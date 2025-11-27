@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: App Runner service for enviar-guias (send-only)
+
+Parameters:
+  ServiceName:
+    Type: String
+    Default: enviar-guias-send-only
+  ImageUri:
+    Type: String
+    Description: ECR image URI (e.g., 123456789012.dkr.ecr.sa-east-1.amazonaws.com/enviar-guias:v0.1.0)
+  Cpu:
+    Type: String
+    Default: '1 vCPU'
+    AllowedValues: ['1 vCPU', '2 vCPU', '4 vCPU']
+  Memory:
+    Type: String
+    Default: '2 GB'
+    AllowedValues: ['1 GB', '2 GB', '3 GB', '4 GB', '8 GB']
+  Port:
+    Type: Number
+    Default: 3000
+  # ENV (plain)
+  TZ:
+    Type: String
+    Default: America/Sao_Paulo
+  LOG_LEVEL:
+    Type: String
+    Default: info
+  DRIVE_FOLDER_ID_CLIENTES:
+    Type: String
+  SHEET_ID:
+    Type: String
+  RUN_TOKEN:
+    Type: String
+    Default: ''
+    NoEcho: true
+  # Secrets (ARNs in Secrets Manager)
+  GOOGLE_APPLICATION_CREDENTIALS_JSON_ARN:
+    Type: String
+    Description: ARN of secret containing the Google Service Account JSON content
+  SMTP_PASS_ARN:
+    Type: String
+    Default: ''
+    Description: ARN of secret containing SMTP password (optional)
+
+Resources:
+  AppRunnerService:
+    Type: AWS::AppRunner::Service
+    Properties:
+      ServiceName: !Ref ServiceName
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /healthz
+      SourceConfiguration:
+        AutoDeploymentsEnabled: true
+        ImageRepository:
+          ImageRepositoryType: ECR
+          ImageIdentifier: !Ref ImageUri
+          ImageConfiguration:
+            Port: !Ref Port
+            StartCommand: >-
+              sh -lc 'printf "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/creds.json &&
+              export GOOGLE_APPLICATION_CREDENTIALS=/tmp/creds.json &&
+              node src/server-send-only.js'
+            RuntimeEnvironmentVariables:
+              - Name: TZ
+                Value: !Ref TZ
+              - Name: LOG_LEVEL
+                Value: !Ref LOG_LEVEL
+              - Name: PORT
+                Value: !Sub '${Port}'
+              - Name: DRIVE_FOLDER_ID_CLIENTES
+                Value: !Ref DRIVE_FOLDER_ID_CLIENTES
+              - Name: SHEET_ID
+                Value: !Ref SHEET_ID
+              - Name: RUN_TOKEN
+                Value: !Ref RUN_TOKEN
+            RuntimeEnvironmentSecrets:
+              - Name: GOOGLE_APPLICATION_CREDENTIALS_JSON
+                Value: !Ref GOOGLE_APPLICATION_CREDENTIALS_JSON_ARN
+              - !If
+                - UseSmtpPass
+                - Name: SMTP_PASS
+                  Value: !Ref SMTP_PASS_ARN
+                - !Ref AWS::NoValue
+      InstanceConfiguration:
+        Cpu: !Ref Cpu
+        Memory: !Ref Memory
+
+Conditions:
+  UseSmtpPass: !Not [ !Equals [ !Ref SMTP_PASS_ARN, '' ] ]
+
+Outputs:
+  ServiceArn:
+    Value: !GetAtt AppRunnerService.ServiceArn
+  ServiceUrl:
+    Value: !GetAtt AppRunnerService.ServiceUrl
+
+

@@ -1,0 +1,37 @@
+{
+  "name": "enviar-guias",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/application/SendGuides.js",
+    "dry": "DRY_RUN=1 node src/application/SendGuides.js",
+    "serve": "node src/server.js",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "web:preview": "npm --prefix web run preview",
+    "serve:send-only": "node src/server-send-only.js",
+    "inbox": "node src/application/ProcessInbox.js",
+    "reset-state": "node -e \"const fs=require('fs'); const paths=['./.state.json','./.processed.json','./state.json','./data/last-run.json','./data/sent-emails.jsonl']; for(const p of paths){ try{ fs.unlinkSync(p);}catch(e){} } console.log('State limpo');\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@mailchimp/mailchimp_transactional": "^1.0.59",
+    "axios": "^1.7.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.19.2",
+    "googleapis": "^140.0.1",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.14",
+    "nodemailer-ses-transport": "^1.5.1",
+    "pdf-parse": "^1.1.1",
+    "pino": "^10.1.0"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.1.2"
+  }
+}
