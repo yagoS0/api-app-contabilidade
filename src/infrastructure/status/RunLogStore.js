@@ -32,7 +32,7 @@ async function writeJson(filePath, data) {
 
 function defaultState() {
   return {
-    kind: null, // "send" | "inbox"
+    kind: null, // "send"
     startedAt: null,
     finishedAt: null,
     running: false,

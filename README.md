@@ -1,7 +1,7 @@
 enviar-guias
 ================
 
-Automação para triagem de guias via Google Drive e envio por e-mail.
+Automação para envio de guias fiscais via Google Drive + e-mail.
 
 Sumário
 - Visão geral
@@ -10,110 +10,75 @@ Sumário
 - Configuração (.env)
 - Como executar
 - Endpoints HTTP
-- Fluxos (Inbox e Envio de Guias)
 - Permissões Google
 - Troubleshooting
 
 Visão geral
-- Inbox: arquivos PDF são colocados em uma pasta do Google Drive (“caixa de entrada”). O sistema extrai dados (empresa, competência, etc.), garante que a pasta da empresa e da competência existam, e move o PDF para o destino correto.
-- Envio de guias: para cada cliente e competência do mês anterior, envia e-mail com os PDFs daquela pasta. Marca arquivos no Drive para evitar reenvio.
+- Para cada cliente listado na planilha (colunas A=Nome, B=Email), o sistema localiza a pasta da competência do mês anterior dentro de “Clientes/MM-AAAA”.
+- Todos os PDFs dessa pasta que ainda não foram marcados como processados (`appProperties.belgen_processed` diferente de 1) são baixados, anexados em um único e-mail e enviados.
+- Após o envio bem-sucedido cada arquivo recebe `belgen_processed=1`, evitando reenvio futuro. Há logs persistidos em `data/`.
 
 Arquitetura
-- src/server.js: servidor HTTP para acionar os fluxos manualmente e expor status.
-- src/inbox.js: fluxo de triagem automática (lê Inbox, extrai campos, cria/move pastas/arquivos).
-- src/main.js: fluxo de envio de guias (mês anterior), com anexos e marcação de processados.
-- src/drive.js: cliente e helpers do Google Drive.
-- src/sheets.js: leitura de clientes (nome e e-mail) de uma planilha.
-- src/mailer.js: envio de e-mails via Gmail API (delegação) ou SMTP.
-- src/ocr.js: extração de texto de PDFs com pdf-parse (sem OCR de imagem).
-- src/extractor.js: heurísticas de parsing (CNPJ, competência, valor, vencimento).
-- src/google_clients.js: inicialização unificada dos clientes Google.
-- src/config.js: configuração e logs.
+- `src/application/SendGuides.js`: orquestra o fluxo de envio.
+- `src/server.js`: expõe endpoints HTTP + cron opcional para disparar `SendGuides`.
+- `src/server-send-only.js`: UI simples com botão único “Enviar agora”.
+- `src/infrastructure/drive/DriveService.js`: utilitários de Google Drive.
+- `src/infrastructure/sheets/SheetService.js`: leitura da planilha de clientes.
+- `src/infrastructure/mail/EmailService.js`: envio por Gmail API (delegação) ou SMTP.
+- `src/infrastructure/status/RunLogStore.js`: persiste status/entregas em `data/`.
+- `src/infrastructure/google/GoogleClients.js`: inicializa clientes Google (Drive/Sheets).
+- `src/config.js`: centraliza variáveis de ambiente e logger.
 
 Estrutura de pastas
 ```
 .
 ├─ docs/
-│  ├─ env.example        # modelo de .env com variáveis necessárias
-├─ scripts/              # scripts auxiliares (reservado)
+│  └─ env.example
+├─ infra/
+├─ scripts/
 ├─ src/
+│  ├─ application/SendGuides.js
 │  ├─ config.js
-│  ├─ drive.js
-│  ├─ extractor.js
-│  ├─ google_clients.js
-│  ├─ inbox.js
-│  ├─ mailer.js
-│  ├─ main.js
-│  ├─ ocr.js
-│  ├─ server.js
-│  ├─ sheets.js
-│  └─ state.js
+│  ├─ infrastructure/
+│  │  ├─ drive/DriveService.js
+│  │  ├─ google/GoogleClients.js
+│  │  ├─ mail/EmailService.js
+│  │  ├─ sheets/SheetService.js
+│  │  └─ status/RunLogStore.js
+│  ├─ server-send-only.js
+│  └─ server.js
 ├─ package.json
 └─ README.md
 ```
 
 Configuração (.env)
-1) Copie `docs/env.example` para `.env` na raiz e preencha:
-- GOOGLE_APPLICATION_CREDENTIALS: caminho absoluto do JSON da Service Account.
-- DRIVE_FOLDER_ID_CLIENTES: ID da pasta raiz “Clientes”.
-- DRIVE_FOLDER_ID_INBOX: ID da pasta “caixa de entrada” no Drive.
-- SHEET_ID: ID da planilha com (A=Cliente, B=Email).
-- Opções de e-mail: USE_GMAIL_API/GMAIL_DELEGATED_USER ou SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/SMTP_FROM.
-- Opcional: RUN_TOKEN para proteger endpoints; CRON_SCHEDULE; TARGET_MONTH; FORCE_SEND; LOG_LEVEL; TZ.
+1. Copie `docs/env.example` para `.env` na raiz e preencha:
+   - `GOOGLE_APPLICATION_CREDENTIALS`: caminho absoluto do JSON da Service Account.
+   - `DRIVE_FOLDER_ID_CLIENTES`: ID da pasta raiz “Clientes”.
+   - `SHEET_ID`: ID da planilha (colunas A/B).
+   - Opções de e-mail: `USE_GMAIL_API` + `GMAIL_DELEGATED_USER` **ou** SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`).
+   - Opções extras: `RUN_TOKEN`, `CRON_SCHEDULE`, `TARGET_MONTH`, `FORCE_SEND`, `LOG_LEVEL`, `TZ`, `HOST`, `PORT`.
 
 Como executar
 Requisitos: Node 18+
-- Instalar dependências:
-  - npm install
-- Executar o servidor HTTP (com UI simples):
-  - npm run serve
-  - Acesse http://localhost:3000 (botões “Enviar agora” e “Processar Inbox”)
-- Executar somente o modo “send-only” (sem Inbox na UI):
-  - npm run serve:send-only
-  - Acesse http://localhost:3000 (apenas “Enviar agora”)
-- Executar apenas o fluxo Inbox (CLI):
-  - npm run inbox
-- Executar envio de guias (CLI):
-  - npm start
+1. Instale dependências: `npm install`
+2. Executar o servidor HTTP com UI básica:
+   - `npm run serve`
+   - Acesse http://localhost:3000 e utilize o botão “Enviar agora”.
+3. Executar somente o fluxo de envio (CLI/headless):
+   - `npm start`
 
 Endpoints HTTP
-- GET /healthz: healthcheck.
-- GET /status: status da última execução.
-- POST /run: aciona o envio de guias.
-- POST /run-inbox: aciona a triagem/movimentação da Inbox.
-Headers: se RUN_TOKEN estiver definido, envie `x-run-token: <token>`.
-
-Fluxos
-Inbox (src/inbox.js)
-1. Lista PDFs na pasta Inbox.
-2. Para cada arquivo não triado (`appProperties.belgen_sorted != 1`):
-   - Baixa o PDF e extrai texto com pdf-parse.
-   - Extrai campos (empresa, competência, etc.).
-   - Garante pasta do cliente e da competência (cria se necessário).
-   - Move o arquivo para cliente/competência e marca `belgen_sorted=1`.
-
-Envio de Guias (src/main.js)
-1. Lê clientes (nome, e-mail) da planilha.
-2. Para cada cliente, localiza a pasta do mês anterior (MM-AAAA).
-3. Anexa todos os PDFs não marcados como processados e envia um único e-mail.
-4. Marca os arquivos enviados no Drive via `appProperties.belgen_processed=1`.
+- `GET /healthz`: healthcheck.
+- `GET /status`: status do último envio + log básico.
+- `POST /run`: dispara o envio imediato. Se `RUN_TOKEN` estiver definido, envie `x-run-token: <token>`.
 
 Permissões Google
-- Compartilhe as pastas (Clientes e Inbox) com a Service Account (ou adicione-a ao Drive compartilhado).
-- Habilite as APIs necessárias (Drive, Sheets; Gmail se for usar API).
-
-Deploy via GHCR
-- Publicação automática ao criar tag v*: uma imagem Docker é enviada para `ghcr.io/<org>/<repo>:<tag>` e `:latest`.
-- Como criar a primeira release (ex.: v0.1.0):
-  1. git tag v0.1.0
-  2. git push origin v0.1.0
-- Rodando a imagem publicada:
-  - docker run --rm -p 3000:3000 --env-file .env -v /abs/credenciais.json:/creds.json:ro -e GOOGLE_APPLICATION_CREDENTIALS=/creds.json ghcr.io/<org>/<repo>:v0.1.0
-
-- Para Gmail Delegation (DWD), configure o escopo `https://www.googleapis.com/auth/gmail.send` e o usuário delegado.
+- Compartilhe a pasta “Clientes” com a Service Account (ou adicione-a ao mesmo Drive compartilhado) e conceda acesso à planilha.
+- Ative as APIs necessárias: Drive, Sheets (e Gmail se optar por `USE_GMAIL_API=1`).
 
 Troubleshooting
-- Falta de acesso/ID incorreto: verifique os logs do servidor e o ID das pastas/planilha.
-- PDFs escaneados (imagem) não extraem texto: troque o extrator para um OCR (ex.: Google Vision). A arquitetura permite substituir `extractTextFromPdf` mantendo a interface.
-- Não cria/move pastas: confirme permissões da Service Account na pasta/Drive.
+- IDs incorretos ou falta de permissão: verifique se a Service Account recebeu “Editor” na pasta e na planilha.
+- “invalid_grant / Invalid JWT Signature”: confira o JSON das credenciais (formatação da chave privada, caminho correto e serviço ativo).
+- Nenhum PDF encontrado: confirme o nome da pasta `MM-AAAA` dentro do cliente ou use `TARGET_MONTH` para forçar uma competência específica.
 

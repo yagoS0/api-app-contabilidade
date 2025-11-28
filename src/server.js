@@ -4,7 +4,6 @@ import cron from "node-cron";
 import bodyParser from "body-parser";
 import cors from "cors";
 import { run } from "./application/SendGuides.js";
-import { runInbox } from "./application/ProcessInbox.js";
 import { log } from "./config.js";
 import { RunLogStore } from "./infrastructure/status/RunLogStore.js";
 
@@ -79,30 +78,6 @@ app.post("/run", async (req, res) => {
   } catch (err) {
     lastRunError = err;
     log.error({ err }, "Execução falhou");
-  } finally {
-    isRunning = false;
-    lastRunFinishedAt = new Date().toISOString();
-    await RunLogStore.finishRun({ error: lastRunError });
-  }
-});
-
-app.post("/run-inbox", async (req, res) => {
-  if (!isAuthorized(req)) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
-  if (isRunning) {
-    return res.status(409).json({ error: "already_running" });
-  }
-  res.status(202).json({ status: "started" });
-  isRunning = true;
-  lastRunError = null;
-  lastRunStartedAt = new Date().toISOString();
-  try {
-    await RunLogStore.startRun("inbox");
-    await runInbox();
-  } catch (err) {
-    lastRunError = err;
-    log.error({ err }, "Execução (inbox) falhou");
   } finally {
     isRunning = false;
     lastRunFinishedAt = new Date().toISOString();

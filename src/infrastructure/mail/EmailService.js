@@ -4,7 +4,6 @@ import path from "node:path";
 import nodemailer from "nodemailer";
 import { google } from "googleapis";
 import {
-  DRY_RUN,
   USE_GMAIL_API,
   FROM,
   SMTP_HOST,
@@ -24,7 +23,9 @@ function encodeHeaderUtf8(value) {
 }
 
 async function getGmailService() {
-  const raw = await fsp.readFile(GOOGLE_APPLICATION_CREDENTIALS, "utf8");
+  // Normaliza o caminho para evitar duplicação
+  const credentialsPath = path.resolve(GOOGLE_APPLICATION_CREDENTIALS);
+  const raw = await fsp.readFile(credentialsPath, "utf8");
   const { client_email, private_key } = JSON.parse(raw);
   const auth = new google.auth.JWT({
     email: client_email,
@@ -74,10 +75,6 @@ export class EmailService {
   async sendViaGmailApi({ to, subject, html, attachments }) {
     const gmail = await getGmailService();
     const mime = buildMimeMessage({ from: FROM, to, subject, html, attachments });
-    if (DRY_RUN) {
-      log.info({ to, from: FROM }, "[DRY_RUN] Enviaria via Gmail API");
-      return;
-    }
     const raw = Buffer.from(mime).toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
     await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
     log.info({ to, from: FROM }, "E-mail enviado (Gmail API)");
@@ -101,10 +98,6 @@ export class EmailService {
         contentType: "application/pdf",
       })),
     };
-    if (DRY_RUN) {
-      log.info({ to, from: FROM, n: mail.attachments.length }, "[DRY_RUN] Enviaria via SMTP");
-      return;
-    }
     await transporter.sendMail(mail);
     log.info({ to, from: FROM }, "E-mail enviado (SMTP)");
   }

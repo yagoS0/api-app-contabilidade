@@ -4,14 +4,9 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/application/SendGuides.js",
-    "dry": "DRY_RUN=1 node src/application/SendGuides.js",
-    "serve": "node src/server.js",
-    "web:dev": "npm --prefix web run dev",
-    "web:build": "npm --prefix web run build",
-    "web:preview": "npm --prefix web run preview",
+    "start": "node src/server.js",
+    "serve": "node src/server.js",    
     "serve:send-only": "node src/server-send-only.js",
-    "inbox": "node src/application/ProcessInbox.js",
     "reset-state": "node -e \"const fs=require('fs'); const paths=['./.state.json','./.processed.json','./state.json','./data/last-run.json','./data/sent-emails.jsonl']; for(const p of paths){ try{ fs.unlinkSync(p);}catch(e){} } console.log('State limpo');\""
   },
   "keywords": [],

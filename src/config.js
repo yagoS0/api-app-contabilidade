@@ -11,7 +11,6 @@ export const log = pino({
 });
 
 // === Flags de execução ===
-export const DRY_RUN = false; // desabilitado por padrão (envio sempre real)
 export const FORCE_SEND = process.env.FORCE_SEND === "1" || false; // reenviar mesmo já processado
 
 // === Google ===
@@ -19,8 +18,6 @@ export const GOOGLE_APPLICATION_CREDENTIALS =
   process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
 export const DRIVE_FOLDER_ID_CLIENTES =
   process.env.DRIVE_FOLDER_ID_CLIENTES || "";
-export const DRIVE_FOLDER_ID_INBOX =
-  process.env.DRIVE_FOLDER_ID_INBOX || "";
 export const SHEET_ID = process.env.SHEET_ID || "";
 export const TARGET_MONTH = process.env.TARGET_MONTH || ""; // opcional: "09-2025"
 
@@ -54,8 +51,6 @@ if (!GOOGLE_APPLICATION_CREDENTIALS)
   log.warn("GOOGLE_APPLICATION_CREDENTIALS ausente no .env");
 if (!DRIVE_FOLDER_ID_CLIENTES)
   log.warn("DRIVE_FOLDER_ID_CLIENTES ausente no .env");
-if (!DRIVE_FOLDER_ID_INBOX)
-  log.warn("DRIVE_FOLDER_ID_INBOX ausente no .env (caixa de entrada do Drive)");
 if (!SHEET_ID) log.warn("SHEET_ID ausente no .env");
 if (!FROM)
   log.warn("Remetente (FROM) vazio: defina SMTP_FROM ou GMAIL_DELEGATED_USER");

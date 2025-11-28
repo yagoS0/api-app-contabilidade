@@ -76,7 +76,7 @@ app.post("/run", async (req, res) => {
   }
 });
 
-// Página simples com botão (sem Inbox)
+// Página simples com botão único
 app.get("/", (_req, res) => {
   const hasToken = Boolean(RUN_TOKEN);
   const html = `<!doctype html>
