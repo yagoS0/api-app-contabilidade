@@ -4,7 +4,7 @@ import cron from "node-cron";
 import bodyParser from "body-parser";
 import cors from "cors";
 import { run } from "./application/SendGuides.js";
-import { log } from "./config.js";
+import { log, API_KEYS } from "./config.js";
 import { RunLogStore } from "./infrastructure/status/RunLogStore.js";
 
 const app = express();
@@ -13,13 +13,12 @@ app.use(
   cors({
     origin: true,
     methods: ["GET", "POST"],
-    allowedHeaders: ["content-type", "x-run-token"],
+    allowedHeaders: ["content-type", "x-api-key"],
   })
 );
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
-const RUN_TOKEN = (process.env.RUN_TOKEN || "").trim();
 const CRON_SCHEDULE = (process.env.CRON_SCHEDULE || "").trim(); // ex: "0 8 * * 1-5"
 
 let isRunning = false;
@@ -27,18 +26,28 @@ let lastRunStartedAt = null;
 let lastRunFinishedAt = null;
 let lastRunError = null;
 
-function isAuthorized(req) {
-  if (!RUN_TOKEN) return true; // sem token configurado => livre
-  const headerToken = (req.get("x-run-token") || "").trim();
-  const queryToken = (req.query.token || "").toString().trim();
-  return headerToken === RUN_TOKEN || queryToken === RUN_TOKEN;
+function extractApiKey(req) {
+  const headerKey = (req.get("x-api-key") || "").trim();
+  if (headerKey) return headerKey;
+  const queryKey = (req.query.apiKey || req.query.apikey || req.query.api_key || "").toString().trim();
+  return queryKey;
+}
+
+function ensureAuthorized(req, res) {
+  if (!API_KEYS.length) return true; // sem chaves configuradas => livre (mas logamos no startup)
+  const provided = extractApiKey(req);
+  if (provided && API_KEYS.includes(provided)) return true;
+  log.warn({ path: req.path, ip: req.ip }, "Chave de API ausente ou inválida");
+  res.status(401).json({ error: "unauthorized" });
+  return false;
 }
 
 app.get("/healthz", (_req, res) => {
   res.status(200).send("ok");
 });
 
-app.get("/status", async (_req, res) => {
+app.get("/status", async (req, res) => {
+  if (!ensureAuthorized(req, res)) return;
   const last = await RunLogStore.getLastRun();
   res.json({
     running: isRunning || Boolean(last?.running),
@@ -61,9 +70,7 @@ app.get("/status", async (_req, res) => {
 });
 
 app.post("/run", async (req, res) => {
-  if (!isAuthorized(req)) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
+  if (!ensureAuthorized(req, res)) return;
   if (isRunning) {
     return res.status(409).json({ error: "already_running" });
   }

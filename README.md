@@ -56,8 +56,10 @@ Configuração (.env)
    - `GOOGLE_APPLICATION_CREDENTIALS`: caminho absoluto do JSON da Service Account.
    - `DRIVE_FOLDER_ID_CLIENTES`: ID da pasta raiz “Clientes”.
    - `SHEET_ID`: ID da planilha (colunas A/B).
+   - `API_KEYS`: uma ou mais chaves separadas por vírgula (ex.: `minha-chave-ui,cli-interno`). Somente requisições que enviarem uma dessas chaves serão autorizadas.
    - Opções de e-mail: `USE_GMAIL_API` + `GMAIL_DELEGATED_USER` **ou** SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`).
-   - Opções extras: `RUN_TOKEN`, `CRON_SCHEDULE`, `TARGET_MONTH`, `FORCE_SEND`, `LOG_LEVEL`, `TZ`, `HOST`, `PORT`.
+   - Opções extras: `CRON_SCHEDULE`, `TARGET_MONTH`, `FORCE_SEND`, `LOG_LEVEL`, `TZ`, `HOST`, `PORT`.
+   - Em produção, mantenha `GOOGLE_APPLICATION_CREDENTIALS` e `API_KEYS` em um Secrets Manager/App Runner Secret e apenas exporte as variáveis em runtime.
 
 Como executar
 Requisitos: Node 18+
@@ -71,7 +73,13 @@ Requisitos: Node 18+
 Endpoints HTTP
 - `GET /healthz`: healthcheck.
 - `GET /status`: status do último envio + log básico.
-- `POST /run`: dispara o envio imediato. Se `RUN_TOKEN` estiver definido, envie `x-run-token: <token>`.
+- `POST /run`: dispara o envio imediato (requer `x-api-key` válido).
+
+Exemplo de chamada autenticada:
+```bash
+curl -X POST https://seu-host/run \
+  -H "x-api-key: minha-chave-ui"
+```
 
 Permissões Google
 - Compartilhe a pasta “Clientes” com a Service Account (ou adicione-a ao mesmo Drive compartilhado) e conceda acesso à planilha.

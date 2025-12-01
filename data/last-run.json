@@ -1,12 +1,12 @@
 {
   "kind": "send",
-  "startedAt": "2025-11-27T13:18:39.698Z",
-  "finishedAt": "2025-11-27T13:21:50.774Z",
-  "running": false,
+  "startedAt": "2025-11-29T00:44:09.788Z",
+  "finishedAt": null,
+  "running": true,
   "error": null,
   "messages": [
     {
-      "timeISO": "2025-11-27T13:18:49.935Z",
+      "timeISO": "2025-11-29T00:44:19.829Z",
       "type": "email",
       "status": "sent",
       "to": "yagoas120@gmail.com",
@@ -16,7 +16,7 @@
       "reason": "ok"
     },
     {
-      "timeISO": "2025-11-27T13:18:57.009Z",
+      "timeISO": "2025-11-29T00:44:28.778Z",
       "type": "email",
       "status": "sent",
       "to": "yagoas120@gmail.com",
@@ -26,7 +26,7 @@
       "reason": "ok"
     },
     {
-      "timeISO": "2025-11-27T13:19:02.250Z",
+      "timeISO": "2025-11-29T00:44:33.918Z",
       "type": "email",
       "status": "sent",
       "to": "yagoas120@gmail.com",
@@ -36,7 +36,7 @@
       "reason": "ok"
     },
     {
-      "timeISO": "2025-11-27T13:19:14.088Z",
+      "timeISO": "2025-11-29T00:44:46.211Z",
       "type": "email",
       "status": "sent",
       "to": "yagoas120@gmail.com",
@@ -44,221 +44,6 @@
       "mes": "10-2025",
       "subject": "Guias de pagamento – 10-2025",
       "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:19:24.136Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "AUQMIA",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:19:25.892Z",
-      "type": "email",
-      "status": "skip",
-      "reason": "month_folder_not_found",
-      "cliente": "BAZAR DO POTENCIA",
-      "to": "yagoas120@gmail.com",
-      "mes": "10-2025"
-    },
-    {
-      "timeISO": "2025-11-27T13:19:26.672Z",
-      "type": "email",
-      "status": "skip",
-      "reason": "month_folder_not_found",
-      "cliente": "BRASS FORTE",
-      "to": "yagoas120@gmail.com",
-      "mes": "10-2025"
-    },
-    {
-      "timeISO": "2025-11-27T13:19:33.528Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "CONSTRUVENDAS",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:19:41.991Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "EDUCACAO E DIREITO TREINAMENTO LTDA",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:19:47.884Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "ELITES",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:20:01.183Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "ERISANGELA LACERDA PEREIRA",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:20:11.092Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "FADINI",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:20:15.750Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "GL CONSULTORIA",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:20:20.553Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "JR MIXX",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:20:31.217Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "KAIZEN",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:20:40.324Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "KLAUS NIGRO",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:20:45.044Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "KODA BEAR",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:20:53.715Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "LENTE MEDICAL MARKETING",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:21:02.424Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "LIFAT",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:21:04.298Z",
-      "type": "email",
-      "status": "skip",
-      "reason": "month_folder_not_found",
-      "cliente": "MAMMEVE 2",
-      "to": "yagoas120@gmail.com",
-      "mes": "10-2025"
-    },
-    {
-      "timeISO": "2025-11-27T13:21:11.353Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "SINTROPIA",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:21:14.717Z",
-      "type": "email",
-      "status": "error",
-      "reason": "client_folder_not_found",
-      "cliente": "PEHDRO SOLUCOES",
-      "to": "yagoas120@gmail.com",
-      "mes": "10-2025"
-    },
-    {
-      "timeISO": "2025-11-27T13:21:25.934Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "PHAOS CONSULTORIA",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:21:40.773Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "PRISMA SOFTWARE",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:21:49.253Z",
-      "type": "email",
-      "status": "sent",
-      "to": "yagoas120@gmail.com",
-      "cliente": "SINCROSAT",
-      "mes": "10-2025",
-      "subject": "Guias de pagamento – 10-2025",
-      "reason": "ok"
-    },
-    {
-      "timeISO": "2025-11-27T13:21:50.761Z",
-      "type": "email",
-      "status": "error",
-      "reason": "client_folder_not_found",
-      "cliente": "TALBOT PEREIRA",
-      "to": "yagoas120@gmail.com",
-      "mes": "10-2025"
     }
   ]
 }

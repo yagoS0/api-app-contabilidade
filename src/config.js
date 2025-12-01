@@ -39,6 +39,13 @@ export const FROM = (
   ""
 ).trim();
 
+// === API Keys ===
+const rawApiKeys = process.env.API_KEYS || "";
+export const API_KEYS = rawApiKeys
+  .split(",")
+  .map((key) => key.trim())
+  .filter((key) => key.length > 0);
+
 // SCOPES Google (Drive + Sheets; adiciona Gmail se habilitado)
 export const SCOPES = [
   "https://www.googleapis.com/auth/drive", // precisamos escrever appProperties para persistir estado
@@ -54,3 +61,5 @@ if (!DRIVE_FOLDER_ID_CLIENTES)
 if (!SHEET_ID) log.warn("SHEET_ID ausente no .env");
 if (!FROM)
   log.warn("Remetente (FROM) vazio: defina SMTP_FROM ou GMAIL_DELEGATED_USER");
+if (!API_KEYS.length)
+  log.warn("API_KEYS vazio: defina pelo menos uma chave para proteger a API");
