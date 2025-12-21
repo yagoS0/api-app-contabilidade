@@ -1,19 +1,29 @@
 // src/server.js
 import express from "express";
 import cron from "node-cron";
-import bodyParser from "body-parser";
 import cors from "cors";
 import { run } from "./application/SendGuides.js";
 import { log, API_KEYS } from "./config.js";
 import { RunLogStore } from "./infrastructure/status/RunLogStore.js";
+import { ClientRepository } from "./infrastructure/db/ClientRepository.js";
+import { UserRepository } from "./infrastructure/db/UserRepository.js";
+import { validateClientPayload } from "./application/validators/clientPayload.js";
+import { AuthService } from "./application/auth/AuthService.js";
+import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
+import { createAuthRouter } from "./routes/auth.js";
+import { createAdminRouter } from "./routes/admin.js";
+import { createClientsRouter } from "./routes/clients.js";
+import { createRunRouter } from "./routes/run.js";
+import { createStatusRouter } from "./routes/status.js";
+import { runState } from "./routes/runState.js";
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(
   cors({
     origin: true,
     methods: ["GET", "POST"],
-    allowedHeaders: ["content-type", "x-api-key"],
+    allowedHeaders: ["content-type", "x-api-key", "authorization"],
   })
 );
 
@@ -21,109 +31,68 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
 const CRON_SCHEDULE = (process.env.CRON_SCHEDULE || "").trim(); // ex: "0 8 * * 1-5"
 
-let isRunning = false;
-let lastRunStartedAt = null;
-let lastRunFinishedAt = null;
-let lastRunError = null;
+const USER_STATUSES = ["pending", "active", "rejected"];
+const USER_ROLES = ["user", "admin"];
 
-function extractApiKey(req) {
-  const headerKey = (req.get("x-api-key") || "").trim();
-  if (headerKey) return headerKey;
-  const queryKey = (req.query.apiKey || req.query.apikey || req.query.api_key || "").toString().trim();
-  return queryKey;
-}
+const ensureAuthorized = createEnsureAuthorized({ AuthService, API_KEYS, log });
 
-function ensureAuthorized(req, res) {
-  if (!API_KEYS.length) return true; // sem chaves configuradas => livre (mas logamos no startup)
-  const provided = extractApiKey(req);
-  if (provided && API_KEYS.includes(provided)) return true;
-  log.warn({ path: req.path, ip: req.ip }, "Chave de API ausente ou inválida");
-  res.status(401).json({ error: "unauthorized" });
-  return false;
-}
-
-app.get("/healthz", (_req, res) => {
-  res.status(200).send("ok");
+const authRouter = createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized });
+const adminRouter = createAdminRouter({
+  ensureAuthorized,
+  UserRepository,
+  log,
+  USER_STATUSES,
+  USER_ROLES,
+  serializeUser,
+});
+const clientsRouter = createClientsRouter({
+  ensureAuthorized,
+  validateClientPayload,
+  ClientRepository,
+  log,
+});
+const { router: runRouter, executeRun } = createRunRouter({
+  ensureAuthorized,
+  RunLogStore,
+  runState,
+  run,
+  log,
+});
+const statusRouter = createStatusRouter({
+  ensureAuthorized,
+  RunLogStore,
+  runState,
+  CRON_SCHEDULE,
 });
 
-app.get("/status", async (req, res) => {
-  if (!ensureAuthorized(req, res)) return;
-  const last = await RunLogStore.getLastRun();
-  res.json({
-    running: isRunning || Boolean(last?.running),
-    lastRunStartedAt,
-    lastRunFinishedAt,
-    lastRunError:
-      lastRunError && typeof lastRunError === "object"
-        ? { message: lastRunError.message }
-        : lastRunError || null,
-    cron: CRON_SCHEDULE || null,
-    messages: Array.isArray(last?.messages) ? last.messages : [],
-    lastRunKind: last?.kind || null,
-    lastRunStore: {
-      startedAt: last?.startedAt || null,
-      finishedAt: last?.finishedAt || null,
-      error: last?.error || null,
-      running: Boolean(last?.running),
-    },
-  });
-});
+app.use("/auth", authRouter);
+app.use("/admin", adminRouter);
+app.use("/clients", clientsRouter);
+app.use("/", statusRouter);
+app.use("/", runRouter);
 
-app.post("/run", async (req, res) => {
-  if (!ensureAuthorized(req, res)) return;
-  if (isRunning) {
-    return res.status(409).json({ error: "already_running" });
-  }
-  // dispara em background
-  res.status(202).json({ status: "started" });
-  isRunning = true;
-  lastRunError = null;
-  lastRunStartedAt = new Date().toISOString();
-  try {
-    await RunLogStore.startRun("send");
-    await run();
-  } catch (err) {
-    lastRunError = err;
-    log.error({ err }, "Execução falhou");
-  } finally {
-    isRunning = false;
-    lastRunFinishedAt = new Date().toISOString();
-    await RunLogStore.finishRun({ error: lastRunError });
-  }
-});
-
-// Página simples com botão
-// (rota "/" removida — backend expõe somente APIs)
-
-// Inicia o servidor
 app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
 });
 
-// Agenda (se configurado)
 if (CRON_SCHEDULE) {
   try {
     cron.schedule(
       CRON_SCHEDULE,
       async () => {
-        if (isRunning) {
+        if (runState.isRunning) {
           log.warn("Execução cron ignorada: já há um processo em andamento.");
           return;
         }
         log.info({ CRON_SCHEDULE }, "Disparando execução pelo CRON");
-        isRunning = true;
-        lastRunError = null;
-        lastRunStartedAt = new Date().toISOString();
         try {
-          await RunLogStore.startRun("send");
-          await run();
+          await executeRun("send");
         } catch (err) {
-          lastRunError = err;
-          log.error({ err }, "Execução (cron) falhou");
-        } finally {
-          isRunning = false;
-          lastRunFinishedAt = new Date().toISOString();
-          await RunLogStore.finishRun({ error: lastRunError });
+          if (err.code === "ALREADY_RUNNING") {
+            log.warn("Cron encontrou execução em andamento");
+          } else {
+            log.error({ err }, "Execução (cron) falhou");
+          }
         }
       },
       {
