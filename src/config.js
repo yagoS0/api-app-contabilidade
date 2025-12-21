@@ -46,6 +46,39 @@ export const API_KEYS = rawApiKeys
   .map((key) => key.trim())
   .filter((key) => key.length > 0);
 
+// === Auth (JWT) ===
+function parseAuthUsers(rawUsers) {
+  if (!rawUsers || !rawUsers.trim()) return [];
+  try {
+    const parsed = JSON.parse(rawUsers);
+    if (!Array.isArray(parsed)) {
+      log.warn("AUTH_USERS deve ser um array JSON de objetos");
+      return [];
+    }
+    return parsed
+      .map((user) => {
+        if (!user || typeof user !== "object") return null;
+        const username = String(user.username || "").trim();
+        if (!username) return null;
+        const password = user.password ? String(user.password) : undefined;
+        const passwordHash = user.passwordHash
+          ? String(user.passwordHash)
+          : undefined;
+        const role = user.role ? String(user.role) : "user";
+        if (!password && !passwordHash) return null;
+        return { username, password, passwordHash, role };
+      })
+      .filter(Boolean);
+  } catch (err) {
+    log.error({ err }, "Falha ao interpretar AUTH_USERS");
+    return [];
+  }
+}
+
+export const AUTH_USERS = parseAuthUsers(process.env.AUTH_USERS || "");
+export const JWT_SECRET = (process.env.JWT_SECRET || "").trim();
+export const JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN || "1h").trim();
+
 // SCOPES Google (Drive + Sheets; adiciona Gmail se habilitado)
 export const SCOPES = [
   "https://www.googleapis.com/auth/drive", // precisamos escrever appProperties para persistir estado
@@ -63,3 +96,7 @@ if (!FROM)
   log.warn("Remetente (FROM) vazio: defina SMTP_FROM ou GMAIL_DELEGATED_USER");
 if (!API_KEYS.length)
   log.warn("API_KEYS vazio: defina pelo menos uma chave para proteger a API");
+if (!AUTH_USERS.length)
+  log.warn("AUTH_USERS vazio: configure pelo menos um usuário para login/password");
+if (!JWT_SECRET)
+  log.warn("JWT_SECRET vazio: tokens JWT não serão emitidos");

@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Client {
+  id        String    @id @default(uuid())
+  name      String
+  email     String    @unique
+  phone     String?
+  cpf       String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  companies Company[]
+}
+
+model Company {
+  id               String    @id @default(uuid())
+  clientId         String
+  razaoSocial      String
+  cnpj             String    @unique
+  nomeFantasia     String?
+  atividades       String[]
+  porte            String?
+  tipoTributario   String?
+  anexoSimples     String?
+  endereco         String?
+  email            String?
+  telefone         String?
+  capitalSocial    Decimal?  @db.Decimal(18, 2)
+  dataAbertura     DateTime?
+  quantidadeSocios Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  client           Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  partners         Partner[]
+}
+
+model Partner {
+  id            String   @id @default(uuid())
+  companyId     String
+  name          String
+  phone         String?
+  email         String?
+  participacao  Decimal? @db.Decimal(5, 2)
+  documento     String?
+  representante Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String?
+  email        String   @unique
+  passwordHash String
+  role         String   @default("user")
+  status       String   @default("pending")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
