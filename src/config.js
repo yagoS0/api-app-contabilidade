@@ -78,6 +78,9 @@ function parseAuthUsers(rawUsers) {
 export const AUTH_USERS = parseAuthUsers(process.env.AUTH_USERS || "");
 export const JWT_SECRET = (process.env.JWT_SECRET || "").trim();
 export const JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN || "1h").trim();
+export const REFRESH_TOKEN_EXPIRES_IN = (
+  process.env.REFRESH_TOKEN_EXPIRES_IN || "7d"
+).trim();
 
 // SCOPES Google (Drive + Sheets; adiciona Gmail se habilitado)
 export const SCOPES = [

@@ -62,15 +62,43 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
         }
         return res.status(401).json({ error: "invalid_credentials" });
       }
-      const token = AuthService.generateToken(result.user);
+      const { accessToken, refreshToken } = AuthService.generateTokens(result.user);
       res.json({
-        token,
+        token: accessToken,
+        refreshToken,
         user: result.user,
         expiresInMs: AuthService.getExpiresInMs(),
       });
     } catch (err) {
       log.error({ err }, "Falha ao autenticar usuário");
       res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  router.post("/refresh", async (req, res) => {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken) {
+      return res.status(400).json({ error: "refresh_token_required" });
+    }
+    try {
+      const payload = AuthService.verifyRefreshToken(refreshToken);
+      const user = await AuthService.resolveUserFromPayload(payload);
+      if (!user) {
+        return res.status(401).json({ error: "invalid_token" });
+      }
+      if (user.status && user.status !== "active") {
+        return res.status(403).json({ error: "user_not_active", status: user.status });
+      }
+      const { accessToken, refreshToken: newRefreshToken } = AuthService.generateTokens(user);
+      res.json({
+        token: accessToken,
+        refreshToken: newRefreshToken,
+        user,
+        expiresInMs: AuthService.getExpiresInMs(),
+      });
+    } catch (err) {
+      log.warn({ err: err.message }, "Refresh token inválido");
+      res.status(401).json({ error: "invalid_refresh_token" });
     }
   });
 

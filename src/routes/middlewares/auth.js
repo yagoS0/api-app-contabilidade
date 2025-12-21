@@ -56,6 +56,9 @@ export function createEnsureAuthorized({ AuthService, API_KEYS = [], log }) {
           res.status(401).json({ error: "invalid_token" });
           return false;
         }
+        if (user.status && user.status !== "active") {
+          return res.status(403).json({ error: "user_not_active", status: user.status });
+        }
         if (requireRole && user.role !== requireRole) {
           return res.status(403).json({ error: "forbidden" });
         }
