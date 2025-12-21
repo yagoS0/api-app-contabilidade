@@ -4,7 +4,7 @@ export function createClientsRouter({ ensureAuthorized, validateClientPayload, C
   const router = Router();
 
   router.post("/", async (req, res) => {
-    if (!(await ensureAuthorized(req, res))) return;
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
     const validation = validateClientPayload(req.body);
     if (!validation.ok) {
       return res.status(400).json({ error: validation.error });
@@ -19,7 +19,7 @@ export function createClientsRouter({ ensureAuthorized, validateClientPayload, C
   });
 
   router.get("/", async (req, res) => {
-    if (!(await ensureAuthorized(req, res))) return;
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
     const limit = req.query.limit ? Number(req.query.limit) : undefined;
     const offset = req.query.offset ? Number(req.query.offset) : undefined;
     try {
@@ -32,7 +32,7 @@ export function createClientsRouter({ ensureAuthorized, validateClientPayload, C
   });
 
   router.get("/:id", async (req, res) => {
-    if (!(await ensureAuthorized(req, res))) return;
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
     try {
       const client = await ClientRepository.getClientById(req.params.id);
       if (!client) {

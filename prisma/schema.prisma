@@ -54,6 +54,7 @@ model Partner {
   company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
+
 model User {
   id           String   @id @default(uuid())
   name         String?

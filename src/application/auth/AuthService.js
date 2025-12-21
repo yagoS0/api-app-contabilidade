@@ -1,11 +1,22 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { AUTH_USERS, JWT_SECRET, JWT_EXPIRES_IN } from "../../config.js";
+import {
+  AUTH_USERS,
+  JWT_SECRET,
+  JWT_EXPIRES_IN,
+  REFRESH_TOKEN_EXPIRES_IN,
+} from "../../config.js";
 import { UserRepository } from "../../infrastructure/db/UserRepository.js";
 
 function normalizeExpiresIn() {
   const raw = JWT_EXPIRES_IN || "1h";
   if (!raw) return "1h";
+  return raw;
+}
+
+function normalizeRefreshExpiresIn() {
+  const raw = REFRESH_TOKEN_EXPIRES_IN || "7d";
+  if (!raw) return "7d";
   return raw;
 }
 
@@ -99,11 +110,42 @@ export class AuthService {
     return jwt.sign(payload, JWT_SECRET, { expiresIn });
   }
 
+  static generateRefreshToken(user) {
+    if (!this.isEnabled()) {
+      throw new Error("AuthService: autenticação não configurada");
+    }
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      source: user.source || "db",
+      tokenType: "refresh",
+    };
+    const expiresIn = normalizeRefreshExpiresIn();
+    return jwt.sign(payload, JWT_SECRET, { expiresIn });
+  }
+
+  static generateTokens(user) {
+    const accessToken = this.generateToken(user);
+    const refreshToken = this.generateRefreshToken(user);
+    return { accessToken, refreshToken };
+  }
+
   static verifyToken(token) {
     if (!this.isEnabled()) {
       throw new Error("AuthService: autenticação não configurada");
     }
     return jwt.verify(token, JWT_SECRET);
+  }
+
+  static verifyRefreshToken(token) {
+    const payload = this.verifyToken(token);
+    if (payload?.tokenType !== "refresh") {
+      const err = new Error("invalid_refresh_token");
+      err.code = "INVALID_REFRESH_TOKEN";
+      throw err;
+    }
+    return payload;
   }
 
   static getExpiresInMs() {
