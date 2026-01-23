@@ -39,6 +39,37 @@ export const FROM = (
   ""
 ).trim();
 
+// === NFSe (Padrão Nacional) ===
+export const NFSE_CERT_PFX_PATH = (process.env.NFSE_CERT_PFX_PATH || "").trim();
+export const NFSE_CERT_PFX_PASSWORD = (process.env.NFSE_CERT_PFX_PASSWORD || "").trim();
+// Suporte a nome legado (NFSE_RJ_BASE_URL) para compatibilidade
+export const NFSE_BASE_URL = (
+  process.env.NFSE_BASE_URL ||
+  process.env.NFSE_RJ_BASE_URL ||
+  ""
+).trim(); // endpoint do provedor NFS-e Nacional
+const nfseEnvRaw = (
+  process.env.NFSE_ENV ||
+  process.env.NFSE_RJ_ENV ||
+  "producao"
+)
+  .toString()
+  .trim()
+  .toLowerCase();
+
+// Normaliza nomes comuns para evitar erro de ambiente
+export const NFSE_ENV =
+  nfseEnvRaw === "homolog" ||
+  nfseEnvRaw === "homologacao" ||
+  nfseEnvRaw === "homologação" ||
+  nfseEnvRaw === "test" ||
+  nfseEnvRaw === "sandbox"
+    ? "homolog"
+    : "producao"; // default: produção
+// Padrão nacional usa /nfse para DPS síncrona; ajuste via env se o provedor tiver outro path.
+export const NFSE_PATH = (process.env.NFSE_PATH || "/nfse").trim();
+export const NFSE_COD_MUNICIPIO = (process.env.NFSE_COD_MUNICIPIO || "").trim(); // cLocEmi (IBGE, 7 dígitos)
+
 // === API Keys ===
 const rawApiKeys = process.env.API_KEYS || "";
 export const API_KEYS = rawApiKeys
@@ -103,3 +134,11 @@ if (!AUTH_USERS.length)
   log.warn("AUTH_USERS vazio: configure pelo menos um usuário para login/password");
 if (!JWT_SECRET)
   log.warn("JWT_SECRET vazio: tokens JWT não serão emitidos");
+if (!NFSE_CERT_PFX_PATH)
+  log.warn("NFSE_CERT_PFX_PATH ausente: emissão NFS-e ficará pendente");
+if (!NFSE_CERT_PFX_PASSWORD)
+  log.warn("NFSE_CERT_PFX_PASSWORD ausente: emissão NFS-e ficará pendente");
+if (!NFSE_BASE_URL)
+  log.warn("NFSE_BASE_URL ausente: configure o endpoint do provedor NFS-e Nacional");
+if (NFSE_PATH === "/nfse/v1/rps")
+  log.info("NFSE_PATH padrão (/nfse/v1/rps); ajuste se o provedor usar outro recurso");

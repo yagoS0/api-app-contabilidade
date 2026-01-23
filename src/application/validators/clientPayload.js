@@ -1,7 +1,14 @@
 import { onlyDigits, toNullableString, toBoolean } from "../../utils/normalizers.js";
 
-const REQUIRED_CLIENT_FIELDS = ["name", "email"];
-const REQUIRED_COMPANY_FIELDS = ["razaoSocial", "cnpj"];
+const REQUIRED_CLIENT_FIELDS = ["name", "email", "password"];
+const REQUIRED_COMPANY_FIELDS = [
+  "razaoSocial",
+  "cnpj",
+  "inscricaoMunicipal",
+  "codigoServicoNacional",
+  "codigoServicoMunicipal",
+  "rpsSerie",
+];
 
 export function validateClientPayload(body) {
   if (!body || typeof body !== "object") {
@@ -29,13 +36,26 @@ export function validateClientPayload(body) {
   const normalizedClient = {
     name: String(client.name).trim(),
     email: String(client.email).trim().toLowerCase(),
+    login: String(client.email || client.login || client.username || client.user)
+      .trim()
+      .toLowerCase(),
+    password: String(client.password || "").trim(),
     phone: toNullableString(client.phone),
     cpf: normalizeCpf(client.cpf),
   };
 
+  if (!normalizedClient.password || normalizedClient.password.length < 8) {
+    return { ok: false, error: "cliente.senha_fraca" };
+  }
+
   const normalizedCompany = {
     razaoSocial: String(company.razaoSocial).trim(),
     cnpj: normalizeCnpj(company.cnpj),
+    inscricaoMunicipal: toNullableString(company.inscricaoMunicipal),
+    codigoServicoNacional: toNullableString(company.codigoServicoNacional),
+    codigoServicoMunicipal: toNullableString(company.codigoServicoMunicipal),
+    rpsSerie: toNullableString(company.rpsSerie),
+    rpsNumero: toNullableString(company.rpsNumero),
     nomeFantasia: toNullableString(company.nomeFantasia),
     atividades: normalizeAtividades(company.atividades),
     porte: toNullableString(company.porte),

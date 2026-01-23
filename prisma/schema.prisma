@@ -11,11 +11,15 @@ model Client {
   id        String    @id @default(uuid())
   name      String
   email     String    @unique
+  login     String    @unique
+  passwordHash String
   phone     String?
   cpf       String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   companies Company[]
+  invoices  Invoice[]
+  serviceInvoices ServiceInvoice[]
 }
 
 model Company {
@@ -34,10 +38,19 @@ model Company {
   capitalSocial    Decimal?  @db.Decimal(18, 2)
   dataAbertura     DateTime?
   quantidadeSocios Int?
+  inscricaoMunicipal    String?
+  codigoServicoNacional String?
+  codigoServicoMunicipal String?
+  rpsSerie              String?
+  rpsNumero             String?
+  optanteSimples        Boolean? @default(false)
+  regimeEspecialTributacao String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
   client           Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   partners         Partner[]
+  invoices         Invoice[]
+  serviceInvoices  ServiceInvoice[]
 }
 
 model Partner {
@@ -64,4 +77,92 @@ model User {
   status       String   @default("pending")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model Invoice {
+  id             String    @id @default(uuid())
+  companyId      String
+  clientId       String?
+  chave          String
+  numero         String?
+  serie          String?
+  dhEmi          DateTime?
+  emitCnpj       String?
+  emitNome       String?
+  destDoc        String?
+  destNome       String?
+  cfopPrincipal  String?
+  valorTotal     Decimal?  @db.Decimal(18, 2)
+  valorProdutos  Decimal?  @db.Decimal(18, 2)
+  valorServicos  Decimal?  @db.Decimal(18, 2)
+  valorImpostos  Decimal?  @db.Decimal(18, 2)
+  valorIcms      Decimal?  @db.Decimal(18, 2)
+  valorPis       Decimal?  @db.Decimal(18, 2)
+  valorCofins    Decimal?  @db.Decimal(18, 2)
+  valorIss       Decimal?  @db.Decimal(18, 2)
+  status         String    @default("imported")
+  fileKey        String?
+  fileUrl        String?
+  fileType       String    @default("xml")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client         Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  items          InvoiceItem[]
+
+  @@unique([companyId, chave])
+  @@index([companyId])
+  @@index([clientId])
+}
+
+model InvoiceItem {
+  id             String   @id @default(uuid())
+  invoiceId      String
+  codigo         String?
+  descricao      String?
+  ncm            String?
+  cfop           String?
+  unidade        String?
+  quantidade     Decimal? @db.Decimal(14, 4)
+  valorUnitario  Decimal? @db.Decimal(18, 4)
+  valorTotal     Decimal? @db.Decimal(18, 2)
+  cstIcms        String?
+  csosn          String?
+  cstPis         String?
+  cstCofins      String?
+  aliquotaIcms   Decimal? @db.Decimal(6, 3)
+  aliquotaPis    Decimal? @db.Decimal(6, 3)
+  aliquotaCofins Decimal? @db.Decimal(6, 3)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  invoice        Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model ServiceInvoice {
+  id                  String   @id @default(uuid())
+  companyId           String
+  clientId            String?
+  tomadorDoc          String
+  tomadorNome         String
+  valorServicos       Decimal  @db.Decimal(18, 2)
+  aliquota            Decimal? @db.Decimal(6, 3)
+  issRetido           Boolean  @default(false)
+  competencia         DateTime?
+  numeroNfse          String?
+  codigoVerificacao   String?
+  rpsNumero           String?
+  rpsSerie            String?
+  status              String   @default("pending")
+  xml                 String?
+  pdfUrl              String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client              Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([clientId])
+  @@index([numeroNfse])
 }

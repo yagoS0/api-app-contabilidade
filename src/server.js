@@ -16,6 +16,8 @@ import { createClientsRouter } from "./routes/clients.js";
 import { createRunRouter } from "./routes/run.js";
 import { createStatusRouter } from "./routes/status.js";
 import { runState } from "./routes/runState.js";
+import { createInvoicesRouter } from "./routes/invoices.js";
+import { createNfseRouter } from "./routes/nfse.js";
 
 const app = express();
 app.use(express.json());
@@ -64,10 +66,20 @@ const statusRouter = createStatusRouter({
   runState,
   CRON_SCHEDULE,
 });
+const invoicesRouter = createInvoicesRouter({
+  ensureAuthorized,
+  log,
+});
+const nfseRouter = createNfseRouter({
+  ensureAuthorized,
+  log,
+});
 
 app.use("/auth", authRouter);
 app.use("/admin", adminRouter);
 app.use("/clients", clientsRouter);
+app.use("/invoices", invoicesRouter);
+app.use("/nfse", nfseRouter);
 app.use("/", statusRouter);
 app.use("/", runRouter);
 

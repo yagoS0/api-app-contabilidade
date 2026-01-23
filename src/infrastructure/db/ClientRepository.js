@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
 
@@ -12,10 +13,14 @@ const clientInclude = {
 export class ClientRepository {
   static async createClientWithCompany({ client, company }) {
     const partners = company.partners || [];
+    const passwordHash = await bcrypt.hash(client.password, 10);
+    const login = client.email.toLowerCase();
     const created = await prisma.client.create({
       data: {
         name: client.name,
         email: client.email,
+        login,
+        passwordHash,
         phone: client.phone,
         cpf: client.cpf,
         companies: {
@@ -34,6 +39,11 @@ export class ClientRepository {
               capitalSocial: company.capitalSocial,
               dataAbertura: company.dataAbertura,
               quantidadeSocios: company.quantidadeSocios ?? partners.length,
+              inscricaoMunicipal: company.inscricaoMunicipal,
+              codigoServicoNacional: company.codigoServicoNacional,
+              codigoServicoMunicipal: company.codigoServicoMunicipal,
+              rpsSerie: company.rpsSerie,
+              rpsNumero: company.rpsNumero,
               partners: {
                 create: partners.map((partner) => ({
                   name: partner.name,
@@ -80,6 +90,17 @@ export class ClientRepository {
     });
     return client ? serializeClient(client) : null;
   }
+
+  static async deleteClient(id) {
+    // Prisma cascades to related companies/partners per FK onDelete rules
+    return prisma.client.delete({ where: { id } });
+  }
+
+  static async findByLogin(login) {
+    return prisma.client.findUnique({
+      where: { login: login.toLowerCase() },
+    });
+  }
 }
 
 function serializeClient(client) {
@@ -112,6 +133,11 @@ function serializeCompany(company) {
     capitalSocial: decimalToNumber(company.capitalSocial),
     dataAbertura: dateToIso(company.dataAbertura),
     quantidadeSocios: company.quantidadeSocios,
+    inscricaoMunicipal: company.inscricaoMunicipal,
+    codigoServicoNacional: company.codigoServicoNacional,
+    codigoServicoMunicipal: company.codigoServicoMunicipal,
+    rpsSerie: company.rpsSerie,
+    rpsNumero: company.rpsNumero,
     createdAt: company.createdAt.toISOString(),
     updatedAt: company.updatedAt.toISOString(),
     partners: (company.partners || []).map(serializePartner),
