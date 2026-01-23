@@ -39,7 +39,9 @@ export function createEnsureAuthorized({ AuthService, API_KEYS = [], log }) {
     const hasJwt = AuthService.isEnabled();
     const hasApiKey = API_KEYS.length > 0;
     if (!hasJwt && !hasApiKey) {
-      return true;
+      log.warn({ path: req.path }, "Autorização indisponível: configure JWT_SECRET ou API_KEYS");
+      res.status(503).json({ error: "auth_not_configured" });
+      return false;
     }
 
     const bearer = extractBearerToken(req);

@@ -7,6 +7,7 @@ import {
   REFRESH_TOKEN_EXPIRES_IN,
 } from "../../config.js";
 import { UserRepository } from "../../infrastructure/db/UserRepository.js";
+import { ClientRepository } from "../../infrastructure/db/ClientRepository.js";
 
 function normalizeExpiresIn() {
   const raw = JWT_EXPIRES_IN || "1h";
@@ -95,6 +96,31 @@ export class AuthService {
     return { ok: false, error: "invalid_credentials" };
   }
 
+  static async authenticateClient(login, password) {
+    if (!this.isEnabled()) {
+      return { ok: false, error: "auth_not_configured" };
+    }
+    if (!login || !password) {
+      return { ok: false, error: "missing_credentials" };
+    }
+    const normalized = String(login).trim().toLowerCase();
+    const client = await ClientRepository.findByLogin(normalized);
+    if (!client) return { ok: false, error: "invalid_credentials" };
+    const ok = await bcrypt.compare(String(password), client.passwordHash);
+    if (!ok) return { ok: false, error: "invalid_credentials" };
+    return {
+      ok: true,
+      client: {
+        id: client.id,
+        login: client.login,
+        email: client.email,
+        name: client.name,
+        role: "client",
+        source: "client",
+      },
+    };
+  }
+
   static generateToken(user) {
     if (!this.isEnabled()) {
       throw new Error("AuthService: autenticação não configurada");
@@ -105,6 +131,23 @@ export class AuthService {
       name: user.name || null,
       role: user.role,
       source: user.source || "db",
+    };
+    const expiresIn = normalizeExpiresIn();
+    return jwt.sign(payload, JWT_SECRET, { expiresIn });
+  }
+
+  static generateClientToken(client) {
+    if (!this.isEnabled()) {
+      throw new Error("AuthService: autenticação não configurada");
+    }
+    const payload = {
+      sub: client.id,
+      login: client.login,
+      email: client.email,
+      name: client.name || null,
+      role: client.role || "client",
+      source: client.source || "client",
+      type: "client",
     };
     const expiresIn = normalizeExpiresIn();
     return jwt.sign(payload, JWT_SECRET, { expiresIn });
@@ -162,6 +205,19 @@ export class AuthService {
 
   static async resolveUserFromPayload(payload) {
     if (!payload) return null;
+    if (payload.type === "client") {
+      if (!payload.sub) return null;
+      const client = await ClientRepository.getClientById(payload.sub);
+      if (!client) return null;
+      return {
+        id: client.id,
+        email: client.email,
+        name: client.name,
+        role: "client",
+        status: "active",
+        source: "client",
+      };
+    }
     if (payload.source === "env") {
       return sanitizeUser({
         id: payload.sub,

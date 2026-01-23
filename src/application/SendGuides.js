@@ -176,7 +176,7 @@ export async function run() {
           })
         );
         if (tmpDir && fssync.existsSync(tmpDir)) {
-          await fs.rmdir(tmpDir);
+          await fs.rm(tmpDir, { recursive: true, force: true });
         }
       } catch {
         // ignore

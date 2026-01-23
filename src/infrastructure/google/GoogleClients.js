@@ -29,10 +29,10 @@ async function getAuth() {
     if (!stats.isFile()) {
       throw new Error(`Caminho não é um arquivo: ${credentialsPath}`);
     }
-    log.debug({ 
+    log.debug({
       originalPath: GOOGLE_APPLICATION_CREDENTIALS,
-      resolvedPath: credentialsPath, 
-      size: stats.size 
+      resolvedPath: credentialsPath,
+      size: stats.size,
     }, "Lendo arquivo de credenciais");
   } catch (err) {
     if (err.code === 'ENOENT') {
@@ -64,10 +64,9 @@ async function getAuth() {
       log.warn('Chave privada pode estar mal formatada (não contém END PRIVATE KEY)');
     }
     
-    log.debug({ 
+    log.debug({
       client_email: credentialsContent.client_email,
       private_key_length: privateKey.length,
-      private_key_starts_with: privateKey.substring(0, 50) + '...'
     }, "Credenciais JSON válidas");
     
   } catch (err) {

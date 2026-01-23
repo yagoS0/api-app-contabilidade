@@ -15,7 +15,7 @@
 - Para colaboradores/clientes, verificar `status === "active"`.
 - Futuro: escopo de dados filtrando por usuário logado (ex.: user-company).
 
-## 3) JWT (refresh opcional)
+ ok ## 3) JWT (refresh opcional)
 - `.env`: `JWT_SECRET` e opcional `JWT_EXPIRES_IN` (ex.: `1h`).
 - `/auth/login`: emite JWT (já implementado).
 - Refresh opcional: endpoint `/auth/refresh` com token de refresh persistido (httpOnly cookie). Se não precisar agora, mantenha só access token curto.

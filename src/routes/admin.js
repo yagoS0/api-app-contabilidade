@@ -24,10 +24,12 @@ export function createAdminRouter({
       return;
     try {
       const users = await UserRepository.listByStatus(statusFilter);
-      res.json({ items: users.map(serializeUser) });
+      return res.json({ items: users.map(serializeUser) });
     } catch (err) {
       log.error({ err }, "Falha ao listar usuários");
-      res.status(500).json({ error: "internal_error" });
+      if (!res.headersSent) {
+        return res.status(500).json({ error: "internal_error" });
+      }
     }
   });
 

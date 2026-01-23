@@ -81,10 +81,11 @@ export class EmailService {
   }
 
   async sendViaSmtp({ to, subject, html, attachments }) {
+    const port = Number(SMTP_PORT || 587);
     const transporter = nodemailer.createTransport({
       host: SMTP_HOST,
-      port: Number(SMTP_PORT || 587),
-      secure: false,
+      port,
+      secure: port === 465, // TLS implícito em 465
       auth: SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
     });
     const mail = {

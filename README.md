@@ -100,6 +100,7 @@ Endpoints HTTP
 - `POST /clients`: cadastra um cliente completo (dados pessoais, empresa e sócios).
 - `GET /clients`: lista clientes com paginação simples (`?limit=20&offset=0`).
 - `GET /clients/:id`: retorna o detalhe de um cliente específico.
+- `POST /nfse/issue`: emite NFS-e padrão nacional (requere `NFSE_CERT_PFX_PATH`, `NFSE_CERT_PFX_PASSWORD`, `NFSE_BASE_URL` e dados de RPS/serviço no cadastro da empresa). Em caso de erro, devolve `status: "rejected"` com motivo. O recurso chamado é configurável via `NFSE_PATH` (padrão `/nfse/v1/rps`; ajuste conforme o provedor, ex.: `/nfse` no ambiente SEFIN).
 - `GET /admin/users`: lista usuários filtrando por `status` (ex.: `/admin/users?status=pending`) — acesso somente para `role=admin`.
 - `PATCH /admin/users/:id/approve`: aprova usuário pendente e, opcionalmente, define `role`.
 - `PATCH /admin/users/:id/reject`: marca usuário como rejeitado.
