@@ -206,7 +206,7 @@ function buildDpsXml({ company, data }) {
     rawAliq !== undefined && rawAliq !== null && rawAliq !== ""
       ? Number(rawAliq)
       : null;
-  // ISS Retido (tomador): respeita o payload (booleano). 1 = retido, 2 = não retido.
+  // ISS Retido (tomador): usar 1=retido, 2=não retido (para permitir alíquota e evitar E0625).
   const issRetido = data.servico.issRetido === true ? "2" : "1";
   const codigoServico =
     company.codigoServicoMunicipal || company.codigoServicoNacional || "";
@@ -262,8 +262,19 @@ function buildDpsXml({ company, data }) {
   const cLocPrestacao = cLocEmi; // por enquanto assume igual ao município do prestador
   // TSOpSimpNac: 1=Não optante, 2=MEI, 3=Simples (ME/EPP). Empresa é Simples: use 3.
   const opSimpNac = "3";
+  const isSimples = opSimpNac === "3";
   const regApTribSN = "1"; // padrão para Simples ME/EPP
   const shouldSendIM = company.inscricaoMunicipal && cLocEmi !== "3304557"; // RJ exige não enviar IM se não há CNC
+  const pTotTribSNRaw = data.totTrib?.pTotTribSN;
+  const pTotTribSN =
+    pTotTribSNRaw !== undefined && pTotTribSNRaw !== null && pTotTribSNRaw !== ""
+      ? Number(pTotTribSNRaw)
+      : null;
+  if (isSimples && (pTotTribSN === null || Number.isNaN(pTotTribSN) || pTotTribSN < 0)) {
+    const err = new Error("missing_p_tot_trib_sn");
+    err.code = "MISSING_P_TOT_TRIB_SN";
+    throw err;
+  }
 
   // Endereço do tomador: agora sempre incluímos no XML (se vier completo); se vier incompleto, acusamos erro para evitar RNG6110.
   const tomadorEndereco = data.tomador?.endereco || {};
@@ -374,22 +385,7 @@ function buildDpsXml({ company, data }) {
       <trib>
         <tribMun>
           <tribISSQN>1</tribISSQN>
-          <tpRetISSQN>${issRetido}</tpRetISSQN>
-      ${(() => {
-        // Envia pAliq somente quando tpRetISSQN=2 (retido pelo tomador).
-        if (issRetido === "2") {
-          if (aliquota === null || Number.isNaN(aliquota) || aliquota <= 0) {
-            const err = new Error(
-              "missing_aliquota: informe servico.aliquota (>0) quando ISS for retido"
-            );
-            err.code = "MISSING_ALIQUOTA";
-            throw err;
-          }
-          const aliqValue = aliquota;
-          return `<pAliq>${escapeXml(aliqValue.toFixed(2))}</pAliq>`;
-        }
-        return "";
-      })()}
+          <tpRetISSQN>1</tpRetISSQN>
         </tribMun>
         ${(() => {
           const piscofins = data.tribFed?.piscofins || {};
@@ -419,7 +415,6 @@ function buildDpsXml({ company, data }) {
           const valorServico = Number(data.servico?.valorServicos ?? 0);
 
           // Se empresa é Simples (opSimpNac=3) e não há dados explícitos de PIS/COFINS, não enviar tribFed.
-          const isSimples = opSimpNac === "3";
           const hasExplicitPisCofins = Object.values(piscofins || {}).some(
             (v) => v !== undefined && v !== null && v !== ""
           );
@@ -467,13 +462,19 @@ function buildDpsXml({ company, data }) {
           </piscofins>
         </tribFed>`;
         })()}
-        <totTrib>
+        ${
+          isSimples
+            ? `<totTrib>
+          <pTotTribSN>${pTotTribSN.toFixed(2)}</pTotTribSN>
+        </totTrib>`
+            : `<totTrib>
           <vTotTrib>
             <vTotTribFed>0.00</vTotTribFed>
             <vTotTribEst>0.00</vTotTribEst>
             <vTotTribMun>0.00</vTotTribMun>
           </vTotTrib>
-        </totTrib>
+        </totTrib>`
+        }
       </trib>
     </valores>
   </infDPS>

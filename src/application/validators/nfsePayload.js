@@ -59,6 +59,8 @@ export function validateNfsePayload(body) {
   const aliquota = parseNumber(servico.aliquota || servico.pAliq || servico.pIss);
   const issRetido = toBoolean(servico.issRetido);
   const competencia = parseDate(body.competencia || servico.competencia || servico.dCompet);
+  const totTrib = body.totTrib || {};
+  const pTotTribSN = parseNumber(totTrib.pTotTribSN || body.pTotTribSN);
 
   return {
     ok: true,
@@ -75,6 +77,9 @@ export function validateNfsePayload(body) {
         valorServicos,
         aliquota,
         issRetido: Boolean(issRetido),
+      },
+      totTrib: {
+        pTotTribSN,
       },
       competencia,
       referencia: toNullableString(body.referencia),
