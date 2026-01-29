@@ -68,7 +68,19 @@ export const NFSE_ENV =
     : "producao"; // default: produção
 // Padrão nacional usa /nfse para DPS síncrona; ajuste via env se o provedor tiver outro path.
 export const NFSE_PATH = (process.env.NFSE_PATH || "/nfse").trim();
+// Endpoints de consulta.
+export const NFSE_CONSULT_PATH = (process.env.NFSE_CONSULT_PATH || "/nfse/consulta").trim();
+export const NFSE_DPS_PATH = (process.env.NFSE_DPS_PATH || "/dps").trim();
+export const NFSE_NFSE_PATH = (process.env.NFSE_NFSE_PATH || "/nfse").trim();
 export const NFSE_COD_MUNICIPIO = (process.env.NFSE_COD_MUNICIPIO || "").trim(); // cLocEmi (IBGE, 7 dígitos)
+
+// === ADN (Ambiente Nacional de Dados) ===
+export const ADN_BASE_URL = (process.env.ADN_BASE_URL || "").trim();
+export const ADN_CERT_PATH = (process.env.ADN_CERT_PATH || "").trim();
+export const ADN_KEY_PATH = (process.env.ADN_KEY_PATH || "").trim();
+export const ADN_DFE_PATH = (process.env.ADN_DFE_PATH || "").trim();
+export const ADN_CNPJ_CONSULTA = (process.env.ADN_CNPJ_CONSULTA || "").trim();
+export const ADN_SYNC_CRON = (process.env.ADN_SYNC_CRON || "").trim();
 
 // === API Keys ===
 const rawApiKeys = process.env.API_KEYS || "";
@@ -142,3 +154,9 @@ if (!NFSE_BASE_URL)
   log.warn("NFSE_BASE_URL ausente: configure o endpoint do provedor NFS-e Nacional");
 if (NFSE_PATH === "/nfse/v1/rps")
   log.info("NFSE_PATH padrão (/nfse/v1/rps); ajuste se o provedor usar outro recurso");
+if (!ADN_BASE_URL)
+  log.warn("ADN_BASE_URL ausente: consulta ADN estará desabilitada");
+if (!ADN_CERT_PATH)
+  log.warn("ADN_CERT_PATH ausente: consulta ADN estará desabilitada");
+if (!ADN_KEY_PATH)
+  log.warn("ADN_KEY_PATH ausente: consulta ADN estará desabilitada");

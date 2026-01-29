@@ -100,7 +100,13 @@ Endpoints HTTP
 - `POST /clients`: cadastra um cliente completo (dados pessoais, empresa e sócios).
 - `GET /clients`: lista clientes com paginação simples (`?limit=20&offset=0`).
 - `GET /clients/:id`: retorna o detalhe de um cliente específico.
-- `POST /nfse/issue`: emite NFS-e padrão nacional (requere `NFSE_CERT_PFX_PATH`, `NFSE_CERT_PFX_PASSWORD`, `NFSE_BASE_URL` e dados de RPS/serviço no cadastro da empresa). Em caso de erro, devolve `status: "rejected"` com motivo. O recurso chamado é configurável via `NFSE_PATH` (padrão `/nfse/v1/rps`; ajuste conforme o provedor, ex.: `/nfse` no ambiente SEFIN).
+- `POST /nfse/issue`: emite NFS-e padrão nacional (requere `NFSE_CERT_PFX_PATH`, `NFSE_CERT_PFX_PASSWORD`, `NFSE_BASE_URL` e dados de RPS/serviço no cadastro da empresa). Em caso de erro, devolve `status: "rejected"` com motivo. O recurso chamado é configurável via `NFSE_PATH`.
+- `GET /nfse`: lista NFS-e do banco com filtros e paginação; opcionalmente sincroniza com o provedor (`sync=1`) usando `idDps`, `chaveAcesso` ou consulta por período (`from`/`to` com XML via `NFSE_CONSULT_PATH`).
+- `POST /nfse/consulta`: mesma consulta do `GET /nfse`, porém aceita JSON no body (útil para enviar período e filtros).
+- `POST /api/nfse/sync`: sincroniza documentos do ADN (por NSU). Body: `{ "loop": true, "cnpjConsulta": "12345678000199", "lote": true }`.
+- `POST /api/nfse/nsu`: define manualmente o próximo NSU. Body: `{ "nsu": 31 }`.
+- `GET /api/nfse`: consulta notas sincronizadas do ADN por período (`cnpj`, `tipo=emitidas|recebidas`, `inicio`, `fim`).
+- `GET /api/nfse/unified`: consulta notas unificadas por CNPJ (merge entre emitidas do sistema + ADN), deduplicando por `chaveAcesso`/`numeroNfse`/`idDps`.
 - `GET /admin/users`: lista usuários filtrando por `status` (ex.: `/admin/users?status=pending`) — acesso somente para `role=admin`.
 - `PATCH /admin/users/:id/approve`: aprova usuário pendente e, opcionalmente, define `role`.
 - `PATCH /admin/users/:id/reject`: marca usuário como rejeitado.

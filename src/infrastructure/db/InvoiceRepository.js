@@ -1,11 +1,6 @@
 import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
-
-function parseDate(value) {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+import { parseDate } from "../../utils/date.js";
 
 function serializeInvoice(invoice) {
   return {
