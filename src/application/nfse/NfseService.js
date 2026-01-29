@@ -4,16 +4,21 @@ import axios from "axios";
 import crypto from "node:crypto";
 import forge from "node-forge";
 import { SignedXml } from "xml-crypto";
-import { DOMParser } from "@xmldom/xmldom";
+import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { gzipSync } from "node:zlib";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { NfseRepository } from "../../infrastructure/db/NfseRepository.js";
+import { parseDate } from "../../utils/date.js";
+import { findFirstByLocalName, getTextByLocalNames } from "../../utils/xml.js";
 import {
   NFSE_CERT_PFX_PATH,
   NFSE_CERT_PFX_PASSWORD,
   NFSE_BASE_URL,
   NFSE_ENV,
   NFSE_PATH,
+  NFSE_CONSULT_PATH,
+  NFSE_DPS_PATH,
+  NFSE_NFSE_PATH,
   NFSE_COD_MUNICIPIO,
   log,
 } from "../../config.js";
@@ -194,6 +199,191 @@ function formatDateTimeWithOffset(value) {
   const offsetH = pad(Math.floor(Math.abs(offsetMinutes) / 60));
   const offsetM = pad(Math.abs(offsetMinutes) % 60);
   return `${year}-${month}-${day}T${hour}:${minute}:${second}${sign}${offsetH}:${offsetM}`;
+}
+
+function buildDpsId(company) {
+  const cLocEmi = (
+    (company.codigoMunicipioIbge || "").replace(/\D+/g, "") ||
+    (company.codigoMunicipio || "").replace(/\D+/g, "") ||
+    (NFSE_COD_MUNICIPIO || "").replace(/\D+/g, "")
+  )
+    .padStart(7, "0")
+    .slice(-7);
+  const cnpj = (company.cnpj || "").replace(/\D+/g, "");
+  const cpfCompany = (company.cpf || "").replace(/\D+/g, "");
+  const isCnpj = cnpj.length === 14;
+  const tpInsc = isCnpj ? "2" : "1";
+  const inscFed = (cnpj || cpfCompany).padStart(14, "0").slice(-14);
+  const rawSerie = (company.rpsSerie || "1").toString();
+  const serieDigitsOnly = rawSerie.replace(/\D+/g, "");
+  const letterMatch = rawSerie.match(/[A-Za-z]/);
+  const letterAsNumber = letterMatch
+    ? String(letterMatch[0].toUpperCase().charCodeAt(0) - 64)
+    : "";
+  const serieNumeric = serieDigitsOnly || letterAsNumber || "1";
+  const serieVal = serieNumeric.padStart(5, "0").slice(-5);
+  const nDpsDigits = (company.rpsNumero || "1").toString().replace(/\D+/g, "");
+  const nDpsRaw = nDpsDigits || "1";
+  const nDpsVal = nDpsRaw.padStart(15, "0").slice(-15);
+  return `DPS${cLocEmi}${tpInsc}${inscFed}${serieVal}${nDpsVal}`;
+}
+
+function buildConsultaPeriodoXml({ company, filters }) {
+  const tpAmb = NFSE_ENV === "homolog" ? "2" : "1";
+  const dataInicial = filters.from;
+  const dataFinal = filters.to;
+  const cnpjPrestador = filters.cnpjPrestador || company.cnpj;
+  const cnpjTomador = filters.cnpjTomador;
+  const situacao = filters.situacao;
+
+  const prestadorXml = cnpjPrestador
+    ? `<Prestador><Cnpj>${escapeXml(cnpjPrestador)}</Cnpj></Prestador>`
+    : "";
+  const tomadorXml = cnpjTomador
+    ? `<Tomador><Cnpj>${escapeXml(cnpjTomador)}</Cnpj></Tomador>`
+    : "";
+  const situacaoXml = situacao ? `<SituacaoNfse>${escapeXml(situacao)}</SituacaoNfse>` : "";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<ConsultarNfseEnvio xmlns="http://www.sped.fazenda.gov.br/nfse">
+  <IdentificacaoAmbiente>
+    <TipoAmbiente>${tpAmb}</TipoAmbiente>
+  </IdentificacaoAmbiente>
+  <Pedido>
+    <ConsultaNfse>
+      <PeriodoEmissao>
+        <DataInicial>${escapeXml(dataInicial)}</DataInicial>
+        <DataFinal>${escapeXml(dataFinal)}</DataFinal>
+      </PeriodoEmissao>
+      ${prestadorXml}
+      ${tomadorXml}
+      ${situacaoXml}
+    </ConsultaNfse>
+  </Pedido>
+</ConsultarNfseEnvio>`;
+}
+
+function parseConsultaPeriodoXml(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, "text/xml");
+  const serializer = new XMLSerializer();
+  const items = [];
+  const compNodes = [];
+
+  const allNodes = doc.getElementsByTagName("*");
+  for (let i = 0; i < allNodes.length; i += 1) {
+    const node = allNodes[i];
+    if (node.localName === "CompNfse" || node.localName === "Nfse") {
+      compNodes.push(node);
+    }
+  }
+
+  for (const node of compNodes) {
+    const inf = findFirstByLocalName(node, "InfNfse") || node;
+    const idAttr = inf?.getAttribute?.("Id") || null;
+    const numeroNfse = getTextByLocalNames(inf, ["nNFSe", "Numero", "numero"]);
+    const competencia = getTextByLocalNames(inf, ["Competencia", "dCompet"]);
+    const dataEmissao = getTextByLocalNames(inf, ["DataEmissao", "dhEmi", "DataEmissaoNfse"]);
+    const valorServicos = getTextByLocalNames(inf, ["vServ", "ValorServicos", "valorServicos"]);
+    const situacao = getTextByLocalNames(inf, ["SituacaoNfse", "Situacao", "xSit"]);
+
+    const tomadorNode = findFirstByLocalName(inf, "Tomador") || findFirstByLocalName(inf, "Toma");
+    const tomadorDoc =
+      getTextByLocalNames(tomadorNode, ["CNPJ", "CPF", "Cnpj", "Cpf"]) ||
+      getTextByLocalNames(inf, ["CNPJ", "CPF"]);
+    const tomadorNome =
+      getTextByLocalNames(tomadorNode, ["RazaoSocial", "xNome", "Nome"]) ||
+      getTextByLocalNames(inf, ["RazaoSocial", "xNome", "Nome"]);
+
+    const xml = serializer.serializeToString(node);
+
+    const valorServicosNumber =
+      valorServicos !== null && valorServicos !== undefined ? Number(valorServicos) : null;
+    items.push({
+      idDps: null,
+      chaveAcesso: idAttr,
+      numeroNfse,
+      competencia: parseDate(competencia || dataEmissao),
+      valorServicos:
+        valorServicosNumber !== null && !Number.isNaN(valorServicosNumber)
+          ? valorServicosNumber
+          : null,
+      tomadorDoc: tomadorDoc ? String(tomadorDoc).replace(/\D+/g, "") : null,
+      tomadorNome: tomadorNome ? String(tomadorNome) : null,
+      status: normalizeProviderStatus(situacao),
+      xml,
+    });
+  }
+
+  return items;
+}
+
+function normalizeProviderStatus(value) {
+  if (!value) return null;
+  const raw = String(value).toLowerCase();
+  if (raw.includes("emit") || raw.includes("issued") || raw.includes("aprov")) return "issued";
+  if (raw.includes("reject") || raw.includes("rejeit") || raw.includes("error")) return "rejected";
+  if (raw.includes("cancel")) return "cancelled";
+  if (raw.includes("pend")) return "pending";
+  return raw;
+}
+
+function mapProviderItem(item) {
+  const tomador = item?.tomador || {};
+  const rps = item?.rps || {};
+  const idDps = item?.idDps || item?.idDPS || item?.identificacaoDps || item?.dpsId || null;
+  const chaveAcesso =
+    item?.chaveAcesso ||
+    item?.chave ||
+    item?.idNfse ||
+    item?.idNFSe ||
+    item?.id ||
+    null;
+  const numeroNfse =
+    item?.numeroNfse || item?.nfseNumero || item?.numero || null;
+  const codigoVerificacao = item?.codigoVerificacao || item?.codigo || item?.codVerificacao || null;
+  const xml = item?.nfseXmlGZipB64 || item?.xml || item?.xmlGZipB64 || item?.xmlBase64 || null;
+  const pdfUrl = item?.pdfUrl || item?.urlPdf || item?.linkPdf || null;
+  const valorServicos =
+    item?.valorServicos ??
+    item?.valor ??
+    item?.vServ ??
+    item?.servico?.valorServicos ??
+    null;
+  const aliquota =
+    item?.aliquota ?? item?.pAliq ?? item?.servico?.aliquota ?? item?.servico?.pAliq ?? null;
+  const tomadorDoc =
+    tomador?.doc || tomador?.cpfCnpj || item?.tomadorDoc || item?.cpfCnpjTomador || null;
+  const tomadorNome =
+    tomador?.nome || tomador?.razaoSocial || item?.tomadorNome || item?.tomadorRazaoSocial || null;
+  const competencia =
+    item?.competencia || item?.dCompet || item?.dataCompetencia || item?.dataEmissao || null;
+  const rpsNumero = item?.rpsNumero || rps?.numero || item?.numeroRps || null;
+  const rpsSerie = item?.rpsSerie || rps?.serie || item?.serieRps || null;
+  const status = normalizeProviderStatus(item?.status || item?.situacao || item?.statusNfse);
+  const valorServicosNumber =
+    valorServicos !== null && valorServicos !== undefined ? Number(valorServicos) : null;
+  const aliquotaNumber = aliquota !== null && aliquota !== undefined ? Number(aliquota) : null;
+
+  return {
+    idDps: idDps ? String(idDps) : null,
+    chaveAcesso: chaveAcesso ? String(chaveAcesso) : null,
+    numeroNfse: numeroNfse ? String(numeroNfse) : null,
+    codigoVerificacao: codigoVerificacao ? String(codigoVerificacao) : null,
+    xml,
+    pdfUrl,
+    valorServicos:
+      valorServicosNumber !== null && !Number.isNaN(valorServicosNumber)
+        ? valorServicosNumber
+        : null,
+    aliquota:
+      aliquotaNumber !== null && !Number.isNaN(aliquotaNumber) ? aliquotaNumber : null,
+    tomadorDoc: tomadorDoc ? String(tomadorDoc) : null,
+    tomadorNome: tomadorNome ? String(tomadorNome) : null,
+    competencia: parseDate(competencia),
+    rpsNumero: rpsNumero ? String(rpsNumero) : null,
+    rpsSerie: rpsSerie ? String(rpsSerie) : null,
+    status: status || null,
+  };
 }
 
 function buildDpsXml({ company, data }) {
@@ -487,10 +677,107 @@ function buildDpsPayload({ company, data }) {
   const { xml, infId } = buildDpsXml({ company, data });
   const signedXml = signDpsXml(xml, infId);
   const compressed = gzipSync(Buffer.from(signedXml, "utf-8")).toString("base64");
-  return { dpsXmlGZipB64: compressed, rawXml: signedXml };
+  return { dpsXmlGZipB64: compressed, rawXml: signedXml, infId };
 }
 
 export class NfseService {
+  static async syncFromProvider({ companyId, filters = {}, log }) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+    });
+    if (!company) {
+      const err = new Error("company_not_found");
+      err.code = "COMPANY_NOT_FOUND";
+      throw err;
+    }
+
+    if (!integrationReady()) {
+      const err = new Error("NFSe: integração não configurada");
+      err.code = "NFSE_NOT_CONFIGURED";
+      throw err;
+    }
+
+    const client = buildAxiosClient();
+    const idDps = filters.idDps;
+    const chaveAcesso = filters.chaveAcesso || filters.numeroNfse;
+    const hasPeriodo = Boolean(filters.from && filters.to);
+
+    if (!idDps && !chaveAcesso && !hasPeriodo) {
+      const err = new Error("nfse_sync_requires_id");
+      err.code = "NFSE_SYNC_REQUIRES_ID";
+      throw err;
+    }
+
+    const dpsPath = NFSE_DPS_PATH.replace(/\/+$/, "");
+    const nfsePath = NFSE_NFSE_PATH.replace(/\/+$/, "");
+
+    const items = [];
+
+    if (hasPeriodo) {
+      const consultaXml = buildConsultaPeriodoXml({ company, filters });
+      const { data: response } = await client.post(NFSE_CONSULT_PATH, consultaXml, {
+        headers: { "content-type": "application/xml" },
+      });
+      const responseText = Buffer.isBuffer(response)
+        ? response.toString("utf-8")
+        : typeof response === "string"
+          ? response
+          : response?.data || "";
+      const parsedItems = parseConsultaPeriodoXml(responseText);
+      items.push(...parsedItems);
+    } else if (idDps) {
+      const { data: dpsResponse } = await client.get(
+        `${dpsPath}/${encodeURIComponent(idDps)}`
+      );
+      items.push(dpsResponse);
+      const mappedDps = mapProviderItem(dpsResponse);
+      const resolvedChaveAcesso = mappedDps.chaveAcesso || chaveAcesso;
+      if (resolvedChaveAcesso) {
+        const { data: nfseResponse } = await client.get(
+          `${nfsePath}/${encodeURIComponent(resolvedChaveAcesso)}`
+        );
+        items.push(nfseResponse);
+      }
+    } else if (chaveAcesso) {
+      const { data: nfseResponse } = await client.get(
+        `${nfsePath}/${encodeURIComponent(chaveAcesso)}`
+      );
+      items.push(nfseResponse);
+    }
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    for (const item of items) {
+      const mapped = mapProviderItem(item);
+      if (!mapped.chaveAcesso && !mapped.idDps && !mapped.numeroNfse && !(mapped.rpsNumero && mapped.rpsSerie)) {
+        skipped += 1;
+        continue;
+      }
+      const result = await NfseRepository.upsertFromProvider({
+        companyId,
+        data: mapped,
+      });
+      if (result.action === "created") created += 1;
+      else if (result.action === "updated") updated += 1;
+      else skipped += 1;
+    }
+
+    log.info(
+      {
+        companyId,
+        total: items.length,
+        created,
+        updated,
+        skipped,
+      },
+      "NFSe: sincronizacao concluida"
+    );
+
+    return { total: items.length, created, updated, skipped };
+  }
+
   /**
    * Prepara e registra o pedido de emissão de NFS-e.
    * Neste momento deixamos o status como "pending" até plugar o cliente oficial da prefeitura/Portal Nacional.
@@ -522,6 +809,7 @@ export class NfseService {
       aliquota: data.servico.aliquota,
       issRetido: data.servico.issRetido ?? false,
       competencia: data.competencia,
+      idDps: buildDpsId(company),
       rpsSerie: company.rpsSerie || null,
       rpsNumero: company.rpsNumero || null,
       status: "pending",
@@ -541,7 +829,7 @@ export class NfseService {
     try {
       const client = buildAxiosClient();
       // Gera DPS (XML) e envia no padrão nacional (dpsXmlGZipB64).
-      const { dpsXmlGZipB64, rawXml: builtXml } = buildDpsPayload({
+      const { dpsXmlGZipB64, rawXml: builtXml, infId } = buildDpsPayload({
         company,
         data,
       });
@@ -553,7 +841,9 @@ export class NfseService {
 
       const issued = await NfseRepository.markIssued(record.id, {
         status: response.status || "issued",
-        numeroNfse: response.chaveAcesso || response.numeroNfse || null,
+        idDps: infId,
+        chaveAcesso: response.chaveAcesso || response.numeroNfse || null,
+        numeroNfse: response.numeroNfse || null,
         codigoVerificacao: response.codigoVerificacao || response.codigo || null,
         xml: response.nfseXmlGZipB64 || rawXml || null,
         pdfUrl: response.pdfUrl || null,
@@ -604,6 +894,7 @@ export class NfseService {
         status: "rejected",
         codigoVerificacao: null,
         numeroNfse: null,
+        chaveAcesso: null,
         xml: rawXml || null,
         pdfUrl: null,
       });

@@ -1,15 +1,10 @@
 import { onlyDigits, toBoolean, toNullableString } from "../../utils/normalizers.js";
+import { parseDate } from "../../utils/date.js";
 
 function parseNumber(value) {
   if (value === null || value === undefined || value === "") return null;
   const num = Number(String(value).replace(",", "."));
   return Number.isFinite(num) ? num : null;
-}
-
-function parseDate(value) {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 export function validateNfsePayload(body) {

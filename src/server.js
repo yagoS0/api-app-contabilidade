@@ -3,7 +3,7 @@ import express from "express";
 import cron from "node-cron";
 import cors from "cors";
 import { run } from "./application/SendGuides.js";
-import { log, API_KEYS } from "./config.js";
+import { log, API_KEYS, ADN_SYNC_CRON } from "./config.js";
 import { RunLogStore } from "./infrastructure/status/RunLogStore.js";
 import { ClientRepository } from "./infrastructure/db/ClientRepository.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
@@ -18,6 +18,8 @@ import { createStatusRouter } from "./routes/status.js";
 import { runState } from "./routes/runState.js";
 import { createInvoicesRouter } from "./routes/invoices.js";
 import { createNfseRouter } from "./routes/nfse.js";
+import { createAdnRouter } from "./routes/adn.js";
+import { AdnSyncService } from "./application/nfse/AdnSyncService.js";
 
 const app = express();
 app.use(express.json());
@@ -74,12 +76,17 @@ const nfseRouter = createNfseRouter({
   ensureAuthorized,
   log,
 });
+const adnRouter = createAdnRouter({
+  ensureAuthorized,
+  log,
+});
 
 app.use("/auth", authRouter);
 app.use("/admin", adminRouter);
 app.use("/clients", clientsRouter);
 app.use("/invoices", invoicesRouter);
 app.use("/nfse", nfseRouter);
+app.use("/api", adnRouter);
 app.use("/", statusRouter);
 app.use("/", runRouter);
 
@@ -114,6 +121,36 @@ if (CRON_SCHEDULE) {
     log.info({ CRON_SCHEDULE }, "CRON habilitado");
   } catch (e) {
     log.error({ err: e, CRON_SCHEDULE }, "Falha ao configurar CRON — desabilitado");
+  }
+}
+
+let adnSyncRunning = false;
+if (ADN_SYNC_CRON) {
+  try {
+    cron.schedule(
+      ADN_SYNC_CRON,
+      async () => {
+        if (adnSyncRunning) {
+          log.warn("Sincronização ADN ignorada: já há execução em andamento.");
+          return;
+        }
+        adnSyncRunning = true;
+        log.info({ ADN_SYNC_CRON }, "Disparando sincronização ADN (cron)");
+        try {
+          await AdnSyncService.syncUntilEmpty({ maxIterations: 50 });
+        } catch (err) {
+          log.error({ err }, "Sincronização ADN falhou");
+        } finally {
+          adnSyncRunning = false;
+        }
+      },
+      {
+        timezone: process.env.TZ || "America/Sao_Paulo",
+      }
+    );
+    log.info({ ADN_SYNC_CRON }, "CRON ADN habilitado");
+  } catch (e) {
+    log.error({ err: e, ADN_SYNC_CRON }, "Falha ao configurar CRON ADN — desabilitado");
   }
 }
 
