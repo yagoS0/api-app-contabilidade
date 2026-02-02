@@ -67,9 +67,30 @@ export class NfseRepository {
     return serialize(updated);
   }
 
+  static async updateByChaveAcesso(chaveAcesso, data) {
+    if (!chaveAcesso) return null;
+    const existing = await prisma.serviceInvoice.findFirst({
+      where: { chaveAcesso },
+    });
+    if (!existing) return null;
+    const updated = await prisma.serviceInvoice.update({
+      where: { id: existing.id },
+      data: buildUpdateData(data),
+    });
+    return serialize(updated);
+  }
+
   static async findById(id) {
     const invoice = await prisma.serviceInvoice.findUnique({
       where: { id },
+    });
+    return serialize(invoice);
+  }
+
+  static async findByChaveAcesso(chaveAcesso) {
+    if (!chaveAcesso) return null;
+    const invoice = await prisma.serviceInvoice.findFirst({
+      where: { chaveAcesso },
     });
     return serialize(invoice);
   }

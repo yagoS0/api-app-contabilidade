@@ -49,6 +49,25 @@ e retorna uma lista consolidada por `chaveAcesso/numeroNfse/idDps/rps`.
 
 ---
 
+### 1.1) Cancelamento / Substituicao (evento)
+`POST /nfse/{chaveAcesso}/eventos`
+
+**Body obrigatorio**
+- `tipoEvento` (`e101101` cancelamento, `e105102` cancelamento por substituicao)
+- `justificativa`
+
+**Body opcional**
+- `cnpjAutor` (se a nota nao existir no sistema)
+- `cMotivo` (codigo do motivo)
+- `chaveSubstituta` (quando for substituicao)
+- `numeroSubstituta` (quando for substituicao)
+
+**Observacoes**
+- NFS-e precisa estar autorizada.
+- Endpoint oficial do padrão nacional: `/nfse/{chaveAcesso}/eventos`.
+
+---
+
 ### 2) Listar NFS-e do sistema
 `GET /nfse`
 
@@ -135,6 +154,36 @@ e retorna uma lista consolidada por `chaveAcesso/numeroNfse/idDps/rps`.
 **Observacoes**
 - Remove **canceladas** e **rejeitadas**.
 - Se existir evento de cancelamento no ADN, a nota correspondente nao aparece no resultado.
+- Retorna `empresaNome` quando identificado pelo CNPJ consultado.
+
+---
+
+### 8) Resumo unificado
+`GET /api/nfse/unified/summary`
+
+**Query obrigatoria**
+- `cnpj`
+
+**Query opcional**
+- `tipo` (`emitidas`, `recebidas`, `todas`)
+- `inicio`, `fim`
+- `tomadorDoc` (filtra por documento do tomador)
+
+**Retorno**
+- `totalNotas`
+- `totalValorServicos`
+- `porTomador` (lista agregada por tomador)
+
+---
+
+### 9) Download PDF (gera a partir do XML)
+`GET /api/nfse/pdf`
+
+**Query obrigatoria (um deles)**
+- `chave` **ou** `numeroNfse` **ou** `idDps`
+
+**Observacoes**
+- Gera PDF a partir do XML armazenado no sistema/ADN.
 
 ## Campos principais de retorno (unificado)
 - `source`: `sistema` ou `adn`
