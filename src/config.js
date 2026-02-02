@@ -73,6 +73,8 @@ export const NFSE_CONSULT_PATH = (process.env.NFSE_CONSULT_PATH || "/nfse/consul
 export const NFSE_DPS_PATH = (process.env.NFSE_DPS_PATH || "/dps").trim();
 export const NFSE_NFSE_PATH = (process.env.NFSE_NFSE_PATH || "/nfse").trim();
 export const NFSE_COD_MUNICIPIO = (process.env.NFSE_COD_MUNICIPIO || "").trim(); // cLocEmi (IBGE, 7 dígitos)
+export const NFSE_EVENT_FIELD = (process.env.NFSE_EVENT_FIELD || "pedidoRegistroEventoXmlGZipB64").trim();
+export const NFSE_EVENT_FORMAT = (process.env.NFSE_EVENT_FORMAT || "gzipB64").trim(); // "xml" | "gzipB64"
 
 // === ADN (Ambiente Nacional de Dados) ===
 export const ADN_BASE_URL = (process.env.ADN_BASE_URL || "").trim();

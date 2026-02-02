@@ -20,6 +20,8 @@ import {
   NFSE_DPS_PATH,
   NFSE_NFSE_PATH,
   NFSE_COD_MUNICIPIO,
+  NFSE_EVENT_FIELD,
+  NFSE_EVENT_FORMAT,
   log,
 } from "../../config.js";
 
@@ -199,6 +201,83 @@ function formatDateTimeWithOffset(value) {
   const offsetH = pad(Math.floor(Math.abs(offsetMinutes) / 60));
   const offsetM = pad(Math.abs(offsetMinutes) % 60);
   return `${year}-${month}-${day}T${hour}:${minute}:${second}${sign}${offsetH}:${offsetM}`;
+}
+
+function normalizeDigits(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+
+function buildEventoXml({
+  tipoEvento,
+  justificativa,
+  cnpjAutor,
+  chaveAcesso,
+  cMotivo,
+  chaveSubstituta,
+  numeroSubstituta,
+}) {
+  const tpAmb = NFSE_ENV === "homolog" ? "2" : "1";
+  const chaveDigits = normalizeDigits(chaveAcesso).slice(-50).padStart(50, "0");
+  const tipoEventoNum = normalizeDigits(tipoEvento).padStart(6, "0").slice(-6);
+  const eventoId = `PRE${chaveDigits}${tipoEventoNum}`;
+  const dhEvento = formatDateTimeWithOffset(new Date());
+  const motivoCodigo = cMotivo || "1";
+  const motivoTexto = justificativa || "Cancelamento de NFS-e";
+  const eventoXml =
+    String(tipoEvento).toLowerCase() === "e105102"
+      ? `<e105102>
+      <xDesc>Cancelamento por substituicao</xDesc>
+      <cMotivo>${escapeXml(motivoCodigo)}</cMotivo>
+      <xMotivo>${escapeXml(motivoTexto)}</xMotivo>
+      ${
+        chaveSubstituta
+          ? `<chNFSeSubst>${escapeXml(normalizeDigits(chaveSubstituta))}</chNFSeSubst>`
+          : numeroSubstituta
+            ? `<nNFSeSubst>${escapeXml(numeroSubstituta)}</nNFSeSubst>`
+            : ""
+      }
+    </e105102>`
+      : `<e101101>
+      <xDesc>Cancelamento de NFS-e</xDesc>
+      <cMotivo>${escapeXml(motivoCodigo)}</cMotivo>
+      <xMotivo>${escapeXml(motivoTexto)}</xMotivo>
+    </e101101>`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<pedRegEvento xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
+  <infPedReg Id="${escapeXml(eventoId)}">
+    <tpAmb>${tpAmb}</tpAmb>
+    <verAplic>API</verAplic>
+    <dhEvento>${dhEvento}</dhEvento>
+    <CNPJAutor>${escapeXml(normalizeDigits(cnpjAutor))}</CNPJAutor>
+    <chNFSe>${escapeXml(chaveDigits)}</chNFSe>
+    ${eventoXml}
+  </infPedReg>
+</pedRegEvento>`;
+}
+
+function signEventoXml(xml) {
+  const { keyPem, certBase64 } = loadCertAndKey();
+
+  const sig = new SignedXml();
+  sig.addReference("//*[local-name()='infPedReg']", [
+    "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
+    "http://www.w3.org/2001/10/xml-exc-c14n#",
+  ]);
+  sig.signatureAlgorithm = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+  sig.signingKey = keyPem;
+  sig.keyInfoProvider = {
+    getKeyInfo() {
+      return `<X509Data><X509Certificate>${certBase64}</X509Certificate></X509Data>`;
+    },
+  };
+
+  sig.computeSignature(xml, {
+    prefix: "",
+    location: { reference: "/*[local-name()='pedRegEvento']", action: "append" },
+  });
+
+  return sig.getSignedXml();
 }
 
 function buildDpsId(company) {
@@ -680,7 +759,163 @@ function buildDpsPayload({ company, data }) {
   return { dpsXmlGZipB64: compressed, rawXml: signedXml, infId };
 }
 
+function buildEventoPayload({ tipoEvento, justificativa, chaveSubstituta, numeroSubstituta }) {
+  return {
+    ambiente: NFSE_ENV === "homolog" ? "homolog" : "producao",
+    tipoEvento,
+    justificativa,
+    ...(NFSE_COD_MUNICIPIO ? { codigoMunicipio: NFSE_COD_MUNICIPIO } : {}),
+    ...(chaveSubstituta ? { chaveSubstituta } : {}),
+    ...(numeroSubstituta ? { numeroSubstituta } : {}),
+    dataEvento: formatDateTimeWithOffset(new Date()),
+  };
+}
+
+function maskSensitive(value) {
+  if (!value) return value;
+  const str = String(value);
+  if (str.length <= 6) return "***";
+  return `${str.slice(0, 3)}***${str.slice(-3)}`;
+}
+
 export class NfseService {
+  static async sendEvent({
+    chaveAcesso,
+    tipoEvento,
+    justificativa,
+    chaveSubstituta,
+    numeroSubstituta,
+    cMotivo,
+    cnpjAutor,
+    log,
+  }) {
+    if (!integrationReady()) {
+      const err = new Error("NFSe: integração não configurada");
+      err.code = "NFSE_NOT_CONFIGURED";
+      throw err;
+    }
+    if (!chaveAcesso) {
+      const err = new Error("chave_required");
+      err.code = "NFSE_CHAVE_REQUIRED";
+      throw err;
+    }
+    if (!tipoEvento) {
+      const err = new Error("tipo_evento_required");
+      err.code = "NFSE_TIPO_EVENTO_REQUIRED";
+      throw err;
+    }
+    if (!justificativa) {
+      const err = new Error("justificativa_required");
+      err.code = "NFSE_JUSTIFICATIVA_REQUIRED";
+      throw err;
+    }
+
+    const client = buildAxiosClient();
+    let autor = cnpjAutor;
+    if (!autor) {
+      const invoice = await NfseRepository.findByChaveAcesso(chaveAcesso);
+      if (invoice?.companyId) {
+        const company = await prisma.company.findUnique({
+          where: { id: invoice.companyId },
+        });
+        autor = company?.cnpj || null;
+      }
+    }
+    if (!autor) {
+      const err = new Error("cnpj_autor_required");
+      err.code = "NFSE_CNPJ_AUTOR_REQUIRED";
+      throw err;
+    }
+    const nfsePath = NFSE_NFSE_PATH.replace(/\/+$/, "");
+    const requestUrl = `${client.defaults.baseURL}${nfsePath}/${encodeURIComponent(
+      chaveAcesso
+    )}/eventos`;
+
+    try {
+      const payload = buildEventoPayload({
+        tipoEvento,
+        justificativa,
+        chaveSubstituta,
+        numeroSubstituta,
+      });
+      const eventoXml = buildEventoXml({
+        tipoEvento,
+        justificativa,
+        cnpjAutor: autor,
+        chaveAcesso,
+        cMotivo,
+        chaveSubstituta,
+        numeroSubstituta,
+      });
+      const signedEventoXml = signEventoXml(eventoXml);
+      const eventFormat = NFSE_EVENT_FORMAT === "gzipB64" ? "gzipB64" : "xml";
+      const eventField = NFSE_EVENT_FIELD || "pedidoRegistroEventoXmlGZipB64";
+      const eventPayloadValue =
+        eventFormat === "gzipB64"
+          ? gzipSync(Buffer.from(signedEventoXml, "utf-8")).toString("base64")
+          : signedEventoXml;
+      const requestBody = { [eventField]: eventPayloadValue };
+      log.info(
+        {
+          url: requestUrl,
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          payload: {
+            tipoEvento: payload.tipoEvento,
+            justificativa: maskSensitive(payload.justificativa),
+            chaveSubstituta: payload.chaveSubstituta
+              ? maskSensitive(payload.chaveSubstituta)
+              : undefined,
+            numeroSubstituta: payload.numeroSubstituta || undefined,
+            ambiente: payload.ambiente,
+            eventField,
+            eventFormat,
+          },
+        },
+        "NFSe: enviando evento ao provedor nacional"
+      );
+      const { data: response } = await client.post(
+        `${nfsePath}/${encodeURIComponent(chaveAcesso)}/eventos`,
+        requestBody
+      );
+      return {
+        status: "accepted",
+        message: "Evento registrado com sucesso.",
+        providerData: response,
+      };
+    } catch (err) {
+      const axiosErr = err?.response;
+      const providerData = axiosErr?.data;
+      const providerDetail =
+        providerData && typeof providerData === "object"
+          ? JSON.stringify(providerData)
+          : providerData;
+      const reason =
+        axiosErr?.data?.message ||
+        axiosErr?.data?.error ||
+        axiosErr?.data?.detail ||
+        providerDetail ||
+        err.message ||
+        "Falha ao registrar evento";
+
+      log.error(
+        {
+          err: reason,
+          status: axiosErr?.status,
+          data: providerData,
+          baseUrl: NFSE_BASE_URL,
+          url: requestUrl,
+        },
+        "Falha ao enviar evento NFS-e ao provedor nacional"
+      );
+      const error = new Error(reason);
+      error.code = "NFSE_EVENT_FAILED";
+      error.providerData = providerData;
+      throw error;
+    }
+  }
   static async syncFromProvider({ companyId, filters = {}, log }) {
     const company = await prisma.company.findUnique({
       where: { id: companyId },

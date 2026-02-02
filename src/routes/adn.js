@@ -4,6 +4,8 @@ import { AdnRepository } from "../infrastructure/db/AdnRepository.js";
 import { NfseRepository } from "../infrastructure/db/NfseRepository.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { parseDate } from "../utils/date.js";
+import PDFDocument from "pdfkit";
+import { gunzipSync } from "node:zlib";
 
 function normalizeCnpj(value) {
   return String(value || "").replace(/\D+/g, "");
@@ -46,8 +48,211 @@ function mergeUnified(existing, incoming) {
   return merged;
 }
 
+function decodeXmlMaybeGzipBase64(value) {
+  if (!value) return null;
+  if (value.startsWith("<")) return value;
+  try {
+    const raw = Buffer.from(value, "base64");
+    try {
+      return gunzipSync(raw).toString("utf-8");
+    } catch {
+      return raw.toString("utf-8");
+    }
+  } catch {
+    return value;
+  }
+}
+
 export function createAdnRouter({ ensureAuthorized, log }) {
   const router = Router();
+
+  async function buildUnifiedItems({ cnpj, tipo, inicio, fim }) {
+    const normalizedCnpj = normalizeCnpj(cnpj);
+    const company = await prisma.company.findUnique({
+      where: { cnpj: normalizedCnpj },
+    });
+    const companyName = company?.nomeFantasia || company?.razaoSocial || null;
+
+    // Sempre sincroniza o ADN antes de unificar, para pegar notas emitidas fora do sistema.
+    try {
+      await AdnSyncService.syncUntilEmpty({
+        maxIterations: 5,
+        cnpjConsulta: normalizedCnpj,
+      });
+    } catch (err) {
+      log.warn({ err, cnpj: normalizedCnpj }, "Falha ao sincronizar ADN antes do unificado");
+    }
+
+    const items = [];
+    const maxFetch = 1000;
+
+    if (tipo !== "recebidas") {
+      if (company) {
+        const emitidas = await NfseRepository.list({
+          companyId: company.id,
+          from: inicio,
+          to: fim,
+          dateField: "competencia",
+          limit: maxFetch,
+          offset: 0,
+        });
+        for (const item of emitidas.items || []) {
+          items.push({
+            source: "sistema",
+            sources: ["sistema"],
+            chaveAcesso: item.chaveAcesso || null,
+            idDps: item.idDps || null,
+            numeroNfse: item.numeroNfse || null,
+            dataEmissao: item.competencia,
+            competencia: item.competencia,
+            valorServicos: item.valorServicos,
+            cnpjPrestador: normalizedCnpj,
+            empresaNome: companyName,
+            cnpjTomador: item.tomadorDoc || null,
+            tomadorNome: item.tomadorNome || null,
+            rpsSerie: item.rpsSerie || null,
+            rpsNumero: item.rpsNumero || null,
+            situacao: item.status || null,
+            _createdAt: item.createdAt || null,
+          });
+        }
+      }
+
+      const adnEmitidas = await AdnRepository.listByPeriodo({
+        cnpj: normalizedCnpj,
+        tipo: "emitidas",
+        inicio,
+        fim,
+        limit: maxFetch,
+        offset: 0,
+        includeCancelled: true,
+      });
+      for (const item of adnEmitidas.items || []) {
+        items.push({
+          source: "adn",
+          sources: ["adn"],
+          chaveAcesso: item.chaveAcesso || null,
+          numeroNfse: item.numeroNfse || null,
+          dataEmissao: item.dataEmissao,
+          competencia: item.competencia,
+          valorServicos: item.valorServicos,
+          cnpjPrestador: item.cnpjPrestador,
+            empresaNome: companyName,
+          cnpjTomador: item.cnpjTomador,
+          situacao: item.situacao || null,
+          tipoEvento: item.tipoEvento || null,
+        });
+      }
+    }
+
+    if (tipo !== "emitidas") {
+      const adnRecebidas = await AdnRepository.listByPeriodo({
+        cnpj: normalizedCnpj,
+        tipo: "recebidas",
+        inicio,
+        fim,
+        limit: maxFetch,
+        offset: 0,
+        includeCancelled: true,
+      });
+      for (const item of adnRecebidas.items || []) {
+        items.push({
+          source: "adn",
+          sources: ["adn"],
+          chaveAcesso: item.chaveAcesso || null,
+          numeroNfse: item.numeroNfse || null,
+          dataEmissao: item.dataEmissao,
+          competencia: item.competencia,
+          valorServicos: item.valorServicos,
+          cnpjPrestador: item.cnpjPrestador,
+            empresaNome: companyName,
+          cnpjTomador: item.cnpjTomador,
+          situacao: item.situacao || null,
+          tipoEvento: item.tipoEvento || null,
+        });
+      }
+    }
+
+    if (!items.length) {
+      const adnCancelEvents = await prisma.adnDocument.findMany({
+        where: {
+          tipoDocumento: "EVENTO",
+          cnpjPrestador: normalizedCnpj,
+          tipoEvento: { contains: "CANCEL", mode: "insensitive" },
+        },
+        select: { chaveAcesso: true, numeroNfse: true },
+      });
+      for (const evt of adnCancelEvents) {
+        items.push({
+          source: "adn",
+          sources: ["adn"],
+          chaveAcesso: evt.chaveAcesso || null,
+          numeroNfse: evt.numeroNfse || null,
+          dataEmissao: null,
+          competencia: null,
+          valorServicos: null,
+          cnpjPrestador: normalizedCnpj,
+            empresaNome: companyName,
+          cnpjTomador: null,
+          situacao: "CANCELAMENTO",
+          tipoEvento: "CANCELAMENTO",
+        });
+      }
+    }
+
+    const cancelKeys = new Set();
+    const adnOkKeys = new Set();
+    for (const item of items) {
+      if (!isCancelledItem(item)) continue;
+      const key = item.chaveAcesso || item.numeroNfse;
+      if (key) cancelKeys.add(key);
+    }
+
+    for (const item of items) {
+      if (item.source !== "adn") continue;
+      if (isCancelledItem(item) || isRejectedItem(item)) continue;
+      const key = item.chaveAcesso || item.numeroNfse;
+      if (key) adnOkKeys.add(key);
+    }
+
+    const recentThresholdMs = 48 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+
+    const filteredByCancel = items.filter((item) => {
+      if (isCancelledItem(item)) return false;
+      const key = item.chaveAcesso || item.numeroNfse;
+      if (key && cancelKeys.has(key)) return false;
+      if (item.source === "sistema" && key && adnOkKeys.size) {
+        if (adnOkKeys.has(key)) return true;
+        const createdAt = parseDate(item._createdAt);
+        if (!createdAt) return false;
+        return nowMs - createdAt.getTime() <= recentThresholdMs;
+      }
+      return true;
+    });
+
+    const deduped = new Map();
+    for (const item of filteredByCancel) {
+      const key = buildUnifiedKey(item);
+      if (!key) continue;
+      const existing = deduped.get(key);
+      deduped.set(key, existing ? mergeUnified(existing, item) : item);
+    }
+
+    const merged = Array.from(deduped.values());
+    for (const item of merged) {
+      if (item._createdAt !== undefined) delete item._createdAt;
+    }
+
+    const filtered = merged.filter((item) => !isCancelledItem(item) && !isRejectedItem(item));
+    filtered.sort((a, b) => {
+      const da = parseDate(a.dataEmissao)?.getTime?.() || 0;
+      const db = parseDate(b.dataEmissao)?.getTime?.() || 0;
+      return db - da;
+    });
+
+    return filtered;
+  }
 
   router.post("/nfse/sync", async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
@@ -138,181 +343,11 @@ export function createAdnRouter({ ensureAuthorized, log }) {
     }
 
     try {
-      const normalizedCnpj = normalizeCnpj(cnpj);
-      const company = await prisma.company.findUnique({
-        where: { cnpj: normalizedCnpj },
-      });
-
-      // Sempre sincroniza o ADN antes de unificar, para pegar notas emitidas fora do sistema.
-      try {
-        await AdnSyncService.syncUntilEmpty({
-          maxIterations: 5,
-          cnpjConsulta: normalizedCnpj,
-        });
-      } catch (err) {
-        log.warn({ err, cnpj: normalizedCnpj }, "Falha ao sincronizar ADN antes do unificado");
-      }
-
-      const items = [];
-      const maxFetch = 1000;
-
-      if (tipoLower !== "recebidas") {
-        if (company) {
-          const emitidas = await NfseRepository.list({
-            companyId: company.id,
-            from: inicio,
-            to: fim,
-            dateField: "competencia",
-            limit: maxFetch,
-            offset: 0,
-          });
-          for (const item of emitidas.items || []) {
-            items.push({
-              source: "sistema",
-              sources: ["sistema"],
-              chaveAcesso: item.chaveAcesso || null,
-              idDps: item.idDps || null,
-              numeroNfse: item.numeroNfse || null,
-              dataEmissao: item.competencia,
-              competencia: item.competencia,
-              valorServicos: item.valorServicos,
-              cnpjPrestador: normalizedCnpj,
-              cnpjTomador: item.tomadorDoc || null,
-              rpsSerie: item.rpsSerie || null,
-              rpsNumero: item.rpsNumero || null,
-              situacao: item.status || null,
-              _createdAt: item.createdAt || null,
-            });
-          }
-        }
-
-        const adnEmitidas = await AdnRepository.listByPeriodo({
-          cnpj: normalizedCnpj,
-          tipo: "emitidas",
-          inicio,
-          fim,
-          limit: maxFetch,
-          offset: 0,
-          includeCancelled: true,
-        });
-        for (const item of adnEmitidas.items || []) {
-          items.push({
-            source: "adn",
-            sources: ["adn"],
-            chaveAcesso: item.chaveAcesso || null,
-            numeroNfse: item.numeroNfse || null,
-            dataEmissao: item.dataEmissao,
-            competencia: item.competencia,
-            valorServicos: item.valorServicos,
-            cnpjPrestador: item.cnpjPrestador,
-            cnpjTomador: item.cnpjTomador,
-            situacao: item.situacao || null,
-            tipoEvento: item.tipoEvento || null,
-          });
-        }
-      }
-
-      if (tipoLower !== "emitidas") {
-        const adnRecebidas = await AdnRepository.listByPeriodo({
-          cnpj: normalizedCnpj,
-          tipo: "recebidas",
-          inicio,
-          fim,
-          limit: maxFetch,
-          offset: 0,
-          includeCancelled: true,
-        });
-        for (const item of adnRecebidas.items || []) {
-          items.push({
-            source: "adn",
-            sources: ["adn"],
-            chaveAcesso: item.chaveAcesso || null,
-            numeroNfse: item.numeroNfse || null,
-            dataEmissao: item.dataEmissao,
-            competencia: item.competencia,
-            valorServicos: item.valorServicos,
-            cnpjPrestador: item.cnpjPrestador,
-            cnpjTomador: item.cnpjTomador,
-            situacao: item.situacao || null,
-            tipoEvento: item.tipoEvento || null,
-          });
-        }
-      }
-
-      if (!items.length) {
-        const adnCancelEvents = await prisma.adnDocument.findMany({
-          where: {
-            tipoDocumento: "EVENTO",
-            cnpjPrestador: normalizedCnpj,
-            tipoEvento: { contains: "CANCEL", mode: "insensitive" },
-          },
-          select: { chaveAcesso: true, numeroNfse: true },
-        });
-        for (const evt of adnCancelEvents) {
-          items.push({
-            source: "adn",
-            sources: ["adn"],
-            chaveAcesso: evt.chaveAcesso || null,
-            numeroNfse: evt.numeroNfse || null,
-            dataEmissao: null,
-            competencia: null,
-            valorServicos: null,
-            cnpjPrestador: normalizedCnpj,
-            cnpjTomador: null,
-            situacao: "CANCELAMENTO",
-            tipoEvento: "CANCELAMENTO",
-          });
-        }
-      }
-
-      const cancelKeys = new Set();
-      const adnOkKeys = new Set();
-      for (const item of items) {
-        if (!isCancelledItem(item)) continue;
-        const key = item.chaveAcesso || item.numeroNfse;
-        if (key) cancelKeys.add(key);
-      }
-
-      for (const item of items) {
-        if (item.source !== "adn") continue;
-        if (isCancelledItem(item) || isRejectedItem(item)) continue;
-        const key = item.chaveAcesso || item.numeroNfse;
-        if (key) adnOkKeys.add(key);
-      }
-
-      const recentThresholdMs = 48 * 60 * 60 * 1000;
-      const nowMs = Date.now();
-
-      const filteredByCancel = items.filter((item) => {
-        if (isCancelledItem(item)) return false;
-        const key = item.chaveAcesso || item.numeroNfse;
-        if (key && cancelKeys.has(key)) return false;
-        if (item.source === "sistema" && key && adnOkKeys.size) {
-          if (adnOkKeys.has(key)) return true;
-          const createdAt = parseDate(item._createdAt);
-          if (!createdAt) return false;
-          return nowMs - createdAt.getTime() <= recentThresholdMs;
-        }
-        return true;
-      });
-
-      const deduped = new Map();
-      for (const item of filteredByCancel) {
-        const key = buildUnifiedKey(item);
-        if (!key) continue;
-        const existing = deduped.get(key);
-        deduped.set(key, existing ? mergeUnified(existing, item) : item);
-      }
-
-      const merged = Array.from(deduped.values());
-      for (const item of merged) {
-        if (item._createdAt !== undefined) delete item._createdAt;
-      }
-      const filtered = merged.filter((item) => !isCancelledItem(item) && !isRejectedItem(item));
-      filtered.sort((a, b) => {
-        const da = parseDate(a.dataEmissao)?.getTime?.() || 0;
-        const db = parseDate(b.dataEmissao)?.getTime?.() || 0;
-        return db - da;
+      const filtered = await buildUnifiedItems({
+        cnpj,
+        tipo: tipoLower,
+        inicio,
+        fim,
       });
 
       const totalValorServicos = filtered.reduce(
@@ -333,6 +368,134 @@ export function createAdnRouter({ ensureAuthorized, log }) {
       });
     } catch (err) {
       log.error({ err }, "Falha ao consultar notas unificadas");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  router.get("/nfse/unified/summary", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    const { cnpj, tipo, inicio, fim, tomadorDoc } = req.query || {};
+    if (!cnpj) {
+      return res.status(400).json({ error: "cnpj_required" });
+    }
+    const tipoLower = String(tipo || "todas").toLowerCase();
+    if (!["emitidas", "recebidas", "todas"].includes(tipoLower)) {
+      return res.status(400).json({ error: "tipo_invalid" });
+    }
+
+    try {
+      const filtered = await buildUnifiedItems({
+        cnpj,
+        tipo: tipoLower,
+        inicio,
+        fim,
+      });
+      const tomadorFilter = tomadorDoc ? normalizeCnpj(tomadorDoc) : null;
+      const items = tomadorFilter
+        ? filtered.filter((item) => normalizeCnpj(item.cnpjTomador) === tomadorFilter)
+        : filtered;
+
+      const totalValorServicos = items.reduce(
+        (sum, item) => sum + (Number(item.valorServicos) || 0),
+        0
+      );
+
+      const porTomador = new Map();
+      for (const item of items) {
+        const key = normalizeCnpj(item.cnpjTomador) || "sem_documento";
+        const current = porTomador.get(key) || {
+          tomadorDoc: item.cnpjTomador || null,
+          tomadorNome: item.tomadorNome || null,
+          totalNotas: 0,
+          totalValorServicos: 0,
+        };
+        current.totalNotas += 1;
+        current.totalValorServicos += Number(item.valorServicos) || 0;
+        if (!current.tomadorNome && item.tomadorNome) current.tomadorNome = item.tomadorNome;
+        porTomador.set(key, current);
+      }
+
+      return res.json({
+        totalNotas: items.length,
+        totalValorServicos,
+        porTomador: Array.from(porTomador.values()),
+      });
+    } catch (err) {
+      log.error({ err }, "Falha ao consultar resumo unificado");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  router.get("/nfse/pdf", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    const { chave, numeroNfse, idDps } = req.query || {};
+    if (!chave && !numeroNfse && !idDps) {
+      return res.status(400).json({ error: "chave_or_numero_required" });
+    }
+
+    try {
+      const systemDoc = await prisma.serviceInvoice.findFirst({
+        where: {
+          ...(chave ? { chaveAcesso: String(chave) } : {}),
+          ...(numeroNfse ? { numeroNfse: String(numeroNfse) } : {}),
+          ...(idDps ? { idDps: String(idDps) } : {}),
+        },
+        select: {
+          chaveAcesso: true,
+          numeroNfse: true,
+          idDps: true,
+          tomadorNome: true,
+          tomadorDoc: true,
+          valorServicos: true,
+          xml: true,
+        },
+      });
+
+      const adnDoc = systemDoc
+        ? null
+        : await prisma.adnDocument.findFirst({
+            where: {
+              ...(chave ? { chaveAcesso: String(chave) } : {}),
+              ...(numeroNfse ? { numeroNfse: String(numeroNfse) } : {}),
+            },
+            select: {
+              chaveAcesso: true,
+              numeroNfse: true,
+              cnpjTomador: true,
+              valorServicos: true,
+              xmlPlain: true,
+              xmlBase64Gzip: true,
+            },
+          });
+
+      const xmlSource =
+        systemDoc?.xml || adnDoc?.xmlPlain || adnDoc?.xmlBase64Gzip || null;
+      const xml = decodeXmlMaybeGzipBase64(xmlSource);
+      if (!xml) {
+        return res.status(404).json({ error: "xml_not_found" });
+      }
+
+      const doc = new PDFDocument({ size: "A4", margin: 40 });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=\"nfse-${chave || numeroNfse || idDps}.pdf\"`
+      );
+
+      doc.fontSize(14).text("NFS-e (XML)", { align: "center" });
+      doc.moveDown();
+      doc.fontSize(10).text(`Chave: ${chave || systemDoc?.chaveAcesso || adnDoc?.chaveAcesso || "-"}`);
+      doc.text(`Numero: ${numeroNfse || systemDoc?.numeroNfse || adnDoc?.numeroNfse || "-"}`);
+      doc.text(`DPS: ${idDps || systemDoc?.idDps || "-"}`);
+      doc.text(`Tomador: ${systemDoc?.tomadorNome || "-"}`);
+      doc.text(`Doc Tomador: ${systemDoc?.tomadorDoc || adnDoc?.cnpjTomador || "-"}`);
+      doc.text(`Valor Servicos: ${systemDoc?.valorServicos || adnDoc?.valorServicos || "-"}`);
+      doc.moveDown();
+      doc.font("Courier").fontSize(8).text(xml, { lineBreak: true });
+      doc.pipe(res);
+      doc.end();
+    } catch (err) {
+      log.error({ err }, "Falha ao gerar PDF da NFS-e");
       return res.status(500).json({ error: "internal_error" });
     }
   });

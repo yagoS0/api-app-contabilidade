@@ -197,5 +197,88 @@ export function createNfseRouter({ ensureAuthorized, log }) {
     }
   });
 
+  router.post("/:chaveAcesso/eventos", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    const { chaveAcesso } = req.params || {};
+    const body = req.body || {};
+    const tipoEvento = body.tipoEvento || body.tipo;
+    const justificativa = body.justificativa || body.motivo;
+    const cMotivo = body.cMotivo || body.codigoMotivo;
+    const cnpjAutor = body.cnpjAutor || body.cnpjPrestador;
+    const chaveSubstituta = body.chaveSubstituta || body.chaveSubstituida || body.chaveAcessoSubstituta;
+    const numeroSubstituta = body.numeroSubstituta || body.numeroNfseSubstituta;
+
+    if (!chaveAcesso) {
+      return res.status(400).json({ error: "chave_required" });
+    }
+    if (!tipoEvento) {
+      return res.status(400).json({ error: "tipo_evento_required" });
+    }
+    if (!["e101101", "e105102"].includes(String(tipoEvento).toLowerCase())) {
+      return res.status(400).json({ error: "tipo_evento_invalid" });
+    }
+    if (!justificativa) {
+      return res.status(400).json({ error: "justificativa_required" });
+    }
+
+    try {
+      const existing = await NfseRepository.findByChaveAcesso(chaveAcesso);
+      if (existing) {
+        const status = String(existing.status || "").toLowerCase();
+        if (status.includes("cancel") || status.includes("reject")) {
+          return res.status(422).json({ error: "nfse_not_authorized" });
+        }
+        if (!status.includes("issued") && !status.includes("autoriz")) {
+          return res.status(422).json({ error: "nfse_not_authorized" });
+        }
+      }
+
+      const result = await NfseService.sendEvent({
+        chaveAcesso,
+        tipoEvento: String(tipoEvento).toLowerCase(),
+        justificativa,
+        chaveSubstituta,
+        numeroSubstituta,
+        cMotivo,
+        cnpjAutor,
+        log,
+      });
+
+      const newStatus =
+        String(tipoEvento).toLowerCase() === "e105102"
+          ? "cancelled_substitution"
+          : "cancelled";
+      const updated = await NfseRepository.updateByChaveAcesso(chaveAcesso, {
+        status: newStatus,
+      });
+
+      return res.json({
+        ok: true,
+        evento: String(tipoEvento).toLowerCase(),
+        status: newStatus,
+        nfse: updated,
+        providerData: result.providerData,
+      });
+    } catch (err) {
+      if (err.code === "NFSE_NOT_CONFIGURED") {
+        return res.status(400).json({ error: "nfse_not_configured" });
+      }
+      if (err.code === "NFSE_TIPO_EVENTO_REQUIRED") {
+        return res.status(400).json({ error: "tipo_evento_required" });
+      }
+      if (err.code === "NFSE_JUSTIFICATIVA_REQUIRED") {
+        return res.status(400).json({ error: "justificativa_required" });
+      }
+      if (err.code === "NFSE_CNPJ_AUTOR_REQUIRED") {
+        return res.status(400).json({ error: "cnpj_autor_required" });
+      }
+      if (err.code === "NFSE_EVENT_FAILED") {
+        return res.status(422).json({ error: "nfse_event_failed", providerData: err.providerData });
+      }
+      log.error({ err }, "Falha ao registrar evento NFS-e");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
   return router;
 }
