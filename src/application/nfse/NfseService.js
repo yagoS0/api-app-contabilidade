@@ -224,7 +224,7 @@ function buildEventoXml({
   const motivoCodigo = cMotivo || "1";
   const motivoTexto = justificativa || "Cancelamento de NFS-e";
   const eventoXml =
-    String(tipoEvento).toLowerCase() === "e105102"
+    String(tipoEvento).toLowerCase() ===  "e105102"
       ? `<e105102>
       <xDesc>Cancelamento por substituicao</xDesc>
       <cMotivo>${escapeXml(motivoCodigo)}</cMotivo>

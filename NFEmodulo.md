@@ -126,6 +126,19 @@ e retorna uma lista consolidada por `chaveAcesso/numeroNfse/idDps/rps`.
 
 ---
 
+### 5.1) Forcar sincronizacao (zera NSU)
+`POST /api/nfse/sync/force`
+
+**Body opcional**
+- `cnpjConsulta`
+- `resetNsu` (default `true`)
+- `maxIterations` (default `50`)
+
+**Observacoes**
+- Quando `resetNsu=true`, o estado volta para `0` e reprocessa tudo.
+
+---
+
 ### 6) Listar documentos ADN
 `GET /api/nfse`
 
@@ -150,6 +163,8 @@ e retorna uma lista consolidada por `chaveAcesso/numeroNfse/idDps/rps`.
 **Query opcional**
 - `tipo` (`emitidas`, `recebidas`, `todas`)
 - `inicio`, `fim`, `limit`, `offset`
+- `sync` (`true/false/background`) para sincronizar antes da consulta
+- `syncMax` (numero de iteracoes, padrao 2, max 10)
 
 **Observacoes**
 - Remove **canceladas** e **rejeitadas**.
@@ -167,6 +182,8 @@ e retorna uma lista consolidada por `chaveAcesso/numeroNfse/idDps/rps`.
 **Query opcional**
 - `tipo` (`emitidas`, `recebidas`, `todas`)
 - `inicio`, `fim`
+- `sync` (`true/false/background`) para sincronizar antes do resumo
+- `syncMax` (numero de iteracoes, padrao 2, max 10)
 - `tomadorDoc` (filtra por documento do tomador)
 
 **Retorno**
