@@ -65,22 +65,59 @@ function decodeXmlMaybeGzipBase64(value) {
 
 export function createAdnRouter({ ensureAuthorized, log }) {
   const router = Router();
+  const syncTracker = new Map();
 
-  async function buildUnifiedItems({ cnpj, tipo, inicio, fim }) {
+  function scheduleAdnSync({ cnpj, maxIterations }) {
+    if (!cnpj) return;
+    const key = String(cnpj);
+    const now = Date.now();
+    const state = syncTracker.get(key) || {
+      running: false,
+      lastAttemptAt: 0,
+      lastCompletedAt: 0,
+    };
+    const throttleMs = 60 * 1000;
+    if (state.running) return;
+    if (now - state.lastAttemptAt < throttleMs) return;
+
+    state.running = true;
+    state.lastAttemptAt = now;
+    syncTracker.set(key, state);
+
+    setImmediate(async () => {
+      try {
+        await AdnSyncService.syncUntilEmpty({
+          maxIterations,
+          cnpjConsulta: key,
+        });
+      } catch (err) {
+        log.warn({ err, cnpj: key }, "Falha ao sincronizar ADN em background");
+      } finally {
+        state.running = false;
+        state.lastCompletedAt = Date.now();
+        syncTracker.set(key, state);
+      }
+    });
+  }
+
+  async function buildUnifiedItems({ cnpj, tipo, inicio, fim, syncMode, syncMax }) {
     const normalizedCnpj = normalizeCnpj(cnpj);
     const company = await prisma.company.findUnique({
       where: { cnpj: normalizedCnpj },
     });
     const companyName = company?.nomeFantasia || company?.razaoSocial || null;
 
-    // Sempre sincroniza o ADN antes de unificar, para pegar notas emitidas fora do sistema.
-    try {
-      await AdnSyncService.syncUntilEmpty({
-        maxIterations: 5,
-        cnpjConsulta: normalizedCnpj,
-      });
-    } catch (err) {
-      log.warn({ err, cnpj: normalizedCnpj }, "Falha ao sincronizar ADN antes do unificado");
+    if (syncMode === "await") {
+      try {
+        await AdnSyncService.syncUntilEmpty({
+          maxIterations: syncMax,
+          cnpjConsulta: normalizedCnpj,
+        });
+      } catch (err) {
+        log.warn({ err, cnpj: normalizedCnpj }, "Falha ao sincronizar ADN antes do unificado");
+      }
+    } else if (syncMode === "background") {
+      scheduleAdnSync({ cnpj: normalizedCnpj, maxIterations: syncMax });
     }
 
     const items = [];
@@ -305,9 +342,40 @@ export function createAdnRouter({ ensureAuthorized, log }) {
     }
   });
 
+  router.post("/nfse/sync/force", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    const body = req.body || {};
+    const cnpjConsulta = body.cnpjConsulta || body.cnpj || null;
+    const resetNsu = body.resetNsu === undefined ? true : Boolean(body.resetNsu);
+    const maxIterations = body.maxIterations ? Number(body.maxIterations) : 50;
+
+    try {
+      if (resetNsu) {
+        await AdnRepository.updateState(0);
+      }
+      const result = await AdnSyncService.syncUntilEmpty({
+        maxIterations,
+        cnpjConsulta,
+      });
+      return res.json({ ok: true, resetNsu, result });
+    } catch (err) {
+      if (err.code === "ADN_NOT_CONFIGURED") {
+        return res.status(400).json({ error: "adn_not_configured" });
+      }
+      if (err.code === "ADN_CNPJ_REQUIRED") {
+        return res.status(400).json({ error: "adn_cnpj_required" });
+      }
+      if (err.code === "ADN_REJEICAO") {
+        return res.status(422).json({ error: "adn_rejeicao", details: err.details || [] });
+      }
+      log.error({ err }, "Falha ao forcar sincronizacao ADN");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
   router.get("/nfse", async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
-    const { cnpj, tipo, inicio, fim, limit, offset } = req.query || {};
+    const { cnpj, tipo, inicio, fim, limit, offset, sync, syncMax } = req.query || {};
     if (!cnpj) {
       return res.status(400).json({ error: "cnpj_required" });
     }
@@ -333,7 +401,7 @@ export function createAdnRouter({ ensureAuthorized, log }) {
 
   router.get("/nfse/unified", async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
-    const { cnpj, tipo, inicio, fim, limit, offset } = req.query || {};
+    const { cnpj, tipo, inicio, fim, limit, offset, sync, syncMax } = req.query || {};
     if (!cnpj) {
       return res.status(400).json({ error: "cnpj_required" });
     }
@@ -343,11 +411,21 @@ export function createAdnRouter({ ensureAuthorized, log }) {
     }
 
     try {
+      const syncRaw = String(sync || "").toLowerCase();
+      const syncMode =
+        syncRaw === "1" || syncRaw === "true"
+          ? "await"
+          : syncRaw === "0" || syncRaw === "false"
+            ? "none"
+            : "background";
+      const maxIterations = Math.min(Math.max(Number(syncMax) || 2, 1), 10);
       const filtered = await buildUnifiedItems({
         cnpj,
         tipo: tipoLower,
         inicio,
         fim,
+        syncMode,
+        syncMax: maxIterations,
       });
 
       const totalValorServicos = filtered.reduce(
@@ -374,7 +452,7 @@ export function createAdnRouter({ ensureAuthorized, log }) {
 
   router.get("/nfse/unified/summary", async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
-    const { cnpj, tipo, inicio, fim, tomadorDoc } = req.query || {};
+    const { cnpj, tipo, inicio, fim, tomadorDoc, sync, syncMax } = req.query || {};
     if (!cnpj) {
       return res.status(400).json({ error: "cnpj_required" });
     }
@@ -384,11 +462,21 @@ export function createAdnRouter({ ensureAuthorized, log }) {
     }
 
     try {
+      const syncRaw = String(sync || "").toLowerCase();
+      const syncMode =
+        syncRaw === "1" || syncRaw === "true"
+          ? "await"
+          : syncRaw === "0" || syncRaw === "false"
+            ? "none"
+            : "background";
+      const maxIterations = Math.min(Math.max(Number(syncMax) || 2, 1), 10);
       const filtered = await buildUnifiedItems({
         cnpj,
         tipo: tipoLower,
         inicio,
         fim,
+        syncMode,
+        syncMax: maxIterations,
       });
       const tomadorFilter = tomadorDoc ? normalizeCnpj(tomadorDoc) : null;
       const items = tomadorFilter
