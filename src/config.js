@@ -84,6 +84,10 @@ export const ADN_DFE_PATH = (process.env.ADN_DFE_PATH || "").trim();
 export const ADN_CNPJ_CONSULTA = (process.env.ADN_CNPJ_CONSULTA || "").trim();
 export const ADN_SYNC_CRON = (process.env.ADN_SYNC_CRON || "").trim();
 
+// === Certificados por empresa (PFX) ===
+export const CERT_STORAGE_PATH = (process.env.CERT_STORAGE_PATH || "").trim();
+export const CERT_SECRET_KEY = (process.env.CERT_SECRET_KEY || "").trim();
+
 // === API Keys ===
 const rawApiKeys = process.env.API_KEYS || "";
 export const API_KEYS = rawApiKeys
@@ -162,3 +166,7 @@ if (!ADN_CERT_PATH)
   log.warn("ADN_CERT_PATH ausente: consulta ADN estará desabilitada");
 if (!ADN_KEY_PATH)
   log.warn("ADN_KEY_PATH ausente: consulta ADN estará desabilitada");
+if (!CERT_STORAGE_PATH)
+  log.warn("CERT_STORAGE_PATH ausente: upload de certificados por empresa indisponível");
+if (!CERT_SECRET_KEY)
+  log.warn("CERT_SECRET_KEY ausente: criptografia de senha do certificado indisponível");

@@ -4,6 +4,9 @@ import axios from "axios";
 import { gunzipSync } from "node:zlib";
 import { parseXmlMetadata } from "./AdnXmlMetadata.js";
 import { parseDate } from "../../utils/date.js";
+import { prisma } from "../../infrastructure/db/prisma.js";
+import { resolveCertificatePath } from "../../infrastructure/storage/CertStorage.js";
+import { decryptSecret } from "../../utils/crypto.js";
 import {
   ADN_BASE_URL,
   ADN_CERT_PATH,
@@ -14,26 +17,44 @@ import {
 } from "../../config.js";
 import { AdnRepository } from "../../infrastructure/db/AdnRepository.js";
 
-function integrationReady() {
-  return Boolean(ADN_BASE_URL && ADN_CERT_PATH && ADN_KEY_PATH);
+function integrationReady(certInfo) {
+  const hasCompanyCert = Boolean(certInfo?.pfxBuffer);
+  const hasEnvCert = Boolean(ADN_CERT_PATH && ADN_KEY_PATH);
+  return Boolean(ADN_BASE_URL && (hasCompanyCert || hasEnvCert));
 }
 
-function buildAdnClient() {
-  if (!integrationReady()) {
+function resolveCompanyCert(company) {
+  if (!company?.certStorageKey || !company?.certPasswordEnc) return null;
+  const password = decryptSecret(company.certPasswordEnc);
+  if (!password) return null;
+  const pfxPath = resolveCertificatePath(company.certStorageKey);
+  if (!pfxPath) return null;
+  const pfxBuffer = fs.readFileSync(pfxPath);
+  return { pfxBuffer, pfxPassword: password };
+}
+
+function buildAdnClient(certInfo) {
+  if (!integrationReady(certInfo)) {
     const err = new Error("ADN: integração não configurada");
     err.code = "ADN_NOT_CONFIGURED";
     throw err;
   }
 
-  const cert = fs.readFileSync(ADN_CERT_PATH);
-  const key = fs.readFileSync(ADN_KEY_PATH);
-  const agent = new https.Agent({
-    cert,
-    key,
-    minVersion: "TLSv1.2",
-    ALPNProtocols: ["http/1.1"],
-    rejectUnauthorized: true,
-  });
+  const agent = certInfo?.pfxBuffer
+    ? new https.Agent({
+        pfx: certInfo.pfxBuffer,
+        passphrase: certInfo.pfxPassword,
+        minVersion: "TLSv1.2",
+        ALPNProtocols: ["http/1.1"],
+        rejectUnauthorized: true,
+      })
+    : new https.Agent({
+        cert: fs.readFileSync(ADN_CERT_PATH),
+        key: fs.readFileSync(ADN_KEY_PATH),
+        minVersion: "TLSv1.2",
+        ALPNProtocols: ["http/1.1"],
+        rejectUnauthorized: true,
+      });
 
   return axios.create({
     baseURL: ADN_BASE_URL.replace(/\/+$/, ""),
@@ -81,8 +102,8 @@ function parseLoteResponse(data) {
 }
 
 export class AdnSyncService {
-  static async fetchLote({ nsu, cnpjConsulta, lote = true }) {
-    const client = buildAdnClient();
+  static async fetchLote({ nsu, cnpjConsulta, lote = true, certInfo }) {
+    const client = buildAdnClient(certInfo);
     const basePath = (ADN_DFE_PATH || "/DFe").replace(/\/+$/, "");
     const basePathLower = basePath.toLowerCase();
     const basePathCaseFixed = basePath.replace(/\/dfe$/i, "/DFe");
@@ -109,6 +130,18 @@ export class AdnSyncService {
       } catch (err) {
         lastError = err;
         const status = err?.response?.status;
+        if (status === 429) {
+          const retryAfterHeader = err?.response?.headers?.["retry-after"];
+          const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : 60;
+          const e = new Error("adn_rate_limited");
+          e.code = "ADN_RATE_LIMITED";
+          e.retryAfterSeconds =
+            Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+              ? retryAfterSeconds
+              : 60;
+          e.providerData = err?.response?.data;
+          throw e;
+        }
         if (status === 404) {
           const responseData = err?.response?.data;
           if (responseData && responseData.StatusProcessamento) {
@@ -123,19 +156,34 @@ export class AdnSyncService {
     throw lastError;
   }
 
-  static async syncOnce({ lote = true, cnpjConsulta } = {}) {
-    const state = await AdnRepository.ensureState();
+  static async syncOnce({ lote = true, cnpjConsulta, companyId } = {}) {
     const cnpj = (cnpjConsulta || ADN_CNPJ_CONSULTA || "").replace(/\D+/g, "");
     if (!cnpj) {
       const err = new Error("adn_cnpj_required");
       err.code = "ADN_CNPJ_REQUIRED";
       throw err;
     }
+    const company = companyId
+      ? await prisma.company.findUnique({ where: { id: String(companyId) } })
+      : null;
+    if (companyId && !company) {
+      const err = new Error("company_not_found");
+      err.code = "COMPANY_NOT_FOUND";
+      throw err;
+    }
+    const certInfo = company ? resolveCompanyCert(company) : null;
+    if (company && !certInfo?.pfxBuffer) {
+      const err = new Error("adn_cert_required");
+      err.code = "ADN_CERT_REQUIRED";
+      throw err;
+    }
+    const state = await AdnRepository.ensureState(cnpj);
     const ultimoNSU = state.ultimoNSU ?? BigInt(0);
     const response = await this.fetchLote({
       nsu: ultimoNSU.toString(),
       lote,
       cnpjConsulta: cnpj,
+      certInfo,
     });
 
     const { status, items, errors } = parseLoteResponse(response);
@@ -191,22 +239,24 @@ export class AdnSyncService {
           xmlPlain: payload.xmlPlain,
           xmlBase64Gzip: payload.xmlBase64Gzip,
           cnpjPrestador: metadata.cnpjPrestador,
+          prestadorNome: metadata.prestadorNome,
           cnpjTomador: metadata.cnpjTomador,
+          tomadorNome: metadata.tomadorNome,
         });
       }
       if (result.action) processed += 1;
     }
 
     const nextNSU = (maxNSU + BigInt(1)).toString();
-    await AdnRepository.updateState(nextNSU);
+    await AdnRepository.updateState(cnpj, nextNSU);
     return { status, processed, nextNSU };
   }
 
-  static async syncUntilEmpty({ lote = true, maxIterations = 50, cnpjConsulta } = {}) {
+  static async syncUntilEmpty({ lote = true, maxIterations = 50, cnpjConsulta, companyId } = {}) {
     let total = 0;
     let iterations = 0;
     while (iterations < maxIterations) {
-      const result = await this.syncOnce({ lote, cnpjConsulta });
+      const result = await this.syncOnce({ lote, cnpjConsulta, companyId });
       total += result.processed;
       iterations += 1;
       if (result.status === "NENHUM_DOCUMENTO_LOCALIZADO") {

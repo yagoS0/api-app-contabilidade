@@ -81,6 +81,19 @@ Banco de dados (PostgreSQL)
   npm run prisma:seed   # usa ADMIN_EMAIL/ADMIN_PASSWORD definidos no .env
   ```
 
+### Portal (novo modelo de notas)
+O portal usa tabelas novas (`PortalClient`, `PortalInvoice`, etc.). Para criar essas tabelas em um banco já existente, rode:
+
+```bash
+npx prisma db execute --schema prisma/schema.prisma --file prisma/migrations/20260211000100_add_portal_models/migration.sql
+```
+
+Depois, para migrar dados legados (`Company`, `ServiceInvoice`, `AdnDocument`) para o novo modelo:
+
+```bash
+npm run portal:migrate
+```
+
 Como executar
 Requisitos: Node 18+
 1. Instale dependências: `npm install`
@@ -92,14 +105,28 @@ Requisitos: Node 18+
 
 Endpoints HTTP
 - `POST /auth/signup`: recebe `name`, `email`, `password` e cria um usuário com `status=pending` (aguarda aprovação do admin).
-- `POST /auth/login`: valida usuário/senha do banco (ou fallback `AUTH_USERS`) e retorna `{ token, expiresInMs, user }`.
-- `GET /auth/me`: retorna o usuário logado (exige `Authorization: Bearer`).
+- `POST /auth/login`: login unificado (usuário do sistema **ou** cliente). Entrada: `{ "email|username|identifier": "...", "password": "..." }`. Retorna `{ accessToken, refreshToken, user: { id, role, defaultClientId, name } }`.
+- `POST /auth/refresh`: entrada `{ refreshToken }`, retorna `{ accessToken, refreshToken }`.
+- `GET /auth/me`: retorna `{ id, role, defaultClientId, name }` (exige `Authorization: Bearer`).
 - `GET /healthz`: healthcheck.
 - `GET /status`: status do último envio + log básico (requer `Authorization: Bearer` ou `x-api-key`).
 - `POST /run`: dispara o envio imediato (protegido por JWT ou API key).
-- `POST /clients`: cadastra um cliente completo (dados pessoais, empresa e sócios).
-- `GET /clients`: lista clientes com paginação simples (`?limit=20&offset=0`).
-- `GET /clients/:id`: retorna o detalhe de um cliente específico.
+- `GET /clients`: lista empresas do portal (paginação `?page=&limit=` e `?search=`). Retorna também `sync.lastSyncAt/state/stale`.
+- `GET /clients/:clientId`: detalhe da empresa do portal.
+- `GET /clients/:clientId/integration-settings`: provider/environment + `certConfigured`.
+- `PATCH /clients/:clientId/integration-settings`: atualiza provider/environment/certId.
+- `GET /clients/:clientId/invoices`: lista notas com filtros (`from/to`, `competencia`, `status`, `type`, `search`, `sort`, `order`, `page`, `limit`).
+- `GET /clients/:clientId/invoices/:invoiceId`: detalhe.
+- `GET /clients/:clientId/invoices/:invoiceId/xml`: baixa XML (attachment).
+- `GET /clients/:clientId/invoices/:invoiceId/xml/raw`: retorna `{ xml }`.
+- `POST /clients/:clientId/invoices/:invoiceId/reparse`: reprocessa campos a partir do XML salvo.
+- `GET /clients/:clientId/invoices/:invoiceId/pdf`: retorna PDF (por enquanto redirect para `pdfUrl`).
+- `GET /clients/:clientId/invoices/:invoiceId/events`: lista eventos da nota.
+- `POST /clients/:clientId/invoices/import/xml`: upload de XMLs (`multipart/form-data`, field `files`).
+- `POST /clients/:clientId/invoices/sync/start`: inicia sync (idempotente, com lock/backoff). Retorna `{ jobId, queued, reason, sync }`.
+- `GET /clients/:clientId/invoices/sync/status/:jobId`: status do job.
+- `GET /clients/:clientId/invoices/sync/summary`: resumo do estado de sync.
+- `POST /clients/:clientId/invoices/sync/:invoiceId/sync-status`: recalcula status (MVP: baseado nos eventos já gravados).
 - `POST /nfse/issue`: emite NFS-e padrão nacional (requere `NFSE_CERT_PFX_PATH`, `NFSE_CERT_PFX_PASSWORD`, `NFSE_BASE_URL` e dados de RPS/serviço no cadastro da empresa). Em caso de erro, devolve `status: "rejected"` com motivo. O recurso chamado é configurável via `NFSE_PATH`.
 - `GET /nfse`: lista NFS-e do banco com filtros e paginação; opcionalmente sincroniza com o provedor (`sync=1`) usando `idDps`, `chaveAcesso` ou consulta por período (`from`/`to` com XML via `NFSE_CONSULT_PATH`).
 - `POST /nfse/consulta`: mesma consulta do `GET /nfse`, porém aceita JSON no body (útil para enviar período e filtros).

@@ -67,6 +67,22 @@ export function createAdnRouter({ ensureAuthorized, log }) {
   const router = Router();
   const syncTracker = new Map();
 
+  function serializeErrorSafe(err) {
+    const status = err?.response?.status || err?.status;
+    const data = err?.response?.data ?? err?.providerData;
+    const message =
+      (data && typeof data === "object" && (data.message || data.error || data.descricao || data.detail)) ||
+      (typeof data === "string" ? data.slice(0, 2000) : null) ||
+      err?.message ||
+      String(err);
+    return {
+      code: err?.code,
+      status,
+      message,
+      retryAfterSeconds: err?.retryAfterSeconds,
+    };
+  }
+
   function scheduleAdnSync({ cnpj, maxIterations }) {
     if (!cnpj) return;
     const key = String(cnpj);
@@ -91,7 +107,11 @@ export function createAdnRouter({ ensureAuthorized, log }) {
           cnpjConsulta: key,
         });
       } catch (err) {
-        log.warn({ err, cnpj: key }, "Falha ao sincronizar ADN em background");
+        // Evita poluir logs do app: sync em background é best-effort.
+        log.trace(
+          { err: serializeErrorSafe(err), cnpj: key },
+          "Falha ao sincronizar ADN em background"
+        );
       } finally {
         state.running = false;
         state.lastCompletedAt = Date.now();
@@ -114,7 +134,11 @@ export function createAdnRouter({ ensureAuthorized, log }) {
           cnpjConsulta: normalizedCnpj,
         });
       } catch (err) {
-        log.warn({ err, cnpj: normalizedCnpj }, "Falha ao sincronizar ADN antes do unificado");
+        // Sync "await" é best-effort: não deve quebrar a consulta nem poluir logs.
+        log.trace(
+          { err: serializeErrorSafe(err), cnpj: normalizedCnpj },
+          "Falha ao sincronizar ADN antes do unificado"
+        );
       }
     } else if (syncMode === "background") {
       scheduleAdnSync({ cnpj: normalizedCnpj, maxIterations: syncMax });
@@ -174,8 +198,10 @@ export function createAdnRouter({ ensureAuthorized, log }) {
           competencia: item.competencia,
           valorServicos: item.valorServicos,
           cnpjPrestador: item.cnpjPrestador,
-            empresaNome: companyName,
+          empresaNome: companyName,
           cnpjTomador: item.cnpjTomador,
+          tomadorNome: item.tomadorNome || null,
+          status: item.status || null,
           situacao: item.situacao || null,
           tipoEvento: item.tipoEvento || null,
         });
@@ -202,8 +228,10 @@ export function createAdnRouter({ ensureAuthorized, log }) {
           competencia: item.competencia,
           valorServicos: item.valorServicos,
           cnpjPrestador: item.cnpjPrestador,
-            empresaNome: companyName,
+          empresaNome: companyName,
           cnpjTomador: item.cnpjTomador,
+          tomadorNome: item.tomadorNome || null,
+          status: item.status || null,
           situacao: item.situacao || null,
           tipoEvento: item.tipoEvento || null,
         });
@@ -229,8 +257,10 @@ export function createAdnRouter({ ensureAuthorized, log }) {
           competencia: null,
           valorServicos: null,
           cnpjPrestador: normalizedCnpj,
-            empresaNome: companyName,
+          empresaNome: companyName,
           cnpjTomador: null,
+          tomadorNome: null,
+          status: "cancelled",
           situacao: "CANCELAMENTO",
           tipoEvento: "CANCELAMENTO",
         });
@@ -295,33 +325,58 @@ export function createAdnRouter({ ensureAuthorized, log }) {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
     const body = req.body || {};
     const loop = body.loop === true || body.loop === "true";
-    const cnpjConsulta = body.cnpjConsulta;
+    const companyId = body.companyId;
+    let cnpjConsulta = body.cnpjConsulta;
     const lote = body.lote !== undefined ? Boolean(body.lote) : true;
     const maxIterations = body.maxIterations ? Number(body.maxIterations) : 50;
 
     try {
+      // Preferência: sincronizar por companyId (mais seguro e consistente com o resto do app).
+      if (companyId) {
+        const company = await prisma.company.findUnique({ where: { id: String(companyId) } });
+        if (!company) return res.status(404).json({ error: "company_not_found" });
+        if (!company.cnpj) return res.status(400).json({ error: "company_cnpj_required" });
+        cnpjConsulta = normalizeCnpj(company.cnpj);
+      }
       const result = loop
-        ? await AdnSyncService.syncUntilEmpty({ lote, maxIterations, cnpjConsulta })
-        : await AdnSyncService.syncOnce({ lote, cnpjConsulta });
+        ? await AdnSyncService.syncUntilEmpty({ lote, maxIterations, cnpjConsulta, companyId })
+        : await AdnSyncService.syncOnce({ lote, cnpjConsulta, companyId });
       return res.json({ result });
     } catch (err) {
       if (err.code === "ADN_NOT_CONFIGURED") {
         return res.status(400).json({ error: "adn_not_configured" });
       }
       if (err.code === "ADN_CNPJ_REQUIRED") {
-        return res.status(400).json({ error: "adn_cnpj_required" });
+        return res.status(400).json({ error: "adn_cnpj_required", message: "Envie companyId (recomendado) ou cnpjConsulta." });
+      }
+      if (err.code === "ADN_CERT_REQUIRED") {
+        return res.status(400).json({ error: "adn_cert_required" });
+      }
+      if (err.code === "COMPANY_NOT_FOUND") {
+        return res.status(404).json({ error: "company_not_found" });
+      }
+      if (err.code === "ADN_RATE_LIMITED") {
+        const retryAfter = Number(err.retryAfterSeconds || 60);
+        if (retryAfter > 0) res.setHeader("Retry-After", String(retryAfter));
+        return res.status(429).json({
+          error: "adn_rate_limited",
+          retryAfterSeconds: retryAfter,
+        });
       }
       if (err.code === "ADN_REJEICAO") {
         return res.status(422).json({ error: "adn_rejeicao", details: err.details || [] });
       }
-      log.error({ err }, "Falha ao sincronizar ADN");
+      log.error({ err: serializeErrorSafe(err) }, "Falha ao sincronizar ADN");
       return res.status(500).json({ error: "internal_error" });
     }
   });
 
   router.post("/nfse/nsu", async (req, res) => {
-    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
-    const { nsu } = req.body || {};
+    if (
+      !(await ensureAuthorized(req, res, { allowApiKeyFallback: false, requireRole: "admin" }))
+    )
+      return;
+    const { nsu, cnpj, companyId } = req.body || {};
     if (nsu === undefined || nsu === null || nsu === "") {
       return res.status(400).json({ error: "nsu_required" });
     }
@@ -331,34 +386,105 @@ export function createAdnRouter({ ensureAuthorized, log }) {
     }
 
     try {
-      const state = await AdnRepository.updateState(Math.floor(nsuValue));
+      let resolvedCnpj = cnpj ? normalizeCnpj(cnpj) : null;
+      if (!resolvedCnpj && companyId) {
+        const company = await prisma.company.findUnique({ where: { id: String(companyId) } });
+        resolvedCnpj = company?.cnpj ? normalizeCnpj(company.cnpj) : null;
+      }
+      if (!resolvedCnpj) return res.status(400).json({ error: "cnpj_required" });
+
+      const state = await AdnRepository.updateState(resolvedCnpj, Math.floor(nsuValue));
       return res.json({
         ok: true,
-        state: { id: state.id, ultimoNSU: state.ultimoNSU.toString() },
+        state: { cnpj: state.cnpj, ultimoNSU: state.ultimoNSU.toString() },
       });
     } catch (err) {
-      log.error({ err }, "Falha ao atualizar NSU");
+      log.error({ err: serializeErrorSafe(err) }, "Falha ao atualizar NSU");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Admin-only: apaga todas as notas (sistema + ADN) e zera NSU de todas as empresas.
+  // POST /api/nfse/reset-all
+  // Body: { "confirm": "RESET_ALL_NFSE", "includeSystem": true, "includeAdn": true }
+  router.post("/nfse/reset-all", async (req, res) => {
+    if (
+      !(await ensureAuthorized(req, res, { allowApiKeyFallback: false, requireRole: "admin" }))
+    )
+      return;
+
+    const body = req.body || {};
+    const confirm = String(body.confirm || "");
+    if (confirm !== "RESET_ALL_NFSE") {
+      return res.status(400).json({
+        error: "confirm_required",
+        message: 'Envie { "confirm": "RESET_ALL_NFSE" } para confirmar a limpeza total.',
+      });
+    }
+
+    const includeSystem = body.includeSystem === undefined ? true : Boolean(body.includeSystem);
+    const includeAdn = body.includeAdn === undefined ? true : Boolean(body.includeAdn);
+
+    try {
+      const [deletedAdnDocs, deletedAdnStates, deletedSystemNotes] = await prisma.$transaction([
+        includeAdn ? prisma.adnDocument.deleteMany({}) : Promise.resolve({ count: 0 }),
+        includeAdn ? prisma.adnSyncState.deleteMany({}) : Promise.resolve({ count: 0 }),
+        includeSystem ? prisma.serviceInvoice.deleteMany({}) : Promise.resolve({ count: 0 }),
+      ]);
+
+      return res.json({
+        ok: true,
+        deleted: {
+          adnDocuments: deletedAdnDocs.count,
+          adnSyncStates: deletedAdnStates.count,
+          serviceInvoices: deletedSystemNotes.count,
+        },
+        include: {
+          adn: includeAdn,
+          system: includeSystem,
+        },
+      });
+    } catch (err) {
+      log.error({ err: serializeErrorSafe(err) }, "Falha ao resetar NFSe/ADN");
       return res.status(500).json({ error: "internal_error" });
     }
   });
 
   router.post("/nfse/sync/force", async (req, res) => {
-    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    if (
+      !(await ensureAuthorized(req, res, { allowApiKeyFallback: false, requireRole: "admin" }))
+    )
+      return;
     const body = req.body || {};
     const cnpjConsulta = body.cnpjConsulta || body.cnpj || null;
+    const companyId = body.companyId || null;
     const resetNsu = body.resetNsu === undefined ? true : Boolean(body.resetNsu);
     const maxIterations = body.maxIterations ? Number(body.maxIterations) : 50;
 
     try {
+      let resolvedCnpj = cnpjConsulta ? normalizeCnpj(cnpjConsulta) : null;
+      if (!resolvedCnpj && companyId) {
+        const company = await prisma.company.findUnique({ where: { id: String(companyId) } });
+        resolvedCnpj = company?.cnpj ? normalizeCnpj(company.cnpj) : null;
+      }
+      if (!resolvedCnpj) return res.status(400).json({ error: "cnpj_required" });
+
       if (resetNsu) {
-        await AdnRepository.updateState(0);
+        await AdnRepository.updateState(resolvedCnpj, 0);
       }
       const result = await AdnSyncService.syncUntilEmpty({
         maxIterations,
-        cnpjConsulta,
+        cnpjConsulta: resolvedCnpj,
+        companyId,
       });
       return res.json({ ok: true, resetNsu, result });
     } catch (err) {
+      if (err.code === "COMPANY_NOT_FOUND") {
+        return res.status(404).json({ error: "company_not_found" });
+      }
+      if (err.code === "ADN_CERT_REQUIRED") {
+        return res.status(400).json({ error: "adn_cert_required" });
+      }
       if (err.code === "ADN_NOT_CONFIGURED") {
         return res.status(400).json({ error: "adn_not_configured" });
       }
@@ -368,7 +494,15 @@ export function createAdnRouter({ ensureAuthorized, log }) {
       if (err.code === "ADN_REJEICAO") {
         return res.status(422).json({ error: "adn_rejeicao", details: err.details || [] });
       }
-      log.error({ err }, "Falha ao forcar sincronizacao ADN");
+      if (err.code === "ADN_RATE_LIMITED") {
+        const retryAfter = Number(err.retryAfterSeconds || 60);
+        if (retryAfter > 0) res.setHeader("Retry-After", String(retryAfter));
+        return res.status(429).json({
+          error: "adn_rate_limited",
+          retryAfterSeconds: retryAfter,
+        });
+      }
+      log.error({ err: serializeErrorSafe(err) }, "Falha ao forcar sincronizacao ADN");
       return res.status(500).json({ error: "internal_error" });
     }
   });
@@ -394,7 +528,54 @@ export function createAdnRouter({ ensureAuthorized, log }) {
       });
       return res.json(result);
     } catch (err) {
-      log.error({ err }, "Falha ao consultar ADN");
+      log.error({ err: serializeErrorSafe(err) }, "Falha ao consultar ADN");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Consulta de notas (ADN) com filtros no banco e paginação por cursor (keyset)
+  // GET /api/notas?companyId=...&direcao=todas&competencia=2026-02&status=AUTORIZADA&dateFrom=...&dateTo=...&cursor=...&limit=50
+  router.get("/notas", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    const {
+      companyId,
+      cnpj,
+      direcao,
+      competencia,
+      status,
+      dateFrom,
+      dateTo,
+      cursor,
+      limit,
+    } = req.query || {};
+
+    try {
+      let resolvedCnpj = cnpj ? normalizeCnpj(cnpj) : null;
+      if (!resolvedCnpj && companyId) {
+        const company = await prisma.company.findUnique({ where: { id: String(companyId) } });
+        resolvedCnpj = company?.cnpj ? normalizeCnpj(company.cnpj) : null;
+      }
+      if (!resolvedCnpj) return res.status(400).json({ error: "cnpj_required" });
+
+      const direction = String(direcao || "todas").toLowerCase();
+      if (!["emitidas", "recebidas", "todas"].includes(direction)) {
+        return res.status(400).json({ error: "direcao_invalid" });
+      }
+
+      const result = await AdnRepository.listNotas({
+        cnpj: resolvedCnpj,
+        direcao: direction,
+        competencia,
+        status,
+        dateFrom,
+        dateTo,
+        cursor,
+        limit,
+      });
+      return res.json(result);
+    } catch (err) {
+      if (err.code === "CNPJ_REQUIRED") return res.status(400).json({ error: "cnpj_required" });
+      log.error({ err: serializeErrorSafe(err) }, "Falha ao consultar /api/notas");
       return res.status(500).json({ error: "internal_error" });
     }
   });
@@ -417,7 +598,7 @@ export function createAdnRouter({ ensureAuthorized, log }) {
           ? "await"
           : syncRaw === "0" || syncRaw === "false"
             ? "none"
-            : "background";
+            : "none"; // default: NÃO sincroniza automaticamente no GET
       const maxIterations = Math.min(Math.max(Number(syncMax) || 2, 1), 10);
       const filtered = await buildUnifiedItems({
         cnpj,
@@ -468,7 +649,7 @@ export function createAdnRouter({ ensureAuthorized, log }) {
           ? "await"
           : syncRaw === "0" || syncRaw === "false"
             ? "none"
-            : "background";
+            : "none"; // default: NÃO sincroniza automaticamente no GET
       const maxIterations = Math.min(Math.max(Number(syncMax) || 2, 1), 10);
       const filtered = await buildUnifiedItems({
         cnpj,

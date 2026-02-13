@@ -153,6 +153,30 @@ export class AuthService {
     return jwt.sign(payload, JWT_SECRET, { expiresIn });
   }
 
+  static generateClientRefreshToken(client) {
+    if (!this.isEnabled()) {
+      throw new Error("AuthService: autenticação não configurada");
+    }
+    const payload = {
+      sub: client.id,
+      login: client.login,
+      email: client.email,
+      name: client.name || null,
+      role: client.role || "client",
+      source: client.source || "client",
+      type: "client",
+      tokenType: "refresh",
+    };
+    const expiresIn = normalizeRefreshExpiresIn();
+    return jwt.sign(payload, JWT_SECRET, { expiresIn });
+  }
+
+  static generateClientTokens(client) {
+    const accessToken = this.generateClientToken(client);
+    const refreshToken = this.generateClientRefreshToken(client);
+    return { accessToken, refreshToken };
+  }
+
   static generateRefreshToken(user) {
     if (!this.isEnabled()) {
       throw new Error("AuthService: autenticação não configurada");
@@ -211,6 +235,7 @@ export class AuthService {
       if (!client) return null;
       return {
         id: client.id,
+        login: client.login,
         email: client.email,
         name: client.name,
         role: "client",
