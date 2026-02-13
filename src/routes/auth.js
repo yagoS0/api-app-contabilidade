@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import { prisma } from "../infrastructure/db/prisma.js";
 
 export function createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized }) {
   const router = Router();
@@ -50,24 +51,60 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       return res.status(400).json({ error: "username_password_required" });
     }
     try {
+      // 1) Usuários do sistema (admin/contador/user)
       const result = await AuthService.authenticate(loginId, password);
-      if (!result.ok) {
+      if (result.ok) {
+        const { accessToken, refreshToken } = AuthService.generateTokens(result.user);
+        return res.json({
+          accessToken,
+          refreshToken,
+          user: {
+            id: result.user.id,
+            role: result.user.role,
+            defaultClientId: null,
+            name: result.user.name || null,
+          },
+        });
+      }
+
+      // 2) Cliente (dono da empresa) — usa tabela Client
+      const clientResult = await AuthService.authenticateClient(loginId, password);
+      if (!clientResult.ok) {
         if (result.error === "user_not_active") {
-          return res
-            .status(403)
-            .json({ error: "user_not_active", status: result.status });
+          return res.status(403).json({ error: "user_not_active", status: result.status });
         }
         if (result.error === "missing_credentials") {
           return res.status(400).json({ error: "username_password_required" });
         }
         return res.status(401).json({ error: "invalid_credentials" });
       }
-      const { accessToken, refreshToken } = AuthService.generateTokens(result.user);
-      res.json({
-        token: accessToken,
+
+      const { accessToken, refreshToken } = AuthService.generateClientTokens(clientResult.client);
+
+      // defaultClientId: primeira empresa do cliente (se existir PortalClient ligado à Company)
+      const companies = await prisma.company.findMany({
+        where: { clientId: String(clientResult.client.id) },
+        select: { id: true },
+        take: 50,
+      });
+      const companyIds = companies.map((c) => c.id);
+      const defaultPortal = companyIds.length
+        ? await prisma.portalClient.findFirst({
+            where: { companyId: { in: companyIds } },
+            orderBy: { razao: "asc" },
+            select: { id: true },
+          })
+        : null;
+
+      return res.json({
+        accessToken,
         refreshToken,
-        user: result.user,
-        expiresInMs: AuthService.getExpiresInMs(),
+        user: {
+          id: clientResult.client.id,
+          role: "cliente",
+          defaultClientId: defaultPortal?.id || null,
+          name: clientResult.client.name || null,
+        },
       });
     } catch (err) {
       log.error({ err }, "Falha ao autenticar usuário");
@@ -89,12 +126,13 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       if (user.status && user.status !== "active") {
         return res.status(403).json({ error: "user_not_active", status: user.status });
       }
-      const { accessToken, refreshToken: newRefreshToken } = AuthService.generateTokens(user);
+      const tokens =
+        user.role === "client"
+          ? AuthService.generateClientTokens(user)
+          : AuthService.generateTokens(user);
       res.json({
-        token: accessToken,
-        refreshToken: newRefreshToken,
-        user,
-        expiresInMs: AuthService.getExpiresInMs(),
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       });
     } catch (err) {
       log.warn({ err: err.message }, "Refresh token inválido");
@@ -109,7 +147,30 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     if (!req.auth?.user) {
       return res.status(401).json({ error: "invalid_token" });
     }
-    res.json({ user: req.auth.user });
+    const u = req.auth.user;
+    let defaultClientId = null;
+    if (u.role === "client" || u.role === "cliente") {
+      const companies = await prisma.company.findMany({
+        where: { clientId: String(u.id) },
+        select: { id: true },
+        take: 50,
+      });
+      const companyIds = companies.map((c) => c.id);
+      const defaultPortal = companyIds.length
+        ? await prisma.portalClient.findFirst({
+            where: { companyId: { in: companyIds } },
+            orderBy: { razao: "asc" },
+            select: { id: true },
+          })
+        : null;
+      defaultClientId = defaultPortal?.id || null;
+    }
+    res.json({
+      id: u.id,
+      role: u.role === "client" ? "cliente" : u.role,
+      defaultClientId,
+      name: u.name || null,
+    });
   });
 
   return router;

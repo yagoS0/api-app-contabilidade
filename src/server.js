@@ -5,14 +5,14 @@ import cors from "cors";
 import { run } from "./application/SendGuides.js";
 import { log, API_KEYS, ADN_SYNC_CRON } from "./config.js";
 import { RunLogStore } from "./infrastructure/status/RunLogStore.js";
-import { ClientRepository } from "./infrastructure/db/ClientRepository.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
-import { validateClientPayload } from "./application/validators/clientPayload.js";
 import { AuthService } from "./application/auth/AuthService.js";
 import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
 import { createAuthRouter } from "./routes/auth.js";
 import { createAdminRouter } from "./routes/admin.js";
-import { createClientsRouter } from "./routes/clients.js";
+import { createPortalClientsRouter } from "./routes/portalClients.js";
+import { createPortalInvoicesRouter } from "./routes/portalInvoices.js";
+import { createPortalSyncRouter } from "./routes/portalSync.js";
 import { createRunRouter } from "./routes/run.js";
 import { createStatusRouter } from "./routes/status.js";
 import { runState } from "./routes/runState.js";
@@ -26,7 +26,7 @@ app.use(express.json());
 app.use(
   cors({
     origin: true,
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "PATCH", "DELETE"],
     allowedHeaders: ["content-type", "x-api-key", "authorization"],
   })
 );
@@ -36,7 +36,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 const CRON_SCHEDULE = (process.env.CRON_SCHEDULE || "").trim(); // ex: "0 8 * * 1-5"
 
 const USER_STATUSES = ["pending", "active", "rejected"];
-const USER_ROLES = ["user", "admin"];
+const USER_ROLES = ["user", "admin", "contador"];
 
 const ensureAuthorized = createEnsureAuthorized({ AuthService, API_KEYS, log });
 
@@ -49,12 +49,9 @@ const adminRouter = createAdminRouter({
   USER_ROLES,
   serializeUser,
 });
-const clientsRouter = createClientsRouter({
-  ensureAuthorized,
-  validateClientPayload,
-  ClientRepository,
-  log,
-});
+const portalClientsRouter = createPortalClientsRouter({ ensureAuthorized, log });
+const portalInvoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log });
+const portalSyncRouter = createPortalSyncRouter({ ensureAuthorized, log });
 const { router: runRouter, executeRun } = createRunRouter({
   ensureAuthorized,
   RunLogStore,
@@ -83,7 +80,9 @@ const adnRouter = createAdnRouter({
 
 app.use("/auth", authRouter);
 app.use("/admin", adminRouter);
-app.use("/clients", clientsRouter);
+app.use("/clients", portalClientsRouter);
+app.use("/clients/:clientId/invoices/sync", portalSyncRouter);
+app.use("/clients/:clientId/invoices", portalInvoicesRouter);
 app.use("/invoices", invoicesRouter);
 app.use("/nfse", nfseRouter);
 app.use("/api", adnRouter);

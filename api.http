@@ -1,0 +1,239 @@
+@baseUrl = http://localhost:3000
+
+# IMPORTANTE
+# - Se /auth/login estiver retornando {"error":"internal_error"}, quase sempre é Postgres parado.
+#   Verifique: `ss -lptn 'sport = :5432'` e suba o banco antes de testar as rotas.
+#
+# Se o seu Cursor não suportar variáveis `@baseUrl`/`{{accessToken}}`, use as requests
+# marcadas como "SEM_VARIAVEIS" (URLs e headers fixos) e substitua manualmente.
+
+# Cole seus valores aqui (depois do login)
+@accessToken = REPLACE_ME
+@refreshToken = REPLACE_ME
+
+# PortalClient.id (retorna em GET /clients)
+@portalClientId = REPLACE_ME
+
+# PortalInvoice.id (retorna em GET /clients/:clientId/invoices)
+@portalInvoiceId = REPLACE_ME
+
+# Sync job id (retorna em POST /clients/:clientId/invoices/sync/start)
+@syncJobId = REPLACE_ME
+
+###############################################################################
+# AUTH
+###############################################################################
+
+### Healthz OK
+GET {{baseUrl}}/healthz
+
+### Auth OK  - Login (admin/contador/user OR cliente)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "yago@belgencontabilidade.com",
+  "password": "1408120600"
+}
+
+### SEM_VARIAVEIS - Auth Login OK
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "email": "yago@belgencontabilidade.com",
+  "password": "1408120600"
+}
+
+### Auth - Refresh token OK
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### Auth - Me OK
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{accessToken}}
+
+###############################################################################
+# PORTAL: CLIENTS
+###############################################################################
+
+### Portal - List clients (companies) OK
+GET {{baseUrl}}/clients?page=1&limit=20&search=
+Authorization: Bearer {{accessToken}}
+
+### Portal - Get client OK
+GET {{baseUrl}}/clients/{{portalClientId}}
+Authorization: Bearer {{accessToken}}
+
+### Portal - Get integration settings OK
+GET {{baseUrl}}/clients/{{portalClientId}}/integration-settings
+Authorization: Bearer {{accessToken}}
+
+### Portal - Patch integration settings
+PATCH {{baseUrl}}/clients/{{portalClientId}}/integration-settings
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "provider": "NFSENACIONAL",
+  "environment": "PROD"
+}
+
+###############################################################################
+# PORTAL: INVOICES (lista + filtros)
+###############################################################################
+
+### Portal - List invoices (default sort: updatedAt desc) OK
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices?page=1&limit=25&sort=updatedAt&order=desc
+Authorization: Bearer {{accessToken}}
+
+### Portal - List invoices (filters examples) ok
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices?competencia=2026-02&status=CANCELADA&type=NFSE&search=&page=1&limit=25&sort=updatedAt&order=desc
+Authorization: Bearer {{accessToken}}
+
+### Portal - Invoice detailc OK
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices/{{portalInvoiceId}}
+Authorization: Bearer {{accessToken}}
+
+###############################################################################
+# PORTAL: XML / PDF / EVENTS
+###############################################################################
+
+### Portal - Download XML (attachment)
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices/{{portalInvoiceId}}/xml
+Authorization: Bearer {{accessToken}}
+
+### Portal - Download XML bulk ZIP (by filters)
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices/xml/bulk?competencia=2026-02&direcao=emitidas&limit=1000
+Authorization: Bearer {{accessToken}}
+
+### Portal - Get XML raw JSON
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices/{{portalInvoiceId}}/xml/raw
+Authorization: Bearer {{accessToken}}
+
+### Portal - Reparse XML (update derived fields)
+POST {{baseUrl}}/clients/{{portalClientId}}/invoices/{{portalInvoiceId}}/reparse
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+### Portal - PDF (MVP: redirect to pdfUrl if exists)
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices/{{portalInvoiceId}}/pdf
+Authorization: Bearer {{accessToken}}
+
+### Portal - Events
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices/{{portalInvoiceId}}/events
+Authorization: Bearer {{accessToken}}
+
+###############################################################################
+# PORTAL: IMPORT XML (multipart)
+###############################################################################
+
+# Observação: arquivos .http nem sempre suportam multipart de forma consistente.
+# Use o curl abaixo (substitua o path do arquivo):
+#
+# curl -X POST "{{baseUrl}}/clients/{{portalClientId}}/invoices/import/xml" \
+#   -H "authorization: Bearer {{accessToken}}" \
+#   -F "files=@/caminho/para/nota1.xml" \
+#   -F "files=@/caminho/para/nota2.xml"
+
+###############################################################################
+# PORTAL: SYNC (lock/TTL/backoff)
+###############################################################################
+
+### Portal - Start sync (idempotent)
+POST {{baseUrl}}/clients/{{portalClientId}}/invoices/sync/start
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+### Portal - Start FULL sync (reset cursor) - admin/contador
+POST {{baseUrl}}/clients/{{portalClientId}}/invoices/sync/start
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "resetCursor": true,
+  "maxIterations": 300
+}
+
+### Portal - Sync job status
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices/sync/status/{{syncJobId}}
+Authorization: Bearer {{accessToken}}
+
+### Portal - Sync summary
+GET {{baseUrl}}/clients/{{portalClientId}}/invoices/sync/summary
+Authorization: Bearer {{accessToken}}
+
+### Portal - Sync status for one invoice (MVP: based on stored events)
+POST {{baseUrl}}/clients/{{portalClientId}}/invoices/sync/{{portalInvoiceId}}/sync-status
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+###############################################################################
+# ADMIN (usuários do sistema)
+###############################################################################
+
+### Admin - List users (admin only)
+GET {{baseUrl}}/admin/users?status=pending
+Authorization: Bearer {{accessToken}}
+
+###############################################################################
+# LEGADO / API (ADN endpoints antigos ainda existentes)
+###############################################################################
+
+### Legacy ADN - Sync incremental
+POST {{baseUrl}}/api/nfse/sync
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "companyId": "REPLACE_ME",
+  "loop": true,
+  "maxIterations": 10
+}
+
+### Legacy ADN - Force sync (admin only) + reset NSU
+POST {{baseUrl}}/api/nfse/sync/force
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "companyId": "REPLACE_ME",
+  "resetNsu": true,
+  "maxIterations": 10
+}
+
+### Legacy ADN - Query unified
+GET {{baseUrl}}/api/nfse/unified?cnpj=REPLACE_ME&tipo=todas&inicio=2026-02-01&fim=2026-02-29&limit=50&offset=0
+Authorization: Bearer {{accessToken}}
+
+### Legacy ADN - Notas (keyset)
+GET {{baseUrl}}/api/notas?cnpj=REPLACE_ME&direcao=todas&competencia=2026-02&status=AUTORIZADA&limit=50
+Authorization: Bearer {{accessToken}}
+
+### Legacy ADN - Reset all (admin only)
+POST {{baseUrl}}/api/nfse/reset-all
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "confirm": "RESET_ALL_NFSE"
+}
+
+###############################################################################
+# LEGADO /nfse (notas emitidas pelo sistema)
+###############################################################################
+
+### Legacy NFSe - List (system)
+GET {{baseUrl}}/nfse?companyId=REPLACE_ME&limit=20&offset=0
+Authorization: Bearer {{accessToken}}
+

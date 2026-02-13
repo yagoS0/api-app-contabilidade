@@ -8,6 +8,12 @@ function normalizeDoc(value) {
   return normalized || null;
 }
 
+function normalizeName(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
 export function parseXmlMetadata(xmlPlain) {
   if (!xmlPlain) return {};
   const doc = new DOMParser().parseFromString(xmlPlain, "text/xml");
@@ -21,6 +27,12 @@ export function parseXmlMetadata(xmlPlain) {
 
   const cnpjPrestador = getTextByLocalNames(prestadorNode, ["Cnpj", "CNPJ", "CPF"]);
   const cnpjTomador = getTextByLocalNames(tomadorNode, ["Cnpj", "CNPJ", "CPF"]);
+  const prestadorNome =
+    getTextByLocalNames(prestadorNode, ["xNome", "Nome", "RazaoSocial", "xFant"]) ||
+    getTextByLocalNames(doc, ["xNomePrestador", "PrestadorNome"]);
+  const tomadorNome =
+    getTextByLocalNames(tomadorNode, ["xNome", "Nome", "RazaoSocial"]) ||
+    getTextByLocalNames(doc, ["xNomeTomador", "TomadorNome"]);
   const cnpjAutor =
     getTextByLocalNames(doc, ["CNPJAutor", "CNPJ", "CPFAutor", "CPF"]) ||
     getTextByLocalNames(infNfse, ["CNPJAutor", "CNPJ", "CPFAutor", "CPF"]);
@@ -42,6 +54,9 @@ export function parseXmlMetadata(xmlPlain) {
   const situacao =
     getTextByLocalNames(infNfse, ["SituacaoNfse", "Situacao", "xSit"]) ||
     getTextByLocalNames(doc, ["SituacaoNfse", "Situacao", "xSit"]);
+  const cStat =
+    getTextByLocalNames(infNfse, ["cStat"]) ||
+    getTextByLocalNames(doc, ["cStat"]);
 
   const valorServicosNumber = valorServicos ? Number(valorServicos) : null;
   const valorIssNumber = valorIss ? Number(valorIss) : null;
@@ -49,6 +64,8 @@ export function parseXmlMetadata(xmlPlain) {
   return {
     cnpjPrestador: normalizeDoc(cnpjPrestador || cnpjAutor),
     cnpjTomador: normalizeDoc(cnpjTomador),
+    prestadorNome: normalizeName(prestadorNome),
+    tomadorNome: normalizeName(tomadorNome),
     competencia: parseDate(competencia),
     dataEmissao: parseDate(dataEmissao),
     numeroNfse: numeroNfse ? String(numeroNfse) : null,
@@ -58,6 +75,8 @@ export function parseXmlMetadata(xmlPlain) {
         : null,
     valorIss:
       valorIssNumber !== null && !Number.isNaN(valorIssNumber) ? valorIssNumber : null,
-    situacao: situacao ? String(situacao) : null,
+    // Algumas implementações do XML da NFS-e Nacional não trazem SituacaoNfse,
+    // mas trazem cStat (ex.: 100 = autorizada). Guardamos como fallback.
+    situacao: situacao ? String(situacao) : cStat ? String(cStat) : null,
   };
 }

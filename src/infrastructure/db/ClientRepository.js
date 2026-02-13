@@ -138,6 +138,11 @@ function serializeCompany(company) {
     codigoServicoMunicipal: company.codigoServicoMunicipal,
     rpsSerie: company.rpsSerie,
     rpsNumero: company.rpsNumero,
+    certificate: {
+      hasCertificate: Boolean(company.certStorageKey),
+      uploadedAt: dateToIso(company.certUploadedAt),
+      expiresAt: dateToIso(company.certExpiresAt),
+    },
     createdAt: company.createdAt.toISOString(),
     updatedAt: company.updatedAt.toISOString(),
     partners: (company.partners || []).map(serializePartner),
