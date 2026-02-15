@@ -170,18 +170,36 @@ export function createPortalClientsRouter({ ensureAuthorized, log }) {
     try {
       const access = await ensurePortalClientAccess(req, res, clientId);
       if (!access.ok) return;
+      let certCompanyIdResolved = undefined;
+      if (certId) {
+        // Compat: aceita certId como Company.id (legado) ou PortalClient.id.
+        const directCompany = await prisma.company.findUnique({
+          where: { id: certId },
+          select: { id: true },
+        });
+        if (directCompany?.id) {
+          certCompanyIdResolved = directCompany.id;
+        } else {
+          const portal = await prisma.portalClient.findUnique({
+            where: { id: certId },
+            select: { companyId: true },
+          });
+          certCompanyIdResolved = portal?.companyId || certId;
+        }
+      }
+
       await prisma.portalIntegrationSettings.upsert({
         where: { clientId: String(clientId) },
         create: {
           clientId: String(clientId),
           provider: provider || "NFSENACIONAL",
           environment: environment || "PROD",
-          certCompanyId: certId || null,
+          certCompanyId: certCompanyIdResolved || null,
         },
         update: {
           ...(provider ? { provider } : {}),
           ...(environment ? { environment } : {}),
-          ...(certId ? { certCompanyId: certId } : {}),
+          ...(certId ? { certCompanyId: certCompanyIdResolved } : {}),
         },
       });
       return res.json({ ok: true });

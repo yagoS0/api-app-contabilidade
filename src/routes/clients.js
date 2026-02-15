@@ -60,6 +60,9 @@ export function createClientsRouter({
       const created = await ClientRepository.createClientWithCompany(validation.data);
       res.status(201).json(created);
     } catch (err) {
+      if (err.code === "COMPANY_VALIDATION_ERROR") {
+        return res.status(400).json({ error: err.message || "company_validation_error" });
+      }
       if (err.code === "P2002") {
         return res.status(409).json({ error: "client_login_or_email_exists" });
       }

@@ -332,9 +332,19 @@ export class InvoiceSyncEngine {
     const cnpjConsulta = normalizeCnpj(portalClient.cnpj);
     const certCompanyId =
       portalClient.integrationSettings?.certCompanyId || portalClient.companyId || null;
-    const company = certCompanyId
+    let company = certCompanyId
       ? await prisma.company.findUnique({ where: { id: String(certCompanyId) } })
       : null;
+    // Compat: se certCompanyId vier com PortalClient.id por engano, resolve para Company.id.
+    if (!company && certCompanyId) {
+      const mappedPortal = await prisma.portalClient.findUnique({
+        where: { id: String(certCompanyId) },
+        select: { companyId: true },
+      });
+      if (mappedPortal?.companyId) {
+        company = await prisma.company.findUnique({ where: { id: String(mappedPortal.companyId) } });
+      }
+    }
     const certInfo = company ? resolveCompanyCert(company) : null;
 
     if (!certInfo?.pfxBuffer) {
@@ -540,6 +550,8 @@ export class InvoiceSyncEngine {
           lockUntil: null,
         },
       });
+      const errorCode = err?.code || "unknown_error";
+      const errorMessage = err?.message ? String(err.message) : null;
       await prisma.portalInvoiceSyncJob.update({
         where: { id: jobId },
         data: {
@@ -549,7 +561,9 @@ export class InvoiceSyncEngine {
           created: counters.created,
           updated: counters.updated,
           duplicates: counters.duplicates,
-          lastMessage: `Falha no sync (${err?.code || "unknown_error"}).`,
+          lastMessage: errorMessage
+            ? `Falha no sync (${errorCode}): ${errorMessage}`
+            : `Falha no sync (${errorCode}).`,
         },
       });
     }

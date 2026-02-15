@@ -1,6 +1,10 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma.js";
 import { decimalToNumber, dateToIso } from "../../utils/serializers.js";
+import {
+  enderecoToSingleLine,
+  validateAndNormalizeCompanyProfile,
+} from "../../application/company/companyProfile.js";
 
 const clientInclude = {
   companies: {
@@ -13,6 +17,13 @@ const clientInclude = {
 export class ClientRepository {
   static async createClientWithCompany({ client, company }) {
     const partners = company.partners || [];
+    const parsed = validateAndNormalizeCompanyProfile(company);
+    if (!parsed.ok) {
+      const err = new Error(parsed.error);
+      err.code = "COMPANY_VALIDATION_ERROR";
+      throw err;
+    }
+    const normalizedCompany = parsed.data;
     const passwordHash = await bcrypt.hash(client.password, 10);
     const login = client.email.toLowerCase();
     const created = await prisma.client.create({
@@ -26,16 +37,25 @@ export class ClientRepository {
         companies: {
           create: [
             {
-              razaoSocial: company.razaoSocial,
-              cnpj: company.cnpj,
-              nomeFantasia: company.nomeFantasia,
-              atividades: company.atividades || [],
+              razaoSocial: normalizedCompany.razaoSocial,
+              cnpj: normalizedCompany.cnpj,
+              nomeFantasia: normalizedCompany.nomeFantasia,
+              atividades: [
+                normalizedCompany.cnaePrincipal,
+                ...normalizedCompany.cnaesSecundarios,
+              ],
               porte: company.porte,
-              tipoTributario: company.tipoTributario,
-              anexoSimples: company.anexoSimples,
-              endereco: company.endereco,
-              email: company.email,
-              telefone: company.telefone,
+              tipoTributario: normalizedCompany.regimeTributario,
+              regimeTributario: normalizedCompany.regimeTributario,
+              anexoSimples: normalizedCompany.simples?.anexo || null,
+              simplesAnexo: normalizedCompany.simples?.anexo || null,
+              simplesDataOpcao: normalizedCompany.simples?.dataOpcao || null,
+              cnaePrincipal: normalizedCompany.cnaePrincipal,
+              cnaesSecundarios: normalizedCompany.cnaesSecundarios,
+              endereco: enderecoToSingleLine(normalizedCompany.endereco),
+              enderecoJson: normalizedCompany.endereco,
+              email: normalizedCompany.email,
+              telefone: normalizedCompany.telefone,
               capitalSocial: company.capitalSocial,
               dataAbertura: company.dataAbertura,
               quantidadeSocios: company.quantidadeSocios ?? partners.length,
@@ -117,12 +137,31 @@ function serializeClient(client) {
 }
 
 function serializeCompany(company) {
+  const structuredEndereco =
+    company.enderecoJson && typeof company.enderecoJson === "object"
+      ? company.enderecoJson
+      : null;
   return {
     id: company.id,
     clientId: company.clientId,
     razaoSocial: company.razaoSocial,
     cnpj: company.cnpj,
     nomeFantasia: company.nomeFantasia,
+    regimeTributario: company.regimeTributario || company.tipoTributario || null,
+    simples:
+      (company.regimeTributario || company.tipoTributario) === "SIMPLES"
+        ? {
+            anexo: company.simplesAnexo || company.anexoSimples || null,
+            dataOpcao: dateToIso(company.simplesDataOpcao),
+          }
+        : null,
+    cnaePrincipal: company.cnaePrincipal || null,
+    cnaesSecundarios:
+      (company.cnaesSecundarios && company.cnaesSecundarios.length
+        ? company.cnaesSecundarios
+        : (company.atividades || []).filter((a) => a !== company.cnaePrincipal)) || [],
+    endereco: structuredEndereco || null,
+    enderecoRaw: company.endereco || null,
     atividades: company.atividades || [],
     porte: company.porte,
     tipoTributario: company.tipoTributario,

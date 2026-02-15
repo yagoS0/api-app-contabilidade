@@ -179,6 +179,138 @@ Content-Type: application/json
 {}
 
 ###############################################################################
+# NOVO CADASTRO: PORTAL CLIENTE (/client/*)
+###############################################################################
+
+### Client portal - list companies for logged client
+GET {{baseUrl}}/client/companies
+Authorization: Bearer {{accessToken}}
+
+### Client portal - list partners
+GET {{baseUrl}}/client/companies/{{portalClientId}}/partners
+Authorization: Bearer {{accessToken}}
+
+### Client portal - create partner (OWNER/CLIENT_ADMIN)
+POST {{baseUrl}}/client/companies/{{portalClientId}}/partners
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "Socio Teste",
+  "documento": "12345678901",
+  "participacao": 10
+}
+
+### Client portal - list users in company
+GET {{baseUrl}}/client/companies/{{portalClientId}}/users
+Authorization: Bearer {{accessToken}}
+
+### Client portal - invite user (OWNER/CLIENT_ADMIN)
+POST {{baseUrl}}/client/companies/{{portalClientId}}/users/invite
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "email": "novo.usuario@exemplo.com",
+  "name": "Novo Usuario",
+  "role": "CLIENT_USER"
+}
+
+### Client portal - invoices list via new prefix
+GET {{baseUrl}}/client/companies/{{portalClientId}}/invoices?page=1&limit=25
+Authorization: Bearer {{accessToken}}
+
+### Client portal - start sync via new prefix
+POST {{baseUrl}}/client/companies/{{portalClientId}}/invoices/sync/start
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{}
+
+### Client portal - certificate status ok
+GET {{baseUrl}}/client/companies/{{portalClientId}}/certificate
+Authorization: Bearer {{accessToken}}
+
+# multipart example: ok
+# curl -X POST "{{baseUrl}}/client/companies/{{portalClientId}}/certificate" \
+#   -H "authorization: Bearer {{accessToken}}" \
+#   -F "pfx=@/caminho/certificado.pfx" \
+#   -F "password=SEU_SEGREDO"
+
+### Client portal - delete certificate
+DELETE {{baseUrl}}/client/companies/{{portalClientId}}/certificate
+Authorization: Bearer {{accessToken}}
+
+###############################################################################
+# NOVO CADASTRO: PORTAL ESCRITÓRIO (/firm/*)
+###############################################################################
+
+### Firm portal - list company wallet ok
+GET {{baseUrl}}/firm/companies
+Authorization: Bearer {{accessToken}}
+
+### Firm portal - create company + owner link + firm link ok
+POST {{baseUrl}}/firm/companies
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "ownerEmail": "owner.empresa@exemplo.com",
+  "ownerName": "Owner Empresa",
+  "ownerPassword": "SenhaForte123",
+  "company": {
+    "cnpj": "12345678000199",
+    "razaoSocial": "EMPRESA TESTE LTDA",
+    "nomeFantasia": "Empresa Teste",
+    "regimeTributario": "SIMPLES",
+    "simples": {
+      "anexo": "III",
+      "dataOpcao": "2024-01-01"
+    },
+    "cnaePrincipal": "6201-5/01",
+    "cnaesSecundarios": ["6311-9/00"],
+    "endereco": {
+      "rua": "Rua Alto Alegre",
+      "numero": "323",
+      "complemento": "Casa 1",
+      "bairro": "Pechincha",
+      "cidade": "Rio de Janeiro",
+      "uf": "RJ",
+      "cep": "22770001"
+    }
+  }
+}
+
+### Firm portal - grant office access to company
+POST {{baseUrl}}/firm/companies/{{portalClientId}}/access
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "userId": "REPLACE_FIRM_USER_ID",
+  "role": "ACCOUNTANT",
+  "scopes": ["NOTES", "GUIDES"]
+}
+
+### Firm portal - invoices list via new prefix
+GET {{baseUrl}}/firm/companies/{{portalClientId}}/invoices?page=1&limit=25
+Authorization: Bearer {{accessToken}}
+
+### Firm portal - certificate status
+GET {{baseUrl}}/firm/companies/{{portalClientId}}/certificate
+Authorization: Bearer {{accessToken}}
+
+# multipart example:
+# curl -X POST "{{baseUrl}}/firm/companies/{{portalClientId}}/certificate" \
+#   -H "authorization: Bearer {{accessToken}}" \
+#   -F "pfx=@/caminho/certificado.pfx" \
+#   -F "password=SEU_SEGREDO"
+
+### Firm portal - delete certificate
+DELETE {{baseUrl}}/firm/companies/{{portalClientId}}/certificate
+Authorization: Bearer {{accessToken}}
+
+###############################################################################
 # ADMIN (usuários do sistema)
 ###############################################################################
 

@@ -23,12 +23,16 @@ function normalizeRefreshExpiresIn() {
 
 function sanitizeUser(user, overrides = {}) {
   if (!user) return null;
+  const role = user.role || "user";
+  const inferredAccountType =
+    role === "admin" || role === "contador" ? "FIRM" : "CLIENT";
   return {
     id: user.id,
     email: user.email,
     name: user.name || null,
-    role: user.role || "user",
+    role,
     status: user.status || "active",
+    accountType: user.accountType || inferredAccountType,
     source: user.source || "db",
     ...overrides,
   };
@@ -116,6 +120,7 @@ export class AuthService {
         email: client.email,
         name: client.name,
         role: "client",
+        accountType: "CLIENT",
         source: "client",
       },
     };
@@ -130,6 +135,7 @@ export class AuthService {
       email: user.email,
       name: user.name || null,
       role: user.role,
+      accountType: user.accountType || "CLIENT",
       source: user.source || "db",
     };
     const expiresIn = normalizeExpiresIn();
@@ -146,6 +152,7 @@ export class AuthService {
       email: client.email,
       name: client.name || null,
       role: client.role || "client",
+      accountType: client.accountType || "CLIENT",
       source: client.source || "client",
       type: "client",
     };
@@ -163,6 +170,7 @@ export class AuthService {
       email: client.email,
       name: client.name || null,
       role: client.role || "client",
+      accountType: client.accountType || "CLIENT",
       source: client.source || "client",
       type: "client",
       tokenType: "refresh",
@@ -185,6 +193,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      accountType: user.accountType || "CLIENT",
       source: user.source || "db",
       tokenType: "refresh",
     };
@@ -240,6 +249,7 @@ export class AuthService {
         name: client.name,
         role: "client",
         status: "active",
+        accountType: "CLIENT",
         source: "client",
       };
     }
@@ -250,6 +260,11 @@ export class AuthService {
         name: payload.name || payload.email || payload.sub,
         role: payload.role || "user",
         status: "active",
+        accountType:
+          payload.accountType ||
+          (payload.role === "admin" || payload.role === "contador"
+            ? "FIRM"
+            : "CLIENT"),
         source: "env",
       });
     }

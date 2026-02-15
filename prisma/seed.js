@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 const ADMIN_NAME = process.env.ADMIN_NAME || "Administrador";
+const ADMIN_ACCOUNT_TYPE = process.env.ADMIN_ACCOUNT_TYPE || "FIRM";
 
 async function main() {
   if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
@@ -30,6 +31,7 @@ async function main() {
         passwordHash,
         role: "admin",
         status: "active",
+        accountType: ADMIN_ACCOUNT_TYPE,
       },
     });
   } else {
@@ -41,6 +43,7 @@ async function main() {
         passwordHash,
         role: "admin",
         status: "active",
+        accountType: ADMIN_ACCOUNT_TYPE,
       },
     });
   }
