@@ -173,7 +173,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
         search,
       });
 
-      const [items, total, sync] = await prisma.$transaction([
+      const [items, total, totals, sync] = await prisma.$transaction([
         prisma.portalInvoice.findMany({
           where,
           orderBy: { [sortKey]: sortOrder },
@@ -181,14 +181,26 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
           take,
         }),
         prisma.portalInvoice.count({ where }),
+        prisma.portalInvoice.aggregate({
+          where,
+          _sum: { total: true },
+        }),
         prisma.portalSyncState.findUnique({ where: { clientId: String(clientId) } }),
       ]);
+
+      const sumFiltered = decimalToNumber(totals?._sum?.total);
+      const pageAmount = items.reduce((acc, item) => acc + (decimalToNumber(item.total) || 0), 0);
 
       return res.json({
         data: items.map(serializeInvoice),
         page: pageNum,
         limit: take,
         total,
+        summary: {
+          totalInvoices: total,
+          totalAmount: sumFiltered || 0,
+          pageAmount,
+        },
         sync: sync
           ? {
               lastSyncAt: dateToIso(sync.lastSyncAt),

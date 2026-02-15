@@ -61,6 +61,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
           user: {
             id: result.user.id,
             role: result.user.role,
+            accountType: result.user.accountType || "CLIENT",
             defaultClientId: null,
             name: result.user.name || null,
           },
@@ -102,6 +103,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
         user: {
           id: clientResult.client.id,
           role: "cliente",
+          accountType: "CLIENT",
           defaultClientId: defaultPortal?.id || null,
           name: clientResult.client.name || null,
         },
@@ -168,6 +170,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     res.json({
       id: u.id,
       role: u.role === "client" ? "cliente" : u.role,
+      accountType: u.accountType || (u.role === "admin" || u.role === "contador" ? "FIRM" : "CLIENT"),
       defaultClientId,
       name: u.name || null,
     });

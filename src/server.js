@@ -13,6 +13,8 @@ import { createAdminRouter } from "./routes/admin.js";
 import { createPortalClientsRouter } from "./routes/portalClients.js";
 import { createPortalInvoicesRouter } from "./routes/portalInvoices.js";
 import { createPortalSyncRouter } from "./routes/portalSync.js";
+import { createClientPortalRouter } from "./routes/client/index.js";
+import { createFirmPortalRouter } from "./routes/firm/index.js";
 import { createRunRouter } from "./routes/run.js";
 import { createStatusRouter } from "./routes/status.js";
 import { runState } from "./routes/runState.js";
@@ -39,6 +41,7 @@ const USER_STATUSES = ["pending", "active", "rejected"];
 const USER_ROLES = ["user", "admin", "contador"];
 
 const ensureAuthorized = createEnsureAuthorized({ AuthService, API_KEYS, log });
+app.locals.ensureAuthorized = ensureAuthorized;
 
 const authRouter = createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized });
 const adminRouter = createAdminRouter({
@@ -52,6 +55,8 @@ const adminRouter = createAdminRouter({
 const portalClientsRouter = createPortalClientsRouter({ ensureAuthorized, log });
 const portalInvoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log });
 const portalSyncRouter = createPortalSyncRouter({ ensureAuthorized, log });
+const clientPortalRouter = createClientPortalRouter({ ensureAuthorized, log });
+const firmPortalRouter = createFirmPortalRouter({ ensureAuthorized, log });
 const { router: runRouter, executeRun } = createRunRouter({
   ensureAuthorized,
   RunLogStore,
@@ -83,6 +88,8 @@ app.use("/admin", adminRouter);
 app.use("/clients", portalClientsRouter);
 app.use("/clients/:clientId/invoices/sync", portalSyncRouter);
 app.use("/clients/:clientId/invoices", portalInvoicesRouter);
+app.use("/client", clientPortalRouter);
+app.use("/firm", firmPortalRouter);
 app.use("/invoices", invoicesRouter);
 app.use("/nfse", nfseRouter);
 app.use("/api", adnRouter);

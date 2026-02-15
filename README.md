@@ -105,9 +105,9 @@ Requisitos: Node 18+
 
 Endpoints HTTP
 - `POST /auth/signup`: recebe `name`, `email`, `password` e cria um usuário com `status=pending` (aguarda aprovação do admin).
-- `POST /auth/login`: login unificado (usuário do sistema **ou** cliente). Entrada: `{ "email|username|identifier": "...", "password": "..." }`. Retorna `{ accessToken, refreshToken, user: { id, role, defaultClientId, name } }`.
+- `POST /auth/login`: login unificado (usuário do sistema **ou** cliente). Entrada: `{ "email|username|identifier": "...", "password": "..." }`. Retorna `{ accessToken, refreshToken, user: { id, role, accountType, defaultClientId, name } }`.
 - `POST /auth/refresh`: entrada `{ refreshToken }`, retorna `{ accessToken, refreshToken }`.
-- `GET /auth/me`: retorna `{ id, role, defaultClientId, name }` (exige `Authorization: Bearer`).
+- `GET /auth/me`: retorna `{ id, role, accountType, defaultClientId, name }` (exige `Authorization: Bearer`).
 - `GET /healthz`: healthcheck.
 - `GET /status`: status do último envio + log básico (requer `Authorization: Bearer` ou `x-api-key`).
 - `POST /run`: dispara o envio imediato (protegido por JWT ou API key).
@@ -127,6 +127,21 @@ Endpoints HTTP
 - `GET /clients/:clientId/invoices/sync/status/:jobId`: status do job.
 - `GET /clients/:clientId/invoices/sync/summary`: resumo do estado de sync.
 - `POST /clients/:clientId/invoices/sync/:invoiceId/sync-status`: recalcula status (MVP: baseado nos eventos já gravados).
+- `GET /client/companies`: lista empresas vinculadas ao usuário de conta `CLIENT` (retorna `myRole`).
+- `GET /client/companies/:companyId/partners`: lista sócios da empresa.
+- `POST /client/companies/:companyId/partners`: cria sócio (somente `OWNER`/`CLIENT_ADMIN`).
+- `PATCH /client/companies/:companyId/partners/:partnerId`: atualiza sócio (somente `OWNER`/`CLIENT_ADMIN`).
+- `DELETE /client/companies/:companyId/partners/:partnerId`: remove sócio (somente `OWNER`/`CLIENT_ADMIN`).
+- `GET /client/companies/:companyId/users`: lista usuários do cliente vinculados à empresa.
+- `POST /client/companies/:companyId/users/invite`: cria convite de usuário (somente `OWNER`/`CLIENT_ADMIN`, status `INVITED`).
+- `PATCH /client/companies/:companyId/users/:userId`: atualiza vínculo/role/status de usuário da empresa.
+- `DELETE /client/companies/:companyId/users/:userId`: remove vínculo (status `REMOVED`).
+- `GET /client/companies/:companyId/invoices*` e `POST /client/companies/:companyId/invoices/sync/*`: mesmas funcionalidades de notas/sync sob prefixo do portal cliente.
+- `GET /firm/companies`: lista carteira do escritório (conta `FIRM`).
+- `POST /firm/companies`: cadastra empresa (cria vínculos `OWNER` para cliente e `FIRM_ADMIN` para quem cadastrou).
+- `POST /firm/companies/:companyId/access`: concede acesso do escritório à empresa (`FIRM_ADMIN`).
+- `DELETE /firm/companies/:companyId/access/:userId`: remove acesso do escritório.
+- `GET /firm/companies/:companyId/invoices*` e `POST /firm/companies/:companyId/invoices/sync/*`: mesmas funcionalidades de notas/sync sob prefixo do portal contador.
 - `POST /nfse/issue`: emite NFS-e padrão nacional (requere `NFSE_CERT_PFX_PATH`, `NFSE_CERT_PFX_PASSWORD`, `NFSE_BASE_URL` e dados de RPS/serviço no cadastro da empresa). Em caso de erro, devolve `status: "rejected"` com motivo. O recurso chamado é configurável via `NFSE_PATH`.
 - `GET /nfse`: lista NFS-e do banco com filtros e paginação; opcionalmente sincroniza com o provedor (`sync=1`) usando `idDps`, `chaveAcesso` ou consulta por período (`from`/`to` com XML via `NFSE_CONSULT_PATH`).
 - `POST /nfse/consulta`: mesma consulta do `GET /nfse`, porém aceita JSON no body (útil para enviar período e filtros).
@@ -138,6 +153,18 @@ Endpoints HTTP
 - `PATCH /admin/users/:id/approve`: aprova usuário pendente e, opcionalmente, define `role`.
 - `PATCH /admin/users/:id/reject`: marca usuário como rejeitado.
 - `DELETE /admin/users/:id`: exclui um usuário.
+
+Modelo de acesso (cadastro por portal):
+- Usuário único (`User`) com `accountType`: `CLIENT` ou `FIRM`.
+- Vínculo cliente x empresa: `CompanyClientUser` (roles: `OWNER`, `CLIENT_ADMIN`, `CLIENT_USER`).
+- Vínculo escritório x empresa: `CompanyFirmAccess` (roles: `FIRM_ADMIN`, `ACCOUNTANT`, `STAFF`, com `scopes` opcionais).
+- `admin` segue com bypass global.
+
+Validação de estrutura da Company (cadastro):
+- Campo obrigatório: `regimeTributario` com `SIMPLES | LUCRO_PRESUMIDO | LUCRO_REAL` (aceita alias `PRESUMIDO`, normalizado para `LUCRO_PRESUMIDO`).
+- Se `regimeTributario = SIMPLES`, `simples.anexo` é obrigatório (`I | II | III | IV | V`).
+- Se regime for diferente de `SIMPLES`, não é permitido enviar `simples.anexo`.
+- Campos mínimos obrigatórios para cadastro: `cnpj`, `razaoSocial`, `regimeTributario`, `cnaePrincipal`, `endereco.{rua,numero,bairro,cidade,uf,cep}`.
 
 Fluxo sugerido:
 ```bash
