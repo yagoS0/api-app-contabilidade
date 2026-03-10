@@ -1,0 +1,180 @@
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.header {
+  margin-bottom: 16px;
+}
+
+.panel {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.inline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.success {
+  border-color: #0ea5e9;
+}
+
+.controls {
+  display: grid;
+  gap: 12px;
+}
+
+.controls label {
+  font-size: 14px;
+  color: #334155;
+}
+
+.controls select,
+.controls button {
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  padding: 0 12px;
+}
+
+.controls button {
+  background: #0f172a;
+  color: #ffffff;
+  border: 0;
+  cursor: pointer;
+}
+
+.secondary {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}
+
+.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.controls button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.form-grid.two-col {
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+}
+
+.form-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.form-grid input,
+.form-grid select {
+  height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
+.form-grid .full {
+  grid-column: 1 / -1;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.company-tile {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.company-tile h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.company-tile p {
+  margin: 0;
+  color: #475569;
+}
+
+.company-tile button,
+.panel button {
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #0f172a;
+  color: #fff;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.small {
+  height: 32px;
+  font-size: 12px;
+}
+
+.company-card {
+  margin-top: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 10px;
+  font-size: 14px;
+}
+
+.error {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.success-text {
+  color: #0f766e;
+  font-weight: 600;
+}
+
+.hint {
+  color: #64748b;
+  font-size: 13px;
+}

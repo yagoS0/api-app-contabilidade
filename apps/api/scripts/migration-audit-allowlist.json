@@ -1,0 +1,4 @@
+[
+  "prisma/migrations/20251221211346_add_users/migration.sql",
+  "prisma/migrations/20260208193000_adn_syncstate_per_cnpj/migration.sql"
+]

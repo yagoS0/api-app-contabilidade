@@ -1,0 +1,41 @@
+name: api-app-contabilidade
+region: nyc
+services:
+  - name: api
+    image:
+      registry_type: DOCR
+      registry: contabilidade
+      repository: contabilidade-api
+      tag: latest
+    http_port: 3000
+    health_check:
+      http_path: /readyz
+      initial_delay_seconds: 20
+      period_seconds: 15
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 6
+    envs:
+      - key: NODE_ENV
+        scope: RUN_TIME
+        value: production
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+        value: ${DATABASE_URL}
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: ${JWT_SECRET}
+      - key: API_KEYS
+        scope: RUN_TIME
+        type: SECRET
+        value: ${API_KEYS}
+      - key: GOOGLE_APPLICATION_CREDENTIALS_JSON
+        scope: RUN_TIME
+        type: SECRET
+        value: ${GOOGLE_APPLICATION_CREDENTIALS_JSON}
+      - key: GUIDE_PARSER_URL
+        scope: RUN_TIME
+        value: ${GUIDE_PARSER_URL}
+
