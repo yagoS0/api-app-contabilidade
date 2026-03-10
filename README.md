@@ -3,6 +3,11 @@ enviar-guias
 
 Automação para envio de guias fiscais via Google Drive + e-mail.
 
+Monorepo (npm workspaces):
+- `apps/api`: backend (Express + Prisma + workers).
+- `apps/web`: front-end (Vite + React) com modo mock via Faker.
+- `packages/shared`: espaço para contratos/itens compartilhados.
+
 Sumário
 - Visão geral
 - Arquitetura
@@ -19,34 +24,31 @@ Visão geral
 - Após o envio bem-sucedido cada arquivo recebe `belgen_processed=1`, evitando reenvio futuro. Há logs persistidos em `data/`.
 
 Arquitetura
-- `src/application/SendGuides.js`: orquestra o fluxo de envio.
-- `src/server.js`: expõe endpoints HTTP + cron opcional para disparar `SendGuides`.
-- `src/server-send-only.js`: UI simples com botão único “Enviar agora”.
-- `src/infrastructure/drive/DriveService.js`: utilitários de Google Drive.
-- `src/infrastructure/sheets/SheetService.js`: leitura da planilha de clientes.
-- `src/infrastructure/mail/EmailService.js`: envio por Gmail API (delegação) ou SMTP.
-- `src/infrastructure/status/RunLogStore.js`: persiste status/entregas em `data/`.
-- `src/infrastructure/google/GoogleClients.js`: inicializa clientes Google (Drive/Sheets).
-- `src/config.js`: centraliza variáveis de ambiente e logger.
+- `apps/api/src/application/SendGuides.js`: orquestra o fluxo de envio.
+- `apps/api/src/server.js`: expõe endpoints HTTP + cron opcional para disparar `SendGuides`.
+- `apps/api/src/infrastructure/drive/DriveService.js`: utilitários de Google Drive.
+- `apps/api/src/infrastructure/sheets/SheetService.js`: leitura da planilha de clientes.
+- `apps/api/src/infrastructure/mail/EmailService.js`: envio por Gmail API (delegação) ou SMTP.
+- `apps/api/src/infrastructure/status/RunLogStore.js`: persiste status/entregas em `data/`.
+- `apps/api/src/infrastructure/google/GoogleClients.js`: inicializa clientes Google (Drive/Sheets).
+- `apps/api/src/config.js`: centraliza variáveis de ambiente e logger.
+- `apps/web/src`: interface para operação e testes de fluxo.
 
 Estrutura de pastas
 ```
 .
+├─ apps/
+│  ├─ api/
+│  │  ├─ prisma/
+│  │  ├─ scripts/
+│  │  └─ src/
+│  └─ web/
+│     └─ src/
 ├─ docs/
 │  └─ env.example
 ├─ infra/
-├─ scripts/
-├─ src/
-│  ├─ application/SendGuides.js
-│  ├─ config.js
-│  ├─ infrastructure/
-│  │  ├─ drive/DriveService.js
-│  │  ├─ google/GoogleClients.js
-│  │  ├─ mail/EmailService.js
-│  │  ├─ sheets/SheetService.js
-│  │  └─ status/RunLogStore.js
-│  ├─ server-send-only.js
-│  └─ server.js
+├─ packages/
+│  └─ shared/
 ├─ package.json
 └─ README.md
 ```
@@ -65,19 +67,19 @@ Configuração (.env)
    - Opções extras: `CRON_SCHEDULE`, `TARGET_MONTH`, `FORCE_SEND`, `LOG_LEVEL`, `TZ`, `HOST`, `PORT`.
    - Em produção, mantenha `GOOGLE_APPLICATION_CREDENTIALS`, `API_KEYS` e `DATABASE_URL` em um Secrets Manager/App Runner Secret e apenas exporte as variáveis em runtime.
 
-Banco de dados (PostgreSQL)
+Banco de dados (PostgreSQL) - API
 - Instale/Configure um PostgreSQL (local, RDS, Aurora, etc.).
 - Crie o banco desejado e ajuste `DATABASE_URL`.
 - Instale dependências e gere o cliente Prisma:
   ```bash
   npm install
-  npx prisma migrate dev --name init-clientes
+  npx prisma migrate dev --schema apps/api/prisma/schema.prisma --name init-clientes
   npm run prisma:generate
   ```
-- As tabelas `Client`, `Company` e `Partner` serão criadas conforme `prisma/schema.prisma`.
+- As tabelas `Client`, `Company` e `Partner` serão criadas conforme `apps/api/prisma/schema.prisma`.
 - Para o fluxo de usuários/admin execute a nova migração e popule o admin inicial:
   ```bash
-  npx prisma migrate dev --name add-users
+  npx prisma migrate dev --schema apps/api/prisma/schema.prisma --name add-users
   npm run prisma:seed   # usa ADMIN_EMAIL/ADMIN_PASSWORD definidos no .env
   ```
 
@@ -85,7 +87,7 @@ Banco de dados (PostgreSQL)
 O portal usa tabelas novas (`PortalClient`, `PortalInvoice`, etc.). Para criar essas tabelas em um banco já existente, rode:
 
 ```bash
-npx prisma db execute --schema prisma/schema.prisma --file prisma/migrations/20260211000100_add_portal_models/migration.sql
+npx prisma db execute --schema apps/api/prisma/schema.prisma --file apps/api/prisma/migrations/20260211000100_add_portal_models/migration.sql
 ```
 
 Depois, para migrar dados legados (`Company`, `ServiceInvoice`, `AdnDocument`) para o novo modelo:
@@ -97,11 +99,16 @@ npm run portal:migrate
 Como executar
 Requisitos: Node 18+
 1. Instale dependências: `npm install`
-2. Executar o servidor HTTP com UI básica:
-   - `npm run serve`
-   - Acesse http://localhost:3000 e utilize o botão “Enviar agora”.
-3. Executar somente o fluxo de envio (CLI/headless):
-   - `npm start`
+2. Executar backend:
+   - `npm run dev:api`
+3. Executar front-end (mock por padrão, sem backend):
+   - `npm run dev:web`
+   - Copie `apps/web/.env.example` para `apps/web/.env` e mantenha `VITE_API_MODE=mock` para trabalhar offline.
+   - Para usar API real, ajuste `VITE_API_MODE=real`, `VITE_API_BASE_URL` e `VITE_API_TOKEN`.
+4. Executar workers:
+   - `npm run worker:guides`
+   - `npm run worker:guide-emails`
+   - `npm run worker:guide-emails-scheduled`
 
 Endpoints HTTP
 - `POST /auth/signup`: recebe `name`, `email`, `password` e cria um usuário com `status=pending` (aguarda aprovação do admin).
@@ -109,8 +116,9 @@ Endpoints HTTP
 - `POST /auth/refresh`: entrada `{ refreshToken }`, retorna `{ accessToken, refreshToken }`.
 - `GET /auth/me`: retorna `{ id, role, accountType, defaultClientId, name }` (exige `Authorization: Bearer`).
 - `GET /healthz`: healthcheck.
-- `GET /status`: status do último envio + log básico (requer `Authorization: Bearer` ou `x-api-key`).
-- `POST /run`: dispara o envio imediato (protegido por JWT ou API key).
+- `GET /readyz`: readiness com checagem de conectividade com banco.
+- `GET /status`: status do último envio + log básico (requer `Authorization: Bearer`).
+- `POST /run`: dispara o envio imediato (requer `Authorization: Bearer`).
 - `GET /clients`: lista empresas do portal (paginação `?page=&limit=` e `?search=`). Retorna também `sync.lastSyncAt/state/stale`.
 - `GET /clients/:clientId`: detalhe da empresa do portal.
 - `GET /clients/:clientId/integration-settings`: provider/environment + `certConfigured`.
@@ -137,11 +145,25 @@ Endpoints HTTP
 - `PATCH /client/companies/:companyId/users/:userId`: atualiza vínculo/role/status de usuário da empresa.
 - `DELETE /client/companies/:companyId/users/:userId`: remove vínculo (status `REMOVED`).
 - `GET /client/companies/:companyId/invoices*` e `POST /client/companies/:companyId/invoices/sync/*`: mesmas funcionalidades de notas/sync sob prefixo do portal cliente.
+- `GET /client/companies/:companyId/guides`: lista guias da empresa do cliente (filtros: `competencia`, `status`, `page`, `limit`).
+- `GET /client/companies/:companyId/guides/:guideId/download`: retorna URL assinada (ou `file://` em ambiente local).
 - `GET /firm/companies`: lista carteira do escritório (conta `FIRM`).
 - `POST /firm/companies`: cadastra empresa (cria vínculos `OWNER` para cliente e `FIRM_ADMIN` para quem cadastrou).
 - `POST /firm/companies/:companyId/access`: concede acesso do escritório à empresa (`FIRM_ADMIN`).
 - `DELETE /firm/companies/:companyId/access/:userId`: remove acesso do escritório.
 - `GET /firm/companies/:companyId/invoices*` e `POST /firm/companies/:companyId/invoices/sync/*`: mesmas funcionalidades de notas/sync sob prefixo do portal contador.
+- `GET /firm/companies/:companyId/guides`: lista guias por empresa no portal contador.
+- `GET /firm/companies/:companyId/guides/:guideId/download`: download por URL assinada.
+- `GET /firm/guides/review`: fila de revisão manual (`NEEDS_REVIEW` por padrão).
+- `POST /firm/guides/:guideId/manual-assign`: atribui empresa/competência/tipo e finaliza processamento da guia.
+- `POST /firm/guides/:guideId/reprocess`: reexecuta parser do PDF da guia para atualizar extração.
+- `POST /firm/guides/ingestion/run`: dispara ingestão imediata da inbox (equivalente ao botão “Atualizar guias” no front).
+- `GET /firm/guides/settings`: retorna configuração atual usada pelo worker (`guideDrive*` e `guideParserUrl`).
+- `PATCH /firm/guides/settings`: permite o front salvar/atualizar configuração de Drive, parser e cron (`guideScheduleCron`) (admin/contador).
+- `POST /firm/guides/emails/send-pending`: processa guias com `emailStatus` pendente/erro elegível e envia **PDF em anexo** (não link).
+- `POST /firm/guides/emails/send-selected`: reenvia imediatamente apenas as `guideIds` informadas (retorno consolidado por item).
+- `GET /firm/guides/pending-report`: relatório global de pendências de e-mail (empresa + guia + tentativas + último erro).
+- `POST /firm/guides/:guideId/resend-email`: recoloca a guia em `PENDING` para novo envio.
 - `POST /nfse/issue`: emite NFS-e padrão nacional (requere `NFSE_CERT_PFX_PATH`, `NFSE_CERT_PFX_PASSWORD`, `NFSE_BASE_URL` e dados de RPS/serviço no cadastro da empresa). Em caso de erro, devolve `status: "rejected"` com motivo. O recurso chamado é configurável via `NFSE_PATH`.
 - `GET /nfse`: lista NFS-e do banco com filtros e paginação; opcionalmente sincroniza com o provedor (`sync=1`) usando `idDps`, `chaveAcesso` ou consulta por período (`from`/`to` com XML via `NFSE_CONSULT_PATH`).
 - `POST /nfse/consulta`: mesma consulta do `GET /nfse`, porém aceita JSON no body (útil para enviar período e filtros).
@@ -162,9 +184,16 @@ Modelo de acesso (cadastro por portal):
 
 Validação de estrutura da Company (cadastro):
 - Campo obrigatório: `regimeTributario` com `SIMPLES | LUCRO_PRESUMIDO | LUCRO_REAL` (aceita alias `PRESUMIDO`, normalizado para `LUCRO_PRESUMIDO`).
-- Se `regimeTributario = SIMPLES`, `simples.anexo` é obrigatório (`I | II | III | IV | V`).
+- Se `regimeTributario = SIMPLES`, `simples.anexo` é opcional; quando informado, deve ser `I | II | III | IV | V`.
 - Se regime for diferente de `SIMPLES`, não é permitido enviar `simples.anexo`.
 - Campos mínimos obrigatórios para cadastro: `cnpj`, `razaoSocial`, `regimeTributario`, `cnaePrincipal`, `endereco.{rua,numero,bairro,cidade,uf,cep}`.
+
+Ingestão de guias (Drive + parser Python + storage):
+- Variáveis de Drive: `GUIDE_DRIVE_INBOX_ID` (caixa de entrada), `GUIDE_DRIVE_OUTPUT_ROOT_ID` (pasta de saída; fallback: `GUIDE_DRIVE_ROOT_ID`). Subpastas fixas (Guias, _REVISAR, _ERRO, _PROCESSANDO, _DUPLICADOS) são criadas automaticamente sob a pasta de saída.
+- Parser Python: `GUIDE_PARSER_URL` (espera `POST /parse-guide` e `GET /health`).
+- Worker: `GUIDE_WORKER_ENABLED=1`, `GUIDE_WORKER_INTERVAL_SECONDS=120`.
+- Storage: `GUIDE_STORAGE_PROVIDER=LOCAL|S3|R2`, `GUIDE_STORAGE_BUCKET`, `GUIDE_STORAGE_REGION`, `GUIDE_STORAGE_ENDPOINT`, `GUIDE_STORAGE_ACCESS_KEY_ID`, `GUIDE_STORAGE_SECRET_ACCESS_KEY`.
+- Script de execução: `npm run worker:guides:once` (1 ciclo) e `npm run worker:guides` (loop).
 
 Fluxo sugerido:
 ```bash
@@ -182,7 +211,7 @@ curl https://seu-host/admin/users?status=pending \
   -H "authorization: Bearer <token-admin>"
 ```
 
-> O cabeçalho `x-api-key` permanece válido como fallback para integrações legadas ou scripts internos.
+> O fallback por `x-api-key` segue disponível apenas onde explicitamente permitido no endpoint; rotas operacionais sensíveis (`/run`, `/status`) exigem JWT.
 
 ### Fluxo de aprovação de usuários
 1. O interessado chama `POST /auth/signup` e recebe `201 { status: "pending" }`.
@@ -242,4 +271,7 @@ Troubleshooting
 - IDs incorretos ou falta de permissão: verifique se a Service Account recebeu “Editor” na pasta e na planilha.
 - “invalid_grant / Invalid JWT Signature”: confira o JSON das credenciais (formatação da chave privada, caminho correto e serviço ativo).
 - Nenhum PDF encontrado: confirme o nome da pasta `MM-AAAA` dentro do cliente ou use `TARGET_MONTH` para forçar uma competência específica.
+
+Deploy na DigitalOcean
+- Guia detalhado de CI/CD, banco, secrets, migração e rollback: `docs/deploy-digitalocean.md`.
 

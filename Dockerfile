@@ -5,11 +5,14 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+COPY apps/api/package.json ./apps/api/package.json
+RUN npm ci --workspace=@contabilidade/api
 
-COPY src ./src
+COPY apps/api ./apps/api
+
+WORKDIR /app/apps/api
 
 EXPOSE 3000
-CMD ["node", "src/server.js"]
+CMD ["npm", "run", "start:prod"]
 
 

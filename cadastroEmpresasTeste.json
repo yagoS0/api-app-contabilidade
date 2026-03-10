@@ -1,0 +1,81 @@
+{
+  "ownerEmail": "yagoas120@gmail.com",
+  "ownerName": "LIZ BARRETO DE SOUSA",
+  "ownerPassword": "123456789",
+  "company": {
+    "cnpj": "24352609000198",
+    "razaoSocial": "LENTE - MEDICAL MARKETING LTDA",
+    "nomeFantasia": "LENTE",
+    "regimeTributario": "SIMPLES",
+    "simples": {
+      "anexo": "III",
+      "dataOpcao": "2024-01-01"
+    },
+    "cnaePrincipal": "73.19-0-03 - Marketing direto",
+    "cnaesSecundarios": ["63.19-4-00 - Portais, provedores de conteúdo e outros serviços de informação na internet"],
+    "endereco": {
+      "rua": "Rua Alto Alegre",
+      "numero": "323",
+      "complemento": "Casa 1",
+      "bairro": "Pechincha",
+      "cidade": "Rio de Janeiro",
+      "uf": "RJ",
+      "cep": "22770001"
+    }
+  }
+},
+{
+  "ownerEmail": "contabilidade@belgencontabilidade.com.br",
+  "ownerName": "ERISANGELA LACERDA PEREIRA",
+  "ownerPassword": "123456789",
+  "company": {
+    "cnpj": "48684291000100",
+    "razaoSocial": "ERISANGELA LACERDA PEREIRA",
+    "nomeFantasia": "ERISANGELA LACERDA PEREIRA",
+    "regimeTributario": "SIMPLES",
+    "simples": {
+      "anexo": "IV",
+      "dataOpcao": "2024-01-01"
+    },
+    "cnaePrincipal": "782.19-9-99 - Preparação de documentos e serviços especializados de apoio administrativo não especificados
+anteriormente",
+    "cnaesSecundarios": ["43.99-1-99 - Serviços especializados para construção não especificados anteriormente
+71.12-0-00 - Serviços de engenharia"],
+    "endereco": {
+      "rua": "AV FREI AFFONSO JORGE BRAGA",
+      "numero": "700",
+      "complemento": "APT 101",
+      "bairro": "PRAIA DO SACO",
+      "cidade": "MANGARATIBA",
+      "uf": "RJ",
+      "cep": "23860000"
+    }
+  }
+}
+
+{
+  "ownerEmail": "belgen.contabilidade@gmail.com",
+  "ownerName": "ELIETE MELLO RODRIGUES DA SILVA",
+  "ownerPassword": "123456789",
+  "company": {
+    "cnpj": "39254243000191",
+    "razaoSocial": "ARAUJO E SILVA 2 ADMINISTRACAO DE EMPRESAS LTDA",
+    "nomeFantasia": "ARAUJO E SILVA SERVICOS DE ESCRITORIO",
+    "regimeTributario": "SIMPLES",
+    "simples": {
+      "anexo": "III",
+      "dataOpcao": "2024-01-01"
+    },
+    "cnaePrincipal": "82.11-3-00 - Serviços combinados de escritório e apoio administrativo",
+    "cnaesSecundarios": [],
+    "endereco": {
+      "rua": "EST DE JACAREPAGUA",
+      "numero": "7655",
+      "complemento": "SAL 220",
+      "bairro": "FREGUESIA (JACAREPAGUA)",
+      "cidade": "RIO DE JANEIRO",
+      "uf": "RJ",
+      "cep": "22755155"
+    }
+  }
+}

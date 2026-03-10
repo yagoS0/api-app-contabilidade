@@ -1,0 +1,59 @@
+name: Deploy DigitalOcean
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      REGISTRY: registry.digitalocean.com
+      REGISTRY_NAME: ${{ secrets.DO_REGISTRY_NAME }}
+      IMAGE_NAME: contabilidade-api
+      DO_APP_ID: ${{ secrets.DO_APP_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web
+        run: npm run build -w @contabilidade/web
+
+      - name: Migration status gate
+        if: ${{ secrets.DATABASE_URL != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run prisma:migrate:status -w @contabilidade/api
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Login to DOCR
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Build and push API image
+        run: |
+          IMAGE_URI_SHA="$REGISTRY/$REGISTRY_NAME/$IMAGE_NAME:${GITHUB_SHA}"
+          IMAGE_URI_LATEST="$REGISTRY/$REGISTRY_NAME/$IMAGE_NAME:latest"
+          docker build -t "$IMAGE_URI_SHA" -t "$IMAGE_URI_LATEST" .
+          docker push "$IMAGE_URI_SHA"
+          docker push "$IMAGE_URI_LATEST"
+
+      - name: Update DigitalOcean App
+        run: doctl apps update "$DO_APP_ID" --spec .do/app.template.yaml
+
