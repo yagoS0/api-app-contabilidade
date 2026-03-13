@@ -3,6 +3,7 @@ import { prisma } from "../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../application/guides/GuideStorageService.js";
 import { EmailService } from "../infrastructure/mail/EmailService.js";
 import { releaseGuideLock, tryAcquireGuideLock } from "../application/guides/GuideLockService.js";
+import { resolveCompanyNotificationEmail } from "../application/guides/GuideScheduledEmailService.js";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -34,16 +35,8 @@ async function releaseLock() {
 
 async function resolveRecipientEmail(guide) {
   if (!guide?.portalClientId) return null;
-  const portal = await prisma.portalClient.findUnique({
-    where: { id: guide.portalClientId },
-    select: { companyId: true },
-  });
-  if (!portal?.companyId) return null;
-  const company = await prisma.company.findUnique({
-    where: { id: portal.companyId },
-    select: { email: true },
-  });
-  return company?.email ? String(company.email).trim() : null;
+  const email = await resolveCompanyNotificationEmail(guide.portalClientId);
+  return email ? String(email).trim() : null;
 }
 
 async function processOneGuide({ guide, emailService, storageService }) {

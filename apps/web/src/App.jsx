@@ -1,6 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { createApiClient } from "./api/client";
 import "./App.css";
+import { AppShell } from "./components/layout/AppShell";
+import { Feedback } from "./components/ui/Feedback";
+import { Button } from "./components/ui/Button";
+import { CompaniesHomePage } from "./features/companies/pages/CompaniesHomePage";
+import { CompanyFormPage } from "./features/companies/pages/CompanyFormPage";
+import { CompanyDetailPage } from "./features/companies/pages/CompanyDetailPage";
+import { GuideSettingsPage } from "./features/guides/pages/GuideSettingsPage";
+import { useCompanies } from "./features/companies/hooks/useCompanies";
+import { useCompanyGuides } from "./features/companies/hooks/useCompanyGuides";
+import {
+  getInitialCompanyFormState,
+  mapCompanyToEditForm,
+  useCompanyForm,
+} from "./features/companies/hooks/useCompanyForm";
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
@@ -41,75 +55,30 @@ function timeValueToDailyCron(timeValue) {
   return `${minute} ${hour} * * *`;
 }
 
-function getInitialFormState() {
-  return {
-    ownerName: "",
-    ownerEmail: "",
-    ownerPassword: "",
-    razaoSocial: "",
-    nomeFantasia: "",
-    cnpj: "",
-    email: "",
-    telefone: "",
-    regimeTributario: "SIMPLES",
-    cnaePrincipal: "",
-    enderecoRua: "",
-    enderecoNumero: "",
-    enderecoBairro: "",
-    enderecoCidade: "",
-    enderecoUf: "",
-    enderecoCep: "",
-    enderecoComplemento: "",
-  };
-}
-
-function getEditFormStateFromCompany(company) {
-  const legacy = company?.legacyCompany && typeof company.legacyCompany === "object" ? company.legacyCompany : {};
-  const endereco = legacy?.enderecoJson && typeof legacy.enderecoJson === "object" ? legacy.enderecoJson : {};
-  return {
-    ownerName: "",
-    ownerEmail: String(company?.email || "").trim(),
-    ownerPassword: "",
-    razaoSocial: String(legacy?.razaoSocial || company?.razao || "").trim(),
-    nomeFantasia: String(legacy?.nomeFantasia || "").trim(),
-    cnpj: String(company?.cnpj || "").trim(),
-    email: String(company?.email || "").trim(),
-    telefone: String(legacy?.telefone || company?.telefone || "").trim(),
-    regimeTributario: String(legacy?.regimeTributario || "SIMPLES"),
-    cnaePrincipal: String(legacy?.cnaePrincipal || "").trim(),
-    enderecoRua: String(endereco?.rua || "").trim(),
-    enderecoNumero: String(endereco?.numero || "").trim(),
-    enderecoBairro: String(endereco?.bairro || "").trim(),
-    enderecoCidade: String(endereco?.cidade || company?.municipio || "").trim(),
-    enderecoUf: String(endereco?.uf || company?.uf || "").trim().toUpperCase(),
-    enderecoCep: String(endereco?.cep || "").trim(),
-    enderecoComplemento: String(endereco?.complemento || "").trim(),
-  };
-}
-
 function App() {
   const [page, setPage] = useState("login");
   const [user, setUser] = useState(null);
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
-  const [companies, setCompanies] = useState([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState("");
-  const [guides, setGuides] = useState([]);
-  const [companyForm, setCompanyForm] = useState(getInitialFormState());
-  const [companyEditForm, setCompanyEditForm] = useState(getInitialFormState());
+  const companiesState = useCompanies();
+  const guidesState = useCompanyGuides();
+  const createCompanyForm = useCompanyForm(getInitialCompanyFormState());
+  const editCompanyForm = useCompanyForm(getInitialCompanyFormState());
   const [companyDetailTab, setCompanyDetailTab] = useState("guides");
   const [submittingCompany, setSubmittingCompany] = useState(false);
   const [submittingCompanyEdit, setSubmittingCompanyEdit] = useState(false);
-  const [loadingCompanies, setLoadingCompanies] = useState(false);
-  const [loadingGuides, setLoadingGuides] = useState(false);
   const [sending, setSending] = useState(false);
-  const [resendingGuideId, setResendingGuideId] = useState("");
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [jobEnabled, setJobEnabled] = useState(false);
   const [guideSettings, setGuideSettings] = useState(null);
+  const [guideSettingsForm, setGuideSettingsForm] = useState({
+    guideDriveInboxId: "",
+    guideDriveOutputRootId: "",
+  });
   const [cronTimeValue, setCronTimeValue] = useState("");
   const [savingCron, setSavingCron] = useState(false);
+  const [savingGuideSettings, setSavingGuideSettings] = useState(false);
   const [pendingGuides, setPendingGuides] = useState([]);
   const [selectedPendingGuideIds, setSelectedPendingGuideIds] = useState([]);
   const [loadingPendingGuides, setLoadingPendingGuides] = useState(false);
@@ -117,10 +86,7 @@ function App() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const selectedCompany = useMemo(
-    () => companies.find((item) => item.companyId === selectedCompanyId) || null,
-    [companies, selectedCompanyId]
-  );
+  const selectedCompany = companiesState.selectedCompany;
   const canEditCompany = useMemo(() => {
     const role = String(user?.role || "").toLowerCase();
     return role === "admin" || role === "contador";
@@ -177,52 +143,56 @@ function App() {
     api.clearSession();
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setUser(null);
-    setCompanies([]);
-    setGuides([]);
-    setSelectedCompanyId("");
+    companiesState.setCompanies([]);
+    guidesState.setGuides([]);
+    companiesState.setSelectedCompanyId("");
     setPage("login");
     clearFeedback();
   }
 
   async function loadCompanies() {
     if (page === "login") return;
-    setLoadingCompanies(true);
+    companiesState.setLoadingCompanies(true);
     clearFeedback();
     try {
       const data = await api.listCompanies();
-      setCompanies(data);
-      if (!selectedCompanyId && data.length > 0) {
-        setSelectedCompanyId(data[0].companyId);
+      companiesState.setCompanies(data);
+      if (!companiesState.selectedCompanyId && data.length > 0) {
+        companiesState.setSelectedCompanyId(data[0].companyId);
       }
     } catch (err) {
       setError(err?.message || "Falha ao carregar empresas");
     } finally {
-      setLoadingCompanies(false);
+      companiesState.setLoadingCompanies(false);
     }
   }
 
-  async function loadGuides(companyId = selectedCompanyId) {
+  async function loadGuides(companyId = companiesState.selectedCompanyId) {
     if (!companyId) return;
-    setLoadingGuides(true);
+    guidesState.setLoadingGuides(true);
     clearFeedback();
     try {
       const items = await api.getCompanyGuides(companyId);
-      setGuides(items);
+      guidesState.setGuides(items);
     } catch (err) {
       setError(err?.message || "Falha ao carregar guias");
-      setGuides([]);
+      guidesState.setGuides([]);
     } finally {
-      setLoadingGuides(false);
+      guidesState.setLoadingGuides(false);
     }
   }
 
   async function loadGuideSettings() {
-    if (page !== "companies") return;
+    if (page === "login") return;
     setSettingsLoading(true);
     clearFeedback();
     try {
       const settings = await api.getGuideSettings();
       setGuideSettings(settings);
+      setGuideSettingsForm({
+        guideDriveInboxId: String(settings?.guideDriveInboxId || ""),
+        guideDriveOutputRootId: String(settings?.guideDriveOutputRootId || ""),
+      });
       setCronTimeValue(cronToTimeValue(settings?.guideScheduleCron));
       const enabled = Boolean(
         settings?.guideDriveInboxId &&
@@ -237,6 +207,36 @@ function App() {
       setError(err?.message || "Falha ao carregar configuracao do job");
     } finally {
       setSettingsLoading(false);
+    }
+  }
+
+  async function handleSaveGuideSettings(event) {
+    event.preventDefault();
+    setSavingGuideSettings(true);
+    clearFeedback();
+    try {
+      const saved = await api.updateGuideSettings({
+        guideDriveInboxId: guideSettingsForm.guideDriveInboxId,
+        guideDriveOutputRootId: guideSettingsForm.guideDriveOutputRootId,
+      });
+      const settings = saved?.settings || saved;
+      setGuideSettings(settings);
+      setGuideSettingsForm({
+        guideDriveInboxId: String(settings?.guideDriveInboxId || ""),
+        guideDriveOutputRootId: String(settings?.guideDriveOutputRootId || ""),
+      });
+      setJobEnabled(
+        Boolean(
+          settings?.guideDriveInboxId &&
+            settings?.guideDriveOutputRootId &&
+            settings?.guideParserUrl
+        )
+      );
+      setMessage("Configuração das pastas salva com sucesso.");
+    } catch (err) {
+      setError(err?.message || "Falha ao salvar configuração das pastas.");
+    } finally {
+      setSavingGuideSettings(false);
     }
   }
 
@@ -317,8 +317,8 @@ function App() {
     setSubmittingCompany(true);
     clearFeedback();
     try {
-      await api.createCompany(companyForm);
-      setCompanyForm(getInitialFormState());
+      await api.createCompany(createCompanyForm.form);
+      createCompanyForm.reset();
       setPage("companies");
       await loadCompanies();
       setMessage("Empresa cadastrada com sucesso.");
@@ -331,11 +331,11 @@ function App() {
 
   async function handleUpdateCompany(event) {
     event.preventDefault();
-    if (!selectedCompanyId) return;
+    if (!companiesState.selectedCompanyId) return;
     setSubmittingCompanyEdit(true);
     clearFeedback();
     try {
-      await api.updateCompany(selectedCompanyId, companyEditForm);
+      await api.updateCompany(companiesState.selectedCompanyId, editCompanyForm.form);
       setMessage("Cadastro da empresa atualizado com sucesso.");
       await loadCompanies();
       setCompanyDetailTab("guides");
@@ -351,7 +351,7 @@ function App() {
       setError("guide_id_not_found");
       return;
     }
-    setResendingGuideId(guideId);
+    guidesState.setResendingGuideId(guideId);
     clearFeedback();
     try {
       await api.resendGuideEmail(guideId);
@@ -360,7 +360,7 @@ function App() {
     } catch (err) {
       setError(err?.message || "Falha ao reenviar guia");
     } finally {
-      setResendingGuideId("");
+      guidesState.setResendingGuideId("");
     }
   }
 
@@ -438,21 +438,22 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (page === "companyDetail" && selectedCompanyId) {
-      loadGuides(selectedCompanyId);
+    if (page === "companyDetail" && companiesState.selectedCompanyId) {
+      loadGuides(companiesState.selectedCompanyId);
       setCompanyDetailTab("guides");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, selectedCompanyId]);
+  }, [page, companiesState.selectedCompanyId]);
 
   useEffect(() => {
     if (selectedCompany) {
-      setCompanyEditForm(getEditFormStateFromCompany(selectedCompany));
+      editCompanyForm.replace(mapCompanyToEditForm(selectedCompany));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompany]);
 
   useEffect(() => {
-    if (page === "companies") {
+    if (page === "companies" || page === "guideSettings") {
       loadCompanies();
       loadGuideSettings();
     } else if (page === "pendingReport") {
@@ -463,7 +464,7 @@ function App() {
 
   if (page === "login") {
     return (
-      <main className="layout">
+      <AppShell>
         <header className="header">
           <h1>Portal Firm</h1>
           <p>
@@ -491,490 +492,97 @@ function App() {
                 required
               />
             </label>
-            <button type="submit" disabled={authLoading}>
-              {authLoading ? "Entrando..." : "Entrar"}
-            </button>
+            <div className="form-actions">
+              <Button type="submit" disabled={authLoading}>
+                {authLoading ? "Entrando..." : "Entrar"}
+              </Button>
+            </div>
           </form>
-          {error ? <p className="error">{error}</p> : null}
+          <Feedback error={error} />
         </section>
-      </main>
+      </AppShell>
     );
   }
 
   if (page === "createCompany") {
     return (
-      <main className="layout">
-        <header className="header inline-header">
-          <div>
-            <h1>Nova empresa</h1>
-            <p>Preencha os dados minimos para cadastro.</p>
-          </div>
-          <button className="secondary" onClick={() => setPage("companies")}>
-            Voltar
-          </button>
-        </header>
-        <section className="panel">
-          <form className="form-grid two-col" onSubmit={handleCreateCompany}>
-            <label>
-              Nome do responsavel
-              <input
-                value={companyForm.ownerName}
-                onChange={(event) => setCompanyForm((old) => ({ ...old, ownerName: event.target.value }))}
-              />
-            </label>
-            <label>
-              E-mail do responsavel
-              <input
-                type="email"
-                value={companyForm.ownerEmail}
-                onChange={(event) => setCompanyForm((old) => ({ ...old, ownerEmail: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Senha do responsavel
-              <input
-                type="password"
-                value={companyForm.ownerPassword}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, ownerPassword: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              CNPJ
-              <input
-                value={companyForm.cnpj}
-                onChange={(event) => setCompanyForm((old) => ({ ...old, cnpj: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Razao social
-              <input
-                value={companyForm.razaoSocial}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, razaoSocial: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Nome fantasia
-              <input
-                value={companyForm.nomeFantasia}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, nomeFantasia: event.target.value }))
-                }
-              />
-            </label>
-            <label>
-              E-mail da empresa
-              <input
-                type="email"
-                value={companyForm.email}
-                onChange={(event) => setCompanyForm((old) => ({ ...old, email: event.target.value }))}
-              />
-            </label>
-            <label>
-              Telefone
-              <input
-                value={companyForm.telefone}
-                onChange={(event) => setCompanyForm((old) => ({ ...old, telefone: event.target.value }))}
-              />
-            </label>
-            <label>
-              Regime tributario
-              <select
-                value={companyForm.regimeTributario}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, regimeTributario: event.target.value }))
-                }
-              >
-                <option value="SIMPLES">SIMPLES</option>
-                <option value="LUCRO_PRESUMIDO">LUCRO_PRESUMIDO</option>
-                <option value="LUCRO_REAL">LUCRO_REAL</option>
-              </select>
-            </label>
-            <label>
-              CNAE principal
-              <input
-                value={companyForm.cnaePrincipal}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, cnaePrincipal: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Endereco - rua
-              <input
-                value={companyForm.enderecoRua}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, enderecoRua: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Endereco - numero
-              <input
-                value={companyForm.enderecoNumero}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, enderecoNumero: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Endereco - bairro
-              <input
-                value={companyForm.enderecoBairro}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, enderecoBairro: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Endereco - cidade
-              <input
-                value={companyForm.enderecoCidade}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, enderecoCidade: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label>
-              Endereco - UF
-              <input
-                value={companyForm.enderecoUf}
-                onChange={(event) => setCompanyForm((old) => ({ ...old, enderecoUf: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Endereco - CEP
-              <input
-                value={companyForm.enderecoCep}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, enderecoCep: event.target.value }))
-                }
-                required
-              />
-            </label>
-            <label className="full">
-              Endereco - complemento
-              <input
-                value={companyForm.enderecoComplemento}
-                onChange={(event) =>
-                  setCompanyForm((old) => ({ ...old, enderecoComplemento: event.target.value }))
-                }
-              />
-            </label>
-            <button type="submit" disabled={submittingCompany}>
-              {submittingCompany ? "Salvando..." : "Cadastrar empresa"}
-            </button>
-          </form>
-          {error ? <p className="error">{error}</p> : null}
-        </section>
-      </main>
+      <CompanyFormPage
+        form={createCompanyForm.form}
+        onChange={createCompanyForm.setField}
+        onSubmit={handleCreateCompany}
+        submitting={submittingCompany}
+        onBack={() => setPage("companies")}
+        error={error}
+      />
+    );
+  }
+
+  if (page === "guideSettings") {
+    return (
+      <GuideSettingsPage
+        form={guideSettingsForm}
+        onChange={(field, value) => setGuideSettingsForm((old) => ({ ...old, [field]: value }))}
+        onSubmit={handleSaveGuideSettings}
+        onBack={() => setPage("companies")}
+        submitting={savingGuideSettings}
+        message={message}
+        error={error}
+      />
     );
   }
 
   if (page === "companyDetail") {
     return (
-      <main className="layout">
-        <header className="header inline-header">
-          <div>
-            <h1>Empresa</h1>
-            <p>Dados da empresa e guias processadas.</p>
-          </div>
-          <button className="secondary" onClick={() => setPage("companies")}>
-            Voltar
-          </button>
-        </header>
-        {selectedCompany ? (
-          <section className="panel">
-            <div className="company-card">
-              <p>
-                <b>Razao social:</b> {selectedCompany.razao}
-              </p>
-              <p>
-                <b>CNPJ:</b> {selectedCompany.cnpj}
-              </p>
-              <p>
-                <b>Email:</b> {selectedCompany.email || "-"}
-              </p>
-              <p>
-                <b>Municipio/UF:</b> {selectedCompany.municipio || "-"} / {selectedCompany.uf || "-"}
-              </p>
-            </div>
-            <div className="row-actions">
-              <button
-                className="secondary"
-                onClick={() => setCompanyDetailTab("guides")}
-                disabled={companyDetailTab === "guides"}
-              >
-                Guias
-              </button>
-              <button
-                className="secondary"
-                onClick={() => setCompanyDetailTab("edit")}
-                disabled={!canEditCompany || companyDetailTab === "edit"}
-                title={!canEditCompany ? "Apenas admin/contador pode editar cadastro." : ""}
-              >
-                Editar cadastro
-              </button>
-            </div>
-          </section>
-        ) : null}
-        {companyDetailTab === "guides" ? (
-          <section className="panel">
-            <div className="inline-header">
-              <h2>Guias</h2>
-              <button className="secondary" onClick={() => loadGuides()}>
-                Atualizar
-              </button>
-            </div>
-            {loadingGuides ? (
-              <p>Carregando guias...</p>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Tipo</th>
-                    <th>Competencia</th>
-                    <th>Valor</th>
-                    <th>Status</th>
-                    <th>Email</th>
-                    <th>Acao</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {guides.map((guide) => (
-                    <tr key={guide.guideId || guide.id}>
-                      <td>{guide.tipo || "-"}</td>
-                      <td>{guide.competencia || "-"}</td>
-                      <td>{fmtMoney(guide.valor)}</td>
-                      <td>{guide.status || "-"}</td>
-                      <td>{guide.emailStatus || "-"}</td>
-                      <td>
-                        <button
-                          className="small"
-                          disabled={resendingGuideId === (guide.guideId || guide.id)}
-                          onClick={() => handleResendGuide(guide.guideId || guide.id)}
-                        >
-                          {resendingGuideId === (guide.guideId || guide.id) ? "Reenviando..." : "Reenviar"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {!loadingGuides && guides.length === 0 ? <p>Nenhuma guia encontrada.</p> : null}
-          </section>
-        ) : (
-          <section className="panel">
-            <div className="inline-header">
-              <h2>Editar cadastro</h2>
-            </div>
-            {!canEditCompany ? (
-              <p className="hint">Apenas perfis admin/contador podem editar os dados da empresa.</p>
-            ) : (
-              <form className="form-grid two-col" onSubmit={handleUpdateCompany}>
-                <label>
-                  E-mail do responsavel
-                  <input
-                    type="email"
-                    value={companyEditForm.ownerEmail}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, ownerEmail: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  CNPJ
-                  <input
-                    value={companyEditForm.cnpj}
-                    onChange={(event) => setCompanyEditForm((old) => ({ ...old, cnpj: event.target.value }))}
-                    required
-                  />
-                </label>
-                <label>
-                  Razao social
-                  <input
-                    value={companyEditForm.razaoSocial}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, razaoSocial: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Nome fantasia
-                  <input
-                    value={companyEditForm.nomeFantasia}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, nomeFantasia: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  E-mail da empresa
-                  <input
-                    type="email"
-                    value={companyEditForm.email}
-                    onChange={(event) => setCompanyEditForm((old) => ({ ...old, email: event.target.value }))}
-                  />
-                </label>
-                <label>
-                  Telefone
-                  <input
-                    value={companyEditForm.telefone}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, telefone: event.target.value }))
-                    }
-                  />
-                </label>
-                <label>
-                  Regime tributario
-                  <select
-                    value={companyEditForm.regimeTributario}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, regimeTributario: event.target.value }))
-                    }
-                  >
-                    <option value="SIMPLES">SIMPLES</option>
-                    <option value="LUCRO_PRESUMIDO">LUCRO_PRESUMIDO</option>
-                    <option value="LUCRO_REAL">LUCRO_REAL</option>
-                  </select>
-                </label>
-                <label>
-                  CNAE principal
-                  <input
-                    value={companyEditForm.cnaePrincipal}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, cnaePrincipal: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Endereco - rua
-                  <input
-                    value={companyEditForm.enderecoRua}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, enderecoRua: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Endereco - numero
-                  <input
-                    value={companyEditForm.enderecoNumero}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, enderecoNumero: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Endereco - bairro
-                  <input
-                    value={companyEditForm.enderecoBairro}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, enderecoBairro: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Endereco - cidade
-                  <input
-                    value={companyEditForm.enderecoCidade}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, enderecoCidade: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Endereco - UF
-                  <input
-                    value={companyEditForm.enderecoUf}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, enderecoUf: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label>
-                  Endereco - CEP
-                  <input
-                    value={companyEditForm.enderecoCep}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, enderecoCep: event.target.value }))
-                    }
-                    required
-                  />
-                </label>
-                <label className="full">
-                  Endereco - complemento
-                  <input
-                    value={companyEditForm.enderecoComplemento}
-                    onChange={(event) =>
-                      setCompanyEditForm((old) => ({ ...old, enderecoComplemento: event.target.value }))
-                    }
-                  />
-                </label>
-                <button type="submit" disabled={submittingCompanyEdit}>
-                  {submittingCompanyEdit ? "Salvando..." : "Salvar alterações"}
-                </button>
-              </form>
-            )}
-          </section>
-        )}
-        {message ? <p className="success-text">{message}</p> : null}
-        {error ? <p className="error">{error}</p> : null}
-      </main>
+      <CompanyDetailPage
+        selectedCompany={selectedCompany}
+        onBack={() => setPage("companies")}
+        companyDetailTab={companyDetailTab}
+        setCompanyDetailTab={setCompanyDetailTab}
+        canEditCompany={canEditCompany}
+        guides={guidesState.guides}
+        loadingGuides={guidesState.loadingGuides}
+        onRefreshGuides={() => loadGuides()}
+        onResendGuide={handleResendGuide}
+        resendingGuideId={guidesState.resendingGuideId}
+        companyEditForm={editCompanyForm.form}
+        onEditFormChange={editCompanyForm.setField}
+        onUpdateCompany={handleUpdateCompany}
+        submittingCompanyEdit={submittingCompanyEdit}
+        message={message}
+        error={error}
+      />
     );
   }
 
   if (page === "pendingReport") {
     return (
-      <main className="layout">
+      <AppShell>
         <header className="header inline-header">
           <div>
             <h1>Pendências de e-mail</h1>
             <p>Relatório global de guias pendentes por empresa.</p>
           </div>
           <div className="row-actions">
-            <button className="secondary" onClick={loadPendingGuidesReport} disabled={loadingPendingGuides}>
+            <Button variant="secondary" onClick={loadPendingGuidesReport} disabled={loadingPendingGuides}>
               Atualizar
-            </button>
-            <button className="secondary" onClick={() => setPage("companies")}>
+            </Button>
+            <Button variant="secondary" onClick={() => setPage("companies")}>
               Voltar
-            </button>
+            </Button>
           </div>
         </header>
         <section className="panel">
           <div className="inline-header">
             <h2>Guias pendentes</h2>
             <div className="row-actions">
-              <button className="secondary" onClick={toggleAllPendingGuides} disabled={!pendingGuides.length}>
+              <Button variant="secondary" onClick={toggleAllPendingGuides} disabled={!pendingGuides.length}>
                 {selectedPendingGuideIds.length === pendingGuides.length && pendingGuides.length > 0
                   ? "Desmarcar todas"
                   : "Selecionar todas"}
-              </button>
-              <button onClick={handleSendSelectedPending} disabled={sendingSelectedPending}>
+              </Button>
+              <Button onClick={handleSendSelectedPending} disabled={sendingSelectedPending}>
                 {sendingSelectedPending ? "Enviando..." : "Enviar selecionadas"}
-              </button>
+              </Button>
             </div>
           </div>
           {loadingPendingGuides ? (
@@ -1023,98 +631,39 @@ function App() {
             <p>Nenhuma guia pendente encontrada.</p>
           ) : null}
         </section>
-        {message ? <p className="success-text">{message}</p> : null}
-        {error ? <p className="error">{error}</p> : null}
-      </main>
+        <Feedback message={message} error={error} />
+      </AppShell>
     );
   }
 
   return (
-    <main className="layout">
-      <header className="header inline-header">
-        <div>
-          <h1>Empresas</h1>
-          <p>
-            Usuario: <b>{user?.name || "FIRM"}</b> | Modo API: <b>{api.mode}</b>
-          </p>
-        </div>
-        <div className="row-actions">
-          <button className="secondary" onClick={() => setPage("createCompany")}>
-            Nova empresa
-          </button>
-          <button className="secondary" onClick={loadCompanies} disabled={loadingCompanies}>
-            Atualizar
-          </button>
-          <button className="secondary" onClick={() => setPage("pendingReport")}>
-            Pendências de e-mail
-          </button>
-          <button className="secondary danger" onClick={handleLogout}>
-            Sair
-          </button>
-        </div>
-      </header>
-      <section className="panel">
-        <div className="inline-header">
-          <h2>Job de guias</h2>
-          <div className="row-actions">
-            <button onClick={handleToggleJob} disabled={settingsLoading || !guideSettings}>
-              {settingsLoading ? "Salvando..." : jobEnabled ? "Desligar job" : "Ligar job"}
-            </button>
-            <button className="secondary" onClick={handleRunIngestionAndSendPending} disabled={sending}>
-              {sending ? "Processando..." : "Organizar inbox e enviar pendentes"}
-            </button>
-          </div>
-        </div>
-        <p>
-          Status atual: <b>{jobEnabled ? "Ligado" : "Desligado"}</b>
-        </p>
-        <p className="hint">
-          Controle baseado na configuracao de parser em `guides/settings`.
-        </p>
-      </section>
-      <section className="panel">
-        <div className="inline-header">
-          <h2>Agendamento automático</h2>
-          <button className="secondary" onClick={handleSaveCronSchedule} disabled={savingCron}>
-            {savingCron ? "Salvando..." : "Salvar horário do cron"}
-          </button>
-        </div>
-        <label>
-          Hora de execução diária
-          <input
-            type="time"
-            value={cronTimeValue}
-            onChange={(event) => setCronTimeValue(event.target.value)}
-          />
-        </label>
-        <p className="hint">
-          Deixe vazio e salve para desativar. Cron atual: <b>{guideSettings?.guideScheduleCron || "desativado"}</b>
-        </p>
-      </section>
-      <section className="cards-grid">
-        {companies.map((company) => (
-          <article key={company.companyId} className="company-tile">
-            <h3>{company.razao}</h3>
-            <p>{company.cnpj}</p>
-            <button
-              onClick={() => {
-                setSelectedCompanyId(company.companyId);
-                setPage("companyDetail");
-              }}
-            >
-              Acessar
-            </button>
-          </article>
-        ))}
-      </section>
-      {!loadingCompanies && companies.length === 0 ? (
-        <section className="panel">
-          <p>Nenhuma empresa encontrada.</p>
-        </section>
-      ) : null}
-      {message ? <p className="success-text">{message}</p> : null}
-      {error ? <p className="error">{error}</p> : null}
-    </main>
+    <CompaniesHomePage
+      user={user}
+      apiMode={api.mode}
+      companies={companiesState.companies}
+      loadingCompanies={companiesState.loadingCompanies}
+      onCreateCompany={() => setPage("createCompany")}
+      onOpenGuideSettings={() => setPage("guideSettings")}
+      onRefreshCompanies={loadCompanies}
+      onOpenPendingReport={() => setPage("pendingReport")}
+      onLogout={handleLogout}
+      onOpenCompany={(companyId) => {
+        companiesState.setSelectedCompanyId(companyId);
+        setPage("companyDetail");
+      }}
+      guideSettings={guideSettings}
+      settingsLoading={settingsLoading}
+      jobEnabled={jobEnabled}
+      onToggleJob={handleToggleJob}
+      sending={sending}
+      onRunIngestionAndSendPending={handleRunIngestionAndSendPending}
+      cronTimeValue={cronTimeValue}
+      setCronTimeValue={setCronTimeValue}
+      savingCron={savingCron}
+      onSaveCronSchedule={handleSaveCronSchedule}
+      message={message}
+      error={error}
+    />
   );
 }
 
