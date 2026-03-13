@@ -1,18 +1,50 @@
+:root {
+  --bg-surface: #ffffff;
+  --bg-soft: #f8fafc;
+  --bg-muted: #eef2ff;
+  --text-main: #0f172a;
+  --text-subtle: #475569;
+  --border-main: #dbe4f0;
+  --border-strong: #c8d2e3;
+  --primary: #1d4ed8;
+  --primary-hover: #1e40af;
+  --danger: #b91c1c;
+  --danger-hover: #991b1b;
+  --success: #065f46;
+  --focus: #2563eb33;
+  --radius-md: 12px;
+  --radius-sm: 10px;
+  --shadow-md: 0 10px 30px -20px rgba(15, 23, 42, 0.4);
+}
+
 .layout {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 28px 24px 36px;
 }
 
 .header {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
+}
+
+.header h1,
+.panel h2 {
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+
+.header p,
+.panel p {
+  margin: 0;
+  color: var(--text-subtle);
 }
 
 .panel {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 20px;
   margin-bottom: 16px;
 }
 
@@ -21,6 +53,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
 .row-actions {
@@ -29,49 +62,108 @@
   flex-wrap: wrap;
 }
 
-.success {
-  border-color: #0ea5e9;
-}
-
 .controls {
   display: grid;
   gap: 12px;
 }
 
-.controls label {
-  font-size: 14px;
+.controls label,
+.form-grid label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
   color: #334155;
 }
 
+.controls input,
 .controls select,
-.controls button {
+.form-grid input,
+.form-grid select {
   height: 40px;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
   padding: 0 12px;
+  background: #fff;
+  color: var(--text-main);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.controls button {
-  background: #0f172a;
-  color: #ffffff;
-  border: 0;
+.controls input:focus,
+.controls select:focus,
+.form-grid input:focus,
+.form-grid select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--focus);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-weight: 600;
   cursor: pointer;
+  transition: transform 0.08s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.secondary {
-  background: #ffffff;
-  color: #0f172a;
-  border: 1px solid #cbd5e1;
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--focus);
 }
 
-.danger {
-  color: #b91c1c;
-  border-color: #fecaca;
-}
-
-.controls button:disabled {
+.btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-md {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.btn-sm {
+  height: 32px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.btn-secondary {
+  background: #fff;
+  color: #0f172a;
+  border-color: var(--border-strong);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-soft);
+}
+
+.btn-danger {
+  background: #fff1f2;
+  color: var(--danger);
+  border-color: #fecdd3;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #ffe4e6;
+  border-color: #fda4af;
+  color: var(--danger-hover);
 }
 
 .form-grid {
@@ -83,23 +175,13 @@
   grid-template-columns: repeat(2, minmax(220px, 1fr));
 }
 
-.form-grid label {
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-  color: #334155;
-}
-
-.form-grid input,
-.form-grid select {
-  height: 40px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 0 12px;
-}
-
 .form-grid .full {
   grid-column: 1 / -1;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-start;
 }
 
 .cards-grid {
@@ -109,10 +191,11 @@
 }
 
 .company-tile {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: 16px;
   display: grid;
   gap: 10px;
 }
@@ -124,57 +207,104 @@
 
 .company-tile p {
   margin: 0;
-  color: #475569;
-}
-
-.company-tile button,
-.panel button {
-  height: 38px;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  background: #0f172a;
-  color: #fff;
-  padding: 0 12px;
-  cursor: pointer;
-}
-
-.small {
-  height: 32px;
-  font-size: 12px;
+  color: var(--text-subtle);
 }
 
 .company-card {
-  margin-top: 16px;
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 12px;
+  margin-top: 8px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: grid;
+  gap: 6px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 8px;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
 }
 
 th,
 td {
   text-align: left;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border-main);
   padding: 10px;
   font-size: 14px;
 }
 
-.error {
-  color: #b91c1c;
+th {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #475569;
+  background: var(--bg-soft);
+}
+
+.feedback {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
   font-weight: 600;
 }
 
+.error {
+  color: var(--danger);
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+}
+
 .success-text {
-  color: #0f766e;
-  font-weight: 600;
+  color: var(--success);
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
 }
 
 .hint {
   color: #64748b;
   font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    padding: 18px 14px 24px;
+  }
+
+  .inline-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .form-grid.two-col {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    display: block;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tbody tr {
+    padding: 10px;
+    border: 1px solid var(--border-main);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+  }
+
+  td {
+    border: none;
+    padding: 6px 0;
+  }
 }
