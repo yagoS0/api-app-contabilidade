@@ -1,5 +1,9 @@
 import { Router } from "express";
 
+function resolveAccountTypeForRole(role) {
+  return role === "admin" || role === "contador" ? "FIRM" : "CLIENT";
+}
+
 export function createAdminRouter({
   ensureAuthorized,
   UserRepository,
@@ -48,6 +52,7 @@ export function createAdminRouter({
         return res.status(400).json({ error: "invalid_role" });
       }
       updateData.role = role;
+      updateData.accountType = resolveAccountTypeForRole(role);
     }
     try {
       const updated = await UserRepository.updateUser(req.params.id, updateData);

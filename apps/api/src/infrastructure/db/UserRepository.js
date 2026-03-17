@@ -6,6 +6,7 @@ const defaultSelect = {
   email: true,
   role: true,
   status: true,
+  accountType: true,
   createdAt: true,
   updatedAt: true,
 };

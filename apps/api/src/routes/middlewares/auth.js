@@ -20,6 +20,7 @@ export function serializeUser(user) {
     email: user.email,
     role: user.role,
     status: user.status,
+    accountType: user.accountType,
     createdAt: formatDate(user.createdAt),
     updatedAt: formatDate(user.updatedAt),
   };
