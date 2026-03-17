@@ -1,9 +1,9 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "cd ../.. && npm ci && npm run prisma:generate -w @contabilidade/api"
+buildCommand = "npm install && npm run prisma:generate"
 
 [deploy]
-startCommand = "cd ../.. && npm run start:prod -w @contabilidade/api"
+startCommand = "npm run start:prod"
 healthcheckPath = "/readyz"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
