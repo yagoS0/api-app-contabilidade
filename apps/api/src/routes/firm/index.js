@@ -1230,11 +1230,34 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   router.post("/guides/ingestion/run", requireAccountType("FIRM"), async (req, res) => {
     const body = req.body || {};
-    const result = await runGuideInboxWorkerOnce({
-      batchSize: body.batchSize,
-      maxDurationMs: body.maxDurationMs,
-    });
-    return res.json({ ok: true, result });
+    try {
+      const result = await runGuideInboxWorkerOnce({
+        batchSize: body.batchSize,
+        maxDurationMs: body.maxDurationMs,
+      });
+      return res.json({ ok: true, result });
+    } catch (err) {
+      const reason = err?.message || "guide_ingestion_failed";
+      log.error({ err: reason }, "Falha ao executar ingestão manual de guias");
+
+      if (
+        reason === "GUIDE_DRIVE_INBOX_ID_not_configured" ||
+        reason === "GUIDE_DRIVE_OUTPUT_ROOT_ID_not_configured" ||
+        reason === "GUIDE_PARSER_URL_not_configured"
+      ) {
+        return res.status(400).json({ ok: false, error: reason });
+      }
+
+      if (
+        reason.includes("GOOGLE_APPLICATION_CREDENTIALS") ||
+        reason.includes("credenciais") ||
+        reason.includes("guide_parser_not_configured")
+      ) {
+        return res.status(500).json({ ok: false, error: "guide_ingestion_dependency_error", reason });
+      }
+
+      return res.status(500).json({ ok: false, error: "guide_ingestion_failed", reason });
+    }
   });
 
   // Rota utilitária para ambiente de desenvolvimento: limpa hashes para reprocessar guias.

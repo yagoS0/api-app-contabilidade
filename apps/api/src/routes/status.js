@@ -1,5 +1,10 @@
 import { Router } from "express";
 import { prisma } from "../infrastructure/db/prisma.js";
+import { GUIDE_PARSER_URL } from "../config.js";
+
+function shouldCheckEmbeddedParser() {
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/i.test(String(GUIDE_PARSER_URL || "").trim());
+}
 
 export function createStatusRouter({ ensureAuthorized, RunLogStore, runState, CRON_SCHEDULE }) {
   const router = Router();
@@ -12,12 +17,25 @@ export function createStatusRouter({ ensureAuthorized, RunLogStore, runState, CR
     try {
       await prisma.$queryRaw`SELECT 1`;
       await prisma.appSetting.findFirst({ select: { key: true } }).catch(() => null);
-      return res.status(200).json({ ok: true, db: "up" });
+      if (shouldCheckEmbeddedParser()) {
+        const parserUrl = String(GUIDE_PARSER_URL || "").trim().replace(/\/+$/, "");
+        const parserResponse = await fetch(`${parserUrl}/health`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!parserResponse.ok) {
+          throw new Error(`embedded_parser_unhealthy_${parserResponse.status}`);
+        }
+      }
+      return res.status(200).json({
+        ok: true,
+        db: "up",
+        parser: shouldCheckEmbeddedParser() ? "up" : "not_checked",
+      });
     } catch (err) {
       return res.status(503).json({
         ok: false,
-        error: "db_unavailable",
-        reason: err?.message || "database_not_ready",
+        error: "service_not_ready",
+        reason: err?.message || "service_not_ready",
       });
     }
   });

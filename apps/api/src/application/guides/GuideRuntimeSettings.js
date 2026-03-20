@@ -8,15 +8,23 @@ import {
 
 const KEY = "guides.runtime.settings";
 
+function isLocalParserUrl(url) {
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/i.test(String(url || "").trim());
+}
+
 export async function getGuideRuntimeSettings() {
   const row = await prisma.appSetting.findUnique({ where: { key: KEY } });
   const value = row?.value && typeof row.value === "object" ? row.value : {};
+  const parserUrlFromEnv = String(GUIDE_PARSER_URL || "").trim();
+  const parserUrlFromDb = String(value.guideParserUrl || "").trim();
   return {
     guideDriveInboxId: String(value.guideDriveInboxId || GUIDE_DRIVE_INBOX_ID || "").trim(),
     guideDriveOutputRootId: String(
       value.guideDriveOutputRootId || GUIDE_DRIVE_OUTPUT_ROOT_ID || ""
     ).trim(),
-    guideParserUrl: String(value.guideParserUrl || GUIDE_PARSER_URL || "").trim(),
+    guideParserUrl: isLocalParserUrl(parserUrlFromEnv)
+      ? parserUrlFromEnv
+      : String(parserUrlFromDb || parserUrlFromEnv).trim(),
     guideScheduleCron: String(value.guideScheduleCron || GUIDE_SCHEDULE_CRON || "").trim(),
   };
 }

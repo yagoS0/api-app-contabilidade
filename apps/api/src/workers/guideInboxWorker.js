@@ -246,6 +246,16 @@ export async function runGuideInboxWorkerOnce(options = {}) {
     return { skipped: true, reason: "lock_active" };
   }
   try {
+    log.info(
+      {
+        batchSize,
+        maxDurationMs,
+        hasInboxId: Boolean(runtime.guideDriveInboxId),
+        hasOutputRootId: Boolean(runtime.guideDriveOutputRootId),
+        guideParserUrl: runtime.guideParserUrl || null,
+      },
+      "Iniciando ingestão manual de guias"
+    );
     const driveService = await GuideDriveService.create();
     const folders = await driveService.ensureGuideOutputFolders(runtime.guideDriveOutputRootId);
     const runtimeWithFolders = {
@@ -256,6 +266,7 @@ export async function runGuideInboxWorkerOnce(options = {}) {
     const parserClient = GuideParserClient.create({ baseURL: runtime.guideParserUrl });
     const storageService = GuideStorageService.create();
     const files = await driveService.listInboxPdfs(runtime.guideDriveInboxId);
+    log.info({ totalFoundInInbox: files.length }, "Arquivos PDF encontrados no inbox");
     const startedAt = Date.now();
 
     const results = [];
