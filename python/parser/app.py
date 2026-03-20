@@ -10,7 +10,8 @@ except Exception:  # pragma: no cover
     pdfplumber = None
 
 app = Flask(__name__)
-LOG_RAW_TEXT = os.getenv("PARSER_LOG_RAW_TEXT", "1") == "1"
+DEFAULT_LOG_RAW_TEXT = "0" if os.getenv("NODE_ENV", "").lower() == "production" else "1"
+LOG_RAW_TEXT = os.getenv("PARSER_LOG_RAW_TEXT", DEFAULT_LOG_RAW_TEXT) == "1"
 MONTHS_PT = {
     "janeiro": "01",
     "fevereiro": "02",
@@ -217,5 +218,7 @@ def parse_guide():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8787)
+    host = os.getenv("PARSER_HOST", "0.0.0.0")
+    port = int(os.getenv("PARSER_PORT", os.getenv("PORT", "8787")))
+    app.run(host=host, port=port)
 
