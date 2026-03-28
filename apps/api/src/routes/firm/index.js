@@ -19,6 +19,7 @@ import {
   buildCompanyFolderName,
   buildGuideFinalFileName,
   buildStorageKey,
+  getFriendlyGuideMessage,
   hashPdf,
   listPendingGuidesReport,
   listGuidesByCompany,
@@ -36,6 +37,7 @@ import { runGuideInboxWorkerOnce } from "../../workers/guideInboxWorker.js";
 import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
 import { applyGuideScheduleCron } from "../../workers/guideScheduledEmailManager.js";
 import { sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
+import { listUnidentifiedGuides, processUploadedGuides } from "../../application/guides/GuideUploadService.js";
 import {
   getCompanyGuideEmailSchedule,
   isAdminLikeUser,
@@ -792,6 +794,150 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
     await applyGuideScheduleCron(settings.guideScheduleCron);
     return res.json({ ok: true, settings });
+  });
+
+  router.post("/guides/upload", upload.array("files", 50), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+
+    const files = Array.isArray(req.files) ? req.files.filter(Boolean) : [];
+    if (!files.length) {
+      return res.status(400).json({
+        ok: false,
+        error: "files_required",
+        message: "Selecione pelo menos um PDF para enviar.",
+      });
+    }
+
+    try {
+      const uploadResult = await processUploadedGuides({ files });
+      let emailDispatch = {
+        attempted: false,
+        skipped: false,
+        reason: null,
+        sent: 0,
+        failed: 0,
+      };
+
+      if (uploadResult.processedGuideIds.length) {
+        const emailResult = await runGuideEmailWorkerSelected({
+          guideIds: uploadResult.processedGuideIds,
+        });
+
+        if (emailResult?.skipped && emailResult?.reason === "lock_active") {
+          emailDispatch = {
+            attempted: true,
+            skipped: true,
+            reason: "lock_active",
+            message: "As guias foram processadas, mas o envio automático está ocupado no momento.",
+            sent: 0,
+            failed: 0,
+          };
+        } else {
+          emailDispatch = {
+            attempted: true,
+            skipped: false,
+            reason: null,
+            sent: Number(emailResult?.sent || 0),
+            failed: Number(emailResult?.errors || 0),
+            items: Array.isArray(emailResult?.results) ? emailResult.results : [],
+          };
+        }
+      }
+
+      const emailByGuideId = new Map(
+        Array.isArray(emailDispatch.items)
+          ? emailDispatch.items.map((item) => [String(item.guideId), item])
+          : []
+      );
+
+      const items = uploadResult.results.map((item) => {
+        if (item.status !== "PROCESSED" || !item.guideId) return item;
+        const emailItem = emailByGuideId.get(String(item.guideId));
+        if (emailDispatch.skipped) {
+          return {
+            ...item,
+            email: {
+              status: "PENDING",
+              message: "Guia processada e colocada na fila. O envio automático será tentado depois.",
+            },
+          };
+        }
+        if (!emailItem) {
+          return {
+            ...item,
+            email: {
+              status: "PENDING",
+              message: "Guia processada e aguardando envio.",
+            },
+          };
+        }
+        return {
+          ...item,
+          email: {
+            status: emailItem.status,
+            reason: emailItem.reason || null,
+            code: emailItem.code || null,
+            message:
+              emailItem.status === "SENT"
+                ? "Guia processada e e-mail enviado com sucesso."
+                : getFriendlyGuideMessage({
+                    code: emailItem.code,
+                    reason: emailItem.reason,
+                  }),
+          },
+        };
+      });
+
+      return res.json({
+        ok: true,
+        result: {
+          total: uploadResult.total,
+          processed: uploadResult.processed,
+          errors: uploadResult.errors,
+          skipped: uploadResult.skipped,
+          sent: emailDispatch.sent,
+          failedToSend: emailDispatch.failed,
+          emailDispatch: {
+            attempted: emailDispatch.attempted,
+            skipped: emailDispatch.skipped,
+            reason: emailDispatch.reason,
+            message: emailDispatch.message || null,
+          },
+          items,
+        },
+      });
+    } catch (err) {
+      log.error({ err }, "Falha ao processar upload de guias");
+      return res.status(500).json({
+        ok: false,
+        error: err?.code || "guide_upload_failed",
+        reason: err?.message || "guide_upload_failed",
+        message: getFriendlyGuideMessage({
+          code: err?.code,
+          reason: err?.message,
+        }),
+      });
+    }
+  });
+
+  router.get("/guides/unidentified", async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const result = await listUnidentifiedGuides({
+      page: req.query?.page,
+      limit: req.query?.limit,
+    });
+    return res.json({
+      data: result.items,
+      page: result.page,
+      limit: result.limit,
+      total: result.total,
+    });
   });
 
   router.get(

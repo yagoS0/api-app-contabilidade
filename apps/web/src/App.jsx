@@ -8,6 +8,7 @@ import { CompaniesHomePage } from "./features/companies/pages/CompaniesHomePage"
 import { CompanyFormPage } from "./features/companies/pages/CompanyFormPage";
 import { CompanyDetailPage } from "./features/companies/pages/CompanyDetailPage";
 import { GuideSettingsPage } from "./features/guides/pages/GuideSettingsPage";
+import { GuideUploadPage } from "./features/guides/pages/GuideUploadPage";
 import { useCompanies } from "./features/companies/hooks/useCompanies";
 import { useCompanyGuides } from "./features/companies/hooks/useCompanyGuides";
 import {
@@ -68,7 +69,6 @@ function App() {
   const [companyDetailTab, setCompanyDetailTab] = useState("guides");
   const [submittingCompany, setSubmittingCompany] = useState(false);
   const [submittingCompanyEdit, setSubmittingCompanyEdit] = useState(false);
-  const [sending, setSending] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [jobEnabled, setJobEnabled] = useState(false);
   const [guideSettings, setGuideSettings] = useState(null);
@@ -83,6 +83,10 @@ function App() {
   const [selectedPendingGuideIds, setSelectedPendingGuideIds] = useState([]);
   const [loadingPendingGuides, setLoadingPendingGuides] = useState(false);
   const [sendingSelectedPending, setSendingSelectedPending] = useState(false);
+  const [uploadResults, setUploadResults] = useState([]);
+  const [uploadingGuides, setUploadingGuides] = useState(false);
+  const [unidentifiedGuides, setUnidentifiedGuides] = useState([]);
+  const [loadingUnidentifiedGuides, setLoadingUnidentifiedGuides] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -255,6 +259,19 @@ function App() {
     }
   }
 
+  async function loadUnidentifiedGuides() {
+    setLoadingUnidentifiedGuides(true);
+    try {
+      const payload = await api.getUnidentifiedGuides({ page: 1, limit: 200 });
+      setUnidentifiedGuides(Array.isArray(payload?.data) ? payload.data : []);
+    } catch (err) {
+      setError(err?.message || "Falha ao carregar pendências de identificação.");
+      setUnidentifiedGuides([]);
+    } finally {
+      setLoadingUnidentifiedGuides(false);
+    }
+  }
+
   async function handleToggleJob() {
     if (!guideSettings) return;
     setSettingsLoading(true);
@@ -364,35 +381,36 @@ function App() {
     }
   }
 
-  async function handleRunIngestionAndSendPending() {
-    setSending(true);
+  async function handleGuideUpload(files) {
+    if (!Array.isArray(files) || !files.length) {
+      setError("Selecione pelo menos um PDF para enviar.");
+      return false;
+    }
+    setUploadingGuides(true);
     clearFeedback();
     try {
-      const ingestionPayload = await api.runGuideIngestion({
-        batchSize: 25,
-        maxDurationMs: 25000,
-      });
-      const ingestion = ingestionPayload?.result || {};
-      const emailsPayload = await api.sendPendingGuideEmails({
-        batchSize: 50,
-        maxBatches: 50,
-      });
-      const emailResult = emailsPayload?.result || {};
-      const processed = Number(ingestion?.processed || 0);
-      const ingestionErrors = Number(ingestion?.errors || 0);
-      const skipped = Number(ingestion?.skippedItems || 0);
-      const sent = Number(emailResult?.sent || 0);
-      const failed = Number(emailResult?.failed || 0);
-      const totalProcessed = Number(emailResult?.totalProcessed || 0);
+      const payload = await api.uploadGuides(files);
+      const result = payload?.result || {};
+      setUploadResults(Array.isArray(result?.items) ? result.items : []);
+      const processed = Number(result?.processed || 0);
+      const errors = Number(result?.errors || 0);
+      const skipped = Number(result?.skipped || 0);
+      const sent = Number(result?.sent || 0);
+      const failed = Number(result?.failedToSend || 0);
+      const emailSuffix = result?.emailDispatch?.skipped
+        ? " O envio automático não pôde iniciar porque outro envio já está em andamento."
+        : "";
       setMessage(
-        `Inbox processada: ${processed} processadas, ${ingestionErrors} com erro, ${skipped} ignoradas. ` +
-          `E-mails: ${sent} enviados, ${failed} falhas (total ${totalProcessed}).`
+        `Upload concluído: ${processed} processadas, ${errors} com erro, ${skipped} ignoradas. ` +
+          `E-mails: ${sent} enviados, ${failed} falhas.${emailSuffix}`
       );
-      await loadCompanies();
+      await loadUnidentifiedGuides();
+      return true;
     } catch (err) {
-      setError(err?.message || "Falha ao processar inbox e enviar e-mails.");
+      setError(err?.message || "Falha ao enviar e processar guias.");
+      return false;
     } finally {
-      setSending(false);
+      setUploadingGuides(false);
     }
   }
 
@@ -458,6 +476,8 @@ function App() {
       loadGuideSettings();
     } else if (page === "pendingReport") {
       loadPendingGuidesReport();
+    } else if (page === "guideUpload") {
+      loadUnidentifiedGuides();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
@@ -525,6 +545,22 @@ function App() {
         onSubmit={handleSaveGuideSettings}
         onBack={() => setPage("companies")}
         submitting={savingGuideSettings}
+        message={message}
+        error={error}
+      />
+    );
+  }
+
+  if (page === "guideUpload") {
+    return (
+      <GuideUploadPage
+        onBack={() => setPage("companies")}
+        onUpload={handleGuideUpload}
+        uploading={uploadingGuides}
+        uploadResults={uploadResults}
+        unidentifiedGuides={unidentifiedGuides}
+        loadingUnidentifiedGuides={loadingUnidentifiedGuides}
+        onRefreshUnidentified={loadUnidentifiedGuides}
         message={message}
         error={error}
       />
@@ -643,6 +679,7 @@ function App() {
       companies={companiesState.companies}
       loadingCompanies={companiesState.loadingCompanies}
       onCreateCompany={() => setPage("createCompany")}
+      onOpenGuideUpload={() => setPage("guideUpload")}
       onOpenGuideSettings={() => setPage("guideSettings")}
       onRefreshCompanies={loadCompanies}
       onOpenPendingReport={() => setPage("pendingReport")}
@@ -655,8 +692,6 @@ function App() {
       settingsLoading={settingsLoading}
       jobEnabled={jobEnabled}
       onToggleJob={handleToggleJob}
-      sending={sending}
-      onRunIngestionAndSendPending={handleRunIngestionAndSendPending}
       cronTimeValue={cronTimeValue}
       setCronTimeValue={setCronTimeValue}
       savingCron={savingCron}

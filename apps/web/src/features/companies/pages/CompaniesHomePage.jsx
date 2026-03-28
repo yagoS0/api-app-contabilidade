@@ -9,6 +9,7 @@ export function CompaniesHomePage({
   companies,
   loadingCompanies,
   onCreateCompany,
+  onOpenGuideUpload,
   onOpenGuideSettings,
   onRefreshCompanies,
   onOpenPendingReport,
@@ -18,8 +19,6 @@ export function CompaniesHomePage({
   settingsLoading,
   jobEnabled,
   onToggleJob,
-  sending,
-  onRunIngestionAndSendPending,
   cronTimeValue,
   setCronTimeValue,
   savingCron,
@@ -43,6 +42,9 @@ export function CompaniesHomePage({
           <Button variant="secondary" onClick={onOpenGuideSettings}>
             Configuração
           </Button>
+          <Button variant="secondary" onClick={onOpenGuideUpload}>
+            Upload de guias
+          </Button>
           <Button variant="secondary" onClick={onRefreshCompanies} disabled={loadingCompanies}>
             Atualizar
           </Button>
@@ -62,8 +64,8 @@ export function CompaniesHomePage({
             <Button onClick={onToggleJob} disabled={settingsLoading || !guideSettings}>
               {settingsLoading ? "Salvando..." : jobEnabled ? "Desligar job" : "Ligar job"}
             </Button>
-            <Button variant="secondary" onClick={onRunIngestionAndSendPending} disabled={sending}>
-              {sending ? "Processando..." : "Organizar inbox e enviar pendentes"}
+            <Button variant="secondary" onClick={onOpenGuideUpload}>
+              Abrir upload de guias
             </Button>
           </div>
         </div>
