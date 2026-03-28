@@ -38,10 +38,13 @@ export function createRealApi() {
 
   async function request(path, options = {}) {
     const baseUrl = getApiBaseUrl();
+    const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
     const headers = {
-      "Content-Type": "application/json",
       ...(options.headers || {}),
     };
+    if (!isFormData) {
+      headers["Content-Type"] = "application/json";
+    }
     if (accessToken) {
       headers.Authorization = `Bearer ${accessToken}`;
     }
@@ -114,6 +117,29 @@ export function createRealApi() {
         method: "POST",
         body: JSON.stringify(input || {}),
       });
+    },
+    async uploadGuides(files) {
+      const formData = new FormData();
+      for (const file of Array.isArray(files) ? files : []) {
+        formData.append("files", file);
+      }
+      return request("/firm/guides/upload", {
+        method: "POST",
+        body: formData,
+      });
+    },
+    async getUnidentifiedGuides(params = {}) {
+      const query = new URLSearchParams();
+      if (params.page) query.set("page", String(params.page));
+      if (params.limit) query.set("limit", String(params.limit));
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      const payload = await request(`/firm/guides/unidentified${suffix}`);
+      return {
+        data: Array.isArray(payload?.data) ? payload.data : [],
+        page: Number(payload?.page || 1),
+        limit: Number(payload?.limit || 25),
+        total: Number(payload?.total || 0),
+      };
     },
     async sendPendingGuideEmails(input) {
       return request("/firm/guides/emails/send-pending", {
