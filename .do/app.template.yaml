@@ -35,7 +35,7 @@ services:
         scope: RUN_TIME
         type: SECRET
         value: ${GOOGLE_APPLICATION_CREDENTIALS_JSON}
-      - key: GUIDE_PARSER_URL
+      - key: PDF_READER_URL
         scope: RUN_TIME
-        value: ${GUIDE_PARSER_URL}
+        value: ${PDF_READER_URL}
 

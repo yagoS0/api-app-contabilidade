@@ -43,8 +43,14 @@ export function getFriendlyGuideMessage({ code, reason }) {
   if (normalizedReason.includes("missing_required_parsed_fields")) {
     return "Não foi possível identificar todos os dados obrigatórios da guia, como competência, valor ou CNPJ.";
   }
-  if (normalizedCode === "GUIDE_PARSER_NOT_CONFIGURED") {
-    return "O parser de guias não está configurado no momento.";
+  if (
+    normalizedCode === "GUIDE_PARSER_NOT_CONFIGURED" ||
+    normalizedCode === "PDF_READER_NOT_CONFIGURED"
+  ) {
+    return "O serviço de leitura de PDF (pdf-reader) não está configurado na API. Defina a variável PDF_READER_URL.";
+  }
+  if (normalizedCode === "PDF_READER_HTTP_ERROR") {
+    return "O serviço de leitura de PDF não respondeu corretamente. Verifique se o pdf-reader está no ar e acessível pela API.";
   }
   if (normalizedCode === "GUIDE_STORAGE_KEY_REQUIRED" || normalizedCode === "GUIDE_STORAGE_BUFFER_REQUIRED") {
     return "A guia foi lida, mas houve uma falha ao preparar o arquivo para armazenamento.";

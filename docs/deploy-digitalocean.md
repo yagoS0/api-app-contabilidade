@@ -3,7 +3,7 @@
 ## 1) Arquitetura recomendada
 - **App Platform** para a API Node (`apps/api`), com imagem Docker.
 - **Managed PostgreSQL** para banco de dados.
-- **Parser Python** como serviço separado (App Platform ou Droplet), exposto em URL HTTPS.
+- **pdf-reader** (FastAPI em `apps/pdf-reader`) como serviço separado, acessível pela API (URL interna ou HTTPS conforme a rede).
 - **DO Container Registry (DOCR)** para armazenar imagem da API.
 
 ## 2) Pré-requisitos
@@ -30,7 +30,7 @@ Configure na App Platform:
   - `DATABASE_URL`
   - `JWT_SECRET`
   - `API_KEYS`
-  - `GUIDE_PARSER_URL`
+  - `PDF_READER_URL` (base do serviço pdf-reader; health em `GET /health`)
   - `GOOGLE_APPLICATION_CREDENTIALS_JSON` (JSON da service account em formato string)
 - E-mail:
   - `USE_GMAIL_API`, `GMAIL_DELEGATED_USER`, `SMTP_FROM`
@@ -56,15 +56,14 @@ Configure na App Platform:
 ## 6) Ordem correta de subida
 1. Subir/validar Managed PostgreSQL.
 2. Configurar secrets da App Platform.
-3. Subir parser Python e validar `GET /health`.
+3. Subir o serviço pdf-reader e validar `GET /health` (resposta `{"status":"ok"}`).
 4. Deploy API.
 5. Verificar readiness:
    - `GET /healthz` (liveness)
-   - `GET /readyz` (db readiness)
-6. Configurar runtime de guias no front:
+   - `GET /readyz` (banco + pdf-reader quando `PDF_READER_URL` está definido)
+6. Configurar runtime de guias no portal (pastas + cron); `PDF_READER_URL` só na API:
    - `guideDriveInboxId`
    - `guideDriveOutputRootId`
-   - `guideParserUrl`
    - `guideScheduleCron`
 
 ## 7) Migração de banco em produção

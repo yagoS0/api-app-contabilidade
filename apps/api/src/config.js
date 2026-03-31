@@ -110,7 +110,6 @@ export const GUIDE_DRIVE_OUTPUT_ROOT_ID = (
   process.env.GUIDE_DRIVE_ROOT_ID ||
   ""
 ).trim();
-export const GUIDE_PARSER_URL = (process.env.GUIDE_PARSER_URL || "").trim();
 export const GUIDE_WORKER_ENABLED = process.env.GUIDE_WORKER_ENABLED === "1";
 export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
   30,
@@ -243,5 +242,12 @@ if (!GUIDE_DRIVE_INBOX_ID)
   log.warn("GUIDE_DRIVE_INBOX_ID ausente: worker de guias não listará arquivos do Inbox");
 if (!GUIDE_DRIVE_OUTPUT_ROOT_ID)
   log.warn("GUIDE_DRIVE_OUTPUT_ROOT_ID ausente: pasta de saída de guias indisponível");
-if (!GUIDE_PARSER_URL)
-  log.warn("GUIDE_PARSER_URL ausente: parser de guias externo (Python) não configurado");
+export const PDF_READER_URL = (process.env.PDF_READER_URL || "").trim();
+export const PDF_READER_TIMEOUT_MS = Math.max(
+  1000,
+  Number(process.env.PDF_READER_TIMEOUT_MS || 30000)
+);
+if (!PDF_READER_URL)
+  log.warn(
+    "PDF_READER_URL ausente: configure a URL do serviço FastAPI pdf-reader (ex.: http://pdf-reader:8000 na rede interna)."
+  );

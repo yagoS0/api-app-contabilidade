@@ -47,7 +47,7 @@ const mockUnidentifiedGuides = [];
 const mockGuideSettings = {
   guideDriveInboxId: "mock-inbox-id",
   guideDriveOutputRootId: "mock-output-root-id",
-  guideParserUrl: "http://localhost:8787",
+  pdfReaderConfigured: true,
   guideScheduleCron: "0 12 * * *",
 };
 
@@ -217,9 +217,6 @@ export function createMockApi() {
       }
       if (input?.guideDriveOutputRootId !== undefined) {
         mockGuideSettings.guideDriveOutputRootId = String(input.guideDriveOutputRootId || "");
-      }
-      if (input?.guideParserUrl !== undefined) {
-        mockGuideSettings.guideParserUrl = String(input.guideParserUrl || "");
       }
       if (input?.guideScheduleCron !== undefined) {
         mockGuideSettings.guideScheduleCron = String(input.guideScheduleCron || "");

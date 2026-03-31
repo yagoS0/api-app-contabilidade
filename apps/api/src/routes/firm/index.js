@@ -772,7 +772,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   router.get("/guides/settings", requireAccountType("FIRM"), async (_req, res) => {
     const settings = await getGuideRuntimeSettings();
-    return res.json(settings);
+    const { pdfReaderUrl, ...rest } = settings;
+    return res.json({
+      ...rest,
+      pdfReaderConfigured: Boolean(String(pdfReaderUrl || "").trim()),
+    });
   });
 
   router.patch("/guides/settings", requireAccountType("FIRM"), async (req, res) => {
@@ -789,11 +793,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const settings = await updateGuideRuntimeSettings({
       guideDriveInboxId: body.guideDriveInboxId,
       guideDriveOutputRootId: body.guideDriveOutputRootId,
-      guideParserUrl: body.guideParserUrl,
       guideScheduleCron: guideScheduleCronRaw,
     });
     await applyGuideScheduleCron(settings.guideScheduleCron);
-    return res.json({ ok: true, settings });
+    const { pdfReaderUrl, ...rest } = settings;
+    return res.json({
+      ok: true,
+      settings: {
+        ...rest,
+        pdfReaderConfigured: Boolean(String(pdfReaderUrl || "").trim()),
+      },
+    });
   });
 
   router.post("/guides/upload", upload.array("files", 50), async (req, res) => {
@@ -812,7 +822,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
 
     try {
-      const uploadResult = await processUploadedGuides({ files });
+      const uploadRequestId = req.get("x-request-id") || req.get("X-Request-Id");
+      const uploadResult = await processUploadedGuides({
+        files,
+        requestId: uploadRequestId || undefined,
+      });
       let emailDispatch = {
         attempted: false,
         skipped: false,
@@ -1389,7 +1403,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       if (
         reason === "GUIDE_DRIVE_INBOX_ID_not_configured" ||
         reason === "GUIDE_DRIVE_OUTPUT_ROOT_ID_not_configured" ||
-        reason === "GUIDE_PARSER_URL_not_configured"
+        reason === "PDF_READER_URL_not_configured"
       ) {
         return res.status(400).json({ ok: false, error: reason });
       }

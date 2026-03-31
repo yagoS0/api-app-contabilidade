@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideParserClient } from "./GuideParserClient.js";
 import { getGuideRuntimeSettings } from "./GuideRuntimeSettings.js";
@@ -37,6 +38,79 @@ function buildExtractedPayload({ parsed, hash, fileName }) {
     uploadHash: hash,
     sourceFileName: fileName || null,
   };
+}
+
+async function createTaxDocumentAudit({
+  requestId,
+  hash,
+  fileName,
+  parserSource,
+  success,
+  parsedData,
+  parseError,
+}) {
+  const metadata =
+    parseError && !success
+      ? {
+          code: parseError.code,
+          message: String(parseError.message || ""),
+        }
+      : {};
+  return prisma.taxDocument.create({
+    data: {
+      requestId,
+      contentHash: hash,
+      sourceFileName: fileName,
+      extractions: {
+        create: {
+          success,
+          parserSource,
+          documentType: parsedData?.tipo ?? null,
+          payload: success && parsedData ? { ...parsedData } : {},
+          confidence: parsedData?.confidence ?? null,
+          warnings: [],
+          rawText: parsedData?.rawTextSample ?? null,
+        },
+      },
+      logs: {
+        create: [
+          {
+            step: "EXTRACT",
+            message: success ? "success" : "failed",
+            metadata,
+          },
+          {
+            step: "ROUTING",
+            message: "evaluating",
+            metadata: {},
+          },
+        ],
+      },
+    },
+  });
+}
+
+async function finalizeTaxDocumentLinks(documentId, { guideId, portalClientId }) {
+  const data = {};
+  if (guideId != null) data.guideId = guideId;
+  if (portalClientId != null) data.portalClientId = portalClientId;
+  if (Object.keys(data).length > 0) {
+    await prisma.taxDocument.update({
+      where: { id: documentId },
+      data,
+    });
+  }
+  await prisma.taxDocumentProcessingLog.create({
+    data: {
+      documentId,
+      step: "GUIDE",
+      message: "linked",
+      metadata: {
+        guideId: guideId ?? null,
+        portalClientId: portalClientId ?? null,
+      },
+    },
+  });
 }
 
 async function savePendingGuide({
@@ -79,11 +153,13 @@ async function savePendingGuide({
   return guide;
 }
 
-async function processUploadedFile({ file, parserClient, storageService }) {
+async function processUploadedFile({ file, parserClient, storageService, requestId: headerRequestId }) {
   const fileName = String(file.originalname || file.name || "guia.pdf");
   const fileBuffer = file.buffer;
   const hash = hashPdf(fileBuffer);
   const sourceFileId = buildUploadSourceFileId(hash);
+  const requestId = randomUUID();
+  const parseTraceId = headerRequestId || requestId;
 
   const duplicate = await prisma.guide.findFirst({
     where: { hash, status: "PROCESSED" },
@@ -102,7 +178,66 @@ async function processUploadedFile({ file, parserClient, storageService }) {
     };
   }
 
-  const parsedData = await parserClient.parsePdf({ buffer: fileBuffer, filename: fileName });
+  let parsedData;
+  try {
+    parsedData = await parserClient.parsePdf({
+      buffer: fileBuffer,
+      filename: fileName,
+      requestId: parseTraceId,
+    });
+  } catch (parseErr) {
+    const errorEntry = buildErrorEntry({
+      code: parseErr?.code || "GUIDE_PROCESSING_ERROR",
+      reason: parseErr?.message || "guide_processing_error",
+    });
+    const taxDoc = await createTaxDocumentAudit({
+      requestId,
+      hash,
+      fileName,
+      parserSource: parserClient.getParserSource(),
+      success: false,
+      parsedData: null,
+      parseError: parseErr,
+    });
+    const existingGuideErr = sourceFileId
+      ? await prisma.guide.findFirst({
+          where: { sourceFileId },
+          select: { id: true },
+        })
+      : null;
+    const pendingGuide = await savePendingGuide({
+      existingGuideId: existingGuideErr?.id || null,
+      fileName,
+      parsed: { data: {}, buffer: fileBuffer },
+      hash,
+      storageService,
+      errorEntry,
+    });
+    await finalizeTaxDocumentLinks(taxDoc.id, {
+      guideId: pendingGuide.id,
+      portalClientId: null,
+    });
+    return {
+      status: "ERROR",
+      guideId: pendingGuide.id,
+      code: errorEntry.code,
+      reason: errorEntry.reason,
+      message: errorEntry.message,
+      fileName,
+      extracted: { uploadHash: hash },
+    };
+  }
+
+  const taxDoc = await createTaxDocumentAudit({
+    requestId,
+    hash,
+    fileName,
+    parserSource: parserClient.getParserSource(),
+    success: true,
+    parsedData,
+    parseError: null,
+  });
+
   const parsed = {
     data: parsedData,
     buffer: fileBuffer,
@@ -131,6 +266,10 @@ async function processUploadedFile({ file, parserClient, storageService }) {
       hash,
       storageService,
       errorEntry,
+    });
+    await finalizeTaxDocumentLinks(taxDoc.id, {
+      guideId: pendingGuide.id,
+      portalClientId: null,
     });
     return {
       status: "ERROR",
@@ -185,6 +324,11 @@ async function processUploadedFile({ file, parserClient, storageService }) {
     },
   });
 
+  await finalizeTaxDocumentLinks(taxDoc.id, {
+    guideId: guide.id,
+    portalClientId: portalClient.id,
+  });
+
   return {
     status: "PROCESSED",
     guideId: guide.id,
@@ -195,22 +339,31 @@ async function processUploadedFile({ file, parserClient, storageService }) {
   };
 }
 
-export async function processUploadedGuides({ files }) {
+export async function processUploadedGuides({ files, requestId: uploadRequestId }) {
   const normalizedFiles = normalizeUploadFiles(files);
   const runtime = await getGuideRuntimeSettings();
-  if (!String(runtime.guideParserUrl || "").trim()) {
-    const err = new Error("guide_parser_not_configured");
-    err.code = "GUIDE_PARSER_NOT_CONFIGURED";
+  if (!runtime.pdfReaderUrl) {
+    const err = new Error("pdf_reader_not_configured");
+    err.code = "PDF_READER_NOT_CONFIGURED";
     throw err;
   }
-  const parserClient = GuideParserClient.create({ baseURL: runtime.guideParserUrl });
+  const parserClient = GuideParserClient.create({
+    pdfReaderUrl: runtime.pdfReaderUrl,
+  });
   const storageService = GuideStorageService.create();
   const results = [];
 
   for (const file of normalizedFiles) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      results.push(await processUploadedFile({ file, parserClient, storageService }));
+      results.push(
+        await processUploadedFile({
+          file,
+          parserClient,
+          storageService,
+          requestId: uploadRequestId,
+        })
+      );
     } catch (err) {
       const fileName = String(file.originalname || file.name || "guia.pdf");
       const code = err?.code || "GUIDE_PROCESSING_ERROR";

@@ -8,6 +8,16 @@ Monorepo (npm workspaces):
 - `apps/web`: front-end (Vite + React) com modo mock via Faker.
 - `packages/shared`: espaço para contratos/itens compartilhados.
 
+O serviço `apps/pdf-reader` (FastAPI, extração de PDF de guias) **não** entra nos workspaces npm: use `pip` e o `Dockerfile` próprio; veja `apps/pdf-reader/README.md`.
+
+### Railway (web, api, pdf-reader)
+
+Em deploy com três serviços, a API Node deve alcançar o leitor de PDF pela rede privada do provedor. Defina na API, por exemplo:
+
+`PDF_READER_URL=http://pdf-reader.railway.internal:8000`
+
+(ajuste host/porta ao nome do serviço e à variável `PORT` do container Python). Opcional: `PDF_READER_TIMEOUT_MS` (padrão 30000). Sem `PDF_READER_URL`, a API não chama leitor de PDF; ingestão/upload de guias e `/readyz` falham até configurar o serviço `apps/pdf-reader`.
+
 Sumário
 - Visão geral
 - Arquitetura
@@ -42,6 +52,7 @@ Estrutura de pastas
 │  │  ├─ prisma/
 │  │  ├─ scripts/
 │  │  └─ src/
+│  ├─ pdf-reader/   # Python FastAPI (fora dos workspaces npm)
 │  └─ web/
 │     └─ src/
 ├─ docs/
@@ -116,7 +127,7 @@ Endpoints HTTP
 - `POST /auth/refresh`: entrada `{ refreshToken }`, retorna `{ accessToken, refreshToken }`.
 - `GET /auth/me`: retorna `{ id, role, accountType, defaultClientId, name }` (exige `Authorization: Bearer`).
 - `GET /healthz`: healthcheck.
-- `GET /readyz`: readiness com checagem de conectividade com banco.
+- `GET /readyz`: readiness (banco + `GET {PDF_READER_URL}/health` com `{"status":"ok"}` quando `PDF_READER_URL` está definido).
 - `GET /status`: status do último envio + log básico (requer `Authorization: Bearer`).
 - `POST /run`: dispara o envio imediato (requer `Authorization: Bearer`).
 - `GET /clients`: lista empresas do portal (paginação `?page=&limit=` e `?search=`). Retorna também `sync.lastSyncAt/state/stale`.
@@ -158,8 +169,8 @@ Endpoints HTTP
 - `POST /firm/guides/:guideId/manual-assign`: atribui empresa/competência/tipo e finaliza processamento da guia.
 - `POST /firm/guides/:guideId/reprocess`: reexecuta parser do PDF da guia para atualizar extração.
 - `POST /firm/guides/ingestion/run`: dispara ingestão imediata da inbox (equivalente ao botão “Atualizar guias” no front).
-- `GET /firm/guides/settings`: retorna configuração atual usada pelo worker (`guideDrive*` e `guideParserUrl`).
-- `PATCH /firm/guides/settings`: permite o front salvar/atualizar configuração de Drive, parser e cron (`guideScheduleCron`) (admin/contador).
+- `GET /firm/guides/settings`: retorna `guideDrive*`, `guideScheduleCron` e `pdfReaderConfigured` (URL do leitor não é exposta).
+- `PATCH /firm/guides/settings`: salva pastas do Drive e cron (`guideScheduleCron`); o leitor de PDF é só infra (`PDF_READER_URL` na API).
 - `POST /firm/guides/emails/send-pending`: processa guias com `emailStatus` pendente/erro elegível e envia **PDF em anexo** (não link).
 - `POST /firm/guides/emails/send-selected`: reenvia imediatamente apenas as `guideIds` informadas (retorno consolidado por item).
 - `GET /firm/guides/pending-report`: relatório global de pendências de e-mail (empresa + guia + tentativas + último erro).
@@ -188,9 +199,9 @@ Validação de estrutura da Company (cadastro):
 - Se regime for diferente de `SIMPLES`, não é permitido enviar `simples.anexo`.
 - Campos mínimos obrigatórios para cadastro: `cnpj`, `razaoSocial`, `regimeTributario`, `cnaePrincipal`, `endereco.{rua,numero,bairro,cidade,uf,cep}`.
 
-Ingestão de guias (Drive + parser Python + storage):
+Ingestão de guias (Drive + pdf-reader + storage):
 - Variáveis de Drive: `GUIDE_DRIVE_INBOX_ID` (caixa de entrada), `GUIDE_DRIVE_OUTPUT_ROOT_ID` (pasta de saída; fallback: `GUIDE_DRIVE_ROOT_ID`). Subpastas fixas (Guias, _REVISAR, _ERRO, _PROCESSANDO, _DUPLICADOS) são criadas automaticamente sob a pasta de saída.
-- Parser Python: `GUIDE_PARSER_URL` (espera `POST /parse-guide` e `GET /health`).
+- Leitor de PDF (FastAPI `apps/pdf-reader`): `PDF_READER_URL` (base URL; a API usa `POST /extract` e `GET /health`).
 - Worker: `GUIDE_WORKER_ENABLED=1`, `GUIDE_WORKER_INTERVAL_SECONDS=120`.
 - Storage: `GUIDE_STORAGE_PROVIDER=LOCAL|S3|R2`, `GUIDE_STORAGE_BUCKET`, `GUIDE_STORAGE_REGION`, `GUIDE_STORAGE_ENDPOINT`, `GUIDE_STORAGE_ACCESS_KEY_ID`, `GUIDE_STORAGE_SECRET_ACCESS_KEY`.
 - Script de execução: `npm run worker:guides:once` (1 ciclo) e `npm run worker:guides` (loop).
