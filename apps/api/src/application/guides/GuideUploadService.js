@@ -1,5 +1,6 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideParserClient } from "./GuideParserClient.js";
+import { getGuideRuntimeSettings } from "./GuideRuntimeSettings.js";
 import { GuideStorageService } from "./GuideStorageService.js";
 import {
   buildPendingGuideStorageKey,
@@ -196,7 +197,13 @@ async function processUploadedFile({ file, parserClient, storageService }) {
 
 export async function processUploadedGuides({ files }) {
   const normalizedFiles = normalizeUploadFiles(files);
-  const parserClient = GuideParserClient.create();
+  const runtime = await getGuideRuntimeSettings();
+  if (!String(runtime.guideParserUrl || "").trim()) {
+    const err = new Error("guide_parser_not_configured");
+    err.code = "GUIDE_PARSER_NOT_CONFIGURED";
+    throw err;
+  }
+  const parserClient = GuideParserClient.create({ baseURL: runtime.guideParserUrl });
   const storageService = GuideStorageService.create();
   const results = [];
 
