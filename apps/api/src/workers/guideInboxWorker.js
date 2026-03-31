@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { GUIDE_WORKER_ENABLED, GUIDE_WORKER_INTERVAL_SECONDS, log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { GuideDriveService } from "../application/guides/GuideDriveService.js";
@@ -102,7 +103,11 @@ async function processOneFile({ file, driveService, parserClient, storageService
       return { status: "SKIPPED", reason: "duplicate_hash", code: "GUIDE_DUPLICATE_HASH" };
     }
 
-    const parsed = await parserClient.parsePdf({ buffer, filename: file.name });
+    const parsed = await parserClient.parsePdf({
+      buffer,
+      filename: file.name,
+      requestId: randomUUID(),
+    });
     const portalClient = await findPortalClientByCnpj(parsed.cnpj);
     const hasRequired = hasRequiredParsedData(parsed);
     if (!hasRequired || !portalClient) {
@@ -237,8 +242,8 @@ export async function runGuideInboxWorkerOnce(options = {}) {
   if (!runtime.guideDriveOutputRootId) {
     throw new Error("GUIDE_DRIVE_OUTPUT_ROOT_ID_not_configured");
   }
-  if (!runtime.guideParserUrl) {
-    throw new Error("GUIDE_PARSER_URL_not_configured");
+  if (!runtime.pdfReaderUrl) {
+    throw new Error("PDF_READER_URL_not_configured");
   }
 
   const locked = await acquireLock();
@@ -252,7 +257,7 @@ export async function runGuideInboxWorkerOnce(options = {}) {
         maxDurationMs,
         hasInboxId: Boolean(runtime.guideDriveInboxId),
         hasOutputRootId: Boolean(runtime.guideDriveOutputRootId),
-        guideParserUrl: runtime.guideParserUrl || null,
+        pdfReaderUrl: runtime.pdfReaderUrl || null,
       },
       "Iniciando ingestão manual de guias"
     );
@@ -263,7 +268,9 @@ export async function runGuideInboxWorkerOnce(options = {}) {
       guideDriveRootId: folders?.guiasRootId,
       guideDriveDuplicatesId: folders?.duplicatesId,
     };
-    const parserClient = GuideParserClient.create({ baseURL: runtime.guideParserUrl });
+    const parserClient = GuideParserClient.create({
+      pdfReaderUrl: runtime.pdfReaderUrl,
+    });
     const storageService = GuideStorageService.create();
     const files = await driveService.listInboxPdfs(runtime.guideDriveInboxId);
     log.info({ totalFoundInInbox: files.length }, "Arquivos PDF encontrados no inbox");

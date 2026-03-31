@@ -19,7 +19,6 @@ import {
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
-const LAST_PARSER_URL_KEY = "portal_firm_last_parser_url";
 
 function fmtMoney(value) {
   if (value === null || value === undefined) return "-";
@@ -198,15 +197,13 @@ function App() {
         guideDriveOutputRootId: String(settings?.guideDriveOutputRootId || ""),
       });
       setCronTimeValue(cronToTimeValue(settings?.guideScheduleCron));
-      const enabled = Boolean(
-        settings?.guideDriveInboxId &&
-          settings?.guideDriveOutputRootId &&
-          settings?.guideParserUrl
+      setJobEnabled(
+        Boolean(
+          settings?.guideDriveInboxId &&
+            settings?.guideDriveOutputRootId &&
+            settings?.pdfReaderConfigured
+        )
       );
-      setJobEnabled(enabled);
-      if (settings?.guideParserUrl) {
-        localStorage.setItem(LAST_PARSER_URL_KEY, settings.guideParserUrl);
-      }
     } catch (err) {
       setError(err?.message || "Falha ao carregar configuracao do job");
     } finally {
@@ -233,7 +230,7 @@ function App() {
         Boolean(
           settings?.guideDriveInboxId &&
             settings?.guideDriveOutputRootId &&
-            settings?.guideParserUrl
+            settings?.pdfReaderConfigured
         )
       );
       setMessage("Configuração das pastas salva com sucesso.");
@@ -272,35 +269,11 @@ function App() {
     }
   }
 
-  async function handleToggleJob() {
-    if (!guideSettings) return;
-    setSettingsLoading(true);
-    clearFeedback();
-    try {
-      if (jobEnabled) {
-        const saved = await api.updateGuideSettings({
-          guideParserUrl: "",
-        });
-        setGuideSettings(saved?.settings || saved);
-        setJobEnabled(false);
-        setMessage("Job desligado com sucesso.");
-      } else {
-        const parserUrl =
-          localStorage.getItem(LAST_PARSER_URL_KEY) ||
-          guideSettings?.guideParserUrl ||
-          "http://localhost:8787";
-        const saved = await api.updateGuideSettings({
-          guideParserUrl: parserUrl,
-        });
-        setGuideSettings(saved?.settings || saved);
-        setJobEnabled(true);
-        setMessage("Job ligado com sucesso.");
-      }
-    } catch (err) {
-      setError(err?.message || "Falha ao atualizar estado do job");
-    } finally {
-      setSettingsLoading(false);
-    }
+  function handleToggleJob() {
+    setMessage(
+      "A leitura de PDF é feita pelo serviço pdf-reader na infraestrutura (variável PDF_READER_URL na API). " +
+        "Configure as pastas do Drive em Configuração e o agendamento abaixo; não é possível ligar/desligar o leitor pelo portal."
+    );
   }
 
   async function handleSaveCronSchedule() {

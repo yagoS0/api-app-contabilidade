@@ -343,7 +343,7 @@ Content-Type: application/json
 POST {{baseUrl}}/firm/dev/guides/reset-hash
 Authorization: Bearer {{accessToken}}
 
-### Firm portal - get guides runtime settings (Drive/Parser)
+### Firm portal - get guides runtime settings (Drive; pdfReaderConfigured vem do PDF_READER_URL na API)
 GET {{baseUrl}}/firm/guides/settings
 Authorization: Bearer {{accessToken}}
 
@@ -354,8 +354,7 @@ Content-Type: application/json
 
 {
   "guideDriveInboxId": "REPLACE_DRIVE_INBOX_ID",
-  "guideDriveOutputRootId": "REPLACE_DRIVE_OUTPUT_ROOT_ID",
-  "guideParserUrl": "http://localhost:8787"
+  "guideDriveOutputRootId": "REPLACE_DRIVE_OUTPUT_ROOT_ID"
 }
 
 ### Firm portal - manual assign guide and finalize
@@ -434,8 +433,7 @@ Content-Type: application/json
 
 {
   "guideDriveInboxId": "REPLACE_DRIVE_INBOX_ID",
-  "guideDriveOutputRootId": "REPLACE_DRIVE_OUTPUT_ROOT_ID",
-  "guideParserUrl": "http://localhost:8787"
+  "guideDriveOutputRootId": "REPLACE_DRIVE_OUTPUT_ROOT_ID"
 }
 
 ### Guides step 2 - conferir configuração salva

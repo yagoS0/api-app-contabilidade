@@ -1,16 +1,22 @@
 import axios from "axios";
-import { GUIDE_PARSER_URL } from "../../config.js";
+import { PDF_READER_TIMEOUT_MS, PDF_READER_URL } from "../../config.js";
+import { mapPdfReaderToParserShape } from "../../modules/pdfReader/pdfReader.mapper.js";
+import { postExtract } from "../../modules/pdfReader/pdfReader.service.js";
+import {
+  throwIfPdfReaderBusinessError,
+  validatePdfReaderExtractResponse,
+} from "../../modules/pdfReader/pdfReader.validator.js";
 import { normalizeCompetencia, normalizeGuideType } from "./guideContract.js";
 
-function ensureConfigured(baseURL) {
-  if (!String(baseURL || "").trim()) {
-    const err = new Error("guide_parser_not_configured");
-    err.code = "GUIDE_PARSER_NOT_CONFIGURED";
+function ensurePdfReaderConfigured(url) {
+  if (!String(url || "").trim()) {
+    const err = new Error("pdf_reader_not_configured");
+    err.code = "PDF_READER_NOT_CONFIGURED";
     throw err;
   }
 }
 
-function normalizeParserPayload(raw) {
+export function normalizeParserPayload(raw) {
   const data = raw && typeof raw === "object" ? raw : {};
   const competencia = normalizeCompetencia(data.competencia);
   const tipo = normalizeGuideType(data.tipo);
@@ -37,41 +43,67 @@ function normalizeParserPayload(raw) {
   };
 }
 
+/**
+ * Cliente do serviço pdf-reader (FastAPI). Não há mais parser Flask legado.
+ */
 export class GuideParserClient {
-  constructor(baseURL = GUIDE_PARSER_URL) {
-    this.baseURL = baseURL;
-    this.client = axios.create({ baseURL, timeout: 30000 });
+  /**
+   * @param {{ pdfReaderUrl?: string | null }} [opts]
+   */
+  constructor({ pdfReaderUrl } = {}) {
+    this.pdfReaderUrl = String(pdfReaderUrl || "").trim() || null;
   }
 
-  static create({ baseURL } = {}) {
-    const resolved = String(baseURL || GUIDE_PARSER_URL || "").trim();
-    if (!resolved) {
-      const err = new Error("guide_parser_not_configured");
-      err.code = "GUIDE_PARSER_NOT_CONFIGURED";
-      throw err;
-    }
-    return new GuideParserClient(resolved);
+  getParserSource() {
+    return "PDF_READER";
+  }
+
+  static create(opts = {}) {
+    const pdfReaderUrl = String(opts.pdfReaderUrl ?? PDF_READER_URL ?? "").trim() || null;
+    ensurePdfReaderConfigured(pdfReaderUrl);
+    return new GuideParserClient({ pdfReaderUrl });
   }
 
   async health() {
-    ensureConfigured(this.baseURL);
-    const { data } = await this.client.get("/health");
+    ensurePdfReaderConfigured(this.pdfReaderUrl);
+    const root = this.pdfReaderUrl.replace(/\/$/, "");
+    const { data } = await axios.get(`${root}/health`, { timeout: 5000 });
     return data;
   }
 
-  async parsePdf({ buffer, filename }) {
-    ensureConfigured(this.baseURL);
+  async parsePdf({ buffer, filename, requestId }) {
     if (!buffer || !Buffer.isBuffer(buffer)) {
       const err = new Error("pdf_buffer_required");
       err.code = "GUIDE_PDF_BUFFER_REQUIRED";
       throw err;
     }
-    const payload = {
-      filename: filename || null,
+    ensurePdfReaderConfigured(this.pdfReaderUrl);
+    const res = await postExtract({
+      baseURL: this.pdfReaderUrl,
       contentBase64: buffer.toString("base64"),
-    };
-    const { data } = await this.client.post("/parse-guide", payload);
-    return normalizeParserPayload(data);
+      filename: filename || null,
+      requestId,
+      timeoutMs: PDF_READER_TIMEOUT_MS,
+    });
+    if (res.status >= 500) {
+      const err = new Error(res.statusText || "pdf_reader_http_error");
+      err.code = "PDF_READER_HTTP_ERROR";
+      err.status = res.status;
+      throw err;
+    }
+    if (res.status >= 400) {
+      validatePdfReaderExtractResponse(res.data);
+      throwIfPdfReaderBusinessError(res.data);
+      const fallback = new Error("pdf_reader_request_failed");
+      fallback.code = "PDF_READER_HTTP_ERROR";
+      fallback.status = res.status;
+      throw fallback;
+    }
+    validatePdfReaderExtractResponse(res.data);
+    throwIfPdfReaderBusinessError(res.data);
+    const shaped = mapPdfReaderToParserShape(
+      /** @type {Record<string, unknown>} */ (res.data)
+    );
+    return normalizeParserPayload(shaped);
   }
 }
-

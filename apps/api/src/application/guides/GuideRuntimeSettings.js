@@ -2,29 +2,22 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import {
   GUIDE_DRIVE_INBOX_ID,
   GUIDE_DRIVE_OUTPUT_ROOT_ID,
-  GUIDE_PARSER_URL,
   GUIDE_SCHEDULE_CRON,
+  PDF_READER_URL,
 } from "../../config.js";
 
 const KEY = "guides.runtime.settings";
 
-function isLocalParserUrl(url) {
-  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/i.test(String(url || "").trim());
-}
-
 export async function getGuideRuntimeSettings() {
   const row = await prisma.appSetting.findUnique({ where: { key: KEY } });
   const value = row?.value && typeof row.value === "object" ? row.value : {};
-  const parserUrlFromEnv = String(GUIDE_PARSER_URL || "").trim();
-  const parserUrlFromDb = String(value.guideParserUrl || "").trim();
   return {
     guideDriveInboxId: String(value.guideDriveInboxId || GUIDE_DRIVE_INBOX_ID || "").trim(),
     guideDriveOutputRootId: String(
       value.guideDriveOutputRootId || GUIDE_DRIVE_OUTPUT_ROOT_ID || ""
     ).trim(),
-    guideParserUrl: isLocalParserUrl(parserUrlFromEnv)
-      ? parserUrlFromEnv
-      : String(parserUrlFromDb || parserUrlFromEnv).trim(),
+    /** URL do serviço FastAPI pdf-reader — somente variável de ambiente `PDF_READER_URL` na API. */
+    pdfReaderUrl: String(PDF_READER_URL || "").trim(),
     guideScheduleCron: String(value.guideScheduleCron || GUIDE_SCHEDULE_CRON || "").trim(),
   };
 }
@@ -42,10 +35,6 @@ export async function updateGuideRuntimeSettings(input = {}) {
       input.guideDriveOutputRootId !== undefined
         ? String(input.guideDriveOutputRootId || "").trim() || null
         : current.guideDriveOutputRootId || null,
-    guideParserUrl:
-      input.guideParserUrl !== undefined
-        ? String(input.guideParserUrl || "").trim() || null
-        : current.guideParserUrl || null,
     guideScheduleCron:
       input.guideScheduleCron !== undefined
         ? String(input.guideScheduleCron || "").trim() || null

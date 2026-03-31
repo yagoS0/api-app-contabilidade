@@ -1,9 +1,15 @@
 import { Router } from "express";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { GUIDE_PARSER_URL } from "../config.js";
+import { PDF_READER_URL } from "../config.js";
 
-function shouldCheckEmbeddedParser() {
-  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/.*)?$/i.test(String(GUIDE_PARSER_URL || "").trim());
+async function checkPdfReaderHealth() {
+  const url = String(PDF_READER_URL || "").trim().replace(/\/+$/, "");
+  if (!url) throw new Error("pdf_reader_url_not_configured");
+  const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
+  if (!res.ok) throw new Error(`pdf_reader_unhealthy_${res.status}`);
+  const body = await res.json().catch(() => ({}));
+  if (body?.status !== "ok") throw new Error("pdf_reader_health_invalid_body");
+  return "up";
 }
 
 export function createStatusRouter({ ensureAuthorized, RunLogStore, runState, CRON_SCHEDULE }) {
@@ -17,19 +23,11 @@ export function createStatusRouter({ ensureAuthorized, RunLogStore, runState, CR
     try {
       await prisma.$queryRaw`SELECT 1`;
       await prisma.appSetting.findFirst({ select: { key: true } }).catch(() => null);
-      if (shouldCheckEmbeddedParser()) {
-        const parserUrl = String(GUIDE_PARSER_URL || "").trim().replace(/\/+$/, "");
-        const parserResponse = await fetch(`${parserUrl}/health`, {
-          signal: AbortSignal.timeout(3000),
-        });
-        if (!parserResponse.ok) {
-          throw new Error(`embedded_parser_unhealthy_${parserResponse.status}`);
-        }
-      }
+      const pdfReader = await checkPdfReaderHealth();
       return res.status(200).json({
         ok: true,
         db: "up",
-        parser: shouldCheckEmbeddedParser() ? "up" : "not_checked",
+        pdfReader,
       });
     } catch (err) {
       return res.status(503).json({
@@ -65,4 +63,3 @@ export function createStatusRouter({ ensureAuthorized, RunLogStore, runState, CR
 
   return router;
 }
-

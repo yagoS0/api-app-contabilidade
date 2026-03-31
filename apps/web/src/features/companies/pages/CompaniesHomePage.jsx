@@ -59,10 +59,10 @@ export function CompaniesHomePage({
 
       <section className="panel">
         <div className="inline-header">
-          <h2>Job de guias</h2>
+          <h2>Ingestão de guias</h2>
           <div className="row-actions">
-            <Button onClick={onToggleJob} disabled={settingsLoading || !guideSettings}>
-              {settingsLoading ? "Salvando..." : jobEnabled ? "Desligar job" : "Ligar job"}
+            <Button variant="secondary" onClick={onToggleJob}>
+              Sobre o leitor de PDF
             </Button>
             <Button variant="secondary" onClick={onOpenGuideUpload}>
               Abrir upload de guias
@@ -70,9 +70,13 @@ export function CompaniesHomePage({
           </div>
         </div>
         <p>
-          Status atual: <b>{jobEnabled ? "Ligado" : "Desligado"}</b>
+          Drive configurado:{" "}
+          <b>{jobEnabled ? "pastas OK + pdf-reader na API" : "incompleto ou pdf-reader ausente"}</b>
         </p>
-        <p className="hint">Controle baseado na configuracao de parser em `guides/settings`.</p>
+        <p className="hint">
+          A leitura de PDF roda no serviço <code>pdf-reader</code> (variável <code>PDF_READER_URL</code> na API,
+          rede interna). O portal só configura pastas do Drive e o cron.
+        </p>
       </section>
 
       <section className="panel">
