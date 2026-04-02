@@ -353,8 +353,7 @@ Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "guideDriveInboxId": "REPLACE_DRIVE_INBOX_ID",
-  "guideDriveOutputRootId": "REPLACE_DRIVE_OUTPUT_ROOT_ID"
+  "guideScheduleCron": "0 12 * * *"
 }
 
 ### Firm portal - manual assign guide and finalize
@@ -432,8 +431,7 @@ Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "guideDriveInboxId": "REPLACE_DRIVE_INBOX_ID",
-  "guideDriveOutputRootId": "REPLACE_DRIVE_OUTPUT_ROOT_ID"
+  "guideScheduleCron": "0 12 * * *"
 }
 
 ### Guides step 2 - conferir configuração salva

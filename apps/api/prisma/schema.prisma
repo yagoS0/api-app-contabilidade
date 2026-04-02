@@ -280,9 +280,11 @@ model Guide {
   driveFinalFolderId String?
   driveFinalFileId   String?
 
-  storageProvider  String? // S3|R2|LOCAL
+  storageProvider  String? // DATABASE|S3|R2|LOCAL (legado)
   storageKey       String?
   storageUrl       String?
+  /// PDF armazenado no PostgreSQL (BYTEA). Preferencial em relação a storage externo.
+  pdfBytes         Bytes?
   hash             String?  @unique
 
   status           String   @default("PENDING") // PENDING|PROCESSING|PROCESSED|NEEDS_REVIEW|ERROR

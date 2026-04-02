@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { GuideStorageService } from "./GuideStorageService.js";
 import { fileNameForGuide, normalizeCompetencia, normalizeGuideType } from "./guideContract.js";
 
 function normalizeCnpj(value) {
@@ -19,15 +20,6 @@ export function buildStorageKey({ portalClientId, competencia, tipo, originalNam
 export function buildUploadSourceFileId(hash) {
   const normalized = String(hash || "").trim();
   return normalized ? `upload:${normalized}` : null;
-}
-
-export function buildPendingGuideStorageKey({ hash, originalName }) {
-  const safeHash = String(hash || "sem-hash").trim();
-  const safeName = String(originalName || "guia.pdf")
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, " ");
-  return `guides/pending/${safeHash}/${safeName}`;
 }
 
 export function getFriendlyGuideMessage({ code, reason }) {
@@ -94,6 +86,20 @@ export async function findPortalClientByCnpj(cnpj) {
     where: { cnpj: digits },
     select: { id: true, razao: true, cnpj: true, companyId: true },
   });
+}
+
+/** PDF da guia: coluna `pdfBytes` no banco ou storage legado (S3/R2/local). */
+export async function getGuidePdfBuffer(guide) {
+  if (!guide) return null;
+  const raw = guide.pdfBytes;
+  if (raw != null && raw.length) {
+    return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+  }
+  if (guide.storageKey) {
+    const storage = GuideStorageService.create();
+    return storage.downloadBuffer({ key: guide.storageKey });
+  }
+  return null;
 }
 
 export async function listGuidesByCompany({
@@ -245,11 +251,17 @@ export async function createOrUpdateGuideFromProcessing({
   storageProvider,
   storageKey,
   storageUrl,
+  pdfBytes: pdfBytesInput,
   hash,
   status,
   errors,
   extracted,
 }) {
+  const hasDbPdf =
+    pdfBytesInput !== undefined &&
+    Buffer.isBuffer(pdfBytesInput) &&
+    pdfBytesInput.length > 0;
+
   const data = {
     portalClientId: portalClientId ? String(portalClientId) : null,
     legacyCompanyId: legacyCompanyId ? String(legacyCompanyId) : null,
@@ -258,15 +270,12 @@ export async function createOrUpdateGuideFromProcessing({
     valor: Number.isFinite(Number(parsed?.valor)) ? Number(parsed.valor) : null,
     vencimento: parsed?.vencimento ? new Date(parsed.vencimento) : null,
     cnpj: normalizeCnpj(parsed?.cnpj),
-    source: source || "DRIVE",
+    source: source || "UPLOAD",
     sourceFileId: sourceFileId || null,
     sourcePath: sourcePath || null,
     driveInboxFolderId: driveInboxFolderId || null,
     driveFinalFolderId: driveFinalFolderId || null,
     driveFinalFileId: driveFinalFileId || null,
-    storageProvider: storageProvider || null,
-    storageKey: storageKey || null,
-    storageUrl: storageUrl || null,
     // Hash só é persistido para guias finalizadas em PROCESSED.
     hash: status === "PROCESSED" ? hash || null : null,
     status: status || "PENDING",
@@ -278,6 +287,23 @@ export async function createOrUpdateGuideFromProcessing({
     errors: errors || [],
     extracted: extracted || parsed || {},
   };
+
+  if (pdfBytesInput !== undefined) {
+    data.pdfBytes = hasDbPdf ? pdfBytesInput : null;
+    if (hasDbPdf) {
+      data.storageProvider = "DATABASE";
+      data.storageKey = null;
+      data.storageUrl = null;
+    } else {
+      data.storageProvider = storageProvider || null;
+      data.storageKey = storageKey || null;
+      data.storageUrl = storageUrl || null;
+    }
+  } else if (!existingGuideId) {
+    data.storageProvider = storageProvider || null;
+    data.storageKey = storageKey || null;
+    data.storageUrl = storageUrl || null;
+  }
 
   if (existingGuideId) {
     return prisma.guide.update({

@@ -103,13 +103,7 @@ export const CERT_STORAGE_PATH = (process.env.CERT_STORAGE_PATH || "").trim();
 export const CERT_SECRET_KEY = (process.env.CERT_SECRET_KEY || "").trim();
 
 // === Ingestão de Guias ===
-// Apenas dois IDs: caixa de entrada e pasta de saída. Subpastas "Guias" e "Duplicadas" são criadas sob a pasta de saída.
-export const GUIDE_DRIVE_INBOX_ID = (process.env.GUIDE_DRIVE_INBOX_ID || "").trim();
-export const GUIDE_DRIVE_OUTPUT_ROOT_ID = (
-  process.env.GUIDE_DRIVE_OUTPUT_ROOT_ID ||
-  process.env.GUIDE_DRIVE_ROOT_ID ||
-  ""
-).trim();
+// PDFs entram por upload no portal e são gravados em `Guide.pdfBytes` (PostgreSQL).
 export const GUIDE_WORKER_ENABLED = process.env.GUIDE_WORKER_ENABLED === "1";
 export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
   30,
@@ -238,10 +232,6 @@ if (!CERT_STORAGE_PATH)
   log.warn("CERT_STORAGE_PATH ausente: upload de certificados por empresa indisponível");
 if (!CERT_SECRET_KEY)
   log.warn("CERT_SECRET_KEY ausente: criptografia de senha do certificado indisponível");
-if (!GUIDE_DRIVE_INBOX_ID)
-  log.warn("GUIDE_DRIVE_INBOX_ID ausente: worker de guias não listará arquivos do Inbox");
-if (!GUIDE_DRIVE_OUTPUT_ROOT_ID)
-  log.warn("GUIDE_DRIVE_OUTPUT_ROOT_ID ausente: pasta de saída de guias indisponível");
 export const PDF_READER_URL = (process.env.PDF_READER_URL || "").trim();
 export const PDF_READER_TIMEOUT_MS = Math.max(
   1000,

@@ -169,8 +169,8 @@ Endpoints HTTP
 - `POST /firm/guides/:guideId/manual-assign`: atribui empresa/competência/tipo e finaliza processamento da guia.
 - `POST /firm/guides/:guideId/reprocess`: reexecuta parser do PDF da guia para atualizar extração.
 - `POST /firm/guides/ingestion/run`: dispara ingestão imediata da inbox (equivalente ao botão “Atualizar guias” no front).
-- `GET /firm/guides/settings`: retorna `guideDrive*`, `guideScheduleCron` e `pdfReaderConfigured` (URL do leitor não é exposta).
-- `PATCH /firm/guides/settings`: salva pastas do Drive e cron (`guideScheduleCron`); o leitor de PDF é só infra (`PDF_READER_URL` na API).
+- `GET /firm/guides/settings`: retorna `guideScheduleCron` e `pdfReaderConfigured` (URL do leitor não é exposta).
+- `PATCH /firm/guides/settings`: salva cron (`guideScheduleCron`); PDFs das guias ficam no banco; leitor em `PDF_READER_URL`.
 - `POST /firm/guides/emails/send-pending`: processa guias com `emailStatus` pendente/erro elegível e envia **PDF em anexo** (não link).
 - `POST /firm/guides/emails/send-selected`: reenvia imediatamente apenas as `guideIds` informadas (retorno consolidado por item).
 - `GET /firm/guides/pending-report`: relatório global de pendências de e-mail (empresa + guia + tentativas + último erro).
@@ -199,12 +199,12 @@ Validação de estrutura da Company (cadastro):
 - Se regime for diferente de `SIMPLES`, não é permitido enviar `simples.anexo`.
 - Campos mínimos obrigatórios para cadastro: `cnpj`, `razaoSocial`, `regimeTributario`, `cnaePrincipal`, `endereco.{rua,numero,bairro,cidade,uf,cep}`.
 
-Ingestão de guias (Drive + pdf-reader + storage):
-- Variáveis de Drive: `GUIDE_DRIVE_INBOX_ID` (caixa de entrada), `GUIDE_DRIVE_OUTPUT_ROOT_ID` (pasta de saída; fallback: `GUIDE_DRIVE_ROOT_ID`). Subpastas fixas (Guias, _REVISAR, _ERRO, _PROCESSANDO, _DUPLICADOS) são criadas automaticamente sob a pasta de saída.
+Guias (upload + pdf-reader + PostgreSQL):
+- Envio de PDF pelo portal (`POST /firm/guides/upload`); o binário é persistido em `Guide.pdfBytes` no Postgres após o parse.
 - Leitor de PDF (FastAPI `apps/pdf-reader`): `PDF_READER_URL` (base URL; a API usa `POST /extract` e `GET /health`).
-- Worker: `GUIDE_WORKER_ENABLED=1`, `GUIDE_WORKER_INTERVAL_SECONDS=120`.
-- Storage: `GUIDE_STORAGE_PROVIDER=LOCAL|S3|R2`, `GUIDE_STORAGE_BUCKET`, `GUIDE_STORAGE_REGION`, `GUIDE_STORAGE_ENDPOINT`, `GUIDE_STORAGE_ACCESS_KEY_ID`, `GUIDE_STORAGE_SECRET_ACCESS_KEY`.
-- Script de execução: `npm run worker:guides:once` (1 ciclo) e `npm run worker:guides` (loop).
+- Worker de inbox (`npm run worker:guides`) não usa mais Google Drive; use apenas upload.
+- Guias antigas podem ainda ter `storageKey` (S3/R2/local); novas usam só o banco.
+- Worker de e-mail: `GUIDE_EMAIL_WORKER_ENABLED=1`; cron agendado via `guideScheduleCron` em settings.
 
 Fluxo sugerido:
 ```bash
