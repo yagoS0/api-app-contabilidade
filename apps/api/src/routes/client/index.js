@@ -12,10 +12,10 @@ import { encryptSecret } from "../../utils/crypto.js";
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import {
+  getGuidePdfBuffer,
   listGuidesByCompany,
   toGuideResponse,
 } from "../../application/guides/GuideService.js";
-import { GuideStorageService } from "../../application/guides/GuideStorageService.js";
 
 function sanitizeRole(role) {
   const value = String(role || "CLIENT_USER").toUpperCase();
@@ -33,7 +33,6 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
 
   const invoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log });
   const syncRouter = createPortalSyncRouter({ ensureAuthorized, log });
-  const guideStorage = GuideStorageService.create();
 
   function parsePfxExpiry(pfxBuffer, password) {
     try {
@@ -519,12 +518,16 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         where: { id: String(guideId), portalClientId: String(companyId) },
       });
       if (!guide) return res.status(404).json({ error: "not_found" });
-      if (!guide.storageKey) return res.status(404).json({ error: "file_not_available" });
-      const url = await guideStorage.createDownloadUrl({
-        key: guide.storageKey,
-        expiresInSeconds: 900,
+      const buf = await getGuidePdfBuffer(guide);
+      if (!buf?.length) return res.status(404).json({ error: "file_not_available" });
+      const fileName = guide.sourcePath || `guia-${guide.competencia || "sem-competencia"}.pdf`;
+      return res.json({
+        url: null,
+        contentBase64: buf.toString("base64"),
+        fileName,
+        mimeType: "application/pdf",
+        expiresIn: null,
       });
-      return res.json({ url, expiresIn: 900 });
     }
   );
 

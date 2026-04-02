@@ -4,7 +4,7 @@ Processos assincronos para ingestao e envio de guias.
 
 ## Workers atuais
 
-- `guideInboxWorker.js`: leitura da inbox no Drive e processamento inicial.
+- `guideInboxWorker.js`: legado (Drive desativado); retorna `skipped`; use upload no portal.
 - `guideEmailWorker.js`: envio de e-mails pendentes/erro com retry.
 - `guideScheduledEmailWorker.js`: disparo agendado por agenda de empresa.
 

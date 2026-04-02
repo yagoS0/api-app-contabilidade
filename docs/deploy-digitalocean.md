@@ -30,14 +30,11 @@ Configure na App Platform:
   - `DATABASE_URL`
   - `JWT_SECRET`
   - `API_KEYS`
-  - `PDF_READER_URL` (base do serviço pdf-reader; health em `GET /health`)
+  - `PDF_READER_URL` (pdf-reader; health em `GET /health`; guias gravam PDF no Postgres após upload)
   - `GOOGLE_APPLICATION_CREDENTIALS_JSON` (JSON da service account em formato string)
 - E-mail:
   - `USE_GMAIL_API`, `GMAIL_DELEGATED_USER`, `SMTP_FROM`
   - ou SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`)
-- Drive/Guias (fallback do runtime):
-  - `GUIDE_DRIVE_INBOX_ID`
-  - `GUIDE_DRIVE_OUTPUT_ROOT_ID`
 - Opcional:
   - `TZ=America/Sao_Paulo`
   - `LOG_LEVEL=info`
@@ -61,10 +58,7 @@ Configure na App Platform:
 5. Verificar readiness:
    - `GET /healthz` (liveness)
    - `GET /readyz` (banco + pdf-reader quando `PDF_READER_URL` está definido)
-6. Configurar runtime de guias no portal (pastas + cron); `PDF_READER_URL` só na API:
-   - `guideDriveInboxId`
-   - `guideDriveOutputRootId`
-   - `guideScheduleCron`
+6. Configurar cron de e-mails de guias no portal (`guideScheduleCron`); `PDF_READER_URL` só na API.
 
 ## 7) Migração de banco em produção
 - A API está configurada para executar:

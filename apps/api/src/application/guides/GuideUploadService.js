@@ -2,10 +2,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideParserClient } from "./GuideParserClient.js";
 import { getGuideRuntimeSettings } from "./GuideRuntimeSettings.js";
-import { GuideStorageService } from "./GuideStorageService.js";
 import {
-  buildPendingGuideStorageKey,
-  buildStorageKey,
   buildUploadSourceFileId,
   createOrUpdateGuideFromProcessing,
   findPortalClientByCnpj,
@@ -118,15 +115,8 @@ async function savePendingGuide({
   fileName,
   parsed,
   hash,
-  storageService,
   errorEntry,
 }) {
-  const storageKey = buildPendingGuideStorageKey({ hash, originalName: fileName });
-  const uploaded = await storageService.upload({
-    key: storageKey,
-    buffer: parsed.buffer,
-    contentType: "application/pdf",
-  });
   const guide = await createOrUpdateGuideFromProcessing({
     existingGuideId,
     portalClientId: null,
@@ -138,9 +128,7 @@ async function savePendingGuide({
     driveInboxFolderId: null,
     driveFinalFolderId: null,
     driveFinalFileId: null,
-    storageProvider: uploaded.provider,
-    storageKey: uploaded.key,
-    storageUrl: uploaded.url,
+    pdfBytes: parsed.buffer,
     hash: null,
     status: "ERROR",
     errors: [errorEntry],
@@ -153,7 +141,7 @@ async function savePendingGuide({
   return guide;
 }
 
-async function processUploadedFile({ file, parserClient, storageService, requestId: headerRequestId }) {
+async function processUploadedFile({ file, parserClient, requestId: headerRequestId }) {
   const fileName = String(file.originalname || file.name || "guia.pdf");
   const fileBuffer = file.buffer;
   const hash = hashPdf(fileBuffer);
@@ -210,7 +198,6 @@ async function processUploadedFile({ file, parserClient, storageService, request
       fileName,
       parsed: { data: {}, buffer: fileBuffer },
       hash,
-      storageService,
       errorEntry,
     });
     await finalizeTaxDocumentLinks(taxDoc.id, {
@@ -264,7 +251,6 @@ async function processUploadedFile({ file, parserClient, storageService, request
       fileName,
       parsed,
       hash,
-      storageService,
       errorEntry,
     });
     await finalizeTaxDocumentLinks(taxDoc.id, {
@@ -282,18 +268,6 @@ async function processUploadedFile({ file, parserClient, storageService, request
     };
   }
 
-  const storageKey = buildStorageKey({
-    portalClientId: portalClient.id,
-    competencia: parsedData.competencia,
-    tipo: parsedData.tipo,
-    originalName: fileName,
-  });
-  const uploaded = await storageService.upload({
-    key: storageKey,
-    buffer: fileBuffer,
-    contentType: "application/pdf",
-  });
-
   const guide = await createOrUpdateGuideFromProcessing({
     existingGuideId: existingGuide?.id || null,
     portalClientId: portalClient.id,
@@ -305,9 +279,7 @@ async function processUploadedFile({ file, parserClient, storageService, request
     driveInboxFolderId: null,
     driveFinalFolderId: null,
     driveFinalFileId: null,
-    storageProvider: uploaded.provider,
-    storageKey: uploaded.key,
-    storageUrl: uploaded.url,
+    pdfBytes: fileBuffer,
     hash,
     status: "PROCESSED",
     errors: [],
@@ -350,7 +322,6 @@ export async function processUploadedGuides({ files, requestId: uploadRequestId 
   const parserClient = GuideParserClient.create({
     pdfReaderUrl: runtime.pdfReaderUrl,
   });
-  const storageService = GuideStorageService.create();
   const results = [];
 
   for (const file of normalizedFiles) {
@@ -360,7 +331,6 @@ export async function processUploadedGuides({ files, requestId: uploadRequestId 
         await processUploadedFile({
           file,
           parserClient,
-          storageService,
           requestId: uploadRequestId,
         })
       );
@@ -382,7 +352,6 @@ export async function processUploadedGuides({ files, requestId: uploadRequestId 
           buffer: file.buffer,
         },
         hash,
-        storageService,
         errorEntry,
       });
       results.push({

@@ -1,6 +1,6 @@
 import { log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { GuideStorageService } from "../application/guides/GuideStorageService.js";
+import { getGuidePdfBuffer } from "../application/guides/GuideService.js";
 import { EmailService } from "../infrastructure/mail/EmailService.js";
 import { releaseGuideLock, tryAcquireGuideLock } from "../application/guides/GuideLockService.js";
 import { resolveCompanyNotificationEmail } from "../application/guides/GuideScheduledEmailService.js";
@@ -39,7 +39,7 @@ async function resolveRecipientEmail(guide) {
   return email ? String(email).trim() : null;
 }
 
-async function processOneGuide({ guide, emailService, storageService }) {
+async function processOneGuide({ guide, emailService }) {
   const attempts = Number(guide.emailAttempts || 0) + 1;
   const source = await prisma.guide.update({
     where: { id: guide.id },
@@ -57,7 +57,8 @@ async function processOneGuide({ guide, emailService, storageService }) {
       err.code = "GUIDE_EMAIL_RECIPIENT_NOT_FOUND";
       throw err;
     }
-    if (!source.storageKey) {
+    const fileBuffer = await getGuidePdfBuffer(source);
+    if (!fileBuffer?.length) {
       const err = new Error("guide_file_not_available");
       err.code = "GUIDE_FILE_NOT_AVAILABLE";
       throw err;
@@ -67,7 +68,6 @@ async function processOneGuide({ guide, emailService, storageService }) {
     const fileName = `${source.tipo || "GUIA"}-${source.competencia || "sem-competencia"}.pdf`;
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guide-pending-email-"));
     const tmpPath = path.join(tmpDir, fileName);
-    const fileBuffer = await storageService.downloadBuffer({ key: source.storageKey });
     await fs.writeFile(tmpPath, fileBuffer);
     const html = `
       <!doctype html>
@@ -156,12 +156,11 @@ export async function runGuideEmailWorkerOnce(options = {}) {
     });
 
     const emailService = new EmailService();
-    const storageService = GuideStorageService.create();
     const results = [];
     for (const guide of guides) {
       // processa em série para evitar burst no provedor
       // eslint-disable-next-line no-await-in-loop
-      results.push(await processOneGuide({ guide, emailService, storageService }));
+      results.push(await processOneGuide({ guide, emailService }));
     }
 
     return {
@@ -201,7 +200,6 @@ export async function runGuideEmailWorkerSelected({ guideIds }) {
     });
     const guideById = new Map(guides.map((guide) => [guide.id, guide]));
     const emailService = new EmailService();
-    const storageService = GuideStorageService.create();
     const results = [];
     for (const guideId of normalizedIds) {
       const guide = guideById.get(guideId);
@@ -216,7 +214,7 @@ export async function runGuideEmailWorkerSelected({ guideIds }) {
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      results.push(await processOneGuide({ guide, emailService, storageService }));
+      results.push(await processOneGuide({ guide, emailService }));
     }
     return {
       skipped: false,

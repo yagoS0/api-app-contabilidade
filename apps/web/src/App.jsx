@@ -71,13 +71,8 @@ function App() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [jobEnabled, setJobEnabled] = useState(false);
   const [guideSettings, setGuideSettings] = useState(null);
-  const [guideSettingsForm, setGuideSettingsForm] = useState({
-    guideDriveInboxId: "",
-    guideDriveOutputRootId: "",
-  });
   const [cronTimeValue, setCronTimeValue] = useState("");
   const [savingCron, setSavingCron] = useState(false);
-  const [savingGuideSettings, setSavingGuideSettings] = useState(false);
   const [pendingGuides, setPendingGuides] = useState([]);
   const [selectedPendingGuideIds, setSelectedPendingGuideIds] = useState([]);
   const [loadingPendingGuides, setLoadingPendingGuides] = useState(false);
@@ -192,52 +187,12 @@ function App() {
     try {
       const settings = await api.getGuideSettings();
       setGuideSettings(settings);
-      setGuideSettingsForm({
-        guideDriveInboxId: String(settings?.guideDriveInboxId || ""),
-        guideDriveOutputRootId: String(settings?.guideDriveOutputRootId || ""),
-      });
       setCronTimeValue(cronToTimeValue(settings?.guideScheduleCron));
-      setJobEnabled(
-        Boolean(
-          settings?.guideDriveInboxId &&
-            settings?.guideDriveOutputRootId &&
-            settings?.pdfReaderConfigured
-        )
-      );
+      setJobEnabled(Boolean(settings?.pdfReaderConfigured));
     } catch (err) {
       setError(err?.message || "Falha ao carregar configuracao do job");
     } finally {
       setSettingsLoading(false);
-    }
-  }
-
-  async function handleSaveGuideSettings(event) {
-    event.preventDefault();
-    setSavingGuideSettings(true);
-    clearFeedback();
-    try {
-      const saved = await api.updateGuideSettings({
-        guideDriveInboxId: guideSettingsForm.guideDriveInboxId,
-        guideDriveOutputRootId: guideSettingsForm.guideDriveOutputRootId,
-      });
-      const settings = saved?.settings || saved;
-      setGuideSettings(settings);
-      setGuideSettingsForm({
-        guideDriveInboxId: String(settings?.guideDriveInboxId || ""),
-        guideDriveOutputRootId: String(settings?.guideDriveOutputRootId || ""),
-      });
-      setJobEnabled(
-        Boolean(
-          settings?.guideDriveInboxId &&
-            settings?.guideDriveOutputRootId &&
-            settings?.pdfReaderConfigured
-        )
-      );
-      setMessage("Configuração das pastas salva com sucesso.");
-    } catch (err) {
-      setError(err?.message || "Falha ao salvar configuração das pastas.");
-    } finally {
-      setSavingGuideSettings(false);
     }
   }
 
@@ -271,8 +226,8 @@ function App() {
 
   function handleToggleJob() {
     setMessage(
-      "A leitura de PDF é feita pelo serviço pdf-reader na infraestrutura (variável PDF_READER_URL na API). " +
-        "Configure as pastas do Drive em Configuração e o agendamento abaixo; não é possível ligar/desligar o leitor pelo portal."
+      "A leitura de PDF é feita pelo serviço pdf-reader (PDF_READER_URL na API). Os PDFs das guias ficam gravados no banco de dados. " +
+        "Use Upload de guias; o agendamento de e-mails é configurado abaixo."
     );
   }
 
@@ -513,13 +468,9 @@ function App() {
   if (page === "guideSettings") {
     return (
       <GuideSettingsPage
-        form={guideSettingsForm}
-        onChange={(field, value) => setGuideSettingsForm((old) => ({ ...old, [field]: value }))}
-        onSubmit={handleSaveGuideSettings}
+        pdfReaderConfigured={Boolean(guideSettings?.pdfReaderConfigured)}
+        guideScheduleCron={guideSettings?.guideScheduleCron || ""}
         onBack={() => setPage("companies")}
-        submitting={savingGuideSettings}
-        message={message}
-        error={error}
       />
     );
   }

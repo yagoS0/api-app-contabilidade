@@ -4,26 +4,10 @@ import fs from "node:fs/promises";
 import fssync from "node:fs";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
-import { GuideDriveService } from "./GuideDriveService.js";
-import { buildCompanyFolderName } from "./GuideService.js";
-import { getGuideRuntimeSettings } from "./GuideRuntimeSettings.js";
-import { normalizeCompetencia } from "./guideContract.js";
-
-const FOLDER_MIME = "application/vnd.google-apps.folder";
+import { getGuidePdfBuffer } from "./GuideService.js";
 
 function safeTempName(name) {
   return String(name || "guia.pdf").replace(/[\\/]+/g, "-");
-}
-
-function pickLatestCompetenciaFolder(folders) {
-  const withComp = (folders || [])
-    .map((item) => ({
-      folder: item,
-      competencia: normalizeCompetencia(item?.name),
-    }))
-    .filter((item) => Boolean(item.competencia))
-    .sort((a, b) => (a.competencia < b.competencia ? 1 : -1));
-  return withComp.length ? withComp[0] : null;
 }
 
 function buildEmailHtml({ razao, competencia, files }) {
@@ -61,93 +45,40 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
     throw err;
   }
 
-  const runtime = await getGuideRuntimeSettings();
-  if (!runtime?.guideDriveOutputRootId) {
-    const err = new Error("guide_drive_output_root_id_not_configured");
-    err.code = "GUIDE_OUTPUT_ROOT_NOT_CONFIGURED";
-    throw err;
-  }
-
-  const drive = await GuideDriveService.create();
-  const email = new EmailService();
-  const folders = await drive.ensureGuideOutputFolders(runtime.guideDriveOutputRootId);
-  if (!folders?.guiasRootId) {
-    const err = new Error("guide_output_folders_unavailable");
-    err.code = "GUIDE_OUTPUT_FOLDERS_UNAVAILABLE";
-    throw err;
-  }
-
-  const companyFolderName = buildCompanyFolderName({ razao: portal.razao, cnpj: portal.cnpj });
-  const companyFolder = await drive.findExactSubfolderByName(folders.guiasRootId, companyFolderName);
-  if (!companyFolder?.id) {
-    return {
-      companyId: portal.id,
-      to,
-      folder: companyFolderName,
-      totalFound: 0,
-      sentNow: 0,
-      alreadySent: 0,
-      status: "no_company_folder",
-    };
-  }
-
-  const subfolders = (await drive.listChildren(companyFolder.id)).filter(
-    (item) => item.mimeType === FOLDER_MIME
-  );
-  const latest = pickLatestCompetenciaFolder(subfolders);
-  if (!latest?.folder?.id) {
-    return {
-      companyId: portal.id,
-      to,
-      folder: companyFolder.name,
-      totalFound: 0,
-      sentNow: 0,
-      alreadySent: 0,
-      status: "no_competencia_folder",
-    };
-  }
-
-  const allPdfs = await drive.listPdfsInFolder(latest.folder.id);
-  const allFileIds = allPdfs.map((item) => String(item.id));
-  const dbSent = allFileIds.length
-    ? await prisma.guide.findMany({
-        where: {
-          portalClientId: portal.id,
-          driveFinalFileId: { in: allFileIds },
-          emailStatus: "SENT",
-        },
-        select: { driveFinalFileId: true },
-      })
-    : [];
-  const dbSentIds = new Set(dbSent.map((item) => String(item.driveFinalFileId)));
-  const pending = allPdfs.filter(
-    (file) => !drive.isGuideEmailSent(file) && !dbSentIds.has(String(file.id))
-  );
-  const toSend = maxFilesPerRun ? pending.slice(0, maxFilesPerRun) : pending;
-  const alreadySent = allPdfs.length - pending.length;
-  if (!toSend.length) {
-    return {
-      companyId: portal.id,
-      to,
-      competencia: latest.competencia,
-      folder: latest.folder.name,
-      totalFound: allPdfs.length,
-      sentNow: 0,
-      alreadySent,
-      pendingToSend: pending.length,
-      remainingAfterRun: 0,
-      durationMs: Date.now() - startedAt,
-      status: "nothing_to_send",
-    };
-  }
-
-  const toSendIds = toSend.map((item) => String(item.id));
-  await prisma.guide.updateMany({
+  const pendingAll = await prisma.guide.findMany({
     where: {
       portalClientId: portal.id,
-      driveFinalFileId: { in: toSendIds },
       status: "PROCESSED",
+      NOT: {
+        OR: [{ emailStatus: "SENT" }, { emailStatus: "SENDING" }],
+      },
     },
+    orderBy: [{ competencia: "desc" }, { updatedAt: "desc" }],
+    take: 500,
+  });
+
+  if (!pendingAll.length) {
+    return {
+      companyId: portal.id,
+      to,
+      competencia: null,
+      totalFound: 0,
+      sentNow: 0,
+      alreadySent: 0,
+      status: "nothing_to_send",
+      durationMs: Date.now() - startedAt,
+    };
+  }
+
+  const latestCompetencia = pendingAll[0]?.competencia || null;
+  const pendingGuides = latestCompetencia
+    ? pendingAll.filter((g) => g.competencia === latestCompetencia)
+    : pendingAll;
+  const toSend = maxFilesPerRun ? pendingGuides.slice(0, maxFilesPerRun) : pendingGuides;
+  const toSendIds = toSend.map((g) => g.id);
+
+  await prisma.guide.updateMany({
+    where: { id: { in: toSendIds } },
     data: {
       emailStatus: "SENDING",
       emailLastError: null,
@@ -159,32 +90,34 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-email-"));
   const attachments = [];
   let attachmentsBytes = 0;
+  const email = new EmailService();
+
   try {
-    for (const file of toSend) {
+    for (const guide of toSend) {
       // eslint-disable-next-line no-await-in-loop
-      const buffer = await drive.downloadFileBuffer(file.id);
+      const buffer = await getGuidePdfBuffer(guide);
+      if (!buffer?.length) {
+        throw new Error(`guide_pdf_missing:${guide.id}`);
+      }
       attachmentsBytes += Number(buffer.length || 0);
-      const tmpPath = path.join(tmpDir, safeTempName(file.name));
+      const name = safeTempName(guide.sourcePath || `${guide.tipo}-${guide.competencia}.pdf`);
+      const tmpPath = path.join(tmpDir, `${guide.id}-${name}`);
       // eslint-disable-next-line no-await-in-loop
       await fs.writeFile(tmpPath, buffer);
-      attachments.push({ path: tmpPath, filename: file.name });
+      attachments.push({ path: tmpPath, filename: name });
     }
 
-    const subject = `Guias de pagamento - ${latest.competencia}`;
+    const subject = `Guias de pagamento - ${latestCompetencia || "—"}`;
     const html = buildEmailHtml({
       razao: portal.razao,
-      competencia: latest.competencia,
-      files: toSend,
+      competencia: latestCompetencia || "—",
+      files: toSend.map((g) => ({ name: g.sourcePath || `${g.tipo}-${g.competencia}.pdf` })),
     });
     await email.send({ to, subject, html, attachments });
 
     const sentAt = new Date();
     await prisma.guide.updateMany({
-      where: {
-        portalClientId: portal.id,
-        driveFinalFileId: { in: toSendIds },
-        status: "PROCESSED",
-      },
+      where: { id: { in: toSendIds } },
       data: {
         emailStatus: "SENT",
         emailSentAt: sentAt,
@@ -193,44 +126,24 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
       },
     });
 
-    const markerErrors = [];
-    for (const file of toSend) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        await drive.markGuideEmailSent(file);
-      } catch (err) {
-        markerErrors.push({
-          fileId: file.id,
-          name: file.name,
-          reason: err?.message || "drive_mark_failed",
-        });
-      }
-    }
-
     return {
       companyId: portal.id,
       to,
-      competencia: latest.competencia,
-      folder: latest.folder.name,
-      totalFound: allPdfs.length,
+      competencia: latestCompetencia,
+      totalFound: pendingGuides.length,
       sentNow: toSend.length,
-      alreadySent,
-      pendingToSend: pending.length,
-      remainingAfterRun: Math.max(pending.length - toSend.length, 0),
+      alreadySent: 0,
+      pendingToSend: pendingGuides.length,
+      remainingAfterRun: Math.max(pendingGuides.length - toSend.length, 0),
       maxFilesPerRun: maxFilesPerRun || null,
       attachmentsCount: toSend.length,
       attachmentsBytes,
       durationMs: Date.now() - startedAt,
-      markerErrors,
-      status: markerErrors.length ? "sent_with_marker_warnings" : "sent",
+      status: "sent",
     };
   } catch (err) {
     await prisma.guide.updateMany({
-      where: {
-        portalClientId: portal.id,
-        driveFinalFileId: { in: toSendIds },
-        status: "PROCESSED",
-      },
+      where: { id: { in: toSendIds } },
       data: {
         emailStatus: "ERROR",
         emailLastError: err?.message || "guide_email_send_failed",
@@ -264,4 +177,3 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
     }
   }
 }
-

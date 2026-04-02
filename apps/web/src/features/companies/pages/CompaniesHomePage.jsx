@@ -59,10 +59,10 @@ export function CompaniesHomePage({
 
       <section className="panel">
         <div className="inline-header">
-          <h2>Ingestão de guias</h2>
+          <h2>Guias</h2>
           <div className="row-actions">
             <Button variant="secondary" onClick={onToggleJob}>
-              Sobre o leitor de PDF
+              Sobre armazenamento e PDF
             </Button>
             <Button variant="secondary" onClick={onOpenGuideUpload}>
               Abrir upload de guias
@@ -70,12 +70,11 @@ export function CompaniesHomePage({
           </div>
         </div>
         <p>
-          Drive configurado:{" "}
-          <b>{jobEnabled ? "pastas OK + pdf-reader na API" : "incompleto ou pdf-reader ausente"}</b>
+          Pdf-reader na API: <b>{jobEnabled ? "configurado" : "ausente (PDF_READER_URL)"}</b>
         </p>
         <p className="hint">
-          A leitura de PDF roda no serviço <code>pdf-reader</code> (variável <code>PDF_READER_URL</code> na API,
-          rede interna). O portal só configura pastas do Drive e o cron.
+          Envie PDFs pelo upload; o arquivo é guardado no banco após o processamento. Sem Google Drive para
+          pastas de guias.
         </p>
       </section>
 

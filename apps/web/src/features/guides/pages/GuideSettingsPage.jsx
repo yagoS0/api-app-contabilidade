@@ -1,22 +1,16 @@
 import { AppShell } from "../../../components/layout/AppShell";
-import { Feedback } from "../../../components/ui/Feedback";
 import { Button } from "../../../components/ui/Button";
 
-export function GuideSettingsPage({
-  form,
-  onChange,
-  onSubmit,
-  onBack,
-  submitting,
-  message,
-  error,
-}) {
+export function GuideSettingsPage({ pdfReaderConfigured, guideScheduleCron, onBack }) {
   return (
     <AppShell>
       <header className="header inline-header">
         <div>
-          <h1>Configuração de guias</h1>
-          <p>Defina os IDs da pasta de entrada e da pasta raiz de saída no Google Drive.</p>
+          <h1>Guias</h1>
+          <p>
+            As guias entram pelo <b>Upload de PDF</b> no portal. O arquivo é processado pelo serviço{" "}
+            <code>pdf-reader</code> e o PDF fica armazenado no <b>banco de dados</b> (PostgreSQL).
+          </p>
         </div>
         <Button variant="secondary" onClick={onBack}>
           Voltar
@@ -24,37 +18,21 @@ export function GuideSettingsPage({
       </header>
 
       <section className="panel">
-        <div className="inline-header">
-          <h2>Pastas do Drive</h2>
-        </div>
-        <form className="form-grid" onSubmit={onSubmit}>
-          <label>
-            ID da pasta Caixa de entrada
-            <input
-              value={form.guideDriveInboxId}
-              onChange={(event) => onChange("guideDriveInboxId", event.target.value)}
-              placeholder="Ex: 1AbCDefGhIJkLmNo"
-            />
-          </label>
-          <label>
-            ID da pasta de saída
-            <input
-              value={form.guideDriveOutputRootId}
-              onChange={(event) => onChange("guideDriveOutputRootId", event.target.value)}
-              placeholder="Ex: 2ZyXWvuTsRqPoNmL"
-            />
-          </label>
-          <p className="hint">
-            A pasta de saída é a raiz onde o backend organiza automaticamente as subpastas das empresas e
-            competências.
-          </p>
-          <div className="form-actions">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Salvando..." : "Salvar configuração"}
-            </Button>
-          </div>
-        </form>
-        <Feedback message={message} error={error} />
+        <h2>Status</h2>
+        <ul className="hint" style={{ lineHeight: 1.6 }}>
+          <li>
+            Leitor de PDF (API):{" "}
+            <b>{pdfReaderConfigured ? "configurado (PDF_READER_URL)" : "ausente na API"}</b>
+          </li>
+          <li>
+            Cron de e-mails agendados (ajuste na lista de empresas):{" "}
+            <b>{guideScheduleCron || "desativado"}</b>
+          </li>
+        </ul>
+        <p className="hint">
+          Não há mais integração com Google Drive para pastas de guias. O envio por e-mail usa o PDF salvo no
+          banco.
+        </p>
       </section>
     </AppShell>
   );

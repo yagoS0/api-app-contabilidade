@@ -16,10 +16,8 @@ import {
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import {
-  buildCompanyFolderName,
-  buildGuideFinalFileName,
-  buildStorageKey,
   getFriendlyGuideMessage,
+  getGuidePdfBuffer,
   hashPdf,
   listPendingGuidesReport,
   listGuidesByCompany,
@@ -27,8 +25,6 @@ import {
   toGuideResponse,
 } from "../../application/guides/GuideService.js";
 import { normalizeCompetencia, normalizeGuideType } from "../../application/guides/guideContract.js";
-import { GuideDriveService } from "../../application/guides/GuideDriveService.js";
-import { GuideStorageService } from "../../application/guides/GuideStorageService.js";
 import {
   getGuideRuntimeSettings,
   updateGuideRuntimeSettings,
@@ -60,7 +56,6 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 },
   });
-  const guideStorage = GuideStorageService.create();
 
   const invoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log });
   const syncRouter = createPortalSyncRouter({ ensureAuthorized, log });
@@ -791,8 +786,6 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       return res.status(400).json({ error: "guide_schedule_cron_invalid" });
     }
     const settings = await updateGuideRuntimeSettings({
-      guideDriveInboxId: body.guideDriveInboxId,
-      guideDriveOutputRootId: body.guideDriveOutputRootId,
       guideScheduleCron: guideScheduleCronRaw,
     });
     await applyGuideScheduleCron(settings.guideScheduleCron);
@@ -1016,12 +1009,16 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         where: { id: String(guideId), portalClientId: String(companyId) },
       });
       if (!guide) return res.status(404).json({ error: "not_found" });
-      if (!guide.storageKey) return res.status(404).json({ error: "file_not_available" });
-      const url = await guideStorage.createDownloadUrl({
-        key: guide.storageKey,
-        expiresInSeconds: 900,
+      const buf = await getGuidePdfBuffer(guide);
+      if (!buf?.length) return res.status(404).json({ error: "file_not_available" });
+      const fileName = guide.sourcePath || `guia-${guide.competencia || "sem-competencia"}.pdf`;
+      return res.json({
+        url: null,
+        contentBase64: buf.toString("base64"),
+        fileName,
+        mimeType: "application/pdf",
+        expiresIn: null,
       });
-      return res.json({ url, expiresIn: 900 });
     }
   );
 
@@ -1058,39 +1055,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(403).json({ error: "forbidden" });
       }
 
-      const driveService = await GuideDriveService.create();
-      const runtime = await getGuideRuntimeSettings();
-      if (!runtime.guideDriveOutputRootId) {
-        return res.status(400).json({ error: "guide_drive_output_root_id_not_configured" });
+      const fileBuffer = await getGuidePdfBuffer(guide);
+      if (!fileBuffer?.length) {
+        return res.status(400).json({ error: "guide_pdf_not_available" });
       }
-      const folders = await driveService.ensureGuideOutputFolders(runtime.guideDriveOutputRootId);
-      if (!folders?.guiasRootId) {
-        return res.status(500).json({ error: "guide_output_folders_unavailable" });
-      }
-      const sourceFileId = guide.sourceFileId;
-      if (!sourceFileId) return res.status(400).json({ error: "source_file_not_available" });
-
-      const fileBuffer = await driveService.downloadFileBuffer(sourceFileId);
-      const companyFolder = buildCompanyFolderName({ razao: portal.razao, cnpj: portal.cnpj });
-      const destinationFolderId = await driveService.ensureNestedFolders(folders.guiasRootId, [
-        companyFolder,
-        competencia,
-      ]);
-      const finalName = buildGuideFinalFileName({ tipo, competencia });
-      await driveService.renameFile(sourceFileId, finalName);
-      await driveService.moveFile(sourceFileId, destinationFolderId);
-
-      const storageKey = buildStorageKey({
-        portalClientId: portal.id,
-        competencia,
-        tipo,
-        originalName: finalName,
-      });
-      const uploaded = await guideStorage.upload({
-        key: storageKey,
-        buffer: fileBuffer,
-        contentType: "application/pdf",
-      });
 
       const updated = await prisma.guide.update({
         where: { id: guide.id },
@@ -1099,11 +1067,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           legacyCompanyId: portal.companyId || null,
           competencia,
           tipo,
-          driveFinalFolderId: destinationFolderId,
-          driveFinalFileId: sourceFileId,
-          storageProvider: uploaded.provider,
-          storageKey: uploaded.key,
-          storageUrl: uploaded.url,
+          driveInboxFolderId: null,
+          driveFinalFolderId: null,
+          driveFinalFileId: null,
+          storageProvider: "DATABASE",
+          storageKey: null,
+          storageUrl: null,
+          pdfBytes: fileBuffer,
           hash: hashPdf(fileBuffer),
           status: "PROCESSED",
           emailStatus: "PENDING",
@@ -1400,11 +1370,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const reason = err?.message || "guide_ingestion_failed";
       log.error({ err: reason }, "Falha ao executar ingestão manual de guias");
 
-      if (
-        reason === "GUIDE_DRIVE_INBOX_ID_not_configured" ||
-        reason === "GUIDE_DRIVE_OUTPUT_ROOT_ID_not_configured" ||
-        reason === "PDF_READER_URL_not_configured"
-      ) {
+      if (reason === "PDF_READER_URL_not_configured") {
         return res.status(400).json({ ok: false, error: reason });
       }
 

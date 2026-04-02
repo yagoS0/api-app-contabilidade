@@ -45,8 +45,6 @@ const mockCompanies = makeCompanies();
 const mockGuidesByCompany = makeGuidesByCompany(mockCompanies);
 const mockUnidentifiedGuides = [];
 const mockGuideSettings = {
-  guideDriveInboxId: "mock-inbox-id",
-  guideDriveOutputRootId: "mock-output-root-id",
   pdfReaderConfigured: true,
   guideScheduleCron: "0 12 * * *",
 };
@@ -212,30 +210,23 @@ export function createMockApi() {
     },
     async updateGuideSettings(input) {
       await delay();
-      if (input?.guideDriveInboxId !== undefined) {
-        mockGuideSettings.guideDriveInboxId = String(input.guideDriveInboxId || "");
-      }
-      if (input?.guideDriveOutputRootId !== undefined) {
-        mockGuideSettings.guideDriveOutputRootId = String(input.guideDriveOutputRootId || "");
-      }
       if (input?.guideScheduleCron !== undefined) {
         mockGuideSettings.guideScheduleCron = String(input.guideScheduleCron || "");
       }
       return { ok: true, settings: { ...mockGuideSettings } };
     },
     async runGuideIngestion() {
-      await delay(500);
-      const processed = faker.number.int({ min: 1, max: 8 });
-      const errors = faker.number.int({ min: 0, max: 1 });
+      await delay(200);
       return {
         ok: true,
         result: {
-          skipped: false,
-          total: processed + errors,
-          totalFoundInInbox: processed + errors,
-          processed,
+          skipped: true,
+          reason: "drive_ingestion_removed",
+          total: 0,
+          totalFoundInInbox: 0,
+          processed: 0,
           needsReview: 0,
-          errors,
+          errors: 0,
           skippedItems: 0,
           remainingInInbox: 0,
           hasMore: false,
@@ -243,9 +234,9 @@ export function createMockApi() {
           batch: {
             batchSize: 25,
             maxDurationMs: 25000,
-            consumedInBatch: processed + errors,
-            processedInBatch: processed,
-            errorsInBatch: errors,
+            consumedInBatch: 0,
+            processedInBatch: 0,
+            errorsInBatch: 0,
             skippedInBatch: 0,
           },
           results: [],
