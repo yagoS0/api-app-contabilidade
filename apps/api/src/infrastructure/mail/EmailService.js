@@ -12,6 +12,7 @@ import {
   SMTP_PASS,
   GMAIL_DELEGATED_USER,
   GOOGLE_APPLICATION_CREDENTIALS,
+  GOOGLE_APPLICATION_CREDENTIALS_JSON,
   log,
 } from "../../config.js";
 
@@ -22,11 +23,37 @@ function encodeHeaderUtf8(value) {
   return `=?UTF-8?B?${b64}?=`;
 }
 
+async function loadServiceAccountJson() {
+  const inline = String(GOOGLE_APPLICATION_CREDENTIALS_JSON || "").trim();
+  if (inline) {
+    return JSON.parse(inline);
+  }
+  const credPath = String(GOOGLE_APPLICATION_CREDENTIALS || "").trim();
+  if (!credPath) {
+    const err = new Error("google_application_credentials_missing");
+    err.code = "GOOGLE_CREDENTIALS_MISSING";
+    throw err;
+  }
+  const resolved = path.resolve(credPath);
+  const st = await fsp.stat(resolved).catch(() => null);
+  if (!st) {
+    const err = new Error("google_application_credentials_file_not_found");
+    err.code = "GOOGLE_CREDENTIALS_NOT_FOUND";
+    throw err;
+  }
+  if (st.isDirectory()) {
+    const err = new Error(
+      "GOOGLE_APPLICATION_CREDENTIALS aponta para um diretório. Use um arquivo .json ou defina GOOGLE_APPLICATION_CREDENTIALS_JSON com o JSON da service account."
+    );
+    err.code = "GOOGLE_CREDENTIALS_EISDIR";
+    throw err;
+  }
+  const raw = await fsp.readFile(resolved, "utf8");
+  return JSON.parse(raw);
+}
+
 async function getGmailService() {
-  // Normaliza o caminho para evitar duplicação
-  const credentialsPath = path.resolve(GOOGLE_APPLICATION_CREDENTIALS);
-  const raw = await fsp.readFile(credentialsPath, "utf8");
-  const { client_email, private_key } = JSON.parse(raw);
+  const { client_email, private_key } = await loadServiceAccountJson();
   const auth = new google.auth.JWT({
     email: client_email,
     key: private_key,
