@@ -1,5 +1,5 @@
 # Railway define PORT em runtime; Caddy expande {$PORT} no Caddyfile.
-:{$PORT} {
+:8080 {
 	root * /usr/share/caddy
 	encode gzip
 	try_files {path} /index.html
