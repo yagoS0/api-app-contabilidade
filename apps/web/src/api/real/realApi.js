@@ -112,12 +112,6 @@ export function createRealApi() {
         body: JSON.stringify(input || {}),
       });
     },
-    async runGuideIngestion(input) {
-      return request("/firm/guides/ingestion/run", {
-        method: "POST",
-        body: JSON.stringify(input || {}),
-      });
-    },
     async uploadGuides(files) {
       const formData = new FormData();
       for (const file of Array.isArray(files) ? files : []) {

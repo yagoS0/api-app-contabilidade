@@ -13,8 +13,6 @@
     "dev:web": "npm run dev -w @contabilidade/web",
     "build": "npm run build --workspaces --if-present",
     "start:api": "npm run start -w @contabilidade/api",
-    "worker:guides": "npm run worker:guides -w @contabilidade/api",
-    "worker:guides:once": "npm run worker:guides:once -w @contabilidade/api",
     "worker:guide-emails": "npm run worker:guide-emails -w @contabilidade/api",
     "worker:guide-emails:once": "npm run worker:guide-emails:once -w @contabilidade/api",
     "worker:guide-emails-scheduled": "npm run worker:guide-emails-scheduled -w @contabilidade/api",

@@ -1,0 +1,6 @@
+# Usado quando o serviço Railway tem Root Directory = apps/web.
+# Evita rebuild do front quando só a API muda (caminhos relativos ao root do serviço).
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["**/*"]

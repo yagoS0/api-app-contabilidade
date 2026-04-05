@@ -1,5 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: App Runner service for enviar-guias (send-only)
+Description: >
+  LEGADO — não corresponde ao monorepo atual (sem Drive/Sheets; API em apps/api + pdf-reader).
+  Mantido só como referência histórica; o StartCommand aponta para um entrypoint que não existe mais neste repositório.
 
 Parameters:
   ServiceName:

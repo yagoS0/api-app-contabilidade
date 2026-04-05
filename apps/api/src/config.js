@@ -22,18 +22,11 @@ export const log = pino({
       : { target: "pino-pretty", options: { colorize: true } },
 });
 
-// === Flags de execução ===
-export const FORCE_SEND = process.env.FORCE_SEND === "1" || false; // reenviar mesmo já processado
-
 // === Google ===
 export const GOOGLE_APPLICATION_CREDENTIALS =
   process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
 export const GOOGLE_APPLICATION_CREDENTIALS_JSON =
   process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON || "";
-export const DRIVE_FOLDER_ID_CLIENTES =
-  process.env.DRIVE_FOLDER_ID_CLIENTES || "";
-export const SHEET_ID = process.env.SHEET_ID || "";
-export const TARGET_MONTH = process.env.TARGET_MONTH || ""; // opcional: "09-2025"
 
 // Gmail API (delegated / DWD)
 export const USE_GMAIL_API = process.env.USE_GMAIL_API === "1" || false;
@@ -193,19 +186,9 @@ export const REFRESH_TOKEN_EXPIRES_IN = (
   process.env.REFRESH_TOKEN_EXPIRES_IN || "7d"
 ).trim();
 
-// SCOPES Google (Drive + Sheets; adiciona Gmail se habilitado)
-export const SCOPES = [
-  "https://www.googleapis.com/auth/drive", // precisamos escrever appProperties para persistir estado
-  "https://www.googleapis.com/auth/spreadsheets.readonly",
-  ...(USE_GMAIL_API ? ["https://www.googleapis.com/auth/gmail.send"] : []),
-];
-
 // Sanidade básica (só loga; quem quiser pode “throw”)
 if (!GOOGLE_APPLICATION_CREDENTIALS && !GOOGLE_APPLICATION_CREDENTIALS_JSON)
   log.warn("GOOGLE_APPLICATION_CREDENTIALS/GOOGLE_APPLICATION_CREDENTIALS_JSON ausente no .env");
-if (!DRIVE_FOLDER_ID_CLIENTES)
-  log.warn("DRIVE_FOLDER_ID_CLIENTES ausente no .env");
-if (!SHEET_ID) log.warn("SHEET_ID ausente no .env");
 if (!FROM)
   log.warn("Remetente (FROM) vazio: defina SMTP_FROM ou GMAIL_DELEGATED_USER");
 if (!API_KEYS.length)

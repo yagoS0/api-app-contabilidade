@@ -10,15 +10,29 @@ function safeTempName(name) {
   return String(name || "guia.pdf").replace(/[\\/]+/g, "-");
 }
 
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function buildEmailHtml({ razao, competencia, files }) {
-  const listItems = files.map((file) => `<li>${file.name}</li>`).join("");
+  const razaoSafe = escapeHtml(razao);
+  const compSafe = escapeHtml(competencia);
+  const listItems = files
+    .map((file) => `<li>${escapeHtml(file.name)}</li>`)
+    .join("");
   return `
     <!doctype html>
-    <html><body style="font-family:Arial,sans-serif;color:#2C3E50">
-    <p>Olá, <b>${razao}</b></p>
-    <p>Segue em anexo a(s) guia(s) da competência <b>${competencia}</b>.</p>
-    <ul>${listItems}</ul>
-    <p>Atenciosamente,<br>Belgen Contabilidade</p>
+    <html><body style="font-family:Georgia,'Segoe UI',Arial,sans-serif;color:#1a1a1a;line-height:1.55;max-width:560px">
+    <p>Olá, equipe da <strong>${razaoSafe}</strong>,</p>
+    <p>Enviamos em anexo o(s) <strong>documento(s) de guia(s) de pagamento</strong> referente(s) à competência <strong>${compSafe}</strong>, para arquivo e pagamento no prazo.</p>
+    <p style="margin:1em 0"><strong>Arquivos neste envio</strong></p>
+    <ul style="margin:0;padding-left:1.25em">${listItems}</ul>
+    <p>Em caso de dúvida, responda este e-mail ou fale com o seu contato no escritório.</p>
+    <p style="margin-top:1.75em">Um abraço,<br><strong>Equipe Belgen Contabilidade</strong></p>
     </body></html>
   `;
 }
@@ -107,7 +121,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
       attachments.push({ path: tmpPath, filename: name });
     }
 
-    const subject = `Guias de pagamento - ${latestCompetencia || "—"}`;
+    const subject = `Guias de pagamento — competência ${latestCompetencia || "—"}`;
     const html = buildEmailHtml({
       razao: portal.razao,
       competencia: latestCompetencia || "—",

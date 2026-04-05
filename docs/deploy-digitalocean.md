@@ -80,7 +80,7 @@ Configure na App Platform:
   - usuário sem vínculo não acessa dados de outra empresa (`403`)
 - Guias:
   - `GET /firm/guides/settings`
-  - `POST /firm/guides/ingestion/run`
+  - `POST /firm/guides/upload` (multipart `files`)
   - `POST /firm/guides/emails/send-pending`
   - validar que o e-mail de `send-pending` chega com **PDF em anexo** (não apenas link)
 
@@ -92,7 +92,7 @@ Configure na App Platform:
   - falhas de e-mail (`guide_email_send_failed`)
 - Logs essenciais:
   - inicialização do scheduler
-  - resultado de ingestão
+  - resultado de upload/parse de guias
   - resultado de envio de e-mails
 
 ## 10) Rollback

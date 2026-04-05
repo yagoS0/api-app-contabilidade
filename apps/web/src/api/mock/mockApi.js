@@ -215,34 +215,6 @@ export function createMockApi() {
       }
       return { ok: true, settings: { ...mockGuideSettings } };
     },
-    async runGuideIngestion() {
-      await delay(200);
-      return {
-        ok: true,
-        result: {
-          skipped: true,
-          reason: "drive_ingestion_removed",
-          total: 0,
-          totalFoundInInbox: 0,
-          processed: 0,
-          needsReview: 0,
-          errors: 0,
-          skippedItems: 0,
-          remainingInInbox: 0,
-          hasMore: false,
-          nextRecommendedDelayMs: 0,
-          batch: {
-            batchSize: 25,
-            maxDurationMs: 25000,
-            consumedInBatch: 0,
-            processedInBatch: 0,
-            errorsInBatch: 0,
-            skippedInBatch: 0,
-          },
-          results: [],
-        },
-      };
-    },
     async uploadGuides(files) {
       await delay(700);
       const normalizedFiles = Array.isArray(files) ? files : [];
