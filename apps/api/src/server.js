@@ -2,9 +2,7 @@
 import express from "express";
 import cron from "node-cron";
 import cors from "cors";
-import { run } from "./application/SendGuides.js";
 import { log, API_KEYS, ADN_SYNC_CRON, GUIDE_EMAIL_WORKER_ENABLED } from "./config.js";
-import { RunLogStore } from "./infrastructure/status/RunLogStore.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
 import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
@@ -15,9 +13,7 @@ import { createPortalInvoicesRouter } from "./routes/portalInvoices.js";
 import { createPortalSyncRouter } from "./routes/portalSync.js";
 import { createClientPortalRouter } from "./routes/client/index.js";
 import { createFirmPortalRouter } from "./routes/firm/index.js";
-import { createRunRouter } from "./routes/run.js";
 import { createStatusRouter } from "./routes/status.js";
-import { runState } from "./routes/runState.js";
 import { createInvoicesRouter } from "./routes/invoices.js";
 import { createNfseRouter } from "./routes/nfse.js";
 import { createAdnRouter } from "./routes/adn.js";
@@ -37,7 +33,6 @@ app.use(
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
-const CRON_SCHEDULE = (process.env.CRON_SCHEDULE || "").trim(); // ex: "0 8 * * 1-5"
 
 const USER_STATUSES = ["pending", "active", "rejected"];
 const USER_ROLES = ["user", "admin", "contador"];
@@ -59,19 +54,7 @@ const portalInvoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log 
 const portalSyncRouter = createPortalSyncRouter({ ensureAuthorized, log });
 const clientPortalRouter = createClientPortalRouter({ ensureAuthorized, log });
 const firmPortalRouter = createFirmPortalRouter({ ensureAuthorized, log });
-const { router: runRouter, executeRun } = createRunRouter({
-  ensureAuthorized,
-  RunLogStore,
-  runState,
-  run,
-  log,
-});
-const statusRouter = createStatusRouter({
-  ensureAuthorized,
-  RunLogStore,
-  runState,
-  CRON_SCHEDULE,
-});
+const statusRouter = createStatusRouter({ ensureAuthorized });
 const invoicesRouter = createInvoicesRouter({
   ensureAuthorized,
   log,
@@ -96,41 +79,10 @@ app.use("/invoices", invoicesRouter);
 app.use("/nfse", nfseRouter);
 app.use("/api", adnRouter);
 app.use("/", statusRouter);
-app.use("/", runRouter);
 
 app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
 });
-
-if (CRON_SCHEDULE) {
-  try {
-    cron.schedule(
-      CRON_SCHEDULE,
-      async () => {
-        if (runState.isRunning) {
-          log.warn("Execução cron ignorada: já há um processo em andamento.");
-          return;
-        }
-        log.info({ CRON_SCHEDULE }, "Disparando execução pelo CRON");
-        try {
-          await executeRun("send");
-        } catch (err) {
-          if (err.code === "ALREADY_RUNNING") {
-            log.warn("Cron encontrou execução em andamento");
-          } else {
-            log.error({ err }, "Execução (cron) falhou");
-          }
-        }
-      },
-      {
-        timezone: process.env.TZ || "America/Sao_Paulo",
-      }
-    );
-    log.info({ CRON_SCHEDULE }, "CRON habilitado");
-  } catch (e) {
-    log.error({ err: e, CRON_SCHEDULE }, "Falha ao configurar CRON — desabilitado");
-  }
-}
 
 let adnSyncRunning = false;
 if (ADN_SYNC_CRON) {

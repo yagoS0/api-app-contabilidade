@@ -39,6 +39,14 @@ async function resolveRecipientEmail(guide) {
   return email ? String(email).trim() : null;
 }
 
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 async function processOneGuide({ guide, emailService }) {
   const attempts = Number(guide.emailAttempts || 0) + 1;
   const source = await prisma.guide.update({
@@ -64,26 +72,42 @@ async function processOneGuide({ guide, emailService }) {
       throw err;
     }
 
-    const subject = `Guia ${source.tipo || "Tributo"} - ${source.competencia || "sem competência"}`;
+    const portal = source.portalClientId
+      ? await prisma.portalClient.findUnique({
+          where: { id: source.portalClientId },
+          select: { razao: true },
+        })
+      : null;
+    const empresa = portal?.razao ? escapeHtml(portal.razao) : null;
+    const competenciaLabel = escapeHtml(source.competencia || "—");
+    const tipoLabel = escapeHtml(source.tipo || "Guia de pagamento");
+    const valorFmt =
+      source.valor != null
+        ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(source.valor))
+        : null;
+    const vencFmt = source.vencimento
+      ? new Date(source.vencimento).toLocaleDateString("pt-BR")
+      : null;
+
+    const subject = `Guia de pagamento — competência ${source.competencia || "—"}`;
     const fileName = `${source.tipo || "GUIA"}-${source.competencia || "sem-competencia"}.pdf`;
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guide-pending-email-"));
     const tmpPath = path.join(tmpDir, fileName);
     await fs.writeFile(tmpPath, fileBuffer);
     const html = `
       <!doctype html>
-      <html><body style="font-family:Arial,sans-serif;color:#2C3E50">
-      <p>Olá,</p>
-      <p>Sua guia foi processada com sucesso.</p>
-      <ul>
-        <li><b>Tipo:</b> ${source.tipo || "-"}</li>
-        <li><b>Competência:</b> ${source.competencia || "-"}</li>
-        <li><b>Valor:</b> ${source.valor ? Number(source.valor).toFixed(2) : "-"}</li>
-        <li><b>Vencimento:</b> ${
-          source.vencimento ? new Date(source.vencimento).toLocaleDateString("pt-BR") : "-"
-        }</li>
+      <html><body style="font-family:Georgia,'Segoe UI',Arial,sans-serif;color:#1a1a1a;line-height:1.55;max-width:560px">
+      <p>Olá${empresa ? `, <strong>${empresa}</strong>` : ""},</p>
+      <p>Segue em anexo o <strong>PDF da sua guia de pagamento</strong> para o seu arquivo e para pagamento dentro do prazo.</p>
+      <p style="margin:1.25em 0"><strong>Resumo do documento</strong></p>
+      <ul style="margin:0;padding-left:1.25em">
+        <li><strong>Tipo:</strong> ${tipoLabel}</li>
+        <li><strong>Competência:</strong> ${competenciaLabel}</li>
+        <li><strong>Valor:</strong> ${valorFmt || "—"}</li>
+        <li><strong>Vencimento:</strong> ${vencFmt || "—"}</li>
       </ul>
-      <p>Segue a guia em anexo (PDF).</p>
-      <p>Atenciosamente,<br>Belgen Contabilidade</p>
+      <p>Se tiver qualquer dúvida sobre valores ou datas, é só responder este e-mail ou falar com o seu contato aqui no escritório.</p>
+      <p style="margin-top:1.75em">Um abraço,<br><strong>Equipe Belgen Contabilidade</strong></p>
       </body></html>
     `;
     try {

@@ -1,23 +1,21 @@
 # Workers module
 
-Processos assincronos para ingestao e envio de guias.
+Processos assíncronos para envio e agendamento de e-mails de guias (PDFs no PostgreSQL).
 
 ## Workers atuais
 
-- `guideInboxWorker.js`: legado (Drive desativado); retorna `skipped`; use upload no portal.
 - `guideEmailWorker.js`: envio de e-mails pendentes/erro com retry.
 - `guideScheduledEmailWorker.js`: disparo agendado por agenda de empresa.
+- `guideScheduledEmailManager.js`: aplica `guideScheduleCron` das settings no processo da API.
 
 ## Regras operacionais
 
-- Cada worker usa lock no banco para evitar execucao concorrente.
-- Execucao em loop e modo `--once` para jobs sob demanda.
+- Cada worker usa lock no banco para evitar execução concorrente.
+- Execução em loop e modo `--once` para jobs sob demanda.
 - Retentativa de envio usa backoff exponencial para erros transientes.
 
 ## Scripts npm
 
-- `npm run worker:guides`
-- `npm run worker:guides:once`
 - `npm run worker:guide-emails`
 - `npm run worker:guide-emails:once`
 - `npm run worker:guide-emails-scheduled`

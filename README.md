@@ -1,7 +1,7 @@
 enviar-guias
 ================
 
-Automação para envio de guias fiscais via Google Drive + e-mail.
+Portal de guias fiscais: upload de PDF, extração via `apps/pdf-reader`, armazenamento em PostgreSQL e envio por e-mail.
 
 Monorepo (npm workspaces):
 - `apps/api`: backend (Express + Prisma + workers).
@@ -29,20 +29,14 @@ Sumário
 - Troubleshooting
 
 Visão geral
-- Para cada cliente listado na planilha (colunas A=Nome, B=Email), o sistema localiza a pasta da competência do mês anterior dentro de “Clientes/MM-AAAA”.
-- Todos os PDFs dessa pasta que ainda não foram marcados como processados (`appProperties.belgen_processed` diferente de 1) são baixados, anexados em um único e-mail e enviados.
-- Após o envio bem-sucedido cada arquivo recebe `belgen_processed=1`, evitando reenvio futuro. Há logs persistidos em `data/`.
+- O contador envia PDFs pelo portal (`POST /firm/guides/upload`); a API chama o leitor FastAPI, grava o binário em `Guide.pdfBytes` e dispara o fluxo de e-mail conforme workers e agenda por empresa.
 
 Arquitetura
-- `apps/api/src/application/SendGuides.js`: orquestra o fluxo de envio.
-- `apps/api/src/server.js`: expõe endpoints HTTP + cron opcional para disparar `SendGuides`.
-- `apps/api/src/infrastructure/drive/DriveService.js`: utilitários de Google Drive.
-- `apps/api/src/infrastructure/sheets/SheetService.js`: leitura da planilha de clientes.
-- `apps/api/src/infrastructure/mail/EmailService.js`: envio por Gmail API (delegação) ou SMTP.
-- `apps/api/src/infrastructure/status/RunLogStore.js`: persiste status/entregas em `data/`.
-- `apps/api/src/infrastructure/google/GoogleClients.js`: inicializa clientes Google (Drive/Sheets).
-- `apps/api/src/config.js`: centraliza variáveis de ambiente e logger.
-- `apps/web/src`: interface para operação e testes de fluxo.
+- `apps/api/src/server.js`: HTTP, cron ADN e workers de guias (e-mail).
+- `apps/api/src/application/guides/*`: upload, parse, fila de e-mail e relatórios.
+- `apps/api/src/infrastructure/mail/EmailService.js`: Gmail API (delegação) ou SMTP.
+- `apps/pdf-reader`: extração de texto e campos do PDF.
+- `apps/web/src`: interface do portal.
 
 Estrutura de pastas
 ```
@@ -67,15 +61,13 @@ Estrutura de pastas
 Configuração (.env)
 1. Copie `docs/env.example` para `.env` na raiz e preencha:
    - `GOOGLE_APPLICATION_CREDENTIALS`: caminho absoluto do JSON da Service Account.
-   - `DRIVE_FOLDER_ID_CLIENTES`: ID da pasta raiz “Clientes”.
-   - `SHEET_ID`: ID da planilha (colunas A/B).
    - `API_KEYS`: uma ou mais chaves separadas por vírgula (ex.: `minha-chave-ui,cli-interno`). Somente requisições que enviarem uma dessas chaves serão autorizadas (fallback para automações/homologação).
    - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` (opcional): usados pelo script `npm run prisma:seed` para garantir que exista um admin ativo.
    - `AUTH_USERS`: fallback legado em JSON (ex.: `[{"username":"admin","password":"trocar","role":"admin"}]`). Utilize apenas durante a migração; os usuários efetivos ficam na tabela `User`.
    - `JWT_SECRET`: segredo usado para assinar o token retornado por `/auth/login`. Opcionalmente ajuste `JWT_EXPIRES_IN` (padrão `1h`).
    - `DATABASE_URL`: string de conexão PostgreSQL (ex.: `postgresql://user:pass@host:5432/db`).
    - Opções de e-mail: `USE_GMAIL_API` + `GMAIL_DELEGATED_USER` **ou** SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`).
-   - Opções extras: `CRON_SCHEDULE`, `TARGET_MONTH`, `FORCE_SEND`, `LOG_LEVEL`, `TZ`, `HOST`, `PORT`.
+   - Opções extras: `LOG_LEVEL`, `TZ`, `HOST`, `PORT`, `PDF_READER_URL`, `GUIDE_EMAIL_WORKER_ENABLED`, `GUIDE_SCHEDULE_CRON`.
    - Em produção, mantenha `GOOGLE_APPLICATION_CREDENTIALS`, `API_KEYS` e `DATABASE_URL` em um Secrets Manager/App Runner Secret e apenas exporte as variáveis em runtime.
 
 Banco de dados (PostgreSQL) - API
@@ -116,8 +108,7 @@ Requisitos: Node 18+
    - `npm run dev:web`
    - Copie `apps/web/.env.example` para `apps/web/.env` e mantenha `VITE_API_MODE=mock` para trabalhar offline.
    - Para usar API real, ajuste `VITE_API_MODE=real`, `VITE_API_BASE_URL` e `VITE_API_TOKEN`.
-4. Executar workers:
-   - `npm run worker:guides`
+4. Executar workers (guias):
    - `npm run worker:guide-emails`
    - `npm run worker:guide-emails-scheduled`
 
@@ -128,8 +119,7 @@ Endpoints HTTP
 - `GET /auth/me`: retorna `{ id, role, accountType, defaultClientId, name }` (exige `Authorization: Bearer`).
 - `GET /healthz`: healthcheck.
 - `GET /readyz`: readiness (banco + `GET {PDF_READER_URL}/health` com `{"status":"ok"}` quando `PDF_READER_URL` está definido).
-- `GET /status`: status do último envio + log básico (requer `Authorization: Bearer`).
-- `POST /run`: dispara o envio imediato (requer `Authorization: Bearer`).
+- `GET /status`: resumo operacional do fluxo atual de guias (requer `Authorization: Bearer`).
 - `GET /clients`: lista empresas do portal (paginação `?page=&limit=` e `?search=`). Retorna também `sync.lastSyncAt/state/stale`.
 - `GET /clients/:clientId`: detalhe da empresa do portal.
 - `GET /clients/:clientId/integration-settings`: provider/environment + `certConfigured`.
@@ -168,7 +158,6 @@ Endpoints HTTP
 - `GET /firm/guides/review`: fila de revisão manual (`NEEDS_REVIEW` por padrão).
 - `POST /firm/guides/:guideId/manual-assign`: atribui empresa/competência/tipo e finaliza processamento da guia.
 - `POST /firm/guides/:guideId/reprocess`: reexecuta parser do PDF da guia para atualizar extração.
-- `POST /firm/guides/ingestion/run`: dispara ingestão imediata da inbox (equivalente ao botão “Atualizar guias” no front).
 - `GET /firm/guides/settings`: retorna `guideScheduleCron` e `pdfReaderConfigured` (URL do leitor não é exposta).
 - `PATCH /firm/guides/settings`: salva cron (`guideScheduleCron`); PDFs das guias ficam no banco; leitor em `PDF_READER_URL`.
 - `POST /firm/guides/emails/send-pending`: processa guias com `emailStatus` pendente/erro elegível e envia **PDF em anexo** (não link).
@@ -202,7 +191,6 @@ Validação de estrutura da Company (cadastro):
 Guias (upload + pdf-reader + PostgreSQL):
 - Envio de PDF pelo portal (`POST /firm/guides/upload`); o binário é persistido em `Guide.pdfBytes` no Postgres após o parse.
 - Leitor de PDF (FastAPI `apps/pdf-reader`): `PDF_READER_URL` (base URL; a API usa `POST /extract` e `GET /health`).
-- Worker de inbox (`npm run worker:guides`) não usa mais Google Drive; use apenas upload.
 - Guias antigas podem ainda ter `storageKey` (S3/R2/local); novas usam só o banco.
 - Worker de e-mail: `GUIDE_EMAIL_WORKER_ENABLED=1`; cron agendado via `guideScheduleCron` em settings.
 
@@ -213,16 +201,12 @@ curl -X POST https://seu-host/auth/login \
   -H "content-type: application/json" \
   -d '{"username":"admin","password":"trocar"}'
 
-# Chamada autenticada com Authorization: Bearer <token>
-curl -X POST https://seu-host/run \
-  -H "authorization: Bearer <token>"
-
 # Listar usuários pendentes (somente admin)
 curl https://seu-host/admin/users?status=pending \
   -H "authorization: Bearer <token-admin>"
 ```
 
-> O fallback por `x-api-key` segue disponível apenas onde explicitamente permitido no endpoint; rotas operacionais sensíveis (`/run`, `/status`) exigem JWT.
+> O fallback por `x-api-key` segue disponível apenas onde explicitamente permitido no endpoint; `GET /status` exige JWT (sem API key).
 
 ### Fluxo de aprovação de usuários
 1. O interessado chama `POST /auth/signup` e recebe `201 { status: "pending" }`.
@@ -275,13 +259,12 @@ Payload para `POST /clients`:
 ```
 
 Permissões Google
-- Compartilhe a pasta “Clientes” com a Service Account (ou adicione-a ao mesmo Drive compartilhado) e conceda acesso à planilha.
-- Ative as APIs necessárias: Drive, Sheets (e Gmail se optar por `USE_GMAIL_API=1`).
+- Com `USE_GMAIL_API=1`, habilite a **Gmail API** no projeto e configure delegação de domínio (DWD) para o usuário em `GMAIL_DELEGATED_USER`, conforme a documentação do Google Workspace.
+- A mesma service account pode ser usada com `GOOGLE_APPLICATION_CREDENTIALS` ou `GOOGLE_APPLICATION_CREDENTIALS_JSON`.
 
 Troubleshooting
-- IDs incorretos ou falta de permissão: verifique se a Service Account recebeu “Editor” na pasta e na planilha.
 - “invalid_grant / Invalid JWT Signature”: confira o JSON das credenciais (formatação da chave privada, caminho correto e serviço ativo).
-- Nenhum PDF encontrado: confirme o nome da pasta `MM-AAAA` dentro do cliente ou use `TARGET_MONTH` para forçar uma competência específica.
+- `GET /readyz` com falha no `pdfReader`: confira `PDF_READER_URL` (rede interna em PaaS) e o `GET /health` do serviço `apps/pdf-reader`.
 
 Deploy na DigitalOcean
 - Guia detalhado de CI/CD, banco, secrets, migração e rollback: `docs/deploy-digitalocean.md`.

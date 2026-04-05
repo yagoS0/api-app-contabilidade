@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { PDF_READER_URL } from "../config.js";
+import {
+  PDF_READER_URL,
+  GUIDE_EMAIL_WORKER_ENABLED,
+  GUIDE_SCHEDULE_CRON,
+} from "../config.js";
 
 async function checkPdfReaderHealth() {
   const url = String(PDF_READER_URL || "").trim().replace(/\/+$/, "");
@@ -12,7 +16,7 @@ async function checkPdfReaderHealth() {
   return "up";
 }
 
-export function createStatusRouter({ ensureAuthorized, RunLogStore, runState, CRON_SCHEDULE }) {
+export function createStatusRouter({ ensureAuthorized }) {
   const router = Router();
 
   router.get("/healthz", (_req, res) => {
@@ -40,23 +44,12 @@ export function createStatusRouter({ ensureAuthorized, RunLogStore, runState, CR
 
   router.get("/status", async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
-    const last = await RunLogStore.getLastRun();
     res.json({
-      running: runState.isRunning || Boolean(last?.running),
-      lastRunStartedAt: runState.lastRunStartedAt,
-      lastRunFinishedAt: runState.lastRunFinishedAt,
-      lastRunError:
-        runState.lastRunError && typeof runState.lastRunError === "object"
-          ? { message: runState.lastRunError.message }
-          : runState.lastRunError || null,
-      cron: CRON_SCHEDULE || null,
-      messages: Array.isArray(last?.messages) ? last.messages : [],
-      lastRunKind: last?.kind || null,
-      lastRunStore: {
-        startedAt: last?.startedAt || null,
-        finishedAt: last?.finishedAt || null,
-        error: last?.error || null,
-        running: Boolean(last?.running),
+      ok: true,
+      guides: {
+        flow: "portal_upload_pdf_reader_postgres_email",
+        guideEmailWorkerEnabled: GUIDE_EMAIL_WORKER_ENABLED,
+        guideScheduleCronDefault: GUIDE_SCHEDULE_CRON || null,
       },
     });
   });

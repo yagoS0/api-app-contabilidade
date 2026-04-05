@@ -6,7 +6,6 @@ watchPatterns = [
   "railway.toml",
   "docker/**",
   "apps/api/**",
-  "python/parser/**",
   "package.json",
   "package-lock.json"
 ]

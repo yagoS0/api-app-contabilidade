@@ -329,25 +329,15 @@ Authorization: Bearer {{accessToken}}
 GET {{baseUrl}}/firm/companies/{{portalClientId}}/guides/{{guideId}}/download
 Authorization: Bearer {{accessToken}}
 
-### Firm portal - run inbox ingestion once (button action)
-POST {{baseUrl}}/firm/guides/ingestion/run
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "batchSize": 25,
-  "maxDurationMs": 25000
-}
-
 ### Dev (admin only) - resetar hashes de guias
 POST {{baseUrl}}/firm/dev/guides/reset-hash
 Authorization: Bearer {{accessToken}}
 
-### Firm portal - get guides runtime settings (Drive; pdfReaderConfigured vem do PDF_READER_URL na API)
+### Firm portal - get guides runtime settings (pdfReaderConfigured vem do PDF_READER_URL na API)
 GET {{baseUrl}}/firm/guides/settings
 Authorization: Bearer {{accessToken}}
 
-### Firm portal - update guides runtime settings (inbox + pasta de saída; subpastas criadas automaticamente)
+### Firm portal - update guides runtime settings (cron agendado global)
 PATCH {{baseUrl}}/firm/guides/settings
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
@@ -422,10 +412,16 @@ Content-Type: application/json
 }
 
 ###############################################################################
-# GUIDES - FLUXO RÁPIDO (Drive + Parser + Ingestão + Envio por Empresa)
+# GUIDES - FLUXO RÁPIDO (upload + pdf-reader + Postgres + e-mail)
 ###############################################################################
 
-### Guides step 1 - salvar configuração runtime (só 2 IDs: inbox + pasta de saída; subpastas são criadas automaticamente)
+### Guides step 1 - upload de PDFs (campo "files"; use curl ou cliente HTTP com multipart)
+# curl -X POST "{{baseUrl}}/firm/guides/upload" \
+#   -H "authorization: Bearer {{accessToken}}" \
+#   -F "files=@/caminho/guia1.pdf" \
+#   -F "files=@/caminho/guia2.pdf"
+
+### Guides step 2 - salvar cron global de envio agendado
 PATCH {{baseUrl}}/firm/guides/settings
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
@@ -434,19 +430,9 @@ Content-Type: application/json
   "guideScheduleCron": "0 12 * * *"
 }
 
-### Guides step 2 - conferir configuração salva
+### Guides step 3 - conferir configuração salva
 GET {{baseUrl}}/firm/guides/settings
 Authorization: Bearer {{accessToken}}
-
-### Guides step 3 - rodar 1 ciclo de ingestão (botão do front)
-POST {{baseUrl}}/firm/guides/ingestion/run
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "batchSize": 25,
-  "maxDurationMs": 25000
-}
 
 ### Guides step 4 - enviar e-mail da competência mais recente (anexos por empresa)
 POST {{baseUrl}}/firm/companies/{{portalClientId}}/guides/send-email-latest

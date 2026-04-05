@@ -1,6 +1,6 @@
 # pdf-reader
 
-Serviço FastAPI interno para extração de texto e campos de guias em PDF (substitui ou complementa o parser Flask em `python/parser`).
+Serviço FastAPI interno para extração de texto e campos de guias em PDF (fluxo oficial da API; o parser Flask legado foi descontinuado).
 
 ## Requisitos
 
