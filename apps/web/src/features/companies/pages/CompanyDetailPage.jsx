@@ -1,4 +1,5 @@
 import { AppShell } from "../../../components/layout/AppShell";
+import { PageHeader } from "../../../components/layout/PageHeader";
 import { Feedback } from "../../../components/ui/Feedback";
 import { Button } from "../../../components/ui/Button";
 import { CompanyGuidesTable } from "../components/CompanyGuidesTable";
@@ -24,35 +25,39 @@ export function CompanyDetailPage({
 }) {
   return (
     <AppShell>
-      <header className="header inline-header">
-        <div>
-          <h1>Empresa</h1>
-          <p>Dados da empresa e guias processadas.</p>
-        </div>
-        <Button variant="secondary" onClick={onBack}>
-          Voltar
-        </Button>
-      </header>
+      <PageHeader
+        title={selectedCompany?.razao || "Empresa"}
+        description="Dados cadastrais e guias processadas."
+        actions={
+          <Button variant="secondary" onClick={onBack}>
+            Voltar
+          </Button>
+        }
+      />
 
       {selectedCompany ? (
         <section className="panel">
           <div className="company-card">
             <p>
-              <b>Razao social:</b> {selectedCompany.razao}
+              <span className="text-muted">CNPJ:</span> {selectedCompany.cnpj}
             </p>
             <p>
-              <b>CNPJ:</b> {selectedCompany.cnpj}
+              <span className="text-muted">E-mail do responsável:</span>{" "}
+              {selectedCompany.ownerEmail || selectedCompany.email || "—"}
             </p>
             <p>
-              <b>Email:</b> {selectedCompany.email || "-"}
+              <span className="text-muted">E-mail das guias:</span>{" "}
+              {selectedCompany.guideNotificationEmail || "—"}
             </p>
             <p>
-              <b>Municipio/UF:</b> {selectedCompany.municipio || "-"} / {selectedCompany.uf || "-"}
+              <span className="text-muted">Município / UF:</span> {selectedCompany.municipio || "—"} /{" "}
+              {selectedCompany.uf || "—"}
             </p>
           </div>
-          <div className="row-actions">
+          <div className="toolbar">
             <Button
               variant="secondary"
+              type="button"
               onClick={() => setCompanyDetailTab("guides")}
               disabled={companyDetailTab === "guides"}
             >
@@ -60,9 +65,10 @@ export function CompanyDetailPage({
             </Button>
             <Button
               variant="secondary"
+              type="button"
               onClick={() => setCompanyDetailTab("edit")}
               disabled={!canEditCompany || companyDetailTab === "edit"}
-              title={!canEditCompany ? "Apenas admin/contador pode editar cadastro." : ""}
+              title={!canEditCompany ? "Apenas admin ou contador pode editar." : undefined}
             >
               Editar cadastro
             </Button>
@@ -80,11 +86,9 @@ export function CompanyDetailPage({
         />
       ) : (
         <section className="panel">
-          <div className="inline-header">
-            <h2>Editar cadastro</h2>
-          </div>
+          <h2 className="panel__title">Editar cadastro</h2>
           {!canEditCompany ? (
-            <p className="hint">Apenas perfis admin/contador podem editar os dados da empresa.</p>
+            <p className="text-muted">Apenas admin ou contador pode alterar os dados.</p>
           ) : (
             <CompanyForm
               form={companyEditForm}
@@ -102,4 +106,3 @@ export function CompanyDetailPage({
     </AppShell>
   );
 }
-

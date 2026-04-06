@@ -9,6 +9,7 @@ export function getInitialCompanyFormState() {
     nomeFantasia: "",
     cnpj: "",
     email: "",
+    guideNotificationEmail: "",
     telefone: "",
     regimeTributario: "SIMPLES",
     cnaePrincipal: "",
@@ -27,12 +28,13 @@ export function mapCompanyToEditForm(company) {
   const endereco = legacy?.enderecoJson && typeof legacy.enderecoJson === "object" ? legacy.enderecoJson : {};
   return {
     ownerName: "",
-    ownerEmail: String(company?.email || "").trim(),
+    ownerEmail: String(company?.ownerEmail || company?.email || "").trim(),
     ownerPassword: "",
     razaoSocial: String(legacy?.razaoSocial || company?.razao || "").trim(),
     nomeFantasia: String(legacy?.nomeFantasia || "").trim(),
     cnpj: String(company?.cnpj || "").trim(),
     email: String(company?.email || "").trim(),
+    guideNotificationEmail: String(company?.guideNotificationEmail || "").trim(),
     telefone: String(legacy?.telefone || company?.telefone || "").trim(),
     regimeTributario: String(legacy?.regimeTributario || "SIMPLES"),
     cnaePrincipal: String(legacy?.cnaePrincipal || "").trim(),

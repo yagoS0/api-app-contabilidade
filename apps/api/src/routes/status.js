@@ -1,10 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../infrastructure/db/prisma.js";
-import {
-  PDF_READER_URL,
-  GUIDE_EMAIL_WORKER_ENABLED,
-  GUIDE_SCHEDULE_CRON,
-} from "../config.js";
+import { PDF_READER_URL, GUIDE_EMAIL_WORKER_ENABLED } from "../config.js";
 
 async function checkPdfReaderHealth() {
   const url = String(PDF_READER_URL || "").trim().replace(/\/+$/, "");
@@ -49,7 +45,6 @@ export function createStatusRouter({ ensureAuthorized }) {
       guides: {
         flow: "portal_upload_pdf_reader_postgres_email",
         guideEmailWorkerEnabled: GUIDE_EMAIL_WORKER_ENABLED,
-        guideScheduleCronDefault: GUIDE_SCHEDULE_CRON || null,
       },
     });
   });

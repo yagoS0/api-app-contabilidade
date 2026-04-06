@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { createApiClient } from "./api/client";
 import "./App.css";
-import { AppShell } from "./components/layout/AppShell";
-import { Feedback } from "./components/ui/Feedback";
-import { Button } from "./components/ui/Button";
 import { CompaniesHomePage } from "./features/companies/pages/CompaniesHomePage";
 import { CompanyFormPage } from "./features/companies/pages/CompanyFormPage";
 import { CompanyDetailPage } from "./features/companies/pages/CompanyDetailPage";
 import { GuideSettingsPage } from "./features/guides/pages/GuideSettingsPage";
 import { GuideUploadPage } from "./features/guides/pages/GuideUploadPage";
+import { LoginPage } from "./features/auth/pages/LoginPage";
+import { PendingGuidesPage } from "./features/guides/pages/PendingGuidesPage";
 import { useCompanies } from "./features/companies/hooks/useCompanies";
 import { useCompanyGuides } from "./features/companies/hooks/useCompanyGuides";
 import {
@@ -19,41 +18,6 @@ import {
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
-
-function fmtMoney(value) {
-  if (value === null || value === undefined) return "-";
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
-}
-
-function fmtDate(value) {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "-";
-  return parsed.toLocaleDateString("pt-BR");
-}
-
-function cronToTimeValue(cronExpression) {
-  const value = String(cronExpression || "").trim();
-  const parts = value.split(/\s+/);
-  if (parts.length !== 5) return "";
-  const minute = Number(parts[0]);
-  const hour = Number(parts[1]);
-  if (Number.isNaN(minute) || Number.isNaN(hour)) return "";
-  if (minute < 0 || minute > 59 || hour < 0 || hour > 23) return "";
-  if (parts[2] !== "*" || parts[3] !== "*" || parts[4] !== "*") return "";
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
-}
-
-function timeValueToDailyCron(timeValue) {
-  const raw = String(timeValue || "").trim();
-  const match = raw.match(/^(\d{2}):(\d{2})$/);
-  if (!match) return "";
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (Number.isNaN(hour) || Number.isNaN(minute)) return "";
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
-  return `${minute} ${hour} * * *`;
-}
 
 function App() {
   const [page, setPage] = useState("login");
@@ -68,11 +32,8 @@ function App() {
   const [companyDetailTab, setCompanyDetailTab] = useState("guides");
   const [submittingCompany, setSubmittingCompany] = useState(false);
   const [submittingCompanyEdit, setSubmittingCompanyEdit] = useState(false);
-  const [settingsLoading, setSettingsLoading] = useState(false);
   const [jobEnabled, setJobEnabled] = useState(false);
   const [guideSettings, setGuideSettings] = useState(null);
-  const [cronTimeValue, setCronTimeValue] = useState("");
-  const [savingCron, setSavingCron] = useState(false);
   const [pendingGuides, setPendingGuides] = useState([]);
   const [selectedPendingGuideIds, setSelectedPendingGuideIds] = useState([]);
   const [loadingPendingGuides, setLoadingPendingGuides] = useState(false);
@@ -182,17 +143,13 @@ function App() {
 
   async function loadGuideSettings() {
     if (page === "login") return;
-    setSettingsLoading(true);
     clearFeedback();
     try {
       const settings = await api.getGuideSettings();
       setGuideSettings(settings);
-      setCronTimeValue(cronToTimeValue(settings?.guideScheduleCron));
       setJobEnabled(Boolean(settings?.pdfReaderConfigured));
     } catch (err) {
       setError(err?.message || "Falha ao carregar configuracao do job");
-    } finally {
-      setSettingsLoading(false);
     }
   }
 
@@ -226,35 +183,8 @@ function App() {
 
   function handleToggleJob() {
     setMessage(
-      "A leitura de PDF é feita pelo serviço pdf-reader (PDF_READER_URL na API). Os PDFs das guias ficam gravados no banco de dados. " +
-        "Use Upload de guias; o agendamento de e-mails é configurado abaixo."
+      "A leitura de PDF é feita pelo serviço pdf-reader (PDF_READER_URL na API). Os PDFs das guias ficam gravados no banco de dados. Use Upload de guias."
     );
-  }
-
-  async function handleSaveCronSchedule() {
-    setSavingCron(true);
-    clearFeedback();
-    try {
-      const cronExpression = timeValueToDailyCron(cronTimeValue);
-      if (cronTimeValue && !cronExpression) {
-        throw new Error("Hora inválida para cron.");
-      }
-      const saved = await api.updateGuideSettings({
-        guideScheduleCron: cronExpression,
-      });
-      const settings = saved?.settings || saved;
-      setGuideSettings(settings);
-      setCronTimeValue(cronToTimeValue(settings?.guideScheduleCron));
-      setMessage(
-        settings?.guideScheduleCron
-          ? `Cron diário configurado para ${cronToTimeValue(settings.guideScheduleCron)}.`
-          : "Cron desativado."
-      );
-    } catch (err) {
-      setError(err?.message || "Falha ao salvar agendamento do cron.");
-    } finally {
-      setSavingCron(false);
-    }
   }
 
   async function handleCreateCompany(event) {
@@ -412,43 +342,16 @@ function App() {
 
   if (page === "login") {
     return (
-      <AppShell>
-        <header className="header">
-          <h1>Portal Firm</h1>
-          <p>
-            Modo da API: <b>{api.mode}</b>
-          </p>
-        </header>
-        <section className="panel">
-          <h2>Entrar</h2>
-          <form className="form-grid" onSubmit={handleLogin}>
-            <label>
-              E-mail ou usuario
-              <input
-                value={loginIdentifier}
-                onChange={(event) => setLoginIdentifier(event.target.value)}
-                placeholder="admin@empresa.com"
-                required
-              />
-            </label>
-            <label>
-              Senha
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(event) => setLoginPassword(event.target.value)}
-                required
-              />
-            </label>
-            <div className="form-actions">
-              <Button type="submit" disabled={authLoading}>
-                {authLoading ? "Entrando..." : "Entrar"}
-              </Button>
-            </div>
-          </form>
-          <Feedback error={error} />
-        </section>
-      </AppShell>
+      <LoginPage
+        apiMode={api.mode}
+        identifier={loginIdentifier}
+        password={loginPassword}
+        onIdentifierChange={setLoginIdentifier}
+        onPasswordChange={setLoginPassword}
+        onSubmit={handleLogin}
+        authLoading={authLoading}
+        error={error}
+      />
     );
   }
 
@@ -469,7 +372,6 @@ function App() {
     return (
       <GuideSettingsPage
         pdfReaderConfigured={Boolean(guideSettings?.pdfReaderConfigured)}
-        guideScheduleCron={guideSettings?.guideScheduleCron || ""}
         onBack={() => setPage("companies")}
       />
     );
@@ -516,83 +418,19 @@ function App() {
 
   if (page === "pendingReport") {
     return (
-      <AppShell>
-        <header className="header inline-header">
-          <div>
-            <h1>Pendências de e-mail</h1>
-            <p>Relatório global de guias pendentes por empresa.</p>
-          </div>
-          <div className="row-actions">
-            <Button variant="secondary" onClick={loadPendingGuidesReport} disabled={loadingPendingGuides}>
-              Atualizar
-            </Button>
-            <Button variant="secondary" onClick={() => setPage("companies")}>
-              Voltar
-            </Button>
-          </div>
-        </header>
-        <section className="panel">
-          <div className="inline-header">
-            <h2>Guias pendentes</h2>
-            <div className="row-actions">
-              <Button variant="secondary" onClick={toggleAllPendingGuides} disabled={!pendingGuides.length}>
-                {selectedPendingGuideIds.length === pendingGuides.length && pendingGuides.length > 0
-                  ? "Desmarcar todas"
-                  : "Selecionar todas"}
-              </Button>
-              <Button onClick={handleSendSelectedPending} disabled={sendingSelectedPending}>
-                {sendingSelectedPending ? "Enviando..." : "Enviar selecionadas"}
-              </Button>
-            </div>
-          </div>
-          {loadingPendingGuides ? (
-            <p>Carregando pendências...</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Empresa</th>
-                  <th>CNPJ</th>
-                  <th>Tipo</th>
-                  <th>Competência</th>
-                  <th>Valor</th>
-                  <th>Vencimento</th>
-                  <th>Status e-mail</th>
-                  <th>Tentativas</th>
-                  <th>Último erro</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingGuides.map((guide) => (
-                  <tr key={guide.guideId}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedPendingGuideIds.includes(guide.guideId)}
-                        onChange={() => togglePendingGuideSelection(guide.guideId)}
-                      />
-                    </td>
-                    <td>{guide.companyName || "-"}</td>
-                    <td>{guide.cnpj || "-"}</td>
-                    <td>{guide.tipo || "-"}</td>
-                    <td>{guide.competencia || "-"}</td>
-                    <td>{fmtMoney(guide.valor)}</td>
-                    <td>{fmtDate(guide.vencimento)}</td>
-                    <td>{guide.emailStatus || "-"}</td>
-                    <td>{Number(guide.emailAttempts || 0)}</td>
-                    <td>{guide.emailLastError || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {!loadingPendingGuides && pendingGuides.length === 0 ? (
-            <p>Nenhuma guia pendente encontrada.</p>
-          ) : null}
-        </section>
-        <Feedback message={message} error={error} />
-      </AppShell>
+      <PendingGuidesPage
+        guides={pendingGuides}
+        loading={loadingPendingGuides}
+        selectedIds={selectedPendingGuideIds}
+        onToggle={togglePendingGuideSelection}
+        onToggleAll={toggleAllPendingGuides}
+        onSendSelected={handleSendSelectedPending}
+        sending={sendingSelectedPending}
+        onRefresh={loadPendingGuidesReport}
+        onBack={() => setPage("companies")}
+        message={message}
+        error={error}
+      />
     );
   }
 
@@ -612,14 +450,8 @@ function App() {
         companiesState.setSelectedCompanyId(companyId);
         setPage("companyDetail");
       }}
-      guideSettings={guideSettings}
-      settingsLoading={settingsLoading}
       jobEnabled={jobEnabled}
       onToggleJob={handleToggleJob}
-      cronTimeValue={cronTimeValue}
-      setCronTimeValue={setCronTimeValue}
-      savingCron={savingCron}
-      onSaveCronSchedule={handleSaveCronSchedule}
       message={message}
       error={error}
     />

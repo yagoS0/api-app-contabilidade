@@ -103,6 +103,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
             id: true,
             razao: true,
             cnpj: true,
+            guideNotificationEmail: true,
             inscricaoMunicipal: true,
             uf: true,
             municipio: true,
@@ -143,7 +144,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       data: links.map((link) => {
         const legacy = link.company.companyId ? legacyByCompanyId.get(link.company.companyId) || null : null;
         const ownerEmail = ownerEmailByPortalId.get(link.company.id) || null;
-        const resolvedEmail = legacy?.email || ownerEmail || null;
+        const legacyEmail = legacy?.email || null;
         return {
           companyId: link.company.id,
           portalId: link.company.id,
@@ -153,11 +154,13 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           inscricaoMunicipal: link.company.inscricaoMunicipal || legacy?.inscricaoMunicipal || null,
           uf: link.company.uf || getEnderecoField(legacy, "uf"),
           municipio: link.company.municipio || getEnderecoField(legacy, "cidade"),
-          email: resolvedEmail,
+          ownerEmail,
+          guideNotificationEmail: link.company.guideNotificationEmail || null,
+          email: legacyEmail,
           telefone: legacy?.telefone || null,
           portalCreatedAt: link.company.createdAt,
           portalUpdatedAt: link.company.updatedAt,
-          legacyCompany: legacy ? { ...legacy, email: resolvedEmail } : null,
+          legacyCompany: legacy ? { ...legacy, email: legacyEmail } : null,
         };
       }),
     });

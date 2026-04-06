@@ -2,7 +2,6 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import forge from "node-forge";
-import cron from "node-cron";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
@@ -30,7 +29,6 @@ import {
   updateGuideRuntimeSettings,
 } from "../../application/guides/GuideRuntimeSettings.js";
 import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
-import { applyGuideScheduleCron } from "../../workers/guideScheduledEmailManager.js";
 import { sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
 import { listUnidentifiedGuides, processUploadedGuides } from "../../application/guides/GuideUploadService.js";
 import {
@@ -122,10 +120,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       : null;
 
   function buildFirmCompanyPayload({ portal, myRole, scopes = [], legacy = null, ownerEmail = null }) {
-    const resolvedEmail = legacy?.email || ownerEmail || null;
     const resolvedUf = portal.uf || getEnderecoField(legacy, "uf");
     const resolvedMunicipio = portal.municipio || getEnderecoField(legacy, "cidade");
     const resolvedInscricaoMunicipal = portal.inscricaoMunicipal || legacy?.inscricaoMunicipal || null;
+    const legacyEmail = legacy?.email || null;
     return {
       companyId: portal.id,
       portalId: portal.id,
@@ -136,11 +134,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       inscricaoMunicipal: resolvedInscricaoMunicipal,
       uf: resolvedUf,
       municipio: resolvedMunicipio,
-      email: resolvedEmail,
+      ownerEmail: ownerEmail || null,
+      guideNotificationEmail: portal.guideNotificationEmail || null,
+      email: legacyEmail,
       telefone: legacy?.telefone || null,
       portalCreatedAt: portal.createdAt,
       portalUpdatedAt: portal.updatedAt,
-      legacyCompany: legacy ? { ...legacy, email: resolvedEmail } : null,
+      legacyCompany: legacy ? { ...legacy, email: legacyEmail } : null,
     };
   }
 
@@ -156,6 +156,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           id: true,
           razao: true,
           cnpj: true,
+          guideNotificationEmail: true,
           inscricaoMunicipal: true,
           uf: true,
           municipio: true,
@@ -211,6 +212,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             id: true,
             razao: true,
             cnpj: true,
+            guideNotificationEmail: true,
             inscricaoMunicipal: true,
             uf: true,
             municipio: true,
@@ -320,7 +322,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             cnpj,
             razaoSocial: razao,
             nomeFantasia: normalizedCompany.nomeFantasia,
-            email: normalizedCompany.email || ownerEmail,
+            email: normalizedCompany.email || null,
             telefone: normalizedCompany.telefone,
             endereco: enderecoToSingleLine(normalizedCompany.endereco),
             enderecoJson: normalizedCompany.endereco,
@@ -344,6 +346,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             companyId: legacyCompany.id,
             razao,
             cnpj,
+            guideNotificationEmail: normalizedCompany.guideNotificationEmail || null,
             inscricaoMunicipal: inscricaoMunicipalInput,
             uf: normalizedCompany.endereco?.uf || null,
             municipio: normalizedCompany.endereco?.cidade || null,
@@ -432,19 +435,24 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             err.code = "PORTAL_COMPANY_NOT_FOUND";
             throw err;
           }
+          const portalUpdateData = {
+            razao: normalizedCompany.razaoSocial,
+            cnpj: normalizedCompany.cnpj,
+            inscricaoMunicipal: inscricaoMunicipalInput,
+            uf: normalizedCompany.endereco?.uf || null,
+            municipio: normalizedCompany.endereco?.cidade || null,
+          };
+          if (Object.prototype.hasOwnProperty.call(companyInput, "guideNotificationEmail")) {
+            portalUpdateData.guideNotificationEmail = normalizedCompany.guideNotificationEmail;
+          }
           const updatedPortal = await tx.portalClient.update({
             where: { id: portalCompanyId },
-            data: {
-              razao: normalizedCompany.razaoSocial,
-              cnpj: normalizedCompany.cnpj,
-              inscricaoMunicipal: inscricaoMunicipalInput,
-              uf: normalizedCompany.endereco?.uf || null,
-              municipio: normalizedCompany.endereco?.cidade || null,
-            },
+            data: portalUpdateData,
             select: {
               id: true,
               razao: true,
               cnpj: true,
+              guideNotificationEmail: true,
               inscricaoMunicipal: true,
               uf: true,
               municipio: true,
@@ -778,16 +786,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     if (!["admin", "contador"].includes(appRole)) {
       return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
     }
-    const body = req.body || {};
-    const guideScheduleCronRaw =
-      body.guideScheduleCron !== undefined ? String(body.guideScheduleCron || "").trim() : undefined;
-    if (guideScheduleCronRaw !== undefined && guideScheduleCronRaw && !cron.validate(guideScheduleCronRaw)) {
-      return res.status(400).json({ error: "guide_schedule_cron_invalid" });
-    }
-    const settings = await updateGuideRuntimeSettings({
-      guideScheduleCron: guideScheduleCronRaw,
-    });
-    await applyGuideScheduleCron(settings.guideScheduleCron);
+    const settings = await updateGuideRuntimeSettings();
     const { pdfReaderUrl, ...rest } = settings;
     return res.json({
       ok: true,
@@ -1181,7 +1180,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       if (!to) {
         return res.status(400).json({
           error: "company_email_not_found",
-          reason: "Empresa sem e-mail de notificação (Company.email ou OWNER.email).",
+          reason:
+            "Empresa sem e-mail para envio de guias (configure o e-mail das guias no cadastro, ou use Company.email legado, ou e-mail do responsável).",
         });
       }
 

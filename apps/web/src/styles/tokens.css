@@ -1,0 +1,41 @@
+/**
+ * Design tokens — ajuste cores e espaçamento aqui para mudar o visual inteiro.
+ */
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+
+  --bg-page: #f0f1f3;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f7f8fa;
+
+  --text: #14151a;
+  --text-muted: #5f6570;
+  --text-faint: #8b919a;
+
+  --border: #e3e5e8;
+  --border-focus: #2563eb;
+
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --danger: #c62828;
+  --danger-surface: #fff5f5;
+  --danger-border: #f5c2c7;
+  --success: #0d7a52;
+  --success-surface: #ecfdf5;
+  --success-border: #a7f3d0;
+
+  --radius: 10px;
+  --radius-sm: 8px;
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --content-max: 920px;
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}

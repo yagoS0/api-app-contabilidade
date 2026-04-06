@@ -9,11 +9,14 @@ function delay(ms = 250) {
 function makeCompanies(count = 6) {
   return Array.from({ length: count }).map(() => {
     const companyId = faker.string.uuid();
+    const ownerEmail = faker.internet.email().toLowerCase();
     return {
       companyId,
       razao: faker.company.name(),
       cnpj: faker.helpers.replaceSymbols("##.###.###/####-##"),
-      email: faker.internet.email().toLowerCase(),
+      ownerEmail,
+      guideNotificationEmail: ownerEmail,
+      email: null,
     };
   });
 }
@@ -46,10 +49,12 @@ const mockGuidesByCompany = makeGuidesByCompany(mockCompanies);
 const mockUnidentifiedGuides = [];
 const mockGuideSettings = {
   pdfReaderConfigured: true,
-  guideScheduleCron: "0 12 * * *",
 };
 
 function buildCompanyPayload(input) {
+  const ownerEmail = String(input.ownerEmail || "").trim().toLowerCase();
+  const guideEmail =
+    String(input.guideNotificationEmail || "").trim().toLowerCase() || ownerEmail || null;
   return {
     companyId: faker.string.uuid(),
     portalId: faker.string.uuid(),
@@ -60,7 +65,9 @@ function buildCompanyPayload(input) {
     inscricaoMunicipal: null,
     uf: String(input.enderecoUf || "").trim().toUpperCase() || null,
     municipio: String(input.enderecoCidade || "").trim() || null,
-    email: String(input.email || "").trim().toLowerCase() || String(input.ownerEmail || "").toLowerCase(),
+    ownerEmail: ownerEmail || null,
+    guideNotificationEmail: guideEmail,
+    email: null,
     telefone: String(input.telefone || "").trim() || null,
     portalCreatedAt: new Date().toISOString(),
     portalUpdatedAt: new Date().toISOString(),
@@ -124,7 +131,9 @@ export function createMockApi() {
       await delay();
       const index = mockCompanies.findIndex((item) => item.companyId === companyId);
       if (index < 0) throw new Error("not_found");
-      const companyInput = input?.company && typeof input.company === "object" ? input.company : input || {};
+      const body = input || {};
+      const nested = body.company && typeof body.company === "object" ? body.company : {};
+      const companyInput = { ...nested, ownerEmail: body.ownerEmail, ownerName: body.ownerName };
       const current = mockCompanies[index];
       const legacyCurrent = current.legacyCompany && typeof current.legacyCompany === "object"
         ? current.legacyCompany
@@ -136,6 +145,11 @@ export function createMockApi() {
         ...current,
         razao: String(companyInput.razaoSocial || current.razao || "").trim(),
         cnpj: String(companyInput.cnpj || current.cnpj || "").trim(),
+        ownerEmail: String(companyInput.ownerEmail || current.ownerEmail || "").trim().toLowerCase() || null,
+        guideNotificationEmail:
+          companyInput.guideNotificationEmail !== undefined && companyInput.guideNotificationEmail !== null
+            ? String(companyInput.guideNotificationEmail || "").trim().toLowerCase() || null
+            : current.guideNotificationEmail ?? null,
         email: String(companyInput.email || current.email || "").trim().toLowerCase() || null,
         telefone: String(companyInput.telefone || current.telefone || "").trim() || null,
         uf: String(endereco.uf || current.uf || "").trim().toUpperCase() || null,
@@ -208,11 +222,8 @@ export function createMockApi() {
       await delay();
       return { ...mockGuideSettings };
     },
-    async updateGuideSettings(input) {
+    async updateGuideSettings() {
       await delay();
-      if (input?.guideScheduleCron !== undefined) {
-        mockGuideSettings.guideScheduleCron = String(input.guideScheduleCron || "");
-      }
       return { ok: true, settings: { ...mockGuideSettings } };
     },
     async uploadGuides(files) {

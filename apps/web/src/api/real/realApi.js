@@ -16,6 +16,7 @@ function buildCompanyPayload(input) {
       razaoSocial: String(input.razaoSocial || "").trim(),
       nomeFantasia: String(input.nomeFantasia || "").trim() || null,
       email: String(input.email || "").trim().toLowerCase() || null,
+      guideNotificationEmail: String(input.guideNotificationEmail || "").trim().toLowerCase() || null,
       telefone: String(input.telefone || "").trim() || null,
       regimeTributario: String(input.regimeTributario || "SIMPLES"),
       cnaePrincipal: String(input.cnaePrincipal || "").trim(),

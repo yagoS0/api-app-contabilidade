@@ -1,8 +1,7 @@
 // src/server.js
 import express from "express";
-import cron from "node-cron";
 import cors from "cors";
-import { log, API_KEYS, ADN_SYNC_CRON, GUIDE_EMAIL_WORKER_ENABLED } from "./config.js";
+import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED } from "./config.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
 import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
@@ -17,9 +16,7 @@ import { createStatusRouter } from "./routes/status.js";
 import { createInvoicesRouter } from "./routes/invoices.js";
 import { createNfseRouter } from "./routes/nfse.js";
 import { createAdnRouter } from "./routes/adn.js";
-import { AdnSyncService } from "./application/nfse/AdnSyncService.js";
 import { runGuideEmailWorkerLoop } from "./workers/guideEmailWorker.js";
-import { startGuideScheduledEmailManager } from "./workers/guideScheduledEmailManager.js";
 
 const app = express();
 app.use(express.json());
@@ -84,44 +81,8 @@ app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
 });
 
-let adnSyncRunning = false;
-if (ADN_SYNC_CRON) {
-  try {
-    cron.schedule(
-      ADN_SYNC_CRON,
-      async () => {
-        if (adnSyncRunning) {
-          log.warn("Sincronização ADN ignorada: já há execução em andamento.");
-          return;
-        }
-        adnSyncRunning = true;
-        log.info({ ADN_SYNC_CRON }, "Disparando sincronização ADN (cron)");
-        try {
-          await AdnSyncService.syncUntilEmpty({ maxIterations: 50 });
-        } catch (err) {
-          log.error({ err }, "Sincronização ADN falhou");
-        } finally {
-          adnSyncRunning = false;
-        }
-      },
-      {
-        timezone: process.env.TZ || "America/Sao_Paulo",
-      }
-    );
-    log.info({ ADN_SYNC_CRON }, "CRON ADN habilitado");
-  } catch (e) {
-    log.error({ err: e, ADN_SYNC_CRON }, "Falha ao configurar CRON ADN — desabilitado");
-  }
-}
-
 if (GUIDE_EMAIL_WORKER_ENABLED) {
   runGuideEmailWorkerLoop().catch((err) => {
     log.error({ err: err?.message || err }, "guideEmailWorker loop fatal");
   });
 }
-
-startGuideScheduledEmailManager().catch((err) => {
-  log.error({ err: err?.message || err }, "guideScheduledEmailManager init fatal");
-});
-
-
