@@ -240,6 +240,8 @@ model PortalClient {
   companyId          String?  @unique
   razao              String
   cnpj               String   @unique
+  /// E-mail só para envio de guias (pode repetir entre empresas). Não é login do portal.
+  guideNotificationEmail String?
   inscricaoMunicipal String?
   uf                String?
   municipio          String?

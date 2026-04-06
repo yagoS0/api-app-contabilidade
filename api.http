@@ -337,14 +337,12 @@ Authorization: Bearer {{accessToken}}
 GET {{baseUrl}}/firm/guides/settings
 Authorization: Bearer {{accessToken}}
 
-### Firm portal - update guides runtime settings (cron agendado global)
+### Firm portal - update guides runtime settings (compat; sem persistência de cron)
 PATCH {{baseUrl}}/firm/guides/settings
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
-{
-  "guideScheduleCron": "0 12 * * *"
-}
+{}
 
 ### Firm portal - manual assign guide and finalize
 POST {{baseUrl}}/firm/guides/{{guideId}}/manual-assign
@@ -421,32 +419,23 @@ Content-Type: application/json
 #   -F "files=@/caminho/guia1.pdf" \
 #   -F "files=@/caminho/guia2.pdf"
 
-### Guides step 2 - salvar cron global de envio agendado
-PATCH {{baseUrl}}/firm/guides/settings
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "guideScheduleCron": "0 12 * * *"
-}
-
-### Guides step 3 - conferir configuração salva
+### Guides step 2 - conferir configuração (pdf-reader)
 GET {{baseUrl}}/firm/guides/settings
 Authorization: Bearer {{accessToken}}
 
-### Guides step 4 - enviar e-mail da competência mais recente (anexos por empresa)
+### Guides step 3 - enviar e-mail da competência mais recente (anexos por empresa)
 POST {{baseUrl}}/firm/companies/{{portalClientId}}/guides/send-email-latest
 Authorization: Bearer {{accessToken}}
 
-### Guides step 5 - chamar novamente (não deve reenviar as mesmas guias)
+### Guides step 4 - chamar novamente (não deve reenviar as mesmas guias)
 POST {{baseUrl}}/firm/companies/{{portalClientId}}/guides/send-email-latest
 Authorization: Bearer {{accessToken}}
 
-### Guides step 6 - após adicionar nova guia na mesma pasta, enviar novamente (envia só as novas)
+### Guides step 5 - após adicionar nova guia na mesma pasta, enviar novamente (envia só as novas)
 POST {{baseUrl}}/firm/companies/{{portalClientId}}/guides/send-email-latest
 Authorization: Bearer {{accessToken}}
 
-### Guides step 7 - listagem final no contador por empresa
+### Guides step 6 - listagem final no contador por empresa
 GET {{baseUrl}}/firm/companies/{{portalClientId}}/guides?competencia=2026-02&status=PROCESSED&page=1&limit=25
 Authorization: Bearer {{accessToken}}
 

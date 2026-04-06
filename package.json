@@ -15,8 +15,6 @@
     "start:api": "npm run start -w @contabilidade/api",
     "worker:guide-emails": "npm run worker:guide-emails -w @contabilidade/api",
     "worker:guide-emails:once": "npm run worker:guide-emails:once -w @contabilidade/api",
-    "worker:guide-emails-scheduled": "npm run worker:guide-emails-scheduled -w @contabilidade/api",
-    "worker:guide-emails-scheduled:once": "npm run worker:guide-emails-scheduled:once -w @contabilidade/api",
     "prisma:generate": "npm run prisma:generate -w @contabilidade/api",
     "prisma:seed": "npm run prisma:seed -w @contabilidade/api",
     "portal:migrate": "npm run portal:migrate -w @contabilidade/api"

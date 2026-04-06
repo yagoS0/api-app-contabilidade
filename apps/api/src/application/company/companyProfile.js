@@ -10,6 +10,15 @@ function asString(value) {
   return String(value).trim();
 }
 
+function normalizeOptionalNotificationEmail(value) {
+  const raw = asString(value).toLowerCase();
+  if (!raw) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+    return { ok: false, error: "company_guide_notification_email_invalid" };
+  }
+  return { ok: true, data: raw };
+}
+
 function parseIsoDateOrNull(value) {
   if (!value) return null;
   const date = new Date(String(value));
@@ -93,6 +102,9 @@ export function validateAndNormalizeCompanyProfile(input) {
     return { ok: false, error: "company_simples_not_allowed_for_regime" };
   }
 
+  const guideEmailResult = normalizeOptionalNotificationEmail(company.guideNotificationEmail);
+  if (!guideEmailResult.ok) return guideEmailResult;
+
   return {
     ok: true,
     data: {
@@ -105,6 +117,7 @@ export function validateAndNormalizeCompanyProfile(input) {
       cnaesSecundarios,
       endereco: enderecoResult.data,
       email: asString(company.email).toLowerCase() || null,
+      guideNotificationEmail: guideEmailResult.data,
       telefone: asString(company.telefone) || null,
     },
   };

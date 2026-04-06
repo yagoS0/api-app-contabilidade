@@ -15,13 +15,14 @@ export function CompanyForm({
         <input value={form.ownerName} onChange={(event) => onChange("ownerName", event.target.value)} />
       </label>
       <label>
-        E-mail do responsavel
+        E-mail do responsável (login do portal)
         <input
           type="email"
           value={form.ownerEmail}
           onChange={(event) => onChange("ownerEmail", event.target.value)}
           required
         />
+        <span className="hint">Único por usuário; usado para entrar no portal.</span>
       </label>
       {showOwnerPassword ? (
         <label>
@@ -46,9 +47,17 @@ export function CompanyForm({
         Nome fantasia
         <input value={form.nomeFantasia} onChange={(event) => onChange("nomeFantasia", event.target.value)} />
       </label>
-      <label>
-        E-mail da empresa
-        <input type="email" value={form.email} onChange={(event) => onChange("email", event.target.value)} />
+      <label className="full">
+        E-mail para recebimento das guias
+        <input
+          type="email"
+          value={form.guideNotificationEmail}
+          onChange={(event) => onChange("guideNotificationEmail", event.target.value)}
+          placeholder="pode ser o mesmo para várias empresas"
+        />
+        <span className="hint">
+          Só para envio dos PDFs das guias; pode repetir em CNPJs diferentes (ex.: mesma caixa de entrada).
+        </span>
       </label>
       <label>
         Telefone

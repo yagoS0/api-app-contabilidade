@@ -58,7 +58,7 @@ Configure na App Platform:
 5. Verificar readiness:
    - `GET /healthz` (liveness)
    - `GET /readyz` (banco + pdf-reader quando `PDF_READER_URL` está definido)
-6. Configurar cron de e-mails de guias no portal (`guideScheduleCron`); `PDF_READER_URL` só na API.
+6. Garantir `PDF_READER_URL` na API; envio agendado de guias (se usado) via `POST /firm/guides/emails/run-scheduled` ou agenda por empresa (`email-schedule`), sem cron no processo da API.
 
 ## 7) Migração de banco em produção
 - A API está configurada para executar:

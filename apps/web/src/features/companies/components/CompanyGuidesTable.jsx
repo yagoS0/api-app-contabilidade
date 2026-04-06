@@ -1,9 +1,5 @@
 import { Button } from "../../../components/ui/Button";
-
-function fmtMoney(value) {
-  if (value === null || value === undefined) return "-";
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
-}
+import { fmtMoney } from "../../../lib/format";
 
 export function CompanyGuidesTable({
   guides,
@@ -14,54 +10,57 @@ export function CompanyGuidesTable({
 }) {
   return (
     <section className="panel">
-      <div className="inline-header">
-        <h2>Guias</h2>
-        <Button variant="secondary" onClick={onRefresh}>
+      <div className="panel__head">
+        <h2 className="panel__title">Guias</h2>
+        <Button variant="secondary" type="button" onClick={onRefresh}>
           Atualizar
         </Button>
       </div>
       {loadingGuides ? (
-        <p>Carregando guias...</p>
+        <p className="text-muted">Carregando…</p>
+      ) : guides.length === 0 ? (
+        <p className="text-muted">Nenhuma guia nesta empresa.</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>Competencia</th>
-              <th>Valor</th>
-              <th>Status</th>
-              <th>Email</th>
-              <th>Acao</th>
-            </tr>
-          </thead>
-          <tbody>
-            {guides.map((guide) => {
-              const guideId = guide.guideId || guide.id;
-              const isLoading = resendingGuideId === guideId;
-              return (
-                <tr key={guideId}>
-                  <td>{guide.tipo || "-"}</td>
-                  <td>{guide.competencia || "-"}</td>
-                  <td>{fmtMoney(guide.valor)}</td>
-                  <td>{guide.status || "-"}</td>
-                  <td>{guide.emailStatus || "-"}</td>
-                  <td>
-                        <Button
-                          size="sm"
-                          disabled={isLoading}
-                          onClick={() => onResendGuide(guideId)}
-                        >
-                      {isLoading ? "Reenviando..." : "Reenviar"}
-                    </Button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Competência</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>E-mail</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {guides.map((guide) => {
+                const guideId = guide.guideId || guide.id;
+                const isLoading = resendingGuideId === guideId;
+                return (
+                  <tr key={guideId}>
+                    <td>{guide.tipo || "—"}</td>
+                    <td>{guide.competencia || "—"}</td>
+                    <td>{fmtMoney(guide.valor)}</td>
+                    <td>{guide.status || "—"}</td>
+                    <td>{guide.emailStatus || "—"}</td>
+                    <td>
+                      <Button
+                        size="sm"
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => onResendGuide(guideId)}
+                      >
+                        {isLoading ? "…" : "Reenviar"}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-      {!loadingGuides && guides.length === 0 ? <p>Nenhuma guia encontrada.</p> : null}
     </section>
   );
 }
-

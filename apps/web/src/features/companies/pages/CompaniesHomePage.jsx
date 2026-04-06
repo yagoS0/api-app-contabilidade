@@ -1,4 +1,5 @@
 import { AppShell } from "../../../components/layout/AppShell";
+import { PageHeader } from "../../../components/layout/PageHeader";
 import { Feedback } from "../../../components/ui/Feedback";
 import { Button } from "../../../components/ui/Button";
 import { CompanyCard } from "../components/CompanyCard";
@@ -15,99 +16,72 @@ export function CompaniesHomePage({
   onOpenPendingReport,
   onLogout,
   onOpenCompany,
-  guideSettings,
-  settingsLoading,
   jobEnabled,
   onToggleJob,
-  cronTimeValue,
-  setCronTimeValue,
-  savingCron,
-  onSaveCronSchedule,
   message,
   error,
 }) {
   return (
     <AppShell>
-      <header className="header inline-header">
-        <div>
-          <h1>Empresas</h1>
-          <p>
-            Usuario: <b>{user?.name || "FIRM"}</b> | Modo API: <b>{apiMode}</b>
-          </p>
-        </div>
-        <div className="row-actions">
+      <PageHeader
+        title="Empresas"
+        description={`${user?.name || "Conta escritório"} · API: ${apiMode}`}
+        actions={
+          <Button variant="danger" onClick={onLogout}>
+            Sair
+          </Button>
+        }
+      />
+
+      <nav className="panel" aria-label="Atalhos">
+        <div className="toolbar">
           <Button variant="secondary" onClick={onCreateCompany}>
             Nova empresa
           </Button>
           <Button variant="secondary" onClick={onOpenGuideSettings}>
-            Configuração
+            Guias — configuração
           </Button>
           <Button variant="secondary" onClick={onOpenGuideUpload}>
-            Upload de guias
+            Guias — upload
           </Button>
           <Button variant="secondary" onClick={onRefreshCompanies} disabled={loadingCompanies}>
-            Atualizar
+            {loadingCompanies ? "Atualizando…" : "Atualizar lista"}
           </Button>
           <Button variant="secondary" onClick={onOpenPendingReport}>
             Pendências de e-mail
           </Button>
-          <Button variant="danger" onClick={onLogout}>
-            Sair
-          </Button>
         </div>
-      </header>
+      </nav>
 
       <section className="panel">
-        <div className="inline-header">
-          <h2>Guias</h2>
-          <div className="row-actions">
-            <Button variant="secondary" onClick={onToggleJob}>
-              Sobre armazenamento e PDF
-            </Button>
-            <Button variant="secondary" onClick={onOpenGuideUpload}>
-              Abrir upload de guias
-            </Button>
-          </div>
+        <div className="panel__head">
+          <h2 className="panel__title">Processamento de PDF</h2>
+          <Button variant="secondary" size="sm" type="button" onClick={onToggleJob}>
+            Como funciona
+          </Button>
         </div>
-        <p>
-          Pdf-reader na API: <b>{jobEnabled ? "configurado" : "ausente (PDF_READER_URL)"}</b>
+        <p className="status-line">
+          Serviço <code className="code-inline">pdf-reader</code> na API:
+          <span className={jobEnabled ? "status-chip status-chip--ok" : "status-chip status-chip--off"}>
+            {jobEnabled ? "Configurado" : "Não configurado"}
+          </span>
         </p>
-        <p className="hint">
-          Envie PDFs pelo upload; o arquivo é guardado no banco após o processamento. Sem Google Drive para
-          pastas de guias.
+        <p className="hint" style={{ marginTop: "var(--space-2)" }}>
+          Envie PDFs em <b>Guias — upload</b>. O arquivo é guardado no banco após o processamento.
         </p>
       </section>
 
-      <section className="panel">
-        <div className="inline-header">
-          <h2>Agendamento automático</h2>
-          <Button variant="secondary" onClick={onSaveCronSchedule} disabled={savingCron}>
-            {savingCron ? "Salvando..." : "Salvar horário do cron"}
-          </Button>
-        </div>
-        <label>
-          Hora de execução diária
-          <input type="time" value={cronTimeValue} onChange={(event) => setCronTimeValue(event.target.value)} />
-        </label>
-        <p className="hint">
-          Deixe vazio e salve para desativar. Cron atual: <b>{guideSettings?.guideScheduleCron || "desativado"}</b>
-        </p>
-      </section>
-
-      <section className="cards-grid">
+      <section className="cards-grid" aria-label="Lista de empresas">
         {companies.map((company) => (
           <CompanyCard key={company.companyId} company={company} onAccess={onOpenCompany} />
         ))}
       </section>
 
       {!loadingCompanies && companies.length === 0 ? (
-        <section className="panel">
-          <p>Nenhuma empresa encontrada.</p>
-        </section>
+        <p className="text-muted">Nenhuma empresa na carteira.</p>
       ) : null}
 
       <Feedback message={message} error={error} />
     </AppShell>
   );
 }
-

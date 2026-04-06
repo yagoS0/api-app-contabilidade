@@ -89,7 +89,6 @@ export const ADN_CERT_PATH = (process.env.ADN_CERT_PATH || "").trim();
 export const ADN_KEY_PATH = (process.env.ADN_KEY_PATH || "").trim();
 export const ADN_DFE_PATH = (process.env.ADN_DFE_PATH || "").trim();
 export const ADN_CNPJ_CONSULTA = (process.env.ADN_CNPJ_CONSULTA || "").trim();
-export const ADN_SYNC_CRON = (process.env.ADN_SYNC_CRON || "").trim();
 
 // === Certificados por empresa (PFX) ===
 export const CERT_STORAGE_PATH = (process.env.CERT_STORAGE_PATH || "").trim();
@@ -103,7 +102,6 @@ export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
   Number(process.env.GUIDE_WORKER_INTERVAL_SECONDS || 120)
 );
 export const GUIDE_EMAIL_WORKER_ENABLED = process.env.GUIDE_EMAIL_WORKER_ENABLED === "1";
-export const GUIDE_SCHEDULE_CRON = (process.env.GUIDE_SCHEDULE_CRON || "0 12 * * *").trim();
 export const GUIDE_SCHEDULE_MAX_FILES_PER_COMPANY = Math.min(
   100,
   Math.max(1, Number(process.env.GUIDE_SCHEDULE_MAX_FILES_PER_COMPANY || 15))

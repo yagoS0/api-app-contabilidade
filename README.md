@@ -67,7 +67,7 @@ Configuração (.env)
    - `JWT_SECRET`: segredo usado para assinar o token retornado por `/auth/login`. Opcionalmente ajuste `JWT_EXPIRES_IN` (padrão `1h`).
    - `DATABASE_URL`: string de conexão PostgreSQL (ex.: `postgresql://user:pass@host:5432/db`).
    - Opções de e-mail: `USE_GMAIL_API` + `GMAIL_DELEGATED_USER` **ou** SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`).
-   - Opções extras: `LOG_LEVEL`, `TZ`, `HOST`, `PORT`, `PDF_READER_URL`, `GUIDE_EMAIL_WORKER_ENABLED`, `GUIDE_SCHEDULE_CRON`.
+   - Opções extras: `LOG_LEVEL`, `TZ`, `HOST`, `PORT`, `PDF_READER_URL`, `GUIDE_EMAIL_WORKER_ENABLED`.
    - Em produção, mantenha `GOOGLE_APPLICATION_CREDENTIALS`, `API_KEYS` e `DATABASE_URL` em um Secrets Manager/App Runner Secret e apenas exporte as variáveis em runtime.
 
 Banco de dados (PostgreSQL) - API
@@ -108,9 +108,8 @@ Requisitos: Node 18+
    - `npm run dev:web`
    - Copie `apps/web/.env.example` para `apps/web/.env` e mantenha `VITE_API_MODE=mock` para trabalhar offline.
    - Para usar API real, ajuste `VITE_API_MODE=real`, `VITE_API_BASE_URL` e `VITE_API_TOKEN`.
-4. Executar workers (guias):
+4. Executar worker de e-mail de guias (opcional):
    - `npm run worker:guide-emails`
-   - `npm run worker:guide-emails-scheduled`
 
 Endpoints HTTP
 - `POST /auth/signup`: recebe `name`, `email`, `password` e cria um usuário com `status=pending` (aguarda aprovação do admin).
@@ -158,8 +157,8 @@ Endpoints HTTP
 - `GET /firm/guides/review`: fila de revisão manual (`NEEDS_REVIEW` por padrão).
 - `POST /firm/guides/:guideId/manual-assign`: atribui empresa/competência/tipo e finaliza processamento da guia.
 - `POST /firm/guides/:guideId/reprocess`: reexecuta parser do PDF da guia para atualizar extração.
-- `GET /firm/guides/settings`: retorna `guideScheduleCron` e `pdfReaderConfigured` (URL do leitor não é exposta).
-- `PATCH /firm/guides/settings`: salva cron (`guideScheduleCron`); PDFs das guias ficam no banco; leitor em `PDF_READER_URL`.
+- `GET /firm/guides/settings`: retorna `pdfReaderConfigured` (URL do leitor não é exposta).
+- `PATCH /firm/guides/settings`: compatível com o portal; não persiste mais cron (apenas confirma `pdfReaderConfigured`).
 - `POST /firm/guides/emails/send-pending`: processa guias com `emailStatus` pendente/erro elegível e envia **PDF em anexo** (não link).
 - `POST /firm/guides/emails/send-selected`: reenvia imediatamente apenas as `guideIds` informadas (retorno consolidado por item).
 - `GET /firm/guides/pending-report`: relatório global de pendências de e-mail (empresa + guia + tentativas + último erro).
@@ -192,7 +191,7 @@ Guias (upload + pdf-reader + PostgreSQL):
 - Envio de PDF pelo portal (`POST /firm/guides/upload`); o binário é persistido em `Guide.pdfBytes` no Postgres após o parse.
 - Leitor de PDF (FastAPI `apps/pdf-reader`): `PDF_READER_URL` (base URL; a API usa `POST /extract` e `GET /health`).
 - Guias antigas podem ainda ter `storageKey` (S3/R2/local); novas usam só o banco.
-- Worker de e-mail: `GUIDE_EMAIL_WORKER_ENABLED=1`; cron agendado via `guideScheduleCron` em settings.
+- Worker de e-mail: `GUIDE_EMAIL_WORKER_ENABLED=1`. Envio por dia da empresa e `POST /firm/guides/emails/run-scheduled` permanecem disponíveis; não há agendamento por cron no processo da API.
 
 Fluxo sugerido:
 ```bash

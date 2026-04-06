@@ -54,8 +54,12 @@ export async function setCompanyGuideEmailSchedule({ portalCompanyId, days, upda
 export async function resolveCompanyNotificationEmail(portalCompanyId) {
   const portal = await prisma.portalClient.findUnique({
     where: { id: String(portalCompanyId) },
-    select: { companyId: true },
+    select: { companyId: true, guideNotificationEmail: true },
   });
+  const guideOnly = String(portal?.guideNotificationEmail || "")
+    .trim()
+    .toLowerCase();
+  if (guideOnly) return guideOnly;
   if (!portal?.companyId) return null;
   const legacyCompany = await prisma.company.findUnique({
     where: { id: portal.companyId },
@@ -144,7 +148,7 @@ export async function runScheduledGuideEmailDispatch({
           eligible: true,
           status: "error",
           error: "company_email_not_found",
-          reason: "Empresa sem e-mail de notificação (Company.email ou OWNER.email).",
+          reason: "Empresa sem e-mail de envio de guias (guideNotificationEmail, Company.email ou OWNER).",
         });
         continue;
       }
