@@ -5,6 +5,7 @@ import fssync from "node:fs";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
+import { guideTypeEmailLabel } from "./guideEmailCopy.js";
 
 function safeTempName(name) {
   return String(name || "guia.pdf").replace(/[\\/]+/g, "-");
@@ -18,21 +19,22 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
-function buildEmailHtml({ razao, competencia, files }) {
+function buildEmailHtml({ razao, competencia, typeLabels }) {
   const razaoSafe = escapeHtml(razao);
   const compSafe = escapeHtml(competencia);
-  const listItems = files
-    .map((file) => `<li>${escapeHtml(file.name)}</li>`)
-    .join("");
+  const unique = [...new Set(typeLabels)];
+  const labelsSafe = unique.map((l) => escapeHtml(l)).join(", ");
+  const intro =
+    unique.length === 1
+      ? `<p>Aqui está sua guia de <strong>${escapeHtml(unique[0])}</strong> (competência <strong>${compSafe}</strong>).</p>`
+      : `<p>Seguem em anexo as guias: <strong>${labelsSafe}</strong> — competência <strong>${compSafe}</strong>.</p>`;
   return `
     <!doctype html>
-    <html><body style="font-family:Georgia,'Segoe UI',Arial,sans-serif;color:#1a1a1a;line-height:1.55;max-width:560px">
-    <p>Olá, equipe da <strong>${razaoSafe}</strong>,</p>
-    <p>Enviamos em anexo o(s) <strong>documento(s) de guia(s) de pagamento</strong> referente(s) à competência <strong>${compSafe}</strong>, para arquivo e pagamento no prazo.</p>
-    <p style="margin:1em 0"><strong>Arquivos neste envio</strong></p>
-    <ul style="margin:0;padding-left:1.25em">${listItems}</ul>
-    <p>Em caso de dúvida, responda este e-mail ou fale com o seu contato no escritório.</p>
-    <p style="margin-top:1.75em">Um abraço,<br><strong>Equipe Belgen Contabilidade</strong></p>
+    <html><body style="font-family:system-ui,Segoe UI,Arial,sans-serif;color:#1a1a1a;line-height:1.5;max-width:560px">
+    <p>Olá, <strong>${razaoSafe}</strong>,</p>
+    ${intro}
+    <p>Os PDFs estão em anexo.</p>
+    <p style="margin-top:1.5em">Um abraço,<br><strong>Equipe Belgen Contabilidade</strong></p>
     </body></html>
   `;
 }
@@ -121,11 +123,16 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
       attachments.push({ path: tmpPath, filename: name });
     }
 
-    const subject = `Guias de pagamento — competência ${latestCompetencia || "—"}`;
+    const typeLabels = toSend.map((g) => guideTypeEmailLabel(g.tipo));
+    const uniqueLabels = [...new Set(typeLabels)];
+    const subject =
+      uniqueLabels.length === 1
+        ? `Sua guia de ${uniqueLabels[0]} — ${latestCompetencia || "—"}`
+        : `Suas guias — ${latestCompetencia || "—"}`;
     const html = buildEmailHtml({
       razao: portal.razao,
       competencia: latestCompetencia || "—",
-      files: toSend.map((g) => ({ name: g.sourcePath || `${g.tipo}-${g.competencia}.pdf` })),
+      typeLabels,
     });
     await email.send({ to, subject, html, attachments });
 

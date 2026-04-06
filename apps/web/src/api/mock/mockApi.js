@@ -6,17 +6,38 @@ function delay(ms = 250) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function mockGuideComplianceRow({ hasProlabore, regimeTributario, ok }) {
+  const regime = String(regimeTributario || "SIMPLES").toUpperCase();
+  let expected = null;
+  if (hasProlabore) expected = "INSS";
+  else if (regime === "SIMPLES") expected = "SIMPLES";
+  return {
+    competencia: "2026-02",
+    expected,
+    ok: expected ? ok : true,
+  };
+}
+
 function makeCompanies(count = 6) {
-  return Array.from({ length: count }).map(() => {
+  return Array.from({ length: count }).map((_, i) => {
     const companyId = faker.string.uuid();
     const ownerEmail = faker.internet.email().toLowerCase();
+    const hasProlabore = i === 0;
+    const regimeTributario = i === 1 ? "LUCRO_PRESUMIDO" : "SIMPLES";
     return {
       companyId,
       razao: faker.company.name(),
       cnpj: faker.helpers.replaceSymbols("##.###.###/####-##"),
       ownerEmail,
       guideNotificationEmail: ownerEmail,
+      hasProlabore,
       email: null,
+      legacyCompany: { regimeTributario, tipoTributario: regimeTributario },
+      guideCompliance: mockGuideComplianceRow({
+        hasProlabore,
+        regimeTributario,
+        ok: !(hasProlabore || regimeTributario === "SIMPLES") ? true : i % 2 === 1,
+      }),
     };
   });
 }
@@ -55,6 +76,8 @@ function buildCompanyPayload(input) {
   const ownerEmail = String(input.ownerEmail || "").trim().toLowerCase();
   const guideEmail =
     String(input.guideNotificationEmail || "").trim().toLowerCase() || ownerEmail || null;
+  const hasProlabore = Boolean(input.hasProlabore);
+  const regimeTributario = String(input.regimeTributario || "SIMPLES");
   return {
     companyId: faker.string.uuid(),
     portalId: faker.string.uuid(),
@@ -67,11 +90,13 @@ function buildCompanyPayload(input) {
     municipio: String(input.enderecoCidade || "").trim() || null,
     ownerEmail: ownerEmail || null,
     guideNotificationEmail: guideEmail,
+    hasProlabore,
     email: null,
     telefone: String(input.telefone || "").trim() || null,
     portalCreatedAt: new Date().toISOString(),
     portalUpdatedAt: new Date().toISOString(),
-    legacyCompany: null,
+    legacyCompany: { regimeTributario, tipoTributario: regimeTributario },
+    guideCompliance: mockGuideComplianceRow({ hasProlabore, regimeTributario, ok: true }),
   };
 }
 
@@ -145,6 +170,8 @@ export function createMockApi() {
         ...current,
         razao: String(companyInput.razaoSocial || current.razao || "").trim(),
         cnpj: String(companyInput.cnpj || current.cnpj || "").trim(),
+        hasProlabore:
+          body.hasProlabore !== undefined ? Boolean(body.hasProlabore) : Boolean(current.hasProlabore),
         ownerEmail: String(companyInput.ownerEmail || current.ownerEmail || "").trim().toLowerCase() || null,
         guideNotificationEmail:
           companyInput.guideNotificationEmail !== undefined && companyInput.guideNotificationEmail !== null
@@ -180,6 +207,11 @@ export function createMockApi() {
             String(endereco.complemento || legacyCurrent.enderecoJson?.complemento || "").trim() || null,
         },
       };
+      next.guideCompliance = mockGuideComplianceRow({
+        hasProlabore: next.hasProlabore,
+        regimeTributario: next.legacyCompany.regimeTributario,
+        ok: next.guideCompliance?.ok ?? true,
+      });
       mockCompanies[index] = next;
       return { ok: true, company: next };
     },

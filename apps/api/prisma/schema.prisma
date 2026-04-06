@@ -242,6 +242,8 @@ model PortalClient {
   cnpj               String   @unique
   /// E-mail só para envio de guias (pode repetir entre empresas). Não é login do portal.
   guideNotificationEmail String?
+  /// Indica se há pró-labore (exige guia INSS na competência de referência para alertas).
+  hasProlabore       Boolean  @default(false)
   inscricaoMunicipal String?
   uf                String?
   municipio          String?
