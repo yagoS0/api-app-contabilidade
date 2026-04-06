@@ -102,6 +102,8 @@ export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
   Number(process.env.GUIDE_WORKER_INTERVAL_SECONDS || 120)
 );
 export const GUIDE_EMAIL_WORKER_ENABLED = process.env.GUIDE_EMAIL_WORKER_ENABLED === "1";
+/** Opcional: fixa YYYY-MM para alertas de guia (homolog). Vazio = mês civil anterior. */
+export const GUIDE_COMPLIANCE_COMPETENCIA = (process.env.GUIDE_COMPLIANCE_COMPETENCIA || "").trim();
 export const GUIDE_SCHEDULE_MAX_FILES_PER_COMPANY = Math.min(
   100,
   Math.max(1, Number(process.env.GUIDE_SCHEDULE_MAX_FILES_PER_COMPANY || 15))

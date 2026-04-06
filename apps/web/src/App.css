@@ -319,6 +319,27 @@
   color: var(--text-muted);
 }
 
+.compliance-tags {
+  margin: 0;
+  min-height: 1.35em;
+}
+
+.compliance-tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.compliance-tag--miss {
+  color: #b91c1c;
+}
+
+.compliance-tag--ok {
+  color: #047857;
+}
+
 .company-card {
   background: var(--bg-subtle);
   border: 1px solid var(--border);

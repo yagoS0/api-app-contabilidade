@@ -72,6 +72,20 @@ export function CompanyForm({
         </select>
       </label>
       <label>
+        Pró-labore
+        <select
+          value={form.hasProlabore ? "sim" : "nao"}
+          onChange={(event) => onChange("hasProlabore", event.target.value === "sim")}
+        >
+          <option value="nao">Não</option>
+          <option value="sim">Sim</option>
+        </select>
+        <span className="hint">
+          Com pró-labore, esperamos guia de INSS no mês de referência; sem pró-labore e regime Simples, guia de
+          Simples Nacional.
+        </span>
+      </label>
+      <label>
         CNAE principal
         <input value={form.cnaePrincipal} onChange={(event) => onChange("cnaePrincipal", event.target.value)} required />
       </label>

@@ -11,6 +11,7 @@ function buildCompanyPayload(input) {
     ownerEmail: String(input.ownerEmail || "").trim().toLowerCase(),
     ownerName: String(input.ownerName || "").trim() || null,
     ownerPassword: String(input.ownerPassword || ""),
+    hasProlabore: Boolean(input.hasProlabore),
     company: {
       cnpj: String(input.cnpj || "").trim(),
       razaoSocial: String(input.razaoSocial || "").trim(),

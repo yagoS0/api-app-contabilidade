@@ -50,6 +50,9 @@ export function CompanyDetailPage({
               {selectedCompany.guideNotificationEmail || "—"}
             </p>
             <p>
+              <span className="text-muted">Pró-labore:</span> {selectedCompany.hasProlabore ? "Sim" : "Não"}
+            </p>
+            <p>
               <span className="text-muted">Município / UF:</span> {selectedCompany.municipio || "—"} /{" "}
               {selectedCompany.uf || "—"}
             </p>

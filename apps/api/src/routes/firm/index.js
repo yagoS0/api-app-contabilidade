@@ -39,6 +39,25 @@ import {
   runScheduledGuideEmailDispatch,
   setCompanyGuideEmailSchedule,
 } from "../../application/guides/GuideScheduledEmailService.js";
+import {
+  computeGuideComplianceMap,
+  getReferenceCompetencia,
+} from "../../application/guides/guideCompliance.js";
+
+async function attachGuideComplianceToCompaniesList(data) {
+  if (!Array.isArray(data) || !data.length) return data;
+  const ref = getReferenceCompetencia();
+  const rows = data.map((item) => ({
+    portalId: item.companyId,
+    hasProlabore: Boolean(item.hasProlabore),
+    legacy: item.legacyCompany,
+  }));
+  const map = await computeGuideComplianceMap(rows, ref);
+  return data.map((item) => ({
+    ...item,
+    guideCompliance: map.get(item.companyId) || { competencia: ref, expected: null, ok: true },
+  }));
+}
 
 function sanitizeFirmRole(role) {
   const value = String(role || "STAFF").toUpperCase();
@@ -136,6 +155,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       municipio: resolvedMunicipio,
       ownerEmail: ownerEmail || null,
       guideNotificationEmail: portal.guideNotificationEmail || null,
+      hasProlabore: Boolean(portal.hasProlabore),
       email: legacyEmail,
       telefone: legacy?.telefone || null,
       portalCreatedAt: portal.createdAt,
@@ -157,6 +177,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           razao: true,
           cnpj: true,
           guideNotificationEmail: true,
+          hasProlabore: true,
           inscricaoMunicipal: true,
           uf: true,
           municipio: true,
@@ -191,8 +212,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           ownerEmailByPortalId.set(link.companyId, link.user?.email || null);
         }
       }
-      return res.json({
-        data: items.map((item) =>
+      const data = await attachGuideComplianceToCompaniesList(
+        items.map((item) =>
           buildFirmCompanyPayload({
             portal: item,
             myRole: "FIRM_ADMIN",
@@ -200,8 +221,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             legacy: item.companyId ? legacyByCompanyId.get(item.companyId) || null : null,
             ownerEmail: ownerEmailByPortalId.get(item.id) || null,
           })
-        ),
-      });
+        )
+      );
+      return res.json({ data });
     }
 
     const links = await prisma.companyFirmAccess.findMany({
@@ -213,6 +235,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             razao: true,
             cnpj: true,
             guideNotificationEmail: true,
+            hasProlabore: true,
             inscricaoMunicipal: true,
             uf: true,
             municipio: true,
@@ -250,8 +273,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         ownerEmailByPortalId.set(link.companyId, link.user?.email || null);
       }
     }
-    return res.json({
-      data: links.map((link) =>
+    const data = await attachGuideComplianceToCompaniesList(
+      links.map((link) =>
         buildFirmCompanyPayload({
           portal: link.company,
           myRole: link.role,
@@ -259,8 +282,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           legacy: link.company.companyId ? legacyByCompanyId.get(link.company.companyId) || null : null,
           ownerEmail: ownerEmailByPortalId.get(link.company.id) || null,
         })
-      ),
-    });
+      )
+    );
+    return res.json({ data });
   });
 
   router.post("/companies", async (req, res) => {
@@ -347,6 +371,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             razao,
             cnpj,
             guideNotificationEmail: normalizedCompany.guideNotificationEmail || null,
+            hasProlabore: Boolean(body.hasProlabore),
             inscricaoMunicipal: inscricaoMunicipalInput,
             uf: normalizedCompany.endereco?.uf || null,
             municipio: normalizedCompany.endereco?.cidade || null,
@@ -445,6 +470,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           if (Object.prototype.hasOwnProperty.call(companyInput, "guideNotificationEmail")) {
             portalUpdateData.guideNotificationEmail = normalizedCompany.guideNotificationEmail;
           }
+          if (Object.prototype.hasOwnProperty.call(body, "hasProlabore")) {
+            portalUpdateData.hasProlabore = Boolean(body.hasProlabore);
+          }
           const updatedPortal = await tx.portalClient.update({
             where: { id: portalCompanyId },
             data: portalUpdateData,
@@ -453,6 +481,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               razao: true,
               cnpj: true,
               guideNotificationEmail: true,
+              hasProlabore: true,
               inscricaoMunicipal: true,
               uf: true,
               municipio: true,
@@ -542,7 +571,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             ownerEmail: ownerLinkAfter?.user?.email || null,
           });
         });
-        return res.json({ ok: true, company: result });
+        const [company] = await attachGuideComplianceToCompaniesList([result]);
+        return res.json({ ok: true, company });
       } catch (err) {
         if (err?.code === "PORTAL_COMPANY_NOT_FOUND") {
           return res.status(404).json({ error: "portal_company_not_found" });
