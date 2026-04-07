@@ -3,3 +3,6 @@ secrets/credentials.json
 secrets/credentials.json
 .env
 certs/
+# dependencies
+node_modules/
+apps/*/node_modules/
