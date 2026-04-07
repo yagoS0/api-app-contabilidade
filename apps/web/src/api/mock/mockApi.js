@@ -6,15 +6,16 @@ function delay(ms = 250) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function mockGuideComplianceRow({ hasProlabore, regimeTributario, ok }) {
+function mockGuideComplianceRow({ hasProlabore, regimeTributario, inssOk, dasOk }) {
   const regime = String(regimeTributario || "SIMPLES").toUpperCase();
-  let expected = null;
-  if (hasProlabore) expected = "INSS";
-  else if (regime === "SIMPLES") expected = "SIMPLES";
+  const inssRequired = Boolean(hasProlabore);
+  const dasRequired = regime === "SIMPLES";
   return {
     competencia: "2026-02",
-    expected,
-    ok: expected ? ok : true,
+    inss: { required: inssRequired, ok: inssRequired ? Boolean(inssOk) : true },
+    das: { required: dasRequired, ok: dasRequired ? Boolean(dasOk) : true },
+    expected: inssRequired ? "INSS" : dasRequired ? "SIMPLES" : null,
+    ok: (inssRequired ? Boolean(inssOk) : true) && (dasRequired ? Boolean(dasOk) : true),
   };
 }
 
@@ -36,7 +37,8 @@ function makeCompanies(count = 6) {
       guideCompliance: mockGuideComplianceRow({
         hasProlabore,
         regimeTributario,
-        ok: !(hasProlabore || regimeTributario === "SIMPLES") ? true : i % 2 === 1,
+        inssOk: i % 2 === 1,
+        dasOk: i % 2 === 0,
       }),
     };
   });
@@ -96,7 +98,7 @@ function buildCompanyPayload(input) {
     portalCreatedAt: new Date().toISOString(),
     portalUpdatedAt: new Date().toISOString(),
     legacyCompany: { regimeTributario, tipoTributario: regimeTributario },
-    guideCompliance: mockGuideComplianceRow({ hasProlabore, regimeTributario, ok: true }),
+    guideCompliance: mockGuideComplianceRow({ hasProlabore, regimeTributario, inssOk: true, dasOk: true }),
   };
 }
 
@@ -210,7 +212,8 @@ export function createMockApi() {
       next.guideCompliance = mockGuideComplianceRow({
         hasProlabore: next.hasProlabore,
         regimeTributario: next.legacyCompany.regimeTributario,
-        ok: next.guideCompliance?.ok ?? true,
+        inssOk: next.guideCompliance?.inss?.ok ?? true,
+        dasOk: next.guideCompliance?.das?.ok ?? true,
       });
       mockCompanies[index] = next;
       return { ok: true, company: next };

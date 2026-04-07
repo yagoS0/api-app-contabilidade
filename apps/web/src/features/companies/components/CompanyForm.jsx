@@ -22,7 +22,6 @@ export function CompanyForm({
           onChange={(event) => onChange("ownerEmail", event.target.value)}
           required
         />
-        <span className="hint">Único por usuário; usado para entrar no portal.</span>
       </label>
       {showOwnerPassword ? (
         <label>
@@ -55,9 +54,6 @@ export function CompanyForm({
           onChange={(event) => onChange("guideNotificationEmail", event.target.value)}
           placeholder="pode ser o mesmo para várias empresas"
         />
-        <span className="hint">
-          Só para envio dos PDFs das guias; pode repetir em CNPJs diferentes (ex.: mesma caixa de entrada).
-        </span>
       </label>
       <label>
         Telefone
@@ -80,10 +76,6 @@ export function CompanyForm({
           <option value="nao">Não</option>
           <option value="sim">Sim</option>
         </select>
-        <span className="hint">
-          Com pró-labore, esperamos guia de INSS no mês de referência; sem pró-labore e regime Simples, guia de
-          Simples Nacional.
-        </span>
       </label>
       <label>
         CNAE principal
