@@ -55,7 +55,13 @@ async function attachGuideComplianceToCompaniesList(data) {
   const map = await computeGuideComplianceMap(rows, ref);
   return data.map((item) => ({
     ...item,
-    guideCompliance: map.get(item.companyId) || { competencia: ref, expected: null, ok: true },
+    guideCompliance: map.get(item.companyId) || {
+      competencia: ref,
+      inss: { required: false, ok: true },
+      das: { required: false, ok: true },
+      expected: null,
+      ok: true,
+    },
   }));
 }
 

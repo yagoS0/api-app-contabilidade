@@ -15,17 +15,10 @@ export function getReferenceCompetencia(now = new Date()) {
   return `${y}-${String(prev).padStart(2, "0")}`;
 }
 
-/**
- * @param {{ hasProlabore: boolean, regimeTributario: string | null | undefined }} input
- * @returns {"INSS" | "SIMPLES" | null}
- */
-export function getExpectedGuideTipo({ hasProlabore, regimeTributario }) {
-  if (hasProlabore) return "INSS";
-  const regime = String(regimeTributario || "")
+function isRegimeSimples(regimeTributario) {
+  return String(regimeTributario || "")
     .trim()
-    .toUpperCase();
-  if (regime === "SIMPLES") return "SIMPLES";
-  return null;
+    .toUpperCase() === "SIMPLES";
 }
 
 function normalizeRegimeFromLegacy(legacy) {
@@ -34,10 +27,23 @@ function normalizeRegimeFromLegacy(legacy) {
   return r != null ? String(r).trim() : null;
 }
 
+function getRequirements({ hasProlabore, regimeTributario }) {
+  return {
+    inssRequired: Boolean(hasProlabore),
+    dasRequired: isRegimeSimples(regimeTributario),
+  };
+}
+
 /**
  * @param {Array<{ portalId: string, hasProlabore: boolean, legacy: object | null }>} rows
  * @param {string} competencia YYYY-MM
- * @returns {Map<string, { competencia: string, expected: "INSS"|"SIMPLES"|null, ok: boolean }>}
+ * @returns {Map<string, {
+ *   competencia: string,
+ *   inss: { required: boolean, ok: boolean },
+ *   das: { required: boolean, ok: boolean },
+ *   ok: boolean,
+ *   expected: "INSS"|"SIMPLES"|null
+ * }>}
  */
 export async function computeGuideComplianceMap(rows, competencia) {
   const map = new Map();
@@ -45,20 +51,25 @@ export async function computeGuideComplianceMap(rows, competencia) {
 
   for (const row of rows) {
     const regime = normalizeRegimeFromLegacy(row.legacy);
-    const expected = getExpectedGuideTipo({
+    const req = getRequirements({
       hasProlabore: Boolean(row.hasProlabore),
       regimeTributario: regime,
     });
-    if (!expected) {
-      map.set(row.portalId, { competencia, expected: null, ok: true });
-    } else {
-      needQuery.push({ portalId: row.portalId, expected });
-    }
+    const base = {
+      competencia,
+      inss: { required: req.inssRequired, ok: !req.inssRequired },
+      das: { required: req.dasRequired, ok: !req.dasRequired },
+      ok: !req.inssRequired && !req.dasRequired,
+      // Mantém compatibilidade com front antigo.
+      expected: req.inssRequired ? "INSS" : req.dasRequired ? "SIMPLES" : null,
+    };
+    map.set(row.portalId, base);
+    if (req.inssRequired || req.dasRequired) needQuery.push(row.portalId);
   }
 
   if (!needQuery.length) return map;
 
-  const portalIds = [...new Set(needQuery.map((r) => r.portalId))];
+  const portalIds = [...new Set(needQuery)];
   const guides = await prisma.guide.findMany({
     where: {
       portalClientId: { in: portalIds },
@@ -76,10 +87,18 @@ export async function computeGuideComplianceMap(rows, competencia) {
     byPortal.get(g.portalClientId).add(String(g.tipo || "").toUpperCase());
   }
 
-  for (const { portalId, expected } of needQuery) {
+  for (const portalId of portalIds) {
+    const current = map.get(portalId);
+    if (!current) continue;
     const tipos = byPortal.get(portalId) || new Set();
-    const ok = tipos.has(expected);
-    map.set(portalId, { competencia, expected, ok });
+    const inssOk = current.inss.required ? tipos.has("INSS") : true;
+    const dasOk = current.das.required ? tipos.has("SIMPLES") : true;
+    map.set(portalId, {
+      ...current,
+      inss: { ...current.inss, ok: inssOk },
+      das: { ...current.das, ok: dasOk },
+      ok: inssOk && dasOk,
+    });
   }
 
   return map;
