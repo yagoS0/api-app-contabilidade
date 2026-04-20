@@ -259,6 +259,8 @@ model PortalClient {
   companyClientUsers  CompanyClientUser[]
   companyFirmAccess   CompanyFirmAccess[]
   taxDocuments        TaxDocument[]
+  chartOfAccounts     ChartOfAccount[]
+  accountingEntries   AccountingEntry[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -530,6 +532,90 @@ model TaxDocumentExtraction {
 
   @@index([documentId])
   @@map("document_extractions")
+}
+
+// ==========================
+// Lançamentos Contábeis
+// ==========================
+
+model ChartOfAccount {
+  id             String   @id @default(uuid())
+  portalClientId String
+  codigo         String   // código reduzido, ex: "5", "464"
+  nome           String
+  tipo           String   // ATIVO | PASSIVO | RECEITA | DESPESA | PATRIMONIO
+  natureza       String   @default("DEVEDORA") // DEVEDORA | CREDORA
+  status         String   @default("CONFIRMADA") // CONFIRMADA | PENDENTE_ERP
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  portalClient   PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, codigo])
+  @@index([portalClientId])
+  @@index([portalClientId, status])
+  @@map("chart_of_accounts")
+}
+
+model AccountingEntry {
+  id              String   @id @default(uuid())
+  portalClientId  String
+  data            DateTime
+  competencia     String
+  historico       String
+  tipo            String   @default("DESPESA")  // DESPESA | RECEITA | FOLHA | PROVISAO | BAIXA | OUTRO
+  subtipo         String?                        // SIMPLES | IRRF | ISS | PIS | COFINS | FGTS | null
+  origem          String   @default("MANUAL")    // MANUAL | OFX | PDF
+  loteImportacao  String?
+  status          String   @default("RASCUNHO")  // RASCUNHO | CONFIRMADO | EXPORTADO
+  statusPagamento String   @default("NA")        // NA | ABERTO | PAGO
+  openEntryId     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines        AccountingEntryLine[]
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  openEntry    AccountingEntry?  @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
+  baixas       AccountingEntry[] @relation("BaixaToOpen")
+
+  @@index([portalClientId])
+  @@index([portalClientId, competencia])
+  @@index([portalClientId, tipo])
+  @@index([portalClientId, status])
+  @@index([portalClientId, statusPagamento])
+  @@index([portalClientId, subtipo])
+  @@map("accounting_entries")
+}
+
+model AccountingEntryLine {
+  id      String  @id @default(uuid())
+  entryId String
+  conta   String
+  tipo    String  // D | C
+  valor   Decimal @db.Decimal(18, 2)
+  ordem   Int     @default(0)
+
+  entry AccountingEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@index([entryId])
+  @@map("accounting_entry_lines")
+}
+
+model AccountingHistorico {
+  id                    String   @id @default(uuid())
+  createdByUserId       String
+  companyPortalClientId String?  // null = global para este usuário; preenchido = específico da empresa
+  text                  String
+  contaDebito           String?
+  contaCredito          String?
+  usageCount            Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([createdByUserId, companyPortalClientId])
+  @@index([createdByUserId, contaDebito])
+  @@index([createdByUserId, contaCredito])
+  @@map("accounting_historicos")
 }
 
 model TaxDocumentProcessingLog {

@@ -24,6 +24,9 @@
   --success: #0d7a52;
   --success-surface: #ecfdf5;
   --success-border: #a7f3d0;
+  --success-cta: #69ff47;
+  --success-cta-hover: #58eb38;
+  --success-cta-text: #1a1b26;
 
   --radius: 10px;
   --radius-sm: 8px;
