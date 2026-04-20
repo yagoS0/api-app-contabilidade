@@ -137,12 +137,6 @@ export function createRealApi() {
         total: Number(payload?.total || 0),
       };
     },
-    async sendPendingGuideEmails(input) {
-      return request("/firm/guides/emails/send-pending", {
-        method: "POST",
-        body: JSON.stringify(input || {}),
-      });
-    },
     async getPendingGuidesReport(params = {}) {
       const query = new URLSearchParams();
       if (params.companyId) query.set("companyId", String(params.companyId));
@@ -166,6 +160,136 @@ export function createRealApi() {
           guideIds: Array.isArray(guideIds) ? guideIds : [],
         }),
       });
+    },
+
+    // ── Plano de Contas ────────────────────────────────────────────────────
+    async getChartOfAccounts(companyId) {
+      const payload = await request(`/firm/companies/${companyId}/chart-of-accounts`);
+      return Array.isArray(payload?.data) ? payload.data : [];
+    },
+    async createChartOfAccount(companyId, input) {
+      return request(`/firm/companies/${companyId}/chart-of-accounts`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    async updateChartOfAccount(companyId, codigo, input) {
+      return request(`/firm/companies/${companyId}/chart-of-accounts/${encodeURIComponent(codigo)}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+    },
+    async deleteChartOfAccount(companyId, codigo) {
+      return request(`/firm/companies/${companyId}/chart-of-accounts/${encodeURIComponent(codigo)}`, {
+        method: "DELETE",
+      });
+    },
+    async importChartOfAccountsFile(companyId, file) {
+      const formData = new FormData();
+      formData.append("file", file);
+      return request(`/firm/companies/${companyId}/chart-of-accounts/import`, {
+        method: "POST",
+        body: formData,
+      });
+    },
+
+    // ── Lançamentos ────────────────────────────────────────────────────────
+    async getAccountingEntries(companyId, params = {}) {
+      const query = new URLSearchParams();
+      if (params.competencia) query.set("competencia", params.competencia);
+      if (params.tipo) query.set("tipo", params.tipo);
+      if (params.origem) query.set("origem", params.origem);
+      if (params.status) query.set("status", params.status);
+      if (params.page) query.set("page", String(params.page));
+      if (params.limit) query.set("limit", String(params.limit));
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      const payload = await request(`/firm/companies/${companyId}/entries${suffix}`);
+      return {
+        data: Array.isArray(payload?.data) ? payload.data : [],
+        total: Number(payload?.total || 0),
+        page: Number(payload?.page || 1),
+        limit: Number(payload?.limit || 50),
+      };
+    },
+    async createAccountingEntry(companyId, input) {
+      return request(`/firm/companies/${companyId}/entries`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    async updateAccountingEntry(companyId, entryId, input) {
+      return request(`/firm/companies/${companyId}/entries/${entryId}`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      });
+    },
+    async deleteAccountingEntry(companyId, entryId) {
+      return request(`/firm/companies/${companyId}/entries/${entryId}`, {
+        method: "DELETE",
+      });
+    },
+    async createBaixa(companyId, entryId, input) {
+      return request(`/firm/companies/${companyId}/entries/${entryId}/baixa`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    async getCircular(companyId, { year } = {}) {
+      const q = year ? `?year=${year}` : "";
+      return request(`/firm/companies/${companyId}/entries/circular${q}`);
+    },
+    async previewOFX(companyId, file) {
+      const formData = new FormData();
+      formData.append("file", file);
+      return request(`/firm/companies/${companyId}/entries/import/ofx?preview=1`, {
+        method: "POST",
+        body: formData,
+      });
+    },
+    async importOFX(companyId, { file, contaDebito, contaCredito, tipo }) {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("contaDebito", contaDebito);
+      formData.append("contaCredito", contaCredito);
+      formData.append("tipo", tipo || "DESPESA");
+      return request(`/firm/companies/${companyId}/entries/import/ofx`, {
+        method: "POST",
+        body: formData,
+      });
+    },
+    async searchHistoricos(companyId, q) {
+      const query = new URLSearchParams();
+      if (q) query.set("q", q);
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      const payload = await request(`/firm/companies/${companyId}/historicos${suffix}`);
+      return Array.isArray(payload) ? payload : [];
+    },
+    async getAllHistoricos(companyId) {
+      const payload = await request(`/firm/companies/${companyId}/historicos?limit=200`);
+      return Array.isArray(payload) ? payload : [];
+    },
+    async updateHistorico(companyId, id, input) {
+      return request(`/firm/companies/${companyId}/historicos/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+    },
+    async getHistoricosByCode(companyId, codigo) {
+      const payload = await request(`/firm/companies/${companyId}/historicos/by-code/${encodeURIComponent(codigo)}`);
+      return Array.isArray(payload) ? payload : [];
+    },
+    async deleteHistorico(companyId, id) {
+      return request(`/firm/companies/${companyId}/historicos/${id}`, { method: "DELETE" });
+    },
+
+    getEntriesExportCsvUrl(companyId, params = {}) {
+      const baseUrl = getApiBaseUrl();
+      const query = new URLSearchParams();
+      if (params.competencia) query.set("competencia", params.competencia);
+      if (params.tipo) query.set("tipo", params.tipo);
+      if (params.status) query.set("status", params.status);
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      return `${baseUrl}/firm/companies/${companyId}/entries/export/csv${suffix}`;
     },
   };
 }

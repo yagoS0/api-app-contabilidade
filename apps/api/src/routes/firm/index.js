@@ -14,6 +14,7 @@ import {
 } from "../../application/company/companyProfile.js";
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
+import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import {
   getFriendlyGuideMessage,
   getGuidePdfBuffer,
@@ -1415,6 +1416,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       message: "Todos os registros de guias foram apagados do banco.",
     });
   });
+
+  const accountingEntriesRouter = createAccountingEntriesRouter({ log });
+  router.use("/companies/:companyId", accountingEntriesRouter);
 
   router.use("/companies/:clientId/invoices/sync", syncRouter);
   router.use("/companies/:clientId/invoices", invoicesRouter);

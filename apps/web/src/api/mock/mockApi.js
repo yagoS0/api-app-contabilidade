@@ -74,6 +74,82 @@ const mockGuideSettings = {
   pdfReaderConfigured: true,
 };
 
+// Plano de contas mock (por empresa)
+const mockChartOfAccounts = new Map();
+const mockEntriesByCompany = new Map();
+
+// Históricos mockados globais (não atrelados a empresa específica)
+const mockHistoricos = [
+  { id: "h1", createdByUserId: "mock-user", companyPortalClientId: null, text: "PAGO AIRBNB", contaDebito: "426", contaCredito: "5", usageCount: 8, scope: "GLOBAL" },
+  { id: "h2", createdByUserId: "mock-user", companyPortalClientId: null, text: "PAGO ALUGUEL", contaDebito: "426", contaCredito: "1", usageCount: 5, scope: "GLOBAL" },
+  { id: "h3", createdByUserId: "mock-user", companyPortalClientId: null, text: "RECEBIMENTO DE CLIENTES", contaDebito: "1", contaCredito: "3", usageCount: 12, scope: "GLOBAL" },
+  { id: "h4", createdByUserId: "mock-user", companyPortalClientId: null, text: "PAGO CONTA DE ENERGIA", contaDebito: "464", contaCredito: "5", usageCount: 3, scope: "GLOBAL" },
+  { id: "h5", createdByUserId: "mock-user", companyPortalClientId: null, text: "PAGO INTERNET", contaDebito: "465", contaCredito: "5", usageCount: 4, scope: "GLOBAL" },
+];
+// Históricos específicos por empresa são adicionados dinamicamente em mockHistoricosByCompany
+const mockHistoricosByCompany = new Map();
+
+// Seed de plano de contas para a primeira empresa mock
+const _seedAccounts = [
+  { codigo: "1", nome: "Ativo", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA" },
+  { codigo: "5", nome: "Caixa", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA" },
+  { codigo: "6", nome: "Banco Conta Corrente", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA" },
+  { codigo: "266", nome: "Impostos a Recolher", tipo: "PASSIVO", natureza: "CREDORA", status: "CONFIRMADA" },
+  { codigo: "400", nome: "Despesas Gerais", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA" },
+  { codigo: "401", nome: "Aluguel", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA" },
+  { codigo: "402", nome: "Energia Elétrica", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA" },
+  { codigo: "464", nome: "Serviços Prestados Pessoa Jurídica", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA" },
+  { codigo: "700", nome: "Receitas de Serviços", tipo: "RECEITA", natureza: "CREDORA", status: "CONFIRMADA" },
+];
+for (const company of mockCompanies) {
+  mockChartOfAccounts.set(
+    company.companyId,
+    _seedAccounts.map((a) => ({
+      id: faker.string.uuid(),
+      portalClientId: company.companyId,
+      ...a,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }))
+  );
+  mockEntriesByCompany.set(company.companyId, []);
+}
+
+// Seed provisões para a primeira empresa
+const _firstCompanyId = mockCompanies[0]?.companyId;
+if (_firstCompanyId) {
+  mockEntriesByCompany.set(_firstCompanyId, [
+    {
+      id: faker.string.uuid(), portalClientId: _firstCompanyId,
+      data: new Date("2026-04-05").toISOString(), competencia: "2026-04",
+      historico: "Provisão DAS Simples Nacional Abril/2026",
+      tipo: "PROVISAO", subtipo: "SIMPLES", origem: "MANUAL",
+      loteImportacao: null,
+      status: "CONFIRMADO", statusPagamento: "ABERTO", openEntryId: null,
+      lines: [
+        { id: faker.string.uuid(), conta: "266", tipo: "D", valor: 1200, ordem: 0 },
+        { id: faker.string.uuid(), conta: "266", tipo: "C", valor: 1200, ordem: 1 },
+      ],
+      totalD: 1200, totalC: 1200, valor: 1200,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    },
+    {
+      id: faker.string.uuid(), portalClientId: _firstCompanyId,
+      data: new Date("2026-03-05").toISOString(), competencia: "2026-03",
+      historico: "Provisão DAS Simples Nacional Março/2026",
+      tipo: "PROVISAO", subtipo: "SIMPLES", origem: "MANUAL",
+      loteImportacao: null,
+      status: "CONFIRMADO", statusPagamento: "PAGO", openEntryId: null,
+      lines: [
+        { id: faker.string.uuid(), conta: "266", tipo: "D", valor: 980, ordem: 0 },
+        { id: faker.string.uuid(), conta: "266", tipo: "C", valor: 980, ordem: 1 },
+      ],
+      totalD: 980, totalC: 980, valor: 980,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    },
+  ]);
+}
+
 function buildCompanyPayload(input) {
   const ownerEmail = String(input.ownerEmail || "").trim().toLowerCase();
   const guideEmail =
@@ -373,30 +449,6 @@ export function createMockApi() {
         total: mockUnidentifiedGuides.length,
       };
     },
-    async sendPendingGuideEmails() {
-      await delay(500);
-      const sent = faker.number.int({ min: 1, max: 6 });
-      const failed = faker.number.int({ min: 0, max: 1 });
-      return {
-        ok: true,
-        message: "Todos os e-mails pendentes elegíveis foram processados com sucesso.",
-        result: {
-          totalProcessed: sent + failed,
-          sent,
-          failed,
-          batches: 1,
-          failedItems: [],
-          batchResults: [
-            {
-              batch: 1,
-              total: sent + failed,
-              sent,
-              errors: failed,
-            },
-          ],
-        },
-      };
-    },
     async getPendingGuidesReport() {
       await delay(300);
       const data = [];
@@ -484,6 +536,341 @@ export function createMockApi() {
           items,
         },
       };
+    },
+
+    // ── Plano de Contas (mock) ─────────────────────────────────────────────
+    async getChartOfAccounts(companyId) {
+      await delay();
+      return mockChartOfAccounts.get(companyId) || [];
+    },
+    async createChartOfAccount(companyId, input) {
+      await delay();
+      const list = mockChartOfAccounts.get(companyId) || [];
+      if (list.find((a) => a.codigo === input.codigo)) throw new Error("codigo_ja_existe");
+      const account = {
+        id: faker.string.uuid(),
+        portalClientId: companyId,
+        codigo: String(input.codigo),
+        nome: String(input.nome),
+        tipo: String(input.tipo || "DESPESA").toUpperCase(),
+        natureza: String(input.natureza || "DEVEDORA").toUpperCase(),
+        status: "PENDENTE_ERP",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      list.push(account);
+      mockChartOfAccounts.set(companyId, list);
+      return { ok: true, account };
+    },
+    async updateChartOfAccount(companyId, codigo, input) {
+      await delay();
+      const list = mockChartOfAccounts.get(companyId) || [];
+      const idx = list.findIndex((a) => a.codigo === codigo);
+      if (idx < 0) throw new Error("conta_nao_encontrada");
+      list[idx] = { ...list[idx], ...input, updatedAt: new Date().toISOString() };
+      mockChartOfAccounts.set(companyId, list);
+      return { ok: true, account: list[idx] };
+    },
+    async deleteChartOfAccount(companyId, codigo) {
+      await delay();
+      const list = mockChartOfAccounts.get(companyId) || [];
+      mockChartOfAccounts.set(companyId, list.filter((a) => a.codigo !== codigo));
+      return { ok: true };
+    },
+    async importChartOfAccountsFile() {
+      await delay(600);
+      return { ok: true, created: 0, skipped: 0, errors: [] };
+    },
+
+    // ── Lançamentos (mock) ─────────────────────────────────────────────────
+    async getAccountingEntries(companyId, params = {}) {
+      await delay();
+      let list = mockEntriesByCompany.get(companyId) || [];
+      if (params.competencia) list = list.filter((e) => e.competencia === params.competencia);
+      if (params.tipo) list = list.filter((e) => e.tipo === params.tipo);
+      if (params.subtipo) list = list.filter((e) => e.subtipo === params.subtipo);
+      if (params.origem) list = list.filter((e) => e.origem === params.origem);
+      if (params.status) list = list.filter((e) => e.status === params.status);
+      if (params.statusPagamento) list = list.filter((e) => e.statusPagamento === params.statusPagamento);
+      const page = Math.max(1, Number(params.page || 1));
+      const limit = Math.min(200, Number(params.limit || 50));
+      const paged = list.slice((page - 1) * limit, page * limit);
+      return { data: paged, total: list.length, page, limit };
+    },
+    async createAccountingEntry(companyId, input) {
+      await delay();
+      const lines = Array.isArray(input.lines) ? input.lines : [];
+      const totalD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+      const totalC = lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
+      if (Math.abs(totalD - totalC) > 0.01) throw new Error("entry_nao_balanceada");
+      const data = input.data ? new Date(input.data) : new Date();
+      const entryId = faker.string.uuid();
+      const entry = {
+        id: entryId,
+        portalClientId: companyId,
+        data: data.toISOString(),
+        competencia: `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`,
+        historico: String(input.historico || ""),
+        tipo: String(input.tipo || "DESPESA").toUpperCase(),
+        subtipo: input.subtipo ? String(input.subtipo).toUpperCase() : null,
+        origem: "MANUAL",
+        loteImportacao: null,
+        status: "RASCUNHO",
+        statusPagamento: input.statusPagamento ? String(input.statusPagamento).toUpperCase() : "NA",
+        openEntryId: null,
+        lines: lines.map((l, idx) => ({
+          id: faker.string.uuid(),
+          entryId,
+          conta: String(l.conta || ""),
+          tipo: String(l.tipo || "D").toUpperCase(),
+          valor: Number(l.valor || 0),
+          ordem: idx,
+        })),
+        totalD,
+        totalC,
+        valor: totalD,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const list = mockEntriesByCompany.get(companyId) || [];
+      list.push(entry);
+      mockEntriesByCompany.set(companyId, list);
+
+      // Auto-save do histórico no mock
+      if (input.historico && lines.length > 0) {
+        const compList = mockHistoricosByCompany.get(companyId) || [];
+        const dLine = lines.find((l) => String(l.tipo || "").toUpperCase() === "D");
+        const cLine = lines.find((l) => String(l.tipo || "").toUpperCase() === "C");
+        const existing = compList.find((h) => h.text === input.historico && h.companyPortalClientId === companyId);
+        if (existing) {
+          existing.usageCount += 1;
+        } else {
+          compList.push({
+            id: faker.string.uuid(), createdByUserId: "mock-user", companyPortalClientId: companyId,
+            text: input.historico,
+            contaDebito: dLine ? String(dLine.conta || "") : null,
+            contaCredito: cLine ? String(cLine.conta || "") : null,
+            usageCount: 1, scope: "COMPANY",
+          });
+        }
+        mockHistoricosByCompany.set(companyId, compList);
+      }
+
+      return { ok: true, entry };
+    },
+    async updateAccountingEntry(companyId, entryId, input) {
+      await delay();
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const idx = list.findIndex((e) => e.id === entryId);
+      if (idx < 0) throw new Error("lancamento_nao_encontrado");
+      const updated = { ...list[idx], updatedAt: new Date().toISOString() };
+      if (input.data !== undefined) updated.data = input.data;
+      if (input.historico !== undefined) updated.historico = input.historico;
+      if (input.tipo !== undefined) updated.tipo = input.tipo;
+      if (input.subtipo !== undefined) updated.subtipo = input.subtipo;
+      if (input.status !== undefined) updated.status = input.status;
+      if (input.statusPagamento !== undefined) updated.statusPagamento = input.statusPagamento;
+      if (Array.isArray(input.lines)) {
+        const totalD = input.lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+        const totalC = input.lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
+        if (Math.abs(totalD - totalC) > 0.01) throw new Error("entry_nao_balanceada");
+        updated.lines = input.lines.map((l, i) => ({
+          id: faker.string.uuid(), entryId,
+          conta: String(l.conta || ""), tipo: String(l.tipo || "D").toUpperCase(),
+          valor: Number(l.valor || 0), ordem: i,
+        }));
+        updated.totalD = totalD;
+        updated.totalC = totalC;
+        updated.valor = totalD;
+      }
+      list[idx] = updated;
+      mockEntriesByCompany.set(companyId, list);
+      return { ok: true, entry: list[idx] };
+    },
+    async deleteAccountingEntry(companyId, entryId) {
+      await delay();
+      const list = mockEntriesByCompany.get(companyId) || [];
+      mockEntriesByCompany.set(companyId, list.filter((e) => e.id !== entryId));
+      return { ok: true };
+    },
+    async createBaixa(companyId, entryId, { data, historico, lines }) {
+      await delay();
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const openIdx = list.findIndex((e) => e.id === entryId);
+      if (openIdx < 0) throw new Error("lancamento_nao_encontrado");
+      if (list[openIdx].statusPagamento !== "ABERTO") throw new Error("lancamento_nao_esta_aberto");
+      const linesArr = Array.isArray(lines) ? lines : [];
+      const totalD = linesArr.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+      const totalC = linesArr.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
+      if (Math.abs(totalD - totalC) > 0.01) throw new Error("entry_nao_balanceada");
+      const baixaId = faker.string.uuid();
+      const dt = data ? new Date(data) : new Date();
+      const baixa = {
+        id: baixaId,
+        portalClientId: companyId,
+        data: dt.toISOString(),
+        competencia: `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`,
+        historico: String(historico || ""),
+        tipo: "BAIXA",
+        subtipo: null,
+        origem: "MANUAL",
+        loteImportacao: null,
+        status: "CONFIRMADO",
+        statusPagamento: "NA",
+        openEntryId: entryId,
+        lines: linesArr.map((l, i) => ({
+          id: faker.string.uuid(), entryId: baixaId,
+          conta: String(l.conta || ""), tipo: String(l.tipo || "D").toUpperCase(),
+          valor: Number(l.valor || 0), ordem: i,
+        })),
+        totalD, totalC, valor: totalD,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      };
+      list.push(baixa);
+      list[openIdx] = { ...list[openIdx], statusPagamento: "PAGO", updatedAt: new Date().toISOString() };
+      mockEntriesByCompany.set(companyId, list);
+      return { ok: true, entry: baixa, openEntry: list[openIdx] };
+    },
+    async getCircular(companyId, { year } = {}) {
+      await delay();
+      const y = year || new Date().getFullYear();
+      const meses = Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const provisoes = list.filter(
+        (e) => e.tipo === "PROVISAO" && ["ABERTO", "PAGO"].includes(e.statusPagamento) && meses.includes(e.competencia)
+      );
+      const receitas = {};
+      for (const e of list.filter((e) => e.tipo === "RECEITA" && meses.includes(e.competencia))) {
+        const total = (e.lines || []).filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+        receitas[e.competencia] = (receitas[e.competencia] || 0) + total;
+      }
+      return { year: y, provisoes, receitas };
+    },
+    async previewOFX() {
+      await delay(400);
+      const transactions = Array.from({ length: faker.number.int({ min: 3, max: 10 }) }).map(() => ({
+        fitId: faker.string.alphanumeric(12),
+        trnType: "DEBIT",
+        data: faker.date.recent({ days: 30 }).toISOString(),
+        valor: Number(faker.finance.amount({ min: 50, max: 5000, dec: 2 })),
+        sinal: "DEBITO",
+        historico: faker.helpers.arrayElement([
+          "PAGAMENTO FORNECEDOR",
+          "TED RECEBIDA",
+          "DEBITO AUTOMATICO",
+          "COMPRA CARTAO",
+          "TARIFA BANCARIA",
+        ]),
+      }));
+      return { ok: true, transactions, total: transactions.length };
+    },
+    async importOFX(companyId, { contaDebito, contaCredito, tipo }) {
+      await delay(600);
+      const count = faker.number.int({ min: 3, max: 10 });
+      const loteImportacao = `OFX-${Date.now()}`;
+      const list = mockEntriesByCompany.get(companyId) || [];
+      for (let i = 0; i < count; i++) {
+        const data = faker.date.recent({ days: 30 });
+        const valor = Number(faker.finance.amount({ min: 50, max: 5000, dec: 2 }));
+        const entryId = faker.string.uuid();
+        list.push({
+          id: entryId,
+          portalClientId: companyId,
+          data: data.toISOString(),
+          competencia: `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`,
+          historico: faker.helpers.arrayElement(["PAGAMENTO FORNECEDOR", "DEBITO AUTOMATICO", "TARIFA BANCARIA"]),
+          tipo: tipo || "DESPESA",
+          subtipo: null,
+          origem: "OFX",
+          loteImportacao,
+          status: "RASCUNHO",
+          statusPagamento: "NA",
+          openEntryId: null,
+          lines: [
+            { id: faker.string.uuid(), entryId, conta: contaDebito, tipo: "D", valor, ordem: 0 },
+            { id: faker.string.uuid(), entryId, conta: contaCredito, tipo: "C", valor, ordem: 1 },
+          ],
+          totalD: valor, totalC: valor, valor,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      mockEntriesByCompany.set(companyId, list);
+      return { ok: true, created: count, loteImportacao };
+    },
+    getEntriesExportCsvUrl(companyId) {
+      return `#mock-csv-export-${companyId}`;
+    },
+
+    // ── Históricos (mock) ──────────────────────────────────────────────────
+    async getAllHistoricos(companyId) {
+      await delay(200);
+      const companySpecific = mockHistoricosByCompany.get(companyId) || [];
+      return [...mockHistoricos, ...companySpecific]
+        .sort((a, b) => b.usageCount - a.usageCount)
+        .map((h) => ({ ...h, scope: h.companyPortalClientId ? "COMPANY" : "GLOBAL" }));
+    },
+    async updateHistorico(companyId, id, input) {
+      await delay(150);
+      // procura globais
+      const gi = mockHistoricos.findIndex((h) => h.id === id);
+      if (gi >= 0) {
+        const h = mockHistoricos[gi];
+        if (input.scope === "COMPANY") { h.companyPortalClientId = companyId; h.scope = "COMPANY"; }
+        if (input.scope === "GLOBAL") { h.companyPortalClientId = null; h.scope = "GLOBAL"; }
+        if (input.contaDebito !== undefined) h.contaDebito = input.contaDebito || null;
+        if (input.contaCredito !== undefined) h.contaCredito = input.contaCredito || null;
+        return { ok: true, historico: { ...h } };
+      }
+      const compList = mockHistoricosByCompany.get(companyId) || [];
+      const ci = compList.findIndex((h) => h.id === id);
+      if (ci >= 0) {
+        const h = compList[ci];
+        if (input.scope === "GLOBAL") {
+          // promove para global: remove da lista da empresa, adiciona nos globais
+          compList.splice(ci, 1);
+          mockHistoricosByCompany.set(companyId, compList);
+          h.companyPortalClientId = null; h.scope = "GLOBAL";
+          mockHistoricos.push(h);
+        } else {
+          if (input.contaDebito !== undefined) h.contaDebito = input.contaDebito || null;
+          if (input.contaCredito !== undefined) h.contaCredito = input.contaCredito || null;
+        }
+        return { ok: true, historico: { ...h } };
+      }
+      return { ok: false, error: "not_found" };
+    },
+    async searchHistoricos(companyId, q) {
+      await delay(150);
+      const companySpecific = mockHistoricosByCompany.get(companyId) || [];
+      const all = [...mockHistoricos, ...companySpecific];
+      const nq = String(q || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const filtered = nq.length < 2
+        ? all
+        : all.filter((h) => h.text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(nq));
+      return filtered
+        .sort((a, b) => b.usageCount - a.usageCount)
+        .slice(0, 12)
+        .map((h) => ({ ...h, scope: h.companyPortalClientId ? "COMPANY" : "GLOBAL" }));
+    },
+    async getHistoricosByCode(companyId, codigo) {
+      await delay(150);
+      const companySpecific = mockHistoricosByCompany.get(companyId) || [];
+      const all = [...mockHistoricos, ...companySpecific];
+      return all
+        .filter((h) => h.contaDebito === codigo || h.contaCredito === codigo)
+        .sort((a, b) => b.usageCount - a.usageCount)
+        .slice(0, 10)
+        .map((h) => ({ ...h, scope: h.companyPortalClientId ? "COMPANY" : "GLOBAL" }));
+    },
+    async deleteHistorico(companyId, id) {
+      await delay(100);
+      const compList = mockHistoricosByCompany.get(companyId) || [];
+      const globalIdx = mockHistoricos.findIndex((h) => h.id === id);
+      if (globalIdx >= 0) { mockHistoricos.splice(globalIdx, 1); return { ok: true }; }
+      const compIdx = compList.findIndex((h) => h.id === id);
+      if (compIdx >= 0) { compList.splice(compIdx, 1); mockHistoricosByCompany.set(companyId, compList); return { ok: true }; }
+      return { ok: false, error: "not_found" };
     },
   };
 }
