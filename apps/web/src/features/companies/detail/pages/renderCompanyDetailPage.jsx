@@ -69,39 +69,83 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     );
   }
 
+  if (companyDetailTab === "guides") {
+      return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="guides"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+
+        <AppShell className="guides-page-shell">
+          <CompanyGuidesTable
+            guides={guidesPanel.guides}
+            loadingGuides={guidesPanel.loading}
+            onResendGuide={guidesPanel.onResendGuide}
+            resendingGuideId={guidesPanel.resendingGuideId}
+          />
+
+          <Feedback message={feedback.message} error={feedback.error} />
+        </AppShell>
+      </div>
+    );
+  }
+
+  if (companyDetailTab === "edit") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="edit"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+
+        <AppShell className="company-form-page-shell">
+          <section className="company-form-page__panel">
+            <div className="company-form-page__intro">
+              <h1 className="company-form-page__title">Editar cadastro</h1>
+              <p className="company-form-page__description">
+                Atualize os dados cadastrais da empresa no mesmo padrão visual das demais telas.
+              </p>
+            </div>
+
+            {!canEditCompany ? (
+              <p className="text-muted">Apenas admin ou contador pode alterar os dados.</p>
+            ) : (
+              <CompanyForm
+                form={editPanel.form}
+                onChange={editPanel.onChange}
+                onSubmit={editPanel.onSubmit}
+                submitting={editPanel.submitting}
+                submitLabel="Salvar alterações"
+                showOwnerPassword={false}
+              />
+            )}
+
+            <Feedback message={feedback.message} error={feedback.error} />
+          </section>
+        </AppShell>
+      </div>
+    );
+  }
+
   // ─── Aba Circular: layout full-screen ────────────────────────────────────────
 
   if (companyDetailTab === "circular") {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
-        <div style={{
-          position: "sticky", top: 0, zIndex: 50,
-          background: "white", borderBottom: "1px solid var(--border)",
-          height: 46, display: "flex", alignItems: "center",
-          padding: "0 16px", gap: 12, flexShrink: 0,
-        }}>
-          <Button variant="secondary" size="sm" onClick={onBack}>← Voltar</Button>
-
-          <div style={{ width: 1, height: 24, background: "var(--border)" }} />
-
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, overflow: "hidden" }}>
-            <span style={{ fontWeight: 700, fontSize: "0.9375rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {selectedCompany?.razao || "Empresa"}
-            </span>
-            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", whiteSpace: "nowrap", flexShrink: 0 }}>
-              {selectedCompany?.cnpj}
-            </span>
-          </div>
-
-          <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
-            <button onClick={() => switchTab("guides")} style={tabBtn(false)}>Guias</button>
-            <button onClick={() => switchTab("lancamentos")} style={tabBtn(false)}>Lançamentos</button>
-            <button style={tabBtn(true)}>Circular</button>
-            {canEditCompany && (
-              <button onClick={() => switchTab("edit")} style={tabBtn(false)}>Editar cadastro</button>
-            )}
-          </div>
-        </div>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="circular"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
 
         <div style={{ flex: 1 }}>
           <CircularTab
@@ -166,41 +210,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} resendingGuideId={guidesPanel.resendingGuideId} />
         )}
 
-      {companyDetailTab === "edit" && (
-        <section className="panel">
-          <h2 className="panel__title">Editar cadastro</h2>
-          {!canEditCompany ? (
-            <p className="text-muted">Apenas admin ou contador pode alterar os dados.</p>
-          ) : (
-            <CompanyForm
-              form={editPanel.form}
-              onChange={editPanel.onChange}
-              onSubmit={editPanel.onSubmit}
-              submitting={editPanel.submitting}
-              submitLabel="Salvar alterações"
-              showOwnerPassword={false}
-            />
-          )}
-        </section>
-      )}
-
       <Feedback message={feedback.message} error={feedback.error} />
     </AppShell>
   );
-}
-
-// ─── Estilo dos botões de aba na barra compacta ────────────────────────────────
-
-function tabBtn(active) {
-  return {
-    padding: "4px 12px",
-    fontSize: "0.8125rem",
-    fontWeight: active ? 700 : 500,
-    border: active ? "1px solid var(--primary)" : "1px solid var(--border)",
-    borderRadius: 6,
-    background: active ? "var(--primary)" : "white",
-    color: active ? "white" : "var(--text)",
-    cursor: active ? "default" : "pointer",
-    whiteSpace: "nowrap",
-  };
 }

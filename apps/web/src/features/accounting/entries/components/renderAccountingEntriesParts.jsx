@@ -108,16 +108,6 @@ function TemplateBadge() {
   return <span style={{ display: "inline-block", fontSize: "0.8125rem", fontWeight: 700, padding: "6px 12px", borderRadius: 999, background: "#FFB347", color: "#1A1B26", border: "1px solid #FFB347", whiteSpace: "nowrap" }}>PREENCHER VALOR</span>;
 }
 
-function PagamentoChip({ status }) {
-  const map = {
-    ABERTO: { bg: "#FF4757", color: "#F8F8F2", border: "#FF4757", label: "ABERTO" },
-    PAGO: { bg: "#69FF47", color: "#1A1B26", border: "#69FF47", label: "PAGO" },
-  };
-  const style = map[status];
-  if (!style) return null;
-  return <span style={{ display: "inline-block", fontSize: "0.8125rem", fontWeight: 700, padding: "6px 12px", borderRadius: 999, background: style.bg, color: style.color, border: `1px solid ${style.border}`, whiteSpace: "nowrap", marginLeft: 4 }}>{style.label}</span>;
-}
-
 function LineEditor({ lines, onChange, accounts }) {
   function updateLine(idx, field, val) { onChange(lines.map((l, i) => i === idx ? { ...l, [field]: val } : l)); }
   function removeLine(idx) { onChange(lines.filter((_, i) => i !== idx)); }
@@ -171,6 +161,10 @@ function detectSubtipoFromNome(nome) {
 }
 
 function detectTipoFromAccounts(contaD, contaC, accounts) {
+  if (!contaD || !contaC || String(contaD).trim() === String(contaC).trim()) {
+    return { tipo: "DESPESA", subtipo: null };
+  }
+
   const accD = accounts.find((a) => a.codigo === String(contaD || "").trim());
   const accC = accounts.find((a) => a.codigo === String(contaC || "").trim());
   if (!accD && !accC) return { tipo: "DESPESA", subtipo: null };
@@ -188,6 +182,21 @@ function detectTipoFromAccounts(contaD, contaC, accounts) {
   if (accD?.tipo === "DESPESA") return { tipo: "DESPESA", subtipo: null };
   if (accD?.tipo === "RECEITA") return { tipo: "RECEITA", subtipo: null };
   return { tipo: "DESPESA", subtipo: null };
+}
+
+function hasDuplicateAccountAcrossSides(lines) {
+  const debitAccounts = new Set(
+    (Array.isArray(lines) ? lines : [])
+      .filter((line) => String(line.tipo || "").toUpperCase() === "D")
+      .map((line) => String(line.conta || "").trim())
+      .filter(Boolean)
+  );
+
+  return (Array.isArray(lines) ? lines : []).some((line) => {
+    if (String(line.tipo || "").toUpperCase() !== "C") return false;
+    const accountCode = String(line.conta || "").trim();
+    return accountCode && debitAccounts.has(accountCode);
+  });
 }
 
 function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onGetHistoricosByCode, onSelectHistorico, placeholder, inputRef }) {
@@ -346,8 +355,9 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
   const totalD = activeLines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
   const totalC = activeLines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
   const balanced = Math.abs(totalD - totalC) < 0.01 && totalD > 0;
+  const duplicateAcrossSides = hasDuplicateAccountAcrossSides(activeLines);
   const listedBalanceDelta = Number(listedTotalD || 0) - Number(listedTotalC || 0);
-  const canSave = dateVal && historico && balanced && !saving;
+  const canSave = dateVal && historico && balanced && !duplicateAcrossSides && !saving;
 
   function reset() {
     setContaD(""); setContaC(""); setHistorico(""); setValor(""); setComplexMode(false); setComplexLines([{ tipo: "D", conta: "", valor: "" }, { tipo: "C", conta: "", valor: "" }]);
@@ -381,7 +391,7 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
             <label style={PANEL_LABEL_STYLE}><span>Crédito</span><AccountCodeInput id="new-conta-c" value={contaC} onChange={setContaC} onKeyDown={(e) => { if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode} onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }} placeholder="C" inputRef={cRef} /></label>
             <label style={PANEL_LABEL_STYLE}><span>Valor</span><input ref={valRef} type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00" style={{ ...PANEL_FIELD_STYLE, textAlign: "right", fontSize: "1.0625rem", fontWeight: 500 }} /></label>
           </div>
-          <button type="button" onClick={handleSave} disabled={!canSave} title={!dateVal ? "Informe o dia" : !historico ? "Informe o histórico" : !balanced ? "Valor ou contas incompletos" : "Enter"} style={{ minHeight: 41, padding: "10px 18px", border: "none", borderRadius: 8, background: canSave ? "#69FF47" : "#4b5563", color: "#1A1B26", font: "inherit", fontSize: entryFontSize, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", alignSelf: "end" }}>{saving ? "..." : "Salvar"}</button>
+          <button type="button" onClick={handleSave} disabled={!canSave} title={!dateVal ? "Informe o dia" : !historico ? "Informe o histórico" : !balanced ? "Valor ou contas incompletos" : duplicateAcrossSides ? "Débito e crédito não podem usar a mesma conta" : "Enter"} style={{ minHeight: 41, padding: "10px 18px", border: "none", borderRadius: 8, background: canSave ? "#69FF47" : "#4b5563", color: "#1A1B26", font: "inherit", fontSize: entryFontSize, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", alignSelf: "end" }}>{saving ? "..." : "Salvar"}</button>
         </div>
         <div style={{ display: "grid", gap: 4, minWidth: 150, width: 150, paddingTop: 16 }}>
           <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#69FF47" }}>Débito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtMoney(listedTotalD)}</span></div>
@@ -392,6 +402,11 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
         <span style={{ fontSize: "0.875rem", color: listedBalanceDelta >= 0 ? "#69FF47" : "#FF4757", fontWeight: 600 }}>Diferença: R$ {fmtMoney(listedBalanceDelta)}</span>
         {monthLabel ? <span style={{ fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}>{monthLabel}</span> : null}
       </div>
+      {duplicateAcrossSides ? (
+        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "#FF4757", fontWeight: 600 }}>
+          Débito e crédito não podem usar a mesma conta.
+        </div>
+      ) : null}
       {hasConta && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}><span>Tipo detectado:</span><span style={{ fontWeight: 700, color: "#1A1B26", background: detected.tipo === "PROVISAO" ? "#FFB347" : detected.tipo === "RECEITA" ? "#69FF47" : "#BD93F9", border: "none", borderRadius: 999, padding: "4px 10px" }}>{tipoDetectadoLabel}</span></div>}
       {complexMode && <div style={{ marginTop: 8 }}><LineEditor lines={complexLines} onChange={setComplexLines} accounts={accounts} /></div>}
     </div>
@@ -417,6 +432,7 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
   const cLine = lines.find((l) => l.tipo === "C");
   const dA = dLine ? accounts.find((a) => a.codigo === dLine.conta) : null;
   const cA = cLine ? accounts.find((a) => a.codigo === cLine.conta) : null;
+  const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
   const incompleteRowStyle = isIncompleteSides ? { outline: "2px solid #8BE9FD", outlineOffset: "-2px" } : null;
 
   function startEdit() {
@@ -424,9 +440,16 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
     setEditing(true);
   }
 
-  async function save() { await onUpdate(entry.id, form); setEditing(false); setForm(null); }
+  async function save() {
+    if (hasDuplicateAccountAcrossSides(form?.lines)) return;
+    await onUpdate(entry.id, form);
+    setEditing(false);
+    setForm(null);
+  }
 
   if (editing && form) {
+    const editingDuplicateAcrossSides = hasDuplicateAccountAcrossSides(form.lines);
+
     return (
       <tr style={{ background: ACCOUNTING_PANEL.field }}>
         <td style={TDv}><input type="date" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark" }} /></td>
@@ -439,7 +462,19 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
           <select value={form.tipo} onChange={(e) => setForm((p) => ({ ...p, tipo: e.target.value, subtipo: e.target.value !== "PROVISAO" ? "" : p.subtipo }))} style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark" }}>{Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
           {form.tipo === "PROVISAO" && <select value={form.subtipo || ""} onChange={(e) => setForm((p) => ({ ...p, subtipo: e.target.value }))} style={{ ...PANEL_FIELD_STYLE, marginTop: 4, colorScheme: "dark" }}><option value="">Subtipo...</option>{SUBTIPO_OPTIONS.map(({ key, label }) => <option key={key} value={key}>{label}</option>)}</select>}
         </td>
-        <td style={TDv} colSpan={2}><div style={{ display: "flex", gap: 4 }}><Button size="lg" variant="success" onClick={save} disabled={saving}>{saving ? "..." : "Salvar"}</Button><Button size="sm" variant="secondary" onClick={() => { setEditing(false); setForm(null); }}>Cancelar</Button></div></td>
+        <td style={TDv} colSpan={2}>
+          <div style={{ display: "grid", gap: 6, justifyItems: "start" }}>
+            <div style={{ display: "flex", gap: 4 }}>
+              <Button size="lg" variant="success" onClick={save} disabled={saving || editingDuplicateAcrossSides}>{saving ? "..." : "Salvar"}</Button>
+              <Button size="sm" variant="secondary" onClick={() => { setEditing(false); setForm(null); }}>Cancelar</Button>
+            </div>
+            {editingDuplicateAcrossSides ? (
+              <div style={{ fontSize: "0.8125rem", color: "#FF4757", fontWeight: 600 }}>
+                Débito e crédito não podem usar a mesma conta.
+              </div>
+            ) : null}
+          </div>
+        </td>
       </tr>
     );
   }
@@ -457,8 +492,14 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
         <td style={{ ...TDv, fontSize: "0.9375rem" }} title={entry.historico}><div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.historico || "—"}</div>{isTemplate ? <span style={{ fontSize: "0.7rem", color: "#1A1B26", background: "#FFB347", padding: "2px 7px", borderRadius: 999 }}>agendado</span> : entry.origem !== "MANUAL" && <span style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.text, background: ACCOUNTING_PANEL.surface, padding: "2px 7px", borderRadius: 999 }}>{ORIGEM_LABELS[entry.origem] || entry.origem}</span>}</td>
         <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.muted, fontSize: "0.875rem" }}>—</span> : fmtMoney(totalD)}</td>
         <td style={{ ...TDv, fontSize: "0.875rem", color: ACCOUNTING_PANEL.text }}>{TIPO_LABELS[entry.tipo] || entry.tipo}</td>
-        <td style={TDv}>{isTemplate ? <TemplateBadge /> : <><StatusChip status={entry.status} />{entry.tipo === "PROVISAO" && <PagamentoChip status={entry.statusPagamento} />}</>}</td>
-        <td style={{ ...TDv, textAlign: "right", borderRight: "none" }}><div style={{ display: "flex", gap: 3, justifyContent: "flex-end", flexWrap: "wrap" }}>{entry.tipo === "PROVISAO" && entry.statusPagamento === "ABERTO" && !isTemplate && onCreateBaixa && <Button size="sm" variant="primary" onClick={() => setShowBaixa(true)} disabled={saving || savingBaixa}>Dar Baixa</Button>}{!exported && <><button type="button" onClick={startEdit} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#BD93F9" }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#FF4757" }}>⌫</button></>}</div></td>
+        <td style={TDv}>
+          {isTemplate ? (
+            <TemplateBadge />
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}><StatusChip status={entry.status} /></div>
+          )}
+        </td>
+        <td style={{ ...TDv, textAlign: "right", borderRight: "none" }}><div style={{ display: "flex", gap: 3, justifyContent: "flex-end", flexWrap: "wrap" }}>{!exported && <><button type="button" onClick={startEdit} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#BD93F9" }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#FF4757" }}>⌫</button></>}</div></td>
       </tr>
       {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={8} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtMoney(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
       {showBaixa && <BaixaModal entry={entry} accounts={accounts} saving={savingBaixa} onSave={async (input) => { await onCreateBaixa(entry.id, input); setShowBaixa(false); }} onClose={() => setShowBaixa(false)} />}
