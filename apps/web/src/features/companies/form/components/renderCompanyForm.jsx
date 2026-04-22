@@ -125,7 +125,7 @@ export function CompanyForm({
         />
       </label>
       <div className="full form-actions">
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" variant="success" className="company-form-page__submit" disabled={submitting}>
           {submitting ? "Salvando..." : submitLabel}
         </Button>
       </div>

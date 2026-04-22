@@ -1,6 +1,6 @@
 import { Button } from "../../../../components/ui/Button";
 
-function tagsFromCompliance(guideCompliance) {
+export function getComplianceTags(guideCompliance) {
   if (!guideCompliance || typeof guideCompliance !== "object") return [];
 
   // Novo formato: dois status independentes.
@@ -21,16 +21,18 @@ function tagsFromCompliance(guideCompliance) {
     {
       label: guideCompliance.expected === "SIMPLES" ? "DAS" : "INSS",
       ok: Boolean(guideCompliance.ok),
-    },
-  ];
+      },
+    ];
 }
 
 export function CompanyCard({ company, onAccess }) {
-  const tags = tagsFromCompliance(company.guideCompliance);
+  const tags = getComplianceTags(company.guideCompliance);
   return (
     <article className="company-tile">
-      <h3>{company.razao}</h3>
-      <p>{company.cnpj}</p>
+      <div className="company-tile__body">
+        <h3>{company.razao}</h3>
+        <p>{company.cnpj}</p>
+      </div>
       <p className="compliance-tags" aria-label="Status de guias obrigatórias">
         {tags.map((tag) => (
           <span
@@ -41,8 +43,9 @@ export function CompanyCard({ company, onAccess }) {
             {tag.label}
           </span>
         ))}
+        {!tags.length ? <span className="compliance-tag compliance-tag--neutral">Sem obrigacoes</span> : null}
       </p>
-      <Button type="button" onClick={() => onAccess(company.companyId)}>
+      <Button type="button" className="company-tile__action" onClick={() => onAccess(company.companyId)}>
         Acessar
       </Button>
     </article>

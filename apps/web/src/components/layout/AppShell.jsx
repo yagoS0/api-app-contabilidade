@@ -1,4 +1,4 @@
-export function AppShell({ children }) {
-  return <main className="layout">{children}</main>;
+export function AppShell({ children, className = "" }) {
+  const classes = ["layout", className].filter(Boolean).join(" ");
+  return <main className={classes}>{children}</main>;
 }
-
