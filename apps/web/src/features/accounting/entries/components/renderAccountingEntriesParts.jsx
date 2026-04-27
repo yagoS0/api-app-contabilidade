@@ -45,14 +45,14 @@ function AccountSuggestionRow({ account, onClick, rowRef, selected, onHover }) {
       }}
     >
       <div>
-        <div style={{ fontSize: "0.8125rem", fontWeight: 600, marginBottom: 2 }}>{account.nome}</div>
-        <div style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.muted }}>
+        <div style={{ fontSize: "0.9375rem", fontWeight: 600, marginBottom: 3 }}>{account.nome}</div>
+        <div style={{ fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}>
           <span style={{ fontWeight: 700, color: isDevedora ? "#8BE9FD" : "#69FF47" }}>
             {isDevedora ? `D ${account.codigo}` : `C ${account.codigo}`}
           </span>
         </div>
       </div>
-      <span style={{ fontSize: "0.6rem", padding: "1px 6px", borderRadius: 999, fontWeight: 700, flexShrink: 0, background: tc.bg, color: tc.fg, border: `1px solid ${tc.border}` }}>
+      <span style={{ fontSize: "0.6875rem", padding: "3px 8px", borderRadius: 999, fontWeight: 700, flexShrink: 0, background: tc.bg, color: tc.fg, border: `1px solid ${tc.border}` }}>
         {account.tipo}
       </span>
     </button>
@@ -77,13 +77,13 @@ function HistoricoSuggestionRow({ item, onClick, rowRef, selected, onHover }) {
       }}
     >
       <div>
-        <div style={{ fontSize: "0.8125rem", fontWeight: 600, marginBottom: 2 }}>{item.text}</div>
-        <div style={{ display: "flex", gap: 12, fontSize: "0.7rem", color: ACCOUNTING_PANEL.muted }}>
+        <div style={{ fontSize: "0.9375rem", fontWeight: 600, marginBottom: 3 }}>{item.text}</div>
+        <div style={{ display: "flex", gap: 12, fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}>
           {item.contaDebito && <span><span style={{ fontWeight: 700, color: "#8BE9FD" }}>D {item.contaDebito}</span></span>}
           {item.contaCredito && <span><span style={{ fontWeight: 700, color: "#69FF47" }}>C {item.contaCredito}</span></span>}
         </div>
       </div>
-      <span style={{ fontSize: "0.6rem", padding: "1px 6px", borderRadius: 999, fontWeight: 700, flexShrink: 0, background: item.scope === "GLOBAL" ? "#44475A" : "#BD93F9", color: item.scope === "GLOBAL" ? "#F8F8F2" : "#1A1B26", border: "none" }}>
+      <span style={{ fontSize: "0.6875rem", padding: "3px 8px", borderRadius: 999, fontWeight: 700, flexShrink: 0, background: item.scope === "GLOBAL" ? "#44475A" : "#BD93F9", color: item.scope === "GLOBAL" ? "#F8F8F2" : "#1A1B26", border: "none" }}>
         {item.scope === "GLOBAL" ? "Global" : "Empresa"}
       </span>
     </button>
@@ -91,7 +91,7 @@ function HistoricoSuggestionRow({ item, onClick, rowRef, selected, onHover }) {
 }
 
 function SectionLabel({ children }) {
-  return <div style={{ padding: "8px 10px", fontSize: "0.65rem", fontWeight: 700, color: ACCOUNTING_PANEL.muted, borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, textTransform: "uppercase", letterSpacing: "0.06em", background: ACCOUNTING_PANEL.surface }}>{children}</div>;
+  return <div style={{ padding: "10px 12px", fontSize: "0.75rem", fontWeight: 700, color: ACCOUNTING_PANEL.muted, borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, textTransform: "uppercase", letterSpacing: "0.06em", background: ACCOUNTING_PANEL.surface }}>{children}</div>;
 }
 
 function StatusChip({ status }) {
@@ -307,7 +307,7 @@ function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSearchHisto
     <div ref={ref} style={{ position: "relative", width: "100%" }}>
       <input ref={inputRef} type="text" value={value} placeholder="Histórico do lançamento..." onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => allItems.length > 0 && setOpen(true)} onKeyDown={handleKeyDown} style={{ ...PANEL_FIELD_STYLE, fontSize: "1.0625rem", fontWeight: 500, ...inputStyle }} />
       {open && allItems.length > 0 && (
-        <div style={{ position: "absolute", top: "calc(100% + 3px)", left: 0, zIndex: 300, background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 6, boxShadow: "0 8px 28px rgba(0,0,0,0.15)", minWidth: 480, maxHeight: 360, overflowY: "auto" }}>
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 300, background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.2)", minWidth: 620, maxWidth: 760, maxHeight: 440, overflowY: "auto" }}>
           {historicos.length > 0 && <><SectionLabel>Históricos salvos — ↑↓ Enter para selecionar</SectionLabel>{historicos.map((h, i) => <HistoricoSuggestionRow key={h.id || i} rowRef={(el) => (itemRefs.current[i] = el)} selected={selIdx === i} item={h} onClick={() => selectItem({ _type: "historico", ...h })} onHover={() => setSelIdx(i)} />)}</>}
           {accts.length > 0 && <><SectionLabel>Plano de contas</SectionLabel>{accts.map((a, i) => { const globalIdx = historicos.length + i; return <AccountSuggestionRow key={a.codigo} rowRef={(el) => (itemRefs.current[globalIdx] = el)} selected={selIdx === globalIdx} account={a} onClick={() => selectItem({ _type: "account", ...a })} onHover={() => setSelIdx(globalIdx)} />; })}</>}
         </div>
@@ -384,12 +384,12 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
     <div style={{ background: ACCOUNTING_PANEL.surface, borderRadius: 12, padding: 14, marginBottom: 16 }}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 30, alignItems: "flex-end", flex: "1 1 860px", minWidth: 280, flexWrap: "wrap" }}>
-          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "110px minmax(220px, 1fr) 72px 72px 90px", flex: "1 1 640px", minWidth: 280 }}>
+          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "110px minmax(220px, 1fr) 72px 72px 140px", flex: "1 1 690px", minWidth: 280 }}>
             <label style={PANEL_LABEL_STYLE}><span>Data</span><input ref={dayRef} type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Dia" value={dayStr} onChange={(e) => handleDayChange(e.target.value.replace(/\D/g, ""))} onBlur={() => { if (dayStr && Number(dayStr) > 0) handleDayChange(dayStr); }} onKeyDown={(e) => { if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); histRef.current?.focus(); } }} style={{ ...PANEL_FIELD_STYLE, textAlign: "center", fontSize: entryFontSize, fontWeight: 500 }} /></label>
             <label style={PANEL_LABEL_STYLE}><span>Histórico</span><SmartHistoricoInput value={historico} onChange={setHistorico} onFillFromHistory={(hist, histLines) => { if (hist) setHistorico(hist); if (histLines?.length) { const d = histLines.find((l) => l.tipo === "D"); const c = histLines.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(String(d.valor)); } }} onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} inputStyle={{ fontSize: entryFontSize, fontWeight: 500 }} /></label>
             <label style={PANEL_LABEL_STYLE}><span>Débito</span><AccountCodeInput id="new-conta-d" value={contaD} onChange={setContaD} onKeyDown={(e) => { if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); cRef.current?.focus(); } }} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode} onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }} placeholder="D" inputRef={dRef} /></label>
             <label style={PANEL_LABEL_STYLE}><span>Crédito</span><AccountCodeInput id="new-conta-c" value={contaC} onChange={setContaC} onKeyDown={(e) => { if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode} onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }} placeholder="C" inputRef={cRef} /></label>
-            <label style={PANEL_LABEL_STYLE}><span>Valor</span><input ref={valRef} type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00" style={{ ...PANEL_FIELD_STYLE, textAlign: "right", fontSize: "1.0625rem", fontWeight: 500 }} /></label>
+            <label style={PANEL_LABEL_STYLE}><span>Valor</span><input ref={valRef} className="accounting-entry-value-input" type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00" style={{ ...PANEL_FIELD_STYLE, textAlign: "right", fontSize: "1.0625rem", fontWeight: 500, minWidth: 140 }} /></label>
           </div>
           <button type="button" onClick={handleSave} disabled={!canSave} title={!dateVal ? "Informe o dia" : !historico ? "Informe o histórico" : !balanced ? "Valor ou contas incompletos" : duplicateAcrossSides ? "Débito e crédito não podem usar a mesma conta" : "Enter"} style={{ minHeight: 41, padding: "10px 18px", border: "none", borderRadius: 8, background: canSave ? "#69FF47" : "#4b5563", color: "#1A1B26", font: "inherit", fontSize: entryFontSize, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", alignSelf: "end" }}>{saving ? "..." : "Salvar"}</button>
         </div>

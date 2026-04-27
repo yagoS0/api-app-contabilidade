@@ -7,7 +7,10 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
 import { requireClientCompanyAccess } from "../../middlewares/requireClientCompanyAccess.js";
-import { deleteCompanyPfx, saveCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
+import {
+  COMPANY_DB_CERT_STORAGE_KEY,
+  deleteCompanyPfx,
+} from "../../infrastructure/storage/CertStorage.js";
 import { encryptSecret } from "../../utils/crypto.js";
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
@@ -387,23 +390,19 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         const company = await getLegacyCompanyByPortalId(portalCompanyId);
         if (!company) return res.status(404).json({ error: "legacy_company_not_linked" });
         const previousStorageKey = company.certStorageKey || null;
-        const storageKey = saveCompanyPfx({
-          companyId: company.id,
-          originalName: file.originalname,
-          buffer: file.buffer,
-        });
         const expiresAt = parsePfxExpiry(file.buffer, password);
         const now = new Date();
         await prisma.company.update({
           where: { id: company.id },
           data: {
-            certStorageKey: storageKey,
+            certStorageKey: COMPANY_DB_CERT_STORAGE_KEY,
+            certPfxBytes: file.buffer,
             certPasswordEnc: encryptSecret(password),
             certUploadedAt: now,
             certExpiresAt: expiresAt || undefined,
           },
         });
-        if (previousStorageKey && previousStorageKey !== storageKey) {
+        if (previousStorageKey && previousStorageKey !== COMPANY_DB_CERT_STORAGE_KEY) {
           try {
             deleteCompanyPfx(previousStorageKey);
           } catch {
@@ -460,6 +459,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           where: { id: company.id },
           data: {
             certStorageKey: null,
+            certPfxBytes: null,
             certPasswordEnc: null,
             certExpiresAt: null,
             certUploadedAt: null,
@@ -536,4 +536,3 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
 
   return router;
 }
-

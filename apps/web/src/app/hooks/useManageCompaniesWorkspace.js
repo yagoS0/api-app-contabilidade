@@ -17,6 +17,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
   const [submittingCompanyEdit, setSubmittingCompanyEdit] = useState(false);
   const [jobEnabled, setJobEnabled] = useState(false);
   const [guideSettings, setGuideSettings] = useState(null);
+  const [savingSerproSettings, setSavingSerproSettings] = useState(false);
+  const [uploadingSerproCertificate, setUploadingSerproCertificate] = useState(false);
+  const [deletingSerproCertificate, setDeletingSerproCertificate] = useState(false);
+  const [checkingSerproProcuration, setCheckingSerproProcuration] = useState(false);
+  const [capturingSerproPgdasd, setCapturingSerproPgdasd] = useState(false);
+  const [serproProcurationStatus, setSerproProcurationStatus] = useState(null);
+  const [serproWorkerStatus, setSerproWorkerStatus] = useState(null);
   const [pendingGuides, setPendingGuides] = useState([]);
   const [selectedPendingGuideIds, setSelectedPendingGuideIds] = useState([]);
   const [loadingPendingGuides, setLoadingPendingGuides] = useState(false);
@@ -64,11 +71,128 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     if (page === "login") return;
     feedback.clearFeedback();
     try {
-      const settings = await api.getGuideSettings();
+      const settings = await api.getSerproSettings();
       setGuideSettings(settings);
-      setJobEnabled(Boolean(settings?.pdfReaderConfigured));
+      setJobEnabled(Boolean(settings?.enabled));
     } catch (err) {
       feedback.setError(err?.message || "Falha ao carregar configuracao do job");
+    }
+  }
+
+  async function loadSerproWorkerStatus() {
+    if (page === "login") return null;
+    try {
+      const payload = await api.getSerproStatus();
+      setSerproWorkerStatus(payload || null);
+      return payload || null;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao carregar status do worker SERPRO.");
+      return null;
+    }
+  }
+
+  async function handleSaveSerproSettings(input) {
+    setSavingSerproSettings(true);
+    feedback.clearFeedback();
+    try {
+      const payload = await api.updateSerproSettings(input);
+      setGuideSettings(payload?.settings || null);
+      feedback.setMessage("Configuração SERPRO salva com sucesso.");
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao salvar configuração SERPRO.");
+    } finally {
+      setSavingSerproSettings(false);
+    }
+  }
+
+  async function handleUploadSerproCertificate({ file, password }) {
+    if (!file || !password) {
+      feedback.setError("Selecione o certificado e informe a senha.");
+      return false;
+    }
+    setUploadingSerproCertificate(true);
+    feedback.clearFeedback();
+    try {
+      await api.uploadSerproCertificate({ file, password });
+      feedback.setMessage("Certificado SERPRO enviado com sucesso.");
+      await loadGuideSettings();
+      return true;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao enviar certificado SERPRO.");
+      return false;
+    } finally {
+      setUploadingSerproCertificate(false);
+    }
+  }
+
+  async function handleDeleteSerproCertificate() {
+    setDeletingSerproCertificate(true);
+    feedback.clearFeedback();
+    try {
+      await api.deleteSerproCertificate();
+      feedback.setMessage("Certificado SERPRO removido.");
+      await loadGuideSettings();
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao remover certificado SERPRO.");
+    } finally {
+      setDeletingSerproCertificate(false);
+    }
+  }
+
+  async function loadSerproCompanyProcuration(companyId) {
+    if (!companyId) {
+      setSerproProcurationStatus(null);
+      return null;
+    }
+    try {
+      const payload = await api.getSerproCompanyProcuration(companyId);
+      setSerproProcurationStatus(payload?.result || null);
+      return payload?.result || null;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao carregar status da procuração SERPRO.");
+      return null;
+    }
+  }
+
+  async function handleCheckSerproProcuration(companyId, input = {}) {
+    if (!companyId) {
+      feedback.setError("Selecione uma empresa para consultar a procuração.");
+      return false;
+    }
+    setCheckingSerproProcuration(true);
+    feedback.clearFeedback();
+    try {
+      const payload = await api.checkSerproCompanyProcuration(companyId, input);
+      setSerproProcurationStatus(payload?.result || null);
+      feedback.setMessage("Procuração SERPRO consultada com sucesso.");
+      return true;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao consultar procuração SERPRO.");
+      return false;
+    } finally {
+      setCheckingSerproProcuration(false);
+    }
+  }
+
+  async function handleCaptureSerproPgdasd(companyId, input = {}) {
+    if (!companyId) {
+      feedback.setError("Selecione uma empresa para capturar a guia PGDAS-D.");
+      return false;
+    }
+    setCapturingSerproPgdasd(true);
+    feedback.clearFeedback();
+    try {
+      const payload = await api.captureSerproPgdasd(companyId, input);
+      feedback.setMessage("Guia PGDAS-D capturada com sucesso.");
+      if (companiesState.selectedCompanyId === companyId) {
+        await loadGuides(companyId);
+      }
+      return payload?.result || null;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao capturar guia PGDAS-D.");
+      return false;
+    } finally {
+      setCapturingSerproPgdasd(false);
     }
   }
 
@@ -234,6 +358,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     setCompanyDetailTab("guides");
     setGuideSettings(null);
     setJobEnabled(false);
+    setSerproProcurationStatus(null);
+    setSerproWorkerStatus(null);
     setPendingGuides([]);
     setSelectedPendingGuideIds([]);
     setUploadResults([]);
@@ -259,6 +385,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     if (page === "companies" || page === "guideSettings") {
       loadCompanies();
       loadGuideSettings();
+      loadSerproWorkerStatus();
     } else if (page === "pendingReport") {
       loadPendingGuidesReport();
     } else if (page === "guideUpload") {
@@ -278,6 +405,20 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     submittingCompanyEdit,
     jobEnabled,
     guideSettings,
+    savingSerproSettings,
+    uploadingSerproCertificate,
+    deletingSerproCertificate,
+    checkingSerproProcuration,
+    capturingSerproPgdasd,
+    serproProcurationStatus,
+    serproWorkerStatus,
+    handleSaveSerproSettings,
+    handleUploadSerproCertificate,
+    handleDeleteSerproCertificate,
+    loadSerproCompanyProcuration,
+    handleCheckSerproProcuration,
+    handleCaptureSerproPgdasd,
+    loadSerproWorkerStatus,
     pendingGuides,
     selectedPendingGuideIds,
     loadingPendingGuides,

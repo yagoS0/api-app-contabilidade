@@ -73,6 +73,46 @@ const mockUnidentifiedGuides = [];
 const mockGuideSettings = {
   pdfReaderConfigured: true,
 };
+const mockSerproSettings = {
+  enabled: false,
+  environment: "homolog",
+  authUrl: "https://autenticacao.sapi.serpro.gov.br/authenticate",
+  baseUrl: "https://gateway.apiserpro.serpro.gov.br/integra-contador/v1",
+  consumerKey: "",
+  consumerSecretConfigured: false,
+  scope: "",
+  timeoutMs: 30000,
+  fetchCron: "0 7 5 * *",
+  certificate: {
+    hasCertificate: false,
+    originalName: null,
+    uploadedAt: null,
+    expiresAt: null,
+    passwordConfigured: false,
+  },
+  source: {
+    usingEnvBaseUrl: false,
+    usingEnvConsumerKey: false,
+    usingEnvConsumerSecret: false,
+  },
+};
+let mockSerproLastRun = {
+  key: "serpro_pgdasd_log:mock",
+  updatedAt: new Date().toISOString(),
+  value: {
+    worker: "serpro_pgdasd",
+    createdAt: new Date().toISOString(),
+    competencia: "2026-04",
+    summary: {
+      totalCompanies: 4,
+      captured: 2,
+      failed: 1,
+      skippedByProcuration: 1,
+      durationMs: 1842,
+    },
+  },
+};
+const mockSerproProcurationByCompany = new Map();
 
 // Plano de contas mock (por empresa)
 const mockChartOfAccounts = new Map();
@@ -180,7 +220,9 @@ function buildCompanyPayload(input) {
 
 export function createMockApi() {
   let accessToken = "";
+
   return {
+    setUnauthorizedHandler() {},
     setAccessToken(token) {
       accessToken = String(token || "").trim();
     },
@@ -336,6 +378,146 @@ export function createMockApi() {
     async updateGuideSettings() {
       await delay();
       return { ok: true, settings: { ...mockGuideSettings } };
+    },
+    async getSerproSettings() {
+      await delay();
+      return {
+        ...mockSerproSettings,
+        certificate: { ...mockSerproSettings.certificate },
+        source: { ...mockSerproSettings.source },
+      };
+    },
+    async getSerproStatus() {
+      await delay();
+      return {
+        ok: true,
+        workerEnabled: true,
+        lastRun: mockSerproLastRun,
+      };
+    },
+    async updateSerproSettings(input) {
+      await delay();
+      mockSerproSettings.enabled = Boolean(input?.enabled);
+      mockSerproSettings.environment = String(input?.environment || mockSerproSettings.environment);
+      mockSerproSettings.authUrl = String(input?.authUrl || "");
+      mockSerproSettings.baseUrl = String(input?.baseUrl || "");
+      mockSerproSettings.consumerKey = String(input?.consumerKey || "");
+      mockSerproSettings.scope = String(input?.scope || "");
+      mockSerproSettings.timeoutMs = Number(input?.timeoutMs || 30000);
+      mockSerproSettings.fetchCron = String(input?.fetchCron || mockSerproSettings.fetchCron);
+      if (String(input?.consumerSecret || "").trim()) {
+        mockSerproSettings.consumerSecretConfigured = true;
+      }
+      return { ok: true, settings: await this.getSerproSettings() };
+    },
+    async uploadSerproCertificate({ file, password }) {
+      await delay();
+      if (!file || !password) throw new Error("pfx_required");
+      mockSerproSettings.certificate = {
+        hasCertificate: true,
+        originalName: String(file.name || "certificado.pfx"),
+        uploadedAt: new Date().toISOString(),
+        expiresAt: null,
+        passwordConfigured: true,
+      };
+      return { ok: true, settings: { certificate: { ...mockSerproSettings.certificate } } };
+    },
+    async deleteSerproCertificate() {
+      await delay();
+      mockSerproSettings.certificate = {
+        hasCertificate: false,
+        originalName: null,
+        uploadedAt: null,
+        expiresAt: null,
+        passwordConfigured: false,
+      };
+      return { ok: true, deletedFile: true, settings: { certificate: { ...mockSerproSettings.certificate } } };
+    },
+    async getSerproCompanyProcuration(companyId) {
+      await delay();
+      return {
+        ok: true,
+        result:
+          mockSerproProcurationByCompany.get(String(companyId)) || {
+            companyId: String(companyId),
+            status: "DESCONHECIDA",
+            validUntil: null,
+            systems: [],
+            checkedAt: null,
+            payload: null,
+          },
+      };
+    },
+    async checkSerproCompanyProcuration(companyId) {
+      await delay();
+      const result = {
+        company: mockCompanies.find((item) => item.companyId === companyId) || null,
+        procuradorCnpj: "12345678000199",
+        status: faker.helpers.arrayElement(["ATIVA", "ATIVA", "AUSENTE"]),
+        validUntil: faker.date.soon({ days: 180 }).toISOString(),
+        systems: ["PGDASD", "PROCURACOES", "DCTFWEB"],
+        checkedAt: new Date().toISOString(),
+      };
+      mockSerproProcurationByCompany.set(String(companyId), { ...result, companyId: String(companyId) });
+      return { ok: true, result };
+    },
+    async captureSerproPgdasd(companyId, input = {}) {
+      await delay();
+      const company = mockCompanies.find((item) => item.companyId === companyId);
+      if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      const guide = {
+        guideId: faker.string.uuid(),
+        companyId,
+        competencia: String(input.competencia || "2026-04"),
+        tipo: "SIMPLES",
+        valor: Number(faker.finance.amount({ min: 300, max: 5000, dec: 2 })),
+        vencimento: faker.date.soon({ days: 20 }).toISOString(),
+        status: "PROCESSED",
+        emailStatus: "PENDING",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const current = mockGuidesByCompany.get(companyId) || [];
+      current.unshift({
+        id: guide.guideId,
+        portalClientId: companyId,
+        tipo: guide.tipo,
+        competencia: guide.competencia,
+        valor: guide.valor,
+        vencimento: guide.vencimento,
+        status: guide.status,
+        emailStatus: guide.emailStatus,
+      });
+      mockGuidesByCompany.set(companyId, current);
+      mockSerproLastRun = {
+        key: `serpro_pgdasd_log:${Date.now()}`,
+        updatedAt: new Date().toISOString(),
+        value: {
+          worker: "serpro_pgdasd",
+          createdAt: new Date().toISOString(),
+          competencia: guide.competencia,
+          summary: {
+            totalCompanies: 1,
+            captured: 1,
+            failed: 0,
+            skippedByProcuration: 0,
+            durationMs: 850,
+          },
+        },
+      };
+      return {
+        ok: true,
+        result: {
+          company: { id: companyId, razao: company.razao, cnpj: company.cnpj },
+          guide,
+          integration: {
+            sistema: "PGDASD",
+            servico: "GERARDASCOBRANCA17",
+            contratanteCnpj: "12345678000199",
+            numeroDocumento: faker.string.numeric(14),
+          },
+        },
+      };
     },
     async uploadGuides(files) {
       await delay(700);

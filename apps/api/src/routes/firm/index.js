@@ -6,7 +6,10 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
-import { deleteCompanyPfx, saveCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
+import {
+  COMPANY_DB_CERT_STORAGE_KEY,
+  deleteCompanyPfx,
+} from "../../infrastructure/storage/CertStorage.js";
 import { encryptSecret } from "../../utils/crypto.js";
 import {
   enderecoToSingleLine,
@@ -41,6 +44,14 @@ import {
   setCompanyGuideEmailSchedule,
 } from "../../application/guides/GuideScheduledEmailService.js";
 import {
+  deleteSerproCertificate,
+  getSerproRuntimeSettings,
+  updateSerproRuntimeSettings,
+  uploadSerproCertificate,
+} from "../../application/fiscal/serpro/SerproRuntimeSettings.js";
+import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
+import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
+import {
   computeGuideComplianceMap,
   getReferenceCompetencia,
 } from "../../application/guides/guideCompliance.js";
@@ -64,6 +75,58 @@ async function attachGuideComplianceToCompaniesList(data) {
       ok: true,
     },
   }));
+}
+
+async function attachSerproStatusToCompaniesList(data) {
+  if (!Array.isArray(data) || !data.length) return data;
+
+  const settings = await getSerproRuntimeSettings();
+  const runtimeReady =
+    Boolean(settings.enabled) &&
+    Boolean(String(settings.baseUrl || "").trim()) &&
+    Boolean(String(settings.consumerKey || "").trim()) &&
+    Boolean(settings.consumerSecretConfigured) &&
+    Boolean(settings.certificate?.hasCertificate);
+
+  const portalIds = data.map((item) => String(item.companyId || "").trim()).filter(Boolean);
+  const procurationKeys = portalIds.map((id) => `serpro_procuration_status:${id}`);
+  const procurationSettings = procurationKeys.length
+    ? await prisma.appSetting.findMany({
+        where: { key: { in: procurationKeys } },
+        select: { key: true, value: true },
+      })
+    : [];
+  const procurationByPortalId = new Map(
+    procurationSettings.map((item) => [item.key.replace("serpro_procuration_status:", ""), item.value && typeof item.value === "object" ? item.value : {}])
+  );
+
+  return data.map((item) => {
+    const cnpj = String(item.cnpj || "").replace(/\D+/g, "");
+    const email = String(item.guideNotificationEmail || item.email || item.ownerEmail || "").trim().toLowerCase();
+    const procuration = procurationByPortalId.get(String(item.companyId)) || {};
+    const procurationStatus = String(procuration.status || "DESCONHECIDA").trim().toUpperCase();
+    const reasons = [];
+
+    if (!settings.enabled) reasons.push("integracao_desabilitada");
+    if (!settings.baseUrl) reasons.push("base_url_ausente");
+    if (!settings.consumerKey) reasons.push("consumer_key_ausente");
+    if (!settings.consumerSecretConfigured) reasons.push("consumer_secret_ausente");
+    if (!settings.certificate?.hasCertificate) reasons.push("certificado_ausente");
+    if (!cnpj || cnpj.length !== 14) reasons.push("cnpj_invalido");
+    if (!email) reasons.push("email_guias_ausente");
+    if (procurationStatus !== "ATIVA") reasons.push("procuracao_inativa_ou_nao_validada");
+
+    return {
+      ...item,
+      serproStatus: {
+        eligible: runtimeReady && reasons.length === 0,
+        status: runtimeReady && reasons.length === 0 ? "APTA" : "NAO_APTA",
+        procurationStatus,
+        checkedAt: procuration.checkedAt || null,
+        reasons,
+      },
+    };
+  });
 }
 
 function sanitizeFirmRole(role) {
@@ -219,7 +282,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           ownerEmailByPortalId.set(link.companyId, link.user?.email || null);
         }
       }
-      const data = await attachGuideComplianceToCompaniesList(
+      const dataWithCompliance = await attachGuideComplianceToCompaniesList(
         items.map((item) =>
           buildFirmCompanyPayload({
             portal: item,
@@ -230,6 +293,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           })
         )
       );
+      const data = await attachSerproStatusToCompaniesList(dataWithCompliance);
       return res.json({ data });
     }
 
@@ -280,7 +344,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         ownerEmailByPortalId.set(link.companyId, link.user?.email || null);
       }
     }
-    const data = await attachGuideComplianceToCompaniesList(
+    const dataWithCompliance = await attachGuideComplianceToCompaniesList(
       links.map((link) =>
         buildFirmCompanyPayload({
           portal: link.company,
@@ -291,6 +355,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         })
       )
     );
+    const data = await attachSerproStatusToCompaniesList(dataWithCompliance);
     return res.json({ data });
   });
 
@@ -712,23 +777,19 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         const company = await getLegacyCompanyByPortalId(portalCompanyId);
         if (!company) return res.status(404).json({ error: "legacy_company_not_linked" });
         const previousStorageKey = company.certStorageKey || null;
-        const storageKey = saveCompanyPfx({
-          companyId: company.id,
-          originalName: file.originalname,
-          buffer: file.buffer,
-        });
         const expiresAt = parsePfxExpiry(file.buffer, password);
         const now = new Date();
         await prisma.company.update({
           where: { id: company.id },
           data: {
-            certStorageKey: storageKey,
+            certStorageKey: COMPANY_DB_CERT_STORAGE_KEY,
+            certPfxBytes: file.buffer,
             certPasswordEnc: encryptSecret(password),
             certUploadedAt: now,
             certExpiresAt: expiresAt || undefined,
           },
         });
-        if (previousStorageKey && previousStorageKey !== storageKey) {
+        if (previousStorageKey && previousStorageKey !== COMPANY_DB_CERT_STORAGE_KEY) {
           try {
             deleteCompanyPfx(previousStorageKey);
           } catch {
@@ -785,6 +846,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           where: { id: company.id },
           data: {
             certStorageKey: null,
+            certPfxBytes: null,
             certPasswordEnc: null,
             certExpiresAt: null,
             certUploadedAt: null,
@@ -832,6 +894,104 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         pdfReaderConfigured: Boolean(String(pdfReaderUrl || "").trim()),
       },
     });
+  });
+
+  router.get("/serpro/settings", requireAccountType("FIRM"), async (_req, res) => {
+    const settings = await getSerproRuntimeSettings();
+    return res.json({
+      enabled: Boolean(settings.enabled),
+      environment: settings.environment,
+      authUrl: settings.authUrl,
+      baseUrl: settings.baseUrl,
+      consumerKey: settings.consumerKey,
+      consumerSecretConfigured: Boolean(settings.consumerSecretConfigured),
+      scope: settings.scope,
+      timeoutMs: settings.timeoutMs,
+      fetchCron: settings.fetchCron,
+      certificate: settings.certificate,
+      source: settings.source,
+    });
+  });
+
+  router.get("/serpro/status", requireAccountType("FIRM"), async (_req, res) => {
+    const latestRun = await prisma.appSetting.findFirst({
+      where: { key: { startsWith: "serpro_pgdasd_log:" } },
+      orderBy: { updatedAt: "desc" },
+      select: { key: true, value: true, updatedAt: true },
+    });
+
+    return res.json({
+      ok: true,
+      workerEnabled: Boolean(process.env.SERPRO_PGDASD_WORKER_ENABLED === "1"),
+      lastRun: latestRun
+        ? {
+            key: latestRun.key,
+            updatedAt: latestRun.updatedAt,
+            value: latestRun.value,
+          }
+        : null,
+    });
+  });
+
+  router.patch("/serpro/settings", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const settings = await updateSerproRuntimeSettings(req.body || {});
+    return res.json({
+      ok: true,
+      settings: {
+        enabled: Boolean(settings.enabled),
+        environment: settings.environment,
+        authUrl: settings.authUrl,
+        baseUrl: settings.baseUrl,
+        consumerKey: settings.consumerKey,
+        consumerSecretConfigured: Boolean(settings.consumerSecretConfigured),
+        scope: settings.scope,
+        timeoutMs: settings.timeoutMs,
+        fetchCron: settings.fetchCron,
+        certificate: settings.certificate,
+        source: settings.source,
+      },
+    });
+  });
+
+  router.post("/serpro/settings/certificate", requireAccountType("FIRM"), upload.fields([{ name: "pfx", maxCount: 1 }, { name: "file", maxCount: 1 }]), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+
+    const password = (req.body?.password || req.body?.pfxPassword || "").toString();
+    const file = (req.files?.pfx && req.files.pfx[0]) || (req.files?.file && req.files.file[0]) || null;
+
+    try {
+      const settings = await uploadSerproCertificate({ file, password });
+      return res.json({ ok: true, settings: { certificate: settings.certificate } });
+    } catch (err) {
+      if (err.code === "PFX_REQUIRED") return res.status(400).json({ error: "pfx_required" });
+      if (err.code === "PASSWORD_REQUIRED") return res.status(400).json({ error: "password_required" });
+      if (err.code === "CERT_STORAGE_NOT_CONFIGURED") return res.status(400).json({ error: "cert_storage_not_configured" });
+      if (err.code === "CERT_SECRET_KEY_NOT_CONFIGURED") return res.status(400).json({ error: "cert_secret_key_not_configured" });
+      log.error({ err: err.message }, "Falha ao subir certificado SERPRO");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  router.delete("/serpro/settings/certificate", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    try {
+      const result = await deleteSerproCertificate();
+      return res.json({ ok: true, deletedFile: result.deletedFile, settings: { certificate: result.settings.certificate } });
+    } catch (err) {
+      if (err.code === "CERT_STORAGE_NOT_CONFIGURED") return res.status(400).json({ error: "cert_storage_not_configured" });
+      log.error({ err: err.message }, "Falha ao remover certificado SERPRO");
+      return res.status(500).json({ error: "internal_error" });
+    }
   });
 
   router.post("/guides/upload", upload.array("files", 50), async (req, res) => {
@@ -1239,6 +1399,123 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   );
 
   router.post(
+    "/companies/:companyId/serpro/pgdasd/capture",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      const competencia = normalizeCompetencia(req.body?.competencia || req.query?.competencia || "");
+      const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim();
+
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+      if (!competencia) {
+        return res.status(400).json({ ok: false, error: "competencia_required" });
+      }
+
+      try {
+        const result = await capturePgdasGuideForCompany({
+          portalClientId: portalCompanyId,
+          competencia,
+          contratanteCnpj: contratanteCnpj || undefined,
+        });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        const code = err?.code || "SERPRO_PGDASD_CAPTURE_FAILED";
+        const message = err?.message || "Falha ao capturar guia PGDAS-D no SERPRO.";
+
+        if (
+          [
+            "SERPRO_PGDASD_DISABLED",
+            "SERPRO_PGDASD_NO_DEBTS_FOUND",
+            "SERPRO_INVALID_COMPETENCIA",
+            "SERPRO_INVALID_CONTRATANTE_CNPJ",
+            "SERPRO_INVALID_CONTRIBUINTE_CNPJ",
+            "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED",
+            "SERPRO_AUTH_URL_NOT_CONFIGURED",
+            "SERPRO_BASE_URL_NOT_CONFIGURED",
+            "SERPRO_CONSUMER_KEY_NOT_CONFIGURED",
+            "SERPRO_CONSUMER_SECRET_NOT_CONFIGURED",
+            "SERPRO_CERTIFICATE_NOT_CONFIGURED",
+            "SERPRO_CERT_FILE_NOT_FOUND",
+            "SERPRO_CERT_PASSWORD_NOT_FOUND",
+          ].includes(code)
+        ) {
+          return res.status(400).json({ ok: false, error: code, reason: message });
+        }
+
+        if (code === "PORTAL_COMPANY_NOT_FOUND") {
+          return res.status(404).json({ ok: false, error: code, reason: message });
+        }
+
+        log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha na captura manual PGDAS-D");
+        return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
+      }
+    }
+  );
+
+  router.get(
+    "/companies/:companyId/serpro/procuration",
+    requireFirmCompanyAccess(),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+      const result = await getStoredProcurationStatus(portalCompanyId);
+      return res.json({ ok: true, result });
+    }
+  );
+
+  router.post(
+    "/companies/:companyId/serpro/procuration/check",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim();
+
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+
+      try {
+        const service = new SerproProcurationService();
+        const result = await service.checkCompanyProcuration({
+          portalClientId: portalCompanyId,
+          contratanteCnpj: contratanteCnpj || undefined,
+        });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        const code = err?.code || "SERPRO_PROCURATION_CHECK_FAILED";
+        const message = err?.message || "Falha ao consultar procuração no SERPRO.";
+
+        if (
+          [
+            "SERPRO_PGDASD_DISABLED",
+            "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED",
+            "SERPRO_AUTH_URL_NOT_CONFIGURED",
+            "SERPRO_BASE_URL_NOT_CONFIGURED",
+            "SERPRO_CONSUMER_KEY_NOT_CONFIGURED",
+            "SERPRO_CONSUMER_SECRET_NOT_CONFIGURED",
+            "SERPRO_CERTIFICATE_NOT_CONFIGURED",
+            "SERPRO_CERT_FILE_NOT_FOUND",
+            "SERPRO_CERT_PASSWORD_NOT_FOUND",
+          ].includes(code)
+        ) {
+          return res.status(400).json({ ok: false, error: code, reason: message });
+        }
+
+        if (code === "PORTAL_COMPANY_NOT_FOUND") {
+          return res.status(404).json({ ok: false, error: code, reason: message });
+        }
+
+        log.error({ err: err?.message || err, code, portalCompanyId }, "Falha na consulta manual de procuração SERPRO");
+        return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
+      }
+    }
+  );
+
+  router.post(
     "/guides/emails/send-pending",
     requireAccountType("FIRM"),
     async (req, res) => {
@@ -1425,4 +1702,3 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   return router;
 }
-

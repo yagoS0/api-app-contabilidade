@@ -37,6 +37,7 @@ function buildCompanyPayload(input) {
 
 export function createRealApi() {
   let accessToken = String(import.meta.env.VITE_API_TOKEN || "").trim();
+  let unauthorizedHandler = null;
 
   async function request(path, options = {}) {
     const baseUrl = getApiBaseUrl();
@@ -56,12 +57,18 @@ export function createRealApi() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if (response.status === 401 && typeof unauthorizedHandler === "function") {
+        unauthorizedHandler({ path, payload, status: response.status });
+      }
       throw new Error(normalizeError(payload, response.status));
     }
     return payload;
   }
 
   return {
+    setUnauthorizedHandler(handler) {
+      unauthorizedHandler = typeof handler === "function" ? handler : null;
+    },
     setAccessToken(token) {
       accessToken = String(token || "").trim();
     },
@@ -112,6 +119,47 @@ export function createRealApi() {
       return request("/firm/guides/settings", {
         method: "PATCH",
         body: JSON.stringify(input || {}),
+      });
+    },
+    async getSerproSettings() {
+      return request("/firm/serpro/settings");
+    },
+    async getSerproStatus() {
+      return request("/firm/serpro/status");
+    },
+    async updateSerproSettings(input) {
+      return request("/firm/serpro/settings", {
+        method: "PATCH",
+        body: JSON.stringify(input || {}),
+      });
+    },
+    async uploadSerproCertificate({ file, password }) {
+      const formData = new FormData();
+      if (file) formData.append("file", file);
+      formData.append("password", String(password || ""));
+      return request("/firm/serpro/settings/certificate", {
+        method: "POST",
+        body: formData,
+      });
+    },
+    async deleteSerproCertificate() {
+      return request("/firm/serpro/settings/certificate", {
+        method: "DELETE",
+      });
+    },
+    async getSerproCompanyProcuration(companyId) {
+      return request(`/firm/companies/${companyId}/serpro/procuration`);
+    },
+    async checkSerproCompanyProcuration(companyId, input = {}) {
+      return request(`/firm/companies/${companyId}/serpro/procuration/check`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    async captureSerproPgdasd(companyId, input = {}) {
+      return request(`/firm/companies/${companyId}/serpro/pgdasd/capture`, {
+        method: "POST",
+        body: JSON.stringify(input),
       });
     },
     async uploadGuides(files) {

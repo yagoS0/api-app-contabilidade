@@ -91,8 +91,12 @@ export const ADN_DFE_PATH = (process.env.ADN_DFE_PATH || "").trim();
 export const ADN_CNPJ_CONSULTA = (process.env.ADN_CNPJ_CONSULTA || "").trim();
 
 // === Certificados por empresa (PFX) ===
-export const CERT_STORAGE_PATH = (process.env.CERT_STORAGE_PATH || "").trim();
-export const CERT_SECRET_KEY = (process.env.CERT_SECRET_KEY || "").trim();
+export const CERT_STORAGE_PATH = (
+  process.env.CERT_STORAGE_PATH || "./storage/certificates"
+).trim();
+export const CERT_SECRET_KEY = (
+  process.env.CERT_SECRET_KEY || process.env.JWT_SECRET || ""
+).trim();
 
 // === Ingestão de Guias ===
 // PDFs entram por upload no portal e são gravados em `Guide.pdfBytes` (PostgreSQL).
@@ -102,6 +106,7 @@ export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
   Number(process.env.GUIDE_WORKER_INTERVAL_SECONDS || 120)
 );
 export const GUIDE_EMAIL_WORKER_ENABLED = process.env.GUIDE_EMAIL_WORKER_ENABLED === "1";
+export const SERPRO_PGDASD_WORKER_ENABLED = process.env.SERPRO_PGDASD_WORKER_ENABLED === "1";
 /** Opcional: fixa YYYY-MM para alertas de guia (homolog). Vazio = mês civil anterior. */
 export const GUIDE_COMPLIANCE_COMPETENCIA = (process.env.GUIDE_COMPLIANCE_COMPETENCIA || "").trim();
 export const GUIDE_SCHEDULE_MAX_FILES_PER_COMPANY = Math.min(
@@ -142,6 +147,21 @@ export const GUIDE_STORAGE_FORCE_PATH_STYLE =
 export const GUIDE_LOCAL_STORAGE_DIR = (
   process.env.GUIDE_LOCAL_STORAGE_DIR || "./storage/guides"
 ).trim();
+
+// === SERPRO / Integra Contador ===
+export const SERPRO_ENABLE_PGDASD = process.env.SERPRO_ENABLE_PGDASD === "1";
+export const SERPRO_BASE_URL = (process.env.SERPRO_BASE_URL || "").trim();
+export const SERPRO_AUTH_URL = (process.env.SERPRO_AUTH_URL || "").trim();
+export const SERPRO_TOKEN_PATH = (process.env.SERPRO_TOKEN_PATH || "/token").trim();
+export const SERPRO_INTEGRA_CONTADOR_PATH = (
+  process.env.SERPRO_INTEGRA_CONTADOR_PATH || "/integra-contador/v1"
+).trim();
+export const SERPRO_CONSUMER_KEY = (process.env.SERPRO_CONSUMER_KEY || "").trim();
+export const SERPRO_CONSUMER_SECRET = (process.env.SERPRO_CONSUMER_SECRET || "").trim();
+export const SERPRO_SCOPE = (process.env.SERPRO_SCOPE || "").trim();
+export const SERPRO_ENV = (process.env.SERPRO_ENV || "homolog").trim().toLowerCase();
+export const SERPRO_TIMEOUT_MS = Math.max(1000, Number(process.env.SERPRO_TIMEOUT_MS || 30000));
+export const SERPRO_CERT_COMPANY_ID = (process.env.SERPRO_CERT_COMPANY_ID || "").trim();
 
 // === API Keys ===
 const rawApiKeys = process.env.API_KEYS || "";
@@ -211,8 +231,10 @@ if (!ADN_CERT_PATH)
   log.warn("ADN_CERT_PATH ausente: consulta ADN estará desabilitada");
 if (!ADN_KEY_PATH)
   log.warn("ADN_KEY_PATH ausente: consulta ADN estará desabilitada");
-if (!CERT_STORAGE_PATH)
-  log.warn("CERT_STORAGE_PATH ausente: upload de certificados por empresa indisponível");
+if (!process.env.CERT_STORAGE_PATH)
+  log.warn("CERT_STORAGE_PATH ausente: usando fallback local ./storage/certificates");
+if (!process.env.CERT_SECRET_KEY && process.env.JWT_SECRET)
+  log.warn("CERT_SECRET_KEY ausente: usando JWT_SECRET como fallback para criptografia do certificado");
 if (!CERT_SECRET_KEY)
   log.warn("CERT_SECRET_KEY ausente: criptografia de senha do certificado indisponível");
 export const PDF_READER_URL = (process.env.PDF_READER_URL || "").trim();
@@ -224,3 +246,13 @@ if (!PDF_READER_URL)
   log.warn(
     "PDF_READER_URL ausente: configure a URL do serviço FastAPI pdf-reader (ex.: http://pdf-reader:8000 na rede interna)."
   );
+if (SERPRO_ENABLE_PGDASD && !SERPRO_AUTH_URL && /\/integra-contador\//.test(SERPRO_BASE_URL))
+  log.warn("SERPRO_AUTH_URL ausente: com SERPRO_BASE_URL completo da API, configure a URL de autenticacao separadamente");
+if (SERPRO_ENABLE_PGDASD && !SERPRO_BASE_URL)
+  log.warn("SERPRO_BASE_URL ausente: integracao SERPRO/PGDAS-D ficara desabilitada");
+if (SERPRO_ENABLE_PGDASD && !SERPRO_CONSUMER_KEY)
+  log.warn("SERPRO_CONSUMER_KEY ausente: integracao SERPRO/PGDAS-D ficara desabilitada");
+if (SERPRO_ENABLE_PGDASD && !SERPRO_CONSUMER_SECRET)
+  log.warn("SERPRO_CONSUMER_SECRET ausente: integracao SERPRO/PGDAS-D ficara desabilitada");
+if (SERPRO_ENABLE_PGDASD && !SERPRO_CERT_COMPANY_ID)
+  log.warn("SERPRO_CERT_COMPANY_ID ausente: configure a Company legada que armazena o certificado do escritorio/procurador");

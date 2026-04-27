@@ -27,12 +27,22 @@ export function getComplianceTags(guideCompliance) {
 
 export function CompanyCard({ company, onAccess }) {
   const tags = getComplianceTags(company.guideCompliance);
+  const serproEligible = Boolean(company?.serproStatus?.eligible);
+
   return (
     <article className="company-tile">
       <div className="company-tile__body">
         <h3>{company.razao}</h3>
         <p>{company.cnpj}</p>
       </div>
+      <p className="company-serpro-status" aria-label="Status da integração SERPRO">
+        <span
+          className={serproEligible ? "company-serpro-status__badge company-serpro-status__badge--ok" : "company-serpro-status__badge company-serpro-status__badge--off"}
+          title={serproEligible ? "Empresa apta ao fluxo SERPRO" : "Empresa não apta ao fluxo SERPRO"}
+        >
+          SERPRO
+        </span>
+      </p>
       <p className="compliance-tags" aria-label="Status de guias obrigatórias">
         {tags.map((tag) => (
           <span

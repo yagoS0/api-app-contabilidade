@@ -3,7 +3,10 @@ import { AuthService } from "../application/auth/AuthService.js";
 import multer from "multer";
 import forge from "node-forge";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { deleteCompanyPfx, saveCompanyPfx } from "../infrastructure/storage/CertStorage.js";
+import {
+  COMPANY_DB_CERT_STORAGE_KEY,
+  deleteCompanyPfx,
+} from "../infrastructure/storage/CertStorage.js";
 import { encryptSecret } from "../utils/crypto.js";
 
 export function createClientsRouter({
@@ -170,17 +173,13 @@ export function createClientsRouter({
         if (!company) return res.status(403).json({ error: "forbidden" });
 
         const previousStorageKey = company.certStorageKey || null;
-        const storageKey = saveCompanyPfx({
-          companyId: company.id,
-          originalName: file.originalname,
-          buffer: file.buffer,
-        });
         const expiresAt = parsePfxExpiry(file.buffer, password);
         const now = new Date();
         await prisma.company.update({
           where: { id: company.id },
           data: {
-            certStorageKey: storageKey,
+            certStorageKey: COMPANY_DB_CERT_STORAGE_KEY,
+            certPfxBytes: file.buffer,
             certPasswordEnc: encryptSecret(password),
             certUploadedAt: now,
             certExpiresAt: expiresAt || undefined,
@@ -188,7 +187,7 @@ export function createClientsRouter({
         });
 
         // Best-effort: remove certificado anterior (evita acumular arquivos)
-        if (previousStorageKey && previousStorageKey !== storageKey) {
+        if (previousStorageKey && previousStorageKey !== COMPANY_DB_CERT_STORAGE_KEY) {
           try {
             deleteCompanyPfx(previousStorageKey);
           } catch {
@@ -200,7 +199,7 @@ export function createClientsRouter({
           ok: true,
           companyId: company.id,
           certificate: {
-            storageKey,
+            storageKey: COMPANY_DB_CERT_STORAGE_KEY,
             uploadedAt: now.toISOString(),
             expiresAt: expiresAt ? expiresAt.toISOString() : null,
           },
@@ -259,6 +258,7 @@ export function createClientsRouter({
         where: { id: company.id },
         data: {
           certStorageKey: null,
+          certPfxBytes: null,
           certPasswordEnc: null,
           certExpiresAt: null,
           certUploadedAt: null,
