@@ -825,6 +825,7 @@ export function createAccountingEntriesRouter({ log }) {
           include: { lines: { orderBy: { ordem: "asc" } } },
         });
       });
+
       // Auto-save do histórico (fora da transaction principal — não é crítico)
       const userId = req.auth?.user?.id;
       if (userId && historico) {

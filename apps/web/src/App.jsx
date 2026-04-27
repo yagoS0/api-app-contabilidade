@@ -1,10 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { createApiClient } from "./api/client";
 import "./App.css";
 import { CompaniesHomePage } from "./features/companies/list/pages/renderCompaniesHomePage";
 import { CompanyFormPage } from "./features/companies/form/pages/renderCompanyFormPage";
 import { CompanyDetailPage } from "./features/companies/detail/pages/renderCompanyDetailPage";
-import { GuideSettingsPage } from "./features/guides/settings/pages/renderGuideSettingsPage";
+import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproSettingsPage";
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
@@ -45,6 +45,19 @@ function App() {
     feedback.clearFeedback();
   }
 
+  useEffect(() => {
+    api.setUnauthorizedHandler?.(() => {
+      session.clearSession();
+      companiesWorkspace.resetWorkspace();
+      accountingWorkspace.resetWorkspace();
+      feedback.setError("Sua sessão expirou. Faça login novamente.");
+    });
+
+    return () => {
+      api.setUnauthorizedHandler?.(null);
+    };
+  }, [accountingWorkspace, companiesWorkspace, feedback, session]);
+
   if (session.page === "login") {
     return (
       <LoginPage
@@ -75,9 +88,27 @@ function App() {
 
   if (session.page === "guideSettings") {
     return (
-      <GuideSettingsPage
-        pdfReaderConfigured={Boolean(companiesWorkspace.guideSettings?.pdfReaderConfigured)}
+      <SerproSettingsPage
+        settings={companiesWorkspace.guideSettings}
+        companies={companiesWorkspace.companiesState.companies}
+        selectedCompanyId={companiesWorkspace.companiesState.selectedCompanyId}
+        saving={companiesWorkspace.savingSerproSettings}
+        uploadingCertificate={companiesWorkspace.uploadingSerproCertificate}
+        deletingCertificate={companiesWorkspace.deletingSerproCertificate}
+        checkingProcuration={companiesWorkspace.checkingSerproProcuration}
+        capturingPgdasd={companiesWorkspace.capturingSerproPgdasd}
+        procurationStatus={companiesWorkspace.serproProcurationStatus}
+        workerStatus={companiesWorkspace.serproWorkerStatus}
+        onSave={companiesWorkspace.handleSaveSerproSettings}
+        onUploadCertificate={companiesWorkspace.handleUploadSerproCertificate}
+        onDeleteCertificate={companiesWorkspace.handleDeleteSerproCertificate}
+        onLoadProcuration={companiesWorkspace.loadSerproCompanyProcuration}
+        onCheckProcuration={companiesWorkspace.handleCheckSerproProcuration}
+        onCapturePgdasd={companiesWorkspace.handleCaptureSerproPgdasd}
+        onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
         onBack={() => session.setPage("companies")}
+        message={feedback.message}
+        error={feedback.error}
       />
     );
   }

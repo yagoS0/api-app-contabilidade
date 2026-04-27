@@ -5,7 +5,7 @@ import { gunzipSync } from "node:zlib";
 import { parseXmlMetadata } from "./AdnXmlMetadata.js";
 import { parseDate } from "../../utils/date.js";
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { resolveCertificatePath } from "../../infrastructure/storage/CertStorage.js";
+import { readStoredCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
 import { decryptSecret } from "../../utils/crypto.js";
 import {
   ADN_BASE_URL,
@@ -24,12 +24,11 @@ function integrationReady(certInfo) {
 }
 
 function resolveCompanyCert(company) {
-  if (!company?.certStorageKey || !company?.certPasswordEnc) return null;
+  if (!company?.certPasswordEnc) return null;
   const password = decryptSecret(company.certPasswordEnc);
   if (!password) return null;
-  const pfxPath = resolveCertificatePath(company.certStorageKey);
-  if (!pfxPath) return null;
-  const pfxBuffer = fs.readFileSync(pfxPath);
+  const pfxBuffer = readStoredCompanyPfx(company);
+  if (!pfxBuffer) return null;
   return { pfxBuffer, pfxPassword: password };
 }
 

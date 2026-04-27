@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { CERT_SECRET_KEY } from "../config.js";
 
 function getKey32() {
-  if (!CERT_SECRET_KEY || CERT_SECRET_KEY.length < 16) {
+  if (!CERT_SECRET_KEY) {
     const err = new Error("cert_secret_key_not_configured");
     err.code = "CERT_SECRET_KEY_NOT_CONFIGURED";
     throw err;
@@ -42,4 +42,3 @@ export function decryptSecret(encrypted) {
   const plain = Buffer.concat([decipher.update(data), decipher.final()]);
   return plain.toString("utf8");
 }
-

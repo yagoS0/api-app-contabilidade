@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { PDF_READER_URL, GUIDE_EMAIL_WORKER_ENABLED } from "../config.js";
+import { PDF_READER_URL, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED } from "../config.js";
 
 async function checkPdfReaderHealth() {
   const url = String(PDF_READER_URL || "").trim().replace(/\/+$/, "");
@@ -40,11 +40,24 @@ export function createStatusRouter({ ensureAuthorized }) {
 
   router.get("/status", async (req, res) => {
     if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    const latestSerproRun = await prisma.appSetting.findFirst({
+      where: { key: { startsWith: "serpro_pgdasd_log:" } },
+      orderBy: { updatedAt: "desc" },
+      select: { key: true, value: true, updatedAt: true },
+    });
     res.json({
       ok: true,
       guides: {
         flow: "portal_upload_pdf_reader_postgres_email",
         guideEmailWorkerEnabled: GUIDE_EMAIL_WORKER_ENABLED,
+        serproPgdasdWorkerEnabled: SERPRO_PGDASD_WORKER_ENABLED,
+        serproPgdasdLastRun: latestSerproRun
+          ? {
+              key: latestSerproRun.key,
+              updatedAt: latestSerproRun.updatedAt,
+              value: latestSerproRun.value,
+            }
+          : null,
       },
     });
   });

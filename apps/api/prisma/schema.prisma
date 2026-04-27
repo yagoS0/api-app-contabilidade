@@ -53,6 +53,7 @@ model Company {
   regimeEspecialTributacao String?
   // Certificado A1 por empresa (PFX) para integrações (ADN/NFSe/etc.)
   certStorageKey   String?
+  certPfxBytes     Bytes?
   certPasswordEnc  String?
   certExpiresAt    DateTime?
   certUploadedAt   DateTime?

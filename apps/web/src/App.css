@@ -5,6 +5,11 @@
   padding: var(--space-5) var(--space-4) var(--space-6);
 }
 
+.dashboard-home-page {
+  min-height: 100vh;
+  background: #1a1b26;
+}
+
 .dashboard-home-shell {
   min-height: 100vh;
   background: #1a1b26;
@@ -87,6 +92,158 @@
 
 .company-form-page__submit {
   min-width: 220px;
+}
+
+.serpro-settings-shell {
+  min-height: 100vh;
+  max-width: 1320px;
+  padding-inline: 24px;
+  background: #1a1b26;
+}
+
+.serpro-settings-page {
+  display: grid;
+  gap: 20px;
+}
+
+.serpro-settings-card {
+  display: grid;
+  gap: 20px;
+  background: #24253a;
+  border: 1px solid #2f314b;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 16px 40px rgba(17, 18, 27, 0.2);
+}
+
+.serpro-settings-card__head {
+  display: grid;
+  gap: 6px;
+}
+
+.serpro-settings-card__head--row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.serpro-settings-card__title {
+  margin: 0;
+  color: #f8f8f2;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.serpro-settings-card__description {
+  margin: 0;
+  color: #aeb6d3;
+  font-size: 0.9375rem;
+}
+
+.serpro-settings-form {
+  display: grid;
+  gap: 18px;
+}
+
+.serpro-settings-form__switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f8f8f2;
+  font-weight: 600;
+}
+
+.serpro-settings-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 16px 20px;
+}
+
+.serpro-settings-form__grid--certificate {
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+}
+
+.serpro-settings-form__grid label {
+  display: grid;
+  gap: 6px;
+  color: #aeb6d3;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.serpro-settings-form__grid label.full {
+  grid-column: 1 / -1;
+}
+
+.serpro-settings-form__grid input,
+.serpro-settings-form__grid select {
+  min-height: 44px;
+  border: 1px solid #2f314b;
+  border-radius: 8px;
+  background: #1a1b26;
+  color: #f8f8f2;
+  padding: 0 12px;
+  font: inherit;
+}
+
+.serpro-settings-form__grid input[type="file"] {
+  padding: 10px 12px;
+}
+
+.serpro-settings-form__grid input:focus,
+.serpro-settings-form__grid select:focus {
+  outline: none;
+  border-color: #bd93f9;
+  box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.2);
+}
+
+.serpro-settings-form__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.serpro-settings-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.serpro-settings-status-grid--manual {
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+
+.serpro-settings-status-item {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #1a1b26;
+  border: 1px solid #2f314b;
+}
+
+.serpro-settings-status-item span {
+  color: #6272a4;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.serpro-settings-status-item strong {
+  color: #f8f8f2;
+  font-size: 0.9375rem;
+}
+
+.accounting-entry-value-input::-webkit-outer-spin-button,
+.accounting-entry-value-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.accounting-entry-value-input {
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
 /* Page header (use com <PageHeader />) */
@@ -368,7 +525,7 @@
 
 .dashboard-home__filters {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr) minmax(220px, 1fr);
   gap: 16px;
   align-items: end;
   padding: 16px;
@@ -690,6 +847,34 @@
   margin: 0;
   font-size: 0.875rem;
   color: #6272a4;
+}
+
+.company-serpro-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.company-serpro-status__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #1a1b26;
+}
+
+.company-serpro-status__badge--ok {
+  color: #69ff47;
+}
+
+.company-serpro-status__badge--off {
+  color: #ff5555;
 }
 
 .compliance-tags {
@@ -1029,6 +1214,12 @@ th {
 
   .guides-grid__cell--actions {
     padding-top: 4px;
+  }
+
+  .serpro-settings-form__grid,
+  .serpro-settings-form__grid--certificate,
+  .serpro-settings-status-grid {
+    grid-template-columns: 1fr;
   }
 
   .company-section-header {

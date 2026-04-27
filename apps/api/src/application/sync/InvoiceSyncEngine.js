@@ -1,11 +1,10 @@
-import fs from "node:fs";
 import crypto from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { AdnSyncService } from "../nfse/AdnSyncService.js";
 import { parseXmlMetadata } from "../nfse/AdnXmlMetadata.js";
 import { parseDate } from "../../utils/date.js";
-import { resolveCertificatePath } from "../../infrastructure/storage/CertStorage.js";
+import { readStoredCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
 import { decryptSecret } from "../../utils/crypto.js";
 
 function normalizeCnpj(value) {
@@ -209,12 +208,11 @@ async function upsertPortalInvoiceSafe({ clientId, data }) {
 }
 
 function resolveCompanyCert(company) {
-  if (!company?.certStorageKey || !company?.certPasswordEnc) return null;
+  if (!company?.certPasswordEnc) return null;
   const password = decryptSecret(company.certPasswordEnc);
   if (!password) return null;
-  const pfxPath = resolveCertificatePath(company.certStorageKey);
-  if (!pfxPath) return null;
-  const pfxBuffer = fs.readFileSync(pfxPath);
+  const pfxBuffer = readStoredCompanyPfx(company);
+  if (!pfxBuffer) return null;
   return { pfxBuffer, pfxPassword: password };
 }
 
@@ -569,4 +567,3 @@ export class InvoiceSyncEngine {
     }
   }
 }
-
