@@ -85,7 +85,11 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             guides={guidesPanel.guides}
             loadingGuides={guidesPanel.loading}
             onResendGuide={guidesPanel.onResendGuide}
+            onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment}
+            onRecalculateGuide={guidesPanel.onRecalculateGuide}
             resendingGuideId={guidesPanel.resendingGuideId}
+            confirmingGuideId={guidesPanel.confirmingGuideId}
+            recalculatingGuideId={guidesPanel.recalculatingGuideId}
           />
 
           <Feedback message={feedback.message} error={feedback.error} />
@@ -152,8 +156,14 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             circularData={circularPanel.circularData}
             loading={circularPanel.loading}
             year={circularPanel.year}
+            competencia={circularPanel.competencia}
+            onCompetenciaChange={circularPanel.onCompetenciaChange}
+            savingCircular={circularPanel.savingCircular}
+            approvingCircularEntryId={circularPanel.approvingCircularEntryId}
             onYearChange={circularPanel.onYearChange}
             onLoad={circularPanel.onLoadCircular}
+            onSaveCircular={circularPanel.onSaveCircular}
+            onApproveAccountingEntry={circularPanel.onApproveAccountingEntry}
             accounts={accountingPanel.accounts}
             onCreateBaixa={accountingPanel.onCreateBaixa}
             savingBaixa={accountingPanel.savingBaixa}
@@ -207,7 +217,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
       )}
 
       {companyDetailTab === "guides" && (
-          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} resendingGuideId={guidesPanel.resendingGuideId} />
+          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
         )}
 
       <Feedback message={feedback.message} error={feedback.error} />

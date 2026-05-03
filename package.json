@@ -17,6 +17,7 @@
     "worker:guide-emails:once": "npm run worker:guide-emails:once -w @contabilidade/api",
     "prisma:generate": "npm run prisma:generate -w @contabilidade/api",
     "prisma:seed": "npm run prisma:seed -w @contabilidade/api",
-    "portal:migrate": "npm run portal:migrate -w @contabilidade/api"
+    "portal:migrate": "npm run portal:migrate -w @contabilidade/api",
+    "progress:update": "node docs/progress/update-current.mjs"
   }
 }

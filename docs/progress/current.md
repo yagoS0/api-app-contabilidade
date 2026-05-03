@@ -1,0 +1,38 @@
+# Current Progress
+
+Date: 2026-04-29
+
+Latest snapshot: `2026-04-29_22-36-59.md`
+
+## Latest Change
+
+Implemented monthly fiscal circular persistence, automatic accounting generation, and the review UI.
+
+## Where it changed
+
+- Backend: apps/api/prisma/schema.prisma
+- Backend: apps/api/prisma/migrations/20260429120000_add_circular_and_entry_rules/migration.sql
+- Backend: apps/api/src/application/accounting/AccountingEntryGeneratorService.js
+- Backend: apps/api/src/application/fiscal/serpro/CaptureSerproGuidesService.js
+- Backend: apps/api/src/routes/firm/accountingEntries.js
+- Backend: apps/api/src/routes/firm/accountingEntryRules.js
+- Backend: apps/api/src/routes/firm/index.js
+- Frontend: apps/web/src/api/real/realApi.js
+- Frontend: apps/web/src/api/mock/mockApi.js
+- Frontend: apps/web/src/app/hooks/useManageAccountingWorkspace.js
+- Frontend: apps/web/src/features/accounting/circular/components/renderCircularTab.jsx
+- Frontend: apps/web/src/features/companies/detail/pages/renderCompanyDetailPage.jsx
+- Frontend: apps/web/src/App.jsx
+
+## How it was done
+
+- Added monthly circular and accounting rule tables
+- Linked SERPRO capture to persist circular data and generate entries
+- Added circular review/edit/approve UI and API contract updates
+- Kept mock and real API aligned
+
+## Notes
+
+- Current progress now reflects the accounting circular implementation rather than the progress-log helper
+- There are still unrelated workspace changes in the tree
+

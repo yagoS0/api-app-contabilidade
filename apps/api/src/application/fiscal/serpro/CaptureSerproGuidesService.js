@@ -4,12 +4,49 @@ import {
   hashPdf,
   toGuideResponse,
 } from "../../guides/GuideService.js";
+import { generateEntriesFromCircular } from "../../accounting/AccountingEntryGeneratorService.js";
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
-import { SerproPgdasdService } from "./SerproPgdasdService.js";
+import {
+  SerproPgdasdService,
+  SERPRO_PGDASD_SERVICE_COBRANCA,
+  SERPRO_PGDASD_SERVICE_NORMAL,
+} from "./SerproPgdasdService.js";
+
+function getCompetenciaDueDate(competencia) {
+  const normalized = normalizeCompetencia(competencia);
+  if (!normalized) return null;
+  const match = normalized.match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  if (!Number.isInteger(year) || !Number.isInteger(monthIndex)) return null;
+  return new Date(Date.UTC(year, monthIndex + 1, 20, 23, 59, 59, 999));
+}
+
+function resolvePgdasdServiceId({ competencia, serviceId, now = new Date() }) {
+  const explicit = String(serviceId || "").trim().toUpperCase();
+  if (explicit) return explicit;
+  const dueDate = getCompetenciaDueDate(competencia);
+  if (dueDate && now.getTime() > dueDate.getTime()) {
+    return SERPRO_PGDASD_SERVICE_COBRANCA;
+  }
+  return SERPRO_PGDASD_SERVICE_NORMAL;
+}
 
 function onlyDigits(value) {
   return String(value || "").replace(/\D+/g, "");
+}
+
+function parseNestedJsonString(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (!(raw.startsWith("{") || raw.startsWith("["))) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 function searchValueDeep(input, matcher) {
@@ -21,10 +58,22 @@ function searchValueDeep(input, matcher) {
     }
     return null;
   }
+  if (typeof input === "string") {
+    const parsed = parseNestedJsonString(input);
+    if (parsed) return searchValueDeep(parsed, matcher);
+    return null;
+  }
   if (typeof input !== "object") return null;
 
   for (const [key, value] of Object.entries(input)) {
     if (matcher(key, value)) return value;
+    if (typeof value === "string") {
+      const parsed = parseNestedJsonString(value);
+      if (parsed != null) {
+        const nestedFound = searchValueDeep(parsed, matcher);
+        if (nestedFound != null) return nestedFound;
+      }
+    }
     const found = searchValueDeep(value, matcher);
     if (found != null) return found;
   }
@@ -71,6 +120,16 @@ function extractAmount(payload) {
   return Number.isFinite(normalized) ? normalized : null;
 }
 
+function extractAmountByKeys(payload, patterns) {
+  const raw = searchValueDeep(payload, (key, value) => {
+    const normalized = String(key || "").toLowerCase();
+    return patterns.some((pattern) => pattern.test(normalized)) && (typeof value === "number" || typeof value === "string");
+  });
+  if (raw == null) return null;
+  const normalized = Number(String(raw).replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
 function parsePossibleDate(value) {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -93,8 +152,25 @@ function buildPgdasGuidePayload({ response, contribuinteCnpj, competencia }) {
       throw err;
     }
 
+    const noAmountDueMessage = providerMessages.find((message) => /nao foi gerado das por nao haver valor devido/i.test(message));
+    if (noAmountDueMessage) {
+      const err = new Error(noAmountDueMessage);
+      err.code = "SERPRO_PGDASD_NO_AMOUNT_DUE";
+      err.details = response;
+      throw err;
+    }
+
+    const noDeclarationMessage = providerMessages.find((message) => /nao ha declaracao transmitida para o periodo informado/i.test(message));
+    if (noDeclarationMessage) {
+      const err = new Error(noDeclarationMessage);
+      err.code = "SERPRO_PGDASD_DECLARATION_NOT_TRANSMITTED";
+      err.details = response;
+      throw err;
+    }
+
     const err = new Error("serpro_pgdasd_pdf_not_found");
     err.code = "SERPRO_PGDASD_PDF_NOT_FOUND";
+    err.details = response;
     throw err;
   }
 
@@ -107,6 +183,8 @@ function buildPgdasGuidePayload({ response, contribuinteCnpj, competencia }) {
 
   const numeroDocumento = extractDocumentNumber(response);
   const valor = extractAmount(response);
+  const receitaBruta = extractAmountByKeys(response, [/receita.*bruta/, /receita_bruta/, /receitabruta/]);
+  const inssTotal = extractAmountByKeys(response, [/inss/, /dctf.*web/, /dctfweb/]);
   const vencimento = parsePossibleDate(extractDateValue(response));
 
   return {
@@ -115,6 +193,8 @@ function buildPgdasGuidePayload({ response, contribuinteCnpj, competencia }) {
       competencia,
       tipo: "SIMPLES",
       valor,
+      receitaBruta,
+      inssTotal,
       vencimento: vencimento ? vencimento.toISOString() : null,
     },
     pdfBuffer,
@@ -123,12 +203,33 @@ function buildPgdasGuidePayload({ response, contribuinteCnpj, competencia }) {
   };
 }
 
-function buildSerproSourceFileId({ cnpj, competencia, numeroDocumento }) {
+function buildGuideSourceFileId({ cnpj, competencia, numeroDocumento, serviceId }) {
   const doc = String(numeroDocumento || "sem-documento").replace(/[^a-zA-Z0-9_-]+/g, "");
-  return `serpro:pgdasd:${onlyDigits(cnpj)}:${competencia}:${doc}`;
+  const service = String(serviceId || "sem-servico").replace(/[^a-zA-Z0-9_-]+/g, "");
+  return `serpro:pgdasd:${service}:${onlyDigits(cnpj)}:${competencia}:${doc}`;
 }
 
-export async function capturePgdasGuideForCompany({ portalClientId, competencia, contratanteCnpj }) {
+function mapGuideLabels(serviceId) {
+  if (serviceId === SERPRO_PGDASD_SERVICE_COBRANCA) {
+    return {
+      sourcePath: "SERPRO PGDAS-D COBRANCA",
+      checkResult: "FOUND_COBRANCA",
+    };
+  }
+  return {
+    sourcePath: "SERPRO PGDAS-D",
+    checkResult: "FOUND_NORMAL",
+  };
+}
+
+export async function capturePgdasGuideForCompany({
+  portalClientId,
+  competencia,
+  contratanteCnpj,
+  existingGuideId = null,
+  serviceId = null,
+  dataConsolidacao,
+}) {
   const normalizedCompanyId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
   if (!normalizedCompanyId) {
@@ -161,11 +262,24 @@ export async function capturePgdasGuideForCompany({ portalClientId, competencia,
   }
 
   const service = new SerproPgdasdService();
-  const response = await service.emitirDasCobranca({
-    contratanteCnpj: procuradorCnpj,
-    contribuinteCnpj: portalClient.cnpj,
-    periodoApuracao: normalizedCompetencia,
+  const resolvedServiceId = resolvePgdasdServiceId({
+    competencia: normalizedCompetencia,
+    serviceId,
   });
+  const response =
+    resolvedServiceId === SERPRO_PGDASD_SERVICE_COBRANCA
+      ? await service.emitirDasCobranca({
+          contratanteCnpj: procuradorCnpj,
+          contribuinteCnpj: portalClient.cnpj,
+          periodoApuracao: normalizedCompetencia,
+          dataConsolidacao,
+        })
+      : await service.emitirDasNormal({
+          contratanteCnpj: procuradorCnpj,
+          contribuinteCnpj: portalClient.cnpj,
+          periodoApuracao: normalizedCompetencia,
+          dataConsolidacao,
+        });
 
   const mapped = buildPgdasGuidePayload({
     response,
@@ -173,25 +287,30 @@ export async function capturePgdasGuideForCompany({ portalClientId, competencia,
     competencia: normalizedCompetencia,
   });
 
-  const sourceFileId = buildSerproSourceFileId({
+  const sourceFileId = buildGuideSourceFileId({
     cnpj: portalClient.cnpj,
     competencia: normalizedCompetencia,
     numeroDocumento: mapped.numeroDocumento,
+    serviceId: resolvedServiceId,
   });
+
+  const labels = mapGuideLabels(resolvedServiceId);
 
   const existingGuide = await prisma.guide.findFirst({
     where: { sourceFileId },
     select: { id: true },
   });
 
+  const now = new Date();
+
   const guide = await createOrUpdateGuideFromProcessing({
-    existingGuideId: existingGuide?.id || null,
+    existingGuideId: existingGuideId || existingGuide?.id || null,
     portalClientId: portalClient.id,
     legacyCompanyId: portalClient.companyId || null,
     parsed: mapped.parsed,
     source: "SERPRO",
     sourceFileId,
-    sourcePath: `SERPRO PGDAS-D ${normalizedCompetencia}`,
+    sourcePath: `${labels.sourcePath} ${normalizedCompetencia}`,
     driveInboxFolderId: null,
     driveFinalFolderId: null,
     driveFinalFileId: null,
@@ -199,10 +318,16 @@ export async function capturePgdasGuideForCompany({ portalClientId, competencia,
     hash: hashPdf(mapped.pdfBuffer),
     status: "PROCESSED",
     errors: [],
+    paymentStatus: "OPEN",
+    paymentStatusSource: "SERPRO",
+    serproLastCheckedAt: now,
+    serproLastCheckResult: labels.checkResult,
+    serproLastSeenAt: now,
+    serproService: resolvedServiceId,
     extracted: {
       integrationSource: "SERPRO_PGDASD",
       sistema: "PGDASD",
-      servico: "GERARDASCOBRANCA17",
+      servico: resolvedServiceId,
       numeroDocumento: mapped.numeroDocumento,
       contratanteCnpj: procuradorCnpj,
       contribuinteCnpj: portalClient.cnpj,
@@ -210,6 +335,64 @@ export async function capturePgdasGuideForCompany({ portalClientId, competencia,
       rawPayload: mapped.rawPayload,
     },
   });
+
+  const circular = await prisma.companyMonthlyCircular.upsert({
+    where: {
+      portalClientId_competencia: {
+        portalClientId: portalClient.id,
+        competencia: normalizedCompetencia,
+      },
+    },
+    create: {
+      portalClientId: portalClient.id,
+      competencia: normalizedCompetencia,
+      receitaBruta: mapped.parsed.receitaBruta != null ? mapped.parsed.receitaBruta : null,
+      dasTotal: mapped.parsed.valor != null ? mapped.parsed.valor : null,
+      inssTotal: mapped.parsed.inssTotal != null ? mapped.parsed.inssTotal : null,
+      metadata: {
+        integrationSource: "SERPRO_PGDASD",
+        sistema: "PGDASD",
+        servico: resolvedServiceId,
+        numeroDocumento: mapped.numeroDocumento,
+        contratanteCnpj: procuradorCnpj,
+        contribuinteCnpj: portalClient.cnpj,
+        referencia: normalizedCompetencia,
+        rawPayload: mapped.rawPayload,
+        capturedAt: now.toISOString(),
+      },
+    },
+    update: {
+      ...(mapped.parsed.receitaBruta != null ? { receitaBruta: mapped.parsed.receitaBruta } : {}),
+      ...(mapped.parsed.valor != null ? { dasTotal: mapped.parsed.valor } : {}),
+      ...(mapped.parsed.inssTotal != null ? { inssTotal: mapped.parsed.inssTotal } : {}),
+      metadata: {
+        integrationSource: "SERPRO_PGDASD",
+        sistema: "PGDASD",
+        servico: resolvedServiceId,
+        numeroDocumento: mapped.numeroDocumento,
+        contratanteCnpj: procuradorCnpj,
+        contribuinteCnpj: portalClient.cnpj,
+        referencia: normalizedCompetencia,
+        rawPayload: mapped.rawPayload,
+        capturedAt: now.toISOString(),
+      },
+    },
+  });
+
+  let accounting = null;
+  try {
+    accounting = await generateEntriesFromCircular({
+      portalClientId: portalClient.id,
+      competencia: normalizedCompetencia,
+      now,
+    });
+  } catch (err) {
+    accounting = {
+      ok: false,
+      error: err?.code || "ACCOUNTING_GENERATION_FAILED",
+      reason: err?.message || "Falha ao gerar lançamentos a partir da Circular.",
+    };
+  }
 
   await prisma.guide.deleteMany({
     where: {
@@ -229,9 +412,11 @@ export async function capturePgdasGuideForCompany({ portalClientId, competencia,
       cnpj: portalClient.cnpj,
     },
     guide: toGuideResponse(guide),
+    circular,
+    accounting,
     integration: {
       sistema: "PGDASD",
-      servico: "GERARDASCOBRANCA17",
+      servico: resolvedServiceId,
       contratanteCnpj: procuradorCnpj,
       numeroDocumento: mapped.numeroDocumento,
     },

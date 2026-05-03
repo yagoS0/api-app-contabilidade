@@ -262,6 +262,8 @@ model PortalClient {
   taxDocuments        TaxDocument[]
   chartOfAccounts     ChartOfAccount[]
   accountingEntries   AccountingEntry[]
+  monthlyCirculars    CompanyMonthlyCircular[]
+  accountingEntryRules AccountingEntryRule[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -276,6 +278,14 @@ model Guide {
   valor            Decimal? @db.Decimal(18, 2)
   vencimento       DateTime?
   cnpj             String?
+  paymentStatus    String?  @default("OPEN") // OPEN|PAID|OVERDUE
+  paymentStatusSource String? // SERPRO|MANUAL
+  paymentConfirmedAt DateTime?
+  paymentConfirmedByUserId String?
+  serproLastCheckedAt DateTime?
+  serproLastCheckResult String?
+  serproLastSeenAt DateTime?
+  serproService String?
 
   taxDocuments     TaxDocument[]
 
@@ -317,6 +327,7 @@ model Guide {
   @@index([status])
   @@index([emailStatus, emailNextRetryAt])
   @@index([cnpj, competencia])
+  @@index([paymentStatus, vencimento])
 }
 
 model GuideIngestionJob {
@@ -561,12 +572,15 @@ model ChartOfAccount {
 model AccountingEntry {
   id              String   @id @default(uuid())
   portalClientId  String
+  circularId      String?
+  ruleId          String?
+  eventType       String?
   data            DateTime
   competencia     String
   historico       String
   tipo            String   @default("DESPESA")  // DESPESA | RECEITA | FOLHA | PROVISAO | BAIXA | OUTRO
   subtipo         String?                        // SIMPLES | IRRF | ISS | PIS | COFINS | FGTS | null
-  origem          String   @default("MANUAL")    // MANUAL | OFX | PDF
+  origem          String   @default("MANUAL")    // MANUAL | OFX | PDF | SERPRO
   loteImportacao  String?
   status          String   @default("RASCUNHO")  // RASCUNHO | CONFIRMADO | EXPORTADO
   statusPagamento String   @default("NA")        // NA | ABERTO | PAGO
@@ -576,6 +590,8 @@ model AccountingEntry {
 
   lines        AccountingEntryLine[]
   portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  circular     CompanyMonthlyCircular? @relation(fields: [circularId], references: [id], onDelete: SetNull)
+  rule        AccountingEntryRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
   openEntry    AccountingEntry?  @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
   baixas       AccountingEntry[] @relation("BaixaToOpen")
 
@@ -585,7 +601,74 @@ model AccountingEntry {
   @@index([portalClientId, status])
   @@index([portalClientId, statusPagamento])
   @@index([portalClientId, subtipo])
+  @@index([portalClientId, eventType])
+  @@index([circularId])
+  @@index([ruleId])
+  @@unique([portalClientId, competencia, eventType, origem])
   @@map("accounting_entries")
+}
+
+model CompanyMonthlyCircular {
+  id                     String   @id @default(uuid())
+  portalClientId         String
+  competencia            String
+  receitaBruta           Decimal? @db.Decimal(18, 2)
+  receitaServicos        Decimal  @default(0) @db.Decimal(18, 2)
+  receitaVendas          Decimal  @default(0) @db.Decimal(18, 2)
+  dasTotal               Decimal? @db.Decimal(18, 2)
+  dasNumeroDocumento     String?
+  dasPago                Boolean?
+  dasDataEmissao         DateTime?
+  inssTotal              Decimal? @db.Decimal(18, 2)
+  inssVencimento         DateTime?
+  inssPdfFileId          String?
+  inssPdfUrl             String?
+  inssStatus             String?
+  pgdasNumeroDeclaracao  String?
+  pgdasDeclaracaoFileId  String?
+  pgdasDeclaracaoFileUrl String?
+  pgdasReciboFileId      String?
+  pgdasReciboFileUrl     String?
+  receitaStatus          String?
+  dasStatus              String?
+  serproSyncStatus       String?
+  serproLastSyncAt       DateTime?
+  serproLastError        String?
+  metadata               Json?
+  hasAccountingDivergence Boolean  @default(false)
+  accountingDivergenceMessage String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  portalClient           PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  accountingEntries      AccountingEntry[]
+
+  @@unique([portalClientId, competencia])
+  @@index([portalClientId, competencia])
+  @@map("company_monthly_circulars")
+}
+
+model AccountingEntryRule {
+  id                  String   @id @default(uuid())
+  portalClientId      String?
+  scope               String   @default("GLOBAL") // GLOBAL | COMPANY
+  eventType           String
+  descriptionTemplate String
+  debitAccountCode    String
+  creditAccountCode   String
+  amountSource        String
+  entryDateStrategy   String   @default("LAST_DAY_OF_MONTH")
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  portalClient        PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+  accountingEntries   AccountingEntry[]
+
+  @@index([portalClientId, eventType])
+  @@index([scope, eventType, isActive])
+  @@index([eventType, isActive])
+  @@map("accounting_entry_rules")
 }
 
 model AccountingEntryLine {
