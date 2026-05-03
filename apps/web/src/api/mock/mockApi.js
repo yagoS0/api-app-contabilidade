@@ -50,6 +50,8 @@ function makeGuidesByCompany(companies) {
     const guides = Array.from({ length: faker.number.int({ min: 3, max: 12 }) }).map(() => {
       const status = faker.helpers.arrayElement(["PROCESSED", "PROCESSED", "PROCESSED", "ERROR"]);
       const emailStatus = status === "ERROR" ? "ERROR" : faker.helpers.arrayElement(["PENDING", "SENT"]);
+      const vencimento = faker.date.soon({ days: 20 }).toISOString();
+      const paymentStatus = faker.helpers.arrayElement(["OPEN", "OPEN", "PAID", "OVERDUE"]);
       return {
         id: faker.string.uuid(),
         portalClientId: company.companyId,
@@ -58,8 +60,17 @@ function makeGuidesByCompany(companies) {
           faker.number.int({ min: 1, max: 12 })
         ).padStart(2, "0")}`,
         valor: faker.finance.amount({ min: 120, max: 9500, dec: 2 }),
+        vencimento,
         status,
         emailStatus,
+        paymentStatus,
+        paymentStatusSource: paymentStatus === "PAID" ? faker.helpers.arrayElement(["MANUAL", "SERPRO"]) : "SERPRO",
+        paymentConfirmedAt: paymentStatus === "PAID" ? new Date().toISOString() : null,
+        serproLastCheckedAt: new Date().toISOString(),
+        serproLastCheckResult: paymentStatus === "PAID" ? "NOT_FOUND" : "FOUND",
+        serproService: "GERARDAS12",
+        canConfirmPayment: paymentStatus !== "PAID",
+        canRecalculate: paymentStatus !== "PAID" && new Date(vencimento).getTime() < Date.now(),
       };
     });
     guidesByCompany.set(company.companyId, guides);
@@ -117,6 +128,7 @@ const mockSerproProcurationByCompany = new Map();
 // Plano de contas mock (por empresa)
 const mockChartOfAccounts = new Map();
 const mockEntriesByCompany = new Map();
+const mockMonthlyCirculars = new Map();
 
 // Históricos mockados globais (não atrelados a empresa específica)
 const mockHistoricos = [
@@ -216,6 +228,62 @@ function buildCompanyPayload(input) {
     legacyCompany: { regimeTributario, tipoTributario: regimeTributario },
     guideCompliance: mockGuideComplianceRow({ hasProlabore, regimeTributario, inssOk: true, dasOk: true }),
   };
+}
+
+function makeCircularKey(companyId, competencia) {
+  return `${companyId}::${competencia}`;
+}
+
+function synthesizeCircularEntries(companyId, circular) {
+  const list = mockEntriesByCompany.get(companyId) || [];
+  const rules = [
+    { eventType: "RECEITA_SIMPLES", amountSource: "receitaBruta", debit: "5", credit: "301", tipo: "RECEITA", subtipo: null, statusPagamento: "NA", label: "VR REF RECEITA BRUTA DO SIMPLES NACIONAL - " },
+    { eventType: "DAS_SIMPLES", amountSource: "dasTotal", debit: "401", credit: "5", tipo: "PROVISAO", subtipo: "DAS", statusPagamento: "ABERTO", label: "VR REF DAS SIMPLES NACIONAL - " },
+    { eventType: "INSS_DCTFWEB", amountSource: "inssTotal", debit: "420", credit: "5", tipo: "PROVISAO", subtipo: "INSS", statusPagamento: "ABERTO", label: "VR REF INSS DCTFWEB - " },
+  ];
+
+  for (const rule of rules) {
+    const amount = Number(circular?.[rule.amountSource] || 0);
+    const entryId = `mock-circular-${companyId}-${circular.competencia}-${rule.eventType}`;
+    const idx = list.findIndex((item) => item.id === entryId);
+    if (!(amount > 0)) {
+      if (idx >= 0) list.splice(idx, 1);
+      continue;
+    }
+    const entry = {
+      id: entryId,
+      portalClientId: companyId,
+      circularId: circular.id,
+      ruleId: `rule-${rule.eventType}`,
+      eventType: rule.eventType,
+      data: new Date(`${circular.competencia}-28T00:00:00.000Z`).toISOString(),
+      competencia: circular.competencia,
+      historico: `${rule.label}${circular.competencia.slice(5)}/${circular.competencia.slice(0, 4)}`,
+      tipo: rule.tipo,
+      subtipo: rule.subtipo,
+      origem: "SERPRO",
+      loteImportacao: `SERPRO-${circular.competencia}`,
+      status: circular.status || "RASCUNHO",
+      statusPagamento: rule.statusPagamento,
+      openEntryId: null,
+      lines: [
+        { id: `${entryId}-d`, entryId, conta: rule.debit, tipo: "D", valor: amount, ordem: 0 },
+        { id: `${entryId}-c`, entryId, conta: rule.credit, tipo: "C", valor: amount, ordem: 1 },
+      ],
+      totalD: amount,
+      totalC: amount,
+      valor: amount,
+      createdAt: circular.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (idx >= 0) list[idx] = entry;
+    else list.push(entry);
+  }
+  mockEntriesByCompany.set(companyId, list);
+}
+
+function getCircularRecord(companyId, competencia) {
+  return mockMonthlyCirculars.get(makeCircularKey(companyId, competencia)) || null;
 }
 
 export function createMockApi() {
@@ -371,6 +439,61 @@ export function createMockApi() {
       }
       throw new Error("not_found");
     },
+    async confirmGuidePayment(guideId) {
+      await delay();
+      for (const guides of mockGuidesByCompany.values()) {
+        const target = guides.find((item) => item.id === guideId);
+        if (target) {
+          target.paymentStatus = "PAID";
+          target.paymentStatusSource = "MANUAL";
+          target.paymentConfirmedAt = new Date().toISOString();
+          target.serproLastCheckResult = "MANUAL_CONFIRMED";
+          target.canConfirmPayment = false;
+          target.canRecalculate = false;
+          return { ok: true, guide: { ...target, guideId: target.id, companyId: target.portalClientId } };
+        }
+      }
+      throw new Error("not_found");
+    },
+    async recalculateGuide(guideId) {
+      await delay(500);
+      for (const guides of mockGuidesByCompany.values()) {
+        const target = guides.find((item) => item.id === guideId);
+        if (target) {
+          target.valor = Number(faker.finance.amount({ min: 300, max: 5000, dec: 2 }));
+          target.vencimento = faker.date.soon({ days: 10 }).toISOString();
+          target.paymentStatus = "OPEN";
+          target.paymentStatusSource = "SERPRO";
+          target.paymentConfirmedAt = null;
+          target.serproLastCheckedAt = new Date().toISOString();
+          target.serproLastCheckResult = "FOUND";
+          target.emailStatus = "PENDING";
+          target.canConfirmPayment = true;
+          target.canRecalculate = false;
+          return {
+            ok: true,
+            result: {
+              company: { id: target.portalClientId },
+              guide: { ...target, guideId: target.id, companyId: target.portalClientId },
+              integration: {
+                sistema: "PGDASD",
+                servico: "GERARDASCOBRANCA17",
+                contratanteCnpj: "12345678000199",
+                numeroDocumento: faker.string.numeric(14),
+              },
+            },
+            emailDispatch: {
+              skipped: false,
+              total: 1,
+              sent: 1,
+              errors: 0,
+              results: [{ guideId: target.id, status: "SENT" }],
+            },
+          };
+        }
+      }
+      throw new Error("not_found");
+    },
     async getGuideSettings() {
       await delay();
       return { ...mockGuideSettings };
@@ -465,6 +588,7 @@ export function createMockApi() {
       await delay();
       const company = mockCompanies.find((item) => item.companyId === companyId);
       if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      const serviceId = String(input?.serviceId || "GERARDAS12").trim() || "GERARDAS12";
       const guide = {
         guideId: faker.string.uuid(),
         companyId,
@@ -474,6 +598,14 @@ export function createMockApi() {
         vencimento: faker.date.soon({ days: 20 }).toISOString(),
         status: "PROCESSED",
         emailStatus: "PENDING",
+        paymentStatus: "OPEN",
+        paymentStatusSource: "SERPRO",
+        paymentConfirmedAt: null,
+        serproLastCheckedAt: new Date().toISOString(),
+        serproLastCheckResult: "FOUND",
+        serproService: serviceId,
+        canConfirmPayment: true,
+        canRecalculate: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -487,6 +619,14 @@ export function createMockApi() {
         vencimento: guide.vencimento,
         status: guide.status,
         emailStatus: guide.emailStatus,
+        paymentStatus: guide.paymentStatus,
+        paymentStatusSource: guide.paymentStatusSource,
+        paymentConfirmedAt: guide.paymentConfirmedAt,
+        serproLastCheckedAt: guide.serproLastCheckedAt,
+        serproLastCheckResult: guide.serproLastCheckResult,
+        serproService: guide.serproService,
+        canConfirmPayment: guide.canConfirmPayment,
+        canRecalculate: guide.canRecalculate,
       });
       mockGuidesByCompany.set(companyId, current);
       mockSerproLastRun = {
@@ -512,10 +652,53 @@ export function createMockApi() {
           guide,
           integration: {
             sistema: "PGDASD",
-            servico: "GERARDASCOBRANCA17",
+            servico: serviceId,
             contratanteCnpj: "12345678000199",
             numeroDocumento: faker.string.numeric(14),
           },
+        },
+      };
+    },
+    async syncSerproInss(companyId, input = {}) {
+      await delay();
+      const company = mockCompanies.find((item) => item.companyId === companyId);
+      if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      const competencia = String(input.competencia || "2026-04");
+      const inssTotal = Number(faker.finance.amount({ min: 180, max: 12000, dec: 2 }));
+      const inssVencimento = faker.date.soon({ days: 20 }).toISOString();
+      const circular = {
+        id: `mock-circular-${companyId}-${competencia}`,
+        portalClientId: companyId,
+        competencia,
+        receitaBruta: 0,
+        receitaServicos: 0,
+        receitaVendas: 0,
+        dasTotal: 0,
+        inssTotal,
+        inssVencimento,
+        inssPdfFileId: `mock-inss-${companyId}-${competencia}.pdf`,
+        inssPdfUrl: `file:///mock/${companyId}/${competencia}.pdf`,
+        inssStatus: "EMITTED",
+        metadata: {
+          integrationSource: "SERPRO_DCTFWEB",
+          sistema: "DCTFWEB",
+          servico: "GERARGUIA31",
+          rawPayload: { inssTotal, inssVencimento },
+        },
+        hasAccountingDivergence: false,
+        accountingDivergenceMessage: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockMonthlyCirculars.set(makeCircularKey(companyId, competencia), circular);
+      synthesizeCircularEntries(companyId, circular);
+      return {
+        ok: true,
+        result: {
+          company: { id: companyId, razao: company.razao, cnpj: company.cnpj },
+          circular,
+          accounting: { ok: true, generatedEntries: [] },
+          inss: { status: "EMITTED", competencia, inssTotal, inssVencimento, pdfFileId: circular.inssPdfFileId, pdfUrl: circular.inssPdfUrl },
         },
       };
     },
@@ -928,6 +1111,92 @@ export function createMockApi() {
       }
       return { year: y, provisoes, receitas };
     },
+    async getCircularAccountingEntries(companyId, competencia) {
+      await delay();
+      const circular = getCircularRecord(companyId, competencia);
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const entries = list.filter((entry) => entry.competencia === competencia && entry.origem === "SERPRO");
+      return { circular, entries, allEntries: entries };
+    },
+    async updateCircular(companyId, competencia, input = {}) {
+      await delay();
+      const receitaServicos = Number(input.receitaServicos ?? 0);
+      const receitaVendas = Number(input.receitaVendas ?? 0);
+      const receitaBruta = input.receitaBruta != null ? Number(input.receitaBruta) : receitaServicos + receitaVendas;
+      const circular = {
+        id: `mock-circular-${companyId}-${competencia}`,
+        portalClientId: companyId,
+        competencia,
+        receitaBruta,
+        receitaServicos,
+        receitaVendas,
+        dasTotal: input.dasTotal ?? null,
+        inssTotal: input.inssTotal ?? null,
+        inssVencimento: input.inssVencimento ? new Date(input.inssVencimento).toISOString() : null,
+        inssPdfFileId: input.inssPdfFileId || null,
+        inssPdfUrl: input.inssPdfUrl || null,
+        inssStatus: input.inssStatus || null,
+        metadata: input.metadata || null,
+        hasAccountingDivergence: false,
+        accountingDivergenceMessage: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockMonthlyCirculars.set(makeCircularKey(companyId, competencia), circular);
+      synthesizeCircularEntries(companyId, circular);
+      return { ok: true, circular, accounting: { ok: true, generatedEntries: [] } };
+    },
+    async syncPgdasCircular(companyId, competencia) {
+      await delay();
+      const company = mockCompanies.find((item) => item.companyId === companyId);
+      if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      const receitaBruta = Number(faker.finance.amount({ min: 15000, max: 95000, dec: 2 }));
+      const isServico = faker.datatype.boolean();
+      const receitaServicos = isServico ? receitaBruta : 0;
+      const receitaVendas = isServico ? 0 : receitaBruta;
+      const dasTotal = Number(faker.finance.amount({ min: 800, max: 8000, dec: 2 }));
+      const circular = {
+        id: `mock-circular-${companyId}-${competencia}`,
+        portalClientId: companyId,
+        competencia,
+        receitaBruta,
+        receitaServicos,
+        receitaVendas,
+        dasTotal,
+        inssTotal: 0,
+        pgdasNumeroDeclaracao: `${company.cnpj.replace(/\D/g, "").slice(0, 8)}${competencia.replace(/\D/g, "")}001`,
+        pgdasDeclaracaoFileId: `mock-pgdas-declaracao-${companyId}-${competencia}.pdf`,
+        pgdasDeclaracaoFileUrl: `file:///mock/${companyId}/${competencia}-pgdas-declaracao.pdf`,
+        pgdasReciboFileId: `mock-pgdas-recibo-${companyId}-${competencia}.pdf`,
+        pgdasReciboFileUrl: `file:///mock/${companyId}/${competencia}-pgdas-recibo.pdf`,
+        receitaStatus: "SUCCESS",
+        dasStatus: "SUCCESS",
+        serproSyncStatus: "SUCCESS",
+        serproLastSyncAt: new Date().toISOString(),
+        serproLastError: null,
+        metadata: {
+          integrationSource: "SERPRO_PGDASD_DECLARACAO",
+          sistema: "PGDASD",
+          servico: "CONSULTIMADECREC14",
+        },
+        hasAccountingDivergence: false,
+        accountingDivergenceMessage: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockMonthlyCirculars.set(makeCircularKey(companyId, competencia), circular);
+      synthesizeCircularEntries(companyId, circular);
+      return { ok: true, result: { company: { id: companyId, razao: company.razao, cnpj: company.cnpj }, circular, accounting: { ok: true, generatedEntries: [] } } };
+    },
+    async approveAccountingEntry(companyId, entryId) {
+      await delay();
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const idx = list.findIndex((entry) => entry.id === entryId);
+      if (idx < 0) throw new Error("lancamento_nao_encontrado");
+      list[idx] = { ...list[idx], status: "CONFIRMADO", updatedAt: new Date().toISOString() };
+      mockEntriesByCompany.set(companyId, list);
+      return { ok: true, entry: list[idx] };
+    },
     async previewOFX() {
       await delay(400);
       const transactions = Array.from({ length: faker.number.int({ min: 3, max: 10 }) }).map(() => ({
@@ -1053,6 +1322,63 @@ export function createMockApi() {
       const compIdx = compList.findIndex((h) => h.id === id);
       if (compIdx >= 0) { compList.splice(compIdx, 1); mockHistoricosByCompany.set(companyId, compList); return { ok: true }; }
       return { ok: false, error: "not_found" };
+    },
+
+    async runCompanyFiscalAction(companyId, input) {
+      await delay(500); // Simulate network delay for fiscal operations
+      const action = String(input?.action || "").toLowerCase();
+      const competencia = input?.competencia;
+
+      if (!action) throw new Error("action_required");
+      if (!competencia) throw new Error("competencia_required");
+
+      const now = new Date().toISOString();
+
+      switch (action) {
+        case "search_guides":
+          return {
+            action: "search_guides",
+            competencia,
+            status: "completed",
+            guidesFound: faker.number.int({ min: 0, max: 5 }),
+            guidesCaptured: faker.number.int({ min: 0, max: 3 }),
+            guidesUpdated: faker.number.int({ min: 0, max: 2 }),
+            circularUpdated: faker.datatype.boolean(),
+            entriesGenerated: faker.number.int({ min: 0, max: 10 }),
+            timestamp: now,
+          };
+
+        case "check_payments":
+          const total = faker.number.int({ min: 2, max: 8 });
+          const paid = faker.number.int({ min: 0, max: total });
+          const overdue = faker.number.int({ min: 0, max: total - paid });
+          return {
+            action: "check_payments",
+            competencia,
+            status: "completed",
+            guidesChecked: total,
+            guidesPaid: paid,
+            guidesOverdue: overdue,
+            guidesOpen: total - paid - overdue,
+            timestamp: now,
+          };
+
+        case "sync_inss":
+          return {
+            action: "sync_inss",
+            competencia,
+            status: "completed",
+            guidesFound: faker.number.int({ min: 0, max: 2 }),
+            guidesCaptured: faker.number.int({ min: 0, max: 1 }),
+            circularUpdated: faker.datatype.boolean(),
+            timestamp: now,
+          };
+
+        default:
+          const err = new Error(`Unknown action: ${action}`);
+          err.code = "UNKNOWN_FISCAL_ACTION";
+          throw err;
+      }
     },
   };
 }

@@ -73,6 +73,8 @@ export function SerproSettingsPage({
   deletingCertificate,
   checkingProcuration,
   capturingPgdasd,
+  syncingPgdas,
+  syncingInss,
   procurationStatus,
   workerStatus,
   onSave,
@@ -81,6 +83,8 @@ export function SerproSettingsPage({
   onLoadProcuration,
   onCheckProcuration,
   onCapturePgdasd,
+  onSyncPgdas,
+  onSyncInss,
   onRefreshWorkerStatus,
   onBack,
   message,
@@ -173,9 +177,26 @@ export function SerproSettingsPage({
     await onCheckProcuration(testCompanyId, { contratanteCnpj: testContratanteCnpj || undefined });
   }
 
-  async function handleCapturePgdasd(event) {
+  async function handleCapturePgdasd(event, serviceId) {
     event.preventDefault();
     await onCapturePgdasd(testCompanyId, {
+      competencia: testCompetencia,
+      contratanteCnpj: testContratanteCnpj || undefined,
+      ...(serviceId ? { serviceId } : {}),
+    });
+  }
+
+  async function handleSyncInss(event) {
+    event.preventDefault();
+    await onSyncInss?.(testCompanyId, {
+      competencia: testCompetencia,
+      contratanteCnpj: testContratanteCnpj || undefined,
+    });
+  }
+
+  async function handleSyncPgdas(event) {
+    event.preventDefault();
+    await onSyncPgdas?.(testCompanyId, {
       competencia: testCompetencia,
       contratanteCnpj: testContratanteCnpj || undefined,
     });
@@ -411,7 +432,7 @@ export function SerproSettingsPage({
             <div className="serpro-settings-card__head">
               <h2 className="serpro-settings-card__title">Teste manual</h2>
               <p className="serpro-settings-card__description">
-                Consulte a procuração da empresa e capture manualmente uma guia PGDAS-D por competência.
+                Consulte a procuração da empresa, capture DAS e sincronize o INSS pela DCTFWeb.
               </p>
             </div>
 
@@ -482,10 +503,23 @@ export function SerproSettingsPage({
               </div>
 
               <div className="serpro-settings-form__actions">
-                <Button type="submit" variant="success" disabled={capturingPgdasd || !testCompanyId || !testCompetencia}>
-                  {capturingPgdasd ? "Capturando..." : "Capturar PGDAS-D"}
+                <Button type="button" variant="success" disabled={capturingPgdasd || !testCompanyId || !testCompetencia} onClick={(event) => handleCapturePgdasd(event, "GERARDAS12")}>
+                  {capturingPgdasd ? "Capturando..." : "Capturar DAS"}
+                </Button>
+                <Button type="button" variant="secondary" disabled={capturingPgdasd || !testCompanyId || !testCompetencia} onClick={(event) => handleCapturePgdasd(event, "GERARDASCOBRANCA17")}>
+                  {capturingPgdasd ? "Capturando..." : "Capturar DAS cobrança"}
+                </Button>
+                <Button type="button" variant="secondary" disabled={syncingPgdas || !testCompanyId || !testCompetencia} onClick={handleSyncPgdas}>
+                  {syncingPgdas ? "Sincronizando..." : "Sincronizar extrato PGDAS"}
+                </Button>
+                <Button type="button" variant="secondary" disabled={syncingInss || !testCompanyId || !testCompetencia} onClick={handleSyncInss}>
+                  {syncingInss ? "Sincronizando..." : "Sincronizar INSS"}
                 </Button>
               </div>
+
+              <p style={{ margin: "0.5rem 0 0", color: "var(--text-muted)", fontSize: "0.8rem" }}>
+                O extrato PGDAS e o INSS são sincronizados pela competência. O PGDAS lê a declaração/recibo e atualiza a Circular automaticamente.
+              </p>
             </form>
           </section>
 

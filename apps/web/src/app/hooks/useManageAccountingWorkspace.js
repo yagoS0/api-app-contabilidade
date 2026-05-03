@@ -7,11 +7,21 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   const chartOfAccountsState = useChartOfAccounts();
   const [savingEntry, setSavingEntry] = useState(false);
   const [savingBaixa, setSavingBaixa] = useState(false);
+  const [savingCircular, setSavingCircular] = useState(false);
+  const [approvingCircularEntryId, setApprovingCircularEntryId] = useState("");
   const [circularData, setCircularData] = useState(null);
   const [loadingCircular, setLoadingCircular] = useState(false);
   const [circularYear, setCircularYear] = useState(new Date().getFullYear());
+  const [circularCompetencia, setCircularCompetencia] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [entriesMessage, setEntriesMessage] = useState("");
   const [entriesError, setEntriesError] = useState("");
+
+  // Fiscal operation state
+  const [runningFiscalAction, setRunningFiscalAction] = useState(null);
+  const [lastFiscalResult, setLastFiscalResult] = useState(null);
 
   async function loadChartOfAccounts(companyId = selectedCompanyId) {
     if (!companyId) return;
@@ -42,17 +52,65 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
   }
 
-  async function loadCircular(year = circularYear) {
+  async function loadCircular(year = circularYear, competencia = circularCompetencia) {
     if (!selectedCompanyId) return;
     setLoadingCircular(true);
     setEntriesError("");
     try {
-      const result = await api.getCircular(selectedCompanyId, { year });
-      setCircularData(result);
+      const yearly = await api.getCircular(selectedCompanyId, { year });
+      let review = null;
+      if (competencia) {
+        try {
+          review = await api.getCircularAccountingEntries(selectedCompanyId, competencia);
+        } catch {
+          review = null;
+        }
+      }
+      setCircularData({
+        ...yearly,
+        circular: review?.circular || null,
+        accountingReview: review || null,
+        reviewEntries: Array.isArray(review?.entries) ? review.entries : [],
+        reviewAllEntries: Array.isArray(review?.allEntries) ? review.allEntries : [],
+      });
     } catch (err) {
       setEntriesError(err?.message || "Falha ao carregar circular.");
     } finally {
       setLoadingCircular(false);
+    }
+  }
+
+  async function handleSaveCircular(input) {
+    if (!selectedCompanyId) return;
+    setSavingCircular(true);
+    setEntriesError("");
+    setEntriesMessage("");
+    try {
+      const competencia = circularCompetencia;
+      await api.updateCircular(selectedCompanyId, competencia, input);
+      await loadCircular(circularYear, competencia);
+      setEntriesMessage("Circular atualizada e lançamentos regenerados.");
+    } catch (err) {
+      setEntriesError(err?.message || "Falha ao salvar circular.");
+    } finally {
+      setSavingCircular(false);
+    }
+  }
+
+  async function handleApproveCircularEntry(entryId) {
+    if (!selectedCompanyId || !entryId) return;
+    setApprovingCircularEntryId(entryId);
+    setEntriesError("");
+    setEntriesMessage("");
+    try {
+      await api.approveAccountingEntry(selectedCompanyId, entryId);
+      await loadCircular(circularYear, circularCompetencia);
+      await loadAccountingEntries(selectedCompanyId);
+      setEntriesMessage("Lançamento da circular aprovado.");
+    } catch (err) {
+      setEntriesError(err?.message || "Falha ao aprovar lançamento.");
+    } finally {
+      setApprovingCircularEntryId("");
     }
   }
 
@@ -64,7 +122,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     try {
       await api.createBaixa(selectedCompanyId, entryId, input);
       await loadAccountingEntries(selectedCompanyId);
-      if (companyDetailTab === "circular") await loadCircular(circularYear);
+      if (companyDetailTab === "circular") await loadCircular(circularYear, circularCompetencia);
       setEntriesMessage("Baixa registrada com sucesso.");
     } catch (err) {
       setEntriesError(err?.message || "Falha ao criar baixa.");
@@ -227,6 +285,52 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     setCircularData(null);
   }
 
+  // Fiscal action handlers
+  async function handleRunFiscalAction(action, competencia = circularCompetencia) {
+    if (!selectedCompanyId) return;
+    if (runningFiscalAction) return; // Prevent concurrent executions
+
+    setRunningFiscalAction(action);
+    setEntriesError("");
+    setEntriesMessage("");
+
+    try {
+      const result = await api.runCompanyFiscalAction(selectedCompanyId, {
+        action,
+        competencia,
+      });
+
+      setLastFiscalResult(result);
+
+      if (result?.result?.status === "completed") {
+        setEntriesMessage(`${action.replace("_", " ")}: operação concluída com sucesso.`);
+        // Reload circular after successful action
+        if (["search_guides", "sync_inss"].includes(action)) {
+          await loadCircular(circularYear, competencia);
+        }
+      } else if (result?.result?.status === "skipped") {
+        setEntriesMessage(`${action.replace("_", " ")}: operação ignorada. ${result?.result?.reason || ""}`);
+      }
+    } catch (err) {
+      setEntriesError(err?.message || `Falha ao executar ${action}`);
+      setLastFiscalResult(null);
+    } finally {
+      setRunningFiscalAction(null);
+    }
+  }
+
+  async function handleSearchGuides(competencia = circularCompetencia) {
+    return handleRunFiscalAction("search_guides", competencia);
+  }
+
+  async function handleCheckPayments(competencia = circularCompetencia) {
+    return handleRunFiscalAction("check_payments", competencia);
+  }
+
+  async function handleSyncInss(competencia = circularCompetencia) {
+    return handleRunFiscalAction("sync_inss", competencia);
+  }
+
   useEffect(() => {
     if (page === "companyDetail" && selectedCompanyId) {
       setEntriesMessage("");
@@ -245,8 +349,13 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     circularData,
     loadingCircular,
     circularYear,
+    circularCompetencia,
+    savingCircular,
+    approvingCircularEntryId,
     entriesMessage,
     entriesError,
+    runningFiscalAction,
+    lastFiscalResult,
     loadChartOfAccounts,
     loadAccountingEntries,
     loadCircular,
@@ -267,6 +376,13 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     handleImportAccountsFile,
     handleExportEntriesCsv,
     handleCircularYearChange,
+    setCircularCompetencia,
+    handleSaveCircular,
+    handleApproveCircularEntry,
+    handleRunFiscalAction,
+    handleSearchGuides,
+    handleCheckPayments,
+    handleSyncInss,
     resetWorkspace,
   };
 }

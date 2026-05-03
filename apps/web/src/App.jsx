@@ -24,6 +24,18 @@ function App() {
     page: session.page,
     setPage: session.setPage,
     feedback,
+    onPgdasSynced: async (companyId, payload) => {
+      if (session.page === "companyDetail" && companiesWorkspace.companiesState.selectedCompanyId === companyId) {
+        const competencia = payload?.circular?.competencia || accountingWorkspace.circularCompetencia;
+        await accountingWorkspace.loadCircular(accountingWorkspace.circularYear, competencia);
+      }
+    },
+    onInssSynced: async (companyId, payload) => {
+      if (session.page === "companyDetail" && companiesWorkspace.companiesState.selectedCompanyId === companyId) {
+        const competencia = payload?.circular?.competencia || accountingWorkspace.circularCompetencia;
+        await accountingWorkspace.loadCircular(accountingWorkspace.circularYear, competencia);
+      }
+    },
   });
   const accountingWorkspace = useManageAccountingWorkspace({
     api,
@@ -97,6 +109,8 @@ function App() {
         deletingCertificate={companiesWorkspace.deletingSerproCertificate}
         checkingProcuration={companiesWorkspace.checkingSerproProcuration}
         capturingPgdasd={companiesWorkspace.capturingSerproPgdasd}
+        syncingPgdas={companiesWorkspace.syncingSerproPgdas}
+        syncingInss={companiesWorkspace.syncingSerproInss}
         procurationStatus={companiesWorkspace.serproProcurationStatus}
         workerStatus={companiesWorkspace.serproWorkerStatus}
         onSave={companiesWorkspace.handleSaveSerproSettings}
@@ -105,6 +119,8 @@ function App() {
         onLoadProcuration={companiesWorkspace.loadSerproCompanyProcuration}
         onCheckProcuration={companiesWorkspace.handleCheckSerproProcuration}
         onCapturePgdasd={companiesWorkspace.handleCaptureSerproPgdasd}
+        onSyncPgdas={companiesWorkspace.handleSyncSerproPgdas}
+        onSyncInss={companiesWorkspace.handleSyncSerproInss}
         onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
         onBack={() => session.setPage("companies")}
         message={feedback.message}
@@ -144,7 +160,11 @@ function App() {
           loading: companiesWorkspace.guidesState.loadingGuides,
           onRefresh: () => companiesWorkspace.loadGuides(),
           onResendGuide: companiesWorkspace.handleResendGuide,
+          onConfirmGuidePayment: companiesWorkspace.handleConfirmGuidePayment,
+          onRecalculateGuide: companiesWorkspace.handleRecalculateGuide,
           resendingGuideId: companiesWorkspace.guidesState.resendingGuideId,
+          confirmingGuideId: companiesWorkspace.guidesState.confirmingGuideId,
+          recalculatingGuideId: companiesWorkspace.guidesState.recalculatingGuideId,
         }}
         editPanel={{
           form: companiesWorkspace.editCompanyForm.form,
@@ -186,8 +206,19 @@ function App() {
           circularData: accountingWorkspace.circularData,
           loading: accountingWorkspace.loadingCircular,
           year: accountingWorkspace.circularYear,
+          competencia: accountingWorkspace.circularCompetencia,
+          onCompetenciaChange: accountingWorkspace.setCircularCompetencia,
+          savingCircular: accountingWorkspace.savingCircular,
+          approvingCircularEntryId: accountingWorkspace.approvingCircularEntryId,
           onYearChange: accountingWorkspace.handleCircularYearChange,
           onLoadCircular: accountingWorkspace.loadCircular,
+          onSaveCircular: accountingWorkspace.handleSaveCircular,
+          onApproveAccountingEntry: accountingWorkspace.handleApproveCircularEntry,
+          runningFiscalAction: accountingWorkspace.runningFiscalAction,
+          lastFiscalResult: accountingWorkspace.lastFiscalResult,
+          onSearchGuides: accountingWorkspace.handleSearchGuides,
+          onCheckPayments: accountingWorkspace.handleCheckPayments,
+          onSyncInss: accountingWorkspace.handleSyncInss,
         }}
         feedback={{ message: feedback.message, error: feedback.error }}
       />

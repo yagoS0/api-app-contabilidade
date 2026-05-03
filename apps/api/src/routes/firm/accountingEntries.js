@@ -2,6 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
+import { generateEntriesFromCircular } from "../../application/accounting/AccountingEntryGeneratorService.js";
+import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
 
 // ---------------------------------------------------------------------------
 // OFX Parser (SGML v1 e XML v2)
@@ -127,6 +129,21 @@ function entryToResponse(entry) {
 // Meses "YYYY-MM" de um ano
 function monthsOfYear(year) {
   return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+}
+
+function parseMoney(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const normalized = raw.includes(",") ? Number(raw.replace(/\./g, "").replace(",", ".")) : Number(raw);
+  return Number.isFinite(normalized) ? normalized : null;
+}
+
+function parseOptionalDate(value) {
+  if (value == null || value === "") return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 // Cria placeholders de provisão para os meses do ano que ainda não têm entrada
@@ -498,6 +515,195 @@ export function createAccountingEntriesRouter({ log }) {
       provisoes: provisoes.map(entryToResponse),
       receitas: receitasPorComp,
     });
+  });
+
+  // GET /firm/companies/:companyId/circular/:competencia/accounting-entries
+  router.get("/circular/:competencia/accounting-entries", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia || "").trim();
+
+    if (!competencia) return res.status(400).json({ error: "competencia_required" });
+
+    const circular = await prisma.companyMonthlyCircular.findUnique({
+      where: {
+        portalClientId_competencia: {
+          portalClientId,
+          competencia,
+        },
+      },
+    });
+    if (!circular) return res.status(404).json({ error: "circular_nao_encontrada" });
+
+    const entries = await prisma.accountingEntry.findMany({
+      where: {
+        portalClientId,
+        competencia,
+      },
+      include: { lines: { orderBy: { ordem: "asc" } } },
+      orderBy: [{ createdAt: "asc" }],
+    });
+
+    const generatedEntries = await prisma.accountingEntry.findMany({
+      where: {
+        portalClientId,
+        competencia,
+        origem: "SERPRO",
+      },
+      include: { lines: { orderBy: { ordem: "asc" } } },
+      orderBy: [{ createdAt: "asc" }],
+    });
+
+    return res.json({
+      circular,
+      entries: generatedEntries.map(entryToResponse),
+      allEntries: entries.map(entryToResponse),
+    });
+  });
+
+  // PATCH /firm/companies/:companyId/circular/:competencia
+  router.patch("/circular/:competencia", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia || "").trim();
+    if (!competencia) return res.status(400).json({ error: "competencia_required" });
+
+    const body = req.body || {};
+    const data = {};
+    if (body.receitaBruta !== undefined) data.receitaBruta = parseMoney(body.receitaBruta);
+    if (body.receitaServicos !== undefined) data.receitaServicos = parseMoney(body.receitaServicos) ?? 0;
+    if (body.receitaVendas !== undefined) data.receitaVendas = parseMoney(body.receitaVendas) ?? 0;
+    if (body.dasTotal !== undefined) data.dasTotal = parseMoney(body.dasTotal);
+    if (body.dasNumeroDocumento !== undefined) data.dasNumeroDocumento = String(body.dasNumeroDocumento || "").trim() || null;
+    if (body.dasPago !== undefined) data.dasPago = body.dasPago === null ? null : Boolean(body.dasPago);
+    if (body.dasDataEmissao !== undefined) data.dasDataEmissao = parseOptionalDate(body.dasDataEmissao);
+    if (body.inssTotal !== undefined) data.inssTotal = parseMoney(body.inssTotal);
+    if (body.inssVencimento !== undefined) data.inssVencimento = parseOptionalDate(body.inssVencimento);
+    if (body.inssPdfFileId !== undefined) data.inssPdfFileId = String(body.inssPdfFileId || "").trim() || null;
+    if (body.inssPdfUrl !== undefined) data.inssPdfUrl = String(body.inssPdfUrl || "").trim() || null;
+    if (body.inssStatus !== undefined) data.inssStatus = String(body.inssStatus || "").trim().toUpperCase() || null;
+    if (body.pgdasNumeroDeclaracao !== undefined) data.pgdasNumeroDeclaracao = String(body.pgdasNumeroDeclaracao || "").trim() || null;
+    if (body.pgdasDeclaracaoFileId !== undefined) data.pgdasDeclaracaoFileId = String(body.pgdasDeclaracaoFileId || "").trim() || null;
+    if (body.pgdasDeclaracaoFileUrl !== undefined) data.pgdasDeclaracaoFileUrl = String(body.pgdasDeclaracaoFileUrl || "").trim() || null;
+    if (body.pgdasReciboFileId !== undefined) data.pgdasReciboFileId = String(body.pgdasReciboFileId || "").trim() || null;
+    if (body.pgdasReciboFileUrl !== undefined) data.pgdasReciboFileUrl = String(body.pgdasReciboFileUrl || "").trim() || null;
+    if (body.receitaStatus !== undefined) data.receitaStatus = String(body.receitaStatus || "").trim().toUpperCase() || null;
+    if (body.dasStatus !== undefined) data.dasStatus = String(body.dasStatus || "").trim().toUpperCase() || null;
+    if (body.serproSyncStatus !== undefined) data.serproSyncStatus = String(body.serproSyncStatus || "").trim().toUpperCase() || null;
+    if (body.serproLastSyncAt !== undefined) data.serproLastSyncAt = parseOptionalDate(body.serproLastSyncAt);
+    if (body.serproLastError !== undefined) data.serproLastError = String(body.serproLastError || "").trim() || null;
+    if (body.metadata !== undefined) data.metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : null;
+
+    const computedReceitaBruta =
+      body.receitaBruta !== undefined
+        ? data.receitaBruta ?? 0
+        : (body.receitaServicos !== undefined || body.receitaVendas !== undefined)
+          ? Number(data.receitaServicos || 0) + Number(data.receitaVendas || 0)
+          : undefined;
+
+    const circular = await prisma.companyMonthlyCircular.upsert({
+      where: {
+        portalClientId_competencia: { portalClientId, competencia },
+      },
+      create: {
+        portalClientId,
+        competencia,
+        receitaBruta: computedReceitaBruta ?? data.receitaBruta ?? null,
+        receitaServicos: data.receitaServicos ?? 0,
+        receitaVendas: data.receitaVendas ?? 0,
+        dasTotal: data.dasTotal ?? null,
+        dasNumeroDocumento: data.dasNumeroDocumento ?? null,
+        dasPago: data.dasPago ?? null,
+        dasDataEmissao: data.dasDataEmissao ?? null,
+        inssTotal: data.inssTotal ?? null,
+        inssVencimento: data.inssVencimento ?? null,
+        inssPdfFileId: data.inssPdfFileId ?? null,
+        inssPdfUrl: data.inssPdfUrl ?? null,
+        inssStatus: data.inssStatus ?? null,
+        pgdasNumeroDeclaracao: data.pgdasNumeroDeclaracao ?? null,
+        pgdasDeclaracaoFileId: data.pgdasDeclaracaoFileId ?? null,
+        pgdasDeclaracaoFileUrl: data.pgdasDeclaracaoFileUrl ?? null,
+        pgdasReciboFileId: data.pgdasReciboFileId ?? null,
+        pgdasReciboFileUrl: data.pgdasReciboFileUrl ?? null,
+        receitaStatus: data.receitaStatus ?? null,
+        dasStatus: data.dasStatus ?? null,
+        serproSyncStatus: data.serproSyncStatus ?? null,
+        serproLastSyncAt: data.serproLastSyncAt ?? null,
+        serproLastError: data.serproLastError ?? null,
+        metadata: data.metadata ?? null,
+      },
+      update: {
+        ...(body.receitaBruta !== undefined ? { receitaBruta: data.receitaBruta } : {}),
+        ...(body.receitaServicos !== undefined ? { receitaServicos: data.receitaServicos } : {}),
+        ...(body.receitaVendas !== undefined ? { receitaVendas: data.receitaVendas } : {}),
+        ...(body.dasTotal !== undefined ? { dasTotal: data.dasTotal } : {}),
+        ...(body.dasNumeroDocumento !== undefined ? { dasNumeroDocumento: data.dasNumeroDocumento } : {}),
+        ...(body.dasPago !== undefined ? { dasPago: data.dasPago } : {}),
+        ...(body.dasDataEmissao !== undefined ? { dasDataEmissao: data.dasDataEmissao } : {}),
+        ...(body.inssTotal !== undefined ? { inssTotal: data.inssTotal } : {}),
+        ...(body.inssVencimento !== undefined ? { inssVencimento: data.inssVencimento } : {}),
+        ...(body.inssPdfFileId !== undefined ? { inssPdfFileId: data.inssPdfFileId } : {}),
+        ...(body.inssPdfUrl !== undefined ? { inssPdfUrl: data.inssPdfUrl } : {}),
+        ...(body.inssStatus !== undefined ? { inssStatus: data.inssStatus } : {}),
+        ...(body.pgdasNumeroDeclaracao !== undefined ? { pgdasNumeroDeclaracao: data.pgdasNumeroDeclaracao } : {}),
+        ...(body.pgdasDeclaracaoFileId !== undefined ? { pgdasDeclaracaoFileId: data.pgdasDeclaracaoFileId } : {}),
+        ...(body.pgdasDeclaracaoFileUrl !== undefined ? { pgdasDeclaracaoFileUrl: data.pgdasDeclaracaoFileUrl } : {}),
+        ...(body.pgdasReciboFileId !== undefined ? { pgdasReciboFileId: data.pgdasReciboFileId } : {}),
+        ...(body.pgdasReciboFileUrl !== undefined ? { pgdasReciboFileUrl: data.pgdasReciboFileUrl } : {}),
+        ...(body.receitaStatus !== undefined ? { receitaStatus: data.receitaStatus } : {}),
+        ...(body.dasStatus !== undefined ? { dasStatus: data.dasStatus } : {}),
+        ...(body.serproSyncStatus !== undefined ? { serproSyncStatus: data.serproSyncStatus } : {}),
+        ...(body.serproLastSyncAt !== undefined ? { serproLastSyncAt: data.serproLastSyncAt } : {}),
+        ...(body.serproLastError !== undefined ? { serproLastError: data.serproLastError } : {}),
+        ...(body.metadata !== undefined ? { metadata: data.metadata } : {}),
+      },
+    });
+
+    const accounting = await generateEntriesFromCircular({ portalClientId, competencia });
+    return res.json({ ok: true, circular, accounting });
+  });
+
+  router.post("/circular/:competencia/sync-pgdas", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId || "").trim();
+    const competencia = String(req.params.competencia || "").trim();
+    const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim();
+
+    if (!portalClientId) return res.status(400).json({ ok: false, error: "company_id_required" });
+    if (!competencia) return res.status(400).json({ ok: false, error: "competencia_required" });
+
+    try {
+      const result = await syncPgdasByCompetencia({
+        portalClientId,
+        competencia,
+        contratanteCnpj: contratanteCnpj || undefined,
+      });
+      return res.json({ ok: true, result });
+    } catch (err) {
+      const code = err?.code || "SERPRO_PGDASD_SYNC_FAILED";
+      const message = err?.message || "Erro ao sincronizar PGDAS-D.";
+      if (
+        [
+          "SERPRO_INVALID_COMPETENCIA",
+          "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED",
+          "SERPRO_AUTH_URL_NOT_CONFIGURED",
+          "SERPRO_BASE_URL_NOT_CONFIGURED",
+          "SERPRO_CONSUMER_KEY_NOT_CONFIGURED",
+          "SERPRO_CONSUMER_SECRET_NOT_CONFIGURED",
+          "SERPRO_CERTIFICATE_NOT_CONFIGURED",
+          "SERPRO_CERT_FILE_NOT_FOUND",
+          "SERPRO_CERT_PASSWORD_NOT_FOUND",
+          "SERPRO_PGDASD_DADOS_NOT_FOUND",
+          "SERPRO_PGDASD_DADOS_INVALID",
+          "SERPRO_PGDASD_PDF_INVALID",
+          "SERPRO_INVALID_CONTRIBUINTE_CNPJ",
+        ].includes(code)
+      ) {
+        return res.status(400).json({ ok: false, error: code, reason: message });
+      }
+      if (code === "PORTAL_COMPANY_NOT_FOUND") {
+        return res.status(404).json({ ok: false, error: code, reason: message });
+      }
+      log.error({ err: err?.message || err, code, portalClientId, competencia }, "Falha ao sincronizar PGDAS-D");
+      return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
+    }
   });
 
   // GET /firm/companies/:companyId/entries/provisoes  (deve vir antes de /entries/:entryId)
@@ -958,6 +1164,28 @@ export function createAccountingEntriesRouter({ log }) {
       log.error({ err }, "Erro ao atualizar lançamento");
       return res.status(500).json({ error: "internal_error" });
     }
+  });
+
+  // PATCH /firm/companies/:companyId/entries/:entryId/approve
+  router.patch("/entries/:entryId/approve", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const entryId = String(req.params.entryId);
+
+    const existing = await prisma.accountingEntry.findFirst({
+      where: { id: entryId, portalClientId },
+    });
+    if (!existing) return res.status(404).json({ error: "lancamento_nao_encontrado" });
+    if (existing.status === "EXPORTADO") {
+      return res.status(400).json({ error: "lancamento_ja_exportado" });
+    }
+
+    const updated = await prisma.accountingEntry.update({
+      where: { id: entryId },
+      data: { status: "CONFIRMADO" },
+      include: { lines: { orderBy: { ordem: "asc" } } },
+    });
+
+    return res.json({ ok: true, entry: entryToResponse(updated) });
   });
 
   // DELETE /firm/companies/:companyId/entries/:entryId

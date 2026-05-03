@@ -11,6 +11,9 @@
     "start": "node src/server.js",
     "start:prod": "npm run prisma:generate && npm run prisma:migrate:deploy && node src/server.js",
     "reset-state": "node -e \"const fs=require('fs'); const paths=['./.state.json','./.processed.json','./state.json','./data/last-run.json','./data/sent-emails.jsonl']; for(const p of paths){ try{ fs.unlinkSync(p);}catch(e){} } console.log('State legado limpo (se existir)');\"",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "prisma:generate": "prisma generate",
     "prisma:migrate:status": "prisma migrate status --schema prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
@@ -50,7 +53,11 @@
     "xml-crypto": "^3.0.0"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.29.3",
+    "babel-jest": "^30.3.0",
+    "jest": "^30.3.0",
     "pino-pretty": "^10.3.1",
-    "prisma": "^5.22.0"
+    "prisma": "^5.22.0",
+    "supertest": "^7.2.2"
   }
 }

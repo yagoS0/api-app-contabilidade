@@ -7,6 +7,14 @@ import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRun
 import { SerproProcurationService } from "../application/fiscal/serpro/SerproProcurationService.js";
 import { capturePgdasGuideForCompany } from "../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
+import {
+  SERPRO_PGDASD_SERVICE_COBRANCA,
+} from "../application/fiscal/serpro/SerproPgdasdService.js";
+import {
+  getGuideDueDate,
+  markGuideOverdueBySerpro,
+  markGuidePaidBySerpro,
+} from "../application/guides/GuidePaymentStatusService.js";
 
 const LOCK_ID = "serpro_pgdasd_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
@@ -109,6 +117,37 @@ async function listEligiblePortalCompanies() {
   return eligible;
 }
 
+async function listGuidesDueForSerproRecheck(now = new Date()) {
+  const guides = await prisma.guide.findMany({
+    where: {
+      source: "SERPRO",
+      tipo: "SIMPLES",
+      status: "PROCESSED",
+      paymentStatus: "OPEN",
+      portalClientId: { not: null },
+    },
+    select: {
+      id: true,
+      portalClientId: true,
+      competencia: true,
+      vencimento: true,
+      paymentStatus: true,
+      portalClient: {
+        select: {
+          id: true,
+          razao: true,
+          cnpj: true,
+        },
+      },
+    },
+  });
+
+  return guides.filter((guide) => {
+    const dueDate = getGuideDueDate(guide, now);
+    return dueDate && dueDate.getTime() <= now.getTime();
+  });
+}
+
 export async function runSerproPgdasdWorkerOnce(options = {}) {
   const locked = await acquireLock();
   if (!locked) return { skipped: true, reason: "lock_active" };
@@ -153,6 +192,7 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
           status: "captured",
           guideId: capture.guide.guideId,
           integration: capture.integration,
+          serviceId: capture.integration?.servico || null,
         });
       } catch (err) {
         results.push({
@@ -169,6 +209,58 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
       }
     }
 
+    const recheckResults = [];
+    const guidesDueForRecheck = await listGuidesDueForSerproRecheck();
+    for (const guide of guidesDueForRecheck) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const capture = await capturePgdasGuideForCompany({
+          portalClientId: guide.portalClientId,
+          competencia: guide.competencia,
+          existingGuideId: guide.id,
+          serviceId: SERPRO_PGDASD_SERVICE_COBRANCA,
+        });
+        // eslint-disable-next-line no-await-in-loop
+        await markGuideOverdueBySerpro({ guideId: guide.id });
+        recheckResults.push({
+          guideId: guide.id,
+          companyId: guide.portalClientId,
+          razao: guide.portalClient?.razao || null,
+          cnpj: guide.portalClient?.cnpj || null,
+          competencia: guide.competencia,
+          status: "overdue",
+          integration: capture.integration,
+          serviceId: SERPRO_PGDASD_SERVICE_COBRANCA,
+        });
+      } catch (err) {
+        if (err?.code === "SERPRO_PGDASD_NO_DEBTS_FOUND") {
+          // eslint-disable-next-line no-await-in-loop
+          await markGuidePaidBySerpro({ guideId: guide.id });
+          recheckResults.push({
+            guideId: guide.id,
+            companyId: guide.portalClientId,
+            razao: guide.portalClient?.razao || null,
+            cnpj: guide.portalClient?.cnpj || null,
+            competencia: guide.competencia,
+            status: "paid",
+          });
+          continue;
+        }
+
+        recheckResults.push({
+          guideId: guide.id,
+          companyId: guide.portalClientId,
+          razao: guide.portalClient?.razao || null,
+          cnpj: guide.portalClient?.cnpj || null,
+          competencia: guide.competencia,
+          status: "error",
+          error: err?.code || "SERPRO_PGDASD_RECHECK_FAILED",
+          reason: err?.message || "serpro_pgdasd_recheck_failed",
+          retryable: Boolean(err?.retryable),
+        });
+      }
+    }
+
     const summary = {
       skipped: false,
       competencia,
@@ -176,8 +268,13 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
       captured: results.filter((item) => item.status === "captured").length,
       failed: results.filter((item) => item.status === "error").length,
       skippedByProcuration: results.filter((item) => item.status === "skipped_procuration_inactive").length,
+      recheckedGuides: recheckResults.length,
+      markedPaid: recheckResults.filter((item) => item.status === "paid").length,
+      markedOverdue: recheckResults.filter((item) => item.status === "overdue").length,
+      recheckFailures: recheckResults.filter((item) => item.status === "error").length,
       durationMs: Date.now() - startedAt,
       results,
+      recheckResults,
     };
     await createSerproExecutionLog({
       worker: "serpro_pgdasd",

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "./GuideStorageService.js";
 import { fileNameForGuide, normalizeCompetencia, normalizeGuideType } from "./guideContract.js";
+import { canGuideConfirmPayment, canGuideRecalculate } from "./GuidePaymentStatusService.js";
 
 function normalizeCnpj(value) {
   return String(value || "").replace(/\D+/g, "");
@@ -176,6 +177,7 @@ export async function listPendingGuidesReport({
 }
 
 export function toGuideResponse(item) {
+  const now = new Date();
   return {
     guideId: item.id,
     companyId: item.portalClientId,
@@ -186,6 +188,14 @@ export function toGuideResponse(item) {
     status: item.status,
     emailStatus: item.emailStatus || null,
     emailLastError: item.emailLastError || null,
+    paymentStatus: item.paymentStatus || "OPEN",
+    paymentStatusSource: item.paymentStatusSource || null,
+    paymentConfirmedAt: item.paymentConfirmedAt ? new Date(item.paymentConfirmedAt).toISOString() : null,
+    serproLastCheckedAt: item.serproLastCheckedAt ? new Date(item.serproLastCheckedAt).toISOString() : null,
+    serproLastCheckResult: item.serproLastCheckResult || null,
+    serproService: item.serproService || null,
+    canConfirmPayment: canGuideConfirmPayment(item),
+    canRecalculate: canGuideRecalculate(item, now),
     createdAt: item.createdAt?.toISOString?.() || null,
     updatedAt: item.updatedAt?.toISOString?.() || null,
   };
@@ -256,6 +266,14 @@ export async function createOrUpdateGuideFromProcessing({
   status,
   errors,
   extracted,
+  paymentStatus,
+  paymentStatusSource,
+  paymentConfirmedAt,
+  paymentConfirmedByUserId,
+  serproLastCheckedAt,
+  serproLastCheckResult,
+  serproLastSeenAt,
+  serproService,
 }) {
   const hasDbPdf =
     pdfBytesInput !== undefined &&
@@ -286,6 +304,14 @@ export async function createOrUpdateGuideFromProcessing({
     emailNextRetryAt: null,
     errors: errors || [],
     extracted: extracted || parsed || {},
+    paymentStatus: paymentStatus || "OPEN",
+    paymentStatusSource: paymentStatusSource || null,
+    paymentConfirmedAt: paymentConfirmedAt || null,
+    paymentConfirmedByUserId: paymentConfirmedByUserId ? String(paymentConfirmedByUserId) : null,
+    serproLastCheckedAt: serproLastCheckedAt || null,
+    serproLastCheckResult: serproLastCheckResult || null,
+    serproLastSeenAt: serproLastSeenAt || null,
+    serproService: serproService || null,
   };
 
   if (pdfBytesInput !== undefined) {
@@ -320,4 +346,3 @@ export function buildGuideFinalFileName(parsed) {
     competencia: normalizeCompetencia(parsed?.competencia),
   });
 }
-

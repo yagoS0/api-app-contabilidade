@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
-import { fmtMoney } from "../../../../lib/format";
+import { fmtDate, fmtMoney } from "../../../../lib/format";
 
 function normalizeValue(value) {
   return String(value || "").trim().toUpperCase();
@@ -34,11 +34,26 @@ function formatEmailStatus(status) {
   return { label: status || "-", tone: "default" };
 }
 
+function formatPaymentStatus(status) {
+  const normalized = normalizeValue(status);
+  if (normalized === "PAID") {
+    return { label: "Paga", tone: "success" };
+  }
+  if (normalized === "OVERDUE") {
+    return { label: "Vencida", tone: "danger" };
+  }
+  return { label: "Em aberto", tone: "warning" };
+}
+
 export function CompanyGuidesTable({
   guides,
   loadingGuides,
   onResendGuide,
+  onConfirmGuidePayment,
+  onRecalculateGuide,
   resendingGuideId,
+  confirmingGuideId,
+  recalculatingGuideId,
 }) {
   const [competencia, setCompetencia] = useState("all");
   const [tipo, setTipo] = useState("all");
@@ -103,7 +118,9 @@ export function CompanyGuidesTable({
               <span className="guides-grid__cell guides-grid__cell--type" role="columnheader">Tipo</span>
               <span className="guides-grid__cell guides-grid__cell--competencia" role="columnheader">Competência</span>
               <span className="guides-grid__cell guides-grid__cell--valor" role="columnheader">Valor</span>
+              <span className="guides-grid__cell guides-grid__cell--competencia" role="columnheader">Vencimento</span>
               <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Status</span>
+              <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Situação</span>
               <span className="guides-grid__cell guides-grid__cell--email" role="columnheader">E-mail</span>
               <span className="guides-grid__cell guides-grid__cell--actions" role="columnheader">Ações</span>
             </div>
@@ -112,8 +129,11 @@ export function CompanyGuidesTable({
           <div className="guides-grid__body" role="rowgroup">
             {filteredGuides.map((guide) => {
               const guideId = guide.guideId || guide.id;
-              const isLoading = resendingGuideId === guideId;
+              const isResending = resendingGuideId === guideId;
+              const isConfirming = confirmingGuideId === guideId;
+              const isRecalculating = recalculatingGuideId === guideId;
               const status = formatGuideStatus(guide.status);
+              const paymentStatus = formatPaymentStatus(guide.paymentStatus);
               const emailStatus = formatEmailStatus(guide.emailStatus);
 
               return (
@@ -123,8 +143,12 @@ export function CompanyGuidesTable({
                   <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell">
                     {fmtMoney(guide.valor)}
                   </span>
+                  <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{fmtDate(guide.vencimento)}</span>
                   <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${status.tone}`} role="cell">
                     {status.label}
+                  </span>
+                  <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${paymentStatus.tone}`} role="cell">
+                    {paymentStatus.label}
                   </span>
                   <span className={`guides-grid__cell guides-grid__cell--email guides-grid__tone guides-grid__tone--${emailStatus.tone}`} role="cell">
                     {emailStatus.label}
@@ -136,10 +160,30 @@ export function CompanyGuidesTable({
                         size="sm"
                         type="button"
                         className="guides-grid__action"
-                        disabled={isLoading}
+                        disabled={isResending}
                         onClick={() => onResendGuide(guideId)}
                       >
-                        {isLoading ? "..." : "Reenviar"}
+                        {isResending ? "..." : "Reenviar"}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        className="guides-grid__action"
+                        disabled={!guide.canConfirmPayment || isConfirming}
+                        onClick={() => onConfirmGuidePayment(guideId)}
+                      >
+                        {isConfirming ? "..." : "Confirmar pagamento"}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        className="guides-grid__action"
+                        disabled={!guide.canRecalculate || isRecalculating}
+                        onClick={() => onRecalculateGuide(guideId)}
+                      >
+                        {isRecalculating ? "..." : "Recalcular"}
                       </Button>
                       <Button
                         variant="secondary"

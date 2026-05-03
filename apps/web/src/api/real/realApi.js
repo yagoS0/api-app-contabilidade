@@ -2,8 +2,79 @@ function getApiBaseUrl() {
   return String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 }
 
+function mapKnownError(payload, status) {
+  const code = String(payload?.error || "").trim().toUpperCase();
+  const reason = String(payload?.reason || "").trim();
+
+  if (code === "SERPRO_PGDASD_DECLARATION_NOT_TRANSMITTED") {
+    return "A declaração do PGDAS-D ainda não foi transmitida para esta competência.";
+  }
+  if (code === "SERPRO_PGDASD_NO_AMOUNT_DUE") {
+    return "Não há valor devido nesta competência, então o SERPRO não gerou DAS.";
+  }
+  if (code === "SERPRO_PGDASD_NO_DEBTS_FOUND") {
+    return "Não há débito em cobrança para esta competência no SERPRO.";
+  }
+  if (code === "SERPRO_PGDASD_PDF_NOT_FOUND") {
+    return "O SERPRO respondeu, mas não devolveu um PDF de guia para esta consulta.";
+  }
+  if (code === "SERPRO_PGDASD_PDF_INVALID") {
+    return "O SERPRO retornou um PDF inválido para esta consulta.";
+  }
+  if (code === "SERPRO_DCTFWEB_PDF_NOT_FOUND") {
+    return "O SERPRO respondeu, mas não devolveu um PDF da guia DCTFWeb.";
+  }
+  if (code === "SERPRO_DCTFWEB_PDF_INVALID") {
+    return "O SERPRO retornou um PDF inválido da guia DCTFWeb.";
+  }
+  if (code === "SERPRO_DCTFWEB_SYNC_FAILED") {
+    return "Falha ao sincronizar o INSS via DCTFWeb.";
+  }
+  if (code === "SERPRO_PGDASD_SYNC_FAILED") {
+    return "Falha ao sincronizar o extrato PGDAS-D.";
+  }
+  if (code === "SERPRO_PGDASD_DADOS_NOT_FOUND") {
+    return "O SERPRO não retornou os dados esperados da declaração PGDAS-D.";
+  }
+  if (code === "SERPRO_PGDASD_DADOS_INVALID") {
+    return "O retorno do SERPRO veio em formato inválido para leitura da declaração PGDAS-D.";
+  }
+  if (code === "SERPRO_INVALID_NUMERO_DAS") {
+    return "O número do DAS informado é inválido.";
+  }
+  if (code === "SERPRO_AUTH_ERROR") {
+    return "Falha de autenticação no SERPRO. Verifique certificado, credenciais e autorização.";
+  }
+  if (code === "SERPRO_SERVICE_UNAVAILABLE" || code === "SERPRO_TIMEOUT") {
+    return "O SERPRO está indisponível no momento. Tente novamente em instantes.";
+  }
+  if (code === "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED") {
+    return "O CNPJ do procurador não está configurado corretamente no certificado SERPRO.";
+  }
+  if (code === "SERPRO_CERTIFICATE_NOT_CONFIGURED") {
+    return "Nenhum certificado SERPRO foi configurado para esta integração.";
+  }
+  if (code === "SERPRO_INVALID_COMPETENCIA") {
+    return "A competência informada é inválida para a consulta do SERPRO.";
+  }
+  if (code === "GUIDE_RECALCULATION_NOT_AVAILABLE") {
+    return "O recálculo só fica disponível após o vencimento da guia.";
+  }
+  if (code === "CIRCULAR_NAO_ENCONTRADA") {
+    return "Nenhuma Circular foi encontrada para esta competência.";
+  }
+  if (code === "COMPETENCIA_REQUIRED") {
+    return "A competência é obrigatória.";
+  }
+  if (code === "ACCOUNTING_GENERATION_FAILED") {
+    return "A circular foi salva, mas a geração dos lançamentos falhou.";
+  }
+
+  return reason || payload?.error || `request_failed_${status}`;
+}
+
 function normalizeError(payload, status) {
-  return payload?.reason || payload?.error || `request_failed_${status}`;
+  return mapKnownError(payload, status);
 }
 
 function buildCompanyPayload(input) {
@@ -112,6 +183,12 @@ export function createRealApi() {
     async resendGuideEmail(guideId) {
       return request(`/firm/guides/${guideId}/resend-email`, { method: "POST" });
     },
+    async confirmGuidePayment(guideId) {
+      return request(`/firm/guides/${guideId}/confirm-payment`, { method: "POST" });
+    },
+    async recalculateGuide(guideId) {
+      return request(`/firm/guides/${guideId}/recalculate`, { method: "POST" });
+    },
     async getGuideSettings() {
       return request("/firm/guides/settings");
     },
@@ -158,6 +235,12 @@ export function createRealApi() {
     },
     async captureSerproPgdasd(companyId, input = {}) {
       return request(`/firm/companies/${companyId}/serpro/pgdasd/capture`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    async syncSerproInss(companyId, input = {}) {
+      return request(`/firm/companies/${companyId}/serpro/inss/sync`, {
         method: "POST",
         body: JSON.stringify(input),
       });
@@ -286,6 +369,26 @@ export function createRealApi() {
       const q = year ? `?year=${year}` : "";
       return request(`/firm/companies/${companyId}/entries/circular${q}`);
     },
+    async getCircularAccountingEntries(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/circular/${encodeURIComponent(competencia)}/accounting-entries`);
+    },
+    async updateCircular(companyId, competencia, input = {}) {
+      return request(`/firm/companies/${companyId}/circular/${encodeURIComponent(competencia)}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+    },
+    async syncPgdasCircular(companyId, competencia, input = {}) {
+      return request(`/firm/companies/${companyId}/circular/${encodeURIComponent(competencia)}/sync-pgdas`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    async approveAccountingEntry(companyId, entryId) {
+      return request(`/firm/companies/${companyId}/entries/${entryId}/approve`, {
+        method: "PATCH",
+      });
+    },
     async previewOFX(companyId, file) {
       const formData = new FormData();
       formData.append("file", file);
@@ -338,6 +441,13 @@ export function createRealApi() {
       if (params.status) query.set("status", params.status);
       const suffix = query.toString() ? `?${query.toString()}` : "";
       return `${baseUrl}/firm/companies/${companyId}/entries/export/csv${suffix}`;
+    },
+
+    async runCompanyFiscalAction(companyId, input) {
+      return request(`/firm/companies/${companyId}/fiscal/run`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
     },
   };
 }

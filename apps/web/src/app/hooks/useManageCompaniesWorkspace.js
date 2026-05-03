@@ -7,7 +7,7 @@ import {
   useCompanyForm,
 } from "../../features/companies/form/hooks/useManageCompanyForm";
 
-export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
+export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced }) {
   const companiesState = useCompanies();
   const guidesState = useCompanyGuides();
   const createCompanyForm = useCompanyForm(getInitialCompanyFormState());
@@ -22,6 +22,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
   const [deletingSerproCertificate, setDeletingSerproCertificate] = useState(false);
   const [checkingSerproProcuration, setCheckingSerproProcuration] = useState(false);
   const [capturingSerproPgdasd, setCapturingSerproPgdasd] = useState(false);
+  const [syncingSerproPgdas, setSyncingSerproPgdas] = useState(false);
+  const [syncingSerproInss, setSyncingSerproInss] = useState(false);
   const [serproProcurationStatus, setSerproProcurationStatus] = useState(null);
   const [serproWorkerStatus, setSerproWorkerStatus] = useState(null);
   const [pendingGuides, setPendingGuides] = useState([]);
@@ -196,6 +198,69 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     }
   }
 
+  async function handleSyncSerproPgdas(companyId, input = {}) {
+    if (!companyId) {
+      feedback.setError("Selecione uma empresa para sincronizar o PGDAS-D.");
+      return false;
+    }
+    const competencia = String(input?.competencia || "").trim();
+    if (!competencia) {
+      feedback.setError("Informe a competência para sincronizar o PGDAS-D.");
+      return false;
+    }
+    setSyncingSerproPgdas(true);
+    feedback.clearFeedback();
+    try {
+      const payload = await api.syncPgdasCircular(companyId, competencia, {
+        contratanteCnpj: input?.contratanteCnpj || undefined,
+      });
+      if (payload?.result?.circular?.serproSyncStatus === "NOT_FOUND") {
+        feedback.setMessage("Nenhuma declaração PGDAS-D transmitida foi encontrada para essa competência.");
+      } else {
+        feedback.setMessage("Extrato PGDAS-D sincronizado com sucesso.");
+      }
+      if (typeof onPgdasSynced === "function") {
+        try {
+          await onPgdasSynced(companyId, payload?.result || null);
+        } catch {
+          // best-effort refresh
+        }
+      }
+      return payload?.result || null;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao sincronizar o PGDAS-D.");
+      return false;
+    } finally {
+      setSyncingSerproPgdas(false);
+    }
+  }
+
+  async function handleSyncSerproInss(companyId, input = {}) {
+    if (!companyId) {
+      feedback.setError("Selecione uma empresa para sincronizar o INSS.");
+      return false;
+    }
+    setSyncingSerproInss(true);
+    feedback.clearFeedback();
+    try {
+      const payload = await api.syncSerproInss(companyId, input);
+      feedback.setMessage("INSS sincronizado com sucesso.");
+      if (typeof onInssSynced === "function") {
+        try {
+          await onInssSynced(companyId, payload?.result || null);
+        } catch {
+          // best-effort refresh
+        }
+      }
+      return payload?.result || null;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao sincronizar INSS.");
+      return false;
+    } finally {
+      setSyncingSerproInss(false);
+    }
+  }
+
   async function loadPendingGuidesReport() {
     setLoadingPendingGuides(true);
     feedback.clearFeedback();
@@ -282,6 +347,47 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     }
   }
 
+  async function handleConfirmGuidePayment(guideId) {
+    if (!guideId) {
+      feedback.setError("guide_id_not_found");
+      return;
+    }
+    guidesState.setConfirmingGuideId(guideId);
+    feedback.clearFeedback();
+    try {
+      await api.confirmGuidePayment(guideId);
+      feedback.setMessage("Guia marcada como paga.");
+      await loadGuides();
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao confirmar pagamento da guia");
+    } finally {
+      guidesState.setConfirmingGuideId("");
+    }
+  }
+
+  async function handleRecalculateGuide(guideId) {
+    if (!guideId) {
+      feedback.setError("guide_id_not_found");
+      return;
+    }
+    guidesState.setRecalculatingGuideId(guideId);
+    feedback.clearFeedback();
+    try {
+      const payload = await api.recalculateGuide(guideId);
+      const skipped = Boolean(payload?.emailDispatch?.skipped);
+      feedback.setMessage(
+        skipped
+          ? "Guia recalculada, mas o envio automático está ocupado no momento."
+          : "Guia recalculada e enviada para a fila de e-mail."
+      );
+      await loadGuides();
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao recalcular guia");
+    } finally {
+      guidesState.setRecalculatingGuideId("");
+    }
+  }
+
   async function handleGuideUpload(files) {
     if (!Array.isArray(files) || !files.length) {
       feedback.setError("Selecione pelo menos um PDF para enviar.");
@@ -353,6 +459,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     companiesState.setSelectedCompanyId("");
     guidesState.setGuides([]);
     guidesState.setResendingGuideId("");
+    guidesState.setConfirmingGuideId("");
+    guidesState.setRecalculatingGuideId("");
     createCompanyForm.reset();
     editCompanyForm.reset();
     setCompanyDetailTab("guides");
@@ -410,6 +518,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     deletingSerproCertificate,
     checkingSerproProcuration,
     capturingSerproPgdasd,
+    syncingSerproPgdas,
+    syncingSerproInss,
     serproProcurationStatus,
     serproWorkerStatus,
     handleSaveSerproSettings,
@@ -418,6 +528,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     loadSerproCompanyProcuration,
     handleCheckSerproProcuration,
     handleCaptureSerproPgdasd,
+    handleSyncSerproPgdas,
+    handleSyncSerproInss,
     loadSerproWorkerStatus,
     pendingGuides,
     selectedPendingGuideIds,
@@ -436,6 +548,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback }) {
     handleCreateCompany,
     handleUpdateCompany,
     handleResendGuide,
+    handleConfirmGuidePayment,
+    handleRecalculateGuide,
     handleGuideUpload,
     togglePendingGuideSelection,
     toggleAllPendingGuides,

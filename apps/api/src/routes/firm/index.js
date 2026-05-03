@@ -18,6 +18,7 @@ import {
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
+import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import {
   getFriendlyGuideMessage,
   getGuidePdfBuffer,
@@ -50,11 +51,21 @@ import {
   uploadSerproCertificate,
 } from "../../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
+import { syncSerproInssForCompany } from "../../application/fiscal/serpro/SerproDctfwebService.js";
 import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
+import { FiscalManualRunService } from "../../application/fiscal/FiscalManualRunService.js";
 import {
   computeGuideComplianceMap,
   getReferenceCompetencia,
 } from "../../application/guides/guideCompliance.js";
+import {
+  canGuideRecalculate,
+  markGuideOpenBySerpro,
+  markGuidePaidManual,
+} from "../../application/guides/GuidePaymentStatusService.js";
+import {
+  SERPRO_PGDASD_SERVICE_COBRANCA,
+} from "../../application/fiscal/serpro/SerproPgdasdService.js";
 
 async function attachGuideComplianceToCompaniesList(data) {
   if (!Array.isArray(data) || !data.length) return data;
@@ -127,6 +138,29 @@ async function attachSerproStatusToCompaniesList(data) {
       },
     };
   });
+}
+
+async function getGuideWithFirmAccess({ guideId, user }) {
+  const guide = await prisma.guide.findUnique({
+    where: { id: String(guideId) },
+  });
+  if (!guide) return { guide: null, error: "not_found", status: 404 };
+  if (!guide.portalClientId) return { guide: null, error: "guide_has_no_company", status: 400 };
+
+  const access = await prisma.companyFirmAccess.findUnique({
+    where: {
+      companyId_userId: {
+        companyId: guide.portalClientId,
+        userId: String(user.id),
+      },
+    },
+  });
+  const appRole = String(user.role || "").toLowerCase();
+  if (!access && !["admin", "contador"].includes(appRole)) {
+    return { guide: null, error: "forbidden", status: 403 };
+  }
+
+  return { guide, error: null, status: 200 };
 }
 
 function sanitizeFirmRole(role) {
@@ -1298,15 +1332,98 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   );
 
   router.post(
+    "/guides/:guideId/confirm-payment",
+    requireAccountType("FIRM"),
+    async (req, res) => {
+      const { guideId } = req.params || {};
+      const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
+      if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
+      if (scoped.guide.status !== "PROCESSED") {
+        return res.status(400).json({ error: "guide_not_processed" });
+      }
+
+      const updated = await markGuidePaidManual({
+        guideId: scoped.guide.id,
+        userId: req.auth.user.id,
+      });
+      return res.json({ ok: true, guide: toGuideResponse(updated) });
+    }
+  );
+
+  router.post(
+    "/guides/:guideId/recalculate",
+    requireAccountType("FIRM"),
+    async (req, res) => {
+      const { guideId } = req.params || {};
+      const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
+      if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
+      if (scoped.guide.status !== "PROCESSED") {
+        return res.status(400).json({ error: "guide_not_processed" });
+      }
+      if (!canGuideRecalculate(scoped.guide, new Date())) {
+        return res.status(400).json({ error: "guide_recalculation_not_available" });
+      }
+
+      try {
+        const result = await capturePgdasGuideForCompany({
+          portalClientId: scoped.guide.portalClientId,
+          competencia: scoped.guide.competencia,
+          existingGuideId: scoped.guide.id,
+          serviceId: SERPRO_PGDASD_SERVICE_COBRANCA,
+        });
+        await markGuideOpenBySerpro({ guideId: result.guide.guideId });
+
+        const emailResult = await runGuideEmailWorkerSelected({
+          guideIds: [result.guide.guideId],
+        });
+
+        return res.json({
+          ok: true,
+          result,
+          emailDispatch: emailResult,
+        });
+      } catch (err) {
+        const code = err?.code || "SERPRO_PGDASD_RECALCULATE_FAILED";
+        const message = err?.message || "Falha ao recalcular guia PGDAS-D no SERPRO.";
+
+        if (
+          [
+            "SERPRO_PGDASD_DISABLED",
+            "SERPRO_PGDASD_NO_DEBTS_FOUND",
+            "SERPRO_PGDASD_NO_AMOUNT_DUE",
+            "SERPRO_PGDASD_DECLARATION_NOT_TRANSMITTED",
+            "SERPRO_INVALID_COMPETENCIA",
+            "SERPRO_INVALID_CONTRATANTE_CNPJ",
+            "SERPRO_INVALID_CONTRIBUINTE_CNPJ",
+            "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED",
+            "SERPRO_AUTH_URL_NOT_CONFIGURED",
+            "SERPRO_BASE_URL_NOT_CONFIGURED",
+            "SERPRO_CONSUMER_KEY_NOT_CONFIGURED",
+            "SERPRO_CONSUMER_SECRET_NOT_CONFIGURED",
+            "SERPRO_CERTIFICATE_NOT_CONFIGURED",
+            "SERPRO_CERT_FILE_NOT_FOUND",
+            "SERPRO_CERT_PASSWORD_NOT_FOUND",
+            "SERPRO_PGDASD_PDF_NOT_FOUND",
+            "SERPRO_PGDASD_PDF_INVALID",
+          ].includes(code)
+        ) {
+          return res.status(400).json({ ok: false, error: code, reason: message });
+        }
+
+        log.error({ err: err?.message || err, code, guideId }, "Falha no recalculo manual PGDAS-D");
+        return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
+      }
+    }
+  );
+
+  router.post(
     "/guides/:guideId/resend-email",
     requireAccountType("FIRM"),
     async (req, res) => {
       const { guideId } = req.params || {};
-      const guide = await prisma.guide.findUnique({
-        where: { id: String(guideId) },
-        select: { id: true, status: true, portalClientId: true, emailStatus: true },
-      });
-      if (!guide) return res.status(404).json({ error: "not_found" });
+      const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
+      if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
+      const guide = scoped.guide;
       if (guide.status !== "PROCESSED") {
         return res.status(400).json({
           error: "guide_not_processed",
@@ -1315,18 +1432,6 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
       if (!guide.portalClientId) {
         return res.status(400).json({ error: "guide_has_no_company", reason: "Guia sem empresa vinculada" });
-      }
-      const access = await prisma.companyFirmAccess.findUnique({
-        where: {
-          companyId_userId: {
-            companyId: guide.portalClientId,
-            userId: String(req.auth.user.id),
-          },
-        },
-      });
-      const appRole = String(req.auth.user.role || "").toLowerCase();
-      if (!access && !["admin", "contador"].includes(appRole)) {
-        return res.status(403).json({ error: "forbidden" });
       }
 
       const updated = await prisma.guide.update({
@@ -1405,6 +1510,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const portalCompanyId = String(req.params.companyId || "").trim();
       const competencia = normalizeCompetencia(req.body?.competencia || req.query?.competencia || "");
       const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim();
+      const serviceId = String(req.body?.serviceId || req.query?.serviceId || "").trim() || null;
 
       if (!portalCompanyId) {
         return res.status(400).json({ ok: false, error: "company_id_required" });
@@ -1418,6 +1524,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           portalClientId: portalCompanyId,
           competencia,
           contratanteCnpj: contratanteCnpj || undefined,
+          serviceId,
         });
         return res.json({ ok: true, result });
       } catch (err) {
@@ -1428,6 +1535,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           [
             "SERPRO_PGDASD_DISABLED",
             "SERPRO_PGDASD_NO_DEBTS_FOUND",
+            "SERPRO_PGDASD_NO_AMOUNT_DUE",
+            "SERPRO_PGDASD_DECLARATION_NOT_TRANSMITTED",
             "SERPRO_INVALID_COMPETENCIA",
             "SERPRO_INVALID_CONTRATANTE_CNPJ",
             "SERPRO_INVALID_CONTRIBUINTE_CNPJ",
@@ -1449,6 +1558,60 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
 
         log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha na captura manual PGDAS-D");
+        return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
+      }
+    }
+  );
+
+  router.post(
+    "/companies/:companyId/serpro/inss/sync",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      const competencia = String(req.body?.competencia || req.query?.competencia || "").trim();
+      const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim();
+
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+      if (!competencia) {
+        return res.status(400).json({ ok: false, error: "competencia_required" });
+      }
+
+      try {
+        const result = await syncSerproInssForCompany({
+          portalClientId: portalCompanyId,
+          competencia,
+          contratanteCnpj: contratanteCnpj || undefined,
+        });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        const code = err?.code || "SERPRO_DCTFWEB_SYNC_FAILED";
+        const message = err?.message || "Falha ao sincronizar INSS no SERPRO.";
+
+        if (
+          [
+            "SERPRO_INVALID_COMPETENCIA",
+            "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED",
+            "SERPRO_AUTH_URL_NOT_CONFIGURED",
+            "SERPRO_BASE_URL_NOT_CONFIGURED",
+            "SERPRO_CONSUMER_KEY_NOT_CONFIGURED",
+            "SERPRO_CONSUMER_SECRET_NOT_CONFIGURED",
+            "SERPRO_CERTIFICATE_NOT_CONFIGURED",
+            "SERPRO_CERT_FILE_NOT_FOUND",
+            "SERPRO_CERT_PASSWORD_NOT_FOUND",
+            "SERPRO_DCTFWEB_PDF_NOT_FOUND",
+            "SERPRO_DCTFWEB_PDF_INVALID",
+          ].includes(code)
+        ) {
+          return res.status(400).json({ ok: false, error: code, reason: message });
+        }
+
+        if (code === "PORTAL_COMPANY_NOT_FOUND") {
+          return res.status(404).json({ ok: false, error: code, reason: message });
+        }
+
+        log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha na sincronização de INSS SERPRO");
         return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
       }
     }
@@ -1694,8 +1857,82 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
   });
 
+  router.post(
+    "/companies/:companyId/fiscal/run",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      const action = String(req.body?.action || "").trim().toLowerCase();
+      const competencia = normalizeCompetencia(req.body?.competencia || req.query?.competencia || "");
+      const contratanteCnpj = String(req.body?.contratanteCnpj || req.query?.contratanteCnpj || "").trim() || null;
+      const serviceId = String(req.body?.serviceId || req.query?.serviceId || "").trim() || null;
+
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+      if (!action) {
+        return res.status(400).json({ ok: false, error: "action_required" });
+      }
+      if (!competencia) {
+        return res.status(400).json({ ok: false, error: "competencia_required" });
+      }
+
+      try {
+        const fiscalService = new FiscalManualRunService();
+        const result = await fiscalService.executeAction(action, portalCompanyId, competencia, {
+          contratanteCnpj: contratanteCnpj || undefined,
+          serviceId: serviceId || undefined,
+        });
+
+        return res.json({ ok: true, result });
+      } catch (err) {
+        const code = err?.code || "FISCAL_ACTION_FAILED";
+        const message = err?.message || "Falha ao executar ação fiscal.";
+
+        const knownErrors = [
+          "INVALID_COMPETENCIA",
+          "UNKNOWN_FISCAL_ACTION",
+          "PORTAL_COMPANY_NOT_FOUND",
+          "SERPRO_PGDASD_DISABLED",
+          "SERPRO_PGDASD_NO_DEBTS_FOUND",
+          "SERPRO_PGDASD_NO_AMOUNT_DUE",
+          "SERPRO_PGDASD_DECLARATION_NOT_TRANSMITTED",
+          "SERPRO_INVALID_COMPETENCIA",
+          "SERPRO_INVALID_CONTRATANTE_CNPJ",
+          "SERPRO_INVALID_CONTRIBUINTE_CNPJ",
+          "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED",
+          "SERPRO_AUTH_URL_NOT_CONFIGURED",
+          "SERPRO_BASE_URL_NOT_CONFIGURED",
+          "SERPRO_CONSUMER_KEY_NOT_CONFIGURED",
+          "SERPRO_CONSUMER_SECRET_NOT_CONFIGURED",
+          "SERPRO_CERTIFICATE_NOT_CONFIGURED",
+          "SERPRO_CERT_FILE_NOT_FOUND",
+          "SERPRO_CERT_PASSWORD_NOT_FOUND",
+        ];
+
+        if (knownErrors.includes(code)) {
+          return res.status(400).json({ ok: false, error: code, reason: message });
+        }
+
+        if (code === "PORTAL_COMPANY_NOT_FOUND") {
+          return res.status(404).json({ ok: false, error: code, reason: message });
+        }
+
+        log.error(
+          { err: err?.message || err, code, portalCompanyId, competencia, action },
+          "Falha na execução da ação fiscal manual"
+        );
+        return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
+      }
+    }
+  );
+
   const accountingEntriesRouter = createAccountingEntriesRouter({ log });
   router.use("/companies/:companyId", accountingEntriesRouter);
+
+  const accountingEntryRulesRouter = createAccountingEntryRulesRouter({ log });
+  router.use("/accounting-entry-rules", accountingEntryRulesRouter);
+  router.use("/companies/:companyId/accounting-entry-rules", accountingEntryRulesRouter);
 
   router.use("/companies/:clientId/invoices/sync", syncRouter);
   router.use("/companies/:clientId/invoices", invoicesRouter);
