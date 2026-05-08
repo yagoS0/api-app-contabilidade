@@ -17,13 +17,27 @@ const EVENT_RULE_DEFAULTS = {
     amountSource: "das_total",
     entryDateStrategy: "DUE_DATE",
   },
-  INSS_DCTFWEB: {
-    descriptionTemplate: "VR REF INSS DCTFWEB - {{competencia}}",
-    debitAccountCode: "420",
-    creditAccountCode: "5",
-    amountSource: "inss_total",
-    entryDateStrategy: "DUE_DATE",
+  BAIXA_DAS_SIMPLES: {
+    // Sem contas default — contador deve configurar (passivo a quitar / banco)
+    descriptionTemplate: "PAGAMENTO DAS SIMPLES NACIONAL - {{competencia}}",
+    debitAccountCode: "",
+    creditAccountCode: "",
+    amountSource: "das_total",
+    entryDateStrategy: "MANUAL",
   },
+  // INSS_DCTFWEB removido: INSS é lançado manualmente via folha/pró-labore.
+};
+
+// Metadados de eventTypes expostos para o frontend (rotulagem e agrupamento).
+const EVENT_TYPE_METADATA = {
+  RECEITA_SIMPLES:    { label: "Receita do Simples Nacional", group: "RECEITA" },
+  DAS_SIMPLES:        { label: "Provisão DAS Simples",        group: "PROVISAO" },
+  BAIXA_DAS_SIMPLES:  { label: "Pagamento da DAS Simples",    group: "BAIXA" },
+};
+
+// Mapa de provisão → eventType de baixa correspondente
+export const PROVISAO_TO_BAIXA_EVENT = {
+  DAS_SIMPLES: "BAIXA_DAS_SIMPLES",
 };
 
 function normalizeScope(value) {
@@ -121,6 +135,26 @@ function listRulesWhere({ scope, companyId }) {
 
 export function createAccountingEntryRulesRouter({ log }) {
   const router = Router({ mergeParams: true });
+
+  // GET /event-types — retorna metadata de todos os eventTypes suportados
+  router.get("/event-types", async (_req, res) => {
+    const data = Object.entries(EVENT_TYPE_METADATA).map(([key, meta]) => {
+      const defaults = EVENT_RULE_DEFAULTS[key] || {};
+      return {
+        key,
+        label: meta.label,
+        group: meta.group,
+        defaults: {
+          descriptionTemplate: defaults.descriptionTemplate || "",
+          debitAccountCode: defaults.debitAccountCode || "",
+          creditAccountCode: defaults.creditAccountCode || "",
+          amountSource: defaults.amountSource || "",
+          entryDateStrategy: defaults.entryDateStrategy || "LAST_DAY_OF_MONTH",
+        },
+      };
+    });
+    return res.json({ data });
+  });
 
   router.get("/global", async (req, res) => {
     if (!requireManager(req, res)) return;

@@ -23,8 +23,17 @@ jest.mock("../../../application/fiscal/FiscalManualRunService.js", () => ({
   }),
 }));
 
+jest.mock("../../../infrastructure/db/prisma.js", () => ({
+  prisma: {
+    fiscalExecutionLog: {
+      findMany: jest.fn(),
+    },
+  },
+}));
+
 import { normalizeCompetencia } from "../../../application/guides/guideContract.js";
 import { FiscalManualRunService } from "../../../application/fiscal/FiscalManualRunService.js";
+import { prisma } from "../../../infrastructure/db/prisma.js";
 
 describe("Fiscal Routes", () => {
   let app;
@@ -85,7 +94,6 @@ describe("Fiscal Routes", () => {
           const knownErrors = [
             "INVALID_COMPETENCIA",
             "UNKNOWN_FISCAL_ACTION",
-            "PORTAL_COMPANY_NOT_FOUND",
             "SERPRO_PGDASD_DISABLED",
             "SERPRO_PGDASD_NO_DEBTS_FOUND",
             "SERPRO_PGDASD_NO_AMOUNT_DUE",
@@ -107,6 +115,41 @@ describe("Fiscal Routes", () => {
       }
     );
 
+    router.get(
+      "/companies/:companyId/fiscal/executions",
+      (req, res, next) => {
+        req.auth = req.auth || { user: { id: "user-123", role: "ACCOUNTANT" } };
+        next();
+      },
+      async (req, res) => {
+        const portalCompanyId = String(req.params.companyId || "").trim();
+        const competencia = String(req.query.competencia || "").trim() || null;
+        const action = String(req.query.action || "").trim() || null;
+        const limitRaw = parseInt(req.query.limit, 10);
+        const limit = isNaN(limitRaw) ? 20 : Math.min(Math.max(limitRaw, 1), 100);
+
+        if (!portalCompanyId) {
+          return res.status(400).json({ ok: false, error: "company_id_required" });
+        }
+
+        try {
+          const where = { portalClientId: portalCompanyId };
+          if (competencia) where.competencia = competencia;
+          if (action) where.action = action;
+
+          const data = await prisma.fiscalExecutionLog.findMany({
+            where,
+            orderBy: { startedAt: "desc" },
+            take: limit,
+          });
+
+          return res.json({ ok: true, data });
+        } catch (err) {
+          return res.status(500).json({ ok: false, error: "EXECUTIONS_FETCH_FAILED" });
+        }
+      }
+    );
+
     app.use(router);
   });
 
@@ -114,13 +157,13 @@ describe("Fiscal Routes", () => {
     const companyId = "company-123";
     const competencia = "2026-01";
 
-    it("returns 400 when company_id is missing", async () => {
+    it("returns 404 when company_id route segment is empty (Express no-match)", async () => {
+      // Express does not match :companyId when the segment is empty, so returns 404
       const response = await request(app)
         .post("/companies//fiscal/run")
         .send({ action: "search_guides", competencia });
 
-      expect(response.status).toBe(400);
-      expect(response.body.error).toBe("company_id_required");
+      expect(response.status).toBe(404);
     });
 
     it("returns 400 when action is missing", async () => {
@@ -312,7 +355,7 @@ describe("Fiscal Routes", () => {
       expect(response.body.error).toBe("UNKNOWN_ERROR");
     });
 
-    it("accepts query parameters as fallback", async () => {
+    it("accepts competencia as query param fallback (action must be in body)", async () => {
       normalizeCompetencia.mockReturnValueOnce(competencia);
 
       const mockResult = {
@@ -325,12 +368,138 @@ describe("Fiscal Routes", () => {
 
       mockFiscalService.executeAction.mockResolvedValueOnce(mockResult);
 
+      // action in body, competencia from query string
       const response = await request(app)
-        .post(`/companies/${companyId}/fiscal/run?competencia=${competencia}&action=search_guides`)
-        .send({});
+        .post(`/companies/${companyId}/fiscal/run?competencia=${competencia}`)
+        .send({ action: "search_guides" });
 
       expect(response.status).toBe(200);
       expect(mockFiscalService.executeAction).toHaveBeenCalled();
+    });
+  });
+
+  describe("GET /companies/:companyId/fiscal/executions", () => {
+    const companyId = "company-123";
+
+    const mockLogs = [
+      {
+        id: "log-1",
+        portalClientId: companyId,
+        competencia: "2026-01",
+        action: "search_guides",
+        status: "completed",
+        startedAt: new Date("2026-01-15T10:00:00Z"),
+        completedAt: new Date("2026-01-15T10:00:03Z"),
+        durationMs: 3000,
+        guidesFound: 2,
+        guidesCaptured: 2,
+        guidesUpdated: 0,
+        entriesGenerated: 3,
+        errorCode: null,
+        errorMessage: null,
+      },
+      {
+        id: "log-2",
+        portalClientId: companyId,
+        competencia: "2026-01",
+        action: "check_payments",
+        status: "completed",
+        startedAt: new Date("2026-01-15T11:00:00Z"),
+        completedAt: new Date("2026-01-15T11:00:01Z"),
+        durationMs: 1000,
+        guidesChecked: 2,
+        guidesPaid: 1,
+        guidesOverdue: 0,
+        guidesOpen: 1,
+        errorCode: null,
+        errorMessage: null,
+      },
+    ];
+
+    it("returns list of executions for a company", async () => {
+      prisma.fiscalExecutionLog.findMany.mockResolvedValueOnce(mockLogs);
+
+      const response = await request(app).get(`/companies/${companyId}/fiscal/executions`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.ok).toBe(true);
+      expect(response.body.data).toHaveLength(2);
+      expect(response.body.data[0].action).toBe("search_guides");
+      expect(prisma.fiscalExecutionLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { portalClientId: companyId },
+          orderBy: { startedAt: "desc" },
+          take: 20,
+        })
+      );
+    });
+
+    it("filters by competencia when provided", async () => {
+      prisma.fiscalExecutionLog.findMany.mockResolvedValueOnce([mockLogs[0]]);
+
+      const response = await request(app)
+        .get(`/companies/${companyId}/fiscal/executions?competencia=2026-01`);
+
+      expect(response.status).toBe(200);
+      expect(prisma.fiscalExecutionLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { portalClientId: companyId, competencia: "2026-01" },
+        })
+      );
+    });
+
+    it("filters by action when provided", async () => {
+      prisma.fiscalExecutionLog.findMany.mockResolvedValueOnce([mockLogs[0]]);
+
+      const response = await request(app)
+        .get(`/companies/${companyId}/fiscal/executions?action=search_guides`);
+
+      expect(response.status).toBe(200);
+      expect(prisma.fiscalExecutionLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { portalClientId: companyId, action: "search_guides" },
+        })
+      );
+    });
+
+    it("respects limit parameter (capped at 100)", async () => {
+      prisma.fiscalExecutionLog.findMany.mockResolvedValueOnce([]);
+
+      await request(app).get(`/companies/${companyId}/fiscal/executions?limit=50`);
+
+      expect(prisma.fiscalExecutionLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 50 })
+      );
+    });
+
+    it("caps limit at 100 for large values", async () => {
+      prisma.fiscalExecutionLog.findMany.mockResolvedValueOnce([]);
+
+      await request(app).get(`/companies/${companyId}/fiscal/executions?limit=999`);
+
+      expect(prisma.fiscalExecutionLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 100 })
+      );
+    });
+
+    it("returns 500 when database query fails", async () => {
+      prisma.fiscalExecutionLog.findMany.mockRejectedValueOnce(new Error("DB error"));
+
+      const response = await request(app)
+        .get(`/companies/${companyId}/fiscal/executions`);
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toBe("EXECUTIONS_FETCH_FAILED");
+    });
+
+    it("returns empty array when no executions found", async () => {
+      prisma.fiscalExecutionLog.findMany.mockResolvedValueOnce([]);
+
+      const response = await request(app)
+        .get(`/companies/${companyId}/fiscal/executions`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual([]);
     });
   });
 });

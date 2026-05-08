@@ -1,25 +1,27 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { CaptureSerproGuidesService } from "./serpro/CaptureSerproGuidesService.js";
-import { SerproDctfwebService } from "./serpro/SerproDctfwebService.js";
+import { capturePgdasGuideForCompany } from "./serpro/CaptureSerproGuidesService.js";
+import { syncSerproInssForCompany } from "./serpro/SerproDctfwebService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
 
 /**
  * Orchestrator service for fiscal manual operations.
  * Coordinates search guides, check payments, and sync INSS actions.
+ * Every execution is persisted in FiscalExecutionLog for audit and history.
  */
 export class FiscalManualRunService {
   constructor(options = {}) {
-    this.captureService = options.captureService || new CaptureSerproGuidesService();
-    this.dctfwebService = options.dctfwebService || new SerproDctfwebService();
+    // Injectable for testing; defaults to the real implementations
+    this._captureGuides = options.captureGuides || capturePgdasGuideForCompany;
+    this._syncInss = options.syncInss || syncSerproInssForCompany;
   }
 
   /**
    * Execute a fiscal action for a company and competência.
-   * @param {string} action - Action type: 'search_guides', 'check_payments', 'sync_inss'
-   * @param {string} portalClientId - Company ID
-   * @param {string} competencia - Competência in YYYY-MM format
-   * @param {object} options - Additional options (contratanteCnpj, serviceId, etc.)
-   * @returns {Promise<object>} Result of the action
+   * @param {string} action - 'search_guides' | 'check_payments' | 'sync_inss'
+   * @param {string} portalClientId
+   * @param {string} competencia - YYYY-MM
+   * @param {object} options - contratanteCnpj, serviceId, userId, etc.
+   * @returns {Promise<object>}
    */
   async executeAction(action, portalClientId, competencia, options = {}) {
     const normalizedCompetencia = normalizeCompetencia(competencia);
@@ -29,7 +31,6 @@ export class FiscalManualRunService {
       throw err;
     }
 
-    // Validate company exists
     const company = await prisma.portalClient.findUnique({
       where: { id: String(portalClientId) },
       select: { id: true, cnpj: true },
@@ -41,66 +42,103 @@ export class FiscalManualRunService {
       throw err;
     }
 
-    switch (String(action || "").toLowerCase()) {
-      case "search_guides":
-        return this.handleSearchGuides(portalClientId, normalizedCompetencia, options);
-      case "check_payments":
-        return this.handleCheckPayments(portalClientId, normalizedCompetencia, options);
-      case "sync_inss":
-        return this.handleSyncInss(portalClientId, normalizedCompetencia, options);
-      default:
-        const err = new Error(`Unknown action: ${action}`);
-        err.code = "UNKNOWN_FISCAL_ACTION";
-        throw err;
+    const normalizedAction = String(action || "").toLowerCase();
+    if (!["search_guides", "check_payments", "sync_inss"].includes(normalizedAction)) {
+      const err = new Error(`Unknown action: ${action}`);
+      err.code = "UNKNOWN_FISCAL_ACTION";
+      throw err;
+    }
+
+    const startedAt = Date.now();
+    const log = await prisma.fiscalExecutionLog.create({
+      data: {
+        portalClientId: String(portalClientId),
+        competencia: normalizedCompetencia,
+        action: normalizedAction,
+        status: "running",
+        triggeredBy: options.userId || null,
+      },
+    });
+
+    try {
+      let result;
+      switch (normalizedAction) {
+        case "search_guides":
+          result = await this.handleSearchGuides(portalClientId, normalizedCompetencia, options);
+          break;
+        case "check_payments":
+          result = await this.handleCheckPayments(portalClientId, normalizedCompetencia, options);
+          break;
+        case "sync_inss":
+          result = await this.handleSyncInss(portalClientId, normalizedCompetencia, options);
+          break;
+      }
+
+      const finalStatus = result.status === "skipped" ? "skipped" : "completed";
+      await prisma.fiscalExecutionLog.update({
+        where: { id: log.id },
+        data: {
+          status: finalStatus,
+          completedAt: new Date(),
+          durationMs: Date.now() - startedAt,
+          skipReason: result.reason || null,
+          guidesFound: result.guidesFound ?? null,
+          guidesCaptured: result.guidesCaptured ?? null,
+          guidesUpdated: result.guidesUpdated ?? null,
+          guidesChecked: result.guidesChecked ?? null,
+          guidesPaid: result.guidesPaid ?? null,
+          guidesOverdue: result.guidesOverdue ?? null,
+          guidesOpen: result.guidesOpen ?? null,
+          circularUpdated: result.circularUpdated ?? null,
+          entriesGenerated: result.entriesGenerated ?? null,
+        },
+      });
+
+      return { ...result, executionLogId: log.id };
+    } catch (err) {
+      await prisma.fiscalExecutionLog.update({
+        where: { id: log.id },
+        data: {
+          status: "failed",
+          completedAt: new Date(),
+          durationMs: Date.now() - startedAt,
+          errorCode: err?.code || "UNKNOWN",
+          errorMessage: err?.message || null,
+        },
+      });
+      throw err;
     }
   }
 
-  /**
-   * Search and capture guides from SERPRO PGDAS system.
-   * @private
-   */
+  /** @private */
   async handleSearchGuides(portalClientId, competencia, options) {
-    const contratanteCnpj = options.contratanteCnpj || null;
-    const serviceId = options.serviceId || null;
-
-    // Use existing capture service
-    const result = await this.captureService.captureForCompany({
+    const result = await this._captureGuides({
       portalClientId,
       competencia,
-      contratanteCnpj: contratanteCnpj || undefined,
-      serviceId,
+      contratanteCnpj: options.contratanteCnpj || null,
+      serviceId: options.serviceId || null,
     });
 
     return {
       action: "search_guides",
       competencia,
       status: "completed",
-      guidesFound: result?.guidesFound || 0,
-      guidesCaptured: result?.guidesCaptured || 0,
-      guidesUpdated: result?.guidesUpdated || 0,
-      circularUpdated: Boolean(result?.circularUpdated),
-      entriesGenerated: result?.entriesGenerated || 0,
+      guidesFound: result?.guide ? 1 : 0,
+      guidesCaptured: result?.guide ? 1 : 0,
+      guidesUpdated: 0,
+      circularUpdated: Boolean(result?.circular?.id || result?.circular),
+      entriesGenerated: Array.isArray(result?.accounting?.generatedEntries)
+        ? result.accounting.generatedEntries.length
+        : 0,
       timestamp: new Date().toISOString(),
     };
   }
 
-  /**
-   * Check payment status of guides via SERPRO.
-   * @private
-   */
+  /** @private */
   async handleCheckPayments(portalClientId, competencia, options) {
-    // Fetch guides for this company + competência
     const guides = await prisma.guide.findMany({
-      where: {
-        portalClientId: String(portalClientId),
-        competencia,
-        status: "PROCESSED",
-      },
-      select: {
-        id: true,
-        paymentStatus: true,
-        serproLastCheckedAt: true,
-      },
+      where: { portalClientId: String(portalClientId), competencia, status: "PROCESSED" },
+      select: { id: true, paymentStatus: true, serproLastCheckedAt: true },
     });
 
     if (!guides || guides.length === 0) {
@@ -116,7 +154,6 @@ export class FiscalManualRunService {
       };
     }
 
-    // Count current statuses
     let guidesPaid = 0;
     let guidesOverdue = 0;
     let guidesOpen = 0;
@@ -128,17 +165,10 @@ export class FiscalManualRunService {
       else guidesOpen++;
     }
 
-    // Update last checked timestamp
     const now = new Date();
     await prisma.guide.updateMany({
-      where: {
-        portalClientId: String(portalClientId),
-        competencia,
-        status: "PROCESSED",
-      },
-      data: {
-        serproLastCheckedAt: now,
-      },
+      where: { portalClientId: String(portalClientId), competencia, status: "PROCESSED" },
+      data: { serproLastCheckedAt: now },
     });
 
     return {
@@ -153,62 +183,39 @@ export class FiscalManualRunService {
     };
   }
 
-  /**
-   * Sync INSS via SERPRO DCTFWeb service.
-   * @private
-   */
+  /** @private */
   async handleSyncInss(portalClientId, competencia, options) {
-    // Validate company has procuration certificate configured
-    const company = await prisma.portalClient.findUnique({
-      where: { id: String(portalClientId) },
-      select: { id: true },
+    const result = await this._syncInss({
+      portalClientId,
+      competencia,
+      contratanteCnpj: options.contratanteCnpj || null,
     });
 
-    if (!company) {
-      const err = new Error("Company not found");
-      err.code = "PORTAL_COMPANY_NOT_FOUND";
-      throw err;
-    }
-
-    // Attempt INSS sync
-    try {
-      const result = await this.dctfwebService.syncForCompany({
-        portalClientId,
-        competencia,
-        idServico: options.serviceId || "GERARGUIA31",
-      });
-
+    // "NOT_TRANSMITTED" means the DCTFWeb declaration wasn't sent yet — treat as skipped
+    if (result?.inss?.status === "NOT_TRANSMITTED") {
       return {
         action: "sync_inss",
         competencia,
-        status: "completed",
-        guidesFound: result?.guidesFound || 0,
-        guidesCaptured: result?.guidesCaptured || 0,
-        circularUpdated: Boolean(result?.circularUpdated),
+        status: "skipped",
+        reason: "declaration_not_transmitted",
+        message: "Declaração DCTFWeb ainda não transmitida para esta competência.",
         timestamp: new Date().toISOString(),
       };
-    } catch (err) {
-      // If INSS sync fails, return partial result with error
-      if (err?.code === "SERPRO_DCTFWEB_DECLARATION_NOT_TRANSMITTED") {
-        return {
-          action: "sync_inss",
-          competencia,
-          status: "skipped",
-          reason: "declaration_not_transmitted",
-          message: err.message,
-          timestamp: new Date().toISOString(),
-        };
-      }
-
-      throw err;
     }
+
+    return {
+      action: "sync_inss",
+      competencia,
+      status: "completed",
+      guidesFound: result?.inss ? 1 : 0,
+      guidesCaptured: result?.inss?.pdfFileId ? 1 : 0,
+      circularUpdated: Boolean(result?.circular?.id || result?.circular),
+      timestamp: new Date().toISOString(),
+    };
   }
 
   /**
-   * Get last execution summary for a company + competência.
-   * @param {string} portalClientId - Company ID
-   * @param {string} competencia - Competência in YYYY-MM format
-   * @returns {Promise<object>} Last execution data
+   * Get last execution summary for a company + competência (from circular state).
    */
   async getLastExecution(portalClientId, competencia) {
     const normalizedCompetencia = normalizeCompetencia(competencia);

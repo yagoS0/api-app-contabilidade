@@ -19,6 +19,7 @@ import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
+import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import {
   getFriendlyGuideMessage,
   getGuidePdfBuffer,
@@ -35,7 +36,7 @@ import {
 } from "../../application/guides/GuideRuntimeSettings.js";
 import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
 import { sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
-import { listUnidentifiedGuides, processUploadedGuides } from "../../application/guides/GuideUploadService.js";
+import { listUnidentifiedGuides, processUploadedGuides, uploadGuideForPortalClient } from "../../application/guides/GuideUploadService.js";
 import {
   getCompanyGuideEmailSchedule,
   isAdminLikeUser,
@@ -941,6 +942,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       consumerSecretConfigured: Boolean(settings.consumerSecretConfigured),
       scope: settings.scope,
       timeoutMs: settings.timeoutMs,
+      fetchDay: settings.fetchDay,
+      fetchHour: settings.fetchHour,
       fetchCron: settings.fetchCron,
       certificate: settings.certificate,
       source: settings.source,
@@ -1197,6 +1200,82 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       });
     }
   );
+
+  router.post(
+    "/companies/:companyId/guides/upload",
+    requireFirmCompanyAccess(),
+    upload.single("file"),
+    async (req, res) => {
+      const appRole = String(req.auth?.user?.role || "").toLowerCase();
+      if (!["admin", "contador"].includes(appRole)) {
+        return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+      }
+      const { companyId } = req.params || {};
+      const file = req.file;
+      if (!file?.buffer?.length) {
+        return res.status(400).json({ ok: false, error: "file_required", message: "Selecione um PDF para enviar." });
+      }
+      let metadata = null;
+      if (req.body?.metadata) {
+        try { metadata = JSON.parse(req.body.metadata); } catch { metadata = null; }
+      }
+      try {
+        const result = await uploadGuideForPortalClient({
+          portalClientId: companyId,
+          fileBuffer: file.buffer,
+          fileName: file.originalname || "guia.pdf",
+          metadata,
+        });
+        if (result.needsMetadata) {
+          return res.json({ ok: false, needsMetadata: true, parsed: result.parsed });
+        }
+        let emailStatus = "PENDING";
+        let emailMessage = "Guia processada e aguardando envio.";
+        try {
+          const emailResult = await runGuideEmailWorkerSelected({ guideIds: [String(result.guideId)] });
+          if (emailResult?.skipped && emailResult?.reason === "lock_active") {
+            emailMessage = "Guia processada. O envio automático está ocupado no momento.";
+          } else {
+            const sent = Number(emailResult?.sent || 0);
+            emailStatus = sent > 0 ? "SENT" : "PENDING";
+            emailMessage = sent > 0 ? "Guia processada e e-mail enviado com sucesso." : emailMessage;
+          }
+        } catch {
+          // email failure is non-fatal
+        }
+        return res.json({ ok: true, guide: toGuideResponse(result.guide), emailStatus, emailMessage });
+      } catch (err) {
+        log.error({ err }, "Falha ao processar upload de guia para empresa");
+        return res.status(500).json({
+          ok: false,
+          error: err?.code || "guide_upload_failed",
+          message: getFriendlyGuideMessage({ code: err?.code, reason: err?.message }),
+        });
+      }
+    }
+  );
+
+  router.delete("/guides/:guideId", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const { guideId } = req.params;
+    try {
+      const guide = await prisma.guide.findFirst({
+        where: { id: String(guideId) },
+        select: { id: true, portalClientId: true },
+      });
+      if (!guide) {
+        return res.status(404).json({ ok: false, error: "guide_not_found" });
+      }
+      await prisma.guide.delete({ where: { id: guide.id } });
+      return res.json({ ok: true, guideId: guide.id });
+    } catch (err) {
+      log.error({ err }, "Falha ao excluir guia");
+      return res.status(500).json({ ok: false, error: "guide_delete_failed", message: err?.message });
+    }
+  });
 
   router.get("/guides/pending-report", requireAccountType("FIRM"), async (req, res) => {
     const appRole = String(req.auth.user.role || "").toLowerCase();
@@ -1892,7 +1971,6 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         const knownErrors = [
           "INVALID_COMPETENCIA",
           "UNKNOWN_FISCAL_ACTION",
-          "PORTAL_COMPANY_NOT_FOUND",
           "SERPRO_PGDASD_DISABLED",
           "SERPRO_PGDASD_NO_DEBTS_FOUND",
           "SERPRO_PGDASD_NO_AMOUNT_DUE",
@@ -1927,12 +2005,151 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
   );
 
+  router.get(
+    "/companies/:companyId/fiscal/executions",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      const competencia = String(req.query.competencia || "").trim() || null;
+      const action = String(req.query.action || "").trim() || null;
+      const limitRaw = parseInt(req.query.limit, 10);
+      const limit = isNaN(limitRaw) ? 20 : Math.min(Math.max(limitRaw, 1), 100);
+
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+
+      try {
+        const where = { portalClientId: portalCompanyId };
+        if (competencia) where.competencia = competencia;
+        if (action) where.action = action;
+
+        const data = await prisma.fiscalExecutionLog.findMany({
+          where,
+          orderBy: { startedAt: "desc" },
+          take: limit,
+        });
+
+        return res.json({ ok: true, data });
+      } catch (err) {
+        log.error({ err: err?.message || err, portalCompanyId }, "Falha ao buscar histórico de execuções fiscais");
+        return res.status(500).json({ ok: false, error: "EXECUTIONS_FETCH_FAILED" });
+      }
+    }
+  );
+
   const accountingEntriesRouter = createAccountingEntriesRouter({ log });
   router.use("/companies/:companyId", accountingEntriesRouter);
 
   const accountingEntryRulesRouter = createAccountingEntryRulesRouter({ log });
   router.use("/accounting-entry-rules", accountingEntryRulesRouter);
   router.use("/companies/:companyId/accounting-entry-rules", accountingEntryRulesRouter);
+
+  // ===========================================================================
+  // Plano de Contas Global
+  // ===========================================================================
+  function requireAdminForGlobal(req, res) {
+    if (!isAdminLikeUser(req.auth?.user)) {
+      res.status(403).json({ error: "forbidden" });
+      return false;
+    }
+    return true;
+  }
+  const VALID_TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
+
+  // GET /firm/chart-of-accounts/global
+  router.get("/chart-of-accounts/global", async (req, res) => {
+    if (!requireAdminForGlobal(req, res)) return;
+    const accounts = await prisma.chartOfAccount.findMany({
+      where: { portalClientId: null },
+      orderBy: [{ tipo: "asc" }, { codigo: "asc" }],
+    });
+    return res.json({ data: accounts.map((a) => ({ ...a, scope: "GLOBAL" })) });
+  });
+
+  // POST /firm/chart-of-accounts/global
+  router.post("/chart-of-accounts/global", async (req, res) => {
+    if (!requireAdminForGlobal(req, res)) return;
+    const body = req.body || {};
+    const codigo = String(body.codigo || "").trim();
+    const nome = String(body.nome || "").trim();
+    const tipo = String(body.tipo || "DESPESA").toUpperCase();
+    const natureza = String(body.natureza || "DEVEDORA").toUpperCase();
+
+    if (!codigo) return res.status(400).json({ error: "codigo_required" });
+    if (!nome) return res.status(400).json({ error: "nome_required" });
+    if (!VALID_TIPOS.includes(tipo)) return res.status(400).json({ error: "tipo_invalido" });
+
+    // Override semantic: empresa sempre vence sobre global. Não bloqueamos
+    // criação global mesmo que alguma empresa já tenha o mesmo código —
+    // a empresa simplesmente não verá esta conta global enquanto a sua existir.
+    try {
+      const account = await prisma.chartOfAccount.create({
+        data: { portalClientId: null, codigo, nome, tipo, natureza, status: "PENDENTE_ERP" },
+      });
+      return res.status(201).json({ ok: true, account });
+    } catch (err) {
+      if (err?.code === "P2002") return res.status(409).json({ error: "codigo_ja_existe" });
+      log.error({ err }, "Erro ao criar conta global");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // PATCH /firm/chart-of-accounts/global/:codigo
+  router.patch("/chart-of-accounts/global/:codigo", async (req, res) => {
+    if (!requireAdminForGlobal(req, res)) return;
+    const codigo = String(req.params.codigo);
+    const body = req.body || {};
+    const existing = await prisma.chartOfAccount.findFirst({
+      where: { portalClientId: null, codigo },
+    });
+    if (!existing) return res.status(404).json({ error: "conta_nao_encontrada" });
+
+    const data = {};
+    if (body.nome !== undefined) data.nome = String(body.nome).trim();
+    if (body.tipo !== undefined) data.tipo = String(body.tipo).toUpperCase();
+    if (body.natureza !== undefined) data.natureza = String(body.natureza).toUpperCase();
+    if (body.status !== undefined && ["CONFIRMADA", "PENDENTE_ERP"].includes(String(body.status))) {
+      data.status = String(body.status);
+    }
+
+    const updated = await prisma.chartOfAccount.update({
+      where: { id: existing.id },
+      data,
+    });
+    return res.json({ ok: true, account: updated });
+  });
+
+  // DELETE /firm/chart-of-accounts/global/:codigo
+  router.delete("/chart-of-accounts/global/:codigo", async (req, res) => {
+    if (!requireAdminForGlobal(req, res)) return;
+    const codigo = String(req.params.codigo);
+    const existing = await prisma.chartOfAccount.findFirst({
+      where: { portalClientId: null, codigo },
+    });
+    if (!existing) return res.status(404).json({ error: "conta_nao_encontrada" });
+    await prisma.chartOfAccount.delete({ where: { id: existing.id } });
+    return res.json({ ok: true });
+  });
+
+  // POST /firm/chart-of-accounts/global/import (CSV ou PDF)
+  router.post("/chart-of-accounts/global/import", upload.single("file"), async (req, res) => {
+    if (!requireAdminForGlobal(req, res)) return;
+    if (!req.file?.buffer) return res.status(400).json({ error: "file_required" });
+
+    const result = await importChartOfAccountsFromBuffer({
+      portalClientId: null,
+      buffer: req.file.buffer,
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+    });
+    if (!result.ok) {
+      const status = result.error === "pdf_no_accounts_found" ? 422 : 500;
+      if (result.error === "pdf_import_failed") log.error({ message: result.message }, "Erro ao importar plano global via PDF");
+      return res.status(status).json(result);
+    }
+    return res.json(result);
+  });
 
   router.use("/companies/:clientId/invoices/sync", syncRouter);
   router.use("/companies/:clientId/invoices", invoicesRouter);

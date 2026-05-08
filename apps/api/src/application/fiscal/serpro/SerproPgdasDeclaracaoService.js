@@ -273,16 +273,46 @@ async function parsePgdasDeclarationPdf(buffer) {
     /receita\s+total[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
   ]);
 
-  const impostoApurado = extractMoneyFromTextByPatterns(rawText, [
-    /Principal\s+(\d+[\d.]*,\d{2})\s+Multa/i,
-    /Receita Bruta Auferida \(regime compet[êe]ncia\)Valor Total do D[ée]bito Declarado \(R\$\)\s*\d+[\d.]*,\d{2}(\d+[\d.]*,\d{2})/i,
-    /Valor Total do D[ée]bito Declarado \(R\$\)\s*\d+[\d.]*,\d{2}(\d+[\d.]*,\d{2})/i,
-    /Total do D[ée]bito Exig[íi]vel \(R\$\)[\s\S]*?Total\s*(\d+[\d.]*,\d{2})/i,
-    /valor\s+total\s+do\s+das[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-    /total\s+apurado[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-    /imposto\s+apurado[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-    /valor\s+apurado[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-  ]);
+  // Tabela de tributos — suporta colunas sem espaço (pdf-parse concatena): "IRPJCSLLTotal\n25,20...630,00"
+  // \s* entre nomes de coluna para funcionar com ou sem espaços entre elas
+  let impostoApurado = null;
+  const tributoTableMatch = rawText.match(
+    /IRPJ\s*CSLL\s*COFINS\s*PIS\S*Pasep\s*INSS\S*CPP\s*ICMS\s*IPI\s*ISS\s*Total\s*([\d.,]+)/i
+  );
+  if (tributoTableMatch?.[1]) {
+    // Extrai todos os valores monetários da linha concatenada e pega o último (Total)
+    const values = tributoTableMatch[1].match(/\d+(?:\.\d{3})*,\d{2}/g);
+    if (values && values.length > 0) {
+      impostoApurado = parseDecimal(values[values.length - 1]);
+    }
+  }
+
+  // Fallback: "Principal 630,00 Multa 0,00 Juros 0,00 Total 630,00" (seção 6 do extrato)
+  // \s* para funcionar com ou sem espaços (pdf-parse às vezes concatena)
+  if (impostoApurado == null) {
+    impostoApurado = extractMoneyFromTextByPatterns(rawText, [
+      /Principal\s*\d+[\d.]*,\d{2}\s*Multa\s*\d+[\d.]*,\d{2}\s*Juros\s*\d+[\d.]*,\d{2}\s*Total\s*(\d+[\d.]*,\d{2})/i,
+    ]);
+  }
+
+  // Fallback: DAS — "Valor Total do Documento" seguido do valor
+  if (impostoApurado == null) {
+    impostoApurado = extractMoneyFromTextByPatterns(rawText, [
+      /Valor\s+Total\s+do\s+Documento\s*\n\s*(\d+[\d.]*,\d{2})/i,
+      /Valor\s+Total\s+do\s+Documento\s+(\d+[\d.]*,\d{2})/i,
+    ]);
+  }
+
+  // Fallback: DAS — linha "Totais X,XX X,XX" captura o último valor (coluna Total)
+  if (impostoApurado == null) {
+    const totaisMatch = rawText.match(/^Totais\s+([\d.,]+)/im);
+    if (totaisMatch?.[1]) {
+      const values = totaisMatch[1].match(/\d+(?:\.\d{3})*,\d{2}/g);
+      if (values && values.length > 0) {
+        impostoApurado = parseDecimal(values[values.length - 1]);
+      }
+    }
+  }
 
   let receitaServicos = extractMoneyFromTextByPatterns(rawText, [
     /receita[^\n]{0,40}servi[cç]os?[^\d]{0,60}(\d+[\d.]*,\d{2})/i,

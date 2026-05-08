@@ -23,6 +23,10 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   const [runningFiscalAction, setRunningFiscalAction] = useState(null);
   const [lastFiscalResult, setLastFiscalResult] = useState(null);
 
+  // Fiscal execution history
+  const [fiscalExecutions, setFiscalExecutions] = useState([]);
+  const [loadingFiscalExecutions, setLoadingFiscalExecutions] = useState(false);
+
   async function loadChartOfAccounts(companyId = selectedCompanyId) {
     if (!companyId) return;
     chartOfAccountsState.setLoading(true);
@@ -157,19 +161,31 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   }
 
   async function handleCreateEntry(input) {
-    if (!selectedCompanyId) return;
+    if (!selectedCompanyId) return null;
     setSavingEntry(true);
     setEntriesError("");
     setEntriesMessage("");
     try {
-      await api.createAccountingEntry(selectedCompanyId, input);
+      const result = await api.createAccountingEntry(selectedCompanyId, input);
       await loadAccountingEntries(selectedCompanyId);
       setEntriesMessage("Lançamento adicionado.");
+      return result;
     } catch (err) {
       setEntriesError(err?.message || "Falha ao criar lançamento.");
+      return null;
     } finally {
       setSavingEntry(false);
     }
+  }
+
+  async function handleLoadPayrollTemplate(kind, competencia) {
+    if (!selectedCompanyId) return null;
+    return api.getPayrollTemplate(selectedCompanyId, kind, competencia);
+  }
+
+  async function handleLoadBaixaTemplate(entryId) {
+    if (!selectedCompanyId) return null;
+    return api.getBaixaTemplate(selectedCompanyId, entryId);
   }
 
   async function handleUpdateEntry(entryId, input) {
@@ -183,6 +199,22 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
       setEntriesMessage("Lançamento atualizado.");
     } catch (err) {
       setEntriesError(err?.message || "Falha ao atualizar lançamento.");
+    } finally {
+      setSavingEntry(false);
+    }
+  }
+
+  async function handleDeleteEntryNoConfirm(entryId) {
+    if (!selectedCompanyId) return;
+    setSavingEntry(true);
+    setEntriesError("");
+    setEntriesMessage("");
+    try {
+      await api.deleteAccountingEntry(selectedCompanyId, entryId);
+      await loadAccountingEntries(selectedCompanyId);
+      setEntriesMessage("Lançamento excluído.");
+    } catch (err) {
+      setEntriesError(err?.message || "Falha ao excluir lançamento.");
     } finally {
       setSavingEntry(false);
     }
@@ -203,6 +235,38 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     } finally {
       setSavingEntry(false);
     }
+  }
+
+  async function handleBulkDeleteEntries(entryIds) {
+    if (!selectedCompanyId) return { ok: false };
+    const ids = Array.isArray(entryIds) ? entryIds.filter(Boolean) : [];
+    if (!ids.length) return { ok: false };
+    const label = ids.length === 1 ? "este lançamento" : `estes ${ids.length} lançamentos`;
+    if (!window.confirm(`Excluir ${label}? Esta ação não pode ser desfeita.`)) return { ok: false, cancelled: true };
+    setSavingEntry(true);
+    setEntriesError("");
+    setEntriesMessage("");
+    let succeeded = 0;
+    const errors = [];
+    for (const id of ids) {
+      try {
+        await api.deleteAccountingEntry(selectedCompanyId, id);
+        succeeded += 1;
+      } catch (err) {
+        errors.push({ id, message: err?.message || "erro" });
+      }
+    }
+    await loadAccountingEntries(selectedCompanyId);
+    setSavingEntry(false);
+    if (succeeded > 0 && errors.length === 0) {
+      setEntriesMessage(`${succeeded} lançamento${succeeded !== 1 ? "s" : ""} excluído${succeeded !== 1 ? "s" : ""}.`);
+    } else if (succeeded > 0 && errors.length > 0) {
+      setEntriesMessage(`${succeeded} excluído${succeeded !== 1 ? "s" : ""}; ${errors.length} falharam.`);
+      setEntriesError(`Algumas exclusões falharam (provavelmente lançamentos já exportados).`);
+    } else {
+      setEntriesError(`Nenhum lançamento foi excluído. ${errors[0]?.message || ""}`);
+    }
+    return { ok: errors.length === 0, succeeded, failed: errors.length };
   }
 
   async function handlePreviewOFX(file) {
@@ -243,10 +307,12 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     return result;
   }
 
-  async function handleExportEntriesCsv() {
+  async function handleExportEntriesCsv(rangeOptions = null) {
     if (!selectedCompanyId) return;
+    // rangeOptions: { competenciaInicio, competenciaFim } | { competencia } | null (usa filtro atual)
+    const params = rangeOptions || { competencia: accountingEntriesState.filters.competencia };
     try {
-      const url = api.getEntriesExportCsvUrl(selectedCompanyId, accountingEntriesState.filters);
+      const url = api.getEntriesExportCsvUrl(selectedCompanyId, params);
       if (!url || url.startsWith("#")) {
         setEntriesError("Exportação CSV não disponível no modo mock.");
         return;
@@ -260,8 +326,11 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
-      const competencia = accountingEntriesState.filters.competencia || "todos";
-      link.download = `lancamentos-${competencia}.csv`;
+      const suffix =
+        params.competenciaInicio && params.competenciaFim
+          ? `${params.competenciaInicio}_a_${params.competenciaFim}`
+          : params.competencia || "todos";
+      link.download = `lancamentos-${suffix}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -283,6 +352,19 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     accountingEntriesState.setTotal(0);
     chartOfAccountsState.setAccounts([]);
     setCircularData(null);
+  }
+
+  async function loadFiscalExecutions(companyId = selectedCompanyId, competencia = circularCompetencia) {
+    if (!companyId || !api.getFiscalExecutions) return;
+    setLoadingFiscalExecutions(true);
+    try {
+      const data = await api.getFiscalExecutions(companyId, { competencia, limit: 20 });
+      setFiscalExecutions(Array.isArray(data) ? data : []);
+    } catch {
+      setFiscalExecutions([]);
+    } finally {
+      setLoadingFiscalExecutions(false);
+    }
   }
 
   // Fiscal action handlers
@@ -311,9 +393,14 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
       } else if (result?.result?.status === "skipped") {
         setEntriesMessage(`${action.replace("_", " ")}: operação ignorada. ${result?.result?.reason || ""}`);
       }
+
+      // Refresh execution history after any action
+      await loadFiscalExecutions(selectedCompanyId, competencia);
     } catch (err) {
       setEntriesError(err?.message || `Falha ao executar ${action}`);
       setLastFiscalResult(null);
+      // Refresh history even on failure (backend logs the failed attempt)
+      await loadFiscalExecutions(selectedCompanyId, competencia);
     } finally {
       setRunningFiscalAction(null);
     }
@@ -341,6 +428,14 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedCompanyId]);
 
+  // Load fiscal execution history when company or competencia changes
+  useEffect(() => {
+    if (selectedCompanyId && companyDetailTab === "circular") {
+      loadFiscalExecutions(selectedCompanyId, circularCompetencia);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCompanyId, circularCompetencia, companyDetailTab]);
+
   return {
     accountingEntriesState,
     chartOfAccountsState,
@@ -356,18 +451,25 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     entriesError,
     runningFiscalAction,
     lastFiscalResult,
+    fiscalExecutions,
+    loadingFiscalExecutions,
+    loadFiscalExecutions,
     loadChartOfAccounts,
     loadAccountingEntries,
     loadCircular,
     handleCreateBaixa,
+    handleDeleteEntryNoConfirm,
     searchHistoricos,
     getHistoricosByCode,
     loadAllHistoricos,
     handleUpdateHistorico,
     handleDeleteHistorico,
     handleCreateEntry,
+    handleLoadPayrollTemplate,
+    handleLoadBaixaTemplate,
     handleUpdateEntry,
     handleDeleteEntry,
+    handleBulkDeleteEntries,
     handlePreviewOFX,
     handleImportOFX,
     handleCreateAccount,

@@ -8,62 +8,62 @@ datasource db {
 }
 
 model Client {
-  id        String    @id @default(uuid())
-  name      String
-  email     String    @unique
-  login     String    @unique
-  passwordHash String
-  phone     String?
-  cpf       String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  companies Company[]
-  invoices  Invoice[]
+  id              String           @id @default(uuid())
+  name            String
+  email           String           @unique
+  login           String           @unique
+  passwordHash    String
+  phone           String?
+  cpf             String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  companies       Company[]
+  invoices        Invoice[]
   serviceInvoices ServiceInvoice[]
 }
 
 model Company {
-  id               String    @id @default(uuid())
-  clientId         String
-  razaoSocial      String
-  cnpj             String    @unique
-  nomeFantasia     String?
-  regimeTributario String?
-  simplesAnexo     String?
-  simplesDataOpcao DateTime?
-  cnaePrincipal    String?
-  cnaesSecundarios String[]  @default([])
-  enderecoJson     Json?
-  atividades       String[]
-  porte            String?
-  tipoTributario   String?
-  anexoSimples     String?
-  endereco         String?
-  email            String?
-  telefone         String?
-  capitalSocial    Decimal?  @db.Decimal(18, 2)
-  dataAbertura     DateTime?
-  quantidadeSocios Int?
-  inscricaoMunicipal    String?
-  codigoServicoNacional String?
-  codigoServicoMunicipal String?
-  rpsSerie              String?
-  rpsNumero             String?
-  optanteSimples        Boolean? @default(false)
+  id                       String           @id @default(uuid())
+  clientId                 String
+  razaoSocial              String
+  cnpj                     String           @unique
+  nomeFantasia             String?
+  regimeTributario         String?
+  simplesAnexo             String?
+  simplesDataOpcao         DateTime?
+  cnaePrincipal            String?
+  cnaesSecundarios         String[]         @default([])
+  enderecoJson             Json?
+  atividades               String[]
+  porte                    String?
+  tipoTributario           String?
+  anexoSimples             String?
+  endereco                 String?
+  email                    String?
+  telefone                 String?
+  capitalSocial            Decimal?         @db.Decimal(18, 2)
+  dataAbertura             DateTime?
+  quantidadeSocios         Int?
+  inscricaoMunicipal       String?
+  codigoServicoNacional    String?
+  codigoServicoMunicipal   String?
+  rpsSerie                 String?
+  rpsNumero                String?
+  optanteSimples           Boolean?         @default(false)
   regimeEspecialTributacao String?
   // Certificado A1 por empresa (PFX) para integrações (ADN/NFSe/etc.)
-  certStorageKey   String?
-  certPfxBytes     Bytes?
-  certPasswordEnc  String?
-  certExpiresAt    DateTime?
-  certUploadedAt   DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  client           Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  partners         Partner[]
-  invoices         Invoice[]
-  serviceInvoices  ServiceInvoice[]
-  guides           Guide[]
+  certStorageKey           String?
+  certPfxBytes             Bytes?
+  certPasswordEnc          String?
+  certExpiresAt            DateTime?
+  certUploadedAt           DateTime?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  client                   Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  partners                 Partner[]
+  invoices                 Invoice[]
+  serviceInvoices          ServiceInvoice[]
+  guides                   Guide[]
 
   @@index([regimeTributario])
   @@index([cnaePrincipal])
@@ -83,7 +83,6 @@ model Partner {
   company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
-
 model User {
   id           String   @id @default(uuid())
   name         String?
@@ -100,35 +99,35 @@ model User {
 }
 
 model Invoice {
-  id             String    @id @default(uuid())
-  companyId      String
-  clientId       String?
-  chave          String
-  numero         String?
-  serie          String?
-  dhEmi          DateTime?
-  emitCnpj       String?
-  emitNome       String?
-  destDoc        String?
-  destNome       String?
-  cfopPrincipal  String?
-  valorTotal     Decimal?  @db.Decimal(18, 2)
-  valorProdutos  Decimal?  @db.Decimal(18, 2)
-  valorServicos  Decimal?  @db.Decimal(18, 2)
-  valorImpostos  Decimal?  @db.Decimal(18, 2)
-  valorIcms      Decimal?  @db.Decimal(18, 2)
-  valorPis       Decimal?  @db.Decimal(18, 2)
-  valorCofins    Decimal?  @db.Decimal(18, 2)
-  valorIss       Decimal?  @db.Decimal(18, 2)
-  status         String    @default("imported")
-  fileKey        String?
-  fileUrl        String?
-  fileType       String    @default("xml")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  client         Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  items          InvoiceItem[]
+  id            String        @id @default(uuid())
+  companyId     String
+  clientId      String?
+  chave         String
+  numero        String?
+  serie         String?
+  dhEmi         DateTime?
+  emitCnpj      String?
+  emitNome      String?
+  destDoc       String?
+  destNome      String?
+  cfopPrincipal String?
+  valorTotal    Decimal?      @db.Decimal(18, 2)
+  valorProdutos Decimal?      @db.Decimal(18, 2)
+  valorServicos Decimal?      @db.Decimal(18, 2)
+  valorImpostos Decimal?      @db.Decimal(18, 2)
+  valorIcms     Decimal?      @db.Decimal(18, 2)
+  valorPis      Decimal?      @db.Decimal(18, 2)
+  valorCofins   Decimal?      @db.Decimal(18, 2)
+  valorIss      Decimal?      @db.Decimal(18, 2)
+  status        String        @default("imported")
+  fileKey       String?
+  fileUrl       String?
+  fileType      String        @default("xml")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client        Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  items         InvoiceItem[]
 
   @@unique([companyId, chave])
   @@index([companyId])
@@ -161,28 +160,28 @@ model InvoiceItem {
 }
 
 model ServiceInvoice {
-  id                  String   @id @default(uuid())
-  companyId           String
-  clientId            String?
-  tomadorDoc          String
-  tomadorNome         String
-  valorServicos       Decimal  @db.Decimal(18, 2)
-  aliquota            Decimal? @db.Decimal(6, 3)
-  issRetido           Boolean  @default(false)
-  competencia         DateTime?
-  idDps               String?
-  chaveAcesso         String?
-  numeroNfse          String?
-  codigoVerificacao   String?
-  rpsNumero           String?
-  rpsSerie            String?
-  status              String   @default("pending")
-  xml                 String?
-  pdfUrl              String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  client              Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  id                String    @id @default(uuid())
+  companyId         String
+  clientId          String?
+  tomadorDoc        String
+  tomadorNome       String
+  valorServicos     Decimal   @db.Decimal(18, 2)
+  aliquota          Decimal?  @db.Decimal(6, 3)
+  issRetido         Boolean   @default(false)
+  competencia       DateTime?
+  idDps             String?
+  chaveAcesso       String?
+  numeroNfse        String?
+  codigoVerificacao String?
+  rpsNumero         String?
+  rpsSerie          String?
+  status            String    @default("pending")
+  xml               String?
+  pdfUrl            String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  company           Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client            Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
   @@index([companyId])
   @@index([clientId])
@@ -198,28 +197,28 @@ model AdnSyncState {
 }
 
 model AdnDocument {
-  id               String   @id @default(uuid())
-  nsu              BigInt   @unique
-  chaveAcesso      String?
-  tipoDocumento    String?
-  tipoEvento       String?
+  id              String    @id @default(uuid())
+  nsu             BigInt    @unique
+  chaveAcesso     String?
+  tipoDocumento   String?
+  tipoEvento      String?
   // Status normalizado da NFSe no nosso domínio: "authorized", "cancelled", "cancelled_substitution", "rejected", "unknown"
-  status           String?
-  dataHoraGeracao  DateTime?
-  xmlBase64Gzip    String?
-  xmlPlain         String?
-  dataEmissao      DateTime?
-  competencia      DateTime?
-  cnpjPrestador    String?
-  prestadorNome    String?
-  cnpjTomador      String?
-  tomadorNome      String?
-  numeroNfse       String?
-  valorServicos    Decimal? @db.Decimal(18, 2)
-  valorIss         Decimal? @db.Decimal(18, 2)
-  situacao         String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  status          String?
+  dataHoraGeracao DateTime?
+  xmlBase64Gzip   String?
+  xmlPlain        String?
+  dataEmissao     DateTime?
+  competencia     DateTime?
+  cnpjPrestador   String?
+  prestadorNome   String?
+  cnpjTomador     String?
+  tomadorNome     String?
+  numeroNfse      String?
+  valorServicos   Decimal?  @db.Decimal(18, 2)
+  valorIss        Decimal?  @db.Decimal(18, 2)
+  situacao        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([chaveAcesso])
   @@index([competencia])
@@ -236,80 +235,81 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
-  id                String   @id @default(uuid())
+  id                     String   @id @default(uuid())
   // Referência opcional para a Company legada (certificado, cadastros, etc.)
-  companyId          String?  @unique
-  razao              String
-  cnpj               String   @unique
+  companyId              String?  @unique
+  razao                  String
+  cnpj                   String   @unique
   /// E-mail só para envio de guias (pode repetir entre empresas). Não é login do portal.
   guideNotificationEmail String?
   /// Indica se há pró-labore (exige guia INSS na competência de referência para alertas).
-  hasProlabore       Boolean  @default(false)
-  inscricaoMunicipal String?
-  uf                String?
-  municipio          String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  hasProlabore           Boolean  @default(false)
+  inscricaoMunicipal     String?
+  uf                     String?
+  municipio              String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  integrationSettings PortalIntegrationSettings?
-  syncState           PortalSyncState?
-  invoices            PortalInvoice[]
-  guides              Guide[]
-  invoiceEvents       PortalInvoiceEvent[]
-  syncJobs            PortalInvoiceSyncJob[]
-  companyClientUsers  CompanyClientUser[]
-  companyFirmAccess   CompanyFirmAccess[]
-  taxDocuments        TaxDocument[]
-  chartOfAccounts     ChartOfAccount[]
-  accountingEntries   AccountingEntry[]
-  monthlyCirculars    CompanyMonthlyCircular[]
+  integrationSettings  PortalIntegrationSettings?
+  syncState            PortalSyncState?
+  invoices             PortalInvoice[]
+  guides               Guide[]
+  invoiceEvents        PortalInvoiceEvent[]
+  syncJobs             PortalInvoiceSyncJob[]
+  companyClientUsers   CompanyClientUser[]
+  companyFirmAccess    CompanyFirmAccess[]
+  taxDocuments         TaxDocument[]
+  chartOfAccounts      ChartOfAccount[]
+  accountingEntries    AccountingEntry[]
+  monthlyCirculars     CompanyMonthlyCircular[]
   accountingEntryRules AccountingEntryRule[]
+  fiscalExecutionLogs  FiscalExecutionLog[]
 
   @@index([cnpj])
   @@index([updatedAt])
 }
 
 model Guide {
-  id               String   @id @default(uuid())
-  portalClientId   String?
-  legacyCompanyId  String?
-  competencia      String? // YYYY-MM
-  tipo             String   // INSS|FGTS|PIS|COFINS|ISS|SIMPLES|OUTRA
-  valor            Decimal? @db.Decimal(18, 2)
-  vencimento       DateTime?
-  cnpj             String?
-  paymentStatus    String?  @default("OPEN") // OPEN|PAID|OVERDUE
-  paymentStatusSource String? // SERPRO|MANUAL
-  paymentConfirmedAt DateTime?
+  id                       String    @id @default(uuid())
+  portalClientId           String?
+  legacyCompanyId          String?
+  competencia              String? // YYYY-MM
+  tipo                     String // INSS|FGTS|PIS|COFINS|ISS|SIMPLES|OUTRA
+  valor                    Decimal?  @db.Decimal(18, 2)
+  vencimento               DateTime?
+  cnpj                     String?
+  paymentStatus            String?   @default("OPEN") // OPEN|PAID|OVERDUE
+  paymentStatusSource      String? // SERPRO|MANUAL
+  paymentConfirmedAt       DateTime?
   paymentConfirmedByUserId String?
-  serproLastCheckedAt DateTime?
-  serproLastCheckResult String?
-  serproLastSeenAt DateTime?
-  serproService String?
+  serproLastCheckedAt      DateTime?
+  serproLastCheckResult    String?
+  serproLastSeenAt         DateTime?
+  serproService            String?
 
-  taxDocuments     TaxDocument[]
+  taxDocuments TaxDocument[]
 
-  source           String   @default("DRIVE") // DRIVE|LOCAL
-  sourceFileId     String?  @unique
-  sourcePath       String?
+  source       String  @default("DRIVE") // DRIVE|LOCAL
+  sourceFileId String? @unique
+  sourcePath   String?
 
   driveInboxFolderId String?
   driveFinalFolderId String?
   driveFinalFileId   String?
 
-  storageProvider  String? // DATABASE|S3|R2|LOCAL (legado)
-  storageKey       String?
-  storageUrl       String?
+  storageProvider String? // DATABASE|S3|R2|LOCAL (legado)
+  storageKey      String?
+  storageUrl      String?
   /// PDF armazenado no PostgreSQL (BYTEA). Preferencial em relação a storage externo.
-  pdfBytes         Bytes?
-  hash             String?  @unique
+  pdfBytes        Bytes?
+  hash            String? @unique
 
-  status           String   @default("PENDING") // PENDING|PROCESSING|PROCESSED|NEEDS_REVIEW|ERROR
+  status           String    @default("PENDING") // PENDING|PROCESSING|PROCESSED|NEEDS_REVIEW|ERROR
   errors           Json?
   extracted        Json?
   // Controle de envio por e-mail para guias já processadas
-  emailStatus      String?  // PENDING|SENDING|SENT|ERROR
-  emailAttempts    Int      @default(0)
+  emailStatus      String? // PENDING|SENDING|SENT|ERROR
+  emailAttempts    Int       @default(0)
   emailLastError   String?
   emailSentAt      DateTime?
   emailNextRetryAt DateTime?
@@ -317,11 +317,11 @@ model Guide {
   reviewedByUserId String?
   reviewedAt       DateTime?
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
-  legacyCompany Company?    @relation(fields: [legacyCompanyId], references: [id], onDelete: SetNull)
+  portalClient  PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+  legacyCompany Company?      @relation(fields: [legacyCompanyId], references: [id], onDelete: SetNull)
 
   @@index([portalClientId, competencia, tipo])
   @@index([status])
@@ -331,26 +331,26 @@ model Guide {
 }
 
 model GuideIngestionJob {
-  id            String   @id @default(uuid())
-  source        String   @default("DRIVE")
-  sourceFileId  String   @unique
-  sourceName    String?
-  status        String   @default("PROCESSING") // PROCESSING|DONE|ERROR|SKIPPED
-  attempts      Int      @default(1)
-  errorReason   String?
-  parserPayload Json?
+  id             String    @id @default(uuid())
+  source         String    @default("DRIVE")
+  sourceFileId   String    @unique
+  sourceName     String?
+  status         String    @default("PROCESSING") // PROCESSING|DONE|ERROR|SKIPPED
+  attempts       Int       @default(1)
+  errorReason    String?
+  parserPayload  Json?
   createdGuideId String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  finishedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  finishedAt     DateTime?
 
   @@index([status, updatedAt])
 }
 
 model GuideIngestionLock {
-  id         String   @id
+  id          String    @id
   lockedUntil DateTime?
-  updatedAt  DateTime @updatedAt
+  updatedAt   DateTime  @updatedAt
 }
 
 model AppSetting {
@@ -396,28 +396,28 @@ model CompanyFirmAccess {
 }
 
 model PortalIntegrationSettings {
-  id          String   @id @default(uuid())
-  clientId    String   @unique
-  provider    String   @default("NFSENACIONAL")
-  environment String   @default("PROD")
+  id            String   @id @default(uuid())
+  clientId      String   @unique
+  provider      String   @default("NFSENACIONAL")
+  environment   String   @default("PROD")
   // Certificado é gerenciado na Company (certStorageKey/certPasswordEnc)
   certCompanyId String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   client PortalClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model PortalSyncState {
-  clientId     String   @id
-  lastCursor   BigInt   @default(0) // NSU/sequence
+  clientId     String    @id
+  lastCursor   BigInt    @default(0) // NSU/sequence
   lastSyncAt   DateTime?
-  state        String   @default("OK") // OK|RUNNING|ERROR
+  state        String    @default("OK") // OK|RUNNING|ERROR
   lastError    String?
   lockUntil    DateTime?
   backoffUntil DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   client PortalClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
@@ -427,19 +427,19 @@ model PortalSyncState {
 }
 
 model PortalInvoice {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   clientId    String
-  type        String   // NFSE, NFE, ...
+  type        String // NFSE, NFE, ...
   numero      String?
   serie       String?
   chaveAcesso String?
-  idNfse      String?  // opcional (dependendo do provedor)
-  idDps       String?  // opcional (NFSe Nacional)
+  idNfse      String? // opcional (dependendo do provedor)
+  idDps       String? // opcional (NFSe Nacional)
 
   competencia DateTime?
   issueDate   DateTime?
-  status      String   @default("PENDENTE") // EMITIDA|CANCELADA|SUBSTITUIDA|REJEITADA|PENDENTE|...
-  total       Decimal? @db.Decimal(18, 2)
+  status      String    @default("PENDENTE") // EMITIDA|CANCELADA|SUBSTITUIDA|REJEITADA|PENDENTE|...
+  total       Decimal?  @db.Decimal(18, 2)
 
   emitenteNome String?
   emitenteDoc  String?
@@ -447,37 +447,37 @@ model PortalInvoice {
   tomadorDoc   String?
 
   // Storage (por enquanto no DB)
-  xmlRaw   String?
-  pdfUrl   String?
-  xmlHash  String?
+  xmlRaw  String?
+  pdfUrl  String?
+  xmlHash String?
 
   lastSyncAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  client PortalClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client PortalClient         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   events PortalInvoiceEvent[]
 
+  @@unique([clientId, chaveAcesso])
+  @@unique([clientId, idDps])
+  @@unique([clientId, idNfse])
   @@index([clientId])
   @@index([clientId, updatedAt])
   @@index([clientId, competencia, status, updatedAt])
   @@index([clientId, issueDate])
   @@index([status, updatedAt])
-  @@unique([clientId, chaveAcesso])
-  @@unique([clientId, idDps])
-  @@unique([clientId, idNfse])
 }
 
 model PortalInvoiceEvent {
-  id        String   @id @default(uuid())
-  clientId  String
-  invoiceId String
-  type      String
-  date      DateTime?
-  protocol  String?
-  reason    String?
+  id         String    @id @default(uuid())
+  clientId   String
+  invoiceId  String
+  type       String
+  date       DateTime?
+  protocol   String?
+  reason     String?
   payloadRaw Json?
-  createdAt DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   client  PortalClient  @relation(fields: [clientId], references: [id], onDelete: Cascade)
   invoice PortalInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -487,18 +487,18 @@ model PortalInvoiceEvent {
 }
 
 model PortalInvoiceSyncJob {
-  id         String   @id @default(uuid())
-  clientId   String
-  state      String   @default("RUNNING") // RUNNING|DONE|ERROR
-  processed  Int      @default(0)
-  created    Int      @default(0)
-  updated    Int      @default(0)
-  duplicates Int      @default(0)
-  errors     Int      @default(0)
-  lastCursor BigInt?
+  id          String   @id @default(uuid())
+  clientId    String
+  state       String   @default("RUNNING") // RUNNING|DONE|ERROR
+  processed   Int      @default(0)
+  created     Int      @default(0)
+  updated     Int      @default(0)
+  duplicates  Int      @default(0)
+  errors      Int      @default(0)
+  lastCursor  BigInt?
   lastMessage String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   client PortalClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
@@ -516,8 +516,8 @@ model TaxDocument {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
-  guide        Guide?        @relation(fields: [guideId], references: [id], onDelete: SetNull)
+  portalClient PortalClient?              @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+  guide        Guide?                     @relation(fields: [guideId], references: [id], onDelete: SetNull)
   extractions  TaxDocumentExtraction[]
   logs         TaxDocumentProcessingLog[]
 
@@ -552,16 +552,16 @@ model TaxDocumentExtraction {
 
 model ChartOfAccount {
   id             String   @id @default(uuid())
-  portalClientId String
-  codigo         String   // código reduzido, ex: "5", "464"
+  portalClientId String? // null = conta global (compartilhada por todas as empresas)
+  codigo         String // código reduzido, ex: "5", "464"
   nome           String
-  tipo           String   // ATIVO | PASSIVO | RECEITA | DESPESA | PATRIMONIO
+  tipo           String // ATIVO | PASSIVO | RECEITA | DESPESA | PATRIMONIO
   natureza       String   @default("DEVEDORA") // DEVEDORA | CREDORA
   status         String   @default("CONFIRMADA") // CONFIRMADA | PENDENTE_ERP
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  portalClient   PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@unique([portalClientId, codigo])
   @@index([portalClientId])
@@ -570,31 +570,36 @@ model ChartOfAccount {
 }
 
 model AccountingEntry {
-  id              String   @id @default(uuid())
-  portalClientId  String
-  circularId      String?
-  ruleId          String?
-  eventType       String?
-  data            DateTime
-  competencia     String
-  historico       String
-  tipo            String   @default("DESPESA")  // DESPESA | RECEITA | FOLHA | PROVISAO | BAIXA | OUTRO
-  subtipo         String?                        // SIMPLES | IRRF | ISS | PIS | COFINS | FGTS | null
-  origem          String   @default("MANUAL")    // MANUAL | OFX | PDF | SERPRO
-  loteImportacao  String?
-  status          String   @default("RASCUNHO")  // RASCUNHO | CONFIRMADO | EXPORTADO
-  statusPagamento String   @default("NA")        // NA | ABERTO | PAGO
-  openEntryId     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                    String    @id @default(uuid())
+  portalClientId        String
+  circularId            String?
+  ruleId                String?
+  eventType             String?
+  data                  DateTime
+  competencia           String
+  historico             String
+  tipo                  String    @default("DESPESA") // DESPESA | RECEITA | FOLHA | PROVISAO | BAIXA | OUTRO
+  subtipo               String? // SIMPLES | IRRF | ISS | PIS | COFINS | FGTS | null
+  origem                String    @default("MANUAL") // MANUAL | OFX | PDF | SERPRO
+  loteImportacao        String?
+  status                String    @default("RASCUNHO") // RASCUNHO | CONFIRMADO | EXPORTADO
+  statusPagamento       String    @default("NA") // NA | ABERTO | PAGO
+  openEntryId           String?
+  recalculatedAt        DateTime?
+  recalculatedFromValor Decimal?  @db.Decimal(18, 2)
+  recalculatedToValor   Decimal?  @db.Decimal(18, 2)
+  recalculatedNotes     String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   lines        AccountingEntryLine[]
-  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient            @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
   circular     CompanyMonthlyCircular? @relation(fields: [circularId], references: [id], onDelete: SetNull)
-  rule        AccountingEntryRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  openEntry    AccountingEntry?  @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
-  baixas       AccountingEntry[] @relation("BaixaToOpen")
+  rule         AccountingEntryRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  openEntry    AccountingEntry?        @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
+  baixas       AccountingEntry[]       @relation("BaixaToOpen")
 
+  @@unique([portalClientId, competencia, eventType, origem])
   @@index([portalClientId])
   @@index([portalClientId, competencia])
   @@index([portalClientId, tipo])
@@ -604,44 +609,43 @@ model AccountingEntry {
   @@index([portalClientId, eventType])
   @@index([circularId])
   @@index([ruleId])
-  @@unique([portalClientId, competencia, eventType, origem])
   @@map("accounting_entries")
 }
 
 model CompanyMonthlyCircular {
-  id                     String   @id @default(uuid())
-  portalClientId         String
-  competencia            String
-  receitaBruta           Decimal? @db.Decimal(18, 2)
-  receitaServicos        Decimal  @default(0) @db.Decimal(18, 2)
-  receitaVendas          Decimal  @default(0) @db.Decimal(18, 2)
-  dasTotal               Decimal? @db.Decimal(18, 2)
-  dasNumeroDocumento     String?
-  dasPago                Boolean?
-  dasDataEmissao         DateTime?
-  inssTotal              Decimal? @db.Decimal(18, 2)
-  inssVencimento         DateTime?
-  inssPdfFileId          String?
-  inssPdfUrl             String?
-  inssStatus             String?
-  pgdasNumeroDeclaracao  String?
-  pgdasDeclaracaoFileId  String?
-  pgdasDeclaracaoFileUrl String?
-  pgdasReciboFileId      String?
-  pgdasReciboFileUrl     String?
-  receitaStatus          String?
-  dasStatus              String?
-  serproSyncStatus       String?
-  serproLastSyncAt       DateTime?
-  serproLastError        String?
-  metadata               Json?
-  hasAccountingDivergence Boolean  @default(false)
+  id                          String    @id @default(uuid())
+  portalClientId              String
+  competencia                 String
+  receitaBruta                Decimal?  @db.Decimal(18, 2)
+  receitaServicos             Decimal   @default(0) @db.Decimal(18, 2)
+  receitaVendas               Decimal   @default(0) @db.Decimal(18, 2)
+  dasTotal                    Decimal?  @db.Decimal(18, 2)
+  dasNumeroDocumento          String?
+  dasPago                     Boolean?
+  dasDataEmissao              DateTime?
+  inssTotal                   Decimal?  @db.Decimal(18, 2)
+  inssVencimento              DateTime?
+  inssPdfFileId               String?
+  inssPdfUrl                  String?
+  inssStatus                  String?
+  pgdasNumeroDeclaracao       String?
+  pgdasDeclaracaoFileId       String?
+  pgdasDeclaracaoFileUrl      String?
+  pgdasReciboFileId           String?
+  pgdasReciboFileUrl          String?
+  receitaStatus               String?
+  dasStatus                   String?
+  serproSyncStatus            String?
+  serproLastSyncAt            DateTime?
+  serproLastError             String?
+  metadata                    Json?
+  hasAccountingDivergence     Boolean   @default(false)
   accountingDivergenceMessage String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
-  portalClient           PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
-  accountingEntries      AccountingEntry[]
+  portalClient      PortalClient      @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  accountingEntries AccountingEntry[]
 
   @@unique([portalClientId, competencia])
   @@index([portalClientId, competencia])
@@ -662,8 +666,8 @@ model AccountingEntryRule {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  portalClient        PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
-  accountingEntries   AccountingEntry[]
+  portalClient      PortalClient?     @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+  accountingEntries AccountingEntry[]
 
   @@index([portalClientId, eventType])
   @@index([scope, eventType, isActive])
@@ -672,12 +676,13 @@ model AccountingEntryRule {
 }
 
 model AccountingEntryLine {
-  id      String  @id @default(uuid())
-  entryId String
-  conta   String
-  tipo    String  // D | C
-  valor   Decimal @db.Decimal(18, 2)
-  ordem   Int     @default(0)
+  id        String  @id @default(uuid())
+  entryId   String
+  conta     String
+  tipo      String  // D | C
+  valor     Decimal @db.Decimal(18, 2)
+  ordem     Int     @default(0)
+  historico String? // Histórico opcional por linha (ex: pró-labore tem histórico distinto por D/C)
 
   entry AccountingEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
@@ -688,7 +693,7 @@ model AccountingEntryLine {
 model AccountingHistorico {
   id                    String   @id @default(uuid())
   createdByUserId       String
-  companyPortalClientId String?  // null = global para este usuário; preenchido = específico da empresa
+  companyPortalClientId String? // null = global para este usuário; preenchido = específico da empresa
   text                  String
   contaDebito           String?
   contaCredito          String?
@@ -714,4 +719,36 @@ model TaxDocumentProcessingLog {
 
   @@index([documentId])
   @@map("document_processing_logs")
+}
+
+model FiscalExecutionLog {
+  id             String    @id @default(cuid())
+  portalClientId String
+  competencia    String
+  action         String // search_guides | check_payments | sync_inss
+  status         String // running | completed | failed | skipped
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  durationMs     Int?
+
+  guidesFound      Int?
+  guidesCaptured   Int?
+  guidesUpdated    Int?
+  guidesChecked    Int?
+  guidesPaid       Int?
+  guidesOverdue    Int?
+  guidesOpen       Int?
+  circularUpdated  Boolean?
+  entriesGenerated Int?
+
+  errorCode    String?
+  errorMessage String?
+  skipReason   String?
+  triggeredBy  String?
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, startedAt(sort: Desc)])
+  @@index([portalClientId, competencia, action])
+  @@map("fiscal_execution_logs")
 }

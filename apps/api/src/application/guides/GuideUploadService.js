@@ -382,6 +382,92 @@ export async function processUploadedGuides({ files, requestId: uploadRequestId 
   };
 }
 
+function normalizeCnpj(cnpj) {
+  return String(cnpj || "").replace(/\D+/g, "");
+}
+
+export async function uploadGuideForPortalClient({ portalClientId, fileBuffer, fileName, metadata }) {
+  const portalClient = await prisma.portalClient.findUnique({
+    where: { id: String(portalClientId) },
+    select: { id: true, cnpj: true, razao: true, companyId: true },
+  });
+  if (!portalClient) {
+    const err = new Error("portal_company_not_found");
+    err.code = "PORTAL_COMPANY_NOT_FOUND";
+    throw err;
+  }
+
+  const runtime = await getGuideRuntimeSettings();
+  let parsedData = {};
+  if (runtime.pdfReaderUrl) {
+    const parserClient = GuideParserClient.create({ pdfReaderUrl: runtime.pdfReaderUrl });
+    try {
+      parsedData = await parserClient.parsePdf({
+        buffer: fileBuffer,
+        filename: fileName || "guia.pdf",
+        requestId: randomUUID(),
+      });
+    } catch {
+      // parsing failed — metadata required
+    }
+  }
+
+  const merged = {
+    tipo: String(metadata?.tipo || parsedData?.tipo || "").trim().toUpperCase() || null,
+    competencia: String(metadata?.competencia || parsedData?.competencia || "").trim() || null,
+    valor: metadata?.valor != null ? Number(metadata.valor) : (parsedData?.valor ?? null),
+    vencimento: metadata?.vencimento || parsedData?.vencimento || null,
+  };
+
+  if (!merged.tipo || !merged.competencia) {
+    return { needsMetadata: true, parsed: merged, extractedCnpj: parsedData?.cnpj, extractedRazaoSocial: parsedData?.razaoSocial };
+  }
+
+  // Validate CNPJ match if extracted from PDF
+  const extractedCnpj = parsedData?.cnpj ? normalizeCnpj(parsedData.cnpj) : null;
+  const companyCnpj = normalizeCnpj(portalClient.cnpj);
+
+  if (extractedCnpj && extractedCnpj !== companyCnpj) {
+    const err = new Error(`CNPJ da guia (${extractedCnpj}) não corresponde ao CNPJ da empresa (${companyCnpj})`);
+    err.code = "GUIDE_CNPJ_MISMATCH";
+    throw err;
+  }
+
+  const hash = hashPdf(fileBuffer);
+  const sourceFileId = buildUploadSourceFileId(hash);
+  const existingGuide = await prisma.guide.findFirst({
+    where: { sourceFileId },
+    select: { id: true },
+  });
+
+  const guide = await createOrUpdateGuideFromProcessing({
+    existingGuideId: existingGuide?.id || null,
+    portalClientId: portalClient.id,
+    legacyCompanyId: portalClient.companyId || null,
+    parsed: {
+      cnpj: portalClient.cnpj,
+      razaoSocial: parsedData?.razaoSocial || portalClient.razao,
+      competencia: merged.competencia,
+      tipo: merged.tipo,
+      valor: Number.isFinite(merged.valor) ? merged.valor : null,
+      vencimento: merged.vencimento,
+    },
+    source: "UPLOAD",
+    sourceFileId,
+    sourcePath: fileName || "guia.pdf",
+    driveInboxFolderId: null,
+    driveFinalFolderId: null,
+    driveFinalFileId: null,
+    pdfBytes: fileBuffer,
+    hash,
+    status: "PROCESSED",
+    errors: [],
+    extracted: buildExtractedPayload({ parsed: { ...parsedData, ...merged }, hash, fileName: fileName || "guia.pdf" }),
+  });
+
+  return { needsMetadata: false, guide, guideId: guide.id };
+}
+
 export async function listUnidentifiedGuides({ page = 1, limit = 25 }) {
   const take = Math.min(Math.max(Number(limit) || 25, 1), 200);
   const pageNum = Math.max(Number(page) || 1, 1);

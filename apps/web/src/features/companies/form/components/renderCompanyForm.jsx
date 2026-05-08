@@ -1,4 +1,29 @@
+import { useState } from "react";
 import { Button } from "../../../../components/ui/Button";
+
+async function fetchCnpjData(cnpj) {
+  const digits = cnpj.replace(/\D/g, "");
+  const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`);
+  if (!res.ok) throw new Error("CNPJ não encontrado");
+  return res.json();
+}
+
+function applyBrasilApiData(data, onChange) {
+  const telefone = [data.ddd_telefone_1, data.ddd_telefone_2].filter(Boolean).join(" / ");
+  const cnae = data.cnae_fiscal ? String(data.cnae_fiscal) : "";
+
+  onChange("razaoSocial", data.razao_social || "");
+  onChange("nomeFantasia", data.nome_fantasia || "");
+  onChange("telefone", telefone);
+  onChange("cnaePrincipal", cnae);
+  onChange("enderecoRua", [data.descricao_tipo_de_logradouro, data.logradouro].filter(Boolean).join(" "));
+  onChange("enderecoNumero", data.numero || "");
+  onChange("enderecoBairro", data.bairro || "");
+  onChange("enderecoCidade", data.municipio || "");
+  onChange("enderecoUf", (data.uf || "").toUpperCase());
+  onChange("enderecoCep", data.cep || "");
+  onChange("enderecoComplemento", data.complemento || "");
+}
 
 export function CompanyForm({
   form,
@@ -8,6 +33,24 @@ export function CompanyForm({
   submitLabel,
   showOwnerPassword,
 }) {
+  const [cnpjLoading, setCnpjLoading] = useState(false);
+  const [cnpjError, setCnpjError] = useState(null);
+
+  async function handleCnpjBlur() {
+    const digits = form.cnpj.replace(/\D/g, "");
+    if (digits.length !== 14) return;
+    setCnpjLoading(true);
+    setCnpjError(null);
+    try {
+      const data = await fetchCnpjData(digits);
+      applyBrasilApiData(data, onChange);
+    } catch {
+      setCnpjError("CNPJ não encontrado ou inválido.");
+    } finally {
+      setCnpjLoading(false);
+    }
+  }
+
   return (
     <form className="form-grid two-col" onSubmit={onSubmit}>
       <label>
@@ -36,7 +79,18 @@ export function CompanyForm({
       ) : null}
       <label>
         CNPJ
-        <input value={form.cnpj} onChange={(event) => onChange("cnpj", event.target.value)} required />
+        {cnpjLoading && <span style={{ marginLeft: 8, fontSize: 12, color: "#888" }}>Consultando...</span>}
+        {cnpjError && <span style={{ marginLeft: 8, fontSize: 12, color: "#e55" }}>{cnpjError}</span>}
+        <input
+          value={form.cnpj}
+          onChange={(event) => {
+            onChange("cnpj", event.target.value);
+            setCnpjError(null);
+          }}
+          onBlur={handleCnpjBlur}
+          placeholder="00.000.000/0000-00"
+          required
+        />
       </label>
       <label>
         Razao social
@@ -125,7 +179,7 @@ export function CompanyForm({
         />
       </label>
       <div className="full form-actions">
-        <Button type="submit" variant="success" className="company-form-page__submit" disabled={submitting}>
+        <Button type="submit" variant="success" className="company-form-page__submit" disabled={submitting || cnpjLoading}>
           {submitting ? "Salvando..." : submitLabel}
         </Button>
       </div>

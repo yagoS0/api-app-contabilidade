@@ -15,6 +15,46 @@ function normalizeCron(value) {
   return raw || "0 7 5 * *";
 }
 
+function clampInt(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+// Extrai dia do mês de uma cron expression (campo 3). Default 5.
+function parseDayFromCron(cronStr) {
+  const parts = String(cronStr || "").trim().split(/\s+/);
+  if (parts.length < 5) return 5;
+  const dayField = parts[2];
+  const n = Number(dayField);
+  return Number.isFinite(n) ? clampInt(n, 1, 31, 5) : 5;
+}
+
+// Extrai hora de uma cron expression (campo 2). Default 7.
+function parseHourFromCron(cronStr) {
+  const parts = String(cronStr || "").trim().split(/\s+/);
+  if (parts.length < 5) return 7;
+  const hourField = parts[1];
+  const n = Number(hourField);
+  return Number.isFinite(n) ? clampInt(n, 0, 23, 7) : 7;
+}
+
+function resolveFetchDay(stored) {
+  if (stored.fetchDay != null) return clampInt(stored.fetchDay, 1, 31, 5);
+  return parseDayFromCron(stored.fetchCron);
+}
+
+function resolveFetchHour(stored) {
+  if (stored.fetchHour != null) return clampInt(stored.fetchHour, 0, 23, 7);
+  return parseHourFromCron(stored.fetchCron);
+}
+
+// fetchCron derivado: SEMPRE diário no horário escolhido — o worker usa este cron
+// para disparar uma vez por dia, e internamente decide se faz captura inicial ou re-fetch.
+function deriveDailyCron(hour) {
+  return `0 ${clampInt(hour, 0, 23, 7)} * * *`;
+}
+
 function normalizeTimeout(value, fallback) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -119,7 +159,9 @@ export async function getSerproRuntimeSettings() {
     consumerSecretConfigured: Boolean(stored.consumerSecretEnc || config.consumerSecret),
     scope: String(stored.scope || config.scope || ""),
     timeoutMs: normalizeTimeout(stored.timeoutMs, config.timeoutMs),
-    fetchCron: normalizeCron(stored.fetchCron),
+    fetchDay: resolveFetchDay(stored),
+    fetchHour: resolveFetchHour(stored),
+    fetchCron: deriveDailyCron(resolveFetchHour(stored)),
     certificate: {
       hasCertificate: Boolean(stored.certPfxBase64 || stored.certStorageKey),
       storageKey: stored.certStorageKey || (stored.certPfxBase64 ? SERPRO_DB_CERT_STORAGE_KEY : null),
@@ -151,6 +193,8 @@ export async function getResolvedSerproCredentials() {
     consumerSecret: settings.consumerSecret,
     scope: settings.scope,
     timeoutMs: settings.timeoutMs,
+    fetchDay: settings.fetchDay,
+    fetchHour: settings.fetchHour,
     fetchCron: settings.fetchCron,
     certificate: {
       ...settings.certificate,
@@ -193,6 +237,15 @@ export async function updateSerproRuntimeSettings(input = {}) {
   const stored = getStoredValue(setting);
   const config = getSerproConfig();
 
+  // Resolve fetchDay/fetchHour priorizando entrada explícita; cai pra stored, e por
+  // último deriva do fetchCron salvo (compat com bancos antigos).
+  const nextFetchDay = input.fetchDay !== undefined
+    ? clampInt(input.fetchDay, 1, 31, 5)
+    : resolveFetchDay(stored);
+  const nextFetchHour = input.fetchHour !== undefined
+    ? clampInt(input.fetchHour, 0, 23, 7)
+    : resolveFetchHour(stored);
+
   const next = {
     ...stored,
     enabled: input.enabled === undefined ? stored.enabled ?? config.enabled ?? false : Boolean(input.enabled),
@@ -202,7 +255,10 @@ export async function updateSerproRuntimeSettings(input = {}) {
     consumerKey: input.consumerKey === undefined ? stored.consumerKey || "" : String(input.consumerKey || "").trim(),
     scope: input.scope === undefined ? stored.scope || "" : String(input.scope || "").trim(),
     timeoutMs: input.timeoutMs === undefined ? normalizeTimeout(stored.timeoutMs, 30000) : normalizeTimeout(input.timeoutMs, 30000),
-    fetchCron: input.fetchCron === undefined ? normalizeCron(stored.fetchCron) : normalizeCron(input.fetchCron),
+    fetchDay: nextFetchDay,
+    fetchHour: nextFetchHour,
+    // fetchCron sempre derivado do horário (cron diário) — não armazena cron arbitrário.
+    fetchCron: deriveDailyCron(nextFetchHour),
   };
 
   if (input.consumerSecret !== undefined) {

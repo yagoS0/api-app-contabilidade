@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
-import { generateEntriesFromCircular } from "../../accounting/AccountingEntryGeneratorService.js";
+import { createOrUpdateGuideFromProcessing, hashPdf, toGuideResponse } from "../../guides/GuideService.js";
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
@@ -173,7 +173,7 @@ async function parsePdfResponse(response) {
   };
 }
 
-export async function syncSerproInssForCompany({ portalClientId, competencia, contratanteCnpj }) {
+export async function syncSerproInssForCompany({ portalClientId, competencia, contratanteCnpj, emailStatusOverride }) {
   const normalizedCompanyId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
   if (!normalizedCompanyId) {
@@ -323,12 +323,75 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
     },
   });
 
-  const accounting = await generateEntriesFromCircular({ portalClientId: portalClient.id, competencia: normalizedCompetencia, now });
+  const inssSourceFileId = `serpro:dctfweb:${onlyDigits(portalClient.cnpj)}:${normalizedCompetencia}`;
+  const existingInssGuide = await prisma.guide.findFirst({
+    where: { sourceFileId: inssSourceFileId },
+    select: { id: true, paymentStatus: true, paymentStatusSource: true, paymentConfirmedAt: true },
+  });
+
+  // Preserve existing payment status — emitir a guia no SERPRO não confirma pagamento
+  const preservedPayment = existingInssGuide
+    ? {
+        paymentStatus: existingInssGuide.paymentStatus,
+        paymentStatusSource: existingInssGuide.paymentStatusSource,
+        paymentConfirmedAt: existingInssGuide.paymentConfirmedAt,
+      }
+    : { paymentStatus: "OPEN" };
+
+  const guide = await createOrUpdateGuideFromProcessing({
+    existingGuideId: existingInssGuide?.id || null,
+    portalClientId: portalClient.id,
+    legacyCompanyId: portalClient.companyId || null,
+    parsed: {
+      cnpj: portalClient.cnpj,
+      competencia: normalizedCompetencia,
+      tipo: "INSS",
+      valor: mapped.parsed.inssTotal,
+      vencimento: mapped.parsed.inssVencimento,
+    },
+    source: "SERPRO",
+    sourceFileId: inssSourceFileId,
+    sourcePath: `SERPRO DCTFWEB ${normalizedCompetencia}`,
+    driveInboxFolderId: null,
+    driveFinalFolderId: null,
+    driveFinalFileId: null,
+    pdfBytes: mapped.pdfBuffer,
+    hash: hashPdf(mapped.pdfBuffer),
+    status: "PROCESSED",
+    errors: [],
+    ...preservedPayment,
+    emailStatusOverride,
+    serproLastCheckedAt: now,
+    serproLastCheckResult: "FOUND_INSS",
+    serproLastSeenAt: now,
+    serproService: SERPRO_DCTFWEB_SERVICE_GUIDE,
+    extracted: {
+      integrationSource: "SERPRO_DCTFWEB",
+      sistema: SERPRO_DCTFWEB_SYSTEM,
+      servico: SERPRO_DCTFWEB_SERVICE_GUIDE,
+      contratanteCnpj: procuradorCnpj,
+      contribuinteCnpj: portalClient.cnpj,
+      referencia: normalizedCompetencia,
+      rawPayload: mapped.rawPayload,
+    },
+  });
+
+  await prisma.guide.deleteMany({
+    where: {
+      portalClientId: portalClient.id,
+      competencia: normalizedCompetencia,
+      tipo: "INSS",
+      source: "SERPRO",
+      status: "PROCESSED",
+      NOT: { id: guide.id },
+    },
+  });
 
   return {
     company: { id: portalClient.id, razao: portalClient.razao, cnpj: portalClient.cnpj },
+    guide: toGuideResponse(guide),
     circular,
-    accounting,
+    accounting: { ok: true, generatedEntries: [] },
     inss: {
       status: "EMITTED",
       competencia: normalizedCompetencia,

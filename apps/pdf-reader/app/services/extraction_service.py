@@ -3,7 +3,7 @@ import os
 from typing import Any
 
 from app.config import settings
-from app.extractors import das, fgts, generic, inss
+from app.extractors import das, fgts, generic, inss, iss
 from app.services import pdf_text
 from app.services.ocr_service import should_fail_short_text
 
@@ -43,6 +43,8 @@ def _build_fields(
         refined = inss.refine_inss(refined, text_upper)
     elif document_type == "FGTS":
         refined = fgts.refine_fgts(refined, text_upper)
+    elif document_type == "ISS":
+        refined = iss.refine_iss(refined, text_upper)
 
     is_pro_labore = bool(
         refined.get("codigo_receita") == "1099"

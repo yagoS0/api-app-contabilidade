@@ -180,6 +180,15 @@ export function createRealApi() {
       const payload = await request(`/firm/companies/${companyId}/guides?page=1&limit=50`);
       return Array.isArray(payload?.data) ? payload.data : [];
     },
+    async uploadCompanyGuide(companyId, file, metadata) {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (metadata) formData.append("metadata", JSON.stringify(metadata));
+      return request(`/firm/companies/${companyId}/guides/upload`, { method: "POST", body: formData });
+    },
+    async deleteGuide(guideId) {
+      return request(`/firm/guides/${guideId}`, { method: "DELETE" });
+    },
     async resendGuideEmail(guideId) {
       return request(`/firm/guides/${guideId}/resend-email`, { method: "POST" });
     },
@@ -324,6 +333,37 @@ export function createRealApi() {
       });
     },
 
+    // ── Plano de Contas Global ─────────────────────────────────────────────
+    async getGlobalChartOfAccounts() {
+      const payload = await request(`/firm/chart-of-accounts/global`);
+      return Array.isArray(payload?.data) ? payload.data : [];
+    },
+    async createGlobalChartOfAccount(input) {
+      return request(`/firm/chart-of-accounts/global`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    async updateGlobalChartOfAccount(codigo, input) {
+      return request(`/firm/chart-of-accounts/global/${encodeURIComponent(codigo)}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+    },
+    async deleteGlobalChartOfAccount(codigo) {
+      return request(`/firm/chart-of-accounts/global/${encodeURIComponent(codigo)}`, {
+        method: "DELETE",
+      });
+    },
+    async importGlobalChartOfAccountsFile(file) {
+      const formData = new FormData();
+      formData.append("file", file);
+      return request(`/firm/chart-of-accounts/global/import`, {
+        method: "POST",
+        body: formData,
+      });
+    },
+
     // ── Lançamentos ────────────────────────────────────────────────────────
     async getAccountingEntries(companyId, params = {}) {
       const query = new URLSearchParams();
@@ -347,6 +387,48 @@ export function createRealApi() {
         method: "POST",
         body: JSON.stringify(input),
       });
+    },
+    async getPayrollTemplate(companyId, kind, competencia) {
+      const qs = new URLSearchParams({ kind: String(kind), competencia: String(competencia) }).toString();
+      return request(`/firm/companies/${companyId}/payroll/template?${qs}`);
+    },
+
+    // ===== Accounting Entry Rules =====
+    async listAccountingRulesEventTypes() {
+      return request(`/firm/accounting-entry-rules/event-types`);
+    },
+    async listGlobalAccountingRules() {
+      return request(`/firm/accounting-entry-rules/global`);
+    },
+    async createGlobalAccountingRule(payload) {
+      return request(`/firm/accounting-entry-rules/global`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    async listAccountingRules(companyId) {
+      return request(`/firm/companies/${companyId}/accounting-entry-rules`);
+    },
+    async createAccountingRule(companyId, payload) {
+      return request(`/firm/companies/${companyId}/accounting-entry-rules`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    async updateAccountingRule(companyId, ruleId, payload) {
+      const path = companyId
+        ? `/firm/companies/${companyId}/accounting-entry-rules/${ruleId}`
+        : `/firm/accounting-entry-rules/${ruleId}`;
+      return request(path, { method: "PUT", body: JSON.stringify(payload) });
+    },
+    async deactivateAccountingRule(companyId, ruleId) {
+      const path = companyId
+        ? `/firm/companies/${companyId}/accounting-entry-rules/${ruleId}/deactivate`
+        : `/firm/accounting-entry-rules/${ruleId}/deactivate`;
+      return request(path, { method: "PATCH" });
+    },
+    async getBaixaTemplate(companyId, entryId) {
+      return request(`/firm/companies/${companyId}/entries/${entryId}/baixa-template`);
     },
     async updateAccountingEntry(companyId, entryId, input) {
       return request(`/firm/companies/${companyId}/entries/${entryId}`, {
@@ -437,6 +519,8 @@ export function createRealApi() {
       const baseUrl = getApiBaseUrl();
       const query = new URLSearchParams();
       if (params.competencia) query.set("competencia", params.competencia);
+      if (params.competenciaInicio) query.set("competenciaInicio", params.competenciaInicio);
+      if (params.competenciaFim) query.set("competenciaFim", params.competenciaFim);
       if (params.tipo) query.set("tipo", params.tipo);
       if (params.status) query.set("status", params.status);
       const suffix = query.toString() ? `?${query.toString()}` : "";
@@ -448,6 +532,16 @@ export function createRealApi() {
         method: "POST",
         body: JSON.stringify(input),
       });
+    },
+
+    async getFiscalExecutions(companyId, params = {}) {
+      const query = new URLSearchParams();
+      if (params.competencia) query.set("competencia", params.competencia);
+      if (params.action) query.set("action", params.action);
+      if (params.limit) query.set("limit", String(params.limit));
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      const payload = await request(`/firm/companies/${companyId}/fiscal/executions${suffix}`);
+      return Array.isArray(payload?.data) ? payload.data : [];
     },
   };
 }

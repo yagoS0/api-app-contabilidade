@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { CircularTab } from "../renderCircularTab.jsx";
 
-jest.mock("../../baixa/components/renderBaixaModal", () => ({
+jest.mock("../../../baixa/components/renderBaixaModal", () => ({
   BaixaModal: () => null,
 }));
 
@@ -207,7 +207,7 @@ describe("CircularTab", () => {
 
       render(<CircularTab {...props} />);
 
-      expect(screen.getByText(/Guias verificadas: 10/i)).toBeInTheDocument();
+      expect(screen.getByText(/Verificadas: 10/i)).toBeInTheDocument();
       expect(screen.getByText(/Pagas: 6/i)).toBeInTheDocument();
     });
 
@@ -231,7 +231,7 @@ describe("CircularTab", () => {
 
       render(<CircularTab {...props} />);
 
-      expect(screen.getByText(/⚠ Incompleto/i)).toBeInTheDocument();
+      expect(screen.getByText(/⚠ Ignorado/i)).toBeInTheDocument();
     });
 
     it("accepts competencia in operational block display", () => {
@@ -248,6 +248,116 @@ describe("CircularTab", () => {
       render(<CircularTab {...props} />);
 
       expect(screen.getByText(/Operações Fiscais para 2026-05/i)).toBeInTheDocument();
+    });
+  });
+
+  describe("ExecutionHistoryPanel", () => {
+    const baseProps = {
+      ...defaultProps,
+      runningFiscalAction: null,
+      lastFiscalResult: null,
+      onSearchGuides: jest.fn(),
+      onCheckPayments: jest.fn(),
+      onSyncInss: jest.fn(),
+    };
+
+    it("shows loading state when loadingExecutions is true", () => {
+      render(<CircularTab {...baseProps} executions={[]} loadingExecutions={true} />);
+      expect(screen.getByText(/Carregando.../i)).toBeInTheDocument();
+    });
+
+    it("shows empty state when executions array is empty", () => {
+      render(<CircularTab {...baseProps} executions={[]} loadingExecutions={false} />);
+      expect(screen.getByText(/Nenhuma execução registrada/i)).toBeInTheDocument();
+    });
+
+    it("renders execution entries with status badges", () => {
+      const executions = [
+        {
+          id: "log-1",
+          portalClientId: "c1",
+          competencia: "2026-01",
+          action: "search_guides",
+          status: "completed",
+          startedAt: "2026-01-15T10:00:00Z",
+          completedAt: "2026-01-15T10:00:03Z",
+          guidesFound: 3,
+          guidesCaptured: 2,
+          entriesGenerated: 5,
+        },
+        {
+          id: "log-2",
+          portalClientId: "c1",
+          competencia: "2026-01",
+          action: "check_payments",
+          status: "failed",
+          startedAt: "2026-01-15T11:00:00Z",
+          errorCode: "SERPRO_SERVICE_UNAVAILABLE",
+          errorMessage: "Service unavailable",
+        },
+      ];
+
+      render(<CircularTab {...baseProps} executions={executions} loadingExecutions={false} />);
+
+      expect(screen.getAllByText(/Concluído/i).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Falhou/i)).toBeInTheDocument();
+      // "Buscar Guias" and "Verificar Pagtos" appear in both buttons and history entries
+      expect(screen.getAllByText(/Buscar Guias/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Verificar Pagtos/i).length).toBeGreaterThan(0);
+    });
+
+    it("shows error message for failed executions", () => {
+      const executions = [
+        {
+          id: "log-fail",
+          portalClientId: "c1",
+          competencia: "2026-01",
+          action: "sync_inss",
+          status: "failed",
+          startedAt: "2026-01-15T12:00:00Z",
+          errorCode: "SERPRO_TIMEOUT",
+          errorMessage: "Request timed out",
+        },
+      ];
+
+      render(<CircularTab {...baseProps} executions={executions} loadingExecutions={false} />);
+
+      expect(screen.getByText(/Request timed out/i)).toBeInTheDocument();
+    });
+
+    it("shows skip reason for skipped executions", () => {
+      const executions = [
+        {
+          id: "log-skip",
+          portalClientId: "c1",
+          competencia: "2026-01",
+          action: "sync_inss",
+          status: "skipped",
+          startedAt: "2026-01-15T12:00:00Z",
+          skipReason: "declaration_not_transmitted",
+        },
+      ];
+
+      render(<CircularTab {...baseProps} executions={executions} loadingExecutions={false} />);
+
+      expect(screen.getByText(/declaration not transmitted/i)).toBeInTheDocument();
+    });
+
+    it("shows record count in panel header", () => {
+      const executions = [
+        {
+          id: "log-1", portalClientId: "c1", competencia: "2026-01",
+          action: "search_guides", status: "completed", startedAt: "2026-01-15T10:00:00Z",
+        },
+        {
+          id: "log-2", portalClientId: "c1", competencia: "2026-01",
+          action: "check_payments", status: "completed", startedAt: "2026-01-15T11:00:00Z",
+        },
+      ];
+
+      render(<CircularTab {...baseProps} executions={executions} loadingExecutions={false} />);
+
+      expect(screen.getByText(/2 registros/i)).toBeInTheDocument();
     });
   });
 });

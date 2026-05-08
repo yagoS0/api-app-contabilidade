@@ -8,6 +8,9 @@ import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproS
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
+import { GlobalAccountingRulesPage } from "./features/accounting/rules/pages/renderGlobalAccountingRulesPage";
+import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
+import { FirmSettingsHubPage } from "./features/firm/settings/pages/renderFirmSettingsHubPage";
 import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
@@ -122,9 +125,40 @@ function App() {
         onSyncPgdas={companiesWorkspace.handleSyncSerproPgdas}
         onSyncInss={companiesWorkspace.handleSyncSerproInss}
         onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
-        onBack={() => session.setPage("companies")}
+        onBack={() => session.setPage("firmSettings")}
         message={feedback.message}
         error={feedback.error}
+      />
+    );
+  }
+
+  if (session.page === "firmSettings") {
+    return (
+      <FirmSettingsHubPage
+        onBack={() => session.setPage("companies")}
+        onOpen={(key) => {
+          if (key === "guides") session.setPage("guideSettings");
+          else if (key === "accountingRules") session.setPage("accountingRulesGlobal");
+          else if (key === "chartOfAccounts") session.setPage("chartOfAccountsGlobal");
+        }}
+      />
+    );
+  }
+
+  if (session.page === "chartOfAccountsGlobal") {
+    return (
+      <GlobalChartOfAccountsPage
+        api={api}
+        onBack={() => session.setPage("firmSettings")}
+      />
+    );
+  }
+
+  if (session.page === "accountingRulesGlobal") {
+    return (
+      <GlobalAccountingRulesPage
+        api={api}
+        onBack={() => session.setPage("firmSettings")}
       />
     );
   }
@@ -165,6 +199,9 @@ function App() {
           resendingGuideId: companiesWorkspace.guidesState.resendingGuideId,
           confirmingGuideId: companiesWorkspace.guidesState.confirmingGuideId,
           recalculatingGuideId: companiesWorkspace.guidesState.recalculatingGuideId,
+          onUploadGuide: companiesWorkspace.handleCompanyGuideUpload,
+          uploadingGuide: companiesWorkspace.uploadingCompanyGuide,
+          onDeleteGuide: companiesWorkspace.handleDeleteGuide,
         }}
         editPanel={{
           form: companiesWorkspace.editCompanyForm.form,
@@ -180,8 +217,12 @@ function App() {
           onFilterChange: (key, value) => accountingWorkspace.accountingEntriesState.setFilter(key, value),
           onLoadEntries: () => accountingWorkspace.loadAccountingEntries(),
           onCreateEntry: accountingWorkspace.handleCreateEntry,
+          onLoadPayrollTemplate: accountingWorkspace.handleLoadPayrollTemplate,
+          onLoadBaixaTemplate: accountingWorkspace.handleLoadBaixaTemplate,
+          api,
           onUpdateEntry: accountingWorkspace.handleUpdateEntry,
           onDeleteEntry: accountingWorkspace.handleDeleteEntry,
+          onBulkDeleteEntries: accountingWorkspace.handleBulkDeleteEntries,
           onPreviewOFX: accountingWorkspace.handlePreviewOFX,
           onImportOFX: accountingWorkspace.handleImportOFX,
           savingEntry: accountingWorkspace.savingEntry,
@@ -219,6 +260,11 @@ function App() {
           onSearchGuides: accountingWorkspace.handleSearchGuides,
           onCheckPayments: accountingWorkspace.handleCheckPayments,
           onSyncInss: accountingWorkspace.handleSyncInss,
+          executions: accountingWorkspace.fiscalExecutions,
+          loadingExecutions: accountingWorkspace.loadingFiscalExecutions,
+          error: accountingWorkspace.entriesError,
+          message: accountingWorkspace.entriesMessage,
+          onCancelBaixa: accountingWorkspace.handleDeleteEntryNoConfirm,
         }}
         feedback={{ message: feedback.message, error: feedback.error }}
       />
@@ -251,7 +297,7 @@ function App() {
       loadingCompanies={companiesWorkspace.companiesState.loadingCompanies}
       onCreateCompany={() => session.setPage("createCompany")}
       onOpenGuideUpload={() => session.setPage("guideUpload")}
-      onOpenGuideSettings={() => session.setPage("guideSettings")}
+      onOpenFirmSettings={() => session.setPage("firmSettings")}
       onRefreshCompanies={companiesWorkspace.loadCompanies}
       onOpenPendingReport={() => session.setPage("pendingReport")}
       onLogout={handleLogout}

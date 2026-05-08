@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import {
@@ -108,7 +108,7 @@ function TemplateBadge() {
   return <span style={{ display: "inline-block", fontSize: "0.8125rem", fontWeight: 700, padding: "6px 12px", borderRadius: 999, background: "#FFB347", color: "#1A1B26", border: "1px solid #FFB347", whiteSpace: "nowrap" }}>PREENCHER VALOR</span>;
 }
 
-function LineEditor({ lines, onChange, accounts }) {
+export function LineEditor({ lines, onChange, accounts }) {
   function updateLine(idx, field, val) { onChange(lines.map((l, i) => i === idx ? { ...l, [field]: val } : l)); }
   function removeLine(idx) { onChange(lines.filter((_, i) => i !== idx)); }
   function addLine(tipo) { onChange([...lines, { tipo, conta: "", valor: "" }]); }
@@ -184,7 +184,7 @@ function detectTipoFromAccounts(contaD, contaC, accounts) {
   return { tipo: "DESPESA", subtipo: null };
 }
 
-function hasDuplicateAccountAcrossSides(lines) {
+export function hasDuplicateAccountAcrossSides(lines) {
   const debitAccounts = new Set(
     (Array.isArray(lines) ? lines : [])
       .filter((line) => String(line.tipo || "").toUpperCase() === "D")
@@ -247,7 +247,7 @@ function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onGetHisto
   );
 }
 
-function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSearchHistoricos, accounts, inputRef, inputStyle }) {
+export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSearchHistoricos, accounts, inputRef, inputStyle }) {
   const [open, setOpen] = useState(false);
   const [historicos, setHistoricos] = useState([]);
   const [selIdx, setSelIdx] = useState(-1);
@@ -413,7 +413,7 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
   );
 }
 
-export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCreateBaixa, savingBaixa, onSearchHistoricos }) {
+export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCreateBaixa, savingBaixa, onSearchHistoricos, isSelected = false, onToggleSelect = null, onLoadBaixaTemplate = null }) {
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [form, setForm] = useState(null);
@@ -452,6 +452,17 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
 
     return (
       <tr style={{ background: ACCOUNTING_PANEL.field }}>
+        <td style={{ ...TDv, textAlign: "center", padding: "8px 4px" }}>
+          {onToggleSelect && (
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" }}
+              aria-label="Selecionar lançamento"
+            />
+          )}
+        </td>
         <td style={TDv}><input type="date" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark" }} /></td>
         <td style={{ ...TDv, position: "relative" }} colSpan={4}>
           <div style={{ marginBottom: 4 }}><SmartHistoricoInput value={form.historico} onChange={(v) => setForm((p) => ({ ...p, historico: v }))} onFillFromHistory={(h, ls) => setForm((p) => ({ ...p, historico: h, lines: ls?.length ? ls.map((l) => ({ tipo: l.tipo, conta: l.conta || "", valor: l.valor ? String(l.valor) : "" })) : p.lines }))} onSearchHistoricos={onSearchHistoricos} /></div>
@@ -483,13 +494,39 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
   const rowBgHover = "#202334";
   return (
     <>
-      <tr style={{ background: rowBg, ...incompleteRowStyle }} onMouseEnter={(e) => (e.currentTarget.style.background = rowBgHover)} onMouseLeave={(e) => (e.currentTarget.style.background = rowBg)}>
+      <tr style={{ background: isSelected ? "#2a2b3d" : rowBg, ...incompleteRowStyle, outline: isSelected ? "1px solid #BD93F9" : "none" }} onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = rowBgHover; }} onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = rowBg; }}>
+        <td style={{ ...TDv, textAlign: "center", padding: "8px 4px" }}>
+          {onToggleSelect && (
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" }}
+              aria-label={`Selecionar ${entry.historico || "lançamento"}`}
+            />
+          )}
+        </td>
         <td style={{ ...TDv, fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtDate(entry.data)}</td>
         <td style={{ ...TDv, textAlign: isSimple ? "center" : "left" }} colSpan={isSimple ? 1 : 2}>
           {isSimple ? <><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{dLine?.conta}</span>{dA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{dA.nome}</div>}</> : <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
         </td>
         {isSimple && <td style={{ ...TDv, textAlign: "center" }}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{cLine?.conta}</span>{cA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{cA.nome}</div>}</td>}
-        <td style={{ ...TDv, fontSize: "0.9375rem" }} title={entry.historico}><div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.historico || "—"}</div>{isTemplate ? <span style={{ fontSize: "0.7rem", color: "#1A1B26", background: "#FFB347", padding: "2px 7px", borderRadius: 999 }}>agendado</span> : entry.origem !== "MANUAL" && <span style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.text, background: ACCOUNTING_PANEL.surface, padding: "2px 7px", borderRadius: 999 }}>{ORIGEM_LABELS[entry.origem] || entry.origem}</span>}</td>
+        <td style={{ ...TDv, fontSize: "0.9375rem" }} title={entry.historico}>
+          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.historico || "—"}</div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
+            {isTemplate
+              ? <span style={{ fontSize: "0.7rem", color: "#1A1B26", background: "#FFB347", padding: "2px 7px", borderRadius: 999 }}>agendado</span>
+              : entry.origem !== "MANUAL" && <span style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.text, background: ACCOUNTING_PANEL.surface, padding: "2px 7px", borderRadius: 999 }}>{ORIGEM_LABELS[entry.origem] || entry.origem}</span>}
+            {entry.recalculatedAt && (
+              <span
+                style={{ fontSize: "0.7rem", color: "#1A1B26", background: "#FFB347", padding: "2px 7px", borderRadius: 999, fontWeight: 700 }}
+                title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)} — valor original R$ ${fmtMoney(entry.recalculatedFromValor)} → atualizado R$ ${fmtMoney(entry.recalculatedToValor)} (na circular). O valor do lançamento permanece o original.`}
+              >
+                Recalculada
+              </span>
+            )}
+          </div>
+        </td>
         <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.muted, fontSize: "0.875rem" }}>—</span> : fmtMoney(totalD)}</td>
         <td style={{ ...TDv, fontSize: "0.875rem", color: ACCOUNTING_PANEL.text }}>{TIPO_LABELS[entry.tipo] || entry.tipo}</td>
         <td style={TDv}>
@@ -501,8 +538,471 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
         </td>
         <td style={{ ...TDv, textAlign: "right", borderRight: "none" }}><div style={{ display: "flex", gap: 3, justifyContent: "flex-end", flexWrap: "wrap" }}>{!exported && <><button type="button" onClick={startEdit} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#BD93F9" }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#FF4757" }}>⌫</button></>}</div></td>
       </tr>
-      {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={8} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtMoney(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
-      {showBaixa && <BaixaModal entry={entry} accounts={accounts} saving={savingBaixa} onSave={async (input) => { await onCreateBaixa(entry.id, input); setShowBaixa(false); }} onClose={() => setShowBaixa(false)} />}
+      {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={9} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtMoney(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
+      {showBaixa && <BaixaModal entry={entry} accounts={accounts} saving={savingBaixa} onSave={async (input) => { await onCreateBaixa(entry.id, input); setShowBaixa(false); }} onClose={() => setShowBaixa(false)} onLoadBaixaTemplate={onLoadBaixaTemplate} />}
     </>
+  );
+}
+
+// =============================================================================
+// PayrollEntryModal — botão "Folha / Pró-labore" cria lançamento com contas
+// pré-preenchidas a partir do template, exibindo o INSS da guia no rodapé.
+// =============================================================================
+
+function competenciaToHistoricoLabel(competencia) {
+  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
+  return m ? `${m[2]}/${m[1]}` : String(competencia || "");
+}
+
+function lastDayOfCompetencia(competencia) {
+  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return "";
+  const yyyy = Number(m[1]);
+  const mm = Number(m[2]);
+  const day = new Date(yyyy, mm, 0).getDate();
+  return `${m[1]}-${m[2]}-${String(day).padStart(2, "0")}`;
+}
+
+export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate, onSave, saving, onClose }) {
+  const [kind, setKind] = useState("PROLABORE");
+  const [competencia, setCompetencia] = useState(defaultCompetencia || "");
+  const [template, setTemplate] = useState(null);
+  // Cada linha: { data, debito, credito, historico, valor }
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let canceled = false;
+    if (!kind || !competencia) return undefined;
+    setLoading(true);
+    setError(null);
+    onLoadTemplate(kind, competencia)
+      .then((res) => {
+        if (canceled) return;
+        const tpl = res?.template || null;
+        setTemplate(tpl);
+        if (!tpl) return;
+        const defaultDate = lastDayOfCompetencia(competencia);
+        // Linhas da provisão: cada uma com apenas D OU C preenchido
+        const provisaoRows = tpl.lines.map((l) => ({
+          data: defaultDate,
+          debito: l.side === "D" ? (l.accountCode || "") : "",
+          credito: l.side === "C" ? (l.accountCode || "") : "",
+          historico: l.historico || "",
+          valor: "",
+        }));
+        // Linha de baixa: D + C preenchidos
+        const baixaRow = tpl.baixa
+          ? {
+              data: defaultDate,
+              debito: tpl.baixa.debitAccountCode || "",
+              credito: tpl.baixa.creditAccountCode || "",
+              historico: tpl.baixa.historico || "",
+              valor: "",
+            }
+          : null;
+        setRows(baixaRow ? [...provisaoRows, baixaRow] : provisaoRows);
+      })
+      .catch((err) => {
+        if (canceled) return;
+        setError(err?.message || "Falha ao carregar template.");
+      })
+      .finally(() => {
+        if (!canceled) setLoading(false);
+      });
+    return () => { canceled = true; };
+  }, [kind, competencia, onLoadTemplate]);
+
+  function updateRow(idx, field, value) {
+    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+  }
+
+  function addRow() {
+    setRows((prev) => [
+      ...prev,
+      {
+        data: lastDayOfCompetencia(competencia),
+        debito: "",
+        credito: "",
+        historico: "",
+        valor: "",
+      },
+    ]);
+  }
+
+  function removeRow(idx) {
+    setRows((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  // Linhas válidas: ao menos uma conta + valor > 0
+  const validRows = rows.filter(
+    (r) => Number(r.valor) > 0 && (String(r.debito || "").trim() || String(r.credito || "").trim())
+  );
+
+  // Provisão = linhas com APENAS um lado (D xor C)
+  const provisaoRowsFilled = validRows.filter(
+    (r) => Boolean(String(r.debito || "").trim()) !== Boolean(String(r.credito || "").trim())
+  );
+  // Baixas = linhas com AMBOS lados
+  const baixaRowsFilled = validRows.filter(
+    (r) => String(r.debito || "").trim() && String(r.credito || "").trim()
+  );
+
+  const totalD = provisaoRowsFilled
+    .filter((r) => r.debito)
+    .reduce((s, r) => s + Number(r.valor || 0), 0);
+  const totalC = provisaoRowsFilled
+    .filter((r) => r.credito)
+    .reduce((s, r) => s + Number(r.valor || 0), 0);
+  const provisaoBalanced =
+    provisaoRowsFilled.length === 0 || (Math.abs(totalD - totalC) < 0.01 && totalD > 0);
+
+  async function handleSave() {
+    setError(null);
+    if (validRows.length === 0) {
+      setError("Preencha valor e contas em ao menos uma linha.");
+      return;
+    }
+    if (!provisaoBalanced) {
+      setError(`Provisão desbalanceada — débito R$ ${totalD.toFixed(2)} ≠ crédito R$ ${totalC.toFixed(2)}.`);
+      return;
+    }
+
+    let provisaoEntry = null;
+    if (provisaoRowsFilled.length > 0) {
+      const firstDate =
+        provisaoRowsFilled.find((r) => r.data)?.data || lastDayOfCompetencia(competencia);
+      provisaoEntry = {
+        data: firstDate,
+        competencia,
+        historico: `${kind === "PROLABORE" ? "PRÓ-LABORE" : "FOLHA"} — ${competenciaToHistoricoLabel(competencia)}`,
+        tipo: "FOLHA",
+        subtipo: kind,
+        lines: provisaoRowsFilled.map((r, idx) => ({
+          tipo: r.debito ? "D" : "C",
+          conta: String(r.debito || r.credito).trim(),
+          valor: Number(r.valor),
+          historico: r.historico ? String(r.historico).trim() : null,
+          ordem: idx,
+        })),
+      };
+    }
+
+    const baixas = baixaRowsFilled.map((r) => ({
+      data: r.data || lastDayOfCompetencia(competencia),
+      historico: (r.historico || "").trim() || `PAGAMENTO ${competenciaToHistoricoLabel(competencia)}`,
+      lines: [
+        { tipo: "D", conta: String(r.debito).trim(), valor: Number(r.valor), ordem: 0 },
+        { tipo: "C", conta: String(r.credito).trim(), valor: Number(r.valor), ordem: 1 },
+      ],
+    }));
+
+    await onSave({ entry: provisaoEntry, baixas });
+  }
+
+  const overlay = {
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100,
+    display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+  };
+  const modal = {
+    background: "#24253A", border: "1px solid #44475A", borderRadius: 10,
+    padding: 22, width: 980, maxWidth: "100%", maxHeight: "92vh", overflowY: "auto",
+    color: "#F8F8F2", boxSizing: "border-box",
+  };
+  const labelStyle = { display: "grid", gap: 4, fontSize: "0.8125rem", color: "#aeb6d3", marginBottom: 10 };
+  const inputStyle = {
+    background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6,
+    color: "#F8F8F2", padding: "6px 8px", fontSize: "0.85rem", width: "100%", boxSizing: "border-box",
+  };
+  const cellStyle = { padding: "4px", verticalAlign: "middle", borderBottom: "1px solid #2D2F45" };
+  const headStyle = {
+    padding: "8px 6px", textAlign: "left", color: "#aeb6d3", fontSize: "0.75rem",
+    fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em",
+    borderBottom: "1px solid #44475A", background: "#1A1B26",
+  };
+
+  return (
+    <div style={overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={modal}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Nova Folha / Pró-labore</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#6272A4", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+          <label style={labelStyle}>
+            Tipo
+            <select value={kind} onChange={(e) => setKind(e.target.value)} style={{ ...inputStyle, padding: "8px 10px", fontSize: "0.9rem" }}>
+              <option value="PROLABORE">Pró-labore</option>
+              <option value="FOLHA">Folha de Pagamento</option>
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Competência (AAAA-MM)
+            <input
+              type="text"
+              value={competencia}
+              onChange={(e) => setCompetencia(e.target.value.trim())}
+              placeholder="2026-01"
+              style={{ ...inputStyle, padding: "8px 10px", fontSize: "0.9rem" }}
+            />
+          </label>
+        </div>
+
+        <p style={{ fontSize: "0.78rem", color: "#aeb6d3", margin: "0 0 8px" }}>
+          Preencha apenas <strong>data</strong> e <strong>valor</strong> nas linhas que quiser lançar. Linhas em branco são ignoradas.
+        </p>
+
+        {loading && <p style={{ color: "#6272A4" }}>Carregando template...</p>}
+
+        {!loading && rows.length > 0 && (
+          <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid #44475A" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+              <thead>
+                <tr>
+                  <th style={{ ...headStyle, width: "150px" }}>Data</th>
+                  <th style={{ ...headStyle, width: "100px" }}>Débito</th>
+                  <th style={{ ...headStyle, width: "100px" }}>Crédito</th>
+                  <th style={headStyle}>Histórico</th>
+                  <th style={{ ...headStyle, width: "150px", textAlign: "right" }}>Valor (R$)</th>
+                  <th style={{ ...headStyle, width: "36px" }} aria-label="Ações" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, idx) => {
+                  const dAccount = r.debito && accounts.find((a) => a.codigo === String(r.debito).trim());
+                  const cAccount = r.credito && accounts.find((a) => a.codigo === String(r.credito).trim());
+                  return (
+                    <tr key={idx}>
+                      <td style={cellStyle}>
+                        <input
+                          type="date"
+                          value={r.data}
+                          onChange={(e) => updateRow(idx, "data", e.target.value)}
+                          style={{ ...inputStyle, colorScheme: "dark" }}
+                        />
+                      </td>
+                      <td style={cellStyle}>
+                        <input
+                          type="text"
+                          list={`payroll-acc-${idx}`}
+                          value={r.debito}
+                          onChange={(e) => updateRow(idx, "debito", e.target.value)}
+                          placeholder="—"
+                          style={{ ...inputStyle, fontWeight: 700, color: r.debito ? "#8BE9FD" : "#6272A4", textAlign: "center" }}
+                        />
+                        {dAccount && <div style={{ fontSize: "0.65rem", color: "#6272A4", marginTop: 2, textAlign: "center" }}>{dAccount.nome}</div>}
+                      </td>
+                      <td style={cellStyle}>
+                        <input
+                          type="text"
+                          list={`payroll-acc-${idx}`}
+                          value={r.credito}
+                          onChange={(e) => updateRow(idx, "credito", e.target.value)}
+                          placeholder="—"
+                          style={{ ...inputStyle, fontWeight: 700, color: r.credito ? "#69FF47" : "#6272A4", textAlign: "center" }}
+                        />
+                        {cAccount && <div style={{ fontSize: "0.65rem", color: "#6272A4", marginTop: 2, textAlign: "center" }}>{cAccount.nome}</div>}
+                      </td>
+                      <td style={cellStyle}>
+                        <input
+                          type="text"
+                          value={r.historico}
+                          onChange={(e) => updateRow(idx, "historico", e.target.value)}
+                          style={{ ...inputStyle }}
+                        />
+                        <datalist id={`payroll-acc-${idx}`}>
+                          {accounts.map((a) => (
+                            <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>
+                          ))}
+                        </datalist>
+                      </td>
+                      <td style={cellStyle}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={r.valor}
+                          onChange={(e) => updateRow(idx, "valor", e.target.value)}
+                          placeholder="0,00"
+                          style={{ ...inputStyle, textAlign: "right" }}
+                        />
+                      </td>
+                      <td style={{ ...cellStyle, textAlign: "center" }}>
+                        <button
+                          type="button"
+                          onClick={() => removeRow(idx)}
+                          title="Remover linha"
+                          style={{
+                            background: "transparent",
+                            border: "1px solid #44475A",
+                            color: "#FF5757",
+                            width: 26, height: 26, borderRadius: 6,
+                            cursor: "pointer", fontSize: "0.85rem", lineHeight: 1,
+                          }}
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr>
+                  <td colSpan={6} style={{ padding: "8px 12px", textAlign: "left" }}>
+                    <button
+                      type="button"
+                      onClick={addRow}
+                      style={{
+                        background: "transparent",
+                        border: "1px dashed #6272A4",
+                        color: "#BD93F9",
+                        padding: "6px 14px",
+                        borderRadius: 6,
+                        cursor: "pointer",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      + Adicionar linha
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr style={{ background: "#1A1B26" }}>
+                  <td colSpan={6} style={{ padding: "8px 12px", fontSize: "0.78rem", color: provisaoBalanced ? "#69FF47" : "#FFB347" }}>
+                    Provisão — D R$ {totalD.toFixed(2)} / C R$ {totalC.toFixed(2)}{" "}
+                    {provisaoBalanced ? "✓" : "(desbalanceado)"}
+                    {baixaRowsFilled.length > 0 && (
+                      <span style={{ marginLeft: 12, color: "#8BE9FD" }}>
+                        {baixaRowsFilled.length} pagamento{baixaRowsFilled.length !== 1 ? "s" : ""} a registrar
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {template?.inssGuide && (
+          <div style={{ marginTop: 10, padding: 8, fontSize: "0.78rem", color: "#aeb6d3" }}>
+            <strong style={{ color: "#FFB347" }}>INSS da guia: R$ {fmtMoney(template.inssGuide.valor)}</strong>
+            {template.inssGuide.vencimento && <span> · vencimento {fmtDate(template.inssGuide.vencimento)}</span>}
+          </div>
+        )}
+
+        {error && (
+          <div style={{ marginTop: 12, padding: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button variant="primary" onClick={handleSave} disabled={saving || loading || validRows.length === 0}>
+            {saving ? "Salvando..." : "Salvar lançamento"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// CsvExportModal — escolhe intervalo de competências (AAAA-MM até AAAA-MM)
+// =============================================================================
+
+export function CsvExportModal({ defaultCompetencia, onExport, onClose }) {
+  const [inicio, setInicio] = useState(defaultCompetencia || "");
+  const [fim, setFim] = useState(defaultCompetencia || "");
+  const [error, setError] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const validFormat = (v) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(v || ""));
+
+  async function handleExport() {
+    setError("");
+    if (!validFormat(inicio) || !validFormat(fim)) {
+      setError("Use o formato AAAA-MM (ex: 2026-01).");
+      return;
+    }
+    if (fim < inicio) {
+      setError("A competência final deve ser maior ou igual à inicial.");
+      return;
+    }
+    setExporting(true);
+    try {
+      await onExport({ competenciaInicio: inicio, competenciaFim: fim });
+      onClose();
+    } catch (err) {
+      setError(err?.message || "Falha ao exportar.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const overlay = {
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100,
+    display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+  };
+  const modal = {
+    background: "#24253A", border: "1px solid #44475A", borderRadius: 10,
+    padding: 22, width: 460, maxWidth: "100%", color: "#F8F8F2", boxSizing: "border-box",
+  };
+  const labelStyle = { display: "grid", gap: 4, fontSize: "0.8125rem", color: "#aeb6d3", marginBottom: 12 };
+  const inputStyle = {
+    background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6,
+    color: "#F8F8F2", padding: "8px 10px", fontSize: "0.95rem", width: "100%", boxSizing: "border-box",
+  };
+
+  return (
+    <div style={overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={modal}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Exportar CSV</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#6272A4", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+
+        <p style={{ fontSize: "0.85rem", color: "#aeb6d3", margin: "0 0 14px" }}>
+          Selecione o intervalo de competências a exportar. O arquivo terá 5 colunas:
+          Data, Código Débito, Código Crédito, Histórico, Valor.
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <label style={labelStyle}>
+            Competência inicial
+            <input
+              type="month"
+              value={inicio}
+              onChange={(e) => setInicio(e.target.value)}
+              style={{ ...inputStyle, colorScheme: "dark" }}
+            />
+          </label>
+          <label style={labelStyle}>
+            Competência final
+            <input
+              type="month"
+              value={fim}
+              onChange={(e) => setFim(e.target.value)}
+              style={{ ...inputStyle, colorScheme: "dark" }}
+            />
+          </label>
+        </div>
+
+        {error && (
+          <div style={{ padding: 8, marginTop: 4, marginBottom: 8, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", borderRadius: 6, color: "#FF5757", fontSize: "0.8125rem" }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+          <Button variant="secondary" onClick={onClose} disabled={exporting}>Cancelar</Button>
+          <Button variant="primary" onClick={handleExport} disabled={exporting}>
+            {exporting ? "Exportando..." : "Exportar"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
