@@ -274,11 +274,36 @@ export async function createOrUpdateGuideFromProcessing({
   serproLastCheckResult,
   serproLastSeenAt,
   serproService,
+  // Override do email status. Valores aceitos:
+  //   - "PRESERVE": mantém o emailStatus atual da guia (lê do existing antes de update).
+  //                 Útil em re-fetches silenciosos (não quer reenviar).
+  //   - "PENDING" (string): força reset para PENDING (causa reenvio pelo email worker).
+  //   - undefined (default): comportamento legado — sempre PENDING para PROCESSED, null caso contrário.
+  emailStatusOverride,
 }) {
   const hasDbPdf =
     pdfBytesInput !== undefined &&
     Buffer.isBuffer(pdfBytesInput) &&
     pdfBytesInput.length > 0;
+
+  // Se "PRESERVE", busca o emailStatus atual da guia para manter o estado de envio
+  let preservedEmail = null;
+  if (emailStatusOverride === "PRESERVE" && existingGuideId) {
+    const current = await prisma.guide.findUnique({
+      where: { id: String(existingGuideId) },
+      select: { emailStatus: true, emailSentAt: true, emailAttempts: true, emailLastError: true, emailNextRetryAt: true },
+    });
+    preservedEmail = current || null;
+  }
+
+  let resolvedEmailStatus;
+  if (emailStatusOverride === "PRESERVE" && preservedEmail) {
+    resolvedEmailStatus = preservedEmail.emailStatus;
+  } else if (typeof emailStatusOverride === "string" && emailStatusOverride !== "PRESERVE") {
+    resolvedEmailStatus = emailStatusOverride;
+  } else {
+    resolvedEmailStatus = status === "PROCESSED" ? "PENDING" : null;
+  }
 
   const data = {
     portalClientId: portalClientId ? String(portalClientId) : null,
@@ -297,11 +322,11 @@ export async function createOrUpdateGuideFromProcessing({
     // Hash só é persistido para guias finalizadas em PROCESSED.
     hash: status === "PROCESSED" ? hash || null : null,
     status: status || "PENDING",
-    emailStatus: status === "PROCESSED" ? "PENDING" : null,
-    emailAttempts: status === "PROCESSED" ? 0 : 0,
-    emailLastError: null,
-    emailSentAt: null,
-    emailNextRetryAt: null,
+    emailStatus: resolvedEmailStatus,
+    emailAttempts: preservedEmail ? preservedEmail.emailAttempts : 0,
+    emailLastError: preservedEmail ? preservedEmail.emailLastError : null,
+    emailSentAt: preservedEmail ? preservedEmail.emailSentAt : null,
+    emailNextRetryAt: preservedEmail ? preservedEmail.emailNextRetryAt : null,
     errors: errors || [],
     extracted: extracted || parsed || {},
     paymentStatus: paymentStatus || "OPEN",

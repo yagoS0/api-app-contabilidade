@@ -107,6 +107,7 @@ export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
 );
 export const GUIDE_EMAIL_WORKER_ENABLED = process.env.GUIDE_EMAIL_WORKER_ENABLED === "1";
 export const SERPRO_PGDASD_WORKER_ENABLED = process.env.SERPRO_PGDASD_WORKER_ENABLED === "1";
+export const SERPRO_DCTFWEB_WORKER_ENABLED = process.env.SERPRO_DCTFWEB_WORKER_ENABLED === "1";
 /** Opcional: fixa YYYY-MM para alertas de guia (homolog). Vazio = mês civil anterior. */
 export const GUIDE_COMPLIANCE_COMPETENCIA = (process.env.GUIDE_COMPLIANCE_COMPETENCIA || "").trim();
 export const GUIDE_SCHEDULE_MAX_FILES_PER_COMPANY = Math.min(

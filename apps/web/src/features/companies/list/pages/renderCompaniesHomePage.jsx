@@ -21,7 +21,7 @@ export function CompaniesHomePage({
   loadingCompanies,
   onCreateCompany,
   onOpenGuideUpload,
-  onOpenGuideSettings,
+  onOpenFirmSettings,
   onRefreshCompanies,
   onOpenPendingReport,
   onLogout,
@@ -81,9 +81,11 @@ export function CompaniesHomePage({
             <Button variant="success" className="dashboard-home__action dashboard-home__action--success" onClick={onCreateCompany}>
               Nova empresa
             </Button>
-            <Button variant="secondary" className="dashboard-home__action" onClick={onOpenGuideSettings}>
-              Guias (Configuracoes)
-            </Button>
+            {onOpenFirmSettings && (
+              <Button variant="secondary" className="dashboard-home__action" onClick={onOpenFirmSettings}>
+                Configurações
+              </Button>
+            )}
             <Button variant="secondary" className="dashboard-home__action" onClick={onOpenGuideUpload}>
               Guias (Upload)
             </Button>

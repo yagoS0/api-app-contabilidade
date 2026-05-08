@@ -3,9 +3,11 @@ import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 
-const SERPRO_DAY_OF_MONTH_OPTIONS = Array.from({ length: 28 }, (_, index) => {
+const SERPRO_DAY_OF_MONTH_OPTIONS = Array.from({ length: 31 }, (_, index) => {
   const day = String(index + 1);
-  return { value: day, label: `Dia ${day}` };
+  // Marca dias 29-31 como "fim de mês" para deixar claro que pode não existir em fevereiro
+  const label = index >= 28 ? `Dia ${day} (fim de mês)` : `Dia ${day}`;
+  return { value: day, label };
 });
 
 function padTimePart(value) {
@@ -31,7 +33,7 @@ function parseSerproSchedule(cronExpression) {
     dayOfWeek !== "*" ||
     !Number.isInteger(parsedDayOfMonth) ||
     parsedDayOfMonth < 1 ||
-    parsedDayOfMonth > 28 ||
+    parsedDayOfMonth > 31 ||
     !Number.isInteger(parsedMinute) ||
     !Number.isInteger(parsedHour) ||
     parsedMinute < 0 ||
@@ -99,7 +101,8 @@ export function SerproSettingsPage({
     consumerSecret: "",
     scope: "",
     timeoutMs: 30000,
-    fetchCron: "0 7 5 * *",
+    fetchDay: 5,
+    fetchHour: 7,
   });
   const [certificateFile, setCertificateFile] = useState(null);
   const [certificatePassword, setCertificatePassword] = useState("");
@@ -114,7 +117,13 @@ export function SerproSettingsPage({
   const [testContratanteCnpj, setTestContratanteCnpj] = useState("");
 
   useEffect(() => {
-    const parsedSchedule = parseSerproSchedule(settings?.fetchCron || "0 7 5 * *");
+    // Prioriza fetchDay/fetchHour explícitos do backend; cai para parse do fetchCron como fallback.
+    const fetchDay = Number.isFinite(Number(settings?.fetchDay))
+      ? Number(settings.fetchDay)
+      : parseSerproSchedule(settings?.fetchCron || "0 7 5 * *").day;
+    const fetchHour = Number.isFinite(Number(settings?.fetchHour))
+      ? Number(settings.fetchHour)
+      : Number(parseSerproSchedule(settings?.fetchCron || "0 7 5 * *").time.split(":")[0]);
     setForm({
       enabled: Boolean(settings?.enabled),
       environment: settings?.environment || "homolog",
@@ -124,11 +133,12 @@ export function SerproSettingsPage({
       consumerSecret: "",
       scope: settings?.scope || "",
       timeoutMs: Number(settings?.timeoutMs || 30000),
-      fetchCron: settings?.fetchCron || "0 7 5 * *",
+      fetchDay,
+      fetchHour,
     });
-    setScheduleDay(parsedSchedule.day);
-    setScheduleTime(parsedSchedule.time);
-    setScheduleUnsupported(parsedSchedule.unsupported);
+    setScheduleDay(String(fetchDay));
+    setScheduleTime(`${padTimePart(fetchHour)}:00`);
+    setScheduleUnsupported(false);
   }, [settings]);
 
   useEffect(() => {
@@ -140,7 +150,7 @@ export function SerproSettingsPage({
     const firstCompanyId = companies?.[0]?.companyId || "";
     setTestCompanyId(firstCompanyId);
     if (firstCompanyId) onLoadProcuration?.(firstCompanyId);
-  }, [companies, onLoadProcuration, selectedCompanyId]);
+  }, [selectedCompanyId]);
 
   function setField(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -149,13 +159,15 @@ export function SerproSettingsPage({
   function handleScheduleDayChange(value) {
     setScheduleDay(value);
     setScheduleUnsupported(false);
-    setField("fetchCron", buildSerproCron(value, scheduleTime));
+    const day = Math.max(1, Math.min(31, Number(value) || 5));
+    setField("fetchDay", day);
   }
 
   function handleScheduleTimeChange(value) {
     setScheduleTime(value);
     setScheduleUnsupported(false);
-    setField("fetchCron", buildSerproCron(scheduleDay, value));
+    const hour = Math.max(0, Math.min(23, Number(String(value || "07:00").split(":")[0]) || 7));
+    setField("fetchHour", hour);
   }
 
   async function handleSubmit(event) {
@@ -303,7 +315,7 @@ export function SerproSettingsPage({
                     </label>
                   </div>
                   <small style={{ color: "#A7B0C0", display: "block", marginTop: 8 }}>
-                    O sistema monta a expressão cron automaticamente a partir do dia do mês e horário escolhidos.
+                    O worker faz a captura inicial no dia escolhido, no horário escolhido. Depois, executa diariamente no mesmo horário até a data de vencimento de cada guia. E-mail é enviado apenas na captura inicial e no dia exato do vencimento (re-checks intermediários são silenciosos).
                   </small>
                   {scheduleUnsupported ? (
                     <small style={{ color: "#F4C46B", display: "block", marginTop: 8 }}>
@@ -486,7 +498,7 @@ export function SerproSettingsPage({
               <div className="serpro-settings-form__grid serpro-settings-form__grid--manual-capture">
                 <label>
                   Empresa
-                  <select value={testCompanyId} onChange={(event) => setTestCompanyId(event.target.value)}>
+                  <select value={testCompanyId} onChange={(event) => { setTestCompanyId(event.target.value); onLoadProcuration?.(event.target.value); }}>
                     <option value="">Selecionar empresa</option>
                     {(Array.isArray(companies) ? companies : []).map((company) => (
                       <option key={company.companyId} value={company.companyId}>

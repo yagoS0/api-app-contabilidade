@@ -17,6 +17,9 @@ MONTHS_PT = {
     "dezembro": "12",
 }
 
+# Maps trimestre number (1-4) to last month of that trimestre
+QUARTER_TO_MONTH = {"1": "03", "2": "06", "3": "09", "4": "12"}
+
 
 def normalize_cnpj(value: str | None) -> str | None:
     if not value:
@@ -34,29 +37,33 @@ def find_first(patterns: list[str], text: str, flags: int = 0) -> str | None:
 
 
 def detect_tipo(text_upper: str) -> str:
-    if re.search(r"\b1099\b", text_upper) and (
-        "CONTRIB INDIVIDUAL" in text_upper
-        or "CONTRIBUINTES INDIVIDUAIS" in text_upper
-        or "CP DESCONTADA SEGURADO" in text_upper
-    ):
-        return "INSS"
+    # FGTS before SIMPLES to avoid "DAS" appearing in unrelated contexts
+    if "FGTS" in text_upper or "GUIA DO FGTS" in text_upper or "GRF" in text_upper or "GUIA DE RECOLHIMENTO DO FGTS" in text_upper:
+        return "FGTS"
+
     if (
         "SIMPLES NACIONAL" in text_upper
         or "DOCUMENTO DE ARRECADAÇÃO DO SIMPLES NACIONAL" in text_upper
         or "PGDAS" in text_upper
-        or "DAS" in text_upper
+        or re.search(r"\bDAS\b", text_upper)
     ):
         return "SIMPLES"
-    if "GUIA DA PREVIDENCIA SOCIAL" in text_upper or "GPS" in text_upper or "INSS" in text_upper:
+
+    # INSS: explicit code 1099 or GPS keywords
+    if re.search(r"\b1099\b", text_upper) or "CONTRIB INDIVIDUAL" in text_upper or "CONTRIBUINTES INDIVIDUAIS" in text_upper or "CP DESCONTADA SEGURADO" in text_upper:
         return "INSS"
-    if "FGTS" in text_upper or "GRF" in text_upper:
-        return "FGTS"
+    if "GUIA DA PREVIDENCIA SOCIAL" in text_upper or re.search(r"\bGPS\b", text_upper) or "INSS" in text_upper:
+        return "INSS"
+
+    # ISS before COFINS/PIS to avoid false positives
+    if "ISS" in text_upper or "ISSQN" in text_upper or "IMPOSTO SOBRE SERVICOS" in text_upper or "DARM" in text_upper:
+        return "ISS"
+
     if "COFINS" in text_upper:
         return "COFINS"
     if "PIS" in text_upper:
         return "PIS"
-    if "ISS" in text_upper or "ISSQN" in text_upper:
-        return "ISS"
+
     return "OUTRA"
 
 
@@ -64,19 +71,34 @@ def normalize_competencia_yyyy_mm(value: str | None) -> str | None:
     if not value:
         return None
     value = value.strip().lower()
+
+    # MM/YYYY
     m = re.match(r"^(\d{2})/(\d{4})$", value)
     if m:
-        mm, yyyy = m.groups()
-        return f"{yyyy}-{mm}"
+        return f"{m.group(2)}-{m.group(1)}"
+
+    # Month name/YYYY  (e.g. "janeiro/2025" or "janeiro 2025")
     m = re.match(
-        r"^(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)/(\d{4})$",
+        r"^(janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)[/\s](\d{4})$",
         value,
     )
     if m:
-        month_name, yyyy = m.groups()
-        month_num = MONTHS_PT.get(month_name, None)
+        month_num = MONTHS_PT.get(m.group(1))
         if month_num:
-            return f"{yyyy}-{month_num}"
+            return f"{m.group(2)}-{month_num}"
+
+    # "04 / 2026" or "04/ 2026" — with spaces around slash (DARM format)
+    m = re.match(r"^(\d{2})\s*/\s*(\d{4})$", value)
+    if m:
+        return f"{m.group(2)}-{m.group(1)}"
+
+    # "Nº Trimestre/YYYY" or just "1/2025" trimestre
+    m = re.match(r"^(\d)[oº°]?\s*trimestre[/\s](\d{4})$", value)
+    if m:
+        quarter_month = QUARTER_TO_MONTH.get(m.group(1))
+        if quarter_month:
+            return f"{m.group(2)}-{quarter_month}"
+
     return None
 
 
@@ -105,18 +127,29 @@ def br_date_to_iso(s: str | None) -> str | None:
 def extract_base_fields(text: str, text_upper: str) -> dict[str, Any]:
     cnpj = find_first(
         [
+            r"CNPJ\s+ESTABELECIMENTO[:\s]*([0-9./-]{14,18})",
             r"CNPJ[:\s]*([0-9./-]{14,18})",
             r"(\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})",
         ],
         text_upper,
-        re.IGNORECASE,
     )
+
     competencia_raw = find_first(
         [
+            # GFD: "Tag Competência: MM/YYYY"
+            r"TAG\s+COMPET[ÊE]NCIA[:\s]*(\d{2}/\d{4})",
+            # DARM: "04. COMPETÊNCIA (MM/AAAA): 04 / 2026" — captures the value after colon
+            r"COMPET[ÊE]NCIA\s*\([^)]*\)[:\s]*(\d{2}\s*/\s*\d{4})",
+            # Standard competência MM/YYYY
             r"COMPET[ÊE]NCIA[:\s]*(\d{2}/\d{4})",
+            # Período de apuração
+            r"PER[IÍ]ODO\s+DE\s+APURA[ÇC][ÃA]O\s*\([^)]*\)[:\s]*(\d{2}/\d{4})",
             r"PER[IÍ]ODO[:\s]*(\d{2}/\d{4})",
+            # Month name followed by year
             r"PER[IÍ]ODO\s+DE\s+APURA[ÇC][ÃA]O[^\n]*\n\s*((?:JANEIRO|FEVEREIRO|MAR[CÇ]O|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)/\d{4})",
             r"\b((?:JANEIRO|FEVEREIRO|MAR[CÇ]O|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)/\d{4})\b",
+            # Trimestre
+            r"(\d[OoOº°]?\s*TRIMESTRE[/\s]\d{4})",
         ],
         text_upper,
         re.IGNORECASE,
@@ -125,14 +158,21 @@ def extract_base_fields(text: str, text_upper: str) -> dict[str, Any]:
 
     valor = find_first(
         [
+            # GFD: "Total da Guia: 1.234,56"
+            r"TOTAL\s+DA\s+GUIA[:\s]*([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2})",
+            # DARM: "09. VALOR TOTAL (R$): 1.234,56"
+            r"09\.?\s*VALOR\s+TOTAL[^:]*:[:\s]*([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2})",
+            # DARF: "Valor Total do Documento"
             r"VALOR\s+TOTAL\s+DO\s+DOCUMENTO[:\s]*([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2})",
+            # Generic valor total / a pagar
             r"VALOR\s+(?:TOTAL|A\s+PAGAR)[:\s]*R?\$?\s*([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2})",
             r"PAGAR\s+AT[ÉE]:\s*\d{2}/\d{2}/\d{4}\s*\nVALOR:\s*([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2})",
-            r"R\$\s*([0-9\.,]+)",
+            r"R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*,[0-9]{2})",
         ],
         text_upper,
         re.IGNORECASE,
     )
+
     codigo_receita = find_first(
         [
             r"\b(1099)\b",
@@ -141,16 +181,34 @@ def extract_base_fields(text: str, text_upper: str) -> dict[str, Any]:
         text_upper,
         re.IGNORECASE,
     )
+
     vencimento_br = find_first(
         [
-            r"VENCIMENTO[:\s]*(\d{2}/\d{2}/\d{4})",
+            # DARM: "03. DATA DE VENCIMENTO: 20/05/2026"
+            r"03\.?\s*DATA\s+DE\s+VENCIMENTO[:\s]*(\d{2}/\d{2}/\d{4})",
+            r"DATA\s+LIMITE\s+PARA\s+ACOLHIMENTO[:\s]*(\d{2}/\d{2}/\d{4})",
             r"DATA\s+DE\s+VENCIMENTO[:\s]*(\d{2}/\d{2}/\d{4})",
+            r"VENCIMENTO[:\s]*(\d{2}/\d{2}/\d{4})",
             r"PAGAR\s+AT[ÉE]:\s*(\d{2}/\d{2}/\d{4})",
             r"PAGAR\s+ESTE\s+DOCUMENTO\s+AT[ÉE][:\s]*(\d{2}/\d{2}/\d{4})",
         ],
         text_upper,
         re.IGNORECASE,
     )
+
+    razao_social = find_first(
+        [
+            # GFD: "Empregador: NOME EMPRESA"
+            r"EMPREGADOR[:\s]*([^\n]+)",
+            r"NOME\s+(?:EMPRESARIAL|DA\s+EMPRESA)[:\s]*([^\n]+)",
+            r"EMPRESA[:\s]*([^\n]+)",
+            r"RAZ[ÃA]O\s+SOCIAL[:\s]*([^\n]+)",
+        ],
+        text_upper,
+        re.IGNORECASE,
+    )
+    if razao_social:
+        razao_social = razao_social.strip()
 
     valor_num = None
     if valor:
@@ -167,6 +225,6 @@ def extract_base_fields(text: str, text_upper: str) -> dict[str, Any]:
         "valor_num": valor_num,
         "codigo_receita": codigo_receita,
         "vencimento_iso": br_date_to_iso(vencimento_br),
-        "razao_social": None,
+        "razao_social": razao_social,
         "codigo_barras": None,
     }

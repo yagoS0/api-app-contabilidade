@@ -1,6 +1,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
 
+// INSS_DCTFWEB removido: INSS deve ser lançado manualmente em conjunto com folha/pró-labore.
 const EVENT_DEFINITIONS = Object.freeze({
   RECEITA_SIMPLES: {
     tipo: "RECEITA",
@@ -14,12 +15,6 @@ const EVENT_DEFINITIONS = Object.freeze({
     statusPagamento: "ABERTO",
     amountSource: "das_total",
   },
-  INSS_DCTFWEB: {
-    tipo: "PROVISAO",
-    subtipo: "INSS",
-    statusPagamento: "ABERTO",
-    amountSource: "inss_total",
-  },
 });
 
 const DEFAULT_RULE_FALLBACKS = Object.freeze({
@@ -32,12 +27,6 @@ const DEFAULT_RULE_FALLBACKS = Object.freeze({
   DAS_SIMPLES: {
     descriptionTemplate: "VR REF DAS SIMPLES NACIONAL - {{competencia}}",
     debitAccountCode: "401",
-    creditAccountCode: "5",
-    entryDateStrategy: "DUE_DATE",
-  },
-  INSS_DCTFWEB: {
-    descriptionTemplate: "VR REF INSS DCTFWEB - {{competencia}}",
-    debitAccountCode: "420",
     creditAccountCode: "5",
     entryDateStrategy: "DUE_DATE",
   },
@@ -61,14 +50,14 @@ function parseDecimal(value) {
   return Number.isFinite(normalized) ? normalized : null;
 }
 
-function formatCompetenciaLabel(competencia) {
+export function formatCompetenciaLabel(competencia) {
   const normalized = normalizeCompetencia(competencia);
   if (!normalized) return null;
   const [yyyy, mm] = normalized.split("-");
   return `${mm}/${yyyy}`;
 }
 
-function applyTemplate(template, context) {
+export function applyTemplate(template, context) {
   return String(template || "")
     .replace(/\{\{\s*competencia\s*\}\}/gi, context.competenciaLabel || context.competencia || "")
     .replace(/\{\{\s*companyName\s*\}\}/gi, context.companyName || "")
@@ -134,7 +123,7 @@ function buildEventsFromCircular(circular) {
   return events;
 }
 
-async function resolveRule(tx, { portalClientId, eventType }) {
+export async function resolveRule(tx, { portalClientId, eventType }) {
   const companyRule = await tx.accountingEntryRule.findFirst({
     where: {
       portalClientId,
@@ -166,9 +155,9 @@ async function resolveRule(tx, { portalClientId, eventType }) {
 
 function findChangedValue(existingEntry, nextEntry) {
   if (!existingEntry) return true;
+  // `data` e `historico` são considerados editáveis pelo contador após a criação;
+  // não disparam re-update pelo worker. Apenas mudanças em valor/relação geram update.
   return (
-    existingEntry.data?.getTime?.() !== nextEntry.data.getTime() ||
-    String(existingEntry.historico || "") !== String(nextEntry.historico || "") ||
     String(existingEntry.tipo || "") !== String(nextEntry.tipo || "") ||
     String(existingEntry.circularId || "") !== String(nextEntry.circularId || "") ||
     String(existingEntry.ruleId || "") !== String(nextEntry.ruleId || "") ||
@@ -223,15 +212,42 @@ async function upsertGeneratedEntry(tx, { existingEntry, portalClientId, circula
       return { action: "noop", entry: existingEntry };
     }
 
+    // DAS_SIMPLES: ao recalcular, manter valor/lines/data/historico originais e apenas marcar como recalculada
+    const previousAmount = sumEntryLines(existingEntry.lines || []);
+    const amountChanged = Math.abs(Number(previousAmount) - Number(event.amount || 0)) > 0.01;
+    if (event.eventType === "DAS_SIMPLES" && amountChanged) {
+      const updated = await tx.accountingEntry.update({
+        where: { id: existingEntry.id },
+        data: {
+          circularId: circular.id,
+          ruleId: rule.id,
+          eventType: event.eventType,
+          competencia: circular.competencia,
+          tipo: event.tipo,
+          subtipo: event.subtipo || null,
+          origem: "SERPRO",
+          loteImportacao: `SERPRO-${circular.competencia}`,
+          status: "RASCUNHO",
+          statusPagamento: event.statusPagamento || "NA",
+          recalculatedAt: now,
+          recalculatedFromValor: previousAmount,
+          recalculatedToValor: event.amount,
+          recalculatedNotes: `Guia recalculada após vencimento. Valor original mantido no lançamento; valor atualizado disponível na circular.`,
+          // data, historico, lines preservados — flag de recálculo é indicada via badge no UI
+        },
+      });
+      return { action: "recalculated", entry: updated };
+    }
+
+    // Campos `data` e `historico` são preservados (editáveis pelo contador).
+    // Worker só atualiza valor/lines + metadados estruturais.
     const updated = await tx.accountingEntry.update({
       where: { id: existingEntry.id },
       data: {
         circularId: circular.id,
         ruleId: rule.id,
         eventType: event.eventType,
-        data,
         competencia: circular.competencia,
-        historico,
         tipo: event.tipo,
         subtipo: event.subtipo || null,
         origem: "SERPRO",
@@ -363,7 +379,12 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
         now,
       });
 
-      if (outcome.action === "created" || outcome.action === "updated" || outcome.action === "noop") {
+      if (
+        outcome.action === "created" ||
+        outcome.action === "updated" ||
+        outcome.action === "recalculated" ||
+        outcome.action === "noop"
+      ) {
         generatedEntries.push({
           eventType: event.eventType,
           action: outcome.action,

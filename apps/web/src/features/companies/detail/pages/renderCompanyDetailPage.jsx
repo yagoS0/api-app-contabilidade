@@ -7,6 +7,8 @@ import { CompanyGuidesTable } from "../../../guides/list/components/renderCompan
 import { CompanyForm } from "../../form/components/renderCompanyForm";
 import { AccountingEntriesTab } from "../../../accounting/entries/components/renderAccountingEntriesTab";
 import { CircularTab } from "../../../accounting/circular/components/renderCircularTab";
+import { AccountingRulesContainer } from "../../../accounting/rules/components/renderAccountingRulesContainer";
+import { ChartOfAccountsPage } from "../../../accounting/chart-of-accounts/pages/renderChartOfAccountsPage";
 
 export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, feedback }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
@@ -16,6 +18,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     setCompanyDetailTab(tab);
     if (tab === "lancamentos") { accountingPanel.onLoadAccounts(); accountingPanel.onLoadEntries(); }
     if (tab === "circular") { accountingPanel.onLoadAccounts(); circularPanel.onLoadCircular(); }
+    if (tab === "configuracoes") { accountingPanel.onLoadAccounts(); }
+    if (tab === "planoContas") { accountingPanel.onLoadAccounts(); }
   }
 
   // ─── Aba Lançamentos: layout full-screen com barra de topo compacta ────────
@@ -42,8 +46,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onFilterChange={accountingPanel.onFilterChange}
             onLoad={accountingPanel.onLoadEntries}
             onCreateEntry={accountingPanel.onCreateEntry}
+            onLoadPayrollTemplate={accountingPanel.onLoadPayrollTemplate}
             onUpdateEntry={accountingPanel.onUpdateEntry}
             onDeleteEntry={accountingPanel.onDeleteEntry}
+            onBulkDeleteEntries={accountingPanel.onBulkDeleteEntries}
             onPreviewOFX={accountingPanel.onPreviewOFX}
             onImportOFX={accountingPanel.onImportOFX}
             savingEntry={accountingPanel.savingEntry}
@@ -53,9 +59,11 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onUpdateAccount={accountingPanel.onUpdateAccount}
             onDeleteAccount={accountingPanel.onDeleteAccount}
             onImportAccountsFile={accountingPanel.onImportAccountsFile}
+            onOpenChartOfAccountsTab={() => switchTab("planoContas")}
             onExportCsv={accountingPanel.onExportCsv}
             onCreateBaixa={accountingPanel.onCreateBaixa}
             savingBaixa={accountingPanel.savingBaixa}
+            onLoadBaixaTemplate={accountingPanel.onLoadBaixaTemplate}
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
             onLoadAllHistoricos={accountingPanel.onLoadAllHistoricos}
@@ -86,12 +94,64 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             loadingGuides={guidesPanel.loading}
             onResendGuide={guidesPanel.onResendGuide}
             onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment}
+            onDeleteGuide={guidesPanel.onDeleteGuide}
             onRecalculateGuide={guidesPanel.onRecalculateGuide}
             resendingGuideId={guidesPanel.resendingGuideId}
             confirmingGuideId={guidesPanel.confirmingGuideId}
             recalculatingGuideId={guidesPanel.recalculatingGuideId}
+            onUploadGuide={guidesPanel.onUploadGuide}
+            uploadingGuide={guidesPanel.uploadingGuide}
           />
 
+          <Feedback message={feedback.message} error={feedback.error} />
+        </AppShell>
+      </div>
+    );
+  }
+
+  if (companyDetailTab === "planoContas") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="planoContas"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1 }}>
+          <ChartOfAccountsPage
+            accounts={accountingPanel.accounts || []}
+            onCreateAccount={accountingPanel.onCreateAccount}
+            onUpdateAccount={accountingPanel.onUpdateAccount}
+            onDeleteAccount={accountingPanel.onDeleteAccount}
+            onImportFile={accountingPanel.onImportAccountsFile}
+            onBack={() => switchTab("lancamentos")}
+          />
+        </div>
+        <Feedback message={feedback.message} error={feedback.error} />
+      </div>
+    );
+  }
+
+  if (companyDetailTab === "configuracoes") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="configuracoes"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <AppShell>
+          <AccountingRulesContainer
+            api={accountingPanel.api}
+            scope="COMPANY"
+            companyId={companyId}
+            accounts={accountingPanel.accounts || []}
+            onOpenChartOfAccounts={() => switchTab("planoContas")}
+          />
           <Feedback message={feedback.message} error={feedback.error} />
         </AppShell>
       </div>
@@ -142,7 +202,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   if (companyDetailTab === "circular") {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="circular"
@@ -158,15 +218,24 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             year={circularPanel.year}
             competencia={circularPanel.competencia}
             onCompetenciaChange={circularPanel.onCompetenciaChange}
-            savingCircular={circularPanel.savingCircular}
-            approvingCircularEntryId={circularPanel.approvingCircularEntryId}
             onYearChange={circularPanel.onYearChange}
             onLoad={circularPanel.onLoadCircular}
-            onSaveCircular={circularPanel.onSaveCircular}
-            onApproveAccountingEntry={circularPanel.onApproveAccountingEntry}
             accounts={accountingPanel.accounts}
             onCreateBaixa={accountingPanel.onCreateBaixa}
             savingBaixa={accountingPanel.savingBaixa}
+            onLoadBaixaTemplate={accountingPanel.onLoadBaixaTemplate}
+            runningFiscalAction={circularPanel.runningFiscalAction}
+            lastFiscalResult={circularPanel.lastFiscalResult}
+            onSearchGuides={circularPanel.onSearchGuides}
+            onCheckPayments={circularPanel.onCheckPayments}
+            onSyncInss={circularPanel.onSyncInss}
+            executions={circularPanel.executions}
+            loadingExecutions={circularPanel.loadingExecutions}
+            error={circularPanel.error}
+            message={circularPanel.message}
+            onUpdateEntry={accountingPanel.onUpdateEntry}
+            onSearchHistoricos={accountingPanel.onSearchHistoricos}
+            onCancelBaixa={circularPanel.onCancelBaixa}
           />
         </div>
       </div>

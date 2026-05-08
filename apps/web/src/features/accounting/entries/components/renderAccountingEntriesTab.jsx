@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
-import { ChartOfAccountsModal } from "../../chart-of-accounts/components/renderChartOfAccountsModal";
+import { Fragment, useMemo, useState } from "react";
 import { HistoricosModal } from "../../historicos/components/renderHistoricosModal";
 import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal";
 import { AccountRow, NewEntryForm } from "./renderAccountingEntriesParts";
-import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, fmtMoney } from "../lib/accountingEntriesShared";
+import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtMoney } from "../lib/accountingEntriesShared";
+import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
 
 export function AccountingEntriesTab({
   companyId,
@@ -30,15 +30,54 @@ export function AccountingEntriesTab({
   error,
   onCreateBaixa,
   savingBaixa,
+  onLoadBaixaTemplate,
   onSearchHistoricos,
   onGetHistoricosByCode,
   onLoadAllHistoricos,
   onUpdateHistorico,
   onDeleteHistorico,
+  onLoadPayrollTemplate,
+  onBulkDeleteEntries,
+  onOpenChartOfAccountsTab,
 }) {
   const [showOFX, setShowOFX] = useState(false);
-  const [showAccounts, setShowAccounts] = useState(false);
   const [showHistoricos, setShowHistoricos] = useState(false);
+  const [showPayroll, setShowPayroll] = useState(false);
+  const [showCsvExport, setShowCsvExport] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  const visibleIds = useMemo(() => entries.map((e) => e.id).filter(Boolean), [entries]);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const someSelected = visibleIds.some((id) => selectedIds.has(id));
+  const selectedCount = visibleIds.filter((id) => selectedIds.has(id)).length;
+
+  function toggleAll() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+  function toggleOne(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
+
+  async function handleBulkDelete() {
+    if (!onBulkDeleteEntries || selectedCount === 0) return;
+    const ids = visibleIds.filter((id) => selectedIds.has(id));
+    setBulkDeleting(true);
+    const result = await onBulkDeleteEntries(ids);
+    setBulkDeleting(false);
+    if (result?.ok || result?.succeeded > 0) clearSelection();
+  }
 
   const now = new Date();
   const defaultComp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -62,6 +101,27 @@ export function AccountingEntriesTab({
     if (hasCreditColumn) acc.credito += Number(totalC || 0);
     return acc;
   }, { debito: 0, credito: 0 }), [entries]);
+
+  // Agrupa lançamentos por tipo seguindo TIPO_GROUP_ORDER; tipos desconhecidos caem em "OUTRO".
+  const groupedEntries = useMemo(() => {
+    const groups = {};
+    for (const tipo of TIPO_GROUP_ORDER) groups[tipo] = [];
+    for (const entry of entries) {
+      const tipo = String(entry.tipo || "OUTRO").toUpperCase();
+      const bucket = groups[tipo] ? tipo : "OUTRO";
+      groups[bucket].push(entry);
+    }
+    return groups;
+  }, [entries]);
+
+  const groupTotals = useMemo(() => {
+    const totals = {};
+    for (const tipo of TIPO_GROUP_ORDER) {
+      const sum = groupedEntries[tipo].reduce((s, e) => s + Number(e.totalD || e.valor || 0), 0);
+      totals[tipo] = sum;
+    }
+    return totals;
+  }, [groupedEntries]);
 
   const actionButtonStyle = {
     minHeight: 33,
@@ -105,9 +165,24 @@ export function AccountingEntriesTab({
       <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 12, background: ACCOUNTING_PANEL.surface }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" onClick={() => setShowHistoricos(true)} style={actionButtonStyle}>Histórico</button>
-          <button type="button" onClick={() => { setShowAccounts(true); onLoadAccounts(); }} style={actionButtonStyle}>Plano de contas</button>
+          <button
+            type="button"
+            onClick={() => { onLoadAccounts(); if (onOpenChartOfAccountsTab) onOpenChartOfAccountsTab(); }}
+            style={actionButtonStyle}
+          >
+            Plano de contas
+          </button>
           <button type="button" onClick={() => setShowOFX(true)} style={actionButtonStyle}>Importar OFX</button>
-          {onExportCsv && <button type="button" onClick={onExportCsv} style={actionButtonStyle}>Exportar CSV</button>}
+          {onLoadPayrollTemplate && (
+            <button
+              type="button"
+              onClick={() => setShowPayroll(true)}
+              style={{ ...actionButtonStyle, background: "#BD93F9", color: "#1A1B26", borderColor: "#BD93F9" }}
+            >
+              + Folha / Pró-labore
+            </button>
+          )}
+          {onExportCsv && <button type="button" onClick={() => setShowCsvExport(true)} style={actionButtonStyle}>Exportar CSV</button>}
           <button type="button" onClick={onLoad} style={actionButtonStyle}>Atualizar</button>
         </div>
 
@@ -164,6 +239,42 @@ export function AccountingEntriesTab({
         listedTotalC={listedTotals.credito}
       />
 
+      {selectedCount > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          background: "#2D2F45", border: "1px solid #44475A", borderRadius: 8,
+          padding: "8px 14px", marginTop: 8, fontSize: "0.875rem", color: ACCOUNTING_PANEL.text,
+        }}>
+          <span style={{ fontWeight: 700, color: "#BD93F9" }}>
+            {selectedCount} selecionado{selectedCount !== 1 ? "s" : ""}
+          </span>
+          {onBulkDeleteEntries && (
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              style={{
+                background: "#FF5757", border: "none", color: "#fff",
+                padding: "6px 14px", borderRadius: 6, fontSize: "0.875rem",
+                fontWeight: 600, cursor: bulkDeleting ? "not-allowed" : "pointer",
+              }}
+            >
+              {bulkDeleting ? "Excluindo..." : `Excluir selecionado${selectedCount !== 1 ? "s" : ""}`}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={clearSelection}
+            style={{
+              background: "none", border: "none", color: ACCOUNTING_PANEL.muted,
+              fontSize: "0.8125rem", textDecoration: "underline", cursor: "pointer",
+            }}
+          >
+            Limpar seleção
+          </button>
+        </div>
+      )}
+
       <div style={{ overflowX: "auto", borderRadius: 16, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20 }}>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", fontSize: "0.9375rem", borderRadius: 16, overflow: "hidden" }}>
           <colgroup>
@@ -171,35 +282,104 @@ export function AccountingEntriesTab({
           </colgroup>
           <thead>
             <tr style={{ background: ACCOUNTING_PANEL.field, userSelect: "none" }}>
-              {COLS.map(({ label, align }, index) => (
+              <th style={{ padding: "14px 8px", textAlign: "center", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, position: "sticky", top: 0, background: ACCOUNTING_PANEL.field, zIndex: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                  onChange={toggleAll}
+                  style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" }}
+                  aria-label="Selecionar todos"
+                />
+              </th>
+              {COLS.slice(1).map(({ label, align }, index) => (
                 <th key={index} style={{ padding: "14px 14px", textAlign: align, fontSize: "1rem", fontWeight: 700, color: ACCOUNTING_PANEL.text, borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, position: "sticky", top: 0, background: ACCOUNTING_PANEL.field, zIndex: 10, whiteSpace: "nowrap" }}>{label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ padding: 16, textAlign: "center", color: ACCOUNTING_PANEL.muted }}>Carregando...</td></tr>}
-            {!loading && entries.length === 0 && <tr><td colSpan={8} style={{ padding: 24, textAlign: "center", color: ACCOUNTING_PANEL.muted }}>Nenhum lançamento para esta competência.</td></tr>}
-            {entries.map((entry) => (
-              <AccountRow
-                key={entry.id}
-                entry={entry}
-                accounts={accounts}
-                onUpdate={onUpdateEntry}
-                onDelete={onDeleteEntry}
-                saving={savingEntry}
-                onCreateBaixa={onCreateBaixa}
-                savingBaixa={savingBaixa}
-                onSearchHistoricos={onSearchHistoricos}
-              />
-            ))}
+            {loading && <tr><td colSpan={9} style={{ padding: 16, textAlign: "center", color: ACCOUNTING_PANEL.muted }}>Carregando...</td></tr>}
+            {!loading && entries.length === 0 && <tr><td colSpan={9} style={{ padding: 24, textAlign: "center", color: ACCOUNTING_PANEL.muted }}>Nenhum lançamento para esta competência.</td></tr>}
+            {!loading && entries.length > 0 && TIPO_GROUP_ORDER.map((tipo) => {
+              const items = groupedEntries[tipo];
+              if (!items || items.length === 0) return null;
+              const accent = TIPO_GROUP_ACCENT[tipo] || ACCOUNTING_PANEL.muted;
+              return (
+                <Fragment key={tipo}>
+                  <tr style={{ background: ACCOUNTING_PANEL.field }}>
+                    <td
+                      colSpan={9}
+                      style={{
+                        padding: "10px 14px",
+                        borderTop: `2px solid ${accent}`,
+                        borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`,
+                        fontWeight: 700,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                        fontSize: "0.8125rem",
+                        color: accent,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                        <span style={{ display: "inline-block", width: 6, height: 18, background: accent, borderRadius: 3 }} />
+                        <span>{TIPO_GROUP_LABELS[tipo] || tipo}</span>
+                        <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 500, fontSize: "0.75rem", textTransform: "none", letterSpacing: 0 }}>
+                          {items.length} lançamento{items.length !== 1 ? "s" : ""}
+                          {groupTotals[tipo] > 0 && <> · R$ {fmtMoney(groupTotals[tipo])}</>}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  {items.map((entry) => (
+                    <AccountRow
+                      key={entry.id}
+                      entry={entry}
+                      accounts={accounts}
+                      onUpdate={onUpdateEntry}
+                      onDelete={onDeleteEntry}
+                      saving={savingEntry}
+                      onCreateBaixa={onCreateBaixa}
+                      savingBaixa={savingBaixa}
+                      onLoadBaixaTemplate={onLoadBaixaTemplate}
+                      onSearchHistoricos={onSearchHistoricos}
+                      isSelected={selectedIds.has(entry.id)}
+                      onToggleSelect={() => toggleOne(entry.id)}
+                    />
+                  ))}
+                </Fragment>
+              );
+            })}
           </tbody>
-          {total > 0 && <tfoot><tr style={{ background: ACCOUNTING_PANEL.field }}><td colSpan={8} style={{ padding: "5px 8px", fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted, borderTop: `1px solid ${ACCOUNTING_PANEL.border}` }}>{total} lançamento{total !== 1 ? "s" : ""} no total</td></tr></tfoot>}
+          {total > 0 && <tfoot><tr style={{ background: ACCOUNTING_PANEL.field }}><td colSpan={9} style={{ padding: "5px 8px", fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted, borderTop: `1px solid ${ACCOUNTING_PANEL.border}` }}>{total} lançamento{total !== 1 ? "s" : ""} no total</td></tr></tfoot>}
         </table>
       </div>
 
       {showOFX && <ImportOFXModal companyId={companyId} accounts={accounts} onPreview={onPreviewOFX} onImport={onImportOFX} onClose={() => setShowOFX(false)} />}
-      {showAccounts && <ChartOfAccountsModal companyId={companyId} accounts={accounts} onCreateAccount={onCreateAccount} onUpdateAccount={onUpdateAccount} onDeleteAccount={onDeleteAccount} onImportFile={onImportAccountsFile} onClose={() => setShowAccounts(false)} />}
       {showHistoricos && <HistoricosModal onClose={() => setShowHistoricos(false)} onLoadAll={onLoadAllHistoricos} onUpdate={(id, input) => onUpdateHistorico(id, input)} onDelete={(id) => onDeleteHistorico(id)} />}
+      {showPayroll && (
+        <PayrollEntryModal
+          accounts={accounts}
+          defaultCompetencia={activeComp}
+          onLoadTemplate={onLoadPayrollTemplate}
+          onSave={async ({ entry, baixa }) => {
+            const result = await onCreateEntry(entry);
+            const createdId = result?.entry?.id;
+            if (baixa && createdId && onCreateBaixa) {
+              try { await onCreateBaixa(createdId, baixa); } catch { /* erro já é exibido */ }
+            }
+            setShowPayroll(false);
+          }}
+          saving={savingEntry}
+          onClose={() => setShowPayroll(false)}
+        />
+      )}
+      {showCsvExport && (
+        <CsvExportModal
+          defaultCompetencia={activeComp}
+          onExport={(rangeOptions) => onExportCsv(rangeOptions)}
+          onClose={() => setShowCsvExport(false)}
+        />
+      )}
     </div>
   );
 }

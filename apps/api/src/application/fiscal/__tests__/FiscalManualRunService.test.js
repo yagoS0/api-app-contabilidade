@@ -13,20 +13,20 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
     companyMonthlyCircular: {
       findUnique: jest.fn(),
     },
+    fiscalExecutionLog: {
+      create: jest.fn(),
+      update: jest.fn(),
+    },
   },
 }));
 
-// Mock the dependent services
+// Mock the dependent services (actual exported functions, not classes)
 jest.mock("../serpro/CaptureSerproGuidesService.js", () => ({
-  CaptureSerproGuidesService: jest.fn(() => ({
-    captureForCompany: jest.fn(),
-  })),
+  capturePgdasGuideForCompany: jest.fn(),
 }));
 
 jest.mock("../serpro/SerproDctfwebService.js", () => ({
-  SerproDctfwebService: jest.fn(() => ({
-    syncForCompany: jest.fn(),
-  })),
+  syncSerproInssForCompany: jest.fn(),
 }));
 
 jest.mock("../../guides/guideContract.js", () => ({
@@ -37,29 +37,24 @@ jest.mock("../../guides/guideContract.js", () => ({
 }));
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { CaptureSerproGuidesService } from "../serpro/CaptureSerproGuidesService.js";
-import { SerproDctfwebService } from "../serpro/SerproDctfwebService.js";
+import { capturePgdasGuideForCompany } from "../serpro/CaptureSerproGuidesService.js";
+import { syncSerproInssForCompany } from "../serpro/SerproDctfwebService.js";
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 
 describe("FiscalManualRunService", () => {
   let service;
-  let mockCaptureService;
-  let mockDctfwebService;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    mockCaptureService = {
-      captureForCompany: jest.fn(),
-    };
+    // Default log mock behavior
+    prisma.fiscalExecutionLog.create.mockResolvedValue({ id: "log-123" });
+    prisma.fiscalExecutionLog.update.mockResolvedValue({});
 
-    mockDctfwebService = {
-      syncForCompany: jest.fn(),
-    };
-
+    // Inject mocked functions directly
     service = new FiscalManualRunService({
-      captureService: mockCaptureService,
-      dctfwebService: mockDctfwebService,
+      captureGuides: capturePgdasGuideForCompany,
+      syncInss: syncSerproInssForCompany,
     });
   });
 
@@ -104,31 +99,31 @@ describe("FiscalManualRunService", () => {
           cnpj: "12.345.678/0001-90",
         });
 
-        mockCaptureService.captureForCompany.mockResolvedValue({
-          guidesFound: 3,
-          guidesCaptured: 2,
-          guidesUpdated: 1,
-          circularUpdated: true,
-          entriesGenerated: 5,
+        // Mock real capturePgdasGuideForCompany return shape
+        capturePgdasGuideForCompany.mockResolvedValue({
+          guide: { id: "guide-1" },
+          circular: { id: "circ-1" },
+          accounting: { generatedEntries: [{}, {}, {}, {}, {}] },
         });
 
         const result = await service.executeAction("search_guides", companyId, competencia, {
           contratanteCnpj: "98.765.432/0001-01",
         });
 
-        expect(result).toEqual({
+        expect(result).toEqual(expect.objectContaining({
           action: "search_guides",
           competencia,
           status: "completed",
-          guidesFound: 3,
-          guidesCaptured: 2,
-          guidesUpdated: 1,
+          guidesFound: 1,
+          guidesCaptured: 1,
+          guidesUpdated: 0,
           circularUpdated: true,
           entriesGenerated: 5,
           timestamp: expect.any(String),
-        });
+          executionLogId: "log-123",
+        }));
 
-        expect(mockCaptureService.captureForCompany).toHaveBeenCalledWith({
+        expect(capturePgdasGuideForCompany).toHaveBeenCalledWith({
           portalClientId: companyId,
           competencia,
           contratanteCnpj: "98.765.432/0001-01",
@@ -143,13 +138,8 @@ describe("FiscalManualRunService", () => {
           cnpj: "12.345.678/0001-90",
         });
 
-        mockCaptureService.captureForCompany.mockResolvedValue({
-          guidesFound: 0,
-          guidesCaptured: 0,
-          guidesUpdated: 0,
-          circularUpdated: false,
-          entriesGenerated: 0,
-        });
+        // No guide returned → all counts zero
+        capturePgdasGuideForCompany.mockResolvedValue({});
 
         const result = await service.executeAction("search_guides", companyId, competencia);
 
@@ -178,7 +168,7 @@ describe("FiscalManualRunService", () => {
 
         const result = await service.executeAction("check_payments", companyId, competencia);
 
-        expect(result).toEqual({
+        expect(result).toEqual(expect.objectContaining({
           action: "check_payments",
           competencia,
           status: "completed",
@@ -187,7 +177,8 @@ describe("FiscalManualRunService", () => {
           guidesOverdue: 1,
           guidesOpen: 1,
           timestamp: expect.any(String),
-        });
+          executionLogId: "log-123",
+        }));
 
         expect(prisma.guide.findMany).toHaveBeenCalledWith({
           where: {
@@ -214,7 +205,7 @@ describe("FiscalManualRunService", () => {
 
         const result = await service.executeAction("check_payments", companyId, competencia);
 
-        expect(result).toEqual({
+        expect(result).toEqual(expect.objectContaining({
           action: "check_payments",
           competencia,
           status: "completed",
@@ -223,7 +214,8 @@ describe("FiscalManualRunService", () => {
           guidesOverdue: 0,
           guidesOpen: 0,
           timestamp: expect.any(String),
-        });
+          executionLogId: "log-123",
+        }));
       });
     });
 
@@ -235,15 +227,15 @@ describe("FiscalManualRunService", () => {
           cnpj: "12.345.678/0001-90",
         });
 
-        mockDctfwebService.syncForCompany.mockResolvedValue({
-          guidesFound: 1,
-          guidesCaptured: 1,
-          circularUpdated: true,
+        // Mock real syncSerproInssForCompany return shape
+        syncSerproInssForCompany.mockResolvedValue({
+          inss: { pdfFileId: "pdf-1" },
+          circular: { id: "circ-1" },
         });
 
         const result = await service.executeAction("sync_inss", companyId, competencia);
 
-        expect(result).toEqual({
+        expect(result).toEqual(expect.objectContaining({
           action: "sync_inss",
           competencia,
           status: "completed",
@@ -251,30 +243,39 @@ describe("FiscalManualRunService", () => {
           guidesCaptured: 1,
           circularUpdated: true,
           timestamp: expect.any(String),
-        });
+          executionLogId: "log-123",
+        }));
       });
 
-      it("handles declaration not transmitted error", async () => {
+      it("handles declaration not transmitted (NOT_TRANSMITTED status)", async () => {
         normalizeCompetencia.mockReturnValue(competencia);
         prisma.portalClient.findUnique.mockResolvedValue({
           id: companyId,
           cnpj: "12.345.678/0001-90",
         });
 
-        const error = new Error("Declaration not transmitted");
-        error.code = "SERPRO_DCTFWEB_DECLARATION_NOT_TRANSMITTED";
-        mockDctfwebService.syncForCompany.mockRejectedValue(error);
+        // Service checks result.inss.status === "NOT_TRANSMITTED" (no exception)
+        syncSerproInssForCompany.mockResolvedValue({
+          inss: { status: "NOT_TRANSMITTED" },
+        });
 
         const result = await service.executeAction("sync_inss", companyId, competencia);
 
-        expect(result).toEqual({
+        expect(result).toEqual(expect.objectContaining({
           action: "sync_inss",
           competencia,
           status: "skipped",
           reason: "declaration_not_transmitted",
-          message: "Declaration not transmitted",
           timestamp: expect.any(String),
-        });
+          executionLogId: "log-123",
+        }));
+
+        // Log should be updated as skipped
+        expect(prisma.fiscalExecutionLog.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ status: "skipped" }),
+          })
+        );
       });
 
       it("propagates other sync errors", async () => {
@@ -286,12 +287,88 @@ describe("FiscalManualRunService", () => {
 
         const error = new Error("Network error");
         error.code = "SERPRO_NETWORK_ERROR";
-        mockDctfwebService.syncForCompany.mockRejectedValue(error);
+        syncSerproInssForCompany.mockRejectedValue(error);
 
         await expect(service.executeAction("sync_inss", companyId, competencia)).rejects.toThrow(
           "Network error"
         );
       });
+    });
+  });
+
+  describe("execution logging", () => {
+    const companyId = "company-123";
+    const competencia = "2026-01";
+
+    it("creates a running log before executing the action", async () => {
+      normalizeCompetencia.mockReturnValue(competencia);
+      prisma.portalClient.findUnique.mockResolvedValue({ id: companyId, cnpj: "12.345.678/0001-90" });
+      capturePgdasGuideForCompany.mockResolvedValue({ guide: { id: "g1" } });
+
+      await service.executeAction("search_guides", companyId, competencia);
+
+      expect(prisma.fiscalExecutionLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          portalClientId: companyId,
+          competencia,
+          action: "search_guides",
+          status: "running",
+        }),
+      });
+    });
+
+    it("updates log to completed on success", async () => {
+      normalizeCompetencia.mockReturnValue(competencia);
+      prisma.portalClient.findUnique.mockResolvedValue({ id: companyId, cnpj: "12.345.678/0001-90" });
+      // guide present → guidesFound:1, guidesCaptured:1
+      capturePgdasGuideForCompany.mockResolvedValue({ guide: { id: "g1" }, circular: { id: "c1" } });
+      prisma.fiscalExecutionLog.create.mockResolvedValue({ id: "log-abc" });
+
+      await service.executeAction("search_guides", companyId, competencia);
+
+      expect(prisma.fiscalExecutionLog.update).toHaveBeenCalledWith({
+        where: { id: "log-abc" },
+        data: expect.objectContaining({
+          status: "completed",
+          completedAt: expect.any(Date),
+          durationMs: expect.any(Number),
+          guidesFound: 1,
+          guidesCaptured: 1,
+        }),
+      });
+    });
+
+    it("updates log to failed when action throws", async () => {
+      normalizeCompetencia.mockReturnValue(competencia);
+      prisma.portalClient.findUnique.mockResolvedValue({ id: companyId, cnpj: "12.345.678/0001-90" });
+      prisma.fiscalExecutionLog.create.mockResolvedValue({ id: "log-err" });
+
+      const error = new Error("SERPRO unavailable");
+      error.code = "SERPRO_SERVICE_UNAVAILABLE";
+      capturePgdasGuideForCompany.mockRejectedValue(error);
+
+      await expect(service.executeAction("search_guides", companyId, competencia)).rejects.toThrow();
+
+      expect(prisma.fiscalExecutionLog.update).toHaveBeenCalledWith({
+        where: { id: "log-err" },
+        data: expect.objectContaining({
+          status: "failed",
+          completedAt: expect.any(Date),
+          errorCode: "SERPRO_SERVICE_UNAVAILABLE",
+          errorMessage: "SERPRO unavailable",
+        }),
+      });
+    });
+
+    it("includes executionLogId in the result", async () => {
+      normalizeCompetencia.mockReturnValue(competencia);
+      prisma.portalClient.findUnique.mockResolvedValue({ id: companyId, cnpj: "12.345.678/0001-90" });
+      prisma.guide.findMany.mockResolvedValue([]);
+      prisma.fiscalExecutionLog.create.mockResolvedValue({ id: "log-xyz" });
+
+      const result = await service.executeAction("check_payments", companyId, competencia);
+
+      expect(result.executionLogId).toBe("log-xyz");
     });
   });
 

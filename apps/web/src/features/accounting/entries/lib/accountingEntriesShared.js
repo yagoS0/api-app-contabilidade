@@ -97,6 +97,7 @@ export const PANEL_ICON_BUTTON_STYLE = {
 };
 
 export const COLS = [
+  { label: "", align: "center", width: "36px" },
   { label: "Data", align: "left", width: "110px" },
   { label: "Débito", align: "center", width: "150px" },
   { label: "Crédito", align: "center", width: "150px" },
@@ -106,3 +107,26 @@ export const COLS = [
   { label: "Status", align: "left", width: "120px" },
   { label: "Ações", align: "right", width: "136px" },
 ];
+
+// Ordem dos blocos no agrupamento visual da tabela.
+// Tipos não listados aqui caem no bloco final "Outros".
+export const TIPO_GROUP_ORDER = ["RECEITA", "PROVISAO", "DESPESA", "FOLHA", "BAIXA", "OUTRO"];
+
+export const TIPO_GROUP_LABELS = {
+  RECEITA: "Receitas",
+  PROVISAO: "Impostos / Provisões",
+  DESPESA: "Despesas",
+  FOLHA: "Folha de Pagamento",
+  BAIXA: "Baixas / Pagamentos",
+  OUTRO: "Outros",
+};
+
+// Cor da barra lateral de cada bloco
+export const TIPO_GROUP_ACCENT = {
+  RECEITA: "#69FF47",
+  PROVISAO: "#FFB347",
+  DESPESA: "#FF5757",
+  FOLHA: "#BD93F9",
+  BAIXA: "#8BE9FD",
+  OUTRO: "#6272A4",
+};

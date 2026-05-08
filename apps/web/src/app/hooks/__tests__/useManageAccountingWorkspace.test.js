@@ -2,7 +2,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { useManageAccountingWorkspace } from "../useManageAccountingWorkspace.js";
 
 // Mock the sub-hooks
-jest.mock("../../features/accounting/hooks/useManageAccountingEntries", () => ({
+jest.mock("../../../features/accounting/hooks/useManageAccountingEntries", () => ({
   useAccountingEntries: () => ({
     entries: [],
     total: 0,
@@ -14,7 +14,7 @@ jest.mock("../../features/accounting/hooks/useManageAccountingEntries", () => ({
   }),
 }));
 
-jest.mock("../../features/accounting/hooks/useManageChartOfAccounts", () => ({
+jest.mock("../../../features/accounting/hooks/useManageChartOfAccounts", () => ({
   useChartOfAccounts: () => ({
     accounts: [],
     loading: false,
@@ -33,6 +33,7 @@ describe("useManageAccountingWorkspace - Fiscal Actions", () => {
       getCircular: jest.fn().mockResolvedValue({ months: [] }),
       getCircularAccountingEntries: jest.fn().mockResolvedValue({ entries: [] }),
       runCompanyFiscalAction: jest.fn(),
+      getFiscalExecutions: jest.fn().mockResolvedValue([]),
     };
   });
 
@@ -105,7 +106,7 @@ describe("useManageAccountingWorkspace - Fiscal Actions", () => {
         await result.current.handleRunFiscalAction("search_guides", "2026-01");
       });
 
-      expect(result.current.entriesError).toContain("Falha ao executar");
+      expect(result.current.entriesError).toContain("API error");
       expect(result.current.lastFiscalResult).toBeNull();
       expect(result.current.runningFiscalAction).toBeNull();
     });

@@ -1,5 +1,7 @@
-import { useEffect, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
+import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
+import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
 
 const SUBTIPO_ROWS = [
   { key: "DAS",             label: "DAS / Simples Nacional" },
@@ -15,13 +17,163 @@ const SUBTIPO_ROWS = [
 
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
+const TIPO_LABELS = { DESPESA: "Despesa", RECEITA: "Receita", FOLHA: "Folha", PROVISAO: "Provisão", BAIXA: "Baixa", OUTRO: "Outro" };
+
 function fmtMoney(val) {
   const n = Number(val);
   if (!n) return null;
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function PagamentoCell({ entry, onBaixa }) {
+// ─── Entry Edit Modal ────────────────────────────────────────────────────────
+
+function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSearchHistoricos }) {
+  const [form, setForm] = useState({
+    data: entry.data ? String(entry.data).slice(0, 10) : "",
+    historico: entry.historico || "",
+    tipo: entry.tipo || "PROVISAO",
+    subtipo: entry.subtipo || "",
+    lines: (entry.lines || []).map((l) => ({
+      tipo: l.tipo,
+      conta: l.conta || "",
+      valor: String(Number(l.valor || 0).toFixed(2)),
+    })),
+  });
+
+  const isDuplicate = hasDuplicateAccountAcrossSides(form.lines);
+  const subtipoLabel = SUBTIPO_ROWS.find((r) => r.key === entry.subtipo)?.label || entry.subtipo || "Lançamento";
+
+  async function handleSave() {
+    if (isDuplicate) return;
+    await onSave(form);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 10, padding: 20, width: "100%", maxWidth: 540, maxHeight: "90vh", overflowY: "auto" }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <span style={{ fontWeight: 700, color: ACCOUNTING_PANEL.text, fontSize: "0.9375rem" }}>
+            Editar: {subtipoLabel}
+          </span>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: ACCOUNTING_PANEL.muted, cursor: "pointer", fontSize: "1.4rem", lineHeight: 1, padding: "0 4px" }}>×</button>
+        </div>
+
+        <div style={{ display: "grid", gap: 14 }}>
+          {/* Data */}
+          <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>
+            Data
+            <input
+              type="date"
+              value={form.data}
+              onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))}
+              style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark", height: 34, padding: "0 10px" }}
+            />
+          </label>
+
+          {/* Histórico */}
+          <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>
+            Histórico
+            <SmartHistoricoInput
+              value={form.historico}
+              onChange={(v) => setForm((p) => ({ ...p, historico: v }))}
+              onFillFromHistory={(h, ls) =>
+                setForm((p) => ({
+                  ...p,
+                  historico: h,
+                  lines: ls?.length
+                    ? ls.map((l) => ({ tipo: l.tipo, conta: l.conta || "", valor: l.valor ? String(l.valor) : "" }))
+                    : p.lines,
+                }))
+              }
+              onSearchHistoricos={onSearchHistoricos}
+              accounts={accounts}
+            />
+          </label>
+
+          {/* Tipo + Subtipo */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>
+              Tipo
+              <select
+                value={form.tipo}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, tipo: e.target.value, subtipo: e.target.value !== "PROVISAO" ? "" : p.subtipo }))
+                }
+                style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", colorScheme: "dark" }}
+              >
+                {Object.entries(TIPO_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </label>
+            {form.tipo === "PROVISAO" && (
+              <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>
+                Subtipo
+                <select
+                  value={form.subtipo || ""}
+                  onChange={(e) => setForm((p) => ({ ...p, subtipo: e.target.value }))}
+                  style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", colorScheme: "dark" }}
+                >
+                  <option value="">—</option>
+                  {SUBTIPO_OPTIONS.map(({ key, label }) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
+          {/* Linhas */}
+          <div>
+            <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted, marginBottom: 4 }}>Linhas (D/C)</div>
+            <LineEditor
+              lines={form.lines}
+              onChange={(ls) => setForm((p) => ({ ...p, lines: ls }))}
+              accounts={accounts}
+            />
+          </div>
+
+          {isDuplicate && (
+            <div style={{ color: "#FF4757", fontSize: "0.8125rem", fontWeight: 600 }}>
+              Débito e crédito não podem usar a mesma conta.
+            </div>
+          )}
+
+          {/* Actions */}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              onClick={onClose}
+              style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 16px", cursor: "pointer", borderRadius: 4 }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || isDuplicate}
+              style={{
+                height: 34, padding: "0 20px",
+                background: "#69FF47", color: "#1A1B26",
+                border: "none", borderRadius: 4,
+                fontWeight: 700, fontSize: "0.875rem",
+                cursor: saving || isDuplicate ? "default" : "pointer",
+                opacity: saving || isDuplicate ? 0.6 : 1,
+              }}
+            >
+              {saving ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PagamentoCell ───────────────────────────────────────────────────────────
+
+function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaId }) {
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
   if (!entry) {
     return (
       <td style={{
@@ -33,7 +185,7 @@ function PagamentoCell({ entry, onBaixa }) {
     );
   }
 
-  // Placeholder (TEMPLATE sem valor) → célula amarela
+  // Placeholder (TEMPLATE sem valor)
   if (entry.placeholder || entry.origem === "TEMPLATE") {
     return (
       <td style={{ background: "#fffbeb", padding: "5px 4px", textAlign: "center", borderRight: "1px solid #e5e7eb", minWidth: 80 }}>
@@ -45,6 +197,18 @@ function PagamentoCell({ entry, onBaixa }) {
           PREENCHER
         </span>
         <div style={{ fontSize: "0.65rem", color: "#92400e", marginTop: 2 }}>sem valor</div>
+        {onEdit && (
+          <button
+            onClick={() => onEdit(entry)}
+            style={{
+              marginTop: 3, fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
+              background: "#92400e", color: "white", border: "none",
+              borderRadius: 3, padding: "2px 6px",
+            }}
+          >
+            ✎ Editar
+          </button>
+        )}
       </td>
     );
   }
@@ -55,6 +219,8 @@ function PagamentoCell({ entry, onBaixa }) {
   const badgeColor  = isAberto ? "#dc2626" : "#16a34a";
   const badgeBorder = isAberto ? "#fca5a5" : "#86efac";
   const badgeLabel  = isAberto ? "ABERTO" : "PAGO";
+  const baixaId     = !isAberto ? (entry.baixas?.[0]?.id ?? null) : null;
+  const isCancelling = cancellingBaixaId === baixaId;
 
   return (
     <td style={{ background: bg, padding: "5px 4px", textAlign: "center", borderRight: "1px solid #e5e7eb", minWidth: 80 }}>
@@ -68,18 +234,70 @@ function PagamentoCell({ entry, onBaixa }) {
       <div style={{ fontSize: "0.7rem", fontWeight: 700, marginTop: 2, whiteSpace: "nowrap" }}>
         {fmtMoney(entry.valor || entry.totalD) ? `R$ ${fmtMoney(entry.valor || entry.totalD)}` : "—"}
       </div>
-      {isAberto && onBaixa && (
-        <button
-          onClick={() => onBaixa(entry)}
-          style={{
-            marginTop: 3, fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
-            background: "#dc2626", color: "white", border: "none",
-            borderRadius: 3, padding: "2px 6px", whiteSpace: "nowrap",
-          }}
+      {entry.recalculatedAt && entry.recalculatedToValor != null && (
+        <div
+          style={{ fontSize: "0.6rem", fontWeight: 700, color: "#92400e", whiteSpace: "nowrap", marginTop: 1 }}
+          title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)}. Valor original do lançamento: R$ ${fmtMoney(entry.recalculatedFromValor)}. Valor atualizado: R$ ${fmtMoney(entry.recalculatedToValor)}.`}
         >
-          Dar Baixa
-        </button>
+          ↻ R$ {fmtMoney(entry.recalculatedToValor)}
+        </div>
       )}
+      <div style={{ display: "flex", gap: 2, justifyContent: "center", flexWrap: "wrap", marginTop: 3 }}>
+        {onEdit && (
+          <button
+            onClick={() => onEdit(entry)}
+            style={{
+              fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
+              background: "#6272A4", color: "white", border: "none",
+              borderRadius: 3, padding: "2px 5px",
+            }}
+          >
+            ✎
+          </button>
+        )}
+        {isAberto && onBaixa && (
+          <button
+            onClick={() => onBaixa(entry)}
+            style={{
+              fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
+              background: "#dc2626", color: "white", border: "none",
+              borderRadius: 3, padding: "2px 5px", whiteSpace: "nowrap",
+            }}
+          >
+            Baixar
+          </button>
+        )}
+        {!isAberto && baixaId && onCancelBaixa && (
+          confirmCancel ? (
+            <div style={{ display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "center" }}>
+              <button
+                onClick={() => { setConfirmCancel(false); onCancelBaixa(baixaId); }}
+                disabled={isCancelling}
+                style={{ fontSize: "0.55rem", fontWeight: 800, cursor: "pointer", background: "#dc2626", color: "white", border: "none", borderRadius: 3, padding: "2px 5px" }}
+              >
+                {isCancelling ? "..." : "Sim"}
+              </button>
+              <button
+                onClick={() => setConfirmCancel(false)}
+                style={{ fontSize: "0.55rem", fontWeight: 700, cursor: "pointer", background: "#44475A", color: "white", border: "none", borderRadius: 3, padding: "2px 5px" }}
+              >
+                Não
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmCancel(true)}
+              style={{
+                fontSize: "0.55rem", fontWeight: 700, cursor: "pointer",
+                background: "#44475A", color: "#d1d5db", border: "none",
+                borderRadius: 3, padding: "2px 5px", whiteSpace: "nowrap",
+              }}
+            >
+              Cancelar
+            </button>
+          )
+        )}
+      </div>
     </td>
   );
 }
@@ -96,81 +314,198 @@ function FaturamentoCell({ valor }) {
   );
 }
 
+// ─── Operational Block ───────────────────────────────────────────────────────
+
+const ACTION_LABELS = {
+  search_guides: "Buscar Guias",
+  check_payments: "Verificar Pagtos",
+  sync_inss: "Sincronizar INSS",
+};
+
+const STATUS_STYLES = {
+  completed: { bg: "#ecfdf5", border: "#a7f3d0", color: "#065f46", badge: "#dcfce7", badgeBorder: "#86efac", label: "Concluído" },
+  skipped:   { bg: "#fffbeb", border: "#fcd34d", color: "#92400e", badge: "#fef3c7", badgeBorder: "#fcd34d", label: "Ignorado" },
+  failed:    { bg: "#fef2f2", border: "#fecaca", color: "#991b1b", badge: "#fee2e2", badgeBorder: "#fca5a5", label: "Falhou" },
+  running:   { bg: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8", badge: "#dbeafe", badgeBorder: "#93c5fd", label: "Em execução" },
+};
+
+function fmtDatetime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function buildExecutionSummary(entry) {
+  if (entry.action === "search_guides") {
+    const parts = [];
+    if (entry.guidesFound != null) parts.push(`${entry.guidesFound} encontradas`);
+    if (entry.guidesCaptured != null) parts.push(`${entry.guidesCaptured} capturadas`);
+    if (entry.entriesGenerated != null && entry.entriesGenerated > 0) parts.push(`${entry.entriesGenerated} lançamentos`);
+    return parts.join(" · ") || null;
+  }
+  if (entry.action === "check_payments") {
+    if (entry.guidesChecked == null) return null;
+    return `${entry.guidesChecked} verificadas · ${entry.guidesPaid ?? 0} pagas · ${entry.guidesOverdue ?? 0} vencidas · ${entry.guidesOpen ?? 0} abertas`;
+  }
+  if (entry.action === "sync_inss") {
+    const parts = [];
+    if (entry.guidesFound != null) parts.push(`${entry.guidesFound} encontradas`);
+    if (entry.guidesCaptured != null) parts.push(`${entry.guidesCaptured} capturadas`);
+    return parts.join(" · ") || null;
+  }
+  return null;
+}
+
+function ExecutionHistoryPanel({ executions, loadingExecutions }) {
+  if (loadingExecutions) {
+    return (
+      <div style={{ padding: "12px 16px", border: "1px solid #44475A", borderRadius: 6, background: "#1A1B26", marginBottom: 0 }}>
+        <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2", marginBottom: 8 }}>Histórico de Execuções</div>
+        <p style={{ margin: 0, fontSize: "0.8rem", color: "#6272A4" }}>Carregando...</p>
+      </div>
+    );
+  }
+
+  if (!executions || executions.length === 0) {
+    return (
+      <div style={{ padding: "12px 16px", border: "1px solid #44475A", borderRadius: 6, background: "#1A1B26", marginBottom: 0 }}>
+        <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2", marginBottom: 8 }}>Histórico de Execuções</div>
+        <p style={{ margin: 0, fontSize: "0.8rem", color: "#6272A4", fontStyle: "italic" }}>Nenhuma execução registrada para esta competência.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ border: "1px solid #44475A", borderRadius: 6, background: "#1A1B26", marginBottom: 0, overflow: "hidden" }}>
+      <div style={{ padding: "10px 16px", borderBottom: "1px solid #44475A", background: "#1A1B26" }}>
+        <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2" }}>Histórico de Execuções</span>
+        <span style={{ marginLeft: 8, fontSize: "0.75rem", color: "#6272A4" }}>{executions.length} registro{executions.length !== 1 ? "s" : ""}</span>
+      </div>
+      <div style={{ display: "grid" }}>
+        {executions.map((entry) => {
+          const st = STATUS_STYLES[entry.status] || STATUS_STYLES.failed;
+          const summary = buildExecutionSummary(entry);
+          return (
+            <div key={entry.id} style={{
+              display: "grid",
+              gridTemplateColumns: "auto 1fr auto",
+              gap: "6px 12px",
+              alignItems: "start",
+              padding: "10px 16px",
+              borderBottom: "1px solid #2d2f4a",
+              background: "#1A1B26",
+            }}>
+              <div style={{ paddingTop: 1 }}>
+                <span style={{
+                  display: "inline-block", fontSize: "0.6rem", fontWeight: 800,
+                  letterSpacing: "0.04em", textTransform: "uppercase",
+                  padding: "2px 6px", borderRadius: 999,
+                  background: st.badge, color: st.color, border: `1px solid ${st.badgeBorder}`,
+                  whiteSpace: "nowrap",
+                }}>
+                  {st.label}
+                </span>
+              </div>
+              <div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2" }}>
+                    {ACTION_LABELS[entry.action] || entry.action}
+                  </span>
+                  <span style={{ fontSize: "0.75rem", color: "#6272A4" }}>{entry.competencia}</span>
+                </div>
+                {summary && (
+                  <div style={{ fontSize: "0.75rem", color: "#6272A4", marginTop: 2 }}>{summary}</div>
+                )}
+                {entry.skipReason && (
+                  <div style={{ fontSize: "0.75rem", color: "#92400e", marginTop: 2 }}>
+                    Motivo: {entry.skipReason.replace(/_/g, " ")}
+                  </div>
+                )}
+                {entry.errorMessage && (
+                  <div style={{ fontSize: "0.75rem", color: "#991b1b", marginTop: 2 }}>
+                    Erro: {entry.errorCode ? `[${entry.errorCode}] ` : ""}{entry.errorMessage}
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: "0.7rem", color: "#6272A4", whiteSpace: "nowrap", textAlign: "right" }}>
+                {fmtDatetime(entry.startedAt)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function OperationalBlock({
   competencia,
+  onCompetenciaChange,
   runningFiscalAction,
   lastFiscalResult,
   onSearchGuides,
   onCheckPayments,
   onSyncInss,
+  executions,
+  loadingExecutions,
 }) {
   const actionInProgress = Boolean(runningFiscalAction);
   const lastResult = lastFiscalResult?.result || null;
 
+  const lastByAction = {};
+  if (Array.isArray(executions)) {
+    for (const e of executions) {
+      if (!lastByAction[e.action]) lastByAction[e.action] = e;
+    }
+  }
+
+  function actionButtonStyle(key) {
+    const isActive = runningFiscalAction === key;
+    const last = lastByAction[key];
+    let borderColor = "#44475A";
+    if (!actionInProgress && last) {
+      borderColor = last.status === "completed" ? "#86efac"
+        : last.status === "failed" ? "#fca5a5"
+        : last.status === "skipped" ? "#fcd34d"
+        : "#44475A";
+    }
+    return {
+      fontSize: "0.8125rem",
+      fontWeight: 600,
+      padding: "6px 12px",
+      background: isActive ? "#3b82f6" : "#1A1B26",
+      color: isActive ? "white" : "#F8F8F2",
+      border: `1px solid ${isActive ? "#3b82f6" : borderColor}`,
+      borderRadius: 4,
+      cursor: actionInProgress ? "default" : "pointer",
+      opacity: actionInProgress && !isActive ? 0.5 : 1,
+    };
+  }
+
   return (
-    <div style={{
-      background: "#f3f4f6",
-      border: "1px solid #e5e7eb",
-      borderRadius: 6,
-      padding: "12px 16px",
-      marginBottom: 16,
-    }}>
-      <div style={{ marginBottom: 8, fontSize: "0.8125rem", fontWeight: 600, color: "#374151" }}>
-        Operações Fiscais para {competencia}
+    <div style={{ background: "#24253A", border: "1px solid #44475A", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2" }}>
+          Operações Fiscais
+        </div>
+        {onCompetenciaChange && (
+          <input
+            type="month"
+            value={competencia || ""}
+            onChange={(e) => onCompetenciaChange(e.target.value)}
+            style={{ ...PANEL_FIELD_STYLE, height: 30, padding: "0 8px", width: "auto", colorScheme: "dark" }}
+          />
+        )}
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: lastResult ? 10 : 0 }}>
-        <button
-          onClick={onSearchGuides}
-          disabled={actionInProgress}
-          style={{
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            padding: "6px 12px",
-            background: actionInProgress && runningFiscalAction === "search_guides" ? "#3b82f6" : "white",
-            color: actionInProgress && runningFiscalAction === "search_guides" ? "white" : "#1f2937",
-            border: "1px solid #d1d5db",
-            borderRadius: 4,
-            cursor: actionInProgress ? "default" : "pointer",
-            opacity: actionInProgress && runningFiscalAction !== "search_guides" ? 0.5 : 1,
-          }}
-        >
+        <button onClick={() => onSearchGuides()} disabled={actionInProgress} style={actionButtonStyle("search_guides")}>
           {runningFiscalAction === "search_guides" ? "⏳ Buscando..." : "🔍 Buscar Guias"}
         </button>
-
-        <button
-          onClick={onCheckPayments}
-          disabled={actionInProgress}
-          style={{
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            padding: "6px 12px",
-            background: actionInProgress && runningFiscalAction === "check_payments" ? "#3b82f6" : "white",
-            color: actionInProgress && runningFiscalAction === "check_payments" ? "white" : "#1f2937",
-            border: "1px solid #d1d5db",
-            borderRadius: 4,
-            cursor: actionInProgress ? "default" : "pointer",
-            opacity: actionInProgress && runningFiscalAction !== "check_payments" ? 0.5 : 1,
-          }}
-        >
+        <button onClick={() => onCheckPayments()} disabled={actionInProgress} style={actionButtonStyle("check_payments")}>
           {runningFiscalAction === "check_payments" ? "⏳ Verificando..." : "✓ Verificar Pagtos"}
         </button>
-
-        <button
-          onClick={onSyncInss}
-          disabled={actionInProgress}
-          style={{
-            fontSize: "0.8125rem",
-            fontWeight: 600,
-            padding: "6px 12px",
-            background: actionInProgress && runningFiscalAction === "sync_inss" ? "#3b82f6" : "white",
-            color: actionInProgress && runningFiscalAction === "sync_inss" ? "white" : "#1f2937",
-            border: "1px solid #d1d5db",
-            borderRadius: 4,
-            cursor: actionInProgress ? "default" : "pointer",
-            opacity: actionInProgress && runningFiscalAction !== "sync_inss" ? 0.5 : 1,
-          }}
-        >
+        <button onClick={() => onSyncInss()} disabled={actionInProgress} style={actionButtonStyle("sync_inss")}>
           {runningFiscalAction === "sync_inss" ? "⏳ Sincronizando..." : "⚙ Sincronizar INSS"}
         </button>
       </div>
@@ -178,26 +513,32 @@ function OperationalBlock({
       {lastResult && (
         <div style={{
           fontSize: "0.75rem",
-          background: lastResult.status === "completed" ? "#ecfdf5" : "#fef2f2",
-          border: `1px solid ${lastResult.status === "completed" ? "#a7f3d0" : "#fecaca"}`,
+          background: lastResult.status === "completed" ? "#ecfdf5" : lastResult.status === "skipped" ? "#fffbeb" : "#fef2f2",
+          border: `1px solid ${lastResult.status === "completed" ? "#a7f3d0" : lastResult.status === "skipped" ? "#fcd34d" : "#fecaca"}`,
           borderRadius: 3,
           padding: "8px 10px",
-          color: lastResult.status === "completed" ? "#065f46" : "#991b1b",
+          color: lastResult.status === "completed" ? "#065f46" : lastResult.status === "skipped" ? "#92400e" : "#991b1b",
+          marginBottom: 10,
         }}>
           <div style={{ fontWeight: 600, marginBottom: 3 }}>
-            {lastResult.action.replace("_", " ").toUpperCase()} — {lastResult.status === "completed" ? "✓ Concluído" : "⚠ Incompleto"}
+            {ACTION_LABELS[lastResult.action] || lastResult.action} —{" "}
+            {lastResult.status === "completed" ? "✓ Concluído" : lastResult.status === "skipped" ? "⚠ Ignorado" : "✗ Falhou"}
           </div>
-          {lastResult.guidesFound != null && (
-            <div>Guias encontradas: {lastResult.guidesFound}</div>
-          )}
+          {lastResult.guidesFound != null && <div>Guias encontradas: {lastResult.guidesFound}</div>}
+          {lastResult.guidesCaptured != null && <div>Capturadas: {lastResult.guidesCaptured}</div>}
           {lastResult.guidesChecked != null && (
-            <div>Guias verificadas: {lastResult.guidesChecked} (Pagas: {lastResult.guidesPaid}, Vencidas: {lastResult.guidesOverdue}, Abertas: {lastResult.guidesOpen})</div>
+            <div>Verificadas: {lastResult.guidesChecked} (Pagas: {lastResult.guidesPaid}, Vencidas: {lastResult.guidesOverdue}, Abertas: {lastResult.guidesOpen})</div>
           )}
+          {lastResult.reason && <div>Motivo: {lastResult.reason.replace(/_/g, " ")}</div>}
         </div>
       )}
+
+      <ExecutionHistoryPanel executions={executions} loadingExecutions={loadingExecutions} />
     </div>
   );
 }
+
+// ─── CircularTab ─────────────────────────────────────────────────────────────
 
 export function CircularTab({
   circularData,
@@ -207,35 +548,28 @@ export function CircularTab({
   onCompetenciaChange,
   onYearChange,
   onLoad,
-  onSaveCircular,
-  savingCircular,
-  onApproveAccountingEntry,
-  approvingCircularEntryId,
   accounts,
   onCreateBaixa,
   savingBaixa,
+  onLoadBaixaTemplate,
   runningFiscalAction,
   lastFiscalResult,
   onSearchGuides,
   onCheckPayments,
   onSyncInss,
+  executions,
+  loadingExecutions,
+  error,
+  message,
+  onUpdateEntry,
+  onSearchHistoricos,
+  onCancelBaixa,
 }) {
   const [baixaEntry, setBaixaEntry] = useState(null);
-  const [draft, setDraft] = useState({ receitaBruta: "", receitaServicos: "", receitaVendas: "", dasTotal: "", inssTotal: "", inssVencimento: "", inssStatus: "" });
+  const [editEntry, setEditEntry] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [cancellingBaixaId, setCancellingBaixaId] = useState(null);
   const currentYear = new Date().getFullYear();
-
-  useEffect(() => {
-    const c = circularData?.circular || {};
-    setDraft({
-      receitaBruta: c.receitaBruta ?? "",
-      receitaServicos: c.receitaServicos ?? "",
-      receitaVendas: c.receitaVendas ?? "",
-      dasTotal: c.dasTotal ?? "",
-      inssTotal: c.inssTotal ?? "",
-      inssVencimento: c.inssVencimento ? String(c.inssVencimento).slice(0, 10) : "",
-      inssStatus: c.inssStatus ?? "",
-    });
-  }, [circularData?.circular]);
 
   const matrix = useMemo(() => {
     if (!circularData?.provisoes) return {};
@@ -244,7 +578,6 @@ export function CircularTab({
       if (!p.subtipo) continue;
       const k = `${p.subtipo}__${p.competencia}`;
       const existing = map[k];
-      // Preferência: ABERTO real > PAGO > TEMPLATE (placeholder)
       if (!existing) { map[k] = p; continue; }
       const isTemplate = (e) => e.placeholder || e.origem === "TEMPLATE";
       if (isTemplate(existing) && !isTemplate(p)) { map[k] = p; continue; }
@@ -259,7 +592,6 @@ export function CircularTab({
     return SUBTIPO_ROWS.filter((r) => usedSubtipos.has(r.key));
   }, [circularData]);
 
-  // Totais por mês para linha de saldo em aberto
   const abertoByMonth = useMemo(() => {
     if (!circularData?.provisoes) return {};
     const totals = {};
@@ -272,53 +604,52 @@ export function CircularTab({
   }, [circularData]);
 
   const monthKeys = MONTH_LABELS.map((_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
-  const reviewEntries = Array.isArray(circularData?.reviewEntries)
-    ? circularData.reviewEntries
-    : Array.isArray(circularData?.entries)
-      ? circularData.entries
-      : [];
-  const circular = circularData?.circular || null;
 
-  function updateDraft(key, value) {
-    setDraft((prev) => ({ ...prev, [key]: value }));
+  async function handleEditSave(form) {
+    if (!editEntry || !onUpdateEntry) return;
+    setSavingEdit(true);
+    try {
+      await onUpdateEntry(editEntry.id, form);
+      await onLoad(year, competencia);
+      setEditEntry(null);
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
-  async function saveCircular() {
-    if (!onSaveCircular) return;
-    const payload = {};
-    if (draft.receitaBruta !== "") payload.receitaBruta = draft.receitaBruta;
-    if (draft.receitaServicos !== "") payload.receitaServicos = draft.receitaServicos;
-    if (draft.receitaVendas !== "") payload.receitaVendas = draft.receitaVendas;
-    if (draft.dasTotal !== "") payload.dasTotal = draft.dasTotal;
-    if (draft.inssTotal !== "") payload.inssTotal = draft.inssTotal;
-    if (draft.inssVencimento !== "") payload.inssVencimento = draft.inssVencimento;
-    if (draft.inssStatus !== "") payload.inssStatus = draft.inssStatus;
-    await onSaveCircular(payload);
+  async function handleCancelBaixa(baixaId) {
+    if (!onCancelBaixa) return;
+    setCancellingBaixaId(baixaId);
+    try {
+      await onCancelBaixa(baixaId);
+      await onLoad(year, competencia);
+    } finally {
+      setCancellingBaixaId(null);
+    }
   }
 
   return (
-    <div style={{ padding: "var(--space-3) var(--space-4)", width: "100%", background: "var(--bg-surface)" }}>
+    <div style={{ padding: "var(--space-3) var(--space-4)", width: "100%", background: "#1A1B26", minHeight: "100%" }}>
       {/* Cabeçalho */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>Circular — Provisões e Pagamentos</h2>
+        <h2 style={{ margin: 0, fontSize: "1rem", fontWeight: 600, color: "#F8F8F2" }}>Circular — Provisões e Pagamentos</h2>
 
-        {/* Seletor de ano */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
           <button
             onClick={() => onYearChange(year - 1)}
             style={{
-              background: "white", border: "1px solid var(--border)", borderRadius: 4,
+              background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
               width: 28, height: 28, cursor: "pointer", fontSize: "0.875rem",
             }}
           >
             ←
           </button>
-          <span style={{ fontWeight: 700, fontSize: "1rem", minWidth: 48, textAlign: "center" }}>{year}</span>
+          <span style={{ fontWeight: 700, fontSize: "1rem", minWidth: 48, textAlign: "center", color: "#F8F8F2" }}>{year}</span>
           <button
             onClick={() => onYearChange(year + 1)}
             disabled={year >= currentYear + 1}
             style={{
-              background: "white", border: "1px solid var(--border)", borderRadius: 4,
+              background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
               width: 28, height: 28, cursor: year >= currentYear + 1 ? "default" : "pointer",
               fontSize: "0.875rem", opacity: year >= currentYear + 1 ? 0.4 : 1,
             }}
@@ -328,7 +659,7 @@ export function CircularTab({
           <button
             onClick={() => onLoad(year)}
             style={{
-              background: "white", border: "1px solid var(--border)", borderRadius: 4,
+              background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
               height: 28, padding: "0 10px", cursor: "pointer", fontSize: "0.8125rem",
             }}
           >
@@ -337,20 +668,39 @@ export function CircularTab({
         </div>
       </div>
 
+      {/* Feedback */}
+      {(error || message) && (
+        <div style={{ marginBottom: 12, display: "grid", gap: 6 }}>
+          {error && (
+            <div style={{ padding: "10px 14px", borderRadius: 6, background: "#3d1515", border: "1px solid #7f1d1d", color: "#fca5a5", fontSize: "0.8125rem" }}>
+              {error}
+            </div>
+          )}
+          {message && (
+            <div style={{ padding: "10px 14px", borderRadius: 6, background: "#0d2d1e", border: "1px solid #166534", color: "#86efac", fontSize: "0.8125rem" }}>
+              {message}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Operational Block */}
       {onSearchGuides && onCheckPayments && onSyncInss && (
         <OperationalBlock
           competencia={competencia}
+          onCompetenciaChange={onCompetenciaChange}
           runningFiscalAction={runningFiscalAction}
           lastFiscalResult={lastFiscalResult}
           onSearchGuides={onSearchGuides}
           onCheckPayments={onCheckPayments}
           onSyncInss={onSyncInss}
+          executions={executions}
+          loadingExecutions={loadingExecutions}
         />
       )}
 
       {/* Legenda */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: "0.75rem", color: "var(--text-muted)", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: "0.75rem", color: "#6272A4", flexWrap: "wrap" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{ width: 10, height: 10, borderRadius: 2, background: "#fee2e2", border: "1px solid #fca5a5", display: "inline-block" }} />
           Em aberto
@@ -370,107 +720,17 @@ export function CircularTab({
       </div>
 
       {loading && (
-        <p style={{ color: "var(--text-muted)", textAlign: "center", padding: 32 }}>Carregando...</p>
+        <p style={{ color: "#6272A4", textAlign: "center", padding: 32 }}>Carregando...</p>
       )}
 
       {!loading && !circularData && (
-        <p style={{ color: "var(--text-muted)", textAlign: "center", padding: 32 }}>
+        <p style={{ color: "#6272A4", textAlign: "center", padding: 32 }}>
           Nenhum dado disponível. Clique em Atualizar.
         </p>
       )}
 
       {!loading && circularData && (
-        <div style={{ display: "grid", gap: 16 }}>
-          <div style={{ display: "grid", gap: 12, padding: 16, border: "1px solid #e5e7eb", borderRadius: 8, background: "white" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: "0.95rem" }}>Revisão fiscal mensal</h3>
-                <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: "0.8rem" }}>Edite os valores vindos do SERPRO e regenere os lançamentos da Circular.</p>
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                  Competência
-                  <input type="month" value={competencia || ""} onChange={(e) => onCompetenciaChange?.(e.target.value)} style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-                </label>
-                <button onClick={() => onLoad(year, competencia)} style={{ padding: "8px 12px", borderRadius: 6, border: "1px solid #d1d5db", background: "white", cursor: "pointer" }}>Atualizar</button>
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                Receita bruta
-                <input value={draft.receitaBruta} onChange={(e) => updateDraft("receitaBruta", e.target.value)} placeholder="0,00" style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                Receita serviços
-                <input value={draft.receitaServicos} onChange={(e) => updateDraft("receitaServicos", e.target.value)} placeholder="0,00" style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                Receita vendas
-                <input value={draft.receitaVendas} onChange={(e) => updateDraft("receitaVendas", e.target.value)} placeholder="0,00" style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                DAS total
-                <input value={draft.dasTotal} onChange={(e) => updateDraft("dasTotal", e.target.value)} placeholder="0,00" style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                INSS total
-                <input value={draft.inssTotal} onChange={(e) => updateDraft("inssTotal", e.target.value)} placeholder="0,00" style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                INSS vencimento
-                <input type="date" value={draft.inssVencimento} onChange={(e) => updateDraft("inssVencimento", e.target.value)} style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-              </label>
-              <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                INSS status
-                <input value={draft.inssStatus} onChange={(e) => updateDraft("inssStatus", e.target.value)} placeholder="EMITTED" style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-              </label>
-            </div>
-
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={saveCircular} disabled={savingCircular} style={{ padding: "9px 14px", borderRadius: 6, border: "none", background: "#2563eb", color: "white", cursor: savingCircular ? "default" : "pointer", opacity: savingCircular ? 0.7 : 1 }}>
-                {savingCircular ? "Salvando..." : "Salvar e regenerar"}
-              </button>
-              {circular?.hasAccountingDivergence && (
-                <span style={{ color: "#b45309", fontSize: "0.8rem" }}>{circular.accountingDivergenceMessage || "Divergência registrada."}</span>
-              )}
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 10, padding: 16, border: "1px solid #e5e7eb", borderRadius: 8, background: "white" }}>
-            <h3 style={{ margin: 0, fontSize: "0.95rem" }}>Lançamentos gerados</h3>
-            {reviewEntries.length === 0 ? (
-              <p style={{ margin: 0, color: "var(--text-muted)", fontSize: "0.85rem" }}>Nenhum lançamento gerado para esta competência.</p>
-            ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {reviewEntries.map((entry) => (
-                  <div key={entry.id} style={{ display: "grid", gap: 6, padding: 12, border: "1px solid #e5e7eb", borderRadius: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                      <strong>{entry.eventType || entry.tipo}</strong>
-                      <span>{entry.status || "RASCUNHO"}</span>
-                    </div>
-                    <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>{entry.historico}</div>
-                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: "0.85rem" }}>
-                      <span>D: {entry.lines?.[0]?.conta || "—"}</span>
-                      <span>C: {entry.lines?.[1]?.conta || "—"}</span>
-                      <span>Valor: {fmtMoney(entry.valor || entry.totalD) ? `R$ ${fmtMoney(entry.valor || entry.totalD)}` : "—"}</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button
-                        onClick={() => onApproveAccountingEntry?.(entry.id)}
-                        disabled={approvingCircularEntryId === entry.id}
-                        style={{ padding: "7px 12px", borderRadius: 6, border: "none", background: "#16a34a", color: "white", cursor: approvingCircularEntryId === entry.id ? "default" : "pointer", opacity: approvingCircularEntryId === entry.id ? 0.7 : 1 }}
-                      >
-                        {approvingCircularEntryId === entry.id ? "Aprovando..." : "Aprovar"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 6 }}>
+        <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 6, background: "white" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", tableLayout: "auto" }}>
             <thead>
               <tr style={{ background: "#f3f4f6" }}>
@@ -518,12 +778,15 @@ export function CircularTab({
                       key={comp}
                       entry={matrix[`${row.key}__${comp}`]}
                       onBaixa={(entry) => setBaixaEntry(entry)}
+                      onEdit={onUpdateEntry ? (entry) => setEditEntry(entry) : null}
+                      onCancelBaixa={onCancelBaixa ? handleCancelBaixa : null}
+                      cancellingBaixaId={cancellingBaixaId}
                     />
                   ))}
                 </tr>
               ))}
 
-              {/* Linha de Total em Aberto */}
+              {/* Total em Aberto */}
               <tr style={{ borderTop: "2px solid #d1d5db", background: "#fef2f2" }}>
                 <td style={{
                   padding: "6px 10px", fontWeight: 700, fontSize: "0.8125rem",
@@ -549,7 +812,7 @@ export function CircularTab({
                 })}
               </tr>
 
-              {/* Linha de Faturamento */}
+              {/* Faturamento */}
               <tr style={{ borderTop: "1px solid #e5e7eb" }}>
                 <td style={{
                   padding: "6px 10px", fontWeight: 600, fontSize: "0.8125rem",
@@ -565,10 +828,10 @@ export function CircularTab({
               </tr>
             </tbody>
           </table>
-          </div>
         </div>
       )}
 
+      {/* Baixa Modal */}
       {baixaEntry && (
         <BaixaModal
           entry={baixaEntry}
@@ -576,9 +839,23 @@ export function CircularTab({
           saving={savingBaixa}
           onSave={async (input) => {
             await onCreateBaixa(baixaEntry.id, input);
+            await onLoad(year, competencia);
             setBaixaEntry(null);
           }}
           onClose={() => setBaixaEntry(null)}
+          onLoadBaixaTemplate={onLoadBaixaTemplate}
+        />
+      )}
+
+      {/* Entry Edit Modal */}
+      {editEntry && (
+        <CircularEntryEditModal
+          entry={editEntry}
+          accounts={accounts || []}
+          saving={savingEdit}
+          onSave={handleEditSave}
+          onClose={() => setEditEntry(null)}
+          onSearchHistoricos={onSearchHistoricos}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 
 const SUBTIPO_LABELS = {
@@ -131,7 +131,7 @@ function LineEditor({ lines, onChange, accounts }) {
   );
 }
 
-export function BaixaModal({ entry, accounts, onSave, onClose, saving }) {
+export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBaixaTemplate }) {
   const subtipoLabel = SUBTIPO_LABELS[entry.subtipo] || entry.subtipo || entry.tipo;
   const title = `Dar Baixa — ${subtipoLabel}`;
 
@@ -140,6 +140,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving }) {
     : `Pagamento ref. ${entry.competencia}`;
 
   const today = new Date().toISOString().slice(0, 10);
+  const valorBase = Number(entry.valor || entry.totalD || 0);
 
   const [data, setData] = useState(today);
   const [historico, setHistorico] = useState(defaultHistorico);
@@ -155,6 +156,29 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving }) {
     }));
   });
   const [error, setError] = useState("");
+  const [templateApplied, setTemplateApplied] = useState(null); // "COMPANY" | "GLOBAL" | null
+
+  // Carrega template configurado (se houver) para pré-preencher
+  useEffect(() => {
+    if (!onLoadBaixaTemplate || !entry?.id) return;
+    let canceled = false;
+    onLoadBaixaTemplate(entry.id)
+      .then((res) => {
+        if (canceled) return;
+        const tpl = res?.template;
+        if (!tpl) return;
+        const v = String(Number(tpl.valor || valorBase).toFixed(2));
+        setLines([
+          { tipo: "D", conta: tpl.debitAccountCode || "", valor: v },
+          { tipo: "C", conta: tpl.creditAccountCode || "", valor: v },
+        ]);
+        if (tpl.historico) setHistorico(tpl.historico);
+        setTemplateApplied(tpl.scope || "GLOBAL");
+      })
+      .catch(() => { /* silencioso — fallback ao comportamento manual */ });
+    return () => { canceled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry?.id]);
 
   const totalD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
   const totalC = lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
@@ -186,7 +210,14 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving }) {
         maxHeight: "90vh", overflow: "auto", padding: "var(--space-5)",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-3)" }}>
-          <h2 style={{ margin: 0, fontSize: "1.0625rem", fontWeight: 700 }}>{title}</h2>
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.0625rem", fontWeight: 700 }}>{title}</h2>
+            {templateApplied && (
+              <span style={{ fontSize: "0.7rem", color: "#16a34a", display: "inline-block", marginTop: 4 }}>
+                ✓ Pré-preenchido com regra {templateApplied === "COMPANY" ? "da empresa" : "global"}
+              </span>
+            )}
+          </div>
           <Button size="sm" variant="secondary" onClick={onClose}>Fechar</Button>
         </div>
 

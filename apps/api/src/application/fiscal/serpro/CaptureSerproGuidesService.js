@@ -229,6 +229,7 @@ export async function capturePgdasGuideForCompany({
   existingGuideId = null,
   serviceId = null,
   dataConsolidacao,
+  emailStatusOverride, // "PRESERVE" | "PENDING" | undefined (default = comportamento legado)
 }) {
   const normalizedCompanyId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
@@ -298,10 +299,24 @@ export async function capturePgdasGuideForCompany({
 
   const existingGuide = await prisma.guide.findFirst({
     where: { sourceFileId },
-    select: { id: true },
+    select: {
+      id: true,
+      paymentStatus: true,
+      paymentStatusSource: true,
+      paymentConfirmedAt: true,
+    },
   });
 
   const now = new Date();
+
+  // Preservar paymentStatus existente: emitir guia no SERPRO não confirma pagamento
+  const preservedPayment = existingGuide
+    ? {
+        paymentStatus: existingGuide.paymentStatus,
+        paymentStatusSource: existingGuide.paymentStatusSource,
+        paymentConfirmedAt: existingGuide.paymentConfirmedAt,
+      }
+    : { paymentStatus: "OPEN" };
 
   const guide = await createOrUpdateGuideFromProcessing({
     existingGuideId: existingGuideId || existingGuide?.id || null,
@@ -318,8 +333,8 @@ export async function capturePgdasGuideForCompany({
     hash: hashPdf(mapped.pdfBuffer),
     status: "PROCESSED",
     errors: [],
-    paymentStatus: "OPEN",
-    paymentStatusSource: "SERPRO",
+    ...preservedPayment,
+    emailStatusOverride,
     serproLastCheckedAt: now,
     serproLastCheckResult: labels.checkResult,
     serproLastSeenAt: now,

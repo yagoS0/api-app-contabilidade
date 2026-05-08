@@ -7,14 +7,7 @@ import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRun
 import { SerproProcurationService } from "../application/fiscal/serpro/SerproProcurationService.js";
 import { capturePgdasGuideForCompany } from "../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
-import {
-  SERPRO_PGDASD_SERVICE_COBRANCA,
-} from "../application/fiscal/serpro/SerproPgdasdService.js";
-import {
-  getGuideDueDate,
-  markGuideOverdueBySerpro,
-  markGuidePaidBySerpro,
-} from "../application/guides/GuidePaymentStatusService.js";
+import { markGuidePaidBySerpro } from "../application/guides/GuidePaymentStatusService.js";
 
 const LOCK_ID = "serpro_pgdasd_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
@@ -117,14 +110,17 @@ async function listEligiblePortalCompanies() {
   return eligible;
 }
 
-async function listGuidesDueForSerproRecheck(now = new Date()) {
-  const guides = await prisma.guide.findMany({
+// Lista guias OPEN cujo vencimento ainda não passou (para re-fetch diário)
+async function listOpenGuidesUntilVencimento(portalClientId, todayDate) {
+  // todayDate = Date no início do dia local
+  return prisma.guide.findMany({
     where: {
+      portalClientId,
       source: "SERPRO",
       tipo: "SIMPLES",
       status: "PROCESSED",
       paymentStatus: "OPEN",
-      portalClientId: { not: null },
+      OR: [{ vencimento: null }, { vencimento: { gte: todayDate } }],
     },
     select: {
       id: true,
@@ -132,20 +128,19 @@ async function listGuidesDueForSerproRecheck(now = new Date()) {
       competencia: true,
       vencimento: true,
       paymentStatus: true,
-      portalClient: {
-        select: {
-          id: true,
-          razao: true,
-          cnpj: true,
-        },
-      },
     },
   });
+}
 
-  return guides.filter((guide) => {
-    const dueDate = getGuideDueDate(guide, now);
-    return dueDate && dueDate.getTime() <= now.getTime();
-  });
+function startOfTodayLocal(now = new Date()) {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function isSameLocalDay(d1, d2) {
+  if (!d1 || !d2) return false;
+  return d1.getFullYear() === d2.getFullYear()
+    && d1.getMonth() === d2.getMonth()
+    && d1.getDate() === d2.getDate();
 }
 
 export async function runSerproPgdasdWorkerOnce(options = {}) {
@@ -162,101 +157,119 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
     const companies = await listEligiblePortalCompanies();
     const procurationService = new SerproProcurationService();
     const results = [];
+    const recheckResults = [];
     const startedAt = Date.now();
+
+    const now = new Date();
+    const todayStart = startOfTodayLocal(now);
+    const fetchDay = settings.fetchDay ?? 5;
+    const isCaptureWindow = now.getDate() >= fetchDay; // a partir do dia configurado
 
     for (const company of companies) {
       try {
         // eslint-disable-next-line no-await-in-loop
         const procuration = await procurationService.checkCompanyProcuration({ portalClientId: company.id });
         if (procuration.status !== "ATIVA") {
-        results.push({
-          companyId: company.id,
-          razao: company.razao,
-          cnpj: company.cnpj,
-          email: company.email,
-          competencia,
-          status: "skipped_procuration_inactive",
-          procurationStatus: procuration.status,
+          results.push({
+            companyId: company.id,
+            razao: company.razao,
+            cnpj: company.cnpj,
+            email: company.email,
+            competencia,
+            status: "skipped_procuration_inactive",
+            procurationStatus: procuration.status,
           });
           continue;
         }
 
+        // Stage 1: Captura inicial (apenas no/após fetchDay e se ainda não houver guia para a competência)
         // eslint-disable-next-line no-await-in-loop
-        const capture = await capturePgdasGuideForCompany({ portalClientId: company.id, competencia });
-        results.push({
-          companyId: company.id,
-          razao: company.razao,
-          cnpj: company.cnpj,
-          email: company.email,
-          competencia,
-          status: "captured",
-          guideId: capture.guide.guideId,
-          integration: capture.integration,
-          serviceId: capture.integration?.servico || null,
+        const existingForCompetencia = await prisma.guide.findFirst({
+          where: {
+            portalClientId: company.id,
+            source: "SERPRO",
+            tipo: "SIMPLES",
+            competencia,
+            status: "PROCESSED",
+          },
+          select: { id: true },
         });
-      } catch (err) {
-        results.push({
-          companyId: company.id,
-          razao: company.razao,
-          cnpj: company.cnpj,
-          email: company.email,
-          competencia,
-          status: "error",
-          error: err?.code || "SERPRO_PGDASD_CAPTURE_FAILED",
-          reason: err?.message || "serpro_pgdasd_capture_failed",
-          retryable: Boolean(err?.retryable),
-        });
-      }
-    }
 
-    const recheckResults = [];
-    const guidesDueForRecheck = await listGuidesDueForSerproRecheck();
-    for (const guide of guidesDueForRecheck) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const capture = await capturePgdasGuideForCompany({
-          portalClientId: guide.portalClientId,
-          competencia: guide.competencia,
-          existingGuideId: guide.id,
-          serviceId: SERPRO_PGDASD_SERVICE_COBRANCA,
-        });
-        // eslint-disable-next-line no-await-in-loop
-        await markGuideOverdueBySerpro({ guideId: guide.id });
-        recheckResults.push({
-          guideId: guide.id,
-          companyId: guide.portalClientId,
-          razao: guide.portalClient?.razao || null,
-          cnpj: guide.portalClient?.cnpj || null,
-          competencia: guide.competencia,
-          status: "overdue",
-          integration: capture.integration,
-          serviceId: SERPRO_PGDASD_SERVICE_COBRANCA,
-        });
-      } catch (err) {
-        if (err?.code === "SERPRO_PGDASD_NO_DEBTS_FOUND") {
-          // eslint-disable-next-line no-await-in-loop
-          await markGuidePaidBySerpro({ guideId: guide.id });
-          recheckResults.push({
-            guideId: guide.id,
-            companyId: guide.portalClientId,
-            razao: guide.portalClient?.razao || null,
-            cnpj: guide.portalClient?.cnpj || null,
-            competencia: guide.competencia,
-            status: "paid",
-          });
-          continue;
+        if (isCaptureWindow && !existingForCompetencia) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const capture = await capturePgdasGuideForCompany({
+              portalClientId: company.id,
+              competencia,
+              // emailStatusOverride padrão = PENDING (envia email da captura inicial)
+            });
+            results.push({
+              companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
+              competencia,
+              status: "captured",
+              guideId: capture.guide.guideId,
+              integration: capture.integration,
+              serviceId: capture.integration?.servico || null,
+            });
+          } catch (err) {
+            results.push({
+              companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
+              competencia,
+              status: "error",
+              error: err?.code || "SERPRO_PGDASD_CAPTURE_FAILED",
+              reason: err?.message || "serpro_pgdasd_capture_failed",
+              retryable: Boolean(err?.retryable),
+            });
+          }
         }
 
-        recheckResults.push({
-          guideId: guide.id,
-          companyId: guide.portalClientId,
-          razao: guide.portalClient?.razao || null,
-          cnpj: guide.portalClient?.cnpj || null,
-          competencia: guide.competencia,
+        // Stage 2: Re-fetch diário das guias OPEN cujo vencimento ainda não passou
+        // eslint-disable-next-line no-await-in-loop
+        const openGuides = await listOpenGuidesUntilVencimento(company.id, todayStart);
+        for (const guide of openGuides) {
+          const vencDate = guide.vencimento ? new Date(guide.vencimento) : null;
+          const isVencimentoHoje = vencDate ? isSameLocalDay(vencDate, now) : false;
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await capturePgdasGuideForCompany({
+              portalClientId: guide.portalClientId,
+              competencia: guide.competencia,
+              existingGuideId: guide.id,
+              // No vencimento → reset PENDING (resend); intermediário → PRESERVE (silencioso)
+              emailStatusOverride: isVencimentoHoje ? "PENDING" : "PRESERVE",
+            });
+            recheckResults.push({
+              guideId: guide.id, companyId: guide.portalClientId,
+              competencia: guide.competencia,
+              status: isVencimentoHoje ? "rechecked_due_today" : "rechecked_silent",
+            });
+          } catch (err) {
+            // SERPRO pode retornar "no debts" para guias já pagas — marca como pago
+            if (err?.code === "SERPRO_PGDASD_NO_DEBTS_FOUND") {
+              // eslint-disable-next-line no-await-in-loop
+              await markGuidePaidBySerpro({ guideId: guide.id });
+              recheckResults.push({
+                guideId: guide.id, companyId: guide.portalClientId,
+                competencia: guide.competencia, status: "paid",
+              });
+              continue;
+            }
+            recheckResults.push({
+              guideId: guide.id, companyId: guide.portalClientId,
+              competencia: guide.competencia,
+              status: "error",
+              error: err?.code || "SERPRO_PGDASD_RECHECK_FAILED",
+              reason: err?.message || "serpro_pgdasd_recheck_failed",
+            });
+          }
+        }
+      } catch (err) {
+        results.push({
+          companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
+          competencia,
           status: "error",
-          error: err?.code || "SERPRO_PGDASD_RECHECK_FAILED",
-          reason: err?.message || "serpro_pgdasd_recheck_failed",
-          retryable: Boolean(err?.retryable),
+          error: err?.code || "SERPRO_PGDASD_CYCLE_FAILED",
+          reason: err?.message || "serpro_pgdasd_cycle_failed",
         });
       }
     }
@@ -264,13 +277,15 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
     const summary = {
       skipped: false,
       competencia,
+      fetchDay,
+      isCaptureWindow,
       totalCompanies: companies.length,
       captured: results.filter((item) => item.status === "captured").length,
       failed: results.filter((item) => item.status === "error").length,
       skippedByProcuration: results.filter((item) => item.status === "skipped_procuration_inactive").length,
-      recheckedGuides: recheckResults.length,
+      recheckedSilent: recheckResults.filter((item) => item.status === "rechecked_silent").length,
+      recheckedDueToday: recheckResults.filter((item) => item.status === "rechecked_due_today").length,
       markedPaid: recheckResults.filter((item) => item.status === "paid").length,
-      markedOverdue: recheckResults.filter((item) => item.status === "overdue").length,
       recheckFailures: recheckResults.filter((item) => item.status === "error").length,
       durationMs: Date.now() - startedAt,
       results,

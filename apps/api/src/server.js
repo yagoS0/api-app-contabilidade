@@ -1,7 +1,7 @@
 // src/server.js
 import express from "express";
 import cors from "cors";
-import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED } from "./config.js";
+import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED } from "./config.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
 import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
@@ -18,6 +18,7 @@ import { createNfseRouter } from "./routes/nfse.js";
 import { createAdnRouter } from "./routes/adn.js";
 import { runGuideEmailWorkerLoop } from "./workers/guideEmailWorker.js";
 import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
+import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
 
 const app = express();
 app.use(express.json());
@@ -91,5 +92,11 @@ if (GUIDE_EMAIL_WORKER_ENABLED) {
 if (SERPRO_PGDASD_WORKER_ENABLED) {
   runSerproPgdasdWorkerLoop().catch((err) => {
     log.error({ err: err?.message || err }, "serproPgdasdWorker loop fatal");
+  });
+}
+
+if (SERPRO_DCTFWEB_WORKER_ENABLED) {
+  runSerproDctfwebWorkerLoop().catch((err) => {
+    log.error({ err: err?.message || err }, "serproDctfwebWorker loop fatal");
   });
 }

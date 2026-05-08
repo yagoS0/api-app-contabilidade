@@ -32,6 +32,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [sendingSelectedPending, setSendingSelectedPending] = useState(false);
   const [uploadResults, setUploadResults] = useState([]);
   const [uploadingGuides, setUploadingGuides] = useState(false);
+  const [uploadingCompanyGuide, setUploadingCompanyGuide] = useState(false);
   const [unidentifiedGuides, setUnidentifiedGuides] = useState([]);
   const [loadingUnidentifiedGuides, setLoadingUnidentifiedGuides] = useState(false);
 
@@ -421,6 +422,40 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
+  async function handleDeleteGuide(guideId) {
+    const companyId = companiesState.selectedCompanyId;
+    feedback.clearFeedback();
+    try {
+      await api.deleteGuide(guideId);
+      await loadGuides(companyId);
+      feedback.setMessage("Guia excluída com sucesso.");
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao excluir guia.");
+    }
+  }
+
+  async function handleCompanyGuideUpload(file, metadata) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId) return null;
+    setUploadingCompanyGuide(true);
+    feedback.clearFeedback();
+    try {
+      const result = await api.uploadCompanyGuide(companyId, file, metadata);
+      if (result?.needsMetadata) return result;
+      await loadGuides(companyId);
+      const emailMsg = result?.emailStatus === "SENT"
+        ? "E-mail enviado ao cliente com sucesso."
+        : "Guia salva. E-mail pendente de envio.";
+      feedback.setMessage(`Guia salva com sucesso. ${emailMsg}`);
+      return result;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao enviar guia.");
+      return null;
+    } finally {
+      setUploadingCompanyGuide(false);
+    }
+  }
+
   function togglePendingGuideSelection(guideId) {
     setSelectedPendingGuideIds((old) => (old.includes(guideId) ? old.filter((id) => id !== guideId) : [...old, guideId]));
   }
@@ -550,7 +585,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleResendGuide,
     handleConfirmGuidePayment,
     handleRecalculateGuide,
+    handleDeleteGuide,
     handleGuideUpload,
+    handleCompanyGuideUpload,
+    uploadingCompanyGuide,
     togglePendingGuideSelection,
     toggleAllPendingGuides,
     handleSendSelectedPending,

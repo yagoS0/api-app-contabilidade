@@ -2,34 +2,102 @@ import { Router } from "express";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
-import { generateEntriesFromCircular } from "../../application/accounting/AccountingEntryGeneratorService.js";
+import { generateEntriesFromCircular, resolveRule, applyTemplate, formatCompetenciaLabel } from "../../application/accounting/AccountingEntryGeneratorService.js";
 import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
+import { resolvePayrollTemplate } from "../../application/accounting/payrollTemplate.js";
+import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
+import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 
 // ---------------------------------------------------------------------------
 // OFX Parser (SGML v1 e XML v2)
+// Suporta: namespaces de tag (n0:STMTTRN), encoding UTF-8/Latin-1,
+// formatos de data YYYYMMDD[HHMMSS[.XXX]][TZ], entidades HTML, sinais +/-,
+// separadores de milhar BR (1.234,56) e US (1,234.56).
 // ---------------------------------------------------------------------------
+
+function decodeOfxBuffer(buffer) {
+  // Tenta UTF-8 primeiro; se header indicar ENCODING:USASCII ou Latin-1, decodifica como latin1.
+  const utf8Text = buffer.toString("utf-8");
+  const headerSlice = utf8Text.slice(0, 600).toUpperCase();
+  const isLatinHeader =
+    /ENCODING:\s*(USASCII|LATIN-?1|ISO-?8859-?1)/.test(headerSlice) ||
+    /CHARSET=(LATIN-?1|ISO-?8859-?1|1252)/.test(headerSlice);
+  if (isLatinHeader) return buffer.toString("latin1");
+  // Detecção heurística: bytes 0x80-0xFF sem padrão UTF-8 multibyte → provavelmente latin1
+  if (/�/.test(utf8Text)) return buffer.toString("latin1");
+  return utf8Text;
+}
+
+function decodeHtmlEntities(value) {
+  if (!value) return value;
+  return String(value)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)));
+}
 
 function parseOfxDate(raw) {
   if (!raw) return null;
-  const s = String(raw).replace(/\[.*\]/, "").trim();
+  // Remove timezone bracket (ex: [-3:GMT]) e qualquer espaço.
+  const s = String(raw).replace(/\[[^\]]*\]/, "").trim();
+  if (s.length < 8) return null;
   const y = s.slice(0, 4);
   const mo = s.slice(4, 6);
   const d = s.slice(6, 8);
-  if (!y || !mo || !d) return null;
+  if (!/^\d{4}$/.test(y) || !/^\d{2}$/.test(mo) || !/^\d{2}$/.test(d)) return null;
   const dt = new Date(`${y}-${mo}-${d}T00:00:00.000Z`);
   return isNaN(dt.getTime()) ? null : dt;
 }
 
+function parseOfxAmount(raw) {
+  if (raw == null) return 0;
+  const s = String(raw).trim();
+  if (!s) return 0;
+  // Detecta separador decimal: o último '.' ou ',' é o decimal; o outro é separador de milhar.
+  const lastDot = s.lastIndexOf(".");
+  const lastComma = s.lastIndexOf(",");
+  let normalized;
+  if (lastDot === -1 && lastComma === -1) {
+    normalized = s;
+  } else if (lastDot > lastComma) {
+    // formato US: 1,234.56 → remove vírgulas
+    normalized = s.replace(/,/g, "");
+  } else {
+    // formato BR: 1.234,56 → remove pontos, troca vírgula por ponto
+    normalized = s.replace(/\./g, "").replace(",", ".");
+  }
+  const parsed = parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// Match de tag insensível a namespace (n0:STMTTRN, ofx:STMTTRN, STMTTRN)
+const NS = "(?:[a-z][a-z0-9]*:)?";
+
 function parseOfxSgml(text) {
   const transactions = [];
-  const blockRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+  const blockRegex = new RegExp(`<${NS}STMTTRN>([\\s\\S]*?)<\\/${NS}STMTTRN>`, "gi");
+  // Fallback se não houver tag de fechamento (SGML estrito): usa STMTTRN abertura como delimitador.
+  // Aqui aceitamos o fechamento opcional via OR adicional abaixo.
   let match;
-  while ((match = blockRegex.exec(text)) !== null) {
-    const block = match[1];
+  const matched = [];
+  while ((match = blockRegex.exec(text)) !== null) matched.push(match[1]);
+
+  // Se não casou nada com fechamento, divide por <STMTTRN>
+  let blocks = matched;
+  if (!blocks.length) {
+    const splits = text.split(new RegExp(`<${NS}STMTTRN>`, "i")).slice(1);
+    blocks = splits.map((b) => b.split(new RegExp(`<${NS}(?:STMTTRN|BANKTRANLIST|/STMTRS)>`, "i"))[0]);
+  }
+
+  for (const block of blocks) {
     const get = (tag) => {
-      const r = new RegExp(`<${tag}>([^<\n\r]*)`, "i");
+      const r = new RegExp(`<${NS}${tag}>([^<\\n\\r]*)`, "i");
       const m = r.exec(block);
-      return m ? m[1].trim() : null;
+      return m ? decodeHtmlEntities(m[1].trim()) : null;
     };
     transactions.push({
       trnType: get("TRNTYPE"),
@@ -44,14 +112,14 @@ function parseOfxSgml(text) {
 
 function parseOfxXml(text) {
   const transactions = [];
-  const blockRegex = /<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi;
+  const blockRegex = new RegExp(`<${NS}STMTTRN>([\\s\\S]*?)<\\/${NS}STMTTRN>`, "gi");
   let match;
   while ((match = blockRegex.exec(text)) !== null) {
     const block = match[1];
     const get = (tag) => {
-      const r = new RegExp(`<${tag}>([^<]*)<\/${tag}>`, "i");
+      const r = new RegExp(`<${NS}${tag}>([^<]*)<\\/${NS}${tag}>`, "i");
       const m = r.exec(block);
-      return m ? m[1].trim() : null;
+      return m ? decodeHtmlEntities(m[1].trim()) : null;
     };
     transactions.push({
       trnType: get("TRNTYPE"),
@@ -65,21 +133,25 @@ function parseOfxXml(text) {
 }
 
 function parseOfx(buffer) {
-  const text = buffer.toString("utf-8");
-  const isXml = /<\?xml/i.test(text) || /<OFX>/i.test(text.slice(0, 500));
+  const text = decodeOfxBuffer(buffer);
+  const headerSlice = text.slice(0, 800);
+  const isXml = /<\?xml/i.test(headerSlice) || /<\?OFX/i.test(headerSlice);
   const raw = isXml ? parseOfxXml(text) : parseOfxSgml(text);
 
-  return raw.map((t) => {
-    const amount = parseFloat(String(t.trnAmt || "0").replace(",", "."));
-    return {
-      fitId: t.fitId || null,
-      trnType: String(t.trnType || "").toUpperCase(),
-      data: parseOfxDate(t.dtPosted),
-      valor: Math.abs(amount),
-      sinal: amount < 0 ? "DEBITO" : "CREDITO",
-      historico: t.memo || "",
-    };
-  }).filter((t) => t.data && t.valor > 0);
+  return raw
+    .map((t) => {
+      const amount = parseOfxAmount(t.trnAmt);
+      return {
+        fitId: t.fitId || null,
+        trnType: String(t.trnType || "").toUpperCase(),
+        data: parseOfxDate(t.dtPosted),
+        valor: Math.abs(amount),
+        // Convenção bancária: TRNAMT < 0 = saída (DEBITO no extrato), > 0 = entrada (CREDITO no extrato)
+        sinal: amount < 0 ? "DEBITO" : "CREDITO",
+        historico: t.memo || "",
+      };
+    })
+    .filter((t) => t.data && t.valor > 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,14 +257,35 @@ async function createProvisionPlaceholders(tx, { portalClientId, subtipo, compet
 // ---------------------------------------------------------------------------
 
 function entriesToCsv(entries) {
-  const header = "Data;Tipo D/C;Conta;Historico;Valor";
+  // Formato "lançamento partido": 5 colunas (Data | Codigo Debito | Codigo Credito | Historico | Valor)
+  // - Lançamento simples (1D + 1C, mesmo valor, mesmo histórico): uma linha consolidada.
+  // - Lançamento composto: uma linha por linha contábil, lado oposto vazio.
+  // - line.historico (se presente) tem prioridade sobre entry.historico.
+  const header = "Data;Codigo Debito;Codigo Credito;Historico;Valor";
   const rows = [];
+  const sanitize = (s) => String(s || "").replace(/;/g, " ").replace(/[\r\n]+/g, " ").trim();
+  const fmtValor = (v) =>
+    Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   for (const e of entries) {
-    const data = new Date(e.data).toLocaleDateString("pt-BR");
-    const historico = String(e.historico || "").replace(/;/g, " ");
-    for (const l of (e.lines || [])) {
-      const valor = Number(l.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      rows.push(`${data};${l.tipo};${l.conta};${historico};${valor}`);
+    const data = e.data ? new Date(e.data).toLocaleDateString("pt-BR") : "";
+    const entryHistorico = sanitize(e.historico);
+    const lines = e.lines || [];
+    const debits = lines.filter((l) => String(l.tipo).toUpperCase() === "D");
+    const credits = lines.filter((l) => String(l.tipo).toUpperCase() === "C");
+    const lineHistoric = (l) => sanitize(l.historico) || entryHistorico;
+
+    if (debits.length === 1 && credits.length === 1
+        && Math.abs(Number(debits[0].valor) - Number(credits[0].valor)) < 0.01
+        && lineHistoric(debits[0]) === lineHistoric(credits[0])) {
+      rows.push(`${data};${debits[0].conta};${credits[0].conta};${lineHistoric(debits[0])};${fmtValor(debits[0].valor)}`);
+    } else {
+      for (const d of debits) {
+        rows.push(`${data};${d.conta};;${lineHistoric(d)};${fmtValor(d.valor)}`);
+      }
+      for (const c of credits) {
+        rows.push(`${data};;${c.conta};${lineHistoric(c)};${fmtValor(c.valor)}`);
+      }
     }
   }
   return [header, ...rows].join("\r\n");
@@ -212,13 +305,46 @@ export function createAccountingEntriesRouter({ log }) {
   // ─── Plano de Contas ──────────────────────────────────────────────────────
 
   // GET /firm/companies/:companyId/chart-of-accounts
+  // Retorna UNION dedupada de contas globais + contas da empresa.
+  // Quando uma conta com mesmo `codigo` existe em ambos os escopos, a da EMPRESA tem
+  // prioridade e a global é ocultada (override semantic).
   router.get("/chart-of-accounts", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const accounts = await prisma.chartOfAccount.findMany({
-      where: { portalClientId },
+      where: { OR: [{ portalClientId }, { portalClientId: null }] },
       orderBy: [{ tipo: "asc" }, { codigo: "asc" }],
     });
-    return res.json({ data: accounts });
+    // Dedup por código: empresa vence sobre global
+    const byCodigo = new Map();
+    for (const acc of accounts) {
+      const isCompany = Boolean(acc.portalClientId);
+      const existing = byCodigo.get(acc.codigo);
+      if (!existing || (isCompany && !existing.portalClientId)) {
+        byCodigo.set(acc.codigo, acc);
+      }
+    }
+    const data = [...byCodigo.values()].map((acc) => ({
+      ...acc,
+      scope: acc.portalClientId ? "COMPANY" : "GLOBAL",
+    }));
+    return res.json({ data });
+  });
+
+  // GET /firm/companies/:companyId/payroll/template?kind=PROLABORE|FOLHA&competencia=YYYY-MM
+  router.get("/payroll/template", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const kind = String(req.query?.kind || "").toUpperCase();
+    const competencia = String(req.query?.competencia || "").trim();
+    if (!kind) return res.status(400).json({ error: "kind_required" });
+    if (!competencia) return res.status(400).json({ error: "competencia_required" });
+    try {
+      const template = await resolvePayrollTemplate({ portalClientId, kind, competencia });
+      return res.json({ ok: true, template });
+    } catch (err) {
+      const code = err?.code || "PAYROLL_TEMPLATE_FAILED";
+      const status = code === "UNKNOWN_PAYROLL_KIND" ? 400 : 500;
+      return res.status(status).json({ ok: false, error: code, message: err?.message });
+    }
   });
 
   // POST /firm/companies/:companyId/chart-of-accounts
@@ -236,6 +362,8 @@ export function createAccountingEntriesRouter({ log }) {
     const TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
     if (!TIPOS.includes(tipo)) return res.status(400).json({ error: "tipo_invalido" });
 
+    // Override semantic: per-empresa pode coexistir com global de mesmo código.
+    // Quando ambos existem, empresa tem prioridade na visualização (dedupe na rota GET).
     try {
       const account = await prisma.chartOfAccount.create({
         data: {
@@ -308,168 +436,19 @@ export function createAccountingEntriesRouter({ log }) {
       const portalClientId = String(req.params.companyId);
       if (!req.file?.buffer) return res.status(400).json({ error: "file_required" });
 
-      const mimeType = req.file.mimetype || "";
-      const isPdf = mimeType === "application/pdf" || req.file.originalname?.endsWith(".pdf");
+      const result = await importChartOfAccountsFromBuffer({
+        portalClientId,
+        buffer: req.file.buffer,
+        filename: req.file.originalname,
+        mimeType: req.file.mimetype,
+      });
 
-      if (isPdf) {
-        try {
-          const pdfParse = (await import("pdf-parse")).default;
-          const pdfData = await pdfParse(req.file.buffer);
-          const rawText = String(pdfData?.text || "");
-
-          // Formato esperado: <reduzido> <conta> <nome> <nivel>
-          // ex: "557 4.1.01.001 Deducao de Simples Nacional 4"
-          // ou linhas com tabs/espaços múltiplos
-          const ROW_RE = /^(\d{1,6})\s+([\d.]+)\s+(.+?)\s+\d\s*$/;
-          // Fallback: só reduzido + nome (sem código estruturado)
-          const ROW_RE2 = /^(\d{1,6})\s+(.+)$/;
-
-          function tipoFromConta(conta) {
-            if (/^4[.\s]|^4$/.test(conta)) return "DESPESA";
-            if (/^3[.\s]|^3$/.test(conta)) return "RECEITA";
-            if (/^2\.4/.test(conta)) return "PATRIMONIO";
-            if (/^2[.\s]|^2$/.test(conta)) return "PASSIVO";
-            if (/^1[.\s]|^1$/.test(conta)) return "ATIVO";
-            return "DESPESA";
-          }
-
-          function naturezaFromTipo(tipo) {
-            return ["PASSIVO", "RECEITA", "PATRIMONIO"].includes(tipo) ? "CREDORA" : "DEVEDORA";
-          }
-
-          const textLines = rawText.split(/\n/).map((l) => l.trim()).filter(Boolean);
-          const accounts = [];
-          for (const line of textLines) {
-            let m = ROW_RE.exec(line);
-            if (m) {
-              const [, reduzido, conta, nome] = m;
-              const tipo = tipoFromConta(conta);
-              accounts.push({ codigo: reduzido, nome: nome.trim(), tipo, natureza: naturezaFromTipo(tipo) });
-              continue;
-            }
-            m = ROW_RE2.exec(line);
-            if (m) {
-              const [, reduzido, rest] = m;
-              // Tentar separar conta estruturada do nome: "4.1.01.001 Nome da Conta"
-              const contaM = /^([\d.]{3,})\s+(.+)$/.exec(rest);
-              if (contaM) {
-                const tipo = tipoFromConta(contaM[1]);
-                accounts.push({ codigo: reduzido, nome: contaM[2].trim(), tipo, natureza: naturezaFromTipo(tipo) });
-              }
-            }
-          }
-
-          if (accounts.length === 0) {
-            return res.status(422).json({
-              error: "pdf_no_accounts_found",
-              hint: "Nenhuma conta reconhecida no PDF. Verifique se o arquivo é o Relatório de Plano de Contas exportado do ERP, ou use um CSV (código;nome;tipo;natureza).",
-            });
-          }
-
-          const created = [];
-          const skipped = [];
-          for (const acc of accounts) {
-            try {
-              await prisma.chartOfAccount.upsert({
-                where: { portalClientId_codigo: { portalClientId, codigo: acc.codigo } },
-                create: { portalClientId, ...acc, status: "CONFIRMADA" },
-                update: { nome: acc.nome, tipo: acc.tipo, natureza: acc.natureza },
-              });
-              created.push(acc.codigo);
-            } catch {
-              skipped.push(acc.codigo);
-            }
-          }
-          return res.json({ ok: true, created: created.length, skipped: skipped.length });
-        } catch (err) {
-          log.error({ err }, "Erro ao importar plano de contas via PDF");
-          return res.status(500).json({ error: "pdf_import_failed", message: err?.message });
-        }
+      if (!result.ok) {
+        const status = result.error === "pdf_no_accounts_found" ? 422 : 500;
+        if (result.error === "pdf_import_failed") log.error({ message: result.message }, "Erro ao importar plano de contas via PDF");
+        return res.status(status).json(result);
       }
-
-      // CSV: dois formatos suportados
-      // 1) Formato padrão:   codigo;nome;tipo;natureza
-      // 2) Formato exportado: codigoPadrao;nome;codigoReduzido;0;0;0
-      // Detecta encoding: tenta UTF-8 primeiro; se gerar replacement chars, usa latin1 (Windows-1252)
-      const utf8Attempt = req.file.buffer.toString("utf-8");
-      const text = utf8Attempt.includes("\uFFFD")
-        ? req.file.buffer.toString("latin1")
-        : utf8Attempt;
-      const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-      const created = [];
-      const skipped = [];
-      const errors = [];
-
-      // Detecta o formato pelo cabeçalho ou pela estrutura da primeira linha válida
-      function detectFormat(lines) {
-        for (const line of lines) {
-          const sep = line.includes(";") ? ";" : ",";
-          const cols = line.split(sep).map((s) => s.replace(/^"|"$/g, "").trim());
-          if (cols.length < 2) continue;
-          if (cols[0].toLowerCase() === "codigo" || cols[0].toLowerCase() === "código") return "padrao";
-          // Formato exportado: col[2] é número puro (código reduzido sequencial)
-          if (cols.length >= 3 && /^\d+$/.test(cols[2])) return "exportado";
-          return "padrao";
-        }
-        return "padrao";
-      }
-
-      function tipoFromCodigoPadrao(cod) {
-        const first = String(cod || "").charAt(0);
-        if (first === "1") return "ATIVO";
-        if (first === "2") {
-          // 24.x = PATRIMÔNIO LÍQUIDO
-          if (/^24/.test(cod)) return "PATRIMONIO";
-          return "PASSIVO";
-        }
-        if (first === "3") return "RECEITA";
-        if (first === "4" || first === "5") return "DESPESA";
-        return "DESPESA";
-      }
-
-      function naturezaFromTipo(tipo) {
-        return ["PASSIVO", "RECEITA", "PATRIMONIO"].includes(tipo) ? "CREDORA" : "DEVEDORA";
-      }
-
-      const formato = detectFormat(lines);
-
-      for (const line of lines) {
-        const sep = line.includes(";") ? ";" : ",";
-        const cols = line.split(sep).map((s) => s.replace(/^"|"$/g, "").trim());
-
-        let codigo, nome, tipo, natureza;
-
-        if (formato === "exportado") {
-          // codigoPadrao;nome;codigoReduzido;0;0;0
-          const [codigoPadrao, nomeRaw, codigoReduzido] = cols;
-          if (!codigoPadrao || !nomeRaw || !codigoReduzido) continue;
-          if (!/^\d+$/.test(codigoReduzido)) continue; // ignora cabeçalhos
-          codigo = codigoReduzido;
-          nome = nomeRaw;
-          tipo = tipoFromCodigoPadrao(codigoPadrao);
-          natureza = naturezaFromTipo(tipo);
-        } else {
-          // codigo;nome;tipo;natureza
-          [codigo, nome, tipo = "DESPESA", natureza = "DEVEDORA"] = cols;
-          if (!codigo || !nome || codigo.toLowerCase() === "codigo") continue;
-          tipo = tipo.toUpperCase();
-          natureza = natureza.toUpperCase();
-        }
-
-        if (!codigo || !nome) continue;
-        try {
-          const result = await prisma.chartOfAccount.upsert({
-            where: { portalClientId_codigo: { portalClientId, codigo } },
-            create: { portalClientId, codigo, nome, tipo, natureza, status: "PENDENTE_ERP" },
-            update: { nome, tipo, natureza },
-          });
-          created.push(result);
-        } catch (err) {
-          errors.push({ codigo, reason: err?.message });
-        }
-      }
-
-      return res.json({ ok: true, created: created.length, skipped: skipped.length, errors });
+      return res.json(result);
     }
   );
 
@@ -491,7 +470,10 @@ export function createAccountingEntriesRouter({ log }) {
           competencia: { in: meses },
           statusPagamento: { in: ["ABERTO", "PAGO"] },
         },
-        include: { lines: { orderBy: { ordem: "asc" } } },
+        include: {
+          lines: { orderBy: { ordem: "asc" } },
+          baixas: { select: { id: true }, take: 1 },
+        },
         orderBy: [{ competencia: "asc" }, { createdAt: "asc" }],
       }),
       prisma.accountingEntry.findMany({
@@ -732,23 +714,41 @@ export function createAccountingEntriesRouter({ log }) {
   });
 
   // GET /firm/companies/:companyId/entries/export/csv
+  // Query params:
+  //   - competencia=YYYY-MM (m\u00EAs \u00FAnico)  OU
+  //   - competenciaInicio=YYYY-MM & competenciaFim=YYYY-MM (intervalo inclusivo)
+  //   - tipo, status (opcionais)
   router.get("/entries/export/csv", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
-    const { competencia, tipo, status } = req.query || {};
+    const { competencia, competenciaInicio, competenciaFim, tipo, status } = req.query || {};
 
     const where = { portalClientId };
-    if (competencia) where.competencia = String(competencia);
+    let filenameSuffix = "todos";
+
+    if (competenciaInicio && competenciaFim) {
+      where.competencia = { gte: String(competenciaInicio), lte: String(competenciaFim) };
+      filenameSuffix = `${competenciaInicio}_a_${competenciaFim}`;
+    } else if (competenciaInicio) {
+      where.competencia = { gte: String(competenciaInicio) };
+      filenameSuffix = `desde_${competenciaInicio}`;
+    } else if (competenciaFim) {
+      where.competencia = { lte: String(competenciaFim) };
+      filenameSuffix = `ate_${competenciaFim}`;
+    } else if (competencia) {
+      where.competencia = String(competencia);
+      filenameSuffix = String(competencia);
+    }
     if (tipo) where.tipo = String(tipo).toUpperCase();
     if (status) where.status = String(status).toUpperCase();
 
     const entries = await prisma.accountingEntry.findMany({
       where,
       include: { lines: { orderBy: { ordem: "asc" } } },
-      orderBy: [{ data: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ competencia: "asc" }, { data: "asc" }, { createdAt: "asc" }],
     });
 
     const csv = entriesToCsv(entries);
-    const filename = `lancamentos-${competencia || "todos"}.csv`;
+    const filename = `lancamentos-${filenameSuffix}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.send("\uFEFF" + csv);
@@ -1013,6 +1013,7 @@ export function createAccountingEntriesRouter({ log }) {
             tipo: String(l.tipo).toUpperCase(),
             valor: parseFloat(String(l.valor).replace(",", ".")),
             ordem: idx,
+            historico: l.historico ? String(l.historico).trim() : null,
           })),
         });
 
@@ -1151,6 +1152,7 @@ export function createAccountingEntriesRouter({ log }) {
               tipo: String(l.tipo).toUpperCase(),
               valor: parseFloat(String(l.valor).replace(",", ".")),
               ordem: idx,
+              historico: l.historico ? String(l.historico).trim() : null,
             })),
           });
         }
@@ -1201,8 +1203,69 @@ export function createAccountingEntriesRouter({ log }) {
       return res.status(400).json({ error: "lancamento_ja_exportado" });
     }
 
-    await prisma.accountingEntry.delete({ where: { id: entryId } });
+    if (existing.tipo === "BAIXA" && existing.openEntryId) {
+      await prisma.$transaction(async (tx) => {
+        await tx.accountingEntry.delete({ where: { id: entryId } });
+        await tx.accountingEntry.updateMany({
+          where: { id: existing.openEntryId, portalClientId },
+          data: { statusPagamento: "ABERTO" },
+        });
+      });
+    } else {
+      await prisma.accountingEntry.delete({ where: { id: entryId } });
+    }
     return res.json({ ok: true });
+  });
+
+  // GET /firm/companies/:companyId/entries/:entryId/baixa-template
+  // Resolve a regra de BAIXA para uma provisão, retornando contas/histórico pré-preenchidos.
+  router.get("/entries/:entryId/baixa-template", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const entryId = String(req.params.entryId);
+
+    const entry = await prisma.accountingEntry.findFirst({
+      where: { id: entryId, portalClientId },
+      include: { lines: { orderBy: { ordem: "asc" } } },
+    });
+    if (!entry) return res.status(404).json({ error: "lancamento_nao_encontrado" });
+
+    const baixaEventType = entry.eventType ? PROVISAO_TO_BAIXA_EVENT[entry.eventType] : null;
+    if (!baixaEventType) {
+      return res.json({ ok: true, template: null, reason: "no_baixa_mapping" });
+    }
+
+    const company = await prisma.portalClient.findUnique({
+      where: { id: portalClientId },
+      select: { razao: true, cnpj: true },
+    });
+
+    const rule = await resolveRule(prisma, { portalClientId, eventType: baixaEventType });
+    if (!rule || !rule.debitAccountCode || !rule.creditAccountCode) {
+      return res.json({ ok: true, template: null, reason: "rule_not_configured" });
+    }
+
+    const totalD = (entry.lines || []).filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+    const valor = totalD > 0 ? totalD : Number(entry.valor || 0);
+
+    const historico = applyTemplate(rule.descriptionTemplate || "", {
+      competencia: entry.competencia,
+      competenciaLabel: formatCompetenciaLabel(entry.competencia),
+      companyName: company?.razao || "",
+      cnpj: company?.cnpj || "",
+    });
+
+    return res.json({
+      ok: true,
+      template: {
+        eventType: baixaEventType,
+        debitAccountCode: rule.debitAccountCode,
+        creditAccountCode: rule.creditAccountCode,
+        historico,
+        valor,
+        ruleId: rule.id || null,
+        scope: rule.id ? (rule.portalClientId ? "COMPANY" : "GLOBAL") : "FALLBACK",
+      },
+    });
   });
 
   // POST /firm/companies/:companyId/entries/:entryId/baixa

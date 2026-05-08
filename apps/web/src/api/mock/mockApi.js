@@ -141,6 +141,9 @@ const mockHistoricos = [
 // Históricos específicos por empresa são adicionados dinamicamente em mockHistoricosByCompany
 const mockHistoricosByCompany = new Map();
 
+// Histórico de execuções fiscais por empresa
+const mockFiscalExecutions = new Map();
+
 // Seed de plano de contas para a primeira empresa mock
 const _seedAccounts = [
   { codigo: "1", nome: "Ativo", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA" },
@@ -239,7 +242,7 @@ function synthesizeCircularEntries(companyId, circular) {
   const rules = [
     { eventType: "RECEITA_SIMPLES", amountSource: "receitaBruta", debit: "5", credit: "301", tipo: "RECEITA", subtipo: null, statusPagamento: "NA", label: "VR REF RECEITA BRUTA DO SIMPLES NACIONAL - " },
     { eventType: "DAS_SIMPLES", amountSource: "dasTotal", debit: "401", credit: "5", tipo: "PROVISAO", subtipo: "DAS", statusPagamento: "ABERTO", label: "VR REF DAS SIMPLES NACIONAL - " },
-    { eventType: "INSS_DCTFWEB", amountSource: "inssTotal", debit: "420", credit: "5", tipo: "PROVISAO", subtipo: "INSS", statusPagamento: "ABERTO", label: "VR REF INSS DCTFWEB - " },
+    // INSS_DCTFWEB removido: INSS é lançado via folha/pró-labore manualmente.
   ];
 
   for (const rule of rules) {
@@ -411,6 +414,40 @@ export function createMockApi() {
         if (a.competencia > b.competencia) return -1;
         return 0;
       });
+    },
+    async uploadCompanyGuide(companyId, file, metadata) {
+      await delay(600);
+      if (!metadata?.tipo || !metadata?.competencia) {
+        return {
+          ok: false,
+          needsMetadata: true,
+          parsed: {
+            tipo: metadata?.tipo || "",
+            competencia: metadata?.competencia || "",
+            valor: metadata?.valor ?? null,
+            vencimento: metadata?.vencimento || null,
+          },
+        };
+      }
+      const id = `mock-guide-upload-${Date.now()}`;
+      const guide = {
+        id,
+        guideId: id,
+        tipo: String(metadata.tipo).toUpperCase(),
+        competencia: metadata.competencia,
+        valor: metadata.valor != null ? Number(metadata.valor) : null,
+        vencimento: metadata.vencimento || null,
+        status: "PROCESSED",
+        paymentStatus: "OPEN",
+        emailStatus: "SENT",
+        source: "UPLOAD",
+        canConfirmPayment: true,
+        canRecalculate: false,
+      };
+      const list = mockGuidesByCompany.get(companyId) || [];
+      list.unshift(guide);
+      mockGuidesByCompany.set(companyId, list);
+      return { ok: true, guide, emailStatus: "SENT", emailMessage: "Guia processada e e-mail enviado com sucesso." };
     },
     async sendLatestGuidesEmail(companyId) {
       await delay(500);
@@ -1054,7 +1091,13 @@ export function createMockApi() {
     },
     async deleteAccountingEntry(companyId, entryId) {
       await delay();
-      const list = mockEntriesByCompany.get(companyId) || [];
+      let list = mockEntriesByCompany.get(companyId) || [];
+      const target = list.find((e) => e.id === entryId);
+      if (target?.tipo === "BAIXA" && target?.openEntryId) {
+        list = list.map((e) =>
+          e.id === target.openEntryId ? { ...e, statusPagamento: "ABERTO" } : e
+        );
+      }
       mockEntriesByCompany.set(companyId, list.filter((e) => e.id !== entryId));
       return { ok: true };
     },
@@ -1325,18 +1368,19 @@ export function createMockApi() {
     },
 
     async runCompanyFiscalAction(companyId, input) {
-      await delay(500); // Simulate network delay for fiscal operations
+      await delay(500);
       const action = String(input?.action || "").toLowerCase();
       const competencia = input?.competencia;
 
       if (!action) throw new Error("action_required");
       if (!competencia) throw new Error("competencia_required");
 
-      const now = new Date().toISOString();
+      const startedAt = new Date().toISOString();
+      let result;
 
       switch (action) {
-        case "search_guides":
-          return {
+        case "search_guides": {
+          result = {
             action: "search_guides",
             competencia,
             status: "completed",
@@ -1345,14 +1389,15 @@ export function createMockApi() {
             guidesUpdated: faker.number.int({ min: 0, max: 2 }),
             circularUpdated: faker.datatype.boolean(),
             entriesGenerated: faker.number.int({ min: 0, max: 10 }),
-            timestamp: now,
+            timestamp: startedAt,
           };
-
-        case "check_payments":
+          break;
+        }
+        case "check_payments": {
           const total = faker.number.int({ min: 2, max: 8 });
           const paid = faker.number.int({ min: 0, max: total });
           const overdue = faker.number.int({ min: 0, max: total - paid });
-          return {
+          result = {
             action: "check_payments",
             competencia,
             status: "completed",
@@ -1360,25 +1405,68 @@ export function createMockApi() {
             guidesPaid: paid,
             guidesOverdue: overdue,
             guidesOpen: total - paid - overdue,
-            timestamp: now,
+            timestamp: startedAt,
           };
-
-        case "sync_inss":
-          return {
+          break;
+        }
+        case "sync_inss": {
+          result = {
             action: "sync_inss",
             competencia,
             status: "completed",
             guidesFound: faker.number.int({ min: 0, max: 2 }),
             guidesCaptured: faker.number.int({ min: 0, max: 1 }),
             circularUpdated: faker.datatype.boolean(),
-            timestamp: now,
+            timestamp: startedAt,
           };
-
-        default:
+          break;
+        }
+        default: {
           const err = new Error(`Unknown action: ${action}`);
           err.code = "UNKNOWN_FISCAL_ACTION";
           throw err;
+        }
       }
+
+      // Persist execution to mock store
+      const logEntry = {
+        id: faker.string.uuid(),
+        portalClientId: companyId,
+        competencia,
+        action,
+        status: result.status,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: faker.number.int({ min: 200, max: 2000 }),
+        guidesFound: result.guidesFound ?? null,
+        guidesCaptured: result.guidesCaptured ?? null,
+        guidesUpdated: result.guidesUpdated ?? null,
+        guidesChecked: result.guidesChecked ?? null,
+        guidesPaid: result.guidesPaid ?? null,
+        guidesOverdue: result.guidesOverdue ?? null,
+        guidesOpen: result.guidesOpen ?? null,
+        circularUpdated: result.circularUpdated ?? null,
+        entriesGenerated: result.entriesGenerated ?? null,
+        errorCode: null,
+        errorMessage: null,
+        skipReason: result.reason ?? null,
+        triggeredBy: null,
+      };
+
+      const existing = mockFiscalExecutions.get(companyId) || [];
+      mockFiscalExecutions.set(companyId, [logEntry, ...existing]);
+
+      return result;
+    },
+
+    async getFiscalExecutions(companyId, params = {}) {
+      await delay(200);
+      const all = mockFiscalExecutions.get(companyId) || [];
+      let filtered = all;
+      if (params.competencia) filtered = filtered.filter((e) => e.competencia === params.competencia);
+      if (params.action) filtered = filtered.filter((e) => e.action === params.action);
+      const limit = Math.min(Number(params.limit) || 20, 100);
+      return filtered.slice(0, limit);
     },
   };
 }
