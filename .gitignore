@@ -2,7 +2,21 @@ enviar-guias/secrets/credentials.json
 secrets/credentials.json
 secrets/credentials.json
 .env
+.env.*
+!.env.example
 certs/
+
+# Service Account JSON (Gmail API, GCP, etc.) — nunca commitar credenciais
+*-*.iam.gserviceaccount.com.json
+apps/api/*.json
+!apps/api/package.json
+!apps/api/package-lock.json
+!apps/api/jest.config.json
+!apps/api/babel.config.json
+!apps/api/tsconfig*.json
+**/service-account*.json
+**/gcp-credentials*.json
+enviodeguias-*.json
 # dependencies
 node_modules/
 apps/*/node_modules/

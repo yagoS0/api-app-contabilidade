@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
@@ -23,6 +23,13 @@ function fmtMoney(val) {
   const n = Number(val);
   if (!n) return null;
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtDate(value) {
+  if (!value) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("pt-BR");
 }
 
 // ─── Entry Edit Modal ────────────────────────────────────────────────────────
@@ -221,6 +228,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
   const badgeLabel  = isAberto ? "ABERTO" : "PAGO";
   const baixaId     = !isAberto ? (entry.baixas?.[0]?.id ?? null) : null;
   const isCancelling = cancellingBaixaId === baixaId;
+  const isSynthetic = entry.synthetic === true;
 
   return (
     <td style={{ background: bg, padding: "5px 4px", textAlign: "center", borderRight: "1px solid #e5e7eb", minWidth: 80 }}>
@@ -242,8 +250,13 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
           ↻ R$ {fmtMoney(entry.recalculatedToValor)}
         </div>
       )}
+      {isSynthetic && (
+        <div style={{ fontSize: "0.55rem", color: "#6b7280", marginTop: 3, fontStyle: "italic" }}>
+          via guia SERPRO
+        </div>
+      )}
       <div style={{ display: "flex", gap: 2, justifyContent: "center", flexWrap: "wrap", marginTop: 3 }}>
-        {onEdit && (
+        {onEdit && !isSynthetic && (
           <button
             onClick={() => onEdit(entry)}
             style={{
@@ -255,7 +268,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
             ✎
           </button>
         )}
-        {isAberto && onBaixa && (
+        {isAberto && onBaixa && !isSynthetic && (
           <button
             onClick={() => onBaixa(entry)}
             style={{
@@ -267,7 +280,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
             Baixar
           </button>
         )}
-        {!isAberto && baixaId && onCancelBaixa && (
+        {!isAberto && baixaId && onCancelBaixa && !isSynthetic && (
           confirmCancel ? (
             <div style={{ display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "center" }}>
               <button
@@ -356,33 +369,41 @@ function buildExecutionSummary(entry) {
   return null;
 }
 
-function ExecutionHistoryPanel({ executions, loadingExecutions }) {
-  if (loadingExecutions) {
-    return (
-      <div style={{ padding: "12px 16px", border: "1px solid #44475A", borderRadius: 6, background: "#1A1B26", marginBottom: 0 }}>
-        <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2", marginBottom: 8 }}>Histórico de Execuções</div>
-        <p style={{ margin: 0, fontSize: "0.8rem", color: "#6272A4" }}>Carregando...</p>
-      </div>
-    );
-  }
+// Notificações temporárias: somem após 30s e mostram no máximo 5
+const TOAST_TTL_MS = 30_000;
+const TOAST_MAX = 5;
 
-  if (!executions || executions.length === 0) {
-    return (
-      <div style={{ padding: "12px 16px", border: "1px solid #44475A", borderRadius: 6, background: "#1A1B26", marginBottom: 0 }}>
-        <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2", marginBottom: 8 }}>Histórico de Execuções</div>
-        <p style={{ margin: 0, fontSize: "0.8rem", color: "#6272A4", fontStyle: "italic" }}>Nenhuma execução registrada para esta competência.</p>
-      </div>
-    );
-  }
+function ExecutionHistoryPanel({ executions, loadingExecutions }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Mostra apenas execuções dos últimos 30s, máximo 5 (mais recentes primeiro)
+  const visible = useMemo(() => {
+    if (!Array.isArray(executions)) return [];
+    const cutoff = now - TOAST_TTL_MS;
+    return executions
+      .filter((e) => {
+        const t = e?.startedAt ? new Date(e.startedAt).getTime() : 0;
+        return Number.isFinite(t) && t >= cutoff;
+      })
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+      .slice(0, TOAST_MAX);
+  }, [executions, now]);
+
+  if (loadingExecutions) return null;
+  if (visible.length === 0) return null;
 
   return (
     <div style={{ border: "1px solid #44475A", borderRadius: 6, background: "#1A1B26", marginBottom: 0, overflow: "hidden" }}>
-      <div style={{ padding: "10px 16px", borderBottom: "1px solid #44475A", background: "#1A1B26" }}>
-        <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2" }}>Histórico de Execuções</span>
-        <span style={{ marginLeft: 8, fontSize: "0.75rem", color: "#6272A4" }}>{executions.length} registro{executions.length !== 1 ? "s" : ""}</span>
+      <div style={{ padding: "10px 16px", borderBottom: "1px solid #44475A", background: "#1A1B26", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2" }}>Execuções recentes</span>
+        <span style={{ fontSize: "0.7rem", color: "#6272A4" }}>somem após 30s · máx. 5</span>
       </div>
       <div style={{ display: "grid" }}>
-        {executions.map((entry) => {
+        {visible.map((entry) => {
           const st = STATUS_STYLES[entry.status] || STATUS_STYLES.failed;
           const summary = buildExecutionSummary(entry);
           return (
@@ -450,7 +471,17 @@ function OperationalBlock({
   loadingExecutions,
 }) {
   const actionInProgress = Boolean(runningFiscalAction);
-  const lastResult = lastFiscalResult?.result || null;
+  const rawLastResult = lastFiscalResult?.result || null;
+
+  // Auto-esconder o card de "última ação" após 30s, mesma lógica do painel de execuções
+  const [resultExpired, setResultExpired] = useState(false);
+  useEffect(() => {
+    if (!rawLastResult) { setResultExpired(false); return undefined; }
+    setResultExpired(false);
+    const id = setTimeout(() => setResultExpired(true), TOAST_TTL_MS);
+    return () => clearTimeout(id);
+  }, [rawLastResult]);
+  const lastResult = resultExpired ? null : rawLastResult;
 
   const lastByAction = {};
   if (Array.isArray(executions)) {
@@ -498,7 +529,7 @@ function OperationalBlock({
         )}
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: lastResult ? 10 : 0 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
         <button onClick={() => onSearchGuides()} disabled={actionInProgress} style={actionButtonStyle("search_guides")}>
           {runningFiscalAction === "search_guides" ? "⏳ Buscando..." : "🔍 Buscar Guias"}
         </button>
@@ -508,6 +539,9 @@ function OperationalBlock({
         <button onClick={() => onSyncInss()} disabled={actionInProgress} style={actionButtonStyle("sync_inss")}>
           {runningFiscalAction === "sync_inss" ? "⏳ Sincronizando..." : "⚙ Sincronizar INSS"}
         </button>
+      </div>
+      <div style={{ fontSize: "0.7rem", color: "#6272A4", marginBottom: lastResult ? 10 : 0, fontStyle: "italic" }}>
+        Use estes botões apenas como fallback manual quando o cron job do SERPRO não trouxer a guia automaticamente.
       </div>
 
       {lastResult && (

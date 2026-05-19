@@ -1,9 +1,101 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { HistoricosModal } from "../../historicos/components/renderHistoricosModal";
 import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal";
+import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
 import { AccountRow, NewEntryForm } from "./renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtMoney } from "../lib/accountingEntriesShared";
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
+
+function ActionMenu({ label, items, accent }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onDocClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function onEsc(e) { if (e.key === "Escape") setOpen(false); }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [open]);
+
+  const triggerStyle = {
+    minHeight: 33,
+    padding: "8px 14px",
+    borderRadius: 16,
+    border: `1px solid ${accent ? accent : ACCOUNTING_PANEL.border}`,
+    background: accent ? accent : ACCOUNTING_PANEL.surface,
+    color: accent ? "#1A1B26" : ACCOUNTING_PANEL.text,
+    font: "inherit",
+    fontSize: "0.875rem",
+    fontWeight: 600,
+    lineHeight: 1,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+  };
+  const menuStyle = {
+    position: "absolute",
+    top: "calc(100% + 4px)",
+    left: 0,
+    minWidth: 200,
+    background: "#1A1B26",
+    border: "1px solid #44475A",
+    borderRadius: 10,
+    boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+    padding: 6,
+    zIndex: 50,
+  };
+  const itemStyle = {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    background: "transparent",
+    border: "none",
+    color: ACCOUNTING_PANEL.text,
+    padding: "8px 12px",
+    borderRadius: 6,
+    cursor: "pointer",
+    font: "inherit",
+    fontSize: "0.8125rem",
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} style={triggerStyle} aria-haspopup="menu" aria-expanded={open}>
+        {label}
+        <span style={{ fontSize: "0.7rem", opacity: 0.7 }}>▾</span>
+      </button>
+      {open && (
+        <div role="menu" style={menuStyle}>
+          {items.filter(Boolean).map((it, i) => (
+            <button
+              key={i}
+              type="button"
+              role="menuitem"
+              onClick={() => { setOpen(false); it.onClick?.(); }}
+              disabled={it.disabled}
+              style={{
+                ...itemStyle,
+                opacity: it.disabled ? 0.5 : 1,
+                cursor: it.disabled ? "not-allowed" : "pointer",
+              }}
+              onMouseEnter={(e) => { if (!it.disabled) e.currentTarget.style.background = ACCOUNTING_PANEL.surface; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              {it.label}
+              {it.hint && <div style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.muted, marginTop: 2 }}>{it.hint}</div>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AccountingEntriesTab({
   companyId,
@@ -39,11 +131,15 @@ export function AccountingEntriesTab({
   onLoadPayrollTemplate,
   onBulkDeleteEntries,
   onOpenChartOfAccountsTab,
+  onOpenAccountingRulesTab,
+  onPreviewExcel,
+  onImportExcel,
 }) {
   const [showOFX, setShowOFX] = useState(false);
   const [showHistoricos, setShowHistoricos] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
   const [showCsvExport, setShowCsvExport] = useState(false);
+  const [showExcel, setShowExcel] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
@@ -164,26 +260,29 @@ export function AccountingEntriesTab({
     <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--space-4)" }}>
       <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 12, background: ACCOUNTING_PANEL.surface }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" onClick={() => setShowHistoricos(true)} style={actionButtonStyle}>Histórico</button>
-          <button
-            type="button"
-            onClick={() => { onLoadAccounts(); if (onOpenChartOfAccountsTab) onOpenChartOfAccountsTab(); }}
-            style={actionButtonStyle}
-          >
-            Plano de contas
-          </button>
-          <button type="button" onClick={() => setShowOFX(true)} style={actionButtonStyle}>Importar OFX</button>
-          {onLoadPayrollTemplate && (
-            <button
-              type="button"
-              onClick={() => setShowPayroll(true)}
-              style={{ ...actionButtonStyle, background: "#BD93F9", color: "#1A1B26", borderColor: "#BD93F9" }}
-            >
-              + Folha / Pró-labore
-            </button>
-          )}
-          {onExportCsv && <button type="button" onClick={() => setShowCsvExport(true)} style={actionButtonStyle}>Exportar CSV</button>}
-          <button type="button" onClick={onLoad} style={actionButtonStyle}>Atualizar</button>
+          <ActionMenu
+            label="Configurações"
+            items={[
+              { label: "Histórico de lançamentos", hint: "Templates de histórico reutilizáveis", onClick: () => setShowHistoricos(true) },
+              { label: "Plano de contas", hint: "Visualizar e editar contas", onClick: () => { onLoadAccounts(); if (onOpenChartOfAccountsTab) onOpenChartOfAccountsTab(); }, disabled: !onOpenChartOfAccountsTab },
+              { label: "Lançamentos padrão", hint: "Regras de receita, provisão e baixa", onClick: () => onOpenAccountingRulesTab?.(), disabled: !onOpenAccountingRulesTab },
+            ]}
+          />
+          <ActionMenu
+            label="Import / Export"
+            items={[
+              { label: "Importar OFX", hint: "Extrato bancário", onClick: () => setShowOFX(true) },
+              { label: "Importar Excel", hint: "Planilha (data; descrição; valor)", onClick: () => setShowExcel(true), disabled: !onPreviewExcel || !onImportExcel },
+              { label: "Exportar CSV", hint: "Lançamentos por competência", onClick: () => setShowCsvExport(true), disabled: !onExportCsv },
+            ]}
+          />
+          <ActionMenu
+            label="Funções"
+            accent="#BD93F9"
+            items={[
+              { label: "+ Folha / Pró-labore", hint: "Lançamento composto pré-preenchido", onClick: () => setShowPayroll(true), disabled: !onLoadPayrollTemplate },
+            ]}
+          />
         </div>
 
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
@@ -212,6 +311,10 @@ export function AccountingEntriesTab({
               {Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
             </select>
           </label>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button type="button" onClick={onLoad} style={actionButtonStyle}>Atualizar</button>
         </div>
 
         {entries.length > 0 && (
@@ -354,7 +457,17 @@ export function AccountingEntriesTab({
         </table>
       </div>
 
-      {showOFX && <ImportOFXModal companyId={companyId} accounts={accounts} onPreview={onPreviewOFX} onImport={onImportOFX} onClose={() => setShowOFX(false)} />}
+      {showOFX && (
+        <ImportOFXModal
+          companyId={companyId}
+          accounts={accounts}
+          onPreview={onPreviewOFX}
+          onImport={onImportOFX}
+          onSearchHistoricos={onSearchHistoricos}
+          onGetHistoricosByCode={onGetHistoricosByCode}
+          onClose={() => setShowOFX(false)}
+        />
+      )}
       {showHistoricos && <HistoricosModal onClose={() => setShowHistoricos(false)} onLoadAll={onLoadAllHistoricos} onUpdate={(id, input) => onUpdateHistorico(id, input)} onDelete={(id) => onDeleteHistorico(id)} />}
       {showPayroll && (
         <PayrollEntryModal
@@ -378,6 +491,14 @@ export function AccountingEntriesTab({
           defaultCompetencia={activeComp}
           onExport={(rangeOptions) => onExportCsv(rangeOptions)}
           onClose={() => setShowCsvExport(false)}
+        />
+      )}
+      {showExcel && (
+        <ImportExcelModal
+          accounts={accounts}
+          onPreview={onPreviewExcel}
+          onCommit={onImportExcel}
+          onClose={() => setShowExcel(false)}
         />
       )}
     </div>

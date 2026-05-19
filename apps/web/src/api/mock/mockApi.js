@@ -739,6 +739,23 @@ export function createMockApi() {
         },
       };
     },
+    async runSerproCron(input = {}) {
+      await delay(800);
+      const competencia = String(input.competencia || "2026-04");
+      return {
+        ok: true,
+        competencia,
+        durationMs: 812,
+        pgdasd: {
+          ok: true,
+          summary: { totalCompanies: 4, captured: 3, failed: 0, skippedByProcuration: 1, durationMs: 612 },
+        },
+        dctfweb: {
+          ok: true,
+          summary: { totalCompanies: 4, captured: 2, failed: 0, skippedByProcuration: 1, durationMs: 198 },
+        },
+      };
+    },
     async uploadGuides(files) {
       await delay(700);
       const normalizedFiles = Array.isArray(files) ? files : [];
@@ -1242,38 +1259,44 @@ export function createMockApi() {
     },
     async previewOFX() {
       await delay(400);
-      const transactions = Array.from({ length: faker.number.int({ min: 3, max: 10 }) }).map(() => ({
-        fitId: faker.string.alphanumeric(12),
-        trnType: "DEBIT",
-        data: faker.date.recent({ days: 30 }).toISOString(),
-        valor: Number(faker.finance.amount({ min: 50, max: 5000, dec: 2 })),
-        sinal: "DEBITO",
-        historico: faker.helpers.arrayElement([
-          "PAGAMENTO FORNECEDOR",
-          "TED RECEBIDA",
-          "DEBITO AUTOMATICO",
-          "COMPRA CARTAO",
-          "TARIFA BANCARIA",
-        ]),
-      }));
+      // Mock: parte das linhas vem com match (simulando histórico salvo), parte sem.
+      const SAMPLE_DESCS = [
+        { desc: "PAGAMENTO FORNECEDOR", match: { historicoSugerido: "Pagamento fornecedor", contaDebito: "411", contaCredito: "5", matchType: "exact", usageCount: 4, scope: "COMPANY" } },
+        { desc: "TARIFA BANCARIA", match: { historicoSugerido: "Tarifa bancária", contaDebito: "425", contaCredito: "5", matchType: "exact", usageCount: 12, scope: "GLOBAL" } },
+        { desc: "TED RECEBIDA CLIENTE XYZ 12345", match: null },
+        { desc: "COMPRA CARTAO POSTO ABC", match: null },
+        { desc: "DEBITO AUTOMATICO LUZ", match: { historicoSugerido: "Energia elétrica", contaDebito: "423", contaCredito: "5", matchType: "substring", usageCount: 2, scope: "COMPANY" } },
+      ];
+      const transactions = Array.from({ length: faker.number.int({ min: 3, max: 8 }) }).map((_, idx) => {
+        const sample = faker.helpers.arrayElement(SAMPLE_DESCS);
+        return {
+          rowIndex: idx,
+          fitId: faker.string.alphanumeric(12),
+          trnType: "DEBIT",
+          data: faker.date.recent({ days: 30 }).toISOString().slice(0, 10),
+          descricaoOfx: sample.desc,
+          valor: Number(faker.finance.amount({ min: 50, max: 5000, dec: 2 })),
+          sinal: "DEBITO",
+          match: sample.match,
+        };
+      });
       return { ok: true, transactions, total: transactions.length };
     },
-    async importOFX(companyId, { contaDebito, contaCredito, tipo }) {
+    async importOFX(companyId, { transactions = [] } = {}) {
       await delay(600);
-      const count = faker.number.int({ min: 3, max: 10 });
       const loteImportacao = `OFX-${Date.now()}`;
       const list = mockEntriesByCompany.get(companyId) || [];
-      for (let i = 0; i < count; i++) {
-        const data = faker.date.recent({ days: 30 });
-        const valor = Number(faker.finance.amount({ min: 50, max: 5000, dec: 2 }));
+      for (const t of transactions) {
+        const data = t.data ? new Date(t.data) : new Date();
+        const valor = Number(t.valor || 0);
         const entryId = faker.string.uuid();
         list.push({
           id: entryId,
           portalClientId: companyId,
           data: data.toISOString(),
           competencia: `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`,
-          historico: faker.helpers.arrayElement(["PAGAMENTO FORNECEDOR", "DEBITO AUTOMATICO", "TARIFA BANCARIA"]),
-          tipo: tipo || "DESPESA",
+          historico: t.historico || t.descricaoOfx || "",
+          tipo: t.tipo || "DESPESA",
           subtipo: null,
           origem: "OFX",
           loteImportacao,
@@ -1281,8 +1304,8 @@ export function createMockApi() {
           statusPagamento: "NA",
           openEntryId: null,
           lines: [
-            { id: faker.string.uuid(), entryId, conta: contaDebito, tipo: "D", valor, ordem: 0 },
-            { id: faker.string.uuid(), entryId, conta: contaCredito, tipo: "C", valor, ordem: 1 },
+            { id: faker.string.uuid(), entryId, conta: t.contaDebito, tipo: "D", valor, ordem: 0 },
+            { id: faker.string.uuid(), entryId, conta: t.contaCredito, tipo: "C", valor, ordem: 1 },
           ],
           totalD: valor, totalC: valor, valor,
           createdAt: new Date().toISOString(),
@@ -1290,7 +1313,7 @@ export function createMockApi() {
         });
       }
       mockEntriesByCompany.set(companyId, list);
-      return { ok: true, created: count, loteImportacao };
+      return { ok: true, created: transactions.length, failed: 0, loteImportacao };
     },
     getEntriesExportCsvUrl(companyId) {
       return `#mock-csv-export-${companyId}`;

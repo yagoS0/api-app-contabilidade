@@ -125,6 +125,9 @@ function App() {
         onSyncPgdas={companiesWorkspace.handleSyncSerproPgdas}
         onSyncInss={companiesWorkspace.handleSyncSerproInss}
         onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
+        onRunCron={companiesWorkspace.handleRunSerproCron}
+        runningCron={companiesWorkspace.runningSerproCron}
+        cronRunResult={companiesWorkspace.serproCronRunResult}
         onBack={() => session.setPage("firmSettings")}
         message={feedback.message}
         error={feedback.error}
@@ -225,6 +228,8 @@ function App() {
           onBulkDeleteEntries: accountingWorkspace.handleBulkDeleteEntries,
           onPreviewOFX: accountingWorkspace.handlePreviewOFX,
           onImportOFX: accountingWorkspace.handleImportOFX,
+          onPreviewExcel: accountingWorkspace.handlePreviewExcel,
+          onImportExcel: accountingWorkspace.handleImportExcel,
           savingEntry: accountingWorkspace.savingEntry,
           accounts: accountingWorkspace.chartOfAccountsState.accounts,
           onLoadAccounts: () => accountingWorkspace.loadChartOfAccounts(),

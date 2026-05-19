@@ -273,8 +273,21 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     return api.previewOFX(selectedCompanyId, file);
   }
 
-  async function handleImportOFX(params) {
-    const result = await api.importOFX(selectedCompanyId, params);
+  async function handleImportOFX(transactions) {
+    if (!selectedCompanyId) return null;
+    const result = await api.importOFX(selectedCompanyId, { transactions });
+    await loadAccountingEntries(selectedCompanyId);
+    return result;
+  }
+
+  async function handlePreviewExcel(file) {
+    if (!selectedCompanyId) return null;
+    return api.previewExcelImport(selectedCompanyId, file);
+  }
+
+  async function handleImportExcel(transactions) {
+    if (!selectedCompanyId) return null;
+    const result = await api.commitExcelImport(selectedCompanyId, transactions);
     await loadAccountingEntries(selectedCompanyId);
     return result;
   }
@@ -472,6 +485,8 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     handleBulkDeleteEntries,
     handlePreviewOFX,
     handleImportOFX,
+    handlePreviewExcel,
+    handleImportExcel,
     handleCreateAccount,
     handleUpdateAccount,
     handleDeleteAccount,

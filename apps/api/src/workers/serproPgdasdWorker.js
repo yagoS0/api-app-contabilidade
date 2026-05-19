@@ -69,9 +69,11 @@ async function releaseLockSafely() {
 }
 
 async function listEligiblePortalCompanies() {
+  // `cnpj` no schema é String não-nulo + único — então não precisa filtrar nulls.
+  // Filtramos apenas strings vazias (caso algum registro antigo tenha "").
   const companies = await prisma.portalClient.findMany({
     where: {
-      cnpj: { not: null },
+      cnpj: { not: "" },
     },
     select: {
       id: true,

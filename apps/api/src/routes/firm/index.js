@@ -35,6 +35,8 @@ import {
   updateGuideRuntimeSettings,
 } from "../../application/guides/GuideRuntimeSettings.js";
 import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
+import { runSerproPgdasdWorkerOnce } from "../../workers/serproPgdasdWorker.js";
+import { runSerproDctfwebWorkerOnce } from "../../workers/serproDctfwebWorker.js";
 import { sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
 import { listUnidentifiedGuides, processUploadedGuides, uploadGuideForPortalClient } from "../../application/guides/GuideUploadService.js";
 import {
@@ -970,6 +972,39 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
   });
 
+  // Dispara manualmente o cron do SERPRO (DAS PGDAS-D + INSS DCTFWeb).
+  // Usado quando o cron automático ainda não rodou e precisamos forçar.
+  router.post("/serpro/cron/run", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+
+    const competencia = normalizeCompetencia(req.body?.competencia || req.query?.competencia || "") || undefined;
+
+    const startedAt = Date.now();
+
+    // Roda os dois workers em paralelo. Cada um já itera todas as empresas elegíveis.
+    const [pgdasResult, dctfwebResult] = await Promise.allSettled([
+      runSerproPgdasdWorkerOnce({ competencia }),
+      runSerproDctfwebWorkerOnce({ competencia }),
+    ]);
+
+    function unpack(settled, label) {
+      if (settled.status === "fulfilled") return { ok: true, ...settled.value };
+      log.error({ err: settled.reason?.message || settled.reason, label }, "Cron SERPRO falhou");
+      return { ok: false, error: settled.reason?.code || "WORKER_ERROR", message: settled.reason?.message || "Erro desconhecido" };
+    }
+
+    return res.json({
+      ok: true,
+      competencia: competencia || "default_reference",
+      durationMs: Date.now() - startedAt,
+      pgdasd: unpack(pgdasResult, "pgdasd"),
+      dctfweb: unpack(dctfwebResult, "dctfweb"),
+    });
+  });
+
   router.patch("/serpro/settings", requireAccountType("FIRM"), async (req, res) => {
     const appRole = String(req.auth?.user?.role || "").toLowerCase();
     if (!["admin", "contador"].includes(appRole)) {
@@ -987,6 +1022,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         consumerSecretConfigured: Boolean(settings.consumerSecretConfigured),
         scope: settings.scope,
         timeoutMs: settings.timeoutMs,
+        // Importante: incluir fetchDay/fetchHour para que o form do frontend
+        // re-hidrate com o valor recém-salvo. Sem eles, o useEffect cairia no
+        // fallback do parse do fetchCron (que é diário e não preserva o dia).
+        fetchDay: settings.fetchDay,
+        fetchHour: settings.fetchHour,
         fetchCron: settings.fetchCron,
         certificate: settings.certificate,
         source: settings.source,
@@ -1605,7 +1645,21 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           contratanteCnpj: contratanteCnpj || undefined,
           serviceId,
         });
-        return res.json({ ok: true, result });
+
+        // Dispara o envio de e-mail imediatamente (a guia foi marcada como PENDING).
+        // Sem isso, o cliente só receberia no próximo ciclo do worker.
+        let emailDispatch = null;
+        if (result?.guide?.guideId) {
+          try {
+            emailDispatch = await runGuideEmailWorkerSelected({
+              guideIds: [String(result.guide.guideId)],
+            });
+          } catch (emailErr) {
+            log.warn({ err: emailErr?.message || emailErr, guideId: result.guide.guideId }, "Falha ao disparar e-mail após captura PGDAS-D");
+          }
+        }
+
+        return res.json({ ok: true, result, emailDispatch });
       } catch (err) {
         const code = err?.code || "SERPRO_PGDASD_CAPTURE_FAILED";
         const message = err?.message || "Falha ao capturar guia PGDAS-D no SERPRO.";
@@ -1663,7 +1717,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           competencia,
           contratanteCnpj: contratanteCnpj || undefined,
         });
-        return res.json({ ok: true, result });
+
+        // Dispara o envio de e-mail imediatamente para a guia INSS capturada.
+        let emailDispatch = null;
+        if (result?.guide?.guideId) {
+          try {
+            emailDispatch = await runGuideEmailWorkerSelected({
+              guideIds: [String(result.guide.guideId)],
+            });
+          } catch (emailErr) {
+            log.warn({ err: emailErr?.message || emailErr, guideId: result.guide.guideId }, "Falha ao disparar e-mail após sync INSS");
+          }
+        }
+
+        return res.json({ ok: true, result, emailDispatch });
       } catch (err) {
         const code = err?.code || "SERPRO_DCTFWEB_SYNC_FAILED";
         const message = err?.message || "Falha ao sincronizar INSS no SERPRO.";

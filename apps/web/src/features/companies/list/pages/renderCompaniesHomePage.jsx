@@ -36,20 +36,31 @@ export function CompaniesHomePage({
   const filteredCompanies = useMemo(() => {
     const normalizedQuery = normalizeSearch(search);
 
-    return companies.filter((company) => {
-      const matchesSearch =
-        !normalizedQuery ||
+    // 1) Busca por nome/CNPJ continua filtrando (remove quem não bate).
+    const searched = companies.filter((company) => {
+      if (!normalizedQuery) return true;
+      return (
         normalizeSearch(company?.razao).includes(normalizedQuery) ||
-        normalizeSearch(company?.cnpj).includes(normalizedQuery);
-
-      if (!matchesSearch) return false;
-
-      if (documentFilter === "pending" && !hasPendingCompliance(company)) return false;
-      if (documentFilter === "ok" && hasPendingCompliance(company)) return false;
-      if (serproFilter === "eligible" && !company?.serproStatus?.eligible) return false;
-      if (serproFilter === "ineligible" && company?.serproStatus?.eligible) return false;
-      return true;
+        normalizeSearch(company?.cnpj).includes(normalizedQuery)
+      );
     });
+
+    // 2) Filtros de documento e SERPRO agora apenas REORDENAM:
+    //    quem bate no critério vai pra frente, sem remover ninguém.
+    function priority(company) {
+      let p = 0;
+      if (documentFilter === "pending" && hasPendingCompliance(company)) p += 2;
+      if (documentFilter === "ok" && !hasPendingCompliance(company)) p += 2;
+      if (serproFilter === "eligible" && company?.serproStatus?.eligible) p += 1;
+      if (serproFilter === "ineligible" && !company?.serproStatus?.eligible) p += 1;
+      return p;
+    }
+
+    // Ordena estável por prioridade desc; preserva ordem original como tiebreaker.
+    return searched
+      .map((company, index) => ({ company, index, p: priority(company) }))
+      .sort((a, b) => (b.p - a.p) || (a.index - b.index))
+      .map((item) => item.company);
   }, [companies, documentFilter, search, serproFilter]);
 
   return (

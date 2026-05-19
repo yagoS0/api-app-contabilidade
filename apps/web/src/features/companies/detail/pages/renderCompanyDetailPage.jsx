@@ -9,6 +9,7 @@ import { AccountingEntriesTab } from "../../../accounting/entries/components/ren
 import { CircularTab } from "../../../accounting/circular/components/renderCircularTab";
 import { AccountingRulesContainer } from "../../../accounting/rules/components/renderAccountingRulesContainer";
 import { ChartOfAccountsPage } from "../../../accounting/chart-of-accounts/pages/renderChartOfAccountsPage";
+import { ErrorBoundary } from "../../../../components/ui/ErrorBoundary";
 
 export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, feedback }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
@@ -52,6 +53,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onBulkDeleteEntries={accountingPanel.onBulkDeleteEntries}
             onPreviewOFX={accountingPanel.onPreviewOFX}
             onImportOFX={accountingPanel.onImportOFX}
+            onPreviewExcel={accountingPanel.onPreviewExcel}
+            onImportExcel={accountingPanel.onImportExcel}
             savingEntry={accountingPanel.savingEntry}
             accounts={accountingPanel.accounts}
             onLoadAccounts={accountingPanel.onLoadAccounts}
@@ -60,6 +63,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onDeleteAccount={accountingPanel.onDeleteAccount}
             onImportAccountsFile={accountingPanel.onImportAccountsFile}
             onOpenChartOfAccountsTab={() => switchTab("planoContas")}
+            onOpenAccountingRulesTab={() => switchTab("configuracoes")}
             onExportCsv={accountingPanel.onExportCsv}
             onCreateBaixa={accountingPanel.onCreateBaixa}
             savingBaixa={accountingPanel.savingBaixa}
@@ -212,6 +216,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         />
 
         <div style={{ flex: 1 }}>
+          <ErrorBoundary>
           <CircularTab
             circularData={circularPanel.circularData}
             loading={circularPanel.loading}
@@ -237,6 +242,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onCancelBaixa={circularPanel.onCancelBaixa}
           />
+          </ErrorBoundary>
         </div>
       </div>
     );

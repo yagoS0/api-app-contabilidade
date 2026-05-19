@@ -694,7 +694,8 @@ model AccountingHistorico {
   id                    String   @id @default(uuid())
   createdByUserId       String
   companyPortalClientId String? // null = global para este usuário; preenchido = específico da empresa
-  text                  String
+  text                  String // chave de match: descrição original (memo OFX ou descrição da planilha)
+  historicoSugerido     String? // histórico digitado pelo contador (OFX); separa "descrição do banco" de "histórico contábil"
   contaDebito           String?
   contaCredito          String?
   usageCount            Int      @default(0)

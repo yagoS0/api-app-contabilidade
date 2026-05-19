@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
+import { PageShell } from "../../../../components/layout/PageShell";
 import { ChartOfAccountsPage } from "./renderChartOfAccountsPage";
 
 /**
@@ -41,21 +42,28 @@ export function GlobalChartOfAccountsPage({ api, onBack }) {
   }
 
   return (
-    <AppShell>
-      {error && (
-        <div style={{ padding: 10, marginBottom: 10, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", color: "#FF5757", borderRadius: 6 }}>
-          {error}
-        </div>
-      )}
-      <ChartOfAccountsPage
-        scope="GLOBAL"
-        accounts={accounts}
-        onCreateAccount={handleCreate}
-        onUpdateAccount={handleUpdate}
-        onDeleteAccount={handleDelete}
-        onImportFile={handleImport}
-        onBack={onBack}
-      />
-    </AppShell>
+    <PageShell
+      title="Plano de Contas Global"
+      subtitle="Plano compartilhado entre todas as empresas. Cada empresa pode ter contas próprias."
+      onBack={onBack}
+    >
+      <AppShell>
+        {error && (
+          <div style={{ padding: 10, marginBottom: 10, background: "rgba(255,87,87,0.15)", border: "1px solid #FF5757", color: "#FF5757", borderRadius: 6 }}>
+            {error}
+          </div>
+        )}
+        <ChartOfAccountsPage
+          scope="GLOBAL"
+          accounts={accounts}
+          onCreateAccount={handleCreate}
+          onUpdateAccount={handleUpdate}
+          onDeleteAccount={handleDelete}
+          onImportFile={handleImport}
+          // Sem onBack: o PageShell já provê o Voltar à esquerda (padrão unificado).
+          onBack={null}
+        />
+      </AppShell>
+    </PageShell>
   );
 }

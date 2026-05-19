@@ -1319,3 +1319,163 @@ th {
     min-width: calc(50% - var(--space-2));
   }
 }
+
+/* ─── PageShell — header unificado do app ─────────────────────────────────── */
+/* Mesmo padrão visual do .company-section-header, exposto como wrapper
+   reutilizável. Voltar SEMPRE à esquerda, ações à direita. */
+
+.page-shell {
+  min-height: 100vh;
+  background: #1a1b26;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-shell__header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 24px;
+  background: #1a1b26;
+  border-bottom: 1px solid #24253a;
+}
+
+.page-shell__brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.page-shell__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 33px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: #24253a;
+  color: #f8f8f2;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  white-space: nowrap;
+}
+
+.page-shell__back:hover {
+  background: #2b2d45;
+}
+
+.page-shell__back:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.28);
+}
+
+.page-shell__title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.page-shell__title {
+  overflow: hidden;
+  color: #f8f8f2;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-shell__subtitle {
+  overflow: hidden;
+  color: #6272a4;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-shell__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.page-shell__tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 33px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: #24253a;
+  color: #f8f8f2;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+}
+
+.page-shell__tab:hover:not(:disabled):not(.is-active) {
+  background: #2b2d45;
+}
+
+.page-shell__tab.is-active {
+  background: #bd93f9;
+  color: #1a1b26;
+  font-weight: 700;
+  cursor: default;
+}
+
+.page-shell__tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.page-shell__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.page-shell__content {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 720px) {
+  .page-shell__header {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .page-shell__brand,
+  .page-shell__tabs,
+  .page-shell__actions {
+    width: 100%;
+  }
+
+  .page-shell__tabs,
+  .page-shell__actions {
+    justify-content: flex-start;
+  }
+}

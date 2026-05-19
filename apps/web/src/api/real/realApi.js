@@ -254,6 +254,13 @@ export function createRealApi() {
         body: JSON.stringify(input),
       });
     },
+    // Dispara manualmente o cron do SERPRO (DAS + INSS) para todas as empresas elegíveis.
+    async runSerproCron(input = {}) {
+      return request(`/firm/serpro/cron/run`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
     async uploadGuides(files) {
       const formData = new FormData();
       for (const file of Array.isArray(files) ? files : []) {
@@ -479,15 +486,24 @@ export function createRealApi() {
         body: formData,
       });
     },
-    async importOFX(companyId, { file, contaDebito, contaCredito, tipo }) {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("contaDebito", contaDebito);
-      formData.append("contaCredito", contaCredito);
-      formData.append("tipo", tipo || "DESPESA");
+    async importOFX(companyId, { transactions }) {
       return request(`/firm/companies/${companyId}/entries/import/ofx`, {
         method: "POST",
+        body: JSON.stringify({ transactions }),
+      });
+    },
+    async previewExcelImport(companyId, file) {
+      const formData = new FormData();
+      formData.append("file", file);
+      return request(`/firm/companies/${companyId}/entries/import/excel?preview=1`, {
+        method: "POST",
         body: formData,
+      });
+    },
+    async commitExcelImport(companyId, transactions) {
+      return request(`/firm/companies/${companyId}/entries/import/excel`, {
+        method: "POST",
+        body: JSON.stringify({ transactions }),
       });
     },
     async searchHistoricos(companyId, q) {
