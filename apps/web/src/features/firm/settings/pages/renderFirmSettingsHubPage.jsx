@@ -1,6 +1,5 @@
 import { AppShell } from "../../../../components/layout/AppShell";
-import { PageHeader } from "../../../../components/layout/PageHeader";
-import { Button } from "../../../../components/ui/Button";
+import { PageShell } from "../../../../components/layout/PageShell";
 
 const PANEL = {
   surface: "#24253A",
@@ -34,13 +33,12 @@ const SETTING_CARDS = [
 
 export function FirmSettingsHubPage({ onBack, onOpen }) {
   return (
-    <AppShell>
-      <PageHeader
-        title="Configurações da Firma"
-        description="Centralize aqui as configurações compartilhadas por todas as empresas."
-        actions={onBack ? <Button variant="secondary" onClick={onBack}>Voltar</Button> : null}
-      />
-
+    <PageShell
+      title="Configurações da Firma"
+      subtitle="Configurações compartilhadas por todas as empresas."
+      onBack={onBack}
+    >
+      <AppShell>
       <section
         style={{
           display: "grid",
@@ -88,6 +86,7 @@ export function FirmSettingsHubPage({ onBack, onOpen }) {
           </button>
         ))}
       </section>
-    </AppShell>
+      </AppShell>
+    </PageShell>
   );
 }

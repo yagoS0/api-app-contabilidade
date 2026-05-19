@@ -62,9 +62,10 @@ function matchesCron(cronExpression, now = new Date()) {
 async function listEligiblePortalCompanies() {
   // INSS via DCTFWeb se aplica a qualquer empresa com CNPJ válido e procuração SERPRO ativa.
   // syncSerproInssForCompany trata "não transmitida" graciosamente.
+  // `cnpj` é String não-nulo no schema; filtramos só strings vazias por segurança.
   const companies = await prisma.portalClient.findMany({
     where: {
-      cnpj: { not: null },
+      cnpj: { not: "" },
     },
     select: {
       id: true,

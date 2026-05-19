@@ -452,8 +452,17 @@ export function CompanyGuidesTable({
                     <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${paymentStatus.tone}`} role="cell">
                       {paymentStatus.label}
                     </span>
-                    <span className={`guides-grid__cell guides-grid__cell--email guides-grid__tone guides-grid__tone--${emailStatus.tone}`} role="cell">
+                    <span
+                      className={`guides-grid__cell guides-grid__cell--email guides-grid__tone guides-grid__tone--${emailStatus.tone}`}
+                      role="cell"
+                      onClick={guide.emailLastError ? () => {
+                        // eslint-disable-next-line no-alert
+                        window.prompt("Erro no envio do e-mail (Ctrl+C para copiar):", guide.emailLastError);
+                      } : undefined}
+                      style={guide.emailLastError ? { cursor: "pointer", textDecoration: "underline" } : undefined}
+                    >
                       {emailStatus.label}
+                      {guide.emailLastError ? " ⓘ" : ""}
                     </span>
                   </div>
                 );

@@ -7,6 +7,7 @@ import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPg
 import { resolvePayrollTemplate } from "../../application/accounting/payrollTemplate.js";
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
+import { parseExcelBuffer, findHistoricoMatches, upsertHistoricoFromImport } from "../../application/accounting/excelImport.js";
 
 // ---------------------------------------------------------------------------
 // OFX Parser (SGML v1 e XML v2)
@@ -462,7 +463,7 @@ export function createAccountingEntriesRouter({ log }) {
 
     const meses = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
 
-    const [provisoes, receitas] = await Promise.all([
+    const [provisoes, receitas, inssGuides] = await Promise.all([
       prisma.accountingEntry.findMany({
         where: {
           portalClientId,
@@ -484,6 +485,24 @@ export function createAccountingEntriesRouter({ log }) {
         },
         select: { competencia: true, id: true, lines: { select: { tipo: true, valor: true } } },
       }),
+      // Guias INSS (que não geram mais lançamento contábil automático após a remoção de INSS_DCTFWEB).
+      // Aqui criamos provisões sintéticas para que apareçam na linha INSS da circular.
+      prisma.guide.findMany({
+        where: {
+          portalClientId,
+          source: "SERPRO",
+          tipo: "INSS",
+          status: "PROCESSED",
+          competencia: { in: meses },
+        },
+        select: {
+          id: true,
+          competencia: true,
+          valor: true,
+          paymentStatus: true,
+          vencimento: true,
+        },
+      }),
     ]);
 
     const receitasPorComp = {};
@@ -492,9 +511,48 @@ export function createAccountingEntriesRouter({ log }) {
       receitasPorComp[e.competencia] = (receitasPorComp[e.competencia] || 0) + total;
     }
 
+    // Provisões sintéticas a partir das guias INSS (não há lançamento contábil PROVISAO para INSS)
+    const inssSynthetic = inssGuides.map((g) => {
+      const valor = Number(g.valor || 0);
+      const isPaid = String(g.paymentStatus || "").toUpperCase() === "PAID";
+      return {
+        id: `synthetic-inss-${g.id}`,
+        portalClientId,
+        circularId: null,
+        ruleId: null,
+        eventType: "INSS_GUIDE_SYNTHETIC",
+        data: g.vencimento || new Date(`${g.competencia}-01T00:00:00.000Z`),
+        competencia: g.competencia,
+        historico: `INSS DCTFWEB - ${g.competencia}`,
+        tipo: "PROVISAO",
+        subtipo: "INSS",
+        origem: "SERPRO",
+        loteImportacao: null,
+        status: "RASCUNHO",
+        statusPagamento: isPaid ? "PAGO" : "ABERTO",
+        openEntryId: null,
+        recalculatedAt: null,
+        recalculatedFromValor: null,
+        recalculatedToValor: null,
+        recalculatedNotes: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lines: [
+          { id: null, entryId: null, conta: "INSS", tipo: "D", valor, ordem: 0, historico: null },
+          { id: null, entryId: null, conta: "INSS", tipo: "C", valor, ordem: 1, historico: null },
+        ],
+        baixas: [],
+        totalD: valor,
+        totalC: valor,
+        valor,
+        placeholder: false,
+        synthetic: true, // sinaliza ao frontend que é uma "fake provisão"
+      };
+    });
+
     return res.json({
       year,
-      provisoes: provisoes.map(entryToResponse),
+      provisoes: [...provisoes.map(entryToResponse), ...inssSynthetic],
       receitas: receitasPorComp,
     });
   });
@@ -1348,43 +1406,80 @@ export function createAccountingEntriesRouter({ log }) {
   });
 
   // POST /firm/companies/:companyId/entries/import/ofx
+  // Modo preview (?preview=1 OU multipart com file): parsea OFX e casa com históricos existentes
+  // Modo commit (JSON body com transactions): cria entries enriquecidos linha-a-linha + auto-save de histórico
   router.post(
     "/entries/import/ofx",
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
     upload.single("file"),
     async (req, res) => {
       const portalClientId = String(req.params.companyId);
-      if (!req.file?.buffer) return res.status(400).json({ error: "file_required" });
+      const userId = req.auth?.user?.id;
+      const isPreview = req.query.preview === "1" || req.body?.preview === true || Boolean(req.file?.buffer);
 
-      const transactions = parseOfx(req.file.buffer);
-      if (!transactions.length) {
-        return res.status(422).json({ error: "nenhuma_transacao_encontrada" });
-      }
+      // ── Modo preview: parsea arquivo + casa com históricos ────────────────
+      if (isPreview) {
+        if (!req.file?.buffer) return res.status(400).json({ error: "file_required" });
 
-      const preview = req.query.preview === "1" || req.body?.preview === true;
-      if (preview) {
+        const parsed = parseOfx(req.file.buffer);
+        if (!parsed.length) {
+          return res.status(422).json({ error: "nenhuma_transacao_encontrada" });
+        }
+
+        // O parser chama o memo do banco de `historico`. Usamos isso como chave de match.
+        const descriptions = parsed.map((t) => t.historico);
+        const matches = await findHistoricoMatches({ portalClientId, userId, descriptions });
+
+        const transactions = parsed.map((t, i) => ({
+          rowIndex: i,
+          data: t.data.toISOString().slice(0, 10),
+          // Renomeia explicitamente: descricaoOfx é o memo do banco (chave de match).
+          descricaoOfx: t.historico,
+          valor: t.valor,
+          sinal: t.sinal,
+          trnType: t.trnType,
+          fitId: t.fitId,
+          match: matches[i] || null,
+        }));
+
         return res.json({ ok: true, transactions, total: transactions.length });
       }
 
-      const contaDebito = String(req.body?.contaDebito || "").trim();
-      const contaCredito = String(req.body?.contaCredito || "").trim();
-      const tipo = String(req.body?.tipo || "DESPESA").toUpperCase();
-      const loteImportacao = `OFX-${Date.now()}`;
+      // ── Modo commit: cria entries linha-a-linha + auto-saves de histórico ─
+      const body = req.body || {};
+      const transactions = Array.isArray(body.transactions) ? body.transactions : [];
+      if (!transactions.length) return res.status(400).json({ error: "transactions_required" });
 
-      if (!contaDebito || !contaCredito) {
-        return res.status(400).json({ error: "contas_required_para_importacao" });
-      }
+      const loteImportacao = `OFX-${Date.now()}`;
+      const created = [];
+      const failed = [];
 
       try {
         await prisma.$transaction(async (tx) => {
           for (const t of transactions) {
-            const competencia = `${t.data.getUTCFullYear()}-${String(t.data.getUTCMonth() + 1).padStart(2, "0")}`;
+            const contaDebito = String(t.contaDebito || "").trim();
+            const contaCredito = String(t.contaCredito || "").trim();
+            const valor = Number(t.valor);
+            const historico = String(t.historico || "").trim();
+            const dataStr = String(t.data || "").slice(0, 10);
+            if (!contaDebito || !contaCredito || !historico || !valor || !dataStr) {
+              failed.push({ rowIndex: t.rowIndex, reason: "campos_obrigatorios" });
+              continue;
+            }
+            const dataDate = new Date(`${dataStr}T00:00:00.000Z`);
+            if (Number.isNaN(dataDate.getTime())) {
+              failed.push({ rowIndex: t.rowIndex, reason: "data_invalida" });
+              continue;
+            }
+            const competencia = `${dataDate.getUTCFullYear()}-${String(dataDate.getUTCMonth() + 1).padStart(2, "0")}`;
+            const tipo = String(t.tipo || "DESPESA").toUpperCase();
+
             const entry = await tx.accountingEntry.create({
               data: {
                 portalClientId,
-                data: t.data,
+                data: dataDate,
                 competencia,
-                historico: t.historico,
+                historico,
                 tipo,
                 origem: "OFX",
                 loteImportacao,
@@ -1394,17 +1489,168 @@ export function createAccountingEntriesRouter({ log }) {
             });
             await tx.accountingEntryLine.createMany({
               data: [
-                { entryId: entry.id, conta: contaDebito, tipo: "D", valor: t.valor, ordem: 0 },
-                { entryId: entry.id, conta: contaCredito, tipo: "C", valor: t.valor, ordem: 1 },
+                { entryId: entry.id, conta: contaDebito, tipo: "D", valor, ordem: 0 },
+                { entryId: entry.id, conta: contaCredito, tipo: "C", valor, ordem: 1 },
               ],
             });
+            created.push({ rowIndex: t.rowIndex, entryId: entry.id });
           }
         });
-        return res.status(201).json({ ok: true, created: transactions.length, loteImportacao });
       } catch (err) {
-        log.error({ err }, "Erro ao importar OFX");
-        return res.status(500).json({ error: "internal_error" });
+        log.error({ err }, "Erro ao importar OFX (commit)");
+        return res.status(500).json({ error: "internal_error", message: err?.message });
       }
+
+      // Auto-save de histórico (fora da transaction principal — falha por linha não derruba o batch).
+      // text = descrição OFX (chave de match) | historicoSugerido = histórico contábil digitado pelo contador.
+      if (userId) {
+        for (const t of transactions) {
+          const contaDebito = String(t.contaDebito || "").trim();
+          const contaCredito = String(t.contaCredito || "").trim();
+          const descricaoOfx = String(t.descricaoOfx || "").trim();
+          const historico = String(t.historico || "").trim();
+          if (!descricaoOfx || !contaDebito || !contaCredito) continue;
+          await upsertHistoricoFromImport({
+            userId,
+            portalClientId,
+            text: descricaoOfx,
+            contaDebito,
+            contaCredito,
+            historicoSugerido: historico,
+          });
+        }
+      }
+
+      return res.status(201).json({
+        ok: true,
+        created: created.length,
+        failed: failed.length,
+        loteImportacao,
+        details: { created, failed },
+      });
+    }
+  );
+
+  // POST /firm/companies/:companyId/entries/import/excel?preview=1
+  // Preview: parsea o Excel e tenta casar cada descrição com históricos existentes.
+  router.post(
+    "/entries/import/excel",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    upload.single("file"),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const userId = req.auth?.user?.id;
+      const isPreview = req.query.preview === "1" || req.body?.preview === true;
+
+      // ── Modo preview: parsea arquivo + match ────────────────────────────
+      if (isPreview) {
+        if (!req.file?.buffer) return res.status(400).json({ error: "file_required" });
+        let parsed;
+        try {
+          parsed = parseExcelBuffer(req.file.buffer);
+        } catch (err) {
+          if (err?.code === "EXCEL_TOO_MANY_ROWS") {
+            return res.status(422).json({ error: "excel_too_many_rows", message: err.message });
+          }
+          log.error({ err }, "Falha ao parsear Excel");
+          return res.status(422).json({ error: "excel_parse_failed", message: err?.message });
+        }
+        if (!parsed.length) {
+          return res.status(422).json({ error: "nenhuma_transacao_encontrada" });
+        }
+
+        const matches = await findHistoricoMatches({
+          portalClientId,
+          userId,
+          descriptions: parsed.map((t) => t.descricao),
+        });
+
+        const transactions = parsed.map((t, i) => ({
+          rowIndex: t.rowIndex,
+          data: t.data.toISOString().slice(0, 10),
+          descricao: t.descricao,
+          valor: t.valor,
+          match: matches[i] || null,
+        }));
+        return res.json({ ok: true, transactions, total: transactions.length });
+      }
+
+      // ── Modo commit: cria entries + auto-saves de histórico ─────────────
+      const body = req.body || {};
+      const transactions = Array.isArray(body.transactions) ? body.transactions : [];
+      if (!transactions.length) return res.status(400).json({ error: "transactions_required" });
+
+      const loteImportacao = `EXCEL-${Date.now()}`;
+      const created = [];
+      const failed = [];
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          for (const t of transactions) {
+            const contaDebito = String(t.contaDebito || "").trim();
+            const contaCredito = String(t.contaCredito || "").trim();
+            const valor = Number(t.valor);
+            const descricao = String(t.descricao || "").trim();
+            const dataStr = String(t.data || "").slice(0, 10);
+            if (!contaDebito || !contaCredito || !descricao || !valor || !dataStr) {
+              failed.push({ rowIndex: t.rowIndex, reason: "campos_obrigatorios" });
+              continue;
+            }
+            const dataDate = new Date(`${dataStr}T00:00:00.000Z`);
+            if (Number.isNaN(dataDate.getTime())) {
+              failed.push({ rowIndex: t.rowIndex, reason: "data_invalida" });
+              continue;
+            }
+            const competencia = `${dataDate.getUTCFullYear()}-${String(dataDate.getUTCMonth() + 1).padStart(2, "0")}`;
+            const tipo = String(t.tipo || "DESPESA").toUpperCase();
+
+            const entry = await tx.accountingEntry.create({
+              data: {
+                portalClientId,
+                data: dataDate,
+                competencia,
+                historico: descricao,
+                tipo,
+                origem: "EXCEL",
+                loteImportacao,
+                status: "RASCUNHO",
+                statusPagamento: "NA",
+              },
+            });
+            await tx.accountingEntryLine.createMany({
+              data: [
+                { entryId: entry.id, conta: contaDebito, tipo: "D", valor, ordem: 0 },
+                { entryId: entry.id, conta: contaCredito, tipo: "C", valor, ordem: 1 },
+              ],
+            });
+            created.push({ rowIndex: t.rowIndex, entryId: entry.id });
+          }
+        });
+      } catch (err) {
+        log.error({ err }, "Erro ao importar Excel (commit)");
+        return res.status(500).json({ error: "internal_error", message: err?.message });
+      }
+
+      // Auto-save de histórico (fora da transaction principal — cada falha não derruba o batch)
+      if (userId) {
+        for (const t of transactions) {
+          const contaDebito = String(t.contaDebito || "").trim();
+          const contaCredito = String(t.contaCredito || "").trim();
+          const descricao = String(t.descricao || "").trim();
+          if (!descricao || !contaDebito || !contaCredito) continue;
+          await upsertHistoricoFromImport({
+            userId, portalClientId, text: descricao, contaDebito, contaCredito,
+          });
+        }
+      }
+
+      return res.status(201).json({
+        ok: true,
+        created: created.length,
+        failed: failed.length,
+        loteImportacao,
+        details: { created, failed },
+      });
     }
   );
 

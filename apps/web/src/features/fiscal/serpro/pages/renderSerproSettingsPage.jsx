@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
+import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 
@@ -88,6 +89,9 @@ export function SerproSettingsPage({
   onSyncPgdas,
   onSyncInss,
   onRefreshWorkerStatus,
+  onRunCron,
+  runningCron,
+  cronRunResult,
   onBack,
   message,
   error,
@@ -215,22 +219,11 @@ export function SerproSettingsPage({
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
-      <header className="company-section-header">
-        <div className="company-section-header__brand">
-          <button type="button" className="company-section-header__back" onClick={onBack}>
-            Voltar
-          </button>
-
-          <div className="company-section-header__company">
-            <strong className="company-section-header__company-name">Configuração SERPRO</strong>
-            <span className="company-section-header__company-meta">
-              Certificado do procurador, credenciais da API e agenda de busca automática.
-            </span>
-          </div>
-        </div>
-      </header>
-
+    <PageShell
+      title="Configuração SERPRO"
+      subtitle="Certificado do procurador, credenciais da API e agenda de busca automática."
+      onBack={onBack}
+    >
       <AppShell className="serpro-settings-shell">
         <div className="serpro-settings-page">
           <section className="serpro-settings-card">
@@ -341,10 +334,51 @@ export function SerproSettingsPage({
                   Acompanhe a última execução automática da captura PGDAS-D configurada pelo cron.
                 </p>
               </div>
-              <Button type="button" variant="secondary" onClick={onRefreshWorkerStatus}>
-                Atualizar status
-              </Button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button
+                  type="button"
+                  variant="success"
+                  disabled={runningCron}
+                  onClick={() => onRunCron?.({ competencia: testCompetencia || undefined })}
+                  title="Roda agora os mesmos workers que o cron rodaria automaticamente (DAS PGDAS-D + INSS DCTFWeb) para todas as empresas elegíveis."
+                >
+                  {runningCron ? "⏳ Executando cron..." : "▶ Forçar execução do cron"}
+                </Button>
+                <Button type="button" variant="secondary" onClick={onRefreshWorkerStatus}>
+                  Atualizar status
+                </Button>
+              </div>
             </div>
+
+            {cronRunResult && (
+              <div style={{
+                marginTop: 12, padding: "10px 12px", borderRadius: 6,
+                background: "#0d2d1e", border: "1px solid #166534",
+                color: "#86efac", fontSize: "0.8125rem",
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                  ✓ Execução manual concluída ({cronRunResult.durationMs} ms · competência {cronRunResult.competencia})
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <div>
+                    <strong>DAS PGDAS-D:</strong>{" "}
+                    {cronRunResult.pgdasd?.skipped
+                      ? `pulado (${cronRunResult.pgdasd.reason})`
+                      : cronRunResult.pgdasd?.ok === false
+                        ? `erro: ${cronRunResult.pgdasd.message || "—"}`
+                        : `${cronRunResult.pgdasd?.summary?.captured ?? "?"} capturadas / ${cronRunResult.pgdasd?.summary?.totalCompanies ?? "?"} empresas`}
+                  </div>
+                  <div>
+                    <strong>INSS DCTFWeb:</strong>{" "}
+                    {cronRunResult.dctfweb?.skipped
+                      ? `pulado (${cronRunResult.dctfweb.reason})`
+                      : cronRunResult.dctfweb?.ok === false
+                        ? `erro: ${cronRunResult.dctfweb.message || "—"}`
+                        : `${cronRunResult.dctfweb?.summary?.captured ?? "?"} capturadas / ${cronRunResult.dctfweb?.summary?.totalCompanies ?? "?"} empresas`}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="serpro-settings-status-grid serpro-settings-status-grid--manual">
               <div className="serpro-settings-status-item">
@@ -538,6 +572,6 @@ export function SerproSettingsPage({
           <Feedback message={message} error={error} />
         </div>
       </AppShell>
-    </div>
+    </PageShell>
   );
 }

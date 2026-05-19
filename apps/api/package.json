@@ -50,6 +50,7 @@
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.17.2",
     "pino": "^8.21.0",
+    "xlsx": "^0.18.5",
     "xml-crypto": "^3.0.0"
   },
   "devDependencies": {

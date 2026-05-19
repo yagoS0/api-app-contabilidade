@@ -1,5 +1,5 @@
 import { AppShell } from "../../../../components/layout/AppShell";
-import { PageHeader } from "../../../../components/layout/PageHeader";
+import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
@@ -20,22 +20,17 @@ export function PendingGuidesPage({
   const allSelected = guides.length > 0 && selectedIds.length === guides.length;
 
   return (
-    <AppShell>
-      <PageHeader
-        title="Pendências de e-mail"
-        description="Guias pendentes de envio, por empresa."
-        actions={
-          <>
-            <Button variant="secondary" onClick={onRefresh} disabled={loading}>
-              Atualizar
-            </Button>
-            <Button variant="secondary" onClick={onBack}>
-              Voltar
-            </Button>
-          </>
-        }
-      />
-
+    <PageShell
+      title="Pendências de e-mail"
+      subtitle="Guias pendentes de envio, por empresa."
+      onBack={onBack}
+      actions={
+        <Button variant="secondary" onClick={onRefresh} disabled={loading}>
+          Atualizar
+        </Button>
+      }
+    >
+      <AppShell>
       <section className="panel">
         <div className="panel__head">
           <h2 className="panel__title">Lista</h2>
@@ -101,6 +96,7 @@ export function PendingGuidesPage({
       </section>
 
       <Feedback message={message} error={error} />
-    </AppShell>
+      </AppShell>
+    </PageShell>
   );
 }

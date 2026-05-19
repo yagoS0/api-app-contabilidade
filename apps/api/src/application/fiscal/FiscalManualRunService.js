@@ -2,6 +2,18 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { capturePgdasGuideForCompany } from "./serpro/CaptureSerproGuidesService.js";
 import { syncSerproInssForCompany } from "./serpro/SerproDctfwebService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
+import { runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
+
+// Dispara o envio imediato de e-mail para um guideId. Falha silenciosamente
+// (a guide já está com emailStatus=PENDING; o worker contínuo pega no próximo ciclo).
+async function fireEmailForGuide(guideId) {
+  if (!guideId) return;
+  try {
+    await runGuideEmailWorkerSelected({ guideIds: [String(guideId)] });
+  } catch {
+    // não crítico
+  }
+}
 
 /**
  * Orchestrator service for fiscal manual operations.
@@ -119,6 +131,9 @@ export class FiscalManualRunService {
       serviceId: options.serviceId || null,
     });
 
+    // Dispara envio imediato do e-mail (guia foi marcada como PENDING pelo create/update)
+    await fireEmailForGuide(result?.guide?.guideId);
+
     return {
       action: "search_guides",
       competencia,
@@ -202,6 +217,9 @@ export class FiscalManualRunService {
         timestamp: new Date().toISOString(),
       };
     }
+
+    // Dispara envio imediato do e-mail
+    await fireEmailForGuide(result?.guide?.guideId);
 
     return {
       action: "sync_inss",

@@ -110,14 +110,58 @@ function extractDocumentNumber(payload) {
   return raw == null ? null : String(raw).trim() || null;
 }
 
+function parseMoneyValue(raw) {
+  if (raw == null) return null;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  // Detecta separador decimal: o último '.' ou ',' é o decimal
+  const lastDot = s.lastIndexOf(".");
+  const lastComma = s.lastIndexOf(",");
+  let normalized;
+  if (lastDot === -1 && lastComma === -1) normalized = s;
+  else if (lastDot > lastComma) normalized = s.replace(/,/g, ""); // formato US: 1,234.56
+  else normalized = s.replace(/\./g, "").replace(",", "."); // formato BR: 1.234,56
+  const parsed = Number(normalized.replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Extrai o valor da DAS percorrendo o payload por prioridade de chaves.
+// Pula valores zero/null em níveis menos específicos para não pegar campos como "valorMulta=0".
 function extractAmount(payload) {
-  const raw = searchValueDeep(payload, (key, value) => {
+  const PRIORITY_PATTERNS = [
+    /valor.*total.*documento/i,
+    /vlr.*total.*documento/i,
+    /valor.*total.*pagar/i,
+    /valor.*pagar.*total/i,
+    /valor.*do.*documento/i,
+    /^vlrtotaldocumento$/i,
+    /^valortotaldocumento$/i,
+    /^valortotal$/i,
+    /^vlrtotal$/i,
+    /^valor.*pagar$/i,
+    /^valor.*principal$/i,
+    /^vlrprincipal$/i,
+    /^valor$/i,
+  ];
+  for (const pattern of PRIORITY_PATTERNS) {
+    const raw = searchValueDeep(payload, (key, value) => {
+      const normalized = String(key || "").toLowerCase().replace(/_/g, "");
+      if (!pattern.test(normalized)) return false;
+      const parsed = parseMoneyValue(value);
+      return parsed != null && parsed > 0; // ignora zeros
+    });
+    if (raw != null) {
+      const parsed = parseMoneyValue(raw);
+      if (parsed != null && parsed > 0) return parsed;
+    }
+  }
+  // Fallback: aceita zero se nenhum positivo encontrado
+  const fallback = searchValueDeep(payload, (key, value) => {
     const normalized = String(key || "").toLowerCase();
     return /(valor.*total|valortotal|valor)/.test(normalized) && (typeof value === "number" || typeof value === "string");
   });
-  if (raw == null) return null;
-  const normalized = Number(String(raw).replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(normalized) ? normalized : null;
+  return parseMoneyValue(fallback);
 }
 
 function extractAmountByKeys(payload, patterns) {
@@ -125,9 +169,7 @@ function extractAmountByKeys(payload, patterns) {
     const normalized = String(key || "").toLowerCase();
     return patterns.some((pattern) => pattern.test(normalized)) && (typeof value === "number" || typeof value === "string");
   });
-  if (raw == null) return null;
-  const normalized = Number(String(raw).replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(normalized) ? normalized : null;
+  return parseMoneyValue(raw);
 }
 
 function parsePossibleDate(value) {
@@ -138,6 +180,51 @@ function parsePossibleDate(value) {
   if (br) return new Date(`${br[3]}-${br[2]}-${br[1]}T00:00:00.000Z`);
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseBrMoney(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  const normalized = s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s;
+  const parsed = Number(normalized.replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+// Lê o PDF da DAS e tenta achar o "Valor Total do Documento".
+// Usado como fallback quando o JSON do GERARDAS12 (Normal) não traz valor.
+async function extractDasValueFromPdf(pdfBuffer) {
+  if (!pdfBuffer || !pdfBuffer.length) return null;
+  const pdfParse = (await import("pdf-parse")).default;
+  const pdfData = await pdfParse(pdfBuffer);
+  const text = String(pdfData?.text || "");
+  const patterns = [
+    /Valor\s+Total\s+do\s+Documento\s*\n\s*(\d+[\d.]*,\d{2})/i,
+    /Valor\s+Total\s+do\s+Documento\s+(\d+[\d.]*,\d{2})/i,
+    /Valor\s+Total\s+do\s+Documento[^\d]{0,40}(\d+[\d.]*,\d{2})/i,
+  ];
+  for (const p of patterns) {
+    const match = p.exec(text);
+    if (match?.[1]) {
+      const v = parseBrMoney(match[1]);
+      if (v != null && v > 0) return v;
+    }
+  }
+  // Fallback: linha "Totais X,XX X,XX" — pega o último valor (coluna Total)
+  const totaisMatch = text.match(/^Totais\s+([\d.,]+)/im);
+  if (totaisMatch?.[1]) {
+    const values = totaisMatch[1].match(/\d+(?:\.\d{3})*,\d{2}/g);
+    if (values && values.length > 0) {
+      const v = parseBrMoney(values[values.length - 1]);
+      if (v != null && v > 0) return v;
+    }
+  }
+  // Fallback: "Principal X,XX Multa X,XX Juros X,XX Total X,XX"
+  const totalMatch = text.match(/Principal[^\n]*?Total\s+(\d+[\d.]*,\d{2})/i);
+  if (totalMatch?.[1]) {
+    const v = parseBrMoney(totalMatch[1]);
+    if (v != null && v > 0) return v;
+  }
+  return null;
 }
 
 function buildPgdasGuidePayload({ response, contribuinteCnpj, competencia }) {
@@ -287,6 +374,19 @@ export async function capturePgdasGuideForCompany({
     contribuinteCnpj: portalClient.cnpj,
     competencia: normalizedCompetencia,
   });
+
+  // GERARDAS12 (Normal) só devolve o PDF base64 — não há valor estruturado no JSON.
+  // Quando o Emitir não traz valor, leio direto do PDF da DAS ("Valor Total do Documento").
+  if (mapped.parsed.valor == null || mapped.parsed.valor === 0) {
+    try {
+      const valorFromPdf = await extractDasValueFromPdf(mapped.pdfBuffer);
+      if (valorFromPdf != null && valorFromPdf > 0) {
+        mapped.parsed.valor = valorFromPdf;
+      }
+    } catch {
+      // Não crítico: se a leitura do PDF falhar, mantém o valor extraído do JSON
+    }
+  }
 
   const sourceFileId = buildGuideSourceFileId({
     cnpj: portalClient.cnpj,

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
-import { PageHeader } from "../../../../components/layout/PageHeader";
+import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
@@ -47,17 +47,12 @@ export function GuideUploadPage({
   }
 
   return (
-    <AppShell>
-      <PageHeader
-        title="Guias — upload"
-        description="Envie PDFs para processamento automático e acompanhe pendências de identificação."
-        actions={
-          <Button variant="secondary" onClick={onBack}>
-            Voltar
-          </Button>
-        }
-      />
-
+    <PageShell
+      title="Guias — upload"
+      subtitle="Envie PDFs para processamento automático e acompanhe pendências de identificação."
+      onBack={onBack}
+    >
+      <AppShell>
       <section className="panel">
         <h2 className="panel__title">Enviar arquivos</h2>
         <form className="form-grid" onSubmit={handleSubmit}>
@@ -157,6 +152,7 @@ export function GuideUploadPage({
       </section>
 
       <Feedback message={message} error={error} />
-    </AppShell>
+      </AppShell>
+    </PageShell>
   );
 }

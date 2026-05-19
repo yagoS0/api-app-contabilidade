@@ -26,6 +26,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [syncingSerproInss, setSyncingSerproInss] = useState(false);
   const [serproProcurationStatus, setSerproProcurationStatus] = useState(null);
   const [serproWorkerStatus, setSerproWorkerStatus] = useState(null);
+  const [runningSerproCron, setRunningSerproCron] = useState(false);
+  const [serproCronRunResult, setSerproCronRunResult] = useState(null);
   const [pendingGuides, setPendingGuides] = useState([]);
   const [selectedPendingGuideIds, setSelectedPendingGuideIds] = useState([]);
   const [loadingPendingGuides, setLoadingPendingGuides] = useState(false);
@@ -91,6 +93,28 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     } catch (err) {
       feedback.setError(err?.message || "Falha ao carregar status do worker SERPRO.");
       return null;
+    }
+  }
+
+  // Dispara manualmente o cron SERPRO (DAS PGDAS-D + INSS DCTFWeb).
+  // Mesmo fluxo que o cron automático rodaria, mas iniciado pelo botão.
+  async function handleRunSerproCron(input = {}) {
+    if (page === "login") return null;
+    setRunningSerproCron(true);
+    feedback.clearFeedback();
+    try {
+      const result = await api.runSerproCron(input);
+      setSerproCronRunResult(result || null);
+      feedback.setMessage("Execução manual do cron SERPRO concluída.");
+      // atualiza o card "última execução" automaticamente
+      await loadSerproWorkerStatus();
+      return result;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao executar cron SERPRO.");
+      setSerproCronRunResult(null);
+      return null;
+    } finally {
+      setRunningSerproCron(false);
     }
   }
 
@@ -557,6 +581,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     syncingSerproInss,
     serproProcurationStatus,
     serproWorkerStatus,
+    runningSerproCron,
+    serproCronRunResult,
+    handleRunSerproCron,
     handleSaveSerproSettings,
     handleUploadSerproCertificate,
     handleDeleteSerproCertificate,

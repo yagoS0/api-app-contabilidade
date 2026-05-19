@@ -1,24 +1,15 @@
 import { AppShell } from "../../../../components/layout/AppShell";
+import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
-import { Button } from "../../../../components/ui/Button";
 import { CompanyForm } from "../components/renderCompanyForm";
 
 export function CompanyFormPage({ form, onChange, onSubmit, submitting, onBack, error }) {
   return (
-    <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
-      <header className="company-section-header">
-        <div className="company-section-header__brand">
-          <button type="button" className="company-section-header__back" onClick={onBack}>
-            Voltar
-          </button>
-
-          <div className="company-section-header__company">
-            <strong className="company-section-header__company-name">Nova empresa</strong>
-            <span className="company-section-header__company-meta">Dados mínimos para cadastro e acesso ao portal</span>
-          </div>
-        </div>
-      </header>
-
+    <PageShell
+      title="Nova empresa"
+      subtitle="Dados mínimos para cadastro e acesso ao portal"
+      onBack={onBack}
+    >
       <AppShell className="company-form-page-shell">
         <section className="company-form-page__panel">
           <div className="company-form-page__intro">
@@ -39,6 +30,6 @@ export function CompanyFormPage({ form, onChange, onSubmit, submitting, onBack, 
           <Feedback error={error} />
         </section>
       </AppShell>
-    </div>
+    </PageShell>
   );
 }
