@@ -264,6 +264,7 @@ model PortalClient {
   monthlyCirculars     CompanyMonthlyCircular[]
   accountingEntryRules AccountingEntryRule[]
   fiscalExecutionLogs  FiscalExecutionLog[]
+  accountingFunctions  AccountingFunction[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -276,6 +277,7 @@ model Guide {
   competencia              String? // YYYY-MM
   tipo                     String // INSS|FGTS|PIS|COFINS|ISS|SIMPLES|OUTRA
   valor                    Decimal?  @db.Decimal(18, 2)
+  valorOriginal            Decimal?  @db.Decimal(18, 2) // valor da PRIMEIRA captura (extrato); imutável em updates de recálculo
   vencimento               DateTime?
   cnpj                     String?
   paymentStatus            String?   @default("OPEN") // OPEN|PAID|OVERDUE
@@ -287,7 +289,8 @@ model Guide {
   serproLastSeenAt         DateTime?
   serproService            String?
 
-  taxDocuments TaxDocument[]
+  taxDocuments      TaxDocument[]
+  accountingEntries AccountingEntry[] @relation("GuideToEntries")
 
   source       String  @default("DRIVE") // DRIVE|LOCAL
   sourceFileId String? @unique
@@ -574,6 +577,7 @@ model AccountingEntry {
   portalClientId        String
   circularId            String?
   ruleId                String?
+  sourceGuideId         String?   // Guide que originou esta provisão (DARFs, INSS, etc.) — null para entries manuais
   eventType             String?
   data                  DateTime
   competencia           String
@@ -596,10 +600,12 @@ model AccountingEntry {
   portalClient PortalClient            @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
   circular     CompanyMonthlyCircular? @relation(fields: [circularId], references: [id], onDelete: SetNull)
   rule         AccountingEntryRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  sourceGuide  Guide?                  @relation("GuideToEntries", fields: [sourceGuideId], references: [id], onDelete: SetNull)
   openEntry    AccountingEntry?        @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
   baixas       AccountingEntry[]       @relation("BaixaToOpen")
 
   @@unique([portalClientId, competencia, eventType, origem])
+  @@unique([sourceGuideId, eventType], name: "uniq_entry_per_guide_event")
   @@index([portalClientId])
   @@index([portalClientId, competencia])
   @@index([portalClientId, tipo])
@@ -609,6 +615,7 @@ model AccountingEntry {
   @@index([portalClientId, eventType])
   @@index([circularId])
   @@index([ruleId])
+  @@index([sourceGuideId])
   @@map("accounting_entries")
 }
 
@@ -618,7 +625,9 @@ model CompanyMonthlyCircular {
   competencia                 String
   receitaBruta                Decimal?  @db.Decimal(18, 2)
   receitaServicos             Decimal   @default(0) @db.Decimal(18, 2)
-  receitaVendas               Decimal   @default(0) @db.Decimal(18, 2)
+  receitaVendas               Decimal   @default(0) @db.Decimal(18, 2) // total (= semST + comST)
+  receitaVendasSemST          Decimal   @default(0) @db.Decimal(18, 2) // Vendas sem substituição tributária
+  receitaVendasComST          Decimal   @default(0) @db.Decimal(18, 2) // Vendas com substituição tributária (ICMS-ST)
   dasTotal                    Decimal?  @db.Decimal(18, 2)
   dasNumeroDocumento          String?
   dasPago                     Boolean?
@@ -698,6 +707,7 @@ model AccountingHistorico {
   historicoSugerido     String? // histórico digitado pelo contador (OFX); separa "descrição do banco" de "histórico contábil"
   contaDebito           String?
   contaCredito          String?
+  eventType             String?  // RECEITA_SERVICO|RECEITA_VENDA_SEM_ST|RECEITA_VENDA_COM_ST|DAS_SIMPLES|... — memória do par D/C para entries automáticos
   usageCount            Int      @default(0)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -705,7 +715,57 @@ model AccountingHistorico {
   @@index([createdByUserId, companyPortalClientId])
   @@index([createdByUserId, contaDebito])
   @@index([createdByUserId, contaCredito])
+  @@index([companyPortalClientId, eventType])
   @@map("accounting_historicos")
+}
+
+// Função de Lançamento: template reutilizável para múltiplos entries.
+// Contador define nome, lista de entries com contas D/C e histórico (placeholders).
+// Ao "Aplicar função", contador preenche apenas valores; sistema cria os N entries.
+model AccountingFunction {
+  id              String   @id @default(uuid())
+  portalClientId  String?  // null = GLOBAL (vale pra qualquer empresa); preenchido = só esta
+  name            String
+  description     String?
+  isSystem        Boolean  @default(false) // true = template de sistema (não editável/deletável)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  entries      AccountingFunctionEntry[]
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId])
+  @@index([isSystem])
+  @@map("accounting_functions")
+}
+
+model AccountingFunctionEntry {
+  id         String  @id @default(uuid())
+  functionId String
+  ordem      Int     @default(0)
+  historico  String  // template (tokens {{competencia}}, {{companyName}}, {{cnpj}})
+  tipo       String  // DESPESA | PROVISAO | RECEITA | etc.
+  subtipo    String?
+
+  lines    AccountingFunctionLine[]
+  function AccountingFunction @relation(fields: [functionId], references: [id], onDelete: Cascade)
+
+  @@index([functionId])
+  @@map("accounting_function_entries")
+}
+
+model AccountingFunctionLine {
+  id              String @id @default(uuid())
+  functionEntryId String
+  conta           String // código da conta (D ou C)
+  tipo            String // D | C
+  ordem           Int    @default(0)
+
+  functionEntry AccountingFunctionEntry @relation(fields: [functionEntryId], references: [id], onDelete: Cascade)
+
+  @@index([functionEntryId])
+  @@map("accounting_function_lines")
 }
 
 model TaxDocumentProcessingLog {

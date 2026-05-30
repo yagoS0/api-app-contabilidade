@@ -37,7 +37,7 @@ import {
 import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
 import { runSerproPgdasdWorkerOnce } from "../../workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerOnce } from "../../workers/serproDctfwebWorker.js";
-import { sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
+import { sendCompanyGuidesEmail, sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
 import { listUnidentifiedGuides, processUploadedGuides, uploadGuideForPortalClient } from "../../application/guides/GuideUploadService.js";
 import {
   getCompanyGuideEmailSchedule,
@@ -69,6 +69,29 @@ import {
 import {
   SERPRO_PGDASD_SERVICE_COBRANCA,
 } from "../../application/fiscal/serpro/SerproPgdasdService.js";
+
+// Plano de contas global precisa cobrir os 5 tipos básicos antes de qualquer empresa ser criada.
+// Lançamentos automáticos (DAS, faturamento, etc) dependem desse plano mínimo configurado.
+const REQUIRED_GLOBAL_TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
+
+async function getGlobalChartStatus() {
+  const counts = await prisma.chartOfAccount.groupBy({
+    by: ["tipo"],
+    where: { portalClientId: null },
+    _count: { _all: true },
+  });
+  const presentTipos = new Set(
+    counts.map((c) => String(c.tipo || "").toUpperCase()).filter(Boolean)
+  );
+  const missingTipos = REQUIRED_GLOBAL_TIPOS.filter((t) => !presentTipos.has(t));
+  const totalAccounts = counts.reduce((s, c) => s + Number(c._count?._all || 0), 0);
+  return {
+    isConfigured: missingTipos.length === 0,
+    totalAccounts,
+    tiposPresentes: [...presentTipos],
+    tiposFaltantes: missingTipos,
+  };
+}
 
 async function attachGuideComplianceToCompaniesList(data) {
   if (!Array.isArray(data) || !data.length) return data;
@@ -413,6 +436,22 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
     if (!ownerEmail) return res.status(400).json({ error: "owner_email_required" });
 
+    // Plano de contas global é PRÉ-REQUISITO para criar empresas.
+    // Lançamentos automáticos (DAS, faturamento, etc) dependem de um plano mínimo.
+    try {
+      const globalStatus = await getGlobalChartStatus();
+      if (!globalStatus.isConfigured) {
+        return res.status(400).json({
+          ok: false,
+          error: "global_chart_of_accounts_not_configured",
+          message: `Configure o plano de contas global antes de criar empresas. Faltam contas dos tipos: ${globalStatus.tiposFaltantes.join(", ")}.`,
+          missingTipos: globalStatus.tiposFaltantes,
+        });
+      }
+    } catch (chartErr) {
+      log.warn({ err: chartErr }, "Falha ao verificar plano global (seguindo o fluxo)");
+    }
+
     try {
       const result = await prisma.$transaction(async (tx) => {
         let ownerUser = await tx.user.findUnique({ where: { email: ownerEmail } });
@@ -558,20 +597,42 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         .trim()
         .toLowerCase();
       const inscricaoMunicipalInput = String(companyInput.inscricaoMunicipal || "").trim() || null;
+      // CNPJ é IMUTÁVEL após criação — vinculado ao certificado A1, SERPRO, NFS-e, validação de PDFs.
+      // Para "trocar" CNPJ, contador deve excluir a empresa e criar uma nova.
+      try {
+        const currentForCnpjCheck = await prisma.portalClient.findUnique({
+          where: { id: portalCompanyId },
+          select: { cnpj: true },
+        });
+        if (currentForCnpjCheck) {
+          const onlyDigits = (s) => String(s || "").replace(/\D+/g, "");
+          if (normalizedCompany.cnpj && onlyDigits(normalizedCompany.cnpj) !== onlyDigits(currentForCnpjCheck.cnpj)) {
+            return res.status(400).json({
+              ok: false,
+              error: "cnpj_imutavel",
+              message: "CNPJ não pode ser alterado. Para trocar o CNPJ, exclua a empresa e crie uma nova.",
+            });
+          }
+        }
+      } catch (cnpjCheckErr) {
+        log.warn({ err: cnpjCheckErr }, "Falha ao checar imutabilidade do CNPJ (seguindo o fluxo)");
+      }
+
       try {
         const result = await prisma.$transaction(async (tx) => {
           const portal = await tx.portalClient.findUnique({
             where: { id: portalCompanyId },
-            select: { id: true, companyId: true },
+            select: { id: true, companyId: true, cnpj: true },
           });
           if (!portal?.id) {
             const err = new Error("portal_company_not_found");
             err.code = "PORTAL_COMPANY_NOT_FOUND";
             throw err;
           }
+          // CNPJ imutável: ignoramos qualquer cnpj vindo do body e mantemos o atual.
           const portalUpdateData = {
             razao: normalizedCompany.razaoSocial,
-            cnpj: normalizedCompany.cnpj,
+            cnpj: portal.cnpj,
             inscricaoMunicipal: inscricaoMunicipalInput,
             uf: normalizedCompany.endereco?.uf || null,
             municipio: normalizedCompany.endereco?.cidade || null,
@@ -605,7 +666,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               where: { id: portal.companyId },
               data: {
                 razaoSocial: normalizedCompany.razaoSocial,
-                cnpj: normalizedCompany.cnpj,
+                cnpj: portal.cnpj, // imutável — herda do PortalClient atual
+
                 nomeFantasia: normalizedCompany.nomeFantasia,
                 email: normalizedCompany.email || null,
                 telefone: normalizedCompany.telefone,
@@ -1092,39 +1154,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         files,
         requestId: uploadRequestId || undefined,
       });
-      let emailDispatch = {
+      // Auto-send REMOVIDO. Guias processadas ficam em emailStatus=PENDING aguardando
+      // envio em lote via página `Envio de e-mails em lote`.
+      const emailDispatch = {
         attempted: false,
-        skipped: false,
-        reason: null,
+        skipped: true,
+        reason: "batch_email_only",
         sent: 0,
         failed: 0,
       };
-
-      if (uploadResult.processedGuideIds.length) {
-        const emailResult = await runGuideEmailWorkerSelected({
-          guideIds: uploadResult.processedGuideIds,
-        });
-
-        if (emailResult?.skipped && emailResult?.reason === "lock_active") {
-          emailDispatch = {
-            attempted: true,
-            skipped: true,
-            reason: "lock_active",
-            message: "As guias foram processadas, mas o envio automático está ocupado no momento.",
-            sent: 0,
-            failed: 0,
-          };
-        } else {
-          emailDispatch = {
-            attempted: true,
-            skipped: false,
-            reason: null,
-            sent: Number(emailResult?.sent || 0),
-            failed: Number(emailResult?.errors || 0),
-            items: Array.isArray(emailResult?.results) ? emailResult.results : [],
-          };
-        }
-      }
 
       const emailByGuideId = new Map(
         Array.isArray(emailDispatch.items)
@@ -1269,21 +1307,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         if (result.needsMetadata) {
           return res.json({ ok: false, needsMetadata: true, parsed: result.parsed });
         }
-        let emailStatus = "PENDING";
-        let emailMessage = "Guia processada e aguardando envio.";
-        try {
-          const emailResult = await runGuideEmailWorkerSelected({ guideIds: [String(result.guideId)] });
-          if (emailResult?.skipped && emailResult?.reason === "lock_active") {
-            emailMessage = "Guia processada. O envio automático está ocupado no momento.";
-          } else {
-            const sent = Number(emailResult?.sent || 0);
-            emailStatus = sent > 0 ? "SENT" : "PENDING";
-            emailMessage = sent > 0 ? "Guia processada e e-mail enviado com sucesso." : emailMessage;
-          }
-        } catch {
-          // email failure is non-fatal
-        }
-        return res.json({ ok: true, guide: toGuideResponse(result.guide), emailStatus, emailMessage });
+        // Auto-send REMOVIDO. Guia fica em emailStatus=PENDING aguardando envio em lote
+        // via página `Envio de e-mails em lote` (endpoint POST /firm/guides/batch-send).
+        return res.json({
+          ok: true,
+          guide: toGuideResponse(result.guide),
+          emailStatus: "PENDING",
+          emailMessage: "Guia processada e aguardando envio manual em lote.",
+        });
       } catch (err) {
         log.error({ err }, "Falha ao processar upload de guia para empresa");
         return res.status(500).json({
@@ -1347,6 +1378,258 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       total: result.total,
     });
   });
+
+  // GET /guides/batch-report
+  // Retorna a matriz "empresa x tipo de guia" para a competência informada (default = referência atual).
+  // Cada empresa traz `tiposGuias` indicando, por tipo (DAS/INSS/IRPJ/CSLL/PIS_COFINS/ISS/FGTS/PARC_DAS),
+  // se há guia pendente de envio (presente = capturada/pendente, null = não capturada).
+  // Frontend separa as empresas em 2 seções (Simples × Presumidos) e mostra colunas por regime.
+  router.get("/guides/batch-report", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth.user.role || "").toLowerCase();
+    const isAdminLike = ["admin", "contador"].includes(appRole);
+    const ref = String(req.query.competencia || "").trim() || getReferenceCompetencia();
+
+    // Escopo de acesso: admin/contador vê todas as PortalClient; demais só as com CompanyFirmAccess ativo.
+    let scopeWhere = {};
+    if (!isAdminLike) {
+      const links = await prisma.companyFirmAccess.findMany({
+        where: { userId: String(req.auth.user.id), status: "ACTIVE" },
+        select: { companyId: true },
+      });
+      const portalIds = links.map((l) => String(l.companyId)).filter(Boolean);
+      if (!portalIds.length) {
+        return res.json({ competencia: ref, simples: [], presumidos: [] });
+      }
+      scopeWhere = { id: { in: portalIds } };
+    }
+
+    // PortalClient não tem relação direta com Company no Prisma — só `companyId` (FK).
+    // Fazemos 2 queries e damos merge em memória por companyId.
+    const portalRows = await prisma.portalClient.findMany({
+      where: scopeWhere,
+      select: { id: true, razao: true, cnpj: true, companyId: true },
+      orderBy: { razao: "asc" },
+    });
+    if (!portalRows.length) {
+      return res.json({ competencia: ref, simples: [], presumidos: [] });
+    }
+    const legacyCompanyIds = portalRows.map((p) => p.companyId).filter(Boolean);
+    const legacyCompanies = legacyCompanyIds.length > 0
+      ? await prisma.company.findMany({
+          where: { id: { in: legacyCompanyIds } },
+          select: { id: true, regimeTributario: true, tipoTributario: true },
+        })
+      : [];
+    const legacyMap = new Map(legacyCompanies.map((c) => [c.id, c]));
+    const companies = portalRows.map((p) => ({
+      id: p.id,
+      razao: p.razao,
+      cnpj: p.cnpj,
+      company: p.companyId ? legacyMap.get(p.companyId) || null : null,
+    }));
+    const portalIds = companies.map((c) => c.id);
+
+    // Guides PROCESSED da competência que ainda não foram enviadas.
+    const guides = await prisma.guide.findMany({
+      where: {
+        portalClientId: { in: portalIds },
+        competencia: ref,
+        status: "PROCESSED",
+        emailStatus: { in: ["PENDING", "ERROR"] },
+      },
+      select: {
+        id: true, portalClientId: true, tipo: true, valor: true, vencimento: true,
+        emailStatus: true, extracted: true,
+      },
+    });
+
+    // Parcelamentos Simples Nacional ABERTOS na competência.
+    const parcelamentos = await prisma.accountingEntry.findMany({
+      where: {
+        portalClientId: { in: portalIds },
+        subtipo: "PARC_DAS",
+        statusPagamento: "ABERTO",
+        competencia: ref,
+      },
+      select: { id: true, portalClientId: true },
+    });
+
+    // Códigos DARF → coluna na matriz. PIS+COFINS agrupam na coluna "PIS_COFINS".
+    const PIS_COFINS_CODES = new Set(["2172", "8109"]);
+    const IRPJ_CODES = new Set(["2089", "2362", "2456", "0220"]);
+    const CSLL_CODES = new Set(["2372", "2484", "6012"]);
+
+    const byCompany = new Map();
+    for (const c of companies) {
+      const regime = String(c.company?.regimeTributario || c.company?.tipoTributario || "").toUpperCase();
+      byCompany.set(c.id, {
+        portalClientId: c.id,
+        razao: c.razao,
+        cnpj: c.cnpj,
+        regimeTributario: regime,
+        tiposGuias: {
+          DAS: null, INSS: null, IRPJ: null, CSLL: null,
+          PIS_COFINS: null, ISS: null, FGTS: null, PARC_DAS: null,
+        },
+        pendingGuideIds: [],
+      });
+    }
+
+    for (const g of guides) {
+      const row = byCompany.get(g.portalClientId);
+      if (!row) continue;
+      const upper = String(g.tipo || "").toUpperCase();
+      const stamp = { guideId: g.id, valor: g.valor != null ? Number(g.valor) : null, vencimento: g.vencimento };
+
+      if (upper === "DARF") {
+        // DARF misto: explode a composição em colunas IRPJ/CSLL/PIS_COFINS conforme códigos.
+        const composicao = Array.isArray(g.extracted?.composicao) ? g.extracted.composicao : [];
+        for (const c of composicao) {
+          const codigo = String(c.codigo || "");
+          if (PIS_COFINS_CODES.has(codigo)) row.tiposGuias.PIS_COFINS = { ...stamp, codigo };
+          else if (IRPJ_CODES.has(codigo)) row.tiposGuias.IRPJ = { ...stamp, codigo };
+          else if (CSLL_CODES.has(codigo)) row.tiposGuias.CSLL = { ...stamp, codigo };
+        }
+      } else if (upper === "PIS" || upper === "COFINS") {
+        row.tiposGuias.PIS_COFINS = stamp;
+      } else if (row.tiposGuias[upper] !== undefined) {
+        row.tiposGuias[upper] = stamp;
+      }
+      row.pendingGuideIds.push(g.id);
+    }
+
+    for (const p of parcelamentos) {
+      const row = byCompany.get(p.portalClientId);
+      if (!row) continue;
+      row.tiposGuias.PARC_DAS = { entryId: p.id, isParcelamento: true };
+    }
+
+    // Separa por regime — Simples num grupo, Presumido/Real noutro. Sem regime, vai pra "outros".
+    const simples = [];
+    const presumidos = [];
+    const outros = [];
+    for (const row of byCompany.values()) {
+      if (row.regimeTributario === "SIMPLES") simples.push(row);
+      else if (row.regimeTributario === "LUCRO_PRESUMIDO" || row.regimeTributario === "LUCRO_REAL") presumidos.push(row);
+      else outros.push(row);
+    }
+
+    return res.json({ competencia: ref, simples, presumidos, outros });
+  });
+
+  // POST /guides/batch-send
+  // Recebe { items: [{ portalClientId, competencia }] } e dispara 1 e-mail por empresa
+  // com todas as guias da competência anexadas (via sendCompanyGuidesEmail).
+  router.post("/guides/batch-send", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) {
+      return res.status(400).json({ ok: false, error: "items_required" });
+    }
+    const results = [];
+    for (const it of items) {
+      const portalClientId = String(it?.portalClientId || "").trim();
+      const competencia = String(it?.competencia || "").trim();
+      if (!portalClientId || !competencia) {
+        results.push({ portalClientId, competencia, ok: false, error: "invalid_input" });
+        continue;
+      }
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await sendCompanyGuidesEmail({ portalClientId, competencia });
+        results.push({ portalClientId, competencia, ok: true, ...r });
+      } catch (err) {
+        log.error({ err: err?.message || err, portalClientId, competencia }, "Falha no batch-send de e-mail");
+        results.push({
+          portalClientId, competencia, ok: false,
+          error: err?.code || "GUIDE_EMAIL_SEND_FAILED",
+          message: err?.message,
+        });
+      }
+    }
+    const sent = results.filter((r) => r.ok && r.status === "sent").length;
+    return res.json({ ok: true, total: items.length, sent, results });
+  });
+
+  // Endpoint binário inline para visualização em iframe (modal de captura).
+  // Diferente do /download (que retorna JSON com base64), este retorna o PDF cru
+  // com Content-Type application/pdf — ideal para <iframe src=...>.
+  router.get(
+    "/companies/:companyId/guides/:guideId/file",
+    requireFirmCompanyAccess(),
+    async (req, res) => {
+      const { companyId, guideId } = req.params || {};
+      const guide = await prisma.guide.findFirst({
+        where: { id: String(guideId), portalClientId: String(companyId) },
+      });
+      if (!guide) return res.status(404).json({ error: "not_found" });
+      const buf = await getGuidePdfBuffer(guide);
+      if (!buf?.length) return res.status(404).json({ error: "file_not_available" });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="${guide.sourcePath || `guia-${guideId}.pdf`}"`);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      return res.send(buf);
+    },
+  );
+
+  // Identifica/completa metadados de uma guia já no banco (status ERROR ou incompleta).
+  // Usado quando o parser falhou e o contador precisa preencher tipo/competência/valor/vencimento.
+  router.post(
+    "/companies/:companyId/guides/:guideId/identify",
+    requireFirmCompanyAccess(),
+    async (req, res) => {
+      const appRole = String(req.auth?.user?.role || "").toLowerCase();
+      if (!["admin", "contador"].includes(appRole)) {
+        return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+      }
+      const { companyId, guideId } = req.params || {};
+      const guide = await prisma.guide.findFirst({
+        where: { id: String(guideId), portalClientId: String(companyId) },
+      });
+      if (!guide) return res.status(404).json({ ok: false, error: "guide_not_found" });
+
+      const body = req.body || {};
+      const tipo = String(body.tipo || "").trim().toUpperCase() || null;
+      const competencia = String(body.competencia || "").trim() || null;
+      const valor = body.valor != null && body.valor !== "" ? Number(body.valor) : null;
+      const vencimentoStr = body.vencimento ? String(body.vencimento).slice(0, 10) : null;
+      const vencimento = vencimentoStr ? new Date(`${vencimentoStr}T00:00:00.000Z`) : null;
+
+      if (!tipo || !competencia) {
+        return res.status(400).json({ ok: false, error: "tipo_e_competencia_required" });
+      }
+
+      // Promove para PROCESSED quando os obrigatórios estão preenchidos.
+      const updated = await prisma.guide.update({
+        where: { id: guide.id },
+        data: {
+          tipo,
+          competencia,
+          ...(Number.isFinite(valor) ? { valor } : {}),
+          ...(vencimento && !Number.isNaN(vencimento.getTime()) ? { vencimento } : {}),
+          status: "PROCESSED",
+          errors: [],
+          // Marca como pendente de envio para o worker pegar (caso já tenha sido enviado errado, o user reabilita).
+          emailStatus: guide.emailStatus === "SENT" ? guide.emailStatus : "PENDING",
+        },
+      });
+
+      // Q5: gera provisão (DARF/IRPJ/CSLL/PIS/COFINS/ISS) a partir da guia identificada.
+      // Best-effort: se falhar, só loga e segue.
+      try {
+        const { generateProvisionsFromGuide } = await import("../../application/accounting/GuideToProvisionService.js");
+        await generateProvisionsFromGuide({ guideId: updated.id });
+      } catch (provErr) {
+        log.warn({ err: provErr?.message || provErr, guideId: updated.id }, "Falha ao gerar provisão pós-identify");
+      }
+
+      // Auto-send REMOVIDO. Guia fica em PENDING aguardando envio em lote.
+      return res.json({ ok: true, guide: toGuideResponse(updated), emailDispatch: null });
+    },
+  );
 
   router.get(
     "/companies/:companyId/guides/:guideId/download",
@@ -1445,6 +1728,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           NOT: { id: updated.id },
         },
       });
+
+      // Q5: gera provisão a partir da guia recém-atribuída.
+      try {
+        const { generateProvisionsFromGuide } = await import("../../application/accounting/GuideToProvisionService.js");
+        await generateProvisionsFromGuide({ guideId: updated.id });
+      } catch (provErr) {
+        log.warn({ err: provErr?.message || provErr, guideId: updated.id }, "Falha ao gerar provisão pós-manual-assign");
+      }
 
       return res.json({ ok: true, guide: toGuideResponse(updated) });
     }
@@ -1646,20 +1937,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           serviceId,
         });
 
-        // Dispara o envio de e-mail imediatamente (a guia foi marcada como PENDING).
-        // Sem isso, o cliente só receberia no próximo ciclo do worker.
-        let emailDispatch = null;
-        if (result?.guide?.guideId) {
-          try {
-            emailDispatch = await runGuideEmailWorkerSelected({
-              guideIds: [String(result.guide.guideId)],
-            });
-          } catch (emailErr) {
-            log.warn({ err: emailErr?.message || emailErr, guideId: result.guide.guideId }, "Falha ao disparar e-mail após captura PGDAS-D");
-          }
-        }
-
-        return res.json({ ok: true, result, emailDispatch });
+        // Auto-send REMOVIDO. Guia capturada do SERPRO fica em emailStatus=PENDING
+        // aguardando envio em lote via página `Envio de e-mails em lote`.
+        return res.json({ ok: true, result, emailDispatch: null });
       } catch (err) {
         const code = err?.code || "SERPRO_PGDASD_CAPTURE_FAILED";
         const message = err?.message || "Falha ao capturar guia PGDAS-D no SERPRO.";
@@ -1718,19 +1998,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           contratanteCnpj: contratanteCnpj || undefined,
         });
 
-        // Dispara o envio de e-mail imediatamente para a guia INSS capturada.
-        let emailDispatch = null;
-        if (result?.guide?.guideId) {
-          try {
-            emailDispatch = await runGuideEmailWorkerSelected({
-              guideIds: [String(result.guide.guideId)],
-            });
-          } catch (emailErr) {
-            log.warn({ err: emailErr?.message || emailErr, guideId: result.guide.guideId }, "Falha ao disparar e-mail após sync INSS");
-          }
-        }
-
-        return res.json({ ok: true, result, emailDispatch });
+        // Auto-send REMOVIDO. Guia INSS fica em emailStatus=PENDING aguardando
+        // envio em lote via página `Envio de e-mails em lote`.
+        return res.json({ ok: true, result, emailDispatch: null });
       } catch (err) {
         const code = err?.code || "SERPRO_DCTFWEB_SYNC_FAILED";
         const message = err?.message || "Falha ao sincronizar INSS no SERPRO.";
@@ -2123,6 +2393,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     return true;
   }
   const VALID_TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
+
+  // GET /firm/chart-of-accounts/global/status
+  // Indica se o plano de contas global tem cobertura mínima (5 tipos básicos) — pré-requisito para criar empresas.
+  router.get("/chart-of-accounts/global/status", async (_req, res) => {
+    try {
+      const status = await getGlobalChartStatus();
+      return res.json({ ok: true, ...status });
+    } catch (err) {
+      log.error({ err }, "Falha ao obter status do plano global");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
 
   // GET /firm/chart-of-accounts/global
   router.get("/chart-of-accounts/global", async (req, res) => {

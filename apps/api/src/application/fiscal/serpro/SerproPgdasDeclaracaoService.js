@@ -257,87 +257,170 @@ function extractMoneyFromTextByPatterns(text, patterns) {
   return null;
 }
 
+/**
+ * Normaliza texto para matching robusto (lowercase + sem acentos + espaços únicos).
+ * Usado por `classifyAtividade`.
+ */
+function normalizeForMatch(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "") // remove diacríticos combinantes
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Classifica a descrição de uma atividade do PGDAS-D em:
+ *  - servico (Anexo III/IV/V — não separa por sub-tipo)
+ *  - venda (sub: sem_st | com_st — separadas para fins contábeis)
+ *  - outro (locação, exportação, etc.)
+ */
+function classifyAtividade(descricao) {
+  const norm = normalizeForMatch(descricao);
+  if (/prestacao\s+de\s+servicos?/i.test(norm)) {
+    return { categoria: "servico", subcategoria: null };
+  }
+  const isVenda =
+    /revenda\s+de\s+mercadorias?/i.test(norm)
+    || /venda\s+de\s+mercadorias\s+industrializadas?/i.test(norm);
+  if (isVenda) {
+    // Distingue venda COM ST × SEM ST pela descrição:
+    //   "...com substituição tributária..."  → com_st
+    //   "...sem substituição tributária..."  → sem_st (default conservador)
+    //   "...substituído tributário..."        → com_st (variação do PDF da Receita)
+    const hasComST = /com\s+substituicao\s+tributaria/i.test(norm)
+      || /substituido\s+tributario/i.test(norm);
+    const subcategoria = hasComST ? "com_st" : "sem_st";
+    return { categoria: "venda", subcategoria };
+  }
+  return { categoria: "outro", subcategoria: null };
+}
+
+/**
+ * Itera TODOS os blocos "Valor do Débito por Tributo para a Atividade" do extrato PGDAS-D
+ * e soma as receitas por categoria/sub-categoria.
+ *
+ * Cada bloco segue o formato:
+ *   Valor do Débito por Tributo para a Atividade (R$):
+ *   <descrição da atividade — pode ter quebras de linha>
+ *   Receita Bruta Informada: R$ <valor>
+ *   IRPJ CSLL COFINS PIS/Pasep INSS/CPP ICMS IPI ISS Total
+ *   <valores>
+ *   Parcela 1: R$ <valor>
+ *
+ * Suporta as 3 variações reais documentadas em PDFs SOLUCLEAN/GARDEN BRASA/PRO-FACILITIES.
+ */
+function parseAtividadesPgdas(text) {
+  const HEADER_RE = /Valor\s+do\s+D[ée]bito\s+por\s+Tributo\s+para\s+a\s+Atividade\s*\(R\$\)\s*:/gi;
+  const matches = [...String(text || "").matchAll(HEADER_RE)];
+  const empty = {
+    receitaServicos: 0,
+    receitaVendas: 0,
+    receitaVendasSemST: 0,
+    receitaVendasComST: 0,
+    receitaOutros: 0,
+    atividades: [],
+  };
+  if (matches.length === 0) return empty;
+
+  const atividades = [];
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index + matches[i][0].length;
+    const end = i + 1 < matches.length ? matches[i + 1].index : Math.min(text.length, start + 2000);
+    const bloco = text.slice(start, end);
+
+    // Descrição = entre o cabeçalho do bloco e "Receita Bruta Informada: R$ <valor>"
+    const descMatch = bloco.match(/^([\s\S]*?)Receita\s+Bruta\s+Informada\s*:?\s*R\$\s*([\d.]+,\d{2})/i);
+    if (!descMatch) continue;
+    const descricao = String(descMatch[1] || "").trim().replace(/\s+/g, " ");
+    const receita = parseDecimal(descMatch[2]) ?? 0;
+    if (!receita) continue;
+
+    const { categoria, subcategoria } = classifyAtividade(descricao);
+    atividades.push({ descricao, receita, categoria, subcategoria });
+  }
+
+  let receitaServicos = 0;
+  let receitaVendasSemST = 0;
+  let receitaVendasComST = 0;
+  let receitaOutros = 0;
+  for (const a of atividades) {
+    if (a.categoria === "servico") {
+      receitaServicos += a.receita;
+    } else if (a.categoria === "venda") {
+      if (a.subcategoria === "com_st") receitaVendasComST += a.receita;
+      else receitaVendasSemST += a.receita;
+    } else {
+      receitaOutros += a.receita;
+    }
+  }
+  const receitaVendas = receitaVendasSemST + receitaVendasComST;
+  return { receitaServicos, receitaVendas, receitaVendasSemST, receitaVendasComST, receitaOutros, atividades };
+}
+
 async function parsePgdasDeclarationPdf(buffer) {
   const pdfParse = (await import("pdf-parse")).default;
   const pdfData = await pdfParse(buffer);
   const rawText = String(pdfData?.text || "");
 
-  const activityDescription =
-    rawText.match(/Valor do Débito por Tributo para a Atividade \(R\$\):\s*([\s\S]*?)\s*Receita Bruta Informada:/i)?.[1] || "";
-
+  // 1) Receita Bruta total — vem do header (seção 2.1 Discriminativo de Receitas)
   const receitaBruta = extractMoneyFromTextByPatterns(rawText, [
     /Receita Bruta do PA \(RPA\) - Compet[êe]ncia\s+(\d+[\d.]*,\d{2})\s+\d+[\d.]*,\d{2}\s+\d+[\d.]*,\d{2}/i,
+    /Receita\s+Bruta\s+do\s+PA[^\d]{0,40}(\d+[\d.]*,\d{2})/i,
     /Receita Bruta Informada:\s*R\$\s*(\d+[\d.]*,\d{2})/i,
     /receita\s+bruta[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
     /total\s+de\s+receitas?[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
     /receita\s+total[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
   ]);
 
-  // Tabela de tributos — suporta colunas sem espaço (pdf-parse concatena): "IRPJCSLLTotal\n25,20...630,00"
-  // \s* entre nomes de coluna para funcionar com ou sem espaços entre elas
+  // 2) Imposto apurado (total do DAS) — preservado igual: tabela de tributos / Principal+Multa+Juros / Valor Total do Documento
   let impostoApurado = null;
   const tributoTableMatch = rawText.match(
     /IRPJ\s*CSLL\s*COFINS\s*PIS\S*Pasep\s*INSS\S*CPP\s*ICMS\s*IPI\s*ISS\s*Total\s*([\d.,]+)/i
   );
   if (tributoTableMatch?.[1]) {
-    // Extrai todos os valores monetários da linha concatenada e pega o último (Total)
     const values = tributoTableMatch[1].match(/\d+(?:\.\d{3})*,\d{2}/g);
-    if (values && values.length > 0) {
-      impostoApurado = parseDecimal(values[values.length - 1]);
-    }
+    if (values && values.length > 0) impostoApurado = parseDecimal(values[values.length - 1]);
   }
-
-  // Fallback: "Principal 630,00 Multa 0,00 Juros 0,00 Total 630,00" (seção 6 do extrato)
-  // \s* para funcionar com ou sem espaços (pdf-parse às vezes concatena)
   if (impostoApurado == null) {
     impostoApurado = extractMoneyFromTextByPatterns(rawText, [
       /Principal\s*\d+[\d.]*,\d{2}\s*Multa\s*\d+[\d.]*,\d{2}\s*Juros\s*\d+[\d.]*,\d{2}\s*Total\s*(\d+[\d.]*,\d{2})/i,
     ]);
   }
-
-  // Fallback: DAS — "Valor Total do Documento" seguido do valor
   if (impostoApurado == null) {
     impostoApurado = extractMoneyFromTextByPatterns(rawText, [
       /Valor\s+Total\s+do\s+Documento\s*\n\s*(\d+[\d.]*,\d{2})/i,
       /Valor\s+Total\s+do\s+Documento\s+(\d+[\d.]*,\d{2})/i,
     ]);
   }
-
-  // Fallback: DAS — linha "Totais X,XX X,XX" captura o último valor (coluna Total)
   if (impostoApurado == null) {
     const totaisMatch = rawText.match(/^Totais\s+([\d.,]+)/im);
     if (totaisMatch?.[1]) {
       const values = totaisMatch[1].match(/\d+(?:\.\d{3})*,\d{2}/g);
-      if (values && values.length > 0) {
-        impostoApurado = parseDecimal(values[values.length - 1]);
-      }
+      if (values && values.length > 0) impostoApurado = parseDecimal(values[values.length - 1]);
     }
   }
 
-  let receitaServicos = extractMoneyFromTextByPatterns(rawText, [
-    /receita[^\n]{0,40}servi[cç]os?[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-    /prest[aã]?[cç][aã]o\s+de\s+servi[cç]os?[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-  ]) ?? 0;
-
-  let receitaVendas = extractMoneyFromTextByPatterns(rawText, [
-    /receita[^\n]{0,40}vendas?[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-    /revenda\s+de\s+mercadorias?[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-    /com[ée]rcio[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
-  ]) ?? 0;
-
-  if (receitaBruta != null && receitaServicos === 0 && receitaVendas === 0) {
-    if (/prest[aã]?[cç][aã]o\s+de\s+servi[cç]os/i.test(activityDescription)) {
-      receitaServicos = receitaBruta;
-    } else if (/revenda\s+de\s+mercadorias|com[ée]rcio/i.test(activityDescription)) {
-      receitaVendas = receitaBruta;
-    }
-  }
+  // 3) NOVO: iteração de blocos de atividade com classificação serviço/venda(sem_st/com_st)/outro
+  const {
+    receitaServicos,
+    receitaVendas,
+    receitaVendasSemST,
+    receitaVendasComST,
+    receitaOutros,
+    atividades,
+  } = parseAtividadesPgdas(rawText);
 
   return {
     receitaBruta,
     impostoApurado,
-    receitaServicos,
-    receitaVendas,
+    receitaServicos,         // agregado de todos os blocos de Prestação de Serviços
+    receitaVendas,           // soma total de vendas (= semST + comST), mantido para compat
+    receitaVendasSemST,      // vendas sem substituição tributária
+    receitaVendasComST,      // vendas com substituição tributária (ICMS-ST)
+    receitaOutros,           // locação, exportação, etc. (não vai pra serviços nem vendas)
+    atividades,              // [{ descricao, receita, categoria, subcategoria }] — auditoria
     rawText,
   };
 }
@@ -509,6 +592,24 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
     const dasTotal = parsedPgdas.impostoApurado ?? null;
     const receitaServicos = parsedPgdas.receitaServicos || 0;
     const receitaVendas = parsedPgdas.receitaVendas || 0;
+    const receitaVendasSemST = parsedPgdas.receitaVendasSemST || 0;
+    const receitaVendasComST = parsedPgdas.receitaVendasComST || 0;
+    const receitaOutros = parsedPgdas.receitaOutros || 0;
+
+    // Validação de consistência: soma das atividades deve bater com o header.
+    // Warn (não bloqueia) quando diverge — pode indicar bloco perdido pelo parser.
+    if (receitaBruta != null) {
+      const soma = receitaServicos + receitaVendas + receitaOutros;
+      const diff = Math.abs(receitaBruta - soma);
+      if (diff > 0.02) {
+        // (log pode não estar definido no escopo deste service; usa console.warn como fallback seguro)
+        // eslint-disable-next-line no-console
+        console.warn("[PGDAS-D] divergência entre Receita Bruta do header e soma das atividades", {
+          portalClientId: company.id, competencia: competenciaStorage,
+          receitaBruta, soma, diff, atividades: parsedPgdas.atividades,
+        });
+      }
+    }
 
     const updated = await prisma.companyMonthlyCircular.update({
       where: { id: circular.id },
@@ -516,6 +617,8 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
         receitaBruta,
         receitaServicos,
         receitaVendas,
+        receitaVendasSemST,
+        receitaVendasComST,
         dasTotal,
         dasNumeroDocumento: dasIndex?.numeroDocumento || null,
         dasPago: dasIndex?.dasPago ?? null,

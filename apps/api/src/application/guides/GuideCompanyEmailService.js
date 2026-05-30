@@ -6,6 +6,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
 import { guideTypeEmailLabel } from "./guideEmailCopy.js";
+import { resolveCompanyNotificationEmail } from "./GuideScheduledEmailService.js";
 
 function safeTempName(name) {
   return String(name || "guia.pdf").replace(/[\\/]+/g, "-");
@@ -190,6 +191,148 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
           }
         })
       );
+      if (tmpDir && fssync.existsSync(tmpDir)) {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    } catch {
+      // noop
+    }
+  }
+}
+
+/**
+ * Envia 1 e-mail por empresa com TODAS as guias pendentes da competência informada.
+ *
+ * Variante de `sendLatestGuidesEmailByCompany` que aceita competência explícita
+ * (em vez de inferir a "última"). Usado pela página "Envio de e-mails em lote".
+ *
+ * - Busca todas as guides PROCESSED dessa competência com emailStatus PENDING ou ERROR.
+ * - Resolve destinatário via `resolveCompanyNotificationEmail` (cascata configurada).
+ * - Anexa cada PDF como anexo separado.
+ * - Após envio bem-sucedido, marca todas como SENT.
+ * - Em falha, marca como ERROR + emailLastError.
+ *
+ * @param {{ portalClientId: string, competencia: string }} params
+ * @returns {Promise<object>} status + counts
+ */
+export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
+  const startedAt = Date.now();
+  if (!portalClientId) {
+    const err = new Error("portal_client_id_required");
+    err.code = "PORTAL_CLIENT_ID_REQUIRED";
+    throw err;
+  }
+  if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+    const err = new Error("competencia_invalida");
+    err.code = "COMPETENCIA_INVALIDA";
+    throw err;
+  }
+
+  const portal = await prisma.portalClient.findUnique({
+    where: { id: String(portalClientId) },
+    select: { id: true, razao: true, cnpj: true },
+  });
+  if (!portal?.id) {
+    const err = new Error("portal_company_not_found");
+    err.code = "PORTAL_COMPANY_NOT_FOUND";
+    throw err;
+  }
+
+  const to = await resolveCompanyNotificationEmail(portal.id);
+  if (!to) {
+    const err = new Error("company_email_not_found");
+    err.code = "COMPANY_EMAIL_NOT_FOUND";
+    throw err;
+  }
+
+  // Busca guides PENDING/ERROR da competência específica.
+  const guides = await prisma.guide.findMany({
+    where: {
+      portalClientId: portal.id,
+      competencia,
+      status: "PROCESSED",
+      emailStatus: { in: ["PENDING", "ERROR"] },
+    },
+    orderBy: { updatedAt: "asc" },
+  });
+  if (!guides.length) {
+    return {
+      companyId: portal.id,
+      to,
+      competencia,
+      totalFound: 0,
+      sentNow: 0,
+      status: "nothing_to_send",
+      durationMs: Date.now() - startedAt,
+    };
+  }
+
+  // Marca como SENDING antes de tentar enviar (evita race com outros workers).
+  const guideIds = guides.map((g) => g.id);
+  await prisma.guide.updateMany({
+    where: { id: { in: guideIds } },
+    data: { emailStatus: "SENDING", emailLastError: null, emailNextRetryAt: null, emailAttempts: { increment: 1 } },
+  });
+
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-batch-email-"));
+  const attachments = [];
+  let attachmentsBytes = 0;
+  const email = new EmailService();
+
+  try {
+    for (const guide of guides) {
+      // eslint-disable-next-line no-await-in-loop
+      const buffer = await getGuidePdfBuffer(guide);
+      if (!buffer?.length) {
+        throw new Error(`guide_pdf_missing:${guide.id}`);
+      }
+      attachmentsBytes += Number(buffer.length || 0);
+      const name = safeTempName(guide.sourcePath || `${guide.tipo}-${guide.competencia}.pdf`);
+      const tmpPath = path.join(tmpDir, `${guide.id}-${name}`);
+      // eslint-disable-next-line no-await-in-loop
+      await fs.writeFile(tmpPath, buffer);
+      attachments.push({ path: tmpPath, filename: name });
+    }
+
+    const typeLabels = guides.map((g) => guideTypeEmailLabel(g.tipo));
+    const uniqueLabels = [...new Set(typeLabels)];
+    const subject = uniqueLabels.length === 1
+      ? `Sua guia de ${uniqueLabels[0]} — ${competencia}`
+      : `Suas guias — ${competencia}`;
+    const html = buildEmailHtml({ razao: portal.razao, competencia, typeLabels });
+    await email.send({ to, subject, html, attachments });
+
+    const sentAt = new Date();
+    await prisma.guide.updateMany({
+      where: { id: { in: guideIds } },
+      data: { emailStatus: "SENT", emailSentAt: sentAt, emailLastError: null, emailNextRetryAt: null },
+    });
+
+    return {
+      companyId: portal.id,
+      to,
+      competencia,
+      totalFound: guides.length,
+      sentNow: guides.length,
+      attachmentsCount: guides.length,
+      attachmentsBytes,
+      durationMs: Date.now() - startedAt,
+      status: "sent",
+    };
+  } catch (err) {
+    await prisma.guide.updateMany({
+      where: { id: { in: guideIds } },
+      data: { emailStatus: "ERROR", emailLastError: err?.message || "guide_email_send_failed" },
+    });
+    const sendErr = new Error(err?.message || "guide_email_send_failed");
+    sendErr.code = err?.code || "GUIDE_EMAIL_SEND_FAILED";
+    sendErr.meta = { companyId: portal.id, to, competencia, attachmentsCount: guides.length, durationMs: Date.now() - startedAt };
+    throw sendErr;
+  } finally {
+    try {
+      await Promise.all(attachments.map(async (item) => {
+        if (item?.path && fssync.existsSync(item.path)) await fs.unlink(item.path);
+      }));
       if (tmpDir && fssync.existsSync(tmpDir)) {
         await fs.rm(tmpDir, { recursive: true, force: true });
       }

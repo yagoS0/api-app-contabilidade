@@ -118,7 +118,7 @@ export async function listGuidesByCompany({
     ...(competencia ? { competencia: normalizeCompetencia(competencia) } : {}),
     ...(status ? { status: String(status).toUpperCase() } : {}),
   };
-  const [items, total] = await prisma.$transaction([
+  const [rawItems, total] = await prisma.$transaction([
     prisma.guide.findMany({
       where,
       orderBy: { updatedAt: "desc" },
@@ -127,6 +127,43 @@ export async function listGuidesByCompany({
     }),
     prisma.guide.count({ where }),
   ]);
+
+  // Enriquecimento: para guias SIMPLES, o valor MOSTRADO ao contador é o do extrato PGDAS-D
+  // (CompanyMonthlyCircular.dasTotal — imutável após 1ª captura), não o do PDF de cobrança
+  // (que pode ter sido recalculado pelo SERPRO com juros/multa). O valor recalculado fica
+  // exposto separadamente em `valorRecalculado` para badge "↻".
+  const simplesCompetencias = [
+    ...new Set(
+      rawItems
+        .filter((g) => String(g.tipo || "").toUpperCase() === "SIMPLES" && g.competencia)
+        .map((g) => g.competencia)
+    ),
+  ];
+  let circularByComp = new Map();
+  if (simplesCompetencias.length > 0) {
+    const circulars = await prisma.companyMonthlyCircular.findMany({
+      where: { portalClientId: String(portalClientId), competencia: { in: simplesCompetencias } },
+      select: { competencia: true, dasTotal: true },
+    });
+    circularByComp = new Map(circulars.map((c) => [c.competencia, c]));
+  }
+  const items = rawItems.map((g) => {
+    if (String(g.tipo || "").toUpperCase() !== "SIMPLES") return g;
+    const circ = circularByComp.get(g.competencia);
+    const extratoValor = circ?.dasTotal != null ? Number(circ.dasTotal) : null;
+    const guideOriginal = g.valorOriginal != null ? Number(g.valorOriginal) : null;
+    const valorOriginal = extratoValor != null ? extratoValor : guideOriginal;
+    const valorAtual = g.valor != null ? Number(g.valor) : null;
+    if (valorOriginal == null) return g; // sem fonte de truth; mantém o valor do PDF
+    const recalculado = valorAtual != null && Math.abs(valorAtual - valorOriginal) > 0.01;
+    return {
+      ...g,
+      // Sobrescreve o valor exibido para o original do extrato; valorRecalculado fica disponível pra badge
+      valor: valorOriginal,
+      valorRecalculado: recalculado ? valorAtual : null,
+    };
+  });
+
   return { items, total, page: pageNum, limit: take };
 }
 
@@ -184,6 +221,7 @@ export function toGuideResponse(item) {
     competencia: item.competencia || null,
     tipo: item.tipo,
     valor: item.valor ? Number(item.valor) : null,
+    valorRecalculado: item.valorRecalculado != null ? Number(item.valorRecalculado) : null,
     vencimento: item.vencimento ? new Date(item.vencimento).toISOString() : null,
     status: item.status,
     emailStatus: item.emailStatus || null,
@@ -356,13 +394,37 @@ export async function createOrUpdateGuideFromProcessing({
     data.storageUrl = storageUrl || null;
   }
 
+  let savedGuide;
   if (existingGuideId) {
-    return prisma.guide.update({
+    // valorOriginal NÃO é incluído no update — preservado da 1ª captura mesmo se SERPRO recalcular.
+    savedGuide = await prisma.guide.update({
       where: { id: String(existingGuideId) },
       data,
     });
+  } else {
+    // Na criação, valorOriginal = valor (mesmo número da 1ª captura, imutável depois).
+    savedGuide = await prisma.guide.create({
+      data: {
+        ...data,
+        valorOriginal: data.valor,
+      },
+    });
   }
-  return prisma.guide.create({ data });
+
+  // Hook Q5: toda guia PROCESSED gera AccountingEntry tipo=PROVISAO (best-effort, não bloqueante).
+  // INSS e SIMPLES são pulados pelo service (decisões do usuário).
+  if (savedGuide?.status === "PROCESSED" && savedGuide?.portalClientId) {
+    try {
+      const { generateProvisionsFromGuide } = await import("../accounting/GuideToProvisionService.js");
+      await generateProvisionsFromGuide({ guideId: savedGuide.id });
+    } catch (provErr) {
+      // Não derruba o fluxo principal — gerar entry é melhoria, não pré-requisito.
+      // eslint-disable-next-line no-console
+      console.warn("[GuideToProvision] Falha ao gerar provisão a partir da guia", savedGuide.id, provErr?.message || provErr);
+    }
+  }
+
+  return savedGuide;
 }
 
 export function buildGuideFinalFileName(parsed) {

@@ -24,8 +24,10 @@ export function CompaniesHomePage({
   onOpenFirmSettings,
   onRefreshCompanies,
   onOpenPendingReport,
+  onOpenBatchEmail,
   onLogout,
   onOpenCompany,
+  globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
   message,
   error,
 }) {
@@ -88,9 +90,62 @@ export function CompaniesHomePage({
             </div>
           </header>
 
+          {globalChartStatus && !globalChartStatus.isConfigured && (
+            <div
+              role="alert"
+              style={{
+                margin: "12px 0",
+                padding: "10px 14px",
+                borderRadius: 8,
+                background: "rgba(255,179,71,0.15)",
+                border: "1px solid #FFB347",
+                color: "#FFB347",
+                fontSize: "0.875rem",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <span>
+                ⚠ <strong>Plano de contas global incompleto</strong>. Antes de criar novas empresas,
+                cadastre contas dos tipos:{" "}
+                <strong>{(globalChartStatus.tiposFaltantes || []).join(", ") || "—"}</strong>.
+              </span>
+              {onOpenFirmSettings && (
+                <Button variant="secondary" onClick={onOpenFirmSettings}>
+                  Abrir Configurações
+                </Button>
+              )}
+            </div>
+          )}
+
           <nav className="dashboard-home__actions" aria-label="Atalhos">
-            <Button variant="success" className="dashboard-home__action dashboard-home__action--success" onClick={onCreateCompany}>
+            <Button
+              variant="success"
+              className="dashboard-home__action dashboard-home__action--success"
+              onClick={() => {
+                if (globalChartStatus && !globalChartStatus.isConfigured) {
+                  const faltantes = (globalChartStatus.tiposFaltantes || []).join(", ");
+                  window.alert(
+                    "Configure o plano de contas global antes de criar empresas.\n\n"
+                    + `Faltam contas dos tipos: ${faltantes}.\n\n`
+                    + "Acesse: Configurações da Firma → Plano de Contas Global."
+                  );
+                  return;
+                }
+                onCreateCompany();
+              }}
+              title={
+                globalChartStatus && !globalChartStatus.isConfigured
+                  ? "Plano de contas global incompleto — configure antes de criar empresas"
+                  : undefined
+              }
+            >
               Nova empresa
+              {globalChartStatus && !globalChartStatus.isConfigured && (
+                <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
+              )}
             </Button>
             {onOpenFirmSettings && (
               <Button variant="secondary" className="dashboard-home__action" onClick={onOpenFirmSettings}>
@@ -108,8 +163,13 @@ export function CompaniesHomePage({
             >
               {loadingCompanies ? "Atualizando…" : "Atualizar lista"}
             </Button>
+            {onOpenBatchEmail && (
+              <Button variant="success" className="dashboard-home__action dashboard-home__action--success" onClick={onOpenBatchEmail}>
+                Envio de e-mails em lote
+              </Button>
+            )}
             <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenPendingReport}>
-              Pendências de e-mail
+              Pendências (debug)
             </Button>
           </nav>
 

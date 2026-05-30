@@ -911,6 +911,15 @@
   color: #aeb6d3;
 }
 
+/* PARC_DAS — empresa com parcelamento Simples Nacional ativo.
+   Laranja para destacar visualmente como categoria especial (não é OK nem MISS). */
+.compliance-tag--accent {
+  color: #ffb347;
+  border-color: rgba(255, 179, 71, 0.32);
+  background: rgba(255, 179, 71, 0.08);
+  font-weight: 700;
+}
+
 .company-tile__action {
   width: 100%;
   min-height: 36px;

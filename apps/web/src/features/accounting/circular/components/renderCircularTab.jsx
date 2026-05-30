@@ -3,17 +3,37 @@ import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
 
-const SUBTIPO_ROWS = [
-  { key: "DAS",             label: "DAS / Simples Nacional" },
-  { key: "INSS",            label: "INSS / CPP" },
-  { key: "IRRF",            label: "IRRF" },
-  { key: "ISS",             label: "ISS" },
-  { key: "PIS_COFINS",      label: "PIS/COFINS" },
-  { key: "FGTS",            label: "FGTS" },
-  { key: "FERIAS",          label: "Férias" },
-  { key: "DECIMO_TERCEIRO", label: "13º Salário" },
-  { key: "OUTROS_TRIBUTOS", label: "Outros Tributos" },
+// Subtipos universais + flag de regimes que os exibem.
+// "all" = qualquer regime; array = só esses regimes.
+// Simples NÃO tem IRPJ/CSLL/PIS_COFINS/ISS (esses são exclusivos de Presumido/Real).
+// Presumido/Real NÃO tem DAS (esse é exclusivo de Simples).
+const SUBTIPO_ROWS_ALL = [
+  { key: "DAS",             label: "DAS / Simples Nacional",        regimes: ["SIMPLES"] },
+  // PARC_DAS — parcelamento Simples Nacional. Aparece logo abaixo de DAS por proximidade temática.
+  // Só faz sentido para empresas regime SIMPLES (que pagam DAS via Simples Nacional).
+  { key: "PARC_DAS",        label: "Parc. Simples Nacional",        regimes: ["SIMPLES"] },
+  { key: "IRPJ",            label: "IRPJ",                          regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
+  { key: "CSLL",            label: "CSLL",                          regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
+  { key: "PIS_COFINS",      label: "PIS/COFINS",                    regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
+  { key: "ISS",             label: "ISS",                           regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
+  { key: "INSS",            label: "INSS / CPP",                    regimes: "all" },
+  { key: "IRRF",            label: "IRRF",                          regimes: "all" },
+  { key: "FGTS",            label: "FGTS",                          regimes: "all" },
+  { key: "FERIAS",          label: "Férias",                        regimes: "all" },
+  { key: "DECIMO_TERCEIRO", label: "13º Salário",                   regimes: "all" },
+  { key: "OUTROS_TRIBUTOS", label: "Outros Tributos",               regimes: "all" },
 ];
+
+function getSubtipoRowsForRegime(regime) {
+  const r = String(regime || "").trim().toUpperCase();
+  if (!r) return SUBTIPO_ROWS_ALL;  // sem regime conhecido → mostra tudo (fallback)
+  return SUBTIPO_ROWS_ALL.filter(
+    (row) => row.regimes === "all" || row.regimes.includes(r),
+  );
+}
+
+// Mantido como fallback para código legado que ainda importava esta constante.
+const SUBTIPO_ROWS = SUBTIPO_ROWS_ALL;
 
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
@@ -46,13 +66,35 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
       valor: String(Number(l.valor || 0).toFixed(2)),
     })),
   });
+  const [saveError, setSaveError] = useState(null);
 
   const isDuplicate = hasDuplicateAccountAcrossSides(form.lines);
   const subtipoLabel = SUBTIPO_ROWS.find((r) => r.key === entry.subtipo)?.label || entry.subtipo || "Lançamento";
 
+  // Detecta linhas com conta vazia — ajuda o contador a entender por que o save vai falhar.
+  const linesWithEmptyConta = form.lines.filter((l) => !String(l.conta || "").trim()).length;
+  const linesWithoutValor = form.lines.filter((l) => {
+    const v = parseFloat(String(l.valor || "0").replace(",", "."));
+    return !Number.isFinite(v) || v <= 0;
+  }).length;
+
   async function handleSave() {
     if (isDuplicate) return;
-    await onSave(form);
+    setSaveError(null);
+    if (linesWithEmptyConta > 0) {
+      setSaveError(`Há ${linesWithEmptyConta} linha(s) sem código de conta. Preencha as contas antes de salvar.`);
+      return;
+    }
+    if (linesWithoutValor > 0) {
+      setSaveError(`Há ${linesWithoutValor} linha(s) sem valor (ou com valor ≤ 0).`);
+      return;
+    }
+    try {
+      // passa também o eventType (pra backend memorizar D/C no AccountingHistorico)
+      await onSave({ ...form, eventType: entry.eventType || null });
+    } catch (err) {
+      setSaveError(err?.message || "Falha ao salvar lançamento.");
+    }
   }
 
   return (
@@ -146,6 +188,15 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
               Débito e crédito não podem usar a mesma conta.
             </div>
           )}
+          {saveError && (
+            <div style={{
+              color: "#FF4757", fontSize: "0.8125rem", fontWeight: 600,
+              padding: "8px 10px", borderRadius: 6,
+              background: "rgba(255, 71, 87, 0.12)", border: "1px solid #FF4757",
+            }}>
+              {saveError}
+            </div>
+          )}
 
           {/* Actions */}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -185,7 +236,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
     return (
       <td style={{
         padding: "6px 4px", textAlign: "center", fontSize: "0.75rem",
-        color: "#d1d5db", borderRight: "1px solid #e5e7eb",
+        color: "#44475A", borderRight: "1px solid #44475A",
       }}>
         —
       </td>
@@ -195,21 +246,21 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
   // Placeholder (TEMPLATE sem valor)
   if (entry.placeholder || entry.origem === "TEMPLATE") {
     return (
-      <td style={{ background: "#fffbeb", padding: "5px 4px", textAlign: "center", borderRight: "1px solid #e5e7eb", minWidth: 80 }}>
+      <td style={{ background: "rgba(255, 179, 71, 0.10)", padding: "5px 4px", textAlign: "center", borderRight: "1px solid #44475A", minWidth: 80 }}>
         <span style={{
           display: "inline-block", fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.04em",
           textTransform: "uppercase", padding: "1px 5px", borderRadius: 999,
-          background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d",
+          background: "rgba(255, 179, 71, 0.20)", color: "#FFB347", border: "1px solid #FFB347",
         }}>
           PREENCHER
         </span>
-        <div style={{ fontSize: "0.65rem", color: "#92400e", marginTop: 2 }}>sem valor</div>
+        <div style={{ fontSize: "0.65rem", color: "#FFB347", marginTop: 2 }}>sem valor</div>
         {onEdit && (
           <button
             onClick={() => onEdit(entry)}
             style={{
               marginTop: 3, fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
-              background: "#92400e", color: "white", border: "none",
+              background: "#FFB347", color: "#1A1B26", border: "none",
               borderRadius: 3, padding: "2px 6px",
             }}
           >
@@ -221,17 +272,17 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
   }
 
   const isAberto = entry.statusPagamento === "ABERTO";
-  const bg          = isAberto ? "#fef2f2" : "#f0fdf4";
-  const badgeBg     = isAberto ? "#fee2e2" : "#dcfce7";
-  const badgeColor  = isAberto ? "#dc2626" : "#16a34a";
-  const badgeBorder = isAberto ? "#fca5a5" : "#86efac";
+  const bg          = isAberto ? "rgba(255, 71, 87, 0.10)" : "rgba(105, 255, 71, 0.08)";
+  const badgeBg     = isAberto ? "rgba(255, 71, 87, 0.20)" : "rgba(105, 255, 71, 0.20)";
+  const badgeColor  = isAberto ? "#FF4757" : "#69FF47";
+  const badgeBorder = isAberto ? "#FF4757" : "#69FF47";
   const badgeLabel  = isAberto ? "ABERTO" : "PAGO";
   const baixaId     = !isAberto ? (entry.baixas?.[0]?.id ?? null) : null;
   const isCancelling = cancellingBaixaId === baixaId;
   const isSynthetic = entry.synthetic === true;
 
   return (
-    <td style={{ background: bg, padding: "5px 4px", textAlign: "center", borderRight: "1px solid #e5e7eb", minWidth: 80 }}>
+    <td style={{ background: bg, padding: "5px 4px", textAlign: "center", borderRight: "1px solid #44475A", minWidth: 80, color: "#F8F8F2" }}>
       <span style={{
         display: "inline-block", fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.04em",
         textTransform: "uppercase", padding: "1px 5px", borderRadius: 999,
@@ -239,19 +290,19 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
       }}>
         {badgeLabel}
       </span>
-      <div style={{ fontSize: "0.7rem", fontWeight: 700, marginTop: 2, whiteSpace: "nowrap" }}>
+      <div style={{ fontSize: "0.7rem", fontWeight: 700, marginTop: 2, whiteSpace: "nowrap", color: "#F8F8F2" }}>
         {fmtMoney(entry.valor || entry.totalD) ? `R$ ${fmtMoney(entry.valor || entry.totalD)}` : "—"}
       </div>
       {entry.recalculatedAt && entry.recalculatedToValor != null && (
         <div
-          style={{ fontSize: "0.6rem", fontWeight: 700, color: "#92400e", whiteSpace: "nowrap", marginTop: 1 }}
+          style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap", marginTop: 1 }}
           title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)}. Valor original do lançamento: R$ ${fmtMoney(entry.recalculatedFromValor)}. Valor atualizado: R$ ${fmtMoney(entry.recalculatedToValor)}.`}
         >
           ↻ R$ {fmtMoney(entry.recalculatedToValor)}
         </div>
       )}
       {isSynthetic && (
-        <div style={{ fontSize: "0.55rem", color: "#6b7280", marginTop: 3, fontStyle: "italic" }}>
+        <div style={{ fontSize: "0.55rem", color: "#aeb6d3", marginTop: 3, fontStyle: "italic" }}>
           via guia SERPRO
         </div>
       )}
@@ -261,7 +312,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
             onClick={() => onEdit(entry)}
             style={{
               fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
-              background: "#6272A4", color: "white", border: "none",
+              background: "#BD93F9", color: "#1A1B26", border: "none",
               borderRadius: 3, padding: "2px 5px",
             }}
           >
@@ -273,7 +324,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
             onClick={() => onBaixa(entry)}
             style={{
               fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
-              background: "#dc2626", color: "white", border: "none",
+              background: "#FF4757", color: "white", border: "none",
               borderRadius: 3, padding: "2px 5px", whiteSpace: "nowrap",
             }}
           >
@@ -286,13 +337,13 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
               <button
                 onClick={() => { setConfirmCancel(false); onCancelBaixa(baixaId); }}
                 disabled={isCancelling}
-                style={{ fontSize: "0.55rem", fontWeight: 800, cursor: "pointer", background: "#dc2626", color: "white", border: "none", borderRadius: 3, padding: "2px 5px" }}
+                style={{ fontSize: "0.55rem", fontWeight: 800, cursor: "pointer", background: "#FF4757", color: "white", border: "none", borderRadius: 3, padding: "2px 5px" }}
               >
                 {isCancelling ? "..." : "Sim"}
               </button>
               <button
                 onClick={() => setConfirmCancel(false)}
-                style={{ fontSize: "0.55rem", fontWeight: 700, cursor: "pointer", background: "#44475A", color: "white", border: "none", borderRadius: 3, padding: "2px 5px" }}
+                style={{ fontSize: "0.55rem", fontWeight: 700, cursor: "pointer", background: "#44475A", color: "#F8F8F2", border: "none", borderRadius: 3, padding: "2px 5px" }}
               >
                 Não
               </button>
@@ -302,7 +353,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
               onClick={() => setConfirmCancel(true)}
               style={{
                 fontSize: "0.55rem", fontWeight: 700, cursor: "pointer",
-                background: "#44475A", color: "#d1d5db", border: "none",
+                background: "#44475A", color: "#aeb6d3", border: "none",
                 borderRadius: 3, padding: "2px 5px", whiteSpace: "nowrap",
               }}
             >
@@ -317,260 +368,18 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaI
 
 function FaturamentoCell({ valor }) {
   return (
-    <td style={{ padding: "6px 4px", textAlign: "center", fontSize: "0.75rem", borderRight: "1px solid #e5e7eb" }}>
+    <td style={{ padding: "6px 4px", textAlign: "center", fontSize: "0.75rem", borderRight: "1px solid #44475A" }}>
       {valor ? (
-        <span style={{ fontWeight: 700, color: "#1d4ed8" }}>R$ {fmtMoney(valor)}</span>
+        <span style={{ fontWeight: 700, color: "#8BE9FD" }}>R$ {fmtMoney(valor)}</span>
       ) : (
-        <span style={{ color: "#d1d5db" }}>—</span>
+        <span style={{ color: "#44475A" }}>—</span>
       )}
     </td>
   );
 }
 
-// ─── Operational Block ───────────────────────────────────────────────────────
-
-const ACTION_LABELS = {
-  search_guides: "Buscar Guias",
-  check_payments: "Verificar Pagtos",
-  sync_inss: "Sincronizar INSS",
-};
-
-const STATUS_STYLES = {
-  completed: { bg: "#ecfdf5", border: "#a7f3d0", color: "#065f46", badge: "#dcfce7", badgeBorder: "#86efac", label: "Concluído" },
-  skipped:   { bg: "#fffbeb", border: "#fcd34d", color: "#92400e", badge: "#fef3c7", badgeBorder: "#fcd34d", label: "Ignorado" },
-  failed:    { bg: "#fef2f2", border: "#fecaca", color: "#991b1b", badge: "#fee2e2", badgeBorder: "#fca5a5", label: "Falhou" },
-  running:   { bg: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8", badge: "#dbeafe", badgeBorder: "#93c5fd", label: "Em execução" },
-};
-
-function fmtDatetime(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function buildExecutionSummary(entry) {
-  if (entry.action === "search_guides") {
-    const parts = [];
-    if (entry.guidesFound != null) parts.push(`${entry.guidesFound} encontradas`);
-    if (entry.guidesCaptured != null) parts.push(`${entry.guidesCaptured} capturadas`);
-    if (entry.entriesGenerated != null && entry.entriesGenerated > 0) parts.push(`${entry.entriesGenerated} lançamentos`);
-    return parts.join(" · ") || null;
-  }
-  if (entry.action === "check_payments") {
-    if (entry.guidesChecked == null) return null;
-    return `${entry.guidesChecked} verificadas · ${entry.guidesPaid ?? 0} pagas · ${entry.guidesOverdue ?? 0} vencidas · ${entry.guidesOpen ?? 0} abertas`;
-  }
-  if (entry.action === "sync_inss") {
-    const parts = [];
-    if (entry.guidesFound != null) parts.push(`${entry.guidesFound} encontradas`);
-    if (entry.guidesCaptured != null) parts.push(`${entry.guidesCaptured} capturadas`);
-    return parts.join(" · ") || null;
-  }
-  return null;
-}
-
-// Notificações temporárias: somem após 30s e mostram no máximo 5
-const TOAST_TTL_MS = 30_000;
-const TOAST_MAX = 5;
-
-function ExecutionHistoryPanel({ executions, loadingExecutions }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Mostra apenas execuções dos últimos 30s, máximo 5 (mais recentes primeiro)
-  const visible = useMemo(() => {
-    if (!Array.isArray(executions)) return [];
-    const cutoff = now - TOAST_TTL_MS;
-    return executions
-      .filter((e) => {
-        const t = e?.startedAt ? new Date(e.startedAt).getTime() : 0;
-        return Number.isFinite(t) && t >= cutoff;
-      })
-      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-      .slice(0, TOAST_MAX);
-  }, [executions, now]);
-
-  if (loadingExecutions) return null;
-  if (visible.length === 0) return null;
-
-  return (
-    <div style={{ border: "1px solid #44475A", borderRadius: 6, background: "#1A1B26", marginBottom: 0, overflow: "hidden" }}>
-      <div style={{ padding: "10px 16px", borderBottom: "1px solid #44475A", background: "#1A1B26", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2" }}>Execuções recentes</span>
-        <span style={{ fontSize: "0.7rem", color: "#6272A4" }}>somem após 30s · máx. 5</span>
-      </div>
-      <div style={{ display: "grid" }}>
-        {visible.map((entry) => {
-          const st = STATUS_STYLES[entry.status] || STATUS_STYLES.failed;
-          const summary = buildExecutionSummary(entry);
-          return (
-            <div key={entry.id} style={{
-              display: "grid",
-              gridTemplateColumns: "auto 1fr auto",
-              gap: "6px 12px",
-              alignItems: "start",
-              padding: "10px 16px",
-              borderBottom: "1px solid #2d2f4a",
-              background: "#1A1B26",
-            }}>
-              <div style={{ paddingTop: 1 }}>
-                <span style={{
-                  display: "inline-block", fontSize: "0.6rem", fontWeight: 800,
-                  letterSpacing: "0.04em", textTransform: "uppercase",
-                  padding: "2px 6px", borderRadius: 999,
-                  background: st.badge, color: st.color, border: `1px solid ${st.badgeBorder}`,
-                  whiteSpace: "nowrap",
-                }}>
-                  {st.label}
-                </span>
-              </div>
-              <div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2" }}>
-                    {ACTION_LABELS[entry.action] || entry.action}
-                  </span>
-                  <span style={{ fontSize: "0.75rem", color: "#6272A4" }}>{entry.competencia}</span>
-                </div>
-                {summary && (
-                  <div style={{ fontSize: "0.75rem", color: "#6272A4", marginTop: 2 }}>{summary}</div>
-                )}
-                {entry.skipReason && (
-                  <div style={{ fontSize: "0.75rem", color: "#92400e", marginTop: 2 }}>
-                    Motivo: {entry.skipReason.replace(/_/g, " ")}
-                  </div>
-                )}
-                {entry.errorMessage && (
-                  <div style={{ fontSize: "0.75rem", color: "#991b1b", marginTop: 2 }}>
-                    Erro: {entry.errorCode ? `[${entry.errorCode}] ` : ""}{entry.errorMessage}
-                  </div>
-                )}
-              </div>
-              <div style={{ fontSize: "0.7rem", color: "#6272A4", whiteSpace: "nowrap", textAlign: "right" }}>
-                {fmtDatetime(entry.startedAt)}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function OperationalBlock({
-  competencia,
-  onCompetenciaChange,
-  runningFiscalAction,
-  lastFiscalResult,
-  onSearchGuides,
-  onCheckPayments,
-  onSyncInss,
-  executions,
-  loadingExecutions,
-}) {
-  const actionInProgress = Boolean(runningFiscalAction);
-  const rawLastResult = lastFiscalResult?.result || null;
-
-  // Auto-esconder o card de "última ação" após 30s, mesma lógica do painel de execuções
-  const [resultExpired, setResultExpired] = useState(false);
-  useEffect(() => {
-    if (!rawLastResult) { setResultExpired(false); return undefined; }
-    setResultExpired(false);
-    const id = setTimeout(() => setResultExpired(true), TOAST_TTL_MS);
-    return () => clearTimeout(id);
-  }, [rawLastResult]);
-  const lastResult = resultExpired ? null : rawLastResult;
-
-  const lastByAction = {};
-  if (Array.isArray(executions)) {
-    for (const e of executions) {
-      if (!lastByAction[e.action]) lastByAction[e.action] = e;
-    }
-  }
-
-  function actionButtonStyle(key) {
-    const isActive = runningFiscalAction === key;
-    const last = lastByAction[key];
-    let borderColor = "#44475A";
-    if (!actionInProgress && last) {
-      borderColor = last.status === "completed" ? "#86efac"
-        : last.status === "failed" ? "#fca5a5"
-        : last.status === "skipped" ? "#fcd34d"
-        : "#44475A";
-    }
-    return {
-      fontSize: "0.8125rem",
-      fontWeight: 600,
-      padding: "6px 12px",
-      background: isActive ? "#3b82f6" : "#1A1B26",
-      color: isActive ? "white" : "#F8F8F2",
-      border: `1px solid ${isActive ? "#3b82f6" : borderColor}`,
-      borderRadius: 4,
-      cursor: actionInProgress ? "default" : "pointer",
-      opacity: actionInProgress && !isActive ? 0.5 : 1,
-    };
-  }
-
-  return (
-    <div style={{ background: "#24253A", border: "1px solid #44475A", borderRadius: 8, padding: "12px 16px", marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-        <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#F8F8F2" }}>
-          Operações Fiscais
-        </div>
-        {onCompetenciaChange && (
-          <input
-            type="month"
-            value={competencia || ""}
-            onChange={(e) => onCompetenciaChange(e.target.value)}
-            style={{ ...PANEL_FIELD_STYLE, height: 30, padding: "0 8px", width: "auto", colorScheme: "dark" }}
-          />
-        )}
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-        <button onClick={() => onSearchGuides()} disabled={actionInProgress} style={actionButtonStyle("search_guides")}>
-          {runningFiscalAction === "search_guides" ? "⏳ Buscando..." : "🔍 Buscar Guias"}
-        </button>
-        <button onClick={() => onCheckPayments()} disabled={actionInProgress} style={actionButtonStyle("check_payments")}>
-          {runningFiscalAction === "check_payments" ? "⏳ Verificando..." : "✓ Verificar Pagtos"}
-        </button>
-        <button onClick={() => onSyncInss()} disabled={actionInProgress} style={actionButtonStyle("sync_inss")}>
-          {runningFiscalAction === "sync_inss" ? "⏳ Sincronizando..." : "⚙ Sincronizar INSS"}
-        </button>
-      </div>
-      <div style={{ fontSize: "0.7rem", color: "#6272A4", marginBottom: lastResult ? 10 : 0, fontStyle: "italic" }}>
-        Use estes botões apenas como fallback manual quando o cron job do SERPRO não trouxer a guia automaticamente.
-      </div>
-
-      {lastResult && (
-        <div style={{
-          fontSize: "0.75rem",
-          background: lastResult.status === "completed" ? "#ecfdf5" : lastResult.status === "skipped" ? "#fffbeb" : "#fef2f2",
-          border: `1px solid ${lastResult.status === "completed" ? "#a7f3d0" : lastResult.status === "skipped" ? "#fcd34d" : "#fecaca"}`,
-          borderRadius: 3,
-          padding: "8px 10px",
-          color: lastResult.status === "completed" ? "#065f46" : lastResult.status === "skipped" ? "#92400e" : "#991b1b",
-          marginBottom: 10,
-        }}>
-          <div style={{ fontWeight: 600, marginBottom: 3 }}>
-            {ACTION_LABELS[lastResult.action] || lastResult.action} —{" "}
-            {lastResult.status === "completed" ? "✓ Concluído" : lastResult.status === "skipped" ? "⚠ Ignorado" : "✗ Falhou"}
-          </div>
-          {lastResult.guidesFound != null && <div>Guias encontradas: {lastResult.guidesFound}</div>}
-          {lastResult.guidesCaptured != null && <div>Capturadas: {lastResult.guidesCaptured}</div>}
-          {lastResult.guidesChecked != null && (
-            <div>Verificadas: {lastResult.guidesChecked} (Pagas: {lastResult.guidesPaid}, Vencidas: {lastResult.guidesOverdue}, Abertas: {lastResult.guidesOpen})</div>
-          )}
-          {lastResult.reason && <div>Motivo: {lastResult.reason.replace(/_/g, " ")}</div>}
-        </div>
-      )}
-
-      <ExecutionHistoryPanel executions={executions} loadingExecutions={loadingExecutions} />
-    </div>
-  );
-}
+// Q7.2: painel "Operações Fiscais" foi removido — as ações (Buscar Guias, Verificar Pagtos,
+// Sincronizar INSS) ficam nas abas Guias / Configurações. Circular foca só na tabela.
 
 // ─── CircularTab ─────────────────────────────────────────────────────────────
 
@@ -583,16 +392,10 @@ export function CircularTab({
   onYearChange,
   onLoad,
   accounts,
+  companyRegime,  // regime tributário da empresa: filtra linhas exibidas (DAS só Simples; IRPJ/CSLL/PIS_COFINS/ISS só Presumido)
   onCreateBaixa,
   savingBaixa,
   onLoadBaixaTemplate,
-  runningFiscalAction,
-  lastFiscalResult,
-  onSearchGuides,
-  onCheckPayments,
-  onSyncInss,
-  executions,
-  loadingExecutions,
   error,
   message,
   onUpdateEntry,
@@ -620,11 +423,15 @@ export function CircularTab({
     return map;
   }, [circularData]);
 
+  // Linhas da matriz são filtradas em 2 passos:
+  // 1) Por regime tributário da empresa (Simples não tem IRPJ/CSLL/etc; Presumido não tem DAS)
+  // 2) Apenas linhas que tenham pelo menos 1 entrada com dados (estética — esconde linhas vazias)
   const visibleRows = useMemo(() => {
-    if (!circularData?.provisoes) return SUBTIPO_ROWS;
+    const byRegime = getSubtipoRowsForRegime(companyRegime);
+    if (!circularData?.provisoes) return byRegime;
     const usedSubtipos = new Set(circularData.provisoes.map((p) => p.subtipo).filter(Boolean));
-    return SUBTIPO_ROWS.filter((r) => usedSubtipos.has(r.key));
-  }, [circularData]);
+    return byRegime.filter((r) => usedSubtipos.has(r.key));
+  }, [circularData, companyRegime]);
 
   const abertoByMonth = useMemo(() => {
     if (!circularData?.provisoes) return {};
@@ -643,7 +450,13 @@ export function CircularTab({
     if (!editEntry || !onUpdateEntry) return;
     setSavingEdit(true);
     try {
-      await onUpdateEntry(editEntry.id, form);
+      // Propaga exceção para o modal exibir o erro inline.
+      // handleUpdateEntry no hook engole erros via try/catch e seta entriesError —
+      // por isso aqui validamos o retorno: se vier { ok: false, error } do backend, lança.
+      const result = await onUpdateEntry(editEntry.id, form);
+      if (result && result.ok === false) {
+        throw new Error(result.error || result.message || "Falha ao salvar lançamento.");
+      }
       await onLoad(year, competencia);
       setEditEntry(null);
     } finally {
@@ -718,37 +531,25 @@ export function CircularTab({
         </div>
       )}
 
-      {/* Operational Block */}
-      {onSearchGuides && onCheckPayments && onSyncInss && (
-        <OperationalBlock
-          competencia={competencia}
-          onCompetenciaChange={onCompetenciaChange}
-          runningFiscalAction={runningFiscalAction}
-          lastFiscalResult={lastFiscalResult}
-          onSearchGuides={onSearchGuides}
-          onCheckPayments={onCheckPayments}
-          onSyncInss={onSyncInss}
-          executions={executions}
-          loadingExecutions={loadingExecutions}
-        />
-      )}
+      {/* Operações Fiscais removidas: ações (Buscar Guias, Verificar Pagtos, Sincronizar INSS)
+          ficam nas abas Guias/Configurações; Circular foca só na tabela. */}
 
-      {/* Legenda */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: "0.75rem", color: "#6272A4", flexWrap: "wrap" }}>
+      {/* Legenda — paleta dark consistente com o resto do app */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: "0.75rem", color: "#aeb6d3", flexWrap: "wrap" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#fee2e2", border: "1px solid #fca5a5", display: "inline-block" }} />
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(255, 71, 87, 0.20)", border: "1px solid #FF4757", display: "inline-block" }} />
           Em aberto
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#dcfce7", border: "1px solid #86efac", display: "inline-block" }} />
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(105, 255, 71, 0.20)", border: "1px solid #69FF47", display: "inline-block" }} />
           Pago
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#fffbeb", border: "1px solid #fcd34d", display: "inline-block" }} />
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(255, 179, 71, 0.20)", border: "1px solid #FFB347", display: "inline-block" }} />
           Aguardando valor
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "#eff6ff", border: "1px solid #bfdbfe", display: "inline-block" }} />
+          <span style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(139, 233, 253, 0.20)", border: "1px solid #8BE9FD", display: "inline-block" }} />
           Faturamento
         </span>
       </div>
@@ -764,15 +565,15 @@ export function CircularTab({
       )}
 
       {!loading && circularData && (
-        <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 6, background: "white" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", tableLayout: "auto" }}>
+        <div style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", tableLayout: "auto", color: "#F8F8F2" }}>
             <thead>
-              <tr style={{ background: "#f3f4f6" }}>
+              <tr style={{ background: "#282A36" }}>
                 <th style={{
                   padding: "6px 10px", textAlign: "left", fontSize: "0.7rem", fontWeight: 700,
-                  color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em",
-                  borderRight: "2px solid #d1d5db", borderBottom: "2px solid #d1d5db",
-                  position: "sticky", left: 0, background: "#f3f4f6", zIndex: 10,
+                  color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.05em",
+                  borderRight: "2px solid #44475A", borderBottom: "2px solid #44475A",
+                  position: "sticky", left: 0, background: "#282A36", zIndex: 10,
                   minWidth: 160,
                 }}>
                   Obrigação
@@ -780,8 +581,8 @@ export function CircularTab({
                 {MONTH_LABELS.map((m, i) => (
                   <th key={i} style={{
                     padding: "6px 4px", textAlign: "center", fontSize: "0.7rem", fontWeight: 700,
-                    color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em",
-                    borderRight: "1px solid #e5e7eb", borderBottom: "2px solid #d1d5db",
+                    color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.05em",
+                    borderRight: "1px solid #44475A", borderBottom: "2px solid #44475A",
                     minWidth: 80,
                   }}>
                     {m}/{String(year).slice(2)}
@@ -792,7 +593,7 @@ export function CircularTab({
             <tbody>
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={13} style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontStyle: "italic" }}>
+                  <td colSpan={13} style={{ padding: 24, textAlign: "center", color: "#aeb6d3", fontStyle: "italic" }}>
                     Nenhuma provisão registrada para {year}. Crie lançamentos do tipo Provisão na aba Lançamentos.
                   </td>
                 </tr>
@@ -801,9 +602,9 @@ export function CircularTab({
                 <tr key={row.key}>
                   <td style={{
                     padding: "6px 10px", fontWeight: 600, fontSize: "0.8125rem",
-                    borderRight: "2px solid #d1d5db", borderBottom: "1px solid #e5e7eb",
-                    position: "sticky", left: 0, background: "white", zIndex: 5,
-                    whiteSpace: "nowrap",
+                    borderRight: "2px solid #44475A", borderBottom: "1px solid #44475A",
+                    position: "sticky", left: 0, background: "#21222C", zIndex: 5,
+                    whiteSpace: "nowrap", color: "#F8F8F2",
                   }}>
                     {row.label}
                   </td>
@@ -821,25 +622,25 @@ export function CircularTab({
               ))}
 
               {/* Total em Aberto */}
-              <tr style={{ borderTop: "2px solid #d1d5db", background: "#fef2f2" }}>
+              <tr style={{ borderTop: "2px solid #44475A", background: "rgba(255, 71, 87, 0.10)" }}>
                 <td style={{
                   padding: "6px 10px", fontWeight: 700, fontSize: "0.8125rem",
-                  borderRight: "2px solid #d1d5db",
-                  position: "sticky", left: 0, background: "#fef2f2", zIndex: 5,
-                  whiteSpace: "nowrap", color: "#dc2626",
+                  borderRight: "2px solid #44475A",
+                  position: "sticky", left: 0, background: "rgba(255, 71, 87, 0.10)", zIndex: 5,
+                  whiteSpace: "nowrap", color: "#FF4757",
                 }}>
                   Total em Aberto
                 </td>
                 {monthKeys.map((comp) => {
                   const total = abertoByMonth[comp];
                   return (
-                    <td key={comp} style={{ padding: "6px 4px", textAlign: "center", borderRight: "1px solid #e5e7eb" }}>
+                    <td key={comp} style={{ padding: "6px 4px", textAlign: "center", borderRight: "1px solid #44475A" }}>
                       {total ? (
-                        <span style={{ fontWeight: 700, fontSize: "0.75rem", color: "#dc2626" }}>
+                        <span style={{ fontWeight: 700, fontSize: "0.75rem", color: "#FF4757" }}>
                           R$ {fmtMoney(total)}
                         </span>
                       ) : (
-                        <span style={{ color: "#d1d5db", fontSize: "0.75rem" }}>—</span>
+                        <span style={{ color: "#44475A", fontSize: "0.75rem" }}>—</span>
                       )}
                     </td>
                   );
@@ -847,12 +648,12 @@ export function CircularTab({
               </tr>
 
               {/* Faturamento */}
-              <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+              <tr style={{ borderTop: "1px solid #44475A" }}>
                 <td style={{
                   padding: "6px 10px", fontWeight: 600, fontSize: "0.8125rem",
-                  borderRight: "2px solid #d1d5db",
-                  position: "sticky", left: 0, background: "#eff6ff", zIndex: 5,
-                  whiteSpace: "nowrap",
+                  borderRight: "2px solid #44475A",
+                  position: "sticky", left: 0, background: "rgba(139, 233, 253, 0.10)", zIndex: 5,
+                  whiteSpace: "nowrap", color: "#8BE9FD",
                 }}>
                   Faturamento
                 </td>

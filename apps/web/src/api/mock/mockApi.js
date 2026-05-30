@@ -449,6 +449,29 @@ export function createMockApi() {
       mockGuidesByCompany.set(companyId, list);
       return { ok: true, guide, emailStatus: "SENT", emailMessage: "Guia processada e e-mail enviado com sucesso." };
     },
+    async fetchGuidePdfBlob() {
+      await delay(120);
+      // PDF de 1x1 vazio só pra abrir o iframe no mock sem erro
+      const tinyPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 100 100]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
+      return new Blob([tinyPdf], { type: "application/pdf" });
+    },
+    async identifyGuide(companyId, guideId, metadata) {
+      await delay(300);
+      const list = mockGuidesByCompany.get(companyId) || [];
+      const idx = list.findIndex((g) => g.id === guideId || g.guideId === guideId);
+      if (idx < 0) return { ok: false, error: "guide_not_found" };
+      const updated = {
+        ...list[idx],
+        tipo: String(metadata.tipo || "").toUpperCase(),
+        competencia: metadata.competencia,
+        valor: metadata.valor != null ? Number(metadata.valor) : list[idx].valor,
+        vencimento: metadata.vencimento || list[idx].vencimento,
+        status: "PROCESSED",
+      };
+      list[idx] = updated;
+      mockGuidesByCompany.set(companyId, list);
+      return { ok: true, guide: updated };
+    },
     async sendLatestGuidesEmail(companyId) {
       await delay(500);
       const list = mockGuidesByCompany.get(companyId) || [];
@@ -1156,6 +1179,101 @@ export function createMockApi() {
       mockEntriesByCompany.set(companyId, list);
       return { ok: true, entry: baixa, openEntry: list[openIdx] };
     },
+    // Mock do parcelamento Simples Nacional — cria N entries no array mock.
+    async createParcelamentoSimples(companyId, payload = {}) {
+      await delay();
+      const numParcelas = Math.min(60, Math.max(1, Number(payload.numParcelas) || 1));
+      const principalValue = Number(payload.principalValue || 0);
+      const jurosValue = Number(payload.jurosValue || 0);
+      const totalLinha = principalValue + jurosValue;
+      const comp = String(payload.competenciaInicial || "");
+      const [y, m] = comp.split("-").map(Number);
+      const dia = Math.min(31, Math.max(1, Number(payload.diaPagamento) || 1));
+      const loteImportacao = `PARC_DAS-${Date.now()}`;
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const created = [];
+      for (let i = 0; i < numParcelas; i++) {
+        const compN = new Date(Date.UTC(y, m - 1 + i, 1));
+        const compStr = `${compN.getUTCFullYear()}-${String(compN.getUTCMonth() + 1).padStart(2, "0")}`;
+        const lastDay = new Date(Date.UTC(compN.getUTCFullYear(), compN.getUTCMonth() + 1, 0)).getUTCDate();
+        const dataN = new Date(Date.UTC(compN.getUTCFullYear(), compN.getUTCMonth(), Math.min(dia, lastDay)));
+        const id = faker.string.uuid();
+        const historicoN = `VR REF ${payload.label || "PARCELAMENTO SIMPLES NACIONAL"} EM ${numParcelas} PARCELAS N/${i + 1}`;
+        list.push({
+          id,
+          portalClientId: companyId,
+          data: dataN.toISOString(),
+          competencia: compStr,
+          historico: historicoN,
+          tipo: "PROVISAO",
+          subtipo: "PARC_DAS",
+          origem: "MANUAL",
+          loteImportacao,
+          status: "RASCUNHO",
+          statusPagamento: "ABERTO",
+          lines: [
+            { id: faker.string.uuid(), entryId: id, conta: payload.principalAccount, tipo: "D", valor: principalValue, ordem: 0 },
+            ...(jurosValue > 0 ? [{ id: faker.string.uuid(), entryId: id, conta: payload.jurosAccount, tipo: "D", valor: jurosValue, ordem: 1 }] : []),
+            { id: faker.string.uuid(), entryId: id, conta: payload.contraAccount, tipo: "C", valor: totalLinha, ordem: 2 },
+          ],
+          totalD: totalLinha, totalC: totalLinha, valor: totalLinha,
+          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        });
+        created.push({ parcela: i + 1, entryId: id, competencia: compStr, data: dataN.toISOString(), valor: totalLinha });
+      }
+      mockEntriesByCompany.set(companyId, list);
+      return { ok: true, loteImportacao, created, totalParcelas: numParcelas };
+    },
+    async getBatchEmailReport(competencia) {
+      await delay(200);
+      const ref = competencia || "2026-04";
+      // Gera dataset mock baseado nas empresas mockadas. Cada empresa simula um regime.
+      const REGIMES = ["SIMPLES", "LUCRO_PRESUMIDO"];
+      const simples = [];
+      const presumidos = [];
+      mockCompanies.forEach((c, idx) => {
+        const regime = REGIMES[idx % REGIMES.length];
+        const row = {
+          portalClientId: c.companyId,
+          razao: c.razao,
+          cnpj: c.cnpj,
+          regimeTributario: regime,
+          tiposGuias: {
+            DAS: null, INSS: null, IRPJ: null, CSLL: null,
+            PIS_COFINS: null, ISS: null, FGTS: null, PARC_DAS: null,
+          },
+          pendingGuideIds: [],
+        };
+        // Aleatoriamente "captura" 0-3 guias do regime correspondente
+        const captured = faker.helpers.arrayElement([0, 1, 2, 2, 3]);
+        if (regime === "SIMPLES") {
+          if (captured >= 1) row.tiposGuias.DAS = { guideId: faker.string.uuid(), valor: 500 };
+          if (captured >= 2) row.tiposGuias.INSS = { guideId: faker.string.uuid(), valor: 250 };
+          if (idx % 4 === 0) row.tiposGuias.PARC_DAS = { entryId: faker.string.uuid(), isParcelamento: true };
+          simples.push(row);
+        } else {
+          if (captured >= 1) row.tiposGuias.IRPJ = { guideId: faker.string.uuid(), valor: 800 };
+          if (captured >= 2) row.tiposGuias.CSLL = { guideId: faker.string.uuid(), valor: 400 };
+          if (captured >= 3) row.tiposGuias.PIS_COFINS = { guideId: faker.string.uuid(), valor: 350 };
+          if (idx % 3 === 0) row.tiposGuias.ISS = { guideId: faker.string.uuid(), valor: 200 };
+          if (idx % 2 === 0) row.tiposGuias.INSS = { guideId: faker.string.uuid(), valor: 250 };
+          presumidos.push(row);
+        }
+      });
+      return { competencia: ref, simples, presumidos, outros: [] };
+    },
+    async sendBatchEmails(items) {
+      await delay(800);
+      return {
+        ok: true,
+        total: items.length,
+        sent: items.length,
+        results: items.map((it) => ({
+          portalClientId: it.portalClientId, competencia: it.competencia,
+          ok: true, status: "sent", sentNow: 2, attachmentsCount: 2,
+        })),
+      };
+    },
     async getCircular(companyId, { year } = {}) {
       await delay();
       const y = year || new Date().getFullYear();
@@ -1491,5 +1609,12 @@ export function createMockApi() {
       const limit = Math.min(Number(params.limit) || 20, 100);
       return filtered.slice(0, limit);
     },
+
+    // ── Q6: stubs (mock não persiste; só retorna estrutura básica para não quebrar UI) ──
+    async listAccountingFunctions() { await delay(80); return []; },
+    async createAccountingFunction() { await delay(80); return { ok: true, data: null }; },
+    async updateAccountingFunction() { await delay(80); return { ok: true, data: null }; },
+    async deleteAccountingFunction() { await delay(80); return { ok: true }; },
+    async applyAccountingFunction() { await delay(80); return { ok: true, entries: [] }; },
   };
 }

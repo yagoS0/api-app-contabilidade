@@ -41,6 +41,19 @@ def detect_tipo(text_upper: str) -> str:
     if "FGTS" in text_upper or "GUIA DO FGTS" in text_upper or "GRF" in text_upper or "GUIA DE RECOLHIMENTO DO FGTS" in text_upper:
         return "FGTS"
 
+    # DARF — Documento de Arrecadação de Receitas Federais (SENDA).
+    # IMPORTANTE: vir antes de SIMPLES porque DARF contém "DAS" no nome do documento,
+    # e antes de PIS/COFINS porque DARF misto contém ambos.
+    # A decisão final (DARF vs IRPJ vs CSLL vs PIS vs COFINS) acontece em darf.refine_darf
+    # via códigos da tabela de composição.
+    if (
+        "DOCUMENTO DE ARRECADAÇÃO DE RECEITAS FEDERAIS" in text_upper
+        or "DOCUMENTO DE ARRECADACAO DE RECEITAS FEDERAIS" in text_upper
+        or "COMPOSIÇÃO DO DOCUMENTO DE ARRECADAÇÃO" in text_upper
+        or "COMPOSICAO DO DOCUMENTO DE ARRECADACAO" in text_upper
+    ):
+        return "DARF"
+
     if (
         "SIMPLES NACIONAL" in text_upper
         or "DOCUMENTO DE ARRECADAÇÃO DO SIMPLES NACIONAL" in text_upper

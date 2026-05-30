@@ -2,39 +2,64 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
 
 // INSS_DCTFWEB removido: INSS deve ser lançado manualmente em conjunto com folha/pró-labore.
+//
+// Eventos de RECEITA suportam múltiplas atividades do PGDAS-D:
+//  - RECEITA_SERVICO       — agregado de todos os serviços (Anexo III/IV/V — não separa)
+//  - RECEITA_VENDA_SEM_ST  — vendas sem substituição tributária
+//  - RECEITA_VENDA_COM_ST  — vendas com substituição tributária (ICMS-ST)
+//
+// Cada definição traz `descriptionTemplate` e `entryDateStrategy` (defaults pro lançamento).
+// Contas D/C NÃO têm fallback hardcoded — vêm do `AccountingHistorico` da empresa
+// (memória aprendida do primeiro preenchimento manual pelo contador). Exceção: `DAS_SIMPLES`
+// tem fallback (`DEFAULT_ACCOUNTS_DAS`) por ser tributo padronizado.
 const EVENT_DEFINITIONS = Object.freeze({
-  RECEITA_SIMPLES: {
+  RECEITA_SERVICO: {
     tipo: "RECEITA",
     subtipo: null,
     statusPagamento: "NA",
-    amountSource: "receita_bruta",
+    amountSource: "receita_servicos",
+    descriptionTemplate: "VR REF RECEITA SERVIÇOS - SIMPLES NACIONAL - {{competencia}}",
+    entryDateStrategy: "LAST_DAY_OF_MONTH",
+  },
+  RECEITA_VENDA_SEM_ST: {
+    tipo: "RECEITA",
+    subtipo: null,
+    statusPagamento: "NA",
+    amountSource: "receita_vendas_sem_st",
+    descriptionTemplate: "VR REF RECEITA VENDAS S/ ST - SIMPLES NACIONAL - {{competencia}}",
+    entryDateStrategy: "LAST_DAY_OF_MONTH",
+  },
+  RECEITA_VENDA_COM_ST: {
+    tipo: "RECEITA",
+    subtipo: null,
+    statusPagamento: "NA",
+    amountSource: "receita_vendas_com_st",
+    descriptionTemplate: "VR REF RECEITA VENDAS C/ ST - SIMPLES NACIONAL - {{competencia}}",
+    entryDateStrategy: "LAST_DAY_OF_MONTH",
   },
   DAS_SIMPLES: {
     tipo: "PROVISAO",
     subtipo: "DAS",
     statusPagamento: "ABERTO",
     amountSource: "das_total",
-  },
-});
-
-const DEFAULT_RULE_FALLBACKS = Object.freeze({
-  RECEITA_SIMPLES: {
-    descriptionTemplate: "VR REF RECEITA BRUTA DO SIMPLES NACIONAL - {{competencia}}",
-    debitAccountCode: "5",
-    creditAccountCode: "301",
-    entryDateStrategy: "LAST_DAY_OF_MONTH",
-  },
-  DAS_SIMPLES: {
     descriptionTemplate: "VR REF DAS SIMPLES NACIONAL - {{competencia}}",
-    debitAccountCode: "401",
-    creditAccountCode: "5",
     entryDateStrategy: "DUE_DATE",
   },
 });
 
+// Sem fallback hardcoded: TODOS os eventos (incluindo DAS_SIMPLES) começam com contas D/C vazias
+// e aguardam o 1º preenchimento manual pelo contador. O auto-save no PUT/POST de entries memoriza
+// o par (eventType, empresa) no AccountingHistorico; sync seguinte da mesma empresa auto-preenche.
+
 const AMOUNT_SOURCE_FIELD_MAP = Object.freeze({
   receita_bruta: "receitaBruta",
   receitaBruta: "receitaBruta",
+  receita_servicos: "receitaServicos",
+  receitaServicos: "receitaServicos",
+  receita_vendas_sem_st: "receitaVendasSemST",
+  receitaVendasSemST: "receitaVendasSemST",
+  receita_vendas_com_st: "receitaVendasComST",
+  receitaVendasComST: "receitaVendasComST",
   das_total: "dasTotal",
   dasTotal: "dasTotal",
   inss_total: "inssTotal",
@@ -123,33 +148,55 @@ function buildEventsFromCircular(circular) {
   return events;
 }
 
+/**
+ * Resolve a regra (AccountingEntryRule) explicitamente cadastrada pela empresa ou globalmente.
+ * Se nenhuma regra existir, monta uma virtual a partir de EVENT_DEFINITIONS contendo
+ * `descriptionTemplate` e `entryDateStrategy` (defaults) — mas SEM contas D/C definidas.
+ * As contas D/C ficam por conta do lookup em `AccountingHistorico` (memória do contador),
+ * com fallback hardcoded apenas para `DAS_SIMPLES`.
+ */
 export async function resolveRule(tx, { portalClientId, eventType }) {
   const companyRule = await tx.accountingEntryRule.findFirst({
-    where: {
-      portalClientId,
-      eventType,
-      isActive: true,
-    },
+    where: { portalClientId, eventType, isActive: true },
   });
   if (companyRule) return companyRule;
 
   const globalRule = await tx.accountingEntryRule.findFirst({
-    where: {
-      portalClientId: null,
-      eventType,
-      isActive: true,
-    },
+    where: { portalClientId: null, eventType, isActive: true },
   });
   if (globalRule) return globalRule;
 
-  const fallback = DEFAULT_RULE_FALLBACKS[eventType];
-  if (!fallback) return null;
+  const definition = EVENT_DEFINITIONS[eventType];
+  if (!definition) return null;
   return {
     id: null,
-    descriptionTemplate: fallback.descriptionTemplate,
-    debitAccountCode: fallback.debitAccountCode,
-    creditAccountCode: fallback.creditAccountCode,
-    entryDateStrategy: fallback.entryDateStrategy,
+    descriptionTemplate: definition.descriptionTemplate,
+    debitAccountCode: null, // será resolvido por lookupAccountsFromHistorico
+    creditAccountCode: null,
+    entryDateStrategy: definition.entryDateStrategy,
+  };
+}
+
+/**
+ * Lookup do par (contaDebito, contaCredito) memorizado no AccountingHistorico para
+ * (companyPortalClientId + eventType). Usado pela primeira vez quando o contador edita
+ * um entry automático e preenche as contas — auto-save grava aqui; sync seguinte reusa.
+ */
+export async function lookupAccountsFromHistorico(tx, { portalClientId, eventType }) {
+  if (!portalClientId || !eventType) return {};
+  const h = await tx.accountingHistorico.findFirst({
+    where: {
+      companyPortalClientId: String(portalClientId),
+      eventType,
+      OR: [{ contaDebito: { not: null } }, { contaCredito: { not: null } }],
+    },
+    orderBy: [{ usageCount: "desc" }, { updatedAt: "desc" }],
+    select: { contaDebito: true, contaCredito: true },
+  });
+  if (!h) return {};
+  return {
+    debitAccountCode: h.contaDebito || null,
+    creditAccountCode: h.contaCredito || null,
   };
 }
 
@@ -180,6 +227,23 @@ async function upsertGeneratedEntry(tx, { existingEntry, portalClientId, circula
     circular: { ...circular, amountSource: event.amountSource, eventType: event.eventType },
     now,
   });
+
+  // Resolução das contas D/C — ordem de prioridade:
+  //   1. Regra explícita (AccountingEntryRule) já trouxe contas → usa
+  //   2. Memória do AccountingHistorico (empresa + eventType)   → usa
+  //   3. Vazio "" → contador preenche manualmente; auto-save memoriza
+  let debitConta = rule.debitAccountCode || null;
+  let creditConta = rule.creditAccountCode || null;
+  if (!debitConta && !creditConta) {
+    const memorized = await lookupAccountsFromHistorico(tx, {
+      portalClientId,
+      eventType: event.eventType,
+    });
+    debitConta = memorized.debitAccountCode || null;
+    creditConta = memorized.creditAccountCode || null;
+  }
+  debitConta = debitConta || "";
+  creditConta = creditConta || "";
 
   const nextEntry = {
     portalClientId,
@@ -260,8 +324,8 @@ async function upsertGeneratedEntry(tx, { existingEntry, portalClientId, circula
     await tx.accountingEntryLine.deleteMany({ where: { entryId: updated.id } });
     await tx.accountingEntryLine.createMany({
       data: [
-        { entryId: updated.id, conta: rule.debitAccountCode, tipo: "D", valor: event.amount, ordem: 0 },
-        { entryId: updated.id, conta: rule.creditAccountCode, tipo: "C", valor: event.amount, ordem: 1 },
+        { entryId: updated.id, conta: debitConta, tipo: "D", valor: event.amount, ordem: 0 },
+        { entryId: updated.id, conta: creditConta, tipo: "C", valor: event.amount, ordem: 1 },
       ],
     });
 
@@ -286,8 +350,8 @@ async function upsertGeneratedEntry(tx, { existingEntry, portalClientId, circula
         lines: {
         createMany: {
           data: [
-            { conta: rule.debitAccountCode, tipo: "D", valor: event.amount, ordem: 0 },
-            { conta: rule.creditAccountCode, tipo: "C", valor: event.amount, ordem: 1 },
+            { conta: debitConta, tipo: "D", valor: event.amount, ordem: 0 },
+            { conta: creditConta, tipo: "C", valor: event.amount, ordem: 1 },
           ],
         },
       },

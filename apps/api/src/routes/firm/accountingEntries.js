@@ -258,15 +258,15 @@ async function createProvisionPlaceholders(tx, { portalClientId, subtipo, compet
 // ---------------------------------------------------------------------------
 
 function entriesToCsv(entries) {
-  // Formato "lançamento partido": 5 colunas (Data | Codigo Debito | Codigo Credito | Historico | Valor)
+  // Formato "lançamento partido": 5 colunas (Data | Codigo Debito | Codigo Credito | Historico | Valor).
+  // SEM header — sistema contábil destino consome desde a linha 1.
+  // Valor SEM separador de milhar — só vírgula decimal (ex: 17614,98).
   // - Lançamento simples (1D + 1C, mesmo valor, mesmo histórico): uma linha consolidada.
   // - Lançamento composto: uma linha por linha contábil, lado oposto vazio.
   // - line.historico (se presente) tem prioridade sobre entry.historico.
-  const header = "Data;Codigo Debito;Codigo Credito;Historico;Valor";
   const rows = [];
   const sanitize = (s) => String(s || "").replace(/;/g, " ").replace(/[\r\n]+/g, " ").trim();
-  const fmtValor = (v) =>
-    Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtValor = (v) => Number(v || 0).toFixed(2).replace(".", ",");
 
   for (const e of entries) {
     const data = e.data ? new Date(e.data).toLocaleDateString("pt-BR") : "";
@@ -289,7 +289,7 @@ function entriesToCsv(entries) {
       }
     }
   }
-  return [header, ...rows].join("\r\n");
+  return rows.join("\r\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -463,7 +463,9 @@ export function createAccountingEntriesRouter({ log }) {
 
     const meses = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
 
-    const [provisoes, receitas, inssGuides] = await Promise.all([
+    // darfGuides removido (Q5): DARFs agora viram AccountingEntry real via GuideToProvisionService
+    // e aparecem naturalmente na query `provisoes`. Sintética DARF foi descontinuada.
+    const [provisoes, receitas, inssGuides, circulars, simplesGuides] = await Promise.all([
       prisma.accountingEntry.findMany({
         where: {
           portalClientId,
@@ -499,9 +501,24 @@ export function createAccountingEntriesRouter({ log }) {
           id: true,
           competencia: true,
           valor: true,
+          valorOriginal: true,
           paymentStatus: true,
           vencimento: true,
+          updatedAt: true,
         },
+      }),
+      prisma.companyMonthlyCircular.findMany({
+        where: { portalClientId, competencia: { in: meses } },
+        select: { competencia: true, dasTotal: true },
+      }),
+      prisma.guide.findMany({
+        where: {
+          portalClientId,
+          status: "PROCESSED",
+          competencia: { in: meses },
+          tipo: "SIMPLES",
+        },
+        select: { competencia: true, valor: true, valorOriginal: true, updatedAt: true },
       }),
     ]);
 
@@ -511,9 +528,47 @@ export function createAccountingEntriesRouter({ log }) {
       receitasPorComp[e.competencia] = (receitasPorComp[e.competencia] || 0) + total;
     }
 
-    // Provisões sintéticas a partir das guias INSS (não há lançamento contábil PROVISAO para INSS)
+    // Mapas por competência para resolver o valor ORIGINAL do DAS_SIMPLES.
+    // Prioridade do "valor original": circular.dasTotal (extrato PGDAS-D) > guide.valorOriginal > guide.valor.
+    // Necessário porque entries antigos podem ter lines com valor recalculado (criados antes do fix).
+    const circularByComp = new Map(circulars.map((c) => [c.competencia, c]));
+    const simplesGuideByComp = new Map(simplesGuides.map((g) => [g.competencia, g]));
+
+    function enrichDasProvisao(entry) {
+      if (entry.eventType !== "DAS_SIMPLES") return entry;
+      const circ = circularByComp.get(entry.competencia);
+      const guide = simplesGuideByComp.get(entry.competencia);
+      // Valor do extrato (truth). Se não existir, mantém o totalD (lines).
+      const extratoValor = circ?.dasTotal != null ? Number(circ.dasTotal) : null;
+      // Valor atual da guia (pode estar recalculado pelo SERPRO).
+      const guideValorAtual = guide?.valor != null ? Number(guide.valor) : null;
+      const valorOriginal = extratoValor != null
+        ? extratoValor
+        : (guide?.valorOriginal != null ? Number(guide.valorOriginal) : Number(entry.valor || entry.totalD || 0));
+      const recalculado =
+        guideValorAtual != null && Math.abs(guideValorAtual - valorOriginal) > 0.01;
+      return {
+        ...entry,
+        valor: valorOriginal,
+        totalD: valorOriginal,
+        totalC: valorOriginal,
+        recalculatedAt: recalculado ? (guide?.updatedAt || entry.recalculatedAt || null) : entry.recalculatedAt,
+        recalculatedFromValor: recalculado ? valorOriginal : entry.recalculatedFromValor,
+        recalculatedToValor: recalculado ? guideValorAtual : entry.recalculatedToValor,
+        recalculatedNotes: recalculado
+          ? (entry.recalculatedNotes || "Guia atualizada pelo SERPRO")
+          : entry.recalculatedNotes,
+      };
+    }
+
+    // Provisões sintéticas a partir das guias INSS (não há lançamento contábil PROVISAO para INSS).
+    // valorOriginal = valor do extrato (1ª captura, imutável). valor = pode estar recalculado pelo SERPRO.
+    // Circular exibe o valor original; badge "↻ R$ X" mostra o recalculado se diferente.
     const inssSynthetic = inssGuides.map((g) => {
-      const valor = Number(g.valor || 0);
+      const valorAtual = Number(g.valor || 0);
+      const valorOriginal = g.valorOriginal != null ? Number(g.valorOriginal) : valorAtual;
+      const valor = valorOriginal; // sempre o original na Circular
+      const recalculado = g.valorOriginal != null && Math.abs(valorAtual - valorOriginal) > 0.01;
       const isPaid = String(g.paymentStatus || "").toUpperCase() === "PAID";
       return {
         id: `synthetic-inss-${g.id}`,
@@ -531,10 +586,10 @@ export function createAccountingEntriesRouter({ log }) {
         status: "RASCUNHO",
         statusPagamento: isPaid ? "PAGO" : "ABERTO",
         openEntryId: null,
-        recalculatedAt: null,
-        recalculatedFromValor: null,
-        recalculatedToValor: null,
-        recalculatedNotes: null,
+        recalculatedAt: recalculado ? g.updatedAt : null,
+        recalculatedFromValor: recalculado ? valorOriginal : null,
+        recalculatedToValor: recalculado ? valorAtual : null,
+        recalculatedNotes: recalculado ? "Guia atualizada pelo SERPRO" : null,
         createdAt: new Date(),
         updatedAt: new Date(),
         lines: [
@@ -550,9 +605,15 @@ export function createAccountingEntriesRouter({ log }) {
       };
     });
 
+    // Q5: DARFs agora são AccountingEntry reais (gerados via GuideToProvisionService no momento
+    // em que a guia vira PROCESSED). Já aparecem no `provisoes` acima — não há mais sintéticas.
+
     return res.json({
       year,
-      provisoes: [...provisoes.map(entryToResponse), ...inssSynthetic],
+      provisoes: [
+        ...provisoes.map((p) => enrichDasProvisao(entryToResponse(p))),
+        ...inssSynthetic,
+      ],
       receitas: receitasPorComp,
     });
   });
@@ -1020,6 +1081,124 @@ export function createAccountingEntriesRouter({ log }) {
 
   // ─── Lançamentos ─────────────────────────────────────────────────────────
 
+  // POST /firm/companies/:companyId/entries/parcelamento
+  // Cria N parcelas de um parcelamento (Simples Nacional, INSS, etc.) em uma transaction.
+  // Cada parcela vira 1 AccountingEntry com subtipo=PARC_DAS, tipo=PROVISAO, statusPagamento=ABERTO,
+  // com 3 linhas: D principal + D juros + C contrapartida (total = principal + juros).
+  // Histórico inclui "N/<numero>" para identificar a parcela ("N/1", "N/2", ..., "N/9").
+  router.post(
+    "/entries/parcelamento",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const body = req.body || {};
+
+      const principalAccount = String(body.principalAccount || "").trim();
+      const jurosAccount = String(body.jurosAccount || "").trim();
+      const contraAccount = String(body.contraAccount || "").trim();
+      const principalValue = Number(body.principalValue);
+      const jurosValue = Number(body.jurosValue || 0);
+      const numParcelas = Math.min(60, Math.max(1, Number(body.numParcelas) || 1));
+      const competenciaInicial = String(body.competenciaInicial || "").trim();
+      const diaPagamento = Math.min(31, Math.max(1, Number(body.diaPagamento) || 1));
+      const periodosReferenciados = String(body.periodosReferenciados || "").trim();
+      const labelParcelamento = String(body.label || "PARCELAMENTO SIMPLES NACIONAL").trim();
+
+      // Validações
+      if (!principalAccount || !contraAccount) {
+        return res.status(400).json({ error: "contas_principal_e_contrapartida_obrigatorias" });
+      }
+      if (!Number.isFinite(principalValue) || principalValue <= 0) {
+        return res.status(400).json({ error: "principal_value_invalido" });
+      }
+      if (!/^\d{4}-\d{2}$/.test(competenciaInicial)) {
+        return res.status(400).json({ error: "competencia_inicial_invalida" });
+      }
+      // Se houver juros, jurosAccount é obrigatório
+      if (Number.isFinite(jurosValue) && jurosValue > 0 && !jurosAccount) {
+        return res.status(400).json({ error: "juros_account_required" });
+      }
+
+      // Helpers locais
+      function addMonthsToCompetencia(comp, n) {
+        const [yyyy, mm] = comp.split("-").map(Number);
+        const date = new Date(Date.UTC(yyyy, mm - 1 + n, 1));
+        return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+      }
+      function buildDate(comp, dayOfMonth) {
+        const [yyyy, mm] = comp.split("-").map(Number);
+        // Se o dia não existir no mês (ex: 31 em fev), usa o último dia.
+        const lastDay = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
+        const dayReal = Math.min(dayOfMonth, lastDay);
+        return new Date(Date.UTC(yyyy, mm - 1, dayReal));
+      }
+
+      const totalLinha = Number(((principalValue + (jurosValue || 0)) * 100).toFixed(0)) / 100;
+      const loteImportacao = `PARC_DAS-${Date.now()}`;
+      const created = [];
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          for (let i = 0; i < numParcelas; i++) {
+            const competenciaN = addMonthsToCompetencia(competenciaInicial, i);
+            const dataN = buildDate(competenciaN, diaPagamento);
+            const numeroParcela = i + 1;
+            const sufixoPeriodos = periodosReferenciados ? ` DE ${periodosReferenciados}` : "";
+            const historicoPrincipal =
+              `VR REF ${labelParcelamento}${sufixoPeriodos} EM ${numParcelas} PARCELAS N/${numeroParcela}`;
+            const historicoJuros =
+              `VR REF JUROS S/${labelParcelamento}${sufixoPeriodos} EM ${numParcelas} PARCELAS N/${numeroParcela}`;
+
+            const entry = await tx.accountingEntry.create({
+              data: {
+                portalClientId,
+                data: dataN,
+                competencia: competenciaN,
+                historico: historicoPrincipal,
+                tipo: "PROVISAO",
+                subtipo: "PARC_DAS",
+                origem: "MANUAL",
+                loteImportacao,
+                status: "RASCUNHO",
+                statusPagamento: "ABERTO",
+              },
+            });
+
+            const linhas = [
+              {
+                entryId: entry.id, conta: principalAccount, tipo: "D",
+                valor: principalValue, ordem: 0, historico: historicoPrincipal,
+              },
+            ];
+            if (jurosValue > 0) {
+              linhas.push({
+                entryId: entry.id, conta: jurosAccount, tipo: "D",
+                valor: jurosValue, ordem: 1, historico: historicoJuros,
+              });
+            }
+            linhas.push({
+              entryId: entry.id, conta: contraAccount, tipo: "C",
+              valor: totalLinha, ordem: linhas.length, historico: historicoPrincipal,
+            });
+
+            await tx.accountingEntryLine.createMany({ data: linhas });
+            created.push({
+              parcela: numeroParcela,
+              entryId: entry.id,
+              competencia: competenciaN,
+              data: dataN.toISOString(),
+              valor: totalLinha,
+            });
+          }
+        });
+        return res.status(201).json({ ok: true, loteImportacao, created, totalParcelas: numParcelas });
+      } catch (err) {
+        log.error({ err }, "Erro ao criar parcelamento Simples Nacional");
+        return res.status(500).json({ ok: false, error: "internal_error", message: err?.message });
+      }
+    },
+  );
+
   // POST /firm/companies/:companyId/entries
   router.post("/entries", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
@@ -1091,8 +1270,12 @@ export function createAccountingEntriesRouter({ log }) {
         });
       });
 
-      // Auto-save do histórico (fora da transaction principal — não é crítico)
+      // Auto-save do histórico (fora da transaction principal — não é crítico).
+      // Para entries automáticos (que vieram do gerador), o body inclui `eventType` —
+      // gravamos esse marcador para permitir o lookup futuro (mesma empresa + mesmo eventType
+      // já tem D/C memorizados, próxima sync auto-preenche em vez de vir vazio).
       const userId = req.auth?.user?.id;
+      const bodyEventType = body?.eventType ? String(body.eventType).trim() : null;
       if (userId && historico) {
         const debitLine = lines.find((l) => String(l.tipo).toUpperCase() === "D");
         const creditLine = lines.find((l) => String(l.tipo).toUpperCase() === "C");
@@ -1108,6 +1291,7 @@ export function createAccountingEntriesRouter({ log }) {
               data: {
                 contaDebito: contaD ?? existing.contaDebito,
                 contaCredito: contaC ?? existing.contaCredito,
+                eventType: bodyEventType ?? existing.eventType,
                 usageCount: existing.usageCount + 1,
                 updatedAt: new Date(),
               },
@@ -1120,6 +1304,7 @@ export function createAccountingEntriesRouter({ log }) {
                 text: historico,
                 contaDebito: contaD,
                 contaCredito: contaC,
+                eventType: bodyEventType,
               },
             });
           }
@@ -1174,6 +1359,20 @@ export function createAccountingEntriesRouter({ log }) {
       if (!validation.ok) {
         // Se o entry é um template e não há linhas ainda, isso é válido (continua como template)
         if (!(isTemplate && lines.length === 0)) {
+          // Log detalhado para diagnosticar saves rejeitados (lines vazias, conta sem código, etc).
+          log.warn(
+            {
+              entryId,
+              portalClientId,
+              validationError: validation.error,
+              linesSummary: (lines || []).map((l) => ({
+                tipo: l?.tipo,
+                contaLen: String(l?.conta || "").length,
+                valor: l?.valor,
+              })),
+            },
+            "PUT /entries — validação de linhas falhou"
+          );
           return res.status(400).json({
             error: validation.error,
             totalD: validation.totalD,
@@ -1219,6 +1418,55 @@ export function createAccountingEntriesRouter({ log }) {
           include: { lines: { orderBy: { ordem: "asc" } } },
         });
       });
+
+      // Auto-save do histórico (mesma lógica do POST). Para entries automáticos editados pelo
+      // contador, gravamos `eventType` para que sync seguinte da mesma empresa auto-preencha D/C.
+      const userId = req.auth?.user?.id;
+      const bodyEventType = body?.eventType
+        ? String(body.eventType).trim()
+        : (updated?.eventType ? String(updated.eventType).trim() : null);
+      const finalLines = Array.isArray(updated?.lines) ? updated.lines : [];
+      const finalHistorico = updated?.historico || data.historico || null;
+      if (userId && finalHistorico) {
+        const debitLine = finalLines.find((l) => String(l.tipo).toUpperCase() === "D");
+        const creditLine = finalLines.find((l) => String(l.tipo).toUpperCase() === "C");
+        const contaD = debitLine ? String(debitLine.conta || "").trim() || null : null;
+        const contaC = creditLine ? String(creditLine.conta || "").trim() || null : null;
+        // Só auto-saveia se tiver pelo menos uma conta preenchida (evita gravar memória vazia)
+        if (contaD || contaC) {
+          try {
+            const existingHist = await prisma.accountingHistorico.findFirst({
+              where: { createdByUserId: userId, companyPortalClientId: portalClientId, text: finalHistorico },
+            });
+            if (existingHist) {
+              await prisma.accountingHistorico.update({
+                where: { id: existingHist.id },
+                data: {
+                  contaDebito: contaD ?? existingHist.contaDebito,
+                  contaCredito: contaC ?? existingHist.contaCredito,
+                  eventType: bodyEventType ?? existingHist.eventType,
+                  usageCount: existingHist.usageCount + 1,
+                  updatedAt: new Date(),
+                },
+              });
+            } else {
+              await prisma.accountingHistorico.create({
+                data: {
+                  createdByUserId: userId,
+                  companyPortalClientId: portalClientId,
+                  text: finalHistorico,
+                  contaDebito: contaD,
+                  contaCredito: contaC,
+                  eventType: bodyEventType,
+                },
+              });
+            }
+          } catch (histErr) {
+            log.warn({ histErr }, "Falha ao auto-salvar histórico no PUT (não crítico)");
+          }
+        }
+      }
+
       return res.json({ ok: true, entry: entryToResponse(updated) });
     } catch (err) {
       log.error({ err }, "Erro ao atualizar lançamento");
@@ -1653,6 +1901,103 @@ export function createAccountingEntriesRouter({ log }) {
       });
     }
   );
+
+  // ─── Q6: Funções de Lançamento ──────────────────────────────────────────
+
+  // GET /firm/companies/:companyId/accounting-functions  → lista GLOBAL + da empresa
+  router.get("/accounting-functions", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    try {
+      const { listAccountingFunctionsForCompany } = await import("../../application/accounting/AccountingFunctionService.js");
+      const funcs = await listAccountingFunctionsForCompany(portalClientId);
+      return res.json({ ok: true, data: funcs });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar funções de lançamento");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // POST /firm/companies/:companyId/accounting-functions  → cria função
+  router.post("/accounting-functions", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const userId = req.auth?.user?.id;
+    try {
+      const { createAccountingFunction } = await import("../../application/accounting/AccountingFunctionService.js");
+      const func = await createAccountingFunction({ portalClientId, userId, payload: req.body || {} });
+      return res.status(201).json({ ok: true, data: func });
+    } catch (err) {
+      const code = err?.message || "internal_error";
+      const status = code === "name_required" || code === "entries_required" ? 400 : 500;
+      if (status === 500) log.error({ err }, "Falha ao criar função");
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // PUT /firm/companies/:companyId/accounting-functions/:functionId  → atualiza (bloqueia isSystem)
+  router.put("/accounting-functions/:functionId", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const functionId = String(req.params.functionId);
+    try {
+      const { updateAccountingFunction } = await import("../../application/accounting/AccountingFunctionService.js");
+      const func = await updateAccountingFunction({ portalClientId, functionId, payload: req.body || {} });
+      return res.json({ ok: true, data: func });
+    } catch (err) {
+      const code = err?.message || "internal_error";
+      const map = {
+        function_not_found: 404,
+        system_function_immutable: 403,
+        function_scope_mismatch: 403,
+      };
+      const status = map[code] || 500;
+      if (status === 500) log.error({ err }, "Falha ao atualizar função");
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // DELETE /firm/companies/:companyId/accounting-functions/:functionId
+  router.delete("/accounting-functions/:functionId", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const functionId = String(req.params.functionId);
+    try {
+      const { deleteAccountingFunction } = await import("../../application/accounting/AccountingFunctionService.js");
+      await deleteAccountingFunction({ portalClientId, functionId });
+      return res.json({ ok: true });
+    } catch (err) {
+      const code = err?.message || "internal_error";
+      const map = {
+        function_not_found: 404,
+        system_function_immutable: 403,
+        function_scope_mismatch: 403,
+      };
+      const status = map[code] || 500;
+      if (status === 500) log.error({ err }, "Falha ao excluir função");
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // POST /firm/companies/:companyId/accounting-functions/:functionId/apply
+  // body: { competencia, entryValores: [{ functionEntryId, valor, data? }] }
+  router.post("/accounting-functions/:functionId/apply", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const functionId = String(req.params.functionId);
+    const { competencia, entryValores } = req.body || {};
+    try {
+      const { applyAccountingFunction } = await import("../../application/accounting/AccountingFunctionService.js");
+      const result = await applyAccountingFunction({ portalClientId, functionId, competencia, entryValores });
+      return res.status(201).json(result);
+    } catch (err) {
+      const code = err?.message || "internal_error";
+      const map = {
+        competencia_required: 400,
+        function_not_found: 404,
+        function_scope_mismatch: 403,
+        company_not_found: 404,
+      };
+      const status = map[code] || 500;
+      if (status === 500) log.error({ err }, "Falha ao aplicar função");
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
 
   return router;
 }

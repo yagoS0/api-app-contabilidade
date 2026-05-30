@@ -8,6 +8,7 @@ import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproS
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
+import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { GlobalAccountingRulesPage } from "./features/accounting/rules/pages/renderGlobalAccountingRulesPage";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
 import { FirmSettingsHubPage } from "./features/firm/settings/pages/renderFirmSettingsHubPage";
@@ -15,6 +16,7 @@ import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
 import { useManageAccountingWorkspace } from "./app/hooks/useManageAccountingWorkspace";
+import { useAccountingFunctions } from "./features/accounting/functions/hooks/useAccountingFunctions";
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
@@ -46,6 +48,11 @@ function App() {
     selectedCompanyId: companiesWorkspace.companiesState.selectedCompanyId,
     companyDetailTab: companiesWorkspace.companyDetailTab,
     feedback,
+  });
+  // Q6: Funções de Lançamento — escopo da empresa selecionada
+  const accountingFunctions = useAccountingFunctions({
+    api,
+    companyId: companiesWorkspace.companiesState.selectedCompanyId,
   });
 
   const canEditCompany = useMemo(() => {
@@ -204,6 +211,8 @@ function App() {
           recalculatingGuideId: companiesWorkspace.guidesState.recalculatingGuideId,
           onUploadGuide: companiesWorkspace.handleCompanyGuideUpload,
           uploadingGuide: companiesWorkspace.uploadingCompanyGuide,
+          onIdentifyGuide: companiesWorkspace.handleIdentifyGuide,
+          onFetchGuidePdf: companiesWorkspace.handleFetchGuidePdf,
           onDeleteGuide: companiesWorkspace.handleDeleteGuide,
         }}
         editPanel={{
@@ -230,6 +239,8 @@ function App() {
           onImportOFX: accountingWorkspace.handleImportOFX,
           onPreviewExcel: accountingWorkspace.handlePreviewExcel,
           onImportExcel: accountingWorkspace.handleImportExcel,
+          onCreateParcelamento: accountingWorkspace.handleCreateParcelamento,
+          accountingFunctions, // Q6: hook completo (functions, loading, saving, create/update/remove/apply)
           savingEntry: accountingWorkspace.savingEntry,
           accounts: accountingWorkspace.chartOfAccountsState.accounts,
           onLoadAccounts: () => accountingWorkspace.loadChartOfAccounts(),
@@ -294,6 +305,21 @@ function App() {
     );
   }
 
+  if (session.page === "batchEmail") {
+    return (
+      <BatchEmailPage
+        report={companiesWorkspace.batchEmailReport}
+        loading={companiesWorkspace.loadingBatchEmailReport}
+        sending={companiesWorkspace.sendingBatchEmails}
+        onBack={() => session.setPage("companies")}
+        onLoad={companiesWorkspace.handleLoadBatchEmailReport}
+        onSend={companiesWorkspace.handleSendBatchEmails}
+        message={feedback.message}
+        error={feedback.error}
+      />
+    );
+  }
+
   return (
     <CompaniesHomePage
       user={session.user}
@@ -305,6 +331,7 @@ function App() {
       onOpenFirmSettings={() => session.setPage("firmSettings")}
       onRefreshCompanies={companiesWorkspace.loadCompanies}
       onOpenPendingReport={() => session.setPage("pendingReport")}
+      onOpenBatchEmail={() => session.setPage("batchEmail")}
       onLogout={handleLogout}
       onOpenCompany={(companyId) => {
         companiesWorkspace.companiesState.setSelectedCompanyId(companyId);
@@ -312,6 +339,7 @@ function App() {
       }}
       jobEnabled={companiesWorkspace.jobEnabled}
       onToggleJob={companiesWorkspace.handleToggleJob}
+      globalChartStatus={companiesWorkspace.globalChartStatus}
       message={feedback.message}
       error={feedback.error}
     />

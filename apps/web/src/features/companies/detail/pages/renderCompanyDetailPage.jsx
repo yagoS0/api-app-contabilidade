@@ -55,6 +55,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onImportOFX={accountingPanel.onImportOFX}
             onPreviewExcel={accountingPanel.onPreviewExcel}
             onImportExcel={accountingPanel.onImportExcel}
+            onCreateParcelamento={accountingPanel.onCreateParcelamento}
+            companyRegime={selectedCompany?.regimeTributario || selectedCompany?.tipoTributario}
+            accountingFunctions={accountingPanel.accountingFunctions}
             savingEntry={accountingPanel.savingEntry}
             accounts={accountingPanel.accounts}
             onLoadAccounts={accountingPanel.onLoadAccounts}
@@ -94,6 +97,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
         <AppShell className="guides-page-shell">
           <CompanyGuidesTable
+            companyId={companyId}
+            companyRegime={selectedCompany?.regimeTributario || selectedCompany?.tipoTributario}
             guides={guidesPanel.guides}
             loadingGuides={guidesPanel.loading}
             onResendGuide={guidesPanel.onResendGuide}
@@ -105,6 +110,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             recalculatingGuideId={guidesPanel.recalculatingGuideId}
             onUploadGuide={guidesPanel.onUploadGuide}
             uploadingGuide={guidesPanel.uploadingGuide}
+            onIdentifyGuide={guidesPanel.onIdentifyGuide}
+            onFetchGuidePdf={guidesPanel.onFetchGuidePdf}
           />
 
           <Feedback message={feedback.message} error={feedback.error} />
@@ -192,6 +199,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 submitting={editPanel.submitting}
                 submitLabel="Salvar alterações"
                 showOwnerPassword={false}
+                cnpjReadOnly
               />
             )}
 
@@ -218,6 +226,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
           <CircularTab
+            companyRegime={selectedCompany?.regimeTributario || selectedCompany?.tipoTributario}
             circularData={circularPanel.circularData}
             loading={circularPanel.loading}
             year={circularPanel.year}
@@ -229,13 +238,6 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onCreateBaixa={accountingPanel.onCreateBaixa}
             savingBaixa={accountingPanel.savingBaixa}
             onLoadBaixaTemplate={accountingPanel.onLoadBaixaTemplate}
-            runningFiscalAction={circularPanel.runningFiscalAction}
-            lastFiscalResult={circularPanel.lastFiscalResult}
-            onSearchGuides={circularPanel.onSearchGuides}
-            onCheckPayments={circularPanel.onCheckPayments}
-            onSyncInss={circularPanel.onSyncInss}
-            executions={circularPanel.executions}
-            loadingExecutions={circularPanel.loadingExecutions}
             error={circularPanel.error}
             message={circularPanel.message}
             onUpdateEntry={accountingPanel.onUpdateEntry}

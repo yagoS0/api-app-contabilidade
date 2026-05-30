@@ -5,6 +5,9 @@ export const GUIDE_TYPES = Object.freeze([
   "COFINS",
   "ISS",
   "SIMPLES",
+  "DARF",   // DARF genérico — quando o PDF tem 2+ tributos federais distintos (ex: PIS+COFINS, IRPJ+CSLL)
+  "IRPJ",   // tributos das empresas Presumidas (LUCRO_PRESUMIDO ou LUCRO_REAL)
+  "CSLL",
   "OUTRA",
 ]);
 

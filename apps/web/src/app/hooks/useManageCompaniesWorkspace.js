@@ -37,6 +37,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [uploadingCompanyGuide, setUploadingCompanyGuide] = useState(false);
   const [unidentifiedGuides, setUnidentifiedGuides] = useState([]);
   const [loadingUnidentifiedGuides, setLoadingUnidentifiedGuides] = useState(false);
+  // Página "Envio de e-mails em lote"
+  const [batchEmailReport, setBatchEmailReport] = useState(null);
+  const [loadingBatchEmailReport, setLoadingBatchEmailReport] = useState(false);
+  const [sendingBatchEmails, setSendingBatchEmails] = useState(false);
+  const [batchEmailSendResult, setBatchEmailSendResult] = useState(null);
+  // Status do plano de contas global — pré-requisito para criar empresas
+  const [globalChartStatus, setGlobalChartStatus] = useState(null);
 
   const selectedCompany = companiesState.selectedCompany;
 
@@ -115,6 +122,52 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       return null;
     } finally {
       setRunningSerproCron(false);
+    }
+  }
+
+  // Carrega a matriz "empresa × tipo de guia" para a página de envio em lote.
+  async function handleLoadBatchEmailReport(competencia) {
+    if (page === "login") return null;
+    setLoadingBatchEmailReport(true);
+    feedback.clearFeedback();
+    try {
+      const result = await api.getBatchEmailReport(competencia);
+      setBatchEmailReport(result || null);
+      return result;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao carregar matriz de envio em lote.");
+      setBatchEmailReport(null);
+      return null;
+    } finally {
+      setLoadingBatchEmailReport(false);
+    }
+  }
+
+  // Dispara envio em lote de 1 e-mail por empresa (com todas as guias da competência anexadas).
+  async function handleSendBatchEmails(items) {
+    if (page === "login" || !Array.isArray(items) || !items.length) return null;
+    setSendingBatchEmails(true);
+    setBatchEmailSendResult(null);
+    feedback.clearFeedback();
+    try {
+      const result = await api.sendBatchEmails(items);
+      setBatchEmailSendResult(result || null);
+      const sent = Number(result?.sent || 0);
+      if (sent > 0) {
+        feedback.setMessage(`${sent} e-mail${sent === 1 ? "" : "s"} enviado${sent === 1 ? "" : "s"} com sucesso.`);
+      } else {
+        feedback.setError("Nenhum e-mail foi enviado.");
+      }
+      // Recarrega o report para refletir o novo estado (linhas enviadas somem).
+      if (batchEmailReport?.competencia) {
+        await handleLoadBatchEmailReport(batchEmailReport.competencia);
+      }
+      return result;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao enviar e-mails em lote.");
+      return null;
+    } finally {
+      setSendingBatchEmails(false);
     }
   }
 
@@ -480,6 +533,33 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
+  // Identifica/completa metadados de uma guia já existente (status ERROR ou faltando tipo/competência).
+  async function handleIdentifyGuide(guideId, metadata) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId || !guideId) return { ok: false };
+    feedback.clearFeedback();
+    try {
+      const result = await api.identifyGuide(companyId, guideId, metadata);
+      if (result?.ok !== false) {
+        await loadGuides(companyId);
+        feedback.setMessage("Guia identificada e processada com sucesso.");
+      }
+      return result;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao identificar guia.");
+      return { ok: false, message: err?.message };
+    }
+  }
+
+  // Baixa o PDF de uma guia como Blob para visualização em iframe (com auth Bearer).
+  async function handleFetchGuidePdf(guideId) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId || !guideId) {
+      throw new Error("Empresa ou guia não selecionada.");
+    }
+    return api.fetchGuidePdfBlob(companyId, guideId);
+  }
+
   function togglePendingGuideSelection(guideId) {
     setSelectedPendingGuideIds((old) => (old.includes(guideId) ? old.filter((id) => id !== guideId) : [...old, guideId]));
   }
@@ -561,6 +641,26 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
+  // Carrega status do plano de contas global ao entrar em telas relevantes (home, criar empresa).
+  // Usado pelo banner de aviso + bloqueio do botão "Nova empresa".
+  async function loadGlobalChartStatus() {
+    if (page === "login") return;
+    if (typeof api?.getGlobalChartStatus !== "function") return;
+    try {
+      const result = await api.getGlobalChartStatus();
+      setGlobalChartStatus(result || null);
+    } catch {
+      setGlobalChartStatus(null);
+    }
+  }
+
+  useEffect(() => {
+    if (page === "companies" || page === "createCompany" || page === "firmSettings") {
+      loadGlobalChartStatus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
   return {
     companiesState,
     guidesState,
@@ -584,6 +684,12 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     runningSerproCron,
     serproCronRunResult,
     handleRunSerproCron,
+    batchEmailReport,
+    loadingBatchEmailReport,
+    sendingBatchEmails,
+    batchEmailSendResult,
+    handleLoadBatchEmailReport,
+    handleSendBatchEmails,
     handleSaveSerproSettings,
     handleUploadSerproCertificate,
     handleDeleteSerproCertificate,
@@ -615,10 +721,14 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleDeleteGuide,
     handleGuideUpload,
     handleCompanyGuideUpload,
+    handleIdentifyGuide,
+    handleFetchGuidePdf,
     uploadingCompanyGuide,
     togglePendingGuideSelection,
     toggleAllPendingGuides,
     handleSendSelectedPending,
     resetWorkspace,
+    globalChartStatus,
+    loadGlobalChartStatus,
   };
 }

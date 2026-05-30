@@ -186,6 +186,30 @@ export function createRealApi() {
       if (metadata) formData.append("metadata", JSON.stringify(metadata));
       return request(`/firm/companies/${companyId}/guides/upload`, { method: "POST", body: formData });
     },
+    // Baixa o PDF de uma guia já existente como Blob (com auth Bearer).
+    // Iframes não enviam Authorization header, então buscamos via fetch e criamos blob URL.
+    async fetchGuidePdfBlob(companyId, guideId) {
+      const baseUrl = getApiBaseUrl();
+      const headers = {};
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+      const res = await fetch(`${baseUrl}/firm/companies/${companyId}/guides/${guideId}/file`, {
+        method: "GET",
+        headers,
+      });
+      if (!res.ok) {
+        const err = new Error(`Falha ao baixar PDF da guia (HTTP ${res.status})`);
+        err.code = "GUIDE_FILE_FETCH_FAILED";
+        throw err;
+      }
+      return res.blob();
+    },
+    // Identifica/completa metadados de uma guia já no banco (status ERROR ou incompleta).
+    async identifyGuide(companyId, guideId, metadata) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/identify`, {
+        method: "POST",
+        body: JSON.stringify(metadata || {}),
+      });
+    },
     async deleteGuide(guideId) {
       return request(`/firm/guides/${guideId}`, { method: "DELETE" });
     },
@@ -345,6 +369,39 @@ export function createRealApi() {
       const payload = await request(`/firm/chart-of-accounts/global`);
       return Array.isArray(payload?.data) ? payload.data : [];
     },
+    // Indica se o plano global tem cobertura mínima (5 tipos básicos) — pré-requisito para criar empresas.
+    async getGlobalChartStatus() {
+      return request(`/firm/chart-of-accounts/global/status`);
+    },
+
+    // ── Q6: Funções de Lançamento (templates reutilizáveis) ───────────────
+    async listAccountingFunctions(companyId) {
+      const payload = await request(`/firm/companies/${companyId}/accounting-functions`);
+      return Array.isArray(payload?.data) ? payload.data : [];
+    },
+    async createAccountingFunction(companyId, body) {
+      return request(`/firm/companies/${companyId}/accounting-functions`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    async updateAccountingFunction(companyId, functionId, body) {
+      return request(`/firm/companies/${companyId}/accounting-functions/${functionId}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+    },
+    async deleteAccountingFunction(companyId, functionId) {
+      return request(`/firm/companies/${companyId}/accounting-functions/${functionId}`, {
+        method: "DELETE",
+      });
+    },
+    async applyAccountingFunction(companyId, functionId, { competencia, entryValores }) {
+      return request(`/firm/companies/${companyId}/accounting-functions/${functionId}/apply`, {
+        method: "POST",
+        body: JSON.stringify({ competencia, entryValores }),
+      });
+    },
     async createGlobalChartOfAccount(input) {
       return request(`/firm/chart-of-accounts/global`, {
         method: "POST",
@@ -452,6 +509,25 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/entries/${entryId}/baixa`, {
         method: "POST",
         body: JSON.stringify(input),
+      });
+    },
+    // Cria N parcelas de um parcelamento (Simples Nacional, INSS, etc.) em transação.
+    async createParcelamentoSimples(companyId, payload) {
+      return request(`/firm/companies/${companyId}/entries/parcelamento`, {
+        method: "POST",
+        body: JSON.stringify(payload || {}),
+      });
+    },
+    // Matriz "empresa × tipo de guia" para a página de envio em lote.
+    async getBatchEmailReport(competencia) {
+      const q = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
+      return request(`/firm/guides/batch-report${q}`);
+    },
+    // Envia 1 e-mail por empresa selecionada (com todas as guias da competência anexadas).
+    async sendBatchEmails(items) {
+      return request(`/firm/guides/batch-send`, {
+        method: "POST",
+        body: JSON.stringify({ items: Array.isArray(items) ? items : [] }),
       });
     },
     async getCircular(companyId, { year } = {}) {

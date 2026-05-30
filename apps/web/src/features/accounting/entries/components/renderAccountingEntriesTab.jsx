@@ -2,9 +2,11 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { HistoricosModal } from "../../historicos/components/renderHistoricosModal";
 import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal";
 import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
+import { ParcelamentoModal } from "../../parcelamento/components/renderParcelamentoModal";
 import { AccountRow, NewEntryForm } from "./renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtMoney } from "../lib/accountingEntriesShared";
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
+import { FunctionListModal, FunctionEditModal, FunctionApplyModal } from "../../functions/components/AccountingFunctionModals";
 
 function ActionMenu({ label, items, accent }) {
   const [open, setOpen] = useState(false);
@@ -134,12 +136,26 @@ export function AccountingEntriesTab({
   onOpenAccountingRulesTab,
   onPreviewExcel,
   onImportExcel,
+  // F3: Parcelamento Simples Nacional
+  onCreateParcelamento,
+  companyRegime,  // regime tributário — controla visibilidade do botão "Novo Parcelamento"
+  // Q6: Funções de Lançamento
+  accountingFunctions,  // { functions, loading, saving, create, update, remove, apply } do hook useAccountingFunctions
 }) {
   const [showOFX, setShowOFX] = useState(false);
   const [showHistoricos, setShowHistoricos] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
   const [showCsvExport, setShowCsvExport] = useState(false);
   const [showExcel, setShowExcel] = useState(false);
+  const [showParcelamento, setShowParcelamento] = useState(false);
+  const [savingParcelamento, setSavingParcelamento] = useState(false);
+  // Q6: Funções de Lançamento — modais
+  const [showFunctionsList, setShowFunctionsList] = useState(false);
+  const [editingFunction, setEditingFunction] = useState(null);    // null=fechado, {}=nova, {id,...}=editando existente
+  const [applyingFunction, setApplyingFunction] = useState(null);  // function que vai ser aplicada
+
+  // Parcelamento Simples Nacional só faz sentido para empresas regime SIMPLES.
+  const isSimples = String(companyRegime || "").trim().toUpperCase() === "SIMPLES";
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
@@ -281,6 +297,19 @@ export function AccountingEntriesTab({
             accent="#BD93F9"
             items={[
               { label: "+ Folha / Pró-labore", hint: "Lançamento composto pré-preenchido", onClick: () => setShowPayroll(true), disabled: !onLoadPayrollTemplate },
+              // Parcelamento Simples Nacional só aparece para empresas regime SIMPLES.
+              ...(isSimples ? [{
+                label: "+ Parcelamento Simples",
+                hint: "Cria N parcelas (provisão recorrente)",
+                onClick: () => setShowParcelamento(true),
+                disabled: !onCreateParcelamento,
+              }] : []),
+              // Q6: Funções customizadas (templates reutilizáveis)
+              ...(accountingFunctions ? [{
+                label: "Aplicar função…",
+                hint: "Use um template reutilizável da empresa ou global",
+                onClick: () => setShowFunctionsList(true),
+              }] : []),
             ]}
           />
         </div>
@@ -474,13 +503,79 @@ export function AccountingEntriesTab({
           accounts={accounts}
           defaultCompetencia={activeComp}
           onLoadTemplate={onLoadPayrollTemplate}
-          onSave={async ({ entry, baixa }) => {
-            const result = await onCreateEntry(entry);
-            const createdId = result?.entry?.id;
-            if (baixa && createdId && onCreateBaixa) {
-              try { await onCreateBaixa(createdId, baixa); } catch { /* erro já é exibido */ }
+          onSave={async ({ entry, baixas, repeatMonths }) => {
+            // F2: Repetição N meses — cria entry + baixas para cada competência (base + N seguintes).
+            // Helpers locais para evitar import; lógica simples:
+            //   addMonthsToCompetencia("2026-04", 1) → "2026-05"
+            //   substituiMmYyyyNoHistorico("VR REF PRO LAB FP 04/2026", "04/2026", "05/2026")
+            const repeatN = Math.max(0, Math.min(12, Number(repeatMonths) || 0));
+            function addMonthsToCompetencia(comp, n) {
+              const m = String(comp || "").match(/^(\d{4})-(\d{2})$/);
+              if (!m) return comp;
+              const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1 + n, 1));
+              return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
             }
-            setShowPayroll(false);
+            function compToMmYyyy(comp) {
+              const m = String(comp || "").match(/^(\d{4})-(\d{2})$/);
+              return m ? `${m[2]}/${m[1]}` : "";
+            }
+            function shiftDate(dateStr, monthsToAdd) {
+              if (!dateStr) return dateStr;
+              const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+              if (!m) return dateStr;
+              // Mantém o dia se possível; se transbordar (ex: 31/02), usa último dia do mês.
+              const targetYear = Number(m[1]);
+              const targetMonth = Number(m[2]) - 1 + monthsToAdd;
+              const day = Number(m[3]);
+              const lastDayOfTarget = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+              const realDay = Math.min(day, lastDayOfTarget);
+              const dt = new Date(Date.UTC(targetYear, targetMonth, realDay));
+              return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+            }
+            const baseComp = entry?.competencia || activeComp;
+            const baseMmYyyy = compToMmYyyy(baseComp);
+            const escapeRegex = (s) => String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const subsHistorico = (texto, novaMmYyyy) => {
+              if (!texto || !baseMmYyyy) return texto;
+              // Substitui apenas o MM/YYYY exato do mês base (evita falso positivo com outros números).
+              return String(texto).replace(new RegExp(escapeRegex(baseMmYyyy), "g"), novaMmYyyy);
+            };
+
+            try {
+              for (let n = 0; n <= repeatN; n++) {
+                const compN = addMonthsToCompetencia(baseComp, n);
+                const mmYyyyN = compToMmYyyy(compN);
+                const entryN = entry ? {
+                  ...entry,
+                  competencia: compN,
+                  data: shiftDate(entry.data, n),
+                  historico: subsHistorico(entry.historico, mmYyyyN),
+                  lines: (entry.lines || []).map((l) => ({
+                    ...l,
+                    historico: l.historico ? subsHistorico(l.historico, mmYyyyN) : l.historico,
+                  })),
+                } : null;
+                const baixasN = Array.isArray(baixas)
+                  ? baixas.map((b) => ({
+                      ...b,
+                      data: shiftDate(b.data, n),
+                      historico: subsHistorico(b.historico, mmYyyyN),
+                    }))
+                  : [];
+
+                let createdId = null;
+                if (entryN) {
+                  const result = await onCreateEntry(entryN);
+                  createdId = result?.entry?.id;
+                }
+                if (createdId && baixasN.length > 0 && onCreateBaixa) {
+                  for (const baixa of baixasN) {
+                    try { await onCreateBaixa(createdId, baixa); } catch { /* erro já é exibido */ }
+                  }
+                }
+              }
+              setShowPayroll(false);
+            } catch { /* erro já é tratado no onCreateEntry */ }
           }}
           saving={savingEntry}
           onClose={() => setShowPayroll(false)}
@@ -499,6 +594,83 @@ export function AccountingEntriesTab({
           onPreview={onPreviewExcel}
           onCommit={onImportExcel}
           onClose={() => setShowExcel(false)}
+        />
+      )}
+      {showParcelamento && (
+        <ParcelamentoModal
+          accounts={accounts}
+          defaultCompetencia={activeComp}
+          saving={savingParcelamento}
+          onSave={async (payload) => {
+            setSavingParcelamento(true);
+            try {
+              return await onCreateParcelamento(payload);
+            } finally {
+              setSavingParcelamento(false);
+            }
+          }}
+          onClose={() => setShowParcelamento(false)}
+        />
+      )}
+
+      {/* Q6: Funções de Lançamento */}
+      {showFunctionsList && accountingFunctions && (
+        <FunctionListModal
+          functions={accountingFunctions.functions}
+          loading={accountingFunctions.loading}
+          onApply={(f) => { setShowFunctionsList(false); setApplyingFunction(f); }}
+          onEdit={(f) => { setShowFunctionsList(false); setEditingFunction(f); }}
+          onDelete={async (f) => {
+            // eslint-disable-next-line no-alert
+            if (!window.confirm(`Excluir a função "${f.name}"?`)) return;
+            try { await accountingFunctions.remove(f.id); } catch {}
+          }}
+          onCreate={() => { setShowFunctionsList(false); setEditingFunction({}); }}
+          onDuplicate={async (f) => {
+            // Duplica como nova função da empresa (sem isSystem)
+            const dup = {
+              name: `${f.name} (cópia)`,
+              description: f.description || null,
+              entries: (f.entries || []).map((e, idx) => ({
+                ordem: idx, historico: e.historico, tipo: e.tipo, subtipo: e.subtipo || null,
+                lines: (e.lines || []).map((ln, lidx) => ({ ordem: lidx, conta: ln.conta, tipo: ln.tipo })),
+              })),
+            };
+            try {
+              await accountingFunctions.create(dup);
+            } catch {}
+          }}
+          onClose={() => setShowFunctionsList(false)}
+        />
+      )}
+      {editingFunction && accountingFunctions && (
+        <FunctionEditModal
+          initial={editingFunction.id ? editingFunction : null}
+          accounts={accounts}
+          saving={accountingFunctions.saving}
+          onSave={async (payload) => {
+            if (editingFunction.id) {
+              await accountingFunctions.update(editingFunction.id, payload);
+            } else {
+              await accountingFunctions.create(payload);
+            }
+            setEditingFunction(null);
+          }}
+          onClose={() => setEditingFunction(null)}
+        />
+      )}
+      {applyingFunction && accountingFunctions && (
+        <FunctionApplyModal
+          func={applyingFunction}
+          defaultCompetencia={activeComp}
+          saving={accountingFunctions.saving}
+          onApply={async ({ competencia, entryValores }) => {
+            await accountingFunctions.apply(applyingFunction.id, { competencia, entryValores });
+            setApplyingFunction(null);
+            // Recarrega lista de lançamentos para mostrar os criados
+            if (onLoad) await onLoad();
+          }}
+          onClose={() => setApplyingFunction(null)}
         />
       )}
     </div>

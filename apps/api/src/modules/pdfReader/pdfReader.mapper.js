@@ -20,6 +20,11 @@ export function mapPdfReaderToParserShape(raw) {
     fields: {
       inssProLabore: Boolean(fields.inss_pro_labore),
       subtipo: fields.subtipo != null ? String(fields.subtipo) : null,
+      // Campos do DARF — composição por tributo (PIS+COFINS, IRPJ+CSLL etc.) e
+      // quotas (ex: CSLL trimestral em 2 quotas com vencimentos diferentes).
+      // A Circular consome `composicao` para gerar provisões sintéticas por tributo.
+      composicao: Array.isArray(fields.composicao) ? fields.composicao : null,
+      quotas: Array.isArray(fields.quotas) ? fields.quotas : null,
     },
   };
 }

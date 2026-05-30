@@ -1,8 +1,23 @@
-import { useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
+import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
 
-const GUIDE_TYPES = ["SIMPLES", "INSS", "FGTS", "DARF", "ISS", "PIS", "COFINS", "OUTRA"];
+// Tipos sempre disponíveis (qualquer regime).
+const GUIDE_TYPES = ["SIMPLES", "INSS", "FGTS", "DARF", "ISS", "PIS", "COFINS", "IRPJ", "CSLL", "OUTRA"];
+
+// Filtro contextual: empresas Simples não têm IRPJ/CSLL/PIS/COFINS/ISS (são exclusivos de Presumidos).
+// Quando o regime não é conhecido, mostra tudo (comportamento conservador — usuário não fica travado).
+const GUIDE_TYPES_BY_REGIME = {
+  SIMPLES: ["SIMPLES", "INSS", "FGTS", "OUTRA"],
+  LUCRO_PRESUMIDO: ["IRPJ", "CSLL", "PIS", "COFINS", "ISS", "DARF", "INSS", "FGTS", "OUTRA"],
+  LUCRO_REAL: ["IRPJ", "CSLL", "PIS", "COFINS", "ISS", "DARF", "INSS", "FGTS", "OUTRA"],
+};
+
+function getAvailableGuideTypes(regimeTributario) {
+  const r = String(regimeTributario || "").trim().toUpperCase();
+  return GUIDE_TYPES_BY_REGIME[r] || GUIDE_TYPES;
+}
 
 const S = {
   overlay: {
@@ -143,6 +158,8 @@ function formatPaymentStatus(status) {
 }
 
 export function CompanyGuidesTable({
+  companyId,
+  companyRegime,  // regime tributário da empresa: filtra opções do dropdown "+ Subir Guia"
   guides,
   loadingGuides,
   onResendGuide,
@@ -154,16 +171,32 @@ export function CompanyGuidesTable({
   recalculatingGuideId,
   onUploadGuide,
   uploadingGuide,
+  // Novos: identificação/completar guia já existente + fetch do PDF para o iframe.
+  onIdentifyGuide,
+  onFetchGuidePdf,
 }) {
+  // Tipos disponíveis no dropdown filtrados pelo regime da empresa.
+  // Simples não vê IRPJ/CSLL/PIS/COFINS/ISS; Presumido não vê SIMPLES.
+  const availableUploadTypes = useMemo(
+    () => getAvailableGuideTypes(companyRegime),
+    [companyRegime],
+  );
   const [filterCompetencia, setFilterCompetencia] = useState("all");
   const [filterTipo, setFilterTipo] = useState("all");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkResending, setBulkResending] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [pendingFile, setPendingFile] = useState(null);
-  const [showDialog, setShowDialog] = useState(false);
-  const [parsedPreFill, setParsedPreFill] = useState(null);
+
+  // Upload flow (modal split): tipo escolhido no dropdown + arquivo + estado de salvamento
+  const [uploadTipo, setUploadTipo] = useState(null);  // "DAS"|"INSS"|... — null = modal fechado
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const uploadMenuRef = useRef(null);
+
+  // Completar flow (modal split p/ guia já existente)
+  const [completingGuide, setCompletingGuide] = useState(null);
+  const [completingSaving, setCompletingSaving] = useState(false);
 
   const competenciaOptions = useMemo(
     () => [...new Set(guides.map((g) => g.competencia).filter(Boolean))].sort((a, b) => b.localeCompare(a)),
@@ -241,35 +274,71 @@ export function CompanyGuidesTable({
     clearSelection();
   }
 
-  async function handleFileChange(event) {
+  // Fluxo novo de upload: usuário escolhe tipo no dropdown → file picker → modal split com PDF lado-a-lado
+  function handleStartUpload(tipo) {
+    setUploadMenuOpen(false);
+    setUploadTipo(tipo);
+    // Dispara file picker no próximo tick (precisa do input já no DOM)
+    requestAnimationFrame(() => fileInputRef.current?.click());
+  }
+
+  function handleFileChange(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !onUploadGuide) return;
-    setPendingFile(file);
-    const result = await onUploadGuide(file, null);
-    if (result?.needsMetadata) {
-      setParsedPreFill(result.parsed || null);
-      setShowDialog(true);
-    } else {
-      setPendingFile(null);
+    if (!file) {
+      // Cancelou o picker — fecha o estado de upload
+      setUploadTipo(null);
+      return;
+    }
+    setUploadFile(file);
+    // O modal split abre quando uploadFile + uploadTipo estão setados
+  }
+
+  async function handleCaptureSave(metadata) {
+    if (!uploadFile || !onUploadGuide) return { ok: false };
+    const result = await onUploadGuide(uploadFile, { ...metadata, tipo: uploadTipo || metadata.tipo });
+    if (result?.ok || (result && !result.needsMetadata)) {
+      // Sucesso: fecha modal
+      setUploadFile(null);
+      setUploadTipo(null);
+      return { ok: true };
+    }
+    return { ok: false, message: result?.message || result?.error || "Falha ao enviar guia." };
+  }
+
+  function handleCaptureCancel() {
+    setUploadFile(null);
+    setUploadTipo(null);
+  }
+
+  // Fluxo de completar guia já existente (modal split com fetch do PDF)
+  async function handleCompleteSave(metadata) {
+    if (!completingGuide || !onIdentifyGuide) return { ok: false };
+    const gid = completingGuide.guideId || completingGuide.id;
+    setCompletingSaving(true);
+    try {
+      const result = await onIdentifyGuide(gid, metadata);
+      if (result?.ok !== false) {
+        setCompletingGuide(null);
+        return { ok: true };
+      }
+      return { ok: false, message: result?.message || result?.error || "Falha ao identificar guia." };
+    } finally {
+      setCompletingSaving(false);
     }
   }
 
-  async function handleDialogSave(metadata) {
-    if (!pendingFile || !onUploadGuide) return;
-    const result = await onUploadGuide(pendingFile, metadata);
-    if (!result?.needsMetadata) {
-      setShowDialog(false);
-      setPendingFile(null);
-      setParsedPreFill(null);
+  // Fecha o menu de upload ao clicar fora
+  useEffect(() => {
+    if (!uploadMenuOpen) return undefined;
+    function onDocClick(e) {
+      if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target)) {
+        setUploadMenuOpen(false);
+      }
     }
-  }
-
-  function handleDialogCancel() {
-    setShowDialog(false);
-    setPendingFile(null);
-    setParsedPreFill(null);
-  }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [uploadMenuOpen]);
 
   async function handleDelete() {
     if (!onDeleteGuide || selectedCount === 0) return;
@@ -288,12 +357,27 @@ export function CompanyGuidesTable({
 
   return (
     <section className="guides-page">
-      {showDialog && (
-        <MetadataDialog
-          initial={parsedPreFill}
-          onSave={handleDialogSave}
-          onCancel={handleDialogCancel}
+      {/* Modal split de upload: PDF lado-a-lado do form. Abre quando tipo + arquivo estão prontos. */}
+      {uploadTipo && uploadFile && (
+        <GuideCaptureModal
+          mode="upload"
+          initialTipo={uploadTipo}
+          pdfFile={uploadFile}
+          onSave={handleCaptureSave}
+          onClose={handleCaptureCancel}
           saving={uploadingGuide}
+        />
+      )}
+
+      {/* Modal split de completar: para guias já no banco que estão pendentes/erro */}
+      {completingGuide && (
+        <GuideCaptureModal
+          mode="complete"
+          initialMetadata={completingGuide}
+          loadPdfBlob={onFetchGuidePdf ? () => onFetchGuidePdf(completingGuide.guideId || completingGuide.id) : null}
+          onSave={handleCompleteSave}
+          onClose={() => setCompletingGuide(null)}
+          saving={completingSaving}
         />
       )}
 
@@ -319,14 +403,46 @@ export function CompanyGuidesTable({
           <>
             <input ref={fileInputRef} type="file" accept="application/pdf"
               style={{ display: "none" }} onChange={handleFileChange} />
-            <Button
-              variant="primary" size="sm" type="button"
-              disabled={uploadingGuide}
-              onClick={() => fileInputRef.current?.click()}
-              style={{ marginLeft: "auto" }}
-            >
-              {uploadingGuide ? "Enviando..." : "+ Subir Guia"}
-            </Button>
+            <div ref={uploadMenuRef} style={{ marginLeft: "auto", position: "relative" }}>
+              <Button
+                variant="primary" size="sm" type="button"
+                disabled={uploadingGuide}
+                onClick={() => setUploadMenuOpen((o) => !o)}
+              >
+                {uploadingGuide ? "Enviando..." : "+ Subir Guia ▾"}
+              </Button>
+              {uploadMenuOpen && (
+                <div style={{
+                  position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 200,
+                  background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 180, overflow: "hidden",
+                }}>
+                  <div style={{
+                    padding: "8px 12px", fontSize: "0.7rem", color: "#6272A4",
+                    textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700,
+                    borderBottom: "1px solid #44475A",
+                  }}>
+                    Tipo de guia
+                  </div>
+                  {availableUploadTypes.map((tipo) => (
+                    <button
+                      key={tipo}
+                      type="button"
+                      onClick={() => handleStartUpload(tipo)}
+                      style={{
+                        display: "block", width: "100%", textAlign: "left",
+                        padding: "8px 12px", background: "transparent", border: "none",
+                        color: "#F8F8F2", fontSize: "0.875rem", cursor: "pointer", fontWeight: 500,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      {tipo}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -358,6 +474,16 @@ export function CompanyGuidesTable({
               >
                 {recalculatingGuideId === selectedGuideId ? "..." : "Recalcular"}
               </Button>
+              {/* Completar: aparece quando a guia selecionada está em ERROR ou faltando tipo/competência.
+                  Abre o modal split com o PDF lado-a-lado pra editar metadados. */}
+              {onIdentifyGuide && selectedCount === 1 && selectedGuide && (selectedGuide.status === "ERROR" || !selectedGuide.tipo || !selectedGuide.competencia) && (
+                <Button
+                  variant="secondary" size="sm"
+                  onClick={() => setCompletingGuide(selectedGuide)}
+                >
+                  ✎ Completar
+                </Button>
+              )}
               {onDeleteGuide && (
                 <Button
                   variant="danger" size="sm"
@@ -444,6 +570,14 @@ export function CompanyGuidesTable({
                     <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{guide.competencia || "-"}</span>
                     <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell">
                       {fmtMoney(guide.valor)}
+                      {guide.valorRecalculado != null && (
+                        <span
+                          style={{ marginLeft: 6, fontSize: "0.7rem", color: "#92400e", fontWeight: 700 }}
+                          title={`Guia recalculada pelo SERPRO. Valor do extrato (apuração): R$ ${fmtMoney(guide.valor)}. Valor atual da guia: R$ ${fmtMoney(guide.valorRecalculado)}.`}
+                        >
+                          ↻ R$ {fmtMoney(guide.valorRecalculado)}
+                        </span>
+                      )}
                     </span>
                     <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{fmtDate(guide.vencimento)}</span>
                     <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${status.tone}`} role="cell">

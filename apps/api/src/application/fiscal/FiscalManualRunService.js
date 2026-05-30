@@ -2,18 +2,9 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { capturePgdasGuideForCompany } from "./serpro/CaptureSerproGuidesService.js";
 import { syncSerproInssForCompany } from "./serpro/SerproDctfwebService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
-import { runGuideEmailWorkerSelected } from "../../workers/guideEmailWorker.js";
 
-// Dispara o envio imediato de e-mail para um guideId. Falha silenciosamente
-// (a guide já está com emailStatus=PENDING; o worker contínuo pega no próximo ciclo).
-async function fireEmailForGuide(guideId) {
-  if (!guideId) return;
-  try {
-    await runGuideEmailWorkerSelected({ guideIds: [String(guideId)] });
-  } catch {
-    // não crítico
-  }
-}
+// Auto-send REMOVIDO. As guias capturadas (PGDAS-D, INSS DCTFWeb) ficam em
+// emailStatus=PENDING aguardando envio em lote via `Envio de e-mails em lote`.
 
 /**
  * Orchestrator service for fiscal manual operations.
@@ -131,8 +122,7 @@ export class FiscalManualRunService {
       serviceId: options.serviceId || null,
     });
 
-    // Dispara envio imediato do e-mail (guia foi marcada como PENDING pelo create/update)
-    await fireEmailForGuide(result?.guide?.guideId);
+    // Auto-send REMOVIDO. Guia fica PENDING para envio em lote pelo contador.
 
     return {
       action: "search_guides",
@@ -218,8 +208,7 @@ export class FiscalManualRunService {
       };
     }
 
-    // Dispara envio imediato do e-mail
-    await fireEmailForGuide(result?.guide?.guideId);
+    // Auto-send REMOVIDO. Guia INSS fica PENDING para envio em lote pelo contador.
 
     return {
       action: "sync_inss",

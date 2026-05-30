@@ -69,44 +69,39 @@ async function releaseLockSafely() {
 }
 
 async function listEligiblePortalCompanies() {
-  // `cnpj` no schema é String não-nulo + único — então não precisa filtrar nulls.
-  // Filtramos apenas strings vazias (caso algum registro antigo tenha "").
-  const companies = await prisma.portalClient.findMany({
-    where: {
-      cnpj: { not: "" },
-    },
+  // PortalClient não tem relação `company` (só FK `companyId`). Buscamos Companies
+  // separadamente e fazemos merge em memória pelo companyId.
+  const portalRows = await prisma.portalClient.findMany({
+    where: { cnpj: { not: "" } },
     select: {
-      id: true,
-      razao: true,
-      cnpj: true,
-      guideNotificationEmail: true,
-      hasProlabore: true,
-      company: {
-        select: {
-          regimeTributario: true,
-          tipoTributario: true,
-        },
-      },
+      id: true, razao: true, cnpj: true,
+      guideNotificationEmail: true, hasProlabore: true, companyId: true,
     },
     orderBy: { razao: "asc" },
   });
+  const legacyIds = portalRows.map((p) => p.companyId).filter(Boolean);
+  const legacy = legacyIds.length > 0
+    ? await prisma.company.findMany({
+        where: { id: { in: legacyIds } },
+        select: { id: true, regimeTributario: true, tipoTributario: true },
+      })
+    : [];
+  const legacyMap = new Map(legacy.map((c) => [c.id, c]));
 
   const eligible = [];
-  for (const company of companies) {
-    const regime = String(company.company?.regimeTributario || company.company?.tipoTributario || "")
+  for (const p of portalRows) {
+    const legacyRow = p.companyId ? legacyMap.get(p.companyId) : null;
+    const regime = String(legacyRow?.regimeTributario || legacyRow?.tipoTributario || "")
       .trim()
       .toUpperCase();
     if (regime !== "SIMPLES") continue;
     // eslint-disable-next-line no-await-in-loop
-    const email = await resolveCompanyNotificationEmail(company.id);
+    const email = await resolveCompanyNotificationEmail(p.id);
     if (!email) continue;
     eligible.push({
-      id: company.id,
-      razao: company.razao,
-      cnpj: company.cnpj,
-      email,
+      id: p.id, razao: p.razao, cnpj: p.cnpj, email,
       regimeTributario: regime,
-      hasProlabore: Boolean(company.hasProlabore),
+      hasProlabore: Boolean(p.hasProlabore),
     });
   }
   return eligible;

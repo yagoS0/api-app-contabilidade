@@ -108,6 +108,102 @@ function TemplateBadge() {
   return <span style={{ display: "inline-block", fontSize: "0.8125rem", fontWeight: 700, padding: "6px 12px", borderRadius: 999, background: "#FFB347", color: "#1A1B26", border: "1px solid #FFB347", whiteSpace: "nowrap" }}>PREENCHER VALOR</span>;
 }
 
+// Input com autocomplete: busca conta no plano por código OU nome (substring, case-insensitive).
+// Aceita digitar texto livre (ex: "receita serviç") — filtra ao vivo e mostra dropdown clicável.
+// Aceita Tab/Enter pra selecionar o 1º resultado. Mostra Nome da conta resolvida ao lado.
+function AccountSearchInput({ value, onChange, accounts, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef(null);
+  // sincroniza query com value externo quando muda de fora (ex: ao carregar entry)
+  useEffect(() => { setQuery(String(value || "")); }, [value]);
+
+  useEffect(() => {
+    const fn = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", fn);
+    return () => document.removeEventListener("mousedown", fn);
+  }, []);
+
+  const normalized = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  const q = normalized(query);
+  // Se a query bate exatamente com um código existente, esconde dropdown (já está "ok")
+  const exactCodeMatch = q && accounts.some((a) => String(a.codigo).toLowerCase() === q);
+  const matches = (q && !exactCodeMatch)
+    ? accounts.filter((a) =>
+        String(a.codigo).toLowerCase().includes(q) ||
+        normalized(a.nome).includes(q)
+      ).slice(0, 12)
+    : [];
+
+  function pick(acc) {
+    onChange(String(acc.codigo));
+    setQuery(String(acc.codigo));
+    setOpen(false);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === "Enter" || e.key === "Tab") {
+      if (matches.length > 0) {
+        e.preventDefault();
+        pick(matches[0]);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <input
+        type="text"
+        value={query}
+        placeholder={placeholder || "Cód. ou nome"}
+        autoComplete="off"
+        onChange={(e) => {
+          const v = e.target.value;
+          setQuery(v);
+          // Sempre propaga — backend tira não-dígitos no save se for código puro;
+          // mas se o usuário ainda digitando texto, é a busca: não atualiza value até pick().
+          // Para suportar usuários que colam o código direto: propaga só se for numérico.
+          if (/^\d+$/.test(v.trim())) onChange(v.trim());
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
+        style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", fontWeight: 700, width: "100%" }}
+      />
+      {open && matches.length > 0 && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 3px)", left: 0, zIndex: 400,
+          background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`,
+          borderRadius: 6, boxShadow: "0 8px 28px rgba(0,0,0,0.25)",
+          minWidth: 320, maxWidth: 480, maxHeight: 260, overflowY: "auto",
+        }}>
+          {matches.map((a) => (
+            <button
+              key={a.codigo}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); pick(a); }}
+              style={{
+                display: "block", width: "100%", textAlign: "left",
+                padding: "6px 10px", border: "none",
+                borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`,
+                background: ACCOUNTING_PANEL.field,
+                color: ACCOUNTING_PANEL.text, cursor: "pointer", fontSize: "0.78rem",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.surface; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.field; }}
+            >
+              <div style={{ fontWeight: 700 }}>{a.codigo} · {a.nome}</div>
+              <div style={{ fontSize: "0.65rem", color: ACCOUNTING_PANEL.muted }}>{a.tipo || "—"}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LineEditor({ lines, onChange, accounts }) {
   function updateLine(idx, field, val) { onChange(lines.map((l, i) => i === idx ? { ...l, [field]: val } : l)); }
   function removeLine(idx) { onChange(lines.filter((_, i) => i !== idx)); }
@@ -116,20 +212,27 @@ export function LineEditor({ lines, onChange, accounts }) {
   const totalC = lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
   const diff = Math.abs(totalD - totalC);
   const balanced = diff < 0.01;
-  const lineStyle = { display: "grid", gridTemplateColumns: "38px 90px 1fr 110px 28px", gap: 4, alignItems: "center", padding: "3px 0", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` };
+  const lineStyle = { display: "grid", gridTemplateColumns: "38px 140px 1fr 110px 28px", gap: 4, alignItems: "center", padding: "3px 0", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` };
 
   return (
     <div style={{ marginTop: 6, padding: 12, borderRadius: 8, background: ACCOUNTING_PANEL.field }}>
-      <div style={{ display: "grid", gridTemplateColumns: "38px 90px 1fr 110px 28px", gap: 4, padding: "2px 0", fontSize: "0.6rem", fontWeight: 700, color: ACCOUNTING_PANEL.muted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}>
-        <span>D/C</span><span>Conta</span><span>Nome</span><span style={{ textAlign: "right" }}>Valor (R$)</span><span></span>
+      <div style={{ display: "grid", gridTemplateColumns: "38px 140px 1fr 110px 28px", gap: 4, padding: "2px 0", fontSize: "0.6rem", fontWeight: 700, color: ACCOUNTING_PANEL.muted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}>
+        <span>D/C</span><span>Conta (cód/nome)</span><span>Nome resolvido</span><span style={{ textAlign: "right" }}>Valor (R$)</span><span></span>
       </div>
       {lines.map((l, idx) => {
         const resolved = accounts.find((a) => a.codigo === String(l.conta || "").trim());
         return (
           <div key={idx} style={lineStyle}>
             <select value={l.tipo} onChange={(e) => updateLine(idx, "tipo", e.target.value)} style={{ ...PANEL_FIELD_STYLE, width: "100%", height: 34, padding: "0 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47", background: ACCOUNTING_PANEL.surface }}><option value="D">D</option><option value="C">C</option></select>
-            <input type="text" value={l.conta || ""} placeholder="Cód." onChange={(e) => updateLine(idx, "conta", e.target.value)} style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", fontWeight: 700 }} />
-            <div style={{ fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: resolved ? ACCOUNTING_PANEL.text : ACCOUNTING_PANEL.muted, paddingLeft: 2 }}>{resolved ? resolved.nome : "—"}</div>
+            <AccountSearchInput
+              value={l.conta || ""}
+              onChange={(v) => updateLine(idx, "conta", v)}
+              accounts={accounts}
+              placeholder="Cód. ou nome"
+            />
+            <div style={{ fontSize: "0.75rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: resolved ? ACCOUNTING_PANEL.text : "#FF4757", paddingLeft: 2 }}>
+              {resolved ? resolved.nome : (l.conta ? `⚠ código ${l.conta} não encontrado` : "— vazio —")}
+            </div>
             <input type="number" step="0.01" min="0" placeholder="0,00" value={l.valor || ""} onChange={(e) => updateLine(idx, "valor", e.target.value)} style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", textAlign: "right" }} />
             <button onClick={() => removeLine(idx)} style={{ width: 24, height: 24, border: "none", background: "#FF4757", color: "#F8F8F2", borderRadius: 3, cursor: "pointer", fontSize: "0.7rem", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
           </div>
@@ -575,14 +678,22 @@ function lastDayOfCompetencia(competencia) {
   return `${m[1]}-${m[2]}-${String(day).padStart(2, "0")}`;
 }
 
+// Conjunto de roles que representam retenções no pró-labore/folha (subtraídas do bruto).
+// Quando o template tiver novos roles (ex: CASP), basta adicionar aqui.
+const RETENCAO_ROLES = new Set(["inss", "irrf", "casp", "fgts"]);
+
 export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate, onSave, saving, onClose }) {
   const [kind, setKind] = useState("PROLABORE");
   const [competencia, setCompetencia] = useState(defaultCompetencia || "");
   const [template, setTemplate] = useState(null);
-  // Cada linha: { data, debito, credito, historico, valor }
+  // Cada linha: { data, debito, credito, historico, valor, role?, _override? }
+  // - role: vem do template ("salary"|"inss"|"irrf"|"liquid"|...). "_baixa" = linha de baixa.
+  // - _override: true quando o usuário editou manualmente um valor que normalmente é calculado.
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // F2: Repetir nos próximos N meses (0..12). Cria N+1 entries (este + N seguintes).
+  const [repeatMonths, setRepeatMonths] = useState(0);
 
   useEffect(() => {
     let canceled = false;
@@ -597,12 +708,14 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
         if (!tpl) return;
         const defaultDate = lastDayOfCompetencia(competencia);
         // Linhas da provisão: cada uma com apenas D OU C preenchido
+        // F1: preserva `role` para reconhecer linha do líquido (cálculo automático).
         const provisaoRows = tpl.lines.map((l) => ({
           data: defaultDate,
           debito: l.side === "D" ? (l.accountCode || "") : "",
           credito: l.side === "C" ? (l.accountCode || "") : "",
           historico: l.historico || "",
           valor: "",
+          role: l.role || null,
         }));
         // Linha de baixa: D + C preenchidos
         const baixaRow = tpl.baixa
@@ -612,6 +725,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
               credito: tpl.baixa.creditAccountCode || "",
               historico: tpl.baixa.historico || "",
               valor: "",
+              role: "_baixa",
             }
           : null;
         setRows(baixaRow ? [...provisaoRows, baixaRow] : provisaoRows);
@@ -626,8 +740,59 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
     return () => { canceled = true; };
   }, [kind, competencia, onLoadTemplate]);
 
+  // F1: Cálculo automático do líquido + baixa em tempo real.
+  // Líquido = sum(linhas D com role "salary") - sum(linhas C com role retenção).
+  // Preenche linha role="liquid" e linha role="_baixa" desde que o usuário não tenha
+  // feito override manual (flag _override).
+  useEffect(() => {
+    const liquidIdx = rows.findIndex((r) => r.role === "liquid");
+    if (liquidIdx === -1) return;
+    const baixaIdx = rows.findIndex((r) => r.role === "_baixa");
+    let totalSalary = 0;
+    let totalRetencao = 0;
+    for (const r of rows) {
+      if (!r.role || r.role === "liquid" || r.role === "_baixa") continue;
+      const v = Number(r.valor || 0);
+      if (!Number.isFinite(v) || v <= 0) continue;
+      if (r.role === "salary") {
+        if (r.debito) totalSalary += v;
+      } else if (RETENCAO_ROLES.has(r.role)) {
+        if (r.credito) totalRetencao += v;
+      }
+    }
+    const liquido = totalSalary - totalRetencao;
+    const liquidoStr = liquido > 0 ? liquido.toFixed(2) : "";
+    setRows((prev) => {
+      let changed = false;
+      const next = prev.map((r, i) => {
+        if (i !== liquidIdx && i !== baixaIdx) return r;
+        if (r._override) return r;  // não sobrescreve edição manual
+        if (r.valor === liquidoStr) return r;  // sem mudança
+        changed = true;
+        return { ...r, valor: liquidoStr };
+      });
+      return changed ? next : prev;
+    });
+    // Depende da "assinatura dos valores" das linhas — quando qualquer valor muda, recalcula.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.map((r) => `${r.role || ""}:${r.debito || ""}:${r.credito || ""}:${r.valor || ""}`).join("|")]);
+
   function updateRow(idx, field, value) {
-    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [field]: value } : r)));
+    setRows((prev) => prev.map((r, i) => {
+      if (i !== idx) return r;
+      const next = { ...r, [field]: value };
+      // F1: marca _override quando o usuário edita manualmente o valor de uma linha calculada
+      if (field === "valor" && (r.role === "liquid" || r.role === "_baixa")) {
+        // Se voltar a vazio, libera o auto-cálculo
+        next._override = String(value || "").trim() !== "";
+      }
+      return next;
+    }));
+  }
+
+  // F1: usuário clica no ícone ✎/⚙ para restaurar auto-cálculo de uma linha
+  function restoreAutoCalc(idx) {
+    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, _override: false, valor: "" } : r)));
   }
 
   function addRow() {
@@ -710,7 +875,19 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
       ],
     }));
 
-    await onSave({ entry: provisaoEntry, baixas });
+    // F2: Confirmação antes de criar múltiplas competências
+    const repeatN = Math.max(0, Math.min(12, Number(repeatMonths) || 0));
+    if (repeatN > 0) {
+      const totalEntries = repeatN + 1;
+      // eslint-disable-next-line no-alert
+      const ok = window.confirm(
+        `Isso vai criar ${totalEntries} lançamentos (este mês + ${repeatN} mês${repeatN === 1 ? "" : "es"} seguintes), `
+        + `replicando valores e contas. Continuar?`,
+      );
+      if (!ok) return;
+    }
+
+    await onSave({ entry: provisaoEntry, baixas, repeatMonths: repeatN });
   }
 
   const overlay = {
@@ -831,14 +1008,47 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
                         </datalist>
                       </td>
                       <td style={cellStyle}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={r.valor}
-                          onChange={(e) => updateRow(idx, "valor", e.target.value)}
-                          placeholder="0,00"
-                          style={{ ...inputStyle, textAlign: "right" }}
-                        />
+                        {/* F1: linhas calculadas (liquid/_baixa) ganham ícone ao lado do input */}
+                        {(r.role === "liquid" || r.role === "_baixa") ? (
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={r.valor}
+                              onChange={(e) => updateRow(idx, "valor", e.target.value)}
+                              placeholder="0,00"
+                              style={{
+                                ...inputStyle, textAlign: "right",
+                                background: r._override ? "#1A1B26" : "rgba(189,147,249,0.08)",
+                                borderColor: r._override ? "#FFB347" : "#44475A",
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => r._override && restoreAutoCalc(idx)}
+                              title={r._override
+                                ? "Editado manualmente — clique para restaurar cálculo automático"
+                                : "Valor calculado automaticamente (salário − retenções)"}
+                              style={{
+                                background: "transparent", border: "none",
+                                color: r._override ? "#FFB347" : "#BD93F9",
+                                width: 22, height: 22, padding: 0, cursor: r._override ? "pointer" : "default",
+                                fontSize: "0.9rem", lineHeight: 1,
+                              }}
+                            >
+                              {r._override ? "✎" : "⚙"}
+                            </button>
+                          </div>
+                        ) : (
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={r.valor}
+                            onChange={(e) => updateRow(idx, "valor", e.target.value)}
+                            placeholder="0,00"
+                            style={{ ...inputStyle, textAlign: "right" }}
+                          />
+                        )}
                       </td>
                       <td style={{ ...cellStyle, textAlign: "center" }}>
                         <button
@@ -910,10 +1120,41 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
           </div>
         )}
 
+        {/* F2: Repetir N meses — útil para pró-labore fixo recorrente */}
+        <div style={{
+          display: "flex", gap: 12, alignItems: "center", marginTop: 14, padding: "10px 12px",
+          background: "#1A1B26", borderRadius: 8, border: "1px solid #44475A",
+        }}>
+          <label style={{ fontSize: "0.8125rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 8 }}>
+            <span>↻ Repetir nos próximos</span>
+            <input
+              type="number"
+              min={0}
+              max={12}
+              value={repeatMonths}
+              onChange={(e) => {
+                const n = Math.max(0, Math.min(12, Number(e.target.value) || 0));
+                setRepeatMonths(n);
+              }}
+              style={{
+                width: 60, background: "#24253A", border: "1px solid #44475A",
+                borderRadius: 6, color: "#F8F8F2", padding: "4px 8px",
+                fontSize: "0.9rem", textAlign: "center",
+              }}
+            />
+            <span>meses</span>
+          </label>
+          <span style={{ fontSize: "0.7rem", color: "#6272A4", flex: 1 }}>
+            {repeatMonths > 0
+              ? `Vai criar ${repeatMonths + 1} lançamentos (este + ${repeatMonths} mês${repeatMonths === 1 ? "" : "es"} seguintes), substituindo MM/AAAA no histórico.`
+              : "Padrão: 0 (só esta competência). Útil para pró-labore fixo mensal."}
+          </span>
+        </div>
+
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14 }}>
           <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
           <Button variant="primary" onClick={handleSave} disabled={saving || loading || validRows.length === 0}>
-            {saving ? "Salvando..." : "Salvar lançamento"}
+            {saving ? "Salvando..." : repeatMonths > 0 ? `Salvar ${repeatMonths + 1} lançamentos` : "Salvar lançamento"}
           </Button>
         </div>
       </div>

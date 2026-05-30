@@ -3,7 +3,7 @@ import os
 from typing import Any
 
 from app.config import settings
-from app.extractors import das, fgts, generic, inss, iss
+from app.extractors import darf, das, fgts, generic, inss, iss
 from app.services import pdf_text
 from app.services.ocr_service import should_fail_short_text
 
@@ -34,8 +34,11 @@ def decode_base64_pdf(content_b64: str) -> tuple[bytes | None, str | None]:
 def _build_fields(
     document_type: str,
     base: dict[str, Any],
+    text: str,
     text_upper: str,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str]:
+    """Refina os campos extraídos e pode promover o document_type
+    (caso o DARF revele ser de um tributo específico — IRPJ/CSLL/PIS/COFINS)."""
     refined = dict(base)
     if document_type == "SIMPLES":
         refined = das.refine_simples(refined, text_upper)
@@ -45,6 +48,14 @@ def _build_fields(
         refined = fgts.refine_fgts(refined, text_upper)
     elif document_type == "ISS":
         refined = iss.refine_iss(refined, text_upper)
+    elif document_type == "DARF":
+        # DARF precisa do texto original (não só uppercase) para preservar capitalização
+        # ao localizar a tabela "Composição do Documento de Arrecadação".
+        refined = darf.refine_darf(refined, text, text_upper)
+        # Promove tipo (IRPJ/CSLL/PIS/COFINS) quando tributo é único e mapeado.
+        override = refined.pop("_tipo_override", None)
+        if override:
+            document_type = override
 
     is_pro_labore = bool(
         refined.get("codigo_receita") == "1099"
@@ -60,7 +71,7 @@ def _build_fields(
     )
     refined.pop("_inss_pro_labore", None)
 
-    return {
+    out = {
         "cnpj": refined.get("cnpj"),
         "razao_social": refined.get("razao_social"),
         "competencia": refined.get("competencia_mm_yyyy"),
@@ -71,6 +82,14 @@ def _build_fields(
         "inss_pro_labore": is_pro_labore,
         "subtipo": "PRO_LABORE" if is_pro_labore else None,
     }
+    # Campos extras do DARF (composição e quotas) — preservados quando presentes.
+    # Vão pro `extracted` no banco e a Circular consome a composição para gerar
+    # provisões sintéticas por tributo.
+    if refined.get("composicao"):
+        out["composicao"] = refined["composicao"]
+    if refined.get("quotas"):
+        out["quotas"] = refined["quotas"]
+    return out, document_type
 
 
 def extract_from_pdf_bytes(content: bytes, filename: str | None) -> dict[str, Any]:
@@ -100,7 +119,7 @@ def extract_from_pdf_bytes(content: bytes, filename: str | None) -> dict[str, An
     text_upper = text.upper()
     document_type = generic.detect_tipo(text_upper)
     base = generic.extract_base_fields(text, text_upper)
-    fields_out = _build_fields(document_type, base, text_upper)
+    fields_out, document_type = _build_fields(document_type, base, text, text_upper)
 
     warnings: list[str] = []
     if not fields_out.get("cnpj"):

@@ -189,16 +189,19 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   }
 
   async function handleUpdateEntry(entryId, input) {
-    if (!selectedCompanyId) return;
+    if (!selectedCompanyId) return { ok: false, error: "no_company" };
     setSavingEntry(true);
     setEntriesError("");
     setEntriesMessage("");
     try {
-      await api.updateAccountingEntry(selectedCompanyId, entryId, input);
+      const result = await api.updateAccountingEntry(selectedCompanyId, entryId, input);
       await loadAccountingEntries(selectedCompanyId);
       setEntriesMessage("Lançamento atualizado.");
+      return result;
     } catch (err) {
       setEntriesError(err?.message || "Falha ao atualizar lançamento.");
+      // Re-lança para o caller (modal) também conseguir exibir.
+      throw err;
     } finally {
       setSavingEntry(false);
     }
@@ -288,6 +291,14 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   async function handleImportExcel(transactions) {
     if (!selectedCompanyId) return null;
     const result = await api.commitExcelImport(selectedCompanyId, transactions);
+    await loadAccountingEntries(selectedCompanyId);
+    return result;
+  }
+
+  // F3: Cria N parcelas de um parcelamento Simples Nacional em transação no backend.
+  async function handleCreateParcelamento(payload) {
+    if (!selectedCompanyId) return null;
+    const result = await api.createParcelamentoSimples(selectedCompanyId, payload);
     await loadAccountingEntries(selectedCompanyId);
     return result;
   }
@@ -487,6 +498,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     handleImportOFX,
     handlePreviewExcel,
     handleImportExcel,
+    handleCreateParcelamento,
     handleCreateAccount,
     handleUpdateAccount,
     handleDeleteAccount,

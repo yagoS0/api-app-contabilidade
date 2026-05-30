@@ -32,6 +32,7 @@ export function CompanyForm({
   submitting,
   submitLabel,
   showOwnerPassword,
+  cnpjReadOnly = false, // true em modo edição: CNPJ é imutável após criação (UI + API)
 }) {
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjError, setCnpjError] = useState(null);
@@ -79,17 +80,29 @@ export function CompanyForm({
       ) : null}
       <label>
         CNPJ
-        {cnpjLoading && <span style={{ marginLeft: 8, fontSize: 12, color: "#888" }}>Consultando...</span>}
-        {cnpjError && <span style={{ marginLeft: 8, fontSize: 12, color: "#e55" }}>{cnpjError}</span>}
+        {cnpjReadOnly && (
+          <span style={{ marginLeft: 8, fontSize: 12, color: "#888" }}>
+            (não editável — para mudar, exclua a empresa e crie outra)
+          </span>
+        )}
+        {!cnpjReadOnly && cnpjLoading && (
+          <span style={{ marginLeft: 8, fontSize: 12, color: "#888" }}>Consultando...</span>
+        )}
+        {!cnpjReadOnly && cnpjError && (
+          <span style={{ marginLeft: 8, fontSize: 12, color: "#e55" }}>{cnpjError}</span>
+        )}
         <input
           value={form.cnpj}
           onChange={(event) => {
+            if (cnpjReadOnly) return;
             onChange("cnpj", event.target.value);
             setCnpjError(null);
           }}
-          onBlur={handleCnpjBlur}
+          onBlur={cnpjReadOnly ? undefined : handleCnpjBlur}
           placeholder="00.000.000/0000-00"
           required
+          readOnly={cnpjReadOnly}
+          style={cnpjReadOnly ? { background: "#1f2030", color: "#aeb6d3", cursor: "not-allowed" } : undefined}
         />
       </label>
       <label>

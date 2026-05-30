@@ -19,13 +19,14 @@ import { createAdnRouter } from "./routes/adn.js";
 import { runGuideEmailWorkerLoop } from "./workers/guideEmailWorker.js";
 import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
+import { backfillProvisionsFromExistingGuides } from "./application/accounting/GuideToProvisionBackfill.js";
 
 const app = express();
 app.use(express.json());
 app.use(
   cors({
     origin: true,
-    methods: ["GET", "POST", "PATCH", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["content-type", "x-api-key", "authorization"],
   })
 );
@@ -81,6 +82,11 @@ app.use("/", statusRouter);
 
 app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
+  // Q5 backfill: cria AccountingEntry para Guides PROCESSED que ainda não têm.
+  // Background, best-effort — não atrasa o boot.
+  backfillProvisionsFromExistingGuides({ logger: log }).catch((err) => {
+    log.warn({ err: err?.message || err }, "Backfill GuideToProvision falhou");
+  });
 });
 
 if (GUIDE_EMAIL_WORKER_ENABLED) {

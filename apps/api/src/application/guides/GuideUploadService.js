@@ -30,8 +30,16 @@ function buildErrorEntry({ code, reason, message }) {
 
 function buildExtractedPayload({ parsed, hash, fileName }) {
   const base = parsed && typeof parsed === "object" ? parsed : {};
+  // Promove composicao e quotas (vindos de parsed.fields para DARFs) ao topo
+  // para que a Circular consuma direto via guide.extracted.composicao / .quotas
+  // sem precisar navegar pelo subobjeto fields.
+  const subFields = base.fields && typeof base.fields === "object" ? base.fields : {};
+  const composicao = Array.isArray(subFields.composicao) ? subFields.composicao : null;
+  const quotas = Array.isArray(subFields.quotas) ? subFields.quotas : null;
   return {
     ...base,
+    ...(composicao ? { composicao } : {}),
+    ...(quotas ? { quotas } : {}),
     uploadHash: hash,
     sourceFileName: fileName || null,
   };
