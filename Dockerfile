@@ -1,5 +1,10 @@
 FROM node:20-slim
 
+# Prisma precisa de OpenSSL pra rodar migrate/schema engine
+RUN apt-get update -y && \
+    apt-get install -y openssl && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY package*.json ./
