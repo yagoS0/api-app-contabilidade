@@ -20,3 +20,23 @@ enviodeguias-*.json
 # dependencies
 node_modules/
 apps/*/node_modules/
+
+# Python venvs
+**/.venv/
+**/__pycache__/
+*.pyc
+
+# Secrets
+**/secrets/
+**/credentials*.json
+**/*.pem
+**/*.key
+**/*.pfx
+
+# Build artifacts
+apps/web/dist/
+apps/api/node_modules/
+
+# OS
+*:Zone.Identifier
+.DS_Store
