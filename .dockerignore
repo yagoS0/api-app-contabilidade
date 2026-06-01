@@ -1,10 +1,41 @@
-node_modules
-npm-debug.log
+# Não copiar nenhum venv Python pro container
+**/.venv/
+**/__pycache__/
+*.pyc
+
+# Não copiar node_modules — Dockerfile faz npm ci dentro do container
+**/node_modules/
+
+# Não copiar build artifacts
+apps/web/dist/
+apps/api/dist/
+
+# Não copiar secrets
+**/secrets/
+**/credentials*.json
+**/*.pem
+**/*.pfx
 .env
-.processed.json
-.state.json
-.git
-.gitignore
-secrets
+.env.*
 
+# Git e CI
+.git/
+.github/
 
+# Docs e progresso
+docs/
+
+# OS
+.DS_Store
+*:Zone.Identifier
+
+# Lixo de IDE
+.vscode/
+.idea/
+
+# Tests/coverage
+**/coverage/
+**/__tests__/
+
+# Backups
+backups/
