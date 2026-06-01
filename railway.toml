@@ -11,7 +11,7 @@ watchPatterns = [
 ]
 
 [deploy]
-healthcheckPath = "/readyz"
+healthcheckPath = "/healthz"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
