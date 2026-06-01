@@ -49,17 +49,9 @@ export const FROM = (
 // === NFSe (Padrão Nacional) ===
 export const NFSE_CERT_PFX_PATH = (process.env.NFSE_CERT_PFX_PATH || "").trim();
 export const NFSE_CERT_PFX_PASSWORD = (process.env.NFSE_CERT_PFX_PASSWORD || "").trim();
-// Suporte a nome legado (NFSE_RJ_BASE_URL) para compatibilidade
-export const NFSE_BASE_URL = (
-  process.env.NFSE_BASE_URL ||
-  process.env.NFSE_RJ_BASE_URL ||
-  ""
-).trim(); // endpoint do provedor NFS-e Nacional
-const nfseEnvRaw = (
-  process.env.NFSE_ENV ||
-  process.env.NFSE_RJ_ENV ||
-  "producao"
-)
+// Q8.B: removido suporte a NFSE_RJ_BASE_URL/NFSE_RJ_ENV legados (Padrão Nacional).
+export const NFSE_BASE_URL = (process.env.NFSE_BASE_URL || "").trim();
+const nfseEnvRaw = (process.env.NFSE_ENV || "producao")
   .toString()
   .trim()
   .toLowerCase();

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
+import { ParcelamentosList, ParcelaPaymentModal } from "../../parcelamento/components/ParcelamentoModals";
 import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
 
 // Subtipos universais + flag de regimes que os exibem.
@@ -401,11 +402,14 @@ export function CircularTab({
   onUpdateEntry,
   onSearchHistoricos,
   onCancelBaixa,
+  parcelamentos, // Q9: hook completo (parcelamentos, payParcela, rescindir, etc)
 }) {
   const [baixaEntry, setBaixaEntry] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [cancellingBaixaId, setCancellingBaixaId] = useState(null);
+  // Q9: state pro modal de pagamento de parcela
+  const [payingParcela, setPayingParcela] = useState(null); // { parcelamento, parcela }
   const currentYear = new Date().getFullYear();
 
   const matrix = useMemo(() => {
@@ -664,6 +668,39 @@ export function CircularTab({
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Q9: lista de parcelamentos (Simples, INSS, etc) — embaixo da matriz */}
+      {parcelamentos && (
+        <div style={{ marginTop: 20 }}>
+          <ParcelamentosList
+            parcelamentos={parcelamentos.parcelamentos}
+            loading={parcelamentos.loading}
+            onPayParcela={(parc, parcela) => setPayingParcela({ parcelamento: parc, parcela })}
+            onRescindir={async (parcId) => {
+              try { await parcelamentos.rescindir(parcId); } catch {}
+            }}
+          />
+        </div>
+      )}
+
+      {/* Q9: modal de pagamento de parcela */}
+      {payingParcela && parcelamentos && (
+        <ParcelaPaymentModal
+          parcelamento={payingParcela.parcelamento}
+          parcela={payingParcela.parcela}
+          saving={parcelamentos.saving}
+          onConfirm={async ({ jurosValor, dataPagamento }) => {
+            await parcelamentos.payParcela(
+              payingParcela.parcelamento.id,
+              payingParcela.parcela.numeroParcela,
+              { jurosValor, dataPagamento }
+            );
+            setPayingParcela(null);
+            await onLoad(year, competencia);
+          }}
+          onClose={() => setPayingParcela(null)}
+        />
       )}
 
       {/* Baixa Modal */}

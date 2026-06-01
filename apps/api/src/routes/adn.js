@@ -4,6 +4,7 @@ import { AdnRepository } from "../infrastructure/db/AdnRepository.js";
 import { NfseRepository } from "../infrastructure/db/NfseRepository.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { parseDate } from "../utils/date.js";
+import { sanitizeFilename } from "../lib/httpHeaders.js";
 import PDFDocument from "pdfkit";
 import { gunzipSync } from "node:zlib";
 import {
@@ -722,6 +723,8 @@ export function createAdnRouter({ ensureAuthorized, log }) {
     }
 
     try {
+      // Q8.A.1: selects DEVEM incluir companyId/cnpjPrestador para a validação de ownership funcionar.
+      // Antes faltavam esses campos → todos os ifs caíam em "undefined" → 404 sem auth real (IDOR latente).
       const systemDoc = await prisma.serviceInvoice.findFirst({
         where: {
           ...(chave ? { chaveAcesso: String(chave) } : {}),
@@ -729,6 +732,7 @@ export function createAdnRouter({ ensureAuthorized, log }) {
           ...(idDps ? { idDps: String(idDps) } : {}),
         },
         select: {
+          companyId: true,
           chaveAcesso: true,
           numeroNfse: true,
           idDps: true,
@@ -749,6 +753,7 @@ export function createAdnRouter({ ensureAuthorized, log }) {
             select: {
               chaveAcesso: true,
               numeroNfse: true,
+              cnpjPrestador: true,
               cnpjTomador: true,
               valorServicos: true,
               xmlPlain: true,
@@ -756,17 +761,21 @@ export function createAdnRouter({ ensureAuthorized, log }) {
             },
           });
 
-      const xmlSource =
-        systemDoc?.xml || adnDoc?.xmlPlain || adnDoc?.xmlBase64Gzip || null;
+      // Q8.A.1: VALIDA ownership ANTES de qualquer payload sair.
+      // Política estrita: sem companyId/cnpjPrestador resolvíveis = 403 (nunca 404 silencioso).
       if (systemDoc?.companyId) {
         const access = await ensureLegacyCompanyAccess(req, res, systemDoc.companyId);
-        if (!access.ok) return;
+        if (!access.ok) return; // ensureLegacyCompanyAccess já respondeu 403
       } else if (adnDoc?.cnpjPrestador) {
         const access = await ensureLegacyCompanyCnpjAccess(req, res, adnDoc.cnpjPrestador);
         if (!access.ok) return;
       } else {
-        return res.status(404).json({ error: "not_found" });
+        // Documento existe mas sem âncora de empresa → recusar (não revelar existência).
+        return res.status(403).json({ error: "forbidden_no_company_context" });
       }
+
+      const xmlSource =
+        systemDoc?.xml || adnDoc?.xmlPlain || adnDoc?.xmlBase64Gzip || null;
       const xml = decodeXmlMaybeGzipBase64(xmlSource);
       if (!xml) {
         return res.status(404).json({ error: "xml_not_found" });
@@ -774,9 +783,10 @@ export function createAdnRouter({ ensureAuthorized, log }) {
 
       const doc = new PDFDocument({ size: "A4", margin: 40 });
       res.setHeader("Content-Type", "application/pdf");
+      // Q8.A.6: sanitiza filename (chave/numero/idDps vêm da query — defesa contra header injection)
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename=\"nfse-${chave || numeroNfse || idDps}.pdf\"`
+        `attachment; filename="${sanitizeFilename(`nfse-${chave || numeroNfse || idDps}.pdf`)}"`
       );
 
       doc.fontSize(14).text("NFS-e (XML)", { align: "center" });

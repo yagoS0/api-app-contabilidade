@@ -20,14 +20,39 @@ import { runGuideEmailWorkerLoop } from "./workers/guideEmailWorker.js";
 import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
 import { backfillProvisionsFromExistingGuides } from "./application/accounting/GuideToProvisionBackfill.js";
+import { seedParcelamentoFunctions } from "./application/accounting/ParcelamentoSeeds.js";
 
 const app = express();
 app.use(express.json());
+
+// Q8.A.2: CORS — em produção exige whitelist via env CORS_ALLOWED_ORIGINS (CSV).
+// Em dev (NODE_ENV !== "production") aceita qualquer origem (vite + ferramentas).
+// Exemplo de var: CORS_ALLOWED_ORIGINS=https://app.dominio.com,https://staging.dominio.com
+const isProd = process.env.NODE_ENV === "production";
+const allowedOrigins = String(process.env.CORS_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const corsOriginPolicy = isProd
+  ? (origin, cb) => {
+      // origin === undefined em chamadas server-to-server / mesma origem — liberar
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error(`CORS bloqueado: origem "${origin}" não está em CORS_ALLOWED_ORIGINS`));
+    }
+  : true;
+if (isProd && allowedOrigins.length === 0) {
+  log.warn(
+    { hint: "Defina CORS_ALLOWED_ORIGINS=https://seu-dominio.com no .env de produção" },
+    "Q8.A.2: NODE_ENV=production mas CORS_ALLOWED_ORIGINS está vazio — todas as origens com cabeçalho Origin serão bloqueadas"
+  );
+}
 app.use(
   cors({
-    origin: true,
+    origin: corsOriginPolicy,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["content-type", "x-api-key", "authorization"],
+    credentials: true,
   })
 );
 
@@ -83,9 +108,12 @@ app.use("/", statusRouter);
 app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
   // Q5 backfill: cria AccountingEntry para Guides PROCESSED que ainda não têm.
-  // Background, best-effort — não atrasa o boot.
   backfillProvisionsFromExistingGuides({ logger: log }).catch((err) => {
     log.warn({ err: err?.message || err }, "Backfill GuideToProvision falhou");
+  });
+  // Q9 seeds: cria/atualiza templates globais de parcelamento (Simples, INSS, ...).
+  seedParcelamentoFunctions({ logger: log }).catch((err) => {
+    log.warn({ err: err?.message || err }, "Seed de funções de parcelamento falhou");
   });
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
+import { GuideLinkParcelamentoModal } from "../../../accounting/parcelamento/components/ParcelamentoModals";
 
 // Tipos sempre disponíveis (qualquer regime).
 const GUIDE_TYPES = ["SIMPLES", "INSS", "FGTS", "DARF", "ISS", "PIS", "COFINS", "IRPJ", "CSLL", "OUTRA"];
@@ -174,7 +175,13 @@ export function CompanyGuidesTable({
   // Novos: identificação/completar guia já existente + fetch do PDF para o iframe.
   onIdentifyGuide,
   onFetchGuidePdf,
+  // Q9.7: hook de parcelamentos + funções; quando setados, dispara modal de linking
+  // após identificação bem-sucedida da guia.
+  parcelamentos,
+  accountingFunctions,
 }) {
+  // Q9.7: state do modal de linking (guia recém-identificada aguardando decisão de vincular)
+  const [linkingGuide, setLinkingGuide] = useState(null);
   // Tipos disponíveis no dropdown filtrados pelo regime da empresa.
   // Simples não vê IRPJ/CSLL/PIS/COFINS/ISS; Presumido não vê SIMPLES.
   const availableUploadTypes = useMemo(
@@ -319,6 +326,14 @@ export function CompanyGuidesTable({
     try {
       const result = await onIdentifyGuide(gid, metadata);
       if (result?.ok !== false) {
+        // Q9.7: se o hook de parcelamentos estiver disponível e o tipo da guia for
+        // candidato a parcelamento (SIMPLES/INSS/DARF), abre modal de linking.
+        const guideAfter = { ...completingGuide, ...metadata, guideId: gid, id: gid };
+        const tipoUpper = String(guideAfter.tipo || metadata?.tipo || "").toUpperCase();
+        const isParcelamentoCandidate = ["SIMPLES", "INSS", "DARF", "PIS", "COFINS", "IRPJ", "CSLL", "ISS"].includes(tipoUpper);
+        if (parcelamentos && accountingFunctions && isParcelamentoCandidate) {
+          setLinkingGuide(guideAfter);
+        }
         setCompletingGuide(null);
         return { ok: true };
       }
@@ -605,6 +620,33 @@ export function CompanyGuidesTable({
           </div>
         )}
       </div>
+
+      {/* Q9.7: modal de linking de guia a parcelamento (3 opções: não / existente / novo) */}
+      {linkingGuide && parcelamentos && accountingFunctions && (
+        <GuideLinkParcelamentoModal
+          guide={linkingGuide}
+          parcelamentos={parcelamentos.parcelamentos}
+          accountingFunctions={accountingFunctions}
+          saving={parcelamentos.saving}
+          onSkip={async () => {
+            setLinkingGuide(null);
+          }}
+          onLink={async (parcId, numeroParcela) => {
+            const guideId = linkingGuide.guideId || linkingGuide.id;
+            try {
+              await parcelamentos.linkGuide(parcId, { guideId, numeroParcela });
+            } catch {}
+            setLinkingGuide(null);
+          }}
+          onCreateAndLink={async (body) => {
+            try {
+              await parcelamentos.create(body);
+            } catch {}
+            setLinkingGuide(null);
+          }}
+          onClose={() => setLinkingGuide(null)}
+        />
+      )}
     </section>
   );
 }

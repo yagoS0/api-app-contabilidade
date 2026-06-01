@@ -40,6 +40,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.5.2",
     "fast-xml-parser": "^4.3.5",
     "googleapis": "^140.0.1",
     "jsonwebtoken": "^9.0.3",
@@ -51,7 +52,8 @@
     "pdfkit": "^0.17.2",
     "pino": "^8.21.0",
     "xlsx": "^0.18.5",
-    "xml-crypto": "^3.0.0"
+    "xml-crypto": "^3.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.29.3",

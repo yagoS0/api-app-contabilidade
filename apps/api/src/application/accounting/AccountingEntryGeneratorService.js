@@ -83,10 +83,17 @@ export function formatCompetenciaLabel(competencia) {
 }
 
 export function applyTemplate(template, context) {
+  // Q9: tokens novos para parcelamentos. Usados em templates kind=PARCELAMENTO_*.
+  // Tokens não encontrados no context viram string vazia (não quebra o template padrão).
   return String(template || "")
     .replace(/\{\{\s*competencia\s*\}\}/gi, context.competenciaLabel || context.competencia || "")
     .replace(/\{\{\s*companyName\s*\}\}/gi, context.companyName || "")
-    .replace(/\{\{\s*cnpj\s*\}\}/gi, context.cnpj || "");
+    .replace(/\{\{\s*cnpj\s*\}\}/gi, context.cnpj || "")
+    .replace(/\{\{\s*numeroParcela\s*\}\}/gi, context.numeroParcela != null ? String(context.numeroParcela).padStart(2, "0") : "")
+    .replace(/\{\{\s*numParcelas\s*\}\}/gi, context.numParcelas != null ? String(context.numParcelas) : "")
+    .replace(/\{\{\s*numEntradas\s*\}\}/gi, context.numEntradas != null ? String(context.numEntradas) : "")
+    .replace(/\{\{\s*numParcelasRestantes\s*\}\}/gi, context.numParcelasRestantes != null ? String(context.numParcelasRestantes) : "")
+    .replace(/\{\{\s*periodosReferenciados\s*\}\}/gi, context.periodosReferenciados || "");
 }
 
 function getLastDayOfMonth(competencia) {

@@ -313,7 +313,9 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ error: "direcao_invalid" });
       }
 
-      const maxItems = Math.min(Math.max(Number(limit) || 1000, 1), 5000);
+      // Q8.A.8: limite reduzido de 5000 → 500 para evitar DoS (carregar 5000 invoices custa caro).
+      // Quem precisar de mais paginação deve quebrar em chamadas menores.
+      const maxItems = Math.min(Math.max(Number(limit) || 200, 1), 500);
       const where = buildWhereFilters({
         clientId,
         clientCnpj,

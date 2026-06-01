@@ -15,6 +15,13 @@ import {
   enderecoToSingleLine,
   validateAndNormalizeCompanyProfile,
 } from "../../application/company/companyProfile.js";
+import {
+  companyCreateSchema,
+  companyUpdateSchema,
+  validateCompanyInput,
+} from "../../application/validators/companySchemas.js";
+import { sanitizeFilename } from "../../lib/httpHeaders.js";
+import { safeLogError } from "../../lib/safeLogError.js";
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
@@ -421,6 +428,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   router.post("/companies", async (req, res) => {
     const body = req.body || {};
+
+    // Q8.A.4: validação rigorosa via Zod ANTES da lógica de negócio.
+    // Roda em paralelo com a normalização legada — Zod rejeita formatos ruins (CNPJ inválido,
+    // senha fraca, email inválido) antes do código alcançar Prisma.
+    const zodResult = validateCompanyInput(companyCreateSchema, body);
+    if (!zodResult.ok) return res.status(zodResult.status).json(zodResult.body);
+
     const ownerEmail = String(body.ownerEmail || "")
       .trim()
       .toLowerCase();
@@ -589,6 +603,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const portalCompanyId = String(req.params?.companyId || "").trim();
       if (!portalCompanyId) return res.status(400).json({ error: "company_id_required" });
       const body = req.body || {};
+
+      // Q8.A.4: validação Zod rigorosa ANTES da lógica.
+      const zodResult = validateCompanyInput(companyUpdateSchema, body);
+      if (!zodResult.ok) return res.status(zodResult.status).json(zodResult.body);
+
       const companyInput = body.company && typeof body.company === "object" ? body.company : body;
       const parsedCompany = validateAndNormalizeCompanyProfile(companyInput);
       if (!parsedCompany.ok) return res.status(400).json({ error: parsedCompany.error });
@@ -910,7 +929,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         if (err.code === "CERT_SECRET_KEY_NOT_CONFIGURED") {
           return res.status(400).json({ error: "cert_secret_key_not_configured" });
         }
-        log.error({ err: err.message }, "Falha ao subir certificado no portal firm");
+        // Q8.A.7: safeLogError redacta `password` em qualquer profundidade do err/ctx.
+        safeLogError(log, { portalCompanyId }, err, "Falha ao subir certificado no portal firm");
         return res.status(500).json({ error: "internal_error" });
       }
     }
@@ -1113,7 +1133,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       if (err.code === "PASSWORD_REQUIRED") return res.status(400).json({ error: "password_required" });
       if (err.code === "CERT_STORAGE_NOT_CONFIGURED") return res.status(400).json({ error: "cert_storage_not_configured" });
       if (err.code === "CERT_SECRET_KEY_NOT_CONFIGURED") return res.status(400).json({ error: "cert_secret_key_not_configured" });
-      log.error({ err: err.message }, "Falha ao subir certificado SERPRO");
+      // Q8.A.7: safeLogError redacta password do contexto/err antes de logar.
+      safeLogError(log, {}, err, "Falha ao subir certificado SERPRO");
       return res.status(500).json({ error: "internal_error" });
     }
   });
@@ -1569,7 +1590,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const buf = await getGuidePdfBuffer(guide);
       if (!buf?.length) return res.status(404).json({ error: "file_not_available" });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `inline; filename="${guide.sourcePath || `guia-${guideId}.pdf`}"`);
+      // Q8.A.6: sanitiza filename pra evitar header injection (CRLF, aspas).
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${sanitizeFilename(guide.sourcePath || `guia-${guideId}.pdf`)}"`
+      );
       res.setHeader("Cache-Control", "private, max-age=300");
       return res.send(buf);
     },
@@ -2250,28 +2275,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     return res.json(result);
   });
 
-  // Rota utilitária para ambiente de desenvolvimento: limpa hashes para reprocessar guias.
-  router.post("/dev/guides/reset-hash", requireAccountType("FIRM"), async (req, res) => {
-    if (String(process.env.NODE_ENV || "").toLowerCase() === "production") {
-      return res.status(404).json({ error: "not_found" });
-    }
-    const appRole = String(req.auth?.user?.role || "").toLowerCase();
-    if (appRole !== "admin") {
-      return res.status(403).json({ error: "forbidden_admin_only" });
-    }
-
-    const beforeCount = await prisma.guide.count();
-    const deleted = await prisma.guide.deleteMany({});
-    const afterCount = await prisma.guide.count();
-
-    return res.json({
-      ok: true,
-      guidesDeleted: deleted.count,
-      before: beforeCount,
-      after: afterCount,
-      message: "Todos os registros de guias foram apagados do banco.",
-    });
-  });
+  // Q8.B: rota POST /dev/guides/reset-hash removida (apagava TODAS as guides do banco;
+  // perigoso mesmo em dev — admin distraído destruía o estado de testes).
 
   router.post(
     "/companies/:companyId/fiscal/run",

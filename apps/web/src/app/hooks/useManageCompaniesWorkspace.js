@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useCompanies } from "../../features/companies/list/hooks/useManageCompanies";
 import { useCompanyGuides } from "../../features/guides/list/hooks/useManageCompanyGuides";
 import {
@@ -7,12 +8,54 @@ import {
   useCompanyForm,
 } from "../../features/companies/form/hooks/useManageCompanyForm";
 
+// Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
+// Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
+const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "plano-contas", "configuracoes", "edit"];
+const SEGMENT_TO_TAB = {
+  guides: "guides",
+  lancamentos: "lancamentos",
+  circular: "circular",
+  "plano-contas": "planoContas",
+  configuracoes: "configuracoes",
+  edit: "edit",
+};
+const TAB_TO_SEGMENT = {
+  guides: "guides",
+  lancamentos: "lancamentos",
+  circular: "circular",
+  planoContas: "plano-contas",
+  configuracoes: "configuracoes",
+  edit: "edit",
+};
+function deriveCompanyDetailTab(pathname) {
+  const match = pathname.match(/^\/companies\/[^\/]+\/([^\/]+)/);
+  if (!match) return "guides";
+  return SEGMENT_TO_TAB[match[1]] || "guides";
+}
+
 export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const companiesState = useCompanies();
   const guidesState = useCompanyGuides();
   const createCompanyForm = useCompanyForm(getInitialCompanyFormState());
   const editCompanyForm = useCompanyForm(getInitialCompanyFormState());
-  const [companyDetailTab, setCompanyDetailTab] = useState("guides");
+
+  // Q8.C.3: companyDetailTab derivado da URL. setCompanyDetailTab vira adapter pra navigate.
+  const companyDetailTab = deriveCompanyDetailTab(location.pathname);
+  function setCompanyDetailTab(tab) {
+    const segment = TAB_TO_SEGMENT[tab];
+    if (!segment) {
+      console.warn(`[setCompanyDetailTab] tab desconhecida: ${tab}`);
+      return;
+    }
+    const cid = companiesState.selectedCompanyId;
+    if (!cid) {
+      console.warn("[setCompanyDetailTab] sem companyId — não é possível navegar");
+      return;
+    }
+    navigate(`/companies/${cid}/${segment}`);
+  }
   const [submittingCompany, setSubmittingCompany] = useState(false);
   const [submittingCompanyEdit, setSubmittingCompanyEdit] = useState(false);
   const [jobEnabled, setJobEnabled] = useState(false);

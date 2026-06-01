@@ -8,6 +8,7 @@ import { resolvePayrollTemplate } from "../../application/accounting/payrollTemp
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { parseExcelBuffer, findHistoricoMatches, upsertHistoricoFromImport } from "../../application/accounting/excelImport.js";
+import { sanitizeFilename } from "../../lib/httpHeaders.js";
 
 // ---------------------------------------------------------------------------
 // OFX Parser (SGML v1 e XML v2)
@@ -869,7 +870,8 @@ export function createAccountingEntriesRouter({ log }) {
     const csv = entriesToCsv(entries);
     const filename = `lancamentos-${filenameSuffix}.csv`;
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    // Q8.A.6: sanitiza filename (defesa contra header injection).
+    res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(filename)}"`);
     return res.send("\uFEFF" + csv);
   });
 
@@ -1995,6 +1997,147 @@ export function createAccountingEntriesRouter({ log }) {
       };
       const status = map[code] || 500;
       if (status === 500) log.error({ err }, "Falha ao aplicar função");
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // ─── Q9: Parcelamentos ──────────────────────────────────────────────────
+
+  // GET /firm/companies/:companyId/parcelamentos[?status=ATIVO|QUITADO|RESCINDIDO]
+  router.get("/parcelamentos", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const status = req.query?.status ? String(req.query.status).toUpperCase() : null;
+    try {
+      const { listParcelamentos } = await import("../../application/accounting/ParcelamentoService.js");
+      const data = await listParcelamentos({ portalClientId, status });
+      return res.json({ ok: true, data });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar parcelamentos");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // GET /firm/companies/:companyId/parcelamentos/:parcId
+  router.get("/parcelamentos/:parcId", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelamentoId = String(req.params.parcId);
+    try {
+      const { getParcelamento } = await import("../../application/accounting/ParcelamentoService.js");
+      const data = await getParcelamento({ portalClientId, parcelamentoId });
+      if (!data) return res.status(404).json({ ok: false, error: "parcelamento_not_found" });
+      return res.json({ ok: true, data });
+    } catch (err) {
+      log.error({ err }, "Falha ao obter parcelamento");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // POST /firm/companies/:companyId/parcelamentos
+  // body: { label, kind, templateOpeningFunctionId, templatePaymentFunctionId, templateRescisionFunctionId,
+  //         numEntradas, numParcelas, principalPerParcela, principalTotal, jurosTotal,
+  //         dataAbertura, competenciaInicial, diaPagamento, periodosReferenciados,
+  //         sourceGuideId, linkGuideAsParcelaNum }
+  router.post("/parcelamentos", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const userId = req.auth?.user?.id;
+    try {
+      const { createParcelamento } = await import("../../application/accounting/ParcelamentoService.js");
+      const data = await createParcelamento({ ...req.body, portalClientId, userId });
+      return res.status(201).json({ ok: true, data });
+    } catch (err) {
+      const code = err?.message || "internal_error";
+      const knownErrors = [
+        "portal_client_id_required", "label_required", "kind_required",
+        "num_parcelas_invalid", "competencia_inicial_invalid", "principal_per_parcela_invalid",
+        "company_not_found",
+      ];
+      const status = knownErrors.includes(code) ? 400 : 500;
+      if (status === 500) log.error({ err }, "Falha ao criar parcelamento");
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // POST /firm/companies/:companyId/parcelamentos/:parcId/link-guide
+  // body: { guideId, numeroParcela }
+  router.post("/parcelamentos/:parcId/link-guide", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelamentoId = String(req.params.parcId);
+    const { guideId, numeroParcela } = req.body || {};
+    if (!guideId || !numeroParcela) {
+      return res.status(400).json({ ok: false, error: "guideId_and_numeroParcela_required" });
+    }
+    try {
+      const { linkGuideToParcela } = await import("../../application/accounting/ParcelamentoService.js");
+      const data = await linkGuideToParcela({ portalClientId, guideId, parcelamentoId, numeroParcela: Number(numeroParcela) });
+      return res.json({ ok: true, data });
+    } catch (err) {
+      const code = err?.message || "internal_error";
+      const map = {
+        parcelamento_not_found: 404,
+        guide_not_found: 404,
+        numero_parcela_out_of_range: 400,
+      };
+      const status = map[code] || 500;
+      if (status === 500) log.error({ err }, "Falha ao linkar guia ao parcelamento");
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // POST /firm/companies/:companyId/parcelamentos/:parcId/parcelas/:num/pagar
+  // body: { jurosValor, dataPagamento? }
+  router.post("/parcelamentos/:parcId/parcelas/:num/pagar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelamentoId = String(req.params.parcId);
+    const numeroParcela = Number(req.params.num);
+    const { jurosValor, dataPagamento } = req.body || {};
+    const userId = req.auth?.user?.id;
+    try {
+      const { confirmParcelaPayment } = await import("../../application/accounting/ParcelamentoService.js");
+      const data = await confirmParcelaPayment({
+        portalClientId, parcelamentoId, numeroParcela,
+        jurosValor: Number(jurosValor) || 0,
+        dataPagamento, userId,
+      });
+      return res.status(201).json(data);
+    } catch (err) {
+      const code = err?.message || "internal_error";
+      const map = {
+        parcelamento_not_found: 404,
+        parcelamento_not_active: 400,
+        parcela_not_found: 404,
+        parcela_already_paid: 400,
+        payment_template_not_configured: 400,
+      };
+      const status = map[code] || 500;
+      if (status === 500) log.error({ err }, "Falha ao confirmar pagamento de parcela");
+      return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // POST /firm/companies/:companyId/parcelamentos/:parcId/rescindir
+  // body: { dataRescisao?, observacoes? }
+  router.post("/parcelamentos/:parcId/rescindir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelamentoId = String(req.params.parcId);
+    const userId = req.auth?.user?.id;
+    try {
+      const { rescindirParcelamento } = await import("../../application/accounting/ParcelamentoService.js");
+      const data = await rescindirParcelamento({
+        portalClientId, parcelamentoId,
+        dataRescisao: req.body?.dataRescisao,
+        observacoes: req.body?.observacoes,
+        userId,
+      });
+      return res.json(data);
+    } catch (err) {
+      const code = err?.message || "internal_error";
+      const map = {
+        parcelamento_not_found: 404,
+        parcelamento_not_active: 400,
+        rescision_template_not_configured: 400,
+      };
+      const status = map[code] || 500;
+      if (status === 500) log.error({ err }, "Falha ao rescindir parcelamento");
       return res.status(status).json({ ok: false, error: code });
     }
   });

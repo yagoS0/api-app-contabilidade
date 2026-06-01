@@ -1,5 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import { prisma } from "../infrastructure/db/prisma.js";
 
 export function createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized }) {
@@ -19,7 +20,19 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     return false;
   }
 
-  router.post("/signup", async (req, res) => {
+  // Q8.A.3: rate-limit por IP usando express-rate-limit.
+  // 10 tentativas / 5 min — bloqueia força-bruta de senha/refresh tokens.
+  // Em memória (single-instance). Em produção horizontal, trocar `store` por RedisStore.
+  // isRateLimited (acima) continua ativo como 2ª linha de defesa (por email/path).
+  const authStrictLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "too_many_requests", reason: "auth_rate_limit" },
+  });
+
+  router.post("/signup", authStrictLimiter, async (req, res) => {
     if (isRateLimited(req)) {
       return res.status(429).json({ error: "too_many_requests" });
     }
@@ -57,7 +70,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     }
   });
 
-  router.post("/login", async (req, res) => {
+  router.post("/login", authStrictLimiter, async (req, res) => {
     if (isRateLimited(req)) {
       return res.status(429).json({ error: "too_many_requests" });
     }
@@ -134,7 +147,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     }
   });
 
-  router.post("/refresh", async (req, res) => {
+  router.post("/refresh", authStrictLimiter, async (req, res) => {
     if (isRateLimited(req)) {
       return res.status(429).json({ error: "too_many_requests" });
     }

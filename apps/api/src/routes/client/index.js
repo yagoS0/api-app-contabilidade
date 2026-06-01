@@ -293,7 +293,11 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       if (!email) return res.status(400).json({ error: "email_required" });
 
       const role = sanitizeRole(body.role);
-      let user = await prisma.user.findUnique({ where: { email } });
+      // Q8.A.5: select restritivo — não precisamos de passwordHash aqui (só id pra criar link).
+      let user = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, email: true, name: true, role: true },
+      });
       if (!user) {
         const tempPassword = crypto.randomBytes(24).toString("hex");
         const passwordHash = await bcrypt.hash(tempPassword, 10);

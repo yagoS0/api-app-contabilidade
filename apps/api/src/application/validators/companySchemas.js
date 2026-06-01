@@ -1,0 +1,78 @@
+// Q8.A.4: schemas Zod para validação rigorosa de input em POST/PATCH /firm/companies.
+// Complementa `validateAndNormalizeCompanyProfile` (mantida) — Zod roda PRIMEIRO,
+// se passar, a normalização legada cuida das transformações.
+
+import { z } from "zod";
+
+const cnpjRegex = /^\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}$/;
+const cnpjDigitsOnly = z.string().transform((s) => String(s || "").replace(/\D+/g, ""));
+
+const senhaForte = z
+  .string()
+  .min(10, "Senha precisa de pelo menos 10 caracteres")
+  .refine((s) => /[A-Za-z]/.test(s), "Senha precisa conter ao menos 1 letra")
+  .refine((s) => /[0-9]/.test(s), "Senha precisa conter ao menos 1 número");
+
+const enderecoSchema = z.object({
+  rua: z.string().max(200).optional().nullable(),
+  numero: z.string().max(20).optional().nullable(),
+  bairro: z.string().max(120).optional().nullable(),
+  cidade: z.string().max(120).optional().nullable(),
+  uf: z.string().length(2).optional().nullable(),
+  cep: z.string().max(20).optional().nullable(),
+  complemento: z.string().max(200).optional().nullable(),
+}).partial().optional();
+
+const companyBaseFields = {
+  razaoSocial: z.string().min(1, "razão social obrigatória").max(200),
+  nomeFantasia: z.string().max(200).optional().nullable(),
+  cnpj: z.string().regex(cnpjRegex, "CNPJ em formato inválido"),
+  email: z.string().email().optional().nullable(),
+  telefone: z.string().max(40).optional().nullable(),
+  inscricaoMunicipal: z.string().max(60).optional().nullable(),
+  cnaePrincipal: z.string().max(20).optional().nullable(),
+  cnaesSecundarios: z.array(z.string().max(20)).max(50).optional(),
+  regimeTributario: z.enum(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI", "OUTRO"]).optional().nullable(),
+  endereco: enderecoSchema,
+  guideNotificationEmail: z.string().email().or(z.literal("")).optional().nullable(),
+  hasProlabore: z.boolean().optional(),
+};
+
+// POST /firm/companies — cria empresa + owner (cliente)
+export const companyCreateSchema = z.object({
+  ownerEmail: z.string().email("ownerEmail inválido"),
+  ownerName: z.string().max(120).optional().nullable(),
+  ownerPassword: senhaForte.optional(), // só obrigatório se owner ainda não existe
+  company: z.object(companyBaseFields).optional(),
+  ...companyBaseFields, // permite payload "achatado" (legacy)
+}).passthrough(); // não rejeita campos extras (legado tem muitos)
+
+// PATCH /firm/companies/:companyId — atualiza empresa (CNPJ é ignorado downstream — imutável)
+export const companyUpdateSchema = z.object({
+  ownerEmail: z.string().email().optional().nullable(),
+  company: z.object({
+    ...companyBaseFields,
+    cnpj: z.string().optional(), // pode vir mas é ignorado (CNPJ imutável)
+  }).partial().optional(),
+  ...Object.fromEntries(Object.entries(companyBaseFields).map(([k, v]) => [k, v.optional()])),
+  hasProlabore: z.boolean().optional(),
+}).passthrough();
+
+/**
+ * Wrapper que valida com Zod e retorna { ok: true, data } ou { ok: false, status: 400, body }
+ * pronto para o handler usar.
+ */
+export function validateCompanyInput(schema, body) {
+  const parsed = schema.safeParse(body);
+  if (parsed.success) return { ok: true, data: parsed.data };
+  const issues = parsed.error.issues.map((i) => ({
+    path: i.path.join("."),
+    message: i.message,
+    code: i.code,
+  }));
+  return {
+    ok: false,
+    status: 400,
+    body: { ok: false, error: "validation_failed", issues },
+  };
+}

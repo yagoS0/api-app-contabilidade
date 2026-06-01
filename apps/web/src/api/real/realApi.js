@@ -402,6 +402,43 @@ export function createRealApi() {
         body: JSON.stringify({ competencia, entryValores }),
       });
     },
+
+    // ── Q9: Parcelamentos (Simples, INSS, DARF, OUTRO) ───────────────────
+    async listParcelamentos(companyId, params = {}) {
+      const q = new URLSearchParams();
+      if (params.status) q.set("status", params.status);
+      const suffix = q.toString() ? `?${q}` : "";
+      const payload = await request(`/firm/companies/${companyId}/parcelamentos${suffix}`);
+      return Array.isArray(payload?.data) ? payload.data : [];
+    },
+    async getParcelamento(companyId, parcId) {
+      const payload = await request(`/firm/companies/${companyId}/parcelamentos/${parcId}`);
+      return payload?.data || null;
+    },
+    async createParcelamento(companyId, body) {
+      return request(`/firm/companies/${companyId}/parcelamentos`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    async linkGuideToParcelamento(companyId, parcId, { guideId, numeroParcela }) {
+      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/link-guide`, {
+        method: "POST",
+        body: JSON.stringify({ guideId, numeroParcela }),
+      });
+    },
+    async payParcela(companyId, parcId, numeroParcela, { jurosValor, dataPagamento }) {
+      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/parcelas/${numeroParcela}/pagar`, {
+        method: "POST",
+        body: JSON.stringify({ jurosValor, dataPagamento }),
+      });
+    },
+    async rescindirParcelamento(companyId, parcId, { dataRescisao, observacoes } = {}) {
+      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/rescindir`, {
+        method: "POST",
+        body: JSON.stringify({ dataRescisao, observacoes }),
+      });
+    },
     async createGlobalChartOfAccount(input) {
       return request(`/firm/chart-of-accounts/global`, {
         method: "POST",

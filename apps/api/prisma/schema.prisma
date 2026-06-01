@@ -265,6 +265,7 @@ model PortalClient {
   accountingEntryRules AccountingEntryRule[]
   fiscalExecutionLogs  FiscalExecutionLog[]
   accountingFunctions  AccountingFunction[]
+  parcelamentos        Parcelamento[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -323,32 +324,25 @@ model Guide {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Q9: link opcional pra um Parcelamento (quando guia é parcela de parcelamento).
+  parcelamentoId String?
+  numeroParcela  Int?
+
   portalClient  PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
   legacyCompany Company?      @relation(fields: [legacyCompanyId], references: [id], onDelete: SetNull)
+  parcelamento  Parcelamento? @relation("GuideParcelamento", fields: [parcelamentoId], references: [id], onDelete: SetNull)
 
   @@index([portalClientId, competencia, tipo])
   @@index([status])
   @@index([emailStatus, emailNextRetryAt])
   @@index([cnpj, competencia])
   @@index([paymentStatus, vencimento])
+  @@index([parcelamentoId])
 }
 
-model GuideIngestionJob {
-  id             String    @id @default(uuid())
-  source         String    @default("DRIVE")
-  sourceFileId   String    @unique
-  sourceName     String?
-  status         String    @default("PROCESSING") // PROCESSING|DONE|ERROR|SKIPPED
-  attempts       Int       @default(1)
-  errorReason    String?
-  parserPayload  Json?
-  createdGuideId String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  finishedAt     DateTime?
-
-  @@index([status, updatedAt])
-}
+// Q8.B: model GuideIngestionJob removido — sem consumidores no código (varredura confirmou).
+// O fluxo atual de ingestão usa Guide.status diretamente; jobs separados não eram lidos.
+// Tabela dropada via migration drop_guide_ingestion_job (usuário autorizou).
 
 model GuideIngestionLock {
   id          String    @id
@@ -593,16 +587,22 @@ model AccountingEntry {
   recalculatedFromValor Decimal?  @db.Decimal(18, 2)
   recalculatedToValor   Decimal?  @db.Decimal(18, 2)
   recalculatedNotes     String?
+  // Q9: vínculo opcional pra entries que são parcelas de um Parcelamento.
+  // numeroParcela=null para a entry de ABERTURA e para entries de RESCISÃO.
+  parcelamentoId        String?
+  numeroParcela         Int?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  lines        AccountingEntryLine[]
-  portalClient PortalClient            @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
-  circular     CompanyMonthlyCircular? @relation(fields: [circularId], references: [id], onDelete: SetNull)
-  rule         AccountingEntryRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  sourceGuide  Guide?                  @relation("GuideToEntries", fields: [sourceGuideId], references: [id], onDelete: SetNull)
-  openEntry    AccountingEntry?        @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
-  baixas       AccountingEntry[]       @relation("BaixaToOpen")
+  lines             AccountingEntryLine[]
+  portalClient      PortalClient            @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  circular          CompanyMonthlyCircular? @relation(fields: [circularId], references: [id], onDelete: SetNull)
+  rule              AccountingEntryRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  sourceGuide       Guide?                  @relation("GuideToEntries", fields: [sourceGuideId], references: [id], onDelete: SetNull)
+  openEntry         AccountingEntry?        @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
+  baixas            AccountingEntry[]       @relation("BaixaToOpen")
+  parcelamento      Parcelamento?           @relation("ParcelamentoParcelas", fields: [parcelamentoId], references: [id], onDelete: SetNull)
+  parcelamentoAbertura Parcelamento?        @relation("ParcAberturaEntry")
 
   @@unique([portalClientId, competencia, eventType, origem])
   @@unique([sourceGuideId, eventType], name: "uniq_entry_per_guide_event")
@@ -616,6 +616,7 @@ model AccountingEntry {
   @@index([circularId])
   @@index([ruleId])
   @@index([sourceGuideId])
+  @@index([parcelamentoId])
   @@map("accounting_entries")
 }
 
@@ -728,15 +729,21 @@ model AccountingFunction {
   name            String
   description     String?
   isSystem        Boolean  @default(false) // true = template de sistema (não editável/deletável)
+  // Q9: tipo de função — STANDARD (templates normais Q6) ou variantes de parcelamento.
+  kind            String   @default("STANDARD") // STANDARD | PARCELAMENTO_OPENING | PARCELAMENTO_PAYMENT | PARCELAMENTO_RESCISION
   createdByUserId String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  entries      AccountingFunctionEntry[]
-  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  entries                  AccountingFunctionEntry[]
+  portalClient             PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  parcelamentosAsOpening   Parcelamento[] @relation("ParcOpeningTemplate")
+  parcelamentosAsPayment   Parcelamento[] @relation("ParcPaymentTemplate")
+  parcelamentosAsRescision Parcelamento[] @relation("ParcRescisionTemplate")
 
   @@index([portalClientId])
   @@index([isSystem])
+  @@index([kind])
   @@map("accounting_functions")
 }
 
@@ -766,6 +773,57 @@ model AccountingFunctionLine {
 
   @@index([functionEntryId])
   @@map("accounting_function_lines")
+}
+
+// Q9: cabeçalho de Parcelamento (Simples Nacional, INSS, DARF, etc).
+// Cada Parcelamento tem 1 entry de ABERTURA + N entries de provisão (1 por parcela)
+// + 1 entry opcional de RESCISÃO (quando rescindido).
+// Guides são linkadas opcionalmente quando contador sobe DARF mensal do parcelamento.
+model Parcelamento {
+  id                          String   @id @default(uuid())
+  portalClientId              String
+  label                       String   // ex: "RE-PARCELAMENTO SIMPLES NACIONAL DE SET/OUT/2024..."
+  kind                        String   // SIMPLES | INSS | DARF | OUTRO
+
+  // Templates (3 kinds em AccountingFunction): abertura, pagamento da parcela, rescisão
+  templateOpeningFunctionId   String?
+  templatePaymentFunctionId   String?
+  templateRescisionFunctionId String?
+
+  // Estrutura financeira
+  numEntradas                 Int      @default(0) // quantas das primeiras parcelas são "entrada"
+  numParcelas                 Int                  // total inclui entradas (ex: 52 = 1 entrada + 51)
+  principalPerParcela         Decimal  @db.Decimal(18, 2)
+  principalTotal              Decimal? @db.Decimal(18, 2)
+  jurosTotal                  Decimal? @db.Decimal(18, 2)
+  totalValue                  Decimal  @db.Decimal(18, 2)
+
+  // Calendário
+  dataAbertura                DateTime?
+  competenciaInicial          String                // YYYY-MM da 1ª parcela
+  diaPagamento                Int      @default(1)
+  periodosReferenciados       String?
+
+  status                      String   @default("ATIVO") // ATIVO | QUITADO | RESCINDIDO
+  observacoes                 String?
+  createdByUserId             String?
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  // FK 1:1 pra entry de abertura
+  aberturaEntryId             String?  @unique
+  aberturaEntry               AccountingEntry?    @relation("ParcAberturaEntry", fields: [aberturaEntryId], references: [id], onDelete: SetNull)
+
+  portalClient                PortalClient        @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  templateOpening             AccountingFunction? @relation("ParcOpeningTemplate", fields: [templateOpeningFunctionId], references: [id], onDelete: SetNull)
+  templatePayment             AccountingFunction? @relation("ParcPaymentTemplate", fields: [templatePaymentFunctionId], references: [id], onDelete: SetNull)
+  templateRescision           AccountingFunction? @relation("ParcRescisionTemplate", fields: [templateRescisionFunctionId], references: [id], onDelete: SetNull)
+  parcelas                    AccountingEntry[]   @relation("ParcelamentoParcelas")
+  guides                      Guide[]             @relation("GuideParcelamento")
+
+  @@index([portalClientId, status])
+  @@index([portalClientId, kind])
+  @@map("parcelamentos")
 }
 
 model TaxDocumentProcessingLog {

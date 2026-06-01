@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useLocation, useParams } from "react-router-dom";
 import { createApiClient } from "./api/client";
 import "./App.css";
 import { CompaniesHomePage } from "./features/companies/list/pages/renderCompaniesHomePage";
@@ -17,6 +18,7 @@ import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
 import { useManageAccountingWorkspace } from "./app/hooks/useManageAccountingWorkspace";
 import { useAccountingFunctions } from "./features/accounting/functions/hooks/useAccountingFunctions";
+import { useParcelamentos } from "./features/accounting/parcelamento/hooks/useParcelamentos";
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
@@ -54,6 +56,25 @@ function App() {
     api,
     companyId: companiesWorkspace.companiesState.selectedCompanyId,
   });
+  // Q9: Parcelamentos — escopo da empresa selecionada
+  const parcelamentos = useParcelamentos({
+    api,
+    companyId: companiesWorkspace.companiesState.selectedCompanyId,
+  });
+
+  // Q8.C: sincroniza selectedCompanyId com a URL (/companies/:companyId/*).
+  // Necessário pra deep-link funcionar: usuário cola URL com companyId → state interno
+  // adota essa empresa. Também garante "voltar" preserva contexto.
+  const location = useLocation();
+  useEffect(() => {
+    const match = location.pathname.match(/^\/companies\/([^\/]+)(\/|$)/);
+    if (match && match[1] !== "new") {
+      const companyIdFromUrl = decodeURIComponent(match[1]);
+      if (companyIdFromUrl !== companiesWorkspace.companiesState.selectedCompanyId) {
+        companiesWorkspace.companiesState.setSelectedCompanyId(companyIdFromUrl);
+      }
+    }
+  }, [location.pathname, companiesWorkspace.companiesState]);
 
   const canEditCompany = useMemo(() => {
     const role = String(session.user?.role || "").toLowerCase();
@@ -241,6 +262,7 @@ function App() {
           onImportExcel: accountingWorkspace.handleImportExcel,
           onCreateParcelamento: accountingWorkspace.handleCreateParcelamento,
           accountingFunctions, // Q6: hook completo (functions, loading, saving, create/update/remove/apply)
+          parcelamentos,       // Q9: hook de parcelamentos (parcelamentos, create, linkGuide, payParcela, rescindir)
           savingEntry: accountingWorkspace.savingEntry,
           accounts: accountingWorkspace.chartOfAccountsState.accounts,
           onLoadAccounts: () => accountingWorkspace.loadChartOfAccounts(),
@@ -334,8 +356,10 @@ function App() {
       onOpenBatchEmail={() => session.setPage("batchEmail")}
       onLogout={handleLogout}
       onOpenCompany={(companyId) => {
+        // Q8.C.3: setSelectedCompanyId pode rodar 1 tick depois (React batching).
+        // Por isso passamos companyId explicitamente pro setPage adapter, que monta a URL imediato.
         companiesWorkspace.companiesState.setSelectedCompanyId(companyId);
-        session.setPage("companyDetail");
+        session.setPage("companyDetail", { companyId });
       }}
       jobEnabled={companiesWorkspace.jobEnabled}
       onToggleJob={companiesWorkspace.handleToggleJob}

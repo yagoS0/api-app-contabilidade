@@ -7,6 +7,7 @@ import { AccountRow, NewEntryForm } from "./renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtMoney } from "../lib/accountingEntriesShared";
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
 import { FunctionListModal, FunctionEditModal, FunctionApplyModal } from "../../functions/components/AccountingFunctionModals";
+import { ParcelamentoCreateModal } from "../../parcelamento/components/ParcelamentoModals";
 
 function ActionMenu({ label, items, accent }) {
   const [open, setOpen] = useState(false);
@@ -141,6 +142,8 @@ export function AccountingEntriesTab({
   companyRegime,  // regime tributário — controla visibilidade do botão "Novo Parcelamento"
   // Q6: Funções de Lançamento
   accountingFunctions,  // { functions, loading, saving, create, update, remove, apply } do hook useAccountingFunctions
+  // Q9: Parcelamentos
+  parcelamentos,        // { parcelamentos, loading, saving, create, linkGuide, payParcela, rescindir } do hook useParcelamentos
 }) {
   const [showOFX, setShowOFX] = useState(false);
   const [showHistoricos, setShowHistoricos] = useState(false);
@@ -153,6 +156,8 @@ export function AccountingEntriesTab({
   const [showFunctionsList, setShowFunctionsList] = useState(false);
   const [editingFunction, setEditingFunction] = useState(null);    // null=fechado, {}=nova, {id,...}=editando existente
   const [applyingFunction, setApplyingFunction] = useState(null);  // function que vai ser aplicada
+  // Q9: state pro modal de criar parcelamento (stand-alone, sem guia de origem)
+  const [showCreateParcelamento, setShowCreateParcelamento] = useState(false);
 
   // Parcelamento Simples Nacional só faz sentido para empresas regime SIMPLES.
   const isSimples = String(companyRegime || "").trim().toUpperCase() === "SIMPLES";
@@ -309,6 +314,12 @@ export function AccountingEntriesTab({
                 label: "Aplicar função…",
                 hint: "Use um template reutilizável da empresa ou global",
                 onClick: () => setShowFunctionsList(true),
+              }] : []),
+              // Q9: Parcelamentos (Simples, INSS, DARF, OUTRO)
+              ...(parcelamentos ? [{
+                label: "+ Novo parcelamento…",
+                hint: "Cria parcelamento com abertura + N parcelas (Simples, INSS, etc)",
+                onClick: () => setShowCreateParcelamento(true),
               }] : []),
             ]}
           />
@@ -671,6 +682,20 @@ export function AccountingEntriesTab({
             if (onLoad) await onLoad();
           }}
           onClose={() => setApplyingFunction(null)}
+        />
+      )}
+
+      {/* Q9: criar parcelamento stand-alone (sem guia de origem) */}
+      {showCreateParcelamento && parcelamentos && accountingFunctions && (
+        <ParcelamentoCreateModal
+          accountingFunctions={accountingFunctions}
+          saving={parcelamentos.saving}
+          onCreate={async (body) => {
+            await parcelamentos.create(body);
+            setShowCreateParcelamento(false);
+            if (onLoad) await onLoad();
+          }}
+          onClose={() => setShowCreateParcelamento(false)}
         />
       )}
     </div>

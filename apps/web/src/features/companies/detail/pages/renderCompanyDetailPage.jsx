@@ -1,15 +1,40 @@
+import { lazy, Suspense } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { CompanySectionHeader } from "../components/renderCompanyDetailHeader";
 import { PageHeader } from "../../../../components/layout/PageHeader";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
-import { CompanyGuidesTable } from "../../../guides/list/components/renderCompanyGuidesTable";
-import { CompanyForm } from "../../form/components/renderCompanyForm";
-import { AccountingEntriesTab } from "../../../accounting/entries/components/renderAccountingEntriesTab";
-import { CircularTab } from "../../../accounting/circular/components/renderCircularTab";
-import { AccountingRulesContainer } from "../../../accounting/rules/components/renderAccountingRulesContainer";
-import { ChartOfAccountsPage } from "../../../accounting/chart-of-accounts/pages/renderChartOfAccountsPage";
 import { ErrorBoundary } from "../../../../components/ui/ErrorBoundary";
+
+// Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
+// e cada tab só carrega seu JS quando o contador clica nela pela 1ª vez.
+// Vantagem extra: erro em uma tab (parse error, missing prop) NÃO derruba as outras.
+const CompanyGuidesTable = lazy(() =>
+  import("../../../guides/list/components/renderCompanyGuidesTable").then((m) => ({ default: m.CompanyGuidesTable }))
+);
+const CompanyForm = lazy(() =>
+  import("../../form/components/renderCompanyForm").then((m) => ({ default: m.CompanyForm }))
+);
+const AccountingEntriesTab = lazy(() =>
+  import("../../../accounting/entries/components/renderAccountingEntriesTab").then((m) => ({ default: m.AccountingEntriesTab }))
+);
+const CircularTab = lazy(() =>
+  import("../../../accounting/circular/components/renderCircularTab").then((m) => ({ default: m.CircularTab }))
+);
+const AccountingRulesContainer = lazy(() =>
+  import("../../../accounting/rules/components/renderAccountingRulesContainer").then((m) => ({ default: m.AccountingRulesContainer }))
+);
+const ChartOfAccountsPage = lazy(() =>
+  import("../../../accounting/chart-of-accounts/pages/renderChartOfAccountsPage").then((m) => ({ default: m.ChartOfAccountsPage }))
+);
+
+function TabLoadingFallback() {
+  return (
+    <div style={{ padding: 32, textAlign: "center", color: "#aeb6d3" }}>
+      Carregando…
+    </div>
+  );
+}
 
 export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, feedback }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
@@ -38,6 +63,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
         {/* Conteúdo full-width — sem restrição de max-width */}
         <div style={{ flex: 1 }}>
+          <Suspense fallback={<TabLoadingFallback />}>
           <AccountingEntriesTab
             companyId={companyId}
             entries={accountingPanel.entries}
@@ -79,6 +105,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             message={accountingPanel.message}
             error={accountingPanel.error}
           />
+          </Suspense>
         </div>
       </div>
     );
@@ -96,6 +123,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         />
 
         <AppShell className="guides-page-shell">
+          <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
             companyId={companyId}
             companyRegime={selectedCompany?.regimeTributario || selectedCompany?.tipoTributario}
@@ -112,7 +140,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             uploadingGuide={guidesPanel.uploadingGuide}
             onIdentifyGuide={guidesPanel.onIdentifyGuide}
             onFetchGuidePdf={guidesPanel.onFetchGuidePdf}
+            parcelamentos={accountingPanel.parcelamentos}
+            accountingFunctions={accountingPanel.accountingFunctions}
           />
+          </Suspense>
 
           <Feedback message={feedback.message} error={feedback.error} />
         </AppShell>
@@ -131,6 +162,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           canEditCompany={canEditCompany}
         />
         <div style={{ flex: 1 }}>
+          <Suspense fallback={<TabLoadingFallback />}>
           <ChartOfAccountsPage
             accounts={accountingPanel.accounts || []}
             onCreateAccount={accountingPanel.onCreateAccount}
@@ -139,6 +171,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onImportFile={accountingPanel.onImportAccountsFile}
             onBack={() => switchTab("lancamentos")}
           />
+          </Suspense>
         </div>
         <Feedback message={feedback.message} error={feedback.error} />
       </div>
@@ -156,6 +189,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           canEditCompany={canEditCompany}
         />
         <AppShell>
+          <Suspense fallback={<TabLoadingFallback />}>
           <AccountingRulesContainer
             api={accountingPanel.api}
             scope="COMPANY"
@@ -163,6 +197,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             accounts={accountingPanel.accounts || []}
             onOpenChartOfAccounts={() => switchTab("planoContas")}
           />
+          </Suspense>
           <Feedback message={feedback.message} error={feedback.error} />
         </AppShell>
       </div>
@@ -192,6 +227,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             {!canEditCompany ? (
               <p className="text-muted">Apenas admin ou contador pode alterar os dados.</p>
             ) : (
+              <Suspense fallback={<TabLoadingFallback />}>
               <CompanyForm
                 form={editPanel.form}
                 onChange={editPanel.onChange}
@@ -201,6 +237,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 showOwnerPassword={false}
                 cnpjReadOnly
               />
+              </Suspense>
             )}
 
             <Feedback message={feedback.message} error={feedback.error} />
@@ -225,6 +262,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
+          <Suspense fallback={<TabLoadingFallback />}>
           <CircularTab
             companyRegime={selectedCompany?.regimeTributario || selectedCompany?.tipoTributario}
             circularData={circularPanel.circularData}
@@ -243,7 +281,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onUpdateEntry={accountingPanel.onUpdateEntry}
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onCancelBaixa={circularPanel.onCancelBaixa}
+            parcelamentos={accountingPanel.parcelamentos}
           />
+          </Suspense>
           </ErrorBoundary>
         </div>
       </div>
@@ -294,7 +334,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
       )}
 
       {companyDetailTab === "guides" && (
+          <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
+          </Suspense>
         )}
 
       <Feedback message={feedback.message} error={feedback.error} />

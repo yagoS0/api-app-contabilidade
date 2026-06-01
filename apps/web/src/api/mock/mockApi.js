@@ -1616,5 +1616,13 @@ export function createMockApi() {
     async updateAccountingFunction() { await delay(80); return { ok: true, data: null }; },
     async deleteAccountingFunction() { await delay(80); return { ok: true }; },
     async applyAccountingFunction() { await delay(80); return { ok: true, entries: [] }; },
+
+    // ── Q9: Parcelamentos stubs ─────────────────────────────────────────
+    async listParcelamentos() { await delay(80); return []; },
+    async getParcelamento() { await delay(80); return null; },
+    async createParcelamento() { await delay(80); return { ok: true, data: null }; },
+    async linkGuideToParcelamento() { await delay(80); return { ok: true }; },
+    async payParcela() { await delay(80); return { ok: true, baixas: [] }; },
+    async rescindirParcelamento() { await delay(80); return { ok: true }; },
   };
 }
