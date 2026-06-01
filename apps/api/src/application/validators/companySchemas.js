@@ -38,14 +38,22 @@ const companyBaseFields = {
   hasProlabore: z.boolean().optional(),
 };
 
-// POST /firm/companies — cria empresa + owner (cliente)
+// POST /firm/companies — cria empresa + owner (cliente).
+// Aceita 2 formatos de payload (legado): aninhado { company: {...} } OU achatado.
+// Validação rigorosa fica downstream em validateAndNormalizeCompanyProfile — aqui só
+// confirma tipos básicos e formato de email/senha. Campos da empresa são opcionais
+// no nível Zod (resolvedos no handler que sabe qual caminho usar).
+const companyBaseFieldsOptional = Object.fromEntries(
+  Object.entries(companyBaseFields).map(([k, v]) => [k, v.optional()])
+);
+
 export const companyCreateSchema = z.object({
   ownerEmail: z.string().email("ownerEmail inválido"),
   ownerName: z.string().max(120).optional().nullable(),
   ownerPassword: senhaForte.optional(), // só obrigatório se owner ainda não existe
-  company: z.object(companyBaseFields).optional(),
-  ...companyBaseFields, // permite payload "achatado" (legacy)
-}).passthrough(); // não rejeita campos extras (legado tem muitos)
+  company: z.object(companyBaseFieldsOptional).optional(),
+  ...companyBaseFieldsOptional, // permite payload "achatado" (legacy)
+}).passthrough();
 
 // PATCH /firm/companies/:companyId — atualiza empresa (CNPJ é ignorado downstream — imutável)
 export const companyUpdateSchema = z.object({
