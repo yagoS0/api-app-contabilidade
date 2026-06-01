@@ -23,10 +23,21 @@ function encodeHeaderUtf8(value) {
   return `=?UTF-8?B?${b64}?=`;
 }
 
+// Normaliza a private_key vinda de env var. Em painéis como Railway/Heroku, ao colar
+// o JSON inteiro como string, as quebras de linha reais às vezes viram `\\n` literais
+// (2 caracteres). Sem isso, o JWT é assinado com chave inválida → invalid_grant.
+function normalizeServiceAccount(sa) {
+  if (!sa || typeof sa !== "object") return sa;
+  if (typeof sa.private_key === "string") {
+    sa.private_key = sa.private_key.replace(/\\n/g, "\n");
+  }
+  return sa;
+}
+
 async function loadServiceAccountJson() {
   const inline = String(GOOGLE_APPLICATION_CREDENTIALS_JSON || "").trim();
   if (inline) {
-    return JSON.parse(inline);
+    return normalizeServiceAccount(JSON.parse(inline));
   }
   const credPath = String(GOOGLE_APPLICATION_CREDENTIALS || "").trim();
   if (!credPath) {
@@ -49,7 +60,7 @@ async function loadServiceAccountJson() {
     throw err;
   }
   const raw = await fsp.readFile(resolved, "utf8");
-  return JSON.parse(raw);
+  return normalizeServiceAccount(JSON.parse(raw));
 }
 
 async function getGmailService() {
