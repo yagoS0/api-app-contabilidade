@@ -57,14 +57,17 @@ function GuideStatusCell({ value, column }) {
   );
 }
 
-function CompanySection({ title, rows, columns, selectedIds, onToggle, onToggleAll, onlyPending }) {
-  // Linha tem o que enviar quando alguma coluna (exceto info-only) está preenchida
+// Q10.4: chave composta `${portalClientId}::${competencia}` — cada linha representa
+// 1 envio (empresa + competência). Mesma empresa pode aparecer em meses diferentes.
+const rowKey = (row) => `${row.portalClientId}::${row.competencia}`;
+
+function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggleAll, onlyPending, showCompetencia }) {
   const rowHasSendable = (row) => columns.some((c) => !c.isInfoOnly && row.tiposGuias?.[c.key]);
   const visibleRows = onlyPending ? rows.filter(rowHasSendable) : rows;
 
-  const sendableIds = visibleRows.filter(rowHasSendable).map((r) => r.portalClientId);
-  const allSelected = sendableIds.length > 0 && sendableIds.every((id) => selectedIds.has(id));
-  const someSelected = sendableIds.some((id) => selectedIds.has(id));
+  const sendableKeys = visibleRows.filter(rowHasSendable).map(rowKey);
+  const allSelected = sendableKeys.length > 0 && sendableKeys.every((k) => selectedKeys.has(k));
+  const someSelected = sendableKeys.some((k) => selectedKeys.has(k));
 
   return (
     <section style={{ marginBottom: 24 }}>
@@ -85,7 +88,7 @@ function CompanySection({ title, rows, columns, selectedIds, onToggle, onToggleA
                     type="checkbox"
                     checked={allSelected}
                     ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                    onChange={() => onToggleAll(sendableIds, !allSelected)}
+                    onChange={() => onToggleAll(sendableKeys, !allSelected)}
                     style={{ width: 16, height: 16, cursor: "pointer", accentColor: PANEL.accent }}
                     title="Selecionar todas com pendência"
                   />
@@ -93,6 +96,11 @@ function CompanySection({ title, rows, columns, selectedIds, onToggle, onToggleA
                 <th style={{ ...cellBaseStyle, textAlign: "left", color: "#aeb6d3", textTransform: "uppercase", fontSize: "0.7rem", letterSpacing: "0.04em" }}>
                   Empresa
                 </th>
+                {showCompetencia && (
+                  <th style={{ ...cellBaseStyle, color: "#aeb6d3", textTransform: "uppercase", fontSize: "0.7rem", letterSpacing: "0.04em" }}>
+                    Competência
+                  </th>
+                )}
                 {columns.map((col) => (
                   <th key={col.key} style={{ ...cellBaseStyle, color: "#aeb6d3", textTransform: "uppercase", fontSize: "0.7rem", letterSpacing: "0.04em" }}>
                     {col.label}
@@ -103,11 +111,12 @@ function CompanySection({ title, rows, columns, selectedIds, onToggle, onToggleA
             <tbody>
               {visibleRows.map((row) => {
                 const hasSendable = rowHasSendable(row);
-                const isSelected = selectedIds.has(row.portalClientId);
+                const k = rowKey(row);
+                const isSelected = selectedKeys.has(k);
                 return (
                   <tr
-                    key={row.portalClientId}
-                    onClick={() => hasSendable && onToggle(row.portalClientId)}
+                    key={k}
+                    onClick={() => hasSendable && onToggle(k)}
                     style={{
                       cursor: hasSendable ? "pointer" : "default",
                       background: isSelected ? "rgba(189,147,249,0.08)" : "transparent",
@@ -119,7 +128,7 @@ function CompanySection({ title, rows, columns, selectedIds, onToggle, onToggleA
                         type="checkbox"
                         checked={isSelected}
                         disabled={!hasSendable}
-                        onChange={() => onToggle(row.portalClientId)}
+                        onChange={() => onToggle(k)}
                         style={{ width: 16, height: 16, cursor: hasSendable ? "pointer" : "not-allowed", accentColor: PANEL.accent }}
                       />
                     </td>
@@ -127,6 +136,9 @@ function CompanySection({ title, rows, columns, selectedIds, onToggle, onToggleA
                       <div style={{ fontWeight: 600 }}>{row.razao || "—"}</div>
                       <div style={{ fontSize: "0.7rem", color: PANEL.muted }}>{row.cnpj || ""}</div>
                     </td>
+                    {showCompetencia && (
+                      <td style={{ ...cellBaseStyle, color: PANEL.text, fontWeight: 600 }}>{row.competencia || "—"}</td>
+                    )}
                     {columns.map((col) => (
                       <GuideStatusCell key={col.key} value={row.tiposGuias?.[col.key]} column={col} />
                     ))}
@@ -163,49 +175,57 @@ export function BatchEmailPage({
   message,
   error,
 }) {
-  const [competencia, setCompetencia] = useState(getPreviousMonthCompetencia());
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  // Q10.4: competência vira opcional. "" (default) = todas as competências pendentes.
+  const [competencia, setCompetencia] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [onlyPending, setOnlyPending] = useState(true);
 
   // Carrega ao montar e quando muda competência
   useEffect(() => {
-    onLoad?.(competencia);
-    setSelectedIds(new Set());  // reset seleção ao trocar competência
+    onLoad?.(competencia || null);
+    setSelectedKeys(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [competencia]);
 
-  function toggleOne(portalClientId) {
-    setSelectedIds((prev) => {
+  function toggleOne(key) {
+    setSelectedKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(portalClientId)) next.delete(portalClientId);
-      else next.add(portalClientId);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
 
-  function toggleAllInSection(ids, addAll) {
-    setSelectedIds((prev) => {
+  function toggleAllInSection(keys, addAll) {
+    setSelectedKeys((prev) => {
       const next = new Set(prev);
-      for (const id of ids) {
-        if (addAll) next.add(id);
-        else next.delete(id);
+      for (const k of keys) {
+        if (addAll) next.add(k);
+        else next.delete(k);
       }
       return next;
     });
   }
 
-  const totalSelected = selectedIds.size;
+  const totalSelected = selectedKeys.size;
   const canSend = totalSelected > 0 && !sending;
 
   async function handleSend() {
     if (!canSend) return;
-    const items = [...selectedIds].map((portalClientId) => ({ portalClientId, competencia }));
+    // Q10.4: cada selectedKey é "portalClientId::competencia" — parseia pra enviar.
+    const items = [...selectedKeys].map((key) => {
+      const [portalClientId, comp] = String(key).split("::");
+      return { portalClientId, competencia: comp };
+    });
     await onSend?.(items);
-    setSelectedIds(new Set());
+    setSelectedKeys(new Set());
   }
 
   const simples = report?.simples || [];
   const presumidos = report?.presumidos || [];
+  const competenciasPresentes = report?.competenciasPresentes || [];
+  // Mostra coluna de competência quando exibindo várias (filtro "Todas")
+  const showCompetencia = !competencia;
 
   return (
     <PageShell
@@ -231,15 +251,20 @@ export function BatchEmailPage({
         }}>
           <label style={{ fontSize: "0.85rem", color: PANEL.muted, display: "flex", alignItems: "center", gap: 8 }}>
             Competência:
-            <input
-              type="month"
+            <select
               value={competencia}
               onChange={(e) => setCompetencia(e.target.value)}
               style={{
                 background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6,
                 color: PANEL.text, padding: "6px 10px", fontSize: "0.9rem", colorScheme: "dark",
+                minWidth: 200,
               }}
-            />
+            >
+              <option value="">Todas pendentes</option>
+              {competenciasPresentes.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </label>
           <label style={{ fontSize: "0.85rem", color: PANEL.muted, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
             <input
@@ -265,19 +290,21 @@ export function BatchEmailPage({
               title="Empresas — Simples Nacional"
               rows={simples}
               columns={COLUMNS_SIMPLES}
-              selectedIds={selectedIds}
+              selectedKeys={selectedKeys}
               onToggle={toggleOne}
               onToggleAll={toggleAllInSection}
               onlyPending={onlyPending}
+              showCompetencia={showCompetencia}
             />
             <CompanySection
               title="Empresas — Lucro Presumido / Lucro Real"
               rows={presumidos}
               columns={COLUMNS_PRESUMIDO}
-              selectedIds={selectedIds}
+              selectedKeys={selectedKeys}
               onToggle={toggleOne}
               onToggleAll={toggleAllInSection}
               onlyPending={onlyPending}
+              showCompetencia={showCompetencia}
             />
             {/* Legenda */}
             <div style={{

@@ -1408,7 +1408,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.get("/guides/batch-report", requireAccountType("FIRM"), async (req, res) => {
     const appRole = String(req.auth.user.role || "").toLowerCase();
     const isAdminLike = ["admin", "contador"].includes(appRole);
-    const ref = String(req.query.competencia || "").trim() || getReferenceCompetencia();
+    // Q10.3: competência é OPCIONAL. Sem filtro, retorna todas as guides pending de qualquer
+    // competência. Default mantido como `getReferenceCompetencia()` quando precisamos de um
+    // contexto (parcelamentos por competência), mas as guides não filtram mais.
+    const competenciaFilter = String(req.query.competencia || "").trim();
+    const ref = competenciaFilter || getReferenceCompetencia();
 
     // Escopo de acesso: admin/contador vê todas as PortalClient; demais só as com CompanyFirmAccess ativo.
     let scopeWhere = {};
@@ -1450,29 +1454,43 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }));
     const portalIds = companies.map((c) => c.id);
 
-    // Guides PROCESSED da competência que ainda não foram enviadas.
+    // Q10.3: guides PROCESSED pending. Filtro de competência só quando explicitamente passado.
+    // Sem filtro, vem TODAS as guides pending de QUALQUER competência (incluindo emailStatus=null
+    // pra retrocompat com guides antigos que ficaram sem o campo).
     const guides = await prisma.guide.findMany({
       where: {
         portalClientId: { in: portalIds },
-        competencia: ref,
         status: "PROCESSED",
-        emailStatus: { in: ["PENDING", "ERROR"] },
+        OR: [
+          { emailStatus: { in: ["PENDING", "ERROR"] } },
+          { emailStatus: null },
+        ],
+        ...(competenciaFilter ? { competencia: competenciaFilter } : {}),
       },
       select: {
-        id: true, portalClientId: true, tipo: true, valor: true, vencimento: true,
+        id: true, portalClientId: true, tipo: true, competencia: true, valor: true, vencimento: true,
         emailStatus: true, extracted: true,
       },
     });
 
-    // Parcelamentos Simples Nacional ABERTOS na competência.
+    // Q10.3: lista de competências presentes nas guides (pra dropdown no frontend).
+    const competenciasPresentes = [
+      ...new Set(guides.map((g) => g.competencia).filter(Boolean)),
+    ].sort().reverse(); // mais recente primeiro
+
+    // Parcelamentos Simples Nacional ABERTOS — filtra pela competência se especificada,
+    // senão pega TODAS abertas das mesmas competências que vieram nas guides.
+    const competenciasParaParc = competenciaFilter
+      ? [competenciaFilter]
+      : competenciasPresentes.length > 0 ? competenciasPresentes : [ref];
     const parcelamentos = await prisma.accountingEntry.findMany({
       where: {
         portalClientId: { in: portalIds },
         subtipo: "PARC_DAS",
         statusPagamento: "ABERTO",
-        competencia: ref,
+        competencia: { in: competenciasParaParc },
       },
-      select: { id: true, portalClientId: true },
+      select: { id: true, portalClientId: true, competencia: true },
     });
 
     // Códigos DARF → coluna na matriz. PIS+COFINS agrupam na coluna "PIS_COFINS".
@@ -1480,33 +1498,42 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const IRPJ_CODES = new Set(["2089", "2362", "2456", "0220"]);
     const CSLL_CODES = new Set(["2372", "2484", "6012"]);
 
-    const byCompany = new Map();
-    for (const c of companies) {
+    // Q10.3: chave agora é (companyId + competencia) — uma linha por empresa POR competência.
+    function makeRow(c, competencia) {
       const regime = String(c.company?.regimeTributario || c.company?.tipoTributario || "").toUpperCase();
-      byCompany.set(c.id, {
+      return {
         portalClientId: c.id,
         razao: c.razao,
         cnpj: c.cnpj,
         regimeTributario: regime,
+        competencia,
         tiposGuias: {
           DAS: null, INSS: null, IRPJ: null, CSLL: null,
           PIS_COFINS: null, ISS: null, FGTS: null, PARC_DAS: null,
         },
         pendingGuideIds: [],
-      });
+      };
     }
+    const companyById = new Map(companies.map((c) => [c.id, c]));
+    const rowKey = (companyId, competencia) => `${companyId}::${competencia}`;
+    const byKey = new Map();
 
     for (const g of guides) {
-      const row = byCompany.get(g.portalClientId);
-      if (!row) continue;
+      const c = companyById.get(g.portalClientId);
+      if (!c) continue;
+      const key = rowKey(g.portalClientId, g.competencia);
+      let row = byKey.get(key);
+      if (!row) {
+        row = makeRow(c, g.competencia);
+        byKey.set(key, row);
+      }
       const upper = String(g.tipo || "").toUpperCase();
       const stamp = { guideId: g.id, valor: g.valor != null ? Number(g.valor) : null, vencimento: g.vencimento };
 
       if (upper === "DARF") {
-        // DARF misto: explode a composição em colunas IRPJ/CSLL/PIS_COFINS conforme códigos.
         const composicao = Array.isArray(g.extracted?.composicao) ? g.extracted.composicao : [];
-        for (const c of composicao) {
-          const codigo = String(c.codigo || "");
+        for (const c2 of composicao) {
+          const codigo = String(c2.codigo || "");
           if (PIS_COFINS_CODES.has(codigo)) row.tiposGuias.PIS_COFINS = { ...stamp, codigo };
           else if (IRPJ_CODES.has(codigo)) row.tiposGuias.IRPJ = { ...stamp, codigo };
           else if (CSLL_CODES.has(codigo)) row.tiposGuias.CSLL = { ...stamp, codigo };
@@ -1519,23 +1546,36 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       row.pendingGuideIds.push(g.id);
     }
 
+    // Parcelamentos só são exibidos se existe ao menos 1 linha pra (empresa, competência).
+    // Senão adicionar (cria linha só pra parcelamento) seria ruído visual.
     for (const p of parcelamentos) {
-      const row = byCompany.get(p.portalClientId);
-      if (!row) continue;
-      row.tiposGuias.PARC_DAS = { entryId: p.id, isParcelamento: true };
+      const key = rowKey(p.portalClientId, p.competencia);
+      const row = byKey.get(key);
+      if (row) row.tiposGuias.PARC_DAS = { entryId: p.id, isParcelamento: true };
     }
 
-    // Separa por regime — Simples num grupo, Presumido/Real noutro. Sem regime, vai pra "outros".
+    // Separa por regime, agora mantendo as múltiplas linhas (empresa+competência) por grupo.
     const simples = [];
     const presumidos = [];
     const outros = [];
-    for (const row of byCompany.values()) {
+    for (const row of byKey.values()) {
       if (row.regimeTributario === "SIMPLES") simples.push(row);
       else if (row.regimeTributario === "LUCRO_PRESUMIDO" || row.regimeTributario === "LUCRO_REAL") presumidos.push(row);
       else outros.push(row);
     }
+    // Ordena cada grupo por competência desc, depois razão asc
+    const sortRows = (arr) => arr.sort((a, b) => {
+      if (a.competencia !== b.competencia) return b.competencia.localeCompare(a.competencia);
+      return String(a.razao).localeCompare(String(b.razao));
+    });
+    sortRows(simples); sortRows(presumidos); sortRows(outros);
 
-    return res.json({ competencia: ref, simples, presumidos, outros });
+    return res.json({
+      competencia: ref, // mantém pra retrocompat com clients antigos
+      competenciasPresentes, // Q10.3: lista pra dropdown
+      competenciaFiltro: competenciaFilter || null,
+      simples, presumidos, outros,
+    });
   });
 
   // POST /guides/batch-send
@@ -1879,12 +1919,34 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           emailNextRetryAt: null,
         },
       });
-      return res.json({
-        ok: true,
-        guideId: updated.id,
-        emailStatus: updated.emailStatus,
-        message: "Guia colocada na fila de reenvio de e-mail.",
-      });
+
+      // Q10.2: reenvio é SÍNCRONO — não depende do worker rodar em background.
+      // Permite ao contador clicar "Reenviar" e ter feedback imediato (SENT ou ERROR).
+      try {
+        const result = await runGuideEmailWorkerSelected({ guideIds: [updated.id] });
+        const guideResult = Array.isArray(result?.guides) ? result.guides[0] : null;
+        const sent = guideResult?.emailStatus === "SENT";
+        return res.json({
+          ok: true,
+          guideId: updated.id,
+          emailStatus: guideResult?.emailStatus || "PENDING",
+          sent,
+          message: sent
+            ? "Guia reenviada com sucesso."
+            : (guideResult?.emailLastError
+              ? `Falha no reenvio: ${guideResult.emailLastError}`
+              : "Tentativa de reenvio realizada. Verifique o status."),
+        });
+      } catch (err) {
+        log.warn({ err: err?.message || err, guideId: updated.id }, "Falha no reenvio síncrono");
+        return res.json({
+          ok: true,
+          guideId: updated.id,
+          emailStatus: "PENDING",
+          sent: false,
+          message: "Reenvio em fila — não foi possível enviar agora. Verifique os logs.",
+        });
+      }
     }
   );
 
