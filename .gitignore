@@ -40,3 +40,7 @@ apps/api/node_modules/
 # OS
 *:Zone.Identifier
 .DS_Store
+
+# Credenciais Google
+apps/api/enviodeguias-*.json
+apps/api/*-service-account.json
