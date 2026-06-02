@@ -247,6 +247,11 @@ model PortalClient {
   inscricaoMunicipal     String?
   uf                     String?
   municipio              String?
+  // Q11.1: empresa pode ser SUSPENSA (workers SERPRO pulam, não captura nem processa).
+  // Suspender é reversível; excluir é hard-delete via DELETE /companies/:id.
+  status                 String    @default("ATIVA") // ATIVA | SUSPENSA
+  suspendedAt            DateTime?
+  suspendedReason        String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -269,6 +274,7 @@ model PortalClient {
 
   @@index([cnpj])
   @@index([updatedAt])
+  @@index([status])
 }
 
 model Guide {

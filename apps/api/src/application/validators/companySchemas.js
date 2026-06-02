@@ -7,11 +7,9 @@ import { z } from "zod";
 const cnpjRegex = /^\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}$/;
 const cnpjDigitsOnly = z.string().transform((s) => String(s || "").replace(/\D+/g, ""));
 
-const senhaForte = z
-  .string()
-  .min(10, "Senha precisa de pelo menos 10 caracteres")
-  .refine((s) => /[A-Za-z]/.test(s), "Senha precisa conter ao menos 1 letra")
-  .refine((s) => /[0-9]/.test(s), "Senha precisa conter ao menos 1 número");
+// Validação branda — bcrypt já protege contra rainbow tables. Min 8 chars é suficiente
+// pra app contábil interno; força exagerada gera fricção sem ganho de segurança real.
+const senhaForte = z.string().min(8, "Senha precisa de pelo menos 8 caracteres");
 
 const enderecoSchema = z.object({
   rua: z.string().max(200).optional().nullable(),

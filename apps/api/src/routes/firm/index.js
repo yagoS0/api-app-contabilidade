@@ -297,6 +297,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       telefone: legacy?.telefone || null,
       portalCreatedAt: portal.createdAt,
       portalUpdatedAt: portal.updatedAt,
+      // Q11.1: estado de suspensão exibido na UI (badge + bloqueio de ações).
+      status: portal.status || "ATIVA",
+      suspendedAt: portal.suspendedAt || null,
+      suspendedReason: portal.suspendedReason || null,
       legacyCompany: legacy ? { ...legacy, email: legacyEmail } : null,
     };
   }
@@ -321,6 +325,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           createdAt: true,
           updatedAt: true,
           companyId: true,
+          status: true,           // Q11.1
+          suspendedAt: true,
+          suspendedReason: true,
         },
       });
       const companyIds = items.map((item) => item.companyId).filter(Boolean);
@@ -380,6 +387,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             createdAt: true,
             updatedAt: true,
             companyId: true,
+            status: true,           // Q11.1
+            suspendedAt: true,
+            suspendedReason: true,
           },
         },
       },
@@ -775,6 +785,96 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
         log.error({ err }, "Falha ao atualizar empresa no portal firm");
         return res.status(500).json({ error: "internal_error" });
+      }
+    }
+  );
+
+  // Q11.1: SUSPENDER empresa — workers SERPRO param de processar; reversível via /resume.
+  router.post(
+    "/companies/:companyId/suspend",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params?.companyId || "").trim();
+      if (!portalCompanyId) return res.status(400).json({ error: "company_id_required" });
+      const reason = req.body?.reason ? String(req.body.reason).trim().slice(0, 500) : null;
+      try {
+        const updated = await prisma.portalClient.update({
+          where: { id: portalCompanyId },
+          data: { status: "SUSPENSA", suspendedAt: new Date(), suspendedReason: reason },
+          select: { id: true, status: true, suspendedAt: true, suspendedReason: true },
+        });
+        log.info({ portalCompanyId, reason }, "Empresa suspensa");
+        return res.json({ ok: true, company: updated });
+      } catch (err) {
+        log.error({ err, portalCompanyId }, "Falha ao suspender empresa");
+        return res.status(500).json({ error: "internal_error" });
+      }
+    }
+  );
+
+  // Q11.1: REATIVAR empresa suspensa.
+  router.post(
+    "/companies/:companyId/resume",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params?.companyId || "").trim();
+      if (!portalCompanyId) return res.status(400).json({ error: "company_id_required" });
+      try {
+        const updated = await prisma.portalClient.update({
+          where: { id: portalCompanyId },
+          data: { status: "ATIVA", suspendedAt: null, suspendedReason: null },
+          select: { id: true, status: true },
+        });
+        log.info({ portalCompanyId }, "Empresa reativada");
+        return res.json({ ok: true, company: updated });
+      } catch (err) {
+        log.error({ err, portalCompanyId }, "Falha ao reativar empresa");
+        return res.status(500).json({ error: "internal_error" });
+      }
+    }
+  );
+
+  // Q11.1: EXCLUIR empresa — exige confirmCnpj no body. Hard delete (cascata Prisma).
+  router.delete(
+    "/companies/:companyId",
+    requireFirmCompanyAccess({ minRole: "FIRM_ADMIN" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params?.companyId || "").trim();
+      if (!portalCompanyId) return res.status(400).json({ error: "company_id_required" });
+      const { confirmCnpj } = req.body || {};
+
+      try {
+        const portal = await prisma.portalClient.findUnique({
+          where: { id: portalCompanyId },
+          select: { id: true, cnpj: true, razao: true, companyId: true },
+        });
+        if (!portal) return res.status(404).json({ ok: false, error: "company_not_found" });
+
+        const onlyDigits = (s) => String(s || "").replace(/\D+/g, "");
+        if (onlyDigits(confirmCnpj) !== onlyDigits(portal.cnpj)) {
+          return res.status(400).json({
+            ok: false,
+            error: "cnpj_confirmation_mismatch",
+            message: "Digite o CNPJ exato da empresa para confirmar a exclusão.",
+          });
+        }
+
+        await prisma.$transaction(async (tx) => {
+          // Cascade Prisma apaga: Guides, AccountingEntries, Parcelamentos, Circular,
+          // ChartOfAccounts, AccountingFunctions, AccountingEntryRule, FiscalExecutionLog,
+          // CompanyFirmAccess, CompanyClientUser, PortalIntegrationSettings, PortalSyncState,
+          // PortalInvoice (e relacionados), TaxDocument.
+          await tx.portalClient.delete({ where: { id: portalCompanyId } });
+          // Company legacy (legacy 1:1) — apaga em separado se houver.
+          if (portal.companyId) {
+            await tx.company.delete({ where: { id: portal.companyId } }).catch(() => null);
+          }
+        });
+        log.warn({ portalCompanyId, razao: portal.razao, cnpj: portal.cnpj }, "Empresa excluída");
+        return res.json({ ok: true, deleted: { id: portalCompanyId, razao: portal.razao } });
+      } catch (err) {
+        log.error({ err, portalCompanyId }, "Falha ao excluir empresa");
+        return res.status(500).json({ ok: false, error: "internal_error" });
       }
     }
   );

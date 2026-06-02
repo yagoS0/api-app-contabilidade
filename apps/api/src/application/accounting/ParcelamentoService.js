@@ -242,8 +242,13 @@ export async function createParcelamento({
 
 /**
  * Associa uma Guide existente a uma parcela específica.
- * Não modifica entries — só seta Guide.parcelamentoId/numeroParcela.
- * UI deriva "viva" a partir disso (parcela com guia linkada == viva).
+ *
+ * Q11.3 (reforço): se a guia já tinha gerado provisão automática via
+ * GuideToProvisionService (caso comum: contador sobe guia → entry de provisão é criada
+ * imediatamente; só DEPOIS o contador linka ao parcelamento), apaga essas entries pra
+ * evitar provisão duplicada. A provisão correta é a que foi criada no createParcelamento.
+ *
+ * Não toca em entries de outras origens (manuais, baixas etc).
  */
 export async function linkGuideToParcela({ portalClientId, guideId, parcelamentoId, numeroParcela }) {
   const parc = await prisma.parcelamento.findFirst({
@@ -258,9 +263,31 @@ export async function linkGuideToParcela({ portalClientId, guideId, parcelamento
   });
   if (!guide) throw new Error("guide_not_found");
 
-  return prisma.guide.update({
-    where: { id: guideId },
-    data: { parcelamentoId, numeroParcela },
+  return prisma.$transaction(async (tx) => {
+    // 1) Linka a guia ao parcelamento + número da parcela
+    const updated = await tx.guide.update({
+      where: { id: guideId },
+      data: { parcelamentoId, numeroParcela },
+    });
+
+    // 2) Apaga entries de provisão que possam ter sido auto-criadas por GuideToProvisionService
+    // pra essa guia. Filtro: sourceGuideId = guideId AND NÃO pertence a esse parcelamento
+    // (entries do parcelamento têm parcelamentoId setado e não vêm com sourceGuideId).
+    const deletable = await tx.accountingEntry.findMany({
+      where: {
+        sourceGuideId: guideId,
+        parcelamentoId: null,
+        status: { not: "EXPORTADO" }, // não apaga se já foi exportado pro contábil
+      },
+      select: { id: true },
+    });
+    if (deletable.length > 0) {
+      await tx.accountingEntry.deleteMany({
+        where: { id: { in: deletable.map((e) => e.id) } },
+      });
+    }
+
+    return updated;
   });
 }
 

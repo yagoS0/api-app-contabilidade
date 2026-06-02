@@ -56,6 +56,12 @@ export async function generateProvisionsFromGuide({ guideId, tx = null }) {
   if (!guide.portalClientId) return { ok: false, reason: "no_company" };
   if (!guide.competencia) return { ok: false, reason: "no_competencia" };
 
+  // Q11.3: guia linkada a um parcelamento NÃO gera provisão nova — o parcelamento já provisionou
+  // todas as N parcelas na origem (createParcelamento). Guia mensal só é registrada via linking.
+  if (guide.parcelamentoId) {
+    return { ok: true, skipped: "linked_to_parcelamento", entries: [] };
+  }
+
   const tipoUpper = String(guide.tipo || "").toUpperCase();
 
   // Decisões do usuário: INSS manual + SIMPLES via PGDAS
@@ -82,9 +88,16 @@ export async function generateProvisionsFromGuide({ guideId, tx = null }) {
 
   if (linhas.length === 0) return { ok: true, skipped: "no_value", entries: [] };
 
-  // Data padrão = vencimento da guia, ou último dia da competência
+  // Q11.3: data de provisão = último dia do mês ANTERIOR ao vencimento.
+  // Ex: guia vence 03/06/2026 → provisão lançada 31/05/2026.
+  // Fallback (sem vencimento): último dia da competência.
   const defaultDate = (() => {
-    if (guide.vencimento) return new Date(guide.vencimento);
+    if (guide.vencimento) {
+      const d = new Date(guide.vencimento);
+      if (!Number.isNaN(d.getTime())) {
+        return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0, 23, 59, 59, 999));
+      }
+    }
     const [yyyy, mm] = String(guide.competencia).split("-").map(Number);
     return new Date(Date.UTC(yyyy, mm, 0, 23, 59, 59, 999));
   })();

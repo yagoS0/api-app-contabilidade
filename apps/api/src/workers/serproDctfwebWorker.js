@@ -66,6 +66,8 @@ async function listEligiblePortalCompanies() {
   const companies = await prisma.portalClient.findMany({
     where: {
       cnpj: { not: "" },
+      // Q11.1: empresas SUSPENSAS são puladas pelo worker DCTFWeb.
+      status: { not: "SUSPENSA" },
     },
     select: {
       id: true,

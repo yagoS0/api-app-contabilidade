@@ -439,6 +439,26 @@ export function createRealApi() {
         body: JSON.stringify({ dataRescisao, observacoes }),
       });
     },
+
+    // ── Q11.1: Suspender / Reativar / Excluir empresa ──────────────────────
+    async suspendCompany(companyId, reason) {
+      return request(`/firm/companies/${companyId}/suspend`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      });
+    },
+    async resumeCompany(companyId) {
+      return request(`/firm/companies/${companyId}/resume`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
+    async deleteCompany(companyId, { confirmCnpj }) {
+      return request(`/firm/companies/${companyId}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmCnpj }),
+      });
+    },
     async createGlobalChartOfAccount(input) {
       return request(`/firm/chart-of-accounts/global`, {
         method: "POST",

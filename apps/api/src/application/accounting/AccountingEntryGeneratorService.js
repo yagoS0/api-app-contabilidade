@@ -43,7 +43,9 @@ const EVENT_DEFINITIONS = Object.freeze({
     statusPagamento: "ABERTO",
     amountSource: "das_total",
     descriptionTemplate: "VR REF DAS SIMPLES NACIONAL - {{competencia}}",
-    entryDateStrategy: "DUE_DATE",
+    // Q11.3: lançamento de provisão = último dia do mês ANTERIOR ao vencimento.
+    // Ex: DAS vence 20/05/2026 → provisão lançada 30/04/2026.
+    entryDateStrategy: "LAST_DAY_BEFORE_DUE_DATE",
   },
 });
 
@@ -106,18 +108,43 @@ function getLastDayOfMonth(competencia) {
   return new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 }
 
+// Q11.3: dado um vencimento (Date), retorna o último dia do mês ANTERIOR a esse vencimento.
+// Ex: due=03/06/2026 → result=31/05/2026.
+// `new Date(Date.UTC(year, month, 0))` retorna o último dia do mês anterior (mês=0 = dezembro do ano anterior).
+export function getLastDayOfMonthBeforeDueDate(dueDate) {
+  if (!dueDate) return null;
+  const d = dueDate instanceof Date ? dueDate : new Date(dueDate);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0, 23, 59, 59, 999));
+}
+
+function pickDueDateFromCircular(circular) {
+  return (
+    circular?.metadata?.dueDates?.[circular?.eventType || ""] ||
+    circular?.metadata?.dueDates?.[circular?.amountSource || ""] ||
+    circular?.metadata?.vencimento ||
+    circular?.metadata?.dueDate ||
+    null
+  );
+}
+
 function resolveEntryDate({ strategy, competencia, circular, now }) {
   const normalizedStrategy = String(strategy || "LAST_DAY_OF_MONTH").toUpperCase();
   if (normalizedStrategy === "SYNC_DATE") return now;
   if (normalizedStrategy === "MANUAL") return now;
 
+  // Q11.3: estratégia padrão pra provisão — vencimento - 1 mês → último dia desse mês.
+  // Usada por DAS_SIMPLES (era DUE_DATE) e por toda nova provisão derivada de guia com vencimento.
+  if (normalizedStrategy === "LAST_DAY_BEFORE_DUE_DATE") {
+    const dueDateRaw = pickDueDateFromCircular(circular);
+    const result = getLastDayOfMonthBeforeDueDate(dueDateRaw);
+    if (result) return result;
+    // fallback: último dia da competência (provisão clássica)
+    return getLastDayOfMonth(competencia) || now;
+  }
+
   if (normalizedStrategy === "DUE_DATE") {
-    const dueDateRaw =
-      circular?.metadata?.dueDates?.[circular?.eventType || ""] ||
-      circular?.metadata?.dueDates?.[circular?.amountSource || ""] ||
-      circular?.metadata?.vencimento ||
-      circular?.metadata?.dueDate ||
-      null;
+    const dueDateRaw = pickDueDateFromCircular(circular);
     if (dueDateRaw) {
       const dueDate = new Date(dueDateRaw);
       if (!Number.isNaN(dueDate.getTime())) return dueDate;

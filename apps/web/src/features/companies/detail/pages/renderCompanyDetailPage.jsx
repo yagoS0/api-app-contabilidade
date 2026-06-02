@@ -1,5 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
+import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { CompanySectionHeader } from "../components/renderCompanyDetailHeader";
 import { PageHeader } from "../../../../components/layout/PageHeader";
 import { Feedback } from "../../../../components/ui/Feedback";
@@ -36,9 +37,11 @@ function TabLoadingFallback() {
   );
 }
 
-export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, feedback }) {
+export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
+  // Q11.1: state do modal de exclusão (zona de risco)
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   function switchTab(tab) {
     setCompanyDetailTab(tab);
@@ -236,6 +239,12 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 submitLabel="Salvar alterações"
                 showOwnerPassword={false}
                 cnpjReadOnly
+                // Q11.1: zona de risco
+                status={selectedCompany?.status}
+                dangerSaving={dangerActions?.saving}
+                onSuspend={dangerActions?.onSuspend}
+                onResume={dangerActions?.onResume}
+                onDelete={dangerActions?.onDelete ? () => setShowDeleteModal(true) : null}
               />
               </Suspense>
             )}
@@ -243,6 +252,20 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             <Feedback message={feedback.message} error={feedback.error} />
           </section>
         </AppShell>
+
+        {/* Q11.1: modal de confirmação de exclusão por CNPJ */}
+        {showDeleteModal && dangerActions?.onDelete && (
+          <DeleteCompanyModal
+            company={selectedCompany}
+            saving={dangerActions.saving}
+            onConfirm={async ({ confirmCnpj }) => {
+              await dangerActions.onDelete({ confirmCnpj });
+              setShowDeleteModal(false);
+              // hook handler já navega de volta pra /companies
+            }}
+            onClose={() => setShowDeleteModal(false)}
+          />
+        )}
       </div>
     );
   }

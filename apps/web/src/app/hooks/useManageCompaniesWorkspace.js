@@ -704,6 +704,63 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
+  // Q11.1: suspender / reativar / excluir empresa
+  const [companyDangerSaving, setCompanyDangerSaving] = useState(false);
+
+  async function handleSuspendCompany(companyId, reason) {
+    if (!companyId) return { ok: false };
+    setCompanyDangerSaving(true);
+    feedback.clearFeedback();
+    try {
+      const res = await api.suspendCompany(companyId, reason);
+      await loadCompanies();
+      feedback.setMessage("Empresa suspensa. Workers SERPRO não vão processá-la.");
+      return res;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao suspender.");
+      throw err;
+    } finally {
+      setCompanyDangerSaving(false);
+    }
+  }
+
+  async function handleResumeCompany(companyId) {
+    if (!companyId) return { ok: false };
+    setCompanyDangerSaving(true);
+    feedback.clearFeedback();
+    try {
+      const res = await api.resumeCompany(companyId);
+      await loadCompanies();
+      feedback.setMessage("Empresa reativada.");
+      return res;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao reativar.");
+      throw err;
+    } finally {
+      setCompanyDangerSaving(false);
+    }
+  }
+
+  async function handleDeleteCompany(companyId, { confirmCnpj }) {
+    if (!companyId) return { ok: false };
+    setCompanyDangerSaving(true);
+    feedback.clearFeedback();
+    try {
+      const res = await api.deleteCompany(companyId, { confirmCnpj });
+      // Após apagar, sai da empresa e recarrega lista
+      companiesState.setSelectedCompanyId(null);
+      await loadCompanies();
+      setPage("companies");
+      feedback.setMessage("Empresa excluída com sucesso.");
+      return res;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao excluir.");
+      throw err;
+    } finally {
+      setCompanyDangerSaving(false);
+    }
+  }
+
   return {
     companiesState,
     guidesState,
@@ -773,5 +830,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     resetWorkspace,
     globalChartStatus,
     loadGlobalChartStatus,
+    // Q11.1: ações destrutivas na empresa
+    companyDangerSaving,
+    handleSuspendCompany,
+    handleResumeCompany,
+    handleDeleteCompany,
   };
 }

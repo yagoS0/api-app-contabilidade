@@ -305,6 +305,15 @@ function App() {
           onCancelBaixa: accountingWorkspace.handleDeleteEntryNoConfirm,
         }}
         feedback={{ message: feedback.message, error: feedback.error }}
+        dangerActions={{
+          saving: companiesWorkspace.companyDangerSaving,
+          onSuspend: (reason) => companiesWorkspace.handleSuspendCompany(
+            companiesWorkspace.companiesState.selectedCompanyId, reason),
+          onResume: () => companiesWorkspace.handleResumeCompany(
+            companiesWorkspace.companiesState.selectedCompanyId),
+          onDelete: ({ confirmCnpj }) => companiesWorkspace.handleDeleteCompany(
+            companiesWorkspace.companiesState.selectedCompanyId, { confirmCnpj }),
+        }}
       />
     );
   }

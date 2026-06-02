@@ -78,10 +78,19 @@ async function getGmailService() {
 function buildMimeMessage({ from, to, subject, html, attachments }) {
   const boundary = "===belgen-" + Date.now();
   const encodedSubject = encodeHeaderUtf8(subject);
+  // Extrai domínio do "from" pra usar no Message-ID (boa prática anti-spam).
+  const fromEmail = (String(from).match(/<([^>]+)>/) || [, String(from).trim()])[1];
+  const fromDomain = fromEmail.split("@")[1] || "belgencontabilidade.com";
+  const messageId = `<${Date.now()}.${Math.random().toString(36).slice(2, 10)}@${fromDomain}>`;
+  // Reply-To: contador (não bounce pra service account). Mesmo email se não definido.
+  const replyTo = fromEmail;
   let head =
     `From: ${from}\r\n` +
     `To: ${to}\r\n` +
+    `Reply-To: ${replyTo}\r\n` +
     `Subject: ${encodedSubject}\r\n` +
+    `Message-ID: ${messageId}\r\n` +
+    `Date: ${new Date().toUTCString()}\r\n` +
     `MIME-Version: 1.0\r\n` +
     `Content-Type: multipart/mixed; boundary="${boundary}"\r\n\r\n`;
   let body = "";

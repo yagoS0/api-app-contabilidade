@@ -1,5 +1,17 @@
 import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "../../../../components/ui/Button";
+import { companyCreateFormSchema, companyUpdateFormSchema } from "../../../../lib/schemas/companySchema";
+
+// Q11.2: estilo padrão pra mensagens de erro inline (vermelho, abaixo do input)
+const ERROR_TEXT_STYLE = {
+  display: "block",
+  marginTop: 4,
+  fontSize: 12,
+  color: "#FF4757",
+  fontWeight: 600,
+};
 
 async function fetchCnpjData(cnpj) {
   const digits = cnpj.replace(/\D/g, "");
@@ -33,9 +45,35 @@ export function CompanyForm({
   submitLabel,
   showOwnerPassword,
   cnpjReadOnly = false, // true em modo edição: CNPJ é imutável após criação (UI + API)
+  // Q11.1: zona de risco — botões só aparecem em modo edição (cnpjReadOnly=true)
+  status,            // "ATIVA" | "SUSPENSA" (vem do servidor)
+  onSuspend,         // (reason?) => Promise
+  onResume,          // () => Promise
+  onDelete,          // () => abre o modal de confirmação (parent gerencia)
+  dangerSaving,      // bool — loading state pros botões da zona de risco
 }) {
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjError, setCnpjError] = useState(null);
+
+  // Q11.2: RHF "paralelo" — não possui o state (continua sendo `form` externo), só faz
+  // validação visual em tempo real. Vantagem: zero refactor dos callers (continua chamando
+  // `onChange(field, value)`). RHF é alimentado pelo `values: form` (resync automático)
+  // e `trigger(field)` é chamado a cada onChange pra atualizar `errors`.
+  const isEditMode = cnpjReadOnly; // edição usa schema menos rigoroso (senha opcional)
+  const {
+    register, formState: { errors }, trigger,
+  } = useForm({
+    resolver: zodResolver(isEditMode ? companyUpdateFormSchema : companyCreateFormSchema),
+    values: form,
+    mode: "onChange",
+  });
+
+  // Helper: chama onChange externo + dispara validação no RHF
+  function handleChange(field, value) {
+    onChange(field, value);
+    // valida o campo modificado pra atualizar errors[field]
+    trigger(field).catch(() => null);
+  }
 
   async function handleCnpjBlur() {
     const digits = form.cnpj.replace(/\D/g, "");
@@ -63,19 +101,29 @@ export function CompanyForm({
         <input
           type="email"
           value={form.ownerEmail}
-          onChange={(event) => onChange("ownerEmail", event.target.value)}
+          onChange={(event) => handleChange("ownerEmail", event.target.value)}
           required
         />
+        {errors.ownerEmail && (
+          <span style={ERROR_TEXT_STYLE}>{errors.ownerEmail.message}</span>
+        )}
       </label>
       {showOwnerPassword ? (
         <label>
           Senha do responsavel
+          <span style={{ marginLeft: 8, fontSize: 12, color: "#888" }}>
+            (mínimo 8 caracteres)
+          </span>
           <input
             type="password"
             value={form.ownerPassword}
-            onChange={(event) => onChange("ownerPassword", event.target.value)}
+            onChange={(event) => handleChange("ownerPassword", event.target.value)}
+            minLength={8}
             required
           />
+          {errors.ownerPassword && (
+            <span style={ERROR_TEXT_STYLE}>{errors.ownerPassword.message}</span>
+          )}
         </label>
       ) : null}
       <label>
@@ -95,7 +143,7 @@ export function CompanyForm({
           value={form.cnpj}
           onChange={(event) => {
             if (cnpjReadOnly) return;
-            onChange("cnpj", event.target.value);
+            handleChange("cnpj", event.target.value);
             setCnpjError(null);
           }}
           onBlur={cnpjReadOnly ? undefined : handleCnpjBlur}
@@ -104,10 +152,16 @@ export function CompanyForm({
           readOnly={cnpjReadOnly}
           style={cnpjReadOnly ? { background: "#1f2030", color: "#aeb6d3", cursor: "not-allowed" } : undefined}
         />
+        {!cnpjReadOnly && errors.cnpj && (
+          <span style={ERROR_TEXT_STYLE}>{errors.cnpj.message}</span>
+        )}
       </label>
       <label>
         Razao social
-        <input value={form.razaoSocial} onChange={(event) => onChange("razaoSocial", event.target.value)} required />
+        <input value={form.razaoSocial} onChange={(event) => handleChange("razaoSocial", event.target.value)} required />
+        {errors.razaoSocial && (
+          <span style={ERROR_TEXT_STYLE}>{errors.razaoSocial.message}</span>
+        )}
       </label>
       <label>
         Nome fantasia
@@ -196,6 +250,68 @@ export function CompanyForm({
           {submitting ? "Salvando..." : submitLabel}
         </Button>
       </div>
+
+      {/* Q11.1: Zona de Risco — só no modo edição (cnpjReadOnly), abaixo do form */}
+      {cnpjReadOnly && (onSuspend || onResume || onDelete) && (
+        <div className="full" style={{
+          marginTop: 32, padding: "16px 18px", borderRadius: 8,
+          background: "rgba(255, 71, 87, 0.06)", border: "1px solid #FF4757",
+        }}>
+          <h3 style={{ margin: "0 0 4px", color: "#FF4757", fontSize: "0.95rem" }}>
+            ⚠ Zona de Risco
+          </h3>
+          <p style={{ margin: "0 0 12px", fontSize: "0.8rem", color: "#aeb6d3" }}>
+            Suspender desativa a captura SERPRO e bloqueia processamentos. Excluir apaga tudo.
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {status === "SUSPENSA" ? (
+              onResume && (
+                <Button
+                  type="button" variant="success"
+                  onClick={onResume}
+                  disabled={dangerSaving}
+                >
+                  {dangerSaving ? "Reativando…" : "Reativar empresa"}
+                </Button>
+              )
+            ) : (
+              onSuspend && (
+                <Button
+                  type="button" variant="secondary"
+                  onClick={() => {
+                    // eslint-disable-next-line no-alert
+                    const reason = window.prompt("Motivo da suspensão (opcional):", "");
+                    if (reason === null) return; // cancelou
+                    onSuspend(reason.trim() || null);
+                  }}
+                  disabled={dangerSaving}
+                  style={{ background: "#FFB347", color: "#1A1B26" }}
+                >
+                  {dangerSaving ? "Suspendendo…" : "Suspender empresa"}
+                </Button>
+              )
+            )}
+            {onDelete && (
+              <Button
+                type="button"
+                onClick={onDelete}
+                disabled={dangerSaving}
+                style={{ background: "#FF4757", color: "white", marginLeft: "auto" }}
+              >
+                Excluir empresa…
+              </Button>
+            )}
+          </div>
+          {status === "SUSPENSA" && (
+            <div style={{
+              marginTop: 12, padding: "8px 10px", background: "rgba(255, 179, 71, 0.10)",
+              border: "1px solid #FFB347", borderRadius: 6, fontSize: "0.8rem", color: "#FFB347",
+            }}>
+              ⏸ Empresa SUSPENSA — workers SERPRO não vão capturar guias.
+            </div>
+          )}
+        </div>
+      )}
     </form>
   );
 }

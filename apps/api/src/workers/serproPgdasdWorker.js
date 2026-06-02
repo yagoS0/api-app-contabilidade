@@ -72,7 +72,8 @@ async function listEligiblePortalCompanies() {
   // PortalClient não tem relação `company` (só FK `companyId`). Buscamos Companies
   // separadamente e fazemos merge em memória pelo companyId.
   const portalRows = await prisma.portalClient.findMany({
-    where: { cnpj: { not: "" } },
+    // Q11.1: empresas SUSPENSAS são puladas pelo worker SERPRO (não captura, não processa).
+    where: { cnpj: { not: "" }, status: { not: "SUSPENSA" } },
     select: {
       id: true, razao: true, cnpj: true,
       guideNotificationEmail: true, hasProlabore: true, companyId: true,

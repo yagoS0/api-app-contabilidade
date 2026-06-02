@@ -1624,5 +1624,10 @@ export function createMockApi() {
     async linkGuideToParcelamento() { await delay(80); return { ok: true }; },
     async payParcela() { await delay(80); return { ok: true, baixas: [] }; },
     async rescindirParcelamento() { await delay(80); return { ok: true }; },
+
+    // ── Q11.1: stubs Suspender/Reativar/Excluir ─────────────────────────
+    async suspendCompany() { await delay(80); return { ok: true }; },
+    async resumeCompany() { await delay(80); return { ok: true }; },
+    async deleteCompany() { await delay(80); return { ok: true }; },
   };
 }
