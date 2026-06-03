@@ -34,12 +34,17 @@ const ENDPOINTS = {
   hom:  "https://adn.producaorestrita.nfse.gov.br",
 };
 
-// Path templates conhecidos (tenta um, cai no outro em 404). Permite
-// adaptar quando o gov.br publicar nova rota sem mudar muito código.
+// Path templates conhecidos do ADN Nacional (gov.br/nfse).
+// Doc oficial: https://adn.nfse.gov.br/docs/index.html (exige mTLS)
+// O POST /DFe é RECEPÇÃO (envio). Aqui precisamos de DISTRIBUIÇÃO (consulta por NSU).
+// Lista ordenada: tenta cada um até obter 200 ou 404+JSON válido. Se mudou, adicione.
 const PATH_TEMPLATES = [
-  // Variante padrão de distribuição por NSU
+  ({ cnpj, ultNSU }) => `/DFe/${cnpj}/${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/DFe/${cnpj}?ultimoNSU=${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/Distribuicao/${cnpj}/${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/Distribuicao/${cnpj}?ultimoNSU=${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/Consulta/${cnpj}/${ultNSU}`,
   ({ cnpj, ultNSU }) => `/sefin/rest/dfe/${cnpj}/distribuicao/${ultNSU}`,
-  // Variante antiga / alternativa
   ({ cnpj, ultNSU }) => `/sefin/rest/dfe/${cnpj}?ultimoNSU=${ultNSU}`,
 ];
 
