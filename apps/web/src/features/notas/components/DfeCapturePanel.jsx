@@ -34,10 +34,11 @@ function ResultBlock({ result }) {
   );
 }
 
-export function DfeCapturePanel({ dfeState, dfeSyncing, dfeLastResult, onSync }) {
+export function DfeCapturePanel({ dfeState, dfeSyncing, dfeLastResult, onSync, onClearError }) {
   const [env, setEnv] = useState("prod");
 
   const inBackoff = dfeState?.dfeBackoffUntil && new Date(dfeState.dfeBackoffUntil) > new Date();
+  const hasError = Boolean(dfeState?.dfeLastError);
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
@@ -51,6 +52,12 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, dfeLastResult, onSync })
             <option value="prod">Produção</option>
             <option value="hom">Homologação</option>
           </select>
+          {(hasError || inBackoff) && onClearError && (
+            <button onClick={onClearError} disabled={dfeSyncing} title="Limpa backoff e último erro"
+              style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.muted, cursor: "pointer", fontSize: "0.75rem" }}>
+              Limpar erro
+            </button>
+          )}
           <button onClick={() => onSync({ env })} disabled={dfeSyncing || inBackoff}
             style={{
               padding: "6px 14px", borderRadius: 6, border: "none",

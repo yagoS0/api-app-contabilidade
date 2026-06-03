@@ -17,6 +17,7 @@
 
 import https from "node:https";
 import axios from "axios";
+import { extractTlsMaterialFromPfx } from "../pfxToTls.js";
 
 const ENDPOINTS = {
   prod: "https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx",
@@ -58,9 +59,12 @@ function buildSoapEnvelope({ cnpj, ultNSU, tpAmb, cUF }) {
 }
 
 function buildHttpsAgent({ pfxBuffer, password }) {
+  // Q12.B fix: extrai cert+key via node-forge (evita ERR_CRYPTO_UNSUPPORTED_OPERATION
+  // em Node 22+OpenSSL 3 com PFX brasileiros que usam 3DES/SHA1).
+  const tls = extractTlsMaterialFromPfx(pfxBuffer, password);
   return new https.Agent({
-    pfx: pfxBuffer,
-    passphrase: password || undefined,
+    cert: tls.cert,
+    key: tls.key,
     minVersion: "TLSv1.2",
     rejectUnauthorized: true,
     keepAlive: true,

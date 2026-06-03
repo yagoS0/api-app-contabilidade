@@ -31,8 +31,9 @@ function ResultBlock({ result }) {
   );
 }
 
-export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync }) {
+export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync, onClearError }) {
   const inBackoff = adnState?.adnBackoffUntil && new Date(adnState.adnBackoffUntil) > new Date();
+  const hasError = Boolean(adnState?.adnLastError);
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
@@ -40,6 +41,12 @@ export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync })
         <h3 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text }}>
           📥 Captura NFS-e (ADN / Emissor Nacional)
         </h3>
+        {(hasError || inBackoff) && onClearError && (
+          <button onClick={onClearError} disabled={adnSyncing} title="Limpa backoff e último erro"
+            style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.muted, cursor: "pointer", fontSize: "0.75rem", marginRight: 8 }}>
+            Limpar erro
+          </button>
+        )}
         <button onClick={() => onSync()} disabled={adnSyncing || inBackoff}
           style={{
             padding: "6px 14px", borderRadius: 6, border: "none",

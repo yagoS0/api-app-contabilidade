@@ -744,6 +744,9 @@ export function createRealApi() {
       const payload = await request(`/firm/companies/${companyId}/dfe/state`);
       return payload?.state || null;
     },
+    async clearDfeError(companyId) {
+      return request(`/firm/companies/${companyId}/dfe/clear-error`, { method: "POST" });
+    },
     // Q12.B+: NFS-e via ADN
     async syncAdn(companyId) {
       return request(`/firm/companies/${companyId}/adn/sync`, { method: "POST" });
@@ -751,6 +754,9 @@ export function createRealApi() {
     async getAdnState(companyId) {
       const payload = await request(`/firm/companies/${companyId}/adn/state`);
       return payload?.state || null;
+    },
+    async clearAdnError(companyId) {
+      return request(`/firm/companies/${companyId}/adn/clear-error`, { method: "POST" });
     },
     // Q12.C.1: listagem de notas + resumo
     async listNotas(companyId, filters = {}) {

@@ -16,6 +16,7 @@ import {
   log,
 } from "../../config.js";
 import { AdnRepository } from "../../infrastructure/db/AdnRepository.js";
+import { extractTlsMaterialFromPfx } from "../notas/pfxToTls.js";
 
 function integrationReady(certInfo) {
   const hasCompanyCert = Boolean(certInfo?.pfxBuffer);
@@ -39,21 +40,27 @@ function buildAdnClient(certInfo) {
     throw err;
   }
 
-  const agent = certInfo?.pfxBuffer
-    ? new https.Agent({
-        pfx: certInfo.pfxBuffer,
-        passphrase: certInfo.pfxPassword,
-        minVersion: "TLSv1.2",
-        ALPNProtocols: ["http/1.1"],
-        rejectUnauthorized: true,
-      })
-    : new https.Agent({
-        cert: fs.readFileSync(ADN_CERT_PATH),
-        key: fs.readFileSync(ADN_KEY_PATH),
-        minVersion: "TLSv1.2",
-        ALPNProtocols: ["http/1.1"],
-        rejectUnauthorized: true,
-      });
+  let agent;
+  if (certInfo?.pfxBuffer) {
+    // Q12.B fix: usa node-forge pra extrair cert+key do PFX em vez de passar
+    // o PFX direto (que falha em Node 22+OpenSSL 3 com PFX brasileiros).
+    const tls = extractTlsMaterialFromPfx(certInfo.pfxBuffer, certInfo.pfxPassword);
+    agent = new https.Agent({
+      cert: tls.cert,
+      key: tls.key,
+      minVersion: "TLSv1.2",
+      ALPNProtocols: ["http/1.1"],
+      rejectUnauthorized: true,
+    });
+  } else {
+    agent = new https.Agent({
+      cert: fs.readFileSync(ADN_CERT_PATH),
+      key: fs.readFileSync(ADN_KEY_PATH),
+      minVersion: "TLSv1.2",
+      ALPNProtocols: ["http/1.1"],
+      rejectUnauthorized: true,
+    });
+  }
 
   return axios.create({
     baseURL: ADN_BASE_URL.replace(/\/+$/, ""),

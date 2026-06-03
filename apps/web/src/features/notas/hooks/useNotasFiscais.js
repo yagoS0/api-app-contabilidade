@@ -148,6 +148,21 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     }
   }
 
+  async function clearDfeError() {
+    try {
+      await api.clearDfeError(companyId);
+      feedback?.notifySuccess?.("Erro DFe limpo.");
+      await loadAll();
+    } catch (err) { feedback?.notifyError?.(err?.message || "Erro."); }
+  }
+  async function clearAdnError() {
+    try {
+      await api.clearAdnError(companyId);
+      feedback?.notifySuccess?.("Erro ADN limpo.");
+      await loadAll();
+    } catch (err) { feedback?.notifyError?.(err?.message || "Erro."); }
+  }
+
   async function syncAdn() {
     setAdnSyncing(true);
     setAdnLastResult(null);
@@ -176,9 +191,9 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     fecharCompetencia, reabrirCompetencia,
     resolverPendencia,
     // Q12.B
-    dfeState, dfeSyncing, dfeLastResult, syncDfe,
+    dfeState, dfeSyncing, dfeLastResult, syncDfe, clearDfeError,
     // Q12.B+: NFS-e via ADN
-    adnState, adnSyncing, adnLastResult, syncAdn,
+    adnState, adnSyncing, adnLastResult, syncAdn, clearAdnError,
     // Q12.C.1: listagem de notas
     notas, notasTotal, notasSummary,
     notasFilters, setNotasFilters,

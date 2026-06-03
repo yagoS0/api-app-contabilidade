@@ -325,6 +325,26 @@ export function createNotasRouter({ log }) {
   });
 
   // GET /dfe/state — retorna cursor + último erro + backoff (UI mostra status)
+  // POST /dfe/clear-error — limpa backoff e último erro (desbloqueia botão)
+  router.post("/dfe/clear-error", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    await prisma.portalSyncState.updateMany({
+      where: { clientId: portalClientId },
+      data: { dfeBackoffUntil: null, dfeLastError: null },
+    });
+    return res.json({ ok: true });
+  });
+
+  // POST /adn/clear-error — idem para ADN
+  router.post("/adn/clear-error", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    await prisma.portalSyncState.updateMany({
+      where: { clientId: portalClientId },
+      data: { adnBackoffUntil: null, adnLastError: null },
+    });
+    return res.json({ ok: true });
+  });
+
   router.get("/dfe/state", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const state = await prisma.portalSyncState.findUnique({ where: { clientId: portalClientId } });

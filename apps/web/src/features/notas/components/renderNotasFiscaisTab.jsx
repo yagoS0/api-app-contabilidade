@@ -10,8 +10,8 @@ export function NotasFiscaisTab({ notasPanel }) {
   const {
     ano,
     loading, error, reload,
-    dfeState, dfeSyncing, dfeLastResult, syncDfe,
-    adnState, adnSyncing, adnLastResult, syncAdn,
+    dfeState, dfeSyncing, dfeLastResult, syncDfe, clearDfeError,
+    adnState, adnSyncing, adnLastResult, syncAdn, clearAdnError,
     notas, notasTotal, notasSummary,
     notasFilters, setNotasFilters,
     loadingNotas, loadNotas,
@@ -31,11 +31,11 @@ export function NotasFiscaisTab({ notasPanel }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
         <DfeCapturePanel
           dfeState={dfeState} dfeSyncing={dfeSyncing} dfeLastResult={dfeLastResult}
-          onSync={syncDfe}
+          onSync={syncDfe} onClearError={clearDfeError}
         />
         <AdnCapturePanel
           adnState={adnState} adnSyncing={adnSyncing} adnLastResult={adnLastResult}
-          onSync={syncAdn}
+          onSync={syncAdn} onClearError={clearAdnError}
         />
       </div>
 
