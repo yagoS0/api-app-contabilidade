@@ -18,13 +18,14 @@ CREATE INDEX "company_monthly_circulars_portalClientId_estado_idx"
   ON "company_monthly_circulars"("portalClientId", "estado");
 
 -- ─── PortalInvoice: papel (EMIT/DEST), status efetivo, marca pós-fechamento ───
-ALTER TABLE "portal_invoices"
+-- Atenção: PortalInvoice NÃO tem @@map → tabela usa PascalCase no banco.
+ALTER TABLE "PortalInvoice"
   ADD COLUMN "papel" TEXT,
   ADD COLUMN "statusEfetivo" TEXT,
   ADD COLUMN "competenciaPosFechamento" BOOLEAN NOT NULL DEFAULT false;
 
-CREATE INDEX "portal_invoices_papel_idx" ON "portal_invoices"("papel");
-CREATE INDEX "portal_invoices_statusEfetivo_idx" ON "portal_invoices"("statusEfetivo");
+CREATE INDEX "PortalInvoice_papel_idx" ON "PortalInvoice"("papel");
+CREATE INDEX "PortalInvoice_statusEfetivo_idx" ON "PortalInvoice"("statusEfetivo");
 
 -- ─── NotaItem: itens de uma nota (NF-e/NFS-e) ───
 CREATE TABLE "nota_itens" (
@@ -48,7 +49,7 @@ CREATE INDEX "nota_itens_anexoResolvido_idx" ON "nota_itens"("anexoResolvido");
 
 ALTER TABLE "nota_itens"
   ADD CONSTRAINT "nota_itens_notaId_fkey"
-  FOREIGN KEY ("notaId") REFERENCES "portal_invoices"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("notaId") REFERENCES "PortalInvoice"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ─── PendenciaPosFechamento: notas chegadas em competência já fechada ───
 CREATE TABLE "pendencias_pos_fechamento" (
@@ -70,11 +71,11 @@ CREATE INDEX "pendencias_pos_fechamento_portalClientId_competencia_resolvida_idx
 
 ALTER TABLE "pendencias_pos_fechamento"
   ADD CONSTRAINT "pendencias_pos_fechamento_portalClientId_fkey"
-  FOREIGN KEY ("portalClientId") REFERENCES "portal_clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("portalClientId") REFERENCES "PortalClient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "pendencias_pos_fechamento"
   ADD CONSTRAINT "pendencias_pos_fechamento_notaId_fkey"
-  FOREIGN KEY ("notaId") REFERENCES "portal_invoices"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  FOREIGN KEY ("notaId") REFERENCES "PortalInvoice"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- ─── Procuracao: e-CAC do escritório por (empresa, serviço) ───
 CREATE TABLE "procuracoes" (
@@ -96,4 +97,4 @@ CREATE INDEX "procuracoes_status_idx" ON "procuracoes"("status");
 
 ALTER TABLE "procuracoes"
   ADD CONSTRAINT "procuracoes_portalClientId_fkey"
-  FOREIGN KEY ("portalClientId") REFERENCES "portal_clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("portalClientId") REFERENCES "PortalClient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
