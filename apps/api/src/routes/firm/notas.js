@@ -162,13 +162,24 @@ export function createNotasRouter({ log }) {
     });
     const byComp = new Map(rows.map((r) => [r.competencia, r]));
 
-    // Estatísticas adicionais (contagem de notas, pendências) por competência
-    const notesCounts = await prisma.portalInvoice.groupBy({
-      by: ["competencia"],
-      where: { portalClientId, competencia: { in: competencias } },
-      _count: { _all: true },
+    // Estatísticas adicionais (contagem de notas, pendências) por competência.
+    // PortalInvoice.clientId (não portalClientId) + competencia é DateTime → agrupamos em JS.
+    const yearStart = new Date(Date.UTC(ano, 0, 1));
+    const yearEnd = new Date(Date.UTC(ano + 1, 0, 1));
+    const notes = await prisma.portalInvoice.findMany({
+      where: {
+        clientId: portalClientId,
+        competencia: { gte: yearStart, lt: yearEnd },
+      },
+      select: { competencia: true },
     });
-    const notesByComp = new Map(notesCounts.map((n) => [n.competencia, n._count._all]));
+    const notesByComp = new Map();
+    for (const n of notes) {
+      if (!n.competencia) continue;
+      const d = new Date(n.competencia);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      notesByComp.set(key, (notesByComp.get(key) || 0) + 1);
+    }
 
     const pendCounts = await prisma.pendenciaPosFechamento.groupBy({
       by: ["competencia"],
@@ -195,7 +206,13 @@ export function createNotasRouter({ log }) {
       return bad(res, 400, "invalid_competencia", "Competência deve estar no formato YYYY-MM");
     }
     const row = await ensureCompetencia({ portalClientId, competencia });
-    const notasCount = await prisma.portalInvoice.count({ where: { portalClientId, competencia } });
+    // PortalInvoice.competencia é DateTime — filtramos por range do mês.
+    const [yy, mm] = competencia.split("-").map(Number);
+    const monthStart = new Date(Date.UTC(yy, mm - 1, 1));
+    const monthEnd = new Date(Date.UTC(yy, mm, 1));
+    const notasCount = await prisma.portalInvoice.count({
+      where: { clientId: portalClientId, competencia: { gte: monthStart, lt: monthEnd } },
+    });
     const pendenciasAbertas = await prisma.pendenciaPosFechamento.count({
       where: { portalClientId, competencia, resolvida: false },
     });
