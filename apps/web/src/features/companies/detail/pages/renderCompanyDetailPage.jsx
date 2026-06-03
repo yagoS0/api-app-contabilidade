@@ -32,6 +32,10 @@ const ChartOfAccountsPage = lazy(() =>
 const NotasFiscaisTab = lazy(() =>
   import("../../../notas/components/renderNotasFiscaisTab").then((m) => ({ default: m.NotasFiscaisTab }))
 );
+// Q12.B+++: painel de cert A1 da empresa
+const CompanyCertificatePanel = lazy(() =>
+  import("../../certificate/components/CompanyCertificatePanel").then((m) => ({ default: m.CompanyCertificatePanel }))
+);
 
 function TabLoadingFallback() {
   return (
@@ -41,7 +45,7 @@ function TabLoadingFallback() {
   );
 }
 
-export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, feedback, dangerActions }) {
+export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
   // Q11.1: state do modal de exclusão (zona de risco)
@@ -251,6 +255,17 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 onResume={dangerActions?.onResume}
                 onDelete={dangerActions?.onDelete ? () => setShowDeleteModal(true) : null}
               />
+              </Suspense>
+            )}
+
+            {/* Q12.B+++: cert A1 da empresa, abaixo do form e acima do feedback */}
+            {canEditCompany && certPanel?.api && (
+              <Suspense fallback={<TabLoadingFallback />}>
+                <CompanyCertificatePanel
+                  api={certPanel.api}
+                  companyId={selectedCompany?.companyId}
+                  feedback={certPanel.feedback}
+                />
               </Suspense>
             )}
 

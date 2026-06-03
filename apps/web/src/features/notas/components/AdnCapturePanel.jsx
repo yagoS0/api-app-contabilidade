@@ -36,9 +36,27 @@ export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync, o
   const [env, setEnv] = useState("prod");
   const inBackoff = adnState?.adnBackoffUntil && new Date(adnState.adnBackoffUntil) > new Date();
   const hasError = Boolean(adnState?.adnLastError);
+  // Q12.B+++.4: detecta erro de falta de cert empresa pra dar guidance específica
+  const errMsg = String(adnState?.adnLastError || "") + " " + String(adnLastResult?.message || "");
+  const isNoCompanyCert = /NO_COMPANY_CERT/i.test(errMsg);
+  const isCnpjNotInAdn = /CNPJ_NOT_IN_ADN/i.test(errMsg);
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+      {isNoCompanyCert && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 6, color: "#FFB347", fontSize: "0.85rem" }}>
+          ⚠ <strong>Esta empresa precisa ter A1 cadastrado pra capturar NFS-e nacional.</strong>{" "}
+          Vá em <strong>Editar Cadastro → 🔐 Certificado A1 da empresa</strong> e faça upload do PFX.
+        </div>
+      )}
+      {isCnpjNotInAdn && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(139,233,253,0.08)", border: "1px solid #8BE9FD", borderRadius: 6, color: "#8BE9FD", fontSize: "0.85rem" }}>
+          ℹ <strong>CNPJ não responde no ADN Nacional.</strong>{" "}
+          Provável: município da empresa ainda não aderiu ao Padrão Nacional NFS-e
+          (muitas cidades grandes só vão entrar até 2027). NF-e (SEFAZ) continua funcionando.
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <h3 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text }}>
           📥 Captura NFS-e (ADN / Emissor Nacional)

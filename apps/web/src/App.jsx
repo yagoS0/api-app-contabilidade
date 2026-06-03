@@ -330,6 +330,7 @@ function App() {
           onCancelBaixa: accountingWorkspace.handleDeleteEntryNoConfirm,
         }}
         notasPanel={notasFiscais}
+        certPanel={{ api, feedback }}
         feedback={{ message: feedback.message, error: feedback.error }}
         dangerActions={{
           saving: companiesWorkspace.companyDangerSaving,

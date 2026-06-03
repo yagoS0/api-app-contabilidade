@@ -1644,6 +1644,9 @@ export function createMockApi() {
     async listNotas() { await delay(60); return { ok: true, total: 0, notas: [] }; },
     async getNotasSummary() { await delay(60); return { ok: true, ano: new Date().getUTCFullYear(), totals: { totalNotas: 0, totalEmitido: 0, totalRecebido: 0 }, byMonth: [] }; },
     async listApuracao({ competencia } = {}) { await delay(60); return { competencia, items: [] }; },
+    async getCompanyCert() { await delay(60); return { hasCertificate: false, uploadedAt: null, expiresAt: null }; },
+    async uploadCompanyCert() { await delay(150); return { ok: true, certificate: { uploadedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 365*86400000).toISOString() } }; },
+    async deleteCompanyCert() { await delay(60); return { ok: true }; },
 
     // ── Q6: stubs (mock não persiste; só retorna estrutura básica para não quebrar UI) ──
     async listAccountingFunctions() { await delay(80); return []; },

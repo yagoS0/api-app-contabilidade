@@ -59,18 +59,23 @@ async function loadOfficeCert() {
 }
 
 async function resolveCertWithFallback(portalClientId) {
-  // Q12.B++: cert escritório como default (mesmo padrão do DfeSyncService).
+  // Q12.B+++: ADN Contribuinte exige cert digital DO CNPJ que consulta.
+  // O cert do escritório não tem cadastro no gov.br/nfse pra atuar em nome
+  // das empresas — então A1 da empresa é PREFERIDO (oposto do DfeSyncService).
+  const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE })
+    .catch(() => ({ source: "none" }));
+  if (r.source === "company_a1") {
+    return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
+  }
+
+  // Fallback (provavelmente vai dar 404 no ADN, mas mantém pra não bloquear
+  // quem tem o escritório cadastrado lá).
   try {
     const office = await loadOfficeCert();
-    return { pfxBuffer: office.pfxBuffer, password: office.password, via: "office_cert" };
-  } catch (officeErr) {
-    const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE })
-      .catch(() => ({ source: "none" }));
-    if (r.source === "company_a1") {
-      return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
-    }
-    throw new AdnNotasSyncError("NO_CERT",
-      `Cert do escritório não configurado (${officeErr?.message || officeErr?.code}) e empresa sem A1.`);
+    return { pfxBuffer: office.pfxBuffer, password: office.password, via: "office_cert_fallback" };
+  } catch {
+    throw new AdnNotasSyncError("NO_COMPANY_CERT",
+      "Esta empresa não tem certificado A1 cadastrado. Vá em Editar Cadastro → Certificado e faça upload do PFX da empresa.");
   }
 }
 
@@ -222,6 +227,8 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
         pfxBuffer: cert.pfxBuffer,
         password: cert.password,
         env,
+        // Q12.B+++: na 1ª iteração com cursor=0, ativa autodescoberta (tenta NSU=0 e NSU=1)
+        autoDiscover: cursor === 0n && iterations === 1,
       });
       const status = r.status;
       const items = r.items || [];

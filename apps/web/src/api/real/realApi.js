@@ -771,6 +771,22 @@ export function createRealApi() {
       const suffix = ano ? `?ano=${ano}` : "";
       return request(`/firm/companies/${companyId}/notas/summary${suffix}`);
     },
+    // Q12.B+++: cert A1 por empresa (upload/status/delete)
+    async getCompanyCert(companyId) {
+      const payload = await request(`/firm/companies/${companyId}/certificate`);
+      return payload?.certificate || null;
+    },
+    async uploadCompanyCert(companyId, file, password) {
+      const fd = new FormData();
+      fd.append("pfx", file);
+      fd.append("password", password);
+      // request() detecta FormData e remove Content-Type (browser seta com boundary)
+      return request(`/firm/companies/${companyId}/certificate`, { method: "POST", body: fd });
+    },
+    async deleteCompanyCert(companyId) {
+      return request(`/firm/companies/${companyId}/certificate`, { method: "DELETE" });
+    },
+
     // Q12.C.2: Apuração global
     async listApuracao({ competencia, search } = {}) {
       const q = new URLSearchParams();

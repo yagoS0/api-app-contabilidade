@@ -82,7 +82,7 @@ function buildHttpsAgent({ pfxBuffer, password }) {
  * @param {number} [opts.timeoutMs=20000]
  * @returns {Promise<{status, items, errors, raw}>}
  */
-export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "prod", timeoutMs = 20000 }) {
+export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "prod", timeoutMs = 20000, autoDiscover = false }) {
   const cleanCnpj = String(cnpj || "").replace(/\D+/g, "");
   if (cleanCnpj.length !== 14) {
     throw new AdnNacionalClientError("INVALID_CNPJ", `CNPJ inválido: ${cnpj}`);
@@ -104,51 +104,72 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
     transformResponse: [(data) => data],
   });
 
-  const ultNSUStr = String(ultNSU || "0");
+  // Q12.B+++: autodescoberta de NSU inicial — alguns ADNs são 1-indexed.
+  // Se autoDiscover=true (usado quando cursor=0 na 1ª sync) e NSU=0 dá 404 vazio,
+  // tenta NSU=1 antes de desistir.
+  const nsuCandidates = autoDiscover
+    ? [String(ultNSU || "0"), "1"]
+    : [String(ultNSU || "0")];
+
   const tried = [];
+  let lastEmpty404 = null;
 
-  for (const tmpl of PATH_TEMPLATES) {
-    const path = tmpl({ cnpj: cleanCnpj, ultNSU: ultNSUStr });
-    tried.push(path);
+  for (const nsuStr of nsuCandidates) {
+    for (const tmpl of PATH_TEMPLATES) {
+      const path = tmpl({ cnpj: cleanCnpj, ultNSU: nsuStr });
+      tried.push(path);
 
-    let res;
-    try {
-      res = await client.get(path);
-    } catch (err) {
-      throw new AdnNacionalClientError("NETWORK_ERROR",
-        `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`, { cause: err });
+      let res;
+      try {
+        res = await client.get(path);
+      } catch (err) {
+        throw new AdnNacionalClientError("NETWORK_ERROR",
+          `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`, { cause: err });
+      }
+
+      // Body como string — tenta JSON.parse
+      let parsedBody = null;
+      if (typeof res.data === "string" && res.data.trim()) {
+        try { parsedBody = JSON.parse(res.data); } catch { parsedBody = null; }
+      } else if (res.data && typeof res.data === "object") {
+        parsedBody = res.data;
+      }
+
+      // Body JSON válido (qualquer status: 200/400/404 com Erros[])
+      if (parsedBody && parsedBody.StatusProcessamento) {
+        return parseResponse(parsedBody, { triedPath: path, httpStatus: res.status });
+      }
+
+      // 404 sem body → registra e tenta próximo path/NSU
+      if (res.status === 404) {
+        lastEmpty404 = { path, headers: res.headers };
+        continue;
+      }
+
+      // Outros status sem body JSON → erro real
+      const bodyPreview = typeof res.data === "string"
+        ? res.data.slice(0, 300)
+        : JSON.stringify(res.data || {}).slice(0, 300);
+      const headersPreview = JSON.stringify(res.headers || {}).slice(0, 300);
+      throw new AdnNacionalClientError(`HTTP_${res.status}`,
+        `ADN Nacional retornou ${res.status}. Path: ${path}. Body: ${bodyPreview || "(vazio)"}. Headers: ${headersPreview}`,
+        { status: res.status, body: res.data, headers: res.headers, path });
     }
+  }
 
-    // Body como string — tenta JSON.parse
-    let parsedBody = null;
-    if (typeof res.data === "string" && res.data.trim()) {
-      try { parsedBody = JSON.parse(res.data); } catch { parsedBody = null; }
-    } else if (res.data && typeof res.data === "object") {
-      parsedBody = res.data;
-    }
-
-    // Body JSON válido (qualquer status: 200/400/404 com Erros[])
-    if (parsedBody && parsedBody.StatusProcessamento) {
-      return parseResponse(parsedBody, { triedPath: path, httpStatus: res.status });
-    }
-
-    // 404 sem body → tenta próximo
-    if (res.status === 404) continue;
-
-    // Outros status sem body JSON → erro real
-    const bodyPreview = typeof res.data === "string"
-      ? res.data.slice(0, 300)
-      : JSON.stringify(res.data || {}).slice(0, 300);
-    const headersPreview = JSON.stringify(res.headers || {}).slice(0, 300);
-    throw new AdnNacionalClientError(`HTTP_${res.status}`,
-      `ADN Nacional retornou ${res.status}. Path: ${path}. Body: ${bodyPreview || "(vazio)"}. Headers: ${headersPreview}`,
-      { status: res.status, body: res.data, headers: res.headers, path });
+  // Esgotou todas as combinações (path × NSU) sem resposta útil
+  if (lastEmpty404) {
+    throw new AdnNacionalClientError("CNPJ_NOT_IN_ADN",
+      `CNPJ ${cleanCnpj} não responde no ADN Contribuinte (gov.br/nfse). Possíveis causas:\n` +
+      `1. CNPJ não cadastrado no Padrão Nacional NFS-e (município ainda não aderiu — muitas cidades grandes só vão entrar até 2027)\n` +
+      `2. Certificado A1 da empresa não autorizado pra esse CNPJ (confira se o cert é do mesmo CNPJ)\n` +
+      `3. Servidor ADN instável (tente novamente em alguns minutos)\n` +
+      `Tentativas: ${tried.join(", ")}`,
+      { tried, lastEmpty404 });
   }
 
   throw new AdnNacionalClientError("ENDPOINT_NOT_FOUND",
-    `Nenhum path retornou JSON válido. Tentados: ${tried.join(", ")}. ` +
-    `Abra o swagger https://adn.nfse.gov.br/contribuintes/docs/index.html ` +
-    `e veja a URL completa na seção "Servers" / "Try it out" pra confirmar o base path.`,
+    `Nenhum path retornou JSON válido. Tentados: ${tried.join(", ")}.`,
     { tried });
 }
 
