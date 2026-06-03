@@ -17,6 +17,9 @@ import { prisma } from "../../../infrastructure/db/prisma.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { readStoredCompanyPfx } from "../../../infrastructure/storage/CertStorage.js";
 import { decryptSecret } from "../../../utils/crypto.js";
+import { resolveCertificatePath } from "../../../infrastructure/storage/CertStorage.js";
+import { getResolvedSerproCredentials } from "../../fiscal/serpro/SerproRuntimeSettings.js";
+import fs from "node:fs";
 import { fetchDistNSU, DfeClientError } from "./DfeClient.js";
 import { parseDistDFeResponse, parseDocZip } from "./DfeParser.js";
 import { ESTADOS } from "../CompetenciaStateMachine.js";
@@ -32,36 +35,70 @@ export class DfeSyncError extends Error {
   }
 }
 
-// Fallback: se a procuração existir mas não tivermos cert do escritório carregado,
-// usa o A1 da empresa. Em produção, o cert do escritório viria de env+cofre.
+/**
+ * Carrega o cert do escritório (mesmo usado pelo SERPRO via aba Configurações).
+ * Reusa SerproRuntimeSettings.getResolvedSerproCredentials — não duplica config.
+ *
+ * Pré-requisito operacional: a empresa precisa ter PROCURAÇÃO e-CAC outorgando
+ * NFe/DFe ao CNPJ do escritório (registrada presencialmente no e-CAC).
+ * A SEFAZ valida o vínculo "procurador (cert) → outorgante (CNPJ no <CNPJ> do SOAP)".
+ */
+async function loadOfficeCert() {
+  const creds = await getResolvedSerproCredentials().catch((err) => {
+    throw new DfeSyncError("OFFICE_CERT_NOT_CONFIGURED",
+      `Cert do escritório não está configurado em Configurações da Firma → SERPRO. (${err?.message || err})`);
+  });
+
+  if (!creds?.certificate?.hasCertificate || !creds?.certificate?.storageKey) {
+    throw new DfeSyncError("OFFICE_CERT_NOT_CONFIGURED",
+      "Cert do escritório não está configurado em Configurações da Firma → SERPRO.");
+  }
+  if (!creds.certificate.passwordConfigured) {
+    throw new DfeSyncError("OFFICE_CERT_PASSWORD_MISSING",
+      "Senha do cert do escritório não está configurada.");
+  }
+
+  // Caso 1: PFX salvo direto no banco (base64)
+  if (creds.certificate.pfxBase64) {
+    return {
+      pfxBuffer: Buffer.from(creds.certificate.pfxBase64, "base64"),
+      password: creds.certificate.password,
+    };
+  }
+
+  // Caso 2: PFX salvo em disco (storageKey)
+  const certPath = resolveCertificatePath(creds.certificate.storageKey);
+  if (!certPath || !fs.existsSync(certPath)) {
+    throw new DfeSyncError("OFFICE_CERT_FILE_NOT_FOUND",
+      `Arquivo do cert do escritório não encontrado em ${certPath || "(path nulo)"}.`);
+  }
+  return { pfxBuffer: fs.readFileSync(certPath), password: creds.certificate.password };
+}
+
+/**
+ * Decide qual cert usar:
+ *   1) Procuração ATIVA pra essa empresa+serviço DFE → cert do escritório (SERPRO)
+ *   2) Senão → A1 da própria empresa (Company.certPfxBytes)
+ *   3) Senão → erro
+ */
 async function resolveCertWithFallback(portalClientId) {
   const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.DFE })
     .catch((err) => ({ source: "none", error: err }));
 
-  if (r.source === "company_a1") return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
-
+  // Procuração ativa — usa cert do escritório (mesmo do SERPRO)
   if (r.source === "procuracao_escritorio") {
-    // Tenta cair pro cert empresa mesmo assim — pragmático pra MVP de teste.
-    const portal = await prisma.portalClient.findUnique({
-      where: { id: portalClientId },
-      select: { companyId: true, cnpj: true },
-    });
-    if (portal?.companyId) {
-      const company = await prisma.company.findUnique({
-        where: { id: portal.companyId },
-        select: { certPfxBytes: true, certStorageKey: true, certPasswordEnc: true },
-      });
-      const pfxBuffer = company ? readStoredCompanyPfx(company) : null;
-      if (pfxBuffer) {
-        const password = company.certPasswordEnc ? decryptSecret(company.certPasswordEnc) : null;
-        return { pfxBuffer, password, via: "company_a1_fallback_from_procuracao" };
-      }
-    }
-    throw new DfeSyncError("NO_OFFICE_CERT",
-      "Empresa tem procuração cadastrada mas o cert do escritório não está configurado e a empresa não tem A1.");
+    const office = await loadOfficeCert();
+    return { pfxBuffer: office.pfxBuffer, password: office.password, via: "office_cert_via_procuracao" };
   }
 
-  throw new DfeSyncError("NO_CERT", r.error?.message || "Sem certificado disponível pra esta empresa");
+  // Sem procuração — usa A1 da empresa
+  if (r.source === "company_a1") {
+    return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
+  }
+
+  // Nada — erro claro
+  throw new DfeSyncError("NO_CERT",
+    r.error?.message || "Sem certificado disponível. Cadastre uma procuração e-CAC OU faça upload do A1 da empresa.");
 }
 
 function deriveUF(portalClient) {
