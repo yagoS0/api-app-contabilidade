@@ -7,9 +7,9 @@
     "node": "20.x"
   },
   "scripts": {
-    "dev": "node src/server.js",
-    "start": "node src/server.js",
-    "start:prod": "npm run prisma:generate && npm run prisma:migrate:deploy && node src/server.js",
+    "dev": "node --openssl-legacy-provider src/server.js",
+    "start": "node --openssl-legacy-provider src/server.js",
+    "start:prod": "npm run prisma:generate && npm run prisma:migrate:deploy && node --openssl-legacy-provider src/server.js",
     "reset-state": "node -e \"const fs=require('fs'); const paths=['./.state.json','./.processed.json','./state.json','./data/last-run.json','./data/sent-emails.jsonl']; for(const p of paths){ try{ fs.unlinkSync(p);}catch(e){} } console.log('State legado limpo (se existir)');\"",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
@@ -20,10 +20,10 @@
     "prisma:migrations:audit": "node scripts/validate-migrations.js",
     "prisma:seed": "node prisma/seed.js",
     "portal:migrate": "node scripts/migrate-portal.js",
-    "worker:guide-emails": "node src/workers/guideEmailWorker.js",
-    "worker:guide-emails:once": "node src/workers/guideEmailWorker.js --once",
-    "worker:serpro-pgdasd": "node src/workers/serproPgdasdWorker.js",
-    "worker:serpro-pgdasd:once": "node src/workers/serproPgdasdWorker.js --once"
+    "worker:guide-emails": "node --openssl-legacy-provider src/workers/guideEmailWorker.js",
+    "worker:guide-emails:once": "node --openssl-legacy-provider src/workers/guideEmailWorker.js --once",
+    "worker:serpro-pgdasd": "node --openssl-legacy-provider src/workers/serproPgdasdWorker.js",
+    "worker:serpro-pgdasd:once": "node --openssl-legacy-provider src/workers/serproPgdasdWorker.js --once"
   },
   "keywords": [],
   "author": "",
