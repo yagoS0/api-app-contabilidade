@@ -25,6 +25,7 @@ import { safeLogError } from "../../lib/safeLogError.js";
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
+import { createNotasRouter } from "./notas.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import {
@@ -2544,6 +2545,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   const accountingEntriesRouter = createAccountingEntriesRouter({ log });
   router.use("/companies/:companyId", accountingEntriesRouter);
+
+  // Q12.A.3: módulo Notas Fiscais (procurações, competências, pendências)
+  const notasRouter = createNotasRouter({ log });
+  router.use("/companies/:companyId", notasRouter);
 
   const accountingEntryRulesRouter = createAccountingEntryRulesRouter({ log });
   router.use("/accounting-entry-rules", accountingEntryRulesRouter);
