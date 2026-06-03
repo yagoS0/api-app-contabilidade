@@ -34,18 +34,18 @@ const ENDPOINTS = {
   hom:  "https://adn.producaorestrita.nfse.gov.br",
 };
 
-// Path templates conhecidos do ADN Nacional (gov.br/nfse).
-// Doc oficial: https://adn.nfse.gov.br/docs/index.html (exige mTLS)
-// O POST /DFe é RECEPÇÃO (envio). Aqui precisamos de DISTRIBUIÇÃO (consulta por NSU).
-// Lista ordenada: tenta cada um até obter 200 ou 404+JSON válido. Se mudou, adicione.
+// Path templates conhecidos do ADN Nacional → API "contribuintes".
+// Doc oficial: https://adn.nfse.gov.br/contribuintes/docs/index.html (exige mTLS)
+// Outras APIs do ADN (consulta pública, recepção etc) não servem aqui — só
+// "contribuintes" tem distribuição de DFe pra empresa.
+// Lista ordenada: tenta cada um até obter 200 ou 404+JSON válido.
 const PATH_TEMPLATES = [
-  ({ cnpj, ultNSU }) => `/DFe/${cnpj}/${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/DFe/${cnpj}?ultimoNSU=${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/Distribuicao/${cnpj}/${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/Distribuicao/${cnpj}?ultimoNSU=${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/Consulta/${cnpj}/${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/sefin/rest/dfe/${cnpj}/distribuicao/${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/sefin/rest/dfe/${cnpj}?ultimoNSU=${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/contribuintes/dfe/${cnpj}/${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/contribuintes/${cnpj}/dfe/${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/contribuintes/${cnpj}/dfe?ultimoNSU=${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/contribuintes/${cnpj}/distribuicao/${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/contribuintes/dfe/${cnpj}?ultimoNSU=${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/contribuintes/distribuicao/${cnpj}/${ultNSU}`,
 ];
 
 export class AdnNacionalClientError extends Error {
