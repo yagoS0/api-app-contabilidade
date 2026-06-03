@@ -19,6 +19,7 @@ import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorks
 import { useManageAccountingWorkspace } from "./app/hooks/useManageAccountingWorkspace";
 import { useAccountingFunctions } from "./features/accounting/functions/hooks/useAccountingFunctions";
 import { useParcelamentos } from "./features/accounting/parcelamento/hooks/useParcelamentos";
+import { useNotasFiscais } from "./features/notas/hooks/useNotasFiscais";
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
@@ -60,6 +61,12 @@ function App() {
   const parcelamentos = useParcelamentos({
     api,
     companyId: companiesWorkspace.companiesState.selectedCompanyId,
+  });
+  // Q12.A: Notas Fiscais — escopo da empresa selecionada (carrega só quando há companyId)
+  const notasFiscais = useNotasFiscais({
+    api,
+    companyId: companiesWorkspace.companiesState.selectedCompanyId,
+    feedback,
   });
 
   // Q8.C: sincroniza selectedCompanyId com a URL (/companies/:companyId/*).
@@ -304,6 +311,7 @@ function App() {
           message: accountingWorkspace.entriesMessage,
           onCancelBaixa: accountingWorkspace.handleDeleteEntryNoConfirm,
         }}
+        notasPanel={notasFiscais}
         feedback={{ message: feedback.message, error: feedback.error }}
         dangerActions={{
           saving: companiesWorkspace.companyDangerSaving,

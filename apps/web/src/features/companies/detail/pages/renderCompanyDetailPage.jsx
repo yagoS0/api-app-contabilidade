@@ -28,6 +28,10 @@ const AccountingRulesContainer = lazy(() =>
 const ChartOfAccountsPage = lazy(() =>
   import("../../../accounting/chart-of-accounts/pages/renderChartOfAccountsPage").then((m) => ({ default: m.ChartOfAccountsPage }))
 );
+// Q12.A: módulo Notas Fiscais — lazy, sem inflar o bundle inicial.
+const NotasFiscaisTab = lazy(() =>
+  import("../../../notas/components/renderNotasFiscaisTab").then((m) => ({ default: m.NotasFiscaisTab }))
+);
 
 function TabLoadingFallback() {
   return (
@@ -37,7 +41,7 @@ function TabLoadingFallback() {
   );
 }
 
-export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, feedback, dangerActions }) {
+export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
   // Q11.1: state do modal de exclusão (zona de risco)
@@ -49,6 +53,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     if (tab === "circular") { accountingPanel.onLoadAccounts(); circularPanel.onLoadCircular(); }
     if (tab === "configuracoes") { accountingPanel.onLoadAccounts(); }
     if (tab === "planoContas") { accountingPanel.onLoadAccounts(); }
+    if (tab === "notasFiscais") { notasPanel?.reload?.(); }
   }
 
   // ─── Aba Lançamentos: layout full-screen com barra de topo compacta ────────
@@ -266,6 +271,29 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onClose={() => setShowDeleteModal(false)}
           />
         )}
+      </div>
+    );
+  }
+
+  // ─── Aba Notas Fiscais (Q12.A): layout full-screen ───────────────────────────
+
+  if (companyDetailTab === "notasFiscais") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="notasFiscais"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              <NotasFiscaisTab notasPanel={notasPanel} />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
       </div>
     );
   }

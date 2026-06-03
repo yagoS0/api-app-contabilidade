@@ -2,6 +2,7 @@ const HEADER_TABS = [
   { key: "guides", label: "Guias" },
   { key: "lancamentos", label: "Lançamentos" },
   { key: "circular", label: "Circular" },
+  { key: "notasFiscais", label: "Notas Fiscais" },
   { key: "edit", label: "Editar Cadastro" },
 ];
 

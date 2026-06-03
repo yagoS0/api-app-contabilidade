@@ -692,5 +692,48 @@ export function createRealApi() {
       const payload = await request(`/firm/companies/${companyId}/fiscal/executions${suffix}`);
       return Array.isArray(payload?.data) ? payload.data : [];
     },
+
+    // ─── Q12.A: módulo Notas Fiscais ────────────────────────────────────────
+    async listProcuracoes(companyId) {
+      const payload = await request(`/firm/companies/${companyId}/procuracoes`);
+      return Array.isArray(payload?.procuracoes) ? payload.procuracoes : [];
+    },
+    async createProcuracao(companyId, body) {
+      return request(`/firm/companies/${companyId}/procuracoes`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    async revogarProcuracao(companyId, procId) {
+      return request(`/firm/companies/${companyId}/procuracoes/${procId}`, { method: "DELETE" });
+    },
+    async listCompetenciasNotas(companyId, ano) {
+      const query = ano ? `?ano=${ano}` : "";
+      const payload = await request(`/firm/companies/${companyId}/competencias${query}`);
+      return {
+        ano: payload?.ano || null,
+        competencias: Array.isArray(payload?.competencias) ? payload.competencias : [],
+      };
+    },
+    async getCompetenciaNotas(companyId, competencia) {
+      const payload = await request(`/firm/companies/${companyId}/competencias/${competencia}`);
+      return payload?.competencia || null;
+    },
+    async fecharCompetencia(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/competencias/${competencia}/fechar`, { method: "POST" });
+    },
+    async reabrirCompetencia(companyId, competencia, reason) {
+      return request(`/firm/companies/${companyId}/competencias/${competencia}/reabrir`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      });
+    },
+    async listPendenciasPosFechamento(companyId, { onlyOpen = true } = {}) {
+      const payload = await request(`/firm/companies/${companyId}/pendencias-pos-fechamento?onlyOpen=${onlyOpen}`);
+      return Array.isArray(payload?.pendencias) ? payload.pendencias : [];
+    },
+    async resolverPendencia(companyId, pendId) {
+      return request(`/firm/companies/${companyId}/pendencias-pos-fechamento/${pendId}/resolver`, { method: "POST" });
+    },
   };
 }

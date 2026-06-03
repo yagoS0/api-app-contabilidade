@@ -1610,6 +1610,32 @@ export function createMockApi() {
       return filtered.slice(0, limit);
     },
 
+    // ── Q12.A: stubs do módulo Notas (mock não persiste) ──
+    async listProcuracoes() { await delay(60); return []; },
+    async createProcuracao() { await delay(60); return { ok: true, procuracao: null }; },
+    async revogarProcuracao() { await delay(60); return { ok: true }; },
+    async listCompetenciasNotas(_id, ano) {
+      await delay(80);
+      const y = ano || new Date().getUTCFullYear();
+      return {
+        ano: y,
+        competencias: Array.from({ length: 12 }, (_, i) => ({
+          id: null, competencia: `${y}-${String(i + 1).padStart(2, "0")}`,
+          estado: "aberto", lockedAt: null, reopenedAt: null,
+          rb12: null, fs12Manual: null, fs12Origem: null, fatorR: null,
+          notasCount: 0, pendenciasAbertas: 0,
+        })),
+      };
+    },
+    async getCompetenciaNotas(_id, competencia) {
+      await delay(60);
+      return { competencia, estado: "aberto", notasCount: 0, pendenciasAbertas: 0 };
+    },
+    async fecharCompetencia() { await delay(60); return { ok: true, competencia: { estado: "fechado" } }; },
+    async reabrirCompetencia() { await delay(60); return { ok: true, competencia: { estado: "em_conferencia" } }; },
+    async listPendenciasPosFechamento() { await delay(60); return []; },
+    async resolverPendencia() { await delay(60); return { ok: true }; },
+
     // ── Q6: stubs (mock não persiste; só retorna estrutura básica para não quebrar UI) ──
     async listAccountingFunctions() { await delay(80); return []; },
     async createAccountingFunction() { await delay(80); return { ok: true, data: null }; },
