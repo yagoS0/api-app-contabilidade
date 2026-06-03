@@ -1,5 +1,6 @@
 // Q12.B+: captura manual de NFS-e via ADN — mesmo padrão visual do DfeCapturePanel.
 
+import { useState } from "react";
 import { PANEL, fmtDate } from "./notasStyles";
 
 function ResultBlock({ result }) {
@@ -32,6 +33,7 @@ function ResultBlock({ result }) {
 }
 
 export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync, onClearError }) {
+  const [env, setEnv] = useState("prod");
   const inBackoff = adnState?.adnBackoffUntil && new Date(adnState.adnBackoffUntil) > new Date();
   const hasError = Boolean(adnState?.adnLastError);
 
@@ -41,13 +43,19 @@ export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync, o
         <h3 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text }}>
           📥 Captura NFS-e (ADN / Emissor Nacional)
         </h3>
-        {(hasError || inBackoff) && onClearError && (
-          <button onClick={onClearError} disabled={adnSyncing} title="Limpa backoff e último erro"
-            style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.muted, cursor: "pointer", fontSize: "0.75rem", marginRight: 8 }}>
-            Limpar erro
-          </button>
-        )}
-        <button onClick={() => onSync()} disabled={adnSyncing || inBackoff}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {(hasError || inBackoff) && onClearError && (
+            <button onClick={onClearError} disabled={adnSyncing} title="Limpa backoff e último erro"
+              style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.muted, cursor: "pointer", fontSize: "0.75rem" }}>
+              Limpar erro
+            </button>
+          )}
+          <select value={env} onChange={(e) => setEnv(e.target.value)} disabled={adnSyncing}
+            style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "4px 8px", fontSize: "0.8rem" }}>
+            <option value="prod">Produção</option>
+            <option value="hom">Homologação</option>
+          </select>
+          <button onClick={() => onSync({ env })} disabled={adnSyncing || inBackoff}
           style={{
             padding: "6px 14px", borderRadius: 6, border: "none",
             background: inBackoff ? PANEL.border : "#BD93F9",
@@ -56,7 +64,8 @@ export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync, o
             fontSize: "0.85rem", fontWeight: 600,
           }}>
           {adnSyncing ? "Capturando…" : "🔄 Buscar NFS-e agora"}
-        </button>
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, fontSize: "0.8rem", color: PANEL.muted }}>

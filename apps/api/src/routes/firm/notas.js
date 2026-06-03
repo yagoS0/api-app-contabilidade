@@ -454,8 +454,9 @@ export function createNotasRouter({ log }) {
 
   router.post("/adn/sync", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
+    const env = String(req.query.env || "prod") === "hom" ? "hom" : "prod";
     try {
-      const result = await syncAdnNotasForCompany({ portalClientId });
+      const result = await syncAdnNotasForCompany({ portalClientId, env });
       return res.json({ ok: result.ok, result });
     } catch (err) {
       log?.warn({ err: err?.message, portalClientId }, "Falha ao sincronizar ADN");

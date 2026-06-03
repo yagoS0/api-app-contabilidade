@@ -163,14 +163,14 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     } catch (err) { feedback?.notifyError?.(err?.message || "Erro."); }
   }
 
-  async function syncAdn() {
+  async function syncAdn({ env = "prod" } = {}) {
     setAdnSyncing(true);
     setAdnLastResult(null);
     try {
-      const out = await api.syncAdn(companyId);
+      const out = await api.syncAdn(companyId, { env });
       setAdnLastResult(out?.result || out);
       if (out?.ok) {
-        feedback?.notifySuccess?.(`Captura NFS-e (ADN) concluída — ${out.result?.totalDocs || 0} documentos.`);
+        feedback?.notifySuccess?.(`Captura NFS-e (${env}) concluída — ${out.result?.totalDocs || 0} documentos.`);
       } else {
         feedback?.notifyError?.(out?.result?.message || out?.message || "Falha na captura ADN.");
       }

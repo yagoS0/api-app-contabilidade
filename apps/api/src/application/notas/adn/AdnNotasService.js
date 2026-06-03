@@ -1,24 +1,20 @@
-// Q12.B+: captura de NFS-e via ADN (Emissor Nacional / RN-141) para o módulo Notas.
+// Q12.B+ rework: captura de NFS-e via ADN Nacional do gov.br/nfse.
 //
-// **Reuso deliberado** (não duplica infra):
-//   - AdnSyncService.fetchLote() — cliente HTTP com mTLS via PFX (config ADN_*)
-//   - AdnXmlMetadata.parseXmlMetadata() — parser do XML da NFS-e
-//   - CertResolver — decide procuração escritório vs A1 empresa
-//   - SerproRuntimeSettings (via DfeSyncService.loadOfficeCert? Não — reuso direto)
+// Substitui o AdnSyncService legado (que dependia de ADN_BASE_URL/ADN_DFE_PATH —
+// vars removidas em Q8.B dead-code cleanup). Agora usa endpoints públicos
+// fixos do Padrão Nacional NFS-e e auth mTLS via cert do escritório (SERPRO).
 //
-// **NÃO usa** o cursor lastCursor nem a tabela AdnDocument do AdnSyncService legado.
-// Usa adnNsuCursor (novo, Q12.B+ migration) e grava direto em PortalInvoice + NotaItem.
+// Reuso:
+//   - AdnXmlMetadata.parseXmlMetadata() — parser do XML da NFS-e (continua válido)
+//   - pfxToTls.extractTlsMaterialFromPfx — extração JS pura do PFX
 //
-// Fluxo:
-//   1) Backoff check
-//   2) Cert (procuração escritório → SERPRO; senão A1 empresa)
-//   3) Loop fetchLote → parseLoteResponse → parseXmlMetadata → upsert PortalInvoice
-//   4) Cursor adnNsuCursor atualizado atomicamente com persistência
+// Estado: PortalSyncState.adnNsuCursor (separado do legado lastCursor).
+// Persistência: direto em PortalInvoice + NotaItem (módulo Notas).
 
 import fs from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { AdnSyncService } from "../../nfse/AdnSyncService.js";
+import { fetchDfeNFSe, AdnNacionalClientError } from "../adn-nacional/AdnNacionalClient.js";
 import { parseXmlMetadata } from "../../nfse/AdnXmlMetadata.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { resolveCertificatePath } from "../../../infrastructure/storage/CertStorage.js";
@@ -52,26 +48,26 @@ async function loadOfficeCert() {
   if (creds.certificate.pfxBase64) {
     return {
       pfxBuffer: Buffer.from(creds.certificate.pfxBase64, "base64"),
-      pfxPassword: creds.certificate.password,
+      password: creds.certificate.password,
     };
   }
   const certPath = resolveCertificatePath(creds.certificate.storageKey);
   if (!certPath || !fs.existsSync(certPath)) {
     throw new AdnNotasSyncError("OFFICE_CERT_FILE_NOT_FOUND", `Arquivo não encontrado: ${certPath}`);
   }
-  return { pfxBuffer: fs.readFileSync(certPath), pfxPassword: creds.certificate.password };
+  return { pfxBuffer: fs.readFileSync(certPath), password: creds.certificate.password };
 }
 
 async function resolveCertWithFallback(portalClientId) {
   // Q12.B++: cert escritório como default (mesmo padrão do DfeSyncService).
   try {
     const office = await loadOfficeCert();
-    return { certInfo: office, via: "office_cert" };
+    return { pfxBuffer: office.pfxBuffer, password: office.password, via: "office_cert" };
   } catch (officeErr) {
     const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE })
       .catch(() => ({ source: "none" }));
     if (r.source === "company_a1") {
-      return { certInfo: { pfxBuffer: r.pfxBuffer, pfxPassword: r.password }, via: "company_a1" };
+      return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
     }
     throw new AdnNotasSyncError("NO_CERT",
       `Cert do escritório não configurado (${officeErr?.message || officeErr?.code}) e empresa sem A1.`);
@@ -185,11 +181,12 @@ async function setBackoff({ clientId, errorMsg }) {
 // ─── API pública ───────────────────────────────────────────────────────────
 
 /**
- * Captura NFS-e via ADN pra UMA empresa.
+ * Captura NFS-e via ADN Nacional (gov.br/nfse) pra UMA empresa.
  * @param {Object} opts
  * @param {string} opts.portalClientId
+ * @param {"prod"|"hom"} [opts.env="prod"]
  */
-export async function syncAdnNotasForCompany({ portalClientId }) {
+export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
   const portal = await prisma.portalClient.findUnique({
     where: { id: portalClientId },
     select: { id: true, razao: true, cnpj: true, status: true },
@@ -219,22 +216,20 @@ export async function syncAdnNotasForCompany({ portalClientId }) {
     while (iterations < MAX_ITERATIONS) {
       iterations++;
 
-      const response = await AdnSyncService.fetchLote({
-        nsu: cursor.toString(),
-        cnpjConsulta: companyCnpj,
-        lote: true,
-        certInfo: cert.certInfo,
+      const r = await fetchDfeNFSe({
+        cnpj: companyCnpj,
+        ultNSU: cursor.toString(),
+        pfxBuffer: cert.pfxBuffer,
+        password: cert.password,
+        env,
       });
+      const status = r.status;
+      const items = r.items || [];
 
-      const status = response?.StatusProcessamento || response?.statusProcessamento || response?.status;
-      const items = Array.isArray(response?.LoteDFe || response?.loteDFe || response?.documentos || response?.itens)
-        ? (response.LoteDFe || response.loteDFe || response.documentos || response.itens)
-        : (response?.LoteDFe || response?.loteDFe || response?.documentos || response?.itens ? [response.LoteDFe || response.loteDFe || response.documentos || response.itens] : []);
-
-      if (String(status || "").toUpperCase() === "REJEICAO") {
-        throw new AdnNotasSyncError("ADN_REJEICAO", `ADN rejeitou: ${JSON.stringify(response?.Erros || response?.erros || {})}`);
+      if (status === "REJEICAO") {
+        throw new AdnNotasSyncError("ADN_REJEICAO", `ADN rejeitou: ${JSON.stringify(r.errors || {})}`);
       }
-      if (String(status || "").toUpperCase() === "NENHUM_DOCUMENTO_LOCALIZADO" || items.length === 0) {
+      if (status === "NENHUM_DOCUMENTO_LOCALIZADO" || items.length === 0) {
         break;
       }
 

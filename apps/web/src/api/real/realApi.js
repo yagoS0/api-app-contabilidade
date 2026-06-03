@@ -748,8 +748,8 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/dfe/clear-error`, { method: "POST" });
     },
     // Q12.B+: NFS-e via ADN
-    async syncAdn(companyId) {
-      return request(`/firm/companies/${companyId}/adn/sync`, { method: "POST" });
+    async syncAdn(companyId, { env = "prod" } = {}) {
+      return request(`/firm/companies/${companyId}/adn/sync?env=${env}`, { method: "POST" });
     },
     async getAdnState(companyId) {
       const payload = await request(`/firm/companies/${companyId}/adn/state`);
