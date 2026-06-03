@@ -2578,7 +2578,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const companies = await prisma.portalClient.findMany({
       where: companiesWhere,
       orderBy: { razao: "asc" },
-      select: { id: true, razao: true, cnpj: true, regimeTributario: true },
+      select: { id: true, razao: true, cnpj: true },
       take: 500,
     });
     const ids = companies.map((c) => c.id);
@@ -2630,7 +2630,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         portalClientId: c.id,
         razao: c.razao,
         cnpj: c.cnpj,
-        regime: c.regimeTributario || null,
+        regime: null,
         estado: circ?.estado || "aberto",
         lockedAt: circ?.lockedAt || null,
         rb12: circ?.rb12 ? circ.rb12.toString() : null,
