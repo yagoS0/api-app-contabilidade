@@ -34,16 +34,16 @@ const ENDPOINTS = {
   hom:  "https://adn.producaorestrita.nfse.gov.br",
 };
 
-// Endpoint oficial confirmado:
-//   GET /DFe/{NSU}?cnpjConsulta=<CNPJ>&lote=true
-//
-// NSU = path param (cursor incremental)
-// cnpjConsulta = query param (CNPJ alvo da consulta)
-// lote = query param (default true, traz N docs por chamada)
-//
-// Outro endpoint útil (futuro): GET /NFSe/{ChaveAcesso}/Eventos
+// Endpoint base oficial: GET /DFe/{NSU}?cnpjConsulta=<CNPJ>&lote=true
+// MAS o swagger pode ter base-path não documentado no path. Testa variações
+// comuns (Servlet/API/v1) antes de desistir.
 const PATH_TEMPLATES = [
   ({ cnpj, ultNSU }) => `/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
+  ({ cnpj, ultNSU }) => `/api/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
+  ({ cnpj, ultNSU }) => `/v1/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
+  ({ cnpj, ultNSU }) => `/api/v1/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
+  ({ cnpj, ultNSU }) => `/contribuintes/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
+  ({ cnpj, ultNSU }) => `/contribuintes/api/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
 ];
 
 export class AdnNacionalClientError extends Error {
@@ -100,36 +100,50 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
   });
 
   const ultNSUStr = String(ultNSU || "0");
-  const path = PATH_TEMPLATES[0]({ cnpj: cleanCnpj, ultNSU: ultNSUStr });
+  const tried = [];
 
-  let res;
-  try {
-    res = await client.get(path);
-  } catch (err) {
-    throw new AdnNacionalClientError("NETWORK_ERROR",
-      `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`, { cause: err });
+  for (const tmpl of PATH_TEMPLATES) {
+    const path = tmpl({ cnpj: cleanCnpj, ultNSU: ultNSUStr });
+    tried.push(path);
+
+    let res;
+    try {
+      res = await client.get(path);
+    } catch (err) {
+      throw new AdnNacionalClientError("NETWORK_ERROR",
+        `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`, { cause: err });
+    }
+
+    // Body como string — tenta JSON.parse
+    let parsedBody = null;
+    if (typeof res.data === "string" && res.data.trim()) {
+      try { parsedBody = JSON.parse(res.data); } catch { parsedBody = null; }
+    } else if (res.data && typeof res.data === "object") {
+      parsedBody = res.data;
+    }
+
+    // Body JSON válido (qualquer status: 200/400/404 com Erros[])
+    if (parsedBody && parsedBody.StatusProcessamento) {
+      return parseResponse(parsedBody, { triedPath: path, httpStatus: res.status });
+    }
+
+    // 404 sem body → tenta próximo
+    if (res.status === 404) continue;
+
+    // Outros status sem body JSON → erro real
+    const bodyPreview = typeof res.data === "string"
+      ? res.data.slice(0, 300)
+      : JSON.stringify(res.data || {}).slice(0, 300);
+    throw new AdnNacionalClientError(`HTTP_${res.status}`,
+      `ADN Nacional retornou ${res.status}. Path: ${path}. Body: ${bodyPreview || "(vazio)"}`,
+      { status: res.status, body: res.data, path });
   }
 
-  // Body sempre vem como string. Tenta JSON.parse pra todos os status
-  // que tenham body — o ADN retorna JSON em 200, 400 e 404 (com Erros[]).
-  let parsedBody = null;
-  if (typeof res.data === "string" && res.data.trim()) {
-    try { parsedBody = JSON.parse(res.data); } catch { parsedBody = null; }
-  } else if (res.data && typeof res.data === "object") {
-    parsedBody = res.data;
-  }
-
-  if (parsedBody && parsedBody.StatusProcessamento) {
-    return parseResponse(parsedBody, { triedPath: path, httpStatus: res.status });
-  }
-
-  // Sem body JSON válido — erro real
-  const bodyPreview = typeof res.data === "string"
-    ? res.data.slice(0, 300)
-    : JSON.stringify(res.data || {}).slice(0, 300);
-  throw new AdnNacionalClientError(`HTTP_${res.status}`,
-    `ADN Nacional retornou ${res.status} sem body JSON válido. Path: ${path}. Body: ${bodyPreview}`,
-    { status: res.status, body: res.data, path });
+  throw new AdnNacionalClientError("ENDPOINT_NOT_FOUND",
+    `Nenhum path retornou JSON válido. Tentados: ${tried.join(", ")}. ` +
+    `Abra o swagger https://adn.nfse.gov.br/contribuintes/docs/index.html ` +
+    `e veja a URL completa na seção "Servers" / "Try it out" pra confirmar o base path.`,
+    { tried });
 }
 
 function parseResponse(data, { triedPath, httpStatus }) {
