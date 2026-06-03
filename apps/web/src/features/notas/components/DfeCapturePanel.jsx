@@ -90,10 +90,10 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, dfeLastResult, onSync })
       <ResultBlock result={dfeLastResult} />
 
       <div style={{ marginTop: 12, padding: 10, background: "rgba(139,233,253,0.08)", borderLeft: "3px solid #8BE9FD", borderRadius: 4, fontSize: "0.75rem", color: PANEL.muted }}>
-        <strong style={{ color: "#8BE9FD" }}>Como funciona:</strong> a SEFAZ entrega notas via{" "}
-        <code>NFeDistribuicaoDFe</code> a partir do último NSU sincronizado. Cada chamada traz até 50
-        documentos. O sistema repete até esgotar (ou 10 ciclos). Notas em competência já fechada viram
-        pendência (não atualizam a base).
+        <strong style={{ color: "#8BE9FD" }}>Como funciona:</strong> consulta a SEFAZ via{" "}
+        <code>NFeDistribuicaoDFe</code> usando o cert do escritório (mesmo configurado em
+        Configurações da Firma → SERPRO). Procuração e-CAC fica no servidor da Receita — não precisa
+        cadastrar nada aqui. Cada chamada traz até 50 documentos a partir do último NSU sincronizado.
       </div>
     </section>
   );

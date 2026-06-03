@@ -31,17 +31,15 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     setLoading(true);
     setError(null);
     try {
-      const [comp, procs, pends, dfe, adn, summary] = await Promise.all([
-        api.listCompetenciasNotas(companyId, ano),
-        api.listProcuracoes(companyId),
-        api.listPendenciasPosFechamento(companyId, { onlyOpen: true }),
+      // Q12.B++: procurações são registradas no e-CAC da Receita, não no nosso banco.
+      // Não carregamos listProcuracoes mais aqui (endpoint backend existe pra audit
+      // futuro mas a UI não exibe). competências/pendências movem-se pra página
+      // global de Apuração — não carregadas aqui.
+      const [dfe, adn, summary] = await Promise.all([
         api.getDfeState ? api.getDfeState(companyId) : Promise.resolve(null),
         api.getAdnState ? api.getAdnState(companyId) : Promise.resolve(null),
         api.getNotasSummary ? api.getNotasSummary(companyId, ano) : Promise.resolve(null),
       ]);
-      setCompetencias(comp.competencias || []);
-      setProcuracoes(procs || []);
-      setPendencias(pends || []);
       setDfeState(dfe);
       setAdnState(adn);
       setNotasSummary(summary);

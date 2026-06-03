@@ -78,10 +78,9 @@ export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync })
       <ResultBlock result={adnLastResult} />
 
       <div style={{ marginTop: 12, padding: 10, background: "rgba(189,147,249,0.08)", borderLeft: "3px solid #BD93F9", borderRadius: 4, fontSize: "0.75rem", color: PANEL.muted }}>
-        <strong style={{ color: "#BD93F9" }}>Como funciona:</strong> o ADN entrega NFS-e por NSU
-        (mesmo conceito da SEFAZ). Usa procuração e-CAC (cert do escritório) ou A1 da empresa.
-        Notas vão pra <code>PortalInvoice</code> (módulo Notas), separado do AdnSyncService
-        legado. Configure ADN_BASE_URL/ADN_DFE_PATH no env da API.
+        <strong style={{ color: "#BD93F9" }}>Como funciona:</strong> consulta o ADN/Emissor Nacional
+        por NSU usando o cert do escritório (procuração e-CAC já registrada na Receita). Mesmo
+        padrão da consulta ao SERPRO. Configure <code>ADN_BASE_URL</code>/<code>ADN_DFE_PATH</code> no env da API.
       </div>
     </section>
   );
