@@ -34,18 +34,16 @@ const ENDPOINTS = {
   hom:  "https://adn.producaorestrita.nfse.gov.br",
 };
 
-// Path templates conhecidos do ADN Nacional → API "contribuintes".
-// Doc oficial: https://adn.nfse.gov.br/contribuintes/docs/index.html (exige mTLS)
-// Outras APIs do ADN (consulta pública, recepção etc) não servem aqui — só
-// "contribuintes" tem distribuição de DFe pra empresa.
-// Lista ordenada: tenta cada um até obter 200 ou 404+JSON válido.
+// Endpoint oficial confirmado:
+//   GET /DFe/{NSU}?cnpjConsulta=<CNPJ>&lote=true
+//
+// NSU = path param (cursor incremental)
+// cnpjConsulta = query param (CNPJ alvo da consulta)
+// lote = query param (default true, traz N docs por chamada)
+//
+// Outro endpoint útil (futuro): GET /NFSe/{ChaveAcesso}/Eventos
 const PATH_TEMPLATES = [
-  ({ cnpj, ultNSU }) => `/contribuintes/dfe/${cnpj}/${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/contribuintes/${cnpj}/dfe/${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/contribuintes/${cnpj}/dfe?ultimoNSU=${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/contribuintes/${cnpj}/distribuicao/${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/contribuintes/dfe/${cnpj}?ultimoNSU=${ultNSU}`,
-  ({ cnpj, ultNSU }) => `/contribuintes/distribuicao/${cnpj}/${ultNSU}`,
+  ({ cnpj, ultNSU }) => `/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
 ];
 
 export class AdnNacionalClientError extends Error {
