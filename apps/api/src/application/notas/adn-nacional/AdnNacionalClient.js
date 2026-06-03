@@ -28,8 +28,9 @@ import axios from "axios";
 import { extractTlsMaterialFromPfx } from "../pfxToTls.js";
 
 const ENDPOINTS = {
-  // URLs públicas oficiais do ADN Nacional (gov.br/nfse)
-  prod: "https://adn.producao.nfse.gov.br",
+  // URLs públicas oficiais do ADN Nacional (gov.br/nfse) — confirmadas via DNS
+  // (resolvem para router-ha.estaleiro.serpro.gov.br, infra do SERPRO).
+  prod: "https://adn.nfse.gov.br",
   hom:  "https://adn.producaorestrita.nfse.gov.br",
 };
 
