@@ -37,13 +37,11 @@ const ENDPOINTS = {
 // Endpoint base oficial: GET /DFe/{NSU}?cnpjConsulta=<CNPJ>&lote=true
 // MAS o swagger pode ter base-path não documentado no path. Testa variações
 // comuns (Servlet/API/v1) antes de desistir.
+// Confirmado pelo usuário (via swagger): URL completa é
+//   https://adn.nfse.gov.br/DFe/{NSU}
+// Path único — sem prefixo.
 const PATH_TEMPLATES = [
   ({ cnpj, ultNSU }) => `/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
-  ({ cnpj, ultNSU }) => `/api/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
-  ({ cnpj, ultNSU }) => `/v1/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
-  ({ cnpj, ultNSU }) => `/api/v1/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
-  ({ cnpj, ultNSU }) => `/contribuintes/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
-  ({ cnpj, ultNSU }) => `/contribuintes/api/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
 ];
 
 export class AdnNacionalClientError extends Error {
@@ -93,8 +91,10 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
     httpsAgent: agent,
     timeout: timeoutMs,
     validateStatus: () => true,
-    // ADN devolve text/plain com payload JSON — peço como string e parseio manual.
-    headers: { Accept: "text/plain, application/json, */*" },
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      "User-Agent": "Mozilla/5.0 (Node) AdnNacionalClient/1.0",
+    },
     responseType: "text",
     transformResponse: [(data) => data],
   });
@@ -134,9 +134,10 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
     const bodyPreview = typeof res.data === "string"
       ? res.data.slice(0, 300)
       : JSON.stringify(res.data || {}).slice(0, 300);
+    const headersPreview = JSON.stringify(res.headers || {}).slice(0, 300);
     throw new AdnNacionalClientError(`HTTP_${res.status}`,
-      `ADN Nacional retornou ${res.status}. Path: ${path}. Body: ${bodyPreview || "(vazio)"}`,
-      { status: res.status, body: res.data, path });
+      `ADN Nacional retornou ${res.status}. Path: ${path}. Body: ${bodyPreview || "(vazio)"}. Headers: ${headersPreview}`,
+      { status: res.status, body: res.data, headers: res.headers, path });
   }
 
   throw new AdnNacionalClientError("ENDPOINT_NOT_FOUND",
