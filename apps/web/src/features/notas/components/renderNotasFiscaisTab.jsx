@@ -9,6 +9,7 @@ import { CompetenciaDetailPanel } from "./CompetenciaDetailPanel";
 import { PendenciasList } from "./PendenciasList";
 import { ReabrirCompetenciaModal } from "./ReabrirCompetenciaModal";
 import { DfeCapturePanel } from "./DfeCapturePanel";
+import { AdnCapturePanel } from "./AdnCapturePanel";
 
 export function NotasFiscaisTab({ notasPanel }) {
   const {
@@ -20,6 +21,7 @@ export function NotasFiscaisTab({ notasPanel }) {
     fecharCompetencia, reabrirCompetencia,
     resolverPendencia,
     dfeState, dfeSyncing, dfeLastResult, syncDfe,
+    adnState, adnSyncing, adnLastResult, syncAdn,
   } = notasPanel;
 
   const [selectedComp, setSelectedComp] = useState(null);
@@ -52,6 +54,13 @@ export function NotasFiscaisTab({ notasPanel }) {
         dfeSyncing={dfeSyncing}
         dfeLastResult={dfeLastResult}
         onSync={syncDfe}
+      />
+
+      <AdnCapturePanel
+        adnState={adnState}
+        adnSyncing={adnSyncing}
+        adnLastResult={adnLastResult}
+        onSync={syncAdn}
       />
 
       <CompetenciasTable

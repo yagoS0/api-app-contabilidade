@@ -23,6 +23,7 @@ import {
 } from "../../application/notas/CompetenciaStateMachine.js";
 import { checkCertAvailability, SERVICOS } from "../../application/notas/CertResolver.js";
 import { syncDfeForCompany } from "../../application/notas/dfe/DfeSyncService.js";
+import { syncAdnNotasForCompany } from "../../application/notas/adn/AdnNotasService.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -337,6 +338,35 @@ export function createNotasRouter({ log }) {
             dfeBackoffUntil: state.dfeBackoffUntil,
           }
         : { dfeNsuCursor: "0", dfeLastSyncAt: null, dfeLastError: null, dfeBackoffUntil: null },
+    });
+  });
+
+  // ─── Q12.B+: captura NFS-e via ADN ─────────────────────────────────────────
+
+  router.post("/adn/sync", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    try {
+      const result = await syncAdnNotasForCompany({ portalClientId });
+      return res.json({ ok: result.ok, result });
+    } catch (err) {
+      log?.warn({ err: err?.message, portalClientId }, "Falha ao sincronizar ADN");
+      return bad(res, 500, "adn_sync_failed", err?.message || "Erro");
+    }
+  });
+
+  router.get("/adn/state", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const state = await prisma.portalSyncState.findUnique({ where: { clientId: portalClientId } });
+    return res.json({
+      ok: true,
+      state: state
+        ? {
+            adnNsuCursor: state.adnNsuCursor?.toString() || "0",
+            adnLastSyncAt: state.adnLastSyncAt,
+            adnLastError: state.adnLastError,
+            adnBackoffUntil: state.adnBackoffUntil,
+          }
+        : { adnNsuCursor: "0", adnLastSyncAt: null, adnLastError: null, adnBackoffUntil: null },
     });
   });
 

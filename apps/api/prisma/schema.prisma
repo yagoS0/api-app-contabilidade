@@ -426,6 +426,13 @@ model PortalSyncState {
   dfeLastSyncAt  DateTime?
   dfeLastError   String?
   dfeBackoffUntil DateTime?
+  // Q12.B+: cursor separado para ADN/NFS-e do módulo Notas (não confundir com lastCursor,
+  // que é usado pelo AdnSyncService legado e grava em AdnDocument). Esse aqui é exclusivo
+  // do AdnNotasService que grava em PortalInvoice.
+  adnNsuCursor      BigInt    @default(0)
+  adnLastSyncAt     DateTime?
+  adnLastError      String?
+  adnBackoffUntil   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

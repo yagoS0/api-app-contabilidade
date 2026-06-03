@@ -1637,6 +1637,8 @@ export function createMockApi() {
     async resolverPendencia() { await delay(60); return { ok: true }; },
     async syncDfe() { await delay(80); return { ok: true, result: { totalDocs: 0, byType: {}, newCursor: "0" } }; },
     async getDfeState() { await delay(60); return null; },
+    async syncAdn() { await delay(80); return { ok: true, result: { totalDocs: 0, byStatus: {}, newCursor: "0" } }; },
+    async getAdnState() { await delay(60); return null; },
 
     // ── Q6: stubs (mock não persiste; só retorna estrutura básica para não quebrar UI) ──
     async listAccountingFunctions() { await delay(80); return []; },

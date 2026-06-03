@@ -744,5 +744,13 @@ export function createRealApi() {
       const payload = await request(`/firm/companies/${companyId}/dfe/state`);
       return payload?.state || null;
     },
+    // Q12.B+: NFS-e via ADN
+    async syncAdn(companyId) {
+      return request(`/firm/companies/${companyId}/adn/sync`, { method: "POST" });
+    },
+    async getAdnState(companyId) {
+      const payload = await request(`/firm/companies/${companyId}/adn/state`);
+      return payload?.state || null;
+    },
   };
 }
