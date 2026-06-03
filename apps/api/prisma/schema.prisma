@@ -271,6 +271,8 @@ model PortalClient {
   fiscalExecutionLogs  FiscalExecutionLog[]
   accountingFunctions  AccountingFunction[]
   parcelamentos        Parcelamento[]
+  procuracoes          Procuracao[]
+  pendenciasPosFechamento PendenciaPosFechamento[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -458,8 +460,17 @@ model PortalInvoice {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
+  // Q12.A: papel da empresa nesta nota (DFe traz emissor E destinatário na mesma fonte)
+  papel                    String? // EMIT | DEST
+  // statusEfetivo: derivado dos eventos (cancelamento/substituição). Análise só usa autorizada.
+  statusEfetivo            String? // autorizada | cancelada | substituida | rejeitada
+  // Q12.A: marca quando a nota chegou em competência já fechada (vai pra fila de pendências)
+  competenciaPosFechamento Boolean @default(false)
+
   client PortalClient         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   events PortalInvoiceEvent[]
+  itens  NotaItem[]
+  pendencias PendenciaPosFechamento[]
 
   @@unique([clientId, chaveAcesso])
   @@unique([clientId, idDps])
@@ -469,6 +480,8 @@ model PortalInvoice {
   @@index([clientId, competencia, status, updatedAt])
   @@index([clientId, issueDate])
   @@index([status, updatedAt])
+  @@index([papel])
+  @@index([statusEfetivo])
 }
 
 model PortalInvoiceEvent {
@@ -657,6 +670,18 @@ model CompanyMonthlyCircular {
   metadata                    Json?
   hasAccountingDivergence     Boolean   @default(false)
   accountingDivergenceMessage String?
+  // Q12.A: máquina de estados por (empresa, competência) do módulo Notas
+  estado              String   @default("aberto")
+  // aberto | em_conferencia | fechado | calculado | revisado | transmitido | confirmado | erro
+  lockedAt            DateTime? // quando virou "fechado"
+  lockedByUserId      String?
+  reopenedAt          DateTime?
+  reopenedByUserId    String?
+  reopenedReason      String?
+  fs12Manual          Decimal? @db.Decimal(18, 2) // Q12.C: FS12 digitado pelo contador
+  fs12Origem          String?  // MANUAL | ESOCIAL (futuro)
+  fatorR              Decimal? @db.Decimal(6, 4)  // 0.28 = 28%
+  rb12                Decimal? @db.Decimal(18, 2) // soma móvel 12m
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
@@ -665,6 +690,7 @@ model CompanyMonthlyCircular {
 
   @@unique([portalClientId, competencia])
   @@index([portalClientId, competencia])
+  @@index([portalClientId, estado])
   @@map("company_monthly_circulars")
 }
 
@@ -876,4 +902,68 @@ model FiscalExecutionLog {
   @@index([portalClientId, startedAt(sort: Desc)])
   @@index([portalClientId, competencia, action])
   @@map("fiscal_execution_logs")
+}
+
+// Q12.A: itens de uma nota (NF-e ou NFS-e). Classificação por anexo SN vem em Q12.C.
+model NotaItem {
+  id              String   @id @default(uuid())
+  notaId          String
+  codigoServico   String? // LC116 (NFS-e)
+  ncm             String? // NF-e
+  cfop            String? // NF-e
+  descricao       String?
+  valor           Decimal  @db.Decimal(18, 2)
+  // Q12.C: classificação resolvida pelo módulo de Análise (lookup em DeparaAnexo)
+  anexoResolvido  String? // III | IV | V (Simples Nacional)
+  sujeitoFatorR   Boolean  @default(false)
+  flagST          Boolean  @default(false)
+  flagMonofasico  Boolean  @default(false)
+  flagExportacao  Boolean  @default(false)
+
+  nota PortalInvoice @relation(fields: [notaId], references: [id], onDelete: Cascade)
+
+  @@index([notaId])
+  @@index([anexoResolvido])
+  @@map("nota_itens")
+}
+
+// Q12.A: notas que chegam em competência já fechada — não atualizam a base; viram pendência.
+// Contador resolve reabrindo a competência (volta pra em_conferencia) OU marcando como ignorada.
+model PendenciaPosFechamento {
+  id              String   @id @default(uuid())
+  portalClientId  String
+  competencia     String // YYYY-MM
+  notaId          String?
+  motivo          String // "nota_retroativa" | "evento_retroativo" | ...
+  observacoes     String?
+  resolvida       Boolean  @default(false)
+  resolvidaAt     DateTime?
+  resolvidaByUserId String?
+  createdAt       DateTime @default(now())
+
+  portalClient    PortalClient   @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  nota            PortalInvoice? @relation(fields: [notaId], references: [id], onDelete: SetNull)
+
+  @@index([portalClientId, competencia, resolvida])
+  @@map("pendencias_pos_fechamento")
+}
+
+// Q12.A: procuração e-CAC do escritório pra atuar em nome da empresa em serviços externos
+// (NFS-e, DFe, eSocial, Integra-SN). Permite resolver "qual cert usar" via CertResolver.
+model Procuracao {
+  id              String   @id @default(uuid())
+  portalClientId  String
+  servico         String // NFSE | DFE | ESOCIAL | SN
+  validade        DateTime?
+  status          String   @default("ATIVA") // ATIVA | EXPIRADA | REVOGADA
+  observacoes     String?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  portalClient    PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, servico])
+  @@index([status])
+  @@map("procuracoes")
 }
