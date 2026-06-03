@@ -93,51 +93,46 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
     httpsAgent: agent,
     timeout: timeoutMs,
     validateStatus: () => true,
-    headers: { Accept: "application/json" },
+    // ADN devolve text/plain com payload JSON — peço como string e parseio manual.
+    headers: { Accept: "text/plain, application/json, */*" },
+    responseType: "text",
+    transformResponse: [(data) => data],
   });
 
   const ultNSUStr = String(ultNSU || "0");
-  const tried = [];
-  let last404Body = null;
+  const path = PATH_TEMPLATES[0]({ cnpj: cleanCnpj, ultNSU: ultNSUStr });
 
-  for (const tmpl of PATH_TEMPLATES) {
-    const path = tmpl({ cnpj: cleanCnpj, ultNSU: ultNSUStr });
-    tried.push(path);
-    try {
-      const res = await client.get(path);
-      // Sucesso (200) — devolve direto
-      if (res.status === 200 && res.data) {
-        return parseResponse(res.data, { triedPath: path });
-      }
-      // 404 + JSON: o ADN às vezes retorna 404 com body válido
-      if (res.status === 404 && res.data && typeof res.data === "object" && res.data.StatusProcessamento) {
-        last404Body = res.data;
-        return parseResponse(res.data, { triedPath: path });
-      }
-      // 404 sem body útil → tenta o próximo template
-      if (res.status === 404) continue;
-
-      // Outros status — joga erro com info da resposta
-      throw new AdnNacionalClientError(`HTTP_${res.status}`,
-        `ADN Nacional retornou ${res.status}: ${typeof res.data === "string" ? res.data.slice(0, 200) : JSON.stringify(res.data || {}).slice(0, 200)}`,
-        { status: res.status, body: res.data });
-    } catch (err) {
-      if (err instanceof AdnNacionalClientError) throw err;
-      // erro de rede/TLS — propaga
-      throw new AdnNacionalClientError("NETWORK_ERROR",
-        `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`,
-        { cause: err });
-    }
+  let res;
+  try {
+    res = await client.get(path);
+  } catch (err) {
+    throw new AdnNacionalClientError("NETWORK_ERROR",
+      `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`, { cause: err });
   }
 
-  // Esgotou todos os paths sem sucesso
-  throw new AdnNacionalClientError("ENDPOINT_NOT_FOUND",
-    `Nenhum path conhecido do ADN Nacional retornou resposta válida. Paths tentados: ${tried.join(", ")}. ` +
-    `Verifique se o endpoint do gov.br/nfse mudou — atualize PATH_TEMPLATES em AdnNacionalClient.js.`,
-    { tried, last404Body });
+  // Body sempre vem como string. Tenta JSON.parse pra todos os status
+  // que tenham body — o ADN retorna JSON em 200, 400 e 404 (com Erros[]).
+  let parsedBody = null;
+  if (typeof res.data === "string" && res.data.trim()) {
+    try { parsedBody = JSON.parse(res.data); } catch { parsedBody = null; }
+  } else if (res.data && typeof res.data === "object") {
+    parsedBody = res.data;
+  }
+
+  if (parsedBody && parsedBody.StatusProcessamento) {
+    return parseResponse(parsedBody, { triedPath: path, httpStatus: res.status });
+  }
+
+  // Sem body JSON válido — erro real
+  const bodyPreview = typeof res.data === "string"
+    ? res.data.slice(0, 300)
+    : JSON.stringify(res.data || {}).slice(0, 300);
+  throw new AdnNacionalClientError(`HTTP_${res.status}`,
+    `ADN Nacional retornou ${res.status} sem body JSON válido. Path: ${path}. Body: ${bodyPreview}`,
+    { status: res.status, body: res.data, path });
 }
 
-function parseResponse(data, { triedPath }) {
+function parseResponse(data, { triedPath, httpStatus }) {
   // Normaliza nomes (case variável: StatusProcessamento|statusProcessamento|status)
   const status = data.StatusProcessamento || data.statusProcessamento || data.status || null;
   const itemsRaw = data.LoteDFe || data.loteDFe || data.documentos || [];
@@ -149,6 +144,7 @@ function parseResponse(data, { triedPath }) {
     errors,
     raw: data,
     triedPath,
+    httpStatus,
   };
 }
 
