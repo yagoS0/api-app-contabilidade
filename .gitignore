@@ -37,6 +37,10 @@ apps/*/node_modules/
 apps/web/dist/
 apps/api/node_modules/
 
+# Jest coverage (gerado em test:coverage)
+coverage/
+apps/*/coverage/
+
 # OS
 *:Zone.Identifier
 .DS_Store
