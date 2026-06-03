@@ -25,6 +25,7 @@ export function CompaniesHomePage({
   onRefreshCompanies,
   onOpenPendingReport,
   onOpenBatchEmail,
+  onOpenApuracao,
   onLogout,
   onOpenCompany,
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
@@ -166,6 +167,11 @@ export function CompaniesHomePage({
             {onOpenBatchEmail && (
               <Button variant="success" className="dashboard-home__action dashboard-home__action--success" onClick={onOpenBatchEmail}>
                 Envio de e-mails em lote
+              </Button>
+            )}
+            {onOpenApuracao && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenApuracao}>
+                📊 Apuração
               </Button>
             )}
             <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenPendingReport}>

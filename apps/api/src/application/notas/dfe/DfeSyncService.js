@@ -76,29 +76,33 @@ async function loadOfficeCert() {
 }
 
 /**
- * Decide qual cert usar:
- *   1) Procuração ATIVA pra essa empresa+serviço DFE → cert do escritório (SERPRO)
- *   2) Senão → A1 da própria empresa (Company.certPfxBytes)
- *   3) Senão → erro
+ * Decide qual cert usar (regra simplificada Q12.B++):
+ *   1) Cert do escritório (SERPRO settings) configurado → usa SEMPRE.
+ *      Operacionalmente: o escritório tem procuração e-CAC no servidor da Receita
+ *      pras empresas que opera. O registro em tabela Procuracao é só metadado/audit.
+ *   2) Senão → tenta A1 da empresa (raro — escritório de contabilidade geralmente não tem).
+ *   3) Senão → erro.
  */
 async function resolveCertWithFallback(portalClientId) {
-  const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.DFE })
-    .catch((err) => ({ source: "none", error: err }));
-
-  // Procuração ativa — usa cert do escritório (mesmo do SERPRO)
-  if (r.source === "procuracao_escritorio") {
+  // 1) Tenta cert escritório (default em escritório de contabilidade)
+  try {
     const office = await loadOfficeCert();
-    return { pfxBuffer: office.pfxBuffer, password: office.password, via: "office_cert_via_procuracao" };
+    return {
+      pfxBuffer: office.pfxBuffer,
+      password: office.password,
+      via: "office_cert",
+    };
+  } catch (officeErr) {
+    // 2) Fallback A1 da empresa (raro)
+    const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.DFE })
+      .catch(() => ({ source: "none" }));
+    if (r.source === "company_a1") {
+      return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
+    }
+    // 3) Erro
+    throw new DfeSyncError("NO_CERT",
+      `Cert do escritório não configurado (${officeErr?.message || officeErr?.code}) e empresa sem A1.`);
   }
-
-  // Sem procuração — usa A1 da empresa
-  if (r.source === "company_a1") {
-    return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
-  }
-
-  // Nada — erro claro
-  throw new DfeSyncError("NO_CERT",
-    r.error?.message || "Sem certificado disponível. Cadastre uma procuração e-CAC OU faça upload do A1 da empresa.");
 }
 
 function deriveUF(portalClient) {

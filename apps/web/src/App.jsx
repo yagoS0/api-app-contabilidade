@@ -20,6 +20,8 @@ import { useManageAccountingWorkspace } from "./app/hooks/useManageAccountingWor
 import { useAccountingFunctions } from "./features/accounting/functions/hooks/useAccountingFunctions";
 import { useParcelamentos } from "./features/accounting/parcelamento/hooks/useParcelamentos";
 import { useNotasFiscais } from "./features/notas/hooks/useNotasFiscais";
+import { useApuracao } from "./features/apuracao/hooks/useApuracao";
+import { ApuracaoPage } from "./features/apuracao/pages/renderApuracaoPage";
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
@@ -68,6 +70,8 @@ function App() {
     companyId: companiesWorkspace.companiesState.selectedCompanyId,
     feedback,
   });
+  // Q12.C.2: Apuração global
+  const apuracao = useApuracao({ api, feedback });
 
   // Q8.C: sincroniza selectedCompanyId com a URL (/companies/:companyId/*).
   // Necessário pra deep-link funcionar: usuário cola URL com companyId → state interno
@@ -197,6 +201,20 @@ function App() {
       <GlobalAccountingRulesPage
         api={api}
         onBack={() => session.setPage("firmSettings")}
+      />
+    );
+  }
+
+  if (session.page === "apuracao") {
+    return (
+      <ApuracaoPage
+        apuracaoPanel={apuracao}
+        onBack={() => session.setPage("companies")}
+        onOpenCompanyNotas={(pcId) => {
+          companiesWorkspace.companiesState.setSelectedCompanyId(pcId);
+          session.setPage("companyDetail");
+          companiesWorkspace.setCompanyDetailTab("notasFiscais");
+        }}
       />
     );
   }
@@ -371,6 +389,7 @@ function App() {
       onRefreshCompanies={companiesWorkspace.loadCompanies}
       onOpenPendingReport={() => session.setPage("pendingReport")}
       onOpenBatchEmail={() => session.setPage("batchEmail")}
+      onOpenApuracao={() => session.setPage("apuracao")}
       onLogout={handleLogout}
       onOpenCompany={(companyId) => {
         // Q8.C.3: setSelectedCompanyId pode rodar 1 tick depois (React batching).

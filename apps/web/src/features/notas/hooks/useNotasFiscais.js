@@ -19,24 +19,32 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   const [adnState, setAdnState] = useState(null);
   const [adnSyncing, setAdnSyncing] = useState(false);
   const [adnLastResult, setAdnLastResult] = useState(null);
+  // Q12.C.1: listagem de notas + resumo
+  const [notas, setNotas] = useState([]);
+  const [notasTotal, setNotasTotal] = useState(0);
+  const [notasSummary, setNotasSummary] = useState(null);
+  const [notasFilters, setNotasFilters] = useState({ papel: "", type: "", competencia: "", search: "", limit: 100, offset: 0 });
+  const [loadingNotas, setLoadingNotas] = useState(false);
 
   const loadAll = useCallback(async () => {
     if (!companyId || !api) return;
     setLoading(true);
     setError(null);
     try {
-      const [comp, procs, pends, dfe, adn] = await Promise.all([
+      const [comp, procs, pends, dfe, adn, summary] = await Promise.all([
         api.listCompetenciasNotas(companyId, ano),
         api.listProcuracoes(companyId),
         api.listPendenciasPosFechamento(companyId, { onlyOpen: true }),
         api.getDfeState ? api.getDfeState(companyId) : Promise.resolve(null),
         api.getAdnState ? api.getAdnState(companyId) : Promise.resolve(null),
+        api.getNotasSummary ? api.getNotasSummary(companyId, ano) : Promise.resolve(null),
       ]);
       setCompetencias(comp.competencias || []);
       setProcuracoes(procs || []);
       setPendencias(pends || []);
       setDfeState(dfe);
       setAdnState(adn);
+      setNotasSummary(summary);
     } catch (err) {
       setError(err?.message || "Falha ao carregar Notas Fiscais.");
     } finally {
@@ -44,7 +52,23 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     }
   }, [api, companyId, ano]);
 
+  const loadNotas = useCallback(async (filtersOverride) => {
+    if (!companyId || !api) return;
+    setLoadingNotas(true);
+    try {
+      const f = filtersOverride || notasFilters;
+      const out = await api.listNotas(companyId, f);
+      setNotas(out?.notas || []);
+      setNotasTotal(out?.total || 0);
+    } catch (err) {
+      setError(err?.message || "Falha ao carregar notas.");
+    } finally {
+      setLoadingNotas(false);
+    }
+  }, [api, companyId, notasFilters]);
+
   useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => { loadNotas(); }, [loadNotas]);
 
   async function createProcuracao(body) {
     setSaving(true);
@@ -157,5 +181,9 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     dfeState, dfeSyncing, dfeLastResult, syncDfe,
     // Q12.B+: NFS-e via ADN
     adnState, adnSyncing, adnLastResult, syncAdn,
+    // Q12.C.1: listagem de notas
+    notas, notasTotal, notasSummary,
+    notasFilters, setNotasFilters,
+    loadingNotas, loadNotas,
   };
 }

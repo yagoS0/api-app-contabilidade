@@ -2550,6 +2550,104 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   const notasRouter = createNotasRouter({ log });
   router.use("/companies/:companyId", notasRouter);
 
+  // Q12.C.2: Apuração global — todas as empresas em uma página
+  // GET /firm/apuracao?competencia=YYYY-MM&search=...
+  router.get("/apuracao", async (req, res) => {
+    const userId = String(req.auth.user.id);
+    const appRole = String(req.auth.user.role || "").toLowerCase();
+    const isAdminLike = appRole === "admin" || appRole === "contador";
+    const competencia = String(req.query.competencia || "").trim();
+    const search = String(req.query.search || "").trim();
+
+    if (!/^\d{4}-\d{2}$/.test(competencia)) {
+      return res.status(400).json({ ok: false, error: "invalid_competencia", message: "competência YYYY-MM obrigatória" });
+    }
+
+    // Lista empresas que o usuário pode ver
+    const companiesWhere = isAdminLike
+      ? { status: { not: "SUSPENSA" } }
+      : { status: { not: "SUSPENSA" }, firmAccess: { some: { userId } } };
+
+    if (search) {
+      companiesWhere.OR = [
+        { razao: { contains: search, mode: "insensitive" } },
+        { cnpj: { contains: search.replace(/\D+/g, "") } },
+      ];
+    }
+
+    const companies = await prisma.portalClient.findMany({
+      where: companiesWhere,
+      orderBy: { razao: "asc" },
+      select: { id: true, razao: true, cnpj: true, regimeTributario: true },
+      take: 500,
+    });
+    const ids = companies.map((c) => c.id);
+    if (ids.length === 0) return res.json({ ok: true, competencia, items: [] });
+
+    // Estados de competência
+    const circulars = await prisma.companyMonthlyCircular.findMany({
+      where: { portalClientId: { in: ids }, competencia },
+      select: {
+        portalClientId: true, estado: true, lockedAt: true,
+        rb12: true, fs12Manual: true, fatorR: true,
+      },
+    });
+    const byPc = new Map(circulars.map((c) => [c.portalClientId, c]));
+
+    // Range do mês pra contar notas/somar receita
+    const [yy, mm] = competencia.split("-").map(Number);
+    const start = new Date(Date.UTC(yy, mm - 1, 1));
+    const end = new Date(Date.UTC(yy, mm, 1));
+
+    // Notas agregadas por empresa (mês corrente)
+    const notas = await prisma.portalInvoice.findMany({
+      where: { clientId: { in: ids }, competencia: { gte: start, lt: end } },
+      select: { clientId: true, papel: true, type: true, total: true, statusEfetivo: true },
+    });
+    const aggByPc = new Map();
+    for (const n of notas) {
+      const agg = aggByPc.get(n.clientId) || { totalNotas: 0, receitaEmitida: 0, comprasRecebidas: 0, byType: { NFE: 0, NFSE: 0 } };
+      agg.totalNotas++;
+      agg.byType[n.type] = (agg.byType[n.type] || 0) + 1;
+      const v = n.total ? Number(n.total) : 0;
+      if (n.papel === "EMIT") agg.receitaEmitida += v;
+      else if (n.papel === "DEST") agg.comprasRecebidas += v;
+      aggByPc.set(n.clientId, agg);
+    }
+
+    // Pendências
+    const pends = await prisma.pendenciaPosFechamento.groupBy({
+      by: ["portalClientId"],
+      where: { portalClientId: { in: ids }, competencia, resolvida: false },
+      _count: { _all: true },
+    });
+    const pendByPc = new Map(pends.map((p) => [p.portalClientId, p._count._all]));
+
+    const items = companies.map((c) => {
+      const circ = byPc.get(c.id);
+      const agg = aggByPc.get(c.id) || { totalNotas: 0, receitaEmitida: 0, comprasRecebidas: 0, byType: {} };
+      return {
+        portalClientId: c.id,
+        razao: c.razao,
+        cnpj: c.cnpj,
+        regime: c.regimeTributario || null,
+        estado: circ?.estado || "aberto",
+        lockedAt: circ?.lockedAt || null,
+        rb12: circ?.rb12 ? circ.rb12.toString() : null,
+        fs12Manual: circ?.fs12Manual ? circ.fs12Manual.toString() : null,
+        fatorR: circ?.fatorR ? circ.fatorR.toString() : null,
+        totalNotas: agg.totalNotas,
+        receitaEmitida: agg.receitaEmitida,
+        comprasRecebidas: agg.comprasRecebidas,
+        nfeCount: agg.byType.NFE || 0,
+        nfseCount: agg.byType.NFSE || 0,
+        pendenciasAbertas: pendByPc.get(c.id) || 0,
+      };
+    });
+
+    return res.json({ ok: true, competencia, items });
+  });
+
   const accountingEntryRulesRouter = createAccountingEntryRulesRouter({ log });
   router.use("/accounting-entry-rules", accountingEntryRulesRouter);
   router.use("/companies/:companyId/accounting-entry-rules", accountingEntryRulesRouter);

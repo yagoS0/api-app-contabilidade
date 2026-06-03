@@ -752,5 +752,26 @@ export function createRealApi() {
       const payload = await request(`/firm/companies/${companyId}/adn/state`);
       return payload?.state || null;
     },
+    // Q12.C.1: listagem de notas + resumo
+    async listNotas(companyId, filters = {}) {
+      const q = new URLSearchParams();
+      ["papel", "type", "competencia", "search", "limit", "offset"].forEach((k) => {
+        if (filters[k] != null && filters[k] !== "") q.set(k, String(filters[k]));
+      });
+      const suffix = q.toString() ? `?${q.toString()}` : "";
+      return request(`/firm/companies/${companyId}/notas${suffix}`);
+    },
+    async getNotasSummary(companyId, ano) {
+      const suffix = ano ? `?ano=${ano}` : "";
+      return request(`/firm/companies/${companyId}/notas/summary${suffix}`);
+    },
+    // Q12.C.2: Apuração global
+    async listApuracao({ competencia, search } = {}) {
+      const q = new URLSearchParams();
+      if (competencia) q.set("competencia", competencia);
+      if (search) q.set("search", search);
+      const payload = await request(`/firm/apuracao?${q.toString()}`);
+      return { competencia: payload?.competencia, items: payload?.items || [] };
+    },
   };
 }

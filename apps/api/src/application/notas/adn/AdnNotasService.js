@@ -63,18 +63,19 @@ async function loadOfficeCert() {
 }
 
 async function resolveCertWithFallback(portalClientId) {
-  const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE })
-    .catch((err) => ({ source: "none", error: err }));
-
-  if (r.source === "procuracao_escritorio") {
+  // Q12.B++: cert escritório como default (mesmo padrão do DfeSyncService).
+  try {
     const office = await loadOfficeCert();
-    return { certInfo: office, via: "office_cert_via_procuracao" };
+    return { certInfo: office, via: "office_cert" };
+  } catch (officeErr) {
+    const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE })
+      .catch(() => ({ source: "none" }));
+    if (r.source === "company_a1") {
+      return { certInfo: { pfxBuffer: r.pfxBuffer, pfxPassword: r.password }, via: "company_a1" };
+    }
+    throw new AdnNotasSyncError("NO_CERT",
+      `Cert do escritório não configurado (${officeErr?.message || officeErr?.code}) e empresa sem A1.`);
   }
-  if (r.source === "company_a1") {
-    return { certInfo: { pfxBuffer: r.pfxBuffer, pfxPassword: r.password }, via: "company_a1" };
-  }
-  throw new AdnNotasSyncError("NO_CERT",
-    r.error?.message || "Sem cert: cadastre procuração e-CAC NFSE OU faça upload do A1.");
 }
 
 // ─── Decodificação do XML ──────────────────────────────────────────────────

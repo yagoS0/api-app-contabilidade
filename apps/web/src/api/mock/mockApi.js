@@ -1639,6 +1639,9 @@ export function createMockApi() {
     async getDfeState() { await delay(60); return null; },
     async syncAdn() { await delay(80); return { ok: true, result: { totalDocs: 0, byStatus: {}, newCursor: "0" } }; },
     async getAdnState() { await delay(60); return null; },
+    async listNotas() { await delay(60); return { ok: true, total: 0, notas: [] }; },
+    async getNotasSummary() { await delay(60); return { ok: true, ano: new Date().getUTCFullYear(), totals: { totalNotas: 0, totalEmitido: 0, totalRecebido: 0 }, byMonth: [] }; },
+    async listApuracao({ competencia } = {}) { await delay(60); return { competencia, items: [] }; },
 
     // ── Q6: stubs (mock não persiste; só retorna estrutura básica para não quebrar UI) ──
     async listAccountingFunctions() { await delay(80); return []; },

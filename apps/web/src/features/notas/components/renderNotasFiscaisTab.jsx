@@ -1,35 +1,21 @@
-// Q12.A.4: componente raiz da aba "Notas Fiscais".
-// Orquestra: ProcuracoesPanel + CompetenciasTable + CompetenciaDetailPanel + PendenciasList.
+// Q12.C.1: aba "Notas Fiscais" da empresa — listagem de NF-e/NFS-e + captura.
+// Competências/fechamento/pendências MOVERAM-SE pra página global de Apuração.
 
-import { useState } from "react";
 import { PANEL } from "./notasStyles";
-import { ProcuracoesPanel } from "./ProcuracoesPanel";
-import { CompetenciasTable } from "./CompetenciasTable";
-import { CompetenciaDetailPanel } from "./CompetenciaDetailPanel";
-import { PendenciasList } from "./PendenciasList";
-import { ReabrirCompetenciaModal } from "./ReabrirCompetenciaModal";
 import { DfeCapturePanel } from "./DfeCapturePanel";
 import { AdnCapturePanel } from "./AdnCapturePanel";
+import { NotasList } from "./NotasList";
 
 export function NotasFiscaisTab({ notasPanel }) {
   const {
-    ano, setAno,
-    competencias, procuracoes, pendencias,
-    loading, saving, error,
-    reload,
-    createProcuracao, revogarProcuracao,
-    fecharCompetencia, reabrirCompetencia,
-    resolverPendencia,
+    ano,
+    loading, error, reload,
     dfeState, dfeSyncing, dfeLastResult, syncDfe,
     adnState, adnSyncing, adnLastResult, syncAdn,
+    notas, notasTotal, notasSummary,
+    notasFilters, setNotasFilters,
+    loadingNotas, loadNotas,
   } = notasPanel;
-
-  const [selectedComp, setSelectedComp] = useState(null);
-  const [reabrirComp, setReabrirComp] = useState(null);
-
-  function handleDetalhar(comp) { setSelectedComp(comp.competencia); }
-
-  const detail = selectedComp ? competencias.find((c) => c.competencia === selectedComp) : null;
 
   return (
     <div style={{ padding: 24, color: PANEL.text, maxWidth: 1400, margin: "0 auto" }}>
@@ -42,65 +28,37 @@ export function NotasFiscaisTab({ notasPanel }) {
         </div>
       )}
 
-      <ProcuracoesPanel
-        procuracoes={procuracoes}
-        saving={saving}
-        onCreate={createProcuracao}
-        onRevogar={revogarProcuracao}
-      />
-
-      <DfeCapturePanel
-        dfeState={dfeState}
-        dfeSyncing={dfeSyncing}
-        dfeLastResult={dfeLastResult}
-        onSync={syncDfe}
-      />
-
-      <AdnCapturePanel
-        adnState={adnState}
-        adnSyncing={adnSyncing}
-        adnLastResult={adnLastResult}
-        onSync={syncAdn}
-      />
-
-      <CompetenciasTable
-        ano={ano} setAno={setAno}
-        competencias={competencias}
-        saving={saving || loading}
-        onFechar={fecharCompetencia}
-        onReabrir={(comp) => setReabrirComp(comp)}
-        onDetalhar={handleDetalhar}
-      />
-
-      {detail && (
-        <CompetenciaDetailPanel
-          comp={detail}
-          saving={saving}
-          onFechar={fecharCompetencia}
-          onReabrir={(comp) => setReabrirComp(comp)}
-          onClose={() => setSelectedComp(null)}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <DfeCapturePanel
+          dfeState={dfeState} dfeSyncing={dfeSyncing} dfeLastResult={dfeLastResult}
+          onSync={syncDfe}
         />
-      )}
+        <AdnCapturePanel
+          adnState={adnState} adnSyncing={adnSyncing} adnLastResult={adnLastResult}
+          onSync={syncAdn}
+        />
+      </div>
 
-      <PendenciasList
-        pendencias={pendencias}
-        saving={saving}
-        onReabrir={(comp) => setReabrirComp(comp)}
-        onResolver={resolverPendencia}
+      <NotasList
+        notas={notas}
+        total={notasTotal}
+        summary={notasSummary}
+        ano={ano}
+        filters={notasFilters}
+        onFiltersChange={setNotasFilters}
+        onApply={(f) => loadNotas(f)}
+        loading={loadingNotas}
       />
 
-      {reabrirComp && (
-        <ReabrirCompetenciaModal
-          competencia={reabrirComp}
-          saving={saving}
-          onConfirm={async (reason) => { await reabrirCompetencia(reabrirComp, reason); }}
-          onClose={() => setReabrirComp(null)}
-        />
-      )}
-
-      {loading && competencias.length === 0 && (
+      {loading && notas.length === 0 && (
         <div style={{ padding: 24, textAlign: "center", color: PANEL.muted }}>Carregando…</div>
       )}
+
+      <div style={{ marginTop: 16, padding: 12, background: PANEL.field, borderRadius: 6, fontSize: "0.8rem", color: PANEL.muted }}>
+        💡 <strong style={{ color: PANEL.text }}>Apuração e fechamento</strong> agora ficam na página
+        global "Apuração" (acessível na home), onde você vê todas as empresas juntas. Aqui você só
+        navega/captura notas desta empresa.
+      </div>
     </div>
   );
 }

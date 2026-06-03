@@ -341,6 +341,95 @@ export function createNotasRouter({ log }) {
     });
   });
 
+  // ─── Q12.C.1: listagem de notas + resumos da empresa ──────────────────────
+
+  // GET /notas?papel=EMIT|DEST&type=NFE|NFSE&competencia=YYYY-MM&search=&limit=&offset=
+  router.get("/notas", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const { papel, type, competencia, search } = req.query;
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+    const where = { clientId: portalClientId };
+    if (papel) where.papel = String(papel).toUpperCase();
+    if (type) where.type = String(type).toUpperCase();
+    if (competencia && /^\d{4}-\d{2}$/.test(competencia)) {
+      const [y, m] = competencia.split("-").map(Number);
+      where.competencia = { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
+    }
+    if (search && String(search).trim()) {
+      const s = String(search).trim();
+      where.OR = [
+        { chaveAcesso: { contains: s } },
+        { numero: { contains: s } },
+        { emitenteNome: { contains: s, mode: "insensitive" } },
+        { emitenteDoc: { contains: s.replace(/\D+/g, "") } },
+        { tomadorNome: { contains: s, mode: "insensitive" } },
+      ];
+    }
+
+    const [notas, total] = await Promise.all([
+      prisma.portalInvoice.findMany({
+        where, orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
+        take: limit, skip: offset,
+        select: {
+          id: true, type: true, papel: true, statusEfetivo: true, status: true,
+          chaveAcesso: true, numero: true, serie: true, competencia: true, issueDate: true,
+          total: true, emitenteNome: true, emitenteDoc: true,
+          tomadorNome: true, tomadorDoc: true,
+          competenciaPosFechamento: true,
+        },
+      }),
+      prisma.portalInvoice.count({ where }),
+    ]);
+
+    return res.json({
+      ok: true, total, limit, offset,
+      notas: notas.map((n) => ({
+        ...n,
+        total: n.total != null ? n.total.toString() : null,
+      })),
+    });
+  });
+
+  // GET /notas/summary?ano=YYYY → resumo agregado por (mês, papel, type, statusEfetivo)
+  router.get("/notas/summary", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const ano = Number(req.query.ano) || new Date().getUTCFullYear();
+    const yearStart = new Date(Date.UTC(ano, 0, 1));
+    const yearEnd = new Date(Date.UTC(ano + 1, 0, 1));
+
+    const notas = await prisma.portalInvoice.findMany({
+      where: {
+        clientId: portalClientId,
+        competencia: { gte: yearStart, lt: yearEnd },
+      },
+      select: { type: true, papel: true, statusEfetivo: true, competencia: true, total: true },
+    });
+
+    // Agrega em memória (volume pequeno por empresa/ano)
+    const byMonth = {};
+    let totalNotas = 0, totalEmitido = 0, totalRecebido = 0;
+    for (const n of notas) {
+      totalNotas++;
+      if (!n.competencia) continue;
+      const d = new Date(n.competencia);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      if (!byMonth[key]) byMonth[key] = { competencia: key, emit: { count: 0, total: 0 }, dest: { count: 0, total: 0 } };
+      const bucket = n.papel === "DEST" ? byMonth[key].dest : byMonth[key].emit;
+      bucket.count++;
+      const val = n.total ? Number(n.total) : 0;
+      bucket.total += val;
+      if (n.papel === "DEST") totalRecebido += val;
+      else totalEmitido += val;
+    }
+    return res.json({
+      ok: true, ano,
+      totals: { totalNotas, totalEmitido, totalRecebido },
+      byMonth: Object.values(byMonth).sort((a, b) => a.competencia.localeCompare(b.competencia)),
+    });
+  });
+
   // ─── Q12.B+: captura NFS-e via ADN ─────────────────────────────────────────
 
   router.post("/adn/sync", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
