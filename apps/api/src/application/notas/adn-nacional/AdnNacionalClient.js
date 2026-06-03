@@ -37,11 +37,20 @@ const ENDPOINTS = {
 // Endpoint base oficial: GET /DFe/{NSU}?cnpjConsulta=<CNPJ>&lote=true
 // MAS o swagger pode ter base-path não documentado no path. Testa variações
 // comuns (Servlet/API/v1) antes de desistir.
-// Confirmado pelo usuário (via swagger): URL completa é
-//   https://adn.nfse.gov.br/DFe/{NSU}
-// Path único — sem prefixo.
+// IMPORTANTE: o ADN tem 2 APIs distintas:
+//   - /municipios/DFe/{NSU}    → ADN Município (só pra prefeituras autenticadas)
+//   - /contribuintes/DFe/{NSU} → ADN Contribuinte (escritórios/empresas) ← É ESSA
+//
+// O usuário viu inicialmente o swagger de Município e gerava 404 porque o cert
+// do escritório não é autorizado lá. A API de Contribuinte está em
+// https://adn.nfse.gov.br/contribuintes/docs/index.html
+//
+// Query params confirmados: cnpjConsulta + lote (true default).
+// tipoNSU (RECEPCAO|DISTRIBUICAO|GERAL|MEI) — GERAL pega tudo emitido + recebido.
 const PATH_TEMPLATES = [
-  ({ cnpj, ultNSU }) => `/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
+  ({ cnpj, ultNSU }) => `/contribuintes/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true&tipoNSU=GERAL`,
+  // Fallback sem tipoNSU caso o param não exista nessa API
+  ({ cnpj, ultNSU }) => `/contribuintes/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
 ];
 
 export class AdnNacionalClientError extends Error {
