@@ -1,0 +1,125 @@
+// Q12.A.3: resolve qual certificado usar para acessar um serviço externo
+// (NFS-e/ADN, DFe/SEFAZ, eSocial, Integra-SN).
+//
+// Estratégia (Q12.A — só leitura da tabela Procuracao, sem trocar de cert ainda):
+//   1) Procura Procuracao ATIVA e dentro da validade pra (portalClient, servico).
+//      Se existir → indica que o ESCRITÓRIO atua via e-CAC com o cert do escritório.
+//      (A resolução real do cert do escritório fica em Q12.B/.C, quando os clients DFe
+//       e PgdasDeclarar passarem a usar este resolver.)
+//   2) Senão → fallback pro cert A1 da empresa (Company.certPfxBytes) via CertStorage.
+//
+// Retorna SEMPRE { source, pfxBuffer?, password? } pra quem chamar montar o https.Agent.
+// `source` indica de onde veio (procuração x cert empresa x nenhum) pra log/erro.
+
+import { prisma } from "../../infrastructure/db/prisma.js";
+import { readStoredCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
+import { decryptSecret } from "../../utils/crypto.js";
+
+export const SERVICOS = Object.freeze({
+  NFSE: "NFSE",
+  DFE: "DFE",
+  ESOCIAL: "ESOCIAL",
+  SN: "SN",
+});
+
+export class CertResolutionError extends Error {
+  constructor(code, message, extra = {}) {
+    super(message);
+    this.code = code;
+    Object.assign(this, extra);
+  }
+}
+
+async function findActiveProcuracao({ portalClientId, servico }) {
+  const proc = await prisma.procuracao.findUnique({
+    where: { portalClientId_servico: { portalClientId, servico } },
+  });
+  if (!proc || proc.status !== "ATIVA") return null;
+  if (proc.validade && new Date(proc.validade) < new Date()) return null; // expirada
+  return proc;
+}
+
+async function loadCompanyCert(portalClientId) {
+  const portal = await prisma.portalClient.findUnique({
+    where: { id: portalClientId },
+    select: { companyId: true },
+  });
+  if (!portal?.companyId) return null;
+
+  const company = await prisma.company.findUnique({
+    where: { id: portal.companyId },
+    select: { certPfxBytes: true, certStorageKey: true, certPasswordEnc: true, certExpiresAt: true },
+  });
+  if (!company) return null;
+
+  const pfxBuffer = readStoredCompanyPfx(company);
+  if (!pfxBuffer) return null;
+
+  let password = null;
+  if (company.certPasswordEnc) {
+    try {
+      password = decryptSecret(company.certPasswordEnc);
+    } catch (err) {
+      throw new CertResolutionError("CERT_PASSWORD_DECRYPT_FAILED", "Falha ao descriptografar a senha do certificado", { cause: err });
+    }
+  }
+
+  return {
+    pfxBuffer,
+    password,
+    certExpiresAt: company.certExpiresAt || null,
+  };
+}
+
+/**
+ * Resolve qual cert usar pra acessar `servico` em nome de `portalClientId`.
+ * NÃO retorna o cert do escritório AINDA (Q12.A é só foundation) — quando há
+ * procuração ativa, devolve { source: "procuracao_escritorio", procuracaoId }
+ * pra o caller decidir (na Q12.B/.C, o caller carrega o cert global do escritório).
+ *
+ * Throw CertResolutionError quando não há fallback viável.
+ */
+export async function resolveCertForCompany({ portalClientId, servico }) {
+  if (!portalClientId) throw new CertResolutionError("PORTAL_CLIENT_REQUIRED", "portalClientId obrigatório");
+  if (!Object.values(SERVICOS).includes(servico)) {
+    throw new CertResolutionError("INVALID_SERVICO", `Serviço inválido: ${servico}. Esperado um de ${Object.values(SERVICOS).join("|")}`);
+  }
+
+  const proc = await findActiveProcuracao({ portalClientId, servico });
+  if (proc) {
+    // Q12.A: marca origem. Caller decide se carrega cert global (Q12.B+) ou cai pro fallback.
+    return {
+      source: "procuracao_escritorio",
+      procuracaoId: proc.id,
+      procuracaoValidade: proc.validade || null,
+    };
+  }
+
+  const companyCert = await loadCompanyCert(portalClientId);
+  if (!companyCert) {
+    throw new CertResolutionError("NO_CERT_AVAILABLE",
+      `Sem certificado pra empresa ${portalClientId} no serviço ${servico}. ` +
+      `Cadastre uma procuração ativa OU faça upload do A1 da empresa.`,
+      { portalClientId, servico });
+  }
+
+  return {
+    source: "company_a1",
+    pfxBuffer: companyCert.pfxBuffer,
+    password: companyCert.password,
+    certExpiresAt: companyCert.certExpiresAt,
+  };
+}
+
+/**
+ * Versão "soft" — não throwa, retorna { ok, source } pra UI/listagens.
+ * Útil pra montar a aba de Procurações mostrando "ATIVA" / "FALTA CERT" por linha.
+ */
+export async function checkCertAvailability({ portalClientId, servico }) {
+  try {
+    const r = await resolveCertForCompany({ portalClientId, servico });
+    return { ok: true, source: r.source };
+  } catch (err) {
+    return { ok: false, code: err.code || "UNKNOWN", message: err.message };
+  }
+}
