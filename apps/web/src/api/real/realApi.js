@@ -735,5 +735,14 @@ export function createRealApi() {
     async resolverPendencia(companyId, pendId) {
       return request(`/firm/companies/${companyId}/pendencias-pos-fechamento/${pendId}/resolver`, { method: "POST" });
     },
+
+    // ─── Q12.B: captura DFe ─────────────────────────────────────────────────
+    async syncDfe(companyId, { env = "prod" } = {}) {
+      return request(`/firm/companies/${companyId}/dfe/sync?env=${env}`, { method: "POST" });
+    },
+    async getDfeState(companyId) {
+      const payload = await request(`/firm/companies/${companyId}/dfe/state`);
+      return payload?.state || null;
+    },
   };
 }

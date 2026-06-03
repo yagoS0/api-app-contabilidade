@@ -11,20 +11,26 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  // Q12.B
+  const [dfeState, setDfeState] = useState(null);
+  const [dfeSyncing, setDfeSyncing] = useState(false);
+  const [dfeLastResult, setDfeLastResult] = useState(null);
 
   const loadAll = useCallback(async () => {
     if (!companyId || !api) return;
     setLoading(true);
     setError(null);
     try {
-      const [comp, procs, pends] = await Promise.all([
+      const [comp, procs, pends, dfe] = await Promise.all([
         api.listCompetenciasNotas(companyId, ano),
         api.listProcuracoes(companyId),
         api.listPendenciasPosFechamento(companyId, { onlyOpen: true }),
+        api.getDfeState ? api.getDfeState(companyId) : Promise.resolve(null),
       ]);
       setCompetencias(comp.competencias || []);
       setProcuracoes(procs || []);
       setPendencias(pends || []);
+      setDfeState(dfe);
     } catch (err) {
       setError(err?.message || "Falha ao carregar Notas Fiscais.");
     } finally {
@@ -95,6 +101,25 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     } finally { setSaving(false); }
   }
 
+  async function syncDfe({ env = "prod" } = {}) {
+    setDfeSyncing(true);
+    setDfeLastResult(null);
+    try {
+      const out = await api.syncDfe(companyId, { env });
+      setDfeLastResult(out?.result || out);
+      if (out?.ok) {
+        feedback?.notifySuccess?.(`Captura DFe (${env}) concluída — ${out.result?.totalDocs || 0} documentos.`);
+      } else {
+        feedback?.notifyError?.(out?.result?.message || out?.message || "Falha na captura DFe.");
+      }
+      await loadAll();
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Erro.");
+    } finally {
+      setDfeSyncing(false);
+    }
+  }
+
   return {
     ano, setAno,
     competencias, procuracoes, pendencias,
@@ -103,5 +128,7 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     createProcuracao, revogarProcuracao,
     fecharCompetencia, reabrirCompetencia,
     resolverPendencia,
+    // Q12.B
+    dfeState, dfeSyncing, dfeLastResult, syncDfe,
   };
 }

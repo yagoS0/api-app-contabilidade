@@ -1635,6 +1635,8 @@ export function createMockApi() {
     async reabrirCompetencia() { await delay(60); return { ok: true, competencia: { estado: "em_conferencia" } }; },
     async listPendenciasPosFechamento() { await delay(60); return []; },
     async resolverPendencia() { await delay(60); return { ok: true }; },
+    async syncDfe() { await delay(80); return { ok: true, result: { totalDocs: 0, byType: {}, newCursor: "0" } }; },
+    async getDfeState() { await delay(60); return null; },
 
     // ── Q6: stubs (mock não persiste; só retorna estrutura básica para não quebrar UI) ──
     async listAccountingFunctions() { await delay(80); return []; },

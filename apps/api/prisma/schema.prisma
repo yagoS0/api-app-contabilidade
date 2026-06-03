@@ -415,12 +415,17 @@ model PortalIntegrationSettings {
 
 model PortalSyncState {
   clientId     String    @id
-  lastCursor   BigInt    @default(0) // NSU/sequence
+  lastCursor   BigInt    @default(0) // NSU/sequence (ADN/NFS-e)
   lastSyncAt   DateTime?
   state        String    @default("OK") // OK|RUNNING|ERROR
   lastError    String?
   lockUntil    DateTime?
   backoffUntil DateTime?
+  // Q12.B: cursor separado para DFe/SEFAZ (NF-e) — ADN e DFe rodam independentes.
+  dfeNsuCursor   BigInt    @default(0)
+  dfeLastSyncAt  DateTime?
+  dfeLastError   String?
+  dfeBackoffUntil DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

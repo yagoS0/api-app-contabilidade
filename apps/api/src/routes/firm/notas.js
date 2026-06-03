@@ -22,6 +22,7 @@ import {
   reabrirCompetencia,
 } from "../../application/notas/CompetenciaStateMachine.js";
 import { checkCertAvailability, SERVICOS } from "../../application/notas/CertResolver.js";
+import { syncDfeForCompany } from "../../application/notas/dfe/DfeSyncService.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -305,6 +306,38 @@ export function createNotasRouter({ log }) {
       },
     });
     return res.json({ ok: true, pendencia: serializePendencia(updated) });
+  });
+
+  // ─── Q12.B: captura DFe (NF-e via SEFAZ) ──────────────────────────────────
+
+  // POST /dfe/sync?env=prod|hom — dispara captura imediata. Sem worker em background nessa fase.
+  router.post("/dfe/sync", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const env = String(req.query.env || "prod") === "hom" ? "hom" : "prod";
+    try {
+      const result = await syncDfeForCompany({ portalClientId, env });
+      return res.json({ ok: result.ok, result });
+    } catch (err) {
+      log?.warn({ err: err?.message, portalClientId }, "Falha ao sincronizar DFe");
+      return bad(res, 500, "dfe_sync_failed", err?.message || "Erro");
+    }
+  });
+
+  // GET /dfe/state — retorna cursor + último erro + backoff (UI mostra status)
+  router.get("/dfe/state", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const state = await prisma.portalSyncState.findUnique({ where: { clientId: portalClientId } });
+    return res.json({
+      ok: true,
+      state: state
+        ? {
+            dfeNsuCursor: state.dfeNsuCursor?.toString() || "0",
+            dfeLastSyncAt: state.dfeLastSyncAt,
+            dfeLastError: state.dfeLastError,
+            dfeBackoffUntil: state.dfeBackoffUntil,
+          }
+        : { dfeNsuCursor: "0", dfeLastSyncAt: null, dfeLastError: null, dfeBackoffUntil: null },
+    });
   });
 
   return router;

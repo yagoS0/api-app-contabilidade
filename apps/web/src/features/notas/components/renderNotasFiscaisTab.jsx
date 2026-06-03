@@ -8,6 +8,7 @@ import { CompetenciasTable } from "./CompetenciasTable";
 import { CompetenciaDetailPanel } from "./CompetenciaDetailPanel";
 import { PendenciasList } from "./PendenciasList";
 import { ReabrirCompetenciaModal } from "./ReabrirCompetenciaModal";
+import { DfeCapturePanel } from "./DfeCapturePanel";
 
 export function NotasFiscaisTab({ notasPanel }) {
   const {
@@ -18,6 +19,7 @@ export function NotasFiscaisTab({ notasPanel }) {
     createProcuracao, revogarProcuracao,
     fecharCompetencia, reabrirCompetencia,
     resolverPendencia,
+    dfeState, dfeSyncing, dfeLastResult, syncDfe,
   } = notasPanel;
 
   const [selectedComp, setSelectedComp] = useState(null);
@@ -43,6 +45,13 @@ export function NotasFiscaisTab({ notasPanel }) {
         saving={saving}
         onCreate={createProcuracao}
         onRevogar={revogarProcuracao}
+      />
+
+      <DfeCapturePanel
+        dfeState={dfeState}
+        dfeSyncing={dfeSyncing}
+        dfeLastResult={dfeLastResult}
+        onSync={syncDfe}
       />
 
       <CompetenciasTable
