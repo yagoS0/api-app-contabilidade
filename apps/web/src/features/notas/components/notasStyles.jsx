@@ -46,3 +46,47 @@ export function fmtDate(d) {
   try { return new Date(d).toLocaleDateString("pt-BR"); }
   catch { return String(d); }
 }
+
+// Q12.B+++.7: detecta staleness do cursor (último sync).
+// Importante porque ADN/SEFAZ tem 2 regras:
+// - CNPJ inativo 60+ dias perde geração de NSU (NT 2014.002 v1.10)
+// - Janela de 90 dias na SEFAZ — notas mais antigas que isso são irrecuperáveis
+// Por isso alertamos:
+//   30-60 dias = warn (preventivo)
+//   60+ dias = danger (já perdendo histórico)
+export function syncStaleness(lastSyncAt) {
+  if (!lastSyncAt) return { days: null, level: "never" };
+  try {
+    const ms = Date.now() - new Date(lastSyncAt).getTime();
+    const days = Math.floor(ms / (24 * 3600 * 1000));
+    let level = "ok";
+    if (days >= 60) level = "danger";
+    else if (days >= 30) level = "warn";
+    return { days, level };
+  } catch { return { days: null, level: "never" }; }
+}
+
+export function StalenessBadge({ lastSyncAt, label = "Última sync" }) {
+  const s = syncStaleness(lastSyncAt);
+  let bg = "transparent", color = PANEL.muted, text = "—";
+  if (s.level === "ok" && s.days != null) {
+    color = PANEL.text;
+    text = s.days === 0 ? "hoje" : s.days === 1 ? "ontem" : `${s.days} dias atrás`;
+  } else if (s.level === "warn") {
+    bg = "rgba(255,179,71,0.15)"; color = "#FFB347";
+    text = `⚠ há ${s.days} dias`;
+  } else if (s.level === "danger") {
+    bg = "rgba(255,71,87,0.15)"; color = "#FF4757";
+    text = `🔴 há ${s.days} dias (risco perder NSU)`;
+  } else {
+    text = "nunca";
+  }
+  return (
+    <span title={label} style={{
+      padding: bg !== "transparent" ? "2px 6px" : 0, borderRadius: 4,
+      background: bg, color, fontWeight: (s.level === "danger" || s.level === "warn") ? 600 : 400,
+    }}>
+      {text}
+    </span>
+  );
+}

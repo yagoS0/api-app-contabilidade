@@ -6,7 +6,7 @@ import { useState } from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { PageHeader } from "../../../components/layout/PageHeader";
 import { Button } from "../../../components/ui/Button";
-import { PANEL, StateBadge, fmtMoney, fmtDate } from "../../notas/components/notasStyles";
+import { PANEL, StateBadge, fmtMoney, fmtDate, syncStaleness, StalenessBadge } from "../../notas/components/notasStyles";
 import { ReabrirCompetenciaModal } from "../../notas/components/ReabrirCompetenciaModal";
 
 function CompanyRow({ item, acting, onFechar, onReabrir, onOpenNotas }) {
@@ -37,6 +37,16 @@ function CompanyRow({ item, acting, onFechar, onReabrir, onOpenNotas }) {
       <td style={{ ...td, textAlign: "right" }}>{item.fatorR != null ? `${(Number(item.fatorR) * 100).toFixed(2)}%` : "—"}</td>
       <td style={{ ...td, textAlign: "right", color: item.pendenciasAbertas > 0 ? "#FF4757" : PANEL.muted }}>
         {item.pendenciasAbertas > 0 ? `⚠ ${item.pendenciasAbertas}` : "—"}
+      </td>
+      <td style={{ ...td, fontSize: "0.7rem" }}>
+        <div title="Última captura NF-e (SEFAZ DFe)">
+          <span style={{ color: PANEL.muted }}>NF-e:</span>{" "}
+          <StalenessBadge lastSyncAt={item.dfeLastSyncAt} />
+        </div>
+        <div title="Última captura NFS-e (ADN)">
+          <span style={{ color: PANEL.muted }}>NFS-e:</span>{" "}
+          <StalenessBadge lastSyncAt={item.adnLastSyncAt} />
+        </div>
       </td>
       <td style={{ ...td, textAlign: "right" }}>
         {canFechar && (
@@ -119,6 +129,7 @@ export function ApuracaoPage({ apuracaoPanel, onBack, onOpenCompanyNotas }) {
                 <th style={{ ...td, textAlign: "right" }}>RB12</th>
                 <th style={{ ...td, textAlign: "right" }}>Fator R</th>
                 <th style={{ ...td, textAlign: "right" }}>Pend</th>
+                <th style={td}>Sync</th>
                 <th style={{ ...td, textAlign: "right" }}>Ações</th>
               </tr>
             </thead>
@@ -133,7 +144,7 @@ export function ApuracaoPage({ apuracaoPanel, onBack, onOpenCompanyNotas }) {
                 />
               ))}
               {items.length === 0 && !loading && (
-                <tr><td colSpan={10} style={{ ...td, textAlign: "center", color: PANEL.muted, padding: 24 }}>
+                <tr><td colSpan={11} style={{ ...td, textAlign: "center", color: PANEL.muted, padding: 24 }}>
                   Nenhuma empresa encontrada.
                 </td></tr>
               )}

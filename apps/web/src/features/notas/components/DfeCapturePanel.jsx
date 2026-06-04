@@ -2,7 +2,7 @@
 // Sem worker — usuário aperta botão e o backend roda síncrono (loop NSU até esgotar).
 
 import { useState } from "react";
-import { PANEL, fmtDate } from "./notasStyles";
+import { PANEL, fmtDate, syncStaleness, StalenessBadge } from "./notasStyles";
 
 function ResultBlock({ result }) {
   if (!result) return null;
@@ -44,9 +44,25 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, dfeLastResult, onSync, o
   const isCertMismatch = /CERT_CNPJ_MISMATCH|cStat=593/i.test(errMsg);
   const isConsumoIndevido = /CONSUMO_INDEVIDO|cStat=656|Consumo Indevido/i.test(errMsg);
   const isNoCompanyCert = /NO_COMPANY_CERT/i.test(errMsg);
+  // Q12.B+++.7: alerta de cursor desatualizado
+  const stale = syncStaleness(dfeState?.dfeLastSyncAt);
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+      {stale.level === "danger" && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757", fontSize: "0.85rem" }}>
+          🔴 <strong>Cursor desatualizado há {stale.days} dias.</strong> A SEFAZ tem janela de
+          90 dias — notas mais antigas se tornam irrecuperáveis. CNPJs sem consulta por
+          60+ dias também perdem geração de NSU (NT 2014.002 v1.10). <strong>Rode uma captura
+          agora</strong> ou ative o worker automático (DFE_NOTAS_WORKER_ENABLED=1).
+        </div>
+      )}
+      {stale.level === "warn" && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,179,71,0.08)", border: "1px solid #FFB347", borderRadius: 6, color: "#FFB347", fontSize: "0.85rem" }}>
+          ⚠ <strong>Cursor não atualizado há {stale.days} dias.</strong> Recomendado rodar
+          captura antes de 60 dias pra não perder notas (janela SEFAZ de 90 dias).
+        </div>
+      )}
       {isNoCompanyCert && (
         <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 6, color: "#FFB347", fontSize: "0.85rem" }}>
           ⚠ <strong>Sem cert A1 cadastrado.</strong> A SEFAZ exige cert do próprio CNPJ pra
@@ -105,7 +121,10 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, dfeLastResult, onSync, o
         </div>
         <div>
           <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: 0.5 }}>Última sync</div>
-          <div style={{ color: PANEL.text }}>{fmtDate(dfeState?.dfeLastSyncAt)}</div>
+          <div style={{ color: PANEL.text }}>
+            {fmtDate(dfeState?.dfeLastSyncAt)}{" "}
+            <span style={{ marginLeft: 4 }}><StalenessBadge lastSyncAt={dfeState?.dfeLastSyncAt} /></span>
+          </div>
         </div>
         <div>
           <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: 0.5 }}>Último erro</div>

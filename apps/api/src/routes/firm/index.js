@@ -2623,9 +2623,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
     const pendByPc = new Map(pends.map((p) => [p.portalClientId, p._count._all]));
 
+    // Q12.B+++.7: lastSync DFe/ADN pra mostrar staleness na tabela
+    const syncStates = await prisma.portalSyncState.findMany({
+      where: { clientId: { in: ids } },
+      select: { clientId: true, dfeLastSyncAt: true, adnLastSyncAt: true },
+    });
+    const syncByPc = new Map(syncStates.map((s) => [s.clientId, s]));
+
     const items = companies.map((c) => {
       const circ = byPc.get(c.id);
       const agg = aggByPc.get(c.id) || { totalNotas: 0, receitaEmitida: 0, comprasRecebidas: 0, byType: {} };
+      const syncState = syncByPc.get(c.id);
       return {
         portalClientId: c.id,
         razao: c.razao,
@@ -2642,6 +2650,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         nfeCount: agg.byType.NFE || 0,
         nfseCount: agg.byType.NFSE || 0,
         pendenciasAbertas: pendByPc.get(c.id) || 0,
+        dfeLastSyncAt: syncState?.dfeLastSyncAt || null,
+        adnLastSyncAt: syncState?.adnLastSyncAt || null,
       };
     });
 

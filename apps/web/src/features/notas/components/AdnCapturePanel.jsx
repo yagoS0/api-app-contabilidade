@@ -1,7 +1,7 @@
 // Q12.B+: captura manual de NFS-e via ADN — mesmo padrão visual do DfeCapturePanel.
 
 import { useState } from "react";
-import { PANEL, fmtDate } from "./notasStyles";
+import { PANEL, fmtDate, syncStaleness, StalenessBadge } from "./notasStyles";
 
 function ResultBlock({ result }) {
   if (!result) return null;
@@ -40,9 +40,22 @@ export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync, o
   const errMsg = String(adnState?.adnLastError || "") + " " + String(adnLastResult?.message || "");
   const isNoCompanyCert = /NO_COMPANY_CERT/i.test(errMsg);
   const isCnpjNotInAdn = /CNPJ_NOT_IN_ADN/i.test(errMsg);
+  const stale = syncStaleness(adnState?.adnLastSyncAt);
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+      {stale.level === "danger" && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757", fontSize: "0.85rem" }}>
+          🔴 <strong>NFS-e não sincronizada há {stale.days} dias.</strong> Rode uma captura
+          agora pra não perder notas.
+        </div>
+      )}
+      {stale.level === "warn" && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,179,71,0.08)", border: "1px solid #FFB347", borderRadius: 6, color: "#FFB347", fontSize: "0.85rem" }}>
+          ⚠ <strong>NFS-e não sincronizada há {stale.days} dias.</strong> Recomendado rodar
+          captura.
+        </div>
+      )}
       {isNoCompanyCert && (
         <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 6, color: "#FFB347", fontSize: "0.85rem" }}>
           ⚠ <strong>Esta empresa precisa ter A1 cadastrado pra capturar NFS-e nacional.</strong>{" "}
@@ -93,7 +106,10 @@ export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync, o
         </div>
         <div>
           <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: 0.5 }}>Última sync</div>
-          <div style={{ color: PANEL.text }}>{fmtDate(adnState?.adnLastSyncAt)}</div>
+          <div style={{ color: PANEL.text }}>
+            {fmtDate(adnState?.adnLastSyncAt)}{" "}
+            <span style={{ marginLeft: 4 }}><StalenessBadge lastSyncAt={adnState?.adnLastSyncAt} /></span>
+          </div>
         </div>
         <div>
           <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: 0.5 }}>Último erro</div>
