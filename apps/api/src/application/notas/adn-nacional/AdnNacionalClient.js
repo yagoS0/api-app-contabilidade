@@ -27,25 +27,29 @@ import https from "node:https";
 import axios from "axios";
 import { extractTlsMaterialFromPfx } from "../pfxToTls.js";
 
+// ADN Contribuinte (gov.br/nfse) — base com /contribuintes incluído.
+// API REST liberada oficialmente em 01/10/2025.
 const ENDPOINTS = {
-  // URLs públicas oficiais do ADN Nacional (gov.br/nfse) — confirmadas via DNS
-  // (resolvem para router-ha.estaleiro.serpro.gov.br, infra do SERPRO).
-  prod: "https://adn.nfse.gov.br",
-  hom:  "https://adn.producaorestrita.nfse.gov.br",
+  prod: "https://adn.nfse.gov.br/contribuintes",
+  hom:  "https://adn.producaorestrita.nfse.gov.br/contribuintes",
 };
 
 // Endpoint base oficial: GET /DFe/{NSU}?cnpjConsulta=<CNPJ>&lote=true
 // MAS o swagger pode ter base-path não documentado no path. Testa variações
 // comuns (Servlet/API/v1) antes de desistir.
-// Endpoint da API ADN Contribuinte (gov.br/nfse):
-//   GET https://adn.nfse.gov.br/DFe/{NSU}?[cnpjConsulta=<CNPJ>&]lote=true
+// ADN Contribuinte: GET /DFe/{NSU}
 //
-// cnpjConsulta é OPCIONAL — quando o cert apresentado é da própria empresa,
-// a API infere o CNPJ do cert. Passar `cnpjConsulta` redundante pode dar
-// 404 vazio. Tentamos primeiro SEM o param, depois COM (fallback).
+// CRÍTICO: cert ICP-Brasil identifica o tomador via SAN extension
+// (otherName OID 2.16.76.1.3.3). NÃO passar cnpjConsulta — é redundante.
+// cnpjConsulta SÓ deve ser usado quando o cert tem CNPJ-RAIZ diferente
+// (escritório consultando filial). Default: sem cnpjConsulta.
+//
+// Diferenças vs SEFAZ NF-e:
+// - Sem maxNSU (ADN não retorna teto)
+// - Sem limite 90 dias (ainda)
+// - Loop até StatusProcessamento=NENHUM_DOCUMENTO_LOCALIZADO
 const PATH_TEMPLATES = [
-  ({ ultNSU }) => `/DFe/${ultNSU}?lote=true`,
-  ({ cnpj, ultNSU }) => `/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
+  ({ ultNSU }) => `/DFe/${ultNSU}`,
 ];
 
 export class AdnNacionalClientError extends Error {
