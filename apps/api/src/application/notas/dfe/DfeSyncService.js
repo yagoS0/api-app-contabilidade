@@ -76,32 +76,29 @@ async function loadOfficeCert() {
 }
 
 /**
- * Decide qual cert usar (regra simplificada Q12.B++):
- *   1) Cert do escritório (SERPRO settings) configurado → usa SEMPRE.
- *      Operacionalmente: o escritório tem procuração e-CAC no servidor da Receita
- *      pras empresas que opera. O registro em tabela Procuracao é só metadado/audit.
- *   2) Senão → tenta A1 da empresa (raro — escritório de contabilidade geralmente não tem).
- *   3) Senão → erro.
+ * Q12.B+++ FIX: SEFAZ exige que o CNPJ-base do cert apresentado bata com o
+ * CNPJ consultado (cStat 593 rejeita). Cert do escritório NUNCA vai funcionar
+ * pra empresa cliente (CNPJs-base diferentes). Por isso:
+ *
+ *   1) A1 da própria empresa (regra SEFAZ — preferido)
+ *   2) Cert escritório (fallback útil SÓ se empresa for o próprio escritório)
+ *   3) Erro NO_COMPANY_CERT com instrução clara
  */
 async function resolveCertWithFallback(portalClientId) {
-  // 1) Tenta cert escritório (default em escritório de contabilidade)
+  // 1) A1 da empresa — único caminho válido pra SEFAZ DFe na maioria dos casos
+  const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.DFE })
+    .catch(() => ({ source: "none" }));
+  if (r.source === "company_a1") {
+    return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
+  }
+
+  // 2) Fallback escritório (só vai funcionar se o escritório for a própria empresa)
   try {
     const office = await loadOfficeCert();
-    return {
-      pfxBuffer: office.pfxBuffer,
-      password: office.password,
-      via: "office_cert",
-    };
-  } catch (officeErr) {
-    // 2) Fallback A1 da empresa (raro)
-    const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.DFE })
-      .catch(() => ({ source: "none" }));
-    if (r.source === "company_a1") {
-      return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
-    }
-    // 3) Erro
-    throw new DfeSyncError("NO_CERT",
-      `Cert do escritório não configurado (${officeErr?.message || officeErr?.code}) e empresa sem A1.`);
+    return { pfxBuffer: office.pfxBuffer, password: office.password, via: "office_cert_fallback" };
+  } catch {
+    throw new DfeSyncError("NO_COMPANY_CERT",
+      "Esta empresa não tem certificado A1 cadastrado. Vá em Editar Cadastro → 🔐 Certificado A1 e faça upload do PFX da empresa (a SEFAZ exige cert do próprio CNPJ — cert do escritório não funciona).");
   }
 }
 

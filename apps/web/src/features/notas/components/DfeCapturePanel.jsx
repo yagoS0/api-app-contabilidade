@@ -43,9 +43,17 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, dfeLastResult, onSync, o
   const errMsg = String(dfeState?.dfeLastError || "") + " " + String(dfeLastResult?.message || "");
   const isCertMismatch = /CERT_CNPJ_MISMATCH|cStat=593/i.test(errMsg);
   const isConsumoIndevido = /CONSUMO_INDEVIDO|cStat=656|Consumo Indevido/i.test(errMsg);
+  const isNoCompanyCert = /NO_COMPANY_CERT/i.test(errMsg);
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+      {isNoCompanyCert && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 6, color: "#FFB347", fontSize: "0.85rem" }}>
+          ⚠ <strong>Sem cert A1 cadastrado.</strong> A SEFAZ exige cert do próprio CNPJ pra
+          DFe NF-e — não dá pra usar o cert do escritório. Vá em <strong>Editar Cadastro →
+          🔐 Certificado A1 da empresa</strong> e faça upload.
+        </div>
+      )}
       {isCertMismatch && (
         <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757", fontSize: "0.85rem" }}>
           ⚠ <strong>Cert errado:</strong> o A1 cadastrado pertence a outro CNPJ. A SEFAZ rejeita
