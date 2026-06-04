@@ -38,14 +38,13 @@ const ENDPOINTS = {
 // MAS o swagger pode ter base-path não documentado no path. Testa variações
 // comuns (Servlet/API/v1) antes de desistir.
 // Endpoint da API ADN Contribuinte (gov.br/nfse):
-//   GET https://adn.nfse.gov.br/DFe/{NSU}?cnpjConsulta=<CNPJ>&lote=true
+//   GET https://adn.nfse.gov.br/DFe/{NSU}?[cnpjConsulta=<CNPJ>&]lote=true
 //
-// Mesmo path da API ADN Município — o roteamento é feito pelo SERVIDOR
-// baseado no cert digital apresentado no mTLS. Cert de escritório =
-// API Contribuinte; cert de prefeitura = API Município.
-//
-// Query: cnpjConsulta + lote (true default). NÃO tem tipoNSU (só Município).
+// cnpjConsulta é OPCIONAL — quando o cert apresentado é da própria empresa,
+// a API infere o CNPJ do cert. Passar `cnpjConsulta` redundante pode dar
+// 404 vazio. Tentamos primeiro SEM o param, depois COM (fallback).
 const PATH_TEMPLATES = [
+  ({ ultNSU }) => `/DFe/${ultNSU}?lote=true`,
   ({ cnpj, ultNSU }) => `/DFe/${ultNSU}?cnpjConsulta=${cnpj}&lote=true`,
 ];
 
