@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Pre-commit hook — bloqueia commit de arquivos sensíveis.
+#
+# Ativação: git config core.hooksPath .githooks  (uma vez por clone)
+# Bypass emergencial: git commit --no-verify  (use com cuidado)
+
+set -e
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$STAGED" ] && exit 0
+
+BLOCKED_PATTERNS=(
+  '\.pfx$'
+  '\.p12$'
+  '\.key$'
+  '\.pem$'
+  '\.crt$'
+  '\.cer$'
+  '^\.env$'
+  '^\.env\.[^e]'      # bloqueia .env.local, .env.production etc — permite .env.example
+  'credentials.*\.json$'
+  'service-account.*\.json$'
+  'gcp-credentials.*\.json$'
+  '^apps/api/storage/'
+  '^storage/'
+  '\.venv/'
+)
+
+BLOCKED_FILES=()
+for file in $STAGED; do
+  for pat in "${BLOCKED_PATTERNS[@]}"; do
+    if echo "$file" | grep -qE "$pat"; then
+      BLOCKED_FILES+=("$file (pattern: $pat)")
+      break
+    fi
+  done
+done
+
+# Heurística adicional: procurar strings tipo "BEGIN PRIVATE KEY" em qualquer
+# arquivo staged (catch pra cert PEM que escapou de extensão)
+for file in $STAGED; do
+  if [ -f "$file" ] && head -c 200 "$file" 2>/dev/null | grep -qE "BEGIN (RSA |EC )?PRIVATE KEY|BEGIN CERTIFICATE"; then
+    BLOCKED_FILES+=("$file (contém chave/cert inline)")
+  fi
+done
+
+if [ ${#BLOCKED_FILES[@]} -gt 0 ]; then
+  echo ""
+  echo "🚫 COMMIT BLOQUEADO — arquivos sensíveis detectados:"
+  echo ""
+  for f in "${BLOCKED_FILES[@]}"; do
+    echo "  ✗ $f"
+  done
+  echo ""
+  echo "Esses arquivos NUNCA devem ir pro git. Possíveis ações:"
+  echo "  1. Remover do staging:  git reset HEAD <arquivo>"
+  echo "  2. Adicionar ao .gitignore se for um novo padrão"
+  echo "  3. Bypass de emergência:  git commit --no-verify"
+  echo "     (use só se TEM CERTEZA — credenciais leakadas não voltam)"
+  echo ""
+  exit 1
+fi
+
+exit 0
