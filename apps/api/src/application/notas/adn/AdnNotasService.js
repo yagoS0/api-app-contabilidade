@@ -23,6 +23,11 @@ import { ESTADOS } from "../CompetenciaStateMachine.js";
 
 const MAX_ITERATIONS = 10;
 const BACKOFF_MINUTES_ON_ERROR = 15;
+// Q12.B+++.10: ADN tem rate limit por requisição (~1 req/s observado).
+// Delay entre chamadas pra evitar HTTP 429 dentro do mesmo ciclo.
+const DELAY_BETWEEN_REQUESTS_MS = 1100;
+// HTTP 429 = backoff menor (15min) pra retomar logo (mesmo cursor preservado).
+const BACKOFF_MINUTES_ON_429 = 15;
 
 export class AdnNotasSyncError extends Error {
   constructor(code, message, extra = {}) {
@@ -174,8 +179,9 @@ async function persistCursor(tx, { clientId, newCursor }) {
   });
 }
 
-async function setBackoff({ clientId, errorMsg }) {
-  const backoffUntil = new Date(Date.now() + BACKOFF_MINUTES_ON_ERROR * 60 * 1000);
+async function setBackoff({ clientId, errorMsg, minutes }) {
+  const mins = Number.isFinite(minutes) ? minutes : BACKOFF_MINUTES_ON_ERROR;
+  const backoffUntil = new Date(Date.now() + mins * 60 * 1000);
   await prisma.portalSyncState.upsert({
     where: { clientId },
     create: { clientId, adnBackoffUntil: backoffUntil, adnLastError: errorMsg },
@@ -220,6 +226,12 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
   try {
     while (iterations < MAX_ITERATIONS) {
       iterations++;
+
+      // Q12.B+++.10: delay entre chamadas pra evitar 429 (a partir da 2ª)
+      if (iterations > 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((res) => setTimeout(res, DELAY_BETWEEN_REQUESTS_MS));
+      }
 
       const r = await fetchDfeNFSe({
         cnpj: companyCnpj,
@@ -272,7 +284,11 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
   } catch (err) {
     const code = err?.code || "ADN_SYNC_FAILED";
     const msg = err?.message || String(err);
-    await setBackoff({ clientId: portalClientId, errorMsg: `[${code}] ${msg}`.slice(0, 500) });
+    // Q12.B+++.10: backoff curto pra 429 (retoma em 15min do mesmo cursor)
+    const minutes = code === "HTTP_429" ? BACKOFF_MINUTES_ON_429 : BACKOFF_MINUTES_ON_ERROR;
+    await setBackoff({ clientId: portalClientId, errorMsg: `[${code}] ${msg}`.slice(0, 500), minutes });
+    // Importante: cursor JÁ FOI persistido a cada iteração bem-sucedida.
+    // Próximo ciclo retoma do mesmo ponto sem perder progresso.
     return { ok: false, reason: code, message: msg, iterations, totalDocs };
   }
 }
