@@ -26,12 +26,26 @@ apps/*/node_modules/
 **/__pycache__/
 *.pyc
 
-# Secrets
+# Secrets — TODO arquivo de certificado e chave privada
 **/secrets/
 **/credentials*.json
 **/*.pem
 **/*.key
 **/*.pfx
+**/*.p12
+**/*.crt
+**/*.cer
+**/*.pfx:Zone.Identifier
+**/*.cer:Zone.Identifier
+
+# Dados fiscais sensíveis (storage dinâmico — gerado em runtime,
+# NUNCA deve ir pro repo). PDFs DAS/INSS, XMLs NF-e/NFS-e, certs A1
+# de empresas clientes, etc.
+apps/api/storage/
+storage/
+**/storage/certificates/
+**/storage/guides/
+**/storage/notas/
 
 # Build artifacts
 apps/web/dist/
