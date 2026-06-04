@@ -104,6 +104,10 @@ export const SERPRO_DCTFWEB_WORKER_ENABLED = process.env.SERPRO_DCTFWEB_WORKER_E
 // Intervalo mínimo entre ciclos por CNPJ — respeita NT 2014.002 v1.10 (Consumo Indevido).
 export const DFE_NOTAS_WORKER_ENABLED = process.env.DFE_NOTAS_WORKER_ENABLED === "1";
 export const DFE_NOTAS_WORKER_INTERVAL_MIN = Number(process.env.DFE_NOTAS_WORKER_INTERVAL_MIN) || 60;
+// Q12.B+++.6: heartbeat — CNPJs com >N dias sem sync entram em prioridade alta
+// (ignoram intervalo de 1h). Protege contra perder geração de NSU (regra 60 dias).
+// Default 7 dias — bem abaixo do limite de 60 pra dar margem de erro.
+export const DFE_NOTAS_HEARTBEAT_DAYS = Number(process.env.DFE_NOTAS_HEARTBEAT_DAYS) || 7;
 /** Opcional: fixa YYYY-MM para alertas de guia (homolog). Vazio = mês civil anterior. */
 export const GUIDE_COMPLIANCE_COMPETENCIA = (process.env.GUIDE_COMPLIANCE_COMPETENCIA || "").trim();
 export const GUIDE_SCHEDULE_MAX_FILES_PER_COMPANY = Math.min(

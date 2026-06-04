@@ -17,7 +17,7 @@
 //
 // Ativação opcional via env: DFE_NOTAS_WORKER_ENABLED=1
 
-import { log, DFE_NOTAS_WORKER_ENABLED, DFE_NOTAS_WORKER_INTERVAL_MIN } from "../config.js";
+import { log, DFE_NOTAS_WORKER_ENABLED, DFE_NOTAS_WORKER_INTERVAL_MIN, DFE_NOTAS_HEARTBEAT_DAYS } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
 import { syncDfeForCompany } from "../application/notas/dfe/DfeSyncService.js";
@@ -27,6 +27,8 @@ const LOCK_ID = "dfe_notas_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 min
 const LOOP_INTERVAL_MS = 60 * 1000; // 1 min de poll do worker
 const MIN_INTERVAL_BETWEEN_SYNCS_MS = (DFE_NOTAS_WORKER_INTERVAL_MIN || 60) * 60 * 1000; // 1h default
+// Q12.B+++.6: heartbeat — threshold pra considerar CNPJ "atrasado"
+const HEARTBEAT_THRESHOLD_MS = (DFE_NOTAS_HEARTBEAT_DAYS || 7) * 24 * 60 * 60 * 1000;
 
 function minutesSince(date) {
   if (!date) return Infinity;
@@ -77,13 +79,28 @@ export async function runDfeNotasWorkerOnce(options = {}) {
       const dfeSinceLast = minutesSince(state?.dfeLastSyncAt);
       const adnSinceLast = minutesSince(state?.adnLastSyncAt);
       const intervalMin = MIN_INTERVAL_BETWEEN_SYNCS_MS / 60000;
+      const heartbeatMin = HEARTBEAT_THRESHOLD_MS / 60000;
+
+      // Q12.B+++.6: heartbeat — CNPJ com >N dias sem sync (ou nunca sincronizado)
+      // ignora o intervalo de 1h e força execução. Evita perder geração de NSU
+      // por inatividade prolongada (regra dos 60 dias do AN).
+      const dfeHeartbeatOverdue = dfeSinceLast >= heartbeatMin;
+      const adnHeartbeatOverdue = adnSinceLast >= heartbeatMin;
 
       // DFe SEFAZ (NF-e)
-      if (dfeSinceLast >= intervalMin) {
+      if (dfeSinceLast >= intervalMin || dfeHeartbeatOverdue) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const r = await syncDfeForCompany({ portalClientId: portal.id, env: "prod" });
-          results.dfe.push({ portalClientId: portal.id, razao: portal.razao, ok: r.ok, totalDocs: r.totalDocs, reason: r.reason, message: r.message });
+          results.dfe.push({
+            portalClientId: portal.id, razao: portal.razao,
+            ok: r.ok, totalDocs: r.totalDocs, reason: r.reason, message: r.message,
+            heartbeat: dfeHeartbeatOverdue,
+          });
+          if (dfeHeartbeatOverdue) {
+            log.warn({ portalClientId: portal.id, razao: portal.razao, daysSince: Math.floor(dfeSinceLast / (24 * 60)) },
+              "[dfeNotasWorker] HEARTBEAT DFe executado — CNPJ estava atrasado");
+          }
         } catch (err) {
           log.warn({ err: err?.message, portalClientId: portal.id }, "[dfeNotasWorker] erro DFe");
           results.dfe.push({ portalClientId: portal.id, ok: false, error: err?.message });
@@ -92,12 +109,20 @@ export async function runDfeNotasWorkerOnce(options = {}) {
         results.dfe.push({ portalClientId: portal.id, skipped: true, reason: `wait_${intervalMin - dfeSinceLast}min` });
       }
 
-      // ADN NFS-e (gov.br) — só roda se passou o intervalo
-      if (adnSinceLast >= intervalMin) {
+      // ADN NFS-e (gov.br)
+      if (adnSinceLast >= intervalMin || adnHeartbeatOverdue) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const r = await syncAdnNotasForCompany({ portalClientId: portal.id, env: "prod" });
-          results.adn.push({ portalClientId: portal.id, razao: portal.razao, ok: r.ok, totalDocs: r.totalDocs, reason: r.reason, message: r.message });
+          results.adn.push({
+            portalClientId: portal.id, razao: portal.razao,
+            ok: r.ok, totalDocs: r.totalDocs, reason: r.reason, message: r.message,
+            heartbeat: adnHeartbeatOverdue,
+          });
+          if (adnHeartbeatOverdue) {
+            log.warn({ portalClientId: portal.id, razao: portal.razao, daysSince: Math.floor(adnSinceLast / (24 * 60)) },
+              "[dfeNotasWorker] HEARTBEAT ADN executado — CNPJ estava atrasado");
+          }
         } catch (err) {
           log.warn({ err: err?.message, portalClientId: portal.id }, "[dfeNotasWorker] erro ADN");
           results.adn.push({ portalClientId: portal.id, ok: false, error: err?.message });
@@ -107,10 +132,14 @@ export async function runDfeNotasWorkerOnce(options = {}) {
       }
     }
 
+    const dfeHeartbeats = results.dfe.filter((d) => d.heartbeat).length;
+    const adnHeartbeats = results.adn.filter((a) => a.heartbeat).length;
+
     return {
       skipped: false,
       durationMs: Date.now() - startedAt,
       totalCnpjs: portals.length,
+      heartbeats: { dfe: dfeHeartbeats, adn: adnHeartbeats },
       dfe: results.dfe,
       adn: results.adn,
     };
@@ -135,6 +164,8 @@ export async function runDfeNotasWorkerLoop() {
             totalCnpjs: result.totalCnpjs,
             dfeOk: result.dfe?.filter((d) => d.ok).length,
             adnOk: result.adn?.filter((a) => a.ok).length,
+            heartbeatsDfe: result.heartbeats?.dfe || 0,
+            heartbeatsAdn: result.heartbeats?.adn || 0,
             durationMs: result.durationMs,
           }, "[dfeNotasWorker] ciclo concluído");
         }
