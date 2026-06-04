@@ -129,8 +129,9 @@ async function persistCursorTx(tx, { clientId, newCursor, errorMsg = null }) {
   });
 }
 
-async function setBackoff({ clientId, errorMsg }) {
-  const backoffUntil = new Date(Date.now() + BACKOFF_MINUTES_ON_ERROR * 60 * 1000);
+async function setBackoff({ clientId, errorMsg, minutes }) {
+  const mins = Number.isFinite(minutes) ? minutes : BACKOFF_MINUTES_ON_ERROR;
+  const backoffUntil = new Date(Date.now() + mins * 60 * 1000);
   await prisma.portalSyncState.upsert({
     where: { clientId },
     create: { clientId, dfeBackoffUntil: backoffUntil, dfeLastError: errorMsg },
@@ -317,7 +318,21 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
 
       // cStat 137 = nada novo; cStat 138 = tem docs
       if (ret.error) {
-        throw new DfeClientError("DIST_ERROR", `cStat=${ret.cStat}: ${ret.xMotivo}`);
+        // Mapeia cStats comuns pra mensagens acionáveis
+        let code = "DIST_ERROR";
+        let hint = "";
+        if (ret.cStat === "593") {
+          code = "CERT_CNPJ_MISMATCH";
+          hint = ` (o A1 cadastrado pertence a outro CNPJ — precisa ser o cert da própria empresa ${portal.cnpj})`;
+        } else if (ret.cStat === "656") {
+          code = "CONSUMO_INDEVIDO";
+          hint = " (outra aplicação consultando o mesmo CNPJ — aguarde 1h)";
+        } else if (ret.cStat === "137") {
+          // 137 nunca chega aqui (já tratado como sucesso)
+        } else if (ret.cStat === "108" || ret.cStat === "109") {
+          hint = " (serviço SEFAZ temporariamente indisponível — tente em alguns minutos)";
+        }
+        throw new DfeClientError(code, `cStat=${ret.cStat}: ${ret.xMotivo}${hint}`);
       }
 
       // Persiste docs + atualiza cursor numa transação
@@ -361,7 +376,13 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
   } catch (err) {
     const code = err?.code || "SYNC_FAILED";
     const msg = err?.message || String(err);
-    await setBackoff({ clientId: portalClientId, errorMsg: `[${code}] ${msg}`.slice(0, 500) });
+    // Q12.B+++.10: "Consumo Indevido" exige backoff de 1h obrigatório (NT 2014.002).
+    // CERT_CNPJ_MISMATCH não precisa backoff longo (problema permanente até trocar cert).
+    const backoffMinutes =
+      code === "CONSUMO_INDEVIDO" ? 60 :
+      code === "CERT_CNPJ_MISMATCH" ? 5 : // curto — pra dar tempo do usuário corrigir
+      15;
+    await setBackoff({ clientId: portalClientId, errorMsg: `[${code}] ${msg}`.slice(0, 500), minutes: backoffMinutes });
     return { ok: false, reason: code, message: msg, iterations, totalDocs };
   }
 }

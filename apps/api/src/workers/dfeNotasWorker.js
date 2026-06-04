@@ -83,7 +83,7 @@ export async function runDfeNotasWorkerOnce(options = {}) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const r = await syncDfeForCompany({ portalClientId: portal.id, env: "prod" });
-          results.dfe.push({ portalClientId: portal.id, razao: portal.razao, ok: r.ok, totalDocs: r.totalDocs, reason: r.reason });
+          results.dfe.push({ portalClientId: portal.id, razao: portal.razao, ok: r.ok, totalDocs: r.totalDocs, reason: r.reason, message: r.message });
         } catch (err) {
           log.warn({ err: err?.message, portalClientId: portal.id }, "[dfeNotasWorker] erro DFe");
           results.dfe.push({ portalClientId: portal.id, ok: false, error: err?.message });
@@ -97,7 +97,7 @@ export async function runDfeNotasWorkerOnce(options = {}) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const r = await syncAdnNotasForCompany({ portalClientId: portal.id, env: "prod" });
-          results.adn.push({ portalClientId: portal.id, razao: portal.razao, ok: r.ok, totalDocs: r.totalDocs, reason: r.reason });
+          results.adn.push({ portalClientId: portal.id, razao: portal.razao, ok: r.ok, totalDocs: r.totalDocs, reason: r.reason, message: r.message });
         } catch (err) {
           log.warn({ err: err?.message, portalClientId: portal.id }, "[dfeNotasWorker] erro ADN");
           results.adn.push({ portalClientId: portal.id, ok: false, error: err?.message });

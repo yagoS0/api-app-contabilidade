@@ -39,9 +39,28 @@ export function DfeCapturePanel({ dfeState, dfeSyncing, dfeLastResult, onSync, o
 
   const inBackoff = dfeState?.dfeBackoffUntil && new Date(dfeState.dfeBackoffUntil) > new Date();
   const hasError = Boolean(dfeState?.dfeLastError);
+  // Q12.B+++.10: detecção de erros comuns pra mostrar banner com instrução clara
+  const errMsg = String(dfeState?.dfeLastError || "") + " " + String(dfeLastResult?.message || "");
+  const isCertMismatch = /CERT_CNPJ_MISMATCH|cStat=593/i.test(errMsg);
+  const isConsumoIndevido = /CONSUMO_INDEVIDO|cStat=656|Consumo Indevido/i.test(errMsg);
 
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+      {isCertMismatch && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757", fontSize: "0.85rem" }}>
+          ⚠ <strong>Cert errado:</strong> o A1 cadastrado pertence a outro CNPJ. A SEFAZ rejeita
+          se o cert não for da PRÓPRIA empresa. Vá em <strong>Editar Cadastro → 🔐 Certificado A1</strong>{" "}
+          e suba o cert correto da empresa.
+        </div>
+      )}
+      {isConsumoIndevido && (
+        <div style={{ marginBottom: 12, padding: 12, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 6, color: "#FFB347", fontSize: "0.85rem" }}>
+          ⚠ <strong>Consumo Indevido:</strong> outra aplicação está consultando o mesmo CNPJ.
+          A SEFAZ bloqueou por 1 hora. Verifique se a empresa tem outro sistema (Omie, Sage, etc)
+          consultando NF-e em paralelo — só um agente é permitido por CNPJ.
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <h3 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text }}>
           📥 Captura DFe (NF-e via SEFAZ)
