@@ -21,7 +21,10 @@ import { resolveCertificatePath } from "../../../infrastructure/storage/CertStor
 import { getResolvedSerproCredentials } from "../../fiscal/serpro/SerproRuntimeSettings.js";
 import { ESTADOS } from "../CompetenciaStateMachine.js";
 
-const MAX_ITERATIONS = 10;
+// Q12.B+++: sync inicial pode ter milhares de notas históricas (NSU=0
+// significa "desde o começo"). 50 iterações × 50 docs = 2.500 docs por
+// ciclo, suficiente pra cobrir até ~1 ano de notas pra empresa ativa.
+const MAX_ITERATIONS = 50;
 const BACKOFF_MINUTES_ON_ERROR = 15;
 // Q12.B+++.10: ADN tem rate limit por requisição (~1 req/s observado).
 // Delay entre chamadas pra evitar HTTP 429 dentro do mesmo ciclo.
