@@ -100,6 +100,10 @@ export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
 export const GUIDE_EMAIL_WORKER_ENABLED = process.env.GUIDE_EMAIL_WORKER_ENABLED === "1";
 export const SERPRO_PGDASD_WORKER_ENABLED = process.env.SERPRO_PGDASD_WORKER_ENABLED === "1";
 export const SERPRO_DCTFWEB_WORKER_ENABLED = process.env.SERPRO_DCTFWEB_WORKER_ENABLED === "1";
+// Q12.B+++.5: worker automático de captura de NF-e (SEFAZ) e NFS-e (gov.br/nfse).
+// Intervalo mínimo entre ciclos por CNPJ — respeita NT 2014.002 v1.10 (Consumo Indevido).
+export const DFE_NOTAS_WORKER_ENABLED = process.env.DFE_NOTAS_WORKER_ENABLED === "1";
+export const DFE_NOTAS_WORKER_INTERVAL_MIN = Number(process.env.DFE_NOTAS_WORKER_INTERVAL_MIN) || 60;
 /** Opcional: fixa YYYY-MM para alertas de guia (homolog). Vazio = mês civil anterior. */
 export const GUIDE_COMPLIANCE_COMPETENCIA = (process.env.GUIDE_COMPLIANCE_COMPETENCIA || "").trim();
 export const GUIDE_SCHEDULE_MAX_FILES_PER_COMPANY = Math.min(

@@ -1,7 +1,7 @@
 // src/server.js
 import express from "express";
 import cors from "cors";
-import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED } from "./config.js";
+import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED } from "./config.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
 import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
@@ -19,6 +19,7 @@ import { createAdnRouter } from "./routes/adn.js";
 import { runGuideEmailWorkerLoop } from "./workers/guideEmailWorker.js";
 import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
+import { runDfeNotasWorkerLoop } from "./workers/dfeNotasWorker.js";
 import { backfillProvisionsFromExistingGuides } from "./application/accounting/GuideToProvisionBackfill.js";
 import { seedParcelamentoFunctions } from "./application/accounting/ParcelamentoSeeds.js";
 
@@ -132,5 +133,14 @@ if (SERPRO_PGDASD_WORKER_ENABLED) {
 if (SERPRO_DCTFWEB_WORKER_ENABLED) {
   runSerproDctfwebWorkerLoop().catch((err) => {
     log.error({ err: err?.message || err }, "serproDctfwebWorker loop fatal");
+  });
+}
+
+// Q12.B+++.5: worker automático de captura DFe (NF-e SEFAZ + NFS-e ADN).
+// Opt-in via DFE_NOTAS_WORKER_ENABLED=1. Intervalo entre ciclos por CNPJ
+// configurável via DFE_NOTAS_WORKER_INTERVAL_MIN (default 60 = 1h conforme NT).
+if (DFE_NOTAS_WORKER_ENABLED) {
+  runDfeNotasWorkerLoop().catch((err) => {
+    log.error({ err: err?.message || err }, "dfeNotasWorker loop fatal");
   });
 }

@@ -23,7 +23,9 @@
     "worker:guide-emails": "node --openssl-legacy-provider src/workers/guideEmailWorker.js",
     "worker:guide-emails:once": "node --openssl-legacy-provider src/workers/guideEmailWorker.js --once",
     "worker:serpro-pgdasd": "node --openssl-legacy-provider src/workers/serproPgdasdWorker.js",
-    "worker:serpro-pgdasd:once": "node --openssl-legacy-provider src/workers/serproPgdasdWorker.js --once"
+    "worker:serpro-pgdasd:once": "node --openssl-legacy-provider src/workers/serproPgdasdWorker.js --once",
+    "worker:dfe-notas": "node --openssl-legacy-provider src/workers/dfeNotasWorker.js",
+    "worker:dfe-notas:once": "node --openssl-legacy-provider src/workers/dfeNotasWorker.js --once"
   },
   "keywords": [],
   "author": "",
