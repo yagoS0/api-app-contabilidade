@@ -18,19 +18,30 @@ function StatusBadge({ status }) {
 function SummaryStrip({ summary, ano }) {
   if (!summary) return null;
   const t = summary.totals || {};
+  const f = summary.filtersApplied || {};
+  // Detecta se há algum filtro ativo pra mudar o label
+  const hasFilter = Boolean(f.papel || f.type || f.competencia || f.search);
+  const scopeLabel = hasFilter ? "filtradas" : `do ano ${ano}`;
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12, marginBottom: 12 }}>
-      <Box label={`Total de notas (${ano})`} value={t.totalNotas || 0} accent={PANEL.text} />
+      <Box label={`Notas ${scopeLabel}`} value={t.totalNotas || 0} accent={PANEL.text}
+        sub={(t.countNfe || t.countNfse) ? `NF-e ${t.countNfe || 0} · NFS-e ${t.countNfse || 0}` : null} />
       <Box label="Emitidas (Receita bruta)" value={fmtMoney(t.totalEmitido)} accent="#69FF47" />
       <Box label="Recebidas (Compras)" value={fmtMoney(t.totalRecebido)} accent="#8BE9FD" />
+      {t.countCanceladas > 0 && (
+        <Box label="Canceladas" value={t.countCanceladas} accent="#FF4757" />
+      )}
     </div>
   );
 }
-function Box({ label, value, accent }) {
+function Box({ label, value, accent, sub }) {
   return (
     <div style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 12 }}>
       <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
       <div style={{ fontSize: "1.15rem", fontWeight: 600, color: accent }}>{value}</div>
+      {sub && (
+        <div style={{ fontSize: "0.7rem", color: PANEL.muted, marginTop: 2 }}>{sub}</div>
+      )}
     </div>
   );
 }

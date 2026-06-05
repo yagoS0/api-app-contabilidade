@@ -767,8 +767,20 @@ export function createRealApi() {
       const suffix = q.toString() ? `?${q.toString()}` : "";
       return request(`/firm/companies/${companyId}/notas${suffix}`);
     },
-    async getNotasSummary(companyId, ano) {
-      const suffix = ano ? `?ano=${ano}` : "";
+    async getNotasSummary(companyId, anoOrFilters) {
+      // Backward-compat: aceita Number (ano) ou Object com filtros completos
+      const q = new URLSearchParams();
+      if (typeof anoOrFilters === "number") {
+        q.set("ano", String(anoOrFilters));
+      } else if (anoOrFilters && typeof anoOrFilters === "object") {
+        const { ano, papel, type, competencia, search } = anoOrFilters;
+        if (ano) q.set("ano", String(ano));
+        if (papel) q.set("papel", String(papel));
+        if (type) q.set("type", String(type));
+        if (competencia) q.set("competencia", String(competencia));
+        if (search) q.set("search", String(search));
+      }
+      const suffix = q.toString() ? `?${q.toString()}` : "";
       return request(`/firm/companies/${companyId}/notas/summary${suffix}`);
     },
     // Q12.B+++: cert A1 por empresa (upload/status/delete)

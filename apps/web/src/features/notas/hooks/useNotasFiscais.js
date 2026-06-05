@@ -32,38 +32,43 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     setError(null);
     try {
       // Q12.B++: procurações são registradas no e-CAC da Receita, não no nosso banco.
-      // Não carregamos listProcuracoes mais aqui (endpoint backend existe pra audit
-      // futuro mas a UI não exibe). competências/pendências movem-se pra página
-      // global de Apuração — não carregadas aqui.
-      const [dfe, adn, summary] = await Promise.all([
+      // Não carregamos listProcuracoes mais aqui. competências/pendências movem-se
+      // pra página global de Apuração — não carregadas aqui.
+      // Q12.B+++.X: summary não vem aqui — vai junto com loadNotas (mesmos filtros).
+      const [dfe, adn] = await Promise.all([
         api.getDfeState ? api.getDfeState(companyId) : Promise.resolve(null),
         api.getAdnState ? api.getAdnState(companyId) : Promise.resolve(null),
-        api.getNotasSummary ? api.getNotasSummary(companyId, ano) : Promise.resolve(null),
       ]);
       setDfeState(dfe);
       setAdnState(adn);
-      setNotasSummary(summary);
     } catch (err) {
       setError(err?.message || "Falha ao carregar Notas Fiscais.");
     } finally {
       setLoading(false);
     }
-  }, [api, companyId, ano]);
+  }, [api, companyId]);
 
   const loadNotas = useCallback(async (filtersOverride) => {
     if (!companyId || !api) return;
     setLoadingNotas(true);
     try {
       const f = filtersOverride || notasFilters;
-      const out = await api.listNotas(companyId, f);
+      // Roda listagem + summary em paralelo com OS MESMOS filtros — assim o
+      // resumo no topo reflete exatamente o que aparece na tabela.
+      const summaryArgs = { ano, papel: f.papel, type: f.type, competencia: f.competencia, search: f.search };
+      const [out, summary] = await Promise.all([
+        api.listNotas(companyId, f),
+        api.getNotasSummary ? api.getNotasSummary(companyId, summaryArgs) : Promise.resolve(null),
+      ]);
       setNotas(out?.notas || []);
       setNotasTotal(out?.total || 0);
+      setNotasSummary(summary);
     } catch (err) {
       setError(err?.message || "Falha ao carregar notas.");
     } finally {
       setLoadingNotas(false);
     }
-  }, [api, companyId, notasFilters]);
+  }, [api, companyId, notasFilters, ano]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { loadNotas(); }, [loadNotas]);

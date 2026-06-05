@@ -412,26 +412,52 @@ export function createNotasRouter({ log }) {
     });
   });
 
-  // GET /notas/summary?ano=YYYY → resumo agregado por (mês, papel, type, statusEfetivo)
+  // GET /notas/summary → resumo agregado APLICANDO OS MESMOS FILTROS de /notas
+  // (papel, type, competencia, search). Fallback: se nada filtrado, usa o ano
+  // do query param (ou ano atual).
   router.get("/notas/summary", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
+    const { papel, type, competencia, search } = req.query;
     const ano = Number(req.query.ano) || new Date().getUTCFullYear();
-    const yearStart = new Date(Date.UTC(ano, 0, 1));
-    const yearEnd = new Date(Date.UTC(ano + 1, 0, 1));
+
+    // Constrói o MESMO where do /notas — assim summary reflete a tabela
+    const where = { clientId: portalClientId };
+    if (papel) where.papel = String(papel).toUpperCase();
+    if (type) where.type = String(type).toUpperCase();
+    if (competencia && /^\d{4}-\d{2}$/.test(competencia)) {
+      const [y, m] = competencia.split("-").map(Number);
+      where.competencia = { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
+    } else if (!papel && !type && !search) {
+      // Sem nenhum filtro? Limita ao ano pra não trazer histórico todo
+      where.competencia = { gte: new Date(Date.UTC(ano, 0, 1)), lt: new Date(Date.UTC(ano + 1, 0, 1)) };
+    }
+    if (search && String(search).trim()) {
+      const s = String(search).trim();
+      where.OR = [
+        { chaveAcesso: { contains: s } },
+        { numero: { contains: s } },
+        { emitenteNome: { contains: s, mode: "insensitive" } },
+        { emitenteDoc: { contains: s.replace(/\D+/g, "") } },
+        { tomadorNome: { contains: s, mode: "insensitive" } },
+      ];
+    }
 
     const notas = await prisma.portalInvoice.findMany({
-      where: {
-        clientId: portalClientId,
-        competencia: { gte: yearStart, lt: yearEnd },
-      },
+      where,
       select: { type: true, papel: true, statusEfetivo: true, competencia: true, total: true },
     });
 
-    // Agrega em memória (volume pequeno por empresa/ano)
+    // Agrega em memória — totals refletem o filtro completo (todas as N
+    // que casam, ignorando paginação do /notas).
     const byMonth = {};
     let totalNotas = 0, totalEmitido = 0, totalRecebido = 0;
+    let countNfe = 0, countNfse = 0;
+    let countCanceladas = 0;
     for (const n of notas) {
       totalNotas++;
+      if (n.type === "NFE") countNfe++;
+      else if (n.type === "NFSE") countNfse++;
+      if (n.statusEfetivo === "cancelada") countCanceladas++;
       if (!n.competencia) continue;
       const d = new Date(n.competencia);
       const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -445,7 +471,8 @@ export function createNotasRouter({ log }) {
     }
     return res.json({
       ok: true, ano,
-      totals: { totalNotas, totalEmitido, totalRecebido },
+      filtersApplied: { papel: papel || null, type: type || null, competencia: competencia || null, search: search || null },
+      totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
       byMonth: Object.values(byMonth).sort((a, b) => a.competencia.localeCompare(b.competencia)),
     });
   });
