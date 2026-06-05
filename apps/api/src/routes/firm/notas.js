@@ -26,6 +26,7 @@ import { syncDfeForCompany } from "../../application/notas/dfe/DfeSyncService.js
 import { syncAdnNotasForCompany } from "../../application/notas/adn/AdnNotasService.js";
 import { classifyItemsForCompany } from "../../application/notas/apuracao/ClassificadorAnexos.js";
 import { calcularApuracaoParaCompetencia } from "../../application/notas/apuracao/CalculoFiscal.js";
+import { transmitirApuracao } from "../../application/notas/apuracao/ApuracaoTransmissaoService.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -541,6 +542,35 @@ export function createNotasRouter({ log }) {
     } catch (err) {
       log?.warn({ err: err?.message, portalClientId, competencia }, "Falha ao calcular apuração");
       return bad(res, 500, "calc_failed", err?.message || "Erro");
+    }
+  });
+
+  // POST /apuracao/:competencia/transmitir — envia declaração PGDAS-D oficial via SERPRO.
+  // PRÉ-REQUISITO: Apuracao em estado "revisada". Exige body.confirmCompetencia=YYYY-MM
+  // pra evitar transmissão acidental (UX guardrail).
+  router.post("/apuracao/:competencia/transmitir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia);
+    const { confirmCompetencia } = req.body || {};
+    if (confirmCompetencia !== competencia) {
+      return bad(res, 400, "confirm_competencia_mismatch",
+        "Digite a competência exata pra confirmar a transmissão (proteção contra envio acidental)");
+    }
+    try {
+      const result = await transmitirApuracao({
+        portalClientId, competencia, userId: req.auth?.user?.id,
+      });
+      return res.json({ ok: true, result });
+    } catch (err) {
+      log?.warn({ err: err?.message, portalClientId, competencia }, "Falha ao transmitir PGDAS-D");
+      const status = err?.code === "INVALID_STATE" ? 409 :
+                     err?.code === "APURACAO_NOT_FOUND" ? 404 : 500;
+      return res.status(status).json({
+        ok: false,
+        error: err?.code || "transmit_failed",
+        message: err?.message || "Erro",
+        currentState: err?.currentState,
+      });
     }
   });
 

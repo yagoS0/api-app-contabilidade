@@ -813,6 +813,12 @@ export function createRealApi() {
     async revisarApuracao(companyId, competencia) {
       return request(`/firm/companies/${companyId}/apuracao/${competencia}/revisar`, { method: "POST" });
     },
+    async transmitirApuracao(companyId, competencia, confirmCompetencia) {
+      return request(`/firm/companies/${companyId}/apuracao/${competencia}/transmitir`, {
+        method: "POST",
+        body: JSON.stringify({ confirmCompetencia }),
+      });
+    },
     async classificarNotas(companyId, { force = false } = {}) {
       return request(`/firm/companies/${companyId}/classificar?force=${force}`, { method: "POST" });
     },

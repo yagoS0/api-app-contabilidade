@@ -89,6 +89,9 @@ export function ApuracaoDetailModal({ api, feedback, portalClientId, razao, comp
   const [saving, setSaving] = useState(false);
   const [fs12Input, setFs12Input] = useState("");
   const [classifying, setClassifying] = useState(false);
+  const [showTransmit, setShowTransmit] = useState(false);
+  const [transmitConfirm, setTransmitConfirm] = useState("");
+  const [transmitting, setTransmitting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,6 +142,30 @@ export function ApuracaoDetailModal({ api, feedback, portalClientId, razao, comp
     } catch (err) {
       feedback?.notifyError?.(err?.message || "Erro");
     } finally { setSaving(false); }
+  }
+
+  async function handleTransmit() {
+    if (transmitConfirm !== competencia) {
+      feedback?.notifyError?.("Digite a competência exata pra confirmar.");
+      return;
+    }
+    setTransmitting(true);
+    try {
+      const out = await api.transmitirApuracao(portalClientId, competencia, transmitConfirm);
+      if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
+      const r = out.result || {};
+      feedback?.notifySuccess?.(
+        r.duplicidade
+          ? `Já transmitida antes (declaração ${r.numeroDeclaracao || "?"}).`
+          : `Transmitida! Declaração ${r.numeroDeclaracao || "?"} · DAS R$ ${Number(r.dasValor || 0).toFixed(2)}`
+      );
+      setShowTransmit(false);
+      setTransmitConfirm("");
+      await load();
+      onChanged?.();
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Erro");
+    } finally { setTransmitting(false); }
   }
 
   const r = apuracao;
@@ -242,9 +269,10 @@ export function ApuracaoDetailModal({ api, feedback, portalClientId, razao, comp
                   </button>
                 )}
                 {r && r.estado === "revisada" && (
-                  <button disabled title="Q12.C.5 — em desenvolvimento"
-                    style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: PANEL.border, color: PANEL.muted, cursor: "not-allowed", fontSize: "0.85rem", fontWeight: 600 }}>
-                    📤 Transmitir (em breve)
+                  <button onClick={() => setShowTransmit(true)} disabled={saving || transmitting}
+                    style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "#69FF47", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 }}
+                    title="Transmite declaração PGDAS-D ao SERPRO — OFICIAL, gera DAS cobrável">
+                    📤 Transmitir
                   </button>
                 )}
               </div>
@@ -266,6 +294,66 @@ export function ApuracaoDetailModal({ api, feedback, portalClientId, razao, comp
           </>
         )}
       </div>
+
+      {showTransmit && (
+        <div
+          onClick={() => !transmitting && setShowTransmit(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100,
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: PANEL.surface, border: `1px solid #FF4757`, borderRadius: 10,
+              padding: 22, width: "min(92vw, 520px)", display: "flex", flexDirection: "column", gap: 14,
+            }}>
+            <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "#FF4757" }}>
+              ⚠ Transmitir declaração PGDAS-D — OFICIAL
+            </div>
+            <div style={{ fontSize: "0.85rem", color: PANEL.text, lineHeight: 1.5 }}>
+              Esta ação transmite a apuração de <strong>{razao}</strong> referente
+              à competência <strong>{competencia}</strong> ao SERPRO Integra Contador.
+              A declaração será registrada oficialmente na Receita Federal e
+              gerará DAS cobrável (não reversível por aqui — só por retificação).
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.8rem", color: PANEL.muted }}>
+              Pra confirmar, digite a competência exata (<code style={{ color: PANEL.text }}>{competencia}</code>):
+              <input
+                type="text"
+                value={transmitConfirm}
+                onChange={(e) => setTransmitConfirm(e.target.value)}
+                placeholder={competencia}
+                disabled={transmitting}
+                autoFocus
+                style={{
+                  background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6,
+                  color: PANEL.text, padding: "8px 12px", fontFamily: "monospace", fontSize: "0.95rem",
+                }}
+              />
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => { setShowTransmit(false); setTransmitConfirm(""); }}
+                disabled={transmitting}
+                style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer", fontSize: "0.85rem" }}>
+                Cancelar
+              </button>
+              <button
+                onClick={handleTransmit}
+                disabled={transmitting || transmitConfirm !== competencia}
+                style={{
+                  padding: "8px 14px", borderRadius: 6, border: "none",
+                  background: transmitConfirm === competencia ? "#FF4757" : PANEL.border,
+                  color: "#fff", cursor: transmitConfirm === competencia ? "pointer" : "not-allowed",
+                  fontSize: "0.85rem", fontWeight: 600,
+                }}>
+                {transmitting ? "Transmitindo…" : "📤 Transmitir agora"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
