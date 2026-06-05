@@ -8,8 +8,9 @@ import { PageHeader } from "../../../components/layout/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { PANEL, StateBadge, fmtMoney, fmtDate, syncStaleness, StalenessBadge } from "../../notas/components/notasStyles";
 import { ReabrirCompetenciaModal } from "../../notas/components/ReabrirCompetenciaModal";
+import { ApuracaoDetailModal } from "../components/ApuracaoDetailModal";
 
-function CompanyRow({ item, acting, onFechar, onReabrir, onOpenNotas }) {
+function CompanyRow({ item, acting, onFechar, onReabrir, onOpenNotas, onApurar }) {
   const canFechar = item.estado === "aberto" || item.estado === "em_conferencia";
   const canReabrir = ["fechado","calculado","revisado","transmitido","confirmado","erro"].includes(item.estado);
 
@@ -49,6 +50,11 @@ function CompanyRow({ item, acting, onFechar, onReabrir, onOpenNotas }) {
         </div>
       </td>
       <td style={{ ...td, textAlign: "right" }}>
+        <button onClick={onApurar} disabled={acting}
+          style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: "#BD93F9", color: "#000", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, marginRight: 4 }}
+          title="Calcular RB12 / Fator R / receita por anexo">
+          📊 Apurar
+        </button>
         {canFechar && (
           <button onClick={onFechar} disabled={acting}
             style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: "#8BE9FD", color: "#000", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, marginRight: 4 }}>
@@ -67,9 +73,10 @@ function CompanyRow({ item, acting, onFechar, onReabrir, onOpenNotas }) {
 }
 const td = { padding: 8 };
 
-export function ApuracaoPage({ apuracaoPanel, onBack, onOpenCompanyNotas }) {
+export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onOpenCompanyNotas }) {
   const { competencia, setCompetencia, search, setSearch, items, loading, error, actingId, fechar, reabrir, reload } = apuracaoPanel;
-  const [reabrindo, setReabrindo] = useState(null); // { portalClientId, razao }
+  const [reabrindo, setReabrindo] = useState(null); // { id, razao }
+  const [apurando, setApurando] = useState(null);   // { id, razao }
 
   const totals = items.reduce((acc, i) => {
     acc.notas += i.totalNotas;
@@ -141,6 +148,7 @@ export function ApuracaoPage({ apuracaoPanel, onBack, onOpenCompanyNotas }) {
                   onFechar={() => fechar(it.portalClientId)}
                   onReabrir={() => setReabrindo({ id: it.portalClientId, razao: it.razao })}
                   onOpenNotas={() => onOpenCompanyNotas?.(it.portalClientId)}
+                  onApurar={() => setApurando({ id: it.portalClientId, razao: it.razao })}
                 />
               ))}
               {items.length === 0 && !loading && (
@@ -159,6 +167,18 @@ export function ApuracaoPage({ apuracaoPanel, onBack, onOpenCompanyNotas }) {
           saving={actingId === reabrindo.id}
           onConfirm={async (reason) => { await reabrir(reabrindo.id, reason); }}
           onClose={() => setReabrindo(null)}
+        />
+      )}
+
+      {apurando && apuracaoApi && (
+        <ApuracaoDetailModal
+          api={apuracaoApi}
+          feedback={feedback}
+          portalClientId={apurando.id}
+          razao={apurando.razao}
+          competencia={competencia}
+          onClose={() => setApurando(null)}
+          onChanged={() => reload?.()}
         />
       )}
     </AppShell>

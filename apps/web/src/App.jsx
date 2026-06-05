@@ -209,6 +209,8 @@ function App() {
     return (
       <ApuracaoPage
         apuracaoPanel={apuracao}
+        apuracaoApi={api}
+        feedback={feedback}
         onBack={() => session.setPage("companies")}
         onOpenCompanyNotas={(pcId) => {
           companiesWorkspace.companiesState.setSelectedCompanyId(pcId);

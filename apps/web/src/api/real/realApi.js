@@ -799,6 +799,24 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/certificate`, { method: "DELETE" });
     },
 
+    // Q12.C.4: Apuração por empresa
+    async calcularApuracao(companyId, competencia, { fs12 } = {}) {
+      return request(`/firm/companies/${companyId}/apuracao/${competencia}/calcular`, {
+        method: "POST",
+        body: JSON.stringify({ fs12 }),
+      });
+    },
+    async getApuracao(companyId, competencia) {
+      const payload = await request(`/firm/companies/${companyId}/apuracao/${competencia}`);
+      return payload?.apuracao || null;
+    },
+    async revisarApuracao(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/apuracao/${competencia}/revisar`, { method: "POST" });
+    },
+    async classificarNotas(companyId, { force = false } = {}) {
+      return request(`/firm/companies/${companyId}/classificar?force=${force}`, { method: "POST" });
+    },
+
     // Q12.C.2: Apuração global
     async listApuracao({ competencia, search } = {}) {
       const q = new URLSearchParams();

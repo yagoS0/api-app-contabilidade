@@ -544,6 +544,24 @@ export function createNotasRouter({ log }) {
     }
   });
 
+  // POST /apuracao/:competencia/revisar — marca como revisada (libera transmissão)
+  router.post("/apuracao/:competencia/revisar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia);
+    const apuracao = await prisma.apuracao.findUnique({
+      where: { portalClientId_competencia: { portalClientId, competencia } },
+    });
+    if (!apuracao) return bad(res, 404, "apuracao_not_found", "Calcule a apuração antes de revisar");
+    if (apuracao.estado !== "calculada") {
+      return bad(res, 409, "invalid_state", `Apuração está em "${apuracao.estado}", precisa estar "calculada"`);
+    }
+    const updated = await prisma.apuracao.update({
+      where: { id: apuracao.id },
+      data: { estado: "revisada" },
+    });
+    return res.json({ ok: true, apuracao: { id: updated.id, estado: updated.estado } });
+  });
+
   // GET /apuracao/:competencia — pega snapshot atual + divergências
   router.get("/apuracao/:competencia", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
