@@ -22,6 +22,7 @@ import { prisma } from "../infrastructure/db/prisma.js";
 import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
 import { syncDfeForCompany } from "../application/notas/dfe/DfeSyncService.js";
 import { syncAdnNotasForCompany } from "../application/notas/adn/AdnNotasService.js";
+import { processPendingForCompany as processManifestacoes } from "../application/notas/dfe/NfeManifestacaoService.js";
 
 const LOCK_ID = "dfe_notas_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000; // 30 min
@@ -64,7 +65,7 @@ export async function runDfeNotasWorkerOnce(options = {}) {
   if (!locked) return { skipped: true, reason: "lock_active" };
 
   const startedAt = Date.now();
-  const results = { dfe: [], adn: [] };
+  const results = { dfe: [], adn: [], manifest: [] };
   try {
     const portals = await listEligibleCompanies();
     log.info({ count: portals.length }, "[dfeNotasWorker] CNPJs elegíveis");
@@ -130,16 +131,36 @@ export async function runDfeNotasWorkerOnce(options = {}) {
       } else {
         results.adn.push({ portalClientId: portal.id, skipped: true, reason: `wait_${intervalMin - adnSinceLast}min` });
       }
+
+      // Q12.B+++.8.d: processa fila de manifestação dessa empresa
+      // (lote máx 20 por chamada — SEFAZ limit). Sem rate limit próprio
+      // porque já tá dentro do loop por CNPJ que tem o 1h do worker.
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const m = await processManifestacoes({ portalClientId: portal.id, env: "prod" });
+        if (m.processed > 0) {
+          results.manifest.push({
+            portalClientId: portal.id, razao: portal.razao,
+            processed: m.processed, sent: m.sent, duplicates: m.duplicates, errors: m.errors,
+            reason: m.reason,
+          });
+        }
+      } catch (err) {
+        log.warn({ err: err?.message, portalClientId: portal.id }, "[dfeNotasWorker] erro Manifest");
+        results.manifest.push({ portalClientId: portal.id, ok: false, error: err?.message });
+      }
     }
 
     const dfeHeartbeats = results.dfe.filter((d) => d.heartbeat).length;
     const adnHeartbeats = results.adn.filter((a) => a.heartbeat).length;
+    const manifestSent = results.manifest.reduce((s, r) => s + (r.sent || 0), 0);
 
     return {
       skipped: false,
       durationMs: Date.now() - startedAt,
       totalCnpjs: portals.length,
       heartbeats: { dfe: dfeHeartbeats, adn: adnHeartbeats },
+      manifest: { totalSent: manifestSent, details: results.manifest },
       dfe: results.dfe,
       adn: results.adn,
     };
@@ -166,6 +187,7 @@ export async function runDfeNotasWorkerLoop() {
             adnOk: result.adn?.filter((a) => a.ok).length,
             heartbeatsDfe: result.heartbeats?.dfe || 0,
             heartbeatsAdn: result.heartbeats?.adn || 0,
+            manifestSent: result.manifest?.totalSent || 0,
             durationMs: result.durationMs,
           }, "[dfeNotasWorker] ciclo concluído");
         }

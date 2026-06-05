@@ -261,6 +261,7 @@ model PortalClient {
   guides               Guide[]
   invoiceEvents        PortalInvoiceEvent[]
   syncJobs             PortalInvoiceSyncJob[]
+  manifestacoes        NfeManifestacaoQueue[]
   companyClientUsers   CompanyClientUser[]
   companyFirmAccess    CompanyFirmAccess[]
   taxDocuments         TaxDocument[]
@@ -532,6 +533,34 @@ model PortalInvoiceSyncJob {
 
   @@index([clientId, createdAt])
   @@index([state])
+}
+
+// Q12.B+++.8: fila de eventos de manifestação do destinatário pra NF-e
+// (NT 2012.002 — evento 210210 Ciência libera XML completo no próximo DFe).
+// Idempotência: 1 chaveAcesso só pode ter 1 evento de cada tpEvento.
+model NfeManifestacaoQueue {
+  id            String   @id @default(uuid())
+  clientId      String
+  chaveAcesso   String   // chave 44 dígitos da NF-e a manifestar
+  tpEvento      String   // "210210" (Ciência), "210200" (Confirmação),
+                         // "210220" (Desconhecimento), "210240" (Não Realizada)
+  nSeqEvento    Int      @default(1)
+  status        String   @default("PENDING") // PENDING | SENT | ERROR | DUPLICATE
+  attempts      Int      @default(0)
+  lastError     String?
+  lastResponse  String?  // últimos 1KB da resposta SEFAZ pra debug
+  protocoloSefaz String? // nProt do retorno (cStat 135)
+  cStat         String?  // código retorno SEFAZ
+  xMotivo       String?  // texto retorno SEFAZ
+  sentAt        DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  client PortalClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, chaveAcesso, tpEvento]) // idempotência rígida
+  @@index([status, createdAt])
+  @@index([clientId, status])
 }
 
 model TaxDocument {

@@ -332,6 +332,11 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
         throw new DfeClientError(code, `cStat=${ret.cStat}: ${ret.xMotivo}${hint}`);
       }
 
+      // Q12.B+++.8: coleta chaves DEST de resNFe pra enfileirar Manifestação
+      // (após o commit — não vai pro tx). procNFe (XML completo) NÃO precisa
+      // — já veio com tudo.
+      const chavesPraManifestar = [];
+
       // Persiste docs + atualiza cursor numa transação
       const newCursor = ret.ultNSU > ultNSU ? ret.ultNSU : ultNSU;
       await prisma.$transaction(async (tx) => {
@@ -345,12 +350,30 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
               portalClientId, parsed: parsed.parsed, items: parsed.items,
             });
             if (r.status === "pendencia_criada") byType.pendencias++;
+            // Marca pra manifestação se DEST + só resumo (procNFe já veio completo)
+            if (parsed.type === "nfe_summary" && parsed.papel === "DEST" && parsed.chaveAcesso) {
+              chavesPraManifestar.push(parsed.chaveAcesso);
+            }
           } else if (parsed.type === "event") {
             await applyEvent(tx, { portalClientId, ev: parsed });
           }
         }
         await persistCursorTx(tx, { clientId: portalClientId, newCursor });
       });
+
+      // Enfileira manifestações (fora da tx — operação independente, best-effort)
+      if (chavesPraManifestar.length > 0) {
+        try {
+          const { enqueueManifestacao } = await import("./NfeManifestacaoService.js");
+          for (const chave of chavesPraManifestar) {
+            await enqueueManifestacao({
+              portalClientId, chaveAcesso: chave, tpEvento: "210210",
+            }).catch(() => null); // idempotente; ignora falha individual
+          }
+        } catch {
+          // não bloqueia o sync principal
+        }
+      }
 
       ultNSU = newCursor;
       if (ret.cStat === "137") break;            // nada novo

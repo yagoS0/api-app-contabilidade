@@ -29,8 +29,11 @@ const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
   parseAttributeValue: false,
+  // CRÍTICO: chaveAcesso tem 44 dígitos — number perde precisão e
+  // vira "3.3260532969012e+43". Forçar string em TUDO.
+  parseTagValue: false,
   trimValues: true,
-  removeNSPrefix: true, // crítico pra ignorar prefixos como soap:/nfe:
+  removeNSPrefix: true,
 });
 
 /**
