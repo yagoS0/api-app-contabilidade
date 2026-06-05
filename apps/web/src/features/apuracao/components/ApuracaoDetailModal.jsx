@@ -92,6 +92,7 @@ export function ApuracaoDetailModal({ api, feedback, portalClientId, razao, comp
   const [showTransmit, setShowTransmit] = useState(false);
   const [transmitConfirm, setTransmitConfirm] = useState("");
   const [transmitting, setTransmitting] = useState(false);
+  const [conferindo, setConferindo] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -142,6 +143,28 @@ export function ApuracaoDetailModal({ api, feedback, portalClientId, razao, comp
     } catch (err) {
       feedback?.notifyError?.(err?.message || "Erro");
     } finally { setSaving(false); }
+  }
+
+  async function handleConferir() {
+    setConferindo(true);
+    try {
+      const out = await api.conferirApuracao(portalClientId, competencia);
+      if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
+      const r = out.result || {};
+      if (r.conferiu) {
+        feedback?.notifySuccess?.(
+          `✓ Conferido! Bate com extrato SERPRO (declaração ${r.ativa?.numeroDeclaracao || "?"}).`
+        );
+      } else {
+        feedback?.notifyError?.(
+          `${r.divergencias || 0} divergência(s) encontrada(s). Veja na lista de divergências.`
+        );
+      }
+      await load();
+      onChanged?.();
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Erro");
+    } finally { setConferindo(false); }
   }
 
   async function handleTransmit() {
@@ -266,6 +289,13 @@ export function ApuracaoDetailModal({ api, feedback, portalClientId, razao, comp
                     style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 }}
                     title="Marca como revisada — habilita transmissão SERPRO PGDAS-D (Q12.C.5)">
                     ✓ Marcar revisada
+                  </button>
+                )}
+                {r && (r.estado === "transmitida" || r.estado === "confirmada") && (
+                  <button onClick={handleConferir} disabled={conferindo || saving}
+                    style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "#8BE9FD", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 }}
+                    title="Consulta SERPRO CONSDECLARACAO13 e compara declarado vs extrato">
+                    {conferindo ? "Conferindo…" : (r.estado === "confirmada" ? "🔄 Reconferir" : "🔍 Conferir extrato")}
                   </button>
                 )}
                 {r && r.estado === "revisada" && (

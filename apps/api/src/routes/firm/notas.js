@@ -27,6 +27,7 @@ import { syncAdnNotasForCompany } from "../../application/notas/adn/AdnNotasServ
 import { classifyItemsForCompany } from "../../application/notas/apuracao/ClassificadorAnexos.js";
 import { calcularApuracaoParaCompetencia } from "../../application/notas/apuracao/CalculoFiscal.js";
 import { transmitirApuracao } from "../../application/notas/apuracao/ApuracaoTransmissaoService.js";
+import { conferirApuracao } from "../../application/notas/apuracao/ApuracaoConferenciaService.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -568,6 +569,29 @@ export function createNotasRouter({ log }) {
       return res.status(status).json({
         ok: false,
         error: err?.code || "transmit_failed",
+        message: err?.message || "Erro",
+        currentState: err?.currentState,
+      });
+    }
+  });
+
+  // POST /apuracao/:competencia/conferir — confere declaração transmitida contra extrato SERPRO (CONSDECLARACAO13).
+  // Marca estado=confirmada se tudo bate; senão cria ApuracaoDivergencia(s).
+  router.post("/apuracao/:competencia/conferir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia);
+    try {
+      const result = await conferirApuracao({
+        portalClientId, competencia, userId: req.auth?.user?.id,
+      });
+      return res.json({ ok: true, result });
+    } catch (err) {
+      log?.warn({ err: err?.message, portalClientId, competencia }, "Falha ao conferir PGDAS-D");
+      const status = err?.code === "INVALID_STATE" ? 409 :
+                     err?.code === "APURACAO_NOT_FOUND" ? 404 : 500;
+      return res.status(status).json({
+        ok: false,
+        error: err?.code || "conferir_failed",
         message: err?.message || "Erro",
         currentState: err?.currentState,
       });

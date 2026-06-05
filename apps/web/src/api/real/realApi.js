@@ -819,6 +819,9 @@ export function createRealApi() {
         body: JSON.stringify({ confirmCompetencia }),
       });
     },
+    async conferirApuracao(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/apuracao/${competencia}/conferir`, { method: "POST" });
+    },
     async classificarNotas(companyId, { force = false } = {}) {
       return request(`/firm/companies/${companyId}/classificar?force=${force}`, { method: "POST" });
     },
