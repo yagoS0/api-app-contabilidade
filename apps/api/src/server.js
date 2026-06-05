@@ -22,6 +22,8 @@ import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
 import { runDfeNotasWorkerLoop } from "./workers/dfeNotasWorker.js";
 import { backfillProvisionsFromExistingGuides } from "./application/accounting/GuideToProvisionBackfill.js";
 import { seedParcelamentoFunctions } from "./application/accounting/ParcelamentoSeeds.js";
+import { seedDeparaAnexoGlobal } from "./application/notas/apuracao/DeparaAnexoSeeds.js";
+import { prisma } from "./infrastructure/db/prisma.js";
 
 const app = express();
 app.use(express.json());
@@ -115,6 +117,10 @@ app.listen(PORT, HOST, () => {
   // Q9 seeds: cria/atualiza templates globais de parcelamento (Simples, INSS, ...).
   seedParcelamentoFunctions({ logger: log }).catch((err) => {
     log.warn({ err: err?.message || err }, "Seed de funções de parcelamento falhou");
+  });
+  // Q12.C.1 seeds: tabela De/Para Anexo Simples Nacional (LC116 → III/IV/V)
+  seedDeparaAnexoGlobal(prisma, { log }).catch((err) => {
+    log.warn({ err: err?.message || err }, "Seed DeparaAnexo falhou");
   });
 });
 

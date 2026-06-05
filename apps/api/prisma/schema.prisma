@@ -262,6 +262,8 @@ model PortalClient {
   invoiceEvents        PortalInvoiceEvent[]
   syncJobs             PortalInvoiceSyncJob[]
   manifestacoes        NfeManifestacaoQueue[]
+  apuracoes            Apuracao[]
+  deparasAnexo         DeparaAnexo[]
   companyClientUsers   CompanyClientUser[]
   companyFirmAccess    CompanyFirmAccess[]
   taxDocuments         TaxDocument[]
@@ -1007,4 +1009,83 @@ model Procuracao {
   @@unique([portalClientId, servico])
   @@index([status])
   @@map("procuracoes")
+}
+
+// Q12.C.1: registro oficial da apuração PGDAS-D de uma competência.
+// Distinto de CompanyMonthlyCircular (que é mais amplo, com guias DAS/INSS).
+// Apuracao é o "envelope de transmissão": idempotencyKey + protocolo SEFAZ.
+model Apuracao {
+  id                String   @id @default(uuid())
+  portalClientId    String
+  competencia       String   // YYYY-MM
+  estado            String   @default("pendente") // pendente | calculada | revisada | transmitida | confirmada | erro
+  // Hash da base fiscal calculada (recalculo idempotente — mesma base = mesma key,
+  // não retransmite). Inclui RB12, FS12, anexos resolvidos por item.
+  idempotencyKey    String   @unique
+  // Base fiscal (snapshot pra auditoria — mesmo se notas mudarem depois, mantém)
+  rb12              Decimal  @db.Decimal(18, 2)
+  fs12              Decimal? @db.Decimal(18, 2)
+  fatorR            Decimal? @db.Decimal(6, 4)
+  receitaMes        Decimal  @db.Decimal(18, 2)
+  // Receita segregada por anexo (JSON: { III: 1234.56, IV: 0, V: 5678.90, ... })
+  receitaPorAnexo   Json
+  // Resultado da transmissão SEFAZ
+  dasValor          Decimal? @db.Decimal(18, 2)
+  numeroDeclaracao  String?
+  reciboNumero      String?
+  transmitidoEm     DateTime?
+  erroMensagem      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  portalClient      PortalClient            @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  divergencias      ApuracaoDivergencia[]
+
+  @@unique([portalClientId, competencia]) // 1 apuração por competência por empresa
+  @@index([estado])
+  @@index([portalClientId, estado])
+  @@map("apuracoes")
+}
+
+// Q12.C.1: divergências encontradas no cálculo (notas vs base, fator R limite, etc).
+// Permite contador revisar antes de transmitir.
+model ApuracaoDivergencia {
+  id           String   @id @default(uuid())
+  apuracaoId   String
+  tipo         String   // VALOR_DAS | BASE_ANEXO | FATOR_R | NOTA_SEM_ANEXO | etc
+  severidade   String   @default("WARN") // INFO | WARN | ERROR
+  descricao    String
+  esperado     String?  // valor/texto esperado (informativo)
+  obtido       String?  // valor/texto obtido
+  tolerado     Boolean  @default(false) // contador marcou como OK
+  resolvida    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  apuracao     Apuracao @relation(fields: [apuracaoId], references: [id], onDelete: Cascade)
+
+  @@index([apuracaoId])
+  @@index([tipo, severidade])
+  @@map("apuracao_divergencias")
+}
+
+// Q12.C.1: tabela De/Para de classificação de itens em anexos do Simples Nacional.
+// Escopo GLOBAL = base nacional (seed); EMPRESA = override específico (raro).
+// Lookup ordem: EMPRESA primeiro, depois GLOBAL.
+model DeparaAnexo {
+  id              String   @id @default(uuid())
+  escopo          String   // GLOBAL | EMPRESA
+  portalClientId  String?  // null = global
+  tipoCodigo      String   // LC116 | NCM | CFOP
+  codigo          String   // ex: "1.01" (LC116), "22021000" (NCM), "5102" (CFOP)
+  anexoResolvido  String   // III | IV | V
+  sujeitoFatorR   Boolean  @default(false)
+  descricao       String?  // opcional, pra UI
+  aprendidoEm     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  portalClient    PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([escopo, portalClientId, tipoCodigo, codigo])
+  @@index([tipoCodigo, codigo])
+  @@map("deparas_anexo")
 }

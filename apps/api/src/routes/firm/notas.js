@@ -24,6 +24,8 @@ import {
 import { checkCertAvailability, SERVICOS } from "../../application/notas/CertResolver.js";
 import { syncDfeForCompany } from "../../application/notas/dfe/DfeSyncService.js";
 import { syncAdnNotasForCompany } from "../../application/notas/adn/AdnNotasService.js";
+import { classifyItemsForCompany } from "../../application/notas/apuracao/ClassificadorAnexos.js";
+import { calcularApuracaoParaCompetencia } from "../../application/notas/apuracao/CalculoFiscal.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -504,6 +506,63 @@ export function createNotasRouter({ log }) {
             adnBackoffUntil: state.adnBackoffUntil,
           }
         : { adnNsuCursor: "0", adnLastSyncAt: null, adnLastError: null, adnBackoffUntil: null },
+    });
+  });
+
+  // ─── Q12.C: Apuração ──────────────────────────────────────────────────────
+
+  // POST /classificar — reclassifica todos os itens de notas da empresa
+  // (lookup DeparaAnexo EMPRESA > GLOBAL > default III).
+  router.post("/classificar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const force = String(req.query.force || "false") === "true";
+    try {
+      const result = await classifyItemsForCompany({ portalClientId, force });
+      return res.json({ ok: true, result });
+    } catch (err) {
+      log?.warn({ err: err?.message, portalClientId }, "Falha ao classificar");
+      return bad(res, 500, "classify_failed", err?.message || "Erro");
+    }
+  });
+
+  // POST /apuracao/:competencia/calcular — calcula RB12/Fator R/receita por anexo
+  // (não transmite — só persiste em Apuracao + CompanyMonthlyCircular).
+  // Body opcional: { fs12 } pra sobrescrever FS12 manual.
+  router.post("/apuracao/:competencia/calcular", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia);
+    const { fs12 } = req.body || {};
+    try {
+      const result = await calcularApuracaoParaCompetencia({
+        portalClientId, competencia,
+        fs12Override: fs12 != null ? Number(fs12) : undefined,
+      });
+      return res.json({ ok: true, result });
+    } catch (err) {
+      log?.warn({ err: err?.message, portalClientId, competencia }, "Falha ao calcular apuração");
+      return bad(res, 500, "calc_failed", err?.message || "Erro");
+    }
+  });
+
+  // GET /apuracao/:competencia — pega snapshot atual + divergências
+  router.get("/apuracao/:competencia", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia);
+    const apuracao = await prisma.apuracao.findUnique({
+      where: { portalClientId_competencia: { portalClientId, competencia } },
+      include: { divergencias: { orderBy: { createdAt: "desc" } } },
+    });
+    if (!apuracao) return res.json({ ok: true, apuracao: null });
+    return res.json({
+      ok: true,
+      apuracao: {
+        ...apuracao,
+        rb12: apuracao.rb12?.toString() || null,
+        fs12: apuracao.fs12?.toString() || null,
+        fatorR: apuracao.fatorR?.toString() || null,
+        receitaMes: apuracao.receitaMes?.toString() || null,
+        dasValor: apuracao.dasValor?.toString() || null,
+      },
     });
   });
 
