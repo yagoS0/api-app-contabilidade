@@ -10,6 +10,7 @@ import {
   resolverPendenciaDivergencia,
   TIPOS_RECEITA_VALIDOS,
 } from "../../application/notas/apuracao/v2/AprendizadoService.js";
+import { calcularApuracaoLocal } from "../../application/notas/apuracao/v2/MotorApuracaoService.js";
 
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
@@ -242,6 +243,44 @@ export function createApuracaoV2Router({ log } = {}) {
       } catch (err) {
         log?.warn({ err: err?.message, pendenciaId }, "Falha ao resolver pendência");
         return bad(res, 500, "resolve_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // ─── Apurar v2 (motor local de cálculo de DAS) ─────────────────────────────
+  router.post(
+    "/apurar-v2/:competencia",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      try {
+        const result = await calcularApuracaoLocal({
+          portalClientId, competencia,
+          userId: req.auth?.user?.id,
+        });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        log?.warn({ err: err?.message, portalClientId, competencia }, "Falha ao apurar v2");
+        return bad(res, 500, "apurar_failed", err?.message || "Erro", { code: err?.code });
+      }
+    }
+  );
+
+  // GET apuração calculada (snapshot)
+  router.get(
+    "/apuracao-snapshot/:competencia",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      try {
+        const snap = await prisma.apuracaoSnapshot.findUnique({
+          where: { portalClientId_competencia: { portalClientId, competencia } },
+        });
+        return res.json({ ok: true, snapshot: snap });
+      } catch (err) {
+        return bad(res, 500, "get_snapshot_failed", err?.message || "Erro");
       }
     }
   );

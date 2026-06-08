@@ -881,5 +881,12 @@ export function createRealApi() {
       if (competencia) q.set("competencia", competencia);
       return request(`/firm/companies/${companyId}/classificar-v2?${q.toString()}`, { method: "POST" });
     },
+    // Q14.3 — motor de apuração local
+    async apurarV2(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/apurar-v2/${competencia}`, { method: "POST" });
+    },
+    async getApuracaoSnapshot(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/apuracao-snapshot/${competencia}`);
+    },
   };
 }

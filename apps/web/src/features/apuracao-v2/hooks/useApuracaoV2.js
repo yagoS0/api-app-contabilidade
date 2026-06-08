@@ -117,6 +117,25 @@ export function useApuracaoV2({ api, companyId, feedback }) {
     } finally { setSaving(false); }
   }
 
+  async function apurarV2(competencia) {
+    setSaving(true);
+    try {
+      const out = await api.apurarV2(companyId, competencia);
+      if (!out?.ok) throw new Error(out?.message || "Falha");
+      const r = out.result || {};
+      if (r.ok) {
+        feedback?.notifySuccess?.(`DAS calculado: R$ ${(r.dasCalculadoLocal || 0).toFixed(2)} · RBT12 ${(r.rbt12 || 0).toFixed(2)}`);
+      } else {
+        feedback?.notifyError?.(`Apuração bloqueada: ${r.blockers?.[0]?.mensagem || "verifique pendências"}`);
+      }
+      await loadAll();
+      return r;
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Erro");
+      throw err;
+    } finally { setSaving(false); }
+  }
+
   return {
     cadastro, cnaePrincipalRef,
     produtos,
@@ -127,5 +146,6 @@ export function useApuracaoV2({ api, companyId, feedback }) {
     createProduto, updateProduto, deleteProduto,
     resolverPendencia,
     classificarV2,
+    apurarV2,
   };
 }

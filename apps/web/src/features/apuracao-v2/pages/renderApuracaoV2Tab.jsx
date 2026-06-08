@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PANEL, fmtDate } from "../../notas/components/notasStyles";
 import { CadastroFiscalForm } from "../components/CadastroFiscalForm";
 import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
+import { MotorPanel } from "../components/MotorPanel";
 
 const TIPOS_RECEITA_LABEL = {
   REVENDA_MERCADORIA: "Anexo I",
@@ -24,6 +25,7 @@ export function ApuracaoV2Tab({ panel }) {
     { key: "cadastro", label: "📋 Cadastro Fiscal" },
     { key: "produtos", label: `📦 Produtos/Serviços (${panel.produtos.length})` },
     { key: "pendencias", label: `⚠ Pendências (${panel.pendencias.length})` },
+    { key: "motor", label: "🧮 Apurar (motor local)" },
   ];
 
   return (
@@ -159,6 +161,9 @@ export function ApuracaoV2Tab({ panel }) {
           )}
         </div>
       )}
+
+      {/* MOTOR (Q14.3) */}
+      {activeSub === "motor" && <MotorPanel panel={panel} />}
 
       {/* Modal de resolver pendência */}
       {resolvendo && (
