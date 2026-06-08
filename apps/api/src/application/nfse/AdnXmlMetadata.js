@@ -58,6 +58,22 @@ export function parseXmlMetadata(xmlPlain) {
     getTextByLocalNames(infNfse, ["cStat"]) ||
     getTextByLocalNames(doc, ["cStat"]);
 
+  // Q12.C fix: extrai código LC116 do serviço pra alimentar NotaItem.
+  // NFS-e Nacional (Padrão Nacional gov.br/nfse) → <cTribNac> dentro de <servico>
+  // ABRASF antigo                                 → <ItemListaServico>
+  // Variantes municipais                           → <CodigoTributacaoMunicipio> / <Codigo>
+  const servicoNode =
+    findFirstByLocalName(doc, "servico") ||
+    findFirstByLocalName(doc, "Servico");
+  const codigoServico =
+    getTextByLocalNames(servicoNode, ["cTribNac", "ItemListaServico", "CodigoTributacaoMunicipio", "codigo", "Codigo"]) ||
+    getTextByLocalNames(infNfse, ["cTribNac", "ItemListaServico", "CodigoTributacaoMunicipio"]) ||
+    getTextByLocalNames(doc, ["cTribNac", "ItemListaServico", "CodigoTributacaoMunicipio"]);
+  const descricaoServico =
+    getTextByLocalNames(servicoNode, ["Discriminacao", "discriminacao", "xDescServ", "Descricao"]) ||
+    getTextByLocalNames(infNfse, ["Discriminacao", "xDescServ"]) ||
+    null;
+
   const valorServicosNumber = valorServicos ? Number(valorServicos) : null;
   const valorIssNumber = valorIss ? Number(valorIss) : null;
 
@@ -78,5 +94,7 @@ export function parseXmlMetadata(xmlPlain) {
     // Algumas implementações do XML da NFS-e Nacional não trazem SituacaoNfse,
     // mas trazem cStat (ex.: 100 = autorizada). Guardamos como fallback.
     situacao: situacao ? String(situacao) : cStat ? String(cStat) : null,
+    codigoServico: codigoServico ? String(codigoServico).trim() : null,
+    descricaoServico: descricaoServico ? String(descricaoServico).trim() : null,
   };
 }

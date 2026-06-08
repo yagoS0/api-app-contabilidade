@@ -70,8 +70,13 @@ function App() {
     companyId: companiesWorkspace.companiesState.selectedCompanyId,
     feedback,
   });
-  // Q12.C.2: Apuração global
-  const apuracao = useApuracao({ api, feedback });
+  // Q12.C.2: Apuração global — só carrega depois de autenticado e na página apuracao
+  // (evita 401 fantasma quando App monta antes do login).
+  const apuracao = useApuracao({
+    api,
+    feedback,
+    enabled: Boolean(session.user) && session.page === "apuracao",
+  });
 
   // Q8.C: sincroniza selectedCompanyId com a URL (/companies/:companyId/*).
   // Necessário pra deep-link funcionar: usuário cola URL com companyId → state interno

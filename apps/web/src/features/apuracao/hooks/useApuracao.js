@@ -9,7 +9,7 @@ function defaultCompetencia() {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-export function useApuracao({ api, feedback }) {
+export function useApuracao({ api, feedback, enabled = true }) {
   const [competencia, setCompetencia] = useState(defaultCompetencia);
   const [search, setSearch] = useState("");
   const [items, setItems] = useState([]);
@@ -18,7 +18,7 @@ export function useApuracao({ api, feedback }) {
   const [actingId, setActingId] = useState(null);
 
   const load = useCallback(async () => {
-    if (!api) return;
+    if (!api || !enabled) return;
     setLoading(true);
     setError(null);
     try {
@@ -29,7 +29,7 @@ export function useApuracao({ api, feedback }) {
     } finally {
       setLoading(false);
     }
-  }, [api, competencia, search]);
+  }, [api, competencia, search, enabled]);
 
   useEffect(() => { load(); }, [load]);
 

@@ -164,11 +164,26 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
     return { created: created.id, status: "pendencia_criada" };
   }
 
-  await tx.portalInvoice.upsert({
+  const upserted = await tx.portalInvoice.upsert({
     where: { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso } },
     create: { clientId: portalClientId, ...dataToWrite },
     update: dataToWrite,
+    select: { id: true },
   });
+
+  // Q12.C fix: NFS-e Nacional traz 1 serviço por nota — cria/atualiza NotaItem
+  // pra alimentar ClassificadorAnexos (LC116 → III/IV/V) e CalculoFiscal.
+  if (metadata.codigoServico) {
+    await tx.notaItem.deleteMany({ where: { notaId: upserted.id } });
+    await tx.notaItem.create({
+      data: {
+        notaId: upserted.id,
+        codigoServico: metadata.codigoServico,
+        descricao: metadata.descricaoServico || null,
+        valor: Number(metadata.valorServicos || 0),
+      },
+    });
+  }
   return { status: "upserted" };
 }
 

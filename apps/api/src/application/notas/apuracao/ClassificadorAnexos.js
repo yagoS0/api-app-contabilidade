@@ -18,6 +18,27 @@ import { prisma } from "../../../infrastructure/db/prisma.js";
 const ANEXO_DEFAULT = "III";
 
 /**
+ * Q12.C fix: NFS-e Padrão Nacional (gov.br/nfse) usa cTribNac (6 dígitos)
+ * em vez do LC116 antigo (1.08, 17.06 etc).
+ *
+ * Formato cTribNac: CCAATT
+ *   CC = capítulo LC116      (01 = informática, 04 = saúde, 17 = apoio técnico...)
+ *   AA = sub-item LC116      (08 = páginas eletrônicas)
+ *   TT = sub-sub-item/variante
+ *
+ * Conversão: "010801" → "1.08", "170601" → "17.06", "040101" → "4.01".
+ * Retorna null se não parecer formato cTribNac.
+ */
+function cTribNacToLc116(codigo) {
+  const digits = String(codigo || "").replace(/\D+/g, "");
+  if (digits.length !== 6) return null;
+  const cap = parseInt(digits.slice(0, 2), 10);  // 01..40
+  const item = parseInt(digits.slice(2, 4), 10); // 01..99
+  if (!cap || !item) return null;
+  return `${cap}.${String(item).padStart(2, "0")}`;
+}
+
+/**
  * Carrega o mapa De/Para pra uma empresa, mesclando EMPRESA sobre GLOBAL.
  * Retorna estrutura `{ "LC116:1.06": { anexoResolvido, sujeitoFatorR }, ... }`.
  */
@@ -49,10 +70,22 @@ async function loadDeparaForCompany(portalClientId) {
  * Retorna { anexoResolvido, sujeitoFatorR, source: "EMPRESA"|"GLOBAL"|"DEFAULT" }.
  */
 function classifyItem(item, map) {
-  // Ordem de tentativa: LC116 (NFS-e) → NCM → CFOP
-  // Pega o primeiro que bater.
+  // Ordem de tentativa pra LC116/NFS-e:
+  //   1. Match exato pelo código original (ex: "17.06" se já vier LC116 puro)
+  //   2. Conversão cTribNac→LC116 e match exato (ex: "172501" → "17.25")
+  //   3. Fallback de capítulo LC116 (ex: "17") — cobre subitens não mapeados
+  // Depois tenta NCM (produto) e CFOP (operação).
   const candidates = [];
-  if (item.codigoServico) candidates.push({ tipo: "LC116", codigo: String(item.codigoServico) });
+  if (item.codigoServico) {
+    const raw = String(item.codigoServico);
+    candidates.push({ tipo: "LC116", codigo: raw });
+    const lc = cTribNacToLc116(raw);
+    if (lc && lc !== raw) candidates.push({ tipo: "LC116", codigo: lc });
+    // Fallback por capítulo: extrai prefixo antes do "." (ou primeiros 2 dígitos do cTribNac)
+    const lc116ish = lc || raw;
+    const chapter = lc116ish.includes(".") ? lc116ish.split(".")[0] : lc116ish.replace(/\D+/g, "").slice(0, 2).replace(/^0+/, "");
+    if (chapter && chapter !== lc116ish) candidates.push({ tipo: "LC116", codigo: chapter });
+  }
   if (item.ncm) candidates.push({ tipo: "NCM", codigo: String(item.ncm) });
   if (item.cfop) candidates.push({ tipo: "CFOP", codigo: String(item.cfop) });
 

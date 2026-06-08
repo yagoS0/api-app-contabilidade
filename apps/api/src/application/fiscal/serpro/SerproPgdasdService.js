@@ -5,8 +5,9 @@ export const SERPRO_PGDASD_SERVICE_NORMAL = "GERARDAS12";
 export const SERPRO_PGDASD_SERVICE_COBRANCA = "GERARDASCOBRANCA17";
 export const SERPRO_PGDASD_SERVICE_CONSDECLARACAO = "CONSDECLARACAO13";
 // Q12.C.5: Transmitir declaração PGDAS-D (substitui o ato manual no portal).
-// Versão atual do catálogo Integra Contador (Junho/2025+).
-export const SERPRO_PGDASD_SERVICE_TRANSDECLARACAO = "TRANSDECLARACAO15";
+// idServico oficial do catálogo Integra Contador SERPRO.
+// Ref: https://apicenter.estaleiro.serpro.gov.br/documentacao/api-integra-contador/
+export const SERPRO_PGDASD_SERVICE_TRANSDECLARACAO = "TRANSDECLARACAO11";
 
 function onlyDigits(value) {
   return String(value || "").replace(/\D+/g, "");
