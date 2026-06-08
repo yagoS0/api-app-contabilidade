@@ -75,7 +75,7 @@ async function loadContextoEmpresa(portalClientId, dataReferencia = new Date()) 
     }),
     prisma.cadastroFiscal.findUnique({
       where: { portalClientId },
-      select: { cnaePrincipal: true, regime: true },
+      select: { cnaePrincipal: true, regime: true, forcarTipoReceitaPorCnae: true },
     }),
   ]);
 
@@ -102,19 +102,25 @@ async function loadContextoEmpresa(portalClientId, dataReferencia = new Date()) 
   const regrasEmpresaMap = indexRegras(regrasEmpresa);
   const regrasGlobaisMap = indexRegras(regrasGlobais);
 
-  // CNAE sugerido (apenas pra conferência de divergência, não decide)
-  let tipoReceitaSugeridoPorCnae = null;
+  // CNAE da empresa: usado pra sugestão de divergência OU (se flag ligada) override total.
+  let tipoReceitaPorCnae = null;
   if (cadastro?.cnaePrincipal) {
     const cnaeRef = await prisma.cnaeAnexo.findUnique({
       where: { cnae: cadastro.cnaePrincipal },
       select: { tipoReceitaSugerido: true, ambiguo: true },
     });
-    if (cnaeRef && !cnaeRef.ambiguo) {
-      tipoReceitaSugeridoPorCnae = cnaeRef.tipoReceitaSugerido;
+    if (cnaeRef) {
+      tipoReceitaPorCnae = {
+        tipoReceita: cnaeRef.tipoReceitaSugerido,
+        ambiguo: cnaeRef.ambiguo,
+      };
     }
   }
 
-  return { produtosMap, regrasEmpresaMap, regrasGlobaisMap, cadastro, tipoReceitaSugeridoPorCnae };
+  return {
+    produtosMap, regrasEmpresaMap, regrasGlobaisMap, cadastro, tipoReceitaPorCnae,
+    forcarCnae: !!cadastro?.forcarTipoReceitaPorCnae,
+  };
 }
 
 /**
@@ -123,6 +129,12 @@ async function loadContextoEmpresa(portalClientId, dataReferencia = new Date()) 
  *   source: PRODUTO | REGRA_EMPRESA | REGRA_GLOBAL_ITEM | REGRA_GLOBAL_CAPITULO | NONE
  */
 function classifyItem(item, ctx) {
+  // Q14.4.d: override total por CNAE — cadastro vence todas as outras regras.
+  // Usar com cautela; viola "nota é sinal", mas útil pra mono-atividade.
+  if (ctx.forcarCnae && ctx.tipoReceitaPorCnae && !ctx.tipoReceitaPorCnae.ambiguo) {
+    return { tipoReceita: ctx.tipoReceitaPorCnae.tipoReceita, source: "CNAE_OVERRIDE" };
+  }
+
   // 1. Match em ProdutoServico cadastrado
   if (item.codigoServico) {
     const p = ctx.produtosMap.get(`codigoServico:${item.codigoServico}`);

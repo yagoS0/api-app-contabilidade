@@ -17,6 +17,7 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
     cnaesSecundarios: "",
     sublimiteICMSISS: false,
     usaFatorR: false,
+    forcarTipoReceitaPorCnae: false,
     observacoes: "",
   });
 
@@ -29,6 +30,7 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
         cnaesSecundarios: (cadastro.cnaesSecundarios || []).join(", "),
         sublimiteICMSISS: !!cadastro.sublimiteICMSISS,
         usaFatorR: !!cadastro.usaFatorR,
+        forcarTipoReceitaPorCnae: !!cadastro.forcarTipoReceitaPorCnae,
         observacoes: cadastro.observacoes || "",
       });
     }
@@ -45,6 +47,7 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
       cnaesSecundarios: form.cnaesSecundarios.split(",").map((c) => c.trim().replace(/\D+/g, "")).filter(Boolean),
       sublimiteICMSISS: form.sublimiteICMSISS,
       usaFatorR: form.usaFatorR,
+      forcarTipoReceitaPorCnae: form.forcarTipoReceitaPorCnae,
       observacoes: form.observacoes.trim() || null,
     });
   }
@@ -92,7 +95,7 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
           placeholder="ex: 6202300, 6209100" style={inputStyle} />
       </label>
 
-      <div style={{ display: "flex", gap: 16 }}>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", cursor: "pointer" }}>
           <input type="checkbox" checked={form.sublimiteICMSISS} onChange={(e) => setField("sublimiteICMSISS", e.target.checked)} />
           Sublimite ICMS/ISS (R$ 3,6 mi por fora)
@@ -101,6 +104,19 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
           <input type="checkbox" checked={form.usaFatorR} onChange={(e) => setField("usaFatorR", e.target.checked)} />
           Usa Fator R (tem serviços intelectuais)
         </label>
+      </div>
+
+      {/* Override CNAE — perigoso, com aviso visível */}
+      <div style={{ padding: 12, background: form.forcarTipoReceitaPorCnae ? "rgba(255,71,87,0.10)" : PANEL.field, border: `1px solid ${form.forcarTipoReceitaPorCnae ? "#FF4757" : PANEL.border}`, borderRadius: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", cursor: "pointer" }}>
+          <input type="checkbox" checked={form.forcarTipoReceitaPorCnae} onChange={(e) => setField("forcarTipoReceitaPorCnae", e.target.checked)} />
+          <strong>Forçar tipo de receita pelo CNAE principal (override total)</strong>
+        </label>
+        <div style={{ fontSize: "0.75rem", color: form.forcarTipoReceitaPorCnae ? "#FF4757" : PANEL.muted }}>
+          {form.forcarTipoReceitaPorCnae
+            ? "⚠ ATIVO — TODAS as notas serão classificadas pelo TipoReceita do CNAE acima, ignorando o código LC116/cTribNac da nota. Use só pra empresas mono-atividade onde emissores mandam código errado."
+            : "Quando ligado, ignora o código da nota e usa só o CNAE principal pra classificar tudo. Útil pra empresas mono-atividade."}
+        </div>
       </div>
 
       <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>

@@ -53,7 +53,7 @@ export function createApuracaoV2Router({ log } = {}) {
     requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
     async (req, res) => {
       const portalClientId = String(req.params.companyId);
-      const { regime, dataOpcaoSN, cnaePrincipal, cnaesSecundarios, sublimiteICMSISS, usaFatorR, observacoes } = req.body || {};
+      const { regime, dataOpcaoSN, cnaePrincipal, cnaesSecundarios, sublimiteICMSISS, usaFatorR, forcarTipoReceitaPorCnae, observacoes } = req.body || {};
       if (!regime || !REGIMES_VALIDOS.has(regime)) {
         return bad(res, 400, "invalid_regime", `Regime deve ser um de: ${[...REGIMES_VALIDOS].join(", ")}`);
       }
@@ -67,6 +67,7 @@ export function createApuracaoV2Router({ log } = {}) {
         cnaesSecundarios: Array.isArray(cnaesSecundarios) ? cnaesSecundarios.map((c) => String(c).replace(/\D+/g, "")) : [],
         sublimiteICMSISS: Boolean(sublimiteICMSISS),
         usaFatorR: Boolean(usaFatorR),
+        forcarTipoReceitaPorCnae: Boolean(forcarTipoReceitaPorCnae),
         observacoes: observacoes ? String(observacoes) : null,
         createdByUserId: req.auth?.user?.id,
       };

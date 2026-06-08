@@ -1132,6 +1132,11 @@ model CadastroFiscal {
   cnaesSecundarios  String[] @default([])
   sublimiteICMSISS  Boolean  @default(false) // R$ 3,6 mi separado p/ ICMS/ISS
   usaFatorR         Boolean  @default(false) // contador confirma se tem serviços Fator R
+  // Q14.4.d: quando true, o ClassificadorService IGNORA o código LC116/cTribNac
+  // da nota e usa o tipoReceitaSugerido do CnaeAnexo[cnaePrincipal] pra TUDO.
+  // Usar com cautela — viola "nota é sinal". Útil pra empresas mono-atividade
+  // onde notas vêm com códigos errados/genéricos do emissor.
+  forcarTipoReceitaPorCnae Boolean @default(false)
   observacoes       String?
   createdByUserId   String?
   createdAt         DateTime @default(now())
