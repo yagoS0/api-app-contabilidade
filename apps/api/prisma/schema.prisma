@@ -963,9 +963,13 @@ model NotaItem {
   cfop            String? // NF-e
   descricao       String?
   valor           Decimal  @db.Decimal(18, 2)
-  // Q12.C: classificação resolvida pelo módulo de Análise (lookup em DeparaAnexo)
+  // Q12.C [LEGADO]: classificação direta pra anexo via DeparaAnexo (semântica antiga)
   anexoResolvido  String? // III | IV | V (Simples Nacional)
   sujeitoFatorR   Boolean  @default(false)
+  // Q14.2: classificação nova baseada em RegraClassificacao (cadastro = autoridade)
+  // Anexo passa a ser DERIVADO pelo motor mensal (Fator R muda III↔V).
+  tipoReceita     TipoReceita? // null = ainda não classificado pela v2
+  classificadoEm  DateTime?    // quando o ClassificadorService v2 processou
   flagST          Boolean  @default(false)
   flagMonofasico  Boolean  @default(false)
   flagExportacao  Boolean  @default(false)
@@ -974,6 +978,7 @@ model NotaItem {
 
   @@index([notaId])
   @@index([anexoResolvido])
+  @@index([tipoReceita])
   @@map("nota_itens")
 }
 

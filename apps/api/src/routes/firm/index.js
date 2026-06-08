@@ -26,6 +26,7 @@ import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createNotasRouter } from "./notas.js";
+import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import {
@@ -2549,6 +2550,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Q12.A.3: módulo Notas Fiscais (procurações, competências, pendências)
   const notasRouter = createNotasRouter({ log });
   router.use("/companies/:companyId", notasRouter);
+
+  // Q14.2.d: Apuração v2 — cadastro fiscal, produtos/serviços, pendências, classificar v2
+  const apuracaoV2Router = createApuracaoV2Router({ log });
+  router.use("/companies/:companyId", apuracaoV2Router);
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...
