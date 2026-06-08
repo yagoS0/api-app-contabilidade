@@ -23,6 +23,10 @@ import { runDfeNotasWorkerLoop } from "./workers/dfeNotasWorker.js";
 import { backfillProvisionsFromExistingGuides } from "./application/accounting/GuideToProvisionBackfill.js";
 import { seedParcelamentoFunctions } from "./application/accounting/ParcelamentoSeeds.js";
 import { seedDeparaAnexoGlobal } from "./application/notas/apuracao/DeparaAnexoSeeds.js";
+// Q14 — Refundação da apuração: novos seeders (alíquotas SN, CNAEs, regras v2)
+import { seedAliquotaSimplesNacional } from "./application/notas/apuracao/v2/seeds/AliquotaSimplesNacionalSeeds.js";
+import { seedCnaeAnexo } from "./application/notas/apuracao/v2/seeds/CnaeAnexoSeeds.js";
+import { seedRegraClassificacaoGlobal } from "./application/notas/apuracao/v2/seeds/RegraClassificacaoSeeds.js";
 import { prisma } from "./infrastructure/db/prisma.js";
 
 const app = express();
@@ -118,9 +122,21 @@ app.listen(PORT, HOST, () => {
   seedParcelamentoFunctions({ logger: log }).catch((err) => {
     log.warn({ err: err?.message || err }, "Seed de funções de parcelamento falhou");
   });
-  // Q12.C.1 seeds: tabela De/Para Anexo Simples Nacional (LC116 → III/IV/V)
+  // Q12.C.1 seeds: tabela De/Para Anexo Simples Nacional (LC116 → III/IV/V) [LEGADO]
   seedDeparaAnexoGlobal(prisma, { log }).catch((err) => {
     log.warn({ err: err?.message || err }, "Seed DeparaAnexo falhou");
+  });
+  // Q14.1.b seeds: tabela de alíquotas SN (5 anexos × 6 faixas, vigência LC 155/16)
+  seedAliquotaSimplesNacional(prisma, { log }).catch((err) => {
+    log.warn({ err: err?.message || err }, "Seed AliquotaSimplesNacional falhou");
+  });
+  // Q14.1.c seeds: tabela CNAE → TipoReceita sugerido (apoio pro cadastro fiscal)
+  seedCnaeAnexo(prisma, { log }).catch((err) => {
+    log.warn({ err: err?.message || err }, "Seed CnaeAnexo falhou");
+  });
+  // Q14.1.d seeds: regras de classificação GLOBAL (LC116 itens + capítulos)
+  seedRegraClassificacaoGlobal(prisma, { log }).catch((err) => {
+    log.warn({ err: err?.message || err }, "Seed RegraClassificacao falhou");
   });
 });
 

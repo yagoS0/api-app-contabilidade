@@ -276,6 +276,13 @@ model PortalClient {
   parcelamentos        Parcelamento[]
   procuracoes          Procuracao[]
   pendenciasPosFechamento PendenciaPosFechamento[]
+  // Q14 — refundação da apuração (cadastro como autoridade)
+  cadastroFiscal       CadastroFiscal?
+  produtosServicos     ProdutoServico[]
+  regrasClassificacao  RegraClassificacao[]
+  filaPendencias       FilaPendencia[]
+  apuracaoSnapshots    ApuracaoSnapshot[]
+  logsDecisaoFatorR    LogDecisaoFatorR[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -1088,4 +1095,235 @@ model DeparaAnexo {
   @@unique([escopo, portalClientId, tipoCodigo, codigo])
   @@index([tipoCodigo, codigo])
   @@map("deparas_anexo")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Q14 — Refundação da apuração (cadastro = autoridade, nota = sinal, motor calcula)
+// Plano em ~/.claude/plans/logical-tickling-nygaard.md
+// Convivência com modelos antigos (Apuracao, DeparaAnexo) durante migração;
+// drop só após Fase 6 (homologação contra PGDAS-D promovida).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Enum estável de tipo de receita pro Simples Nacional.
+// Anexo é DERIVADO disso + Fator R mensal — nunca é o input direto.
+enum TipoReceita {
+  REVENDA_MERCADORIA          // → Anexo I
+  INDUSTRIALIZACAO            // → Anexo II
+  SERVICO_ANEXO_III           // serviço fixo Anexo III
+  SERVICO_ANEXO_IV            // construção/advocacia/vigilância — sem Fator R
+  SERVICO_ANEXO_V             // exceções V puro (raro)
+  SERVICO_FATOR_R             // III ou V — decidido mensalmente pelo motor
+  RECEITA_NAO_CLASSIFICADA    // fila de pendência — NUNCA chuta
+}
+
+// Cadastro fiscal da empresa — autoridade pra classificação.
+// Contador preenche uma vez; alterações geram log.
+model CadastroFiscal {
+  id                String   @id @default(uuid())
+  portalClientId    String   @unique
+  regime            String   // SIMPLES_NACIONAL | LUCRO_PRESUMIDO | LUCRO_REAL | MEI
+  dataOpcaoSN       DateTime?
+  cnaePrincipal     String
+  cnaesSecundarios  String[] @default([])
+  sublimiteICMSISS  Boolean  @default(false) // R$ 3,6 mi separado p/ ICMS/ISS
+  usaFatorR         Boolean  @default(false) // contador confirma se tem serviços Fator R
+  observacoes       String?
+  createdByUserId   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  portalClient      PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@map("cadastros_fiscais")
+}
+
+// Catálogo de produtos/serviços da empresa amarrado a TipoReceita.
+// Itens podem ser cadastrados manualmente OU aprendidos (1ª vez que código X
+// aparece em nota, gera pendência → contador classifica → vira ProdutoServico).
+model ProdutoServico {
+  id              String      @id @default(uuid())
+  portalClientId  String
+  nome            String      // descrição interna
+  tipoReceita    TipoReceita
+  codigoServico   String?     // LC116/cTribNac (NFS-e)
+  ncm             String?     // NF-e produto
+  cfop            String?     // NF-e operação
+  codigoInterno   String?     // SKU/ID próprio da empresa
+  ativo           Boolean     @default(true)
+  origem          String      // MANUAL | APRENDIDO_DA_NOTA | IMPORTADO
+  createdByUserId String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  portalClient    PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, codigoServico])
+  @@index([portalClientId, ncm])
+  @@index([portalClientId, ativo])
+  @@map("produtos_servicos")
+}
+
+// Regra de classificação (substitui DeparaAnexo atual com nova semântica).
+// codigo → TipoReceita (não → anexo direto!).
+// EMPRESA sobrescreve GLOBAL. Versionada por vigência pra mudanças legais.
+model RegraClassificacao {
+  id              String      @id @default(uuid())
+  escopo          String      // GLOBAL | EMPRESA
+  portalClientId  String?     // null = global
+  tipoCodigo      String      // LC116 | CTRIBNAC | NCM | CFOP | CNAE
+  codigo          String      // valor exato (ou capítulo "17" como fallback)
+  tipoReceita     TipoReceita
+  prioridade      Int         @default(0) // EMPRESA > GLOBAL > capítulo
+  vigenciaInicio  DateTime?
+  vigenciaFim     DateTime?
+  fonte           String      // RFB_REFERENCIA | SEED_APP | CADASTRO_EMPRESA | APRENDIZADO
+  descricao       String?
+  createdByUserId String?
+  createdAt       DateTime    @default(now())
+
+  portalClient    PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([escopo, tipoCodigo, codigo, vigenciaInicio])
+  @@index([portalClientId, escopo])
+  @@map("regras_classificacao")
+}
+
+// Tabela de referência CNAE → TipoReceita sugerido. Apoio, não decisão.
+// Pré-carregada da RFB. CNAEs ambíguos exigem decisão humana no cadastro.
+model CnaeAnexo {
+  cnae                String      @id // 7 dígitos sem hífen (ex: "6201500")
+  descricao           String
+  tipoReceitaSugerido TipoReceita
+  ambiguo             Boolean     @default(false) // múltiplos anexos possíveis
+  vigenciaInicio      DateTime
+  vigenciaFim         DateTime?
+
+  @@index([tipoReceitaSugerido])
+  @@map("cnae_anexo")
+}
+
+// Tabela versionada de alíquotas SN (LC 123/06, atualizada por LC 155/16
+// e o que vier da Reforma Tributária). 5 anexos × 6 faixas = 30 linhas/vigência.
+model AliquotaSimplesNacional {
+  id                String   @id @default(uuid())
+  anexo             String   // I, II, III, IV, V
+  faixa             Int      // 1..6
+  rbt12Min          Decimal  @db.Decimal(18, 2)
+  rbt12Max          Decimal  @db.Decimal(18, 2)
+  aliquotaNominal   Decimal  @db.Decimal(6, 4)  // ex: 0.0400 = 4%
+  parcelaDeduzir    Decimal  @db.Decimal(18, 2)
+  vigenciaInicio    DateTime
+  vigenciaFim       DateTime?
+
+  @@unique([anexo, faixa, vigenciaInicio])
+  @@index([anexo, vigenciaInicio])
+  @@map("aliquotas_sn")
+}
+
+// Fila de pendências fiscais. Bloqueia fechamento até resolução humana.
+// Resolução pode criar RegraClassificacao ou ProdutoServico novos (aprendizado).
+model FilaPendencia {
+  id              String   @id @default(uuid())
+  portalClientId  String
+  tipo            String   // ITEM_SEM_REGRA | DIVERGENCIA_CADASTRO | FATOR_R_AMBIGUO | CADASTRO_INCOMPLETO
+  notaId          String?  // referência à PortalInvoice
+  itemId          String?  // referência ao NotaItem
+  competencia     String?  // YYYY-MM (null se for pendência geral da empresa)
+  resumo          String   // texto curto pra UI
+  detalhes        Json     // payload pra UI montar form de resolução
+  resolvida       Boolean  @default(false)
+  resolvidaPor    String?
+  resolvidaEm     DateTime?
+  acaoResolucao   String?  // CRIOU_REGRA | CRIOU_PRODUTO | IGNOROU | REENQUADROU
+  createdAt       DateTime @default(now())
+
+  portalClient    PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, resolvida, tipo])
+  @@index([portalClientId, competencia, resolvida])
+  @@map("fila_pendencias")
+}
+
+// Snapshot reproduzível da apuração. Substitui Apuracao após Fase 6.
+// Por enquanto convive — apuração nova grava aqui, antiga continua em Apuracao.
+model ApuracaoSnapshot {
+  id                       String   @id @default(uuid())
+  portalClientId           String
+  competencia              String   // YYYY-MM
+  // Insumos auditáveis
+  rbt12                    Decimal  @db.Decimal(18, 2)
+  folha12m                 Decimal? @db.Decimal(18, 2)
+  fatorR                   Decimal? @db.Decimal(6, 4)
+  receitaPorTipo           Json     // { REVENDA_MERCADORIA: x, SERVICO_FATOR_R: y, ... }
+  receitaPorAnexo          Json     // derivado, com Fator R aplicado
+  // Motor próprio (cálculo local)
+  dasCalculadoLocal        Decimal? @db.Decimal(18, 2)
+  aliquotaEfetivaPorAnexo  Json?
+  vigenciaAliquota         DateTime? // qual versão de AliquotaSimplesNacional usada
+  // Cross-check SERPRO (vem depois da transmissão)
+  dasRetornadoSerpro       Decimal? @db.Decimal(18, 2)
+  divergenciaValor         Decimal? @db.Decimal(18, 2)
+  // Reconciliação extrato (Fase 5)
+  rbt12Extrato             Decimal? @db.Decimal(18, 2)
+  divergenciaRbt12         Decimal? @db.Decimal(18, 2)
+  // Identificadores SERPRO pós-transmissão
+  numeroDeclaracao         String?
+  reciboNumero             String?
+  transmitidoEm            DateTime?
+  // Estado (estende máquina existente com bloqueada_pendencias / erro_calculo / erro_transmissao)
+  estado                   String   @default("pendente")
+  idempotencyKey           String   @unique
+  erroMensagem             String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  portalClient             PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, competencia])
+  @@index([estado])
+  @@index([portalClientId, estado])
+  @@map("apuracao_snapshots")
+}
+
+// Log auditável da decisão mensal do Fator R (III vs V).
+// 1 linha por (empresa, competência) quando há receita SERVICO_FATOR_R.
+model LogDecisaoFatorR {
+  id              String   @id @default(uuid())
+  portalClientId  String
+  competencia     String   // YYYY-MM
+  folha12m        Decimal  @db.Decimal(18, 2)
+  rbt12           Decimal  @db.Decimal(18, 2)
+  fatorR          Decimal  @db.Decimal(6, 4)
+  threshold       Decimal  @db.Decimal(6, 4) @default(0.28)
+  anexoDecidido   String   // "III" se fatorR >= threshold, "V" caso contrário
+  fonteFolha      String   @default("MANUAL") // MANUAL | ESOCIAL | IMPORTADO
+  createdAt       DateTime @default(now())
+
+  portalClient    PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, competencia])
+  @@index([portalClientId])
+  @@map("log_decisoes_fator_r")
+}
+
+// Job de operação em lote (fechar/apurar/transmitir N empresas de uma vez).
+// Cada job tem N filhos (1 por empresa) processados em paralelo cap 5.
+// Falha em 1 empresa não trava as demais.
+model ApuracaoBatchJob {
+  id              String   @id @default(uuid())
+  acao            String   // VALIDAR | FECHAR | APURAR | TRANSMITIR
+  competencia     String   // YYYY-MM
+  totalEmpresas   Int
+  processadas     Int      @default(0)
+  okCount         Int      @default(0)
+  errorCount      Int      @default(0)
+  pendenteCount   Int      @default(0)
+  status          String   @default("running") // running | completed | failed
+  triggeredBy     String?  // userId
+  iniciadoEm      DateTime @default(now())
+  concluidoEm     DateTime?
+  resumo          Json?    // { porEmpresa: [{ portalClientId, status, msg }] }
+
+  @@index([status, iniciadoEm])
+  @@map("apuracao_batch_jobs")
 }
