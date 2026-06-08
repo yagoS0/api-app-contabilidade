@@ -6,6 +6,9 @@ import { PageHeader } from "../../../../components/layout/PageHeader";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { ErrorBoundary } from "../../../../components/ui/ErrorBoundary";
+// Q14.2: hook próprio da Apuração v2 (escopo da empresa atual)
+import { useApuracaoV2 } from "../../../apuracao-v2/hooks/useApuracaoV2";
+import { createApiClient } from "../../../../api/client";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
 // e cada tab só carrega seu JS quando o contador clica nela pela 1ª vez.
@@ -32,6 +35,10 @@ const ChartOfAccountsPage = lazy(() =>
 const NotasFiscaisTab = lazy(() =>
   import("../../../notas/components/renderNotasFiscaisTab").then((m) => ({ default: m.NotasFiscaisTab }))
 );
+// Q14.2: Apuração v2 — cadastro fiscal + produtos/serviços + pendências
+const ApuracaoV2Tab = lazy(() =>
+  import("../../../apuracao-v2/pages/renderApuracaoV2Tab").then((m) => ({ default: m.ApuracaoV2Tab }))
+);
 // Q12.B+++: painel de cert A1 da empresa
 const CompanyCertificatePanel = lazy(() =>
   import("../../certificate/components/CompanyCertificatePanel").then((m) => ({ default: m.CompanyCertificatePanel }))
@@ -43,6 +50,13 @@ function TabLoadingFallback() {
       Carregando…
     </div>
   );
+}
+
+// Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
+const apuracaoV2Api = createApiClient();
+function ApuracaoV2TabWrapper({ companyId, feedback }) {
+  const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
+  return <ApuracaoV2Tab panel={panel} />;
 }
 
 export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
@@ -306,6 +320,28 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
               <NotasFiscaisTab notasPanel={notasPanel} />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+      </div>
+    );
+  }
+
+  // Q14.2: Apuração v2 — autônoma (busca dados via hook próprio)
+  if (companyDetailTab === "apuracaoV2") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="apuracaoV2"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1, padding: 24 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              <ApuracaoV2TabWrapper companyId={selectedCompany?.id} feedback={feedback} />
             </Suspense>
           </ErrorBoundary>
         </div>

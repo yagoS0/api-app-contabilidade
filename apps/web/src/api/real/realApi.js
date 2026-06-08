@@ -834,5 +834,52 @@ export function createRealApi() {
       const payload = await request(`/firm/apuracao?${q.toString()}`);
       return { competencia: payload?.competencia, items: payload?.items || [] };
     },
+
+    // Q14.2 — apuração v2 (cadastro = autoridade)
+    async getCadastroFiscal(companyId) {
+      return request(`/firm/companies/${companyId}/cadastro-fiscal`);
+    },
+    async saveCadastroFiscal(companyId, payload) {
+      return request(`/firm/companies/${companyId}/cadastro-fiscal`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+    },
+    async listProdutosServicos(companyId, { ativo = true } = {}) {
+      return request(`/firm/companies/${companyId}/produtos-servicos?ativo=${ativo}`);
+    },
+    async createProdutoServico(companyId, payload) {
+      return request(`/firm/companies/${companyId}/produtos-servicos`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    async updateProdutoServico(companyId, produtoId, payload) {
+      return request(`/firm/companies/${companyId}/produtos-servicos/${produtoId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    },
+    async deleteProdutoServico(companyId, produtoId) {
+      return request(`/firm/companies/${companyId}/produtos-servicos/${produtoId}`, { method: "DELETE" });
+    },
+    async listPendencias(companyId, { resolvida = false, tipo, competencia } = {}) {
+      const q = new URLSearchParams({ resolvida: String(resolvida) });
+      if (tipo) q.set("tipo", tipo);
+      if (competencia) q.set("competencia", competencia);
+      return request(`/firm/companies/${companyId}/pendencias?${q.toString()}`);
+    },
+    async resolverPendencia(companyId, pendenciaId, payload) {
+      return request(`/firm/companies/${companyId}/pendencias/${pendenciaId}/resolver`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+    async classificarV2(companyId, { force = false, competencia } = {}) {
+      const q = new URLSearchParams();
+      if (force) q.set("force", "true");
+      if (competencia) q.set("competencia", competencia);
+      return request(`/firm/companies/${companyId}/classificar-v2?${q.toString()}`, { method: "POST" });
+    },
   };
 }

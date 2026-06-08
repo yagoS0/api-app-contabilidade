@@ -3,6 +3,7 @@ const HEADER_TABS = [
   { key: "lancamentos", label: "Lançamentos" },
   { key: "circular", label: "Circular" },
   { key: "notasFiscais", label: "Notas Fiscais" },
+  { key: "apuracaoV2", label: "Apuração V2" },
   { key: "edit", label: "Editar Cadastro" },
 ];
 
