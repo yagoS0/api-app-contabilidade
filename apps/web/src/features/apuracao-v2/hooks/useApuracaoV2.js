@@ -117,10 +117,10 @@ export function useApuracaoV2({ api, companyId, feedback }) {
     } finally { setSaving(false); }
   }
 
-  async function apurarV2(competencia) {
+  async function apurarV2(competencia, opts = {}) {
     setSaving(true);
     try {
-      const out = await api.apurarV2(companyId, competencia);
+      const out = await api.apurarV2(companyId, competencia, opts);
       if (!out?.ok) throw new Error(out?.message || "Falha");
       const r = out.result || {};
       if (r.ok) {

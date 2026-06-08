@@ -19,11 +19,13 @@ const ANEXO_COLORS = {
 
 export function MotorPanel({ panel }) {
   const [competencia, setCompetencia] = useState(defaultCompetencia);
+  const [folha12m, setFolha12m] = useState("");
   const [resultado, setResultado] = useState(null);
 
   async function handleApurar() {
     try {
-      const r = await panel.apurarV2(competencia);
+      const opts = folha12m ? { folha12m: Number(folha12m) } : {};
+      const r = await panel.apurarV2(competencia, opts);
       setResultado(r);
     } catch { /* feedback já notifica */ }
   }
@@ -40,11 +42,17 @@ export function MotorPanel({ panel }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: PANEL.muted }}>
           Competência:
           <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
             style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px" }} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: PANEL.muted }}
+          title="Necessário só se houver receita Fator R. Vazio = usa último valor informado pra essa empresa.">
+          Folha 12m (R$):
+          <input type="number" step="0.01" value={folha12m} onChange={(e) => setFolha12m(e.target.value)}
+            placeholder="opcional" style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px", width: 140 }} />
         </label>
         <button onClick={handleApurar} disabled={panel.saving}
           style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#BD93F9", color: "#000", cursor: "pointer", fontSize: "0.9rem", fontWeight: 600 }}>
@@ -68,6 +76,30 @@ export function MotorPanel({ panel }) {
 
       {resultado && resultado.ok && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* Badge Fator R quando houver */}
+          {resultado.fatorR && (
+            <div style={{
+              padding: 14, background: "rgba(189,147,249,0.10)", border: "1px solid #BD93F9",
+              borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
+            }}>
+              <div>
+                <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  ★ Decisão Fator R (mensal)
+                </div>
+                <div style={{ fontSize: "1rem", color: "#BD93F9", fontWeight: 600 }}>
+                  {(resultado.fatorR.fatorR * 100).toFixed(2)}% {resultado.fatorR.fatorR >= resultado.fatorR.threshold ? "≥" : "<"} {(resultado.fatorR.threshold * 100).toFixed(0)}%
+                  {" → Receita Fator R aplicada no Anexo "}
+                  <strong style={{ color: resultado.fatorR.anexoDecidido === "III" ? "#8BE9FD" : "#FF4757" }}>
+                    {resultado.fatorR.anexoDecidido}
+                  </strong>
+                </div>
+                <div style={{ fontSize: "0.7rem", color: PANEL.muted, marginTop: 4 }}>
+                  Folha 12m = {fmtMoney(resultado.fatorR.folha12m)} · RBT12 = {fmtMoney(resultado.rbt12)}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Resumo */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12 }}>
             <MoneyCard label="DAS Calculado (LOCAL)" value={fmtMoney(resultado.dasCalculadoLocal)} accent="#69FF47" />

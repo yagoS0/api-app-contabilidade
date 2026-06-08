@@ -23,6 +23,7 @@
 import crypto from "node:crypto";
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { resolverAliquota, calcularAliquotaEfetiva, AliquotaResolverError } from "./AliquotaResolver.js";
+import { calcularEPersistirFatorR, resolverFolha12m, FatorRError } from "./FatorRService.js";
 
 export class MotorApuracaoError extends Error {
   constructor(code, message, extra = {}) {
@@ -64,7 +65,7 @@ function dataReferenciaCompetencia(competencia) {
  *
  * @returns {Promise<{ok, snapshot, divergencias, blockers?}>}
  */
-export async function calcularApuracaoLocal({ portalClientId, competencia, userId }) {
+export async function calcularApuracaoLocal({ portalClientId, competencia, folha12mOverride, userId }) {
   if (!portalClientId) throw new MotorApuracaoError("MISSING_PORTAL", "portalClientId obrigatório");
   if (!/^\d{4}-\d{2}$/.test(competencia)) {
     throw new MotorApuracaoError("INVALID_COMPETENCIA", `Formato YYYY-MM esperado, recebido: ${competencia}`);
@@ -148,30 +149,6 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, userI
   }
 
   // ─── BLOQUEIOS PÓS-SEGREGAÇÃO ─────────────────────────────────────────────
-  // Receita SERVICO_FATOR_R sem Fator R resolvido (Fase 4)
-  if (receitaPorTipo.SERVICO_FATOR_R > 0) {
-    // Cria pendência específica e bloqueia
-    await prisma.filaPendencia.create({
-      data: {
-        portalClientId,
-        tipo: "FATOR_R_AMBIGUO",
-        competencia,
-        resumo: `R$ ${receitaPorTipo.SERVICO_FATOR_R.toFixed(2)} em receita Fator R — precisa de cálculo III↔V (Fase 4)`,
-        detalhes: { receitaFatorR: receitaPorTipo.SERVICO_FATOR_R, message: "Fase 4 (Fator R) ainda não implementada" },
-      },
-    }).catch(() => null);
-    return {
-      ok: false,
-      blockers: [{
-        tipo: "FATOR_R_NAO_IMPLEMENTADO",
-        mensagem: `Empresa tem R$ ${receitaPorTipo.SERVICO_FATOR_R.toFixed(2)} de receita Fator R. ` +
-          `Decisão III↔V mensal só na Fase 4 (Q14.4). Apure pelo sistema antigo por enquanto.`,
-        receitaFatorR: receitaPorTipo.SERVICO_FATOR_R,
-      }],
-      estado: "bloqueada_pendencias",
-      receitaPorTipo,
-    };
-  }
   if (receitaPorTipo.RECEITA_NAO_CLASSIFICADA > 0) {
     return {
       ok: false,
@@ -196,6 +173,53 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, userI
   });
   const rbt12 = +Number(agg12._sum.total || 0).toFixed(2);
 
+  // ─── FATOR R (Q14.4): decide anexo do SERVICO_FATOR_R mensalmente ────────
+  let decisaoFatorR = null;
+  if (receitaPorTipo.SERVICO_FATOR_R > 0) {
+    // Resolve folha 12m: override > circular atual > sugestão da anterior
+    let folha12m = folha12mOverride;
+    let fonteFolha = "MANUAL";
+    if (folha12m == null) {
+      const resolved = await resolverFolha12m({ portalClientId, competencia });
+      folha12m = resolved.folha12m;
+      fonteFolha = resolved.origem || "MANUAL";
+    }
+    if (folha12m == null || !Number.isFinite(Number(folha12m))) {
+      return {
+        ok: false,
+        blockers: [{
+          tipo: "FOLHA_12M_FALTANDO",
+          mensagem: `Empresa tem R$ ${receitaPorTipo.SERVICO_FATOR_R.toFixed(2)} de receita Fator R. ` +
+            `Informe a folha 12m (input "Folha 12m" no painel Apurar).`,
+          receitaFatorR: receitaPorTipo.SERVICO_FATOR_R,
+        }],
+        estado: "bloqueada_pendencias",
+        receitaPorTipo,
+      };
+    }
+    try {
+      decisaoFatorR = await calcularEPersistirFatorR({
+        portalClientId, competencia,
+        folha12m, rbt12, fonteFolha,
+      });
+    } catch (err) {
+      if (err instanceof FatorRError) {
+        return {
+          ok: false,
+          blockers: [{ tipo: err.code, mensagem: err.message }],
+          estado: "erro_calculo",
+        };
+      }
+      throw err;
+    }
+  }
+
+  // Mapeia SERVICO_FATOR_R pro anexo decidido (III ou V)
+  const tipoReceitaParaAnexoComFR = { ...TIPO_RECEITA_PARA_ANEXO };
+  if (decisaoFatorR) {
+    tipoReceitaParaAnexoComFR.SERVICO_FATOR_R = decisaoFatorR.anexoDecidido;
+  }
+
   // ─── RESOLVE ALÍQUOTA POR ANEXO + CALCULA DAS ─────────────────────────────
   const dataRef = dataReferenciaCompetencia(competencia);
   const receitaPorAnexo = {};
@@ -205,19 +229,22 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, userI
 
   for (const [tipo, receita] of Object.entries(receitaPorTipo)) {
     if (receita <= 0) continue;
-    const anexo = TIPO_RECEITA_PARA_ANEXO[tipo];
-    if (!anexo) continue; // FATOR_R/NÃO_CLASS já bloqueados acima
+    const anexo = tipoReceitaParaAnexoComFR[tipo];
+    if (!anexo) continue; // RECEITA_NAO_CLASSIFICADA já bloqueada acima
     try {
       const faixa = await resolverAliquota({ anexo, rbt12, dataReferencia: dataRef });
       const efetiva = calcularAliquotaEfetiva({
         rbt12, aliquotaNominal: faixa.aliquotaNominal, parcelaDeduzir: faixa.parcelaDeduzir,
       });
       const valorAnexo = +(receita * efetiva).toFixed(2);
-      receitaPorAnexo[anexo] = (receitaPorAnexo[anexo] || 0) + receita;
+      receitaPorAnexo[anexo] = +((receitaPorAnexo[anexo] || 0) + receita).toFixed(2);
+      // Acumula no anexo (Fator R pode somar com Anexo III/V já existente)
+      const prev = aliquotaEfetivaPorAnexo[anexo] || { receita: 0, dasParcial: 0 };
       aliquotaEfetivaPorAnexo[anexo] = {
         efetiva, faixa: faixa.faixa, nominal: faixa.aliquotaNominal,
         parcelaDeduzir: faixa.parcelaDeduzir, vigenciaInicio: faixa.vigenciaInicio,
-        receita, dasParcial: valorAnexo,
+        receita: +(prev.receita + receita).toFixed(2),
+        dasParcial: +(prev.dasParcial + valorAnexo).toFixed(2),
       };
       dasCalculadoLocal += valorAnexo;
       vigenciaAliquotaUsada = faixa.vigenciaInicio;
@@ -256,6 +283,7 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, userI
     receitaPorAnexo,
     dasCalculadoLocal: dasCalculadoLocal.toFixed(2),
     vigencia: vigenciaAliquotaUsada?.toISOString() || null,
+    fatorR: decisaoFatorR?.fatorR || null,
   };
   const idempotencyKey = crypto
     .createHash("sha256")
@@ -267,7 +295,10 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, userI
     where: { portalClientId_competencia: { portalClientId, competencia } },
   });
   const data = {
-    rbt12, receitaPorTipo, receitaPorAnexo,
+    rbt12,
+    folha12m: decisaoFatorR?.folha12m || null,
+    fatorR: decisaoFatorR?.fatorR || null,
+    receitaPorTipo, receitaPorAnexo,
     dasCalculadoLocal,
     aliquotaEfetivaPorAnexo,
     vigenciaAliquota: vigenciaAliquotaUsada,
@@ -288,6 +319,12 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, userI
     aliquotaEfetivaPorAnexo,
     dasCalculadoLocal,
     rbt12,
+    fatorR: decisaoFatorR ? {
+      fatorR: decisaoFatorR.fatorR,
+      anexoDecidido: decisaoFatorR.anexoDecidido,
+      folha12m: decisaoFatorR.folha12m,
+      threshold: decisaoFatorR.threshold,
+    } : null,
   };
 }
 

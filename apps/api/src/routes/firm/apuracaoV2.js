@@ -254,9 +254,11 @@ export function createApuracaoV2Router({ log } = {}) {
     async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
+      const { folha12m } = req.body || {};
       try {
         const result = await calcularApuracaoLocal({
           portalClientId, competencia,
+          folha12mOverride: folha12m != null ? Number(folha12m) : undefined,
           userId: req.auth?.user?.id,
         });
         return res.json({ ok: true, result });
