@@ -11,6 +11,12 @@ import {
   TIPOS_RECEITA_VALIDOS,
 } from "../../application/notas/apuracao/v2/AprendizadoService.js";
 import { calcularApuracaoLocal } from "../../application/notas/apuracao/v2/MotorApuracaoService.js";
+import {
+  getDadosFechamento,
+  calcularFechamento,
+  salvarFechamento,
+  transmitirFechamento,
+} from "../../application/notas/apuracao/v2/FechamentoService.js";
 
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
@@ -244,6 +250,81 @@ export function createApuracaoV2Router({ log } = {}) {
       } catch (err) {
         log?.warn({ err: err?.message, pendenciaId }, "Falha ao resolver pendência");
         return bad(res, 500, "resolve_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // ─── Q15: Fechamento (modal) — dados / calcular(simulação) / salvar / transmitir ──
+  router.get(
+    "/fechamento/:competencia",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      try {
+        const dados = await getDadosFechamento({ portalClientId, competencia });
+        return res.json({ ok: true, dados });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha getDadosFechamento");
+        return bad(res, err?.code === "PORTAL_NOT_FOUND" ? 404 : 500, err?.code || "fechamento_get_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  router.post(
+    "/fechamento/:competencia/calcular",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      const { atividades, folhaMensal12, regimeApuracao } = req.body || {};
+      try {
+        const result = await calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha calcularFechamento");
+        return bad(res, 500, err?.code || "calcular_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  router.post(
+    "/fechamento/:competencia/salvar",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      const { atividades, folhaMensal12, regimeApuracao } = req.body || {};
+      try {
+        const result = await salvarFechamento({
+          portalClientId, competencia, atividades, folhaMensal12, regimeApuracao,
+          userId: req.auth?.user?.id,
+        });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha salvarFechamento");
+        return bad(res, err?.code === "NAO_CALCULADA" ? 409 : 500, err?.code || "salvar_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  router.post(
+    "/fechamento/:competencia/transmitir",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      const { confirmCompetencia } = req.body || {};
+      if (confirmCompetencia !== competencia) {
+        return bad(res, 400, "confirm_competencia_mismatch",
+          "Digite a competência exata pra confirmar a transmissão (proteção contra envio acidental).");
+      }
+      try {
+        const result = await transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha transmitirFechamento");
+        return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : 500, err?.code || "transmitir_failed", err?.message || "Erro");
       }
     }
   );
