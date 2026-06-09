@@ -1,4 +1,4 @@
-// Q12.C.2: state da página global de Apuração.
+// Q15.7: state da página global de Apuração (fluxo novo — fechamento + lote).
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -15,7 +15,8 @@ export function useApuracao({ api, feedback, enabled = true }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [actingId, setActingId] = useState(null);
+  const [selected, setSelected] = useState(new Set()); // portalClientIds selecionados
+  const [batchJobId, setBatchJobId] = useState(null);
 
   const load = useCallback(async () => {
     if (!api || !enabled) return;
@@ -23,7 +24,13 @@ export function useApuracao({ api, feedback, enabled = true }) {
     setError(null);
     try {
       const out = await api.listApuracao({ competencia, search });
-      setItems(out?.items || []);
+      const lista = out?.items || [];
+      setItems(lista);
+      // mantém na seleção só quem continua "fechada"
+      setSelected((prev) => {
+        const fechadas = new Set(lista.filter((i) => i.estado === "fechada").map((i) => i.portalClientId));
+        return new Set([...prev].filter((id) => fechadas.has(id)));
+      });
     } catch (err) {
       setError(err?.message || "Falha ao carregar apuração.");
     } finally {
@@ -33,36 +40,40 @@ export function useApuracao({ api, feedback, enabled = true }) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function fechar(portalClientId) {
-    setActingId(portalClientId);
-    try {
-      const out = await api.fecharCompetencia(portalClientId, competencia);
-      if (!out?.ok) throw new Error(out?.message || "Falha");
-      feedback?.notifySuccess?.(`Competência ${competencia} fechada.`);
-      await load();
-    } catch (err) {
-      feedback?.notifyError?.(err?.message || "Erro ao fechar");
-    } finally { setActingId(null); }
+  function toggleSelect(portalClientId) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(portalClientId)) next.delete(portalClientId);
+      else next.add(portalClientId);
+      return next;
+    });
+  }
+  function selectAllFechadas() {
+    const fechadas = items.filter((i) => i.estado === "fechada").map((i) => i.portalClientId);
+    setSelected((prev) => (prev.size === fechadas.length && fechadas.length > 0) ? new Set() : new Set(fechadas));
   }
 
-  async function reabrir(portalClientId, reason) {
-    setActingId(portalClientId);
+  async function apurarEmLote() {
+    const ids = [...selected];
+    if (ids.length === 0) { feedback?.notifyError?.("Selecione empresas fechadas."); return; }
     try {
-      const out = await api.reabrirCompetencia(portalClientId, competencia, reason);
-      if (!out?.ok) throw new Error(out?.message || "Falha");
-      feedback?.notifySuccess?.(`Competência reaberta.`);
-      await load();
+      const out = await api.criarApuracaoBatch({ portalClientIds: ids, competencia });
+      if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
+      feedback?.notifySuccess?.(`Lote criado: ${out.totalEmpresas} empresa(s)${out.ignoradas ? ` (${out.ignoradas} ignoradas)` : ""}.`);
+      setBatchJobId(out.jobId);
+      setSelected(new Set());
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Erro ao reabrir");
-    } finally { setActingId(null); }
+      feedback?.notifyError?.(err?.message || "Erro ao criar lote");
+    }
   }
 
   return {
     competencia, setCompetencia,
     search, setSearch,
     items, loading, error,
-    actingId,
+    selected, toggleSelect, selectAllFechadas,
+    batchJobId, setBatchJobId,
+    apurarEmLote,
     reload: load,
-    fechar, reabrir,
   };
 }

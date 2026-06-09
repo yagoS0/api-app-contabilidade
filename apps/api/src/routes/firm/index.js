@@ -2590,7 +2590,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const ids = companies.map((c) => c.id);
     if (ids.length === 0) return res.json({ ok: true, competencia, items: [] });
 
-    // Estados de competência
+    // Q15: estado/DAS vêm do ApuracaoSnapshot (fluxo novo). Circular fica só pra rb12 legado.
+    const snapshots = await prisma.apuracaoSnapshot.findMany({
+      where: { portalClientId: { in: ids }, competencia },
+      select: {
+        portalClientId: true, estado: true, dasCalculadoLocal: true, dasRetornadoSerpro: true,
+        rbt12: true, fatorR: true, receitaInterna: true, receitaExterna: true,
+        numeroDeclaracao: true, fechadaEm: true,
+      },
+    });
+    const snapByPc = new Map(snapshots.map((s) => [s.portalClientId, s]));
+    // Estados de competência (legado — mantido só pra compat de rb12)
     const circulars = await prisma.companyMonthlyCircular.findMany({
       where: { portalClientId: { in: ids }, competencia },
       select: {
@@ -2638,6 +2648,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
     const items = companies.map((c) => {
       const circ = byPc.get(c.id);
+      const snap = snapByPc.get(c.id);
       const agg = aggByPc.get(c.id) || { totalNotas: 0, receitaEmitida: 0, comprasRecebidas: 0, byType: {} };
       const syncState = syncByPc.get(c.id);
       return {
@@ -2645,11 +2656,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         razao: c.razao,
         cnpj: c.cnpj,
         regime: null,
-        estado: circ?.estado || "aberto",
-        lockedAt: circ?.lockedAt || null,
-        rb12: circ?.rb12 ? circ.rb12.toString() : null,
-        fs12Manual: circ?.fs12Manual ? circ.fs12Manual.toString() : null,
-        fatorR: circ?.fatorR ? circ.fatorR.toString() : null,
+        // Q15: estado vem do snapshot (aberta/configurando/calculada/fechada/transmitida)
+        estado: snap?.estado || "aberta",
+        dasCalculado: snap?.dasCalculadoLocal != null ? Number(snap.dasCalculadoLocal) : null,
+        dasTransmitido: snap?.dasRetornadoSerpro != null ? Number(snap.dasRetornadoSerpro) : null,
+        numeroDeclaracao: snap?.numeroDeclaracao || null,
+        fechadaEm: snap?.fechadaEm || null,
+        rbt12: snap?.rbt12 != null ? Number(snap.rbt12) : (circ?.rb12 ? Number(circ.rb12) : null),
+        fatorR: snap?.fatorR != null ? Number(snap.fatorR) : (circ?.fatorR ? Number(circ.fatorR) : null),
         totalNotas: agg.totalNotas,
         receitaEmitida: agg.receitaEmitida,
         comprasRecebidas: agg.comprasRecebidas,

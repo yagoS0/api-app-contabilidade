@@ -891,5 +891,33 @@ export function createRealApi() {
     async getApuracaoSnapshot(companyId, competencia) {
       return request(`/firm/companies/${companyId}/apuracao-snapshot/${competencia}`);
     },
+    // Q15 — fechamento
+    async getFechamento(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/fechamento/${competencia}`);
+    },
+    async calcularFechamento(companyId, competencia, payload) {
+      return request(`/firm/companies/${companyId}/fechamento/${competencia}/calcular`, {
+        method: "POST", body: JSON.stringify(payload),
+      });
+    },
+    async salvarFechamento(companyId, competencia, payload) {
+      return request(`/firm/companies/${companyId}/fechamento/${competencia}/salvar`, {
+        method: "POST", body: JSON.stringify(payload),
+      });
+    },
+    async transmitirFechamento(companyId, competencia, confirmCompetencia) {
+      return request(`/firm/companies/${companyId}/fechamento/${competencia}/transmitir`, {
+        method: "POST", body: JSON.stringify({ confirmCompetencia }),
+      });
+    },
+    // Q15 — fila batch
+    async criarApuracaoBatch({ portalClientIds, competencia }) {
+      return request(`/firm/apuracao/batch`, {
+        method: "POST", body: JSON.stringify({ portalClientIds, competencia }),
+      });
+    },
+    async getApuracaoBatch(jobId) {
+      return request(`/firm/apuracao/batch/${jobId}`);
+    },
   };
 }

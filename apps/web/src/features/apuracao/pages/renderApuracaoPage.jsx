@@ -1,100 +1,63 @@
-// Q12.C.2: página global de Apuração.
-// Tabela com todas as empresas × competência selecionada.
-// Permite fechar/reabrir competência por empresa direto da tabela.
+// Q15.7: página global de Apuração (fluxo novo).
+// Tabela de empresas × competência: faturamento, status, Fator-R, DAS, [Fechar].
+// Seleção múltipla → [Apurar em lote] (só empresas fechadas). Fechar abre o modal.
 
 import { useState } from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { PageHeader } from "../../../components/layout/PageHeader";
 import { Button } from "../../../components/ui/Button";
-import { PANEL, StateBadge, fmtMoney, fmtDate, syncStaleness, StalenessBadge } from "../../notas/components/notasStyles";
-import { ReabrirCompetenciaModal } from "../../notas/components/ReabrirCompetenciaModal";
-import { ApuracaoDetailModal } from "../components/ApuracaoDetailModal";
+import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
+import { FechamentoModal } from "../components/FechamentoModal";
+import { BatchProgressModal } from "../components/BatchProgressModal";
 
-function CompanyRow({ item, acting, onFechar, onReabrir, onOpenNotas, onApurar }) {
-  const canFechar = item.estado === "aberto" || item.estado === "em_conferencia";
-  const canReabrir = ["fechado","calculado","revisado","transmitido","confirmado","erro"].includes(item.estado);
+const ESTADO_BADGE = {
+  aberta:        { c: PANEL.muted, l: "aberta" },
+  configurando:  { c: "#8BE9FD",   l: "configurando" },
+  calculada:     { c: "#BD93F9",   l: "calculada" },
+  fechada:       { c: "#FFB347",   l: "fechada" },
+  transmitida:   { c: "#69FF47",   l: "transmitida" },
+  confirmada:    { c: "#69FF47",   l: "confirmada" },
+  erro:          { c: "#FF4757",   l: "erro" },
+  erro_calculo:  { c: "#FF4757",   l: "erro cálculo" },
+  erro_transmissao: { c: "#FF4757", l: "erro transm." },
+};
 
+function EstadoBadge({ estado }) {
+  const e = ESTADO_BADGE[estado] || ESTADO_BADGE.aberta;
   return (
-    <tr style={{ borderTop: `1px solid ${PANEL.border}`, color: PANEL.text }}>
-      <td style={td}>
-        <a onClick={onOpenNotas} style={{ color: PANEL.accent, cursor: "pointer", fontWeight: 500 }}>
-          {item.razao}
-        </a>
-        <div style={{ fontSize: "0.7rem", color: PANEL.muted, fontFamily: "monospace" }}>{item.cnpj}</div>
-      </td>
-      <td style={td}>{item.regime || "—"}</td>
-      <td style={td}><StateBadge estado={item.estado} /></td>
-      <td style={{ ...td, textAlign: "right" }}>
-        {item.totalNotas}
-        {item.totalNotas > 0 && (
-          <div style={{ fontSize: "0.7rem", color: PANEL.muted }}>
-            NF-e {item.nfeCount} · NFS-e {item.nfseCount}
-          </div>
-        )}
-      </td>
-      <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#69FF47" }}>{fmtMoney(item.receitaEmitida)}</td>
-      <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#8BE9FD" }}>{fmtMoney(item.comprasRecebidas)}</td>
-      <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(item.rb12)}</td>
-      <td style={{ ...td, textAlign: "right" }}>{item.fatorR != null ? `${(Number(item.fatorR) * 100).toFixed(2)}%` : "—"}</td>
-      <td style={{ ...td, textAlign: "right", color: item.pendenciasAbertas > 0 ? "#FF4757" : PANEL.muted }}>
-        {item.pendenciasAbertas > 0 ? `⚠ ${item.pendenciasAbertas}` : "—"}
-      </td>
-      <td style={{ ...td, fontSize: "0.7rem" }}>
-        <div title="Última captura NF-e (SEFAZ DFe)">
-          <span style={{ color: PANEL.muted }}>NF-e:</span>{" "}
-          <StalenessBadge lastSyncAt={item.dfeLastSyncAt} />
-        </div>
-        <div title="Última captura NFS-e (ADN)">
-          <span style={{ color: PANEL.muted }}>NFS-e:</span>{" "}
-          <StalenessBadge lastSyncAt={item.adnLastSyncAt} />
-        </div>
-      </td>
-      <td style={{ ...td, textAlign: "right" }}>
-        <button onClick={onApurar} disabled={acting}
-          style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: "#BD93F9", color: "#000", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, marginRight: 4 }}
-          title="Calcular RB12 / Fator R / receita por anexo">
-          📊 Apurar
-        </button>
-        {canFechar && (
-          <button onClick={onFechar} disabled={acting}
-            style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: "#8BE9FD", color: "#000", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, marginRight: 4 }}>
-            🔒 Fechar
-          </button>
-        )}
-        {canReabrir && (
-          <button onClick={onReabrir} disabled={acting}
-            style={{ padding: "4px 10px", borderRadius: 4, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600 }}>
-            🔓 Reabrir
-          </button>
-        )}
-      </td>
-    </tr>
+    <span style={{ padding: "2px 9px", borderRadius: 11, background: `${e.c}22`, color: e.c, border: `1px solid ${e.c}`, fontSize: "0.72rem", fontWeight: 600 }}>
+      {e.l}
+    </span>
   );
 }
+
 const td = { padding: 8 };
 
 export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onOpenCompanyNotas }) {
-  const { competencia, setCompetencia, search, setSearch, items, loading, error, actingId, fechar, reabrir, reload } = apuracaoPanel;
-  const [reabrindo, setReabrindo] = useState(null); // { id, razao }
-  const [apurando, setApurando] = useState(null);   // { id, razao }
+  const {
+    competencia, setCompetencia, search, setSearch, items, loading, error,
+    selected, toggleSelect, selectAllFechadas, batchJobId, setBatchJobId, apurarEmLote, reload,
+  } = apuracaoPanel;
+  const [fechando, setFechando] = useState(null); // { id, razao }
 
+  const fechadasCount = items.filter((i) => i.estado === "fechada").length;
   const totals = items.reduce((acc, i) => {
-    acc.notas += i.totalNotas;
-    acc.receita += i.receitaEmitida;
-    acc.compras += i.comprasRecebidas;
+    acc.fat += (i.receitaEmitida || 0);
+    acc.das += (i.dasTransmitido ?? i.dasCalculado ?? 0);
     return acc;
-  }, { notas: 0, receita: 0, compras: 0 });
+  }, { fat: 0, das: 0 });
 
   return (
     <AppShell>
       <PageHeader
         title="Apuração"
-        description="Visão consolidada de todas as empresas para a competência selecionada — feche/reabra direto da tabela."
+        description="Feche cada empresa pelo modal, depois selecione as fechadas e apure em lote."
         actions={<Button variant="secondary" onClick={onBack}>Voltar</Button>}
       />
 
       <section className="panel" style={{ padding: 16 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 16 }}>
+        {/* Filtros */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 14 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6, color: PANEL.muted, fontSize: "0.85rem" }}>
             Competência:
             <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
@@ -103,82 +66,108 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
           <input type="text" placeholder="Filtrar por nome ou CNPJ" value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px", flex: 1, minWidth: 220 }} />
-          <Button variant="secondary" onClick={reload} disabled={loading}>
-            {loading ? "..." : "Atualizar"}
-          </Button>
-          <span style={{ marginLeft: "auto", color: PANEL.muted, fontSize: "0.85rem" }}>
-            {items.length} empresa(s)
-          </span>
+          <Button variant="secondary" onClick={reload} disabled={loading}>{loading ? "..." : "Atualizar"}</Button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px,1fr))", gap: 12, marginBottom: 16 }}>
-          <Box label="Total notas" value={totals.notas} accent={PANEL.text} />
-          <Box label="Receita emitida (consolidada)" value={fmtMoney(totals.receita)} accent="#69FF47" />
-          <Box label="Compras recebidas (consolidadas)" value={fmtMoney(totals.compras)} accent="#8BE9FD" />
+        {/* Barra de ações em lote */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, padding: 10, background: PANEL.field, borderRadius: 8 }}>
+          <button onClick={selectAllFechadas} disabled={fechadasCount === 0}
+            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
+            {selected.size === fechadasCount && fechadasCount > 0 ? "Desmarcar todas" : "Selecionar fechadas"}
+          </button>
+          <span style={{ color: PANEL.muted, fontSize: "0.82rem" }}>
+            {selected.size} selecionada(s) · {fechadasCount} fechada(s)
+          </span>
+          <button onClick={apurarEmLote} disabled={selected.size === 0}
+            style={{ marginLeft: "auto", background: selected.size > 0 ? "#69FF47" : PANEL.border, color: "#000", border: "none", borderRadius: 6, padding: "8px 16px", cursor: selected.size > 0 ? "pointer" : "not-allowed", fontSize: "0.85rem", fontWeight: 600 }}>
+            📤 Apurar em lote ({selected.size})
+          </button>
+        </div>
+
+        {/* Resumo */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
+          <Box label="Empresas" value={items.length} accent={PANEL.text} />
+          <Box label="Faturamento (mês)" value={fmtMoney(totals.fat)} accent="#69FF47" />
+          <Box label="DAS (calc./transm.)" value={fmtMoney(totals.das)} accent="#8BE9FD" />
         </div>
 
         {error && (
-          <div style={{ padding: 12, marginBottom: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757" }}>
-            {error}
-          </div>
+          <div style={{ padding: 12, marginBottom: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757" }}>{error}</div>
         )}
 
         <div style={{ overflowX: "auto", background: PANEL.surface, borderRadius: 6 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
             <thead>
               <tr style={{ background: PANEL.field, color: PANEL.muted, textAlign: "left" }}>
+                <th style={{ ...td, width: 36 }}></th>
                 <th style={td}>Empresa</th>
-                <th style={td}>Regime</th>
-                <th style={td}>Estado</th>
+                <th style={td}>Status</th>
                 <th style={{ ...td, textAlign: "right" }}>Notas</th>
-                <th style={{ ...td, textAlign: "right" }}>Receita</th>
-                <th style={{ ...td, textAlign: "right" }}>Compras</th>
-                <th style={{ ...td, textAlign: "right" }}>RB12</th>
+                <th style={{ ...td, textAlign: "right" }}>Faturamento</th>
+                <th style={{ ...td, textAlign: "right" }}>RBT12</th>
                 <th style={{ ...td, textAlign: "right" }}>Fator R</th>
-                <th style={{ ...td, textAlign: "right" }}>Pend</th>
-                <th style={td}>Sync</th>
+                <th style={{ ...td, textAlign: "right" }}>DAS</th>
                 <th style={{ ...td, textAlign: "right" }}>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((it) => (
-                <CompanyRow key={it.portalClientId}
-                  item={it}
-                  acting={actingId === it.portalClientId}
-                  onFechar={() => fechar(it.portalClientId)}
-                  onReabrir={() => setReabrindo({ id: it.portalClientId, razao: it.razao })}
-                  onOpenNotas={() => onOpenCompanyNotas?.(it.portalClientId)}
-                  onApurar={() => setApurando({ id: it.portalClientId, razao: it.razao })}
-                />
-              ))}
+              {items.map((it) => {
+                const isFechada = it.estado === "fechada";
+                return (
+                  <tr key={it.portalClientId} style={{ borderTop: `1px solid ${PANEL.border}`, color: PANEL.text }}>
+                    <td style={td}>
+                      <input type="checkbox" disabled={!isFechada}
+                        checked={selected.has(it.portalClientId)}
+                        onChange={() => toggleSelect(it.portalClientId)}
+                        title={isFechada ? "" : "Só empresas fechadas entram no lote"} />
+                    </td>
+                    <td style={td}>
+                      <a onClick={() => onOpenCompanyNotas?.(it.portalClientId)} style={{ color: PANEL.accent, cursor: "pointer", fontWeight: 500 }}>{it.razao}</a>
+                      <div style={{ fontSize: "0.7rem", color: PANEL.muted, fontFamily: "monospace" }}>{it.cnpj}</div>
+                    </td>
+                    <td style={td}><EstadoBadge estado={it.estado} /></td>
+                    <td style={{ ...td, textAlign: "right" }}>{it.totalNotas}</td>
+                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#69FF47" }}>{fmtMoney(it.receitaEmitida)}</td>
+                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{it.rbt12 != null ? fmtMoney(it.rbt12) : "—"}</td>
+                    <td style={{ ...td, textAlign: "right" }}>{it.fatorR != null ? `${(Number(it.fatorR) * 100).toFixed(2)}%` : "—"}</td>
+                    <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#8BE9FD" }}>
+                      {it.dasTransmitido != null ? fmtMoney(it.dasTransmitido) : (it.dasCalculado != null ? fmtMoney(it.dasCalculado) : "—")}
+                    </td>
+                    <td style={{ ...td, textAlign: "right" }}>
+                      <button onClick={() => setFechando({ id: it.portalClientId, razao: it.razao })}
+                        style={{ padding: "5px 12px", borderRadius: 5, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontSize: "0.78rem", fontWeight: 600 }}>
+                        {it.estado === "aberta" ? "🔒 Fechar" : "Revisar"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {items.length === 0 && !loading && (
-                <tr><td colSpan={11} style={{ ...td, textAlign: "center", color: PANEL.muted, padding: 24 }}>
-                  Nenhuma empresa encontrada.
-                </td></tr>
+                <tr><td colSpan={9} style={{ ...td, textAlign: "center", color: PANEL.muted, padding: 24 }}>Nenhuma empresa encontrada.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </section>
 
-      {reabrindo && (
-        <ReabrirCompetenciaModal
-          competencia={`${competencia} (${reabrindo.razao})`}
-          saving={actingId === reabrindo.id}
-          onConfirm={async (reason) => { await reabrir(reabrindo.id, reason); }}
-          onClose={() => setReabrindo(null)}
+      {fechando && apuracaoApi && (
+        <FechamentoModal
+          api={apuracaoApi}
+          feedback={feedback}
+          portalClientId={fechando.id}
+          razao={fechando.razao}
+          competencia={competencia}
+          onClose={() => setFechando(null)}
+          onChanged={() => reload?.()}
         />
       )}
 
-      {apurando && apuracaoApi && (
-        <ApuracaoDetailModal
+      {batchJobId && apuracaoApi && (
+        <BatchProgressModal
           api={apuracaoApi}
-          feedback={feedback}
-          portalClientId={apurando.id}
-          razao={apurando.razao}
-          competencia={competencia}
-          onClose={() => setApurando(null)}
-          onChanged={() => reload?.()}
+          jobId={batchJobId}
+          onClose={() => { setBatchJobId(null); reload?.(); }}
+          onDone={() => reload?.()}
         />
       )}
     </AppShell>
