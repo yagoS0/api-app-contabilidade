@@ -22,7 +22,8 @@ import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { SerproPgdasdService } from "./SerproPgdasdService.js";
 
 function onlyDigits(v) { return String(v || "").replace(/\D+/g, ""); }
-function paFromCompetencia(comp) { return String(comp || "").replace("-", ""); } // YYYY-MM → YYYYMM
+// pa é NUMBER no payload (AAAAMM). "2021-01" → 202101
+function paNum(comp) { return Number(String(comp || "").replace("-", "")); }
 function round2(n) { return +Number(n || 0).toFixed(2); }
 
 export class PgdasSimulacaoError extends Error {
@@ -54,54 +55,65 @@ export function buildDeclaracaoPayload({
   valorFixo = {},
 }) {
   const cnpjCompleto = onlyDigits(contribuinteCnpj);
-  const pa = paFromCompetencia(competencia);
+  const pa = paNum(competencia);
 
-  // Soma das receitas das atividades = receita bruta do PA (interna/externa)
+  // Cabeçalho: receita bruta total do PA por mercado. A segregação interno/externo
+  // NO NÍVEL DE ATIVIDADE é feita pelo próprio idAtividade (ex: 1=interno, 3=exterior),
+  // não por flag dentro de receitasAtividade.
   const receitaInterna = round2(atividades.reduce((s, a) => s + Number(a.valorInterno || 0), 0));
   const receitaExterna = round2(atividades.reduce((s, a) => s + Number(a.valorExterno || 0), 0));
   const isCaixa = String(regimeApuracao).toUpperCase() === "CAIXA";
 
-  // Estabelecimento único (matriz) no MVP — estrutura já é array pra multi-filial futuro.
+  // Cada atividade já é mercado-específica (via idAtividade). valorAtividade = o que houver.
   const estabelecimento = {
     cnpjCompleto,
-    atividades: atividades.map((a) => ({
-      idAtividade: a.idAtividade,
-      // valor por atividade segregado por mercado
-      valorAtividade: round2(Number(a.valorInterno || 0) + Number(a.valorExterno || 0)),
-      receitasAtividade: [
-        ...(Number(a.valorInterno || 0) > 0
-          ? [{ valor: round2(a.valorInterno), tipoMercado: 1, /* interno */ qualificacoes: a.qualificacoes || [] }]
-          : []),
-        ...(Number(a.valorExterno || 0) > 0
-          ? [{ valor: round2(a.valorExterno), tipoMercado: 2, /* externo */ qualificacoes: a.qualificacoes || [] }]
-          : []),
-      ],
+    atividades: atividades
+      .map((a) => {
+        const valor = round2(Number(a.valorInterno || 0) + Number(a.valorExterno || 0));
+        if (valor <= 0) return null;
+        return {
+          idAtividade: a.idAtividade,
+          valorAtividade: valor,
+          receitasAtividade: [{
+            valor,
+            // qualificações tributárias (ST, monofásico, etc) entram aqui quando houver
+            ...(Array.isArray(a.qualificacoesTributarias) && a.qualificacoesTributarias.length
+              ? { qualificacoesTributarias: a.qualificacoesTributarias } : {}),
+            ...(Array.isArray(a.isencoes) && a.isencoes.length ? { isencoes: a.isencoes } : {}),
+            ...(Array.isArray(a.reducoes) && a.reducoes.length ? { reducoes: a.reducoes } : {}),
+          }],
+        };
+      })
+      .filter(Boolean),
+  };
+
+  const declaracao = {
+    tipoDeclaracao,
+    receitaPaCompetenciaInterno: receitaInterna,
+    receitaPaCompetenciaExterno: receitaExterna,
+    // caixa preenche os dois pares; competência deixa caixa como null (campo opcional)
+    receitaPaCaixaInterno: isCaixa ? receitaInterna : null,
+    receitaPaCaixaExterno: isCaixa ? receitaExterna : null,
+    // valorFixo é opcional e "deve ser maior que zero" → só envia se > 0, senão null
+    valorFixoIcms: Number(valorFixo.icms) > 0 ? round2(valorFixo.icms) : null,
+    valorFixoIss: Number(valorFixo.iss) > 0 ? round2(valorFixo.iss) : null,
+    receitasBrutasAnteriores: receitasBrutasAnteriores.map((r) => ({
+      pa: paNum(r.pa),
+      valorInterno: round2(r.valorInterno),
+      valorExterno: round2(r.valorExterno),
     })),
+    folhasSalario: folhasSalario.map((f) => ({ pa: paNum(f.pa), valor: round2(f.valor) })),
+    estabelecimentos: [estabelecimento],
   };
 
   return {
     cnpjCompleto,
     pa,
     indicadorTransmissao: Boolean(indicadorTransmissao),
-    indicadorComparacao: true,
-    declaracao: {
-      tipoDeclaracao,
-      // regime: competência preenche *Competencia*, caixa preenche os DOIS pares
-      receitaPaCompetenciaInterno: receitaInterna,
-      receitaPaCompetenciaExterno: receitaExterna,
-      ...(isCaixa
-        ? { receitaPaCaixaInterno: receitaInterna, receitaPaCaixaExterno: receitaExterna }
-        : { receitaPaCaixaInterno: 0, receitaPaCaixaExterno: 0 }),
-      valorFixoIcms: round2(valorFixo.icms || 0),
-      valorFixoIss: round2(valorFixo.iss || 0),
-      receitasBrutasAnteriores: receitasBrutasAnteriores.map((r) => ({
-        pa: paFromCompetencia(r.pa),
-        valorInterno: round2(r.valorInterno),
-        valorExterno: round2(r.valorExterno),
-      })),
-      folhasSalario: folhasSalario.map((f) => ({ pa: paFromCompetencia(f.pa), valor: round2(f.valor) })),
-      estabelecimentos: [estabelecimento],
-    },
+    // false: deixa a RFB calcular sem exigir valoresParaComparacao exatos.
+    // (com true, regra (f) exige a lista de valores idêntica ao cálculo — não temos.)
+    indicadorComparacao: false,
+    declaracao,
   };
 }
 
@@ -109,20 +121,40 @@ export function buildDeclaracaoPayload({
  * Parseia o retorno oficial da RFB (simulação ou transmissão).
  * Campos calculados pela RFB: valor devido por tributo, alíquota efetiva, RBT12, DAS.
  */
+// Códigos de tributo do PGDAS-D (pra rótulo do detalhamento)
+const COD_TRIBUTO = {
+  1001: "IRPJ", 1002: "CSLL", 1004: "COFINS", 1005: "PIS",
+  1006: "CPP", 1007: "ICMS", 1008: "IPI", 1010: "ISS",
+};
+
 export function parseRetornoSimulacao(raw) {
-  let dadosSaida = raw?.dadosSaida;
-  if (typeof dadosSaida === "string") {
-    try { dadosSaida = JSON.parse(dadosSaida); } catch { /* mantém */ }
+  // O retorno tem `dados` (string JSON) com idDeclaracao, valoresDevidos[], PDFs.
+  // (não há "valorTotalDevido" nem RBT12 no retorno — DAS = soma de valoresDevidos.)
+  let dados = raw?.dados ?? raw?.dadosSaida;
+  if (typeof dados === "string") {
+    try { dados = JSON.parse(dados); } catch { dados = null; }
   }
-  const dasValor =
-    dadosSaida?.valorTotalDevido ?? dadosSaida?.valorDevidoDAS ?? dadosSaida?.valorTotal ?? null;
-  const rbt12 =
-    dadosSaida?.rbt12 ?? dadosSaida?.valorRbt12 ?? dadosSaida?.RBT12 ?? null;
-  const numeroDeclaracao =
-    dadosSaida?.numeroDeclaracao ?? dadosSaida?.numero ?? null;
-  const tributos = dadosSaida?.valoresDevidos ?? dadosSaida?.tributos ?? null;
-  const mensagens = raw?.mensagens ?? dadosSaida?.mensagens ?? [];
-  return { dasValor, rbt12, numeroDeclaracao, tributos, mensagens, raw: dadosSaida };
+  // dados pode ser objeto único ou array com 1 DeclaracaoTransmitida
+  const decl = Array.isArray(dados) ? dados[0] : dados;
+
+  const valoresDevidos = Array.isArray(decl?.valoresDevidos) ? decl.valoresDevidos : [];
+  const dasValor = valoresDevidos.length
+    ? round2(valoresDevidos.reduce((s, v) => s + Number(v.valor || 0), 0))
+    : null;
+  const tributos = valoresDevidos.map((v) => ({
+    codigo: v.codigoTributo,
+    nome: COD_TRIBUTO[v.codigoTributo] || String(v.codigoTributo),
+    valor: Number(v.valor || 0),
+  }));
+  const numeroDeclaracao = decl?.idDeclaracao ?? null;
+  const dataHoraTransmissao = decl?.dataHoraTransmissao ?? null;
+  const mensagens = raw?.mensagens ?? [];
+  return {
+    dasValor,
+    rbt12: null, // RBT12 não vem no retorno — é o que NÓS enviamos em receitasBrutasAnteriores
+    numeroDeclaracao, dataHoraTransmissao,
+    tributos, mensagens, raw: decl,
+  };
 }
 
 export class PgdasSimulacaoService {
