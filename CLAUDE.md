@@ -69,6 +69,25 @@ Rotas protegidas pelo middleware `requireRole`. Nunca bypassar sem motivo explí
 - [x] PDF reader Python integrado como serviço separado
 - [x] Deploy Railway com Dockerfile e variáveis de ambiente
 
+## Princípios de trabalho (INEGOCIÁVEIS)
+
+> Definidos pelo dono do projeto. Valem pra qualquer tarefa, em qualquer arquivo.
+
+1. **NÃO INVENTAR NADA.** Não chutar valores, IDs, nomes de campo, endpoints,
+   regras fiscais, alíquotas, estruturas de payload de API, nem comportamento de
+   integração. Se um dado é externo (SERPRO, SEFAZ, RFB, gov.br) e não está
+   confirmado por documentação oficial ou pelo dono, **não preencher por suposição**.
+2. **O QUE NÃO SOUBER, PERGUNTAR.** Diante de incerteza sobre um requisito, um
+   dado fiscal, um ID de atividade, um campo de API ou o efeito de uma ação —
+   **perguntar ao dono antes de codar/executar**, não adivinhar.
+3. **MARCAR O NÃO-VERIFICADO.** Quando algo só puder ser confirmado em ambiente
+   externo (ex: `idAtividade` do PGDAS-D no trial), deixar explícito no código
+   (ex: flag `verificadoTrial: false`) e avisar — nunca tratar como certo.
+4. **FONTE OFICIAL VENCE.** Documentação oficial (apicenter SERPRO, manuais RFB,
+   LC 123/06) tem prioridade sobre memória, exemplos de terceiros ou inferência.
+5. **NUNCA transmitir/gravar ato fiscal por suposição.** Transmissão PGDAS-D,
+   manifestação, emissão — só com dados confirmados e confirmação explícita.
+
 ## Regras Gerais
 
 - Sempre considerar o contexto fiscal brasileiro (NFe, NFS-e, SEFAZ)
