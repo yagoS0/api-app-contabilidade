@@ -27,6 +27,7 @@ import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
+import { criarBatchJob } from "../../workers/apuracaoBatchWorker.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import {
@@ -2661,6 +2662,54 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
 
     return res.json({ ok: true, competencia, items });
+  });
+
+  // Q15.6: fila de transmissão em lote ao SERPRO
+  // POST /firm/apuracao/batch  body: { portalClientIds:[], competencia }
+  router.post("/apuracao/batch", async (req, res) => {
+    const { portalClientIds, competencia } = req.body || {};
+    if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+      return res.status(400).json({ ok: false, error: "invalid_competencia" });
+    }
+    try {
+      const result = await criarBatchJob({
+        portalClientIds, competencia, userId: req.auth?.user?.id,
+      });
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      log.warn({ err: err?.message }, "Falha ao criar batch de apuração");
+      return res.status(err?.code === "NO_COMPANIES" || err?.code === "NONE_CLOSED" ? 400 : 500)
+        .json({ ok: false, error: err?.code || "batch_failed", message: err?.message });
+    }
+  });
+
+  // GET /firm/apuracao/batch/:jobId — progresso (polling)
+  router.get("/apuracao/batch/:jobId", async (req, res) => {
+    const jobId = String(req.params.jobId);
+    try {
+      const job = await prisma.apuracaoBatchJob.findUnique({ where: { id: jobId } });
+      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      const items = await prisma.apuracaoBatchItem.findMany({
+        where: { jobId },
+        select: { portalClientId: true, status: true, dasValor: true, numeroDeclaracao: true, erroMensagem: true },
+      });
+      // enriquece com razão social
+      const ids = items.map((i) => i.portalClientId);
+      const empresas = await prisma.portalClient.findMany({ where: { id: { in: ids } }, select: { id: true, razao: true } });
+      const razaoById = new Map(empresas.map((e) => [e.id, e.razao]));
+      return res.json({
+        ok: true,
+        job: {
+          id: job.id, status: job.status, competencia: job.competencia,
+          totalEmpresas: job.totalEmpresas, okCount: job.okCount,
+          errorCount: job.errorCount, pendenteCount: job.pendenteCount,
+          concluidoEm: job.concluidoEm,
+        },
+        items: items.map((i) => ({ ...i, razao: razaoById.get(i.portalClientId) || i.portalClientId })),
+      });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: "batch_status_failed", message: err?.message });
+    }
   });
 
   const accountingEntryRulesRouter = createAccountingEntryRulesRouter({ log });

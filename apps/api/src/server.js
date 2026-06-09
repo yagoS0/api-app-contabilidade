@@ -1,7 +1,8 @@
 // src/server.js
 import express from "express";
 import cors from "cors";
-import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED } from "./config.js";
+import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, APURACAO_BATCH_WORKER_ENABLED } from "./config.js";
+import { runApuracaoBatchLoop } from "./workers/apuracaoBatchWorker.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
 import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
@@ -169,5 +170,12 @@ if (SERPRO_DCTFWEB_WORKER_ENABLED) {
 if (DFE_NOTAS_WORKER_ENABLED) {
   runDfeNotasWorkerLoop().catch((err) => {
     log.error({ err: err?.message || err }, "dfeNotasWorker loop fatal");
+  });
+}
+
+// Q15.6: worker da fila de transmissão de apurações ao SERPRO (opt-in).
+if (APURACAO_BATCH_WORKER_ENABLED) {
+  runApuracaoBatchLoop().catch((err) => {
+    log.error({ err: err?.message || err }, "apuracaoBatchWorker loop fatal");
   });
 }

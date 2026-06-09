@@ -100,6 +100,8 @@ export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
 export const GUIDE_EMAIL_WORKER_ENABLED = process.env.GUIDE_EMAIL_WORKER_ENABLED === "1";
 export const SERPRO_PGDASD_WORKER_ENABLED = process.env.SERPRO_PGDASD_WORKER_ENABLED === "1";
 export const SERPRO_DCTFWEB_WORKER_ENABLED = process.env.SERPRO_DCTFWEB_WORKER_ENABLED === "1";
+// Q15.6: worker da fila de transmissão de apurações ao SERPRO (opt-in).
+export const APURACAO_BATCH_WORKER_ENABLED = process.env.APURACAO_BATCH_WORKER_ENABLED === "1";
 // Q12.B+++.5: worker automático de captura de NF-e (SEFAZ) e NFS-e (gov.br/nfse).
 // Intervalo mínimo entre ciclos por CNPJ — respeita NT 2014.002 v1.10 (Consumo Indevido).
 export const DFE_NOTAS_WORKER_ENABLED = process.env.DFE_NOTAS_WORKER_ENABLED === "1";
