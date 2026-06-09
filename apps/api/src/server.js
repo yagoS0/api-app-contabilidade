@@ -27,6 +27,7 @@ import { seedDeparaAnexoGlobal } from "./application/notas/apuracao/DeparaAnexoS
 import { seedAliquotaSimplesNacional } from "./application/notas/apuracao/v2/seeds/AliquotaSimplesNacionalSeeds.js";
 import { seedCnaeAnexo } from "./application/notas/apuracao/v2/seeds/CnaeAnexoSeeds.js";
 import { seedRegraClassificacaoGlobal } from "./application/notas/apuracao/v2/seeds/RegraClassificacaoSeeds.js";
+import { seedAtividadePgdasd } from "./application/notas/apuracao/v2/seeds/AtividadePgdasdSeeds.js";
 import { prisma } from "./infrastructure/db/prisma.js";
 
 const app = express();
@@ -137,6 +138,10 @@ app.listen(PORT, HOST, () => {
   // Q14.1.d seeds: regras de classificação GLOBAL (LC116 itens + capítulos)
   seedRegraClassificacaoGlobal(prisma, { log }).catch((err) => {
     log.warn({ err: err?.message || err }, "Seed RegraClassificacao falhou");
+  });
+  // Q15.2 seeds: de-para idAtividade do PGDAS-D (⚠ confirmar IDs no trial)
+  seedAtividadePgdasd(prisma, { log }).catch((err) => {
+    log.warn({ err: err?.message || err }, "Seed AtividadePgdasd falhou");
   });
 });
 

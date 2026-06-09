@@ -1137,6 +1137,9 @@ model CadastroFiscal {
   // Usar com cautela — viola "nota é sinal". Útil pra empresas mono-atividade
   // onde notas vêm com códigos errados/genéricos do emissor.
   forcarTipoReceitaPorCnae Boolean @default(false)
+  // Q15: regime de apuração do PGDAS-D (anual, irreversível). Define se o payload
+  // usa receitaPaCompetencia* (COMPETENCIA) ou receitaPaCaixa* (CAIXA).
+  regimeApuracao    String   @default("COMPETENCIA") // COMPETENCIA | CAIXA
   observacoes       String?
   createdByUserId   String?
   createdAt         DateTime @default(now())
@@ -1276,11 +1279,22 @@ model ApuracaoSnapshot {
   // Reconciliação extrato (Fase 5)
   rbt12Extrato             Decimal? @db.Decimal(18, 2)
   divergenciaRbt12         Decimal? @db.Decimal(18, 2)
+  // Q15 — fechamento (contador escolhe atividades; RFB calcula anexo/DAS)
+  atividadesEscolhidas     Json?    // [{ idAtividade, valorInterno, valorExterno, flags }]
+  receitaInterna           Decimal? @db.Decimal(18, 2)
+  receitaExterna           Decimal? @db.Decimal(18, 2)
+  folhaMensal12            Json?    // série de 12 meses { pa: valor } pro Fator-R
+  simulacaoSerpro          Json?    // retorno oficial PGDAS-D (indicadorTransmissao:false) — verdade do preview
+  tributosPorTributo       Json?    // { IRPJ, CSLL, COFINS, PIS, CPP, ICMS, ISS, IPI }
+  disparidades             Json?    // avisos atividade↔CNAE (não bloqueia)
+  fechadaEm                DateTime?
+  fechadaPor               String?
   // Identificadores SERPRO pós-transmissão
   numeroDeclaracao         String?
   reciboNumero             String?
   transmitidoEm            DateTime?
-  // Estado (estende máquina existente com bloqueada_pendencias / erro_calculo / erro_transmissao)
+  // Estado: aberta | configurando | calculada | fechada | transmitida | confirmada
+  //         | bloqueada_pendencias | erro_calculo | erro_transmissao | erro
   estado                   String   @default("pendente")
   idempotencyKey           String   @unique
   erroMensagem             String?
@@ -1336,4 +1350,77 @@ model ApuracaoBatchJob {
 
   @@index([status, iniciadoEm])
   @@map("apuracao_batch_jobs")
+}
+
+// Q15 — item de fila por empresa dentro de um ApuracaoBatchJob.
+// Falha em 1 item não derruba o lote; worker processa FIFO com backoff.
+model ApuracaoBatchItem {
+  id              String   @id @default(uuid())
+  jobId           String
+  portalClientId  String
+  competencia     String
+  status          String   @default("pendente") // pendente | processando | ok | erro
+  dasValor        Decimal? @db.Decimal(18, 2)
+  numeroDeclaracao String?
+  erroMensagem    String?
+  tentativas      Int      @default(0)
+  backoffUntil    DateTime?
+  processadoEm    DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([jobId])
+  @@index([status, backoffUntil])
+  @@map("apuracao_batch_items")
+}
+
+// Q15 — cache do RBT12 (custo SERPRO por requisição: cache é requisito).
+// detalhePorMes guarda interno/externo separados (vira receitasBrutasAnteriores).
+model RbtExtratoCache {
+  id              String   @id @default(uuid())
+  portalClientId  String
+  competencia     String   // YYYY-MM (PA de referência do RBT12)
+  rbt12           Decimal  @db.Decimal(18, 2)
+  detalhePorMes   Json     // [{ pa, valorInterno, valorExterno }] (12 meses anteriores)
+  origem          String   // SIMULACAO | EXTRATO | PARCIAL_LOCAL
+  capturadoEm     DateTime @default(now())
+
+  @@unique([portalClientId, competencia])
+  @@index([portalClientId])
+  @@map("rbt_extrato_cache")
+}
+
+// Q15 — memória da última configuração de apuração por empresa (defaults).
+// Reaparece pré-preenchida na próxima competência.
+model ApuracaoConfigMemory {
+  id                   String   @id @default(uuid())
+  portalClientId       String   @unique
+  atividadesEscolhidas Json     // [{ idAtividade, ... }]
+  folhaMensal12        Json?    // série de 12 meses
+  regimeApuracao       String?
+  flags                Json?
+  atualizadoEm         DateTime @default(now())
+  atualizadoPor        String?
+
+  @@map("apuracao_config_memory")
+}
+
+// Q15 — tabela de-para versionada: atividade do PGDAS-D → anexo/mercado implícitos.
+// idAtividade é o que vai no payload TRANSDECLARACAO11 (estabelecimentos[].atividades[]).
+// Levantar lista completa no ambiente trial; versionar (muda quando RFB altera programa).
+model AtividadePgdasd {
+  id              String   @id @default(uuid())
+  idAtividade     Int      // ID na tabela de atividades do PGDAS-D
+  descricao       String
+  anexoImplicito  String   // I | II | III | IV | V (informativo — RFB decide o final)
+  mercado         String   @default("INTERNO") // INTERNO | EXTERNO
+  sujeitoFatorR   Boolean  @default(false)
+  // mapeamento pro nosso classificador (tipoReceita → idAtividade)
+  tipoReceita     String?  // TipoReceita correspondente (pra default automático)
+  vigenciaInicio  DateTime
+  vigenciaFim     DateTime?
+  verificadoTrial Boolean  @default(false) // true após confirmar o ID no ambiente trial
+
+  @@unique([idAtividade, vigenciaInicio])
+  @@index([tipoReceita, mercado])
+  @@map("atividades_pgdasd")
 }
