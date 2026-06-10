@@ -43,18 +43,25 @@ Rotas protegidas pelo middleware `requireRole`. Nunca bypassar sem motivo explí
 
 ### Em andamento (branch `dev`)
 
-- [x] Módulo de lançamentos contábeis — base completa
-  - Schema Prisma + migrations `20260410`, `20260411`
-  - Plano de contas (CRUD + importação CSV/PDF)
-  - OFX import, export CSV, baixa de provisões, circular anual
-- [ ] Sistema de históricos persistentes (`AccountingHistorico`)
-  - Schema adicionado (migration `20260413`)
-  - Backend: 4 rotas (`/historicos` GET, GET by-code, POST, DELETE)
-  - Auto-save ao criar lançamento (scope COMPANY por padrão)
-  - Frontend: autocomplete por API no campo histórico
-  - Frontend: sugestão de histórico ao digitar código D/C
-  - Campos D/C agora aceitam qualquer código (free-form)
-  - Promoção de COMPANY → GLOBAL: pendente (tela de gerenciamento de históricos)
+- [x] Módulo de lançamentos contábeis — base completa (plano de contas, OFX,
+  export CSV, baixa de provisões, circular anual, históricos persistentes,
+  funções de lançamento, parcelamentos)
+- [x] **Módulo de Notas Fiscais (Q12)** — captura NF-e (SEFAZ DFe) + NFS-e (ADN
+  Nacional gov.br) com cert A1 por empresa; manifestação destinatário; workers
+  automáticos com rate limit; alertas de cursor desatualizado.
+- [x] **Apuração Simples Nacional — refundação (Q14)** — cadastro = autoridade,
+  classificação como sinal, motor de cálculo local, Fator-R mensal, filas de
+  pendência. Models: CadastroFiscal, ProdutoServico, RegraClassificacao,
+  CnaeAnexo, AliquotaSimplesNacional, ApuracaoSnapshot, etc.
+- [~] **Apuração — fluxo de fechamento + SERPRO (Q15)** — tabela global com
+  seleção múltipla; FechamentoModal (atividades, folha 12m, disparidade);
+  **simulação oficial PGDAS-D (TRANSDECLARACAO11) validada em produção real**;
+  fila de transmissão em lote (consulta-antes-de-transmitir).
+  - Pendente: validar os demais `idAtividade` (só o 11 exercido); transmissão
+    real (`indicadorTransmissao:true`) ainda não testada; ligar worker da fila.
+  - Detalhes técnicos do PGDAS-D: ver `apps/api/CLAUDE.md`.
+- [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
+  envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 
 ### Concluído (main)
 

@@ -85,6 +85,52 @@ router.get('/', requireAuth, requireRole(['FIRM_ADMIN']), async (req, res) => {
 | Storage          | `infrastructure/storage`           | Upload local / cloud          |
 | PDF Reader       | `infrastructure/pdfReader`         | Chamadas ao serviço Python    |
 
+## Módulo de Apuração Simples Nacional (Q14/Q15) — fluxo novo
+
+> Princípio fundador: **a nota é SINAL, o cadastro é AUTORIDADE, o motor calcula,
+> nada é chutado.** Item sem regra vira pendência (não vai pra anexo "provável").
+
+**Camadas (em `application/notas/apuracao/v2/`):**
+- `ClassificadorService.js` — classifica `NotaItem` → `TipoReceita` (regra EMPRESA →
+  GLOBAL → capítulo LC116 → pendência). Sem match = `FilaPendencia(ITEM_SEM_REGRA)`.
+- `AprendizadoService.js` — resolver pendência cria `RegraClassificacao` escopo EMPRESA.
+- `AtividadeResolver.js` — converte receita classificada (tipoReceita+mercado) nas
+  `atividades[]` do PGDAS-D (de-para via model `AtividadePgdasd`).
+- `FechamentoService.js` — orquestra o modal: getDados / calcular / salvar / transmitir.
+- `RbtExtratoService.js` — RBT12 (cache `RbtExtratoCache`; fonte SIMULACAO > local).
+- `ApuracaoConfigMemoryService.js` — memória da última config por empresa (reaparece).
+- `DisparidadeService.js` — avisa atividade↔CNAE (nunca bloqueia).
+- `FatorRService.js`, `AliquotaResolver.js`, `MotorApuracaoService.js` — cálculo
+  LOCAL (double-check; a verdade do DAS vem da RFB via simulação).
+
+**SERPRO PGDAS-D (`application/fiscal/serpro/`):**
+- `PgdasSimulacaoService.js` — monta o payload `TRANSDECLARACAO11` e chama:
+  - `simular()` = `indicadorTransmissao:false` → cálculo oficial **sem transmitir**
+    (é a verdade do botão [Calcular]). `transmitir()` = `true` → declara/gera DAS.
+- idServicos em uso: `GERARDAS12`, `CONSDECLARACAO13`, `CONSULTIMADECREC14`,
+  `TRANSDECLARACAO11`. Cliente HTTP: `SerproHttpClient` (baseUrl + cert + OAuth2
+  vêm de `getResolvedSerproCredentials` — **uma só config**, prod por padrão).
+
+**Regras CRÍTICAS do PGDAS-D (validadas contra a API real):**
+- O contador escolhe **ATIVIDADE** (`idAtividade`), NÃO o anexo. A RFB decide
+  anexo, faixa, III↔V do Fator-R, repartição e DAS. A gente só envia atividades.
+- Mercado interno/externo é codificado no próprio `idAtividade` (ex: 1=interno,
+  3=exterior) — NÃO há flag `tipoMercado` em `receitasAtividade`.
+- `pa` é **Number** (AAAAMM). `receitaPaCaixa*`/`valorFixo*` = `null` quando não
+  se aplica (valorFixo "deve ser > 0", senão null — não mandar 0).
+- DAS = **soma de `valoresDevidos[]`** no retorno (não existe `valorTotalDevido`).
+- Tabela `AtividadePgdasd`: **43 atividades oficiais**. Só as `verificadoTrial:true`
+  foram exercidas contra a API; o resto vem da spec — confirmar antes de produção
+  (`apps/api/scripts/mark-atividade-verificada.js <id>`).
+- **Fila de transmissão** (`workers/apuracaoBatchWorker.js`, opt-in
+  `APURACAO_BATCH_WORKER_ENABLED=1`): **consulta-antes-de-transmitir**
+  (CONSDECLARACAO13) — PA já declarado NÃO é retransmitido (evita retificadora).
+
+**Status (2026-06-09):** simulação validada em produção real (LENTE 2026-05 →
+DAS R$ 26.670,52, `[Sucesso-PGDASD]`). Transmissão real (`true`) ainda não
+exercida. Scripts úteis: `rodar-simulacao-pgdasd.js`, `gerar-payload-pgdasd.js`,
+`gerar-curls-trial.js`, `test-fechamento-dados.js`.
+
 ## Variáveis de Ambiente Obrigatórias
 
 ```
@@ -94,6 +140,10 @@ GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET  (ou SMTP_*)
 PDF_READER_URL   (URL do serviço FastAPI)
 PORT             (default 3000)
 ```
+
+Workers opt-in (default desligados): `GUIDE_EMAIL_WORKER_ENABLED`,
+`SERPRO_PGDASD_WORKER_ENABLED`, `SERPRO_DCTFWEB_WORKER_ENABLED`,
+`DFE_NOTAS_WORKER_ENABLED`, `APURACAO_BATCH_WORKER_ENABLED`.
 
 ## Regras
 
