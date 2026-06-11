@@ -450,6 +450,26 @@ export function CircularTab({
 
   const monthKeys = MONTH_LABELS.map((_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
 
+  // Q17: totais por linha em TRIMESTRE (Q1–Q4) e ANUAL — calculados a partir da mesma
+  // matriz exibida (fonte única; evita divergência com o grid mensal).
+  const resumoTriAnual = useMemo(() => {
+    if (!circularData) return null;
+    const somaTri = (vals, qi) => vals.slice(qi * 3, qi * 3 + 3).reduce((s, v) => s + v, 0);
+    const rowVals = (getVal) => {
+      const vals = monthKeys.map((c) => Number(getVal(c)) || 0);
+      return { q: [somaTri(vals, 0), somaTri(vals, 1), somaTri(vals, 2), somaTri(vals, 3)], ano: vals.reduce((s, v) => s + v, 0) };
+    };
+    const linhas = visibleRows.map((r) => ({
+      label: r.label,
+      ...rowVals((c) => { const e = matrix[`${r.key}__${c}`]; return e ? (e.totalD || e.valor || 0) : 0; }),
+    }));
+    return {
+      linhas,
+      faturamento: rowVals((c) => circularData.receitas?.[c] || 0),
+      aberto: rowVals((c) => abertoByMonth[c] || 0),
+    };
+  }, [circularData, matrix, visibleRows, abertoByMonth, monthKeys]);
+
   async function handleEditSave(form) {
     if (!editEntry || !onUpdateEntry) return;
     setSavingEdit(true);
@@ -665,6 +685,40 @@ export function CircularTab({
                   <FaturamentoCell key={comp} valor={circularData.receitas?.[comp]} />
                 ))}
               </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Q17: totais por linha — TRIMESTRE (Q1–Q4) e ANUAL */}
+      {!loading && circularData && resumoTriAnual && (
+        <div style={{ marginTop: 20, overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", color: "#F8F8F2" }}>
+            <thead>
+              <tr style={{ background: "#282A36" }}>
+                {["Linha", "Trim. 1", "Trim. 2", "Trim. 3", "Trim. 4", "Anual"].map((h, i) => (
+                  <th key={h} style={{
+                    padding: "6px 10px", textAlign: i === 0 ? "left" : "right", fontSize: "0.7rem", fontWeight: 700,
+                    color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.05em",
+                    borderBottom: "2px solid #44475A",
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...resumoTriAnual.linhas, { label: "Faturamento", ...resumoTriAnual.faturamento, _accent: "#8BE9FD" }, { label: "Total em Aberto", ...resumoTriAnual.aberto, _accent: "#FF4757" }].map((r) => (
+                <tr key={r.label} style={{ borderBottom: "1px solid #44475A" }}>
+                  <td style={{ padding: "6px 10px", fontWeight: 600, color: r._accent || "#F8F8F2", whiteSpace: "nowrap" }}>{r.label}</td>
+                  {r.q.map((v, qi) => (
+                    <td key={qi} style={{ padding: "6px 10px", textAlign: "right", color: v ? "#F8F8F2" : "#44475A" }}>
+                      {v ? `R$ ${fmtMoney(v)}` : "—"}
+                    </td>
+                  ))}
+                  <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, color: r._accent || "#F8F8F2" }}>
+                    {r.ano ? `R$ ${fmtMoney(r.ano)}` : "—"}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

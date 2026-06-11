@@ -60,6 +60,15 @@ Rotas protegidas pelo middleware `requireRole`. Nunca bypassar sem motivo explí
   - Pendente: validar os demais `idAtividade` (só o 11 exercido); transmissão
     real (`indicadorTransmissao:true`) ainda não testada; ligar worker da fila.
   - Detalhes técnicos do PGDAS-D: ver `apps/api/CLAUDE.md`.
+- [x] **Parcelamento real (Q16)** — 1 provisão (abertura) + linhas leves de parcela +
+  baixa por pagamento; contas D/C em branco com memória por linha (igual Simples);
+  envio em lote com 3 estados; selo de e-mail no dashboard.
+- [~] **Fluxo mensal do contador (Q17)** — cron busca **extrato** (gera lançamentos) além
+  das guias; guia **"Vazio"** (ausência confirmada → amarelo); **circular com trimestre/anual**
+  por linha; **fechamento contábil do mês** (bloqueia se houver lançamento em branco/D≠C);
+  dashboard filtra por competência (mês anterior) + pendências; card muda de cor quando
+  fechada; aba **Lançamentos** vira a primeira. Cada bloco de arquitetura tem seu `CLAUDE.md`.
+  - Pendente: aplicar a migração `add_fechamento_contabil` (requer o banco no ar).
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 

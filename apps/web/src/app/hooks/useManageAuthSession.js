@@ -58,8 +58,8 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
         console.warn("[setPage(companyDetail)] companyId ausente, voltando pra /companies");
         return navigate("/companies");
       }
-      // navega pra default tab (guides) — sub-rotas serão habilitadas no Commit 3
-      return navigate(`/companies/${cid}/guides`);
+      // Q17: aba default = Lançamentos (era guides).
+      return navigate(`/companies/${cid}/lancamentos`);
     }
     const target = PAGE_TO_PATH[name];
     if (target) navigate(target);

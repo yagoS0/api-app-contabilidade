@@ -89,14 +89,17 @@ export async function computeGuideComplianceMap(rows, competencia) {
       regimeTributario: regime,
       hasParcDasAtivo,
     });
+    // state por tributo (Q17): "present" (guia PROCESSED) | "vazio" (ausência confirmada)
+    // | "missing" (falta) | "na" (não exigido). O front pinta verde/amarelo/vermelho.
+    const node = (required) => ({ required, ok: !required, state: required ? "missing" : "na" });
     const base = {
       competencia,
-      inss: { required: req.inssRequired, ok: !req.inssRequired },
-      das: { required: req.dasRequired, ok: !req.dasRequired },
-      irpj: { required: req.irpjRequired, ok: !req.irpjRequired },
-      csll: { required: req.csllRequired, ok: !req.csllRequired },
-      pisCofins: { required: req.pisCofinsRequired, ok: !req.pisCofinsRequired },
-      iss: { required: req.issRequired, ok: !req.issRequired },
+      inss: node(req.inssRequired),
+      das: node(req.dasRequired),
+      irpj: node(req.irpjRequired),
+      csll: node(req.csllRequired),
+      pisCofins: node(req.pisCofinsRequired),
+      iss: node(req.issRequired),
       // Parcelamento DAS: required=true significa "tem parcela ABERTA";
       // ok=false enquanto não pagar (a tag aparece amarela/laranja no card).
       parcDas: { required: req.parcDasRequired, ok: !req.parcDasRequired },
@@ -123,57 +126,63 @@ export async function computeGuideComplianceMap(rows, competencia) {
     where: {
       portalClientId: { in: portalIds },
       competencia,
-      status: "PROCESSED",
+      // Q17: inclui marcadores VAZIO (ausência confirmada) além das guias PROCESSED.
+      status: { in: ["PROCESSED", "VAZIO"] },
       tipo: { in: ["INSS", "SIMPLES", "IRPJ", "CSLL", "PIS", "COFINS", "ISS", "DARF"] },
     },
-    select: { portalClientId: true, tipo: true, extracted: true },
+    select: { portalClientId: true, tipo: true, status: true, extracted: true },
   });
 
-  // Para cada empresa, agrega os tipos presentes. DARF expande pelos códigos da composição
-  // (ex: DARF com 2172+8109 → marca PIS_COFINS_HAS=true; com 2089 → IRPJ_HAS=true).
-  const byPortal = new Map();
   const CODIGO_TO_GROUP = {
     "2089": "IRPJ", "2362": "IRPJ", "2456": "IRPJ", "0220": "IRPJ",
     "2372": "CSLL", "2484": "CSLL", "6012": "CSLL",
     "2172": "PIS_COFINS", "8109": "PIS_COFINS",
   };
+  // presentByPortal = guias PROCESSED; vazioByPortal = marcadores VAZIO.
+  const presentByPortal = new Map();
+  const vazioByPortal = new Map();
+  const addTo = (mapp, portalId, key) => {
+    if (!mapp.has(portalId)) mapp.set(portalId, new Set());
+    mapp.get(portalId).add(key);
+  };
   for (const g of guides) {
     if (!g.portalClientId) continue;
-    if (!byPortal.has(g.portalClientId)) byPortal.set(g.portalClientId, new Set());
-    const set = byPortal.get(g.portalClientId);
     const tipo = String(g.tipo || "").toUpperCase();
-    set.add(tipo);
-    // Quando o tipo agrupado (PIS/COFINS) entra individualmente, marca também o grupo.
-    if (tipo === "PIS" || tipo === "COFINS") set.add("PIS_COFINS");
-    // DARF: explode pela composição
-    if (tipo === "DARF") {
+    const target = g.status === "VAZIO" ? vazioByPortal : presentByPortal;
+    addTo(target, g.portalClientId, tipo);
+    if (tipo === "PIS" || tipo === "COFINS") addTo(target, g.portalClientId, "PIS_COFINS");
+    // DARF real (PROCESSED) explode pela composição; VAZIO não tem composição.
+    if (tipo === "DARF" && g.status === "PROCESSED") {
       const composicao = Array.isArray(g.extracted?.composicao) ? g.extracted.composicao : [];
       for (const c of composicao) {
         const group = CODIGO_TO_GROUP[String(c.codigo || "")];
-        if (group) set.add(group);
+        if (group) addTo(presentByPortal, g.portalClientId, group);
       }
     }
   }
 
+  // present vence vazio; vazio vence missing. ok = present || vazio (ambos "resolvem").
+  const resolveNode = (node, presentHas, vazioHas) => {
+    if (!node.required) return { ...node, ok: true, state: "na" };
+    if (presentHas) return { ...node, ok: true, state: "present" };
+    if (vazioHas) return { ...node, ok: true, state: "vazio" };
+    return { ...node, ok: false, state: "missing" };
+  };
+
   for (const portalId of portalIds) {
     const current = map.get(portalId);
     if (!current) continue;
-    const tipos = byPortal.get(portalId) || new Set();
-    const inssOk = current.inss.required ? tipos.has("INSS") : true;
-    const dasOk = current.das.required ? tipos.has("SIMPLES") : true;
-    const irpjOk = current.irpj.required ? tipos.has("IRPJ") : true;
-    const csllOk = current.csll.required ? tipos.has("CSLL") : true;
-    const pisCofinsOk = current.pisCofins.required ? tipos.has("PIS_COFINS") : true;
-    const issOk = current.iss.required ? tipos.has("ISS") : true;
+    const pres = presentByPortal.get(portalId) || new Set();
+    const vaz = vazioByPortal.get(portalId) || new Set();
+    const inss = resolveNode(current.inss, pres.has("INSS"), vaz.has("INSS"));
+    const das = resolveNode(current.das, pres.has("SIMPLES"), vaz.has("SIMPLES"));
+    const irpj = resolveNode(current.irpj, pres.has("IRPJ"), vaz.has("IRPJ"));
+    const csll = resolveNode(current.csll, pres.has("CSLL"), vaz.has("CSLL"));
+    const pisCofins = resolveNode(current.pisCofins, pres.has("PIS_COFINS"), vaz.has("PIS_COFINS"));
+    const iss = resolveNode(current.iss, pres.has("ISS"), vaz.has("ISS"));
     map.set(portalId, {
-      ...current,
-      inss: { ...current.inss, ok: inssOk },
-      das: { ...current.das, ok: dasOk },
-      irpj: { ...current.irpj, ok: irpjOk },
-      csll: { ...current.csll, ok: csllOk },
-      pisCofins: { ...current.pisCofins, ok: pisCofinsOk },
-      iss: { ...current.iss, ok: issOk },
-      ok: inssOk && dasOk && irpjOk && csllOk && pisCofinsOk && issOk,
+      ...current, inss, das, irpj, csll, pisCofins, iss,
+      ok: inss.ok && das.ok && irpj.ok && csll.ok && pisCofins.ok && iss.ok,
     });
   }
 

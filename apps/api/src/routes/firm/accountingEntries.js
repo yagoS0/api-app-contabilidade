@@ -187,6 +187,36 @@ function validateLines(lines) {
   return { ok: true, totalD, totalC, diferenca, balanced: diferenca <= 0.01 };
 }
 
+// Q17: valida se a competência pode ser FECHADA (fechamento contábil).
+// Bloqueia por lançamento: em branco (sem linhas / conta vazia) OU D≠C (desbalanceado).
+// Ignora linhas de rastreio de parcela (tipo="PARCELA") e a abertura/baixas de parcelamento
+// não são desbalanceadas. Retorna { ok, blockers: [{ entryId, competencia, historico, motivo }] }.
+async function validateFechamentoContabil(prisma, { portalClientId, competencia }) {
+  const entries = await prisma.accountingEntry.findMany({
+    where: { portalClientId, competencia, tipo: { not: "PARCELA" } },
+    include: { lines: true },
+  });
+  const blockers = [];
+  for (const e of entries) {
+    const lines = e.lines || [];
+    if (lines.length === 0) {
+      blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "em_branco" });
+      continue;
+    }
+    const temContaVazia = lines.some((l) => !String(l.conta || "").trim());
+    if (temContaVazia) {
+      blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "conta_em_branco" });
+      continue;
+    }
+    const totalD = lines.filter((l) => String(l.tipo).toUpperCase() === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+    const totalC = lines.filter((l) => String(l.tipo).toUpperCase() === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
+    if (Math.abs(totalD - totalC) > 0.01) {
+      blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "desbalanceado", totalD, totalC });
+    }
+  }
+  return { ok: blockers.length === 0, blockers, totalEntries: entries.length };
+}
+
 function entryToResponse(entry) {
   const lines = entry.lines || [];
   const totalD = lines
@@ -832,6 +862,78 @@ export function createAccountingEntriesRouter({ log }) {
     });
 
     return res.json({ data: entries.map(entryToResponse) });
+  });
+
+  // Q17: FECHAMENTO CONTÁBIL do mês ─────────────────────────────────────────
+  // GET estado + bloqueios (lançamentos em branco / desbalanceados).
+  router.get("/fechamento-contabil/:competencia", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia || "").trim();
+    if (!competencia) return res.status(400).json({ error: "competencia_required" });
+    try {
+      const circular = await prisma.companyMonthlyCircular.findUnique({
+        where: { portalClientId_competencia: { portalClientId, competencia } },
+        select: { fechadoContabilEm: true, fechadoContabilPor: true },
+      });
+      const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
+      return res.json({
+        ok: true,
+        competencia,
+        fechado: Boolean(circular?.fechadoContabilEm),
+        fechadoEm: circular?.fechadoContabilEm || null,
+        fechadoPor: circular?.fechadoContabilPor || null,
+        podeFechar: validation.ok,
+        blockers: validation.blockers,
+      });
+    } catch (err) {
+      log.error({ err }, "Falha ao consultar fechamento contábil");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // POST fechar — bloqueia se houver lançamento em branco ou desbalanceado.
+  router.post("/fechamento-contabil/:competencia/fechar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia || "").trim();
+    if (!competencia) return res.status(400).json({ error: "competencia_required" });
+    try {
+      const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
+      if (!validation.ok) {
+        return res.status(400).json({ ok: false, error: "fechamento_bloqueado", blockers: validation.blockers });
+      }
+      // Garante a linha da circular (cria se não existir) e marca o fechamento contábil.
+      const existing = await prisma.companyMonthlyCircular.findUnique({
+        where: { portalClientId_competencia: { portalClientId, competencia } },
+        select: { id: true },
+      });
+      const data = { fechadoContabilEm: new Date(), fechadoContabilPor: req.auth?.user?.id || null };
+      if (existing) {
+        await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data });
+      } else {
+        await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, ...data } });
+      }
+      return res.json({ ok: true, competencia, fechado: true });
+    } catch (err) {
+      log.error({ err }, "Falha ao fechar empresa (contábil)");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // POST reabrir — limpa o fechamento contábil.
+  router.post("/fechamento-contabil/:competencia/reabrir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia || "").trim();
+    if (!competencia) return res.status(400).json({ error: "competencia_required" });
+    try {
+      await prisma.companyMonthlyCircular.updateMany({
+        where: { portalClientId, competencia },
+        data: { fechadoContabilEm: null, fechadoContabilPor: null },
+      });
+      return res.json({ ok: true, competencia, fechado: false });
+    } catch (err) {
+      log.error({ err }, "Falha ao reabrir empresa (contábil)");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
   });
 
   // GET /firm/companies/:companyId/entries/export/csv

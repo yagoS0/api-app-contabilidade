@@ -395,6 +395,8 @@ function App() {
       onOpenGuideUpload={() => session.setPage("guideUpload")}
       onOpenFirmSettings={() => session.setPage("firmSettings")}
       onRefreshCompanies={companiesWorkspace.loadCompanies}
+      dashboardCompetencia={companiesWorkspace.dashboardCompetencia}
+      onChangeCompetencia={companiesWorkspace.changeDashboardCompetencia}
       onOpenPendingReport={() => session.setPage("pendingReport")}
       onOpenBatchEmail={() => session.setPage("batchEmail")}
       onOpenApuracao={() => session.setPage("apuracao")}

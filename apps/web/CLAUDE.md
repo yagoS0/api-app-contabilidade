@@ -77,6 +77,16 @@ const data = await api.getAccountingEntries(companyId);
 - Não criar arquivos CSS por componente
 - Componentes de UI reutilizáveis ficam em `src/components/`
 
+## Blocos com CLAUDE.md próprio (Q17)
+
+Ler antes de mexer; atualizar ao terminar: `src/features/companies/`,
+`src/features/guides/`, `src/features/accounting/`.
+- **Aba default da empresa = Lançamentos** (`useManageCompaniesWorkspace.deriveCompanyDetailTab`
+  + `useManageAuthSession` → `/companies/:id/lancamentos`).
+- **Dashboard** filtra por competência (default mês anterior, `changeDashboardCompetencia`)
+  e por pendências; tags por estado (verde/amarelo=vazio/vermelho); card inteiro muda de
+  cor quando a empresa está **fechada** (contábil).
+
 ## Regras
 
 - Toda feature nova precisa de entrada no `mockApi.js` antes de integrar o real

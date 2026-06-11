@@ -1,8 +1,123 @@
 import { useEffect, useRef, useState, useMemo } from "react";
+import { createApiClient } from "../../../../api/client";
 import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
 import { GuideLinkParcelamentoModal } from "../../../accounting/parcelamento/components/ParcelamentoModals";
+
+// Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
+// Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
+const EXPECTED_GUIDE_ROWS = [
+  { key: "das", label: "DAS (Simples)", tipo: "SIMPLES" },
+  { key: "inss", label: "INSS", tipo: "INSS" },
+  { key: "irpj", label: "IRPJ", tipo: "IRPJ" },
+  { key: "csll", label: "CSLL", tipo: "CSLL" },
+  { key: "pisCofins", label: "PIS/COFINS", tipo: "PIS" },
+  { key: "iss", label: "ISS", tipo: "ISS" },
+];
+
+function prevMonthCompetencia() {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+const STATE_STYLE = {
+  present: { color: "#69FF47", label: "presente" },
+  vazio: { color: "#FFB347", label: "vazio" },
+  missing: { color: "#FF5757", label: "faltando" },
+  na: { color: "#6272A4", label: "—" },
+};
+
+const expectedGuidesApi = createApiClient();
+
+function ExpectedGuidesPanel({ companyId }) {
+  const [competencia, setCompetencia] = useState(prevMonthCompetencia());
+  const [compliance, setCompliance] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [busyTipo, setBusyTipo] = useState(null);
+
+  async function load(comp) {
+    setLoading(true);
+    try {
+      const r = await expectedGuidesApi.getExpectedGuides(companyId, comp);
+      setCompliance(r?.compliance || null);
+    } catch { setCompliance(null); }
+    setLoading(false);
+  }
+  useEffect(() => { load(competencia); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [companyId, competencia]);
+
+  async function setVazio(tipo, undo) {
+    setBusyTipo(tipo);
+    try {
+      if (undo) await expectedGuidesApi.undoGuideVazio(companyId, tipo, competencia);
+      else await expectedGuidesApi.markGuideVazio(companyId, tipo, competencia);
+      await load(competencia);
+    } catch (err) {
+      // eslint-disable-next-line no-alert
+      window.alert(err?.message || "Falha ao atualizar status.");
+    } finally { setBusyTipo(null); }
+  }
+
+  const rows = EXPECTED_GUIDE_ROWS.filter((r) => compliance?.[r.key]?.required);
+
+  return (
+    <div style={{
+      marginBottom: 16, padding: "12px 14px", background: "#24253A",
+      border: "1px solid #44475A", borderRadius: 8,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
+        <strong style={{ color: "#F8F8F2", fontSize: "0.9rem" }}>Guias do mês (esperadas)</strong>
+        <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
+          Competência:
+          <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
+            style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 8px", colorScheme: "dark" }} />
+        </label>
+        {loading && <span style={{ color: "#6272A4", fontSize: "0.75rem" }}>carregando…</span>}
+      </div>
+      {!loading && rows.length === 0 && (
+        <div style={{ color: "#6272A4", fontSize: "0.8rem" }}>Nenhuma guia obrigatória para esta empresa/competência.</div>
+      )}
+      <div style={{ display: "grid", gap: 6 }}>
+        {rows.map((r) => {
+          const node = compliance[r.key] || {};
+          const st = STATE_STYLE[node.state] || STATE_STYLE.na;
+          const isVazio = node.state === "vazio";
+          const isPresent = node.state === "present";
+          return (
+            <div key={r.key} style={{
+              display: "grid", gridTemplateColumns: "1fr 110px 130px", gap: 8, alignItems: "center",
+              padding: "6px 8px", borderBottom: "1px solid #2a2c3d",
+            }}>
+              <span style={{ color: "#F8F8F2", fontSize: "0.82rem" }}>{r.label}</span>
+              <span style={{
+                justifySelf: "start", fontSize: "0.7rem", fontWeight: 700, padding: "2px 8px",
+                borderRadius: 999, color: st.color, background: `${st.color}22`, border: `1px solid ${st.color}`,
+              }}>
+                {st.label}
+              </span>
+              <span style={{ justifySelf: "end" }}>
+                {isPresent ? null : isVazio ? (
+                  <button type="button" disabled={busyTipo === r.tipo}
+                    onClick={() => setVazio(r.tipo, true)}
+                    style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: "pointer", background: "transparent", color: "#aeb6d3", border: "1px solid #44475A", borderRadius: 4 }}>
+                    desfazer
+                  </button>
+                ) : (
+                  <button type="button" disabled={busyTipo === r.tipo}
+                    onClick={() => setVazio(r.tipo, false)}
+                    style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: "pointer", background: "#FFB347", color: "#1A1B26", border: "none", borderRadius: 4, fontWeight: 700 }}>
+                    Vazio
+                  </button>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Tipos sempre disponíveis (qualquer regime).
 const GUIDE_TYPES = ["SIMPLES", "INSS", "FGTS", "DARF", "ISS", "PIS", "COFINS", "IRPJ", "CSLL", "OUTRA"];
@@ -395,6 +510,9 @@ export function CompanyGuidesTable({
           saving={completingSaving}
         />
       )}
+
+      {/* Q17: guias esperadas do mês + botão Vazio */}
+      <ExpectedGuidesPanel companyId={companyId} />
 
       {/* Filter bar */}
       <div className="guides-filters" aria-label="Filtros das guias">

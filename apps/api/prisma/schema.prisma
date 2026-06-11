@@ -732,6 +732,10 @@ model CompanyMonthlyCircular {
   fs12Origem          String?  // MANUAL | ESOCIAL (futuro)
   fatorR              Decimal? @db.Decimal(6, 4)  // 0.28 = 28%
   rb12                Decimal? @db.Decimal(18, 2) // soma móvel 12m
+  // Q17: fechamento CONTÁBIL do mês (distinto do `estado` da apuração/notas).
+  // Setado quando o contador fecha a empresa após lançar tudo; null = aberta.
+  fechadoContabilEm   DateTime?
+  fechadoContabilPor  String?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 

@@ -103,9 +103,9 @@ async function getGlobalChartStatus() {
   };
 }
 
-async function attachGuideComplianceToCompaniesList(data) {
+async function attachGuideComplianceToCompaniesList(data, competenciaArg) {
   if (!Array.isArray(data) || !data.length) return data;
-  const ref = getReferenceCompetencia();
+  const ref = competenciaArg || getReferenceCompetencia();
   const rows = data.map((item) => ({
     portalId: item.companyId,
     hasProlabore: Boolean(item.hasProlabore),
@@ -137,6 +137,33 @@ async function attachGuideComplianceToCompaniesList(data) {
     monthEmailSent: emailSentSet.has(item.companyId),
     monthEmailCompetencia: ref,
   }));
+}
+
+// Q17: anexa o estado do FECHAMENTO CONTÁBIL da competência por empresa (card "Fechada").
+async function attachFechamentoContabilToCompaniesList(data, competenciaArg) {
+  if (!Array.isArray(data) || !data.length) return data;
+  const competencia = competenciaArg || getReferenceCompetencia();
+  const portalIds = [...new Set(data.map((item) => item.companyId).filter(Boolean))];
+  const byPortal = new Map();
+  if (portalIds.length) {
+    const circs = await prisma.companyMonthlyCircular.findMany({
+      where: { portalClientId: { in: portalIds }, competencia },
+      select: { portalClientId: true, fechadoContabilEm: true, fechadoContabilPor: true },
+    });
+    for (const c of circs) byPortal.set(c.portalClientId, c);
+  }
+  return data.map((item) => {
+    const c = byPortal.get(item.companyId);
+    return {
+      ...item,
+      fechamentoContabil: {
+        competencia,
+        fechado: Boolean(c?.fechadoContabilEm),
+        fechadoEm: c?.fechadoContabilEm || null,
+        fechadoPor: c?.fechadoContabilPor || null,
+      },
+    };
+  });
 }
 
 async function attachSerproStatusToCompaniesList(data) {
@@ -327,6 +354,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const userId = String(req.auth.user.id);
     const appRole = String(req.auth.user.role || "").toLowerCase();
     const isAdminLike = appRole === "admin" || appRole === "contador";
+    // Q17: dashboard filtra por competência (default = mês anterior).
+    const competenciaRef = normalizeCompetencia(req.query?.competencia || "") || getReferenceCompetencia();
 
     if (isAdminLike) {
       const items = await prisma.portalClient.findMany({
@@ -383,10 +412,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             legacy: item.companyId ? legacyByCompanyId.get(item.companyId) || null : null,
             ownerEmail: ownerEmailByPortalId.get(item.id) || null,
           })
-        )
+        ),
+        competenciaRef
       );
-      const data = await attachSerproStatusToCompaniesList(dataWithCompliance);
-      return res.json({ data });
+      const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
+      const data = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
+      return res.json({ data, competencia: competenciaRef });
     }
 
     const links = await prisma.companyFirmAccess.findMany({
@@ -448,10 +479,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           legacy: link.company.companyId ? legacyByCompanyId.get(link.company.companyId) || null : null,
           ownerEmail: ownerEmailByPortalId.get(link.company.id) || null,
         })
-      )
+      ),
+      competenciaRef
     );
-    const data = await attachSerproStatusToCompaniesList(dataWithCompliance);
-    return res.json({ data });
+    const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
+    const data = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
+    return res.json({ data, competencia: competenciaRef });
   });
 
   router.post("/companies", async (req, res) => {
@@ -1484,6 +1517,99 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) {
       log.error({ err }, "Falha ao excluir guia");
       return res.status(500).json({ ok: false, error: "guide_delete_failed", message: err?.message });
+    }
+  });
+
+  // Q17: marcar "não há guia neste mês" (Vazio) — ausência confirmada (campo amarelo).
+  // Cria/garante uma Guide marcadora status="VAZIO" (sem PDF) por (empresa, tipo, competência).
+  router.post("/guides/vazio", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const portalClientId = String(req.body?.portalClientId || "").trim();
+    const tipo = normalizeGuideType(req.body?.tipo);
+    const competencia = normalizeCompetencia(req.body?.competencia || "");
+    if (!portalClientId) return res.status(400).json({ ok: false, error: "portal_client_id_required" });
+    if (!competencia) return res.status(400).json({ ok: false, error: "competencia_invalida" });
+    try {
+      // Idempotente: se já existe guia (qualquer status) pra (empresa, tipo, competência),
+      // não sobrescreve uma guia real PROCESSED; só cria o marcador VAZIO quando não há guia real.
+      const existing = await prisma.guide.findFirst({
+        where: { portalClientId, tipo, competencia },
+        select: { id: true, status: true },
+      });
+      if (existing && existing.status === "PROCESSED") {
+        return res.status(409).json({ ok: false, error: "guide_already_present" });
+      }
+      const guide = existing
+        ? await prisma.guide.update({
+            where: { id: existing.id },
+            data: { status: "VAZIO", source: "MANUAL", reviewedByUserId: req.auth?.user?.id || null, reviewedAt: new Date() },
+          })
+        : await prisma.guide.create({
+            data: {
+              portalClientId, tipo, competencia,
+              status: "VAZIO", source: "MANUAL",
+              reviewedByUserId: req.auth?.user?.id || null, reviewedAt: new Date(),
+            },
+          });
+      return res.json({ ok: true, guideId: guide.id, status: guide.status });
+    } catch (err) {
+      log.error({ err }, "Falha ao marcar guia como Vazio");
+      return res.status(500).json({ ok: false, error: "guide_vazio_failed", message: err?.message });
+    }
+  });
+
+  // Desfaz o "Vazio" (volta a faltar): remove o marcador VAZIO da competência/tipo.
+  router.delete("/guides/vazio", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const portalClientId = String(req.body?.portalClientId || req.query?.portalClientId || "").trim();
+    const tipo = normalizeGuideType(req.body?.tipo || req.query?.tipo);
+    const competencia = normalizeCompetencia(req.body?.competencia || req.query?.competencia || "");
+    if (!portalClientId || !competencia) {
+      return res.status(400).json({ ok: false, error: "params_required" });
+    }
+    try {
+      const result = await prisma.guide.deleteMany({
+        where: { portalClientId, tipo, competencia, status: "VAZIO" },
+      });
+      return res.json({ ok: true, removed: result.count });
+    } catch (err) {
+      log.error({ err }, "Falha ao desfazer Vazio");
+      return res.status(500).json({ ok: false, error: "guide_vazio_undo_failed", message: err?.message });
+    }
+  });
+
+  // Q17: guias ESPERADAS da competência (por regime/prolabore) + estado de cada uma
+  // (present/vazio/missing) — alimenta a aba de Guias (lista pré-preenchida + botão Vazio).
+  router.get("/companies/:companyId/guides/expected", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = normalizeCompetencia(req.query?.competencia || "") || getReferenceCompetencia();
+    try {
+      const portal = await prisma.portalClient.findUnique({
+        where: { id: portalClientId },
+        select: { id: true, hasProlabore: true, companyId: true },
+      });
+      if (!portal) return res.status(404).json({ ok: false, error: "company_not_found" });
+      const legacy = portal.companyId
+        ? await prisma.company.findUnique({
+            where: { id: portal.companyId },
+            select: { regimeTributario: true, tipoTributario: true },
+          })
+        : null;
+      const map = await computeGuideComplianceMap(
+        [{ portalId: portal.id, hasProlabore: Boolean(portal.hasProlabore), legacy }],
+        competencia,
+      );
+      const compliance = map.get(portal.id) || null;
+      return res.json({ ok: true, competencia, compliance });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar guias esperadas");
+      return res.status(500).json({ ok: false, error: "expected_guides_failed", message: err?.message });
     }
   });
 

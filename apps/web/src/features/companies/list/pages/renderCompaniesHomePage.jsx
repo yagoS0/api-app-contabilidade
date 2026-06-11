@@ -29,6 +29,8 @@ export function CompaniesHomePage({
   onLogout,
   onOpenCompany,
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
+  dashboardCompetencia, // Q17: competência do filtro (default mês anterior)
+  onChangeCompetencia,
   message,
   error,
 }) {
@@ -81,6 +83,17 @@ export function CompaniesHomePage({
                   Busca, filtros e acesso rapido para a carteira do escritorio.
                 </p>
               </div>
+              {onChangeCompetencia && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", color: "#aeb6d3", marginTop: 8 }}>
+                  Competência:
+                  <input
+                    type="month"
+                    value={dashboardCompetencia || ""}
+                    onChange={(e) => onChangeCompetencia(e.target.value)}
+                    style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 9px", colorScheme: "dark" }}
+                  />
+                </label>
+              )}
             </div>
 
             <div className="dashboard-home__user">

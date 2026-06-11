@@ -31,10 +31,18 @@ const TAB_TO_SEGMENT = {
   configuracoes: "configuracoes",
   edit: "edit",
 };
+// Q17: competência default do dashboard = mês civil anterior.
+function dashboardPrevMonth() {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function deriveCompanyDetailTab(pathname) {
+  // Q17: Lançamentos é a aba default ao abrir uma empresa.
   const match = pathname.match(/^\/companies\/[^\/]+\/([^\/]+)/);
-  if (!match) return "guides";
-  return SEGMENT_TO_TAB[match[1]] || "guides";
+  if (!match) return "lancamentos";
+  return SEGMENT_TO_TAB[match[1]] || "lancamentos";
 }
 
 export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced }) {
@@ -61,6 +69,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     navigate(`/companies/${cid}/${segment}`);
   }
   const [submittingCompany, setSubmittingCompany] = useState(false);
+  // Q17: competência do dashboard (default = mês anterior). Trocar recarrega a lista.
+  const [dashboardCompetencia, setDashboardCompetenciaState] = useState(dashboardPrevMonth());
+  function changeDashboardCompetencia(comp) {
+    const next = comp || dashboardPrevMonth();
+    setDashboardCompetenciaState(next);
+    loadCompanies(next);
+  }
   const [submittingCompanyEdit, setSubmittingCompanyEdit] = useState(false);
   const [jobEnabled, setJobEnabled] = useState(false);
   const [guideSettings, setGuideSettings] = useState(null);
@@ -94,12 +109,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
 
   const selectedCompany = companiesState.selectedCompany;
 
-  async function loadCompanies() {
+  async function loadCompanies(competenciaArg) {
     if (page === "login") return;
+    const competencia = competenciaArg || dashboardCompetencia;
     companiesState.setLoadingCompanies(true);
     feedback.clearFeedback();
     try {
-      const data = await api.listCompanies();
+      const data = await api.listCompanies(competencia);
       companiesState.setCompanies(data);
       if (!companiesState.selectedCompanyId && data.length > 0) {
         companiesState.setSelectedCompanyId(data[0].companyId);
@@ -813,6 +829,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     loadingUnidentifiedGuides,
     selectedCompany,
     loadCompanies,
+    dashboardCompetencia,
+    changeDashboardCompetencia,
     loadGuides,
     loadPendingGuidesReport,
     loadUnidentifiedGuides,

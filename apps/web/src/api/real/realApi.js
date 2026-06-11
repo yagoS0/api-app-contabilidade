@@ -160,8 +160,9 @@ export function createRealApi() {
     async me() {
       return request("/auth/me");
     },
-    async listCompanies() {
-      const payload = await request("/firm/companies");
+    async listCompanies(competencia) {
+      const suffix = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
+      const payload = await request(`/firm/companies${suffix}`);
       return Array.isArray(payload?.data) ? payload.data : [];
     },
     async createCompany(input) {
@@ -221,6 +222,34 @@ export function createRealApi() {
     },
     async recalculateGuide(guideId) {
       return request(`/firm/guides/${guideId}/recalculate`, { method: "POST" });
+    },
+    // Q17: guias esperadas da competência + estado (present/vazio/missing)
+    async getExpectedGuides(companyId, competencia) {
+      const suffix = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
+      return request(`/firm/companies/${companyId}/guides/expected${suffix}`);
+    },
+    // Q17: marcar "não há guia neste mês" (Vazio) → campo amarelo
+    async markGuideVazio(portalClientId, tipo, competencia) {
+      return request("/firm/guides/vazio", {
+        method: "POST",
+        body: JSON.stringify({ portalClientId, tipo, competencia }),
+      });
+    },
+    async undoGuideVazio(portalClientId, tipo, competencia) {
+      return request("/firm/guides/vazio", {
+        method: "DELETE",
+        body: JSON.stringify({ portalClientId, tipo, competencia }),
+      });
+    },
+    // Q17: fechamento CONTÁBIL do mês
+    async getFechamentoContabil(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}`);
+    },
+    async fecharFechamentoContabil(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/fechar`, { method: "POST" });
+    },
+    async reabrirFechamentoContabil(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/reabrir`, { method: "POST" });
     },
     async getGuideSettings() {
       return request("/firm/guides/settings");

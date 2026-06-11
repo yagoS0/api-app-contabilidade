@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { createApiClient } from "../../../../api/client";
 import { HistoricosModal } from "../../historicos/components/renderHistoricosModal";
 import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal";
 import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
@@ -8,6 +9,80 @@ import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
 import { FunctionListModal, FunctionEditModal, FunctionApplyModal } from "../../functions/components/AccountingFunctionModals";
 import { ParcelamentoCreateModal } from "../../parcelamento/components/ParcelamentoModals";
+
+const fechamentoApi = createApiClient();
+
+// Q17: painel de fechamento contábil — avisa lançamentos em branco/desbalanceados e
+// permite fechar a empresa no mês (bloqueado se houver pendência).
+function FechamentoContabilPanel({ companyId, competencia, entries }) {
+  const [fechado, setFechado] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  const problemas = useMemo(() => {
+    const out = [];
+    for (const e of entries || []) {
+      if (String(e.tipo || "").toUpperCase() === "PARCELA") continue;
+      const lines = e.lines || [];
+      if (lines.length === 0) { out.push({ id: e.id, historico: e.historico, motivo: "em branco (sem débito/crédito)" }); continue; }
+      if (lines.some((l) => !String(l.conta || "").trim())) { out.push({ id: e.id, historico: e.historico, motivo: "conta em branco" }); continue; }
+      const d = lines.filter((l) => String(l.tipo).toUpperCase() === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+      const c = lines.filter((l) => String(l.tipo).toUpperCase() === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
+      if (Math.abs(d - c) > 0.01) out.push({ id: e.id, historico: e.historico, motivo: `débito ≠ crédito (D ${d.toFixed(2)} / C ${c.toFixed(2)})` });
+    }
+    return out;
+  }, [entries]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!companyId || !competencia) return undefined;
+    fechamentoApi.getFechamentoContabil(companyId, competencia)
+      .then((r) => { if (alive) setFechado(Boolean(r?.fechado)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [companyId, competencia]);
+
+  async function fechar() {
+    setErro(null);
+    if (problemas.length > 0) { setErro("Há lançamentos pendentes — corrija antes de fechar."); return; }
+    setBusy(true);
+    try { await fechamentoApi.fecharFechamentoContabil(companyId, competencia); setFechado(true); }
+    catch (e) { setErro(e?.message || "Falha ao fechar."); }
+    finally { setBusy(false); }
+  }
+  async function reabrir() {
+    setBusy(true);
+    try { await fechamentoApi.reabrirFechamentoContabil(companyId, competencia); setFechado(false); }
+    catch (e) { setErro(e?.message || "Falha ao reabrir."); }
+    finally { setBusy(false); }
+  }
+
+  const btn = { fontSize: "0.8rem", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontWeight: 700, border: "none" };
+  return (
+    <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.surface, display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <strong style={{ color: ACCOUNTING_PANEL.text }}>Fechamento contábil — {competencia}</strong>
+        {fechado
+          ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>🔒 Fechada</span>
+          : problemas.length > 0
+            ? <span style={{ color: "#FF5757", fontWeight: 700 }}>{problemas.length} lançamento(s) em branco/desbalanceado(s)</span>
+            : <span style={{ color: "#69FF47", fontWeight: 700 }}>pronta para fechar</span>}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          {fechado
+            ? <button onClick={reabrir} disabled={busy} style={{ ...btn, background: "transparent", color: ACCOUNTING_PANEL.muted, border: `1px solid ${ACCOUNTING_PANEL.border}` }}>Reabrir</button>
+            : <button onClick={fechar} disabled={busy || problemas.length > 0} style={{ ...btn, background: problemas.length > 0 ? "#44475A" : "#69FF47", color: problemas.length > 0 ? "#888" : "#1A1B26", cursor: problemas.length > 0 ? "not-allowed" : "pointer" }}>Fechar empresa (mês)</button>}
+        </div>
+      </div>
+      {!fechado && problemas.length > 0 && (
+        <div style={{ fontSize: "0.78rem", color: "#FFB347", display: "grid", gap: 2 }}>
+          {problemas.slice(0, 8).map((p) => <div key={p.id}>⚠ {p.historico || p.id}: {p.motivo}</div>)}
+          {problemas.length > 8 && <div>… e mais {problemas.length - 8}.</div>}
+        </div>
+      )}
+      {erro && <div style={{ color: "#FF5757", fontSize: "0.78rem" }}>{erro}</div>}
+    </div>
+  );
+}
 
 function ActionMenu({ label, items, accent }) {
   const [open, setOpen] = useState(false);
@@ -279,6 +354,8 @@ export function AccountingEntriesTab({
 
   return (
     <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--space-4)" }}>
+      {/* Q17: fechamento contábil + aviso de lançamentos em branco */}
+      <FechamentoContabilPanel companyId={companyId} competencia={activeComp} entries={entries} />
       <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 12, background: ACCOUNTING_PANEL.surface }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <ActionMenu

@@ -72,9 +72,18 @@ router.get('/', requireAuth, requireRole(['FIRM_ADMIN']), async (req, res) => {
 
 ### Workers
 
-- Jobs de background ficam em `src/workers/`
+- Jobs de background ficam em `src/workers/` — ver `src/workers/CLAUDE.md`.
 - Executados internamente (sem fila externa por ora)
 - Ex: `guideEmailWorker.js` envia guias em lote por email
+- **Q17:** `serproPgdasdWorker` também busca o **extrato** (`syncPgdasByCompetencia`), que
+  gera os lançamentos — não só as guias. Agendamento vem de `SerproRuntimeSettings`
+  (página do SERPRO), não fixo.
+
+> **Blocos com `CLAUDE.md` próprio** (ler antes de mexer; atualizar ao terminar):
+> `src/workers/`, `src/application/accounting/`, `src/application/guides/`.
+> **Fechamento contábil do mês (Q17)** ≠ `estado` da apuração: campos
+> `CompanyMonthlyCircular.fechadoContabilEm/Por`; endpoints `.../fechamento-contabil/...`;
+> gate por lançamento (em branco / D≠C). Guia `status="VAZIO"` = ausência confirmada (amarelo).
 
 ### Infraestrutura
 

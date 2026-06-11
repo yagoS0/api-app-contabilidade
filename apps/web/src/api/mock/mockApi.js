@@ -554,6 +554,43 @@ export function createMockApi() {
       }
       throw new Error("not_found");
     },
+    async getExpectedGuides(_companyId, competencia) {
+      await delay();
+      return {
+        ok: true,
+        competencia: competencia || null,
+        compliance: {
+          competencia: competencia || null,
+          das: { required: true, ok: false, state: "missing" },
+          inss: { required: false, ok: true, state: "na" },
+          irpj: { required: false, ok: true, state: "na" },
+          csll: { required: false, ok: true, state: "na" },
+          pisCofins: { required: false, ok: true, state: "na" },
+          iss: { required: false, ok: true, state: "na" },
+          ok: false,
+        },
+      };
+    },
+    async markGuideVazio() {
+      await delay();
+      return { ok: true, status: "VAZIO" };
+    },
+    async undoGuideVazio() {
+      await delay();
+      return { ok: true, removed: 1 };
+    },
+    async getFechamentoContabil(_companyId, competencia) {
+      await delay();
+      return { ok: true, competencia, fechado: false, podeFechar: true, blockers: [] };
+    },
+    async fecharFechamentoContabil(_companyId, competencia) {
+      await delay();
+      return { ok: true, competencia, fechado: true };
+    },
+    async reabrirFechamentoContabil(_companyId, competencia) {
+      await delay();
+      return { ok: true, competencia, fechado: false };
+    },
     async getGuideSettings() {
       await delay();
       return { ...mockGuideSettings };

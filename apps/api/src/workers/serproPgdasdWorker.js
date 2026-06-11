@@ -6,6 +6,7 @@ import { resolveCompanyNotificationEmail } from "../application/guides/GuideSche
 import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { SerproProcurationService } from "../application/fiscal/serpro/SerproProcurationService.js";
 import { capturePgdasGuideForCompany } from "../application/fiscal/serpro/CaptureSerproGuidesService.js";
+import { syncPgdasByCompetencia } from "../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
 import { markGuidePaidBySerpro } from "../application/guides/GuidePaymentStatusService.js";
 
@@ -156,6 +157,7 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
     const procurationService = new SerproProcurationService();
     const results = [];
     const recheckResults = [];
+    const extratoResults = [];
     const startedAt = Date.now();
 
     const now = new Date();
@@ -218,6 +220,36 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
               reason: err?.message || "serpro_pgdasd_capture_failed",
               retryable: Boolean(err?.retryable),
             });
+          }
+        }
+
+        // Stage 3 (Q17): extrato/declaração PGDAS-D → gera os lançamentos contábeis.
+        // syncPgdasByCompetencia baixa o extrato e chama generateEntriesFromCircular.
+        // Idempotente: só busca se a competência ainda não foi sincronizada com SUCESSO
+        // (evita re-hit pago no SERPRO a cada ciclo). Isolado: falha não derruba o ciclo.
+        if (isCaptureWindow) {
+          // eslint-disable-next-line no-await-in-loop
+          const circ = await prisma.companyMonthlyCircular.findUnique({
+            where: { portalClientId_competencia: { portalClientId: company.id, competencia } },
+            select: { serproSyncStatus: true },
+          });
+          if (circ?.serproSyncStatus !== "SUCCESS") {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await syncPgdasByCompetencia({ portalClientId: company.id, competencia });
+              extratoResults.push({
+                companyId: company.id, razao: company.razao, competencia, status: "extrato_ok",
+              });
+            } catch (err) {
+              extratoResults.push({
+                companyId: company.id, razao: company.razao, competencia,
+                status: "extrato_erro",
+                error: err?.code || "SERPRO_PGDASD_EXTRATO_FAILED",
+                reason: err?.message || "serpro_pgdasd_extrato_failed",
+              });
+            }
+          } else {
+            extratoResults.push({ companyId: company.id, competencia, status: "extrato_ja_sincronizado" });
           }
         }
 
@@ -285,9 +317,13 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
       recheckedDueToday: recheckResults.filter((item) => item.status === "rechecked_due_today").length,
       markedPaid: recheckResults.filter((item) => item.status === "paid").length,
       recheckFailures: recheckResults.filter((item) => item.status === "error").length,
+      extratoOk: extratoResults.filter((item) => item.status === "extrato_ok").length,
+      extratoErro: extratoResults.filter((item) => item.status === "extrato_erro").length,
+      extratoJaSincronizado: extratoResults.filter((item) => item.status === "extrato_ja_sincronizado").length,
       durationMs: Date.now() - startedAt,
       results,
       recheckResults,
+      extratoResults,
     };
     await createSerproExecutionLog({
       worker: "serpro_pgdasd",
