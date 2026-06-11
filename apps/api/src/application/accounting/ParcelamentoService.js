@@ -8,8 +8,105 @@
 //   - listParcelamentos / getParcelamento: consultas
 
 import { prisma } from "../../infrastructure/db/prisma.js";
-import { applyTemplate, formatCompetenciaLabel } from "./AccountingEntryGeneratorService.js";
+import { applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "./AccountingEntryGeneratorService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
+
+// Q16: contas D/C do parcelamento começam EM BRANCO e são memorizadas por papel de
+// linha (igual às guias do Simples). A memória usa AccountingHistorico keyed por
+// (empresa, eventType) onde eventType = `PARC_<KIND>_<ROLE>#<ordem>`. NÃO persistimos
+// esse eventType no AccountingEntry (pra não colidir com o unique
+// [portalClientId, competencia, eventType, origem]) — ele é derivado no read/write.
+
+function parcLineEventType({ kind, role, ordem }) {
+  return `PARC_${String(kind).toUpperCase()}_${role}#${ordem}`;
+}
+
+// Resolve a conta memorizada pra uma linha (D→contaDebito, C→contaCredito); "" se nunca preenchida.
+async function lookupLineConta(tx, { portalClientId, kind, role, ordem, tipo }) {
+  const eventType = parcLineEventType({ kind, role, ordem });
+  const r = await lookupAccountsFromHistorico(tx, { portalClientId, eventType });
+  const conta = String(tipo).toUpperCase() === "D" ? r.debitAccountCode : r.creditAccountCode;
+  return conta || "";
+}
+
+// Deriva o papel (role) de um entry de parcelamento pra fins de memória.
+//  - abertura  → "OPEN"
+//  - baixa com "juros" no histórico → "PAY_JUROS"; senão → "PAY_PRINCIPAL"
+function deriveParcRole({ entry, parcelamento }) {
+  if (parcelamento.aberturaEntryId && entry.id === parcelamento.aberturaEntryId) return "OPEN";
+  if (String(entry.tipo).toUpperCase() === "BAIXA") {
+    return /juros/i.test(entry.historico || "") ? "PAY_JUROS" : "PAY_PRINCIPAL";
+  }
+  return null;
+}
+
+/**
+ * Q16: memoriza as contas D/C preenchidas pelo contador num entry de parcelamento,
+ * por papel de linha. Chamado pelo auto-save do PUT /entries quando o entry pertence a
+ * um parcelamento. Próxima abertura/baixa da mesma empresa (mesmo kind) auto-preenche.
+ * Best-effort — falha aqui nunca derruba o save.
+ */
+export async function memorizeParcelamentoLineAccounts({ userId, portalClientId, entry }) {
+  if (!entry?.parcelamentoId || !Array.isArray(entry.lines) || entry.lines.length === 0) return;
+  const parc = await prisma.parcelamento.findUnique({
+    where: { id: entry.parcelamentoId },
+    select: { id: true, kind: true, aberturaEntryId: true },
+  });
+  if (!parc) return;
+  const role = deriveParcRole({ entry, parcelamento: parc });
+  if (!role) return;
+
+  for (const ln of entry.lines) {
+    const conta = String(ln.conta || "").trim();
+    if (!conta) continue;
+    const isD = String(ln.tipo).toUpperCase() === "D";
+    const eventType = parcLineEventType({ kind: parc.kind, role, ordem: ln.ordem });
+    const existing = await prisma.accountingHistorico.findFirst({
+      where: { companyPortalClientId: portalClientId, eventType },
+    });
+    if (existing) {
+      await prisma.accountingHistorico.update({
+        where: { id: existing.id },
+        data: {
+          contaDebito: isD ? conta : existing.contaDebito,
+          contaCredito: isD ? existing.contaCredito : conta,
+          usageCount: existing.usageCount + 1,
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.accountingHistorico.create({
+        data: {
+          createdByUserId: userId || null,
+          companyPortalClientId: portalClientId,
+          text: entry.historico || eventType,
+          eventType,
+          contaDebito: isD ? conta : null,
+          contaCredito: isD ? null : conta,
+        },
+      });
+    }
+  }
+}
+
+// Resolve o template OPENING quando o id não veio explícito: prefere global do kind.
+async function resolveOpeningTemplate(tx, { templateOpeningFunctionId, kind, portalClientId }) {
+  if (templateOpeningFunctionId) {
+    return tx.accountingFunction.findUnique({
+      where: { id: templateOpeningFunctionId },
+      include: { entries: { include: { lines: { orderBy: { ordem: "asc" } } }, orderBy: { ordem: "asc" } } },
+    });
+  }
+  // Fallback: template OPENING do kind (empresa primeiro, depois global).
+  return tx.accountingFunction.findFirst({
+    where: {
+      kind: "PARCELAMENTO_OPENING",
+      OR: [{ portalClientId }, { portalClientId: null }],
+    },
+    include: { entries: { include: { lines: { orderBy: { ordem: "asc" } } }, orderBy: { ordem: "asc" } } },
+    orderBy: [{ portalClientId: "desc" }],
+  });
+}
 
 function addMonths(competenciaInicial, n) {
   // competenciaInicial = YYYY-MM, n = offset (0 = mesma competência)
@@ -102,104 +199,79 @@ export async function createParcelamento({
       },
     });
 
-    // 2) Gera entry de ABERTURA (usando template OPENING se houver)
-    let aberturaEntry = null;
-    if (templateOpeningFunctionId && computedPrincipalTotal != null) {
-      const openingTpl = await tx.accountingFunction.findUnique({
-        where: { id: templateOpeningFunctionId },
-        include: { entries: { include: { lines: { orderBy: { ordem: "asc" } } }, orderBy: { ordem: "asc" } } },
-      });
-      if (openingTpl?.entries?.length) {
-        const tplEntry = openingTpl.entries[0]; // abertura é sempre 1 entry
-        const ctx = buildContext({
-          competencia: normCompetencia,
-          company,
-          parcelamento,
-          numeroParcela: null,
-        });
-        const historico = applyTemplate(tplEntry.historico, ctx);
-        const data = dataAbertura ? new Date(dataAbertura) : buildDateOfMonth(normCompetencia, diaPagamento);
+    // 2) Gera o ÚNICO entry de provisão da dívida: a ABERTURA (D principal + D juros = C total).
+    //    Obrigatória. Contas D/C começam EM BRANCO e vêm da memória por papel de linha
+    //    (PARC_<KIND>_OPEN#<ordem>) — preenchidas automaticamente após a 1ª vez (Q16).
+    const openingTpl = await resolveOpeningTemplate(tx, {
+      templateOpeningFunctionId, kind, portalClientId,
+    });
+    if (!openingTpl?.entries?.length) throw new Error("opening_template_required");
 
-        // Mapeia ordem da linha → valor (convenção do seed Simples):
-        //   ordem 0 = D principal (principalTotal)
-        //   ordem 1 = D juros (jurosTotal)
-        //   ordem 2 = C total (totalValue)
-        // Para outros tipos: 1ª D = principal, 2ª D = juros (se houver), última C = total.
-        const aberturaLines = tplEntry.lines.map((ln) => {
-          let valor;
-          if (ln.tipo === "C") {
-            valor = totalValue;
-          } else {
-            // D — primeira é principal, segunda é juros
-            const dLines = tplEntry.lines.filter((l) => l.tipo === "D");
-            const idxD = dLines.findIndex((l) => l.id === ln.id);
-            valor = idxD === 0 ? computedPrincipalTotal : computedJurosTotal;
-          }
-          return { conta: ln.conta || "", tipo: ln.tipo, valor: Number(valor) || 0, ordem: ln.ordem };
-        });
+    // principalTotal sempre definido: deriva do total − juros quando não informado.
+    const openPrincipalTotal = computedPrincipalTotal != null
+      ? computedPrincipalTotal
+      : Math.max(0, totalValue - computedJurosTotal);
+    const openTotalValue = openPrincipalTotal + computedJurosTotal;
 
-        aberturaEntry = await tx.accountingEntry.create({
-          data: {
-            portalClientId,
-            parcelamentoId: parcelamento.id,
-            numeroParcela: null, // abertura não é parcela numerada
-            data,
-            competencia: normCompetencia,
-            historico,
-            tipo: tplEntry.tipo,
-            subtipo: tplEntry.subtipo || null,
-            origem: "MANUAL",
-            loteImportacao: `PARC-${parcelamento.id.slice(0, 8)}-ABERTURA`,
-            status: "RASCUNHO",
-            statusPagamento: "NA", // abertura não é provisão pagável (provisão por parcela é separada)
-            sourceGuideId: sourceGuideId || null,
-            lines: { createMany: { data: aberturaLines } },
-          },
-        });
+    const tplEntry = openingTpl.entries[0]; // abertura é sempre 1 entry
+    const openCtx = buildContext({ competencia: normCompetencia, company, parcelamento, numeroParcela: null });
+    const openHistorico = applyTemplate(tplEntry.historico, openCtx);
+    const openData = dataAbertura ? new Date(dataAbertura) : buildDateOfMonth(normCompetencia, diaPagamento);
 
-        // Update FK 1:1
-        await tx.parcelamento.update({
-          where: { id: parcelamento.id },
-          data: { aberturaEntryId: aberturaEntry.id },
-        });
+    // ordem 0 = D principal, ordem 1 = D juros, ordem 2 = C total (convenção do seed).
+    const dLines = tplEntry.lines.filter((l) => l.tipo === "D");
+    const aberturaLines = [];
+    for (const ln of tplEntry.lines) {
+      let valor;
+      if (ln.tipo === "C") {
+        valor = openTotalValue;
+      } else {
+        const idxD = dLines.findIndex((l) => l.id === ln.id);
+        valor = idxD === 0 ? openPrincipalTotal : computedJurosTotal;
       }
+      const conta = await lookupLineConta(tx, {
+        portalClientId, kind, role: "OPEN", ordem: ln.ordem, tipo: ln.tipo,
+      });
+      aberturaLines.push({ conta, tipo: ln.tipo, valor: Number(valor) || 0, ordem: ln.ordem });
     }
 
-    // 3) Gera N entries de provisão (1 por parcela)
-    const paymentTpl = templatePaymentFunctionId
-      ? await tx.accountingFunction.findUnique({
-          where: { id: templatePaymentFunctionId },
-          include: { entries: { include: { lines: { orderBy: { ordem: "asc" } } }, orderBy: { ordem: "asc" } } },
-        })
-      : null;
+    const aberturaEntry = await tx.accountingEntry.create({
+      data: {
+        portalClientId,
+        parcelamentoId: parcelamento.id,
+        numeroParcela: null, // abertura não é parcela numerada
+        data: openData,
+        competencia: normCompetencia,
+        historico: openHistorico,
+        tipo: tplEntry.tipo, // PROVISAO
+        subtipo: tplEntry.subtipo || null,
+        origem: "MANUAL",
+        loteImportacao: `PARC-${parcelamento.id.slice(0, 8)}-ABERTURA`,
+        status: "RASCUNHO",
+        statusPagamento: "NA", // a dívida é provisionada aqui; baixas vão contra ela
+        sourceGuideId: sourceGuideId || null,
+        lines: { createMany: { data: aberturaLines } },
+      },
+    });
 
+    // Atualiza cabeçalho: FK da abertura + valores efetivos da dívida.
+    await tx.parcelamento.update({
+      where: { id: parcelamento.id },
+      data: {
+        aberturaEntryId: aberturaEntry.id,
+        principalTotal: openPrincipalTotal,
+        totalValue: openTotalValue,
+      },
+    });
+
+    // 3) Gera N LINHAS LEVES de parcela (só rastreio — SEM lançamento contábil).
+    //    tipo="PARCELA" + sem lines ⇒ zero impacto em somas/export; serve à UI
+    //    (aguardando guia / em aberto / pago). A dívida já foi provisionada na abertura.
     for (let i = 1; i <= numParcelas; i++) {
       const competencia = addMonths(normCompetencia, i - 1);
       const data = buildDateOfMonth(competencia, diaPagamento);
-      const ctx = buildContext({ competencia, company, parcelamento, numeroParcela: i });
-
-      // Histórico padrão se template não fornecer
-      let historico = `PROVISAO ${label} PARC ${String(i).padStart(2, "0")}/${numParcelas} - ${competencia}`;
-      let lines = [
-        { conta: "", tipo: "D", valor: principal, ordem: 0 },
-        { conta: "", tipo: "C", valor: principal, ordem: 1 },
-      ];
-
-      // Se template de payment foi escolhido, usa a 1ª entry dele (principal) como provisão.
-      // O template tem 2 entries: principal+juros — para provisão usamos só o principal.
-      if (paymentTpl?.entries?.length) {
-        const tplPrincipalEntry = paymentTpl.entries.find((e) => /PARC|principal/i.test(e.historico) || !/juros/i.test(e.historico)) || paymentTpl.entries[0];
-        const provHistorico = tplPrincipalEntry.historico.replace(/^PAGO\s+/i, "PROVISAO ");
-        historico = applyTemplate(provHistorico, ctx);
-        lines = tplPrincipalEntry.lines.map((ln) => ({
-          conta: ln.conta || "",
-          tipo: ln.tipo,
-          valor: principal,
-          ordem: ln.ordem,
-        }));
-      }
-
-      const subtipo = `PARC_${kind}`;
+      const isEntrada = numEntradas > 0 && i <= numEntradas;
+      const historico = `${isEntrada ? "ENTRADA" : "PARCELA"} ${label} ${String(i).padStart(2, "0")}/${numParcelas} - ${competencia}`;
       const shouldLinkGuide = sourceGuideId && linkGuideAsParcelaNum === i;
       await tx.accountingEntry.create({
         data: {
@@ -209,14 +281,14 @@ export async function createParcelamento({
           data,
           competencia,
           historico,
-          tipo: "PROVISAO",
-          subtipo,
+          tipo: "PARCELA", // marcador de rastreio (não é provisão/baixa)
+          subtipo: `PARC_${kind}`,
           origem: "MANUAL",
           loteImportacao: `PARC-${parcelamento.id.slice(0, 8)}`,
           status: "RASCUNHO",
           statusPagamento: "ABERTO",
           sourceGuideId: shouldLinkGuide ? sourceGuideId : null,
-          lines: { createMany: { data: lines } },
+          // sem lines — rastreio puro
         },
       });
     }
@@ -233,7 +305,7 @@ export async function createParcelamento({
       where: { id: parcelamento.id },
       include: {
         aberturaEntry: { include: { lines: true } },
-        parcelas: { orderBy: { numeroParcela: "asc" }, include: { lines: true } },
+        parcelas: { where: { tipo: "PARCELA" }, orderBy: { numeroParcela: "asc" }, include: { lines: true } },
         guides: true,
       },
     });
@@ -305,7 +377,7 @@ export async function confirmParcelaPayment({
     where: { id: parcelamentoId, portalClientId },
     include: {
       templatePayment: { include: { entries: { include: { lines: { orderBy: { ordem: "asc" } } }, orderBy: { ordem: "asc" } } } },
-      parcelas: { where: { numeroParcela }, include: { lines: true } },
+      parcelas: { where: { numeroParcela, tipo: "PARCELA" }, include: { lines: true } },
       portalClient: { select: { razao: true, cnpj: true } },
     },
   });
@@ -338,12 +410,15 @@ export async function confirmParcelaPayment({
       if (isJurosEntry && valor <= 0) continue;
 
       const historico = applyTemplate(tplEntry.historico, ctx);
-      const baixaLines = tplEntry.lines.map((ln) => ({
-        conta: ln.conta || "",
-        tipo: ln.tipo,
-        valor,
-        ordem: ln.ordem,
-      }));
+      const role = isJurosEntry ? "PAY_JUROS" : "PAY_PRINCIPAL";
+      // Contas D/C em branco na 1ª vez; memorizadas por papel de linha (Q16).
+      const baixaLines = [];
+      for (const ln of tplEntry.lines) {
+        const conta = await lookupLineConta(tx, {
+          portalClientId, kind: parc.kind, role, ordem: ln.ordem, tipo: ln.tipo,
+        });
+        baixaLines.push({ conta, tipo: ln.tipo, valor, ordem: ln.ordem });
+      }
 
       const baixa = await tx.accountingEntry.create({
         data: {
@@ -359,7 +434,9 @@ export async function confirmParcelaPayment({
           loteImportacao: `PARC-${parc.id.slice(0, 8)}-PAGTO-${String(numeroParcela).padStart(2, "0")}`,
           status: "RASCUNHO",
           statusPagamento: "NA",
-          openEntryId: provEntry.id, // vincula BAIXA → PROVISAO
+          // openEntryId aponta pra LINHA DA PARCELA (rastreio) — é o vínculo de auditoria
+          // "baixa desta parcela". A redução da dívida é o próprio lançamento D=553/C=caixa.
+          openEntryId: provEntry.id,
           lines: { createMany: { data: baixaLines } },
         },
       });
@@ -376,6 +453,7 @@ export async function confirmParcelaPayment({
     const remaining = await tx.accountingEntry.count({
       where: {
         parcelamentoId: parc.id,
+        tipo: "PARCELA", // só linhas de rastreio contam pra QUITADO (não baixas/abertura)
         numeroParcela: { not: null },
         statusPagamento: { not: "PAGO" },
       },
@@ -400,7 +478,7 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
     where: { id: parcelamentoId, portalClientId },
     include: {
       templateRescision: { include: { entries: { include: { lines: { orderBy: { ordem: "asc" } } }, orderBy: { ordem: "asc" } } } },
-      parcelas: { include: { lines: true } },
+      parcelas: { where: { tipo: "PARCELA" }, include: { lines: true } },
       portalClient: { select: { razao: true, cnpj: true } },
     },
   });
@@ -467,15 +545,35 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
   });
 }
 
+// Q16: enriquece o parcelamento com saldo/quanto-falta. Parcelas são linhas leves
+// (tipo="PARCELA"); pagas = statusPagamento PAGO. Saldo = total − principais já baixados.
+function decorateParcelamento(parc) {
+  if (!parc) return parc;
+  const parcelas = Array.isArray(parc.parcelas) ? parc.parcelas : [];
+  const parcelasPagas = parcelas.filter((p) => p.statusPagamento === "PAGO").length;
+  const principalPerParcela = Number(parc.principalPerParcela) || 0;
+  const principalPago = parcelasPagas * principalPerParcela;
+  const totalValue = Number(parc.totalValue) || 0;
+  const saldoRestante = Math.max(0, totalValue - principalPago);
+  return {
+    ...parc,
+    parcelasPagas,
+    parcelasTotal: parcelas.length,
+    principalPago,
+    saldoRestante,
+  };
+}
+
 /**
  * Lista parcelamentos da empresa com parcelas embedded.
  */
 export async function listParcelamentos({ portalClientId, status }) {
-  return prisma.parcelamento.findMany({
+  const rows = await prisma.parcelamento.findMany({
     where: { portalClientId, ...(status ? { status } : {}) },
     include: {
       aberturaEntry: { include: { lines: { orderBy: { ordem: "asc" } } } },
       parcelas: {
+        where: { tipo: "PARCELA" },
         orderBy: { numeroParcela: "asc" },
         include: {
           lines: { orderBy: { ordem: "asc" } },
@@ -489,14 +587,16 @@ export async function listParcelamentos({ portalClientId, status }) {
     },
     orderBy: { createdAt: "desc" },
   });
+  return rows.map(decorateParcelamento);
 }
 
 export async function getParcelamento({ portalClientId, parcelamentoId }) {
-  return prisma.parcelamento.findFirst({
+  const parc = await prisma.parcelamento.findFirst({
     where: { id: parcelamentoId, portalClientId },
     include: {
       aberturaEntry: { include: { lines: true } },
       parcelas: {
+        where: { tipo: "PARCELA" },
         orderBy: { numeroParcela: "asc" },
         include: { lines: true, baixas: { include: { lines: true } } },
       },
@@ -506,4 +606,5 @@ export async function getParcelamento({ portalClientId, parcelamentoId }) {
       templateRescision: true,
     },
   });
+  return decorateParcelamento(parc);
 }

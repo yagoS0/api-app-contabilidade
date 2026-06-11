@@ -35,12 +35,15 @@ export function CompaniesHomePage({
   const [search, setSearch] = useState("");
   const [documentFilter, setDocumentFilter] = useState("pending");
   const [serproFilter, setSerproFilter] = useState("all");
+  const [emailFilter, setEmailFilter] = useState("all"); // all | notSent (Q16)
 
   const filteredCompanies = useMemo(() => {
     const normalizedQuery = normalizeSearch(search);
 
     // 1) Busca por nome/CNPJ continua filtrando (remove quem não bate).
+    //    Q16: filtro "Só não enviados" também REMOVE quem já teve o e-mail do mês enviado.
     const searched = companies.filter((company) => {
+      if (emailFilter === "notSent" && company?.monthEmailSent) return false;
       if (!normalizedQuery) return true;
       return (
         normalizeSearch(company?.razao).includes(normalizedQuery) ||
@@ -205,6 +208,14 @@ export function CompaniesHomePage({
                 <option value="all">Todas</option>
                 <option value="eligible">SERPRO aptas</option>
                 <option value="ineligible">SERPRO não aptas</option>
+              </select>
+            </label>
+
+            <label className="dashboard-filter-field dashboard-filter-field--select">
+              <span>E-mail do mês</span>
+              <select value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)}>
+                <option value="all">Todas</option>
+                <option value="notSent">Só não enviados</option>
               </select>
             </label>
           </section>

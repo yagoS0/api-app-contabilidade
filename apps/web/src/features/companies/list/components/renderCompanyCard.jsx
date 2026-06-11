@@ -55,6 +55,22 @@ export function CompanyCard({ company, onAccess }) {
         >
           SERPRO
         </span>
+        {/* Q16: selo de e-mail do mês enviado */}
+        <span
+          style={{
+            marginLeft: 8, fontSize: "0.7rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+            border: `1px solid ${company.monthEmailSent ? "#69FF47" : "#FFB347"}`,
+            color: company.monthEmailSent ? "#69FF47" : "#FFB347",
+            background: company.monthEmailSent ? "rgba(105,255,71,0.12)" : "rgba(255,179,71,0.12)",
+          }}
+          title={
+            company.monthEmailSent
+              ? `E-mail do mês (${company.monthEmailCompetencia || ""}) enviado`
+              : `E-mail do mês (${company.monthEmailCompetencia || ""}) ainda não enviado`
+          }
+        >
+          {company.monthEmailSent ? "✅ E-mail do mês" : "⏳ E-mail do mês"}
+        </span>
       </p>
       <p className="compliance-tags" aria-label="Status de guias obrigatórias">
         {tags.map((tag) => {

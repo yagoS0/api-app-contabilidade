@@ -43,16 +43,26 @@ const cellBaseStyle = {
 };
 
 function GuideStatusCell({ value, column }) {
-  // null = não capturada (vermelho); valor presente = capturada (verde); info-only do PARC = laranja
+  // Q16: 3 estados — ✗ ausente / "contendo guia" / "enviado".
   if (!value) {
-    return <td style={{ ...cellBaseStyle, color: PANEL.danger }}>✗</td>;
+    return <td style={{ ...cellBaseStyle, color: PANEL.danger }} title="Sem guia">✗</td>;
   }
   if (column.isInfoOnly) {
     return <td style={{ ...cellBaseStyle, color: PANEL.warning }} title="Parcelamento ativo (sem PDF para anexar)">●</td>;
   }
+  const valorTitle = value.valor != null ? `R$ ${Number(value.valor).toFixed(2)}` : "";
+  if (value.emailStatus === "SENT") {
+    const quando = value.emailSentAt ? new Date(value.emailSentAt).toLocaleDateString("pt-BR") : "";
+    return (
+      <td style={{ ...cellBaseStyle, color: PANEL.success, fontWeight: 600 }} title={`Enviado${quando ? ` em ${quando}` : ""}. ${valorTitle}`}>
+        ✓ enviado
+      </td>
+    );
+  }
+  // contendo guia (PENDING/ERROR/null) — capturada, ainda não enviada
   return (
-    <td style={{ ...cellBaseStyle, color: PANEL.success }} title={value.valor != null ? `R$ ${Number(value.valor).toFixed(2)}` : "Capturada"}>
-      ✓
+    <td style={{ ...cellBaseStyle, color: PANEL.accent }} title={`Contendo guia (não enviada). ${valorTitle}`}>
+      📄 guia
     </td>
   );
 }
@@ -62,7 +72,11 @@ function GuideStatusCell({ value, column }) {
 const rowKey = (row) => `${row.portalClientId}::${row.competencia}`;
 
 function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggleAll, onlyPending, showCompetencia }) {
-  const rowHasSendable = (row) => columns.some((c) => !c.isInfoOnly && row.tiposGuias?.[c.key]);
+  // Q16: só é "enviável" se tem guia NÃO enviada (SENT = display-only, não re-seleciona).
+  const rowHasSendable = (row) => columns.some((c) => {
+    const cell = !c.isInfoOnly && row.tiposGuias?.[c.key];
+    return cell && cell.emailStatus !== "SENT";
+  });
   const visibleRows = onlyPending ? rows.filter(rowHasSendable) : rows;
 
   const sendableKeys = visibleRows.filter(rowHasSendable).map(rowKey);
@@ -311,8 +325,9 @@ export function BatchEmailPage({
               marginTop: 8, padding: "10px 12px", background: PANEL.field, border: `1px solid ${PANEL.border}`,
               borderRadius: 8, fontSize: "0.75rem", color: PANEL.muted, display: "flex", gap: 24, flexWrap: "wrap",
             }}>
-              <span><strong style={{ color: PANEL.success }}>✓</strong> Guia capturada — será anexada no e-mail</span>
-              <span><strong style={{ color: PANEL.danger }}>✗</strong> Guia não capturada</span>
+              <span><strong style={{ color: PANEL.accent }}>📄 guia</strong> Contendo guia — não enviada (será anexada)</span>
+              <span><strong style={{ color: PANEL.success }}>✓ enviado</strong> E-mail já enviado</span>
+              <span><strong style={{ color: PANEL.danger }}>✗</strong> Sem guia</span>
               <span><strong style={{ color: PANEL.warning }}>●</strong> Parcelamento ativo (info, sem anexo de PDF)</span>
             </div>
           </>

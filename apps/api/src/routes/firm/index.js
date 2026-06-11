@@ -112,6 +112,19 @@ async function attachGuideComplianceToCompaniesList(data) {
     legacy: item.legacyCompany,
   }));
   const map = await computeGuideComplianceMap(rows, ref);
+
+  // Q16: selo "e-mail do mês enviado" — empresa com ao menos 1 guia SENT na competência ref.
+  const portalIds = [...new Set(data.map((item) => item.companyId).filter(Boolean))];
+  const emailSentSet = new Set();
+  if (portalIds.length) {
+    const sent = await prisma.guide.findMany({
+      where: { portalClientId: { in: portalIds }, competencia: ref, emailStatus: "SENT" },
+      select: { portalClientId: true },
+      distinct: ["portalClientId"],
+    });
+    for (const s of sent) emailSentSet.add(s.portalClientId);
+  }
+
   return data.map((item) => ({
     ...item,
     guideCompliance: map.get(item.companyId) || {
@@ -121,6 +134,8 @@ async function attachGuideComplianceToCompaniesList(data) {
       expected: null,
       ok: true,
     },
+    monthEmailSent: emailSentSet.has(item.companyId),
+    monthEmailCompetencia: ref,
   }));
 }
 
@@ -1560,19 +1575,21 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     // Q10.3: guides PROCESSED pending. Filtro de competência só quando explicitamente passado.
     // Sem filtro, vem TODAS as guides pending de QUALQUER competência (incluindo emailStatus=null
     // pra retrocompat com guides antigos que ficaram sem o campo).
+    // Q16: inclui ENVIADAS (SENT) também — pra a matriz mostrar 3 estados
+    // (ausente=X / contendo guia / enviado). SENT é display-only (não selecionável).
     const guides = await prisma.guide.findMany({
       where: {
         portalClientId: { in: portalIds },
         status: "PROCESSED",
         OR: [
-          { emailStatus: { in: ["PENDING", "ERROR"] } },
+          { emailStatus: { in: ["PENDING", "ERROR", "SENT"] } },
           { emailStatus: null },
         ],
         ...(competenciaFilter ? { competencia: competenciaFilter } : {}),
       },
       select: {
         id: true, portalClientId: true, tipo: true, competencia: true, valor: true, vencimento: true,
-        emailStatus: true, extracted: true,
+        emailStatus: true, emailSentAt: true, extracted: true,
       },
     });
 
@@ -1586,12 +1603,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const competenciasParaParc = competenciaFilter
       ? [competenciaFilter]
       : competenciasPresentes.length > 0 ? competenciasPresentes : [ref];
+    // Q16: parcelas em aberto vêm do model novo (Parcelamento) — linhas leves tipo="PARCELA"
+    // de parcelamentos ATIVOS, com parcela aberta na competência.
     const parcelamentos = await prisma.accountingEntry.findMany({
       where: {
         portalClientId: { in: portalIds },
-        subtipo: "PARC_DAS",
+        tipo: "PARCELA",
         statusPagamento: "ABERTO",
         competencia: { in: competenciasParaParc },
+        parcelamento: { is: { status: "ATIVO" } },
       },
       select: { id: true, portalClientId: true, competencia: true },
     });
@@ -1630,8 +1650,16 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         row = makeRow(c, g.competencia);
         byKey.set(key, row);
       }
-      const upper = String(g.tipo || "").toUpperCase();
-      const stamp = { guideId: g.id, valor: g.valor != null ? Number(g.valor) : null, vencimento: g.vencimento };
+      // Q16: a guia de Simples é gravada como tipo "SIMPLES"; a coluna da matriz é "DAS".
+      const rawUpper = String(g.tipo || "").toUpperCase();
+      const upper = rawUpper === "SIMPLES" ? "DAS" : rawUpper;
+      const stamp = {
+        guideId: g.id,
+        valor: g.valor != null ? Number(g.valor) : null,
+        vencimento: g.vencimento,
+        emailStatus: g.emailStatus || null,
+        emailSentAt: g.emailSentAt || null,
+      };
 
       if (upper === "DARF") {
         const composicao = Array.isArray(g.extracted?.composicao) ? g.extracted.composicao : [];
@@ -1646,7 +1674,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       } else if (row.tiposGuias[upper] !== undefined) {
         row.tiposGuias[upper] = stamp;
       }
-      row.pendingGuideIds.push(g.id);
+      // Só guias ainda NÃO enviadas entram na seleção de envio em lote.
+      if (g.emailStatus !== "SENT") row.pendingGuideIds.push(g.id);
     }
 
     // Parcelamentos só são exibidos se existe ao menos 1 linha pra (empresa, competência).

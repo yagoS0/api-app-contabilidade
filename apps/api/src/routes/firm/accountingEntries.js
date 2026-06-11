@@ -640,6 +640,7 @@ export function createAccountingEntriesRouter({ log }) {
       where: {
         portalClientId,
         competencia,
+        tipo: { not: "PARCELA" }, // Q16: linhas leves de rastreio não entram na listagem
       },
       include: { lines: { orderBy: { ordem: "asc" } } },
       orderBy: [{ createdAt: "asc" }],
@@ -859,6 +860,7 @@ export function createAccountingEntriesRouter({ log }) {
       filenameSuffix = String(competencia);
     }
     if (tipo) where.tipo = String(tipo).toUpperCase();
+    else where.tipo = { not: "PARCELA" }; // Q16: rastreio de parcela não vai pro CSV
     if (status) where.status = String(status).toUpperCase();
 
     const entries = await prisma.accountingEntry.findMany({
@@ -883,6 +885,7 @@ export function createAccountingEntriesRouter({ log }) {
     const where = { portalClientId };
     if (competencia) where.competencia = String(competencia);
     if (tipo) where.tipo = String(tipo).toUpperCase();
+    else where.tipo = { not: "PARCELA" }; // Q16: rastreio de parcela fora da lista de lançamentos
     if (subtipo) where.subtipo = String(subtipo).toUpperCase();
     if (origem) where.origem = String(origem).toUpperCase();
     if (status) where.status = String(status).toUpperCase();
@@ -1466,6 +1469,23 @@ export function createAccountingEntriesRouter({ log }) {
           } catch (histErr) {
             log.warn({ histErr }, "Falha ao auto-salvar histórico no PUT (não crítico)");
           }
+        }
+      }
+
+      // Q16: entries de parcelamento (abertura/baixa) memorizam contas POR LINHA, pra a
+      // próxima abertura/baixa da mesma empresa (mesmo kind) vir pré-preenchida.
+      if (existing.parcelamentoId && Array.isArray(updated?.lines) && updated.lines.length > 0) {
+        try {
+          const { memorizeParcelamentoLineAccounts } = await import(
+            "../../application/accounting/ParcelamentoService.js"
+          );
+          await memorizeParcelamentoLineAccounts({
+            userId: req.auth?.user?.id,
+            portalClientId,
+            entry: updated,
+          });
+        } catch (memErr) {
+          log.warn({ memErr }, "Falha ao memorizar contas de parcelamento (não crítico)");
         }
       }
 

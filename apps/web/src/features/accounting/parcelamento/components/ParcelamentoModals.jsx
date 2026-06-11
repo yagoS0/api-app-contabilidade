@@ -101,20 +101,23 @@ export function ParcelamentoCreateModal({
   async function handleCreate() {
     setErr(null);
     if (!label.trim()) return setErr("Label obrigatório.");
+    // A abertura é obrigatória (é a única provisão da dívida) — exige template + principal total.
+    if (!templateOpeningId) return setErr("Selecione um template de abertura.");
     if (!templatePaymentId) return setErr("Selecione um template de pagamento.");
     if (!numParcelas || numParcelas < 1) return setErr("Número de parcelas inválido.");
     if (!Number(principalPerParcela) || Number(principalPerParcela) <= 0) return setErr("Valor por parcela inválido.");
+    if (!Number(principalTotal) || Number(principalTotal) <= 0) return setErr("Informe o principal total da dívida (vem do PDF da guia de abertura).");
     if (!competenciaInicial) return setErr("Competência inicial obrigatória.");
     try {
       await onCreate({
         label: label.trim(), kind,
-        templateOpeningFunctionId: templateOpeningId || null,
+        templateOpeningFunctionId: templateOpeningId,
         templatePaymentFunctionId: templatePaymentId,
         templateRescisionFunctionId: templateRescisionId || null,
         numEntradas: Number(numEntradas) || 0,
         numParcelas: Number(numParcelas),
         principalPerParcela: Number(principalPerParcela),
-        principalTotal: Number(principalTotal) || null,
+        principalTotal: Number(principalTotal),
         jurosTotal: Number(jurosTotal) || 0,
         dataAbertura,
         competenciaInicial,
@@ -165,11 +168,16 @@ export function ParcelamentoCreateModal({
             <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>
               Templates (funções globais)
             </div>
+            {openingTemplates.length === 0 && (
+              <div style={{ marginBottom: 8, padding: "6px 10px", fontSize: "0.72rem", color: "#FFB347", background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", borderRadius: 6 }}>
+                ⚠ Nenhum template de abertura disponível. Configure as funções de parcelamento antes de criar.
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
               <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted }}>
-                Abertura
+                Abertura *
                 <select value={templateOpeningId} onChange={(e) => setTemplateOpeningId(e.target.value)} style={FIELD_STYLE}>
-                  <option value="">— sem abertura —</option>
+                  <option value="">— selecione —</option>
                   {openingTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </label>
@@ -346,6 +354,11 @@ export function ParcelamentosList({ parcelamentos, loading, onPayParcela, onResc
                 <div style={{ color: PANEL.text, fontWeight: 700, fontSize: "0.85rem" }}>{p.label}</div>
                 <div style={{ color: PANEL.muted, fontSize: "0.7rem", marginTop: 2 }}>
                   {p.kind} · R$ {fmtMoney(p.totalValue)} · {p.numParcelas} parcelas · {pagas} pagas
+                  {p.status === "ATIVO" && (
+                    <span style={{ marginLeft: 8, color: "#FFB347", fontWeight: 700 }}>
+                      falta R$ {fmtMoney(p.saldoRestante != null ? p.saldoRestante : (p.totalValue - pagas * (Number(p.principalPerParcela) || 0)))}
+                    </span>
+                  )}
                   <span style={{ marginLeft: 8, padding: "1px 6px", borderRadius: 999, background: `${statusColor}33`, color: statusColor, fontWeight: 700, fontSize: "0.65rem" }}>
                     {p.status}
                   </span>
@@ -402,7 +415,7 @@ export function ParcelamentosList({ parcelamentos, loading, onPayParcela, onResc
                         </span>
                         <span style={{ color: PANEL.text, fontSize: "0.75rem" }}>{parc.competencia}</span>
                         <span style={{ color: PANEL.text, fontSize: "0.75rem" }}>
-                          R$ {fmtMoney(parc.lines?.[0]?.valor)}
+                          R$ {fmtMoney(parc.lines?.[0]?.valor ?? p.principalPerParcela)}
                           {isPaid && jurosPago > 0 && (
                             <span style={{ color: PANEL.muted, marginLeft: 6, fontSize: "0.7rem" }}>
                               + R$ {fmtMoney(jurosPago)} juros
@@ -492,9 +505,9 @@ export function ParcelaPaymentModal({ parcelamento, parcela, saving, onConfirm, 
           </label>
 
           <div style={{ padding: 10, background: "rgba(105,255,71,0.10)", border: "1px solid #69FF47", borderRadius: 6, fontSize: "0.8rem", color: PANEL.text }}>
-            <div style={{ fontSize: "0.7rem", color: "#69FF47", fontWeight: 700, marginBottom: 4 }}>PREVIEW</div>
-            <div>D=553/principal → R$ {fmtMoney(principal)}</div>
-            {juros > 0 && <div>D=501/juros → R$ {fmtMoney(juros)}</div>}
+            <div style={{ fontSize: "0.7rem", color: "#69FF47", fontWeight: 700, marginBottom: 4 }}>PREVIEW (baixa contra a abertura)</div>
+            <div>Principal → R$ {fmtMoney(principal)}</div>
+            {juros > 0 && <div>Juros → R$ {fmtMoney(juros)}</div>}
             <div style={{ marginTop: 4, fontWeight: 700 }}>Total: R$ {fmtMoney(total)}</div>
           </div>
 
