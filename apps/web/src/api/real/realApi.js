@@ -106,6 +106,19 @@ function buildCompanyPayload(input) {
   };
 }
 
+// Q17: chave do token logado (mesma de App.jsx). Instâncias criadas por componentes
+// (ex.: painéis que fazem `createApiClient()` direto) caem aqui quando não receberam
+// `setAccessToken` — senão suas requisições saem sem Authorization (401 unauthorized).
+const TOKEN_STORAGE_KEY = "portal_firm_access_token";
+function readStoredToken() {
+  try {
+    if (typeof localStorage !== "undefined") {
+      return String(localStorage.getItem(TOKEN_STORAGE_KEY) || "").trim();
+    }
+  } catch { /* ignore */ }
+  return "";
+}
+
 export function createRealApi() {
   let accessToken = String(import.meta.env.VITE_API_TOKEN || "").trim();
   let unauthorizedHandler = null;
@@ -119,8 +132,9 @@ export function createRealApi() {
     if (!isFormData) {
       headers["Content-Type"] = "application/json";
     }
-    if (accessToken) {
-      headers.Authorization = `Bearer ${accessToken}`;
+    const tok = accessToken || readStoredToken();
+    if (tok) {
+      headers.Authorization = `Bearer ${tok}`;
     }
     const response = await fetch(`${baseUrl}${path}`, {
       ...options,
@@ -192,7 +206,8 @@ export function createRealApi() {
     async fetchGuidePdfBlob(companyId, guideId) {
       const baseUrl = getApiBaseUrl();
       const headers = {};
-      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+      const tok = accessToken || readStoredToken();
+      if (tok) headers.Authorization = `Bearer ${tok}`;
       const res = await fetch(`${baseUrl}/firm/companies/${companyId}/guides/${guideId}/file`, {
         method: "GET",
         headers,

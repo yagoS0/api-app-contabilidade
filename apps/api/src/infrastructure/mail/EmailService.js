@@ -65,13 +65,38 @@ async function loadServiceAccountJson() {
 
 async function getGmailService() {
   const { client_email, private_key } = await loadServiceAccountJson();
+  // O subject (usuário impersonado) precisa ser uma caixa REAL do Google Workspace.
+  // Normaliza pra minúsculas+trim — endereços de Workspace são case-insensitive e
+  // espaços/caixa alta costumam causar "invalid_grant: Not a valid email or user ID".
+  const delegatedUser = String(GMAIL_DELEGATED_USER || "").trim().toLowerCase();
+  if (!delegatedUser) {
+    const err = new Error(
+      "GMAIL_DELEGATED_USER ausente — defina a caixa do Workspace a ser impersonada (ex: contabilidade@belgencontabilidade.com)."
+    );
+    err.code = "GMAIL_DELEGATED_USER_MISSING";
+    throw err;
+  }
   const auth = new google.auth.JWT({
     email: client_email,
     key: private_key,
     scopes: ["https://www.googleapis.com/auth/gmail.send"],
-    subject: GMAIL_DELEGATED_USER,
+    subject: delegatedUser,
   });
-  await auth.authorize();
+  try {
+    await auth.authorize();
+  } catch (err) {
+    // invalid_grant aqui = delegação domain-wide não autorizada OU o subject não é um
+    // usuário válido do Workspace. Enriquece a mensagem com o que precisa ser conferido.
+    const detail = err?.response?.data?.error_description || err?.message || String(err);
+    const wrapped = new Error(
+      `Falha na autorização do Gmail API (delegação). subject=${delegatedUser}, `
+      + `service_account=${client_email}. Verifique: (1) a caixa existe no Workspace; `
+      + `(2) Domain-wide delegation autoriza o Client ID da service account para o escopo `
+      + `gmail.send. Detalhe Google: ${detail}`
+    );
+    wrapped.code = "GMAIL_AUTHORIZE_FAILED";
+    throw wrapped;
+  }
   return google.gmail({ version: "v1", auth });
 }
 
