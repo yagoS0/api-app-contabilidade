@@ -24,13 +24,20 @@ Lógica de lançamentos contábeis, provisões, baixas, parcelamentos e fechamen
 | `ParcelamentoSeeds.js` | templates `AccountingFunction kind=PARCELAMENTO_OPENING/PAYMENT/RESCISION` |
 | `AccountingFunctionService.js` | funções/templates de lançamento reutilizáveis |
 
-## Fechamento contábil do mês (Q17)
+## Fechamento contábil do mês (Q17/Q18)
 
 Distinto do `estado` da apuração (módulo Notas). Campos em `CompanyMonthlyCircular`:
 `fechadoContabilEm` / `fechadoContabilPor`. Endpoints em `routes/firm/accountingEntries.js`:
 `GET/POST .../fechamento-contabil/:competencia[/fechar|/reabrir]`. O **gate**
 (`validateFechamentoContabil`) bloqueia o fechamento **por lançamento**: em branco
 (sem linhas / conta vazia) ou desbalanceado (Σ D ≠ Σ C, tolerância 0,01). Ignora `tipo="PARCELA"`.
+
+**Q18 — mês fechado bloqueia mudanças.** Helper `isMonthClosed(portalClientId, competencia)`
+em `fechamentoContabil.js`. Usado para **bloquear**: criar lançamento (`POST /entries` → 409
+`mes_fechado`), subir/registrar guia **manual** (`createOrUpdateGuideFromProcessing` lança
+`MES_FECHADO` quando `source !== "SERPRO"` — a captura automática do SERPRO não é afetada) e
+marcar guia **Vazio** (`POST /guides/vazio` → 409). No front, a aba Lançamentos desabilita
+"+ Adicionar" (via `FechamentoCadeado.onState`) e o painel de guias esperadas desabilita "Vazio".
 
 ## Regras
 

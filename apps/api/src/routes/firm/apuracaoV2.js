@@ -17,6 +17,7 @@ import {
   salvarFechamento,
   transmitirFechamento,
 } from "../../application/notas/apuracao/v2/FechamentoService.js";
+import { carregarAtividades } from "../../application/notas/apuracao/v2/AtividadeResolver.js";
 
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
@@ -250,6 +251,42 @@ export function createApuracaoV2Router({ log } = {}) {
       } catch (err) {
         log?.warn({ err: err?.message, pendenciaId }, "Falha ao resolver pendência");
         return bad(res, 500, "resolve_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // ─── Q19: lista de atividades do PGDAS-D (de-para oficial) p/ o dropdown do modal ──
+  // Path distinto de "/fechamento/:competencia" pra não colidir com o param.
+  router.get(
+    "/atividades-pgdasd",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const dataReferencia = req.query.dataReferencia
+        ? new Date(String(req.query.dataReferencia))
+        : new Date();
+      try {
+        const { linhas } = await carregarAtividades(
+          Number.isNaN(dataReferencia.getTime()) ? new Date() : dataReferencia,
+        );
+        // linhas vêm ordenadas por vigenciaInicio desc → 1ª ocorrência por idAtividade vence.
+        const porId = new Map();
+        for (const a of linhas) {
+          if (!porId.has(a.idAtividade)) {
+            porId.set(a.idAtividade, {
+              idAtividade: a.idAtividade,
+              descricao: a.descricao,
+              anexoImplicito: a.anexoImplicito,
+              mercado: a.mercado,
+              sujeitoFatorR: a.sujeitoFatorR,
+              tipoReceita: a.tipoReceita,
+            });
+          }
+        }
+        const atividades = [...porId.values()].sort((x, y) => x.idAtividade - y.idAtividade);
+        return res.json({ ok: true, atividades });
+      } catch (err) {
+        log?.warn?.({ err: err?.message }, "Falha ao listar atividades PGDAS-D");
+        return bad(res, 500, "atividades_list_failed", err?.message || "Erro");
       }
     }
   );

@@ -41,12 +41,6 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
   const [fechando, setFechando] = useState(null); // { id, razao }
 
   const fechadasCount = items.filter((i) => i.estado === "fechada").length;
-  const totals = items.reduce((acc, i) => {
-    acc.fat += (i.receitaEmitida || 0);
-    acc.das += (i.dasTransmitido ?? i.dasCalculado ?? 0);
-    return acc;
-  }, { fat: 0, das: 0 });
-
   return (
     <AppShell>
       <PageHeader
@@ -84,11 +78,10 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
           </button>
         </div>
 
-        {/* Resumo */}
+        {/* Resumo — Q19: só nº de empresas e empresas fechadas */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
           <Box label="Empresas" value={items.length} accent={PANEL.text} />
-          <Box label="Faturamento (mês)" value={fmtMoney(totals.fat)} accent="#69FF47" />
-          <Box label="DAS (calc./transm.)" value={fmtMoney(totals.das)} accent="#8BE9FD" />
+          <Box label="Empresas fechadas" value={fechadasCount} accent="#69FF47" />
         </div>
 
         {error && (

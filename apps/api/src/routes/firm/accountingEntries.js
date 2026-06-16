@@ -7,6 +7,7 @@ import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPg
 import { resolvePayrollTemplate } from "../../application/accounting/payrollTemplate.js";
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
+import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { parseExcelBuffer, findHistoricoMatches, upsertHistoricoFromImport } from "../../application/accounting/excelImport.js";
 import { sanitizeFilename } from "../../lib/httpHeaders.js";
 
@@ -1334,6 +1335,11 @@ export function createAccountingEntriesRouter({ log }) {
     }
 
     const competencia = `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`;
+
+    // Q18: não permite lançar em mês fechado (fechamento contábil).
+    if (await isMonthClosed(portalClientId, competencia)) {
+      return res.status(409).json({ error: "mes_fechado", competencia, message: "Mês fechado — reabra a empresa para lançar." });
+    }
 
     try {
       const entry = await prisma.$transaction(async (tx) => {

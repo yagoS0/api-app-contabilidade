@@ -4,7 +4,7 @@ import { HistoricosModal } from "../../historicos/components/renderHistoricosMod
 import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal";
 import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
 import { ParcelamentoModal } from "../../parcelamento/components/renderParcelamentoModal";
-import { AccountRow, NewEntryForm } from "./renderAccountingEntriesParts";
+import { AccountRow, DraftEntryRow } from "./renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtMoney } from "../lib/accountingEntriesShared";
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
 import { FunctionListModal, FunctionEditModal, FunctionApplyModal } from "../../functions/components/AccountingFunctionModals";
@@ -12,23 +12,22 @@ import { ParcelamentoCreateModal } from "../../parcelamento/components/Parcelame
 
 const fechamentoApi = createApiClient();
 
-// Q17: painel de fechamento contábil — avisa lançamentos em branco/desbalanceados e
-// permite fechar a empresa no mês (bloqueado se houver pendência).
-function FechamentoContabilPanel({ companyId, competencia, entries }) {
+// Q18: fechamento contábil compacto — um CADEADO que abre/fecha a empresa no mês.
+// 🔒 fechada (clica → reabre) · 🔓 aberta (clica → fecha; bloqueado se houver pendência).
+function FechamentoCadeado({ companyId, competencia, entries, onState }) {
   const [fechado, setFechado] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [erro, setErro] = useState(null);
 
   const problemas = useMemo(() => {
     const out = [];
     for (const e of entries || []) {
       if (String(e.tipo || "").toUpperCase() === "PARCELA") continue;
       const lines = e.lines || [];
-      if (lines.length === 0) { out.push({ id: e.id, historico: e.historico, motivo: "em branco (sem débito/crédito)" }); continue; }
+      if (lines.length === 0) { out.push({ id: e.id, historico: e.historico, motivo: "em branco" }); continue; }
       if (lines.some((l) => !String(l.conta || "").trim())) { out.push({ id: e.id, historico: e.historico, motivo: "conta em branco" }); continue; }
       const d = lines.filter((l) => String(l.tipo).toUpperCase() === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
       const c = lines.filter((l) => String(l.tipo).toUpperCase() === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
-      if (Math.abs(d - c) > 0.01) out.push({ id: e.id, historico: e.historico, motivo: `débito ≠ crédito (D ${d.toFixed(2)} / C ${c.toFixed(2)})` });
+      if (Math.abs(d - c) > 0.01) out.push({ id: e.id, historico: e.historico, motivo: "D≠C" });
     }
     return out;
   }, [entries]);
@@ -37,50 +36,56 @@ function FechamentoContabilPanel({ companyId, competencia, entries }) {
     let alive = true;
     if (!companyId || !competencia) return undefined;
     fechamentoApi.getFechamentoContabil(companyId, competencia)
-      .then((r) => { if (alive) setFechado(Boolean(r?.fechado)); })
+      .then((r) => { if (alive) { setFechado(Boolean(r?.fechado)); onState?.(Boolean(r?.fechado)); } })
       .catch(() => {});
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, competencia]);
 
-  async function fechar() {
-    setErro(null);
-    if (problemas.length > 0) { setErro("Há lançamentos pendentes — corrija antes de fechar."); return; }
+  async function toggle() {
+    if (busy) return;
+    if (fechado) {
+      setBusy(true);
+      try { await fechamentoApi.reabrirFechamentoContabil(companyId, competencia); setFechado(false); onState?.(false); }
+      catch (e) { window.alert(e?.message || "Falha ao reabrir."); }
+      finally { setBusy(false); }
+      return;
+    }
+    if (problemas.length > 0) {
+      // eslint-disable-next-line no-alert
+      window.alert(
+        `Não é possível fechar: ${problemas.length} lançamento(s) com problema.\n\n`
+        + problemas.slice(0, 10).map((p) => `• ${p.historico || p.id}: ${p.motivo}`).join("\n")
+      );
+      return;
+    }
     setBusy(true);
-    try { await fechamentoApi.fecharFechamentoContabil(companyId, competencia); setFechado(true); }
-    catch (e) { setErro(e?.message || "Falha ao fechar."); }
-    finally { setBusy(false); }
-  }
-  async function reabrir() {
-    setBusy(true);
-    try { await fechamentoApi.reabrirFechamentoContabil(companyId, competencia); setFechado(false); }
-    catch (e) { setErro(e?.message || "Falha ao reabrir."); }
+    try { await fechamentoApi.fecharFechamentoContabil(companyId, competencia); setFechado(true); onState?.(true); }
+    catch (e) { window.alert(e?.message || "Falha ao fechar."); }
     finally { setBusy(false); }
   }
 
-  const btn = { fontSize: "0.8rem", padding: "6px 12px", borderRadius: 6, cursor: "pointer", fontWeight: 700, border: "none" };
+  const color = fechado ? "#2DD4BF" : problemas.length > 0 ? "#FF5757" : "#69FF47";
+  const title = fechado
+    ? `Empresa fechada (${competencia}). Clique para reabrir.`
+    : problemas.length > 0
+      ? `${problemas.length} lançamento(s) com problema — corrija antes de fechar.`
+      : `Pronta para fechar (${competencia}). Clique no cadeado para fechar.`;
   return (
-    <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.surface, display: "grid", gap: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <strong style={{ color: ACCOUNTING_PANEL.text }}>Fechamento contábil — {competencia}</strong>
-        {fechado
-          ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>🔒 Fechada</span>
-          : problemas.length > 0
-            ? <span style={{ color: "#FF5757", fontWeight: 700 }}>{problemas.length} lançamento(s) em branco/desbalanceado(s)</span>
-            : <span style={{ color: "#69FF47", fontWeight: 700 }}>pronta para fechar</span>}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          {fechado
-            ? <button onClick={reabrir} disabled={busy} style={{ ...btn, background: "transparent", color: ACCOUNTING_PANEL.muted, border: `1px solid ${ACCOUNTING_PANEL.border}` }}>Reabrir</button>
-            : <button onClick={fechar} disabled={busy || problemas.length > 0} style={{ ...btn, background: problemas.length > 0 ? "#44475A" : "#69FF47", color: problemas.length > 0 ? "#888" : "#1A1B26", cursor: problemas.length > 0 ? "not-allowed" : "pointer" }}>Fechar empresa (mês)</button>}
-        </div>
-      </div>
-      {!fechado && problemas.length > 0 && (
-        <div style={{ fontSize: "0.78rem", color: "#FFB347", display: "grid", gap: 2 }}>
-          {problemas.slice(0, 8).map((p) => <div key={p.id}>⚠ {p.historico || p.id}: {p.motivo}</div>)}
-          {problemas.length > 8 && <div>… e mais {problemas.length - 8}.</div>}
-        </div>
-      )}
-      {erro && <div style={{ color: "#FF5757", fontSize: "0.78rem" }}>{erro}</div>}
-    </div>
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={busy}
+      title={title}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px",
+        borderRadius: 8, cursor: busy ? "default" : "pointer", fontSize: "0.8rem", fontWeight: 700,
+        background: "transparent", color, border: `1px solid ${color}`,
+      }}
+    >
+      <span style={{ fontSize: "1rem" }}>{fechado ? "🔒" : "🔓"}</span>
+      {fechado ? "Fechada" : "Fechar mês"}
+    </button>
   );
 }
 
@@ -238,6 +243,8 @@ export function AccountingEntriesTab({
   const isSimples = String(companyRegime || "").trim().toUpperCase() === "SIMPLES";
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [adding, setAdding] = useState(false); // Q18: linha de novo lançamento inline
+  const [monthClosed, setMonthClosed] = useState(false); // Q18: mês fechado bloqueia adicionar
 
   const visibleIds = useMemo(() => entries.map((e) => e.id).filter(Boolean), [entries]);
   const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
@@ -329,23 +336,26 @@ export function AccountingEntriesTab({
     cursor: "pointer",
   };
 
+  // Q18: filtros compactos (como no dashboard).
   const filterLabelStyle = {
     display: "grid",
-    gap: 4,
+    gap: 3,
     minWidth: 0,
-    fontSize: "0.75rem",
-    fontWeight: 500,
+    fontSize: "0.68rem",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.03em",
     color: ACCOUNTING_PANEL.muted,
   };
 
   const filterControlStyle = {
     width: "100%",
-    height: 41,
-    border: `1px solid ${ACCOUNTING_PANEL.field}`,
-    borderRadius: 8,
-    padding: "0 12px",
+    height: 34,
+    border: `1px solid ${ACCOUNTING_PANEL.border}`,
+    borderRadius: 6,
+    padding: "0 8px",
     font: "inherit",
-    fontSize: "0.875rem",
+    fontSize: "0.8rem",
     color: ACCOUNTING_PANEL.text,
     background: ACCOUNTING_PANEL.field,
     boxSizing: "border-box",
@@ -354,16 +364,15 @@ export function AccountingEntriesTab({
 
   return (
     <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--space-4)" }}>
-      {/* Q17: fechamento contábil + aviso de lançamentos em branco */}
-      <FechamentoContabilPanel companyId={companyId} competencia={activeComp} entries={entries} />
-      <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 12, background: ACCOUNTING_PANEL.surface }}>
+      <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 12, background: ACCOUNTING_PANEL.surface, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <ActionMenu
             label="Configurações"
             items={[
               { label: "Histórico de lançamentos", hint: "Templates de histórico reutilizáveis", onClick: () => setShowHistoricos(true) },
               { label: "Plano de contas", hint: "Visualizar e editar contas", onClick: () => { onLoadAccounts(); if (onOpenChartOfAccountsTab) onOpenChartOfAccountsTab(); }, disabled: !onOpenChartOfAccountsTab },
-              { label: "Lançamentos padrão", hint: "Regras de receita, provisão e baixa", onClick: () => onOpenAccountingRulesTab?.(), disabled: !onOpenAccountingRulesTab },
+              // Q17: "Lançamentos padrão" removido daqui — a config global fica em
+              // Configurações da firma → Padrões de Lançamento.
             ]}
           />
           <ActionMenu
@@ -437,7 +446,7 @@ export function AccountingEntriesTab({
         {entries.length > 0 && (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             {Object.entries(totals).map(([tipo, value]) => (
-              <span key={tipo} style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>
+              <span key={tipo} style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text }}>
                 <strong style={{ color: ACCOUNTING_PANEL.text }}>{TIPO_LABELS[tipo] || tipo}:</strong> R$ {fmtMoney(value)}
               </span>
             ))}
@@ -448,16 +457,26 @@ export function AccountingEntriesTab({
       {message && message !== "Lançamento adicionado." && <p style={{ color: "var(--success)", margin: "0 0 8px", fontSize: "0.875rem" }}>{message}</p>}
       {error && <p style={{ color: "var(--danger)", margin: "0 0 8px", fontSize: "0.875rem" }}>{error}</p>}
 
-      <NewEntryForm
-        accounts={accounts}
-        onSave={onCreateEntry}
-        saving={savingEntry}
-        activeComp={activeComp}
-        onSearchHistoricos={onSearchHistoricos}
-        onGetHistoricosByCode={onGetHistoricosByCode}
-        listedTotalD={listedTotals.debito}
-        listedTotalC={listedTotals.credito}
-      />
+      {/* Q18: toolbar junto da tabela (mesma largura/centralização) — Adicionar + cadeado */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap", maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          disabled={adding || monthClosed}
+          title={monthClosed ? "Mês fechado — reabra a empresa para lançar." : undefined}
+          style={{ minHeight: 34, padding: "7px 16px", border: "none", borderRadius: 8, background: (adding || monthClosed) ? "#44475A" : "#69FF47", color: (adding || monthClosed) ? "#888" : "#1A1B26", font: "inherit", fontSize: "0.875rem", fontWeight: 700, cursor: (adding || monthClosed) ? "default" : "pointer" }}
+        >
+          + Adicionar lançamento
+        </button>
+        <div style={{ marginLeft: "auto" }}>
+          <FechamentoCadeado
+            companyId={companyId}
+            competencia={activeComp}
+            entries={entries}
+            onState={(closed) => { setMonthClosed(closed); if (closed) setAdding(false); }}
+          />
+        </div>
+      </div>
 
       {selectedCount > 0 && (
         <div style={{
@@ -495,7 +514,8 @@ export function AccountingEntriesTab({
         </div>
       )}
 
-      <div style={{ overflowX: "auto", borderRadius: 16, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20 }}>
+      {/* Q18: tabela centralizada e mais estreita (Histórico fica perto do Valor). */}
+      <div style={{ overflowX: "auto", borderRadius: 16, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", fontSize: "0.9375rem", borderRadius: 16, overflow: "hidden" }}>
           <colgroup>
             {COLS.map((col, index) => <col key={index} style={{ width: col.width }} />)}
@@ -513,41 +533,49 @@ export function AccountingEntriesTab({
                 />
               </th>
               {COLS.slice(1).map(({ label, align }, index) => (
-                <th key={index} style={{ padding: "14px 14px", textAlign: align, fontSize: "1rem", fontWeight: 700, color: ACCOUNTING_PANEL.text, borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, position: "sticky", top: 0, background: ACCOUNTING_PANEL.field, zIndex: 10, whiteSpace: "nowrap" }}>{label}</th>
+                <th key={index} style={{ padding: "10px 12px", textAlign: align, fontSize: "0.8rem", fontWeight: 700, color: ACCOUNTING_PANEL.text, borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, position: "sticky", top: 0, background: ACCOUNTING_PANEL.field, zIndex: 10, whiteSpace: "nowrap" }}>{label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} style={{ padding: 16, textAlign: "center", color: ACCOUNTING_PANEL.muted }}>Carregando...</td></tr>}
-            {!loading && entries.length === 0 && <tr><td colSpan={9} style={{ padding: 24, textAlign: "center", color: ACCOUNTING_PANEL.muted }}>Nenhum lançamento para esta competência.</td></tr>}
+            {adding && (
+              <DraftEntryRow
+                accounts={accounts}
+                onSave={onCreateEntry}
+                saving={savingEntry}
+                activeComp={activeComp}
+                onSearchHistoricos={onSearchHistoricos}
+                onGetHistoricosByCode={onGetHistoricosByCode}
+                onClose={() => setAdding(false)}
+              />
+            )}
+            {loading && <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: ACCOUNTING_PANEL.text }}>Carregando...</td></tr>}
+            {!loading && entries.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: ACCOUNTING_PANEL.text }}>Nenhum lançamento para esta competência.</td></tr>}
             {!loading && entries.length > 0 && TIPO_GROUP_ORDER.map((tipo) => {
               const items = groupedEntries[tipo];
               if (!items || items.length === 0) return null;
-              const accent = TIPO_GROUP_ACCENT[tipo] || ACCOUNTING_PANEL.muted;
               return (
                 <Fragment key={tipo}>
                   <tr style={{ background: ACCOUNTING_PANEL.field }}>
                     <td
-                      colSpan={9}
+                      colSpan={7}
                       style={{
-                        padding: "10px 14px",
-                        borderTop: `2px solid ${accent}`,
+                        padding: "8px 14px",
+                        borderTop: `1px solid ${ACCOUNTING_PANEL.border}`,
                         borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`,
                         fontWeight: 700,
-                        letterSpacing: "0.04em",
-                        textTransform: "uppercase",
-                        fontSize: "0.8125rem",
-                        color: accent,
+                        letterSpacing: "0.02em",
+                        fontSize: "0.75rem",
+                        color: ACCOUNTING_PANEL.text,
+                        textAlign: "center",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                        <span style={{ display: "inline-block", width: 6, height: 18, background: accent, borderRadius: 3 }} />
-                        <span>{TIPO_GROUP_LABELS[tipo] || tipo}</span>
-                        <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 500, fontSize: "0.75rem", textTransform: "none", letterSpacing: 0 }}>
-                          {items.length} lançamento{items.length !== 1 ? "s" : ""}
-                          {groupTotals[tipo] > 0 && <> · R$ {fmtMoney(groupTotals[tipo])}</>}
-                        </span>
-                      </div>
+                      {/* Q18: título centralizado, branco, menor; sem cores de accent */}
+                      <span>{TIPO_GROUP_LABELS[tipo] || tipo}</span>
+                      <span style={{ color: ACCOUNTING_PANEL.text, fontWeight: 500, fontSize: "0.72rem", marginLeft: 10 }}>
+                        {items.length} lançamento{items.length !== 1 ? "s" : ""}
+                        {groupTotals[tipo] > 0 && <> · R$ {fmtMoney(groupTotals[tipo])}</>}
+                      </span>
                     </td>
                   </tr>
                   {items.map((entry) => (
@@ -570,7 +598,7 @@ export function AccountingEntriesTab({
               );
             })}
           </tbody>
-          {total > 0 && <tfoot><tr style={{ background: ACCOUNTING_PANEL.field }}><td colSpan={9} style={{ padding: "5px 8px", fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted, borderTop: `1px solid ${ACCOUNTING_PANEL.border}` }}>{total} lançamento{total !== 1 ? "s" : ""} no total</td></tr></tfoot>}
+          {total > 0 && <tfoot><tr style={{ background: ACCOUNTING_PANEL.field }}><td colSpan={7} style={{ padding: "5px 8px", fontSize: "0.875rem", color: ACCOUNTING_PANEL.text, borderTop: `1px solid ${ACCOUNTING_PANEL.border}` }}>{total} lançamento{total !== 1 ? "s" : ""} no total</td></tr></tfoot>}
         </table>
       </div>
 

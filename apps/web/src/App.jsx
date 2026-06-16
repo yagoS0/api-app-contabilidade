@@ -394,6 +394,9 @@ function App() {
       onCreateCompany={() => session.setPage("createCompany")}
       onOpenGuideUpload={() => session.setPage("guideUpload")}
       onOpenFirmSettings={() => session.setPage("firmSettings")}
+      onOpenGuideSettings={() => session.setPage("guideSettings")}
+      onOpenAccountingRules={() => session.setPage("accountingRulesGlobal")}
+      onOpenChartGlobal={() => session.setPage("chartOfAccountsGlobal")}
       onRefreshCompanies={companiesWorkspace.loadCompanies}
       dashboardCompetencia={companiesWorkspace.dashboardCompetencia}
       onChangeCompetencia={companiesWorkspace.changeDashboardCompetencia}

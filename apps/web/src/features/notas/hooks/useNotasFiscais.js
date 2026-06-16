@@ -3,6 +3,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+// Competência (YYYY-MM) do mês anterior ao atual.
+function prevMonthCompetencia() {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function useNotasFiscais({ api, companyId, feedback }) {
   const [ano, setAno] = useState(() => new Date().getUTCFullYear());
   const [competencias, setCompetencias] = useState([]);
@@ -23,7 +30,8 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   const [notas, setNotas] = useState([]);
   const [notasTotal, setNotasTotal] = useState(0);
   const [notasSummary, setNotasSummary] = useState(null);
-  const [notasFilters, setNotasFilters] = useState({ papel: "", type: "", competencia: "", search: "", limit: 100, offset: 0 });
+  // Q19: filtro de competência das notas começa no mês ANTERIOR ao atual (default).
+  const [notasFilters, setNotasFilters] = useState({ papel: "", type: "", competencia: prevMonthCompetencia(), search: "", limit: 100, offset: 0 });
   const [loadingNotas, setLoadingNotas] = useState(false);
 
   const loadAll = useCallback(async () => {

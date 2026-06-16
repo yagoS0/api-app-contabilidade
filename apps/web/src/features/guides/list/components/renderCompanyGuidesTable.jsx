@@ -31,17 +31,22 @@ const STATE_STYLE = {
 
 const expectedGuidesApi = createApiClient();
 
-function ExpectedGuidesPanel({ companyId }) {
-  const [competencia, setCompetencia] = useState(prevMonthCompetencia());
+function ExpectedGuidesPanel({ companyId, competencia, onCompetenciaChange }) {
+  // Q19: competência é controlada pelo pai (mesmo seletor filtra a tabela de guias abaixo).
   const [compliance, setCompliance] = useState(null);
   const [loading, setLoading] = useState(false);
   const [busyTipo, setBusyTipo] = useState(null);
+  const [monthClosed, setMonthClosed] = useState(false); // Q18: mês fechado bloqueia Vazio/upload
 
   async function load(comp) {
     setLoading(true);
     try {
-      const r = await expectedGuidesApi.getExpectedGuides(companyId, comp);
+      const [r, fech] = await Promise.all([
+        expectedGuidesApi.getExpectedGuides(companyId, comp),
+        expectedGuidesApi.getFechamentoContabil(companyId, comp).catch(() => null),
+      ]);
       setCompliance(r?.compliance || null);
+      setMonthClosed(Boolean(fech?.fechado));
     } catch { setCompliance(null); }
     setLoading(false);
   }
@@ -70,10 +75,11 @@ function ExpectedGuidesPanel({ companyId }) {
         <strong style={{ color: "#F8F8F2", fontSize: "0.9rem" }}>Guias do mês (esperadas)</strong>
         <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
           Competência:
-          <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)}
+          <input type="month" value={competencia} onChange={(e) => onCompetenciaChange(e.target.value)}
             style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 8px", colorScheme: "dark" }} />
         </label>
         {loading && <span style={{ color: "#6272A4", fontSize: "0.75rem" }}>carregando…</span>}
+        {monthClosed && <span style={{ color: "#8BE9FD", fontSize: "0.75rem", fontWeight: 700 }}>🔒 Mês fechado</span>}
       </div>
       {!loading && rows.length === 0 && (
         <div style={{ color: "#6272A4", fontSize: "0.8rem" }}>Nenhuma guia obrigatória para esta empresa/competência.</div>
@@ -98,15 +104,17 @@ function ExpectedGuidesPanel({ companyId }) {
               </span>
               <span style={{ justifySelf: "end" }}>
                 {isPresent ? null : isVazio ? (
-                  <button type="button" disabled={busyTipo === r.tipo}
+                  <button type="button" disabled={busyTipo === r.tipo || monthClosed}
                     onClick={() => setVazio(r.tipo, true)}
-                    style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: "pointer", background: "transparent", color: "#aeb6d3", border: "1px solid #44475A", borderRadius: 4 }}>
+                    title={monthClosed ? "Mês fechado — reabra a empresa para alterar." : undefined}
+                    style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: monthClosed ? "not-allowed" : "pointer", background: "transparent", color: "#aeb6d3", border: "1px solid #44475A", borderRadius: 4, opacity: monthClosed ? 0.5 : 1 }}>
                     desfazer
                   </button>
                 ) : (
-                  <button type="button" disabled={busyTipo === r.tipo}
+                  <button type="button" disabled={busyTipo === r.tipo || monthClosed}
                     onClick={() => setVazio(r.tipo, false)}
-                    style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: "pointer", background: "#FFB347", color: "#1A1B26", border: "none", borderRadius: 4, fontWeight: 700 }}>
+                    title={monthClosed ? "Mês fechado — reabra a empresa para alterar." : undefined}
+                    style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: monthClosed ? "not-allowed" : "pointer", background: monthClosed ? "#44475A" : "#FFB347", color: monthClosed ? "#888" : "#1A1B26", border: "none", borderRadius: 4, fontWeight: 700 }}>
                     Vazio
                   </button>
                 )}
@@ -303,8 +311,8 @@ export function CompanyGuidesTable({
     () => getAvailableGuideTypes(companyRegime),
     [companyRegime],
   );
-  const [filterCompetencia, setFilterCompetencia] = useState("all");
-  const [filterTipo, setFilterTipo] = useState("all");
+  // Q19: filtro único de competência (mês), default = mês anterior ao atual.
+  const [filterCompetencia, setFilterCompetencia] = useState(prevMonthCompetencia());
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkResending, setBulkResending] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -320,23 +328,13 @@ export function CompanyGuidesTable({
   const [completingGuide, setCompletingGuide] = useState(null);
   const [completingSaving, setCompletingSaving] = useState(false);
 
-  const competenciaOptions = useMemo(
-    () => [...new Set(guides.map((g) => g.competencia).filter(Boolean))].sort((a, b) => b.localeCompare(a)),
-    [guides]
-  );
-
-  const tipoOptions = useMemo(
-    () => [...new Set(guides.map((g) => g.tipo).filter(Boolean))].sort(),
-    [guides]
-  );
-
   const filteredGuides = useMemo(() => {
     return guides.filter((g) => {
-      if (filterCompetencia !== "all" && g.competencia !== filterCompetencia) return false;
-      if (filterTipo !== "all" && g.tipo !== filterTipo) return false;
+      // Competência vazia = mostra todas; senão filtra pelo mês escolhido.
+      if (filterCompetencia && g.competencia !== filterCompetencia) return false;
       return true;
     });
-  }, [filterCompetencia, filterTipo, guides]);
+  }, [filterCompetencia, guides]);
 
   const filteredIds = useMemo(
     () => filteredGuides.map((g) => g.guideId || g.id),
@@ -511,78 +509,63 @@ export function CompanyGuidesTable({
         />
       )}
 
-      {/* Q17: guias esperadas do mês + botão Vazio */}
-      <ExpectedGuidesPanel companyId={companyId} />
-
-      {/* Filter bar */}
-      <div className="guides-filters" aria-label="Filtros das guias">
-        <strong className="guides-filters__title">Filtrar por:</strong>
-        <label className="guides-filter-field">
-          <span>Competência</span>
-          <select value={filterCompetencia} onChange={(e) => setFilterCompetencia(e.target.value)}>
-            <option value="all">Todas</option>
-            {competenciaOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        </label>
-        <label className="guides-filter-field">
-          <span>Tipo</span>
-          <select value={filterTipo} onChange={(e) => setFilterTipo(e.target.value)}>
-            <option value="all">Todos</option>
-            {tipoOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        </label>
-
-        {onUploadGuide && (
-          <>
-            <input ref={fileInputRef} type="file" accept="application/pdf"
-              style={{ display: "none" }} onChange={handleFileChange} />
-            <div ref={uploadMenuRef} style={{ marginLeft: "auto", position: "relative" }}>
-              <Button
-                variant="primary" size="sm" type="button"
-                disabled={uploadingGuide}
-                onClick={() => setUploadMenuOpen((o) => !o)}
-              >
-                {uploadingGuide ? "Enviando..." : "+ Subir Guia ▾"}
-              </Button>
-              {uploadMenuOpen && (
-                <div style={{
-                  position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 200,
-                  background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 180, overflow: "hidden",
-                }}>
-                  <div style={{
-                    padding: "8px 12px", fontSize: "0.7rem", color: "#6272A4",
-                    textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700,
-                    borderBottom: "1px solid #44475A",
-                  }}>
-                    Tipo de guia
-                  </div>
-                  {availableUploadTypes.map((tipo) => (
-                    <button
-                      key={tipo}
-                      type="button"
-                      onClick={() => handleStartUpload(tipo)}
-                      style={{
-                        display: "block", width: "100%", textAlign: "left",
-                        padding: "8px 12px", background: "transparent", border: "none",
-                        color: "#F8F8F2", fontSize: "0.875rem", cursor: "pointer", fontWeight: 500,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                    >
-                      {tipo}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+      {/* Q19: guias esperadas do mês + botão Vazio. O seletor de competência deste
+          painel é o ÚNICO filtro — controla também a tabela de guias abaixo. */}
+      <ExpectedGuidesPanel
+        companyId={companyId}
+        competencia={filterCompetencia}
+        onCompetenciaChange={setFilterCompetencia}
+      />
 
       {/* Action toolbar — always visible above the table */}
       <div className="guides-toolbar">
         <div className="guides-toolbar__actions">
+          {onUploadGuide && (
+            <>
+              <input ref={fileInputRef} type="file" accept="application/pdf"
+                style={{ display: "none" }} onChange={handleFileChange} />
+              <div ref={uploadMenuRef} style={{ position: "relative" }}>
+                <Button
+                  variant="primary" size="sm" type="button"
+                  disabled={uploadingGuide}
+                  onClick={() => setUploadMenuOpen((o) => !o)}
+                >
+                  {uploadingGuide ? "Enviando..." : "+ Subir Guia ▾"}
+                </Button>
+                {uploadMenuOpen && (
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
+                    background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 180, overflow: "hidden",
+                  }}>
+                    <div style={{
+                      padding: "8px 12px", fontSize: "0.7rem", color: "#6272A4",
+                      textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700,
+                      borderBottom: "1px solid #44475A",
+                    }}>
+                      Tipo de guia
+                    </div>
+                    {availableUploadTypes.map((tipo) => (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() => handleStartUpload(tipo)}
+                        style={{
+                          display: "block", width: "100%", textAlign: "left",
+                          padding: "8px 12px", background: "transparent", border: "none",
+                          color: "#F8F8F2", fontSize: "0.875rem", cursor: "pointer", fontWeight: 500,
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                      >
+                        {tipo}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
           <Button
             variant="secondary" size="sm"
             onClick={handleBulkResend}

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "./GuideStorageService.js";
 import { fileNameForGuide, normalizeCompetencia, normalizeGuideType } from "./guideContract.js";
+import { isMonthClosed } from "../accounting/fechamentoContabil.js";
 import { canGuideConfirmPayment, canGuideRecalculate } from "./GuidePaymentStatusService.js";
 
 function normalizeCnpj(value) {
@@ -319,6 +320,19 @@ export async function createOrUpdateGuideFromProcessing({
   //   - undefined (default): comportamento legado — sempre PENDING para PROCESSED, null caso contrário.
   emailStatusOverride,
 }) {
+  // Q18: bloqueia upload/registro MANUAL de guia em mês fechado (fechamento contábil).
+  // Não afeta a captura automática do SERPRO (source="SERPRO").
+  const _compGuard = normalizeCompetencia(parsed?.competencia);
+  if (
+    String(source || "").toUpperCase() !== "SERPRO"
+    && portalClientId && _compGuard
+    && (await isMonthClosed(portalClientId, _compGuard))
+  ) {
+    const err = new Error("Mês fechado — reabra a empresa para subir guias desta competência.");
+    err.code = "MES_FECHADO";
+    throw err;
+  }
+
   const hasDbPdf =
     pdfBytesInput !== undefined &&
     Buffer.isBuffer(pdfBytesInput) &&

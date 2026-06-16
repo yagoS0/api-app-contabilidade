@@ -1,8 +1,53 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
+
+// Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
+function SettingsMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    function onDoc(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function onEsc(e) { if (e.key === "Escape") setOpen(false); }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onEsc);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onEsc); };
+  }, [open]);
+  const usable = items.filter((it) => typeof it.onClick === "function");
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <Button variant="secondary" className="dashboard-home__action" onClick={() => setOpen((o) => !o)}>
+        Configurações ▾
+      </Button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
+          background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 220, overflow: "hidden",
+        }}>
+          {usable.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              onClick={() => { setOpen(false); it.onClick(); }}
+              style={{
+                display: "block", width: "100%", textAlign: "left", padding: "9px 14px",
+                background: "transparent", border: "none", color: "#F8F8F2", cursor: "pointer", fontSize: "0.85rem",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#2f3147"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function normalizeSearch(value) {
   return String(value || "")
@@ -15,6 +60,10 @@ function hasPendingCompliance(company) {
   return getComplianceTags(company?.guideCompliance).some((tag) => !tag.ok);
 }
 
+// Q17: filtros compactos (campos menores), com competência junto deles.
+const FILTER_LABEL = { display: "grid", gap: 3, fontSize: "0.68rem", color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.03em" };
+const FILTER_CONTROL = { background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.8rem", colorScheme: "dark" };
+
 export function CompaniesHomePage({
   user,
   companies,
@@ -22,6 +71,9 @@ export function CompaniesHomePage({
   onCreateCompany,
   onOpenGuideUpload,
   onOpenFirmSettings,
+  onOpenGuideSettings,
+  onOpenAccountingRules,
+  onOpenChartGlobal,
   onRefreshCompanies,
   onOpenPendingReport,
   onOpenBatchEmail,
@@ -83,17 +135,6 @@ export function CompaniesHomePage({
                   Busca, filtros e acesso rapido para a carteira do escritorio.
                 </p>
               </div>
-              {onChangeCompetencia && (
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", color: "#aeb6d3", marginTop: 8 }}>
-                  Competência:
-                  <input
-                    type="month"
-                    value={dashboardCompetencia || ""}
-                    onChange={(e) => onChangeCompetencia(e.target.value)}
-                    style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 9px", colorScheme: "dark" }}
-                  />
-                </label>
-              )}
             </div>
 
             <div className="dashboard-home__user">
@@ -164,22 +205,7 @@ export function CompaniesHomePage({
                 <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
               )}
             </Button>
-            {onOpenFirmSettings && (
-              <Button variant="secondary" className="dashboard-home__action" onClick={onOpenFirmSettings}>
-                Configurações
-              </Button>
-            )}
-            <Button variant="secondary" className="dashboard-home__action" onClick={onOpenGuideUpload}>
-              Guias (Upload)
-            </Button>
-            <Button
-              variant="secondary"
-              className="dashboard-home__action"
-              onClick={onRefreshCompanies}
-              disabled={loadingCompanies}
-            >
-              {loadingCompanies ? "Atualizando…" : "Atualizar lista"}
-            </Button>
+            {/* Q17: ordem — Nova empresa · Envio de e-mails · Apuração · Configurações */}
             {onOpenBatchEmail && (
               <Button variant="success" className="dashboard-home__action dashboard-home__action--success" onClick={onOpenBatchEmail}>
                 Envio de e-mails em lote
@@ -190,43 +216,76 @@ export function CompaniesHomePage({
                 📊 Apuração
               </Button>
             )}
-            <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenPendingReport}>
-              Pendências (debug)
+            <SettingsMenu
+              items={[
+                { label: "Configuração de Guias", onClick: onOpenGuideSettings },
+                { label: "Padrões de Lançamento", onClick: onOpenAccountingRules },
+                { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
+                { label: "Pendências (debug)", onClick: onOpenPendingReport },
+              ]}
+            />
+            {/* Atualizar lista vira um ícone discreto */}
+            <Button
+              variant="secondary"
+              className="dashboard-home__action"
+              onClick={onRefreshCompanies}
+              disabled={loadingCompanies}
+              title="Atualizar lista"
+              aria-label="Atualizar lista"
+              style={{ minWidth: 40, padding: "8px 12px" }}
+            >
+              {loadingCompanies ? "…" : "↻"}
             </Button>
           </nav>
 
-          <section className="dashboard-home__filters" aria-label="Filtros">
-            <label className="dashboard-filter-field dashboard-filter-field--search">
-              <span>Buscar empresa ou CNPJ</span>
+          <section
+            aria-label="Filtros"
+            style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 16 }}
+          >
+            <label style={{ ...FILTER_LABEL, flex: "1 1 220px", minWidth: 180 }}>
+              Buscar empresa ou CNPJ
               <input
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Ex.: Clinica ou 00.000.000/0001-00"
+                style={{ ...FILTER_CONTROL, width: "100%" }}
               />
             </label>
 
-            <label className="dashboard-filter-field dashboard-filter-field--select">
-              <span>Filtro de documentos</span>
-              <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value)}>
-                <option value="pending">Empresas com pendencias</option>
-                <option value="ok">Empresas em dia</option>
-                <option value="all">Todas as empresas</option>
-              </select>
-            </label>
+            {onChangeCompetencia && (
+              <label style={FILTER_LABEL}>
+                Competência
+                <input
+                  type="month"
+                  value={dashboardCompetencia || ""}
+                  onChange={(e) => onChangeCompetencia(e.target.value)}
+                  style={{ ...FILTER_CONTROL, width: 150 }}
+                />
+              </label>
+            )}
 
-            <label className="dashboard-filter-field dashboard-filter-field--select">
-              <span>Filtro SERPRO</span>
-              <select value={serproFilter} onChange={(event) => setSerproFilter(event.target.value)}>
+            <label style={FILTER_LABEL}>
+              Documentos
+              <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 170 }}>
+                <option value="pending">Com pendências</option>
+                <option value="ok">Em dia</option>
                 <option value="all">Todas</option>
-                <option value="eligible">SERPRO aptas</option>
-                <option value="ineligible">SERPRO não aptas</option>
               </select>
             </label>
 
-            <label className="dashboard-filter-field dashboard-filter-field--select">
-              <span>E-mail do mês</span>
-              <select value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)}>
+            <label style={FILTER_LABEL}>
+              SERPRO
+              <select value={serproFilter} onChange={(event) => setSerproFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 130 }}>
+                <option value="all">Todas</option>
+                <option value="eligible">Aptas</option>
+                <option value="ineligible">Não aptas</option>
+              </select>
+            </label>
+
+            <label style={FILTER_LABEL}>
+              E-mail do mês
+              <select value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 150 }}>
                 <option value="all">Todas</option>
                 <option value="notSent">Só não enviados</option>
               </select>

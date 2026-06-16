@@ -460,6 +460,22 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompanyId, circularCompetencia, companyDetailTab]);
 
+  // Q18: carrega lançamentos + plano de contas ao abrir a aba Lançamentos e
+  // recarrega quando os filtros mudam (competência/tipo/origem/status). Antes a carga
+  // dependia do botão "Atualizar" — com Lançamentos virando aba inicial, a lista
+  // aparecia vazia.
+  useEffect(() => {
+    if (page === "companyDetail" && selectedCompanyId && companyDetailTab === "lancamentos") {
+      loadAccountingEntries(selectedCompanyId);
+      loadChartOfAccounts(selectedCompanyId);
+    }
+    // `page` está nas deps de propósito: na navegação SPA, selectedCompanyId/tab
+    // ficam prontos ANTES de page virar "companyDetail", e o efeito de limpeza acima
+    // (que zera os lançamentos quando page muda) rodaria DEPOIS da carga, apagando a
+    // lista. Reagir a `page` garante a recarga após a limpeza.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, selectedCompanyId, companyDetailTab, accountingEntriesState.filters]);
+
   return {
     accountingEntriesState,
     chartOfAccountsState,

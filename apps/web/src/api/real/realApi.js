@@ -954,6 +954,11 @@ export function createRealApi() {
         method: "POST", body: JSON.stringify({ confirmCompetencia }),
       });
     },
+    // Q19 — lista de atividades PGDAS-D (de-para oficial) p/ o dropdown do modal de fechamento
+    async listAtividadesPgdasd(companyId, dataReferencia) {
+      const qs = dataReferencia ? `?dataReferencia=${encodeURIComponent(dataReferencia)}` : "";
+      return request(`/firm/companies/${companyId}/atividades-pgdasd${qs}`);
+    },
     // Q15 — fila batch
     async criarApuracaoBatch({ portalClientIds, competencia }) {
       return request(`/firm/apuracao/batch`, {

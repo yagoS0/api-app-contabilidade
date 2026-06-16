@@ -37,9 +37,10 @@ export function getCompRange(competencia) {
 }
 
 export const INPUT = {
-  width: "100%", height: 26, border: "1px solid var(--border)",
+  width: "100%", height: 26, border: "1px solid #44475A",
   borderRadius: 3, padding: "0 5px", font: "inherit",
-  fontSize: "0.8125rem", background: "white", boxSizing: "border-box", outline: "none",
+  fontSize: "0.8125rem", background: "#1A1B26", color: "#F8F8F2",
+  boxSizing: "border-box", outline: "none", colorScheme: "dark",
 };
 
 export const ACCOUNTING_PANEL = {
@@ -96,6 +97,7 @@ export const PANEL_ICON_BUTTON_STYLE = {
   color: ACCOUNTING_PANEL.text,
 };
 
+// Q18: colunas Tipo e Status removidas da tabela (tipo continua no payload/editor).
 export const COLS = [
   { label: "", align: "center", width: "36px" },
   { label: "Data", align: "left", width: "110px" },
@@ -103,10 +105,11 @@ export const COLS = [
   { label: "Crédito", align: "center", width: "150px" },
   { label: "Histórico", align: "left", width: "auto" },
   { label: "Valor (R$)", align: "right", width: "132px" },
-  { label: "Tipo", align: "left", width: "110px" },
-  { label: "Status", align: "left", width: "120px" },
-  { label: "Ações", align: "right", width: "136px" },
+  { label: "Ações", align: "right", width: "120px" },
 ];
+
+// Q18: nº total de colunas (para colSpan de linhas full-width).
+export const COL_COUNT = COLS.length; // 7
 
 // Ordem dos blocos no agrupamento visual da tabela.
 // Tipos não listados aqui caem no bloco final "Outros".

@@ -43,12 +43,20 @@ const cellBaseStyle = {
 };
 
 function GuideStatusCell({ value, column }) {
-  // Q16: 3 estados — ✗ ausente / "contendo guia" / "enviado".
+  // Q16/Q17: 4 estados — ✗ ausente / "vazio" (amarelo) / "contendo guia" / "enviado".
   if (!value) {
     return <td style={{ ...cellBaseStyle, color: PANEL.danger }} title="Sem guia">✗</td>;
   }
   if (column.isInfoOnly) {
     return <td style={{ ...cellBaseStyle, color: PANEL.warning }} title="Parcelamento ativo (sem PDF para anexar)">●</td>;
+  }
+  // Q17: marcador VAZIO = ausência confirmada pelo contador (não é guia enviável).
+  if (value.vazio) {
+    return (
+      <td style={{ ...cellBaseStyle, color: PANEL.warning }} title="Marcada como vazio (sem guia no mês). Desfaça na aba Guias da empresa para subir a guia real.">
+        ⊘ vazio
+      </td>
+    );
   }
   const valorTitle = value.valor != null ? `R$ ${Number(value.valor).toFixed(2)}` : "";
   if (value.emailStatus === "SENT") {
@@ -75,7 +83,8 @@ function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggle
   // Q16: só é "enviável" se tem guia NÃO enviada (SENT = display-only, não re-seleciona).
   const rowHasSendable = (row) => columns.some((c) => {
     const cell = !c.isInfoOnly && row.tiposGuias?.[c.key];
-    return cell && cell.emailStatus !== "SENT";
+    // VAZIO não é enviável (sem PDF); SENT é display-only.
+    return cell && !cell.vazio && cell.emailStatus !== "SENT";
   });
   const visibleRows = onlyPending ? rows.filter(rowHasSendable) : rows;
 
@@ -171,8 +180,10 @@ function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggle
  * Página "Envio de e-mails em lote".
  *
  * Mostra todas as empresas em 2 seções (Simples + Presumido), com colunas por tipo de guia.
- * - Verde ✓ = guia capturada (PENDING/ERROR, ainda não enviada)
+ * - Azul 📄 guia = guia capturada (PENDING/ERROR, ainda não enviada)
+ * - Verde ✓ enviado = guia já enviada por e-mail (display-only)
  * - Vermelho ✗ = guia ainda não capturada
+ * - Amarelo ⊘ vazio = marcada como "sem guia no mês" (ausência confirmada, não enviável)
  * - Laranja ● = parcelamento ativo (info-only, sem anexo de PDF)
  *
  * O contador seleciona empresas e clica "Enviar e-mails (N)" — backend envia 1 e-mail
@@ -189,8 +200,9 @@ export function BatchEmailPage({
   message,
   error,
 }) {
-  // Q10.4: competência vira opcional. "" (default) = todas as competências pendentes.
-  const [competencia, setCompetencia] = useState("");
+  // Q10.4: competência opcional ("" = todas). Q19: default = mês anterior (mesmo
+  // padrão do dashboard/guias/notas); usuário pode trocar para "Todas" no seletor.
+  const [competencia, setCompetencia] = useState(getPreviousMonthCompetencia());
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
   const [onlyPending, setOnlyPending] = useState(true);
 

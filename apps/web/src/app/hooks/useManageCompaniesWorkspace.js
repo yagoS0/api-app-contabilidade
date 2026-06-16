@@ -462,7 +462,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       await api.updateCompany(companiesState.selectedCompanyId, editCompanyForm.form);
       feedback.setMessage("Cadastro da empresa atualizado com sucesso.");
       await loadCompanies();
-      setCompanyDetailTab("guides");
+      setCompanyDetailTab("lancamentos");
     } catch (err) {
       feedback.setError(err?.message || "Falha ao atualizar cadastro da empresa.");
     } finally {
@@ -665,7 +665,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     guidesState.setRecalculatingGuideId("");
     createCompanyForm.reset();
     editCompanyForm.reset();
-    setCompanyDetailTab("guides");
+    setCompanyDetailTab("lancamentos");
     setGuideSettings(null);
     setJobEnabled(false);
     setSerproProcurationStatus(null);
@@ -679,7 +679,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   useEffect(() => {
     if (page === "companyDetail" && companiesState.selectedCompanyId) {
       loadGuides(companiesState.selectedCompanyId);
-      setCompanyDetailTab("guides");
+      // Q17: aba default ao abrir a empresa = Lançamentos.
+      setCompanyDetailTab("lancamentos");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, companiesState.selectedCompanyId]);

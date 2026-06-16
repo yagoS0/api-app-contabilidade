@@ -528,6 +528,105 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
   );
 }
 
+// Q18: linha editável de NOVO lançamento direto na tabela (substitui o form fixo).
+// Ao salvar, limpa e mantém aberta (foca a Data) até ESC/Sair. Mesma lógica/payload do NewEntryForm.
+export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHistoricos, onGetHistoricosByCode, onClose }) {
+  const { min, max, defaultDate } = getCompRange(activeComp);
+  const [dayStr, setDayStr] = useState(() => defaultDate ? String(Number(defaultDate.slice(8))) : "");
+  const [dateVal, setDateVal] = useState(defaultDate);
+  const [contaD, setContaD] = useState("");
+  const [contaC, setContaC] = useState("");
+  const [historico, setHistorico] = useState("");
+  const [valor, setValor] = useState("");
+  const dayRef = useRef(null);
+  const cRef = useRef(null);
+  const histRef = useRef(null);
+  const valRef = useRef(null);
+
+  useEffect(() => {
+    const { defaultDate: nd } = getCompRange(activeComp);
+    setDateVal(nd); setDayStr(nd ? String(Number(nd.slice(8))) : "");
+  }, [activeComp]);
+
+  useEffect(() => { setTimeout(() => dayRef.current?.focus(), 30); }, []);
+
+  function handleDayChange(raw) {
+    setDayStr(raw);
+    if (raw === "" || raw === "0") { setDateVal(""); return; }
+    const maxDay = max ? Number(max.slice(8)) : 31;
+    const day = Math.max(1, Math.min(maxDay, Number(raw)));
+    if (isNaN(day)) return;
+    const [y, m] = (min || "").split("-");
+    if (y && m) setDateVal(`${y}-${m}-${String(day).padStart(2, "0")}`);
+  }
+
+  const detected = useMemo(() => detectTipoFromAccounts(contaD, contaC, accounts), [contaD, contaC, accounts]);
+  const lines = [{ tipo: "D", conta: contaD, valor }, { tipo: "C", conta: contaC, valor }];
+  const balanced = Number(valor) > 0;
+  const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
+  const canSave = dateVal && historico && balanced && contaD && contaC && !duplicateAcrossSides && !saving;
+
+  function reset() {
+    setContaD(""); setContaC(""); setHistorico(""); setValor("");
+    const { defaultDate: nd } = getCompRange(activeComp);
+    setDateVal(nd); setDayStr(nd ? String(Number(nd.slice(8))) : "");
+    setTimeout(() => dayRef.current?.focus(), 30);
+  }
+
+  async function handleSave() {
+    if (!canSave) return;
+    const payload = { data: dateVal, historico, tipo: detected.tipo, lines: lines.map((l, i) => ({ conta: l.conta, tipo: l.tipo, valor: Number(l.valor || 0), ordem: i })) };
+    if (detected.tipo === "PROVISAO") payload.subtipo = detected.subtipo;
+    const res = await onSave(payload);
+    // Sucesso → limpa e mantém aberta para o próximo. (onSave retorna null em falha.)
+    if (res !== null) reset();
+  }
+
+  function onKeyDown(e) {
+    if (e.key === "Escape") { e.preventDefault(); onClose?.(); }
+  }
+
+  const cell = { ...TDv, padding: "6px 8px" };
+  return (
+    <tr style={{ background: "#202334", outline: "2px solid #69FF47", outlineOffset: "-2px" }} onKeyDown={onKeyDown}>
+      <td style={{ ...cell, textAlign: "center" }} />
+      <td style={cell}>
+        <input ref={dayRef} type="text" inputMode="numeric" placeholder="Dia" value={dayStr}
+          onChange={(e) => handleDayChange(e.target.value.replace(/\D/g, ""))}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); histRef.current?.focus(); } }}
+          style={{ ...PANEL_FIELD_STYLE, textAlign: "center" }} />
+      </td>
+      <td style={cell}>
+        <AccountCodeInput value={contaD} onChange={setContaD} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode}
+          onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); cRef.current?.focus(); } }} placeholder="D" />
+      </td>
+      <td style={cell}>
+        <AccountCodeInput value={contaC} onChange={setContaC} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode}
+          onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} placeholder="C" inputRef={cRef} />
+      </td>
+      <td style={cell}>
+        <SmartHistoricoInput value={historico} onChange={setHistorico}
+          onFillFromHistory={(hist, hl) => { if (hist) setHistorico(hist); if (hl?.length) { const d = hl.find((l) => l.tipo === "D"); const c = hl.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(String(d.valor)); } }}
+          onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} />
+        {duplicateAcrossSides ? <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>Débito e crédito não podem ser a mesma conta.</div> : null}
+      </td>
+      <td style={cell}>
+        <input ref={valRef} type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00"
+          style={{ ...PANEL_FIELD_STYLE, textAlign: "right" }} />
+      </td>
+      <td style={{ ...cell, textAlign: "right" }}>
+        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+          <Button size="sm" variant="success" onClick={handleSave} disabled={!canSave}>{saving ? "..." : "Salvar"}</Button>
+          <Button size="sm" variant="secondary" onClick={() => onClose?.()}>Sair</Button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCreateBaixa, savingBaixa, onSearchHistoricos, isSelected = false, onToggleSelect = null, onLoadBaixaTemplate = null }) {
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -583,12 +682,13 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
           <div style={{ marginBottom: 4 }}><SmartHistoricoInput value={form.historico} onChange={(v) => setForm((p) => ({ ...p, historico: v }))} onFillFromHistory={(h, ls) => setForm((p) => ({ ...p, historico: h, lines: ls?.length ? ls.map((l) => ({ tipo: l.tipo, conta: l.conta || "", valor: l.valor ? String(l.valor) : "" })) : p.lines }))} onSearchHistoricos={onSearchHistoricos} /></div>
           {isTemplate && <div style={{ background: "#FFB347", border: "none", borderRadius: 8, padding: "6px 10px", marginBottom: 6, fontSize: "0.8rem", color: "#1A1B26" }}>Este lançamento foi agendado automaticamente. Preencha as contas e o valor para confirmá-lo.</div>}
           <LineEditor lines={form.lines} onChange={(ls) => setForm((p) => ({ ...p, lines: ls }))} accounts={accounts} />
+          {/* Q18: tipo/subtipo editáveis aqui (a coluna Tipo foi removida da tabela) */}
+          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+            <select value={form.tipo} onChange={(e) => setForm((p) => ({ ...p, tipo: e.target.value, subtipo: e.target.value !== "PROVISAO" ? "" : p.subtipo }))} style={{ ...PANEL_FIELD_STYLE, width: 160, colorScheme: "dark" }}>{Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+            {form.tipo === "PROVISAO" && <select value={form.subtipo || ""} onChange={(e) => setForm((p) => ({ ...p, subtipo: e.target.value }))} style={{ ...PANEL_FIELD_STYLE, width: 200, colorScheme: "dark" }}><option value="">Subtipo...</option>{SUBTIPO_OPTIONS.map(({ key, label }) => <option key={key} value={key}>{label}</option>)}</select>}
+          </div>
         </td>
         <td style={TDv}>
-          <select value={form.tipo} onChange={(e) => setForm((p) => ({ ...p, tipo: e.target.value, subtipo: e.target.value !== "PROVISAO" ? "" : p.subtipo }))} style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark" }}>{Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-          {form.tipo === "PROVISAO" && <select value={form.subtipo || ""} onChange={(e) => setForm((p) => ({ ...p, subtipo: e.target.value }))} style={{ ...PANEL_FIELD_STYLE, marginTop: 4, colorScheme: "dark" }}><option value="">Subtipo...</option>{SUBTIPO_OPTIONS.map(({ key, label }) => <option key={key} value={key}>{label}</option>)}</select>}
-        </td>
-        <td style={TDv} colSpan={2}>
           <div style={{ display: "grid", gap: 6, justifyItems: "start" }}>
             <div style={{ display: "flex", gap: 4 }}>
               <Button size="lg" variant="success" onClick={save} disabled={saving || editingDuplicateAcrossSides}>{saving ? "..." : "Salvar"}</Button>
@@ -623,9 +723,9 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
         </td>
         <td style={{ ...TDv, fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtDate(entry.data)}</td>
         <td style={{ ...TDv, textAlign: isSimple ? "center" : "left" }} colSpan={isSimple ? 1 : 2}>
-          {isSimple ? <><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{dLine?.conta}</span>{dA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{dA.nome}</div>}</> : <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
+          {isSimple ? <><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{dLine?.conta}</span>{dA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{dA.nome}</div>}</> : <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
         </td>
-        {isSimple && <td style={{ ...TDv, textAlign: "center" }}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{cLine?.conta}</span>{cA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{cA.nome}</div>}</td>}
+        {isSimple && <td style={{ ...TDv, textAlign: "center" }}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{cLine?.conta}</span>{cA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{cA.nome}</div>}</td>}
         <td style={{ ...TDv, fontSize: "0.9375rem" }} title={entry.historico}>
           <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.historico || "—"}</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
@@ -642,18 +742,17 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
             )}
           </div>
         </td>
-        <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.muted, fontSize: "0.875rem" }}>—</span> : fmtMoney(totalD)}</td>
-        <td style={{ ...TDv, fontSize: "0.875rem", color: ACCOUNTING_PANEL.text }}>{TIPO_LABELS[entry.tipo] || entry.tipo}</td>
-        <td style={TDv}>
-          {isTemplate ? (
-            <TemplateBadge />
-          ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}><StatusChip status={entry.status} /></div>
-          )}
+        <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.875rem" }}>—</span> : fmtMoney(totalD)}</td>
+        {/* Q18: colunas Tipo e Status removidas. Status mostrado como chip discreto junto às ações pra template/exportado. */}
+        <td style={{ ...TDv, textAlign: "right", borderRight: "none" }}>
+          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
+            {isTemplate && <TemplateBadge />}
+            {!exported && <><button type="button" onClick={startEdit} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#BD93F9" }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#FF4757" }}>⌫</button></>}
+            {exported && <span style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.text }}>exportado</span>}
+          </div>
         </td>
-        <td style={{ ...TDv, textAlign: "right", borderRight: "none" }}><div style={{ display: "flex", gap: 3, justifyContent: "flex-end", flexWrap: "wrap" }}>{!exported && <><button type="button" onClick={startEdit} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#BD93F9" }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#FF4757" }}>⌫</button></>}</div></td>
       </tr>
-      {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={9} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtMoney(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
+      {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={7} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtMoney(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
       {showBaixa && <BaixaModal entry={entry} accounts={accounts} saving={savingBaixa} onSave={async (input) => { await onCreateBaixa(entry.id, input); setShowBaixa(false); }} onClose={() => setShowBaixa(false)} onLoadBaixaTemplate={onLoadBaixaTemplate} />}
     </>
   );

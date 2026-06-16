@@ -45,26 +45,23 @@ const TAG_STATE_COLOR = { present: "#69FF47", vazio: "#FFB347", missing: "#FF575
 export function CompanyCard({ company, onAccess }) {
   const tags = getComplianceTags(company.guideCompliance);
   const serproEligible = Boolean(company?.serproStatus?.eligible);
-  // Q17: empresa FECHADA (contábil) → o CARD INTEIRO muda de cor.
+  // Q17: empresa FECHADA (contábil) → card inteiro fica verde-azulado (teal) + cadeado no título.
   const fechada = Boolean(company?.fechamentoContabil?.fechado);
   const cardStyle = fechada
-    ? { background: "rgba(139,233,253,0.10)", borderColor: "#8BE9FD" }
+    ? { background: "rgba(45,212,191,0.10)", borderColor: "#2DD4BF" }
+    : undefined;
+  const fechadaTitle = fechada
+    ? `Empresa fechada${company.fechamentoContabil?.fechadoEm ? ` em ${new Date(company.fechamentoContabil.fechadoEm).toLocaleDateString("pt-BR")}` : ""}`
     : undefined;
 
   return (
     <article className="company-tile" style={cardStyle}>
       <div className="company-tile__body">
-        <h3>{company.razao}</h3>
-        <p>{company.cnpj}</p>
-        {fechada && (
-          <span style={{
-            display: "inline-block", marginTop: 4, fontSize: "0.68rem", fontWeight: 700,
-            padding: "2px 8px", borderRadius: 999, color: "#8BE9FD",
-            background: "rgba(139,233,253,0.15)", border: "1px solid #8BE9FD",
-          }} title={`Empresa fechada em ${company.fechamentoContabil?.fechadoEm ? new Date(company.fechamentoContabil.fechadoEm).toLocaleDateString("pt-BR") : ""}`}>
-            🔒 Fechada
-          </span>
-        )}
+        <h3>
+          {company.razao}
+          {fechada && <span title={fechadaTitle} style={{ marginLeft: 6 }}>🔒</span>}
+        </h3>
+        <p style={{ color: "#FFFFFF" }}>CNPJ: {company.cnpj}</p>
       </div>
       <p className="company-serpro-status" aria-label="Status da integração SERPRO">
         <span
@@ -73,46 +70,51 @@ export function CompanyCard({ company, onAccess }) {
         >
           SERPRO
         </span>
-        {/* Q16: selo de e-mail do mês enviado */}
+        {/* Q16/Q17: selo de envio das guias — mesmo estilo das tags (só borda):
+            verde se enviadas, vermelho se não. */}
         <span
           style={{
-            marginLeft: 8, fontSize: "0.7rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-            border: `1px solid ${company.monthEmailSent ? "#69FF47" : "#FFB347"}`,
-            color: company.monthEmailSent ? "#69FF47" : "#FFB347",
-            background: company.monthEmailSent ? "rgba(105,255,71,0.12)" : "rgba(255,179,71,0.12)",
+            // Q18: sem borda — cor na fonte (verde enviado / vermelho não enviado).
+            marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
+            color: company.monthEmailSent ? "#69FF47" : "#FF5757",
           }}
           title={
             company.monthEmailSent
-              ? `E-mail do mês (${company.monthEmailCompetencia || ""}) enviado`
-              : `E-mail do mês (${company.monthEmailCompetencia || ""}) ainda não enviado`
+              ? `Guias do mês (${company.monthEmailCompetencia || ""}) enviadas por e-mail`
+              : `Guias do mês (${company.monthEmailCompetencia || ""}) ainda não enviadas`
           }
         >
-          {company.monthEmailSent ? "✅ E-mail do mês" : "⏳ E-mail do mês"}
+          {company.monthEmailSent ? "📤 guias" : "✉ guias"}
         </span>
       </p>
       <p className="compliance-tags" aria-label="Status de guias obrigatórias">
         {tags.map((tag) => {
-          // Tag accent (PARC_DAS): cor laranja para destacar parcelamento ativo.
-          if (tag.accent) {
-            return (
-              <span key={tag.label} className="compliance-tag compliance-tag--accent" title={`${tag.label} — parcelamento ativo`}>
-                {tag.label}
-              </span>
-            );
-          }
-          // Q17: cor por estado — present(verde)/vazio(amarelo)/missing(vermelho).
-          const color = TAG_STATE_COLOR[tag.state] || (tag.ok ? "#69FF47" : "#FF5757");
-          const title = tag.state === "vazio"
-            ? `${tag.label} — sem guia (confirmado)`
-            : tag.ok ? `${tag.label} em dia` : `${tag.label} pendente`;
+          // Q17: só a BORDA colorida por estado; texto neutro; cantos mais quadrados.
+          // accent (PARC_DAS) = laranja; present=verde, vazio=amarelo, missing=vermelho.
+          const color = tag.accent ? "#FFB347" : (TAG_STATE_COLOR[tag.state] || (tag.ok ? "#69FF47" : "#FF5757"));
+          const title = tag.accent
+            ? `${tag.label} — parcelamento ativo`
+            : tag.state === "vazio"
+              ? `${tag.label} — sem guia (confirmado)`
+              : tag.ok ? `${tag.label} em dia` : `${tag.label} pendente`;
           return (
-            <span key={tag.label} className="compliance-tag"
-              style={{ color, borderColor: color, background: `${color}1f` }} title={title}>
+            <span
+              key={tag.label}
+              style={{
+                // Q18: sem borda — a cor vai na FONTE (estado verde/amarelo/vermelho).
+                fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color,
+              }}
+              title={title}
+            >
               {tag.label}
             </span>
           );
         })}
-        {!tags.length ? <span className="compliance-tag compliance-tag--neutral">Sem obrigacoes</span> : null}
+        {!tags.length ? (
+          <span style={{ fontSize: "0.72rem", padding: "2px 6px", color: "#aeb6d3" }}>
+            Sem obrigações
+          </span>
+        ) : null}
       </p>
       <Button type="button" className="company-tile__action" onClick={() => onAccess(company.companyId)}>
         Acessar

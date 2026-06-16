@@ -69,6 +69,16 @@ Rotas protegidas pelo middleware `requireRole`. Nunca bypassar sem motivo explí
   dashboard filtra por competência (mês anterior) + pendências; card muda de cor quando
   fechada; aba **Lançamentos** vira a primeira. Cada bloco de arquitetura tem seu `CLAUDE.md`.
   - Pendente: aplicar a migração `add_fechamento_contabil` (requer o banco no ar).
+- [x] **UI do dashboard + aba Lançamentos (Q18)** — dashboard: botões reordenados
+  (Nova empresa · Envio de e-mails · Apuração · Configurações-dropdown), "Atualizar" vira
+  ícone, filtros compactos, cards menos coloridos (tags só com borda), CNPJ branco, card
+  teal quando fechada. Lançamentos: **adicionar inline** (DraftEntryRow, auto-reabre até
+  ESC/Sair), **filtros compactos**, **cadeado** de fechamento perto da tabela, colunas
+  **Tipo/Status removidas**, títulos centralizados/brancos, e **carga automática** ao
+  abrir a aba/mudar competência (effect em `useManageAccountingWorkspace`).
+  **Mês fechado bloqueia** novo lançamento e upload/registro de guia manual + marcar Vazio
+  (helper `isMonthClosed`; back retorna 409/`MES_FECHADO`; front desabilita os botões).
+  Aba **Apuração V2 removida** do header da empresa.
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 

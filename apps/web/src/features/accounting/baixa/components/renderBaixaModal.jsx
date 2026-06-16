@@ -19,12 +19,14 @@ function fmtMoney(val) {
 
 const INPUT = {
   height: 32,
-  border: "1px solid var(--border)",
+  border: "1px solid #44475A",
   borderRadius: "var(--radius-sm)",
   padding: "0 var(--space-3)",
   font: "inherit",
   fontSize: "0.8125rem",
-  background: "white",
+  background: "#1A1B26",
+  color: "#F8F8F2",
+  colorScheme: "dark",
 };
 
 function LineEditor({ lines, onChange, accounts }) {
@@ -47,7 +49,7 @@ function LineEditor({ lines, onChange, accounts }) {
     <div style={{ marginTop: 8 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
         <thead>
-          <tr style={{ background: "#f3f4f6" }}>
+          <tr style={{ background: "#282A36" }}>
             <th style={{ padding: "4px 6px", width: 52, textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>D/C</th>
             <th style={{ padding: "4px 6px", textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>Conta</th>
             <th style={{ padding: "4px 6px", width: 120, textAlign: "right", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>Valor (R$)</th>
@@ -59,7 +61,7 @@ function LineEditor({ lines, onChange, accounts }) {
             <tr key={i}>
               <td style={{ padding: "2px 4px" }}>
                 <select value={l.tipo} onChange={(e) => updateLine(i, "tipo", e.target.value)}
-                  style={{ ...INPUT, width: 46, fontWeight: 700, color: l.tipo === "D" ? "#1d4ed8" : "#065f46" }}>
+                  style={{ ...INPUT, width: 46, fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>
                   <option value="D">D</option>
                   <option value="C">C</option>
                 </select>
@@ -108,20 +110,20 @@ function LineEditor({ lines, onChange, accounts }) {
             <td colSpan={2} style={{ padding: "4px 6px", fontSize: "0.75rem" }}>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => addLine("D")}
-                  style={{ fontSize: "0.7rem", background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+                  style={{ fontSize: "0.7rem", background: "rgba(139,233,253,0.12)", color: "#8BE9FD", border: "1px solid #8BE9FD", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
                   + Débito
                 </button>
                 <button onClick={() => addLine("C")}
-                  style={{ fontSize: "0.7rem", background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+                  style={{ fontSize: "0.7rem", background: "rgba(105,255,71,0.10)", color: "#69FF47", border: "1px solid #69FF47", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
                   + Crédito
                 </button>
               </div>
             </td>
             <td colSpan={2} style={{ padding: "4px 6px", textAlign: "right", fontSize: "0.75rem" }}>
               {balanced ? (
-                <span style={{ color: "#047857", fontWeight: 700 }}>Balanceado</span>
+                <span style={{ color: "#69FF47", fontWeight: 700 }}>Balanceado</span>
               ) : (
-                <span style={{ color: "#dc2626", fontWeight: 700 }}>Dif. R$ {fmtMoney(diff)}</span>
+                <span style={{ color: "#FF5757", fontWeight: 700 }}>Dif. R$ {fmtMoney(diff)}</span>
               )}
             </td>
           </tr>
@@ -223,7 +225,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
 
         {/* Info da provisão */}
         <div style={{
-          background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 6,
+          background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", borderRadius: 6,
           padding: "8px 12px", marginBottom: 16, fontSize: "0.8125rem",
         }}>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>

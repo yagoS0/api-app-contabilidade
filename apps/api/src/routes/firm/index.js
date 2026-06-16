@@ -40,6 +40,7 @@ import {
   toGuideResponse,
 } from "../../application/guides/GuideService.js";
 import { normalizeCompetencia, normalizeGuideType } from "../../application/guides/guideContract.js";
+import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import {
   getGuideRuntimeSettings,
   updateGuideRuntimeSettings,
@@ -1532,6 +1533,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const competencia = normalizeCompetencia(req.body?.competencia || "");
     if (!portalClientId) return res.status(400).json({ ok: false, error: "portal_client_id_required" });
     if (!competencia) return res.status(400).json({ ok: false, error: "competencia_invalida" });
+    if (await isMonthClosed(portalClientId, competencia)) {
+      return res.status(409).json({ ok: false, error: "mes_fechado", message: "Mês fechado — reabra a empresa para alterar guias desta competência." });
+    }
     try {
       // Idempotente: se já existe guia (qualquer status) pra (empresa, tipo, competência),
       // não sobrescreve uma guia real PROCESSED; só cria o marcador VAZIO quando não há guia real.
@@ -1706,7 +1710,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const guides = await prisma.guide.findMany({
       where: {
         portalClientId: { in: portalIds },
-        status: "PROCESSED",
+        // Q17: inclui marcadores VAZIO (ausência confirmada) — a matriz mostra "vazio"
+        // amarelo distinto de "sem guia" (X), pra ficar claro que foi marcado vazio.
+        status: { in: ["PROCESSED", "VAZIO"] },
         OR: [
           { emailStatus: { in: ["PENDING", "ERROR", "SENT"] } },
           { emailStatus: null },
@@ -1715,7 +1721,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       },
       select: {
         id: true, portalClientId: true, tipo: true, competencia: true, valor: true, vencimento: true,
-        emailStatus: true, emailSentAt: true, extracted: true,
+        status: true, emailStatus: true, emailSentAt: true, extracted: true,
       },
     });
 
@@ -1779,10 +1785,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // Q16: a guia de Simples é gravada como tipo "SIMPLES"; a coluna da matriz é "DAS".
       const rawUpper = String(g.tipo || "").toUpperCase();
       const upper = rawUpper === "SIMPLES" ? "DAS" : rawUpper;
+      const isVazio = g.status === "VAZIO";
       const stamp = {
         guideId: g.id,
         valor: g.valor != null ? Number(g.valor) : null,
         vencimento: g.vencimento,
+        // Q17: vazio = ausência confirmada (sem PDF). Frontend mostra amarelo "vazio".
+        vazio: isVazio,
         emailStatus: g.emailStatus || null,
         emailSentAt: g.emailSentAt || null,
       };
@@ -1800,8 +1809,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       } else if (row.tiposGuias[upper] !== undefined) {
         row.tiposGuias[upper] = stamp;
       }
-      // Só guias ainda NÃO enviadas entram na seleção de envio em lote.
-      if (g.emailStatus !== "SENT") row.pendingGuideIds.push(g.id);
+      // Só guias REAIS ainda NÃO enviadas entram na seleção de envio em lote.
+      // Marcadores VAZIO não são enviáveis (não têm PDF).
+      if (g.emailStatus !== "SENT" && !isVazio) row.pendingGuideIds.push(g.id);
     }
 
     // Parcelamentos só são exibidos se existe ao menos 1 linha pra (empresa, competência).

@@ -6,9 +6,19 @@ plano de contas, funções/templates, importações (OFX/Excel).
 ## Subpastas
 
 - `entries/` — aba **Lançamentos** (`renderAccountingEntriesTab.jsx`). É a **aba default**
-  ao abrir a empresa (Q17). Mostra `FechamentoContabilPanel` no topo: avisa lançamentos
-  em branco/desbalanceados e permite **Fechar empresa (mês)** / Reabrir (bloqueado se houver
-  pendência). Cálculo de pendência espelha o backend (`validateFechamentoContabil`).
+  ao abrir a empresa (Q17). **Q18 (reforma de UI):**
+  - **Adicionar inline:** sem form fixo; botão **"+ Adicionar lançamento"** → `adding=true`
+    → `DraftEntryRow` (linha editável no topo do `<tbody>`, em `renderAccountingEntriesParts.jsx`).
+    Salvar cria e **reabre** outra linha (auto); **ESC/Sair** fecha.
+  - **Cadeado de fechamento:** `FechamentoCadeado` (compacto, ao lado de "+ Adicionar")
+    — 🔓 Fechar mês / 🔒 Fechada; bloqueia com alerta se houver lançamento em branco/D≠C.
+  - **Tabela:** colunas **Tipo** e **Status** removidas (`COLS` em `accountingEntriesShared.js`,
+    7 colunas; `colSpan` full-width = 7); títulos de grupo centralizados/brancos/menores;
+    textos em branco; mais espaço pro Histórico.
+  - **Carga (importante):** os lançamentos carregam via `useEffect` em
+    `useManageAccountingWorkspace.js` quando `companyDetailTab === "lancamentos"` e quando
+    `accountingEntriesState.filters` mudam (competência etc). Sem esse effect a lista abre
+    vazia (a carga não é feita pela tab).
 - `circular/` — **Circular** (`renderCircularTab.jsx`): matriz linha (tipo) × 12 meses +
   **resumo por TRIMESTRE (Q1–Q4) e ANUAL por linha** (Q17), calculado da mesma matriz
   exibida (fonte única). Embaixo, `ParcelamentosList`.

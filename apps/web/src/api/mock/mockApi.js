@@ -1703,6 +1703,7 @@ export function createMockApi() {
     async calcularFechamento() { await delay(150); return { ok: true, result: { dasValor: 0, rbt12: 0, mensagens: [] } }; },
     async salvarFechamento() { await delay(80); return { ok: true, result: { snapshot: { estado: "fechada" } } }; },
     async transmitirFechamento() { await delay(200); return { ok: true, result: { numeroDeclaracao: "MOCK-1", dasValor: 0 } }; },
+    async listAtividadesPgdasd() { await delay(40); return { ok: true, atividades: [] }; },
     async criarApuracaoBatch() { await delay(100); return { ok: true, jobId: "mock-job", totalEmpresas: 0 }; },
     async getApuracaoBatch() { await delay(60); return { ok: true, job: { status: "completed", okCount: 0, errorCount: 0, pendenteCount: 0, totalEmpresas: 0 }, items: [] }; },
     async getCompanyCert() { await delay(60); return { hasCertificate: false, uploadedAt: null, expiresAt: null }; },
