@@ -983,6 +983,9 @@ model NotaItem {
   @@index([notaId])
   @@index([anexoResolvido])
   @@index([tipoReceita])
+  // Q20: filtro de notas por atividade (CFOP / código de serviço LC116)
+  @@index([cfop])
+  @@index([codigoServico])
   @@map("nota_itens")
 }
 

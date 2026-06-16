@@ -367,10 +367,33 @@ export function createNotasRouter({ log }) {
 
   // ─── Q12.C.1: listagem de notas + resumos da empresa ──────────────────────
 
-  // GET /notas?papel=EMIT|DEST&type=NFE|NFSE&competencia=YYYY-MM&search=&limit=&offset=
+  // Q20: filtro por ATIVIDADE (CFOP / serviço). CFOP e código de serviço vivem em
+  // NotaItem (1 nota tem N itens). Filtra notas que tenham AO MENOS 1 item casando,
+  // via subquery indexada (índices em nota_itens.cfop / nota_itens.codigoServico).
+  // Mutaciona `where` adicionando `where.id = { in: [...] }`. Retorna true se aplicou.
+  async function applyAtividadeFilter(where, { cfop, servico }) {
+    const cfopT = String(cfop || "").trim();
+    const servicoT = String(servico || "").trim();
+    if (!cfopT && !servicoT) return false;
+    const itemWhere = { nota: { is: { clientId: where.clientId } } };
+    if (cfopT) itemWhere.cfop = cfopT;
+    if (servicoT) {
+      itemWhere.OR = [
+        { codigoServico: { contains: servicoT, mode: "insensitive" } },
+        { descricao: { contains: servicoT, mode: "insensitive" } },
+      ];
+    }
+    const rows = await prisma.notaItem.findMany({
+      where: itemWhere, select: { notaId: true }, distinct: ["notaId"],
+    });
+    where.id = { in: rows.map((r) => r.notaId) };
+    return true;
+  }
+
+  // GET /notas?papel=EMIT|DEST&type=NFE|NFSE&competencia=YYYY-MM&search=&cfop=&servico=&limit=&offset=
   router.get("/notas", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
-    const { papel, type, competencia, search } = req.query;
+    const { papel, type, competencia, search, cfop, servico } = req.query;
     const limit = Math.min(Number(req.query.limit) || 100, 500);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
@@ -391,6 +414,7 @@ export function createNotasRouter({ log }) {
         { tomadorNome: { contains: s, mode: "insensitive" } },
       ];
     }
+    await applyAtividadeFilter(where, { cfop, servico });
 
     const [notas, total] = await Promise.all([
       prisma.portalInvoice.findMany({
@@ -421,8 +445,9 @@ export function createNotasRouter({ log }) {
   // do query param (ou ano atual).
   router.get("/notas/summary", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
-    const { papel, type, competencia, search } = req.query;
+    const { papel, type, competencia, search, cfop, servico } = req.query;
     const ano = Number(req.query.ano) || new Date().getUTCFullYear();
+    const temAtividade = Boolean(String(cfop || "").trim() || String(servico || "").trim());
 
     // Constrói o MESMO where do /notas — assim summary reflete a tabela
     const where = { clientId: portalClientId };
@@ -431,7 +456,7 @@ export function createNotasRouter({ log }) {
     if (competencia && /^\d{4}-\d{2}$/.test(competencia)) {
       const [y, m] = competencia.split("-").map(Number);
       where.competencia = { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
-    } else if (!papel && !type && !search) {
+    } else if (!papel && !type && !search && !temAtividade) {
       // Sem nenhum filtro? Limita ao ano pra não trazer histórico todo
       where.competencia = { gte: new Date(Date.UTC(ano, 0, 1)), lt: new Date(Date.UTC(ano + 1, 0, 1)) };
     }
@@ -445,6 +470,7 @@ export function createNotasRouter({ log }) {
         { tomadorNome: { contains: s, mode: "insensitive" } },
       ];
     }
+    await applyAtividadeFilter(where, { cfop, servico });
 
     const notas = await prisma.portalInvoice.findMany({
       where,
@@ -475,7 +501,7 @@ export function createNotasRouter({ log }) {
     }
     return res.json({
       ok: true, ano,
-      filtersApplied: { papel: papel || null, type: type || null, competencia: competencia || null, search: search || null },
+      filtersApplied: { papel: papel || null, type: type || null, competencia: competencia || null, search: search || null, cfop: cfop || null, servico: servico || null },
       totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
       byMonth: Object.values(byMonth).sort((a, b) => a.competencia.localeCompare(b.competencia)),
     });

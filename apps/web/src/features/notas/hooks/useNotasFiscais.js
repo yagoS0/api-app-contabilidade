@@ -31,7 +31,8 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   const [notasTotal, setNotasTotal] = useState(0);
   const [notasSummary, setNotasSummary] = useState(null);
   // Q19: filtro de competência das notas começa no mês ANTERIOR ao atual (default).
-  const [notasFilters, setNotasFilters] = useState({ papel: "", type: "", competencia: prevMonthCompetencia(), search: "", limit: 100, offset: 0 });
+  // Q20: + filtro por atividade (cfop / servico = código LC116 ou nome).
+  const [notasFilters, setNotasFilters] = useState({ papel: "", type: "", competencia: prevMonthCompetencia(), search: "", cfop: "", servico: "", limit: 100, offset: 0 });
   const [loadingNotas, setLoadingNotas] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -63,7 +64,7 @@ export function useNotasFiscais({ api, companyId, feedback }) {
       const f = filtersOverride || notasFilters;
       // Roda listagem + summary em paralelo com OS MESMOS filtros — assim o
       // resumo no topo reflete exatamente o que aparece na tabela.
-      const summaryArgs = { ano, papel: f.papel, type: f.type, competencia: f.competencia, search: f.search };
+      const summaryArgs = { ano, papel: f.papel, type: f.type, competencia: f.competencia, search: f.search, cfop: f.cfop, servico: f.servico };
       const [out, summary] = await Promise.all([
         api.listNotas(companyId, f),
         api.getNotasSummary ? api.getNotasSummary(companyId, summaryArgs) : Promise.resolve(null),

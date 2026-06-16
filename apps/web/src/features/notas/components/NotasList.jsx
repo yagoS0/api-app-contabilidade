@@ -67,7 +67,12 @@ function FilterBar({ filters, onChange, onApply, loading, total }) {
       <input type="month" value={local.competencia || ""} onChange={(e) => patch("competencia", e.target.value)}
         placeholder="competência" style={inputStyle} />
       <input type="text" value={local.search || ""} onChange={(e) => patch("search", e.target.value)}
-        placeholder="Buscar (CNPJ, nome, número, chave)" style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
+        placeholder="Buscar (CNPJ, nome, número, chave)" style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+      {/* Q20: filtro por atividade — CFOP (NF-e) e serviço (LC116/nome, NFS-e) */}
+      <input type="text" value={local.cfop || ""} onChange={(e) => patch("cfop", e.target.value)}
+        placeholder="CFOP" style={{ ...inputStyle, width: 90 }} title="Filtra notas com item neste CFOP" />
+      <input type="text" value={local.servico || ""} onChange={(e) => patch("servico", e.target.value)}
+        placeholder="Serviço (código ou nome)" style={{ ...inputStyle, width: 180 }} title="Filtra por código LC116 ou nome do serviço" />
       <button onClick={apply} disabled={loading}
         style={{ padding: "8px 14px", background: PANEL.accent, color: "#000", border: "none", borderRadius: 6, fontWeight: 600, cursor: "pointer" }}>
         {loading ? "..." : "Filtrar"}

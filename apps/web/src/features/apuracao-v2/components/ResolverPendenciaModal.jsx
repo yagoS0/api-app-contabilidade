@@ -11,15 +11,21 @@ const TIPOS_RECEITA = [
   { value: "SERVICO_FATOR_R",      label: "Serviço — Fator R (III↔V mensal) ★" },
 ];
 
-export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving }) {
-  const [tipoReceita, setTipoReceita] = useState("");
-  const [criarRegra, setCriarRegra] = useState(true);
-  const [nomeProduto, setNomeProduto] = useState("");
+const CONF_COLOR = { alta: "#69FF47", media: "#FFB347", baixa: "#8BE9FD" };
+const CONF_LABEL = { alta: "alta", media: "média", baixa: "baixa" };
 
+export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving }) {
   const detalhes = pendencia.detalhes || {};
   const codigo = detalhes.codigo || "?";
   const tipoCodigo = detalhes.tipoCodigo || "?";
   const ocorrencias = detalhes.ocorrencias || 0;
+  // Q20: recomendação ancorada no CNAE → atividade SERPRO (sugestão, não chuta).
+  const rec = detalhes.recomendacao || null;
+
+  // Pré-seleciona o tipoReceita sugerido (se houver) — o contador confirma.
+  const [tipoReceita, setTipoReceita] = useState(rec?.tipoReceitaSugerido || "");
+  const [criarRegra, setCriarRegra] = useState(true);
+  const [nomeProduto, setNomeProduto] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -44,6 +50,24 @@ export function ResolverPendenciaModal({ pendencia, onResolver, onClose, saving 
           <div><strong>Ocorrências:</strong> {ocorrencias} nota(s) com esse código</div>
           {pendencia.competencia && <div><strong>Competência:</strong> {pendencia.competencia}</div>}
         </div>
+
+        {/* Q20: recomendação (atividade SERPRO via CNAE) + confiança */}
+        {rec && (
+          <div style={{ background: "rgba(139,233,253,0.08)", border: `1px solid ${CONF_COLOR[rec.confianca] || PANEL.border}`, padding: 12, borderRadius: 6, fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <strong>Recomendação</strong>
+              <span style={{ fontSize: "0.68rem", fontWeight: 700, color: CONF_COLOR[rec.confianca] || PANEL.muted, border: `1px solid ${CONF_COLOR[rec.confianca] || PANEL.border}`, borderRadius: 999, padding: "1px 8px" }}>
+                confiança {CONF_LABEL[rec.confianca] || rec.confianca}
+              </span>
+            </div>
+            {rec.atividade ? (
+              <div>Atividade SERPRO: <strong>{rec.atividade.descricao}</strong> <span style={{ color: PANEL.muted }}>(#{rec.atividade.idAtividade} · Anexo {rec.atividade.anexoImplicito}{rec.atividade.sujeitoFatorR ? " ★FR" : ""})</span></div>
+            ) : rec.ambiguo ? (
+              <div style={{ color: PANEL.muted }}>Candidatos: {(rec.candidatos || []).join(", ") || "—"}</div>
+            ) : null}
+            <div style={{ color: PANEL.muted, fontSize: "0.72rem" }}>{rec.motivo}</div>
+          </div>
+        )}
 
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
           Tipo de Receita:

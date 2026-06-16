@@ -15,6 +15,17 @@
 // como WARN (não bloqueia, mas avisa). Item segue classificado.
 
 import { prisma } from "../../../../infrastructure/db/prisma.js";
+import { carregarAtividades } from "./AtividadeResolver.js";
+
+// Q20: grau de confiança da classificação, derivado da fonte (sem schema novo).
+//  alta  = match de código (produto/regra empresa/regra global item) → auto-classifica
+//  média = capítulo LC116 / override por CNAE
+//  baixa = sugestão por CNAE ou sem regra (vai pra fila — nunca auto)
+function confiancaFromSource(source) {
+  if (source === "PRODUTO" || source === "REGRA_EMPRESA" || source === "REGRA_GLOBAL_ITEM") return "alta";
+  if (source === "REGRA_GLOBAL_CAPITULO" || source === "CNAE_OVERRIDE") return "media";
+  return "baixa";
+}
 
 // cTribNac (NFS-e Nacional) → LC116 (ex: "010801" → "1.08")
 // Pra reutilizar regras LC116 quando a nota vem com cTribNac.
@@ -75,7 +86,7 @@ async function loadContextoEmpresa(portalClientId, dataReferencia = new Date()) 
     }),
     prisma.cadastroFiscal.findUnique({
       where: { portalClientId },
-      select: { cnaePrincipal: true, regime: true, forcarTipoReceitaPorCnae: true },
+      select: { cnaePrincipal: true, cnaesSecundarios: true, regime: true, forcarTipoReceitaPorCnae: true },
     }),
   ]);
 
@@ -102,24 +113,66 @@ async function loadContextoEmpresa(portalClientId, dataReferencia = new Date()) 
   const regrasEmpresaMap = indexRegras(regrasEmpresa);
   const regrasGlobaisMap = indexRegras(regrasGlobais);
 
-  // CNAE da empresa: usado pra sugestão de divergência OU (se flag ligada) override total.
-  let tipoReceitaPorCnae = null;
-  if (cadastro?.cnaePrincipal) {
-    const cnaeRef = await prisma.cnaeAnexo.findUnique({
-      where: { cnae: cadastro.cnaePrincipal },
-      select: { tipoReceitaSugerido: true, ambiguo: true },
+  // CNAEs da empresa (principal + secundários): sugestão de divergência, override total
+  // (flag) e — Q20 — recomendação na fila de pendência (ancorada na tabela SERPRO).
+  const cnaes = [cadastro?.cnaePrincipal, ...(cadastro?.cnaesSecundarios || [])]
+    .map((c) => String(c || "").replace(/\D+/g, ""))
+    .filter(Boolean);
+  let tipoReceitaPorCnae = null; // do CNAE PRINCIPAL (mantém compat com override/divergência)
+  let recomendacaoCnae = null;   // Q20: consolidado dos CNAEs pra recomendação na fila
+  if (cnaes.length) {
+    const refs = await prisma.cnaeAnexo.findMany({
+      where: { cnae: { in: cnaes } },
+      select: { cnae: true, tipoReceitaSugerido: true, ambiguo: true },
     });
-    if (cnaeRef) {
-      tipoReceitaPorCnae = {
-        tipoReceita: cnaeRef.tipoReceitaSugerido,
-        ambiguo: cnaeRef.ambiguo,
-      };
+    const byCnae = new Map(refs.map((r) => [r.cnae, r]));
+    const principalRef = cadastro?.cnaePrincipal ? byCnae.get(String(cadastro.cnaePrincipal).replace(/\D+/g, "")) : null;
+    if (principalRef) {
+      tipoReceitaPorCnae = { tipoReceita: principalRef.tipoReceitaSugerido, ambiguo: principalRef.ambiguo };
+    }
+    // Consolida sugestões não-ambíguas e distintas dos CNAEs conhecidos.
+    const naoAmbiguos = [...new Set(refs.filter((r) => !r.ambiguo).map((r) => r.tipoReceitaSugerido))];
+    const temAmbiguo = refs.some((r) => r.ambiguo);
+    if (naoAmbiguos.length === 1 && !temAmbiguo) {
+      recomendacaoCnae = { tipoReceita: naoAmbiguos[0], ambiguo: false };
+    } else if (naoAmbiguos.length > 1 || temAmbiguo) {
+      recomendacaoCnae = { ambiguo: true, candidatos: naoAmbiguos };
     }
   }
 
+  // Catálogo oficial de atividades SERPRO (idAtividade), indexado por tipoReceita|mercado.
+  // Carregado 1x — usado só pra montar a recomendação na fila (não classifica).
+  const { map: atividadesMap } = await carregarAtividades(dataReferencia);
+
   return {
     produtosMap, regrasEmpresaMap, regrasGlobaisMap, cadastro, tipoReceitaPorCnae,
+    recomendacaoCnae, atividadesMap,
     forcarCnae: !!cadastro?.forcarTipoReceitaPorCnae,
+  };
+}
+
+// Q20: monta a recomendação de atividade SERPRO pra uma pendência (sem chutar — só sugere).
+// Ancora no CNAE da empresa → tipoReceitaSugerido → atividade SERPRO (anexo embutido).
+function buildRecomendacao(ctx) {
+  const rec = ctx.recomendacaoCnae;
+  if (!rec) {
+    return { confianca: "baixa", motivo: "Sem CNAE de referência — defina o enquadramento manualmente." };
+  }
+  if (rec.ambiguo) {
+    return {
+      confianca: "baixa", ambiguo: true, candidatos: rec.candidatos || [],
+      motivo: "CNAE(s) da empresa sugerem mais de um enquadramento — escolha manualmente.",
+    };
+  }
+  const tipoReceita = rec.tipoReceita;
+  const atv = ctx.atividadesMap.get(`${tipoReceita}|INTERNO`) || null;
+  return {
+    confianca: "baixa",
+    tipoReceitaSugerido: tipoReceita,
+    motivo: "Sugerido pelo CNAE da empresa — não houve regra de código da nota. Confirme.",
+    atividade: atv
+      ? { idAtividade: atv.idAtividade, descricao: atv.descricao, anexoImplicito: atv.anexoImplicito, sujeitoFatorR: atv.sujeitoFatorR }
+      : null,
   };
 }
 
@@ -213,6 +266,7 @@ export async function classificarItensV2({ portalClientId, force = false, compet
 
   const byTipo = {};
   const byFonte = {};
+  const byConfianca = {}; // Q20: alta | media | baixa
   let pendentes = 0;
   const pendenciasNovas = new Map(); // key=codigo único → 1 pendência apenas
 
@@ -223,6 +277,8 @@ export async function classificarItensV2({ portalClientId, force = false, compet
     const result = classifyItem(item, ctx);
     byTipo[result.tipoReceita] = (byTipo[result.tipoReceita] || 0) + 1;
     byFonte[result.source] = (byFonte[result.source] || 0) + 1;
+    const confianca = confiancaFromSource(result.source);
+    byConfianca[confianca] = (byConfianca[confianca] || 0) + 1;
 
     if (!grupos.has(result.tipoReceita)) grupos.set(result.tipoReceita, []);
     grupos.get(result.tipoReceita).push(item.id);
@@ -258,6 +314,9 @@ export async function classificarItensV2({ portalClientId, force = false, compet
     });
   }
 
+  // Q20: recomendação (ancorada no CNAE → atividade SERPRO) — mesma p/ a empresa.
+  const recomendacao = buildRecomendacao(ctx);
+
   // Cria pendências agrupadas (1 por código distinto)
   for (const pend of pendenciasNovas.values()) {
     // Idempotente: se já existe pendência aberta pro mesmo código, pula
@@ -282,6 +341,7 @@ export async function classificarItensV2({ portalClientId, force = false, compet
           codigo: pend.codigo,
           tipoCodigo: pend.tipoCodigo,
           ocorrencias: pend.ocorrencias,
+          recomendacao, // Q20: atividade SERPRO sugerida + confiança (não chuta — só sugere)
         },
       },
     });
@@ -294,5 +354,6 @@ export async function classificarItensV2({ portalClientId, force = false, compet
     pendenciasNovas: pendenciasNovas.size,
     byTipo,
     byFonte,
+    byConfianca,
   };
 }

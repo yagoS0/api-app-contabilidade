@@ -805,7 +805,7 @@ export function createRealApi() {
     // Q12.C.1: listagem de notas + resumo
     async listNotas(companyId, filters = {}) {
       const q = new URLSearchParams();
-      ["papel", "type", "competencia", "search", "limit", "offset"].forEach((k) => {
+      ["papel", "type", "competencia", "search", "cfop", "servico", "limit", "offset"].forEach((k) => {
         if (filters[k] != null && filters[k] !== "") q.set(k, String(filters[k]));
       });
       const suffix = q.toString() ? `?${q.toString()}` : "";
@@ -817,12 +817,14 @@ export function createRealApi() {
       if (typeof anoOrFilters === "number") {
         q.set("ano", String(anoOrFilters));
       } else if (anoOrFilters && typeof anoOrFilters === "object") {
-        const { ano, papel, type, competencia, search } = anoOrFilters;
+        const { ano, papel, type, competencia, search, cfop, servico } = anoOrFilters;
         if (ano) q.set("ano", String(ano));
         if (papel) q.set("papel", String(papel));
         if (type) q.set("type", String(type));
         if (competencia) q.set("competencia", String(competencia));
         if (search) q.set("search", String(search));
+        if (cfop) q.set("cfop", String(cfop));
+        if (servico) q.set("servico", String(servico));
       }
       const suffix = q.toString() ? `?${q.toString()}` : "";
       return request(`/firm/companies/${companyId}/notas/summary${suffix}`);
