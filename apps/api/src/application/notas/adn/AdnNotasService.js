@@ -18,6 +18,7 @@ import { fetchDfeNFSe, AdnNacionalClientError } from "../adn-nacional/AdnNaciona
 import { parseXmlMetadata } from "../../nfse/AdnXmlMetadata.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { resolveCertificatePath } from "../../../infrastructure/storage/CertStorage.js";
+import { decryptBytes } from "../../../utils/crypto.js";
 import { getResolvedSerproCredentials } from "../../fiscal/serpro/SerproRuntimeSettings.js";
 import { ESTADOS } from "../CompetenciaStateMachine.js";
 
@@ -55,7 +56,8 @@ async function loadOfficeCert() {
   }
   if (creds.certificate.pfxBase64) {
     return {
-      pfxBuffer: Buffer.from(creds.certificate.pfxBase64, "base64"),
+      // Q30/Q35: decryptBytes decifra o PFX cifrado (local ou KMS; no-op se legado em claro).
+      pfxBuffer: await decryptBytes(Buffer.from(creds.certificate.pfxBase64, "base64")),
       password: creds.certificate.password,
     };
   }
@@ -63,7 +65,7 @@ async function loadOfficeCert() {
   if (!certPath || !fs.existsSync(certPath)) {
     throw new AdnNotasSyncError("OFFICE_CERT_FILE_NOT_FOUND", `Arquivo não encontrado: ${certPath}`);
   }
-  return { pfxBuffer: fs.readFileSync(certPath), password: creds.certificate.password };
+  return { pfxBuffer: await decryptBytes(fs.readFileSync(certPath)), password: creds.certificate.password };
 }
 
 async function resolveCertWithFallback(portalClientId) {

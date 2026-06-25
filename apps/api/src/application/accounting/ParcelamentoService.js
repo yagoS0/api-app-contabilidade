@@ -473,65 +473,134 @@ export async function confirmParcelaPayment({
  * Rescinde parcelamento: gera entry de RESCISÃO + marca status RESCINDIDO.
  * Valores remanescentes (parcelas ainda em aberto) são computados automaticamente.
  */
-export async function rescindirParcelamento({ portalClientId, parcelamentoId, dataRescisao, observacoes, userId }) {
+export async function rescindirParcelamento({ portalClientId, parcelamentoId, dataRescisao, observacoes, rescisaoLines, userId }) {
   const parc = await prisma.parcelamento.findFirst({
     where: { id: parcelamentoId, portalClientId },
     include: {
       templateRescision: { include: { entries: { include: { lines: { orderBy: { ordem: "asc" } } }, orderBy: { ordem: "asc" } } } },
       parcelas: { where: { tipo: "PARCELA" }, include: { lines: true } },
+      aberturaEntry: { include: { lines: { orderBy: { ordem: "asc" } } } },
       portalClient: { select: { razao: true, cnpj: true } },
     },
   });
   if (!parc) throw new Error("parcelamento_not_found");
   if (parc.status !== "ATIVO") throw new Error("parcelamento_not_active");
-  if (!parc.templateRescision) throw new Error("rescision_template_not_configured");
 
-  // Computa remanescente: parcelas ABERTAS x principalPerParcela + saldo proporcional de juros
-  const parcelasAbertas = parc.parcelas.filter((p) => p.statusPagamento === "ABERTO" && p.numeroParcela != null);
-  const principalRemanescente = parcelasAbertas.length * Number(parc.principalPerParcela);
-  const jurosRemanescente = parc.jurosTotal && parc.numParcelas
-    ? Number(parc.jurosTotal) * (parcelasAbertas.length / parc.numParcelas)
-    : 0;
-  const totalRemanescente = principalRemanescente + jurosRemanescente;
+  let historico;
+  let lines;
+  let tipoEntry = "PROVISAO";
+  let subtipoEntry = null;
+  let totalRemanescente = 0;
+  let parcelasAbertasCount = 0;
 
-  const tplEntry = parc.templateRescision.entries[0];
-  const ctx = buildContext({
-    competencia: parc.competenciaInicial,
-    company: parc.portalClient,
-    parcelamento: parc,
-    numeroParcela: null,
-  });
-  const historico = applyTemplate(tplEntry.historico, ctx);
-  const lines = tplEntry.lines.map((ln) => {
-    let valor;
-    if (ln.tipo === "C") {
-      valor = totalRemanescente;
+  // Q31: rescisão com linhas vindas do modal (estorno reverso editável). 1 lançamento por linha (single-leg).
+  const customLines = Array.isArray(rescisaoLines) && rescisaoLines.length > 0;
+
+  if (customLines) {
+    historico = `RESCISÃO ${parc.tipo || parc.kind || ""}${parc.numeroParcelamento ? ` Nº ${parc.numeroParcelamento}` : ""}`.trim();
+    subtipoEntry = `PARC_${parc.tipo || "OUTRO"}`;
+    lines = rescisaoLines
+      .filter((l) => String(l.conta || "").trim() || Number(l.valor))
+      .map((l, i) => ({
+        conta: String(l.conta || "").trim(),
+        tipo: String(l.tipo).toUpperCase() === "C" ? "C" : "D",
+        valor: Number(l.valor) || 0,
+        ordem: i,
+        tipoLinha: l.tipoLinha || null,
+        codigoTributo: l.codigoTributo || null,
+      }));
+    totalRemanescente = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + l.valor, 0);
+  } else if (parc.templateRescision) {
+    // Q16 (legado, com template): remanescente = parcelas ABERTAS x principal + juros proporcional.
+    const parcelasAbertas = parc.parcelas.filter((p) => p.statusPagamento === "ABERTO" && p.numeroParcela != null);
+    parcelasAbertasCount = parcelasAbertas.length;
+    const principalRemanescente = parcelasAbertas.length * Number(parc.principalPerParcela);
+    const jurosRemanescente = parc.jurosTotal && parc.numParcelas
+      ? Number(parc.jurosTotal) * (parcelasAbertas.length / parc.numParcelas)
+      : 0;
+    totalRemanescente = principalRemanescente + jurosRemanescente;
+
+    const tplEntry = parc.templateRescision.entries[0];
+    tipoEntry = tplEntry.tipo;
+    subtipoEntry = tplEntry.subtipo || null;
+    const ctx = buildContext({ competencia: parc.competenciaInicial, company: parc.portalClient, parcelamento: parc, numeroParcela: null });
+    historico = applyTemplate(tplEntry.historico, ctx);
+    lines = tplEntry.lines.map((ln) => {
+      let valor;
+      if (ln.tipo === "C") {
+        valor = totalRemanescente;
+      } else {
+        const dLines = tplEntry.lines.filter((l) => l.tipo === "D");
+        const idxD = dLines.findIndex((l) => l.id === ln.id);
+        valor = idxD === 0 ? principalRemanescente : jurosRemanescente;
+      }
+      return { conta: ln.conta || "", tipo: ln.tipo, valor: Number(valor) || 0, ordem: ln.ordem };
+    });
+  } else {
+    // Q24 — parcelamento v2 (sem template): ESTORNA a provisão invertendo D↔C de TODAS as suas
+    // pernas (a provisão agora são N lançamentos individuais). Sem provisão → só marca RESCINDIDO.
+    const provisaoEntries = await prisma.accountingEntry.findMany({
+      where: { parcelamentoId: parc.id, tipo: "PROVISAO" },
+      include: { lines: true },
+    });
+    const provLines = provisaoEntries.flatMap((e) => e.lines || []);
+    if (provLines.length) {
+      historico = `ESTORNO/RESCISÃO ${parc.tipo || parc.kind || ""}${parc.numeroParcelamento ? ` Nº ${parc.numeroParcelamento}` : ""}`.trim();
+      subtipoEntry = `PARC_${parc.tipo || "OUTRO"}`;
+      lines = provLines.map((ln, i) => ({
+        conta: ln.conta || "",
+        tipo: ln.tipo === "D" ? "C" : "D", // inverte pra estornar
+        valor: Number(ln.valor) || 0,
+        ordem: i,
+        tipoLinha: ln.tipoLinha || null,
+        codigoTributo: ln.codigoTributo || null,
+      }));
+      totalRemanescente = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + l.valor, 0);
     } else {
-      const dLines = tplEntry.lines.filter((l) => l.tipo === "D");
-      const idxD = dLines.findIndex((l) => l.id === ln.id);
-      valor = idxD === 0 ? principalRemanescente : jurosRemanescente;
+      lines = [];
     }
-    return { conta: ln.conta || "", tipo: ln.tipo, valor: Number(valor) || 0, ordem: ln.ordem };
-  });
+  }
+
+  const isV2 = customLines || !parc.templateRescision;
+  const LABEL = { PARC: "parcelamento a pagar", PRINCIPAL: "principal", PARC_DAS: "principal", MULTA: "multa", JUROS: "juros", TOTAL: "total" };
+  const dataEntry = dataRescisao ? new Date(dataRescisao) : new Date();
+  const loteRescisao = `PARC-${parc.id.slice(0, 8)}-RESCISAO`;
 
   return prisma.$transaction(async (tx) => {
-    const rescisaoEntry = await tx.accountingEntry.create({
-      data: {
-        portalClientId,
-        parcelamentoId: parc.id,
-        numeroParcela: null,
-        data: dataRescisao ? new Date(dataRescisao) : new Date(),
-        competencia: parc.competenciaInicial,
-        historico,
-        tipo: tplEntry.tipo,
-        subtipo: tplEntry.subtipo || null,
-        origem: "MANUAL",
-        loteImportacao: `PARC-${parc.id.slice(0, 8)}-RESCISAO`,
-        status: "RASCUNHO",
-        statusPagamento: "NA",
-        lines: { createMany: { data: lines } },
-      },
-    });
+    let rescisaoEntry = null;
+    if (lines && lines.length && isV2) {
+      // Q24: estorno v2 = um lançamento individual por linha (1 perna). Balanço fecha no conjunto.
+      const created = [];
+      for (const ln of lines) {
+        const label = LABEL[ln.tipoLinha] || (ln.tipo === "C" ? "crédito" : "débito");
+        // eslint-disable-next-line no-await-in-loop
+        const e = await tx.accountingEntry.create({
+          data: {
+            portalClientId, parcelamentoId: parc.id, numeroParcela: null,
+            data: dataEntry, competencia: parc.competenciaInicial,
+            historico: `${historico} — ${label}`,
+            tipo: tipoEntry, subtipo: subtipoEntry, origem: "MANUAL",
+            loteImportacao: loteRescisao,
+            status: "RASCUNHO", statusPagamento: "NA",
+            lines: { createMany: { data: [{ conta: ln.conta || "", tipo: ln.tipo, valor: Number(ln.valor) || 0, ordem: 0, tipoLinha: ln.tipoLinha || null, codigoTributo: ln.codigoTributo || null }] } },
+          },
+        });
+        created.push(e);
+      }
+      rescisaoEntry = created[0] || null;
+    } else if (lines && lines.length) {
+      // Q16 (legado, com template): um único lançamento multi-linha.
+      rescisaoEntry = await tx.accountingEntry.create({
+        data: {
+          portalClientId, parcelamentoId: parc.id, numeroParcela: null,
+          data: dataEntry, competencia: parc.competenciaInicial,
+          historico, tipo: tipoEntry, subtipo: subtipoEntry, origem: "MANUAL",
+          loteImportacao: loteRescisao,
+          status: "RASCUNHO", statusPagamento: "NA",
+          lines: { createMany: { data: lines } },
+        },
+      });
+    }
 
     await tx.parcelamento.update({
       where: { id: parc.id },
@@ -541,7 +610,7 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
       },
     });
 
-    return { ok: true, rescisaoEntry, totalRemanescente, parcelasAbertas: parcelasAbertas.length };
+    return { ok: true, rescisaoEntry, totalRemanescente, parcelasAbertas: parcelasAbertasCount };
   });
 }
 
@@ -550,7 +619,13 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
 function decorateParcelamento(parc) {
   if (!parc) return parc;
   const parcelas = Array.isArray(parc.parcelas) ? parc.parcelas : [];
-  const parcelasPagas = parcelas.filter((p) => p.statusPagamento === "PAGO").length;
+  const guides = Array.isArray(parc.guides) ? parc.guides : [];
+  // Q24: v2 não usa linhas tipo=PARCELA — as parcelas são as guias vinculadas. Conta pagas pelas
+  // guias baixadas/PAID quando não há linhas de rastreio (compat com o modelo Q16 legado).
+  const isV2 = parcelas.length === 0 && guides.length > 0;
+  const parcelasPagas = isV2
+    ? guides.filter((g) => g.paymentStatus === "PAID" || g.baixada).length
+    : parcelas.filter((p) => p.statusPagamento === "PAGO").length;
   const principalPerParcela = Number(parc.principalPerParcela) || 0;
   const principalPago = parcelasPagas * principalPerParcela;
   const totalValue = Number(parc.totalValue) || 0;
@@ -558,7 +633,7 @@ function decorateParcelamento(parc) {
   return {
     ...parc,
     parcelasPagas,
-    parcelasTotal: parcelas.length,
+    parcelasTotal: isV2 ? guides.length : parcelas.length,
     principalPago,
     saldoRestante,
   };
@@ -580,7 +655,7 @@ export async function listParcelamentos({ portalClientId, status }) {
           baixas: { include: { lines: true } },
         },
       },
-      guides: { select: { id: true, numeroParcela: true, valor: true, paymentStatus: true } },
+      guides: { select: { id: true, numeroParcela: true, valor: true, paymentStatus: true, baixada: true, competencia: true, anoMesParcela: true } },
       templateOpening: { select: { id: true, name: true } },
       templatePayment: { select: { id: true, name: true } },
       templateRescision: { select: { id: true, name: true } },

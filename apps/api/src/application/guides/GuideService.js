@@ -125,6 +125,8 @@ export async function listGuidesByCompany({
       orderBy: { updatedAt: "desc" },
       skip,
       take,
+      // Q24: traz a relação de parcelamento pra rotular a guia como parcelamento (não "DAS").
+      include: { parcelamento: { select: { id: true, tipo: true, numeroParcelamento: true, label: true } } },
     }),
     prisma.guide.count({ where }),
   ]);
@@ -235,6 +237,15 @@ export function toGuideResponse(item) {
     serproService: item.serproService || null,
     canConfirmPayment: canGuideConfirmPayment(item),
     canRecalculate: canGuideRecalculate(item, now),
+    // Q24: vínculo de parcelamento (pra UI rotular a guia como parcelamento, não "DAS").
+    parcelamentoId: item.parcelamentoId || null,
+    numeroParcela: item.numeroParcela != null ? Number(item.numeroParcela) : null,
+    anoMesParcela: item.anoMesParcela || null,
+    baixada: Boolean(item.baixada),
+    parcelaEstado: item.parcelaEstado || null, // Q28 Fase 3
+    parcelamentoLabel: item.parcelamento?.label || null,
+    parcelamentoTipo: item.parcelamento?.tipo || null,
+    parcelamentoNumero: item.parcelamento?.numeroParcelamento || null,
     createdAt: item.createdAt?.toISOString?.() || null,
     updatedAt: item.updatedAt?.toISOString?.() || null,
   };

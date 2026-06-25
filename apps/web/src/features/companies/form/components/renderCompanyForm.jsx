@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "../../../../components/ui/Button";
 import { companyCreateFormSchema, companyUpdateFormSchema } from "../../../../lib/schemas/companySchema";
+import { passwordChecklist } from "../../../../lib/schemas/passwordPolicy";
 
 // Q11.2: estilo padrão pra mensagens de erro inline (vermelho, abaixo do input)
 const ERROR_TEXT_STYLE = {
@@ -111,16 +112,20 @@ export function CompanyForm({
       {showOwnerPassword ? (
         <label>
           Senha do responsavel
-          <span style={{ marginLeft: 8, fontSize: 12, color: "#888" }}>
-            (mínimo 8 caracteres)
-          </span>
           <input
             type="password"
             value={form.ownerPassword}
             onChange={(event) => handleChange("ownerPassword", event.target.value)}
-            minLength={8}
             required
           />
+          {/* Q27.A: checklist ao vivo dos requisitos da senha forte */}
+          <ul style={{ listStyle: "none", padding: 0, margin: "6px 0 0", fontSize: 12 }}>
+            {passwordChecklist(form.ownerPassword).map((r) => (
+              <li key={r.key} style={{ color: r.ok ? "#69FF47" : "#aeb6d3" }}>
+                {r.ok ? "✓" : "○"} {r.label}
+              </li>
+            ))}
+          </ul>
           {errors.ownerPassword && (
             <span style={ERROR_TEXT_STYLE}>{errors.ownerPassword.message}</span>
           )}

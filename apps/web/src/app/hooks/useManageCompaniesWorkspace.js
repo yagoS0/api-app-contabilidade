@@ -496,11 +496,21 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     guidesState.setConfirmingGuideId(guideId);
     feedback.clearFeedback();
     try {
-      await api.confirmGuidePayment(guideId);
-      feedback.setMessage("Guia marcada como paga.");
+      const res = await api.confirmGuidePayment(guideId);
+      // Q23: guia de parcela gera a baixa do pagamento; mensagem reflete o resultado.
+      if (res?.parcelaBaixa?.pagamentoId) {
+        feedback.setMessage("Guia paga — lançamento de baixa gerado.");
+      } else {
+        feedback.setMessage("Guia marcada como paga.");
+      }
       await loadGuides();
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao confirmar pagamento da guia");
+      const msg = String(err?.message || "");
+      if (msg.includes("MES_FECHADO")) {
+        feedback.setError("Mês contábil fechado — reabra o mês antes de marcar a parcela como paga.");
+      } else {
+        feedback.setError(err?.message || "Falha ao confirmar pagamento da guia");
+      }
     } finally {
       guidesState.setConfirmingGuideId("");
     }
@@ -719,7 +729,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   }
 
   useEffect(() => {
-    if (page === "companies" || page === "createCompany" || page === "firmSettings") {
+    if (page === "companies" || page === "createCompany") {
       loadGlobalChartStatus();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

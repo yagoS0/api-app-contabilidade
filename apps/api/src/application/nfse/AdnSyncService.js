@@ -24,11 +24,11 @@ function integrationReady(certInfo) {
   return Boolean(ADN_BASE_URL && (hasCompanyCert || hasEnvCert));
 }
 
-function resolveCompanyCert(company) {
+async function resolveCompanyCert(company) {
   if (!company?.certPasswordEnc) return null;
-  const password = decryptSecret(company.certPasswordEnc);
+  const password = await decryptSecret(company.certPasswordEnc);
   if (!password) return null;
-  const pfxBuffer = readStoredCompanyPfx(company);
+  const pfxBuffer = await readStoredCompanyPfx(company);
   if (!pfxBuffer) return null;
   return { pfxBuffer, pfxPassword: password };
 }
@@ -177,7 +177,7 @@ export class AdnSyncService {
       err.code = "COMPANY_NOT_FOUND";
       throw err;
     }
-    const certInfo = company ? resolveCompanyCert(company) : null;
+    const certInfo = company ? await resolveCompanyCert(company) : null;
     if (company && !certInfo?.pfxBuffer) {
       const err = new Error("adn_cert_required");
       err.code = "ADN_CERT_REQUIRED";

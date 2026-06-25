@@ -384,6 +384,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onCancelBaixa={circularPanel.onCancelBaixa}
             parcelamentos={accountingPanel.parcelamentos}
+            onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment}
           />
           </Suspense>
           </ErrorBoundary>

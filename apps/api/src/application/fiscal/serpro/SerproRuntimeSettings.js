@@ -4,7 +4,8 @@ import {
   deleteCompanyPfx,
   isDatabaseCertificateStorageKey,
 } from "../../../infrastructure/storage/CertStorage.js";
-import { decryptSecret, encryptSecret } from "../../../utils/crypto.js";
+import { decryptSecret, encryptSecret, encryptBytes } from "../../../utils/crypto.js";
+import { auditCertAccess } from "../../security/CertAccessAudit.js";
 import { getSerproConfig } from "./SerproConfig.js";
 
 const APP_SETTING_KEY = "serpro_runtime_settings";
@@ -148,6 +149,9 @@ export async function getSerproRuntimeSettings() {
   const config = getSerproConfig();
   const setting = await prisma.appSetting.findUnique({ where: { key: APP_SETTING_KEY } });
   const stored = getStoredValue(setting);
+  const consumerSecret = stored.consumerSecretEnc
+    ? await decryptSecret(stored.consumerSecretEnc)
+    : String(config.consumerSecret || "");
 
   return {
     enabled: stored.enabled ?? config.enabled,
@@ -155,7 +159,7 @@ export async function getSerproRuntimeSettings() {
     authUrl: resolveStoredAuthUrl(stored, config),
     baseUrl: resolveStoredApiBaseUrl(stored, config),
     consumerKey: String(stored.consumerKey || config.consumerKey || ""),
-    consumerSecret: stored.consumerSecretEnc ? decryptSecret(stored.consumerSecretEnc) : String(config.consumerSecret || ""),
+    consumerSecret,
     consumerSecretConfigured: Boolean(stored.consumerSecretEnc || config.consumerSecret),
     scope: String(stored.scope || config.scope || ""),
     timeoutMs: normalizeTimeout(stored.timeoutMs, config.timeoutMs),
@@ -184,6 +188,9 @@ export async function getResolvedSerproCredentials() {
   const setting = await prisma.appSetting.findUnique({ where: { key: APP_SETTING_KEY } });
   const stored = getStoredValue(setting);
   const settings = await getSerproRuntimeSettings();
+  const certPassword = settings.certificate.passwordConfigured
+    ? await decryptSecret(stored.certPasswordEnc)
+    : null;
   const credentials = {
     enabled: Boolean(settings.enabled),
     environment: settings.environment,
@@ -199,7 +206,7 @@ export async function getResolvedSerproCredentials() {
     certificate: {
       ...settings.certificate,
       pfxBase64: stored.certPfxBase64 || null,
-      password: settings.certificate.passwordConfigured ? decryptSecret(stored.certPasswordEnc) : null,
+      password: certPassword,
     },
   };
 
@@ -227,6 +234,11 @@ export async function getResolvedSerproCredentials() {
     const err = new Error("serpro_consumer_secret_not_configured");
     err.code = "SERPRO_CONSUMER_SECRET_NOT_CONFIGURED";
     throw err;
+  }
+
+  // Q30: trilha de auditoria (best-effort) quando a senha do cert do escritório foi descriptografada.
+  if (credentials.certificate?.passwordConfigured) {
+    await auditCertAccess({ certKind: "OFFICE_SERPRO", action: "DECRYPT", consumer: "getResolvedSerproCredentials" });
   }
 
   return credentials;
@@ -264,7 +276,7 @@ export async function updateSerproRuntimeSettings(input = {}) {
   if (input.consumerSecret !== undefined) {
     const nextSecret = String(input.consumerSecret || "").trim();
     if (nextSecret) {
-      next.consumerSecretEnc = encryptSecret(nextSecret);
+      next.consumerSecretEnc = await encryptSecret(nextSecret);
     }
   }
 
@@ -301,9 +313,10 @@ export async function uploadSerproCertificate({ file, password }) {
     // has not explicitly disabled the integration, enable it automatically.
     enabled: stored.enabled ?? true,
     certStorageKey: SERPRO_DB_CERT_STORAGE_KEY,
-    certPfxBase64: file.buffer.toString("base64"),
+    certPfxBase64: (await encryptBytes(file.buffer)).toString("base64"), // Q30/Q35: PFX cifrado em repouso
+
     certOriginalName: String(file.originalname || "certificado-serpro.pfx"),
-    certPasswordEnc: encryptSecret(password),
+    certPasswordEnc: await encryptSecret(password),
     certUploadedAt: now.toISOString(),
     certExpiresAt: expiresAt ? expiresAt.toISOString() : null,
     certDocument: parsePfxDocument(file.buffer, password),
@@ -323,6 +336,7 @@ export async function uploadSerproCertificate({ file, password }) {
     }
   }
 
+  await auditCertAccess({ certKind: "OFFICE_SERPRO", action: "UPLOAD", consumer: "uploadSerproCertificate" });
   return getSerproRuntimeSettings();
 }
 
@@ -356,6 +370,7 @@ export async function deleteSerproCertificate() {
     }
   }
 
+  await auditCertAccess({ certKind: "OFFICE_SERPRO", action: "DELETE", consumer: "deleteSerproCertificate" });
   return {
     deletedFile,
     settings: await getSerproRuntimeSettings(),

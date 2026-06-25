@@ -198,8 +198,22 @@ async function validateFechamentoContabil(prisma, { portalClientId, competencia 
     include: { lines: true },
   });
   const blockers = [];
+  // Q24: lançamentos de parcelamento são individuais (1 perna) — não validam D=C por lançamento,
+  // e sim por GRUPO (parcelamentoId). Conta vazia continua bloqueando (precisa preencher p/ fechar).
+  const parcByGroup = new Map();
   for (const e of entries) {
     const lines = e.lines || [];
+    if (e.parcelamentoId) {
+      // Agrupa pra validar o balanço do conjunto; conta vazia é checada por lançamento abaixo.
+      if (!parcByGroup.has(e.parcelamentoId)) parcByGroup.set(e.parcelamentoId, []);
+      parcByGroup.get(e.parcelamentoId).push(e);
+      if (lines.length === 0) {
+        blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "em_branco" });
+      } else if (lines.some((l) => !String(l.conta || "").trim())) {
+        blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "conta_em_branco" });
+      }
+      continue;
+    }
     if (lines.length === 0) {
       blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "em_branco" });
       continue;
@@ -213,6 +227,19 @@ async function validateFechamentoContabil(prisma, { portalClientId, competencia 
     const totalC = lines.filter((l) => String(l.tipo).toUpperCase() === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
     if (Math.abs(totalD - totalC) > 0.01) {
       blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "desbalanceado", totalD, totalC });
+    }
+  }
+  // Balanço por grupo de parcelamento (Σ D == Σ C no conjunto).
+  for (const [parcelamentoId, grupo] of parcByGroup) {
+    let totalD = 0; let totalC = 0;
+    for (const e of grupo) {
+      for (const l of e.lines || []) {
+        if (String(l.tipo).toUpperCase() === "D") totalD += Number(l.valor || 0);
+        else if (String(l.tipo).toUpperCase() === "C") totalC += Number(l.valor || 0);
+      }
+    }
+    if (Math.abs(totalD - totalC) > 0.01) {
+      blockers.push({ parcelamentoId, competencia, historico: grupo[0]?.historico || "Parcelamento", motivo: "parcelamento_desbalanceado", totalD, totalC });
     }
   }
   return { ok: blockers.length === 0, blockers, totalEntries: entries.length };
@@ -537,6 +564,7 @@ export function createAccountingEntriesRouter({ log }) {
           paymentStatus: true,
           vencimento: true,
           updatedAt: true,
+          parcelamentoId: true, // Q31: vínculo a parcelamento (célula amarela na Circular)
         },
       }),
       prisma.companyMonthlyCircular.findMany({
@@ -634,6 +662,7 @@ export function createAccountingEntriesRouter({ log }) {
         valor,
         placeholder: false,
         synthetic: true, // sinaliza ao frontend que é uma "fake provisão"
+        parcelamentoId: g.parcelamentoId || null, // Q31: vínculo (amarelo) — roteado pela guia
       };
     });
 
@@ -2185,6 +2214,170 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
+  // Q23 — GET /firm/companies/:companyId/parcelamentos/contas-provisao?tipo=PARCSN
+  // Devolve as contas memorizadas (MapaContaTributo) das linhas-padrão da provisão pra pré-preencher
+  // o modal: { PARC_DAS, MULTA, JUROS, TOTAL } (string vazia quando ainda não aprendida).
+  router.get("/parcelamentos/contas-provisao", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const tipoParcelamento = String(req.query.tipo || "").trim().toUpperCase();
+    if (!tipoParcelamento) return res.status(400).json({ ok: false, error: "tipo_required" });
+    try {
+      const { resolverContasProvisao } = await import("../../application/accounting/parcelamento/ParcelamentoV2Service.js");
+      const contas = await resolverContasProvisao({ portalClientId, tipoParcelamento });
+      return res.json({ ok: true, contas });
+    } catch (err) {
+      log.error({ err }, "Falha ao resolver contas de provisão");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Q28 Fase 1 — POST /firm/companies/:companyId/parcelamentos/consultar-serpro
+  // Consulta um parcelamento no SERPRO por CÓDIGO (OBTERPARC164) para pré-preencher o modal de entrada.
+  // body: { tipo, numeroParcelamento }. Atrás da flag INTEGRACAO_SERPRO_PARCELAMENTO (devolve 400 claro
+  // enquanto desligada / não validada no sandbox). Não cria nada — só consulta e devolve o consolidado.
+  router.post("/parcelamentos/consultar-serpro", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const tipo = String(req.body?.tipo || "").trim().toUpperCase();
+    const numeroParcelamento = String(req.body?.numeroParcelamento || "").trim();
+    if (!tipo) return res.status(400).json({ ok: false, error: "tipo_required" });
+    if (!numeroParcelamento) return res.status(400).json({ ok: false, error: "numero_parcelamento_required" });
+    try {
+      const company = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true } });
+      if (!company) return res.status(404).json({ ok: false, error: "company_not_found" });
+      const { getResolvedSerproCredentials } = await import("../../application/fiscal/serpro/SerproRuntimeSettings.js");
+      const { SerproParcelamentoService } = await import("../../application/fiscal/serpro/SerproParcelamentoService.js");
+      const runtime = await getResolvedSerproCredentials();
+      const contratanteCnpj = String(runtime?.certificate?.document || "").replace(/\D+/g, "");
+      const contribuinteCnpj = String(company.cnpj || "").replace(/\D+/g, "");
+      const serpro = new SerproParcelamentoService({ log });
+      const { dto } = await serpro.consultarParcelamento({ contratanteCnpj, contribuinteCnpj, tipo, numeroParcelamento });
+      return res.json({ ok: true, parcelamento: dto });
+    } catch (err) {
+      const code = err?.code || "internal_error";
+      if (code === "SERPRO_PARC_FLAG_OFF") {
+        return res.status(400).json({ ok: false, error: code, message: "Integração SERPRO de parcelamento está desligada — ative após validar no sandbox para buscar por código." });
+      }
+      if (code === "SERPRO_PARC_MAP_NOT_CONFIGURED" || code === "SERPRO_PARC_COMPOSICAO_INVALIDA") {
+        return res.status(400).json({ ok: false, error: code, message: err.message });
+      }
+      log.error({ err: err?.message || err, code }, "Falha ao consultar parcelamento no SERPRO");
+      return res.status(502).json({ ok: false, error: code, message: err?.message });
+    }
+  });
+
+  // Q28 Fase 2 — GET/PUT da CONFIG de lançamento (provisão + pagamento) de um parcelamento.
+  // Acessível pela Circular/aba Guias pra ver/editar as contas por papel.
+  router.get("/parcelamentos/:parcId/config", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcId = String(req.params.parcId);
+    try {
+      const p = await prisma.parcelamento.findFirst({
+        where: { id: parcId, portalClientId },
+        select: { id: true, label: true, tipo: true, configProvisao: true, configPagamento: true, observacoes: true },
+      });
+      if (!p) return res.status(404).json({ ok: false, error: "parcelamento_not_found" });
+      return res.json({ ok: true, parcelamento: p });
+    } catch (err) {
+      log.error({ err }, "Falha ao ler config do parcelamento");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+  router.put("/parcelamentos/:parcId/config", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcId = String(req.params.parcId);
+    const { configProvisao, configPagamento, observacoes } = req.body || {};
+    const norm = (lines) => (Array.isArray(lines)
+      ? lines
+        .filter((l) => l && (l.tipoLinha || String(l.conta || "").trim()))
+        .map((l) => ({ tipoLinha: String(l.tipoLinha || ""), tipo: String(l.tipo).toUpperCase() === "C" ? "C" : "D", conta: String(l.conta || "").trim() }))
+      : null);
+    try {
+      const found = await prisma.parcelamento.findFirst({ where: { id: parcId, portalClientId }, select: { id: true } });
+      if (!found) return res.status(404).json({ ok: false, error: "parcelamento_not_found" });
+      const updated = await prisma.parcelamento.update({
+        where: { id: parcId },
+        data: {
+          configProvisao: norm(configProvisao),
+          configPagamento: norm(configPagamento),
+          ...(observacoes !== undefined ? { observacoes: observacoes ? String(observacoes) : null } : {}),
+        },
+        select: { id: true, configProvisao: true, configPagamento: true, observacoes: true },
+      });
+      return res.json({ ok: true, parcelamento: updated });
+    } catch (err) {
+      log.error({ err }, "Falha ao salvar config do parcelamento");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Q28 Fase 3 — Fila de conferência das parcelas (PAGA_A_CONFERIR + DIVERGENTE).
+  router.get("/parcelas/conferencia", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    try {
+      const { listarConferenciaParcelas } = await import("../../application/accounting/parcelamento/ParcelamentoV2Service.js");
+      const items = await listarConferenciaParcelas({ portalClientId });
+      return res.json({ ok: true, items });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar conferência de parcelas");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+  // POST .../parcelas/conferencia/aprovar — body { guideIds: [...] } → CONFIRMADA + lançamentos CONFIRMADO.
+  router.post("/parcelas/conferencia/aprovar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const { guideIds } = req.body || {};
+    try {
+      const { aprovarConferenciaParcelas } = await import("../../application/accounting/parcelamento/ParcelamentoV2Service.js");
+      const r = await aprovarConferenciaParcelas({ portalClientId, guideIds });
+      return res.json({ ok: true, ...r });
+    } catch (err) {
+      log.error({ err }, "Falha ao aprovar conferência de parcelas");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Q21 (spec v2) — POST /firm/companies/:companyId/parcelamentos/ingestao
+  // Sobe uma guia MANUAL como parcela de parcelamento → cria/anexa parcelamento +
+  // PROVISÃO (1ª vez) + PAGAMENTO por composição (juros LIDO). body:
+  //   { guideId, header: { tipo, numeroParcelamento, quantidadeParcelas, numeroParcela,
+  //                        valorPrincipal, valorMulta, valorJuros, valorTotal, dataAdesao,
+  //                        anoMesParcela?, vencimento? }, tributos?: [{codigoTributo,principal,multa,juros,total}] }
+  // Se `tributos` ausente, usa a composição já extraída do PDF (guide.extracted.composicao).
+  router.post("/parcelamentos/ingestao", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const userId = req.auth?.user?.id;
+    const { guideId, header, tributos, provisaoLines, pagamentoLines } = req.body || {};
+    // Q28: guideId é OPCIONAL — caminho SERPRO cria o parcelamento sem guia (o worker traz as guias).
+    if (!header?.tipo) return res.status(400).json({ ok: false, error: "tipo_required" });
+    // Q23: nº do parcelamento é obrigatório (necessário pra busca automática do SERPRO).
+    if (!String(header?.numeroParcelamento || "").trim()) {
+      return res.status(400).json({ ok: false, error: "numero_parcelamento_required" });
+    }
+    try {
+      let guide = null;
+      if (guideId) {
+        guide = await prisma.guide.findFirst({
+          where: { id: String(guideId), portalClientId },
+          select: { id: true, competencia: true, vencimento: true, valor: true, extracted: true },
+        });
+        if (!guide) return res.status(404).json({ ok: false, error: "guide_not_found" });
+      }
+
+      const { buildDTOsFromManual } = await import("../../application/accounting/parcelamento/entradaManual.js");
+      const { ingestParcelamentoFromGuide } = await import("../../application/accounting/parcelamento/ParcelamentoV2Service.js");
+      const { parcelamentoDTO, parcelaDTO } = buildDTOsFromManual({ guide, header, tributos });
+      const data = await ingestParcelamentoFromGuide({ portalClientId, guideId: guide?.id || null, parcelamentoDTO, parcelaDTO, provisaoLines, pagamentoLines, descricao: header?.descricao, userId });
+      return res.status(201).json({ ok: true, data });
+    } catch (err) {
+      const code = err?.code || "internal_error";
+      if (code === "COMPOSICAO_INVALIDA") {
+        return res.status(400).json({ ok: false, error: code, message: err.message });
+      }
+      log.error({ err }, "Falha na ingestão de parcelamento (v2)");
+      return res.status(500).json({ ok: false, error: code });
+    }
+  });
+
   // POST /firm/companies/:companyId/parcelamentos/:parcId/link-guide
   // body: { guideId, numeroParcela }
   router.post("/parcelamentos/:parcId/link-guide", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
@@ -2243,7 +2436,7 @@ export function createAccountingEntriesRouter({ log }) {
   });
 
   // POST /firm/companies/:companyId/parcelamentos/:parcId/rescindir
-  // body: { dataRescisao?, observacoes? }
+  // body: { dataRescisao?, observacoes?, rescisaoLines? }
   router.post("/parcelamentos/:parcId/rescindir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const parcelamentoId = String(req.params.parcId);
@@ -2254,6 +2447,7 @@ export function createAccountingEntriesRouter({ log }) {
         portalClientId, parcelamentoId,
         dataRescisao: req.body?.dataRescisao,
         observacoes: req.body?.observacoes,
+        rescisaoLines: req.body?.rescisaoLines,
         userId,
       });
       return res.json(data);
@@ -2267,6 +2461,38 @@ export function createAccountingEntriesRouter({ log }) {
       const status = map[code] || 500;
       if (status === 500) log.error({ err }, "Falha ao rescindir parcelamento");
       return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // Q31 Parte D — vincula/desvincula uma provisão (competência aberta) a um parcelamento.
+  // SÓ marca (seta parcelamentoId → célula amarela na Circular). NÃO altera as linhas do lançamento.
+  // POST /firm/companies/:companyId/entries/:entryId/vincular-parcelamento  body: { parcelamentoId | null }
+  router.post("/entries/:entryId/vincular-parcelamento", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const entryId = String(req.params.entryId);
+    const parcelamentoId = req.body?.parcelamentoId ? String(req.body.parcelamentoId) : null;
+    try {
+      if (parcelamentoId) {
+        const parc = await prisma.parcelamento.findFirst({ where: { id: parcelamentoId, portalClientId }, select: { id: true } });
+        if (!parc) return res.status(404).json({ ok: false, error: "parcelamento_not_found" });
+      }
+      // Q31: INSS na Circular é sintético (synthetic-inss-<guideId>) — não há lançamento; roteia pela GUIA.
+      if (entryId.startsWith("synthetic-inss-")) {
+        const guideId = entryId.replace("synthetic-inss-", "");
+        const guide = await prisma.guide.findFirst({ where: { id: guideId, portalClientId }, select: { id: true } });
+        if (!guide) return res.status(404).json({ ok: false, error: "guide_not_found" });
+        await prisma.guide.update({ where: { id: guideId }, data: { parcelamentoId } });
+        return res.json({ ok: true, entryId, parcelamentoId });
+      }
+      const entry = await prisma.accountingEntry.findFirst({ where: { id: entryId, portalClientId }, select: { id: true, tipo: true } });
+      if (!entry) return res.status(404).json({ ok: false, error: "entry_not_found" });
+      if (entry.tipo !== "PROVISAO") return res.status(400).json({ ok: false, error: "entry_not_provisao" });
+      // Só o vínculo — não toca em lines (decisão do dono: provisão permanece como está).
+      await prisma.accountingEntry.update({ where: { id: entryId }, data: { parcelamentoId } });
+      return res.json({ ok: true, entryId, parcelamentoId });
+    } catch (err) {
+      log.error({ err }, "Falha ao vincular provisão a parcelamento");
+      return res.status(500).json({ ok: false, error: "internal_error" });
     }
   });
 

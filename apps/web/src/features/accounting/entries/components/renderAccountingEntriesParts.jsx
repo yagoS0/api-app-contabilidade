@@ -308,6 +308,23 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
   const ref = useRef(null);
   const debounceRef = useRef(null);
 
+  // Q31 fix: sugere contas do PLANO DE CONTAS pelo código digitado (prefixo). Antes só buscava históricos.
+  const matchedAccounts = useMemo(() => {
+    const v = String(value || "").trim();
+    if (!v || !Array.isArray(accounts) || accounts.length === 0) return [];
+    const starts = accounts.filter((a) => String(a.codigo).startsWith(v));
+    const contains = accounts.filter((a) => !String(a.codigo).startsWith(v) && String(a.codigo).includes(v));
+    return [...starts, ...contains].slice(0, 8);
+  }, [value, accounts]);
+
+  // Q31 fix: o dropdown é position:fixed (a tabela tem overflow:hidden e cortava a sugestão).
+  const [coords, setCoords] = useState(null);
+  useEffect(() => {
+    if (!open || !ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    setCoords({ left: r.left, top: r.bottom + 3, width: r.width });
+  }, [open, historicos.length, matchedAccounts.length]);
+
   useEffect(() => {
     const v = String(value || "").trim();
     if (!onGetHistoricosByCode || v.length < 1) { setHistoricos([]); return; }
@@ -330,10 +347,21 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
 
   return (
     <div ref={ref} style={{ flexShrink: 0, position: "relative", minWidth: 0 }}>
-      <input ref={inputRef} id={id} type="text" inputMode="numeric" value={value} onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))} onKeyDown={onKeyDown} onFocus={() => historicos.length > 0 && setOpen(true)} placeholder={placeholder || "Cód."} autoComplete="off" style={{ ...PANEL_FIELD_STYLE, padding: "0 8px", textAlign: "center" }} />
-      {open && historicos.length > 0 && (
-        <div style={{ position: "absolute", top: "calc(100% + 3px)", left: 0, zIndex: 300, background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 6, boxShadow: "0 8px 28px rgba(0,0,0,0.15)", minWidth: 300, maxHeight: 220, overflowY: "auto" }}>
-          <SectionLabel>Históricos do código {value}</SectionLabel>
+      <input ref={inputRef} id={id} type="text" inputMode="numeric" value={value} onChange={(e) => { onChange(e.target.value.replace(/\D/g, "")); setOpen(true); }} onKeyDown={onKeyDown} onFocus={() => (historicos.length > 0 || matchedAccounts.length > 0) && setOpen(true)} placeholder={placeholder || "Cód."} autoComplete="off" style={{ ...PANEL_FIELD_STYLE, padding: "0 8px", textAlign: "center" }} />
+      {open && coords && (matchedAccounts.length > 0 || historicos.length > 0) && (
+        <div style={{ position: "fixed", top: coords.top, left: coords.left, zIndex: 1000, background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 6, boxShadow: "0 8px 28px rgba(0,0,0,0.35)", minWidth: Math.max(300, coords.width), maxHeight: 260, overflowY: "auto" }}>
+          {matchedAccounts.length > 0 && (
+            <>
+              <SectionLabel>Plano de contas</SectionLabel>
+              {matchedAccounts.map((a) => (
+                <button key={a.codigo} onMouseDown={(e) => { e.preventDefault(); onChange(String(a.codigo)); setOpen(false); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.field, border: "none", cursor: "pointer", color: ACCOUNTING_PANEL.text }} onMouseEnter={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.surface; }} onMouseLeave={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.field; }}>
+                  <span style={{ fontWeight: 700, fontSize: "0.8rem" }}>{a.codigo}</span>
+                  <span style={{ marginLeft: 6, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>{a.nome}</span>
+                </button>
+              ))}
+            </>
+          )}
+          {historicos.length > 0 && <SectionLabel>Históricos do código {value}</SectionLabel>}
           {historicos.map((h, i) => (
             <button key={h.id || i} onMouseDown={(e) => { e.preventDefault(); onSelectHistorico?.(h.text, h.contaDebito, h.contaCredito); setOpen(false); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.field, border: "none", cursor: "pointer", color: ACCOUNTING_PANEL.text }} onMouseEnter={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.surface; }} onMouseLeave={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.field; }}>
               <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>{h.text}</div>
@@ -354,6 +382,7 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
   const [open, setOpen] = useState(false);
   const [historicos, setHistoricos] = useState([]);
   const [selIdx, setSelIdx] = useState(-1);
+  const [coords, setCoords] = useState(null); // Q31 fix: dropdown position:fixed (escapa do overflow da tabela)
   const ref = useRef(null);
   const itemRefs = useRef([]);
   const debounceRef = useRef(null);
@@ -372,6 +401,7 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
 
   const allItems = useMemo(() => [...historicos.map((h) => ({ _type: "historico", ...h })), ...accts.map((a) => ({ _type: "account", ...a }))], [historicos, accts]);
   useEffect(() => { if (allItems.length > 0 && value.trim().length >= 2) setOpen(true); }, [allItems.length, value]);
+  useEffect(() => { if (open && ref.current) { const r = ref.current.getBoundingClientRect(); setCoords({ left: r.left, top: r.bottom + 4, width: r.width }); } }, [open, allItems.length]);
   useEffect(() => { if (selIdx >= 0 && itemRefs.current[selIdx]) itemRefs.current[selIdx].scrollIntoView({ block: "nearest" }); }, [selIdx]);
   useEffect(() => { setSelIdx(-1); }, [allItems.length]);
 
@@ -421,8 +451,8 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
   return (
     <div ref={ref} style={{ position: "relative", width: "100%" }}>
       <input ref={inputRef} type="text" value={value} placeholder="Histórico do lançamento..." onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => allItems.length > 0 && setOpen(true)} onKeyDown={handleKeyDown} style={{ ...PANEL_FIELD_STYLE, fontSize: "1.0625rem", fontWeight: 500, ...inputStyle }} />
-      {open && allItems.length > 0 && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 300, background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.2)", minWidth: 620, maxWidth: 760, maxHeight: 440, overflowY: "auto" }}>
+      {open && coords && allItems.length > 0 && (
+        <div style={{ position: "fixed", top: coords.top, left: coords.left, zIndex: 1000, background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.4)", minWidth: Math.max(420, coords.width), maxWidth: 760, maxHeight: 440, overflowY: "auto" }}>
           {historicos.length > 0 && <><SectionLabel>Históricos salvos — ↑↓ Enter para selecionar</SectionLabel>{historicos.map((h, i) => <HistoricoSuggestionRow key={h.id || i} rowRef={(el) => (itemRefs.current[i] = el)} selected={selIdx === i} item={h} onClick={() => selectItem({ _type: "historico", ...h })} onHover={() => setSelIdx(i)} />)}</>}
           {accts.length > 0 && <><SectionLabel>Plano de contas</SectionLabel>{accts.map((a, i) => { const globalIdx = historicos.length + i; return <AccountSuggestionRow key={a.codigo} rowRef={(el) => (itemRefs.current[globalIdx] = el)} selected={selIdx === globalIdx} account={a} onClick={() => selectItem({ _type: "account", ...a })} onHover={() => setSelIdx(globalIdx)} />; })}</>}
         </div>
@@ -564,7 +594,8 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   const lines = [{ tipo: "D", conta: contaD, valor }, { tipo: "C", conta: contaC, valor }];
   const balanced = Number(valor) > 0;
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
-  const canSave = dateVal && historico && balanced && contaD && contaC && !duplicateAcrossSides && !saving;
+  // Lançamento de 1 perna é válido (em aberto) — basta D OU C preenchido. [[nao-mudar-forma-lancamentos]]
+  const canSave = dateVal && historico && balanced && (contaD || contaC) && !duplicateAcrossSides && !saving;
 
   function reset() {
     setContaD(""); setContaC(""); setHistorico(""); setValor("");
@@ -575,7 +606,9 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
 
   async function handleSave() {
     if (!canSave) return;
-    const payload = { data: dateVal, historico, tipo: detected.tipo, lines: lines.map((l, i) => ({ conta: l.conta, tipo: l.tipo, valor: Number(l.valor || 0), ordem: i })) };
+    // Envia só as pernas preenchidas — permite lançamento de 1 perna (em aberto).
+    const filled = lines.filter((l) => String(l.conta || "").trim());
+    const payload = { data: dateVal, historico, tipo: detected.tipo, lines: filled.map((l, i) => ({ conta: String(l.conta).trim(), tipo: l.tipo, valor: Number(l.valor || 0), ordem: i })) };
     if (detected.tipo === "PROVISAO") payload.subtipo = detected.subtipo;
     const res = await onSave(payload);
     // Sucesso → limpa e mantém aberta para o próximo. (onSave retorna null em falha.)
@@ -618,7 +651,7 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
           style={{ ...PANEL_FIELD_STYLE, textAlign: "right" }} />
       </td>
       <td style={{ ...cell, textAlign: "right" }}>
-        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
           <Button size="sm" variant="success" onClick={handleSave} disabled={!canSave}>{saving ? "..." : "Salvar"}</Button>
           <Button size="sm" variant="secondary" onClick={() => onClose?.()}>Sair</Button>
         </div>
@@ -636,12 +669,17 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
   const isTemplate = entry.origem === "TEMPLATE" || entry.placeholder === true;
   const lines = entry.lines || [];
   const totalD = entry.totalD ?? lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor), 0);
+  const totalC = entry.totalC ?? lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor), 0);
   const dCount = lines.filter((l) => l.tipo === "D").length;
   const cCount = lines.filter((l) => l.tipo === "C").length;
   const hasDebitColumn = lines.some((l) => l.tipo === "D" && String(l.conta || "").trim());
   const hasCreditColumn = lines.some((l) => l.tipo === "C" && String(l.conta || "").trim());
-  const isIncompleteSides = !hasDebitColumn || !hasCreditColumn;
-  const isSimple = dCount === 1 && cCount === 1;
+  // Q26: lançamento de 1 perna ("em aberto") é válido — não marcar como "incompleto" (o balanço é no
+  // total, não por lançamento). Só sinaliza falta de lado quando o lançamento tem 2+ linhas.
+  const isIncompleteSides = lines.length > 1 && (!hasDebitColumn || !hasCreditColumn);
+  // Q26: trata como linha limpa também o lançamento de 1 perna (só D ou só C) — sem dropdown/expand.
+  // Só lançamento realmente composto (2+ de um lado) usa o selo "ND/NC" + expandir.
+  const isSimple = dCount <= 1 && cCount <= 1;
   const dLine = lines.find((l) => l.tipo === "D");
   const cLine = lines.find((l) => l.tipo === "C");
   const dA = dLine ? accounts.find((a) => a.codigo === dLine.conta) : null;
@@ -723,9 +761,9 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
         </td>
         <td style={{ ...TDv, fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtDate(entry.data)}</td>
         <td style={{ ...TDv, textAlign: isSimple ? "center" : "left" }} colSpan={isSimple ? 1 : 2}>
-          {isSimple ? <><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{dLine?.conta}</span>{dA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{dA.nome}</div>}</> : <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
+          {isSimple ? <><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{dLine?.conta ? dLine.conta : <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span>{dA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{dA.nome}</div>}</> : <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
         </td>
-        {isSimple && <td style={{ ...TDv, textAlign: "center" }}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{cLine?.conta}</span>{cA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{cA.nome}</div>}</td>}
+        {isSimple && <td style={{ ...TDv, textAlign: "center" }}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{cLine?.conta ? cLine.conta : <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span>{cA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{cA.nome}</div>}</td>}
         <td style={{ ...TDv, fontSize: "0.9375rem" }} title={entry.historico}>
           <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.historico || "—"}</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
@@ -742,7 +780,7 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
             )}
           </div>
         </td>
-        <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.875rem" }}>—</span> : fmtMoney(totalD)}</td>
+        <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.875rem" }}>—</span> : fmtMoney(totalD || totalC)}</td>
         {/* Q18: colunas Tipo e Status removidas. Status mostrado como chip discreto junto às ações pra template/exportado. */}
         <td style={{ ...TDv, textAlign: "right", borderRight: "none" }}>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
@@ -806,6 +844,10 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
         setTemplate(tpl);
         if (!tpl) return;
         const defaultDate = lastDayOfCompetencia(competencia);
+        // Q34: valor da provisão do INSS vem da guia INSS da competência (editável).
+        const inssGuideValor = tpl.inssGuide?.valor != null && Number(tpl.inssGuide.valor) > 0
+          ? Number(tpl.inssGuide.valor).toFixed(2)
+          : "";
         // Linhas da provisão: cada uma com apenas D OU C preenchido
         // F1: preserva `role` para reconhecer linha do líquido (cálculo automático).
         const provisaoRows = tpl.lines.map((l) => ({
@@ -813,7 +855,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
           debito: l.side === "D" ? (l.accountCode || "") : "",
           credito: l.side === "C" ? (l.accountCode || "") : "",
           historico: l.historico || "",
-          valor: "",
+          valor: l.role === "inss" ? inssGuideValor : "",
           role: l.role || null,
         }));
         // Linha de baixa: D + C preenchidos

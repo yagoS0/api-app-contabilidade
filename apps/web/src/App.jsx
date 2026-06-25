@@ -12,7 +12,6 @@ import { PendingGuidesPage } from "./features/guides/pending/pages/renderPending
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { GlobalAccountingRulesPage } from "./features/accounting/rules/pages/renderGlobalAccountingRulesPage";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
-import { FirmSettingsHubPage } from "./features/firm/settings/pages/renderFirmSettingsHubPage";
 import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
@@ -172,22 +171,9 @@ function App() {
         onRunCron={companiesWorkspace.handleRunSerproCron}
         runningCron={companiesWorkspace.runningSerproCron}
         cronRunResult={companiesWorkspace.serproCronRunResult}
-        onBack={() => session.setPage("firmSettings")}
+        onBack={() => session.setPage("companies")}
         message={feedback.message}
         error={feedback.error}
-      />
-    );
-  }
-
-  if (session.page === "firmSettings") {
-    return (
-      <FirmSettingsHubPage
-        onBack={() => session.setPage("companies")}
-        onOpen={(key) => {
-          if (key === "guides") session.setPage("guideSettings");
-          else if (key === "accountingRules") session.setPage("accountingRulesGlobal");
-          else if (key === "chartOfAccounts") session.setPage("chartOfAccountsGlobal");
-        }}
       />
     );
   }
@@ -196,7 +182,7 @@ function App() {
     return (
       <GlobalChartOfAccountsPage
         api={api}
-        onBack={() => session.setPage("firmSettings")}
+        onBack={() => session.setPage("companies")}
       />
     );
   }
@@ -205,7 +191,7 @@ function App() {
     return (
       <GlobalAccountingRulesPage
         api={api}
-        onBack={() => session.setPage("firmSettings")}
+        onBack={() => session.setPage("companies")}
       />
     );
   }
@@ -393,7 +379,6 @@ function App() {
       loadingCompanies={companiesWorkspace.companiesState.loadingCompanies}
       onCreateCompany={() => session.setPage("createCompany")}
       onOpenGuideUpload={() => session.setPage("guideUpload")}
-      onOpenFirmSettings={() => session.setPage("firmSettings")}
       onOpenGuideSettings={() => session.setPage("guideSettings")}
       onOpenAccountingRules={() => session.setPage("accountingRulesGlobal")}
       onOpenChartGlobal={() => session.setPage("chartOfAccountsGlobal")}

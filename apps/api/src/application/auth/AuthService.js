@@ -9,6 +9,14 @@ import {
 import { UserRepository } from "../../infrastructure/db/UserRepository.js";
 import { ClientRepository } from "../../infrastructure/db/ClientRepository.js";
 
+// Q27.B: hash bcrypt fixo (de uma senha aleatória descartada) usado pra comparar quando o
+// usuário/cliente NÃO existe — iguala o tempo de resposta e mata o timing-oracle (distinguir
+// "e-mail inexistente" de "senha errada" pelo tempo). O resultado do compare é ignorado.
+const DUMMY_BCRYPT_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMy.Mrq4r3Q3sQ1q9z3wH3y3q3wH3y3q3O";
+async function dummyCompare(password) {
+  try { await bcrypt.compare(String(password || ""), DUMMY_BCRYPT_HASH); } catch { /* ignore */ }
+}
+
 function normalizeExpiresIn() {
   const raw = JWT_EXPIRES_IN || "1h";
   if (!raw) return "1h";
@@ -97,6 +105,8 @@ export class AuthService {
       };
     }
 
+    // Q27.B: usuário não existe (nem DB nem fallback) → compare dummy pra igualar o tempo.
+    await dummyCompare(password);
     return { ok: false, error: "invalid_credentials" };
   }
 
@@ -109,7 +119,11 @@ export class AuthService {
     }
     const normalized = String(login).trim().toLowerCase();
     const client = await ClientRepository.findByLogin(normalized);
-    if (!client) return { ok: false, error: "invalid_credentials" };
+    if (!client) {
+      // Q27.B: cliente não existe → compare dummy pra igualar o tempo (anti timing-oracle).
+      await dummyCompare(password);
+      return { ok: false, error: "invalid_credentials" };
+    }
     const ok = await bcrypt.compare(String(password), client.passwordHash);
     if (!ok) return { ok: false, error: "invalid_credentials" };
     return {

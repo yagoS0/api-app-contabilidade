@@ -7,7 +7,7 @@ import {
   COMPANY_DB_CERT_STORAGE_KEY,
   deleteCompanyPfx,
 } from "../infrastructure/storage/CertStorage.js";
-import { encryptSecret } from "../utils/crypto.js";
+import { encryptSecret, encryptBytes } from "../utils/crypto.js";
 
 export function createClientsRouter({
   ensureAuthorized,
@@ -179,8 +179,8 @@ export function createClientsRouter({
           where: { id: company.id },
           data: {
             certStorageKey: COMPANY_DB_CERT_STORAGE_KEY,
-            certPfxBytes: file.buffer,
-            certPasswordEnc: encryptSecret(password),
+            certPfxBytes: await encryptBytes(file.buffer), // Q30/Q35: PFX cifrado em repouso
+            certPasswordEnc: await encryptSecret(password),
             certUploadedAt: now,
             certExpiresAt: expiresAt || undefined,
           },

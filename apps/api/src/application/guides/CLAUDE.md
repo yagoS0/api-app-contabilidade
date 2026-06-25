@@ -11,6 +11,11 @@ status de pagamento/e-mail, lock de captura e envio.
   **VAZIO (Q17)** = marcador "não há guia neste mês" (sem PDF) — ausência confirmada.
 - `emailStatus`: PENDING|SENDING|SENT|ERROR. `paymentStatus`: OPEN|PAID|OVERDUE.
 - `valorOriginal` = valor da 1ª captura (imutável em recálculo).
+- **Confirmar pagamento** (`POST /firm/guides/:id/confirm-payment` → `markGuidePaidManual`): seta
+  `paymentStatus=PAID`. **Q23:** se a guia é de **parcelamento** (`parcelamentoId`), também gera o
+  lançamento de **BAIXA** via `gerarPagamentoParcelaFromGuide` (juros LIDO da composição, data = hoje,
+  `baixada/dataBaixa/lancamentoId`); idempotente; **bloqueia (409 MES_FECHADO)** se o mês contábil
+  do pagamento estiver fechado. Guia normal não gera lançamento.
 
 ## Compliance (guideCompliance.js)
 

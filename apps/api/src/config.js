@@ -86,9 +86,23 @@ export const ADN_CNPJ_CONSULTA = (process.env.ADN_CNPJ_CONSULTA || "").trim();
 export const CERT_STORAGE_PATH = (
   process.env.CERT_STORAGE_PATH || "./storage/certificates"
 ).trim();
-export const CERT_SECRET_KEY = (
-  process.env.CERT_SECRET_KEY || process.env.JWT_SECRET || ""
+// Q30 Fase 1: chave-mestra dos certificados — SEM fallback pro JWT_SECRET (era inseguro: o JWT muda
+// ao invalidar sessões e podia tornar os certificados ilegíveis). Agora é obrigatória e dedicada.
+// Gere com: openssl rand -base64 48
+export const CERT_SECRET_KEY = (process.env.CERT_SECRET_KEY || "").trim();
+export const CERT_SECRET_KEY_MIN_LENGTH = 32;
+
+// Q35 Fase 2: cofre AWS KMS (envelope encryption). Quando AWS_KMS_CERT_KEY_ID está setado, novos
+// certificados nascem cifrados por DEK (Data Encryption Key) gerada pelo KMS e cifrada pela master
+// no HSM da AWS. Região/credenciais DEDICADAS (não reusa AWS_REGION do S3 de guias). Se as vars do
+// KMS não vierem, cai nas AWS_* compartilhadas. CERT_SECRET_KEY permanece (legado + fallback local).
+export const AWS_KMS_CERT_KEY_ID = (process.env.AWS_KMS_CERT_KEY_ID || "").trim();
+export const AWS_KMS_REGION = (process.env.AWS_KMS_REGION || "sa-east-1").trim();
+export const AWS_KMS_ACCESS_KEY_ID = (
+  process.env.AWS_KMS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || ""
 ).trim();
+export const AWS_KMS_SECRET_ACCESS_KEY =
+  process.env.AWS_KMS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY || "";
 
 // === Ingestão de Guias ===
 // PDFs entram por upload no portal e são gravados em `Guide.pdfBytes` (PostgreSQL).
@@ -153,6 +167,9 @@ export const GUIDE_LOCAL_STORAGE_DIR = (
 
 // === SERPRO / Integra Contador ===
 export const SERPRO_ENABLE_PGDASD = process.env.SERPRO_ENABLE_PGDASD === "1";
+// Q21: ingestão de parcelamento via SERPRO (OBTERPARC164/DETPAGTOPARC165). Default OFF.
+// Só ligar após o teste de contrato passar verde no sandbox (nomes de campo confirmados).
+export const INTEGRACAO_SERPRO_PARCELAMENTO = process.env.INTEGRACAO_SERPRO_PARCELAMENTO === "1";
 export const SERPRO_BASE_URL = (process.env.SERPRO_BASE_URL || "").trim();
 export const SERPRO_AUTH_URL = (process.env.SERPRO_AUTH_URL || "").trim();
 export const SERPRO_TOKEN_PATH = (process.env.SERPRO_TOKEN_PATH || "/token").trim();
@@ -236,10 +253,11 @@ if (!ADN_KEY_PATH)
   log.warn("ADN_KEY_PATH ausente: consulta ADN estará desabilitada");
 if (!process.env.CERT_STORAGE_PATH)
   log.warn("CERT_STORAGE_PATH ausente: usando fallback local ./storage/certificates");
-if (!process.env.CERT_SECRET_KEY && process.env.JWT_SECRET)
-  log.warn("CERT_SECRET_KEY ausente: usando JWT_SECRET como fallback para criptografia do certificado");
+// Q30 Fase 1: sem mais fallback pro JWT. A API recusa subir sem CERT_SECRET_KEY (fail-fast no server.js).
 if (!CERT_SECRET_KEY)
-  log.warn("CERT_SECRET_KEY ausente: criptografia de senha do certificado indisponível");
+  log.warn("CERT_SECRET_KEY ausente: defina uma chave dedicada (openssl rand -base64 48). A API não sobe sem ela.");
+else if (CERT_SECRET_KEY.length < CERT_SECRET_KEY_MIN_LENGTH)
+  log.warn(`CERT_SECRET_KEY curta (< ${CERT_SECRET_KEY_MIN_LENGTH} chars): use uma chave mais forte.`);
 export const PDF_READER_URL = (process.env.PDF_READER_URL || "").trim();
 export const PDF_READER_TIMEOUT_MS = Math.max(
   1000,

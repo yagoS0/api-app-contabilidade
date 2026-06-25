@@ -207,11 +207,11 @@ async function upsertPortalInvoiceSafe({ clientId, data }) {
   }
 }
 
-function resolveCompanyCert(company) {
+async function resolveCompanyCert(company) {
   if (!company?.certPasswordEnc) return null;
-  const password = decryptSecret(company.certPasswordEnc);
+  const password = await decryptSecret(company.certPasswordEnc);
   if (!password) return null;
-  const pfxBuffer = readStoredCompanyPfx(company);
+  const pfxBuffer = await readStoredCompanyPfx(company);
   if (!pfxBuffer) return null;
   return { pfxBuffer, pfxPassword: password };
 }
@@ -343,7 +343,7 @@ export class InvoiceSyncEngine {
         company = await prisma.company.findUnique({ where: { id: String(mappedPortal.companyId) } });
       }
     }
-    const certInfo = company ? resolveCompanyCert(company) : null;
+    const certInfo = company ? await resolveCompanyCert(company) : null;
 
     if (!certInfo?.pfxBuffer) {
       await prisma.portalSyncState.update({

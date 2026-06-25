@@ -1,4 +1,4 @@
-import { log } from "../config.js";
+import { log, INTEGRACAO_SERPRO_PARCELAMENTO } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
 import { getReferenceCompetencia } from "../application/guides/guideCompliance.js";
@@ -7,6 +7,7 @@ import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRun
 import { SerproProcurationService } from "../application/fiscal/serpro/SerproProcurationService.js";
 import { capturePgdasGuideForCompany } from "../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { syncPgdasByCompetencia } from "../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
+import { capturarParcelaGuideForCompany } from "../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
 import { markGuidePaidBySerpro } from "../application/guides/GuidePaymentStatusService.js";
 
@@ -158,6 +159,7 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
     const results = [];
     const recheckResults = [];
     const extratoResults = [];
+    const parcelaResults = []; // Q22: guias de parcelamento trazidas pelo worker
     const startedAt = Date.now();
 
     const now = new Date();
@@ -253,6 +255,28 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
           }
         }
 
+        // Stage 4 (Q22): guias de PARCELAMENTO. Atrás da flag INTEGRACAO_SERPRO_PARCELAMENTO.
+        // Itera só os parcelamentos ATIVOS já criados na base (decisão do dono); para cada um,
+        // lista as competências geráveis e traz a parcela (composição + PDF) → lançamento + guia.
+        if (INTEGRACAO_SERPRO_PARCELAMENTO && isCaptureWindow) {
+          // eslint-disable-next-line no-await-in-loop
+          const parcelamentos = await prisma.parcelamento.findMany({
+            // Q23: só busca automática depois que a 1ª parcela manual gerou a provisão (aberturaEntryId).
+            // Q28 Fase 4: grupo "outros" (PGFN/estadual/municipal) NÃO integra SERPRO — fica fora.
+            where: { portalClientId: company.id, status: "ATIVO", numeroParcelamento: { not: null }, aberturaEntryId: { not: null }, grupo: { not: "outros" } },
+            select: { id: true, tipo: true, numeroParcelamento: true, totalValue: true, principalTotal: true, valorMulta: true, jurosTotal: true, numParcelas: true },
+          });
+          for (const parc of parcelamentos) {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              const r = await capturarParcelaGuideForCompany({ portalClientId: company.id, parcelamento: parc, log });
+              parcelaResults.push({ companyId: company.id, razao: company.razao, numeroParcelamento: parc.numeroParcelamento, parcelas: r.parcelas, reason: r.reason || null });
+            } catch (err) {
+              parcelaResults.push({ companyId: company.id, numeroParcelamento: parc.numeroParcelamento, status: "erro", reason: err?.code || err?.message });
+            }
+          }
+        }
+
         // Stage 2: Re-fetch diário das guias OPEN cujo vencimento ainda não passou
         // eslint-disable-next-line no-await-in-loop
         const openGuides = await listOpenGuidesUntilVencimento(company.id, todayStart);
@@ -320,10 +344,14 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
       extratoOk: extratoResults.filter((item) => item.status === "extrato_ok").length,
       extratoErro: extratoResults.filter((item) => item.status === "extrato_erro").length,
       extratoJaSincronizado: extratoResults.filter((item) => item.status === "extrato_ja_sincronizado").length,
+      // Q22: parcelas trazidas (flatten dos resultados por parcelamento).
+      parcelasOk: parcelaResults.reduce((s, p) => s + (p.parcelas || []).filter((x) => String(x.status).startsWith("ok")).length, 0),
+      parcelasErro: parcelaResults.reduce((s, p) => s + (p.parcelas || []).filter((x) => x.status === "erro").length, 0),
       durationMs: Date.now() - startedAt,
       results,
       recheckResults,
       extratoResults,
+      parcelaResults,
     };
     await createSerproExecutionLog({
       worker: "serpro_pgdasd",

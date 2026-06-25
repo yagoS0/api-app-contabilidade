@@ -2,6 +2,8 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { prisma } from "../infrastructure/db/prisma.js";
+import { validateStrongPassword, strongPasswordMessage } from "../application/validators/passwordPolicy.js";
+import { safeLogError } from "../lib/safeLogError.js";
 
 export function createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized }) {
   const router = Router();
@@ -18,6 +20,35 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     recent.push(now);
     authAttemptMap.set(key, recent);
     return false;
+  }
+
+  // Q27.C: trava por CONTA (além do rate-limit por IP). Após N falhas no mesmo e-mail dentro da
+  // janela, bloqueia aquele login por LOCK_DURATION. Em memória (reseta no restart; sem migração).
+  const loginFailMap = new Map(); // email -> { count, firstAt, lockedUntil }
+  const LOCK_THRESHOLD = 5;
+  const LOCK_WINDOW_MS = 15 * 60 * 1000;
+  const LOCK_DURATION_MS = 15 * 60 * 1000;
+  const lockKey = (email) => String(email || "").trim().toLowerCase();
+
+  function accountLockState(email) {
+    const e = loginFailMap.get(lockKey(email));
+    if (e?.lockedUntil && e.lockedUntil > Date.now()) {
+      return { locked: true, retryAfterSec: Math.ceil((e.lockedUntil - Date.now()) / 1000) };
+    }
+    return { locked: false };
+  }
+  function recordFailedLogin(email) {
+    const k = lockKey(email);
+    if (!k) return;
+    const now = Date.now();
+    const e = loginFailMap.get(k) || { count: 0, firstAt: now, lockedUntil: 0 };
+    if (now - e.firstAt > LOCK_WINDOW_MS) { e.count = 0; e.firstAt = now; e.lockedUntil = 0; }
+    e.count += 1;
+    if (e.count >= LOCK_THRESHOLD) e.lockedUntil = now + LOCK_DURATION_MS;
+    loginFailMap.set(k, e);
+  }
+  function clearFailedLogin(email) {
+    loginFailMap.delete(lockKey(email));
   }
 
   // Q8.A.3: rate-limit por IP usando express-rate-limit.
@@ -44,8 +75,10 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     if (!normalizedEmail.includes("@")) {
       return res.status(400).json({ error: "email_invalid" });
     }
-    if (String(password).length < 8) {
-      return res.status(400).json({ error: "weak_password" });
+    // Q27.A: senha de acesso forte (8 + maiúscula + minúscula + número + especial).
+    const pwCheck = validateStrongPassword(password);
+    if (!pwCheck.ok) {
+      return res.status(400).json({ error: "weak_password", message: strongPasswordMessage(pwCheck.errors), missing: pwCheck.errors });
     }
     try {
       const existing = await UserRepository.findByEmail(normalizedEmail);
@@ -65,7 +98,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
         .status(201)
         .json({ status: "pending", message: "Cadastro aguardando aprovação." });
     } catch (err) {
-      log.error({ err }, "Falha no signup");
+      safeLogError(log, { email: normalizedEmail }, err, "Falha no signup");
       res.status(500).json({ error: "internal_error" });
     }
   });
@@ -79,14 +112,24 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       return res.status(503).json({ error: "auth_not_configured" });
     }
     const { email, username, identifier, password } = req.body || {};
+    // Q27.B: valida tipos do corpo (sem distinguir mensagens) antes de tocar no banco.
+    if (typeof password !== "string" || (email && typeof email !== "string") || (username && typeof username !== "string") || (identifier && typeof identifier !== "string")) {
+      return res.status(400).json({ error: "username_password_required" });
+    }
     const loginId = (email || username || identifier || "").trim();
     if (!loginId || !password) {
       return res.status(400).json({ error: "username_password_required" });
+    }
+    // Q27.C: trava por conta — bloqueia o e-mail após N falhas (defesa direcionada além do IP).
+    const lock = accountLockState(loginId);
+    if (lock.locked) {
+      return res.status(429).json({ error: "account_locked", retryAfterSec: lock.retryAfterSec });
     }
     try {
       // 1) Usuários do sistema (admin/contador/user)
       const result = await AuthService.authenticate(loginId, password);
       if (result.ok) {
+        clearFailedLogin(loginId);
         const { accessToken, refreshToken } = AuthService.generateTokens(result.user);
         return res.json({
           accessToken,
@@ -110,9 +153,12 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
         if (result.error === "missing_credentials") {
           return res.status(400).json({ error: "username_password_required" });
         }
+        // Q27.C: registra a falha pra contar contra a trava por conta.
+        recordFailedLogin(loginId);
         return res.status(401).json({ error: "invalid_credentials" });
       }
 
+      clearFailedLogin(loginId);
       const { accessToken, refreshToken } = AuthService.generateClientTokens(clientResult.client);
 
       // defaultClientId: primeira empresa do cliente (se existir PortalClient ligado à Company)
@@ -142,7 +188,7 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
         },
       });
     } catch (err) {
-      log.error({ err }, "Falha ao autenticar usuário");
+      safeLogError(log, { loginId }, err, "Falha ao autenticar usuário");
       res.status(500).json({ error: "internal_error" });
     }
   });

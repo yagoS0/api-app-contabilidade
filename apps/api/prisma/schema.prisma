@@ -345,10 +345,20 @@ model Guide {
   // Q9: link opcional pra um Parcelamento (quando guia é parcela de parcelamento).
   parcelamentoId String?
   numeroParcela  Int?
+  // Q21 (spec v2): metadados da parcela + estado de baixa.
+  quantidadeParcelas Int?
+  anoMesParcela      String?   // YYYYMM (competência da parcela, chave da API)
+  lancamentoId       String?   // lançamento gerado (provisão ou pagamento)
+  baixada            Boolean   @default(false)
+  dataBaixa          DateTime?
+  // Q28 Fase 3: estado explícito da PARCELA (só guias de parcelamento usam).
+  // PREVISTA | EM_ATRASO | PAGA_A_CONFERIR | DIVERGENTE | CONFIRMADA | CANCELADA
+  parcelaEstado      String?
 
   portalClient  PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
   legacyCompany Company?      @relation(fields: [legacyCompanyId], references: [id], onDelete: SetNull)
   parcelamento  Parcelamento? @relation("GuideParcelamento", fields: [parcelamentoId], references: [id], onDelete: SetNull)
+  tributosParcela TributoParcela[]
 
   @@index([portalClientId, competencia, tipo])
   @@index([status])
@@ -356,6 +366,10 @@ model Guide {
   @@index([cnpj, competencia])
   @@index([paymentStatus, vencimento])
   @@index([parcelamentoId])
+  @@index([baixada])
+  @@index([portalClientId, parcelaEstado])
+  // Q21: ingestão idempotente da mesma parcela (parcial WHERE parcelamentoId NOT NULL via SQL).
+  @@unique([parcelamentoId, numeroParcela])
 }
 
 // Q8.B: model GuideIngestionJob removido — sem consumidores no código (varredura confirmou).
@@ -373,6 +387,25 @@ model AppSetting {
   value     Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Q30 Fase 1: trilha de auditoria de acesso aos certificados digitais (LGPD).
+// Sem FK de propósito — o log de DELETE precisa sobreviver à empresa/cert excluído.
+model CertAccessLog {
+  id             String   @id @default(uuid())
+  portalClientId String?  // null = certificado do escritório (SERPRO)
+  certKind       String   // COMPANY_A1 | OFFICE_SERPRO
+  action         String   // DECRYPT | UPLOAD | DELETE
+  consumer       String?  // CertResolver | SerproAuthService | AdnNotasService | DfeSyncService | upload | ...
+  actorUserId    String?  // null nas automáticas (workers)
+  workerName     String?
+  success        Boolean  @default(true)
+  errorCode      String?
+  createdAt      DateTime @default(now())
+
+  @@index([portalClientId, createdAt])
+  @@index([certKind, createdAt])
+  @@map("cert_access_logs")
 }
 
 model CompanyClientUser {
@@ -779,6 +812,9 @@ model AccountingEntryLine {
   valor     Decimal @db.Decimal(18, 2)
   ordem     Int     @default(0)
   historico String? // Histórico opcional por linha (ex: pró-labore tem histórico distinto por D/C)
+  // Q21: papel da linha em lançamentos de parcelamento + tributo (aprendizado por tributo)
+  tipoLinha     String? // PARC_DAS | JUROS | MULTA | TOTAL
+  codigoTributo String?
 
   entry AccountingEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
@@ -871,6 +907,18 @@ model Parcelamento {
   label                       String   // ex: "RE-PARCELAMENTO SIMPLES NACIONAL DE SET/OUT/2024..."
   kind                        String   // SIMPLES | INSS | DARF | OUTRO
 
+  // Q21 (spec v2): modalidade oficial + número do parcelamento (RFB/SERPRO)
+  tipo                        String?  // PARCSN|PARCSN_ESPECIAL|PERT_SN|RELP_SN|PARCMEI|PARCMEI_ESPECIAL|PERT_MEI|RELP_MEI|OUTRO
+  numeroParcelamento          String?  // número oficial
+  valorMulta                  Decimal? @db.Decimal(18, 2) // multa consolidada
+  valorParcelaReferencia      Decimal? @db.Decimal(18, 2) // valor nominal/contratado da parcela
+  parcelaInicial              Int?     // nº da 1ª parcela conhecida no sistema (suporta começar no meio)
+  dataAdesao                  DateTime?
+  origem                      String   @default("MANUAL") // MANUAL | SERPRO
+  // Q28 Fase 4: grupo do parcelamento. sn_mei = Simples/MEI (integra SERPRO); outros = PGFN/estadual/
+  // municipal (100% manual, nunca chama SERPRO). Derivado do `tipo` quando não informado.
+  grupo                       String?  // sn_mei | outros
+
   // Templates (3 kinds em AccountingFunction): abertura, pagamento da parcela, rescisão
   templateOpeningFunctionId   String?
   templatePaymentFunctionId   String?
@@ -889,6 +937,12 @@ model Parcelamento {
   competenciaInicial          String                // YYYY-MM da 1ª parcela
   diaPagamento                Int      @default(1)
   periodosReferenciados       String?
+
+  // Q28 Fase 1: configuração de lançamento POR PARCELAMENTO (papéis/contas), independente entre
+  // PROVISÃO e PAGAMENTO. Cada uma = lista de linhas { papel, tipo (D|C), conta }. Quando nula, o
+  // sistema usa os papéis padrão + MapaContaTributo (memória). Editável pela Circular/aba Guias (Fase 2).
+  configProvisao              Json?
+  configPagamento             Json?
 
   status                      String   @default("ATIVO") // ATIVO | QUITADO | RESCINDIDO
   observacoes                 String?
@@ -909,7 +963,48 @@ model Parcelamento {
 
   @@index([portalClientId, status])
   @@index([portalClientId, kind])
+  // Q21: vínculo determinístico — impede cabeçalho duplicado (parcial WHERE numeroParcelamento NOT NULL via SQL).
+  @@unique([portalClientId, tipo, numeroParcelamento])
   @@map("parcelamentos")
+}
+
+// Q21 (spec v2): composição por tributo de uma guia de parcela.
+// VEM ITEMIZADA (PDF/SERPRO) — juros LIDO, nunca derivado.
+model TributoParcela {
+  id              String   @id @default(uuid())
+  guideId         String
+  codigoTributo   String   // ex: 1001 (IRPJ-SN), 1002 (CSLL)...
+  nomeTributo     String?
+  principal       Decimal  @db.Decimal(18, 2)
+  multa           Decimal  @db.Decimal(18, 2)
+  juros           Decimal  @db.Decimal(18, 2)
+  total           Decimal  @db.Decimal(18, 2)
+  verificadoTrial Boolean  @default(false) // false até confirmar payload SERPRO no sandbox
+  rawPayload      Json?
+  createdAt       DateTime @default(now())
+
+  guide Guide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+
+  @@unique([guideId, codigoTributo])
+  @@index([guideId])
+  @@map("tributos_parcela")
+}
+
+// Q21 (spec v2): memória de conta por tributo (GLOBAL com override por cliente).
+model MapaContaTributo {
+  id               String   @id @default(uuid())
+  portalClientId   String?  // null = global; preenchido = override por cliente
+  tipoParcelamento String   // PARCSN | PARCMEI | ... (modalidade)
+  tipoLinha        String   // PARC_DAS | JUROS | MULTA | TOTAL
+  codigoTributo    String?  // tributo, quando a conta é por tributo
+  contaId          String   // código/conta aprendida
+  createdByUserId  String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([portalClientId, tipoParcelamento, tipoLinha, codigoTributo])
+  @@index([portalClientId, tipoParcelamento])
+  @@map("mapa_conta_tributo")
 }
 
 model TaxDocumentProcessingLog {

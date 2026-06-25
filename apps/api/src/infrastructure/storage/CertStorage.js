@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { CERT_STORAGE_PATH } from "../../config.js";
+import { decryptBytes } from "../../utils/crypto.js";
 
 export const COMPANY_DB_CERT_STORAGE_KEY = "db:company-pfx";
 
@@ -55,18 +56,20 @@ export function saveCompanyPfx({ companyId, originalName, buffer }) {
   return filename;
 }
 
-export function readStoredCompanyPfx(company) {
+export async function readStoredCompanyPfx(company) {
+  // Q30/Q35: decryptBytes decifra o PFX cifrado (local ou KMS) e é no-op em PFX legado em claro (compat).
   if (company?.certPfxBytes) {
-    return Buffer.isBuffer(company.certPfxBytes)
+    const raw = Buffer.isBuffer(company.certPfxBytes)
       ? company.certPfxBytes
       : Buffer.from(company.certPfxBytes);
+    return decryptBytes(raw);
   }
   if (!company?.certStorageKey || isDatabaseCertificateStorageKey(company.certStorageKey)) {
     return null;
   }
   const fullPath = resolveCertificatePath(company.certStorageKey);
   if (!fullPath || !fs.existsSync(fullPath)) return null;
-  return fs.readFileSync(fullPath);
+  return decryptBytes(fs.readFileSync(fullPath));
 }
 
 export function deleteCompanyPfx(storageKey) {

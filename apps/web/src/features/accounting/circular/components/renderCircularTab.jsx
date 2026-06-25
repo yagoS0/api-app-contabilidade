@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
-import { ParcelamentosList, ParcelaPaymentModal } from "../../parcelamento/components/ParcelamentoModals";
+import { ParcelamentosList, ParcelaPaymentModal, ConferenciaParcelasPanel } from "../../parcelamento/components/ParcelamentoModals";
 import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
 
 // Subtipos universais + flag de regimes que os exibem.
@@ -37,6 +37,9 @@ function getSubtipoRowsForRegime(regime) {
 const SUBTIPO_ROWS = SUBTIPO_ROWS_ALL;
 
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+// Q31: largura ÚNICA de coluna do quadro (todas iguais — header, célula, subtotal).
+const COL_W = 96;
 
 const TIPO_LABELS = { DESPESA: "Despesa", RECEITA: "Receita", FOLHA: "Folha", PROVISAO: "Provisão", BAIXA: "Baixa", OUTRO: "Outro" };
 
@@ -230,139 +233,87 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
 
 // ─── PagamentoCell ───────────────────────────────────────────────────────────
 
-function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, cancellingBaixaId }) {
-  const [confirmCancel, setConfirmCancel] = useState(false);
+// Q31: célula só com NÚMERO; cor implícita (vermelho=aberto, verde=pago, amarelo=vinculado a
+// parcelamento). Clicar abre o menu de ações (Editar / Dar baixa / Vincular a parcelamento).
+function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, onConfirmPagamento }) {
+  const [open, setOpen] = useState(false);
+  const [selParc, setSelParc] = useState("");
 
   if (!entry) {
-    return (
-      <td style={{
-        padding: "6px 4px", textAlign: "center", fontSize: "0.75rem",
-        color: "#44475A", borderRight: "1px solid #44475A",
-      }}>
-        —
-      </td>
-    );
+    return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
   }
 
-  // Placeholder (TEMPLATE sem valor)
-  if (entry.placeholder || entry.origem === "TEMPLATE") {
-    return (
-      <td style={{ background: "rgba(255, 179, 71, 0.10)", padding: "5px 4px", textAlign: "center", borderRight: "1px solid #44475A", minWidth: 80 }}>
-        <span style={{
-          display: "inline-block", fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.04em",
-          textTransform: "uppercase", padding: "1px 5px", borderRadius: 999,
-          background: "rgba(255, 179, 71, 0.20)", color: "#FFB347", border: "1px solid #FFB347",
-        }}>
-          PREENCHER
-        </span>
-        <div style={{ fontSize: "0.65rem", color: "#FFB347", marginTop: 2 }}>sem valor</div>
-        {onEdit && (
-          <button
-            onClick={() => onEdit(entry)}
-            style={{
-              marginTop: 3, fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
-              background: "#FFB347", color: "#1A1B26", border: "none",
-              borderRadius: 3, padding: "2px 6px",
-            }}
-          >
-            ✎ Editar
-          </button>
-        )}
-      </td>
-    );
-  }
-
+  const placeholder = entry.placeholder || entry.origem === "TEMPLATE";
   const isAberto = entry.statusPagamento === "ABERTO";
-  const bg          = isAberto ? "rgba(255, 71, 87, 0.10)" : "rgba(105, 255, 71, 0.08)";
-  const badgeBg     = isAberto ? "rgba(255, 71, 87, 0.20)" : "rgba(105, 255, 71, 0.20)";
-  const badgeColor  = isAberto ? "#FF4757" : "#69FF47";
-  const badgeBorder = isAberto ? "#FF4757" : "#69FF47";
-  const badgeLabel  = isAberto ? "ABERTO" : "PAGO";
-  const baixaId     = !isAberto ? (entry.baixas?.[0]?.id ?? null) : null;
-  const isCancelling = cancellingBaixaId === baixaId;
+  const isVinculado = Boolean(entry.parcelamentoId);
   const isSynthetic = entry.synthetic === true;
+  const valor = entry.valor || entry.totalD;
+  const baixaId = !isAberto ? (entry.baixas?.[0]?.id ?? null) : null;
+
+  // Cor implícita do número:
+  let color = "#FF4757"; let bg = "rgba(255,71,87,0.06)"; // em aberto (vermelho)
+  if (placeholder) { color = "#6272A4"; bg = "transparent"; }
+  else if (!isAberto) { color = "#69FF47"; bg = "rgba(105,255,71,0.06)"; } // pago (verde)
+  else if (isVinculado) { color = "#FFB347"; bg = "rgba(255,179,71,0.08)"; } // vinculado a parcelamento (amarelo)
+
+  const menuBtn = { display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: "transparent", border: "none", color: "#F8F8F2", fontSize: "0.78rem", cursor: "pointer", borderRadius: 4 };
+
+  // Lançamentos reais: editar/baixar/vincular. INSS sintético (vem da guia): só "Confirmar pagamento".
+  const canConfirmInss = isSynthetic && isAberto && Boolean(onConfirmPagamento);
+  const hasActions = canConfirmInss || (!isSynthetic && (Boolean(onEdit) || (isAberto && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
+  const numText = fmtMoney(valor) ? `R$ ${fmtMoney(valor)}` : "—";
 
   return (
-    <td style={{ background: bg, padding: "5px 4px", textAlign: "center", borderRight: "1px solid #44475A", minWidth: 80, color: "#F8F8F2" }}>
-      <span style={{
-        display: "inline-block", fontSize: "0.55rem", fontWeight: 800, letterSpacing: "0.04em",
-        textTransform: "uppercase", padding: "1px 5px", borderRadius: 999,
-        background: badgeBg, color: badgeColor, border: `1px solid ${badgeBorder}`,
-      }}>
-        {badgeLabel}
-      </span>
-      <div style={{ fontSize: "0.7rem", fontWeight: 700, marginTop: 2, whiteSpace: "nowrap", color: "#F8F8F2" }}>
-        {fmtMoney(entry.valor || entry.totalD) ? `R$ ${fmtMoney(entry.valor || entry.totalD)}` : "—"}
-      </div>
+    <td style={{ position: "relative", background: bg, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", width: COL_W, minWidth: COL_W, color: "#F8F8F2" }}>
+      {hasActions ? (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          title={isVinculado ? "Vinculado a parcelamento" : (isAberto ? "Em aberto" : "Pago")}
+          style={{ background: "transparent", border: "none", cursor: "pointer", color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", width: "100%", padding: "2px 0" }}
+        >
+          {numText}
+        </button>
+      ) : (
+        <span
+          title={isSynthetic ? "Gerada a partir da guia INSS — gerencie o pagamento na aba Guias" : (isAberto ? "Em aberto" : "Pago")}
+          style={{ color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", display: "inline-block", padding: "2px 0" }}
+        >
+          {numText}
+        </span>
+      )}
       {entry.recalculatedAt && entry.recalculatedToValor != null && (
         <div
-          style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap", marginTop: 1 }}
-          title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)}. Valor original do lançamento: R$ ${fmtMoney(entry.recalculatedFromValor)}. Valor atualizado: R$ ${fmtMoney(entry.recalculatedToValor)}.`}
+          style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}
+          title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)}. Valor original: R$ ${fmtMoney(entry.recalculatedFromValor)}. Atualizado: R$ ${fmtMoney(entry.recalculatedToValor)}.`}
         >
           ↻ R$ {fmtMoney(entry.recalculatedToValor)}
         </div>
       )}
-      {isSynthetic && (
-        <div style={{ fontSize: "0.55rem", color: "#aeb6d3", marginTop: 3, fontStyle: "italic" }}>
-          via guia SERPRO
+      {open && hasActions && (
+        <div
+          onMouseLeave={() => setOpen(false)}
+          style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "#24253A", border: "1px solid #44475A", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.45)", padding: 6, minWidth: 190, display: "flex", flexDirection: "column", gap: 2 }}
+        >
+          {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
+          {isAberto && onBaixa && !isSynthetic && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Dar baixa</button>}
+          {!isAberto && baixaId && onCancelBaixa && !isSynthetic && <button onClick={() => { setOpen(false); onCancelBaixa(baixaId); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Cancelar baixa</button>}
+          {onVincular && !isSynthetic && (
+            isVinculado ? (
+              <button onClick={() => { setOpen(false); onDesvincular(entry); }} style={{ ...menuBtn, color: "#FFB347" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Desvincular do parcelamento</button>
+            ) : (
+              <div style={{ borderTop: `1px solid #44475A`, marginTop: 2, paddingTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                <select value={selParc} onChange={(e) => setSelParc(e.target.value)} style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2", padding: "4px 6px", fontSize: "0.72rem", colorScheme: "dark" }}>
+                  <option value="">— parcelamento —</option>
+                  {parcelamentosAtivos.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+                <button disabled={!selParc} onClick={() => { if (selParc) { setOpen(false); onVincular(entry, selParc); } }} style={{ ...menuBtn, color: selParc ? "#FFB347" : "#6272A4", cursor: selParc ? "pointer" : "default" }}>Vincular a parcelamento</button>
+              </div>
+            )
+          )}
+          {/* INSS sintético (vem da guia): única ação é confirmar o pagamento → fica verde (PAGO). */}
+          {canConfirmInss && <button onClick={() => { setOpen(false); onConfirmPagamento(entry); }} style={{ ...menuBtn, color: "#69FF47", fontWeight: 700 }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Confirmar pagamento</button>}
         </div>
       )}
-      <div style={{ display: "flex", gap: 2, justifyContent: "center", flexWrap: "wrap", marginTop: 3 }}>
-        {onEdit && !isSynthetic && (
-          <button
-            onClick={() => onEdit(entry)}
-            style={{
-              fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
-              background: "#BD93F9", color: "#1A1B26", border: "none",
-              borderRadius: 3, padding: "2px 5px",
-            }}
-          >
-            ✎
-          </button>
-        )}
-        {isAberto && onBaixa && !isSynthetic && (
-          <button
-            onClick={() => onBaixa(entry)}
-            style={{
-              fontSize: "0.6rem", fontWeight: 700, cursor: "pointer",
-              background: "#FF4757", color: "white", border: "none",
-              borderRadius: 3, padding: "2px 5px", whiteSpace: "nowrap",
-            }}
-          >
-            Baixar
-          </button>
-        )}
-        {!isAberto && baixaId && onCancelBaixa && !isSynthetic && (
-          confirmCancel ? (
-            <div style={{ display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "center" }}>
-              <button
-                onClick={() => { setConfirmCancel(false); onCancelBaixa(baixaId); }}
-                disabled={isCancelling}
-                style={{ fontSize: "0.55rem", fontWeight: 800, cursor: "pointer", background: "#FF4757", color: "white", border: "none", borderRadius: 3, padding: "2px 5px" }}
-              >
-                {isCancelling ? "..." : "Sim"}
-              </button>
-              <button
-                onClick={() => setConfirmCancel(false)}
-                style={{ fontSize: "0.55rem", fontWeight: 700, cursor: "pointer", background: "#44475A", color: "#F8F8F2", border: "none", borderRadius: 3, padding: "2px 5px" }}
-              >
-                Não
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmCancel(true)}
-              style={{
-                fontSize: "0.55rem", fontWeight: 700, cursor: "pointer",
-                background: "#44475A", color: "#aeb6d3", border: "none",
-                borderRadius: 3, padding: "2px 5px", whiteSpace: "nowrap",
-              }}
-            >
-              Cancelar
-            </button>
-          )
-        )}
-      </div>
     </td>
   );
 }
@@ -403,6 +354,7 @@ export function CircularTab({
   onSearchHistoricos,
   onCancelBaixa,
   parcelamentos, // Q9: hook completo (parcelamentos, payParcela, rescindir, etc)
+  onConfirmGuidePayment, // Q31: confirmar pagamento de guia (INSS sintético na Circular)
 }) {
   const [baixaEntry, setBaixaEntry] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
@@ -412,10 +364,16 @@ export function CircularTab({
   const [payingParcela, setPayingParcela] = useState(null); // { parcelamento, parcela }
   const currentYear = new Date().getFullYear();
 
+  // Q31: o quadro NÃO mostra os lançamentos do parcelamento (subtipo PARC_*) — eles ficam só nos
+  // cards de parcelamento abaixo. (Competências DAS/INSS vinculadas a um parcelamento continuam, em amarelo.)
+  const quadroProvisoes = useMemo(
+    () => (circularData?.provisoes || []).filter((p) => !String(p.subtipo || "").toUpperCase().startsWith("PARC")),
+    [circularData],
+  );
+
   const matrix = useMemo(() => {
-    if (!circularData?.provisoes) return {};
     const map = {};
-    for (const p of circularData.provisoes) {
+    for (const p of quadroProvisoes) {
       if (!p.subtipo) continue;
       const k = `${p.subtipo}__${p.competencia}`;
       const existing = map[k];
@@ -425,50 +383,68 @@ export function CircularTab({
       if (!isTemplate(existing) && p.statusPagamento === "ABERTO" && !isTemplate(p)) { map[k] = p; }
     }
     return map;
-  }, [circularData]);
+  }, [quadroProvisoes]);
 
   // Linhas da matriz são filtradas em 2 passos:
   // 1) Por regime tributário da empresa (Simples não tem IRPJ/CSLL/etc; Presumido não tem DAS)
   // 2) Apenas linhas que tenham pelo menos 1 entrada com dados (estética — esconde linhas vazias)
   const visibleRows = useMemo(() => {
     const byRegime = getSubtipoRowsForRegime(companyRegime);
-    if (!circularData?.provisoes) return byRegime;
-    const usedSubtipos = new Set(circularData.provisoes.map((p) => p.subtipo).filter(Boolean));
+    const usedSubtipos = new Set(quadroProvisoes.map((p) => p.subtipo).filter(Boolean));
     return byRegime.filter((r) => usedSubtipos.has(r.key));
-  }, [circularData, companyRegime]);
+  }, [quadroProvisoes, companyRegime]);
 
   const abertoByMonth = useMemo(() => {
-    if (!circularData?.provisoes) return {};
     const totals = {};
-    for (const p of circularData.provisoes) {
+    for (const p of quadroProvisoes) {
       if (p.statusPagamento === "ABERTO" && !p.placeholder && p.origem !== "TEMPLATE") {
         totals[p.competencia] = (totals[p.competencia] || 0) + (Number(p.totalD) || 0);
       }
     }
     return totals;
-  }, [circularData]);
+  }, [quadroProvisoes]);
 
   const monthKeys = MONTH_LABELS.map((_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
 
-  // Q17: totais por linha em TRIMESTRE (Q1–Q4) e ANUAL — calculados a partir da mesma
-  // matriz exibida (fonte única; evita divergência com o grid mensal).
-  const resumoTriAnual = useMemo(() => {
-    if (!circularData) return null;
-    const somaTri = (vals, qi) => vals.slice(qi * 3, qi * 3 + 3).reduce((s, v) => s + v, 0);
-    const rowVals = (getVal) => {
-      const vals = monthKeys.map((c) => Number(getVal(c)) || 0);
-      return { q: [somaTri(vals, 0), somaTri(vals, 1), somaTri(vals, 2), somaTri(vals, 3)], ano: vals.reduce((s, v) => s + v, 0) };
-    };
-    const linhas = visibleRows.map((r) => ({
-      label: r.label,
-      ...rowVals((c) => { const e = matrix[`${r.key}__${c}`]; return e ? (e.totalD || e.valor || 0) : 0; }),
-    }));
-    return {
-      linhas,
-      faturamento: rowVals((c) => circularData.receitas?.[c] || 0),
-      aberto: rowVals((c) => abertoByMonth[c] || 0),
-    };
-  }, [circularData, matrix, visibleRows, abertoByMonth, monthKeys]);
+  // Q31: quadro transposto — meses nas linhas, impostos nas colunas (+ Faturamento, Total em aberto).
+  // Valor numérico de uma coluna num mês (impostos via matrix; colunas especiais por chave).
+  const yy = String(year).slice(2);
+  const cellNum = (colKey, comp) => {
+    if (colKey === "__FAT__") return Number(circularData?.receitas?.[comp]) || 0;
+    if (colKey === "__ABERTO__") return Number(abertoByMonth[comp]) || 0;
+    const e = matrix[`${colKey}__${comp}`];
+    return e ? Number(e.totalD || e.valor || 0) : 0;
+  };
+  const sumQuarter = (colKey, qi) => monthKeys.slice(qi * 3, qi * 3 + 3).reduce((s, c) => s + cellNum(colKey, c), 0);
+  const sumYear = (colKey) => monthKeys.reduce((s, c) => s + cellNum(colKey, c), 0);
+
+  // Q31: parcelamentos ativos (pra vincular competências) + handlers de vínculo (só marca).
+  const parcelamentosAtivos = (parcelamentos?.parcelamentos || []).filter((p) => p.status === "ATIVO");
+  async function handleVincular(entry, parcId) {
+    if (!parcelamentos?.vincularEntry) return;
+    await parcelamentos.vincularEntry(entry.id, parcId);
+    await onLoad(year, competencia);
+  }
+  async function handleDesvincular(entry) {
+    if (!parcelamentos?.vincularEntry) return;
+    await parcelamentos.vincularEntry(entry.id, null);
+    await onLoad(year, competencia);
+  }
+  // Q31: confirmar pagamento do INSS sintético — roteado pela guia (synthetic-inss-<guideId>).
+  async function handleConfirmInss(entry) {
+    if (!onConfirmGuidePayment) return;
+    const guideId = String(entry.id || "").replace("synthetic-inss-", "");
+    if (!guideId) return;
+    await onConfirmGuidePayment(guideId);
+    await onLoad(year, competencia);
+  }
+
+  // Estilos do quadro transposto — TODAS as colunas com a mesma largura (COL_W).
+  const headCellStyle = { width: COL_W, minWidth: COL_W, padding: "8px 6px", textAlign: "center", fontSize: "0.82rem", fontWeight: 700, color: "#F8F8F2", letterSpacing: "0.01em", borderRight: "1px solid #44475A", borderBottom: "2px solid #44475A", lineHeight: 1.2 };
+  const headStickyStyle = { ...headCellStyle, textAlign: "center", position: "sticky", left: 0, background: "#282A36", zIndex: 10 };
+  const monthStickyStyle = { width: COL_W, minWidth: COL_W, padding: "8px 8px", fontWeight: 700, fontSize: "0.9rem", textAlign: "center", borderRight: "2px solid #44475A", borderBottom: "1px solid #44475A", position: "sticky", left: 0, background: "#21222C", zIndex: 5, whiteSpace: "nowrap", color: "#F8F8F2" };
+  const extraCellStyle = { width: COL_W, minWidth: COL_W, padding: "8px 6px", textAlign: "center", borderRight: "1px solid #44475A", fontSize: "0.9rem" };
+  const subCellStyle = { width: COL_W, minWidth: COL_W, padding: "8px 6px", textAlign: "center", borderRight: "1px solid #44475A", fontSize: "0.9rem", color: "#F8F8F2" };
 
   async function handleEditSave(form) {
     if (!editEntry || !onUpdateEntry) return;
@@ -503,7 +479,7 @@ export function CircularTab({
     <div style={{ padding: "var(--space-3) var(--space-4)", width: "100%", background: "#1A1B26", minHeight: "100%" }}>
       {/* Cabeçalho */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: "1rem", fontWeight: 600, color: "#F8F8F2" }}>Circular — Provisões e Pagamentos</h2>
+        <h2 style={{ margin: 0, fontSize: "1.6rem", fontWeight: 700, color: "#F8F8F2" }}>Circular</h2>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
           <button
@@ -558,26 +534,6 @@ export function CircularTab({
       {/* Operações Fiscais removidas: ações (Buscar Guias, Verificar Pagtos, Sincronizar INSS)
           ficam nas abas Guias/Configurações; Circular foca só na tabela. */}
 
-      {/* Legenda — paleta dark consistente com o resto do app */}
-      <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: "0.75rem", color: "#aeb6d3", flexWrap: "wrap" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(255, 71, 87, 0.20)", border: "1px solid #FF4757", display: "inline-block" }} />
-          Em aberto
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(105, 255, 71, 0.20)", border: "1px solid #69FF47", display: "inline-block" }} />
-          Pago
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(255, 179, 71, 0.20)", border: "1px solid #FFB347", display: "inline-block" }} />
-          Aguardando valor
-        </span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 2, background: "rgba(139, 233, 253, 0.20)", border: "1px solid #8BE9FD", display: "inline-block" }} />
-          Faturamento
-        </span>
-      </div>
-
       {loading && (
         <p style={{ color: "#6272A4", textAlign: "center", padding: 32 }}>Carregando...</p>
       )}
@@ -590,150 +546,90 @@ export function CircularTab({
 
       {!loading && circularData && (
         <div style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", tableLayout: "auto", color: "#F8F8F2" }}>
+          <table style={{ width: (1 + visibleRows.length + 2) * COL_W, minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", color: "#F8F8F2" }}>
             <thead>
               <tr style={{ background: "#282A36" }}>
-                <th style={{
-                  padding: "6px 10px", textAlign: "left", fontSize: "0.7rem", fontWeight: 700,
-                  color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.05em",
-                  borderRight: "2px solid #44475A", borderBottom: "2px solid #44475A",
-                  position: "sticky", left: 0, background: "#282A36", zIndex: 10,
-                  minWidth: 160,
-                }}>
-                  Obrigação
-                </th>
-                {MONTH_LABELS.map((m, i) => (
-                  <th key={i} style={{
-                    padding: "6px 4px", textAlign: "center", fontSize: "0.7rem", fontWeight: 700,
-                    color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.05em",
-                    borderRight: "1px solid #44475A", borderBottom: "2px solid #44475A",
-                    minWidth: 80,
-                  }}>
-                    {m}/{String(year).slice(2)}
-                  </th>
+                <th style={headStickyStyle}>Mês</th>
+                {visibleRows.map((col) => (
+                  <th key={col.key} style={headCellStyle}>{col.label}</th>
                 ))}
+                <th style={{ ...headCellStyle, color: "#8BE9FD" }}>Faturamento</th>
+                <th style={{ ...headCellStyle, color: "#FF4757" }}>Total em aberto</th>
               </tr>
             </thead>
             <tbody>
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={13} style={{ padding: 24, textAlign: "center", color: "#aeb6d3", fontStyle: "italic" }}>
+                  <td colSpan={3 + visibleRows.length} style={{ padding: 24, textAlign: "center", color: "#aeb6d3", fontStyle: "italic" }}>
                     Nenhuma provisão registrada para {year}. Crie lançamentos do tipo Provisão na aba Lançamentos.
                   </td>
                 </tr>
               )}
-              {visibleRows.map((row) => (
-                <tr key={row.key}>
-                  <td style={{
-                    padding: "6px 10px", fontWeight: 600, fontSize: "0.8125rem",
-                    borderRight: "2px solid #44475A", borderBottom: "1px solid #44475A",
-                    position: "sticky", left: 0, background: "#21222C", zIndex: 5,
-                    whiteSpace: "nowrap", color: "#F8F8F2",
-                  }}>
-                    {row.label}
-                  </td>
-                  {monthKeys.map((comp) => (
-                    <PagamentoCell
-                      key={comp}
-                      entry={matrix[`${row.key}__${comp}`]}
-                      onBaixa={(entry) => setBaixaEntry(entry)}
-                      onEdit={onUpdateEntry ? (entry) => setEditEntry(entry) : null}
-                      onCancelBaixa={onCancelBaixa ? handleCancelBaixa : null}
-                      cancellingBaixaId={cancellingBaixaId}
-                    />
-                  ))}
-                </tr>
-              ))}
-
-              {/* Total em Aberto */}
-              <tr style={{ borderTop: "2px solid #44475A", background: "rgba(255, 71, 87, 0.10)" }}>
-                <td style={{
-                  padding: "6px 10px", fontWeight: 700, fontSize: "0.8125rem",
-                  borderRight: "2px solid #44475A",
-                  position: "sticky", left: 0, background: "rgba(255, 71, 87, 0.10)", zIndex: 5,
-                  whiteSpace: "nowrap", color: "#FF4757",
-                }}>
-                  Total em Aberto
-                </td>
-                {monthKeys.map((comp) => {
-                  const total = abertoByMonth[comp];
-                  return (
-                    <td key={comp} style={{ padding: "6px 4px", textAlign: "center", borderRight: "1px solid #44475A" }}>
-                      {total ? (
-                        <span style={{ fontWeight: 700, fontSize: "0.75rem", color: "#FF4757" }}>
-                          R$ {fmtMoney(total)}
-                        </span>
-                      ) : (
-                        <span style={{ color: "#44475A", fontSize: "0.75rem" }}>—</span>
-                      )}
-                    </td>
+              {monthKeys.flatMap((comp, i) => {
+                const fat = circularData.receitas?.[comp];
+                const aberto = abertoByMonth[comp];
+                const rows = [(
+                  <tr key={comp}>
+                    <td style={monthStickyStyle}>{MONTH_LABELS[i]}/{yy}</td>
+                    {visibleRows.map((col) => (
+                      <PagamentoCell
+                        key={col.key}
+                        entry={matrix[`${col.key}__${comp}`]}
+                        onBaixa={(entry) => setBaixaEntry(entry)}
+                        onEdit={onUpdateEntry ? (entry) => setEditEntry(entry) : null}
+                        onCancelBaixa={onCancelBaixa ? handleCancelBaixa : null}
+                        parcelamentosAtivos={parcelamentosAtivos}
+                        onVincular={parcelamentos?.vincularEntry ? handleVincular : null}
+                        onDesvincular={handleDesvincular}
+                        onConfirmPagamento={onConfirmGuidePayment ? handleConfirmInss : null}
+                      />
+                    ))}
+                    <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtMoney(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
+                    <td style={extraCellStyle}>{aberto ? <span style={{ color: "#FF4757", fontWeight: 700 }}>R$ {fmtMoney(aberto)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
+                  </tr>
+                )];
+                if ((i + 1) % 3 === 0) {
+                  const qi = Math.floor(i / 3);
+                  const triStyle = { ...subCellStyle, fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" };
+                  rows.push(
+                    <tr key={`q${qi}`} style={{ background: "#282A36" }}>
+                      <td style={{ ...monthStickyStyle, background: "#282A36", color: "#aeb6d3", fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" }}>{qi + 1}º Trimestre</td>
+                      {visibleRows.map((col) => { const v = sumQuarter(col.key, qi); return <td key={col.key} style={{ ...triStyle, color: "#aeb6d3" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })}
+                      {(() => { const v = sumQuarter("__FAT__", qi); return <td style={{ ...triStyle, color: "#8BE9FD" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })()}
+                      {(() => { const v = sumQuarter("__ABERTO__", qi); return <td style={{ ...triStyle, color: "#FF4757" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })()}
+                    </tr>
                   );
-                })}
-              </tr>
-
-              {/* Faturamento */}
-              <tr style={{ borderTop: "1px solid #44475A" }}>
-                <td style={{
-                  padding: "6px 10px", fontWeight: 600, fontSize: "0.8125rem",
-                  borderRight: "2px solid #44475A",
-                  position: "sticky", left: 0, background: "rgba(139, 233, 253, 0.10)", zIndex: 5,
-                  whiteSpace: "nowrap", color: "#8BE9FD",
-                }}>
-                  Faturamento
-                </td>
-                {monthKeys.map((comp) => (
-                  <FaturamentoCell key={comp} valor={circularData.receitas?.[comp]} />
-                ))}
+                }
+                return rows;
+              })}
+              {/* Anual */}
+              <tr style={{ background: "#1f2030", borderTop: "3px solid #44475A" }}>
+                <td style={{ ...monthStickyStyle, background: "#1f2030", fontWeight: 800 }}>Anual</td>
+                {visibleRows.map((col) => { const v = sumYear(col.key); return <td key={col.key} style={{ ...subCellStyle, fontWeight: 800 }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })}
+                {(() => { const v = sumYear("__FAT__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#8BE9FD" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })()}
+                {(() => { const v = sumYear("__ABERTO__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#FF4757" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })()}
               </tr>
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Q17: totais por linha — TRIMESTRE (Q1–Q4) e ANUAL */}
-      {!loading && circularData && resumoTriAnual && (
-        <div style={{ marginTop: 20, overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem", color: "#F8F8F2" }}>
-            <thead>
-              <tr style={{ background: "#282A36" }}>
-                {["Linha", "Trim. 1", "Trim. 2", "Trim. 3", "Trim. 4", "Anual"].map((h, i) => (
-                  <th key={h} style={{
-                    padding: "6px 10px", textAlign: i === 0 ? "left" : "right", fontSize: "0.7rem", fontWeight: 700,
-                    color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.05em",
-                    borderBottom: "2px solid #44475A",
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {[...resumoTriAnual.linhas, { label: "Faturamento", ...resumoTriAnual.faturamento, _accent: "#8BE9FD" }, { label: "Total em Aberto", ...resumoTriAnual.aberto, _accent: "#FF4757" }].map((r) => (
-                <tr key={r.label} style={{ borderBottom: "1px solid #44475A" }}>
-                  <td style={{ padding: "6px 10px", fontWeight: 600, color: r._accent || "#F8F8F2", whiteSpace: "nowrap" }}>{r.label}</td>
-                  {r.q.map((v, qi) => (
-                    <td key={qi} style={{ padding: "6px 10px", textAlign: "right", color: v ? "#F8F8F2" : "#44475A" }}>
-                      {v ? `R$ ${fmtMoney(v)}` : "—"}
-                    </td>
-                  ))}
-                  <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, color: r._accent || "#F8F8F2" }}>
-                    {r.ano ? `R$ ${fmtMoney(r.ano)}` : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Q9: lista de parcelamentos (Simples, INSS, etc) — embaixo da matriz */}
+      {/* Q9: lista de parcelamentos (Simples, INSS, etc) — embaixo do quadro */}
       {parcelamentos && (
         <div style={{ marginTop: 20 }}>
+          <ConferenciaParcelasPanel
+            listConferencia={parcelamentos.listConferencia}
+            aprovarConferencia={parcelamentos.aprovarConferencia}
+          />
           <ParcelamentosList
-            parcelamentos={parcelamentos.parcelamentos}
+            parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO")}
             loading={parcelamentos.loading}
-            onPayParcela={(parc, parcela) => setPayingParcela({ parcelamento: parc, parcela })}
-            onRescindir={async (parcId) => {
-              try { await parcelamentos.rescindir(parcId); } catch {}
+            onRescindir={async (parcId, body) => {
+              await parcelamentos.rescindir(parcId, body);
+              await onLoad(year, competencia);
             }}
+            getConfig={parcelamentos.getConfig}
+            saveConfig={parcelamentos.saveConfig}
           />
         </div>
       )}

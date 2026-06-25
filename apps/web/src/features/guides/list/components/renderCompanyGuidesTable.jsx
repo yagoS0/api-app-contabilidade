@@ -3,7 +3,7 @@ import { createApiClient } from "../../../../api/client";
 import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
-import { GuideLinkParcelamentoModal } from "../../../accounting/parcelamento/components/ParcelamentoModals";
+import { ParcelamentoIngestaoModal, ParcelamentoEntradaModal } from "../../../accounting/parcelamento/components/ParcelamentoModals";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -22,107 +22,102 @@ function prevMonthCompetencia() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-const STATE_STYLE = {
-  present: { color: "#69FF47", label: "presente" },
-  vazio: { color: "#FFB347", label: "vazio" },
-  missing: { color: "#FF5757", label: "faltando" },
-  na: { color: "#6272A4", label: "—" },
-};
-
 const expectedGuidesApi = createApiClient();
 
-function ExpectedGuidesPanel({ companyId, competencia, onCompetenciaChange }) {
-  // Q19: competência é controlada pelo pai (mesmo seletor filtra a tabela de guias abaixo).
+// Dropdown "Marcar vazio" — lista as guias OBRIGATÓRIAS que ainda faltam no mês e permite marcá-las
+// como VAZIO (ausência confirmada). Ao marcar, a guia aparece na própria tabela de Guias como VAZIO.
+function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) {
   const [compliance, setCompliance] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [busyTipo, setBusyTipo] = useState(null);
-  const [monthClosed, setMonthClosed] = useState(false); // Q18: mês fechado bloqueia Vazio/upload
+  const [monthClosed, setMonthClosed] = useState(false); // Q18: mês fechado bloqueia
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef(null);
 
-  async function load(comp) {
-    setLoading(true);
-    try {
-      const [r, fech] = await Promise.all([
-        expectedGuidesApi.getExpectedGuides(companyId, comp),
-        expectedGuidesApi.getFechamentoContabil(companyId, comp).catch(() => null),
-      ]);
-      setCompliance(r?.compliance || null);
-      setMonthClosed(Boolean(fech?.fechado));
-    } catch { setCompliance(null); }
-    setLoading(false);
-  }
-  useEffect(() => { load(competencia); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [companyId, competencia]);
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const [r, fech] = await Promise.all([
+          expectedGuidesApi.getExpectedGuides(companyId, competencia),
+          expectedGuidesApi.getFechamentoContabil(companyId, competencia).catch(() => null),
+        ]);
+        if (cancel) return;
+        setCompliance(r?.compliance || null);
+        setMonthClosed(Boolean(fech?.fechado));
+      } catch { if (!cancel) setCompliance(null); }
+    })();
+    return () => { cancel = true; };
+  }, [companyId, competencia, refreshKey]);
 
-  async function setVazio(tipo, undo) {
-    setBusyTipo(tipo);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  // Candidatos = guias obrigatórias que ainda faltam (não presentes e ainda não marcadas vazio).
+  const candidatos = EXPECTED_GUIDE_ROWS.filter((r) => {
+    const node = compliance?.[r.key];
+    return node?.required && node.state === "missing";
+  });
+
+  async function marcar(tipo) {
+    setBusy(true);
     try {
-      if (undo) await expectedGuidesApi.undoGuideVazio(companyId, tipo, competencia);
-      else await expectedGuidesApi.markGuideVazio(companyId, tipo, competencia);
-      await load(competencia);
+      await expectedGuidesApi.markGuideVazio(companyId, tipo, competencia);
+      setOpen(false);
+      if (onChanged) await onChanged();
     } catch (err) {
       // eslint-disable-next-line no-alert
-      window.alert(err?.message || "Falha ao atualizar status.");
-    } finally { setBusyTipo(null); }
+      window.alert(err?.message || "Falha ao marcar vazio.");
+    } finally { setBusy(false); }
   }
 
-  const rows = EXPECTED_GUIDE_ROWS.filter((r) => compliance?.[r.key]?.required);
-
   return (
-    <div style={{
-      marginBottom: 16, padding: "12px 14px", background: "#24253A",
-      border: "1px solid #44475A", borderRadius: 8,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
-        <strong style={{ color: "#F8F8F2", fontSize: "0.9rem" }}>Guias do mês (esperadas)</strong>
-        <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
-          Competência:
-          <input type="month" value={competencia} onChange={(e) => onCompetenciaChange(e.target.value)}
-            style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 8px", colorScheme: "dark" }} />
-        </label>
-        {loading && <span style={{ color: "#6272A4", fontSize: "0.75rem" }}>carregando…</span>}
-        {monthClosed && <span style={{ color: "#8BE9FD", fontSize: "0.75rem", fontWeight: 700 }}>🔒 Mês fechado</span>}
-      </div>
-      {!loading && rows.length === 0 && (
-        <div style={{ color: "#6272A4", fontSize: "0.8rem" }}>Nenhuma guia obrigatória para esta empresa/competência.</div>
-      )}
-      <div style={{ display: "grid", gap: 6 }}>
-        {rows.map((r) => {
-          const node = compliance[r.key] || {};
-          const st = STATE_STYLE[node.state] || STATE_STYLE.na;
-          const isVazio = node.state === "vazio";
-          const isPresent = node.state === "present";
-          return (
-            <div key={r.key} style={{
-              display: "grid", gridTemplateColumns: "1fr 110px 130px", gap: 8, alignItems: "center",
-              padding: "6px 8px", borderBottom: "1px solid #2a2c3d",
-            }}>
-              <span style={{ color: "#F8F8F2", fontSize: "0.82rem" }}>{r.label}</span>
-              <span style={{
-                justifySelf: "start", fontSize: "0.7rem", fontWeight: 700, padding: "2px 8px",
-                borderRadius: 999, color: st.color, background: `${st.color}22`, border: `1px solid ${st.color}`,
-              }}>
-                {st.label}
-              </span>
-              <span style={{ justifySelf: "end" }}>
-                {isPresent ? null : isVazio ? (
-                  <button type="button" disabled={busyTipo === r.tipo || monthClosed}
-                    onClick={() => setVazio(r.tipo, true)}
-                    title={monthClosed ? "Mês fechado — reabra a empresa para alterar." : undefined}
-                    style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: monthClosed ? "not-allowed" : "pointer", background: "transparent", color: "#aeb6d3", border: "1px solid #44475A", borderRadius: 4, opacity: monthClosed ? 0.5 : 1 }}>
-                    desfazer
-                  </button>
-                ) : (
-                  <button type="button" disabled={busyTipo === r.tipo || monthClosed}
-                    onClick={() => setVazio(r.tipo, false)}
-                    title={monthClosed ? "Mês fechado — reabra a empresa para alterar." : undefined}
-                    style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: monthClosed ? "not-allowed" : "pointer", background: monthClosed ? "#44475A" : "#FFB347", color: monthClosed ? "#888" : "#1A1B26", border: "none", borderRadius: 4, fontWeight: 700 }}>
-                    Vazio
-                  </button>
-                )}
-              </span>
+    <div ref={ref} style={{ position: "relative" }}>
+      <Button
+        variant="secondary" size="sm" type="button"
+        disabled={busy || monthClosed}
+        title={monthClosed ? "Mês fechado — reabra a empresa para alterar." : "Marcar uma guia obrigatória como vazia neste mês"}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {monthClosed ? "🔒 Marcar vazio" : "Marcar vazio ▾"}
+      </Button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
+          background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 200, overflow: "hidden",
+        }}>
+          <div style={{
+            padding: "8px 12px", fontSize: "0.7rem", color: "#6272A4",
+            textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700,
+            borderBottom: "1px solid #44475A",
+          }}>
+            Marcar vazia ({competencia})
+          </div>
+          {candidatos.length === 0 ? (
+            <div style={{ padding: "8px 12px", fontSize: "0.8rem", color: "#6272A4" }}>
+              Nenhuma guia obrigatória pendente.
             </div>
-          );
-        })}
-      </div>
+          ) : candidatos.map((r) => (
+            <button
+              key={r.key} type="button" disabled={busy}
+              onClick={() => marcar(r.tipo)}
+              style={{
+                display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
+                background: "transparent", border: "none", color: "#F8F8F2",
+                fontSize: "0.875rem", cursor: "pointer", fontWeight: 500,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -305,6 +300,26 @@ export function CompanyGuidesTable({
 }) {
   // Q9.7: state do modal de linking (guia recém-identificada aguardando decisão de vincular)
   const [linkingGuide, setLinkingGuide] = useState(null);
+  // Q28 Fase 1: modal de entrada (SERPRO × manual) + prefill vindo da consulta SERPRO (sem guia).
+  const [entradaOpen, setEntradaOpen] = useState(false);
+  const [serproPrefill, setSerproPrefill] = useState(null);
+  // Anexar a um parcelamento ATIVO existente: a guia subida vira a próxima parcela dele.
+  const [attachParc, setAttachParc] = useState(null);
+  // "Marcar vazio": força recarga do dropdown + da lista de guias quando o estado muda.
+  const [vazioRefreshKey, setVazioRefreshKey] = useState(0);
+  async function refreshAfterVazio() {
+    setVazioRefreshKey((k) => k + 1);
+    if (onRefresh) await onRefresh();
+  }
+  async function handleUndoVazio(guide) {
+    try {
+      await expectedGuidesApi.undoGuideVazio(companyId, guide.tipo, guide.competencia);
+      await refreshAfterVazio();
+    } catch (err) {
+      // eslint-disable-next-line no-alert
+      window.alert(err?.message || "Falha ao desfazer vazio.");
+    }
+  }
   // Tipos disponíveis no dropdown filtrados pelo regime da empresa.
   // Simples não vê IRPJ/CSLL/PIS/COFINS/ISS; Presumido não vê SIMPLES.
   const availableUploadTypes = useMemo(
@@ -319,6 +334,7 @@ export function CompanyGuidesTable({
 
   // Upload flow (modal split): tipo escolhido no dropdown + arquivo + estado de salvamento
   const [uploadTipo, setUploadTipo] = useState(null);  // "DAS"|"INSS"|... — null = modal fechado
+  const [uploadAsParcelamento, setUploadAsParcelamento] = useState(false); // Q22: upload→ingestão parcelamento
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -395,8 +411,10 @@ export function CompanyGuidesTable({
   }
 
   // Fluxo novo de upload: usuário escolhe tipo no dropdown → file picker → modal split com PDF lado-a-lado
-  function handleStartUpload(tipo) {
+  // Q22: asParcelamento=true → ao salvar, abre o modal de ingestão de parcelamento (não fecha só).
+  function handleStartUpload(tipo, asParcelamento = false) {
     setUploadMenuOpen(false);
+    setUploadAsParcelamento(asParcelamento);
     setUploadTipo(tipo);
     // Dispara file picker no próximo tick (precisa do input já no DOM)
     requestAnimationFrame(() => fileInputRef.current?.click());
@@ -421,6 +439,11 @@ export function CompanyGuidesTable({
       // Sucesso: fecha modal
       setUploadFile(null);
       setUploadTipo(null);
+      // Q22: se foi upload de parcelamento, abre o modal de ingestão com a guia criada.
+      if (uploadAsParcelamento && result?.guide) {
+        setLinkingGuide(result.guide);
+      }
+      setUploadAsParcelamento(false);
       return { ok: true };
     }
     return { ok: false, message: result?.message || result?.error || "Falha ao enviar guia." };
@@ -429,6 +452,7 @@ export function CompanyGuidesTable({
   function handleCaptureCancel() {
     setUploadFile(null);
     setUploadTipo(null);
+    setUploadAsParcelamento(false);
   }
 
   // Fluxo de completar guia já existente (modal split com fetch do PDF)
@@ -444,7 +468,8 @@ export function CompanyGuidesTable({
         const guideAfter = { ...completingGuide, ...metadata, guideId: gid, id: gid };
         const tipoUpper = String(guideAfter.tipo || metadata?.tipo || "").toUpperCase();
         const isParcelamentoCandidate = ["SIMPLES", "INSS", "DARF", "PIS", "COFINS", "IRPJ", "CSLL", "ISS"].includes(tipoUpper);
-        if (parcelamentos && accountingFunctions && isParcelamentoCandidate) {
+        // Q21: o modal de ingestão v2 não depende de accountingFunctions.
+        if (parcelamentos && isParcelamentoCandidate) {
           setLinkingGuide(guideAfter);
         }
         setCompletingGuide(null);
@@ -509,14 +534,6 @@ export function CompanyGuidesTable({
         />
       )}
 
-      {/* Q19: guias esperadas do mês + botão Vazio. O seletor de competência deste
-          painel é o ÚNICO filtro — controla também a tabela de guias abaixo. */}
-      <ExpectedGuidesPanel
-        companyId={companyId}
-        competencia={filterCompetencia}
-        onCompetenciaChange={setFilterCompetencia}
-      />
-
       {/* Action toolbar — always visible above the table */}
       <div className="guides-toolbar">
         <div className="guides-toolbar__actions">
@@ -561,11 +578,33 @@ export function CompanyGuidesTable({
                         {tipo}
                       </button>
                     ))}
+                    {/* Q28: abre o modal de ENTRADA (consultar nº no SERPRO ou subir guia). */}
+                    <button
+                      type="button"
+                      onClick={() => { setUploadMenuOpen(false); setEntradaOpen(true); }}
+                      style={{
+                        display: "block", width: "100%", textAlign: "left",
+                        padding: "8px 12px", background: "transparent", border: "none",
+                        borderTop: "1px solid #44475A",
+                        color: "#FFB347", fontSize: "0.875rem", cursor: "pointer", fontWeight: 600,
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      Parcelamento…
+                    </button>
                   </div>
                 )}
               </div>
             </>
           )}
+          {/* Marcar guias obrigatórias como VAZIO no mês (aparecem na tabela abaixo como vazio). */}
+          <MarcarVazioDropdown
+            companyId={companyId}
+            competencia={filterCompetencia}
+            refreshKey={vazioRefreshKey}
+            onChanged={refreshAfterVazio}
+          />
           <Button
             variant="secondary" size="sm"
             onClick={handleBulkResend}
@@ -600,6 +639,15 @@ export function CompanyGuidesTable({
                   ✎ Completar
                 </Button>
               )}
+              {/* Q21: marcar a guia selecionada como parcela de parcelamento (entrada manual). */}
+              {parcelamentos && selectedCount === 1 && selectedGuide && (
+                <Button
+                  variant="secondary" size="sm"
+                  onClick={() => setLinkingGuide(selectedGuide)}
+                >
+                  Parcelamento…
+                </Button>
+              )}
               {onDeleteGuide && (
                 <Button
                   variant="danger" size="sm"
@@ -626,7 +674,16 @@ export function CompanyGuidesTable({
       </div>
 
       <div className="guides-list-panel">
-        <h2 className="guides-list-panel__title">Guias</h2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
+          <h2 className="guides-list-panel__title" style={{ margin: 0 }}>Guias</h2>
+          <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
+            Competência:
+            <input
+              type="month" value={filterCompetencia} onChange={(e) => setFilterCompetencia(e.target.value)}
+              style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 8px", colorScheme: "dark" }}
+            />
+          </label>
+        </div>
 
         {loadingGuides ? (
           <p className="text-muted">Carregando...</p>
@@ -682,7 +739,11 @@ export function CompanyGuidesTable({
                         aria-label={`Selecionar guia ${guide.tipo} ${guide.competencia}`}
                       />
                     </span>
-                    <span className="guides-grid__cell guides-grid__cell--type" role="cell">{guide.tipo || "-"}</span>
+                    <span className="guides-grid__cell guides-grid__cell--type" role="cell">
+                      {guide.parcelamentoId
+                        ? `Parc. ${guide.parcelamentoTipo || guide.tipo || ""}${guide.parcelamentoNumero ? ` nº${guide.parcelamentoNumero}` : ""}${guide.numeroParcela ? ` (${guide.numeroParcela})` : ""}`.trim()
+                        : (guide.tipo || "-")}
+                    </span>
                     <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{guide.competencia || "-"}</span>
                     <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell">
                       {fmtMoney(guide.valor)}
@@ -699,8 +760,18 @@ export function CompanyGuidesTable({
                     <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${status.tone}`} role="cell">
                       {status.label}
                     </span>
-                    <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${paymentStatus.tone}`} role="cell">
-                      {paymentStatus.label}
+                    <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${paymentStatus.tone}`} role="cell"
+                      onClick={(e) => e.stopPropagation()}>
+                      {guide.status === "VAZIO" ? (
+                        <button
+                          type="button"
+                          onClick={() => handleUndoVazio(guide)}
+                          title="Desfazer marcação de vazio"
+                          style={{ fontSize: "0.7rem", padding: "3px 8px", cursor: "pointer", background: "transparent", color: "#aeb6d3", border: "1px solid #44475A", borderRadius: 4 }}
+                        >
+                          desfazer vazio
+                        </button>
+                      ) : paymentStatus.label}
                     </span>
                     <span
                       className={`guides-grid__cell guides-grid__cell--email guides-grid__tone guides-grid__tone--${emailStatus.tone}`}
@@ -722,30 +793,41 @@ export function CompanyGuidesTable({
         )}
       </div>
 
-      {/* Q9.7: modal de linking de guia a parcelamento (3 opções: não / existente / novo) */}
-      {linkingGuide && parcelamentos && accountingFunctions && (
-        <GuideLinkParcelamentoModal
+      {/* Q28 Fase 1: porta de entrada do parcelamento — consultar nº no SERPRO ou subir guia. */}
+      {entradaOpen && parcelamentos && (
+        <ParcelamentoEntradaModal
+          parcelamentosAtivos={parcelamentos.parcelamentos || []}
+          onChooseAttach={(parc) => { setEntradaOpen(false); setAttachParc(parc); handleStartUpload("SIMPLES", true); }}
+          onConsultSerpro={parcelamentos.consultarSerpro}
+          onResolved={(prefill) => { setEntradaOpen(false); setSerproPrefill(prefill); }}
+          onChooseUpload={() => { setEntradaOpen(false); setAttachParc(null); handleStartUpload("SIMPLES", true); }}
+          onClose={() => setEntradaOpen(false)}
+        />
+      )}
+
+      {/* Q23/Q28: passo de config — provisão + pagamento. Com guia (manual) OU prefill SERPRO (sem guia). */}
+      {(linkingGuide || serproPrefill) && parcelamentos && (
+        <ParcelamentoIngestaoModal
           guide={linkingGuide}
-          parcelamentos={parcelamentos.parcelamentos}
-          accountingFunctions={accountingFunctions}
+          prefill={serproPrefill}
+          existingParc={attachParc}
           saving={parcelamentos.saving}
-          onSkip={async () => {
+          getContasProvisao={parcelamentos.getContasProvisao}
+          onSkip={() => { setLinkingGuide(null); setSerproPrefill(null); setAttachParc(null); }}
+          onClose={() => { setLinkingGuide(null); setSerproPrefill(null); setAttachParc(null); }}
+          onIngest={async (body) => {
+            // Propaga erro pro modal exibir (antes era engolido → "nada acontecia").
+            await parcelamentos.ingest(body);
+            // Anexo a parcelamento existente: contabiliza a parcela (gera a baixa "PARC X/Y").
+            const gid = linkingGuide?.guideId || linkingGuide?.id;
+            if (attachParc && gid && onConfirmGuidePayment) {
+              try { await onConfirmGuidePayment(gid); } catch { /* handler já exibe o erro (ex.: mês fechado) */ }
+            }
             setLinkingGuide(null);
+            setSerproPrefill(null);
+            setAttachParc(null);
+            if (onRefresh) onRefresh();
           }}
-          onLink={async (parcId, numeroParcela) => {
-            const guideId = linkingGuide.guideId || linkingGuide.id;
-            try {
-              await parcelamentos.linkGuide(parcId, { guideId, numeroParcela });
-            } catch {}
-            setLinkingGuide(null);
-          }}
-          onCreateAndLink={async (body) => {
-            try {
-              await parcelamentos.create(body);
-            } catch {}
-            setLinkingGuide(null);
-          }}
-          onClose={() => setLinkingGuide(null)}
         />
       )}
     </section>

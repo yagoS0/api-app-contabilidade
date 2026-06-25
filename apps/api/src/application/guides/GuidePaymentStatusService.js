@@ -30,11 +30,14 @@ export function canGuideConfirmPayment(guide) {
   return !isGuidePaid(guide);
 }
 
-export function canGuideRecalculate(guide, now = new Date()) {
+// Q29: recálculo liberado para QUALQUER guia SIMPLES do SERPRO ainda não paga —
+// vencida OU em aberto. O serviço SERPRO certo (COBRANCA17 vs GERARDAS12) é
+// escolhido na rota conforme o vencimento. (Antes exigia isGuideOverdue.)
+export function canGuideRecalculate(guide) {
   if (normalizeValue(guide?.source) !== "SERPRO") return false;
   if (normalizeValue(guide?.tipo) !== "SIMPLES") return false;
   if (isGuidePaid(guide)) return false;
-  return isGuideOverdue(guide, now);
+  return true;
 }
 
 async function updateGuidePaymentStatus(guideId, data) {

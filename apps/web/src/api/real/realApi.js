@@ -58,7 +58,7 @@ function mapKnownError(payload, status) {
     return "A competência informada é inválida para a consulta do SERPRO.";
   }
   if (code === "GUIDE_RECALCULATION_NOT_AVAILABLE") {
-    return "O recálculo só fica disponível após o vencimento da guia.";
+    return "O recálculo só está disponível para guias do Simples (SERPRO) ainda não pagas.";
   }
   if (code === "CIRCULAR_NAO_ENCONTRADA") {
     return "Nenhuma Circular foi encontrada para esta competência.";
@@ -110,20 +110,66 @@ function buildCompanyPayload(input) {
 // (ex.: painéis que fazem `createApiClient()` direto) caem aqui quando não receberam
 // `setAccessToken` — senão suas requisições saem sem Authorization (401 unauthorized).
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
-function readStoredToken() {
+// Q27.D: refresh token guardado pra renovar a sessão silenciosamente (sem relogin a cada 1h).
+const REFRESH_TOKEN_STORAGE_KEY = "portal_firm_refresh_token";
+function readStored(key) {
   try {
     if (typeof localStorage !== "undefined") {
-      return String(localStorage.getItem(TOKEN_STORAGE_KEY) || "").trim();
+      return String(localStorage.getItem(key) || "").trim();
     }
   } catch { /* ignore */ }
   return "";
 }
+function writeStored(key, value) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      if (value) localStorage.setItem(key, value);
+      else localStorage.removeItem(key);
+    }
+  } catch { /* ignore */ }
+}
+function readStoredToken() { return readStored(TOKEN_STORAGE_KEY); }
 
 export function createRealApi() {
   let accessToken = String(import.meta.env.VITE_API_TOKEN || "").trim();
   let unauthorizedHandler = null;
+  let refreshPromise = null; // single-flight: uma renovação concorrente só
 
-  async function request(path, options = {}) {
+  // Q27.D: tenta renovar o accessToken via /auth/refresh usando o refresh guardado.
+  // Usa fetch direto (não `request`) pra não recursar no 401. Atualiza memória + localStorage.
+  async function doRefresh() {
+    const refreshToken = readStored(REFRESH_TOKEN_STORAGE_KEY);
+    if (!refreshToken) return false;
+    if (!refreshPromise) {
+      const baseUrl = getApiBaseUrl();
+      refreshPromise = (async () => {
+        try {
+          const res = await fetch(`${baseUrl}/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken }),
+          });
+          if (!res.ok) return false;
+          const data = await res.json().catch(() => ({}));
+          const newAccess = String(data?.accessToken || "").trim();
+          const newRefresh = String(data?.refreshToken || "").trim();
+          if (!newAccess) return false;
+          accessToken = newAccess;
+          writeStored(TOKEN_STORAGE_KEY, newAccess);
+          if (newRefresh) writeStored(REFRESH_TOKEN_STORAGE_KEY, newRefresh);
+          return true;
+        } catch {
+          return false;
+        } finally {
+          // libera o single-flight no próximo tick
+          setTimeout(() => { refreshPromise = null; }, 0);
+        }
+      })();
+    }
+    return refreshPromise;
+  }
+
+  async function request(path, options = {}, _retried = false) {
     const baseUrl = getApiBaseUrl();
     const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
     const headers = {
@@ -142,6 +188,11 @@ export function createRealApi() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+      // Q27.D: 401 → tenta renovar UMA vez e repete a requisição original. Não tenta no /auth/*.
+      if (response.status === 401 && !_retried && !path.startsWith("/auth/")) {
+        const refreshed = await doRefresh();
+        if (refreshed) return request(path, options, true);
+      }
       if (response.status === 401 && typeof unauthorizedHandler === "function") {
         unauthorizedHandler({ path, payload, status: response.status });
       }
@@ -162,6 +213,7 @@ export function createRealApi() {
     },
     clearSession() {
       accessToken = "";
+      writeStored(REFRESH_TOKEN_STORAGE_KEY, ""); // Q27.D: limpa o refresh no logout
     },
     async login({ identifier, password }) {
       const payload = await request("/auth/login", {
@@ -169,6 +221,8 @@ export function createRealApi() {
         body: JSON.stringify({ identifier, password }),
       });
       accessToken = String(payload?.accessToken || "").trim();
+      // Q27.D: guarda o refresh token pra renovar a sessão silenciosamente.
+      writeStored(REFRESH_TOKEN_STORAGE_KEY, String(payload?.refreshToken || "").trim());
       return payload;
     },
     async me() {
@@ -465,6 +519,44 @@ export function createRealApi() {
         body: JSON.stringify(body),
       });
     },
+    // Q21/Q23: sobe guia manual como 1ª parcela → cria/anexa + provisão (≥3 linhas). Sem pagamento.
+    async ingestParcelamento(companyId, body) {
+      return request(`/firm/companies/${companyId}/parcelamentos/ingestao`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    // Q23: contas memorizadas das linhas-padrão da provisão (pré-preenche o modal).
+    async getContasProvisao(companyId, tipo) {
+      return request(`/firm/companies/${companyId}/parcelamentos/contas-provisao?tipo=${encodeURIComponent(tipo)}`);
+    },
+    // Q28 Fase 1: consulta um parcelamento no SERPRO por código (OBTERPARC164) p/ pré-preencher o modal.
+    async consultarParcelamentoSerpro(companyId, { tipo, numeroParcelamento }) {
+      return request(`/firm/companies/${companyId}/parcelamentos/consultar-serpro`, {
+        method: "POST",
+        body: JSON.stringify({ tipo, numeroParcelamento }),
+      });
+    },
+    // Q28 Fase 2: ver/editar a config de lançamento (provisão + pagamento) de um parcelamento.
+    async getParcelamentoConfig(companyId, parcId) {
+      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/config`);
+    },
+    async saveParcelamentoConfig(companyId, parcId, body) {
+      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/config`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+    },
+    // Q28 Fase 3: fila de conferência de parcelas (pagas a conferir / divergentes).
+    async getConferenciaParcelas(companyId) {
+      return request(`/firm/companies/${companyId}/parcelas/conferencia`);
+    },
+    async aprovarConferenciaParcelas(companyId, guideIds) {
+      return request(`/firm/companies/${companyId}/parcelas/conferencia/aprovar`, {
+        method: "POST",
+        body: JSON.stringify({ guideIds }),
+      });
+    },
     async linkGuideToParcelamento(companyId, parcId, { guideId, numeroParcela }) {
       return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/link-guide`, {
         method: "POST",
@@ -477,10 +569,17 @@ export function createRealApi() {
         body: JSON.stringify({ jurosValor, dataPagamento }),
       });
     },
-    async rescindirParcelamento(companyId, parcId, { dataRescisao, observacoes } = {}) {
+    async rescindirParcelamento(companyId, parcId, { dataRescisao, observacoes, rescisaoLines } = {}) {
       return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/rescindir`, {
         method: "POST",
-        body: JSON.stringify({ dataRescisao, observacoes }),
+        body: JSON.stringify({ dataRescisao, observacoes, rescisaoLines }),
+      });
+    },
+    // Q31 Parte D: vincula/desvincula uma provisão (competência aberta) a um parcelamento (só marca).
+    async vincularEntryParcelamento(companyId, entryId, parcelamentoId) {
+      return request(`/firm/companies/${companyId}/entries/${entryId}/vincular-parcelamento`, {
+        method: "POST",
+        body: JSON.stringify({ parcelamentoId: parcelamentoId || null }),
       });
     },
 

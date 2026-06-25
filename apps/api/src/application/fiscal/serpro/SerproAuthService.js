@@ -4,6 +4,7 @@ import { Buffer } from "node:buffer";
 import axios from "axios";
 import forge from "node-forge";
 import { resolveCertificatePath } from "../../../infrastructure/storage/CertStorage.js";
+import { decryptBytes } from "../../../utils/crypto.js";
 import { getSerproConfig } from "./SerproConfig.js";
 import { mapSerproError } from "./SerproErrorMapper.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
@@ -53,7 +54,8 @@ export class SerproAuthService {
 
       return {
         certPath: null,
-        certBuffer: Buffer.from(runtime.certificate.pfxBase64, "base64"),
+        // Q30/Q35: decryptBytes decifra o PFX cifrado (local ou KMS; no-op se legado em claro).
+        certBuffer: await decryptBytes(Buffer.from(runtime.certificate.pfxBase64, "base64")),
         certPassword: runtime.certificate.password,
       };
     }
@@ -73,7 +75,7 @@ export class SerproAuthService {
 
     return {
       certPath,
-      certBuffer: fs.readFileSync(certPath),
+      certBuffer: await decryptBytes(fs.readFileSync(certPath)),
       certPassword: runtime.certificate.password,
     };
   }

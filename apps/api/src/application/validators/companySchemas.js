@@ -3,13 +3,13 @@
 // se passar, a normalização legada cuida das transformações.
 
 import { z } from "zod";
+import { strongPasswordSchema } from "./passwordPolicy.js";
 
 const cnpjRegex = /^\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}$/;
 const cnpjDigitsOnly = z.string().transform((s) => String(s || "").replace(/\D+/g, ""));
 
-// Validação branda — bcrypt já protege contra rainbow tables. Min 8 chars é suficiente
-// pra app contábil interno; força exagerada gera fricção sem ganho de segurança real.
-const senhaForte = z.string().min(8, "Senha precisa de pelo menos 8 caracteres");
+// Q27.A: senha de acesso forte (8 + maiúscula + minúscula + número + especial) — política única.
+const senhaForte = strongPasswordSchema;
 
 const enderecoSchema = z.object({
   rua: z.string().max(200).optional().nullable(),

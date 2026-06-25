@@ -1,7 +1,7 @@
 // src/server.js
 import express from "express";
 import cors from "cors";
-import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, APURACAO_BATCH_WORKER_ENABLED } from "./config.js";
+import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, APURACAO_BATCH_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
 import { runApuracaoBatchLoop } from "./workers/apuracaoBatchWorker.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
@@ -23,6 +23,7 @@ import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
 import { runDfeNotasWorkerLoop } from "./workers/dfeNotasWorker.js";
 import { backfillProvisionsFromExistingGuides } from "./application/accounting/GuideToProvisionBackfill.js";
 import { seedParcelamentoFunctions } from "./application/accounting/ParcelamentoSeeds.js";
+import { seedMapaContaTributoGlobal } from "./application/accounting/parcelamento/MapaContaTributoSeeds.js";
 import { seedDeparaAnexoGlobal } from "./application/notas/apuracao/DeparaAnexoSeeds.js";
 // Q14 — Refundação da apuração: novos seeders (alíquotas SN, CNAEs, regras v2)
 import { seedAliquotaSimplesNacional } from "./application/notas/apuracao/v2/seeds/AliquotaSimplesNacionalSeeds.js";
@@ -114,6 +115,16 @@ app.use("/nfse", nfseRouter);
 app.use("/api", adnRouter);
 app.use("/", statusRouter);
 
+// Q30 Fase 1: fail-fast — a API não sobe sem uma CERT_SECRET_KEY dedicada e forte (>= 32 chars).
+// Sem ela, os certificados não podem ser cifrados/lidos com segurança. (Antes caía no JWT_SECRET.)
+if (!CERT_SECRET_KEY || CERT_SECRET_KEY.length < CERT_SECRET_KEY_MIN_LENGTH) {
+  log.error(
+    `CERT_SECRET_KEY ausente ou curta (< ${CERT_SECRET_KEY_MIN_LENGTH} chars). `
+    + "Defina-a no ambiente (ex.: openssl rand -base64 48). A API não vai subir sem ela.",
+  );
+  process.exit(1);
+}
+
 app.listen(PORT, HOST, () => {
   log.info({ port: PORT, host: HOST }, "Servidor iniciado");
   // Q5 backfill: cria AccountingEntry para Guides PROCESSED que ainda não têm.
@@ -123,6 +134,10 @@ app.listen(PORT, HOST, () => {
   // Q9 seeds: cria/atualiza templates globais de parcelamento (Simples, INSS, ...).
   seedParcelamentoFunctions({ logger: log }).catch((err) => {
     log.warn({ err: err?.message || err }, "Seed de funções de parcelamento falhou");
+  });
+  // Q21 seeds: contas sugeridas (global) por papel de linha do parcelamento (MapaContaTributo).
+  seedMapaContaTributoGlobal(prisma, { log }).catch((err) => {
+    log.warn({ err: err?.message || err }, "Seed MapaContaTributo falhou");
   });
   // Q12.C.1 seeds: tabela De/Para Anexo Simples Nacional (LC116 → III/IV/V) [LEGADO]
   seedDeparaAnexoGlobal(prisma, { log }).catch((err) => {

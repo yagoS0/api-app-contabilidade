@@ -1,4 +1,5 @@
 import { onlyDigits, toNullableString, toBoolean } from "../../utils/normalizers.js";
+import { validateStrongPassword } from "./passwordPolicy.js";
 
 const REQUIRED_CLIENT_FIELDS = ["name", "email", "password"];
 const REQUIRED_COMPANY_FIELDS = [
@@ -44,7 +45,8 @@ export function validateClientPayload(body) {
     cpf: normalizeCpf(client.cpf),
   };
 
-  if (!normalizedClient.password || normalizedClient.password.length < 8) {
+  // Q27.A: senha de acesso forte (8 + maiúscula + minúscula + número + especial).
+  if (!validateStrongPassword(normalizedClient.password).ok) {
     return { ok: false, error: "cliente.senha_fraca" };
   }
 

@@ -13,6 +13,7 @@
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { readStoredCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
+import { auditCertAccess } from "../security/CertAccessAudit.js";
 import { decryptSecret } from "../../utils/crypto.js";
 
 export const SERVICOS = Object.freeze({
@@ -52,17 +53,20 @@ async function loadCompanyCert(portalClientId) {
   });
   if (!company) return null;
 
-  const pfxBuffer = readStoredCompanyPfx(company);
+  const pfxBuffer = await readStoredCompanyPfx(company);
   if (!pfxBuffer) return null;
 
   let password = null;
   if (company.certPasswordEnc) {
     try {
-      password = decryptSecret(company.certPasswordEnc);
+      password = await decryptSecret(company.certPasswordEnc);
     } catch (err) {
       throw new CertResolutionError("CERT_PASSWORD_DECRYPT_FAILED", "Falha ao descriptografar a senha do certificado", { cause: err });
     }
   }
+
+  // Q30: trilha de auditoria (best-effort) — o PFX/senha da empresa foram descriptografados aqui.
+  await auditCertAccess({ portalClientId, certKind: "COMPANY_A1", action: "DECRYPT", consumer: "CertResolver" });
 
   return {
     pfxBuffer,

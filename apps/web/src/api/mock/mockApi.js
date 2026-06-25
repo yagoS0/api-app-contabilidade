@@ -70,7 +70,7 @@ function makeGuidesByCompany(companies) {
         serproLastCheckResult: paymentStatus === "PAID" ? "NOT_FOUND" : "FOUND",
         serproService: "GERARDAS12",
         canConfirmPayment: paymentStatus !== "PAID",
-        canRecalculate: paymentStatus !== "PAID" && new Date(vencimento).getTime() < Date.now(),
+        canRecalculate: paymentStatus !== "PAID", // Q29: vencida ou em aberto (não só vencida)
       };
     });
     guidesByCompany.set(company.companyId, guides);
@@ -1721,9 +1721,17 @@ export function createMockApi() {
     async listParcelamentos() { await delay(80); return []; },
     async getParcelamento() { await delay(80); return null; },
     async createParcelamento() { await delay(80); return { ok: true, data: null }; },
+    async ingestParcelamento() { await delay(80); return { ok: true, data: { parcelamentoId: "mock", criouParcelamento: true } }; },
+    async getContasProvisao() { await delay(40); return { ok: true, contas: { CONTRAPARTIDA: "", PARC: "" } }; },
+    async consultarParcelamentoSerpro() { await delay(60); return { ok: true, parcelamento: { tipo: "PARCSN", numeroParcelamento: "0", valorTotal: null, quantidadeParcelas: null, situacao: "mock", origem: "SERPRO" } }; },
+    async getParcelamentoConfig() { await delay(40); return { ok: true, parcelamento: { id: "mock", configProvisao: null, configPagamento: null } }; },
+    async saveParcelamentoConfig() { await delay(40); return { ok: true, parcelamento: { id: "mock" } }; },
+    async getConferenciaParcelas() { await delay(40); return { ok: true, items: [] }; },
+    async aprovarConferenciaParcelas() { await delay(40); return { ok: true, aprovadas: 0 }; },
     async linkGuideToParcelamento() { await delay(80); return { ok: true }; },
     async payParcela() { await delay(80); return { ok: true, baixas: [] }; },
     async rescindirParcelamento() { await delay(80); return { ok: true }; },
+    async vincularEntryParcelamento() { await delay(40); return { ok: true }; },
 
     // ── Q11.1: stubs Suspender/Reativar/Excluir ─────────────────────────
     async suspendCompany() { await delay(80); return { ok: true }; },

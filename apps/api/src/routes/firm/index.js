@@ -10,7 +10,8 @@ import {
   COMPANY_DB_CERT_STORAGE_KEY,
   deleteCompanyPfx,
 } from "../../infrastructure/storage/CertStorage.js";
-import { encryptSecret } from "../../utils/crypto.js";
+import { encryptSecret, encryptBytes } from "../../utils/crypto.js";
+import { auditCertAccess } from "../../application/security/CertAccessAudit.js";
 import {
   enderecoToSingleLine,
   validateAndNormalizeCompanyProfile,
@@ -74,16 +75,41 @@ import {
 } from "../../application/guides/guideCompliance.js";
 import {
   canGuideRecalculate,
+  isGuideOverdue,
   markGuideOpenBySerpro,
   markGuidePaidManual,
 } from "../../application/guides/GuidePaymentStatusService.js";
 import {
   SERPRO_PGDASD_SERVICE_COBRANCA,
+  SERPRO_PGDASD_SERVICE_NORMAL,
 } from "../../application/fiscal/serpro/SerproPgdasdService.js";
 
 // Plano de contas global precisa cobrir os 5 tipos básicos antes de qualquer empresa ser criada.
 // Lançamentos automáticos (DAS, faturamento, etc) dependem desse plano mínimo configurado.
 const REQUIRED_GLOBAL_TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
+
+// Q29: traduz os códigos de erro do SERPRO no recálculo do DAS Simples em mensagens
+// legíveis para o contador (a UI mostrava só "Falha ao recalcular guia").
+function formatCompetenciaBR(competencia) {
+  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
+  return m ? `${m[2]}/${m[1]}` : String(competencia || "");
+}
+function friendlyRecalcMessage(code, { competencia } = {}, fallback) {
+  const comp = formatCompetenciaBR(competencia);
+  switch (code) {
+    case "SERPRO_PGDASD_DECLARATION_NOT_TRANSMITTED":
+      return `Não há declaração PGDAS-D transmitida para ${comp}. Transmita a apuração antes de recalcular o DAS.`;
+    case "SERPRO_PGDASD_NO_DEBTS_FOUND":
+      return `O SERPRO não encontrou débito para ${comp} (nada a recolher nesta competência).`;
+    case "SERPRO_PGDASD_NO_AMOUNT_DUE":
+      return `Não foi gerado DAS: sem valor devido para ${comp}.`;
+    case "SERPRO_PGDASD_PDF_NOT_FOUND":
+    case "SERPRO_PGDASD_PDF_INVALID":
+      return "O SERPRO não retornou o documento. Confirme que a declaração foi transmitida e que há débito em aberto.";
+    default:
+      return fallback || "Falha ao recalcular guia PGDAS-D no SERPRO.";
+  }
+}
 
 async function getGlobalChartStatus() {
   const counts = await prisma.chartOfAccount.groupBy({
@@ -1053,8 +1079,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           where: { id: company.id },
           data: {
             certStorageKey: COMPANY_DB_CERT_STORAGE_KEY,
-            certPfxBytes: file.buffer,
-            certPasswordEnc: encryptSecret(password),
+            certPfxBytes: await encryptBytes(file.buffer), // Q30/Q35: PFX cifrado em repouso (expiry lido do buffer em claro acima)
+            certPasswordEnc: await encryptSecret(password),
             certUploadedAt: now,
             certExpiresAt: expiresAt || undefined,
           },
@@ -1066,6 +1092,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             // best effort
           }
         }
+        await auditCertAccess({
+          portalClientId: portalCompanyId, certKind: "COMPANY_A1", action: "UPLOAD",
+          consumer: "firm:upload", actorUserId: req.auth?.user?.id || null,
+        });
         return res.json({
           ok: true,
           companyId: portalCompanyId,
@@ -1131,6 +1161,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             // best effort
           }
         }
+        await auditCertAccess({
+          portalClientId: req.params.companyId, certKind: "COMPANY_A1", action: "DELETE",
+          consumer: "firm:delete", actorUserId: req.auth?.user?.id || null,
+        });
         return res.json({ ok: true, deletedFile });
       } catch (err) {
         if (err.code === "CERT_STORAGE_NOT_CONFIGURED") {
@@ -1141,6 +1175,26 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
     }
   );
+
+  // Q30 Fase 1: auditoria de acesso a certificados (LGPD). Filtros opcionais: companyId, action, certKind.
+  router.get("/cert-audit", requireAccountType("FIRM"), async (req, res) => {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 100);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+    const where = {};
+    if (req.query.companyId) where.portalClientId = String(req.query.companyId);
+    if (req.query.action) where.action = String(req.query.action).toUpperCase();
+    if (req.query.certKind) where.certKind = String(req.query.certKind).toUpperCase();
+    try {
+      const [items, total] = await Promise.all([
+        prisma.certAccessLog.findMany({ where, orderBy: { createdAt: "desc" }, take: limit, skip: offset }),
+        prisma.certAccessLog.count({ where }),
+      ]);
+      return res.json({ ok: true, total, limit, offset, items });
+    } catch (err) {
+      log.error({ err: err?.message }, "Falha ao listar auditoria de certificados");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
 
   router.get("/guides/settings", requireAccountType("FIRM"), async (_req, res) => {
     const settings = await getGuideRuntimeSettings();
@@ -2085,11 +2139,65 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ error: "guide_not_processed" });
       }
 
+      // Q23/Q34: guia de parcela OU de INSS gera lançamento de BAIXA ao marcar como paga. Se o mês
+      // contábil do pagamento (hoje) estiver fechado, BLOQUEIA o "pago" inteiro (não marca, não lança).
+      const isParcela = Boolean(scoped.guide.parcelamentoId);
+      const isInss = !isParcela && String(scoped.guide.tipo || "").toUpperCase() === "INSS";
+      const now = new Date();
+      const competenciaPagamento = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      if ((isParcela || isInss) && (await isMonthClosed(scoped.guide.portalClientId, competenciaPagamento))) {
+        return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
+      }
+
       const updated = await markGuidePaidManual({
         guideId: scoped.guide.id,
         userId: req.auth.user.id,
       });
-      return res.json({ ok: true, guide: toGuideResponse(updated) });
+
+      // Q23: para guia de parcela, gera a BAIXA (juros LIDO da composição), data = hoje. Best-effort:
+      // falha aqui não desfaz o pagamento marcado, mas o aviso vai no payload.
+      let parcelaBaixa = null;
+      if (isParcela) {
+        try {
+          const { gerarPagamentoParcelaFromGuide } = await import(
+            "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
+          );
+          parcelaBaixa = await gerarPagamentoParcelaFromGuide({
+            portalClientId: scoped.guide.portalClientId,
+            guideId: scoped.guide.id,
+            userId: req.auth.user.id,
+          });
+        } catch (err) {
+          if (err?.code === "MES_FECHADO") {
+            return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
+          }
+          log.warn({ err: err?.message, guideId: scoped.guide.id }, "Falha ao gerar baixa de parcela (não crítico)");
+          parcelaBaixa = { skipped: true, reason: err?.message || "erro" };
+        }
+      }
+
+      // Q34: para guia de INSS, gera a BAIXA (D INSS a Recolher / C Caixa) — conta da folha do mês.
+      let inssBaixa = null;
+      if (isInss) {
+        try {
+          const { gerarPagamentoInssFromGuide } = await import(
+            "../../application/accounting/InssPagamentoService.js"
+          );
+          inssBaixa = await gerarPagamentoInssFromGuide({
+            portalClientId: scoped.guide.portalClientId,
+            guideId: scoped.guide.id,
+            userId: req.auth.user.id,
+          });
+        } catch (err) {
+          if (err?.code === "MES_FECHADO") {
+            return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
+          }
+          log.warn({ err: err?.message, guideId: scoped.guide.id }, "Falha ao gerar baixa do INSS (não crítico)");
+          inssBaixa = { skipped: true, reason: err?.message || "erro" };
+        }
+      }
+
+      return res.json({ ok: true, guide: toGuideResponse(updated), parcelaBaixa, inssBaixa });
     }
   );
 
@@ -2103,16 +2211,21 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       if (scoped.guide.status !== "PROCESSED") {
         return res.status(400).json({ error: "guide_not_processed" });
       }
-      if (!canGuideRecalculate(scoped.guide, new Date())) {
+      if (!canGuideRecalculate(scoped.guide)) {
         return res.status(400).json({ error: "guide_recalculation_not_available" });
       }
+
+      // Q29: vencida → DAS de cobrança (juros/multa); em aberto → DAS normal.
+      const serviceId = isGuideOverdue(scoped.guide, new Date())
+        ? SERPRO_PGDASD_SERVICE_COBRANCA
+        : SERPRO_PGDASD_SERVICE_NORMAL;
 
       try {
         const result = await capturePgdasGuideForCompany({
           portalClientId: scoped.guide.portalClientId,
           competencia: scoped.guide.competencia,
           existingGuideId: scoped.guide.id,
-          serviceId: SERPRO_PGDASD_SERVICE_COBRANCA,
+          serviceId,
         });
         await markGuideOpenBySerpro({ guideId: result.guide.guideId });
 
@@ -2150,7 +2263,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             "SERPRO_PGDASD_PDF_INVALID",
           ].includes(code)
         ) {
-          return res.status(400).json({ ok: false, error: code, reason: message });
+          const friendly = friendlyRecalcMessage(code, { competencia: scoped.guide.competencia }, message);
+          return res.status(400).json({ ok: false, error: code, reason: friendly, message: friendly });
         }
 
         log.error({ err: err?.message || err, code, guideId }, "Falha no recalculo manual PGDAS-D");

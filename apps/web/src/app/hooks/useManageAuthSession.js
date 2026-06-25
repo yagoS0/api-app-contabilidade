@@ -12,7 +12,6 @@ const PAGE_TO_PATH = {
   guideUpload: "/guides/upload",
   pendingReport: "/guides/pending",
   batchEmail: "/guides/batch-email",
-  firmSettings: "/firm-settings",
   guideSettings: "/firm-settings/guides",
   accountingRulesGlobal: "/firm-settings/rules",
   chartOfAccountsGlobal: "/firm-settings/chart",
@@ -28,7 +27,6 @@ function pathToPageName(pathname) {
   if (pathname === "/guides/upload") return "guideUpload";
   if (pathname === "/guides/pending") return "pendingReport";
   if (pathname === "/guides/batch-email") return "batchEmail";
-  if (pathname === "/firm-settings") return "firmSettings";
   if (pathname === "/firm-settings/guides") return "guideSettings";
   if (pathname === "/firm-settings/rules") return "accountingRulesGlobal";
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";

@@ -70,7 +70,6 @@ export function CompaniesHomePage({
   loadingCompanies,
   onCreateCompany,
   onOpenGuideUpload,
-  onOpenFirmSettings,
   onOpenGuideSettings,
   onOpenAccountingRules,
   onOpenChartGlobal,
@@ -170,9 +169,9 @@ export function CompaniesHomePage({
                 cadastre contas dos tipos:{" "}
                 <strong>{(globalChartStatus.tiposFaltantes || []).join(", ") || "—"}</strong>.
               </span>
-              {onOpenFirmSettings && (
-                <Button variant="secondary" onClick={onOpenFirmSettings}>
-                  Abrir Configurações
+              {onOpenChartGlobal && (
+                <Button variant="secondary" onClick={onOpenChartGlobal}>
+                  Abrir Plano de Contas Global
                 </Button>
               )}
             </div>

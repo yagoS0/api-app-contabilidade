@@ -16,7 +16,7 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { readStoredCompanyPfx } from "../../../infrastructure/storage/CertStorage.js";
-import { decryptSecret } from "../../../utils/crypto.js";
+import { decryptSecret, decryptBytes } from "../../../utils/crypto.js";
 import { resolveCertificatePath } from "../../../infrastructure/storage/CertStorage.js";
 import { getResolvedSerproCredentials } from "../../fiscal/serpro/SerproRuntimeSettings.js";
 import fs from "node:fs";
@@ -58,10 +58,10 @@ async function loadOfficeCert() {
       "Senha do cert do escritório não está configurada.");
   }
 
-  // Caso 1: PFX salvo direto no banco (base64)
+  // Caso 1: PFX salvo direto no banco (base64). Q30/Q35: decryptBytes decifra (local ou KMS; no-op se legado).
   if (creds.certificate.pfxBase64) {
     return {
-      pfxBuffer: Buffer.from(creds.certificate.pfxBase64, "base64"),
+      pfxBuffer: await decryptBytes(Buffer.from(creds.certificate.pfxBase64, "base64")),
       password: creds.certificate.password,
     };
   }
@@ -72,7 +72,7 @@ async function loadOfficeCert() {
     throw new DfeSyncError("OFFICE_CERT_FILE_NOT_FOUND",
       `Arquivo do cert do escritório não encontrado em ${certPath || "(path nulo)"}.`);
   }
-  return { pfxBuffer: fs.readFileSync(certPath), password: creds.certificate.password };
+  return { pfxBuffer: await decryptBytes(fs.readFileSync(certPath)), password: creds.certificate.password };
 }
 
 /**

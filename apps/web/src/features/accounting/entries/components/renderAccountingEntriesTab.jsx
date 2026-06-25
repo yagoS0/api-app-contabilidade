@@ -5,7 +5,7 @@ import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal
 import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
 import { ParcelamentoModal } from "../../parcelamento/components/renderParcelamentoModal";
 import { AccountRow, DraftEntryRow } from "./renderAccountingEntriesParts";
-import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtMoney } from "../lib/accountingEntriesShared";
+import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtMoney, formatCompetenciaTitulo } from "../lib/accountingEntriesShared";
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
 import { FunctionListModal, FunctionEditModal, FunctionApplyModal } from "../../functions/components/AccountingFunctionModals";
 import { ParcelamentoCreateModal } from "../../parcelamento/components/ParcelamentoModals";
@@ -268,6 +268,16 @@ export function AccountingEntriesTab({
     });
   }
   function clearSelection() { setSelectedIds(new Set()); }
+  // Q32.1: select-all por grupo (cabeçalho de cada tipo).
+  function toggleGroup(ids) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const all = ids.length > 0 && ids.every((id) => next.has(id));
+      if (all) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
 
   async function handleBulkDelete() {
     if (!onBulkDeleteEntries || selectedCount === 0) return;
@@ -309,6 +319,12 @@ export function AccountingEntriesTab({
       const tipo = String(entry.tipo || "OUTRO").toUpperCase();
       const bucket = groups[tipo] ? tipo : "OUTRO";
       groups[bucket].push(entry);
+    }
+    // Q32: dentro de cada tipo, ordena por DATA desc (mais nova em cima; dia 1 embaixo).
+    // Desempate por createdAt desc.
+    const ts = (v) => { const t = v ? new Date(v).getTime() : 0; return Number.isFinite(t) ? t : 0; };
+    for (const tipo of TIPO_GROUP_ORDER) {
+      groups[tipo].sort((a, b) => (ts(b.data) - ts(a.data)) || (ts(b.createdAt) - ts(a.createdAt)));
     }
     return groups;
   }, [entries]);
@@ -483,6 +499,7 @@ export function AccountingEntriesTab({
           display: "flex", alignItems: "center", gap: 12,
           background: "#2D2F45", border: "1px solid #44475A", borderRadius: 8,
           padding: "8px 14px", marginTop: 8, fontSize: "0.875rem", color: ACCOUNTING_PANEL.text,
+          maxWidth: 1250, marginLeft: "auto", marginRight: "auto", boxSizing: "border-box",
         }}>
           <span style={{ fontWeight: 700, color: "#BD93F9" }}>
             {selectedCount} selecionado{selectedCount !== 1 ? "s" : ""}
@@ -515,28 +532,16 @@ export function AccountingEntriesTab({
       )}
 
       {/* Q18: tabela centralizada e mais estreita (Histórico fica perto do Valor). */}
-      <div style={{ overflowX: "auto", borderRadius: 16, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
+      <div style={{ overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
+        {/* Q32: título da competência acima do cabeçalho (ex.: MAIO/2026). */}
+        <div style={{ textAlign: "center", fontSize: "1.4rem", fontWeight: 800, letterSpacing: "0.04em", color: ACCOUNTING_PANEL.text, marginBottom: 14 }}>
+          {formatCompetenciaTitulo(activeComp)}
+        </div>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", fontSize: "0.9375rem", borderRadius: 16, overflow: "hidden" }}>
           <colgroup>
             {COLS.map((col, index) => <col key={index} style={{ width: col.width }} />)}
           </colgroup>
-          <thead>
-            <tr style={{ background: ACCOUNTING_PANEL.field, userSelect: "none" }}>
-              <th style={{ padding: "14px 8px", textAlign: "center", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, position: "sticky", top: 0, background: ACCOUNTING_PANEL.field, zIndex: 10 }}>
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                  onChange={toggleAll}
-                  style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" }}
-                  aria-label="Selecionar todos"
-                />
-              </th>
-              {COLS.slice(1).map(({ label, align }, index) => (
-                <th key={index} style={{ padding: "10px 12px", textAlign: align, fontSize: "0.8rem", fontWeight: 700, color: ACCOUNTING_PANEL.text, borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, position: "sticky", top: 0, background: ACCOUNTING_PANEL.field, zIndex: 10, whiteSpace: "nowrap" }}>{label}</th>
-              ))}
-            </tr>
-          </thead>
+          {/* Q32.1: cabeçalho de colunas não fica mais global — é repetido embaixo do título de cada tipo. */}
           <tbody>
             {adding && (
               <DraftEntryRow
@@ -554,29 +559,49 @@ export function AccountingEntriesTab({
             {!loading && entries.length > 0 && TIPO_GROUP_ORDER.map((tipo) => {
               const items = groupedEntries[tipo];
               if (!items || items.length === 0) return null;
+              const groupIds = items.map((e) => e.id);
+              const groupAll = groupIds.every((id) => selectedIds.has(id));
+              const groupSome = groupIds.some((id) => selectedIds.has(id));
               return (
                 <Fragment key={tipo}>
                   <tr style={{ background: ACCOUNTING_PANEL.field }}>
                     <td
                       colSpan={7}
                       style={{
-                        padding: "8px 14px",
-                        borderTop: `1px solid ${ACCOUNTING_PANEL.border}`,
-                        borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`,
-                        fontWeight: 700,
-                        letterSpacing: "0.02em",
-                        fontSize: "0.75rem",
+                        padding: "12px 16px",
+                        borderTop: `3px solid ${ACCOUNTING_PANEL.border}`,
+                        borderBottom: `2px solid ${ACCOUNTING_PANEL.border}`,
+                        fontWeight: 800,
+                        letterSpacing: "0.03em",
+                        fontSize: "0.95rem",
+                        textTransform: "uppercase",
                         color: ACCOUNTING_PANEL.text,
                         textAlign: "center",
                       }}
                     >
-                      {/* Q18: título centralizado, branco, menor; sem cores de accent */}
+                      {/* Q32: separador de tipo mais destacado (maior, caixa-alta, borda superior grossa). */}
                       <span>{TIPO_GROUP_LABELS[tipo] || tipo}</span>
-                      <span style={{ color: ACCOUNTING_PANEL.text, fontWeight: 500, fontSize: "0.72rem", marginLeft: 10 }}>
+                      <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 500, fontSize: "0.78rem", marginLeft: 12, textTransform: "none" }}>
                         {items.length} lançamento{items.length !== 1 ? "s" : ""}
                         {groupTotals[tipo] > 0 && <> · R$ {fmtMoney(groupTotals[tipo])}</>}
                       </span>
                     </td>
+                  </tr>
+                  {/* Q32.1: cabeçalho de colunas embaixo do título do tipo. */}
+                  <tr style={{ background: ACCOUNTING_PANEL.field, userSelect: "none" }}>
+                    <th style={{ padding: "8px 8px", textAlign: "center", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, borderRight: `1px solid ${ACCOUNTING_PANEL.border}` }}>
+                      <input
+                        type="checkbox"
+                        checked={groupAll}
+                        ref={(el) => { if (el) el.indeterminate = groupSome && !groupAll; }}
+                        onChange={() => toggleGroup(groupIds)}
+                        style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" }}
+                        aria-label={`Selecionar todos de ${TIPO_GROUP_LABELS[tipo] || tipo}`}
+                      />
+                    </th>
+                    {COLS.slice(1).map(({ label, align }, index, arr) => (
+                      <th key={index} style={{ padding: "8px 12px", textAlign: align, fontSize: "0.82rem", fontWeight: 700, color: ACCOUNTING_PANEL.muted, textTransform: "uppercase", letterSpacing: "0.02em", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, borderRight: index < arr.length - 1 ? `1px solid ${ACCOUNTING_PANEL.border}` : "none", whiteSpace: "nowrap" }}>{label}</th>
+                    ))}
                   </tr>
                   {items.map((entry) => (
                     <AccountRow
@@ -598,7 +623,29 @@ export function AccountingEntriesTab({
               );
             })}
           </tbody>
-          {total > 0 && <tfoot><tr style={{ background: ACCOUNTING_PANEL.field }}><td colSpan={7} style={{ padding: "5px 8px", fontSize: "0.875rem", color: ACCOUNTING_PANEL.text, borderTop: `1px solid ${ACCOUNTING_PANEL.border}` }}>{total} lançamento{total !== 1 ? "s" : ""} no total</td></tr></tfoot>}
+          {total > 0 && (() => {
+            // Q33: contagem + balanço Débito × Crédito — discreto, na mesma linha.
+            const dTot = Number(listedTotals.debito) || 0;
+            const cTot = Number(listedTotals.credito) || 0;
+            const diff = Math.abs(dTot - cTot);
+            const balanced = diff <= 0.01;
+            return (
+              <tfoot>
+                <tr style={{ background: ACCOUNTING_PANEL.field }}>
+                  <td colSpan={7} style={{ padding: "6px 12px", fontSize: "0.8rem", color: ACCOUNTING_PANEL.muted, borderTop: `1px solid ${ACCOUNTING_PANEL.border}` }}>
+                    {total} lançamento{total !== 1 ? "s" : ""} no total
+                    <span style={{ margin: "0 8px", color: ACCOUNTING_PANEL.border }}>·</span>
+                    D R$ {fmtMoney(dTot) || "0,00"}
+                    <span style={{ margin: "0 6px", color: ACCOUNTING_PANEL.border }}>·</span>
+                    C R$ {fmtMoney(cTot) || "0,00"}
+                    <span style={{ marginLeft: 8, color: balanced ? "#69FF47" : "#FFB347", fontWeight: 600 }}>
+                      {balanced ? "✓ ok" : `⚠ dif. R$ ${fmtMoney(diff) || "0,00"}`}
+                    </span>
+                  </td>
+                </tr>
+              </tfoot>
+            );
+          })()}
         </table>
       </div>
 

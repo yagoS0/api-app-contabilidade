@@ -56,9 +56,18 @@ export const ACCOUNTING_PANEL = {
 export const TDv = {
   padding: "8px 12px", verticalAlign: "top",
   color: ACCOUNTING_PANEL.text,
-  borderRight: "none",
+  borderRight: `1px solid ${ACCOUNTING_PANEL.border}`, // Q32: separação vertical entre colunas
   borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`,
 };
+
+// Q32: título da competência para o topo da tabela. "2026-05" → "MAIO/2026".
+const MESES_PT = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
+export function formatCompetenciaTitulo(comp) {
+  const [yyyy, mm] = String(comp || "").split("-");
+  const idx = Number(mm) - 1;
+  if (!yyyy || idx < 0 || idx > 11) return String(comp || "");
+  return `${MESES_PT[idx]}/${yyyy}`;
+}
 
 export const PANEL_FIELD_STYLE = {
   width: "100%",
@@ -105,7 +114,7 @@ export const COLS = [
   { label: "Crédito", align: "center", width: "150px" },
   { label: "Histórico", align: "left", width: "auto" },
   { label: "Valor (R$)", align: "right", width: "132px" },
-  { label: "Ações", align: "right", width: "120px" },
+  { label: "Ações", align: "right", width: "170px" },
 ];
 
 // Q18: nº total de colunas (para colSpan de linhas full-width).
@@ -117,10 +126,10 @@ export const TIPO_GROUP_ORDER = ["RECEITA", "PROVISAO", "DESPESA", "FOLHA", "BAI
 
 export const TIPO_GROUP_LABELS = {
   RECEITA: "Receitas",
-  PROVISAO: "Impostos / Provisões",
+  PROVISAO: "Impostos",
   DESPESA: "Despesas",
   FOLHA: "Folha de Pagamento",
-  BAIXA: "Baixas / Pagamentos",
+  BAIXA: "Pagamentos",
   OUTRO: "Outros",
 };
 

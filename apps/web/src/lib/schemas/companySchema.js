@@ -9,6 +9,7 @@
 // - Campos da empresa opcionais no Zod (validação rigorosa fica em validateAndNormalizeCompanyProfile no backend)
 
 import { z } from "zod";
+import { strongPasswordSchema } from "./passwordPolicy.js";
 
 const cnpjOnlyDigits = (v) => String(v || "").replace(/\D+/g, "");
 const isValidCnpj = (v) => cnpjOnlyDigits(v).length === 14;
@@ -24,9 +25,7 @@ export const companyCreateFormSchema = z.object({
     .string()
     .min(1, "E-mail é obrigatório")
     .email("E-mail inválido (formato: exemplo@dominio.com)"),
-  ownerPassword: z
-    .string()
-    .min(8, "Senha precisa de pelo menos 8 caracteres"),
+  ownerPassword: strongPasswordSchema, // Q27.A: 8 + minúscula + maiúscula + número + especial
   cnpj: z
     .string()
     .min(1, "CNPJ é obrigatório")
@@ -56,6 +55,6 @@ export const companyCreateFormSchema = z.object({
 
 // Schema pra modo EDIÇÃO (PATCH) — senha opcional, CNPJ imutável (não revalida)
 export const companyUpdateFormSchema = companyCreateFormSchema.partial().extend({
-  // Em edição, ownerEmail/razaoSocial podem vir; senão preserva o que tinha
-  ownerPassword: z.string().min(8).or(z.literal("")).optional(),
+  // Em edição, senha é opcional; se vier, precisa ser forte (ou string vazia = não altera).
+  ownerPassword: strongPasswordSchema.or(z.literal("")).optional(),
 });
