@@ -8,6 +8,8 @@ import { Button } from "../../../../components/ui/Button";
 import { ErrorBoundary } from "../../../../components/ui/ErrorBoundary";
 // Q14.2: hook próprio da Apuração v2 (escopo da empresa atual)
 import { useApuracaoV2 } from "../../../apuracao-v2/hooks/useApuracaoV2";
+// Q41: hook próprio da aba Situação Fiscal (SITFIS)
+import { useSitfis } from "../../../fiscal/sitfis/hooks/useSitfis";
 import { createApiClient } from "../../../../api/client";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
@@ -39,6 +41,10 @@ const NotasFiscaisTab = lazy(() =>
 const ApuracaoV2Tab = lazy(() =>
   import("../../../apuracao-v2/pages/renderApuracaoV2Tab").then((m) => ({ default: m.ApuracaoV2Tab }))
 );
+// Q41: aba Situação Fiscal (SITFIS)
+const SitfisTab = lazy(() =>
+  import("../../../fiscal/sitfis/components/renderSitfisTab").then((m) => ({ default: m.SitfisTab }))
+);
 // Q12.B+++: painel de cert A1 da empresa
 const CompanyCertificatePanel = lazy(() =>
   import("../../certificate/components/CompanyCertificatePanel").then((m) => ({ default: m.CompanyCertificatePanel }))
@@ -57,6 +63,13 @@ const apuracaoV2Api = createApiClient();
 function ApuracaoV2TabWrapper({ companyId, feedback }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
   return <ApuracaoV2Tab panel={panel} />;
+}
+
+// Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
+const sitfisApi = createApiClient();
+function SitfisTabWrapper({ companyId }) {
+  const panel = useSitfis({ api: sitfisApi, companyId });
+  return <SitfisTab sitfisPanel={panel} />;
 }
 
 export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
@@ -342,6 +355,28 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
               <ApuracaoV2TabWrapper companyId={selectedCompany?.id} feedback={feedback} />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+      </div>
+    );
+  }
+
+  // Q41: Aba Situação Fiscal (SITFIS) — autônoma (hook próprio via wrapper)
+  if (companyDetailTab === "sitfis") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="sitfis"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              <SitfisTabWrapper companyId={companyId} />
             </Suspense>
           </ErrorBoundary>
         </div>

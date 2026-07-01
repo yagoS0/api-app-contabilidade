@@ -376,6 +376,56 @@ export function createRealApi() {
         body: JSON.stringify(input),
       });
     },
+    // Q36: captura manual de parcelamento (itera as parcelas geráveis internamente; sem competência).
+    async captureSerproParcelamento(companyId) {
+      return request(`/firm/companies/${companyId}/serpro/parcelamento/capture`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
+    // Q40: confirmação de pagamento (PAGTOWEB) por empresa — consulta comprovante das guias OPEN.
+    async confirmarPagamentoSerpro(companyId, input = {}) {
+      return request(`/firm/companies/${companyId}/serpro/payment-confirmation`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    // Q40: relatório de situação fiscal (SITFIS) por empresa.
+    async getSitfis(companyId) {
+      return request(`/firm/companies/${companyId}/serpro/sitfis/relatorio`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
+    // Q41: última situação fiscal gravada (sem chamar o SERPRO).
+    async getStoredSitfis(companyId) {
+      return request(`/firm/companies/${companyId}/serpro/sitfis`);
+    },
+    // Q41: lista de empresas com a última situação fiscal (página Pendências).
+    async listFiscalPendencias() {
+      return request(`/firm/pendencias/fiscal`);
+    },
+    // Q43.4: baixa o PDF do relatório SITFIS como Blob (auth Bearer; iframe não manda header).
+    async fetchSitfisPdfBlob(companyId) {
+      const baseUrl = getApiBaseUrl();
+      const headers = {};
+      const tok = accessToken || readStoredToken();
+      if (tok) headers.Authorization = `Bearer ${tok}`;
+      const res = await fetch(`${baseUrl}/firm/companies/${companyId}/serpro/sitfis/pdf`, { method: "GET", headers });
+      if (!res.ok) {
+        const err = new Error(`Falha ao baixar o PDF da situação fiscal (HTTP ${res.status})`);
+        err.code = "SITFIS_PDF_FETCH_FAILED";
+        throw err;
+      }
+      return res.blob();
+    },
+    // Q40: dispara o cron de confirmação de pagamento para todas as guias OPEN.
+    async runSerproPaymentConfirmation(input = {}) {
+      return request(`/firm/serpro/payment-confirmation/run-now`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
     // Dispara manualmente o cron do SERPRO (DAS + INSS) para todas as empresas elegíveis.
     async runSerproCron(input = {}) {
       return request(`/firm/serpro/cron/run`, {

@@ -26,6 +26,9 @@ import { ESTADOS } from "../CompetenciaStateMachine.js";
 // significa "desde o começo"). 50 iterações × 50 docs = 2.500 docs por
 // ciclo, suficiente pra cobrir até ~1 ano de notas pra empresa ativa.
 const MAX_ITERATIONS = 50;
+// Q42: tamanho do lote do ADN (até 50 docs por chamada). Sem maxNSU, o fim da varredura é
+// sinalizado por "lote incompleto" (items.length < LOTE_MAX). Env-overridável (ADN_LOTE_MAX).
+const LOTE_MAX = Math.max(1, Number(process.env.ADN_LOTE_MAX) || 50);
 const BACKOFF_MINUTES_ON_ERROR = 15;
 // Q12.B+++.10: ADN tem rate limit por requisição (~1 req/s observado).
 // Delay entre chamadas pra evitar HTTP 429 dentro do mesmo ciclo.
@@ -294,6 +297,10 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
         await persistCursor(tx, { clientId: portalClientId, newCursor });
       });
       cursor = maxNsuThisIter + 1n;
+
+      // Q42: sem maxNSU no ADN, o fim é o lote INCOMPLETO (< 50). Enquanto vier lote cheio,
+      // continua puxando os próximos 50. Isso substitui a varredura 1-em-1.
+      if (items.length < LOTE_MAX) break;
     }
 
     return {

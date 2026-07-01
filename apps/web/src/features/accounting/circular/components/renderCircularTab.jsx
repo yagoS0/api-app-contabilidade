@@ -289,6 +289,15 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           ↻ R$ {fmtMoney(entry.recalculatedToValor)}
         </div>
       )}
+      {/* Q41: selo verde do SERPRO quando o pagamento foi confirmado pelo SERPRO (PAGTOWEB). */}
+      {!isAberto && entry.sourceGuide?.paymentStatusSource === "SERPRO" && (
+        <div
+          style={{ fontSize: "0.6rem", fontWeight: 700, color: "#69FF47", whiteSpace: "nowrap" }}
+          title={`Pagamento confirmado pelo SERPRO${entry.sourceGuide.paymentConfirmedAt ? ` em ${fmtDate(entry.sourceGuide.paymentConfirmedAt)}` : ""}.${entry.sourceGuide.comprovantePdfFileId ? " Comprovante de arrecadação disponível." : ""}`}
+        >
+          ✓ SERPRO
+        </div>
+      )}
       {open && hasActions && (
         <div
           onMouseLeave={() => setOpen(false)}

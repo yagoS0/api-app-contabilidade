@@ -52,6 +52,17 @@ const PATH_TEMPLATES = [
   ({ ultNSU }) => `/DFe/${ultNSU}`,
 ];
 
+// gov.br/nfse (ADN Contribuinte) responde 502/503/504 quando o gateway está sem backend
+// (instabilidade frequente do serviço, liberado só em out/2025). Tratamos como transitório:
+// algumas tentativas com backoff curto antes de desistir com mensagem amigável.
+const MAX_5XX_RETRIES = 3;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Q42: consulta em LOTE (até 50 docs por chamada). SEM este parâmetro o ADN devolve 1 doc por
+// requisição (varredura 1-em-1) → enxurrada de chamadas e empresa nova "travada". Env-overridável
+// (ADN_LOTE=0) caso o Swagger do ADN mude o nome/rota do lote.
+const ADN_LOTE = process.env.ADN_LOTE !== "0";
+
 export class AdnNacionalClientError extends Error {
   constructor(code, message, extra = {}) {
     super(message);
@@ -123,11 +134,24 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
       tried.push(path);
 
       let res;
-      try {
-        res = await client.get(path);
-      } catch (err) {
-        throw new AdnNacionalClientError("NETWORK_ERROR",
-          `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`, { cause: err });
+      let attempt = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        try {
+          // Q42: lote=true → retorna até 50 docs por chamada (corrige a varredura 1-em-1).
+          res = await client.get(path, ADN_LOTE ? { params: { lote: true } } : undefined);
+        } catch (err) {
+          throw new AdnNacionalClientError("NETWORK_ERROR",
+            `Falha de rede no ADN Nacional (${path}): ${err?.message || err}`, { cause: err });
+        }
+        // 5xx = gateway/serviço do gov.br instável → tenta de novo (backoff curto)
+        if (res.status >= 500 && attempt < MAX_5XX_RETRIES) {
+          attempt += 1;
+          // eslint-disable-next-line no-await-in-loop
+          await sleep(1000 * attempt);
+          continue;
+        }
+        break;
       }
 
       // Body como string — tenta JSON.parse
@@ -147,6 +171,14 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
       if (res.status === 404) {
         lastEmpty404 = { path, headers: res.headers };
         continue;
+      }
+
+      // 5xx persistente após os retries → serviço do gov.br fora do ar. Mensagem amigável (sem HTML cru).
+      if (res.status >= 500) {
+        throw new AdnNacionalClientError("ADN_UNAVAILABLE",
+          `O ADN Nacional (gov.br/nfse) está temporariamente indisponível (${res.status}). ` +
+          `Isso é uma instabilidade do serviço da Receita, não do sistema. Tente novamente em alguns minutos.`,
+          { status: res.status, path });
       }
 
       // Outros status sem body JSON → erro real

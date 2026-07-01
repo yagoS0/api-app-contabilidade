@@ -16,6 +16,7 @@ const PAGE_TO_PATH = {
   accountingRulesGlobal: "/firm-settings/rules",
   chartOfAccountsGlobal: "/firm-settings/chart",
   apuracao: "/apuracao",
+  pendencias: "/pendencias",
 };
 
 function pathToPageName(pathname) {
@@ -31,6 +32,7 @@ function pathToPageName(pathname) {
   if (pathname === "/firm-settings/rules") return "accountingRulesGlobal";
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";
   if (pathname === "/apuracao") return "apuracao";
+  if (pathname === "/pendencias") return "pendencias";
   return "companies"; // fallback seguro
 }
 

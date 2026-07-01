@@ -67,7 +67,13 @@ import {
 } from "../../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { syncSerproInssForCompany } from "../../application/fiscal/serpro/SerproDctfwebService.js";
+import { capturarParcelaGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
+// Q40: confirmação de pagamento (PAGTOWEB) + SITFIS.
+import { runPaymentConfirmationOnce } from "../../application/fiscal/serpro/SerproPaymentConfirmationService.js";
+import { runSerproPaymentConfirmationWorkerOnce } from "../../workers/serproPaymentConfirmationWorker.js";
+import { obterRelatorio as obterSitfisRelatorio } from "../../application/fiscal/serpro/SerproSitfisService.js";
+import { GuideStorageService } from "../../application/guides/GuideStorageService.js";
 import { FiscalManualRunService } from "../../application/fiscal/FiscalManualRunService.js";
 import {
   computeGuideComplianceMap,
@@ -87,6 +93,41 @@ import {
 // Plano de contas global precisa cobrir os 5 tipos básicos antes de qualquer empresa ser criada.
 // Lançamentos automáticos (DAS, faturamento, etc) dependem desse plano mínimo configurado.
 const REQUIRED_GLOBAL_TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
+
+// Q41: deriva a situação fiscal (SITFIS) por palavra-chave no relatório retornado pelo SERPRO.
+// ⚠ Best-effort — o formato do relatório SITFIS ainda não foi validado no sandbox (verificadoTrial:false);
+// esta heurística é aproximada e serve só para sinalizar na UI (não é fonte fiscal definitiva).
+// Sinais fortes de pendência (RFB + PGFN). "devedor"/"saldo devedor consolidado ... DEVEDOR"
+// aparece na coluna "Sdo. Dev. Cons. Situação" do relatório quando há débito.
+const SITFIS_PENDENCIA_REGEX = /pend[êe]ncia|d[ée]bito|em aberto|parcelamento em atraso|irregular|div[íi]da ativa|inscri[çc][ãa]o em d[íi]vida|devedor|saldo devedor|exig[íi]vel/i;
+// Frases de "nada consta" — removidas antes de aplicar a regex para não gerar falso-positivo
+// (ex.: "não há débitos" contém "débitos"). Um relatório pode ter uma seção "sem débitos" na RFB
+// e ainda assim ter débito na PGFN; ao remover só as frases negativas, o "DEVEDOR" da PGFN dispara.
+const SITFIS_NEGACAO_REGEX = /n[ãa]o\s+(?:h[áa]|constam?|possui|exist[eê]m?|foram\s+localizad[oa]s?)\s+(?:d[ée]bitos?|pend[êe]ncias?|inscri[çc][õo]es?)[^.;\n]*/gi;
+
+async function extractSitfisPdfText(buffer) {
+  if (!buffer?.length) return "";
+  try {
+    const pdfParse = (await import("pdf-parse")).default;
+    const data = await pdfParse(buffer);
+    return String(data?.text || "");
+  } catch (err) {
+    log.warn({ err: err?.message }, "SITFIS: falha ao extrair texto do PDF (segue sem heurística de texto)");
+    return "";
+  }
+}
+
+function deriveSituacaoFiscal(result, extraText = "") {
+  if (result?.processando) return "PROCESSANDO";
+  const haystack = [
+    result?.relatorioTexto || "",
+    extraText || "",
+    result?.rawPayload ? JSON.stringify(result.rawPayload) : "",
+  ].join(" ");
+  const semNegacoes = haystack.replace(SITFIS_NEGACAO_REGEX, " ");
+  if (SITFIS_PENDENCIA_REGEX.test(semNegacoes)) return "COM_PENDENCIA";
+  return "REGULAR";
+}
 
 // Q29: traduz os códigos de erro do SERPRO no recálculo do DAS Simples em mensagens
 // legíveis para o contador (a UI mostrava só "Falha ao recalcular guia").
@@ -512,6 +553,46 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
     const data = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
     return res.json({ data, competencia: competenciaRef });
+  });
+
+  // Q41: lista das empresas com a última situação fiscal (SITFIS) gravada — alimenta a página Pendências.
+  // Não chama o SERPRO (lê CompanyFiscalStatus). Ordena COM_PENDENCIA primeiro.
+  router.get("/pendencias/fiscal", async (req, res) => {
+    const userId = String(req.auth.user.id);
+    const appRole = String(req.auth.user.role || "").toLowerCase();
+    const isAdminLike = appRole === "admin" || appRole === "contador";
+    const fiscalSelect = { situacao: true, checkedAt: true, protocolo: true, relatorioPdfFileId: true };
+
+    let portals;
+    if (isAdminLike) {
+      portals = await prisma.portalClient.findMany({
+        where: { status: { not: "SUSPENSA" } },
+        orderBy: { razao: "asc" },
+        select: { id: true, razao: true, cnpj: true, fiscalStatus: { select: fiscalSelect } },
+      });
+    } else {
+      const links = await prisma.companyFirmAccess.findMany({
+        where: { userId, status: "ACTIVE" },
+        include: {
+          company: { select: { id: true, razao: true, cnpj: true, status: true, fiscalStatus: { select: fiscalSelect } } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      portals = links.map((l) => l.company).filter((c) => c && c.status !== "SUSPENSA");
+    }
+
+    const items = portals.map((p) => ({
+      companyId: p.id,
+      razao: p.razao,
+      cnpj: p.cnpj,
+      situacao: p.fiscalStatus?.situacao || null,
+      checkedAt: p.fiscalStatus?.checkedAt || null,
+      protocolo: p.fiscalStatus?.protocolo || null,
+      relatorioPdfFileId: p.fiscalStatus?.relatorioPdfFileId || null,
+    }));
+    const rank = (s) => (s === "COM_PENDENCIA" ? 0 : s === "PROCESSANDO" ? 1 : s === "REGULAR" ? 2 : 3);
+    items.sort((a, b) => rank(a.situacao) - rank(b.situacao) || String(a.razao).localeCompare(String(b.razao)));
+    return res.json({ items });
   });
 
   router.post("/companies", async (req, res) => {
@@ -1235,6 +1316,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       fetchDay: settings.fetchDay,
       fetchHour: settings.fetchHour,
       fetchCron: settings.fetchCron,
+      // Q40: cron próprio de confirmação de pagamento (PAGTOWEB).
+      paymentConfirmationEnabled: Boolean(settings.paymentConfirmationEnabled),
+      paymentConfirmationDay: settings.paymentConfirmationDay,
+      paymentConfirmationHour: settings.paymentConfirmationHour,
+      paymentConfirmationCron: settings.paymentConfirmationCron,
       certificate: settings.certificate,
       source: settings.source,
     });
@@ -1293,6 +1379,22 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
   });
 
+  // Q40: dispara manualmente o cron de confirmação de pagamento (PAGTOWEB) para TODAS as guias OPEN.
+  router.post("/serpro/payment-confirmation/run-now", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const competencia = normalizeCompetencia(req.body?.competencia || req.query?.competencia || "") || undefined;
+    try {
+      const result = await runSerproPaymentConfirmationWorkerOnce({ competencia });
+      return res.json({ ok: true, result });
+    } catch (err) {
+      log.error({ err: err?.message || err }, "Falha no run-now de confirmação de pagamento SERPRO");
+      return res.status(502).json({ ok: false, error: err?.code || "SERPRO_PAYMENT_CONFIRMATION_FAILED", reason: err?.message });
+    }
+  });
+
   router.patch("/serpro/settings", requireAccountType("FIRM"), async (req, res) => {
     const appRole = String(req.auth?.user?.role || "").toLowerCase();
     if (!["admin", "contador"].includes(appRole)) {
@@ -1316,6 +1418,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         fetchDay: settings.fetchDay,
         fetchHour: settings.fetchHour,
         fetchCron: settings.fetchCron,
+        // Q40: cron próprio de confirmação de pagamento — re-hidrata o form.
+        paymentConfirmationEnabled: Boolean(settings.paymentConfirmationEnabled),
+        paymentConfirmationDay: settings.paymentConfirmationDay,
+        paymentConfirmationHour: settings.paymentConfirmationHour,
+        paymentConfirmationCron: settings.paymentConfirmationCron,
         certificate: settings.certificate,
         source: settings.source,
       },
@@ -2498,6 +2605,238 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
         log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha na sincronização de INSS SERPRO");
         return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
+      }
+    }
+  );
+
+  // Q36: captura manual de parcelamento — itera os parcelamentos ATIVOS da empresa (mesmo where do
+  // worker Stage 4). Ação explícita do contador → roda independente da flag INTEGRACAO_SERPRO_PARCELAMENTO.
+  // Sem competência (o serviço itera internamente as parcelas geráveis).
+  router.post(
+    "/companies/:companyId/serpro/parcelamento/capture",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+      try {
+        const parcelamentos = await prisma.parcelamento.findMany({
+          where: {
+            portalClientId: portalCompanyId,
+            status: "ATIVO",
+            numeroParcelamento: { not: null },
+            aberturaEntryId: { not: null },
+            grupo: { not: "outros" },
+          },
+          select: { id: true, tipo: true, numeroParcelamento: true, totalValue: true, principalTotal: true, valorMulta: true, jurosTotal: true, numParcelas: true },
+        });
+        if (!parcelamentos.length) {
+          return res.json({ ok: true, parcelamentos: [], skipped: "sem_parcelamento_ativo" });
+        }
+        const results = [];
+        for (const parc of parcelamentos) {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const r = await capturarParcelaGuideForCompany({ portalClientId: portalCompanyId, parcelamento: parc });
+            results.push({ id: parc.id, numeroParcelamento: parc.numeroParcelamento, parcelas: r?.parcelas || [], reason: r?.reason || null });
+          } catch (err) {
+            results.push({ id: parc.id, numeroParcelamento: parc.numeroParcelamento, status: "erro", reason: err?.code || err?.message });
+          }
+        }
+        return res.json({ ok: true, parcelamentos: results });
+      } catch (err) {
+        const code = err?.code || "SERPRO_PARCELAMENTO_CAPTURE_FAILED";
+        const message = err?.message || "Falha ao capturar parcelamento no SERPRO.";
+        if (code === "PORTAL_COMPANY_NOT_FOUND") {
+          return res.status(404).json({ ok: false, error: code, reason: message });
+        }
+        log.error({ err: err?.message || err, code, portalCompanyId }, "Falha na captura de parcelamento SERPRO");
+        return res.status(502).json({ ok: false, error: code, reason: message });
+      }
+    }
+  );
+
+  // Q40 Fase A/B: confirmação de pagamento por empresa (PAGTOWEB). Ação manual do contador —
+  // consulta o comprovante das guias OPEN (com numeroDocumento) e marca as pagas + gera a baixa.
+  router.post(
+    "/companies/:companyId/serpro/payment-confirmation",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      const competencia = String(req.body?.competencia || req.query?.competencia || "").trim() || null;
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+      try {
+        const result = await runPaymentConfirmationOnce({
+          portalClientId: portalCompanyId,
+          competencia,
+          userId: req.auth?.user?.id || null,
+          logger: log,
+        });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        const code = err?.code || "SERPRO_PAYMENT_CONFIRMATION_FAILED";
+        const message = err?.message || "Falha ao confirmar pagamento no SERPRO.";
+        if (code === "SERPRO_PAGTOWEB_DISABLED") {
+          return res.status(400).json({ ok: false, error: code, reason: "Confirmação de pagamento (PAGTOWEB) desabilitada. Ligue INTEGRACAO_SERPRO_PAGTOWEB após validar no sandbox." });
+        }
+        log.error({ err: err?.message || err, code, portalCompanyId }, "Falha na confirmação de pagamento SERPRO");
+        return res.status(502).json({ ok: false, error: code, reason: message });
+      }
+    }
+  );
+
+  // Q41: leitura do último status fiscal gravado (SEM chamar o SERPRO). Usado pela aba Situação Fiscal
+  // e pela página Pendências para exibir a última consulta sem custo de requisição.
+  router.get(
+    "/companies/:companyId/serpro/sitfis",
+    requireFirmCompanyAccess(),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+      const status = await prisma.companyFiscalStatus.findUnique({
+        where: { portalClientId: portalCompanyId },
+        select: { situacao: true, protocolo: true, relatorioPdfFileId: true, texto: true, checkedAt: true },
+      });
+      return res.json({ ok: true, status: status || null });
+    }
+  );
+
+  // Q43.4: serve o PDF do relatório SITFIS (inline) para visualização/download. Sem chamar o SERPRO.
+  router.get(
+    "/companies/:companyId/serpro/sitfis/pdf",
+    requireFirmCompanyAccess(),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      if (!portalCompanyId) return res.status(400).json({ error: "company_id_required" });
+      const status = await prisma.companyFiscalStatus.findUnique({
+        where: { portalClientId: portalCompanyId },
+        select: { relatorioPdfFileId: true },
+      });
+      if (!status?.relatorioPdfFileId) return res.status(404).json({ error: "pdf_not_available" });
+      try {
+        const buf = await GuideStorageService.create().downloadBuffer({ key: status.relatorioPdfFileId });
+        if (!buf?.length) return res.status(404).json({ error: "pdf_not_available" });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename="${sanitizeFilename(`situacao-fiscal-${portalCompanyId}.pdf`)}"`);
+        res.setHeader("Cache-Control", "private, max-age=300");
+        return res.send(buf);
+      } catch (err) {
+        log.warn({ err: err?.message, portalCompanyId }, "SITFIS: falha ao ler PDF do storage");
+        return res.status(404).json({ error: "pdf_not_available" });
+      }
+    }
+  );
+
+  // Q40 Fase C: relatório de situação fiscal (SITFIS) por empresa. Resolve o polling inline (≤~28s);
+  // grava a última consulta em CompanyFiscalStatus. Se não ficar pronto, responde processando=true.
+  router.post(
+    "/companies/:companyId/serpro/sitfis/relatorio",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      if (!portalCompanyId) {
+        return res.status(400).json({ ok: false, error: "company_id_required" });
+      }
+      try {
+        const portal = await prisma.portalClient.findUnique({
+          where: { id: portalCompanyId },
+          select: { id: true, cnpj: true },
+        });
+        if (!portal) return res.status(404).json({ ok: false, error: "company_not_found" });
+
+        // Q43.7: reusa o protocolo do dia (evita novo /Apoiar → reduz o limite AV02 por contratante).
+        let protocoloExistente = null;
+        try {
+          const prev = await prisma.companyFiscalStatus.findUnique({
+            where: { portalClientId: portal.id },
+            select: { protocolo: true, checkedAt: true },
+          });
+          if (prev?.protocolo && prev.checkedAt) {
+            const spDay = (d) => new Intl.DateTimeFormat("en-CA", {
+              timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+            }).format(d);
+            if (spDay(prev.checkedAt) === spDay(new Date())) protocoloExistente = prev.protocolo;
+          }
+        } catch { /* best-effort: sem reuso, segue com /Apoiar */ }
+
+        const result = await obterSitfisRelatorio({ contribuinteCnpj: portal.cnpj, tipo: 2, protocoloExistente, logger: log });
+        // Q43.5: o relatório SITFIS vem só como PDF (dados.pdf) — extrai o texto para a heurística
+        // de pendência funcionar (senão a situação cairia sempre em REGULAR por falta de texto).
+        const pdfText = result.relatorioTexto ? "" : await extractSitfisPdfText(result.relatorioPdfBuffer);
+        // Q41: deriva a situação fiscal por palavra-chave (best-effort — verificadoTrial:false).
+        const situacao = deriveSituacaoFiscal(result, pdfText);
+        // Guarda o texto extraído (trunca para não inflar a linha) — alimenta a página Pendências.
+        const textoRelatorio = result.relatorioTexto || (pdfText ? pdfText.slice(0, 20000) : null);
+
+        let relatorioPdfFileId = null;
+        if (result.relatorioPdfBuffer?.length) {
+          try {
+            const storage = GuideStorageService.create();
+            const key = `serpro/sitfis/${portal.id}/${Date.now()}.pdf`;
+            const uploaded = await storage.upload({ key, buffer: result.relatorioPdfBuffer, contentType: "application/pdf" });
+            relatorioPdfFileId = uploaded.key;
+          } catch (err) {
+            log.warn({ err: err?.message, portalCompanyId }, "SITFIS: falha ao salvar PDF (segue)");
+          }
+        }
+
+        // Q43.7: quando a consulta ainda está "processando" (sem relatório novo), PRESERVAMOS o último
+        // relatório/situação já gravados e só atualizamos o protocolo (se obtido) + checkedAt — assim o
+        // protocolo do dia fica salvo para reuso até expirar, e não apagamos o relatório anterior.
+        const temRelatorioNovo = Boolean(relatorioPdfFileId || textoRelatorio);
+        const updateData = {
+          tipo: 2,
+          // protocolo: só sobrescreve quando temos um novo; senão mantém o salvo (|| undefined = não altera).
+          protocolo: result.protocolo || undefined,
+          checkedAt: new Date(),
+        };
+        if (temRelatorioNovo || !result.processando) {
+          // Consulta concluída (com relatório) ou sem indicação de processando → atualiza o resultado.
+          updateData.situacao = situacao;
+          updateData.relatorioPdfFileId = relatorioPdfFileId;
+          updateData.texto = textoRelatorio;
+          updateData.rawPayload = result.rawPayload || undefined;
+        }
+        // (processando sem relatório novo → não toca em situacao/pdf/texto: mantém o último conhecido)
+
+        await prisma.companyFiscalStatus.upsert({
+          where: { portalClientId: portal.id },
+          create: {
+            portalClientId: portal.id,
+            tipo: 2,
+            situacao,
+            protocolo: result.protocolo || null,
+            relatorioPdfFileId,
+            texto: textoRelatorio,
+            rawPayload: result.rawPayload || undefined,
+            checkedAt: new Date(),
+          },
+          update: updateData,
+        });
+
+        return res.json({
+          ok: true,
+          processando: Boolean(result.processando),
+          situacao,
+          protocolo: result.protocolo || null,
+          relatorioPdfFileId,
+          relatorioTexto: textoRelatorio,
+          mensagem: result.mensagem || null,
+          verificadoTrial: result.verificadoTrial,
+        });
+      } catch (err) {
+        const code = err?.code || "SERPRO_SITFIS_FAILED";
+        const message = err?.message || "Falha ao consultar a situação fiscal (SITFIS).";
+        if (code === "SERPRO_SITFIS_DISABLED") {
+          return res.status(400).json({ ok: false, error: code, reason: "Situação fiscal (SITFIS) desabilitada. Ligue INTEGRACAO_SERPRO_SITFIS após validar no sandbox." });
+        }
+        log.error({ err: err?.message || err, code, portalCompanyId }, "Falha na consulta SITFIS");
+        return res.status(502).json({ ok: false, error: code, reason: message });
       }
     }
   );

@@ -10,12 +10,13 @@ import {
 
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
-const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "apuracao-v2", "plano-contas", "configuracoes", "edit"];
+const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "sitfis", "apuracao-v2", "plano-contas", "configuracoes", "edit"];
 const SEGMENT_TO_TAB = {
   guides: "guides",
   lancamentos: "lancamentos",
   circular: "circular",
   "notas-fiscais": "notasFiscais",
+  sitfis: "sitfis",
   "apuracao-v2": "apuracaoV2",
   "plano-contas": "planoContas",
   configuracoes: "configuracoes",
@@ -26,6 +27,7 @@ const TAB_TO_SEGMENT = {
   lancamentos: "lancamentos",
   circular: "circular",
   notasFiscais: "notas-fiscais",
+  sitfis: "sitfis",
   apuracaoV2: "apuracao-v2",
   planoContas: "plano-contas",
   configuracoes: "configuracoes",
@@ -399,6 +401,57 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       return false;
     } finally {
       setSyncingSerproInss(false);
+    }
+  }
+
+  // Q36: executa UMA operação SERPRO (das|inss|extrato|parcelamento|procuracao) para uma empresa
+  // (e competência quando aplicável). Retorna { ok, message } SEM mexer no feedback global — a página
+  // de configuração orquestra o loop (empresas × meses) e mostra o resultado por linha ao vivo.
+  async function runSerproOp(op, companyId, competencia) {
+    try {
+      if (!companyId) return { ok: false, message: "Empresa não informada." };
+      switch (op) {
+        case "procuracao":
+          await api.checkSerproCompanyProcuration(companyId, {});
+          return { ok: true };
+        case "parcelamento":
+          await api.captureSerproParcelamento(companyId);
+          return { ok: true };
+        case "das":
+          await api.captureSerproPgdasd(companyId, { competencia });
+          return { ok: true };
+        case "inss":
+          await api.syncSerproInss(companyId, { competencia });
+          return { ok: true };
+        case "extrato":
+          await api.syncPgdasCircular(companyId, competencia, {});
+          return { ok: true };
+        case "pagamento": {
+          // Q40/Q43: confirma pagamento das guias OPEN (via PAGTOWEB). competencia é opcional.
+          const r = await api.confirmarPagamentoSerpro(companyId, competencia ? { competencia } : {});
+          const res = r?.result || {};
+          const paid = res.paid ?? 0;
+          const errors = res.errors ?? 0;
+          const total = res.total ?? 0;
+          // Q43: NÃO reportar OK quando tudo falhou. Mapeia o motivo (ex.: PAGTOWEB desabilitado).
+          if (errors > 0 && paid === 0) {
+            const msg = res.firstError === "SERPRO_PAGTOWEB_DISABLED"
+              ? "PAGTOWEB desabilitado (validar no trial antes de ligar)"
+              : `Falha ao confirmar (${res.firstError || `${errors} erro(s)`})`;
+            return { ok: false, message: msg };
+          }
+          return { ok: true, message: paid ? `${paid} pago(s)` : (total ? "Nenhum pago" : "Sem guias a confirmar") };
+        }
+        case "sitfis": {
+          // Q40: relatório de situação fiscal.
+          const r = await api.getSitfis(companyId);
+          return { ok: true, message: r?.processando ? "Processando (tente novamente)" : "Relatório consultado", data: r };
+        }
+        default:
+          return { ok: false, message: `Operação desconhecida: ${op}` };
+      }
+    } catch (err) {
+      return { ok: false, message: err?.message || "Falha na operação SERPRO." };
     }
   }
 
@@ -829,6 +882,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleCaptureSerproPgdasd,
     handleSyncSerproPgdas,
     handleSyncSerproInss,
+    runSerproOp,
     loadSerproWorkerStatus,
     pendingGuides,
     selectedPendingGuideIds,

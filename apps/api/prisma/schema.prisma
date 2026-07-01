@@ -283,10 +283,31 @@ model PortalClient {
   filaPendencias       FilaPendencia[]
   apuracaoSnapshots    ApuracaoSnapshot[]
   logsDecisaoFatorR    LogDecisaoFatorR[]
+  fiscalStatus         CompanyFiscalStatus?
 
   @@index([cnpj])
   @@index([updatedAt])
   @@index([status])
+}
+
+// Q40 Fase C: relatório de situação fiscal (SITFIS) por empresa — última consulta.
+// 1 linha por empresa (@unique). ADD-only; sob demanda (não em massa — custo por chamada).
+model CompanyFiscalStatus {
+  id                 String   @id @default(uuid())
+  portalClientId     String   @unique
+  tipo               Int      @default(2) // 1=CPF, 2=CNPJ
+  situacao           String?  // resumo textual/derivado (opcional)
+  protocolo          String?  // protocoloRelatorio do SOLICITARPROTOCOLO91
+  relatorioPdfFileId String?  // PDF do relatório (quando o SERPRO devolve PDF base64)
+  texto              String?  // relatório em texto (quando aplicável)
+  rawPayload         Json?
+  checkedAt          DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@map("company_fiscal_status")
 }
 
 model Guide {
@@ -307,6 +328,8 @@ model Guide {
   serproLastCheckResult    String?
   serproLastSeenAt         DateTime?
   serproService            String?
+  // Q40: comprovante oficial de arrecadação (PAGTOWEB/COMPARRECADACAO) quando o pagamento é confirmado.
+  comprovantePdfFileId     String?
 
   taxDocuments      TaxDocument[]
   accountingEntries AccountingEntry[] @relation("GuideToEntries")

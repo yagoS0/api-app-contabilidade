@@ -292,6 +292,16 @@ export function AccountingEntriesTab({
   const defaultComp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const activeComp = filters.competencia || defaultComp;
 
+  // Navegação rápida de competência (setas ◀ ▶ no título): ±1 mês.
+  function shiftCompetencia(n) {
+    const m = String(activeComp).match(/^(\d{4})-(\d{2})$/);
+    if (!m) return;
+    let total = Number(m[1]) * 12 + (Number(m[2]) - 1) + n;
+    const y = Math.floor(total / 12);
+    const mo = (total % 12) + 1;
+    onFilterChange("competencia", `${y}-${String(mo).padStart(2, "0")}`);
+  }
+
   const totals = useMemo(() => {
     const summary = {};
     entries.forEach((entry) => {
@@ -533,9 +543,29 @@ export function AccountingEntriesTab({
 
       {/* Q18: tabela centralizada e mais estreita (Histórico fica perto do Valor). */}
       <div style={{ overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
-        {/* Q32: título da competência acima do cabeçalho (ex.: MAIO/2026). */}
-        <div style={{ textAlign: "center", fontSize: "1.4rem", fontWeight: 800, letterSpacing: "0.04em", color: ACCOUNTING_PANEL.text, marginBottom: 14 }}>
-          {formatCompetenciaTitulo(activeComp)}
+        {/* Q32: título da competência acima do cabeçalho (ex.: MAIO/2026). Q39: setas ◀ ▶ pra navegar. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 14 }}>
+          <button
+            type="button"
+            onClick={() => shiftCompetencia(-1)}
+            aria-label="Competência anterior"
+            title="Competência anterior"
+            style={{ background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 8, width: 34, height: 34, fontSize: "1.1rem", cursor: "pointer", lineHeight: 1 }}
+          >
+            ◀
+          </button>
+          <div style={{ minWidth: 200, textAlign: "center", fontSize: "1.4rem", fontWeight: 800, letterSpacing: "0.04em", color: ACCOUNTING_PANEL.text }}>
+            {formatCompetenciaTitulo(activeComp)}
+          </div>
+          <button
+            type="button"
+            onClick={() => shiftCompetencia(1)}
+            aria-label="Próxima competência"
+            title="Próxima competência"
+            style={{ background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 8, width: 34, height: 34, fontSize: "1.1rem", cursor: "pointer", lineHeight: 1 }}
+          >
+            ▶
+          </button>
         </div>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", fontSize: "0.9375rem", borderRadius: 16, overflow: "hidden" }}>
           <colgroup>
@@ -615,6 +645,7 @@ export function AccountingEntriesTab({
                       savingBaixa={savingBaixa}
                       onLoadBaixaTemplate={onLoadBaixaTemplate}
                       onSearchHistoricos={onSearchHistoricos}
+                      onGetHistoricosByCode={onGetHistoricosByCode}
                       isSelected={selectedIds.has(entry.id)}
                       onToggleSelect={() => toggleOne(entry.id)}
                     />

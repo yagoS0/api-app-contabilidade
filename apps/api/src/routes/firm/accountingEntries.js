@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireFirmCompanyAccess } from "../../middlewares/requireFirmCompanyAccess.js";
-import { generateEntriesFromCircular, resolveRule, applyTemplate, formatCompetenciaLabel } from "../../application/accounting/AccountingEntryGeneratorService.js";
+import { generateEntriesFromCircular, resolveRule, applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "../../application/accounting/AccountingEntryGeneratorService.js";
 import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
 import { resolvePayrollTemplate } from "../../application/accounting/payrollTemplate.js";
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
@@ -10,6 +10,55 @@ import { importChartOfAccountsFromBuffer } from "../../application/accounting/ch
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { parseExcelBuffer, findHistoricoMatches, upsertHistoricoFromImport } from "../../application/accounting/excelImport.js";
 import { sanitizeFilename } from "../../lib/httpHeaders.js";
+
+// Q16/Q37: memória de contas por (empresa, eventType). Grava/atualiza AccountingHistorico para que o
+// próximo lançamento do mesmo evento (provisão automática OU baixa) venha com D/C pré-preenchidos —
+// "último preenchido permanece". Best-effort: nunca derruba a operação principal.
+async function memorizeAccountHistorico({ userId, portalClientId, text, contaDebito, contaCredito, eventType }) {
+  if (!userId || !portalClientId || !text) return;
+  if (!contaDebito && !contaCredito) return;
+  try {
+    const existing = await prisma.accountingHistorico.findFirst({
+      where: { createdByUserId: String(userId), companyPortalClientId: String(portalClientId), text },
+    });
+    if (existing) {
+      await prisma.accountingHistorico.update({
+        where: { id: existing.id },
+        data: {
+          contaDebito: contaDebito ?? existing.contaDebito,
+          contaCredito: contaCredito ?? existing.contaCredito,
+          eventType: eventType ?? existing.eventType,
+          usageCount: existing.usageCount + 1,
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.accountingHistorico.create({
+        data: {
+          createdByUserId: String(userId),
+          companyPortalClientId: String(portalClientId),
+          text,
+          contaDebito: contaDebito || null,
+          contaCredito: contaCredito || null,
+          eventType: eventType || null,
+        },
+      });
+    }
+  } catch {
+    // best-effort: memória não derruba a operação
+  }
+}
+
+// Q37: deriva o eventType da BAIXA a partir da provisão. DAS tem mapa explícito
+// (PROVISAO_TO_BAIXA_EVENT); os demais tributos usam chave genérica por eventType/subtipo
+// (memória por tributo). Retorna null quando não há como chavear (cai na inversão da provisão).
+function deriveBaixaEventType(entry) {
+  if (!entry) return null;
+  if (entry.eventType && PROVISAO_TO_BAIXA_EVENT[entry.eventType]) return PROVISAO_TO_BAIXA_EVENT[entry.eventType];
+  if (entry.eventType) return `BAIXA_${entry.eventType}`;
+  if (entry.subtipo) return `BAIXA_${entry.subtipo}`;
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // OFX Parser (SGML v1 e XML v2)
@@ -535,6 +584,17 @@ export function createAccountingEntriesRouter({ log }) {
         include: {
           lines: { orderBy: { ordem: "asc" } },
           baixas: { select: { id: true }, take: 1 },
+          // Q41: dados do pagamento confirmado pelo SERPRO (para o selo verde na célula).
+          sourceGuide: {
+            select: {
+              id: true,
+              paymentStatus: true,
+              paymentStatusSource: true,
+              paymentConfirmedAt: true,
+              serproLastCheckResult: true,
+              comprovantePdfFileId: true,
+            },
+          },
         },
         orderBy: [{ competencia: "asc" }, { createdAt: "asc" }],
       }),
@@ -562,6 +622,10 @@ export function createAccountingEntriesRouter({ log }) {
           valor: true,
           valorOriginal: true,
           paymentStatus: true,
+          paymentStatusSource: true, // Q41: selo verde SERPRO
+          paymentConfirmedAt: true,
+          serproLastCheckResult: true,
+          comprovantePdfFileId: true,
           vencimento: true,
           updatedAt: true,
           parcelamentoId: true, // Q31: vínculo a parcelamento (célula amarela na Circular)
@@ -663,6 +727,15 @@ export function createAccountingEntriesRouter({ log }) {
         placeholder: false,
         synthetic: true, // sinaliza ao frontend que é uma "fake provisão"
         parcelamentoId: g.parcelamentoId || null, // Q31: vínculo (amarelo) — roteado pela guia
+        // Q41: dados do pagamento confirmado pelo SERPRO (selo verde na célula).
+        sourceGuide: {
+          id: g.id,
+          paymentStatus: g.paymentStatus,
+          paymentStatusSource: g.paymentStatusSource,
+          paymentConfirmedAt: g.paymentConfirmedAt,
+          serproLastCheckResult: g.serproLastCheckResult,
+          comprovantePdfFileId: g.comprovantePdfFileId,
+        },
       };
     });
 
@@ -1574,39 +1647,15 @@ export function createAccountingEntriesRouter({ log }) {
         const creditLine = finalLines.find((l) => String(l.tipo).toUpperCase() === "C");
         const contaD = debitLine ? String(debitLine.conta || "").trim() || null : null;
         const contaC = creditLine ? String(creditLine.conta || "").trim() || null : null;
-        // Só auto-saveia se tiver pelo menos uma conta preenchida (evita gravar memória vazia)
-        if (contaD || contaC) {
-          try {
-            const existingHist = await prisma.accountingHistorico.findFirst({
-              where: { createdByUserId: userId, companyPortalClientId: portalClientId, text: finalHistorico },
-            });
-            if (existingHist) {
-              await prisma.accountingHistorico.update({
-                where: { id: existingHist.id },
-                data: {
-                  contaDebito: contaD ?? existingHist.contaDebito,
-                  contaCredito: contaC ?? existingHist.contaCredito,
-                  eventType: bodyEventType ?? existingHist.eventType,
-                  usageCount: existingHist.usageCount + 1,
-                  updatedAt: new Date(),
-                },
-              });
-            } else {
-              await prisma.accountingHistorico.create({
-                data: {
-                  createdByUserId: userId,
-                  companyPortalClientId: portalClientId,
-                  text: finalHistorico,
-                  contaDebito: contaD,
-                  contaCredito: contaC,
-                  eventType: bodyEventType,
-                },
-              });
-            }
-          } catch (histErr) {
-            log.warn({ histErr }, "Falha ao auto-salvar histórico no PUT (não crítico)");
-          }
-        }
+        // Só auto-saveia se tiver pelo menos uma conta preenchida (helper guarda contaD||contaC).
+        await memorizeAccountHistorico({
+          userId,
+          portalClientId,
+          text: finalHistorico,
+          contaDebito: contaD,
+          contaCredito: contaC,
+          eventType: bodyEventType,
+        });
       }
 
       // Q16: entries de parcelamento (abertura/baixa) memorizam contas POR LINHA, pra a
@@ -1694,7 +1743,7 @@ export function createAccountingEntriesRouter({ log }) {
     });
     if (!entry) return res.status(404).json({ error: "lancamento_nao_encontrado" });
 
-    const baixaEventType = entry.eventType ? PROVISAO_TO_BAIXA_EVENT[entry.eventType] : null;
+    const baixaEventType = deriveBaixaEventType(entry);
     if (!baixaEventType) {
       return res.json({ ok: true, template: null, reason: "no_baixa_mapping" });
     }
@@ -1704,31 +1753,39 @@ export function createAccountingEntriesRouter({ log }) {
       select: { razao: true, cnpj: true },
     });
 
+    // Q37: prioriza a MEMÓRIA do último preenchido sobre a regra fixa (AccountingEntryRule).
+    const mem = await lookupAccountsFromHistorico(prisma, { portalClientId, eventType: baixaEventType });
     const rule = await resolveRule(prisma, { portalClientId, eventType: baixaEventType });
-    if (!rule || !rule.debitAccountCode || !rule.creditAccountCode) {
-      return res.json({ ok: true, template: null, reason: "rule_not_configured" });
+    const debitAccountCode = mem.debitAccountCode || rule?.debitAccountCode || "";
+    const creditAccountCode = mem.creditAccountCode || rule?.creditAccountCode || "";
+    if (!debitAccountCode && !creditAccountCode) {
+      // Sem memória nem regra → modal inverte as linhas da provisão (comportamento atual).
+      return res.json({ ok: true, template: null, reason: "sem_memoria_nem_regra" });
     }
 
     const totalD = (entry.lines || []).filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
     const valor = totalD > 0 ? totalD : Number(entry.valor || 0);
 
-    const historico = applyTemplate(rule.descriptionTemplate || "", {
-      competencia: entry.competencia,
-      competenciaLabel: formatCompetenciaLabel(entry.competencia),
-      companyName: company?.razao || "",
-      cnpj: company?.cnpj || "",
-    });
+    const historico = rule?.descriptionTemplate
+      ? applyTemplate(rule.descriptionTemplate, {
+          competencia: entry.competencia,
+          competenciaLabel: formatCompetenciaLabel(entry.competencia),
+          companyName: company?.razao || "",
+          cnpj: company?.cnpj || "",
+        })
+      : `PAGAMENTO ${entry.subtipo || "PROVISÃO"} - ${formatCompetenciaLabel(entry.competencia)}`;
 
+    const fromMemoria = Boolean(mem.debitAccountCode || mem.creditAccountCode);
     return res.json({
       ok: true,
       template: {
         eventType: baixaEventType,
-        debitAccountCode: rule.debitAccountCode,
-        creditAccountCode: rule.creditAccountCode,
+        debitAccountCode,
+        creditAccountCode,
         historico,
         valor,
-        ruleId: rule.id || null,
-        scope: rule.id ? (rule.portalClientId ? "COMPANY" : "GLOBAL") : "FALLBACK",
+        ruleId: rule?.id || null,
+        scope: fromMemoria ? "MEMORIA" : (rule?.id ? (rule.portalClientId ? "COMPANY" : "GLOBAL") : "FALLBACK"),
       },
     });
   });
@@ -1775,6 +1832,8 @@ export function createAccountingEntriesRouter({ log }) {
             competencia,
             historico,
             tipo: "BAIXA",
+            // Q37: grava o eventType da baixa pra alimentar a memória de contas (último preenchido).
+            eventType: deriveBaixaEventType(openEntry),
             openEntryId: entryId,
             origem: "MANUAL",
             statusPagamento: "NA",
@@ -1800,6 +1859,18 @@ export function createAccountingEntriesRouter({ log }) {
           include: { lines: { orderBy: { ordem: "asc" } } },
         });
         return { entry: fullBaixa, openEntry: updatedOpen };
+      });
+      // Q37: memoriza as contas D/C da baixa por (empresa, eventType) → próxima baixa vem pré-preenchida
+      // com o último preenchido. Best-effort.
+      const dLine = lines.find((l) => String(l.tipo).toUpperCase() === "D");
+      const cLine = lines.find((l) => String(l.tipo).toUpperCase() === "C");
+      await memorizeAccountHistorico({
+        userId: req.auth?.user?.id,
+        portalClientId,
+        text: historico,
+        contaDebito: dLine ? String(dLine.conta || "").trim() || null : null,
+        contaCredito: cLine ? String(cLine.conta || "").trim() || null : null,
+        eventType: deriveBaixaEventType(openEntry),
       });
       return res.status(201).json({
         ok: true,

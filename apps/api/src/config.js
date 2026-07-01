@@ -114,6 +114,8 @@ export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
 export const GUIDE_EMAIL_WORKER_ENABLED = process.env.GUIDE_EMAIL_WORKER_ENABLED === "1";
 export const SERPRO_PGDASD_WORKER_ENABLED = process.env.SERPRO_PGDASD_WORKER_ENABLED === "1";
 export const SERPRO_DCTFWEB_WORKER_ENABLED = process.env.SERPRO_DCTFWEB_WORKER_ENABLED === "1";
+// Q40: cron próprio de confirmação de pagamento (PAGTOWEB). Agenda vem do SerproRuntimeSettings.
+export const SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED = process.env.SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED === "1";
 // Q15.6: worker da fila de transmissão de apurações ao SERPRO (opt-in).
 export const APURACAO_BATCH_WORKER_ENABLED = process.env.APURACAO_BATCH_WORKER_ENABLED === "1";
 // Q12.B+++.5: worker automático de captura de NF-e (SEFAZ) e NFS-e (gov.br/nfse).
@@ -182,6 +184,29 @@ export const SERPRO_SCOPE = (process.env.SERPRO_SCOPE || "").trim();
 export const SERPRO_ENV = (process.env.SERPRO_ENV || "homolog").trim().toLowerCase();
 export const SERPRO_TIMEOUT_MS = Math.max(1000, Number(process.env.SERPRO_TIMEOUT_MS || 30000));
 export const SERPRO_CERT_COMPANY_ID = (process.env.SERPRO_CERT_COMPANY_ID || "").trim();
+
+// Q40: PAGTOWEB (confirmação de pagamento por comprovante de arrecadação) — flag OFF por padrão.
+// ⚠ NÃO INVENTAR: idServiço/payload precisam ser confirmados no catálogo oficial + validados no
+// sandbox antes de ligar a flag. Defaults abaixo são o palpite da spec (verificadoTrial:false).
+export const INTEGRACAO_SERPRO_PAGTOWEB = process.env.INTEGRACAO_SERPRO_PAGTOWEB === "1";
+export const SERPRO_PAGTOWEB_SYSTEM = (process.env.SERPRO_PAGTOWEB_SYSTEM || "PAGTOWEB").trim();
+export const SERPRO_PAGTOWEB_SERVICE_COMPROVANTE = (
+  process.env.SERPRO_PAGTOWEB_SERVICE_COMPROVANTE || "COMPARRECADACAO72"
+).trim();
+
+// Q40: SITFIS (relatório de situação fiscal, assíncrono em 2 etapas) — flag OFF por padrão.
+// ⚠ NÃO INVENTAR: idServiço/payload/polling confirmar no catálogo oficial + sandbox antes de ligar.
+export const INTEGRACAO_SERPRO_SITFIS = process.env.INTEGRACAO_SERPRO_SITFIS === "1";
+export const SERPRO_SITFIS_SYSTEM = (process.env.SERPRO_SITFIS_SYSTEM || "SITFIS").trim();
+export const SERPRO_SITFIS_SERVICE_PROTOCOLO = (
+  process.env.SERPRO_SITFIS_SERVICE_PROTOCOLO || "SOLICITARPROTOCOLO91"
+).trim();
+export const SERPRO_SITFIS_SERVICE_RELATORIO = (
+  process.env.SERPRO_SITFIS_SERVICE_RELATORIO || "RELATORIOSITFIS92"
+).trim();
+// Catálogo oficial confirma versaoSistema "2.0" para o SITFIS (páginas de serviço atuais);
+// a página de cenários trial ainda mostra "1.0" — por isso deixamos env-overridável (confirmar no trial/homolog).
+export const SERPRO_SITFIS_VERSAO = (process.env.SERPRO_SITFIS_VERSAO || "2.0").trim();
 
 // === API Keys ===
 const rawApiKeys = process.env.API_KEYS || "";

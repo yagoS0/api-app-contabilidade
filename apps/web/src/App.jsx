@@ -21,6 +21,8 @@ import { useParcelamentos } from "./features/accounting/parcelamento/hooks/usePa
 import { useNotasFiscais } from "./features/notas/hooks/useNotasFiscais";
 import { useApuracao } from "./features/apuracao/hooks/useApuracao";
 import { ApuracaoPage } from "./features/apuracao/pages/renderApuracaoPage";
+import { usePendencias } from "./features/pendencias/hooks/usePendencias";
+import { PendenciasPage } from "./features/pendencias/pages/renderPendenciasPage";
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
@@ -75,6 +77,13 @@ function App() {
     api,
     feedback,
     enabled: Boolean(session.user) && session.page === "apuracao",
+  });
+
+  // Q41: página Pendências (situação fiscal / SITFIS) — carrega só quando na página.
+  const pendenciasFiscais = usePendencias({
+    api,
+    feedback,
+    enabled: Boolean(session.user) && session.page === "pendencias",
   });
 
   // Q8.C: sincroniza selectedCompanyId com a URL (/companies/:companyId/*).
@@ -167,6 +176,7 @@ function App() {
         onCapturePgdasd={companiesWorkspace.handleCaptureSerproPgdasd}
         onSyncPgdas={companiesWorkspace.handleSyncSerproPgdas}
         onSyncInss={companiesWorkspace.handleSyncSerproInss}
+        onRunOp={companiesWorkspace.runSerproOp}
         onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
         onRunCron={companiesWorkspace.handleRunSerproCron}
         runningCron={companiesWorkspace.runningSerproCron}
@@ -208,6 +218,15 @@ function App() {
           session.setPage("companyDetail");
           companiesWorkspace.setCompanyDetailTab("notasFiscais");
         }}
+      />
+    );
+  }
+
+  if (session.page === "pendencias") {
+    return (
+      <PendenciasPage
+        pendenciasPanel={pendenciasFiscais}
+        onBack={() => session.setPage("companies")}
       />
     );
   }
@@ -388,6 +407,7 @@ function App() {
       onOpenPendingReport={() => session.setPage("pendingReport")}
       onOpenBatchEmail={() => session.setPage("batchEmail")}
       onOpenApuracao={() => session.setPage("apuracao")}
+      onOpenPendencias={() => session.setPage("pendencias")}
       onLogout={handleLogout}
       onOpenCompany={(companyId) => {
         // Q8.C.3: setSelectedCompanyId pode rodar 1 tick depois (React batching).

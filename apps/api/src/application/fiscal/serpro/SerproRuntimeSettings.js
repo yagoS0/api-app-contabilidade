@@ -50,6 +50,19 @@ function resolveFetchHour(stored) {
   return parseHourFromCron(stored.fetchCron);
 }
 
+// Q40: cron próprio de confirmação de pagamento (PAGTOWEB). Independente da captura (fetch*).
+function resolvePaymentConfirmationEnabled(stored) {
+  return stored.paymentConfirmationEnabled === true;
+}
+
+function resolvePaymentConfirmationDay(stored) {
+  return clampInt(stored.paymentConfirmationDay, 1, 31, 10);
+}
+
+function resolvePaymentConfirmationHour(stored) {
+  return clampInt(stored.paymentConfirmationHour, 0, 23, 8);
+}
+
 // fetchCron derivado: SEMPRE diário no horário escolhido — o worker usa este cron
 // para disparar uma vez por dia, e internamente decide se faz captura inicial ou re-fetch.
 function deriveDailyCron(hour) {
@@ -166,6 +179,11 @@ export async function getSerproRuntimeSettings() {
     fetchDay: resolveFetchDay(stored),
     fetchHour: resolveFetchHour(stored),
     fetchCron: deriveDailyCron(resolveFetchHour(stored)),
+    // Q40: cron próprio de confirmação de pagamento (dia/hora configuráveis + on/off).
+    paymentConfirmationEnabled: resolvePaymentConfirmationEnabled(stored),
+    paymentConfirmationDay: resolvePaymentConfirmationDay(stored),
+    paymentConfirmationHour: resolvePaymentConfirmationHour(stored),
+    paymentConfirmationCron: deriveDailyCron(resolvePaymentConfirmationHour(stored)),
     certificate: {
       hasCertificate: Boolean(stored.certPfxBase64 || stored.certStorageKey),
       storageKey: stored.certStorageKey || (stored.certPfxBase64 ? SERPRO_DB_CERT_STORAGE_KEY : null),
@@ -258,6 +276,17 @@ export async function updateSerproRuntimeSettings(input = {}) {
     ? clampInt(input.fetchHour, 0, 23, 7)
     : resolveFetchHour(stored);
 
+  // Q40: cron de confirmação de pagamento (independente do fetch*).
+  const nextPaymentEnabled = input.paymentConfirmationEnabled !== undefined
+    ? Boolean(input.paymentConfirmationEnabled)
+    : resolvePaymentConfirmationEnabled(stored);
+  const nextPaymentDay = input.paymentConfirmationDay !== undefined
+    ? clampInt(input.paymentConfirmationDay, 1, 31, 10)
+    : resolvePaymentConfirmationDay(stored);
+  const nextPaymentHour = input.paymentConfirmationHour !== undefined
+    ? clampInt(input.paymentConfirmationHour, 0, 23, 8)
+    : resolvePaymentConfirmationHour(stored);
+
   const next = {
     ...stored,
     enabled: input.enabled === undefined ? stored.enabled ?? config.enabled ?? false : Boolean(input.enabled),
@@ -271,6 +300,10 @@ export async function updateSerproRuntimeSettings(input = {}) {
     fetchHour: nextFetchHour,
     // fetchCron sempre derivado do horário (cron diário) — não armazena cron arbitrário.
     fetchCron: deriveDailyCron(nextFetchHour),
+    // Q40: cron próprio de confirmação de pagamento.
+    paymentConfirmationEnabled: nextPaymentEnabled,
+    paymentConfirmationDay: nextPaymentDay,
+    paymentConfirmationHour: nextPaymentHour,
   };
 
   if (input.consumerSecret !== undefined) {

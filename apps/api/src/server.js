@@ -1,8 +1,9 @@
 // src/server.js
 import express from "express";
 import cors from "cors";
-import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, APURACAO_BATCH_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
+import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, APURACAO_BATCH_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
 import { runApuracaoBatchLoop } from "./workers/apuracaoBatchWorker.js";
+import { runSerproPaymentConfirmationWorkerLoop } from "./workers/serproPaymentConfirmationWorker.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
 import { createEnsureAuthorized, serializeUser } from "./routes/middlewares/auth.js";
@@ -17,6 +18,7 @@ import { createStatusRouter } from "./routes/status.js";
 import { createInvoicesRouter } from "./routes/invoices.js";
 import { createNfseRouter } from "./routes/nfse.js";
 import { createAdnRouter } from "./routes/adn.js";
+import { createInternalRouter } from "./routes/internal.js";
 import { runGuideEmailWorkerLoop } from "./workers/guideEmailWorker.js";
 import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
@@ -102,6 +104,7 @@ const adnRouter = createAdnRouter({
   ensureAuthorized,
   log,
 });
+const internalRouter = createInternalRouter({ ensureAuthorized, log });
 
 app.use("/auth", authRouter);
 app.use("/admin", adminRouter);
@@ -113,6 +116,7 @@ app.use("/firm", firmPortalRouter);
 app.use("/invoices", invoicesRouter);
 app.use("/nfse", nfseRouter);
 app.use("/api", adnRouter);
+app.use("/internal", internalRouter);
 app.use("/", statusRouter);
 
 // Q30 Fase 1: fail-fast — a API não sobe sem uma CERT_SECRET_KEY dedicada e forte (>= 32 chars).
@@ -176,6 +180,14 @@ if (SERPRO_PGDASD_WORKER_ENABLED) {
 if (SERPRO_DCTFWEB_WORKER_ENABLED) {
   runSerproDctfwebWorkerLoop().catch((err) => {
     log.error({ err: err?.message || err }, "serproDctfwebWorker loop fatal");
+  });
+}
+
+// Q40: worker do cron próprio de confirmação de pagamento (PAGTOWEB). Opt-in via env;
+// dentro do loop ainda respeita paymentConfirmationEnabled + o cron configurado nas settings.
+if (SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED) {
+  runSerproPaymentConfirmationWorkerLoop().catch((err) => {
+    log.error({ err: err?.message || err }, "serproPaymentConfirmationWorker loop fatal");
   });
 }
 

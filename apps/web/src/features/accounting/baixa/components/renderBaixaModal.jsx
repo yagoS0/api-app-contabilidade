@@ -133,6 +133,16 @@ function LineEditor({ lines, onChange, accounts }) {
   );
 }
 
+// Q37: data padrão da baixa = dia 5 do mês SEGUINTE à competência da provisão (abril → 05/05).
+function defaultBaixaDate(competencia) {
+  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  let year = Number(m[1]);
+  let month = Number(m[2]) + 1; // mês seguinte
+  if (month > 12) { month = 1; year += 1; }
+  return `${year}-${String(month).padStart(2, "0")}-05`;
+}
+
 export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBaixaTemplate }) {
   const subtipoLabel = SUBTIPO_LABELS[entry.subtipo] || entry.subtipo || entry.tipo;
   const title = `Dar Baixa — ${subtipoLabel}`;
@@ -144,7 +154,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   const today = new Date().toISOString().slice(0, 10);
   const valorBase = Number(entry.valor || entry.totalD || 0);
 
-  const [data, setData] = useState(today);
+  const [data, setData] = useState(() => defaultBaixaDate(entry?.competencia) || today);
   const [historico, setHistorico] = useState(defaultHistorico);
   const [lines, setLines] = useState(() => {
     const entryLines = entry.lines || [];

@@ -560,23 +560,41 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
 
 // Q18: linha editável de NOVO lançamento direto na tabela (substitui o form fixo).
 // Ao salvar, limpa e mantém aberta (foca a Data) até ESC/Sair. Mesma lógica/payload do NewEntryForm.
-export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHistoricos, onGetHistoricosByCode, onClose }) {
+export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHistoricos, onGetHistoricosByCode, onClose, mode = "create", entry = null }) {
+  const isEdit = mode === "edit";
+  // Q38: no modo edição, inicializa os campos a partir do lançamento (mesma disposição do criar).
+  const initial = useMemo(() => {
+    if (!isEdit || !entry) return null;
+    const ls = entry.lines || [];
+    const d = ls.find((l) => l.tipo === "D");
+    const c = ls.find((l) => l.tipo === "C");
+    const v = Number((d?.valor ?? c?.valor) || 0);
+    return {
+      dateVal: entry.data ? String(entry.data).slice(0, 10) : "",
+      contaD: d?.conta || "",
+      contaC: c?.conta || "",
+      historico: entry.historico || "",
+      valor: v ? String(v) : "",
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { min, max, defaultDate } = getCompRange(activeComp);
-  const [dayStr, setDayStr] = useState(() => defaultDate ? String(Number(defaultDate.slice(8))) : "");
-  const [dateVal, setDateVal] = useState(defaultDate);
-  const [contaD, setContaD] = useState("");
-  const [contaC, setContaC] = useState("");
-  const [historico, setHistorico] = useState("");
-  const [valor, setValor] = useState("");
+  const [dayStr, setDayStr] = useState(() => (isEdit ? "" : (defaultDate ? String(Number(defaultDate.slice(8))) : "")));
+  const [dateVal, setDateVal] = useState(() => (initial ? initial.dateVal : defaultDate));
+  const [contaD, setContaD] = useState(() => initial?.contaD || "");
+  const [contaC, setContaC] = useState(() => initial?.contaC || "");
+  const [historico, setHistorico] = useState(() => initial?.historico || "");
+  const [valor, setValor] = useState(() => initial?.valor || "");
   const dayRef = useRef(null);
   const cRef = useRef(null);
   const histRef = useRef(null);
   const valRef = useRef(null);
 
   useEffect(() => {
+    if (isEdit) return; // edição não re-deriva a data pela competência ativa
     const { defaultDate: nd } = getCompRange(activeComp);
     setDateVal(nd); setDayStr(nd ? String(Number(nd.slice(8))) : "");
-  }, [activeComp]);
+  }, [activeComp, isEdit]);
 
   useEffect(() => { setTimeout(() => dayRef.current?.focus(), 30); }, []);
 
@@ -608,11 +626,21 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
     if (!canSave) return;
     // Envia só as pernas preenchidas — permite lançamento de 1 perna (em aberto).
     const filled = lines.filter((l) => String(l.conta || "").trim());
-    const payload = { data: dateVal, historico, tipo: detected.tipo, lines: filled.map((l, i) => ({ conta: String(l.conta).trim(), tipo: l.tipo, valor: Number(l.valor || 0), ordem: i })) };
-    if (detected.tipo === "PROVISAO") payload.subtipo = detected.subtipo;
+    const payload = {
+      data: dateVal,
+      historico,
+      tipo: isEdit ? entry.tipo : detected.tipo,
+      lines: filled.map((l, i) => ({ conta: String(l.conta).trim(), tipo: l.tipo, valor: Number(l.valor || 0), ordem: i })),
+    };
+    if (isEdit) {
+      // Q38: preserva o tipo/subtipo do lançamento (não re-detecta).
+      if (entry.subtipo) payload.subtipo = entry.subtipo;
+    } else if (detected.tipo === "PROVISAO") {
+      payload.subtipo = detected.subtipo;
+    }
     const res = await onSave(payload);
-    // Sucesso → limpa e mantém aberta para o próximo. (onSave retorna null em falha.)
-    if (res !== null) reset();
+    // Criar: sucesso → limpa e mantém aberta. Editar: sucesso → fecha. (onSave retorna null em falha.)
+    if (res !== null) { if (isEdit) onClose?.(); else reset(); }
   }
 
   function onKeyDown(e) {
@@ -624,10 +652,15 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
     <tr style={{ background: "#202334", outline: "2px solid #69FF47", outlineOffset: "-2px" }} onKeyDown={onKeyDown}>
       <td style={{ ...cell, textAlign: "center" }} />
       <td style={cell}>
-        <input ref={dayRef} type="text" inputMode="numeric" placeholder="Dia" value={dayStr}
-          onChange={(e) => handleDayChange(e.target.value.replace(/\D/g, ""))}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); histRef.current?.focus(); } }}
-          style={{ ...PANEL_FIELD_STYLE, textAlign: "center" }} />
+        {isEdit ? (
+          <input ref={dayRef} type="date" value={dateVal || ""} onChange={(e) => setDateVal(e.target.value)}
+            style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark" }} />
+        ) : (
+          <input ref={dayRef} type="text" inputMode="numeric" placeholder="Dia" value={dayStr}
+            onChange={(e) => handleDayChange(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); histRef.current?.focus(); } }}
+            style={{ ...PANEL_FIELD_STYLE, textAlign: "center" }} />
+        )}
       </td>
       <td style={cell}>
         <AccountCodeInput value={contaD} onChange={setContaD} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode}
@@ -653,17 +686,16 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
       <td style={{ ...cell, textAlign: "right" }}>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
           <Button size="sm" variant="success" onClick={handleSave} disabled={!canSave}>{saving ? "..." : "Salvar"}</Button>
-          <Button size="sm" variant="secondary" onClick={() => onClose?.()}>Sair</Button>
+          <Button size="sm" variant="secondary" onClick={() => onClose?.()}>{isEdit ? "Cancelar" : "Sair"}</Button>
         </div>
       </td>
     </tr>
   );
 }
 
-export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCreateBaixa, savingBaixa, onSearchHistoricos, isSelected = false, onToggleSelect = null, onLoadBaixaTemplate = null }) {
+export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCreateBaixa, savingBaixa, onSearchHistoricos, onGetHistoricosByCode = null, isSelected = false, onToggleSelect = null, onLoadBaixaTemplate = null }) {
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [form, setForm] = useState(null);
   const [showBaixa, setShowBaixa] = useState(false);
   const exported = entry.status === "EXPORTADO";
   const isTemplate = entry.origem === "TEMPLATE" || entry.placeholder === true;
@@ -688,58 +720,22 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
   const incompleteRowStyle = isIncompleteSides ? { outline: "2px solid #8BE9FD", outlineOffset: "-2px" } : null;
 
   function startEdit() {
-    setForm({ data: entry.data ? entry.data.slice(0, 10) : "", historico: entry.historico, tipo: entry.tipo, subtipo: entry.subtipo || "", lines: lines.map((l) => ({ tipo: l.tipo, conta: l.conta, valor: String(Number(l.valor).toFixed(2)) })) });
     setEditing(true);
   }
 
-  async function save() {
-    if (hasDuplicateAccountAcrossSides(form?.lines)) return;
-    await onUpdate(entry.id, form);
-    setEditing(false);
-    setForm(null);
-  }
-
-  if (editing && form) {
-    const editingDuplicateAcrossSides = hasDuplicateAccountAcrossSides(form.lines);
-
+  // Q38: editar usa a MESMA linha do criar (DraftEntryRow em modo "edit"), preservando tipo/subtipo.
+  if (editing) {
     return (
-      <tr style={{ background: ACCOUNTING_PANEL.field }}>
-        <td style={{ ...TDv, textAlign: "center", padding: "8px 4px" }}>
-          {onToggleSelect && (
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={onToggleSelect}
-              style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" }}
-              aria-label="Selecionar lançamento"
-            />
-          )}
-        </td>
-        <td style={TDv}><input type="date" value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark" }} /></td>
-        <td style={{ ...TDv, position: "relative" }} colSpan={4}>
-          <div style={{ marginBottom: 4 }}><SmartHistoricoInput value={form.historico} onChange={(v) => setForm((p) => ({ ...p, historico: v }))} onFillFromHistory={(h, ls) => setForm((p) => ({ ...p, historico: h, lines: ls?.length ? ls.map((l) => ({ tipo: l.tipo, conta: l.conta || "", valor: l.valor ? String(l.valor) : "" })) : p.lines }))} onSearchHistoricos={onSearchHistoricos} /></div>
-          {isTemplate && <div style={{ background: "#FFB347", border: "none", borderRadius: 8, padding: "6px 10px", marginBottom: 6, fontSize: "0.8rem", color: "#1A1B26" }}>Este lançamento foi agendado automaticamente. Preencha as contas e o valor para confirmá-lo.</div>}
-          <LineEditor lines={form.lines} onChange={(ls) => setForm((p) => ({ ...p, lines: ls }))} accounts={accounts} />
-          {/* Q18: tipo/subtipo editáveis aqui (a coluna Tipo foi removida da tabela) */}
-          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-            <select value={form.tipo} onChange={(e) => setForm((p) => ({ ...p, tipo: e.target.value, subtipo: e.target.value !== "PROVISAO" ? "" : p.subtipo }))} style={{ ...PANEL_FIELD_STYLE, width: 160, colorScheme: "dark" }}>{Object.entries(TIPO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
-            {form.tipo === "PROVISAO" && <select value={form.subtipo || ""} onChange={(e) => setForm((p) => ({ ...p, subtipo: e.target.value }))} style={{ ...PANEL_FIELD_STYLE, width: 200, colorScheme: "dark" }}><option value="">Subtipo...</option>{SUBTIPO_OPTIONS.map(({ key, label }) => <option key={key} value={key}>{label}</option>)}</select>}
-          </div>
-        </td>
-        <td style={TDv}>
-          <div style={{ display: "grid", gap: 6, justifyItems: "start" }}>
-            <div style={{ display: "flex", gap: 4 }}>
-              <Button size="lg" variant="success" onClick={save} disabled={saving || editingDuplicateAcrossSides}>{saving ? "..." : "Salvar"}</Button>
-              <Button size="sm" variant="secondary" onClick={() => { setEditing(false); setForm(null); }}>Cancelar</Button>
-            </div>
-            {editingDuplicateAcrossSides ? (
-              <div style={{ fontSize: "0.8125rem", color: "#FF4757", fontWeight: 600 }}>
-                Débito e crédito não podem usar a mesma conta.
-              </div>
-            ) : null}
-          </div>
-        </td>
-      </tr>
+      <DraftEntryRow
+        mode="edit"
+        entry={entry}
+        accounts={accounts}
+        saving={saving}
+        onSave={(payload) => onUpdate(entry.id, payload)}
+        onClose={() => setEditing(false)}
+        onSearchHistoricos={onSearchHistoricos}
+        onGetHistoricosByCode={onGetHistoricosByCode}
+      />
     );
   }
 

@@ -799,6 +799,44 @@ export function createMockApi() {
         },
       };
     },
+    async captureSerproParcelamento(companyId) {
+      await delay();
+      const company = mockCompanies.find((item) => item.companyId === companyId);
+      if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      return { ok: true, parcelamentos: [], skipped: "sem_parcelamento_ativo" };
+    },
+    // Q40 stubs
+    async confirmarPagamentoSerpro(companyId) {
+      await delay();
+      const company = mockCompanies.find((item) => item.companyId === companyId);
+      if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      return { ok: true, result: { total: 0, paid: 0, open: 0, errors: 0, results: [] } };
+    },
+    async getSitfis(companyId) {
+      await delay();
+      const company = mockCompanies.find((item) => item.companyId === companyId);
+      if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      return { ok: true, processando: false, situacao: "REGULAR", protocolo: null, relatorioPdfFileId: null, relatorioTexto: null, verificadoTrial: false };
+    },
+    async getStoredSitfis(companyId) {
+      await delay();
+      const company = mockCompanies.find((item) => item.companyId === companyId);
+      if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      return { ok: true, status: null };
+    },
+    async listFiscalPendencias() {
+      await delay();
+      return { items: mockCompanies.map((c) => ({ companyId: c.companyId, razao: c.razao, cnpj: c.cnpj, situacao: null, checkedAt: null, protocolo: null, relatorioPdfFileId: null })) };
+    },
+    async fetchSitfisPdfBlob() {
+      await delay();
+      const tinyPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
+      return new Blob([tinyPdf], { type: "application/pdf" });
+    },
+    async runSerproPaymentConfirmation() {
+      await delay(500);
+      return { ok: true, result: { total: 0, paid: 0, open: 0, errors: 0, results: [] } };
+    },
     async runSerproCron(input = {}) {
       await delay(800);
       const competencia = String(input.competencia || "2026-04");

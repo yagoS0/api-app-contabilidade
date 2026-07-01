@@ -77,6 +77,7 @@ export function CompaniesHomePage({
   onOpenPendingReport,
   onOpenBatchEmail,
   onOpenApuracao,
+  onOpenPendencias,
   onLogout,
   onOpenCompany,
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
@@ -213,6 +214,11 @@ export function CompaniesHomePage({
             {onOpenApuracao && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenApuracao}>
                 📊 Apuração
+              </Button>
+            )}
+            {onOpenPendencias && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenPendencias}>
+                ⚠️ Pendências
               </Button>
             )}
             <SettingsMenu

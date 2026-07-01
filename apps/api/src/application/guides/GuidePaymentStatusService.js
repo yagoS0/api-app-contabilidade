@@ -69,6 +69,23 @@ export async function markGuidePaidBySerpro({ guideId }) {
   });
 }
 
+// Q40: pagamento confirmado pelo comprovante oficial (PAGTOWEB/COMPARRECADACAO).
+// Diferente de markGuidePaidBySerpro (que usa a heurística "sem débito = pago"): aqui o
+// SERPRO devolveu o comprovante de arrecadação, então gravamos paymentConfirmedAt + o PDF.
+export async function markGuidePaidByComprovante({ guideId, comprovantePdfFileId = null }) {
+  const now = new Date();
+  return updateGuidePaymentStatus(guideId, {
+    paymentStatus: "PAID",
+    paymentStatusSource: "SERPRO",
+    paymentConfirmedAt: now,
+    paymentConfirmedByUserId: null,
+    serproLastCheckedAt: now,
+    serproLastSeenAt: now,
+    serproLastCheckResult: "COMPROVANTE_FOUND",
+    ...(comprovantePdfFileId ? { comprovantePdfFileId } : {}),
+  });
+}
+
 export async function markGuideOverdueBySerpro({ guideId }) {
   const now = new Date();
   return updateGuidePaymentStatus(guideId, {

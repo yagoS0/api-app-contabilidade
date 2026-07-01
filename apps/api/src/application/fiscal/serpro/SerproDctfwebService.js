@@ -110,6 +110,21 @@ function extractDueDate(payload) {
   return parsePossibleDate(raw);
 }
 
+// Q40: número do documento (DARF/guia) para confirmar o pagamento via PAGTOWEB depois.
+function extractDocumentNumber(payload, rawText = "") {
+  const raw = searchValueDeep(payload, (key, value) => {
+    const normalized = String(key || "").toLowerCase();
+    if (!/(numerodocumento|numerodarf|numeroguia|nrodocumento|numero.*documento|documento.*arrecad)/.test(normalized)) {
+      return false;
+    }
+    return typeof value === "string" || typeof value === "number";
+  });
+  if (raw != null && String(raw).trim()) return String(raw).trim();
+  // Fallback: procura no texto do PDF um "Número do Documento" seguido de dígitos.
+  const fromText = String(rawText || "").match(/n[uú]mero\s+do\s+documento\D{0,10}([0-9.\-/]{6,})/i)?.[1];
+  return fromText ? fromText.replace(/\s+/g, "").trim() : null;
+}
+
 function buildDctfwebPayload({ competencia, idServico }) {
   const normalized = normalizeCompetencia(competencia);
   if (!normalized) {
@@ -161,10 +176,12 @@ async function parsePdfResponse(response) {
 
   const inssTotal = extractAmount(response) ?? parseDecimal(amountCandidates[0]) ?? 0;
   const inssVencimento = extractDueDate(response) || parsePossibleDate(dueCandidates[0]);
+  const numeroDocumento = extractDocumentNumber(response, rawText);
 
   return {
     pdfBuffer,
     rawText,
+    numeroDocumento,
     parsed: {
       inssTotal,
       inssVencimento: inssVencimento ? inssVencimento.toISOString() : null,
@@ -369,6 +386,7 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
       integrationSource: "SERPRO_DCTFWEB",
       sistema: SERPRO_DCTFWEB_SYSTEM,
       servico: SERPRO_DCTFWEB_SERVICE_GUIDE,
+      numeroDocumento: mapped.numeroDocumento, // Q40: usado na confirmação de pagamento (PAGTOWEB)
       contratanteCnpj: procuradorCnpj,
       contribuinteCnpj: portalClient.cnpj,
       referencia: normalizedCompetencia,
