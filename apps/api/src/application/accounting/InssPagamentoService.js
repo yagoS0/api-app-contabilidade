@@ -33,7 +33,7 @@ function competenciaLabel(competencia) {
 // Acha a conta "INSS a Recolher" creditada na folha/pró-labore da competência (linha C cujo
 // histórico cita INSS — o template grava "VR REF INSS S/..."). Fallback: nome da conta no plano
 // de contas batendo com os accountHints de INSS do payrollTemplate. "" se não achar.
-async function resolveInssAccountFromFolha(portalClientId, competencia) {
+export async function resolveInssAccountFromFolha(portalClientId, competencia) {
   const folhas = await prisma.accountingEntry.findMany({
     where: { portalClientId, competencia: String(competencia), tipo: "FOLHA" },
     select: { lines: { select: { conta: true, tipo: true, historico: true } } },
@@ -52,7 +52,7 @@ async function resolveInssAccountFromFolha(portalClientId, competencia) {
 }
 
 // Caixa da baixa: resolve pelos creditAccountHints (caixa/banco) do template de folha. "" se não achar.
-async function resolveCaixaAccount(portalClientId) {
+export async function resolveCaixaAccount(portalClientId) {
   const hints = (PAYROLL_TEMPLATES.FOLHA.baixa?.creditAccountHints || []).map(norm);
   return matchAccountByHints(portalClientId, hints);
 }
@@ -89,8 +89,13 @@ async function matchAccountByHints(portalClientId, normalizedHints) {
  * Gera a baixa do INSS a partir da guia confirmada como paga.
  * D INSS a Recolher (conta da folha do mês) / C Caixa — valor da guia, data = pagamento (ou hoje).
  * Idempotente; lança erro `MES_FECHADO` se o mês do pagamento estiver fechado.
+ *
+ * Q47: aceita override manual do modal "Dar baixa" da Circular:
+ *  - `lines` (array {conta, tipo, valor}) → usa essas partidas em vez de resolver contas automaticamente;
+ *  - `historico` → texto do lançamento (senão usa o padrão "PAGO INSS - MM/AAAA").
+ * Sem override (fluxo automático do confirm-payment), resolve conta INSS/caixa da folha como antes.
  */
-export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dataPagamento, userId }) {
+export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dataPagamento, historico, lines, userId }) {
   void userId; // reservado p/ auditoria futura
   const guide = await prisma.guide.findFirst({
     where: { id: String(guideId), portalClientId },
@@ -116,9 +121,28 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
     throw err;
   }
 
-  // Conta "INSS a Recolher" vem da folha da competência da guia (decisão do dono); caixa por hints.
-  const contaInss = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
-  const contaCaixa = await resolveCaixaAccount(portalClientId);
+  // Override manual (modal da Circular) tem prioridade; senão resolve as contas da folha do mês.
+  const hasOverride = Array.isArray(lines) && lines.length > 0;
+  let contaInss = null;
+  let contaCaixa = null;
+  let entryLines;
+  if (hasOverride) {
+    entryLines = lines.map((l, i) => ({
+      conta: String(l.conta || "").trim(),
+      tipo: String(l.tipo || "").toUpperCase() === "C" ? "C" : "D",
+      valor: round2(l.valor),
+      ordem: i,
+    }));
+  } else {
+    // Conta "INSS a Recolher" vem da folha da competência da guia (decisão do dono); caixa por hints.
+    contaInss = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
+    contaCaixa = await resolveCaixaAccount(portalClientId);
+    entryLines = [
+      { conta: contaInss || "", tipo: "D", valor, ordem: 0 },
+      { conta: contaCaixa || "", tipo: "C", valor, ordem: 1 },
+    ];
+  }
+  const historicoFinal = String(historico || "").trim() || `PAGO INSS - ${competenciaLabel(guide.competencia)}`;
 
   return prisma.$transaction(async (tx) => {
     const entry = await tx.accountingEntry.create({
@@ -127,21 +151,14 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
         sourceGuideId: guide.id,
         data,
         competencia: competenciaPag,
-        historico: `PAGO INSS - ${competenciaLabel(guide.competencia)}`,
+        historico: historicoFinal,
         tipo: "BAIXA",
         subtipo: "INSS",
         origem: "MANUAL",
         loteImportacao: `INSS-PAG-${guide.id.slice(0, 8)}`,
         status: "RASCUNHO",
         statusPagamento: "PAGO",
-        lines: {
-          createMany: {
-            data: [
-              { conta: contaInss || "", tipo: "D", valor, ordem: 0 },
-              { conta: contaCaixa || "", tipo: "C", valor, ordem: 1 },
-            ],
-          },
-        },
+        lines: { createMany: { data: entryLines } },
       },
       include: { lines: true },
     });

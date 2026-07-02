@@ -21,6 +21,10 @@ src/
     accounting/         - Lançamentos contábeis (em andamento)
       components/
       hooks/
+    fiscal/
+      serpro/           - Página de configuração SERPRO (credenciais, cron, cert)
+      sitfis/           - Situação Fiscal (SITFIS): useSitfis + aba (PDF em iframe + download)
+    pendencias/         - Página top-level "Pendências" (fiscal/SITFIS): individual + lote
   components/           - Componentes genéricos reutilizáveis
   lib/                  - Helpers, hooks globais
   styles/               - CSS global

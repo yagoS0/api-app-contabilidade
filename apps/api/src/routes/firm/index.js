@@ -28,7 +28,7 @@ import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
-import { criarBatchJob } from "../../workers/apuracaoBatchWorker.js";
+import { criarBatchJob, runApuracaoBatchOnce } from "../../workers/apuracaoBatchWorker.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import {
@@ -3341,6 +3341,47 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       });
     } catch (err) {
       return res.status(500).json({ ok: false, error: "batch_status_failed", message: err?.message });
+    }
+  });
+
+  // Q44: POST /firm/apuracao/batch/:jobId/run-now — processa a fila SOB DEMANDA.
+  // Antes o lote só era processado pelo worker de fundo (APURACAO_BATCH_WORKER_ENABLED); com a flag
+  // OFF os itens ficavam "pendente" pra sempre (modal preso). Aqui drenamos os itens pendentes do job
+  // inline (com teto de tempo/ciclos), pra o lote andar mesmo sem o worker ligado. Idempotente
+  // (o worker faz consulta-antes-de-transmitir; item já "ok" é ignorado). ⚠ Transmite de verdade.
+  router.post("/apuracao/batch/:jobId/run-now", async (req, res) => {
+    const jobId = String(req.params.jobId);
+    try {
+      const job = await prisma.apuracaoBatchJob.findUnique({ where: { id: jobId } });
+      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+
+      const deadline = Date.now() + 20000; // teto inline; o front continua o polling/run-now se sobrar
+      let ciclos = 0;
+      for (;;) {
+        const pendentes = await prisma.apuracaoBatchItem.count({
+          where: { jobId, status: { in: ["pendente", "processando"] } },
+        });
+        if (pendentes === 0) break;
+        if (Date.now() >= deadline || ciclos >= 50) break;
+        // eslint-disable-next-line no-await-in-loop
+        const { processados } = await runApuracaoBatchOnce();
+        ciclos += 1;
+        if (!processados) break; // nada pronto agora (ex.: itens em backoff) — evita loop quente
+      }
+
+      const atualizado = await prisma.apuracaoBatchJob.findUnique({ where: { id: jobId } });
+      return res.json({
+        ok: true,
+        job: atualizado && {
+          id: atualizado.id, status: atualizado.status, competencia: atualizado.competencia,
+          totalEmpresas: atualizado.totalEmpresas, okCount: atualizado.okCount,
+          errorCount: atualizado.errorCount, pendenteCount: atualizado.pendenteCount,
+          concluidoEm: atualizado.concluidoEm,
+        },
+      });
+    } catch (err) {
+      log.warn({ err: err?.message, jobId }, "Falha ao processar batch de apuração (run-now)");
+      return res.status(500).json({ ok: false, error: "batch_run_failed", message: err?.message });
     }
   });
 

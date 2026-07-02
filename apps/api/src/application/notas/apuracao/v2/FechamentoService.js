@@ -11,7 +11,7 @@ import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { getResolvedSerproCredentials } from "../../../fiscal/serpro/SerproRuntimeSettings.js";
 import { SerproPgdasdService } from "../../../fiscal/serpro/SerproPgdasdService.js";
 import { PgdasSimulacaoService, parseRetornoSimulacao } from "../../../fiscal/serpro/PgdasSimulacaoService.js";
-import { montarAtividadesDefault } from "./AtividadeResolver.js";
+import { montarAtividadesDefault, carregarAtividades } from "./AtividadeResolver.js";
 import { getRbt12, gravarDaSimulacao } from "./RbtExtratoService.js";
 import { lerConfigMemory, salvarConfigMemory } from "./ApuracaoConfigMemoryService.js";
 import { detectarDisparidades } from "./DisparidadeService.js";
@@ -56,18 +56,61 @@ async function receitaPorTipoMercado({ portalClientId, competencia }) {
   return { receitaPorTipoMercado: acc, receitaPorTipo: porTipo, semClassificacao: round2(semClassificacao) };
 }
 
+// Q44: deriva a(s) atividade(s) default a partir do CNAE da empresa (quando não há notas
+// classificadas nem memória). Reusa CnaeAnexo (cnae→tipoReceitaSugerido) + carregarAtividades
+// (tipoReceita+mercado→idAtividade/anexo). Emite a linha mesmo com faturamento 0, só pra TRAZER o
+// ANEXO — o contador ajusta os valores. Best-effort: sem CNAE/mapeamento → retorna [].
+async function montarAtividadesDoCnae({ cnaePrincipal, faturamentoInterno = 0, faturamentoExterno = 0, dataReferencia = new Date() }) {
+  const cnae = String(cnaePrincipal || "").replace(/\D+/g, "");
+  if (cnae.length < 7) return [];
+  const anexoRow = await prisma.cnaeAnexo.findUnique({ where: { cnae: cnae.slice(0, 7) } }).catch(() => null);
+  const tipo = anexoRow?.tipoReceitaSugerido;
+  if (!tipo) return [];
+  const { map } = await carregarAtividades(dataReferencia);
+  const atvInterno = map.get(`${tipo}|INTERNO`);
+  const atvExterno = map.get(`${tipo}|EXTERNO`);
+  const out = [];
+  if (faturamentoExterno > 0 && atvExterno) {
+    out.push({
+      idAtividade: atvExterno.idAtividade, descricao: atvExterno.descricao, anexoImplicito: atvExterno.anexoImplicito,
+      mercado: atvExterno.mercado, sujeitoFatorR: atvExterno.sujeitoFatorR, tipoReceita: atvExterno.tipoReceita,
+      valorInterno: 0, valorExterno: round2(faturamentoExterno),
+    });
+  }
+  if (atvInterno) {
+    out.push({
+      idAtividade: atvInterno.idAtividade, descricao: atvInterno.descricao, anexoImplicito: atvInterno.anexoImplicito,
+      mercado: atvInterno.mercado, sujeitoFatorR: atvInterno.sujeitoFatorR, tipoReceita: atvInterno.tipoReceita,
+      valorInterno: round2(faturamentoInterno), valorExterno: 0,
+    });
+  }
+  return out;
+}
+
 /**
  * Dados pro modal de fechamento. Pré-preenche atividades/folha da memória de config.
  */
 export async function getDadosFechamento({ portalClientId, competencia }) {
   const portal = await prisma.portalClient.findUnique({
-    where: { id: portalClientId }, select: { cnpj: true, razao: true },
+    where: { id: portalClientId },
+    select: { cnpj: true, razao: true, companyId: true },
   });
   if (!portal) throw new FechamentoError("PORTAL_NOT_FOUND", "Empresa não encontrada");
 
   const cadastro = await prisma.cadastroFiscal.findUnique({ where: { portalClientId } });
+  // Q44: CNAE efetivo — do CadastroFiscal, senão do cadastro da empresa (Company legada, vindo do CNPJ).
+  let companyCnae = null;
+  if (!cadastro?.cnaePrincipal && portal.companyId) {
+    companyCnae = await prisma.company.findUnique({
+      where: { id: portal.companyId }, select: { cnaePrincipal: true },
+    }).catch(() => null);
+  }
+  const cnaePrincipalEfetivo = cadastro?.cnaePrincipal || companyCnae?.cnaePrincipal || null;
   const { receitaPorTipoMercado: rtm, receitaPorTipo, semClassificacao } =
     await receitaPorTipoMercado({ portalClientId, competencia });
+
+  const faturamentoInterno = round2(Object.entries(rtm).filter(([k]) => k.endsWith("|INTERNO")).reduce((s, [, v]) => s + v, 0));
+  const faturamentoExterno = round2(Object.entries(rtm).filter(([k]) => k.endsWith("|EXTERNO")).reduce((s, [, v]) => s + v, 0));
 
   // Atividades default: da memória (última config) OU derivadas das notas
   const memory = await lerConfigMemory({ portalClientId });
@@ -87,11 +130,18 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     }
   }
 
+  // Q44: sem atividades (nem memória nem notas classificadas) → deriva do CNAE da empresa
+  // pra TRAZER O ANEXO automaticamente. O contador ajusta atividade/valores no modal.
+  if ((!Array.isArray(atividades) || atividades.length === 0) && cnaePrincipalEfetivo) {
+    const doCnae = await montarAtividadesDoCnae({
+      cnaePrincipal: cnaePrincipalEfetivo, faturamentoInterno, faturamentoExterno,
+      dataReferencia: rangeMes(competencia).gte,
+    });
+    if (doCnae.length) { atividades = doCnae; origemAtividades = "cnae"; }
+  }
+
   const rbt = await getRbt12({ portalClientId, competencia });
   const disparidades = await detectarDisparidades({ portalClientId, atividadesEscolhidas: atividades, receitaPorTipo });
-
-  const faturamentoInterno = round2(Object.entries(rtm).filter(([k]) => k.endsWith("|INTERNO")).reduce((s, [, v]) => s + v, 0));
-  const faturamentoExterno = round2(Object.entries(rtm).filter(([k]) => k.endsWith("|EXTERNO")).reduce((s, [, v]) => s + v, 0));
 
   const snapshot = await prisma.apuracaoSnapshot.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
@@ -101,7 +151,9 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     portalClientId, competencia,
     razao: portal.razao, cnpj: portal.cnpj,
     regimeApuracao: cadastro?.regimeApuracao || "COMPETENCIA",
-    cadastroCompleto: Boolean(cadastro),
+    // Q44: completo se há CadastroFiscal OU CNAE utilizável (Company) — some o aviso p/ empresa com CNPJ.
+    cadastroCompleto: Boolean(cadastro) || Boolean(cnaePrincipalEfetivo),
+    cnaePrincipal: cnaePrincipalEfetivo,
     faturamento: { interno: faturamentoInterno, externo: faturamentoExterno, total: round2(faturamentoInterno + faturamentoExterno) },
     receitaPorTipo,
     semClassificacao,
@@ -252,13 +304,28 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   // 2. Transmite de fato
   const sim = new PgdasSimulacaoService();
   const rbt = await getRbt12({ portalClientId, competencia });
-  const resultado = await sim.transmitir({
-    contratanteCnpj, contribuinteCnpj, competencia,
-    regimeApuracao: "COMPETENCIA",
-    atividades: snapshot.atividadesEscolhidas || [],
-    receitasBrutasAnteriores: rbt.detalhePorMes || [],
-    folhasSalario: (snapshot.folhaMensal12 || []).map((f) => ({ pa: f.pa, valor: f.valor })),
-  });
+  let resultado;
+  try {
+    resultado = await sim.transmitir({
+      contratanteCnpj, contribuinteCnpj, competencia,
+      regimeApuracao: "COMPETENCIA",
+      atividades: snapshot.atividadesEscolhidas || [],
+      receitasBrutasAnteriores: rbt.detalhePorMes || [],
+      folhasSalario: (snapshot.folhaMensal12 || []).map((f) => ({ pa: f.pa, valor: f.valor })),
+    });
+  } catch (err) {
+    // Q44: rede de segurança — se o SERPRO recusar por já existir declaração (pede Retificadora),
+    // a consulta-antes não pegou, mas o erro prova que já está declarado. Decisão do dono: só
+    // reconhecer, NÃO retransmitir (sem retificadora). Marca como já declarada em vez de erro.
+    if (erroIndicaJaDeclarado(err)) {
+      const updated = await prisma.apuracaoSnapshot.update({
+        where: { id: snapshot.id },
+        data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
+      });
+      return { ok: true, jaDeclarado: true, snapshot: updated, mensagem: "PA já declarado na Receita — não retransmitido (para alterar, seria necessária uma retificadora)." };
+    }
+    throw err;
+  }
 
   const updated = await prisma.apuracaoSnapshot.update({
     where: { id: snapshot.id },
@@ -273,12 +340,27 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   return { ok: true, jaDeclarado: false, dasValor: resultado.dasValor, numeroDeclaracao: resultado.numeroDeclaracao, snapshot: updated };
 }
 
-/** Heurística: o índice CONSDECLARACAO13 indica declaração existente pro PA? */
+/** Heurística: o índice CONSDECLARACAO13 indica declaração existente pro PA?
+ * Q44: o retorno do SERPRO usa `dados` (não `dadosSaida`) — lê os dois por robustez. */
 function detectarDeclaracaoExistente(indice) {
   if (!indice) return false;
-  let dados = indice?.dadosSaida;
+  let dados = indice?.dados ?? indice?.dadosSaida;
   if (typeof dados === "string") { try { dados = JSON.parse(dados); } catch { dados = null; } }
   if (!dados) return false;
-  const arr = Array.isArray(dados) ? dados : (dados.declaracoes || dados.listaDeclaracoes || []);
-  return Array.isArray(arr) && arr.length > 0;
+  const arr = Array.isArray(dados)
+    ? dados
+    : (dados.declaracoes || dados.listaDeclaracoes || dados.declaracaoTransmitida || []);
+  if (Array.isArray(arr) && arr.length > 0) return true;
+  // objeto único de declaração (idDeclaracao/numeroDeclaracao presentes)
+  if (!Array.isArray(dados) && (dados.idDeclaracao || dados.numeroDeclaracao)) return true;
+  return false;
+}
+
+// Q44: a mensagem de negócio do SERPRO que prova que já existe declaração no PA
+// ("...1-Original não está de acordo... O correto é 2-Retificadora.").
+function erroIndicaJaDeclarado(err) {
+  if (!err) return false;
+  if (err.code !== "SERPRO_BUSINESS_ERROR") return false;
+  const msg = String(err.message || "");
+  return /retificadora|n[ãa]o est[áa] de acordo|1[-\s]?original/i.test(msg);
 }

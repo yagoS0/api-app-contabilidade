@@ -432,15 +432,12 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
           const res = r?.result || {};
           const paid = res.paid ?? 0;
           const errors = res.errors ?? 0;
-          const total = res.total ?? 0;
-          // Q43: NÃO reportar OK quando tudo falhou. Mapeia o motivo (ex.: PAGTOWEB desabilitado).
-          if (errors > 0 && paid === 0) {
-            const msg = res.firstError === "SERPRO_PAGTOWEB_DISABLED"
-              ? "PAGTOWEB desabilitado (validar no trial antes de ligar)"
-              : `Falha ao confirmar (${res.firstError || `${errors} erro(s)`})`;
-            return { ok: false, message: msg };
-          }
-          return { ok: true, message: paid ? `${paid} pago(s)` : (total ? "Nenhum pago" : "Sem guias a confirmar") };
+          // Q45: usa a mensagem detalhada do backend (pagas / não localizadas / sem nº / desabilitado).
+          const message = res.mensagem
+            || (paid ? `${paid} pago(s)` : (res.total ? "Nenhum pago" : "Sem guias a confirmar"));
+          // Não reporta OK quando PAGTOWEB está desligado ou tudo falhou.
+          const ok = !res.pagtowebDisabled && !(errors > 0 && paid === 0);
+          return { ok, message };
         }
         case "sitfis": {
           // Q40: relatório de situação fiscal.

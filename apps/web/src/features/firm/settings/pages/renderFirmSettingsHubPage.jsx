@@ -18,12 +18,6 @@ const SETTING_CARDS = [
     accent: "#FFB347",
   },
   {
-    key: "accountingRules",
-    title: "Padrões de Lançamento",
-    description: "Defina contas e históricos padrão para receitas, provisões e baixas usadas em todas as empresas.",
-    accent: "#69FF47",
-  },
-  {
     key: "chartOfAccounts",
     title: "Plano de Contas Global",
     description: "Mantenha o plano de contas compartilhado entre todas as empresas. Cada empresa pode adicionar contas próprias.",

@@ -131,7 +131,6 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onDeleteAccount={accountingPanel.onDeleteAccount}
             onImportAccountsFile={accountingPanel.onImportAccountsFile}
             onOpenChartOfAccountsTab={() => switchTab("planoContas")}
-            onOpenAccountingRulesTab={() => switchTab("configuracoes")}
             onExportCsv={accountingPanel.onExportCsv}
             onCreateBaixa={accountingPanel.onCreateBaixa}
             savingBaixa={accountingPanel.savingBaixa}
@@ -419,7 +418,6 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onCancelBaixa={circularPanel.onCancelBaixa}
             parcelamentos={accountingPanel.parcelamentos}
-            onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment}
           />
           </Suspense>
           </ErrorBoundary>

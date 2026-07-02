@@ -140,6 +140,36 @@ DAS R$ 26.670,52, `[Sucesso-PGDASD]`). Transmissão real (`true`) ainda não
 exercida. Scripts úteis: `rodar-simulacao-pgdasd.js`, `gerar-payload-pgdasd.js`,
 `gerar-curls-trial.js`, `test-fechamento-dados.js`.
 
+## Situação Fiscal (SITFIS) + Confirmação de pagamento (Q40/Q41/Q43)
+
+**SITFIS — situação fiscal do contribuinte** (`application/fiscal/serpro/SerproSitfisService.js`).
+Serviço assíncrono em 2 etapas, resolvido inline (~28s) ou devolvido como `processando`:
+- `/Apoiar` (`SOLICITARPROTOCOLO91`, versão **2.0**) → protocolo. Cache do dia: se já existe,
+  responde **304** com o protocolo no header **ETag** (corpo vazio). Se o limite da conta foi
+  atingido, responde **200 sem protocolo** com aviso **`[Aviso-Sitfis-AV02]`** + `tempoEspera`
+  → tratamos como **"processando"** (não erro), com mensagem pedindo aguardar ~Xs.
+- `/Emitir` (`RELATORIOSITFIS92`) → PDF em `dados.pdf` (base64). Status: 200 pronto · 202/204
+  processando (aguarda `tempoEspera`) · 304 reusar protocolo.
+- **Protocolo do dia é salvo** em `CompanyFiscalStatus.protocolo` e **reusado** (pula o `/Apoiar`,
+  que é o que abre "slot" e dispara o AV02 — limite é **por contratante**, não por empresa).
+  Reuso só no mesmo dia (America/Sao_Paulo); expirado → re-solicita.
+- **Situação** derivada por palavra-chave sobre o **texto extraído do PDF** (`pdf-parse`):
+  `devedor|dívida ativa|débito|pendência|…` → `COM_PENDENCIA`; com guard removendo frases de
+  negação ("não há débitos") pra evitar falso-positivo. Best-effort, `verificadoTrial:false`.
+- Rota `POST /firm/companies/:id/serpro/sitfis/relatorio` grava `CompanyFiscalStatus`
+  (situacao/protocolo/texto/relatorioPdfFileId); numa reconsulta ainda "processando",
+  **preserva** o último relatório/situação (não zera). PDF servido inline em
+  `GET .../serpro/sitfis/pdf`. Página **Pendências** = `GET /firm/pendencias/fiscal`.
+- Flag: **`INTEGRACAO_SERPRO_SITFIS`**. Status (2026-07): fluxo validado end-to-end em produção
+  (Apoiar 304/ETag → Emitir 200 → PDF exibido/baixável); heurística ligada.
+
+**PAGTOWEB — confirmação de pagamento por comprovante**
+(`SerproPagtoWebService.js` + `SerproPaymentConfirmationService.js`, worker próprio).
+- idServiço `COMPARRECADACAO72` via `/Emitir`; comprovante (PDF) = pago.
+- ⚠ **`INTEGRACAO_SERPRO_PAGTOWEB` fica OFF** — idServiço/payload **não validados no trial**.
+  O fluxo (worker/cron/UI) está pronto e correto (não reporta mais falso-OK), mas só liga
+  após validar no sandbox. INSS grava `numeroDocumento` (extraído do GERARGUIA31) para o PAGTOWEB.
+
 ## Variáveis de Ambiente Obrigatórias
 
 ```
@@ -152,7 +182,12 @@ PORT             (default 3000)
 
 Workers opt-in (default desligados): `GUIDE_EMAIL_WORKER_ENABLED`,
 `SERPRO_PGDASD_WORKER_ENABLED`, `SERPRO_DCTFWEB_WORKER_ENABLED`,
-`DFE_NOTAS_WORKER_ENABLED`, `APURACAO_BATCH_WORKER_ENABLED`.
+`DFE_NOTAS_WORKER_ENABLED`, `APURACAO_BATCH_WORKER_ENABLED`,
+`SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED`.
+
+Flags de integração SERPRO (default OFF até validar no trial):
+`INTEGRACAO_SERPRO_SITFIS` (ligada), `INTEGRACAO_SERPRO_PAGTOWEB` (OFF — não validado),
+`INTEGRACAO_SERPRO_PARCELAMENTO`. Ver `config.js` para os idServiço/versão.
 
 ## Regras
 

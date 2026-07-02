@@ -235,7 +235,7 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
 
 // Q31: célula só com NÚMERO; cor implícita (vermelho=aberto, verde=pago, amarelo=vinculado a
 // parcelamento). Clicar abre o menu de ações (Editar / Dar baixa / Vincular a parcelamento).
-function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, onConfirmPagamento }) {
+function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular }) {
   const [open, setOpen] = useState(false);
   const [selParc, setSelParc] = useState("");
 
@@ -258,9 +258,10 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
 
   const menuBtn = { display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: "transparent", border: "none", color: "#F8F8F2", fontSize: "0.78rem", cursor: "pointer", borderRadius: 4 };
 
-  // Lançamentos reais: editar/baixar/vincular. INSS sintético (vem da guia): só "Confirmar pagamento".
-  const canConfirmInss = isSynthetic && isAberto && Boolean(onConfirmPagamento);
-  const hasActions = canConfirmInss || (!isSynthetic && (Boolean(onEdit) || (isAberto && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
+  // Lançamentos reais: editar/baixar/vincular. INSS sintético (vem da guia): só "Dar baixa" (Q47) —
+  // abre o mesmo modal do DAS, mas roteado pela guia; confirma o pagamento + gera a baixa contábil.
+  const canBaixaInss = isSynthetic && isAberto && Boolean(onBaixa);
+  const hasActions = canBaixaInss || (!isSynthetic && (Boolean(onEdit) || (isAberto && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
   const numText = fmtMoney(valor) ? `R$ ${fmtMoney(valor)}` : "—";
 
   return (
@@ -289,13 +290,14 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           ↻ R$ {fmtMoney(entry.recalculatedToValor)}
         </div>
       )}
-      {/* Q41: selo verde do SERPRO quando o pagamento foi confirmado pelo SERPRO (PAGTOWEB). */}
-      {!isAberto && entry.sourceGuide?.paymentStatusSource === "SERPRO" && (
+      {/* Ícone único de "pago" — aparece em qualquer célula paga (baixa manual ou confirmação SERPRO).
+          Só indicador visual (não clicável); o tooltip traz data/origem quando houver. */}
+      {!placeholder && !isAberto && (
         <div
-          style={{ fontSize: "0.6rem", fontWeight: 700, color: "#69FF47", whiteSpace: "nowrap" }}
-          title={`Pagamento confirmado pelo SERPRO${entry.sourceGuide.paymentConfirmedAt ? ` em ${fmtDate(entry.sourceGuide.paymentConfirmedAt)}` : ""}.${entry.sourceGuide.comprovantePdfFileId ? " Comprovante de arrecadação disponível." : ""}`}
+          style={{ fontSize: "0.85rem", lineHeight: 1.1 }}
+          title={`Pagamento confirmado${entry.sourceGuide?.paymentConfirmedAt ? ` em ${fmtDate(entry.sourceGuide.paymentConfirmedAt)}` : ""}${entry.sourceGuide?.paymentStatusSource === "SERPRO" ? " (via SERPRO)" : ""}${entry.sourceGuide?.comprovantePdfFileId ? " — comprovante de arrecadação disponível" : ""}.`}
         >
-          ✓ SERPRO
+          ✅
         </div>
       )}
       {open && hasActions && (
@@ -304,7 +306,8 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "#24253A", border: "1px solid #44475A", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.45)", padding: 6, minWidth: 190, display: "flex", flexDirection: "column", gap: 2 }}
         >
           {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
-          {isAberto && onBaixa && !isSynthetic && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Dar baixa</button>}
+          {/* "Dar baixa" — provisões reais E INSS sintético (Q47: mesmo modal, roteado pela guia). */}
+          {isAberto && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Dar baixa</button>}
           {!isAberto && baixaId && onCancelBaixa && !isSynthetic && <button onClick={() => { setOpen(false); onCancelBaixa(baixaId); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Cancelar baixa</button>}
           {onVincular && !isSynthetic && (
             isVinculado ? (
@@ -319,8 +322,6 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
               </div>
             )
           )}
-          {/* INSS sintético (vem da guia): única ação é confirmar o pagamento → fica verde (PAGO). */}
-          {canConfirmInss && <button onClick={() => { setOpen(false); onConfirmPagamento(entry); }} style={{ ...menuBtn, color: "#69FF47", fontWeight: 700 }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Confirmar pagamento</button>}
         </div>
       )}
     </td>
@@ -363,7 +364,6 @@ export function CircularTab({
   onSearchHistoricos,
   onCancelBaixa,
   parcelamentos, // Q9: hook completo (parcelamentos, payParcela, rescindir, etc)
-  onConfirmGuidePayment, // Q31: confirmar pagamento de guia (INSS sintético na Circular)
 }) {
   const [baixaEntry, setBaixaEntry] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
@@ -437,14 +437,6 @@ export function CircularTab({
   async function handleDesvincular(entry) {
     if (!parcelamentos?.vincularEntry) return;
     await parcelamentos.vincularEntry(entry.id, null);
-    await onLoad(year, competencia);
-  }
-  // Q31: confirmar pagamento do INSS sintético — roteado pela guia (synthetic-inss-<guideId>).
-  async function handleConfirmInss(entry) {
-    if (!onConfirmGuidePayment) return;
-    const guideId = String(entry.id || "").replace("synthetic-inss-", "");
-    if (!guideId) return;
-    await onConfirmGuidePayment(guideId);
     await onLoad(year, competencia);
   }
 
@@ -590,7 +582,6 @@ export function CircularTab({
                         parcelamentosAtivos={parcelamentosAtivos}
                         onVincular={parcelamentos?.vincularEntry ? handleVincular : null}
                         onDesvincular={handleDesvincular}
-                        onConfirmPagamento={onConfirmGuidePayment ? handleConfirmInss : null}
                       />
                     ))}
                     <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtMoney(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>

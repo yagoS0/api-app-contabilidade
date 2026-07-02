@@ -109,7 +109,7 @@ export const PANEL_ICON_BUTTON_STYLE = {
 // Q18: colunas Tipo e Status removidas da tabela (tipo continua no payload/editor).
 export const COLS = [
   { label: "", align: "center", width: "36px" },
-  { label: "Data", align: "left", width: "110px" },
+  { label: "Data", align: "left", width: "128px" },
   { label: "Débito", align: "center", width: "150px" },
   { label: "Crédito", align: "center", width: "150px" },
   { label: "Histórico", align: "left", width: "auto" },

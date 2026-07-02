@@ -792,6 +792,9 @@ model CompanyMonthlyCircular {
   // Setado quando o contador fecha a empresa após lançar tudo; null = aberta.
   fechadoContabilEm   DateTime?
   fechadoContabilPor  String?
+  // Q47: contador confirma que a folha/pró-labore do mês foi lançada. Trava o fechamento contábil
+  // enquanto não marcada (null/false). Por competência.
+  folhaProlaboreOk    Boolean?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 

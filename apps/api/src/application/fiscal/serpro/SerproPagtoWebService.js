@@ -106,7 +106,24 @@ function buildPagtoWebPayload({ numeroDocumento }) {
  * - pago=false quando devolve "não localizado" / vazio (ainda não pago).
  * Só roda com a flag INTEGRACAO_SERPRO_PAGTOWEB ligada (senão lança SERPRO_PAGTOWEB_DISABLED).
  */
-export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, numeroDocumento }) {
+// Concatena as mensagens do envelope (para o diagnóstico da 1ª resposta real do trial).
+function extractMensagensTexto(payload) {
+  if (payload == null) return "";
+  let obj = payload;
+  if (typeof payload === "string") obj = parseNestedJsonString(payload) || {};
+  if (typeof obj !== "object") return String(payload);
+  const bag = [];
+  const m = obj.mensagens || obj.Mensagens || obj.mensagem || obj.Mensagem;
+  const push = (x) => {
+    if (x == null) return;
+    if (typeof x === "string") bag.push(x);
+    else if (typeof x === "object") bag.push(String(x.texto || x.mensagem || x.descricao || JSON.stringify(x)));
+  };
+  if (Array.isArray(m)) m.forEach(push); else push(m);
+  return bag.filter(Boolean).join(" | ");
+}
+
+export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, numeroDocumento, logger = null }) {
   if (!INTEGRACAO_SERPRO_PAGTOWEB) {
     const err = new Error("serpro_pagtoweb_disabled");
     err.code = "SERPRO_PAGTOWEB_DISABLED";
@@ -128,30 +145,51 @@ export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, nu
   }
 
   const client = new SerproHttpClient();
-  const response = await client.post("/Emitir", {
+  // raw + validateStatus: não estoura em 4xx (documento não pago/não localizado é resposta de negócio,
+  // não erro de rede). versaoSistema "1.0" (COMPARRECADACAO72) — NÃO reusar o 2.0 do SITFIS.
+  const resp = await client.post("/Emitir", {
     contratante: { numero: procuradorCnpj, tipo: 2 },
     autorPedidoDados: { numero: procuradorCnpj, tipo: 2 },
     contribuinte: { numero: contribuinte, tipo: 2 },
     ...buildPagtoWebPayload({ numeroDocumento }),
-  });
+  }, { raw: true, validateStatus: () => true });
 
-  const pdfBase64 = extractComprovantePdfBase64(response);
+  const httpStatus = resp.status;
+  const data = resp.data;
+  const mensagem = extractMensagensTexto(data);
+
+  // Diagnóstico (validação no trial): status + mensagem + chaves do `dados` de saída — fixa o parse depois.
+  const parsedDados = (() => {
+    try { const d = data && (data.dados ?? data.Dados); return typeof d === "string" ? JSON.parse(d) : d; } catch { return null; }
+  })();
+  logger?.warn?.(
+    { httpStatus, mensagem, dadosKeys: parsedDados && typeof parsedDados === "object" ? Object.keys(parsedDados) : null },
+    "PAGTOWEB: resposta /Emitir",
+  );
+
+  // 200 com comprovante (PDF base64) = PAGO.
+  const pdfBase64 = extractComprovantePdfBase64(data);
   if (pdfBase64) {
     const pdfBuffer = Buffer.from(pdfBase64, "base64");
-    return {
-      pago: pdfBuffer.length > 0,
-      comprovantePdfBuffer: pdfBuffer.length > 0 ? pdfBuffer : null,
-      mensagem: null,
-      verificadoTrial: VERIFICADO_TRIAL,
-      rawPayload: response,
-    };
+    if (pdfBuffer.length > 0) {
+      return { pago: true, comprovantePdfBuffer: pdfBuffer, mensagem: null, verificadoTrial: VERIFICADO_TRIAL, rawPayload: data };
+    }
   }
 
+  // 5xx = indisponibilidade transitória → erro (cliente re-tenta depois).
+  if (httpStatus >= 500) {
+    const err = new Error(mensagem || "serpro_pagtoweb_indisponivel");
+    err.code = "SERPRO_PAGTOWEB_INDISPONIVEL";
+    err.details = { httpStatus, mensagem };
+    throw err;
+  }
+
+  // Sem comprovante (200 sem PDF, ou 4xx de negócio) = NÃO PAGO / não localizado.
   return {
     pago: false,
     comprovantePdfBuffer: null,
-    mensagem: extractNotFoundMessage(response) || "Comprovante de pagamento não localizado no SERPRO.",
+    mensagem: extractNotFoundMessage(data) || mensagem || "Comprovante de pagamento não localizado no SERPRO.",
     verificadoTrial: VERIFICADO_TRIAL,
-    rawPayload: response,
+    rawPayload: data,
   };
 }

@@ -653,8 +653,9 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
       <td style={{ ...cell, textAlign: "center" }} />
       <td style={cell}>
         {isEdit ? (
+          // Q47.1: coluna estreita — reduz o padding p/ o date (dd/mm/aaaa + ícone) não cortar o valor.
           <input ref={dayRef} type="date" value={dateVal || ""} onChange={(e) => setDateVal(e.target.value)}
-            style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark" }} />
+            style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark", padding: "0 4px", minWidth: 0 }} />
         ) : (
           <input ref={dayRef} type="text" inputMode="numeric" placeholder="Dia" value={dayStr}
             onChange={(e) => handleDayChange(e.target.value.replace(/\D/g, ""))}
@@ -681,7 +682,7 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
       <td style={cell}>
         <input ref={valRef} type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00"
-          style={{ ...PANEL_FIELD_STYLE, textAlign: "right" }} />
+          style={{ ...PANEL_FIELD_STYLE, textAlign: "right", padding: "0 6px", minWidth: 0 }} />
       </td>
       <td style={{ ...cell, textAlign: "right" }}>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "nowrap", whiteSpace: "nowrap" }}>

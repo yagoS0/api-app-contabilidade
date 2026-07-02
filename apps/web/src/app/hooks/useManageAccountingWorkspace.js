@@ -124,7 +124,13 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     setEntriesError("");
     setEntriesMessage("");
     try {
-      await api.createBaixa(selectedCompanyId, entryId, input);
+      // Q47: INSS na Circular é sintético (synthetic-inss-<guideId>) — a baixa é roteada pela guia.
+      if (String(entryId).startsWith("synthetic-inss-")) {
+        const guideId = String(entryId).replace("synthetic-inss-", "");
+        await api.saveInssBaixa(selectedCompanyId, guideId, input);
+      } else {
+        await api.createBaixa(selectedCompanyId, entryId, input);
+      }
       await loadAccountingEntries(selectedCompanyId);
       if (companyDetailTab === "circular") await loadCircular(circularYear, circularCompetencia);
       setEntriesMessage("Baixa registrada com sucesso.");
@@ -185,6 +191,11 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
 
   async function handleLoadBaixaTemplate(entryId) {
     if (!selectedCompanyId) return null;
+    // Q47: INSS sintético → template roteado pela guia (contas da folha / caixa).
+    if (String(entryId).startsWith("synthetic-inss-")) {
+      const guideId = String(entryId).replace("synthetic-inss-", "");
+      return api.getInssBaixaTemplate(selectedCompanyId, guideId);
+    }
     return api.getBaixaTemplate(selectedCompanyId, entryId);
   }
 

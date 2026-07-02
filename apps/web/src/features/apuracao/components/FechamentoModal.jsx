@@ -2,6 +2,8 @@
 // Faturamento (read-only, das notas), folha 12m (grade), atividades (editável),
 // aviso de disparidade, alíquota/DAS calculado. Botões: Calcular | Salvar | Transmitir.
 import { useEffect, useState } from "react";
+import { Feedback } from "../../../components/ui/Feedback";
+import { CadastroFiscalForm } from "../../apuracao-v2/components/CadastroFiscalForm";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 
 function pasAnteriores(competencia, n = 12) {
@@ -24,6 +26,35 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const [resultado, setResultado] = useState(null);
   const [showTransmit, setShowTransmit] = useState(false);
   const [confirmComp, setConfirmComp] = useState("");
+  // Q44: Cadastro Fiscal acessível no próprio fluxo de apuração (a aba "Apuração V2" saiu do menu).
+  const [showCadastro, setShowCadastro] = useState(false);
+  const [cadastroData, setCadastroData] = useState(null); // { cadastro, cnaePrincipalRef }
+  const [savingCadastro, setSavingCadastro] = useState(false);
+
+  async function abrirCadastro() {
+    try {
+      const out = await api.getCadastroFiscal?.(portalClientId);
+      // pré-preenche o CNAE que a empresa já tem (Company) quando não há CadastroFiscal ainda
+      const cadastro = out?.cadastro || (dados?.cnaePrincipal ? { cnaePrincipal: dados.cnaePrincipal, regime: "SIMPLES_NACIONAL" } : null);
+      setCadastroData({ cadastro, cnaePrincipalRef: out?.cnaePrincipalRef || null });
+    } catch {
+      setCadastroData({ cadastro: dados?.cnaePrincipal ? { cnaePrincipal: dados.cnaePrincipal, regime: "SIMPLES_NACIONAL" } : null, cnaePrincipalRef: null });
+    }
+    setShowCadastro(true);
+  }
+
+  async function salvarCadastro(payload) {
+    setSavingCadastro(true);
+    try {
+      const out = await api.saveCadastroFiscal?.(portalClientId, payload);
+      if (out && out.ok === false) throw new Error(out?.message || out?.error || "Falha ao salvar cadastro");
+      feedback?.notifySuccess?.("Cadastro fiscal salvo.");
+      setShowCadastro(false);
+      await load(); // recarrega dados (atividades/anexo do CNAE, cadastroCompleto)
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Erro ao salvar cadastro fiscal");
+    } finally { setSavingCadastro(false); }
+  }
 
   async function load() {
     setLoading(true);
@@ -149,9 +180,27 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
 
         {dados && !loading && (
           <>
-            {!dados.cadastroCompleto && (
-              <div style={{ padding: 10, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757", fontSize: "0.85rem" }}>
-                ⚠ Cadastro fiscal incompleto. Preencha em Apuração V2 → Cadastro Fiscal antes de transmitir.
+            {/* Q44: Cadastro fiscal acessível aqui (a aba "Apuração V2" saiu do menu). */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              {!dados.cadastroCompleto && (
+                <span style={{ padding: "6px 10px", background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", borderRadius: 6, color: "#FFB347", fontSize: "0.82rem" }}>
+                  ⚠ Cadastro fiscal incompleto (sem CNAE) — o anexo pode não vir automático.
+                </span>
+              )}
+              <button type="button" onClick={() => (showCadastro ? setShowCadastro(false) : abrirCadastro())}
+                style={{ padding: "6px 12px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: PANEL.field, color: PANEL.text, cursor: "pointer", fontSize: "0.82rem" }}>
+                {showCadastro ? "Fechar cadastro" : "📋 Cadastro fiscal"}
+              </button>
+            </div>
+
+            {showCadastro && (
+              <div style={{ padding: 12, background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
+                <CadastroFiscalForm
+                  cadastro={cadastroData?.cadastro}
+                  cnaePrincipalRef={cadastroData?.cnaePrincipalRef}
+                  saving={savingCadastro}
+                  onSave={salvarCadastro}
+                />
               </div>
             )}
 
@@ -262,6 +311,11 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#69FF47" }}>{fmtMoney(resultado.dasValor)}</div>
                 {resultado.rbt12 != null && <div style={{ fontSize: "0.75rem", color: PANEL.muted }}>RBT12 usado: {fmtMoney(resultado.rbt12)}</div>}
               </div>
+            )}
+
+            {/* Q44: feedback das ações (Calcular/Salvar/Transmitir) — antes os notify* eram invisíveis */}
+            {(feedback?.message || feedback?.error) && (
+              <Feedback message={feedback?.message} error={feedback?.error} />
             )}
 
             {/* Botões */}

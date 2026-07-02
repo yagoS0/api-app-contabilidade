@@ -13,10 +13,10 @@ const PAGE_TO_PATH = {
   pendingReport: "/guides/pending",
   batchEmail: "/guides/batch-email",
   guideSettings: "/firm-settings/guides",
-  accountingRulesGlobal: "/firm-settings/rules",
   chartOfAccountsGlobal: "/firm-settings/chart",
   apuracao: "/apuracao",
   pendencias: "/pendencias",
+  serproFuncoes: "/funcoes-serpro",
 };
 
 function pathToPageName(pathname) {
@@ -29,10 +29,10 @@ function pathToPageName(pathname) {
   if (pathname === "/guides/pending") return "pendingReport";
   if (pathname === "/guides/batch-email") return "batchEmail";
   if (pathname === "/firm-settings/guides") return "guideSettings";
-  if (pathname === "/firm-settings/rules") return "accountingRulesGlobal";
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";
   if (pathname === "/apuracao") return "apuracao";
   if (pathname === "/pendencias") return "pendencias";
+  if (pathname === "/funcoes-serpro") return "serproFuncoes";
   return "companies"; // fallback seguro
 }
 

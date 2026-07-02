@@ -21,6 +21,16 @@ import { carregarAtividades } from "../../application/notas/apuracao/v2/Atividad
 
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
+// Q44: mapeia o regime do cadastro da empresa (Company, dados do CNPJ) → enum do CadastroFiscal.
+function mapRegime(company) {
+  const raw = String(company?.regimeTributario || "").toUpperCase();
+  if (/MEI/.test(raw)) return "MEI";
+  if (/PRESUMID/.test(raw)) return "LUCRO_PRESUMIDO";
+  if (/REAL/.test(raw)) return "LUCRO_REAL";
+  if (/SIMPLES/.test(raw) || company?.optanteSimples) return "SIMPLES_NACIONAL";
+  return "SIMPLES_NACIONAL"; // default (a maioria das empresas do app é SN)
+}
+
 export function createApuracaoV2Router({ log } = {}) {
   const router = Router({ mergeParams: true });
 
@@ -36,17 +46,44 @@ export function createApuracaoV2Router({ log } = {}) {
     async (req, res) => {
       const portalClientId = String(req.params.companyId);
       try {
-        const cadastro = await prisma.cadastroFiscal.findUnique({
+        let cadastro = await prisma.cadastroFiscal.findUnique({
           where: { portalClientId },
         });
+        // Q44: sem CadastroFiscal salvo → pré-preenche a partir do cadastro da empresa (dados do CNPJ,
+        // já gravados no Company na consulta). Assim o form vem pronto; o contador só confere e salva.
+        let prefill = false;
+        if (!cadastro) {
+          const pc = await prisma.portalClient.findUnique({
+            where: { id: portalClientId }, select: { companyId: true },
+          });
+          const company = pc?.companyId
+            ? await prisma.company.findUnique({
+                where: { id: pc.companyId },
+                select: { cnaePrincipal: true, cnaesSecundarios: true, regimeTributario: true, optanteSimples: true, simplesDataOpcao: true },
+              }).catch(() => null)
+            : null;
+          if (company?.cnaePrincipal) {
+            cadastro = {
+              regime: mapRegime(company),
+              dataOpcaoSN: company.simplesDataOpcao || null,
+              cnaePrincipal: String(company.cnaePrincipal).replace(/\D+/g, ""),
+              cnaesSecundarios: (company.cnaesSecundarios || []).map((c) => String(c).replace(/\D+/g, "")).filter(Boolean),
+              sublimiteICMSISS: false,
+              usaFatorR: false,
+              forcarTipoReceitaPorCnae: false,
+              observacoes: null,
+            };
+            prefill = true;
+          }
+        }
         let cnaePrincipalRef = null;
         if (cadastro?.cnaePrincipal) {
           cnaePrincipalRef = await prisma.cnaeAnexo.findUnique({
-            where: { cnae: cadastro.cnaePrincipal },
+            where: { cnae: String(cadastro.cnaePrincipal).replace(/\D+/g, "").slice(0, 7) },
             select: { descricao: true, tipoReceitaSugerido: true, ambiguo: true },
-          });
+          }).catch(() => null);
         }
-        return res.json({ ok: true, cadastro, cnaePrincipalRef });
+        return res.json({ ok: true, cadastro, cnaePrincipalRef, prefill });
       } catch (err) {
         log?.warn({ err: err?.message, portalClientId }, "Falha ao buscar cadastro fiscal");
         return bad(res, 500, "cadastro_fetch_failed", err?.message || "Erro");

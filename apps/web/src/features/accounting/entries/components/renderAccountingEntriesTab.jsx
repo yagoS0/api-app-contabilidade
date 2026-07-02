@@ -17,6 +17,9 @@ const fechamentoApi = createApiClient();
 function FechamentoCadeado({ companyId, competencia, entries, onState }) {
   const [fechado, setFechado] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Q47: folha/pró-labore lançada — pré-requisito para fechar o mês.
+  const [folhaOk, setFolhaOk] = useState(false);
+  const [folhaBusy, setFolhaBusy] = useState(false);
 
   const problemas = useMemo(() => {
     const out = [];
@@ -36,7 +39,7 @@ function FechamentoCadeado({ companyId, competencia, entries, onState }) {
     let alive = true;
     if (!companyId || !competencia) return undefined;
     fechamentoApi.getFechamentoContabil(companyId, competencia)
-      .then((r) => { if (alive) { setFechado(Boolean(r?.fechado)); onState?.(Boolean(r?.fechado)); } })
+      .then((r) => { if (alive) { setFechado(Boolean(r?.fechado)); setFolhaOk(r?.folhaProlaboreOk === true); onState?.(Boolean(r?.fechado)); } })
       .catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -59,33 +62,66 @@ function FechamentoCadeado({ companyId, competencia, entries, onState }) {
       );
       return;
     }
+    if (!folhaOk) {
+      // eslint-disable-next-line no-alert
+      window.alert("Marque 'Folha/Pró-labore lançada' antes de fechar a empresa.");
+      return;
+    }
     setBusy(true);
     try { await fechamentoApi.fecharFechamentoContabil(companyId, competencia); setFechado(true); onState?.(true); }
     catch (e) { window.alert(e?.message || "Falha ao fechar."); }
     finally { setBusy(false); }
   }
 
-  const color = fechado ? "#2DD4BF" : problemas.length > 0 ? "#FF5757" : "#69FF47";
+  async function toggleFolha() {
+    if (folhaBusy || fechado) return;
+    const next = !folhaOk;
+    setFolhaBusy(true);
+    try { await fechamentoApi.setFolhaProlabore(companyId, competencia, next); setFolhaOk(next); }
+    catch (e) { window.alert(e?.message || "Falha ao salvar folha/pró-labore."); }
+    finally { setFolhaBusy(false); }
+  }
+
+  const bloqueadoPorFolha = !fechado && !folhaOk;
+  const color = fechado ? "#2DD4BF" : (problemas.length > 0 || bloqueadoPorFolha) ? "#FF5757" : "#69FF47";
   const title = fechado
     ? `Empresa fechada (${competencia}). Clique para reabrir.`
     : problemas.length > 0
       ? `${problemas.length} lançamento(s) com problema — corrija antes de fechar.`
-      : `Pronta para fechar (${competencia}). Clique no cadeado para fechar.`;
+      : bloqueadoPorFolha
+        ? "Marque 'Folha/Pró-labore lançada' antes de fechar."
+        : `Pronta para fechar (${competencia}). Clique no cadeado para fechar.`;
+  const btnDisabled = busy || bloqueadoPorFolha;
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      disabled={busy}
-      title={title}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px",
-        borderRadius: 8, cursor: busy ? "default" : "pointer", fontSize: "0.8rem", fontWeight: 700,
-        background: "transparent", color, border: `1px solid ${color}`,
-      }}
-    >
-      <span style={{ fontSize: "1rem" }}>{fechado ? "🔒" : "🔓"}</span>
-      {fechado ? "Fechada" : "Fechar mês"}
-    </button>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+      {/* Q47: checkbox de folha/pró-labore — some quando o mês já está fechado. */}
+      {!fechado && (
+        <label
+          title="Confirme que a folha e o pró-labore do mês foram lançados."
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.78rem", fontWeight: 600,
+            color: folhaOk ? "#69FF47" : "#aeb6d3", cursor: folhaBusy ? "default" : "pointer", userSelect: "none",
+          }}
+        >
+          <input type="checkbox" checked={folhaOk} disabled={folhaBusy} onChange={toggleFolha} style={{ cursor: folhaBusy ? "default" : "pointer" }} />
+          Folha/Pró-labore lançada
+        </label>
+      )}
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={btnDisabled}
+        title={title}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px",
+          borderRadius: 8, cursor: btnDisabled ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 700,
+          background: "transparent", color, border: `1px solid ${color}`, opacity: btnDisabled ? 0.6 : 1,
+        }}
+      >
+        <span style={{ fontSize: "1rem" }}>{fechado ? "🔒" : "🔓"}</span>
+        {fechado ? "Fechada" : "Fechar mês"}
+      </button>
+    </div>
   );
 }
 
@@ -214,7 +250,6 @@ export function AccountingEntriesTab({
   onLoadPayrollTemplate,
   onBulkDeleteEntries,
   onOpenChartOfAccountsTab,
-  onOpenAccountingRulesTab,
   onPreviewExcel,
   onImportExcel,
   // F3: Parcelamento Simples Nacional
@@ -397,8 +432,6 @@ export function AccountingEntriesTab({
             items={[
               { label: "Histórico de lançamentos", hint: "Templates de histórico reutilizáveis", onClick: () => setShowHistoricos(true) },
               { label: "Plano de contas", hint: "Visualizar e editar contas", onClick: () => { onLoadAccounts(); if (onOpenChartOfAccountsTab) onOpenChartOfAccountsTab(); }, disabled: !onOpenChartOfAccountsTab },
-              // Q17: "Lançamentos padrão" removido daqui — a config global fica em
-              // Configurações da firma → Padrões de Lançamento.
             ]}
           />
           <ActionMenu

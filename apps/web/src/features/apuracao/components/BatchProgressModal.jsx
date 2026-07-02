@@ -29,6 +29,24 @@ export function BatchProgressModal({ api, jobId, onClose, onDone }) {
     return () => { alive = false; clearInterval(timer.current); };
   }, [api, jobId, onDone]);
 
+  // Q44: "driver" — processa a fila sob demanda (o worker de fundo pode estar desligado; sem isto
+  // o lote ficava "pendente" pra sempre). Chama run-now em loop até concluir. ⚠ transmite de verdade.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      for (let i = 0; alive && i < 60; i++) {
+        let out;
+        try { out = await api.runApuracaoBatch?.(jobId); } catch { break; }
+        if (!alive || !out) break; // run-now indisponível → deixa o worker/poll cuidar
+        const j = out.job;
+        if (!j || j.status === "completed" || (j.pendenteCount || 0) === 0) break;
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    })();
+    return () => { alive = false; };
+  }, [api, jobId]);
+
   const total = job?.totalEmpresas || items.length || 0;
   const feito = (job?.okCount || 0) + (job?.errorCount || 0);
   const pct = total > 0 ? Math.round((feito / total) * 100) : 0;

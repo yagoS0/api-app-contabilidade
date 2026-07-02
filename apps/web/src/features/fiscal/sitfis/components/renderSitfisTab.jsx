@@ -72,18 +72,10 @@ export function SitfisTab({ sitfisPanel }) {
               </div>
             </div>
 
-            {status.texto && (
-              <div style={{ marginTop: 18 }}>
-                <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Relatório</span>
-                <pre style={{ marginTop: 6, padding: 14, background: "#282A36", borderRadius: 8, color: "#F8F8F2", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 420, overflow: "auto", fontSize: "0.85rem" }}>
-                  {status.texto}
-                </pre>
-              </div>
-            )}
             {status.relatorioPdfFileId && (
               <div style={{ marginTop: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-                  <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Relatório (PDF)</span>
+                  <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Relatório</span>
                   {pdfUrl && (
                     <a
                       href={pdfUrl}

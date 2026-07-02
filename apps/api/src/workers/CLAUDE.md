@@ -30,6 +30,7 @@ e `fetchDay` (dia do mês a partir do qual a captura começa). O loop usa `match
 | `apuracaoBatchWorker.js` | `APURACAO_BATCH_WORKER_ENABLED` | Fila de transmissão PGDAS-D em lote (consulta-antes-de-transmitir). |
 | `guideEmailWorker.js` | `GUIDE_EMAIL_WORKER_ENABLED` (default OFF) | Envio de guias por e-mail. Em prod o envio é manual (BatchEmail); ver `apps/api/CLAUDE.md`. |
 | `dfeNotasWorker.js` / heartbeat | `DFE_NOTAS_WORKER_ENABLED` | Captura NF-e (NFeDistribuicaoDFe) + heartbeat. |
+| `serproPaymentConfirmationWorker.js` (Q40) | `SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED` | Confirmação de pagamento via **PAGTOWEB** (COMPARRECADACAO72). Cron **próprio** (dia/hora em `SerproRuntimeSettings.paymentConfirmationCron`), lock `serpro_payment_confirmation_lock`. Confirma guias OPEN/SERPRO com `numeroDocumento`. ⚠ PAGTOWEB **atrás de `INTEGRACAO_SERPRO_PAGTOWEB` (OFF)** — idServiço não validado no trial; o worker fica OFF até validar. Disparo manual: `POST /firm/serpro/payment-confirmation/run-now`. |
 
 ## Disparo manual
 

@@ -71,13 +71,13 @@ export function CompaniesHomePage({
   onCreateCompany,
   onOpenGuideUpload,
   onOpenGuideSettings,
-  onOpenAccountingRules,
   onOpenChartGlobal,
   onRefreshCompanies,
   onOpenPendingReport,
   onOpenBatchEmail,
   onOpenApuracao,
   onOpenPendencias,
+  onOpenSerproFuncoes,
   onLogout,
   onOpenCompany,
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
@@ -221,10 +221,14 @@ export function CompaniesHomePage({
                 ⚠️ Pendências
               </Button>
             )}
+            {onOpenSerproFuncoes && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenSerproFuncoes}>
+                ⚙️ Funções SERPRO
+              </Button>
+            )}
             <SettingsMenu
               items={[
-                { label: "Configuração de Guias", onClick: onOpenGuideSettings },
-                { label: "Padrões de Lançamento", onClick: onOpenAccountingRules },
+                { label: "Configuração SERPRO", onClick: onOpenGuideSettings },
                 { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
                 { label: "Pendências (debug)", onClick: onOpenPendingReport },
               ]}

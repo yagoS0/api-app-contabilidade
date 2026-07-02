@@ -141,6 +141,40 @@ function parseDasIndexResponse(responseData) {
   };
 }
 
+/**
+ * Q46: resolve o índice do DAS de uma competência (número do documento de arrecadação + dasPago)
+ * via CONSDECLARACAO13. Usado pela confirmação de pagamento para obter o numeroDocumento CORRETO
+ * (não o heurístico do GERARDAS) e o sinal autoritativo de pagamento (`dasPago`). Chamada barata
+ * (/Consultar); NÃO gera lançamentos. Prefira o valor já gravado em companyMonthlyCircular.
+ * @returns {Promise<{numeroDocumento: string|null, dasPago: boolean, dataHoraEmissaoDas: string|null}|null>}
+ */
+export async function consultarDasIndexPorCompetencia({ portalClientId, competencia, contribuinteCnpj = null, contratanteCnpj = null }) {
+  const runtime = await getResolvedSerproCredentials();
+  const procuradorCnpj = onlyDigits(contratanteCnpj || runtime.certificate.document);
+  if (!procuradorCnpj || procuradorCnpj.length !== 14) {
+    const err = new Error("serpro_procurador_cnpj_not_configured");
+    err.code = "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED";
+    throw err;
+  }
+  let cnpj = onlyDigits(contribuinteCnpj);
+  if (cnpj.length !== 14 && portalClientId) {
+    const portal = await prisma.portalClient.findUnique({
+      where: { id: String(portalClientId) }, select: { cnpj: true },
+    });
+    cnpj = onlyDigits(portal?.cnpj);
+  }
+  if (cnpj.length !== 14) {
+    const err = new Error("contribuinte_cnpj_invalido");
+    err.code = "SERPRO_INVALID_CONTRIBUINTE_CNPJ";
+    throw err;
+  }
+  const pgdasService = new SerproPgdasdService();
+  const resp = await pgdasService.consultarDeclaracaoIndice({
+    contratanteCnpj: procuradorCnpj, contribuinteCnpj: cnpj, periodoApuracao: competencia,
+  });
+  return parseDasIndexResponse(resp);
+}
+
 async function tryEnsureDasGuideRecord(params) {
   try {
     const guide = await ensureDasGuideRecord(params);

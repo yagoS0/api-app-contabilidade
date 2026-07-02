@@ -581,7 +581,11 @@ export function createMockApi() {
     },
     async getFechamentoContabil(_companyId, competencia) {
       await delay();
-      return { ok: true, competencia, fechado: false, podeFechar: true, blockers: [] };
+      return { ok: true, competencia, fechado: false, folhaProlaboreOk: true, podeFechar: true, blockers: [] };
+    },
+    async setFolhaProlabore(_companyId, competencia, ok) {
+      await delay();
+      return { ok: true, competencia, folhaProlaboreOk: Boolean(ok) };
     },
     async fecharFechamentoContabil(_companyId, competencia) {
       await delay();
@@ -1254,6 +1258,15 @@ export function createMockApi() {
       mockEntriesByCompany.set(companyId, list);
       return { ok: true, entry: baixa, openEntry: list[openIdx] };
     },
+    // Q47: baixa do INSS (guia sintética) — stubs para o modo mock.
+    async getInssBaixaTemplate() {
+      await delay();
+      return { ok: true, template: null, reason: "mock" };
+    },
+    async saveInssBaixa() {
+      await delay();
+      return { ok: true, inssBaixa: { ok: true } };
+    },
     // Mock do parcelamento Simples Nacional — cria N entries no array mock.
     async createParcelamentoSimples(companyId, payload = {}) {
       await delay();
@@ -1744,6 +1757,7 @@ export function createMockApi() {
     async listAtividadesPgdasd() { await delay(40); return { ok: true, atividades: [] }; },
     async criarApuracaoBatch() { await delay(100); return { ok: true, jobId: "mock-job", totalEmpresas: 0 }; },
     async getApuracaoBatch() { await delay(60); return { ok: true, job: { status: "completed", okCount: 0, errorCount: 0, pendenteCount: 0, totalEmpresas: 0 }, items: [] }; },
+    async runApuracaoBatch() { await delay(80); return { ok: true, job: { status: "completed", okCount: 0, errorCount: 0, pendenteCount: 0, totalEmpresas: 0 } }; },
     async getCompanyCert() { await delay(60); return { hasCertificate: false, uploadedAt: null, expiresAt: null }; },
     async uploadCompanyCert() { await delay(150); return { ok: true, certificate: { uploadedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 365*86400000).toISOString() } }; },
     async deleteCompanyCert() { await delay(60); return { ok: true }; },

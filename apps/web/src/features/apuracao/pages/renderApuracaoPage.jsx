@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { PageHeader } from "../../../components/layout/PageHeader";
 import { Button } from "../../../components/ui/Button";
+import { Feedback } from "../../../components/ui/Feedback";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import { FechamentoModal } from "../components/FechamentoModal";
 import { BatchProgressModal } from "../components/BatchProgressModal";
@@ -86,6 +87,13 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
 
         {error && (
           <div style={{ padding: 12, marginBottom: 12, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757" }}>{error}</div>
+        )}
+
+        {/* Q44: feedback das ações (apurar em lote / fechar) — antes os notify* eram no-op invisível */}
+        {(feedback?.message || feedback?.error) && (
+          <div style={{ marginBottom: 12 }}>
+            <Feedback message={feedback?.message} error={feedback?.error} />
+          </div>
         )}
 
         <div style={{ overflowX: "auto", background: PANEL.surface, borderRadius: 6 }}>

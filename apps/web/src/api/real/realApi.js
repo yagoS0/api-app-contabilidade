@@ -320,6 +320,13 @@ export function createRealApi() {
     async reabrirFechamentoContabil(companyId, competencia) {
       return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/reabrir`, { method: "POST" });
     },
+    // Q47: marca/desmarca "Folha/Pró-labore lançada" (pré-requisito do fechamento).
+    async setFolhaProlabore(companyId, competencia, ok) {
+      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/folha-prolabore`, {
+        method: "POST",
+        body: JSON.stringify({ ok: Boolean(ok) }),
+      });
+    },
     async getGuideSettings() {
       return request("/firm/guides/settings");
     },
@@ -761,6 +768,16 @@ export function createRealApi() {
         body: JSON.stringify(input),
       });
     },
+    // Q47: baixa do INSS (guia sintética na Circular) — roteada pela guia, não por entryId.
+    async getInssBaixaTemplate(companyId, guideId) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/inss-baixa-template`);
+    },
+    async saveInssBaixa(companyId, guideId, input) {
+      return request(`/firm/companies/${companyId}/guides/${guideId}/inss-baixa`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
     // Cria N parcelas de um parcelamento (Simples Nacional, INSS, etc.) em transação.
     async createParcelamentoSimples(companyId, payload) {
       return request(`/firm/companies/${companyId}/entries/parcelamento`, {
@@ -1118,6 +1135,10 @@ export function createRealApi() {
     },
     async getApuracaoBatch(jobId) {
       return request(`/firm/apuracao/batch/${jobId}`);
+    },
+    // Q44: processa a fila do lote sob demanda (worker de fundo pode estar desligado).
+    async runApuracaoBatch(jobId) {
+      return request(`/firm/apuracao/batch/${jobId}/run-now`, { method: "POST" });
     },
   };
 }

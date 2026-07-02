@@ -10,6 +10,13 @@ import { importChartOfAccountsFromBuffer } from "../../application/accounting/ch
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { parseExcelBuffer, findHistoricoMatches, upsertHistoricoFromImport } from "../../application/accounting/excelImport.js";
 import { sanitizeFilename } from "../../lib/httpHeaders.js";
+// Q47: baixa do INSS pela Circular (guia sintética) — reusa o serviço de pagamento do INSS.
+import {
+  gerarPagamentoInssFromGuide,
+  resolveInssAccountFromFolha,
+  resolveCaixaAccount,
+} from "../../application/accounting/InssPagamentoService.js";
+import { markGuidePaidManual } from "../../application/guides/GuidePaymentStatusService.js";
 
 // Q16/Q37: memória de contas por (empresa, eventType). Grava/atualiza AccountingHistorico para que o
 // próximo lançamento do mesmo evento (provisão automática OU baixa) venha com D/C pré-preenchidos —
@@ -642,7 +649,11 @@ export function createAccountingEntriesRouter({ log }) {
           competencia: { in: meses },
           tipo: "SIMPLES",
         },
-        select: { competencia: true, valor: true, valorOriginal: true, updatedAt: true },
+        select: {
+          competencia: true, valor: true, valorOriginal: true, updatedAt: true,
+          // Q45: reflete o pagamento confirmado da guia (SERPRO/manual) na provisão DAS da Circular.
+          id: true, paymentStatus: true, paymentStatusSource: true, paymentConfirmedAt: true, comprovantePdfFileId: true,
+        },
       }),
     ]);
 
@@ -671,11 +682,26 @@ export function createAccountingEntriesRouter({ log }) {
         : (guide?.valorOriginal != null ? Number(guide.valorOriginal) : Number(entry.valor || entry.totalD || 0));
       const recalculado =
         guideValorAtual != null && Math.abs(guideValorAtual - valorOriginal) > 0.01;
+      // Q45: se a GUIA do DAS foi confirmada como paga (SERPRO/PAGTOWEB ou "pago" manual) e a provisão
+      // ainda não tem baixa, reflete como PAGO na Circular (verde + ✅), como já é feito no INSS.
+      const guidePaid = guide && String(guide.paymentStatus || "").toUpperCase() === "PAID";
+      const hasBaixa = Array.isArray(entry.baixas) && entry.baixas.length > 0;
       return {
         ...entry,
         valor: valorOriginal,
         totalD: valorOriginal,
         totalC: valorOriginal,
+        ...(guidePaid && !hasBaixa ? { statusPagamento: "PAGO" } : {}),
+        // sourceGuide: dados do pagamento p/ o selo ✅ (data/origem/comprovante).
+        sourceGuide: guide
+          ? {
+              id: guide.id,
+              paymentStatus: guide.paymentStatus,
+              paymentStatusSource: guide.paymentStatusSource,
+              paymentConfirmedAt: guide.paymentConfirmedAt,
+              comprovantePdfFileId: guide.comprovantePdfFileId,
+            }
+          : entry.sourceGuide,
         recalculatedAt: recalculado ? (guide?.updatedAt || entry.recalculatedAt || null) : entry.recalculatedAt,
         recalculatedFromValor: recalculado ? valorOriginal : entry.recalculatedFromValor,
         recalculatedToValor: recalculado ? guideValorAtual : entry.recalculatedToValor,
@@ -976,16 +1002,19 @@ export function createAccountingEntriesRouter({ log }) {
     try {
       const circular = await prisma.companyMonthlyCircular.findUnique({
         where: { portalClientId_competencia: { portalClientId, competencia } },
-        select: { fechadoContabilEm: true, fechadoContabilPor: true },
+        select: { fechadoContabilEm: true, fechadoContabilPor: true, folhaProlaboreOk: true },
       });
       const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
+      // Q47: folha/pró-labore é pré-requisito manual do fechamento.
+      const folhaProlaboreOk = circular?.folhaProlaboreOk === true;
       return res.json({
         ok: true,
         competencia,
         fechado: Boolean(circular?.fechadoContabilEm),
         fechadoEm: circular?.fechadoContabilEm || null,
         fechadoPor: circular?.fechadoContabilPor || null,
-        podeFechar: validation.ok,
+        folhaProlaboreOk,
+        podeFechar: validation.ok && folhaProlaboreOk,
         blockers: validation.blockers,
       });
     } catch (err) {
@@ -1003,6 +1032,18 @@ export function createAccountingEntriesRouter({ log }) {
       const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
       if (!validation.ok) {
         return res.status(400).json({ ok: false, error: "fechamento_bloqueado", blockers: validation.blockers });
+      }
+      // Q47: só fecha se a folha/pró-labore do mês estiver marcada como lançada.
+      const flag = await prisma.companyMonthlyCircular.findUnique({
+        where: { portalClientId_competencia: { portalClientId, competencia } },
+        select: { folhaProlaboreOk: true },
+      });
+      if (flag?.folhaProlaboreOk !== true) {
+        return res.status(400).json({
+          ok: false,
+          error: "folha_prolabore_pendente",
+          message: "Marque 'Folha/Pró-labore lançada' antes de fechar a empresa.",
+        });
       }
       // Garante a linha da circular (cria se não existir) e marca o fechamento contábil.
       const existing = await prisma.companyMonthlyCircular.findUnique({
@@ -1035,6 +1076,30 @@ export function createAccountingEntriesRouter({ log }) {
       return res.json({ ok: true, competencia, fechado: false });
     } catch (err) {
       log.error({ err }, "Falha ao reabrir empresa (contábil)");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Q47: marca/desmarca "Folha/Pró-labore lançada" da competência. Pré-requisito do fechamento.
+  router.post("/fechamento-contabil/:competencia/folha-prolabore", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia || "").trim();
+    if (!competencia) return res.status(400).json({ error: "competencia_required" });
+    const ok = req.body?.ok === true;
+    try {
+      // Upsert por (empresa, competência) — garante a linha da circular como no fechar.
+      const existing = await prisma.companyMonthlyCircular.findUnique({
+        where: { portalClientId_competencia: { portalClientId, competencia } },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data: { folhaProlaboreOk: ok } });
+      } else {
+        await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, folhaProlaboreOk: ok } });
+      }
+      return res.json({ ok: true, competencia, folhaProlaboreOk: ok });
+    } catch (err) {
+      log.error({ err }, "Falha ao marcar folha/pró-labore");
       return res.status(500).json({ ok: false, error: "internal_error" });
     }
   });
@@ -1879,6 +1944,104 @@ export function createAccountingEntriesRouter({ log }) {
       });
     } catch (err) {
       log.error({ err }, "Erro ao criar baixa");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Q47 — Baixa do INSS pela Circular. O INSS aparece como provisão SINTÉTICA (synthetic-inss-<guideId>),
+  // sem AccountingEntry PROVISAO; por isso a baixa é roteada pela GUIA (não por entryId). Reusa o mesmo
+  // modal genérico de baixa do DAS: template pré-preenche contas (INSS a Recolher da folha / Caixa),
+  // e o POST confirma a guia como paga (selo verde) + gera a BAIXA com as contas escolhidas.
+
+  // GET /firm/companies/:companyId/guides/:guideId/inss-baixa-template
+  router.get("/guides/:guideId/inss-baixa-template", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const guideId = String(req.params.guideId);
+
+    const guide = await prisma.guide.findFirst({
+      where: { id: guideId, portalClientId },
+      select: { id: true, tipo: true, competencia: true, valor: true },
+    });
+    if (!guide) return res.status(404).json({ error: "guide_not_found" });
+    if (String(guide.tipo || "").toUpperCase() !== "INSS") {
+      return res.status(400).json({ error: "guia_nao_e_inss" });
+    }
+
+    // Conta "INSS a Recolher" vem da folha/pró-labore da competência; caixa por hints do template de folha.
+    const debitAccountCode = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
+    const creditAccountCode = await resolveCaixaAccount(portalClientId);
+    const valor = Number(guide.valor || 0);
+    const historico = `PAGO INSS - ${formatCompetenciaLabel(guide.competencia)}`;
+
+    if (!debitAccountCode && !creditAccountCode) {
+      // Sem folha lançada → modal usa os defaults (contador preenche as contas manualmente).
+      return res.json({ ok: true, template: null, reason: "sem_conta_folha" });
+    }
+    return res.json({
+      ok: true,
+      template: {
+        debitAccountCode: debitAccountCode || "",
+        creditAccountCode: creditAccountCode || "",
+        valor,
+        historico,
+        scope: "COMPANY", // contas resolvidas da folha da própria empresa
+      },
+    });
+  });
+
+  // POST /firm/companies/:companyId/guides/:guideId/inss-baixa
+  router.post("/guides/:guideId/inss-baixa", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const guideId = String(req.params.guideId);
+    const body = req.body || {};
+
+    const guide = await prisma.guide.findFirst({
+      where: { id: guideId, portalClientId },
+      select: { id: true, tipo: true },
+    });
+    if (!guide) return res.status(404).json({ error: "guide_not_found" });
+    if (String(guide.tipo || "").toUpperCase() !== "INSS") {
+      return res.status(400).json({ error: "guia_nao_e_inss" });
+    }
+
+    const data = body.data ? new Date(body.data) : null;
+    const historico = String(body.historico || "").trim();
+    const lines = body.lines;
+    if (!data || isNaN(data.getTime())) return res.status(400).json({ error: "data_invalida" });
+    if (!historico) return res.status(400).json({ error: "historico_required" });
+
+    const validation = validateLines(lines);
+    if (!validation.ok) {
+      return res.status(400).json({
+        error: validation.error,
+        totalD: validation.totalD,
+        totalC: validation.totalC,
+        diferenca: validation.diferenca,
+      });
+    }
+
+    try {
+      // Gera a BAIXA (D INSS a Recolher / C Caixa) com as contas escolhidas no modal.
+      const inssBaixa = await gerarPagamentoInssFromGuide({
+        portalClientId,
+        guideId,
+        dataPagamento: data,
+        historico,
+        lines,
+        userId: req.auth?.user?.id,
+      });
+      if (inssBaixa?.skipped) {
+        // ja_baixada / sem_valor etc — não confirma pagamento nem duplica lançamento.
+        return res.status(409).json({ error: inssBaixa.reason || "baixa_skipped" });
+      }
+      // Selo verde da Circular depende de paymentStatus=PAID: marca a guia como paga (fonte MANUAL).
+      await markGuidePaidManual({ guideId, userId: req.auth?.user?.id });
+      return res.status(201).json({ ok: true, inssBaixa });
+    } catch (err) {
+      if (err?.code === "MES_FECHADO") {
+        return res.status(409).json({ error: "MES_FECHADO" });
+      }
+      log.error({ err }, "Erro ao criar baixa do INSS");
       return res.status(500).json({ error: "internal_error" });
     }
   });

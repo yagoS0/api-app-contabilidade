@@ -6,11 +6,11 @@ import { CompaniesHomePage } from "./features/companies/list/pages/renderCompani
 import { CompanyFormPage } from "./features/companies/form/pages/renderCompanyFormPage";
 import { CompanyDetailPage } from "./features/companies/detail/pages/renderCompanyDetailPage";
 import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproSettingsPage";
+import { SerproFuncoesPage } from "./features/fiscal/serpro/pages/renderSerproFuncoesPage";
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
-import { GlobalAccountingRulesPage } from "./features/accounting/rules/pages/renderGlobalAccountingRulesPage";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
 import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
@@ -197,15 +197,6 @@ function App() {
     );
   }
 
-  if (session.page === "accountingRulesGlobal") {
-    return (
-      <GlobalAccountingRulesPage
-        api={api}
-        onBack={() => session.setPage("companies")}
-      />
-    );
-  }
-
   if (session.page === "apuracao") {
     return (
       <ApuracaoPage
@@ -227,6 +218,19 @@ function App() {
       <PendenciasPage
         pendenciasPanel={pendenciasFiscais}
         onBack={() => session.setPage("companies")}
+      />
+    );
+  }
+
+  if (session.page === "serproFuncoes") {
+    return (
+      <SerproFuncoesPage
+        settings={companiesWorkspace.guideSettings}
+        companies={companiesWorkspace.companiesState.companies}
+        onRunOp={companiesWorkspace.runSerproOp}
+        onBack={() => session.setPage("companies")}
+        message={feedback.message}
+        error={feedback.error}
       />
     );
   }
@@ -399,7 +403,6 @@ function App() {
       onCreateCompany={() => session.setPage("createCompany")}
       onOpenGuideUpload={() => session.setPage("guideUpload")}
       onOpenGuideSettings={() => session.setPage("guideSettings")}
-      onOpenAccountingRules={() => session.setPage("accountingRulesGlobal")}
       onOpenChartGlobal={() => session.setPage("chartOfAccountsGlobal")}
       onRefreshCompanies={companiesWorkspace.loadCompanies}
       dashboardCompetencia={companiesWorkspace.dashboardCompetencia}
@@ -407,6 +410,7 @@ function App() {
       onOpenPendingReport={() => session.setPage("pendingReport")}
       onOpenBatchEmail={() => session.setPage("batchEmail")}
       onOpenApuracao={() => session.setPage("apuracao")}
+      onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenPendencias={() => session.setPage("pendencias")}
       onLogout={handleLogout}
       onOpenCompany={(companyId) => {
