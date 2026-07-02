@@ -154,7 +154,8 @@ export function useNotasFiscais({ api, companyId, feedback }) {
       } else {
         feedback?.notifyError?.(out?.result?.message || out?.message || "Falha na captura DFe.");
       }
-      await loadAll();
+      // Recarrega estado E a lista de notas — as notas capturadas aparecem sem precisar consultar de novo.
+      await Promise.all([loadAll(), loadNotas()]);
     } catch (err) {
       feedback?.notifyError?.(err?.message || "Erro.");
     } finally {
@@ -188,7 +189,8 @@ export function useNotasFiscais({ api, companyId, feedback }) {
       } else {
         feedback?.notifyError?.(out?.result?.message || out?.message || "Falha na captura ADN.");
       }
-      await loadAll();
+      // Recarrega estado E a lista de notas — as notas capturadas aparecem sem precisar consultar de novo.
+      await Promise.all([loadAll(), loadNotas()]);
     } catch (err) {
       feedback?.notifyError?.(err?.message || "Erro.");
     } finally {

@@ -311,6 +311,14 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
   } catch (err) {
     const code = err?.code || "ADN_SYNC_FAILED";
     const msg = err?.message || String(err);
+    // Se ESTA run já capturou notas antes do erro, é sucesso parcial — não mostra "erro" nem seta
+    // backoff longo (as notas entraram; o resto vem na próxima). Só o cursor foi persistido a cada lote.
+    if (totalDocs > 0) {
+      await prisma.portalSyncState
+        .updateMany({ where: { clientId: portalClientId }, data: { adnLastSyncAt: new Date(), adnLastError: null, adnBackoffUntil: null } })
+        .catch(() => null);
+      return { ok: true, cnpj: companyCnpj, certVia: cert.via, iterations, totalDocs, byStatus, newCursor: cursor.toString(), warning: `${code}: ${msg}` };
+    }
     // Q12.B+++.10: backoff curto pra 429 (retoma em 15min do mesmo cursor)
     const minutes = code === "HTTP_429" ? BACKOFF_MINUTES_ON_429 : BACKOFF_MINUTES_ON_ERROR;
     await setBackoff({ clientId: portalClientId, errorMsg: `[${code}] ${msg}`.slice(0, 500), minutes });

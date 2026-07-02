@@ -192,8 +192,23 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
     }
   }
 
-  // Esgotou todas as combinações (path × NSU) sem resposta útil
+  // Esgotou todas as combinações (path × NSU) sem resposta útil.
   if (lastEmpty404) {
+    // Paginação (autoDiscover=false, cursor>0 — já tínhamos NSU): um 404 vazio aqui significa
+    // apenas "não há mais documentos", NÃO "CNPJ fora do ADN". Termina o lote limpo (o loop de
+    // syncAdnNotasForCompany quebra em NENHUM_DOCUMENTO_LOCALIZADO) — antes isso lançava CNPJ_NOT_IN_ADN
+    // por engano no fim da paginação, mesmo já tendo capturado notas nesta sync.
+    if (!autoDiscover) {
+      return {
+        status: "NENHUM_DOCUMENTO_LOCALIZADO",
+        items: [],
+        errors: [],
+        raw: null,
+        triedPath: lastEmpty404.path,
+        httpStatus: 404,
+      };
+    }
+    // 1º contato real (autoDiscover=true, tentou NSU 0 e 1 e nada) → aí sim CNPJ não responde no ADN.
     throw new AdnNacionalClientError("CNPJ_NOT_IN_ADN",
       `CNPJ ${cleanCnpj} não responde no ADN Contribuinte (gov.br/nfse). Possíveis causas:\n` +
       `1. CNPJ não cadastrado no Padrão Nacional NFS-e (município ainda não aderiu — muitas cidades grandes só vão entrar até 2027)\n` +
