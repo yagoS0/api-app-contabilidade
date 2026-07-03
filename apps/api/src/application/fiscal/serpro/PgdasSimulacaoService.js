@@ -102,7 +102,11 @@ export function buildDeclaracaoPayload({
       valorInterno: round2(r.valorInterno),
       valorExterno: round2(r.valorExterno),
     })),
-    folhasSalario: folhasSalario.map((f) => ({ pa: paNum(f.pa), valor: round2(f.valor) })),
+    // Lista vazia → OMITE o campo: a RFB trata folhasSalario presente como "lista informada" e
+    // rejeita quando nenhuma atividade exige Fator-R ("SN-Entregar: Foi informada a lista de Folha…").
+    ...(folhasSalario.length
+      ? { folhasSalario: folhasSalario.map((f) => ({ pa: paNum(f.pa), valor: round2(f.valor) })) }
+      : {}),
     estabelecimentos: [estabelecimento],
   };
 

@@ -183,6 +183,29 @@ async function resolverCnpjs(portalClientId) {
   return { contratanteCnpj, contribuinteCnpj };
 }
 
+// PGDAS-D rejeita a declaração inteira se folhasSalario vier sem atividade sujeita ao Fator-R
+// ("SN-Entregar: Foi informada a lista de Folha de Salários mas não há atividade com este requisito").
+// A folha vem pré-preenchida da memória de config, então só entra no payload quando alguma atividade
+// selecionada exige Fator-R. Se NENHUMA atividade trouxer o campo definido (payload de cliente antigo),
+// consulta o catálogo AtividadePgdasd — nunca cortar a folha de quem precisa (Anexo III/V).
+async function folhasSalarioSeAplicavel(atividades, folhaMensal12) {
+  const lista = Array.isArray(folhaMensal12) ? folhaMensal12 : [];
+  if (!lista.length) return [];
+  const atvs = Array.isArray(atividades) ? atividades : [];
+  const algumDefinido = atvs.some((a) => a && a.sujeitoFatorR !== undefined);
+  let temFatorR;
+  if (algumDefinido) {
+    temFatorR = atvs.some((a) => a?.sujeitoFatorR === true);
+  } else {
+    const ids = atvs.map((a) => Number(a?.idAtividade)).filter(Number.isFinite);
+    const doCatalogo = ids.length
+      ? await prisma.atividadePgdasd.findMany({ where: { idAtividade: { in: ids }, sujeitoFatorR: true }, select: { id: true }, take: 1 })
+      : [];
+    temFatorR = doCatalogo.length > 0;
+  }
+  return temFatorR ? lista.map((f) => ({ pa: f.pa, valor: f.valor })) : [];
+}
+
 /**
  * [Calcular] — simulação oficial SERPRO (não transmite). Verdade do preview.
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
@@ -200,7 +223,7 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
     regimeApuracao: regimeApuracao || "COMPETENCIA",
     atividades,
     receitasBrutasAnteriores: rbt.detalhePorMes || [],
-    folhasSalario: (folhaMensal12 || []).map((f) => ({ pa: f.pa, valor: f.valor })),
+    folhasSalario: await folhasSalarioSeAplicavel(atividades, folhaMensal12),
   });
 
   // Se a RFB devolveu RBT12 oficial, grava no cache (fonte SIMULACAO)
@@ -311,7 +334,8 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
       regimeApuracao: "COMPETENCIA",
       atividades: snapshot.atividadesEscolhidas || [],
       receitasBrutasAnteriores: rbt.detalhePorMes || [],
-      folhasSalario: (snapshot.folhaMensal12 || []).map((f) => ({ pa: f.pa, valor: f.valor })),
+      // Mesmo gate do calcular — senão a transmissão sofreria a mesma rejeição da RFB.
+      folhasSalario: await folhasSalarioSeAplicavel(snapshot.atividadesEscolhidas, snapshot.folhaMensal12),
     });
   } catch (err) {
     // Q44: rede de segurança — se o SERPRO recusar por já existir declaração (pede Retificadora),

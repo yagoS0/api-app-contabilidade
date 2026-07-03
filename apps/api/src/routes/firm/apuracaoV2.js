@@ -16,6 +16,7 @@ import {
   calcularFechamento,
   salvarFechamento,
   transmitirFechamento,
+  FechamentoError,
 } from "../../application/notas/apuracao/v2/FechamentoService.js";
 import { carregarAtividades } from "../../application/notas/apuracao/v2/AtividadeResolver.js";
 
@@ -36,6 +37,13 @@ export function createApuracaoV2Router({ log } = {}) {
 
   function bad(res, status, error, message, extra = {}) {
     return res.status(status).json({ ok: false, error, message, ...extra });
+  }
+
+  // Erro de negócio/config conhecido (validação nossa ou rejeição do SERPRO) → 400; 500 só pro inesperado.
+  function statusForFechamentoErr(err) {
+    if (err instanceof FechamentoError) return 400;
+    if (String(err?.code || "").startsWith("SERPRO_")) return 400;
+    return 500;
   }
 
   // ─── Cadastro Fiscal ──────────────────────────────────────────────────────
@@ -357,7 +365,7 @@ export function createApuracaoV2Router({ log } = {}) {
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha calcularFechamento");
-        return bad(res, 500, err?.code || "calcular_failed", err?.message || "Erro");
+        return bad(res, statusForFechamentoErr(err), err?.code || "calcular_failed", err?.message || "Erro");
       }
     }
   );
@@ -377,7 +385,7 @@ export function createApuracaoV2Router({ log } = {}) {
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha salvarFechamento");
-        return bad(res, err?.code === "NAO_CALCULADA" ? 409 : 500, err?.code || "salvar_failed", err?.message || "Erro");
+        return bad(res, err?.code === "NAO_CALCULADA" ? 409 : statusForFechamentoErr(err), err?.code || "salvar_failed", err?.message || "Erro");
       }
     }
   );
@@ -398,7 +406,7 @@ export function createApuracaoV2Router({ log } = {}) {
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha transmitirFechamento");
-        return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : 500, err?.code || "transmitir_failed", err?.message || "Erro");
+        return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : statusForFechamentoErr(err), err?.code || "transmitir_failed", err?.message || "Erro");
       }
     }
   );

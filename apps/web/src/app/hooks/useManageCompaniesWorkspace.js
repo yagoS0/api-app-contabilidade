@@ -739,8 +739,14 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   useEffect(() => {
     if (page === "companyDetail" && companiesState.selectedCompanyId) {
       loadGuides(companiesState.selectedCompanyId);
-      // Q17: aba default ao abrir a empresa = Lançamentos.
-      setCompanyDetailTab("lancamentos");
+      // Q17/Q49: aba default (Lançamentos) SÓ quando a URL ainda não tem segmento de aba
+      // (ex.: /companies/:id). Antes forçava sempre → refresh em /companies/:id/circular era
+      // jogado pra /lancamentos e o navigate (push) empilhava histórico, quebrando o Voltar.
+      // replace: o redirect default não vira entrada de histórico.
+      const temAba = /^\/companies\/[^/]+\/[^/]+/.test(location.pathname);
+      if (!temAba) {
+        navigate(`/companies/${companiesState.selectedCompanyId}/lancamentos`, { replace: true });
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, companiesState.selectedCompanyId]);
@@ -761,6 +767,17 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       loadPendingGuidesReport();
     } else if (page === "guideUpload") {
       loadUnidentifiedGuides();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  // Q49: auto-carga da lista de empresas. Refresh direto em /companies/:id/*, /funcoes-serpro,
+  // /download-notas ou /apuracao deixava companies=[] (a lista só carregava na home) → header
+  // caía no fallback "Empresa" (empresa fantasma) e as tabelas de seleção ficavam vazias.
+  // Carrega uma vez quando qualquer página autenticada monta sem a lista.
+  useEffect(() => {
+    if (page !== "login" && companiesState.companies.length === 0 && !companiesState.loadingCompanies) {
+      loadCompanies();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);

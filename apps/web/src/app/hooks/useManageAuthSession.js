@@ -25,7 +25,12 @@ function pathToPageName(pathname) {
   if (pathname === "/login") return "login";
   if (pathname === "/companies") return "companies";
   if (pathname === "/companies/new") return "createCompany";
-  if (pathname.startsWith("/companies/")) return "companyDetail";
+  // Q49: companyDetail exige um id real no path. "/companies/" (vazio) caía como detalhe de
+  // empresa sem id → tela fantasma; agora volta pra lista.
+  if (pathname.startsWith("/companies/")) {
+    const seg = pathname.split("/")[2] || "";
+    return seg && seg !== "new" ? "companyDetail" : "companies";
+  }
   if (pathname === "/guides/upload") return "guideUpload";
   if (pathname === "/guides/pending") return "pendingReport";
   if (pathname === "/guides/batch-email") return "batchEmail";
