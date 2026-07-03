@@ -126,12 +126,6 @@ export function AdnCapturePanel({ adnState, adnSyncing, adnLastResult, onSync, o
       </div>
 
       <ResultBlock result={adnLastResult} />
-
-      <div style={{ marginTop: 12, padding: 10, background: "rgba(189,147,249,0.08)", borderLeft: "3px solid #BD93F9", borderRadius: 4, fontSize: "0.75rem", color: PANEL.muted }}>
-        <strong style={{ color: "#BD93F9" }}>Como funciona:</strong> consulta o ADN/Emissor Nacional
-        por NSU usando o cert do escritório (procuração e-CAC já registrada na Receita). Mesmo
-        padrão da consulta ao SERPRO. Configure <code>ADN_BASE_URL</code>/<code>ADN_DFE_PATH</code> no env da API.
-      </div>
     </section>
   );
 }

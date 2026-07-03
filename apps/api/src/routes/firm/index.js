@@ -29,6 +29,13 @@ import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { criarBatchJob, runApuracaoBatchOnce } from "../../workers/apuracaoBatchWorker.js";
+// Q48: download de notas em lote (ZIP em segundo plano)
+import fsNotasDownload from "node:fs";
+import {
+  criarNotasDownloadJob,
+  cleanupNotasDownloadJobs,
+  jobToResponse as notasDownloadJobToResponse,
+} from "../../application/notas/download/NotasDownloadService.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import {
@@ -3382,6 +3389,94 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) {
       log.warn({ err: err?.message, jobId }, "Falha ao processar batch de apuração (run-now)");
       return res.status(500).json({ ok: false, error: "batch_run_failed", message: err?.message });
+    }
+  });
+
+  // ===========================================================================
+  // Q48 — Download de notas em lote (ZIP em segundo plano)
+  // O POST cria o job e responde na hora (processamento fire-and-forget no serviço);
+  // o front acompanha por polling no GET e baixa o arquivo pronto em /arquivo.
+  // ===========================================================================
+
+  // POST /firm/notas-download  body: { companyIds:[], competenciaDe, competenciaAte, tipo?, papel? }
+  router.post("/notas-download", async (req, res) => {
+    const { companyIds, competenciaDe, competenciaAte, tipo, papel } = req.body || {};
+    try {
+      // Só empresas que existem (evita ids inventados no payload).
+      const ids = Array.isArray(companyIds) ? companyIds.map(String).filter(Boolean) : [];
+      const existentes = await prisma.portalClient.findMany({
+        where: { id: { in: ids } },
+        select: { id: true },
+      });
+      const validIds = existentes.map((c) => c.id);
+      const result = await criarNotasDownloadJob({
+        companyIds: validIds,
+        competenciaDe,
+        competenciaAte,
+        tipo,
+        papel,
+        userId: req.auth?.user?.id,
+      });
+      return res.json(result);
+    } catch (err) {
+      const badCodes = ["COMPANIES_REQUIRED", "PERIODO_INVALIDO", "PERIODO_MUITO_LONGO"];
+      log.warn({ err: err?.message }, "Falha ao criar download de notas");
+      return res.status(badCodes.includes(err?.code) ? 400 : 500)
+        .json({ ok: false, error: err?.code || "notas_download_failed", message: err?.message });
+    }
+  });
+
+  // GET /firm/notas-download — últimos jobs ("Downloads recentes")
+  router.get("/notas-download", async (_req, res) => {
+    try {
+      await cleanupNotasDownloadJobs();
+      const jobs = await prisma.notasDownloadJob.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      });
+      return res.json({ ok: true, jobs: jobs.map(notasDownloadJobToResponse) });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: "notas_download_list_failed", message: err?.message });
+    }
+  });
+
+  // GET /firm/notas-download/:jobId — progresso (polling)
+  router.get("/notas-download/:jobId", async (req, res) => {
+    try {
+      const job = await prisma.notasDownloadJob.findUnique({ where: { id: String(req.params.jobId) } });
+      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      return res.json({ ok: true, job: notasDownloadJobToResponse(job) });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: "notas_download_status_failed", message: err?.message });
+    }
+  });
+
+  // GET /firm/notas-download/:jobId/arquivo — stream do ZIP pronto
+  router.get("/notas-download/:jobId/arquivo", async (req, res) => {
+    try {
+      const job = await prisma.notasDownloadJob.findUnique({ where: { id: String(req.params.jobId) } });
+      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      if (job.status === "expirado") return res.status(410).json({ ok: false, error: "expirado" });
+      if (job.status !== "concluido" || !job.arquivoPath) {
+        return res.status(409).json({ ok: false, error: "nao_concluido", status: job.status });
+      }
+      if (job.expiresAt && new Date(job.expiresAt) < new Date()) {
+        return res.status(410).json({ ok: false, error: "expirado" });
+      }
+      if (!fsNotasDownload.existsSync(job.arquivoPath)) {
+        return res.status(410).json({ ok: false, error: "arquivo_removido" });
+      }
+      res.setHeader("Content-Type", "application/zip");
+      // Q8.A.6: sanitiza filename (defesa contra header injection).
+      res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(job.arquivoNome || `notas-${job.id}.zip`)}"`);
+      if (job.arquivoBytes) res.setHeader("Content-Length", String(job.arquivoBytes));
+      const stream = fsNotasDownload.createReadStream(job.arquivoPath);
+      stream.on("error", () => { if (!res.headersSent) res.status(500).end(); else res.end(); });
+      return stream.pipe(res);
+    } catch (err) {
+      log.warn({ err: err?.message }, "Falha no download do zip de notas");
+      if (!res.headersSent) return res.status(500).json({ ok: false, error: "notas_download_file_failed" });
+      return res.end();
     }
   });
 

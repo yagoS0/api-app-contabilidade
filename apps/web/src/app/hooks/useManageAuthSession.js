@@ -17,6 +17,7 @@ const PAGE_TO_PATH = {
   apuracao: "/apuracao",
   pendencias: "/pendencias",
   serproFuncoes: "/funcoes-serpro",
+  notasDownload: "/download-notas",
 };
 
 function pathToPageName(pathname) {
@@ -33,6 +34,7 @@ function pathToPageName(pathname) {
   if (pathname === "/apuracao") return "apuracao";
   if (pathname === "/pendencias") return "pendencias";
   if (pathname === "/funcoes-serpro") return "serproFuncoes";
+  if (pathname === "/download-notas") return "notasDownload";
   return "companies"; // fallback seguro
 }
 

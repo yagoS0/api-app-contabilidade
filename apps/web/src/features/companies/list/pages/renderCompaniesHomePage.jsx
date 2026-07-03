@@ -76,6 +76,7 @@ export function CompaniesHomePage({
   onOpenPendingReport,
   onOpenBatchEmail,
   onOpenApuracao,
+  onOpenNotasDownload,
   onOpenPendencias,
   onOpenSerproFuncoes,
   onLogout,
@@ -214,6 +215,11 @@ export function CompaniesHomePage({
             {onOpenApuracao && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenApuracao}>
                 📊 Apuração
+              </Button>
+            )}
+            {onOpenNotasDownload && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenNotasDownload}>
+                ⬇ Download de Notas
               </Button>
             )}
             {onOpenPendencias && (

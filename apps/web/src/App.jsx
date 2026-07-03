@@ -7,6 +7,7 @@ import { CompanyFormPage } from "./features/companies/form/pages/renderCompanyFo
 import { CompanyDetailPage } from "./features/companies/detail/pages/renderCompanyDetailPage";
 import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproSettingsPage";
 import { SerproFuncoesPage } from "./features/fiscal/serpro/pages/renderSerproFuncoesPage";
+import { NotasDownloadPage } from "./features/notas/download/pages/renderNotasDownloadPage";
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
@@ -235,6 +236,16 @@ function App() {
     );
   }
 
+  if (session.page === "notasDownload") {
+    return (
+      <NotasDownloadPage
+        api={api}
+        companies={companiesWorkspace.companiesState.companies}
+        onBack={() => session.setPage("companies")}
+      />
+    );
+  }
+
   if (session.page === "guideUpload") {
     return (
       <GuideUploadPage
@@ -410,6 +421,7 @@ function App() {
       onOpenPendingReport={() => session.setPage("pendingReport")}
       onOpenBatchEmail={() => session.setPage("batchEmail")}
       onOpenApuracao={() => session.setPage("apuracao")}
+      onOpenNotasDownload={() => session.setPage("notasDownload")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenPendencias={() => session.setPage("pendencias")}
       onLogout={handleLogout}

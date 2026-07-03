@@ -1552,3 +1552,30 @@ model AtividadePgdasd {
   @@index([tipoReceita, mercado])
   @@map("atividades_pgdasd")
 }
+
+// Q48 — Download de notas em lote (módulo top-level). O job roda em segundo plano no processo da API
+// (fire-and-forget) e gera um ZIP em disco (storage/downloads) com pasta por empresa. O frontend
+// acompanha por polling e baixa o arquivo pronto. expiresAt: zip é apagado após 7 dias.
+model NotasDownloadJob {
+  id             String    @id @default(uuid())
+  status         String    @default("processando") // processando | concluido | erro | expirado
+  competenciaDe  String // YYYY-MM
+  competenciaAte String // YYYY-MM
+  tipo           String? // NFE | NFSE | null = todas
+  papel          String? // EMIT | DEST | null = todas
+  companyIds     Json // string[] de portalClientId
+  totalEmpresas  Int
+  processadas    Int       @default(0)
+  totalNotas     Int       @default(0)
+  arquivoPath    String? // caminho do zip em disco
+  arquivoNome    String?
+  arquivoBytes   Int?
+  erroMensagem   String?
+  triggeredBy    String? // userId
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@map("notas_download_jobs")
+}

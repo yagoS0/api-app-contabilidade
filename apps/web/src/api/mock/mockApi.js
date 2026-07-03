@@ -1729,6 +1729,27 @@ export function createMockApi() {
     async syncAdn() { await delay(80); return { ok: true, result: { totalDocs: 0, byStatus: {}, newCursor: "0" } }; },
     async getAdnState() { await delay(60); return null; },
     async clearAdnError() { await delay(40); return { ok: true }; },
+    // Q48: download de notas em lote — job fake que "conclui" no primeiro poll.
+    async createNotasDownload(payload = {}) {
+      await delay(80);
+      return { ok: true, jobId: `mock-notas-dl-${Date.now()}` };
+    },
+    async listNotasDownloads() { await delay(60); return { ok: true, jobs: [] }; },
+    async getNotasDownload(jobId) {
+      await delay(60);
+      return {
+        ok: true,
+        job: {
+          id: jobId, status: "concluido", competenciaDe: "2026-01", competenciaAte: "2026-01",
+          totalEmpresas: 1, processadas: 1, totalNotas: 0,
+          arquivoNome: "notas-mock.zip", arquivoBytes: 0, erroMensagem: null,
+        },
+      };
+    },
+    async fetchNotasDownloadBlob() {
+      await delay(60);
+      return new Blob(["mock"], { type: "application/zip" });
+    },
     async listNotas() { await delay(60); return { ok: true, total: 0, notas: [] }; },
     async getNotasSummary() { await delay(60); return { ok: true, ano: new Date().getUTCFullYear(), totals: { totalNotas: 0, totalEmitido: 0, totalRecebido: 0 }, byMonth: [] }; },
     async listApuracao({ competencia } = {}) { await delay(60); return { competencia, items: [] }; },

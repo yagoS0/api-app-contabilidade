@@ -968,6 +968,30 @@ export function createRealApi() {
     async clearAdnError(companyId) {
       return request(`/firm/companies/${companyId}/adn/clear-error`, { method: "POST" });
     },
+    // Q48: download de notas em lote (job em segundo plano + zip)
+    async createNotasDownload(payload) {
+      return request(`/firm/notas-download`, { method: "POST", body: JSON.stringify(payload || {}) });
+    },
+    async listNotasDownloads() {
+      return request(`/firm/notas-download`);
+    },
+    async getNotasDownload(jobId) {
+      return request(`/firm/notas-download/${jobId}`);
+    },
+    // Baixa o ZIP pronto como Blob (com auth Bearer) — mesmo padrão do fetchSitfisPdfBlob.
+    async fetchNotasDownloadBlob(jobId) {
+      const baseUrl = getApiBaseUrl();
+      const headers = {};
+      const tok = accessToken || readStoredToken();
+      if (tok) headers.Authorization = `Bearer ${tok}`;
+      const res = await fetch(`${baseUrl}/firm/notas-download/${jobId}/arquivo`, { method: "GET", headers });
+      if (!res.ok) {
+        const err = new Error(`Falha ao baixar o ZIP de notas (HTTP ${res.status})`);
+        err.code = "NOTAS_DOWNLOAD_FETCH_FAILED";
+        throw err;
+      }
+      return res.blob();
+    },
     // Q12.C.1: listagem de notas + resumo
     async listNotas(companyId, filters = {}) {
       const q = new URLSearchParams();
