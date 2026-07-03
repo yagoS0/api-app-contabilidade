@@ -69,8 +69,14 @@ function mapKnownError(payload, status) {
   if (code === "ACCOUNTING_GENERATION_FAILED") {
     return "A circular foi salva, mas a geração dos lançamentos falhou.";
   }
+  // Erro de negócio do SERPRO: a mensagem REAL vem em payload.message (ex.: "PA já declarado",
+  // atividade inválida, cadastro incompleto) — mostrar ela, não o código seco.
+  if (code === "SERPRO_BUSINESS_ERROR") {
+    return String(payload?.message || "").trim() || "O SERPRO rejeitou a operação (erro de negócio).";
+  }
 
-  return reason || payload?.error || `request_failed_${status}`;
+  // Fallback: prefere a mensagem humana do backend ({error, message}) antes do código cru.
+  return reason || String(payload?.message || "").trim() || payload?.error || `request_failed_${status}`;
 }
 
 function normalizeError(payload, status) {
