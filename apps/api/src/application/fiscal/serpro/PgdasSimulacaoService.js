@@ -97,11 +97,17 @@ export function buildDeclaracaoPayload({
     // valorFixo é opcional e "deve ser maior que zero" → só envia se > 0, senão null
     valorFixoIcms: Number(valorFixo.icms) > 0 ? round2(valorFixo.icms) : null,
     valorFixoIss: Number(valorFixo.iss) > 0 ? round2(valorFixo.iss) : null,
-    receitasBrutasAnteriores: receitasBrutasAnteriores.map((r) => ({
-      pa: paNum(r.pa),
-      valorInterno: round2(r.valorInterno),
-      valorExterno: round2(r.valorExterno),
-    })),
+    // Lista vazia → OMITE o campo (mesmo padrão do folhasSalario): a RFB só aceita meses que ela
+    // NÃO tem declarados; empresa com histórico completo converge pra lista vazia.
+    ...(receitasBrutasAnteriores.length
+      ? {
+          receitasBrutasAnteriores: receitasBrutasAnteriores.map((r) => ({
+            pa: paNum(r.pa),
+            valorInterno: round2(r.valorInterno),
+            valorExterno: round2(r.valorExterno),
+          })),
+        }
+      : {}),
     // Lista vazia → OMITE o campo: a RFB trata folhasSalario presente como "lista informada" e
     // rejeita quando nenhuma atividade exige Fator-R ("SN-Entregar: Foi informada a lista de Folha…").
     ...(folhasSalario.length

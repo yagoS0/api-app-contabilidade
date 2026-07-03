@@ -206,6 +206,33 @@ async function folhasSalarioSeAplicavel(atividades, folhaMensal12) {
   return temFatorR ? lista.map((f) => ({ pa: f.pa, valor: f.valor })) : [];
 }
 
+// A RFB só aceita receitasBrutasAnteriores dos meses que ela NÃO tem declarados; para os demais
+// rejeita com "SN-Entregar: Foi enviada receita bruta de um período desnecessário: MM/AAAA. Remova
+// este período e tente novamente." Fazemos literalmente isso: remove o PA apontado e re-executa,
+// até a lista convergir (pior caso: 12 remoções → lista vazia, campo omitido do payload).
+// Qualquer OUTRO erro propaga intacto (não mascara rejeições reais).
+const RE_PERIODO_DESNECESSARIO = /per[íi]odo desnecess[áa]rio:?\s*(\d{2})\/(\d{4})/i;
+async function executarComAjusteReceitas(executar, { receitasBrutasAnteriores, ...params }) {
+  let detalhe = [...(receitasBrutasAnteriores || [])];
+  const removidos = [];
+  for (let tentativa = 0; tentativa <= 13; tentativa += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const resultado = await executar({ ...params, receitasBrutasAnteriores: detalhe });
+      return { resultado, receitasAceitas: detalhe, periodosRemovidos: removidos };
+    } catch (err) {
+      const m = String(err?.message || "").match(RE_PERIODO_DESNECESSARIO);
+      if (!m) throw err;
+      const pa = `${m[2]}-${m[1]}`; // "06/2025" → "2025-06"
+      const antes = detalhe.length;
+      detalhe = detalhe.filter((r) => String(r.pa) !== pa);
+      if (detalhe.length === antes) throw err; // PA não está na lista → evita loop infinito
+      removidos.push(pa);
+    }
+  }
+  throw new FechamentoError("RECEITAS_ANTERIORES_NAO_CONVERGIU", "A RFB rejeitou as receitas brutas anteriores repetidamente.");
+}
+
 /**
  * [Calcular] — simulação oficial SERPRO (não transmite). Verdade do preview.
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
@@ -218,22 +245,36 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   const rbt = await getRbt12({ portalClientId, competencia });
 
   const sim = new PgdasSimulacaoService();
-  const resultado = await sim.simular({
-    contratanteCnpj, contribuinteCnpj, competencia,
-    regimeApuracao: regimeApuracao || "COMPETENCIA",
-    atividades,
-    receitasBrutasAnteriores: rbt.detalhePorMes || [],
-    folhasSalario: await folhasSalarioSeAplicavel(atividades, folhaMensal12),
-  });
+  const folhasSalario = await folhasSalarioSeAplicavel(atividades, folhaMensal12);
+  const { resultado, receitasAceitas, periodosRemovidos } = await executarComAjusteReceitas(
+    (p) => sim.simular(p),
+    {
+      contratanteCnpj, contribuinteCnpj, competencia,
+      regimeApuracao: regimeApuracao || "COMPETENCIA",
+      atividades,
+      receitasBrutasAnteriores: rbt.detalhePorMes || [],
+      folhasSalario,
+    },
+  );
 
-  // Se a RFB devolveu RBT12 oficial, grava no cache (fonte SIMULACAO)
+  // Se a RFB devolveu RBT12 oficial, grava no cache (fonte SIMULACAO) — com a lista ACEITA
+  // (já sem os meses "desnecessários"), pro transmitir reusar sem retry.
   if (resultado.rbt12 != null) {
     await gravarDaSimulacao({
       portalClientId, competencia,
       rbt12: resultado.rbt12,
-      receitasBrutasAnteriores: rbt.detalhePorMes || [],
+      receitasBrutasAnteriores: receitasAceitas,
     }).catch(() => null);
   }
+
+  // Memória da última config (anexo/atividades/folha/regime) já no Calcular — antes só o Salvar
+  // gravava, e quando o cálculo falhava a escolha se perdia. Best-effort.
+  await salvarConfigMemory({
+    portalClientId,
+    atividadesEscolhidas: atividades,
+    folhaMensal12: folhaMensal12 || null,
+    regimeApuracao: regimeApuracao || null,
+  }).catch(() => null);
 
   const faturamentoInterno = round2(atividades.reduce((s, a) => s + Number(a.valorInterno || 0), 0));
   const faturamentoExterno = round2(atividades.reduce((s, a) => s + Number(a.valorExterno || 0), 0));
@@ -262,7 +303,7 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
     ? await prisma.apuracaoSnapshot.update({ where: { id: existing.id }, data })
     : await prisma.apuracaoSnapshot.create({ data: { ...data, portalClientId, competencia } });
 
-  return { ok: true, dasValor: resultado.dasValor, rbt12: data.rbt12, mensagens: resultado.mensagens, snapshot };
+  return { ok: true, dasValor: resultado.dasValor, rbt12: data.rbt12, mensagens: resultado.mensagens, periodosRemovidos, snapshot };
 }
 
 /**
@@ -329,14 +370,21 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   const rbt = await getRbt12({ portalClientId, competencia });
   let resultado;
   try {
-    resultado = await sim.transmitir({
-      contratanteCnpj, contribuinteCnpj, competencia,
-      regimeApuracao: "COMPETENCIA",
-      atividades: snapshot.atividadesEscolhidas || [],
-      receitasBrutasAnteriores: rbt.detalhePorMes || [],
-      // Mesmo gate do calcular — senão a transmissão sofreria a mesma rejeição da RFB.
-      folhasSalario: await folhasSalarioSeAplicavel(snapshot.atividadesEscolhidas, snapshot.folhaMensal12),
-    });
+    // Auto-ajuste das receitas anteriores também aqui: a rejeição "período desnecessário" ocorre
+    // ANTES de a declaração ser aceita, então re-tentar com a lista corrigida é seguro. O cache
+    // já convergido pelo Calcular torna o retry raro.
+    const exec = await executarComAjusteReceitas(
+      (p) => sim.transmitir(p),
+      {
+        contratanteCnpj, contribuinteCnpj, competencia,
+        regimeApuracao: "COMPETENCIA",
+        atividades: snapshot.atividadesEscolhidas || [],
+        receitasBrutasAnteriores: rbt.detalhePorMes || [],
+        // Mesmo gate do calcular — senão a transmissão sofreria a mesma rejeição da RFB.
+        folhasSalario: await folhasSalarioSeAplicavel(snapshot.atividadesEscolhidas, snapshot.folhaMensal12),
+      },
+    );
+    resultado = exec.resultado;
   } catch (err) {
     // Q44: rede de segurança — se o SERPRO recusar por já existir declaração (pede Retificadora),
     // a consulta-antes não pegou, mas o erro prova que já está declarado. Decisão do dono: só
