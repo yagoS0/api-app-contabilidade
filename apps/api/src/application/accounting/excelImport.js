@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { normalizarHistorico } from "./historicoCompetencia.js";
 
 const HEADER_ALIASES = {
   data: ["data", "date", "dt", "dia"],
@@ -177,7 +178,8 @@ export async function upsertHistoricoFromImport({
   historicoSugerido,
 }) {
   if (!userId || !text) return;
-  const trimmed = String(text).trim();
+  // Q50: chave normalizada — competências no memo viram {{competencia}} (dedup entre meses).
+  const trimmed = normalizarHistorico(String(text).trim());
   if (!trimmed) return;
   const historicoTrimmed = historicoSugerido ? String(historicoSugerido).trim() || null : null;
   try {

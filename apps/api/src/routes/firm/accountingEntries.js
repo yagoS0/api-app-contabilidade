@@ -17,16 +17,25 @@ import {
   resolveCaixaAccount,
 } from "../../application/accounting/InssPagamentoService.js";
 import { markGuidePaidManual } from "../../application/guides/GuidePaymentStatusService.js";
+// Q50: históricos agnósticos de competência (chave normalizada com {{competencia}}).
+import { normalizarHistorico } from "../../application/accounting/historicoCompetencia.js";
 
 // Q16/Q37: memória de contas por (empresa, eventType). Grava/atualiza AccountingHistorico para que o
 // próximo lançamento do mesmo evento (provisão automática OU baixa) venha com D/C pré-preenchidos —
 // "último preenchido permanece". Best-effort: nunca derruba a operação principal.
+// Q50: a chave é o texto NORMALIZADO ({{competencia}} no lugar de MM/AAAA / AAAA-MM) — "DAS 05/2026"
+// e "DAS 06/2026" são o MESMO histórico. Além da linha da empresa, mantém uma linha GLOBAL
+// (companyPortalClientId null) que serve de fallback pra empresas novas; nela as contas só são
+// preenchidas quando estão vazias (a linha da empresa é que manda no caso específico).
 async function memorizeAccountHistorico({ userId, portalClientId, text, contaDebito, contaCredito, eventType }) {
   if (!userId || !portalClientId || !text) return;
-  if (!contaDebito && !contaCredito) return;
+  // (sem guard de contas: histórico só-texto também vale — alimenta o autocomplete; o POST /entries
+  // sempre salvou assim.)
+  const textNorm = normalizarHistorico(text);
+  if (!textNorm) return;
   try {
     const existing = await prisma.accountingHistorico.findFirst({
-      where: { createdByUserId: String(userId), companyPortalClientId: String(portalClientId), text },
+      where: { createdByUserId: String(userId), companyPortalClientId: String(portalClientId), text: textNorm },
     });
     if (existing) {
       await prisma.accountingHistorico.update({
@@ -44,7 +53,36 @@ async function memorizeAccountHistorico({ userId, portalClientId, text, contaDeb
         data: {
           createdByUserId: String(userId),
           companyPortalClientId: String(portalClientId),
-          text,
+          text: textNorm,
+          contaDebito: contaDebito || null,
+          contaCredito: contaCredito || null,
+          eventType: eventType || null,
+        },
+      });
+    }
+
+    // Linha GLOBAL (fallback pra empresa nova): cria se não existe; se existe, incrementa uso e só
+    // completa conta que estiver vazia — divergência pontual de uma empresa não sobrescreve o padrão.
+    const global = await prisma.accountingHistorico.findFirst({
+      where: { createdByUserId: String(userId), companyPortalClientId: null, text: textNorm },
+    });
+    if (global) {
+      await prisma.accountingHistorico.update({
+        where: { id: global.id },
+        data: {
+          contaDebito: global.contaDebito ?? (contaDebito || null),
+          contaCredito: global.contaCredito ?? (contaCredito || null),
+          eventType: global.eventType ?? (eventType || null),
+          usageCount: global.usageCount + 1,
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.accountingHistorico.create({
+        data: {
+          createdByUserId: String(userId),
+          companyPortalClientId: null,
+          text: textNorm,
           contaDebito: contaDebito || null,
           contaCredito: contaCredito || null,
           eventType: eventType || null,
@@ -1187,7 +1225,8 @@ export function createAccountingEntriesRouter({ log }) {
     const userId = req.auth?.user?.id;
     if (!userId) return res.json([]);
 
-    const q = String(req.query.q || "").trim();
+    // Q50: normaliza o q — quem digita "DAS 06/2026" acha o histórico tokenizado ({{competencia}}).
+    const q = normalizarHistorico(String(req.query.q || "").trim());
     const rawLimit = parseInt(String(req.query.limit || "12"), 10);
     const take = Math.min(200, rawLimit > 0 ? rawLimit : 12);
 
@@ -1559,38 +1598,15 @@ export function createAccountingEntriesRouter({ log }) {
       if (userId && historico) {
         const debitLine = lines.find((l) => String(l.tipo).toUpperCase() === "D");
         const creditLine = lines.find((l) => String(l.tipo).toUpperCase() === "C");
-        const contaD = debitLine ? String(debitLine.conta || "").trim() || null : null;
-        const contaC = creditLine ? String(creditLine.conta || "").trim() || null : null;
-        try {
-          const existing = await prisma.accountingHistorico.findFirst({
-            where: { createdByUserId: userId, companyPortalClientId: portalClientId, text: historico },
-          });
-          if (existing) {
-            await prisma.accountingHistorico.update({
-              where: { id: existing.id },
-              data: {
-                contaDebito: contaD ?? existing.contaDebito,
-                contaCredito: contaC ?? existing.contaCredito,
-                eventType: bodyEventType ?? existing.eventType,
-                usageCount: existing.usageCount + 1,
-                updatedAt: new Date(),
-              },
-            });
-          } else {
-            await prisma.accountingHistorico.create({
-              data: {
-                createdByUserId: userId,
-                companyPortalClientId: portalClientId,
-                text: historico,
-                contaDebito: contaD,
-                contaCredito: contaC,
-                eventType: bodyEventType,
-              },
-            });
-          }
-        } catch (histErr) {
-          log.warn({ histErr }, "Falha ao auto-salvar histórico (não crítico)");
-        }
+        // Q50: ponto único de gravação (normaliza a competência + mantém a linha global).
+        await memorizeAccountHistorico({
+          userId,
+          portalClientId,
+          text: historico,
+          contaDebito: debitLine ? String(debitLine.conta || "").trim() || null : null,
+          contaCredito: creditLine ? String(creditLine.conta || "").trim() || null : null,
+          eventType: bodyEventType,
+        });
       }
 
       return res.status(201).json({ ok: true, entry: entryToResponse(entry) });

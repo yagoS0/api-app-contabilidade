@@ -106,6 +106,19 @@ export const PANEL_ICON_BUTTON_STYLE = {
   color: ACCOUNTING_PANEL.text,
 };
 
+// Q50: históricos são salvos com a competência tokenizada ({{competencia}}) — aqui resolvemos
+// pro lançamento ATUAL. Defensivo: também troca competências concretas legadas (MM/AAAA ou AAAA-MM)
+// que ainda estejam no texto (registros anteriores ao backfill), sem tocar datas DD/MM/AAAA.
+export function resolveHistoricoText(text, competencia) {
+  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return String(text || "");
+  const label = `${m[2]}/${m[1]}`;
+  return String(text || "")
+    .replaceAll("{{competencia}}", label)
+    .replace(/(?<![\d/])(0[1-9]|1[0-2])\/((?:19|20)\d{2})(?!\d)/g, label)
+    .replace(/(?<!\d)((?:19|20)\d{2})-(0[1-9]|1[0-2])(?!\d)/g, label);
+}
+
 // Q18: colunas Tipo e Status removidas da tabela (tipo continua no payload/editor).
 export const COLS = [
   { label: "", align: "center", width: "36px" },

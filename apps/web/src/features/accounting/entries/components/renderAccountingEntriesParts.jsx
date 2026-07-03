@@ -15,6 +15,7 @@ import {
   fmtDate,
   fmtMoney,
   getCompRange,
+  resolveHistoricoText,
 } from "../lib/accountingEntriesShared";
 
 const TIPO_COLOR = {
@@ -302,9 +303,14 @@ export function hasDuplicateAccountAcrossSides(lines) {
   });
 }
 
-export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onGetHistoricosByCode, onSelectHistorico, placeholder, inputRef }) {
+export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onGetHistoricosByCode, onSelectHistorico, placeholder, inputRef, competencia = null }) {
   const [open, setOpen] = useState(false);
-  const [historicos, setHistoricos] = useState([]);
+  const [historicosRaw, setHistoricosRaw] = useState([]);
+  // Q50: resolve o token {{competencia}} pro lançamento atual (exibição + texto aplicado).
+  const historicos = useMemo(
+    () => (competencia ? historicosRaw.map((h) => ({ ...h, text: resolveHistoricoText(h.text, competencia) })) : historicosRaw),
+    [historicosRaw, competencia],
+  );
   const ref = useRef(null);
   const debounceRef = useRef(null);
 
@@ -327,12 +333,12 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
 
   useEffect(() => {
     const v = String(value || "").trim();
-    if (!onGetHistoricosByCode || v.length < 1) { setHistoricos([]); return; }
+    if (!onGetHistoricosByCode || v.length < 1) { setHistoricosRaw([]); return; }
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
         const results = await onGetHistoricosByCode(v);
-        setHistoricos(Array.isArray(results) ? results : []);
+        setHistoricosRaw(Array.isArray(results) ? results : []);
         if (results.length > 0) setOpen(true);
       } catch {}
     }, 300);
@@ -378,9 +384,15 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
   );
 }
 
-export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSearchHistoricos, accounts, inputRef, inputStyle, preserveTypedText = false }) {
+export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSearchHistoricos, accounts, inputRef, inputStyle, preserveTypedText = false, competencia = null }) {
   const [open, setOpen] = useState(false);
-  const [historicos, setHistoricos] = useState([]);
+  const [historicosRaw, setHistoricosRaw] = useState([]);
+  // Q50: históricos vêm tokenizados ({{competencia}}) — resolve pra competência do lançamento ATUAL,
+  // tanto na exibição quanto no texto aplicado ao selecionar. Sem competência, mostra como está.
+  const historicos = useMemo(
+    () => (competencia ? historicosRaw.map((h) => ({ ...h, text: resolveHistoricoText(h.text, competencia) })) : historicosRaw),
+    [historicosRaw, competencia],
+  );
   const [selIdx, setSelIdx] = useState(-1);
   const [coords, setCoords] = useState(null); // Q31 fix: dropdown position:fixed (escapa do overflow da tabela)
   const ref = useRef(null);
@@ -393,9 +405,9 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
   }, [value, accounts]);
 
   useEffect(() => {
-    if (!onSearchHistoricos || value.trim().length < 2) { setHistoricos([]); return; }
+    if (!onSearchHistoricos || value.trim().length < 2) { setHistoricosRaw([]); return; }
     clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => { try { const results = await onSearchHistoricos(value.trim()); setHistoricos(Array.isArray(results) ? results : []); } catch {} }, 250);
+    debounceRef.current = setTimeout(async () => { try { const results = await onSearchHistoricos(value.trim()); setHistoricosRaw(Array.isArray(results) ? results : []); } catch {} }, 250);
     return () => clearTimeout(debounceRef.current);
   }, [value, onSearchHistoricos]);
 
@@ -531,9 +543,9 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
         <div style={{ display: "flex", gap: 30, alignItems: "flex-end", flex: "1 1 860px", minWidth: 280, flexWrap: "wrap" }}>
           <div style={{ display: "grid", gap: 8, gridTemplateColumns: "110px minmax(220px, 1fr) 72px 72px 140px", flex: "1 1 690px", minWidth: 280 }}>
             <label style={PANEL_LABEL_STYLE}><span>Data</span><input ref={dayRef} type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Dia" value={dayStr} onChange={(e) => handleDayChange(e.target.value.replace(/\D/g, ""))} onBlur={() => { if (dayStr && Number(dayStr) > 0) handleDayChange(dayStr); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); histRef.current?.focus(); } }} style={{ ...PANEL_FIELD_STYLE, textAlign: "center", fontSize: entryFontSize, fontWeight: 500 }} /></label>
-            <label style={PANEL_LABEL_STYLE}><span>Histórico</span><SmartHistoricoInput value={historico} onChange={setHistorico} onFillFromHistory={(hist, histLines) => { if (hist) setHistorico(hist); if (histLines?.length) { const d = histLines.find((l) => l.tipo === "D"); const c = histLines.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(String(d.valor)); } }} onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} inputStyle={{ fontSize: entryFontSize, fontWeight: 500 }} /></label>
-            <label style={PANEL_LABEL_STYLE}><span>Débito</span><AccountCodeInput id="new-conta-d" value={contaD} onChange={setContaD} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); cRef.current?.focus(); } }} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode} onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }} placeholder="D" inputRef={dRef} /></label>
-            <label style={PANEL_LABEL_STYLE}><span>Crédito</span><AccountCodeInput id="new-conta-c" value={contaC} onChange={setContaC} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode} onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }} placeholder="C" inputRef={cRef} /></label>
+            <label style={PANEL_LABEL_STYLE}><span>Histórico</span><SmartHistoricoInput value={historico} onChange={setHistorico} onFillFromHistory={(hist, histLines) => { if (hist) setHistorico(hist); if (histLines?.length) { const d = histLines.find((l) => l.tipo === "D"); const c = histLines.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(String(d.valor)); } }} onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} inputStyle={{ fontSize: entryFontSize, fontWeight: 500 }} competencia={activeComp} /></label>
+            <label style={PANEL_LABEL_STYLE}><span>Débito</span><AccountCodeInput id="new-conta-d" value={contaD} onChange={setContaD} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); cRef.current?.focus(); } }} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode} onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }} placeholder="D" inputRef={dRef} competencia={activeComp} /></label>
+            <label style={PANEL_LABEL_STYLE}><span>Crédito</span><AccountCodeInput id="new-conta-c" value={contaC} onChange={setContaC} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode} onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }} placeholder="C" inputRef={cRef} competencia={activeComp} /></label>
             <label style={PANEL_LABEL_STYLE}><span>Valor</span><input ref={valRef} className="accounting-entry-value-input" type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00" style={{ ...PANEL_FIELD_STYLE, textAlign: "right", fontSize: "1.0625rem", fontWeight: 500, minWidth: 140 }} /></label>
           </div>
           <button type="button" onClick={handleSave} disabled={!canSave} title={!dateVal ? "Informe o dia" : !historico ? "Informe o histórico" : !balanced ? "Valor ou contas incompletos" : duplicateAcrossSides ? "Débito e crédito não podem usar a mesma conta" : "Enter"} style={{ minHeight: 41, padding: "10px 18px", border: "none", borderRadius: 8, background: canSave ? "#69FF47" : "#4b5563", color: "#1A1B26", font: "inherit", fontSize: entryFontSize, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", alignSelf: "end" }}>{saving ? "..." : "Salvar"}</button>
@@ -666,17 +678,17 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
       <td style={cell}>
         <AccountCodeInput value={contaD} onChange={setContaD} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode}
           onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); cRef.current?.focus(); } }} placeholder="D" />
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); cRef.current?.focus(); } }} placeholder="D" competencia={activeComp} />
       </td>
       <td style={cell}>
         <AccountCodeInput value={contaC} onChange={setContaC} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode}
           onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} placeholder="C" inputRef={cRef} />
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} placeholder="C" inputRef={cRef} competencia={activeComp} />
       </td>
       <td style={cell}>
         <SmartHistoricoInput value={historico} onChange={setHistorico}
           onFillFromHistory={(hist, hl) => { if (hist) setHistorico(hist); if (hl?.length) { const d = hl.find((l) => l.tipo === "D"); const c = hl.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(String(d.valor)); } }}
-          onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} />
+          onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} competencia={activeComp} />
         {duplicateAcrossSides ? <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>Débito e crédito não podem ser a mesma conta.</div> : null}
       </td>
       <td style={cell}>

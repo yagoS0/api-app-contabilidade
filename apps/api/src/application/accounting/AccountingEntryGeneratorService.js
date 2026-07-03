@@ -227,10 +227,27 @@ export async function lookupAccountsFromHistorico(tx, { portalClientId, eventTyp
     orderBy: [{ usageCount: "desc" }, { updatedAt: "desc" }],
     select: { contaDebito: true, contaCredito: true },
   });
-  if (!h) return {};
+  if (h) {
+    return {
+      debitAccountCode: h.contaDebito || null,
+      creditAccountCode: h.contaCredito || null,
+    };
+  }
+  // Q50: fallback GLOBAL (companyPortalClientId null) — empresa nova ainda não tem memória própria,
+  // mas herda o padrão do escritório já no primeiro extrato (não vem mais com contas vazias).
+  const g = await tx.accountingHistorico.findFirst({
+    where: {
+      companyPortalClientId: null,
+      eventType,
+      OR: [{ contaDebito: { not: null } }, { contaCredito: { not: null } }],
+    },
+    orderBy: [{ usageCount: "desc" }, { updatedAt: "desc" }],
+    select: { contaDebito: true, contaCredito: true },
+  });
+  if (!g) return {};
   return {
-    debitAccountCode: h.contaDebito || null,
-    creditAccountCode: h.contaCredito || null,
+    debitAccountCode: g.contaDebito || null,
+    creditAccountCode: g.contaCredito || null,
   };
 }
 

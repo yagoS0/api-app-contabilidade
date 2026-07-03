@@ -141,6 +141,7 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
               }
               onSearchHistoricos={onSearchHistoricos}
               accounts={accounts}
+              competencia={entry.competencia}
             />
           </label>
 
