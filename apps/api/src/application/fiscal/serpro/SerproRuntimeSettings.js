@@ -63,10 +63,20 @@ function resolvePaymentConfirmationHour(stored) {
   return clampInt(stored.paymentConfirmationHour, 0, 23, 8);
 }
 
-// fetchCron derivado: SEMPRE diário no horário escolhido — o worker usa este cron
-// para disparar uma vez por dia, e internamente decide se faz captura inicial ou re-fetch.
-function deriveDailyCron(hour) {
-  return `0 ${clampInt(hour, 0, 23, 7)} * * *`;
+// Q54: janela de retry — o cron dispara do dia D até D+FETCH_RETRY_DAYS (ex.: dia 10 → 10,11,12).
+// Não é re-fetch: as travas de idempotência (Stage 1 `!existente`, Stage 3 `serproSyncStatus="SUCCESS"`)
+// fazem a captura acontecer UMA vez; os dias seguintes só re-tentam SE a captura do dia D falhou.
+const FETCH_RETRY_DAYS = 2;
+
+// Q54: fetchCron derivado = MENSAL a partir do dia+hora escolhidos ("0 H D-Dend * *"). No dia
+// configurado (ex.: dia 10) o worker busca a ÚLTIMA competência (mês anterior) de DAS/INSS/extrato,
+// com uma pequena janela de retry nos dias seguintes. Antes era diário; recálculo pontual é manual.
+function deriveMonthlyCron(day, hour) {
+  const d = clampInt(day, 1, 31, 5);
+  const h = clampInt(hour, 0, 23, 7);
+  const end = Math.min(d + FETCH_RETRY_DAYS, 31);
+  const dayField = end > d ? `${d}-${end}` : `${d}`;
+  return `0 ${h} ${dayField} * *`;
 }
 
 function normalizeTimeout(value, fallback) {
@@ -178,12 +188,12 @@ export async function getSerproRuntimeSettings() {
     timeoutMs: normalizeTimeout(stored.timeoutMs, config.timeoutMs),
     fetchDay: resolveFetchDay(stored),
     fetchHour: resolveFetchHour(stored),
-    fetchCron: deriveDailyCron(resolveFetchHour(stored)),
+    fetchCron: deriveMonthlyCron(resolveFetchDay(stored), resolveFetchHour(stored)),
     // Q40: cron próprio de confirmação de pagamento (dia/hora configuráveis + on/off).
     paymentConfirmationEnabled: resolvePaymentConfirmationEnabled(stored),
     paymentConfirmationDay: resolvePaymentConfirmationDay(stored),
     paymentConfirmationHour: resolvePaymentConfirmationHour(stored),
-    paymentConfirmationCron: deriveDailyCron(resolvePaymentConfirmationHour(stored)),
+    paymentConfirmationCron: deriveMonthlyCron(resolvePaymentConfirmationDay(stored), resolvePaymentConfirmationHour(stored)),
     certificate: {
       hasCertificate: Boolean(stored.certPfxBase64 || stored.certStorageKey),
       storageKey: stored.certStorageKey || (stored.certPfxBase64 ? SERPRO_DB_CERT_STORAGE_KEY : null),
@@ -298,8 +308,8 @@ export async function updateSerproRuntimeSettings(input = {}) {
     timeoutMs: input.timeoutMs === undefined ? normalizeTimeout(stored.timeoutMs, 30000) : normalizeTimeout(input.timeoutMs, 30000),
     fetchDay: nextFetchDay,
     fetchHour: nextFetchHour,
-    // fetchCron sempre derivado do horário (cron diário) — não armazena cron arbitrário.
-    fetchCron: deriveDailyCron(nextFetchHour),
+    // Q54: fetchCron derivado = mensal no dia+hora escolhidos — não armazena cron arbitrário.
+    fetchCron: deriveMonthlyCron(nextFetchDay, nextFetchHour),
     // Q40: cron próprio de confirmação de pagamento.
     paymentConfirmationEnabled: nextPaymentEnabled,
     paymentConfirmationDay: nextPaymentDay,
