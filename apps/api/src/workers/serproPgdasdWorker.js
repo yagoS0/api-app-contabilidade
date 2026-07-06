@@ -9,7 +9,6 @@ import { capturePgdasGuideForCompany } from "../application/fiscal/serpro/Captur
 import { syncPgdasByCompetencia } from "../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
 import { capturarParcelaGuideForCompany } from "../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
-import { markGuidePaidBySerpro } from "../application/guides/GuidePaymentStatusService.js";
 
 const LOCK_ID = "serpro_pgdasd_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
@@ -110,39 +109,6 @@ async function listEligiblePortalCompanies() {
   return eligible;
 }
 
-// Lista guias OPEN cujo vencimento ainda não passou (para re-fetch diário)
-async function listOpenGuidesUntilVencimento(portalClientId, todayDate) {
-  // todayDate = Date no início do dia local
-  return prisma.guide.findMany({
-    where: {
-      portalClientId,
-      source: "SERPRO",
-      tipo: "SIMPLES",
-      status: "PROCESSED",
-      paymentStatus: "OPEN",
-      OR: [{ vencimento: null }, { vencimento: { gte: todayDate } }],
-    },
-    select: {
-      id: true,
-      portalClientId: true,
-      competencia: true,
-      vencimento: true,
-      paymentStatus: true,
-    },
-  });
-}
-
-function startOfTodayLocal(now = new Date()) {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-function isSameLocalDay(d1, d2) {
-  if (!d1 || !d2) return false;
-  return d1.getFullYear() === d2.getFullYear()
-    && d1.getMonth() === d2.getMonth()
-    && d1.getDate() === d2.getDate();
-}
-
 export async function runSerproPgdasdWorkerOnce(options = {}) {
   const locked = await acquireLock();
   if (!locked) return { skipped: true, reason: "lock_active" };
@@ -157,13 +123,11 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
     const companies = await listEligiblePortalCompanies();
     const procurationService = new SerproProcurationService();
     const results = [];
-    const recheckResults = [];
     const extratoResults = [];
     const parcelaResults = []; // Q22: guias de parcelamento trazidas pelo worker
     const startedAt = Date.now();
 
     const now = new Date();
-    const todayStart = startOfTodayLocal(now);
     const fetchDay = settings.fetchDay ?? 5;
     const isCaptureWindow = now.getDate() >= fetchDay; // a partir do dia configurado
 
@@ -277,46 +241,11 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
           }
         }
 
-        // Stage 2: Re-fetch diário das guias OPEN cujo vencimento ainda não passou
-        // eslint-disable-next-line no-await-in-loop
-        const openGuides = await listOpenGuidesUntilVencimento(company.id, todayStart);
-        for (const guide of openGuides) {
-          const vencDate = guide.vencimento ? new Date(guide.vencimento) : null;
-          const isVencimentoHoje = vencDate ? isSameLocalDay(vencDate, now) : false;
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            await capturePgdasGuideForCompany({
-              portalClientId: guide.portalClientId,
-              competencia: guide.competencia,
-              existingGuideId: guide.id,
-              // No vencimento → reset PENDING (resend); intermediário → PRESERVE (silencioso)
-              emailStatusOverride: isVencimentoHoje ? "PENDING" : "PRESERVE",
-            });
-            recheckResults.push({
-              guideId: guide.id, companyId: guide.portalClientId,
-              competencia: guide.competencia,
-              status: isVencimentoHoje ? "rechecked_due_today" : "rechecked_silent",
-            });
-          } catch (err) {
-            // SERPRO pode retornar "no debts" para guias já pagas — marca como pago
-            if (err?.code === "SERPRO_PGDASD_NO_DEBTS_FOUND") {
-              // eslint-disable-next-line no-await-in-loop
-              await markGuidePaidBySerpro({ guideId: guide.id });
-              recheckResults.push({
-                guideId: guide.id, companyId: guide.portalClientId,
-                competencia: guide.competencia, status: "paid",
-              });
-              continue;
-            }
-            recheckResults.push({
-              guideId: guide.id, companyId: guide.portalClientId,
-              competencia: guide.competencia,
-              status: "error",
-              error: err?.code || "SERPRO_PGDASD_RECHECK_FAILED",
-              reason: err?.message || "serpro_pgdasd_recheck_failed",
-            });
-          }
-        }
+        // Q54: Stage 2 (re-fetch diário das guias DAS OPEN) REMOVIDO. Re-buscar diariamente no
+        // SERPRO uma guia já capturada sobrescrevia o valor (com juros/multa após o vencimento),
+        // mesmo já paga no prazo → confusão contábil (mesmo problema que já corrigimos no INSS).
+        // Toda busca automática do DAS passa a ser SÓ a captura mensal do Cron (Stage 1/3/4);
+        // recálculo de guia específica é ação manual (botão "Recalcular").
       } catch (err) {
         results.push({
           companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
@@ -337,10 +266,6 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
       captured: results.filter((item) => item.status === "captured").length,
       failed: results.filter((item) => item.status === "error").length,
       skippedByProcuration: results.filter((item) => item.status === "skipped_procuration_inactive").length,
-      recheckedSilent: recheckResults.filter((item) => item.status === "rechecked_silent").length,
-      recheckedDueToday: recheckResults.filter((item) => item.status === "rechecked_due_today").length,
-      markedPaid: recheckResults.filter((item) => item.status === "paid").length,
-      recheckFailures: recheckResults.filter((item) => item.status === "error").length,
       extratoOk: extratoResults.filter((item) => item.status === "extrato_ok").length,
       extratoErro: extratoResults.filter((item) => item.status === "extrato_erro").length,
       extratoJaSincronizado: extratoResults.filter((item) => item.status === "extrato_ja_sincronizado").length,
@@ -349,7 +274,6 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
       parcelasErro: parcelaResults.reduce((s, p) => s + (p.parcelas || []).filter((x) => x.status === "erro").length, 0),
       durationMs: Date.now() - startedAt,
       results,
-      recheckResults,
       extratoResults,
       parcelaResults,
     };

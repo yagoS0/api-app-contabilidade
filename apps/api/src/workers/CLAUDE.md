@@ -12,7 +12,7 @@ Jobs de background. Executados in-process (sem fila externa), **opt-in por env v
 - **Lock global** via `tryAcquireGuideLock(LOCK_ID, TTL)` / `releaseGuideLock` — 1
   processador por vez (evita concorrência no mesmo CNPJ contratante SERPRO).
 - **Isolamento por empresa:** cada empresa em try/catch; erro de uma não derruba o ciclo.
-  O resultado por empresa entra em arrays (`results`, `recheckResults`, `extratoResults`).
+  O resultado por empresa entra em arrays (`results`, `extratoResults`, `parcelaResults`).
 - **Auditoria:** `createSerproExecutionLog({ worker, competencia, settings, summary })`.
 
 ## Agendamento (não fixo)
@@ -25,8 +25,8 @@ e `fetchDay` (dia do mês a partir do qual a captura começa). O loop usa `match
 
 | Worker | Env | O que faz |
 |---|---|---|
-| `serproPgdasdWorker.js` | `SERPRO_PGDASD_WORKER_ENABLED` | Simples Nacional. Por empresa elegível (regime SIMPLES, não suspensa, c/ e-mail, procuração ATIVA): **Stage 1** captura a guia DAS (`capturePgdasGuideForCompany`); **Stage 3 (Q17)** baixa o **extrato/declaração** e **gera os lançamentos** (`syncPgdasByCompetencia` → `generateEntriesFromCircular`), só se a competência ainda não estiver `serproSyncStatus="SUCCESS"` (idempotente, evita re-hit pago); **Stage 2** re-fetch diário das guias OPEN até o vencimento; **Stage 4 (Q22/Q23)** traz as guias de PARCELAMENTO (atrás de `INTEGRACAO_SERPRO_PARCELAMENTO`) — só dos parcelamentos `status="ATIVO"` + `numeroParcelamento` + **`aberturaEntryId` não nulo** (i.e. a 1ª parcela manual já gerou a provisão); traz só guia+PDF+e-mail e persiste `TributoParcela` (o pagamento sai no "pago"). |
-| `serproDctfwebWorker.js` | `SERPRO_DCTFWEB_WORKER_ENABLED` | INSS/DCTFWeb — mesmo padrão de captura de guia. |
+| `serproPgdasdWorker.js` | `SERPRO_PGDASD_WORKER_ENABLED` | Simples Nacional. Por empresa elegível (regime SIMPLES, não suspensa, c/ e-mail, procuração ATIVA): **Stage 1** captura a guia DAS (`capturePgdasGuideForCompany`), só na 1ª vez (`!existente` na competência); **Stage 3 (Q17)** baixa o **extrato/declaração** e **gera os lançamentos** (`syncPgdasByCompetencia` → `generateEntriesFromCircular`), só se a competência ainda não estiver `serproSyncStatus="SUCCESS"` (idempotente, evita re-hit pago); **Stage 4 (Q22/Q23)** traz as guias de PARCELAMENTO (atrás de `INTEGRACAO_SERPRO_PARCELAMENTO`) — só dos parcelamentos `status="ATIVO"` + `numeroParcelamento` + **`aberturaEntryId` não nulo** (i.e. a 1ª parcela manual já gerou a provisão); traz só guia+PDF+e-mail e persiste `TributoParcela` (o pagamento sai no "pago"). **Q54: o antigo "Stage 2 — re-fetch diário das guias OPEN" foi REMOVIDO** — re-buscar diariamente sobrescrevia o valor com juros/multa após o vencimento (mesmo já pago). Recálculo de guia específica é **ação manual** (botão "Recalcular"). |
+| `serproDctfwebWorker.js` | `SERPRO_DCTFWEB_WORKER_ENABLED` | INSS/DCTFWeb — mesmo padrão: **Stage 1** captura só a 1ª vez. **Q53: o re-fetch diário (Stage 2) foi REMOVIDO** pelo mesmo motivo; recálculo/traga de competência passada é manual (botão "Recalcular INSS" na aba Guias → `/serpro/inss/sync`, bloqueia guia já paga). |
 | `apuracaoBatchWorker.js` | `APURACAO_BATCH_WORKER_ENABLED` | Fila de transmissão PGDAS-D em lote (consulta-antes-de-transmitir). |
 | `guideEmailWorker.js` | `GUIDE_EMAIL_WORKER_ENABLED` (default OFF) | Envio de guias por e-mail. Em prod o envio é manual (BatchEmail); ver `apps/api/CLAUDE.md`. |
 | `dfeNotasWorker.js` / heartbeat | `DFE_NOTAS_WORKER_ENABLED` | Captura NF-e (NFeDistribuicaoDFe) + heartbeat. |
