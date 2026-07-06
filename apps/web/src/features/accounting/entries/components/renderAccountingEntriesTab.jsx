@@ -23,14 +23,28 @@ function FechamentoCadeado({ companyId, competencia, entries, onState }) {
 
   const problemas = useMemo(() => {
     const out = [];
+    // Q24/Q52: lançamentos individuais (1 perna) de parcelamento e de folha/pró-labore
+    // balanceiam em GRUPO (parcelamentoId / loteImportacao "FOLHA-"/"PROLABORE-"), não por lançamento.
+    const grupos = new Map();
     for (const e of entries || []) {
       if (String(e.tipo || "").toUpperCase() === "PARCELA") continue;
       const lines = e.lines || [];
       if (lines.length === 0) { out.push({ id: e.id, historico: e.historico, motivo: "em branco" }); continue; }
       if (lines.some((l) => !String(l.conta || "").trim())) { out.push({ id: e.id, historico: e.historico, motivo: "conta em branco" }); continue; }
+      const folhaLote = String(e.tipo || "").toUpperCase() === "FOLHA" && /^(FOLHA|PROLABORE)-/.test(String(e.loteImportacao || ""));
+      const groupKey = e.parcelamentoId || (folhaLote ? e.loteImportacao : null);
       const d = lines.filter((l) => String(l.tipo).toUpperCase() === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
       const c = lines.filter((l) => String(l.tipo).toUpperCase() === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
+      if (groupKey) {
+        const g = grupos.get(groupKey) || { d: 0, c: 0, historico: e.historico };
+        g.d += d; g.c += c;
+        grupos.set(groupKey, g);
+        continue;
+      }
       if (Math.abs(d - c) > 0.01) out.push({ id: e.id, historico: e.historico, motivo: "D≠C" });
+    }
+    for (const [key, g] of grupos) {
+      if (Math.abs(g.d - g.c) > 0.01) out.push({ id: key, historico: g.historico, motivo: "grupo D≠C" });
     }
     return out;
   }, [entries]);
@@ -248,6 +262,7 @@ export function AccountingEntriesTab({
   onUpdateHistorico,
   onDeleteHistorico,
   onLoadPayrollTemplate,
+  onCreateFolha,   // Q52: folha/pró-labore em lançamentos individuais (1 chamada por competência)
   onBulkDeleteEntries,
   onOpenChartOfAccountsTab,
   onPreviewExcel,
@@ -730,11 +745,10 @@ export function AccountingEntriesTab({
           accounts={accounts}
           defaultCompetencia={activeComp}
           onLoadTemplate={onLoadPayrollTemplate}
-          onSave={async ({ entry, baixas, repeatMonths }) => {
-            // F2: Repetição N meses — cria entry + baixas para cada competência (base + N seguintes).
-            // Helpers locais para evitar import; lógica simples:
-            //   addMonthsToCompetencia("2026-04", 1) → "2026-05"
-            //   substituiMmYyyyNoHistorico("VR REF PRO LAB FP 04/2026", "04/2026", "05/2026")
+          onSave={async ({ competencia, subtipo, provisoes, baixas, repeatMonths }) => {
+            // Q52: cada linha do modal vira UM lançamento individual — o backend cria todos
+            // os da competência numa transaction (POST /entries/folha, 1 lote por mês).
+            // F2: Repetição N meses — repete provisões + baixas para cada competência seguinte.
             const repeatN = Math.max(0, Math.min(12, Number(repeatMonths) || 0));
             function addMonthsToCompetencia(comp, n) {
               const m = String(comp || "").match(/^(\d{4})-(\d{2})$/);
@@ -759,7 +773,7 @@ export function AccountingEntriesTab({
               const dt = new Date(Date.UTC(targetYear, targetMonth, realDay));
               return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
             }
-            const baseComp = entry?.competencia || activeComp;
+            const baseComp = competencia || activeComp;
             const baseMmYyyy = compToMmYyyy(baseComp);
             const escapeRegex = (s) => String(s || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
             const subsHistorico = (texto, novaMmYyyy) => {
@@ -772,37 +786,21 @@ export function AccountingEntriesTab({
               for (let n = 0; n <= repeatN; n++) {
                 const compN = addMonthsToCompetencia(baseComp, n);
                 const mmYyyyN = compToMmYyyy(compN);
-                const entryN = entry ? {
-                  ...entry,
-                  competencia: compN,
-                  data: shiftDate(entry.data, n),
-                  historico: subsHistorico(entry.historico, mmYyyyN),
-                  lines: (entry.lines || []).map((l) => ({
-                    ...l,
-                    historico: l.historico ? subsHistorico(l.historico, mmYyyyN) : l.historico,
-                  })),
-                } : null;
-                const baixasN = Array.isArray(baixas)
-                  ? baixas.map((b) => ({
-                      ...b,
-                      data: shiftDate(b.data, n),
-                      historico: subsHistorico(b.historico, mmYyyyN),
-                    }))
-                  : [];
-
-                let createdId = null;
-                if (entryN) {
-                  const result = await onCreateEntry(entryN);
-                  createdId = result?.entry?.id;
-                }
-                if (createdId && baixasN.length > 0 && onCreateBaixa) {
-                  for (const baixa of baixasN) {
-                    try { await onCreateBaixa(createdId, baixa); } catch { /* erro já é exibido */ }
-                  }
-                }
+                const provisoesN = (provisoes || []).map((p) => ({
+                  ...p,
+                  data: shiftDate(p.data, n),
+                  historico: subsHistorico(p.historico, mmYyyyN),
+                }));
+                const baixasN = (baixas || []).map((b) => ({
+                  ...b,
+                  data: shiftDate(b.data, n),
+                  historico: subsHistorico(b.historico, mmYyyyN),
+                }));
+                if (provisoesN.length === 0 && baixasN.length === 0) continue;
+                await onCreateFolha({ competencia: compN, subtipo, provisoes: provisoesN, baixas: baixasN });
               }
               setShowPayroll(false);
-            } catch { /* erro já é tratado no onCreateEntry */ }
+            } catch { /* erro já é tratado no onCreateFolha */ }
           }}
           saving={savingEntry}
           onClose={() => setShowPayroll(false)}

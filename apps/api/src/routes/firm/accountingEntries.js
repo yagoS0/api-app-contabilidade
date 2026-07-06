@@ -295,12 +295,18 @@ async function validateFechamentoContabil(prisma, { portalClientId, competencia 
   // Q24: lançamentos de parcelamento são individuais (1 perna) — não validam D=C por lançamento,
   // e sim por GRUPO (parcelamentoId). Conta vazia continua bloqueando (precisa preencher p/ fechar).
   const parcByGroup = new Map();
+  // Q52: folha/pró-labore individuais idem — agrupam pelo loteImportacao ("FOLHA-<ts>"/"PROLABORE-<ts>").
+  // Prefixo restrito pra não capturar lotes de OFX/Excel que porventura existam em entries FOLHA.
+  const isFolhaLote = (e) => e.tipo === "FOLHA" && /^(FOLHA|PROLABORE)-/.test(String(e.loteImportacao || ""));
+  const folhaByGroup = new Map();
   for (const e of entries) {
     const lines = e.lines || [];
-    if (e.parcelamentoId) {
+    if (e.parcelamentoId || isFolhaLote(e)) {
       // Agrupa pra validar o balanço do conjunto; conta vazia é checada por lançamento abaixo.
-      if (!parcByGroup.has(e.parcelamentoId)) parcByGroup.set(e.parcelamentoId, []);
-      parcByGroup.get(e.parcelamentoId).push(e);
+      const groups = e.parcelamentoId ? parcByGroup : folhaByGroup;
+      const groupKey = e.parcelamentoId || e.loteImportacao;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey).push(e);
       if (lines.length === 0) {
         blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "em_branco" });
       } else if (lines.some((l) => !String(l.conta || "").trim())) {
@@ -334,6 +340,19 @@ async function validateFechamentoContabil(prisma, { portalClientId, competencia 
     }
     if (Math.abs(totalD - totalC) > 0.01) {
       blockers.push({ parcelamentoId, competencia, historico: grupo[0]?.historico || "Parcelamento", motivo: "parcelamento_desbalanceado", totalD, totalC });
+    }
+  }
+  // Q52: balanço por grupo de folha/pró-labore (Σ D == Σ C no conjunto do lote).
+  for (const [loteImportacao, grupo] of folhaByGroup) {
+    let totalD = 0; let totalC = 0;
+    for (const e of grupo) {
+      for (const l of e.lines || []) {
+        if (String(l.tipo).toUpperCase() === "D") totalD += Number(l.valor || 0);
+        else if (String(l.tipo).toUpperCase() === "C") totalC += Number(l.valor || 0);
+      }
+    }
+    if (Math.abs(totalD - totalC) > 0.01) {
+      blockers.push({ loteImportacao, competencia, historico: grupo[0]?.historico || "Folha/Pró-labore", motivo: "folha_desbalanceada", totalD, totalC });
     }
   }
   return { ok: blockers.length === 0, blockers, totalEntries: entries.length };
@@ -1509,6 +1528,201 @@ export function createAccountingEntriesRouter({ log }) {
       } catch (err) {
         log.error({ err }, "Erro ao criar parcelamento Simples Nacional");
         return res.status(500).json({ ok: false, error: "internal_error", message: err?.message });
+      }
+    },
+  );
+
+  // POST /firm/companies/:companyId/entries/folha
+  // Q52: cada linha do modal de Folha/Pró-labore vira UM lançamento individual (1 perna),
+  // seguindo a regra dos parcelamentos (Q24.6). Todos os lançamentos da chamada compartilham
+  // o mesmo loteImportacao ("FOLHA-<ts>"/"PROLABORE-<ts>") — o fechamento valida o balanço
+  // D=C na SOMA do grupo (não por lançamento). Baixas (pagamento) têm 2 pernas e entram no
+  // mesmo lote com tipo FOLHA (não há provisão ABERTO individual para vincular via openEntryId).
+  router.post(
+    "/entries/folha",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const body = req.body || {};
+
+      const competencia = String(body.competencia || "").trim();
+      const subtipoRaw = String(body.subtipo || "FOLHA").toUpperCase();
+      const subtipo = subtipoRaw === "PROLABORE" ? "PROLABORE" : "FOLHA";
+      const provisoes = Array.isArray(body.provisoes) ? body.provisoes : [];
+      const baixas = Array.isArray(body.baixas) ? body.baixas : [];
+
+      if (!/^\d{4}-\d{2}$/.test(competencia)) {
+        return res.status(400).json({ error: "competencia_invalida", message: "Competência inválida (use AAAA-MM)." });
+      }
+      if (provisoes.length === 0 && baixas.length === 0) {
+        return res.status(400).json({ error: "linhas_required", message: "Preencha valor e contas em ao menos uma linha." });
+      }
+
+      const parseValor = (v) => parseFloat(String(v ?? "").replace(",", "."));
+
+      // Provisões: exatamente 1 perna cada (D xor C), conta + valor > 0 + data válida.
+      let totalD = 0;
+      let totalC = 0;
+      const provisoesN = [];
+      for (const p of provisoes) {
+        const line = p?.line || {};
+        const conta = String(line.conta || "").trim();
+        const tipoLinha = String(line.tipo || "").toUpperCase();
+        const valor = parseValor(line.valor);
+        const dataP = p?.data ? new Date(p.data) : null;
+        if (!conta) return res.status(400).json({ error: "linha_sem_conta", message: "Há linha de provisão sem conta preenchida." });
+        if (!["D", "C"].includes(tipoLinha)) {
+          return res.status(400).json({ error: "linha_tipo_invalido", message: "Linha de provisão deve ter uma perna D ou C." });
+        }
+        if (!Number.isFinite(valor) || valor <= 0) {
+          return res.status(400).json({ error: "linha_valor_invalido", message: "Há linha de provisão com valor inválido." });
+        }
+        if (!dataP || isNaN(dataP.getTime())) {
+          return res.status(400).json({ error: "data_invalida", message: "Há linha de provisão com data inválida." });
+        }
+        if (tipoLinha === "D") totalD += valor;
+        else totalC += valor;
+        provisoesN.push({
+          data: dataP,
+          historico: String(p.historico || "").trim(),
+          conta,
+          tipoLinha,
+          valor,
+        });
+      }
+      if (provisoesN.length > 0 && Math.abs(totalD - totalC) > 0.01) {
+        return res.status(400).json({
+          error: "folha_desbalanceada",
+          totalD,
+          totalC,
+          message: `Provisão desbalanceada — débito R$ ${totalD.toFixed(2)} difere do crédito R$ ${totalC.toFixed(2)}.`,
+        });
+      }
+
+      // Baixas: 2 pernas (1 D + 1 C) de mesmo valor.
+      const baixasN = [];
+      for (const b of baixas) {
+        const lines = Array.isArray(b?.lines) ? b.lines : [];
+        const dataB = b?.data ? new Date(b.data) : null;
+        if (!dataB || isNaN(dataB.getTime())) {
+          return res.status(400).json({ error: "data_invalida", message: "Há baixa com data inválida." });
+        }
+        const dLine = lines.find((l) => String(l?.tipo || "").toUpperCase() === "D");
+        const cLine = lines.find((l) => String(l?.tipo || "").toUpperCase() === "C");
+        if (lines.length !== 2 || !dLine || !cLine) {
+          return res.status(400).json({ error: "baixa_invalida", message: "Baixa deve ter uma perna de débito e uma de crédito." });
+        }
+        const contaD = String(dLine.conta || "").trim();
+        const contaC = String(cLine.conta || "").trim();
+        if (!contaD || !contaC) return res.status(400).json({ error: "linha_sem_conta", message: "Há baixa sem conta preenchida." });
+        const valorD = parseValor(dLine.valor);
+        const valorC = parseValor(cLine.valor);
+        if (!Number.isFinite(valorD) || valorD <= 0 || !Number.isFinite(valorC) || valorC <= 0) {
+          return res.status(400).json({ error: "linha_valor_invalido", message: "Há baixa com valor inválido." });
+        }
+        if (Math.abs(valorD - valorC) > 0.01) {
+          return res.status(400).json({ error: "baixa_desbalanceada", message: "Baixa com débito e crédito de valores diferentes." });
+        }
+        baixasN.push({
+          data: dataB,
+          historico: String(b.historico || "").trim(),
+          contaD,
+          contaC,
+          valor: valorD,
+        });
+      }
+
+      if (await isMonthClosed(portalClientId, competencia)) {
+        return res.status(409).json({ error: "mes_fechado", competencia, message: "Mês fechado — reabra a empresa para lançar." });
+      }
+
+      const loteImportacao = `${subtipo}-${Date.now()}`;
+      const created = [];
+      try {
+        await prisma.$transaction(async (tx) => {
+          for (const p of provisoesN) {
+            const entry = await tx.accountingEntry.create({
+              data: {
+                portalClientId,
+                data: p.data,
+                competencia,
+                historico: p.historico || subtipo,
+                tipo: "FOLHA",
+                subtipo,
+                origem: "MANUAL",
+                loteImportacao,
+                status: "RASCUNHO",
+                statusPagamento: "NA",
+              },
+            });
+            await tx.accountingEntryLine.create({
+              data: {
+                entryId: entry.id,
+                conta: p.conta,
+                tipo: p.tipoLinha,
+                valor: p.valor,
+                ordem: 0,
+                historico: p.historico || null,
+              },
+            });
+            created.push({ entryId: entry.id, historico: entry.historico, valor: p.valor });
+          }
+          for (const b of baixasN) {
+            const entry = await tx.accountingEntry.create({
+              data: {
+                portalClientId,
+                data: b.data,
+                competencia,
+                historico: b.historico || `PAGO ${subtipo}`,
+                tipo: "FOLHA",
+                subtipo,
+                origem: "MANUAL",
+                loteImportacao,
+                status: "RASCUNHO",
+                statusPagamento: "NA",
+              },
+            });
+            await tx.accountingEntryLine.createMany({
+              data: [
+                { entryId: entry.id, conta: b.contaD, tipo: "D", valor: b.valor, ordem: 0, historico: b.historico || null },
+                { entryId: entry.id, conta: b.contaC, tipo: "C", valor: b.valor, ordem: 1, historico: b.historico || null },
+              ],
+            });
+            created.push({ entryId: entry.id, historico: entry.historico, valor: b.valor });
+          }
+        });
+
+        // Memória de históricos (Q50) — best-effort, fora da transaction.
+        const userId = req.auth?.user?.id;
+        if (userId) {
+          for (const p of provisoesN) {
+            if (!p.historico) continue;
+            await memorizeAccountHistorico({
+              userId,
+              portalClientId,
+              text: p.historico,
+              contaDebito: p.tipoLinha === "D" ? p.conta : null,
+              contaCredito: p.tipoLinha === "C" ? p.conta : null,
+              eventType: null,
+            });
+          }
+          for (const b of baixasN) {
+            if (!b.historico) continue;
+            await memorizeAccountHistorico({
+              userId,
+              portalClientId,
+              text: b.historico,
+              contaDebito: b.contaD,
+              contaCredito: b.contaC,
+              eventType: null,
+            });
+          }
+        }
+
+        return res.status(201).json({ ok: true, loteImportacao, created });
+      } catch (err) {
+        log.error({ err }, "Erro ao criar lançamentos de folha/pró-labore");
+        return res.status(500).json({ error: "internal_error", message: err?.message });
       }
     },
   );

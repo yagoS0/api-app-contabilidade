@@ -112,6 +112,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onFilterChange={accountingPanel.onFilterChange}
             onLoad={accountingPanel.onLoadEntries}
             onCreateEntry={accountingPanel.onCreateEntry}
+            onCreateFolha={accountingPanel.onCreateFolha}
             onLoadPayrollTemplate={accountingPanel.onLoadPayrollTemplate}
             onUpdateEntry={accountingPanel.onUpdateEntry}
             onDeleteEntry={accountingPanel.onDeleteEntry}

@@ -302,6 +302,7 @@ function App() {
           onFilterChange: (key, value) => accountingWorkspace.accountingEntriesState.setFilter(key, value),
           onLoadEntries: () => accountingWorkspace.loadAccountingEntries(),
           onCreateEntry: accountingWorkspace.handleCreateEntry,
+          onCreateFolha: accountingWorkspace.handleCreateFolha,
           onLoadPayrollTemplate: accountingWorkspace.handleLoadPayrollTemplate,
           onLoadBaixaTemplate: accountingWorkspace.handleLoadBaixaTemplate,
           api,

@@ -1179,6 +1179,35 @@ export function createMockApi() {
 
       return { ok: true, entry };
     },
+    // Q52: folha/pró-labore — cada linha vira 1 entry individual (mesmo lote).
+    async createFolhaEntries(companyId, payload = {}) {
+      await delay();
+      const subtipo = String(payload.subtipo || "FOLHA").toUpperCase() === "PROLABORE" ? "PROLABORE" : "FOLHA";
+      const loteImportacao = `${subtipo}-${Date.now()}`;
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const created = [];
+      const mk = (data, historico, lines) => {
+        const entryId = faker.string.uuid();
+        const totalD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+        const entry = {
+          id: entryId, portalClientId: companyId,
+          data: new Date(data).toISOString(),
+          competencia: String(payload.competencia || ""),
+          historico, tipo: "FOLHA", subtipo, origem: "MANUAL", loteImportacao,
+          status: "RASCUNHO", statusPagamento: "NA", openEntryId: null,
+          lines: lines.map((l, idx) => ({ id: faker.string.uuid(), entryId, conta: l.conta, tipo: l.tipo, valor: Number(l.valor || 0), ordem: idx })),
+          totalD, totalC: lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0),
+          valor: totalD,
+          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+        };
+        list.push(entry);
+        created.push({ entryId, historico, valor: Number(lines[0]?.valor || 0) });
+      };
+      for (const p of payload.provisoes || []) mk(p.data, p.historico || subtipo, [p.line]);
+      for (const b of payload.baixas || []) mk(b.data, b.historico || `PAGO ${subtipo}`, b.lines || []);
+      mockEntriesByCompany.set(companyId, list);
+      return { ok: true, loteImportacao, created };
+    },
     async updateAccountingEntry(companyId, entryId, input) {
       await delay();
       const list = mockEntriesByCompany.get(companyId) || [];

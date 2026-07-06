@@ -184,6 +184,27 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
   }
 
+  // Q52: folha/pró-labore — cada linha do modal vira um lançamento individual;
+  // o backend cria todos os da competência numa transaction (1 lote por mês).
+  async function handleCreateFolha(payload) {
+    if (!selectedCompanyId) return null;
+    setSavingEntry(true);
+    setEntriesError("");
+    setEntriesMessage("");
+    try {
+      const result = await api.createFolhaEntries(selectedCompanyId, payload);
+      await loadAccountingEntries(selectedCompanyId);
+      setEntriesMessage("Lançamentos de folha/pró-labore adicionados.");
+      return result;
+    } catch (err) {
+      setEntriesError(err?.message || "Falha ao criar lançamentos de folha/pró-labore.");
+      // Re-lança para o caller (loop de repetição) parar no mês que falhou.
+      throw err;
+    } finally {
+      setSavingEntry(false);
+    }
+  }
+
   async function handleLoadPayrollTemplate(kind, competencia) {
     if (!selectedCompanyId) return null;
     return api.getPayrollTemplate(selectedCompanyId, kind, competencia);
@@ -516,6 +537,7 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     handleUpdateHistorico,
     handleDeleteHistorico,
     handleCreateEntry,
+    handleCreateFolha,
     handleLoadPayrollTemplate,
     handleLoadBaixaTemplate,
     handleUpdateEntry,

@@ -1012,25 +1012,18 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
       return;
     }
 
-    let provisaoEntry = null;
-    if (provisaoRowsFilled.length > 0) {
-      const firstDate =
-        provisaoRowsFilled.find((r) => r.data)?.data || lastDayOfCompetencia(competencia);
-      provisaoEntry = {
-        data: firstDate,
-        competencia,
-        historico: `${kind === "PROLABORE" ? "PRÓ-LABORE" : "FOLHA"} — ${competenciaToHistoricoLabel(competencia)}`,
-        tipo: "FOLHA",
-        subtipo: kind,
-        lines: provisaoRowsFilled.map((r, idx) => ({
-          tipo: r.debito ? "D" : "C",
-          conta: String(r.debito || r.credito).trim(),
-          valor: Number(r.valor),
-          historico: r.historico ? String(r.historico).trim() : null,
-          ordem: idx,
-        })),
-      };
-    }
+    // Q52: cada linha da provisão vira UM lançamento individual (1 perna) no backend,
+    // agrupado por loteImportacao — mesma regra dos parcelamentos (Q24.6).
+    const provisoes = provisaoRowsFilled.map((r) => ({
+      data: r.data || lastDayOfCompetencia(competencia),
+      historico: (r.historico || "").trim()
+        || `${kind === "PROLABORE" ? "PRÓ-LABORE" : "FOLHA"} — ${competenciaToHistoricoLabel(competencia)}`,
+      line: {
+        tipo: r.debito ? "D" : "C",
+        conta: String(r.debito || r.credito).trim(),
+        valor: Number(r.valor),
+      },
+    }));
 
     const baixas = baixaRowsFilled.map((r) => ({
       data: r.data || lastDayOfCompetencia(competencia),
@@ -1053,7 +1046,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
       if (!ok) return;
     }
 
-    await onSave({ entry: provisaoEntry, baixas, repeatMonths: repeatN });
+    await onSave({ competencia, subtipo: kind, provisoes, baixas, repeatMonths: repeatN });
   }
 
   const overlay = {

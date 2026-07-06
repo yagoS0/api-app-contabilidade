@@ -715,6 +715,13 @@ export function createRealApi() {
         body: JSON.stringify(input),
       });
     },
+    // Q52: folha/pró-labore — cada linha do modal vira um lançamento individual (1 lote por competência).
+    async createFolhaEntries(companyId, payload) {
+      return request(`/firm/companies/${companyId}/entries/folha`, {
+        method: "POST",
+        body: JSON.stringify(payload || {}),
+      });
+    },
     async getPayrollTemplate(companyId, kind, competencia) {
       const qs = new URLSearchParams({ kind: String(kind), competencia: String(competencia) }).toString();
       return request(`/firm/companies/${companyId}/payroll/template?${qs}`);
