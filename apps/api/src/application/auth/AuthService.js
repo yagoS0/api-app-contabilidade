@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import {
   AUTH_USERS,
   JWT_SECRET,
+  PORTAL_AUDIENCE,
   JWT_EXPIRES_IN,
   REFRESH_TOKEN_EXPIRES_IN,
 } from "../../config.js";
@@ -153,7 +154,7 @@ export class AuthService {
       source: user.source || "db",
     };
     const expiresIn = normalizeExpiresIn();
-    return jwt.sign(payload, JWT_SECRET, { expiresIn });
+    return jwt.sign(payload, JWT_SECRET, { expiresIn, audience: PORTAL_AUDIENCE });
   }
 
   static generateClientToken(client) {
@@ -171,7 +172,7 @@ export class AuthService {
       type: "client",
     };
     const expiresIn = normalizeExpiresIn();
-    return jwt.sign(payload, JWT_SECRET, { expiresIn });
+    return jwt.sign(payload, JWT_SECRET, { expiresIn, audience: PORTAL_AUDIENCE });
   }
 
   static generateClientRefreshToken(client) {
@@ -190,7 +191,7 @@ export class AuthService {
       tokenType: "refresh",
     };
     const expiresIn = normalizeRefreshExpiresIn();
-    return jwt.sign(payload, JWT_SECRET, { expiresIn });
+    return jwt.sign(payload, JWT_SECRET, { expiresIn, audience: PORTAL_AUDIENCE });
   }
 
   static generateClientTokens(client) {
@@ -212,7 +213,7 @@ export class AuthService {
       tokenType: "refresh",
     };
     const expiresIn = normalizeRefreshExpiresIn();
-    return jwt.sign(payload, JWT_SECRET, { expiresIn });
+    return jwt.sign(payload, JWT_SECRET, { expiresIn, audience: PORTAL_AUDIENCE });
   }
 
   static generateTokens(user) {
@@ -225,7 +226,16 @@ export class AuthService {
     if (!this.isEnabled()) {
       throw new Error("AuthService: autenticação não configurada");
     }
-    return jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    // Portal Cliente (Contrato #1): rejeita token de OUTRA superfície (ex.: "portal-cliente").
+    // Migração gradual: token legado SEM `aud` é aceito na transição e ganha `aud` no próximo
+    // login/refresh. NÃO usar a opção { audience } do jwt.verify — ela rejeitaria o legado.
+    if (payload?.aud && payload.aud !== PORTAL_AUDIENCE) {
+      const err = new Error("invalid_audience");
+      err.code = "INVALID_AUDIENCE";
+      throw err;
+    }
+    return payload;
   }
 
   static verifyRefreshToken(token) {

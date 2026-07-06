@@ -246,6 +246,9 @@ function parseAuthUsers(rawUsers) {
 
 export const AUTH_USERS = parseAuthUsers(process.env.AUTH_USERS || "");
 export const JWT_SECRET = (process.env.JWT_SECRET || "").trim();
+// Portal Cliente (Contrato #1): audiência dos tokens da superfície INTERNA (portal do contador).
+// O portal emite este `aud` e rejeita tokens de outra superfície (ex.: "portal-cliente").
+export const PORTAL_AUDIENCE = (process.env.PORTAL_AUDIENCE || "portal-contador").trim();
 export const JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN || "1h").trim();
 export const REFRESH_TOKEN_EXPIRES_IN = (
   process.env.REFRESH_TOKEN_EXPIRES_IN || "7d"
