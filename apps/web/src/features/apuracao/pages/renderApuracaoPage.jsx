@@ -42,6 +42,9 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
   const [fechando, setFechando] = useState(null); // { id, razao }
 
   const fechadasCount = items.filter((i) => i.estado === "fechada").length;
+  // Q52: "selecionar todas" marca só as empresas selecionáveis (estado "fechada").
+  const allFechadasSelected = fechadasCount > 0 && selected.size === fechadasCount;
+  const someFechadasSelected = selected.size > 0 && selected.size < fechadasCount;
   return (
     <AppShell>
       <PageHeader
@@ -100,7 +103,18 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
             <thead>
               <tr style={{ background: PANEL.field, color: PANEL.muted, textAlign: "left" }}>
-                <th style={{ ...td, width: 36 }}></th>
+                <th style={{ ...td, width: 36, textAlign: "center" }}>
+                  {/* Q52: caixa "selecionar todas" — marca só as selecionáveis (fechadas). */}
+                  <input
+                    type="checkbox"
+                    checked={allFechadasSelected}
+                    ref={(el) => { if (el) el.indeterminate = someFechadasSelected; }}
+                    onChange={selectAllFechadas}
+                    disabled={fechadasCount === 0}
+                    title={fechadasCount === 0 ? "Nenhuma empresa fechada para selecionar" : "Selecionar todas as empresas fechadas"}
+                    style={{ cursor: fechadasCount === 0 ? "not-allowed" : "pointer" }}
+                  />
+                </th>
                 <th style={td}>Empresa</th>
                 <th style={td}>Status</th>
                 <th style={{ ...td, textAlign: "right" }}>Notas</th>
