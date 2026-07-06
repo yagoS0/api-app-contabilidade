@@ -93,32 +93,6 @@ async function listEligiblePortalCompanies() {
   return eligible;
 }
 
-// Lista guias INSS OPEN cujo vencimento ainda não passou (para re-fetch diário)
-async function listOpenInssGuidesUntilVencimento(portalClientId, todayDate) {
-  return prisma.guide.findMany({
-    where: {
-      portalClientId,
-      source: "SERPRO",
-      tipo: "INSS",
-      status: "PROCESSED",
-      paymentStatus: "OPEN",
-      OR: [{ vencimento: null }, { vencimento: { gte: todayDate } }],
-    },
-    select: { id: true, portalClientId: true, competencia: true, vencimento: true, paymentStatus: true },
-  });
-}
-
-function startOfTodayLocal(now = new Date()) {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-}
-
-function isSameLocalDay(d1, d2) {
-  if (!d1 || !d2) return false;
-  return d1.getFullYear() === d2.getFullYear()
-    && d1.getMonth() === d2.getMonth()
-    && d1.getDate() === d2.getDate();
-}
-
 export async function runSerproDctfwebWorkerOnce(options = {}) {
   const locked = await tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
   if (!locked) return { skipped: true, reason: "lock_active" };
@@ -133,11 +107,9 @@ export async function runSerproDctfwebWorkerOnce(options = {}) {
     const companies = await listEligiblePortalCompanies();
     const procurationService = new SerproProcurationService();
     const results = [];
-    const recheckResults = [];
     const startedAt = Date.now();
 
     const now = new Date();
-    const todayStart = startOfTodayLocal(now);
     const fetchDay = settings.fetchDay ?? 5;
     const isCaptureWindow = now.getDate() >= fetchDay;
 
@@ -192,35 +164,10 @@ export async function runSerproDctfwebWorkerOnce(options = {}) {
           }
         }
 
-        // Stage 2 — Re-fetch diário das INSS OPEN cujo vencimento ainda não passou
-        // eslint-disable-next-line no-await-in-loop
-        const openGuides = await listOpenInssGuidesUntilVencimento(company.id, todayStart);
-        for (const guide of openGuides) {
-          const vencDate = guide.vencimento ? new Date(guide.vencimento) : null;
-          const isVencimentoHoje = vencDate ? isSameLocalDay(vencDate, now) : false;
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            const sync = await syncSerproInssForCompany({
-              portalClientId: guide.portalClientId,
-              competencia: guide.competencia,
-              emailStatusOverride: isVencimentoHoje ? "PENDING" : "PRESERVE",
-            });
-            recheckResults.push({
-              guideId: guide.id, companyId: guide.portalClientId,
-              competencia: guide.competencia,
-              status: isVencimentoHoje ? "rechecked_due_today" : "rechecked_silent",
-              inssTotal: sync.inss?.inssTotal || null,
-            });
-          } catch (err) {
-            recheckResults.push({
-              guideId: guide.id, companyId: guide.portalClientId,
-              competencia: guide.competencia,
-              status: "error",
-              error: err?.code || "SERPRO_DCTFWEB_RECHECK_FAILED",
-              reason: err?.message || "serpro_dctfweb_recheck_failed",
-            });
-          }
-        }
+        // Q53: Stage 2 (re-fetch diário das INSS OPEN passadas) REMOVIDO. Re-buscar guias de
+        // competências já vencidas trazia o valor do SERPRO COM juros/multa e sobrescrevia a guia,
+        // mesmo já paga no prazo → confusão contábil. Agora competências passadas só são recalculadas
+        // sob pedido explícito (botão "Recalcular INSS" na aba Guias → /serpro/inss/sync).
       } catch (err) {
         results.push({
           companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
@@ -242,12 +189,8 @@ export async function runSerproDctfwebWorkerOnce(options = {}) {
       notTransmitted: results.filter((item) => item.status === "not_transmitted").length,
       failed: results.filter((item) => item.status === "error").length,
       skippedByProcuration: results.filter((item) => item.status === "skipped_procuration_inactive").length,
-      recheckedSilent: recheckResults.filter((item) => item.status === "rechecked_silent").length,
-      recheckedDueToday: recheckResults.filter((item) => item.status === "rechecked_due_today").length,
-      recheckFailures: recheckResults.filter((item) => item.status === "error").length,
       durationMs: Date.now() - startedAt,
       results,
-      recheckResults,
     };
     await createSerproExecutionLog({
       worker: "serpro_dctfweb",

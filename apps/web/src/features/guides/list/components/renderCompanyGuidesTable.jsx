@@ -284,6 +284,8 @@ export function CompanyGuidesTable({
   onResendGuide,
   onConfirmGuidePayment,
   onRecalculateGuide,
+  onRecalcularInss,   // Q53: recálculo/traga explícito do INSS por competência
+  recalcInssBusy,
   onDeleteGuide,
   resendingGuideId,
   confirmingGuideId,
@@ -676,13 +678,27 @@ export function CompanyGuidesTable({
       <div className="guides-list-panel">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
           <h2 className="guides-list-panel__title" style={{ margin: 0 }}>Guias</h2>
-          <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
-            Competência:
-            <input
-              type="month" value={filterCompetencia} onChange={(e) => setFilterCompetencia(e.target.value)}
-              style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 8px", colorScheme: "dark" }}
-            />
-          </label>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* Q53: recálculo/traga explícito da guia de INSS da competência selecionada.
+                Competências passadas não são mais buscadas automaticamente; guia já paga é bloqueada. */}
+            {onRecalcularInss && (
+              <Button
+                variant="secondary" size="sm"
+                disabled={!/^\d{4}-\d{2}$/.test(String(filterCompetencia || "")) || !!recalcInssBusy}
+                onClick={() => onRecalcularInss(filterCompetencia)}
+                title="Busca/recalcula no SERPRO a guia de INSS desta competência. Guia já paga é bloqueada para não alterar o valor."
+              >
+                {recalcInssBusy ? "Recalculando..." : "🔄 Recalcular INSS"}
+              </Button>
+            )}
+            <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
+              Competência:
+              <input
+                type="month" value={filterCompetencia} onChange={(e) => setFilterCompetencia(e.target.value)}
+                style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 8px", colorScheme: "dark" }}
+              />
+            </label>
+          </div>
         </div>
 
         {loadingGuides ? (

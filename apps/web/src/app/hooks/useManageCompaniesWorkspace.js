@@ -88,6 +88,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [capturingSerproPgdasd, setCapturingSerproPgdasd] = useState(false);
   const [syncingSerproPgdas, setSyncingSerproPgdas] = useState(false);
   const [syncingSerproInss, setSyncingSerproInss] = useState(false);
+  const [recalcInssBusy, setRecalcInssBusy] = useState(false); // Q53: recálculo explícito do INSS na aba Guias
   const [serproProcurationStatus, setSerproProcurationStatus] = useState(null);
   const [serproWorkerStatus, setSerproWorkerStatus] = useState(null);
   const [runningSerproCron, setRunningSerproCron] = useState(false);
@@ -589,6 +590,31 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
+  // Q53: recálculo/traga EXPLÍCITO da guia de INSS de uma competência (botão na aba Guias).
+  // Reusa /serpro/inss/sync — o backend bloqueia se a guia da competência já estiver paga.
+  async function handleRecalcularInss(competencia) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId) {
+      feedback.setError("Selecione uma empresa para recalcular o INSS.");
+      return;
+    }
+    if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+      feedback.setError("Selecione uma competência (AAAA-MM) para recalcular o INSS.");
+      return;
+    }
+    setRecalcInssBusy(true);
+    feedback.clearFeedback();
+    try {
+      await api.syncSerproInss(companyId, { competencia });
+      feedback.setMessage(`INSS de ${competencia} recalculado/atualizado.`);
+      await loadGuides(companyId);
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao recalcular o INSS.");
+    } finally {
+      setRecalcInssBusy(false);
+    }
+  }
+
   async function handleGuideUpload(files) {
     if (!Array.isArray(files) || !files.length) {
       feedback.setError("Selecione pelo menos um PDF para enviar.");
@@ -919,6 +945,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleResendGuide,
     handleConfirmGuidePayment,
     handleRecalculateGuide,
+    handleRecalcularInss,
+    recalcInssBusy,
     handleDeleteGuide,
     handleGuideUpload,
     handleCompanyGuideUpload,

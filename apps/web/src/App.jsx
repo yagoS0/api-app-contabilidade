@@ -279,6 +279,8 @@ function App() {
           onResendGuide: companiesWorkspace.handleResendGuide,
           onConfirmGuidePayment: companiesWorkspace.handleConfirmGuidePayment,
           onRecalculateGuide: companiesWorkspace.handleRecalculateGuide,
+          onRecalcularInss: companiesWorkspace.handleRecalcularInss,
+          recalcInssBusy: companiesWorkspace.recalcInssBusy,
           resendingGuideId: companiesWorkspace.guidesState.resendingGuideId,
           confirmingGuideId: companiesWorkspace.guidesState.confirmingGuideId,
           recalculatingGuideId: companiesWorkspace.guidesState.recalculatingGuideId,

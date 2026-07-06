@@ -89,6 +89,7 @@ import {
 import {
   canGuideRecalculate,
   isGuideOverdue,
+  isGuidePaid,
   markGuideOpenBySerpro,
   markGuidePaidManual,
 } from "../../application/guides/GuidePaymentStatusService.js";
@@ -2651,6 +2652,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       try {
+        // Q53: recálculo explícito NÃO pode sobrescrever guia já paga (o SERPRO devolveria o valor
+        // com juros/multa, mesmo que o cliente tenha pago no prazo). Bloqueia antes de sincronizar.
+        const existingInss = await prisma.guide.findFirst({
+          where: { portalClientId: portalCompanyId, tipo: "INSS", competencia, status: "PROCESSED" },
+          select: { paymentStatus: true },
+        });
+        if (existingInss && isGuidePaid(existingInss)) {
+          return res.status(409).json({
+            ok: false,
+            error: "guia_inss_ja_paga",
+            message: "Guia de INSS desta competência já está paga — recálculo bloqueado para não alterar o valor.",
+          });
+        }
+
         const result = await syncSerproInssForCompany({
           portalClientId: portalCompanyId,
           competencia,
