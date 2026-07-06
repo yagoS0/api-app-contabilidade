@@ -1,7 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import multer from "multer";
-import forge from "node-forge";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
@@ -11,6 +10,7 @@ import {
   deleteCompanyPfx,
 } from "../../infrastructure/storage/CertStorage.js";
 import { encryptSecret, encryptBytes } from "../../utils/crypto.js";
+import { inspectPfx, formatCnpj } from "../../application/security/inspectPfx.js";
 import { auditCertAccess } from "../../application/security/CertAccessAudit.js";
 import {
   enderecoToSingleLine,
@@ -241,6 +241,65 @@ async function attachFechamentoContabilToCompaniesList(data, competenciaArg) {
   });
 }
 
+// Q52: anexa ao card do dashboard o total de notas emitidas e o estado da apuração da competência.
+// - notasEmitidas: soma de PortalInvoice EMIT autorizadas do mês (1 groupBy pra lista toda).
+// - apuracao: ApuracaoSnapshot com estado transmitida/confirmada ("confirmada" = pós-conferência
+//   de apuração já transmitida — conta como apurada). Model legado Apuracao é ignorado (fluxo v2).
+async function attachNotasApuracaoToCompaniesList(data, competenciaArg) {
+  if (!Array.isArray(data) || !data.length) return data;
+  const competencia = competenciaArg || getReferenceCompetencia();
+  const m = String(competencia).match(/^(\d{4})-(\d{2})$/);
+  const portalIds = [...new Set(data.map((item) => item.companyId).filter(Boolean))];
+  const notasByPortal = new Map();
+  const apuracaoByPortal = new Map();
+  if (portalIds.length && m) {
+    const inicioMes = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));
+    const mesSeguinte = new Date(Date.UTC(Number(m[1]), Number(m[2]), 1));
+    const [notas, snapshots] = await Promise.all([
+      prisma.portalInvoice.groupBy({
+        by: ["clientId"],
+        where: {
+          clientId: { in: portalIds },
+          papel: "EMIT",
+          statusEfetivo: "autorizada",
+          competencia: { gte: inicioMes, lt: mesSeguinte },
+        },
+        _sum: { total: true },
+        _count: { _all: true },
+      }),
+      prisma.apuracaoSnapshot.findMany({
+        where: {
+          portalClientId: { in: portalIds },
+          competencia,
+          estado: { in: ["transmitida", "confirmada"] },
+        },
+        select: { portalClientId: true, estado: true, transmitidoEm: true },
+      }),
+    ]);
+    for (const n of notas) {
+      notasByPortal.set(n.clientId, {
+        total: Number(n._sum?.total || 0),
+        quantidade: Number(n._count?._all || 0),
+      });
+    }
+    for (const s of snapshots) apuracaoByPortal.set(s.portalClientId, s);
+  }
+  return data.map((item) => {
+    const notas = notasByPortal.get(item.companyId) || { total: 0, quantidade: 0 };
+    const snap = apuracaoByPortal.get(item.companyId) || null;
+    return {
+      ...item,
+      notasEmitidas: { competencia, total: notas.total, quantidade: notas.quantidade },
+      apuracao: {
+        competencia,
+        apurada: Boolean(snap),
+        estado: snap?.estado || null,
+        transmitidoEm: snap?.transmitidoEm || null,
+      },
+    };
+  });
+}
+
 async function attachSerproStatusToCompaniesList(data) {
   if (!Array.isArray(data) || !data.length) return data;
 
@@ -332,19 +391,6 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   const invoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log });
   const syncRouter = createPortalSyncRouter({ ensureAuthorized, log });
-
-  function parsePfxExpiry(pfxBuffer, password) {
-    try {
-      const p12Asn1 = forge.asn1.fromDer(pfxBuffer.toString("binary"));
-      const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password);
-      const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })?.[forge.pki.oids.certBag]?.[0];
-      const cert = certBag?.cert;
-      if (!cert || !cert.validity?.notAfter) return null;
-      return cert.validity.notAfter;
-    } catch {
-      return null;
-    }
-  }
 
   async function getLegacyCompanyByPortalId(portalCompanyId) {
     const portal = await prisma.portalClient.findUnique({
@@ -491,7 +537,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         competenciaRef
       );
       const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
-      const data = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
+      const dataWithFechamento = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
+      const data = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
       return res.json({ data, competencia: competenciaRef });
     }
 
@@ -558,7 +605,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       competenciaRef
     );
     const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
-    const data = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
+    const dataWithFechamento = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
+    const data = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
     return res.json({ data, competencia: competenciaRef });
   });
 
@@ -1161,7 +1209,35 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         const company = await getLegacyCompanyByPortalId(portalCompanyId);
         if (!company) return res.status(404).json({ error: "legacy_company_not_linked" });
         const previousStorageKey = company.certStorageKey || null;
-        const expiresAt = parsePfxExpiry(file.buffer, password);
+
+        // Q52: valida senha do PFX e se o certificado pertence à empresa (CNPJ) ANTES de salvar.
+        let inspected;
+        try {
+          inspected = inspectPfx(file.buffer, password);
+        } catch (inspectErr) {
+          if (inspectErr?.code === "CERT_SENHA_INVALIDA" || inspectErr?.code === "CERT_ARQUIVO_INVALIDO") {
+            return res.status(400).json({ error: inspectErr.code.toLowerCase(), message: inspectErr.message });
+          }
+          throw inspectErr;
+        }
+        if (!inspected.cnpj) {
+          return res.status(400).json({
+            error: "cert_sem_cnpj",
+            message: "O certificado não contém CNPJ (parece ser e-CPF/pessoa física). Envie o certificado A1 e-CNPJ da empresa.",
+          });
+        }
+        const portalClient = await prisma.portalClient.findUnique({
+          where: { id: portalCompanyId },
+          select: { cnpj: true },
+        });
+        const empresaCnpj = String(portalClient?.cnpj || company.cnpj || "").replace(/\D/g, "");
+        if (empresaCnpj && inspected.cnpj !== empresaCnpj) {
+          return res.status(400).json({
+            error: "cert_cnpj_mismatch",
+            message: `O certificado pertence ao CNPJ ${formatCnpj(inspected.cnpj)}, mas esta empresa é ${formatCnpj(empresaCnpj)}. Envie o certificado correto.`,
+          });
+        }
+        const expiresAt = inspected.notAfter;
         const now = new Date();
         await prisma.company.update({
           where: { id: company.id },

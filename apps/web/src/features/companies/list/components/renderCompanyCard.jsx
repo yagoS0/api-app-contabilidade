@@ -45,6 +45,27 @@ const TAG_STATE_COLOR = { present: "#69FF47", vazio: "#FFB347", missing: "#FF575
 export function CompanyCard({ company, onAccess }) {
   const tags = getComplianceTags(company.guideCompliance);
   const serproEligible = Boolean(company?.serproStatus?.eligible);
+  // Q52: selo de certificado A1 da empresa — verde (ativo), vermelho (vencido), apagado (sem cert).
+  // certExpiresAt null com cert presente conta como ativo (upload legado sem validade extraída).
+  const legacy = company?.legacyCompany || null;
+  const hasCert = Boolean(legacy?.certStorageKey);
+  const certExpiresAt = legacy?.certExpiresAt ? new Date(legacy.certExpiresAt) : null;
+  const certExpirado = hasCert && certExpiresAt && certExpiresAt.getTime() < Date.now();
+  const certAtivo = hasCert && !certExpirado;
+  const certColor = certAtivo ? "#69FF47" : certExpirado ? "#FF5757" : "#6272A4";
+  const certTitle = certAtivo
+    ? `Certificado A1 ativo${certExpiresAt ? ` — válido até ${certExpiresAt.toLocaleDateString("pt-BR")}` : " — validade desconhecida"}`
+    : certExpirado
+      ? `Certificado A1 vencido em ${certExpiresAt.toLocaleDateString("pt-BR")}`
+      : "Empresa sem certificado A1";
+  // Q52: total de notas emitidas da competência filtrada + selo de apuração transmitida.
+  const notas = company?.notasEmitidas || null;
+  const notasTotal = Number(notas?.total || 0);
+  const apuracao = company?.apuracao || null;
+  const apurada = Boolean(apuracao?.apurada);
+  const apuradaTitle = apurada
+    ? `Apuração ${apuracao?.estado === "confirmada" ? "confirmada" : "transmitida"}${apuracao?.transmitidoEm ? ` em ${new Date(apuracao.transmitidoEm).toLocaleDateString("pt-BR")}` : ""}`
+    : `Apuração da competência ainda não transmitida`;
   // Q17: empresa FECHADA (contábil) → card inteiro fica verde-azulado (teal) + cadeado no título.
   const fechada = Boolean(company?.fechamentoContabil?.fechado);
   const cardStyle = fechada
@@ -86,7 +107,38 @@ export function CompanyCard({ company, onAccess }) {
         >
           {company.monthEmailSent ? "📤 guias" : "✉ guias"}
         </span>
+        {/* Q52: selo do certificado A1 — mesmo estilo dos demais (cor na fonte). */}
+        <span
+          style={{
+            marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
+            color: certColor,
+          }}
+          title={certTitle}
+        >
+          🔐 A1
+        </span>
+        {/* Q52: selo de empresa apurada (apuração transmitida/confirmada na competência). */}
+        <span
+          style={{
+            marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
+            color: apurada ? "#69FF47" : "#6272A4",
+          }}
+          title={apuradaTitle}
+        >
+          {apurada ? "✓ apurada" : "apurada"}
+        </span>
       </p>
+      {/* Q52: total de notas emitidas da competência filtrada no dashboard. */}
+      {notas && (
+        <p
+          style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#aeb6d3" }}
+          title={`${notas.quantidade || 0} nota(s) emitida(s) autorizada(s) na competência ${notas.competencia || ""}`}
+        >
+          Notas emitidas: <strong style={{ color: notasTotal > 0 ? "#F8F8F2" : "#6272A4" }}>
+            R$ {notasTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </strong>
+        </p>
+      )}
       <p className="compliance-tags" aria-label="Status de guias obrigatórias">
         {tags.map((tag) => {
           // Q17: só a BORDA colorida por estado; texto neutro; cantos mais quadrados.

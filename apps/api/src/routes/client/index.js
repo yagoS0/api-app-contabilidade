@@ -2,7 +2,6 @@ import { Router } from "express";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import multer from "multer";
-import forge from "node-forge";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
 import { requireAccountType } from "../../middlewares/requireAccountType.js";
@@ -12,6 +11,7 @@ import {
   deleteCompanyPfx,
 } from "../../infrastructure/storage/CertStorage.js";
 import { encryptSecret, encryptBytes } from "../../utils/crypto.js";
+import { inspectPfx, formatCnpj } from "../../application/security/inspectPfx.js";
 import { createPortalInvoicesRouter } from "../portalInvoices.js";
 import { createPortalSyncRouter } from "../portalSync.js";
 import {
@@ -36,19 +36,6 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
 
   const invoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log });
   const syncRouter = createPortalSyncRouter({ ensureAuthorized, log });
-
-  function parsePfxExpiry(pfxBuffer, password) {
-    try {
-      const p12Asn1 = forge.asn1.fromDer(pfxBuffer.toString("binary"));
-      const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password);
-      const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })?.[forge.pki.oids.certBag]?.[0];
-      const cert = certBag?.cert;
-      if (!cert || !cert.validity?.notAfter) return null;
-      return cert.validity.notAfter;
-    } catch {
-      return null;
-    }
-  }
 
   async function getLegacyCompanyByPortalId(portalCompanyId) {
     const portal = await prisma.portalClient.findUnique({
@@ -394,7 +381,35 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         const company = await getLegacyCompanyByPortalId(portalCompanyId);
         if (!company) return res.status(404).json({ error: "legacy_company_not_linked" });
         const previousStorageKey = company.certStorageKey || null;
-        const expiresAt = parsePfxExpiry(file.buffer, password);
+
+        // Q52: valida senha do PFX e se o certificado pertence à empresa (CNPJ) ANTES de salvar.
+        let inspected;
+        try {
+          inspected = inspectPfx(file.buffer, password);
+        } catch (inspectErr) {
+          if (inspectErr?.code === "CERT_SENHA_INVALIDA" || inspectErr?.code === "CERT_ARQUIVO_INVALIDO") {
+            return res.status(400).json({ error: inspectErr.code.toLowerCase(), message: inspectErr.message });
+          }
+          throw inspectErr;
+        }
+        if (!inspected.cnpj) {
+          return res.status(400).json({
+            error: "cert_sem_cnpj",
+            message: "O certificado não contém CNPJ (parece ser e-CPF/pessoa física). Envie o certificado A1 e-CNPJ da empresa.",
+          });
+        }
+        const portalClient = await prisma.portalClient.findUnique({
+          where: { id: portalCompanyId },
+          select: { cnpj: true },
+        });
+        const empresaCnpj = String(portalClient?.cnpj || company.cnpj || "").replace(/\D/g, "");
+        if (empresaCnpj && inspected.cnpj !== empresaCnpj) {
+          return res.status(400).json({
+            error: "cert_cnpj_mismatch",
+            message: `O certificado pertence ao CNPJ ${formatCnpj(inspected.cnpj)}, mas esta empresa é ${formatCnpj(empresaCnpj)}. Envie o certificado correto.`,
+          });
+        }
+        const expiresAt = inspected.notAfter;
         const now = new Date();
         await prisma.company.update({
           where: { id: company.id },
