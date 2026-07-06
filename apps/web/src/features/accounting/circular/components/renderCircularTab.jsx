@@ -259,10 +259,16 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
 
   const menuBtn = { display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: "transparent", border: "none", color: "#F8F8F2", fontSize: "0.78rem", cursor: "pointer", borderRadius: 4 };
 
-  // Lançamentos reais: editar/baixar/vincular. INSS sintético (vem da guia): só "Dar baixa" (Q47) —
-  // abre o mesmo modal do DAS, mas roteado pela guia; confirma o pagamento + gera a baixa contábil.
+  // Lançamentos reais: editar/baixar/vincular. INSS sintético (vem da guia) agora tem o fluxo
+  // completo igual ao DAS (Q52): "Dar baixa" (abre modal, gera a baixa contábil), "Editar baixa"
+  // (edita o lançamento gerado) e "Cancelar baixa" (apaga a baixa e reabre a guia).
   const canBaixaInss = isSynthetic && isAberto && Boolean(onBaixa);
-  const hasActions = canBaixaInss || (!isSynthetic && (Boolean(onEdit) || (isAberto && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
+  // INSS pago: pode editar a baixa (entry.baixaEntry é o lançamento real) e cancelá-la.
+  const canManageInssBaixa = isSynthetic && !isAberto && Boolean(baixaId);
+  const hasActions =
+    canBaixaInss
+    || (canManageInssBaixa && (Boolean(onCancelBaixa) || (Boolean(onEdit) && Boolean(entry.baixaEntry))))
+    || (!isSynthetic && (Boolean(onEdit) || (isAberto && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
   const numText = fmtMoney(valor) ? `R$ ${fmtMoney(valor)}` : "—";
 
   return (
@@ -307,9 +313,12 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "#24253A", border: "1px solid #44475A", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.45)", padding: 6, minWidth: 190, display: "flex", flexDirection: "column", gap: 2 }}
         >
           {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
+          {/* Q52: INSS pago — edita o lançamento de baixa real (não a provisão sintética). */}
+          {onEdit && isSynthetic && !isAberto && entry.baixaEntry && <button onClick={() => { setOpen(false); onEdit(entry.baixaEntry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar baixa</button>}
           {/* "Dar baixa" — provisões reais E INSS sintético (Q47: mesmo modal, roteado pela guia). */}
           {isAberto && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Dar baixa</button>}
-          {!isAberto && baixaId && onCancelBaixa && !isSynthetic && <button onClick={() => { setOpen(false); onCancelBaixa(baixaId); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Cancelar baixa</button>}
+          {/* "Cancelar baixa" — DAS (provisão real) E INSS sintético (Q52: apaga a baixa + reabre a guia). */}
+          {!isAberto && baixaId && onCancelBaixa && <button onClick={() => { setOpen(false); onCancelBaixa(baixaId); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Cancelar baixa</button>}
           {onVincular && !isSynthetic && (
             isVinculado ? (
               <button onClick={() => { setOpen(false); onDesvincular(entry); }} style={{ ...menuBtn, color: "#FFB347" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Desvincular do parcelamento</button>

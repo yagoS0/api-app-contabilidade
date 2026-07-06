@@ -714,6 +714,17 @@ export function createAccountingEntriesRouter({ log }) {
       }),
     ]);
 
+    // Q52.INSS: baixas contábeis reais do INSS (tipo=BAIXA, sourceGuideId) — para que a provisão
+    // sintética paga possa ser EDITADA e ter a baixa CANCELADA na Circular, igual ao DAS.
+    const inssGuideIds = inssGuides.map((g) => g.id);
+    const inssBaixas = inssGuideIds.length
+      ? await prisma.accountingEntry.findMany({
+          where: { portalClientId, tipo: "BAIXA", sourceGuideId: { in: inssGuideIds } },
+          include: { lines: { orderBy: { ordem: "asc" } } },
+        })
+      : [];
+    const inssBaixaByGuide = new Map(inssBaixas.map((b) => [b.sourceGuideId, b]));
+
     const receitasPorComp = {};
     for (const e of receitas) {
       const total = e.lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor), 0);
@@ -777,6 +788,20 @@ export function createAccountingEntriesRouter({ log }) {
       const valor = valorOriginal; // sempre o original na Circular
       const recalculado = g.valorOriginal != null && Math.abs(valorAtual - valorOriginal) > 0.01;
       const isPaid = String(g.paymentStatus || "").toUpperCase() === "PAID";
+      // Baixa contábil real associada à guia (existe quando o INSS foi baixado pela Circular).
+      const baixa = inssBaixaByGuide.get(g.id) || null;
+      const baixaEntry = baixa
+        ? {
+            id: baixa.id,
+            data: baixa.data,
+            competencia: baixa.competencia,
+            historico: baixa.historico,
+            tipo: baixa.tipo,
+            subtipo: baixa.subtipo,
+            eventType: baixa.eventType,
+            lines: baixa.lines,
+          }
+        : null;
       return {
         id: `synthetic-inss-${g.id}`,
         portalClientId,
@@ -803,7 +828,9 @@ export function createAccountingEntriesRouter({ log }) {
           { id: null, entryId: null, conta: "INSS", tipo: "D", valor, ordem: 0, historico: null },
           { id: null, entryId: null, conta: "INSS", tipo: "C", valor, ordem: 1, historico: null },
         ],
-        baixas: [],
+        // Q52.INSS: quando pago, expõe a baixa real (id p/ cancelar + entry completo p/ editar).
+        baixas: baixa ? [{ id: baixa.id }] : [],
+        baixaEntry,
         totalD: valor,
         totalC: valor,
         valor,
@@ -2019,6 +2046,36 @@ export function createAccountingEntriesRouter({ log }) {
           where: { id: existing.openEntryId, portalClientId },
           data: { statusPagamento: "ABERTO" },
         });
+      });
+    } else if (existing.tipo === "BAIXA" && existing.sourceGuideId) {
+      // Q52.INSS: cancelar baixa do INSS — apaga o lançamento e reabre a guia (volta a vermelho).
+      // Só reverte o pagamento se ele veio DESTA baixa (fonte MANUAL); não desfaz confirmação do SERPRO.
+      await prisma.$transaction(async (tx) => {
+        await tx.accountingEntry.delete({ where: { id: entryId } });
+        const guide = await tx.guide.findFirst({
+          where: { id: existing.sourceGuideId, portalClientId },
+          select: { id: true, paymentStatusSource: true },
+        });
+        if (guide) {
+          const fromManual = String(guide.paymentStatusSource || "").toUpperCase() === "MANUAL";
+          await tx.guide.update({
+            where: { id: guide.id },
+            data: {
+              baixada: false,
+              dataBaixa: null,
+              lancamentoId: null,
+              ...(fromManual
+                ? {
+                    paymentStatus: "OPEN",
+                    paymentStatusSource: null,
+                    paymentConfirmedAt: null,
+                    paymentConfirmedByUserId: null,
+                    serproLastCheckResult: null,
+                  }
+                : {}),
+            },
+          });
+        }
       });
     } else {
       await prisma.accountingEntry.delete({ where: { id: entryId } });
