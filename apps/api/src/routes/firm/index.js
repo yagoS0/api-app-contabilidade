@@ -1440,6 +1440,35 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
   });
 
+  // Módulo Fiscal M2 — SPIKE read-only por CNPJ direto (não depende da empresa estar no banco).
+  // Serviço /Consultar (leitura, SEM ato fiscal). Só descobre PDF vs estruturado. Não persiste.
+  // Gated: admin/contador + flag SERPRO_DCTFWEB_LP_PROBE_ENABLED. Body: { cnpj, competencia, idServico?, categoria?, dados? }
+  router.post("/serpro/dctfweb/probe", requireAccountType("FIRM"), async (req, res) => {
+    if (!SERPRO_DCTFWEB_LP_PROBE_ENABLED) {
+      return res.status(403).json({ ok: false, error: "probe_disabled", message: "Ligue SERPRO_DCTFWEB_LP_PROBE_ENABLED=1 para rodar o spike." });
+    }
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ ok: false, error: "forbidden_admin_or_contador_only" });
+    }
+    const cnpj = String(req.body?.cnpj || "").replace(/\D+/g, "");
+    const competencia = String(req.body?.competencia || "").trim();
+    const idServico = req.body?.idServico ? String(req.body.idServico).trim() : undefined;
+    const categoria = req.body?.categoria ? String(req.body.categoria).trim() : undefined;
+    const dadosOverride = req.body?.dados && typeof req.body.dados === "object" ? req.body.dados : undefined;
+    if (cnpj.length !== 14) return res.status(400).json({ ok: false, error: "cnpj_invalido", message: "cnpj com 14 dígitos" });
+    if (!/^\d{4}-\d{2}$/.test(competencia)) return res.status(400).json({ ok: false, error: "competencia_required", message: "competencia YYYY-MM" });
+    try {
+      const out = await probeConsultarDeclaracaoCompleta({ contribuinteCnpj: cnpj, competencia, idServico, categoria, dadosOverride });
+      log.warn({ cnpj: cnpj.slice(0, 5) + "***", competencia, idServico: out.idServico, httpStatus: out.httpStatus, temPdf: out.temPdf, temDados: out.temDadosEstruturados }, "SPIKE DCTFWeb probe (cnpj direto)");
+      return res.json({ ok: true, ...out });
+    } catch (err) {
+      const code = err?.code || "SERPRO_DCTFWEB_PROBE_FAILED";
+      log.error({ err: err?.message || err, code, competencia }, "Falha no probe DCTFWeb (cnpj direto)");
+      return res.status(502).json({ ok: false, error: code, reason: err?.message || "Erro", retryable: Boolean(err?.retryable) });
+    }
+  });
+
   // Dispara manualmente o cron do SERPRO (DAS PGDAS-D + INSS DCTFWeb).
   // Usado quando o cron automático ainda não rodou e precisamos forçar.
   router.post("/serpro/cron/run", requireAccountType("FIRM"), async (req, res) => {
