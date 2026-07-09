@@ -36,6 +36,12 @@ function getSubtipoRowsForRegime(regime) {
 // Mantido como fallback para código legado que ainda importava esta constante.
 const SUBTIPO_ROWS = SUBTIPO_ROWS_ALL;
 
+// Frente B: subtipo da matriz → chave(s) do tributo em circular.acrescimos.
+// PIS_COFINS agrega PIS + COFINS (a matriz tem uma linha só).
+const SUBTIPO_TO_ACRESCIMO = {
+  DAS: ["DAS"], INSS: ["INSS"], IRPJ: ["IRPJ"], CSLL: ["CSLL"], PIS_COFINS: ["PIS", "COFINS"], ISS: ["ISS"],
+};
+
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 // Q31: largura ÚNICA de coluna do quadro (todas iguais — header, célula, subtotal).
@@ -236,12 +242,23 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
 
 // Q31: célula só com NÚMERO; cor implícita (vermelho=aberto, verde=pago, amarelo=vinculado a
 // parcelamento). Clicar abre o menu de ações (Editar / Dar baixa / Vincular a parcelamento).
-function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular }) {
+function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null, onEditAcrescimo = null }) {
   const [open, setOpen] = useState(false);
   const [selParc, setSelParc] = useState("");
+  const temAcrescimo = acrescimo && acrescimo.acrescimo > 0;
 
+  // Célula sem provisão: mostra "—" (ou o split, se houver — ex.: LP sem lançamento ainda).
   if (!entry) {
-    return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
+    if (!acrescimo) {
+      return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
+    }
+    return (
+      <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", color: "#F8F8F2" }}>
+        <div style={{ fontWeight: 700, fontSize: "0.9rem", whiteSpace: "nowrap" }}>R$ {fmtMoney(acrescimo.principal) || "0,00"}</div>
+        {temAcrescimo && <div title={`Juros/multa R$ ${fmtMoney(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>+R$ {fmtMoney(acrescimo.acrescimo)} j/m</div>}
+        {onEditAcrescimo && <button onClick={onEditAcrescimo} title="Editar principal / juros / multa" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#6272A4", fontSize: "0.6rem", padding: 0 }}>✎ split</button>}
+      </td>
+    );
   }
 
   const placeholder = entry.placeholder || entry.origem === "TEMPLATE";
@@ -296,6 +313,15 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
         >
           ↻ R$ {fmtMoney(entry.recalculatedToValor)}
         </div>
+      )}
+      {/* Frente B: acréscimo (juros/multa) destacado + edição do split principal/juros/multa. */}
+      {temAcrescimo && (
+        <div title={`Valor original R$ ${fmtMoney(acrescimo.principal)} + juros/multa R$ ${fmtMoney(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>
+          +R$ {fmtMoney(acrescimo.acrescimo)} j/m
+        </div>
+      )}
+      {onEditAcrescimo && (
+        <button onClick={onEditAcrescimo} title="Editar valor original / juros / multa" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#6272A4", fontSize: "0.58rem", padding: 0, display: "block", margin: "1px auto 0" }}>✎ split</button>
       )}
       {/* Ícone único de "pago" — aparece em qualquer célula paga (baixa manual ou confirmação SERPRO).
           Só indicador visual (não clicável); o tooltip traz data/origem quando houver. */}
@@ -374,10 +400,13 @@ export function CircularTab({
   onSearchHistoricos,
   onCancelBaixa,
   parcelamentos, // Q9: hook completo (parcelamentos, payParcela, rescindir, etc)
+  onSaveCircular, // Frente B: salva acrescimos (principal/juros/multa) da circular
+  savingCircular,
 }) {
   const [baixaEntry, setBaixaEntry] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [editAcrescimo, setEditAcrescimo] = useState(null); // { competencia, subtipo, label, tributos:[{key,principal,juros,multa}] }
   const [cancellingBaixaId, setCancellingBaixaId] = useState(null);
   // Q9: state pro modal de pagamento de parcela
   const [payingParcela, setPayingParcela] = useState(null); // { parcelamento, parcela }
@@ -473,6 +502,47 @@ export function CircularTab({
     } finally {
       setSavingEdit(false);
     }
+  }
+
+  // Frente B: acréscimo (juros/multa) agregado por célula subtipo×mês.
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const numOrNull = (s) => { const v = Number(String(s).replace(",", ".")); return Number.isFinite(v) ? r2(v) : 0; };
+  function acrescimoFor(colKey, comp) {
+    const keys = SUBTIPO_TO_ACRESCIMO[colKey];
+    if (!keys) return null;
+    const src = circularData?.acrescimos?.[comp];
+    if (!src) return null;
+    let principal = 0, juros = 0, multa = 0, has = false;
+    for (const k of keys) {
+      const t = src[k];
+      if (t) { has = true; principal += Number(t.principal) || 0; juros += Number(t.juros) || 0; multa += Number(t.multa) || 0; }
+    }
+    return has ? { principal: r2(principal), juros: r2(juros), multa: r2(multa), acrescimo: r2(juros + multa) } : null;
+  }
+  function openEditAcrescimo(colKey, comp) {
+    const keys = SUBTIPO_TO_ACRESCIMO[colKey];
+    if (!keys || !onSaveCircular) return;
+    const src = circularData?.acrescimos?.[comp] || {};
+    setEditAcrescimo({
+      competencia: comp, subtipo: colKey,
+      label: SUBTIPO_ROWS.find((r) => r.key === colKey)?.label || colKey,
+      tributos: keys.map((k) => ({
+        key: k,
+        principal: src[k]?.principal != null ? String(src[k].principal) : "",
+        juros: src[k]?.juros != null ? String(src[k].juros) : "",
+        multa: src[k]?.multa != null ? String(src[k].multa) : "",
+      })),
+    });
+  }
+  async function handleSaveAcrescimo() {
+    if (!editAcrescimo || !onSaveCircular) return;
+    const comp = editAcrescimo.competencia;
+    const merged = { ...(circularData?.acrescimos?.[comp] || {}) };
+    for (const t of editAcrescimo.tributos) {
+      merged[t.key] = { principal: numOrNull(t.principal), juros: numOrNull(t.juros), multa: numOrNull(t.multa) };
+    }
+    await onSaveCircular({ competencia: comp, acrescimos: merged });
+    setEditAcrescimo(null);
   }
 
   async function handleCancelBaixa(baixaId) {
@@ -592,6 +662,8 @@ export function CircularTab({
                         parcelamentosAtivos={parcelamentosAtivos}
                         onVincular={parcelamentos?.vincularEntry ? handleVincular : null}
                         onDesvincular={handleDesvincular}
+                        acrescimo={acrescimoFor(col.key, comp)}
+                        onEditAcrescimo={onSaveCircular && SUBTIPO_TO_ACRESCIMO[col.key] ? () => openEditAcrescimo(col.key, comp) : null}
                       />
                     ))}
                     <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtMoney(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
@@ -690,6 +762,63 @@ export function CircularTab({
           onSearchHistoricos={onSearchHistoricos}
         />
       )}
+      {editAcrescimo && (
+        <AcrescimoEditModal
+          data={editAcrescimo}
+          saving={savingCircular}
+          onChange={setEditAcrescimo}
+          onSave={handleSaveAcrescimo}
+          onClose={() => setEditAcrescimo(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Frente B: modal de edição do split principal/juros/multa por tributo (célula da matriz).
+function AcrescimoEditModal({ data, saving, onChange, onSave, onClose }) {
+  function setField(idx, field, val) {
+    onChange({ ...data, tributos: data.tributos.map((t, i) => (i === idx ? { ...t, [field]: val } : t)) });
+  }
+  const inp = { ...PANEL_FIELD_STYLE, width: "100%" };
+  const compLabel = (() => { const [y, m] = String(data.competencia).split("-"); return `${m}/${y}`; })();
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 10, padding: 20, width: "100%", maxWidth: 460 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span style={{ fontWeight: 700, color: ACCOUNTING_PANEL.text, fontSize: "0.95rem" }}>Valores — {data.label} · {compLabel}</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: ACCOUNTING_PANEL.muted, cursor: "pointer", fontSize: "1.4rem", lineHeight: 1 }}>×</button>
+        </div>
+        <p style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted, marginBottom: 12 }}>
+          Valor <strong>original (principal)</strong> × <strong>juros/multa</strong> (guia vencida/recalculada).
+          A provisão usa o principal; juros/multa ficam só destacados na circular.
+        </p>
+        <div style={{ display: "grid", gap: 14 }}>
+          {data.tributos.map((t, i) => (
+            <div key={t.key} style={{ display: "grid", gap: 6 }}>
+              {data.tributos.length > 1 && <strong style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.8rem" }}>{t.key}</strong>}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: ACCOUNTING_PANEL.muted }}>
+                  Principal
+                  <input value={t.principal} onChange={(e) => setField(i, "principal", e.target.value)} placeholder="0,00" style={inp} />
+                </label>
+                <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: "#FFB347" }}>
+                  Juros
+                  <input value={t.juros} onChange={(e) => setField(i, "juros", e.target.value)} placeholder="0,00" style={inp} />
+                </label>
+                <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: "#FFB347" }}>
+                  Multa
+                  <input value={t.multa} onChange={(e) => setField(i, "multa", e.target.value)} placeholder="0,00" style={inp} />
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <button onClick={onClose} disabled={saving} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: "transparent", color: ACCOUNTING_PANEL.text, cursor: "pointer", fontSize: "0.85rem" }}>Cancelar</button>
+          <button onClick={onSave} disabled={saving} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "#69FF47", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "Salvando…" : "Salvar"}</button>
+        </div>
+      </div>
     </div>
   );
 }

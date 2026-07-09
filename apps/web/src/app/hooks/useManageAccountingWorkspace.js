@@ -90,8 +90,10 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     setEntriesError("");
     setEntriesMessage("");
     try {
-      const competencia = circularCompetencia;
-      await api.updateCircular(selectedCompanyId, competencia, input);
+      // Frente B: a matriz edita a célula de um mês específico → aceita override por input.competencia.
+      const { competencia: compOverride, ...patch } = input || {};
+      const competencia = compOverride || circularCompetencia;
+      await api.updateCircular(selectedCompanyId, competencia, patch);
       await loadCircular(circularYear, competencia);
       setEntriesMessage("Circular atualizada e lançamentos regenerados.");
     } catch (err) {

@@ -424,6 +424,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onCancelBaixa={circularPanel.onCancelBaixa}
             parcelamentos={accountingPanel.parcelamentos}
+            onSaveCircular={circularPanel.onSaveCircular}
+            savingCircular={circularPanel.savingCircular}
           />
           </Suspense>
           </ErrorBoundary>

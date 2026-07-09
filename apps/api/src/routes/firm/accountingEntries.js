@@ -697,7 +697,7 @@ export function createAccountingEntriesRouter({ log }) {
       }),
       prisma.companyMonthlyCircular.findMany({
         where: { portalClientId, competencia: { in: meses } },
-        select: { competencia: true, dasTotal: true },
+        select: { competencia: true, dasTotal: true, acrescimos: true },
       }),
       prisma.guide.findMany({
         where: {
@@ -852,6 +852,12 @@ export function createAccountingEntriesRouter({ log }) {
     // Q5: DARFs agora são AccountingEntry reais (gerados via GuideToProvisionService no momento
     // em que a guia vira PROCESSED). Já aparecem no `provisoes` acima — não há mais sintéticas.
 
+    // Frente B: split principal/juros/multa por tributo, por competência (pra matriz).
+    const acrescimosByMonth = {};
+    for (const c of circulars) {
+      if (c?.acrescimos && typeof c.acrescimos === "object") acrescimosByMonth[c.competencia] = c.acrescimos;
+    }
+
     return res.json({
       year,
       provisoes: [
@@ -859,6 +865,7 @@ export function createAccountingEntriesRouter({ log }) {
         ...inssSynthetic,
       ],
       receitas: receitasPorComp,
+      acrescimos: acrescimosByMonth,
     });
   });
 
