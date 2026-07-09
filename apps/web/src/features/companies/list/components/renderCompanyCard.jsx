@@ -127,21 +127,24 @@ export function CompanyCard({ company, onAccess }) {
           SERPRO
         </span>
         {/* Q16/Q17: selo de envio das guias — mesmo estilo das tags (só borda):
-            verde se enviadas, vermelho se não. */}
-        <span
-          style={{
-            // Q18: sem borda — cor na fonte (verde enviado / vermelho não enviado).
-            marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
-            color: company.monthEmailSent ? "#69FF47" : "#FF5757",
-          }}
-          title={
-            company.monthEmailSent
-              ? `Guias do mês (${company.monthEmailCompetencia || ""}) enviadas por e-mail`
-              : `Guias do mês (${company.monthEmailCompetencia || ""}) ainda não enviadas`
-          }
-        >
-          {company.monthEmailSent ? "📤 Enviados" : "✉ Enviados"}
-        </span>
+            verde se enviadas, vermelho se não.
+            Empresa zerada não tem guia pra enviar → oculta a marcação de envio. */}
+        {!zerada && (
+          <span
+            style={{
+              // Q18: sem borda — cor na fonte (verde enviado / vermelho não enviado).
+              marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
+              color: company.monthEmailSent ? "#69FF47" : "#FF5757",
+            }}
+            title={
+              company.monthEmailSent
+                ? `Guias do mês (${company.monthEmailCompetencia || ""}) enviadas por e-mail`
+                : `Guias do mês (${company.monthEmailCompetencia || ""}) ainda não enviadas`
+            }
+          >
+            {company.monthEmailSent ? "📤 Enviados" : "✉ Enviados"}
+          </span>
+        )}
         {/* Q52: selo do certificado A1 — mesmo estilo dos demais (cor na fonte). */}
         <span
           style={{
