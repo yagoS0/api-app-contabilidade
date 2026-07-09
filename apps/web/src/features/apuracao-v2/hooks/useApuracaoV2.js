@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 export function useApuracaoV2({ api, companyId, feedback }) {
   const [cadastro, setCadastro] = useState(null);
   const [cnaePrincipalRef, setCnaePrincipalRef] = useState(null);
+  const [perfil, setPerfil] = useState(null); // Aba Fiscal / Bloco A
   const [produtos, setProdutos] = useState([]);
   const [pendencias, setPendencias] = useState([]);
   const [pendenciasCounts, setPendenciasCounts] = useState([]);
@@ -15,13 +16,15 @@ export function useApuracaoV2({ api, companyId, feedback }) {
     if (!api || !companyId) return;
     setLoading(true);
     try {
-      const [cad, prods, pends] = await Promise.all([
+      const [cad, perf, prods, pends] = await Promise.all([
         api.getCadastroFiscal(companyId).catch(() => ({ cadastro: null })),
+        api.getPerfilFiscal?.(companyId).catch(() => null) ?? null,
         api.listProdutosServicos(companyId).catch(() => ({ items: [] })),
         api.listPendencias(companyId, { resolvida: false }).catch(() => ({ items: [], counts: [] })),
       ]);
       setCadastro(cad?.cadastro || null);
       setCnaePrincipalRef(cad?.cnaePrincipalRef || null);
+      setPerfil(perf?.ok ? perf : null);
       setProdutos(prods?.items || []);
       setPendencias(pends?.items || []);
       setPendenciasCounts(pends?.counts || []);
@@ -46,6 +49,24 @@ export function useApuracaoV2({ api, companyId, feedback }) {
       feedback?.notifyError?.(err?.message || "Erro ao salvar");
       throw err;
     } finally { setSaving(false); }
+  }
+
+  async function savePerfil(perfilAtividades) {
+    setSaving(true);
+    try {
+      const out = await api.savePerfilFiscal(companyId, perfilAtividades);
+      if (!out?.ok) throw new Error(out?.message || "Falha");
+      feedback?.notifySuccess?.("Perfil fiscal salvo.");
+      setPerfil(out);
+      return out;
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Erro ao salvar perfil");
+      throw err;
+    } finally { setSaving(false); }
+  }
+
+  async function getSugestao(competencia) {
+    return api.getSugestaoAnexo(companyId, competencia);
   }
 
   async function createProduto(payload) {
@@ -138,6 +159,8 @@ export function useApuracaoV2({ api, companyId, feedback }) {
 
   return {
     cadastro, cnaePrincipalRef,
+    perfil, savePerfil,
+    getSugestao,
     produtos,
     pendencias, pendenciasCounts,
     loading, saving,

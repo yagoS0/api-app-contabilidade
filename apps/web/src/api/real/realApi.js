@@ -1115,6 +1115,16 @@ export function createRealApi() {
         body: JSON.stringify(payload),
       });
     },
+    // Módulo Fiscal (Aba Fiscal / Bloco A) — perfil de atividades permitidas.
+    async getPerfilFiscal(companyId) {
+      return request(`/firm/companies/${companyId}/perfil-fiscal`);
+    },
+    async savePerfilFiscal(companyId, perfilAtividades) {
+      return request(`/firm/companies/${companyId}/perfil-fiscal`, {
+        method: "PUT",
+        body: JSON.stringify({ perfilAtividades }),
+      });
+    },
     async listProdutosServicos(companyId, { ativo = true } = {}) {
       return request(`/firm/companies/${companyId}/produtos-servicos?ativo=${ativo}`);
     },
@@ -1160,6 +1170,10 @@ export function createRealApi() {
     },
     async getApuracaoSnapshot(companyId, competencia) {
       return request(`/firm/companies/${companyId}/apuracao-snapshot/${competencia}`);
+    },
+    // Módulo Fiscal (§1.3) — sugestão de anexo por nota.
+    async getSugestaoAnexo(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/apuracao-sugestao/${competencia}`);
     },
     // Q15 — fechamento
     async getFechamento(companyId, competencia) {

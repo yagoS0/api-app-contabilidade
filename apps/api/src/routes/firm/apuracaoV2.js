@@ -20,6 +20,8 @@ import {
   FechamentoError,
 } from "../../application/notas/apuracao/v2/FechamentoService.js";
 import { carregarAtividades } from "../../application/notas/apuracao/v2/AtividadeResolver.js";
+import { resolverPerfilFiscal, normalizarPerfilConfig } from "../../application/notas/apuracao/v2/PerfilFiscalService.js";
+import { sugerirAnexosDaCompetencia } from "../../application/notas/apuracao/v2/SugestaoAnexoService.js";
 
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
@@ -133,6 +135,91 @@ export function createApuracaoV2Router({ log } = {}) {
       } catch (err) {
         log?.warn({ err: err?.message, portalClientId }, "Falha ao salvar cadastro fiscal");
         return bad(res, 500, "cadastro_save_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // ─── Perfil Fiscal (Aba Fiscal / Bloco A) ─────────────────────────────────
+  // GET perfil-fiscal — atividades permitidas derivadas dos CNAEs + config do contador.
+  router.get(
+    "/perfil-fiscal",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      try {
+        const perfil = await resolverPerfilFiscal({ portalClientId });
+        return res.json({ ok: true, ...perfil });
+      } catch (err) {
+        log?.warn({ err: err?.message, portalClientId }, "Falha ao resolver perfil fiscal");
+        return bad(res, 500, "perfil_fetch_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // PUT perfil-fiscal — salva a config por CNAE (ativar/desativar, atividade padrão, atributos ISS).
+  router.put(
+    "/perfil-fiscal",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const perfilAtividades = normalizarPerfilConfig(req.body?.perfilAtividades);
+      try {
+        const existing = await prisma.cadastroFiscal.findUnique({ where: { portalClientId } });
+        if (existing) {
+          const cadastro = await prisma.cadastroFiscal.update({
+            where: { portalClientId },
+            data: { perfilAtividades },
+          });
+          const perfil = await resolverPerfilFiscal({ portalClientId });
+          return res.json({ ok: true, cadastro, ...perfil });
+        }
+        // Sem CadastroFiscal → cria mínimo a partir do Company (CNPJ), como faz o GET /cadastro-fiscal.
+        const pc = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { companyId: true } });
+        const company = pc?.companyId
+          ? await prisma.company.findUnique({
+              where: { id: pc.companyId },
+              select: { cnaePrincipal: true, cnaesSecundarios: true, regimeTributario: true, optanteSimples: true, simplesDataOpcao: true },
+            }).catch(() => null)
+          : null;
+        if (!company?.cnaePrincipal) {
+          return bad(res, 409, "cadastro_fiscal_required", "Salve o Cadastro Fiscal (regime + CNAE) antes de configurar o perfil.");
+        }
+        const cadastro = await prisma.cadastroFiscal.create({
+          data: {
+            portalClientId,
+            regime: mapRegime(company),
+            dataOpcaoSN: company.simplesDataOpcao || null,
+            cnaePrincipal: String(company.cnaePrincipal).replace(/\D+/g, ""),
+            cnaesSecundarios: (company.cnaesSecundarios || []).map((c) => String(c).replace(/\D+/g, "")).filter(Boolean),
+            perfilAtividades,
+            createdByUserId: req.auth?.user?.id,
+          },
+        });
+        const perfil = await resolverPerfilFiscal({ portalClientId });
+        return res.json({ ok: true, cadastro, ...perfil });
+      } catch (err) {
+        log?.warn({ err: err?.message, portalClientId }, "Falha ao salvar perfil fiscal");
+        return bad(res, 500, "perfil_save_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // GET apuracao-sugestao/:competencia — sugestão de anexo por nota (§1.3).
+  router.get(
+    "/apuracao-sugestao/:competencia",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia || "");
+      if (!/^\d{4}-\d{2}$/.test(competencia)) {
+        return bad(res, 400, "invalid_competencia", "competência YYYY-MM obrigatória");
+      }
+      try {
+        const out = await sugerirAnexosDaCompetencia({ portalClientId, competencia });
+        return res.json({ ok: true, ...out });
+      } catch (err) {
+        log?.warn({ err: err?.message, portalClientId, competencia }, "Falha na sugestão de anexo");
+        return bad(res, 500, "sugestao_failed", err?.message || "Erro");
       }
     }
   );

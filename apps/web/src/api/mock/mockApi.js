@@ -1792,6 +1792,8 @@ export function createMockApi() {
     // Q14.2 — apuração v2
     async getCadastroFiscal() { await delay(40); return { ok: true, cadastro: null, cnaePrincipalRef: null }; },
     async saveCadastroFiscal() { await delay(60); return { ok: true, cadastro: null }; },
+    async getPerfilFiscal() { await delay(40); return { ok: true, regime: null, usaFatorR: false, temCadastro: false, temFatorR: false, candidatos: [] }; },
+    async savePerfilFiscal() { await delay(60); return { ok: true, candidatos: [] }; },
     async listProdutosServicos() { await delay(40); return { ok: true, items: [] }; },
     async createProdutoServico() { await delay(60); return { ok: true, produto: null }; },
     async updateProdutoServico() { await delay(60); return { ok: true, produto: null }; },
@@ -1801,6 +1803,7 @@ export function createMockApi() {
     async classificarV2() { await delay(120); return { ok: true, result: { processed: 0, classified: 0, pendentes: 0, byTipo: {}, byFonte: {} } }; },
     async apurarV2() { await delay(150); return { ok: true, result: { ok: true, snapshot: null, dasCalculadoLocal: 0, rbt12: 0, receitaPorAnexo: {}, aliquotaEfetivaPorAnexo: {} } }; },
     async getApuracaoSnapshot() { await delay(40); return { ok: true, snapshot: null }; },
+    async getSugestaoAnexo() { await delay(60); return { ok: true, competencia: null, totalNotas: 0, perfilConfigurado: false, anexosAtivos: [], resumo: { alta: 0, media: 0, revisao: 0, porAnexo: {} }, notas: [] }; },
     async getFechamento() { await delay(60); return { ok: true, dados: { faturamento: { interno: 0, externo: 0, total: 0 }, atividades: [], rbt12: 0, disparidades: [], estado: "aberta", folhaMensal12: null, regimeApuracao: "COMPETENCIA" } }; },
     async calcularFechamento() { await delay(150); return { ok: true, result: { dasValor: 0, rbt12: 0, mensagens: [] } }; },
     async salvarFechamento() { await delay(80); return { ok: true, result: { snapshot: { estado: "fechada" } } }; },

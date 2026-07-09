@@ -1279,6 +1279,10 @@ model CadastroFiscal {
   // usa receitaPaCompetencia* (COMPETENCIA) ou receitaPaCaixa* (CAIXA).
   regimeApuracao    String   @default("COMPETENCIA") // COMPETENCIA | CAIXA
   observacoes       String?
+  // Módulo Fiscal (Aba Fiscal / Bloco A): config por CNAE do perfil de atividades.
+  // Array: [{ cnae, ativo, padrao, aliquotaIss?, codigoServicoMunicipal?, retencaoFonte?, domicilioFiscal?, obs? }]
+  // Entrada do motor de sugestão de anexo (restringe candidatos ao conjunto da empresa).
+  perfilAtividades  Json?
   createdByUserId   String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

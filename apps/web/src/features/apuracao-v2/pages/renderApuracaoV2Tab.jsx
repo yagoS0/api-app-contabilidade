@@ -5,6 +5,8 @@ import { PANEL, fmtDate } from "../../notas/components/notasStyles";
 import { CadastroFiscalForm } from "../components/CadastroFiscalForm";
 import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
 import { MotorPanel } from "../components/MotorPanel";
+import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
+import { SugestaoAnexoPanel } from "../components/SugestaoAnexoPanel";
 
 const TIPOS_RECEITA_LABEL = {
   REVENDA_MERCADORIA: "Anexo I",
@@ -23,6 +25,8 @@ export function ApuracaoV2Tab({ panel }) {
 
   const tabs = [
     { key: "cadastro", label: "📋 Cadastro Fiscal" },
+    { key: "fiscal", label: "🧾 Aba Fiscal" },
+    { key: "sugestao", label: "🔎 Sugestões" },
     { key: "produtos", label: `📦 Produtos/Serviços (${panel.produtos.length})` },
     { key: "pendencias", label: `⚠ Pendências (${panel.pendencias.length})` },
     { key: "motor", label: "🧮 Apurar (motor local)" },
@@ -61,6 +65,12 @@ export function ApuracaoV2Tab({ panel }) {
           onSave={panel.saveCadastro}
         />
       )}
+
+      {/* ABA FISCAL (Bloco A) */}
+      {activeSub === "fiscal" && <AbaFiscalPanel panel={panel} />}
+
+      {/* SUGESTÃO DE ANEXO POR NOTA (§1.3) */}
+      {activeSub === "sugestao" && <SugestaoAnexoPanel panel={panel} />}
 
       {/* PRODUTOS */}
       {activeSub === "produtos" && (
