@@ -204,6 +204,16 @@ export function CompanyForm({
         </select>
       </label>
       <label>
+        Empresa zerada (sem movimento)
+        <select
+          value={form.empresaZerada ? "sim" : "nao"}
+          onChange={(event) => onChange("empresaZerada", event.target.value === "sim")}
+        >
+          <option value="nao">Não</option>
+          <option value="sim">Sim — só obrigações zeradas</option>
+        </select>
+      </label>
+      <label>
         CNAE principal
         <input value={form.cnaePrincipal} onChange={(event) => onChange("cnaePrincipal", event.target.value)} required />
       </label>

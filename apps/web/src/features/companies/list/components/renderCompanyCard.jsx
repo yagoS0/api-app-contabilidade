@@ -74,6 +74,17 @@ export function CompanyCard({ company, onAccess }) {
   const fechadaTitle = fechada
     ? `Empresa fechada${company.fechamentoContabil?.fechadoEm ? ` em ${new Date(company.fechamentoContabil.fechadoEm).toLocaleDateString("pt-BR")}` : ""}`
     : undefined;
+  // Regime tributário — tag Simples/Presumido/Real (vem do cadastro legado).
+  const regime = legacy?.regimeTributario || null;
+  const regimeLabel = regime === "SIMPLES" ? "Simples"
+    : regime === "LUCRO_PRESUMIDO" ? "Presumido"
+    : regime === "LUCRO_REAL" ? "Lucro Real"
+    : regime === "MEI" ? "MEI" : null;
+  const regimeColor = regime === "SIMPLES" ? "#8BE9FD"
+    : regime === "LUCRO_PRESUMIDO" ? "#FFB86C"
+    : regime === "LUCRO_REAL" ? "#BD93F9" : "#6272A4";
+  // Empresa zerada (sem movimento) — só enviamos obrigações zeradas; não há guias/impostos.
+  const zerada = Boolean(company?.empresaZerada);
 
   return (
     <article className="company-tile" style={cardStyle}>
@@ -83,6 +94,30 @@ export function CompanyCard({ company, onAccess }) {
           {fechada && <span title={fechadaTitle} style={{ marginLeft: 6 }}>🔒</span>}
         </h3>
         <p style={{ color: "#FFFFFF" }}>CNPJ: {company.cnpj}</p>
+        <p style={{ margin: "4px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          {regimeLabel && (
+            <span
+              style={{
+                fontSize: "0.7rem", fontWeight: 700, padding: "1px 8px", borderRadius: 999,
+                border: `1px solid ${regimeColor}`, color: regimeColor,
+              }}
+              title={`Regime tributário: ${regimeLabel}`}
+            >
+              {regimeLabel}
+            </span>
+          )}
+          {zerada && (
+            <span
+              style={{
+                fontSize: "0.7rem", fontWeight: 700, padding: "1px 8px", borderRadius: 999,
+                border: "1px solid #FFB347", color: "#FFB347",
+              }}
+              title="Empresa zerada (sem movimento) — só enviamos obrigações zeradas"
+            >
+              🚫 Zerada
+            </span>
+          )}
+        </p>
       </div>
       <p className="company-serpro-status" aria-label="Status da integração SERPRO">
         <span
@@ -105,7 +140,7 @@ export function CompanyCard({ company, onAccess }) {
               : `Guias do mês (${company.monthEmailCompetencia || ""}) ainda não enviadas`
           }
         >
-          {company.monthEmailSent ? "📤 guias" : "✉ guias"}
+          {company.monthEmailSent ? "📤 Enviados" : "✉ Enviados"}
         </span>
         {/* Q52: selo do certificado A1 — mesmo estilo dos demais (cor na fonte). */}
         <span
@@ -140,6 +175,15 @@ export function CompanyCard({ company, onAccess }) {
         </p>
       )}
       <p className="compliance-tags" aria-label="Status de guias obrigatórias">
+        {zerada ? (
+          <span
+            style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "#FFB347" }}
+            title="Empresa zerada (sem movimento) — sem guias/impostos; enviamos apenas obrigações zeradas"
+          >
+            Empresa zerada — sem obrigações com imposto
+          </span>
+        ) : (
+        <>
         {tags.map((tag) => {
           // Q17: só a BORDA colorida por estado; texto neutro; cantos mais quadrados.
           // accent (PARC_DAS) = laranja; present=verde, vazio=amarelo, missing=vermelho.
@@ -167,6 +211,8 @@ export function CompanyCard({ company, onAccess }) {
             Sem obrigações
           </span>
         ) : null}
+        </>
+        )}
       </p>
       <Button type="button" className="company-tile__action" onClick={() => onAccess(company.companyId)}>
         Acessar

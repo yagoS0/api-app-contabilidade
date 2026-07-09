@@ -460,6 +460,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       ownerEmail: ownerEmail || null,
       guideNotificationEmail: portal.guideNotificationEmail || null,
       hasProlabore: Boolean(portal.hasProlabore),
+      empresaZerada: Boolean(portal.empresaZerada),
       email: legacyEmail,
       telefone: legacy?.telefone || null,
       portalCreatedAt: portal.createdAt,
@@ -488,6 +489,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           cnpj: true,
           guideNotificationEmail: true,
           hasProlabore: true,
+          empresaZerada: true,
           inscricaoMunicipal: true,
           uf: true,
           municipio: true,
@@ -553,6 +555,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             cnpj: true,
             guideNotificationEmail: true,
             hasProlabore: true,
+            empresaZerada: true,
             inscricaoMunicipal: true,
             uf: true,
             municipio: true,
@@ -759,6 +762,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             cnpj,
             guideNotificationEmail: normalizedCompany.guideNotificationEmail || null,
             hasProlabore: Boolean(body.hasProlabore),
+            empresaZerada: Boolean(body.empresaZerada),
             inscricaoMunicipal: inscricaoMunicipalInput,
             uf: normalizedCompany.endereco?.uf || null,
             municipio: normalizedCompany.endereco?.cidade || null,
@@ -887,6 +891,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           if (Object.prototype.hasOwnProperty.call(body, "hasProlabore")) {
             portalUpdateData.hasProlabore = Boolean(body.hasProlabore);
           }
+          if (Object.prototype.hasOwnProperty.call(body, "empresaZerada")) {
+            portalUpdateData.empresaZerada = Boolean(body.empresaZerada);
+          }
           const updatedPortal = await tx.portalClient.update({
             where: { id: portalCompanyId },
             data: portalUpdateData,
@@ -896,6 +903,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               cnpj: true,
               guideNotificationEmail: true,
               hasProlabore: true,
+              empresaZerada: true,
               inscricaoMunicipal: true,
               uf: true,
               municipio: true,
@@ -3297,12 +3305,24 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       ];
     }
 
-    const companies = await prisma.portalClient.findMany({
+    const companiesRaw = await prisma.portalClient.findMany({
       where: companiesWhere,
       orderBy: { razao: "asc" },
-      select: { id: true, razao: true, cnpj: true },
+      select: { id: true, razao: true, cnpj: true, companyId: true },
       take: 500,
     });
+
+    // Regime tributário (da Company legada). Lucro Presumido e Lucro Real apuram em fluxo
+    // SEPARADO — não entram na aba de Apuração (que é do Simples Nacional / PGDAS-D).
+    const REGIMES_FORA_APURACAO = new Set(["LUCRO_PRESUMIDO", "LUCRO_REAL"]);
+    const legacyIds = companiesRaw.map((c) => c.companyId).filter(Boolean);
+    const regimes = legacyIds.length
+      ? await prisma.company.findMany({ where: { id: { in: legacyIds } }, select: { id: true, regimeTributario: true } })
+      : [];
+    const regimeByCompanyId = new Map(regimes.map((r) => [r.id, r.regimeTributario || null]));
+    const regimeDe = (c) => (c.companyId ? regimeByCompanyId.get(c.companyId) || null : null);
+    const companies = companiesRaw.filter((c) => !REGIMES_FORA_APURACAO.has(regimeDe(c)));
+
     const ids = companies.map((c) => c.id);
     if (ids.length === 0) return res.json({ ok: true, competencia, items: [] });
 
@@ -3371,7 +3391,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         portalClientId: c.id,
         razao: c.razao,
         cnpj: c.cnpj,
-        regime: null,
+        regime: regimeDe(c),
         // Q15: estado vem do snapshot (aberta/configurando/calculada/fechada/transmitida)
         estado: snap?.estado || "aberta",
         dasCalculado: snap?.dasCalculadoLocal != null ? Number(snap.dasCalculadoLocal) : null,

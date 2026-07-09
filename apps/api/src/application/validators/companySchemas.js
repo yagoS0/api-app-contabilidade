@@ -34,6 +34,7 @@ const companyBaseFields = {
   endereco: enderecoSchema,
   guideNotificationEmail: z.string().email().or(z.literal("")).optional().nullable(),
   hasProlabore: z.boolean().optional(),
+  empresaZerada: z.boolean().optional(),
 };
 
 // POST /firm/companies — cria empresa + owner (cliente).

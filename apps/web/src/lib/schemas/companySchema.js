@@ -51,6 +51,7 @@ export const companyCreateFormSchema = z.object({
   enderecoCep: z.string().max(20).optional().or(z.literal("")),
   enderecoComplemento: z.string().max(200).optional().or(z.literal("")),
   hasProlabore: z.boolean().optional(),
+  empresaZerada: z.boolean().optional(),
 });
 
 // Schema pra modo EDIÇÃO (PATCH) — senha opcional, CNPJ imutável (não revalida)

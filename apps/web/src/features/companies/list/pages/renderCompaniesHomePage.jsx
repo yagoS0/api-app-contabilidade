@@ -90,15 +90,24 @@ export function CompaniesHomePage({
   const [search, setSearch] = useState("");
   const [documentFilter, setDocumentFilter] = useState("pending");
   const [serproFilter, setSerproFilter] = useState("all");
-  const [emailFilter, setEmailFilter] = useState("all"); // all | notSent (Q16)
+  const [emailFilter, setEmailFilter] = useState("all"); // all | sent | notSent (Q16)
+  const [apuracaoFilter, setApuracaoFilter] = useState("all"); // all | apurados | naoApurados
+  const [certFilter, setCertFilter] = useState("all"); // all | comCert | semCert
 
   const filteredCompanies = useMemo(() => {
     const normalizedQuery = normalizeSearch(search);
 
     // 1) Busca por nome/CNPJ continua filtrando (remove quem não bate).
-    //    Q16: filtro "Só não enviados" também REMOVE quem já teve o e-mail do mês enviado.
+    //    Q16: filtro "Enviados/Só não enviados" também REMOVE quem não bate.
+    //    Novos filtros (apuração / certificado) também REMOVEM quem não bate.
     const searched = companies.filter((company) => {
       if (emailFilter === "notSent" && company?.monthEmailSent) return false;
+      if (emailFilter === "sent" && !company?.monthEmailSent) return false;
+      if (apuracaoFilter === "apurados" && !company?.apuracao?.apurada) return false;
+      if (apuracaoFilter === "naoApurados" && company?.apuracao?.apurada) return false;
+      const temCert = Boolean(company?.legacyCompany?.certStorageKey);
+      if (certFilter === "comCert" && !temCert) return false;
+      if (certFilter === "semCert" && temCert) return false;
       if (!normalizedQuery) return true;
       return (
         normalizeSearch(company?.razao).includes(normalizedQuery) ||
@@ -122,7 +131,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter]);
 
   return (
     <div className="dashboard-home-page">
@@ -299,10 +308,29 @@ export function CompaniesHomePage({
             </label>
 
             <label style={FILTER_LABEL}>
-              E-mail do mês
+              Enviados
               <select value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 150 }}>
                 <option value="all">Todas</option>
+                <option value="sent">Só enviados</option>
                 <option value="notSent">Só não enviados</option>
+              </select>
+            </label>
+
+            <label style={FILTER_LABEL}>
+              Apuração
+              <select value={apuracaoFilter} onChange={(event) => setApuracaoFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 150 }}>
+                <option value="all">Todas</option>
+                <option value="apurados">Apurados</option>
+                <option value="naoApurados">Não apurados</option>
+              </select>
+            </label>
+
+            <label style={FILTER_LABEL}>
+              Certificado
+              <select value={certFilter} onChange={(event) => setCertFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 160 }}>
+                <option value="all">Todas</option>
+                <option value="comCert">Com certificado</option>
+                <option value="semCert">Sem certificado</option>
               </select>
             </label>
           </section>
