@@ -15,7 +15,14 @@ export function NotasFiscaisTab({ notasPanel }) {
     notas, notasTotal, notasSummary,
     notasFilters, setNotasFilters,
     loadingNotas, loadNotas,
+    importing, importResult, importNotas,
   } = notasPanel;
+
+  function onPickFiles(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ""; // permite reimportar o mesmo arquivo
+    if (files.length && importNotas) importNotas(files);
+  }
 
   return (
     <div style={{ padding: 24, color: PANEL.text, maxWidth: 1400, margin: "0 auto" }}>
@@ -27,6 +34,29 @@ export function NotasFiscaisTab({ notasPanel }) {
           </button>
         </div>
       )}
+
+      {/* Q56: import manual de notas (XML) — pra empresas onde a captura automática não trouxe as notas */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16, padding: 12, background: PANEL.field, borderRadius: 6 }}>
+        <label
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 6,
+            border: "none", background: importing ? "#555" : "#2E86DE", color: "white",
+            cursor: importing ? "default" : "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: importing ? 0.7 : 1,
+          }}
+        >
+          {importing ? "Importando…" : "⬆️ Importar notas (XML)"}
+          <input type="file" accept=".xml,text/xml,application/xml" multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
+        </label>
+        <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>
+          Envie XML(s) de NFS-e quando a captura automática não trouxe as notas desta empresa.
+        </span>
+        {importResult && (
+          <span style={{ fontSize: "0.78rem", color: PANEL.text }}>
+            → {importResult.created ?? 0} nova(s), {importResult.updated ?? 0} atualizada(s)
+            {Array.isArray(importResult.errors) && importResult.errors.length ? `, ${importResult.errors.length} com erro` : ""}
+          </span>
+        )}
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
         <DfeCapturePanel

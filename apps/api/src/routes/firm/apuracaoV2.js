@@ -16,6 +16,7 @@ import {
   calcularFechamento,
   salvarFechamento,
   transmitirFechamento,
+  reabrirFechamento,
   FechamentoError,
 } from "../../application/notas/apuracao/v2/FechamentoService.js";
 import { carregarAtividades } from "../../application/notas/apuracao/v2/AtividadeResolver.js";
@@ -407,6 +408,49 @@ export function createApuracaoV2Router({ log } = {}) {
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha transmitirFechamento");
         return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : statusForFechamentoErr(err), err?.code || "transmitir_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // Q55 — Reabrir uma apuração "transmitida" para retificar (rebaixa p/ "calculada").
+  router.post(
+    "/fechamento/:competencia/reabrir",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      try {
+        const result = await reabrirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha reabrirFechamento");
+        return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : statusForFechamentoErr(err), err?.code || "reabrir_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // Q55 — Retransmitir como RETIFICADORA (tipoDeclaracao:2). Dupla confirmação obrigatória.
+  router.post(
+    "/fechamento/:competencia/retificar",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      const { confirmCompetencia, confirmRetificar } = req.body || {};
+      if (confirmCompetencia !== competencia) {
+        return bad(res, 400, "confirm_competencia_mismatch",
+          "Digite a competência exata pra confirmar a retificação.");
+      }
+      if (confirmRetificar !== true) {
+        return bad(res, 400, "confirm_retificar_required",
+          "Confirme explicitamente que deseja RETIFICAR (retransmitir a declaração à Receita).");
+      }
+      try {
+        const result = await transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id, retificar: true });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha retificar (transmitir)");
+        return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : statusForFechamentoErr(err), err?.code || "retificar_failed", err?.message || "Erro");
       }
     }
   );

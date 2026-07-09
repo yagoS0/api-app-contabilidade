@@ -28,6 +28,24 @@ function rangeMes(competencia) {
   return { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) };
 }
 
+// Q55: soma das atividades preenchidas (interno + externo).
+function somaAtividades(atividades) {
+  return round2((Array.isArray(atividades) ? atividades : []).reduce(
+    (s, a) => s + Number(a?.valorInterno || 0) + Number(a?.valorExterno || 0), 0));
+}
+
+// Q55: faturamento REAL da competência = notas EMIT autorizadas (fonte da guarda anti-zero).
+// Se não houver notas capturadas, retorna 0 (não bloqueia — tratamos como "sem movimento").
+async function faturamentoEmitDaCompetencia(portalClientId, competencia) {
+  if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) return 0;
+  const { gte, lt } = rangeMes(competencia);
+  const agg = await prisma.portalInvoice.aggregate({
+    where: { clientId: String(portalClientId), papel: "EMIT", statusEfetivo: "autorizada", competencia: { gte, lt } },
+    _sum: { total: true },
+  });
+  return round2(Number(agg._sum?.total || 0));
+}
+
 /** Receita do mês segregada por tipoReceita + mercado (interno/externo). */
 async function receitaPorTipoMercado({ portalClientId, competencia }) {
   const notas = await prisma.portalInvoice.findMany({
@@ -279,6 +297,19 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   const faturamentoInterno = round2(atividades.reduce((s, a) => s + Number(a.valorInterno || 0), 0));
   const faturamentoExterno = round2(atividades.reduce((s, a) => s + Number(a.valorExterno || 0), 0));
 
+  // Q55: GUARDA ANTI-ZERO — não gravar apuração zerada de empresa que TEM faturamento.
+  // (Empresa sem notas capturadas → faturamento 0 → não bloqueia, é "sem movimento" legítimo.)
+  if (faturamentoInterno + faturamentoExterno === 0) {
+    const fat = await faturamentoEmitDaCompetencia(portalClientId, competencia);
+    if (fat > 0) {
+      throw new FechamentoError(
+        "APURACAO_ZERADA_COM_FATURAMENTO",
+        `Empresa com faturamento de R$ ${fat.toFixed(2)} na competência, mas as atividades somam R$ 0,00. Classifique/preencha as receitas antes de apurar.`,
+        { faturamento: fat },
+      );
+    }
+  }
+
   // Persiste snapshot (configurando→calculada)
   const idempotencyKey = `${portalClientId}:${competencia}:${JSON.stringify(atividades)}:${resultado.dasValor}`;
   const data = {
@@ -341,14 +372,29 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
 /**
  * [Apurar/Transmitir] individual — consulta-antes-de-transmitir + TRANSDECLARACAO11.
  */
-export async function transmitirFechamento({ portalClientId, competencia, userId }) {
+export async function transmitirFechamento({ portalClientId, competencia, userId, retificar = false }) {
   const snapshot = await prisma.apuracaoSnapshot.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
   });
   if (!snapshot) throw new FechamentoError("NAO_CALCULADA", "Apuração não calculada.");
-  if (!["fechada", "calculada"].includes(snapshot.estado)) {
-    throw new FechamentoError("ESTADO_INVALIDO", `Estado "${snapshot.estado}" não permite transmitir.`);
+  // Q55: retificar permite reprocessar uma competência já "transmitida".
+  const estadosOk = retificar ? ["fechada", "calculada", "transmitida"] : ["fechada", "calculada"];
+  if (!estadosOk.includes(snapshot.estado)) {
+    throw new FechamentoError("ESTADO_INVALIDO", `Estado "${snapshot.estado}" não permite ${retificar ? "retificar" : "transmitir"}.`);
   }
+
+  // Q55: GUARDA ANTI-ZERO — nunca transmitir declaração zerada de empresa com faturamento.
+  // (Roda ANTES de qualquer chamada ao SERPRO — usa os valores já salvos no snapshot.)
+  const somaAtiv = somaAtividades(snapshot.atividadesEscolhidas);
+  const fatEmit = await faturamentoEmitDaCompetencia(portalClientId, competencia);
+  if (fatEmit > 0 && somaAtiv === 0) {
+    throw new FechamentoError(
+      "TRANSMISSAO_ZERADA_BLOQUEADA",
+      `Transmissão bloqueada: empresa com faturamento R$ ${fatEmit.toFixed(2)} mas a apuração está zerada (atividades R$ 0,00). Recalcule com os valores corretos antes de transmitir.`,
+      { faturamento: fatEmit },
+    );
+  }
+
   const { contratanteCnpj, contribuinteCnpj } = await resolverCnpjs(portalClientId);
 
   // 1. CONSULTA-ANTES-DE-TRANSMITIR: já existe declaração pra esse PA?
@@ -357,7 +403,8 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
     contratanteCnpj, contribuinteCnpj, periodoApuracao: competencia,
   }).catch(() => null);
   const jaDeclarado = detectarDeclaracaoExistente(indice);
-  if (jaDeclarado) {
+  // Q55: em RETIFICAÇÃO, NÃO fazemos o short-circuit — o objetivo é justamente retransmitir.
+  if (jaDeclarado && !retificar) {
     const updated = await prisma.apuracaoSnapshot.update({
       where: { id: snapshot.id },
       data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
@@ -378,6 +425,8 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
       {
         contratanteCnpj, contribuinteCnpj, competencia,
         regimeApuracao: "COMPETENCIA",
+        // Q55: retificadora (2) na retificação explícita; original (1) caso contrário.
+        tipoDeclaracao: retificar ? 2 : 1,
         atividades: snapshot.atividadesEscolhidas || [],
         receitasBrutasAnteriores: rbt.detalhePorMes || [],
         // Mesmo gate do calcular — senão a transmissão sofreria a mesma rejeição da RFB.
@@ -389,7 +438,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
     // Q44: rede de segurança — se o SERPRO recusar por já existir declaração (pede Retificadora),
     // a consulta-antes não pegou, mas o erro prova que já está declarado. Decisão do dono: só
     // reconhecer, NÃO retransmitir (sem retificadora). Marca como já declarada em vez de erro.
-    if (erroIndicaJaDeclarado(err)) {
+    if (erroIndicaJaDeclarado(err) && !retificar) {
       const updated = await prisma.apuracaoSnapshot.update({
         where: { id: snapshot.id },
         data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
@@ -410,6 +459,27 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
     },
   });
   return { ok: true, jaDeclarado: false, dasValor: resultado.dasValor, numeroDeclaracao: resultado.numeroDeclaracao, snapshot: updated };
+}
+
+/**
+ * Q55 — [Reabrir para retificar] rebaixa uma apuração "transmitida" → "calculada",
+ * para o contador corrigir os valores (modal → calcular → fechar) e retransmitir como retificadora.
+ * Não toca na RFB; só muda o estado local.
+ */
+export async function reabrirFechamento({ portalClientId, competencia, userId }) {
+  void userId;
+  const snapshot = await prisma.apuracaoSnapshot.findUnique({
+    where: { portalClientId_competencia: { portalClientId, competencia } },
+  });
+  if (!snapshot) throw new FechamentoError("NAO_CALCULADA", "Apuração não encontrada.");
+  if (snapshot.estado !== "transmitida") {
+    throw new FechamentoError("ESTADO_INVALIDO", `Só uma apuração 'transmitida' pode ser reaberta para retificar (estado atual: ${snapshot.estado}).`);
+  }
+  const updated = await prisma.apuracaoSnapshot.update({
+    where: { id: snapshot.id },
+    data: { estado: "calculada", erroMensagem: null },
+  });
+  return { ok: true, snapshot: updated };
 }
 
 /** Heurística: o índice CONSDECLARACAO13 indica declaração existente pro PA?

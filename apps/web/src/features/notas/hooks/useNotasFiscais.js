@@ -26,6 +26,10 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   const [adnState, setAdnState] = useState(null);
   const [adnSyncing, setAdnSyncing] = useState(false);
   const [adnLastResult, setAdnLastResult] = useState(null);
+
+  // Q56: import MANUAL de notas (XML)
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   // Q12.C.1: listagem de notas + resumo
   const [notas, setNotas] = useState([]);
   const [notasTotal, setNotasTotal] = useState(0);
@@ -198,6 +202,40 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     }
   }
 
+  // Q56: import MANUAL de notas via upload de XML (pra empresas onde a captura automática falhou)
+  async function importNotas(files) {
+    const list = Array.isArray(files) ? files : (files ? [files] : []);
+    if (!list.length) return;
+    if (!api?.importInvoicesXml) {
+      feedback?.notifyError?.("Import de notas não disponível.");
+      return;
+    }
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const out = await api.importInvoicesXml(companyId, list);
+      setImportResult(out || null);
+      const created = out?.created ?? 0;
+      const updated = out?.updated ?? 0;
+      const dup = out?.duplicates ?? 0;
+      const errs = Array.isArray(out?.errors) ? out.errors.length : 0;
+      if (errs && !created && !updated) {
+        feedback?.notifyError?.(`Nenhuma nota importada — ${errs} arquivo(s) com erro.`);
+      } else {
+        feedback?.notifySuccess?.(
+          `Importação concluída — ${created} nova(s), ${updated} atualizada(s)` +
+          (dup ? `, ${dup} duplicada(s)` : "") +
+          (errs ? `, ${errs} com erro` : "") + "."
+        );
+      }
+      await loadNotas();
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Falha ao importar notas.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return {
     ano, setAno,
     competencias, procuracoes, pendencias,
@@ -214,5 +252,7 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     notas, notasTotal, notasSummary,
     notasFilters, setNotasFilters,
     loadingNotas, loadNotas,
+    // Q56: import manual de notas (XML)
+    importing, importResult, importNotas,
   };
 }

@@ -16,7 +16,7 @@ function pasAnteriores(competencia, n = 12) {
   return out;
 }
 
-export function FechamentoModal({ api, feedback, portalClientId, competencia, razao, onClose, onChanged }) {
+export function FechamentoModal({ api, feedback, portalClientId, competencia, razao, retificar = false, onClose, onChanged }) {
   const [dados, setDados] = useState(null);
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState(false);
@@ -152,12 +152,15 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     if (confirmComp !== competencia) { feedback?.notifyError?.("Digite a competência exata."); return; }
     setActing(true);
     try {
-      const out = await api.transmitirFechamento(portalClientId, competencia, confirmComp);
+      // Q55: em modo retificar, retransmite como RETIFICADORA (tipoDeclaracao:2, fura o guard "já declarado").
+      const out = retificar
+        ? await api.retificarFechamento(portalClientId, competencia, confirmComp)
+        : await api.transmitirFechamento(portalClientId, competencia, confirmComp);
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       const r = out.result || {};
-      feedback?.notifySuccess?.(r.jaDeclarado
-        ? "PA já declarado — não retransmitido."
-        : `Transmitida! Declaração ${r.numeroDeclaracao || "?"}`);
+      feedback?.notifySuccess?.(retificar
+        ? `Retificadora transmitida! Declaração ${r.numeroDeclaracao || "?"}`
+        : (r.jaDeclarado ? "PA já declarado — não retransmitido." : `Transmitida! Declaração ${r.numeroDeclaracao || "?"}`));
       setShowTransmit(false);
       onChanged?.();
       onClose?.();
@@ -325,13 +328,19 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
               <button onClick={handleSalvar} disabled={acting || !resultado}
                 style={btn("#FFB347")} title={!resultado ? "Calcule antes de salvar" : ""}>💾 Salvar (fechar)</button>
               <button onClick={() => setShowTransmit(true)} disabled={acting || !resultado}
-                style={btn("#69FF47")} title={!resultado ? "Calcule antes de transmitir" : ""}>📤 Apurar/Transmitir</button>
+                style={btn(retificar ? "#BD93F9" : "#69FF47")} title={!resultado ? "Calcule antes de transmitir" : ""}>
+                {retificar ? "🔄 Retransmitir (retificadora)" : "📤 Apurar/Transmitir"}
+              </button>
             </div>
 
             {/* Confirmação de transmissão individual */}
             {showTransmit && (
               <div style={{ padding: 12, background: "rgba(255,71,87,0.08)", border: "1px solid #FF4757", borderRadius: 6, display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ color: "#FF4757", fontSize: "0.85rem", fontWeight: 600 }}>⚠ Transmissão OFICIAL — digite a competência ({competencia}) pra confirmar:</div>
+                <div style={{ color: "#FF4757", fontSize: "0.85rem", fontWeight: 600 }}>
+                  {retificar
+                    ? `⚠ RETIFICADORA OFICIAL — substitui a declaração já enviada. Digite a competência (${competencia}) pra confirmar:`
+                    : `⚠ Transmissão OFICIAL — digite a competência (${competencia}) pra confirmar:`}
+                </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input value={confirmComp} onChange={(e) => setConfirmComp(e.target.value)} placeholder={competencia} style={{ ...inputS, fontFamily: "monospace", flex: 1 }} />
                   <button onClick={handleTransmitir} disabled={acting || confirmComp !== competencia} style={btn("#FF4757", "#fff")}>{acting ? "Transmitindo…" : "Confirmar"}</button>

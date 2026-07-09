@@ -1,19 +1,14 @@
-// Q15.6 — Worker da fila de transmissão de apurações ao SERPRO.
+// Q15.6 — Fila de transmissão de apurações ao SERPRO.
 //
-// Processa ApuracaoBatchItem (status pendente) em lotes pequenos, respeitando
-// throttling + custo SERPRO. Lock global (1 processador por vez). Falha isolada
-// por item (não derruba o lote). Consulta-antes-de-transmitir (via FechamentoService).
-//
-// Opt-in por env APURACAO_BATCH_WORKER_ENABLED=1 (igual aos outros workers).
+// Q55: o LOOP autônomo (runApuracaoBatchLoop) foi REMOVIDO — ele transmitia declarações à RFB
+// sozinho, drenando a fila GLOBAL (sem filtrar por job), e foi a causa de apurações zeradas
+// "enviadas sozinhas". Agora a transmissão em lote é 100% sob clique: a rota
+// POST /firm/apuracao/batch/:jobId/run-now chama runApuracaoBatchOnce(jobId) de forma SÍNCRONA,
+// e o processamento é ESCOPADO ao jobId (nunca toca itens de outro job).
 
-import { log } from "../config.js";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { tryAcquireGuideLock, releaseGuideLock } from "../application/guides/GuideLockService.js";
 import { transmitirFechamento } from "../application/notas/apuracao/v2/FechamentoService.js";
 
-const LOCK_ID = "apuracao_batch_lock";
-const LOCK_TTL_MS = 15 * 60 * 1000;
-const LOOP_INTERVAL_MS = 30 * 1000;
 const ITEMS_POR_CICLO = 4;   // cap por ciclo (throttling/custo SERPRO)
 const MAX_TENTATIVAS = 3;
 const BACKOFF_MS = 5 * 60 * 1000;
@@ -73,11 +68,16 @@ async function atualizarJob(jobId) {
   });
 }
 
-/** Roda 1 ciclo: pega até ITEMS_POR_CICLO itens prontos e processa. */
-export async function runApuracaoBatchOnce() {
+/**
+ * Roda 1 ciclo ESCOPADO a um job: pega até ITEMS_POR_CICLO itens pendentes DAQUELE job e transmite.
+ * Q55: exige jobId — SEM jobId não processa nada (nunca drena a fila global).
+ */
+export async function runApuracaoBatchOnce(jobId = null) {
+  if (!jobId) return { processados: 0, skipped: "no_job_scope" };
   const agora = new Date();
   const itens = await prisma.apuracaoBatchItem.findMany({
     where: {
+      jobId: String(jobId),
       status: "pendente",
       OR: [{ backoffUntil: null }, { backoffUntil: { lte: agora } }],
     },
@@ -85,35 +85,12 @@ export async function runApuracaoBatchOnce() {
     take: ITEMS_POR_CICLO,
   });
   if (itens.length === 0) return { processados: 0 };
-
-  const jobsTocados = new Set();
   for (const item of itens) {
+    // eslint-disable-next-line no-await-in-loop
     await processarItem(item);
-    jobsTocados.add(item.jobId);
   }
-  for (const jobId of jobsTocados) await atualizarJob(jobId);
+  await atualizarJob(String(jobId));
   return { processados: itens.length };
-}
-
-let running = false;
-export async function runApuracaoBatchLoop() {
-  if (running) return;
-  running = true;
-  log.info("apuracaoBatchWorker loop iniciado");
-  for (;;) {
-    const got = await tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
-    if (got) {
-      try {
-        const { processados } = await runApuracaoBatchOnce();
-        if (processados > 0) log.info({ processados }, "apuracaoBatchWorker ciclo");
-      } catch (err) {
-        log.warn({ err: err?.message || err }, "apuracaoBatchWorker erro no ciclo");
-      } finally {
-        await releaseGuideLock(LOCK_ID);
-      }
-    }
-    await new Promise((r) => setTimeout(r, LOOP_INTERVAL_MS));
-  }
 }
 
 /**
@@ -121,12 +98,16 @@ export async function runApuracaoBatchLoop() {
  * @returns {Promise<{jobId, totalEmpresas}>}
  */
 export async function criarBatchJob({ portalClientIds, competencia, userId }) {
-  if (!Array.isArray(portalClientIds) || portalClientIds.length === 0) {
+  // Q55: valida os ids recebidos (descarta vazios/undefined) — nunca aceitar seleção "solta".
+  const ids = Array.isArray(portalClientIds)
+    ? [...new Set(portalClientIds.map((x) => String(x || "").trim()).filter(Boolean))]
+    : [];
+  if (ids.length === 0) {
     const e = new Error("Sem empresas selecionadas"); e.code = "NO_COMPANIES"; throw e;
   }
   // só empresas com snapshot em estado "fechada" entram
   const snaps = await prisma.apuracaoSnapshot.findMany({
-    where: { portalClientId: { in: portalClientIds }, competencia, estado: "fechada" },
+    where: { portalClientId: { in: ids }, competencia, estado: "fechada" },
     select: { portalClientId: true },
   });
   const elegiveis = snaps.map((s) => s.portalClientId);
@@ -143,5 +124,5 @@ export async function criarBatchJob({ portalClientIds, competencia, userId }) {
   await prisma.apuracaoBatchItem.createMany({
     data: elegiveis.map((pcId) => ({ jobId: job.id, portalClientId: pcId, competencia, status: "pendente" })),
   });
-  return { jobId: job.id, totalEmpresas: elegiveis.length, ignoradas: portalClientIds.length - elegiveis.length };
+  return { jobId: job.id, totalEmpresas: elegiveis.length, ignoradas: ids.length - elegiveis.length };
 }

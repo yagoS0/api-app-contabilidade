@@ -572,33 +572,16 @@ export function createNotasRouter({ log }) {
     }
   });
 
-  // POST /apuracao/:competencia/transmitir — envia declaração PGDAS-D oficial via SERPRO.
-  // PRÉ-REQUISITO: Apuracao em estado "revisada". Exige body.confirmCompetencia=YYYY-MM
-  // pra evitar transmissão acidental (UX guardrail).
+  // Q55: transmissão LEGADA (v1) DESABILITADA. Ela re-derivava as atividades da classificação
+  // automática das notas (ignorando o que o contador preenchia) e mandava receita externa = 0 —
+  // causa de declarações ZERADAS. Toda transmissão passa agora pelo fluxo v2 (apuração/fechamento):
+  // POST /firm/companies/:companyId/apuracao-v2/fechamento/:competencia/transmitir.
   router.post("/apuracao/:competencia/transmitir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
-    const portalClientId = String(req.params.companyId);
-    const competencia = String(req.params.competencia);
-    const { confirmCompetencia } = req.body || {};
-    if (confirmCompetencia !== competencia) {
-      return bad(res, 400, "confirm_competencia_mismatch",
-        "Digite a competência exata pra confirmar a transmissão (proteção contra envio acidental)");
-    }
-    try {
-      const result = await transmitirApuracao({
-        portalClientId, competencia, userId: req.auth?.user?.id,
-      });
-      return res.json({ ok: true, result });
-    } catch (err) {
-      log?.warn({ err: err?.message, portalClientId, competencia }, "Falha ao transmitir PGDAS-D");
-      const status = err?.code === "INVALID_STATE" ? 409 :
-                     err?.code === "APURACAO_NOT_FOUND" ? 404 : 500;
-      return res.status(status).json({
-        ok: false,
-        error: err?.code || "transmit_failed",
-        message: err?.message || "Erro",
-        currentState: err?.currentState,
-      });
-    }
+    return res.status(410).json({
+      ok: false,
+      error: "transmissao_v1_desabilitada",
+      message: "Transmissão antiga desativada (transmitia zerado). Use o fluxo de Apuração (Calcular → Fechar → Transmitir).",
+    });
   });
 
   // POST /apuracao/:competencia/conferir — confere declaração transmitida contra extrato SERPRO (CONSDECLARACAO13).

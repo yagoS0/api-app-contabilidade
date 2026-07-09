@@ -3461,8 +3461,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         });
         if (pendentes === 0) break;
         if (Date.now() >= deadline || ciclos >= 50) break;
+        // Q55: escopado ao jobId — nunca toca itens de outro lote/escritório.
         // eslint-disable-next-line no-await-in-loop
-        const { processados } = await runApuracaoBatchOnce();
+        const { processados } = await runApuracaoBatchOnce(jobId);
         ciclos += 1;
         if (!processados) break; // nada pronto agora (ex.: itens em backoff) — evita loop quente
       }

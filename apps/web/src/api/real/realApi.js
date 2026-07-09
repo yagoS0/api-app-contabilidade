@@ -298,6 +298,19 @@ export function createRealApi() {
     async recalculateGuide(guideId) {
       return request(`/firm/guides/${guideId}/recalculate`, { method: "POST" });
     },
+    // Portal Cliente (#3.1): libera/revoga as guias de uma competência para o app do cliente.
+    async liberarGuiasCliente(companyId, competencia) {
+      return request(`/firm/guides/liberar-cliente`, {
+        method: "POST",
+        body: JSON.stringify({ items: [{ portalClientId: companyId, competencia }] }),
+      });
+    },
+    async revogarGuiasCliente(companyId, competencia) {
+      return request(`/firm/guides/revogar-cliente`, {
+        method: "POST",
+        body: JSON.stringify({ items: [{ portalClientId: companyId, competencia }] }),
+      });
+    },
     // Q17: guias esperadas da competência + estado (present/vazio/missing)
     async getExpectedGuides(companyId, competencia) {
       const suffix = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
@@ -981,6 +994,13 @@ export function createRealApi() {
     async clearAdnError(companyId) {
       return request(`/firm/companies/${companyId}/adn/clear-error`, { method: "POST" });
     },
+    // Q56: import MANUAL de notas (XML) — pra quando a captura automática não trouxe as notas.
+    async importInvoicesXml(companyId, files) {
+      const formData = new FormData();
+      const list = Array.isArray(files) ? files : (files ? [files] : []);
+      for (const f of list) { if (f) formData.append("files", f); }
+      return request(`/clients/${companyId}/invoices/import/xml`, { method: "POST", body: formData });
+    },
     // Q48: download de notas em lote (job em segundo plano + zip)
     async createNotasDownload(payload) {
       return request(`/firm/notas-download`, { method: "POST", body: JSON.stringify(payload || {}) });
@@ -1157,6 +1177,15 @@ export function createRealApi() {
     async transmitirFechamento(companyId, competencia, confirmCompetencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}/transmitir`, {
         method: "POST", body: JSON.stringify({ confirmCompetencia }),
+      });
+    },
+    // Q55 — retificação: reabrir uma apuração transmitida + retransmitir como retificadora.
+    async reabrirFechamento(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/fechamento/${competencia}/reabrir`, { method: "POST" });
+    },
+    async retificarFechamento(companyId, competencia, confirmCompetencia) {
+      return request(`/firm/companies/${companyId}/fechamento/${competencia}/retificar`, {
+        method: "POST", body: JSON.stringify({ confirmCompetencia, confirmRetificar: true }),
       });
     },
     // Q19 — lista de atividades PGDAS-D (de-para oficial) p/ o dropdown do modal de fechamento

@@ -1,8 +1,7 @@
 // src/server.js
 import express from "express";
 import cors from "cors";
-import { log, API_KEYS, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, APURACAO_BATCH_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
-import { runApuracaoBatchLoop } from "./workers/apuracaoBatchWorker.js";
+import { log, API_KEYS, SERPRO_PGDASD_WORKER_ENABLED, SERPRO_DCTFWEB_WORKER_ENABLED, SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED, DFE_NOTAS_WORKER_ENABLED, CERT_SECRET_KEY, CERT_SECRET_KEY_MIN_LENGTH } from "./config.js";
 import { runSerproPaymentConfirmationWorkerLoop } from "./workers/serproPaymentConfirmationWorker.js";
 import { UserRepository } from "./infrastructure/db/UserRepository.js";
 import { AuthService } from "./application/auth/AuthService.js";
@@ -19,7 +18,6 @@ import { createInvoicesRouter } from "./routes/invoices.js";
 import { createNfseRouter } from "./routes/nfse.js";
 import { createAdnRouter } from "./routes/adn.js";
 import { createInternalRouter } from "./routes/internal.js";
-import { runGuideEmailWorkerLoop } from "./workers/guideEmailWorker.js";
 import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
 import { runDfeNotasWorkerLoop } from "./workers/dfeNotasWorker.js";
@@ -165,11 +163,8 @@ app.listen(PORT, HOST, () => {
   });
 });
 
-if (GUIDE_EMAIL_WORKER_ENABLED) {
-  runGuideEmailWorkerLoop().catch((err) => {
-    log.error({ err: err?.message || err }, "guideEmailWorker loop fatal");
-  });
-}
+// Q55: worker de e-mail em loop REMOVIDO (nada roda sozinho). O envio de guias por e-mail
+// é 100% manual (página BatchEmail / POST /firm/guides/emails/send-pending|send-selected).
 
 if (SERPRO_PGDASD_WORKER_ENABLED) {
   runSerproPgdasdWorkerLoop().catch((err) => {
@@ -200,9 +195,7 @@ if (DFE_NOTAS_WORKER_ENABLED) {
   });
 }
 
-// Q15.6: worker da fila de transmissão de apurações ao SERPRO (opt-in).
-if (APURACAO_BATCH_WORKER_ENABLED) {
-  runApuracaoBatchLoop().catch((err) => {
-    log.error({ err: err?.message || err }, "apuracaoBatchWorker loop fatal");
-  });
-}
+// Q55: worker de transmissão de apuração em loop REMOVIDO. Ele transmitia declarações à RFB
+// SOZINHO (loop de 30s, drenava a fila global) — causa do incidente de apurações zeradas
+// "enviadas sozinhas". A transmissão em lote agora é 100% sob clique: POST
+// /firm/apuracao/batch/:jobId/run-now (síncrono, escopado por jobId). Nada apura/transmite sozinho.

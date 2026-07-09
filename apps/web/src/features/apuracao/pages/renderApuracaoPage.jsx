@@ -45,6 +45,21 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
   // Q52: "selecionar todas" marca só as empresas selecionáveis (estado "fechada").
   const allFechadasSelected = fechadasCount > 0 && selected.size === fechadasCount;
   const someFechadasSelected = selected.size > 0 && selected.size < fechadasCount;
+
+  // Q55: reabre uma apuração transmitida e abre o modal em modo RETIFICAR (corrigir → retransmitir).
+  async function abrirRetificacao(it) {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Reabrir a apuração de ${it.razao} (${competencia}) para RETIFICAR?\n\nVocê vai corrigir os valores e retransmitir uma declaração RETIFICADORA à Receita (substitui a anterior).`)) return;
+    try {
+      const r = await apuracaoApi.reabrirFechamento(it.portalClientId, competencia);
+      if (r?.ok === false) throw new Error(r?.message || r?.error || "Falha ao reabrir");
+      feedback?.notifySuccess?.("Apuração reaberta — corrija os valores e clique em Retificar/Retransmitir.");
+      setFechando({ id: it.portalClientId, razao: it.razao, retificar: true });
+      reload?.();
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Falha ao reabrir para retificar");
+    }
+  }
   return (
     <AppShell>
       <PageHeader
@@ -148,11 +163,19 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#8BE9FD" }}>
                       {it.dasTransmitido != null ? fmtMoney(it.dasTransmitido) : (it.dasCalculado != null ? fmtMoney(it.dasCalculado) : "—")}
                     </td>
-                    <td style={{ ...td, textAlign: "right" }}>
+                    <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
                       <button onClick={() => setFechando({ id: it.portalClientId, razao: it.razao })}
                         style={{ padding: "5px 12px", borderRadius: 5, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontSize: "0.78rem", fontWeight: 600 }}>
                         {it.estado === "aberta" ? "🔒 Fechar" : "Revisar"}
                       </button>
+                      {/* Q55: retificação — reabre a transmitida para corrigir e retransmitir como retificadora. */}
+                      {it.estado === "transmitida" && (
+                        <button onClick={() => abrirRetificacao(it)}
+                          title="Reabrir para corrigir os valores e retransmitir como declaração retificadora."
+                          style={{ marginLeft: 6, padding: "5px 10px", borderRadius: 5, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer", fontSize: "0.78rem", fontWeight: 600 }}>
+                          🔄 Retificar
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -172,6 +195,7 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
           portalClientId={fechando.id}
           razao={fechando.razao}
           competencia={competencia}
+          retificar={fechando.retificar === true}
           onClose={() => setFechando(null)}
           onChanged={() => reload?.()}
         />
