@@ -57,6 +57,7 @@ import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../work
 import { runSerproPgdasdWorkerOnce } from "../../workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerOnce } from "../../workers/serproDctfwebWorker.js";
 import { sendCompanyGuidesEmail, sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
+import { liberarGuiasCliente, revogarLiberacaoCliente } from "../../application/guides/GuideLiberacaoService.js";
 import { listUnidentifiedGuides, processUploadedGuides, uploadGuideForPortalClient } from "../../application/guides/GuideUploadService.js";
 import {
   getCompanyGuideEmailSchedule,
@@ -2134,6 +2135,65 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
     const sent = results.filter((r) => r.ok && r.status === "sent").length;
     return res.json({ ok: true, total: items.length, sent, results });
+  });
+
+  // Portal Cliente (#3.1): POST /guides/liberar-cliente
+  // Libera as guias da competência para o app do cliente (+ dispara o e-mail). Molde do batch-send.
+  // Body: { items: [{ portalClientId, competencia }] }
+  router.post("/guides/liberar-cliente", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) return res.status(400).json({ ok: false, error: "items_required" });
+    const userId = req.auth?.user?.id || null;
+    const results = [];
+    for (const it of items) {
+      const portalClientId = String(it?.portalClientId || "").trim();
+      const competencia = String(it?.competencia || "").trim();
+      if (!portalClientId || !competencia) {
+        results.push({ portalClientId, competencia, ok: false, error: "invalid_input" });
+        continue;
+      }
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await liberarGuiasCliente({ portalClientId, competencia, userId });
+        results.push({ portalClientId, competencia, ok: true, ...r });
+      } catch (err) {
+        log.error({ err: err?.message || err, portalClientId, competencia }, "Falha ao liberar guias ao cliente");
+        results.push({ portalClientId, competencia, ok: false, error: err?.code || "GUIDE_LIBERAR_FAILED", message: err?.message });
+      }
+    }
+    return res.json({ ok: true, total: items.length, results });
+  });
+
+  // Portal Cliente (#3.1): POST /guides/revogar-cliente — desfaz a liberação (sem e-mail).
+  router.post("/guides/revogar-cliente", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) return res.status(400).json({ ok: false, error: "items_required" });
+    const results = [];
+    for (const it of items) {
+      const portalClientId = String(it?.portalClientId || "").trim();
+      const competencia = String(it?.competencia || "").trim();
+      if (!portalClientId || !competencia) {
+        results.push({ portalClientId, competencia, ok: false, error: "invalid_input" });
+        continue;
+      }
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await revogarLiberacaoCliente({ portalClientId, competencia });
+        results.push({ portalClientId, competencia, ok: true, ...r });
+      } catch (err) {
+        log.error({ err: err?.message || err, portalClientId, competencia }, "Falha ao revogar liberação de guias");
+        results.push({ portalClientId, competencia, ok: false, error: err?.code || "GUIDE_REVOGAR_FAILED", message: err?.message });
+      }
+    }
+    return res.json({ ok: true, total: items.length, results });
   });
 
   // Endpoint binário inline para visualização em iframe (modal de captura).

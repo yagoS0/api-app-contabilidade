@@ -19,6 +19,7 @@ import {
   listGuidesByCompany,
   toGuideResponse,
 } from "../../application/guides/GuideService.js";
+import { buildCompanyDashboard } from "../../application/dashboard/buildCompanyDashboard.js";
 
 function sanitizeRole(role) {
   const value = String(role || "CLIENT_USER").toUpperCase();
@@ -523,6 +524,8 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       status,
       page,
       limit,
+      // Portal Cliente (#3.1): o cliente só vê guias liberadas pelo contador.
+      apenasLiberadas: true,
     });
     return res.json({
       data: result.items.map(toGuideResponse),
@@ -537,7 +540,8 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
     async (req, res) => {
       const { companyId, guideId } = req.params || {};
       const guide = await prisma.guide.findFirst({
-        where: { id: String(guideId), portalClientId: String(companyId) },
+        // Portal Cliente (#3.1): cliente só baixa guia liberada.
+        where: { id: String(guideId), portalClientId: String(companyId), liberadaCliente: true },
       });
       if (!guide) return res.status(404).json({ error: "not_found" });
       const buf = await getGuidePdfBuffer(guide);
@@ -550,6 +554,79 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         mimeType: "application/pdf",
         expiresIn: null,
       });
+    }
+  );
+
+  // Portal Cliente (#3.2): fontes da ALÍQUOTA por competência. O portal expõe os valores brutos;
+  // o app calcula: de-receita = das/faturamento; efetiva = impostosPagos.total/faturamento.
+  router.get("/companies/:companyId/aliquota", requireClientCompanyAccess(), async (req, res) => {
+    const { companyId } = req.params || {};
+    const competencia = String(req.query?.competencia || "").trim();
+    if (!/^\d{4}-\d{2}$/.test(competencia)) {
+      return res.status(400).json({ error: "competencia_required" });
+    }
+    try {
+      const cid = String(companyId);
+      const [y, m] = competencia.split("-").map(Number);
+      const gte = new Date(Date.UTC(y, m - 1, 1));
+      const lt = new Date(Date.UTC(y, m, 1));
+
+      const [notas, ultimoExtrato, guiasPagas] = await Promise.all([
+        // Faturamento da competência: notas EMIT autorizadas (mesma fonte do dashboard).
+        prisma.portalInvoice.aggregate({
+          where: { clientId: cid, papel: "EMIT", statusEfetivo: "autorizada", competencia: { gte, lt } },
+          _sum: { total: true },
+        }),
+        // Imposto do "último extrato" disponível (DAS do PGDAS-D).
+        prisma.companyMonthlyCircular.findFirst({
+          where: { portalClientId: cid, dasTotal: { not: null } },
+          orderBy: { competencia: "desc" },
+          select: { competencia: true, dasTotal: true },
+        }),
+        // Impostos PAGOS da competência, por tipo (inclui INSS).
+        prisma.guide.groupBy({
+          by: ["tipo"],
+          where: { portalClientId: cid, competencia, paymentStatus: "PAID" },
+          _sum: { valor: true },
+        }),
+      ]);
+
+      const porTipo = {};
+      let totalPagos = 0;
+      for (const g of guiasPagas) {
+        const v = Number(g._sum?.valor || 0);
+        porTipo[String(g.tipo || "OUTRA").toUpperCase()] = v;
+        totalPagos += v;
+      }
+
+      return res.json({
+        competencia,
+        faturamento: { valor: Number(notas._sum?.total || 0) },
+        impostoUltimoExtrato: ultimoExtrato
+          ? { competencia: ultimoExtrato.competencia, das: Number(ultimoExtrato.dasTotal || 0) }
+          : { competencia: null, das: 0 },
+        impostosPagos: { total: totalPagos, porTipo },
+      });
+    } catch (err) {
+      log.error({ err: err.message, companyId }, "client aliquota falhou");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Dashboard do app (faturamento do mês + extrato do Simples). Consumido pelo BFF
+  // do app mobile com o JWT do cliente; o escopo por empresa é garantido aqui.
+  router.get(
+    "/companies/:companyId/dashboard",
+    requireClientCompanyAccess(),
+    async (req, res) => {
+      const { companyId } = req.params || {};
+      try {
+        const data = await buildCompanyDashboard({ portalClientId: String(companyId) });
+        return res.json(data);
+      } catch (err) {
+        log.error({ err: err.message, companyId }, "client dashboard falhou");
+        return res.status(500).json({ error: "internal_error" });
+      }
     }
   );
 

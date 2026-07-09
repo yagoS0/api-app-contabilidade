@@ -286,6 +286,9 @@ export function CompanyGuidesTable({
   onRecalculateGuide,
   onRecalcularInss,   // Q53: recálculo/traga explícito do INSS por competência
   recalcInssBusy,
+  onLiberarGuias,     // Portal Cliente (#3.1): liberar/revogar guias da competência ao app do cliente
+  onRevogarGuias,
+  liberarGuiasBusy,
   onDeleteGuide,
   resendingGuideId,
   confirmingGuideId,
@@ -691,6 +694,27 @@ export function CompanyGuidesTable({
                 {recalcInssBusy ? "Recalculando..." : "🔄 Recalcular INSS"}
               </Button>
             )}
+            {/* Portal Cliente (#3.1): libera as guias desta competência para o app do cliente (dispara e-mail). */}
+            {onLiberarGuias && (
+              <Button
+                variant="secondary" size="sm"
+                disabled={!/^\d{4}-\d{2}$/.test(String(filterCompetencia || "")) || !!liberarGuiasBusy}
+                onClick={() => onLiberarGuias(filterCompetencia)}
+                title="Libera as guias PROCESSED desta competência no app do cliente e dispara o e-mail."
+              >
+                {liberarGuiasBusy ? "Liberando..." : "📤 Liberar ao cliente"}
+              </Button>
+            )}
+            {onRevogarGuias && (
+              <Button
+                variant="secondary" size="sm"
+                disabled={!/^\d{4}-\d{2}$/.test(String(filterCompetencia || "")) || !!liberarGuiasBusy}
+                onClick={() => onRevogarGuias(filterCompetencia)}
+                title="Revoga a liberação: o cliente para de ver as guias desta competência."
+              >
+                Revogar
+              </Button>
+            )}
             <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
               Competência:
               <input
@@ -800,6 +824,15 @@ export function CompanyGuidesTable({
                     >
                       {emailStatus.label}
                       {guide.emailLastError ? " ⓘ" : ""}
+                      {/* Portal Cliente (#3.1): selo de guia liberada ao app do cliente. */}
+                      {guide.liberadaCliente && (
+                        <span
+                          title={`Liberada ao cliente${guide.liberadaEm ? ` em ${fmtDate(guide.liberadaEm)}` : ""}`}
+                          style={{ marginLeft: 6, color: "#69FF47", fontWeight: 700 }}
+                        >
+                          📤
+                        </span>
+                      )}
                     </span>
                   </div>
                 );

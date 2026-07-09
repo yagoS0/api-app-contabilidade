@@ -110,6 +110,8 @@ export async function listGuidesByCompany({
   status,
   page = 1,
   limit = 25,
+  // Portal Cliente (#3.1): quando true, retorna SÓ guias liberadas ao cliente (usado pelo /client).
+  apenasLiberadas = false,
 }) {
   const take = Math.min(Math.max(Number(limit) || 25, 1), 200);
   const pageNum = Math.max(Number(page) || 1, 1);
@@ -118,6 +120,7 @@ export async function listGuidesByCompany({
     portalClientId: String(portalClientId),
     ...(competencia ? { competencia: normalizeCompetencia(competencia) } : {}),
     ...(status ? { status: String(status).toUpperCase() } : {}),
+    ...(apenasLiberadas ? { liberadaCliente: true } : {}),
   };
   const [rawItems, total] = await prisma.$transaction([
     prisma.guide.findMany({
@@ -246,6 +249,9 @@ export function toGuideResponse(item) {
     parcelamentoLabel: item.parcelamento?.label || null,
     parcelamentoTipo: item.parcelamento?.tipo || null,
     parcelamentoNumero: item.parcelamento?.numeroParcelamento || null,
+    // Portal Cliente (#3.1): liberação ao cliente (selo no contador + gate no /client).
+    liberadaCliente: Boolean(item.liberadaCliente),
+    liberadaEm: item.liberadaEm ? new Date(item.liberadaEm).toISOString() : null,
     createdAt: item.createdAt?.toISOString?.() || null,
     updatedAt: item.updatedAt?.toISOString?.() || null,
   };

@@ -89,6 +89,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [syncingSerproPgdas, setSyncingSerproPgdas] = useState(false);
   const [syncingSerproInss, setSyncingSerproInss] = useState(false);
   const [recalcInssBusy, setRecalcInssBusy] = useState(false); // Q53: recálculo explícito do INSS na aba Guias
+  const [liberarGuiasBusy, setLiberarGuiasBusy] = useState(false); // Portal Cliente (#3.1): liberar/revogar guias ao cliente
   const [serproProcurationStatus, setSerproProcurationStatus] = useState(null);
   const [serproWorkerStatus, setSerproWorkerStatus] = useState(null);
   const [runningSerproCron, setRunningSerproCron] = useState(false);
@@ -615,6 +616,47 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
+  // Portal Cliente (#3.1): libera as guias da competência ao app do cliente (dispara e-mail).
+  async function handleLiberarGuias(competencia) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
+    if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+      feedback.setError("Selecione uma competência (AAAA-MM) para liberar."); return;
+    }
+    setLiberarGuiasBusy(true);
+    feedback.clearFeedback();
+    try {
+      const r = await api.liberarGuiasCliente(companyId, competencia);
+      const item = r?.results?.[0] || {};
+      feedback.setMessage(`Liberadas ${item.liberadas ?? 0} guia(s) de ${competencia} ao cliente (e-mail disparado).`);
+      await loadGuides(companyId);
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao liberar guias ao cliente.");
+    } finally {
+      setLiberarGuiasBusy(false);
+    }
+  }
+
+  async function handleRevogarGuias(competencia) {
+    const companyId = companiesState.selectedCompanyId;
+    if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
+    if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+      feedback.setError("Selecione uma competência (AAAA-MM) para revogar."); return;
+    }
+    setLiberarGuiasBusy(true);
+    feedback.clearFeedback();
+    try {
+      const r = await api.revogarGuiasCliente(companyId, competencia);
+      const item = r?.results?.[0] || {};
+      feedback.setMessage(`Liberação revogada para ${item.revogadas ?? 0} guia(s) de ${competencia}.`);
+      await loadGuides(companyId);
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao revogar liberação.");
+    } finally {
+      setLiberarGuiasBusy(false);
+    }
+  }
+
   async function handleGuideUpload(files) {
     if (!Array.isArray(files) || !files.length) {
       feedback.setError("Selecione pelo menos um PDF para enviar.");
@@ -947,6 +989,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleRecalculateGuide,
     handleRecalcularInss,
     recalcInssBusy,
+    handleLiberarGuias,
+    handleRevogarGuias,
+    liberarGuiasBusy,
     handleDeleteGuide,
     handleGuideUpload,
     handleCompanyGuideUpload,

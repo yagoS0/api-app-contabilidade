@@ -365,6 +365,11 @@ model Guide {
   reviewedByUserId String?
   reviewedAt       DateTime?
 
+  // Portal Cliente (#3.1): guia só aparece no app do cliente quando o contador a "libera".
+  liberadaCliente Boolean   @default(false)
+  liberadaEm      DateTime?
+  liberadaPor     String?   // userId do contador que liberou (auditoria)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -394,6 +399,8 @@ model Guide {
   @@index([parcelamentoId])
   @@index([baixada])
   @@index([portalClientId, parcelaEstado])
+  // Portal Cliente (#3.1): filtro do /client por guias liberadas.
+  @@index([portalClientId, liberadaCliente, competencia])
   // Q21: ingestão idempotente da mesma parcela (parcial WHERE parcelamentoId NOT NULL via SQL).
   @@unique([parcelamentoId, numeroParcela])
 }
