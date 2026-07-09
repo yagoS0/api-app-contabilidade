@@ -74,7 +74,7 @@ import {
   uploadSerproCertificate,
 } from "../../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
-import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta } from "../../application/fiscal/serpro/SerproDctfwebService.js";
+import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta, probeEmitirDarfDctfweb } from "../../application/fiscal/serpro/SerproDctfwebService.js";
 import { SERPRO_DCTFWEB_LP_PROBE_ENABLED } from "../../config.js";
 import { capturarParcelaGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
@@ -1465,6 +1465,35 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) {
       const code = err?.code || "SERPRO_DCTFWEB_PROBE_FAILED";
       log.error({ err: err?.message || err, code, competencia }, "Falha no probe DCTFWeb (cnpj direto)");
+      return res.status(502).json({ ok: false, error: code, reason: err?.message || "Erro", retryable: Boolean(err?.retryable) });
+    }
+  });
+
+  // Módulo Fiscal M2 — SPIKE: probe do Emitir DARF DCTFWeb (GERARGUIA31) por CNPJ direto.
+  // /Emitir deriva da declaração já transmitida (não envia info, não paga). NÃO persiste.
+  // Gated: admin/contador + flag. Body: { cnpj, competencia, categoria?, idServico?, dados? }
+  router.post("/serpro/dctfweb/probe-darf", requireAccountType("FIRM"), async (req, res) => {
+    if (!SERPRO_DCTFWEB_LP_PROBE_ENABLED) {
+      return res.status(403).json({ ok: false, error: "probe_disabled", message: "Ligue SERPRO_DCTFWEB_LP_PROBE_ENABLED=1 para rodar o spike." });
+    }
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ ok: false, error: "forbidden_admin_or_contador_only" });
+    }
+    const cnpj = String(req.body?.cnpj || "").replace(/\D+/g, "");
+    const competencia = String(req.body?.competencia || "").trim();
+    const categoria = req.body?.categoria ? String(req.body.categoria).trim() : undefined;
+    const idServico = req.body?.idServico ? String(req.body.idServico).trim() : undefined;
+    const dadosOverride = req.body?.dados && typeof req.body.dados === "object" ? req.body.dados : undefined;
+    if (cnpj.length !== 14) return res.status(400).json({ ok: false, error: "cnpj_invalido", message: "cnpj com 14 dígitos" });
+    if (!/^\d{4}-\d{2}$/.test(competencia)) return res.status(400).json({ ok: false, error: "competencia_required", message: "competencia YYYY-MM" });
+    try {
+      const out = await probeEmitirDarfDctfweb({ contribuinteCnpj: cnpj, competencia, categoria, idServico, dadosOverride });
+      log.warn({ cnpj: cnpj.slice(0, 5) + "***", competencia, idServico: out.idServico, httpStatus: out.httpStatus, temPdf: out.temPdf, valor: out.parsed?.valor }, "SPIKE DCTFWeb probe-darf");
+      return res.json({ ok: true, ...out });
+    } catch (err) {
+      const code = err?.code || "SERPRO_DCTFWEB_DARF_PROBE_FAILED";
+      log.error({ err: err?.message || err, code, competencia }, "Falha no probe-darf DCTFWeb");
       return res.status(502).json({ ok: false, error: code, reason: err?.message || "Erro", retryable: Boolean(err?.retryable) });
     }
   });

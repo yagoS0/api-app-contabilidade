@@ -234,6 +234,76 @@ export async function probeConsultarDeclaracaoCompleta({
   };
 }
 
+/**
+ * SPIKE M2 (read-adjacent, NÃO persiste) — probe do Emitir DARF DCTFWeb (GERARGUIA31).
+ *
+ * /Emitir gera a guia a partir da declaração JÁ TRANSMITIDA — não envia info nova, não
+ * confessa, não paga. É a MESMA operação que o app já faz em produção pro INSS. O probe
+ * NÃO cria Guide nem salva PDF: só emite, extrai valor/vencimento/nº documento e devolve.
+ *
+ * Objetivo: descobrir a `categoria`/params certos pros débitos de LP (PIS/COFINS/IRPJ/CSLL).
+ */
+export async function probeEmitirDarfDctfweb({
+  contribuinteCnpj,
+  competencia,
+  categoria = "GERAL_MENSAL",
+  idServico = SERPRO_DCTFWEB_SERVICE_GUIDE,
+  dadosOverride,
+} = {}) {
+  const runtime = await getResolvedSerproCredentials();
+  const procuradorCnpj = onlyDigits(runtime?.certificate?.document);
+  if (!procuradorCnpj || procuradorCnpj.length !== 14) {
+    const err = new Error("serpro_procurador_cnpj_not_configured");
+    err.code = "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED";
+    throw err;
+  }
+  const cnpj = onlyDigits(contribuinteCnpj);
+  const normalized = normalizeCompetencia(competencia);
+  const [year, month] = String(normalized || "-").split("-");
+  const dados = dadosOverride ?? { categoria, anoPA: year, mesPA: month };
+
+  const client = new SerproHttpClient();
+  const res = await client.post(
+    "/Emitir",
+    {
+      contratante: { numero: procuradorCnpj, tipo: 2 },
+      autorPedidoDados: { numero: procuradorCnpj, tipo: 2 },
+      contribuinte: { numero: cnpj, tipo: 2 },
+      pedidoDados: { idSistema: SERPRO_DCTFWEB_SYSTEM, idServico, versaoSistema: "1.0", dados: JSON.stringify(dados) },
+    },
+    { raw: true, validateStatus: () => true }
+  );
+
+  const envelope = res?.data ?? res ?? null;
+  const pdf = extractPdfBase64(envelope);
+  let parsed = null;
+  let pdfTexto = null;
+  let pdfTextoErro = null;
+  if (pdf) {
+    try {
+      const r = await parsePdfResponse(envelope); // parse puro (não salva no storage)
+      parsed = { valor: r.parsed?.inssTotal ?? null, vencimento: r.parsed?.inssVencimento ?? null, numeroDocumento: r.numeroDocumento ?? null };
+      pdfTexto = String(r.rawText || "").slice(0, 4000);
+    } catch (e) {
+      pdfTextoErro = e?.message || "falha ao parsear PDF do DARF";
+    }
+  }
+
+  return {
+    verificadoTrial: false,
+    idServico,
+    httpStatus: res?.status ?? null,
+    enviado: { idSistema: SERPRO_DCTFWEB_SYSTEM, idServico, dados },
+    temPdf: Boolean(pdf),
+    pdfLength: pdf ? String(pdf).length : 0,
+    parsed, // { valor, vencimento, numeroDocumento }
+    pdfTexto,
+    pdfTextoErro,
+    mensagens: envelope && typeof envelope === "object" ? envelope.mensagens ?? null : null,
+    envelopeKeys: envelope && typeof envelope === "object" ? Object.keys(envelope) : [],
+  };
+}
+
 async function parsePdfResponse(response) {
   const pdfBase64 = extractPdfBase64(response);
   if (!pdfBase64) {
