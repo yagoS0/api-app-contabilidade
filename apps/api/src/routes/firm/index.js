@@ -74,7 +74,8 @@ import {
   uploadSerproCertificate,
 } from "../../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
-import { syncSerproInssForCompany } from "../../application/fiscal/serpro/SerproDctfwebService.js";
+import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta } from "../../application/fiscal/serpro/SerproDctfwebService.js";
+import { SERPRO_DCTFWEB_LP_PROBE_ENABLED } from "../../config.js";
 import { capturarParcelaGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
 // Q40: confirmação de pagamento (PAGTOWEB) + SITFIS.
@@ -2771,6 +2772,42 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
         log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha na sincronização de INSS SERPRO");
         return res.status(502).json({ ok: false, error: code, reason: message, retryable: Boolean(err?.retryable) });
+      }
+    }
+  );
+
+  // Módulo Fiscal M2 — SPIKE read-only: probe da Consultar Declaração Completa DCTFWeb.
+  // Serviço /Consultar (leitura, SEM ato fiscal). Só descobre se os débitos vêm estruturados
+  // ou em PDF. NÃO persiste. Gated: admin/contador + flag SERPRO_DCTFWEB_LP_PROBE_ENABLED.
+  router.post(
+    "/companies/:companyId/serpro/dctfweb/consultar-completa",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      if (!SERPRO_DCTFWEB_LP_PROBE_ENABLED) {
+        return res.status(403).json({ ok: false, error: "probe_disabled", message: "Ligue SERPRO_DCTFWEB_LP_PROBE_ENABLED=1 para rodar o spike." });
+      }
+      const appRole = String(req.auth?.user?.role || "").toLowerCase();
+      if (!["admin", "contador"].includes(appRole)) {
+        return res.status(403).json({ ok: false, error: "forbidden_admin_or_contador_only" });
+      }
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      const competencia = String(req.body?.competencia || req.query?.competencia || "").trim();
+      const idServico = req.body?.idServico ? String(req.body.idServico).trim() : undefined;
+      const categoria = req.body?.categoria ? String(req.body.categoria).trim() : undefined;
+      const dadosOverride = req.body?.dados && typeof req.body.dados === "object" ? req.body.dados : undefined;
+      if (!competencia) return res.status(400).json({ ok: false, error: "competencia_required" });
+      try {
+        const portal = await prisma.portalClient.findUnique({ where: { id: portalCompanyId }, select: { cnpj: true, razao: true } });
+        if (!portal) return res.status(404).json({ ok: false, error: "portal_company_not_found" });
+        const out = await probeConsultarDeclaracaoCompleta({
+          contribuinteCnpj: portal.cnpj, competencia, idServico, categoria, dadosOverride,
+        });
+        log.warn({ portalCompanyId, competencia, idServico: out.idServico, httpStatus: out.httpStatus, temPdf: out.temPdf, temDados: out.temDadosEstruturados }, "SPIKE DCTFWeb consultar-completa");
+        return res.json({ ok: true, empresa: portal.razao, ...out });
+      } catch (err) {
+        const code = err?.code || "SERPRO_DCTFWEB_PROBE_FAILED";
+        log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha no probe DCTFWeb");
+        return res.status(502).json({ ok: false, error: code, reason: err?.message || "Erro", retryable: Boolean(err?.retryable) });
       }
     }
   );

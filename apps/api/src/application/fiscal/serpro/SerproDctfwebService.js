@@ -9,6 +9,9 @@ import { SerproHttpClient } from "./SerproHttpClient.js";
 const SERPRO_DCTFWEB_SYSTEM = "DCTFWEB";
 const SERPRO_DCTFWEB_SERVICE_RECEIPT = "CONSRECIBO32";
 const SERPRO_DCTFWEB_SERVICE_GUIDE = "GERARGUIA31";
+// Módulo Fiscal M2 (spike, NÃO VALIDADO): consulta da declaração completa DCTFWeb.
+// [CONFIRMAR] idServico/payload no catálogo SERPRO — por isso o probe retorna cru.
+const SERPRO_DCTFWEB_SERVICE_DECL_COMPLETA = "CONSDECCOMPLETA33";
 
 function onlyDigits(value) {
   return String(value || "").replace(/\D+/g, "");
@@ -140,6 +143,74 @@ function buildDctfwebPayload({ competencia, idServico }) {
       versaoSistema: "1.0",
       dados: JSON.stringify({ categoria: "GERAL_MENSAL", anoPA: year, mesPA: month }),
     },
+  };
+}
+
+/**
+ * SPIKE M2 (read-only, NÃO VALIDADO) — probe da Consultar Declaração Completa (CONSDECCOMPLETA33).
+ *
+ * Serviço de /Consultar (leitura): NÃO transmite, NÃO confessa, NÃO emite. Só lê o que já
+ * está na Receita. Objetivo: descobrir se os débitos vêm como DADO ESTRUTURADO ou só PDF.
+ * NÃO persiste nada — devolve a resposta CRUA + um resumo pra inspeção.
+ *
+ * @param {Object} opts
+ * @param {string} opts.contribuinteCnpj — CNPJ da empresa (contribuinte)
+ * @param {string} opts.competencia — YYYY-MM
+ * @param {string} [opts.categoria="GERAL_MENSAL"]
+ * @param {string} [opts.idServico=CONSDECCOMPLETA33]
+ * @param {Object} [opts.dadosOverride] — sobrescreve o objeto `dados` (pra iterar no spike)
+ */
+export async function probeConsultarDeclaracaoCompleta({
+  contribuinteCnpj,
+  competencia,
+  categoria = "GERAL_MENSAL",
+  idServico = SERPRO_DCTFWEB_SERVICE_DECL_COMPLETA,
+  dadosOverride,
+} = {}) {
+  const runtime = await getResolvedSerproCredentials();
+  const procuradorCnpj = onlyDigits(runtime?.certificate?.document);
+  if (!procuradorCnpj || procuradorCnpj.length !== 14) {
+    const err = new Error("serpro_procurador_cnpj_not_configured");
+    err.code = "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED";
+    throw err;
+  }
+  const cnpj = onlyDigits(contribuinteCnpj);
+  const normalized = normalizeCompetencia(competencia);
+  const [year, month] = String(normalized || "-").split("-");
+  const dados = dadosOverride ?? { categoria, anoPA: year, mesPA: month };
+
+  const client = new SerproHttpClient();
+  const res = await client.post(
+    "/Consultar",
+    {
+      contratante: { numero: procuradorCnpj, tipo: 2 },
+      autorPedidoDados: { numero: procuradorCnpj, tipo: 2 },
+      contribuinte: { numero: cnpj, tipo: 2 },
+      pedidoDados: { idSistema: SERPRO_DCTFWEB_SYSTEM, idServico, versaoSistema: "1.0", dados: JSON.stringify(dados) },
+    },
+    { raw: true, validateStatus: () => true }
+  );
+
+  const envelope = res?.data ?? res ?? null;
+  const pdf = extractPdfBase64(envelope);
+  const dadosBruto = envelope && typeof envelope === "object" ? envelope.dados ?? null : null;
+  const dadosParsed = parseNestedJsonString(dadosBruto);
+
+  return {
+    verificadoTrial: false, // spike — contrato NÃO validado no catálogo SERPRO
+    idServico,
+    httpStatus: res?.status ?? null,
+    enviado: { idSistema: SERPRO_DCTFWEB_SYSTEM, idServico, dados },
+    temPdf: Boolean(pdf),
+    pdfLength: pdf ? String(pdf).length : 0,
+    temDadosEstruturados: dadosParsed != null && typeof dadosParsed === "object",
+    mensagens: envelope && typeof envelope === "object" ? envelope.mensagens ?? null : null,
+    envelopeKeys: envelope && typeof envelope === "object" ? Object.keys(envelope) : [],
+    dadosParsed: dadosParsed ?? null,
+    // resposta crua (sem o base64 gigante do PDF, pra não estourar log/UI)
+    raw: pdf && envelope && typeof envelope === "object"
+      ? { ...envelope, dados: "[dados omitido: contém PDF base64 — ver temPdf/pdfLength]" }
+      : envelope,
   };
 }
 

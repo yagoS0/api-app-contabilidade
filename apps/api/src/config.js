@@ -185,6 +185,11 @@ export const SERPRO_ENV = (process.env.SERPRO_ENV || "homolog").trim().toLowerCa
 export const SERPRO_TIMEOUT_MS = Math.max(1000, Number(process.env.SERPRO_TIMEOUT_MS || 30000));
 export const SERPRO_CERT_COMPANY_ID = (process.env.SERPRO_CERT_COMPANY_ID || "").trim();
 
+// Módulo Fiscal M2 (spike): probe read-only da Consultar Declaração Completa DCTFWeb.
+// OFF por padrão. Serviço /Consultar (leitura, sem ato fiscal), mas contrato NÃO validado —
+// ligar só pra rodar o spike e desligar depois. Não persiste nada.
+export const SERPRO_DCTFWEB_LP_PROBE_ENABLED = process.env.SERPRO_DCTFWEB_LP_PROBE_ENABLED === "1";
+
 // Q40: PAGTOWEB (confirmação de pagamento por comprovante de arrecadação) — flag OFF por padrão.
 // ⚠ NÃO INVENTAR: idServiço/payload precisam ser confirmados no catálogo oficial + validados no
 // sandbox antes de ligar a flag. Defaults abaixo são o palpite da spec (verificadoTrial:false).
