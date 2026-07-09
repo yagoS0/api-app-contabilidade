@@ -196,6 +196,25 @@ export async function probeConsultarDeclaracaoCompleta({
   const dadosBruto = envelope && typeof envelope === "object" ? envelope.dados ?? null : null;
   const dadosParsed = parseNestedJsonString(dadosBruto);
 
+  // "Estruturado" de verdade = parsed tem chave que NÃO é PDF/arquivo/documento.
+  const nonPdfKeys = dadosParsed && typeof dadosParsed === "object"
+    ? Object.keys(dadosParsed).filter((k) => !/pdf|arquivo|documento|base64/i.test(k))
+    : [];
+  const temDadosEstruturados = nonPdfKeys.length > 0;
+
+  // Extrai o TEXTO do PDF pra avaliarmos se os débitos são parseáveis.
+  let pdfTexto = null;
+  let pdfTextoErro = null;
+  if (pdf) {
+    try {
+      const pdfParse = (await import("pdf-parse")).default;
+      const parsed = await pdfParse(Buffer.from(String(pdf), "base64"));
+      pdfTexto = String(parsed?.text || "").slice(0, 6000);
+    } catch (e) {
+      pdfTextoErro = e?.message || "falha ao extrair texto do PDF";
+    }
+  }
+
   return {
     verificadoTrial: false, // spike — contrato NÃO validado no catálogo SERPRO
     idServico,
@@ -203,14 +222,15 @@ export async function probeConsultarDeclaracaoCompleta({
     enviado: { idSistema: SERPRO_DCTFWEB_SYSTEM, idServico, dados },
     temPdf: Boolean(pdf),
     pdfLength: pdf ? String(pdf).length : 0,
-    temDadosEstruturados: dadosParsed != null && typeof dadosParsed === "object",
+    temDadosEstruturados,
+    dadosKeys: dadosParsed && typeof dadosParsed === "object" ? Object.keys(dadosParsed) : [],
+    nonPdfKeys,
+    pdfTexto,
+    pdfTextoErro,
     mensagens: envelope && typeof envelope === "object" ? envelope.mensagens ?? null : null,
     envelopeKeys: envelope && typeof envelope === "object" ? Object.keys(envelope) : [],
-    dadosParsed: dadosParsed ?? null,
-    // resposta crua (sem o base64 gigante do PDF, pra não estourar log/UI)
-    raw: pdf && envelope && typeof envelope === "object"
-      ? { ...envelope, dados: "[dados omitido: contém PDF base64 — ver temPdf/pdfLength]" }
-      : envelope,
+    // dadosParsed omitido do retorno quando só tem PDF (base64 gigante) — ver pdfTexto.
+    dadosParsed: temDadosEstruturados ? dadosParsed : "[só PDF — omitido; ver pdfTexto]",
   };
 }
 
