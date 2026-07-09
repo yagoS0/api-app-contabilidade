@@ -937,6 +937,8 @@ export function createAccountingEntriesRouter({ log }) {
     if (body.serproLastSyncAt !== undefined) data.serproLastSyncAt = parseOptionalDate(body.serproLastSyncAt);
     if (body.serproLastError !== undefined) data.serproLastError = String(body.serproLastError || "").trim() || null;
     if (body.metadata !== undefined) data.metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : null;
+    // Frente B: split principal/juros/multa por tributo (editável pelo contador).
+    if (body.acrescimos !== undefined) data.acrescimos = body.acrescimos && typeof body.acrescimos === "object" ? body.acrescimos : null;
 
     const computedReceitaBruta =
       body.receitaBruta !== undefined
@@ -975,6 +977,7 @@ export function createAccountingEntriesRouter({ log }) {
         serproLastSyncAt: data.serproLastSyncAt ?? null,
         serproLastError: data.serproLastError ?? null,
         metadata: data.metadata ?? null,
+        acrescimos: data.acrescimos ?? null,
       },
       update: {
         ...(body.receitaBruta !== undefined ? { receitaBruta: data.receitaBruta } : {}),
@@ -1000,6 +1003,7 @@ export function createAccountingEntriesRouter({ log }) {
         ...(body.serproLastSyncAt !== undefined ? { serproLastSyncAt: data.serproLastSyncAt } : {}),
         ...(body.serproLastError !== undefined ? { serproLastError: data.serproLastError } : {}),
         ...(body.metadata !== undefined ? { metadata: data.metadata } : {}),
+        ...(body.acrescimos !== undefined ? { acrescimos: data.acrescimos } : {}),
       },
     });
 

@@ -158,7 +158,20 @@ function sumEntryLines(lines) {
   return (lines || []).reduce((total, line) => total + Number(line?.valor || 0), 0);
 }
 
+// Frente B: amountSource → chave do tributo em `circular.acrescimos`.
+const AMOUNT_SOURCE_TO_TRIBUTO = Object.freeze({
+  das_total: "DAS", dasTotal: "DAS",
+  inss_total: "INSS", inssTotal: "INSS",
+});
+
 function resolveAmount(circular, amountSource) {
+  // Frente B: quando há split principal/juros/multa (guia recalculada após vencimento),
+  // a PROVISÃO usa o PRINCIPAL (valor original) — os juros/multa ficam só destacados na circular.
+  const tributo = AMOUNT_SOURCE_TO_TRIBUTO[amountSource];
+  if (tributo && circular?.acrescimos && typeof circular.acrescimos === "object") {
+    const principal = parseDecimal(circular.acrescimos?.[tributo]?.principal);
+    if (principal != null) return principal;
+  }
   const field = AMOUNT_SOURCE_FIELD_MAP[amountSource] || amountSource;
   return parseDecimal(circular?.[field]);
 }

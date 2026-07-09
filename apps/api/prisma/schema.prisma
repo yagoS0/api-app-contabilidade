@@ -784,6 +784,10 @@ model CompanyMonthlyCircular {
   serproLastSyncAt            DateTime?
   serproLastError             String?
   metadata                    Json?
+  // Módulo Fiscal (Frente B): valor ORIGINAL × ACRÉSCIMO (juros/multa) por tributo.
+  // { <tributo>: { principal, juros, multa } } — tributo ∈ {DAS, INSS, PIS, COFINS, IRPJ, CSLL, ISS}.
+  // total = principal+juros+multa (derivado). Preenchido no recálculo; editável pelo contador.
+  acrescimos                  Json?
   hasAccountingDivergence     Boolean   @default(false)
   accountingDivergenceMessage String?
   // Q12.A: máquina de estados por (empresa, competência) do módulo Notas
