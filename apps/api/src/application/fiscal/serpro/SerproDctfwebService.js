@@ -5,6 +5,8 @@ import { createOrUpdateGuideFromProcessing, hashPdf, toGuideResponse } from "../
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
+import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
+import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 
 const SERPRO_DCTFWEB_SYSTEM = "DCTFWEB";
 const SERPRO_DCTFWEB_SERVICE_RECEIPT = "CONSRECIBO32";
@@ -343,6 +345,8 @@ async function parsePdfResponse(response) {
     pdfBuffer,
     rawText,
     numeroDocumento,
+    // Frente B: composição principal/multa/juros por código (dado do PDF, antes descartado).
+    composicao: parseArrecadacaoComposicao(rawText),
     parsed: {
       inssTotal,
       inssVencimento: inssVencimento ? inssVencimento.toISOString() : null,
@@ -500,6 +504,19 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
       },
     },
   });
+
+  // Frente B: grava o split principal/juros/multa do INSS na circular (dado do PDF, antes descartado).
+  // Guarda de sanidade: só grava se o total parseado bate com o total conhecido (evita split
+  // errado caso o layout do PDF divirja do esperado). Se não bater, não grava (a provisão segue no total).
+  const inssTot = mapped?.composicao?.totais;
+  if (inssTot && Math.abs((Number(inssTot.total) || 0) - (Number(mapped.parsed.inssTotal) || 0)) < 0.02) {
+    await gravarAcrescimoCircular({
+      client: prisma,
+      portalClientId: portalClient.id,
+      competencia: normalizedCompetencia,
+      valores: { INSS: { principal: inssTot.principal, juros: inssTot.juros, multa: inssTot.multa } },
+    }).catch(() => {});
+  }
 
   const inssSourceFileId = `serpro:dctfweb:${onlyDigits(portalClient.cnpj)}:${normalizedCompetencia}`;
   const existingInssGuide = await prisma.guide.findFirst({

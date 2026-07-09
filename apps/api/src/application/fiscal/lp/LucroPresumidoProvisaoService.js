@@ -11,6 +11,10 @@
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { generateProvisionsFromGuide } from "../../accounting/GuideToProvisionService.js";
+import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
+
+// Código de receita → chave do tributo na circular.acrescimos.
+const CODIGO_TRIBUTO = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };
 
 const onlyDigits = (v) => String(v || "").replace(/\D+/g, "");
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -87,5 +91,23 @@ export async function provisionarLpDaDeclaracao({
   });
 
   const provisao = await generateProvisionsFromGuide({ guideId: guide.id });
+
+  // Frente B: grava o split por tributo na circular (principal; juros/multa=0 na apuração —
+  // o acréscimo entra depois, quando o DARF é emitido após o vencimento).
+  const valores = {};
+  for (const c of composicao) {
+    const t = CODIGO_TRIBUTO[c.codigo];
+    if (t) valores[t] = { principal: c.total, juros: 0, multa: 0 };
+  }
+  if (Object.keys(valores).length) {
+    // garante a circular da competência (LP pode não ter uma ainda) pra segurar os acréscimos.
+    await prisma.companyMonthlyCircular.upsert({
+      where: { portalClientId_competencia: { portalClientId, competencia } },
+      create: { portalClientId, competencia },
+      update: {},
+    }).catch(() => {});
+    await gravarAcrescimoCircular({ client: prisma, portalClientId, competencia, valores }).catch(() => {});
+  }
+
   return { ok: true, guideId: guide.id, principalTotal, composicao, provisao };
 }

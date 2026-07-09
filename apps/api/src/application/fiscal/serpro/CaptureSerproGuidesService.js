@@ -5,6 +5,8 @@ import {
   toGuideResponse,
 } from "../../guides/GuideService.js";
 import { generateEntriesFromCircular } from "../../accounting/AccountingEntryGeneratorService.js";
+import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
+import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import {
@@ -493,6 +495,25 @@ export async function capturePgdasGuideForCompany({
       },
     },
   });
+
+  // Frente B: grava o split principal/juros/multa do DAS na circular (dado do PDF, antes descartado).
+  // Guarda de sanidade: só grava se o total parseado bate com o total do DAS (layout do PDF não
+  // validado no offline — se não bater, não grava e a provisão segue no total/dasTotal).
+  try {
+    if (mapped.pdfBuffer?.length && mapped.parsed.valor != null) {
+      const pdfParse = (await import("pdf-parse")).default;
+      const txt = String((await pdfParse(mapped.pdfBuffer))?.text || "");
+      const comp = parseArrecadacaoComposicao(txt);
+      if (comp?.totais && Math.abs((Number(comp.totais.total) || 0) - Number(mapped.parsed.valor)) < 0.02) {
+        await gravarAcrescimoCircular({
+          client: prisma,
+          portalClientId: portalClient.id,
+          competencia: normalizedCompetencia,
+          valores: { DAS: { principal: comp.totais.principal, juros: comp.totais.juros, multa: comp.totais.multa } },
+        });
+      }
+    }
+  } catch { /* best-effort: nunca derruba a captura do DAS */ }
 
   let accounting = null;
   try {
