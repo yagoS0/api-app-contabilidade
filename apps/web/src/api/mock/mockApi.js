@@ -760,6 +760,10 @@ export function createMockApi() {
         },
       };
     },
+    async captureSerproLp(companyId, input = {}) {
+      await delay();
+      return { ok: true, result: { cabecalho: {}, debitos: [], totais: { principal: 0, juros: 0, multa: 0, total: 0 }, provisao: { ok: true } } };
+    },
     async syncSerproInss(companyId, input = {}) {
       await delay();
       const company = mockCompanies.find((item) => item.companyId === companyId);

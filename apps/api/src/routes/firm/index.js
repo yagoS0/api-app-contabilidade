@@ -76,6 +76,7 @@ import {
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta, probeEmitirDarfDctfweb } from "../../application/fiscal/serpro/SerproDctfwebService.js";
 import { SERPRO_DCTFWEB_LP_PROBE_ENABLED } from "../../config.js";
+import { capturarLpDaCompetencia } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
 import { capturarParcelaGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
 // Q40: confirmação de pagamento (PAGTOWEB) + SITFIS.
@@ -2865,6 +2866,38 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       } catch (err) {
         const code = err?.code || "SERPRO_DCTFWEB_PROBE_FAILED";
         log.error({ err: err?.message || err, code, portalCompanyId, competencia }, "Falha no probe DCTFWeb");
+        return res.status(502).json({ ok: false, error: code, reason: err?.message || "Erro", retryable: Boolean(err?.retryable) });
+      }
+    }
+  );
+
+  // Módulo Fiscal M2 — captura do Lucro Presumido: consulta a Declaração Completa DCTFWeb,
+  // parseia os débitos (principal) e gera a provisão por tributo + o split na circular.
+  router.post(
+    "/companies/:companyId/serpro/lp/capture",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId || "").trim();
+      const competencia = String(req.body?.competencia || req.query?.competencia || "").trim();
+      if (!portalClientId) return res.status(400).json({ ok: false, error: "company_id_required" });
+      if (!/^\d{4}-\d{2}$/.test(competencia)) return res.status(400).json({ ok: false, error: "competencia_required", message: "competência YYYY-MM" });
+      try {
+        const result = await capturarLpDaCompetencia({ portalClientId, competencia });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        const code = err?.code || "SERPRO_DCTFWEB_LP_CAPTURE_FAILED";
+        // "Declaração não transmitida por terceiros" é estado NORMAL (não é erro do app).
+        if (code === "SERPRO_DCTFWEB_LP_NAO_TRANSMITIDA") {
+          return res.status(200).json({ ok: false, error: code, message: "DCTFWeb ainda não transmitida para esta competência.", mensagens: err?.mensagens || null });
+        }
+        if ([
+          "SERPRO_INVALID_COMPETENCIA", "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED", "PORTAL_COMPANY_NOT_FOUND",
+          "SERPRO_AUTH_URL_NOT_CONFIGURED", "SERPRO_BASE_URL_NOT_CONFIGURED", "SERPRO_CONSUMER_KEY_NOT_CONFIGURED",
+          "SERPRO_CONSUMER_SECRET_NOT_CONFIGURED", "SERPRO_CERTIFICATE_NOT_CONFIGURED",
+        ].includes(code)) {
+          return res.status(400).json({ ok: false, error: code, reason: err?.message || "Erro" });
+        }
+        log.error({ err: err?.message || err, code, portalClientId, competencia }, "Falha na captura de Lucro Presumido");
         return res.status(502).json({ ok: false, error: code, reason: err?.message || "Erro", retryable: Boolean(err?.retryable) });
       }
     }

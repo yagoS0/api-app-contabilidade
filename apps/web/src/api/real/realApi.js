@@ -403,6 +403,13 @@ export function createRealApi() {
         body: JSON.stringify(input),
       });
     },
+    // Módulo Fiscal M2 — captura Lucro Presumido (DCTFWeb → provisão por tributo + split na circular).
+    async captureSerproLp(companyId, input = {}) {
+      return request(`/firm/companies/${companyId}/serpro/lp/capture`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
     // Q36: captura manual de parcelamento (itera as parcelas geráveis internamente; sem competência).
     async captureSerproParcelamento(companyId) {
       return request(`/firm/companies/${companyId}/serpro/parcelamento/capture`, {

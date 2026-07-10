@@ -12,6 +12,7 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { generateProvisionsFromGuide } from "../../accounting/GuideToProvisionService.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
+import { consultarDeclaracaoCompletaLp } from "../serpro/SerproDctfwebService.js";
 
 // Código de receita → chave do tributo na circular.acrescimos.
 const CODIGO_TRIBUTO = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };
@@ -110,4 +111,27 @@ export async function provisionarLpDaDeclaracao({
   }
 
   return { ok: true, guideId: guide.id, principalTotal, composicao, provisao };
+}
+
+/**
+ * Captura o Lucro Presumido de uma competência: consulta a Declaração Completa DCTFWeb,
+ * parseia os débitos (principal por código) e gera a provisão por tributo + o split na circular.
+ * @param {Object} opts { portalClientId, competencia }
+ */
+export async function capturarLpDaCompetencia({ portalClientId, competencia }) {
+  const pc = await prisma.portalClient.findUnique({ where: { id: portalClientId }, select: { cnpj: true } });
+  if (!pc) {
+    const e = new Error("portal_company_not_found");
+    e.code = "PORTAL_COMPANY_NOT_FOUND";
+    throw e;
+  }
+  const decl = await consultarDeclaracaoCompletaLp({ contribuinteCnpj: pc.cnpj, competencia });
+  const provisao = await provisionarLpDaDeclaracao({
+    portalClientId,
+    competencia,
+    cnpj: pc.cnpj,
+    debitos: decl.debitos,
+    numeroRecibo: decl.cabecalho?.numeroRecibo,
+  });
+  return { ok: true, cabecalho: decl.cabecalho, debitos: decl.debitos, totais: decl.totais, provisao };
 }

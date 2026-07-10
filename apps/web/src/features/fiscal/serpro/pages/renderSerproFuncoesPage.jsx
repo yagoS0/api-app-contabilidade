@@ -14,6 +14,7 @@ const OP_DEFS = [
   { key: "das", label: "DAS", useRange: true },
   { key: "inss", label: "INSS", useRange: true },
   { key: "extrato", label: "Extrato", useRange: true },
+  { key: "presumido", label: "Presumido", useRange: true },
   { key: "parcelamento", label: "Parcelamento", useRange: false },
   { key: "pagamento", label: "Confirmar pagamento", useRange: true },
   { key: "procuracao", label: "Testar procuração", useRange: false },

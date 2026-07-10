@@ -6,6 +6,7 @@ import { resolveCompanyNotificationEmail } from "../application/guides/GuideSche
 import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRuntimeSettings.js";
 import { SerproProcurationService } from "../application/fiscal/serpro/SerproProcurationService.js";
 import { capturePgdasGuideForCompany } from "../application/fiscal/serpro/CaptureSerproGuidesService.js";
+import { capturarLpDaCompetencia } from "../application/fiscal/lp/LucroPresumidoProvisaoService.js";
 import { syncPgdasByCompetencia } from "../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
 import { capturarParcelaGuideForCompany } from "../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
@@ -96,7 +97,8 @@ async function listEligiblePortalCompanies() {
     const regime = String(legacyRow?.regimeTributario || legacyRow?.tipoTributario || "")
       .trim()
       .toUpperCase();
-    if (regime !== "SIMPLES") continue;
+    // Módulo Fiscal M2: o cron também processa Lucro Presumido (captura DCTFWeb → provisão).
+    if (regime !== "SIMPLES" && regime !== "LUCRO_PRESUMIDO") continue;
     // eslint-disable-next-line no-await-in-loop
     const email = await resolveCompanyNotificationEmail(p.id);
     if (!email) continue;
@@ -146,6 +148,40 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
             procurationStatus: procuration.status,
           });
           continue;
+        }
+
+        // Módulo Fiscal M2: Lucro Presumido → captura DCTFWeb (provisão por tributo + split na circular).
+        // Idempotente: pula se já houver guia LP PROCESSED da competência (evita re-hit no SERPRO).
+        if (company.regimeTributario === "LUCRO_PRESUMIDO") {
+          if (isCaptureWindow) {
+            const cnpjDigits = String(company.cnpj || "").replace(/\D+/g, "");
+            // eslint-disable-next-line no-await-in-loop
+            const existingLp = await prisma.guide.findFirst({
+              where: { sourceFileId: `serpro:dctfweb:lp:${cnpjDigits}:${competencia}`, status: "PROCESSED" },
+              select: { id: true },
+            });
+            if (!existingLp) {
+              try {
+                // eslint-disable-next-line no-await-in-loop
+                const cap = await capturarLpDaCompetencia({ portalClientId: company.id, competencia });
+                results.push({
+                  companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
+                  competencia, status: "lp_captured", debitos: cap.debitos?.length || 0,
+                });
+              } catch (err) {
+                const naoTransmitida = err?.code === "SERPRO_DCTFWEB_LP_NAO_TRANSMITIDA";
+                results.push({
+                  companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
+                  competencia,
+                  status: naoTransmitida ? "lp_nao_transmitida" : "error",
+                  error: naoTransmitida ? null : (err?.code || "SERPRO_DCTFWEB_LP_CAPTURE_FAILED"),
+                  reason: err?.message || null,
+                  retryable: Boolean(err?.retryable),
+                });
+              }
+            }
+          }
+          continue; // LP não roda as stages de Simples (DAS/extrato/parcelamento)
         }
 
         // Stage 1: Captura inicial (apenas no/após fetchDay e se ainda não houver guia para a competência)

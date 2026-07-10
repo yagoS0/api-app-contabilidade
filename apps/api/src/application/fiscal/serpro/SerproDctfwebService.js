@@ -7,6 +7,7 @@ import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
 import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
+import { parseDctfwebDeclaracao } from "./parseDctfwebDeclaracao.js";
 
 const SERPRO_DCTFWEB_SYSTEM = "DCTFWEB";
 const SERPRO_DCTFWEB_SERVICE_RECEIPT = "CONSRECIBO32";
@@ -234,6 +235,59 @@ export async function probeConsultarDeclaracaoCompleta({
     // dadosParsed omitido do retorno quando só tem PDF (base64 gigante) — ver pdfTexto.
     dadosParsed: temDadosEstruturados ? dadosParsed : "[só PDF — omitido; ver pdfTexto]",
   };
+}
+
+/**
+ * Módulo Fiscal M2 — consulta a Declaração Completa DCTFWeb (Lucro Presumido) e devolve os
+ * débitos parseados (principal por código). /Consultar (leitura, sem ato fiscal).
+ * Sem PDF na resposta = declaração ainda não transmitida por terceiros → estado NORMAL (erro tratável).
+ */
+export async function consultarDeclaracaoCompletaLp({ contribuinteCnpj, competencia }) {
+  const runtime = await getResolvedSerproCredentials();
+  const procuradorCnpj = onlyDigits(runtime?.certificate?.document);
+  if (!procuradorCnpj || procuradorCnpj.length !== 14) {
+    const err = new Error("serpro_procurador_cnpj_not_configured");
+    err.code = "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED";
+    throw err;
+  }
+  const cnpj = onlyDigits(contribuinteCnpj);
+  const normalized = normalizeCompetencia(competencia);
+  if (!normalized) {
+    const err = new Error("competencia_invalida");
+    err.code = "SERPRO_INVALID_COMPETENCIA";
+    throw err;
+  }
+  const [year, month] = normalized.split("-");
+
+  const client = new SerproHttpClient();
+  const res = await client.post(
+    "/Consultar",
+    {
+      contratante: { numero: procuradorCnpj, tipo: 2 },
+      autorPedidoDados: { numero: procuradorCnpj, tipo: 2 },
+      contribuinte: { numero: cnpj, tipo: 2 },
+      pedidoDados: {
+        idSistema: SERPRO_DCTFWEB_SYSTEM,
+        idServico: SERPRO_DCTFWEB_SERVICE_DECL_COMPLETA,
+        versaoSistema: "1.0",
+        dados: JSON.stringify({ categoria: "GERAL_MENSAL", anoPA: year, mesPA: month }),
+      },
+    },
+    { raw: true, validateStatus: () => true }
+  );
+
+  const envelope = res?.data ?? res ?? null;
+  const pdf = extractPdfBase64(envelope);
+  if (!pdf) {
+    const err = new Error("dctfweb_declaracao_nao_transmitida");
+    err.code = "SERPRO_DCTFWEB_LP_NAO_TRANSMITIDA";
+    err.mensagens = envelope && typeof envelope === "object" ? envelope.mensagens : null;
+    throw err;
+  }
+  const pdfParse = (await import("pdf-parse")).default;
+  const texto = String((await pdfParse(Buffer.from(String(pdf), "base64")))?.text || "");
+  const parsed = parseDctfwebDeclaracao(texto);
+  return { ...parsed, competencia: normalized, cnpj };
 }
 
 /**
