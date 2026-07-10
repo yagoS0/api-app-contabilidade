@@ -429,11 +429,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
           await api.syncPgdasCircular(companyId, competencia, {});
           return { ok: true };
         case "presumido": {
-          // Módulo Fiscal M2 — Lucro Presumido (DCTFWeb → provisão + split na circular).
+          // Módulo Fiscal M2 — Lucro Presumido (DCTFWeb → provisão + split + reconciliação).
           const r = await api.captureSerproLp(companyId, { competencia });
           if (r?.ok === false) return { ok: false, message: r?.message || "DCTFWeb não transmitida" };
           const tot = r?.result?.totais?.principal;
-          return { ok: true, message: tot != null ? `Presumido: R$ ${Number(tot).toFixed(2)}` : "Presumido capturado" };
+          const alerta = r?.result?.reconciliacao?.alerta;
+          const base = tot != null ? `Presumido: R$ ${Number(tot).toFixed(2)}` : "Presumido capturado";
+          return { ok: true, message: base + (alerta ? " ⚠ divergência calc × DCTFWeb (conferir)" : " ✓ reconciliado") };
         }
         case "pagamento": {
           // Q40/Q43: confirma pagamento das guias OPEN (via PAGTOWEB). competencia é opcional.

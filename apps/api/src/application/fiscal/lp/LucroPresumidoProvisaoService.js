@@ -13,6 +13,7 @@ import { prisma } from "../../../infrastructure/db/prisma.js";
 import { generateProvisionsFromGuide } from "../../accounting/GuideToProvisionService.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 import { consultarDeclaracaoCompletaLp } from "../serpro/SerproDctfwebService.js";
+import { reconciliarLp } from "./LucroPresumidoCalculoService.js";
 
 // Código de receita → chave do tributo na circular.acrescimos.
 const CODIGO_TRIBUTO = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };
@@ -133,5 +134,15 @@ export async function capturarLpDaCompetencia({ portalClientId, competencia }) {
     debitos: decl.debitos,
     numeroRecibo: decl.cabecalho?.numeroRecibo,
   });
-  return { ok: true, cabecalho: decl.cabecalho, debitos: decl.debitos, totais: decl.totais, provisao };
+
+  // Reconciliação (alerta, não bloqueia): calculado (notas × presunção) × débito da DCTFWeb.
+  const CODIGO_TRIB = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };
+  const debitosDctfweb = {};
+  for (const d of decl.debitos || []) {
+    const t = CODIGO_TRIB[String(d.codigoReceita).replace(/\D+/g, "").slice(0, 4)];
+    if (t) debitosDctfweb[t] = d.debitoApurado;
+  }
+  const reconciliacao = await reconciliarLp({ portalClientId, competencia, debitosDctfweb }).catch(() => null);
+
+  return { ok: true, cabecalho: decl.cabecalho, debitos: decl.debitos, totais: decl.totais, provisao, reconciliacao };
 }
