@@ -56,20 +56,26 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
     background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6,
     color: PANEL.text, padding: "8px 12px", fontSize: "0.9rem",
   };
+  // Campos read-only (regime/CNAE vêm do cadastro da empresa).
+  const readOnlyStyle = {
+    background: PANEL.surface, border: `1px dashed ${PANEL.border}`, borderRadius: 6,
+    color: PANEL.text, padding: "8px 12px", fontSize: "0.9rem",
+  };
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
       <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>📋 Cadastro Fiscal</div>
       <div style={{ fontSize: "0.85rem", color: PANEL.muted }}>
-        Define a "autoridade" pra classificação. Sem cadastro completo, o motor não consegue apurar.
+        Define a "autoridade" pra classificação. <strong style={{ color: PANEL.text }}>Regime e CNAEs</strong> vêm
+        do cadastro da empresa (aba <strong style={{ color: PANEL.text }}>Editar Cadastro</strong>) — aqui só de leitura.
+        Ajuste abaixo apenas os parâmetros fiscais.
       </div>
 
+      {/* Regime + CNAEs: read-only (fonte = cadastro da empresa). */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
-          Regime tributário *
-          <select value={form.regime} onChange={(e) => setField("regime", e.target.value)} required style={inputStyle}>
-            {REGIMES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem", color: PANEL.muted }}>
+          Regime tributário (do cadastro)
+          <div style={{ ...readOnlyStyle }}>{REGIMES.find((r) => r.value === form.regime)?.label || form.regime || "—"}</div>
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
           Data de opção pelo SN
@@ -77,10 +83,9 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
         </label>
       </div>
 
-      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
-        CNAE principal * (7 dígitos, sem hífen)
-        <input type="text" value={form.cnaePrincipal} onChange={(e) => setField("cnaePrincipal", e.target.value)}
-          placeholder="ex: 6201500" required maxLength={9} style={inputStyle} />
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem", color: PANEL.muted }}>
+        CNAE principal (do cadastro)
+        <div style={{ ...readOnlyStyle, fontFamily: "monospace" }}>{form.cnaePrincipal || "—"}</div>
         {cnaePrincipalRef && (
           <span style={{ fontSize: "0.7rem", color: cnaePrincipalRef.ambiguo ? "#FFB347" : "#69FF47" }}>
             {cnaePrincipalRef.ambiguo ? "⚠ Ambíguo: " : "✓ "}{cnaePrincipalRef.descricao}
@@ -89,10 +94,9 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
         )}
       </label>
 
-      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
-        CNAEs secundários (separados por vírgula)
-        <input type="text" value={form.cnaesSecundarios} onChange={(e) => setField("cnaesSecundarios", e.target.value)}
-          placeholder="ex: 6202300, 6209100" style={inputStyle} />
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem", color: PANEL.muted }}>
+        CNAEs secundários (do cadastro)
+        <div style={{ ...readOnlyStyle, fontFamily: "monospace" }}>{form.cnaesSecundarios || "—"}</div>
       </label>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>

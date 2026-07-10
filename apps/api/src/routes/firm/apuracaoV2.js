@@ -60,25 +60,32 @@ export function createApuracaoV2Router({ log } = {}) {
         let cadastro = await prisma.cadastroFiscal.findUnique({
           where: { portalClientId },
         });
-        // Q44: sem CadastroFiscal salvo → pré-preenche a partir do cadastro da empresa (dados do CNPJ,
-        // já gravados no Company na consulta). Assim o form vem pronto; o contador só confere e salva.
+        // Regime + CNAE são do CADASTRO DA EMPRESA (fonte única, editados na aba "Editar Cadastro").
+        // SEMPRE sobrepõe esses campos com os do Company — evita re-digitação e divergência.
+        // Os campos fiscais-específicos (usaFatorR, sublimite, forçarCnae, dataOpcao, observações)
+        // continuam vindo do CadastroFiscal salvo.
         let prefill = false;
-        if (!cadastro) {
-          const pc = await prisma.portalClient.findUnique({
-            where: { id: portalClientId }, select: { companyId: true },
-          });
-          const company = pc?.companyId
-            ? await prisma.company.findUnique({
-                where: { id: pc.companyId },
-                select: { cnaePrincipal: true, cnaesSecundarios: true, regimeTributario: true, optanteSimples: true, simplesDataOpcao: true },
-              }).catch(() => null)
-            : null;
-          if (company?.cnaePrincipal) {
+        const pc = await prisma.portalClient.findUnique({
+          where: { id: portalClientId }, select: { companyId: true },
+        });
+        const company = pc?.companyId
+          ? await prisma.company.findUnique({
+              where: { id: pc.companyId },
+              select: { cnaePrincipal: true, cnaesSecundarios: true, regimeTributario: true, optanteSimples: true, simplesDataOpcao: true },
+            }).catch(() => null)
+          : null;
+        if (company?.cnaePrincipal) {
+          const doCompany = {
+            regime: mapRegime(company),
+            cnaePrincipal: String(company.cnaePrincipal).replace(/\D+/g, ""),
+            cnaesSecundarios: (company.cnaesSecundarios || []).map((c) => String(c).replace(/\D+/g, "")).filter(Boolean),
+          };
+          if (cadastro) {
+            cadastro = { ...cadastro, ...doCompany }; // sobrepõe regime/CNAE (empresa é a fonte)
+          } else {
             cadastro = {
-              regime: mapRegime(company),
+              ...doCompany,
               dataOpcaoSN: company.simplesDataOpcao || null,
-              cnaePrincipal: String(company.cnaePrincipal).replace(/\D+/g, ""),
-              cnaesSecundarios: (company.cnaesSecundarios || []).map((c) => String(c).replace(/\D+/g, "")).filter(Boolean),
               sublimiteICMSISS: false,
               usaFatorR: false,
               forcarTipoReceitaPorCnae: false,
