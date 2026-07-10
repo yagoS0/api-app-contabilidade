@@ -12,7 +12,7 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { generateProvisionsFromGuide } from "../../accounting/GuideToProvisionService.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
-import { consultarDeclaracaoCompletaLp } from "../serpro/SerproDctfwebService.js";
+import { consultarDeclaracaoCompletaLp, emitirDarfDctfweb } from "../serpro/SerproDctfwebService.js";
 import { reconciliarLp } from "./LucroPresumidoCalculoService.js";
 
 // Código de receita → chave do tributo na circular.acrescimos.
@@ -134,6 +134,35 @@ export async function capturarLpDaCompetencia({ portalClientId, competencia }) {
     debitos: decl.debitos,
     numeroRecibo: decl.cabecalho?.numeroRecibo,
   });
+
+  // Emite o DARF (guia a pagar) — dá o nº do documento (p/ confirmar pagamento via PAGTOWEB)
+  // e os juros/multa REAIS (a declaração traz só o principal). Best-effort: se não emitir
+  // (ex.: nada a pagar / já pago), a provisão já foi feita e o fluxo segue.
+  let darf = null;
+  try {
+    darf = await emitirDarfDctfweb({ contribuinteCnpj: pc.cnpj, competencia });
+  } catch { /* ignore */ }
+  if (darf && provisao?.guideId) {
+    const g = await prisma.guide.findUnique({ where: { id: provisao.guideId }, select: { extracted: true } }).catch(() => null);
+    const extractedAtual = g?.extracted && typeof g.extracted === "object" ? g.extracted : {};
+    await prisma.guide.update({
+      where: { id: provisao.guideId },
+      data: {
+        ...(darf.valor != null ? { valor: darf.valor } : {}),
+        ...(darf.vencimento ? { vencimento: new Date(darf.vencimento) } : {}),
+        extracted: { ...extractedAtual, numeroDocumento: darf.numeroDocumento },
+      },
+    }).catch(() => {});
+    // Acréscimo REAL por tributo (juros/multa do DARF) → sobrepõe o principal-only da declaração.
+    const valores = {};
+    for (const it of darf.composicao?.itens || []) {
+      const t = CODIGO_TRIBUTO[String(it.codigo).replace(/\D+/g, "").slice(0, 4)];
+      if (t) valores[t] = { principal: it.principal, juros: it.juros, multa: it.multa };
+    }
+    if (Object.keys(valores).length) {
+      await gravarAcrescimoCircular({ client: prisma, portalClientId, competencia, valores }).catch(() => {});
+    }
+  }
 
   // Reconciliação (alerta, não bloqueia): calculado (notas × presunção) × débito da DCTFWeb.
   const CODIGO_TRIB = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };

@@ -291,6 +291,39 @@ export async function consultarDeclaracaoCompletaLp({ contribuinteCnpj, competen
 }
 
 /**
+ * Módulo Fiscal M2 — emite o DARF DCTFWeb (GERARGUIA31) e devolve valor/vencimento/nº documento
+ * + a composição (principal/multa/juros por código). Deriva da declaração já transmitida
+ * (não confessa, não paga). Usado na captura do Lucro Presumido pra gerar a guia a pagar.
+ */
+export async function emitirDarfDctfweb({ contribuinteCnpj, competencia, categoria = "GERAL_MENSAL" }) {
+  const runtime = await getResolvedSerproCredentials();
+  const procuradorCnpj = onlyDigits(runtime?.certificate?.document);
+  if (!procuradorCnpj || procuradorCnpj.length !== 14) {
+    const err = new Error("serpro_procurador_cnpj_not_configured");
+    err.code = "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED";
+    throw err;
+  }
+  const cnpj = onlyDigits(contribuinteCnpj);
+  const normalized = normalizeCompetencia(competencia);
+  const [year, month] = String(normalized || "-").split("-");
+  const client = new SerproHttpClient();
+  const res = await client.post("/Emitir", {
+    contratante: { numero: procuradorCnpj, tipo: 2 },
+    autorPedidoDados: { numero: procuradorCnpj, tipo: 2 },
+    contribuinte: { numero: cnpj, tipo: 2 },
+    pedidoDados: { idSistema: SERPRO_DCTFWEB_SYSTEM, idServico: SERPRO_DCTFWEB_SERVICE_GUIDE, versaoSistema: "1.0", dados: JSON.stringify({ categoria, anoPA: year, mesPA: month }) },
+  });
+  const mapped = await parsePdfResponse(res); // { pdfBuffer, numeroDocumento, composicao, parsed:{inssTotal,inssVencimento} }
+  return {
+    valor: mapped.parsed?.inssTotal ?? null,
+    vencimento: mapped.parsed?.inssVencimento ?? null,
+    numeroDocumento: mapped.numeroDocumento ?? null,
+    composicao: mapped.composicao || { itens: [], totais: null },
+    pdfBuffer: mapped.pdfBuffer,
+  };
+}
+
+/**
  * SPIKE M2 (read-adjacent, NÃO persiste) — probe do Emitir DARF DCTFWeb (GERARGUIA31).
  *
  * /Emitir gera a guia a partir da declaração JÁ TRANSMITIDA — não envia info nova, não

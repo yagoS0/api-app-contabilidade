@@ -176,7 +176,11 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     source: "SERPRO",
     status: "PROCESSED",
     paymentStatus: { in: ["OPEN", "OVERDUE"] },
-    tipo: { in: ["SIMPLES", "INSS"] },
+    // SIMPLES/INSS + guia de Lucro Presumido (DCTFWeb, tipo OUTRA) — confirmada via PAGTOWEB pelo nº do DARF.
+    OR: [
+      { tipo: { in: ["SIMPLES", "INSS"] } },
+      { tipo: "OUTRA", sourceFileId: { startsWith: "serpro:dctfweb:lp:" } },
+    ],
     ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
     ...(competencia ? { competencia: String(competencia) } : {}),
   };
