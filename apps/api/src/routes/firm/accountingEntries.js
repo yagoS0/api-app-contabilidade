@@ -106,8 +106,11 @@ function deriveBaixaEventType(entry) {
 }
 
 // Frente B / item 2: acréscimo (juros+multa) do tributo do lançamento, lido de circular.acrescimos.
-// Usado na baixa pra somar uma linha de despesa de juros (conta 501) quando a guia veio recalculada.
+// Usado na baixa pra somar linhas de despesa quando a guia veio recalculada.
+// Contas conferidas no plano de contas (ChartOfAccount): 501 = JUROS, 506 = MULTAS (ambas DESPESA/DEVEDORA).
 const SUBTIPO_TO_ACRESCIMO_TRIB = { DAS: ["DAS"], INSS: ["INSS"], IRPJ: ["IRPJ"], CSLL: ["CSLL"], PIS_COFINS: ["PIS", "COFINS"], ISS: ["ISS"] };
+const CONTA_JUROS = "501"; // JUROS
+const CONTA_MULTA = "506"; // MULTAS
 async function acrescimoDoEntry(client, portalClientId, entry) {
   const keys = SUBTIPO_TO_ACRESCIMO_TRIB[String(entry?.subtipo || "").toUpperCase()];
   if (!keys || !entry?.competencia) return null;
@@ -119,8 +122,12 @@ async function acrescimoDoEntry(client, portalClientId, entry) {
   if (!src || typeof src !== "object") return null;
   let juros = 0, multa = 0;
   for (const k of keys) { const t = src[k]; if (t) { juros += Number(t.juros) || 0; multa += Number(t.multa) || 0; } }
+  juros = Math.round(juros * 100) / 100;
+  multa = Math.round(multa * 100) / 100;
   const total = Math.round((juros + multa) * 100) / 100;
-  return total > 0 ? { juros: Math.round(juros * 100) / 100, multa: Math.round(multa * 100) / 100, total, conta: "501" } : null;
+  if (total <= 0) return null;
+  // Cada acréscimo na sua conta: juros → 501, multa → 506. `conta` mantido p/ compat (= juros).
+  return { juros, multa, total, contaJuros: CONTA_JUROS, contaMulta: CONTA_MULTA, conta: CONTA_JUROS };
 }
 
 // ---------------------------------------------------------------------------

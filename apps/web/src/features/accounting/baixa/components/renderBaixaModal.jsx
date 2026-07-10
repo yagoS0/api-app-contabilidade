@@ -183,12 +183,15 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         const tpl = res?.template;
         if (!tpl) return;
         const principal = Number(tpl.valor || valorBase) || 0;
-        const juros = acr?.total || 0;
-        // Item 2: guia recalculada (juros/multa) → linha extra de despesa de juros (conta 501);
-        // o crédito (caixa) sai pelo TOTAL pago (principal + juros/multa).
+        const juros = Number(acr?.juros) || 0;
+        const multa = Number(acr?.multa) || 0;
+        const acrescimoTotal = Math.round((juros + multa) * 100) / 100;
+        // Item 2: guia recalculada → cada acréscimo na sua conta de despesa (juros 501, multa 506);
+        // o crédito (caixa) sai pelo TOTAL pago (principal + juros + multa).
         const newLines = [{ tipo: "D", conta: tpl.debitAccountCode || "", valor: principal.toFixed(2) }];
-        if (juros > 0) newLines.push({ tipo: "D", conta: acr.conta || "501", valor: juros.toFixed(2) });
-        newLines.push({ tipo: "C", conta: tpl.creditAccountCode || "", valor: (principal + juros).toFixed(2) });
+        if (juros > 0) newLines.push({ tipo: "D", conta: acr.contaJuros || "501", valor: juros.toFixed(2) });
+        if (multa > 0) newLines.push({ tipo: "D", conta: acr.contaMulta || "506", valor: multa.toFixed(2) });
+        newLines.push({ tipo: "C", conta: tpl.creditAccountCode || "", valor: (principal + acrescimoTotal).toFixed(2) });
         setLines(newLines);
         if (tpl.historico) setHistorico(tpl.historico);
         setTemplateApplied(tpl.scope || "GLOBAL");
@@ -239,10 +242,14 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
           <Button size="sm" variant="secondary" onClick={onClose}>Fechar</Button>
         </div>
 
-        {/* Item 2: aviso de guia recalculada (juros/multa → conta de juros) */}
+        {/* Item 2: aviso de guia recalculada (juros → 501, multa → 506) */}
         {acrescimo && acrescimo.total > 0 && (
           <div style={{ background: "rgba(255,110,110,0.12)", border: "1px solid #FF6E6E", borderRadius: 6, padding: "8px 12px", marginBottom: 12, fontSize: "0.8rem" }}>
-            ⚠ Guia recalculada — juros/multa de <strong>R$ {acrescimo.total.toFixed(2)}</strong> (juros {acrescimo.juros.toFixed(2)} + multa {acrescimo.multa.toFixed(2)}) lançados na conta de despesa <strong>{acrescimo.conta}</strong>. O crédito (caixa) sai pelo total pago (principal + juros/multa).
+            ⚠ Guia recalculada — acréscimo de <strong>R$ {acrescimo.total.toFixed(2)}</strong>:
+            {acrescimo.juros > 0 && <> juros R$ {acrescimo.juros.toFixed(2)} → conta <strong>{acrescimo.contaJuros || "501"}</strong></>}
+            {acrescimo.juros > 0 && acrescimo.multa > 0 && " · "}
+            {acrescimo.multa > 0 && <> multa R$ {acrescimo.multa.toFixed(2)} → conta <strong>{acrescimo.contaMulta || "506"}</strong></>}
+            . O crédito (caixa) sai pelo total pago (principal + juros + multa).
           </div>
         )}
 
