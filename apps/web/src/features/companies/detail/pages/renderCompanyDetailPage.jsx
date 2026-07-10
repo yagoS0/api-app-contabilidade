@@ -359,7 +359,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         <div style={{ flex: 1, padding: 24 }}>
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
-              <ApuracaoV2TabWrapper companyId={selectedCompany?.id} feedback={feedback} />
+              <ApuracaoV2TabWrapper companyId={companyId} feedback={feedback} />
             </Suspense>
           </ErrorBoundary>
         </div>
