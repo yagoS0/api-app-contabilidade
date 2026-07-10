@@ -105,6 +105,24 @@ function deriveBaixaEventType(entry) {
   return null;
 }
 
+// Frente B / item 2: acréscimo (juros+multa) do tributo do lançamento, lido de circular.acrescimos.
+// Usado na baixa pra somar uma linha de despesa de juros (conta 501) quando a guia veio recalculada.
+const SUBTIPO_TO_ACRESCIMO_TRIB = { DAS: ["DAS"], INSS: ["INSS"], IRPJ: ["IRPJ"], CSLL: ["CSLL"], PIS_COFINS: ["PIS", "COFINS"], ISS: ["ISS"] };
+async function acrescimoDoEntry(client, portalClientId, entry) {
+  const keys = SUBTIPO_TO_ACRESCIMO_TRIB[String(entry?.subtipo || "").toUpperCase()];
+  if (!keys || !entry?.competencia) return null;
+  const circ = await client.companyMonthlyCircular.findUnique({
+    where: { portalClientId_competencia: { portalClientId, competencia: entry.competencia } },
+    select: { acrescimos: true },
+  }).catch(() => null);
+  const src = circ?.acrescimos;
+  if (!src || typeof src !== "object") return null;
+  let juros = 0, multa = 0;
+  for (const k of keys) { const t = src[k]; if (t) { juros += Number(t.juros) || 0; multa += Number(t.multa) || 0; } }
+  const total = Math.round((juros + multa) * 100) / 100;
+  return total > 0 ? { juros: Math.round(juros * 100) / 100, multa: Math.round(multa * 100) / 100, total, conta: "501" } : null;
+}
+
 // ---------------------------------------------------------------------------
 // OFX Parser (SGML v1 e XML v2)
 // Suporta: namespaces de tag (n0:STMTTRN), encoding UTF-8/Latin-1,
@@ -2106,9 +2124,12 @@ export function createAccountingEntriesRouter({ log }) {
     });
     if (!entry) return res.status(404).json({ error: "lancamento_nao_encontrado" });
 
+    // Frente B / item 2: juros+multa da guia (acréscimo) → linha extra na baixa (conta de juros 501).
+    const acrescimo = await acrescimoDoEntry(prisma, portalClientId, entry);
+
     const baixaEventType = deriveBaixaEventType(entry);
     if (!baixaEventType) {
-      return res.json({ ok: true, template: null, reason: "no_baixa_mapping" });
+      return res.json({ ok: true, template: null, acrescimo, reason: "no_baixa_mapping" });
     }
 
     const company = await prisma.portalClient.findUnique({
@@ -2123,7 +2144,7 @@ export function createAccountingEntriesRouter({ log }) {
     const creditAccountCode = mem.creditAccountCode || rule?.creditAccountCode || "";
     if (!debitAccountCode && !creditAccountCode) {
       // Sem memória nem regra → modal inverte as linhas da provisão (comportamento atual).
-      return res.json({ ok: true, template: null, reason: "sem_memoria_nem_regra" });
+      return res.json({ ok: true, template: null, acrescimo, reason: "sem_memoria_nem_regra" });
     }
 
     const totalD = (entry.lines || []).filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
@@ -2141,6 +2162,7 @@ export function createAccountingEntriesRouter({ log }) {
     const fromMemoria = Boolean(mem.debitAccountCode || mem.creditAccountCode);
     return res.json({
       ok: true,
+      acrescimo,
       template: {
         eventType: baixaEventType,
         debitAccountCode,
