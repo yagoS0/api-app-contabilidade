@@ -130,6 +130,28 @@ async function acrescimoDoEntry(client, portalClientId, entry) {
   return { juros, multa, total, contaJuros: CONTA_JUROS, contaMulta: CONTA_MULTA, conta: CONTA_JUROS };
 }
 
+// ── Baixa parcial por quota (IRPJ/CSLL trimestral: até 3 quotas com saldo) ───────────────
+// O PRINCIPAL abatido por uma baixa = débitos que NÃO são acréscimo (juros 501 / multa 506).
+// Assim uma baixa parcial só amortiza o passivo da provisão; juros/multa de quota não contam no saldo.
+const CONTAS_ACRESCIMO = new Set([CONTA_JUROS, CONTA_MULTA]); // 501, 506
+const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+function principalAbatidoDaBaixa(baixa) {
+  const lines = baixa?.lines || [];
+  return lines
+    .filter((l) => String(l.tipo).toUpperCase() === "D" && !CONTAS_ACRESCIMO.has(String(l.conta).trim()))
+    .reduce((s, l) => s + Number(l.valor || 0), 0);
+}
+// Saldo de uma provisão = principal (D da provisão) − principal já abatido pelas baixas.
+// entry deve vir com `lines` e `baixas: { lines }`.
+function computeSaldoProvisao(entry) {
+  const lines = entry?.lines || [];
+  const principal = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+  const baixas = Array.isArray(entry?.baixas) ? entry.baixas : [];
+  const abatido = r2(baixas.reduce((s, b) => s + principalAbatidoDaBaixa(b), 0));
+  const saldoRaw = r2(principal - abatido);
+  return { principal: r2(principal), abatido, saldo: saldoRaw > 0 ? saldoRaw : 0, quotasPagas: baixas.length };
+}
+
 // ---------------------------------------------------------------------------
 // OFX Parser (SGML v1 e XML v2)
 // Suporta: namespaces de tag (n0:STMTTRN), encoding UTF-8/Latin-1,
@@ -393,7 +415,16 @@ function entryToResponse(entry) {
     .reduce((s, l) => s + Number(l.valor), 0);
   // placeholder = PROVISAO sem linhas (agendado, aguardando valor)
   const placeholder = entry.tipo === "PROVISAO" && lines.length === 0;
-  return { ...entry, totalD, totalC, valor: totalD, placeholder };
+  const result = { ...entry, totalD, totalC, valor: totalD, placeholder };
+  // Baixa parcial por quota: expõe saldo/abatido/quotas quando as baixas vierem com linhas.
+  if (entry.tipo === "PROVISAO" && Array.isArray(entry.baixas)) {
+    const s = computeSaldoProvisao(entry);
+    result.saldo = s.saldo;
+    result.abatido = s.abatido;
+    result.quotasPagas = s.quotasPagas;
+    result.parcial = entry.statusPagamento === "PARCIAL" || (s.abatido > 0.009 && s.saldo > 0.009);
+  }
+  return result;
 }
 
 // Meses "YYYY-MM" de um ano
@@ -668,7 +699,7 @@ export function createAccountingEntriesRouter({ log }) {
           portalClientId,
           tipo: "PROVISAO",
           competencia: { in: meses },
-          statusPagamento: { in: ["ABERTO", "PAGO"] },
+          statusPagamento: { in: ["ABERTO", "PARCIAL", "PAGO"] },
         },
         include: {
           lines: { orderBy: { ordem: "asc" } },
@@ -1096,7 +1127,7 @@ export function createAccountingEntriesRouter({ log }) {
     const where = {
       portalClientId,
       tipo: "PROVISAO",
-      statusPagamento: { in: ["ABERTO", "PAGO"] },
+      statusPagamento: { in: ["ABERTO", "PARCIAL", "PAGO"] },
     };
     if (competencia) where.competencia = String(competencia);
     if (subtipo) where.subtipo = String(subtipo).toUpperCase();
@@ -2078,10 +2109,19 @@ export function createAccountingEntriesRouter({ log }) {
     if (existing.tipo === "BAIXA" && existing.openEntryId) {
       await prisma.$transaction(async (tx) => {
         await tx.accountingEntry.delete({ where: { id: entryId } });
-        await tx.accountingEntry.updateMany({
+        // Baixa parcial: recalcula o status pelas baixas RESTANTES (pode ainda estar PARCIAL).
+        const open = await tx.accountingEntry.findFirst({
           where: { id: existing.openEntryId, portalClientId },
-          data: { statusPagamento: "ABERTO" },
+          include: {
+            lines: { orderBy: { ordem: "asc" } },
+            baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
+          },
         });
+        if (open) {
+          const s = computeSaldoProvisao(open);
+          const status = s.abatido <= 0.009 ? "ABERTO" : (s.saldo <= 0.009 ? "PAGO" : "PARCIAL");
+          await tx.accountingEntry.update({ where: { id: open.id }, data: { statusPagamento: status } });
+        }
       });
     } else if (existing.tipo === "BAIXA" && existing.sourceGuideId) {
       // Q52.INSS: cancelar baixa do INSS — apaga o lançamento e reabre a guia (volta a vermelho).
@@ -2127,16 +2167,23 @@ export function createAccountingEntriesRouter({ log }) {
 
     const entry = await prisma.accountingEntry.findFirst({
       where: { id: entryId, portalClientId },
-      include: { lines: { orderBy: { ordem: "asc" } } },
+      include: {
+        lines: { orderBy: { ordem: "asc" } },
+        baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
+      },
     });
     if (!entry) return res.status(404).json({ error: "lancamento_nao_encontrado" });
+
+    // Baixa parcial por quota: saldo restante da provisão (principal − já abatido).
+    const saldoInfo = computeSaldoProvisao(entry);
+    const quotaNumero = saldoInfo.quotasPagas + 1;
 
     // Frente B / item 2: juros+multa da guia (acréscimo) → linha extra na baixa (conta de juros 501).
     const acrescimo = await acrescimoDoEntry(prisma, portalClientId, entry);
 
     const baixaEventType = deriveBaixaEventType(entry);
     if (!baixaEventType) {
-      return res.json({ ok: true, template: null, acrescimo, reason: "no_baixa_mapping" });
+      return res.json({ ok: true, template: null, acrescimo, saldoInfo, quotaNumero, reason: "no_baixa_mapping" });
     }
 
     const company = await prisma.portalClient.findUnique({
@@ -2151,11 +2198,12 @@ export function createAccountingEntriesRouter({ log }) {
     const creditAccountCode = mem.creditAccountCode || rule?.creditAccountCode || "";
     if (!debitAccountCode && !creditAccountCode) {
       // Sem memória nem regra → modal inverte as linhas da provisão (comportamento atual).
-      return res.json({ ok: true, template: null, acrescimo, reason: "sem_memoria_nem_regra" });
+      return res.json({ ok: true, template: null, acrescimo, saldoInfo, quotaNumero, reason: "sem_memoria_nem_regra" });
     }
 
-    const totalD = (entry.lines || []).filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
-    const valor = totalD > 0 ? totalD : Number(entry.valor || 0);
+    // Baixa parcial: o valor sugerido é o SALDO restante (não o principal cheio). Numa provisão
+    // ainda intacta, saldo == principal → comportamento idêntico ao de antes.
+    const valor = saldoInfo.saldo > 0 ? saldoInfo.saldo : saldoInfo.principal;
 
     const historico = rule?.descriptionTemplate
       ? applyTemplate(rule.descriptionTemplate, {
@@ -2170,6 +2218,8 @@ export function createAccountingEntriesRouter({ log }) {
     return res.json({
       ok: true,
       acrescimo,
+      saldoInfo,
+      quotaNumero,
       template: {
         eventType: baixaEventType,
         debitAccountCode,
@@ -2190,9 +2240,14 @@ export function createAccountingEntriesRouter({ log }) {
 
     const openEntry = await prisma.accountingEntry.findFirst({
       where: { id: entryId, portalClientId },
+      include: {
+        lines: { orderBy: { ordem: "asc" } },
+        baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
+      },
     });
     if (!openEntry) return res.status(404).json({ error: "lancamento_nao_encontrado" });
-    if (openEntry.statusPagamento !== "ABERTO") {
+    // Baixa parcial: aceita provisão ABERTA ou já PARCIAL (com saldo). PAGO/NA não pode.
+    if (!["ABERTO", "PARCIAL"].includes(openEntry.statusPagamento)) {
       return res.status(400).json({ error: "lancamento_nao_esta_aberto" });
     }
 
@@ -2212,6 +2267,26 @@ export function createAccountingEntriesRouter({ log }) {
         diferenca: validation.diferenca,
       });
     }
+
+    // Baixa parcial por quota: quanto ESTA baixa amortiza do principal (exclui juros 501 / multa 506).
+    const saldoAtual = computeSaldoProvisao(openEntry);
+    const principalDestaBaixa = r2(
+      lines
+        .filter((l) => String(l.tipo).toUpperCase() === "D" && !CONTAS_ACRESCIMO.has(String(l.conta).trim()))
+        .reduce((s, l) => s + parseFloat(String(l.valor).replace(",", ".")), 0)
+    );
+    // Não deixa a soma das baixas passar do principal da provisão (tolerância de centavo).
+    if (principalDestaBaixa - saldoAtual.saldo > 0.01) {
+      return res.status(400).json({
+        error: "baixa_excede_saldo",
+        saldo: saldoAtual.saldo,
+        principalDestaBaixa,
+        message: `A baixa (principal R$ ${principalDestaBaixa.toFixed(2)}) excede o saldo da provisão (R$ ${saldoAtual.saldo.toFixed(2)}).`,
+      });
+    }
+    // Quita a provisão quando o abatido acumulado alcança o principal; senão fica PARCIAL.
+    const abatidoAcumulado = r2(saldoAtual.abatido + principalDestaBaixa);
+    const novoStatus = abatidoAcumulado + 0.01 >= saldoAtual.principal ? "PAGO" : "PARCIAL";
 
     const competencia = `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`;
 
@@ -2243,8 +2318,11 @@ export function createAccountingEntriesRouter({ log }) {
         });
         const updatedOpen = await tx.accountingEntry.update({
           where: { id: entryId },
-          data: { statusPagamento: "PAGO" },
-          include: { lines: { orderBy: { ordem: "asc" } } },
+          data: { statusPagamento: novoStatus },
+          include: {
+            lines: { orderBy: { ordem: "asc" } },
+            baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
+          },
         });
         const fullBaixa = await tx.accountingEntry.findUnique({
           where: { id: baixa.id },

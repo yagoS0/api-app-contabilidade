@@ -170,6 +170,8 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   const [error, setError] = useState("");
   const [templateApplied, setTemplateApplied] = useState(null); // "COMPANY" | "GLOBAL" | null
   const [acrescimo, setAcrescimo] = useState(null); // { juros, multa, total, conta } — guia recalculada (item 2)
+  const [saldoInfo, setSaldoInfo] = useState(null); // { principal, abatido, saldo, quotasPagas } — baixa parcial
+  const [quotaNumero, setQuotaNumero] = useState(1); // nº da quota desta baixa
 
   // Carrega template configurado (se houver) para pré-preencher
   useEffect(() => {
@@ -180,8 +182,11 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         if (canceled) return;
         const acr = res?.acrescimo || null;
         setAcrescimo(acr);
+        setSaldoInfo(res?.saldoInfo || null);
+        setQuotaNumero(res?.quotaNumero || 1);
         const tpl = res?.template;
         if (!tpl) return;
+        // Baixa parcial: tpl.valor já vem como o SALDO restante (não o principal cheio).
         const principal = Number(tpl.valor || valorBase) || 0;
         const juros = Number(acr?.juros) || 0;
         const multa = Number(acr?.multa) || 0;
@@ -241,6 +246,15 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
           </div>
           <Button size="sm" variant="secondary" onClick={onClose}>Fechar</Button>
         </div>
+
+        {/* Baixa parcial por quota: mostra saldo restante quando a provisão já teve quotas pagas */}
+        {saldoInfo && saldoInfo.abatido > 0.009 && saldoInfo.saldo > 0.009 && (
+          <div style={{ background: "rgba(120,170,255,0.12)", border: "1px solid #6EA8FF", borderRadius: 6, padding: "8px 12px", marginBottom: 12, fontSize: "0.8rem" }}>
+            💠 Pagamento por quota — <strong>quota {quotaNumero}</strong>. Provisão R$ {saldoInfo.principal.toFixed(2)} ·
+            já pago R$ {saldoInfo.abatido.toFixed(2)} · <strong>saldo R$ {saldoInfo.saldo.toFixed(2)}</strong>.
+            O valor sugerido é o saldo; reduza o principal se for pagar só uma parte.
+          </div>
+        )}
 
         {/* Item 2: aviso de guia recalculada (juros → 501, multa → 506) */}
         {acrescimo && acrescimo.total > 0 && (

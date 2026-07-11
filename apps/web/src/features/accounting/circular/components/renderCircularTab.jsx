@@ -263,14 +263,19 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
 
   const placeholder = entry.placeholder || entry.origem === "TEMPLATE";
   const isAberto = entry.statusPagamento === "ABERTO";
+  const isParcial = entry.statusPagamento === "PARCIAL"; // baixa parcial por quota — ainda tem saldo
+  const isOpenLike = isAberto || isParcial; // pode receber (nova) baixa
   const isVinculado = Boolean(entry.parcelamentoId);
   const isSynthetic = entry.synthetic === true;
   const valor = entry.valor || entry.totalD;
-  const baixaId = !isAberto ? (entry.baixas?.[0]?.id ?? null) : null;
+  // baixas existem quando parcial ou pago; usado tanto p/ cancelar a última quota quanto p/ INSS.
+  const baixaId = entry.baixas?.[0]?.id ?? null;
+  const saldo = Number(entry.saldo);
 
   // Cor implícita do número:
   let color = "#FF4757"; let bg = "rgba(255,71,87,0.06)"; // em aberto (vermelho)
   if (placeholder) { color = "#6272A4"; bg = "transparent"; }
+  else if (isParcial) { color = "#6EA8FF"; bg = "rgba(110,168,255,0.08)"; } // parcial (azul)
   else if (!isAberto) { color = "#69FF47"; bg = "rgba(105,255,71,0.06)"; } // pago (verde)
   else if (isVinculado) { color = "#FFB347"; bg = "rgba(255,179,71,0.08)"; } // vinculado a parcelamento (amarelo)
 
@@ -285,7 +290,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
   const hasActions =
     canBaixaInss
     || (canManageInssBaixa && (Boolean(onCancelBaixa) || (Boolean(onEdit) && Boolean(entry.baixaEntry))))
-    || (!isSynthetic && (Boolean(onEdit) || (isAberto && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
+    || (!isSynthetic && (Boolean(onEdit) || (isOpenLike && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
   const numText = fmtMoney(valor) ? `R$ ${fmtMoney(valor)}` : "—";
 
   return (
@@ -293,14 +298,14 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
       {hasActions ? (
         <button
           onClick={() => setOpen((o) => !o)}
-          title={isVinculado ? "Vinculado a parcelamento" : (isAberto ? "Em aberto" : "Pago")}
+          title={isVinculado ? "Vinculado a parcelamento" : (isParcial ? `Parcial — saldo R$ ${fmtMoney(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
           style={{ background: "transparent", border: "none", cursor: "pointer", color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", width: "100%", padding: "2px 0" }}
         >
           {numText}
         </button>
       ) : (
         <span
-          title={isSynthetic ? "Gerada a partir da guia INSS — gerencie o pagamento na aba Guias" : (isAberto ? "Em aberto" : "Pago")}
+          title={isSynthetic ? "Gerada a partir da guia INSS — gerencie o pagamento na aba Guias" : (isParcial ? `Parcial — saldo R$ ${fmtMoney(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
           style={{ color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", display: "inline-block", padding: "2px 0" }}
         >
           {numText}
@@ -323,9 +328,15 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
       {onEditAcrescimo && (
         <button onClick={onEditAcrescimo} title="Editar valor original / juros / multa" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#6272A4", fontSize: "0.58rem", padding: 0, display: "block", margin: "1px auto 0" }}>✎ split</button>
       )}
-      {/* Ícone único de "pago" — aparece em qualquer célula paga (baixa manual ou confirmação SERPRO).
+      {/* Baixa parcial por quota: mostra o saldo restante (azul) na célula. */}
+      {!placeholder && isParcial && Number.isFinite(saldo) && (
+        <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "#6EA8FF", whiteSpace: "nowrap" }} title={`Pago R$ ${fmtMoney(entry.abatido)} de R$ ${fmtMoney(valor)} — ${entry.quotasPagas || 0} quota(s)`}>
+          saldo R$ {fmtMoney(saldo)}
+        </div>
+      )}
+      {/* Ícone único de "pago" — só quando totalmente quitado (baixa manual ou confirmação SERPRO).
           Só indicador visual (não clicável); o tooltip traz data/origem quando houver. */}
-      {!placeholder && !isAberto && (
+      {!placeholder && !isOpenLike && (
         <div
           style={{ fontSize: "0.85rem", lineHeight: 1.1 }}
           title={`Pagamento confirmado${entry.sourceGuide?.paymentConfirmedAt ? ` em ${fmtDate(entry.sourceGuide.paymentConfirmedAt)}` : ""}${entry.sourceGuide?.paymentStatusSource === "SERPRO" ? " (via SERPRO)" : ""}${entry.sourceGuide?.comprovantePdfFileId ? " — comprovante de arrecadação disponível" : ""}.`}
@@ -341,10 +352,10 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
           {/* Q52: INSS pago — edita o lançamento de baixa real (não a provisão sintética). */}
           {onEdit && isSynthetic && !isAberto && entry.baixaEntry && <button onClick={() => { setOpen(false); onEdit(entry.baixaEntry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar baixa</button>}
-          {/* "Dar baixa" — provisões reais E INSS sintético (Q47: mesmo modal, roteado pela guia). */}
-          {isAberto && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Dar baixa</button>}
-          {/* "Cancelar baixa" — DAS (provisão real) E INSS sintético (Q52: apaga a baixa + reabre a guia). */}
-          {!isAberto && baixaId && onCancelBaixa && <button onClick={() => { setOpen(false); onCancelBaixa(baixaId); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Cancelar baixa</button>}
+          {/* "Dar baixa" — provisões reais E INSS sintético (Q47). Em PARCIAL, abre nova quota. */}
+          {isOpenLike && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Dar baixa (próxima quota)" : "Dar baixa"}</button>}
+          {/* "Cancelar baixa" — DAS/quota (provisão real) E INSS sintético (Q52). Em PARCIAL cancela a última quota. */}
+          {baixaId && onCancelBaixa && <button onClick={() => { setOpen(false); onCancelBaixa(baixaId); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Cancelar última quota" : "Cancelar baixa"}</button>}
           {onVincular && !isSynthetic && (
             isVinculado ? (
               <button onClick={() => { setOpen(false); onDesvincular(entry); }} style={{ ...menuBtn, color: "#FFB347" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Desvincular do parcelamento</button>
@@ -428,7 +439,8 @@ export function CircularTab({
       if (!existing) { map[k] = p; continue; }
       const isTemplate = (e) => e.placeholder || e.origem === "TEMPLATE";
       if (isTemplate(existing) && !isTemplate(p)) { map[k] = p; continue; }
-      if (!isTemplate(existing) && p.statusPagamento === "ABERTO" && !isTemplate(p)) { map[k] = p; }
+      // Provisão ainda com saldo (ABERTO ou PARCIAL) prevalece sobre uma duplicata PAGA.
+      if (!isTemplate(existing) && ["ABERTO", "PARCIAL"].includes(p.statusPagamento) && !isTemplate(p)) { map[k] = p; }
     }
     return map;
   }, [quadroProvisoes]);
@@ -445,8 +457,12 @@ export function CircularTab({
   const abertoByMonth = useMemo(() => {
     const totals = {};
     for (const p of quadroProvisoes) {
-      if (p.statusPagamento === "ABERTO" && !p.placeholder && p.origem !== "TEMPLATE") {
+      if (p.placeholder || p.origem === "TEMPLATE") continue;
+      if (p.statusPagamento === "ABERTO") {
         totals[p.competencia] = (totals[p.competencia] || 0) + (Number(p.totalD) || 0);
+      } else if (p.statusPagamento === "PARCIAL") {
+        // Parcial conta só o SALDO restante como "em aberto".
+        totals[p.competencia] = (totals[p.competencia] || 0) + (Number(p.saldo) || 0);
       }
     }
     return totals;
