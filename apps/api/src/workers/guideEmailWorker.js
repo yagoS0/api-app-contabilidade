@@ -81,7 +81,9 @@ async function processOneGuide({ guide, emailService }) {
       : null;
 
     const subject = `Sua guia de ${typeLabel} — ${source.competencia || "—"}`;
-    const fileName = `${source.tipo || "GUIA"}-${source.competencia || "sem-competencia"}.pdf`;
+    // Nome do anexo = nome da guia (label + competência), sem tipo cru / origem SERPRO.
+    const nomeGuia = typeLabel === "pagamento" ? "Guia" : typeLabel;
+    const fileName = `${nomeGuia} ${source.competencia || "sem-competencia"}.pdf`.replace(/[\\/]+/g, "-");
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guide-pending-email-"));
     const tmpPath = path.join(tmpDir, fileName);
     await fs.writeFile(tmpPath, fileBuffer);

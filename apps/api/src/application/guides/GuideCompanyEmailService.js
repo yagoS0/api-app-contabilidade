@@ -12,6 +12,23 @@ function safeTempName(name) {
   return String(name || "guia.pdf").replace(/[\\/]+/g, "-");
 }
 
+// Nome do PDF anexado = NOME DA GUIA (tipo + competência), sem o caminho de origem —
+// o `sourcePath` do SERPRO vinha como "SERPRO PGDAS-D 2026-05" e virava o nome do anexo.
+// `usedNames` (Set) desambigua nomes repetidos no mesmo e-mail (ex.: 2 guias do mesmo tipo).
+function guidePdfFilename(guide, usedNames) {
+  const label = guideTypeEmailLabel(guide.tipo);
+  const nice = label === "pagamento" ? "Guia" : label; // OUTRA (DARF/LP) → "Guia"
+  const comp = guide.competencia ? ` ${guide.competencia}` : "";
+  const base = `${nice}${comp}`;
+  let name = safeTempName(`${base}.pdf`);
+  if (usedNames) {
+    let i = 2;
+    while (usedNames.has(name)) name = safeTempName(`${base} (${i++}).pdf`);
+    usedNames.add(name);
+  }
+  return name;
+}
+
 function escapeHtml(text) {
   return String(text ?? "")
     .replace(/&/g, "&amp;")
@@ -107,6 +124,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-email-"));
   const attachments = [];
   let attachmentsBytes = 0;
+  const usedNames = new Set();
   const email = new EmailService();
 
   try {
@@ -117,7 +135,7 @@ export async function sendLatestGuidesEmailByCompany({ portalClientId, to, maxFi
         throw new Error(`guide_pdf_missing:${guide.id}`);
       }
       attachmentsBytes += Number(buffer.length || 0);
-      const name = safeTempName(guide.sourcePath || `${guide.tipo}-${guide.competencia}.pdf`);
+      const name = guidePdfFilename(guide, usedNames);
       const tmpPath = path.join(tmpDir, `${guide.id}-${name}`);
       // eslint-disable-next-line no-await-in-loop
       await fs.writeFile(tmpPath, buffer);
@@ -277,6 +295,7 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "guides-batch-email-"));
   const attachments = [];
   let attachmentsBytes = 0;
+  const usedNames = new Set();
   const email = new EmailService();
 
   try {
@@ -287,7 +306,7 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
         throw new Error(`guide_pdf_missing:${guide.id}`);
       }
       attachmentsBytes += Number(buffer.length || 0);
-      const name = safeTempName(guide.sourcePath || `${guide.tipo}-${guide.competencia}.pdf`);
+      const name = guidePdfFilename(guide, usedNames);
       const tmpPath = path.join(tmpDir, `${guide.id}-${name}`);
       // eslint-disable-next-line no-await-in-loop
       await fs.writeFile(tmpPath, buffer);
