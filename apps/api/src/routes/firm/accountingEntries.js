@@ -120,14 +120,16 @@ async function acrescimoDoEntry(client, portalClientId, entry) {
   }).catch(() => null);
   const src = circ?.acrescimos;
   if (!src || typeof src !== "object") return null;
-  let juros = 0, multa = 0;
-  for (const k of keys) { const t = src[k]; if (t) { juros += Number(t.juros) || 0; multa += Number(t.multa) || 0; } }
+  let principal = 0, juros = 0, multa = 0;
+  for (const k of keys) { const t = src[k]; if (t) { principal += Number(t.principal) || 0; juros += Number(t.juros) || 0; multa += Number(t.multa) || 0; } }
+  principal = Math.round(principal * 100) / 100;
   juros = Math.round(juros * 100) / 100;
   multa = Math.round(multa * 100) / 100;
   const total = Math.round((juros + multa) * 100) / 100;
-  if (total <= 0) return null;
+  // Retorna se houver acréscimo OU principal editado (INSS usa o principal p/ o valor da baixa).
+  if (total <= 0 && principal <= 0) return null;
   // Cada acréscimo na sua conta: juros → 501, multa → 506. `conta` mantido p/ compat (= juros).
-  return { juros, multa, total, contaJuros: CONTA_JUROS, contaMulta: CONTA_MULTA, conta: CONTA_JUROS };
+  return { principal, juros, multa, total, contaJuros: CONTA_JUROS, contaMulta: CONTA_MULTA, conta: CONTA_JUROS };
 }
 
 // ── Baixa parcial por quota (IRPJ/CSLL trimestral: até 3 quotas com saldo) ───────────────
@@ -835,13 +837,22 @@ export function createAccountingEntriesRouter({ log }) {
       };
     }
 
+    // Frente B: split principal/juros/multa por tributo, por competência (pra matriz e p/ o INSS).
+    const acrescimosByMonth = {};
+    for (const c of circulars) {
+      if (c?.acrescimos && typeof c.acrescimos === "object") acrescimosByMonth[c.competencia] = c.acrescimos;
+    }
+
     // Provisões sintéticas a partir das guias INSS (não há lançamento contábil PROVISAO para INSS).
     // valorOriginal = valor do extrato (1ª captura, imutável). valor = pode estar recalculado pelo SERPRO.
     // Circular exibe o valor original; badge "↻ R$ X" mostra o recalculado se diferente.
+    // A5: se o contador editou o principal do INSS na circular (acrescimos.INSS.principal), esse valor
+    // prevalece como o número exibido/base da baixa.
     const inssSynthetic = inssGuides.map((g) => {
       const valorAtual = Number(g.valor || 0);
       const valorOriginal = g.valorOriginal != null ? Number(g.valorOriginal) : valorAtual;
-      const valor = valorOriginal; // sempre o original na Circular
+      const principalEditado = Number(acrescimosByMonth[g.competencia]?.INSS?.principal) || 0;
+      const valor = principalEditado > 0 ? Math.round(principalEditado * 100) / 100 : valorOriginal; // principal editado > original
       const recalculado = g.valorOriginal != null && Math.abs(valorAtual - valorOriginal) > 0.01;
       const isPaid = String(g.paymentStatus || "").toUpperCase() === "PAID";
       // Baixa contábil real associada à guia (existe quando o INSS foi baixado pela Circular).
@@ -907,12 +918,6 @@ export function createAccountingEntriesRouter({ log }) {
 
     // Q5: DARFs agora são AccountingEntry reais (gerados via GuideToProvisionService no momento
     // em que a guia vira PROCESSED). Já aparecem no `provisoes` acima — não há mais sintéticas.
-
-    // Frente B: split principal/juros/multa por tributo, por competência (pra matriz).
-    const acrescimosByMonth = {};
-    for (const c of circulars) {
-      if (c?.acrescimos && typeof c.acrescimos === "object") acrescimosByMonth[c.competencia] = c.acrescimos;
-    }
 
     return res.json({
       year,
@@ -2375,15 +2380,19 @@ export function createAccountingEntriesRouter({ log }) {
     // Conta "INSS a Recolher" vem da folha/pró-labore da competência; caixa por hints do template de folha.
     const debitAccountCode = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
     const creditAccountCode = await resolveCaixaAccount(portalClientId);
-    const valor = Number(guide.valor || 0);
+    // Baixa com juros/multa: lê o split do INSS (circular.acrescimos.INSS — SERPRO ou edição manual).
+    // Se houver principal editado, ele vira o valor da linha principal; senão usa o valor da guia.
+    const acrescimo = await acrescimoDoEntry(prisma, portalClientId, { subtipo: "INSS", competencia: guide.competencia });
+    const valor = acrescimo?.principal > 0 ? acrescimo.principal : Number(guide.valor || 0);
     const historico = `PAGO INSS - ${formatCompetenciaLabel(guide.competencia)}`;
 
     if (!debitAccountCode && !creditAccountCode) {
       // Sem folha lançada → modal usa os defaults (contador preenche as contas manualmente).
-      return res.json({ ok: true, template: null, reason: "sem_conta_folha" });
+      return res.json({ ok: true, template: null, acrescimo, reason: "sem_conta_folha" });
     }
     return res.json({
       ok: true,
+      acrescimo,
       template: {
         debitAccountCode: debitAccountCode || "",
         creditAccountCode: creditAccountCode || "",

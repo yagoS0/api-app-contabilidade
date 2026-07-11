@@ -64,7 +64,7 @@ function fmtDate(value) {
 
 // ─── Entry Edit Modal ────────────────────────────────────────────────────────
 
-function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSearchHistoricos }) {
+function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSearchHistoricos, acrescimosComp }) {
   const [form, setForm] = useState({
     data: entry.data ? String(entry.data).slice(0, 10) : "",
     historico: entry.historico || "",
@@ -81,6 +81,25 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
   const isDuplicate = hasDuplicateAccountAcrossSides(form.lines);
   const subtipoLabel = SUBTIPO_ROWS.find((r) => r.key === entry.subtipo)?.label || entry.subtipo || "Lançamento";
 
+  // Acréscimo (juros/multa) — e, p/ INSS sintético, o valor principal — editado no MESMO modal.
+  // INSS não tem lançamento real (synthetic): modo "acréscimo-only" edita só valor/juros/multa.
+  const isAcrOnly = entry.synthetic === true;
+  const acrKeys = SUBTIPO_TO_ACRESCIMO[entry.subtipo] || [];
+  const [acr, setAcr] = useState(() =>
+    acrKeys.map((k) => {
+      const src = (acrescimosComp && acrescimosComp[k]) || {};
+      return {
+        key: k,
+        principal: src.principal != null ? String(src.principal) : (isAcrOnly && src.principal == null ? String(Number(entry.valor || entry.totalD || 0).toFixed(2)) : ""),
+        juros: src.juros != null ? String(src.juros) : "",
+        multa: src.multa != null ? String(src.multa) : "",
+      };
+    }),
+  );
+  const setAcrField = (i, field, val) => setAcr((p) => p.map((t, idx) => (idx === i ? { ...t, [field]: val } : t)));
+  // Payload do acréscimo: real → só juros/multa (principal preservado no parent); INSS → inclui principal.
+  const buildAcrescimo = () => acr.map((t) => (isAcrOnly ? { key: t.key, principal: t.principal, juros: t.juros, multa: t.multa } : { key: t.key, juros: t.juros, multa: t.multa }));
+
   // Detecta linhas com conta vazia — ajuda o contador a entender por que o save vai falhar.
   const linesWithEmptyConta = form.lines.filter((l) => !String(l.conta || "").trim()).length;
   const linesWithoutValor = form.lines.filter((l) => {
@@ -89,8 +108,17 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
   }).length;
 
   async function handleSave() {
-    if (isDuplicate) return;
     setSaveError(null);
+    // INSS sintético: não há lançamento pra validar/atualizar — salva só valor/juros/multa.
+    if (isAcrOnly) {
+      try {
+        await onSave({ acrescimoOnly: true, acrescimoTributos: buildAcrescimo() });
+      } catch (err) {
+        setSaveError(err?.message || "Falha ao salvar.");
+      }
+      return;
+    }
+    if (isDuplicate) return;
     if (linesWithEmptyConta > 0) {
       setSaveError(`Há ${linesWithEmptyConta} linha(s) sem código de conta. Preencha as contas antes de salvar.`);
       return;
@@ -100,8 +128,8 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
       return;
     }
     try {
-      // passa também o eventType (pra backend memorizar D/C no AccountingHistorico)
-      await onSave({ ...form, eventType: entry.eventType || null });
+      // passa também o eventType (pra backend memorizar D/C no AccountingHistorico) + acréscimo
+      await onSave({ ...form, eventType: entry.eventType || null, acrescimoTributos: buildAcrescimo() });
     } catch (err) {
       setSaveError(err?.message || "Falha ao salvar lançamento.");
     }
@@ -119,6 +147,7 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
         </div>
 
         <div style={{ display: "grid", gap: 14 }}>
+          {!isAcrOnly && (<>
           {/* Data */}
           <label style={{ display: "grid", gap: 4, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>
             Data
@@ -193,8 +222,39 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
               accounts={accounts}
             />
           </div>
+          </>)}
 
-          {isDuplicate && (
+          {/* Acréscimo: juros/multa (e o valor principal, no caso do INSS sintético) */}
+          {acr.length > 0 && (
+            <div style={{ display: "grid", gap: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,179,71,0.06)", border: "1px solid rgba(255,179,71,0.35)" }}>
+              <div style={{ fontSize: "0.72rem", color: "#FFB347", fontWeight: 700 }}>
+                {isAcrOnly ? "Valor, juros e multa" : "Juros / multa (guia vencida ou recalculada)"}
+              </div>
+              {acr.map((t, i) => (
+                <div key={t.key} style={{ display: "grid", gap: 6 }}>
+                  {acr.length > 1 && <strong style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.78rem" }}>{t.key}</strong>}
+                  <div style={{ display: "grid", gridTemplateColumns: isAcrOnly ? "1fr 1fr 1fr" : "1fr 1fr", gap: 8 }}>
+                    {isAcrOnly && (
+                      <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: ACCOUNTING_PANEL.muted }}>
+                        Valor
+                        <input value={t.principal} onChange={(e) => setAcrField(i, "principal", e.target.value)} placeholder="0,00" style={{ ...PANEL_FIELD_STYLE, width: "100%" }} />
+                      </label>
+                    )}
+                    <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: "#FFB347" }}>
+                      Juros
+                      <input value={t.juros} onChange={(e) => setAcrField(i, "juros", e.target.value)} placeholder="0,00" style={{ ...PANEL_FIELD_STYLE, width: "100%" }} />
+                    </label>
+                    <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: "#FFB347" }}>
+                      Multa
+                      <input value={t.multa} onChange={(e) => setAcrField(i, "multa", e.target.value)} placeholder="0,00" style={{ ...PANEL_FIELD_STYLE, width: "100%" }} />
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isAcrOnly && isDuplicate && (
             <div style={{ color: "#FF4757", fontSize: "0.8125rem", fontWeight: 600 }}>
               Débito e crédito não podem usar a mesma conta.
             </div>
@@ -219,14 +279,14 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
             </button>
             <button
               onClick={handleSave}
-              disabled={saving || isDuplicate}
+              disabled={saving || (!isAcrOnly && isDuplicate)}
               style={{
                 height: 34, padding: "0 20px",
                 background: "#69FF47", color: "#1A1B26",
                 border: "none", borderRadius: 4,
                 fontWeight: 700, fontSize: "0.875rem",
-                cursor: saving || isDuplicate ? "default" : "pointer",
-                opacity: saving || isDuplicate ? 0.6 : 1,
+                cursor: saving || (!isAcrOnly && isDuplicate) ? "default" : "pointer",
+                opacity: saving || (!isAcrOnly && isDuplicate) ? 0.6 : 1,
               }}
             >
               {saving ? "Salvando..." : "Salvar"}
@@ -242,7 +302,7 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
 
 // Q31: célula só com NÚMERO; cor implícita (vermelho=aberto, verde=pago, amarelo=vinculado a
 // parcelamento). Clicar abre o menu de ações (Editar / Dar baixa / Vincular a parcelamento).
-function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null, onEditAcrescimo = null }) {
+function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null }) {
   const [open, setOpen] = useState(false);
   const [selParc, setSelParc] = useState("");
   const temAcrescimo = acrescimo && acrescimo.acrescimo > 0;
@@ -256,7 +316,6 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
       <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", color: "#F8F8F2" }}>
         <div style={{ fontWeight: 700, fontSize: "0.9rem", whiteSpace: "nowrap" }}>R$ {fmtMoney(acrescimo.principal) || "0,00"}</div>
         {temAcrescimo && <div title={`Juros/multa R$ ${fmtMoney(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>+R$ {fmtMoney(acrescimo.acrescimo)} j/m</div>}
-        {onEditAcrescimo && <button onClick={onEditAcrescimo} title="Editar principal / juros / multa" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#6272A4", fontSize: "0.6rem", padding: 0 }}>✎ split</button>}
       </td>
     );
   }
@@ -285,10 +344,13 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
   // completo igual ao DAS (Q52): "Dar baixa" (abre modal, gera a baixa contábil), "Editar baixa"
   // (edita o lançamento gerado) e "Cancelar baixa" (apaga a baixa e reabre a guia).
   const canBaixaInss = isSynthetic && isAberto && Boolean(onBaixa);
+  // INSS aberto: pode editar valor/juros/multa (não há lançamento — vai p/ acrescimos.INSS).
+  const canEditInss = isSynthetic && isAberto && Boolean(onEdit);
   // INSS pago: pode editar a baixa (entry.baixaEntry é o lançamento real) e cancelá-la.
   const canManageInssBaixa = isSynthetic && !isAberto && Boolean(baixaId);
   const hasActions =
     canBaixaInss
+    || canEditInss
     || (canManageInssBaixa && (Boolean(onCancelBaixa) || (Boolean(onEdit) && Boolean(entry.baixaEntry))))
     || (!isSynthetic && (Boolean(onEdit) || (isOpenLike && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
   const numText = fmtMoney(valor) ? `R$ ${fmtMoney(valor)}` : "—";
@@ -325,9 +387,6 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           +R$ {fmtMoney(acrescimo.acrescimo)} j/m
         </div>
       )}
-      {onEditAcrescimo && (
-        <button onClick={onEditAcrescimo} title="Editar valor original / juros / multa" style={{ background: "transparent", border: "none", cursor: "pointer", color: "#6272A4", fontSize: "0.58rem", padding: 0, display: "block", margin: "1px auto 0" }}>✎ split</button>
-      )}
       {/* Baixa parcial por quota: mostra o saldo restante (azul) na célula. */}
       {!placeholder && isParcial && Number.isFinite(saldo) && (
         <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "#6EA8FF", whiteSpace: "nowrap" }} title={`Pago R$ ${fmtMoney(entry.abatido)} de R$ ${fmtMoney(valor)} — ${entry.quotasPagas || 0} quota(s)`}>
@@ -350,6 +409,8 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "#24253A", border: "1px solid #44475A", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.45)", padding: 6, minWidth: 190, display: "flex", flexDirection: "column", gap: 2 }}
         >
           {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
+          {/* INSS sintético aberto: edita valor/juros/multa (vai p/ acrescimos.INSS) no mesmo modal. */}
+          {canEditInss && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar valor/juros/multa</button>}
           {/* Q52: INSS pago — edita o lançamento de baixa real (não a provisão sintética). */}
           {onEdit && isSynthetic && !isAberto && entry.baixaEntry && <button onClick={() => { setOpen(false); onEdit(entry.baixaEntry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar baixa</button>}
           {/* "Dar baixa" — provisões reais E INSS sintético (Q47). Em PARCIAL, abre nova quota. */}
@@ -417,7 +478,6 @@ export function CircularTab({
   const [baixaEntry, setBaixaEntry] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [editAcrescimo, setEditAcrescimo] = useState(null); // { competencia, subtipo, label, tributos:[{key,principal,juros,multa}] }
   const [cancellingBaixaId, setCancellingBaixaId] = useState(null);
   // Q9: state pro modal de pagamento de parcela
   const [payingParcela, setPayingParcela] = useState(null); // { parcelamento, parcela }
@@ -503,15 +563,32 @@ export function CircularTab({
   const subCellStyle = { width: COL_W, minWidth: COL_W, padding: "8px 6px", textAlign: "center", borderRight: "1px solid #44475A", fontSize: "0.9rem", color: "#F8F8F2" };
 
   async function handleEditSave(form) {
-    if (!editEntry || !onUpdateEntry) return;
+    if (!editEntry) return;
     setSavingEdit(true);
     try {
-      // Propaga exceção para o modal exibir o erro inline.
-      // handleUpdateEntry no hook engole erros via try/catch e seta entriesError —
-      // por isso aqui validamos o retorno: se vier { ok: false, error } do backend, lança.
-      const result = await onUpdateEntry(editEntry.id, form);
-      if (result && result.ok === false) {
-        throw new Error(result.error || result.message || "Falha ao salvar lançamento.");
+      // 1) Lançamento real (DAS/LP): atualiza a entry. INSS sintético não tem lançamento — pula.
+      // Propaga exceção para o modal exibir o erro inline (handleUpdateEntry engole via try/catch;
+      // por isso validamos o retorno: se vier { ok:false } do backend, lança).
+      if (!editEntry.synthetic && onUpdateEntry) {
+        const result = await onUpdateEntry(editEntry.id, form);
+        if (result && result.ok === false) {
+          throw new Error(result.error || result.message || "Falha ao salvar lançamento.");
+        }
+      }
+      // 2) Acréscimo (juros/multa; e o principal, no caso do INSS) → acrescimos da circular.
+      if (Array.isArray(form.acrescimoTributos) && onSaveCircular) {
+        const comp = editEntry.competencia;
+        const merged = { ...(circularData?.acrescimos?.[comp] || {}) };
+        for (const t of form.acrescimoTributos) {
+          const existing = merged[t.key] || {};
+          merged[t.key] = {
+            // principal só é editado no modo INSS; nos demais, preserva o existente.
+            principal: t.principal !== undefined ? numOrNull(t.principal) : (existing.principal ?? null),
+            juros: numOrNull(t.juros),
+            multa: numOrNull(t.multa),
+          };
+        }
+        await onSaveCircular({ competencia: comp, acrescimos: merged });
       }
       await onLoad(year, competencia);
       setEditEntry(null);
@@ -528,39 +605,15 @@ export function CircularTab({
     if (!keys) return null;
     const src = circularData?.acrescimos?.[comp];
     if (!src) return null;
-    let principal = 0, juros = 0, multa = 0, has = false;
+    let principal = 0, juros = 0, multa = 0;
     for (const k of keys) {
       const t = src[k];
-      if (t) { has = true; principal += Number(t.principal) || 0; juros += Number(t.juros) || 0; multa += Number(t.multa) || 0; }
+      if (t) { principal += Number(t.principal) || 0; juros += Number(t.juros) || 0; multa += Number(t.multa) || 0; }
     }
-    return has ? { principal: r2(principal), juros: r2(juros), multa: r2(multa), acrescimo: r2(juros + multa) } : null;
+    // Ignora acréscimo "vazio" (tudo zero) — evita célula-fantasma "R$ 0,00" e badge sem valor.
+    if (r2(principal) <= 0 && r2(juros) <= 0 && r2(multa) <= 0) return null;
+    return { principal: r2(principal), juros: r2(juros), multa: r2(multa), acrescimo: r2(juros + multa) };
   }
-  function openEditAcrescimo(colKey, comp) {
-    const keys = SUBTIPO_TO_ACRESCIMO[colKey];
-    if (!keys || !onSaveCircular) return;
-    const src = circularData?.acrescimos?.[comp] || {};
-    setEditAcrescimo({
-      competencia: comp, subtipo: colKey,
-      label: SUBTIPO_ROWS.find((r) => r.key === colKey)?.label || colKey,
-      tributos: keys.map((k) => ({
-        key: k,
-        principal: src[k]?.principal != null ? String(src[k].principal) : "",
-        juros: src[k]?.juros != null ? String(src[k].juros) : "",
-        multa: src[k]?.multa != null ? String(src[k].multa) : "",
-      })),
-    });
-  }
-  async function handleSaveAcrescimo() {
-    if (!editAcrescimo || !onSaveCircular) return;
-    const comp = editAcrescimo.competencia;
-    const merged = { ...(circularData?.acrescimos?.[comp] || {}) };
-    for (const t of editAcrescimo.tributos) {
-      merged[t.key] = { principal: numOrNull(t.principal), juros: numOrNull(t.juros), multa: numOrNull(t.multa) };
-    }
-    await onSaveCircular({ competencia: comp, acrescimos: merged });
-    setEditAcrescimo(null);
-  }
-
   async function handleCancelBaixa(baixaId) {
     if (!onCancelBaixa) return;
     setCancellingBaixaId(baixaId);
@@ -673,13 +726,12 @@ export function CircularTab({
                         key={col.key}
                         entry={matrix[`${col.key}__${comp}`]}
                         onBaixa={(entry) => setBaixaEntry(entry)}
-                        onEdit={onUpdateEntry ? (entry) => setEditEntry(entry) : null}
+                        onEdit={(onUpdateEntry || onSaveCircular) ? (entry) => setEditEntry(entry) : null}
                         onCancelBaixa={onCancelBaixa ? handleCancelBaixa : null}
                         parcelamentosAtivos={parcelamentosAtivos}
                         onVincular={parcelamentos?.vincularEntry ? handleVincular : null}
                         onDesvincular={handleDesvincular}
                         acrescimo={acrescimoFor(col.key, comp)}
-                        onEditAcrescimo={onSaveCircular && SUBTIPO_TO_ACRESCIMO[col.key] ? () => openEditAcrescimo(col.key, comp) : null}
                       />
                     ))}
                     <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtMoney(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
@@ -767,7 +819,7 @@ export function CircularTab({
         />
       )}
 
-      {/* Entry Edit Modal */}
+      {/* Entry Edit Modal — inclui juros/multa (e valor, p/ INSS sintético) na mesma tela. */}
       {editEntry && (
         <CircularEntryEditModal
           entry={editEntry}
@@ -776,65 +828,10 @@ export function CircularTab({
           onSave={handleEditSave}
           onClose={() => setEditEntry(null)}
           onSearchHistoricos={onSearchHistoricos}
-        />
-      )}
-      {editAcrescimo && (
-        <AcrescimoEditModal
-          data={editAcrescimo}
-          saving={savingCircular}
-          onChange={setEditAcrescimo}
-          onSave={handleSaveAcrescimo}
-          onClose={() => setEditAcrescimo(null)}
+          acrescimosComp={circularData?.acrescimos?.[editEntry.competencia] || {}}
         />
       )}
     </div>
   );
 }
 
-// Frente B: modal de edição do split principal/juros/multa por tributo (célula da matriz).
-function AcrescimoEditModal({ data, saving, onChange, onSave, onClose }) {
-  function setField(idx, field, val) {
-    onChange({ ...data, tributos: data.tributos.map((t, i) => (i === idx ? { ...t, [field]: val } : t)) });
-  }
-  const inp = { ...PANEL_FIELD_STYLE, width: "100%" };
-  const compLabel = (() => { const [y, m] = String(data.competencia).split("-"); return `${m}/${y}`; })();
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 10, padding: 20, width: "100%", maxWidth: 460 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span style={{ fontWeight: 700, color: ACCOUNTING_PANEL.text, fontSize: "0.95rem" }}>Valores — {data.label} · {compLabel}</span>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: ACCOUNTING_PANEL.muted, cursor: "pointer", fontSize: "1.4rem", lineHeight: 1 }}>×</button>
-        </div>
-        <p style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted, marginBottom: 12 }}>
-          Valor <strong>original (principal)</strong> × <strong>juros/multa</strong> (guia vencida/recalculada).
-          A provisão usa o principal; juros/multa ficam só destacados na circular.
-        </p>
-        <div style={{ display: "grid", gap: 14 }}>
-          {data.tributos.map((t, i) => (
-            <div key={t.key} style={{ display: "grid", gap: 6 }}>
-              {data.tributos.length > 1 && <strong style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.8rem" }}>{t.key}</strong>}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: ACCOUNTING_PANEL.muted }}>
-                  Principal
-                  <input value={t.principal} onChange={(e) => setField(i, "principal", e.target.value)} placeholder="0,00" style={inp} />
-                </label>
-                <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: "#FFB347" }}>
-                  Juros
-                  <input value={t.juros} onChange={(e) => setField(i, "juros", e.target.value)} placeholder="0,00" style={inp} />
-                </label>
-                <label style={{ display: "grid", gap: 3, fontSize: "0.7rem", color: "#FFB347" }}>
-                  Multa
-                  <input value={t.multa} onChange={(e) => setField(i, "multa", e.target.value)} placeholder="0,00" style={inp} />
-                </label>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-          <button onClick={onClose} disabled={saving} style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: "transparent", color: ACCOUNTING_PANEL.text, cursor: "pointer", fontSize: "0.85rem" }}>Cancelar</button>
-          <button onClick={onSave} disabled={saving} style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "#69FF47", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: saving ? 0.6 : 1 }}>{saving ? "Salvando…" : "Salvar"}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
