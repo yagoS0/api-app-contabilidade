@@ -3,26 +3,27 @@
 //   PROVISÃO  : D CONTRAPARTIDA / C PARC (passivo "parcelamento a pagar") — só principal.
 //   PAGAMENTO : D PARC (amortiza o passivo) + D JUROS + D MULTA / C CAIXA.
 // Convenções do Simples Nacional (sugestões — o contador sobrescreve por cliente):
-//   PARC(passivo) 265, JUROS 501, MULTA 502, CAIXA 5.  CONTRAPARTIDA fica EM BRANCO de propósito
+//   PARC(passivo) 265, JUROS 501, MULTA 506, CAIXA 5.  CONTRAPARTIDA fica EM BRANCO de propósito
 //   (despesa/reclasse depende do plano do cliente — não inventar). A provisão NÃO mapeia caixa.
+//   Contas conferidas no plano de contas (ChartOfAccount): 501=JUROS, 506=MULTAS (502=IOF, NÃO usar p/ multa).
 //
 // codigoTributo=null = vale pra qualquer tributo daquele papel (fallback geral).
 
 // Papéis (espelham o lançamento real do contador, e são editáveis na config do parcelamento):
-//   PROVISÃO : D PRINCIPAL(265) + D JUROS(501) [+ D MULTA(502)] / C PARC(553, parcelamento a pagar)
-//   PAGAMENTO: D PARC(553) + D JUROS(501) [+ D MULTA(502)] / C CAIXA(5)
+//   PROVISÃO : D PRINCIPAL(265) + D JUROS(501) [+ D MULTA(506)] / C PARC(553, parcelamento a pagar)
+//   PAGAMENTO: D PARC(553) + D JUROS(501) [+ D MULTA(506)] / C CAIXA(5)
 // PARC(553) = passivo (creditado na provisão, debitado no pagamento). Sugestões SN — o contador ajusta.
 const SEEDS = [
   // Simples Nacional
   { tipoParcelamento: "PARCSN", tipoLinha: "PRINCIPAL", codigoTributo: null, contaId: "265" },
   { tipoParcelamento: "PARCSN", tipoLinha: "JUROS", codigoTributo: null, contaId: "501" },
-  { tipoParcelamento: "PARCSN", tipoLinha: "MULTA", codigoTributo: null, contaId: "502" },
+  { tipoParcelamento: "PARCSN", tipoLinha: "MULTA", codigoTributo: null, contaId: "506" },
   { tipoParcelamento: "PARCSN", tipoLinha: "PARC", codigoTributo: null, contaId: "553" },
   { tipoParcelamento: "PARCSN", tipoLinha: "CAIXA", codigoTributo: null, contaId: "5" },
   // MEI (mesma convenção por enquanto)
   { tipoParcelamento: "PARCMEI", tipoLinha: "PRINCIPAL", codigoTributo: null, contaId: "265" },
   { tipoParcelamento: "PARCMEI", tipoLinha: "JUROS", codigoTributo: null, contaId: "501" },
-  { tipoParcelamento: "PARCMEI", tipoLinha: "MULTA", codigoTributo: null, contaId: "502" },
+  { tipoParcelamento: "PARCMEI", tipoLinha: "MULTA", codigoTributo: null, contaId: "506" },
   { tipoParcelamento: "PARCMEI", tipoLinha: "PARC", codigoTributo: null, contaId: "553" },
   { tipoParcelamento: "PARCMEI", tipoLinha: "CAIXA", codigoTributo: null, contaId: "5" },
 ];
