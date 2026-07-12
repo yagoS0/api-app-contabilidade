@@ -445,7 +445,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       ? legacy.enderecoJson[field] || null
       : null;
 
-  function buildFirmCompanyPayload({ portal, myRole, scopes = [], legacy = null, ownerEmail = null }) {
+  function buildFirmCompanyPayload({ portal, myRole, scopes = [], legacy = null, ownerEmail = null, ownerName = null }) {
     const resolvedUf = portal.uf || getEnderecoField(legacy, "uf");
     const resolvedMunicipio = portal.municipio || getEnderecoField(legacy, "cidade");
     const resolvedInscricaoMunicipal = portal.inscricaoMunicipal || legacy?.inscricaoMunicipal || null;
@@ -461,6 +461,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       uf: resolvedUf,
       municipio: resolvedMunicipio,
       ownerEmail: ownerEmail || null,
+      ownerName: ownerName || null,
       guideNotificationEmail: portal.guideNotificationEmail || null,
       hasProlabore: Boolean(portal.hasProlabore),
       empresaZerada: Boolean(portal.empresaZerada),
@@ -520,14 +521,16 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               role: "OWNER",
               status: "ACTIVE",
             },
-            include: { user: { select: { email: true } } },
+            include: { user: { select: { email: true, name: true } } },
             orderBy: { createdAt: "asc" },
           })
         : [];
       const ownerEmailByPortalId = new Map();
+      const ownerNameByPortalId = new Map();
       for (const link of ownerLinks) {
         if (!ownerEmailByPortalId.has(link.companyId)) {
           ownerEmailByPortalId.set(link.companyId, link.user?.email || null);
+          ownerNameByPortalId.set(link.companyId, link.user?.name || null);
         }
       }
       const dataWithCompliance = await attachGuideComplianceToCompaniesList(
@@ -538,6 +541,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             scopes: ["*"],
             legacy: item.companyId ? legacyByCompanyId.get(item.companyId) || null : null,
             ownerEmail: ownerEmailByPortalId.get(item.id) || null,
+            ownerName: ownerNameByPortalId.get(item.id) || null,
           })
         ),
         competenciaRef
@@ -589,14 +593,16 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             role: "OWNER",
             status: "ACTIVE",
           },
-          include: { user: { select: { email: true } } },
+          include: { user: { select: { email: true, name: true } } },
           orderBy: { createdAt: "asc" },
         })
       : [];
     const ownerEmailByPortalId = new Map();
+    const ownerNameByPortalId = new Map();
     for (const link of ownerLinks) {
       if (!ownerEmailByPortalId.has(link.companyId)) {
         ownerEmailByPortalId.set(link.companyId, link.user?.email || null);
+        ownerNameByPortalId.set(link.companyId, link.user?.name || null);
       }
     }
     const dataWithCompliance = await attachGuideComplianceToCompaniesList(
@@ -607,6 +613,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           scopes: link.scopes || [],
           legacy: link.company.companyId ? legacyByCompanyId.get(link.company.companyId) || null : null,
           ownerEmail: ownerEmailByPortalId.get(link.company.id) || null,
+          ownerName: ownerNameByPortalId.get(link.company.id) || null,
         })
       ),
       competenciaRef
@@ -847,6 +854,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const ownerEmailInput = String(body.ownerEmail || "")
         .trim()
         .toLowerCase();
+      // Nome do responsável (owner) — antes era ignorado no PATCH (só o e-mail era atualizado).
+      const ownerNameInput = Object.prototype.hasOwnProperty.call(body, "ownerName")
+        ? String(body.ownerName || "").trim()
+        : null;
       const inscricaoMunicipalInput = String(companyInput.inscricaoMunicipal || "").trim() || null;
       // CNPJ é IMUTÁVEL após criação — vinculado ao certificado A1, SERPRO, NFS-e, validação de PDFs.
       // Para "trocar" CNPJ, contador deve excluir a empresa e criar uma nova.
@@ -944,7 +955,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               select: legacyCompanySelect,
             });
           }
-          if (ownerEmailInput) {
+          // Atualiza o responsável (owner): e-mail E/OU nome. Antes só o e-mail era gravado —
+          // por isso o "Nome do responsável" não salvava.
+          if (ownerEmailInput || ownerNameInput) {
             const ownerLink = await tx.companyClientUser.findFirst({
               where: {
                 companyId: portalCompanyId,
@@ -955,21 +968,25 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               select: { userId: true },
             });
             if (ownerLink?.userId) {
-              const existingUser = await tx.user.findUnique({
-                where: { email: ownerEmailInput },
-                select: { id: true },
-              });
-              if (existingUser?.id && existingUser.id !== ownerLink.userId) {
-                const err = new Error("owner_email_already_in_use");
-                err.code = "OWNER_EMAIL_ALREADY_IN_USE";
-                throw err;
+              const userData = {};
+              if (ownerEmailInput) {
+                const existingUser = await tx.user.findUnique({
+                  where: { email: ownerEmailInput },
+                  select: { id: true },
+                });
+                if (existingUser?.id && existingUser.id !== ownerLink.userId) {
+                  const err = new Error("owner_email_already_in_use");
+                  err.code = "OWNER_EMAIL_ALREADY_IN_USE";
+                  throw err;
+                }
+                userData.email = ownerEmailInput;
               }
-              await tx.user.update({
-                where: { id: ownerLink.userId },
-                data: { email: ownerEmailInput },
-              });
+              if (ownerNameInput) userData.name = ownerNameInput;
+              if (Object.keys(userData).length) {
+                await tx.user.update({ where: { id: ownerLink.userId }, data: userData });
+              }
             }
-            if (updatedLegacy?.clientId) {
+            if (ownerEmailInput && updatedLegacy?.clientId) {
               await tx.client.update({
                 where: { id: updatedLegacy.clientId },
                 data: { email: ownerEmailInput, login: ownerEmailInput },
@@ -984,7 +1001,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             },
             include: {
               user: {
-                select: { email: true },
+                select: { email: true, name: true },
               },
             },
             orderBy: { createdAt: "asc" },
@@ -995,6 +1012,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             scopes: req.access?.scopes || [],
             legacy: updatedLegacy,
             ownerEmail: ownerLinkAfter?.user?.email || null,
+            ownerName: ownerLinkAfter?.user?.name || null,
           });
         });
         const [company] = await attachGuideComplianceToCompaniesList([result]);

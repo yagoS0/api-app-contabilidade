@@ -29,7 +29,7 @@ export function mapCompanyToEditForm(company) {
   const legacy = company?.legacyCompany && typeof company.legacyCompany === "object" ? company.legacyCompany : {};
   const endereco = legacy?.enderecoJson && typeof legacy.enderecoJson === "object" ? legacy.enderecoJson : {};
   return {
-    ownerName: "",
+    ownerName: String(company?.ownerName || "").trim(),
     ownerEmail: String(company?.ownerEmail || company?.email || "").trim(),
     ownerPassword: "",
     razaoSocial: String(legacy?.razaoSocial || company?.razao || "").trim(),
