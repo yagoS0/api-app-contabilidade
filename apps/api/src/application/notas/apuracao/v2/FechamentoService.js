@@ -111,7 +111,7 @@ async function montarAtividadesDoCnae({ cnaePrincipal, faturamentoInterno = 0, f
 export async function getDadosFechamento({ portalClientId, competencia }) {
   const portal = await prisma.portalClient.findUnique({
     where: { id: portalClientId },
-    select: { cnpj: true, razao: true, companyId: true },
+    select: { cnpj: true, razao: true, companyId: true, empresaZerada: true },
   });
   if (!portal) throw new FechamentoError("PORTAL_NOT_FOUND", "Empresa não encontrada");
 
@@ -173,6 +173,9 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     cadastroCompleto: Boolean(cadastro) || Boolean(cnaePrincipalEfetivo),
     cnaePrincipal: cnaePrincipalEfetivo,
     faturamento: { interno: faturamentoInterno, externo: faturamentoExterno, total: round2(faturamentoInterno + faturamentoExterno) },
+    // Sem movimento: disponível quando não há faturamento EMIT na competência. empresaZerada = dica p/ UI.
+    semMovimentoDisponivel: round2(faturamentoInterno + faturamentoExterno) === 0,
+    empresaZerada: Boolean(portal.empresaZerada),
     receitaPorTipo,
     semClassificacao,
     atividades,
@@ -255,10 +258,26 @@ async function executarComAjusteReceitas(executar, { receitasBrutasAnteriores, .
  * [Calcular] — simulação oficial SERPRO (não transmite). Verdade do preview.
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
  */
-export async function calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao }) {
-  if (!Array.isArray(atividades) || atividades.length === 0) {
-    throw new FechamentoError("NO_ATIVIDADES", "Sem atividades pra calcular.");
+export async function calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false }) {
+  const semAtividades = !Array.isArray(atividades) || atividades.length === 0;
+  if (semAtividades) {
+    // Declaração SEM MOVIMENTO: só permitida quando NÃO há faturamento EMIT na competência
+    // (trava de segurança — nunca declarar zerado quem tem nota). Senão, mantém o bloqueio.
+    if (semMovimento) {
+      const fat = await faturamentoEmitDaCompetencia(portalClientId, competencia);
+      if (fat > 0) {
+        throw new FechamentoError(
+          "SEM_MOVIMENTO_COM_FATURAMENTO",
+          `Não é possível declarar sem movimento: a empresa tem faturamento de R$ ${fat.toFixed(2)} na competência.`,
+          { faturamento: fat },
+        );
+      }
+    } else {
+      throw new FechamentoError("NO_ATIVIDADES", "Sem atividades pra calcular.");
+    }
   }
+  // Normaliza pra [] (sem movimento) — o restante usa atividades.reduce/JSON.stringify.
+  atividades = Array.isArray(atividades) ? atividades : [];
   const { contratanteCnpj, contribuinteCnpj } = await resolverCnpjs(portalClientId);
   const rbt = await getRbt12({ portalClientId, competencia });
 
@@ -269,9 +288,10 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
     {
       contratanteCnpj, contribuinteCnpj, competencia,
       regimeApuracao: regimeApuracao || "COMPETENCIA",
-      atividades,
+      atividades: atividades || [],
       receitasBrutasAnteriores: rbt.detalhePorMes || [],
       folhasSalario,
+      permitirSemMovimento: semMovimento && semAtividades,
     },
   );
 
@@ -394,6 +414,9 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
       { faturamento: fatEmit },
     );
   }
+  // Declaração SEM MOVIMENTO: atividades = 0 só chega aqui quando faturamento também é 0 (a guarda
+  // acima bloqueia fat>0 + soma 0). Nesse caso transmite o PGDAS-D zerado (atividades vazias).
+  const semMovimento = somaAtiv === 0;
 
   const { contratanteCnpj, contribuinteCnpj } = await resolverCnpjs(portalClientId);
 
@@ -431,6 +454,7 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
         receitasBrutasAnteriores: rbt.detalhePorMes || [],
         // Mesmo gate do calcular — senão a transmissão sofreria a mesma rejeição da RFB.
         folhasSalario: await folhasSalarioSeAplicavel(snapshot.atividadesEscolhidas, snapshot.folhaMensal12),
+        permitirSemMovimento: semMovimento,
       },
     );
     resultado = exec.resultado;

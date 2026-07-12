@@ -177,10 +177,11 @@ export class PgdasSimulacaoService {
    * É a "verdade" do botão [Calcular] do FechamentoModal.
    */
   async simular({ contratanteCnpj, contribuinteCnpj, competencia, regimeApuracao,
-    atividades, receitasBrutasAnteriores, folhasSalario, valorFixo, tipoDeclaracao = 1 }) {
+    atividades, receitasBrutasAnteriores, folhasSalario, valorFixo, tipoDeclaracao = 1, permitirSemMovimento = false }) {
     return this._executar({
       contratanteCnpj, contribuinteCnpj, competencia, regimeApuracao,
       atividades, receitasBrutasAnteriores, folhasSalario, valorFixo, tipoDeclaracao,
+      permitirSemMovimento,
       indicadorTransmissao: false,
     });
   }
@@ -189,10 +190,11 @@ export class PgdasSimulacaoService {
    * Transmissão oficial: indicadorTransmissao=true → declara de fato (gera DAS).
    */
   async transmitir({ contratanteCnpj, contribuinteCnpj, competencia, regimeApuracao,
-    atividades, receitasBrutasAnteriores, folhasSalario, valorFixo, tipoDeclaracao = 1 }) {
+    atividades, receitasBrutasAnteriores, folhasSalario, valorFixo, tipoDeclaracao = 1, permitirSemMovimento = false }) {
     return this._executar({
       contratanteCnpj, contribuinteCnpj, competencia, regimeApuracao,
       atividades, receitasBrutasAnteriores, folhasSalario, valorFixo, tipoDeclaracao,
+      permitirSemMovimento,
       indicadorTransmissao: true,
     });
   }
@@ -200,7 +202,9 @@ export class PgdasSimulacaoService {
   async _executar(opts) {
     const competencia = normalizeCompetencia(opts.competencia);
     if (!competencia) throw new PgdasSimulacaoError("INVALID_COMPETENCIA", "competência YYYY-MM inválida");
-    if (!Array.isArray(opts.atividades) || opts.atividades.length === 0) {
+    // Declaração SEM MOVIMENTO: permite atividades vazias. buildDeclaracaoPayload já produz o
+    // payload zerado (receitaPaCompetencia* = 0, estabelecimentos[0].atividades = []).
+    if (!opts.permitirSemMovimento && (!Array.isArray(opts.atividades) || opts.atividades.length === 0)) {
       throw new PgdasSimulacaoError("NO_ATIVIDADES", "Sem atividades pra declarar — classifique/segregue a receita.");
     }
     const declaracao = buildDeclaracaoPayload({

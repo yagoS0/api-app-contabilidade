@@ -26,6 +26,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const [resultado, setResultado] = useState(null);
   const [showTransmit, setShowTransmit] = useState(false);
   const [confirmComp, setConfirmComp] = useState("");
+  const [semMovimento, setSemMovimento] = useState(false); // declaração zerada (empresa sem receita)
   // Q44: Cadastro Fiscal acessível no próprio fluxo de apuração (a aba "Apuração V2" saiu do menu).
   const [showCadastro, setShowCadastro] = useState(false);
   const [cadastroData, setCadastroData] = useState(null); // { cadastro, cnaePrincipalRef }
@@ -66,6 +67,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       ]);
       const d = out?.dados || out;
       setDados(d);
+      // Dica: empresa marcada como zerada + sem faturamento → já sugere o modo sem movimento.
+      if (d?.semMovimentoDisponivel && d?.empresaZerada) setSemMovimento(true);
       setAtividadeOpcoes(Array.isArray(atvOut?.atividades) ? atvOut.atividades : []);
       setAtividades(Array.isArray(d?.atividades) ? d.atividades.filter((a) => a && a.idAtividade != null) : []);
       // folha: pré-preenche da memória se houver
@@ -124,6 +127,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     try {
       const out = await api.calcularFechamento(portalClientId, competencia, {
         atividades, folhaMensal12: folhaSerie, regimeApuracao: dados?.regimeApuracao,
+        semMovimento: semMovimento && atividades.length === 0,
       });
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       setResultado(out.result);
@@ -241,8 +245,21 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 </button>
               </div>
               {atividades.length === 0 ? (
-                <div style={{ color: PANEL.muted, fontSize: "0.8rem", padding: 10, background: PANEL.field, borderRadius: 6 }}>
-                  Nenhuma atividade. Use “+ atividade” pra adicionar, ou classifique as notas (Apuração V2).
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ color: PANEL.muted, fontSize: "0.8rem", padding: 10, background: PANEL.field, borderRadius: 6 }}>
+                    Nenhuma atividade. Use “+ atividade” pra adicionar, ou classifique as notas (Apuração V2).
+                  </div>
+                  {/* Sem movimento: empresa sem faturamento pode declarar o PGDAS-D zerado. */}
+                  {dados?.semMovimentoDisponivel && (
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 10, background: "rgba(139,233,253,0.08)", border: `1px solid #8BE9FD`, borderRadius: 6, fontSize: "0.82rem", cursor: "pointer" }}>
+                      <input type="checkbox" checked={semMovimento} onChange={(e) => setSemMovimento(e.target.checked)} style={{ marginTop: 2 }} />
+                      <span>
+                        <strong>Declarar SEM MOVIMENTO (zerado)</strong> — a empresa não teve receita nesta competência.
+                        Vai transmitir o PGDAS-D com receita <strong>R$ 0,00</strong> à Receita.
+                        {dados?.empresaZerada ? " (Empresa marcada como zerada.)" : ""}
+                      </span>
+                    </label>
+                  )}
                 </div>
               ) : (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
@@ -323,8 +340,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
 
             {/* Botões */}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <button onClick={handleCalcular} disabled={acting || atividades.length === 0}
-                style={btn("#8BE9FD")}>{acting ? "…" : "🧮 Calcular (simulação)"}</button>
+              <button onClick={handleCalcular} disabled={acting || (atividades.length === 0 && !semMovimento)}
+                style={btn("#8BE9FD")}>{acting ? "…" : (atividades.length === 0 && semMovimento ? "🧮 Calcular sem movimento" : "🧮 Calcular (simulação)")}</button>
               <button onClick={handleSalvar} disabled={acting || !resultado}
                 style={btn("#FFB347")} title={!resultado ? "Calcule antes de salvar" : ""}>💾 Salvar (fechar)</button>
               <button onClick={() => setShowTransmit(true)} disabled={acting || !resultado}
@@ -341,6 +358,11 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                     ? `⚠ RETIFICADORA OFICIAL — substitui a declaração já enviada. Digite a competência (${competencia}) pra confirmar:`
                     : `⚠ Transmissão OFICIAL — digite a competência (${competencia}) pra confirmar:`}
                 </div>
+                {atividades.length === 0 && (
+                  <div style={{ color: "#8BE9FD", fontSize: "0.8rem" }}>
+                    Declaração <strong>SEM MOVIMENTO</strong>: será transmitido o PGDAS-D com receita R$ 0,00.
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <input value={confirmComp} onChange={(e) => setConfirmComp(e.target.value)} placeholder={competencia} style={{ ...inputS, fontFamily: "monospace", flex: 1 }} />
                   <button onClick={handleTransmitir} disabled={acting || confirmComp !== competencia} style={btn("#FF4757", "#fff")}>{acting ? "Transmitindo…" : "Confirmar"}</button>
