@@ -454,9 +454,9 @@ export function createApuracaoV2Router({ log } = {}) {
     async (req, res) => {
       const portalClientId = String(req.params.companyId);
       const competencia = String(req.params.competencia);
-      const { atividades, folhaMensal12, regimeApuracao } = req.body || {};
+      const { atividades, folhaMensal12, regimeApuracao, semMovimento } = req.body || {};
       try {
-        const result = await calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao });
+        const result = await calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento: Boolean(semMovimento) });
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha calcularFechamento");
