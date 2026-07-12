@@ -233,7 +233,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
       <div style={{
         background: "var(--bg-surface)", borderRadius: "var(--radius)", border: "1px solid var(--border)",
         boxShadow: "0 8px 32px rgba(0,0,0,0.16)", width: "100%", maxWidth: "560px",
-        maxHeight: "90vh", overflow: "auto", padding: "var(--space-5)",
+        maxHeight: "90vh", overflow: "auto", padding: "var(--space-5)", boxSizing: "border-box",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-3)" }}>
           <div>

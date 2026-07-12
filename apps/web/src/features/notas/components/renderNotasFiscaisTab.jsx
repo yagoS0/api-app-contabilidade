@@ -50,12 +50,22 @@ export function NotasFiscaisTab({ notasPanel }) {
         <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>
           Envie XML(s) de NFS-e quando a captura automática não trouxe as notas desta empresa.
         </span>
-        {importResult && (
-          <span style={{ fontSize: "0.78rem", color: PANEL.text }}>
-            → {importResult.created ?? 0} nova(s), {importResult.updated ?? 0} atualizada(s)
-            {Array.isArray(importResult.errors) && importResult.errors.length ? `, ${importResult.errors.length} com erro` : ""}
-          </span>
-        )}
+        {importResult && (() => {
+          const errs = Array.isArray(importResult.errors) ? importResult.errors : [];
+          const naoPertence = errs.filter((e) => e?.reason === "nota_nao_pertence").length;
+          const outrosErros = errs.length - naoPertence;
+          return (
+            <span style={{ fontSize: "0.78rem", color: PANEL.text }}>
+              → {importResult.created ?? 0} nova(s), {importResult.updated ?? 0} atualizada(s)
+              {naoPertence > 0 && (
+                <span style={{ color: "#FFB347", fontWeight: 600 }}>
+                  {", "}{naoPertence} ignorada(s): a nota não pertence a esta empresa
+                </span>
+              )}
+              {outrosErros > 0 ? `, ${outrosErros} com erro` : ""}
+            </span>
+          );
+        })()}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>

@@ -137,7 +137,7 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 10, padding: 20, width: "100%", maxWidth: 540, maxHeight: "90vh", overflowY: "auto" }}>
+      <div style={{ background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 10, padding: 20, width: "100%", maxWidth: 640, maxHeight: "90vh", overflowY: "auto", overflowX: "hidden", boxSizing: "border-box" }}>
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <span style={{ fontWeight: 700, color: ACCOUNTING_PANEL.text, fontSize: "0.9375rem" }}>
@@ -214,13 +214,16 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
           </div>
 
           {/* Linhas */}
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted, marginBottom: 4 }}>Linhas (D/C)</div>
-            <LineEditor
-              lines={form.lines}
-              onChange={(ls) => setForm((p) => ({ ...p, lines: ls }))}
-              accounts={accounts}
-            />
+            {/* Colunas fixas do LineEditor: em telas estreitas rola só aqui, não o modal todo. */}
+            <div style={{ overflowX: "auto", minWidth: 0 }}>
+              <LineEditor
+                lines={form.lines}
+                onChange={(ls) => setForm((p) => ({ ...p, lines: ls }))}
+                accounts={accounts}
+              />
+            </div>
           </div>
           </>)}
 

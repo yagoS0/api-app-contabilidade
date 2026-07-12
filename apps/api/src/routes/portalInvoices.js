@@ -490,9 +490,18 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
       return res.status(400).json({ error: "files_required" });
     }
 
+    // CNPJ da empresa — usado p/ verificar titularidade e derivar papel EMIT/DEST
+    // (mesmo tratamento do caminho automático em AdnNotasService.upsertNfseFromItem).
+    const portalClient = await prisma.portalClient.findUnique({
+      where: { id: String(clientId) },
+      select: { cnpj: true },
+    });
+    const companyCnpj = normalizeDoc(portalClient?.cnpj);
+
     let created = 0;
     let updated = 0;
     let duplicates = 0;
+    let rejeitadas = 0;
     const errors = [];
 
     for (const file of files) {
@@ -503,6 +512,20 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
           continue;
         }
         const meta = parseXmlMetadata(xml);
+        const prestadorDoc = normalizeDoc(meta?.cnpjPrestador);
+        const tomadorDoc = normalizeDoc(meta?.cnpjTomador);
+
+        // Verificação de titularidade: a nota tem que pertencer à empresa (emitente OU tomador).
+        // Se o CNPJ da empresa não bate com nenhum dos dois, rejeita (não importa nota de terceiro).
+        if (!companyCnpj || (prestadorDoc !== companyCnpj && tomadorDoc !== companyCnpj)) {
+          rejeitadas += 1;
+          errors.push({ file: file.originalname, reason: "nota_nao_pertence" });
+          continue;
+        }
+
+        // papel/statusEfetivo espelham AdnNotasService: sem eles, card e apuração não somam a nota.
+        const papel = prestadorDoc && prestadorDoc === companyCnpj ? "EMIT" : "DEST";
+        const cancelada = meta?.situacao === "2" || meta?.situacao === "CANCELADA";
         const data = {
           clientId: String(clientId),
           type: "NFSE",
@@ -511,7 +534,9 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
           idNfse: meta?.numeroNfse || null,
           competencia: meta?.competencia || null,
           issueDate: meta?.dataEmissao || null,
-          status: meta?.situacao === "2" ? "CANCELADA" : "EMITIDA",
+          status: cancelada ? "CANCELADA" : "EMITIDA",
+          statusEfetivo: cancelada ? "cancelada" : "autorizada",
+          papel,
           total: meta?.valorServicos || null,
           emitenteNome: meta?.prestadorNome || null,
           emitenteDoc: meta?.cnpjPrestador || null,
@@ -521,16 +546,33 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
           xmlHash: null,
         };
 
+        let notaId;
         if (data.idNfse) {
-          await prisma.portalInvoice.upsert({
+          const up = await prisma.portalInvoice.upsert({
             where: { clientId_idNfse: { clientId: String(clientId), idNfse: data.idNfse } },
             create: data,
             update: data,
+            select: { id: true },
           });
+          notaId = up.id;
           updated += 1;
         } else {
-          await prisma.portalInvoice.create({ data });
+          const cr = await prisma.portalInvoice.create({ data, select: { id: true } });
+          notaId = cr.id;
           created += 1;
+        }
+
+        // NotaItem (LC116 → alimenta o classificador na apuração), como no fluxo automático.
+        if (notaId && meta?.codigoServico) {
+          await prisma.notaItem.deleteMany({ where: { notaId } });
+          await prisma.notaItem.create({
+            data: {
+              notaId,
+              codigoServico: meta.codigoServico,
+              descricao: meta.descricaoServico || null,
+              valor: Number(meta.valorServicos || 0),
+            },
+          });
         }
       } catch (err) {
         errors.push({ file: file.originalname, reason: "import_failed" });
@@ -538,7 +580,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
       }
     }
 
-    return res.json({ created, updated, duplicates, errors });
+    return res.json({ created, updated, duplicates, rejeitadas, errors });
   });
 
   return router;
