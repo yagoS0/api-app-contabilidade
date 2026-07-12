@@ -828,12 +828,16 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, companiesState.selectedCompanyId]);
 
+  // Remapeia o form APENAS ao trocar de empresa (por companyId) — NÃO a cada refresh da lista.
+  // Antes dependia de [selectedCompany]: qualquer reload em background trocava a referência do
+  // objeto e resetava o form, apagando edições não salvas (ex.: "empresa zerada = Sim" voltava
+  // pra "Não" sozinho antes de salvar). Agora edições ficam preservadas até salvar/trocar de empresa.
   useEffect(() => {
     if (selectedCompany) {
       editCompanyForm.replace(mapCompanyToEditForm(selectedCompany));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCompany]);
+  }, [selectedCompany?.companyId]);
 
   useEffect(() => {
     if (page === "companies" || page === "guideSettings") {
