@@ -1060,6 +1060,11 @@ export function createRealApi() {
       const suffix = q.toString() ? `?${q.toString()}` : "";
       return request(`/firm/companies/${companyId}/notas/summary${suffix}`);
     },
+    async marcarNotaStatus(companyId, notaId, statusEfetivo) {
+      return request(`/firm/companies/${companyId}/notas/${notaId}/status`, {
+        method: "PATCH", body: JSON.stringify({ statusEfetivo }),
+      });
+    },
     // Q12.B+++: cert A1 por empresa (upload/status/delete)
     async getCompanyCert(companyId) {
       const payload = await request(`/firm/companies/${companyId}/certificate`);

@@ -274,7 +274,10 @@ function parseDecimal(v) {
 function firstOfMonth(isoStr) {
   try {
     const d = new Date(isoStr);
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+    // Competência no fuso de Brasília (UTC-3). Sem isso, uma NF-e emitida na virada do mês (ex.:
+    // 30/06 23:30 BRT = 01/07 02:30 UTC) cairia em julho e "sumiria" da apuração de junho.
+    const br = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+    return new Date(Date.UTC(br.getUTCFullYear(), br.getUTCMonth(), 1));
   } catch { return null; }
 }
 

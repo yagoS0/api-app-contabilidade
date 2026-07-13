@@ -54,6 +54,7 @@ function buildWhereFilters({
   status,
   type,
   search,
+  incluirCanceladas,
 }) {
   const where = { clientId: String(clientId) };
   const and = [];
@@ -108,6 +109,11 @@ function buildWhereFilters({
         { idDps: { contains: q, mode: "insensitive" } },
       ],
     });
+  }
+
+  // Esconde notas CANCELADAS por padrão (não devem aparecer nem somar) — a menos que peça explícito.
+  if (!incluirCanceladas) {
+    and.push({ OR: [{ statusEfetivo: null }, { statusEfetivo: { not: "cancelada" } }] });
   }
 
   if (and.length) where.AND = and;
@@ -171,6 +177,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
         status,
         type,
         search,
+        incluirCanceladas: String(req.query.incluirCanceladas || "") === "1",
       });
 
       const [items, total, totals, sync] = await prisma.$transaction([

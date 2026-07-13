@@ -88,7 +88,7 @@ const inputStyle = {
   borderRadius: 6, color: PANEL.text, padding: "8px 10px", fontSize: "0.85rem",
 };
 
-export function NotasList({ notas, total, summary, ano, filters, onFiltersChange, onApply, loading }) {
+export function NotasList({ notas, total, summary, ano, filters, onFiltersChange, onApply, loading, onMarcarStatus }) {
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
       <h3 style={{ margin: 0, marginBottom: 12, fontSize: "0.95rem", color: PANEL.text }}>📄 Notas Fiscais</h3>
@@ -118,6 +118,7 @@ export function NotasList({ notas, total, summary, ano, filters, onFiltersChange
                 <th style={{ ...th, textAlign: "right" }}>Valor</th>
                 <th style={th}>Status</th>
                 <th style={th}>Chave</th>
+                {onMarcarStatus && <th style={th}></th>}
               </tr>
             </thead>
             <tbody>
@@ -151,6 +152,21 @@ export function NotasList({ notas, total, summary, ano, filters, onFiltersChange
                         title={n.chaveAcesso}>
                       {n.chaveAcesso ? `…${n.chaveAcesso.slice(-12)}` : "—"}
                     </td>
+                    {onMarcarStatus && (
+                      <td style={td}>
+                        {String(n.statusEfetivo || "").toLowerCase() === "cancelada" ? (
+                          <button onClick={() => onMarcarStatus(n.id, "autorizada")} title="Reativar (volta a contar no faturamento)"
+                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "#69FF47", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            Reativar
+                          </button>
+                        ) : (
+                          <button onClick={() => { if (window.confirm("Marcar esta nota como CANCELADA? Ela sai do faturamento/apuração.")) onMarcarStatus(n.id, "cancelada"); }} title="Marcar como cancelada (sai do faturamento/apuração)"
+                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "#FF4757", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            Cancelar
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

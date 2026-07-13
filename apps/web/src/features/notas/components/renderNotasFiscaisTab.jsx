@@ -88,6 +88,7 @@ export function NotasFiscaisTab({ notasPanel }) {
         onFiltersChange={setNotasFilters}
         onApply={(f) => loadNotas(f)}
         loading={loadingNotas}
+        onMarcarStatus={notasPanel.marcarNotaStatus}
       />
 
       {loading && notas.length === 0 && (
