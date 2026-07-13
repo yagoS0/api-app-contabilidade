@@ -219,6 +219,28 @@ export async function generateProvisionsFromGuide({ guideId, tx = null }) {
         created.push({ entryId: existing.id, eventType: l.eventType, valor: l.valor, action: "noop" });
       }
     }
+
+    // Reconciliação: remove provisões ÓRFÃS deste guide cujo eventType saiu do conjunto atual
+    // (ex.: LP antes vinha lumpado como DARF_OUTROS; agora diferenciado em DARF_PIS/COFINS/...).
+    // Sem isso, uma re-captura deixaria a provisão antiga órfã e dobraria o valor. Só remove as
+    // SEGURAS: não exportadas, não pagas e sem baixa vinculada (nunca mexe em algo já contabilizado).
+    const eventTypesAtuais = linhas.map((l) => l.eventType);
+    const orfas = await ctx.accountingEntry.findMany({
+      where: {
+        sourceGuideId: guide.id,
+        tipo: "PROVISAO",
+        eventType: { notIn: eventTypesAtuais },
+        status: { not: "EXPORTADO" },
+        statusPagamento: { not: "PAGO" },
+        baixas: { none: {} },
+      },
+      select: { id: true, eventType: true },
+    });
+    for (const o of orfas) {
+      await ctx.accountingEntryLine.deleteMany({ where: { entryId: o.id } });
+      await ctx.accountingEntry.delete({ where: { id: o.id } });
+      created.push({ entryId: o.id, eventType: o.eventType, action: "removed_orphan" });
+    }
     return created;
   }
 
