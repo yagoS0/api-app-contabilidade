@@ -15,6 +15,18 @@ const CODIGO_TRIBUTO = {
   "2372": "CSLL",
 };
 
+// Identifica o tributo pelo NOME que vem na descrição do extrato da DCTFWeb — é a fonte confiável
+// quando o código de receita varia (o extrato sempre traz o nome). Sem isso, PIS/COFINS/CSLL/IRPJ
+// ficavam indiferenciados no lançamento (todos caíam em "OUTROS_TRIBUTOS").
+export function tributoDaDescricao(descricao) {
+  const s = String(descricao || "").toUpperCase();
+  if (/COFINS|FINANCIAMENTO DA SEGURIDADE/.test(s)) return "COFINS";
+  if (/\bPIS\b|PIS\/PASEP|PASEP/.test(s)) return "PIS";
+  if (/CSLL|SOBRE O LUCRO L[IÍ]QUIDO|CONTRIBUI[CÇ][AÃ]O SOCIAL/.test(s)) return "CSLL";
+  if (/IRPJ|IMPOSTO.*RENDA|RENDA.*PESSOA(S)? JUR/.test(s)) return "IRPJ";
+  return null;
+}
+
 function parseValorBR(raw) {
   const s = String(raw || "").trim();
   if (!s) return null;
@@ -61,10 +73,12 @@ export function parseDctfwebDeclaracao(pdfTexto) {
   while ((m = re.exec(texto)) !== null) {
     const codigoReceita = m[1].trim();
     const cod4 = codigoReceita.replace(/\D+/g, "").slice(0, 4);
+    const descricao = m[2].trim();
     debitos.push({
       codigoReceita,
-      tributo: CODIGO_TRIBUTO[cod4] || null,
-      descricao: m[2].trim(),
+      // Prioriza o NOME da descrição (sempre presente no extrato); código é fallback.
+      tributo: tributoDaDescricao(descricao) || CODIGO_TRIBUTO[cod4] || null,
+      descricao,
       debitoApurado: parseValorBR(m[3]),
       saldoAPagar: parseValorBR(m[4]),
     });

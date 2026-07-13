@@ -50,6 +50,7 @@ export async function provisionarLpDaDeclaracao({
     .filter((d) => Number(d?.debitoApurado) > 0)
     .map((d) => ({
       codigo: onlyDigits(d.codigoReceita).slice(0, 4),
+      tributo: d.tributo || null, // PIS | COFINS | IRPJ | CSLL — identifica o lançamento por tributo
       total: round2(d.debitoApurado), // PRINCIPAL — a provisão usa o valor original
       denominacao: d.descricao || d.tributo || null,
     }));
@@ -98,7 +99,7 @@ export async function provisionarLpDaDeclaracao({
   // o acréscimo entra depois, quando o DARF é emitido após o vencimento).
   const valores = {};
   for (const c of composicao) {
-    const t = CODIGO_TRIBUTO[c.codigo];
+    const t = c.tributo || CODIGO_TRIBUTO[c.codigo]; // nome do extrato tem prioridade sobre o código
     if (t) valores[t] = { principal: c.total, juros: 0, multa: 0 };
   }
   if (Object.keys(valores).length) {
