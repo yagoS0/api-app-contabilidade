@@ -111,3 +111,35 @@ export function parseXmlMetadata(xmlPlain) {
     descricaoServico: descricaoServico ? String(descricaoServico).trim() : null,
   };
 }
+
+// Códigos de tpEvento conhecidos de cancelamento da NFS-e Nacional (com e sem prefixo "e").
+// A validação final é contra evento REAL (logamos o XML cru); múltiplos sinais reduzem falso-negativo.
+const TP_EVENTO_CANCELAMENTO = new Set(["101101", "e101101", "105102", "e105102", "110111"]);
+
+/**
+ * Parseia um item TipoDocumento="EVENTO" da NFS-e Nacional (documento separado da nota).
+ * O ADN entrega o evento no mesmo LoteDFe; aqui extraímos a chave da nota afetada, o tpEvento
+ * e se é (ou parece ser) um cancelamento. Conservador: só marca cancelamento com sinal estrutural
+ * (código de evento OU elemento de cancelamento OU descrição "cancel").
+ * @returns {{ chave, tpEvento, descricao, isCancelamento }}
+ */
+export function parseNfseEvento(xmlPlain) {
+  if (!xmlPlain) return { chave: null, tpEvento: null, descricao: null, isCancelamento: false };
+  const doc = new DOMParser().parseFromString(xmlPlain, "text/xml");
+  const chave = getTextByLocalNames(doc, ["chNFSe", "ChaveAcesso", "chaveAcesso", "chAcesso"]) || null;
+  const tpEvento = getTextByLocalNames(doc, ["tpEvento", "TipoEvento"]) || null;
+  const descricao = getTextByLocalNames(doc, ["xDesc", "descEvento", "xEvento", "xMotivo", "descSit"]) || null;
+  const porTp = tpEvento && TP_EVENTO_CANCELAMENTO.has(String(tpEvento).trim().toLowerCase());
+  // Alguns layouts nomeiam o elemento do evento pelo código (ex.: <e101101>, <e105102>).
+  const porElemento = Boolean(
+    findFirstByLocalName(doc, "e101101") || findFirstByLocalName(doc, "e105102") ||
+    findFirstByLocalName(doc, "cancNFSe") || findFirstByLocalName(doc, "cancelamento")
+  );
+  const porDescricao = descricao && /cancel/i.test(descricao);
+  return {
+    chave: chave ? String(chave).trim() : null,
+    tpEvento: tpEvento ? String(tpEvento).trim() : null,
+    descricao: descricao ? String(descricao).trim() : null,
+    isCancelamento: Boolean(porTp || porElemento || porDescricao),
+  };
+}
