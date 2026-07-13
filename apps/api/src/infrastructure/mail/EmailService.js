@@ -125,12 +125,17 @@ function buildMimeMessage({ from, to, subject, html, attachments }) {
   for (const a of attachments || []) {
     const fileContent = fs.readFileSync(a.path);
     const base64Data = fileContent.toString("base64");
+    // RFC 2045: o base64 PRECISA ser dobrado em linhas de até 76 chars. Sem isso vira uma linha
+    // única gigante que estoura o limite de 998 octetos/linha do SMTP (RFC 5321) — relays quebram
+    // a linha e corrompem o anexo → PDF que não abre ("folha branca"). O nodemailer (via SMTP)
+    // dobra sozinho; aqui (MIME manual da via Gmail API) precisamos dobrar explicitamente.
+    const base64Folded = base64Data.match(/.{1,76}/g)?.join("\r\n") || base64Data;
     const filename = a.filename || path.basename(a.path);
     body += `--${boundary}\r\n`;
     body += `Content-Type: application/pdf; name="${filename}"\r\n`;
     body += "Content-Transfer-Encoding: base64\r\n";
     body += `Content-Disposition: attachment; filename="${filename}"\r\n\r\n`;
-    body += `${base64Data}\r\n`;
+    body += `${base64Folded}\r\n`;
   }
   body += `--${boundary}--`;
   return head + body;
