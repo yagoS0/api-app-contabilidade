@@ -63,13 +63,7 @@ export function AbaFiscalPanel({ panel }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, color: PANEL.text }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>🧾 Atividades permitidas (Bloco A)</div>
-          <div style={{ fontSize: "0.8rem", color: PANEL.muted, maxWidth: 640 }}>
-            Derivado dos CNAEs do cadastro. Ative/desative atividades, eleja a <strong>padrão</strong> por tipo
-            e informe atributos de ISS (opcionais). Essa config alimenta o motor de sugestão de anexo.
-          </div>
-        </div>
+        <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>Atividades permitidas</div>
         <button onClick={salvar} disabled={panel.saving}
           style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#69FF47", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: panel.saving ? 0.6 : 1 }}>
           {panel.saving ? "Salvando…" : "Salvar perfil"}
@@ -78,8 +72,7 @@ export function AbaFiscalPanel({ panel }) {
 
       {perfil?.temFatorR && (
         <div style={{ padding: 10, background: "rgba(139,233,253,0.10)", border: "1px solid #8BE9FD", borderRadius: 8, fontSize: "0.8rem", color: "#8BE9FD" }}>
-          ℹ Há atividade sujeita a <strong>Fator R</strong> (III↔V). O anexo é decidido a cada competência na
-          sub-aba <strong>“Apurar (motor local)”</strong>, com a folha (FS12). Atenção à zona de risco 27%–29%.
+          ℹ Há atividade sujeita a <strong>Fator R</strong> (III↔V) — atenção à zona 27%–29%.
         </div>
       )}
 

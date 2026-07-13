@@ -41,13 +41,7 @@ export function SugestaoAnexoPanel({ panel }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, color: PANEL.text }}>
-      <div>
-        <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>🔎 Sugestão de anexo por nota</div>
-        <div style={{ fontSize: "0.8rem", color: PANEL.muted, maxWidth: 680 }}>
-          Empacota a classificação das notas (motor v2) numa sugestão por nota, com confiança e justificativa,
-          restrita às atividades ativas do perfil. Nunca chuta — sem match único vira <strong>revisão</strong> (aba Pendências).
-        </div>
-      </div>
+      <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>Sugestão de anexo por nota</div>
 
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
         <label style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
@@ -66,7 +60,7 @@ export function SugestaoAnexoPanel({ panel }) {
 
       {data && !data.perfilConfigurado && (
         <div style={{ padding: 10, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 8, color: "#FFB347", fontSize: "0.8rem" }}>
-          ⚠ Perfil não configurado (aba <strong>Aba Fiscal</strong>). A sugestão roda sem restrição de atividades ativas.
+          ⚠ Perfil não configurado (em <strong>Cadastro</strong>). A sugestão roda sem restrição de atividades ativas.
         </div>
       )}
 

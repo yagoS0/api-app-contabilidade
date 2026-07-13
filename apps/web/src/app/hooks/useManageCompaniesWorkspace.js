@@ -10,14 +10,18 @@ import {
 
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
-const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "sitfis", "apuracao-v2", "plano-contas", "configuracoes", "edit"];
+const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "sitfis", "cadastro-fiscal", "sugestao", "pendencias", "plano-contas", "configuracoes", "edit"];
 const SEGMENT_TO_TAB = {
   guides: "guides",
   lancamentos: "lancamentos",
   circular: "circular",
   "notas-fiscais": "notasFiscais",
   sitfis: "sitfis",
-  "apuracao-v2": "apuracaoV2",
+  // A aba "Fiscal" (apuracao-v2) virou sub-abas próprias no grupo Fiscal:
+  "cadastro-fiscal": "cadastroFiscal",
+  sugestao: "sugestao",
+  pendencias: "pendencias",
+  "apuracao-v2": "cadastroFiscal", // compat: link antigo cai no Cadastro Fiscal
   "plano-contas": "planoContas",
   configuracoes: "configuracoes",
   edit: "edit",
@@ -28,7 +32,9 @@ const TAB_TO_SEGMENT = {
   circular: "circular",
   notasFiscais: "notas-fiscais",
   sitfis: "sitfis",
-  apuracaoV2: "apuracao-v2",
+  cadastroFiscal: "cadastro-fiscal",
+  sugestao: "sugestao",
+  pendencias: "pendencias",
   planoContas: "plano-contas",
   configuracoes: "configuracoes",
   edit: "edit",

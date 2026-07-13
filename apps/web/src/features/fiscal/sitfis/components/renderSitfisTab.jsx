@@ -30,12 +30,7 @@ export function SitfisTab({ sitfisPanel }) {
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
-          <p style={{ margin: "4px 0 0", color: "#A7B0C0", fontSize: "0.9rem" }}>
-            Relatório de situação fiscal (SITFIS) da empresa junto ao SERPRO / Receita Federal.
-          </p>
-        </div>
+        <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
         <Button variant="success" disabled={consulting} onClick={consultar}>
           {consulting ? "Consultando…" : "Consultar situação fiscal agora"}
         </Button>
