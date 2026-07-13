@@ -38,8 +38,21 @@ export const EVENT_TO_SUBTIPO = Object.freeze({
   DARF_OUTROS: "OUTROS_TRIBUTOS",
 });
 
-function pickEventType(tipoUpper, codigo) {
+// Nome do tributo (do extrato DCTFWeb) → eventType. Fonte confiável p/ Lucro Presumido, cujo
+// código de receita pode variar (antes tudo caía em DARF_OUTROS e PIS/COFINS/CSLL/IRPJ ficavam
+// indiferenciados no lançamento).
+const NOME_TRIBUTO_TO_EVENT = Object.freeze({
+  PIS: "DARF_PIS",
+  COFINS: "DARF_COFINS",
+  IRPJ: "DARF_IRPJ",
+  CSLL: "DARF_CSLL",
+  ISS: "DARF_ISS",
+});
+
+function pickEventType(tipoUpper, codigo, tributo) {
   if (codigo && CODIGO_RECEITA_TO_EVENT[codigo]) return CODIGO_RECEITA_TO_EVENT[codigo];
+  const nome = String(tributo || "").toUpperCase();
+  if (nome && NOME_TRIBUTO_TO_EVENT[nome]) return NOME_TRIBUTO_TO_EVENT[nome];
   return TIPO_GUIDE_TO_EVENT[tipoUpper] || "DARF_OUTROS";
 }
 
@@ -74,10 +87,10 @@ export async function generateProvisionsFromGuide({ guideId, tx = null }) {
     ? composicao
         .filter((c) => Number(c?.total) > 0)
         .map((c) => ({
-          eventType: pickEventType(tipoUpper, c.codigo),
+          eventType: pickEventType(tipoUpper, c.codigo, c.tributo),
           valor: Number(c.total),
           codigo: c.codigo || null,
-          denominacao: c.denominacao || null,
+          denominacao: c.denominacao || c.tributo || null,
         }))
     : (Number(guide.valor) > 0 ? [{
         eventType: pickEventType(tipoUpper, null),
