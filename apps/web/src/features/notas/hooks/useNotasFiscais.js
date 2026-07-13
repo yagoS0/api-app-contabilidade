@@ -202,6 +202,18 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     }
   }
 
+  // Marca uma nota como cancelada (some do faturamento/apuração) ou reativa.
+  async function marcarNotaStatus(notaId, statusEfetivo) {
+    if (!api?.marcarNotaStatus) { feedback?.notifyError?.("Ação indisponível."); return; }
+    try {
+      await api.marcarNotaStatus(companyId, notaId, statusEfetivo);
+      feedback?.notifySuccess?.(statusEfetivo === "cancelada" ? "Nota marcada como cancelada." : "Nota reativada.");
+      await loadNotas();
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Falha ao atualizar a nota.");
+    }
+  }
+
   // Q56: import MANUAL de notas via upload de XML (pra empresas onde a captura automática falhou)
   async function importNotas(files) {
     const list = Array.isArray(files) ? files : (files ? [files] : []);
@@ -251,7 +263,7 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     // Q12.C.1: listagem de notas
     notas, notasTotal, notasSummary,
     notasFilters, setNotasFilters,
-    loadingNotas, loadNotas,
+    loadingNotas, loadNotas, marcarNotaStatus,
     // Q56: import manual de notas (XML)
     importing, importResult, importNotas,
   };

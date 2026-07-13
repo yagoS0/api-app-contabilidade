@@ -416,6 +416,11 @@ export function createNotasRouter({ log }) {
     }
     await applyAtividadeFilter(where, { cfop, servico });
 
+    // Esconde CANCELADAS por padrão (via AND pra não conflitar com o OR do search). ?incluirCanceladas=1 mostra.
+    if (String(req.query.incluirCanceladas || "") !== "1") {
+      where.AND = [...(where.AND || []), { OR: [{ statusEfetivo: null }, { statusEfetivo: { not: "cancelada" } }] }];
+    }
+
     const [notas, total] = await Promise.all([
       prisma.portalInvoice.findMany({
         where, orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
@@ -438,6 +443,28 @@ export function createNotasRouter({ log }) {
         total: n.total != null ? n.total.toString() : null,
       })),
     });
+  });
+
+  // PATCH /notas/:notaId/status → marca a nota como CANCELADA (some do faturamento/apuração) ou
+  // reativa (autorizada). Bridge manual enquanto a auto-detecção de cancelamento de NFS-e Nacional
+  // (evento separado do ADN) não é implementada.
+  router.patch("/notas/:notaId/status", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const notaId = String(req.params.notaId);
+    const alvo = String(req.body?.statusEfetivo || "").toLowerCase();
+    if (!["cancelada", "autorizada"].includes(alvo)) {
+      return res.status(400).json({ error: "status_invalido", allowed: ["cancelada", "autorizada"] });
+    }
+    const nota = await prisma.portalInvoice.findFirst({
+      where: { id: notaId, clientId: portalClientId }, select: { id: true },
+    });
+    if (!nota) return res.status(404).json({ error: "nota_nao_encontrada" });
+    const updated = await prisma.portalInvoice.update({
+      where: { id: nota.id },
+      data: { statusEfetivo: alvo, status: alvo === "cancelada" ? "CANCELADA" : "EMITIDA" },
+      select: { id: true, statusEfetivo: true, status: true },
+    });
+    return res.json({ ok: true, nota: updated });
   });
 
   // GET /notas/summary → resumo agregado APLICANDO OS MESMOS FILTROS de /notas
@@ -484,10 +511,11 @@ export function createNotasRouter({ log }) {
     let countNfe = 0, countNfse = 0;
     let countCanceladas = 0;
     for (const n of notas) {
+      // Canceladas ficam FORA dos totais (faturamento/contagens) — só entram em countCanceladas.
+      if (n.statusEfetivo === "cancelada") { countCanceladas++; continue; }
       totalNotas++;
       if (n.type === "NFE") countNfe++;
       else if (n.type === "NFSE") countNfse++;
-      if (n.statusEfetivo === "cancelada") countCanceladas++;
       if (!n.competencia) continue;
       const d = new Date(n.competencia);
       const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;

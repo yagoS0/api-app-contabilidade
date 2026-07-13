@@ -121,8 +121,12 @@ async function isCompetenciaFechada(tx, { portalClientId, competenciaDate }) {
 // ─── Persistência: NFS-e → PortalInvoice ───────────────────────────────────
 
 async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPlain, metadata }) {
-  const chaveAcesso = item.ChaveAcesso || item.chaveAcesso || null;
-  if (!chaveAcesso) return { skipped: true, reason: "no_chave" };
+  // Chave: do item ADN OU do XML (NFS-e Nacional traz a chave DENTRO do XML, não no item top-level).
+  const chaveAcesso = item.ChaveAcesso || item.chaveAcesso || metadata.chaveAcesso || null;
+  const idNfse = metadata.numeroNfse || null;
+  // Sem NENHUM identificador (nem chave nem número) não dá pra deduplicar — aí sim pula.
+  // Antes descartávamos toda NFS-e sem `item.ChaveAcesso` (a maioria!) → nota sumia da apuração.
+  if (!chaveAcesso && !idNfse) return { status: "skipped", reason: "sem_identificador" };
 
   // Papel: EMIT se prestador é a empresa; senão DEST. NFS-e quase sempre EMIT
   // (a empresa só recebe DFe de NFS-e em casos específicos).
@@ -131,11 +135,23 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
 
   const competenciaDate = metadata.competencia || metadata.dataEmissao || null;
   const fechada = await isCompetenciaFechada(tx, { portalClientId, competenciaDate });
+  const canceladaNoXml = metadata.situacao === "CANCELADA" || metadata.situacao === "2";
+
+  // Dedup: por chaveAcesso quando houver; senão por idNfse (numeroNfse). idNfse só é escrito no
+  // fallback sem-chave — evita colisão com nota DEST de mesmo número emitida por outro prestador.
+  const where = chaveAcesso
+    ? { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso } }
+    : { clientId_idNfse: { clientId: portalClientId, idNfse } };
+
+  // Preserva o cancelamento numa re-captura: nunca rebaixa "cancelada" → "autorizada".
+  const existing = await tx.portalInvoice.findUnique({ where, select: { statusEfetivo: true } }).catch(() => null);
+  const statusEfetivo = existing?.statusEfetivo === "cancelada" || canceladaNoXml ? "cancelada" : "autorizada";
 
   const dataToWrite = {
     type: "NFSE",
     numero: metadata.numeroNfse,
-    chaveAcesso,
+    chaveAcesso: chaveAcesso || null,
+    ...(chaveAcesso ? {} : { idNfse }),
     competencia: competenciaDate,
     issueDate: metadata.dataEmissao,
     total: metadata.valorServicos,
@@ -144,17 +160,17 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
     tomadorNome: metadata.tomadorNome,
     tomadorDoc: metadata.cnpjTomador,
     xmlRaw: xmlPlain || null,
-    status: metadata.situacao === "CANCELADA" || metadata.situacao === "2" ? "CANCELADA" : "EMITIDA",
+    status: canceladaNoXml ? "CANCELADA" : "EMITIDA",
     papel,
-    statusEfetivo: metadata.situacao === "CANCELADA" || metadata.situacao === "2" ? "cancelada" : "autorizada",
+    statusEfetivo,
     competenciaPosFechamento: fechada || false,
   };
 
   if (fechada) {
     const created = await tx.portalInvoice.upsert({
-      where: { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso } },
+      where,
       create: { clientId: portalClientId, ...dataToWrite },
-      update: { competenciaPosFechamento: true, statusEfetivo: dataToWrite.statusEfetivo },
+      update: { competenciaPosFechamento: true, statusEfetivo },
     });
     const comp = competenciaDate
       ? `${new Date(competenciaDate).getUTCFullYear()}-${String(new Date(competenciaDate).getUTCMonth() + 1).padStart(2, "0")}`
@@ -163,14 +179,14 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
       data: {
         portalClientId, competencia: comp, notaId: created.id,
         motivo: "nota_retroativa",
-        observacoes: `NFS-e ${chaveAcesso} chegou para ${comp} (competência já fechada).`,
+        observacoes: `NFS-e ${chaveAcesso || idNfse} chegou para ${comp} (competência já fechada).`,
       },
     }).catch(() => null);
     return { created: created.id, status: "pendencia_criada" };
   }
 
   const upserted = await tx.portalInvoice.upsert({
-    where: { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso } },
+    where,
     create: { clientId: portalClientId, ...dataToWrite },
     update: dataToWrite,
     select: { id: true },

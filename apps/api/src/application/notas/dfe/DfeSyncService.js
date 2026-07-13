@@ -160,6 +160,13 @@ async function upsertNotaFromParsed(tx, { portalClientId, parsed, items }) {
     portalClientId, competenciaDate: parsed.competencia,
   });
 
+  // Preserva o cancelamento: o cancelamento de NF-e chega num EVENTO separado (applyEvent grava
+  // statusEfetivo="cancelada"). O resumo/nota da NF-e traz statusEfetivo hardcoded "autorizada";
+  // sem isso, uma re-captura da nota reverteria o cancelamento.
+  const wKey = { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso: parsed.chaveAcesso } };
+  const existente = await tx.portalInvoice.findUnique({ where: wKey, select: { statusEfetivo: true } }).catch(() => null);
+  const statusEfetivo = existente?.statusEfetivo === "cancelada" ? "cancelada" : (parsed.statusEfetivo || null);
+
   const dataToWrite = {
     type: parsed.type,
     numero: parsed.numero || null,
@@ -175,16 +182,16 @@ async function upsertNotaFromParsed(tx, { portalClientId, parsed, items }) {
     tomadorDoc: parsed.tomadorDoc || null,
     xmlRaw: parsed.xmlRaw || null,
     papel: parsed.papel || null,
-    statusEfetivo: parsed.statusEfetivo || null,
+    statusEfetivo,
     competenciaPosFechamento: fechada,
   };
 
   if (fechada) {
     // Não atualiza base — cria a nota mas só registra a pendência.
     const created = await tx.portalInvoice.upsert({
-      where: { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso: parsed.chaveAcesso } },
+      where: wKey,
       create: { clientId: portalClientId, ...dataToWrite },
-      update: { competenciaPosFechamento: true, statusEfetivo: parsed.statusEfetivo || null },
+      update: { competenciaPosFechamento: true, statusEfetivo },
     });
     const comp = `${new Date(parsed.competencia).getUTCFullYear()}-${String(new Date(parsed.competencia).getUTCMonth() + 1).padStart(2, "0")}`;
     await tx.pendenciaPosFechamento.create({
@@ -198,7 +205,7 @@ async function upsertNotaFromParsed(tx, { portalClientId, parsed, items }) {
   }
 
   const nota = await tx.portalInvoice.upsert({
-    where: { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso: parsed.chaveAcesso } },
+    where: wKey,
     create: { clientId: portalClientId, ...dataToWrite },
     update: dataToWrite,
   });

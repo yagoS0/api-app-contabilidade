@@ -74,10 +74,23 @@ export function parseXmlMetadata(xmlPlain) {
     getTextByLocalNames(infNfse, ["Discriminacao", "xDescServ"]) ||
     null;
 
+  // Chave de acesso da NFS-e Nacional: normalmente no atributo Id de <infNFSe> (50 dígitos, às vezes
+  // prefixado por "NFS"), ou num elemento <chNFSe>. Antes não era extraída → a captura ADN descartava
+  // a nota por "sem chave" (o campo top-level do item ADN não traz a chave). Extraímos aqui.
+  let chaveAcesso = getTextByLocalNames(doc, ["chNFSe", "ChaveAcesso", "chaveAcesso"]);
+  if (!chaveAcesso && infNfse && typeof infNfse.getAttribute === "function") {
+    const idAttr = infNfse.getAttribute("Id") || infNfse.getAttribute("id");
+    if (idAttr) {
+      const digits = String(idAttr).replace(/\D+/g, "");
+      chaveAcesso = digits.length >= 40 ? digits : String(idAttr).trim();
+    }
+  }
+
   const valorServicosNumber = valorServicos ? Number(valorServicos) : null;
   const valorIssNumber = valorIss ? Number(valorIss) : null;
 
   return {
+    chaveAcesso: chaveAcesso ? String(chaveAcesso).trim() : null,
     cnpjPrestador: normalizeDoc(cnpjPrestador || cnpjAutor),
     cnpjTomador: normalizeDoc(cnpjTomador),
     prestadorNome: normalizeName(prestadorNome),
