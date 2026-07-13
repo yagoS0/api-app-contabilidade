@@ -15,7 +15,8 @@ import fs from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { fetchDfeNFSe, AdnNacionalClientError } from "../adn-nacional/AdnNacionalClient.js";
-import { parseXmlMetadata } from "../../nfse/AdnXmlMetadata.js";
+import { parseXmlMetadata, parseNfseEvento } from "../../nfse/AdnXmlMetadata.js";
+import { log } from "../../../config.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { resolveCertificatePath } from "../../../infrastructure/storage/CertStorage.js";
 import { decryptBytes } from "../../../utils/crypto.js";
@@ -208,6 +209,28 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
   return { status: "upserted" };
 }
 
+// Trata um item TipoDocumento="EVENTO" do ADN (documento separado da nota). O cancelamento de
+// NFS-e Nacional chega aqui — não muda o XML da nota (que fica cStat=100). Loga SEMPRE o XML cru
+// (pra validar a estrutura do evento contra dado real) e, se for cancelamento, marca a nota pela
+// chave. Idempotente e reversível (botão manual). Conservador: só marca com sinal de cancelamento.
+async function applyNfseEvento(tx, { portalClientId, item, xmlPlain }) {
+  const evt = parseNfseEvento(xmlPlain);
+  const chave = item.ChaveAcesso || item.chaveAcesso || evt.chave || null;
+  // Log cru do evento — é assim que capturamos a estrutura real (tpEvento etc.) sem precisar exportar.
+  log?.info?.({
+    portalClientId, chave, tpEvento: evt.tpEvento, descricao: evt.descricao,
+    isCancelamento: evt.isCancelamento, xmlPreview: String(xmlPlain || "").slice(0, 800),
+  }, "ADN evento recebido");
+  if (!chave) return { status: "evento_sem_chave" };
+  if (!evt.isCancelamento) return { status: "evento_ignorado" };
+  // Marca a nota como cancelada (se já existir no banco). Preserva a semântica das listagens/apuração.
+  const r = await tx.portalInvoice.updateMany({
+    where: { clientId: portalClientId, chaveAcesso: chave },
+    data: { statusEfetivo: "cancelada", status: "CANCELADA" },
+  });
+  return { status: r.count > 0 ? "evento_cancelou" : "evento_nota_ausente" };
+}
+
 // ─── Cursor + backoff ──────────────────────────────────────────────────────
 
 async function persistCursor(tx, { clientId, newCursor }) {
@@ -304,6 +327,14 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
           if (!arquivoXml) { byStatus.skipped++; continue; }
 
           const xmlPlain = decodeXml(arquivoXml);
+          // Ramifica por tipo: EVENTO (cancelamento etc.) vs NFSE (a nota). Antes tudo virava nota
+          // e o evento de cancelamento se perdia (a nota continuava "autorizada").
+          const tipoDoc = String(item.TipoDocumento || item.tipoDocumento || "").toUpperCase();
+          if (tipoDoc === "EVENTO") {
+            const r = await applyNfseEvento(tx, { portalClientId, item, xmlPlain });
+            byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+            continue;
+          }
           const metadata = parseXmlMetadata(xmlPlain);
           const r = await upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPlain, metadata });
           byStatus[r.status] = (byStatus[r.status] || 0) + 1;
