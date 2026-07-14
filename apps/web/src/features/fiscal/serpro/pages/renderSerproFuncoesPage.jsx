@@ -3,6 +3,7 @@ import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
+import { NotasDownloadContent } from "../../../notas/download/pages/renderNotasDownloadPage";
 
 // Q47: página top-level "Funções SERPRO" (Buscas SERPRO) — separada da "Configuração SERPRO"
 // (credenciais + certificado). Fluxo: (1) selecionar funções, (2) selecionar empresas, (3) Rodar.
@@ -43,7 +44,8 @@ function expandRange(from, to) {
   return { ok: true, months };
 }
 
-export function SerproFuncoesPage({ settings, companies, onRunOp, onBack, message, error }) {
+export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, message, error }) {
+  const [view, setView] = useState("funcoes"); // "funcoes" | "download"
   const [selectedOps, setSelectedOps] = useState(() => new Set());
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [dateFrom, setDateFrom] = useState(currentCompetencia);
@@ -186,12 +188,25 @@ export function SerproFuncoesPage({ settings, companies, onRunOp, onBack, messag
 
   return (
     <PageShell
-      title="Funções SERPRO"
-      subtitle="Selecione as funções, selecione as empresas e rode as buscas SERPRO."
+      title="Funções em lote"
+      subtitle="Buscas SERPRO em lote e download de notas por período."
       onBack={onBack}
     >
       <AppShell className="serpro-settings-shell">
         <div>
+          {/* Mini-nav: Buscas SERPRO × Download de notas */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button type="button" onClick={() => setView("funcoes")} style={chip(view === "funcoes")}>
+              Buscas SERPRO
+            </button>
+            <button type="button" onClick={() => setView("download")} style={chip(view === "download")}>
+              Download de notas
+            </button>
+          </div>
+
+          {view === "download" ? (
+            <NotasDownloadContent api={api} companies={companies} />
+          ) : (
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">
               <h1 className="serpro-settings-card__title">Buscas SERPRO</h1>
@@ -312,6 +327,7 @@ export function SerproFuncoesPage({ settings, companies, onRunOp, onBack, messag
               </table>
             </div>
           </section>
+          )}
 
           <Feedback message={message} error={error} />
         </div>

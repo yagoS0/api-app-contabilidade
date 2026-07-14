@@ -7,7 +7,7 @@ import { CompanyFormPage } from "./features/companies/form/pages/renderCompanyFo
 import { CompanyDetailPage } from "./features/companies/detail/pages/renderCompanyDetailPage";
 import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproSettingsPage";
 import { SerproFuncoesPage } from "./features/fiscal/serpro/pages/renderSerproFuncoesPage";
-import { NotasDownloadPage } from "./features/notas/download/pages/renderNotasDownloadPage";
+import { RotinasPage } from "./features/fiscal/rotinas/pages/renderRotinasPage";
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
@@ -226,6 +226,7 @@ function App() {
   if (session.page === "serproFuncoes") {
     return (
       <SerproFuncoesPage
+        api={api}
         settings={companiesWorkspace.guideSettings}
         companies={companiesWorkspace.companiesState.companies}
         onRunOp={companiesWorkspace.runSerproOp}
@@ -236,12 +237,21 @@ function App() {
     );
   }
 
-  if (session.page === "notasDownload") {
+  if (session.page === "rotinas") {
     return (
-      <NotasDownloadPage
-        api={api}
-        companies={companiesWorkspace.companiesState.companies}
+      <RotinasPage
+        settings={companiesWorkspace.guideSettings}
+        saving={companiesWorkspace.savingSerproSettings}
+        workerStatus={companiesWorkspace.serproWorkerStatus}
+        onSave={companiesWorkspace.handleSaveSerproSettings}
+        onRunCron={companiesWorkspace.handleRunSerproCron}
+        runningCron={companiesWorkspace.runningSerproCron}
+        cronRunResult={companiesWorkspace.serproCronRunResult}
+        onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
+        onRunPaymentConfirmation={() => api.runSerproPaymentConfirmation({})}
         onBack={() => session.setPage("companies")}
+        message={feedback.message}
+        error={feedback.error}
       />
     );
   }
@@ -427,7 +437,7 @@ function App() {
       onOpenPendingReport={() => session.setPage("pendingReport")}
       onOpenBatchEmail={() => session.setPage("batchEmail")}
       onOpenApuracao={() => session.setPage("apuracao")}
-      onOpenNotasDownload={() => session.setPage("notasDownload")}
+      onOpenRotinas={() => session.setPage("rotinas")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenPendencias={() => session.setPage("pendencias")}
       onLogout={handleLogout}

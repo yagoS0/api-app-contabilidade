@@ -4,50 +4,6 @@ import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 
-const SERPRO_DAY_OF_MONTH_OPTIONS = Array.from({ length: 31 }, (_, index) => {
-  const day = String(index + 1);
-  // Marca dias 29-31 como "fim de mês" para deixar claro que pode não existir em fevereiro
-  const label = index >= 28 ? `Dia ${day} (fim de mês)` : `Dia ${day}`;
-  return { value: day, label };
-});
-
-function padTimePart(value) {
-  return String(value).padStart(2, "0");
-}
-
-function parseSerproSchedule(cronExpression) {
-  const fallback = { day: "5", time: "07:00", unsupported: false };
-  const parts = String(cronExpression || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length !== 5) return { ...fallback, unsupported: Boolean(cronExpression) };
-
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  const parsedMinute = Number(minute);
-  const parsedHour = Number(hour);
-  const parsedDayOfMonth = Number(dayOfMonth);
-
-  if (
-    month !== "*" ||
-    dayOfWeek !== "*" ||
-    !Number.isInteger(parsedDayOfMonth) ||
-    parsedDayOfMonth < 1 ||
-    parsedDayOfMonth > 31 ||
-    !Number.isInteger(parsedMinute) ||
-    !Number.isInteger(parsedHour) ||
-    parsedMinute < 0 ||
-    parsedMinute > 59 ||
-    parsedHour < 0 ||
-    parsedHour > 23
-  ) {
-    return { ...fallback, unsupported: true };
-  }
-
-  return {
-    day: String(parsedDayOfMonth),
-    time: `${padTimePart(parsedHour)}:${padTimePart(parsedMinute)}`,
-    unsupported: false,
-  };
-}
-
 function formatDateTime(value) {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -55,8 +11,12 @@ function formatDateTime(value) {
   return parsed.toLocaleString("pt-BR");
 }
 
-// Q47: as "Buscas SERPRO" saíram desta página para a página top-level "Funções SERPRO"
-// (renderSerproFuncoesPage.jsx). Aqui ficam só as credenciais (Integra Contador) + certificado.
+// Q47: as "Buscas SERPRO" saíram desta página para a página top-level "Funções em lote"
+// (renderSerproFuncoesPage.jsx), e as agendas de cron para "Rotinas" (renderRotinasPage.jsx).
+// Aqui ficam só as credenciais (Integra Contador) + certificado.
+//
+// Os campos de cron NÃO ficam neste form de propósito: onSave(form) manda só o que está aqui,
+// e o backend faz merge — assim salvar credencial não sobrescreve a agenda definida em Rotinas.
 
 export function SerproSettingsPage({
   settings,
@@ -79,26 +39,11 @@ export function SerproSettingsPage({
     consumerSecret: "",
     scope: "",
     timeoutMs: 30000,
-    fetchDay: 5,
-    fetchHour: 7,
-    // Q40: cron próprio de confirmação de pagamento (PAGTOWEB).
-    paymentConfirmationEnabled: false,
-    paymentConfirmationDay: 10,
-    paymentConfirmationHour: 8,
   });
   const [certificateFile, setCertificateFile] = useState(null);
   const [certificatePassword, setCertificatePassword] = useState("");
-  const [scheduleDay, setScheduleDay] = useState("5");
-  const [scheduleTime, setScheduleTime] = useState("07:00");
-  const [scheduleUnsupported, setScheduleUnsupported] = useState(false);
 
   useEffect(() => {
-    const fetchDay = Number.isFinite(Number(settings?.fetchDay))
-      ? Number(settings.fetchDay)
-      : parseSerproSchedule(settings?.fetchCron || "0 7 5 * *").day;
-    const fetchHour = Number.isFinite(Number(settings?.fetchHour))
-      ? Number(settings.fetchHour)
-      : Number(parseSerproSchedule(settings?.fetchCron || "0 7 5 * *").time.split(":")[0]);
     setForm({
       enabled: Boolean(settings?.enabled),
       environment: settings?.environment || "homolog",
@@ -108,31 +53,11 @@ export function SerproSettingsPage({
       consumerSecret: "",
       scope: settings?.scope || "",
       timeoutMs: Number(settings?.timeoutMs || 30000),
-      fetchDay,
-      fetchHour,
-      paymentConfirmationEnabled: Boolean(settings?.paymentConfirmationEnabled),
-      paymentConfirmationDay: Number.isFinite(Number(settings?.paymentConfirmationDay)) ? Number(settings.paymentConfirmationDay) : 10,
-      paymentConfirmationHour: Number.isFinite(Number(settings?.paymentConfirmationHour)) ? Number(settings.paymentConfirmationHour) : 8,
     });
-    setScheduleDay(String(fetchDay));
-    setScheduleTime(`${padTimePart(fetchHour)}:00`);
-    setScheduleUnsupported(false);
   }, [settings]);
 
   function setField(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  function handleScheduleDayChange(value) {
-    setScheduleDay(value);
-    setScheduleUnsupported(false);
-    setField("fetchDay", Math.max(1, Math.min(31, Number(value) || 5)));
-  }
-
-  function handleScheduleTimeChange(value) {
-    setScheduleTime(value);
-    setScheduleUnsupported(false);
-    setField("fetchHour", Math.max(0, Math.min(23, Number(String(value || "07:00").split(":")[0]) || 7)));
   }
 
   async function handleSubmit(event) {
@@ -152,12 +77,12 @@ export function SerproSettingsPage({
   return (
     <PageShell
       title="Configuração SERPRO"
-      subtitle="Certificado do procurador, credenciais da API e agenda automática. As buscas por empresa ficam em Funções SERPRO."
+      subtitle="Certificado do procurador e credenciais da API. As agendas automáticas ficam em Rotinas e as buscas por empresa em Funções em lote."
       onBack={onBack}
     >
       <AppShell className="serpro-settings-shell">
         <div className="serpro-settings-page">
-          {/* ── Config SERPRO (Integra Contador) — inclui a agenda do CRON ── */}
+          {/* ── Config SERPRO (Integra Contador) — só conexão/credenciais (agenda → Rotinas) ── */}
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">
               <h1 className="serpro-settings-card__title">Integra Contador</h1>
@@ -215,76 +140,6 @@ export function SerproSettingsPage({
                   Scope
                   <input value={form.scope} onChange={(event) => setField("scope", event.target.value)} />
                 </label>
-
-                <div className="full">
-                  <span>Agenda automática (CRON)</span>
-                  <div className="serpro-settings-form__grid" style={{ gridTemplateColumns: "minmax(0, 1fr) 180px" }}>
-                    <label>
-                      Dia
-                      <select value={scheduleDay} onChange={(event) => handleScheduleDayChange(event.target.value)}>
-                        {SERPRO_DAY_OF_MONTH_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      Horário
-                      <input type="time" value={scheduleTime} onChange={(event) => handleScheduleTimeChange(event.target.value)} />
-                    </label>
-                  </div>
-                  <small style={{ color: "#A7B0C0", display: "block", marginTop: 8 }}>
-                    O worker faz a captura inicial (extrato + DAS + INSS) no dia/horário escolhidos e depois executa
-                    diariamente até o vencimento de cada guia. E-mail só na captura inicial e no dia do vencimento.
-                  </small>
-                  {scheduleUnsupported ? (
-                    <small style={{ color: "#F4C46B", display: "block", marginTop: 8 }}>
-                      A agenda salva anteriormente estava em formato avançado. Ao salvar, será substituída pelo dia/horário escolhidos.
-                    </small>
-                  ) : null}
-                </div>
-
-              </div>
-
-              {/* Q40: cron próprio de confirmação de pagamento (PAGTOWEB).
-                  Fora do .serpro-settings-form__grid de propósito — dentro da grid o checkbox
-                  herdava min-height:44px + width total (ficava gigante/centralizado). */}
-              <div style={{ borderTop: "1px solid #2b2d45", paddingTop: 16, marginTop: 4 }}>
-                <label className="serpro-settings-form__switch">
-                  <input
-                    type="checkbox"
-                    style={{ width: 16, height: 16, flex: "none" }}
-                    checked={form.paymentConfirmationEnabled}
-                    onChange={(event) => setField("paymentConfirmationEnabled", event.target.checked)}
-                  />
-                  <span>Confirmação de pagamento automática (cron)</span>
-                </label>
-                <div className="serpro-settings-form__grid" style={{ gridTemplateColumns: "minmax(0, 1fr) 180px", marginTop: 12 }}>
-                  <label>
-                    Dia
-                    <select
-                      value={String(form.paymentConfirmationDay)}
-                      onChange={(event) => setField("paymentConfirmationDay", Math.max(1, Math.min(31, Number(event.target.value) || 10)))}
-                      disabled={!form.paymentConfirmationEnabled}
-                    >
-                      {SERPRO_DAY_OF_MONTH_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Horário
-                    <input
-                      type="time"
-                      value={`${padTimePart(form.paymentConfirmationHour)}:00`}
-                      onChange={(event) => setField("paymentConfirmationHour", Math.max(0, Math.min(23, Number(String(event.target.value || "08:00").split(":")[0]) || 8)))}
-                      disabled={!form.paymentConfirmationEnabled}
-                    />
-                  </label>
-                </div>
-                <small style={{ color: "#A7B0C0", display: "block", marginTop: 8 }}>
-                  Consulta o comprovante oficial (PAGTOWEB) das guias em aberto e marca as pagas, gerando a baixa
-                  contábil. Requer o serviço PAGTOWEB validado no SERPRO.
-                </small>
               </div>
 
               <div className="serpro-settings-form__actions">

@@ -76,7 +76,7 @@ export function CompaniesHomePage({
   onOpenPendingReport,
   onOpenBatchEmail,
   onOpenApuracao,
-  onOpenNotasDownload,
+  onOpenRotinas,
   onOpenPendencias,
   onOpenSerproFuncoes,
   onLogout,
@@ -226,9 +226,9 @@ export function CompaniesHomePage({
                 📊 Apuração
               </Button>
             )}
-            {onOpenNotasDownload && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenNotasDownload}>
-                ⬇ Download de Notas
+            {onOpenRotinas && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenRotinas}>
+                🕒 Rotinas
               </Button>
             )}
             {onOpenPendencias && (
@@ -238,7 +238,7 @@ export function CompaniesHomePage({
             )}
             {onOpenSerproFuncoes && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenSerproFuncoes}>
-                ⚙️ Funções SERPRO
+                ⚙️ Funções em lote
               </Button>
             )}
             <SettingsMenu

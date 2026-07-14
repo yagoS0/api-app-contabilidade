@@ -42,7 +42,8 @@ function fmtDateTime(value) {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString("pt-BR");
 }
 
-export function NotasDownloadPage({ api, companies, onBack }) {
+// Conteúdo puro (sem PageShell) — reutilizado como aba "Download de notas" dentro de Funções em lote.
+export function NotasDownloadContent({ api, companies }) {
   const [dateFrom, setDateFrom] = useState(currentCompetencia);
   const [dateTo, setDateTo] = useState(currentCompetencia);
   const [tipo, setTipo] = useState("");
@@ -153,17 +154,11 @@ export function NotasDownloadPage({ api, companies, onBack }) {
     : 0;
 
   return (
-    <PageShell
-      title="Download de Notas"
-      subtitle="Selecione o período, as empresas e baixe os XMLs das notas em lote (ZIP com pasta por empresa)."
-      onBack={onBack}
-    >
-      <AppShell className="serpro-settings-shell">
-        <div>
-          <section className="serpro-settings-card">
-            <div className="serpro-settings-card__head">
-              <h1 className="serpro-settings-card__title">Baixar notas em lote</h1>
-            </div>
+    <div>
+      <section className="serpro-settings-card">
+        <div className="serpro-settings-card__head">
+          <h1 className="serpro-settings-card__title">Baixar notas em lote</h1>
+        </div>
 
             {/* Filtros */}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
@@ -328,7 +323,19 @@ export function NotasDownloadPage({ api, companies, onBack }) {
               </table>
             </div>
           </section>
-        </div>
+    </div>
+  );
+}
+
+export function NotasDownloadPage({ api, companies, onBack }) {
+  return (
+    <PageShell
+      title="Download de Notas"
+      subtitle="Selecione o período, as empresas e baixe os XMLs das notas em lote (ZIP com pasta por empresa)."
+      onBack={onBack}
+    >
+      <AppShell className="serpro-settings-shell">
+        <NotasDownloadContent api={api} companies={companies} />
       </AppShell>
     </PageShell>
   );

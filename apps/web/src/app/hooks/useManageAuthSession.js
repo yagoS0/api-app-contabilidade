@@ -15,9 +15,9 @@ const PAGE_TO_PATH = {
   guideSettings: "/firm-settings/guides",
   chartOfAccountsGlobal: "/firm-settings/chart",
   apuracao: "/apuracao",
+  rotinas: "/rotinas",
   pendencias: "/pendencias",
   serproFuncoes: "/funcoes-serpro",
-  notasDownload: "/download-notas",
 };
 
 function pathToPageName(pathname) {
@@ -37,9 +37,11 @@ function pathToPageName(pathname) {
   if (pathname === "/firm-settings/guides") return "guideSettings";
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";
   if (pathname === "/apuracao") return "apuracao";
+  if (pathname === "/rotinas") return "rotinas";
   if (pathname === "/pendencias") return "pendencias";
   if (pathname === "/funcoes-serpro") return "serproFuncoes";
-  if (pathname === "/download-notas") return "notasDownload";
+  // O download de notas virou aba dentro de "Funções em lote" — links antigos caem lá.
+  if (pathname === "/download-notas") return "serproFuncoes";
   return "companies"; // fallback seguro
 }
 
