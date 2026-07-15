@@ -51,6 +51,25 @@ model Company {
   rpsNumero                String?
   optanteSimples           Boolean?         @default(false)
   regimeEspecialTributacao String?
+  // ── Ficha de cadastro do escritório ──────────────────────────────────────────
+  /// Quem abriu a empresa (contato/parceiro que trouxe o cliente). Ex.: "JEFFERSON".
+  abriuCom                 String?
+  /// Registro na junta: número + tipo (ex.: 33.6.0068899-0 / "JUNTA COMERCIAL").
+  numeroRegistro           String?
+  tipoRegistro             String?
+  /// Inscrições com a data de cada uma (a coluna inscricaoMunicipal já existia acima).
+  inscricaoMunicipalData   DateTime?
+  inscricaoEstadual        String?
+  inscricaoEstadualData    DateTime?
+  /// Natureza jurídica (ex.: "230-5" = EIRELI). Vem da BrasilAPI no cadastro por CNPJ.
+  naturezaJuridica         String?
+  /// Nº do diário contábil.
+  diarioNumero             String?
+  /// Empresa com desoneração da folha ("C/DESONE" na ficha).
+  desoneracao              Boolean?         @default(false)
+  /// Última alteração contratual (ex.: "2" em 14/04/2026).
+  alteracaoNumero          String?
+  alteracaoData            DateTime?
   // Certificado A1 por empresa (PFX) para integrações (ADN/NFSe/etc.)
   certStorageKey           String?
   certPfxBytes             Bytes?
@@ -61,6 +80,7 @@ model Company {
   updatedAt                DateTime         @updatedAt
   client                   Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   partners                 Partner[]
+  regimeHistorico          RegimeHistorico[]
   invoices                 Invoice[]
   serviceInvoices          ServiceInvoice[]
   guides                   Guide[]
@@ -69,18 +89,55 @@ model Company {
   @@index([cnaePrincipal])
 }
 
+/// Sócios. O model existia mas estava morto (nenhuma rota /firm lia ou gravava). Agora é a
+/// fonte do bloco "RELAÇÃO DOS SÓCIOS" da ficha: nome, %, CPF (documento), RG, nascimento
+/// e a data de saída — sócio que saiu continua no histórico, só marcado com dataSaida.
 model Partner {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   companyId     String
   name          String
   phone         String?
   email         String?
-  participacao  Decimal? @db.Decimal(5, 2)
+  participacao  Decimal?  @db.Decimal(5, 2)
   documento     String?
-  representante Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  representante Boolean   @default(false)
+  dataNascimento DateTime?
+  rg            String?
+  /// Órgão emissor do RG (ex.: "DIC/RJ").
+  rgOrgaoEmissor String?
+  /// Quando saiu da sociedade. Nulo = sócio atual.
+  dataSaida     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+/// Histórico de regime tributário com vigência — o bloco "TIPO:" da ficha
+/// (ex.: SIMPLES 20/08/2018→31/12/2019, LUCRO PRESUMIDO 01/01/2020→31/12/2020).
+///
+/// ⚠ INFORMATIVO por ora, por decisão do dono: a apuração e a captura continuam usando
+/// `Company.regimeTributario` (o regime atual). Nada aqui alimenta cálculo fiscal. Fazer o
+/// regime ser resolvido por competência é um bloco de trabalho à parte.
+model RegimeHistorico {
+  id             String    @id @default(uuid())
+  companyId      String
+  /// SIMPLES | LUCRO_PRESUMIDO | LUCRO_REAL | MEI
+  regime         String
+  vigenciaInicio DateTime
+  /// Nulo = vigente ("A PARTIR DE ...").
+  vigenciaFim    DateTime?
+  /// Impostos daquele período, como o escritório escreve: ["DAS"] ou ["ISS","PIS","COFINS","CSLL","IRPJ"].
+  impostos       String[]  @default([])
+  desoneracao    Boolean   @default(false)
+  observacao     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, vigenciaInicio])
+  @@map("regime_historico")
 }
 
 model User {

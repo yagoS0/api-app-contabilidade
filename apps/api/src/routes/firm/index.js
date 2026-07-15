@@ -439,6 +439,33 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     rpsNumero: true,
     optanteSimples: true,
     regimeEspecialTributacao: true,
+    // ── Ficha de cadastro ──
+    abriuCom: true,
+    numeroRegistro: true,
+    tipoRegistro: true,
+    inscricaoMunicipalData: true,
+    inscricaoEstadual: true,
+    inscricaoEstadualData: true,
+    naturezaJuridica: true,
+    diarioNumero: true,
+    desoneracao: true,
+    alteracaoNumero: true,
+    alteracaoData: true,
+    partners: {
+      select: {
+        id: true, name: true, documento: true, participacao: true,
+        rg: true, rgOrgaoEmissor: true, dataNascimento: true, dataSaida: true,
+        representante: true, email: true, phone: true,
+      },
+      orderBy: { createdAt: "asc" },
+    },
+    regimeHistorico: {
+      select: {
+        id: true, regime: true, vigenciaInicio: true, vigenciaFim: true,
+        impostos: true, desoneracao: true, observacao: true,
+      },
+      orderBy: { vigenciaInicio: "asc" },
+    },
     certStorageKey: true,
     certUploadedAt: true,
     certExpiresAt: true,
@@ -767,7 +794,31 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             simplesDataOpcao: normalizedCompany.simples?.dataOpcao || null,
             cnaePrincipal: normalizedCompany.cnaePrincipal,
             cnaesSecundarios: normalizedCompany.cnaesSecundarios,
-            inscricaoMunicipal: inscricaoMunicipalInput,
+            inscricaoMunicipal: inscricaoMunicipalInput ?? normalizedCompany.inscricaoMunicipal,
+            // ── Ficha de cadastro (muito disso já vem preenchido da BrasilAPI) ──
+            inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
+            inscricaoEstadual: normalizedCompany.inscricaoEstadual,
+            inscricaoEstadualData: normalizedCompany.inscricaoEstadualData,
+            porte: normalizedCompany.porte,
+            naturezaJuridica: normalizedCompany.naturezaJuridica,
+            capitalSocial: normalizedCompany.capitalSocial,
+            dataAbertura: normalizedCompany.dataAbertura,
+            abriuCom: normalizedCompany.abriuCom,
+            numeroRegistro: normalizedCompany.numeroRegistro,
+            tipoRegistro: normalizedCompany.tipoRegistro,
+            diarioNumero: normalizedCompany.diarioNumero,
+            desoneracao: normalizedCompany.desoneracao,
+            alteracaoNumero: normalizedCompany.alteracaoNumero,
+            alteracaoData: normalizedCompany.alteracaoData,
+            quantidadeSocios: normalizedCompany.socios
+              ? normalizedCompany.socios.filter((s) => !s.dataSaida).length
+              : null,
+            ...(normalizedCompany.socios?.length
+              ? { partners: { create: normalizedCompany.socios } }
+              : {}),
+            ...(normalizedCompany.regimeHistorico?.length
+              ? { regimeHistorico: { create: normalizedCompany.regimeHistorico } }
+              : {}),
           },
         });
 
@@ -956,8 +1007,52 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 simplesDataOpcao: normalizedCompany.simples?.dataOpcao || null,
                 cnaePrincipal: normalizedCompany.cnaePrincipal,
                 cnaesSecundarios: normalizedCompany.cnaesSecundarios,
-                inscricaoMunicipal: inscricaoMunicipalInput,
+                // A rota já aceitava `inscricaoMunicipal` solto no body; agora o form também
+                // manda pelo perfil normalizado. Mantém a precedência do body por compat.
+                inscricaoMunicipal: inscricaoMunicipalInput ?? normalizedCompany.inscricaoMunicipal,
+                // ── Ficha de cadastro ──
+                inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
+                inscricaoEstadual: normalizedCompany.inscricaoEstadual,
+                inscricaoEstadualData: normalizedCompany.inscricaoEstadualData,
+                porte: normalizedCompany.porte,
+                naturezaJuridica: normalizedCompany.naturezaJuridica,
+                capitalSocial: normalizedCompany.capitalSocial,
+                dataAbertura: normalizedCompany.dataAbertura,
+                abriuCom: normalizedCompany.abriuCom,
+                numeroRegistro: normalizedCompany.numeroRegistro,
+                tipoRegistro: normalizedCompany.tipoRegistro,
+                diarioNumero: normalizedCompany.diarioNumero,
+                desoneracao: normalizedCompany.desoneracao,
+                alteracaoNumero: normalizedCompany.alteracaoNumero,
+                alteracaoData: normalizedCompany.alteracaoData,
+                ...(normalizedCompany.socios
+                  ? { quantidadeSocios: normalizedCompany.socios.filter((s) => !s.dataSaida).length }
+                  : {}),
               },
+              select: legacyCompanySelect,
+            });
+
+            // Sócios e histórico: só mexe se vieram no payload (null = campo ausente).
+            // Substitui o conjunto inteiro — é como o form edita (uma lista).
+            if (normalizedCompany.socios) {
+              await tx.partner.deleteMany({ where: { companyId: portal.companyId } });
+              if (normalizedCompany.socios.length > 0) {
+                await tx.partner.createMany({
+                  data: normalizedCompany.socios.map((s) => ({ ...s, companyId: portal.companyId })),
+                });
+              }
+            }
+            if (normalizedCompany.regimeHistorico) {
+              await tx.regimeHistorico.deleteMany({ where: { companyId: portal.companyId } });
+              if (normalizedCompany.regimeHistorico.length > 0) {
+                await tx.regimeHistorico.createMany({
+                  data: normalizedCompany.regimeHistorico.map((r) => ({ ...r, companyId: portal.companyId })),
+                });
+              }
+            }
+            // Re-lê pra devolver sócios/histórico já atualizados (o update acima é anterior a eles).
+            updatedLegacy = await tx.company.findUnique({
+              where: { id: portal.companyId },
               select: legacyCompanySelect,
             });
           }
