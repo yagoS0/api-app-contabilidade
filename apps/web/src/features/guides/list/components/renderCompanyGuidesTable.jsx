@@ -302,6 +302,11 @@ export function CompanyGuidesTable({
   // após identificação bem-sucedida da guia.
   parcelamentos,
   accountingFunctions,
+  // Sugestão de contas nos campos D/C do modal de ingestão de parcelamento — mesmo
+  // autocomplete (plano de contas + históricos) usado em Lançamentos, Circular e OFX.
+  accounts = [],
+  onSearchHistoricos,
+  onGetHistoricosByCode,
 }) {
   // Q9.7: state do modal de linking (guia recém-identificada aguardando decisão de vincular)
   const [linkingGuide, setLinkingGuide] = useState(null);
@@ -444,8 +449,10 @@ export function CompanyGuidesTable({
       // Sucesso: fecha modal
       setUploadFile(null);
       setUploadTipo(null);
-      // Q22: se foi upload de parcelamento, abre o modal de ingestão com a guia criada.
-      if (uploadAsParcelamento && result?.guide) {
+      // O checkbox do modal manda: o contador acabou de olhar o PDF. O `uploadAsParcelamento`
+      // (vindo do dropdown "Subir Guia → ... parcelamento") só semeia o valor inicial dele.
+      const isParc = metadata?.isParcelamento ?? uploadAsParcelamento;
+      if (isParc && result?.guide) {
         setLinkingGuide(result.guide);
       }
       setUploadAsParcelamento(false);
@@ -468,13 +475,19 @@ export function CompanyGuidesTable({
     try {
       const result = await onIdentifyGuide(gid, metadata);
       if (result?.ok !== false) {
-        // Q9.7: se o hook de parcelamentos estiver disponível e o tipo da guia for
-        // candidato a parcelamento (SIMPLES/INSS/DARF), abre modal de linking.
         const guideAfter = { ...completingGuide, ...metadata, guideId: gid, id: gid };
-        const tipoUpper = String(guideAfter.tipo || metadata?.tipo || "").toUpperCase();
-        const isParcelamentoCandidate = ["SIMPLES", "INSS", "DARF", "PIS", "COFINS", "IRPJ", "CSLL", "ISS"].includes(tipoUpper);
+        // A escolha explícita do contador no modal vence. Antes, a heurística por tipo abria o
+        // modal de vínculo em TODA guia SIMPLES/INSS/DARF — inclusive nas que não são parcela.
+        // A heurística fica só como fallback pra quem chamar isto sem a flag.
+        let abrirVinculo;
+        if (metadata?.isParcelamento !== undefined) {
+          abrirVinculo = metadata.isParcelamento;
+        } else {
+          const tipoUpper = String(guideAfter.tipo || metadata?.tipo || "").toUpperCase();
+          abrirVinculo = ["SIMPLES", "INSS", "DARF", "PIS", "COFINS", "IRPJ", "CSLL", "ISS"].includes(tipoUpper);
+        }
         // Q21: o modal de ingestão v2 não depende de accountingFunctions.
-        if (parcelamentos && isParcelamentoCandidate) {
+        if (parcelamentos && abrirVinculo) {
           setLinkingGuide(guideAfter);
         }
         setCompletingGuide(null);
@@ -520,6 +533,7 @@ export function CompanyGuidesTable({
         <GuideCaptureModal
           mode="upload"
           initialTipo={uploadTipo}
+          initialIsParcelamento={uploadAsParcelamento}
           pdfFile={uploadFile}
           onSave={handleCaptureSave}
           onClose={handleCaptureCancel}
@@ -862,6 +876,9 @@ export function CompanyGuidesTable({
           existingParc={attachParc}
           saving={parcelamentos.saving}
           getContasProvisao={parcelamentos.getContasProvisao}
+          accounts={accounts}
+          onSearchHistoricos={onSearchHistoricos}
+          onGetHistoricosByCode={onGetHistoricosByCode}
           onSkip={() => { setLinkingGuide(null); setSerproPrefill(null); setAttachParc(null); }}
           onClose={() => { setLinkingGuide(null); setSerproPrefill(null); setAttachParc(null); }}
           onIngest={async (body) => {

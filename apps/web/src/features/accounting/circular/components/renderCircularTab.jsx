@@ -473,6 +473,7 @@ export function CircularTab({
   message,
   onUpdateEntry,
   onSearchHistoricos,
+  onGetHistoricosByCode, // sugestão de contas por código no config de parcelamento
   onCancelBaixa,
   parcelamentos, // Q9: hook completo (parcelamentos, payParcela, rescindir, etc)
   onSaveCircular, // Frente B: salva acrescimos (principal/juros/multa) da circular
@@ -783,6 +784,9 @@ export function CircularTab({
             }}
             getConfig={parcelamentos.getConfig}
             saveConfig={parcelamentos.saveConfig}
+            accounts={accounts}
+            onSearchHistoricos={onSearchHistoricos}
+            onGetHistoricosByCode={onGetHistoricosByCode}
           />
         </div>
       )}

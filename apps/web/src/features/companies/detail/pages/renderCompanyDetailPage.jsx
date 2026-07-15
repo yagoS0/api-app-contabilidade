@@ -80,6 +80,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     if (tab === "lancamentos") { accountingPanel.onLoadAccounts(); accountingPanel.onLoadEntries(); }
     if (tab === "circular") { accountingPanel.onLoadAccounts(); circularPanel.onLoadCircular(); }
     if (tab === "planoContas") { accountingPanel.onLoadAccounts(); }
+    // Guias precisa do plano de contas: o modal de ingestão de parcelamento sugere as contas D/C.
+    if (tab === "guides") { accountingPanel.onLoadAccounts(); }
     if (tab === "notasFiscais") { notasPanel?.reload?.(); }
   }
 
@@ -182,6 +184,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onFetchGuidePdf={guidesPanel.onFetchGuidePdf}
             parcelamentos={accountingPanel.parcelamentos}
             accountingFunctions={accountingPanel.accountingFunctions}
+            accounts={accountingPanel.accounts}
+            onSearchHistoricos={accountingPanel.onSearchHistoricos}
+            onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
           />
           </Suspense>
 
@@ -392,6 +397,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             message={circularPanel.message}
             onUpdateEntry={accountingPanel.onUpdateEntry}
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
+            onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
             onCancelBaixa={circularPanel.onCancelBaixa}
             parcelamentos={accountingPanel.parcelamentos}
             onSaveCircular={circularPanel.onSaveCircular}

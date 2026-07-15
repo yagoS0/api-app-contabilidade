@@ -6,6 +6,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
+import { AccountCodeInput } from "../../entries/components/renderAccountingEntriesParts";
+
+// Fechamento dos modais deste arquivo: ESC fecha, clicar fora NÃO.
+// Clique no backdrop fechava e fazia perder o preenchimento inteiro sem confirmação —
+// esses modais são formulários longos (linhas de provisão/pagamento). Saída = ✕, Cancelar ou ESC.
+function useEscapeToClose(onClose) {
+  useEffect(() => {
+    if (!onClose) return undefined;
+    function onKeyDown(event) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+}
 
 const PANEL = {
   surface: "#21222C", field: "#282A36", border: "#44475A",
@@ -70,7 +85,8 @@ const PAG_LINHAS_PADRAO = [
   { tipoLinha: "CAIXA", label: "Caixa / Banco", tipo: "C", conta: "" },
 ];
 
-export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null, saving, onIngest, onSkip, onClose, getContasProvisao }) {
+export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null, saving, onIngest, onSkip, onClose, getContasProvisao, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
+  useEscapeToClose(onClose);
   // Modo "anexar a parcelamento existente": a dívida já foi provisionada na 1ª parcela; aqui só
   // vinculamos a guia como a PRÓXIMA parcela (modalidade/nº travados) e contabilizamos a baixa.
   const isExisting = Boolean(existingParc);
@@ -222,8 +238,8 @@ export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null,
   const lbl = { fontSize: "0.72rem", color: PANEL.muted, display: "block", marginBottom: 2 };
   const iconBtn = { background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, width: 26, height: 26, lineHeight: "22px", textAlign: "center", cursor: "pointer", fontSize: "1rem", padding: 0 };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 780px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
+      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 780px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.05rem" }}>{isExisting ? "Anexar parcela ao parcelamento" : "Registrar 1ª parcela do parcelamento"}</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
@@ -297,7 +313,16 @@ export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null,
                     <option value="D">D</option><option value="C">C</option>
                   </select>
                 </td>
-                <td style={{ padding: 3 }}><input value={l.conta} onChange={(e) => setProv(i, "conta", e.target.value)} placeholder="—" style={{ ...FIELD_STYLE, padding: "4px 6px" }} /></td>
+                <td style={{ padding: 3 }}>
+                  <AccountCodeInput
+                    value={l.conta}
+                    onChange={(v) => setProv(i, "conta", v)}
+                    accounts={accounts}
+                    onSearchHistoricos={onSearchHistoricos}
+                    onGetHistoricosByCode={onGetHistoricosByCode}
+                    placeholder="—"
+                  />
+                </td>
                 <td style={{ padding: 3 }}><input value={l.valor} onChange={(e) => setProv(i, "valor", e.target.value)} placeholder="0,00" style={{ ...FIELD_STYLE, padding: "4px 6px", textAlign: "right" }} /></td>
                 <td style={{ padding: 3, textAlign: "center" }}><button onClick={() => rmProv(i)} style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer" }}>×</button></td>
               </tr>
@@ -361,7 +386,16 @@ export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null,
                     <option value="D">D</option><option value="C">C</option>
                   </select>
                 </td>
-                <td style={{ padding: 3 }}><input value={l.conta} onChange={(e) => setPag(i, "conta", e.target.value)} placeholder="—" style={{ ...FIELD_STYLE, padding: "4px 6px" }} /></td>
+                <td style={{ padding: 3 }}>
+                  <AccountCodeInput
+                    value={l.conta}
+                    onChange={(v) => setPag(i, "conta", v)}
+                    accounts={accounts}
+                    onSearchHistoricos={onSearchHistoricos}
+                    onGetHistoricosByCode={onGetHistoricosByCode}
+                    placeholder="—"
+                  />
+                </td>
                 <td style={{ padding: 3, textAlign: "center" }}><button onClick={() => rmPag(i)} style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer" }}>×</button></td>
               </tr>
             ))}
@@ -389,6 +423,7 @@ export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null,
 // Escolha: consultar o nº no SERPRO (pré-preenche) OU subir uma guia manualmente.
 // ─────────────────────────────────────────────────────────────────────────
 export function ParcelamentoEntradaModal({ parcelamentosAtivos = [], onChooseAttach, onConsultSerpro, onResolved, onChooseUpload, onClose }) {
+  useEscapeToClose(onClose);
   const [tipo, setTipo] = useState("PARCSN");
   const [numero, setNumero] = useState("");
   const [attachId, setAttachId] = useState("");
@@ -416,8 +451,8 @@ export function ParcelamentoEntradaModal({ parcelamentosAtivos = [], onChooseAtt
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 560px)", color: PANEL.text, display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
+      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 560px)", color: PANEL.text, display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.05rem" }}>Novo parcelamento</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
@@ -501,7 +536,8 @@ const CFG_PAG_PADRAO = [{ tipoLinha: "PARC", tipo: "D", conta: "" }, { tipoLinha
 const ROLE_LABEL = { PRINCIPAL: "Principal", JUROS: "Juros", MULTA: "Multa", PARC: "Parcelamento a pagar (passivo)", CAIXA: "Caixa / Banco", CONTRAPARTIDA: "Contrapartida (despesa/reclasse)" };
 const normCfgRow = (r) => ({ tipoLinha: r?.tipoLinha || "PARC", tipo: r?.tipo === "C" ? "C" : "D", conta: r?.conta || "" });
 
-export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, onClose, onSaved }) {
+export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, onClose, onSaved, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
+  useEscapeToClose(onClose);
   const [prov, setProv] = useState([]);
   const [pag, setPag] = useState([]);
   const [obs, setObs] = useState(""); // Q31: descrição (competências parceladas)
@@ -561,7 +597,16 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
                 <option value="D">D</option><option value="C">C</option>
               </select>
             </td>
-            <td style={{ padding: 3 }}><input value={l.conta} onChange={(e) => setRow(which, i, "conta", e.target.value)} placeholder="—" style={{ ...FIELD_STYLE, padding: "4px 6px" }} /></td>
+            <td style={{ padding: 3 }}>
+              <AccountCodeInput
+                value={l.conta}
+                onChange={(v) => setRow(which, i, "conta", v)}
+                accounts={accounts}
+                onSearchHistoricos={onSearchHistoricos}
+                onGetHistoricosByCode={onGetHistoricosByCode}
+                placeholder="—"
+              />
+            </td>
             <td style={{ padding: 3, textAlign: "center" }}><button onClick={() => rmRow(which, i)} style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer" }}>×</button></td>
           </tr>
         ))}
@@ -570,8 +615,8 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
   );
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 620px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
+      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 620px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.0rem" }}>Configuração de lançamento — {label}</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
@@ -610,7 +655,8 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
 // Q31: ParcelamentoRescisaoModal — 3 linhas pré-configuradas (estorno reverso da provisão),
 // editáveis, com saldo remanescente sugerido. Ao confirmar, lança a rescisão (single-leg por linha).
 // ─────────────────────────────────────────────────────────────────────────
-export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, onClose }) {
+export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, onClose, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
+  useEscapeToClose(onClose);
   const [lines, setLines] = useState([]);
   const [dataRescisao, setDataRescisao] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
@@ -677,8 +723,8 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
   const lbl = { fontSize: "0.72rem", color: PANEL.muted, display: "block", marginBottom: 2 };
   const iconBtn = { background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, width: 26, height: 26, lineHeight: "22px", textAlign: "center", cursor: "pointer", fontSize: "1rem", padding: 0 };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1700, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 680px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1700, padding: 16 }}>
+      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 680px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.0rem" }}>Rescindir — {parc?.label}</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
@@ -717,7 +763,16 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
                         <option value="D">D</option><option value="C">C</option>
                       </select>
                     </td>
-                    <td style={{ padding: 3 }}><input value={l.conta} onChange={(e) => setLine(i, "conta", e.target.value)} placeholder="—" style={{ ...FIELD_STYLE, padding: "4px 6px" }} /></td>
+                    <td style={{ padding: 3 }}>
+                      <AccountCodeInput
+                        value={l.conta}
+                        onChange={(v) => setLine(i, "conta", v)}
+                        accounts={accounts}
+                        onSearchHistoricos={onSearchHistoricos}
+                        onGetHistoricosByCode={onGetHistoricosByCode}
+                        placeholder="—"
+                      />
+                    </td>
                     <td style={{ padding: 3 }}><input value={l.valor} onChange={(e) => setLine(i, "valor", e.target.value)} placeholder="0,00" style={{ ...FIELD_STYLE, padding: "4px 6px", textAlign: "right" }} /></td>
                     <td style={{ padding: 3, textAlign: "center" }}><button onClick={() => rmLine(i)} style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer" }}>×</button></td>
                   </tr>
@@ -751,6 +806,7 @@ export function ParcelamentoCreateModal({
   sourceGuide = null,
   defaultLinkGuideAsParcelaNum = 1,
 }) {
+  useEscapeToClose(onClose);
   const [kind, setKind] = useState("SIMPLES");
   const [label, setLabel] = useState(sourceGuide ? `Parcelamento ${sourceGuide.tipo || ""} ${new Date().toLocaleDateString("pt-BR")}` : "");
   const [templateOpeningId, setTemplateOpeningId] = useState("");
@@ -1014,7 +1070,7 @@ function ParcMetric({ label, value, accent }) {
   );
 }
 
-export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenCreate, getConfig, saveConfig }) {
+export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenCreate, getConfig, saveConfig, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
   const [configParc, setConfigParc] = useState(null); // { id, label }
   const [rescParc, setRescParc] = useState(null);      // parcelamento sendo rescindido
   const [rescBusy, setRescBusy] = useState(false);
@@ -1106,6 +1162,9 @@ export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenC
           saveConfig={saveConfig}
           onClose={() => setConfigParc(null)}
           onSaved={() => setConfigParc(null)}
+          accounts={accounts}
+          onSearchHistoricos={onSearchHistoricos}
+          onGetHistoricosByCode={onGetHistoricosByCode}
         />
       )}
 
@@ -1121,6 +1180,9 @@ export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenC
             finally { setRescBusy(false); }
           }}
           onClose={() => setRescParc(null)}
+          accounts={accounts}
+          onSearchHistoricos={onSearchHistoricos}
+          onGetHistoricosByCode={onGetHistoricosByCode}
         />
       )}
     </div>
@@ -1176,6 +1238,7 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
 // ParcelaPaymentModal — confirmar pagamento (só campo juros)
 // ─────────────────────────────────────────────────────────────────────────
 export function ParcelaPaymentModal({ parcelamento, parcela, saving, onConfirm, onClose }) {
+  useEscapeToClose(onClose);
   const [jurosValor, setJurosValor] = useState("");
   const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().slice(0, 10));
   const [err, setErr] = useState(null);
@@ -1258,6 +1321,7 @@ export function GuideLinkParcelamentoModal({
   guide, parcelamentos, accountingFunctions,
   saving, onLink, onCreateAndLink, onSkip, onClose,
 }) {
+  useEscapeToClose(onClose);
   const [option, setOption] = useState("none"); // none | existing | new
   const [selectedParcId, setSelectedParcId] = useState("");
   const [numeroParcela, setNumeroParcela] = useState(1);
