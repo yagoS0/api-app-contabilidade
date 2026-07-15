@@ -10,7 +10,7 @@ import {
 
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
-const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "sitfis", "cadastro-fiscal", "sugestao", "pendencias", "plano-contas", "configuracoes", "edit"];
+const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "sitfis", "cadastro-fiscal", "sugestao", "pendencias", "plano-contas", "edit"];
 const SEGMENT_TO_TAB = {
   guides: "guides",
   lancamentos: "lancamentos",
@@ -23,7 +23,9 @@ const SEGMENT_TO_TAB = {
   pendencias: "pendencias",
   "apuracao-v2": "cadastroFiscal", // compat: link antigo cai no Cadastro Fiscal
   "plano-contas": "planoContas",
-  configuracoes: "configuracoes",
+  // "configuracoes" (Configurações de Lançamentos) foi removida: lançamento não se configura,
+  // ele aprende do histórico. Link antigo cai em Lançamentos.
+  configuracoes: "lancamentos",
   edit: "edit",
 };
 const TAB_TO_SEGMENT = {
@@ -36,7 +38,6 @@ const TAB_TO_SEGMENT = {
   sugestao: "sugestao",
   pendencias: "pendencias",
   planoContas: "plano-contas",
-  configuracoes: "configuracoes",
   edit: "edit",
 };
 // Q17: competência default do dashboard = mês civil anterior.

@@ -5,11 +5,11 @@ const GROUPS = [
   {
     key: "contabilidade",
     label: "Contabilidade",
+    // Plano de Contas NÃO é sub-aba: abre por dentro de Lançamentos (menu Configurações).
+    // A rota /plano-contas segue válida — só não tem botão próprio aqui.
     tabs: [
       { key: "lancamentos", label: "Lançamentos" },
       { key: "circular", label: "Circular" },
-      { key: "planoContas", label: "Plano de Contas" },
-      { key: "configuracoes", label: "Configurações" },
     ],
   },
   {

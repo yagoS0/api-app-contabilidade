@@ -748,40 +748,6 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/payroll/template?${qs}`);
     },
 
-    // ===== Accounting Entry Rules =====
-    async listAccountingRulesEventTypes() {
-      return request(`/firm/accounting-entry-rules/event-types`);
-    },
-    async listGlobalAccountingRules() {
-      return request(`/firm/accounting-entry-rules/global`);
-    },
-    async createGlobalAccountingRule(payload) {
-      return request(`/firm/accounting-entry-rules/global`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-    },
-    async listAccountingRules(companyId) {
-      return request(`/firm/companies/${companyId}/accounting-entry-rules`);
-    },
-    async createAccountingRule(companyId, payload) {
-      return request(`/firm/companies/${companyId}/accounting-entry-rules`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-    },
-    async updateAccountingRule(companyId, ruleId, payload) {
-      const path = companyId
-        ? `/firm/companies/${companyId}/accounting-entry-rules/${ruleId}`
-        : `/firm/accounting-entry-rules/${ruleId}`;
-      return request(path, { method: "PUT", body: JSON.stringify(payload) });
-    },
-    async deactivateAccountingRule(companyId, ruleId) {
-      const path = companyId
-        ? `/firm/companies/${companyId}/accounting-entry-rules/${ruleId}/deactivate`
-        : `/firm/accounting-entry-rules/${ruleId}/deactivate`;
-      return request(path, { method: "PATCH" });
-    },
     async getBaixaTemplate(companyId, entryId) {
       return request(`/firm/companies/${companyId}/entries/${entryId}/baixa-template`);
     },

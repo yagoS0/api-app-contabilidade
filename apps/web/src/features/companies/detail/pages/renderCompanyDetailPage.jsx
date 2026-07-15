@@ -27,9 +27,6 @@ const AccountingEntriesTab = lazy(() =>
 const CircularTab = lazy(() =>
   import("../../../accounting/circular/components/renderCircularTab").then((m) => ({ default: m.CircularTab }))
 );
-const AccountingRulesContainer = lazy(() =>
-  import("../../../accounting/rules/components/renderAccountingRulesContainer").then((m) => ({ default: m.AccountingRulesContainer }))
-);
 const ChartOfAccountsPage = lazy(() =>
   import("../../../accounting/chart-of-accounts/pages/renderChartOfAccountsPage").then((m) => ({ default: m.ChartOfAccountsPage }))
 );
@@ -82,7 +79,6 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     setCompanyDetailTab(tab);
     if (tab === "lancamentos") { accountingPanel.onLoadAccounts(); accountingPanel.onLoadEntries(); }
     if (tab === "circular") { accountingPanel.onLoadAccounts(); circularPanel.onLoadCircular(); }
-    if (tab === "configuracoes") { accountingPanel.onLoadAccounts(); }
     if (tab === "planoContas") { accountingPanel.onLoadAccounts(); }
     if (tab === "notasFiscais") { notasPanel?.reload?.(); }
   }
@@ -218,32 +214,6 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           </Suspense>
         </div>
         <Feedback message={feedback.message} error={feedback.error} />
-      </div>
-    );
-  }
-
-  if (companyDetailTab === "configuracoes") {
-    return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
-        <CompanySectionHeader
-          company={selectedCompany}
-          activeTab="configuracoes"
-          onBack={onBack}
-          onTabChange={switchTab}
-          canEditCompany={canEditCompany}
-        />
-        <AppShell>
-          <Suspense fallback={<TabLoadingFallback />}>
-          <AccountingRulesContainer
-            api={accountingPanel.api}
-            scope="COMPANY"
-            companyId={companyId}
-            accounts={accountingPanel.accounts || []}
-            onOpenChartOfAccounts={() => switchTab("planoContas")}
-          />
-          </Suspense>
-          <Feedback message={feedback.message} error={feedback.error} />
-        </AppShell>
       </div>
     );
   }
