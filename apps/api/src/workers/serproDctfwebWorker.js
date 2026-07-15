@@ -7,57 +7,13 @@ import { getSerproRuntimeSettings } from "../application/fiscal/serpro/SerproRun
 import { SerproProcurationService } from "../application/fiscal/serpro/SerproProcurationService.js";
 import { syncSerproInssForCompany } from "../application/fiscal/serpro/SerproDctfwebService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
+import { idsComRotinaAtiva } from "../application/fiscal/serpro/CompanyRotinasService.js";
+import { matchesCron } from "./cronMatch.js";
 
 const LOCK_ID = "serpro_dctfweb_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
 const LOOP_INTERVAL_MS = 60 * 1000;
 
-function parseCronField(field, value, min, max) {
-  const raw = String(field || "*").trim();
-  if (raw === "*") return true;
-
-  return raw.split(",").some((part) => {
-    const token = String(part || "").trim();
-    if (!token) return false;
-
-    const stepMatch = token.match(/^(\*|\d+-\d+|\d+)\/(\d+)$/);
-    if (stepMatch) {
-      const base = stepMatch[1];
-      const step = Number(stepMatch[2]);
-      if (!Number.isFinite(step) || step <= 0) return false;
-      if (base === "*") return value >= min && value <= max && (value - min) % step === 0;
-      if (base.includes("-")) {
-        const [start, end] = base.split("-").map(Number);
-        if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
-        return value >= start && value <= end && (value - start) % step === 0;
-      }
-      const start = Number(base);
-      return value === start;
-    }
-
-    if (token.includes("-")) {
-      const [start, end] = token.split("-").map(Number);
-      if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
-      return value >= start && value <= end;
-    }
-
-    const numeric = Number(token);
-    return Number.isFinite(numeric) && numeric === value;
-  });
-}
-
-function matchesCron(cronExpression, now = new Date()) {
-  const parts = String(cronExpression || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length !== 5) return false;
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  return (
-    parseCronField(minute, now.getMinutes(), 0, 59) &&
-    parseCronField(hour, now.getHours(), 0, 23) &&
-    parseCronField(dayOfMonth, now.getDate(), 1, 31) &&
-    parseCronField(month, now.getMonth() + 1, 1, 12) &&
-    parseCronField(dayOfWeek, now.getDay(), 0, 6)
-  );
-}
 
 async function listEligiblePortalCompanies() {
   // INSS via DCTFWeb se aplica a qualquer empresa com CNPJ válido e procuração SERPRO ativa.
@@ -113,6 +69,15 @@ export async function runSerproDctfwebWorkerOnce(options = {}) {
     const fetchDay = settings.fetchDay ?? 5;
     const isCaptureWindow = now.getDate() >= fetchDay;
 
+    // Rotina `inss`: antes este worker tentava INSS em TODA empresa (não filtrava regime).
+    // O seed marcou `inss` em todas justamente pra preservar isso — agora o contador vê
+    // na tela e pode desmarcar quem não precisa.
+    const cfgInss = settings.rotinas?.inss;
+    const idsInss = await idsComRotinaAtiva("inss");
+    const janelaInss = cfgInss
+      ? (cfgInss.enabled !== false && now.getDate() >= (cfgInss.day ?? fetchDay))
+      : isCaptureWindow;
+
     for (const company of companies) {
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -140,7 +105,7 @@ export async function runSerproDctfwebWorkerOnce(options = {}) {
           select: { id: true },
         });
 
-        if (isCaptureWindow && !existingForCompetencia) {
+        if (janelaInss && idsInss.has(company.id) && !existingForCompetencia) {
           try {
             // eslint-disable-next-line no-await-in-loop
             const sync = await syncSerproInssForCompany({ portalClientId: company.id, competencia });
@@ -218,7 +183,13 @@ export async function runSerproDctfwebWorkerLoop() {
       const now = new Date();
       const tickKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
-      if (settings.enabled && matchesCron(settings.fetchCron, now) && tickKey !== lastTickKey) {
+      // Agenda própria da rotina `inss` (antes era o fetchCron global, compartilhado com o PGDAS).
+      const cfgInss = settings.rotinas?.inss;
+      const inssBateu = cfgInss
+        ? (cfgInss.enabled !== false && matchesCron(cfgInss.cron, now))
+        : matchesCron(settings.fetchCron, now);
+
+      if (settings.enabled && inssBateu && tickKey !== lastTickKey) {
         lastTickKey = tickKey;
         const result = await runSerproDctfwebWorkerOnce();
         log.info({ result, tickKey }, "Ciclo do serproDctfwebWorker concluído");

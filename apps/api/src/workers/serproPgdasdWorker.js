@@ -10,57 +10,12 @@ import { capturarLpDaCompetencia } from "../application/fiscal/lp/LucroPresumido
 import { syncPgdasByCompetencia } from "../application/fiscal/serpro/SerproPgdasDeclaracaoService.js";
 import { capturarParcelaGuideForCompany } from "../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { createSerproExecutionLog } from "../application/fiscal/serpro/SerproExecutionLogService.js";
+import { idsComRotinaAtiva } from "../application/fiscal/serpro/CompanyRotinasService.js";
+import { matchesCron } from "./cronMatch.js";
 
 const LOCK_ID = "serpro_pgdasd_capture_lock";
 const LOCK_TTL_MS = 30 * 60 * 1000;
 const LOOP_INTERVAL_MS = 60 * 1000;
-
-function parseCronField(field, value, min, max) {
-  const raw = String(field || "*").trim();
-  if (raw === "*") return true;
-
-  return raw.split(",").some((part) => {
-    const token = String(part || "").trim();
-    if (!token) return false;
-
-    const stepMatch = token.match(/^(\*|\d+-\d+|\d+)\/(\d+)$/);
-    if (stepMatch) {
-      const base = stepMatch[1];
-      const step = Number(stepMatch[2]);
-      if (!Number.isFinite(step) || step <= 0) return false;
-      if (base === "*") return value >= min && value <= max && (value - min) % step === 0;
-      if (base.includes("-")) {
-        const [start, end] = base.split("-").map(Number);
-        if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
-        return value >= start && value <= end && (value - start) % step === 0;
-      }
-      const start = Number(base);
-      return value === start;
-    }
-
-    if (token.includes("-")) {
-      const [start, end] = token.split("-").map(Number);
-      if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
-      return value >= start && value <= end;
-    }
-
-    const numeric = Number(token);
-    return Number.isFinite(numeric) && numeric === value;
-  });
-}
-
-function matchesCron(cronExpression, now = new Date()) {
-  const parts = String(cronExpression || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length !== 5) return false;
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  return (
-    parseCronField(minute, now.getMinutes(), 0, 59) &&
-    parseCronField(hour, now.getHours(), 0, 23) &&
-    parseCronField(dayOfMonth, now.getDate(), 1, 31) &&
-    parseCronField(month, now.getMonth() + 1, 1, 12) &&
-    parseCronField(dayOfWeek, now.getDay(), 0, 6)
-  );
-}
 
 async function acquireLock() {
   return tryAcquireGuideLock(LOCK_ID, LOCK_TTL_MS);
@@ -133,6 +88,25 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
     const fetchDay = settings.fetchDay ?? 5;
     const isCaptureWindow = now.getDate() >= fetchDay; // a partir do dia configurado
 
+    // Rotinas: QUEM (CompanyRotina, por empresa) × QUANDO (agenda por rotina).
+    // Antes isso era implícito — o regime decidia tudo dentro deste laço. O seed do
+    // CompanyRotinasService reproduz a regra antiga, então ligar isto não muda nada.
+    const agenda = settings.rotinas || {};
+    const [idsDas, idsExtrato, idsPresumido, idsParcelamento] = await Promise.all([
+      idsComRotinaAtiva("das"),
+      idsComRotinaAtiva("extrato"),
+      idsComRotinaAtiva("presumido"),
+      idsComRotinaAtiva("parcelamento"),
+    ]);
+    // Cada rotina tem sua própria janela (dia do mês a partir do qual pode rodar).
+    // Sem agenda salva, cai no fetchDay legado — mesma janela de antes.
+    function janelaAberta(rotina) {
+      const cfg = agenda[rotina];
+      if (!cfg) return isCaptureWindow;
+      if (cfg.enabled === false) return false;
+      return now.getDate() >= (cfg.day ?? fetchDay);
+    }
+
     for (const company of companies) {
       try {
         // eslint-disable-next-line no-await-in-loop
@@ -153,7 +127,7 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
         // Módulo Fiscal M2: Lucro Presumido → captura DCTFWeb (provisão por tributo + split na circular).
         // Idempotente: pula se já houver guia LP PROCESSED da competência (evita re-hit no SERPRO).
         if (company.regimeTributario === "LUCRO_PRESUMIDO") {
-          if (isCaptureWindow) {
+          if (janelaAberta("presumido") && idsPresumido.has(company.id)) {
             const cnpjDigits = String(company.cnpj || "").replace(/\D+/g, "");
             // eslint-disable-next-line no-await-in-loop
             const existingLp = await prisma.guide.findFirst({
@@ -197,7 +171,7 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
           select: { id: true },
         });
 
-        if (isCaptureWindow && !existingForCompetencia) {
+        if (janelaAberta("das") && idsDas.has(company.id) && !existingForCompetencia) {
           try {
             // eslint-disable-next-line no-await-in-loop
             const capture = await capturePgdasGuideForCompany({
@@ -229,7 +203,7 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
         // syncPgdasByCompetencia baixa o extrato e chama generateEntriesFromCircular.
         // Idempotente: só busca se a competência ainda não foi sincronizada com SUCESSO
         // (evita re-hit pago no SERPRO a cada ciclo). Isolado: falha não derruba o ciclo.
-        if (isCaptureWindow) {
+        if (janelaAberta("extrato") && idsExtrato.has(company.id)) {
           // eslint-disable-next-line no-await-in-loop
           const circ = await prisma.companyMonthlyCircular.findUnique({
             where: { portalClientId_competencia: { portalClientId: company.id, competencia } },
@@ -258,7 +232,7 @@ export async function runSerproPgdasdWorkerOnce(options = {}) {
         // Stage 4 (Q22): guias de PARCELAMENTO. Atrás da flag INTEGRACAO_SERPRO_PARCELAMENTO.
         // Itera só os parcelamentos ATIVOS já criados na base (decisão do dono); para cada um,
         // lista as competências geráveis e traz a parcela (composição + PDF) → lançamento + guia.
-        if (INTEGRACAO_SERPRO_PARCELAMENTO && isCaptureWindow) {
+        if (INTEGRACAO_SERPRO_PARCELAMENTO && janelaAberta("parcelamento") && idsParcelamento.has(company.id)) {
           // eslint-disable-next-line no-await-in-loop
           const parcelamentos = await prisma.parcelamento.findMany({
             // Q23: só busca automática depois que a 1ª parcela manual gerou a provisão (aberturaEntryId).
@@ -339,7 +313,18 @@ export async function runSerproPgdasdWorkerLoop() {
       const now = new Date();
       const tickKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
-      if (settings.enabled && matchesCron(settings.fetchCron, now) && tickKey !== lastTickKey) {
+      // Este worker atende 4 rotinas, cada uma com sua agenda. O ciclo roda se QUALQUER
+      // uma bater agora; lá dentro, cada stage confere a própria janela e as empresas
+      // marcadas. Com a agenda semeada (todas no mesmo dia/hora), equivale ao fetchCron
+      // de antes. O ciclo é idempotente, então rodar mais de uma vez no mês é inofensivo.
+      const rotinasDoWorker = ["das", "extrato", "presumido", "parcelamento"];
+      const algumaBateu = rotinasDoWorker.some((r) => {
+        const cfg = settings.rotinas?.[r];
+        if (!cfg || cfg.enabled === false) return false;
+        return matchesCron(cfg.cron, now);
+      });
+
+      if (settings.enabled && algumaBateu && tickKey !== lastTickKey) {
         lastTickKey = tickKey;
         const result = await runSerproPgdasdWorkerOnce();
         log.info({ result, tickKey }, "Ciclo do serproPgdasdWorker concluído");

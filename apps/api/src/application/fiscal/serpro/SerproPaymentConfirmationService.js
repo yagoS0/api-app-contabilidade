@@ -9,6 +9,7 @@ import { gerarPagamentoInssFromGuide } from "../../accounting/InssPagamentoServi
 import { gerarPagamentoParcelaFromGuide } from "../../accounting/parcelamento/ParcelamentoV2Service.js";
 import { confirmarPagamento } from "./SerproPagtoWebService.js";
 import { consultarDasIndexPorCompetencia } from "./SerproPgdasDeclaracaoService.js";
+import { idsComRotinaAtiva } from "./CompanyRotinasService.js";
 import { INTEGRACAO_SERPRO_PAGTOWEB } from "../../../config.js";
 
 // Q40 Fase A/B: confirmação de pagamento de guias via comprovante oficial (PAGTOWEB).
@@ -172,6 +173,15 @@ async function gerarBaixaSePreciso({ guide, userId, logger }) {
  * @param {string} [opts.competencia] limita a uma competência
  */
 export async function runPaymentConfirmationOnce({ portalClientId = null, competencia = null, userId = null, logger = null } = {}) {
+  // Rotina `pagamento`: quando roda em lote (cron ou "confirmar agora"), só as empresas
+  // marcadas na página Rotinas. Com `portalClientId` explícito o filtro NÃO se aplica —
+  // é o botão por empresa, escolha direta do contador.
+  let filtroRotina = null;
+  if (!portalClientId) {
+    const ids = await idsComRotinaAtiva("pagamento");
+    filtroRotina = { portalClientId: { in: [...ids] } };
+  }
+
   const where = {
     source: "SERPRO",
     status: "PROCESSED",
@@ -182,6 +192,7 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
       { tipo: "OUTRA", sourceFileId: { startsWith: "serpro:dctfweb:lp:" } },
     ],
     ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+    ...(filtroRotina || {}),
     ...(competencia ? { competencia: String(competencia) } : {}),
   };
 

@@ -240,13 +240,10 @@ function App() {
   if (session.page === "rotinas") {
     return (
       <RotinasPage
-        settings={companiesWorkspace.guideSettings}
-        saving={companiesWorkspace.savingSerproSettings}
+        api={api}
         workerStatus={companiesWorkspace.serproWorkerStatus}
-        onSave={companiesWorkspace.handleSaveSerproSettings}
         onRunCron={companiesWorkspace.handleRunSerproCron}
         runningCron={companiesWorkspace.runningSerproCron}
-        cronRunResult={companiesWorkspace.serproCronRunResult}
         onRefreshWorkerStatus={companiesWorkspace.loadSerproWorkerStatus}
         onRunPaymentConfirmation={() => api.runSerproPaymentConfirmation({})}
         onBack={() => session.setPage("companies")}

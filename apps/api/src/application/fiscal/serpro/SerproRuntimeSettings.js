@@ -79,6 +79,40 @@ function deriveMonthlyCron(day, hour) {
   return `0 ${h} ${dayField} * *`;
 }
 
+// Vocabulário REAL do SERPRO — o mesmo das "Funções em lote" (OP_DEFS no frontend).
+// PIS/COFINS/CSLL/IRPJ NÃO entram aqui: não existem como consulta separada. Os quatro vêm
+// juntos de uma única chamada (a do `presumido`, Consultar Declaração Completa DCTFWeb) e são
+// separados localmente por código de receita — ver parseDctfwebDeclaracao.js.
+export const ROTINA_KEYS = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento"];
+
+// Agenda por rotina. Semeada a partir da agenda global legada (fetchDay/fetchHour e, para o
+// pagamento, paymentConfirmation*) — assim ligar esta feature NÃO muda o comportamento de quem
+// já está em produção: cada rotina nasce no mesmo dia/hora que já rodava.
+function resolveRotinas(stored) {
+  const fetchDay = resolveFetchDay(stored);
+  const fetchHour = resolveFetchHour(stored);
+  const salvas = stored.rotinas && typeof stored.rotinas === "object" ? stored.rotinas : {};
+
+  const out = {};
+  for (const key of ROTINA_KEYS) {
+    const salva = salvas[key] && typeof salvas[key] === "object" ? salvas[key] : null;
+    const legadoDia = key === "pagamento" ? resolvePaymentConfirmationDay(stored) : fetchDay;
+    const legadoHora = key === "pagamento" ? resolvePaymentConfirmationHour(stored) : fetchHour;
+    // O pagamento já tinha on/off próprio; as demais sempre rodaram junto da captura.
+    const legadoEnabled = key === "pagamento" ? resolvePaymentConfirmationEnabled(stored) : true;
+
+    const day = clampInt(salva?.day, 1, 31, legadoDia);
+    const hour = clampInt(salva?.hour, 0, 23, legadoHora);
+    out[key] = {
+      enabled: salva?.enabled === undefined ? legadoEnabled : salva.enabled === true,
+      day,
+      hour,
+      cron: deriveMonthlyCron(day, hour),
+    };
+  }
+  return out;
+}
+
 function normalizeTimeout(value, fallback) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -194,6 +228,9 @@ export async function getSerproRuntimeSettings() {
     paymentConfirmationDay: resolvePaymentConfirmationDay(stored),
     paymentConfirmationHour: resolvePaymentConfirmationHour(stored),
     paymentConfirmationCron: deriveMonthlyCron(resolvePaymentConfirmationDay(stored), resolvePaymentConfirmationHour(stored)),
+    // Agenda por rotina (das|inss|extrato|presumido|parcelamento|pagamento). QUEM faz cada
+    // rotina fica no model CompanyRotina — aqui é só QUANDO.
+    rotinas: resolveRotinas(stored),
     certificate: {
       hasCertificate: Boolean(stored.certPfxBase64 || stored.certStorageKey),
       storageKey: stored.certStorageKey || (stored.certPfxBase64 ? SERPRO_DB_CERT_STORAGE_KEY : null),
@@ -297,6 +334,20 @@ export async function updateSerproRuntimeSettings(input = {}) {
     ? clampInt(input.paymentConfirmationHour, 0, 23, 8)
     : resolvePaymentConfirmationHour(stored);
 
+  // Agenda por rotina: merge por chave, igual ao resto. Grava só {enabled,day,hour} — o `cron`
+  // é derivado na leitura, nunca armazenado (mesma regra do fetchCron).
+  const rotinasAtuais = resolveRotinas(stored);
+  const nextRotinas = {};
+  for (const key of ROTINA_KEYS) {
+    const entrada = input.rotinas && typeof input.rotinas === "object" ? input.rotinas[key] : undefined;
+    const atual = rotinasAtuais[key];
+    nextRotinas[key] = {
+      enabled: entrada?.enabled === undefined ? atual.enabled : entrada.enabled === true,
+      day: entrada?.day === undefined ? atual.day : clampInt(entrada.day, 1, 31, atual.day),
+      hour: entrada?.hour === undefined ? atual.hour : clampInt(entrada.hour, 0, 23, atual.hour),
+    };
+  }
+
   const next = {
     ...stored,
     enabled: input.enabled === undefined ? stored.enabled ?? config.enabled ?? false : Boolean(input.enabled),
@@ -314,6 +365,7 @@ export async function updateSerproRuntimeSettings(input = {}) {
     paymentConfirmationEnabled: nextPaymentEnabled,
     paymentConfirmationDay: nextPaymentDay,
     paymentConfirmationHour: nextPaymentHour,
+    rotinas: nextRotinas,
   };
 
   if (input.consumerSecret !== undefined) {

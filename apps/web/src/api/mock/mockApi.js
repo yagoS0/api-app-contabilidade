@@ -845,6 +845,46 @@ export function createMockApi() {
       await delay(500);
       return { ok: true, result: { total: 0, paid: 0, open: 0, errors: 0, results: [] } };
     },
+    // Rotinas: espelha o shape do GET /firm/rotinas (rotinas + agenda + empresas).
+    async getRotinas() {
+      await delay();
+      return {
+        ok: true,
+        rotinas: [
+          { key: "das", label: "DAS" },
+          { key: "inss", label: "INSS" },
+          { key: "extrato", label: "Extrato" },
+          { key: "presumido", label: "Presumido" },
+          { key: "parcelamento", label: "Parcelamento" },
+          { key: "pagamento", label: "Pagamento" },
+        ],
+        agenda: {
+          das: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
+          inss: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
+          extrato: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
+          presumido: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
+          parcelamento: { enabled: true, day: 10, hour: 7, cron: "0 7 10-12 * *" },
+          pagamento: { enabled: true, day: 20, hour: 8, cron: "0 8 20-22 * *" },
+        },
+        empresas: mockCompanies.map((c, i) => ({
+          companyId: c.companyId,
+          razao: c.razao,
+          cnpj: c.cnpj,
+          status: "ATIVA",
+          regime: i % 3 === 0 ? "LUCRO_PRESUMIDO" : "SIMPLES",
+          rotinas: i % 3 === 0
+            ? { das: false, inss: true, extrato: false, presumido: true, parcelamento: false, pagamento: true }
+            : { das: true, inss: true, extrato: true, presumido: false, parcelamento: true, pagamento: true },
+        })),
+      };
+    },
+    async saveRotinas(input = {}) {
+      await delay(400);
+      const atualizadas = Array.isArray(input.empresas)
+        ? input.empresas.reduce((s, e) => s + Object.keys(e.rotinas || {}).length, 0)
+        : 0;
+      return { ok: true, atualizadas, agenda: input.agenda || {} };
+    },
     async runSerproCron(input = {}) {
       await delay(800);
       const competencia = String(input.competencia || "2026-04");

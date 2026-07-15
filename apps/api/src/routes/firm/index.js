@@ -72,7 +72,13 @@ import {
   getSerproRuntimeSettings,
   updateSerproRuntimeSettings,
   uploadSerproCertificate,
+  ROTINA_KEYS,
 } from "../../application/fiscal/serpro/SerproRuntimeSettings.js";
+import {
+  listCompanyRotinas,
+  saveCompanyRotinas,
+  ROTINA_LABELS,
+} from "../../application/fiscal/serpro/CompanyRotinasService.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta, probeEmitirDarfDctfweb } from "../../application/fiscal/serpro/SerproDctfwebService.js";
 import { SERPRO_DCTFWEB_LP_PROBE_ENABLED } from "../../config.js";
@@ -1594,10 +1600,55 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         paymentConfirmationDay: settings.paymentConfirmationDay,
         paymentConfirmationHour: settings.paymentConfirmationHour,
         paymentConfirmationCron: settings.paymentConfirmationCron,
+        // Agenda por rotina — re-hidrata a página Rotinas com o valor recém-salvo.
+        rotinas: settings.rotinas,
         certificate: settings.certificate,
         source: settings.source,
       },
     });
+  });
+
+  // ── Rotinas: QUEM (empresa × rotina) + QUANDO (agenda global por rotina) ──
+  // A agenda vive em SerproRuntimeSettings.rotinas; a seleção por empresa, no model
+  // CompanyRotina. O GET semeia a partir da regra implícita que os workers usavam
+  // (Simples→DAS+extrato+parcelamento, LP→presumido, INSS→todas), então a primeira
+  // abertura da tela já reflete o que o sistema faz hoje.
+  router.get("/rotinas", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const [empresas, settings] = await Promise.all([
+      listCompanyRotinas(),
+      getSerproRuntimeSettings(),
+    ]);
+    return res.json({
+      ok: true,
+      rotinas: ROTINA_KEYS.map((key) => ({ key, label: ROTINA_LABELS[key] })),
+      agenda: settings.rotinas,
+      empresas,
+    });
+  });
+
+  router.put("/rotinas", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const { empresas, agenda } = req.body || {};
+    const resultado = { atualizadas: 0 };
+    if (Array.isArray(empresas) && empresas.length > 0) {
+      const r = await saveCompanyRotinas(empresas);
+      resultado.atualizadas = r.atualizadas;
+    }
+    // Só os campos de agenda — updateSerproRuntimeSettings faz merge e preserva credenciais.
+    let settings = null;
+    if (agenda && typeof agenda === "object") {
+      settings = await updateSerproRuntimeSettings({ rotinas: agenda });
+    } else {
+      settings = await getSerproRuntimeSettings();
+    }
+    return res.json({ ok: true, ...resultado, agenda: settings.rotinas });
   });
 
   router.post("/serpro/settings/certificate", requireAccountType("FIRM"), upload.fields([{ name: "pfx", maxCount: 1 }, { name: "file", maxCount: 1 }]), async (req, res) => {

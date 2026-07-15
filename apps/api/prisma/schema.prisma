@@ -287,10 +287,37 @@ model PortalClient {
   apuracaoSnapshots    ApuracaoSnapshot[]
   logsDecisaoFatorR    LogDecisaoFatorR[]
   fiscalStatus         CompanyFiscalStatus?
+  rotinas              CompanyRotina[]
 
   @@index([cnpj])
   @@index([updatedAt])
   @@index([status])
+}
+
+/// Quais rotinas de captura SERPRO cada empresa faz. Antes isso era implícito: o worker
+/// derivava do regime (Simples→DAS+extrato, LP→Presumido) e o INSS era tentado em TODA
+/// empresa. Agora é declarado — o contador vê e escolhe na página Rotinas.
+///
+/// A AGENDA (dia/hora) é global por rotina e vive em AppSetting["serpro_runtime_settings"],
+/// não aqui: aqui é só QUEM faz o quê.
+///
+/// `rotina` usa o vocabulário real do SERPRO (o mesmo das "Funções em lote"):
+///   das | inss | extrato | presumido | parcelamento | pagamento
+/// PIS/COFINS/CSLL/IRPJ NÃO são rotinas: vêm juntos numa única consulta, a do `presumido`,
+/// e são separados aqui por código de receita (ver parseDctfwebDeclaracao.js).
+model CompanyRotina {
+  id             String   @id @default(uuid())
+  portalClientId String
+  rotina         String
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, rotina])
+  @@index([rotina, enabled])
+  @@map("company_rotinas")
 }
 
 // Q40 Fase C: relatório de situação fiscal (SITFIS) por empresa — última consulta.

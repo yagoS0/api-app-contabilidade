@@ -417,6 +417,16 @@ export function createRealApi() {
         body: JSON.stringify({}),
       });
     },
+    // Rotinas: tabela empresa × rotina + agenda global por rotina.
+    async getRotinas() {
+      return request(`/firm/rotinas`);
+    },
+    async saveRotinas(input = {}) {
+      return request(`/firm/rotinas`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      });
+    },
     // Q40: confirmação de pagamento (PAGTOWEB) por empresa — consulta comprovante das guias OPEN.
     async confirmarPagamentoSerpro(companyId, input = {}) {
       return request(`/firm/companies/${companyId}/serpro/payment-confirmation`, {
