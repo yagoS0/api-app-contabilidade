@@ -1,4 +1,4 @@
-// Navegação da empresa em 2 níveis: 3 grupos grandes (Contabilidade, Fiscal, Editar cadastro)
+// Navegação da empresa em 2 níveis: 3 grupos grandes (Contabilidade, Fiscal, Cadastro)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
 // clicar num grupo navega pro seu 1º sub-tab. Nada de roteamento novo — só reagrupa o header.
 const GROUPS = [
@@ -25,17 +25,24 @@ const GROUPS = [
     ],
   },
   {
-    key: "editar",
-    label: "Editar cadastro",
-    requiresEdit: true,
-    tabs: [{ key: "edit", label: "Editar cadastro" }],
+    // Abre a FICHA (read-only). Editar é um botão dentro dela, que leva à aba `edit`.
+    key: "cadastro",
+    label: "Cadastro",
+    tabs: [{ key: "cadastro", label: "Cadastro" }],
   },
 ];
 
 const GROUP_BTN_STYLE = { fontSize: "1rem", fontWeight: 700, padding: "12px 26px" };
 
+// Abas que não são sub-aba de ninguém, mas pertencem a um grupo (o grupo fica destacado).
+// `edit` abre pela ficha (botão Editar) e `planoContas` por Lançamentos → Configurações.
+const TAB_TO_GROUP = { edit: "cadastro", planoContas: "contabilidade" };
+
 export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, canEditCompany = false }) {
-  const activeGroup = GROUPS.find((g) => g.tabs.some((t) => t.key === activeTab)) || GROUPS[0];
+  const activeGroup =
+    GROUPS.find((g) => g.tabs.some((t) => t.key === activeTab))
+    || GROUPS.find((g) => g.key === TAB_TO_GROUP[activeTab])
+    || GROUPS[0];
   const subTabs = activeGroup.tabs;
 
   return (

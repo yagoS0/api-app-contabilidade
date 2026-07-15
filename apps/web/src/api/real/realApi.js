@@ -83,6 +83,17 @@ function normalizeError(payload, status) {
   return mapKnownError(payload, status);
 }
 
+function txt(value) {
+  return String(value || "").trim() || null;
+}
+
+// "" → undefined: campo ausente no payload significa "não mexer" (sócios/histórico) ou
+// simplesmente não enviar. Já `null` apagaria o valor no banco.
+function omitIfEmpty(value) {
+  const v = String(value || "").trim();
+  return v || undefined;
+}
+
 function buildCompanyPayload(input) {
   return {
     ownerEmail: String(input.ownerEmail || "").trim().toLowerCase(),
@@ -93,13 +104,20 @@ function buildCompanyPayload(input) {
     company: {
       cnpj: String(input.cnpj || "").trim(),
       razaoSocial: String(input.razaoSocial || "").trim(),
-      nomeFantasia: String(input.nomeFantasia || "").trim() || null,
+      nomeFantasia: txt(input.nomeFantasia),
       email: String(input.email || "").trim().toLowerCase() || null,
       guideNotificationEmail: String(input.guideNotificationEmail || "").trim().toLowerCase() || null,
-      telefone: String(input.telefone || "").trim() || null,
+      telefone: txt(input.telefone),
       regimeTributario: String(input.regimeTributario || "SIMPLES"),
       cnaePrincipal: String(input.cnaePrincipal || "").trim(),
-      cnaesSecundarios: [],
+      // Antes era `[]` fixo: os CNAEs secundários NUNCA eram enviados, mesmo vindo da
+      // BrasilAPI. Aceita array ou string separada por vírgula (o form usa string).
+      cnaesSecundarios: Array.isArray(input.cnaesSecundarios)
+        ? input.cnaesSecundarios.map((c) => String(c).replace(/\D+/g, "")).filter(Boolean)
+        : String(input.cnaesSecundarios || "")
+            .split(",")
+            .map((c) => c.replace(/\D+/g, ""))
+            .filter(Boolean),
       endereco: {
         rua: String(input.enderecoRua || "").trim(),
         numero: String(input.enderecoNumero || "").trim(),
@@ -107,8 +125,63 @@ function buildCompanyPayload(input) {
         cidade: String(input.enderecoCidade || "").trim(),
         uf: String(input.enderecoUf || "").trim().toUpperCase(),
         cep: String(input.enderecoCep || "").replace(/\D+/g, ""),
-        complemento: String(input.enderecoComplemento || "").trim() || null,
+        complemento: txt(input.enderecoComplemento),
       },
+      // ── Ficha de cadastro ──
+      // A inscrição municipal já era ACEITA pela API, mas o form nunca mandava:
+      // em produção ela é sempre null.
+      inscricaoMunicipal: txt(input.inscricaoMunicipal),
+      inscricaoMunicipalData: omitIfEmpty(input.inscricaoMunicipalData),
+      inscricaoEstadual: txt(input.inscricaoEstadual),
+      inscricaoEstadualData: omitIfEmpty(input.inscricaoEstadualData),
+      porte: txt(input.porte),
+      naturezaJuridica: txt(input.naturezaJuridica),
+      capitalSocial: omitIfEmpty(input.capitalSocial),
+      dataAbertura: omitIfEmpty(input.dataAbertura),
+      abriuCom: txt(input.abriuCom),
+      numeroRegistro: txt(input.numeroRegistro),
+      tipoRegistro: txt(input.tipoRegistro),
+      diarioNumero: txt(input.diarioNumero),
+      desoneracao: Boolean(input.desoneracao),
+      alteracaoNumero: txt(input.alteracaoNumero),
+      alteracaoData: omitIfEmpty(input.alteracaoData),
+      // Só manda se o form editou: ausente = backend não mexe na lista.
+      // Linhas sem nome/regime são descartadas aqui (o form deixa linha vazia enquanto digita).
+      ...(Array.isArray(input.socios)
+        ? {
+            socios: input.socios
+              .filter((s) => String(s?.name || "").trim())
+              .map((s) => ({
+                name: String(s.name).trim(),
+                documento: String(s.documento || "").replace(/\D+/g, "") || null,
+                participacao: String(s.participacao || "").trim() || null,
+                rg: String(s.rg || "").trim() || null,
+                rgOrgaoEmissor: String(s.rgOrgaoEmissor || "").trim() || null,
+                dataNascimento: String(s.dataNascimento || "").trim() || null,
+                dataSaida: String(s.dataSaida || "").trim() || null,
+                representante: Boolean(s.representante),
+              })),
+          }
+        : {}),
+      ...(Array.isArray(input.regimeHistorico)
+        ? {
+            regimeHistorico: input.regimeHistorico
+              .filter((r) => String(r?.regime || "").trim() && String(r?.vigenciaInicio || "").trim())
+              .map((r) => ({
+                regime: String(r.regime).trim(),
+                vigenciaInicio: String(r.vigenciaInicio).trim(),
+                vigenciaFim: String(r.vigenciaFim || "").trim() || null,
+                // O form guarda "ISS/PIS/COFINS" (como a ficha escreve); a API quer array.
+                impostos: Array.isArray(r.impostos)
+                  ? r.impostos
+                  : String(r.impostos || "")
+                      .split(/[/,]/)
+                      .map((x) => x.trim().toUpperCase())
+                      .filter(Boolean),
+                desoneracao: Boolean(r.desoneracao),
+              })),
+          }
+        : {}),
     },
   };
 }

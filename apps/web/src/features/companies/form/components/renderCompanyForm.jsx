@@ -21,6 +21,16 @@ async function fetchCnpjData(cnpj) {
   return res.json();
 }
 
+// Porte da BrasilAPI ("MICRO EMPRESA", "EMPRESA DE PEQUENO PORTE"...) → como a ficha escreve.
+function porteDaBrasilApi(data) {
+  const raw = String(data.porte || data.descricao_porte || "").trim().toUpperCase();
+  if (!raw) return "";
+  if (raw.includes("MICRO EMPRESA") || raw === "ME") return "MICROEMPRESA";
+  if (raw.includes("PEQUENO PORTE") || raw === "EPP") return "EMPRESA DE PEQUENO PORTE";
+  if (raw.includes("DEMAIS")) return "DEMAIS";
+  return raw;
+}
+
 function applyBrasilApiData(data, onChange) {
   const telefone = [data.ddd_telefone_1, data.ddd_telefone_2].filter(Boolean).join(" / ");
   const cnae = data.cnae_fiscal ? String(data.cnae_fiscal) : "";
@@ -36,6 +46,162 @@ function applyBrasilApiData(data, onChange) {
   onChange("enderecoUf", (data.uf || "").toUpperCase());
   onChange("enderecoCep", data.cep || "");
   onChange("enderecoComplemento", data.complemento || "");
+
+  // A BrasilAPI já devolvia tudo abaixo e a gente jogava fora — o contador redigitava
+  // (ou simplesmente ficava sem). Agora entra direto na ficha.
+  onChange("porte", porteDaBrasilApi(data));
+  onChange("naturezaJuridica", String(data.codigo_natureza_juridica || data.natureza_juridica || "").trim());
+  onChange("dataAbertura", data.data_inicio_atividade || "");
+  if (data.capital_social !== undefined && data.capital_social !== null) {
+    onChange("capitalSocial", String(data.capital_social));
+  }
+  if (Array.isArray(data.cnaes_secundarios)) {
+    const secundarios = data.cnaes_secundarios
+      .map((c) => String(c?.codigo || "").replace(/\D+/g, ""))
+      .filter(Boolean);
+    onChange("cnaesSecundarios", secundarios.join(", "));
+  }
+}
+
+const MINI_INPUT = {
+  background: "#282A36", border: "1px solid #44475A", borderRadius: 5,
+  color: "#F8F8F2", padding: "5px 7px", fontSize: "0.8rem", width: "100%",
+  colorScheme: "dark",
+};
+const MINI_TH = { padding: "4px 6px", fontSize: "0.68rem", color: "#6b7280", textTransform: "uppercase", textAlign: "left" };
+
+// Sócios: lista editável. Sócio que saiu NÃO é removido — preenche "Saiu em" e ele fica no
+// histórico (é assim que a ficha do escritório trata).
+function SociosEditor({ socios, onChange }) {
+  const linhas = Array.isArray(socios) ? socios : [];
+  function setLinha(i, campo, valor) {
+    onChange(linhas.map((s, idx) => (idx === i ? { ...s, [campo]: valor } : s)));
+  }
+  function add() {
+    onChange([...linhas, { name: "", documento: "", participacao: "", rg: "", rgOrgaoEmissor: "", dataNascimento: "", dataSaida: "", representante: false }]);
+  }
+  function remove(i) {
+    onChange(linhas.filter((_, idx) => idx !== i));
+  }
+  const totalPerc = linhas
+    .filter((s) => !s.dataSaida)
+    .reduce((sum, s) => sum + (Number(String(s.participacao).replace(",", ".")) || 0), 0);
+
+  return (
+    <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Sócios</strong>
+        <span style={{ fontSize: 11, color: totalPerc > 100 ? "#FF4757" : "#6b7280" }}>
+          {linhas.length > 0 && `Soma dos ativos: ${totalPerc}%`}
+          {totalPerc > 100 && " — passa de 100%"}
+        </span>
+      </div>
+      {linhas.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+            <thead>
+              <tr>
+                <th style={MINI_TH}>Nome</th>
+                <th style={{ ...MINI_TH, width: 120 }}>CPF</th>
+                <th style={{ ...MINI_TH, width: 60 }}>%</th>
+                <th style={{ ...MINI_TH, width: 110 }}>Nascimento</th>
+                <th style={{ ...MINI_TH, width: 110 }}>RG</th>
+                <th style={{ ...MINI_TH, width: 80 }}>Órgão</th>
+                <th style={{ ...MINI_TH, width: 110 }}>Saiu em</th>
+                <th style={{ width: 26 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((s, i) => (
+                <tr key={i} style={{ opacity: s.dataSaida ? 0.6 : 1 }}>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.name} onChange={(e) => setLinha(i, "name", e.target.value)} placeholder="nome do sócio" /></td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.documento} onChange={(e) => setLinha(i, "documento", e.target.value)} placeholder="000.000.000-00" /></td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.participacao} onChange={(e) => setLinha(i, "participacao", e.target.value)} placeholder="100" /></td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={s.dataNascimento} onChange={(e) => setLinha(i, "dataNascimento", e.target.value)} /></td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.rg} onChange={(e) => setLinha(i, "rg", e.target.value)} /></td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.rgOrgaoEmissor} onChange={(e) => setLinha(i, "rgOrgaoEmissor", e.target.value)} placeholder="DIC/RJ" /></td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={s.dataSaida} onChange={(e) => setLinha(i, "dataSaida", e.target.value)} /></td>
+                  <td style={{ padding: 3, textAlign: "center" }}>
+                    <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer" }}>×</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <button type="button" onClick={add} style={{ marginTop: 6, background: "none", border: "1px dashed #44475A", color: "#8BE9FD", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
+        + Adicionar sócio
+      </button>
+    </div>
+  );
+}
+
+// Histórico de regime. INFORMATIVO: a apuração continua usando o regime atual da empresa.
+function RegimeHistoricoEditor({ historico, onChange }) {
+  const linhas = Array.isArray(historico) ? historico : [];
+  function setLinha(i, campo, valor) {
+    onChange(linhas.map((r, idx) => (idx === i ? { ...r, [campo]: valor } : r)));
+  }
+  function add() {
+    onChange([...linhas, { regime: "SIMPLES", vigenciaInicio: "", vigenciaFim: "", impostos: "", desoneracao: false }]);
+  }
+  function remove(i) {
+    onChange(linhas.filter((_, idx) => idx !== i));
+  }
+
+  return (
+    <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+      <div style={{ marginBottom: 8 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Histórico de regime</strong>
+        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
+          Registro para consulta. A apuração usa o regime atual selecionado acima.
+        </span>
+      </div>
+      {linhas.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
+            <thead>
+              <tr>
+                <th style={{ ...MINI_TH, width: 150 }}>Regime</th>
+                <th style={{ ...MINI_TH, width: 120 }}>De</th>
+                <th style={{ ...MINI_TH, width: 120 }}>Até</th>
+                <th style={MINI_TH}>Impostos</th>
+                <th style={{ ...MINI_TH, width: 70 }}>Desone</th>
+                <th style={{ width: 26 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ padding: 3 }}>
+                    <select style={MINI_INPUT} value={r.regime} onChange={(e) => setLinha(i, "regime", e.target.value)}>
+                      <option value="SIMPLES">Simples Nacional</option>
+                      <option value="LUCRO_PRESUMIDO">Lucro Presumido</option>
+                      <option value="LUCRO_REAL">Lucro Real</option>
+                      <option value="MEI">MEI</option>
+                    </select>
+                  </td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={r.vigenciaInicio} onChange={(e) => setLinha(i, "vigenciaInicio", e.target.value)} /></td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={r.vigenciaFim} onChange={(e) => setLinha(i, "vigenciaFim", e.target.value)} placeholder="vigente" /></td>
+                  <td style={{ padding: 3 }}><input style={MINI_INPUT} value={r.impostos} onChange={(e) => setLinha(i, "impostos", e.target.value)} placeholder="ISS/PIS/COFINS/CSLL/IRPJ" /></td>
+                  <td style={{ padding: 3, textAlign: "center" }}>
+                    <input type="checkbox" checked={Boolean(r.desoneracao)} onChange={(e) => setLinha(i, "desoneracao", e.target.checked)} />
+                  </td>
+                  <td style={{ padding: 3, textAlign: "center" }}>
+                    <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer" }}>×</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <button type="button" onClick={add} style={{ marginTop: 6, background: "none", border: "1px dashed #44475A", color: "#8BE9FD", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
+        + Adicionar período
+      </button>
+    </div>
+  );
 }
 
 export function CompanyForm({
@@ -218,6 +384,15 @@ export function CompanyForm({
         <input value={form.cnaePrincipal} onChange={(event) => onChange("cnaePrincipal", event.target.value)} required />
       </label>
       <label>
+        CNAEs secundários
+        <input
+          value={form.cnaesSecundarios}
+          onChange={(event) => onChange("cnaesSecundarios", event.target.value)}
+          placeholder="4330405, 4321500"
+        />
+        <span style={{ fontSize: 11, color: "#6b7280" }}>Separados por vírgula. Preenche sozinho pelo CNPJ.</span>
+      </label>
+      <label>
         Endereco - rua
         <input value={form.enderecoRua} onChange={(event) => onChange("enderecoRua", event.target.value)} required />
       </label>
@@ -260,6 +435,87 @@ export function CompanyForm({
           onChange={(event) => onChange("enderecoComplemento", event.target.value)}
         />
       </label>
+
+      {/* ── Ficha de cadastro ── */}
+      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Dados da ficha</strong>
+        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
+          Porte, natureza jurídica, capital e abertura preenchem sozinhos pelo CNPJ.
+        </span>
+      </div>
+      <label>
+        Data de abertura
+        <input type="date" value={form.dataAbertura} onChange={(event) => onChange("dataAbertura", event.target.value)} />
+      </label>
+      <label>
+        Porte
+        <input value={form.porte} onChange={(event) => onChange("porte", event.target.value)} placeholder="MICROEMPRESA" />
+      </label>
+      <label>
+        Natureza jurídica
+        <input value={form.naturezaJuridica} onChange={(event) => onChange("naturezaJuridica", event.target.value)} placeholder="230-5" />
+      </label>
+      <label>
+        Capital social
+        <input value={form.capitalSocial} onChange={(event) => onChange("capitalSocial", event.target.value)} placeholder="100.000,00" />
+      </label>
+      <label>
+        Abriu com
+        <input value={form.abriuCom} onChange={(event) => onChange("abriuCom", event.target.value)} placeholder="JEFFERSON" />
+      </label>
+      <label>
+        Diário nº
+        <input value={form.diarioNumero} onChange={(event) => onChange("diarioNumero", event.target.value)} />
+      </label>
+      <label>
+        Nº de registro
+        <input value={form.numeroRegistro} onChange={(event) => onChange("numeroRegistro", event.target.value)} placeholder="33.6.0068899-0" />
+      </label>
+      <label>
+        Tipo de registro
+        <input value={form.tipoRegistro} onChange={(event) => onChange("tipoRegistro", event.target.value)} placeholder="JUNTA COMERCIAL" />
+      </label>
+      <label>
+        Desoneração da folha
+        <select
+          value={form.desoneracao ? "sim" : "nao"}
+          onChange={(event) => onChange("desoneracao", event.target.value === "sim")}
+        >
+          <option value="nao">Não</option>
+          <option value="sim">Sim — c/ desoneração</option>
+        </select>
+      </label>
+      <label>
+        Inscrição municipal
+        <input value={form.inscricaoMunicipal} onChange={(event) => onChange("inscricaoMunicipal", event.target.value)} />
+      </label>
+      <label>
+        Data da IM
+        <input type="date" value={form.inscricaoMunicipalData} onChange={(event) => onChange("inscricaoMunicipalData", event.target.value)} />
+      </label>
+      <div />
+      <label>
+        Inscrição estadual
+        <input value={form.inscricaoEstadual} onChange={(event) => onChange("inscricaoEstadual", event.target.value)} />
+      </label>
+      <label>
+        Data da IE
+        <input type="date" value={form.inscricaoEstadualData} onChange={(event) => onChange("inscricaoEstadualData", event.target.value)} />
+      </label>
+      <div />
+      <label>
+        Nº da última alteração
+        <input value={form.alteracaoNumero} onChange={(event) => onChange("alteracaoNumero", event.target.value)} placeholder="2" />
+      </label>
+      <label>
+        Data da alteração
+        <input type="date" value={form.alteracaoData} onChange={(event) => onChange("alteracaoData", event.target.value)} />
+      </label>
+      <div />
+
+      <SociosEditor socios={form.socios} onChange={(next) => onChange("socios", next)} />
+      <RegimeHistoricoEditor historico={form.regimeHistorico} onChange={(next) => onChange("regimeHistorico", next)} />
+
       <div className="full form-actions">
         <Button type="submit" variant="success" className="company-form-page__submit" disabled={submitting || cnpjLoading}>
           {submitting ? "Salvando..." : submitLabel}

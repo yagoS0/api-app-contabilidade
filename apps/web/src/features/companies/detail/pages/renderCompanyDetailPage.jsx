@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { CompanySectionHeader } from "../components/renderCompanyDetailHeader";
+import { CompanyFichaTab } from "../components/renderCompanyFichaTab";
 import { PageHeader } from "../../../../components/layout/PageHeader";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
@@ -217,6 +218,29 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onBack={() => switchTab("lancamentos")}
           />
           </Suspense>
+        </div>
+        <Feedback message={feedback.message} error={feedback.error} />
+      </div>
+    );
+  }
+
+  // Ficha de cadastro (read-only) — a tela de consulta. Editar leva à aba `edit`.
+  if (companyDetailTab === "cadastro") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="cadastro"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1 }}>
+          <CompanyFichaTab
+            selectedCompany={selectedCompany}
+            canEditCompany={canEditCompany}
+            onEdit={() => switchTab("edit")}
+          />
         </div>
         <Feedback message={feedback.message} error={feedback.error} />
       </div>
@@ -444,10 +468,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               Circular
             </Button>
             <Button variant="secondary" type="button"
-              onClick={() => switchTab("edit")}
-              disabled={!canEditCompany || companyDetailTab === "edit"}
-              title={!canEditCompany ? "Apenas admin ou contador pode editar." : undefined}>
-              Editar cadastro
+              onClick={() => switchTab("cadastro")}
+              disabled={companyDetailTab === "cadastro"}>
+              Cadastro
             </Button>
           </div>
         </section>
