@@ -323,7 +323,13 @@
 }
 
 .company-section-header__back {
-  border-radius: 14px;
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid rgba(189, 147, 249, 0.28);
+  border-radius: 12px;
+  font-size: 1.2rem;
+  font-weight: 700;
 }
 
 .company-section-header__back:hover,

@@ -46,9 +46,9 @@ export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, 
 
   return (
     <header className="company-section-header">
-      {/* Voltar fica FORA da barra (pílula) — só ele. */}
-      <button type="button" className="company-section-header__back" onClick={onBack}>
-        ← Voltar
+      {/* Voltar fica FORA da barra (pílula) — só a seta, mesmo padrão de design. */}
+      <button type="button" className="company-section-header__back" onClick={onBack} aria-label="Voltar" title="Voltar">
+        ←
       </button>
 
       {/* Barra em pílula: nome da empresa + os 3 grupos juntos. */}

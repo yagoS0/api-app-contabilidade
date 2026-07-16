@@ -279,6 +279,7 @@ export function AccountingEntriesTab({
   const [showHistoricos, setShowHistoricos] = useState(false);
   const [showPayroll, setShowPayroll] = useState(false);
   const [showCsvExport, setShowCsvExport] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);   // filtros saíram da caixa → modal
   const [showExcel, setShowExcel] = useState(false);
   const [showParcelamento, setShowParcelamento] = useState(false);
   const [savingParcelamento, setSavingParcelamento] = useState(false);
@@ -438,9 +439,13 @@ export function AccountingEntriesTab({
     outline: "none",
   };
 
+  // Nº de filtros ativos (competência sempre tem valor, então não conta pro selo do botão).
+  const activeFilterCount = ["tipo", "origem", "status"].filter((k) => filters?.[k]).length;
+
   return (
     <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--space-4)" }}>
-      <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 12, background: ACCOUNTING_PANEL.surface, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
+      {/* Caixa superior no mesmo padrão das pílulas: fundo sólido + borda roxa + cantos macios. */}
+      <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <ActionMenu
             label="Configurações"
@@ -483,38 +488,15 @@ export function AccountingEntriesTab({
               }] : []),
             ]}
           />
-        </div>
-
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-          <label style={filterLabelStyle}>
-            Competência
-            <input type="month" value={activeComp} onChange={(e) => onFilterChange("competencia", e.target.value)} style={{ ...filterControlStyle, colorScheme: "dark" }} />
-          </label>
-          <label style={filterLabelStyle}>
-            Tipo
-            <select value={filters.tipo || ""} onChange={(e) => onFilterChange("tipo", e.target.value)} style={filterControlStyle}>
-              <option value="">Selecionar tipo</option>
-              {Object.entries(TIPO_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-          </label>
-          <label style={filterLabelStyle}>
-            Origem
-            <select value={filters.origem || ""} onChange={(e) => onFilterChange("origem", e.target.value)} style={filterControlStyle}>
-              <option value="">Selecionar origem</option>
-              {Object.entries(ORIGEM_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-          </label>
-          <label style={filterLabelStyle}>
-            Status
-            <select value={filters.status || ""} onChange={(e) => onFilterChange("status", e.target.value)} style={filterControlStyle}>
-              <option value="">Selecionar status</option>
-              {Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-          </label>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button type="button" onClick={onLoad} style={actionButtonStyle}>Atualizar</button>
+          {/* Filtros saíram da caixa: abrem num modal, deixando a caixa superior enxuta. */}
+          <button
+            type="button"
+            onClick={() => setShowFilters(true)}
+            style={activeFilterCount ? { ...actionButtonStyle, borderColor: ACCOUNTING_PANEL.accent, color: ACCOUNTING_PANEL.accent } : actionButtonStyle}
+            title="Filtrar lançamentos"
+          >
+            ⚲ Filtro{activeFilterCount ? ` (${activeFilterCount})` : ""}
+          </button>
         </div>
 
         {entries.length > 0 && (
@@ -527,6 +509,64 @@ export function AccountingEntriesTab({
           </div>
         )}
       </div>
+
+      {/* Modal de filtros (saíram da caixa superior pra deixá-la enxuta). */}
+      {showFilters && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={(e) => e.target === e.currentTarget && setShowFilters(false)}
+        >
+          <div style={{ background: ACCOUNTING_PANEL.surface, border: "1px solid rgba(189,147,249,0.28)", borderRadius: 16, padding: 22, width: 420, maxWidth: "100%", color: ACCOUNTING_PANEL.text, boxSizing: "border-box" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Filtros</h3>
+              <button type="button" onClick={() => setShowFilters(false)} style={{ background: "none", border: "none", color: ACCOUNTING_PANEL.muted, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ display: "grid", gap: 14 }}>
+              <label style={filterLabelStyle}>
+                Competência
+                <input type="month" value={activeComp} onChange={(e) => onFilterChange("competencia", e.target.value)} style={{ ...filterControlStyle, colorScheme: "dark" }} />
+              </label>
+              <label style={filterLabelStyle}>
+                Tipo
+                <select value={filters.tipo || ""} onChange={(e) => onFilterChange("tipo", e.target.value)} style={filterControlStyle}>
+                  <option value="">Selecionar tipo</option>
+                  {Object.entries(TIPO_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </label>
+              <label style={filterLabelStyle}>
+                Origem
+                <select value={filters.origem || ""} onChange={(e) => onFilterChange("origem", e.target.value)} style={filterControlStyle}>
+                  <option value="">Selecionar origem</option>
+                  {Object.entries(ORIGEM_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </label>
+              <label style={filterLabelStyle}>
+                Status
+                <select value={filters.status || ""} onChange={(e) => onFilterChange("status", e.target.value)} style={filterControlStyle}>
+                  <option value="">Selecionar status</option>
+                  {Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </label>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={() => { onFilterChange("tipo", ""); onFilterChange("origem", ""); onFilterChange("status", ""); }}
+                style={actionButtonStyle}
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                onClick={() => { if (onLoad) onLoad(); setShowFilters(false); }}
+                style={{ ...actionButtonStyle, background: ACCOUNTING_PANEL.accent, color: "#1A1B26", border: "none" }}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {message && message !== "Lançamento adicionado." && <p style={{ color: "var(--success)", margin: "0 0 8px", fontSize: "0.875rem" }}>{message}</p>}
       {error && <p style={{ color: "var(--danger)", margin: "0 0 8px", fontSize: "0.875rem" }}>{error}</p>}
