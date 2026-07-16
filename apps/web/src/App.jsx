@@ -289,7 +289,6 @@ function App() {
           onRecalcularInss: companiesWorkspace.handleRecalcularInss,
           recalcInssBusy: companiesWorkspace.recalcInssBusy,
           onLiberarGuias: companiesWorkspace.handleLiberarGuias,
-          onRevogarGuias: companiesWorkspace.handleRevogarGuias,
           liberarGuiasBusy: companiesWorkspace.liberarGuiasBusy,
           resendingGuideId: companiesWorkspace.guidesState.resendingGuideId,
           confirmingGuideId: companiesWorkspace.guidesState.confirmingGuideId,

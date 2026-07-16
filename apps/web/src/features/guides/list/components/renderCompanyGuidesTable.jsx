@@ -286,8 +286,7 @@ export function CompanyGuidesTable({
   onRecalculateGuide,
   onRecalcularInss,   // Q53: recálculo/traga explícito do INSS por competência
   recalcInssBusy,
-  onLiberarGuias,     // Portal Cliente (#3.1): liberar/revogar guias da competência ao app do cliente
-  onRevogarGuias,
+  onLiberarGuias,     // Portal Cliente (#3.1): libera guias da competência ao app do cliente (dispara e-mail)
   liberarGuiasBusy,
   onDeleteGuide,
   resendingGuideId,
@@ -339,8 +338,9 @@ export function CompanyGuidesTable({
   // Q19: filtro único de competência (mês), default = mês anterior ao atual.
   const [filterCompetencia, setFilterCompetencia] = useState(prevMonthCompetencia());
   const [selectedIds, setSelectedIds] = useState(new Set());
-  const [bulkResending, setBulkResending] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
+  const [resendConfirm, setResendConfirm] = useState(null);
 
   // Upload flow (modal split): tipo escolhido no dropdown + arquivo + estado de salvamento
   const [uploadTipo, setUploadTipo] = useState(null);  // "DAS"|"INSS"|... — null = modal fechado
@@ -380,6 +380,33 @@ export function CompanyGuidesTable({
 
   const selectedGuideId = selectedGuide ? (selectedGuide.guideId || selectedGuide.id) : null;
 
+  // Ações da guia selecionada -------------------------------------------------
+  // Recalcular é UM botão só: detecta o tipo e chama o endpoint certo.
+  //   INSS  → sync SERPRO DCTFweb da competência   ·  DAS/SIMPLES → recálculo PGDAS-D da guia.
+  const selTipo = String(selectedGuide?.tipo || "").toUpperCase();
+  const isInss = selTipo === "INSS";
+  const isDas = selTipo === "SIMPLES";
+  const canShowRecalcular = isInss || isDas;
+  const inssPaid = String(selectedGuide?.paymentStatus || "").toUpperCase() === "PAID";
+  const recalcDisabled = isDas
+    ? (!selectedGuide?.canRecalculate || !!recalculatingGuideId)
+    : (inssPaid || !!recalcInssBusy);
+  const recalcBusy = isDas ? (recalculatingGuideId === selectedGuideId) : !!recalcInssBusy;
+  // "Liberar ao cliente" substitui o Reenviar: se a guia já foi enviada, confirma reenvio no modal.
+  const alreadySent = String(selectedGuide?.emailStatus || "").toUpperCase() === "SENT";
+
+  function handleRecalcularDispatch() {
+    if (!selectedGuide) return;
+    if (isInss) onRecalcularInss?.(selectedGuide.competencia);
+    else if (isDas) onRecalculateGuide?.(selectedGuideId);
+  }
+
+  function handleLiberarClick() {
+    if (!selectedGuide) return;
+    if (alreadySent) setResendConfirm(selectedGuide);           // já enviada → pergunta antes de reenviar
+    else onLiberarGuias?.(selectedGuide.competencia);           // não enviada → libera + e-mail
+  }
+
   function toggleAll() {
     if (allSelected) {
       setSelectedIds((prev) => {
@@ -407,17 +434,6 @@ export function CompanyGuidesTable({
 
   function clearSelection() {
     setSelectedIds(new Set());
-  }
-
-  async function handleBulkResend() {
-    const ids = filteredIds.filter((id) => selectedIds.has(id));
-    if (!ids.length || !onResendGuide) return;
-    setBulkResending(true);
-    for (const id of ids) {
-      try { await onResendGuide(id); } catch { /* surfaced individually */ }
-    }
-    setBulkResending(false);
-    clearSelection();
   }
 
   // Fluxo novo de upload: usuário escolhe tipo no dropdown → file picker → modal split com PDF lado-a-lado
@@ -524,7 +540,7 @@ export function CompanyGuidesTable({
     clearSelection();
   }
 
-  const actionsBusy = bulkResending || deleting || !!confirmingGuideId || !!recalculatingGuideId;
+  const actionsBusy = deleting || !!confirmingGuideId || !!recalculatingGuideId;
 
   return (
     <section className="guides-page">
@@ -551,6 +567,39 @@ export function CompanyGuidesTable({
           onClose={() => setCompletingGuide(null)}
           saving={completingSaving}
         />
+      )}
+
+      {/* Confirmação de reenvio: "Liberar ao cliente" numa guia que já foi enviada. */}
+      {resendConfirm && (
+        <div style={S.overlay} onClick={(e) => e.target === e.currentTarget && setResendConfirm(null)}>
+          <div style={S.modal}>
+            <h3 style={S.title}>Guia já enviada</h3>
+            <p style={{ fontSize: 13, color: "#6272A4", margin: "0 0 16px" }}>
+              Esta guia ({resendConfirm.tipo} · {resendConfirm.competencia}) já foi enviada ao cliente por
+              e-mail. Deseja reenviar?
+            </p>
+            <div style={S.btnRow}>
+              <Button
+                variant="primary" size="sm"
+                disabled={!!resendingGuideId}
+                onClick={async () => {
+                  const gid = resendConfirm.guideId || resendConfirm.id;
+                  await onResendGuide?.(gid);
+                  setResendConfirm(null);
+                }}
+              >
+                {resendingGuideId ? "Reenviando..." : "Reenviar"}
+              </Button>
+              <Button
+                variant="secondary" size="sm"
+                disabled={!!resendingGuideId}
+                onClick={() => setResendConfirm(null)}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Action toolbar — always visible above the table */}
@@ -624,47 +673,48 @@ export function CompanyGuidesTable({
             refreshKey={vazioRefreshKey}
             onChanged={refreshAfterVazio}
           />
-          <Button
-            variant="secondary" size="sm"
-            onClick={handleBulkResend}
-            disabled={selectedCount === 0 || actionsBusy}
-          >
-            {bulkResending ? "Reenviando..." : "Reenviar"}
-          </Button>
-
-          {selectedCount > 0 && (
+          {/* Barra única de ações da guia selecionada (uma guia por vez). */}
+          {selectedCount === 1 && selectedGuide && (
             <>
+              {/* Recalcular: um botão só — INSS (SERPRO DCTFweb) ou DAS (PGDAS-D), conforme o tipo. */}
+              {canShowRecalcular && (
+                <Button
+                  variant="secondary" size="sm"
+                  disabled={recalcDisabled}
+                  onClick={handleRecalcularDispatch}
+                  title={isInss
+                    ? "Busca/recalcula no SERPRO a guia de INSS desta competência. Guia já paga é bloqueada."
+                    : "Recalcula a guia do DAS no PGDAS-D."}
+                >
+                  {recalcBusy ? "Recalculando..." : "Recalcular"}
+                </Button>
+              )}
               <Button
                 variant="secondary" size="sm"
-                disabled={selectedCount !== 1 || !selectedGuide?.canConfirmPayment || !!confirmingGuideId}
+                disabled={!selectedGuide?.canConfirmPayment || !!confirmingGuideId}
                 onClick={() => selectedGuideId && onConfirmGuidePayment(selectedGuideId)}
               >
                 {confirmingGuideId === selectedGuideId ? "..." : "Confirmar pagamento"}
               </Button>
-              <Button
-                variant="secondary" size="sm"
-                disabled={selectedCount !== 1 || !selectedGuide?.canRecalculate || !!recalculatingGuideId}
-                onClick={() => selectedGuideId && onRecalculateGuide(selectedGuideId)}
-              >
-                {recalculatingGuideId === selectedGuideId ? "..." : "Recalcular"}
-              </Button>
+              {/* Liberar ao cliente = envio por e-mail (substitui o Reenviar). Se já enviada, confirma no modal. */}
+              {onLiberarGuias && (
+                <Button
+                  variant="secondary" size="sm"
+                  disabled={!/^\d{4}-\d{2}$/.test(String(selectedGuide?.competencia || "")) || !!liberarGuiasBusy}
+                  onClick={handleLiberarClick}
+                  title="Libera a guia desta competência ao cliente e envia por e-mail."
+                >
+                  {liberarGuiasBusy ? "Liberando..." : "Liberar ao cliente"}
+                </Button>
+              )}
               {/* Completar: aparece quando a guia selecionada está em ERROR ou faltando tipo/competência.
                   Abre o modal split com o PDF lado-a-lado pra editar metadados. */}
-              {onIdentifyGuide && selectedCount === 1 && selectedGuide && (selectedGuide.status === "ERROR" || !selectedGuide.tipo || !selectedGuide.competencia) && (
+              {onIdentifyGuide && (selectedGuide.status === "ERROR" || !selectedGuide.tipo || !selectedGuide.competencia) && (
                 <Button
                   variant="secondary" size="sm"
                   onClick={() => setCompletingGuide(selectedGuide)}
                 >
                   ✎ Completar
-                </Button>
-              )}
-              {/* Q21: marcar a guia selecionada como parcela de parcelamento (entrada manual). */}
-              {parcelamentos && selectedCount === 1 && selectedGuide && (
-                <Button
-                  variant="secondary" size="sm"
-                  onClick={() => setLinkingGuide(selectedGuide)}
-                >
-                  Parcelamento…
                 </Button>
               )}
               {onDeleteGuide && (
@@ -696,39 +746,6 @@ export function CompanyGuidesTable({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
           <h2 className="guides-list-panel__title" style={{ margin: 0 }}>Guias</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            {/* Q53: recálculo/traga explícito da guia de INSS da competência selecionada.
-                Competências passadas não são mais buscadas automaticamente; guia já paga é bloqueada. */}
-            {onRecalcularInss && (
-              <Button
-                variant="secondary" size="sm"
-                disabled={!/^\d{4}-\d{2}$/.test(String(filterCompetencia || "")) || !!recalcInssBusy}
-                onClick={() => onRecalcularInss(filterCompetencia)}
-                title="Busca/recalcula no SERPRO a guia de INSS desta competência. Guia já paga é bloqueada para não alterar o valor."
-              >
-                {recalcInssBusy ? "Recalculando..." : "🔄 Recalcular INSS"}
-              </Button>
-            )}
-            {/* Portal Cliente (#3.1): libera as guias desta competência para o app do cliente (dispara e-mail). */}
-            {onLiberarGuias && (
-              <Button
-                variant="secondary" size="sm"
-                disabled={!/^\d{4}-\d{2}$/.test(String(filterCompetencia || "")) || !!liberarGuiasBusy}
-                onClick={() => onLiberarGuias(filterCompetencia)}
-                title="Libera as guias PROCESSED desta competência no app do cliente e dispara o e-mail."
-              >
-                {liberarGuiasBusy ? "Liberando..." : "📤 Liberar ao cliente"}
-              </Button>
-            )}
-            {onRevogarGuias && (
-              <Button
-                variant="secondary" size="sm"
-                disabled={!/^\d{4}-\d{2}$/.test(String(filterCompetencia || "")) || !!liberarGuiasBusy}
-                onClick={() => onRevogarGuias(filterCompetencia)}
-                title="Revoga a liberação: o cliente para de ver as guias desta competência."
-              >
-                Revogar
-              </Button>
-            )}
             <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
               Competência:
               <input

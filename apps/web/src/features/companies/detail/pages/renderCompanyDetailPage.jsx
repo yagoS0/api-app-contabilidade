@@ -179,7 +179,6 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onRecalcularInss={guidesPanel.onRecalcularInss}
             recalcInssBusy={guidesPanel.recalcInssBusy}
             onLiberarGuias={guidesPanel.onLiberarGuias}
-            onRevogarGuias={guidesPanel.onRevogarGuias}
             liberarGuiasBusy={guidesPanel.liberarGuiasBusy}
             resendingGuideId={guidesPanel.resendingGuideId}
             confirmingGuideId={guidesPanel.confirmingGuideId}
@@ -512,7 +511,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
       {companyDetailTab === "guides" && (
           <Suspense fallback={<TabLoadingFallback />}>
-          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} onRecalcularInss={guidesPanel.onRecalcularInss} recalcInssBusy={guidesPanel.recalcInssBusy} onLiberarGuias={guidesPanel.onLiberarGuias} onRevogarGuias={guidesPanel.onRevogarGuias} liberarGuiasBusy={guidesPanel.liberarGuiasBusy} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
+          <CompanyGuidesTable guides={guidesPanel.guides} loadingGuides={guidesPanel.loading} onRefresh={guidesPanel.onRefresh} onResendGuide={guidesPanel.onResendGuide} onConfirmGuidePayment={guidesPanel.onConfirmGuidePayment} onRecalculateGuide={guidesPanel.onRecalculateGuide} onRecalcularInss={guidesPanel.onRecalcularInss} recalcInssBusy={guidesPanel.recalcInssBusy} onLiberarGuias={guidesPanel.onLiberarGuias} liberarGuiasBusy={guidesPanel.liberarGuiasBusy} resendingGuideId={guidesPanel.resendingGuideId} confirmingGuideId={guidesPanel.confirmingGuideId} recalculatingGuideId={guidesPanel.recalculatingGuideId} />
           </Suspense>
         )}
 

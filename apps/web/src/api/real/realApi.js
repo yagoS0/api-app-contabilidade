@@ -372,15 +372,9 @@ export function createRealApi() {
     async recalculateGuide(guideId) {
       return request(`/firm/guides/${guideId}/recalculate`, { method: "POST" });
     },
-    // Portal Cliente (#3.1): libera/revoga as guias de uma competência para o app do cliente.
+    // Portal Cliente (#3.1): libera as guias de uma competência para o app do cliente (dispara e-mail).
     async liberarGuiasCliente(companyId, competencia) {
       return request(`/firm/guides/liberar-cliente`, {
-        method: "POST",
-        body: JSON.stringify({ items: [{ portalClientId: companyId, competencia }] }),
-      });
-    },
-    async revogarGuiasCliente(companyId, competencia) {
-      return request(`/firm/guides/revogar-cliente`, {
         method: "POST",
         body: JSON.stringify({ items: [{ portalClientId: companyId, competencia }] }),
       });
