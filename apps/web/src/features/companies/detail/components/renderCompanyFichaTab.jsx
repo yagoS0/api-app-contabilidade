@@ -8,8 +8,8 @@ import { Button } from "../../../../components/ui/Button";
 // data de abertura em toda listagem — o frontend é que não lia).
 
 const PANEL = {
-  // Mesmo estilo da barra superior: gradiente sutil + borda roxa nos blocos.
-  surface: "linear-gradient(160deg, rgba(70,56,110,0.30) 0%, rgba(41,42,66,0.92) 42%, rgba(31,32,50,0.96) 100%)",
+  // Mesmo estilo da barra superior: cor sólida + borda roxa nos blocos.
+  surface: "#24253a",
   field: "#282A36", border: "rgba(189,147,249,0.22)",
   text: "#F8F8F2", muted: "#A7B0C0", dim: "#6b7280",
 };

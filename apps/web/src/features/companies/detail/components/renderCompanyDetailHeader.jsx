@@ -82,20 +82,22 @@ export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, 
           tem só 1 (ex.: Cadastro → abre direto a ficha). */}
       {subTabs.length > 1 && (
         <nav className="company-section-header__subtabs" aria-label={`Seções de ${activeGroup.label}`}>
-          {subTabs.map((tab) => {
-            const isActive = tab.key === activeTab;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                className={`company-section-header__subtab${isActive ? " is-active" : ""}`}
-                onClick={isActive ? undefined : () => onTabChange(tab.key)}
-                aria-current={isActive ? "page" : undefined}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+          <div className="company-section-header__subtabs-pill">
+            {subTabs.map((tab) => {
+              const isActive = tab.key === activeTab;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`company-section-header__subtab${isActive ? " is-active" : ""}`}
+                  onClick={isActive ? undefined : () => onTabChange(tab.key)}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </nav>
       )}
     </header>

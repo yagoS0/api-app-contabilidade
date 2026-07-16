@@ -109,8 +109,8 @@
 .serpro-settings-card {
   display: grid;
   gap: 20px;
-  /* Mesmo estilo da barra superior (pílula): gradiente sutil + borda roxa + cantos macios. */
-  background: linear-gradient(160deg, rgba(70, 56, 110, 0.30) 0%, rgba(41, 42, 66, 0.92) 42%, rgba(31, 32, 50, 0.96) 100%);
+  /* Mesmo estilo da barra superior (pílula): cor sólida + borda roxa + cantos macios. */
+  background: #24253a;
   border: 1px solid rgba(189, 147, 249, 0.22);
   border-radius: 16px;
   padding: 24px;
@@ -398,7 +398,7 @@
   padding: 10px 24px;
   border-radius: 999px;
   border: 1px solid rgba(189, 147, 249, 0.35);
-  background: linear-gradient(90deg, rgba(120, 80, 180, 0.32) 0%, rgba(45, 47, 78, 0.55) 45%, rgba(26, 27, 38, 0.7) 100%);
+  background: #24253a;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.32);
 }
 
@@ -482,20 +482,26 @@
 
 /* Nível 2 — sub-abas no MESMO estilo da barra principal: pílula com gradiente + borda roxa,
    centralizada; a ativa marcada com sublinhado roxo (igual ao menu principal). */
+/* Faixa de largura total (própria linha, abaixo do topo) que só CENTRALIZA a pílula interna.
+   A pílula (fit-content) abraça as abas → mais estreita que a barra principal (largura toda). */
 .company-section-header__subtabs {
   flex-basis: 100%;
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.company-section-header__subtabs-pill {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  width: fit-content;
   max-width: 100%;
-  margin: 8px auto 0;
-  padding: 6px 18px;
+  padding: 5px 14px;
   border-radius: 999px;
   border: 1px solid rgba(189, 147, 249, 0.28);
-  background: linear-gradient(90deg, rgba(120, 80, 180, 0.20) 0%, rgba(45, 47, 78, 0.42) 45%, rgba(26, 27, 38, 0.58) 100%);
+  background: #24253a;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
 }
 
@@ -543,8 +549,8 @@
 
 /* Panels */
 .panel {
-  /* Mesmo estilo da barra superior (pílula): gradiente sutil + borda roxa + cantos macios. */
-  background: linear-gradient(160deg, rgba(70, 56, 110, 0.26) 0%, var(--bg-surface) 42%);
+  /* Mesmo estilo da barra superior (pílula): cor sólida + borda roxa + cantos macios. */
+  background: var(--bg-surface);
   border: 1px solid rgba(189, 147, 249, 0.20);
   border-radius: 16px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
