@@ -10,11 +10,12 @@ import {
 
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
-const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "edit"];
+const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "parcelamento", "notas-fiscais", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "edit"];
 const SEGMENT_TO_TAB = {
   guides: "guides",
   lancamentos: "lancamentos",
   circular: "circular",
+  parcelamento: "parcelamento",
   "notas-fiscais": "notasFiscais",
   sitfis: "sitfis",
   "cadastro-fiscal": "cadastroFiscal",
@@ -34,6 +35,7 @@ const TAB_TO_SEGMENT = {
   guides: "guides",
   lancamentos: "lancamentos",
   circular: "circular",
+  parcelamento: "parcelamento",
   notasFiscais: "notas-fiscais",
   sitfis: "sitfis",
   cadastroFiscal: "cadastro-fiscal",

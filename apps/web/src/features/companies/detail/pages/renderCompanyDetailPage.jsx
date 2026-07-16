@@ -31,6 +31,9 @@ const CircularTab = lazy(() =>
 const ChartOfAccountsPage = lazy(() =>
   import("../../../accounting/chart-of-accounts/pages/renderChartOfAccountsPage").then((m) => ({ default: m.ChartOfAccountsPage }))
 );
+const ParcelamentoTab = lazy(() =>
+  import("../../../accounting/parcelamento/pages/renderParcelamentoTab").then((m) => ({ default: m.ParcelamentoTab }))
+);
 // Q12.A: módulo Notas Fiscais — lazy, sem inflar o bundle inicial.
 const NotasFiscaisTab = lazy(() =>
   import("../../../notas/components/renderNotasFiscaisTab").then((m) => ({ default: m.NotasFiscaisTab }))
@@ -83,6 +86,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     if (tab === "planoContas") { accountingPanel.onLoadAccounts(); }
     // Guias precisa do plano de contas: o modal de ingestão de parcelamento sugere as contas D/C.
     if (tab === "guides") { accountingPanel.onLoadAccounts(); }
+    // Parcelamento: o modal de config de contas usa o plano de contas.
+    if (tab === "parcelamento") { accountingPanel.onLoadAccounts(); }
     if (tab === "notasFiscais") { notasPanel?.reload?.(); }
   }
 
@@ -431,6 +436,34 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           </Suspense>
           </ErrorBoundary>
         </div>
+      </div>
+    );
+  }
+
+  // ─── Aba Parcelamento (grupo Contabilidade) ──────────────────────────────────
+  if (companyDetailTab === "parcelamento") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="parcelamento"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              <ParcelamentoTab
+                parcelamentos={accountingPanel.parcelamentos}
+                accounts={accountingPanel.accounts}
+                onSearchHistoricos={accountingPanel.onSearchHistoricos}
+                onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
+              />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+        <Feedback message={feedback.message} error={feedback.error} />
       </div>
     );
   }

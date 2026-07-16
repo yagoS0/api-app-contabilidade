@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
-import { ParcelamentosList, ParcelaPaymentModal, ConferenciaParcelasPanel } from "../../parcelamento/components/ParcelamentoModals";
 import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
 
 // Subtipos universais + flag de regimes que os exibem.
@@ -483,8 +482,6 @@ export function CircularTab({
   const [editEntry, setEditEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [cancellingBaixaId, setCancellingBaixaId] = useState(null);
-  // Q9: state pro modal de pagamento de parcela
-  const [payingParcela, setPayingParcela] = useState(null); // { parcelamento, parcela }
   const currentYear = new Date().getFullYear();
 
   // Q31: o quadro NÃO mostra os lançamentos do parcelamento (subtipo PARC_*) — eles ficam só nos
@@ -768,47 +765,7 @@ export function CircularTab({
         </div>
       )}
 
-      {/* Q9: lista de parcelamentos (Simples, INSS, etc) — embaixo do quadro */}
-      {parcelamentos && (
-        <div style={{ marginTop: 20 }}>
-          <ConferenciaParcelasPanel
-            listConferencia={parcelamentos.listConferencia}
-            aprovarConferencia={parcelamentos.aprovarConferencia}
-          />
-          <ParcelamentosList
-            parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO")}
-            loading={parcelamentos.loading}
-            onRescindir={async (parcId, body) => {
-              await parcelamentos.rescindir(parcId, body);
-              await onLoad(year, competencia);
-            }}
-            getConfig={parcelamentos.getConfig}
-            saveConfig={parcelamentos.saveConfig}
-            accounts={accounts}
-            onSearchHistoricos={onSearchHistoricos}
-            onGetHistoricosByCode={onGetHistoricosByCode}
-          />
-        </div>
-      )}
-
-      {/* Q9: modal de pagamento de parcela */}
-      {payingParcela && parcelamentos && (
-        <ParcelaPaymentModal
-          parcelamento={payingParcela.parcelamento}
-          parcela={payingParcela.parcela}
-          saving={parcelamentos.saving}
-          onConfirm={async ({ jurosValor, dataPagamento }) => {
-            await parcelamentos.payParcela(
-              payingParcela.parcelamento.id,
-              payingParcela.parcela.numeroParcela,
-              { jurosValor, dataPagamento }
-            );
-            setPayingParcela(null);
-            await onLoad(year, competencia);
-          }}
-          onClose={() => setPayingParcela(null)}
-        />
-      )}
+      {/* Parcelamentos foram movidos pra aba própria "Parcelamento" (grupo Contabilidade). */}
 
       {/* Baixa Modal */}
       {baixaEntry && (

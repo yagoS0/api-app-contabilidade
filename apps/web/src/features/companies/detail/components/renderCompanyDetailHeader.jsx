@@ -10,6 +10,7 @@ const GROUPS = [
     tabs: [
       { key: "lancamentos", label: "Lançamentos" },
       { key: "circular", label: "Circular" },
+      { key: "parcelamento", label: "Parcelamento" },
     ],
   },
   {
