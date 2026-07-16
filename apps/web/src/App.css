@@ -382,12 +382,98 @@
 
 /* Nível 1 (grupos) e nível 2 (sub-abas) ficam em linhas próprias, alinhados à esquerda —
    os principais em cima, os secundários logo abaixo (não mais à direita). */
-/* Menu principal (3 grupos) na MESMA linha do nome da empresa, mas CENTRALIZADO com folga —
-   margin auto dos dois lados centraliza os grupos no espaço à direita do nome. */
-.company-section-header__nav--groups {
-  justify-content: center;
+/* Barra em pílula: nome da empresa + os 3 grupos numa faixa arredondada com gradiente.
+   O "Voltar" fica fora dela, à esquerda. */
+.company-topbar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(189, 147, 249, 0.35);
+  background: linear-gradient(90deg, rgba(120, 80, 180, 0.32) 0%, rgba(45, 47, 78, 0.55) 45%, rgba(26, 27, 38, 0.7) 100%);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.32);
+}
+
+.company-topbar__brand {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.company-topbar__name {
+  overflow: hidden;
+  color: #f8f8f2;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-topbar__cnpj {
+  overflow: hidden;
+  color: #b9a9e0;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-topbar__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
-  margin-right: auto;
+  margin-right: auto; /* centraliza os grupos na folga à direita do nome */
+}
+
+.company-topbar__link {
+  position: relative;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #cdd0e8;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.company-topbar__link:hover:not(:disabled):not(.is-active) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.company-topbar__link.is-active {
+  color: #ffffff;
+  font-weight: 700;
+  cursor: default;
+}
+
+.company-topbar__link.is-active::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: 1px;
+  left: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: #bd93f9;
+}
+
+.company-topbar__link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.company-topbar__link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.28);
 }
 
 /* Nível 2 — abas estilo Chrome: sentadas sobre uma linha contínua; a ativa "abre" no conteúdo.

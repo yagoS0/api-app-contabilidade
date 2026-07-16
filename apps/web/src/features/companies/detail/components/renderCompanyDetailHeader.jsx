@@ -32,7 +32,6 @@ const GROUPS = [
   },
 ];
 
-const GROUP_BTN_STYLE = { fontSize: "1rem", fontWeight: 700, padding: "12px 26px" };
 
 // Abas que não são sub-aba de ninguém, mas pertencem a um grupo (o grupo fica destacado).
 // `edit` abre pela ficha (botão Editar) e `planoContas` por Lançamentos → Configurações.
@@ -47,38 +46,37 @@ export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, 
 
   return (
     <header className="company-section-header">
-      <div className="company-section-header__brand">
-        <button type="button" className="company-section-header__back" onClick={onBack}>
-          Voltar
-        </button>
+      {/* Voltar fica FORA da barra (pílula) — só ele. */}
+      <button type="button" className="company-section-header__back" onClick={onBack}>
+        ← Voltar
+      </button>
 
-        <div className="company-section-header__company">
-          <strong className="company-section-header__company-name">{company?.razao || "Empresa"}</strong>
-          <span className="company-section-header__company-meta">{company?.cnpj || "CNPJ nao informado"}</span>
+      {/* Barra em pílula: nome da empresa + os 3 grupos juntos. */}
+      <div className="company-topbar">
+        <div className="company-topbar__brand">
+          <strong className="company-topbar__name">{company?.razao || "Empresa"}</strong>
+          <span className="company-topbar__cnpj">{company?.cnpj || "CNPJ não informado"}</span>
         </div>
+        <nav className="company-topbar__nav" aria-label="Grupos da empresa">
+          {GROUPS.map((group) => {
+            const isActive = group.key === activeGroup.key;
+            const isDisabled = group.requiresEdit && !canEditCompany;
+            return (
+              <button
+                key={group.key}
+                type="button"
+                className={`company-topbar__link${isActive ? " is-active" : ""}`}
+                onClick={isDisabled ? undefined : () => onTabChange(group.tabs[0].key)}
+                disabled={isDisabled}
+                aria-current={isActive ? "page" : undefined}
+                title={isDisabled ? "Apenas admin ou contador pode editar." : undefined}
+              >
+                {group.label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
-
-      {/* Nível 1 — os 3 grupos grandes (principais, alinhados à esquerda) */}
-      <nav className="company-section-header__nav company-section-header__nav--groups" aria-label="Grupos da empresa">
-        {GROUPS.map((group) => {
-          const isActive = group.key === activeGroup.key;
-          const isDisabled = group.requiresEdit && !canEditCompany;
-          return (
-            <button
-              key={group.key}
-              type="button"
-              style={GROUP_BTN_STYLE}
-              className={`company-section-header__tab${isActive ? " is-active" : ""}`}
-              onClick={isDisabled ? undefined : () => onTabChange(group.tabs[0].key)}
-              disabled={isDisabled}
-              aria-current={isActive ? "page" : undefined}
-              title={isDisabled ? "Apenas admin ou contador pode editar." : undefined}
-            >
-              {group.label}
-            </button>
-          );
-        })}
-      </nav>
 
       {/* Nível 2 — sub-abas do grupo ativo, em formato de aba (Chrome). Oculto quando o grupo
           tem só 1 (ex.: Cadastro → abre direto a ficha). */}
