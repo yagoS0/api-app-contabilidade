@@ -286,7 +286,7 @@ export function CompanyGuidesTable({
   onRecalculateGuide,
   onRecalcularInss,   // Q53: recálculo/traga explícito do INSS por competência
   recalcInssBusy,
-  onLiberarGuias,     // Portal Cliente (#3.1): libera guias da competência ao app do cliente (dispara e-mail)
+  onLiberarGuia,      // Portal Cliente: libera SÓ a guia selecionada ao cliente (envia só ela por e-mail)
   liberarGuiasBusy,
   onDeleteGuide,
   resendingGuideId,
@@ -404,7 +404,7 @@ export function CompanyGuidesTable({
   function handleLiberarClick() {
     if (!selectedGuide) return;
     if (alreadySent) setResendConfirm(selectedGuide);           // já enviada → pergunta antes de reenviar
-    else onLiberarGuias?.(selectedGuide.competencia);           // não enviada → libera + e-mail
+    else onLiberarGuia?.(selectedGuideId);                      // não enviada → libera + envia SÓ esta guia
   }
 
   function toggleAll() {
@@ -696,13 +696,14 @@ export function CompanyGuidesTable({
               >
                 {confirmingGuideId === selectedGuideId ? "..." : "Confirmar pagamento"}
               </Button>
-              {/* Liberar ao cliente = envio por e-mail (substitui o Reenviar). Se já enviada, confirma no modal. */}
-              {onLiberarGuias && (
+              {/* Liberar ao cliente = envio por e-mail SÓ desta guia (substitui o Reenviar).
+                  Se já enviada, confirma reenvio no modal. */}
+              {onLiberarGuia && (
                 <Button
                   variant="secondary" size="sm"
-                  disabled={!/^\d{4}-\d{2}$/.test(String(selectedGuide?.competencia || "")) || !!liberarGuiasBusy}
+                  disabled={selectedGuide?.status !== "PROCESSED" || !!liberarGuiasBusy}
                   onClick={handleLiberarClick}
-                  title="Libera a guia desta competência ao cliente e envia por e-mail."
+                  title="Libera esta guia ao cliente e envia só ela por e-mail."
                 >
                   {liberarGuiasBusy ? "Liberando..." : "Liberar ao cliente"}
                 </Button>

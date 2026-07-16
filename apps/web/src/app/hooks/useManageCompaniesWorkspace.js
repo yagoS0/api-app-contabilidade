@@ -635,22 +635,22 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
-  // Portal Cliente (#3.1): libera as guias da competência ao app do cliente (dispara e-mail).
-  async function handleLiberarGuias(competencia) {
+  // Portal Cliente: libera SÓ a guia selecionada ao cliente e envia SÓ ela por e-mail
+  // (página da empresa). O empacotamento DAS+INSS fica no envio em lote da página principal.
+  async function handleLiberarGuia(guideId) {
     const companyId = companiesState.selectedCompanyId;
     if (!companyId) { feedback.setError("Selecione uma empresa."); return; }
-    if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
-      feedback.setError("Selecione uma competência (AAAA-MM) para liberar."); return;
-    }
+    if (!guideId) { feedback.setError("Selecione uma guia."); return; }
     setLiberarGuiasBusy(true);
     feedback.clearFeedback();
     try {
-      const r = await api.liberarGuiasCliente(companyId, competencia);
-      const item = r?.results?.[0] || {};
-      feedback.setMessage(`Liberadas ${item.liberadas ?? 0} guia(s) de ${competencia} ao cliente (e-mail disparado).`);
+      const r = await api.liberarGuiaCliente(guideId);
+      feedback.setMessage(r?.sent
+        ? "Guia liberada ao cliente e enviada por e-mail."
+        : (r?.message || "Guia liberada ao cliente; e-mail em processamento."));
       await loadGuides(companyId);
     } catch (err) {
-      feedback.setError(err?.message || "Falha ao liberar guias ao cliente.");
+      feedback.setError(err?.message || "Falha ao liberar a guia ao cliente.");
     } finally {
       setLiberarGuiasBusy(false);
     }
@@ -992,7 +992,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleRecalculateGuide,
     handleRecalcularInss,
     recalcInssBusy,
-    handleLiberarGuias,
+    handleLiberarGuia,
     liberarGuiasBusy,
     handleDeleteGuide,
     handleGuideUpload,

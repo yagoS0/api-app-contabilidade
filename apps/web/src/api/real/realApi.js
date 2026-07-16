@@ -372,12 +372,10 @@ export function createRealApi() {
     async recalculateGuide(guideId) {
       return request(`/firm/guides/${guideId}/recalculate`, { method: "POST" });
     },
-    // Portal Cliente (#3.1): libera as guias de uma competência para o app do cliente (dispara e-mail).
-    async liberarGuiasCliente(companyId, competencia) {
-      return request(`/firm/guides/liberar-cliente`, {
-        method: "POST",
-        body: JSON.stringify({ items: [{ portalClientId: companyId, competencia }] }),
-      });
+    // Portal Cliente: libera SÓ a guia selecionada ao cliente e envia SÓ ela por e-mail
+    // (página da empresa). O empacotamento DAS+INSS fica no envio em lote da página principal.
+    async liberarGuiaCliente(guideId) {
+      return request(`/firm/guides/${guideId}/liberar-cliente`, { method: "POST" });
     },
     // Q17: guias esperadas da competência + estado (present/vazio/missing)
     async getExpectedGuides(companyId, competencia) {

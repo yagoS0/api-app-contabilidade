@@ -499,6 +499,20 @@ export function createMockApi() {
       }
       throw new Error("not_found");
     },
+    // Libera SÓ esta guia ao cliente e "envia" só ela (página da empresa).
+    async liberarGuiaCliente(guideId) {
+      await delay();
+      for (const guides of mockGuidesByCompany.values()) {
+        const target = guides.find((item) => item.id === guideId);
+        if (target) {
+          target.liberadaCliente = true;
+          target.liberadaEm = new Date().toISOString();
+          target.emailStatus = "SENT";
+          return { ok: true, guideId, liberadas: 1, emailStatus: "SENT", sent: true };
+        }
+      }
+      throw new Error("not_found");
+    },
     async confirmGuidePayment(guideId) {
       await delay();
       for (const guides of mockGuidesByCompany.values()) {

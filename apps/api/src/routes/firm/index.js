@@ -57,7 +57,7 @@ import { runGuideEmailWorkerOnce, runGuideEmailWorkerSelected } from "../../work
 import { runSerproPgdasdWorkerOnce } from "../../workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerOnce } from "../../workers/serproDctfwebWorker.js";
 import { sendCompanyGuidesEmail, sendLatestGuidesEmailByCompany } from "../../application/guides/GuideCompanyEmailService.js";
-import { liberarGuiasCliente, revogarLiberacaoCliente } from "../../application/guides/GuideLiberacaoService.js";
+import { liberarGuiasCliente, liberarGuiaCliente, revogarLiberacaoCliente } from "../../application/guides/GuideLiberacaoService.js";
 import { listUnidentifiedGuides, processUploadedGuides, uploadGuideForPortalClient } from "../../application/guides/GuideUploadService.js";
 import {
   getCompanyGuideEmailSchedule,
@@ -2810,6 +2810,65 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           emailStatus: "PENDING",
           sent: false,
           message: "Reenvio em fila — não foi possível enviar agora. Verifique os logs.",
+        });
+      }
+    }
+  );
+
+  // Portal Cliente: POST /guides/:guideId/liberar-cliente — libera SÓ esta guia e envia SÓ ela
+  // por e-mail (worker por-guia). O empacotamento DAS+INSS fica exclusivo do envio em lote da
+  // página principal (batch-send / emails/send-pending|send-selected). Molde da rota de resend.
+  router.post(
+    "/guides/:guideId/liberar-cliente",
+    requireAccountType("FIRM"),
+    async (req, res) => {
+      const appRole = String(req.auth?.user?.role || "").toLowerCase();
+      if (!["admin", "contador"].includes(appRole)) {
+        return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+      }
+      const { guideId } = req.params || {};
+      const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
+      if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
+      const guide = scoped.guide;
+      if (guide.status !== "PROCESSED") {
+        return res.status(400).json({
+          error: "guide_not_processed",
+          reason: "Só é possível liberar guias com status PROCESSED",
+        });
+      }
+      if (!guide.portalClientId) {
+        return res.status(400).json({ error: "guide_has_no_company", reason: "Guia sem empresa vinculada" });
+      }
+
+      const userId = req.auth?.user?.id || null;
+      // 1) marca esta guia como liberada ao cliente (no-op se já liberada)
+      const lib = await liberarGuiaCliente({ guideId: guide.id, userId });
+      // 2) envia SÓ esta guia por e-mail — síncrono, feedback imediato ao contador
+      try {
+        const result = await runGuideEmailWorkerSelected({ guideIds: [guide.id] });
+        if (result?.skipped) {
+          return res.json({
+            ok: true, guideId: guide.id, liberadas: lib.liberadas, emailStatus: "PENDING", sent: false,
+            message: "Guia liberada; envio de e-mail ocupado no momento — ficará em fila.",
+          });
+        }
+        const item = Array.isArray(result?.results) ? result.results[0] : null;
+        const sent = item?.status === "SENT";
+        return res.json({
+          ok: true,
+          guideId: guide.id,
+          liberadas: lib.liberadas,
+          emailStatus: item?.status || null,
+          sent,
+          message: sent
+            ? "Guia liberada e enviada ao cliente."
+            : (item?.reason ? `Guia liberada; falha no e-mail: ${item.reason}` : "Guia liberada; envio de e-mail em processamento."),
+        });
+      } catch (err) {
+        log.warn({ err: err?.message || err, guideId: guide.id }, "Falha no envio síncrono ao liberar guia");
+        return res.json({
+          ok: true, guideId: guide.id, liberadas: lib.liberadas, emailStatus: null, sent: false,
+          message: "Guia liberada; e-mail em fila — verifique os logs.",
         });
       }
     }

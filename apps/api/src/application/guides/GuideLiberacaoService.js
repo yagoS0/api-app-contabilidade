@@ -33,6 +33,23 @@ export async function liberarGuiasCliente({ portalClientId, competencia, userId 
   return { liberadas: upd.count, emailResult };
 }
 
+// Libera UMA guia PROCESSED ao cliente (página da empresa, guia selecionada). Só marca a flag;
+// o e-mail dessa única guia é disparado pela rota via worker por-guia — NÃO empacota DAS+INSS
+// como o envio em lote da página principal. No-op (count 0) se já liberada ou não PROCESSED.
+export async function liberarGuiaCliente({ guideId, userId }) {
+  const gid = String(guideId || "").trim();
+  if (!gid) {
+    const err = new Error("guideId inválido");
+    err.code = "INVALID_INPUT";
+    throw err;
+  }
+  const upd = await prisma.guide.updateMany({
+    where: { id: gid, status: "PROCESSED", liberadaCliente: false },
+    data: { liberadaCliente: true, liberadaEm: new Date(), liberadaPor: userId ? String(userId) : null },
+  });
+  return { liberadas: upd.count };
+}
+
 // Revoga a liberação da competência (o cliente para de ver as guias). Não dispara e-mail.
 export async function revogarLiberacaoCliente({ portalClientId, competencia }) {
   const { cid, comp } = validar({ portalClientId, competencia });
