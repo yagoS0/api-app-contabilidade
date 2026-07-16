@@ -8,7 +8,9 @@ import { Button } from "../../../../components/ui/Button";
 // data de abertura em toda listagem — o frontend é que não lia).
 
 const PANEL = {
-  surface: "#21222C", field: "#282A36", border: "#44475A",
+  // Mesmo estilo da barra superior: gradiente sutil + borda roxa nos blocos.
+  surface: "linear-gradient(160deg, rgba(70,56,110,0.30) 0%, rgba(41,42,66,0.92) 42%, rgba(31,32,50,0.96) 100%)",
+  field: "#282A36", border: "rgba(189,147,249,0.22)",
   text: "#F8F8F2", muted: "#A7B0C0", dim: "#6b7280",
 };
 
@@ -65,7 +67,7 @@ function Campo({ label, value, wide = false }) {
 
 function Bloco({ titulo, children, cols = 3 }) {
   return (
-    <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
+    <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 16, padding: 18, marginBottom: 12 }}>
       <h2 style={{ margin: "0 0 12px", fontSize: "0.95rem", color: PANEL.text, fontWeight: 700 }}>{titulo}</h2>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 12 }}>
         {children}
@@ -157,7 +159,7 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
       </Bloco>
 
       {/* Regime: o atual manda no sistema; o histórico é informativo (registro do escritório). */}
-      <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
+      <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 16, padding: 18, marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
           <h2 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text, fontWeight: 700 }}>Regime tributário</h2>
           <span style={{ fontSize: "0.8rem", color: PANEL.muted }}>
@@ -203,7 +205,7 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
         )}
       </section>
 
-      <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
+      <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 16, padding: 18, marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
           <h2 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text, fontWeight: 700 }}>Sócios</h2>
           <span style={{ fontSize: "0.8rem", color: PANEL.muted }}>

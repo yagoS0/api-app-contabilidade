@@ -109,11 +109,12 @@
 .serpro-settings-card {
   display: grid;
   gap: 20px;
-  background: #24253a;
-  border: 1px solid #2f314b;
-  border-radius: 12px;
+  /* Mesmo estilo da barra superior (pílula): gradiente sutil + borda roxa + cantos macios. */
+  background: linear-gradient(160deg, rgba(70, 56, 110, 0.30) 0%, rgba(41, 42, 66, 0.92) 42%, rgba(31, 32, 50, 0.96) 100%);
+  border: 1px solid rgba(189, 147, 249, 0.22);
+  border-radius: 16px;
   padding: 24px;
-  box-shadow: 0 16px 40px rgba(17, 18, 27, 0.2);
+  box-shadow: 0 16px 40px rgba(17, 18, 27, 0.28);
 }
 
 .serpro-settings-card__head {
@@ -387,9 +388,12 @@
 .company-topbar {
   flex: 1;
   min-width: 0;
-  display: flex;
+  /* 3 colunas: nome à esquerda | menu no CENTRO | folga simétrica à direita.
+     Assim o menu fica centralizado de verdade, sem ser empurrado pelo nome. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
   padding: 10px 24px;
   border-radius: 999px;
   border: 1px solid rgba(189, 147, 249, 0.35);
@@ -425,9 +429,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  margin-right: auto; /* centraliza os grupos na folga à direita do nome */
+  justify-content: center;
+  gap: 4px; /* já vai na coluna central do grid — sem margens auto */
 }
 
 .company-topbar__link {
@@ -529,10 +532,11 @@
 
 /* Panels */
 .panel {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  /* Mesmo estilo da barra superior (pílula): gradiente sutil + borda roxa + cantos macios. */
+  background: linear-gradient(160deg, rgba(70, 56, 110, 0.26) 0%, var(--bg-surface) 42%);
+  border: 1px solid rgba(189, 147, 249, 0.20);
+  border-radius: 16px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
   padding: var(--space-4);
   margin-bottom: var(--space-4);
 }
