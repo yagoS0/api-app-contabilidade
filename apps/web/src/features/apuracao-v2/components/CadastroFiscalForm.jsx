@@ -55,19 +55,21 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
   const inputStyle = {
     background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6,
     color: PANEL.text, padding: "8px 12px", fontSize: "0.9rem",
+    width: "100%", boxSizing: "border-box", // não estoura a coluna do grid
   };
   // Campos read-only (regime/CNAE vêm do cadastro da empresa).
   const readOnlyStyle = {
     background: PANEL.surface, border: `1px dashed ${PANEL.border}`, borderRadius: 6,
     color: PANEL.text, padding: "8px 12px", fontSize: "0.9rem",
+    boxSizing: "border-box",
   };
 
   return (
     <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
       <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>Cadastro Fiscal</div>
 
-      {/* Regime + CNAEs: read-only (fonte = cadastro da empresa). */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      {/* Regime + CNAEs: read-only (fonte = cadastro da empresa). Grid colapsa pra 1 coluna quando aperta. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem", color: PANEL.muted }}>
           Regime tributário (do cadastro)
           <div style={{ ...readOnlyStyle }}>{REGIMES.find((r) => r.value === form.regime)?.label || form.regime || "—"}</div>

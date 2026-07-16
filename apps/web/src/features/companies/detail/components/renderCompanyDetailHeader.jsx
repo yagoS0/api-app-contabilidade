@@ -15,13 +15,12 @@ const GROUPS = [
   {
     key: "fiscal",
     label: "Fiscal",
+    // Cadastro absorve Sugestão e Pendências (viram sub-abas INTERNAS do painel Cadastro).
     tabs: [
+      { key: "guides", label: "Guias" },
       { key: "cadastroFiscal", label: "Cadastro" },
-      { key: "sugestao", label: "Sugestão" },
-      { key: "pendencias", label: "Pendências" },
       { key: "sitfis", label: "Situação Fiscal" },
       { key: "notasFiscais", label: "Notas Fiscais" },
-      { key: "guides", label: "Guias" },
     ],
   },
   {
@@ -58,8 +57,8 @@ export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, 
         </div>
       </div>
 
-      {/* Nível 1 — os 3 grupos grandes */}
-      <nav className="company-section-header__nav" aria-label="Grupos da empresa">
+      {/* Nível 1 — os 3 grupos grandes (principais, alinhados à esquerda) */}
+      <nav className="company-section-header__nav company-section-header__nav--groups" aria-label="Grupos da empresa">
         {GROUPS.map((group) => {
           const isActive = group.key === activeGroup.key;
           const isDisabled = group.requiresEdit && !canEditCompany;
@@ -80,16 +79,17 @@ export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, 
         })}
       </nav>
 
-      {/* Nível 2 — sub-abas do grupo ativo (oculto quando o grupo tem só 1, ex.: Editar cadastro) */}
+      {/* Nível 2 — sub-abas do grupo ativo, em formato de aba (Chrome). Oculto quando o grupo
+          tem só 1 (ex.: Cadastro → abre direto a ficha). */}
       {subTabs.length > 1 && (
-        <nav className="company-section-header__nav" aria-label={`Seções de ${activeGroup.label}`}>
+        <nav className="company-section-header__subtabs" aria-label={`Seções de ${activeGroup.label}`}>
           {subTabs.map((tab) => {
             const isActive = tab.key === activeTab;
             return (
               <button
                 key={tab.key}
                 type="button"
-                className={`company-section-header__tab${isActive ? " is-active" : ""}`}
+                className={`company-section-header__subtab${isActive ? " is-active" : ""}`}
                 onClick={isActive ? undefined : () => onTabChange(tab.key)}
                 aria-current={isActive ? "page" : undefined}
               >

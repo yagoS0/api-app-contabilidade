@@ -380,6 +380,62 @@
   cursor: not-allowed;
 }
 
+/* Nível 1 (grupos) e nível 2 (sub-abas) ficam em linhas próprias, alinhados à esquerda —
+   os principais em cima, os secundários logo abaixo (não mais à direita). */
+.company-section-header__nav--groups {
+  flex-basis: 100%;
+  justify-content: flex-start;
+}
+
+/* Nível 2 — abas estilo Chrome: sentadas sobre uma linha contínua; a ativa "abre" no conteúdo. */
+.company-section-header__subtabs {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px;
+  margin-top: -6px;
+  padding: 0;
+  border-bottom: 1px solid #2b2d45;
+}
+
+.company-section-header__subtab {
+  position: relative;
+  bottom: -1px; /* sobrepõe a linha da barra, pra ativa "grudar" no conteúdo */
+  padding: 8px 18px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 9px 9px 0 0;
+  background: transparent;
+  color: #8b93b8;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.company-section-header__subtab:hover:not(.is-active) {
+  background: #20212e;
+  color: #f8f8f2;
+}
+
+.company-section-header__subtab.is-active {
+  background: #1a1b26; /* mesma cor do conteúdo → conecta */
+  border-color: #2b2d45;
+  border-top: 2px solid #bd93f9; /* selo de aba selecionada */
+  border-bottom: 1px solid #1a1b26; /* cobre a linha da barra */
+  color: #f8f8f2;
+  font-weight: 700;
+  cursor: default;
+}
+
+.company-section-header__subtab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.28);
+}
+
 /* Panels */
 .panel {
   background: var(--bg-surface);

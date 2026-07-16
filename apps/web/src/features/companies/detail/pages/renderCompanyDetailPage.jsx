@@ -58,9 +58,9 @@ function TabLoadingFallback() {
 
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
 const apuracaoV2Api = createApiClient();
-function ApuracaoV2TabWrapper({ companyId, feedback, sub }) {
+function ApuracaoV2TabWrapper({ companyId, feedback }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
-  return <ApuracaoV2Tab panel={panel} sub={sub} />;
+  return <ApuracaoV2Tab panel={panel} />;
 }
 
 // Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
@@ -345,12 +345,13 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   }
 
   // Grupo Fiscal — sub-abas Cadastro Fiscal / Sugestão / Pendências (mesmo hook via wrapper único).
-  if (["cadastroFiscal", "sugestao", "pendencias"].includes(companyDetailTab)) {
+  // Fiscal → Cadastro. Sugestão e Pendências são sub-abas INTERNAS deste painel (estado local).
+  if (companyDetailTab === "cadastroFiscal") {
     return (
       <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
-          activeTab={companyDetailTab}
+          activeTab="cadastroFiscal"
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
@@ -358,7 +359,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         <div style={{ flex: 1, padding: 24 }}>
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
-              <ApuracaoV2TabWrapper companyId={companyId} feedback={feedback} sub={companyDetailTab} />
+              <ApuracaoV2TabWrapper companyId={companyId} feedback={feedback} />
             </Suspense>
           </ErrorBoundary>
         </div>

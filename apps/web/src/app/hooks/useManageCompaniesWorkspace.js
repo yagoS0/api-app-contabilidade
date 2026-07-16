@@ -10,18 +10,19 @@ import {
 
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
-const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "sitfis", "cadastro-fiscal", "sugestao", "pendencias", "plano-contas", "cadastro", "edit"];
+const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "notas-fiscais", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "edit"];
 const SEGMENT_TO_TAB = {
   guides: "guides",
   lancamentos: "lancamentos",
   circular: "circular",
   "notas-fiscais": "notasFiscais",
   sitfis: "sitfis",
-  // A aba "Fiscal" (apuracao-v2) virou sub-abas próprias no grupo Fiscal:
   "cadastro-fiscal": "cadastroFiscal",
-  sugestao: "sugestao",
-  pendencias: "pendencias",
-  "apuracao-v2": "cadastroFiscal", // compat: link antigo cai no Cadastro Fiscal
+  // Sugestão e Pendências viraram sub-abas INTERNAS do Cadastro (estado local, não URL).
+  // Links antigos caem no Cadastro Fiscal.
+  sugestao: "cadastroFiscal",
+  pendencias: "cadastroFiscal",
+  "apuracao-v2": "cadastroFiscal",
   "plano-contas": "planoContas",
   // "configuracoes" (Configurações de Lançamentos) foi removida: lançamento não se configura,
   // ele aprende do histórico. Link antigo cai em Lançamentos.
@@ -36,8 +37,6 @@ const TAB_TO_SEGMENT = {
   notasFiscais: "notas-fiscais",
   sitfis: "sitfis",
   cadastroFiscal: "cadastro-fiscal",
-  sugestao: "sugestao",
-  pendencias: "pendencias",
   planoContas: "plano-contas",
   cadastro: "cadastro",
   edit: "edit",

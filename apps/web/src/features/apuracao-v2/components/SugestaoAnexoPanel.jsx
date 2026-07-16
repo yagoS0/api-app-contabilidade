@@ -1,6 +1,7 @@
-// Módulo Fiscal (§1.3) — visão por nota da sugestão de anexo.
+// Módulo Fiscal (§1.3) — visão por nota da sugestão de anexo (só leitura, não grava nada).
 // Seletor de competência → tabela de notas com anexo sugerido, confiança e justificativa.
-// Notas em "revisão" apontam pra aba Pendências (o classificador nunca chuta).
+// "revisão" = o classificador não decidiu sozinho. Pra virar pendência de fato (e ser resolvida),
+// é preciso rodar "Classificar competência" na sub-aba Pendências — a sugestão não cria a fila.
 
 import { useState } from "react";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
