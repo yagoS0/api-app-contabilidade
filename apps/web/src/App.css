@@ -382,10 +382,11 @@
 
 /* Nível 1 (grupos) e nível 2 (sub-abas) ficam em linhas próprias, alinhados à esquerda —
    os principais em cima, os secundários logo abaixo (não mais à direita). */
-/* Menu principal (3 grupos) na MESMA linha do nome da empresa, logo ao lado dele.
-   margin-right:auto empurra o espaço livre pra direita → os grupos ficam colados ao nome. */
+/* Menu principal (3 grupos) na MESMA linha do nome da empresa, mas CENTRALIZADO com folga —
+   margin auto dos dois lados centraliza os grupos no espaço à direita do nome. */
 .company-section-header__nav--groups {
-  justify-content: flex-start;
+  justify-content: center;
+  margin-left: auto;
   margin-right: auto;
 }
 
