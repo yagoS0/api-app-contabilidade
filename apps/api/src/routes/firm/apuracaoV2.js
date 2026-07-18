@@ -22,6 +22,7 @@ import {
 import { carregarAtividades } from "../../application/notas/apuracao/v2/AtividadeResolver.js";
 import { resolverPerfilFiscal, normalizarPerfilConfig } from "../../application/notas/apuracao/v2/PerfilFiscalService.js";
 import { sugerirAnexosDaCompetencia } from "../../application/notas/apuracao/v2/SugestaoAnexoService.js";
+import { conferirCompetencia } from "../../application/notas/apuracao/v2/ConferenciaAdnService.js";
 
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
@@ -444,6 +445,25 @@ export function createApuracaoV2Router({ log } = {}) {
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha getDadosFechamento");
         return bad(res, err?.code === "PORTAL_NOT_FOUND" ? 404 : 500, err?.code || "fechamento_get_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // Camada 2 (Robustez): confere a contagem de NFS-e da competência contra o ADN (scan read-only) e
+  // grava o resultado no snapshot. Divergência → salvarFechamento trava. Sob demanda (hit no ADN).
+  router.post(
+    "/fechamento/:competencia/conferencia",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      const env = String(req.body?.env || "prod");
+      try {
+        const conferencia = await conferirCompetencia({ portalClientId, competencia, env });
+        return res.json({ ok: true, conferencia });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha conferência ADN");
+        return bad(res, statusForFechamentoErr(err), err?.code || "conferencia_failed", err?.message || "Erro");
       }
     }
   );

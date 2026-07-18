@@ -1517,6 +1517,10 @@ model ApuracaoSnapshot {
   simulacaoSerpro          Json?    // retorno oficial PGDAS-D (indicadorTransmissao:false) — verdade do preview
   tributosPorTributo       Json?    // { IRPJ, CSLL, COFINS, PIS, CPP, ICMS, ISS, IPI }
   disparidades             Json?    // avisos atividade↔CNAE (não bloqueia)
+  // Camada 2 (Robustez): conferência de contagem por chave contra o ADN antes do fechamento.
+  conferenciaStatus        String?   // ok | divergente | nao_conferivel
+  conferenciaResultado     Json?     // { nossoTotal, adnTotal, faltantes[], extras[], via, env, alcancouFim }
+  conferidaEm              DateTime?
   fechadaEm                DateTime?
   fechadaPor               String?
   // Identificadores SERPRO pós-transmissão

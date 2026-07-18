@@ -366,6 +366,19 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
   });
   if (!existing) throw new FechamentoError("NAO_CALCULADA", "Calcule a apuração antes de salvar.");
 
+  // Camada 2 (Robustez): se a conferência com o ADN achou nota que falta no nosso lado, TRAVA o
+  // fechamento (é o "28 vs 27"). Só trava em divergência confirmada — "nao_conferivel" (município
+  // fora do ADN / sem cert próprio) e "ok" liberam. Resolver: capturar/importar a(s) nota(s) faltante(s)
+  // e reconferir. Ver ConferenciaAdnService / docs/robustez-nfse-adn.md.
+  if (existing.conferenciaStatus === "divergente") {
+    const r = existing.conferenciaResultado || {};
+    const n = Array.isArray(r.faltantes) ? r.faltantes.length : 0;
+    throw new FechamentoError(
+      "DIVERGENCIA_CONFERENCIA",
+      `Conferência com o ADN achou ${n} nota(s) que faltam no nosso lado (ADN ${r.adnTotal ?? "?"} × nós ${r.nossoTotal ?? "?"}). Capture/importe as notas faltantes e reconfira antes de fechar.`,
+    );
+  }
+
   const snapshot = await prisma.apuracaoSnapshot.update({
     where: { id: existing.id },
     data: {
