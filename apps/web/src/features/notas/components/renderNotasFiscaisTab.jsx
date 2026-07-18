@@ -1,22 +1,42 @@
-// Q12.C.1: aba "Notas Fiscais" da empresa — listagem de NF-e/NFS-e + captura.
-// Competências/fechamento/pendências MOVERAM-SE pra página global de Apuração.
+// Q12.C.1: aba "Notas Fiscais" da empresa — enxuta, em 2 janelas:
+//   • Notas de serviço (NFS-e) — captura ADN + import XML
+//   • Notas de venda (NF-e)    — captura SEFAZ; SÓ aparece se a empresa tem inscrição estadual.
+// Competências/fechamento/apuração ficam na aba Apuração / página global.
 
+import { useState } from "react";
 import { PANEL } from "./notasStyles";
 import { DfeCapturePanel } from "./DfeCapturePanel";
 import { AdnCapturePanel } from "./AdnCapturePanel";
 import { NotasList } from "./NotasList";
 
-export function NotasFiscaisTab({ notasPanel }) {
+function JanelaBtn({ active, onClick, children }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{
+        padding: "8px 16px", borderRadius: 999, cursor: "pointer", fontSize: "0.85rem", fontWeight: 600,
+        border: `1px solid ${active ? PANEL.accent : PANEL.border}`,
+        background: active ? "rgba(189,147,249,0.15)" : "transparent",
+        color: active ? PANEL.text : PANEL.muted,
+      }}>
+      {children}
+    </button>
+  );
+}
+
+export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false }) {
   const {
-    ano,
     loading, error, reload,
-    dfeState, dfeSyncing, dfeLastResult, syncDfe, clearDfeError,
-    adnState, adnSyncing, adnLastResult, syncAdn, clearAdnError,
-    notas, notasTotal, notasSummary,
-    notasFilters, setNotasFilters,
+    dfeState, dfeSyncing, syncDfe, clearDfeError,
+    adnState, adnSyncing, syncAdn, clearAdnError,
+    notas, notasFilters, setNotasFilters,
     loadingNotas, loadNotas,
-    importing, importResult, importNotas,
+    importing, importNotas, marcarNotaStatus,
   } = notasPanel;
+
+  // NFS-e é a janela padrão; NF-e só existe com inscrição estadual.
+  const [janela, setJanela] = useState("NFSE");
+  const janelaAtiva = (janela === "NFE" && !hasInscricaoEstadual) ? "NFSE" : janela;
+  const notasDaJanela = notas.filter((n) => n.type === janelaAtiva);
 
   function onPickFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -35,71 +55,46 @@ export function NotasFiscaisTab({ notasPanel }) {
         </div>
       )}
 
-      {/* Q56: import manual de notas (XML) — pra empresas onde a captura automática não trouxe as notas */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16, padding: 12, background: PANEL.field, borderRadius: 6 }}>
-        <label
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 6,
-            border: "none", background: importing ? "#555" : "#2E86DE", color: "white",
-            cursor: importing ? "default" : "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: importing ? 0.7 : 1,
-          }}
-        >
-          {importing ? "Importando…" : "⬆️ Importar notas (XML)"}
-          <input type="file" accept=".xml,text/xml,application/xml" multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
-        </label>
-        <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>
-          Envie XML(s) de NFS-e quando a captura automática não trouxe as notas desta empresa.
-        </span>
-        {importResult && (() => {
-          const errs = Array.isArray(importResult.errors) ? importResult.errors : [];
-          const naoPertence = errs.filter((e) => e?.reason === "nota_nao_pertence").length;
-          const outrosErros = errs.length - naoPertence;
-          return (
-            <span style={{ fontSize: "0.78rem", color: PANEL.text }}>
-              → {importResult.created ?? 0} nova(s), {importResult.updated ?? 0} atualizada(s)
-              {naoPertence > 0 && (
-                <span style={{ color: "#FFB347", fontWeight: 600 }}>
-                  {", "}{naoPertence} ignorada(s): a nota não pertence a esta empresa
-                </span>
-              )}
-              {outrosErros > 0 ? `, ${outrosErros} com erro` : ""}
-            </span>
-          );
-        })()}
-      </div>
+      {/* Toggle das duas janelas — NF-e só aparece com inscrição estadual. */}
+      {hasInscricaoEstadual && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <JanelaBtn active={janelaAtiva === "NFSE"} onClick={() => setJanela("NFSE")}>Notas de serviço (NFS-e)</JanelaBtn>
+          <JanelaBtn active={janelaAtiva === "NFE"} onClick={() => setJanela("NFE")}>Notas de venda (NF-e)</JanelaBtn>
+        </div>
+      )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-        <DfeCapturePanel
-          dfeState={dfeState} dfeSyncing={dfeSyncing} dfeLastResult={dfeLastResult}
-          onSync={syncDfe} onClearError={clearDfeError}
-        />
-        <AdnCapturePanel
-          adnState={adnState} adnSyncing={adnSyncing} adnLastResult={adnLastResult}
-          onSync={syncAdn} onClearError={clearAdnError}
-        />
+      {/* Barra de captura da janela ativa: consultar (+ importar XML só na de serviço). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        {janelaAtiva === "NFSE" ? (
+          <>
+            <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} onClearError={clearAdnError} />
+            <label style={{
+              display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 6,
+              border: "none", background: importing ? "#555" : "#2E86DE", color: "white",
+              cursor: importing ? "default" : "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: importing ? 0.7 : 1,
+            }}>
+              {importing ? "Importando…" : "⬆️ Importar XML"}
+              <input type="file" accept=".xml,text/xml,application/xml" multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
+            </label>
+          </>
+        ) : (
+          <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onSync={syncDfe} onClearError={clearDfeError} />
+        )}
       </div>
 
       <NotasList
-        notas={notas}
-        total={notasTotal}
-        summary={notasSummary}
-        ano={ano}
+        notas={notasDaJanela}
+        total={notasDaJanela.length}
         filters={notasFilters}
         onFiltersChange={setNotasFilters}
         onApply={(f) => loadNotas(f)}
         loading={loadingNotas}
-        onMarcarStatus={notasPanel.marcarNotaStatus}
+        onMarcarStatus={marcarNotaStatus}
       />
 
       {loading && notas.length === 0 && (
         <div style={{ padding: 24, textAlign: "center", color: PANEL.muted }}>Carregando…</div>
       )}
-
-      <div style={{ marginTop: 16, padding: 12, background: PANEL.field, borderRadius: 6, fontSize: "0.8rem", color: PANEL.muted }}>
-        💡 <strong style={{ color: PANEL.text }}>Apuração e fechamento</strong> agora ficam na página
-        global "Apuração" (acessível na home), onde você vê todas as empresas juntas. Aqui você só
-        navega/captura notas desta empresa.
-      </div>
     </div>
   );
 }

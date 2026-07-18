@@ -340,7 +340,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
-              <NotasFiscaisTab notasPanel={notasPanel} />
+              <NotasFiscaisTab
+                notasPanel={notasPanel}
+                hasInscricaoEstadual={Boolean(String(selectedCompany?.legacyCompany?.inscricaoEstadual || "").trim())}
+              />
             </Suspense>
           </ErrorBoundary>
         </div>
