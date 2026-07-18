@@ -180,6 +180,13 @@ eventos por NSU*, não *snapshot por data*. Fase 1 (fundação) já no código, 
   `NsuGapService` (detecta/resolve lacunas de NSU).
 - **Nunca** dar UPDATE em `documentos`/`eventos` (correção = novo registro). A captura atual (`PortalInvoice`)
   segue intacta. Fase 0 (forense 28 vs 27) depende de dados de produção — pendente do dono.
+- **Camada 2 (conferência ADN):** `ConferenciaAdnService` compara o conjunto de chaves que temos
+  (EMIT/autorizada da competência = mesma população do faturamento) com o **conjunto autoritativo do ADN**
+  (scan read-only por NSU, reusa `fetchDfeNFSe` sem mover cursor). Divergência → grava
+  `ApuracaoSnapshot.conferenciaStatus="divergente"` e **`salvarFechamento` TRAVA** (`DIVERGENCIA_CONFERENCIA`).
+  Município fora do ADN / sem cert = `nao_conferivel` (não trava). Sob demanda:
+  `POST /firm/companies/:id/fechamento/:competencia/conferencia`; ferramenta de prod: `scripts/conferir-adn.mjs`.
+  O scan do ADN só é validável em produção (cert + ADN reais).
 
 ## Variáveis de Ambiente Obrigatórias
 

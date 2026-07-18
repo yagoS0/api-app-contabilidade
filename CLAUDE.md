@@ -79,6 +79,24 @@ Rotas protegidas pelo middleware `requireRole`. Nunca bypassar sem motivo explí
   **Mês fechado bloqueia** novo lançamento e upload/registro de guia manual + marcar Vazio
   (helper `isMonthClosed`; back retorna 409/`MES_FECHADO`; front desabilita os botões).
   Aba **Apuração V2 removida** do header da empresa.
+- [x] **Guias — barra de ações única (Q57)** — ao selecionar 1 guia: **Recalcular** (um botão,
+  detecta INSS→DCTFweb / DAS→PGDAS-D), **Confirmar pagamento**, **Liberar ao cliente** (envia SÓ a
+  guia por e-mail; se já enviada, modal de reenvio), **Excluir** (hard-delete já revoga). Removidos
+  Reenviar/Revogar/Parcelamento solto/Recalcular INSS. Liberar por-guia: `POST /firm/guides/:id/liberar-cliente`
+  (o empacotamento DAS+INSS fica só no envio em lote da página principal).
+- [x] **Notas Fiscais — aba enxuta (Q58)** — 2 janelas: **NFS-e** (ADN + import XML) e **NF-e**
+  (SEFAZ), a de NF-e **só com inscrição estadual** (`selectedCompany.legacyCompany.inscricaoEstadual`).
+  Sem stats/legendas/rodapé; captura compacta.
+- [~] **Robustez NFS-e/ADN (Q59)** — captura deve virar *fluxo de eventos por NSU*, não *snapshot por data*.
+  Roadmap em **`docs/robustez-nfse-adn.md`**. **Fase 1** (ledger append-only `documentos`/`eventos` +
+  `nsu_watermark`/`nsu_gaps` + projeção recalculável) codada e **verificada offline** — ainda NÃO ligada
+  à captura (`PortalInvoice` intacto). **Camada 2** (conferência de contagem por chave vs ADN) **trava o
+  fechamento** no "28 vs 27" (`ConferenciaAdnService`; `POST .../fechamento/:comp/conferencia`;
+  `scripts/conferir-adn.mjs` roda em prod). Fase 0 (forense) superada pela detecção automática.
+- [x] **Apuração dentro da empresa (Q60)** — aba Fiscal "Cadastro" → **"Apuração"**: faturamento +
+  prévia (reusa `FechamentoModal`) + **extrato do Simples** (`syncPgdasCircular`) + fechar/transmitir/retificar
+  por dentro da empresa. Cadastro enxuto (só regime + atividades permitidas). Tela de lote global vira
+  **select-only** (só seleciona fechadas + apura em lote; o filtro `estado="fechada"` já é server-side).
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 
