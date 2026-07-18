@@ -1,17 +1,18 @@
-// Grupo "Fiscal" da empresa → aba "Cadastro", com 2 sub-abas INTERNAS:
-//   Cadastro   → Cadastro Fiscal + Atividades permitidas (Bloco A)
-//   Sugestão   → sugestão de anexo por nota (leitura) + Pendências (fila) juntas, por competência
+// Grupo "Fiscal" da empresa → aba "Apuração" (renomeada de "Cadastro"). É onde a empresa é
+// FECHADA para apuração, transmitida e retificada — tudo por dentro da própria empresa. Seções:
+//   Apuração → faturamento + prévia (modal de fechamento reusado) + extrato do Simples + ações
+//   Cadastro → só o essencial: regime (Simples) + atividades permitidas
+//   Sugestão → sugestão de anexo por nota + pendências (por competência) — igual antes
 //
-// Sugestão e Pendências foram unidas: as duas trabalham por competência e se complementam
-// (a sugestão mostra as notas; classificar cria as pendências dos itens sem regra). O state da
-// sugestão fica AQUI (no pai), não no componente da tabela — assim não some ao trocar de sub-aba,
-// que era o bug de "sumia e tinha que clicar em Sugerir de novo".
-import { useState } from "react";
-import { PANEL, fmtDate } from "../../notas/components/notasStyles";
-import { CadastroFiscalForm } from "../components/CadastroFiscalForm";
+// O fluxo de calcular/fechar/transmitir/retificar reaproveita o FechamentoModal (o MESMO da tela de
+// lote), aberto por um botão — então a lógica validada não muda. A tela de lote (renderApuracaoPage)
+// virou só "selecionar as fechadas e apurar em lote".
+import { useCallback, useEffect, useState } from "react";
+import { PANEL, fmtDate, fmtMoney } from "../../notas/components/notasStyles";
 import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
 import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
 import { SugestaoAnexoTabela } from "../components/SugestaoAnexoPanel";
+import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
 
 function competenciaAnterior() {
   const d = new Date();
@@ -19,8 +20,18 @@ function competenciaAnterior() {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+const ESTADO_COR = {
+  fechada: "#69FF47", transmitida: "#8BE9FD", calculada: "#FFB347", confirmada: "#69FF47",
+};
+function EstadoBadge({ estado }) {
+  if (!estado || estado === "pendente" || estado === "aberta") return <span style={{ color: PANEL.muted }}>aberta</span>;
+  const cor = ESTADO_COR[estado] || "#FFB347";
+  return <span style={{ color: cor, fontWeight: 700 }}>{estado}</span>;
+}
+
 function SecaoTabs({ secao, setSecao, pendCount }) {
   const itens = [
+    { key: "apuracao", label: "Apuração" },
     { key: "cadastro", label: "Cadastro" },
     { key: "sugestao", label: "Sugestão", badge: pendCount },
   ];
@@ -50,11 +61,78 @@ function SecaoTabs({ secao, setSecao, pendCount }) {
   );
 }
 
-export function ApuracaoV2Tab({ panel }) {
-  const [secao, setSecao] = useState("cadastro");
+function Kpi({ label, value, cor }) {
+  return (
+    <div style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: "10px 14px" }}>
+      <div style={{ fontSize: "0.68rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
+      <div style={{ fontSize: "1.05rem", fontWeight: 700, color: cor || PANEL.text, fontFamily: "monospace" }}>{value}</div>
+    </div>
+  );
+}
+
+export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
+  const [secao, setSecao] = useState("apuracao");
   const [resolvendo, setResolvendo] = useState(null);
   const [competencia, setCompetencia] = useState(competenciaAnterior());
-  // State da sugestão no PAI → sobrevive à troca de sub-aba.
+
+  // ── Apuração (fechamento) ─────────────────────────────────────────────
+  const [fechDados, setFechDados] = useState(null);
+  const [fechLoading, setFechLoading] = useState(false);
+  const [snap, setSnap] = useState(null);
+  const [fechando, setFechando] = useState(null); // { retificar } → abre o FechamentoModal
+  // Extrato do Simples (o que realmente foi pra Receita) — botão explícito (bate no SERPRO).
+  const [extrato, setExtrato] = useState(null);
+  const [extratoLoading, setExtratoLoading] = useState(false);
+
+  const carregarApuracao = useCallback(async () => {
+    if (!api || !companyId || !/^\d{4}-\d{2}$/.test(competencia)) return;
+    setFechLoading(true);
+    try {
+      const [fech, snapshot] = await Promise.all([
+        api.getFechamento?.(companyId, competencia),
+        api.getApuracaoSnapshot?.(companyId, competencia).catch(() => null),
+      ]);
+      setFechDados(fech?.dados || fech || null);
+      setSnap(snapshot?.snapshot || snapshot || null);
+    } catch {
+      setFechDados(null);
+    } finally {
+      setFechLoading(false);
+    }
+  }, [api, companyId, competencia]);
+
+  useEffect(() => {
+    if (secao === "apuracao") carregarApuracao();
+  }, [secao, carregarApuracao]);
+
+  async function abrirRetificar() {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Reabrir a apuração de ${razao || "esta empresa"} (${competencia}) para RETIFICAR?\n\nVocê corrige os valores e retransmite uma declaração RETIFICADORA (substitui a anterior).`)) return;
+    try {
+      const r = await api.reabrirFechamento?.(companyId, competencia);
+      if (r?.ok === false) throw new Error(r?.message || r?.error || "Falha ao reabrir");
+      feedback?.notifySuccess?.("Apuração reaberta — corrija e clique em Transmitir/Retificar dentro do modal.");
+      setFechando({ retificar: true });
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Falha ao reabrir para retificar");
+    }
+  }
+
+  async function buscarExtrato() {
+    setExtratoLoading(true);
+    try {
+      const out = await api.syncPgdasCircular?.(companyId, competencia);
+      const r = out?.result || out;
+      setExtrato(r || null);
+      if (out?.ok === false) feedback?.notifyError?.(out?.message || "Falha ao buscar extrato.");
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "Falha ao buscar extrato do Simples.");
+    } finally {
+      setExtratoLoading(false);
+    }
+  }
+
+  // ── Sugestão (state no pai → sobrevive à troca de sub-aba) ─────────────
   const [sugData, setSugData] = useState(null);
   const [sugLoading, setSugLoading] = useState(false);
   const [sugErro, setSugErro] = useState(null);
@@ -75,7 +153,6 @@ export function ApuracaoV2Tab({ panel }) {
     setClassificando(true);
     try {
       await panel.classificarV2({ competencia });
-      // recarrega a sugestão pra refletir o que virou pendência (se já tinha carregado antes)
       if (sugData) await sugerir();
     } catch { /* o hook já exibe o erro via feedback */ }
     finally { setClassificando(false); }
@@ -83,28 +160,91 @@ export function ApuracaoV2Tab({ panel }) {
 
   const pendencias = panel.pendencias || [];
   const inputStyle = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px", fontSize: "0.85rem", colorScheme: "dark" };
+  const btnPrimary = { padding: "8px 16px", borderRadius: 6, border: "none", background: "#BD93F9", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 700 };
+  const btnGhost = { padding: "8px 14px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer", fontSize: "0.82rem", fontWeight: 600 };
+
+  const fat = fechDados?.faturamento || {};
+  const estado = fechDados?.estado || snap?.estado;
+  const dasApurado = snap?.dasRetornadoSerpro ?? snap?.dasCalculadoLocal ?? null;
+  const extDados = extrato?.dados || extrato?.circular || null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100 }}>
       <SecaoTabs secao={secao} setSecao={setSecao} pendCount={pendencias.length} />
 
-      {/* CADASTRO FISCAL (+ Bloco A: atividades permitidas) */}
-      {secao === "cadastro" && (
-        <>
-          <CadastroFiscalForm
-            cadastro={panel.cadastro}
-            cnaePrincipalRef={panel.cnaePrincipalRef}
-            saving={panel.saving}
-            onSave={panel.saveCadastro}
-          />
-          <AbaFiscalPanel panel={panel} />
-        </>
+      {/* ── APURAÇÃO ──────────────────────────────────────────────────── */}
+      {secao === "apuracao" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
+            <label style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
+              Competência
+              <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={inputStyle} />
+            </label>
+            <span style={{ fontSize: "0.82rem", color: PANEL.muted, paddingBottom: 6 }}>Estado: <EstadoBadge estado={estado} /></span>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setFechando({ retificar: false })} style={btnPrimary} disabled={fechLoading}>
+              {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
+            </button>
+            {estado === "transmitida" && (
+              <button onClick={abrirRetificar} style={btnGhost} title="Reabrir para corrigir e retransmitir como retificadora.">
+                🔄 Retificar
+              </button>
+            )}
+          </div>
+
+          {/* Faturamento + valor apurado (a prévia completa — CNAEs/alíquota/DAS — sai no modal ao Calcular). */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+            <Kpi label="Fat. interno" value={`R$ ${fmtMoney(fat.interno)}`} />
+            <Kpi label="Fat. externo" value={`R$ ${fmtMoney(fat.externo)}`} />
+            <Kpi label="RBT12" value={`R$ ${fmtMoney(fechDados?.rbt12)}`} />
+            <Kpi label="DAS apurado" value={dasApurado != null ? `R$ ${fmtMoney(dasApurado)}` : "—"} cor="#8BE9FD" />
+          </div>
+          {fechDados?.cadastroCompleto === false && (
+            <div style={{ padding: 10, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 8, color: "#FFB347", fontSize: "0.82rem" }}>
+              ⚠ Cadastro fiscal incompleto (sem CNAE). Ajuste na aba Cadastro antes de fechar.
+            </div>
+          )}
+
+          {/* Extrato do Simples — o que realmente foi pra Receita (conferência). */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: "0.9rem" }}>Extrato do Simples Nacional</strong>
+              <button onClick={buscarExtrato} style={btnGhost} disabled={extratoLoading}>
+                {extratoLoading ? "Buscando…" : "Buscar extrato"}
+              </button>
+              <span style={{ fontSize: "0.72rem", color: PANEL.muted }}>Consulta o que foi transmitido à Receita (SERPRO).</span>
+            </div>
+            {extDados && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+                <Kpi label="Receita bruta" value={`R$ ${fmtMoney(extDados.receitaBruta)}`} />
+                <Kpi label="DAS (Receita)" value={`R$ ${fmtMoney(extDados.dasTotal ?? extDados.impostoApurado)}`} cor="#8BE9FD" />
+                {extrato?.files?.declaracaoUrl && (
+                  <a href={extrato.files.declaracaoUrl} target="_blank" rel="noreferrer" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>Declaração (PDF)</a>
+                )}
+                {extrato?.files?.reciboUrl && (
+                  <a href={extrato.files.reciboUrl} target="_blank" rel="noreferrer" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>Recibo (PDF)</a>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
-      {/* SUGESTÃO + PENDÊNCIAS (por competência) */}
+      {/* ── CADASTRO (enxuto: só regime + atividades permitidas) ───────── */}
+      {secao === "cadastro" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, fontSize: "0.85rem" }}>
+            Regime tributário: <strong style={{ color: "#69FF47" }}>
+              {String(panel.cadastro?.regime || "SIMPLES_NACIONAL") === "SIMPLES_NACIONAL" ? "Simples Nacional" : (panel.cadastro?.regime || "—")}
+            </strong>
+          </div>
+          <AbaFiscalPanel panel={panel} />
+        </div>
+      )}
+
+      {/* ── SUGESTÃO + PENDÊNCIAS (por competência) ────────────────────── */}
       {secao === "sugestao" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
-          {/* Toolbar única: competência + Sugerir (leitura) + Classificar (grava, cria pendências) */}
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
             <label style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
               Competência
@@ -114,8 +254,7 @@ export function ApuracaoV2Tab({ panel }) {
               style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#8BE9FD", color: "#000", cursor: sugLoading ? "default" : "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: sugLoading ? 0.6 : 1 }}>
               {sugLoading ? "Carregando…" : "Sugerir"}
             </button>
-            <button onClick={classificar} disabled={classificando}
-              style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#BD93F9", color: "#000", cursor: classificando ? "default" : "pointer", fontSize: "0.85rem", fontWeight: 700, opacity: classificando ? 0.6 : 1 }}>
+            <button onClick={classificar} disabled={classificando} style={{ ...btnPrimary, opacity: classificando ? 0.6 : 1 }}>
               {classificando ? "Classificando…" : "Classificar competência"}
             </button>
             <span style={{ fontSize: "0.72rem", color: PANEL.muted, paddingBottom: 6, flex: 1, minWidth: 180 }}>
@@ -123,7 +262,6 @@ export function ApuracaoV2Tab({ panel }) {
             </span>
           </div>
 
-          {/* Pendências primeiro — é o que precisa de ação */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>Pendências</div>
             {pendencias.length === 0 ? (
@@ -150,7 +288,7 @@ export function ApuracaoV2Tab({ panel }) {
                   </div>
                   {p.tipo === "ITEM_SEM_REGRA" && (
                     <button onClick={() => setResolvendo(p)}
-                      style={{ padding: "8px 14px", borderRadius: 6, border: "none", background: "#BD93F9", color: "#000", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600, flex: "none" }}>
+                      style={{ ...btnPrimary, flex: "none", fontSize: "0.8rem" }}>
                       Classificar
                     </button>
                   )}
@@ -159,7 +297,6 @@ export function ApuracaoV2Tab({ panel }) {
             )}
           </div>
 
-          {/* Tabela da sugestão (leitura) */}
           {sugErro && (
             <div style={{ padding: 10, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 8, color: "#FF6E6E", fontSize: "0.85rem" }}>{sugErro}</div>
           )}
@@ -170,6 +307,20 @@ export function ApuracaoV2Tab({ panel }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* Modal de fechamento reusado (calcular/fechar/transmitir/retificar). */}
+      {fechando && api && (
+        <FechamentoModal
+          api={api}
+          feedback={feedback}
+          portalClientId={companyId}
+          razao={razao}
+          competencia={competencia}
+          retificar={fechando.retificar === true}
+          onClose={() => setFechando(null)}
+          onChanged={() => carregarApuracao()}
+        />
       )}
 
       {resolvendo && (

@@ -19,7 +19,7 @@ const GROUPS = [
     // Cadastro absorve Sugestão e Pendências (viram sub-abas INTERNAS do painel Cadastro).
     tabs: [
       { key: "guides", label: "Guias" },
-      { key: "cadastroFiscal", label: "Cadastro" },
+      { key: "cadastroFiscal", label: "Apuração" },
       { key: "sitfis", label: "Situação Fiscal" },
       { key: "notasFiscais", label: "Notas Fiscais" },
     ],

@@ -1,14 +1,12 @@
-// Q15.7: página global de Apuração (fluxo novo).
-// Tabela de empresas × competência: faturamento, status, Fator-R, DAS, [Fechar].
-// Seleção múltipla → [Apurar em lote] (só empresas fechadas). Fechar abre o modal.
+// Q15.7: página global de Apuração (fluxo novo). Agora é SELECT-ONLY:
+// tabela de empresas × competência; seleção múltipla das FECHADAS → [Apurar em lote].
+// Fechar/transmitir/retificar saíram daqui — agora é dentro de cada empresa (aba Apuração).
 
-import { useState } from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { PageHeader } from "../../../components/layout/PageHeader";
 import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
-import { FechamentoModal } from "../components/FechamentoModal";
 import { BatchProgressModal } from "../components/BatchProgressModal";
 
 const ESTADO_BADGE = {
@@ -39,32 +37,17 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
     competencia, setCompetencia, search, setSearch, items, loading, error,
     selected, toggleSelect, selectAllFechadas, batchJobId, setBatchJobId, apurarEmLote, reload,
   } = apuracaoPanel;
-  const [fechando, setFechando] = useState(null); // { id, razao }
 
   const fechadasCount = items.filter((i) => i.estado === "fechada").length;
   // Q52: "selecionar todas" marca só as empresas selecionáveis (estado "fechada").
   const allFechadasSelected = fechadasCount > 0 && selected.size === fechadasCount;
   const someFechadasSelected = selected.size > 0 && selected.size < fechadasCount;
 
-  // Q55: reabre uma apuração transmitida e abre o modal em modo RETIFICAR (corrigir → retransmitir).
-  async function abrirRetificacao(it) {
-    // eslint-disable-next-line no-alert
-    if (!window.confirm(`Reabrir a apuração de ${it.razao} (${competencia}) para RETIFICAR?\n\nVocê vai corrigir os valores e retransmitir uma declaração RETIFICADORA à Receita (substitui a anterior).`)) return;
-    try {
-      const r = await apuracaoApi.reabrirFechamento(it.portalClientId, competencia);
-      if (r?.ok === false) throw new Error(r?.message || r?.error || "Falha ao reabrir");
-      feedback?.notifySuccess?.("Apuração reaberta — corrija os valores e clique em Retificar/Retransmitir.");
-      setFechando({ id: it.portalClientId, razao: it.razao, retificar: true });
-      reload?.();
-    } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao reabrir para retificar");
-    }
-  }
   return (
     <AppShell>
       <PageHeader
         title="Apuração"
-        description="Feche cada empresa pelo modal, depois selecione as fechadas e apure em lote."
+        description="Selecione as empresas fechadas e apure em lote. O fechamento é feito dentro de cada empresa (aba Apuração)."
         actions={<Button variant="secondary" onClick={onBack}>Voltar</Button>}
       />
 
@@ -137,7 +120,6 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                 <th style={{ ...td, textAlign: "right" }}>RBT12</th>
                 <th style={{ ...td, textAlign: "right" }}>Fator R</th>
                 <th style={{ ...td, textAlign: "right" }}>DAS</th>
-                <th style={{ ...td, textAlign: "right" }}>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -163,43 +145,16 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#8BE9FD" }}>
                       {it.dasTransmitido != null ? fmtMoney(it.dasTransmitido) : (it.dasCalculado != null ? fmtMoney(it.dasCalculado) : "—")}
                     </td>
-                    <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button onClick={() => setFechando({ id: it.portalClientId, razao: it.razao })}
-                        style={{ padding: "5px 12px", borderRadius: 5, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontSize: "0.78rem", fontWeight: 600 }}>
-                        {it.estado === "aberta" ? "🔒 Fechar" : "Revisar"}
-                      </button>
-                      {/* Q55: retificação — reabre a transmitida para corrigir e retransmitir como retificadora. */}
-                      {it.estado === "transmitida" && (
-                        <button onClick={() => abrirRetificacao(it)}
-                          title="Reabrir para corrigir os valores e retransmitir como declaração retificadora."
-                          style={{ marginLeft: 6, padding: "5px 10px", borderRadius: 5, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer", fontSize: "0.78rem", fontWeight: 600 }}>
-                          🔄 Retificar
-                        </button>
-                      )}
-                    </td>
                   </tr>
                 );
               })}
               {items.length === 0 && !loading && (
-                <tr><td colSpan={9} style={{ ...td, textAlign: "center", color: PANEL.muted, padding: 24 }}>Nenhuma empresa encontrada.</td></tr>
+                <tr><td colSpan={8} style={{ ...td, textAlign: "center", color: PANEL.muted, padding: 24 }}>Nenhuma empresa encontrada.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </section>
-
-      {fechando && apuracaoApi && (
-        <FechamentoModal
-          api={apuracaoApi}
-          feedback={feedback}
-          portalClientId={fechando.id}
-          razao={fechando.razao}
-          competencia={competencia}
-          retificar={fechando.retificar === true}
-          onClose={() => setFechando(null)}
-          onChanged={() => reload?.()}
-        />
-      )}
 
       {batchJobId && apuracaoApi && (
         <BatchProgressModal

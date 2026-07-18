@@ -61,9 +61,9 @@ function TabLoadingFallback() {
 
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
 const apuracaoV2Api = createApiClient();
-function ApuracaoV2TabWrapper({ companyId, feedback }) {
+function ApuracaoV2TabWrapper({ companyId, feedback, razao }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
-  return <ApuracaoV2Tab panel={panel} />;
+  return <ApuracaoV2Tab panel={panel} api={apuracaoV2Api} companyId={companyId} feedback={feedback} razao={razao} />;
 }
 
 // Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
@@ -366,7 +366,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         <div style={{ flex: 1, padding: 24 }}>
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
-              <ApuracaoV2TabWrapper companyId={companyId} feedback={feedback} />
+              <ApuracaoV2TabWrapper companyId={companyId} feedback={feedback} razao={selectedCompany?.razao} />
             </Suspense>
           </ErrorBoundary>
         </div>
