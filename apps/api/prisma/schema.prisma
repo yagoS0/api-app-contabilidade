@@ -1681,3 +1681,79 @@ model NotasDownloadJob {
   @@index([status, createdAt])
   @@map("notas_download_jobs")
 }
+
+// ── Ledger append-only de documentos fiscais (Robustez NFS-e/ADN — Fase 1) ──────────────
+// Fundação do modelo por FLUXO DE EVENTOS (não snapshot por data). Documentos e eventos são
+// IMUTÁVEIS (append-only): correção = novo registro, nunca UPDATE. O status é PROJEÇÃO
+// recalculável (ver LedgerProjectionService), nunca coluna gravada. Ainda NÃO ligado à captura
+// atual (PortalInvoice segue intacto) — ver docs/robustez-nfse-adn.md.
+// Convenção: portalClientId é coluna simples (sem FK/cascade de propósito — ledger é dado de
+// auditoria e não deve sumir se o cliente for removido).
+
+model Documento {
+  id             String   @id @default(uuid())
+  portalClientId String
+  chaveAcesso    String
+  cnpjPrestador  String?
+  cnpjTomador    String?
+  municipioIbge  String?
+  numeroNfse     String?
+  dataEmissao    DateTime?
+  dataRecepcaoAdn DateTime?
+  competencia    String? // YYYY-MM (derivada da emissão)
+  valorServico   Decimal? @db.Decimal(18, 2)
+  xmlOriginal    String? // XML cru (gzip/base64)
+  nsuOrigem      BigInt?
+  fonte          String // ADN | RPA | WS_MUNICIPAL | MANUAL
+  capturadoEm    DateTime @default(now())
+
+  @@unique([portalClientId, chaveAcesso])
+  @@index([portalClientId, competencia])
+  @@index([chaveAcesso])
+  @@map("documentos")
+}
+
+model Evento {
+  id             String   @id @default(uuid())
+  portalClientId String
+  chaveAcesso    String
+  tipoEvento     String // cancelamento | canc_por_substituicao | confirmacao | confirmacao_tacita | anulacao_rejeicao | canc_por_oficio | bloqueio_oficio | desbloqueio_oficio
+  nSeqEvento     Int      @default(1)
+  dataEvento     DateTime?
+  justificativa  String?
+  chaveSubstituta String? // preenchido no cancelamento por substituição
+  xmlEvento      String?
+  nsuOrigem      BigInt?
+  fonte          String // ADN | RPA | WS_MUNICIPAL | MANUAL
+  capturadoEm    DateTime @default(now())
+
+  @@unique([chaveAcesso, tipoEvento, nSeqEvento]) // idempotência do evento
+  @@index([portalClientId, chaveAcesso])
+  @@map("eventos")
+}
+
+model NsuWatermark {
+  id                    String   @id @default(uuid())
+  portalClientId        String
+  fonte                 String // ADN | RPA | WS_MUNICIPAL
+  ultimoNsuProcessado   BigInt   @default(0)
+  primeiroNsuDisponivel BigInt?
+  atualizadoEm          DateTime @updatedAt
+
+  @@unique([portalClientId, fonte])
+  @@map("nsu_watermark")
+}
+
+model NsuGap {
+  id             String   @id @default(uuid())
+  portalClientId String
+  fonte          String
+  nsuFaltante    BigInt
+  tentativas     Int      @default(0)
+  status         String   @default("aberto") // aberto | resolvido | inexistente
+  detectadoEm    DateTime @default(now())
+
+  @@unique([portalClientId, fonte, nsuFaltante])
+  @@index([portalClientId, status])
+  @@map("nsu_gaps")
+}

@@ -170,6 +170,17 @@ Serviço assíncrono em 2 etapas, resolvido inline (~28s) ou devolvido como `pro
   O fluxo (worker/cron/UI) está pronto e correto (não reporta mais falso-OK), mas só liga
   após validar no sandbox. INSS grava `numeroDocumento` (extraído do GERARGUIA31) para o PAGTOWEB.
 
+## Robustez NFS-e/ADN — ledger append-only (Fase 1)
+
+Roadmap completo em **`docs/robustez-nfse-adn.md`** (raiz do repo). Captura deve virar *fluxo de
+eventos por NSU*, não *snapshot por data*. Fase 1 (fundação) já no código, **ainda NÃO ligada à captura**:
+- Modelos `documentos`/`eventos` (imutáveis), `nsu_watermark`, `nsu_gaps` — migration `20260717120000_add_notas_ledger`.
+- Primitivas em `src/application/notas/ledger/`: `LedgerService` (append idempotente + watermark atômico),
+  `LedgerProjectionService` (`computeSituacao` — status é **projeção recalculável**, nunca coluna gravada),
+  `NsuGapService` (detecta/resolve lacunas de NSU).
+- **Nunca** dar UPDATE em `documentos`/`eventos` (correção = novo registro). A captura atual (`PortalInvoice`)
+  segue intacta. Fase 0 (forense 28 vs 27) depende de dados de produção — pendente do dono.
+
 ## Variáveis de Ambiente Obrigatórias
 
 ```
