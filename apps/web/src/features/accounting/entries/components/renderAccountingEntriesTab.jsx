@@ -445,7 +445,7 @@ export function AccountingEntriesTab({
   return (
     <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--space-4)" }}>
       {/* Caixa superior no mesmo padrão das pílulas: fundo sólido + borda roxa + cantos macios. */}
-      <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
+      <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface, maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <ActionMenu
             label="Configurações"
@@ -572,7 +572,7 @@ export function AccountingEntriesTab({
       {error && <p style={{ color: "var(--danger)", margin: "0 0 8px", fontSize: "0.875rem" }}>{error}</p>}
 
       {/* Q18: toolbar junto da tabela (mesma largura/centralização) — Adicionar + cadeado */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap", maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap", maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
         <button
           type="button"
           onClick={() => setAdding(true)}
@@ -597,7 +597,7 @@ export function AccountingEntriesTab({
           display: "flex", alignItems: "center", gap: 12,
           background: "#2D2F45", border: "1px solid #44475A", borderRadius: 8,
           padding: "8px 14px", marginTop: 8, fontSize: "0.875rem", color: ACCOUNTING_PANEL.text,
-          maxWidth: 1250, marginLeft: "auto", marginRight: "auto", boxSizing: "border-box",
+          maxWidth: 1600, marginLeft: "auto", marginRight: "auto", boxSizing: "border-box",
         }}>
           <span style={{ fontWeight: 700, color: "#BD93F9" }}>
             {selectedCount} selecionado{selectedCount !== 1 ? "s" : ""}
@@ -630,7 +630,7 @@ export function AccountingEntriesTab({
       )}
 
       {/* Q18: tabela centralizada e mais estreita (Histórico fica perto do Valor). */}
-      <div style={{ overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20, maxWidth: 1250, marginLeft: "auto", marginRight: "auto" }}>
+      <div style={{ overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20, maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
         {/* Q32: título da competência acima do cabeçalho (ex.: MAIO/2026). Q39: setas ◀ ▶ pra navegar. */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 14 }}>
           <button

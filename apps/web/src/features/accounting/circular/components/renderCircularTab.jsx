@@ -44,7 +44,7 @@ const SUBTIPO_TO_ACRESCIMO = {
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 // Q31: largura ÚNICA de coluna do quadro (todas iguais — header, célula, subtotal).
-const COL_W = 96;
+const COL_W = 120;
 
 const TIPO_LABELS = { DESPESA: "Despesa", RECEITA: "Receita", FOLHA: "Folha", PROVISAO: "Provisão", BAIXA: "Baixa", OUTRO: "Outro" };
 
@@ -229,9 +229,6 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
           {/* Acréscimo: juros/multa (e o valor principal, no caso do INSS sintético) */}
           {acr.length > 0 && (
             <div style={{ display: "grid", gap: 10, padding: "10px 12px", borderRadius: 8, background: "rgba(255,179,71,0.06)", border: "1px solid rgba(255,179,71,0.35)" }}>
-              <div style={{ fontSize: "0.72rem", color: "#FFB347", fontWeight: 700 }}>
-                {isAcrOnly ? "Valor, juros e multa" : "Juros / multa (guia vencida ou recalculada)"}
-              </div>
               {acr.map((t, i) => (
                 <div key={t.key} style={{ display: "grid", gap: 6 }}>
                   {acr.length > 1 && <strong style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.78rem" }}>{t.key}</strong>}

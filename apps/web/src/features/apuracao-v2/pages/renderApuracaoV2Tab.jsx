@@ -212,7 +212,6 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
               <button onClick={buscarExtrato} style={btnGhost} disabled={extratoLoading}>
                 {extratoLoading ? "Buscando…" : "Buscar extrato"}
               </button>
-              <span style={{ fontSize: "0.72rem", color: PANEL.muted }}>Consulta o que foi transmitido à Receita (SERPRO).</span>
             </div>
             {extDados && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
@@ -257,9 +256,6 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
             <button onClick={classificar} disabled={classificando} style={{ ...btnPrimary, opacity: classificando ? 0.6 : 1 }}>
               {classificando ? "Classificando…" : "Classificar competência"}
             </button>
-            <span style={{ fontSize: "0.72rem", color: PANEL.muted, paddingBottom: 6, flex: 1, minWidth: 180 }}>
-              Sugerir só mostra. Classificar grava e cria as pendências dos itens sem regra.
-            </span>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

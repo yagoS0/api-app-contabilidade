@@ -239,7 +239,7 @@ export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null,
   const iconBtn = { background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, width: 26, height: 26, lineHeight: "22px", textAlign: "center", cursor: "pointer", fontSize: "1rem", padding: 0 };
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 780px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 1040px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.05rem" }}>{isExisting ? "Anexar parcela ao parcelamento" : "Registrar 1ª parcela do parcelamento"}</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
@@ -291,7 +291,7 @@ export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null,
         {/* Provisão — linhas do lançamento (dívida consolidada do parcelamento inteiro). Só na 1ª parcela. */}
         {!isExisting && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-          <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Lançamento da provisão (dívida consolidada — contas em branco aprendem após o 1º uso):</div>
+          <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Provisão</div>
           <button onClick={addProv} title="Adicionar linha" style={iconBtn}>+</button>
         </div>
         )}
@@ -337,7 +337,7 @@ export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null,
 
         {/* Composição por tributo desta parcela (usada no pagamento futuro) */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-          <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Composição desta parcela por tributo (juros LIDO — usada na baixa do pagamento):</div>
+          <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Composição por tributo</div>
           <button onClick={addTrib} title="Adicionar tributo" style={iconBtn}>+</button>
         </div>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
@@ -365,7 +365,7 @@ export function ParcelamentoIngestaoModal({ guide, prefill, existingParc = null,
             Só na 1ª parcela — ao anexar a um parcelamento existente, a config dele é reaproveitada. */}
         {!isExisting && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-          <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Lançamento do pagamento (como a baixa de cada parcela será feita ao confirmar — SERPRO ou usuário):</div>
+          <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Pagamento (baixa)</div>
           <button onClick={addPag} title="Adicionar linha" style={iconBtn}>+</button>
         </div>
         )}
