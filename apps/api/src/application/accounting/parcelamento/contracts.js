@@ -10,7 +10,9 @@
 
 export const TIPOS_PARCELAMENTO = [
   "PARCSN", "PARCSN_ESPECIAL", "PERT_SN", "RELP_SN",
-  "PARCMEI", "PARCMEI_ESPECIAL", "PERT_MEI", "RELP_MEI", "OUTRO",
+  "PARCMEI", "PARCMEI_ESPECIAL", "PERT_MEI", "RELP_MEI",
+  "INSS", // Q61: parcelamento previdenciário/INSS (manual — sem auto-search SERPRO)
+  "OUTRO",
 ];
 
 function num(v) {

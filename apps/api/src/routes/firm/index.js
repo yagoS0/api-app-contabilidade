@@ -1986,13 +1986,56 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     try {
       const guide = await prisma.guide.findFirst({
         where: { id: String(guideId) },
-        select: { id: true, portalClientId: true },
+        select: { id: true, portalClientId: true, competencia: true, extracted: true },
       });
       if (!guide) {
         return res.status(404).json({ ok: false, error: "guide_not_found" });
       }
-      await prisma.guide.delete({ where: { id: guide.id } });
-      return res.json({ ok: true, guideId: guide.id });
+
+      // Q61: excluir a guia deve fazê-la SUMIR da Circular — remove as provisões derivadas + reverte o
+      // split de acréscimos. Só remove o SEGURO (não exportado, não pago, sem baixa); se houver
+      // lançamento pago/baixado/exportado, BLOQUEIA (integridade contábil — desfaça a baixa antes).
+      const derivadas = await prisma.accountingEntry.findMany({
+        where: { sourceGuideId: guide.id, tipo: { in: ["PROVISAO", "BAIXA"] } },
+        select: { id: true, tipo: true, status: true, statusPagamento: true, baixas: { select: { id: true }, take: 1 } },
+      });
+      const bloqueia = derivadas.some(
+        (e) => e.tipo === "BAIXA" || e.status === "EXPORTADO" || e.statusPagamento === "PAGO" || (e.baixas && e.baixas.length),
+      );
+      if (bloqueia) {
+        return res.status(409).json({
+          ok: false, error: "GUIA_COM_LANCAMENTO",
+          message: "Há lançamento pago/baixado/exportado vinculado a esta guia. Desfaça a baixa antes de excluir.",
+        });
+      }
+
+      // Tributos desta guia (composição LP) pra limpar do split de acréscimos da circular.
+      const CODIGO_TRIBUTO = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };
+      const composicao = Array.isArray(guide.extracted?.composicao) ? guide.extracted.composicao : [];
+      const tributos = new Set();
+      for (const c of composicao) {
+        const t = c?.tributo || CODIGO_TRIBUTO[String(c?.codigo || "")];
+        if (t) tributos.add(t);
+      }
+
+      await prisma.$transaction(async (tx) => {
+        for (const e of derivadas) {
+          await tx.accountingEntryLine.deleteMany({ where: { entryId: e.id } });
+          await tx.accountingEntry.delete({ where: { id: e.id } });
+        }
+        if (tributos.size && guide.competencia) {
+          const where = { portalClientId_competencia: { portalClientId: guide.portalClientId, competencia: guide.competencia } };
+          const circ = await tx.companyMonthlyCircular.findUnique({ where, select: { acrescimos: true } }).catch(() => null);
+          if (circ?.acrescimos && typeof circ.acrescimos === "object") {
+            const next = { ...circ.acrescimos };
+            for (const t of tributos) delete next[t];
+            await tx.companyMonthlyCircular.update({ where, data: { acrescimos: next } });
+          }
+        }
+        await tx.guide.delete({ where: { id: guide.id } });
+      });
+
+      return res.json({ ok: true, guideId: guide.id, provisoesRemovidas: derivadas.length });
     } catch (err) {
       log.error({ err }, "Falha ao excluir guia");
       return res.status(500).json({ ok: false, error: "guide_delete_failed", message: err?.message });
@@ -2622,13 +2665,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ error: "guide_not_processed" });
       }
 
-      // Q23/Q34: guia de parcela OU de INSS gera lançamento de BAIXA ao marcar como paga. Se o mês
-      // contábil do pagamento (hoje) estiver fechado, BLOQUEIA o "pago" inteiro (não marca, não lança).
+      // Q23/Q34/Q61: toda guia gera lançamento de BAIXA ao marcar como paga (parcela, INSS ou normal).
+      // Se o mês contábil do pagamento (hoje) estiver fechado, BLOQUEIA o "pago" inteiro (não marca, não lança).
       const isParcela = Boolean(scoped.guide.parcelamentoId);
       const isInss = !isParcela && String(scoped.guide.tipo || "").toUpperCase() === "INSS";
+      const isNormal = !isParcela && !isInss;
       const now = new Date();
       const competenciaPagamento = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-      if ((isParcela || isInss) && (await isMonthClosed(scoped.guide.portalClientId, competenciaPagamento))) {
+      if (await isMonthClosed(scoped.guide.portalClientId, competenciaPagamento)) {
         return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
       }
 
@@ -2680,7 +2724,28 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
       }
 
-      return res.json({ ok: true, guide: toGuideResponse(updated), parcelaBaixa, inssBaixa });
+      // Q61: guia NORMAL (DARF/DAS/LP) — marca as provisões como PAGO (Circular "confirmado") e gera a baixa.
+      let normalBaixa = null;
+      if (isNormal) {
+        try {
+          const { gerarPagamentoNormalFromGuide } = await import(
+            "../../application/accounting/GuideNormalPagamentoService.js"
+          );
+          normalBaixa = await gerarPagamentoNormalFromGuide({
+            portalClientId: scoped.guide.portalClientId,
+            guideId: scoped.guide.id,
+            userId: req.auth.user.id,
+          });
+        } catch (err) {
+          if (err?.code === "MES_FECHADO") {
+            return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
+          }
+          log.warn({ err: err?.message, guideId: scoped.guide.id }, "Falha ao gerar baixa da guia (não crítico)");
+          normalBaixa = { skipped: true, reason: err?.message || "erro" };
+        }
+      }
+
+      return res.json({ ok: true, guide: toGuideResponse(updated), parcelaBaixa, inssBaixa, normalBaixa });
     }
   );
 

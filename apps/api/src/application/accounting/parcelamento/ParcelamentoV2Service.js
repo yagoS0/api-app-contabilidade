@@ -257,7 +257,7 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
         data: {
           portalClientId,
           label: `PARCELAMENTO ${dto.tipo}${dto.numeroParcelamento ? ` Nº ${dto.numeroParcelamento}` : ""}`,
-          kind: dto.tipo.startsWith("PARCMEI") ? "INSS" : "SIMPLES", // compat com campo legado
+          kind: (dto.tipo === "INSS" || dto.tipo.startsWith("PARCMEI")) ? "INSS" : "SIMPLES", // compat com campo legado
           tipo: dto.tipo,
           numeroParcelamento: dto.numeroParcelamento,
           origem: dto.origem,
