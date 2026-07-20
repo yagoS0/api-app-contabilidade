@@ -538,9 +538,6 @@ export function ImportOFXModal({
             <p style={{ color: PANEL.muted, fontSize: "0.875rem", margin: 0 }}>
               Lote: <span style={{ color: PANEL.text, fontWeight: 700 }}>{result?.loteImportacao}</span>
             </p>
-            <p style={{ color: PANEL.muted, fontSize: "0.8125rem", margin: 0 }}>
-              Os históricos digitados foram memorizados — descrições iguais nos próximos OFX virão pré-preenchidas.
-            </p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Button variant="primary" onClick={onClose}>Fechar</Button>
             </div>

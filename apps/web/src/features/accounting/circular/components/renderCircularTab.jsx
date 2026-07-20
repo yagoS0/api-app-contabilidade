@@ -709,7 +709,7 @@ export function CircularTab({
               {visibleRows.length === 0 && (
                 <tr>
                   <td colSpan={3 + visibleRows.length} style={{ padding: 24, textAlign: "center", color: "#aeb6d3", fontStyle: "italic" }}>
-                    Nenhuma provisão registrada para {year}. Crie lançamentos do tipo Provisão na aba Lançamentos.
+                    Nenhuma provisão registrada para {year}.
                   </td>
                 </tr>
               )}

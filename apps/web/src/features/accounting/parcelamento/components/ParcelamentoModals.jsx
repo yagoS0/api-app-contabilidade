@@ -469,7 +469,7 @@ export function ParcelamentoEntradaModal({ parcelamentosAtivos = [], onChooseAtt
             <strong style={{ fontSize: "0.85rem" }}>Anexar a um parcelamento existente (próxima parcela)</strong>
             {ativos.length === 0 ? (
               <div style={{ fontSize: "0.75rem", color: PANEL.muted }}>
-                Nenhum parcelamento ativo encontrado para esta empresa. Crie um novo abaixo (SERPRO ou guia manual).
+                Nenhum parcelamento ativo.
               </div>
             ) : (
               <>
@@ -1416,7 +1416,6 @@ export function GuideLinkParcelamentoModal({
                     <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: "0.75rem", color: PANEL.muted }}>
                       Parcela:
                       <input type="number" min="1" max={selectedParc.numParcelas} value={numeroParcela} onChange={(e) => setNumeroParcela(e.target.value)} style={{ ...FIELD_STYLE, width: 80 }} />
-                      <span style={{ color: PANEL.muted, fontSize: "0.7rem" }}>(sugerido pela competência da guia, mas pode alterar)</span>
                     </label>
                   )}
                 </div>
@@ -1428,7 +1427,6 @@ export function GuideLinkParcelamentoModal({
             <input type="radio" checked={option === "new"} onChange={() => setOption("new")} style={{ marginTop: 2 }} />
             <div>
               <div style={{ color: PANEL.text, fontSize: "0.8rem", fontWeight: 700 }}>Sim, esta guia é a ABERTURA de um NOVO parcelamento</div>
-              <div style={{ color: PANEL.muted, fontSize: "0.7rem" }}>Abre o wizard de criação. A guia será linkada à parcela escolhida (default = 1 = entrada).</div>
             </div>
           </label>
 

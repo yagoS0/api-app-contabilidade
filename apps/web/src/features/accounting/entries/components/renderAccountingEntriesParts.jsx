@@ -1098,9 +1098,6 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
           </label>
         </div>
 
-        <p style={{ fontSize: "0.78rem", color: "#aeb6d3", margin: "0 0 8px" }}>
-          Preencha apenas <strong>data</strong> e <strong>valor</strong> nas linhas que quiser lançar. Linhas em branco são ignoradas.
-        </p>
 
         {loading && <p style={{ color: "#6272A4" }}>Carregando template...</p>}
 
