@@ -163,6 +163,20 @@ const S = {
   checkbox: { width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" },
 };
 
+// Rótulo do tipo na tabela. LP vem como guia consolidada "OUTRA" com composição por tributo —
+// mostra os tributos contidos (IRPJ · CSLL · PIS · COFINS) no lugar de "OUTRA/OUTROS".
+function tipoGuiaLabel(guide) {
+  const tipo = String(guide?.tipo || "");
+  if (tipo.toUpperCase() === "OUTRA") {
+    const comp = guide?.extracted?.composicao;
+    if (Array.isArray(comp) && comp.length) {
+      const tributos = [...new Set(comp.map((c) => c?.tributo || c?.denominacao).filter(Boolean))];
+      if (tributos.length) return tributos.join(" · ");
+    }
+  }
+  return tipo || "-";
+}
+
 function MetadataDialog({ initial, onSave, onCancel, saving }) {
   const [form, setForm] = useState({
     tipo: initial?.tipo || "",
@@ -696,6 +710,28 @@ export function CompanyGuidesTable({
               >
                 {confirmingGuideId === selectedGuideId ? "..." : "Confirmar pagamento"}
               </Button>
+              {/* Baixar o PDF da guia (se houver). */}
+              {onFetchGuidePdf && selectedGuide.status === "PROCESSED" && (
+                <Button
+                  variant="secondary" size="sm"
+                  onClick={async () => {
+                    try {
+                      const blob = await onFetchGuidePdf(selectedGuideId);
+                      if (!blob) { window.alert("Esta guia não tem PDF para baixar."); return; }
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `guia-${selectedGuide.tipo || "guia"}-${selectedGuide.competencia || ""}.pdf`;
+                      document.body.appendChild(a); a.click(); a.remove();
+                      setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    } catch (err) {
+                      window.alert(err?.message || "Falha ao baixar a guia.");
+                    }
+                  }}
+                >
+                  ⬇ Baixar
+                </Button>
+              )}
               {/* Liberar ao cliente = envio por e-mail SÓ desta guia (substitui o Reenviar).
                   Se já enviada, confirma reenvio no modal. */}
               {onLiberarGuia && (
@@ -814,7 +850,7 @@ export function CompanyGuidesTable({
                     <span className="guides-grid__cell guides-grid__cell--type" role="cell">
                       {guide.parcelamentoId
                         ? `Parc. ${guide.parcelamentoTipo || guide.tipo || ""}${guide.parcelamentoNumero ? ` nº${guide.parcelamentoNumero}` : ""}${guide.numeroParcela ? ` (${guide.numeroParcela})` : ""}`.trim()
-                        : (guide.tipo || "-")}
+                        : tipoGuiaLabel(guide)}
                     </span>
                     <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{guide.competencia || "-"}</span>
                     <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell">

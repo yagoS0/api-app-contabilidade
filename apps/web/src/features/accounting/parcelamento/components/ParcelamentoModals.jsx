@@ -58,6 +58,7 @@ const TIPOS_PARC = [
   ["PARCMEI_ESPECIAL", "MEI Especial"],
   ["PERT_MEI", "PERT-MEI"],
   ["RELP_MEI", "RELP-MEI"],
+  ["INSS", "INSS / Previdenciário"],
   ["OUTRO", "Outro"],
 ];
 
