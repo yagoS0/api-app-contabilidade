@@ -9,6 +9,7 @@ import { Button } from "../../../components/ui/Button";
 
 const SITUACAO_META = {
   COM_PENDENCIA: { label: "Com pendência", color: "#FF4757", bg: "rgba(255,71,87,0.12)" },
+  EM_PARCELAMENTO: { label: "Em parcelamento", color: "#8BE9FD", bg: "rgba(139,233,253,0.12)" },
   REGULAR: { label: "Regular", color: "#69FF47", bg: "rgba(105,255,71,0.10)" },
   PROCESSANDO: { label: "Processando", color: "#FFB347", bg: "rgba(255,179,71,0.12)" },
 };
@@ -65,6 +66,7 @@ export function PendenciasPage({ pendenciasPanel, onBack }) {
   }
 
   const comPendencia = (items || []).filter((r) => r.situacao === "COM_PENDENCIA").length;
+  const emParcelamento = (items || []).filter((r) => r.situacao === "EM_PARCELAMENTO").length;
 
   return (
     <PageShell
@@ -83,6 +85,12 @@ export function PendenciasPage({ pendenciasPanel, onBack }) {
               <div style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Com pendência</div>
               <div style={{ color: "#FF4757", fontSize: "1.4rem", fontWeight: 700 }}>{comPendencia}</div>
             </div>
+            {emParcelamento > 0 && (
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: "rgba(139,233,253,0.08)", border: "1px solid #8BE9FD" }}>
+                <div style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Em parcelamento</div>
+                <div style={{ color: "#8BE9FD", fontSize: "1.4rem", fontWeight: 700 }}>{emParcelamento}</div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>

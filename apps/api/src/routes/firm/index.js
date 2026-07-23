@@ -130,6 +130,12 @@ const SITFIS_PENDENCIA_REGEX = /pend[êe]ncia|d[ée]bito|em aberto|parcelamento 
 // exigibilidades suspensas ..." — por isso "detectad" tem que estar aqui (era a causa do falso-positivo).
 const SITFIS_NEGACAO_REGEX = /(?:n[ãa]o\s+(?:h[áa]|constam?|possui|exist[eê]m?|foram\s+(?:localizad[oa]s?|apurad[oa]s?|encontrad[oa]s?|identificad[oa]s?|detectad[oa]s?))\s+(?:d[ée]bitos?|pend[êe]ncias?|inscri[çc][õo]es?|ocorr[êe]ncias?|exigibilidades?)[^.;\n]*|nada\s+consta[^.;\n]*|sem\s+(?:pend[êe]ncias?|ocorr[êe]ncias?|d[ée]bitos?)[^.;\n]*|situa[çc][ãa]o\s+(?:fiscal\s+)?regular[^.;\n]*|regular\s+perante[^.;\n]*)/gi;
 
+// Parcelamento com exigibilidade SUSPENSA = empresa regularizando (débito suspenso, não em aberto).
+// No relatório real aparece como "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)" e
+// "SIMPLES NACIONAL - EM PARCELAMENTO". ⚠ NÃO casa "parcelamento EM ATRASO" (esse é pendência de
+// verdade — voltou a ser exigível — e já cai em SITFIS_PENDENCIA_REGEX, que é checada antes).
+const SITFIS_PARCELAMENTO_REGEX = /parcelamento\s+com\s+exigibilidade\s+suspensa|(?:^|[^a-zç])em\s+parcelamento|\bparcsn\b|\bparcmei\b/i;
+
 async function extractSitfisPdfText(buffer) {
   if (!buffer?.length) return "";
   try {
@@ -151,7 +157,11 @@ function deriveSituacaoFiscal(result, extraText = "") {
     extraText || "",
   ].join(" ");
   const semNegacoes = haystack.replace(SITFIS_NEGACAO_REGEX, " ");
+  // Débito em aberto (inclui parcelamento EM ATRASO, que voltou a ser exigível) vence tudo.
   if (SITFIS_PENDENCIA_REGEX.test(semNegacoes)) return "COM_PENDENCIA";
+  // Parcelamento com exigibilidade suspensa: está regularizando — status próprio (não é pendência
+  // aberta, mas também não é "nada consta").
+  if (SITFIS_PARCELAMENTO_REGEX.test(semNegacoes)) return "EM_PARCELAMENTO";
   return "REGULAR";
 }
 
