@@ -151,6 +151,8 @@ export async function capturarLpDaCompetencia({ portalClientId, competencia }) {
       data: {
         ...(darf.valor != null ? { valor: darf.valor } : {}),
         ...(darf.vencimento ? { vencimento: new Date(darf.vencimento) } : {}),
+        // Anexa o PDF do DARF consolidado (GERARGUIA31) → guia baixável e enviável por e-mail.
+        ...(darf.pdfBuffer ? { pdfBytes: darf.pdfBuffer } : {}),
         extracted: { ...extractedAtual, numeroDocumento: darf.numeroDocumento },
       },
     }).catch(() => {});
