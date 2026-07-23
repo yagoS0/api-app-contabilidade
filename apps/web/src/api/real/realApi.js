@@ -1074,6 +1074,26 @@ export function createRealApi() {
       }
       return res.blob();
     },
+    // Q62: download em lote das situações fiscais (SITFIS) — job + zip dos PDFs armazenados.
+    async createSitfisDownload(companyIds) {
+      return request(`/firm/sitfis-download`, { method: "POST", body: JSON.stringify({ companyIds: companyIds || [] }) });
+    },
+    async getSitfisDownload(jobId) {
+      return request(`/firm/sitfis-download/${jobId}`);
+    },
+    async fetchSitfisDownloadBlob(jobId) {
+      const baseUrl = getApiBaseUrl();
+      const headers = {};
+      const tok = accessToken || readStoredToken();
+      if (tok) headers.Authorization = `Bearer ${tok}`;
+      const res = await fetch(`${baseUrl}/firm/sitfis-download/${jobId}/arquivo`, { method: "GET", headers });
+      if (!res.ok) {
+        const err = new Error(`Falha ao baixar o ZIP de situações fiscais (HTTP ${res.status})`);
+        err.code = "SITFIS_DOWNLOAD_FETCH_FAILED";
+        throw err;
+      }
+      return res.blob();
+    },
     // Q12.C.1: listagem de notas + resumo
     async listNotas(companyId, filters = {}) {
       const q = new URLSearchParams();

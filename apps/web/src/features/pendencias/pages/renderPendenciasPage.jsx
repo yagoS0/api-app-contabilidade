@@ -30,7 +30,7 @@ function SituacaoBadge({ situacao }) {
 }
 
 export function PendenciasPage({ pendenciasPanel, onBack }) {
-  const { items, loading, error, running, progress, consultarUma, consultarLote } = pendenciasPanel || {};
+  const { items, loading, error, running, progress, consultarUma, consultarLote, baixando, baixarLote } = pendenciasPanel || {};
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [onlyPendencia, setOnlyPendencia] = useState(false);
   const [rowBusy, setRowBusy] = useState(null);
@@ -93,6 +93,15 @@ export function PendenciasPage({ pendenciasPanel, onBack }) {
               onClick={() => consultarLote?.(rows.filter((r) => selectedIds.has(r.companyId)).map((r) => r.companyId))}
             >
               {running ? `Consultando… (${progress.done}/${progress.total})` : "Consultar selecionadas"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!someSelected || baixando || running}
+              onClick={() => baixarLote?.(rows.filter((r) => selectedIds.has(r.companyId)).map((r) => r.companyId))}
+              title="Baixa um ZIP com os PDFs de situação fiscal das empresas selecionadas."
+            >
+              {baixando ? "Baixando…" : "⬇ Baixar em lote"}
             </Button>
             <label style={{ display: "flex", alignItems: "center", gap: 6, color: "#A7B0C0", fontSize: "0.85rem" }}>
               <input type="checkbox" checked={onlyPendencia} onChange={(e) => setOnlyPendencia(e.target.checked)} />

@@ -62,9 +62,48 @@ export function usePendencias({ api, feedback, enabled = true }) {
     if (firstError) setError(`Concluído com erros: ${firstError}`);
   }, [api, running, load]);
 
+  // Q62: baixa em lote as situações fiscais (ZIP) — cria o job, faz polling e baixa o arquivo pronto.
+  const [baixando, setBaixando] = useState(false);
+  const baixarLote = useCallback(async (companyIds) => {
+    const ids = Array.isArray(companyIds) ? companyIds.filter(Boolean) : [];
+    if (!api || ids.length === 0 || baixando) return;
+    setBaixando(true);
+    setError(null);
+    try {
+      const created = await api.createSitfisDownload(ids);
+      const jobId = created?.jobId;
+      if (!jobId) throw new Error(created?.message || "Falha ao criar o download.");
+      let job = null;
+      for (let i = 0; i < 160; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const out = await api.getSitfisDownload(jobId);
+        job = out?.job;
+        if (!job || ["concluido", "erro", "expirado"].includes(job.status)) break;
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (job?.status !== "concluido") throw new Error(job?.erroMensagem || "O download não concluiu.");
+      const blob = await api.fetchSitfisDownloadBlob(jobId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = job.arquivoNome || "situacoes-fiscais.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      feedback?.notifySuccess?.(`ZIP com ${job.comPdf ?? 0} situação(ões) fiscal(is) baixado.`);
+    } catch (err) {
+      setError(err?.message || "Falha ao baixar em lote.");
+      feedback?.notifyError?.(err?.message || "Falha ao baixar em lote.");
+    } finally {
+      setBaixando(false);
+    }
+  }, [api, baixando, feedback]);
+
   useEffect(() => {
     load();
   }, [load]);
 
-  return { items, loading, error, running, progress, reload: load, consultarUma, consultarLote };
+  return { items, loading, error, running, progress, reload: load, consultarUma, consultarLote, baixando, baixarLote };
 }

@@ -1838,6 +1838,13 @@ export function createMockApi() {
       await delay(60);
       return new Blob(["mock"], { type: "application/zip" });
     },
+    // Q62: download em lote das SITFIS (mock)
+    async createSitfisDownload() { await delay(80); return { ok: true, jobId: `mock-sitfis-dl-${Date.now()}` }; },
+    async getSitfisDownload(jobId) {
+      await delay(60);
+      return { ok: true, job: { id: jobId, status: "concluido", totalEmpresas: 1, processadas: 1, comPdf: 1, arquivoNome: "situacao-fiscal-mock.zip", arquivoBytes: 0, erroMensagem: null } };
+    },
+    async fetchSitfisDownloadBlob() { await delay(60); return new Blob(["mock"], { type: "application/zip" }); },
     async listNotas() { await delay(60); return { ok: true, total: 0, notas: [] }; },
     async getNotasSummary() { await delay(60); return { ok: true, ano: new Date().getUTCFullYear(), totals: { totalNotas: 0, totalEmitido: 0, totalRecebido: 0 }, byMonth: [] }; },
     async listApuracao({ competencia } = {}) { await delay(60); return { competencia, items: [] }; },

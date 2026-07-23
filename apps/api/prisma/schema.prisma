@@ -1686,6 +1686,27 @@ model NotasDownloadJob {
   @@map("notas_download_jobs")
 }
 
+// Q62 — Download em lote das SITFIS (situação fiscal): ZIP com os PDFs já armazenados por empresa.
+model SitfisDownloadJob {
+  id            String    @id @default(uuid())
+  status        String    @default("processando") // processando | concluido | erro | expirado
+  companyIds    Json // string[] de portalClientId
+  totalEmpresas Int
+  processadas   Int       @default(0)
+  comPdf        Int       @default(0)
+  arquivoPath   String?
+  arquivoNome   String?
+  arquivoBytes  Int?
+  erroMensagem  String?
+  triggeredBy   String?
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@map("sitfis_download_jobs")
+}
+
 // ── Ledger append-only de documentos fiscais (Robustez NFS-e/ADN — Fase 1) ──────────────
 // Fundação do modelo por FLUXO DE EVENTOS (não snapshot por data). Documentos e eventos são
 // IMUTÁVEIS (append-only): correção = novo registro, nunca UPDATE. O status é PROJEÇÃO

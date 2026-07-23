@@ -36,6 +36,10 @@ import {
   cleanupNotasDownloadJobs,
   jobToResponse as notasDownloadJobToResponse,
 } from "../../application/notas/download/NotasDownloadService.js";
+import {
+  criarSitfisDownloadJob,
+  sitfisJobToResponse,
+} from "../../application/fiscal/serpro/SitfisDownloadService.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import {
@@ -4072,6 +4076,54 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) {
       log.warn({ err: err?.message }, "Falha no download do zip de notas");
       if (!res.headersSent) return res.status(500).json({ ok: false, error: "notas_download_file_failed" });
+      return res.end();
+    }
+  });
+
+  // Q62 — Download em lote das situações fiscais (SITFIS): job + ZIP dos PDFs armazenados.
+  // POST /firm/sitfis-download  body: { companyIds:[] }
+  router.post("/sitfis-download", async (req, res) => {
+    try {
+      const ids = Array.isArray(req.body?.companyIds) ? req.body.companyIds.map(String).filter(Boolean) : [];
+      const existentes = await prisma.portalClient.findMany({ where: { id: { in: ids } }, select: { id: true } });
+      const result = await criarSitfisDownloadJob({ companyIds: existentes.map((c) => c.id), userId: req.auth?.user?.id });
+      return res.json(result);
+    } catch (err) {
+      log.warn({ err: err?.message }, "Falha ao criar download de SITFIS");
+      return res.status(err?.code === "COMPANIES_REQUIRED" ? 400 : 500)
+        .json({ ok: false, error: err?.code || "sitfis_download_failed", message: err?.message });
+    }
+  });
+
+  // GET /firm/sitfis-download/:jobId — progresso (polling)
+  router.get("/sitfis-download/:jobId", async (req, res) => {
+    try {
+      const job = await prisma.sitfisDownloadJob.findUnique({ where: { id: String(req.params.jobId) } });
+      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      return res.json({ ok: true, job: sitfisJobToResponse(job) });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: "sitfis_download_status_failed", message: err?.message });
+    }
+  });
+
+  // GET /firm/sitfis-download/:jobId/arquivo — stream do ZIP pronto
+  router.get("/sitfis-download/:jobId/arquivo", async (req, res) => {
+    try {
+      const job = await prisma.sitfisDownloadJob.findUnique({ where: { id: String(req.params.jobId) } });
+      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      if (job.status === "expirado") return res.status(410).json({ ok: false, error: "expirado" });
+      if (job.status !== "concluido" || !job.arquivoPath) return res.status(409).json({ ok: false, error: "nao_concluido", status: job.status });
+      if (job.expiresAt && new Date(job.expiresAt) < new Date()) return res.status(410).json({ ok: false, error: "expirado" });
+      if (!fsNotasDownload.existsSync(job.arquivoPath)) return res.status(410).json({ ok: false, error: "arquivo_removido" });
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${sanitizeFilename(job.arquivoNome || `situacao-fiscal-${job.id}.zip`)}"`);
+      if (job.arquivoBytes) res.setHeader("Content-Length", String(job.arquivoBytes));
+      const stream = fsNotasDownload.createReadStream(job.arquivoPath);
+      stream.on("error", () => { if (!res.headersSent) res.status(500).end(); else res.end(); });
+      return stream.pipe(res);
+    } catch (err) {
+      log.warn({ err: err?.message }, "Falha no download do zip de SITFIS");
+      if (!res.headersSent) return res.status(500).json({ ok: false, error: "sitfis_download_file_failed" });
       return res.end();
     }
   });
