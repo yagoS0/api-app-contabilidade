@@ -57,9 +57,10 @@ for (let i = 0; i < candidatos.length; i++) {
     const r = await probeEmitirDarfDctfweb({ contribuinteCnpj: cnpj, competencia, dadosOverride: dados });
     console.log(`   httpStatus=${r.httpStatus}  temPdf=${r.temPdf}  pdfLength=${r.pdfLength}`);
     console.log(`   parsed=${JSON.stringify(r.parsed)}`);
+    if (r.composicao) console.log(`   composicao=${JSON.stringify(r.composicao)}`); // códigos/valores DENTRO deste DARF
     if (r.mensagens) console.log(`   mensagens=${JSON.stringify(r.mensagens)}`);
     if (r.envelopeKeys?.length) console.log(`   envelopeKeys=${JSON.stringify(r.envelopeKeys)}`);
-    if (r.pdfTexto) console.log(`   pdfTexto[0..300]=${r.pdfTexto.slice(0, 300).replace(/\s+/g, " ")}`);
+    if (r.pdfTexto) console.log(`   pdfTexto[0..900]=${r.pdfTexto.slice(0, 900).replace(/\s+/g, " ")}`);
     if (r.pdfTextoErro) console.log(`   pdfTextoErro=${r.pdfTextoErro}`);
   } catch (e) {
     ok = false;

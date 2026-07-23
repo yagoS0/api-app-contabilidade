@@ -368,10 +368,12 @@ export async function probeEmitirDarfDctfweb({
   let parsed = null;
   let pdfTexto = null;
   let pdfTextoErro = null;
+  let composicao = null;
   if (pdf) {
     try {
       const r = await parsePdfResponse(envelope); // parse puro (não salva no storage)
       parsed = { valor: r.parsed?.inssTotal ?? null, vencimento: r.parsed?.inssVencimento ?? null, numeroDocumento: r.numeroDocumento ?? null };
+      composicao = r.composicao ?? null; // principal/multa/juros por código (do texto do DARF)
       pdfTexto = String(r.rawText || "").slice(0, 4000);
     } catch (e) {
       pdfTextoErro = e?.message || "falha ao parsear PDF do DARF";
@@ -386,6 +388,7 @@ export async function probeEmitirDarfDctfweb({
     temPdf: Boolean(pdf),
     pdfLength: pdf ? String(pdf).length : 0,
     parsed, // { valor, vencimento, numeroDocumento }
+    composicao, // { itens: [{ codigo, principal, multa, juros, total, denominacao }], totais }
     pdfTexto,
     pdfTextoErro,
     mensagens: envelope && typeof envelope === "object" ? envelope.mensagens ?? null : null,
