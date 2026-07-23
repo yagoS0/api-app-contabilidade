@@ -2517,7 +2517,8 @@ export function createAccountingEntriesRouter({ log }) {
             const valor = Number(t.valor);
             const historico = String(t.historico || "").trim();
             const dataStr = String(t.data || "").slice(0, 10);
-            if (!contaDebito || !contaCredito || !historico || !valor || !dataStr) {
+            // Importa com ≥1 conta preenchida; só pula quando D E C estão vazias (a outra aprende depois).
+            if ((!contaDebito && !contaCredito) || !historico || !valor || !dataStr) {
               failed.push({ rowIndex: t.rowIndex, reason: "campos_obrigatorios" });
               continue;
             }
@@ -2647,7 +2648,8 @@ export function createAccountingEntriesRouter({ log }) {
             const valor = Number(t.valor);
             const descricao = String(t.descricao || "").trim();
             const dataStr = String(t.data || "").slice(0, 10);
-            if (!contaDebito || !contaCredito || !descricao || !valor || !dataStr) {
+            // Importa com ≥1 conta preenchida; só pula quando D E C estão vazias (a outra aprende depois).
+            if ((!contaDebito && !contaCredito) || !descricao || !valor || !dataStr) {
               failed.push({ rowIndex: t.rowIndex, reason: "campos_obrigatorios" });
               continue;
             }

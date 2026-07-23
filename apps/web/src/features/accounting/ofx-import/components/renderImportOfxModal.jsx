@@ -159,7 +159,7 @@ export function ImportOFXModal({
     (t) => !t.skip && (!t.historico || !t.contaDebito || !t.contaCredito),
   ).length;
   const completeRows = transactions.filter(
-    (t) => t.contaDebito && t.contaCredito && t.historico && !t.skip,
+    (t) => (t.contaDebito || t.contaCredito) && t.historico && !t.skip,
   ).length;
   const skipRows = transactions.filter((t) => t.skip).length;
   const canCommit = completeRows > 0 && !saving;
@@ -175,7 +175,7 @@ export function ImportOFXModal({
   async function handleCommit() {
     setError("");
     const toSend = transactions
-      .filter((t) => !t.skip && t.contaDebito && t.contaCredito && t.historico)
+      .filter((t) => !t.skip && (t.contaDebito || t.contaCredito) && t.historico)
       .map((t) => ({
         rowIndex: t.rowIndex,
         data: t.data,

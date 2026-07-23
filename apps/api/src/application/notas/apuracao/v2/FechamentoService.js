@@ -495,7 +495,46 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
       erroMensagem: null,
     },
   });
-  return { ok: true, jaDeclarado: false, dasValor: resultado.dasValor, numeroDeclaracao: resultado.numeroDeclaracao, snapshot: updated };
+  // Q62: em RETIFICAÇÃO — (a) reconsulta o extrato (atualiza faturamento/circular/DAS) e (b) libera a
+  // guia DAS pra reenvio (busca o DAS novo + reseta os flags de e-mail). Best-effort: falha aqui NÃO
+  // desfaz a retransmissão (o aviso vai no payload).
+  let posRetificacao = null;
+  if (retificar) {
+    posRetificacao = { extrato: null, guia: null };
+    // (a) reconsulta o extrato — reescreve a circular e re-roda os lançamentos de RECEITA/DAS.
+    try {
+      const { syncPgdasByCompetencia } = await import("../../../fiscal/serpro/SerproPgdasDeclaracaoService.js");
+      const r = await syncPgdasByCompetencia({ portalClientId, competencia });
+      posRetificacao.extrato = { ok: true, receitaStatus: r?.circular?.receitaStatus ?? null };
+    } catch (err) {
+      posRetificacao.extrato = { skipped: true, reason: err?.message || "erro" };
+    }
+    // (b) DAS novo (novo nº doc/valor/PDF) + reset dos flags de e-mail da guia DAS pra reenvio.
+    try {
+      try {
+        const { capturePgdasGuideForCompany } = await import("../../../fiscal/serpro/CaptureSerproGuidesService.js");
+        await capturePgdasGuideForCompany({ portalClientId, competencia });
+      } catch { /* PDF novo é bônus; o reenvio depende só do reset abaixo */ }
+      const dasGuide = await prisma.guide.findFirst({
+        where: { portalClientId, competencia, tipo: "SIMPLES", source: "SERPRO" },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, status: true },
+      });
+      if (dasGuide && dasGuide.status === "PROCESSED") {
+        await prisma.guide.update({
+          where: { id: dasGuide.id },
+          data: { emailStatus: "PENDING", emailAttempts: 0, emailLastError: null, emailSentAt: null, emailNextRetryAt: null },
+        });
+        posRetificacao.guia = { guideId: dasGuide.id, liberadaReenvio: true };
+      } else {
+        posRetificacao.guia = { skipped: true, reason: "das_guide_nao_encontrada_ou_nao_processada" };
+      }
+    } catch (err) {
+      posRetificacao.guia = { skipped: true, reason: err?.message || "erro" };
+    }
+  }
+
+  return { ok: true, jaDeclarado: false, dasValor: resultado.dasValor, numeroDeclaracao: resultado.numeroDeclaracao, snapshot: updated, posRetificacao };
 }
 
 /**

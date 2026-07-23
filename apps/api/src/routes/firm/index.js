@@ -120,7 +120,10 @@ const SITFIS_PENDENCIA_REGEX = /pend[êe]ncia|d[ée]bito|em aberto|parcelamento 
 // Frases de "nada consta" — removidas antes de aplicar a regex para não gerar falso-positivo
 // (ex.: "não há débitos" contém "débitos"). Um relatório pode ter uma seção "sem débitos" na RFB
 // e ainda assim ter débito na PGFN; ao remover só as frases negativas, o "DEVEDOR" da PGFN dispara.
-const SITFIS_NEGACAO_REGEX = /n[ãa]o\s+(?:h[áa]|constam?|possui|exist[eê]m?|foram\s+localizad[oa]s?)\s+(?:d[ée]bitos?|pend[êe]ncias?|inscri[çc][õo]es?)[^.;\n]*/gi;
+// Q62: guarda de negação AMPLIADA (menos falso-positivo em empresa limpa). Cobre várias formas de
+// "nada consta / situação regular / sem pendências / não foram apurados/localizados débitos...".
+// Ainda a calibrar com texto SITFIS real (scripts/dump-sitfis-texto.mjs).
+const SITFIS_NEGACAO_REGEX = /(?:n[ãa]o\s+(?:h[áa]|constam?|possui|exist[eê]m?|foram\s+(?:localizad[oa]s?|apurad[oa]s?|encontrad[oa]s?|identificad[oa]s?))\s+(?:d[ée]bitos?|pend[êe]ncias?|inscri[çc][õo]es?|ocorr[êe]ncias?)[^.;\n]*|nada\s+consta[^.;\n]*|sem\s+(?:pend[êe]ncias?|ocorr[êe]ncias?|d[ée]bitos?)[^.;\n]*|situa[çc][ãa]o\s+(?:fiscal\s+)?regular[^.;\n]*|regular\s+perante[^.;\n]*)/gi;
 
 async function extractSitfisPdfText(buffer) {
   if (!buffer?.length) return "";
@@ -136,10 +139,11 @@ async function extractSitfisPdfText(buffer) {
 
 function deriveSituacaoFiscal(result, extraText = "") {
   if (result?.processando) return "PROCESSANDO";
+  // Q62: NÃO varrer o rawPayload (JSON do envelope SERPRO) — os nomes de campo/metadados casavam
+  // as palavras-chave e geravam pendência falsa. Só o texto do relatório (PDF) conta.
   const haystack = [
     result?.relatorioTexto || "",
     extraText || "",
-    result?.rawPayload ? JSON.stringify(result.rawPayload) : "",
   ].join(" ");
   const semNegacoes = haystack.replace(SITFIS_NEGACAO_REGEX, " ");
   if (SITFIS_PENDENCIA_REGEX.test(semNegacoes)) return "COM_PENDENCIA";
@@ -3177,6 +3181,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // "Declaração não transmitida por terceiros" é estado NORMAL (não é erro do app).
         if (code === "SERPRO_DCTFWEB_LP_NAO_TRANSMITIDA") {
           return res.status(200).json({ ok: false, error: code, message: "DCTFWeb ainda não transmitida para esta competência.", mensagens: err?.mensagens || null });
+        }
+        // Empresa do Simples (ou regime não Presumido/Real): a consulta do LP não se aplica.
+        if (code === "REGIME_INVALIDO_LP") {
+          return res.status(409).json({ ok: false, error: code, message: err?.message || "Consulta do Lucro Presumido não se aplica a este regime." });
         }
         if ([
           "SERPRO_INVALID_COMPETENCIA", "SERPRO_PROCURADOR_CNPJ_NOT_CONFIGURED", "PORTAL_COMPANY_NOT_FOUND",

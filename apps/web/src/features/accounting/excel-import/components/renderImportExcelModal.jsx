@@ -92,14 +92,14 @@ export function ImportExcelModal({ accounts = [], onPreview, onCommit, onClose }
   const totalRows = transactions.length;
   const matchedRows = transactions.filter((t) => t.match).length;
   const pendingRows = transactions.filter((t) => !t.match).length;
-  const completeRows = transactions.filter((t) => t.contaDebito && t.contaCredito && !t.skip).length;
+  const completeRows = transactions.filter((t) => (t.contaDebito || t.contaCredito) && !t.skip).length;
   const skipRows = transactions.filter((t) => t.skip).length;
   const canCommit = completeRows > 0 && !saving;
 
   async function handleCommit() {
     setError("");
     const toSend = transactions
-      .filter((t) => !t.skip && t.contaDebito && t.contaCredito)
+      .filter((t) => !t.skip && (t.contaDebito || t.contaCredito))
       .map((t) => ({
         rowIndex: t.rowIndex,
         data: t.data,
