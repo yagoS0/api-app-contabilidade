@@ -64,22 +64,32 @@ try {
   }
   console.log(`situação atual (heurística): ${status.situacao} · consultado em ${status.checkedAt}`);
 
-  if (!status.relatorioPdfFileId) {
-    console.error("Sem relatorioPdfFileId (PDF não armazenado).");
-    if (status.texto) console.log(`\n=== texto salvo (${status.texto.length} chars) ===\n${status.texto}`);
-    process.exit(1);
+  // 1) Tenta ler o PDF do storage (só existe onde a consulta rodou — normalmente produção).
+  if (status.relatorioPdfFileId) {
+    try {
+      const buf = await GuideStorageService.create().downloadBuffer({ key: status.relatorioPdfFileId });
+      if (buf?.length) {
+        const pdfParse = (await import("pdf-parse")).default;
+        const data = await pdfParse(buf);
+        const texto = String(data?.text || "");
+        console.log(`\n=== TEXTO EXTRAÍDO DO PDF SITFIS (${texto.length} chars) ===\n`);
+        console.log(texto);
+        await prisma.$disconnect();
+        process.exit(0);
+      }
+    } catch (e) {
+      console.error(`(PDF não acessível aqui: ${e?.message || e} — usando o texto salvo no banco)`);
+    }
   }
 
-  const buf = await GuideStorageService.create().downloadBuffer({ key: status.relatorioPdfFileId });
-  if (!buf?.length) {
-    console.error("PDF vazio/inacessível no storage.");
-    process.exit(1);
+  // 2) Fallback: o texto extraído já ficou salvo no banco (funciona LOCAL, sem o PDF).
+  if (status.texto) {
+    console.log(`\n=== TEXTO SALVO NO BANCO (${status.texto.length} chars) ===\n`);
+    console.log(status.texto);
+  } else {
+    console.error("Sem texto salvo e sem PDF acessível. Rode no container (produção), onde o PDF existe.");
+    process.exitCode = 1;
   }
-  const pdfParse = (await import("pdf-parse")).default;
-  const data = await pdfParse(buf);
-  const texto = String(data?.text || "");
-  console.log(`\n=== TEXTO EXTRAÍDO DO PDF SITFIS (${texto.length} chars) ===\n`);
-  console.log(texto);
 } catch (err) {
   console.error("Erro:", err?.message || err);
   process.exitCode = 1;
