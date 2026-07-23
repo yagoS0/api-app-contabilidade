@@ -126,8 +126,9 @@ const SITFIS_PENDENCIA_REGEX = /pend[êe]ncia|d[ée]bito|em aberto|parcelamento 
 // e ainda assim ter débito na PGFN; ao remover só as frases negativas, o "DEVEDOR" da PGFN dispara.
 // Q62: guarda de negação AMPLIADA (menos falso-positivo em empresa limpa). Cobre várias formas de
 // "nada consta / situação regular / sem pendências / não foram apurados/localizados débitos...".
-// Ainda a calibrar com texto SITFIS real (scripts/dump-sitfis-texto.mjs).
-const SITFIS_NEGACAO_REGEX = /(?:n[ãa]o\s+(?:h[áa]|constam?|possui|exist[eê]m?|foram\s+(?:localizad[oa]s?|apurad[oa]s?|encontrad[oa]s?|identificad[oa]s?))\s+(?:d[ée]bitos?|pend[êe]ncias?|inscri[çc][õo]es?|ocorr[êe]ncias?)[^.;\n]*|nada\s+consta[^.;\n]*|sem\s+(?:pend[êe]ncias?|ocorr[êe]ncias?|d[ée]bitos?)[^.;\n]*|situa[çc][ãa]o\s+(?:fiscal\s+)?regular[^.;\n]*|regular\s+perante[^.;\n]*)/gi;
+// Calibrada com relatório SITFIS real: a linha limpa da PGFN é "Não foram DETECTADAS pendências/
+// exigibilidades suspensas ..." — por isso "detectad" tem que estar aqui (era a causa do falso-positivo).
+const SITFIS_NEGACAO_REGEX = /(?:n[ãa]o\s+(?:h[áa]|constam?|possui|exist[eê]m?|foram\s+(?:localizad[oa]s?|apurad[oa]s?|encontrad[oa]s?|identificad[oa]s?|detectad[oa]s?))\s+(?:d[ée]bitos?|pend[êe]ncias?|inscri[çc][õo]es?|ocorr[êe]ncias?|exigibilidades?)[^.;\n]*|nada\s+consta[^.;\n]*|sem\s+(?:pend[êe]ncias?|ocorr[êe]ncias?|d[ée]bitos?)[^.;\n]*|situa[çc][ãa]o\s+(?:fiscal\s+)?regular[^.;\n]*|regular\s+perante[^.;\n]*)/gi;
 
 async function extractSitfisPdfText(buffer) {
   if (!buffer?.length) return "";
