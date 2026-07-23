@@ -163,18 +163,42 @@ const S = {
   checkbox: { width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" },
 };
 
-// Rótulo do tipo na tabela. LP vem como guia consolidada "OUTRA" com composição por tributo —
-// mostra os tributos contidos (IRPJ · CSLL · PIS · COFINS) no lugar de "OUTRA/OUTROS".
+// LP vem como guia consolidada "OUTRA" com composição por tributo. Nome curto de cada imposto
+// contido (IRRF · PIS · COFINS) no lugar de "OUTRA/OUTROS"; a descrição completa vai no tooltip.
+function composicaoDaGuia(guide) {
+  const comp = guide?.extracted?.composicao;
+  return Array.isArray(comp) ? comp : [];
+}
+function tributoCurto(c) {
+  if (c?.tributo) return String(c.tributo).trim();
+  const den = String(c?.denominacao || "").trim();
+  if (den) return (den.split(/\s*[-–—]\s*/)[0] || den).trim(); // "IRRF - ALUG..." → "IRRF"
+  return String(c?.codigo || "").trim() || "?";
+}
+// Rótulo curto na coluna Tipo.
 function tipoGuiaLabel(guide) {
   const tipo = String(guide?.tipo || "");
   if (tipo.toUpperCase() === "OUTRA") {
-    const comp = guide?.extracted?.composicao;
-    if (Array.isArray(comp) && comp.length) {
-      const tributos = [...new Set(comp.map((c) => c?.tributo || c?.denominacao).filter(Boolean))];
-      if (tributos.length) return tributos.join(" · ");
+    const comp = composicaoDaGuia(guide);
+    if (comp.length) {
+      const nomes = [...new Set(comp.map(tributoCurto).filter(Boolean))];
+      if (nomes.length) return nomes.join(" · ");
     }
   }
   return tipo || "-";
+}
+// Descrição completa (tooltip): cada imposto contido na guia consolidada + valor.
+function tipoGuiaTitle(guide) {
+  if (String(guide?.tipo || "").toUpperCase() !== "OUTRA") return undefined;
+  const comp = composicaoDaGuia(guide);
+  if (!comp.length) return undefined;
+  return "Impostos contidos nesta guia:\n" + comp
+    .map((c) => {
+      const nome = c?.denominacao || tributoCurto(c);
+      const valor = c?.total != null ? ` — R$ ${Number(c.total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "";
+      return `• ${nome}${valor}`;
+    })
+    .join("\n");
 }
 
 function MetadataDialog({ initial, onSave, onCancel, saving }) {
@@ -847,7 +871,7 @@ export function CompanyGuidesTable({
                         aria-label={`Selecionar guia ${guide.tipo} ${guide.competencia}`}
                       />
                     </span>
-                    <span className="guides-grid__cell guides-grid__cell--type" role="cell">
+                    <span className="guides-grid__cell guides-grid__cell--type" role="cell" title={tipoGuiaTitle(guide)}>
                       {guide.parcelamentoId
                         ? `Parc. ${guide.parcelamentoTipo || guide.tipo || ""}${guide.parcelamentoNumero ? ` nº${guide.parcelamentoNumero}` : ""}${guide.numeroParcela ? ` (${guide.numeroParcela})` : ""}`.trim()
                         : tipoGuiaLabel(guide)}
