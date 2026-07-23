@@ -13,13 +13,47 @@ function arg(name) {
   return p ? p.split("=").slice(1).join("=") : null;
 }
 
-const portalClientId = arg("portalClientId");
-if (!portalClientId) {
-  console.error("Uso: node scripts/dump-sitfis-texto.mjs --portalClientId=<id>");
+// Resolve a empresa por --portalClientId OU --cnpj OU --razao (nome, parcial). Se o nome bater em
+// várias, lista as candidatas (id · razão · CNPJ) e sai — aí você roda de novo com o id certo.
+async function resolverPortalClientId() {
+  const byId = arg("portalClientId");
+  if (byId) return byId;
+
+  const cnpjArg = arg("cnpj");
+  if (cnpjArg) {
+    const dig = String(cnpjArg).replace(/\D+/g, "");
+    const cands = await prisma.portalClient.findMany({
+      where: { OR: [{ cnpj: cnpjArg }, { cnpj: dig }] },
+      select: { id: true, razao: true, cnpj: true },
+      take: 10,
+    });
+    if (cands.length === 1) return cands[0].id;
+    if (cands.length === 0) { console.error(`Nenhuma empresa com CNPJ ${cnpjArg}.`); process.exit(1); }
+    console.error("Mais de uma empresa com esse CNPJ:");
+    cands.forEach((c) => console.error(`  ${c.id}  ·  ${c.razao}  ·  ${c.cnpj}`));
+    process.exit(1);
+  }
+
+  const razaoArg = arg("razao");
+  if (razaoArg) {
+    const cands = await prisma.portalClient.findMany({
+      where: { razao: { contains: razaoArg, mode: "insensitive" } },
+      select: { id: true, razao: true, cnpj: true },
+      take: 20,
+    });
+    if (cands.length === 1) return cands[0].id;
+    if (cands.length === 0) { console.error(`Nenhuma empresa com nome contendo "${razaoArg}".`); process.exit(1); }
+    console.error(`Empresas com nome contendo "${razaoArg}" (rode de novo com --portalClientId=<id>):`);
+    cands.forEach((c) => console.error(`  ${c.id}  ·  ${c.razao}  ·  ${c.cnpj}`));
+    process.exit(1);
+  }
+
+  console.error("Uso: node scripts/dump-sitfis-texto.mjs --portalClientId=<id> | --cnpj=<cnpj> | --razao=<nome>");
   process.exit(2);
 }
 
 try {
+  const portalClientId = await resolverPortalClientId();
   const status = await prisma.companyFiscalStatus.findUnique({
     where: { portalClientId },
     select: { relatorioPdfFileId: true, situacao: true, texto: true, checkedAt: true },
