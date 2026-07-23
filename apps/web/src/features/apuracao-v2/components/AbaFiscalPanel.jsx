@@ -54,7 +54,7 @@ export function AbaFiscalPanel({ panel }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 12, color: PANEL.text }}>
         <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>🧾 Aba Fiscal — Atividades permitidas</div>
         <div style={{ padding: 24, textAlign: "center", color: PANEL.muted, background: PANEL.field, borderRadius: 8 }}>
-          Nenhum CNAE encontrado. Preencha o <strong style={{ color: PANEL.text }}>Cadastro Fiscal</strong> (regime + CNAE principal/secundários) para derivar as atividades permitidas.
+          Nenhum CNAE encontrado.
         </div>
       </div>
     );

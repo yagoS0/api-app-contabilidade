@@ -366,7 +366,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
         </button>
       ) : (
         <span
-          title={isSynthetic ? "Gerada a partir da guia INSS — gerencie o pagamento na aba Guias" : (isParcial ? `Parcial — saldo R$ ${fmtMoney(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
+          title={isSynthetic ? "Gerada a partir da guia INSS" : (isParcial ? `Parcial — saldo R$ ${fmtMoney(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
           style={{ color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", display: "inline-block", padding: "2px 0" }}
         >
           {numText}

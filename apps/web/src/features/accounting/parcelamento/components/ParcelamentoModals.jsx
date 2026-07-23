@@ -458,10 +458,6 @@ export function ParcelamentoEntradaModal({ parcelamentosAtivos = [], onChooseAtt
           <strong style={{ fontSize: "1.05rem" }}>Novo parcelamento</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
         </div>
-        <div style={{ fontSize: "0.8rem", color: PANEL.muted }}>
-          Anexe a guia a um parcelamento <strong>já existente</strong> (próxima parcela), ou abra um
-          <strong> novo</strong> parcelamento — buscando o número no SERPRO ou subindo a guia manualmente.
-        </div>
 
         {/* Opção: anexar a um parcelamento ATIVO existente (próxima parcela) — sempre visível. */}
         {onChooseAttach && (
@@ -625,12 +621,12 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
         {loading ? <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div> : (
           <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span style={lbl}>Provisão (adesão): D contrapartida / C parcelamento a pagar</span>
+              <span style={lbl}>Provisão (adesão)</span>
               <button onClick={() => addRow("prov")} style={{ ...FIELD_STYLE, width: 26, height: 26, padding: 0, cursor: "pointer" }}>+</button>
             </div>
             {tbl("prov", prov)}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
-              <span style={lbl}>Pagamento (baixa): D parcelamento + D juros / C caixa</span>
+              <span style={lbl}>Pagamento (baixa)</span>
               <button onClick={() => addRow("pag")} style={{ ...FIELD_STYLE, width: 26, height: 26, padding: 0, cursor: "pointer" }}>+</button>
             </div>
             {tbl("pag", pag)}
@@ -730,17 +726,13 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
           <strong style={{ fontSize: "1.0rem" }}>Rescindir — {parc?.label}</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
         </div>
-        <div style={{ fontSize: "0.8rem", color: PANEL.muted }}>
-          Lança a <strong>rescisão</strong> (estorno do saldo remanescente). As 3 linhas vêm pré-preenchidas
-          — confira contas e valores antes de confirmar. Depois o parcelamento sai da Circular.
-        </div>
         {loading ? <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div> : (
           <>
             <label style={{ maxWidth: 200 }}><span style={lbl}>Data da rescisão</span>
               <input type="date" value={dataRescisao} onChange={(e) => setDataRescisao(e.target.value)} style={{ ...FIELD_STYLE, colorScheme: "dark" }} />
             </label>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
-              <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Linhas da rescisão (estorno reverso — editável):</div>
+              <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Linhas da rescisão</div>
               <button onClick={addLine} title="Adicionar linha" style={iconBtn}>+</button>
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
@@ -1291,7 +1283,7 @@ export function ParcelaPaymentModal({ parcelamento, parcela, saving, onConfirm, 
           </label>
 
           <div style={{ padding: 10, background: "rgba(105,255,71,0.10)", border: "1px solid #69FF47", borderRadius: 6, fontSize: "0.8rem", color: PANEL.text }}>
-            <div style={{ fontSize: "0.7rem", color: "#69FF47", fontWeight: 700, marginBottom: 4 }}>PREVIEW (baixa contra a abertura)</div>
+            <div style={{ fontSize: "0.7rem", color: "#69FF47", fontWeight: 700, marginBottom: 4 }}>Preview</div>
             <div>Principal → R$ {fmtMoney(principal)}</div>
             {juros > 0 && <div>Juros → R$ {fmtMoney(juros)}</div>}
             <div style={{ marginTop: 4, fontWeight: 700 }}>Total: R$ {fmtMoney(total)}</div>
@@ -1394,7 +1386,6 @@ export function GuideLinkParcelamentoModal({
             <input type="radio" checked={option === "none"} onChange={() => setOption("none")} style={{ marginTop: 2 }} />
             <div>
               <div style={{ color: PANEL.text, fontSize: "0.8rem", fontWeight: 700 }}>Não, é guia normal</div>
-              <div style={{ color: PANEL.muted, fontSize: "0.7rem" }}>Continua o fluxo automático (gera provisão genérica via Q5).</div>
             </div>
           </label>
 
