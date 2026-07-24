@@ -405,6 +405,70 @@ export async function salvarFechamento({ portalClientId, competencia, atividades
 /**
  * [Apurar/Transmitir] individual — consulta-antes-de-transmitir + TRANSDECLARACAO11.
  */
+/**
+ * C12 — pós-transmissão: reconsulta o extrato e traz a guia DAS, para o contador NÃO precisar
+ * rodar uma busca depois. Antes isso só acontecia na retificação; agora vale para toda
+ * transmissão (inclusive quando o PA já estava declarado).
+ *
+ * Best-effort por definição: a declaração já foi transmitida quando chegamos aqui, então
+ * falha de rede/SERPRO NÃO pode desfazer nada — volta como `skipped` no payload.
+ *
+ * @param {boolean} liberarReenvio  só na RETIFICAÇÃO: zera os flags de e-mail da guia DAS para
+ *   ela poder ser reenviada ao cliente (numa transmissão normal a guia já nasce PENDING).
+ */
+async function sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio = false }) {
+  const out = { extrato: null, guia: null };
+
+  // (a) extrato: reescreve a circular (receitas/DAS) e re-roda os lançamentos RECEITA_*/DAS.
+  try {
+    const { syncPgdasByCompetencia } = await import("../../../fiscal/serpro/SerproPgdasDeclaracaoService.js");
+    const r = await syncPgdasByCompetencia({ portalClientId, competencia });
+    out.extrato = {
+      ok: true,
+      receitaStatus: r?.circular?.receitaStatus ?? null,
+      receitaBruta: r?.circular?.receitaBruta ?? null,
+      dasTotal: r?.circular?.dasTotal ?? null,
+    };
+  } catch (err) {
+    out.extrato = { skipped: true, reason: err?.message || "erro" };
+  }
+
+  // (b) guia DAS: emite/atualiza o PDF e devolve os dados pra tela mostrar na hora.
+  try {
+    try {
+      const { capturePgdasGuideForCompany } = await import("../../../fiscal/serpro/CaptureSerproGuidesService.js");
+      await capturePgdasGuideForCompany({ portalClientId, competencia });
+    } catch { /* PDF é bônus; se falhar ainda devolvemos a guia que já existir */ }
+
+    const dasGuide = await prisma.guide.findFirst({
+      where: { portalClientId, competencia, tipo: "SIMPLES", source: "SERPRO" },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, status: true, valor: true, vencimento: true, emailStatus: true },
+    });
+    if (!dasGuide) {
+      out.guia = { skipped: true, reason: "das_guide_nao_encontrada" };
+    } else {
+      if (liberarReenvio && dasGuide.status === "PROCESSED") {
+        await prisma.guide.update({
+          where: { id: dasGuide.id },
+          data: { emailStatus: "PENDING", emailAttempts: 0, emailLastError: null, emailSentAt: null, emailNextRetryAt: null },
+        });
+      }
+      out.guia = {
+        guideId: dasGuide.id,
+        status: dasGuide.status,
+        valor: dasGuide.valor != null ? Number(dasGuide.valor) : null,
+        vencimento: dasGuide.vencimento || null,
+        liberadaReenvio: Boolean(liberarReenvio && dasGuide.status === "PROCESSED"),
+      };
+    }
+  } catch (err) {
+    out.guia = { skipped: true, reason: err?.message || "erro" };
+  }
+
+  return out;
+}
+
 export async function transmitirFechamento({ portalClientId, competencia, userId, retificar = false }) {
   const snapshot = await prisma.apuracaoSnapshot.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
@@ -445,7 +509,13 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
       where: { id: snapshot.id },
       data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
     });
-    return { ok: true, jaDeclarado: true, snapshot: updated, mensagem: "PA já declarado — não retransmitido (evita retificadora acidental)." };
+    // C12: mesmo sem retransmitir, traz extrato + guia — é justamente o caso em que o contador
+    // mais precisava rodar a busca na mão (a declaração existe, mas a guia podia não estar aqui).
+    const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia });
+    return {
+      ok: true, jaDeclarado: true, snapshot: updated, posTransmissao,
+      mensagem: "PA já declarado — não retransmitido (evita retificadora acidental).",
+    };
   }
 
   // 2. Transmite de fato
@@ -480,7 +550,11 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
         where: { id: snapshot.id },
         data: { estado: "transmitida", erroMensagem: null, transmitidoEm: snapshot.transmitidoEm || new Date() },
       });
-      return { ok: true, jaDeclarado: true, snapshot: updated, mensagem: "PA já declarado na Receita — não retransmitido (para alterar, seria necessária uma retificadora)." };
+      const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia });
+      return {
+        ok: true, jaDeclarado: true, snapshot: updated, posTransmissao,
+        mensagem: "PA já declarado na Receita — não retransmitido (para alterar, seria necessária uma retificadora).",
+      };
     }
     throw err;
   }
@@ -495,46 +569,20 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
       erroMensagem: null,
     },
   });
-  // Q62: em RETIFICAÇÃO — (a) reconsulta o extrato (atualiza faturamento/circular/DAS) e (b) libera a
-  // guia DAS pra reenvio (busca o DAS novo + reseta os flags de e-mail). Best-effort: falha aqui NÃO
-  // desfaz a retransmissão (o aviso vai no payload).
-  let posRetificacao = null;
-  if (retificar) {
-    posRetificacao = { extrato: null, guia: null };
-    // (a) reconsulta o extrato — reescreve a circular e re-roda os lançamentos de RECEITA/DAS.
-    try {
-      const { syncPgdasByCompetencia } = await import("../../../fiscal/serpro/SerproPgdasDeclaracaoService.js");
-      const r = await syncPgdasByCompetencia({ portalClientId, competencia });
-      posRetificacao.extrato = { ok: true, receitaStatus: r?.circular?.receitaStatus ?? null };
-    } catch (err) {
-      posRetificacao.extrato = { skipped: true, reason: err?.message || "erro" };
-    }
-    // (b) DAS novo (novo nº doc/valor/PDF) + reset dos flags de e-mail da guia DAS pra reenvio.
-    try {
-      try {
-        const { capturePgdasGuideForCompany } = await import("../../../fiscal/serpro/CaptureSerproGuidesService.js");
-        await capturePgdasGuideForCompany({ portalClientId, competencia });
-      } catch { /* PDF novo é bônus; o reenvio depende só do reset abaixo */ }
-      const dasGuide = await prisma.guide.findFirst({
-        where: { portalClientId, competencia, tipo: "SIMPLES", source: "SERPRO" },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true, status: true },
-      });
-      if (dasGuide && dasGuide.status === "PROCESSED") {
-        await prisma.guide.update({
-          where: { id: dasGuide.id },
-          data: { emailStatus: "PENDING", emailAttempts: 0, emailLastError: null, emailSentAt: null, emailNextRetryAt: null },
-        });
-        posRetificacao.guia = { guideId: dasGuide.id, liberadaReenvio: true };
-      } else {
-        posRetificacao.guia = { skipped: true, reason: "das_guide_nao_encontrada_ou_nao_processada" };
-      }
-    } catch (err) {
-      posRetificacao.guia = { skipped: true, reason: err?.message || "erro" };
-    }
-  }
+  // C12: toda transmissão (não só a retificação) já devolve extrato + guia — o contador não
+  // precisa mais rodar uma busca depois. Só a retificação libera a guia pra reenvio.
+  const posTransmissao = await sincronizarExtratoEGuia({ portalClientId, competencia, liberarReenvio: retificar });
 
-  return { ok: true, jaDeclarado: false, dasValor: resultado.dasValor, numeroDeclaracao: resultado.numeroDeclaracao, snapshot: updated, posRetificacao };
+  return {
+    ok: true,
+    jaDeclarado: false,
+    dasValor: resultado.dasValor,
+    numeroDeclaracao: resultado.numeroDeclaracao,
+    snapshot: updated,
+    posTransmissao,
+    // Nome antigo mantido enquanto houver quem leia (o bloco nasceu só pra retificação).
+    posRetificacao: retificar ? posTransmissao : null,
+  };
 }
 
 /**

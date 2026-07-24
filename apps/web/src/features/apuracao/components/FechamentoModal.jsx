@@ -162,9 +162,22 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
         : await api.transmitirFechamento(portalClientId, competencia, confirmComp);
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       const r = out.result || {};
-      feedback?.notifySuccess?.(retificar
+      const base = retificar
         ? `Retificadora transmitida! Declaração ${r.numeroDeclaracao || "?"}`
-        : (r.jaDeclarado ? "PA já declarado — não retransmitido." : `Transmitida! Declaração ${r.numeroDeclaracao || "?"}`));
+        : (r.jaDeclarado ? "PA já declarado — não retransmitido." : `Transmitida! Declaração ${r.numeroDeclaracao || "?"}`);
+      // C12: a transmissão já traz extrato + guia DAS junto — avisa o que veio (ou o que faltou),
+      // pra ninguém sair rodando "buscar extrato/guia" achando que ficou pendente.
+      const pos = r.posTransmissao || null;
+      const partes = [];
+      if (pos?.extrato?.ok) partes.push("extrato reconsultado");
+      else if (pos?.extrato?.skipped) partes.push("extrato não veio (rode a busca)");
+      if (pos?.guia?.guideId) {
+        const v = pos.guia.valor != null
+          ? ` (R$ ${Number(pos.guia.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2 })})`
+          : "";
+        partes.push(`guia DAS disponível${v}`);
+      } else if (pos?.guia?.skipped) partes.push("guia DAS não veio (rode a busca)");
+      feedback?.notifySuccess?.(partes.length ? `${base} · ${partes.join(" · ")}` : base);
       setShowTransmit(false);
       onChanged?.();
       onClose?.();
