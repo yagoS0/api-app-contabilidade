@@ -1851,6 +1851,8 @@ export function createMockApi() {
       return { ok: true, job: { id: jobId, status: "concluido", totalEmpresas: 1, processadas: 1, comPdf: 1, arquivoNome: "situacao-fiscal-mock.zip", arquivoBytes: 0, erroMensagem: null } };
     },
     async fetchSitfisDownloadBlob() { await delay(60); return new Blob(["mock"], { type: "application/zip" }); },
+    // C9: no mock não há job de verdade rodando — sempre zero (o selo simplesmente não aparece).
+    async getJobsAtivos() { await delay(40); return { ok: true, total: 0, jobs: [] }; },
     async listNotas() { await delay(60); return { ok: true, total: 0, notas: [] }; },
     async getNotasSummary(_companyId, filtros = {}) {
       await delay(60);

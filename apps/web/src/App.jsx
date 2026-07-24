@@ -23,6 +23,7 @@ import { useNotasFiscais } from "./features/notas/hooks/useNotasFiscais";
 import { useApuracao } from "./features/apuracao/hooks/useApuracao";
 import { ApuracaoPage } from "./features/apuracao/pages/renderApuracaoPage";
 import { usePendencias } from "./features/pendencias/hooks/usePendencias";
+import { useBackgroundJobs } from "./features/companies/list/hooks/useBackgroundJobs";
 
 
 const api = createApiClient();
@@ -79,6 +80,9 @@ function App() {
     feedback,
     enabled: Boolean(session.user) && session.page === "apuracao",
   });
+
+  // C9: processos em segundo plano (downloads em lote) — selo no dashboard. Só enquanto logado.
+  const backgroundJobs = useBackgroundJobs({ api, enabled: Boolean(session.user) });
 
   // Q41/C10: situação fiscal (SITFIS) — hoje vive como aba dentro de "Consultas"
   // (a página top-level "Pendências" deixou de existir), então carrega junto dela.
@@ -428,6 +432,7 @@ function App() {
       onOpenApuracao={() => session.setPage("apuracao")}
       onOpenRotinas={() => session.setPage("rotinas")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
+      backgroundJobs={backgroundJobs}
 
       onLogout={handleLogout}
       onOpenCompany={(companyId) => {

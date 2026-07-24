@@ -96,6 +96,7 @@ export function CompaniesHomePage({
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
   dashboardCompetencia, // Q17: competência do filtro (default mês anterior)
   onChangeCompetencia,
+  backgroundJobs, // C9: { total, processadas, empresas } — processos rodando em segundo plano
   message,
   error,
 }) {
@@ -287,6 +288,29 @@ export function CompaniesHomePage({
               {loadingCompanies ? "…" : "↻"}
             </Button>
           </nav>
+
+          {/* C9: avisa que há processo rodando em segundo plano (downloads de notas / situações
+              fiscais) mesmo depois de sair da página que disparou. O progresso detalhado
+              continua na página do job — aqui é só o aviso. */}
+          {backgroundJobs?.total > 0 && (
+            <div
+              role="status"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 12,
+                padding: "6px 12px", borderRadius: 999,
+                background: "rgba(139,233,253,0.10)", border: "1px solid #8BE9FD", color: "#8BE9FD",
+                fontSize: "0.82rem", fontWeight: 600,
+              }}
+              title="Downloads em lote rodando no servidor. Acompanhe o progresso em Consultas."
+            >
+              ⏳ {backgroundJobs.total} processo{backgroundJobs.total > 1 ? "s" : ""} em segundo plano
+              {backgroundJobs.empresas > 0 && (
+                <span style={{ color: "#A7B0C0", fontWeight: 400 }}>
+                  ({backgroundJobs.processadas}/{backgroundJobs.empresas} empresas)
+                </span>
+              )}
+            </div>
+          )}
 
           <section
             aria-label="Filtros"

@@ -1057,6 +1057,10 @@ export function createRealApi() {
     async listNotasDownloads() {
       return request(`/firm/notas-download`);
     },
+    // C9: contagem dos processos em segundo plano (downloads de notas / situações fiscais).
+    async getJobsAtivos() {
+      return request(`/firm/jobs/ativos`);
+    },
     async getNotasDownload(jobId) {
       return request(`/firm/notas-download/${jobId}`);
     },

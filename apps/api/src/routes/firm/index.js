@@ -4146,6 +4146,35 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
   });
 
+  // C9: resumo dos processos rodando em segundo plano — alimenta o selo "N processos" do dashboard.
+  // Só CONTAGEM + progresso agregado (2 counts curtos), pra poder ser chamado em polling barato.
+  // Envio de e-mails em lote NÃO entra: é chamada bloqueante, não job de fundo.
+  router.get("/jobs/ativos", async (_req, res) => {
+    try {
+      const [notas, sitfis] = await Promise.all([
+        prisma.notasDownloadJob.findMany({
+          where: { status: "processando" },
+          select: { id: true, totalEmpresas: true, processadas: true },
+        }),
+        prisma.sitfisDownloadJob.findMany({
+          where: { status: "processando" },
+          select: { id: true, totalEmpresas: true, processadas: true },
+        }),
+      ]);
+      const mapa = (arr, tipo) => arr.map((j) => ({
+        tipo,
+        jobId: j.id,
+        total: Number(j.totalEmpresas || 0),
+        processadas: Number(j.processadas || 0),
+      }));
+      const jobs = [...mapa(notas, "notas"), ...mapa(sitfis, "sitfis")];
+      return res.json({ ok: true, total: jobs.length, jobs });
+    } catch (err) {
+      // Nunca derruba o dashboard por causa do selo — devolve vazio.
+      return res.json({ ok: false, total: 0, jobs: [], message: err?.message });
+    }
+  });
+
   // GET /firm/notas-download — últimos jobs ("Downloads recentes")
   router.get("/notas-download", async (_req, res) => {
     try {
