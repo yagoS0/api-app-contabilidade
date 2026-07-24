@@ -1852,7 +1852,17 @@ export function createMockApi() {
     },
     async fetchSitfisDownloadBlob() { await delay(60); return new Blob(["mock"], { type: "application/zip" }); },
     async listNotas() { await delay(60); return { ok: true, total: 0, notas: [] }; },
-    async getNotasSummary() { await delay(60); return { ok: true, ano: new Date().getUTCFullYear(), totals: { totalNotas: 0, totalEmitido: 0, totalRecebido: 0 }, byMonth: [] }; },
+    async getNotasSummary(_companyId, filtros = {}) {
+      await delay(60);
+      // Números fixos só pra conferir o resumo da aba Notas Fiscais sem backend.
+      return {
+        ok: true,
+        ano: filtros.ano || new Date().getUTCFullYear(),
+        filtersApplied: { type: filtros.type || null, competencia: filtros.competencia || null },
+        totals: { totalNotas: 14, totalEmitido: 48250.75, totalRecebido: 9310.4, countNfe: 5, countNfse: 9, countCanceladas: 2 },
+        byMonth: [],
+      };
+    },
     async listApuracao({ competencia } = {}) { await delay(60); return { competencia, items: [] }; },
     async calcularApuracao() { await delay(120); return { ok: true, result: { rb12: 0, fs12: 0, fatorR: 0, receitaMes: 0, receitaPorAnexo: {}, divergencias: 0 } }; },
     async getApuracao() { await delay(60); return null; },

@@ -4,10 +4,13 @@ import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { NotasDownloadContent } from "../../../notas/download/pages/renderNotasDownloadPage";
+import { PendenciasContent } from "../../../pendencias/pages/renderPendenciasPage";
 
-// Q47: página top-level "Funções SERPRO" (Buscas SERPRO) — separada da "Configuração SERPRO"
-// (credenciais + certificado). Fluxo: (1) selecionar funções, (2) selecionar empresas, (3) Rodar.
-// A situação fiscal (SITFIS) NÃO fica aqui — é consultada por empresa na aba "Situação Fiscal".
+// Q47: página top-level "Consultas" — separada da "Configuração SERPRO" (credenciais +
+// certificado). Fluxo das buscas: (1) selecionar funções, (2) selecionar empresas, (3) Rodar.
+// C10: a página deixou de se chamar "Funções em lote" e absorveu a antiga página top-level
+// "Pendências", que virou a aba "Situação Fiscal" aqui dentro (consulta individual/lote +
+// download em lote). A consulta por empresa continua existindo na aba da própria empresa.
 
 // useRange=true → a função roda por competência (usa o intervalo De/Até).
 // useRange=false → roda uma vez por empresa (ignora o intervalo).
@@ -44,8 +47,8 @@ function expandRange(from, to) {
   return { ok: true, months };
 }
 
-export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, message, error }) {
-  const [view, setView] = useState("funcoes"); // "funcoes" | "download"
+export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, message, error, pendenciasPanel }) {
+  const [view, setView] = useState("funcoes"); // "funcoes" | "download" | "sitfis"
   const [selectedOps, setSelectedOps] = useState(() => new Set());
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [dateFrom, setDateFrom] = useState(currentCompetencia);
@@ -188,16 +191,19 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
 
   return (
     <PageShell
-      title="Funções em lote"
-      subtitle="Buscas SERPRO em lote e download de notas por período."
+      title="Consultas"
+      subtitle="Buscas SERPRO em lote, situação fiscal das empresas e download de notas por período."
       onBack={onBack}
     >
       <AppShell className="serpro-settings-shell">
         <div>
-          {/* Mini-nav: Buscas SERPRO × Download de notas */}
+          {/* Mini-nav: Buscas SERPRO × Situação Fiscal × Download de notas */}
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <button type="button" onClick={() => setView("funcoes")} style={chip(view === "funcoes")}>
               Buscas SERPRO
+            </button>
+            <button type="button" onClick={() => setView("sitfis")} style={chip(view === "sitfis")}>
+              Situação Fiscal
             </button>
             <button type="button" onClick={() => setView("download")} style={chip(view === "download")}>
               Download de notas
@@ -206,6 +212,8 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
 
           {view === "download" ? (
             <NotasDownloadContent api={api} companies={companies} />
+          ) : view === "sitfis" ? (
+            <PendenciasContent pendenciasPanel={pendenciasPanel} />
           ) : (
           <section className="serpro-settings-card">
             <div className="serpro-settings-card__head">

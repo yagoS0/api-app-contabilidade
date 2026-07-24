@@ -23,7 +23,7 @@ import { useNotasFiscais } from "./features/notas/hooks/useNotasFiscais";
 import { useApuracao } from "./features/apuracao/hooks/useApuracao";
 import { ApuracaoPage } from "./features/apuracao/pages/renderApuracaoPage";
 import { usePendencias } from "./features/pendencias/hooks/usePendencias";
-import { PendenciasPage } from "./features/pendencias/pages/renderPendenciasPage";
+
 
 const api = createApiClient();
 const TOKEN_STORAGE_KEY = "portal_firm_access_token";
@@ -80,11 +80,12 @@ function App() {
     enabled: Boolean(session.user) && session.page === "apuracao",
   });
 
-  // Q41: página Pendências (situação fiscal / SITFIS) — carrega só quando na página.
+  // Q41/C10: situação fiscal (SITFIS) — hoje vive como aba dentro de "Consultas"
+  // (a página top-level "Pendências" deixou de existir), então carrega junto dela.
   const pendenciasFiscais = usePendencias({
     api,
     feedback,
-    enabled: Boolean(session.user) && session.page === "pendencias",
+    enabled: Boolean(session.user) && session.page === "serproFuncoes",
   });
 
   // Q8.C: sincroniza selectedCompanyId com a URL (/companies/:companyId/*).
@@ -214,15 +215,6 @@ function App() {
     );
   }
 
-  if (session.page === "pendencias") {
-    return (
-      <PendenciasPage
-        pendenciasPanel={pendenciasFiscais}
-        onBack={() => session.setPage("companies")}
-      />
-    );
-  }
-
   if (session.page === "serproFuncoes") {
     return (
       <SerproFuncoesPage
@@ -233,6 +225,7 @@ function App() {
         onBack={() => session.setPage("companies")}
         message={feedback.message}
         error={feedback.error}
+        pendenciasPanel={pendenciasFiscais}
       />
     );
   }
@@ -435,7 +428,7 @@ function App() {
       onOpenApuracao={() => session.setPage("apuracao")}
       onOpenRotinas={() => session.setPage("rotinas")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
-      onOpenPendencias={() => session.setPage("pendencias")}
+
       onLogout={handleLogout}
       onOpenCompany={(companyId) => {
         // Q8.C.3: setSelectedCompanyId pode rodar 1 tick depois (React batching).

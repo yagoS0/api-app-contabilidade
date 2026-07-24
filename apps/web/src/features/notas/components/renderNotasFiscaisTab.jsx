@@ -3,11 +3,12 @@
 //   • Notas de venda (NF-e)    — captura SEFAZ; SÓ aparece se a empresa tem inscrição estadual.
 // Competências/fechamento/apuração ficam na aba Apuração / página global.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PANEL } from "./notasStyles";
 import { DfeCapturePanel } from "./DfeCapturePanel";
 import { AdnCapturePanel } from "./AdnCapturePanel";
 import { NotasList } from "./NotasList";
+import { NotasResumo } from "./NotasResumo";
 
 function JanelaBtn({ active, onClick, children }) {
   return (
@@ -28,7 +29,7 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false }) {
     loading, error, reload,
     dfeState, dfeSyncing, syncDfe, clearDfeError,
     adnState, adnSyncing, syncAdn, clearAdnError,
-    notas, notasFilters, setNotasFilters,
+    notas, notasFilters, setNotasFilters, notasSummary,
     loadingNotas, loadNotas,
     importing, importNotas, marcarNotaStatus,
   } = notasPanel;
@@ -37,6 +38,15 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false }) {
   const [janela, setJanela] = useState("NFSE");
   const janelaAtiva = (janela === "NFE" && !hasInscricaoEstadual) ? "NFSE" : janela;
   const notasDaJanela = notas.filter((n) => n.type === janelaAtiva);
+
+  // O filtro `type` acompanha a janela ativa: assim o RESUMO (que é agregado no servidor)
+  // fala da mesma janela que a tabela — e a paginação passa a ser por janela, não dividida
+  // entre NF-e e NFS-e. Só dispara quando muda de fato (evita loop com o effect do hook).
+  useEffect(() => {
+    if (notasFilters.type !== janelaAtiva) {
+      setNotasFilters({ ...notasFilters, type: janelaAtiva, offset: 0 });
+    }
+  }, [janelaAtiva, notasFilters, setNotasFilters]);
 
   function onPickFiles(e) {
     const files = Array.from(e.target.files || []);
@@ -81,6 +91,13 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false }) {
           <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onSync={syncDfe} onClearError={clearDfeError} />
         )}
       </div>
+
+      <NotasResumo
+        summary={notasSummary}
+        janela={janelaAtiva}
+        competencia={notasFilters.competencia}
+        loading={loadingNotas}
+      />
 
       <NotasList
         notas={notasDaJanela}

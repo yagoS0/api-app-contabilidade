@@ -90,7 +90,6 @@ export function CompaniesHomePage({
   onOpenBatchEmail,
   onOpenApuracao,
   onOpenRotinas,
-  onOpenPendencias,
   onOpenSerproFuncoes,
   onLogout,
   onOpenCompany,
@@ -261,14 +260,11 @@ export function CompaniesHomePage({
                 🕒 Rotinas
               </Button>
             )}
-            {onOpenPendencias && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenPendencias}>
-                ⚠️ Pendências
-              </Button>
-            )}
+            {/* C10: "Pendências" saiu do dashboard — virou a aba "Situação Fiscal"
+                dentro de Consultas (antiga "Funções em lote"). */}
             {onOpenSerproFuncoes && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenSerproFuncoes}>
-                ⚙️ Funções em lote
+                🔎 Consultas
               </Button>
             )}
             <SettingsMenu
@@ -355,9 +351,11 @@ export function CompaniesHomePage({
               {showFilters && (
                 <div
                   style={{
-                    position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30,
+                    // Ancorado à DIREITA do botão: crescendo pra esquerda ele não vaza pra fora
+                    // da tela quando o botão está na ponta direita da barra de filtros.
+                    position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 30,
                     background: "#21222C", border: "1px solid #44475A", borderRadius: 10,
-                    padding: 12, display: "grid", gap: 10, minWidth: 220,
+                    padding: 12, display: "grid", gap: 10, width: 240, maxWidth: "90vw",
                     boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
                   }}
                 >

@@ -2,8 +2,6 @@
 // Marca por palavra-chave (backend) COM_PENDENCIA/REGULAR/PROCESSANDO. Consulta individual + em lote.
 
 import { useMemo, useState } from "react";
-import { AppShell } from "../../../components/layout/AppShell";
-import { PageShell } from "../../../components/layout/PageShell";
 import { Feedback } from "../../../components/ui/Feedback";
 import { Button } from "../../../components/ui/Button";
 
@@ -30,7 +28,9 @@ function SituacaoBadge({ situacao }) {
   );
 }
 
-export function PendenciasPage({ pendenciasPanel, onBack }) {
+// C10: o conteúdo vive separado do PageShell porque agora ele é EMBUTIDO como a aba
+// "Situação Fiscal" dentro de Consultas (mesmo padrão do NotasDownloadContent).
+export function PendenciasContent({ pendenciasPanel }) {
   const { items, loading, error, running, progress, consultarUma, consultarLote, baixando, baixarLote } = pendenciasPanel || {};
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [onlyPendencia, setOnlyPendencia] = useState(false);
@@ -69,12 +69,6 @@ export function PendenciasPage({ pendenciasPanel, onBack }) {
   const emParcelamento = (items || []).filter((r) => r.situacao === "EM_PARCELAMENTO").length;
 
   return (
-    <PageShell
-      title="Pendências fiscais"
-      subtitle="Situação fiscal (SITFIS) das empresas junto ao SERPRO / Receita Federal."
-      onBack={onBack}
-    >
-      <AppShell>
         <div style={{ padding: 8 }}>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
             <div style={{ padding: "10px 14px", borderRadius: 10, background: "#21222C", border: "1px solid #44475A" }}>
@@ -189,7 +183,5 @@ export function PendenciasPage({ pendenciasPanel, onBack }) {
 
           <Feedback message={null} error={null} />
         </div>
-      </AppShell>
-    </PageShell>
   );
 }
