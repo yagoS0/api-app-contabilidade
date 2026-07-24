@@ -128,7 +128,10 @@ export async function computeGuideComplianceMap(rows, competencia) {
       competencia,
       // Q17: inclui marcadores VAZIO (ausência confirmada) além das guias PROCESSED.
       status: { in: ["PROCESSED", "VAZIO"] },
-      tipo: { in: ["INSS", "SIMPLES", "IRPJ", "CSLL", "PIS", "COFINS", "ISS", "DARF"] },
+      // C5: "OUTRA" entra porque a captura do Lucro Presumido grava UMA DARF consolidada com
+      // esse tipo (não pode ser split) — sem ela, as tags IRPJ/CSLL/PIS-COFINS do card ficavam
+      // vermelhas mesmo com a guia capturada. A composição abaixo resolve o tributo de cada uma.
+      tipo: { in: ["INSS", "SIMPLES", "IRPJ", "CSLL", "PIS", "COFINS", "ISS", "DARF", "OUTRA"] },
     },
     select: { portalClientId: true, tipo: true, status: true, extracted: true },
   });
@@ -151,11 +154,18 @@ export async function computeGuideComplianceMap(rows, competencia) {
     const target = g.status === "VAZIO" ? vazioByPortal : presentByPortal;
     addTo(target, g.portalClientId, tipo);
     if (tipo === "PIS" || tipo === "COFINS") addTo(target, g.portalClientId, "PIS_COFINS");
-    // DARF real (PROCESSED) explode pela composição; VAZIO não tem composição.
-    if (tipo === "DARF" && g.status === "PROCESSED") {
+    // DARF/OUTRA real (PROCESSED) explode pela composição; VAZIO não tem composição.
+    // O `tributo` do extrato tem prioridade sobre o código (mesma regra do parser do DCTFWeb);
+    // PIS e COFINS caem no mesmo grupo PIS_COFINS.
+    if ((tipo === "DARF" || tipo === "OUTRA") && g.status === "PROCESSED") {
       const composicao = Array.isArray(g.extracted?.composicao) ? g.extracted.composicao : [];
       for (const c of composicao) {
-        const group = CODIGO_TO_GROUP[String(c.codigo || "")];
+        const t = String(c.tributo || "").toUpperCase();
+        const group = (t === "PIS" || t === "COFINS")
+          ? "PIS_COFINS"
+          : (t === "IRPJ" || t === "CSLL")
+            ? t
+            : CODIGO_TO_GROUP[String(c.codigo || "")];
         if (group) addTo(presentByPortal, g.portalClientId, group);
       }
     }

@@ -17,6 +17,23 @@ status de pagamento/e-mail, lock de captura e envio.
   `baixada/dataBaixa/lancamentoId`); idempotente; **bloqueia (409 MES_FECHADO)** se o mês contábil
   do pagamento estiver fechado. Guia normal não gera lançamento.
 
+## Guia consolidada do Lucro Presumido (C5)
+
+A captura do LP (`application/fiscal/lp/LucroPresumidoProvisaoService.js`) grava **UMA DARF
+consolidada** por competência com `tipo:"OUTRA"` — **o DARF do LP não pode ser split** (decisão do
+dono, confirmada em estudo próprio). O que separa os tributos é a **composição**, em
+`guide.extracted.composicao[]`: `{ codigo, tributo, total, denominacao }`, onde `tributo` ∈
+PIS|COFINS|IRPJ|CSLL vem do texto do extrato (`tributoDaDescricao`) com o código de receita como
+fallback (**8109=PIS, 2172=COFINS, 2089=IRPJ, 2372=CSLL**).
+
+Consequências práticas (duas armadilhas já corrigidas):
+- **Rótulo na tela:** a UI (`renderCompanyGuidesTable.tipoGuiaLabel`) mostra os impostos contidos
+  ("PIS · COFINS") em vez de "OUTRA" — mas só funciona porque `toGuideResponse` **expõe a
+  composição** (`extracted: { composicao }`). Não remover esse campo do contrato.
+- **Compliance:** `computeGuideComplianceMap` precisa aceitar `tipo:"OUTRA"` e **explodir a
+  composição** (igual faz com DARF), senão as tags IRPJ/CSLL/PIS-COFINS do card ficam vermelhas
+  mesmo com a guia capturada. PIS e COFINS caem no mesmo grupo `PIS_COFINS`.
+
 ## Compliance (guideCompliance.js)
 
 `computeGuideComplianceMap(rows, competencia)` retorna por empresa, por tributo, um nó

@@ -249,6 +249,13 @@ export function toGuideResponse(item) {
     parcelamentoLabel: item.parcelamento?.label || null,
     parcelamentoTipo: item.parcelamento?.tipo || null,
     parcelamentoNumero: item.parcelamento?.numeroParcelamento || null,
+    // C5: composição por tributo. O Lucro Presumido vem como UMA DARF consolidada (`tipo:"OUTRA"`,
+    // não pode ser split), e a UI rotula a guia pelos impostos contidos ("PIS · COFINS") em vez de
+    // "OUTRA" — mas só consegue se a composição chegar aqui. Expomos SÓ a composição (não o
+    // `extracted` inteiro, que carrega rawPayload da integração).
+    extracted: Array.isArray(item.extracted?.composicao)
+      ? { composicao: item.extracted.composicao }
+      : null,
     // Portal Cliente (#3.1): liberação ao cliente (selo no contador + gate no /client).
     liberadaCliente: Boolean(item.liberadaCliente),
     liberadaEm: item.liberadaEm ? new Date(item.liberadaEm).toISOString() : null,

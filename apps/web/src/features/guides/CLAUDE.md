@@ -19,5 +19,9 @@ envio em lote e o painel de guias esperadas.
   auto-contido e usa `createApiClient()` direto (mini-página).
 - `tipo="SIMPLES"` é a guia do DAS; a UI rotula como "DAS". `status="VAZIO"` = ausência
   confirmada (amarelo) — não é guia com PDF.
+- **Lucro Presumido = 1 DARF consolidada `tipo="OUTRA"`** (não pode ser split). `tipoGuiaLabel`
+  (`list/renderCompanyGuidesTable.jsx`) troca "OUTRA" pelos impostos contidos ("PIS · COFINS"),
+  lendo `guide.extracted.composicao` — que **o backend precisa enviar** (`toGuideResponse`).
+  Se voltar a aparecer "OUTRA" na tela, o suspeito nº 1 é a composição não estar vindo na resposta.
 - Cores de estado: verde `#69FF47`, amarelo `#FFB347`, vermelho `#FF5757`.
 - Toda chamada nova precisa de par mock/real em `src/api/`.
