@@ -42,6 +42,29 @@ export function getComplianceTags(guideCompliance) {
 // Q17: cores por estado da tag (amarelo = vazio confirmado).
 const TAG_STATE_COLOR = { present: "#69FF47", vazio: "#FFB347", missing: "#FF5757" };
 
+// C6: os selos de identidade da empresa (regime · SERPRO · A1) agora usam UM design só —
+// pílula com borda colorida. Antes SERPRO era badge com classe CSS e A1 era fonte colorida.
+function Pill({ color, title, children }) {
+  return (
+    <span
+      style={{
+        fontSize: "0.7rem", fontWeight: 700, padding: "1px 8px", borderRadius: 999,
+        border: `1px solid ${color}`, color,
+      }}
+      title={title}
+    >
+      {children}
+    </span>
+  );
+}
+
+// C6: situação fiscal (SITFIS) — só avisa quando há algo a dizer. `null` (nunca consultada)
+// não vira selo: não afirmamos nada sobre o fisco sem ter consultado.
+const FISCAL_META = {
+  COM_PENDENCIA: { label: "⚠ Pendência fiscal", color: "#FF4757", title: "SITFIS: empresa com pendência fiscal" },
+  EM_PARCELAMENTO: { label: "Em parcelamento", color: "#8BE9FD", title: "SITFIS: débito com exigibilidade suspensa (parcelamento)" },
+};
+
 export function CompanyCard({ company, onAccess }) {
   const tags = getComplianceTags(company.guideCompliance);
   const serproEligible = Boolean(company?.serproStatus?.eligible);
@@ -85,6 +108,12 @@ export function CompanyCard({ company, onAccess }) {
     : regime === "LUCRO_REAL" ? "#BD93F9" : "#6272A4";
   // Empresa zerada (sem movimento) — só enviamos obrigações zeradas; não há guias/impostos.
   const zerada = Boolean(company?.empresaZerada);
+  // C6: "Enviado" substitui as tags de guia só quando TODAS as guias do mês foram enviadas.
+  const envio = company?.guidesEnvio || null;
+  const todasEnviadas = Boolean(envio?.todasEnviadas);
+  // C6: situação fiscal do SITFIS (⚠ ao lado de "apurada") e parcelamento ativo (selo PARC).
+  const fiscalMeta = FISCAL_META[company?.fiscalSituacao] || null;
+  const temParcelamento = Boolean(company?.temParcelamento);
 
   return (
     <article className="company-tile" style={cardStyle}>
@@ -94,77 +123,45 @@ export function CompanyCard({ company, onAccess }) {
           {fechada && <span title={fechadaTitle} style={{ marginLeft: 6 }}>🔒</span>}
         </h3>
         <p style={{ color: "#FFFFFF" }}>CNPJ: {company.cnpj}</p>
+        {/* C6: identidade da empresa — regime, SERPRO e A1 juntos e no MESMO design (pílula). */}
         <p style={{ margin: "4px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {regimeLabel && (
-            <span
-              style={{
-                fontSize: "0.7rem", fontWeight: 700, padding: "1px 8px", borderRadius: 999,
-                border: `1px solid ${regimeColor}`, color: regimeColor,
-              }}
-              title={`Regime tributário: ${regimeLabel}`}
-            >
-              {regimeLabel}
-            </span>
+            <Pill color={regimeColor} title={`Regime tributário: ${regimeLabel}`}>{regimeLabel}</Pill>
           )}
+          <Pill
+            color={serproEligible ? "#69FF47" : "#6272A4"}
+            title={serproEligible ? "Empresa apta ao fluxo SERPRO" : "Empresa não apta ao fluxo SERPRO"}
+          >
+            SERPRO
+          </Pill>
+          <Pill color={certColor} title={certTitle}>🔐 A1</Pill>
           {zerada && (
-            <span
-              style={{
-                fontSize: "0.7rem", fontWeight: 700, padding: "1px 8px", borderRadius: 999,
-                border: "1px solid #FFB347", color: "#FFB347",
-              }}
-              title="Empresa zerada (sem movimento) — só enviamos obrigações zeradas"
-            >
+            <Pill color="#FFB347" title="Empresa zerada (sem movimento) — só enviamos obrigações zeradas">
               🚫 Zerada
-            </span>
+            </Pill>
           )}
         </p>
       </div>
-      <p className="company-serpro-status" aria-label="Status da integração SERPRO">
-        <span
-          className={serproEligible ? "company-serpro-status__badge company-serpro-status__badge--ok" : "company-serpro-status__badge company-serpro-status__badge--off"}
-          title={serproEligible ? "Empresa apta ao fluxo SERPRO" : "Empresa não apta ao fluxo SERPRO"}
-        >
-          SERPRO
-        </span>
-        {/* Q16/Q17: selo de envio das guias — mesmo estilo das tags (só borda):
-            verde se enviadas, vermelho se não.
-            Empresa zerada não tem guia pra enviar → oculta a marcação de envio. */}
-        {!zerada && (
-          <span
-            style={{
-              // Q18: sem borda — cor na fonte (verde enviado / vermelho não enviado).
-              marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
-              color: company.monthEmailSent ? "#69FF47" : "#FF5757",
-            }}
-            title={
-              company.monthEmailSent
-                ? `Guias do mês (${company.monthEmailCompetencia || ""}) enviadas por e-mail`
-                : `Guias do mês (${company.monthEmailCompetencia || ""}) ainda não enviadas`
-            }
-          >
-            {company.monthEmailSent ? "📤 Enviados" : "✉ Enviados"}
-          </span>
-        )}
-        {/* Q52: selo do certificado A1 — mesmo estilo dos demais (cor na fonte). */}
-        <span
-          style={{
-            marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
-            color: certColor,
-          }}
-          title={certTitle}
-        >
-          🔐 A1
-        </span>
+      <p className="company-serpro-status" aria-label="Apuração e situação fiscal">
         {/* Q52: selo de empresa apurada (apuração transmitida/confirmada na competência). */}
         <span
           style={{
-            marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
+            fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
             color: apurada ? "#69FF47" : "#6272A4",
           }}
           title={apuradaTitle}
         >
           {apurada ? "✓ apurada" : "apurada"}
         </span>
+        {/* C6: aviso de pendência fiscal (SITFIS) ao lado de "apurada". */}
+        {fiscalMeta && (
+          <span
+            style={{ marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px", color: fiscalMeta.color }}
+            title={fiscalMeta.title}
+          >
+            {fiscalMeta.label}
+          </span>
+        )}
       </p>
       {/* Q52: total de notas emitidas da competência filtrada no dashboard. */}
       {notas && (
@@ -184,6 +181,16 @@ export function CompanyCard({ company, onAccess }) {
             title="Empresa zerada (sem movimento) — sem guias/impostos; enviamos apenas obrigações zeradas"
           >
             Empresa zerada — sem obrigações com imposto
+          </span>
+        ) : todasEnviadas ? (
+          /* C6: guias do mês todas enviadas → o "Enviado" ocupa o LUGAR das tags de guia.
+             Guia nova/recalculada/retificada volta pra PENDING no backend → todasEnviadas vira
+             false → as tags reaparecem até o novo envio. */
+          <span
+            style={{ fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px", color: "#69FF47" }}
+            title={`As ${envio.total} guia(s) do mês (${envio.competencia || ""}) foram enviadas ao cliente`}
+          >
+            📤 Enviado
           </span>
         ) : (
         <>
@@ -209,7 +216,18 @@ export function CompanyCard({ company, onAccess }) {
             </span>
           );
         })}
-        {!tags.length ? (
+        {/* C6: empresa com parcelamento ATIVO ganha o selo PARC junto das demais guias.
+            Só quando a tag PARC DAS (parcela aberta na competência) já não estiver na lista —
+            senão o mesmo fato apareceria duas vezes. */}
+        {temParcelamento && !tags.some((t) => t.accent) && (
+          <span
+            style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "#FFB347" }}
+            title="Empresa com parcelamento ativo — há guia de parcelamento a acompanhar"
+          >
+            PARC
+          </span>
+        )}
+        {!tags.length && !temParcelamento ? (
           <span style={{ fontSize: "0.72rem", padding: "2px 6px", color: "#aeb6d3" }}>
             Sem obrigações
           </span>

@@ -218,29 +218,85 @@ async function attachGuideComplianceToCompaniesList(data, competenciaArg) {
   const map = await computeGuideComplianceMap(rows, ref);
 
   // Q16: selo "e-mail do mês enviado" — empresa com ao menos 1 guia SENT na competência ref.
+  // C6: além disso contamos guias PROCESSED x enviadas, porque o card agora TROCA as tags de
+  // guia pelo selo "Enviado" só quando TODAS foram enviadas. Guia nova/recalculada/retificada
+  // volta pra PENDING (ver reset de flags na retificação) → enviadas < total → as tags reaparecem.
   const portalIds = [...new Set(data.map((item) => item.companyId).filter(Boolean))];
   const emailSentSet = new Set();
+  const envioByPortal = new Map();
   if (portalIds.length) {
-    const sent = await prisma.guide.findMany({
-      where: { portalClientId: { in: portalIds }, competencia: ref, emailStatus: "SENT" },
-      select: { portalClientId: true },
-      distinct: ["portalClientId"],
+    const guiasDoMes = await prisma.guide.findMany({
+      where: { portalClientId: { in: portalIds }, competencia: ref, status: "PROCESSED" },
+      select: { portalClientId: true, emailStatus: true },
     });
-    for (const s of sent) emailSentSet.add(s.portalClientId);
+    for (const g of guiasDoMes) {
+      const cur = envioByPortal.get(g.portalClientId) || { total: 0, enviadas: 0 };
+      cur.total += 1;
+      if (String(g.emailStatus || "").toUpperCase() === "SENT") {
+        cur.enviadas += 1;
+        emailSentSet.add(g.portalClientId);
+      }
+      envioByPortal.set(g.portalClientId, cur);
+    }
   }
 
-  return data.map((item) => ({
-    ...item,
-    guideCompliance: map.get(item.companyId) || {
-      competencia: ref,
-      inss: { required: false, ok: true },
-      das: { required: false, ok: true },
-      expected: null,
-      ok: true,
-    },
-    monthEmailSent: emailSentSet.has(item.companyId),
-    monthEmailCompetencia: ref,
-  }));
+  return data.map((item) => {
+    const envio = envioByPortal.get(item.companyId) || { total: 0, enviadas: 0 };
+    return {
+      ...item,
+      guideCompliance: map.get(item.companyId) || {
+        competencia: ref,
+        inss: { required: false, ok: true },
+        das: { required: false, ok: true },
+        expected: null,
+        ok: true,
+      },
+      monthEmailSent: emailSentSet.has(item.companyId),
+      monthEmailCompetencia: ref,
+      // C6: só é "Enviado" quando existe guia e todas foram enviadas.
+      guidesEnvio: {
+        competencia: ref,
+        total: envio.total,
+        enviadas: envio.enviadas,
+        todasEnviadas: envio.total > 0 && envio.enviadas === envio.total,
+      },
+    };
+  });
+}
+
+// C6: anexa ao card (a) a situação fiscal do SITFIS — pra avisar pendência ao lado de "apurada" —
+// e (b) se a empresa tem parcelamento ATIVO (selo "PARC" junto das guias). Duas queries pra lista
+// inteira, no molde de attachFechamentoContabilToCompaniesList.
+async function attachFiscalParcelamentoToCompaniesList(data) {
+  if (!Array.isArray(data) || !data.length) return data;
+  const portalIds = [...new Set(data.map((item) => item.companyId).filter(Boolean))];
+  const situacaoByPortal = new Map();
+  const comParcelamento = new Set();
+  if (portalIds.length) {
+    const [status, parcs] = await Promise.all([
+      prisma.companyFiscalStatus.findMany({
+        where: { portalClientId: { in: portalIds } },
+        select: { portalClientId: true, situacao: true, checkedAt: true },
+      }),
+      prisma.parcelamento.findMany({
+        where: { portalClientId: { in: portalIds }, status: "ATIVO" },
+        select: { portalClientId: true },
+        distinct: ["portalClientId"],
+      }),
+    ]);
+    for (const s of status) situacaoByPortal.set(s.portalClientId, s);
+    for (const p of parcs) comParcelamento.add(p.portalClientId);
+  }
+  return data.map((item) => {
+    const s = situacaoByPortal.get(item.companyId) || null;
+    return {
+      ...item,
+      // null = nunca consultada (card não mostra selo nenhum — não afirmamos nada sobre o fisco).
+      fiscalSituacao: s?.situacao || null,
+      fiscalCheckedAt: s?.checkedAt || null,
+      temParcelamento: comParcelamento.has(item.companyId),
+    };
+  });
 }
 
 // Q17: anexa o estado do FECHAMENTO CONTÁBIL da competência por empresa (card "Fechada").
@@ -600,7 +656,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       );
       const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
       const dataWithFechamento = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
-      const data = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
+      const dataWithNotas = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
+      const data = await attachFiscalParcelamentoToCompaniesList(dataWithNotas);
       return res.json({ data, competencia: competenciaRef });
     }
 
@@ -672,7 +729,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     );
     const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
     const dataWithFechamento = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
-    const data = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
+    const dataWithNotas = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
+    const data = await attachFiscalParcelamentoToCompaniesList(dataWithNotas);
     return res.json({ data, competencia: competenciaRef });
   });
 

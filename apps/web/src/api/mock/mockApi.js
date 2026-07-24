@@ -40,6 +40,12 @@ function makeCompanies(count = 6) {
         inssOk: i % 2 === 1,
         dasOk: i % 2 === 0,
       }),
+      // C6: paridade com o real — o card usa estes campos pro toggle guias⇄"Enviado",
+      // pro aviso de pendência fiscal (SITFIS) e pro selo PARC.
+      guidesEnvio: { competencia: null, total: 2, enviadas: i % 3 === 0 ? 2 : 1, todasEnviadas: i % 3 === 0 },
+      fiscalSituacao: i === 0 ? "COM_PENDENCIA" : i === 1 ? "EM_PARCELAMENTO" : i === 2 ? "REGULAR" : null,
+      fiscalCheckedAt: i <= 2 ? new Date().toISOString() : null,
+      temParcelamento: i === 1,
     };
   });
 }
