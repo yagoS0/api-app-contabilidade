@@ -136,6 +136,10 @@ const SITFIS_NEGACAO_REGEX = /(?:n[ãa]o\s+(?:h[áa]|constam?|possui|exist[eê]m
 // verdade — voltou a ser exigível — e já cai em SITFIS_PENDENCIA_REGEX, que é checada antes).
 const SITFIS_PARCELAMENTO_REGEX = /parcelamento\s+com\s+exigibilidade\s+suspensa|(?:^|[^a-zç])em\s+parcelamento|\bparcsn\b|\bparcmei\b/i;
 
+// C11: intervalo mínimo entre duas consultas SITFIS da MESMA empresa (4h). Abrir a aba mostra o
+// relatório salvo; só o botão "Consultar" chama o SERPRO, e mesmo assim respeitando esta janela.
+const SITFIS_MIN_INTERVALO_MS = 4 * 60 * 60 * 1000;
+
 async function extractSitfisPdfText(buffer) {
   if (!buffer?.length) return "";
   try {
@@ -3365,7 +3369,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         where: { portalClientId: portalCompanyId },
         select: { situacao: true, protocolo: true, relatorioPdfFileId: true, texto: true, checkedAt: true },
       });
-      return res.json({ ok: true, status: status || null });
+      if (!status) return res.json({ ok: true, status: null });
+      // C11: a aba usa isto pra saber se o botão "Consultar" já está liberado (trava de 4h).
+      const temRelatorio = Boolean(status.relatorioPdfFileId || status.texto) && status.situacao !== "PROCESSANDO";
+      const proximaConsultaEm = temRelatorio && status.checkedAt
+        ? new Date(new Date(status.checkedAt).getTime() + SITFIS_MIN_INTERVALO_MS).toISOString()
+        : null;
+      return res.json({
+        ok: true,
+        status: {
+          ...status,
+          proximaConsultaEm,
+          podeConsultar: !proximaConsultaEm || new Date(proximaConsultaEm).getTime() <= Date.now(),
+        },
+      });
     }
   );
 
@@ -3412,13 +3429,42 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         });
         if (!portal) return res.status(404).json({ ok: false, error: "company_not_found" });
 
+        // C11: TRAVA DE 4h. Consultar o SITFIS é caro (chamada paga) e o limite AV02 do /Apoiar é
+        // por CONTRATANTE — uma consulta desnecessária de uma empresa atrapalha todas as outras.
+        // Dentro da janela devolvemos o que já está gravado (com o PDF), sem tocar no SERPRO.
+        // `force` existe só para quebra manual consciente, não é usado pela UI.
+        const prevStatus = await prisma.companyFiscalStatus.findUnique({
+          where: { portalClientId: portal.id },
+          select: { situacao: true, protocolo: true, relatorioPdfFileId: true, texto: true, checkedAt: true },
+        });
+        const forcar = String(req.query.force || "") === "1";
+        // A trava só vale quando JÁ TEMOS um relatório pra mostrar. Se a última tentativa parou em
+        // "processando" (sem PDF/texto), travar 4h deixaria a empresa sem situação fiscal nenhuma —
+        // nesse caso o contador precisa poder tentar de novo.
+        const temRelatorioSalvo = Boolean(prevStatus?.relatorioPdfFileId || prevStatus?.texto)
+          && prevStatus?.situacao !== "PROCESSANDO";
+        if (!forcar && temRelatorioSalvo && prevStatus?.checkedAt) {
+          const proxima = new Date(new Date(prevStatus.checkedAt).getTime() + SITFIS_MIN_INTERVALO_MS);
+          if (proxima.getTime() > Date.now()) {
+            return res.json({
+              ok: true,
+              processando: false,
+              throttled: true,
+              situacao: prevStatus.situacao || null,
+              protocolo: prevStatus.protocolo || null,
+              relatorioPdfFileId: prevStatus.relatorioPdfFileId || null,
+              relatorioTexto: prevStatus.texto || null,
+              checkedAt: prevStatus.checkedAt,
+              proximaConsultaEm: proxima.toISOString(),
+              mensagem: "Situação fiscal consultada há pouco — mostrando o último relatório salvo.",
+            });
+          }
+        }
+
         // Q43.7: reusa o protocolo do dia (evita novo /Apoiar → reduz o limite AV02 por contratante).
         let protocoloExistente = null;
         try {
-          const prev = await prisma.companyFiscalStatus.findUnique({
-            where: { portalClientId: portal.id },
-            select: { protocolo: true, checkedAt: true },
-          });
+          const prev = prevStatus;
           if (prev?.protocolo && prev.checkedAt) {
             const spDay = (d) => new Intl.DateTimeFormat("en-CA", {
               timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
@@ -3467,7 +3513,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
         // (processando sem relatório novo → não toca em situacao/pdf/texto: mantém o último conhecido)
 
-        await prisma.companyFiscalStatus.upsert({
+        const salvo = await prisma.companyFiscalStatus.upsert({
           where: { portalClientId: portal.id },
           create: {
             portalClientId: portal.id,
@@ -3485,10 +3531,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.json({
           ok: true,
           processando: Boolean(result.processando),
+          throttled: false,
           situacao,
           protocolo: result.protocolo || null,
-          relatorioPdfFileId,
+          // Ainda "processando" não gera PDF novo — devolve o último salvo, que é o que a aba mostra.
+          relatorioPdfFileId: relatorioPdfFileId || salvo.relatorioPdfFileId || null,
           relatorioTexto: textoRelatorio,
+          checkedAt: salvo.checkedAt,
+          // C11: quando libera a próxima consulta (a UI desabilita o botão até lá).
+          proximaConsultaEm: new Date(new Date(salvo.checkedAt).getTime() + SITFIS_MIN_INTERVALO_MS).toISOString(),
           mensagem: result.mensagem || null,
           verificadoTrial: result.verificadoTrial,
         });

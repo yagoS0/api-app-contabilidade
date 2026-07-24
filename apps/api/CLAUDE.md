@@ -188,6 +188,32 @@ eventos por NSU*, não *snapshot por data*. Fase 1 (fundação) já no código, 
   `POST /firm/companies/:id/fechamento/:competencia/conferencia`; ferramenta de prod: `scripts/conferir-adn.mjs`.
   O scan do ADN só é validável em produção (cert + ADN reais).
 
+## ⚠ Armazenamento de PDFs — exige Volume no Railway
+
+Provider default = **LOCAL** (`GUIDE_LOCAL_STORAGE_DIR`, default `./storage/guides` → `/app/storage/guides`).
+O filesystem do container no Railway é **efêmero**: sem um Volume montado, **todo deploy apaga os
+PDFs** (guias capturadas e relatórios SITFIS). O sintoma é o registro existir no banco
+(`relatorioPdfFileId` / guia) mas o arquivo dar **ENOENT** na leitura.
+
+**Config correta:** criar um **Volume** no serviço da API montado em **`/app/storage`**. O default já
+grava dentro dele — não precisa mudar env. Alternativa: `GUIDE_STORAGE_PROVIDER=S3|R2` +
+bucket/credenciais (`GUIDE_STORAGE_*`). O código já suporta os três providers
+(`GuideStorageService`).
+
+A UI trata o arquivo ausente sem quebrar: a aba Situação Fiscal mostra "o arquivo não está mais no
+armazenamento" e mantém situação/data (que vivem no banco).
+
+## Situação Fiscal — trava de 4h (C11)
+
+Abrir a aba **não** consulta o SERPRO: mostra o `CompanyFiscalStatus` salvo + o PDF gravado.
+A consulta só acontece pelo **botão**, e `POST .../sitfis/relatorio` aplica uma janela mínima de
+**4h por empresa** (`SITFIS_MIN_INTERVALO_MS`), respondendo `throttled:true` com o relatório salvo.
+Motivo: a consulta é paga e o limite AV02 do `/Apoiar` é **por contratante** — consulta à toa de uma
+empresa prejudica todas. `GET .../sitfis` devolve `podeConsultar` + `proximaConsultaEm` pra UI
+desabilitar o botão. **A trava só vale quando já existe relatório salvo**: se a última tentativa
+parou em "processando" (sem PDF), o contador pode tentar de novo — senão ficaria 4h sem situação
+nenhuma. `?force=1` quebra a trava manualmente (não usado pela UI).
+
 ## Variáveis de Ambiente Obrigatórias
 
 ```

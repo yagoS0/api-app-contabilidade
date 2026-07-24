@@ -10,6 +10,9 @@ export function useSitfis({ api, companyId }) {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null); // mensagem pós-consulta (ex.: processando)
   const [pdfUrl, setPdfUrl] = useState(null); // Q43.4: object URL do PDF do relatório (para iframe/download)
+  // C11: o PDF fica gravado e é exibido ao abrir a aba. Se o arquivo sumiu do armazenamento
+  // (deploy sem volume persistente apagava a pasta), avisamos em vez de mostrar quadro em branco.
+  const [pdfIndisponivel, setPdfIndisponivel] = useState(false);
 
   const reload = useCallback(async () => {
     if (!api || !companyId) return;
@@ -33,7 +36,10 @@ export function useSitfis({ api, companyId }) {
     setNotice(null);
     try {
       const res = await api.getSitfis(companyId);
-      if (res?.processando) {
+      if (res?.throttled) {
+        // C11: dentro da janela de 4h o backend não chama o SERPRO — devolve o relatório salvo.
+        setNotice(res?.mensagem || "Situação fiscal consultada há pouco — mostrando o último relatório salvo.");
+      } else if (res?.processando) {
         setNotice(res?.mensagem || "Relatório em processamento no SERPRO. Tente novamente em instantes.");
       } else {
         setNotice("Situação fiscal consultada com sucesso.");
@@ -55,6 +61,7 @@ export function useSitfis({ api, companyId }) {
     const fileId = status?.relatorioPdfFileId;
     if (!api || !companyId || !fileId || typeof api.fetchSitfisPdfBlob !== "function") {
       setPdfUrl(null);
+      setPdfIndisponivel(false);
       return undefined;
     }
     let cancelled = false;
@@ -65,8 +72,10 @@ export function useSitfis({ api, companyId }) {
         if (cancelled) return;
         createdUrl = URL.createObjectURL(blob);
         setPdfUrl(createdUrl);
+        setPdfIndisponivel(false);
       } catch {
-        if (!cancelled) setPdfUrl(null);
+        // Há registro do PDF no banco, mas o arquivo não veio do armazenamento.
+        if (!cancelled) { setPdfUrl(null); setPdfIndisponivel(true); }
       }
     })();
     return () => {
@@ -75,5 +84,12 @@ export function useSitfis({ api, companyId }) {
     };
   }, [api, companyId, status?.relatorioPdfFileId, status?.checkedAt]);
 
-  return { status, loading, consulting, error, notice, pdfUrl, reload, consultar };
+  // C11: trava de 4h — o backend manda `podeConsultar`/`proximaConsultaEm` junto do status.
+  const podeConsultar = status?.podeConsultar !== false;
+  const proximaConsultaEm = status?.proximaConsultaEm || null;
+
+  return {
+    status, loading, consulting, error, notice, pdfUrl, pdfIndisponivel,
+    podeConsultar, proximaConsultaEm, reload, consultar,
+  };
 }

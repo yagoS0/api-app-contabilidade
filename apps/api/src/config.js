@@ -163,6 +163,12 @@ export const GUIDE_STORAGE_SECRET_ACCESS_KEY = (
 ).trim();
 export const GUIDE_STORAGE_FORCE_PATH_STYLE =
   process.env.GUIDE_STORAGE_FORCE_PATH_STYLE === "1";
+// ⚠ PERSISTÊNCIA: com provider LOCAL os PDFs (guias + relatório SITFIS) vivem NO DISCO do
+// container. No Railway o filesystem é efêmero — sem um Volume montado, TODO DEPLOY APAGA os
+// arquivos (foi o que causou o ENOENT ao ler um SITFIS gravado dias antes).
+// Config correta em produção: criar um Volume no serviço da API montado em `/app/storage`
+// (o default abaixo resolve pra /app/storage/guides, já dentro do volume). Alternativa:
+// GUIDE_STORAGE_PROVIDER=S3|R2 com bucket + credenciais.
 export const GUIDE_LOCAL_STORAGE_DIR = (
   process.env.GUIDE_LOCAL_STORAGE_DIR || "./storage/guides"
 ).trim();

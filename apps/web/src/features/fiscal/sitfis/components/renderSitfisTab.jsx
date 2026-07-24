@@ -26,15 +26,32 @@ function SituacaoBadge({ situacao }) {
 }
 
 export function SitfisTab({ sitfisPanel }) {
-  const { status, loading, consulting, error, notice, pdfUrl, consultar } = sitfisPanel || {};
+  const {
+    status, loading, consulting, error, notice, pdfUrl, consultar,
+    pdfIndisponivel, podeConsultar = true, proximaConsultaEm,
+  } = sitfisPanel || {};
+
+  // C11: abrir a aba NÃO consulta — mostra o relatório salvo. Consultar de novo só pelo botão,
+  // e mesmo assim respeitando a janela de 4h (consulta paga; o limite do SERPRO é por contratante).
+  const bloqueado = !podeConsultar && !consulting;
+  const tituloBotao = bloqueado
+    ? `Nova consulta liberada em ${formatDateTime(proximaConsultaEm)} (limite de 1 a cada 4h)`
+    : "Consulta o SERPRO e salva o relatório";
 
   return (
     <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
-        <Button variant="success" disabled={consulting} onClick={consultar}>
-          {consulting ? "Consultando…" : "Consultar situação fiscal agora"}
-        </Button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+          <Button variant="success" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>
+            {consulting ? "Consultando…" : "Consultar situação fiscal agora"}
+          </Button>
+          {bloqueado && (
+            <span style={{ color: "#A7B0C0", fontSize: "0.75rem" }}>
+              Nova consulta em {formatDateTime(proximaConsultaEm)}
+            </span>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -88,6 +105,11 @@ export function SitfisTab({ sitfisPanel }) {
                     src={pdfUrl}
                     style={{ width: "100%", height: 600, border: "1px solid #44475A", borderRadius: 8, background: "#fff" }}
                   />
+                ) : pdfIndisponivel ? (
+                  <div style={{ padding: "10px 12px", borderRadius: 6, background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem" }}>
+                    O arquivo deste relatório não está mais no armazenamento do servidor. A situação
+                    fiscal e a data acima seguem válidas — para ver o PDF de novo, consulte novamente.
+                  </div>
                 ) : (
                   <p style={{ color: "#A7B0C0", margin: 0, fontSize: "0.85rem" }}>Carregando o PDF…</p>
                 )}
