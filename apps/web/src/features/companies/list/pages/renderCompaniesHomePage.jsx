@@ -63,6 +63,19 @@ function hasPendingCompliance(company) {
 // Q17: filtros compactos (campos menores), com competência junto deles.
 const FILTER_LABEL = { display: "grid", gap: 3, fontSize: "0.68rem", color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.03em" };
 const FILTER_CONTROL = { background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.8rem", colorScheme: "dark" };
+// C7: setas de navegação da competência (‹ ›).
+const COMP_ARROW = { ...FILTER_CONTROL, padding: "5px 9px", cursor: "pointer", fontWeight: 700, lineHeight: 1 };
+
+// C7: anda N meses na competência YYYY-MM (aceita negativo). Sem dependência de Date pra não
+// escorregar em fuso — é aritmética de ano/mês pura.
+function shiftCompetencia(competencia, delta) {
+  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return competencia;
+  const total = Number(m[1]) * 12 + (Number(m[2]) - 1) + delta;
+  const ano = Math.floor(total / 12);
+  const mes = (total % 12) + 1;
+  return `${ano}-${String(mes).padStart(2, "0")}`;
+}
 
 export function CompaniesHomePage({
   user,
@@ -93,6 +106,23 @@ export function CompaniesHomePage({
   const [emailFilter, setEmailFilter] = useState("all"); // all | sent | notSent (Q16)
   const [apuracaoFilter, setApuracaoFilter] = useState("all"); // all | apurados | naoApurados
   const [certFilter, setCertFilter] = useState("all"); // all | comCert | semCert
+  // C7: os filtros secundários ficam num painel; só busca e competência seguem aparentes.
+  const [showFilters, setShowFilters] = useState(false);
+  // "pending" é o default de Documentos (não conta como filtro ativo).
+  const filtrosAtivos = [
+    documentFilter !== "pending",
+    serproFilter !== "all",
+    emailFilter !== "all",
+    apuracaoFilter !== "all",
+    certFilter !== "all",
+  ].filter(Boolean).length;
+  function limparFiltros() {
+    setDocumentFilter("pending");
+    setSerproFilter("all");
+    setEmailFilter("all");
+    setApuracaoFilter("all");
+    setCertFilter("all");
+  }
 
   const filteredCompanies = useMemo(() => {
     const normalizedQuery = normalizeSearch(search);
@@ -277,62 +307,113 @@ export function CompaniesHomePage({
               />
             </label>
 
+            {/* C7: competência com setas ‹ › pra andar mês a mês (antes só o picker). */}
             {onChangeCompetencia && (
               <label style={FILTER_LABEL}>
                 Competência
-                <input
-                  type="month"
-                  value={dashboardCompetencia || ""}
-                  onChange={(e) => onChangeCompetencia(e.target.value)}
-                  style={{ ...FILTER_CONTROL, width: 150 }}
-                />
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
+                    style={COMP_ARROW}
+                    aria-label="Competência anterior"
+                    title="Mês anterior"
+                  >
+                    ‹
+                  </button>
+                  <input
+                    type="month"
+                    value={dashboardCompetencia || ""}
+                    onChange={(e) => onChangeCompetencia(e.target.value)}
+                    style={{ ...FILTER_CONTROL, width: 150 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, 1))}
+                    style={COMP_ARROW}
+                    aria-label="Próxima competência"
+                    title="Próximo mês"
+                  >
+                    ›
+                  </button>
+                </span>
               </label>
             )}
 
-            <label style={FILTER_LABEL}>
-              Documentos
-              <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 170 }}>
-                <option value="pending">Com pendências</option>
-                <option value="ok">Em dia</option>
-                <option value="all">Todas</option>
-              </select>
-            </label>
+            {/* C7: os demais filtros saem da barra e vão pra um painel — o dono só quer
+                busca e competência sempre visíveis. O badge mostra quantos estão ativos. */}
+            <div style={{ position: "relative" }}>
+              <Button
+                type="button"
+                variant={filtrosAtivos > 0 ? "primary" : "secondary"}
+                onClick={() => setShowFilters((v) => !v)}
+                aria-expanded={showFilters}
+                title="Mais filtros"
+              >
+                Filtros{filtrosAtivos > 0 ? ` (${filtrosAtivos})` : ""}
+              </Button>
+              {showFilters && (
+                <div
+                  style={{
+                    position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30,
+                    background: "#21222C", border: "1px solid #44475A", borderRadius: 10,
+                    padding: 12, display: "grid", gap: 10, minWidth: 220,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+                  }}
+                >
+                  <label style={FILTER_LABEL}>
+                    Documentos
+                    <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
+                      <option value="pending">Com pendências</option>
+                      <option value="ok">Em dia</option>
+                      <option value="all">Todas</option>
+                    </select>
+                  </label>
 
-            <label style={FILTER_LABEL}>
-              SERPRO
-              <select value={serproFilter} onChange={(event) => setSerproFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 130 }}>
-                <option value="all">Todas</option>
-                <option value="eligible">Aptas</option>
-                <option value="ineligible">Não aptas</option>
-              </select>
-            </label>
+                  <label style={FILTER_LABEL}>
+                    SERPRO
+                    <select value={serproFilter} onChange={(event) => setSerproFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
+                      <option value="all">Todas</option>
+                      <option value="eligible">Aptas</option>
+                      <option value="ineligible">Não aptas</option>
+                    </select>
+                  </label>
 
-            <label style={FILTER_LABEL}>
-              Enviados
-              <select value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 150 }}>
-                <option value="all">Todas</option>
-                <option value="sent">Só enviados</option>
-                <option value="notSent">Só não enviados</option>
-              </select>
-            </label>
+                  <label style={FILTER_LABEL}>
+                    Enviados
+                    <select value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
+                      <option value="all">Todas</option>
+                      <option value="sent">Só enviados</option>
+                      <option value="notSent">Só não enviados</option>
+                    </select>
+                  </label>
 
-            <label style={FILTER_LABEL}>
-              Apuração
-              <select value={apuracaoFilter} onChange={(event) => setApuracaoFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 150 }}>
-                <option value="all">Todas</option>
-                <option value="apurados">Apurados</option>
-                <option value="naoApurados">Não apurados</option>
-              </select>
-            </label>
+                  <label style={FILTER_LABEL}>
+                    Apuração
+                    <select value={apuracaoFilter} onChange={(event) => setApuracaoFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
+                      <option value="all">Todas</option>
+                      <option value="apurados">Apurados</option>
+                      <option value="naoApurados">Não apurados</option>
+                    </select>
+                  </label>
 
-            <label style={FILTER_LABEL}>
-              Certificado
-              <select value={certFilter} onChange={(event) => setCertFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: 160 }}>
-                <option value="all">Todas</option>
-                <option value="comCert">Com certificado</option>
-                <option value="semCert">Sem certificado</option>
-              </select>
-            </label>
+                  <label style={FILTER_LABEL}>
+                    Certificado
+                    <select value={certFilter} onChange={(event) => setCertFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
+                      <option value="all">Todas</option>
+                      <option value="comCert">Com certificado</option>
+                      <option value="semCert">Sem certificado</option>
+                    </select>
+                  </label>
+
+                  {filtrosAtivos > 0 && (
+                    <Button type="button" variant="secondary" onClick={limparFiltros}>
+                      Limpar filtros
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
           </section>
 
           <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
