@@ -17,11 +17,14 @@ const GROUPS = [
     key: "fiscal",
     label: "Fiscal",
     // Cadastro absorve Sugestão e Pendências (viram sub-abas INTERNAS do painel Cadastro).
+    // Q63: ordem = Notas Fiscais → Apuração → Guias → Situação Fiscal (a 1ª também é o destino
+    // ao clicar no grupo "Fiscal").
     tabs: [
-      { key: "guides", label: "Guias" },
-      { key: "cadastroFiscal", label: "Apuração" },
-      { key: "sitfis", label: "Situação Fiscal" },
       { key: "notasFiscais", label: "Notas Fiscais" },
+      // Só apuramos Simples hoje — no Lucro Presumido esta aba é escondida (ver soApuraSimples).
+      { key: "cadastroFiscal", label: "Apuração", soApuraSimples: true },
+      { key: "guides", label: "Guias" },
+      { key: "sitfis", label: "Situação Fiscal" },
     ],
   },
   {
@@ -37,11 +40,28 @@ const GROUPS = [
 // `edit` abre pela ficha (botão Editar) e `planoContas` por Lançamentos → Configurações.
 const TAB_TO_GROUP = { edit: "cadastro", planoContas: "contabilidade" };
 
+// Q63: a aba "Apuração" só existe pro Simples — ainda não apuramos Lucro Presumido/Real no app.
+// O regime vem do cadastro legado (mesma fonte da tag do card) ou do próprio company.
+function isSimplesCompany(company) {
+  const regime = company?.regimeTributario
+    || company?.tipoTributario
+    || company?.legacyCompany?.regimeTributario
+    || company?.legacyCompany?.tipoTributario;
+  // Sem regime cadastrado não escondemos nada (não sabemos o suficiente pra tirar a aba).
+  if (!regime) return true;
+  return String(regime).trim().toUpperCase() === "SIMPLES";
+}
+
 export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, canEditCompany = false }) {
+  const simples = isSimplesCompany(company);
+  const groups = GROUPS.map((g) => ({
+    ...g,
+    tabs: g.tabs.filter((t) => !t.soApuraSimples || simples),
+  }));
   const activeGroup =
-    GROUPS.find((g) => g.tabs.some((t) => t.key === activeTab))
-    || GROUPS.find((g) => g.key === TAB_TO_GROUP[activeTab])
-    || GROUPS[0];
+    groups.find((g) => g.tabs.some((t) => t.key === activeTab))
+    || groups.find((g) => g.key === TAB_TO_GROUP[activeTab])
+    || groups[0];
   const subTabs = activeGroup.tabs;
 
   return (
@@ -58,7 +78,7 @@ export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, 
           <span className="company-topbar__cnpj">{company?.cnpj || "CNPJ não informado"}</span>
         </div>
         <nav className="company-topbar__nav" aria-label="Grupos da empresa">
-          {GROUPS.map((group) => {
+          {groups.map((group) => {
             const isActive = group.key === activeGroup.key;
             const isDisabled = group.requiresEdit && !canEditCompany;
             return (

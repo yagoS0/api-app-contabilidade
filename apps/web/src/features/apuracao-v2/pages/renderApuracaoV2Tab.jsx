@@ -169,7 +169,8 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
   const extDados = extrato?.dados || extrato?.circular || null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100 }}>
+    // Q63: maxWidth sem margem automática colava o módulo à esquerda — centraliza como em Lançamentos.
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100, marginLeft: "auto", marginRight: "auto", width: "100%" }}>
       <SecaoTabs secao={secao} setSecao={setSecao} pendCount={pendencias.length} />
 
       {/* ── APURAÇÃO ──────────────────────────────────────────────────── */}
