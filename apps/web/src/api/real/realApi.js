@@ -1061,6 +1061,10 @@ export function createRealApi() {
     async getJobsAtivos() {
       return request(`/firm/jobs/ativos`);
     },
+    // C8: visão anual — 12 meses × empresas (fechamento contábil + apuração por célula).
+    async getCompaniesAnnual(ano) {
+      return request(`/firm/companies/annual?ano=${encodeURIComponent(ano)}`);
+    },
     async getNotasDownload(jobId) {
       return request(`/firm/notas-download/${jobId}`);
     },

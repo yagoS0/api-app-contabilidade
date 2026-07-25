@@ -1853,6 +1853,31 @@ export function createMockApi() {
     async fetchSitfisDownloadBlob() { await delay(60); return new Blob(["mock"], { type: "application/zip" }); },
     // C9: no mock não há job de verdade rodando — sempre zero (o selo simplesmente não aparece).
     async getJobsAtivos() { await delay(40); return { ok: true, total: 0, jobs: [] }; },
+    // C8: grade anual de mentira, só pra conferir o layout (meses passados variam, futuros vazios).
+    async getCompaniesAnnual(ano) {
+      await delay(80);
+      const y = Number(ano) || new Date().getUTCFullYear();
+      return {
+        ok: true,
+        ano: y,
+        empresas: mockCompanies.map((c, idx) => ({
+          companyId: c.companyId,
+          razao: c.razao,
+          cnpj: c.cnpj,
+          meses: Array.from({ length: 12 }, (_, i) => {
+            const passado = i < 6;
+            return {
+              competencia: `${y}-${String(i + 1).padStart(2, "0")}`,
+              mes: i + 1,
+              fechado: passado && (i + idx) % 3 !== 0,
+              fechadoEm: null,
+              apurada: passado && (i + idx) % 2 === 0,
+              estadoApuracao: passado && (i + idx) % 2 === 0 ? "transmitida" : null,
+            };
+          }),
+        })),
+      };
+    },
     async listNotas() { await delay(60); return { ok: true, total: 0, notas: [] }; },
     async getNotasSummary(_companyId, filtros = {}) {
       await delay(60);

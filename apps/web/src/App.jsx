@@ -433,12 +433,17 @@ function App() {
       onOpenRotinas={() => session.setPage("rotinas")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       backgroundJobs={backgroundJobs}
+      api={api}
 
       onLogout={handleLogout}
-      onOpenCompany={(companyId) => {
+      onOpenCompany={(companyId, competencia) => {
         // Q8.C.3: setSelectedCompanyId pode rodar 1 tick depois (React batching).
         // Por isso passamos companyId explicitamente pro setPage adapter, que monta a URL imediato.
         companiesWorkspace.companiesState.setSelectedCompanyId(companyId);
+        // C8: clique numa célula da grade anual abre a empresa JÁ na competência daquele mês.
+        if (competencia) {
+          accountingWorkspace.accountingEntriesState.setFilter("competencia", competencia);
+        }
         session.setPage("companyDetail", { companyId });
       }}
       jobEnabled={companiesWorkspace.jobEnabled}

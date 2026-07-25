@@ -3,6 +3,7 @@ import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
+import { AnnualGrid } from "../components/renderAnnualGrid";
 
 // Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
 function SettingsMenu({ items }) {
@@ -97,9 +98,12 @@ export function CompaniesHomePage({
   dashboardCompetencia, // Q17: competência do filtro (default mês anterior)
   onChangeCompetencia,
   backgroundJobs, // C9: { total, processadas, empresas } — processos rodando em segundo plano
+  api, // C8: usado pela visão anual (busca própria, não reusa a lista de cards)
   message,
   error,
 }) {
+  // C8: duas formas de ver a carteira — cards (competência única) ou grade anual (12 meses).
+  const [modoVisao, setModoVisao] = useState("cards"); // "cards" | "ano"
   const [search, setSearch] = useState("");
   const [documentFilter, setDocumentFilter] = useState("pending");
   const [serproFilter, setSerproFilter] = useState("all");
@@ -312,6 +316,27 @@ export function CompaniesHomePage({
             </div>
           )}
 
+          {/* C8: alterna entre os cards (uma competência) e a grade anual (12 meses). */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            {[["cards", "Cards"], ["ano", "Ano"]].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setModoVisao(key)}
+                style={{
+                  padding: "5px 14px", borderRadius: 999, cursor: "pointer", fontSize: "0.82rem", fontWeight: 600,
+                  border: `1px solid ${modoVisao === key ? "#BD93F9" : "#44475A"}`,
+                  background: modoVisao === key ? "rgba(189,147,249,0.16)" : "transparent",
+                  color: modoVisao === key ? "#F8F8F2" : "#A7B0C0",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Os filtros abaixo são da visão de cards — a grade anual tem navegação própria (ano). */}
+          {modoVisao === "cards" && (
           <section
             aria-label="Filtros"
             style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 16 }}
@@ -437,12 +462,17 @@ export function CompaniesHomePage({
               )}
             </div>
           </section>
+          )}
 
+          {modoVisao === "ano" ? (
+            <AnnualGrid api={api} onOpenCompany={onOpenCompany} />
+          ) : (
           <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
             {filteredCompanies.map((company) => (
               <CompanyCard key={company.companyId} company={company} onAccess={onOpenCompany} />
             ))}
           </section>
+          )}
 
           {!loadingCompanies && filteredCompanies.length === 0 ? (
             <p className="text-muted dashboard-home__empty">Nenhuma empresa encontrada para os filtros atuais.</p>

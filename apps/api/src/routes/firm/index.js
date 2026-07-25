@@ -589,6 +589,81 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     };
   }
 
+  // C8: visão ANUAL — 12 meses × empresas, com DOIS indicadores por célula:
+  // fechamento contábil (CompanyMonthlyCircular.fechadoContabilEm) e apuração transmitida
+  // (ApuracaoSnapshot.estado). Duas queries pro ano inteiro — NÃO 12 chamadas por empresa.
+  router.get("/companies/annual", async (req, res) => {
+    const userId = String(req.auth.user.id);
+    const appRole = String(req.auth.user.role || "").toLowerCase();
+    const isAdminLike = appRole === "admin" || appRole === "contador";
+    const ano = Number(req.query?.ano) || new Date().getFullYear();
+    if (!Number.isInteger(ano) || ano < 2000 || ano > 2100) {
+      return res.status(400).json({ ok: false, error: "ano_invalido" });
+    }
+
+    // Escopo multi-tenant: admin/contador vê a carteira toda; os demais, só o que têm acesso.
+    let empresas;
+    if (isAdminLike) {
+      empresas = await prisma.portalClient.findMany({
+        orderBy: { razao: "asc" },
+        select: { id: true, razao: true, cnpj: true },
+      });
+    } else {
+      const links = await prisma.companyFirmAccess.findMany({
+        where: { userId, status: "ACTIVE" },
+        include: { company: { select: { id: true, razao: true, cnpj: true } } },
+      });
+      empresas = links.map((l) => l.company).filter(Boolean);
+      empresas.sort((a, b) => String(a.razao || "").localeCompare(String(b.razao || "")));
+    }
+    const portalIds = empresas.map((e) => e.id);
+    if (!portalIds.length) return res.json({ ok: true, ano, empresas: [] });
+
+    // As competências do ano são strings YYYY-MM nos dois modelos → range simples.
+    const de = `${ano}-01`;
+    const ate = `${ano}-12`;
+    const [circulares, snapshots] = await Promise.all([
+      prisma.companyMonthlyCircular.findMany({
+        where: { portalClientId: { in: portalIds }, competencia: { gte: de, lte: ate } },
+        select: { portalClientId: true, competencia: true, fechadoContabilEm: true },
+      }),
+      prisma.apuracaoSnapshot.findMany({
+        where: { portalClientId: { in: portalIds }, competencia: { gte: de, lte: ate } },
+        select: { portalClientId: true, competencia: true, estado: true },
+      }),
+    ]);
+
+    const chave = (portalId, comp) => `${portalId}|${comp}`;
+    const fechadoPor = new Map();
+    for (const c of circulares) {
+      if (c.fechadoContabilEm) fechadoPor.set(chave(c.portalClientId, c.competencia), c.fechadoContabilEm);
+    }
+    const apuracaoPor = new Map();
+    for (const s of snapshots) apuracaoPor.set(chave(s.portalClientId, s.competencia), s.estado);
+
+    const APURADA = new Set(["transmitida", "confirmada"]);
+    const linhas = empresas.map((e) => ({
+      companyId: e.id,
+      razao: e.razao,
+      cnpj: e.cnpj,
+      meses: Array.from({ length: 12 }, (_, i) => {
+        const competencia = `${ano}-${String(i + 1).padStart(2, "0")}`;
+        const k = chave(e.id, competencia);
+        const estado = apuracaoPor.get(k) || null;
+        return {
+          competencia,
+          mes: i + 1,
+          fechado: fechadoPor.has(k),
+          fechadoEm: fechadoPor.get(k) || null,
+          apurada: APURADA.has(String(estado || "")),
+          estadoApuracao: estado,
+        };
+      }),
+    }));
+
+    return res.json({ ok: true, ano, empresas: linhas });
+  });
+
   router.get("/companies", async (req, res) => {
     const userId = String(req.auth.user.id);
     const appRole = String(req.auth.user.role || "").toLowerCase();
