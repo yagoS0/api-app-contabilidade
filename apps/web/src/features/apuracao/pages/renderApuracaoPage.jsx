@@ -3,7 +3,9 @@
 // Fechar/transmitir/retificar saíram daqui — agora é dentro de cada empresa (aba Apuração).
 
 import { AppShell } from "../../../components/layout/AppShell";
-import { PageHeader } from "../../../components/layout/PageHeader";
+// C4: cabeçalho padronizado — PageShell põe o "← Voltar" no topo-esquerdo, igual às demais
+// páginas de firma (PageHeader deixava o Voltar como botão solto à direita).
+import { PageShell } from "../../../components/layout/PageShell";
 import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
@@ -44,13 +46,12 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
   const someFechadasSelected = selected.size > 0 && selected.size < fechadasCount;
 
   return (
-    <AppShell>
-      <PageHeader
-        title="Apuração"
-        description="Selecione as empresas fechadas e apure em lote. O fechamento é feito dentro de cada empresa (aba Apuração)."
-        actions={<Button variant="secondary" onClick={onBack}>Voltar</Button>}
-      />
-
+    <PageShell
+      title="Apuração"
+      subtitle="Selecione as empresas fechadas e apure em lote. O fechamento é feito dentro de cada empresa (aba Apuração)."
+      onBack={onBack}
+    >
+      <AppShell>
       <section className="panel" style={{ padding: 16 }}>
         {/* Filtros */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 14 }}>
@@ -164,7 +165,8 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
           onDone={() => reload?.()}
         />
       )}
-    </AppShell>
+      </AppShell>
+    </PageShell>
   );
 }
 
