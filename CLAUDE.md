@@ -97,6 +97,19 @@ Rotas protegidas pelo middleware `requireRole`. Nunca bypassar sem motivo explí
   prévia (reusa `FechamentoModal`) + **extrato do Simples** (`syncPgdasCircular`) + fechar/transmitir/retificar
   por dentro da empresa. Cadastro enxuto (só regime + atividades permitidas). Tela de lote global vira
   **select-only** (só seleciona fechadas + apura em lote; o filtro `estado="fechada"` já é server-side).
+- [x] **Reorganização do dashboard + fluxo fiscal (Lote C)** — dashboard com **duas visões**
+  (Cards ⇄ **Ano**: grade 12 meses × empresas, fechamento contábil + apuração por célula, clique
+  abre a empresa naquela competência); **filtros recolhidos** (só busca + competência aparentes,
+  com setas ‹ ›); **card redesenhado** (regime·SERPRO·A1 no mesmo design; tags de guia dão lugar a
+  "Enviado" quando todas enviadas; ⚠ pendência fiscal; selo PARC); **selo de processos em segundo
+  plano**. "Funções em lote" virou **Consultas** e absorveu **Pendências** (aba "Situação Fiscal").
+  Abas fiscais da empresa reordenadas (Notas Fiscais → Apuração → Guias → Situação Fiscal), **LP
+  sem aba Apuração** (ainda não apuramos Presumido), módulo fiscal centralizado, **resumo na aba
+  Notas Fiscais**. Fiscal: guia do LP mostra os tributos (PIS/COFINS) em vez de "OUTRA";
+  **transmitir já devolve extrato + guia**; SITFIS mostra o relatório salvo ao abrir e reconsulta
+  só pelo botão, **1× a cada 4h**.
+  - ⚠ **Exige Volume no Railway em `/app/storage`** — sem ele o filesystem é efêmero e **todo
+    deploy apaga os PDFs** (guias e relatórios SITFIS). Ver `apps/api/CLAUDE.md`.
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 

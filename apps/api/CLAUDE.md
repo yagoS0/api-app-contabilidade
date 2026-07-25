@@ -214,6 +214,28 @@ desabilitar o botão. **A trava só vale quando já existe relatório salvo**: s
 parou em "processando" (sem PDF), o contador pode tentar de novo — senão ficaria 4h sem situação
 nenhuma. `?force=1` quebra a trava manualmente (não usado pela UI).
 
+## Apuração — transmitir já traz extrato + guia (C12)
+
+`transmitirFechamento` chama `sincronizarExtratoEGuia()` em **toda** transmissão (antes só na
+retificação) e também nos **dois caminhos de "PA já declarado"** — que era justamente onde o
+contador precisava rodar a busca na mão. Retorno: `posTransmissao { extrato, guia }`.
+**Best-effort por definição:** quando o código chega ali a declaração JÁ foi transmitida, então
+falha de rede/SERPRO não pode desfazer nada — volta como `skipped` no payload. Só a **retificação**
+zera os flags de e-mail da guia DAS (`liberarReenvio`); numa transmissão normal a guia já nasce
+`PENDING`.
+
+## Endpoints agregados do dashboard (Lote C)
+
+- `GET /firm/companies/annual?ano=` — grade 12 meses × empresas: fechamento contábil
+  (`CompanyMonthlyCircular.fechadoContabilEm`) + apuração (`ApuracaoSnapshot.estado`). **Duas
+  queries pro ano inteiro**, não 12 por empresa. Registrada **antes** de `/companies/:companyId`
+  pra "annual" não ser lido como id.
+- `GET /firm/jobs/ativos` — contagem dos downloads em lote com `status:"processando"` (notas +
+  SITFIS), pro selo do dashboard. Só contagem/progresso, feito pra polling barato; em erro devolve
+  vazio (nunca derruba o dashboard). Envio de e-mail em lote **não** entra: é chamada bloqueante.
+- `GET /firm/companies` ganhou `guidesEnvio` (total/enviadas/todasEnviadas), `fiscalSituacao` e
+  `temParcelamento` — ver `apps/web/src/features/companies/CLAUDE.md` para o efeito no card.
+
 ## Variáveis de Ambiente Obrigatórias
 
 ```
