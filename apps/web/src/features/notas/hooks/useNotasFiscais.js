@@ -36,7 +36,9 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   const [notasSummary, setNotasSummary] = useState(null);
   // Q19: filtro de competência das notas começa no mês ANTERIOR ao atual (default).
   // Q20: + filtro por atividade (cfop / servico = código LC116 ou nome).
-  const [notasFilters, setNotasFilters] = useState({ papel: "", type: "", competencia: prevMonthCompetencia(), search: "", cfop: "", servico: "", limit: 100, offset: 0 });
+  // papel começa em EMIT: as notas EMITIDAS são o faturamento (o que a apuração usa), então é
+  // o que o contador quer ver ao abrir. As caixas do resumo trocam esse filtro.
+  const [notasFilters, setNotasFilters] = useState({ papel: "EMIT", type: "", competencia: prevMonthCompetencia(), search: "", cfop: "", servico: "", limit: 100, offset: 0 });
   const [loadingNotas, setLoadingNotas] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -66,9 +68,11 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     setLoadingNotas(true);
     try {
       const f = filtersOverride || notasFilters;
-      // Roda listagem + summary em paralelo com OS MESMOS filtros — assim o
-      // resumo no topo reflete exatamente o que aparece na tabela.
-      const summaryArgs = { ano, papel: f.papel, type: f.type, competencia: f.competencia, search: f.search, cfop: f.cfop, servico: f.servico };
+      // Listagem + summary em paralelo com os mesmos filtros — MENOS `papel`: as caixas
+      // Emitidas/Recebidas SÃO o seletor de papel, então precisam continuar mostrando os dois
+      // valores. Se o summary respeitasse o papel, clicar em "Emitidas" zerava a caixa de
+      // "Recebidas" e não dava mais pra voltar por ela.
+      const summaryArgs = { ano, type: f.type, competencia: f.competencia, search: f.search, cfop: f.cfop, servico: f.servico };
       const [out, summary] = await Promise.all([
         api.listNotas(companyId, f),
         api.getNotasSummary ? api.getNotasSummary(companyId, summaryArgs) : Promise.resolve(null),

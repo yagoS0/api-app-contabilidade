@@ -9,25 +9,35 @@
 
 import { PANEL, fmtMoney } from "./notasStyles";
 
-function Tile({ label, valor, sub, color = PANEL.text, title }) {
-  return (
-    <div
-      title={title}
-      style={{
-        padding: "10px 14px", borderRadius: 10, background: PANEL.field,
-        border: `1px solid ${PANEL.border}`, minWidth: 150, flex: "0 1 auto",
-      }}
-    >
+// `onClick` transforma a caixa em seletor: Emitidas/Recebidas filtram a tabela por papel.
+// A caixa ativa fica com a borda na cor do próprio indicador, pra ficar claro o que a tabela mostra.
+function Tile({ label, valor, sub, color = PANEL.text, title, onClick, ativo }) {
+  const clicavel = typeof onClick === "function";
+  const style = {
+    padding: "10px 14px", borderRadius: 10, minWidth: 150, flex: "0 1 auto", textAlign: "left",
+    background: ativo ? "rgba(255,255,255,0.06)" : PANEL.field,
+    border: `1px solid ${ativo ? color : PANEL.border}`,
+    cursor: clicavel ? "pointer" : "default",
+    font: "inherit",
+  };
+  const conteudo = (
+    <>
       <div style={{ color: PANEL.muted, fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.03em" }}>
         {label}
       </div>
       <div style={{ color, fontSize: "1.25rem", fontWeight: 700, lineHeight: 1.3 }}>{valor}</div>
       {sub && <div style={{ color: PANEL.muted, fontSize: "0.72rem" }}>{sub}</div>}
-    </div>
+    </>
+  );
+  if (!clicavel) return <div title={title} style={style}>{conteudo}</div>;
+  return (
+    <button type="button" onClick={onClick} title={title} aria-pressed={Boolean(ativo)} style={style}>
+      {conteudo}
+    </button>
   );
 }
 
-export function NotasResumo({ summary, janela, competencia, loading }) {
+export function NotasResumo({ summary, janela, competencia, loading, papel, onSelectPapel }) {
   const t = summary?.totals || null;
   if (!t && !loading) return null;
 
@@ -55,16 +65,20 @@ export function NotasResumo({ summary, janela, competencia, loading }) {
       <Tile
         label="Emitidas"
         valor={loading ? "…" : fmtMoney(emitidas)}
-        sub="faturamento do período"
+        sub={papel === "EMIT" ? "▸ na tabela" : "faturamento do período"}
         color="#69FF47"
-        title="Soma das notas EMITIDAS (papel EMIT) autorizadas — é a base do faturamento na apuração."
+        ativo={papel === "EMIT"}
+        onClick={onSelectPapel ? () => onSelectPapel("EMIT") : undefined}
+        title="Soma das notas EMITIDAS (papel EMIT) autorizadas — é a base do faturamento na apuração. Clique para ver só elas na tabela."
       />
       <Tile
         label="Recebidas"
         valor={loading ? "…" : fmtMoney(recebidas)}
-        sub="notas de fornecedores"
+        sub={papel === "DEST" ? "▸ na tabela" : "notas de fornecedores"}
         color="#8BE9FD"
-        title="Soma das notas RECEBIDAS (papel DEST) autorizadas."
+        ativo={papel === "DEST"}
+        onClick={onSelectPapel ? () => onSelectPapel("DEST") : undefined}
+        title="Soma das notas RECEBIDAS (papel DEST) autorizadas. Clique para ver só elas na tabela."
       />
       {canceladas > 0 && (
         <Tile

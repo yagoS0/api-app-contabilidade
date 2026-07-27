@@ -97,6 +97,13 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false }) {
         janela={janelaAtiva}
         competencia={notasFilters.competencia}
         loading={loadingNotas}
+        papel={notasFilters.papel}
+        // Clicar na caixa filtra a tabela por papel. Clicar na já ativa NÃO desliga: a tabela
+        // sempre mostra um dos dois lados (emitidas por padrão) — sem estado "misturado".
+        onSelectPapel={(p) => {
+          if (notasFilters.papel === p) return;
+          setNotasFilters({ ...notasFilters, papel: p, offset: 0 });
+        }}
       />
 
       <NotasList
