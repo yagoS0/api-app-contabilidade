@@ -140,6 +140,19 @@ const SITFIS_PARCELAMENTO_REGEX = /parcelamento\s+com\s+exigibilidade\s+suspensa
 // relatório salvo; só o botão "Consultar" chama o SERPRO, e mesmo assim respeitando esta janela.
 const SITFIS_MIN_INTERVALO_MS = 4 * 60 * 60 * 1000;
 
+// Extrai o texto de mensagem que o SERPRO devolveu no envelope (formato: mensagens[] com
+// { codigo, texto }). Serve pra mostrar ao contador POR QUE a consulta falhou, em vez do
+// código interno. Retorna null quando não há mensagem reconhecível.
+function extrairMensagemSerpro(details) {
+  const msgs = details?.mensagens;
+  const lista = Array.isArray(msgs) ? msgs : (msgs ? [msgs] : []);
+  const textos = lista
+    .map((m) => (typeof m === "string" ? m : [m?.codigo, m?.texto].filter(Boolean).join(" ")))
+    .map((t) => String(t || "").trim())
+    .filter(Boolean);
+  return textos.length ? textos.join(" | ").slice(0, 400) : null;
+}
+
 async function extractSitfisPdfText(buffer) {
   if (!buffer?.length) return "";
   try {
@@ -3650,8 +3663,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         if (code === "SERPRO_SITFIS_DISABLED") {
           return res.status(400).json({ ok: false, error: code, reason: "Situação fiscal (SITFIS) desabilitada. Ligue INTEGRACAO_SERPRO_SITFIS após validar no sandbox." });
         }
-        log.error({ err: err?.message || err, code, portalCompanyId }, "Falha na consulta SITFIS");
-        return res.status(502).json({ ok: false, error: code, reason: message });
+        log.error({ err: err?.message || err, code, details: err?.details, portalCompanyId }, "Falha na consulta SITFIS");
+        // Devolve a MENSAGEM DO SERPRO junto (err.details já é um preview sanitizado — sem PDF nem
+        // dado sensível). Antes o contador recebia só o código seco ("serpro_sitfis_protocolo_not
+        // _found") e o motivo real ficava enterrado no log do servidor.
+        const doSerpro = extrairMensagemSerpro(err?.details);
+        return res.status(502).json({
+          ok: false,
+          error: code,
+          reason: doSerpro ? `${message} — SERPRO: ${doSerpro}` : message,
+          detalhes: err?.details || null,
+        });
       }
     }
   );
