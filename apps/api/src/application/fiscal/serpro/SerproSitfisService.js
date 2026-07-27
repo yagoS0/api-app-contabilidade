@@ -386,8 +386,33 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
       // eslint-disable-next-line no-await-in-loop
       sol = await solicitarProtocolo();
       if (!sol.proto) {
+        // MESMA regra do /Apoiar inicial: 200 sem protocolo + tempoEspera/AV02 = "aguarde", não
+        // erro. Esta re-solicitação é o caminho mais provável de bater no limite (o protocolo
+        // salvo expirou → re-solicitamos → o /Apoiar é justamente o que consome o limite por
+        // CONTRATANTE). Sem isso o contador via um "protocolo não encontrado" seco.
+        const msgReSolic = extractMensagemTexto(sol.resp);
+        if (sol.wait || pedeAguardarProtocolo(msgReSolic)) {
+          const segundos = Math.ceil((sol.wait || 30000) / 1000);
+          logger?.warn?.({ status: sol.status, wait: sol.wait }, "SITFIS: re-solicitação pediu para aguardar (limite)");
+          return {
+            ok: true,
+            processando: true,
+            protocolo: null,
+            relatorioPdfBuffer: null,
+            relatorioTexto: null,
+            verificadoTrial: VERIFICADO_TRIAL,
+            rawPayload: sol.resp,
+            mensagem: `O SERPRO está processando a solicitação (limite momentâneo atingido). Aguarde ~${segundos}s e consulte novamente.`,
+          };
+        }
+        logger?.warn?.(
+          { status: sol.status, apoiar: safeApoiarPreview(sol.resp) },
+          "SITFIS: re-solicitação do /Apoiar não devolveu protocolo",
+        );
         const err = new Error("serpro_sitfis_protocolo_not_found");
         err.code = "SERPRO_SITFIS_PROTOCOLO_NOT_FOUND";
+        // Sem os detalhes aqui, o erro chegava na tela sem nenhuma pista do motivo.
+        err.details = { status: sol.status, etapa: "re-solicitacao", ...safeApoiarPreview(sol.resp) };
         throw err;
       }
       protocolo = sol.proto;

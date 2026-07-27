@@ -3663,6 +3663,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         if (code === "SERPRO_SITFIS_DISABLED") {
           return res.status(400).json({ ok: false, error: code, reason: "Situação fiscal (SITFIS) desabilitada. Ligue INTEGRACAO_SERPRO_SITFIS após validar no sandbox." });
         }
+        // Protocolo salvo virou lixo: se não limparmos, a próxima tentativa reusa o MESMO protocolo
+        // (pulando o /Apoiar) e repete o erro pra sempre. Limpar destrava a consulta seguinte.
+        if (code === "SERPRO_SITFIS_PROTOCOLO_NOT_FOUND" || code === "SERPRO_SITFIS_PROTOCOLO_INVALIDO") {
+          await prisma.companyFiscalStatus
+            .updateMany({ where: { portalClientId: portalCompanyId }, data: { protocolo: null } })
+            .catch(() => null);
+        }
         log.error({ err: err?.message || err, code, details: err?.details, portalCompanyId }, "Falha na consulta SITFIS");
         // Devolve a MENSAGEM DO SERPRO junto (err.details já é um preview sanitizado — sem PDF nem
         // dado sensível). Antes o contador recebia só o código seco ("serpro_sitfis_protocolo_not
