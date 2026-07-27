@@ -301,6 +301,7 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
           relatorioTexto: null,
           verificadoTrial: VERIFICADO_TRIAL,
           rawPayload: sol.resp,
+          tempoEsperaSegundos: segundos,
           mensagem: `O SERPRO está processando a solicitação (limite momentâneo atingido). Aguarde ~${segundos}s e consulte novamente.`,
         };
       }
@@ -402,6 +403,7 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
             relatorioTexto: null,
             verificadoTrial: VERIFICADO_TRIAL,
             rawPayload: sol.resp,
+            tempoEsperaSegundos: segundos,
             mensagem: `O SERPRO está processando a solicitação (limite momentâneo atingido). Aguarde ~${segundos}s e consulte novamente.`,
           };
         }

@@ -37,29 +37,74 @@ export function usePendencias({ api, feedback, enabled = true }) {
     }
   }, [api, load, feedback]);
 
-  // Consulta o SITFIS de várias empresas em sequência (respeita o rate limit do SERPRO).
+  // Consulta o SITFIS de várias empresas em sequência.
+  //
+  // O limite do SERPRO (AV02) é por CONTRATANTE (CNPJ do escritório), não por empresa: cada
+  // /Apoiar abre um "slot de processamento". Disparar N consultas coladas queima a cota nas
+  // primeiras e as demais voltam todas "processando" — sem relatório, nada é gravado, e a
+  // sensação é de que "a situação fiscal não persiste". Por isso aqui:
+  //   • espera o tempo que o próprio SERPRO pediu antes da próxima empresa;
+  //   • para o lote após alguns limites seguidos, em vez de varrer a lista à toa.
   const consultarLote = useCallback(async (companyIds) => {
     const ids = Array.isArray(companyIds) ? companyIds.filter(Boolean) : [];
     if (!api || ids.length === 0 || running) return;
     setRunning(true);
     setError(null);
     setProgress({ done: 0, total: ids.length });
+
+    const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+    const LIMITES_SEGUIDOS_PARA_PARAR = 3;
     let done = 0;
+    let comRelatorio = 0;
+    let limitados = 0;
+    let limitesSeguidos = 0;
     let firstError = null;
-    for (const id of ids) {
+    let interrompido = false;
+
+    for (let i = 0; i < ids.length; i += 1) {
+      let esperarSegundos = 0;
       try {
         // eslint-disable-next-line no-await-in-loop
-        await api.getSitfis(id);
+        const res = await api.getSitfis(ids[i]);
+        if (res?.processando) {
+          limitados += 1;
+          limitesSeguidos += 1;
+          esperarSegundos = Number(res?.tempoEsperaSegundos || 0) || 30;
+        } else {
+          comRelatorio += 1;
+          limitesSeguidos = 0;
+        }
       } catch (err) {
         if (!firstError) firstError = err?.reason || err?.message || "Falha na consulta.";
+        limitesSeguidos = 0;
       }
       done += 1;
       setProgress({ done, total: ids.length });
+
+      if (limitesSeguidos >= LIMITES_SEGUIDOS_PARA_PARAR) { interrompido = true; break; }
+      // Só espera se ainda há empresa pela frente.
+      if (esperarSegundos > 0 && i < ids.length - 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await espera(Math.min(esperarSegundos, 60) * 1000);
+      }
     }
+
     await load();
     setRunning(false);
     setProgress({ done: 0, total: 0 });
-    if (firstError) setError(`Concluído com erros: ${firstError}`);
+
+    const restantes = ids.length - done;
+    if (interrompido) {
+      setError(
+        `Lote interrompido: o SERPRO atingiu o limite de solicitações do escritório `
+        + `(${comRelatorio} com relatório, ${limitados} aguardando, ${restantes} não consultadas). `
+        + `Aguarde alguns minutos e rode de novo — as que já vieram não serão reconsultadas.`,
+      );
+    } else if (limitados > 0) {
+      setError(`Concluído: ${comRelatorio} com relatório, ${limitados} ainda em processamento no SERPRO — reconsulte essas em alguns minutos.`);
+    } else if (firstError) {
+      setError(`Concluído com erros: ${firstError}`);
+    }
   }, [api, running, load]);
 
   // Q62: baixa em lote as situações fiscais (ZIP) — cria o job, faz polling e baixa o arquivo pronto.

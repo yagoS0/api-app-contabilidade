@@ -3655,6 +3655,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             ? new Date(new Date(salvo.ultimoRelatorioEm).getTime() + SITFIS_MIN_INTERVALO_MS).toISOString()
             : null,
           mensagem: result.mensagem || null,
+          // Quanto o SERPRO pediu pra aguardar (limite AV02). A consulta em lote usa isso pra se
+          // espaçar em vez de queimar a cota do contratante empresa após empresa.
+          tempoEsperaSegundos: result.tempoEsperaSegundos || null,
           verificadoTrial: result.verificadoTrial,
         });
       } catch (err) {
