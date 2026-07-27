@@ -85,7 +85,7 @@ export function SitfisTab({ sitfisPanel }) {
               </div>
             </div>
 
-            {status.relatorioPdfFileId && (
+            {(status.relatorioPdfFileId || status.texto) && (
               <div style={{ marginTop: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
                   <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Relatório</span>
@@ -105,6 +105,27 @@ export function SitfisTab({ sitfisPanel }) {
                     src={pdfUrl}
                     style={{ width: "100%", height: 600, border: "1px solid #44475A", borderRadius: 8, background: "#fff" }}
                   />
+                ) : status.texto ? (
+                  // PDF indisponível (perdido antes do volume persistente) mas o TEXTO extraído
+                  // está salvo no banco — mostra o conteúdo do relatório em vez de só um aviso.
+                  <>
+                    {pdfIndisponivel && (
+                      <div style={{ padding: "8px 12px", marginBottom: 8, borderRadius: 6, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.8rem" }}>
+                        O PDF deste relatório não está mais no servidor — abaixo está o texto extraído
+                        dele, que é a mesma informação. Uma nova consulta gera o PDF de novo.
+                      </div>
+                    )}
+                    <pre
+                      style={{
+                        margin: 0, padding: 14, maxHeight: 600, overflowY: "auto", overflowX: "auto",
+                        background: "#1A1B26", border: "1px solid #44475A", borderRadius: 8,
+                        color: "#F8F8F2", fontSize: "0.78rem", lineHeight: 1.5,
+                        whiteSpace: "pre-wrap", wordBreak: "break-word",
+                      }}
+                    >
+                      {status.texto}
+                    </pre>
+                  </>
                 ) : pdfIndisponivel ? (
                   <div style={{ padding: "10px 12px", borderRadius: 6, background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem" }}>
                     O arquivo deste relatório não está mais no armazenamento do servidor. A situação
