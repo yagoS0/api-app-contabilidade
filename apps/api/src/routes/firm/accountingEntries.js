@@ -730,10 +730,11 @@ export function createAccountingEntriesRouter({ log }) {
       }),
       // Guias INSS (que não geram mais lançamento contábil automático após a remoção de INSS_DCTFWEB).
       // Aqui criamos provisões sintéticas para que apareçam na linha INSS da circular.
+      // Inclui guia de UPLOAD (antes só `source:"SERPRO"`): ao subir a guia o contador escolhe o
+      // tipo, então dá pra colocá-la na linha certa — não havia motivo pra ela ficar invisível.
       prisma.guide.findMany({
         where: {
           portalClientId,
-          source: "SERPRO",
           tipo: "INSS",
           status: "PROCESSED",
           competencia: { in: meses },
@@ -743,6 +744,7 @@ export function createAccountingEntriesRouter({ log }) {
           competencia: true,
           valor: true,
           valorOriginal: true,
+          source: true, // usado só pra desempatar SERPRO × upload no mesmo mês
           paymentStatus: true,
           paymentStatusSource: true, // Q41: selo verde SERPRO
           paymentConfirmedAt: true,
@@ -768,6 +770,8 @@ export function createAccountingEntriesRouter({ log }) {
           competencia: true, valor: true, valorOriginal: true, updatedAt: true,
           // Q45: reflete o pagamento confirmado da guia (SERPRO/manual) na provisão DAS da Circular.
           id: true, paymentStatus: true, paymentStatusSource: true, paymentConfirmedAt: true, comprovantePdfFileId: true,
+          // `vencimento`/`source`: data e desempate da provisão DAS sintética (guia de upload).
+          vencimento: true, source: true,
         },
       }),
     ]);
@@ -848,7 +852,20 @@ export function createAccountingEntriesRouter({ log }) {
     // Circular exibe o valor original; badge "↻ R$ X" mostra o recalculado se diferente.
     // A5: se o contador editou o principal do INSS na circular (acrescimos.INSS.principal), esse valor
     // prevalece como o número exibido/base da baixa.
-    const inssSynthetic = inssGuides.map((g) => {
+    // Uma célula da Circular = um mês. Se a empresa tem a guia do SERPRO E uma subida à mão no
+    // mesmo mês, a do SERPRO vence (é a autoritativa) — senão a linha do INSS apareceria duplicada.
+    const inssGuidesUnicas = Array.from(
+      inssGuides.reduce((mapa, g) => {
+        const atual = mapa.get(g.competencia);
+        const ganha = !atual
+          || (String(g.source || "").toUpperCase() === "SERPRO"
+              && String(atual.source || "").toUpperCase() !== "SERPRO");
+        if (ganha) mapa.set(g.competencia, g);
+        return mapa;
+      }, new Map()).values(),
+    );
+
+    const inssSynthetic = inssGuidesUnicas.map((g) => {
       const valorAtual = Number(g.valor || 0);
       const valorOriginal = g.valorOriginal != null ? Number(g.valorOriginal) : valorAtual;
       const principalEditado = Number(acrescimosByMonth[g.competencia]?.INSS?.principal) || 0;
@@ -919,11 +936,77 @@ export function createAccountingEntriesRouter({ log }) {
     // Q5: DARFs agora são AccountingEntry reais (gerados via GuideToProvisionService no momento
     // em que a guia vira PROCESSED). Já aparecem no `provisoes` acima — não há mais sintéticas.
 
+    // DAS: a provisão normalmente vem do extrato PGDAS. Quando a empresa não tem esse extrato
+    // (ex.: a guia do DAS foi subida à mão), não havia NADA na linha DAS — a guia existia mas a
+    // Circular ficava vazia. Aqui sintetizamos a partir da guia, só nos meses SEM provisão de DAS.
+    const mesesComDas = new Set(
+      provisoes.filter((p) => p.eventType === "DAS_SIMPLES" || p.subtipo === "DAS").map((p) => p.competencia),
+    );
+    const dasSynthetic = Array.from(
+      simplesGuides
+        .filter((g) => !mesesComDas.has(g.competencia))
+        // Uma célula por mês: com SERPRO e upload no mesmo mês, o do SERPRO vence (autoritativo).
+        .reduce((mapa, g) => {
+          const atual = mapa.get(g.competencia);
+          const ganha = !atual
+            || (String(g.source || "").toUpperCase() === "SERPRO"
+                && String(atual.source || "").toUpperCase() !== "SERPRO");
+          if (ganha) mapa.set(g.competencia, g);
+          return mapa;
+        }, new Map()).values(),
+    )
+      .map((g) => {
+        const valorAtual = Number(g.valor || 0);
+        const valorOriginal = g.valorOriginal != null ? Number(g.valorOriginal) : valorAtual;
+        const principalEditado = Number(acrescimosByMonth[g.competencia]?.DAS?.principal) || 0;
+        const valor = principalEditado > 0 ? Math.round(principalEditado * 100) / 100 : valorOriginal;
+        const isPaid = String(g.paymentStatus || "").toUpperCase() === "PAID";
+        return {
+          id: `synthetic-das-${g.id}`,
+          portalClientId,
+          circularId: null,
+          ruleId: null,
+          eventType: "DAS_GUIDE_SYNTHETIC",
+          data: g.vencimento || new Date(`${g.competencia}-01T00:00:00.000Z`),
+          competencia: g.competencia,
+          historico: `DAS SIMPLES NACIONAL - ${g.competencia}`,
+          tipo: "PROVISAO",
+          subtipo: "DAS",
+          origem: "UPLOAD",
+          loteImportacao: null,
+          status: "RASCUNHO",
+          statusPagamento: isPaid ? "PAGO" : "ABERTO",
+          openEntryId: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          lines: [
+            { id: null, entryId: null, conta: "DAS", tipo: "D", valor, ordem: 0, historico: null },
+            { id: null, entryId: null, conta: "DAS", tipo: "C", valor, ordem: 1, historico: null },
+          ],
+          baixas: [],
+          baixaEntry: null,
+          totalD: valor,
+          totalC: valor,
+          valor,
+          placeholder: false,
+          synthetic: true,
+          parcelamentoId: null,
+          sourceGuide: {
+            id: g.id,
+            paymentStatus: g.paymentStatus,
+            paymentStatusSource: g.paymentStatusSource,
+            paymentConfirmedAt: g.paymentConfirmedAt,
+            comprovantePdfFileId: g.comprovantePdfFileId,
+          },
+        };
+      });
+
     return res.json({
       year,
       provisoes: [
         ...provisoes.map((p) => enrichDasProvisao(entryToResponse(p))),
         ...inssSynthetic,
+        ...dasSynthetic,
       ],
       receitas: receitasPorComp,
       acrescimos: acrescimosByMonth,

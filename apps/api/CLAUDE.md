@@ -224,6 +224,21 @@ falha de rede/SERPRO não pode desfazer nada — volta como `skipped` no payload
 zera os flags de e-mail da guia DAS (`liberarReenvio`); numa transmissão normal a guia já nasce
 `PENDING`.
 
+## Guias na Circular — quem alimenta cada linha
+
+- **DARF / PIS / COFINS / IRPJ / CSLL / ISS:** viram `AccountingEntry` PROVISAO de verdade, via
+  `generateProvisionsFromGuide` no hook de `GuideService` (toda guia que vira PROCESSED, **inclusive
+  upload**). Aparecem naturalmente na query `provisoes`.
+- **INSS e SIMPLES/DAS:** `generateProvisionsFromGuide` **pula** os dois de propósito (INSS é manual;
+  DAS vem do extrato PGDAS). A Circular os monta como **provisões sintéticas** no endpoint
+  `GET /entries/circular` — não existem no banco.
+  - INSS: sintética a partir da guia (`inssSynthetic`). Lê `guide.paymentStatus` direto, então o ✓
+    do INSS **não** depende de `AccountingEntry.statusPagamento`.
+  - DAS: normalmente vem do extrato; `dasSynthetic` só entra nos meses **sem** provisão de DAS
+    (caso da guia subida à mão numa empresa sem extrato PGDAS).
+  - Nos dois, havendo guia SERPRO **e** upload no mesmo mês, a do **SERPRO vence** (autoritativa) —
+    senão a linha apareceria duplicada.
+
 ## Endpoints agregados do dashboard (Lote C)
 
 - `GET /firm/companies/annual?ano=` — grade 12 meses × empresas: fechamento contábil
