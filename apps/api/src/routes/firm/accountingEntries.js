@@ -1232,6 +1232,25 @@ export function createAccountingEntriesRouter({ log }) {
     return res.json({ data: entries.map(entryToResponse) });
   });
 
+  // Checklist de conferência do mês. `folhaProlabore` é o item original (Q47); os demais seguem
+  // exatamente a mesma regra. Chave da API → coluna do banco. Ordem = ordem exibida na tela.
+  const CHECKLIST_FECHAMENTO = Object.freeze({
+    folhaProlabore: { campo: "folhaProlaboreOk", label: "Folha/Pró-labore lançada" },
+    despesas:       { campo: "despesasOk",       label: "Despesas lançadas" },
+    receitas:       { campo: "receitasOk",       label: "Receitas lançadas" },
+    provisoes:      { campo: "provisoesOk",      label: "Provisões lançadas" },
+    pagamentos:     { campo: "pagamentosOk",     label: "Pagamentos lançados" },
+  });
+  const CHECKLIST_SELECT = Object.fromEntries(
+    Object.values(CHECKLIST_FECHAMENTO).map((c) => [c.campo, true]),
+  );
+  // Itens ainda não confirmados (null/false) — o que impede o fechamento.
+  function checklistPendentes(circular) {
+    return Object.entries(CHECKLIST_FECHAMENTO)
+      .filter(([, c]) => circular?.[c.campo] !== true)
+      .map(([chave, c]) => ({ chave, label: c.label }));
+  }
+
   // Q17: FECHAMENTO CONTÁBIL do mês ─────────────────────────────────────────
   // GET estado + bloqueios (lançamentos em branco / desbalanceados).
   router.get("/fechamento-contabil/:competencia", requireFirmCompanyAccess(), async (req, res) => {
@@ -1241,19 +1260,25 @@ export function createAccountingEntriesRouter({ log }) {
     try {
       const circular = await prisma.companyMonthlyCircular.findUnique({
         where: { portalClientId_competencia: { portalClientId, competencia } },
-        select: { fechadoContabilEm: true, fechadoContabilPor: true, folhaProlaboreOk: true },
+        select: { fechadoContabilEm: true, fechadoContabilPor: true, ...CHECKLIST_SELECT },
       });
       const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
-      // Q47: folha/pró-labore é pré-requisito manual do fechamento.
-      const folhaProlaboreOk = circular?.folhaProlaboreOk === true;
+      // Checklist manual (folha/pró-labore, despesas, receitas, provisões, pagamentos).
+      const pendentes = checklistPendentes(circular);
+      const checklist = Object.fromEntries(
+        Object.entries(CHECKLIST_FECHAMENTO).map(([chave, c]) => [chave, circular?.[c.campo] === true]),
+      );
       return res.json({
         ok: true,
         competencia,
         fechado: Boolean(circular?.fechadoContabilEm),
         fechadoEm: circular?.fechadoContabilEm || null,
         fechadoPor: circular?.fechadoContabilPor || null,
-        folhaProlaboreOk,
-        podeFechar: validation.ok && folhaProlaboreOk,
+        // Mantido no payload: a UI antiga (e o gate do fechamento) já liam este nome.
+        folhaProlaboreOk: checklist.folhaProlabore,
+        checklist,
+        checklistPendentes: pendentes,
+        podeFechar: validation.ok && pendentes.length === 0,
         blockers: validation.blockers,
       });
     } catch (err) {
@@ -1272,16 +1297,21 @@ export function createAccountingEntriesRouter({ log }) {
       if (!validation.ok) {
         return res.status(400).json({ ok: false, error: "fechamento_bloqueado", blockers: validation.blockers });
       }
-      // Q47: só fecha se a folha/pró-labore do mês estiver marcada como lançada.
-      const flag = await prisma.companyMonthlyCircular.findUnique({
+      // Só fecha com TODO o checklist de conferência marcado (folha/pró-labore, despesas,
+      // receitas, provisões, pagamentos).
+      const flags = await prisma.companyMonthlyCircular.findUnique({
         where: { portalClientId_competencia: { portalClientId, competencia } },
-        select: { folhaProlaboreOk: true },
+        select: CHECKLIST_SELECT,
       });
-      if (flag?.folhaProlaboreOk !== true) {
+      const pendentes = checklistPendentes(flags);
+      if (pendentes.length > 0) {
         return res.status(400).json({
           ok: false,
-          error: "folha_prolabore_pendente",
-          message: "Marque 'Folha/Pró-labore lançada' antes de fechar a empresa.",
+          // Substitui folha_prolabore_pendente (que ninguém consumia por código — o front usa
+          // `message`), agora que a trava é o checklist inteiro e não só a folha.
+          error: "checklist_pendente",
+          checklistPendentes: pendentes,
+          message: `Confirme antes de fechar: ${pendentes.map((p) => p.label).join(", ")}.`,
         });
       }
       // Garante a linha da circular (cria se não existir) e marca o fechamento contábil.
@@ -1319,11 +1349,14 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
-  // Q47: marca/desmarca "Folha/Pró-labore lançada" da competência. Pré-requisito do fechamento.
-  router.post("/fechamento-contabil/:competencia/folha-prolabore", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+  // Marca/desmarca um item do checklist de conferência da competência (pré-requisito do fechamento).
+  // `:item` = folhaProlabore | despesas | receitas | provisoes | pagamentos.
+  async function setChecklistItem(req, res, itemChave) {
     const portalClientId = String(req.params.companyId);
     const competencia = String(req.params.competencia || "").trim();
     if (!competencia) return res.status(400).json({ error: "competencia_required" });
+    const def = CHECKLIST_FECHAMENTO[itemChave];
+    if (!def) return res.status(400).json({ error: "item_invalido", itens: Object.keys(CHECKLIST_FECHAMENTO) });
     const ok = req.body?.ok === true;
     try {
       // Upsert por (empresa, competência) — garante a linha da circular como no fechar.
@@ -1332,16 +1365,23 @@ export function createAccountingEntriesRouter({ log }) {
         select: { id: true },
       });
       if (existing) {
-        await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data: { folhaProlaboreOk: ok } });
+        await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data: { [def.campo]: ok } });
       } else {
-        await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, folhaProlaboreOk: ok } });
+        await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, [def.campo]: ok } });
       }
-      return res.json({ ok: true, competencia, folhaProlaboreOk: ok });
+      return res.json({ ok: true, competencia, item: itemChave, valor: ok });
     } catch (err) {
-      log.error({ err }, "Falha ao marcar folha/pró-labore");
+      log.error({ err, item: itemChave }, "Falha ao marcar item do checklist de fechamento");
       return res.status(500).json({ ok: false, error: "internal_error" });
     }
-  });
+  }
+
+  // Rota antiga (Q47) preservada — clientes já publicados continuam funcionando.
+  router.post("/fechamento-contabil/:competencia/folha-prolabore", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), (req, res) =>
+    setChecklistItem(req, res, "folhaProlabore"));
+
+  router.post("/fechamento-contabil/:competencia/checklist/:item", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), (req, res) =>
+    setChecklistItem(req, res, String(req.params.item || "")));
 
   // GET /firm/companies/:companyId/entries/export/csv
   // Query params:

@@ -897,6 +897,13 @@ model CompanyMonthlyCircular {
   // Q47: contador confirma que a folha/pró-labore do mês foi lançada. Trava o fechamento contábil
   // enquanto não marcada (null/false). Por competência.
   folhaProlaboreOk    Boolean?
+  // Checklist de conferência do mês (mesma regra da folha: trava o fechamento até marcar).
+  // Cada uma é uma confirmação MANUAL do contador — o sistema não tem como saber se "todas as
+  // despesas do mês entraram", só quem lançou sabe.
+  despesasOk          Boolean?
+  receitasOk          Boolean?
+  provisoesOk         Boolean?
+  pagamentosOk        Boolean?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 

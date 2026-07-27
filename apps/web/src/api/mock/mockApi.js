@@ -601,11 +601,21 @@ export function createMockApi() {
     },
     async getFechamentoContabil(_companyId, competencia) {
       await delay();
-      return { ok: true, competencia, fechado: false, folhaProlaboreOk: true, podeFechar: true, blockers: [] };
+      // Checklist com um item pendente de propósito, pra dar pra ver o estado bloqueado na tela.
+      return {
+        ok: true, competencia, fechado: false, folhaProlaboreOk: true,
+        checklist: { folhaProlabore: true, despesas: true, receitas: true, provisoes: false, pagamentos: false },
+        checklistPendentes: [{ chave: "provisoes", label: "Provisões lançadas" }, { chave: "pagamentos", label: "Pagamentos lançados" }],
+        podeFechar: false, blockers: [],
+      };
     },
     async setFolhaProlabore(_companyId, competencia, ok) {
       await delay();
       return { ok: true, competencia, folhaProlaboreOk: Boolean(ok) };
+    },
+    async setChecklistFechamento(_companyId, competencia, item, ok) {
+      await delay();
+      return { ok: true, competencia, item, valor: Boolean(ok) };
     },
     async fecharFechamentoContabil(_companyId, competencia) {
       await delay();

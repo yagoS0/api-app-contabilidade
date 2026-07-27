@@ -14,12 +14,23 @@ const fechamentoApi = createApiClient();
 
 // Q18: fechamento contábil compacto — um CADEADO que abre/fecha a empresa no mês.
 // 🔒 fechada (clica → reabre) · 🔓 aberta (clica → fecha; bloqueado se houver pendência).
+// Checklist de conferência do mês: cada item é uma confirmação MANUAL do contador (o sistema não
+// tem como saber se "todas as despesas do mês entraram"). Todos precisam estar marcados pra fechar.
+// A ordem aqui é a ordem exibida. As chaves batem com o CHECKLIST_FECHAMENTO do backend.
+const CHECKLIST_ITENS = [
+  { chave: "folhaProlabore", label: "Folha/Pró-labore", title: "Confirme que a folha e o pró-labore do mês foram lançados." },
+  { chave: "despesas",       label: "Despesas",         title: "Confirme que as despesas do mês foram lançadas." },
+  { chave: "receitas",       label: "Receitas",         title: "Confirme que as receitas do mês foram lançadas." },
+  { chave: "provisoes",      label: "Provisões",        title: "Confirme que as provisões do mês foram lançadas." },
+  { chave: "pagamentos",     label: "Pagamentos",       title: "Confirme que os pagamentos do mês foram lançados." },
+];
+
 function FechamentoCadeado({ companyId, competencia, entries, onState }) {
   const [fechado, setFechado] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Q47: folha/pró-labore lançada — pré-requisito para fechar o mês.
-  const [folhaOk, setFolhaOk] = useState(false);
-  const [folhaBusy, setFolhaBusy] = useState(false);
+  // Checklist (Q47 + Lote C): { folhaProlabore, despesas, receitas, provisoes, pagamentos }
+  const [checklist, setChecklist] = useState({});
+  const [checkBusy, setCheckBusy] = useState(null); // chave em gravação
 
   const problemas = useMemo(() => {
     const out = [];
@@ -53,7 +64,13 @@ function FechamentoCadeado({ companyId, competencia, entries, onState }) {
     let alive = true;
     if (!companyId || !competencia) return undefined;
     fechamentoApi.getFechamentoContabil(companyId, competencia)
-      .then((r) => { if (alive) { setFechado(Boolean(r?.fechado)); setFolhaOk(r?.folhaProlaboreOk === true); onState?.(Boolean(r?.fechado)); } })
+      .then((r) => {
+        if (!alive) return;
+        setFechado(Boolean(r?.fechado));
+        // `checklist` é o formato novo; o fallback cobre um backend ainda sem ele (só a folha).
+        setChecklist(r?.checklist || { folhaProlabore: r?.folhaProlaboreOk === true });
+        onState?.(Boolean(r?.fechado));
+      })
       .catch(() => {});
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,9 +93,9 @@ function FechamentoCadeado({ companyId, competencia, entries, onState }) {
       );
       return;
     }
-    if (!folhaOk) {
+    if (pendentes.length > 0) {
       // eslint-disable-next-line no-alert
-      window.alert("Marque 'Folha/Pró-labore lançada' antes de fechar a empresa.");
+      window.alert(`Confirme antes de fechar:\n\n${pendentes.map((p) => `• ${p.label}`).join("\n")}`);
       return;
     }
     setBusy(true);
@@ -87,40 +104,54 @@ function FechamentoCadeado({ companyId, competencia, entries, onState }) {
     finally { setBusy(false); }
   }
 
-  async function toggleFolha() {
-    if (folhaBusy || fechado) return;
-    const next = !folhaOk;
-    setFolhaBusy(true);
-    try { await fechamentoApi.setFolhaProlabore(companyId, competencia, next); setFolhaOk(next); }
-    catch (e) { window.alert(e?.message || "Falha ao salvar folha/pró-labore."); }
-    finally { setFolhaBusy(false); }
+  async function toggleItem(chave) {
+    if (checkBusy || fechado) return;
+    const next = !checklist[chave];
+    setCheckBusy(chave);
+    try {
+      await fechamentoApi.setChecklistFechamento(companyId, competencia, chave, next);
+      setChecklist((prev) => ({ ...prev, [chave]: next }));
+    } catch (e) { window.alert(e?.message || "Falha ao salvar a conferência."); }
+    finally { setCheckBusy(null); }
   }
 
-  const bloqueadoPorFolha = !fechado && !folhaOk;
-  const color = fechado ? "#2DD4BF" : (problemas.length > 0 || bloqueadoPorFolha) ? "#FF5757" : "#69FF47";
+  const pendentes = CHECKLIST_ITENS.filter((i) => checklist[i.chave] !== true);
+  const bloqueadoPorChecklist = !fechado && pendentes.length > 0;
+  const color = fechado ? "#2DD4BF" : (problemas.length > 0 || bloqueadoPorChecklist) ? "#FF5757" : "#69FF47";
   const title = fechado
     ? `Empresa fechada (${competencia}). Clique para reabrir.`
     : problemas.length > 0
       ? `${problemas.length} lançamento(s) com problema — corrija antes de fechar.`
-      : bloqueadoPorFolha
-        ? "Marque 'Folha/Pró-labore lançada' antes de fechar."
+      : bloqueadoPorChecklist
+        ? `Falta confirmar: ${pendentes.map((p) => p.label).join(", ")}.`
         : `Pronta para fechar (${competencia}). Clique no cadeado para fechar.`;
-  const btnDisabled = busy || bloqueadoPorFolha;
+  const btnDisabled = busy || bloqueadoPorChecklist;
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-      {/* Q47: checkbox de folha/pró-labore — some quando o mês já está fechado. */}
-      {!fechado && (
-        <label
-          title="Confirme que a folha e o pró-labore do mês foram lançados."
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.78rem", fontWeight: 600,
-            color: folhaOk ? "#69FF47" : "#aeb6d3", cursor: folhaBusy ? "default" : "pointer", userSelect: "none",
-          }}
-        >
-          <input type="checkbox" checked={folhaOk} disabled={folhaBusy} onChange={toggleFolha} style={{ cursor: folhaBusy ? "default" : "pointer" }} />
-          Folha/Pró-labore lançada
-        </label>
-      )}
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      {/* Checklist de conferência — some quando o mês já está fechado. */}
+      {!fechado && CHECKLIST_ITENS.map((item) => {
+        const marcado = checklist[item.chave] === true;
+        const gravando = checkBusy === item.chave;
+        return (
+          <label
+            key={item.chave}
+            title={item.title}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.78rem", fontWeight: 600,
+              color: marcado ? "#69FF47" : "#aeb6d3", cursor: gravando ? "default" : "pointer", userSelect: "none",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={marcado}
+              disabled={Boolean(checkBusy)}
+              onChange={() => toggleItem(item.chave)}
+              style={{ cursor: gravando ? "default" : "pointer" }}
+            />
+            {item.label}
+          </label>
+        );
+      })}
       <button
         type="button"
         onClick={toggle}

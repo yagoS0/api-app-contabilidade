@@ -412,6 +412,13 @@ export function createRealApi() {
         body: JSON.stringify({ ok: Boolean(ok) }),
       });
     },
+    // Checklist de conferência do mês. `item`: folhaProlabore | despesas | receitas | provisoes | pagamentos.
+    async setChecklistFechamento(companyId, competencia, item, ok) {
+      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/checklist/${item}`, {
+        method: "POST",
+        body: JSON.stringify({ ok: Boolean(ok) }),
+      });
+    },
     async getGuideSettings() {
       return request("/firm/guides/settings");
     },
