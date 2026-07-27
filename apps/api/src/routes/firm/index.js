@@ -2901,7 +2901,22 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
       }
 
-      return res.json({ ok: true, guide: toGuideResponse(updated), parcelaBaixa, inssBaixa, normalBaixa });
+      // A guia foi marcada como paga com sucesso (por isso ok:true), mas a baixa/Circular é
+      // best-effort e pode ter sido pulada. Diz explicitamente o que aconteceu do lado da
+      // Circular — antes a resposta era um "ok" liso e o contador ficava sem saber por que a
+      // célula não tinha ficado verde.
+      const baixa = parcelaBaixa || inssBaixa || normalBaixa || null;
+      const circularAtualizada = Boolean(baixa?.ok) || Number(baixa?.provisoesMarcadas || 0) > 0;
+      return res.json({
+        ok: true,
+        guide: toGuideResponse(updated),
+        parcelaBaixa, inssBaixa, normalBaixa,
+        circular: {
+          atualizada: circularAtualizada,
+          provisoesMarcadas: Number(baixa?.provisoesMarcadas || 0),
+          motivo: circularAtualizada ? null : (baixa?.reason || "sem_provisao_correspondente"),
+        },
+      });
     }
   );
 

@@ -9,6 +9,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { isMonthClosed } from "./fechamentoContabil.js";
 import { resolveCaixaAccount } from "./InssPagamentoService.js";
+import { subtiposDaGuiaNaCircular } from "./GuideToProvisionService.js";
 
 function competenciaFromDate(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -21,6 +22,43 @@ function competenciaLabel(competencia) {
 }
 
 /**
+ * Marca como PAGO as provisões que a Circular exibe para esta guia.
+ *
+ * Casa por `sourceGuideId` E, como FALLBACK, por competência + subtipo. O fallback existe porque a
+ * provisão do DAS/Simples é criada pelo caminho do extrato PGDAS, não a partir da guia, então nasce
+ * com `sourceGuideId = null` — só o vínculo por id fazia o UPDATE atingir ZERO linhas e a guia
+ * ficava "Paga" na tabela de Guias mas sem ✅ na Circular (a Circular lê
+ * `AccountingEntry.statusPagamento`, não `Guide.paymentStatus`).
+ *
+ * O fallback é restrito ao que a célula da Circular representa (mesma empresa, mesma competência,
+ * mesmo subtipo) e só toca provisões ainda EM ABERTO/PARCIAL — nunca reescreve algo já quitado.
+ *
+ * @returns {Promise<number>} quantas provisões foram marcadas
+ */
+async function marcarProvisoesPagas(client, { portalClientId, guide }) {
+  const porId = await client.accountingEntry.updateMany({
+    where: { sourceGuideId: guide.id, tipo: "PROVISAO" },
+    data: { statusPagamento: "PAGO" },
+  });
+  if (porId.count > 0) return porId.count;
+
+  const subtipos = subtiposDaGuiaNaCircular(guide);
+  if (!subtipos.length || !guide.competencia) return 0;
+
+  const porCompetencia = await client.accountingEntry.updateMany({
+    where: {
+      portalClientId,
+      tipo: "PROVISAO",
+      competencia: guide.competencia,
+      subtipo: { in: subtipos },
+      statusPagamento: { in: ["ABERTO", "PARCIAL"] },
+    },
+    data: { statusPagamento: "PAGO" },
+  });
+  return porCompetencia.count;
+}
+
+/**
  * Gera a baixa de uma guia normal e marca as provisões vinculadas como PAGO.
  * Idempotente (skip se já baixada); lança `MES_FECHADO` se o mês do pagamento estiver fechado.
  */
@@ -28,17 +66,31 @@ export async function gerarPagamentoNormalFromGuide({ portalClientId, guideId, d
   void userId; // reservado p/ auditoria
   const guide = await prisma.guide.findFirst({
     where: { id: String(guideId), portalClientId },
-    select: { id: true, tipo: true, competencia: true, valor: true, lancamentoId: true, baixada: true, parcelamentoId: true },
+    // `extracted` entra por causa de subtiposDaGuiaNaCircular (usa a composição por tributo).
+    select: {
+      id: true, tipo: true, competencia: true, valor: true, lancamentoId: true, baixada: true,
+      parcelamentoId: true, extracted: true,
+    },
   });
   if (!guide) return { skipped: true, reason: "guide_not_found" };
   if (guide.parcelamentoId) return { skipped: true, reason: "e_parcela" };
   if (String(guide.tipo || "").toUpperCase() === "INSS") return { skipped: true, reason: "e_inss" };
-  if (guide.lancamentoId || guide.baixada) return { skipped: true, reason: "ja_baixada" };
+
+  // Já baixada: NÃO cria lançamento de novo, mas ainda assim garante que a Circular reflita o
+  // pago. Sem isso, uma guia que baixou antes desta correção (ou uma 2ª confirmação) saía daqui
+  // sem nunca marcar a provisão — a guia ficava "Paga" e a Circular seguia vermelha.
+  if (guide.lancamentoId || guide.baixada) {
+    const n = await marcarProvisoesPagas(prisma, { portalClientId, guide });
+    return { skipped: true, reason: "ja_baixada", provisoesMarcadas: n };
+  }
 
   const baixaExistente = await prisma.accountingEntry.findFirst({
     where: { sourceGuideId: guide.id, tipo: "BAIXA" }, select: { id: true },
   });
-  if (baixaExistente) return { skipped: true, reason: "ja_baixada" };
+  if (baixaExistente) {
+    const n = await marcarProvisoesPagas(prisma, { portalClientId, guide });
+    return { skipped: true, reason: "ja_baixada", provisoesMarcadas: n };
+  }
 
   // Provisões desta guia → cada uma dá a conta do tributo a recolher (linha C) + o valor.
   const provisoes = await prisma.accountingEntry.findMany({
@@ -65,10 +117,8 @@ export async function gerarPagamentoNormalFromGuide({ portalClientId, guideId, d
   }
   if (!debitos.length || valorTotal <= 0) {
     // Ainda assim marca as provisões (se houver) como PAGO — a Circular precisa refletir o "confirmado".
-    await prisma.accountingEntry.updateMany({
-      where: { sourceGuideId: guide.id, tipo: "PROVISAO" }, data: { statusPagamento: "PAGO" },
-    });
-    return { skipped: true, reason: "sem_valor" };
+    const n = await marcarProvisoesPagas(prisma, { portalClientId, guide });
+    return { skipped: true, reason: "sem_valor", provisoesMarcadas: n };
   }
 
   const data = dataPagamento ? new Date(dataPagamento) : new Date();
@@ -104,13 +154,14 @@ export async function gerarPagamentoNormalFromGuide({ portalClientId, guideId, d
       include: { lines: true },
     });
     // Circular "confirmado": marca as provisões da guia como PAGO (pinta verde/✅).
-    await tx.accountingEntry.updateMany({
-      where: { sourceGuideId: guide.id, tipo: "PROVISAO" }, data: { statusPagamento: "PAGO" },
-    });
+    const provisoesMarcadas = await marcarProvisoesPagas(tx, { portalClientId, guide });
     await tx.guide.update({
       where: { id: guide.id },
       data: { baixada: true, dataBaixa: data, lancamentoId: entry.id },
     });
-    return { ok: true, pagamentoId: entry.id, contaCaixa: contaCaixa || null, debitos: debitos.length };
+    return {
+      ok: true, pagamentoId: entry.id, contaCaixa: contaCaixa || null,
+      debitos: debitos.length, provisoesMarcadas,
+    };
   });
 }

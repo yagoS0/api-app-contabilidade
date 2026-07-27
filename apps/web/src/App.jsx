@@ -49,6 +49,16 @@ function App() {
         await accountingWorkspace.loadCircular(accountingWorkspace.circularYear, competencia);
       }
     },
+    // Confirmar pagamento muda AccountingEntry.statusPagamento, que é o que a Circular lê pro ✅ —
+    // sem recarregar aqui a aba continuava mostrando a célula em aberto.
+    onGuidePaymentConfirmed: async () => {
+      if (session.page === "companyDetail") {
+        await accountingWorkspace.loadCircular(
+          accountingWorkspace.circularYear,
+          accountingWorkspace.circularCompetencia,
+        );
+      }
+    },
   });
   const accountingWorkspace = useManageAccountingWorkspace({
     api,

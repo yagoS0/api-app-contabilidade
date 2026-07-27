@@ -57,7 +57,7 @@ function deriveCompanyDetailTab(pathname) {
   return SEGMENT_TO_TAB[match[1]] || "lancamentos";
 }
 
-export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced }) {
+export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced, onGuidePaymentConfirmed }) {
   const location = useLocation();
   const navigate = useNavigate();
   const companiesState = useCompanies();
@@ -569,12 +569,21 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     try {
       const res = await api.confirmGuidePayment(guideId);
       // Q23: guia de parcela gera a baixa do pagamento; mensagem reflete o resultado.
-      if (res?.parcelaBaixa?.pagamentoId) {
+      // A resposta diz se a Circular foi atualizada — não afirmamos "✅ na Circular" sem ter sido.
+      if (res?.circular?.atualizada === false) {
+        feedback.setMessage(
+          "Guia marcada como paga, mas nenhuma provisão correspondente foi encontrada na Circular — "
+          + "a célula do mês pode continuar em aberto."
+        );
+      } else if (res?.parcelaBaixa?.pagamentoId) {
         feedback.setMessage("Guia paga — lançamento de baixa gerado.");
       } else {
         feedback.setMessage("Guia marcada como paga.");
       }
       await loadGuides();
+      // A Circular lê AccountingEntry.statusPagamento, que acabou de mudar — sem este reload a
+      // aba mostrava dado velho (antes só as guias eram recarregadas).
+      await onGuidePaymentConfirmed?.();
     } catch (err) {
       const msg = String(err?.message || "");
       if (msg.includes("MES_FECHADO")) {

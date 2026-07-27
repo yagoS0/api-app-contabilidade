@@ -57,6 +57,30 @@ function pickEventType(tipoUpper, codigo, tributo) {
 }
 
 /**
+ * Em quais LINHAS da matriz Circular (subtipo) esta guia aparece.
+ *
+ * Existe porque a provisão do DAS/Simples é criada pelo caminho do PGDAS (extrato), NÃO a partir
+ * da guia — então ela nasce **sem `sourceGuideId`**. Quem precisa casar guia ↔ provisão (ex.: a
+ * confirmação de pagamento, pra pintar a Circular) não consegue usar o id e precisa cair pra
+ * competência + subtipo. Fica aqui pra não haver um segundo vocabulário de tipos no projeto.
+ *
+ * @returns {string[]} subtipos (chaves de SUBTIPO_ROWS_ALL na aba Circular)
+ */
+export function subtiposDaGuiaNaCircular(guide) {
+  const tipoUpper = String(guide?.tipo || "").toUpperCase();
+  // Simples: a provisão vem do extrato PGDAS com subtipo "DAS" (eventType DAS_SIMPLES).
+  if (tipoUpper === "SIMPLES") return ["DAS"];
+  if (tipoUpper === "INSS") return ["INSS"];
+
+  const composicao = Array.isArray(guide?.extracted?.composicao) ? guide.extracted.composicao : [];
+  const eventos = composicao.length > 0
+    ? composicao.filter((c) => Number(c?.total) > 0).map((c) => pickEventType(tipoUpper, c.codigo, c.tributo))
+    : [pickEventType(tipoUpper, null, null)];
+
+  return [...new Set(eventos.map((e) => EVENT_TO_SUBTIPO[e]).filter(Boolean))];
+}
+
+/**
  * Gera AccountingEntry(s) a partir de uma Guide.
  * Idempotente: usa upsert por unique (sourceGuideId, eventType).
  * Best-effort: chamadores devem envolver com try/catch (não derrubar fluxo principal).
