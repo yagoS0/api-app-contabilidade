@@ -11,7 +11,68 @@ function diasAte(dataBR) {
   return Math.ceil((alvo.getTime() - Date.now()) / 86400000);
 }
 
-// Resumo dos campos ROTULADOS do relatório. Não tabela débitos — ver comentário em parseSitfisTexto.
+const fmtMoney = (v) => (Number.isFinite(v) ? v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—");
+
+// Rótulos das colunas na tela (as chaves vêm do parser, que segue a ordem das colunas do PDF).
+const COLUNA_LABEL = {
+  receita: "Receita", periodo: "Período", vencimento: "Vencimento",
+  valorOriginal: "Vl. original", saldoDevedor: "Saldo devedor", multa: "Multa", juros: "Juros",
+  saldoConsolidado: "Saldo consolidado", situacao: "Situação",
+  processo: "Processo", localizacao: "Localização",
+  inscricao: "Inscrição", inscritoEm: "Inscrito em", ajuizadoEm: "Ajuizado em", tipoDevedor: "Tipo de devedor",
+};
+const MONETARIAS = new Set(["valorOriginal", "saldoDevedor", "multa", "juros", "saldoConsolidado"]);
+const NIVEL_COR = { pendencia: "#FF4757", suspenso: "#FFB347" };
+
+function TabelaSecao({ tabela }) {
+  const cor = NIVEL_COR[tabela.nivel] || "#A7B0C0";
+  const th = { padding: "6px 8px", textAlign: "left", fontSize: "0.68rem", color: "#A7B0C0", fontWeight: 700, textTransform: "uppercase", whiteSpace: "nowrap" };
+  const td = { padding: "6px 8px", fontSize: "0.8rem", color: "#F8F8F2", whiteSpace: "nowrap" };
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 2, background: cor }} />
+        <strong style={{ color: cor, fontSize: "0.85rem" }}>{tabela.titulo}</strong>
+        <span style={{ color: "#6272A4", fontSize: "0.75rem" }}>({tabela.registros.length})</span>
+      </div>
+      <div style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 8 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#282A36" }}>
+              {tabela.colunas.map((c) => (
+                <th key={c} style={{ ...th, textAlign: MONETARIAS.has(c) ? "right" : "left" }}>
+                  {COLUNA_LABEL[c] || c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tabela.registros.map((r, idx) => (
+              <tr key={idx} style={{ borderTop: "1px solid #2b2d45" }}>
+                {tabela.colunas.map((c) => (
+                  <td
+                    key={c}
+                    style={{
+                      ...td,
+                      textAlign: MONETARIAS.has(c) ? "right" : "left",
+                      fontFamily: MONETARIAS.has(c) ? "monospace" : undefined,
+                      color: c === "situacao" ? cor : td.color,
+                      fontWeight: c === "situacao" || c === "saldoConsolidado" ? 600 : undefined,
+                    }}
+                  >
+                    {MONETARIAS.has(c) ? fmtMoney(r[c]) : (r[c] || "—")}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// Resumo do relatório: campos rotulados + as tabelas de pendência.
 function ResumoRelatorio({ resumo }) {
   const dias = diasAte(resumo.certidaoValidade);
   const vencida = dias != null && dias < 0;
@@ -21,16 +82,36 @@ function ResumoRelatorio({ resumo }) {
 
   return (
     <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
-      {resumo.diagnostico && (
-        <div style={{
-          padding: "10px 12px", borderRadius: 8, fontSize: "0.85rem", lineHeight: 1.45,
-          background: resumo.semPendencias ? "rgba(105,255,71,0.08)" : "rgba(255,71,87,0.08)",
-          border: `1px solid ${resumo.semPendencias ? "#69FF47" : "#FF4757"}`,
-          color: resumo.semPendencias ? "#69FF47" : "#FF4757",
-        }}>
-          {resumo.diagnostico}
+      {[["Receita Federal", resumo.diagnosticoRfb], ["PGFN", resumo.diagnosticoPgfn]]
+        .filter(([, frase]) => frase)
+        .map(([orgao, frase]) => {
+          const limpo = /n[ãa]o\s+foram\s+detectad|nada\s+consta/i.test(frase);
+          return (
+            <div key={orgao} style={{
+              padding: "8px 12px", borderRadius: 8, fontSize: "0.82rem", lineHeight: 1.45,
+              background: limpo ? "rgba(105,255,71,0.08)" : "rgba(255,71,87,0.08)",
+              border: `1px solid ${limpo ? "#69FF47" : "#FF4757"}`,
+              color: limpo ? "#69FF47" : "#FF4757",
+            }}>
+              <strong>{orgao}:</strong> {frase}
+            </div>
+          );
+        })}
+      {(resumo.totalDevido > 0 || resumo.parcelasEmAtraso > 0) && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {resumo.totalDevido > 0 && (
+            <span style={{ padding: "5px 12px", borderRadius: 999, background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", color: "#FF4757", fontSize: "0.85rem", fontWeight: 700 }}>
+              Total em aberto: {fmtMoney(resumo.totalDevido)}
+            </span>
+          )}
+          {resumo.parcelasEmAtraso > 0 && (
+            <span style={{ padding: "5px 12px", borderRadius: 999, background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem", fontWeight: 700 }}>
+              {resumo.parcelasEmAtraso} parcela(s) em atraso
+            </span>
+          )}
         </div>
       )}
+
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         {resumo.situacaoCadastral && (
           <div style={item}>
@@ -65,6 +146,8 @@ function ResumoRelatorio({ resumo }) {
           </div>
         )}
       </div>
+
+      {(resumo.tabelas || []).map((t) => <TabelaSecao key={t.id} tabela={t} />)}
     </div>
   );
 }
