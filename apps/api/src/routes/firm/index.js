@@ -3569,17 +3569,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           }
         }
 
-        // Q43.7: reusa o protocolo do dia (evita novo /Apoiar → reduz o limite AV02 por contratante).
-        let protocoloExistente = null;
-        try {
-          const prev = prevStatus;
-          if (prev?.protocolo && prev.checkedAt) {
-            const spDay = (d) => new Intl.DateTimeFormat("en-CA", {
-              timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
-            }).format(d);
-            if (spDay(prev.checkedAt) === spDay(new Date())) protocoloExistente = prev.protocolo;
-          }
-        } catch { /* best-effort: sem reuso, segue com /Apoiar */ }
+        // Q43.7: reusa o protocolo salvo — vai direto ao /Emitir e NÃO consome o limite AV02
+        // (quem consome é o /Apoiar, e o limite é por CONTRATANTE).
+        //
+        // Tenta reusar mesmo se for de outro dia: antes só reusávamos o protocolo do MESMO dia, o
+        // que criava um impasse — o SERPRO nega protocolo novo enquanto existe solicitação em
+        // processamento pra aquele contribuinte, e nós descartávamos o único protocolo capaz de
+        // concluir o /Emitir. Reusar é seguro: se estiver expirado, o SERPRO responde "inicie nova
+        // solicitação" e o próprio loop do /Emitir re-solicita.
+        const protocoloExistente = prevStatus?.protocolo || null;
+        if (protocoloExistente) {
+          log.warn({ portalCompanyId, checkedAt: prevStatus?.checkedAt }, "SITFIS: reusando protocolo salvo (pula /Apoiar)");
+        }
 
         const result = await obterSitfisRelatorio({ contribuinteCnpj: portal.cnpj, tipo: 2, protocoloExistente, logger: log });
         // Q43.5: o relatório SITFIS vem só como PDF (dados.pdf) — extrai o texto para a heurística
@@ -3666,9 +3667,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         if (code === "SERPRO_SITFIS_DISABLED") {
           return res.status(400).json({ ok: false, error: code, reason: "Situação fiscal (SITFIS) desabilitada. Ligue INTEGRACAO_SERPRO_SITFIS após validar no sandbox." });
         }
-        // Protocolo salvo virou lixo: se não limparmos, a próxima tentativa reusa o MESMO protocolo
-        // (pulando o /Apoiar) e repete o erro pra sempre. Limpar destrava a consulta seguinte.
-        if (code === "SERPRO_SITFIS_PROTOCOLO_NOT_FOUND" || code === "SERPRO_SITFIS_PROTOCOLO_INVALIDO") {
+        // Limpa o protocolo salvo APENAS quando o SERPRO disse que ele é inválido. Não limpar em
+        // PROTOCOLO_NOT_FOUND: esse erro é sobre não conseguir um protocolo NOVO no /Apoiar — o
+        // que já estava salvo pode continuar bom, e apagá-lo cria um impasse (o SERPRO nega novo
+        // protocolo enquanto há solicitação em processamento, e nós jogamos fora o único que
+        // tínhamos pra concluir o /Emitir).
+        if (code === "SERPRO_SITFIS_PROTOCOLO_INVALIDO") {
           await prisma.companyFiscalStatus
             .updateMany({ where: { portalClientId: portalCompanyId }, data: { protocolo: null } })
             .catch(() => null);
