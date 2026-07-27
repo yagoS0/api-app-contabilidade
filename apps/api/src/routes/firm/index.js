@@ -93,6 +93,9 @@ import { getStoredProcurationStatus, SerproProcurationService } from "../../appl
 import { runPaymentConfirmationOnce } from "../../application/fiscal/serpro/SerproPaymentConfirmationService.js";
 import { runSerproPaymentConfirmationWorkerOnce } from "../../workers/serproPaymentConfirmationWorker.js";
 import { obterRelatorio as obterSitfisRelatorio } from "../../application/fiscal/serpro/SerproSitfisService.js";
+// Heurística da situação fiscal: mora num módulo próprio porque o script de reclassificação usa
+// exatamente a mesma regra (duplicar geraria situações divergentes).
+import { deriveSituacaoFiscal } from "../../application/fiscal/serpro/sitfisSituacao.js";
 import { GuideStorageService } from "../../application/guides/GuideStorageService.js";
 import { FiscalManualRunService } from "../../application/fiscal/FiscalManualRunService.js";
 import {
@@ -114,27 +117,6 @@ import {
 // Plano de contas global precisa cobrir os 5 tipos básicos antes de qualquer empresa ser criada.
 // Lançamentos automáticos (DAS, faturamento, etc) dependem desse plano mínimo configurado.
 const REQUIRED_GLOBAL_TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
-
-// Q41: deriva a situação fiscal (SITFIS) por palavra-chave no relatório retornado pelo SERPRO.
-// ⚠ Best-effort — o formato do relatório SITFIS ainda não foi validado no sandbox (verificadoTrial:false);
-// esta heurística é aproximada e serve só para sinalizar na UI (não é fonte fiscal definitiva).
-// Sinais fortes de pendência (RFB + PGFN). "devedor"/"saldo devedor consolidado ... DEVEDOR"
-// aparece na coluna "Sdo. Dev. Cons. Situação" do relatório quando há débito.
-const SITFIS_PENDENCIA_REGEX = /pend[êe]ncia|d[ée]bito|em aberto|parcelamento em atraso|irregular|div[íi]da ativa|inscri[çc][ãa]o em d[íi]vida|devedor|saldo devedor|exig[íi]vel/i;
-// Frases de "nada consta" — removidas antes de aplicar a regex para não gerar falso-positivo
-// (ex.: "não há débitos" contém "débitos"). Um relatório pode ter uma seção "sem débitos" na RFB
-// e ainda assim ter débito na PGFN; ao remover só as frases negativas, o "DEVEDOR" da PGFN dispara.
-// Q62: guarda de negação AMPLIADA (menos falso-positivo em empresa limpa). Cobre várias formas de
-// "nada consta / situação regular / sem pendências / não foram apurados/localizados débitos...".
-// Calibrada com relatório SITFIS real: a linha limpa da PGFN é "Não foram DETECTADAS pendências/
-// exigibilidades suspensas ..." — por isso "detectad" tem que estar aqui (era a causa do falso-positivo).
-const SITFIS_NEGACAO_REGEX = /(?:n[ãa]o\s+(?:h[áa]|constam?|possui|exist[eê]m?|foram\s+(?:localizad[oa]s?|apurad[oa]s?|encontrad[oa]s?|identificad[oa]s?|detectad[oa]s?))\s+(?:d[ée]bitos?|pend[êe]ncias?|inscri[çc][õo]es?|ocorr[êe]ncias?|exigibilidades?)[^.;\n]*|nada\s+consta[^.;\n]*|sem\s+(?:pend[êe]ncias?|ocorr[êe]ncias?|d[ée]bitos?)[^.;\n]*|situa[çc][ãa]o\s+(?:fiscal\s+)?regular[^.;\n]*|regular\s+perante[^.;\n]*)/gi;
-
-// Parcelamento com exigibilidade SUSPENSA = empresa regularizando (débito suspenso, não em aberto).
-// No relatório real aparece como "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)" e
-// "SIMPLES NACIONAL - EM PARCELAMENTO". ⚠ NÃO casa "parcelamento EM ATRASO" (esse é pendência de
-// verdade — voltou a ser exigível — e já cai em SITFIS_PENDENCIA_REGEX, que é checada antes).
-const SITFIS_PARCELAMENTO_REGEX = /parcelamento\s+com\s+exigibilidade\s+suspensa|(?:^|[^a-zç])em\s+parcelamento|\bparcsn\b|\bparcmei\b/i;
 
 // C11: intervalo mínimo entre duas consultas SITFIS da MESMA empresa (4h). Abrir a aba mostra o
 // relatório salvo; só o botão "Consultar" chama o SERPRO, e mesmo assim respeitando esta janela.
@@ -165,22 +147,6 @@ async function extractSitfisPdfText(buffer) {
   }
 }
 
-function deriveSituacaoFiscal(result, extraText = "") {
-  if (result?.processando) return "PROCESSANDO";
-  // Q62: NÃO varrer o rawPayload (JSON do envelope SERPRO) — os nomes de campo/metadados casavam
-  // as palavras-chave e geravam pendência falsa. Só o texto do relatório (PDF) conta.
-  const haystack = [
-    result?.relatorioTexto || "",
-    extraText || "",
-  ].join(" ");
-  const semNegacoes = haystack.replace(SITFIS_NEGACAO_REGEX, " ");
-  // Débito em aberto (inclui parcelamento EM ATRASO, que voltou a ser exigível) vence tudo.
-  if (SITFIS_PENDENCIA_REGEX.test(semNegacoes)) return "COM_PENDENCIA";
-  // Parcelamento com exigibilidade suspensa: está regularizando — status próprio (não é pendência
-  // aberta, mas também não é "nada consta").
-  if (SITFIS_PARCELAMENTO_REGEX.test(semNegacoes)) return "EM_PARCELAMENTO";
-  return "REGULAR";
-}
 
 // Q29: traduz os códigos de erro do SERPRO no recálculo do DAS Simples em mensagens
 // legíveis para o contador (a UI mostrava só "Falha ao recalcular guia").
