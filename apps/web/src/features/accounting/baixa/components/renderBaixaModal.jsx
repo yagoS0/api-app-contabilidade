@@ -46,7 +46,9 @@ function LineEditor({ lines, onChange, accounts }) {
   const balanced = diff < 0.01;
 
   return (
-    <div style={{ marginTop: 8 }}>
+    // minWidth:0 + overflowX próprio: se as colunas não couberem, quem rola é ESTA tabela,
+    // não o modal inteiro (o pai agora é overflowX:hidden).
+    <div style={{ marginTop: 8, overflowX: "auto", minWidth: 0 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
         <thead>
           <tr style={{ background: "#282A36" }}>
@@ -133,15 +135,10 @@ function LineEditor({ lines, onChange, accounts }) {
   );
 }
 
-// Q37: data padrão da baixa = dia 5 do mês SEGUINTE à competência da provisão (abril → 05/05).
-function defaultBaixaDate(competencia) {
-  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
-  if (!m) return null;
-  let year = Number(m[1]);
-  let month = Number(m[2]) + 1; // mês seguinte
-  if (month > 12) { month = 1; year += 1; }
-  return `${year}-${String(month).padStart(2, "0")}-05`;
-}
+// A data da baixa é o DIA DA CONFIRMAÇÃO (hoje) — pagamento se lança quando acontece.
+// Antes o padrão era "dia 5 do mês seguinte à competência", o que jogava o lançamento para um
+// mês diferente do atual (às vezes futuro), fora do mês que o contador está fechando.
+// O campo segue editável para corrigir um pagamento feito em outro dia.
 
 export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBaixaTemplate }) {
   const subtipoLabel = SUBTIPO_LABELS[entry.subtipo] || entry.subtipo || entry.tipo;
@@ -154,7 +151,7 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   const today = new Date().toISOString().slice(0, 10);
   const valorBase = Number(entry.valor || entry.totalD || 0);
 
-  const [data, setData] = useState(() => defaultBaixaDate(entry?.competencia) || today);
+  const [data, setData] = useState(today);
   const [historico, setHistorico] = useState(defaultHistorico);
   const [lines, setLines] = useState(() => {
     const entryLines = entry.lines || [];
@@ -193,10 +190,13 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         const acrescimoTotal = Math.round((juros + multa) * 100) / 100;
         // Item 2: guia recalculada → cada acréscimo na sua conta de despesa (juros 501, multa 506);
         // o crédito (caixa) sai pelo TOTAL pago (principal + juros + multa).
-        const newLines = [{ tipo: "D", conta: tpl.debitAccountCode || "", valor: principal.toFixed(2) }];
-        if (juros > 0) newLines.push({ tipo: "D", conta: acr.contaJuros || "501", valor: juros.toFixed(2) });
-        if (multa > 0) newLines.push({ tipo: "D", conta: acr.contaMulta || "506", valor: multa.toFixed(2) });
-        newLines.push({ tipo: "C", conta: tpl.creditAccountCode || "", valor: (principal + acrescimoTotal).toFixed(2) });
+        // `papel` marca o que cada linha representa. O backend usa isso pra separar a baixa em
+        // lançamentos independentes (principal / juros / multa) — derivar pelo número da conta não
+        // serviria, porque o contador pode trocar a conta aqui no modal.
+        const newLines = [{ tipo: "D", conta: tpl.debitAccountCode || "", valor: principal.toFixed(2), papel: "PRINCIPAL" }];
+        if (juros > 0) newLines.push({ tipo: "D", conta: acr.contaJuros || "501", valor: juros.toFixed(2), papel: "JUROS" });
+        if (multa > 0) newLines.push({ tipo: "D", conta: acr.contaMulta || "506", valor: multa.toFixed(2), papel: "MULTA" });
+        newLines.push({ tipo: "C", conta: tpl.creditAccountCode || "", valor: (principal + acrescimoTotal).toFixed(2), papel: "CAIXA" });
         setLines(newLines);
         if (tpl.historico) setHistorico(tpl.historico);
         setTemplateApplied(tpl.scope || "GLOBAL");
@@ -218,7 +218,9 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
       await onSave({
         data,
         historico,
-        lines: lines.map((l, i) => ({ conta: l.conta, tipo: l.tipo, valor: Number(l.valor || 0), ordem: i })),
+        // `papel` só existe nas linhas que o template gerou; linha adicionada à mão vai sem ele
+        // (o backend trata como principal). Não atrapalha quem ignora o campo.
+        lines: lines.map((l, i) => ({ conta: l.conta, tipo: l.tipo, valor: Number(l.valor || 0), ordem: i, papel: l.papel || null })),
       });
     } catch (err) {
       setError(err?.message || "Falha ao registrar baixa.");
@@ -233,7 +235,11 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
       <div style={{
         background: "var(--bg-surface)", borderRadius: "var(--radius)", border: "1px solid var(--border)",
         boxShadow: "0 8px 32px rgba(0,0,0,0.16)", width: "100%", maxWidth: "560px",
-        maxHeight: "90vh", overflow: "auto", padding: "var(--space-5)", boxSizing: "border-box",
+        // overflow:"auto" valia para os DOIS eixos: a tabela de partidas (colunas fixas) estourava
+        // e o modal inteiro rolava lateralmente. Agora só o eixo Y rola no modal; quem rola em X é
+        // o wrapper da tabela (abaixo). Mesmo tratamento do CircularEntryEditModal.
+        maxHeight: "90vh", overflowY: "auto", overflowX: "hidden",
+        padding: "var(--space-5)", boxSizing: "border-box",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-3)" }}>
           <div>

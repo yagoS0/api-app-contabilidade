@@ -121,6 +121,32 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
     throw err;
   }
 
+  // Principal, juros e multa viram LANÇAMENTOS INDEPENDENTES (decisão do dono), cada um
+  // balanceado contra o caixa. Antes tudo virava um lançamento só, debitando o TOTAL contra
+  // "INSS a Recolher" — o que amortizava o passivo por mais do que foi provisionado: juros e
+  // multa não são passivo previdenciário, são despesa do mês do pagamento.
+  //
+  // O papel vem marcado do modal (não é derivado da conta, porque o contador pode trocá-la).
+  // Componente zerado não gera lançamento.
+  function separarPorPapel(linhasEntrada) {
+    const debitos = linhasEntrada.filter((l) => String(l.tipo || "").toUpperCase() === "D");
+    const credito = linhasEntrada.find((l) => String(l.tipo || "").toUpperCase() === "C");
+    const contaCaixaInput = String(credito?.conta || "").trim();
+
+    const grupos = [];
+    for (const papel of ["PRINCIPAL", "JUROS", "MULTA"]) {
+      // Linha sem papel (adicionada à mão no modal) conta como principal.
+      const doGrupo = debitos.filter((l) => {
+        const p = String(l.papel || "").toUpperCase();
+        return papel === "PRINCIPAL" ? (!p || p === "PRINCIPAL") : p === papel;
+      });
+      const total = round2(doGrupo.reduce((s, l) => s + (Number(l.valor) || 0), 0));
+      if (!doGrupo.length || total <= 0) continue;
+      grupos.push({ papel, debitos: doGrupo, total, contaCaixa: contaCaixaInput });
+    }
+    return grupos;
+  }
+
   // Override manual (modal da Circular) tem prioridade; senão resolve as contas da folha do mês.
   const hasOverride = Array.isArray(lines) && lines.length > 0;
   let contaInss = null;
@@ -144,28 +170,67 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
   }
   const historicoFinal = String(historico || "").trim() || `PAGO INSS - ${competenciaLabel(guide.competencia)}`;
 
+  // Sem papéis marcados (fluxo automático, sem modal) segue lançamento único — não há juros/multa
+  // separados pra dividir.
+  const grupos = hasOverride ? separarPorPapel(entryLines) : [];
+  const separar = grupos.length > 1;
+
+  const SUFIXO_HISTORICO = { PRINCIPAL: "", JUROS: " (juros)", MULTA: " (multa)" };
+
   return prisma.$transaction(async (tx) => {
-    const entry = await tx.accountingEntry.create({
-      data: {
-        portalClientId,
-        sourceGuideId: guide.id,
-        data,
-        competencia: competenciaPag,
-        historico: historicoFinal,
-        tipo: "BAIXA",
-        subtipo: "INSS",
-        origem: "MANUAL",
-        loteImportacao: `INSS-PAG-${guide.id.slice(0, 8)}`,
-        status: "RASCUNHO",
-        statusPagamento: "PAGO",
-        lines: { createMany: { data: entryLines } },
-      },
-      include: { lines: true },
-    });
+    const base = {
+      portalClientId,
+      sourceGuideId: guide.id,
+      data,
+      competencia: competenciaPag,
+      tipo: "BAIXA",
+      subtipo: "INSS",
+      origem: "MANUAL",
+      loteImportacao: `INSS-PAG-${guide.id.slice(0, 8)}`,
+      status: "RASCUNHO",
+      statusPagamento: "PAGO",
+    };
+
+    if (!separar) {
+      const entry = await tx.accountingEntry.create({
+        data: { ...base, historico: historicoFinal, lines: { createMany: { data: entryLines } } },
+        include: { lines: true },
+      });
+      await tx.guide.update({
+        where: { id: guide.id },
+        data: { baixada: true, dataBaixa: data, lancamentoId: entry.id },
+      });
+      return { ok: true, pagamentoId: entry.id, lancamentos: 1, contaInss: contaInss || null, contaCaixa: contaCaixa || null };
+    }
+
+    const criados = [];
+    for (const g of grupos) {
+      const linhasGrupo = [
+        ...g.debitos.map((l, i) => ({ conta: String(l.conta || "").trim(), tipo: "D", valor: round2(l.valor), ordem: i })),
+        // Cada lançamento credita o caixa pelo SEU total → fecha D=C sozinho.
+        { conta: g.contaCaixa, tipo: "C", valor: g.total, ordem: g.debitos.length },
+      ];
+      const entry = await tx.accountingEntry.create({
+        data: { ...base, historico: `${historicoFinal}${SUFIXO_HISTORICO[g.papel] || ""}`, lines: { createMany: { data: linhasGrupo } } },
+        include: { lines: true },
+      });
+      criados.push({ papel: g.papel, id: entry.id, valor: g.total });
+    }
+
+    // A guia aponta para o lançamento do PRINCIPAL (é o que amortiza o passivo); os demais
+    // continuam ligados a ela por sourceGuideId.
+    const principal = criados.find((c) => c.papel === "PRINCIPAL") || criados[0];
     await tx.guide.update({
       where: { id: guide.id },
-      data: { baixada: true, dataBaixa: data, lancamentoId: entry.id },
+      data: { baixada: true, dataBaixa: data, lancamentoId: principal.id },
     });
-    return { ok: true, pagamentoId: entry.id, contaInss: contaInss || null, contaCaixa: contaCaixa || null };
+    return {
+      ok: true,
+      pagamentoId: principal.id,
+      lancamentos: criados.length,
+      detalhe: criados,
+      contaInss: contaInss || null,
+      contaCaixa: contaCaixa || null,
+    };
   });
 }
