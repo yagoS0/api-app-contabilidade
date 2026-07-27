@@ -388,7 +388,11 @@ model CompanyFiscalStatus {
   relatorioPdfFileId String?  // PDF do relatório (quando o SERPRO devolve PDF base64)
   texto              String?  // relatório em texto (quando aplicável)
   rawPayload         Json?
-  checkedAt          DateTime @default(now())
+  checkedAt          DateTime @default(now()) // última TENTATIVA (sobe até quando volta "processando")
+  // Última consulta que realmente TROUXE relatório. A trava de 4h é ancorada aqui, não em
+  // checkedAt: senão uma tentativa que voltou "processando" (sem PDF) iniciava a trava e deixava
+  // a empresa 4h sem conseguir buscar a situação fiscal.
+  ultimoRelatorioEm  DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

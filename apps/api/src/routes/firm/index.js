@@ -3442,13 +3442,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
       const status = await prisma.companyFiscalStatus.findUnique({
         where: { portalClientId: portalCompanyId },
-        select: { situacao: true, protocolo: true, relatorioPdfFileId: true, texto: true, checkedAt: true },
+        select: {
+          situacao: true, protocolo: true, relatorioPdfFileId: true, texto: true,
+          checkedAt: true, ultimoRelatorioEm: true,
+        },
       });
       if (!status) return res.json({ ok: true, status: null });
       // C11: a aba usa isto pra saber se o botão "Consultar" já está liberado (trava de 4h).
-      const temRelatorio = Boolean(status.relatorioPdfFileId || status.texto) && status.situacao !== "PROCESSANDO";
-      const proximaConsultaEm = temRelatorio && status.checkedAt
-        ? new Date(new Date(status.checkedAt).getTime() + SITFIS_MIN_INTERVALO_MS).toISOString()
+      // Ancorado no ÚLTIMO RELATÓRIO, não na última tentativa — tentativa que voltou
+      // "processando" não pode travar o contador.
+      const proximaConsultaEm = status.ultimoRelatorioEm
+        ? new Date(new Date(status.ultimoRelatorioEm).getTime() + SITFIS_MIN_INTERVALO_MS).toISOString()
         : null;
       return res.json({
         ok: true,
@@ -3510,16 +3514,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         // `force` existe só para quebra manual consciente, não é usado pela UI.
         const prevStatus = await prisma.companyFiscalStatus.findUnique({
           where: { portalClientId: portal.id },
-          select: { situacao: true, protocolo: true, relatorioPdfFileId: true, texto: true, checkedAt: true },
+          select: {
+            situacao: true, protocolo: true, relatorioPdfFileId: true, texto: true,
+            checkedAt: true, ultimoRelatorioEm: true,
+          },
         });
         const forcar = String(req.query.force || "") === "1";
-        // A trava só vale quando JÁ TEMOS um relatório pra mostrar. Se a última tentativa parou em
-        // "processando" (sem PDF/texto), travar 4h deixaria a empresa sem situação fiscal nenhuma —
-        // nesse caso o contador precisa poder tentar de novo.
-        const temRelatorioSalvo = Boolean(prevStatus?.relatorioPdfFileId || prevStatus?.texto)
-          && prevStatus?.situacao !== "PROCESSANDO";
-        if (!forcar && temRelatorioSalvo && prevStatus?.checkedAt) {
-          const proxima = new Date(new Date(prevStatus.checkedAt).getTime() + SITFIS_MIN_INTERVALO_MS);
+        // A trava é ancorada em ultimoRelatorioEm (consulta que TROUXE relatório), NÃO em checkedAt:
+        // checkedAt sobe em toda tentativa, inclusive nas que voltam "processando" sem relatório —
+        // usar ele deixava a empresa 4h travada por causa de uma tentativa que não trouxe nada.
+        if (!forcar && prevStatus?.ultimoRelatorioEm) {
+          const proxima = new Date(new Date(prevStatus.ultimoRelatorioEm).getTime() + SITFIS_MIN_INTERVALO_MS);
           if (proxima.getTime() > Date.now()) {
             return res.json({
               ok: true,
@@ -3587,6 +3592,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           updateData.rawPayload = result.rawPayload || undefined;
         }
         // (processando sem relatório novo → não toca em situacao/pdf/texto: mantém o último conhecido)
+        // Só uma consulta que TROUXE relatório inicia a janela de 4h.
+        if (temRelatorioNovo) updateData.ultimoRelatorioEm = new Date();
 
         const salvo = await prisma.companyFiscalStatus.upsert({
           where: { portalClientId: portal.id },
@@ -3599,6 +3606,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             texto: textoRelatorio,
             rawPayload: result.rawPayload || undefined,
             checkedAt: new Date(),
+            ultimoRelatorioEm: temRelatorioNovo ? new Date() : null,
           },
           update: updateData,
         });
@@ -3613,8 +3621,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           relatorioPdfFileId: relatorioPdfFileId || salvo.relatorioPdfFileId || null,
           relatorioTexto: textoRelatorio,
           checkedAt: salvo.checkedAt,
-          // C11: quando libera a próxima consulta (a UI desabilita o botão até lá).
-          proximaConsultaEm: new Date(new Date(salvo.checkedAt).getTime() + SITFIS_MIN_INTERVALO_MS).toISOString(),
+          // C11: quando libera a próxima consulta (a UI desabilita o botão até lá). Null quando a
+          // consulta não trouxe relatório — aí o botão continua liberado pra tentar de novo.
+          proximaConsultaEm: salvo.ultimoRelatorioEm
+            ? new Date(new Date(salvo.ultimoRelatorioEm).getTime() + SITFIS_MIN_INTERVALO_MS).toISOString()
+            : null,
           mensagem: result.mensagem || null,
           verificadoTrial: result.verificadoTrial,
         });
