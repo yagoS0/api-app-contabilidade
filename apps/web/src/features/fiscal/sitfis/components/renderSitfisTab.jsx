@@ -1,7 +1,73 @@
 // Q41: Aba "Situação Fiscal" (SITFIS) — mostra a última consulta gravada + botão para consultar no SERPRO.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
+import { parseSitfisTexto, temResumo } from "../lib/parseSitfisTexto";
+
+function diasAte(dataBR) {
+  const m = String(dataBR || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const alvo = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  return Math.ceil((alvo.getTime() - Date.now()) / 86400000);
+}
+
+// Resumo dos campos ROTULADOS do relatório. Não tabela débitos — ver comentário em parseSitfisTexto.
+function ResumoRelatorio({ resumo }) {
+  const dias = diasAte(resumo.certidaoValidade);
+  const vencida = dias != null && dias < 0;
+  const corValidade = vencida ? "#FF4757" : (dias != null && dias <= 30 ? "#FFB347" : "#69FF47");
+  const item = { display: "flex", flexDirection: "column", gap: 2 };
+  const rotulo = { color: "#A7B0C0", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.03em" };
+
+  return (
+    <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
+      {resumo.diagnostico && (
+        <div style={{
+          padding: "10px 12px", borderRadius: 8, fontSize: "0.85rem", lineHeight: 1.45,
+          background: resumo.semPendencias ? "rgba(105,255,71,0.08)" : "rgba(255,71,87,0.08)",
+          border: `1px solid ${resumo.semPendencias ? "#69FF47" : "#FF4757"}`,
+          color: resumo.semPendencias ? "#69FF47" : "#FF4757",
+        }}>
+          {resumo.diagnostico}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+        {resumo.situacaoCadastral && (
+          <div style={item}>
+            <span style={rotulo}>Situação cadastral</span>
+            <strong style={{ color: "#F8F8F2" }}>{resumo.situacaoCadastral}</strong>
+          </div>
+        )}
+        {resumo.certidaoTipo && (
+          <div style={item}>
+            <span style={rotulo}>Certidão</span>
+            <strong style={{ color: "#F8F8F2" }}>{resumo.certidaoTipo}</strong>
+            {resumo.certidaoCodigo && (
+              <span style={{ color: "#6272A4", fontSize: "0.72rem", fontFamily: "monospace" }}>{resumo.certidaoCodigo}</span>
+            )}
+          </div>
+        )}
+        {resumo.certidaoEmissao && (
+          <div style={item}>
+            <span style={rotulo}>Emissão</span>
+            <strong style={{ color: "#F8F8F2" }}>{resumo.certidaoEmissao}</strong>
+          </div>
+        )}
+        {resumo.certidaoValidade && (
+          <div style={item}>
+            <span style={rotulo}>Validade</span>
+            <strong style={{ color: corValidade }}>{resumo.certidaoValidade}</strong>
+            {dias != null && (
+              <span style={{ color: corValidade, fontSize: "0.72rem" }}>
+                {vencida ? `vencida há ${Math.abs(dias)} dia(s)` : `faltam ${dias} dia(s)`}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const SITUACAO_META = {
   COM_PENDENCIA: { label: "Com pendência", color: "#FF4757", bg: "rgba(255,71,87,0.12)" },
@@ -32,6 +98,8 @@ export function SitfisTab({ sitfisPanel }) {
     pdfIndisponivel, podeConsultar = true, proximaConsultaEm,
   } = sitfisPanel || {};
 
+
+  const resumo = useMemo(() => parseSitfisTexto(status?.texto), [status?.texto]);
 
   // C11: abrir a aba NÃO consulta — mostra o relatório salvo. Consultar de novo só pelo botão,
   // e mesmo assim respeitando a janela de 4h (consulta paga; o limite do SERPRO é por contratante).
@@ -118,10 +186,11 @@ export function SitfisTab({ sitfisPanel }) {
                       </div>
                     )}
 
-                    {/* Relatório integral. NÃO tabelamos: o SITFIS é uma TABELA no PDF e a
-                        extração de texto quebra as colunas — tentar remontar linha a linha
-                        produzia débitos vazios e valores inexistentes. Em contexto fiscal,
-                        número errado é pior que texto sem formatação. */}
+                    {/* Resumo dos campos ROTULADOS (diagnóstico, certidão, validade). Débitos NÃO
+                        são tabelados — o PDF é uma tabela e remontá-la a partir do texto gerou
+                        valor falso antes. O relatório integral fica logo abaixo. */}
+                    {temResumo(resumo) && <ResumoRelatorio resumo={resumo} />}
+
                     <pre
                       style={{
                         margin: 0, padding: 14, maxHeight: 600, overflowY: "auto", overflowX: "auto",
