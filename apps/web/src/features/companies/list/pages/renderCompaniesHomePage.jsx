@@ -110,6 +110,9 @@ export function CompaniesHomePage({
   const [emailFilter, setEmailFilter] = useState("all"); // all | sent | notSent (Q16)
   const [apuracaoFilter, setApuracaoFilter] = useState("all"); // all | apurados | naoApurados
   const [certFilter, setCertFilter] = useState("all"); // all | comCert | semCert
+  // Situação fiscal (SITFIS) e regime — combinam com os demais filtros.
+  const [fiscalFilter, setFiscalFilter] = useState("all"); // all | comPendencia | semPendencia | emParcelamento
+  const [regimeFilter, setRegimeFilter] = useState("all"); // all | SIMPLES | LUCRO_PRESUMIDO
   // C7: os filtros secundários ficam num painel; só busca e competência seguem aparentes.
   const [showFilters, setShowFilters] = useState(false);
   // "pending" é o default de Documentos (não conta como filtro ativo).
@@ -119,6 +122,8 @@ export function CompaniesHomePage({
     emailFilter !== "all",
     apuracaoFilter !== "all",
     certFilter !== "all",
+    fiscalFilter !== "all",
+    regimeFilter !== "all",
   ].filter(Boolean).length;
   function limparFiltros() {
     setDocumentFilter("pending");
@@ -126,6 +131,8 @@ export function CompaniesHomePage({
     setEmailFilter("all");
     setApuracaoFilter("all");
     setCertFilter("all");
+    setFiscalFilter("all");
+    setRegimeFilter("all");
   }
 
   const filteredCompanies = useMemo(() => {
@@ -142,6 +149,16 @@ export function CompaniesHomePage({
       const temCert = Boolean(company?.legacyCompany?.certStorageKey);
       if (certFilter === "comCert" && !temCert) return false;
       if (certFilter === "semCert" && temCert) return false;
+      // Situação fiscal (SITFIS). "Sem pendência" = REGULAR de verdade: empresa nunca consultada
+      // (fiscalSituacao null) NÃO entra — não afirmamos que está limpa sem ter consultado.
+      const fiscal = String(company?.fiscalSituacao || "");
+      if (fiscalFilter === "comPendencia" && fiscal !== "COM_PENDENCIA") return false;
+      if (fiscalFilter === "semPendencia" && fiscal !== "REGULAR") return false;
+      if (fiscalFilter === "emParcelamento" && fiscal !== "EM_PARCELAMENTO") return false;
+      if (regimeFilter !== "all") {
+        const regime = String(company?.legacyCompany?.regimeTributario || company?.regimeTributario || "").trim().toUpperCase();
+        if (regime !== regimeFilter) return false;
+      }
       if (!normalizedQuery) return true;
       return (
         normalizeSearch(company?.razao).includes(normalizedQuery) ||
@@ -165,7 +182,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter]);
 
   return (
     <div className="dashboard-home-page">
@@ -450,6 +467,25 @@ export function CompaniesHomePage({
                       <option value="all">Todas</option>
                       <option value="comCert">Com certificado</option>
                       <option value="semCert">Sem certificado</option>
+                    </select>
+                  </label>
+
+                  <label style={FILTER_LABEL}>
+                    Situação fiscal
+                    <select value={fiscalFilter} onChange={(event) => setFiscalFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
+                      <option value="all">Todas</option>
+                      <option value="comPendencia">Com pendência</option>
+                      <option value="semPendencia">Sem pendência</option>
+                      <option value="emParcelamento">Em parcelamento</option>
+                    </select>
+                  </label>
+
+                  <label style={FILTER_LABEL}>
+                    Regime
+                    <select value={regimeFilter} onChange={(event) => setRegimeFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
+                      <option value="all">Todos</option>
+                      <option value="SIMPLES">Simples Nacional</option>
+                      <option value="LUCRO_PRESUMIDO">Lucro Presumido</option>
                     </select>
                   </label>
 
