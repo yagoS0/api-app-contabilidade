@@ -40,6 +40,33 @@ em `fechamentoContabil.js`. Usado para **bloquear**: criar lançamento (`POST /e
 marcar guia **Vazio** (`POST /guides/vazio` → 409). No front, a aba Lançamentos desabilita
 "+ Adicionar" (via `FechamentoCadeado.onState`) e o painel de guias esperadas desabilita "Vazio".
 
+## Baixa: principal, juros e multa são LANÇAMENTOS SEPARADOS
+
+Regra do dono. Cada componente vira um `AccountingEntry` próprio, balanceado contra o caixa:
+`D principal / C caixa` · `D juros / C caixa` · `D multa / C caixa`. Um único lançamento 3D/1C
+esconde os acréscimos num dropdown e, pior, faz parecer que juros/multa amortizam o passivo —
+eles são **despesa do mês do pagamento**. Componente zerado **não** gera lançamento.
+
+- O **papel** de cada linha vem MARCADO do modal (`papel: PRINCIPAL|JUROS|MULTA`), não deduzido da
+  conta: o contador pode trocar a conta. Linha sem papel conta como principal.
+- ⚠ `@@unique([portalClientId, competencia, eventType, origem])`: **só o lançamento do PRINCIPAL
+  carrega o `eventType`** — repetir nos três viola a constraint e derruba a baixa inteira. Também é
+  o correto: a memória de contas (`AccountingHistorico`) é do par do tributo, não de juros/multa.
+- Todos apontam para a MESMA provisão (`openEntryId`); juros/multa não entram no principal abatido
+  (`CONTAS_ACRESCIMO` = 501/506), então o saldo continua certo.
+- Onde vale: baixa do INSS (`InssPagamentoService`), baixa genérica (`POST /entries/:id/baixa`) e
+  parcelamento V2 (que já usava `criarLancamentosIndividuais`).
+- Legado: `scripts/separar-baixas-agrupadas.mjs` separa baixas antigas que ficaram agrupadas.
+
+## Valor corrigido pelo contador manda
+
+Ao editar o valor de um tributo na Circular, as LINHAS do lançamento acompanham (`edicaoManual` em
+`generateEntriesFromCircular`). A regra que preserva o valor original vale só para o **recálculo
+automático do SERPRO** (juros após vencimento). E, havendo baixa, o status é recalculado a partir
+dela (`statusPelasBaixas`) — senão a provisão corrigida pra menor ficava eternamente PARCIAL com a
+diferença "em aberto", e reeditar uma provisão paga a ressuscitava como ABERTO.
+Legado: `scripts/corrigir-provisao-parcial.mjs`.
+
 ## Regras
 
 - **Idempotência** em geração (upsert por competência/eventType; guardas antes de criar).
