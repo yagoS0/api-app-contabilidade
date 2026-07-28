@@ -166,9 +166,17 @@ export const GUIDE_STORAGE_FORCE_PATH_STYLE =
 // ⚠ PERSISTÊNCIA: com provider LOCAL os PDFs (guias + relatório SITFIS) vivem NO DISCO do
 // container. No Railway o filesystem é efêmero — sem um Volume montado, TODO DEPLOY APAGA os
 // arquivos (foi o que causou o ENOENT ao ler um SITFIS gravado dias antes).
-// Config correta em produção: criar um Volume no serviço da API montado em `/app/storage`
-// (o default abaixo resolve pra /app/storage/guides, já dentro do volume). Alternativa:
-// GUIDE_STORAGE_PROVIDER=S3|R2 com bucket + credenciais.
+//
+// ⚠⚠ CUIDADO COM O CAMINHO RELATIVO: o default é relativo ao CWD, e o processo NÃO roda em /app.
+// O start é `npm run start:prod -w @contabilidade/api`, e o npm executa o script com o CWD do
+// WORKSPACE → o default resolve para **/app/apps/api/storage/guides**, não /app/storage/guides.
+// Volume montado em /app/storage não captura nada (erro cometido na 1ª configuração).
+//
+// Produção — escolha uma:
+//   a) Volume montado em `/app/apps/api/storage`; ou
+//   b) Volume em `/app/storage` + `GUIDE_LOCAL_STORAGE_DIR=/app/storage/guides` (absoluto,
+//      imune a mudança de CWD — recomendado).
+// Alternativa sem volume: GUIDE_STORAGE_PROVIDER=S3|R2 com bucket + credenciais.
 export const GUIDE_LOCAL_STORAGE_DIR = (
   process.env.GUIDE_LOCAL_STORAGE_DIR || "./storage/guides"
 ).trim();

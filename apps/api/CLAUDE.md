@@ -195,10 +195,22 @@ O filesystem do container no Railway é **efêmero**: sem um Volume montado, **t
 PDFs** (guias capturadas e relatórios SITFIS). O sintoma é o registro existir no banco
 (`relatorioPdfFileId` / guia) mas o arquivo dar **ENOENT** na leitura.
 
-**Config correta:** criar um **Volume** no serviço da API montado em **`/app/storage`**. O default já
-grava dentro dele — não precisa mudar env. Alternativa: `GUIDE_STORAGE_PROVIDER=S3|R2` +
-bucket/credenciais (`GUIDE_STORAGE_*`). O código já suporta os três providers
-(`GuideStorageService`).
+⚠ **O caminho default é RELATIVO e o processo NÃO roda em `/app`.** O start é
+`npm run start:prod -w @contabilidade/api`, e o npm executa o script com o CWD do **workspace** →
+`./storage/guides` resolve para **`/app/apps/api/storage/guides`**. Um volume montado em
+`/app/storage` **não captura nada** (erro cometido na 1ª configuração — o PDF continuava sumindo
+mesmo com o volume criado).
+
+**Config correta em produção — escolha uma:**
+- **(recomendado)** Volume em `/app/storage` + env **`GUIDE_LOCAL_STORAGE_DIR=/app/storage/guides`**
+  (absoluto, imune a mudança de CWD);
+- ou Volume montado direto em `/app/apps/api/storage` (aí o default relativo funciona).
+
+Alternativa sem volume: `GUIDE_STORAGE_PROVIDER=S3|R2` + bucket/credenciais (`GUIDE_STORAGE_*`).
+O código já suporta os três providers (`GuideStorageService`).
+
+Pra conferir onde está gravando de fato, o erro de leitura mostra o caminho absoluto
+(`scripts/dump-sitfis-texto.mjs` imprime o ENOENT com o path completo).
 
 A UI trata o arquivo ausente sem quebrar: a aba Situação Fiscal mostra "o arquivo não está mais no
 armazenamento" e mantém situação/data (que vivem no banco).

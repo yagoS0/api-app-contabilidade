@@ -183,6 +183,8 @@ export function SitfisTab({ sitfisPanel }) {
 
 
   const resumo = useMemo(() => parseSitfisTexto(status?.texto), [status?.texto]);
+  // PDF é OPCIONAL: a tabela é a visão padrão e o PDF abre por botão.
+  const [verPdf, setVerPdf] = useState(false);
 
   // C11: abrir a aba NÃO consulta — mostra o relatório salvo. Consultar de novo só pelo botão,
   // e mesmo assim respeitando a janela de 4h (consulta paga; o limite do SERPRO é por contratante).
@@ -192,7 +194,7 @@ export function SitfisTab({ sitfisPanel }) {
     : "Consulta o SERPRO e salva o relatório";
 
   return (
-    <div style={{ padding: 24, maxWidth: 900, margin: "0 auto" }}>
+    <div style={{ padding: 24, maxWidth: 1400, margin: "0 auto" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -242,17 +244,30 @@ export function SitfisTab({ sitfisPanel }) {
               <div style={{ marginTop: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
                   <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Relatório</span>
-                  {pdfUrl && (
-                    <a
-                      href={pdfUrl}
-                      download={`situacao-fiscal.pdf`}
-                      style={{ padding: "6px 12px", borderRadius: 6, background: "rgba(105,255,71,0.12)", border: "1px solid #69FF47", color: "#69FF47", fontSize: "0.82rem", fontWeight: 700, textDecoration: "none" }}
-                    >
-                      ⬇ Baixar PDF
-                    </a>
-                  )}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {pdfUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setVerPdf((v) => !v)}
+                        style={{ padding: "6px 12px", borderRadius: 6, background: verPdf ? "rgba(139,233,253,0.18)" : "transparent", border: "1px solid #8BE9FD", color: "#8BE9FD", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        {verPdf ? "Ver tabela" : "📄 Visualizar PDF"}
+                      </button>
+                    )}
+                    {pdfUrl && (
+                      <a
+                        href={pdfUrl}
+                        download={`situacao-fiscal.pdf`}
+                        style={{ padding: "6px 12px", borderRadius: 6, background: "rgba(105,255,71,0.12)", border: "1px solid #69FF47", color: "#69FF47", fontSize: "0.82rem", fontWeight: 700, textDecoration: "none" }}
+                      >
+                        ⬇ Baixar PDF
+                      </a>
+                    )}
+                  </div>
                 </div>
-                {pdfUrl ? (
+                {/* Tabela é o padrão; o PDF abre pelo botão. Sem texto salvo (nada a tabelar),
+                    cai direto no PDF pra não ficar tela vazia. */}
+                {pdfUrl && (verPdf || !status.texto) ? (
                   <iframe
                     title="Relatório de situação fiscal (SITFIS)"
                     src={pdfUrl}
