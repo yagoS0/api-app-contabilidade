@@ -27,10 +27,31 @@ const onlyDigits = (v) => String(v || "").replace(/\D+/g, "");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // A BrasilAPI é pública e sem contrato de uso pesado: uma consulta por vez, com pausa.
-async function consultarCnpj(cnpj) {
-  const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${onlyDigits(cnpj)}`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+//
+// DUAS ARMADILHAS, as duas descobertas rodando isto em produção:
+//  • Sem `User-Agent` ela responde 403 — sempre, para todo CNPJ. O navegador manda um sozinho,
+//    então o formulário funciona e o script falhava em 100% das empresas. Não é bloqueio de IP.
+//  • Ela limita taxa por minuto e devolve 429. Pausa maior + espera progressiva a cada 429;
+//    sem isso o backfill "termina" com metade das empresas marcadas como falha.
+const UA = "portal-contabil/1.0 (backfill-cnae)";
+const PAUSA_MS = 2500;
+
+async function consultarCnpj(cnpj, { tentativas = 3 } = {}) {
+  let espera = 5000;
+  for (let i = 1; i <= tentativas; i += 1) {
+    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${onlyDigits(cnpj)}`, {
+      headers: { "User-Agent": UA },
+    });
+    if (res.ok) return res.json();
+    if (res.status === 429 && i < tentativas) {
+      console.log(`     (limite de taxa — aguardando ${espera / 1000}s)`);
+      await sleep(espera);
+      espera *= 2;
+      continue;
+    }
+    throw new Error(`HTTP ${res.status}`);
+  }
+  throw new Error("HTTP 429 (limite de taxa persistente)");
 }
 
 try {
@@ -56,7 +77,7 @@ try {
     } catch (err) {
       falhas += 1;
       console.log(`  ✗ ${(emp.razaoSocial || "").slice(0, 36).padEnd(36)} ${emp.cnpj}  — consulta falhou: ${err.message}`);
-      await sleep(1200);
+      await sleep(PAUSA_MS);
       continue;
     }
 
@@ -69,7 +90,7 @@ try {
         .filter((c) => c !== principalNorm),
     )];
 
-    if (!novos.length) { semSecundarios += 1; await sleep(1200); continue; }
+    if (!novos.length) { semSecundarios += 1; await sleep(PAUSA_MS); continue; }
 
     const descricoes = new Map(
       (dados.cnaes_secundarios || []).map((c) => [normalizarCnae(c?.codigo), String(c?.descricao || "")]),
@@ -82,7 +103,7 @@ try {
       await prisma.company.update({ where: { id: emp.id }, data: { cnaesSecundarios: novos } });
     }
     corrigidas += 1;
-    await sleep(1200);
+    await sleep(PAUSA_MS);
   }
 
   console.log("\n" + "─".repeat(64));
