@@ -113,6 +113,8 @@ export function CompaniesHomePage({
   // Situação fiscal (SITFIS) e regime — combinam com os demais filtros.
   const [fiscalFilter, setFiscalFilter] = useState("all"); // all | comPendencia | semPendencia | emParcelamento
   const [regimeFilter, setRegimeFilter] = useState("all"); // all | SIMPLES | LUCRO_PRESUMIDO
+  // Fechamento CONTÁBIL do mês filtrado (o mesmo 🔒 do card) — não confundir com apuração.
+  const [fechamentoFilter, setFechamentoFilter] = useState("all"); // all | fechadas | abertas
   // C7: os filtros secundários ficam num painel; só busca e competência seguem aparentes.
   const [showFilters, setShowFilters] = useState(false);
   // "pending" é o default de Documentos (não conta como filtro ativo).
@@ -124,6 +126,7 @@ export function CompaniesHomePage({
     certFilter !== "all",
     fiscalFilter !== "all",
     regimeFilter !== "all",
+    fechamentoFilter !== "all",
   ].filter(Boolean).length;
   function limparFiltros() {
     setDocumentFilter("pending");
@@ -133,6 +136,7 @@ export function CompaniesHomePage({
     setCertFilter("all");
     setFiscalFilter("all");
     setRegimeFilter("all");
+    setFechamentoFilter("all");
   }
 
   const filteredCompanies = useMemo(() => {
@@ -155,6 +159,11 @@ export function CompaniesHomePage({
       if (fiscalFilter === "comPendencia" && fiscal !== "COM_PENDENCIA") return false;
       if (fiscalFilter === "semPendencia" && fiscal !== "REGULAR") return false;
       if (fiscalFilter === "emParcelamento" && fiscal !== "EM_PARCELAMENTO") return false;
+      if (fechamentoFilter !== "all") {
+        const fechada = Boolean(company?.fechamentoContabil?.fechado);
+        if (fechamentoFilter === "fechadas" && !fechada) return false;
+        if (fechamentoFilter === "abertas" && fechada) return false;
+      }
       if (regimeFilter !== "all") {
         const regime = String(company?.legacyCompany?.regimeTributario || company?.regimeTributario || "").trim().toUpperCase();
         if (regime !== regimeFilter) return false;
@@ -182,7 +191,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, fechamentoFilter]);
 
   return (
     <div className="dashboard-home-page">
@@ -477,6 +486,15 @@ export function CompaniesHomePage({
                       <option value="comPendencia">Com pendência</option>
                       <option value="semPendencia">Sem pendência</option>
                       <option value="emParcelamento">Em parcelamento</option>
+                    </select>
+                  </label>
+
+                  <label style={FILTER_LABEL}>
+                    Fechamento
+                    <select value={fechamentoFilter} onChange={(event) => setFechamentoFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
+                      <option value="all">Todas</option>
+                      <option value="fechadas">Fechadas</option>
+                      <option value="abertas">Abertas</option>
                     </select>
                   </label>
 
