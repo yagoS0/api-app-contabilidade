@@ -3625,6 +3625,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           // Quanto o SERPRO pediu pra aguardar (limite AV02). A consulta em lote usa isso pra se
           // espaçar em vez de queimar a cota do contratante empresa após empresa.
           tempoEsperaSegundos: result.tempoEsperaSegundos || null,
+          // Mensagem CRUA do SERPRO. O texto de "limite momentâneo" é inferência nossa — sem isto
+          // não dá pra distinguir limite de conta de procuração/certificado/contribuinte inválido.
+          mensagemSerpro: result.mensagemSerpro || null,
           verificadoTrial: result.verificadoTrial,
         });
       } catch (err) {

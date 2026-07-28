@@ -262,7 +262,16 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
     }
     const dadosBody = parseDadosEnvelope(resp.data);
     const wait = extractTempoEspera(dadosBody) ?? extractTempoEspera(resp.data);
-    logger?.warn?.({ httpStatus, fonte, temEtag: Boolean(etag) }, "SITFIS: /Apoiar");
+    // Loga o corpo (preview sanitizado) SEMPRE que não veio protocolo: sem isso a mensagem real do
+    // SERPRO nunca aparecia em lugar nenhum e o diagnóstico virava adivinhação.
+    if (proto) {
+      logger?.warn?.({ httpStatus, fonte, temEtag: Boolean(etag) }, "SITFIS: /Apoiar OK");
+    } else {
+      logger?.warn?.(
+        { httpStatus, temEtag: Boolean(etag), wait, apoiar: safeApoiarPreview(resp.data) },
+        "SITFIS: /Apoiar SEM protocolo",
+      );
+    }
     return { proto, wait, etag, status: httpStatus, resp: resp.data };
   }
 
@@ -302,6 +311,8 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
           verificadoTrial: VERIFICADO_TRIAL,
           rawPayload: sol.resp,
           tempoEsperaSegundos: segundos,
+          mensagemSerpro: extractMensagemTexto(sol.resp) || null,
+          apoiarPreview: safeApoiarPreview(sol.resp),
           mensagem: `O SERPRO está processando a solicitação (limite momentâneo atingido). Aguarde ~${segundos}s e consulte novamente.`,
         };
       }
@@ -404,6 +415,10 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
             verificadoTrial: VERIFICADO_TRIAL,
             rawPayload: sol.resp,
             tempoEsperaSegundos: segundos,
+            // O que o SERPRO REALMENTE respondeu. O texto abaixo é inferência nossa (a mensagem
+            // casou com o padrão de "aguarde") — sem isto não dá pra saber se é mesmo limite.
+            mensagemSerpro: extractMensagemTexto(sol.resp) || null,
+            apoiarPreview: safeApoiarPreview(sol.resp),
             mensagem: `O SERPRO está processando a solicitação (limite momentâneo atingido). Aguarde ~${segundos}s e consulte novamente.`,
           };
         }

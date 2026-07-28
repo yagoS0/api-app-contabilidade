@@ -40,7 +40,11 @@ export function useSitfis({ api, companyId }) {
         // C11: dentro da janela de 4h o backend não chama o SERPRO — devolve o relatório salvo.
         setNotice(res?.mensagem || "Situação fiscal consultada há pouco — mostrando o último relatório salvo.");
       } else if (res?.processando) {
-        setNotice(res?.mensagem || "Relatório em processamento no SERPRO. Tente novamente em instantes.");
+        // Mostra o que o SERPRO respondeu de fato — o texto padrão é inferência nossa.
+        const base = res?.mensagem || "Relatório em processamento no SERPRO. Tente novamente em instantes.";
+        setNotice(res?.mensagemSerpro ? `${base}
+
+SERPRO: ${res.mensagemSerpro}` : base);
       } else {
         setNotice("Situação fiscal consultada com sucesso.");
       }
