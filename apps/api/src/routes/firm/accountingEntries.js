@@ -809,10 +809,12 @@ export function createAccountingEntriesRouter({ log }) {
 
     // Q52.INSS: baixas contábeis reais do INSS (tipo=BAIXA, sourceGuideId) — para que a provisão
     // sintética paga possa ser EDITADA e ter a baixa CANCELADA na Circular, igual ao DAS.
-    const inssGuideIds = inssGuides.map((g) => g.id);
-    const inssBaixas = inssGuideIds.length
+    // Inclui também as guias de DAS: a linha sintética do DAS precisa saber se já FOI BAIXADA,
+    // senão ela se pinta de paga só porque o pagamento foi localizado no SERPRO.
+    const guiaIdsComBaixa = [...inssGuides.map((g) => g.id), ...simplesGuides.map((g) => g.id)];
+    const inssBaixas = guiaIdsComBaixa.length
       ? await prisma.accountingEntry.findMany({
-          where: { portalClientId, tipo: "BAIXA", sourceGuideId: { in: inssGuideIds } },
+          where: { portalClientId, tipo: "BAIXA", sourceGuideId: { in: guiaIdsComBaixa } },
           include: { lines: { orderBy: { ordem: "asc" } } },
         })
       : [];
@@ -939,7 +941,13 @@ export function createAccountingEntriesRouter({ log }) {
         origem: "SERPRO",
         loteImportacao: null,
         status: "RASCUNHO",
-        statusPagamento: isPaid ? "PAGO" : "ABERTO",
+        // PAGO só com BAIXA lançada. Guia PAID sem baixa = pagamento localizado no SERPRO, que é
+        // outra coisa: o contador ainda precisa lançar. Antes bastava a busca de pagamento marcar
+        // a guia pra célula ficar verde sem existir lançamento nenhum — escondia trabalho pendente.
+        statusPagamento: baixa ? "PAGO" : "ABERTO",
+        pagamentoLocalizado: Boolean(isPaid && !baixa),
+        // Quebra real (data/principal/juros/multa) lida do comprovante, pra pré-preencher a baixa.
+        comprovante: (g.extracted && typeof g.extracted === "object" ? g.extracted.comprovante : null) || null,
         openEntryId: null,
         recalculatedAt: recalculado ? g.updatedAt : null,
         recalculatedFromValor: recalculado ? valorOriginal : null,
@@ -1000,6 +1008,7 @@ export function createAccountingEntriesRouter({ log }) {
         const principalEditado = Number(acrescimosByMonth[g.competencia]?.DAS?.principal) || 0;
         const valor = principalEditado > 0 ? Math.round(principalEditado * 100) / 100 : valorOriginal;
         const isPaid = String(g.paymentStatus || "").toUpperCase() === "PAID";
+        const baixa = inssBaixaByGuide.get(g.id) || null;
         return {
           id: `synthetic-das-${g.id}`,
           portalClientId,
@@ -1014,7 +1023,11 @@ export function createAccountingEntriesRouter({ log }) {
           origem: "UPLOAD",
           loteImportacao: null,
           status: "RASCUNHO",
-          statusPagamento: isPaid ? "PAGO" : "ABERTO",
+          // Mesma regra do INSS sintetico: PAGO exige BAIXA lancada. Pagamento localizado no
+          // SERPRO e so uma tag - o ato contabil continua sendo do contador.
+          statusPagamento: baixa ? "PAGO" : "ABERTO",
+          pagamentoLocalizado: Boolean(isPaid && !baixa),
+          comprovante: (g.extracted && typeof g.extracted === "object" ? g.extracted.comprovante : null) || null,
           openEntryId: null,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -1022,8 +1035,14 @@ export function createAccountingEntriesRouter({ log }) {
             { id: null, entryId: null, conta: "DAS", tipo: "D", valor, ordem: 0, historico: null },
             { id: null, entryId: null, conta: "DAS", tipo: "C", valor, ordem: 1, historico: null },
           ],
-          baixas: [],
-          baixaEntry: null,
+          baixas: baixa ? [{ id: baixa.id }] : [],
+          baixaEntry: baixa
+            ? {
+                id: baixa.id, data: baixa.data, competencia: baixa.competencia,
+                historico: baixa.historico, tipo: baixa.tipo, subtipo: baixa.subtipo,
+                eventType: baixa.eventType, lines: baixa.lines,
+              }
+            : null,
           totalD: valor,
           totalC: valor,
           valor,
