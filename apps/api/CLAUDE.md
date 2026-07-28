@@ -166,9 +166,21 @@ Serviço assíncrono em 2 etapas, resolvido inline (~28s) ou devolvido como `pro
 **PAGTOWEB — confirmação de pagamento por comprovante**
 (`SerproPagtoWebService.js` + `SerproPaymentConfirmationService.js`, worker próprio).
 - idServiço `COMPARRECADACAO72` via `/Emitir`; comprovante (PDF) = pago.
-- ⚠ **`INTEGRACAO_SERPRO_PAGTOWEB` fica OFF** — idServiço/payload **não validados no trial**.
-  O fluxo (worker/cron/UI) está pronto e correto (não reporta mais falso-OK), mas só liga
-  após validar no sandbox. INSS grava `numeroDocumento` (extraído do GERARGUIA31) para o PAGTOWEB.
+- **Validado em produção real (2026-07-28).** O payload é `{"numeroDocumento":"<só dígitos>"}`:
+  com máscara → **HTTP 500** (`Erro-PAGTOWEB-00099`); com o nome `numeroDocumentoArrecadacao` →
+  **HTTP 400**. A resposta traz **só `dados.pdf`** — não há data nem valor estruturados, então o
+  rateio principal/juros/multa sai do **texto do PDF** (`parseComprovanteArrecadacao.js`, que só
+  devolve o rateio se `principal+juros+multa == total`).
+- ⚠ **O número do documento é a entrada de tudo.** Ele vive em
+  `dados.detalhamentoDas.numeroDocumento` (DAS) — e `dados` vem ora objeto, ora array de 1 item.
+  O extrator antigo varria o payload inteiro e pegava `contratante.numero`, o CNPJ do **escritório**
+  ecoado na resposta: toda guia de DAS ficou com um número inexistente e a busca nunca achava nada.
+  Hoje `extractDocumentNumber` tenta o **nome exato dentro de `dados`** antes da varredura ampla e,
+  não achando, devolve `null` — nunca o CNPJ. Guias antigas se corrigem sem gastar chamada com
+  `scripts/corrigir-numero-documento.mjs` (reextrai do `rawPayload` salvo); sem `rawPayload`, só
+  recapturando. Diagnóstico: `scripts/diag-numero-documento.mjs`.
+- A busca **só marca** a guia como paga (`pagamentoLocalizado`); quem faz o lançamento de baixa é o
+  contador, pela Circular — ver "Guias na Circular".
 
 ## Robustez NFS-e/ADN — ledger append-only (Fase 1)
 
