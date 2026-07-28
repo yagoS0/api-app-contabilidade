@@ -413,6 +413,13 @@ export function createRealApi() {
       });
     },
     // Checklist de conferência do mês. `item`: folhaProlabore | despesas | receitas | provisoes | pagamentos.
+    // Parcelas com pagamento marcado e ainda sem lançamento (painel da aba Parcelamento).
+    async listParcelasPendentesBaixa(companyId) {
+      return request(`/firm/companies/${companyId}/parcelamentos/parcelas-pendentes-baixa`);
+    },
+    async lancarBaixaParcela(companyId, guideId) {
+      return request(`/firm/companies/${companyId}/parcelamentos/parcelas/${guideId}/baixa`, { method: "POST" });
+    },
     // Busca o comprovante no SERPRO e só REGISTRA (não lança) — a baixa segue sendo do contador.
     async buscarPagamentoGuia(guideId) {
       return request(`/firm/guides/${guideId}/buscar-pagamento`, { method: "POST" });

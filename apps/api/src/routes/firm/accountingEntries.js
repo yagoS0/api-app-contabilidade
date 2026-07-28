@@ -3267,6 +3267,68 @@ export function createAccountingEntriesRouter({ log }) {
 
   // POST /firm/companies/:companyId/parcelamentos/:parcId/rescindir
   // body: { dataRescisao?, observacoes?, rescisaoLines? }
+  // Parcelas com pagamento marcado mas SEM lançamento — alimenta o painel da aba Parcelamento.
+  // A baixa da parcela saiu do "confirmar pagamento" e passou a ser ato deliberado aqui, no mesmo
+  // lugar onde as parcelas são acompanhadas (espelha o que a Circular faz com os tributos).
+  router.get("/parcelamentos/parcelas-pendentes-baixa", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    try {
+      const guias = await prisma.guide.findMany({
+        where: {
+          portalClientId,
+          parcelamentoId: { not: null },
+          status: "PROCESSED",
+          paymentStatus: "PAID",
+          baixada: false,
+          lancamentoId: null,
+        },
+        select: {
+          id: true, tipo: true, competencia: true, valor: true, vencimento: true,
+          parcelamentoId: true, extracted: true, paymentConfirmedAt: true,
+        },
+        orderBy: { competencia: "asc" },
+        take: 100,
+      });
+      return res.json({
+        ok: true,
+        parcelas: guias.map((g) => ({
+          guideId: g.id,
+          competencia: g.competencia,
+          valor: g.valor != null ? Number(g.valor) : null,
+          vencimento: g.vencimento,
+          parcelamentoId: g.parcelamentoId,
+          confirmadoEm: g.paymentConfirmedAt,
+          // Dados do comprovante (quando a busca no SERPRO já rodou) pra mostrar data/valores reais.
+          comprovante: g.extracted && typeof g.extracted === "object" ? g.extracted.comprovante || null : null,
+        })),
+      });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar parcelas pendentes de baixa");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Lança a baixa de UMA parcela (a partir da guia). Mês fechado bloqueia — aqui SIM há lançamento.
+  router.post("/parcelamentos/parcelas/:guideId/baixa", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const guideId = String(req.params.guideId);
+    try {
+      const { gerarPagamentoParcelaFromGuide } = await import(
+        "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
+      );
+      const out = await gerarPagamentoParcelaFromGuide({
+        portalClientId, guideId, userId: req.auth?.user?.id,
+      });
+      return res.status(201).json({ ok: true, resultado: out });
+    } catch (err) {
+      if (err?.code === "MES_FECHADO") {
+        return res.status(409).json({ ok: false, error: "MES_FECHADO", message: err.message });
+      }
+      log.error({ err: err?.message, guideId }, "Falha ao lançar baixa da parcela");
+      return res.status(500).json({ ok: false, error: err?.code || "internal_error", message: err?.message });
+    }
+  });
+
   router.post("/parcelamentos/:parcId/rescindir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const parcelamentoId = String(req.params.parcId);

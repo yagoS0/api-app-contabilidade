@@ -2925,50 +2925,19 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // Data do pagamento: a da arrecadação quando confiável; senão o dia da confirmação.
       const dataPagamentoReal = batendo && comprovante?.dataArrecadacao ? comprovante.dataArrecadacao : null;
 
-      // Só a PARCELA ainda gera lançamento aqui (parcelas vivem na aba Parcelamento, não na
-      // Circular). Para as demais, confirmar pagamento apenas MARCA — o lançamento é feito na
-      // Circular pelo contador.
-      const isParcela = Boolean(scoped.guide.parcelamentoId);
-      // A trava de mês fechado só se aplica a quem VAI LANÇAR: bloquear a simples marcação de
-      // "pago" por causa de um mês fechado impediria registrar um fato que já aconteceu.
-      const dataLancamento = dataPagamentoReal || new Date();
-      const competenciaPagamento = `${dataLancamento.getUTCFullYear()}-${String(dataLancamento.getUTCMonth() + 1).padStart(2, "0")}`;
-      if (isParcela && await isMonthClosed(scoped.guide.portalClientId, competenciaPagamento)) {
-        return res.status(409).json({
-          error: "MES_FECHADO",
-          competencia: competenciaPagamento,
-          message: dataPagamentoReal
-            ? `O pagamento foi em ${competenciaPagamento} (data do comprovante) e esse mês está fechado — reabra antes de confirmar.`
-            : undefined,
-        });
-      }
+      // Esta rota não cria mais NENHUM lançamento — logo, não há mês contábil a proteger aqui.
+      // A trava de mês fechado vive junto do lançamento: na Circular (tributos) e na aba
+      // Parcelamento (parcelas). Bloquear a marcação de "pago" impediria registrar um fato que
+      // já aconteceu só porque o mês foi fechado.
 
       const updated = await markGuidePaidManual({
         guideId: scoped.guide.id,
         userId: req.auth.user.id,
       });
 
-      // Q23: para guia de parcela, gera a BAIXA (juros LIDO da composição), data = hoje. Best-effort:
-      // falha aqui não desfaz o pagamento marcado, mas o aviso vai no payload.
-      let parcelaBaixa = null;
-      if (isParcela) {
-        try {
-          const { gerarPagamentoParcelaFromGuide } = await import(
-            "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
-          );
-          parcelaBaixa = await gerarPagamentoParcelaFromGuide({
-            portalClientId: scoped.guide.portalClientId,
-            guideId: scoped.guide.id,
-            userId: req.auth.user.id,
-          });
-        } catch (err) {
-          if (err?.code === "MES_FECHADO") {
-            return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
-          }
-          log.warn({ err: err?.message, guideId: scoped.guide.id }, "Falha ao gerar baixa de parcela (não crítico)");
-          parcelaBaixa = { skipped: true, reason: err?.message || "erro" };
-        }
-      }
+      // Parcela também NÃO lança aqui: o lançamento foi para a aba Parcelamento, onde as
+      // parcelas são acompanhadas. Confirmar pagamento só marca e guarda o comprovante.
+      const parcelaBaixa = null;
 
       // O LANÇAMENTO da baixa não acontece mais aqui: confirmar pagamento apenas MARCA a guia e
       // guarda o comprovante. O contador lança pela Circular ("Dar baixa", já pré-preenchido com a

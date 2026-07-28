@@ -3,14 +3,115 @@
 // Lançamentos/Guias (fluxo de ingestão da 1ª parcela) — aqui é a visão de gerenciar os que
 // já existem: conferência de parcelas pagas, lista, config de contas e rescisão.
 //
+// A BAIXA da parcela também é feita aqui (antes saía sozinha ao confirmar o pagamento da guia):
+// o ato contábil de cada domínio vive no lugar onde ele é acompanhado — tributos na Circular,
+// parcelas nesta aba.
+//
 // Dados: hook useParcelamentos (accountingPanel.parcelamentos). Ele carrega sozinho no mount
 // e recarrega após cada ação (rescindir/config/conferência), então não precisa de reload manual.
 
+import { useCallback, useEffect, useState } from "react";
 import { ParcelamentosList, ConferenciaParcelasPanel } from "../components/ParcelamentoModals";
+import { createApiClient } from "../../../../api/client";
 
 const PANEL = { text: "#F8F8F2", muted: "#A7B0C0" };
+const parcelaApi = createApiClient();
 
-export function ParcelamentoTab({ parcelamentos, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
+function fmtMoney(v) {
+  return Number.isFinite(Number(v))
+    ? Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+    : "—";
+}
+
+// Parcelas com pagamento marcado e SEM lançamento — o que falta o contador lançar.
+function ParcelasPendentesBaixa({ companyId }) {
+  const [parcelas, setParcelas] = useState([]);
+  const [carregando, setCarregando] = useState(false);
+  const [lancando, setLancando] = useState(null);
+
+  const carregar = useCallback(async () => {
+    if (!companyId || !parcelaApi?.listParcelasPendentesBaixa) return;
+    setCarregando(true);
+    try {
+      const out = await parcelaApi.listParcelasPendentesBaixa(companyId);
+      setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
+    } catch { setParcelas([]); }
+    finally { setCarregando(false); }
+  }, [companyId]);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  async function lancar(guideId) {
+    if (lancando) return;
+    setLancando(guideId);
+    try {
+      const out = await parcelaApi.lancarBaixaParcela(companyId, guideId);
+      if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao lançar.");
+      await carregar();
+    } catch (err) {
+      window.alert(err?.message || "Falha ao lançar a baixa da parcela.");
+    } finally { setLancando(null); }
+  }
+
+  if (!carregando && parcelas.length === 0) return null;
+
+  const th = { padding: "6px 8px", textAlign: "left", fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase" };
+  const td = { padding: "6px 8px", fontSize: "0.82rem", color: PANEL.text };
+
+  return (
+    <section style={{ background: "#21222C", border: "1px solid #FFB347", borderRadius: 10, padding: 14 }}>
+      <div style={{ marginBottom: 8 }}>
+        <strong style={{ color: "#FFB347", fontSize: "0.9rem" }}>
+          Parcelas pagas aguardando lançamento ({parcelas.length})
+        </strong>
+        <div style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
+          O pagamento já foi confirmado; falta gerar a baixa contábil.
+        </div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "#282A36" }}>
+              <th style={th}>Competência</th>
+              <th style={{ ...th, textAlign: "right" }}>Valor</th>
+              <th style={th}>Pagamento</th>
+              <th style={th} />
+            </tr>
+          </thead>
+          <tbody>
+            {parcelas.map((p) => (
+              <tr key={p.guideId} style={{ borderTop: "1px solid #2b2d45" }}>
+                <td style={td}>{p.competencia}</td>
+                <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(p.valor)}</td>
+                <td style={{ ...td, color: PANEL.muted }}>
+                  {p.comprovante?.dataArrecadacao
+                    ? `${p.comprovante.dataArrecadacao} (comprovante)`
+                    : (p.confirmadoEm ? new Date(p.confirmadoEm).toLocaleDateString("pt-BR") : "—")}
+                </td>
+                <td style={{ ...td, textAlign: "right" }}>
+                  <button
+                    type="button"
+                    onClick={() => lancar(p.guideId)}
+                    disabled={Boolean(lancando)}
+                    style={{
+                      padding: "4px 10px", borderRadius: 6, cursor: lancando ? "default" : "pointer",
+                      background: "transparent", border: "1px solid #69FF47", color: "#69FF47",
+                      fontSize: "0.78rem", fontWeight: 700,
+                    }}
+                  >
+                    {lancando === p.guideId ? "Lançando…" : "Dar baixa"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+export function ParcelamentoTab({ companyId, parcelamentos, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
   if (!parcelamentos) {
     return <div style={{ padding: 24, color: PANEL.muted }}>Carregando…</div>;
   }
@@ -20,9 +121,12 @@ export function ParcelamentoTab({ parcelamentos, accounts = [], onSearchHistoric
       <div>
         <h1 style={{ margin: 0, fontSize: "1.15rem", color: PANEL.text }}>Parcelamentos</h1>
         <span style={{ fontSize: "0.85rem", color: PANEL.muted }}>
-          Conferência de parcelas, contas de lançamento e rescisão. Novos parcelamentos entram pela guia (Lançamentos / Guias).
+          Conferência de parcelas, baixa das parcelas pagas, contas de lançamento e rescisão.
+          Novos parcelamentos entram pela guia (Lançamentos / Guias).
         </span>
       </div>
+
+      <ParcelasPendentesBaixa companyId={companyId} />
 
       <ConferenciaParcelasPanel
         listConferencia={parcelamentos.listConferencia}

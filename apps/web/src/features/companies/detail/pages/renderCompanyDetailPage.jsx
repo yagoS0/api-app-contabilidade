@@ -457,6 +457,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
               <ParcelamentoTab
+                companyId={companyId}
                 parcelamentos={accountingPanel.parcelamentos}
                 accounts={accountingPanel.accounts}
                 onSearchHistoricos={accountingPanel.onSearchHistoricos}

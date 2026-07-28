@@ -613,6 +613,14 @@ export function createMockApi() {
       await delay();
       return { ok: true, competencia, folhaProlaboreOk: Boolean(ok) };
     },
+    async listParcelasPendentesBaixa() {
+      await delay();
+      return { ok: true, parcelas: [] };
+    },
+    async lancarBaixaParcela() {
+      await delay();
+      return { ok: true, resultado: { pagamentoId: "mock-baixa-parcela" } };
+    },
     async buscarPagamentoGuia() {
       await delay();
       return {
