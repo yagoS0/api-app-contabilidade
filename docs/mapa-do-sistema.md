@@ -144,6 +144,88 @@ Ordenado por **risco de errar dinheiro**, não por esforço.
    em vez de foto por data. É a solução estrutural do que a conferência hoje remedia.
 8. **Apuração do Lucro Presumido** — decisão de produto, não de código: hoje só duas empresas.
 
+---
+
+# Varredura de UI/UX
+
+Feita percorrendo as telas no navegador, não lendo o código. O critério é o que o dono definiu:
+**o software não deve precisar de legenda nem explicação.** Onde há uma legenda explicando como
+usar, a tela falhou antes.
+
+## O sintoma mais claro: telas que ensinam a si mesmas
+
+| Onde | O que está escrito | Por que é sintoma |
+|---|---|---|
+| Consultas | "1) marque as funções · 2) marque as empresas na tabela · 3) clique em Rodar" | Um manual numerado dentro da tela. Se a ordem precisa ser explicada, o layout não a comunica. O certo é a tela guiar sozinha — o passo 2 desabilitado até o 1 estar feito, o botão Rodar inerte até haver seleção. |
+| Dashboard | "Busca, filtros e acesso rapido para a carteira do escritorio." | Subtítulo que descreve o óbvio (e com dois erros de acentuação). A tela já é a carteira. |
+| Cadastro | "Separados por vírgula. Preenche sozinho pelo CNPJ." | Instrução de formato. O campo deveria aceitar e formatar sozinho. |
+| Apuração | "RBT12" | Sigla sem tradução em nenhum lugar. Quem não sabe, não descobre pela tela. |
+
+## Selos que não informam nada
+
+No card da empresa, **"SERPRO" e "🔐 A1" aparecem em todas as empresas**. Um selo que nunca varia
+é ruído: ocupa espaço e não distingue. O mesmo vale para "apurada".
+
+**A regra que falta:** selo só existe para sinalizar **ausência ou exceção**. Certificado presente
+é o esperado — quem precisa gritar é o que está faltando ou vencendo.
+
+Além disso, no mesmo card convivem "PARC" e "Em parcelamento" — dois selos para o mesmo fato.
+E "DAS" sozinho não diz se a guia está pendente, pronta ou enviada; só quem já conhece a
+convenção sabe que tag de guia significa pendente.
+
+## Vocabulário inconsistente
+
+| Conceito | Aparece como | Onde |
+|---|---|---|
+| Regime | `Presumido` / `LUCRO_PRESUMIDO` | card do dashboard / tabela de Consultas |
+| A mesma página | `Consultas` / `Buscas SERPRO` | botão do dashboard / título da própria página |
+| Estado da apuração | `aberta`, `calculada`, `transmitida` | nomes técnicos do banco, expostos na tela |
+| Dinheiro | dois `fmtMoney` com convenções opostas | um inclui "R$", o outro não — gerou o **"R$ R$ 0,00"** já corrigido |
+
+`LUCRO_PRESUMIDO` com underline é nome de enum vazando para a interface. O contador não deveria
+ver a forma como o banco guarda o dado.
+
+## Navegação com o mesmo nome para coisas diferentes
+
+A palavra **"Cadastro"** significa três coisas distintas, duas delas na mesma tela:
+
+1. grupo de abas da empresa (ficha, documentos, anotações);
+2. sub-aba **dentro** de Apuração (o cadastro fiscal);
+3. "Editar cadastro", a tela de formulário.
+
+Em Lançamentos há três menus suspensos lado a lado — **Configurações**, **Import / Export**,
+**Funções** — e "Funções" não diz o que contém. "Configurações" ali é outra coisa que a
+"Configurações" do dashboard.
+
+## Defeitos visíveis encontrados
+
+| | O que aparece | Situação |
+|---|---|---|
+| ✅ | `R$ R$ 0,00` em Fat. interno, Fat. externo, RBT12, DAS apurado | **corrigido** (`a708d282`) |
+| ⬜ | Circular diz "Nenhuma provisão registrada para 2026" **e** mostra R$ 1.200,00 em Abril | mensagem de vazio aparecendo com a tabela preenchida |
+| ⬜ | Ícone `⚲` no botão Filtro (Lançamentos) | não é uma lupa; é o símbolo de gênero neutro |
+| ⬜ | Grupo de caixas "Folha/Pró-labore · Despesas · Receitas · Provisões · Pagamentos" sem título | não dá pra saber se é filtro ou checklist (é checklist de conferência) |
+| ⬜ | Emoji em 3 dos 7 botões do topo (📊 🕒 🔎), nenhum nos outros | metade decorada, metade não |
+
+## O que eu mudaria, por ordem de retorno
+
+1. **Selo só para exceção.** Tirar SERPRO/A1/apurada quando estão OK; deixá-los aparecer só
+   quando faltam ou vencem. Esvazia o card e faz o que sobra ser lido de verdade.
+2. **Um vocabulário só.** Uma tabela de termos (regime, estado, nome de página) e nenhuma sigla
+   nem enum cru na tela. `RBT12` vira "Receita dos últimos 12 meses".
+3. **Consultas guiar sozinha** em vez de numerar os passos: seções desabilitadas até a anterior
+   estar preenchida, e o botão Rodar inerte enquanto não houver o que rodar. Aí o texto "1) 2) 3)"
+   pode sair.
+4. **Resolver o "Cadastro" triplo** — renomear a sub-aba de Apuração para "Perfil fiscal" e o
+   grupo para "Empresa".
+5. **Unificar `fmtMoney`** num helper só, com o símbolo dentro. É o que gerou o `R$ R$`, e vai
+   gerar de novo.
+6. **Corrigir os defeitos visíveis** da tabela acima — todos pequenos e isolados.
+7. **Nomear o grupo de caixas** de conferência em Lançamentos e trocar o ícone `⚲`.
+
+Nada disso muda um número fiscal. É tudo sobre o contador olhar a tela e saber o que fazer sem
+alguém do lado explicando.
+
 ## O que eu NÃO faria agora
 
 - **Cofre de certificados / KMS (Q13):** importante para LGPD, mas não muda nenhum número.
