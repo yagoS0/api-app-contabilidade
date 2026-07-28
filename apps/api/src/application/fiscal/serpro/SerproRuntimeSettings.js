@@ -83,7 +83,15 @@ function deriveMonthlyCron(day, hour) {
 // PIS/COFINS/CSLL/IRPJ NÃO entram aqui: não existem como consulta separada. Os quatro vêm
 // juntos de uma única chamada (a do `presumido`, Consultar Declaração Completa DCTFWeb) e são
 // separados localmente por código de receita — ver parseDctfwebDeclaracao.js.
-export const ROTINA_KEYS = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento"];
+export const ROTINA_KEYS = ["das", "inss", "extrato", "presumido", "parcelamento", "pagamento", "conferencia"];
+
+// Rotinas que NÃO herdam a agenda legada por não existirem antes dela.
+// `conferencia` (confere as NFS-e da competência contra o ADN nacional) tem que rodar no
+// PRIMEIRO DIA DO MÊS SEGUINTE: ela valida o faturamento do mês que acabou, antes do fechamento.
+// Sair do dia 1 esvazia o propósito — conferir depois de fechar não impede nada.
+const DEFAULTS_POR_ROTINA = {
+  conferencia: { day: 1, hour: 6, enabled: true },
+};
 
 // Agenda por rotina. Semeada a partir da agenda global legada (fetchDay/fetchHour e, para o
 // pagamento, paymentConfirmation*) — assim ligar esta feature NÃO muda o comportamento de quem
@@ -96,10 +104,14 @@ function resolveRotinas(stored) {
   const out = {};
   for (const key of ROTINA_KEYS) {
     const salva = salvas[key] && typeof salvas[key] === "object" ? salvas[key] : null;
-    const legadoDia = key === "pagamento" ? resolvePaymentConfirmationDay(stored) : fetchDay;
-    const legadoHora = key === "pagamento" ? resolvePaymentConfirmationHour(stored) : fetchHour;
+    const proprio = DEFAULTS_POR_ROTINA[key] || null;
+    const legadoDia = proprio ? proprio.day
+      : key === "pagamento" ? resolvePaymentConfirmationDay(stored) : fetchDay;
+    const legadoHora = proprio ? proprio.hour
+      : key === "pagamento" ? resolvePaymentConfirmationHour(stored) : fetchHour;
     // O pagamento já tinha on/off próprio; as demais sempre rodaram junto da captura.
-    const legadoEnabled = key === "pagamento" ? resolvePaymentConfirmationEnabled(stored) : true;
+    const legadoEnabled = proprio ? proprio.enabled
+      : key === "pagamento" ? resolvePaymentConfirmationEnabled(stored) : true;
 
     const day = clampInt(salva?.day, 1, 31, legadoDia);
     const hour = clampInt(salva?.hour, 0, 23, legadoHora);

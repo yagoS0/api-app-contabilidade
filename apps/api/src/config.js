@@ -122,6 +122,9 @@ export const APURACAO_BATCH_WORKER_ENABLED = process.env.APURACAO_BATCH_WORKER_E
 // Intervalo mínimo entre ciclos por CNPJ — respeita NT 2014.002 v1.10 (Consumo Indevido).
 export const DFE_NOTAS_WORKER_ENABLED = process.env.DFE_NOTAS_WORKER_ENABLED === "1";
 export const DFE_NOTAS_WORKER_INTERVAL_MIN = Number(process.env.DFE_NOTAS_WORKER_INTERVAL_MIN) || 60;
+// Confere as NFS-e da competência contra o ADN nacional no dia 1 do mês seguinte, antes do
+// fechamento. Agenda vem do SerproRuntimeSettings (rotina "conferencia").
+export const CONFERENCIA_ADN_WORKER_ENABLED = process.env.CONFERENCIA_ADN_WORKER_ENABLED === "1";
 // Q12.B+++.6: heartbeat — CNPJs com >N dias sem sync entram em prioridade alta
 // (ignoram intervalo de 1h). Protege contra perder geração de NSU (regra 60 dias).
 // Default 7 dias — bem abaixo do limite de 60 pra dar margem de erro.

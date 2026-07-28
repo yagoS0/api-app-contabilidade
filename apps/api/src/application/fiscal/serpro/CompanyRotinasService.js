@@ -23,6 +23,7 @@ export const ROTINA_LABELS = {
   presumido: "Presumido",
   parcelamento: "Parcelamento",
   pagamento: "Pagamento",
+  conferencia: "Conferência ADN",
 };
 
 function normalizaRegime(legacyRow) {
