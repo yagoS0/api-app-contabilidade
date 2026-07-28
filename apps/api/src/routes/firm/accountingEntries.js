@@ -143,6 +143,30 @@ function principalAbatidoDaBaixa(baixa) {
     .filter((l) => String(l.tipo).toUpperCase() === "D" && !CONTAS_ACRESCIMO.has(String(l.conta).trim()))
     .reduce((s, l) => s + Number(l.valor || 0), 0);
 }
+// ── Separação da baixa em lançamentos independentes (principal / juros / multa) ──────────────
+// Regra do projeto: cada componente é um LANÇAMENTO próprio, balanceado contra o caixa. Um único
+// lançamento 3D/1C escondia que juros e multa são DESPESA do mês, e não amortização do passivo.
+//
+// O papel vem MARCADO do modal (não é deduzido da conta — o contador pode trocá-la). Linha sem
+// papel conta como principal, que é o comportamento seguro para lançamentos montados à mão.
+const SUFIXO_PAPEL = { PRINCIPAL: "", JUROS: " (juros)", MULTA: " (multa)" };
+function separarLinhasPorPapel(linhas) {
+  const debitos = linhas.filter((l) => String(l.tipo || "").toUpperCase() === "D");
+  const credito = linhas.find((l) => String(l.tipo || "").toUpperCase() === "C");
+  const contaCaixa = String(credito?.conta || "").trim();
+  const grupos = [];
+  for (const papel of ["PRINCIPAL", "JUROS", "MULTA"]) {
+    const doGrupo = debitos.filter((l) => {
+      const p = String(l.papel || "").toUpperCase();
+      return papel === "PRINCIPAL" ? (!p || p === "PRINCIPAL") : p === papel;
+    });
+    const total = r2(doGrupo.reduce((acc, l) => acc + (parseFloat(String(l.valor).replace(",", ".")) || 0), 0));
+    if (!doGrupo.length || total <= 0) continue;
+    grupos.push({ papel, debitos: doGrupo, total, contaCaixa });
+  }
+  return grupos;
+}
+
 // Saldo de uma provisão = principal (D da provisão) − principal já abatido pelas baixas.
 // entry deve vir com `lines` e `baixas: { lines }`.
 function computeSaldoProvisao(entry) {
@@ -1162,7 +1186,9 @@ export function createAccountingEntriesRouter({ log }) {
       },
     });
 
-    const accounting = await generateEntriesFromCircular({ portalClientId, competencia });
+    // Edição vinda deste PATCH é MANUAL: se o contador corrigiu o valor, ele é a verdade e as
+    // linhas do lançamento acompanham (senão a baixa do valor certo deixaria a diferença aberta).
+    const accounting = await generateEntriesFromCircular({ portalClientId, competencia, edicaoManual: true });
     return res.json({ ok: true, circular, accounting });
   });
 
@@ -2424,30 +2450,46 @@ export function createAccountingEntriesRouter({ log }) {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
-        const baixa = await tx.accountingEntry.create({
-          data: {
-            portalClientId,
-            data,
-            competencia,
-            historico,
-            tipo: "BAIXA",
-            // Q37: grava o eventType da baixa pra alimentar a memória de contas (último preenchido).
-            eventType: deriveBaixaEventType(openEntry),
-            openEntryId: entryId,
-            origem: "MANUAL",
-            statusPagamento: "NA",
-            status: "CONFIRMADO",
-          },
-        });
-        await tx.accountingEntryLine.createMany({
-          data: lines.map((l, idx) => ({
-            entryId: baixa.id,
-            conta: String(l.conta).trim(),
-            tipo: String(l.tipo).toUpperCase(),
-            valor: parseFloat(String(l.valor).replace(",", ".")),
-            ordem: idx,
-          })),
-        });
+        // PRINCIPAL, JUROS e MULTA viram lançamentos INDEPENDENTES (regra do projeto), cada um
+        // balanceado contra o caixa. Um lançamento único misturando os três (3D/1C) some no
+        // dropdown e esconde que juros/multa são DESPESA do mês, não amortização do passivo.
+        // Componente zerado não gera lançamento.
+        const grupos = separarLinhasPorPapel(lines);
+        const criados = [];
+        for (const g of grupos) {
+          const entry = await tx.accountingEntry.create({
+            data: {
+              portalClientId,
+              data,
+              competencia,
+              historico: `${historico}${SUFIXO_PAPEL[g.papel] || ""}`,
+              tipo: "BAIXA",
+              // Q37: grava o eventType da baixa pra alimentar a memória de contas (último preenchido).
+              eventType: deriveBaixaEventType(openEntry),
+              // Todos apontam para a MESMA provisão: o cálculo de saldo soma as três (e juros/multa
+              // não entram no principal abatido, por conta de CONTAS_ACRESCIMO).
+              openEntryId: entryId,
+              origem: "MANUAL",
+              statusPagamento: "NA",
+              status: "CONFIRMADO",
+            },
+          });
+          await tx.accountingEntryLine.createMany({
+            data: [
+              ...g.debitos.map((l, idx) => ({
+                entryId: entry.id,
+                conta: String(l.conta).trim(),
+                tipo: "D",
+                valor: r2(parseFloat(String(l.valor).replace(",", "."))),
+                ordem: idx,
+              })),
+              { entryId: entry.id, conta: g.contaCaixa, tipo: "C", valor: g.total, ordem: g.debitos.length },
+            ],
+          });
+          criados.push(entry);
+        }
+        // A baixa "principal" é a referência devolvida ao cliente (é a que amortiza o passivo).
+        const baixa = criados[0];
         const updatedOpen = await tx.accountingEntry.update({
           where: { id: entryId },
           data: { statusPagamento: novoStatus },

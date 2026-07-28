@@ -277,7 +277,7 @@ function findChangedValue(existingEntry, nextEntry) {
   );
 }
 
-async function upsertGeneratedEntry(tx, { existingEntry, portalClientId, circular, rule, event, company, now }) {
+async function upsertGeneratedEntry(tx, { edicaoManual = false, existingEntry, portalClientId, circular, rule, event, company, now }) {
   const context = {
     competencia: circular.competencia,
     competenciaLabel: formatCompetenciaLabel(circular.competencia),
@@ -343,7 +343,11 @@ async function upsertGeneratedEntry(tx, { existingEntry, portalClientId, circula
     // DAS_SIMPLES: ao recalcular, manter valor/lines/data/historico originais e apenas marcar como recalculada
     const previousAmount = sumEntryLines(existingEntry.lines || []);
     const amountChanged = Math.abs(Number(previousAmount) - Number(event.amount || 0)) > 0.01;
-    if (event.eventType === "DAS_SIMPLES" && amountChanged) {
+    // Recálculo AUTOMÁTICO do SERPRO (juros/multa após vencimento): preserva o lançamento
+    // original e só sinaliza. Correção MANUAL do contador NÃO entra aqui — se ele alterou o
+    // valor é porque o anterior estava errado, então as linhas têm que acompanhar (senão a
+    // baixa do valor certo deixa a diferença em aberto como PARCIAL).
+    if (event.eventType === "DAS_SIMPLES" && amountChanged && !edicaoManual) {
       const updated = await tx.accountingEntry.update({
         where: { id: existingEntry.id },
         data: {
@@ -426,7 +430,9 @@ async function upsertGeneratedEntry(tx, { existingEntry, portalClientId, circula
   return { action: "created", entry: created };
 }
 
-export async function generateEntriesFromCircular({ portalClientId, competencia, now = new Date() }) {
+// `edicaoManual`: o contador CORRIGIU o valor na Circular (o novo valor é a verdade). Sem isso, o
+// DAS cai na regra de recálculo automático, que preserva as linhas antigas de propósito.
+export async function generateEntriesFromCircular({ portalClientId, competencia, now = new Date(), edicaoManual = false }) {
   const normalizedPortalClientId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
   if (!normalizedPortalClientId) {
@@ -498,6 +504,7 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
 
       // eslint-disable-next-line no-await-in-loop
       const outcome = await upsertGeneratedEntry(tx, {
+        edicaoManual,
         existingEntry,
         portalClientId: normalizedPortalClientId,
         circular,
