@@ -68,7 +68,7 @@ function AccountSearch({ value, onChange, accounts, placeholder }) {
         <div style={{
           position: "absolute", top: "calc(100% + 2px)", left: 0, zIndex: 2000,
           background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6,
-          boxShadow: "0 8px 28px rgba(0,0,0,0.3)", minWidth: 280, maxHeight: 220, overflowY: "auto",
+          boxShadow: "0 8px 28px rgba(0,0,0,0.3)", minWidth: 280, maxHeight: 220, overflowY: "auto", overflowX: "hidden",
         }}>
           {matches.map((a) => (
             <button key={a.codigo} type="button"
@@ -153,7 +153,7 @@ export function FunctionListModal({ functions, loading, onApply, onEdit, onDelet
     }}>
       <div style={{
         background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-        padding: 20, width: "100%", maxWidth: 720, maxHeight: "90vh", overflowY: "auto",
+        padding: 20, width: "100%", maxWidth: 720, maxHeight: "90vh", overflowY: "auto", overflowX: "hidden",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ margin: 0, color: PANEL.text, fontSize: "1rem" }}>Funções de Lançamento</h3>
@@ -265,7 +265,7 @@ export function FunctionEditModal({ initial, accounts, saving, onSave, onClose }
     }}>
       <div style={{
         background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-        padding: 20, width: "100%", maxWidth: 780, maxHeight: "92vh", overflowY: "auto",
+        padding: 20, width: "100%", maxWidth: 780, maxHeight: "92vh", overflowY: "auto", overflowX: "hidden",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <h3 style={{ margin: 0, color: PANEL.text }}>{initial ? "Editar função" : "Nova função"}</h3>
@@ -399,7 +399,7 @@ export function FunctionApplyModal({ func, defaultCompetencia, saving, onApply, 
     }}>
       <div style={{
         background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-        padding: 20, width: "100%", maxWidth: 640, maxHeight: "92vh", overflowY: "auto",
+        padding: 20, width: "100%", maxWidth: 640, maxHeight: "92vh", overflowY: "auto", overflowX: "hidden",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <h3 style={{ margin: 0, color: PANEL.text }}>Aplicar: {func?.name}</h3>

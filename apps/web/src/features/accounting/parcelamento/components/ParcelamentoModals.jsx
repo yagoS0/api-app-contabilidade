@@ -613,7 +613,7 @@ export function ParcelamentoConfigModal({ parcId, label, getConfig, saveConfig, 
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 620px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 620px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.0rem" }}>Configuração de lançamento — {label}</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
@@ -721,7 +721,7 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
   const iconBtn = { background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.text, borderRadius: 6, width: 26, height: 26, lineHeight: "22px", textAlign: "center", cursor: "pointer", fontSize: "1rem", padding: 0 };
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1700, padding: 16 }}>
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 680px)", maxHeight: "92vh", overflowY: "auto", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 680px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", color: PANEL.text, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <strong style={{ fontSize: "1.0rem" }}>Rescindir — {parc?.label}</strong>
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "1.2rem" }}>✕</button>
@@ -893,7 +893,7 @@ export function ParcelamentoCreateModal({
     }}>
       <div style={{
         background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10,
-        padding: 20, width: "100%", maxWidth: 760, maxHeight: "92vh", overflowY: "auto",
+        padding: 20, width: "100%", maxWidth: 760, maxHeight: "92vh", overflowY: "auto", overflowX: "hidden",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <h3 style={{ margin: 0, color: PANEL.text }}>
@@ -1020,7 +1020,7 @@ export function ParcelamentoCreateModal({
               <summary style={{ cursor: "pointer", color: PANEL.text, fontSize: "0.8rem", fontWeight: 700 }}>
                 Preview ({preview.length} parcelas)
               </summary>
-              <div style={{ maxHeight: 200, overflowY: "auto", marginTop: 8, fontSize: "0.75rem", color: PANEL.text }}>
+              <div style={{ maxHeight: 200, overflowY: "auto", overflowX: "hidden", marginTop: 8, fontSize: "0.75rem", color: PANEL.text }}>
                 {preview.map((p) => (
                   <div key={p.numero} style={{ display: "grid", gridTemplateColumns: "60px 100px 100px 1fr", gap: 8, padding: "2px 0", borderBottom: `1px solid ${PANEL.border}` }}>
                     <span style={{ color: PANEL.muted }}>{p.label}</span>

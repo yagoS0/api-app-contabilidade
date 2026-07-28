@@ -1,5 +1,3 @@
-const MOCK_SITFIS_TEXTO = "\n\nMINISTÉRIO DA ECONOMIA\nPor meio do Integra Contador\nSECRETARIA ESPECIAL DA RECEITA FEDERAL DO BRASIL\nAutor pedido: 39.254.243/0001-91. Contratante: 39.254.243/0001-91\nPROCURADORIA-GERAL DA FAZENDA NACIONAL\n24/07/2026 19:08:00\nINFORMAÇÕES DE APOIO PARA EMISSÃO DE CERTIDÃO\nCNPJ: \n52.682.158 - ATIM ENGENHARIA LTDA\nDados Cadastrais da Matriz ______________________________________________________________________________________CNPJ: 52.682.158/0001-92UA de Domicílio: \nDRF RIO DE JANEIRO II-RJ\nCódigo da UA: \n07.109.00\nEndereço: \nEST DO PONTAL,06825 - APT 301\nBairro: \nRECREIO DOS BANDEIRANTES\nCEP: \n22790-877\nMunicípio: \nRIO DE JANEIRO\nUF: \nRJ\nResponsável: \n097.466.527-45 - MARCIO MARCELO SANTOS FERREIRA\nSituação: \nATIVA\n\nNatureza Jurídica: \n206-2 - SOCIEDADE EMPRESARIA LIMITADA\nData de Abertura: \n26/10/2023\nCNAE: \n4120-4/00 - Construção de edifícios\nPorte da Empresa: \nMICRO EMPRESA\n\nOpção pelo Simples NacionalInclusão\nExclusão\n26/10/2023\n31/12/2025\n01/01/2026Sócios e Administradores ________________________________________________________________________________________CPF/CNPJ\nNome\nQualificação\nSituação Cadastral\nCap. Social\nCap. Votante\n097.466.527-45\nMARCIO MARCELO SANTOS FERREIRA\nSÓCIO-ADMINISTRADOR\nREGULAR\n100,00%\nCertidão Emitida ________________________________________________________________________________________________CNPJ: 52.682.158/0001-92Certidão Negativa:  D7C2.B8F1.701B.43D8\nEmissão: \n14/11/2023\nData de Validade: \n12/05/2024\n_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Pendência - Parcelamento (PARCSN/PARCMEI) _______________________________________________________________________CNPJ: 52.682.158/0001-92SIMPLES NACIONAL - EM PARCELAMENTO\nParcelas em atraso\n\n4\nPendência - Débito (SIEF) _______________________________________________________________________________________CNPJ: 52.682.158/0001-92Receita\nPA/Exerc.\nDt. Vcto\nVl. Original\nSdo. Devedor\nMulta\nJuros\nSdo. Dev. Cons.\nSituação\n4406-01 - MAED - PGDAS-D\n23/02/2026\n25/03/2026\n50,00\n50,00\n0,00\n2,14\n52,14\nDEVEDOR\n          Notificação de lançamento: 526821582026010011099-01 - CP-SEGUR.\n02/2026\n20/03/2026\n178,31\n178,31\n35,66\n7,63\n221,60\nDEVEDOR\nPágina: 1 / \n2\n\nMINISTÉRIO DA ECONOMIA\nPor meio do Integra Contador\nSECRETARIA ESPECIAL DA RECEITA FEDERAL DO BRASIL\nAutor pedido: 39.254.243/0001-91. Contratante: 39.254.243/0001-91\nPROCURADORIA-GERAL DA FAZENDA NACIONAL\n24/07/2026 19:08:00\nINFORMAÇÕES DE APOIO PARA EMISSÃO DE CERTIDÃO\nCNPJ: \n52.682.158 - ATIM ENGENHARIA LTDA\n1099-01 - CP-SEGUR.\n03/2026\n20/04/2026\n178,31\n178,31\n35,66\n5,68\n219,65\nDEVEDOR\n1099-01 - CP-SEGUR.\n05/2026\n19/06/2026\n178,31\n178,31\n19,41\n1,78\n199,50\nDEVEDOR\n          SIMPLES NAC.\n12/2025\n21/01/2026\n2.382,50\n2.382,50\n476,50\n154,62\n3.013,62\nDEVEDOR\n          SIMPLES NAC.\n02/2026\n20/03/2026\n1.243,85\n1.243,85\n248,77\n53,23\n1.545,85\nDEVEDOR\n          SIMPLES NAC.\n03/2026\n20/04/2026\n1.242,43\n1.242,43\n248,48\n39,63\n1.530,54\nDEVEDOR\n          SIMPLES NAC.\n04/2026\n20/05/2026\n1.258,35\n1.258,35\n251,67\n26,67\n1.536,69\nDEVEDOR\n          SIMPLES NAC.\n05/2026\n22/06/2026\n1.261,03\n1.261,03\n133,16\n12,61\n1.406,80\nDEVEDOR\nDébito com Exigibilidade Suspensa (SIEF) ________________________________________________________________________CNPJ: 52.682.158/0001-92Receita\nPA/Exerc.\nDt. Vcto\nVl.Original\nSdo.Devedor\nSituação\n1099-01 - CP-SEGUR.\n06/2026\n20/07/2026\n178,31\n178,31\nA ANALISAR-A VENCER\nPendência - Processo Fiscal (SIEF) ______________________________________________________________________________CNPJ: 52.682.158/0001-92Processo\nSituação\nLocalização\n10642.032.115/2026-17\nDEVEDOR\nSETOR PROC ELETRONICO REFIS-DRFRJ2-RJ\n__________________________ Diagnóstico Fiscal na Procuradoria-Geral da Fazenda Nacional _________________________Não foram detectadas pendências/exigibilidades suspensas para esse contribuinte nos controles da Procuradoria-Geral da Fazenda Nacional.\n_________________________________________________________________________________________________________________\nFinal do Relatório\nPágina: 2 / \n2\n";
-
 import { faker } from "@faker-js/faker";
 
 faker.seed(20260127);
@@ -862,18 +860,16 @@ export function createMockApi() {
       await delay();
       const company = mockCompanies.find((item) => item.companyId === companyId);
       if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
-      // Texto REAL de um relatorio SITFIS com pendencias (empresa ATIM), pra conferir o resumo
-      // e as tabelas sem depender do SERPRO. Serve de fixture visual do parser.
       return {
         ok: true,
         status: {
           situacao: "COM_PENDENCIA",
           checkedAt: new Date().toISOString(),
+          // Sem PDF no mock → a aba mostra o aviso pedindo nova consulta.
           relatorioPdfFileId: null,
           protocolo: null,
           podeConsultar: true,
           proximaConsultaEm: null,
-          texto: MOCK_SITFIS_TEXTO,
         },
       };
     },
@@ -1492,6 +1488,26 @@ export function createMockApi() {
       for (const e of list.filter((e) => e.tipo === "RECEITA" && meses.includes(e.competencia))) {
         const total = (e.lines || []).filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
         receitas[e.competencia] = (receitas[e.competencia] || 0) + total;
+      }
+      // Fixture: uma provisão ABERTA garante o botão "Dar baixa" no mock (o modal de baixa só
+      // aparece a partir dela). Sem isso não dá pra conferir o modal sem backend.
+      if (provisoes.length === 0) {
+        provisoes.push({
+          id: "mock-provisao-das",
+          competencia: meses[5],
+          tipo: "PROVISAO",
+          subtipo: "DAS",
+          eventType: "DAS_SIMPLES",
+          statusPagamento: "ABERTO",
+          valor: 1234.56,
+          totalD: 1234.56,
+          totalC: 1234.56,
+          lines: [
+            { conta: "265", tipo: "D", valor: 1234.56, ordem: 0 },
+            { conta: "553", tipo: "C", valor: 1234.56, ordem: 1 },
+          ],
+          baixas: [],
+        });
       }
       return { year: y, provisoes, receitas };
     },

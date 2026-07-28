@@ -232,7 +232,7 @@ export function ChartOfAccountsModal({
         background: PANEL.surface, borderRadius: 16, border: `1px solid ${PANEL.border}`,
         color: PANEL.text,
         boxShadow: "0 8px 32px rgba(0,0,0,0.28)", width: "100%", maxWidth: "920px",
-        maxHeight: "90vh", overflow: "auto", padding: "var(--space-5)",
+        maxHeight: "90vh", overflowY: "auto", overflowX: "hidden", padding: "var(--space-5)",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-4)" }}>
           <div>
