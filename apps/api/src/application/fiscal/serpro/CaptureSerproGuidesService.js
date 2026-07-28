@@ -111,7 +111,9 @@ function extractDateValue(payload) {
 // (e faria o PAGTOWEB consultar o documento errado).
 // Por isso: procura primeiro DENTRO de `dados` (a carga real da resposta); só então cai para o
 // payload completo, aí com padrão ESTRITO (sem o "numero" solto).
-function extractDocumentNumber(payload) {
+// Exportado para o script de correção reextrair o número das guias já gravadas a partir do
+// `extracted.rawPayload`, sem recapturar no SERPRO — a regra tem que ser a MESMA dos dois lados.
+export function extractDocumentNumber(payload) {
   const casaEstrito = (key, value) => {
     const k = String(key || "").toLowerCase();
     if (typeof value === "object" || value == null) return false;
@@ -125,6 +127,12 @@ function extractDocumentNumber(payload) {
     try { dados = JSON.parse(dadosRaw); } catch { dados = null; }
   }
   if (dados && typeof dados === "object") {
+    // Nome exato primeiro. Confirmado no payload real do GERARDAS12:
+    // dados.detalhamentoDas.numeroDocumento = "07202619039520400". Buscar pelo nome exato evita
+    // que um "numeroDeclaracao"/"numeroRecibo" qualquer vença por ordem de travessia.
+    const exato = searchValueDeep(dados, casaEstrito);
+    if (exato != null && String(exato).trim()) return String(exato).trim();
+
     const doDados = searchValueDeep(dados, (key, value) => {
       const k = String(key || "").toLowerCase();
       if (typeof value === "object" || value == null) return false;
