@@ -2800,15 +2800,67 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return res.status(400).json({ error: "guide_not_processed" });
       }
 
+      // Busca o COMPROVANTE no SERPRO (PAGTOWEB) pra usar a DATA e os VALORES reais do pagamento
+      // em vez de "hoje" + valor devido da guia. Decisão do dono: baixa automática SÓ quando o
+      // comprovante é confiável E o total bate com a guia; havendo divergência (juros/multa,
+      // pagamento parcial), a guia é marcada como paga mas o lançamento fica pro contador conferir.
+      // Best-effort: falha na consulta não impede a confirmação manual.
+      let comprovante = null;
+      let comprovanteAviso = null;
+      try {
+        const { confirmarPagamento } = await import(
+          "../../application/fiscal/serpro/SerproPagtoWebService.js"
+        );
+        const numeroDoc = String(scoped.guide.extracted?.numeroDocumento || "").trim();
+        if (numeroDoc) {
+          const r = await confirmarPagamento({
+            contribuinteCnpj: scoped.guide.cnpj,
+            numeroDocumento: numeroDoc,
+            logger: log,
+          });
+          if (r?.pago && r?.comprovante) comprovante = r.comprovante;
+          else if (!r?.pago) comprovanteAviso = r?.mensagem || "Comprovante não localizado no SERPRO.";
+        } else {
+          comprovanteAviso = "Guia sem número de documento — não dá pra buscar o comprovante.";
+        }
+      } catch (err) {
+        comprovanteAviso = `Não foi possível consultar o comprovante: ${err?.message || err}`;
+        log.warn({ err: err?.message, guideId: scoped.guide.id }, "PAGTOWEB: consulta falhou (segue com confirmação manual)");
+      }
+
+      // O comprovante só COMANDA a baixa quando é confiável e o total confere com a guia.
+      const totalGuia = Number(scoped.guide.valor || 0);
+      const batendo = Boolean(
+        comprovante?.confiavel
+        && comprovante?.total != null
+        && Math.abs(Number(comprovante.total) - totalGuia) <= 0.01,
+      );
+      if (comprovante && !batendo) {
+        comprovanteAviso = comprovante.total != null
+          ? `Comprovante encontrado com total R$ ${Number(comprovante.total).toFixed(2)}, diferente da guia (R$ ${totalGuia.toFixed(2)}) — confira antes de lançar.`
+          : "Comprovante encontrado, mas não foi possível ler os valores com segurança — confira antes de lançar.";
+      }
+      // Data do pagamento: a da arrecadação quando confiável; senão o dia da confirmação.
+      const dataPagamentoReal = batendo && comprovante?.dataArrecadacao ? comprovante.dataArrecadacao : null;
+
       // Q23/Q34/Q61: toda guia gera lançamento de BAIXA ao marcar como paga (parcela, INSS ou normal).
-      // Se o mês contábil do pagamento (hoje) estiver fechado, BLOQUEIA o "pago" inteiro (não marca, não lança).
+      // Se o mês contábil do pagamento estiver fechado, BLOQUEIA o "pago" inteiro (não marca, não lança).
       const isParcela = Boolean(scoped.guide.parcelamentoId);
       const isInss = !isParcela && String(scoped.guide.tipo || "").toUpperCase() === "INSS";
       const isNormal = !isParcela && !isInss;
-      const now = new Date();
-      const competenciaPagamento = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      // A trava tem que olhar o mês em que o lançamento VAI CAIR. Com a data real do comprovante,
+      // esse mês pode não ser o atual (pagamento de junho confirmado em julho) — checar "hoje"
+      // deixaria passar lançamento em mês já fechado.
+      const dataLancamento = dataPagamentoReal || new Date();
+      const competenciaPagamento = `${dataLancamento.getUTCFullYear()}-${String(dataLancamento.getUTCMonth() + 1).padStart(2, "0")}`;
       if (await isMonthClosed(scoped.guide.portalClientId, competenciaPagamento)) {
-        return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
+        return res.status(409).json({
+          error: "MES_FECHADO",
+          competencia: competenciaPagamento,
+          message: dataPagamentoReal
+            ? `O pagamento foi em ${competenciaPagamento} (data do comprovante) e esse mês está fechado — reabra antes de confirmar.`
+            : undefined,
+        });
       }
 
       const updated = await markGuidePaidManual({
@@ -2849,6 +2901,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             portalClientId: scoped.guide.portalClientId,
             guideId: scoped.guide.id,
             userId: req.auth.user.id,
+            // Data REAL da arrecadação quando o comprovante confere; senão o serviço usa hoje.
+            dataPagamento: dataPagamentoReal,
           });
         } catch (err) {
           if (err?.code === "MES_FECHADO") {
@@ -2867,6 +2921,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             "../../application/accounting/GuideNormalPagamentoService.js"
           );
           normalBaixa = await gerarPagamentoNormalFromGuide({
+            dataPagamento: dataPagamentoReal,
             portalClientId: scoped.guide.portalClientId,
             guideId: scoped.guide.id,
             userId: req.auth.user.id,
@@ -2890,6 +2945,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         ok: true,
         guide: toGuideResponse(updated),
         parcelaBaixa, inssBaixa, normalBaixa,
+        // Dados do comprovante do SERPRO (quando localizado). `aplicado` diz se eles COMANDARAM
+        // a baixa — se false, a guia foi marcada como paga mas o lançamento precisa de conferência.
+        comprovante: comprovante
+          ? {
+              dataArrecadacao: comprovante.dataArrecadacaoBR || null,
+              principal: comprovante.principal, juros: comprovante.juros,
+              multa: comprovante.multa, total: comprovante.total,
+              meioPagamento: comprovante.meioPagamento,
+              aplicado: batendo,
+            }
+          : null,
+        comprovanteAviso,
         circular: {
           atualizada: circularAtualizada,
           provisoesMarcadas: Number(baixa?.provisoesMarcadas || 0),

@@ -570,7 +570,20 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       const res = await api.confirmGuidePayment(guideId);
       // Q23: guia de parcela gera a baixa do pagamento; mensagem reflete o resultado.
       // A resposta diz se a Circular foi atualizada — não afirmamos "✅ na Circular" sem ter sido.
-      if (res?.circular?.atualizada === false) {
+      // Comprovante do SERPRO: quando `aplicado`, a baixa saiu com a DATA e os VALORES reais.
+      const comp = res?.comprovante;
+      if (comp?.aplicado) {
+        const partes = [`pago em ${comp.dataArrecadacao}`];
+        if (comp.juros > 0 || comp.multa > 0) {
+          partes.push(`principal R$ ${Number(comp.principal).toFixed(2)}`);
+          if (comp.juros > 0) partes.push(`juros R$ ${Number(comp.juros).toFixed(2)}`);
+          if (comp.multa > 0) partes.push(`multa R$ ${Number(comp.multa).toFixed(2)}`);
+        }
+        feedback.setMessage(`Baixa pelo comprovante do SERPRO — ${partes.join(" · ")}.`);
+      } else if (res?.comprovanteAviso) {
+        // Guia marcada como paga, mas o lançamento saiu com os dados presumidos: avisa pra conferir.
+        feedback.setMessage(`Guia marcada como paga. ${res.comprovanteAviso}`);
+      } else if (res?.circular?.atualizada === false) {
         feedback.setMessage(
           "Guia marcada como paga, mas nenhuma provisão correspondente foi encontrada na Circular — "
           + "a célula do mês pode continuar em aberto."

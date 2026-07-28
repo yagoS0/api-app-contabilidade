@@ -179,7 +179,29 @@ export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, nu
   if (pdfBase64) {
     const pdfBuffer = Buffer.from(pdfBase64, "base64");
     if (pdfBuffer.length > 0) {
-      return { pago: true, comprovantePdfBuffer: pdfBuffer, mensagem: null, verificadoTrial: VERIFICADO_TRIAL, rawPayload: data };
+      // O comprovante só vem como PDF (validado: `dados` = { pdf }, sem campos estruturados).
+      // Lemos o texto pra obter a DATA DE ARRECADAÇÃO e a quebra principal/juros/multa — é isso
+      // que permite baixar na data certa em vez de "hoje" + valor devido da guia.
+      // Best-effort: falha na leitura NÃO invalida o pagamento (o PDF é a prova).
+      let comprovante = null;
+      try {
+        const pdfParse = (await import("pdf-parse")).default;
+        const { parseComprovanteArrecadacao } = await import("./parseComprovanteArrecadacao.js");
+        const out = await pdfParse(pdfBuffer);
+        comprovante = parseComprovanteArrecadacao(out?.text || "");
+      } catch (err) {
+        logger?.warn?.({ err: err?.message }, "PAGTOWEB: não consegui ler o texto do comprovante (segue com o PDF)");
+      }
+      return {
+        pago: true,
+        comprovantePdfBuffer: pdfBuffer,
+        // `confiavel:false` = não conseguimos a quebra com segurança (a soma não fechou) →
+        // quem chama deve pedir conferência humana em vez de lançar valores.
+        comprovante,
+        mensagem: null,
+        verificadoTrial: VERIFICADO_TRIAL,
+        rawPayload: data,
+      };
     }
   }
 
