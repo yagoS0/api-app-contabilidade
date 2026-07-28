@@ -234,12 +234,16 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
     }}>
       <div style={{
         background: "var(--bg-surface)", borderRadius: "var(--radius)", border: "1px solid var(--border)",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.16)", width: "100%", maxWidth: "560px",
+        // Largura suficiente pra tabela de partidas caber SEM scroll lateral (era 560px).
+        boxShadow: "0 8px 32px rgba(0,0,0,0.16)", width: "min(96vw, 860px)",
         // overflow:"auto" valia para os DOIS eixos: a tabela de partidas (colunas fixas) estourava
         // e o modal inteiro rolava lateralmente. Agora só o eixo Y rola no modal; quem rola em X é
         // o wrapper da tabela (abaixo). Mesmo tratamento do CircularEntryEditModal.
         maxHeight: "90vh", overflowY: "auto", overflowX: "hidden",
         padding: "var(--space-5)", boxSizing: "border-box",
+        // Sem isso, um texto longo sem espaços (código, mensagem do SERPRO) empurra a largura
+        // e reintroduz a barra horizontal mesmo com o modal largo.
+        overflowWrap: "anywhere",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-3)" }}>
           <div>

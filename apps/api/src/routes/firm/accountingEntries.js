@@ -765,6 +765,10 @@ export function createAccountingEntriesRouter({ log }) {
           status: "PROCESSED",
           competencia: { in: meses },
           tipo: "SIMPLES",
+          // Guia de PARCELAMENTO não é DAS do mês: o parcelamento já provisionou tudo na abertura
+          // e é acompanhado na aba Parcelamento. Sem este filtro ela virava uma linha "DAS" na
+          // Circular — mesma regra que generateProvisionsFromGuide já aplica ("linked_to_parcelamento").
+          parcelamentoId: null,
         },
         select: {
           competencia: true, valor: true, valorOriginal: true, updatedAt: true,
