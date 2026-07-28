@@ -47,6 +47,7 @@ const CNAES = [
 
   // Atacadistas → mesmo Anexo I de revenda
   ["4646002", "Comércio atacadista cosméticos", TR_REVENDA, false],
+  ["4651601", "Comércio atacadista de equipamentos de informática", TR_REVENDA, false],
   ["4647801", "Comércio atacadista artigos escritório", TR_REVENDA, false],
   ["4639701", "Comércio atacadista produtos alimentícios", TR_REVENDA, false],
 
@@ -91,6 +92,11 @@ const CNAES = [
   ["4322303", "Instalações hidráulicas, sanitárias", TR_ANEXO_IV, false],
   ["4321500", "Instalações elétricas", TR_ANEXO_IV, false],
   ["4330404", "Serviços de pintura predial e similar", TR_ANEXO_IV, false],
+  ["4213800", "Obras de urbanização — ruas, praças e calçadas", TR_ANEXO_IV, false],
+  ["4292801", "Montagem de estruturas metálicas", TR_ANEXO_IV, false],
+  ["4299599", "Outras obras de engenharia civil n.e.", TR_ANEXO_IV, false],
+  ["4311801", "Demolição de edifícios e outras estruturas", TR_ANEXO_IV, false],
+  ["4313400", "Obras de terraplenagem", TR_ANEXO_IV, false],
   ["4322301", "Instalações hidráulicas, sanitárias e de gás", TR_ANEXO_IV, false],
   ["4330403", "Obras de acabamento em gesso e estuque", TR_ANEXO_IV, false],
   ["4399101", "Administração de obras", TR_ANEXO_IV, false],
@@ -120,6 +126,16 @@ const CNAES = [
   ["7319002", "Promoção de vendas", TR_FATOR_R, false],
   ["7319003", "Marketing direto", TR_FATOR_R, false],
   ["7319004", "Consultoria em publicidade", TR_FATOR_R, false],
+
+  // ─── APOIO ADMINISTRATIVO / INTERMEDIAÇÃO / EVENTOS ─────────────────────
+  // Enquadramento definido pelo dono (28/07/2026). Sem irmão de subclasse na tabela, então NÃO
+  // foram deduzidos daqui — são decisão do contador, registrada.
+  ["4619200", "Representantes comerciais e agentes do comércio", TR_FATOR_R, false],
+  ["8211300", "Serviços combinados de escritório e apoio administrativo", TR_FATOR_R, false],
+  ["8219999", "Preparação de documentos e serviços de apoio administrativo n.e.", TR_FATOR_R, false],
+  ["8220200", "Atividades de teleatendimento", TR_FATOR_R, false],
+  ["8230001", "Organização de feiras, congressos, exposições e festas", TR_FATOR_R, false],
+  ["8291100", "Atividades de cobranças e informações cadastrais", TR_FATOR_R, false],
   ["7319099", "Outras atividades de publicidade", TR_FATOR_R, false],
   ["7320300", "Pesquisa de mercado e opinião pública", TR_FATOR_R, false],
 
