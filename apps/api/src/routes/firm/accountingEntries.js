@@ -2475,8 +2475,11 @@ export function createAccountingEntriesRouter({ log }) {
               competencia,
               historico: `${historico}${SUFIXO_PAPEL[g.papel] || ""}`,
               tipo: "BAIXA",
-              // Q37: grava o eventType da baixa pra alimentar a memória de contas (último preenchido).
-              eventType: deriveBaixaEventType(openEntry),
+              // Q37: o eventType alimenta a memória de contas — e há @@unique(portalClientId,
+              // competencia, eventType, origem), então SÓ o lançamento do principal pode carregá-lo.
+              // Repetir nos três violaria a constraint e derrubaria a baixa inteira. Também é o
+              // certo semanticamente: a memória D/C é do par do tributo, não de juros/multa.
+              eventType: g.papel === "PRINCIPAL" ? deriveBaixaEventType(openEntry) : null,
               // Todos apontam para a MESMA provisão: o cálculo de saldo soma as três (e juros/multa
               // não entram no principal abatido, por conta de CONTAS_ACRESCIMO).
               openEntryId: entryId,

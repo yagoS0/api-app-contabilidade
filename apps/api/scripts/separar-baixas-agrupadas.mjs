@@ -89,13 +89,24 @@ try {
       const contaCaixa = String(credito?.conta || "").trim();
 
       await prisma.$transaction(async (tx) => {
+        // ORDEM IMPORTA: o lançamento novo do PRINCIPAL reusa o mesmo eventType do original, e há
+        // @@unique(portalClientId, competencia, eventType, origem) — criar antes de apagar colide
+        // com o próprio registro que estamos substituindo. Então: solta a referência da guia,
+        // apaga o agrupado e só então cria os separados. Tudo na mesma transação: se algo falhar,
+        // nada é perdido.
+        if (b.sourceGuideId) {
+          await tx.guide.updateMany({ where: { id: b.sourceGuideId, lancamentoId: b.id }, data: { lancamentoId: null } });
+        }
+        await tx.accountingEntryLine.deleteMany({ where: { entryId: b.id } });
+        await tx.accountingEntry.delete({ where: { id: b.id } });
+
         const criados = [];
         for (const papel of ["PRINCIPAL", "JUROS", "MULTA"]) {
           const ls = grupos[papel];
           if (!ls?.length) continue;
           const total = r2(ls.reduce((s, l) => s + Number(l.valor || 0), 0));
           if (total <= 0) continue;
-          const novo = await tx.accountingEntry.create({
+          const novoEntry = await tx.accountingEntry.create({
             data: {
               portalClientId: b.portalClientId,
               data: b.data,
@@ -103,7 +114,9 @@ try {
               historico: `${b.historico}${SUFIXO[papel] || ""}`,
               tipo: "BAIXA",
               subtipo: b.subtipo,
-              eventType: b.eventType,
+              // @@unique acima: só o PRINCIPAL carrega o eventType. É também o correto — a memória
+              // de contas (AccountingHistorico) é do par do tributo, não de juros/multa.
+              eventType: papel === "PRINCIPAL" ? b.eventType : null,
               origem: b.origem,
               loteImportacao: b.loteImportacao,
               status: b.status,
@@ -114,26 +127,20 @@ try {
               lines: {
                 createMany: {
                   data: [
-                    ...ls.map((l, i) => ({ conta: l.conta, tipo: "D", valor: r2(l.valor), ordem: i })),
+                    ...ls.map((l, i2) => ({ conta: l.conta, tipo: "D", valor: r2(l.valor), ordem: i2 })),
                     { conta: contaCaixa, tipo: "C", valor: total, ordem: ls.length },
                   ],
                 },
               },
             },
           });
-          criados.push({ papel, id: novo.id });
+          criados.push({ papel, id: novoEntry.id });
         }
-        // A guia passa a apontar pro lançamento do PRINCIPAL (é o que amortiza o passivo).
+        // A guia volta a apontar para o lançamento do PRINCIPAL (é o que amortiza o passivo).
         const principal = criados.find((c) => c.papel === "PRINCIPAL") || criados[0];
         if (b.sourceGuideId && principal) {
-          await tx.guide.updateMany({
-            where: { id: b.sourceGuideId, lancamentoId: b.id },
-            data: { lancamentoId: principal.id },
-          });
+          await tx.guide.update({ where: { id: b.sourceGuideId }, data: { lancamentoId: principal.id } });
         }
-        // Remove o agrupado só depois de recriar tudo (linhas caem por cascade).
-        await tx.accountingEntryLine.deleteMany({ where: { entryId: b.id } });
-        await tx.accountingEntry.delete({ where: { id: b.id } });
       });
     }
 
