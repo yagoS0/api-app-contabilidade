@@ -26,6 +26,7 @@ const ROTINA_HINT = {
   presumido: "Lucro Presumido: traz PIS, COFINS, CSLL e IRPJ de uma vez",
   parcelamento: "Parcelas dos parcelamentos ativos",
   pagamento: "Confirma pagamento pelo comprovante (PAGTOWEB)",
+  conferencia: "Confere as NFS-e contra o ADN nacional no dia 1 — antes do fechamento",
 };
 
 function pad2(value) {

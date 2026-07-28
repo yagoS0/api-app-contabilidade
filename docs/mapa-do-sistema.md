@@ -100,7 +100,7 @@ Tudo abaixo é detalhe desses oito passos.
 | ✅ | Pagamento localizado ≠ baixa lançada | a guia ganha tag "paga"; o lançamento é ato do contador |
 | ✅ | Juros e multa como lançamentos separados | contas 501 e 506 |
 | 🟡 | 87 guias antigas sem `numeroDocumento` | sem ele não dá pra buscar comprovante; só recapturando (chamada paga) |
-| ⬜ | `INTEGRACAO_SERPRO_PAGTOWEB` ligada em produção | validada, falta ligar |
+| ✅ | `INTEGRACAO_SERPRO_PAGTOWEB` ligada em produção | validada e em uso |
 
 ## 9. Contabilidade
 
@@ -131,20 +131,18 @@ Ordenado por **risco de errar dinheiro**, não por esforço.
 1. **Marcar as empresas na rotina "Conferência ADN"** — hoje o faturamento nunca foi
    confrontado com a autoridade nacional. É o único item que protege o número que vai ser
    declarado, e não custa código nenhum: é configuração.
-2. **Ligar o `INTEGRACAO_SERPRO_PAGTOWEB`** — já validado; sem ligar, a busca de pagamento
-   continua manual.
-3. **Rodar `diag-apuracao.mjs`** e resolver o que aparecer: competência fechada e não
+2. **Rodar `diag-apuracao.mjs`** e resolver o que aparecer: competência fechada e não
    transmitida, pendência humana travando, DAS que mudou entre a prévia e a declaração.
-4. **Validar os `idAtividade`** que as empresas da carteira realmente usam. Hoje só um foi
+3. **Validar os `idAtividade`** que as empresas da carteira realmente usam. Hoje só um foi
    exercido contra a API real — é o maior risco silencioso da apuração.
-5. **Botão de conferência sob demanda** na aba Apuração — a rota já existe.
-6. **Conferência de NF-e contra a SEFAZ** — hoje NF-e depende do evento chegar pela captura.
+4. **Botão de conferência sob demanda** na aba Apuração — a rota já existe.
+5. **Conferência de NF-e contra a SEFAZ** — hoje NF-e depende do evento chegar pela captura.
    Menos urgente porque a carteira é quase toda de serviço.
-7. **Recapturar as 87 guias sem `numeroDocumento`** — sob demanda, quando precisar conferir
+6. **Recapturar as 87 guias sem `numeroDocumento`** — sob demanda, quando precisar conferir
    pagamento daquele mês. Não vale em lote (chamada paga por guia).
-8. **Ligar o ledger por NSU** (`docs/robustez-nfse-adn.md`) — a captura vira fluxo de eventos
+7. **Ligar o ledger por NSU** (`docs/robustez-nfse-adn.md`) — a captura vira fluxo de eventos
    em vez de foto por data. É a solução estrutural do que a conferência hoje remedia.
-9. **Apuração do Lucro Presumido** — decisão de produto, não de código: hoje só duas empresas.
+8. **Apuração do Lucro Presumido** — decisão de produto, não de código: hoje só duas empresas.
 
 ## O que eu NÃO faria agora
 
