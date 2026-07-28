@@ -29,6 +29,8 @@ const SEGMENT_TO_TAB = {
   // ele aprende do histórico. Link antigo cai em Lançamentos.
   configuracoes: "lancamentos",
   cadastro: "cadastro",
+  documentos: "documentos",
+  anotacoes: "anotacoes",
   edit: "edit",
 };
 const TAB_TO_SEGMENT = {
@@ -41,6 +43,8 @@ const TAB_TO_SEGMENT = {
   cadastroFiscal: "cadastro-fiscal",
   planoContas: "plano-contas",
   cadastro: "cadastro",
+  documentos: "documentos",
+  anotacoes: "anotacoes",
   edit: "edit",
 };
 // Q17: competência default do dashboard = mês civil anterior.

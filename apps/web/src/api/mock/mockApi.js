@@ -87,6 +87,25 @@ function makeGuidesByCompany(companies) {
 const mockCompanies = makeCompanies();
 const mockGuidesByCompany = makeGuidesByCompany(mockCompanies);
 const mockUnidentifiedGuides = [];
+
+const MOCK_TIPOS_DOC = ["CONTRATO_SOCIAL", "CARTAO_CNPJ", "INSCRICAO_ESTADUAL", "INSCRICAO_MUNICIPAL", "ALVARA", "PROCURACAO", "OUTRO"];
+const MOCK_TIPO_DOC_LABELS = {
+  CONTRATO_SOCIAL: "Contrato social", CARTAO_CNPJ: "Cartão CNPJ",
+  INSCRICAO_ESTADUAL: "Inscrição estadual", INSCRICAO_MUNICIPAL: "Inscrição municipal",
+  ALVARA: "Alvará", PROCURACAO: "Procuração", OUTRO: "Outro",
+};
+let mockDocumentos = [
+  { id: "mock-doc-1", tipo: "CONTRATO_SOCIAL", nome: "Contrato social.pdf", mimeType: "application/pdf", bytes: 184320, validade: null, createdAt: "2026-03-10T12:00:00.000Z" },
+  { id: "mock-doc-2", tipo: "CARTAO_CNPJ", nome: "Cartão CNPJ.pdf", mimeType: "application/pdf", bytes: 51200, validade: null, createdAt: "2026-05-02T12:00:00.000Z" },
+  { id: "mock-doc-3", tipo: "ALVARA", nome: "Alvará de funcionamento.pdf", mimeType: "application/pdf", bytes: 92160, validade: "2026-12-31T00:00:00.000Z", createdAt: "2026-01-15T12:00:00.000Z" },
+];
+// A fixada é de propósito a MENOS importante e a MAIS antiga: é o caso que revela um orderBy
+// ingênuo — nas duas ordenações ela tem que continuar em primeiro.
+let mockAnotacoes = [
+  { id: "mock-nota-1", texto: "Cliente prefere receber as guias até o dia 5.", importancia: "BAIXA", fixada: true, createdAt: "2026-02-01T12:00:00.000Z" },
+  { id: "mock-nota-2", texto: "Sócio entrou em 04/2026 — conferir pró-labore.", importancia: "ALTA", fixada: false, createdAt: "2026-07-20T12:00:00.000Z" },
+  { id: "mock-nota-3", texto: "Enviar balancete trimestral ao contador do grupo.", importancia: "MEDIA", fixada: false, createdAt: "2026-06-11T12:00:00.000Z" },
+];
 const mockGuideSettings = {
   pdfReaderConfigured: true,
 };
@@ -1883,6 +1902,81 @@ export function createMockApi() {
     async createNotasDownload(payload = {}) {
       await delay(80);
       return { ok: true, jobId: `mock-notas-dl-${Date.now()}` };
+    },
+    // ── Documentos e anotações (mock com estado em memória) ────────────────────────────────
+    // Estado de verdade, não retorno fixo: as duas features têm REGRAS que só dá pra conferir
+    // mexendo (fixação exclusiva, seleção múltipla), e um mock imutável passaria por elas.
+    async listCompanyDocuments() {
+      await delay(60);
+      return { ok: true, documentos: mockDocumentos, tipos: MOCK_TIPOS_DOC, tipoLabels: MOCK_TIPO_DOC_LABELS };
+    },
+    async uploadCompanyDocument(_companyId, { arquivo, tipo, nome }) {
+      await delay(120);
+      const doc = {
+        id: `mock-doc-${mockDocumentos.length + 1}`,
+        tipo: tipo || "OUTRO",
+        nome: nome || arquivo?.name || "documento.pdf",
+        mimeType: arquivo?.type || "application/pdf",
+        bytes: arquivo?.size || 1024,
+        validade: null,
+        createdAt: "2026-07-28T12:00:00.000Z",
+      };
+      mockDocumentos = [doc, ...mockDocumentos];
+      return { ok: true, documento: doc };
+    },
+    async fetchCompanyDocumentBlob() {
+      await delay(60);
+      return new Blob(["mock"], { type: "application/pdf" });
+    },
+    async deleteCompanyDocument(_companyId, documentId) {
+      await delay(60);
+      mockDocumentos = mockDocumentos.filter((d) => d.id !== documentId);
+      return { ok: true, removido: { id: documentId } };
+    },
+    async sendCompanyDocuments(_companyId, documentIds) {
+      await delay(150);
+      const docs = mockDocumentos.filter((d) => documentIds.includes(d.id));
+      return {
+        ok: true, enviados: docs.length, destinatario: "cliente@exemplo.com.br",
+        documentos: docs.map((d) => ({ id: d.id, nome: d.nome, tipo: d.tipo })),
+      };
+    },
+    async listCompanyNotes(_companyId, ordenarPor = "data") {
+      await delay(60);
+      const PESO = { ALTA: 0, MEDIA: 1, BAIXA: 2 };
+      const porData = (a, b) => new Date(b.createdAt) - new Date(a.createdAt);
+      const criterio = ordenarPor === "importancia"
+        ? (a, b) => ((PESO[a.importancia] ?? 9) - (PESO[b.importancia] ?? 9)) || porData(a, b)
+        : porData;
+      // Espelha a regra do backend: fixada sempre no topo, em qualquer ordenação.
+      const anotacoes = [...mockAnotacoes].sort((a, b) => {
+        if (a.fixada !== b.fixada) return a.fixada ? -1 : 1;
+        return criterio(a, b);
+      });
+      return { ok: true, anotacoes, importancias: ["ALTA", "MEDIA", "BAIXA"] };
+    },
+    async createCompanyNote(_companyId, { texto, importancia, fixada }) {
+      await delay(80);
+      if (fixada) mockAnotacoes = mockAnotacoes.map((n) => ({ ...n, fixada: false }));
+      const nota = {
+        id: `mock-nota-${mockAnotacoes.length + 1}`, texto,
+        importancia: importancia || "MEDIA", fixada: Boolean(fixada),
+        createdAt: new Date().toISOString(),
+      };
+      mockAnotacoes = [nota, ...mockAnotacoes];
+      return { ok: true, anotacao: nota };
+    },
+    async updateCompanyNote(_companyId, noteId, patch) {
+      await delay(80);
+      // Fixação EXCLUSIVA, igual ao backend — é o que a tela precisa exercitar.
+      if (patch.fixada === true) mockAnotacoes = mockAnotacoes.map((n) => ({ ...n, fixada: false }));
+      mockAnotacoes = mockAnotacoes.map((n) => (n.id === noteId ? { ...n, ...patch } : n));
+      return { ok: true, anotacao: mockAnotacoes.find((n) => n.id === noteId) };
+    },
+    async deleteCompanyNote(_companyId, noteId) {
+      await delay(60);
+      mockAnotacoes = mockAnotacoes.filter((n) => n.id !== noteId);
+      return { ok: true, removida: { id: noteId } };
     },
     async listNotasDownloads() { await delay(60); return { ok: true, jobs: [] }; },
     async getNotasDownload(jobId) {

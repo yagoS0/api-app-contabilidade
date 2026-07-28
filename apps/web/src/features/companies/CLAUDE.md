@@ -51,6 +51,22 @@ Feature da carteira de empresas: dashboard (lista), detalhe (abas), formulário,
     (`company.fechamentoContabil.fechado`, vindo de `attachFechamentoContabilToCompaniesList`).
   - Selo "E-mail do mês" (Q16): verde enviado / âmbar pendente.
 
+## Documentos e Anotações (Lote D)
+
+Duas sub-abas novas no grupo **Cadastro** (`documents/`, hook `useCompanyDocuments.js` com os dois
+estados). São cadastrais, não fiscais — é onde o contador já procura dado de empresa.
+
+- **Documentos** (contrato social, cartão CNPJ, inscrições, alvará): seleção múltipla + barra de
+  ações **Baixar** / **Enviar por e-mail**, no formato da barra única das Guias (Q57). O download
+  passa por `fetch` com Bearer e vira Blob — um `<a href>` não leva o token. O envio **confirma
+  antes** (lista os nomes) e o retorno diz quantos foram e para quem.
+- **Anotações**: a **fixada** é renderizada FORA da lista, acima de tudo, em qualquer ordenação
+  (data ou importância), e a fixação é **exclusiva**. As duas regras são garantidas no backend
+  (`CompanyNotesService`) — o front só reflete.
+
+O mock tem estado em memória, não retorno fixo: as duas features têm regras que só dá pra conferir
+mexendo (fixação exclusiva, seleção múltipla), e um mock imutável passaria por elas sem testar nada.
+
 ## Abas do detalhe
 
 Ordem/roteamento: `useManageCompaniesWorkspace.deriveCompanyDetailTab` (default `lancamentos`)

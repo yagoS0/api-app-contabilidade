@@ -12,6 +12,7 @@ import { useApuracaoV2 } from "../../../apuracao-v2/hooks/useApuracaoV2";
 // Q41: hook próprio da aba Situação Fiscal (SITFIS)
 import { useSitfis } from "../../../fiscal/sitfis/hooks/useSitfis";
 import { createApiClient } from "../../../../api/client";
+import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useCompanyDocuments";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
 // e cada tab só carrega seu JS quando o contador clica nela pela 1ª vez.
@@ -59,8 +60,28 @@ function TabLoadingFallback() {
   );
 }
 
+// Documentos e Anotações da empresa (grupo Cadastro). Lazy como as demais abas: só carregam o JS
+// quando o contador abre a aba.
+const CompanyDocumentsTab = lazy(() =>
+  import("../../documents/components/renderCompanyDocumentsTab").then((m) => ({ default: m.CompanyDocumentsTab }))
+);
+const CompanyNotesTab = lazy(() =>
+  import("../../documents/components/renderCompanyNotesTab").then((m) => ({ default: m.CompanyNotesTab }))
+);
+
+function CompanyDocumentsTabWrapper({ companyId, feedback }) {
+  const docs = useCompanyDocuments({ api: companyDocsApi, companyId, feedback });
+  return <CompanyDocumentsTab docs={docs} />;
+}
+
+function CompanyNotesTabWrapper({ companyId, feedback }) {
+  const notes = useCompanyNotes({ api: companyDocsApi, companyId, feedback });
+  return <CompanyNotesTab notes={notes} />;
+}
+
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
 const apuracaoV2Api = createApiClient();
+const companyDocsApi = createApiClient();
 function ApuracaoV2TabWrapper({ companyId, feedback, razao }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
   return <ApuracaoV2Tab panel={panel} api={apuracaoV2Api} companyId={companyId} feedback={feedback} razao={razao} />;
@@ -245,6 +266,31 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             canEditCompany={canEditCompany}
             onEdit={() => switchTab("edit")}
           />
+        </div>
+        <Feedback message={feedback.message} error={feedback.error} />
+      </div>
+    );
+  }
+
+  if (companyDetailTab === "documentos" || companyDetailTab === "anotacoes") {
+    const ehDocumentos = companyDetailTab === "documentos";
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab={companyDetailTab}
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<div style={{ padding: 24, color: "#8A8FA3" }}>Carregando…</div>}>
+              {ehDocumentos
+                ? <CompanyDocumentsTabWrapper companyId={companyId} feedback={feedback} />
+                : <CompanyNotesTabWrapper companyId={companyId} feedback={feedback} />}
+            </Suspense>
+          </ErrorBoundary>
         </div>
         <Feedback message={feedback.message} error={feedback.error} />
       </div>

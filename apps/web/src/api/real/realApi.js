@@ -533,6 +533,61 @@ export function createRealApi() {
       return request(`/firm/pendencias/fiscal`);
     },
     // Q43.4: baixa o PDF do relatório SITFIS como Blob (auth Bearer; iframe não manda header).
+    // ── Documentos da empresa (contrato social, cartão CNPJ, inscrições…) ──────────────────
+    async listCompanyDocuments(companyId) {
+      return request(`/firm/companies/${companyId}/documentos`);
+    },
+    async uploadCompanyDocument(companyId, { arquivo, tipo, nome, validade }) {
+      const formData = new FormData();
+      formData.append("arquivo", arquivo);
+      formData.append("tipo", tipo || "OUTRO");
+      if (nome) formData.append("nome", nome);
+      if (validade) formData.append("validade", validade);
+      return request(`/firm/companies/${companyId}/documentos`, { method: "POST", body: formData });
+    },
+    // Blob com auth Bearer — mesmo padrão do fetchSitfisPdfBlob (o <a href> não leva o token).
+    async fetchCompanyDocumentBlob(companyId, documentId) {
+      const baseUrl = getApiBaseUrl();
+      const headers = {};
+      const tok = accessToken || readStoredToken();
+      if (tok) headers.Authorization = `Bearer ${tok}`;
+      const res = await fetch(`${baseUrl}/firm/companies/${companyId}/documentos/${documentId}/download`, { method: "GET", headers });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        const err = new Error(payload?.message || `Falha ao baixar o documento (HTTP ${res.status})`);
+        err.code = payload?.error || "COMPANY_DOCUMENT_FETCH_FAILED";
+        throw err;
+      }
+      return res.blob();
+    },
+    async deleteCompanyDocument(companyId, documentId) {
+      return request(`/firm/companies/${companyId}/documentos/${documentId}`, { method: "DELETE" });
+    },
+    async sendCompanyDocuments(companyId, documentIds, destinatario) {
+      return request(`/firm/companies/${companyId}/documentos/enviar`, {
+        method: "POST",
+        body: JSON.stringify({ documentIds, destinatario: destinatario || undefined }),
+      });
+    },
+    // ── Anotações da empresa ───────────────────────────────────────────────────────────────
+    async listCompanyNotes(companyId, ordenarPor = "data") {
+      return request(`/firm/companies/${companyId}/anotacoes?ordenarPor=${encodeURIComponent(ordenarPor)}`);
+    },
+    async createCompanyNote(companyId, { texto, importancia, fixada }) {
+      return request(`/firm/companies/${companyId}/anotacoes`, {
+        method: "POST",
+        body: JSON.stringify({ texto, importancia, fixada: Boolean(fixada) }),
+      });
+    },
+    async updateCompanyNote(companyId, noteId, patch) {
+      return request(`/firm/companies/${companyId}/anotacoes/${noteId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+    },
+    async deleteCompanyNote(companyId, noteId) {
+      return request(`/firm/companies/${companyId}/anotacoes/${noteId}`, { method: "DELETE" });
+    },
     async fetchSitfisPdfBlob(companyId) {
       const baseUrl = getApiBaseUrl();
       const headers = {};
