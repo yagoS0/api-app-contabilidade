@@ -171,6 +171,12 @@ Serviço assíncrono em 2 etapas, resolvido inline (~28s) ou devolvido como `pro
   **HTTP 400**. A resposta traz **só `dados.pdf`** — não há data nem valor estruturados, então o
   rateio principal/juros/multa sai do **texto do PDF** (`parseComprovanteArrecadacao.js`, que só
   devolve o rateio se `principal+juros+multa == total`).
+- ⚠ **A ordem das colunas de acréscimo é `principal · MULTA · JUROS · total`** — o inverso do
+  cabeçalho impresso ("Total Juros Multa Principal"). A autoverificação da soma **não** pega uma
+  troca entre juros e multa (a soma é a mesma), então a ordem está fixada por evidência: no
+  comprovante real de INSS, 12,94/178,31 = 7,26% = 0,33%/dia × 22 dias (multa de mora) e
+  1,78/178,31 = 1,00% (juros do mês do pagamento). Importa porque juros e multa viram lançamentos
+  separados, em contas diferentes (501 e 506).
 - ⚠ **O número do documento é a entrada de tudo.** Ele vive em
   `dados.detalhamentoDas.numeroDocumento` (DAS) — e `dados` vem ora objeto, ora array de 1 item.
   O extrator antigo varria o payload inteiro e pegava `contratante.numero`, o CNPJ do **escritório**

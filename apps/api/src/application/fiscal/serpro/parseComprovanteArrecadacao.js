@@ -11,9 +11,11 @@
 //     → a data de arrecadação é a 1ª data que aparece DEPOIS do rótulo. Buscar antes pegaria a
 //       data de EMISSÃO do comprovante ("Comprovante emitido às…de 27/07/2026").
 //
-//  2. Os valores da linha de totais vêm COLADOS, sem separador:
+//  2. Os valores da linha de totais vêm COLADOS, sem separador, na ordem
+//     principal | MULTA | JUROS | total:
 //       "178,3112,941,78193,03"  =  178,31 | 12,94 | 1,78 | 193,03
-//     → separados por regex de moeda (cada valor termina em ",dd").
+//     → separados por regex de moeda (cada valor termina em ",dd"). Ver a nota sobre a ordem
+//       das colunas junto ao bloco "Totais" — juros e multa NÃO seguem a ordem do cabeçalho.
 //
 // ⚠ AUTOVERIFICAÇÃO: só devolvemos a quebra se principal+juros+multa == total (tolerância de 1
 // centavo). Se não fechar, o split dos números colados não é confiável e devolvemos null — nunca
@@ -70,8 +72,18 @@ export function parseComprovanteArrecadacao(texto) {
     if (mPag) out.meioPagamento = mPag[1].toUpperCase();
   }
 
-  // ── Totais: a linha logo após o rótulo "Totais" traz principal, juros, multa e total ────────
-  // (nesta ordem — o cabeçalho sai invertido no texto, mas os VALORES seguem esta sequência).
+  // ── Totais: a linha logo após o rótulo "Totais" traz principal, MULTA, JUROS e total ────────
+  // Nesta ordem. O cabeçalho sai invertido no texto extraído: o DAS imprime
+  // "CódigoDescriçãoTotalJurosMultaPrincipal", cujo inverso é Principal·Multa·Juros·Total.
+  //
+  // Confirmado por aritmética no comprovante de INSS (principal 178,31 · 12,94 · 1,78 · 193,03):
+  //   12,94 / 178,31 = 7,26%  = 0,33%/dia × 22 dias  → MULTA de mora
+  //    1,78 / 178,31 = 1,00%                          → JUROS (1% no mês do pagamento)
+  // Os dois caem em valores canônicos da legislação, e concordam com a inversão do cabeçalho.
+  //
+  // ⚠ A autoverificação abaixo (soma == total) NÃO detecta troca entre juros e multa — a soma é a
+  // mesma dos dois jeitos. Por isso a ordem está fixada aqui por evidência, não pelo self-check.
+  // Importa: juros e multa viram lançamentos separados, em contas diferentes (501 e 506).
   const linhas = t.split(/\r?\n/).map((l) => l.trim());
   const iTotais = linhas.findIndex((l) => /^totais$/i.test(l));
   let valores = [];
@@ -88,7 +100,7 @@ export function parseComprovanteArrecadacao(texto) {
   }
 
   if (valores.length >= 4) {
-    const [p, j, m, tot] = valores.slice(-4).map(parseValorBR);
+    const [p, m, j, tot] = valores.slice(-4).map(parseValorBR);
     const soma = r2((p || 0) + (j || 0) + (m || 0));
     // A soma tem que bater com o total; senão o split dos números colados errou.
     if (tot != null && Math.abs(soma - tot) <= 0.01) {
