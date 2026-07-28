@@ -18,6 +18,11 @@ const TR_FATOR_R = "SERVICO_FATOR_R";
 
 const VIGENCIA = new Date("2018-01-01T00:00:00Z");
 
+// Alguns códigos entraram por CONSISTÊNCIA, não por classificação nova: quando a subclasse já
+// estava na tabela e era unânime, o irmão faltante herda o mesmo critério (ex.: 4399-1/03 "Obras
+// de alvenaria" já era Anexo IV → /01 e /99 idem). Os que NÃO têm irmão aqui ficam de fora até o
+// contador decidir — `scripts/cnaes-faltantes.mjs` lista os dois grupos separados.
+//
 // Formato: [cnae, descrição, tipoReceitaSugerido, ambiguo]
 const CNAES = [
   // ─── COMÉRCIO (Anexo I) ─────────────────────────────────────────────────
@@ -86,7 +91,11 @@ const CNAES = [
   ["4322303", "Instalações hidráulicas, sanitárias", TR_ANEXO_IV, false],
   ["4321500", "Instalações elétricas", TR_ANEXO_IV, false],
   ["4330404", "Serviços de pintura predial e similar", TR_ANEXO_IV, false],
+  ["4322301", "Instalações hidráulicas, sanitárias e de gás", TR_ANEXO_IV, false],
+  ["4330403", "Obras de acabamento em gesso e estuque", TR_ANEXO_IV, false],
+  ["4399101", "Administração de obras", TR_ANEXO_IV, false],
   ["4399103", "Obras de alvenaria", TR_ANEXO_IV, false],
+  ["4399199", "Serviços especializados para construção n.e.", TR_ANEXO_IV, false],
   ["6911701", "Advocacia", TR_ANEXO_IV, false],
   ["7490104", "Atividades de intermediação e agenciamento serviços/negócios em geral", TR_ANEXO_IV, true],
   ["8011102", "Atividades de vigilância ARMADA", TR_ANEXO_IV, false],
@@ -95,6 +104,7 @@ const CNAES = [
   // ─── SERVIÇOS FATOR R (informática) ────────────────────────────────────
   ["6201500", "Desenvolvimento de programas customizáveis", TR_FATOR_R, false],
   ["6201501", "Desenvolvimento de programas customizáveis", TR_FATOR_R, false],
+  ["6201502", "Web design", TR_FATOR_R, false],
   ["6202300", "Desenvolvimento e licenciamento de programas customizáveis", TR_FATOR_R, false],
   ["6203100", "Desenvolvimento e licenciamento de programas NÃO customizáveis", TR_FATOR_R, false],
   ["6204000", "Consultoria em tecnologia da informação", TR_FATOR_R, false],
@@ -109,6 +119,7 @@ const CNAES = [
   // sem sugestão de anexo na Aba Fiscal — o CNAE estava preenchido, mas não existia linha aqui.
   ["7319002", "Promoção de vendas", TR_FATOR_R, false],
   ["7319003", "Marketing direto", TR_FATOR_R, false],
+  ["7319004", "Consultoria em publicidade", TR_FATOR_R, false],
   ["7319099", "Outras atividades de publicidade", TR_FATOR_R, false],
   ["7320300", "Pesquisa de mercado e opinião pública", TR_FATOR_R, false],
 
@@ -144,6 +155,7 @@ const CNAES = [
   ["8513900", "Ensino fundamental", TR_FATOR_R, false],
   ["8520100", "Ensino médio", TR_FATOR_R, false],
   ["8531700", "Educação superior — graduação", TR_FATOR_R, false],
+  ["8599603", "Treinamento em informática", TR_FATOR_R, false],
   ["8599604", "Treinamento em desenvolvimento profissional", TR_FATOR_R, false],
   ["8599699", "Outras atividades de ensino n.e.", TR_FATOR_R, true],
 
