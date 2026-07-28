@@ -123,14 +123,33 @@ try {
   console.log(`=== HTTP ${resp.status} ===`);
   const data = resp.data;
   // O PDF (base64) pode ser enorme: mostra só o tamanho, não o conteúdo.
-  const resumido = JSON.parse(JSON.stringify(data ?? null, (k, v) =>
+  const encurtar = (obj) => JSON.parse(JSON.stringify(obj ?? null, (k, v) =>
     (typeof v === "string" && v.length > 300 ? `«${v.length} chars — provável base64/PDF»` : v)));
-  console.log("\n=== CORPO (strings longas resumidas) ===");
-  console.log(JSON.stringify(resumido, null, 2).slice(0, 6000));
+  console.log("\n=== ENVELOPE (strings longas resumidas) ===");
+  console.log(JSON.stringify(encurtar(data), null, 2).slice(0, 4000));
+
+  // `dados` e string JSON escapada — e AQUI que mora o comprovante e, se existirem, a DATA e o
+  // VALOR do pagamento. Abre e mostra a ESTRUTURA (chaves + valores curtos); o PDF vira o tamanho.
+  const dadosRaw = data?.dados ?? data?.Dados ?? null;
+  if (dadosRaw != null) {
+    let parsed = dadosRaw;
+    if (typeof dadosRaw === "string") { try { parsed = JSON.parse(dadosRaw); } catch { parsed = null; } }
+    console.log("\n=== DADOS (conteúdo do comprovante) ===");
+    if (parsed && typeof parsed === "object") {
+      console.log(JSON.stringify(encurtar(parsed), null, 2).slice(0, 6000));
+      const achatar = (o, pre = "") => Object.entries(o).flatMap(([k, v]) =>
+        (v && typeof v === "object" && !Array.isArray(v) ? achatar(v, `${pre}${k}.`) : [`${pre}${k}`]));
+      console.log("\nCampos disponíveis: " + achatar(parsed).join(", "));
+    } else if (typeof dadosRaw === "string") {
+      console.log(`(nao e JSON — string de ${dadosRaw.length} chars; provavelmente o PDF em base64 direto)`);
+      console.log(`inicio: ${dadosRaw.slice(0, 80)}...`);
+    }
+  }
 
   console.log("\n=== O QUE OLHAR ===");
-  console.log("• mensagens[]: código/texto dizem se o idServiço existe e se o payload foi aceito.");
-  console.log("• dados: deve trazer o comprovante (PDF base64) e/ou data/valor do pagamento.");
+  console.log("• Em 'Campos disponíveis', procure a DATA e o VALOR do pagamento — é o que permite");
+  console.log("  dar baixa com os dados reais em vez de 'hoje' + valor da guia.");
+  console.log("• ✅ Payload já validado: {\"numeroDocumento\":\"<só dígitos>\"} → 200 + comprovante.");
   console.log("• Erro-PAGTOWEB-00099 = erro INTERNO do PAGTOWEB: o serviço existe e recebeu a chamada,");
   console.log("  mas não gostou do `dados`. Tente: --digitos, --campo=<outro nome>, --dados='{...}'.");
   console.log("• O 'Protocolo de erro' da mensagem identifica a falha no suporte do SERPRO.");

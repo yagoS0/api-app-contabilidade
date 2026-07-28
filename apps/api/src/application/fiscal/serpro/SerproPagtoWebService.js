@@ -81,8 +81,16 @@ function extractNotFoundMessage(payload) {
   return null;
 }
 
+// ✅ VALIDADO em produção (27/07/2026) com o probe `scripts/probe-pagtoweb.mjs`:
+//   {"numeroDocumento":"07162619444412336"} → HTTP 200 · Sucesso-PAGTOWEB-00000 + comprovante.
+// Duas coisas confirmadas na prática:
+//   • o campo é `numeroDocumento` — `numeroDocumentoArrecadacao` devolve
+//     "EntradaIncorreta-PAGTOWEB-00001: Parâmetro de entrada ... inválido";
+//   • o valor tem que ser SÓ DÍGITOS. Com a máscara do documento (07.16.26194.4441233-6) o
+//     serviço responde 500 / Erro-PAGTOWEB-00099 (erro interno genérico) — era isso que fazia a
+//     confirmação de pagamento nunca funcionar.
 function buildPagtoWebPayload({ numeroDocumento }) {
-  const doc = String(numeroDocumento || "").trim();
+  const doc = String(numeroDocumento || "").replace(/\D+/g, "");
   if (!doc) {
     const err = new Error("numero_documento_required");
     err.code = "SERPRO_PAGTOWEB_NUMERO_DOCUMENTO_REQUIRED";
@@ -93,7 +101,6 @@ function buildPagtoWebPayload({ numeroDocumento }) {
       idSistema: SERPRO_PAGTOWEB_SYSTEM,
       idServico: SERPRO_PAGTOWEB_SERVICE_COMPROVANTE,
       versaoSistema: "1.0",
-      // ⚠ estrutura de `dados` a confirmar no sandbox (verificadoTrial:false).
       dados: JSON.stringify({ numeroDocumento: doc }),
     },
   };
