@@ -23,16 +23,16 @@ model Client {
 }
 
 model Company {
-  id                       String           @id @default(uuid())
+  id                       String            @id @default(uuid())
   clientId                 String
   razaoSocial              String
-  cnpj                     String           @unique
+  cnpj                     String            @unique
   nomeFantasia             String?
   regimeTributario         String?
   simplesAnexo             String?
   simplesDataOpcao         DateTime?
   cnaePrincipal            String?
-  cnaesSecundarios         String[]         @default([])
+  cnaesSecundarios         String[]          @default([])
   enderecoJson             Json?
   atividades               String[]
   porte                    String?
@@ -41,7 +41,7 @@ model Company {
   endereco                 String?
   email                    String?
   telefone                 String?
-  capitalSocial            Decimal?         @db.Decimal(18, 2)
+  capitalSocial            Decimal?          @db.Decimal(18, 2)
   dataAbertura             DateTime?
   quantidadeSocios         Int?
   inscricaoMunicipal       String?
@@ -49,7 +49,7 @@ model Company {
   codigoServicoMunicipal   String?
   rpsSerie                 String?
   rpsNumero                String?
-  optanteSimples           Boolean?         @default(false)
+  optanteSimples           Boolean?          @default(false)
   regimeEspecialTributacao String?
   // ── Ficha de cadastro do escritório ──────────────────────────────────────────
   /// Quem abriu a empresa (contato/parceiro que trouxe o cliente). Ex.: "JEFFERSON".
@@ -66,7 +66,7 @@ model Company {
   /// Nº do diário contábil.
   diarioNumero             String?
   /// Empresa com desoneração da folha ("C/DESONE" na ficha).
-  desoneracao              Boolean?         @default(false)
+  desoneracao              Boolean?          @default(false)
   /// Última alteração contratual (ex.: "2" em 14/04/2026).
   alteracaoNumero          String?
   alteracaoData            DateTime?
@@ -76,9 +76,9 @@ model Company {
   certPasswordEnc          String?
   certExpiresAt            DateTime?
   certUploadedAt           DateTime?
-  createdAt                DateTime         @default(now())
-  updatedAt                DateTime         @updatedAt
-  client                   Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  client                   Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
   partners                 Partner[]
   regimeHistorico          RegimeHistorico[]
   invoices                 Invoice[]
@@ -93,23 +93,23 @@ model Company {
 /// fonte do bloco "RELAÇÃO DOS SÓCIOS" da ficha: nome, %, CPF (documento), RG, nascimento
 /// e a data de saída — sócio que saiu continua no histórico, só marcado com dataSaida.
 model Partner {
-  id            String    @id @default(uuid())
-  companyId     String
-  name          String
-  phone         String?
-  email         String?
-  participacao  Decimal?  @db.Decimal(5, 2)
-  documento     String?
-  representante Boolean   @default(false)
+  id             String    @id @default(uuid())
+  companyId      String
+  name           String
+  phone          String?
+  email          String?
+  participacao   Decimal?  @db.Decimal(5, 2)
+  documento      String?
+  representante  Boolean   @default(false)
   dataNascimento DateTime?
-  rg            String?
+  rg             String?
   /// Órgão emissor do RG (ex.: "DIC/RJ").
   rgOrgaoEmissor String?
   /// Quando saiu da sociedade. Nulo = sócio atual.
-  dataSaida     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  company       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  dataSaida      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
 }
@@ -292,18 +292,18 @@ model AdnDocument {
 // ==========================
 
 model PortalClient {
-  id                     String   @id @default(uuid())
+  id                     String    @id @default(uuid())
   // Referência opcional para a Company legada (certificado, cadastros, etc.)
-  companyId              String?  @unique
+  companyId              String?   @unique
   razao                  String
-  cnpj                   String   @unique
+  cnpj                   String    @unique
   /// E-mail só para envio de guias (pode repetir entre empresas). Não é login do portal.
   guideNotificationEmail String?
   /// Indica se há pró-labore (exige guia INSS na competência de referência para alertas).
-  hasProlabore           Boolean  @default(false)
+  hasProlabore           Boolean   @default(false)
   /// Empresa zerada / sem movimento: não gera impostos; só enviamos obrigações zeradas.
   /// No card, oculta as guias/obrigações e sinaliza que é zerada.
-  empresaZerada          Boolean  @default(false)
+  empresaZerada          Boolean   @default(false)
   inscricaoMunicipal     String?
   uf                     String?
   municipio              String?
@@ -312,39 +312,41 @@ model PortalClient {
   status                 String    @default("ATIVA") // ATIVA | SUSPENSA
   suspendedAt            DateTime?
   suspendedReason        String?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  integrationSettings  PortalIntegrationSettings?
-  syncState            PortalSyncState?
-  invoices             PortalInvoice[]
-  guides               Guide[]
-  invoiceEvents        PortalInvoiceEvent[]
-  syncJobs             PortalInvoiceSyncJob[]
-  manifestacoes        NfeManifestacaoQueue[]
-  apuracoes            Apuracao[]
-  deparasAnexo         DeparaAnexo[]
-  companyClientUsers   CompanyClientUser[]
-  companyFirmAccess    CompanyFirmAccess[]
-  taxDocuments         TaxDocument[]
-  chartOfAccounts      ChartOfAccount[]
-  accountingEntries    AccountingEntry[]
-  monthlyCirculars     CompanyMonthlyCircular[]
-  accountingEntryRules AccountingEntryRule[]
-  fiscalExecutionLogs  FiscalExecutionLog[]
-  accountingFunctions  AccountingFunction[]
-  parcelamentos        Parcelamento[]
-  procuracoes          Procuracao[]
+  integrationSettings     PortalIntegrationSettings?
+  syncState               PortalSyncState?
+  invoices                PortalInvoice[]
+  guides                  Guide[]
+  invoiceEvents           PortalInvoiceEvent[]
+  syncJobs                PortalInvoiceSyncJob[]
+  manifestacoes           NfeManifestacaoQueue[]
+  apuracoes               Apuracao[]
+  deparasAnexo            DeparaAnexo[]
+  companyClientUsers      CompanyClientUser[]
+  companyFirmAccess       CompanyFirmAccess[]
+  taxDocuments            TaxDocument[]
+  chartOfAccounts         ChartOfAccount[]
+  accountingEntries       AccountingEntry[]
+  monthlyCirculars        CompanyMonthlyCircular[]
+  accountingEntryRules    AccountingEntryRule[]
+  fiscalExecutionLogs     FiscalExecutionLog[]
+  accountingFunctions     AccountingFunction[]
+  parcelamentos           Parcelamento[]
+  procuracoes             Procuracao[]
   pendenciasPosFechamento PendenciaPosFechamento[]
   // Q14 — refundação da apuração (cadastro como autoridade)
-  cadastroFiscal       CadastroFiscal?
-  produtosServicos     ProdutoServico[]
-  regrasClassificacao  RegraClassificacao[]
-  filaPendencias       FilaPendencia[]
-  apuracaoSnapshots    ApuracaoSnapshot[]
-  logsDecisaoFatorR    LogDecisaoFatorR[]
-  fiscalStatus         CompanyFiscalStatus?
-  rotinas              CompanyRotina[]
+  cadastroFiscal          CadastroFiscal?
+  produtosServicos        ProdutoServico[]
+  regrasClassificacao     RegraClassificacao[]
+  filaPendencias          FilaPendencia[]
+  apuracaoSnapshots       ApuracaoSnapshot[]
+  logsDecisaoFatorR       LogDecisaoFatorR[]
+  fiscalStatus            CompanyFiscalStatus?
+  rotinas                 CompanyRotina[]
+  documentos              CompanyDocument[]
+  anotacoes               CompanyNote[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -377,24 +379,70 @@ model CompanyRotina {
   @@map("company_rotinas")
 }
 
+/// Documentos societários/cadastrais da empresa (contrato social, cartão CNPJ, inscrições…).
+/// Até aqui só existia lugar para guia e nota fiscal: contrato social e inscrições viviam fora do
+/// sistema, e toda vez que o cliente pedia alguém garimpava em e-mail/pasta local.
+/// O arquivo NÃO fica no banco — `fileKey` aponta pro GuideStorageService (LOCAL/S3/R2), o mesmo
+/// que guarda as guias, justamente pra herdar a resolução de volume já corrigida.
+model CompanyDocument {
+  id             String    @id @default(uuid())
+  portalClientId String
+  /// CONTRATO_SOCIAL | CARTAO_CNPJ | INSCRICAO_ESTADUAL | INSCRICAO_MUNICIPAL | ALVARA | PROCURACAO | OUTRO
+  tipo           String
+  /// Nome de exibição (o do arquivo enviado, ou um rótulo dado pelo contador).
+  nome           String
+  fileKey        String
+  mimeType       String
+  bytes          Int
+  /// Só para documento que vence (alvará, procuração). Null = não expira.
+  validade       DateTime?
+  uploadedById   String?
+  createdAt      DateTime  @default(now())
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, tipo])
+  @@map("company_documents")
+}
+
+/// Anotações do contador sobre a empresa — o que hoje mora na cabeça de quem atende.
+/// `fixada` é EXCLUSIVA: fixar uma desafixa a anterior (ver CompanyNotesService). A fixada aparece
+/// sempre no topo, independente da ordenação escolhida.
+model CompanyNote {
+  id             String   @id @default(uuid())
+  portalClientId String
+  texto          String
+  /// ALTA | MEDIA | BAIXA
+  importancia    String   @default("MEDIA")
+  fixada         Boolean  @default(false)
+  autorId        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, fixada])
+  @@map("company_notes")
+}
+
 // Q40 Fase C: relatório de situação fiscal (SITFIS) por empresa — última consulta.
 // 1 linha por empresa (@unique). ADD-only; sob demanda (não em massa — custo por chamada).
 model CompanyFiscalStatus {
-  id                 String   @id @default(uuid())
-  portalClientId     String   @unique
-  tipo               Int      @default(2) // 1=CPF, 2=CNPJ
-  situacao           String?  // resumo textual/derivado (opcional)
-  protocolo          String?  // protocoloRelatorio do SOLICITARPROTOCOLO91
-  relatorioPdfFileId String?  // PDF do relatório (quando o SERPRO devolve PDF base64)
-  texto              String?  // relatório em texto (quando aplicável)
+  id                 String    @id @default(uuid())
+  portalClientId     String    @unique
+  tipo               Int       @default(2) // 1=CPF, 2=CNPJ
+  situacao           String? // resumo textual/derivado (opcional)
+  protocolo          String? // protocoloRelatorio do SOLICITARPROTOCOLO91
+  relatorioPdfFileId String? // PDF do relatório (quando o SERPRO devolve PDF base64)
+  texto              String? // relatório em texto (quando aplicável)
   rawPayload         Json?
-  checkedAt          DateTime @default(now()) // última TENTATIVA (sobe até quando volta "processando")
+  checkedAt          DateTime  @default(now()) // última TENTATIVA (sobe até quando volta "processando")
   // Última consulta que realmente TROUXE relatório. A trava de 4h é ancorada aqui, não em
   // checkedAt: senão uma tentativa que voltou "processando" (sem PDF) iniciava a trava e deixava
   // a empresa 4h sem conseguir buscar a situação fiscal.
   ultimoRelatorioEm  DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
@@ -456,29 +504,31 @@ model Guide {
   // Portal Cliente (#3.1): guia só aparece no app do cliente quando o contador a "libera".
   liberadaCliente Boolean   @default(false)
   liberadaEm      DateTime?
-  liberadaPor     String?   // userId do contador que liberou (auditoria)
+  liberadaPor     String? // userId do contador que liberou (auditoria)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Q9: link opcional pra um Parcelamento (quando guia é parcela de parcelamento).
-  parcelamentoId String?
-  numeroParcela  Int?
+  parcelamentoId     String?
+  numeroParcela      Int?
   // Q21 (spec v2): metadados da parcela + estado de baixa.
   quantidadeParcelas Int?
-  anoMesParcela      String?   // YYYYMM (competência da parcela, chave da API)
-  lancamentoId       String?   // lançamento gerado (provisão ou pagamento)
+  anoMesParcela      String? // YYYYMM (competência da parcela, chave da API)
+  lancamentoId       String? // lançamento gerado (provisão ou pagamento)
   baixada            Boolean   @default(false)
   dataBaixa          DateTime?
   // Q28 Fase 3: estado explícito da PARCELA (só guias de parcelamento usam).
   // PREVISTA | EM_ATRASO | PAGA_A_CONFERIR | DIVERGENTE | CONFIRMADA | CANCELADA
   parcelaEstado      String?
 
-  portalClient  PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
-  legacyCompany Company?      @relation(fields: [legacyCompanyId], references: [id], onDelete: SetNull)
-  parcelamento  Parcelamento? @relation("GuideParcelamento", fields: [parcelamentoId], references: [id], onDelete: SetNull)
+  portalClient    PortalClient?    @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+  legacyCompany   Company?         @relation(fields: [legacyCompanyId], references: [id], onDelete: SetNull)
+  parcelamento    Parcelamento?    @relation("GuideParcelamento", fields: [parcelamentoId], references: [id], onDelete: SetNull)
   tributosParcela TributoParcela[]
 
+  // Q21: ingestão idempotente da mesma parcela (parcial WHERE parcelamentoId NOT NULL via SQL).
+  @@unique([parcelamentoId, numeroParcela])
   @@index([portalClientId, competencia, tipo])
   @@index([status])
   @@index([emailStatus, emailNextRetryAt])
@@ -489,8 +539,6 @@ model Guide {
   @@index([portalClientId, parcelaEstado])
   // Portal Cliente (#3.1): filtro do /client por guias liberadas.
   @@index([portalClientId, liberadaCliente, competencia])
-  // Q21: ingestão idempotente da mesma parcela (parcial WHERE parcelamentoId NOT NULL via SQL).
-  @@unique([parcelamentoId, numeroParcela])
 }
 
 // Q8.B: model GuideIngestionJob removido — sem consumidores no código (varredura confirmou).
@@ -514,11 +562,11 @@ model AppSetting {
 // Sem FK de propósito — o log de DELETE precisa sobreviver à empresa/cert excluído.
 model CertAccessLog {
   id             String   @id @default(uuid())
-  portalClientId String?  // null = certificado do escritório (SERPRO)
-  certKind       String   // COMPANY_A1 | OFFICE_SERPRO
-  action         String   // DECRYPT | UPLOAD | DELETE
-  consumer       String?  // CertResolver | SerproAuthService | AdnNotasService | DfeSyncService | upload | ...
-  actorUserId    String?  // null nas automáticas (workers)
+  portalClientId String? // null = certificado do escritório (SERPRO)
+  certKind       String // COMPANY_A1 | OFFICE_SERPRO
+  action         String // DECRYPT | UPLOAD | DELETE
+  consumer       String? // CertResolver | SerproAuthService | AdnNotasService | DfeSyncService | upload | ...
+  actorUserId    String? // null nas automáticas (workers)
   workerName     String?
   success        Boolean  @default(true)
   errorCode      String?
@@ -578,27 +626,27 @@ model PortalIntegrationSettings {
 }
 
 model PortalSyncState {
-  clientId     String    @id
-  lastCursor   BigInt    @default(0) // NSU/sequence (ADN/NFS-e)
-  lastSyncAt   DateTime?
-  state        String    @default("OK") // OK|RUNNING|ERROR
-  lastError    String?
-  lockUntil    DateTime?
-  backoffUntil DateTime?
+  clientId        String    @id
+  lastCursor      BigInt    @default(0) // NSU/sequence (ADN/NFS-e)
+  lastSyncAt      DateTime?
+  state           String    @default("OK") // OK|RUNNING|ERROR
+  lastError       String?
+  lockUntil       DateTime?
+  backoffUntil    DateTime?
   // Q12.B: cursor separado para DFe/SEFAZ (NF-e) — ADN e DFe rodam independentes.
-  dfeNsuCursor   BigInt    @default(0)
-  dfeLastSyncAt  DateTime?
-  dfeLastError   String?
+  dfeNsuCursor    BigInt    @default(0)
+  dfeLastSyncAt   DateTime?
+  dfeLastError    String?
   dfeBackoffUntil DateTime?
   // Q12.B+: cursor separado para ADN/NFS-e do módulo Notas (não confundir com lastCursor,
   // que é usado pelo AdnSyncService legado e grava em AdnDocument). Esse aqui é exclusivo
   // do AdnNotasService que grava em PortalInvoice.
-  adnNsuCursor      BigInt    @default(0)
-  adnLastSyncAt     DateTime?
-  adnLastError      String?
-  adnBackoffUntil   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  adnNsuCursor    BigInt    @default(0)
+  adnLastSyncAt   DateTime?
+  adnLastError    String?
+  adnBackoffUntil DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   client PortalClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
@@ -643,9 +691,9 @@ model PortalInvoice {
   // Q12.A: marca quando a nota chegou em competência já fechada (vai pra fila de pendências)
   competenciaPosFechamento Boolean @default(false)
 
-  client PortalClient         @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  events PortalInvoiceEvent[]
-  itens  NotaItem[]
+  client     PortalClient             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  events     PortalInvoiceEvent[]
+  itens      NotaItem[]
   pendencias PendenciaPosFechamento[]
 
   @@unique([clientId, chaveAcesso])
@@ -702,22 +750,22 @@ model PortalInvoiceSyncJob {
 // (NT 2012.002 — evento 210210 Ciência libera XML completo no próximo DFe).
 // Idempotência: 1 chaveAcesso só pode ter 1 evento de cada tpEvento.
 model NfeManifestacaoQueue {
-  id            String   @id @default(uuid())
-  clientId      String
-  chaveAcesso   String   // chave 44 dígitos da NF-e a manifestar
-  tpEvento      String   // "210210" (Ciência), "210200" (Confirmação),
-                         // "210220" (Desconhecimento), "210240" (Não Realizada)
-  nSeqEvento    Int      @default(1)
-  status        String   @default("PENDING") // PENDING | SENT | ERROR | DUPLICATE
-  attempts      Int      @default(0)
-  lastError     String?
-  lastResponse  String?  // últimos 1KB da resposta SEFAZ pra debug
+  id             String    @id @default(uuid())
+  clientId       String
+  chaveAcesso    String // chave 44 dígitos da NF-e a manifestar
+  tpEvento       String // "210210" (Ciência), "210200" (Confirmação),
+  // "210220" (Desconhecimento), "210240" (Não Realizada)
+  nSeqEvento     Int       @default(1)
+  status         String    @default("PENDING") // PENDING | SENT | ERROR | DUPLICATE
+  attempts       Int       @default(0)
+  lastError      String?
+  lastResponse   String? // últimos 1KB da resposta SEFAZ pra debug
   protocoloSefaz String? // nProt do retorno (cStat 135)
-  cStat         String?  // código retorno SEFAZ
-  xMotivo       String?  // texto retorno SEFAZ
-  sentAt        DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  cStat          String? // código retorno SEFAZ
+  xMotivo        String? // texto retorno SEFAZ
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   client PortalClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
@@ -794,7 +842,7 @@ model AccountingEntry {
   portalClientId        String
   circularId            String?
   ruleId                String?
-  sourceGuideId         String?   // Guide que originou esta provisão (DARFs, INSS, etc.) — null para entries manuais
+  sourceGuideId         String? // Guide que originou esta provisão (DARFs, INSS, etc.) — null para entries manuais
   eventType             String?
   data                  DateTime
   competencia           String
@@ -817,15 +865,15 @@ model AccountingEntry {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  lines             AccountingEntryLine[]
-  portalClient      PortalClient            @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
-  circular          CompanyMonthlyCircular? @relation(fields: [circularId], references: [id], onDelete: SetNull)
-  rule              AccountingEntryRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  sourceGuide       Guide?                  @relation("GuideToEntries", fields: [sourceGuideId], references: [id], onDelete: SetNull)
-  openEntry         AccountingEntry?        @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
-  baixas            AccountingEntry[]       @relation("BaixaToOpen")
-  parcelamento      Parcelamento?           @relation("ParcelamentoParcelas", fields: [parcelamentoId], references: [id], onDelete: SetNull)
-  parcelamentoAbertura Parcelamento?        @relation("ParcAberturaEntry")
+  lines                AccountingEntryLine[]
+  portalClient         PortalClient            @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  circular             CompanyMonthlyCircular? @relation(fields: [circularId], references: [id], onDelete: SetNull)
+  rule                 AccountingEntryRule?    @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  sourceGuide          Guide?                  @relation("GuideToEntries", fields: [sourceGuideId], references: [id], onDelete: SetNull)
+  openEntry            AccountingEntry?        @relation("BaixaToOpen", fields: [openEntryId], references: [id], onDelete: SetNull)
+  baixas               AccountingEntry[]       @relation("BaixaToOpen")
+  parcelamento         Parcelamento?           @relation("ParcelamentoParcelas", fields: [parcelamentoId], references: [id], onDelete: SetNull)
+  parcelamentoAbertura Parcelamento?           @relation("ParcAberturaEntry")
 
   @@unique([portalClientId, competencia, eventType, origem])
   @@unique([sourceGuideId, eventType], name: "uniq_entry_per_guide_event")
@@ -879,31 +927,31 @@ model CompanyMonthlyCircular {
   hasAccountingDivergence     Boolean   @default(false)
   accountingDivergenceMessage String?
   // Q12.A: máquina de estados por (empresa, competência) do módulo Notas
-  estado              String   @default("aberto")
+  estado                      String    @default("aberto")
   // aberto | em_conferencia | fechado | calculado | revisado | transmitido | confirmado | erro
-  lockedAt            DateTime? // quando virou "fechado"
-  lockedByUserId      String?
-  reopenedAt          DateTime?
-  reopenedByUserId    String?
-  reopenedReason      String?
-  fs12Manual          Decimal? @db.Decimal(18, 2) // Q12.C: FS12 digitado pelo contador
-  fs12Origem          String?  // MANUAL | ESOCIAL (futuro)
-  fatorR              Decimal? @db.Decimal(6, 4)  // 0.28 = 28%
-  rb12                Decimal? @db.Decimal(18, 2) // soma móvel 12m
+  lockedAt                    DateTime? // quando virou "fechado"
+  lockedByUserId              String?
+  reopenedAt                  DateTime?
+  reopenedByUserId            String?
+  reopenedReason              String?
+  fs12Manual                  Decimal?  @db.Decimal(18, 2) // Q12.C: FS12 digitado pelo contador
+  fs12Origem                  String? // MANUAL | ESOCIAL (futuro)
+  fatorR                      Decimal?  @db.Decimal(6, 4) // 0.28 = 28%
+  rb12                        Decimal?  @db.Decimal(18, 2) // soma móvel 12m
   // Q17: fechamento CONTÁBIL do mês (distinto do `estado` da apuração/notas).
   // Setado quando o contador fecha a empresa após lançar tudo; null = aberta.
-  fechadoContabilEm   DateTime?
-  fechadoContabilPor  String?
+  fechadoContabilEm           DateTime?
+  fechadoContabilPor          String?
   // Q47: contador confirma que a folha/pró-labore do mês foi lançada. Trava o fechamento contábil
   // enquanto não marcada (null/false). Por competência.
-  folhaProlaboreOk    Boolean?
+  folhaProlaboreOk            Boolean?
   // Checklist de conferência do mês (mesma regra da folha: trava o fechamento até marcar).
   // Cada uma é uma confirmação MANUAL do contador — o sistema não tem como saber se "todas as
   // despesas do mês entraram", só quem lançou sabe.
-  despesasOk          Boolean?
-  receitasOk          Boolean?
-  provisoesOk         Boolean?
-  pagamentosOk        Boolean?
+  despesasOk                  Boolean?
+  receitasOk                  Boolean?
+  provisoesOk                 Boolean?
+  pagamentosOk                Boolean?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
@@ -940,13 +988,13 @@ model AccountingEntryRule {
 }
 
 model AccountingEntryLine {
-  id        String  @id @default(uuid())
-  entryId   String
-  conta     String
-  tipo      String  // D | C
-  valor     Decimal @db.Decimal(18, 2)
-  ordem     Int     @default(0)
-  historico String? // Histórico opcional por linha (ex: pró-labore tem histórico distinto por D/C)
+  id            String  @id @default(uuid())
+  entryId       String
+  conta         String
+  tipo          String // D | C
+  valor         Decimal @db.Decimal(18, 2)
+  ordem         Int     @default(0)
+  historico     String? // Histórico opcional por linha (ex: pró-labore tem histórico distinto por D/C)
   // Q21: papel da linha em lançamentos de parcelamento + tributo (aprendizado por tributo)
   tipoLinha     String? // PARC_DAS | JUROS | MULTA | TOTAL
   codigoTributo String?
@@ -965,7 +1013,7 @@ model AccountingHistorico {
   historicoSugerido     String? // histórico digitado pelo contador (OFX); separa "descrição do banco" de "histórico contábil"
   contaDebito           String?
   contaCredito          String?
-  eventType             String?  // RECEITA_SERVICO|RECEITA_VENDA_SEM_ST|RECEITA_VENDA_COM_ST|DAS_SIMPLES|... — memória do par D/C para entries automáticos
+  eventType             String? // RECEITA_SERVICO|RECEITA_VENDA_SEM_ST|RECEITA_VENDA_COM_ST|DAS_SIMPLES|... — memória do par D/C para entries automáticos
   usageCount            Int      @default(0)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -982,7 +1030,7 @@ model AccountingHistorico {
 // Ao "Aplicar função", contador preenche apenas valores; sistema cria os N entries.
 model AccountingFunction {
   id              String   @id @default(uuid())
-  portalClientId  String?  // null = GLOBAL (vale pra qualquer empresa); preenchido = só esta
+  portalClientId  String? // null = GLOBAL (vale pra qualquer empresa); preenchido = só esta
   name            String
   description     String?
   isSystem        Boolean  @default(false) // true = template de sistema (não editável/deletável)
@@ -993,10 +1041,10 @@ model AccountingFunction {
   updatedAt       DateTime @updatedAt
 
   entries                  AccountingFunctionEntry[]
-  portalClient             PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
-  parcelamentosAsOpening   Parcelamento[] @relation("ParcOpeningTemplate")
-  parcelamentosAsPayment   Parcelamento[] @relation("ParcPaymentTemplate")
-  parcelamentosAsRescision Parcelamento[] @relation("ParcRescisionTemplate")
+  portalClient             PortalClient?             @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  parcelamentosAsOpening   Parcelamento[]            @relation("ParcOpeningTemplate")
+  parcelamentosAsPayment   Parcelamento[]            @relation("ParcPaymentTemplate")
+  parcelamentosAsRescision Parcelamento[]            @relation("ParcRescisionTemplate")
 
   @@index([portalClientId])
   @@index([isSystem])
@@ -1008,12 +1056,12 @@ model AccountingFunctionEntry {
   id         String  @id @default(uuid())
   functionId String
   ordem      Int     @default(0)
-  historico  String  // template (tokens {{competencia}}, {{companyName}}, {{cnpj}})
-  tipo       String  // DESPESA | PROVISAO | RECEITA | etc.
+  historico  String // template (tokens {{competencia}}, {{companyName}}, {{cnpj}})
+  tipo       String // DESPESA | PROVISAO | RECEITA | etc.
   subtipo    String?
 
   lines    AccountingFunctionLine[]
-  function AccountingFunction @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  function AccountingFunction       @relation(fields: [functionId], references: [id], onDelete: Cascade)
 
   @@index([functionId])
   @@map("accounting_function_entries")
@@ -1037,22 +1085,22 @@ model AccountingFunctionLine {
 // + 1 entry opcional de RESCISÃO (quando rescindido).
 // Guides são linkadas opcionalmente quando contador sobe DARF mensal do parcelamento.
 model Parcelamento {
-  id                          String   @id @default(uuid())
-  portalClientId              String
-  label                       String   // ex: "RE-PARCELAMENTO SIMPLES NACIONAL DE SET/OUT/2024..."
-  kind                        String   // SIMPLES | INSS | DARF | OUTRO
+  id             String @id @default(uuid())
+  portalClientId String
+  label          String // ex: "RE-PARCELAMENTO SIMPLES NACIONAL DE SET/OUT/2024..."
+  kind           String // SIMPLES | INSS | DARF | OUTRO
 
   // Q21 (spec v2): modalidade oficial + número do parcelamento (RFB/SERPRO)
-  tipo                        String?  // PARCSN|PARCSN_ESPECIAL|PERT_SN|RELP_SN|PARCMEI|PARCMEI_ESPECIAL|PERT_MEI|RELP_MEI|OUTRO
-  numeroParcelamento          String?  // número oficial
-  valorMulta                  Decimal? @db.Decimal(18, 2) // multa consolidada
-  valorParcelaReferencia      Decimal? @db.Decimal(18, 2) // valor nominal/contratado da parcela
-  parcelaInicial              Int?     // nº da 1ª parcela conhecida no sistema (suporta começar no meio)
-  dataAdesao                  DateTime?
-  origem                      String   @default("MANUAL") // MANUAL | SERPRO
+  tipo                   String? // PARCSN|PARCSN_ESPECIAL|PERT_SN|RELP_SN|PARCMEI|PARCMEI_ESPECIAL|PERT_MEI|RELP_MEI|OUTRO
+  numeroParcelamento     String? // número oficial
+  valorMulta             Decimal?  @db.Decimal(18, 2) // multa consolidada
+  valorParcelaReferencia Decimal?  @db.Decimal(18, 2) // valor nominal/contratado da parcela
+  parcelaInicial         Int? // nº da 1ª parcela conhecida no sistema (suporta começar no meio)
+  dataAdesao             DateTime?
+  origem                 String    @default("MANUAL") // MANUAL | SERPRO
   // Q28 Fase 4: grupo do parcelamento. sn_mei = Simples/MEI (integra SERPRO); outros = PGFN/estadual/
   // municipal (100% manual, nunca chama SERPRO). Derivado do `tipo` quando não informado.
-  grupo                       String?  // sn_mei | outros
+  grupo                  String? // sn_mei | outros
 
   // Templates (3 kinds em AccountingFunction): abertura, pagamento da parcela, rescisão
   templateOpeningFunctionId   String?
@@ -1060,46 +1108,46 @@ model Parcelamento {
   templateRescisionFunctionId String?
 
   // Estrutura financeira
-  numEntradas                 Int      @default(0) // quantas das primeiras parcelas são "entrada"
-  numParcelas                 Int                  // total inclui entradas (ex: 52 = 1 entrada + 51)
-  principalPerParcela         Decimal  @db.Decimal(18, 2)
-  principalTotal              Decimal? @db.Decimal(18, 2)
-  jurosTotal                  Decimal? @db.Decimal(18, 2)
-  totalValue                  Decimal  @db.Decimal(18, 2)
+  numEntradas         Int      @default(0) // quantas das primeiras parcelas são "entrada"
+  numParcelas         Int // total inclui entradas (ex: 52 = 1 entrada + 51)
+  principalPerParcela Decimal  @db.Decimal(18, 2)
+  principalTotal      Decimal? @db.Decimal(18, 2)
+  jurosTotal          Decimal? @db.Decimal(18, 2)
+  totalValue          Decimal  @db.Decimal(18, 2)
 
   // Calendário
-  dataAbertura                DateTime?
-  competenciaInicial          String                // YYYY-MM da 1ª parcela
-  diaPagamento                Int      @default(1)
-  periodosReferenciados       String?
+  dataAbertura          DateTime?
+  competenciaInicial    String // YYYY-MM da 1ª parcela
+  diaPagamento          Int       @default(1)
+  periodosReferenciados String?
 
   // Q28 Fase 1: configuração de lançamento POR PARCELAMENTO (papéis/contas), independente entre
   // PROVISÃO e PAGAMENTO. Cada uma = lista de linhas { papel, tipo (D|C), conta }. Quando nula, o
   // sistema usa os papéis padrão + MapaContaTributo (memória). Editável pela Circular/aba Guias (Fase 2).
-  configProvisao              Json?
-  configPagamento             Json?
+  configProvisao  Json?
+  configPagamento Json?
 
-  status                      String   @default("ATIVO") // ATIVO | QUITADO | RESCINDIDO
-  observacoes                 String?
-  createdByUserId             String?
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
+  status          String   @default("ATIVO") // ATIVO | QUITADO | RESCINDIDO
+  observacoes     String?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   // FK 1:1 pra entry de abertura
-  aberturaEntryId             String?  @unique
-  aberturaEntry               AccountingEntry?    @relation("ParcAberturaEntry", fields: [aberturaEntryId], references: [id], onDelete: SetNull)
+  aberturaEntryId String?          @unique
+  aberturaEntry   AccountingEntry? @relation("ParcAberturaEntry", fields: [aberturaEntryId], references: [id], onDelete: SetNull)
 
-  portalClient                PortalClient        @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
-  templateOpening             AccountingFunction? @relation("ParcOpeningTemplate", fields: [templateOpeningFunctionId], references: [id], onDelete: SetNull)
-  templatePayment             AccountingFunction? @relation("ParcPaymentTemplate", fields: [templatePaymentFunctionId], references: [id], onDelete: SetNull)
-  templateRescision           AccountingFunction? @relation("ParcRescisionTemplate", fields: [templateRescisionFunctionId], references: [id], onDelete: SetNull)
-  parcelas                    AccountingEntry[]   @relation("ParcelamentoParcelas")
-  guides                      Guide[]             @relation("GuideParcelamento")
+  portalClient      PortalClient        @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  templateOpening   AccountingFunction? @relation("ParcOpeningTemplate", fields: [templateOpeningFunctionId], references: [id], onDelete: SetNull)
+  templatePayment   AccountingFunction? @relation("ParcPaymentTemplate", fields: [templatePaymentFunctionId], references: [id], onDelete: SetNull)
+  templateRescision AccountingFunction? @relation("ParcRescisionTemplate", fields: [templateRescisionFunctionId], references: [id], onDelete: SetNull)
+  parcelas          AccountingEntry[]   @relation("ParcelamentoParcelas")
+  guides            Guide[]             @relation("GuideParcelamento")
 
-  @@index([portalClientId, status])
-  @@index([portalClientId, kind])
   // Q21: vínculo determinístico — impede cabeçalho duplicado (parcial WHERE numeroParcelamento NOT NULL via SQL).
   @@unique([portalClientId, tipo, numeroParcelamento])
+  @@index([portalClientId, status])
+  @@index([portalClientId, kind])
   @@map("parcelamentos")
 }
 
@@ -1108,7 +1156,7 @@ model Parcelamento {
 model TributoParcela {
   id              String   @id @default(uuid())
   guideId         String
-  codigoTributo   String   // ex: 1001 (IRPJ-SN), 1002 (CSLL)...
+  codigoTributo   String // ex: 1001 (IRPJ-SN), 1002 (CSLL)...
   nomeTributo     String?
   principal       Decimal  @db.Decimal(18, 2)
   multa           Decimal  @db.Decimal(18, 2)
@@ -1128,11 +1176,11 @@ model TributoParcela {
 // Q21 (spec v2): memória de conta por tributo (GLOBAL com override por cliente).
 model MapaContaTributo {
   id               String   @id @default(uuid())
-  portalClientId   String?  // null = global; preenchido = override por cliente
-  tipoParcelamento String   // PARCSN | PARCMEI | ... (modalidade)
-  tipoLinha        String   // PARC_DAS | JUROS | MULTA | TOTAL
-  codigoTributo    String?  // tributo, quando a conta é por tributo
-  contaId          String   // código/conta aprendida
+  portalClientId   String? // null = global; preenchido = override por cliente
+  tipoParcelamento String // PARCSN | PARCMEI | ... (modalidade)
+  tipoLinha        String // PARC_DAS | JUROS | MULTA | TOTAL
+  codigoTributo    String? // tributo, quando a conta é por tributo
+  contaId          String // código/conta aprendida
   createdByUserId  String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -1190,23 +1238,23 @@ model FiscalExecutionLog {
 
 // Q12.A: itens de uma nota (NF-e ou NFS-e). Classificação por anexo SN vem em Q12.C.
 model NotaItem {
-  id              String   @id @default(uuid())
-  notaId          String
-  codigoServico   String? // LC116 (NFS-e)
-  ncm             String? // NF-e
-  cfop            String? // NF-e
-  descricao       String?
-  valor           Decimal  @db.Decimal(18, 2)
+  id             String       @id @default(uuid())
+  notaId         String
+  codigoServico  String? // LC116 (NFS-e)
+  ncm            String? // NF-e
+  cfop           String? // NF-e
+  descricao      String?
+  valor          Decimal      @db.Decimal(18, 2)
   // Q12.C [LEGADO]: classificação direta pra anexo via DeparaAnexo (semântica antiga)
-  anexoResolvido  String? // III | IV | V (Simples Nacional)
-  sujeitoFatorR   Boolean  @default(false)
+  anexoResolvido String? // III | IV | V (Simples Nacional)
+  sujeitoFatorR  Boolean      @default(false)
   // Q14.2: classificação nova baseada em RegraClassificacao (cadastro = autoridade)
   // Anexo passa a ser DERIVADO pelo motor mensal (Fator R muda III↔V).
-  tipoReceita     TipoReceita? // null = ainda não classificado pela v2
-  classificadoEm  DateTime?    // quando o ClassificadorService v2 processou
-  flagST          Boolean  @default(false)
-  flagMonofasico  Boolean  @default(false)
-  flagExportacao  Boolean  @default(false)
+  tipoReceita    TipoReceita? // null = ainda não classificado pela v2
+  classificadoEm DateTime? // quando o ClassificadorService v2 processou
+  flagST         Boolean      @default(false)
+  flagMonofasico Boolean      @default(false)
+  flagExportacao Boolean      @default(false)
 
   nota PortalInvoice @relation(fields: [notaId], references: [id], onDelete: Cascade)
 
@@ -1222,19 +1270,19 @@ model NotaItem {
 // Q12.A: notas que chegam em competência já fechada — não atualizam a base; viram pendência.
 // Contador resolve reabrindo a competência (volta pra em_conferencia) OU marcando como ignorada.
 model PendenciaPosFechamento {
-  id              String   @id @default(uuid())
-  portalClientId  String
-  competencia     String // YYYY-MM
-  notaId          String?
-  motivo          String // "nota_retroativa" | "evento_retroativo" | ...
-  observacoes     String?
-  resolvida       Boolean  @default(false)
-  resolvidaAt     DateTime?
+  id                String    @id @default(uuid())
+  portalClientId    String
+  competencia       String // YYYY-MM
+  notaId            String?
+  motivo            String // "nota_retroativa" | "evento_retroativo" | ...
+  observacoes       String?
+  resolvida         Boolean   @default(false)
+  resolvidaAt       DateTime?
   resolvidaByUserId String?
-  createdAt       DateTime @default(now())
+  createdAt         DateTime  @default(now())
 
-  portalClient    PortalClient   @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
-  nota            PortalInvoice? @relation(fields: [notaId], references: [id], onDelete: SetNull)
+  portalClient PortalClient   @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  nota         PortalInvoice? @relation(fields: [notaId], references: [id], onDelete: SetNull)
 
   @@index([portalClientId, competencia, resolvida])
   @@map("pendencias_pos_fechamento")
@@ -1243,17 +1291,17 @@ model PendenciaPosFechamento {
 // Q12.A: procuração e-CAC do escritório pra atuar em nome da empresa em serviços externos
 // (NFS-e, DFe, eSocial, Integra-SN). Permite resolver "qual cert usar" via CertResolver.
 model Procuracao {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   portalClientId  String
   servico         String // NFSE | DFE | ESOCIAL | SN
   validade        DateTime?
-  status          String   @default("ATIVA") // ATIVA | EXPIRADA | REVOGADA
+  status          String    @default("ATIVA") // ATIVA | EXPIRADA | REVOGADA
   observacoes     String?
   createdByUserId String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  portalClient    PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@unique([portalClientId, servico])
   @@index([status])
@@ -1264,31 +1312,31 @@ model Procuracao {
 // Distinto de CompanyMonthlyCircular (que é mais amplo, com guias DAS/INSS).
 // Apuracao é o "envelope de transmissão": idempotencyKey + protocolo SEFAZ.
 model Apuracao {
-  id                String   @id @default(uuid())
-  portalClientId    String
-  competencia       String   // YYYY-MM
-  estado            String   @default("pendente") // pendente | calculada | revisada | transmitida | confirmada | erro
+  id               String    @id @default(uuid())
+  portalClientId   String
+  competencia      String // YYYY-MM
+  estado           String    @default("pendente") // pendente | calculada | revisada | transmitida | confirmada | erro
   // Hash da base fiscal calculada (recalculo idempotente — mesma base = mesma key,
   // não retransmite). Inclui RB12, FS12, anexos resolvidos por item.
-  idempotencyKey    String   @unique
+  idempotencyKey   String    @unique
   // Base fiscal (snapshot pra auditoria — mesmo se notas mudarem depois, mantém)
-  rb12              Decimal  @db.Decimal(18, 2)
-  fs12              Decimal? @db.Decimal(18, 2)
-  fatorR            Decimal? @db.Decimal(6, 4)
-  receitaMes        Decimal  @db.Decimal(18, 2)
+  rb12             Decimal   @db.Decimal(18, 2)
+  fs12             Decimal?  @db.Decimal(18, 2)
+  fatorR           Decimal?  @db.Decimal(6, 4)
+  receitaMes       Decimal   @db.Decimal(18, 2)
   // Receita segregada por anexo (JSON: { III: 1234.56, IV: 0, V: 5678.90, ... })
-  receitaPorAnexo   Json
+  receitaPorAnexo  Json
   // Resultado da transmissão SEFAZ
-  dasValor          Decimal? @db.Decimal(18, 2)
-  numeroDeclaracao  String?
-  reciboNumero      String?
-  transmitidoEm     DateTime?
-  erroMensagem      String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  dasValor         Decimal?  @db.Decimal(18, 2)
+  numeroDeclaracao String?
+  reciboNumero     String?
+  transmitidoEm    DateTime?
+  erroMensagem     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  portalClient      PortalClient            @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
-  divergencias      ApuracaoDivergencia[]
+  portalClient PortalClient          @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  divergencias ApuracaoDivergencia[]
 
   @@unique([portalClientId, competencia]) // 1 apuração por competência por empresa
   @@index([estado])
@@ -1299,18 +1347,18 @@ model Apuracao {
 // Q12.C.1: divergências encontradas no cálculo (notas vs base, fator R limite, etc).
 // Permite contador revisar antes de transmitir.
 model ApuracaoDivergencia {
-  id           String   @id @default(uuid())
-  apuracaoId   String
-  tipo         String   // VALOR_DAS | BASE_ANEXO | FATOR_R | NOTA_SEM_ANEXO | etc
-  severidade   String   @default("WARN") // INFO | WARN | ERROR
-  descricao    String
-  esperado     String?  // valor/texto esperado (informativo)
-  obtido       String?  // valor/texto obtido
-  tolerado     Boolean  @default(false) // contador marcou como OK
-  resolvida    Boolean  @default(false)
-  createdAt    DateTime @default(now())
+  id         String   @id @default(uuid())
+  apuracaoId String
+  tipo       String // VALOR_DAS | BASE_ANEXO | FATOR_R | NOTA_SEM_ANEXO | etc
+  severidade String   @default("WARN") // INFO | WARN | ERROR
+  descricao  String
+  esperado   String? // valor/texto esperado (informativo)
+  obtido     String? // valor/texto obtido
+  tolerado   Boolean  @default(false) // contador marcou como OK
+  resolvida  Boolean  @default(false)
+  createdAt  DateTime @default(now())
 
-  apuracao     Apuracao @relation(fields: [apuracaoId], references: [id], onDelete: Cascade)
+  apuracao Apuracao @relation(fields: [apuracaoId], references: [id], onDelete: Cascade)
 
   @@index([apuracaoId])
   @@index([tipo, severidade])
@@ -1321,18 +1369,18 @@ model ApuracaoDivergencia {
 // Escopo GLOBAL = base nacional (seed); EMPRESA = override específico (raro).
 // Lookup ordem: EMPRESA primeiro, depois GLOBAL.
 model DeparaAnexo {
-  id              String   @id @default(uuid())
-  escopo          String   // GLOBAL | EMPRESA
-  portalClientId  String?  // null = global
-  tipoCodigo      String   // LC116 | NCM | CFOP
-  codigo          String   // ex: "1.01" (LC116), "22021000" (NCM), "5102" (CFOP)
-  anexoResolvido  String   // III | IV | V
-  sujeitoFatorR   Boolean  @default(false)
-  descricao       String?  // opcional, pra UI
-  aprendidoEm     DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             String   @id @default(uuid())
+  escopo         String // GLOBAL | EMPRESA
+  portalClientId String? // null = global
+  tipoCodigo     String // LC116 | NCM | CFOP
+  codigo         String // ex: "1.01" (LC116), "22021000" (NCM), "5102" (CFOP)
+  anexoResolvido String // III | IV | V
+  sujeitoFatorR  Boolean  @default(false)
+  descricao      String? // opcional, pra UI
+  aprendidoEm    DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  portalClient    PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@unique([escopo, portalClientId, tipoCodigo, codigo])
   @@index([tipoCodigo, codigo])
@@ -1349,44 +1397,44 @@ model DeparaAnexo {
 // Enum estável de tipo de receita pro Simples Nacional.
 // Anexo é DERIVADO disso + Fator R mensal — nunca é o input direto.
 enum TipoReceita {
-  REVENDA_MERCADORIA          // → Anexo I
-  INDUSTRIALIZACAO            // → Anexo II
-  SERVICO_ANEXO_III           // serviço fixo Anexo III
-  SERVICO_ANEXO_IV            // construção/advocacia/vigilância — sem Fator R
-  SERVICO_ANEXO_V             // exceções V puro (raro)
-  SERVICO_FATOR_R             // III ou V — decidido mensalmente pelo motor
-  RECEITA_NAO_CLASSIFICADA    // fila de pendência — NUNCA chuta
+  REVENDA_MERCADORIA // → Anexo I
+  INDUSTRIALIZACAO // → Anexo II
+  SERVICO_ANEXO_III // serviço fixo Anexo III
+  SERVICO_ANEXO_IV // construção/advocacia/vigilância — sem Fator R
+  SERVICO_ANEXO_V // exceções V puro (raro)
+  SERVICO_FATOR_R // III ou V — decidido mensalmente pelo motor
+  RECEITA_NAO_CLASSIFICADA // fila de pendência — NUNCA chuta
 }
 
 // Cadastro fiscal da empresa — autoridade pra classificação.
 // Contador preenche uma vez; alterações geram log.
 model CadastroFiscal {
-  id                String   @id @default(uuid())
-  portalClientId    String   @unique
-  regime            String   // SIMPLES_NACIONAL | LUCRO_PRESUMIDO | LUCRO_REAL | MEI
-  dataOpcaoSN       DateTime?
-  cnaePrincipal     String
-  cnaesSecundarios  String[] @default([])
-  sublimiteICMSISS  Boolean  @default(false) // R$ 3,6 mi separado p/ ICMS/ISS
-  usaFatorR         Boolean  @default(false) // contador confirma se tem serviços Fator R
+  id                       String    @id @default(uuid())
+  portalClientId           String    @unique
+  regime                   String // SIMPLES_NACIONAL | LUCRO_PRESUMIDO | LUCRO_REAL | MEI
+  dataOpcaoSN              DateTime?
+  cnaePrincipal            String
+  cnaesSecundarios         String[]  @default([])
+  sublimiteICMSISS         Boolean   @default(false) // R$ 3,6 mi separado p/ ICMS/ISS
+  usaFatorR                Boolean   @default(false) // contador confirma se tem serviços Fator R
   // Q14.4.d: quando true, o ClassificadorService IGNORA o código LC116/cTribNac
   // da nota e usa o tipoReceitaSugerido do CnaeAnexo[cnaePrincipal] pra TUDO.
   // Usar com cautela — viola "nota é sinal". Útil pra empresas mono-atividade
   // onde notas vêm com códigos errados/genéricos do emissor.
-  forcarTipoReceitaPorCnae Boolean @default(false)
+  forcarTipoReceitaPorCnae Boolean   @default(false)
   // Q15: regime de apuração do PGDAS-D (anual, irreversível). Define se o payload
   // usa receitaPaCompetencia* (COMPETENCIA) ou receitaPaCaixa* (CAIXA).
-  regimeApuracao    String   @default("COMPETENCIA") // COMPETENCIA | CAIXA
-  observacoes       String?
+  regimeApuracao           String    @default("COMPETENCIA") // COMPETENCIA | CAIXA
+  observacoes              String?
   // Módulo Fiscal (Aba Fiscal / Bloco A): config por CNAE do perfil de atividades.
   // Array: [{ cnae, ativo, padrao, aliquotaIss?, codigoServicoMunicipal?, retencaoFonte?, domicilioFiscal?, obs? }]
   // Entrada do motor de sugestão de anexo (restringe candidatos ao conjunto da empresa).
-  perfilAtividades  Json?
-  createdByUserId   String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  perfilAtividades         Json?
+  createdByUserId          String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 
-  portalClient      PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@map("cadastros_fiscais")
 }
@@ -1397,19 +1445,19 @@ model CadastroFiscal {
 model ProdutoServico {
   id              String      @id @default(uuid())
   portalClientId  String
-  nome            String      // descrição interna
-  tipoReceita    TipoReceita
-  codigoServico   String?     // LC116/cTribNac (NFS-e)
-  ncm             String?     // NF-e produto
-  cfop            String?     // NF-e operação
-  codigoInterno   String?     // SKU/ID próprio da empresa
+  nome            String // descrição interna
+  tipoReceita     TipoReceita
+  codigoServico   String? // LC116/cTribNac (NFS-e)
+  ncm             String? // NF-e produto
+  cfop            String? // NF-e operação
+  codigoInterno   String? // SKU/ID próprio da empresa
   ativo           Boolean     @default(true)
-  origem          String      // MANUAL | APRENDIDO_DA_NOTA | IMPORTADO
+  origem          String // MANUAL | APRENDIDO_DA_NOTA | IMPORTADO
   createdByUserId String?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
-  portalClient    PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@index([portalClientId, codigoServico])
   @@index([portalClientId, ncm])
@@ -1422,20 +1470,20 @@ model ProdutoServico {
 // EMPRESA sobrescreve GLOBAL. Versionada por vigência pra mudanças legais.
 model RegraClassificacao {
   id              String      @id @default(uuid())
-  escopo          String      // GLOBAL | EMPRESA
-  portalClientId  String?     // null = global
-  tipoCodigo      String      // LC116 | CTRIBNAC | NCM | CFOP | CNAE
-  codigo          String      // valor exato (ou capítulo "17" como fallback)
+  escopo          String // GLOBAL | EMPRESA
+  portalClientId  String? // null = global
+  tipoCodigo      String // LC116 | CTRIBNAC | NCM | CFOP | CNAE
+  codigo          String // valor exato (ou capítulo "17" como fallback)
   tipoReceita     TipoReceita
   prioridade      Int         @default(0) // EMPRESA > GLOBAL > capítulo
   vigenciaInicio  DateTime?
   vigenciaFim     DateTime?
-  fonte           String      // RFB_REFERENCIA | SEED_APP | CADASTRO_EMPRESA | APRENDIZADO
+  fonte           String // RFB_REFERENCIA | SEED_APP | CADASTRO_EMPRESA | APRENDIZADO
   descricao       String?
   createdByUserId String?
   createdAt       DateTime    @default(now())
 
-  portalClient    PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@index([escopo, tipoCodigo, codigo, vigenciaInicio])
   @@index([portalClientId, escopo])
@@ -1459,15 +1507,15 @@ model CnaeAnexo {
 // Tabela versionada de alíquotas SN (LC 123/06, atualizada por LC 155/16
 // e o que vier da Reforma Tributária). 5 anexos × 6 faixas = 30 linhas/vigência.
 model AliquotaSimplesNacional {
-  id                String   @id @default(uuid())
-  anexo             String   // I, II, III, IV, V
-  faixa             Int      // 1..6
-  rbt12Min          Decimal  @db.Decimal(18, 2)
-  rbt12Max          Decimal  @db.Decimal(18, 2)
-  aliquotaNominal   Decimal  @db.Decimal(6, 4)  // ex: 0.0400 = 4%
-  parcelaDeduzir    Decimal  @db.Decimal(18, 2)
-  vigenciaInicio    DateTime
-  vigenciaFim       DateTime?
+  id              String    @id @default(uuid())
+  anexo           String // I, II, III, IV, V
+  faixa           Int // 1..6
+  rbt12Min        Decimal   @db.Decimal(18, 2)
+  rbt12Max        Decimal   @db.Decimal(18, 2)
+  aliquotaNominal Decimal   @db.Decimal(6, 4) // ex: 0.0400 = 4%
+  parcelaDeduzir  Decimal   @db.Decimal(18, 2)
+  vigenciaInicio  DateTime
+  vigenciaFim     DateTime?
 
   @@unique([anexo, faixa, vigenciaInicio])
   @@index([anexo, vigenciaInicio])
@@ -1477,21 +1525,21 @@ model AliquotaSimplesNacional {
 // Fila de pendências fiscais. Bloqueia fechamento até resolução humana.
 // Resolução pode criar RegraClassificacao ou ProdutoServico novos (aprendizado).
 model FilaPendencia {
-  id              String   @id @default(uuid())
-  portalClientId  String
-  tipo            String   // ITEM_SEM_REGRA | DIVERGENCIA_CADASTRO | FATOR_R_AMBIGUO | CADASTRO_INCOMPLETO
-  notaId          String?  // referência à PortalInvoice
-  itemId          String?  // referência ao NotaItem
-  competencia     String?  // YYYY-MM (null se for pendência geral da empresa)
-  resumo          String   // texto curto pra UI
-  detalhes        Json     // payload pra UI montar form de resolução
-  resolvida       Boolean  @default(false)
-  resolvidaPor    String?
-  resolvidaEm     DateTime?
-  acaoResolucao   String?  // CRIOU_REGRA | CRIOU_PRODUTO | IGNOROU | REENQUADROU
-  createdAt       DateTime @default(now())
+  id             String    @id @default(uuid())
+  portalClientId String
+  tipo           String // ITEM_SEM_REGRA | DIVERGENCIA_CADASTRO | FATOR_R_AMBIGUO | CADASTRO_INCOMPLETO
+  notaId         String? // referência à PortalInvoice
+  itemId         String? // referência ao NotaItem
+  competencia    String? // YYYY-MM (null se for pendência geral da empresa)
+  resumo         String // texto curto pra UI
+  detalhes       Json // payload pra UI montar form de resolução
+  resolvida      Boolean   @default(false)
+  resolvidaPor   String?
+  resolvidaEm    DateTime?
+  acaoResolucao  String? // CRIOU_REGRA | CRIOU_PRODUTO | IGNOROU | REENQUADROU
+  createdAt      DateTime  @default(now())
 
-  portalClient    PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@index([portalClientId, resolvida, tipo])
   @@index([portalClientId, competencia, resolvida])
@@ -1501,52 +1549,52 @@ model FilaPendencia {
 // Snapshot reproduzível da apuração. Substitui Apuracao após Fase 6.
 // Por enquanto convive — apuração nova grava aqui, antiga continua em Apuracao.
 model ApuracaoSnapshot {
-  id                       String   @id @default(uuid())
-  portalClientId           String
-  competencia              String   // YYYY-MM
+  id                      String    @id @default(uuid())
+  portalClientId          String
+  competencia             String // YYYY-MM
   // Insumos auditáveis
-  rbt12                    Decimal  @db.Decimal(18, 2)
-  folha12m                 Decimal? @db.Decimal(18, 2)
-  fatorR                   Decimal? @db.Decimal(6, 4)
-  receitaPorTipo           Json     // { REVENDA_MERCADORIA: x, SERVICO_FATOR_R: y, ... }
-  receitaPorAnexo          Json     // derivado, com Fator R aplicado
+  rbt12                   Decimal   @db.Decimal(18, 2)
+  folha12m                Decimal?  @db.Decimal(18, 2)
+  fatorR                  Decimal?  @db.Decimal(6, 4)
+  receitaPorTipo          Json // { REVENDA_MERCADORIA: x, SERVICO_FATOR_R: y, ... }
+  receitaPorAnexo         Json // derivado, com Fator R aplicado
   // Motor próprio (cálculo local)
-  dasCalculadoLocal        Decimal? @db.Decimal(18, 2)
-  aliquotaEfetivaPorAnexo  Json?
-  vigenciaAliquota         DateTime? // qual versão de AliquotaSimplesNacional usada
+  dasCalculadoLocal       Decimal?  @db.Decimal(18, 2)
+  aliquotaEfetivaPorAnexo Json?
+  vigenciaAliquota        DateTime? // qual versão de AliquotaSimplesNacional usada
   // Cross-check SERPRO (vem depois da transmissão)
-  dasRetornadoSerpro       Decimal? @db.Decimal(18, 2)
-  divergenciaValor         Decimal? @db.Decimal(18, 2)
+  dasRetornadoSerpro      Decimal?  @db.Decimal(18, 2)
+  divergenciaValor        Decimal?  @db.Decimal(18, 2)
   // Reconciliação extrato (Fase 5)
-  rbt12Extrato             Decimal? @db.Decimal(18, 2)
-  divergenciaRbt12         Decimal? @db.Decimal(18, 2)
+  rbt12Extrato            Decimal?  @db.Decimal(18, 2)
+  divergenciaRbt12        Decimal?  @db.Decimal(18, 2)
   // Q15 — fechamento (contador escolhe atividades; RFB calcula anexo/DAS)
-  atividadesEscolhidas     Json?    // [{ idAtividade, valorInterno, valorExterno, flags }]
-  receitaInterna           Decimal? @db.Decimal(18, 2)
-  receitaExterna           Decimal? @db.Decimal(18, 2)
-  folhaMensal12            Json?    // série de 12 meses { pa: valor } pro Fator-R
-  simulacaoSerpro          Json?    // retorno oficial PGDAS-D (indicadorTransmissao:false) — verdade do preview
-  tributosPorTributo       Json?    // { IRPJ, CSLL, COFINS, PIS, CPP, ICMS, ISS, IPI }
-  disparidades             Json?    // avisos atividade↔CNAE (não bloqueia)
+  atividadesEscolhidas    Json? // [{ idAtividade, valorInterno, valorExterno, flags }]
+  receitaInterna          Decimal?  @db.Decimal(18, 2)
+  receitaExterna          Decimal?  @db.Decimal(18, 2)
+  folhaMensal12           Json? // série de 12 meses { pa: valor } pro Fator-R
+  simulacaoSerpro         Json? // retorno oficial PGDAS-D (indicadorTransmissao:false) — verdade do preview
+  tributosPorTributo      Json? // { IRPJ, CSLL, COFINS, PIS, CPP, ICMS, ISS, IPI }
+  disparidades            Json? // avisos atividade↔CNAE (não bloqueia)
   // Camada 2 (Robustez): conferência de contagem por chave contra o ADN antes do fechamento.
-  conferenciaStatus        String?   // ok | divergente | nao_conferivel
-  conferenciaResultado     Json?     // { nossoTotal, adnTotal, faltantes[], extras[], via, env, alcancouFim }
-  conferidaEm              DateTime?
-  fechadaEm                DateTime?
-  fechadaPor               String?
+  conferenciaStatus       String? // ok | divergente | nao_conferivel
+  conferenciaResultado    Json? // { nossoTotal, adnTotal, faltantes[], extras[], via, env, alcancouFim }
+  conferidaEm             DateTime?
+  fechadaEm               DateTime?
+  fechadaPor              String?
   // Identificadores SERPRO pós-transmissão
-  numeroDeclaracao         String?
-  reciboNumero             String?
-  transmitidoEm            DateTime?
+  numeroDeclaracao        String?
+  reciboNumero            String?
+  transmitidoEm           DateTime?
   // Estado: aberta | configurando | calculada | fechada | transmitida | confirmada
   //         | bloqueada_pendencias | erro_calculo | erro_transmissao | erro
-  estado                   String   @default("pendente")
-  idempotencyKey           String   @unique
-  erroMensagem             String?
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
+  estado                  String    @default("pendente")
+  idempotencyKey          String    @unique
+  erroMensagem            String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  portalClient             PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@unique([portalClientId, competencia])
   @@index([estado])
@@ -1557,18 +1605,18 @@ model ApuracaoSnapshot {
 // Log auditável da decisão mensal do Fator R (III vs V).
 // 1 linha por (empresa, competência) quando há receita SERVICO_FATOR_R.
 model LogDecisaoFatorR {
-  id              String   @id @default(uuid())
-  portalClientId  String
-  competencia     String   // YYYY-MM
-  folha12m        Decimal  @db.Decimal(18, 2)
-  rbt12           Decimal  @db.Decimal(18, 2)
-  fatorR          Decimal  @db.Decimal(6, 4)
-  threshold       Decimal  @db.Decimal(6, 4) @default(0.28)
-  anexoDecidido   String   // "III" se fatorR >= threshold, "V" caso contrário
-  fonteFolha      String   @default("MANUAL") // MANUAL | ESOCIAL | IMPORTADO
-  createdAt       DateTime @default(now())
+  id             String   @id @default(uuid())
+  portalClientId String
+  competencia    String // YYYY-MM
+  folha12m       Decimal  @db.Decimal(18, 2)
+  rbt12          Decimal  @db.Decimal(18, 2)
+  fatorR         Decimal  @db.Decimal(6, 4)
+  threshold      Decimal  @default(0.28) @db.Decimal(6, 4)
+  anexoDecidido  String // "III" se fatorR >= threshold, "V" caso contrário
+  fonteFolha     String   @default("MANUAL") // MANUAL | ESOCIAL | IMPORTADO
+  createdAt      DateTime @default(now())
 
-  portalClient    PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
 
   @@unique([portalClientId, competencia])
   @@index([portalClientId])
@@ -1579,19 +1627,19 @@ model LogDecisaoFatorR {
 // Cada job tem N filhos (1 por empresa) processados em paralelo cap 5.
 // Falha em 1 empresa não trava as demais.
 model ApuracaoBatchJob {
-  id              String   @id @default(uuid())
-  acao            String   // VALIDAR | FECHAR | APURAR | TRANSMITIR
-  competencia     String   // YYYY-MM
-  totalEmpresas   Int
-  processadas     Int      @default(0)
-  okCount         Int      @default(0)
-  errorCount      Int      @default(0)
-  pendenteCount   Int      @default(0)
-  status          String   @default("running") // running | completed | failed
-  triggeredBy     String?  // userId
-  iniciadoEm      DateTime @default(now())
-  concluidoEm     DateTime?
-  resumo          Json?    // { porEmpresa: [{ portalClientId, status, msg }] }
+  id            String    @id @default(uuid())
+  acao          String // VALIDAR | FECHAR | APURAR | TRANSMITIR
+  competencia   String // YYYY-MM
+  totalEmpresas Int
+  processadas   Int       @default(0)
+  okCount       Int       @default(0)
+  errorCount    Int       @default(0)
+  pendenteCount Int       @default(0)
+  status        String    @default("running") // running | completed | failed
+  triggeredBy   String? // userId
+  iniciadoEm    DateTime  @default(now())
+  concluidoEm   DateTime?
+  resumo        Json? // { porEmpresa: [{ portalClientId, status, msg }] }
 
   @@index([status, iniciadoEm])
   @@map("apuracao_batch_jobs")
@@ -1600,18 +1648,18 @@ model ApuracaoBatchJob {
 // Q15 — item de fila por empresa dentro de um ApuracaoBatchJob.
 // Falha em 1 item não derruba o lote; worker processa FIFO com backoff.
 model ApuracaoBatchItem {
-  id              String   @id @default(uuid())
-  jobId           String
-  portalClientId  String
-  competencia     String
-  status          String   @default("pendente") // pendente | processando | ok | erro
-  dasValor        Decimal? @db.Decimal(18, 2)
+  id               String    @id @default(uuid())
+  jobId            String
+  portalClientId   String
+  competencia      String
+  status           String    @default("pendente") // pendente | processando | ok | erro
+  dasValor         Decimal?  @db.Decimal(18, 2)
   numeroDeclaracao String?
-  erroMensagem    String?
-  tentativas      Int      @default(0)
-  backoffUntil    DateTime?
-  processadoEm    DateTime?
-  createdAt       DateTime @default(now())
+  erroMensagem     String?
+  tentativas       Int       @default(0)
+  backoffUntil     DateTime?
+  processadoEm     DateTime?
+  createdAt        DateTime  @default(now())
 
   @@index([jobId])
   @@index([status, backoffUntil])
@@ -1621,13 +1669,13 @@ model ApuracaoBatchItem {
 // Q15 — cache do RBT12 (custo SERPRO por requisição: cache é requisito).
 // detalhePorMes guarda interno/externo separados (vira receitasBrutasAnteriores).
 model RbtExtratoCache {
-  id              String   @id @default(uuid())
-  portalClientId  String
-  competencia     String   // YYYY-MM (PA de referência do RBT12)
-  rbt12           Decimal  @db.Decimal(18, 2)
-  detalhePorMes   Json     // [{ pa, valorInterno, valorExterno }] (12 meses anteriores)
-  origem          String   // SIMULACAO | EXTRATO | PARCIAL_LOCAL
-  capturadoEm     DateTime @default(now())
+  id             String   @id @default(uuid())
+  portalClientId String
+  competencia    String // YYYY-MM (PA de referência do RBT12)
+  rbt12          Decimal  @db.Decimal(18, 2)
+  detalhePorMes  Json // [{ pa, valorInterno, valorExterno }] (12 meses anteriores)
+  origem         String // SIMULACAO | EXTRATO | PARCIAL_LOCAL
+  capturadoEm    DateTime @default(now())
 
   @@unique([portalClientId, competencia])
   @@index([portalClientId])
@@ -1639,8 +1687,8 @@ model RbtExtratoCache {
 model ApuracaoConfigMemory {
   id                   String   @id @default(uuid())
   portalClientId       String   @unique
-  atividadesEscolhidas Json     // [{ idAtividade, ... }]
-  folhaMensal12        Json?    // série de 12 meses
+  atividadesEscolhidas Json // [{ idAtividade, ... }]
+  folhaMensal12        Json? // série de 12 meses
   regimeApuracao       String?
   flags                Json?
   atualizadoEm         DateTime @default(now())
@@ -1653,17 +1701,17 @@ model ApuracaoConfigMemory {
 // idAtividade é o que vai no payload TRANSDECLARACAO11 (estabelecimentos[].atividades[]).
 // Levantar lista completa no ambiente trial; versionar (muda quando RFB altera programa).
 model AtividadePgdasd {
-  id              String   @id @default(uuid())
-  idAtividade     Int      // ID na tabela de atividades do PGDAS-D
+  id              String    @id @default(uuid())
+  idAtividade     Int // ID na tabela de atividades do PGDAS-D
   descricao       String
-  anexoImplicito  String   // I | II | III | IV | V (informativo — RFB decide o final)
-  mercado         String   @default("INTERNO") // INTERNO | EXTERNO
-  sujeitoFatorR   Boolean  @default(false)
+  anexoImplicito  String // I | II | III | IV | V (informativo — RFB decide o final)
+  mercado         String    @default("INTERNO") // INTERNO | EXTERNO
+  sujeitoFatorR   Boolean   @default(false)
   // mapeamento pro nosso classificador (tipoReceita → idAtividade)
-  tipoReceita     String?  // TipoReceita correspondente (pra default automático)
+  tipoReceita     String? // TipoReceita correspondente (pra default automático)
   vigenciaInicio  DateTime
   vigenciaFim     DateTime?
-  verificadoTrial Boolean  @default(false) // true após confirmar o ID no ambiente trial
+  verificadoTrial Boolean   @default(false) // true após confirmar o ID no ambiente trial
 
   @@unique([idAtividade, vigenciaInicio])
   @@index([tipoReceita, mercado])
@@ -1727,21 +1775,21 @@ model SitfisDownloadJob {
 // auditoria e não deve sumir se o cliente for removido).
 
 model Documento {
-  id             String   @id @default(uuid())
-  portalClientId String
-  chaveAcesso    String
-  cnpjPrestador  String?
-  cnpjTomador    String?
-  municipioIbge  String?
-  numeroNfse     String?
-  dataEmissao    DateTime?
+  id              String    @id @default(uuid())
+  portalClientId  String
+  chaveAcesso     String
+  cnpjPrestador   String?
+  cnpjTomador     String?
+  municipioIbge   String?
+  numeroNfse      String?
+  dataEmissao     DateTime?
   dataRecepcaoAdn DateTime?
-  competencia    String? // YYYY-MM (derivada da emissão)
-  valorServico   Decimal? @db.Decimal(18, 2)
-  xmlOriginal    String? // XML cru (gzip/base64)
-  nsuOrigem      BigInt?
-  fonte          String // ADN | RPA | WS_MUNICIPAL | MANUAL
-  capturadoEm    DateTime @default(now())
+  competencia     String? // YYYY-MM (derivada da emissão)
+  valorServico    Decimal?  @db.Decimal(18, 2)
+  xmlOriginal     String? // XML cru (gzip/base64)
+  nsuOrigem       BigInt?
+  fonte           String // ADN | RPA | WS_MUNICIPAL | MANUAL
+  capturadoEm     DateTime  @default(now())
 
   @@unique([portalClientId, chaveAcesso])
   @@index([portalClientId, competencia])
@@ -1750,18 +1798,18 @@ model Documento {
 }
 
 model Evento {
-  id             String   @id @default(uuid())
-  portalClientId String
-  chaveAcesso    String
-  tipoEvento     String // cancelamento | canc_por_substituicao | confirmacao | confirmacao_tacita | anulacao_rejeicao | canc_por_oficio | bloqueio_oficio | desbloqueio_oficio
-  nSeqEvento     Int      @default(1)
-  dataEvento     DateTime?
-  justificativa  String?
+  id              String    @id @default(uuid())
+  portalClientId  String
+  chaveAcesso     String
+  tipoEvento      String // cancelamento | canc_por_substituicao | confirmacao | confirmacao_tacita | anulacao_rejeicao | canc_por_oficio | bloqueio_oficio | desbloqueio_oficio
+  nSeqEvento      Int       @default(1)
+  dataEvento      DateTime?
+  justificativa   String?
   chaveSubstituta String? // preenchido no cancelamento por substituição
-  xmlEvento      String?
-  nsuOrigem      BigInt?
-  fonte          String // ADN | RPA | WS_MUNICIPAL | MANUAL
-  capturadoEm    DateTime @default(now())
+  xmlEvento       String?
+  nsuOrigem       BigInt?
+  fonte           String // ADN | RPA | WS_MUNICIPAL | MANUAL
+  capturadoEm     DateTime  @default(now())
 
   @@unique([chaveAcesso, tipoEvento, nSeqEvento]) // idempotência do evento
   @@index([portalClientId, chaveAcesso])

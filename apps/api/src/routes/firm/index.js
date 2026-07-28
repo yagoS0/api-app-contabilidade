@@ -28,6 +28,7 @@ import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
+import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { criarBatchJob, runApuracaoBatchOnce } from "../../workers/apuracaoBatchWorker.js";
 // Q48: download de notas em lote (ZIP em segundo plano)
 import fsNotasDownload from "node:fs";
@@ -4072,6 +4073,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Q14.2.d: Apuração v2 — cadastro fiscal, produtos/serviços, pendências, classificar v2
   const apuracaoV2Router = createApuracaoV2Router({ log });
   router.use("/companies/:companyId", apuracaoV2Router);
+
+  // Documentos societários + anotações da empresa (grupo "Cadastro" na UI).
+  const companyDocumentsRouter = createCompanyDocumentsRouter({ log });
+  router.use("/companies/:companyId", companyDocumentsRouter);
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...
