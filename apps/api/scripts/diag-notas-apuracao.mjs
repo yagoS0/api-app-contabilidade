@@ -12,6 +12,10 @@
 //
 //  • SEM CNAE          → a Aba Fiscal não consegue oferecer CNAE nem sugerir anexo. Empresas
 //                        cadastradas antes da busca BrasilAPI ficam assim.
+//  • CNAE FORA DA TABELA → a empresa TEM CNAE, mas ele não existe em `CnaeAnexo`. A rota do
+//                        cadastro fiscal resolve `cnaePrincipalRef` por essa tabela; sem a linha,
+//                        ela devolve null e a tela não tem o que oferecer — o sintoma é "não
+//                        oferece CNAE" mesmo com o CNAE preenchido no cadastro.
 //  • statusEfetivo VAZIO → ⚠ a nota SOME da apuração. Todas as queries de faturamento filtram
 //                        `statusEfetivo: "autorizada"` (igualdade exata), então nulo é excluído —
 //                        mas a LISTAGEM da tela mostra a nota. Apura a MENOS, sem avisar.
@@ -62,6 +66,7 @@ try {
   console.log(`Raio-X notas → apuração · ano ${ano} · ${empresas.length} empresa(s)\n`);
 
   const semCnae = [];
+  const cnaeForaDaTabela = [];
   const comNulo = [];
   const comCanceladas = [];
   const semCadastro = [];
@@ -107,8 +112,19 @@ try {
     });
 
     const cnaeEfetivo = emp.cnaePrincipal || cadastro?.cnaePrincipal || null;
+    // Normaliza EXATAMENTE como a rota do cadastro fiscal faz (apuracaoV2.js): só dígitos, 7
+    // primeiros. Se divergir daqui, o diagnóstico mente.
+    const cnaeDigitos = String(cnaeEfetivo || "").replace(/\D+/g, "").slice(0, 7);
+    const refAnexo = cnaeDigitos.length === 7
+      ? await prisma.cnaeAnexo.findUnique({
+          where: { cnae: cnaeDigitos },
+          select: { descricao: true, tipoReceitaSugerido: true, ambiguo: true },
+        }).catch(() => null)
+      : null;
+
     const problemas = [];
     if (!cnaeEfetivo) { problemas.push("SEM CNAE"); semCnae.push(emp); }
+    else if (!refAnexo) { problemas.push("CNAE FORA DA TABELA"); cnaeForaDaTabela.push({ ...emp, cnaeDigitos }); }
     if (!cadastro) semCadastro.push(emp);
     if (nulos.qtd) { problemas.push(`${nulos.qtd} nota(s) com statusEfetivo VAZIO`); comNulo.push(emp); }
     if (canceladas.qtd) comCanceladas.push(emp);
@@ -117,6 +133,11 @@ try {
     const marca = problemas.length ? "⚠" : " ";
     console.log(`${marca} ${(emp.razaoSocial || "").slice(0, 34).padEnd(34)} ${emp.cnpj}  ${String(emp.regimeTributario || emp.tipoTributario || "?").slice(0, 8)}`);
     console.log(`     CNAE: ${cnaeEfetivo || "— NENHUM —"}${emp.cnaePrincipal ? "" : cadastro?.cnaePrincipal ? "  (só no cadastro fiscal)" : ""}`);
+    if (cnaeEfetivo) {
+      console.log(refAnexo
+        ? `     └ CnaeAnexo[${cnaeDigitos}]: ${refAnexo.tipoReceitaSugerido}${refAnexo.ambiguo ? " (ambíguo)" : ""}`
+        : `     └ ⚠ CnaeAnexo[${cnaeDigitos || "?"}]: NÃO EXISTE → a tela não sugere anexo`);
+    }
     console.log(`     Notas EMIT ${ano}: ${notas.length}  ·  apuráveis (autorizada): ${autorizadas.qtd} = R$ ${money(autorizadas.valor)}`);
     if (canceladas.qtd) console.log(`     canceladas: ${canceladas.qtd} = R$ ${money(canceladas.valor)}  (fora da apuração, correto)`);
     if (nulos.qtd) console.log(`     ⚠ statusEfetivo VAZIO: ${nulos.qtd} = R$ ${money(nulos.valor)}  → NÃO apuradas, mas aparecem na lista`);
@@ -133,7 +154,8 @@ try {
   }
 
   console.log("─".repeat(72));
-  console.log(`Sem CNAE ...................: ${semCnae.length}  → Aba Fiscal não sugere anexo`);
+  console.log(`Sem CNAE ...................: ${semCnae.length}`);
+  console.log(`CNAE fora da CnaeAnexo .....: ${cnaeForaDaTabela.length}  → ⚠ tem CNAE, mas a tela não sugere anexo`);
   console.log(`Sem CadastroFiscal .........: ${semCadastro.length}`);
   console.log(`Com statusEfetivo vazio ....: ${comNulo.length}  → ⚠ apuram a MENOS, silenciosamente`);
   console.log(`Com notas canceladas .......: ${comCanceladas.length}`);
