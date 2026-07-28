@@ -154,6 +154,24 @@ function resolveEntryDate({ strategy, competencia, circular, now }) {
   return getLastDayOfMonth(competencia) || now;
 }
 
+// Contas de acréscimo: juros/multa NÃO amortizam o passivo, então não contam como principal
+// abatido. Mesmos códigos usados no cálculo de saldo da Circular (routes/firm/accountingEntries.js).
+const CONTA_JUROS_GEN = "501";
+const CONTA_MULTA_GEN = "506";
+
+// Status de uma provisão que JÁ TEM baixas, dado um principal novo. Sem isto, atualizar o valor
+// de uma provisão baixada a jogava de volta pra ABERTO (o worker sobrescrevia o status), e uma
+// provisão corrigida pra menor ficava eternamente PARCIAL com a diferença "em aberto".
+function statusPelasBaixas(baixas, principalNovo) {
+  const abatido = (baixas || []).reduce((total, b) => total + (b.lines || [])
+    .filter((l) => String(l.tipo).toUpperCase() === "D"
+      && ![CONTA_JUROS_GEN, CONTA_MULTA_GEN].includes(String(l.conta || "").trim()))
+    .reduce((s, l) => s + Number(l.valor || 0), 0), 0);
+  const abat = Math.round(abatido * 100) / 100;
+  if (abat <= 0.009) return null;                                  // sem baixa → mantém o padrão
+  return abat + 0.01 >= Number(principalNovo || 0) ? "PAGO" : "PARCIAL";
+}
+
 function sumEntryLines(lines) {
   return (lines || []).reduce((total, line) => total + Number(line?.valor || 0), 0);
 }
@@ -385,7 +403,11 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, existingEntry, p
         origem: "SERPRO",
         loteImportacao: `SERPRO-${circular.competencia}`,
         status: "RASCUNHO",
-        statusPagamento: event.statusPagamento || "NA",
+        // Com baixa já lançada, o status vem do confronto com o principal NOVO — não pode ser
+        // sobrescrito cegamente (era o que ressuscitava provisão paga como ABERTO).
+        statusPagamento: statusPelasBaixas(existingEntry.baixas, event.amount)
+          || event.statusPagamento
+          || "NA",
       },
     });
 
@@ -499,7 +521,11 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
           eventType: event.eventType,
           origem: "SERPRO",
         },
-        include: { lines: { orderBy: { ordem: "asc" } } },
+        include: {
+          lines: { orderBy: { ordem: "asc" } },
+          // Necessário pra recalcular o status quando o valor muda (provisão já baixada).
+          baixas: { include: { lines: true } },
+        },
       });
 
       // eslint-disable-next-line no-await-in-loop
