@@ -579,7 +579,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
           if (comp.juros > 0) partes.push(`juros R$ ${Number(comp.juros).toFixed(2)}`);
           if (comp.multa > 0) partes.push(`multa R$ ${Number(comp.multa).toFixed(2)}`);
         }
-        feedback.setMessage(`Baixa pelo comprovante do SERPRO — ${partes.join(" · ")}.`);
+        // A baixa NÃO é feita aqui — o lançamento acontece na Circular, num único lugar.
+        feedback.setMessage(
+          `Pagamento confirmado pelo SERPRO — ${partes.join(" · ")}. Lance a baixa na Circular (já vem preenchida).`,
+        );
       } else if (res?.comprovanteAviso) {
         // Guia marcada como paga, mas o lançamento saiu com os dados presumidos: avisa pra conferir.
         feedback.setMessage(`Guia marcada como paga. ${res.comprovanteAviso}`);
@@ -589,9 +592,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
           + "a célula do mês pode continuar em aberto."
         );
       } else if (res?.parcelaBaixa?.pagamentoId) {
-        feedback.setMessage("Guia paga — lançamento de baixa gerado.");
+        feedback.setMessage("Parcela paga — lançamento de baixa gerado.");
       } else {
-        feedback.setMessage("Guia marcada como paga.");
+        feedback.setMessage("Guia marcada como paga. Lance a baixa na Circular.");
       }
       await loadGuides();
       // A Circular lê AccountingEntry.statusPagamento, que acabou de mudar — sem este reload a

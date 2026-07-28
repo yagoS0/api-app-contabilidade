@@ -2925,17 +2925,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // Data do pagamento: a da arrecadação quando confiável; senão o dia da confirmação.
       const dataPagamentoReal = batendo && comprovante?.dataArrecadacao ? comprovante.dataArrecadacao : null;
 
-      // Q23/Q34/Q61: toda guia gera lançamento de BAIXA ao marcar como paga (parcela, INSS ou normal).
-      // Se o mês contábil do pagamento estiver fechado, BLOQUEIA o "pago" inteiro (não marca, não lança).
+      // Só a PARCELA ainda gera lançamento aqui (parcelas vivem na aba Parcelamento, não na
+      // Circular). Para as demais, confirmar pagamento apenas MARCA — o lançamento é feito na
+      // Circular pelo contador.
       const isParcela = Boolean(scoped.guide.parcelamentoId);
-      const isInss = !isParcela && String(scoped.guide.tipo || "").toUpperCase() === "INSS";
-      const isNormal = !isParcela && !isInss;
-      // A trava tem que olhar o mês em que o lançamento VAI CAIR. Com a data real do comprovante,
-      // esse mês pode não ser o atual (pagamento de junho confirmado em julho) — checar "hoje"
-      // deixaria passar lançamento em mês já fechado.
+      // A trava de mês fechado só se aplica a quem VAI LANÇAR: bloquear a simples marcação de
+      // "pago" por causa de um mês fechado impediria registrar um fato que já aconteceu.
       const dataLancamento = dataPagamentoReal || new Date();
       const competenciaPagamento = `${dataLancamento.getUTCFullYear()}-${String(dataLancamento.getUTCMonth() + 1).padStart(2, "0")}`;
-      if (await isMonthClosed(scoped.guide.portalClientId, competenciaPagamento)) {
+      if (isParcela && await isMonthClosed(scoped.guide.portalClientId, competenciaPagamento)) {
         return res.status(409).json({
           error: "MES_FECHADO",
           competencia: competenciaPagamento,
@@ -2972,50 +2970,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
       }
 
-      // Q34: para guia de INSS, gera a BAIXA (D INSS a Recolher / C Caixa) — conta da folha do mês.
-      let inssBaixa = null;
-      if (isInss) {
-        try {
-          const { gerarPagamentoInssFromGuide } = await import(
-            "../../application/accounting/InssPagamentoService.js"
-          );
-          inssBaixa = await gerarPagamentoInssFromGuide({
-            portalClientId: scoped.guide.portalClientId,
-            guideId: scoped.guide.id,
-            userId: req.auth.user.id,
-            // Data REAL da arrecadação quando o comprovante confere; senão o serviço usa hoje.
-            dataPagamento: dataPagamentoReal,
-          });
-        } catch (err) {
-          if (err?.code === "MES_FECHADO") {
-            return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
-          }
-          log.warn({ err: err?.message, guideId: scoped.guide.id }, "Falha ao gerar baixa do INSS (não crítico)");
-          inssBaixa = { skipped: true, reason: err?.message || "erro" };
-        }
-      }
-
-      // Q61: guia NORMAL (DARF/DAS/LP) — marca as provisões como PAGO (Circular "confirmado") e gera a baixa.
-      let normalBaixa = null;
-      if (isNormal) {
-        try {
-          const { gerarPagamentoNormalFromGuide } = await import(
-            "../../application/accounting/GuideNormalPagamentoService.js"
-          );
-          normalBaixa = await gerarPagamentoNormalFromGuide({
-            dataPagamento: dataPagamentoReal,
-            portalClientId: scoped.guide.portalClientId,
-            guideId: scoped.guide.id,
-            userId: req.auth.user.id,
-          });
-        } catch (err) {
-          if (err?.code === "MES_FECHADO") {
-            return res.status(409).json({ error: "MES_FECHADO", competencia: competenciaPagamento });
-          }
-          log.warn({ err: err?.message, guideId: scoped.guide.id }, "Falha ao gerar baixa da guia (não crítico)");
-          normalBaixa = { skipped: true, reason: err?.message || "erro" };
-        }
-      }
+      // O LANÇAMENTO da baixa não acontece mais aqui: confirmar pagamento apenas MARCA a guia e
+      // guarda o comprovante. O contador lança pela Circular ("Dar baixa", já pré-preenchido com a
+      // data da arrecadação e a quebra principal/juros/multa). Um único lugar para o ato contábil
+      // evita lançamento em duplicidade e mantém a revisão humana antes de mexer no razão.
+      // (Parcelamento segue com baixa própria: parcelas vivem na aba Parcelamento, não na Circular.)
+      const inssBaixa = null;
+      const normalBaixa = null;
 
       // A guia foi marcada como paga com sucesso (por isso ok:true), mas a baixa/Circular é
       // best-effort e pode ter sido pulada. Diz explicitamente o que aconteceu do lado da
