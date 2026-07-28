@@ -92,7 +92,10 @@ try {
 
   const runtime = await getResolvedSerproCredentials();
   const contratante = onlyDigits(runtime.certificate?.document);
-  if (guiaInfo) console.log(`Guia .......: ${guiaInfo.tipo} ${guiaInfo.competencia} · R$ ${Number(guiaInfo.valor || 0).toFixed(2)} · status atual: ${guiaInfo.paymentStatus || "—"}`);
+  // ⚠ Estes dados são do NOSSO BANCO, não do SERPRO — são impressos antes da chamada.
+  // `valor` é o DEVIDO na guia (não o pago) e `paymentStatus` é a marcação manual. São
+  // exatamente os campos que a leitura do comprovante deve substituir por dados reais.
+  if (guiaInfo) console.log(`Guia (nosso banco): ${guiaInfo.tipo} ${guiaInfo.competencia} · devido R$ ${Number(guiaInfo.valor || 0).toFixed(2)} · marcada como: ${guiaInfo.paymentStatus || "—"}`);
   console.log(`Contribuinte: ${contribuinte}`);
   console.log(`Contratante : ${contratante || "(não configurado)"}`);
   console.log(`Documento ..: ${numeroDocumento}\n`);
