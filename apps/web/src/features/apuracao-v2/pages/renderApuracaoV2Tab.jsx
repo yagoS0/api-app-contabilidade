@@ -195,10 +195,10 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
 
           {/* Faturamento + valor apurado (a prévia completa — CNAEs/alíquota/DAS — sai no modal ao Calcular). */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
-            <Kpi label="Fat. interno" value={`R$ ${fmtMoney(fat.interno)}`} />
-            <Kpi label="Fat. externo" value={`R$ ${fmtMoney(fat.externo)}`} />
-            <Kpi label="RBT12" value={`R$ ${fmtMoney(fechDados?.rbt12)}`} />
-            <Kpi label="DAS apurado" value={dasApurado != null ? `R$ ${fmtMoney(dasApurado)}` : "—"} cor="#8BE9FD" />
+            <Kpi label="Fat. interno" value={`${fmtMoney(fat.interno)}`} />
+            <Kpi label="Fat. externo" value={`${fmtMoney(fat.externo)}`} />
+            <Kpi label="RBT12" value={`${fmtMoney(fechDados?.rbt12)}`} />
+            <Kpi label="DAS apurado" value={dasApurado != null ? `${fmtMoney(dasApurado)}` : "—"} cor="#8BE9FD" />
           </div>
           {fechDados?.cadastroCompleto === false && (
             <div style={{ padding: 10, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 8, color: "#FFB347", fontSize: "0.82rem" }}>
@@ -216,8 +216,8 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
             </div>
             {extDados && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
-                <Kpi label="Receita bruta" value={`R$ ${fmtMoney(extDados.receitaBruta)}`} />
-                <Kpi label="DAS (Receita)" value={`R$ ${fmtMoney(extDados.dasTotal ?? extDados.impostoApurado)}`} cor="#8BE9FD" />
+                <Kpi label="Receita bruta" value={`${fmtMoney(extDados.receitaBruta)}`} />
+                <Kpi label="DAS (Receita)" value={`${fmtMoney(extDados.dasTotal ?? extDados.impostoApurado)}`} cor="#8BE9FD" />
                 {extrato?.files?.declaracaoUrl && (
                   <a href={extrato.files.declaracaoUrl} target="_blank" rel="noreferrer" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>Declaração (PDF)</a>
                 )}
