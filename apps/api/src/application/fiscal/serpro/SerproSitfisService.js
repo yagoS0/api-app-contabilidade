@@ -20,6 +20,24 @@ const VERIFICADO_TRIAL = false;
 
 const MAX_POLL_MS = 28 * 1000; // teto para responder inline sem estourar o timeout HTTP
 const DEFAULT_WAIT_MS = 2000;
+
+// ── Cooldown do AV02 (limite por CONTRATANTE) ────────────────────────────────────────────────
+// O SERPRO responde AV02 quando o limite de solicitações EM PROCESSAMENTO da conta foi atingido.
+// Quem abre solicitação é o /Apoiar; quem a consome é o /Emitir. Consultar N empresas de uma vez
+// abre N solicitações e, se nenhuma conclui, a fila não drena — e CADA nova tentativa piora.
+//
+// Este cooldown é do CONTRATANTE (não da empresa): recebido um AV02, nenhuma outra empresa tenta
+// o /Apoiar até passar o tempoEspera. Sem ele o app fica martelando o SERPRO e mantém a fila cheia.
+// Em memória de propósito: é uma trava de curtíssimo prazo (segundos); reiniciar o processo
+// zerá-la é aceitável e não corrompe nada.
+let av02BloqueadoAte = 0;
+export function sitfisCooldownRestanteMs() {
+  return Math.max(0, av02BloqueadoAte - Date.now());
+}
+function registrarAv02(waitMs) {
+  const espera = Number(waitMs) > 0 ? Number(waitMs) : 30000;
+  av02BloqueadoAte = Math.max(av02BloqueadoAte, Date.now() + espera);
+}
 const MAX_WAIT_MS = 8000;
 
 function onlyDigits(value) {
@@ -271,6 +289,9 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
         { httpStatus, temEtag: Boolean(etag), wait, apoiar: safeApoiarPreview(resp.data) },
         "SITFIS: /Apoiar SEM protocolo",
       );
+      // AV02 = fila do contratante cheia. Trava as próximas tentativas (de QUALQUER empresa)
+      // pelo tempo que o próprio SERPRO pediu — continuar chamando só engorda a fila.
+      if (pedeAguardarProtocolo(extractMensagemTexto(resp.data))) registrarAv02(wait);
     }
     return { proto, wait, etag, status: httpStatus, resp: resp.data };
   }
@@ -287,7 +308,29 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
       sol = { proto, wait: 0, etag: null, status: 200, resp: null };
     }
   }
-  if (!sol) sol = await solicitarProtocolo();
+  if (!sol) {
+    // Sem protocolo salvo → seria preciso um /Apoiar. Se o contratante está em cooldown de AV02,
+    // nem tenta: devolve "processando" com o tempo restante. Evita alimentar a fila que já está
+    // cheia (era o ciclo que deixava a consulta impossível em TODAS as empresas).
+    const restante = sitfisCooldownRestanteMs();
+    if (restante > 0) {
+      const segundos = Math.ceil(restante / 1000);
+      logger?.warn?.({ restanteMs: restante }, "SITFIS: em cooldown do AV02 — /Apoiar não foi chamado");
+      return {
+        ok: true,
+        processando: true,
+        protocolo: null,
+        relatorioPdfBuffer: null,
+        relatorioTexto: null,
+        verificadoTrial: VERIFICADO_TRIAL,
+        rawPayload: null,
+        tempoEsperaSegundos: segundos,
+        mensagemSerpro: "[Aviso-Sitfis-AV02] O limite de solicitações em processamento foi atingido.",
+        mensagem: `Fila do escritório cheia no SERPRO (limite de solicitações em processamento). Aguarde ~${segundos}s SEM tentar de novo — cada tentativa reabre uma solicitação e mantém a fila cheia.`,
+      };
+    }
+    sol = await solicitarProtocolo();
+  }
   if (!sol.proto) {
     // Q43.6: caso legítimo de "aguarde" — o /Apoiar 200 sem protocolo, com tempoEspera / aviso AV02
     // ("limite de solicitações em processamento atingido"). Se o tempo cabe no orçamento inline,
