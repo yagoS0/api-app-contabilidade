@@ -104,6 +104,11 @@ const CNAES = [
   ["6391700", "Agências de notícias", TR_FATOR_R, false],
   ["7311400", "Agências de publicidade", TR_FATOR_R, false],
   ["7312200", "Agenciamento de espaços publicitários", TR_FATOR_R, false],
+  // 7319-0/02 e /03 faltavam e são da MESMA subclasse do /99 já listado acima (7319-0), com a
+  // família 73xx inteira aqui classificada igual. Sem eles, 3 empresas reais da carteira ficavam
+  // sem sugestão de anexo na Aba Fiscal — o CNAE estava preenchido, mas não existia linha aqui.
+  ["7319002", "Promoção de vendas", TR_FATOR_R, false],
+  ["7319003", "Marketing direto", TR_FATOR_R, false],
   ["7319099", "Outras atividades de publicidade", TR_FATOR_R, false],
   ["7320300", "Pesquisa de mercado e opinião pública", TR_FATOR_R, false],
 
