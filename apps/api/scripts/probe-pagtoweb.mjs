@@ -1,19 +1,19 @@
 // Sonda o PAGTOWEB (comprovante de arrecadação) e imprime a resposta CRUA do SERPRO.
 //
-// OBJETIVO: validar o idServiço/payload antes de ligar INTEGRACAO_SERPRO_PAGTOWEB. Hoje a flag
-// está OFF porque `COMPARRECADACAO72` e o formato de `dados` são o PALPITE da spec
-// (verificadoTrial:false) — decisão do projeto de nunca reportar pagamento por suposição.
-// É isso que permitiria dar baixa com a DATA e o VALOR reais do pagamento (o que hoje se faz
-// olhando o e-CAC na mão).
+// ✅ PAYLOAD VALIDADO (27/07/2026): {"numeroDocumento":"<só dígitos>"} → 200 + { pdf }.
+// Com máscara (07.16.26194.4441233-6) dá 500/Erro-PAGTOWEB-00099; com o campo
+// `numeroDocumentoArrecadacao` dá 400. O serviço devolve SÓ o PDF — não há data/valor
+// estruturados, então a baixa automática depende de ler o comprovante (use --texto).
 //
 //   node scripts/probe-pagtoweb.mjs --guia=<guideId>
 //   node scripts/probe-pagtoweb.mjs --cnpj=<cnpj> --documento=<numeroDocumento>
 //   node scripts/probe-pagtoweb.mjs --cnpj=<cnpj> --listar     → mostra guias com numeroDocumento
 //
-// Ajuste do payload (o `dados` correto ainda não é conhecido — 00099 = erro interno do PAGTOWEB):
+// Ajuste do payload (mantidos para investigar outros serviços/variações):
 //   --digitos                 → manda o documento só com dígitos (tira pontos e traço)
 //   --campo=<nome>            → troca o nome do campo (default numeroDocumento)
 //   --dados='{"x":"y"}'       → manda um `dados` inteiro, cru (vence tudo)
+//   --texto                   → extrai o TEXTO do PDF do comprovante (data/valor do pagamento)
 //
 // Roda MESMO com a flag OFF (o ponto é validar antes de ligar). Não grava nada: só lê e imprime.
 // ⚠ Consome uma chamada paga ao SERPRO. Rode em UMA guia.
@@ -143,6 +143,20 @@ try {
     } else if (typeof dadosRaw === "string") {
       console.log(`(nao e JSON — string de ${dadosRaw.length} chars; provavelmente o PDF em base64 direto)`);
       console.log(`inicio: ${dadosRaw.slice(0, 80)}...`);
+    }
+
+    // O comprovante vem SÓ como PDF (dados = { pdf }), sem data/valor estruturados. Para dar baixa
+    // com os dados reais é preciso ler o PDF — e o texto tem que ser visto ANTES de escrever
+    // qualquer parser (a lição do SITFIS: parser escrito no escuro inventa número).
+    const pdfB64 = parsed && typeof parsed === "object" ? (parsed.pdf || parsed.PDF || parsed.arquivo) : null;
+    if (temFlag("texto") && pdfB64) {
+      const buf = Buffer.from(String(pdfB64), "base64");
+      const pdfParse = (await import("pdf-parse")).default;
+      const out = await pdfParse(buf);
+      console.log(`\n=== TEXTO DO COMPROVANTE (${String(out?.text || "").length} chars) ===\n`);
+      console.log(out?.text || "(vazio)");
+    } else if (pdfB64) {
+      console.log("\n(rode com --texto para extrair o texto do PDF e ver data/valor do pagamento)");
     }
   }
 
