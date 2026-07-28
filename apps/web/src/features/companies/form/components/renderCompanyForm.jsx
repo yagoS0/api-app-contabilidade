@@ -55,12 +55,68 @@ function applyBrasilApiData(data, onChange) {
   if (data.capital_social !== undefined && data.capital_social !== null) {
     onChange("capitalSocial", String(data.capital_social));
   }
+  // Traz TODOS os CNAEs, com descrição. O classificador consolida a sugestão de anexo sobre o
+  // CONJUNTO (principal + secundários): apoio administrativo que também faz obra e engenharia é
+  // outro caso. Antes só o código era guardado, e a tela virava uma fileira de números sem
+  // sentido — dava pra ter o dado certo e ainda assim não saber o que ele significa.
   if (Array.isArray(data.cnaes_secundarios)) {
     const secundarios = data.cnaes_secundarios
       .map((c) => String(c?.codigo || "").replace(/\D+/g, ""))
       .filter(Boolean);
     onChange("cnaesSecundarios", secundarios.join(", "));
   }
+}
+
+// Descrições dos CNAEs vindas da consulta — só para EXIBIR ao lado do código. O que é gravado
+// continua sendo o código; a descrição é conveniência de leitura, não dado fiscal.
+function descricoesDosCnaes(data) {
+  const mapa = new Map();
+  const norm = (v) => String(v || "").replace(/\D+/g, "").slice(0, 7);
+  if (data?.cnae_fiscal) mapa.set(norm(data.cnae_fiscal), String(data.cnae_fiscal_descricao || ""));
+  for (const c of Array.isArray(data?.cnaes_secundarios) ? data.cnaes_secundarios : []) {
+    const k = norm(c?.codigo);
+    if (k) mapa.set(k, String(c?.descricao || ""));
+  }
+  return mapa;
+}
+
+// Formata "8219999" → "8219-9/99", que é como o cartão CNPJ escreve.
+function formatarCnae(valor) {
+  const d = String(valor || "").replace(/\D+/g, "").slice(0, 7);
+  return d.length === 7 ? `${d.slice(0, 4)}-${d.slice(4, 5)}/${d.slice(5)}` : String(valor || "");
+}
+
+// Mostra o CNAE do jeito que o cartão CNPJ escreve (8219-9/99) + a descrição, quando conhecida.
+// Sem isso o campo é só um número, e conferir contra o cartão vira trabalho manual.
+function CnaeLegenda({ valor, descricoes }) {
+  const digitos = String(valor || "").replace(/\D+/g, "").slice(0, 7);
+  if (digitos.length !== 7) return null;
+  const desc = descricoes?.get(digitos) || "";
+  return (
+    <span style={{ fontSize: 11, color: "#8A8FA3" }}>
+      {formatarCnae(digitos)}{desc ? ` — ${desc}` : ""}
+    </span>
+  );
+}
+
+function ListaCnaesSecundarios({ valor, descricoes }) {
+  const codigos = String(valor || "")
+    .split(",")
+    .map((c) => c.replace(/\D+/g, "").slice(0, 7))
+    .filter((c) => c.length === 7);
+  if (!codigos.length) return null;
+  return (
+    <div className="full" style={{ marginTop: -4 }}>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: "#8A8FA3", lineHeight: 1.7 }}>
+        {codigos.map((c) => (
+          <li key={c}>
+            <strong style={{ color: "#F8F8F2", fontWeight: 600 }}>{formatarCnae(c)}</strong>
+            {descricoes?.get(c) ? ` — ${descricoes.get(c)}` : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 const MINI_INPUT = {
@@ -221,6 +277,8 @@ export function CompanyForm({
 }) {
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjError, setCnpjError] = useState(null);
+  // Descrições dos CNAEs da última consulta — só para exibir; o que é gravado é o código.
+  const [cnaeDescricoes, setCnaeDescricoes] = useState(() => new Map());
 
   // Q11.2: RHF "paralelo" — não possui o state (continua sendo `form` externo), só faz
   // validação visual em tempo real. Vantagem: zero refactor dos callers (continua chamando
@@ -250,6 +308,7 @@ export function CompanyForm({
     try {
       const data = await fetchCnpjData(digits);
       applyBrasilApiData(data, onChange);
+      setCnaeDescricoes(descricoesDosCnaes(data));
     } catch {
       setCnpjError("CNPJ não encontrado ou inválido.");
     } finally {
@@ -259,6 +318,12 @@ export function CompanyForm({
 
   return (
     <form className="form-grid two-col" onSubmit={onSubmit}>
+      <div className="full" style={{ paddingBottom: 4 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Responsável pelo acesso</strong>
+        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
+          Quem vai entrar no portal do cliente.
+        </span>
+      </div>
       <label>
         Nome do responsavel
         <input value={form.ownerName} onChange={(event) => onChange("ownerName", event.target.value)} />
@@ -297,6 +362,12 @@ export function CompanyForm({
           )}
         </label>
       ) : null}
+      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Identificação da empresa</strong>
+        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
+          Digite o CNPJ e saia do campo: o resto preenche sozinho.
+        </span>
+      </div>
       <label>
         CNPJ
         {cnpjReadOnly && (
@@ -351,6 +422,9 @@ export function CompanyForm({
         Telefone
         <input value={form.telefone} onChange={(event) => onChange("telefone", event.target.value)} />
       </label>
+      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Regime e obrigações</strong>
+      </div>
       <label>
         Regime tributario
         <select value={form.regimeTributario} onChange={(event) => onChange("regimeTributario", event.target.value)}>
@@ -379,9 +453,16 @@ export function CompanyForm({
           <option value="sim">Sim — só obrigações zeradas</option>
         </select>
       </label>
+      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Atividades (CNAE)</strong>
+        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
+          Todos os CNAEs contam: a sugestão de anexo é feita sobre o conjunto, não só o principal.
+        </span>
+      </div>
       <label>
         CNAE principal
         <input value={form.cnaePrincipal} onChange={(event) => onChange("cnaePrincipal", event.target.value)} required />
+        <CnaeLegenda valor={form.cnaePrincipal} descricoes={cnaeDescricoes} />
       </label>
       <label>
         CNAEs secundários
@@ -390,8 +471,14 @@ export function CompanyForm({
           onChange={(event) => onChange("cnaesSecundarios", event.target.value)}
           placeholder="4330405, 4321500"
         />
-        <span style={{ fontSize: 11, color: "#6b7280" }}>Separados por vírgula. Preenche sozinho pelo CNPJ.</span>
+        <span style={{ fontSize: 11, color: "#6b7280" }}>Separados por vírgula. Preenchem sozinhos pelo CNPJ.</span>
       </label>
+      {/* Lista legível: o campo de texto é uma fileira de números; aqui dá pra CONFERIR se os
+          CNAEs batem com o cartão CNPJ antes de salvar. */}
+      <ListaCnaesSecundarios valor={form.cnaesSecundarios} descricoes={cnaeDescricoes} />
+      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Endereço</strong>
+      </div>
       <label>
         Endereco - rua
         <input value={form.enderecoRua} onChange={(event) => onChange("enderecoRua", event.target.value)} required />
@@ -485,6 +572,9 @@ export function CompanyForm({
           <option value="sim">Sim — c/ desoneração</option>
         </select>
       </label>
+      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Inscrições</strong>
+      </div>
       <label>
         Inscrição municipal
         <input value={form.inscricaoMunicipal} onChange={(event) => onChange("inscricaoMunicipal", event.target.value)} />
