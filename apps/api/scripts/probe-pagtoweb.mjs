@@ -10,6 +10,11 @@
 //   node scripts/probe-pagtoweb.mjs --cnpj=<cnpj> --documento=<numeroDocumento>
 //   node scripts/probe-pagtoweb.mjs --cnpj=<cnpj> --listar     → mostra guias com numeroDocumento
 //
+// Ajuste do payload (o `dados` correto ainda não é conhecido — 00099 = erro interno do PAGTOWEB):
+//   --digitos                 → manda o documento só com dígitos (tira pontos e traço)
+//   --campo=<nome>            → troca o nome do campo (default numeroDocumento)
+//   --dados='{"x":"y"}'       → manda um `dados` inteiro, cru (vence tudo)
+//
 // Roda MESMO com a flag OFF (o ponto é validar antes de ligar). Não grava nada: só lê e imprime.
 // ⚠ Consome uma chamada paga ao SERPRO. Rode em UMA guia.
 
@@ -92,6 +97,16 @@ try {
   console.log(`Contratante : ${contratante || "(não configurado)"}`);
   console.log(`Documento ..: ${numeroDocumento}\n`);
 
+  // O formato exato de `dados` ainda não é conhecido (o SERPRO devolveu Erro-PAGTOWEB-00099,
+  // erro interno genérico, com o documento formatado). Estas flags permitem testar variações
+  // sem novo deploy — cada tentativa é UMA chamada paga.
+  const dadosCru = arg("dados");
+  const campo = arg("campo") || "numeroDocumento";
+  const docEnviado = temFlag("digitos") ? onlyDigits(numeroDocumento) : numeroDocumento;
+  const dadosPayload = dadosCru || JSON.stringify({ [campo]: docEnviado });
+  console.log(`dados ......: ${dadosPayload}
+`);
+
   const client = new SerproHttpClient();
   const resp = await client.post("/Emitir", {
     contratante: { numero: contratante, tipo: 2 },
@@ -101,7 +116,7 @@ try {
       idSistema: SERPRO_PAGTOWEB_SYSTEM,
       idServico: SERPRO_PAGTOWEB_SERVICE_COMPROVANTE,
       versaoSistema: "1.0",
-      dados: JSON.stringify({ numeroDocumento }),
+      dados: dadosPayload,
     },
   }, { raw: true, validateStatus: () => true });
 
@@ -116,7 +131,9 @@ try {
   console.log("\n=== O QUE OLHAR ===");
   console.log("• mensagens[]: código/texto dizem se o idServiço existe e se o payload foi aceito.");
   console.log("• dados: deve trazer o comprovante (PDF base64) e/ou data/valor do pagamento.");
-  console.log("• Se vier 'serviço não encontrado'/'inválido', o idServiço COMPARRECADACAO72 está errado.");
+  console.log("• Erro-PAGTOWEB-00099 = erro INTERNO do PAGTOWEB: o serviço existe e recebeu a chamada,");
+  console.log("  mas não gostou do `dados`. Tente: --digitos, --campo=<outro nome>, --dados='{...}'.");
+  console.log("• O 'Protocolo de erro' da mensagem identifica a falha no suporte do SERPRO.");
 } catch (err) {
   console.error("\nErro:", err?.message || err);
   if (err?.response) {
