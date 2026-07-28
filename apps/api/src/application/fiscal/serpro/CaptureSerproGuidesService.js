@@ -104,11 +104,37 @@ function extractDateValue(payload) {
   return raw ? String(raw).trim() : null;
 }
 
+// ⚠ A resposta do SERPRO ECOA o envelope enviado, que contém
+// `contratante.numero` / `contribuinte.numero` / `autorPedidoDados.numero` (CNPJs).
+// Varrer o payload inteiro com um padrão frouxo de "numero" pegava o CNPJ do ESCRITÓRIO como se
+// fosse o número do documento — foi o que gravou doc=39254243000191 em todas as guias de DAS
+// (e faria o PAGTOWEB consultar o documento errado).
+// Por isso: procura primeiro DENTRO de `dados` (a carga real da resposta); só então cai para o
+// payload completo, aí com padrão ESTRITO (sem o "numero" solto).
 function extractDocumentNumber(payload) {
-  const raw = searchValueDeep(payload, (key, value) => {
-    const normalized = String(key || "").toLowerCase();
-    return /(numero.*documento|numerodocumento|nosso.*numero|numerodar|numero)/.test(normalized) && typeof value !== "object";
-  });
+  const casaEstrito = (key, value) => {
+    const k = String(key || "").toLowerCase();
+    if (typeof value === "object" || value == null) return false;
+    return /(numero.*documento|numerodocumento|nosso.*numero|numerodar|numerodas|numeroguia)/.test(k);
+  };
+
+  // `dados` vem como string JSON escapada no envelope Integra Contador.
+  const dadosRaw = payload && (payload.dados ?? payload.Dados);
+  let dados = dadosRaw;
+  if (typeof dadosRaw === "string") {
+    try { dados = JSON.parse(dadosRaw); } catch { dados = null; }
+  }
+  if (dados && typeof dados === "object") {
+    const doDados = searchValueDeep(dados, (key, value) => {
+      const k = String(key || "").toLowerCase();
+      if (typeof value === "object" || value == null) return false;
+      // Dentro de `dados` não há eco de envelope, então aqui "numero" solto é aceitável.
+      return /(numero|nosso.*numero|documento)/.test(k);
+    });
+    if (doDados != null && String(doDados).trim()) return String(doDados).trim();
+  }
+
+  const raw = searchValueDeep(payload, casaEstrito);
   return raw == null ? null : String(raw).trim() || null;
 }
 
