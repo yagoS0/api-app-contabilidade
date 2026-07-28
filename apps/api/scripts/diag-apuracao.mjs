@@ -12,8 +12,12 @@
 // COMO LER
 //  • `estado` da competência é a verdade do fluxo: `transmitida`/`confirmada` = declarado à RFB;
 //    `fechada` = pronto mas não transmitido; `bloqueada_pendencias` = tem pendência humana.
-//  • DAS local × SERPRO: o motor local é DOUBLE-CHECK. Quem manda é o SERPRO. Divergência grande
-//    é sinal de que o cálculo local está desatualizado — não de que a declaração está errada.
+//  • DAS prévia × declarado: apesar do nome do campo, `dasCalculadoLocal` guarda a SIMULAÇÃO do
+//    SERPRO (indicadorTransmissao:false), não o motor local — ver FechamentoService:287→343.
+//    `dasRetornadoSerpro` guarda a TRANSMISSÃO (:true). Os dois são do SERPRO. Divergir significa
+//    que o valor MUDOU entre a prévia que o contador aprovou e o que foi declarado de fato:
+//    nota capturada no intervalo, receita anterior ajustada, atividade alterada. Vale investigar
+//    caso a caso — não é erro de cálculo nosso.
 //  • Conferência ADN nunca rodada aparece como `—`: significa que o faturamento daquela
 //    competência NUNCA foi confrontado com a autoridade nacional.
 
@@ -103,12 +107,12 @@ try {
       if (s.conferenciaStatus) totais.conferidas += 1;
       if (s.conferenciaStatus === "divergente") totais.divergentes += 1;
 
-      // Divergência entre o motor local e o oficial do SERPRO — só faz sentido se os dois existem.
+      // Prévia (simulação) × declarado (transmissão) — os dois vindos do SERPRO.
       let divTxt = "";
       if (s.dasCalculadoLocal != null && s.dasRetornadoSerpro != null) {
         const dif = Number(s.dasRetornadoSerpro) - Number(s.dasCalculadoLocal);
         if (Math.abs(dif) > 0.01) {
-          divTxt = `  Δ local×SERPRO ${money(dif)}`;
+          divTxt = `  Δ prévia×declarado ${money(dif)}`;
           totais.divergenciaDas.push({ emp: emp.razaoSocial, comp: s.competencia, dif });
         }
       }
@@ -138,7 +142,7 @@ try {
     for (const d of totais.divergenciaDas.slice(0, 10)) {
       console.log(`   ${d.comp}  ${String(d.emp).slice(0, 34).padEnd(34)} ${money(d.dif)}`);
     }
-    console.log("   (o SERPRO é a autoridade; divergência indica motor local desatualizado)");
+    console.log("   (prévia = simulação SERPRO; declarado = transmissão SERPRO — o valor mudou no meio)");
   }
   if (!totais.conferidas) {
     console.log("\n⚠ NENHUMA competência foi conferida contra o ADN — o faturamento nunca foi");

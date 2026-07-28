@@ -61,7 +61,7 @@ Tudo abaixo é detalhe desses oito passos.
 | ✅ | Fechamento com escolha de atividades + folha 12m | |
 | ✅ | Transmissão gera extrato + guia no mesmo retorno | |
 | ⚠️ | **Só 1 dos 43 `idAtividade` foi exercido contra a API real** | os outros vêm da especificação, com `verificadoTrial:false`. Empresa que precise de outra atividade é território não testado |
-| 🟡 | Motor de cálculo local é double-check | quem manda é o SERPRO; divergência = motor local desatualizado |
+| 🟡 | Existe um motor de cálculo local, mas **não é ele** que alimenta o snapshot | o campo `dasCalculadoLocal` guarda a **simulação do SERPRO**; o nome é herança. Comparar com `dasRetornadoSerpro` mostra se o valor mudou entre a prévia e a declaração |
 
 ## 5. Lucro Presumido
 
@@ -134,7 +134,7 @@ Ordenado por **risco de errar dinheiro**, não por esforço.
 2. **Ligar o `INTEGRACAO_SERPRO_PAGTOWEB`** — já validado; sem ligar, a busca de pagamento
    continua manual.
 3. **Rodar `diag-apuracao.mjs`** e resolver o que aparecer: competência fechada e não
-   transmitida, pendência humana travando, divergência local × SERPRO.
+   transmitida, pendência humana travando, DAS que mudou entre a prévia e a declaração.
 4. **Validar os `idAtividade`** que as empresas da carteira realmente usam. Hoje só um foi
    exercido contra a API real — é o maior risco silencioso da apuração.
 5. **Botão de conferência sob demanda** na aba Apuração — a rota já existe.
