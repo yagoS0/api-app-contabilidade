@@ -613,6 +613,13 @@ export function createMockApi() {
       await delay();
       return { ok: true, competencia, folhaProlaboreOk: Boolean(ok) };
     },
+    async buscarPagamentoGuia() {
+      await delay();
+      return {
+        ok: true, encontrado: true,
+        comprovante: { dataArrecadacao: "13/07/2026", principal: 178.31, juros: 12.94, multa: 1.78, total: 193.03, meioPagamento: "PIX", confiavel: true },
+      };
+    },
     async setChecklistFechamento(_companyId, competencia, item, ok) {
       await delay();
       return { ok: true, competencia, item, valor: Boolean(ok) };

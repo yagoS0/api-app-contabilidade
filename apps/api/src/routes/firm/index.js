@@ -2789,6 +2789,88 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
   );
 
+  // BUSCAR PAGAMENTO — consulta o comprovante no SERPRO e apenas REGISTRA o que encontrou.
+  // NÃO gera lançamento contábil: a baixa continua sendo ato deliberado do contador (que depois
+  // abre "Dar baixa" já pré-preenchido com a data e a quebra reais). Separar as duas coisas evita
+  // lançamento automático a partir de um dado que ainda não foi conferido por gente.
+  router.post(
+    "/guides/:guideId/buscar-pagamento",
+    requireAccountType("FIRM"),
+    async (req, res) => {
+      const { guideId } = req.params || {};
+      const scoped = await getGuideWithFirmAccess({ guideId, user: req.auth.user });
+      if (!scoped.guide) return res.status(scoped.status).json({ error: scoped.error });
+
+      const numeroDoc = String(scoped.guide.extracted?.numeroDocumento || "").trim();
+      if (!numeroDoc) {
+        return res.json({
+          ok: true, encontrado: false,
+          motivo: "Guia sem número de documento — o comprovante é localizado por ele.",
+        });
+      }
+
+      try {
+        const { confirmarPagamento } = await import(
+          "../../application/fiscal/serpro/SerproPagtoWebService.js"
+        );
+        const r = await confirmarPagamento({
+          contribuinteCnpj: scoped.guide.cnpj,
+          numeroDocumento: numeroDoc,
+          logger: log,
+        });
+        if (!r?.pago) {
+          return res.json({
+            ok: true, encontrado: false,
+            motivo: r?.mensagem || "Pagamento ainda não localizado no SERPRO.",
+          });
+        }
+
+        const c = r.comprovante || null;
+        // Guarda a leitura do comprovante na própria guia — é o que pré-preenche a baixa depois.
+        const extractedAtual = (scoped.guide.extracted && typeof scoped.guide.extracted === "object")
+          ? scoped.guide.extracted
+          : {};
+        await prisma.guide.update({
+          where: { id: scoped.guide.id },
+          data: {
+            // PAID aqui = "pagamento localizado no SERPRO". A baixa contábil é o passo seguinte
+            // (guide.baixada/lancamentoId continuam vazios até o contador lançar).
+            paymentStatus: "PAID",
+            paymentStatusSource: "SERPRO",
+            paymentConfirmedAt: new Date(),
+            serproLastCheckedAt: new Date(),
+            serproLastCheckResult: "COMPROVANTE_LOCALIZADO",
+            extracted: {
+              ...extractedAtual,
+              comprovante: c
+                ? {
+                    dataArrecadacao: c.dataArrecadacaoBR || null,
+                    principal: c.principal, juros: c.juros, multa: c.multa, total: c.total,
+                    meioPagamento: c.meioPagamento, confiavel: c.confiavel,
+                  }
+                : { confiavel: false },
+            },
+          },
+        });
+
+        return res.json({
+          ok: true,
+          encontrado: true,
+          comprovante: c
+            ? {
+                dataArrecadacao: c.dataArrecadacaoBR, principal: c.principal,
+                juros: c.juros, multa: c.multa, total: c.total,
+                meioPagamento: c.meioPagamento, confiavel: c.confiavel,
+              }
+            : null,
+        });
+      } catch (err) {
+        log.error({ err: err?.message, guideId: scoped.guide.id }, "Falha ao buscar pagamento (PAGTOWEB)");
+        return res.status(502).json({ ok: false, error: err?.code || "PAGTOWEB_FALHOU", reason: err?.message });
+      }
+    }
+  );
+
   router.post(
     "/guides/:guideId/confirm-payment",
     requireAccountType("FIRM"),

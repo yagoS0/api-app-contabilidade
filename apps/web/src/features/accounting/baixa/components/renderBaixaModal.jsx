@@ -151,7 +151,14 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   const today = new Date().toISOString().slice(0, 10);
   const valorBase = Number(entry.valor || entry.totalD || 0);
 
-  const [data, setData] = useState(today);
+  // Quando o pagamento já foi localizado no SERPRO, a data da BAIXA é a da arrecadação (não hoje)
+  // e os valores vêm do comprovante — é o ponto do fluxo "buscar agora, lançar depois".
+  const comprovante = entry?.comprovante?.confiavel ? entry.comprovante : null;
+  const dataComprovante = (() => {
+    const m = String(comprovante?.dataArrecadacao || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+  })();
+  const [data, setData] = useState(dataComprovante || today);
   const [historico, setHistorico] = useState(defaultHistorico);
   const [lines, setLines] = useState(() => {
     const entryLines = entry.lines || [];
@@ -184,9 +191,12 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         const tpl = res?.template;
         if (!tpl) return;
         // Baixa parcial: tpl.valor já vem como o SALDO restante (não o principal cheio).
-        const principal = Number(tpl.valor || valorBase) || 0;
-        const juros = Number(acr?.juros) || 0;
-        const multa = Number(acr?.multa) || 0;
+        // Comprovante do SERPRO vence a estimativa da circular: são os valores efetivamente pagos.
+        const principal = comprovante?.principal != null
+          ? Number(comprovante.principal)
+          : (Number(tpl.valor || valorBase) || 0);
+        const juros = comprovante?.juros != null ? Number(comprovante.juros) : (Number(acr?.juros) || 0);
+        const multa = comprovante?.multa != null ? Number(comprovante.multa) : (Number(acr?.multa) || 0);
         const acrescimoTotal = Math.round((juros + multa) * 100) / 100;
         // Item 2: guia recalculada → cada acréscimo na sua conta de despesa (juros 501, multa 506);
         // o crédito (caixa) sai pelo TOTAL pago (principal + juros + multa).

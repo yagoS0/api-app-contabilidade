@@ -2,6 +2,9 @@ import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
+// Cliente próprio: a busca de pagamento é uma chamada pontual da própria aba (mesmo padrão
+// auto-contido de FechamentoContabilPanel/ExpectedGuidesPanel).
+import { createApiClient } from "../../../../api/client";
 
 // Subtipos universais + flag de regimes que os exibem.
 // "all" = qualquer regime; array = só esses regimes.
@@ -301,7 +304,7 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
 
 // Q31: célula só com NÚMERO; cor implícita (vermelho=aberto, verde=pago, amarelo=vinculado a
 // parcelamento). Clicar abre o menu de ações (Editar / Dar baixa / Vincular a parcelamento).
-function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null }) {
+function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null, onBuscarPagamento }) {
   const [open, setOpen] = useState(false);
   const [selParc, setSelParc] = useState("");
   const temAcrescimo = acrescimo && acrescimo.acrescimo > 0;
@@ -336,6 +339,9 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
   else if (isParcial) { color = "#6EA8FF"; bg = "rgba(110,168,255,0.08)"; } // parcial (azul)
   else if (!isAberto) { color = "#69FF47"; bg = "rgba(105,255,71,0.06)"; } // pago (verde)
   else if (isVinculado) { color = "#FFB347"; bg = "rgba(255,179,71,0.08)"; } // vinculado a parcelamento (amarelo)
+  // Pagamento LOCALIZADO no SERPRO mas ainda SEM lançamento: continua "em aberto" na cor (há
+  // trabalho a fazer), mas ganha a tag "paga" — o dinheiro saiu, falta o contador lançar.
+  const pagamentoLocalizado = Boolean(entry.pagamentoLocalizado) && isOpenLike;
 
   const menuBtn = { display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: "transparent", border: "none", color: "#F8F8F2", fontSize: "0.78rem", cursor: "pointer", borderRadius: 4 };
 
@@ -387,6 +393,16 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
         </div>
       )}
       {/* Baixa parcial por quota: mostra o saldo restante (azul) na célula. */}
+      {pagamentoLocalizado && (
+        <div
+          title={entry.comprovante?.dataArrecadacao
+            ? `Pagamento localizado no SERPRO em ${entry.comprovante.dataArrecadacao} — falta lançar a baixa.`
+            : "Pagamento localizado no SERPRO — falta lançar a baixa."}
+          style={{ fontSize: "0.62rem", fontWeight: 700, color: "#69FF47", lineHeight: 1.2 }}
+        >
+          paga{entry.comprovante?.dataArrecadacao ? ` ${entry.comprovante.dataArrecadacao.slice(0, 5)}` : ""}
+        </div>
+      )}
       {!placeholder && isParcial && Number.isFinite(saldo) && (
         <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "#6EA8FF", whiteSpace: "nowrap" }} title={`Pago R$ ${fmtMoney(entry.abatido)} de R$ ${fmtMoney(valor)} — ${entry.quotasPagas || 0} quota(s)`}>
           saldo R$ {fmtMoney(saldo)}
@@ -412,6 +428,18 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           {canEditInss && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar valor/juros/multa</button>}
           {/* Q52: INSS pago — edita o lançamento de baixa real (não a provisão sintética). */}
           {onEdit && isSynthetic && !isAberto && entry.baixaEntry && <button onClick={() => { setOpen(false); onEdit(entry.baixaEntry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar baixa</button>}
+          {/* Busca o comprovante no SERPRO: marca "paga" e guarda data/valores, SEM lançar.
+              O lançamento continua sendo o "Dar baixa" abaixo, já pré-preenchido. */}
+          {isOpenLike && onBuscarPagamento && entry.sourceGuide?.id && (
+            <button
+              onClick={() => { setOpen(false); onBuscarPagamento(entry); }}
+              style={menuBtn}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              🔎 Buscar pagamento
+            </button>
+          )}
           {/* "Dar baixa" — provisões reais E INSS sintético (Q47). Em PARCIAL, abre nova quota. */}
           {isOpenLike && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Dar baixa (próxima quota)" : "Dar baixa"}</button>}
           {/* "Cancelar baixa" — DAS/quota (provisão real) E INSS sintético (Q52). Em PARCIAL cancela a última quota. */}
@@ -452,6 +480,8 @@ function FaturamentoCell({ valor }) {
 
 // ─── CircularTab ─────────────────────────────────────────────────────────────
 
+const circularApi = createApiClient();
+
 export function CircularTab({
   circularData,
   loading,
@@ -476,6 +506,32 @@ export function CircularTab({
   savingCircular,
 }) {
   const [baixaEntry, setBaixaEntry] = useState(null);
+  // Busca o comprovante no SERPRO (custo por chamada → só sob clique). NÃO lança nada: marca a
+  // guia como paga e guarda data/valores, que depois pré-preenchem o "Dar baixa".
+  const [buscandoPagamento, setBuscandoPagamento] = useState(null);
+  async function handleBuscarPagamento(entry) {
+    const guideId = entry?.sourceGuide?.id;
+    if (!guideId || !circularApi?.buscarPagamentoGuia || buscandoPagamento) return;
+    setBuscandoPagamento(guideId);
+    try {
+      const r = await circularApi.buscarPagamentoGuia(guideId);
+      if (r?.encontrado) {
+        const c = r.comprovante;
+        window.alert(c?.dataArrecadacao
+          ? `Pagamento localizado em ${c.dataArrecadacao} — total R$ ${Number(c.total || 0).toFixed(2)}.
+
+A baixa continua com você: use "Dar baixa" (já vem preenchida).`
+          : "Pagamento localizado no SERPRO. Use \"Dar baixa\" para lançar.");
+      } else {
+        window.alert(r?.motivo || "Pagamento ainda não localizado no SERPRO.");
+      }
+      await onLoad?.();
+    } catch (err) {
+      window.alert(err?.message || "Falha ao buscar o pagamento no SERPRO.");
+    } finally {
+      setBuscandoPagamento(null);
+    }
+  }
   const [editEntry, setEditEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [cancellingBaixaId, setCancellingBaixaId] = useState(null);
@@ -724,6 +780,7 @@ export function CircularTab({
                         key={col.key}
                         entry={matrix[`${col.key}__${comp}`]}
                         onBaixa={(entry) => setBaixaEntry(entry)}
+                        onBuscarPagamento={handleBuscarPagamento}
                         onEdit={(onUpdateEntry || onSaveCircular) ? (entry) => setEditEntry(entry) : null}
                         onCancelBaixa={onCancelBaixa ? handleCancelBaixa : null}
                         parcelamentosAtivos={parcelamentosAtivos}

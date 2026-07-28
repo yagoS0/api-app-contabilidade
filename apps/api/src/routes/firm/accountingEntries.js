@@ -800,6 +800,9 @@ export function createAccountingEntriesRouter({ log }) {
           id: true, paymentStatus: true, paymentStatusSource: true, paymentConfirmedAt: true, comprovantePdfFileId: true,
           // `vencimento`/`source`: data e desempate da provisão DAS sintética (guia de upload).
           vencimento: true, source: true,
+          // `extracted`: traz o comprovante lido do SERPRO (data real + principal/juros/multa),
+          // usado pra pré-preencher a baixa.
+          extracted: true,
         },
       }),
     ]);
@@ -840,16 +843,24 @@ export function createAccountingEntriesRouter({ log }) {
         : (guide?.valorOriginal != null ? Number(guide.valorOriginal) : Number(entry.valor || entry.totalD || 0));
       const recalculado =
         guideValorAtual != null && Math.abs(guideValorAtual - valorOriginal) > 0.01;
-      // Q45: se a GUIA do DAS foi confirmada como paga (SERPRO/PAGTOWEB ou "pago" manual) e a provisão
-      // ainda não tem baixa, reflete como PAGO na Circular (verde + ✅), como já é feito no INSS.
+      // Pagamento LOCALIZADO no SERPRO ≠ baixa LANÇADA. São dois estados distintos:
+      //   • guia PAID sem baixa  → "pagamento localizado" (tag), o contador ainda vai lançar;
+      //   • provisão com baixa   → PAGO de fato (verde + ✅).
+      // Antes a guia paga já pintava a célula de verde sem existir lançamento nenhum — escondia
+      // trabalho pendente e dava a impressão de que a contabilidade estava fechada.
       const guidePaid = guide && String(guide.paymentStatus || "").toUpperCase() === "PAID";
       const hasBaixa = Array.isArray(entry.baixas) && entry.baixas.length > 0;
+      const comprovante = guide?.extracted && typeof guide.extracted === "object"
+        ? guide.extracted.comprovante || null
+        : null;
       return {
         ...entry,
         valor: valorOriginal,
         totalD: valorOriginal,
         totalC: valorOriginal,
-        ...(guidePaid && !hasBaixa ? { statusPagamento: "PAGO" } : {}),
+        pagamentoLocalizado: Boolean(guidePaid && !hasBaixa),
+        // Dados do comprovante pra pré-preencher a baixa (data real + quebra principal/juros/multa).
+        comprovante,
         // sourceGuide: dados do pagamento p/ o selo ✅ (data/origem/comprovante).
         sourceGuide: guide
           ? {

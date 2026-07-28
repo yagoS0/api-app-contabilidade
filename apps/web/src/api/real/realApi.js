@@ -413,6 +413,10 @@ export function createRealApi() {
       });
     },
     // Checklist de conferência do mês. `item`: folhaProlabore | despesas | receitas | provisoes | pagamentos.
+    // Busca o comprovante no SERPRO e só REGISTRA (não lança) — a baixa segue sendo do contador.
+    async buscarPagamentoGuia(guideId) {
+      return request(`/firm/guides/${guideId}/buscar-pagamento`, { method: "POST" });
+    },
     async setChecklistFechamento(companyId, competencia, item, ok) {
       return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/checklist/${item}`, {
         method: "POST",
