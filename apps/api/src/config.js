@@ -177,9 +177,28 @@ export const GUIDE_STORAGE_FORCE_PATH_STYLE =
 //   b) Volume em `/app/storage` + `GUIDE_LOCAL_STORAGE_DIR=/app/storage/guides` (absoluto,
 //      imune a mudança de CWD — recomendado).
 // Alternativa sem volume: GUIDE_STORAGE_PROVIDER=S3|R2 com bucket + credenciais.
-export const GUIDE_LOCAL_STORAGE_DIR = (
-  process.env.GUIDE_LOCAL_STORAGE_DIR || "./storage/guides"
-).trim();
+// Resolução em 3 níveis, do mais explícito ao mais seguro:
+//   1) GUIDE_LOCAL_STORAGE_DIR — manda sempre (use caminho ABSOLUTO em produção);
+//   2) volume detectado — se existe /app/storage (o mount do Railway), grava lá. Isso conserta
+//      sozinho o caso que nos custou todos os PDFs: o CWD é /app/apps/api (npm workspace), então
+//      o default relativo caía em /app/apps/api/storage, FORA do volume, e sumia a cada deploy;
+//   3) relativo ao CWD — desenvolvimento local.
+function resolveStorageDir() {
+  const doEnv = String(process.env.GUIDE_LOCAL_STORAGE_DIR || "").trim();
+  if (doEnv) return doEnv;
+  try {
+    // Só aceita como volume se der pra ESCREVER — diretório existente porém read-only não serve.
+    if (fs.existsSync("/app/storage")) {
+      fs.accessSync("/app/storage", fs.constants.W_OK);
+      return "/app/storage/guides";
+    }
+  } catch { /* sem volume acessível: cai no relativo */ }
+  return "./storage/guides";
+}
+export const GUIDE_LOCAL_STORAGE_DIR = resolveStorageDir();
+// Absoluto e visível: o problema anterior passou despercebido porque ninguém sabia ONDE estava
+// gravando. Quem lê o log agora vê o caminho real.
+export const GUIDE_LOCAL_STORAGE_DIR_ABS = path.resolve(GUIDE_LOCAL_STORAGE_DIR);
 
 // === SERPRO / Integra Contador ===
 export const SERPRO_ENABLE_PGDASD = process.env.SERPRO_ENABLE_PGDASD === "1";
@@ -300,6 +319,20 @@ if (!ADN_KEY_PATH)
   log.warn("ADN_KEY_PATH ausente: consulta ADN estará desabilitada");
 if (!process.env.CERT_STORAGE_PATH)
   log.warn("CERT_STORAGE_PATH ausente: usando fallback local ./storage/certificates");
+
+// PDFs (guias + relatório SITFIS): diz ONDE está gravando e AVISA se for efêmero.
+// A perda anterior passou despercebida justamente por não haver nenhum sinal disso no arranque.
+if (GUIDE_STORAGE_PROVIDER === "LOCAL") {
+  const dentroDeVolume = GUIDE_LOCAL_STORAGE_DIR_ABS.startsWith("/app/storage");
+  const noContainer = fs.existsSync("/app");
+  log.info(`PDFs em: ${GUIDE_LOCAL_STORAGE_DIR_ABS}${dentroDeVolume ? " (volume persistente)" : ""}`);
+  if (noContainer && !dentroDeVolume) {
+    log.warn(
+      `⚠ ARMAZENAMENTO EFÊMERO: ${GUIDE_LOCAL_STORAGE_DIR_ABS} está FORA do volume — todo deploy apaga os PDFs. `
+      + "Monte um Volume em /app/storage ou defina GUIDE_LOCAL_STORAGE_DIR=/app/storage/guides.",
+    );
+  }
+}
 // Q30 Fase 1: sem mais fallback pro JWT. A API recusa subir sem CERT_SECRET_KEY (fail-fast no server.js).
 if (!CERT_SECRET_KEY)
   log.warn("CERT_SECRET_KEY ausente: defina uma chave dedicada (openssl rand -base64 48). A API não sobe sem ela.");
