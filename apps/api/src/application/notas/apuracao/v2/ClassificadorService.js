@@ -15,6 +15,7 @@
 // como WARN (não bloqueia, mas avisa). Item segue classificado.
 
 import { prisma } from "../../../../infrastructure/db/prisma.js";
+import { resolverCnaesDaEmpresa } from "./CnaesDaEmpresaService.js";
 import { carregarAtividades } from "./AtividadeResolver.js";
 
 // Q20: grau de confiança da classificação, derivado da fonte (sem schema novo).
@@ -115,9 +116,14 @@ async function loadContextoEmpresa(portalClientId, dataReferencia = new Date()) 
 
   // CNAEs da empresa (principal + secundários): sugestão de divergência, override total
   // (flag) e — Q20 — recomendação na fila de pendência (ancorada na tabela SERPRO).
-  const cnaes = [cadastro?.cnaePrincipal, ...(cadastro?.cnaesSecundarios || [])]
-    .map((c) => String(c || "").replace(/\D+/g, ""))
-    .filter(Boolean);
+  //
+  // Resolvido por `resolverCnaesDaEmpresa`, que cai no cadastro da EMPRESA quando não há
+  // CadastroFiscal. Antes lia só o CadastroFiscal e, como ele só nasce ao salvar a aba fiscal,
+  // 15 das 19 empresas em produção ficavam sem CNAE nenhum aqui — sem divergência, sem
+  // recomendação — com o cadastro aparentemente completo na tela.
+  const cnaesEmpresa = await resolverCnaesDaEmpresa(portalClientId, { cadastroFiscal: cadastro });
+  const cnaes = cnaesEmpresa.todos;
+  const cnaePrincipalNorm = cnaesEmpresa.principal;
   let tipoReceitaPorCnae = null; // do CNAE PRINCIPAL (mantém compat com override/divergência)
   let recomendacaoCnae = null;   // Q20: consolidado dos CNAEs pra recomendação na fila
   if (cnaes.length) {
@@ -126,7 +132,7 @@ async function loadContextoEmpresa(portalClientId, dataReferencia = new Date()) 
       select: { cnae: true, tipoReceitaSugerido: true, ambiguo: true },
     });
     const byCnae = new Map(refs.map((r) => [r.cnae, r]));
-    const principalRef = cadastro?.cnaePrincipal ? byCnae.get(String(cadastro.cnaePrincipal).replace(/\D+/g, "")) : null;
+    const principalRef = cnaePrincipalNorm ? byCnae.get(cnaePrincipalNorm) : null;
     if (principalRef) {
       tipoReceitaPorCnae = { tipoReceita: principalRef.tipoReceitaSugerido, ambiguo: principalRef.ambiguo };
     }
