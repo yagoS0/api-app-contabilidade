@@ -37,7 +37,7 @@ function Tile({ label, valor, sub, color = PANEL.text, title, onClick, ativo }) 
   );
 }
 
-export function NotasResumo({ summary, janela, competencia, loading, papel, onSelectPapel }) {
+export function NotasResumo({ summary, janela, competencia, loading, papel, onSelectPapel, verCanceladas, onToggleCanceladas }) {
   const t = summary?.totals || null;
   if (!t && !loading) return null;
 
@@ -84,9 +84,14 @@ export function NotasResumo({ summary, janela, competencia, loading, papel, onSe
         <Tile
           label="Canceladas"
           valor={loading ? "…" : canceladas}
-          sub="fora do faturamento"
+          // A tabela esconde canceladas por padrão (elas não são faturamento). Sem esta caixa
+          // clicável não havia NENHUM jeito de vê-las: o contador dizia "2 canceladas" e as notas
+          // ficavam invisíveis — não dava pra conferir se o cancelamento estava certo.
+          sub={verCanceladas ? "▸ na tabela" : "clique para ver"}
           color="#FF4757"
-          title="Notas canceladas no período — não entram nos valores acima nem na apuração."
+          ativo={Boolean(verCanceladas)}
+          onClick={onToggleCanceladas}
+          title="Notas canceladas no período — não entram nos valores acima nem na apuração. Clique para mostrá-las na tabela."
         />
       )}
     </section>

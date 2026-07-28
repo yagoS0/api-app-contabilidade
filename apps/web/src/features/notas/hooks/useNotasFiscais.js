@@ -38,7 +38,10 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   // Q20: + filtro por atividade (cfop / servico = código LC116 ou nome).
   // papel começa em EMIT: as notas EMITIDAS são o faturamento (o que a apuração usa), então é
   // o que o contador quer ver ao abrir. As caixas do resumo trocam esse filtro.
-  const [notasFilters, setNotasFilters] = useState({ papel: "EMIT", type: "", competencia: prevMonthCompetencia(), search: "", cfop: "", servico: "", limit: 100, offset: 0 });
+  // `incluirCanceladas`: a listagem esconde canceladas por padrão (não são faturamento), mas
+  // precisamos conseguir VER quais foram canceladas pra conferir o cancelamento — senão o
+  // contador de canceladas do resumo aponta para notas invisíveis.
+  const [notasFilters, setNotasFilters] = useState({ papel: "EMIT", type: "", competencia: prevMonthCompetencia(), search: "", cfop: "", servico: "", incluirCanceladas: "", limit: 100, offset: 0 });
   const [loadingNotas, setLoadingNotas] = useState(false);
 
   const loadAll = useCallback(async () => {

@@ -1934,7 +1934,26 @@ export function createMockApi() {
         })),
       };
     },
-    async listNotas() { await delay(60); return { ok: true, total: 0, notas: [] }; },
+    // Duas notas fixas — uma autorizada e uma CANCELADA — pra dar pra conferir sem backend que a
+    // caixa "Canceladas" mostra/esconde de verdade. Sem a cancelada no mock, a tela ficava igual
+    // nos dois estados e o toggle parecia funcionar mesmo quebrado.
+    async listNotas(_companyId, filters = {}) {
+      await delay(60);
+      const todas = [
+        { id: "mock-nota-1", type: "NFSE", papel: "EMIT", statusEfetivo: "autorizada", status: "EMITIDA",
+          chaveAcesso: null, numero: "101", serie: null, competencia: "2026-06-01T00:00:00.000Z",
+          issueDate: "2026-06-10T00:00:00.000Z", total: "1500.00", emitenteNome: "EMPRESA MOCK",
+          emitenteDoc: "00000000000191", tomadorNome: "CLIENTE MOCK", tomadorDoc: null, competenciaPosFechamento: false },
+        { id: "mock-nota-2", type: "NFSE", papel: "EMIT", statusEfetivo: "cancelada", status: "CANCELADA",
+          chaveAcesso: null, numero: "102", serie: null, competencia: "2026-06-01T00:00:00.000Z",
+          issueDate: "2026-06-12T00:00:00.000Z", total: "800.00", emitenteNome: "EMPRESA MOCK",
+          emitenteDoc: "00000000000191", tomadorNome: "CLIENTE MOCK", tomadorDoc: null, competenciaPosFechamento: false },
+      ];
+      const notas = String(filters.incluirCanceladas || "") === "1"
+        ? todas
+        : todas.filter((n) => n.statusEfetivo !== "cancelada");
+      return { ok: true, total: notas.length, limit: 100, offset: 0, notas };
+    },
     async getNotasSummary(_companyId, filtros = {}) {
       await delay(60);
       // Números fixos só pra conferir o resumo da aba Notas Fiscais sem backend.

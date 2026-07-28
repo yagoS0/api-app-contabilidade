@@ -4,6 +4,11 @@
 // gravar nota). Divergência (ADN tem chave que nós não temos) grava conferenciaStatus="divergente"
 // no snapshot — e o salvarFechamento TRAVA. É a detecção automática do "28 vs 27".
 //
+// Além de contar, a conferência CORRIGE um caso: nota que o cliente cancelou no sistema NACIONAL
+// (NFS-e Nacional, via ADN) e que aqui continuou "autorizada". O ADN é a autoridade — enquanto não
+// marcarmos, ela soma no faturamento e a apuração sai A MAIOR, sem nada indicar. Só corrige com
+// evidência explícita de cancelamento (situação da nota ou evento); nunca por ausência no scan.
+//
 // Municípios ainda fora do ADN / empresa sem cert próprio → "nao_conferivel" (NÃO trava).
 // O scan é sob demanda (uma vez por competência), não a cada save. Prod-only (precisa de cert + ADN):
 // a lógica de diff é pura e testável offline; o scan em si roda no ambiente do escritório.
@@ -149,9 +154,34 @@ export async function conferirCompetencia({ portalClientId, competencia, env = "
       autoritativo.add(chave);
     }
     const { faltantes, extras, ok } = diffConjuntos(nosso, autoritativo);
+
+    // CANCELADA PELO CLIENTE no NFS-e Nacional: nota que temos como "autorizada" e que o ADN
+    // (autoridade nacional, não a prefeitura) diz estar CANCELADA
+    // (pela situação da própria nota ou por evento de cancelamento). Enquanto continuar
+    // "autorizada" aqui, ela entra no faturamento e a apuração sai A MAIOR — silenciosamente.
+    //
+    // Só marcamos as chaves que estão explicitamente em `scan.canceladas`. As demais `extras`
+    // (temos, o ADN não trouxe) ficam intocadas: podem ser limite de varredura, e cancelar por
+    // AUSÊNCIA de evidência seria inventar um cancelamento que talvez não exista.
+    const canceladasNoAdn = extras.filter((chave) => scan.canceladas.has(chave));
+    let marcadasCanceladas = 0;
+    if (canceladasNoAdn.length) {
+      const r = await prisma.portalInvoice.updateMany({
+        where: {
+          clientId: String(portalClientId),
+          statusEfetivo: "autorizada",
+          OR: [{ chaveAcesso: { in: canceladasNoAdn } }, { idNfse: { in: canceladasNoAdn } }],
+        },
+        data: { statusEfetivo: "cancelada", status: "CANCELADA" },
+      });
+      marcadasCanceladas = r.count;
+    }
+
     status = ok ? "ok" : "divergente";
     resultado = {
       nossoTotal: nosso.size, adnTotal: autoritativo.size, faltantes, extras,
+      // O que o ADN provou estar cancelado e nós corrigimos nesta passada.
+      canceladasNoAdn, marcadasCanceladas,
       via: scan.via, env, alcancouFim: scan.alcancouFim, iteracoes: scan.iteracoes,
     };
   }

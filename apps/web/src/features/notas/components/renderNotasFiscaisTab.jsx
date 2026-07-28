@@ -104,6 +104,13 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false }) {
           if (notasFilters.papel === p) return;
           setNotasFilters({ ...notasFilters, papel: p, offset: 0 });
         }}
+        verCanceladas={notasFilters.incluirCanceladas === "1"}
+        // Alterna entre esconder (default, só faturamento) e mostrar as canceladas na tabela.
+        onToggleCanceladas={() => setNotasFilters({
+          ...notasFilters,
+          incluirCanceladas: notasFilters.incluirCanceladas === "1" ? "" : "1",
+          offset: 0,
+        })}
       />
 
       <NotasList

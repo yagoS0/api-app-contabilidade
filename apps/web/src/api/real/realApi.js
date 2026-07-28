@@ -1123,7 +1123,7 @@ export function createRealApi() {
     // Q12.C.1: listagem de notas + resumo
     async listNotas(companyId, filters = {}) {
       const q = new URLSearchParams();
-      ["papel", "type", "competencia", "search", "cfop", "servico", "limit", "offset"].forEach((k) => {
+      ["papel", "type", "competencia", "search", "cfop", "servico", "incluirCanceladas", "limit", "offset"].forEach((k) => {
         if (filters[k] != null && filters[k] !== "") q.set(k, String(filters[k]));
       });
       const suffix = q.toString() ? `?${q.toString()}` : "";
