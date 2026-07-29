@@ -29,6 +29,7 @@ import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
+import { createCalendarioRouter } from "./calendario.js";
 import { criarBatchJob, runApuracaoBatchOnce } from "../../workers/apuracaoBatchWorker.js";
 // Q48: download de notas em lote (ZIP em segundo plano)
 import fsNotasDownload from "node:fs";
@@ -4108,6 +4109,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Documentos societários + anotações da empresa (grupo "Cadastro" na UI).
   const companyDocumentsRouter = createCompanyDocumentsRouter({ log });
   router.use("/companies/:companyId", companyDocumentsRouter);
+
+  // Calendário fiscal — do ESCRITÓRIO, não por empresa: monta no nível raiz de /firm.
+  router.use("/", createCalendarioRouter({ log }));
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...

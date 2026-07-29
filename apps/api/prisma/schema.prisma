@@ -347,6 +347,7 @@ model PortalClient {
   rotinas                 CompanyRotina[]
   documentos              CompanyDocument[]
   anotacoes               CompanyNote[]
+  MarcoFiscal             MarcoFiscal[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -377,6 +378,29 @@ model CompanyRotina {
   @@unique([portalClientId, rotina])
   @@index([rotina, enabled])
   @@map("company_rotinas")
+}
+
+/// Datas que o contador marca à mão no calendário fiscal — o que NÃO vem de dado nenhum.
+/// O caso que motivou: a virada do IBS/CBS. O calendário já mostra sozinho o que vence (guias com
+/// vencimento, competência não transmitida, mês não fechado); isto aqui é para o resto.
+/// `portalClientId` nulo = marco do ESCRITÓRIO, vale para todas as empresas.
+model MarcoFiscal {
+  id             String   @id @default(uuid())
+  portalClientId String?
+  titulo         String
+  data           DateTime
+  descricao      String?
+  /// ALTA | MEDIA | BAIXA — só destaque visual, não muda comportamento.
+  importancia    String   @default("MEDIA")
+  criadoPorId    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([data])
+  @@index([portalClientId, data])
+  @@map("marcos_fiscais")
 }
 
 /// Documentos societários/cadastrais da empresa (contrato social, cartão CNPJ, inscrições…).
