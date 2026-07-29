@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
@@ -483,9 +484,10 @@ export function CompaniesHomePage({
                     Situação fiscal
                     <select value={fiscalFilter} onChange={(event) => setFiscalFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
                       <option value="all">Todas</option>
-                      <option value="comPendencia">Com pendência</option>
-                      <option value="semPendencia">Sem pendência</option>
-                      <option value="emParcelamento">Em parcelamento</option>
+                      {/* Símbolo + palavra: é aqui que se aprende o que o ⚠ do card significa. */}
+                      <option value="comPendencia">{situacaoFiscalComSimbolo("COM_PENDENCIA")}</option>
+                      <option value="semPendencia">{situacaoFiscalComSimbolo("REGULAR")}</option>
+                      <option value="emParcelamento">{situacaoFiscalComSimbolo("EM_PARCELAMENTO")}</option>
                     </select>
                   </label>
 

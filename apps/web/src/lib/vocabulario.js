@@ -56,3 +56,29 @@ export function rotuloEstadoApuracao(valor) {
 // Sigla que só faz sentido para quem já conhece. Onde couber, usar o nome por extenso; onde o
 // espaço for curto, usar a sigla COM este texto como title.
 export const RBT12_NOME = "Receita bruta dos últimos 12 meses";
+
+// Símbolos da situação fiscal (SITFIS). Decisão do dono: no card vale o símbolo sozinho, aceitando
+// que se aprende o que ele significa.
+//
+// Para que esse aprendizado aconteça SEM legenda separada, o mesmo símbolo aparece colado à
+// palavra nos lugares onde há espaço — o filtro "Situação fiscal" do dashboard. É lá que a
+// associação se forma; no card ele já é lido de relance.
+export const SITUACAO_FISCAL_SIMBOLO = {
+  COM_PENDENCIA: "⚠",
+  EM_PARCELAMENTO: "⏸",
+  REGULAR: "✓",
+};
+
+export const SITUACAO_FISCAL_TEXTO = {
+  COM_PENDENCIA: "Com pendência",
+  EM_PARCELAMENTO: "Em parcelamento",
+  REGULAR: "Sem pendência",
+};
+
+// "⚠ Com pendência" — símbolo e palavra juntos, para os lugares com espaço.
+export function situacaoFiscalComSimbolo(chave) {
+  const sim = SITUACAO_FISCAL_SIMBOLO[chave];
+  const txt = SITUACAO_FISCAL_TEXTO[chave];
+  if (!sim || !txt) return txt || "";
+  return `${sim} ${txt}`;
+}

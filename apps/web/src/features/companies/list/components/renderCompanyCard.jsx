@@ -1,5 +1,5 @@
 import { Button } from "../../../../components/ui/Button";
-import { rotuloRegime } from "../../../../lib/vocabulario";
+import { rotuloRegime, SITUACAO_FISCAL_SIMBOLO } from "../../../../lib/vocabulario";
 
 // Tributos potencialmente exibidos no card de compliance.
 // A ordem aqui define a ordem visual das tags (DAS primeiro para Simples; depois Presumidos; PARC_DAS no fim).
@@ -61,9 +61,17 @@ function Pill({ color, title, children }) {
 
 // C6: situação fiscal (SITFIS) — só avisa quando há algo a dizer. `null` (nunca consultada)
 // não vira selo: não afirmamos nada sobre o fisco sem ter consultado.
+// No card vale o SÍMBOLO sozinho — o texto vive no `title` e no filtro do dashboard, que é onde a
+// associação símbolo↔significado se aprende.
 const FISCAL_META = {
-  COM_PENDENCIA: { label: "⚠ Pendência fiscal", color: "#FF4757", title: "SITFIS: empresa com pendência fiscal" },
-  EM_PARCELAMENTO: { label: "Em parcelamento", color: "#8BE9FD", title: "SITFIS: débito com exigibilidade suspensa (parcelamento)" },
+  COM_PENDENCIA: {
+    label: SITUACAO_FISCAL_SIMBOLO.COM_PENDENCIA, color: "#FF4757",
+    title: "Situação fiscal: empresa COM PENDÊNCIA (SITFIS)",
+  },
+  EM_PARCELAMENTO: {
+    label: SITUACAO_FISCAL_SIMBOLO.EM_PARCELAMENTO, color: "#8BE9FD",
+    title: "Situação fiscal: débito com exigibilidade suspensa — em parcelamento (SITFIS)",
+  },
 };
 
 export function CompanyCard({ company, onAccess }) {
@@ -166,8 +174,9 @@ export function CompanyCard({ company, onAccess }) {
         {/* C6: aviso de pendência fiscal (SITFIS) ao lado de "apurada". */}
         {fiscalMeta && (
           <span
-            style={{ marginLeft: 8, fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px", color: fiscalMeta.color }}
+            style={{ marginLeft: 8, fontSize: "1.05rem", fontWeight: 700, padding: "2px 6px", color: fiscalMeta.color, cursor: "help" }}
             title={fiscalMeta.title}
+            aria-label={fiscalMeta.title}
           >
             {fiscalMeta.label}
           </span>
