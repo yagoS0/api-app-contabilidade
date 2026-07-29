@@ -13,6 +13,9 @@
 .dashboard-home-shell {
   min-height: 100vh;
   background: #1a1b26;
+  /* Mais largo que o padrão (1200px): com 1200 menos o padding sobrava espaço pra 3 cards, não 4.
+     A carteira é a única tela que ganha de verdade com largura — mais empresas por olhada. */
+  max-width: 1560px;
 }
 
 .guides-page-shell {
@@ -984,10 +987,24 @@
 /* Cards */
 .cards-grid {
   display: grid;
-  /* 280px: com 260 as pílulas de identidade (regime + parc + SERPRO + A1) quebravam linha em
-     telas médias, e cada card ficava com uma altura diferente. */
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* QUATRO por linha na tela larga. `auto-fill` deixava a contagem à mercê da largura disponível:
+     bastava o padding do container mudar pra virar 3 e o layout "respirar" diferente sem motivo.
+     Aqui a contagem é explícita e degrada em passos previsíveis — 4 → 3 → 2 → 1.
+     `minmax(0, 1fr)` (e não `1fr`) impede que um nome de empresa comprido estique a coluna. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+@media (max-width: 1200px) {
+  .cards-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .cards-grid { grid-template-columns: 1fr; }
 }
 
 .company-tile {
