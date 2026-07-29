@@ -3,9 +3,22 @@
 // As duas moram no mesmo hook porque compartilham a mesma casa na UI (grupo "Cadastro") e são
 // pequenas — dois hooks quase idênticos seriam só cerimônia.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+
+// `feedback` chega como objeto literal novo a cada render do App (`feedback={{ message, error }}`).
+// Se ele entrar nas dependências dos callbacks, `carregar` muda de identidade em todo render, o
+// efeito que o chama redispara, e vira um LAÇO INFINITO de requisições — o sintoma era o
+// "carregando…" piscando sem parar na aba de Documentos.
+// Guardado em ref: continua sempre atual quando chamado, sem participar das dependências.
+function useFeedbackRef(feedback) {
+  const ref = useRef(feedback);
+  ref.current = feedback;
+  return ref;
+}
 
 export function useCompanyDocuments({ api, companyId, feedback }) {
+  const feedbackRef = useFeedbackRef(feedback);
   const [documentos, setDocumentos] = useState([]);
   const [tipoLabels, setTipoLabels] = useState({});
   const [tipos, setTipos] = useState([]);
@@ -28,11 +41,11 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
         return new Set([...atual].filter((id) => validos.has(id)));
       });
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao carregar os documentos.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao carregar os documentos.");
     } finally {
       setCarregando(false);
     }
-  }, [api, companyId, feedback]);
+  }, [api, companyId]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -50,14 +63,14 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
     if (!api || !companyId) return false;
     try {
       await api.uploadCompanyDocument(companyId, { arquivo, tipo, nome, validade });
-      feedback?.notifySuccess?.("Documento enviado.");
+      feedbackRef.current?.notifySuccess?.("Documento enviado.");
       await carregar();
       return true;
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao enviar o documento.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao enviar o documento.");
       return false;
     }
-  }, [api, companyId, carregar, feedback]);
+  }, [api, companyId, carregar]);
 
   // O download precisa passar pelo fetch com token (um <a href> não leva o Bearer), então o
   // arquivo vem como Blob e é entregue por um link temporário.
@@ -74,9 +87,9 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao baixar o documento.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao baixar o documento.");
     }
-  }, [api, companyId, feedback]);
+  }, [api, companyId]);
 
   const baixarSelecionados = useCallback(async () => {
     const alvos = documentos.filter((d) => selecionados.has(d.id));
@@ -90,12 +103,12 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
     if (!api || !companyId) return;
     try {
       await api.deleteCompanyDocument(companyId, doc.id);
-      feedback?.notifySuccess?.("Documento excluído.");
+      feedbackRef.current?.notifySuccess?.("Documento excluído.");
       await carregar();
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao excluir o documento.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao excluir o documento.");
     }
-  }, [api, companyId, carregar, feedback]);
+  }, [api, companyId, carregar]);
 
   const enviarPorEmail = useCallback(async (destinatario) => {
     if (!api || !companyId || !selecionados.size) return;
@@ -103,16 +116,16 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
     try {
       const r = await api.sendCompanyDocuments(companyId, [...selecionados], destinatario);
       // Diz o que saiu e para quem — "enviado" sozinho não deixa conferir nada.
-      feedback?.notifySuccess?.(
+      feedbackRef.current?.notifySuccess?.(
         `${r?.enviados || 0} documento(s) enviado(s) para ${r?.destinatario || "o cliente"}.`,
       );
       limparSelecao();
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao enviar os documentos.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao enviar os documentos.");
     } finally {
       setEnviando(false);
     }
-  }, [api, companyId, selecionados, limparSelecao, feedback]);
+  }, [api, companyId, selecionados, limparSelecao]);
 
   return {
     documentos, tipos, tipoLabels, carregando, enviando,
@@ -122,6 +135,7 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
 }
 
 export function useCompanyNotes({ api, companyId, feedback }) {
+  const feedbackRef = useFeedbackRef(feedback);
   const [anotacoes, setAnotacoes] = useState([]);
   const [ordenarPor, setOrdenarPor] = useState("data");
   const [carregando, setCarregando] = useState(false);
@@ -133,11 +147,11 @@ export function useCompanyNotes({ api, companyId, feedback }) {
       const r = await api.listCompanyNotes(companyId, ordenarPor);
       setAnotacoes(r?.anotacoes || []);
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao carregar as anotações.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao carregar as anotações.");
     } finally {
       setCarregando(false);
     }
-  }, [api, companyId, ordenarPor, feedback]);
+  }, [api, companyId, ordenarPor]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -148,10 +162,10 @@ export function useCompanyNotes({ api, companyId, feedback }) {
       await carregar();
       return true;
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao criar a anotação.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao criar a anotação.");
       return false;
     }
-  }, [api, companyId, carregar, feedback]);
+  }, [api, companyId, carregar]);
 
   const atualizar = useCallback(async (noteId, patch) => {
     if (!api || !companyId) return;
@@ -159,9 +173,9 @@ export function useCompanyNotes({ api, companyId, feedback }) {
       await api.updateCompanyNote(companyId, noteId, patch);
       await carregar();
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao atualizar a anotação.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao atualizar a anotação.");
     }
-  }, [api, companyId, carregar, feedback]);
+  }, [api, companyId, carregar]);
 
   const excluir = useCallback(async (noteId) => {
     if (!api || !companyId) return;
@@ -169,9 +183,9 @@ export function useCompanyNotes({ api, companyId, feedback }) {
       await api.deleteCompanyNote(companyId, noteId);
       await carregar();
     } catch (err) {
-      feedback?.notifyError?.(err?.message || "Falha ao excluir a anotação.");
+      feedbackRef.current?.notifyError?.(err?.message || "Falha ao excluir a anotação.");
     }
-  }, [api, companyId, carregar, feedback]);
+  }, [api, companyId, carregar]);
 
   // A fixada é destacada fora da lista; as demais seguem a ordenação escolhida. O backend já
   // devolve a fixada em primeiro, então isto é só a separação visual.
