@@ -21,7 +21,7 @@
 
 import "dotenv/config";
 import { prisma } from "../src/infrastructure/db/prisma.js";
-import { obterSitfisRelatorio } from "../src/application/fiscal/serpro/SerproSitfisService.js";
+import { obterRelatorio } from "../src/application/fiscal/serpro/SerproSitfisService.js";
 
 const aplicar = process.argv.includes("--aplicar");
 function arg(name) {
@@ -83,7 +83,7 @@ try {
     try {
       // `protocoloExistente` faz o serviço PULAR o /Apoiar e ir direto ao /Emitir — é justamente
       // o que queremos: consumir sem abrir nada novo.
-      const r = await obterSitfisRelatorio({
+      const r = await obterRelatorio({
         contribuinteCnpj: alvo.portal.cnpj,
         tipo: 2,
         protocoloExistente: alvo.protocolo,
