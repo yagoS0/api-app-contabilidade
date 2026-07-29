@@ -1,66 +1,150 @@
-// Lê o texto do relatório SITFIS e o organiza em seções — para a aba mostrar uma tabela em vez de
-// só um PDF embutido.
+// Lê o texto do relatório SITFIS e o transforma nas TABELAS que o PDF mostra.
 //
-// PRINCÍPIO: ORGANIZAR, NÃO INTERPRETAR.
+// ── COMO O TEXTO EXTRAÍDO REALMENTE É (conferido em produção, empresa COM pendência) ──
 //
-// Já existiu aqui um parser que tentava extrair DÉBITOS COM VALORES. Ele mostrou "R$ 100,00" numa
-// empresa que não devia nada: o número veio do `100,00%` de participação no quadro societário. Em
-// contexto fiscal, um débito inventado é pior do que nenhuma tabela — e o parser foi removido.
+// O PDF mostra tabelas alinhadas, mas o texto extraído põe CADA CÉLULA EM UMA LINHA:
 //
-// O texto real (conferido em produção) mostra por que aquilo era um erro de premissa: o relatório
-// NÃO é uma tabela de valores. É um laudo por órgão:
+//   Pendência - Débito (SIEF) ______CNPJ: 52.682.158/0001-92Receita
+//   PA/Exerc.
+//   Dt. Vcto
+//   … (9 linhas de cabeçalho)
+//   4406-01 - MAED - PGDAS-D
+//   23/02/2026
+//   … (9 linhas por registro)
 //
-//   _____ Diagnóstico Fiscal na Receita Federal _____
-//   Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI) ____CNPJ: …SIMPLES NACIONAL - EM PARCELAMENTO
-//   _____ Diagnóstico Fiscal na Procuradoria-Geral da Fazenda Nacional _____
-//   Não foram detectadas pendências/exigibilidades suspensas …
+// Então a leitura é: contar as colunas pelo cabeçalho e agrupar as linhas de dados de N em N.
 //
-// Então aqui NÃO se procura valor nenhum. Recorta-se o que o relatório afirma, na ordem em que
-// afirma, e devolve-se como linhas. Se um dia aparecer valor explícito e rotulado, ele entra —
-// mas nunca por dedução a partir de um número solto.
+// ── AS TRÊS ARMADILHAS, todas presentes no texto real ──
+//
+//  1. O CNPJ vem COLADO na primeira célula do cabeçalho:
+//       "…______CNPJ: 52.682.158/0001-92Receita"  →  a coluna é "Receita".
+//  2. O CABEÇALHO DA PÁGINA 2 corta a tabela no meio (MINISTÉRIO DA ECONOMIA, data, CNPJ…).
+//     Sem removê-lo, essas linhas entram como células e desalinham TUDO a partir dali.
+//  3. "Notificação de lançamento: 52682158202601001" vem colado no início do registro seguinte
+//     ("…0011099-01 - CP-SEGUR."). É anotação do registro ANTERIOR, e o rabo é a próxima linha.
+//
+// ── POR QUE A CONTAGEM É A VALIDAÇÃO ──
+//
+// Se as linhas de dados não forem múltiplo exato do número de colunas, alguma armadilha escapou —
+// e aí o bloco NÃO vira tabela: vai como "não interpretado", com as linhas cruas visíveis. É o que
+// impede o retorno do defeito antigo, quando o parser exibia número em coluna errada (chegou a
+// mostrar "R$ 100,00" de débito lendo o 100,00% de participação societária).
 
-// Blocos são separados por corridas longas de "_" (o relatório usa isso como régua).
 const REGUA = /_{6,}/g;
 
-// Órgãos que emitem diagnóstico. O título vem entre réguas: "___ Diagnóstico Fiscal na X ___".
 const ORGAOS = [
   { chave: "RFB", regex: /Diagn[óo]stico\s+Fiscal\s+na\s+Receita\s+Federal/i, nome: "Receita Federal" },
   { chave: "PGFN", regex: /Diagn[óo]stico\s+Fiscal\s+na\s+Procuradoria-?Geral\s+da\s+Fazenda\s+Nacional/i, nome: "Procuradoria-Geral da Fazenda Nacional" },
 ];
 
-// Frase padrão de "nada consta". Reconhecê-la é o que permite dizer "sem pendências" com segurança,
-// em vez de deixar a linha vazia e o contador sem saber se é ausência ou falha de leitura.
 const SEM_PENDENCIA = /N[ãa]o\s+foram\s+detectadas\s+pend[êe]ncias/i;
 
-function limpar(txt) {
-  return String(txt || "")
-    .replace(/ /g, " ")
-    .replace(/[ \t]+/g, " ")
-    .trim();
+// Cabeçalhos que o relatório usa. Lista FECHADA de propósito: é ela que separa cabeçalho de dado.
+// Coluna desconhecida faz o bloco cair em "não interpretado" em vez de virar tabela torta.
+const COLUNAS_CONHECIDAS = new Set([
+  "Receita", "PA/Exerc.", "Dt. Vcto", "Vl. Original", "Sdo. Devedor",
+  "Multa", "Juros", "Sdo. Dev. Cons.", "Situação",
+  "Processo", "Localização",
+  "Parcelas em atraso",
+  "Inscrição", "Devedor", "Valor", "Tipo", "Data",
+]);
+
+// Ruído de cabeçalho/rodapé de página — some no meio das tabelas e precisa sair antes de agrupar.
+const RUIDO = [
+  /^MINIST[ÉE]RIO DA ECONOMIA$/i,
+  /^Por meio do Integra Contador$/i,
+  /^SECRETARIA ESPECIAL DA RECEITA FEDERAL DO BRASIL$/i,
+  /^PROCURADORIA-GERAL DA FAZENDA NACIONAL$/i,
+  /^Autor pedido:/i,
+  /^INFORMA[ÇC][ÕO]ES DE APOIO PARA EMISS[ÃA]O DE CERTID[ÃA]O$/i,
+  /^CNPJ:?$/i,
+  /^P[áa]gina:?\s*\d*\s*\/?\s*$/i,
+  /^_+$/,                                        // régua solta: separador, nunca célula
+  /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}$/,   // carimbo de emissão repetido por página
+  /^[\d.]{10,}\s*-\s*.+$/,                       // "52.682.158 - ATIM ENGENHARIA LTDA"
+  /^Final do Relat[óo]rio$/i,
+];
+
+const limpar = (t) => String(t || "").replace(/ /g, " ").replace(/[ \t]+/g, " ").trim();
+const ehRuido = (l) => RUIDO.some((r) => r.test(l));
+
+// "1099-01 - CP-SEGUR." — código de receita, usado para achar onde a anotação termina.
+const INICIO_REGISTRO = /(\d{4}-\d{2}\s*-\s*\D.*)$/;
+
+/**
+ * Normaliza as linhas de um bloco: tira ruído de página, separa o CNPJ colado e desgruda a
+ * anotação de lançamento do registro seguinte.
+ */
+function linhasDoBloco(bruto) {
+  const saida = [];
+  const anotacoes = [];
+  // O número da página vem numa linha própria, LOGO APÓS "Página: N /". Descartar todo número
+  // solto seria pior do que o problema: comia o "4" de "Parcelas em atraso", que é dado real.
+  // Por isso o descarte é posicional, não por formato.
+  let aguardaNumeroDePagina = false;
+  for (const raw of String(bruto || "").split(/\r?\n/)) {
+    const l0 = limpar(raw);
+    if (!l0) continue;
+    if (aguardaNumeroDePagina) {
+      aguardaNumeroDePagina = false;
+      if (/^\d{1,3}$/.test(l0)) continue;
+    }
+    if (/^P[áa]gina:?\s*\d*\s*\/?\s*$/i.test(l0)) { aguardaNumeroDePagina = true; continue; }
+    let l = l0;
+
+    // Armadilha 1: "CNPJ: 52.682.158/0001-92Receita" → sobra "Receita".
+    l = limpar(l.replace(/^CNPJ:\s*[\d.\-/]+/i, ""));
+    if (!l) continue;
+
+    // Armadilha 3: a anotação carrega o começo do próximo registro grudado.
+    const mAnot = l.match(/^Notifica[çc][ãa]o de lan[çc]amento:\s*(.*)$/i);
+    if (mAnot) {
+      const resto = mAnot[1] || "";
+      const mProx = resto.match(INICIO_REGISTRO);
+      if (mProx) {
+        anotacoes.push(limpar(resto.slice(0, mProx.index)));
+        saida.push(limpar(mProx[1]));   // devolve o registro seguinte à fila
+      } else {
+        anotacoes.push(limpar(resto));
+      }
+      continue;
+    }
+
+    // Armadilha 2: cabeçalho/rodapé de página no meio da tabela.
+    if (ehRuido(l)) continue;
+    saida.push(l);
+  }
+  return { linhas: saida, anotacoes };
 }
 
-// Quebra em linhas úteis: o texto extraído do PDF cola rótulo e valor, e usa \n de forma irregular.
-function linhasUteis(bloco) {
-  return String(bloco || "")
-    .split(/\r?\n/)
-    .map(limpar)
-    .filter(Boolean)
-    // Ruído de paginação e rodapé não é conteúdo do laudo.
-    .filter((l) => !/^P[áa]gina:?\s*\d*/i.test(l))
-    .filter((l) => !/^\d+\s*\/?\s*\d*$/.test(l))
-    .filter((l) => !/^Final do Relat[óo]rio$/i.test(l));
+/** Monta uma tabela a partir das linhas já normalizadas. */
+function montarTabela(linhas) {
+  // Antes do cabeçalho pode vir uma descrição livre ("SIMPLES NACIONAL - EM PARCELAMENTO").
+  let i = 0;
+  const descricao = [];
+  while (i < linhas.length && !COLUNAS_CONHECIDAS.has(linhas[i])) { descricao.push(linhas[i]); i += 1; }
+
+  const colunas = [];
+  while (i < linhas.length && COLUNAS_CONHECIDAS.has(linhas[i])) { colunas.push(linhas[i]); i += 1; }
+
+  const dados = linhas.slice(i);
+  if (!colunas.length) return { descricao, colunas: [], registros: [], naoInterpretado: dados };
+
+  // A VALIDAÇÃO: dados têm que fechar em múltiplo exato das colunas.
+  if (dados.length % colunas.length !== 0) {
+    return { descricao, colunas, registros: [], naoInterpretado: dados };
+  }
+
+  const registros = [];
+  for (let k = 0; k < dados.length; k += colunas.length) {
+    const celulas = dados.slice(k, k + colunas.length);
+    registros.push(Object.fromEntries(colunas.map((c, idx) => [c, celulas[idx]])));
+  }
+  return { descricao, colunas, registros, naoInterpretado: [] };
 }
 
 /**
  * @param {string} texto  texto extraído do PDF do relatório SITFIS
- * @returns {{
- *   emitidoEm: string|null,
- *   contribuinte: { cnpj: string|null, nome: string|null },
- *   diagnosticos: Array<{ orgao: string, chave: string, semPendencia: boolean,
- *                         itens: Array<{ titulo: string|null, descricao: string }> }>,
- *   naoInterpretado: string[],
- *   temTexto: boolean,
- * }}
  */
 export function parseSitfisRelatorio(texto) {
   const t = String(texto || "");
@@ -73,18 +157,15 @@ export function parseSitfisRelatorio(texto) {
   };
   if (!out.temTexto) return out;
 
-  // Data/hora de emissão do relatório (aparece no cabeçalho, antes do título).
   const mData = t.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}:\d{2})/);
   if (mData) out.emitidoEm = `${mData[1]} ${mData[2]}`;
 
-  // "48.684.291 - ERISANGELA LACERDA PEREIRA" logo após "CNPJ:" no cabeçalho.
-  const mContrib = t.match(/CNPJ:\s*\n?\s*([\d.\-/]{10,})\s*-\s*([^\n]+)/);
+  const mContrib = t.match(/CNPJ:\s*\n\s*([\d.\-/]{10,})\s*-\s*([^\n]+)/);
   if (mContrib) {
     out.contribuinte.cnpj = limpar(mContrib[1]);
     out.contribuinte.nome = limpar(mContrib[2]);
   }
 
-  // Cada órgão abre um trecho que vai do seu título até o título do próximo órgão (ou o fim).
   const marcos = [];
   for (const org of ORGAOS) {
     const m = t.match(org.regex);
@@ -94,42 +175,37 @@ export function parseSitfisRelatorio(texto) {
 
   for (let i = 0; i < marcos.length; i += 1) {
     const atual = marcos[i];
-    const proximo = marcos[i + 1];
-    const trecho = t.slice(atual.fim, proximo ? proximo.inicio : t.length);
-
+    const trecho = t.slice(atual.fim, marcos[i + 1] ? marcos[i + 1].inicio : t.length);
     const semPendencia = SEM_PENDENCIA.test(trecho);
-    const itens = [];
+    const blocos = [];
 
     if (!semPendencia) {
-      // Dentro do trecho, as réguas separam "assunto" do "conteúdo": o assunto é o texto que vem
-      // ANTES da régua ("Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)") e o conteúdo o
-      // que vem depois ("CNPJ: … / SIMPLES NACIONAL - EM PARCELAMENTO").
-      const partes = trecho.split(REGUA).map(limpar).filter(Boolean);
-      let tituloPendente = null;
-      for (const parte of partes) {
-        const linhas = linhasUteis(parte);
-        if (!linhas.length) continue;
-        // Parte curta e sem CNPJ tende a ser o rótulo do assunto seguinte.
-        const ehTitulo = linhas.length === 1 && linhas[0].length < 90 && !/CNPJ/i.test(linhas[0]);
-        if (ehTitulo) { tituloPendente = linhas[0]; continue; }
-        for (const linha of linhas) {
-          // O CNPJ vem COLADO no conteúdo — o texto extraído não põe quebra:
-          //   "CNPJ: 48.684.291/0001-00SIMPLES NACIONAL - EM PARCELAMENTO"
-          // Descartar a linha inteira por começar com "CNPJ:" fazia sumir justamente a pendência.
-          // Remove só o prefixo de identificação e mantém o resto.
-          const semCnpj = limpar(linha.replace(/^CNPJ:\s*[\d.\-/]+/i, ""));
-          if (!semCnpj) continue; // era só o CNPJ, sem conteúdo
-          itens.push({ titulo: tituloPendente, descricao: semCnpj });
-        }
-        tituloPendente = null;
+      // Um bloco é sempre "<título> ______". Nem todo bloco começa com "Pendência -": empresa só
+      // com parcelamento traz "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI) ______".
+      // Por isso o marcador é a RÉGUA precedida de texto, não uma palavra específica.
+      // `[ \t]*` e NÃO `\s*`: o título tem que estar na MESMA LINHA da régua. Com `\s*` a régua
+      // que fecha a seção (numa linha só) engolia a linha anterior como se fosse título — e o
+      // conteúdo do bloco de verdade virava vazio.
+      // A régua que ABRE a próxima seção fica dentro deste trecho e, em alguns relatórios, na
+      // MESMA linha do último conteúdo ("…EM PARCELAMENTO______ Diagnóstico Fiscal na PGFN").
+      // Sem aparar, ela vira um marcador falso cujo "título" é o conteúdo real — e o bloco de
+      // verdade fica vazio.
+      const corpoSecao = trecho.replace(/[ \t]*_{6,}[ \t]*$/, "");
+      const marcadores = [...corpoSecao.matchAll(/([^\n_]{3,120}?)[ \t]*_{6,}/g)];
+      for (let b = 0; b < marcadores.length; b += 1) {
+        const m = marcadores[b];
+        const titulo = limpar(m[1]);
+        const inicio = m.index + m[0].length;
+        const fim = marcadores[b + 1] ? marcadores[b + 1].index : corpoSecao.length;
+        const { linhas, anotacoes } = linhasDoBloco(corpoSecao.slice(inicio, fim));
+        if (!linhas.length && !anotacoes.length) continue;
+        blocos.push({ titulo: titulo || null, anotacoes, ...montarTabela(linhas) });
       }
     }
 
-    out.diagnosticos.push({ orgao: atual.nome, chave: atual.chave, semPendencia, itens });
+    out.diagnosticos.push({ orgao: atual.nome, chave: atual.chave, semPendencia, blocos });
   }
 
-  // Órgão esperado que não apareceu no texto → registra, para a tela poder dizer que o relatório
-  // veio incompleto em vez de fingir que está tudo certo.
   for (const org of ORGAOS) {
     if (!out.diagnosticos.some((d) => d.chave === org.chave)) {
       out.naoInterpretado.push(`Seção não encontrada no relatório: ${org.nome}`);

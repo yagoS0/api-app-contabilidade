@@ -233,48 +233,51 @@ Pra conferir onde está gravando de fato, o erro de leitura mostra o caminho abs
 A UI trata o arquivo ausente sem quebrar: a aba Situação Fiscal mostra "o arquivo não está mais no
 armazenamento" e mantém situação/data (que vivem no banco).
 
-## Situação Fiscal — tabela + PDF opcional
+## Situação Fiscal — tabelas do relatório + PDF opcional
 
-A aba mostra uma **TABELA** do relatório; o PDF oficial fica atrás do botão "Ver PDF oficial".
-A tabela é a leitura do dia a dia — o PDF é o documento de prova.
+A aba mostra as **TABELAS** do relatório; o PDF oficial fica atrás do botão "Ver PDF oficial".
 
-**`parseSitfisRelatorio.js` ORGANIZA, não interpreta.** Isto não é preciosismo: a versão anterior
-extraía débitos com valores e mostrou **"R$ 100,00" numa empresa sem débito nenhum** — o número era
-o `100,00%` de participação do quadro societário. O parser foi removido na época e agora voltou com
-outra premissa.
+### O relatório tem duas caras — e supor uma só foi o erro
 
-O texto real (conferido em produção) mostra por que aquilo era erro de partida: **o relatório não é
-uma tabela de valores**, é um laudo por órgão:
+Empresa **sem débito** traz apenas um laudo textual por órgão. Empresa **com pendência** traz
+tabelas de verdade, com colunas (`Receita · PA/Exerc. · Dt. Vcto · Vl. Original · Sdo. Devedor ·
+Multa · Juros · Sdo. Dev. Cons. · Situação`). Um parser escrito só contra o primeiro caso produz
+lixo no segundo — foi exatamente o que aconteceu.
 
-```
-_____ Diagnóstico Fiscal na Receita Federal _____
-Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI) ____CNPJ: …SIMPLES NACIONAL - EM PARCELAMENTO
-_____ Diagnóstico Fiscal na Procuradoria-Geral da Fazenda Nacional _____
-Não foram detectadas pendências/exigibilidades suspensas …
-```
+### Como o texto extraído realmente é
 
-Regras que o parser segue:
-- Seções são separadas por corridas de `_` (o relatório usa como régua). Cada órgão vai do seu
-  título até o do próximo.
-- **Nenhum valor monetário é extraído.** Se um dia aparecer valor explícito e rotulado, entra —
-  nunca por dedução a partir de um número solto.
-- "Não foram detectadas pendências" é reconhecido e vira **"Nada consta"**, para distinguir ausência
-  de pendência de falha de leitura.
-- ⚠ O CNPJ vem **colado** no conteúdo (`CNPJ: 48.684.291/0001-00SIMPLES NACIONAL - EM PARCELAMENTO`).
-  Descartar a linha inteira por começar com "CNPJ:" fazia sumir justamente a pendência — remove-se
-  só o prefixo.
+O PDF alinha colunas, mas o texto extraído põe **cada célula em uma linha**. Então a leitura é:
+contar as colunas pelo cabeçalho e agrupar as linhas de dados de N em N. `COLUNAS_CONHECIDAS` é
+uma lista **fechada** — é ela que separa cabeçalho de dado.
 
-**A tabela NUNCA some.** Seção que o parser não reconheceu continua na tela como linha do órgão com
-"Não foi possível ler esta seção — confira no PDF oficial". Esconder daria a impressão de "nada
-consta", que é o oposto do que se sabe.
+### As armadilhas do texto (todas reais, todas custaram um ciclo)
 
-Relatório antigo (gravado antes de guardarmos o `texto`) cai direto no PDF, com aviso — não numa
-tabela vazia sem explicação.
+| # | Armadilha | Efeito se ignorada |
+|---|---|---|
+| 1 | CNPJ **colado** na 1ª célula do cabeçalho: `______CNPJ: 52.682.158/0001-92Receita` | a coluna some |
+| 2 | **Cabeçalho da página 2** cortando a tabela no meio | desalinha tudo dali em diante |
+| 3 | `Notificação de lançamento: 526821582026010011099-01 - CP-SEGUR.` — o próximo registro vem colado | perde um registro |
+| 4 | Régua (`______`) como linha solta | entra como célula e quebra a contagem |
+| 5 | Número da página em linha própria | filtrar todo número solto comia o `4` de "Parcelas em atraso" — o descarte é **posicional** |
+| 6 | Bloco nem sempre começa com "Pendência -" | marcador é **título + régua na MESMA linha** (`[ 	]*`, nunca `\s*`, senão a régua final rouba a linha anterior como título) |
+
+### A validação
+
+`linhasDeDados.length % colunas.length === 0`. Não fechando, o bloco **não vira tabela**: sai como
+`naoInterpretado`, com as linhas cruas visíveis. É isso que impede a volta do defeito antigo — o
+parser original extraía valores e chegou a mostrar **"R$ 100,00" de débito numa empresa sem débito**,
+lendo o `100,00%` de participação do quadro societário.
+
+### Regra de exibição
+
+**A tabela nunca some.** Bloco ilegível aparece com as linhas cruas e o aviso de conferir no PDF —
+esconder passaria a impressão de "nada consta", o oposto do que se sabe.
+
+Verificado contra os dois textos reais (ATIM com 3 blocos e 6 registros; ERISANGELA só com
+parcelamento): nenhum bloco ilegível.
 
 **O relatório salvo nunca é apagado por uma consulta que falha.** A gravação só sobrescreve
-`situacao`/`relatorioPdfFileId`/`texto` quando vem relatório NOVO. Antes a condição incluía
-`|| !result.processando`, e uma consulta que voltasse sem relatório e sem "processando" zerava o
-PDF salvo — perdia-se o relatório justamente quando a consulta nova não funcionava.
+`situacao`/`relatorioPdfFileId`/`texto` quando vem relatório NOVO.
 
 ## Situação Fiscal — trava de 4h (C11)
 

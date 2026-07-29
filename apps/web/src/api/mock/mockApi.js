@@ -902,16 +902,48 @@ export function createMockApi() {
           // Relatório interpretado — o mesmo formato que o backend devolve (parseSitfisRelatorio).
           // Com um órgão COM pendência, um SEM, e um TERCEIRO que o parser não conseguiu ler:
           // esse último é o caso que a tabela precisa continuar mostrando em vez de esconder.
+          // Espelha o formato REAL do parser (conferido contra a ATIM em produção): um bloco por
+          // assunto, cada um com suas próprias colunas. Inclui de propósito um bloco ILEGÍVEL —
+          // é o caso que precisa continuar visível em vez de sumir.
           relatorio: {
-            emitidoEm: "24/07/2026 19:08:29",
-            contribuinte: { cnpj: "00.000.000", nome: "EMPRESA MOCK" },
+            emitidoEm: "29/07/2026 14:54:45",
+            contribuinte: { cnpj: "52.682.158", nome: "EMPRESA MOCK" },
             diagnosticos: [
               {
                 orgao: "Receita Federal", chave: "RFB", semPendencia: false,
-                itens: [{ titulo: "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)", descricao: "SIMPLES NACIONAL - EM PARCELAMENTO" }],
+                blocos: [
+                  {
+                    titulo: "Pendência - Parcelamento (PARCSN/PARCMEI)",
+                    descricao: ["SIMPLES NACIONAL - EM PARCELAMENTO"],
+                    colunas: ["Parcelas em atraso"],
+                    registros: [{ "Parcelas em atraso": "4" }],
+                    anotacoes: [], naoInterpretado: [],
+                  },
+                  {
+                    titulo: "Pendência - Débito (SIEF)",
+                    descricao: [],
+                    colunas: ["Receita", "PA/Exerc.", "Dt. Vcto", "Vl. Original", "Sdo. Devedor", "Multa", "Juros", "Sdo. Dev. Cons.", "Situação"],
+                    registros: [
+                      { "Receita": "4406-01 - MAED - PGDAS-D", "PA/Exerc.": "23/02/2026", "Dt. Vcto": "25/03/2026", "Vl. Original": "50,00", "Sdo. Devedor": "50,00", "Multa": "0,00", "Juros": "2,14", "Sdo. Dev. Cons.": "52,14", "Situação": "DEVEDOR" },
+                      { "Receita": "1099-01 - CP-SEGUR.", "PA/Exerc.": "02/2026", "Dt. Vcto": "20/03/2026", "Vl. Original": "178,31", "Sdo. Devedor": "178,31", "Multa": "35,66", "Juros": "7,63", "Sdo. Dev. Cons.": "221,60", "Situação": "DEVEDOR" },
+                      { "Receita": "SIMPLES NAC.", "PA/Exerc.": "12/2025", "Dt. Vcto": "21/01/2026", "Vl. Original": "2.382,50", "Sdo. Devedor": "2.382,50", "Multa": "476,50", "Juros": "154,62", "Sdo. Dev. Cons.": "3.013,62", "Situação": "DEVEDOR" },
+                    ],
+                    anotacoes: ["52682158202601001"], naoInterpretado: [],
+                  },
+                  {
+                    titulo: "Pendência - Processo Fiscal (SIEF)",
+                    descricao: [], colunas: ["Processo", "Situação", "Localização"],
+                    registros: [{ "Processo": "10642.032.115/2026-17", "Situação": "DEVEDOR", "Localização": "SETOR PROC ELETRONICO REFIS-DRFRJ2-RJ" }],
+                    anotacoes: [], naoInterpretado: [],
+                  },
+                  {
+                    titulo: "Pendência - Bloco de exemplo (ilegível)",
+                    descricao: [], colunas: [], registros: [], anotacoes: [],
+                    naoInterpretado: ["LINHA SOLTA A", "LINHA SOLTA B"],
+                  },
+                ],
               },
-              { orgao: "Procuradoria-Geral da Fazenda Nacional", chave: "PGFN", semPendencia: true, itens: [] },
-              { orgao: "Órgão de exemplo (seção ilegível)", chave: "X", semPendencia: false, itens: [] },
+              { orgao: "Procuradoria-Geral da Fazenda Nacional", chave: "PGFN", semPendencia: true, blocos: [] },
             ],
             naoInterpretado: [],
             temTexto: true,
