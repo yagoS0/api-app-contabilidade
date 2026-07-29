@@ -200,10 +200,10 @@ export function CompaniesHomePage({
           <header className="dashboard-home__header">
             <div className="dashboard-home__brand">
               <div>
-                <h1 className="dashboard-home__title">Dashboard de empresas</h1>
-                <p className="dashboard-home__subtitle">
-                  Busca, filtros e acesso rapido para a carteira do escritorio.
-                </p>
+                {/* Subtítulo removido: descrevia o óbvio ("busca, filtros e acesso rápido") numa
+                    tela que JÁ é a carteira, e ainda vinha sem acentuação. Legenda que explica o
+                    que se vê é sinal de que a tela não se explica sozinha. */}
+                <h1 className="dashboard-home__title">Empresas</h1>
               </div>
             </div>
 
@@ -283,19 +283,19 @@ export function CompaniesHomePage({
             )}
             {onOpenApuracao && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenApuracao}>
-                📊 Apuração
+                Apuração
               </Button>
             )}
             {onOpenRotinas && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenRotinas}>
-                🕒 Rotinas
+                Rotinas
               </Button>
             )}
             {/* C10: "Pendências" saiu do dashboard — virou a aba "Situação Fiscal"
                 dentro de Consultas (antiga "Funções em lote"). */}
             {onOpenSerproFuncoes && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenSerproFuncoes}>
-                🔎 Consultas
+                Consultas
               </Button>
             )}
             <SettingsMenu

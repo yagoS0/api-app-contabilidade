@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { rotuloRegime } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
@@ -316,7 +317,9 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
                   )}
                   {companyList.map((company) => {
                     const checked = selectedIds.has(company.companyId);
-                    const regime = company.legacyCompany?.regimeTributario || company.legacyCompany?.tipoTributario || "—";
+                    // Sem rotuloRegime aqui a tabela mostrava "LUCRO_PRESUMIDO" — enum cru, com
+                    // underline, enquanto o card do dashboard já dizia "Presumido".
+                    const regime = rotuloRegime(company.legacyCompany?.regimeTributario || company.legacyCompany?.tipoTributario) || "—";
                     const proc = company.serproStatus?.procurationStatus || company.serproStatus?.status || "—";
                     return (
                       <tr key={company.companyId} style={{ borderTop: "1px solid #2b2d45", background: checked ? "rgba(189,147,249,0.06)" : "transparent" }}>

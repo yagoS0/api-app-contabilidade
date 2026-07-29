@@ -1,4 +1,5 @@
 import { Button } from "../../../../components/ui/Button";
+import { rotuloRegime } from "../../../../lib/vocabulario";
 
 // Tributos potencialmente exibidos no card de compliance.
 // A ordem aqui define a ordem visual das tags (DAS primeiro para Simples; depois Presumidos; PARC_DAS no fim).
@@ -99,10 +100,7 @@ export function CompanyCard({ company, onAccess }) {
     : undefined;
   // Regime tributário — tag Simples/Presumido/Real (vem do cadastro legado).
   const regime = legacy?.regimeTributario || null;
-  const regimeLabel = regime === "SIMPLES" ? "Simples"
-    : regime === "LUCRO_PRESUMIDO" ? "Presumido"
-    : regime === "LUCRO_REAL" ? "Lucro Real"
-    : regime === "MEI" ? "MEI" : null;
+  const regimeLabel = rotuloRegime(regime) || null;
   const regimeColor = regime === "SIMPLES" ? "#8BE9FD"
     : regime === "LUCRO_PRESUMIDO" ? "#FFB86C"
     : regime === "LUCRO_REAL" ? "#BD93F9" : "#6272A4";
@@ -112,8 +110,12 @@ export function CompanyCard({ company, onAccess }) {
   const envio = company?.guidesEnvio || null;
   const todasEnviadas = Boolean(envio?.todasEnviadas);
   // C6: situação fiscal do SITFIS (⚠ ao lado de "apurada") e parcelamento ativo (selo PARC).
-  const fiscalMeta = FISCAL_META[company?.fiscalSituacao] || null;
   const temParcelamento = Boolean(company?.temParcelamento);
+  // "Em parcelamento" (SITFIS) e o selo "PARC" (guia de parcelamento ativa) dizem a MESMA coisa
+  // para quem lê o card. Apareciam juntos no mesmo cartão. Fica o PARC, que é o acionável — tem
+  // guia a acompanhar. A pendência fiscal, essa sim, nunca é suprimida.
+  const fiscalBruto = FISCAL_META[company?.fiscalSituacao] || null;
+  const fiscalMeta = (company?.fiscalSituacao === "EM_PARCELAMENTO" && temParcelamento) ? null : fiscalBruto;
 
   return (
     <article className="company-tile" style={cardStyle}>
@@ -128,13 +130,20 @@ export function CompanyCard({ company, onAccess }) {
           {regimeLabel && (
             <Pill color={regimeColor} title={`Regime tributário: ${regimeLabel}`}>{regimeLabel}</Pill>
           )}
-          <Pill
-            color={serproEligible ? "#69FF47" : "#6272A4"}
-            title={serproEligible ? "Empresa apta ao fluxo SERPRO" : "Empresa não apta ao fluxo SERPRO"}
-          >
-            SERPRO
-          </Pill>
-          <Pill color={certColor} title={certTitle}>🔐 A1</Pill>
+          {/* SELO SÓ PARA EXCEÇÃO. Antes "SERPRO" e "A1" apareciam em TODAS as empresas — e selo
+              que nunca varia não informa nada: ocupa espaço e não distingue ninguém. O estado
+              esperado (apta ao SERPRO, certificado válido) é silêncio; quem precisa gritar é o
+              que está faltando ou vencendo. */}
+          {!serproEligible && (
+            <Pill color="#FFB347" title="Empresa não apta ao fluxo SERPRO — confira procuração e certificado">
+              sem SERPRO
+            </Pill>
+          )}
+          {!certAtivo && (
+            <Pill color={certExpirado ? "#FF5757" : "#FFB347"} title={certTitle}>
+              {certExpirado ? "A1 vencido" : "sem A1"}
+            </Pill>
+          )}
           {zerada && (
             <Pill color="#FFB347" title="Empresa zerada (sem movimento) — só enviamos obrigações zeradas">
               🚫 Zerada
@@ -144,15 +153,16 @@ export function CompanyCard({ company, onAccess }) {
       </div>
       <p className="company-serpro-status" aria-label="Apuração e situação fiscal">
         {/* Q52: selo de empresa apurada (apuração transmitida/confirmada na competência). */}
-        <span
-          style={{
-            fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px",
-            color: apurada ? "#69FF47" : "#6272A4",
-          }}
-          title={apuradaTitle}
-        >
-          {apurada ? "✓ apurada" : "apurada"}
-        </span>
+        {/* Mesma regra: apuração transmitida é o esperado. O que merece destaque é a que AINDA
+            NÃO foi — é ela que tem trabalho pendente. */}
+        {!apurada && (
+          <span
+            style={{ fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px", color: "#FFB347" }}
+            title={apuradaTitle}
+          >
+            a apurar
+          </span>
+        )}
         {/* C6: aviso de pendência fiscal (SITFIS) ao lado de "apurada". */}
         {fiscalMeta && (
           <span

@@ -8,6 +8,7 @@
 // lote), aberto por um botão — então a lógica validada não muda. A tela de lote (renderApuracaoPage)
 // virou só "selecionar as fechadas e apurar em lote".
 import { useCallback, useEffect, useState } from "react";
+import { rotuloEstadoApuracao, RBT12_NOME } from "../../../lib/vocabulario";
 import { PANEL, fmtDate, fmtMoney } from "../../notas/components/notasStyles";
 import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
 import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
@@ -23,10 +24,15 @@ function competenciaAnterior() {
 const ESTADO_COR = {
   fechada: "#69FF47", transmitida: "#8BE9FD", calculada: "#FFB347", confirmada: "#69FF47",
 };
+// Mostra em que ponto do TRABALHO a competência está, não o nome do registro no banco.
+// "calculada" e "bloqueada_pendencias" descrevem a linha da tabela; o contador quer saber se
+// ainda falta transmitir.
 function EstadoBadge({ estado }) {
-  if (!estado || estado === "pendente" || estado === "aberta") return <span style={{ color: PANEL.muted }}>aberta</span>;
+  if (!estado || estado === "pendente" || estado === "aberta") {
+    return <span style={{ color: PANEL.muted }}>{rotuloEstadoApuracao(estado)}</span>;
+  }
   const cor = ESTADO_COR[estado] || "#FFB347";
-  return <span style={{ color: cor, fontWeight: 700 }}>{estado}</span>;
+  return <span style={{ color: cor, fontWeight: 700 }}>{rotuloEstadoApuracao(estado)}</span>;
 }
 
 function SecaoTabs({ secao, setSecao, pendCount }) {
@@ -61,9 +67,9 @@ function SecaoTabs({ secao, setSecao, pendCount }) {
   );
 }
 
-function Kpi({ label, value, cor }) {
+function Kpi({ label, value, cor, title }) {
   return (
-    <div style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: "10px 14px" }}>
+    <div title={title} style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: "10px 14px" }}>
       <div style={{ fontSize: "0.68rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</div>
       <div style={{ fontSize: "1.05rem", fontWeight: 700, color: cor || PANEL.text, fontFamily: "monospace" }}>{value}</div>
     </div>
@@ -197,7 +203,7 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
             <Kpi label="Fat. interno" value={`${fmtMoney(fat.interno)}`} />
             <Kpi label="Fat. externo" value={`${fmtMoney(fat.externo)}`} />
-            <Kpi label="RBT12" value={`${fmtMoney(fechDados?.rbt12)}`} />
+            <Kpi label="Receita 12 meses" title={`${RBT12_NOME} (RBT12)`} value={`${fmtMoney(fechDados?.rbt12)}`} />
             <Kpi label="DAS apurado" value={dasApurado != null ? `${fmtMoney(dasApurado)}` : "—"} cor="#8BE9FD" />
           </div>
           {fechDados?.cadastroCompleto === false && (

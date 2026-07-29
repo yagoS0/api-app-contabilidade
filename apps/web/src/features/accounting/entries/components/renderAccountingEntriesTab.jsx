@@ -128,7 +128,14 @@ function FechamentoCadeado({ companyId, competencia, entries, onState }) {
   const btnDisabled = busy || bloqueadoPorChecklist;
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      {/* Checklist de conferência — some quando o mês já está fechado. */}
+      {/* Checklist de conferência — some quando o mês já está fechado.
+          Sem o rótulo abaixo eram cinco caixas soltas ao lado do cadeado: não dava pra saber se
+          filtravam a tabela ou se eram confirmações. São confirmações manuais do contador. */}
+      {!fechado && (
+        <span style={{ fontSize: "0.72rem", color: "#8A8FA3", fontWeight: 600, whiteSpace: "nowrap" }}>
+          Confiro que lancei:
+        </span>
+      )}
       {!fechado && CHECKLIST_ITENS.map((item) => {
         const marcado = checklist[item.chave] === true;
         const gravando = checkBusy === item.chave;
@@ -526,7 +533,8 @@ export function AccountingEntriesTab({
             style={activeFilterCount ? { ...actionButtonStyle, borderColor: ACCOUNTING_PANEL.accent, color: ACCOUNTING_PANEL.accent } : actionButtonStyle}
             title="Filtrar lançamentos"
           >
-            ⚲ Filtro{activeFilterCount ? ` (${activeFilterCount})` : ""}
+            {/* Era "⚲", que não é uma lupa — é o símbolo de gênero neutro. */}
+            🔍 Filtro{activeFilterCount ? ` (${activeFilterCount})` : ""}
           </button>
         </div>
 

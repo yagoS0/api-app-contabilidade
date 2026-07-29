@@ -762,7 +762,11 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
               </tr>
             </thead>
             <tbody>
-              {visibleRows.length === 0 && (
+              {/* `visibleRows` são as COLUNAS de tributo, não as linhas de dados. Usar isso como
+                  "está vazio" fazia a Circular dizer "Nenhuma provisão registrada" com a tabela
+                  mostrando valor em aberto — a provisão vinha de origem que não gera coluna
+                  (INSS/DAS sintéticos). Agora só declara vazio quando NÃO HÁ NADA no ano. */}
+              {visibleRows.length === 0 && sumYear("__ABERTO__") === 0 && sumYear("__FAT__") === 0 && (
                 <tr>
                   <td colSpan={3 + visibleRows.length} style={{ padding: 24, textAlign: "center", color: "#aeb6d3", fontStyle: "italic" }}>
                     Nenhuma provisão registrada para {year}.
