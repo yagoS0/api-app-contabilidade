@@ -51,7 +51,7 @@ const COL_W = 120;
 
 const TIPO_LABELS = { DESPESA: "Despesa", RECEITA: "Receita", FOLHA: "Folha", PROVISAO: "Provisão", BAIXA: "Baixa", OUTRO: "Outro" };
 
-function fmtMoney(val) {
+function fmtValor(val) {
   const n = Number(val);
   if (!n) return null;
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -316,8 +316,8 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
     }
     return (
       <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", color: "#F8F8F2" }}>
-        <div style={{ fontWeight: 700, fontSize: "0.9rem", whiteSpace: "nowrap" }}>R$ {fmtMoney(acrescimo.principal) || "0,00"}</div>
-        {temAcrescimo && <div title={`Juros/multa R$ ${fmtMoney(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>+R$ {fmtMoney(acrescimo.acrescimo)} j/m</div>}
+        <div style={{ fontWeight: 700, fontSize: "0.9rem", whiteSpace: "nowrap" }}>R$ {fmtValor(acrescimo.principal) || "0,00"}</div>
+        {temAcrescimo && <div title={`Juros/multa R$ ${fmtValor(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>+R$ {fmtValor(acrescimo.acrescimo)} j/m</div>}
       </td>
     );
   }
@@ -358,21 +358,21 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
     || canEditInss
     || (canManageInssBaixa && (Boolean(onCancelBaixa) || (Boolean(onEdit) && Boolean(entry.baixaEntry))))
     || (!isSynthetic && (Boolean(onEdit) || (isOpenLike && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
-  const numText = fmtMoney(valor) ? `R$ ${fmtMoney(valor)}` : "—";
+  const numText = fmtValor(valor) ? `R$ ${fmtValor(valor)}` : "—";
 
   return (
     <td style={{ position: "relative", background: bg, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", width: COL_W, minWidth: COL_W, color: "#F8F8F2" }}>
       {hasActions ? (
         <button
           onClick={() => setOpen((o) => !o)}
-          title={isVinculado ? "Vinculado a parcelamento" : (isParcial ? `Parcial — saldo R$ ${fmtMoney(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
+          title={isVinculado ? "Vinculado a parcelamento" : (isParcial ? `Parcial — saldo R$ ${fmtValor(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
           style={{ background: "transparent", border: "none", cursor: "pointer", color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", width: "100%", padding: "2px 0" }}
         >
           {numText}
         </button>
       ) : (
         <span
-          title={isSynthetic ? "Gerada a partir da guia INSS" : (isParcial ? `Parcial — saldo R$ ${fmtMoney(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
+          title={isSynthetic ? "Gerada a partir da guia INSS" : (isParcial ? `Parcial — saldo R$ ${fmtValor(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
           style={{ color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", display: "inline-block", padding: "2px 0" }}
         >
           {numText}
@@ -381,15 +381,15 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
       {entry.recalculatedAt && entry.recalculatedToValor != null && (
         <div
           style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}
-          title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)}. Valor original: R$ ${fmtMoney(entry.recalculatedFromValor)}. Atualizado: R$ ${fmtMoney(entry.recalculatedToValor)}.`}
+          title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)}. Valor original: R$ ${fmtValor(entry.recalculatedFromValor)}. Atualizado: R$ ${fmtValor(entry.recalculatedToValor)}.`}
         >
-          ↻ R$ {fmtMoney(entry.recalculatedToValor)}
+          ↻ R$ {fmtValor(entry.recalculatedToValor)}
         </div>
       )}
       {/* Frente B: acréscimo (juros/multa) destacado + edição do split principal/juros/multa. */}
       {temAcrescimo && (
-        <div title={`Valor original R$ ${fmtMoney(acrescimo.principal)} + juros/multa R$ ${fmtMoney(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>
-          +R$ {fmtMoney(acrescimo.acrescimo)} j/m
+        <div title={`Valor original R$ ${fmtValor(acrescimo.principal)} + juros/multa R$ ${fmtValor(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>
+          +R$ {fmtValor(acrescimo.acrescimo)} j/m
         </div>
       )}
       {/* Baixa parcial por quota: mostra o saldo restante (azul) na célula. */}
@@ -404,8 +404,8 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
         </div>
       )}
       {!placeholder && isParcial && Number.isFinite(saldo) && (
-        <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "#6EA8FF", whiteSpace: "nowrap" }} title={`Pago R$ ${fmtMoney(entry.abatido)} de R$ ${fmtMoney(valor)} — ${entry.quotasPagas || 0} quota(s)`}>
-          saldo R$ {fmtMoney(saldo)}
+        <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "#6EA8FF", whiteSpace: "nowrap" }} title={`Pago R$ ${fmtValor(entry.abatido)} de R$ ${fmtValor(valor)} — ${entry.quotasPagas || 0} quota(s)`}>
+          saldo R$ {fmtValor(saldo)}
         </div>
       )}
       {/* Ícone único de "pago" — só quando totalmente quitado (baixa manual ou confirmação SERPRO).
@@ -467,7 +467,7 @@ function FaturamentoCell({ valor }) {
   return (
     <td style={{ padding: "6px 4px", textAlign: "center", fontSize: "0.75rem", borderRight: "1px solid #44475A" }}>
       {valor ? (
-        <span style={{ fontWeight: 700, color: "#8BE9FD" }}>R$ {fmtMoney(valor)}</span>
+        <span style={{ fontWeight: 700, color: "#8BE9FD" }}>R$ {fmtValor(valor)}</span>
       ) : (
         <span style={{ color: "#44475A" }}>—</span>
       )}
@@ -793,8 +793,8 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         acrescimo={acrescimoFor(col.key, comp)}
                       />
                     ))}
-                    <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtMoney(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
-                    <td style={extraCellStyle}>{aberto ? <span style={{ color: "#FF4757", fontWeight: 700 }}>R$ {fmtMoney(aberto)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
+                    <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtValor(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
+                    <td style={extraCellStyle}>{aberto ? <span style={{ color: "#FF4757", fontWeight: 700 }}>R$ {fmtValor(aberto)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
                   </tr>
                 )];
                 if ((i + 1) % 3 === 0) {
@@ -803,9 +803,9 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                   rows.push(
                     <tr key={`q${qi}`} style={{ background: "#282A36" }}>
                       <td style={{ ...monthStickyStyle, background: "#282A36", color: "#aeb6d3", fontWeight: 700, borderTop: "2px solid #44475A", borderBottom: "2px solid #44475A" }}>{qi + 1}º Trimestre</td>
-                      {visibleRows.map((col) => { const v = sumQuarter(col.key, qi); return <td key={col.key} style={{ ...triStyle, color: "#aeb6d3" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })}
-                      {(() => { const v = sumQuarter("__FAT__", qi); return <td style={{ ...triStyle, color: "#8BE9FD" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })()}
-                      {(() => { const v = sumQuarter("__ABERTO__", qi); return <td style={{ ...triStyle, color: "#FF4757" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })()}
+                      {visibleRows.map((col) => { const v = sumQuarter(col.key, qi); return <td key={col.key} style={{ ...triStyle, color: "#aeb6d3" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })}
+                      {(() => { const v = sumQuarter("__FAT__", qi); return <td style={{ ...triStyle, color: "#8BE9FD" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
+                      {(() => { const v = sumQuarter("__ABERTO__", qi); return <td style={{ ...triStyle, color: "#FF4757" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
                     </tr>
                   );
                 }
@@ -814,9 +814,9 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
               {/* Anual */}
               <tr style={{ background: "#1f2030", borderTop: "3px solid #44475A" }}>
                 <td style={{ ...monthStickyStyle, background: "#1f2030", fontWeight: 800 }}>Anual</td>
-                {visibleRows.map((col) => { const v = sumYear(col.key); return <td key={col.key} style={{ ...subCellStyle, fontWeight: 800 }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })}
-                {(() => { const v = sumYear("__FAT__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#8BE9FD" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })()}
-                {(() => { const v = sumYear("__ABERTO__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#FF4757" }}>{v ? `R$ ${fmtMoney(v)}` : "—"}</td>; })()}
+                {visibleRows.map((col) => { const v = sumYear(col.key); return <td key={col.key} style={{ ...subCellStyle, fontWeight: 800 }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })}
+                {(() => { const v = sumYear("__FAT__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#8BE9FD" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
+                {(() => { const v = sumYear("__ABERTO__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#FF4757" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
               </tr>
             </tbody>
           </table>

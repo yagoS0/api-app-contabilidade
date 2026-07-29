@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
-import { fmtMoney } from "../../entries/lib/accountingEntriesShared";
+import { fmtValor } from "../../entries/lib/accountingEntriesShared";
 import { SmartHistoricoInput, AccountCodeInput } from "../../entries/components/renderAccountingEntriesParts";
 
 const PANEL = {
@@ -393,7 +393,7 @@ export function ImportOFXModal({
                           )}
                         </td>
                         <td style={{ padding: "5px 8px", textAlign: "right", whiteSpace: "nowrap", verticalAlign: "top" }}>
-                          {fmtMoney(t.valor)}
+                          {fmtValor(t.valor)}
                           <div style={{ fontSize: "0.65rem", color: sinalColor, marginTop: 2 }}>{sinalLabel}</div>
                         </td>
                         {/* F3: AccountCodeInput em D e C */}

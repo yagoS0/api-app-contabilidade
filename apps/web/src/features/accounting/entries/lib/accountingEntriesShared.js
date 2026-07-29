@@ -19,7 +19,11 @@ export function fmtDate(iso) {
   return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
 }
 
-export function fmtMoney(val) {
+// `fmtValor` devolve SÓ O NÚMERO ("1.234,56") — quem chama põe o "R$" onde faz sentido (tabelas
+// contábeis com coluna própria de moeda). NÃO confundir com o `fmtMoney` de notasStyles, que já
+// devolve "R$ 1.234,56": prefixar aquele gerava "R$ R$ 0,00" na tela. Os nomes são diferentes
+// justamente para que a troca não compile como algo plausível.
+export function fmtValor(val) {
   const n = Number(val);
   return isNaN(n) ? "—" : n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

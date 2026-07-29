@@ -207,21 +207,23 @@ Em Lançamentos há três menus suspensos lado a lado — **Configurações**, *
 | ⬜ | Grupo de caixas "Folha/Pró-labore · Despesas · Receitas · Provisões · Pagamentos" sem título | não dá pra saber se é filtro ou checklist (é checklist de conferência) |
 | ⬜ | Emoji em 3 dos 7 botões do topo (📊 🕒 🔎), nenhum nos outros | metade decorada, metade não |
 
-## O que eu mudaria, por ordem de retorno
+## O que foi executado (28/07/2026)
 
-1. **Selo só para exceção.** Tirar SERPRO/A1/apurada quando estão OK; deixá-los aparecer só
-   quando faltam ou vencem. Esvazia o card e faz o que sobra ser lido de verdade.
-2. **Um vocabulário só.** Uma tabela de termos (regime, estado, nome de página) e nenhuma sigla
-   nem enum cru na tela. `RBT12` vira "Receita dos últimos 12 meses".
-3. **Consultas guiar sozinha** em vez de numerar os passos: seções desabilitadas até a anterior
-   estar preenchida, e o botão Rodar inerte enquanto não houver o que rodar. Aí o texto "1) 2) 3)"
-   pode sair.
-4. **Resolver o "Cadastro" triplo** — renomear a sub-aba de Apuração para "Perfil fiscal" e o
-   grupo para "Empresa".
-5. **Unificar `fmtMoney`** num helper só, com o símbolo dentro. É o que gerou o `R$ R$`, e vai
-   gerar de novo.
-6. **Corrigir os defeitos visíveis** da tabela acima — todos pequenos e isolados.
-7. **Nomear o grupo de caixas** de conferência em Lançamentos e trocar o ícone `⚲`.
+- ✅ **Selo só para exceção.** SERPRO/A1/apurada só aparecem quando faltam, vencem ou estão
+  pendentes. Some também a duplicata "Em parcelamento" + "PARC".
+- ✅ **Vocabulário único** (`src/lib/vocabulario.js`): fim do `LUCRO_PRESUMIDO` na tela, estados
+  da apuração com rótulo de trabalho ("Calculada — falta transmitir"), `RBT12` → "Receita 12 meses".
+- ✅ **"Cadastro" triplo resolvido:** grupo virou **Empresa**, sub-aba fiscal virou **Perfil fiscal**.
+- ✅ **`fmtMoney` desambiguado:** o que devolve só o número virou **`fmtValor`** (49 ocorrências).
+  Nomes diferentes tornam impossível prefixar "R$" no que já o traz — a causa do `R$ R$ 0,00`.
+- ✅ **Defeitos visíveis:** vazio da Circular, ícone do Filtro, checklist sem título, subtítulo
+  redundante do dashboard, emojis em metade dos botões.
+
+## O que ficou pendente
+
+- ⬜ **Consultas guiar sozinha** em vez de numerar os passos ("1) 2) 3)"): seções desabilitadas
+  até a anterior estar preenchida e botão Rodar inerte sem seleção. É o item de maior esforço e o
+  único que exige mexer no fluxo, não só em rótulo.
 
 Nada disso muda um número fiscal. É tudo sobre o contador olhar a tela e saber o que fazer sem
 alguém do lado explicando.

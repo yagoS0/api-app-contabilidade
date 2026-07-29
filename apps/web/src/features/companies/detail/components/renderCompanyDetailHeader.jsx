@@ -30,7 +30,9 @@ const GROUPS = [
   {
     // Abre a FICHA (read-only). Editar é um botão dentro dela, que leva à aba `edit`.
     key: "cadastro",
-    label: "Cadastro",
+    // Grupo = "Empresa" (ficha, documentos, anotações). Antes chamava "Cadastro", mesmo nome da
+    // sub-aba fiscal e da tela de ficha — a palavra apontava para três lugares diferentes.
+    label: "Empresa",
     // Documentos (contrato social, cartão CNPJ, inscrições) e Anotações moram aqui: são
     // cadastrais, não fiscais, e é onde o contador já vai procurar dado de empresa.
     tabs: [

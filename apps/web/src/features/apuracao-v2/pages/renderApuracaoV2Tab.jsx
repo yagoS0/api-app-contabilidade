@@ -38,7 +38,9 @@ function EstadoBadge({ estado }) {
 function SecaoTabs({ secao, setSecao, pendCount }) {
   const itens = [
     { key: "apuracao", label: "Apuração" },
-    { key: "cadastro", label: "Cadastro" },
+    // "Perfil fiscal", não "Cadastro": a palavra Cadastro já era o grupo de abas da empresa E a
+    // tela de ficha. Três coisas com o mesmo nome, duas delas visíveis ao mesmo tempo.
+    { key: "cadastro", label: "Perfil fiscal" },
     { key: "sugestao", label: "Sugestão", badge: pendCount },
   ];
   return (

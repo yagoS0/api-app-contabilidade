@@ -13,7 +13,7 @@ import {
   TDv,
   TIPO_LABELS,
   fmtDate,
-  fmtMoney,
+  fmtValor,
   getCompRange,
   resolveHistoricoText,
 } from "../lib/accountingEntriesShared";
@@ -243,9 +243,9 @@ export function LineEditor({ lines, onChange, accounts }) {
         <button type="button" onClick={() => addLine("D")} style={{ ...PANEL_FIELD_STYLE, width: "auto", height: 32, padding: "0 12px", cursor: "pointer" }}>+ D</button>
         <button type="button" onClick={() => addLine("C")} style={{ ...PANEL_FIELD_STYLE, width: "auto", height: 32, padding: "0 12px", cursor: "pointer" }}>+ C</button>
         <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center", fontSize: "0.8rem" }}>
-          <span>Débitos: <strong style={{ color: "#8BE9FD" }}>R$ {fmtMoney(totalD)}</strong></span>
-          <span>Créditos: <strong style={{ color: "#69FF47" }}>R$ {fmtMoney(totalC)}</strong></span>
-          {balanced ? <span style={{ color: "#69FF47", fontWeight: 700 }}>Balanceado</span> : <span style={{ color: "#FF4757", fontWeight: 700 }}>Diferença: R$ {fmtMoney(diff)}</span>}
+          <span>Débitos: <strong style={{ color: "#8BE9FD" }}>R$ {fmtValor(totalD)}</strong></span>
+          <span>Créditos: <strong style={{ color: "#69FF47" }}>R$ {fmtValor(totalC)}</strong></span>
+          {balanced ? <span style={{ color: "#69FF47", fontWeight: 700 }}>Balanceado</span> : <span style={{ color: "#FF4757", fontWeight: 700 }}>Diferença: R$ {fmtValor(diff)}</span>}
         </div>
       </div>
     </div>
@@ -567,12 +567,12 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
           <button type="button" onClick={handleSave} disabled={!canSave} title={!dateVal ? "Informe o dia" : !historico ? "Informe o histórico" : !balanced ? "Valor ou contas incompletos" : duplicateAcrossSides ? "Débito e crédito não podem usar a mesma conta" : "Enter"} style={{ minHeight: 41, padding: "10px 18px", border: "none", borderRadius: 8, background: canSave ? "#69FF47" : "#4b5563", color: "#1A1B26", font: "inherit", fontSize: entryFontSize, fontWeight: 600, cursor: canSave ? "pointer" : "not-allowed", alignSelf: "end" }}>{saving ? "..." : "Salvar"}</button>
         </div>
         <div style={{ display: "grid", gap: 4, minWidth: 150, width: 150, paddingTop: 16 }}>
-          <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#69FF47" }}>Débito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtMoney(listedTotalD)}</span></div>
-          <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#FF4757" }}>Crédito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtMoney(listedTotalC)}</span></div>
+          <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#69FF47" }}>Débito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtValor(listedTotalD)}</span></div>
+          <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#FF4757" }}>Crédito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtValor(listedTotalC)}</span></div>
         </div>
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.875rem", color: listedBalanceDelta >= 0 ? "#69FF47" : "#FF4757", fontWeight: 600 }}>Diferença: R$ {fmtMoney(listedBalanceDelta)}</span>
+        <span style={{ fontSize: "0.875rem", color: listedBalanceDelta >= 0 ? "#69FF47" : "#FF4757", fontWeight: 600 }}>Diferença: R$ {fmtValor(listedBalanceDelta)}</span>
         {monthLabel ? <span style={{ fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}>{monthLabel}</span> : null}
       </div>
       {duplicateAcrossSides ? (
@@ -798,14 +798,14 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
             {entry.recalculatedAt && (
               <span
                 style={{ fontSize: "0.7rem", color: "#1A1B26", background: "#FFB347", padding: "2px 7px", borderRadius: 999, fontWeight: 700 }}
-                title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)} — valor original R$ ${fmtMoney(entry.recalculatedFromValor)} → atualizado R$ ${fmtMoney(entry.recalculatedToValor)} (na circular). O valor do lançamento permanece o original.`}
+                title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)} — valor original R$ ${fmtValor(entry.recalculatedFromValor)} → atualizado R$ ${fmtValor(entry.recalculatedToValor)} (na circular). O valor do lançamento permanece o original.`}
               >
                 Recalculada
               </span>
             )}
           </div>
         </td>
-        <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.875rem" }}>—</span> : fmtMoney(totalD || totalC)}</td>
+        <td style={{ ...TDv, textAlign: "right", fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{isTemplate ? <span style={{ color: ACCOUNTING_PANEL.text, fontSize: "0.875rem" }}>—</span> : fmtValor(totalD || totalC)}</td>
         {/* Q18: colunas Tipo e Status removidas. Status mostrado como chip discreto junto às ações pra template/exportado. */}
         <td style={{ ...TDv, textAlign: "right", borderRight: "none" }}>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
@@ -815,7 +815,7 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
           </div>
         </td>
       </tr>
-      {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={7} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtMoney(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
+      {expanded && !isSimple && <tr style={{ background: ACCOUNTING_PANEL.surface }}><td colSpan={7} style={{ padding: "6px 16px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}` }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}><thead><tr><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>D/C</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Conta</th><th style={{ textAlign: "left", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Nome</th><th style={{ textAlign: "right", padding: "2px 6px", color: ACCOUNTING_PANEL.muted, fontWeight: 700 }}>Valor</th></tr></thead><tbody>{lines.map((l, i) => { const acc = accounts.find((a) => a.codigo === l.conta); return <tr key={i}><td style={{ padding: "2px 6px", fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>{l.tipo}</td><td style={{ padding: "2px 6px", fontWeight: 700 }}>{l.conta}</td><td style={{ padding: "2px 6px", color: ACCOUNTING_PANEL.muted }}>{acc?.nome || "—"}</td><td style={{ padding: "2px 6px", textAlign: "right" }}>{fmtValor(l.valor)}</td></tr>; })}</tbody></table></td></tr>}
       {showBaixa && <BaixaModal entry={entry} accounts={accounts} saving={savingBaixa} onSave={async (input) => { await onCreateBaixa(entry.id, input); setShowBaixa(false); }} onClose={() => setShowBaixa(false)} onLoadBaixaTemplate={onLoadBaixaTemplate} />}
     </>
   );
@@ -1265,7 +1265,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
 
         {template?.inssGuide && (
           <div style={{ marginTop: 10, padding: 8, fontSize: "0.78rem", color: "#aeb6d3" }}>
-            <strong style={{ color: "#FFB347" }}>INSS da guia: R$ {fmtMoney(template.inssGuide.valor)}</strong>
+            <strong style={{ color: "#FFB347" }}>INSS da guia: R$ {fmtValor(template.inssGuide.valor)}</strong>
             {template.inssGuide.vencimento && <span> · vencimento {fmtDate(template.inssGuide.vencimento)}</span>}
           </div>
         )}

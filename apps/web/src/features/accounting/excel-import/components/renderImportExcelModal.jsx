@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "../../../../components/ui/Button";
-import { fmtMoney } from "../../entries/lib/accountingEntriesShared";
+import { fmtValor } from "../../entries/lib/accountingEntriesShared";
 
 const PANEL = {
   surface: "#24253A",
@@ -199,7 +199,7 @@ export function ImportExcelModal({ accounts = [], onPreview, onCommit, onClose }
                       <tr key={idx} style={{ background: bg, borderBottom: `1px solid ${PANEL.border}`, opacity: t.skip ? 0.4 : 1 }}>
                         <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{fmtDateBR(t.data)}</td>
                         <td style={{ padding: "5px 8px" }}>{t.descricao}</td>
-                        <td style={{ padding: "5px 8px", textAlign: "right", whiteSpace: "nowrap" }}>{fmtMoney(t.valor)}</td>
+                        <td style={{ padding: "5px 8px", textAlign: "right", whiteSpace: "nowrap" }}>{fmtValor(t.valor)}</td>
                         <td style={{ padding: "5px 8px" }}>
                           <input
                             type="text"

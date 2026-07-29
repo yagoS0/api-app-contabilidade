@@ -5,7 +5,7 @@ import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal
 import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
 import { ParcelamentoModal } from "../../parcelamento/components/renderParcelamentoModal";
 import { AccountRow, DraftEntryRow } from "./renderAccountingEntriesParts";
-import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtMoney, formatCompetenciaTitulo } from "../lib/accountingEntriesShared";
+import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtValor, formatCompetenciaTitulo } from "../lib/accountingEntriesShared";
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
 import { FunctionListModal, FunctionEditModal, FunctionApplyModal } from "../../functions/components/AccountingFunctionModals";
 import { ParcelamentoCreateModal } from "../../parcelamento/components/ParcelamentoModals";
@@ -542,7 +542,7 @@ export function AccountingEntriesTab({
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             {Object.entries(totals).map(([tipo, value]) => (
               <span key={tipo} style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text }}>
-                <strong style={{ color: ACCOUNTING_PANEL.text }}>{TIPO_LABELS[tipo] || tipo}:</strong> R$ {fmtMoney(value)}
+                <strong style={{ color: ACCOUNTING_PANEL.text }}>{TIPO_LABELS[tipo] || tipo}:</strong> R$ {fmtValor(value)}
               </span>
             ))}
           </div>
@@ -740,7 +740,7 @@ export function AccountingEntriesTab({
                       <span>{TIPO_GROUP_LABELS[tipo] || tipo}</span>
                       <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 500, fontSize: "0.78rem", marginLeft: 12, textTransform: "none" }}>
                         {items.length} lançamento{items.length !== 1 ? "s" : ""}
-                        {groupTotals[tipo] > 0 && <> · R$ {fmtMoney(groupTotals[tipo])}</>}
+                        {groupTotals[tipo] > 0 && <> · R$ {fmtValor(groupTotals[tipo])}</>}
                       </span>
                     </td>
                   </tr>
@@ -793,11 +793,11 @@ export function AccountingEntriesTab({
                   <td colSpan={7} style={{ padding: "6px 12px", fontSize: "0.8rem", color: ACCOUNTING_PANEL.muted, borderTop: `1px solid ${ACCOUNTING_PANEL.border}` }}>
                     {total} lançamento{total !== 1 ? "s" : ""} no total
                     <span style={{ margin: "0 8px", color: ACCOUNTING_PANEL.border }}>·</span>
-                    D R$ {fmtMoney(dTot) || "0,00"}
+                    D R$ {fmtValor(dTot) || "0,00"}
                     <span style={{ margin: "0 6px", color: ACCOUNTING_PANEL.border }}>·</span>
-                    C R$ {fmtMoney(cTot) || "0,00"}
+                    C R$ {fmtValor(cTot) || "0,00"}
                     <span style={{ marginLeft: 8, color: balanced ? "#69FF47" : "#FFB347", fontWeight: 600 }}>
-                      {balanced ? "✓ ok" : `⚠ dif. R$ ${fmtMoney(diff) || "0,00"}`}
+                      {balanced ? "✓ ok" : `⚠ dif. R$ ${fmtValor(diff) || "0,00"}`}
                     </span>
                   </td>
                 </tr>
