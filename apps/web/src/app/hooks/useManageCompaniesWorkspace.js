@@ -10,7 +10,7 @@ import {
 
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
-const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "parcelamento", "notas-fiscais", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "edit"];
+const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "parcelamento", "notas-fiscais", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "documentos", "anotacoes", "edit"];
 const SEGMENT_TO_TAB = {
   guides: "guides",
   lancamentos: "lancamentos",
@@ -57,8 +57,11 @@ function dashboardPrevMonth() {
 function deriveCompanyDetailTab(pathname) {
   // Q17: Lançamentos é a aba default ao abrir uma empresa.
   const match = pathname.match(/^\/companies\/[^\/]+\/([^\/]+)/);
-  if (!match) return "lancamentos";
-  return SEGMENT_TO_TAB[match[1]] || "lancamentos";
+  // Default = Anotações: se a empresa tem alguma particularidade, ela precisa ser lida ANTES de
+  // mexer em qualquer número. Antes o default era Lançamentos, e a anotação só era vista por quem
+  // fosse procurá-la.
+  if (!match) return "anotacoes";
+  return SEGMENT_TO_TAB[match[1]] || "anotacoes";
 }
 
 export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onInssSynced, onPgdasSynced, onGuidePaymentConfirmed }) {

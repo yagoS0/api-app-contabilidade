@@ -68,7 +68,7 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
         return navigate("/companies");
       }
       // Q17: aba default = Lançamentos (era guides).
-      return navigate(`/companies/${cid}/lancamentos`);
+      return navigate(`/companies/${cid}/anotacoes`);
     }
     const target = PAGE_TO_PATH[name];
     if (target) navigate(target);

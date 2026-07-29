@@ -1,7 +1,16 @@
-// Navegação da empresa em 2 níveis: 3 grupos grandes (Contabilidade, Fiscal, Cadastro)
+// Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
 // clicar num grupo navega pro seu 1º sub-tab. Nada de roteamento novo — só reagrupa o header.
 const GROUPS = [
+  {
+    // ANOTAÇÕES VEM PRIMEIRO, e no primeiro nível — não é sub-aba de Cadastro.
+    // O raciocínio do dono: se a empresa tem alguma particularidade, isso precisa ser sabido antes
+    // de mexer em qualquer número. Enterrada dentro de "Empresa" ela só era vista por quem fosse
+    // procurar; e quem vai procurar já sabe o que tem lá. Por isso é também a aba de entrada.
+    key: "anotacoes",
+    label: "Anotações",
+    tabs: [{ key: "anotacoes", label: "Anotações" }],
+  },
   {
     key: "contabilidade",
     label: "Contabilidade",
@@ -33,12 +42,11 @@ const GROUPS = [
     // Grupo = "Empresa" (ficha, documentos, anotações). Antes chamava "Cadastro", mesmo nome da
     // sub-aba fiscal e da tela de ficha — a palavra apontava para três lugares diferentes.
     label: "Empresa",
-    // Documentos (contrato social, cartão CNPJ, inscrições) e Anotações moram aqui: são
-    // cadastrais, não fiscais, e é onde o contador já vai procurar dado de empresa.
+    // Documentos (contrato social, cartão CNPJ, inscrições) mora aqui: é cadastral, não fiscal.
+    // Anotações SAIU daqui — virou grupo próprio, primeiro de todos.
     tabs: [
       { key: "cadastro", label: "Cadastro" },
       { key: "documentos", label: "Documentos" },
-      { key: "anotacoes", label: "Anotações" },
     ],
   },
 ];
