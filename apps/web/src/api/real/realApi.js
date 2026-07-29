@@ -533,6 +533,27 @@ export function createRealApi() {
       return request(`/firm/pendencias/fiscal`);
     },
     // Q43.4: baixa o PDF do relatório SITFIS como Blob (auth Bearer; iframe não manda header).
+    // ── Calendário fiscal (do escritório; companyId é filtro opcional) ─────────────────────
+    async getCalendario(mes, companyId) {
+      const q = new URLSearchParams({ mes });
+      if (companyId) q.set("companyId", companyId);
+      return request(`/firm/calendario?${q.toString()}`);
+    },
+    async listMarcosFiscais() {
+      return request(`/firm/marcos-fiscais`);
+    },
+    async createMarcoFiscal({ titulo, data, descricao, importancia, companyId }) {
+      return request(`/firm/marcos-fiscais`, {
+        method: "POST",
+        body: JSON.stringify({ titulo, data, descricao, importancia, companyId: companyId || undefined }),
+      });
+    },
+    async updateMarcoFiscal(marcoId, patch) {
+      return request(`/firm/marcos-fiscais/${marcoId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    },
+    async deleteMarcoFiscal(marcoId) {
+      return request(`/firm/marcos-fiscais/${marcoId}`, { method: "DELETE" });
+    },
     // ── Documentos da empresa (contrato social, cartão CNPJ, inscrições…) ──────────────────
     async listCompanyDocuments(companyId) {
       return request(`/firm/companies/${companyId}/documentos`);

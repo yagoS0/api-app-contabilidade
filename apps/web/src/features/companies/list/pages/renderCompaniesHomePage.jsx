@@ -92,6 +92,7 @@ export function CompaniesHomePage({
   onOpenBatchEmail,
   onOpenApuracao,
   onOpenRotinas,
+  onOpenCalendario,
   onOpenSerproFuncoes,
   onLogout,
   onOpenCompany,
@@ -285,6 +286,11 @@ export function CompaniesHomePage({
             {onOpenApuracao && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenApuracao}>
                 Apuração
+              </Button>
+            )}
+            {onOpenCalendario && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenCalendario}>
+                Calendário
               </Button>
             )}
             {onOpenRotinas && (

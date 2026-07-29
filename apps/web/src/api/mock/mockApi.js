@@ -1952,6 +1952,40 @@ export function createMockApi() {
       await delay(80);
       return { ok: true, jobId: `mock-notas-dl-${Date.now()}` };
     },
+    // ── Calendário fiscal (mock) ───────────────────────────────────────────────────────────
+    // Popula o mês pedido: guias em dias fixos, um marco do escritório e um da empresa. Mês vazio
+    // não deixaria conferir a grade, que é justamente o que precisa ser visto.
+    async getCalendario(mes) {
+      await delay(80);
+      const [y, m] = String(mes || "2026-07").split("-").map(Number);
+      const diasNoMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const iso = (d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const porDia = {
+        15: [
+          { tipo: "guia", id: "g1", titulo: "INSS", companyId: "c1", empresa: "Farrell - Brakus", competencia: mes, valor: 193.03, resolvido: false },
+          { tipo: "guia", id: "g2", titulo: "INSS", companyId: "c2", empresa: "Schultz and Sons", competencia: mes, valor: 421.9, resolvido: true },
+        ],
+        20: [
+          { tipo: "guia", id: "g3", titulo: "SIMPLES", companyId: "c1", empresa: "Farrell - Brakus", competencia: mes, valor: 1441.25, resolvido: false },
+          { tipo: "guia", id: "g4", titulo: "SIMPLES", companyId: "c3", empresa: "Kirlin - Kris", competencia: mes, valor: 2380.11, resolvido: false },
+        ],
+        1: [{ tipo: "marco", id: "mk1", titulo: "CBS passa a ser cobrada", descricao: "Fim da fase de teste", importancia: "ALTA", companyId: null, empresa: null, doEscritorio: true }],
+        8: [{ tipo: "marco", id: "mk2", titulo: "Reuniao com o cliente", importancia: "BAIXA", companyId: "c1", empresa: "Farrell - Brakus", doEscritorio: false }],
+      };
+      return {
+        ok: true, competencia: mes, diasNoMes,
+        dias: Array.from({ length: diasNoMes }, (_, i) => ({ dia: i + 1, data: iso(i + 1), itens: porDia[i + 1] || [] })),
+        pendenciasDoMes: [
+          { tipo: "apuracao", companyId: "c1", empresa: "Farrell - Brakus", competencia: mes, titulo: "Apuracao nao transmitida", estado: "calculada" },
+          { tipo: "fechamento", companyId: "c2", empresa: "Schultz and Sons", competencia: mes, titulo: "Mes contabil nao fechado" },
+        ],
+        totais: { guias: 4, marcos: 2, apuracoes: 1, fechamentos: 1 },
+      };
+    },
+    async listMarcosFiscais() { await delay(50); return { ok: true, marcos: [] }; },
+    async createMarcoFiscal(input) { await delay(80); return { ok: true, marco: { id: `mk-${Date.now()}`, ...input } }; },
+    async updateMarcoFiscal(marcoId, patch) { await delay(60); return { ok: true, marco: { id: marcoId, ...patch } }; },
+    async deleteMarcoFiscal(marcoId) { await delay(50); return { ok: true, removido: { id: marcoId } }; },
     // ── Documentos e anotações (mock com estado em memória) ────────────────────────────────
     // Estado de verdade, não retorno fixo: as duas features têm REGRAS que só dá pra conferir
     // mexendo (fixação exclusiva, seleção múltipla), e um mock imutável passaria por elas.

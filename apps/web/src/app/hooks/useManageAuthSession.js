@@ -16,6 +16,7 @@ const PAGE_TO_PATH = {
   chartOfAccountsGlobal: "/firm-settings/chart",
   apuracao: "/apuracao",
   rotinas: "/rotinas",
+  calendario: "/calendario",
   pendencias: "/pendencias",
   serproFuncoes: "/funcoes-serpro",
 };
@@ -38,6 +39,7 @@ function pathToPageName(pathname) {
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";
   if (pathname === "/apuracao") return "apuracao";
   if (pathname === "/rotinas") return "rotinas";
+  if (pathname === "/calendario") return "calendario";
   if (pathname === "/pendencias") return "pendencias";
   if (pathname === "/funcoes-serpro") return "serproFuncoes";
   // O download de notas virou aba dentro de "Funções em lote" — links antigos caem lá.
