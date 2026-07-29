@@ -219,7 +219,14 @@ function safeApoiarPreview(resp) {
  * Resolve o polling inline (≤~28s); se não ficar pronto a tempo, retorna { processando:true }.
  * @returns {{ ok, processando?, protocolo?, relatorioPdfBuffer?, relatorioTexto?, verificadoTrial, rawPayload }}
  */
-export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo = 2, protocoloExistente = null, logger = null }) {
+/**
+ * @param permitirNovaSolicitacao  Quando `false`, NUNCA chama `/Apoiar`. Serve para consumir um
+ *   protocolo já existente sem abrir solicitação nova — é o que a drenagem da fila precisa: com o
+ *   limite AV02 atingido, abrir mais uma é exatamente o que não pode acontecer. Nesse modo, em vez
+ *   de re-solicitar, devolve `{ protocoloExpirado: true }` ou `{ protocoloAusente: true }` e sai.
+ *   A tela usa o padrão `true` — lá reconsultar TEM que solicitar.
+ */
+export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo = 2, protocoloExistente = null, logger = null, permitirNovaSolicitacao = true }) {
   if (!INTEGRACAO_SERPRO_SITFIS) {
     const err = new Error("serpro_sitfis_disabled");
     err.code = "SERPRO_SITFIS_DISABLED";
@@ -312,6 +319,15 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
     // Sem protocolo salvo → seria preciso um /Apoiar. Se o contratante está em cooldown de AV02,
     // nem tenta: devolve "processando" com o tempo restante. Evita alimentar a fila que já está
     // cheia (era o ciclo que deixava a consulta impossível em TODAS as empresas).
+    if (!permitirNovaSolicitacao) {
+      logger?.warn?.({}, "SITFIS: sem protocolo salvo e /Apoiar proibido neste modo");
+      return {
+        ok: true, protocoloAusente: true, processando: false,
+        protocolo: null, relatorioPdfBuffer: null, relatorioTexto: null,
+        verificadoTrial: VERIFICADO_TRIAL, rawPayload: null,
+        mensagem: "Sem protocolo guardado — nada a consumir sem abrir solicitação nova.",
+      };
+    }
     const restante = sitfisCooldownRestanteMs();
     if (restante > 0) {
       const segundos = Math.ceil(restante / 1000);
@@ -430,6 +446,18 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
 
     // Protocolo inválido/expirado → SERPRO pede nova solicitação /apoiar. Re-solicita (até 1x) e retenta.
     if (pedeNovoProtocolo(mensagem)) {
+      // ESTE é o ponto que fazia a drenagem abrir solicitação: protocolo expirado → o SERPRO pede
+      // "inicie nova solicitação" → re-solicitávamos via /Apoiar, ocupando mais um lugar na fila
+      // que estávamos tentando esvaziar.
+      if (!permitirNovaSolicitacao) {
+        logger?.warn?.({ mensagem }, "SITFIS: protocolo expirado e /Apoiar proibido neste modo");
+        return {
+          ok: true, protocoloExpirado: true, processando: false,
+          protocolo, relatorioPdfBuffer: null, relatorioTexto: null,
+          verificadoTrial: VERIFICADO_TRIAL, rawPayload: lastData,
+          mensagem: "Protocolo expirado — consumi-lo exigiria abrir uma solicitação nova.",
+        };
+      }
       if (resolicitou >= 1) {
         const err = new Error("serpro_sitfis_protocolo_invalido");
         err.code = "SERPRO_SITFIS_PROTOCOLO_INVALIDO";

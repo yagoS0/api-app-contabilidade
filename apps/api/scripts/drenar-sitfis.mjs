@@ -71,7 +71,7 @@ try {
     process.exit(0);
   }
 
-  let concluidos = 0, processando = 0, falhas = 0;
+  let concluidos = 0, processando = 0, expirados = 0, bloqueados = 0, falhas = 0;
 
   for (const alvo of alvos) {
     const nome = (alvo.portal.razao || "").slice(0, 34).padEnd(34);
@@ -81,24 +81,38 @@ try {
     }
 
     try {
-      // `protocoloExistente` faz o serviço PULAR o /Apoiar e ir direto ao /Emitir — é justamente
-      // o que queremos: consumir sem abrir nada novo.
+      // `protocoloExistente` + `permitirNovaSolicitacao:false` = SÓ /Emitir, nunca /Apoiar.
       const r = await obterRelatorio({
         contribuinteCnpj: alvo.portal.cnpj,
         tipo: 2,
         protocoloExistente: alvo.protocolo,
         logger: null,
+        // O PONTO DE TODO O SCRIPT: proíbe o /Apoiar. Sem isto, protocolo expirado fazia o serviço
+        // re-solicitar sozinho e ABRIR mais um lugar na fila que estamos tentando esvaziar.
+        permitirNovaSolicitacao: false,
       });
 
-      if (r?.relatorioPdfBuffer?.length) {
+      if (r?.relatorioPdfBuffer?.length || r?.relatorioTexto) {
         concluidos += 1;
         console.log(`  ✓ ${nome} relatório obtido — lugar liberado`);
+      } else if (r?.protocoloExpirado || r?.protocoloAusente) {
+        expirados += 1;
+        console.log(`  ✗ ${nome} protocolo expirado — consumir exigiria abrir solicitação nova`);
       } else if (r?.processando) {
-        processando += 1;
-        console.log(`  … ${nome} ainda processando${r.tempoEsperaSegundos ? ` (~${r.tempoEsperaSegundos}s)` : ""}`);
+        // "Processando" tem DOIS significados opostos, e a versão anterior deste script imprimia o
+        // mesmo texto para os dois: relatório sendo gerado (bom, é só esperar) e fila do
+        // contratante cheia (ruim, nada avança). O aviso AV02 separa um do outro.
+        const filaCheia = /AV02|limite de solicita/i.test(String(r.mensagemSerpro || r.mensagem || ""));
+        if (filaCheia) {
+          bloqueados += 1;
+          console.log(`  ⛔ ${nome} FILA CHEIA (AV02) — a drenagem não avança por aqui`);
+        } else {
+          processando += 1;
+          console.log(`  … ${nome} relatório em processamento${r.tempoEsperaSegundos ? ` (~${r.tempoEsperaSegundos}s)` : ""}`);
+        }
       } else {
         falhas += 1;
-        console.log(`  ? ${nome} sem relatório e sem "processando" — ${r?.mensagem || "resposta inesperada"}`);
+        console.log(`  ? ${nome} ${r?.mensagem || "resposta inesperada"}`);
       }
     } catch (err) {
       falhas += 1;
@@ -110,8 +124,18 @@ try {
   if (aplicar) {
     console.log("\n" + "─".repeat(64));
     console.log(`Relatórios concluídos (lugares liberados) : ${concluidos}`);
-    console.log(`Ainda processando ........................: ${processando}`);
+    console.log(`Relatório ainda em processamento .........: ${processando}`);
+    console.log(`Protocolo expirado (não consumível) ......: ${expirados}`);
+    console.log(`Bloqueados por fila cheia (AV02) .........: ${bloqueados}`);
     console.log(`Falhas ...................................: ${falhas}`);
+    if (!concluidos && expirados) {
+      console.log("\n⚠ Nenhum lugar liberado: os protocolos guardados já expiraram.");
+      console.log("  Protocolo expirado provavelmente significa que a solicitação dele TAMBÉM já");
+      console.log("  foi encerrada no SERPRO — ou seja, não são eles que ocupam a fila, e não há");
+      console.log("  nada a drenar do nosso lado.");
+      console.log("  Caminho: parar de tentar e acionar o suporte do SERPRO pedindo liberação da");
+      console.log("  fila do contratante. `probe-sitfis-apoiar.mjs` confirma o estado na API.");
+    }
     if (concluidos) {
       console.log("\nCom lugares livres, a consulta das demais empresas volta a funcionar.");
       console.log("Este script NÃO grava a situação fiscal — rode a consulta pela tela para");
