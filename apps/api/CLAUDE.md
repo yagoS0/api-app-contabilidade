@@ -233,6 +233,38 @@ Pra conferir onde está gravando de fato, o erro de leitura mostra o caminho abs
 A UI trata o arquivo ausente sem quebrar: a aba Situação Fiscal mostra "o arquivo não está mais no
 armazenamento" e mantém situação/data (que vivem no banco).
 
+## Fator R — conferência da folha de 12 meses
+
+O Fator R decide **Anexo III ou V** (diferença tributária grande) e sai de
+`CompanyMonthlyCircular.fs12Manual` — um número **digitado à mão**, com o mês anterior sugerido
+(`FatorRService.resolverFolha12m`). Um dígito a menos ali muda o anexo da empresa: não há erro, não
+há alerta, só um imposto diferente. Até aqui esse número não tinha **nenhuma segunda fonte**.
+
+`FolhaDerivadaService.derivarFolha12m` soma os lançamentos de folha já existentes e devolve um
+segundo número, para comparar. Entra no `getDadosFechamento` como `folhaDerivada`, e o
+`FechamentoModal` mostra os dois lado a lado — total e **por competência**, destacando a célula do
+mês que diverge.
+
+**O que é somado:** o total de DÉBITO dos lançamentos `tipo: "FOLHA"` (subtipo FOLHA ou PROLABORE)
+das 12 competências. Nos dois templates de `payrollTemplate.js` a única linha de débito é a despesa
+bruta (salário ou pró-labore); os créditos são retenções e líquido. Somar créditos duplicaria.
+
+**O que NÃO é:** a base do Fator R. A base é regra fiscal (LC 123/06) e pode incluir ou excluir
+parcelas que o sistema não separa. Isto é a soma do que foi LANÇADO, oferecida como conferência.
+
+**Nunca escolhe por conta própria.** Mostra os dois valores e a diferença; `fs12Manual` continua do
+contador. Numa empresa recém-migrada os lançamentos podem estar incompletos, e substituir o valor
+digitado por um derivado incompleto trocaria um erro raro por um sistemático — por isso a caixa diz
+em quantos dos 12 meses existe folha lançada.
+
+Sem nenhum lançamento no período, `disponivel: false` e nada é mostrado: exibir "R$ 0,00" ao lado do
+digitado sugeriria folha zero, quando o que há é ausência de dado.
+
+⚠ **Formato de `pa`:** o modal usa `"YYYY-MM"` (string, de `pasAnteriores`) e é isso que ele envia
+de volta; a série do PGDAS-D usa `AAAAMM` numérico. `folhaDerivada` traz os dois (`porMes` com
+`competencia` string, `serie` com `pa` numérico) — a comparação na tela usa o **string**, senão o
+`Map` não casa e a conferência por mês fica silenciosamente vazia.
+
 ## Situação Fiscal — tabelas do relatório + PDF opcional
 
 A aba mostra as **TABELAS** do relatório; o PDF oficial fica atrás do botão "Ver PDF oficial".

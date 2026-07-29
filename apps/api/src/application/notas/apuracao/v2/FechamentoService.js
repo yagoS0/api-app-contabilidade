@@ -8,6 +8,7 @@
 //   transmitir→ consulta-antes-de-transmitir + TRANSDECLARACAO11 (individual)
 
 import { prisma } from "../../../../infrastructure/db/prisma.js";
+import { derivarFolha12m } from "./FolhaDerivadaService.js";
 import { getResolvedSerproCredentials } from "../../../fiscal/serpro/SerproRuntimeSettings.js";
 import { SerproPgdasdService } from "../../../fiscal/serpro/SerproPgdasdService.js";
 import { PgdasSimulacaoService, parseRetornoSimulacao } from "../../../fiscal/serpro/PgdasSimulacaoService.js";
@@ -181,6 +182,10 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     atividades,
     origemAtividades,
     folhaMensal12: memory?.folhaMensal12 || null,
+    // CONFERÊNCIA da folha: soma dos lançamentos contábeis de folha/pró-labore dos 12 meses.
+    // Não substitui `folhaMensal12` (que o contador digita) — vai ao lado, para comparar.
+    // O Fator R decide Anexo III ou V, e hoje esse número não tem nenhuma segunda fonte.
+    folhaDerivada: await derivarFolha12m({ portalClientId, competencia }),
     rbt12: rbt.rbt12,
     rbt12Origem: rbt.origem,
     disparidades,

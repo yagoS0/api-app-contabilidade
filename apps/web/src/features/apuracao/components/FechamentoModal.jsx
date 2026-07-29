@@ -84,6 +84,19 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const temFatorR = atividades.some((a) => a.sujeitoFatorR);
   const folhaSerie = pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) }));
 
+  // Conferência da folha: o backend deriva dos lançamentos contábeis (FolhaDerivadaService).
+  // Serve para COMPARAR com o que é digitado — o Fator R decide Anexo III ou V e, até aqui, esse
+  // número não tinha nenhuma segunda fonte.
+  const derivada = dados?.folhaDerivada || null;
+  const derivadaDisponivel = Boolean(derivada?.disponivel);
+  // Casa pelo MESMO formato que o modal já usa em `pasAnteriores` ("YYYY-MM"). A série do backend
+  // também traz `pa` numérico (AAAAMM, formato do PGDAS-D), e usar aquele aqui não casava com
+  // nada — a comparação por mês ficava silenciosamente vazia.
+  const derivadaPorPa = new Map((derivada?.porMes || []).map((m) => [String(m.competencia), Number(m.valor)]));
+  const totalDerivado = Number(derivada?.total || 0);
+  const totalDigitado = folhaSerie.reduce((s, f) => s + Number(f.valor || 0), 0);
+  const folhaConfere = derivadaDisponivel && Math.abs(totalDigitado - totalDerivado) <= 0.01;
+
   function setAtvValor(idx, campo, valor) {
     setAtividades((prev) => prev.map((a, i) => i === idx ? { ...a, [campo]: Number(valor) || 0 } : a));
   }
@@ -327,13 +340,57 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   ★ Folha de salários (12 meses) — pro Fator-R. A RFB decide Anexo III↔V.
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 6 }}>
-                  {pasAnteriores(competencia).map((pa) => (
-                    <label key={pa} style={{ fontSize: "0.7rem", color: PANEL.muted, display: "flex", flexDirection: "column", gap: 2 }}>
-                      {pa}
-                      <input type="number" step="0.01" value={folha[pa] || ""} onChange={(e) => setFolha((p) => ({ ...p, [pa]: e.target.value }))} placeholder="0,00" style={inputS} />
-                    </label>
-                  ))}
+                  {pasAnteriores(competencia).map((pa) => {
+                    // Valor derivado dos lançamentos daquele mês, para comparar célula a célula.
+                    const derivadoMes = derivadaPorPa.get(String(pa));
+                    const digitadoMes = Number(folha[pa] || 0);
+                    const divergeMes = derivadaDisponivel && derivadoMes != null
+                      && Math.abs(derivadoMes - digitadoMes) > 0.01;
+                    return (
+                      <label key={pa} style={{ fontSize: "0.7rem", color: PANEL.muted, display: "flex", flexDirection: "column", gap: 2 }}>
+                        {pa}
+                        <input
+                          type="number" step="0.01" value={folha[pa] || ""}
+                          onChange={(e) => setFolha((p) => ({ ...p, [pa]: e.target.value }))}
+                          placeholder="0,00"
+                          style={divergeMes ? { ...inputS, borderColor: "#FFB347" } : inputS}
+                        />
+                        {divergeMes && (
+                          <span style={{ color: "#FFB347", fontSize: "0.65rem" }} title="Soma dos lançamentos de folha desta competência">
+                            lançado: {fmtMoney(derivadoMes)}
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
+
+                {/* CONFERÊNCIA — mostra os DOIS números, nunca escolhe. Os lançamentos podem estar
+                    incompletos numa empresa recém-migrada; substituir o valor do contador por um
+                    derivado incompleto trocaria um erro raro por um sistemático. */}
+                {derivadaDisponivel && (
+                  <div style={{
+                    marginTop: 8, padding: "8px 10px", borderRadius: 6, fontSize: "0.75rem",
+                    background: folhaConfere ? "rgba(105,255,71,0.08)" : "rgba(255,179,71,0.10)",
+                    border: `1px solid ${folhaConfere ? "#69FF47" : "#FFB347"}`,
+                    color: folhaConfere ? "#69FF47" : "#FFB347",
+                  }}>
+                    {folhaConfere ? (
+                      <>✓ Confere com os lançamentos de folha ({fmtMoney(totalDerivado)}).</>
+                    ) : (
+                      <>
+                        Digitado <strong>{fmtMoney(totalDigitado)}</strong> · lançamentos somam{" "}
+                        <strong>{fmtMoney(totalDerivado)}</strong> · diferença{" "}
+                        <strong>{fmtMoney(Math.abs(totalDigitado - totalDerivado))}</strong>.
+                        <div style={{ color: PANEL.muted, marginTop: 4 }}>
+                          Conferência, não correção — os lançamentos podem estar incompletos.
+                          {derivada?.mesesComLancamento != null
+                            && ` Há folha lançada em ${derivada.mesesComLancamento} dos 12 meses.`}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

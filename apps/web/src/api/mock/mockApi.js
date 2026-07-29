@@ -2130,7 +2130,39 @@ export function createMockApi() {
     async apurarV2() { await delay(150); return { ok: true, result: { ok: true, snapshot: null, dasCalculadoLocal: 0, rbt12: 0, receitaPorAnexo: {}, aliquotaEfetivaPorAnexo: {} } }; },
     async getApuracaoSnapshot() { await delay(40); return { ok: true, snapshot: null }; },
     async getSugestaoAnexo() { await delay(60); return { ok: true, competencia: null, totalNotas: 0, perfilConfigurado: false, anexosAtivos: [], resumo: { alta: 0, media: 0, revisao: 0, porAnexo: {} }, notas: [] }; },
-    async getFechamento() { await delay(60); return { ok: true, dados: { faturamento: { interno: 0, externo: 0, total: 0 }, atividades: [], rbt12: 0, disparidades: [], estado: "aberta", folhaMensal12: null, regimeApuracao: "COMPETENCIA" } }; },
+    // Mock com atividade SUJEITA A FATOR R e folha derivada dos lançamentos — é a única forma de
+    // conferir a comparação da folha sem backend. A folha digitada vem DIFERENTE da derivada de
+    // propósito: o caso que precisa avisar é a divergência, não a coincidência.
+    async getFechamento(_companyId, competencia) {
+      await delay(60);
+      const pas = [];
+      const [y, m] = String(competencia || "2026-06").split("-").map(Number);
+      for (let i = 12; i >= 1; i--) {
+        const d = new Date(Date.UTC(y, m - 1 - i, 1));
+        // `pa` como STRING "YYYY-MM": é o formato que o modal usa (`pasAnteriores`) e que ele
+        // envia de volta ao salvar. Usar número aqui fazia o prefill não casar.
+        pas.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+      }
+      return {
+        ok: true,
+        dados: {
+          faturamento: { interno: 120000, externo: 0, total: 120000 },
+          atividades: [{ idAtividade: 11, descricao: "Serviços sujeitos ao Fator R", anexoImplicito: "III", mercado: "interno", sujeitoFatorR: true, valorInterno: 120000, valorExterno: 0 }],
+          rbt12: 480000, disparidades: [], estado: "aberta", regimeApuracao: "COMPETENCIA",
+          // Digitado: 5.000 em todos os meses. Derivado: 5.000, MENOS num mês (4.200) — divergência
+          // de 800, que é a que a tela precisa apontar, inclusive na célula do mês.
+          folhaMensal12: pas.map((pa) => ({ pa, valor: 5000 })),
+          folhaDerivada: {
+            disponivel: true,
+            total: 59200,
+            mesesComLancamento: 12,
+            competencias: pas,
+            porMes: pas.map((pa, i) => ({ competencia: pa, valor: i === 3 ? 4200 : 5000, lancamentos: 1 })),
+            serie: pas.map((pa, i) => ({ pa: Number(pa.replace("-", "")), valor: i === 3 ? 4200 : 5000 })),
+          },
+        },
+      };
+    },
     async calcularFechamento() { await delay(150); return { ok: true, result: { dasValor: 0, rbt12: 0, mensagens: [] } }; },
     async salvarFechamento() { await delay(80); return { ok: true, result: { snapshot: { estado: "fechada" } } }; },
     async transmitirFechamento() { await delay(200); return { ok: true, result: { numeroDeclaracao: "MOCK-1", dasValor: 0 } }; },
