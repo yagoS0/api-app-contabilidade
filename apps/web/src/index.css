@@ -1,5 +1,31 @@
 @import "./styles/tokens.css";
 
+html {
+  /* Reserva SEMPRE o espaço da barra de rolagem.
+     Sem isto, toda vez que o conteúdo encolhe (salvar algo, uma lista virar loading, um modal
+     abrir) a barra some, a página fica ~15px mais larga, e volta a encolher quando o conteúdo
+     retorna. O efeito é a largura "indo e voltando" num piscar — o que se via ao salvar no
+     cadastro e ao lançar pró-labore em vários meses.
+     `scrollbar-gutter` é a forma correta; o `overflow-y: scroll` abaixo é o fallback para
+     navegador que ainda não a suporta (mostra a barra desabilitada em vez de sumir com ela). */
+  scrollbar-gutter: stable;
+}
+
+@supports not (scrollbar-gutter: stable) {
+  html { overflow-y: scroll; }
+}
+
+@keyframes girar {
+  to { transform: rotate(360deg); }
+}
+
+/* Quem configurou o sistema para reduzir animação não deve ganhar um disco girando na tela. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes girar {
+    to { transform: none; }
+  }
+}
+
 body {
   margin: 0;
   min-height: 100vh;

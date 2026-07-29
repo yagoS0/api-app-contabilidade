@@ -856,6 +856,10 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
   const [error, setError] = useState(null);
   // F2: Repetir nos próximos N meses (0..12). Cria N+1 entries (este + N seguintes).
   const [repeatMonths, setRepeatMonths] = useState(0);
+  // Quantos lançamentos a gravação em curso vai criar. Serve só para o aviso de progresso: com
+  // 12 meses a chamada demora, e trocar o texto de um botão não comunica que algo está rodando —
+  // dá a impressão de que o clique não pegou, e o contador clica de novo.
+  const [gravandoTotal, setGravandoTotal] = useState(0);
 
   useEffect(() => {
     let canceled = false;
@@ -1046,7 +1050,12 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
       if (!ok) return;
     }
 
-    await onSave({ competencia, subtipo: kind, provisoes, baixas, repeatMonths: repeatN });
+    setGravandoTotal(repeatN + 1);
+    try {
+      await onSave({ competencia, subtipo: kind, provisoes, baixas, repeatMonths: repeatN });
+    } finally {
+      setGravandoTotal(0);
+    }
   }
 
   const overlay = {
@@ -1057,6 +1066,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
     background: "#24253A", border: "1px solid #44475A", borderRadius: 10,
     padding: 22, width: 980, maxWidth: "100%", maxHeight: "92vh", overflowY: "auto",
     color: "#F8F8F2", boxSizing: "border-box",
+    position: "relative", // âncora do overlay de progresso
   };
   const labelStyle = { display: "grid", gap: 4, fontSize: "0.8125rem", color: "#aeb6d3", marginBottom: 10 };
   const inputStyle = {
@@ -1313,6 +1323,36 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
             {saving ? "Salvando..." : repeatMonths > 0 ? `Salvar ${repeatMonths + 1} lançamentos` : "Salvar lançamento"}
           </Button>
         </div>
+
+        {/* Progresso da gravação. Cobre o modal inteiro de propósito: além de mostrar que está
+            rodando, impede um segundo clique enquanto a primeira chamada não volta. */}
+        {gravandoTotal > 0 && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position: "absolute", inset: 0, borderRadius: 10,
+              background: "rgba(36,37,58,0.88)", display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 12, textAlign: "center", padding: 24,
+            }}
+          >
+            <div
+              style={{
+                width: 34, height: 34, borderRadius: "50%",
+                border: "3px solid #44475A", borderTopColor: "#69FF47",
+                animation: "girar 0.8s linear infinite",
+              }}
+            />
+            <strong style={{ fontSize: "0.95rem" }}>
+              {gravandoTotal === 1 ? "Gravando o lançamento…" : `Gravando ${gravandoTotal} lançamentos…`}
+            </strong>
+            {gravandoTotal > 1 && (
+              <span style={{ fontSize: "0.8rem", color: "#8A8FA3" }}>
+                Um por competência. Não feche esta janela.
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
