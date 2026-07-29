@@ -61,16 +61,12 @@ function Pill({ color, title, children }) {
 
 // C6: situação fiscal (SITFIS) — só avisa quando há algo a dizer. `null` (nunca consultada)
 // não vira selo: não afirmamos nada sobre o fisco sem ter consultado.
-// No card vale o SÍMBOLO sozinho — o texto vive no `title` e no filtro do dashboard, que é onde a
-// associação símbolo↔significado se aprende.
+// Só a PENDÊNCIA aparece no card, com símbolo E palavra. O parcelamento saiu daqui: virou a tag
+// "parc" ao lado do regime, junto da identidade da empresa.
 const FISCAL_META = {
   COM_PENDENCIA: {
-    label: SITUACAO_FISCAL_SIMBOLO.COM_PENDENCIA, color: "#FF4757",
+    label: `${SITUACAO_FISCAL_SIMBOLO.COM_PENDENCIA} Pendência`, color: "#FF4757",
     title: "Situação fiscal: empresa COM PENDÊNCIA (SITFIS)",
-  },
-  EM_PARCELAMENTO: {
-    label: SITUACAO_FISCAL_SIMBOLO.EM_PARCELAMENTO, color: "#8BE9FD",
-    title: "Situação fiscal: débito com exigibilidade suspensa — em parcelamento (SITFIS)",
   },
 };
 
@@ -119,11 +115,11 @@ export function CompanyCard({ company, onAccess }) {
   const todasEnviadas = Boolean(envio?.todasEnviadas);
   // C6: situação fiscal do SITFIS (⚠ ao lado de "apurada") e parcelamento ativo (selo PARC).
   const temParcelamento = Boolean(company?.temParcelamento);
-  // "Em parcelamento" (SITFIS) e o selo "PARC" (guia de parcelamento ativa) dizem a MESMA coisa
-  // para quem lê o card. Apareciam juntos no mesmo cartão. Fica o PARC, que é o acionável — tem
-  // guia a acompanhar. A pendência fiscal, essa sim, nunca é suprimida.
-  const fiscalBruto = FISCAL_META[company?.fiscalSituacao] || null;
-  const fiscalMeta = (company?.fiscalSituacao === "EM_PARCELAMENTO" && temParcelamento) ? null : fiscalBruto;
+  const fiscalMeta = FISCAL_META[company?.fiscalSituacao] || null;
+  // Parcelamento é identidade da empresa (como o regime), não evento do mês: vale tanto quando há
+  // guia de parcelamento ativa quanto quando a situação fiscal do SITFIS diz que há débito
+  // parcelado. As duas fontes viram a MESMA tag, ao lado da tributação.
+  const emParcelamento = temParcelamento || company?.fiscalSituacao === "EM_PARCELAMENTO";
 
   return (
     <article className="company-tile" style={cardStyle}>
@@ -142,15 +138,19 @@ export function CompanyCard({ company, onAccess }) {
               que nunca varia não informa nada: ocupa espaço e não distingue ninguém. O estado
               esperado (apta ao SERPRO, certificado válido) é silêncio; quem precisa gritar é o
               que está faltando ou vencendo. */}
+          {/* Parcelamento fica JUNTO da tributação: é característica da empresa, não do mês. */}
+          {emParcelamento && (
+            <Pill color="#FFB347" title="Empresa com parcelamento — há parcelas a acompanhar">parc</Pill>
+          )}
+          {/* Presente = silêncio. Faltando = a própria palavra, em vermelho. Não "sem SERPRO":
+              a ausência já é dita pela cor, e o "sem" só alongava a pílula. */}
           {!serproEligible && (
-            <Pill color="#FFB347" title="Empresa não apta ao fluxo SERPRO — confira procuração e certificado">
-              sem SERPRO
+            <Pill color="#FF5757" title="Empresa NÃO apta ao fluxo SERPRO — confira procuração e certificado">
+              SERPRO
             </Pill>
           )}
           {!certAtivo && (
-            <Pill color={certExpirado ? "#FF5757" : "#FFB347"} title={certTitle}>
-              {certExpirado ? "A1 vencido" : "sem A1"}
-            </Pill>
+            <Pill color="#FF5757" title={certTitle}>A1</Pill>
           )}
           {zerada && (
             <Pill color="#FFB347" title="Empresa zerada (sem movimento) — só enviamos obrigações zeradas">
@@ -165,16 +165,16 @@ export function CompanyCard({ company, onAccess }) {
             NÃO foi — é ela que tem trabalho pendente. */}
         {!apurada && (
           <span
-            style={{ fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px", color: "#FFB347" }}
+            style={{ fontSize: "0.82rem", fontWeight: 700, padding: "2px 6px", color: "#FFB347" }}
             title={apuradaTitle}
           >
-            a apurar
+            Falta apurar
           </span>
         )}
         {/* C6: aviso de pendência fiscal (SITFIS) ao lado de "apurada". */}
         {fiscalMeta && (
           <span
-            style={{ marginLeft: 8, fontSize: "1.05rem", fontWeight: 700, padding: "2px 6px", color: fiscalMeta.color, cursor: "help" }}
+            style={{ marginLeft: 8, fontSize: "0.82rem", fontWeight: 700, padding: "2px 6px", color: fiscalMeta.color }}
             title={fiscalMeta.title}
             aria-label={fiscalMeta.title}
           >
@@ -235,17 +235,9 @@ export function CompanyCard({ company, onAccess }) {
             </span>
           );
         })}
-        {/* C6: empresa com parcelamento ATIVO ganha o selo PARC junto das demais guias.
-            Só quando a tag PARC DAS (parcela aberta na competência) já não estiver na lista —
-            senão o mesmo fato apareceria duas vezes. */}
-        {temParcelamento && !tags.some((t) => t.accent) && (
-          <span
-            style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "#FFB347" }}
-            title="Empresa com parcelamento ativo — há guia de parcelamento a acompanhar"
-          >
-            PARC
-          </span>
-        )}
+        {/* O selo PARC que ficava aqui subiu para junto da tributação — parcelamento é
+            característica da empresa, não obrigação daquele mês. A tag "PARC DAS" segue nesta
+            linha: essa sim é a PARCELA aberta na competência. */}
         {!tags.length && !temParcelamento ? (
           <span style={{ fontSize: "0.72rem", padding: "2px 6px", color: "#aeb6d3" }}>
             Sem obrigações

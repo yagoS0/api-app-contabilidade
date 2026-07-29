@@ -984,7 +984,9 @@
 /* Cards */
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  /* 280px: com 260 as pílulas de identidade (regime + parc + SERPRO + A1) quebravam linha em
+     telas médias, e cada card ficava com uma altura diferente. */
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space-3);
 }
 
@@ -994,8 +996,13 @@
   border-radius: 12px;
   box-shadow: none;
   padding: 16px;
-  display: grid;
-  gap: 12px;
+  /* FLEX em coluna, não grid: com grid, cada card distribuía o espaço entre as linhas que TINHA,
+     então o botão "Acessar" parava numa altura diferente em cada card — empresa sem pendência
+     terminava mais alto que a com. Em flex, o botão é empurrado para a base (margin-top:auto) e
+     todos se alinham na mesma linha, independente do que há no meio. */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
@@ -1096,6 +1103,8 @@
 
 .company-tile__action {
   width: 100%;
+  /* Ancora o botão na base do card — é o que iguala o rodapé de todos na mesma fileira. */
+  margin-top: auto;
   min-height: 36px;
   padding-inline: 16px;
   border-radius: 8px;
