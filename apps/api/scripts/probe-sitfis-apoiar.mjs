@@ -9,8 +9,12 @@
 //   node scripts/probe-sitfis-apoiar.mjs --cnpj=00000000000000
 //   node scripts/probe-sitfis-apoiar.mjs --razao=atim
 //
-// ⚠ Consome UMA solicitação /Apoiar (é o que abre "slot" e conta no limite por contratante).
-// Rode em UMA empresa, não em lote.
+// ⚠ Faz UMA chamada paga ao /Apoiar. Rode em UMA empresa, não em lote.
+//
+// NÃO necessariamente consome um lugar na fila: quando a resposta vem SEM protocolo (aviso AV02),
+// nenhuma solicitação foi aberta — só quando um protocolo é devolvido é que o lugar passa a
+// existir. O aviso anterior dizia que consumia sempre, o que desencorajava usar justamente o
+// diagnóstico que mostra a mensagem crua do SERPRO quando a fila está cheia.
 
 import "dotenv/config";
 import { prisma } from "../src/infrastructure/db/prisma.js";
