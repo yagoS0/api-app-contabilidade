@@ -899,7 +899,24 @@ export function createMockApi() {
         status: {
           situacao: "COM_PENDENCIA",
           checkedAt: new Date().toISOString(),
-          // Sem PDF no mock → a aba mostra o aviso pedindo nova consulta.
+          // Relatório interpretado — o mesmo formato que o backend devolve (parseSitfisRelatorio).
+          // Com um órgão COM pendência, um SEM, e um TERCEIRO que o parser não conseguiu ler:
+          // esse último é o caso que a tabela precisa continuar mostrando em vez de esconder.
+          relatorio: {
+            emitidoEm: "24/07/2026 19:08:29",
+            contribuinte: { cnpj: "00.000.000", nome: "EMPRESA MOCK" },
+            diagnosticos: [
+              {
+                orgao: "Receita Federal", chave: "RFB", semPendencia: false,
+                itens: [{ titulo: "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)", descricao: "SIMPLES NACIONAL - EM PARCELAMENTO" }],
+              },
+              { orgao: "Procuradoria-Geral da Fazenda Nacional", chave: "PGFN", semPendencia: true, itens: [] },
+              { orgao: "Órgão de exemplo (seção ilegível)", chave: "X", semPendencia: false, itens: [] },
+            ],
+            naoInterpretado: [],
+            temTexto: true,
+          },
+          // Sem PDF no mock → dá pra conferir que a tabela aparece SEM depender do PDF.
           relatorioPdfFileId: null,
           protocolo: null,
           podeConsultar: true,

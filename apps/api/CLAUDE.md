@@ -233,6 +233,49 @@ Pra conferir onde está gravando de fato, o erro de leitura mostra o caminho abs
 A UI trata o arquivo ausente sem quebrar: a aba Situação Fiscal mostra "o arquivo não está mais no
 armazenamento" e mantém situação/data (que vivem no banco).
 
+## Situação Fiscal — tabela + PDF opcional
+
+A aba mostra uma **TABELA** do relatório; o PDF oficial fica atrás do botão "Ver PDF oficial".
+A tabela é a leitura do dia a dia — o PDF é o documento de prova.
+
+**`parseSitfisRelatorio.js` ORGANIZA, não interpreta.** Isto não é preciosismo: a versão anterior
+extraía débitos com valores e mostrou **"R$ 100,00" numa empresa sem débito nenhum** — o número era
+o `100,00%` de participação do quadro societário. O parser foi removido na época e agora voltou com
+outra premissa.
+
+O texto real (conferido em produção) mostra por que aquilo era erro de partida: **o relatório não é
+uma tabela de valores**, é um laudo por órgão:
+
+```
+_____ Diagnóstico Fiscal na Receita Federal _____
+Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI) ____CNPJ: …SIMPLES NACIONAL - EM PARCELAMENTO
+_____ Diagnóstico Fiscal na Procuradoria-Geral da Fazenda Nacional _____
+Não foram detectadas pendências/exigibilidades suspensas …
+```
+
+Regras que o parser segue:
+- Seções são separadas por corridas de `_` (o relatório usa como régua). Cada órgão vai do seu
+  título até o do próximo.
+- **Nenhum valor monetário é extraído.** Se um dia aparecer valor explícito e rotulado, entra —
+  nunca por dedução a partir de um número solto.
+- "Não foram detectadas pendências" é reconhecido e vira **"Nada consta"**, para distinguir ausência
+  de pendência de falha de leitura.
+- ⚠ O CNPJ vem **colado** no conteúdo (`CNPJ: 48.684.291/0001-00SIMPLES NACIONAL - EM PARCELAMENTO`).
+  Descartar a linha inteira por começar com "CNPJ:" fazia sumir justamente a pendência — remove-se
+  só o prefixo.
+
+**A tabela NUNCA some.** Seção que o parser não reconheceu continua na tela como linha do órgão com
+"Não foi possível ler esta seção — confira no PDF oficial". Esconder daria a impressão de "nada
+consta", que é o oposto do que se sabe.
+
+Relatório antigo (gravado antes de guardarmos o `texto`) cai direto no PDF, com aviso — não numa
+tabela vazia sem explicação.
+
+**O relatório salvo nunca é apagado por uma consulta que falha.** A gravação só sobrescreve
+`situacao`/`relatorioPdfFileId`/`texto` quando vem relatório NOVO. Antes a condição incluía
+`|| !result.processando`, e uma consulta que voltasse sem relatório e sem "processando" zerava o
+PDF salvo — perdia-se o relatório justamente quando a consulta nova não funcionava.
+
 ## Situação Fiscal — trava de 4h (C11)
 
 Abrir a aba **não** consulta o SERPRO: mostra o `CompanyFiscalStatus` salvo + o PDF gravado.

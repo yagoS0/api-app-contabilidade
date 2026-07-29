@@ -94,6 +94,7 @@ import { getStoredProcurationStatus, SerproProcurationService } from "../../appl
 import { runPaymentConfirmationOnce } from "../../application/fiscal/serpro/SerproPaymentConfirmationService.js";
 import { runSerproPaymentConfirmationWorkerOnce } from "../../workers/serproPaymentConfirmationWorker.js";
 import { obterRelatorio as obterSitfisRelatorio } from "../../application/fiscal/serpro/SerproSitfisService.js";
+import { parseSitfisRelatorio } from "../../application/fiscal/serpro/parseSitfisRelatorio.js";
 // Heurística da situação fiscal: mora num módulo próprio porque o script de reclassificação usa
 // exatamente a mesma regra (duplicar geraria situações divergentes).
 import { deriveSituacaoFiscal } from "../../application/fiscal/serpro/sitfisSituacao.js";
@@ -3528,10 +3529,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const proximaConsultaEm = status.ultimoRelatorioEm
         ? new Date(new Date(status.ultimoRelatorioEm).getTime() + SITFIS_MIN_INTERVALO_MS).toISOString()
         : null;
+      // Relatório interpretado, para a aba montar a TABELA. O PDF continua servido à parte e vira
+      // visualização opcional. Se o texto não estiver salvo (relatório antigo), `relatorio` vem
+      // null e a tela cai no PDF — nunca numa tabela vazia sem explicação.
+      const relatorio = status.texto ? parseSitfisRelatorio(status.texto) : null;
       return res.json({
         ok: true,
         status: {
           ...status,
+          relatorio,
           proximaConsultaEm,
           podeConsultar: !proximaConsultaEm || new Date(proximaConsultaEm).getTime() <= Date.now(),
         },

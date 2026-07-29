@@ -1,7 +1,9 @@
 // Q41: Aba "Situação Fiscal" (SITFIS) — mostra a última consulta gravada + botão para consultar no SERPRO.
 
 
+import { useState } from "react";
 import { Button } from "../../../../components/ui/Button";
+import { SitfisRelatorioTabela } from "./SitfisRelatorioTabela";
 
 
 
@@ -34,6 +36,9 @@ function SituacaoBadge({ situacao }) {
 }
 
 export function SitfisTab({ sitfisPanel }) {
+  // O PDF é o documento oficial, mas a leitura do dia a dia é a tabela. Por isso ele é opcional,
+  // sob clique — e não mais o único jeito de ver o relatório.
+  const [verPdf, setVerPdf] = useState(false);
   const {
     status, loading, consulting, error, notice, pdfUrl, consultar,
     pdfIndisponivel, podeConsultar = true, proximaConsultaEm,
@@ -95,15 +100,27 @@ export function SitfisTab({ sitfisPanel }) {
               </div>
             </div>
 
-            {status.relatorioPdfFileId && (
+            {(status.relatorio || status.relatorioPdfFileId) && (
               <div style={{ marginTop: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-                  <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>Relatório</span>
+                  <span style={{ color: "#A7B0C0", fontSize: "0.8rem" }}>
+                    Diagnóstico fiscal
+                    {status.relatorio?.emitidoEm ? ` · emitido em ${status.relatorio.emitidoEm}` : ""}
+                  </span>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {status.relatorioPdfFileId && status.relatorio && (
+                      <button
+                        type="button"
+                        onClick={() => setVerPdf((v) => !v)}
+                        style={{ padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid #8BE9FD", color: "#8BE9FD", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        {verPdf ? "Ocultar PDF" : "Ver PDF oficial"}
+                      </button>
+                    )}
                     {pdfUrl && (
                       <a
                         href={pdfUrl}
-                        download={`situacao-fiscal.pdf`}
+                        download="situacao-fiscal.pdf"
                         style={{ padding: "6px 12px", borderRadius: 6, background: "rgba(105,255,71,0.12)", border: "1px solid #69FF47", color: "#69FF47", fontSize: "0.82rem", fontWeight: 700, textDecoration: "none" }}
                       >
                         ⬇ Baixar PDF
@@ -111,25 +128,35 @@ export function SitfisTab({ sitfisPanel }) {
                     )}
                   </div>
                 </div>
-                {/* O PDF é a ÚNICA visualização do relatório: é o documento oficial do SERPRO,
-                    com a formatação de tabela original. Já tentamos remontar o relatório a partir
-                    do texto extraído e isso produziu valores que não existiam — em contexto fiscal
-                    não vale o risco. Sem PDF, pedimos nova consulta. */}
-                {pdfUrl ? (
-                  <iframe
-                    title="Relatório de situação fiscal (SITFIS)"
-                    src={pdfUrl}
-                    style={{ width: "100%", height: 700, border: "1px solid #44475A", borderRadius: 8, background: "#fff" }}
-                  />
-                ) : pdfIndisponivel ? (
-                  <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem", lineHeight: 1.5 }}>
-                    O PDF deste relatório não está mais no servidor (foi gravado antes do
-                    armazenamento persistente). A <strong>situação</strong> e a <strong>data</strong>{" "}
-                    acima seguem válidas — clique em <strong>“Consultar situação fiscal agora”</strong>{" "}
-                    para gerar o PDF novamente.
-                  </div>
+
+                {/* TABELA primeiro — é a leitura do dia a dia. O PDF é o documento oficial e fica
+                    opcional, sob clique. O parser ORGANIZA e não interpreta: não extrai valor
+                    monetário nenhum. A versão anterior extraía, e mostrou "R$ 100,00" numa empresa
+                    sem débito — era o 100,00% de participação societária. */}
+                {status.relatorio ? (
+                  <SitfisRelatorioTabela relatorio={status.relatorio} />
                 ) : (
-                  <p style={{ color: "#A7B0C0", margin: 0, fontSize: "0.85rem" }}>Carregando o PDF…</p>
+                  <p style={{ color: "#A7B0C0", margin: "0 0 10px", fontSize: "0.82rem" }}>
+                    Relatório antigo, gravado antes de guardarmos o texto — só o PDF está disponível.
+                  </p>
+                )}
+
+                {(verPdf || !status.relatorio) && (
+                  pdfUrl ? (
+                    <iframe
+                      title="Relatório de situação fiscal (SITFIS)"
+                      src={pdfUrl}
+                      style={{ width: "100%", height: 700, border: "1px solid #44475A", borderRadius: 8, background: "#fff", marginTop: 12 }}
+                    />
+                  ) : pdfIndisponivel ? (
+                    <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 8, background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347", color: "#FFB347", fontSize: "0.85rem", lineHeight: 1.5 }}>
+                      O PDF deste relatório não está mais no servidor (foi gravado antes do
+                      armazenamento persistente).{status.relatorio ? " A tabela acima veio do texto salvo e segue válida" : " A situação e a data acima seguem válidas"} — clique em{" "}
+                      <strong>“Consultar situação fiscal agora”</strong> para gerar o PDF novamente.
+                    </div>
+                  ) : (
+                    <p style={{ color: "#A7B0C0", marginTop: 12, fontSize: "0.85rem" }}>Carregando o PDF…</p>
+                  )
                 )}
               </div>
             )}
