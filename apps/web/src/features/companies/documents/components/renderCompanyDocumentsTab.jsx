@@ -1,6 +1,11 @@
 // Aba Documentos da empresa: contrato social, cartão CNPJ, inscrições, alvará.
 // Seleção múltipla + barra de ações (Baixar / Enviar por e-mail), no mesmo formato da barra única
 // da aba Guias (Q57), que já resolveu esse padrão de "selecionei, e agora?".
+//
+// Houve uma área de arrastar-e-soltar aqui; foi REMOVIDA por não funcionar de forma confiável.
+// O que sobreviveu dela — e vale manter — é a ordem: primeiro o arquivo, e só então a pergunta
+// "qual documento é este?". Quem sobe um documento está com o arquivo na mão, não com a
+// taxonomia na cabeça.
 
 import { useRef, useState } from "react";
 
@@ -35,7 +40,6 @@ export function CompanyDocumentsTab({ docs }) {
 
   const inputRef = useRef(null);
   const [subindo, setSubindo] = useState(false);
-  const [arrastando, setArrastando] = useState(false);
   // Fila de arquivos aguardando a pergunta "qual documento é este?". O tipo NÃO é escolhido antes:
   // quem arrasta um arquivo está com o arquivo na mão, não com a taxonomia na cabeça. O botão
   // segue o mesmo caminho — os dois caem aqui.
@@ -81,18 +85,6 @@ export function CompanyDocumentsTab({ docs }) {
     setFila([]);
   }
 
-  function aoSoltar(e) {
-    e.preventDefault();
-    setArrastando(false);
-    enfileirar(e.dataTransfer?.files);
-  }
-
-  // `dragover` PRECISA de preventDefault, senão o navegador abre o arquivo numa aba nova e a
-  // página some — o erro clássico de drop zone.
-  function aoArrastarSobre(e) {
-    e.preventDefault();
-    if (!arrastando) setArrastando(true);
-  }
 
   // Enviar sai do sistema e chega no cliente: confirma antes, dizendo quantos e quais.
   async function aoEnviar() {
@@ -141,29 +133,10 @@ export function CompanyDocumentsTab({ docs }) {
         </div>
       )}
 
-      {/* Área de arraste: envolve a lista inteira, então dá pra soltar em qualquer lugar do painel
-          — e não só num retângulo pequeno que obriga a mirar. */}
-      <div
-        onDragOver={aoArrastarSobre}
-        onDragLeave={() => setArrastando(false)}
-        onDrop={aoSoltar}
-        style={{
-          borderRadius: 10,
-          border: `1px dashed ${arrastando ? "#69FF47" : PANEL.border}`,
-          background: arrastando ? "rgba(105,255,71,0.06)" : "transparent",
-          padding: arrastando || !documentos.length ? 16 : 4,
-          transition: "background 0.12s ease, border-color 0.12s ease",
-        }}
-      >
-      {arrastando && (
-        <p style={{ margin: "0 0 8px", textAlign: "center", color: "#69FF47", fontSize: "0.85rem", fontWeight: 700 }}>
-          Solte para adicionar
-        </p>
-      )}
       {!carregando && !documentos.length ? (
-        <p style={{ color: PANEL.muted, fontSize: "0.85rem", textAlign: "center", margin: "12px 0" }}>
-          Arraste os arquivos para cá — contrato social, cartão CNPJ, inscrições — ou use o botão
-          acima.
+        <p style={{ color: PANEL.muted, fontSize: "0.85rem" }}>
+          Nenhum documento guardado. Use "Adicionar documento" para subir o contrato social, o
+          cartão CNPJ e as inscrições, e tê-los à mão quando o cliente pedir.
         </p>
       ) : (
         <div style={{ overflowX: "auto" }}>
@@ -213,7 +186,6 @@ export function CompanyDocumentsTab({ docs }) {
           </table>
         </div>
       )}
-      </div>
 
       {/* A PERGUNTA. Só aparece depois que o arquivo já está na mão — arrastado ou escolhido.
           Com vários arquivos, pergunta um a um: o tipo raramente é o mesmo para todos. */}
