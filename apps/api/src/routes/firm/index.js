@@ -3677,14 +3677,21 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           protocolo: result.protocolo || undefined,
           checkedAt: new Date(),
         };
-        if (temRelatorioNovo || !result.processando) {
-          // Consulta concluída (com relatório) ou sem indicação de processando → atualiza o resultado.
+        // SÓ sobrescreve o relatório quando veio um NOVO. Antes a condição era
+        // `temRelatorioNovo || !result.processando`, e o segundo termo era uma armadilha: uma
+        // consulta que voltasse sem relatório E sem a marca de "processando" — erro, protocolo
+        // recusado, resposta inesperada — gravava `relatorioPdfFileId: null` e APAGAVA o PDF que
+        // já estava salvo. O contador perdia o relatório por causa de uma tentativa fracassada.
+        //
+        // Relatório salvo é a única cópia que temos: consultar de novo custa chamada paga e pode
+        // esbarrar no limite do SERPRO. Na dúvida, preserva.
+        if (temRelatorioNovo) {
           updateData.situacao = situacao;
           updateData.relatorioPdfFileId = relatorioPdfFileId;
           updateData.texto = textoRelatorio;
           updateData.rawPayload = result.rawPayload || undefined;
         }
-        // (processando sem relatório novo → não toca em situacao/pdf/texto: mantém o último conhecido)
+        // (sem relatório novo → não toca em situacao/pdf/texto: mantém o último conhecido)
         // Só uma consulta que TROUXE relatório inicia a janela de 4h.
         if (temRelatorioNovo) updateData.ultimoRelatorioEm = new Date();
 
