@@ -3628,7 +3628,25 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           log.warn({ portalCompanyId, checkedAt: prevStatus?.checkedAt }, "SITFIS: reusando protocolo salvo (pula /Apoiar)");
         }
 
-        const result = await obterSitfisRelatorio({ contribuinteCnpj: portal.cnpj, tipo: 2, protocoloExistente, logger: log });
+        const result = await obterSitfisRelatorio({
+          contribuinteCnpj: portal.cnpj,
+          tipo: 2,
+          protocoloExistente,
+          logger: log,
+          // Persiste o protocolo NA HORA em que o /Apoiar o devolve, antes de qualquer /Emitir.
+          // Antes ele só era gravado no fim (linha ~3690): se o /Emitir falhasse — rede, timeout,
+          // aba fechada, protocolo recusado — o protocolo se perdia e a solicitação ficava ABERTA
+          // no SERPRO sem dono, ocupando um lugar do limite por contratante que ninguém mais
+          // conseguia consumir. Cada tentativa interrompida entupia a fila mais um pouco, e
+          // nenhuma espera resolvia, porque o que ocupa o lugar é a solicitação, não o tempo.
+          onProtocolo: async (proto) => {
+            await prisma.companyFiscalStatus.upsert({
+              where: { portalClientId: portalCompanyId },
+              update: { protocolo: proto, checkedAt: new Date() },
+              create: { portalClientId: portalCompanyId, tipo: 2, protocolo: proto, checkedAt: new Date() },
+            });
+          },
+        });
         // Q43.5: o relatório SITFIS vem só como PDF (dados.pdf) — extrai o texto para a heurística
         // de pendência funcionar (senão a situação cairia sempre em REGULAR por falta de texto).
         const pdfText = result.relatorioTexto ? "" : await extractSitfisPdfText(result.relatorioPdfBuffer);

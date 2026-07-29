@@ -220,13 +220,19 @@ function safeApoiarPreview(resp) {
  * @returns {{ ok, processando?, protocolo?, relatorioPdfBuffer?, relatorioTexto?, verificadoTrial, rawPayload }}
  */
 /**
+ * @param onProtocolo  Chamado assim que um protocolo NOVO é obtido, ANTES de qualquer /Emitir.
+ *   Existe porque o protocolo só era gravado no fim de tudo: se o /Emitir falhasse (rede, timeout,
+ *   aba fechada, protocolo recusado), o protocolo se perdia — e a solicitação correspondente ficava
+ *   ABERTA no SERPRO para sempre, ocupando um lugar do limite por contratante que ninguém mais
+ *   conseguia consumir. Era um VAZAMENTO de lugares: cada tentativa interrompida entupia a fila um
+ *   pouco mais, e nenhuma espera resolvia. Persistir na hora garante que o lugar sempre tem dono.
  * @param permitirNovaSolicitacao  Quando `false`, NUNCA chama `/Apoiar`. Serve para consumir um
  *   protocolo já existente sem abrir solicitação nova — é o que a drenagem da fila precisa: com o
  *   limite AV02 atingido, abrir mais uma é exatamente o que não pode acontecer. Nesse modo, em vez
  *   de re-solicitar, devolve `{ protocoloExpirado: true }` ou `{ protocoloAusente: true }` e sai.
  *   A tela usa o padrão `true` — lá reconsultar TEM que solicitar.
  */
-export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo = 2, protocoloExistente = null, logger = null, permitirNovaSolicitacao = true }) {
+export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo = 2, protocoloExistente = null, logger = null, permitirNovaSolicitacao = true, onProtocolo = null }) {
   if (!INTEGRACAO_SERPRO_SITFIS) {
     const err = new Error("serpro_sitfis_disabled");
     err.code = "SERPRO_SITFIS_DISABLED";
@@ -388,6 +394,11 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
     throw err;
   }
   let protocolo = sol.proto;
+  // Grava ANTES do primeiro /Emitir: daqui em diante qualquer falha deixaria o lugar órfão.
+  if (protocolo && protocolo !== protocoloExistente) {
+    try { await onProtocolo?.(protocolo); }
+    catch (e) { logger?.warn?.({ err: e?.message }, "SITFIS: falha ao persistir protocolo recém-obtido"); }
+  }
   // O /Apoiar 200 traz o tempoEspera a aguardar antes do 1º /Emitir; no 304 (cache) usa espera curta.
   const preWait = sol.wait || (sol.status === 304 ? 1500 : 0);
   if (preWait) await sleep(Math.min(preWait, MAX_POLL_MS - 2000));
@@ -504,6 +515,9 @@ export async function obterRelatorio({ contratanteCnpj, contribuinteCnpj, tipo =
         throw err;
       }
       protocolo = sol.proto;
+      // Mesmo cuidado na re-solicitação: este protocolo também abriu um lugar novo.
+      try { await onProtocolo?.(protocolo); }
+      catch (e) { logger?.warn?.({ err: e?.message }, "SITFIS: falha ao persistir protocolo re-solicitado"); }
       // eslint-disable-next-line no-await-in-loop
       if (sol.wait) await sleep(Math.min(sol.wait, 5000));
       continue;
