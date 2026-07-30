@@ -1,5 +1,4 @@
 import { useEffect, useMemo } from "react";
-import { CalendarioPage } from "./features/calendario/pages/renderCalendarioPage";
 import { useLocation, useParams } from "react-router-dom";
 import { createApiClient } from "./api/client";
 import "./App.css";
@@ -245,24 +244,6 @@ function App() {
     );
   }
 
-  if (session.page === "calendario") {
-    return (
-      <CalendarioPage
-        api={api}
-        empresas={companiesWorkspace.companiesState?.companies || []}
-        onBack={() => session.setPage("companies")}
-        onOpenCompany={(companyId, competencia) => {
-          // Mesmo caminho que a grade anual usa (ver o onOpenCompany do dashboard): o
-          // setSelectedCompanyId roda um tick depois por batching, então o companyId vai
-          // explícito no setPage para a URL sair certa de imediato.
-          companiesWorkspace.companiesState.setSelectedCompanyId(companyId);
-          if (competencia) accountingWorkspace.accountingEntriesState.setFilter("competencia", competencia);
-          session.setPage("companyDetail", { companyId });
-        }}
-      />
-    );
-  }
-
   if (session.page === "rotinas") {
     return (
       <RotinasPage
@@ -465,7 +446,6 @@ function App() {
       api={api}
 
       onLogout={handleLogout}
-      onOpenCalendario={() => session.setPage("calendario")}
       onOpenCompany={(companyId, competencia) => {
         // Q8.C.3: setSelectedCompanyId pode rodar 1 tick depois (React batching).
         // Por isso passamos companyId explicitamente pro setPage adapter, que monta a URL imediato.

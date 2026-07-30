@@ -5,6 +5,7 @@ import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
 import { AnnualGrid } from "../components/renderAnnualGrid";
+import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
 
 // Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
 function SettingsMenu({ items }) {
@@ -92,7 +93,6 @@ export function CompaniesHomePage({
   onOpenBatchEmail,
   onOpenApuracao,
   onOpenRotinas,
-  onOpenCalendario,
   onOpenSerproFuncoes,
   onLogout,
   onOpenCompany,
@@ -288,11 +288,8 @@ export function CompaniesHomePage({
                 Apuração
               </Button>
             )}
-            {onOpenCalendario && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenCalendario}>
-                Calendário
-              </Button>
-            )}
+            {/* O botão "Calendário" saiu daqui: o calendário virou VISÃO, ao lado de Cards e Ano.
+                Ter as duas portas para a mesma coisa só dividiria o caminho. */}
             {onOpenRotinas && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenRotinas}>
                 Rotinas
@@ -349,9 +346,11 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* C8: alterna entre os cards (uma competência) e a grade anual (12 meses). */}
+          {/* Três visões da MESMA carteira: cards (uma competência), grade anual (12 meses) e
+              calendário (o que vence no dia). O calendário era uma página separada; virou visão
+              porque é a mesma pergunta — "como está a carteira" — só com outro eixo de tempo. */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {[["cards", "Cards"], ["ano", "Ano"]].map(([key, label]) => (
+            {[["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"]].map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -526,7 +525,9 @@ export function CompaniesHomePage({
           </section>
           )}
 
-          {modoVisao === "ano" ? (
+          {modoVisao === "calendario" ? (
+            <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
+          ) : modoVisao === "ano" ? (
             <AnnualGrid api={api} onOpenCompany={onOpenCompany} />
           ) : (
           <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
