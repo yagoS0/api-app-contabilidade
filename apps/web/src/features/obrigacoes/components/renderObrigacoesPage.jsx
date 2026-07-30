@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/Button";
+import { RegrasObrigacao } from "./renderRegrasObrigacao";
 
 const COR = {
   fundo: "#21222C", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
@@ -241,6 +242,7 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
   const [modal, setModal] = useState(null); // { inicial }
   const [salvando, setSalvando] = useState(false);
   const [erroModal, setErroModal] = useState(null);
+  const [verRegras, setVerRegras] = useState(false);
 
   const carregar = useCallback(async () => {
     if (!api) return;
@@ -337,6 +339,18 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
 
   const resumo = dados?.resumo || { pendentes: 0, vencendoEm7Dias: 0, vencidas: 0 };
 
+  // Ao voltar das regras, recarrega: propagar cria e remove obrigações nas empresas, e a lista
+  // atrás estaria desatualizada.
+  if (verRegras) {
+    return (
+      <RegrasObrigacao
+        api={api}
+        empresas={empresas}
+        onVoltar={() => { setVerRegras(false); carregar(); }}
+      />
+    );
+  }
+
   return (
     <section aria-label="Obrigações">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
@@ -347,6 +361,7 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
         </span>
         {carregando && <span style={{ color: COR.suave, fontSize: "0.75rem" }}>carregando…</span>}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant="secondary" onClick={() => setVerRegras(true)}>Regras do escritório</Button>
           <Button variant="success" onClick={() => { setErroModal(null); setModal({ inicial: null }); }}>
             + Nova obrigação
           </Button>

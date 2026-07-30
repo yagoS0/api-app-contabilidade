@@ -18,6 +18,17 @@ import {
   remover,
 } from "../../application/obrigacoes/ObrigacoesService.js";
 import { AJUSTES_DIA_UTIL, PERIODICIDADES } from "../../application/obrigacoes/gerarOcorrencias.js";
+import {
+  ESCOPOS,
+  REGIMES,
+  adicionarExcecao,
+  atualizarRegra,
+  criarRegra,
+  listarRegras,
+  preverEscopo,
+  removerExcecao,
+  removerRegra,
+} from "../../application/obrigacoes/RegrasObrigacaoService.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 
 export function createObrigacoesRouter({ log } = {}) {
@@ -128,6 +139,101 @@ export function createObrigacoesRouter({ log } = {}) {
       const ocorrencia = await reabrir({ portalIds, ocorrenciaId });
       return res.json({ ok: true, ocorrencia });
     } catch (err) { return falhar(res, err, { ocorrenciaId }); }
+  });
+
+  // ── Regras do escritório ───────────────────────────────────────────────────────────────────
+  router.get("/regras-obrigacao", async (req, res) => {
+    try {
+      const portalIds = await empresasVisiveis(req);
+      const regras = await listarRegras({ portalIds });
+      return res.json({
+        ok: true,
+        regras,
+        opcoes: {
+          escopos: ESCOPOS,
+          regimes: REGIMES,
+          periodicidades: PERIODICIDADES,
+          ajustesDiaUtil: AJUSTES_DIA_UTIL,
+          verificadores: Object.entries(VERIFICADORES).map(([chave, rotulo]) => ({ chave, rotulo })),
+        },
+      });
+    } catch (err) { return falhar(res, err, {}); }
+  });
+
+  // Prévia do passo "Para quem": quantas e quais empresas entram, SEM gravar. O contador não
+  // descobre o alcance depois de salvar — o número aparece enquanto ele mexe nos filtros.
+  router.post("/regras-obrigacao/previa", async (req, res) => {
+    try {
+      const portalIds = await empresasVisiveis(req);
+      const out = await preverEscopo({
+        portalIds,
+        escopo: String(req.body?.escopo || "").toUpperCase(),
+        filtros: req.body?.filtros || null,
+      });
+      return res.json({ ok: true, ...out });
+    } catch (err) { return falhar(res, err, {}); }
+  });
+
+  router.post("/regras-obrigacao", async (req, res) => {
+    try {
+      const portalIds = await empresasVisiveis(req);
+      const out = await criarRegra({
+        portalIds,
+        dados: req.body || {},
+        criadoPorId: req.auth?.user?.id || null,
+      });
+      return res.status(201).json({ ok: true, ...out });
+    } catch (err) { return falhar(res, err, {}); }
+  });
+
+  router.patch("/regras-obrigacao/:regraId", async (req, res) => {
+    const regraId = String(req.params.regraId);
+    try {
+      const portalIds = await empresasVisiveis(req);
+      const out = await atualizarRegra({ portalIds, regraId, dados: req.body || {} });
+      return res.json({ ok: true, ...out });
+    } catch (err) { return falhar(res, err, { regraId }); }
+  });
+
+  router.delete("/regras-obrigacao/:regraId", async (req, res) => {
+    const regraId = String(req.params.regraId);
+    // "remover" apaga as obrigações nas empresas; "desvincular" as deixa como avulsas. Não há
+    // default silencioso entre os dois: são efeitos opostos, e a UI pergunta antes.
+    const modo = String(req.query?.modo || req.body?.modo || "").toLowerCase();
+    if (!["remover", "desvincular"].includes(modo)) {
+      return res.status(400).json({
+        ok: false,
+        error: "modo_obrigatorio",
+        message: "Diga se as obrigações devem ser removidas das empresas ou apenas desvinculadas.",
+      });
+    }
+    try {
+      const out = await removerRegra({ regraId, modo });
+      return res.json({ ok: true, ...out });
+    } catch (err) { return falhar(res, err, { regraId }); }
+  });
+
+  router.post("/regras-obrigacao/:regraId/excecoes", async (req, res) => {
+    const regraId = String(req.params.regraId);
+    try {
+      const portalIds = await empresasVisiveis(req);
+      const out = await adicionarExcecao({
+        portalIds,
+        regraId,
+        companyId: String(req.body?.companyId || ""),
+        motivo: String(req.body?.motivo || "").trim() || null,
+      });
+      return res.json({ ok: true, ...out });
+    } catch (err) { return falhar(res, err, { regraId }); }
+  });
+
+  router.delete("/regras-obrigacao/:regraId/excecoes/:companyId", async (req, res) => {
+    const regraId = String(req.params.regraId);
+    try {
+      const portalIds = await empresasVisiveis(req);
+      const out = await removerExcecao({ portalIds, regraId, companyId: String(req.params.companyId) });
+      return res.json({ ok: true, ...out });
+    } catch (err) { return falhar(res, err, { regraId }); }
   });
 
   return router;

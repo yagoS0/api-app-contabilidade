@@ -31,6 +31,8 @@ import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
+import { empresasVisiveis } from "./empresasVisiveis.js";
+import { aplicarRegrasAEmpresaNova } from "../../application/obrigacoes/RegrasObrigacaoService.js";
 import { criarBatchJob, runApuracaoBatchOnce } from "../../workers/apuracaoBatchWorker.js";
 // Q48: download de notas em lote (ZIP em segundo plano)
 import fsNotasDownload from "node:fs";
@@ -1021,7 +1023,21 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         return { portalId: portal.id, companyId: portal.id, ownerUserId: ownerUser.id };
       });
 
-      return res.status(201).json({ ok: true, ...result });
+      // Regras do escritório com "aplicar a novas empresas": a empresa recém-criada já nasce com
+      // as obrigações que se encaixam no filtro dela.
+      //
+      // FORA da transação e best-effort de propósito: a empresa JÁ está criada quando chegamos
+      // aqui, então uma falha aqui não pode desfazer o cadastro. No pior caso a obrigação entra na
+      // próxima vez que a regra for salva.
+      let regrasAplicadas = null;
+      try {
+        const portalIds = await empresasVisiveis(req);
+        regrasAplicadas = await aplicarRegrasAEmpresaNova({ portalClientId: result.portalId, portalIds });
+      } catch (err) {
+        log.warn({ err: err?.message || err, companyId: result.portalId }, "Regras de obrigação não aplicadas à empresa nova");
+      }
+
+      return res.status(201).json({ ok: true, ...result, regrasAplicadas });
     } catch (err) {
       if (err?.code === "OWNER_PASSWORD_REQUIRED") {
         return res.status(400).json({ error: "owner_password_required_min_8" });

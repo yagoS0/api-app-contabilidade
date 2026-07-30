@@ -581,6 +581,35 @@ export function createRealApi() {
     async reabrirOcorrencia(ocorrenciaId) {
       return request(`/firm/ocorrencias/${ocorrenciaId}/reabrir`, { method: "POST" });
     },
+    // ── Regras do escritório (uma obrigação aplicada a várias empresas) ────────────────────
+    async listRegrasObrigacao() {
+      return request(`/firm/regras-obrigacao`);
+    },
+    async previewEscopoRegra({ escopo, filtros }) {
+      return request(`/firm/regras-obrigacao/previa`, {
+        method: "POST",
+        body: JSON.stringify({ escopo, filtros }),
+      });
+    },
+    async createRegraObrigacao(dados) {
+      return request(`/firm/regras-obrigacao`, { method: "POST", body: JSON.stringify(dados) });
+    },
+    async updateRegraObrigacao(regraId, patch) {
+      return request(`/firm/regras-obrigacao/${regraId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    },
+    // `modo` é obrigatório: remover apaga as obrigações nas empresas, desvincular as mantém.
+    async deleteRegraObrigacao(regraId, modo) {
+      return request(`/firm/regras-obrigacao/${regraId}?modo=${encodeURIComponent(modo)}`, { method: "DELETE" });
+    },
+    async addExcecaoRegra(regraId, companyId, motivo) {
+      return request(`/firm/regras-obrigacao/${regraId}/excecoes`, {
+        method: "POST",
+        body: JSON.stringify({ companyId, motivo }),
+      });
+    },
+    async removeExcecaoRegra(regraId, companyId) {
+      return request(`/firm/regras-obrigacao/${regraId}/excecoes/${companyId}`, { method: "DELETE" });
+    },
     // ── Documentos da empresa (contrato social, cartão CNPJ, inscrições…) ──────────────────
     async listCompanyDocuments(companyId) {
       return request(`/firm/companies/${companyId}/documentos`);

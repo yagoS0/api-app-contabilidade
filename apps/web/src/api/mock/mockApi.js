@@ -179,6 +179,76 @@ const mockObrigacoes = mockCompanies.length
     ]
   : [];
 
+// ── Regras do escritório ──────────────────────────────────────────────────────────────────────
+const mockRegras = [];
+
+const MOCK_ROTULO_REGIME = {
+  SIMPLES: "Simples Nacional", LUCRO_PRESUMIDO: "Lucro Presumido", LUCRO_REAL: "Lucro Real",
+};
+
+function mockRegimeDaEmpresa(c) {
+  return c.legacyCompany?.regimeTributario || null;
+}
+
+function mockEmpresasDoEscopo(escopo, filtros, excecoesIds = []) {
+  const fora = new Set(excecoesIds);
+  let alvo = mockCompanies.filter((c) => !fora.has(c.companyId));
+  if (escopo === "SELECAO_MANUAL") {
+    const ids = new Set(filtros?.empresasIds || []);
+    alvo = alvo.filter((c) => ids.has(c.companyId));
+  } else if (escopo === "POR_FILTRO") {
+    const regimes = filtros?.regimes || [];
+    if (filtros?.temFolha === true) alvo = alvo.filter((c) => c.temFolha);
+    // Empresa sem regime declarado NÃO entra num filtro por regime — mesma regra do backend.
+    if (regimes.length) alvo = alvo.filter((c) => regimes.includes(mockRegimeDaEmpresa(c)));
+  }
+  return alvo.map((c) => ({ companyId: c.companyId, razao: c.razao, cnpj: c.cnpj, temFolha: Boolean(c.temFolha) }));
+}
+
+function mockResumoEscopo(regra, total) {
+  const sufixo = `${total} empresa${total === 1 ? "" : "s"}`;
+  if (regra.escopo === "TODAS") return `Todas as empresas · ${sufixo}`;
+  if (regra.escopo === "SELECAO_MANUAL") return `Empresas escolhidas à mão · ${sufixo}`;
+  const partes = [];
+  if (regra.filtros?.regimes?.length) partes.push(regra.filtros.regimes.map((r) => MOCK_ROTULO_REGIME[r] || r).join(", "));
+  if (regra.filtros?.temFolha === true) partes.push("somente com folha");
+  return `${partes.join(" · ") || "Todas"} · ${sufixo}`;
+}
+
+function mockPropagarRegra(regra) {
+  const excecoesIds = (regra.excecoes || []).map((e) => e.companyId);
+  const alvo = regra.ativa === false ? [] : mockEmpresasDoEscopo(regra.escopo, regra.filtros, excecoesIds);
+  const alvoIds = new Set(alvo.map((e) => e.companyId));
+  let criadas = 0, atualizadas = 0, puladas = 0;
+
+  for (const empresa of alvo) {
+    const atual = mockObrigacoes.find((o) => o.regraId === regra.regraId && o.companyId === empresa.companyId);
+    // Sobrescrita local é pulada: a regra não apaga a escolha de quem editou na empresa.
+    if (atual?.sobrescritaLocal) { puladas += 1; continue; }
+    const nova = mockCriarObrigacao(empresa.companyId, empresa.razao, { ...regra });
+    nova.regraId = regra.regraId;
+    if (atual) {
+      const concluidas = atual.ocorrencias.filter((oc) => oc.status === "CONCLUIDA");
+      const jaTem = new Set(concluidas.map((oc) => oc.dataVencimento));
+      nova.obrigacaoId = atual.obrigacaoId;
+      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento))]
+        .sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
+      mockObrigacoes[mockObrigacoes.indexOf(atual)] = nova;
+      atualizadas += 1;
+    } else {
+      mockObrigacoes.push(nova);
+      criadas += 1;
+    }
+  }
+
+  const removidas = mockObrigacoes.filter(
+    (o) => o.regraId === regra.regraId && !alvoIds.has(o.companyId) && !o.sobrescritaLocal,
+  );
+  for (const o of removidas) mockObrigacoes.splice(mockObrigacoes.indexOf(o), 1);
+
+  return { criadas, atualizadas, puladas, removidas: removidas.length, empresasNoEscopo: alvo.length };
+}
+
 const MOCK_TIPOS_DOC = ["CONTRATO_SOCIAL", "CARTAO_CNPJ", "INSCRICAO_ESTADUAL", "INSCRICAO_MUNICIPAL", "ALVARA", "PROCURACAO", "OUTRO"];
 const MOCK_TIPO_DOC_LABELS = {
   CONTRATO_SOCIAL: "Contrato social", CARTAO_CNPJ: "Cartão CNPJ",
@@ -2187,6 +2257,91 @@ export function createMockApi() {
         return { ok: true, ocorrencia: oc };
       }
       return { ok: false, error: "nao_encontrada" };
+    },
+    // ── Regras do escritório (mock com propagação de verdade) ─────────────────────────────
+    // A propagação é o comportamento que precisa ser visto: quem entra no filtro, quem sai, e o
+    // que acontece com a empresa editada localmente. Um retorno fixo mostraria a tela e esconderia
+    // exatamente isso.
+    async listRegrasObrigacao() {
+      await delay(70);
+      return {
+        ok: true,
+        regras: mockRegras.map((r) => {
+          const aplicadas = mockObrigacoes.filter((o) => o.regraId === r.regraId);
+          return {
+            ...r,
+            totalEmpresas: aplicadas.length,
+            totalExcecoes: r.excecoes.length,
+            totalSobrescritas: aplicadas.filter((o) => o.sobrescritaLocal).length,
+            resumoEscopo: mockResumoEscopo(r, aplicadas.length),
+            empresas: aplicadas.map((o) => ({
+              companyId: o.companyId, razao: o.empresa, obrigacaoId: o.obrigacaoId,
+              sobrescritaLocal: o.sobrescritaLocal,
+            })),
+          };
+        }),
+        opcoes: {
+          escopos: ["TODAS", "POR_FILTRO", "SELECAO_MANUAL"],
+          regimes: ["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL"],
+          periodicidades: ["MENSAL", "TRIMESTRAL", "ANUAL"],
+          ajustesDiaUtil: ["ANTECIPAR", "POSTERGAR", "MANTER"],
+          verificadores: [
+            { chave: "APURACAO_TRANSMITIDA", rotulo: "Quando a apuração da competência for transmitida" },
+            { chave: "MES_FECHADO", rotulo: "Quando o mês contábil da competência for fechado" },
+          ],
+        },
+      };
+    },
+    async previewEscopoRegra({ escopo, filtros }) {
+      await delay(50);
+      const empresas = mockEmpresasDoEscopo(escopo, filtros);
+      return { ok: true, total: empresas.length, empresas };
+    },
+    async createRegraObrigacao(dados) {
+      await delay(120);
+      const regraId = `mock-regra-${Math.random().toString(36).slice(2, 9)}`;
+      const regra = { ...dados, regraId, excecoes: [], ativa: true };
+      mockRegras.push(regra);
+      const efeito = mockPropagarRegra(regra);
+      return { ok: true, regra, ...efeito };
+    },
+    async updateRegraObrigacao(regraId, patch) {
+      await delay(120);
+      const i = mockRegras.findIndex((r) => r.regraId === regraId);
+      if (i < 0) return { ok: false, error: "regra_nao_encontrada", message: "Regra não encontrada." };
+      mockRegras[i] = { ...mockRegras[i], ...patch };
+      const efeito = mockPropagarRegra(mockRegras[i]);
+      return { ok: true, regra: mockRegras[i], ...efeito };
+    },
+    async deleteRegraObrigacao(regraId, modo) {
+      await delay(90);
+      const i = mockRegras.findIndex((r) => r.regraId === regraId);
+      if (i < 0) return { ok: false, error: "regra_nao_encontrada" };
+      const [regra] = mockRegras.splice(i, 1);
+      const ligadas = mockObrigacoes.filter((o) => o.regraId === regraId);
+      if (modo === "desvincular") {
+        for (const o of ligadas) { o.regraId = null; o.sobrescritaLocal = false; }
+        return { ok: true, nome: regra.nome, desvinculadas: ligadas.length, removidas: 0 };
+      }
+      for (const o of ligadas) {
+        const idx = mockObrigacoes.indexOf(o);
+        if (idx >= 0) mockObrigacoes.splice(idx, 1);
+      }
+      return { ok: true, nome: regra.nome, desvinculadas: 0, removidas: ligadas.length };
+    },
+    async addExcecaoRegra(regraId, companyId, motivo) {
+      await delay(80);
+      const regra = mockRegras.find((r) => r.regraId === regraId);
+      if (!regra) return { ok: false, error: "regra_nao_encontrada" };
+      if (!regra.excecoes.some((e) => e.companyId === companyId)) regra.excecoes.push({ companyId, motivo });
+      return { ok: true, ...mockPropagarRegra(regra) };
+    },
+    async removeExcecaoRegra(regraId, companyId) {
+      await delay(80);
+      const regra = mockRegras.find((r) => r.regraId === regraId);
+      if (!regra) return { ok: false, error: "regra_nao_encontrada" };
+      regra.excecoes = regra.excecoes.filter((e) => e.companyId !== companyId);
+      return { ok: true, ...mockPropagarRegra(regra) };
     },
     async listMarcosFiscais() { await delay(50); return { ok: true, marcos: [] }; },
     async createMarcoFiscal(input) { await delay(80); return { ok: true, marco: { id: `mk-${Date.now()}`, ...input } }; },
