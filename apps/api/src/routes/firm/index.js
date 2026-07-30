@@ -558,6 +558,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       ownerName: ownerName || null,
       guideNotificationEmail: portal.guideNotificationEmail || null,
       hasProlabore: Boolean(portal.hasProlabore),
+      temFolha: Boolean(portal.temFolha),
       empresaZerada: Boolean(portal.empresaZerada),
       email: legacyEmail,
       telefone: legacy?.telefone || null,
@@ -662,6 +663,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           cnpj: true,
           guideNotificationEmail: true,
           hasProlabore: true,
+          temFolha: true,
           empresaZerada: true,
           inscricaoMunicipal: true,
           uf: true,
@@ -732,6 +734,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             cnpj: true,
             guideNotificationEmail: true,
             hasProlabore: true,
+            temFolha: true,
             empresaZerada: true,
             inscricaoMunicipal: true,
             uf: true,
@@ -967,6 +970,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             cnpj,
             guideNotificationEmail: normalizedCompany.guideNotificationEmail || null,
             hasProlabore: Boolean(body.hasProlabore),
+            temFolha: Boolean(body.temFolha),
             empresaZerada: Boolean(body.empresaZerada),
             inscricaoMunicipal: inscricaoMunicipalInput,
             uf: normalizedCompany.endereco?.uf || null,
@@ -1100,6 +1104,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           if (Object.prototype.hasOwnProperty.call(body, "hasProlabore")) {
             portalUpdateData.hasProlabore = Boolean(body.hasProlabore);
           }
+          if (Object.prototype.hasOwnProperty.call(body, "temFolha")) {
+            portalUpdateData.temFolha = Boolean(body.temFolha);
+          }
           if (Object.prototype.hasOwnProperty.call(body, "empresaZerada")) {
             portalUpdateData.empresaZerada = Boolean(body.empresaZerada);
           }
@@ -1112,6 +1119,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               cnpj: true,
               guideNotificationEmail: true,
               hasProlabore: true,
+              temFolha: true,
               empresaZerada: true,
               inscricaoMunicipal: true,
               uf: true,

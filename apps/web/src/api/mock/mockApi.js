@@ -24,6 +24,9 @@ function makeCompanies(count = 6) {
     const companyId = faker.string.uuid();
     const ownerEmail = faker.internet.email().toLowerCase();
     const hasProlabore = i === 0;
+    // Folha e pró-labore variam em empresas DIFERENTES de propósito: é o que deixa conferir na
+    // tela que os dois selos são independentes, em vez de sempre aparecerem juntos.
+    const temFolha = i === 1 || i === 2;
     const regimeTributario = i === 1 ? "LUCRO_PRESUMIDO" : "SIMPLES";
     return {
       companyId,
@@ -32,6 +35,7 @@ function makeCompanies(count = 6) {
       ownerEmail,
       guideNotificationEmail: ownerEmail,
       hasProlabore,
+      temFolha,
       email: null,
       legacyCompany: { regimeTributario, tipoTributario: regimeTributario },
       guideCompliance: mockGuideComplianceRow({
@@ -235,6 +239,7 @@ function buildCompanyPayload(input) {
   const guideEmail =
     String(input.guideNotificationEmail || "").trim().toLowerCase() || ownerEmail || null;
   const hasProlabore = Boolean(input.hasProlabore);
+  const temFolha = Boolean(input.temFolha);
   const regimeTributario = String(input.regimeTributario || "SIMPLES");
   return {
     companyId: faker.string.uuid(),
@@ -249,6 +254,7 @@ function buildCompanyPayload(input) {
     ownerEmail: ownerEmail || null,
     guideNotificationEmail: guideEmail,
     hasProlabore,
+    temFolha,
     email: null,
     telefone: String(input.telefone || "").trim() || null,
     portalCreatedAt: new Date().toISOString(),
@@ -388,6 +394,8 @@ export function createMockApi() {
         cnpj: String(companyInput.cnpj || current.cnpj || "").trim(),
         hasProlabore:
           body.hasProlabore !== undefined ? Boolean(body.hasProlabore) : Boolean(current.hasProlabore),
+        temFolha:
+          body.temFolha !== undefined ? Boolean(body.temFolha) : Boolean(current.temFolha),
         ownerEmail: String(companyInput.ownerEmail || current.ownerEmail || "").trim().toLowerCase() || null,
         guideNotificationEmail:
           companyInput.guideNotificationEmail !== undefined && companyInput.guideNotificationEmail !== null

@@ -115,6 +115,7 @@ export function CompanyCard({ company, onAccess }) {
   const todasEnviadas = Boolean(envio?.todasEnviadas);
   // C6: situação fiscal do SITFIS (⚠ ao lado de "apurada") e parcelamento ativo (selo PARC).
   const temParcelamento = Boolean(company?.temParcelamento);
+  const temFolha = Boolean(company?.temFolha);
   const fiscalMeta = FISCAL_META[company?.fiscalSituacao] || null;
   // Parcelamento é identidade da empresa (como o regime), não evento do mês: vale tanto quando há
   // guia de parcelamento ativa quanto quando a situação fiscal do SITFIS diz que há débito
@@ -141,6 +142,13 @@ export function CompanyCard({ company, onAccess }) {
           {/* Parcelamento fica JUNTO da tributação: é característica da empresa, não do mês. */}
           {emParcelamento && (
             <Pill color="#FFB347" title="Empresa com parcelamento — há parcelas a acompanhar">parc</Pill>
+          )}
+          {/* Folha entra aqui pelo mesmo motivo do parc: é característica da empresa, não evento
+              do mês. Não contraria a regra do "selo só para exceção" logo abaixo — aquela vale
+              para ESTADO (SERPRO apto, A1 válido), onde o normal é silêncio. Aqui o campo varia
+              entre empresas e é o que diz quais obrigações trabalhistas fazem sentido. */}
+          {temFolha && (
+            <Pill color="#FF79C6" title="Empresa com folha de pagamento (empregado registrado)">folha</Pill>
           )}
           {/* Presente = silêncio. Faltando = a própria palavra, em vermelho. Não "sem SERPRO":
               a ausência já é dita pela cor, e o "sem" só alongava a pílula. */}

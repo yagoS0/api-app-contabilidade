@@ -534,6 +534,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             <p><span className="text-muted">E-mail do responsável:</span> {selectedCompany.ownerEmail || selectedCompany.email || "—"}</p>
             <p><span className="text-muted">E-mail das guias:</span> {selectedCompany.guideNotificationEmail || "—"}</p>
             <p><span className="text-muted">Pró-labore:</span> {selectedCompany.hasProlabore ? "Sim" : "Não"}</p>
+            <p><span className="text-muted">Folha de pagamento:</span> {selectedCompany.temFolha ? "Sim" : "Não"}</p>
             <p><span className="text-muted">Município / UF:</span> {selectedCompany.municipio || "—"} / {selectedCompany.uf || "—"}</p>
           </div>
           <div className="toolbar">

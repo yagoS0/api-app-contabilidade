@@ -100,6 +100,7 @@ function buildCompanyPayload(input) {
     ownerName: String(input.ownerName || "").trim() || null,
     ownerPassword: String(input.ownerPassword || ""),
     hasProlabore: Boolean(input.hasProlabore),
+    temFolha: Boolean(input.temFolha),
     empresaZerada: Boolean(input.empresaZerada),
     company: {
       cnpj: String(input.cnpj || "").trim(),

@@ -301,6 +301,11 @@ model PortalClient {
   guideNotificationEmail String?
   /// Indica se há pró-labore (exige guia INSS na competência de referência para alertas).
   hasProlabore           Boolean   @default(false)
+  /// Empresa tem FOLHA DE PAGAMENTO (empregado registrado). Não é o mesmo que `hasProlabore`:
+  /// sócio retirando pró-labore sem nenhum empregado não gera eSocial/FGTS de folha. Por isso são
+  /// dois campos e não um — juntá-los criaria obrigação trabalhista em empresa que não tem.
+  /// Serve de filtro nas regras de obrigação do escritório ("aplicar a todas as empresas com folha").
+  temFolha               Boolean   @default(false)
   /// Empresa zerada / sem movimento: não gera impostos; só enviamos obrigações zeradas.
   /// No card, oculta as guias/obrigações e sinaliza que é zerada.
   empresaZerada          Boolean   @default(false)

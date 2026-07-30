@@ -443,6 +443,21 @@ export function CompanyForm({
           <option value="sim">Sim</option>
         </select>
       </label>
+      {/* Folha ≠ pró-labore: sócio retirando pró-labore sem empregado não gera eSocial/FGTS de
+          folha. São dois campos porque juntá-los criaria obrigação trabalhista em quem não tem. */}
+      <label>
+        Possui folha de pagamento?
+        <select
+          value={form.temFolha ? "sim" : "nao"}
+          onChange={(event) => onChange("temFolha", event.target.value === "sim")}
+        >
+          <option value="nao">Não</option>
+          <option value="sim">Sim — tem empregado registrado</option>
+        </select>
+        <span style={{ fontSize: 11, color: "#6b7280" }}>
+          Permite aplicar obrigações trabalhistas em lote pelas regras do escritório.
+        </span>
+      </label>
       <label>
         Empresa zerada (sem movimento)
         <select
