@@ -1930,6 +1930,10 @@ model Obrigacao {
   regra        RegraObrigacao?       @relation(fields: [regraId], references: [id], onDelete: SetNull)
   ocorrencias  OcorrenciaObrigacao[]
 
+  /// Uma regra produz NO MÁXIMO uma obrigação por empresa. Sem isso, uma propagação que rodasse
+  /// duas vezes criaria duas linhas iguais e o contador veria a mesma entrega em dobro no
+  /// calendário. `regraId` nulo (obrigação avulsa) não é afetado: o Postgres não compara NULLs.
+  @@unique([regraId, portalClientId])
   @@index([portalClientId, ativa])
   @@index([regraId])
   @@map("obrigacoes")
