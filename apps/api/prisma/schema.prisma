@@ -353,6 +353,7 @@ model PortalClient {
   documentos              CompanyDocument[]
   anotacoes               CompanyNote[]
   MarcoFiscal             MarcoFiscal[]
+  obrigacoes              Obrigacao[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -1869,4 +1870,167 @@ model NsuGap {
   @@unique([portalClientId, fonte, nsuFaltante])
   @@index([portalClientId, status])
   @@map("nsu_gaps")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Controle de Obrigações
+//
+// OBRIGAÇÃO É O SERVIÇO QUE O ESCRITÓRIO PRECISA FAZER até uma data — transmitir a apuração,
+// entregar a ECD, fechar o mês. NÃO é o vencimento da guia: aquele é do CLIENTE e continua vindo
+// de `Guide.vencimento`. São dois eixos diferentes, com públicos e datas diferentes, e por isso
+// convivem no calendário sem nenhuma deduplicação entre si.
+//
+// NÃO EXISTE CATÁLOGO PRÉ-CARREGADO. Nome, periodicidade e dia são digitados pelo contador. Data
+// de obrigação é dado fiscal que muda por ato normativo; semear uma lista embutida colocaria prazo
+// desatualizado na tela de todas as empresas de uma vez. Repetição entre empresas se resolve pela
+// `RegraObrigacao`, que é cadastrar uma vez e aplicar a muitas.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+model Obrigacao {
+  id             String  @id @default(uuid())
+  portalClientId String
+  nome           String
+  /// Campo LIVRE (fiscal, trabalhista, própria da empresa…). A UI sugere o que o escritório já
+  /// usou; não é vocabulário fechado que precise ser mantido por nós. Só alimenta cor e filtro.
+  categoria      String?
+  /// MENSAL | TRIMESTRAL | ANUAL
+  periodicidade  String
+  /// 1–31. Dia maior que o mês comporta é fixado no ÚLTIMO dia do mês (31 em fevereiro = 28/29),
+  /// nunca transbordando para o mês seguinte — ver `gerarOcorrencias`.
+  diaVencimento  Int
+  /// TRIMESTRAL: primeiro mês do ciclo (1–12), e daí de 3 em 3. ANUAL: o mês. MENSAL: ignorado.
+  mesReferencia  Int?
+  /// Quantos meses ATRÁS do vencimento está a competência a que o serviço se refere.
+  /// "Transmitir a apuração de julho" vence em agosto: defasagem 1. Fechar o mês corrente: 0.
+  /// Não é chutado — o contador declara no formulário, porque varia por obrigação. É o que
+  /// permite o `verificador` olhar a competência CERTA ao concluir sozinho.
+  defasagemMeses Int  @default(1)
+
+  antecedenciaLembreteDias Int    @default(5)
+  /// ANTECIPAR | POSTERGAR | MANTER — o que fazer quando o vencimento cai em dia não útil.
+  ajusteDiaUtil            String @default("ANTECIPAR")
+  cor                      String?
+  ativa                    Boolean @default(true)
+
+  /// Chave de um conjunto FECHADO (APURACAO_TRANSMITIDA | MES_FECHADO). Quando preenchida, a
+  /// ocorrência se conclui sozinha ao observar o estado do sistema, sem clique. Nulo = manual.
+  /// Escolhido pelo contador no formulário, em linguagem comum — não imposto pelo sistema.
+  verificador String?
+
+  /// Preenchido = obrigação gerenciada por uma regra do escritório.
+  regraId         String?
+  /// Empresa editou localmente uma obrigação que veio de regra: a regra não sobrescreve mais.
+  sobrescritaLocal Boolean @default(false)
+
+  criadoPorId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  portalClient PortalClient          @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  regra        RegraObrigacao?       @relation(fields: [regraId], references: [id], onDelete: SetNull)
+  ocorrencias  OcorrenciaObrigacao[]
+
+  @@index([portalClientId, ativa])
+  @@index([regraId])
+  @@map("obrigacoes")
+}
+
+model OcorrenciaObrigacao {
+  id             String   @id @default(uuid())
+  obrigacaoId    String
+  dataVencimento DateTime @db.Date
+  /// "YYYY-MM" — a competência a que o SERVIÇO se refere, já com a defasagem aplicada. Guardada
+  /// e não recalculada na leitura porque mudar a defasagem depois não pode reescrever o passado.
+  competenciaRef String?
+  /// Guarda só PENDENTE | CONCLUIDA. **VENCIDA é derivada na leitura** (pendente + data passada),
+  /// nunca gravada: status calculado a partir do relógio envelhece no banco, e aí a tela mostra
+  /// "pendente" no que já venceu até alguém rodar um job. Derivando, nunca está errado.
+  status         String   @default("PENDENTE")
+  concluidaEm    DateTime?
+  concluidaPorId String?
+  /// MANUAL | AUTOMATICA — de onde veio a conclusão. A tela não oferece "concluir" na automática:
+  /// ela diz o que o sistema observou.
+  fonteConclusao String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  obrigacao Obrigacao @relation(fields: [obrigacaoId], references: [id], onDelete: Cascade)
+
+  /// É esta constraint que torna a geração da janela de 12 meses segura para rodar de novo:
+  /// reexecutar não duplica, e o worker mensal pode ser chamado quantas vezes for.
+  @@unique([obrigacaoId, dataVencimento])
+  @@index([dataVencimento, status])
+  @@map("ocorrencias_obrigacao")
+}
+
+model RegraObrigacao {
+  id       String  @id @default(uuid())
+  nome     String
+  categoria String?
+
+  periodicidade            String
+  diaVencimento            Int
+  mesReferencia            Int?
+  defasagemMeses           Int     @default(1)
+  antecedenciaLembreteDias Int     @default(5)
+  ajusteDiaUtil            String  @default("ANTECIPAR")
+  cor                      String?
+  verificador              String?
+  ativa                    Boolean @default(true)
+
+  /// TODAS | POR_FILTRO | SELECAO_MANUAL
+  escopo  String
+  /// POR_FILTRO: { regimes: [...], temFolha: true|null }. SELECAO_MANUAL: { empresasIds: [...] }.
+  filtros Json?
+  /// Empresa nova que se encaixe no filtro recebe a obrigação sozinha.
+  aplicarANovas Boolean @default(true)
+
+  criadoPorId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  obrigacoes Obrigacao[]
+  excecoes   RegraObrigacaoExcecao[]
+
+  @@index([ativa])
+  @@map("regras_obrigacao")
+}
+
+/// Empresa tirada da regra à mão. É linha própria, e não ausência de `Obrigacao`, porque inferir
+/// exceção pela ausência é frágil: uma falha na propagação viraria "exceção" silenciosa.
+model RegraObrigacaoExcecao {
+  id             String   @id @default(uuid())
+  regraId        String
+  portalClientId String
+  motivo         String?
+  createdAt      DateTime @default(now())
+
+  regra RegraObrigacao @relation(fields: [regraId], references: [id], onDelete: Cascade)
+
+  @@unique([regraId, portalClientId])
+  @@map("regras_obrigacao_excecoes")
+}
+
+/// Feriados, para o ajuste de dia útil.
+///
+/// ⚠ A tabela é INCOMPLETA por natureza e isso é seguro: fim de semana é sempre conhecido (é a
+/// maioria dos casos e não é juízo jurídico), e feriado que não está aqui simplesmente não move a
+/// data. O que NÃO se pode é inventar: feriado municipal varia por município, e Carnaval e Corpus
+/// Christi são ponto facultativo federal — não feriado —, ainda que banco não opere. Enquanto o
+/// dono não confirmar, ficam de fora.
+model Feriado {
+  id String @id @default(uuid())
+  /// Data exata do ano (feriado móvel entra ano a ano, já calculado).
+  data DateTime @db.Date
+  /// NACIONAL | MUNICIPAL
+  abrangencia String
+  /// Só para MUNICIPAL. Nome do município como está em `PortalClient.municipio`.
+  municipio   String?
+  nome        String
+  createdAt   DateTime @default(now())
+
+  @@unique([data, abrangencia, municipio])
+  @@index([data])
+  @@map("feriados")
 }
