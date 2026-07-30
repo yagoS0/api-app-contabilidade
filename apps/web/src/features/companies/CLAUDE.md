@@ -9,6 +9,15 @@ Feature da carteira de empresas: dashboard (lista), detalhe (abas), formulário,
   `components/renderCompanyDetailHeader.jsx`). **Aba default = Lançamentos (Q17)**.
 - `form/`, `certificate/`.
 
+## Dashboard — quatro visões
+
+`modoVisao` em `renderCompaniesHomePage`: **Cards · Ano · Calendário · Obrigações**. As duas
+últimas não são "listas de empresa" — são o mesmo recorte da carteira por outro eixo. **Obrigações**
+(`features/obrigacoes/components/renderObrigacoesPage.jsx`) responde "o que EU preciso entregar",
+enquanto o calendário mostra o mesmo no formato de grade. Obrigação **não é guia**: guia é o que o
+cliente paga, obrigação é o serviço do contador — por isso a tela não fala em valor nem pagamento.
+Obrigação com `conclusaoAutomatica` **não mostra botão de concluir**: o backend recusaria o clique.
+
 ## Dashboard — reorganização (Lote C)
 
 - **Duas visões** (`modoVisao` em `renderCompaniesHomePage`): **Cards** (uma competência) e

@@ -555,6 +555,32 @@ export function createRealApi() {
     async deleteMarcoFiscal(marcoId) {
       return request(`/firm/marcos-fiscais/${marcoId}`, { method: "DELETE" });
     },
+    // ── Obrigações (do escritório; companyId é filtro opcional, como o calendário) ──────────
+    async listObrigacoes({ companyId, incluirInativas } = {}) {
+      const q = new URLSearchParams();
+      if (companyId) q.set("companyId", companyId);
+      if (incluirInativas) q.set("incluirInativas", "1");
+      const qs = q.toString();
+      return request(`/firm/obrigacoes${qs ? `?${qs}` : ""}`);
+    },
+    async createObrigacao(companyId, dados) {
+      return request(`/firm/companies/${companyId}/obrigacoes`, {
+        method: "POST",
+        body: JSON.stringify(dados),
+      });
+    },
+    async updateObrigacao(obrigacaoId, patch) {
+      return request(`/firm/obrigacoes/${obrigacaoId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    },
+    async deleteObrigacao(obrigacaoId) {
+      return request(`/firm/obrigacoes/${obrigacaoId}`, { method: "DELETE" });
+    },
+    async concluirOcorrencia(ocorrenciaId) {
+      return request(`/firm/ocorrencias/${ocorrenciaId}/concluir`, { method: "POST" });
+    },
+    async reabrirOcorrencia(ocorrenciaId) {
+      return request(`/firm/ocorrencias/${ocorrenciaId}/reabrir`, { method: "POST" });
+    },
     // ── Documentos da empresa (contrato social, cartão CNPJ, inscrições…) ──────────────────
     async listCompanyDocuments(companyId) {
       return request(`/firm/companies/${companyId}/documentos`);

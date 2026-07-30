@@ -92,6 +92,93 @@ const mockCompanies = makeCompanies();
 const mockGuidesByCompany = makeGuidesByCompany(mockCompanies);
 const mockUnidentifiedGuides = [];
 
+// ── Obrigações ────────────────────────────────────────────────────────────────────────────────
+// Gera a janela de 12 meses com as MESMAS regras do backend (clamp do dia 31, fim de semana,
+// defasagem da competência). Repetir a regra aqui é chato, mas um mock que devolvesse datas
+// bonitas esconderia justamente o que precisa ser visto na tela.
+function mockCriarObrigacao(companyId, empresa, dados) {
+  const periodicidade = String(dados.periodicidade || "MENSAL").toUpperCase();
+  const diaPedido = Number(dados.diaVencimento) || 20;
+  const ajuste = String(dados.ajusteDiaUtil || "ANTECIPAR").toUpperCase();
+  const defasagem = dados.defasagemMeses == null ? 1 : Number(dados.defasagemMeses);
+  const mesRef = dados.mesReferencia == null ? null : Number(dados.mesReferencia);
+
+  const hoje = new Date();
+  const ocorrencias = [];
+  for (let i = 0; i < 12; i += 1) {
+    const bruto = hoje.getUTCMonth() + i;
+    const ano = hoje.getUTCFullYear() + Math.floor(bruto / 12);
+    const mes = (bruto % 12) + 1;
+    if (periodicidade === "ANUAL" && mes !== mesRef) continue;
+    if (periodicidade === "TRIMESTRAL" && (((mes - mesRef) % 3) + 3) % 3 !== 0) continue;
+
+    const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+    const d = new Date(Date.UTC(ano, mes - 1, Math.min(diaPedido, ultimoDia)));
+    if (ajuste !== "MANTER") {
+      const passo = ajuste === "ANTECIPAR" ? -1 : 1;
+      while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + passo);
+    }
+    const compBruta = ano * 12 + (mes - 1) - Math.max(0, defasagem);
+    ocorrencias.push({
+      ocorrenciaId: `mock-oc-${companyId}-${ano}${String(mes).padStart(2, "0")}-${Math.random().toString(36).slice(2, 7)}`,
+      dataVencimento: d.toISOString().slice(0, 10),
+      competenciaRef: `${Math.floor(compBruta / 12)}-${String((compBruta % 12) + 1).padStart(2, "0")}`,
+      status: "PENDENTE",
+      concluidaEm: null,
+      fonteConclusao: null,
+    });
+  }
+
+  return {
+    obrigacaoId: `mock-obr-${Math.random().toString(36).slice(2, 9)}`,
+    companyId,
+    empresa,
+    nome: String(dados.nome || "").trim() || "Obrigação sem nome",
+    categoria: String(dados.categoria || "").trim() || null,
+    periodicidade,
+    diaVencimento: diaPedido,
+    mesReferencia: periodicidade === "MENSAL" ? null : mesRef,
+    defasagemMeses: defasagem,
+    antecedenciaLembreteDias: dados.antecedenciaLembreteDias == null ? 5 : Number(dados.antecedenciaLembreteDias),
+    ajusteDiaUtil: ajuste,
+    cor: dados.cor || null,
+    ativa: dados.ativa === undefined ? true : Boolean(dados.ativa),
+    verificador: dados.verificador || null,
+    regraId: dados.regraId || null,
+    sobrescritaLocal: false,
+    ocorrencias,
+  };
+}
+
+// Semente escolhida para cobrir os três casos que a tela precisa distinguir: uma que se conclui
+// sozinha, uma manual com vencimento já passado (para o VENCIDA derivado aparecer) e uma anual.
+const mockObrigacoes = mockCompanies.length
+  ? [
+      mockCriarObrigacao(mockCompanies[0].companyId, mockCompanies[0].razao, {
+        nome: "Transmitir apuração do Simples",
+        categoria: "fiscal",
+        periodicidade: "MENSAL",
+        diaVencimento: 20,
+        verificador: "APURACAO_TRANSMITIDA",
+      }),
+      mockCriarObrigacao(mockCompanies[0].companyId, mockCompanies[0].razao, {
+        nome: "Enviar folha ao cliente",
+        categoria: "trabalhista",
+        periodicidade: "MENSAL",
+        diaVencimento: 5,
+        defasagemMeses: 0,
+      }),
+      mockCriarObrigacao(mockCompanies[1]?.companyId || mockCompanies[0].companyId, mockCompanies[1]?.razao || mockCompanies[0].razao, {
+        nome: "Entregar ECD",
+        categoria: "fiscal",
+        periodicidade: "ANUAL",
+        mesReferencia: 5,
+        diaVencimento: 31,
+        defasagemMeses: 5,
+      }),
+    ]
+  : [];
+
 const MOCK_TIPOS_DOC = ["CONTRATO_SOCIAL", "CARTAO_CNPJ", "INSCRICAO_ESTADUAL", "INSCRICAO_MUNICIPAL", "ALVARA", "PROCURACAO", "OUTRO"];
 const MOCK_TIPO_DOC_LABELS = {
   CONTRATO_SOCIAL: "Contrato social", CARTAO_CNPJ: "Cartão CNPJ",
@@ -1989,6 +2076,117 @@ export function createMockApi() {
         ],
         totais: { guias: 4, marcos: 2, apuracoes: 1, fechamentos: 1 },
       };
+    },
+    // ── Obrigações (mock com estado em memória) ────────────────────────────────────────────
+    // Estado de verdade, não retorno fixo: as regras que importam aqui só aparecem mexendo — a
+    // janela de 12 ocorrências, a recusa do clique em obrigação automática e o VENCIDA derivado.
+    // Um mock imutável passaria por todas elas sem testar nenhuma.
+    async listObrigacoes({ companyId, incluirInativas } = {}) {
+      await delay(70);
+      const hoje = new Date().toISOString().slice(0, 10);
+      const emSeteDias = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      let pendentes = 0, vencendoEm7Dias = 0, vencidas = 0;
+
+      const lista = mockObrigacoes
+        .filter((o) => (companyId ? o.companyId === companyId : true))
+        .filter((o) => (incluirInativas ? true : o.ativa))
+        .map((o) => {
+          const ocorrencias = o.ocorrencias.map((oc) => {
+            const situacao =
+              oc.status === "CONCLUIDA" ? "CONCLUIDA" : oc.dataVencimento < hoje ? "VENCIDA" : "PENDENTE";
+            return { ...oc, situacao };
+          });
+          for (const oc of ocorrencias) {
+            if (oc.situacao === "VENCIDA") vencidas += 1;
+            else if (oc.situacao === "PENDENTE") {
+              pendentes += 1;
+              if (oc.dataVencimento <= emSeteDias) vencendoEm7Dias += 1;
+            }
+          }
+          const proxima = ocorrencias.find((oc) => oc.situacao === "PENDENTE");
+          return {
+            ...o,
+            conclusaoAutomatica: Boolean(o.verificador),
+            proximoVencimento: proxima?.dataVencimento || null,
+            ocorrencias,
+          };
+        });
+
+      return {
+        ok: true,
+        obrigacoes: lista,
+        resumo: { pendentes, vencendoEm7Dias, vencidas },
+        opcoes: {
+          periodicidades: ["MENSAL", "TRIMESTRAL", "ANUAL"],
+          ajustesDiaUtil: ["ANTECIPAR", "POSTERGAR", "MANTER"],
+          verificadores: [
+            { chave: "APURACAO_TRANSMITIDA", rotulo: "Quando a apuração da competência for transmitida" },
+            { chave: "MES_FECHADO", rotulo: "Quando o mês contábil da competência for fechado" },
+          ],
+        },
+      };
+    },
+    async createObrigacao(companyId, dados) {
+      await delay(90);
+      const empresa = mockCompanies.find((c) => c.companyId === companyId);
+      const obrigacao = mockCriarObrigacao(companyId, empresa?.razao || null, dados);
+      mockObrigacoes.push(obrigacao);
+      return { ok: true, obrigacao, ocorrenciasCriadas: obrigacao.ocorrencias.length };
+    },
+    async updateObrigacao(obrigacaoId, patch) {
+      await delay(80);
+      const i = mockObrigacoes.findIndex((o) => o.obrigacaoId === obrigacaoId);
+      if (i < 0) return { ok: false, error: "nao_encontrada", message: "Obrigação não encontrada." };
+      const antes = mockObrigacoes[i];
+      // Concluída é histórico: sobrevive à regeração, igual ao backend.
+      const concluidas = antes.ocorrencias.filter((oc) => oc.status === "CONCLUIDA");
+      const nova = mockCriarObrigacao(antes.companyId, antes.empresa, { ...antes, ...patch });
+      nova.obrigacaoId = antes.obrigacaoId;
+      const jaTem = new Set(concluidas.map((oc) => oc.dataVencimento));
+      nova.ocorrencias = [...concluidas, ...nova.ocorrencias.filter((oc) => !jaTem.has(oc.dataVencimento))]
+        .sort((a, b) => a.dataVencimento.localeCompare(b.dataVencimento));
+      if (nova.ativa === false) nova.ocorrencias = concluidas;
+      mockObrigacoes[i] = nova;
+      return { ok: true, obrigacao: nova, ocorrenciasCriadas: 0, ocorrenciasRemovidas: 0 };
+    },
+    async deleteObrigacao(obrigacaoId) {
+      await delay(60);
+      const i = mockObrigacoes.findIndex((o) => o.obrigacaoId === obrigacaoId);
+      if (i < 0) return { ok: false, error: "nao_encontrada" };
+      const [removida] = mockObrigacoes.splice(i, 1);
+      return { ok: true, removida: { id: removida.obrigacaoId, nome: removida.nome } };
+    },
+    async concluirOcorrencia(ocorrenciaId) {
+      await delay(60);
+      for (const o of mockObrigacoes) {
+        const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
+        if (!oc) continue;
+        // Mesma recusa do backend: o que se conclui sozinho não aceita clique.
+        if (o.verificador) {
+          return {
+            ok: false,
+            error: "conclusao_automatica",
+            message: "Esta obrigação se conclui sozinha quando o sistema observa o serviço feito.",
+          };
+        }
+        oc.status = "CONCLUIDA";
+        oc.concluidaEm = new Date().toISOString();
+        oc.fonteConclusao = "MANUAL";
+        return { ok: true, ocorrencia: oc };
+      }
+      return { ok: false, error: "nao_encontrada" };
+    },
+    async reabrirOcorrencia(ocorrenciaId) {
+      await delay(60);
+      for (const o of mockObrigacoes) {
+        const oc = o.ocorrencias.find((x) => x.ocorrenciaId === ocorrenciaId);
+        if (!oc) continue;
+        oc.status = "PENDENTE";
+        oc.concluidaEm = null;
+        oc.fonteConclusao = null;
+        return { ok: true, ocorrencia: oc };
+      }
+      return { ok: false, error: "nao_encontrada" };
     },
     async listMarcosFiscais() { await delay(50); return { ok: true, marcos: [] }; },
     async createMarcoFiscal(input) { await delay(80); return { ok: true, marco: { id: `mk-${Date.now()}`, ...input } }; },

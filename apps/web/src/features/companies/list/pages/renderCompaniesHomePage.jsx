@@ -6,6 +6,7 @@ import { Button } from "../../../../components/ui/Button";
 import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
 import { AnnualGrid } from "../components/renderAnnualGrid";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
+import { ObrigacoesPage } from "../../../obrigacoes/components/renderObrigacoesPage";
 
 // Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
 function SettingsMenu({ items }) {
@@ -346,11 +347,13 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* Três visões da MESMA carteira: cards (uma competência), grade anual (12 meses) e
-              calendário (o que vence no dia). O calendário era uma página separada; virou visão
-              porque é a mesma pergunta — "como está a carteira" — só com outro eixo de tempo. */}
+          {/* Quatro visões da MESMA carteira: cards (uma competência), grade anual (12 meses),
+              calendário (o que vence no dia) e obrigações (o que EU preciso entregar). O calendário
+              era uma página separada; virou visão porque é a mesma pergunta — "como está a
+              carteira" — só com outro eixo de tempo. Obrigações fica ao lado dele porque responde
+              a mesma coisa em outra forma: lista em vez de grade. */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {[["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"]].map(([key, label]) => (
+            {[["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"], ["obrigacoes", "Obrigações"]].map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -525,7 +528,9 @@ export function CompaniesHomePage({
           </section>
           )}
 
-          {modoVisao === "calendario" ? (
+          {modoVisao === "obrigacoes" ? (
+            <ObrigacoesPage api={api} empresas={companies} />
+          ) : modoVisao === "calendario" ? (
             <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
           ) : modoVisao === "ano" ? (
             <AnnualGrid api={api} onOpenCompany={onOpenCompany} />

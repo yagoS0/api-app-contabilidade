@@ -188,8 +188,13 @@ export async function criar({ portalClientId, dados, criadoPorId = null }) {
   return { obrigacao, ...geradas };
 }
 
-export async function atualizar({ portalClientId, obrigacaoId, dados }) {
-  const atual = await prisma.obrigacao.findFirst({ where: { id: obrigacaoId, portalClientId } });
+export async function atualizar({ portalIds, obrigacaoId, dados }) {
+  // Escopo por LISTA de empresas visíveis, igual a `concluir`: a rota não precisa descobrir a
+  // empresa antes de chamar, e uma obrigação de fora do escopo some como 404 em vez de 403 —
+  // não confirmamos a existência de dado que o usuário não pode ver.
+  const atual = await prisma.obrigacao.findFirst({
+    where: { id: obrigacaoId, portalClientId: { in: portalIds } },
+  });
   if (!atual) throw new ObrigacaoError("nao_encontrada", "Obrigação não encontrada.", 404);
 
   const limpo = normalizarEntrada({ ...atual, ...dados });
@@ -207,8 +212,10 @@ export async function atualizar({ portalClientId, obrigacaoId, dados }) {
   return { obrigacao, ...geradas };
 }
 
-export async function remover({ portalClientId, obrigacaoId }) {
-  const atual = await prisma.obrigacao.findFirst({ where: { id: obrigacaoId, portalClientId } });
+export async function remover({ portalIds, obrigacaoId }) {
+  const atual = await prisma.obrigacao.findFirst({
+    where: { id: obrigacaoId, portalClientId: { in: portalIds } },
+  });
   if (!atual) throw new ObrigacaoError("nao_encontrada", "Obrigação não encontrada.", 404);
   // Cascade leva as ocorrências junto — inclusive as concluídas. É exclusão de verdade, pedida
   // explicitamente; quem só quer parar de gerar usa `ativa: false`.

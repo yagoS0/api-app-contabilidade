@@ -7,27 +7,12 @@
 import { Router } from "express";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { montarCalendarioDoMes } from "../../application/calendario/CalendarioFiscalService.js";
+import { empresasVisiveis } from "./empresasVisiveis.js";
 
 const IMPORTANCIAS = new Set(["ALTA", "MEDIA", "BAIXA"]);
 
 export function createCalendarioRouter({ log } = {}) {
   const router = Router({ mergeParams: true });
-
-  // Escopo multi-tenant, mesmo critério do `GET /companies/annual`: admin/contador enxerga a
-  // carteira toda; os demais, só as empresas a que têm acesso ativo.
-  async function empresasVisiveis(req) {
-    const userId = String(req.auth.user.id);
-    const role = String(req.auth.user.role || "").toLowerCase();
-    if (role === "admin" || role === "contador") {
-      const todas = await prisma.portalClient.findMany({ select: { id: true } });
-      return todas.map((p) => p.id);
-    }
-    const links = await prisma.companyFirmAccess.findMany({
-      where: { userId, status: "ACTIVE" },
-      select: { companyId: true },
-    });
-    return links.map((l) => l.companyId).filter(Boolean);
-  }
 
   function falhar(res, err, contexto) {
     log?.error?.({ err: err?.message || err, ...contexto }, "Falha no calendário fiscal");

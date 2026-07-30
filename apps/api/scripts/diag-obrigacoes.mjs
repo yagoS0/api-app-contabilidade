@@ -110,7 +110,7 @@ async function main() {
 
   console.log("\n2) Idempotência — regerar não duplica");
   const { criadas: recriadas } = await atualizar({
-    portalClientId: empresa.id,
+    portalIds: [empresa.id],
     obrigacaoId: obrigacao.id,
     dados: { nome: NOME },
   });
@@ -165,7 +165,7 @@ async function main() {
   console.log(`  resumo do escritório: ${resumo.pendentes} pendentes · ${resumo.vencendoEm7Dias} em 7 dias · ${resumo.vencidas} vencidas`);
 
   console.log("\n6) Inativar remove só o futuro pendente");
-  await atualizar({ portalClientId: empresa.id, obrigacaoId: obrigacao.id, dados: { ativa: false } });
+  await atualizar({ portalIds: [empresa.id], obrigacaoId: obrigacao.id, dados: { ativa: false } });
   const restantes = await prisma.ocorrenciaObrigacao.count({ where: { obrigacaoId: obrigacao.id } });
   const concluidasRestantes = await prisma.ocorrenciaObrigacao.count({
     where: { obrigacaoId: obrigacao.id, status: "CONCLUIDA" },
@@ -178,7 +178,7 @@ async function main() {
   if (manter) {
     console.log(`\n--manter: a obrigação "${NOME}" ficou no banco.`);
   } else {
-    await remover({ portalClientId: empresa.id, obrigacaoId: obrigacao.id });
+    await remover({ portalIds: [empresa.id], obrigacaoId: obrigacao.id });
     console.log("\nLimpo: obrigação de teste removida.");
   }
 }
