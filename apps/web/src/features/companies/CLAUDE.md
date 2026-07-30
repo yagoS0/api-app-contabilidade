@@ -33,6 +33,11 @@ Feature da carteira de empresas: dashboard (lista), detalhe (abas), formulário,
   **todas** forem enviadas, o selo **"📤 Enviado"** ocupa o lugar delas. Guia nova/recalculada/
   retificada volta pra `PENDING` no backend → `guidesEnvio.todasEnviadas` vira false → as tags
   reaparecem. Campo vem de `attachGuideComplianceToCompaniesList`.
+- **`folha`** (rosa) ao lado de `parc`, quando `company.temFolha`. Fica na linha da identidade —
+  junto de regime e parcelamento — porque é **característica da empresa, não evento do mês**, o
+  mesmo argumento que já tinha movido o `parc` pra lá. Não contraria o "selo só para exceção" que
+  vale logo abaixo: aquela regra é sobre **estado** (SERPRO apto, A1 válido), onde o normal é
+  silêncio. `temFolha` ≠ `hasProlabore`: sócio com pró-labore e nenhum empregado não tem folha.
 - **⚠ Pendência fiscal** (SITFIS) ao lado de "apurada" e **PARC** quando há parcelamento ATIVO
   (`fiscalSituacao` / `temParcelamento`, de `attachFiscalParcelamentoToCompaniesList`).
   `fiscalSituacao: null` (nunca consultada) **não** vira selo — não afirmamos nada sobre o fisco
