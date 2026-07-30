@@ -2137,6 +2137,26 @@ export function createMockApi() {
         1: [{ tipo: "marco", id: "mk1", titulo: "CBS passa a ser cobrada", descricao: "Fim da fase de teste", importancia: "ALTA", companyId: null, empresa: null, doEscritorio: true }],
         8: [{ tipo: "marco", id: "mk2", titulo: "Reuniao com o cliente", importancia: "BAIXA", companyId: "c1", empresa: "Farrell - Brakus", doEscritorio: false }],
       };
+
+      // Quinta fonte: as obrigações cadastradas, no mesmo formato do backend. Vêm do estado real do
+      // mock (não de uma lista fixa), então criar uma obrigação na aba aparece aqui na hora.
+      const hojeStr = new Date().toISOString().slice(0, 10);
+      for (const o of mockObrigacoes) {
+        if (!o.ativa) continue;
+        for (const oc of o.ocorrencias) {
+          if (!oc.dataVencimento.startsWith(mes)) continue;
+          const dia = Number(oc.dataVencimento.slice(8));
+          const situacao = oc.status === "CONCLUIDA" ? "CONCLUIDA"
+            : oc.dataVencimento < hojeStr ? "VENCIDA" : "PENDENTE";
+          porDia[dia] = [...(porDia[dia] || []), {
+            tipo: "obrigacao", id: oc.ocorrenciaId, titulo: o.nome, categoria: o.categoria,
+            cor: o.cor, companyId: o.companyId, empresa: o.empresa,
+            competencia: oc.competenciaRef, data: oc.dataVencimento, situacao,
+            resolvido: oc.status === "CONCLUIDA",
+            conclusaoAutomatica: Boolean(o.verificador), fonteConclusao: oc.fonteConclusao,
+          }];
+        }
+      }
       return {
         ok: true, competencia: mes, diasNoMes,
         dias: Array.from({ length: diasNoMes }, (_, i) => ({ dia: i + 1, data: iso(i + 1), itens: porDia[i + 1] || [] })),

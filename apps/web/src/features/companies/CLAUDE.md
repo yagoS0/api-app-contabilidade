@@ -17,6 +17,24 @@ Feature da carteira de empresas: dashboard (lista), detalhe (abas), formulário,
 enquanto o calendário mostra o mesmo no formato de grade. Obrigação **não é guia**: guia é o que o
 cliente paga, obrigação é o serviço do contador — por isso a tela não fala em valor nem pagamento.
 Obrigação com `conclusaoAutomatica` **não mostra botão de concluir**: o backend recusaria o clique.
+Dentro de Obrigações, o botão **Regras do escritório** (`renderRegrasObrigacao.jsx`) aplica uma
+obrigação a várias empresas — é o que substitui o catálogo pré-carregado.
+
+### Calendário (`features/calendario/components/renderCalendarioGrid.jsx`)
+
+Quatro visões: **Mês · Semana · Dia · Agenda**, com atalhos `M S D A` e `T` (hoje) — ignorados
+quando o foco está num campo. **Agenda é o default em tela estreita**: a grade de mês vira 42
+células ilegíveis num celular. `ehTelaEstreita()` trata largura 0 como *desconhecida*, não como
+estreita — sem isso a tela abre em modo celular num container ainda sem layout e fica assim, porque
+`visao`/`sidebarAberta` são valores iniciais e não se recalculam.
+
+Sidebar com mini-calendário (pontinho no dia que tem evento) e filtro por categoria — o filtro age
+na **exibição**, não na busca. Em tela estreita ela vira **drawer**: largura total e a grade some
+enquanto está aberta.
+
+**Guia e obrigação têm cores e símbolos distintos** (`•` laranja × `▸` verde) porque respondem a
+perguntas diferentes; obrigação **vencida** ganha contorno vermelho por cima da cor da categoria.
+`fmtMoney` só aparece em guia — obrigação não tem valor.
 
 ## Dashboard — reorganização (Lote C)
 

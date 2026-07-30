@@ -5,16 +5,22 @@
 // existe — só nunca foi reunida numa visão de mês:
 //
 //   • guia com vencimento no dia          → `Guide.vencimento`
+//   • obrigação a entregar no dia         → `OcorrenciaObrigacao`
 //   • competência ainda não transmitida   → `ApuracaoSnapshot.estado`
 //   • mês contábil ainda não fechado      → `CompanyMonthlyCircular.fechadoContabilEm`
 //   • marco marcado à mão                 → `MarcoFiscal` (IBS/CBS e afins)
 //
 // Só o último é digitação.
 //
+// ⚠ GUIA e OBRIGAÇÃO são eixos DIFERENTES e não se deduplicam. Guia é o que o CLIENTE paga, com o
+// vencimento definido em lei; obrigação é o serviço que o CONTADOR entrega, com o prazo que ele
+// declarou. O mesmo tributo pode ter os dois no mesmo mês, em dias distintos, e isso está certo.
+//
 // Consulta: uma query por fonte para o mês inteiro, agregadas em memória — mesmo molde do
 // `GET /firm/companies/annual`, que faz duas queries pro ano em vez de doze por empresa.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { ocorrenciasDoPeriodo } from "../obrigacoes/ObrigacoesService.js";
 
 const APURADA = new Set(["transmitida", "confirmada"]);
 
@@ -60,7 +66,7 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
   };
   if (!alvos.length) return vazio;
 
-  const [empresas, guias, snapshots, circulares, marcos] = await Promise.all([
+  const [empresas, guias, snapshots, circulares, marcos, obrigacoes] = await Promise.all([
     prisma.portalClient.findMany({ where: { id: { in: alvos } }, select: { id: true, razao: true } }),
     // Guias com vencimento DENTRO do mês. `status: VAZIO` fica de fora: ausência confirmada não é
     // obrigação a cumprir, e poluiria o dia com algo que já foi resolvido.
@@ -89,6 +95,8 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
       select: { id: true, portalClientId: true, titulo: true, data: true, descricao: true, importancia: true },
       orderBy: { data: "asc" },
     }),
+    // Quinta fonte. Já sai no formato de item do dia, com a situação derivada.
+    ocorrenciasDoPeriodo({ portalIds: alvos, inicio: limites.inicio, fim: limites.fim }),
   ]);
 
   const razaoPor = new Map(empresas.map((e) => [e.id, e.razao]));
@@ -112,6 +120,8 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
       resolvido: String(g.paymentStatus || "").toUpperCase() === "PAID",
     });
   }
+
+  for (const o of obrigacoes) adicionar(o.data, o);
 
   // Apuração e fechamento não têm dia próprio: são estado do MÊS. Entram como pendências do mês,
   // fora da grade de dias — pendurá-los num dia arbitrário seria inventar um prazo que não existe.
@@ -167,6 +177,7 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
     pendenciasDoMes,
     totais: {
       guias: guias.length,
+      obrigacoes: obrigacoes.length,
       marcos: marcos.length,
       apuracoes: pendenciasDoMes.filter((p) => p.tipo === "apuracao").length,
       fechamentos: pendenciasDoMes.filter((p) => p.tipo === "fechamento").length,
