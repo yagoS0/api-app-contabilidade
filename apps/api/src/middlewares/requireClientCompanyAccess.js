@@ -1,7 +1,12 @@
 import { prisma } from "../infrastructure/db/prisma.js";
 
+// Papéis do cliente (peso crescente). No app ofertamos OWNER/CLIENT_ADMIN/FINANCEIRO;
+// CLIENT_USER fica só para vínculos legados (mesmo piso do FINANCEIRO).
+// Gates: financeiro (notas/guias/alíquota/fluxo) = membro ativo (sem minRole);
+// pró-labore/certificado/sócios = CLIENT_ADMIN; gestão de usuários = OWNER.
 const ROLE_WEIGHT = {
   CLIENT_USER: 1,
+  FINANCEIRO: 1,
   CLIENT_ADMIN: 2,
   OWNER: 3,
 };

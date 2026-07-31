@@ -22,9 +22,33 @@ import {
 import { buildCompanyDashboard } from "../../application/dashboard/buildCompanyDashboard.js";
 
 function sanitizeRole(role) {
-  const value = String(role || "CLIENT_USER").toUpperCase();
-  if (!["OWNER", "CLIENT_ADMIN", "CLIENT_USER"].includes(value)) return "CLIENT_USER";
+  const value = String(role || "FINANCEIRO").toUpperCase();
+  // FINANCEIRO é o piso ofertado no app; CLIENT_USER aceito só por compatibilidade legada.
+  if (!["OWNER", "CLIENT_ADMIN", "FINANCEIRO", "CLIENT_USER"].includes(value)) return "FINANCEIRO";
   return value;
+}
+
+// Lista de competências 'YYYY-MM' (ascendente) para a série de alíquotas.
+// Padrão: 12 meses até o mês antecedente (mês fechado anterior). Aceita from/to 'YYYY-MM'.
+function buildCompetenciaRange(from, to) {
+  const parse = (s) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(String(s || ""));
+    return m ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1)) : null;
+  };
+  const now = new Date();
+  const defEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const end = parse(to) || defEnd;
+  const start =
+    parse(from) || new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 11, 1));
+  const out = [];
+  const cur = new Date(start);
+  let guard = 0;
+  while (cur <= end && guard < 60) {
+    out.push(`${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}`);
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
+    guard += 1;
+  }
+  return out;
 }
 
 export function createClientPortalRouter({ ensureAuthorized, log }) {
@@ -272,7 +296,7 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
 
   router.post(
     "/companies/:companyId/users/invite",
-    requireClientCompanyAccess("CLIENT_ADMIN"),
+    requireClientCompanyAccess("OWNER"),
     async (req, res) => {
       const body = req.body || {};
       const email = String(body.email || "")
@@ -281,6 +305,8 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       if (!email) return res.status(400).json({ error: "email_required" });
 
       const role = sanitizeRole(body.role);
+      // Só OWNER convida, e não é possível criar outro OWNER por aqui (transferência é à parte).
+      if (role === "OWNER") return res.status(400).json({ error: "cannot_assign_owner" });
       // Q8.A.5: select restritivo — não precisamos de passwordHash aqui (só id pra criar link).
       let user = await prisma.user.findUnique({
         where: { email },
@@ -325,19 +351,29 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
 
   router.patch(
     "/companies/:companyId/users/:userId",
-    requireClientCompanyAccess("CLIENT_ADMIN"),
+    requireClientCompanyAccess("OWNER"),
     async (req, res) => {
+      const companyId = String(req.params.companyId);
+      const userId = String(req.params.userId);
+      const existing = await prisma.companyClientUser.findUnique({
+        where: { companyId_userId: { companyId, userId } },
+        select: { role: true },
+      });
+      if (!existing) return res.status(404).json({ error: "member_not_found" });
+      // OWNER é protegido: não pode ser rebaixado/alterado por aqui.
+      if (String(existing.role).toUpperCase() === "OWNER") {
+        return res.status(403).json({ error: "cannot_modify_owner" });
+      }
       const body = req.body || {};
       const data = {};
-      if (body.role !== undefined) data.role = sanitizeRole(body.role);
+      if (body.role !== undefined) {
+        const role = sanitizeRole(body.role);
+        if (role === "OWNER") return res.status(400).json({ error: "cannot_assign_owner" });
+        data.role = role;
+      }
       if (body.status !== undefined) data.status = String(body.status).toUpperCase();
       const updated = await prisma.companyClientUser.update({
-        where: {
-          companyId_userId: {
-            companyId: String(req.params.companyId),
-            userId: String(req.params.userId),
-          },
-        },
+        where: { companyId_userId: { companyId, userId } },
         data,
       });
       return res.json({ ok: true, role: updated.role, status: updated.status });
@@ -346,15 +382,20 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
 
   router.delete(
     "/companies/:companyId/users/:userId",
-    requireClientCompanyAccess("CLIENT_ADMIN"),
+    requireClientCompanyAccess("OWNER"),
     async (req, res) => {
+      const companyId = String(req.params.companyId);
+      const userId = String(req.params.userId);
+      const existing = await prisma.companyClientUser.findUnique({
+        where: { companyId_userId: { companyId, userId } },
+        select: { role: true },
+      });
+      if (!existing) return res.status(404).json({ error: "member_not_found" });
+      if (String(existing.role).toUpperCase() === "OWNER") {
+        return res.status(403).json({ error: "cannot_remove_owner" });
+      }
       await prisma.companyClientUser.update({
-        where: {
-          companyId_userId: {
-            companyId: String(req.params.companyId),
-            userId: String(req.params.userId),
-          },
-        },
+        where: { companyId_userId: { companyId, userId } },
         data: { status: "REMOVED" },
       });
       return res.json({ ok: true });
@@ -609,6 +650,110 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       });
     } catch (err) {
       log.error({ err: err.message, companyId }, "client aliquota falhou");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Portal Cliente (Fase 3): SÉRIE de alíquotas por competência (drill-down no app).
+  // Reusa as MESMAS fontes do /aliquota, mas com o DAS do extrato DAQUELE mês (não o último).
+  router.get("/companies/:companyId/aliquotas", requireClientCompanyAccess(), async (req, res) => {
+    const cid = String(req.params.companyId);
+    try {
+      const list = buildCompetenciaRange(req.query?.from, req.query?.to);
+      if (!list.length) return res.json({ data: [] });
+
+      const [circulares, guiasPagas] = await Promise.all([
+        prisma.companyMonthlyCircular.findMany({
+          where: { portalClientId: cid, competencia: { in: list } },
+          select: { competencia: true, dasTotal: true },
+        }),
+        prisma.guide.groupBy({
+          by: ["competencia"],
+          where: { portalClientId: cid, competencia: { in: list }, paymentStatus: "PAID" },
+          _sum: { valor: true },
+        }),
+      ]);
+      const dasByComp = new Map(circulares.map((c) => [c.competencia, Number(c.dasTotal || 0)]));
+      const pagosByComp = new Map(
+        guiasPagas.map((g) => [g.competencia, Number(g._sum?.valor || 0)])
+      );
+      const pct = (n, d) => (d > 0 ? Number(((n / d) * 100).toFixed(2)) : 0);
+
+      const data = [];
+      for (const comp of list) {
+        const [y, m] = comp.split("-").map(Number);
+        const gte = new Date(Date.UTC(y, m - 1, 1));
+        const lt = new Date(Date.UTC(y, m, 1));
+        const notas = await prisma.portalInvoice.aggregate({
+          where: {
+            clientId: cid,
+            papel: "EMIT",
+            statusEfetivo: "autorizada",
+            competencia: { gte, lt },
+          },
+          _sum: { total: true },
+        });
+        const faturamento = Number(notas._sum?.total || 0);
+        const impostosPagos = pagosByComp.get(comp) || 0;
+        const dasExtrato = dasByComp.get(comp) || 0;
+        data.push({
+          competencia: comp,
+          faturamento,
+          impostosPagos,
+          dasExtrato,
+          efetiva: pct(impostosPagos, faturamento),
+          deReceita: pct(dasExtrato, faturamento),
+        });
+      }
+      // Mais recente primeiro (bom para lista no app).
+      data.reverse();
+      return res.json({ data });
+    } catch (err) {
+      log.error({ err: err.message, companyId: cid }, "client aliquotas (série) falhou");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Portal Cliente (Fase 4): FLUXO de caixa futuro a partir das obrigações fiscais.
+  // Fonte = guias LIBERADAS ao cliente ainda EM ABERTO (OPEN/OVERDUE) com vencimento.
+  // INSS/DAS/parcelas do Simples são todos Guides. Sem lançamento manual nesta fase.
+  router.get("/companies/:companyId/fluxo", requireClientCompanyAccess(), async (req, res) => {
+    const cid = String(req.params.companyId);
+    try {
+      const guias = await prisma.guide.findMany({
+        where: {
+          portalClientId: cid,
+          liberadaCliente: true,
+          vencimento: { not: null },
+          paymentStatus: { in: ["OPEN", "OVERDUE"] },
+        },
+        select: {
+          id: true,
+          tipo: true,
+          competencia: true,
+          valor: true,
+          vencimento: true,
+          paymentStatus: true,
+          numeroParcela: true,
+        },
+        orderBy: { vencimento: "asc" },
+      });
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      const data = guias.map((g) => ({
+        id: g.id,
+        tipo: g.tipo || "OUTRA",
+        competencia: g.competencia || null,
+        valor: Number(g.valor || 0),
+        vencimento: g.vencimento ? g.vencimento.toISOString().slice(0, 10) : null,
+        paymentStatus: g.paymentStatus || "OPEN",
+        vencida: g.vencimento ? new Date(g.vencimento) < hoje : false,
+        numeroParcela: g.numeroParcela ?? null,
+      }));
+      const total = data.reduce((s, i) => s + i.valor, 0);
+      return res.json({ data, total });
+    } catch (err) {
+      log.error({ err: err.message, companyId: cid }, "client fluxo falhou");
       return res.status(500).json({ error: "internal_error" });
     }
   });

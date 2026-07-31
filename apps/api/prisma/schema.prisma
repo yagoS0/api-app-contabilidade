@@ -153,6 +153,25 @@ model User {
 
   companyClientUsers CompanyClientUser[]
   companyFirmAccess  CompanyFirmAccess[]
+  clientSessions     ClientSession[]
+}
+
+// Sessão revogável do portal do cliente (app mobile). O refresh é opaco (aleatório),
+// guardado só como hash; rotaciona a cada /auth/refresh. Logout revoga a sessão do
+// dispositivo; troca de senha revoga TODAS as sessões do usuário. FIRM segue stateless.
+model ClientSession {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String    @unique
+  deviceLabel      String?
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Invoice {

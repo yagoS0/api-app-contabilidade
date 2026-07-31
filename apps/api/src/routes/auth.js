@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import rateLimit from "express-rate-limit";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { validateStrongPassword, strongPasswordMessage } from "../application/validators/passwordPolicy.js";
+import { ClientSessionService } from "../application/auth/ClientSessionService.js";
 import { safeLogError } from "../lib/safeLogError.js";
 
 export function createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized }) {
@@ -130,7 +131,18 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       const result = await AuthService.authenticate(loginId, password);
       if (result.ok) {
         clearFailedLogin(loginId);
-        const { accessToken, refreshToken } = AuthService.generateTokens(result.user);
+        const accessToken = AuthService.generateToken(result.user);
+        // Portal do cliente (app): refresh OPACO revogável por dispositivo (ClientSession).
+        // FIRM/env seguem com o refresh JWT stateless de antes.
+        let refreshToken;
+        if ((result.user.accountType || "CLIENT") === "CLIENT" && result.user.source !== "env") {
+          const session = await ClientSessionService.createSession(result.user.id, {
+            deviceLabel: req.headers["x-device-label"],
+          });
+          refreshToken = session.refreshToken;
+        } else {
+          refreshToken = AuthService.generateRefreshToken(result.user);
+        }
         return res.json({
           accessToken,
           refreshToken,
@@ -201,6 +213,35 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
     if (!refreshToken) {
       return res.status(400).json({ error: "refresh_token_required" });
     }
+    // Refresh OPACO do portal do cliente (ClientSession): valida contra a store, rotaciona
+    // e emite um access novo. FIRM/env caem no caminho JWT abaixo.
+    if (ClientSessionService.looksOpaque(refreshToken)) {
+      try {
+        const rotated = await ClientSessionService.rotate(refreshToken);
+        if (!rotated) {
+          return res.status(401).json({ error: "invalid_refresh_token" });
+        }
+        const user = await UserRepository.findById(rotated.userId);
+        if (!user) {
+          return res.status(401).json({ error: "invalid_token" });
+        }
+        if (user.status && user.status !== "active") {
+          return res.status(403).json({ error: "user_not_active", status: user.status });
+        }
+        const accessToken = AuthService.generateToken({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          accountType: user.accountType || "CLIENT",
+          source: "db",
+        });
+        return res.json({ accessToken, refreshToken: rotated.refreshToken });
+      } catch (err) {
+        safeLogError(log, {}, err, "Falha ao rotacionar sessão do cliente");
+        return res.status(401).json({ error: "invalid_refresh_token" });
+      }
+    }
     try {
       const payload = AuthService.verifyRefreshToken(refreshToken);
       const user = await AuthService.resolveUserFromPayload(payload);
@@ -256,6 +297,70 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       defaultClientId,
       name: u.name || null,
     });
+  });
+
+  // Logout do dispositivo: revoga a ClientSession do refresh apresentado (best-effort).
+  router.post("/logout", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) {
+      return;
+    }
+    const u = req.auth?.user;
+    if (!u) return res.status(401).json({ error: "invalid_token" });
+    const { refreshToken } = req.body || {};
+    try {
+      if (refreshToken && ClientSessionService.looksOpaque(refreshToken)) {
+        await ClientSessionService.revokeByRefresh(refreshToken, u.id);
+      }
+      return res.json({ ok: true });
+    } catch (err) {
+      safeLogError(log, { userId: u.id }, err, "Falha no logout");
+      return res.json({ ok: true });
+    }
+  });
+
+  // Troca de senha do usuário logado. Valida a senha atual, exige senha forte, grava e
+  // REVOGA todas as sessões do usuário (força re-login em todos os dispositivos).
+  router.post("/change-password", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) {
+      return;
+    }
+    const authUser = req.auth?.user;
+    if (!authUser) return res.status(401).json({ error: "invalid_token" });
+
+    const { currentPassword, newPassword } = req.body || {};
+    if (
+      typeof currentPassword !== "string" ||
+      typeof newPassword !== "string" ||
+      !currentPassword ||
+      !newPassword
+    ) {
+      return res.status(400).json({ error: "passwords_required" });
+    }
+    const pwCheck = validateStrongPassword(newPassword);
+    if (!pwCheck.ok) {
+      return res.status(400).json({
+        error: "weak_password",
+        message: strongPasswordMessage(pwCheck.errors),
+        missing: pwCheck.errors,
+      });
+    }
+    try {
+      const user = await UserRepository.findById(authUser.id);
+      if (!user || !user.passwordHash) {
+        return res.status(404).json({ error: "user_not_found" });
+      }
+      const ok = await bcrypt.compare(String(currentPassword), user.passwordHash);
+      if (!ok) {
+        return res.status(401).json({ error: "invalid_current_password" });
+      }
+      const passwordHash = await bcrypt.hash(String(newPassword), 10);
+      await UserRepository.updateUser(user.id, { passwordHash });
+      await ClientSessionService.revokeAllForUser(user.id);
+      return res.json({ ok: true });
+    } catch (err) {
+      safeLogError(log, { userId: authUser.id }, err, "Falha ao trocar senha");
+      return res.status(500).json({ error: "internal_error" });
+    }
   });
 
   return router;
