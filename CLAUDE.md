@@ -35,9 +35,13 @@ Cada app tem seu próprio `CLAUDE.md` com regras específicas.
 ## RBAC
 
 - **FIRM:** `ADMIN`, `ACCOUNTANT`, `STAFF`
-- **CLIENT:** `OWNER`, `ADMIN`, `USER`
+- **CLIENT (por empresa, `CompanyClientUser.role`):** `OWNER`, `CLIENT_ADMIN`, `FINANCEIRO`
+  (`CLIENT_USER` = legado, não ofertado no app do cliente). Pesos: FINANCEIRO=1 < CLIENT_ADMIN=2 < OWNER=3.
+  - **Gestão de usuários** (convidar/editar/remover membros) = **OWNER apenas**; OWNER é protegido.
+  - **Pró-labore / certificado A1 / sócios** = `CLIENT_ADMIN`+; **notas/guias/alíquota/fluxo** = qualquer membro ativo.
 
-Rotas protegidas pelo middleware `requireRole`. Nunca bypassar sem motivo explícito.
+Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCompanyAccess(minRole)`
+(cliente, em `apps/api/src/middlewares/`). Nunca bypassar sem motivo explícito.
 
 ## Progresso e Histórico de Mudanças
 

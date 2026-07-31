@@ -67,7 +67,10 @@ router.get('/', requireAuth, requireRole(['FIRM_ADMIN']), async (req, res) => {
 
 - JWT gerado e validado via `AuthService`
 - Middleware `requireRole` recebe array de roles permitidas
-- Roles: `FIRM_ADMIN`, `FIRM_ACCOUNTANT`, `FIRM_STAFF`, `CLIENT_OWNER`, `CLIENT_ADMIN`, `CLIENT_USER`
+- Roles FIRM: `FIRM_ADMIN`, `FIRM_ACCOUNTANT`, `FIRM_STAFF`
+- Roles CLIENT (por empresa, `CompanyClientUser.role`, gate por `requireClientCompanyAccess(minRole)`):
+  `OWNER` (3) > `CLIENT_ADMIN` (2) > `FINANCEIRO` (1); `CLIENT_USER` (1) só legado. Gestão de
+  usuários exige OWNER; pró-labore/certificado/sócios exigem CLIENT_ADMIN.
 - Usuários novos precisam de aprovação do admin antes de acessar
 
 ### Workers
