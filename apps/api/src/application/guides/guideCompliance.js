@@ -32,11 +32,17 @@ function normalizeRegimeFromLegacy(legacy) {
   return r != null ? String(r).trim() : null;
 }
 
-function getRequirements({ hasProlabore, regimeTributario, hasParcDasAtivo }) {
+function getRequirements({ hasProlabore, regimeTributario, hasParcDasAtivo, semFaturamento }) {
   const presumido = isRegimePresumido(regimeTributario);
   return {
     inssRequired: Boolean(hasProlabore),
-    dasRequired: isRegimeSimples(regimeTributario),
+    // Mês declarado SEM FATURAMENTO não exige DAS: sem receita não há guia a pagar, e a tag
+    // vermelha ficaria acesa para sempre. É decisão do dono que a tag SUMA (não que fique amarela
+    // como o "Vazio"). O lembrete de transmitir a declaração zerada não se perde: ele continua na
+    // pendência de apuração do calendário, que não foi tocada.
+    // Só afeta o DAS — folha, despesas e parcelas seguem exigidas, porque "sem faturamento"
+    // afirma apenas que não houve receita.
+    dasRequired: isRegimeSimples(regimeTributario) && semFaturamento !== true,
     // Tributos federais/municipais exclusivos das empresas Presumidas (LUCRO_PRESUMIDO/LUCRO_REAL).
     // Simplificação v1: todo presumido tem ISS. Refinar com flag de atividade não-serviço se necessário.
     irpjRequired: presumido,
@@ -81,6 +87,17 @@ export async function computeGuideComplianceMap(rows, competencia) {
     parcDasAtivoSet = new Set(parcEntries.map((e) => e.portalClientId));
   }
 
+  // Pre-query simétrica à de cima: meses declarados SEM FATURAMENTO. Uma query para a carteira
+  // inteira, não uma por empresa — mesmo molde do `GET /companies/annual`.
+  let semFaturamentoSet = new Set();
+  if (allPortalIds.length > 0) {
+    const semFat = await prisma.companyMonthlyCircular.findMany({
+      where: { portalClientId: { in: allPortalIds }, competencia, semFaturamento: true },
+      select: { portalClientId: true },
+    });
+    semFaturamentoSet = new Set(semFat.map((c) => c.portalClientId));
+  }
+
   for (const row of rows) {
     const regime = normalizeRegimeFromLegacy(row.legacy);
     const hasParcDasAtivo = parcDasAtivoSet.has(row.portalId);
@@ -88,6 +105,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
       hasProlabore: Boolean(row.hasProlabore),
       regimeTributario: regime,
       hasParcDasAtivo,
+      semFaturamento: semFaturamentoSet.has(row.portalId),
     });
     // state por tributo (Q17): "present" (guia PROCESSED) | "vazio" (ausência confirmada)
     // | "missing" (falta) | "na" (não exigido). O front pinta verde/amarelo/vermelho.

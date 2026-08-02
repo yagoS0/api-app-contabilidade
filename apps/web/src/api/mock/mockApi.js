@@ -497,6 +497,18 @@ function getCircularRecord(companyId, competencia) {
   return mockMonthlyCirculars.get(makeCircularKey(companyId, competencia)) || null;
 }
 
+/**
+ * Faturamento da competência no mock — a mesma pergunta que `faturamentoEmitDaCompetencia` faz
+ * contra as notas EMIT autorizadas. Aqui sai da circular sincronizada, que é a única receita que
+ * o mock conhece. Competência ímpar devolve 0 para haver mês marcável e mês recusável na tela.
+ */
+function mockFaturamentoDaCompetencia(companyId, competencia) {
+  const circular = getCircularRecord(companyId, competencia);
+  if (circular?.receitaBruta != null) return Number(circular.receitaBruta);
+  const mes = Number(String(competencia || "").slice(5, 7));
+  return mes % 2 === 0 ? 18500.75 : 0;
+}
+
 // Marca das buscas do Presumido já feitas — o equivalente, no mock, à guia com `sourceFileId`
 // determinístico que o backend usa como chave de idempotência. É o que faz a confirmação
 // "já buscado em <data>" ser exercitável offline; sem ela, o mock nunca chega ao segundo clique.
@@ -866,6 +878,9 @@ export function createMockApi() {
         checklist: { folhaProlabore: true, despesas: true, receitas: true, provisoes: false, pagamentos: false },
         checklistPendentes: [{ chave: "provisoes", label: "Provisões lançadas" }, { chave: "pagamentos", label: "Pagamentos lançados" }],
         podeFechar: false, blockers: [],
+        semFaturamento: circular?.semFaturamento === true,
+        semFaturamentoEm: circular?.semFaturamentoEm || null,
+        faturamentoEmit: mockFaturamentoDaCompetencia(companyId, competencia),
         serpro: {
           // NOT_FOUND conta como buscado: a chamada saiu e foi cobrada do mesmo jeito.
           extrato: {
@@ -882,6 +897,31 @@ export function createMockApi() {
     async setFolhaProlabore(_companyId, competencia, ok) {
       await delay();
       return { ok: true, competencia, folhaProlaboreOk: Boolean(ok) };
+    },
+    // A recusa é a regra que importa aqui, então o mock a aplica de verdade: com faturamento na
+    // competência, devolve o mesmo 409 do backend. Um mock que aceitasse sempre esconderia
+    // exatamente o caso que o campo existe para impedir.
+    async setSemFaturamento(companyId, competencia, ok) {
+      await delay();
+      const fat = mockFaturamentoDaCompetencia(companyId, competencia);
+      if (ok && fat > 0) {
+        return {
+          ok: false,
+          error: "SEM_FATURAMENTO_COM_RECEITA",
+          faturamento: fat,
+          message: `A competência tem R$ ${fat.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em notas emitidas autorizadas. Não dá para marcar como sem faturamento.`,
+        };
+      }
+      const chave = makeCircularKey(companyId, competencia);
+      const atual = mockMonthlyCirculars.get(chave) || {
+        id: `mock-circular-${companyId}-${competencia}`, portalClientId: companyId, competencia,
+      };
+      mockMonthlyCirculars.set(chave, {
+        ...atual,
+        semFaturamento: Boolean(ok),
+        semFaturamentoEm: ok ? new Date().toISOString() : null,
+      });
+      return { ok: true, competencia, semFaturamento: Boolean(ok) };
     },
     async listParcelasPendentesBaixa() {
       await delay();

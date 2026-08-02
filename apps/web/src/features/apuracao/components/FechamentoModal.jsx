@@ -68,7 +68,10 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       const d = out?.dados || out;
       setDados(d);
       // Dica: empresa marcada como zerada + sem faturamento → já sugere o modo sem movimento.
-      if (d?.semMovimentoDisponivel && d?.empresaZerada) setSemMovimento(true);
+      // `semFaturamento` é a afirmação POR MÊS feita na aba Lançamentos; `empresaZerada` é da
+      // empresa inteira. Qualquer uma das duas pré-marca a caixa — mas só PRÉ-MARCA: quem aperta
+      // o botão continua sendo o contador, porque isto vira ato fiscal.
+      if (d?.semMovimentoDisponivel && (d?.empresaZerada || d?.semFaturamento)) setSemMovimento(true);
       setAtividadeOpcoes(Array.isArray(atvOut?.atividades) ? atvOut.atividades : []);
       setAtividades(Array.isArray(d?.atividades) ? d.atividades.filter((a) => a && a.idAtividade != null) : []);
       // folha: pré-preenche da memória se houver

@@ -404,6 +404,35 @@ guia LP existente); o caminho manual repetia a cobrança a cada clique. Hoje:
   botão vira o caminho fácil de escrever num mês fechado sem rastro de reabertura. A guarda fica na
   **rota**, não no serviço: o worker segue livre.
 
+⚠ A busca também **cria guia** (DAS no Simples, DARF consolidada no Presumido) e **gera
+lançamento**. Ao mover o botão de lugar, os pontos de refresh ficaram para trás: `onPgdasSynced`
+recarregava só a Circular, e o contador buscava sem ver nada aparecer. Hoje recarrega Circular +
+lançamentos + guias.
+
+## Mês sem faturamento (`CompanyMonthlyCircular.semFaturamento`)
+
+Afirmação **por competência** de que o mês não teve receita. Tri-estado (`null` = ninguém disse
+nada, diferente de "disseram que teve"), com `semFaturamentoEm`/`Por` gravados — é afirmação
+fiscal, não preferência de tela.
+
+**Afirma SÓ receita zero.** Folha, despesas e parcelas seguem normais e continuam exigidas. O nome
+e a verificação batem: o que a recusa mede é nota EMIT autorizada.
+
+**A recusa é o coração.** `POST .../fechamento-contabil/:competencia/sem-faturamento` devolve
+**409 `SEM_FATURAMENTO_COM_RECEITA`** (com o valor) quando há faturamento na competência —
+importando `faturamentoEmitDaCompetencia` de `v2/FechamentoService.js`, a **mesma** função da
+apuração. Duas cópias dessa query divergiriam, e aí apuração e fechamento discordariam sobre se o
+mês teve receita, com o contador no meio. O `GET` do fechamento devolve `faturamentoEmit`, então o
+alternador já nasce desabilitado com o motivo — ninguém descobre a recusa clicando.
+
+**Efeito:** `getRequirements` (`guideCompliance.js`) deixa de exigir o DAS (decisão do dono: a tag
+**some**, não fica amarela como o `VAZIO`). Pré-query simétrica à do `parcDasAtivoSet` — uma query
+para a carteira, não uma por empresa. O lembrete de transmitir a declaração zerada **não se perde**:
+segue na pendência de apuração do calendário, que não foi tocada.
+
+**Não decide ato fiscal.** No `FechamentoModal` ele apenas **pré-marca** a caixa "sem movimento",
+igual `empresaZerada` já fazia; quem transmite continua sendo o contador (regra 5).
+
 ## Regras
 
 - Nunca hardcodar credenciais ou URLs — usar `config.js`

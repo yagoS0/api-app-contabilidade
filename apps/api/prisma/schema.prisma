@@ -1001,6 +1001,16 @@ model CompanyMonthlyCircular {
   receitasOk                  Boolean?
   provisoesOk                 Boolean?
   pagamentosOk                Boolean?
+  /// O mês NÃO TEVE FATURAMENTO. Afirma só isso: folha, despesas e parcelas seguem normais e
+  /// continuam a ser lançadas e conferidas. Tri-estado como o checklist acima — `null` significa
+  /// "ninguém disse nada", que é diferente de "disseram que teve".
+  ///
+  /// É uma afirmação FISCAL, não uma preferência de tela: por isso quem e quando ficam gravados.
+  /// O sistema RECUSA marcar quando existe nota EMIT autorizada na competência — vira confirmação
+  /// do que ele já enxerga, nunca uma declaração cega contra a evidência.
+  semFaturamento              Boolean?
+  semFaturamentoEm            DateTime?
+  semFaturamentoPor           String?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 

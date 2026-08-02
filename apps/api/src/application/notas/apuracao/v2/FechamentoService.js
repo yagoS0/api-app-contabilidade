@@ -37,7 +37,11 @@ function somaAtividades(atividades) {
 
 // Q55: faturamento REAL da competência = notas EMIT autorizadas (fonte da guarda anti-zero).
 // Se não houver notas capturadas, retorna 0 (não bloqueia — tratamos como "sem movimento").
-async function faturamentoEmitDaCompetencia(portalClientId, competencia) {
+//
+// EXPORTADA porque a marcação de "mês sem faturamento" (fechamento contábil) precisa da MESMA
+// definição de faturamento que a apuração usa. Duas cópias desta query divergiriam, e aí a
+// apuração e o fechamento discordariam sobre se o mês teve receita — com o contador no meio.
+export async function faturamentoEmitDaCompetencia(portalClientId, competencia) {
   if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) return 0;
   const { gte, lt } = rangeMes(competencia);
   const agg = await prisma.portalInvoice.aggregate({
@@ -125,6 +129,11 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     }).catch(() => null);
   }
   const cnaePrincipalEfetivo = cadastro?.cnaePrincipal || companyCnae?.cnaePrincipal || null;
+  // Afirmação de "mês sem faturamento" feita no fechamento contábil — entra aqui só como dica.
+  const circularDoMes = await prisma.companyMonthlyCircular.findUnique({
+    where: { portalClientId_competencia: { portalClientId, competencia } },
+    select: { semFaturamento: true },
+  }).catch(() => null);
   const { receitaPorTipoMercado: rtm, receitaPorTipo, semClassificacao } =
     await receitaPorTipoMercado({ portalClientId, competencia });
 
@@ -177,6 +186,9 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     // Sem movimento: disponível quando não há faturamento EMIT na competência. empresaZerada = dica p/ UI.
     semMovimentoDisponivel: round2(faturamentoInterno + faturamentoExterno) === 0,
     empresaZerada: Boolean(portal.empresaZerada),
+    // Afirmação POR MÊS feita na aba Lançamentos (`CompanyMonthlyCircular.semFaturamento`).
+    // Só DICA para a UI pré-marcar a caixa — não decide nada aqui: quem transmite é o contador.
+    semFaturamento: circularDoMes?.semFaturamento === true,
     receitaPorTipo,
     semClassificacao,
     atividades,

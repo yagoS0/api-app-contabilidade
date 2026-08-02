@@ -52,6 +52,14 @@ perguntas diferentes; obrigação **vencida** ganha contorno vermelho por cima d
   avisa que há download em lote rodando mesmo depois de sair da página que disparou. Polling
   adaptativo (4s ativo / 30s ocioso) e para com a aba escondida.
 
+## ⚠ Regime da empresa mora em `legacyCompany`
+
+`selectedCompany.regimeTributario` **não existe** — `buildFirmCompanyPayload` só devolve o regime
+dentro de `legacyCompany`. `renderCompanyDetailPage` lia do topo e obtinha `undefined` sempre, o que
+silenciava três telas: "+ Parcelamento Simples" nunca aparecia, e o filtro por regime da Circular e
+do "+ Subir Guia" recebia undefined. Hoje há um `companyRegime` único no topo do componente, com
+fallback para as duas formas. Não voltar a ler do topo do payload.
+
 ## Card da empresa (Lote C)
 
 - **Regime · SERPRO · A1** usam **um só design** (pílula com borda) — antes SERPRO era badge com

@@ -9,6 +9,8 @@ import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
+// Mesma definição de faturamento que a apuração usa — importada de propósito, não copiada.
+import { faturamentoEmitDaCompetencia } from "../../application/notas/apuracao/v2/FechamentoService.js";
 import { parseExcelBuffer, findHistoricoMatches, upsertHistoricoFromImport } from "../../application/accounting/excelImport.js";
 import { sanitizeFilename } from "../../lib/httpHeaders.js";
 // Q47: baixa do INSS pela Circular (guia sintética) — reusa o serviço de pagamento do INSS.
@@ -1384,11 +1386,16 @@ export function createAccountingEntriesRouter({ log }) {
           fechadoContabilPor: true,
           serproSyncStatus: true,
           serproLastSyncAt: true,
+          semFaturamento: true,
+          semFaturamentoEm: true,
           ...CHECKLIST_SELECT,
         },
       });
       const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
       const serpro = await estadoDasBuscasSerpro({ portalClientId, competencia, circular });
+      // O faturamento viaja junto para o alternador já nascer desabilitado com o motivo, em vez de
+      // o contador descobrir a recusa clicando.
+      const faturamentoEmit = await faturamentoEmitDaCompetencia(portalClientId, competencia).catch(() => null);
       // Checklist manual (folha/pró-labore, despesas, receitas, provisões, pagamentos).
       const pendentes = checklistPendentes(circular);
       const checklist = Object.fromEntries(
@@ -1407,6 +1414,9 @@ export function createAccountingEntriesRouter({ log }) {
         podeFechar: validation.ok && pendentes.length === 0,
         blockers: validation.blockers,
         serpro,
+        semFaturamento: circular?.semFaturamento === true,
+        semFaturamentoEm: circular?.semFaturamentoEm || null,
+        faturamentoEmit,
       });
     } catch (err) {
       log.error({ err }, "Falha ao consultar fechamento contábil");
@@ -1509,6 +1519,55 @@ export function createAccountingEntriesRouter({ log }) {
 
   router.post("/fechamento-contabil/:competencia/checklist/:item", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), (req, res) =>
     setChecklistItem(req, res, String(req.params.item || "")));
+
+  /**
+   * Marca/desmarca "o mês não teve faturamento".
+   *
+   * NÃO é um sexto item do checklist: o checklist confirma que algo FOI LANÇADO; isto afirma que
+   * algo NÃO EXISTIU. Por isso fica separado na tela e grava quem/quando — é afirmação fiscal.
+   *
+   * A recusa é o coração da coisa. O sistema já enxerga as notas EMIT autorizadas da competência;
+   * deixar marcar "sem faturamento" com nota no mês transformaria uma confirmação numa declaração
+   * contra a evidência — e a empresa sairia da apuração em silêncio. Mesmo espírito do
+   * SEM_MOVIMENTO_COM_FATURAMENTO que a apuração já aplica.
+   */
+  router.post("/fechamento-contabil/:competencia/sem-faturamento", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.params.competencia || "").trim();
+    if (!/^\d{4}-\d{2}$/.test(competencia)) return res.status(400).json({ ok: false, error: "competencia_required" });
+    const ok = req.body?.ok === true;
+
+    try {
+      if (ok) {
+        // Mesma definição de faturamento que a apuração usa — importada, não copiada.
+        const faturamento = await faturamentoEmitDaCompetencia(portalClientId, competencia);
+        if (faturamento > 0) {
+          return res.status(409).json({
+            ok: false,
+            error: "SEM_FATURAMENTO_COM_RECEITA",
+            faturamento,
+            message: `A competência tem R$ ${faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em notas emitidas autorizadas. Não dá para marcar como sem faturamento.`,
+          });
+        }
+      }
+
+      const dados = ok
+        ? { semFaturamento: true, semFaturamentoEm: new Date(), semFaturamentoPor: req.auth?.user?.id || null }
+        : { semFaturamento: false, semFaturamentoEm: null, semFaturamentoPor: null };
+
+      const existing = await prisma.companyMonthlyCircular.findUnique({
+        where: { portalClientId_competencia: { portalClientId, competencia } },
+        select: { id: true },
+      });
+      if (existing) await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data: dados });
+      else await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, ...dados } });
+
+      return res.json({ ok: true, competencia, semFaturamento: ok });
+    } catch (err) {
+      log.error({ err, portalClientId, competencia }, "Falha ao marcar mês sem faturamento");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
 
   // GET /firm/companies/:companyId/entries/export/csv
   // Query params:

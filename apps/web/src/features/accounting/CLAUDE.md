@@ -35,6 +35,26 @@ plano de contas, funções/templates, importações (OFX/Excel).
   verde `#69FF47`, amarelo `#FFB347`, vermelho `#FF5757`, ciano `#8BE9FD` (fechada/faturamento).
 - Toda chamada nova precisa de par mock/real em `src/api/`.
 
+## Menu SERPRO na aba Lançamentos
+
+Quarto `ActionMenu` (depois de "Funções"): **Buscar extrato do Simples** / **Buscar tributos do
+Presumido**, na competência da tela (`activeComp`). O regime vem de `companyRegime` — que só
+funciona porque `renderCompanyDetailPage` passou a ler de `legacyCompany`; **no topo do payload ele
+nunca existiu**, e isso silenciava também o "+ Parcelamento Simples" e os filtros da Circular e das
+Guias. Regime fora de Simples/Presumido: item desabilitado que **nomeia** o regime.
+
+⚠ **As chamadas são PAGAS** (o Presumido são duas por clique). O menu lê `serpro` do
+`getFechamentoContabil` e confirma antes de repetir — **o estado é lido antes do POST**, porque a
+resposta chegaria tarde demais. A marcação de "já buscado" acontece no `finally`: o que a
+confirmação protege é o bolso, e a chamada sai mesmo quando falha.
+
+## Mês sem faturamento
+
+Alternador **separado** dos cinco "Confiro que lancei" — e a separação é o ponto: o checklist
+confirma que algo FOI lançado; este afirma que algo NÃO EXISTIU. Nasce desabilitado, com o valor
+no `title`, quando a competência tem nota emitida (`faturamentoEmit` do mesmo GET). Marcar faz a
+tag DAS sumir do card no dashboard.
+
 ## Fechamento contábil (Q17)
 
 API: `getFechamentoContabil`, `fecharFechamentoContabil`, `reabrirFechamentoContabil`

@@ -25,6 +25,12 @@ const CHECKLIST_ITENS = [
   { chave: "pagamentos",     label: "Pagamentos",       title: "Confirme que os pagamentos do mês foram lançados." },
 ];
 
+/** Número → "R$ 18.500,75". Serve só para o aviso da recusa; nulo vira string vazia. */
+function fmtMoedaCurta(v) {
+  if (v == null) return "";
+  return `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+}
+
 /** ISO → "12/05/2026 14:31". Sem data conhecida devolve "data desconhecida", nunca "Invalid Date". */
 function fmtDataHora(iso) {
   if (!iso) return "data desconhecida";
@@ -39,6 +45,11 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
   // Checklist (Q47 + Lote C): { folhaProlabore, despesas, receitas, provisoes, pagamentos }
   const [checklist, setChecklist] = useState({});
   const [checkBusy, setCheckBusy] = useState(null); // chave em gravação
+  // "Mês sem faturamento" NÃO é um sexto item do checklist: o checklist confirma que algo FOI
+  // lançado; isto afirma que algo NÃO EXISTIU. Por isso vive à parte, com estado próprio.
+  const [semFaturamento, setSemFaturamento] = useState(false);
+  const [faturamentoEmit, setFaturamentoEmit] = useState(null);
+  const [semFatBusy, setSemFatBusy] = useState(false);
 
   const problemas = useMemo(() => {
     const out = [];
@@ -77,6 +88,8 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
         setFechado(Boolean(r?.fechado));
         // `checklist` é o formato novo; o fallback cobre um backend ainda sem ele (só a folha).
         setChecklist(r?.checklist || { folhaProlabore: r?.folhaProlaboreOk === true });
+        setSemFaturamento(r?.semFaturamento === true);
+        setFaturamentoEmit(r?.faturamentoEmit ?? null);
         onState?.(Boolean(r?.fechado));
         // Payload inteiro para quem precisa de mais que o booleano de fechado — hoje, o menu do
         // SERPRO, que lê `r.serpro` para avisar "já buscado em <data>" ANTES de gastar de novo.
@@ -127,6 +140,22 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
     finally { setCheckBusy(null); }
   }
 
+  async function toggleSemFaturamento() {
+    if (semFatBusy || fechado) return;
+    const next = !semFaturamento;
+    setSemFatBusy(true);
+    try {
+      const r = await fechamentoApi.setSemFaturamento(companyId, competencia, next);
+      // A recusa vem do servidor (409 / ok:false) e traz o valor — mostrar o número é o que faz o
+      // contador entender que não é capricho da tela.
+      if (r?.ok === false) { window.alert(r.message || "Não foi possível marcar."); return; }
+      setSemFaturamento(next);
+    } catch (e) { window.alert(e?.message || "Não foi possível marcar."); }
+    finally { setSemFatBusy(false); }
+  }
+
+  const temFaturamento = Number(faturamentoEmit || 0) > 0;
+
   const pendentes = CHECKLIST_ITENS.filter((i) => checklist[i.chave] !== true);
   const bloqueadoPorChecklist = !fechado && pendentes.length > 0;
   const color = fechado ? "#2DD4BF" : (problemas.length > 0 || bloqueadoPorChecklist) ? "#FF5757" : "#69FF47";
@@ -143,6 +172,34 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
       {/* Checklist de conferência — some quando o mês já está fechado.
           Sem o rótulo abaixo eram cinco caixas soltas ao lado do cadeado: não dava pra saber se
           filtravam a tabela ou se eram confirmações. São confirmações manuais do contador. */}
+      {/* Separado do "Confiro que lancei" de propósito: aquilo confirma que algo FOI lançado,
+          isto afirma que algo NÃO EXISTIU. Misturar os dois faria parecer um sexto item de
+          conferência — e o contador marcaria sem pensar no que está declarando. */}
+      {!fechado && (
+        <label
+          title={
+            temFaturamento
+              ? `A competência tem ${fmtMoedaCurta(faturamentoEmit)} em notas emitidas — não dá para marcar sem faturamento.`
+              : "Afirma que a competência não teve faturamento. Folha, despesas e parcelas seguem normais."
+          }
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.78rem", fontWeight: 600,
+            padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap",
+            border: `1px solid ${semFaturamento ? "#FFB347" : "#44475A"}`,
+            color: semFaturamento ? "#FFB347" : temFaturamento ? "#6272A4" : "#aeb6d3",
+            cursor: semFatBusy || temFaturamento ? "not-allowed" : "pointer", userSelect: "none",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={semFaturamento}
+            disabled={semFatBusy || (temFaturamento && !semFaturamento)}
+            onChange={toggleSemFaturamento}
+            style={{ cursor: semFatBusy || temFaturamento ? "not-allowed" : "pointer" }}
+          />
+          Mês sem faturamento
+        </label>
+      )}
       {!fechado && (
         <span style={{ fontSize: "0.72rem", color: "#8A8FA3", fontWeight: 600, whiteSpace: "nowrap" }}>
           Confiro que lancei:

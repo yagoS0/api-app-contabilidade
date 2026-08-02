@@ -425,6 +425,14 @@ export function createRealApi() {
     async buscarPagamentoGuia(guideId) {
       return request(`/firm/guides/${guideId}/buscar-pagamento`, { method: "POST" });
     },
+    // Afirma que a competência não teve faturamento. O backend RECUSA (409) se houver nota EMIT
+    // autorizada no mês — é confirmação do que ele já vê, não declaração contra a evidência.
+    async setSemFaturamento(companyId, competencia, ok) {
+      return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/sem-faturamento`, {
+        method: "POST",
+        body: JSON.stringify({ ok: Boolean(ok) }),
+      });
+    },
     async setChecklistFechamento(companyId, competencia, item, ok) {
       return request(`/firm/companies/${companyId}/fechamento-contabil/${competencia}/checklist/${item}`, {
         method: "POST",
