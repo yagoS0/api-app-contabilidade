@@ -8,6 +8,10 @@ import { resolvePayrollTemplate } from "../../application/accounting/payrollTemp
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
+import {
+  computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS,
+  CHECKLIST_FECHAMENTO, CHECKLIST_SELECT, checklistPendentes,
+} from "../../application/accounting/fechamentoBlockers.js";
 import { INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
 // Mesma definição de faturamento que a apuração usa — importada de propósito, não copiada.
 import { faturamentoEmitDaCompetencia } from "../../application/notas/apuracao/v2/FechamentoService.js";
@@ -365,73 +369,11 @@ function validateLines(lines) {
 async function validateFechamentoContabil(prisma, { portalClientId, competencia }) {
   const entries = await prisma.accountingEntry.findMany({
     where: { portalClientId, competencia, tipo: { not: "PARCELA" } },
-    include: { lines: true },
+    select: SELECT_PARA_BLOQUEIOS,
   });
-  const blockers = [];
-  // Q24: lançamentos de parcelamento são individuais (1 perna) — não validam D=C por lançamento,
-  // e sim por GRUPO (parcelamentoId). Conta vazia continua bloqueando (precisa preencher p/ fechar).
-  const parcByGroup = new Map();
-  // Q52: folha/pró-labore individuais idem — agrupam pelo loteImportacao ("FOLHA-<ts>"/"PROLABORE-<ts>").
-  // Prefixo restrito pra não capturar lotes de OFX/Excel que porventura existam em entries FOLHA.
-  const isFolhaLote = (e) => e.tipo === "FOLHA" && /^(FOLHA|PROLABORE)-/.test(String(e.loteImportacao || ""));
-  const folhaByGroup = new Map();
-  for (const e of entries) {
-    const lines = e.lines || [];
-    if (e.parcelamentoId || isFolhaLote(e)) {
-      // Agrupa pra validar o balanço do conjunto; conta vazia é checada por lançamento abaixo.
-      const groups = e.parcelamentoId ? parcByGroup : folhaByGroup;
-      const groupKey = e.parcelamentoId || e.loteImportacao;
-      if (!groups.has(groupKey)) groups.set(groupKey, []);
-      groups.get(groupKey).push(e);
-      if (lines.length === 0) {
-        blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "em_branco" });
-      } else if (lines.some((l) => !String(l.conta || "").trim())) {
-        blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "conta_em_branco" });
-      }
-      continue;
-    }
-    if (lines.length === 0) {
-      blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "em_branco" });
-      continue;
-    }
-    const temContaVazia = lines.some((l) => !String(l.conta || "").trim());
-    if (temContaVazia) {
-      blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "conta_em_branco" });
-      continue;
-    }
-    const totalD = lines.filter((l) => String(l.tipo).toUpperCase() === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
-    const totalC = lines.filter((l) => String(l.tipo).toUpperCase() === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
-    if (Math.abs(totalD - totalC) > 0.01) {
-      blockers.push({ entryId: e.id, competencia: e.competencia, historico: e.historico, motivo: "desbalanceado", totalD, totalC });
-    }
-  }
-  // Balanço por grupo de parcelamento (Σ D == Σ C no conjunto).
-  for (const [parcelamentoId, grupo] of parcByGroup) {
-    let totalD = 0; let totalC = 0;
-    for (const e of grupo) {
-      for (const l of e.lines || []) {
-        if (String(l.tipo).toUpperCase() === "D") totalD += Number(l.valor || 0);
-        else if (String(l.tipo).toUpperCase() === "C") totalC += Number(l.valor || 0);
-      }
-    }
-    if (Math.abs(totalD - totalC) > 0.01) {
-      blockers.push({ parcelamentoId, competencia, historico: grupo[0]?.historico || "Parcelamento", motivo: "parcelamento_desbalanceado", totalD, totalC });
-    }
-  }
-  // Q52: balanço por grupo de folha/pró-labore (Σ D == Σ C no conjunto do lote).
-  for (const [loteImportacao, grupo] of folhaByGroup) {
-    let totalD = 0; let totalC = 0;
-    for (const e of grupo) {
-      for (const l of e.lines || []) {
-        if (String(l.tipo).toUpperCase() === "D") totalD += Number(l.valor || 0);
-        else if (String(l.tipo).toUpperCase() === "C") totalC += Number(l.valor || 0);
-      }
-    }
-    if (Math.abs(totalD - totalC) > 0.01) {
-      blockers.push({ loteImportacao, competencia, historico: grupo[0]?.historico || "Folha/Pró-labore", motivo: "folha_desbalanceada", totalD, totalC });
-    }
-  }
-  return { ok: blockers.length === 0, blockers, totalEntries: entries.length };
+  // A regra em si mora em `application/accounting/fechamentoBlockers.js`: a visão de carteira
+  // precisa da MESMA resposta para dezenas de empresas numa query só, e duas cópias divergiriam.
+  return computeFechamentoBlockers(entries, competencia);
 }
 
 function entryToResponse(entry) {
@@ -1307,24 +1249,6 @@ export function createAccountingEntriesRouter({ log }) {
     return res.json({ data: entries.map(entryToResponse) });
   });
 
-  // Checklist de conferência do mês. `folhaProlabore` é o item original (Q47); os demais seguem
-  // exatamente a mesma regra. Chave da API → coluna do banco. Ordem = ordem exibida na tela.
-  const CHECKLIST_FECHAMENTO = Object.freeze({
-    folhaProlabore: { campo: "folhaProlaboreOk", label: "Folha/Pró-labore lançada" },
-    despesas:       { campo: "despesasOk",       label: "Despesas lançadas" },
-    receitas:       { campo: "receitasOk",       label: "Receitas lançadas" },
-    provisoes:      { campo: "provisoesOk",      label: "Provisões lançadas" },
-    pagamentos:     { campo: "pagamentosOk",     label: "Pagamentos lançados" },
-  });
-  const CHECKLIST_SELECT = Object.fromEntries(
-    Object.values(CHECKLIST_FECHAMENTO).map((c) => [c.campo, true]),
-  );
-  // Itens ainda não confirmados (null/false) — o que impede o fechamento.
-  function checklistPendentes(circular) {
-    return Object.entries(CHECKLIST_FECHAMENTO)
-      .filter(([, c]) => circular?.[c.campo] !== true)
-      .map(([chave, c]) => ({ chave, label: c.label }));
-  }
 
   /**
    * O que já foi buscado no SERPRO nesta competência — para a tela AVISAR antes de gastar de novo.

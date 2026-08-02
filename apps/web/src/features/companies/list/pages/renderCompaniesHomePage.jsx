@@ -120,6 +120,36 @@ export function CompaniesHomePage({
   const [fechamentoFilter, setFechamentoFilter] = useState("all"); // all | fechadas | abertas
   // C7: os filtros secundários ficam num painel; só busca e competência seguem aparentes.
   const [showFilters, setShowFilters] = useState(false);
+  // F2: "o que trava a carteira" — resposta agregada do servidor para a competência da tela.
+  // Não vem do card: o card sabe se a empresa está fechada, não POR QUE ela ainda não pode ser.
+  const [travas, setTravas] = useState(null);          // Map companyId → linha do servidor
+  const [travaFiltro, setTravaFiltro] = useState("all"); // all | prontas | checklist | problemas
+  useEffect(() => {
+    let vivo = true;
+    if (!api?.getCarteiraFechamento || !dashboardCompetencia) { setTravas(null); return undefined; }
+    api.getCarteiraFechamento(dashboardCompetencia)
+      .then((out) => {
+        if (!vivo) return;
+        if (out?.ok === false) { setTravas(null); return; }
+        setTravas(new Map((out?.empresas || []).map((e) => [e.companyId, e])));
+      })
+      // Silencioso de propósito: isto é um atalho sobre a lista, e falhar aqui não pode derrubar
+      // o dashboard. Sem resposta, a barra some e os cards continuam como sempre foram.
+      .catch(() => { if (vivo) setTravas(null); });
+    return () => { vivo = false; };
+  }, [api, dashboardCompetencia]);
+
+  const contagemTravas = useMemo(() => {
+    if (!travas) return null;
+    const linhas = [...travas.values()];
+    return {
+      total: linhas.length,
+      prontas: linhas.filter((l) => l.podeFechar).length,
+      checklist: linhas.filter((l) => !l.fechado && l.checklistPendentes?.length > 0).length,
+      problemas: linhas.filter((l) => !l.fechado && l.blockers?.length > 0).length,
+      fechadas: linhas.filter((l) => l.fechado).length,
+    };
+  }, [travas]);
   // "pending" é o default de Documentos (não conta como filtro ativo).
   const filtrosAtivos = [
     documentFilter !== "pending",
@@ -149,6 +179,16 @@ export function CompaniesHomePage({
     //    Q16: filtro "Enviados/Só não enviados" também REMOVE quem não bate.
     //    Novos filtros (apuração / certificado) também REMOVEM quem não bate.
     const searched = companies.filter((company) => {
+      // F2: REMOVE quem não bate — é uma lista de trabalho ("me mostre só as que posso fechar"),
+      // não uma ordenação. Empresa sem linha no agregado fica de fora de qualquer recorte: dizer
+      // "pronta" sem ter a resposta do servidor seria pior que omitir.
+      if (travaFiltro !== "all") {
+        const t = travas?.get(company?.companyId);
+        if (!t) return false;
+        if (travaFiltro === "prontas" && !t.podeFechar) return false;
+        if (travaFiltro === "checklist" && !(!t.fechado && t.checklistPendentes?.length > 0)) return false;
+        if (travaFiltro === "problemas" && !(!t.fechado && t.blockers?.length > 0)) return false;
+      }
       if (emailFilter === "notSent" && company?.monthEmailSent) return false;
       if (emailFilter === "sent" && !company?.monthEmailSent) return false;
       if (apuracaoFilter === "apurados" && !company?.apuracao?.apurada) return false;
@@ -194,7 +234,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, fechamentoFilter]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, fechamentoFilter, travaFiltro, travas]);
 
   return (
     <div className="dashboard-home-page">
@@ -374,6 +414,47 @@ export function CompaniesHomePage({
               </button>
             ))}
           </div>
+
+          {/* F2 — o que trava a carteira nesta competência.
+              A pergunta "quais eu já posso fechar?" só tinha uma resposta: abrir empresa por
+              empresa e olhar o cadeado. Aqui ela vira contagem, e cada contagem vira lista de
+              trabalho. Some inteira quando o servidor não responde: um número errado sobre
+              fechamento é pior que número nenhum. */}
+          {modoVisao === "cards" && contagemTravas && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: "0.74rem", color: "#8A8FA3", fontWeight: 700, marginRight: 2 }}>
+                FECHAMENTO DO MÊS
+              </span>
+              {[
+                ["all", `Todas · ${contagemTravas.total}`, "#A7B0C0"],
+                ["prontas", `✅ Prontas para fechar · ${contagemTravas.prontas}`, "#69FF47"],
+                ["checklist", `☐ Falta check-list · ${contagemTravas.checklist}`, "#FFB347"],
+                ["problemas", `⚠ Lançamento com problema · ${contagemTravas.problemas}`, "#FF5757"],
+              ].map(([chave, label, cor]) => {
+                const ativo = travaFiltro === chave;
+                return (
+                  <button
+                    key={chave}
+                    type="button"
+                    onClick={() => setTravaFiltro(ativo ? "all" : chave)}
+                    style={{
+                      padding: "4px 12px", borderRadius: 999, cursor: "pointer", fontSize: "0.78rem", fontWeight: 600,
+                      border: `1px solid ${ativo ? cor : "#44475A"}`,
+                      background: ativo ? `${cor}22` : "transparent",
+                      color: ativo ? cor : "#A7B0C0",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+              {contagemTravas.fechadas > 0 && (
+                <span style={{ fontSize: "0.74rem", color: "#2DD4BF" }}>
+                  🔒 {contagemTravas.fechadas} já fechada{contagemTravas.fechadas > 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Os filtros abaixo são da visão de cards — a grade anual tem navegação própria (ano). */}
           {modoVisao === "cards" && (

@@ -1223,6 +1223,10 @@ export function createRealApi() {
     async getCompaniesAnnual(ano) {
       return request(`/firm/companies/annual?ano=${encodeURIComponent(ano)}`);
     },
+    // F2: o que trava a carteira numa competência — por empresa, o mesmo cálculo do cadeado.
+    async getCarteiraFechamento(competencia) {
+      return request(`/firm/companies/fechamento?competencia=${encodeURIComponent(competencia)}`);
+    },
     async getNotasDownload(jobId) {
       return request(`/firm/notas-download/${jobId}`);
     },

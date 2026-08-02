@@ -83,6 +83,26 @@ uma empresa. Mesmo motivo pelo qual `mockApi.getCalendario` passou a filtrar tam
 `pendenciasDoMes` (antes tinha id fictício e ignorava o filtro — a aba de uma empresa listava a
 pendência de outra). Marco do escritório (`portalClientId: null`) continua aparecendo: vale sempre.
 
+## Barra "Fechamento do mês" (o que trava a carteira)
+
+`GET /firm/companies/fechamento?competencia=` (via `api.getCarteiraFechamento`) responde, por
+empresa, **por que** ela ainda não pode fechar. Vira uma barra de contagens acima dos cards:
+**Todas · ✅ Prontas para fechar · ☐ Falta check-list · ⚠ Lançamento com problema**, mais o aviso
+de quantas já estão fechadas. Antes, essa pergunta custava abrir empresa por empresa.
+
+Três decisões:
+- Este filtro **remove** quem não bate — é lista de trabalho, não ordenação (diferente de
+  `documentFilter`/`serproFilter`, que só reordenam).
+- Empresa **sem linha no agregado fica de fora** de qualquer recorte: chamar de "pronta" quem o
+  servidor não respondeu seria pior que omitir.
+- Falha na chamada é **silenciosa e a barra some** inteira. É um atalho sobre a lista; um número
+  errado sobre fechamento é pior que número nenhum, e derrubar o dashboard por causa dele, pior
+  ainda.
+
+⚠ No **mock** o check-list é sintético e varia por índice — o mock não guarda essas caixas por
+empresa, e um check-list igual para todas deixaria o filtro sem nada para separar. Os **bloqueios**,
+esses, saem dos lançamentos de verdade do mock.
+
 ## Dashboard — reorganização (Lote C)
 
 - **Cards** (uma competência) e **Ano** (`components/renderAnnualGrid.jsx` →

@@ -32,6 +32,9 @@ import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
+import {
+  computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistPendentes,
+} from "../../application/accounting/fechamentoBlockers.js";
 import { aplicarRegrasAEmpresaNova } from "../../application/obrigacoes/RegrasObrigacaoService.js";
 import { criarBatchJob, runApuracaoBatchOnce } from "../../workers/apuracaoBatchWorker.js";
 // Q48: download de notas em lote (ZIP em segundo plano)
@@ -574,6 +577,73 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       legacyCompany: legacy ? { ...legacy, email: legacyEmail } : null,
     };
   }
+
+  // F2: O QUE TRAVA A CARTEIRA numa competência ─────────────────────────────
+  //
+  // A pergunta "quais empresas eu já posso fechar?" só tinha uma resposta: abrir empresa por
+  // empresa e olhar o cadeado. Numa carteira de quarenta isso é quarenta abas.
+  //
+  // Mesmo truque do `/companies/annual`: DUAS queries para a carteira inteira, não uma por empresa.
+  // A regra de bloqueio é a MESMA da aba Lançamentos — `computeFechamentoBlockers` — porque duas
+  // cópias divergiriam e as duas telas passariam a discordar sobre a mesma empresa.
+  //
+  // ⚠ O peso está na segunda query: ela traz as LINHAS dos lançamentos do mês de toda a carteira
+  // (o balanço D≠C não sai de agregado, precisa do detalhe). Por isso o `select` é enxuto e a rota
+  // é por UMA competência — nunca por ano, como a anual.
+  router.get("/companies/fechamento", async (req, res) => {
+    const competencia = String(req.query?.competencia || "").trim();
+    if (!/^\d{4}-\d{2}$/.test(competencia)) {
+      return res.status(400).json({ ok: false, error: "competencia_invalida" });
+    }
+    const portalIds = await empresasVisiveis(req);
+    if (!portalIds.length) return res.json({ ok: true, competencia, empresas: [] });
+
+    const empresas = await prisma.portalClient.findMany({
+      where: { id: { in: portalIds } },
+      select: { id: true, razao: true, cnpj: true },
+      orderBy: { razao: "asc" },
+    });
+
+    const [circulares, lancamentos] = await Promise.all([
+      prisma.companyMonthlyCircular.findMany({
+        where: { portalClientId: { in: portalIds }, competencia },
+        select: { portalClientId: true, fechadoContabilEm: true, ...CHECKLIST_SELECT },
+      }),
+      prisma.accountingEntry.findMany({
+        where: { portalClientId: { in: portalIds }, competencia, tipo: { not: "PARCELA" } },
+        select: SELECT_PARA_BLOQUEIOS,
+      }),
+    ]);
+
+    const circularPor = new Map(circulares.map((c) => [c.portalClientId, c]));
+    const lancamentosPor = new Map();
+    for (const e of lancamentos) {
+      if (!lancamentosPor.has(e.portalClientId)) lancamentosPor.set(e.portalClientId, []);
+      lancamentosPor.get(e.portalClientId).push(e);
+    }
+
+    const linhas = empresas.map((e) => {
+      const circular = circularPor.get(e.id) || null;
+      const fechado = Boolean(circular?.fechadoContabilEm);
+      const pendentes = checklistPendentes(circular);
+      const { blockers } = computeFechamentoBlockers(lancamentosPor.get(e.id) || [], competencia);
+      return {
+        companyId: e.id,
+        razao: e.razao,
+        cnpj: e.cnpj,
+        fechado,
+        fechadoEm: circular?.fechadoContabilEm || null,
+        // Empresa já fechada não "pode fechar" — ela ESTÁ fechada. Misturar os dois faria a
+        // contagem de "prontas para fechar" incluir quem não tem mais nada a fazer.
+        podeFechar: !fechado && blockers.length === 0 && pendentes.length === 0,
+        checklistPendentes: pendentes,
+        blockers,
+        totalLancamentos: (lancamentosPor.get(e.id) || []).length,
+      };
+    });
+
+    return res.json({ ok: true, competencia, empresas: linhas });
+  });
 
   // C8: visão ANUAL — 12 meses × empresas, com DOIS indicadores por célula:
   // fechamento contábil (CompanyMonthlyCircular.fechadoContabilEm) e apuração transmitida

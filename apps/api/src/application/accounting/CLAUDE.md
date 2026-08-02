@@ -33,6 +33,19 @@ Distinto do `estado` da apuração (módulo Notas). Campos em `CompanyMonthlyCir
 (`validateFechamentoContabil`) bloqueia o fechamento **por lançamento**: em branco
 (sem linhas / conta vazia) ou desbalanceado (Σ D ≠ Σ C, tolerância 0,01). Ignora `tipo="PARCELA"`.
 
+⚠ **A regra mora em `fechamentoBlockers.js`, não na rota.** `computeFechamentoBlockers(entries,
+competencia)` é PURA (recebe lançamentos já carregados) e é usada por dois consumidores: o cadeado
+por empresa (`validateFechamentoContabil`, que virou uma query + uma chamada) e a visão de carteira
+`GET /firm/companies/fechamento?competencia=`, que precisa da mesma resposta para dezenas de
+empresas numa query só. O check-list (`CHECKLIST_FECHAMENTO`, `CHECKLIST_SELECT`,
+`checklistPendentes`) foi para lá pelo mesmo motivo — morava dentro da fábrica de rotas e não dava
+para reusar. Uma segunda cópia de qualquer um dos dois faz as telas discordarem sobre a mesma
+empresa.
+
+Sutileza que a extração preservou: **conta em branco é checada lançamento a lançamento** (inclusive
+nos de parcelamento e folha), mas **D≠C é checado por GRUPO** nesses dois casos — eles nascem com
+uma perna só e só balanceiam em conjunto (`parcelamentoId` / `loteImportacao`).
+
 **Q18 — mês fechado bloqueia mudanças.** Helper `isMonthClosed(portalClientId, competencia)`
 em `fechamentoContabil.js`. Usado para **bloquear**: criar lançamento (`POST /entries` → 409
 `mes_fechado`), subir/registrar guia **manual** (`createOrUpdateGuideFromProcessing` lança

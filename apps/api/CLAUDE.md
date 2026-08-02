@@ -356,6 +356,18 @@ zera os flags de e-mail da guia DAS (`liberarReenvio`); numa transmissão normal
   (`CompanyMonthlyCircular.fechadoContabilEm`) + apuração (`ApuracaoSnapshot.estado`). **Duas
   queries pro ano inteiro**, não 12 por empresa. Registrada **antes** de `/companies/:companyId`
   pra "annual" não ser lido como id.
+- `GET /firm/companies/fechamento?competencia=` — **o que trava a carteira** naquele mês: por
+  empresa, `{podeFechar, fechado, checklistPendentes[], blockers[], totalLancamentos}`. Substitui
+  abrir quarenta abas para descobrir quais já dá para fechar. **Duas queries** para a carteira
+  inteira, como a anual — mas esta é por UMA competência, e não por ano: o balanço D≠C não sai de
+  agregado, precisa das LINHAS dos lançamentos do mês (por isso o `select` enxuto de
+  `SELECT_PARA_BLOQUEIOS`). Registrada **antes** de `/companies/:companyId`. `podeFechar` é falso
+  para empresa já fechada — ela não "pode fechar", ela ESTÁ fechada.
+  ⚠ A regra de bloqueio **não é reescrita aqui**: vem de
+  `application/accounting/fechamentoBlockers.js`, o mesmo módulo que o cadeado da aba Lançamentos
+  usa (`validateFechamentoContabil` virou uma query + uma chamada). O check-list idem
+  (`CHECKLIST_FECHAMENTO`/`checklistPendentes`, que moravam dentro da fábrica de rotas). Duas cópias
+  fariam as duas telas discordarem sobre a mesma empresa, com o contador no meio.
 - `GET /firm/jobs/ativos` — contagem dos downloads em lote com `status:"processando"` (notas +
   SITFIS), pro selo do dashboard. Só contagem/progresso, feito pra polling barato; em erro devolve
   vazio (nunca derruba o dashboard). Envio de e-mail em lote **não** entra: é chamada bloqueante.

@@ -2729,6 +2729,50 @@ export function createMockApi() {
         })),
       };
     },
+    // F2: o que trava a carteira. Os BLOQUEIOS saem dos lançamentos de verdade do mock (mesma
+    // regra do backend: sem linhas, conta em branco ou D≠C), então mexer nos lançamentos muda a
+    // resposta. O check-list é sintético e variado de propósito: o mock não guarda essas caixas
+    // por empresa, e um check-list igual para todas deixaria o filtro sem nada para separar.
+    async getCarteiraFechamento(competencia) {
+      await delay(90);
+      const comp = String(competencia || "");
+      const CHECKLIST = [
+        { chave: "folhaProlabore", label: "Folha/Pró-labore lançada" },
+        { chave: "despesas", label: "Despesas lançadas" },
+        { chave: "receitas", label: "Receitas lançadas" },
+        { chave: "provisoes", label: "Provisões lançadas" },
+        { chave: "pagamentos", label: "Pagamentos lançados" },
+      ];
+      const empresas = mockCompanies.map((c, idx) => {
+        const lancamentos = (mockEntriesByCompany.get(c.companyId) || []).filter(
+          (e) => e.competencia === comp && String(e.tipo || "").toUpperCase() !== "PARCELA",
+        );
+        const blockers = [];
+        for (const e of lancamentos) {
+          const lines = e.lines || [];
+          if (!lines.length) { blockers.push({ entryId: e.id, historico: e.historico, motivo: "em_branco" }); continue; }
+          if (lines.some((l) => !String(l.conta || "").trim())) { blockers.push({ entryId: e.id, historico: e.historico, motivo: "conta_em_branco" }); continue; }
+          const d = lines.filter((l) => String(l.tipo).toUpperCase() === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+          const cr = lines.filter((l) => String(l.tipo).toUpperCase() === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
+          if (Math.abs(d - cr) > 0.01) blockers.push({ entryId: e.id, historico: e.historico, motivo: "desbalanceado", totalD: d, totalC: cr });
+        }
+        const circular = getCircularRecord(c.companyId, comp);
+        const fechado = Boolean(circular?.fechadoContabilEm);
+        const pendentes = CHECKLIST.slice(0, idx % 3); // 0, 1 ou 2 itens em aberto
+        return {
+          companyId: c.companyId,
+          razao: c.razao,
+          cnpj: c.cnpj,
+          fechado,
+          fechadoEm: circular?.fechadoContabilEm || null,
+          podeFechar: !fechado && !blockers.length && !pendentes.length,
+          checklistPendentes: pendentes,
+          blockers,
+          totalLancamentos: lancamentos.length,
+        };
+      });
+      return { ok: true, competencia: comp, empresas };
+    },
     // Duas notas fixas — uma autorizada e uma CANCELADA — pra dar pra conferir sem backend que a
     // caixa "Canceladas" mostra/esconde de verdade. Sem a cancelada no mock, a tela ficava igual
     // nos dois estados e o toggle parecia funcionar mesmo quebrado.
