@@ -48,6 +48,9 @@ function App() {
         if (companiesWorkspace.companyDetailTab === "lancamentos") {
           await accountingWorkspace.loadAccountingEntries();
         }
+        // As duas buscas também criam GUIA (o DAS no Simples, a DARF consolidada no Presumido).
+        // Sem recarregar, o contador busca e a aba Guias continua dizendo "nenhuma guia".
+        await companiesWorkspace.loadGuides(companyId);
       }
     },
     onInssSynced: async (companyId, payload) => {

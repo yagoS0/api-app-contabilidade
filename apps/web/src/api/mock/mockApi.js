@@ -1081,12 +1081,21 @@ export function createMockApi() {
       if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
       const competencia = String(input.competencia || "2026-06");
 
-      // Os quatro tributos numa consulta só, como o CONSDECCOMPLETA33 devolve de verdade.
+      // A composição varia por mês DE PROPÓSITO: no Lucro Presumido o IRPJ e a CSLL são
+      // trimestrais, então há competência com DARF só de PIS/COFINS. Um mock que devolvesse
+      // sempre os quatro esconderia justamente esse caso — e é ele que prova que o rótulo da
+      // guia lista os impostos REAIS dela, em vez de um texto fixo.
+      //
+      // ⚠ Isto é forma de mock, não regra fiscal: no caminho real quem decide o que entra na guia
+      // é a declaração que o SERPRO devolve, nunca este `if`.
+      const mesFechaTrimestre = [3, 6, 9, 12].includes(Number(competencia.slice(5, 7)));
       const debitos = [
         { codigoReceita: "8109", tributo: "PIS", descricao: "PIS/PASEP" },
         { codigoReceita: "2172", tributo: "COFINS", descricao: "COFINS" },
-        { codigoReceita: "2089", tributo: "IRPJ", descricao: "IRPJ" },
-        { codigoReceita: "2372", tributo: "CSLL", descricao: "CSLL" },
+        ...(mesFechaTrimestre ? [
+          { codigoReceita: "2089", tributo: "IRPJ", descricao: "IRPJ" },
+          { codigoReceita: "2372", tributo: "CSLL", descricao: "CSLL" },
+        ] : []),
       ].map((t) => {
         const v = Number(faker.finance.amount({ min: 120, max: 9000, dec: 2 }));
         return { ...t, debitoApurado: v, saldoAPagar: v };
@@ -1109,6 +1118,41 @@ export function createMockApi() {
       mockMonthlyCirculars.set(chave, circular);
       synthesizeLpEntries(companyId, competencia, debitos);
       mockBuscasLp.set(`${companyId}|${competencia}`, new Date().toISOString());
+
+      // UMA guia consolidada `tipo:"OUTRA"` — o DARF do LP não se divide. Quem separa os tributos
+      // é a `composicao`, e é dela que a tabela tira o rótulo ("PIS · COFINS") em vez de "OUTRA".
+      // Sem criar a guia aqui, esse rótulo não era verificável no mock.
+      const guias = mockGuidesByCompany.get(companyId) || [];
+      const sourceFileId = `serpro:dctfweb:lp:${String(company.cnpj).replace(/\D/g, "")}:${competencia}`;
+      const guiaLp = {
+        id: `mock-guia-lp-${companyId}-${competencia}`,
+        portalClientId: companyId,
+        sourceFileId,
+        tipo: "OUTRA",
+        competencia,
+        valor: principal,
+        valorOriginal: principal,
+        vencimento: new Date(Date.UTC(Number(competencia.slice(0, 4)), Number(competencia.slice(5, 7)), 20)).toISOString(),
+        status: "PROCESSED",
+        emailStatus: "PENDING",
+        paymentStatus: "OPEN",
+        paymentStatusSource: "SERPRO",
+        paymentConfirmedAt: null,
+        serproService: "CONSDECCOMPLETA33",
+        canConfirmPayment: true,
+        canRecalculate: false,
+        extracted: {
+          composicao: debitos.map((d) => ({
+            codigo: d.codigoReceita,
+            tributo: d.tributo,
+            total: d.debitoApurado,
+            denominacao: d.descricao,
+          })),
+        },
+      };
+      const iGuia = guias.findIndex((g) => g.sourceFileId === sourceFileId);
+      if (iGuia >= 0) guias[iGuia] = guiaLp; else guias.push(guiaLp);
+      mockGuidesByCompany.set(companyId, guias);
 
       return {
         ok: true,
