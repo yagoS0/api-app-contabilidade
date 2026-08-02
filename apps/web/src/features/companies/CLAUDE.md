@@ -99,6 +99,12 @@ Três decisões:
   errado sobre fechamento é pior que número nenhum, e derrubar o dashboard por causa dele, pior
   ainda.
 
+**Fechar em lote** (`🔒 Fechar as N`) só aparece **dentro do recorte "Prontas"** — na barra solta
+seria fácil clicar sem ter olhado quem vai ser fechado. O laço é **sequencial** (são escritas; N em
+paralelo contra o mesmo backend para ganhar dois segundos não paga o risco) e **não aborta no
+primeiro erro**: a rota revalida cada empresa, então quem deixou de estar pronta entre a leitura do
+agregado e o clique é recusada e as demais seguem. O relatório final conta as recusas.
+
 ⚠ No **mock** o check-list é sintético e varia por índice — o mock não guarda essas caixas por
 empresa, e um check-list igual para todas deixaria o filtro sem nada para separar. Os **bloqueios**,
 esses, saem dos lançamentos de verdade do mock.

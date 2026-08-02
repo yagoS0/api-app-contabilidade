@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
@@ -124,20 +124,20 @@ export function CompaniesHomePage({
   // Não vem do card: o card sabe se a empresa está fechada, não POR QUE ela ainda não pode ser.
   const [travas, setTravas] = useState(null);          // Map companyId → linha do servidor
   const [travaFiltro, setTravaFiltro] = useState("all"); // all | prontas | checklist | problemas
-  useEffect(() => {
-    let vivo = true;
-    if (!api?.getCarteiraFechamento || !dashboardCompetencia) { setTravas(null); return undefined; }
-    api.getCarteiraFechamento(dashboardCompetencia)
-      .then((out) => {
-        if (!vivo) return;
-        if (out?.ok === false) { setTravas(null); return; }
-        setTravas(new Map((out?.empresas || []).map((e) => [e.companyId, e])));
-      })
+  const [fechandoLote, setFechandoLote] = useState(false);
+  const carregarTravas = useCallback(async () => {
+    if (!api?.getCarteiraFechamento || !dashboardCompetencia) { setTravas(null); return; }
+    try {
+      const out = await api.getCarteiraFechamento(dashboardCompetencia);
+      if (out?.ok === false) { setTravas(null); return; }
+      setTravas(new Map((out?.empresas || []).map((e) => [e.companyId, e])));
+    } catch {
       // Silencioso de propósito: isto é um atalho sobre a lista, e falhar aqui não pode derrubar
       // o dashboard. Sem resposta, a barra some e os cards continuam como sempre foram.
-      .catch(() => { if (vivo) setTravas(null); });
-    return () => { vivo = false; };
+      setTravas(null);
+    }
   }, [api, dashboardCompetencia]);
+  useEffect(() => { carregarTravas(); }, [carregarTravas]);
 
   const contagemTravas = useMemo(() => {
     if (!travas) return null;
@@ -150,6 +150,50 @@ export function CompaniesHomePage({
       fechadas: linhas.filter((l) => l.fechado).length,
     };
   }, [travas]);
+
+  /**
+   * Fecha, uma a uma, as empresas que o servidor disse estarem prontas.
+   *
+   * O laço é sequencial de propósito: são escritas, e disparar N em paralelo contra o mesmo backend
+   * para ganhar dois segundos não paga o risco. A rota de fechar **revalida cada empresa** — se
+   * alguém lançou algo entre a leitura do agregado e o clique, aquela empresa é recusada e as
+   * demais seguem. Por isso o relatório final conta recusas em vez de abortar no primeiro erro.
+   */
+  async function fecharAsProntas() {
+    if (fechandoLote || !contagemTravas?.prontas) return;
+    const alvos = [...travas.values()].filter((l) => l.podeFechar);
+    // eslint-disable-next-line no-alert
+    const ok = window.confirm(
+      `Fechar o mês ${dashboardCompetencia} de ${alvos.length} empresa(s)?\n\n`
+      + alvos.slice(0, 12).map((a) => `• ${a.razao}`).join("\n")
+      + (alvos.length > 12 ? `\n… e mais ${alvos.length - 12}` : "")
+      + "\n\nCada empresa é revalidada no servidor; quem não estiver pronta é recusada.",
+    );
+    if (!ok) return;
+    setFechandoLote(true);
+    let fechadas = 0;
+    const recusadas = [];
+    try {
+      for (const alvo of alvos) {
+        try {
+          const r = await api.fecharFechamentoContabil(alvo.companyId, dashboardCompetencia);
+          if (r?.ok === false) recusadas.push(alvo.razao);
+          else fechadas += 1;
+        } catch (e) {
+          recusadas.push(`${alvo.razao} (${e?.message || "falhou"})`);
+        }
+      }
+    } finally {
+      setFechandoLote(false);
+      await carregarTravas();
+      onRefreshCompanies?.();
+    }
+    // eslint-disable-next-line no-alert
+    window.alert(
+      `${fechadas} empresa(s) fechada(s).`
+      + (recusadas.length ? `\n\nRecusadas (${recusadas.length}):\n${recusadas.slice(0, 12).map((r) => `• ${r}`).join("\n")}` : ""),
+    );
+  }
   // "pending" é o default de Documentos (não conta como filtro ativo).
   const filtrosAtivos = [
     documentFilter !== "pending",
@@ -448,6 +492,22 @@ export function CompaniesHomePage({
                   </button>
                 );
               })}
+              {/* Só aparece dentro do recorte "Prontas": um botão de fechar em lote solto na barra
+                  seria fácil de clicar sem ter olhado quem vai ser fechado. */}
+              {travaFiltro === "prontas" && contagemTravas.prontas > 0 && (
+                <button
+                  type="button"
+                  onClick={fecharAsProntas}
+                  disabled={fechandoLote}
+                  style={{
+                    padding: "4px 12px", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700,
+                    border: "1px solid #2DD4BF", background: "rgba(45,212,191,0.14)", color: "#2DD4BF",
+                    cursor: fechandoLote ? "wait" : "pointer",
+                  }}
+                >
+                  {fechandoLote ? "Fechando…" : `🔒 Fechar as ${contagemTravas.prontas}`}
+                </button>
+              )}
               {contagemTravas.fechadas > 0 && (
                 <span style={{ fontSize: "0.74rem", color: "#2DD4BF" }}>
                   🔒 {contagemTravas.fechadas} já fechada{contagemTravas.fechadas > 1 ? "s" : ""}

@@ -942,12 +942,21 @@ export function createMockApi() {
       await delay();
       return { ok: true, competencia, item, valor: Boolean(ok) };
     },
-    async fecharFechamentoContabil(_companyId, competencia) {
+    // Fechar/reabrir GRAVAM na circular do mock. Sem isso o fechamento em lote "dava certo" e a
+    // barra "Prontas para fechar" continuava com o mesmo número — ou seja, o único efeito
+    // observável da funcionalidade era invisível offline.
+    async fecharFechamentoContabil(companyId, competencia) {
       await delay();
+      const chave = makeCircularKey(companyId, competencia);
+      const atual = mockMonthlyCirculars.get(chave) || { id: `mock-circular-${companyId}-${competencia}`, portalClientId: companyId, competencia };
+      mockMonthlyCirculars.set(chave, { ...atual, fechadoContabilEm: new Date().toISOString(), fechadoContabilPor: "Usuario Mock" });
       return { ok: true, competencia, fechado: true };
     },
-    async reabrirFechamentoContabil(_companyId, competencia) {
+    async reabrirFechamentoContabil(companyId, competencia) {
       await delay();
+      const chave = makeCircularKey(companyId, competencia);
+      const atual = mockMonthlyCirculars.get(chave);
+      if (atual) mockMonthlyCirculars.set(chave, { ...atual, fechadoContabilEm: null, fechadoContabilPor: null });
       return { ok: true, competencia, fechado: false };
     },
     async getGuideSettings() {
