@@ -2394,10 +2394,13 @@ export function createMockApi() {
           // Feriado é propriedade do DIA, não item: não se clica nem se conclui.
           feriado: MOCK_FERIADOS[iso(i + 1)] || null,
         })),
+        // Mesma regra dos itens do dia: id REAL e filtro respeitado. Com id fictício e sem filtro,
+        // a aba de Obrigações de uma empresa listava a pendência de OUTRA — exatamente o vazamento
+        // de escopo que o backend evita usando `alvos` em todas as queries.
         pendenciasDoMes: [
-          { tipo: "apuracao", companyId: "c1", empresa: "Farrell - Brakus", competencia: mes, titulo: "Apuracao nao transmitida", estado: "calculada" },
-          { tipo: "fechamento", companyId: "c2", empresa: "Schultz and Sons", competencia: mes, titulo: "Mes contabil nao fechado" },
-        ],
+          { tipo: "apuracao", companyId: e0.companyId, empresa: e0.razao, competencia: mes, titulo: "Apuracao nao transmitida", estado: "calculada" },
+          { tipo: "fechamento", companyId: e1.companyId, empresa: e1.razao, competencia: mes, titulo: "Mes contabil nao fechado" },
+        ].filter((p) => !companyId || p.companyId === companyId),
         totais: { guias: 4, marcos: 2, apuracoes: 1, fechamentos: 1 },
       };
     },

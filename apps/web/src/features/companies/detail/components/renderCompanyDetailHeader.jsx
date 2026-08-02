@@ -20,6 +20,10 @@ const GROUPS = [
       { key: "lancamentos", label: "Lançamentos" },
       { key: "circular", label: "Circular" },
       { key: "parcelamento", label: "Parcelamento" },
+      // Obrigações fica em Contabilidade e NÃO em Fiscal de propósito: obrigação é o serviço que o
+      // escritório entrega até uma data, não tributo a pagar. O cabeçalho do CalendarioFiscalService
+      // argumenta isso — guia é do cliente, obrigação é do contador.
+      { key: "obrigacoes", label: "Obrigações" },
     ],
   },
   {

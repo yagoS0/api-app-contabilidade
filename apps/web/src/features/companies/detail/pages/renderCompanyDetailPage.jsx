@@ -35,6 +35,10 @@ const ChartOfAccountsPage = lazy(() =>
 const ParcelamentoTab = lazy(() =>
   import("../../../accounting/parcelamento/pages/renderParcelamentoTab").then((m) => ({ default: m.ParcelamentoTab }))
 );
+// Aba Obrigações da empresa = o calendário do dashboard travado numa empresa.
+const CalendarioGrid = lazy(() =>
+  import("../../../calendario/components/renderCalendarioGrid").then((m) => ({ default: m.CalendarioGrid }))
+);
 // Q12.A: módulo Notas Fiscais — lazy, sem inflar o bundle inicial.
 const NotasFiscaisTab = lazy(() =>
   import("../../../notas/components/renderNotasFiscaisTab").then((m) => ({ default: m.NotasFiscaisTab }))
@@ -82,6 +86,9 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
 const apuracaoV2Api = createApiClient();
 const companyDocsApi = createApiClient();
+// O CalendarioGrid chama a API por conta própria (mesmo padrão do SITFIS e do Apuração v2) —
+// a página de detalhe não tem `api` em escopo.
+const obrigacoesApi = createApiClient();
 function ApuracaoV2TabWrapper({ companyId, feedback, razao }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
   return <ApuracaoV2Tab panel={panel} api={apuracaoV2Api} companyId={companyId} feedback={feedback} razao={razao} />;
@@ -521,6 +528,33 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 onSearchHistoricos={accountingPanel.onSearchHistoricos}
                 onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
               />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+        <Feedback message={feedback.message} error={feedback.error} />
+      </div>
+    );
+  }
+
+  // ─── Aba Obrigações (grupo Contabilidade) ───────────────────────────────────
+  // É o MESMO calendário do dashboard, travado nesta empresa (`companyIdFixo`) — não uma segunda
+  // tela que precisaria ser mantida em paralelo. Sem `onOpenCompany`: já se está dentro dela.
+  if (companyDetailTab === "obrigacoes") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="obrigacoes"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+        />
+        <div style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              {/* Sem companyId ainda, o calendário buscaria a carteira INTEIRA dentro da página de
+                  uma empresa — espera a empresa carregar antes de montar. */}
+              {companyId ? <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId} /> : <TabLoadingFallback />}
             </Suspense>
           </ErrorBoundary>
         </div>

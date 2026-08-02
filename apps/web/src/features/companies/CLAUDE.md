@@ -56,6 +56,23 @@ Três armadilhas, todas reais:
 Na linha da empresa, o ✓ some quando a obrigação é `conclusaoAutomatica` (o backend recusa o
 clique) e quando já está concluída.
 
+O número no chip conta **empresas**, então só aparece quando `total > 1` — com uma só ele não
+informa nada, e dentro da aba da empresa (abaixo) todo grupo tem tamanho 1: seria "· 1" em cada
+chip da grade.
+
+### Aba Obrigações dentro da empresa
+
+É o **mesmo** `CalendarioGrid`, com `companyIdFixo` — não uma segunda tela a manter em paralelo.
+Fica no grupo **Contabilidade** (obrigação é serviço a entregar, não tributo a pagar). Com a prop
+setada: o `<select>` de empresa some (não há o que escolher) e **os atalhos de teclado desligam** —
+eles são globais (`window`), e ali o calendário é um bloco da página, não a página; apertar "d"
+trocaria a visão de qualquer lugar da tela.
+
+A aba **não monta sem `companyId`**: montar antes buscaria a carteira inteira dentro da página de
+uma empresa. Mesmo motivo pelo qual `mockApi.getCalendario` passou a filtrar também
+`pendenciasDoMes` (antes tinha id fictício e ignorava o filtro — a aba de uma empresa listava a
+pendência de outra). Marco do escritório (`portalClientId: null`) continua aparecendo: vale sempre.
+
 ## Dashboard — reorganização (Lote C)
 
 - **Duas visões** (`modoVisao` em `renderCompaniesHomePage`): **Cards** (uma competência) e

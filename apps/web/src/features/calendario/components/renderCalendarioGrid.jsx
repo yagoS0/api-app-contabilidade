@@ -106,8 +106,10 @@ function rotuloDoItem(item) {
   if (item.tipo === "obrigacaoGrupo") {
     // Conta as EM ABERTO, não o total: "EFD-Contribuições · 38" num dia em que as 38 já foram
     // feitas é mentira. Com tudo concluído o número some e sobra o nome, riscado.
+    // O número conta EMPRESAS; com uma só ele não informa nada — e dentro da aba da empresa, onde
+    // todo grupo tem tamanho 1, seria "· 1" em cada chip da grade.
     const abertas = item.pendentes + item.vencidas;
-    return abertas > 0 ? `${item.titulo} · ${abertas}` : item.titulo;
+    return abertas > 0 && item.total > 1 ? `${item.titulo} · ${abertas}` : item.titulo;
   }
   return `${item.titulo}${item.empresa ? ` · ${item.empresa}` : ""}`;
 }
@@ -277,12 +279,17 @@ function ehTelaEstreita() {
   return largura <= 760;
 }
 
-export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
+/**
+ * @param {string} [companyIdFixo] Trava o calendário numa empresa (aba dentro da empresa). Some o
+ *   seletor — não há o que escolher — e os atalhos de teclado são desligados: eles são globais
+ *   (`window`), e dentro da empresa apertar "d" trocaria a visão de qualquer lugar da tela.
+ */
+export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFixo = null }) {
   // No celular a grade de mês vira 42 células de 40px onde nada é legível. A AGENDA — lista
   // cronológica por dia — é a única visão que funciona nessa largura, então é o default lá.
   const [visao, setVisao] = useState(() => (ehTelaEstreita() ? "agenda" : "mes"));
   const [referencia, setReferencia] = useState(hojeISO); // dia âncora da navegação
-  const [companyId, setCompanyId] = useState("");
+  const [companyId, setCompanyId] = useState(companyIdFixo || "");
   const [categorias, setCategorias] = useState(() => new Set(CATEGORIAS.map((c) => c.chave)));
   const [sidebarAberta, setSidebarAberta] = useState(() => !ehTelaEstreita());
   const [estreita, setEstreita] = useState(ehTelaEstreita);
@@ -295,6 +302,12 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
   const [detalhe, setDetalhe] = useState(null);   // item clicado
   const [salvando, setSalvando] = useState(false);
   const tituloRef = useRef(null);
+
+  // Trocar de empresa sem desmontar o componente (mudar o id na URL com a aba já aberta) deixaria
+  // o filtro na empresa anterior — o cabeçalho diria uma coisa e a grade mostraria outra.
+  useEffect(() => {
+    if (companyIdFixo) setCompanyId(companyIdFixo);
+  }, [companyIdFixo]);
 
   const competencia = referencia.slice(0, 7);
 
@@ -360,6 +373,9 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
   // Atalhos do Google Calendar. Ignora quando o foco está num campo — senão digitar "dia" numa
   // descrição trocaria a visão três vezes.
   useEffect(() => {
+    // Dentro de uma empresa o calendário é UM bloco da página, não a página inteira — um atalho
+    // global ali roubaria a tecla de qualquer outro lugar da tela.
+    if (companyIdFixo) return undefined;
     function aoTeclar(e) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const alvo = e.target;
@@ -605,16 +621,19 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
         {carregando && <span style={{ color: COR.suave, fontSize: "0.75rem" }}>carregando…</span>}
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <select
-            value={companyId}
-            onChange={(e) => setCompanyId(e.target.value)}
-            style={{ ...btn(false), color: COR.texto, background: COR.fundo }}
-          >
-            <option value="">Todas as empresas</option>
-            {empresas.map((e) => <option key={e.companyId} value={e.companyId}>{e.razao}</option>)}
-          </select>
+          {/* Travado numa empresa não tem o que escolher — o seletor sairia mentindo que dá. */}
+          {!companyIdFixo && (
+            <select
+              value={companyId}
+              onChange={(e) => setCompanyId(e.target.value)}
+              style={{ ...btn(false), color: COR.texto, background: COR.fundo }}
+            >
+              <option value="">Todas as empresas</option>
+              {empresas.map((e) => <option key={e.companyId} value={e.companyId}>{e.razao}</option>)}
+            </select>
+          )}
           {[["mes", "Mês", "M"], ["semana", "Semana", "S"], ["dia", "Dia", "D"], ["agenda", "Agenda", "A"]].map(([k, label, tecla]) => (
-            <button key={k} type="button" onClick={() => setVisao(k)} style={btn(visao === k)} title={`${label} (${tecla})`}>
+            <button key={k} type="button" onClick={() => setVisao(k)} style={btn(visao === k)} title={companyIdFixo ? label : `${label} (${tecla})`}>
               {label}
             </button>
           ))}
