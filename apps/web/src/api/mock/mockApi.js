@@ -502,6 +502,19 @@ function getCircularRecord(companyId, competencia) {
  * contra as notas EMIT autorizadas. Aqui sai da circular sincronizada, que é a única receita que
  * o mock conhece. Competência ímpar devolve 0 para haver mês marcável e mês recusável na tela.
  */
+/**
+ * Conferência do ADN no mock. Os TRÊS estados precisam existir na tela, porque cada um leva a um
+ * comportamento diferente do "mês sem faturamento": `ok` marca limpo, `nao_conferivel` marca com
+ * aviso, `divergente` não marca. Um mock com um estado só deixaria dois caminhos sem prova.
+ * Distribuição por empresa (não por competência): a conferência é da empresa+mês, mas variar por
+ * empresa dá os três estados visíveis no mesmo mês.
+ */
+function mockConferenciaAdn(companyId, competencia) {
+  const idx = mockCompanies.findIndex((c) => c.companyId === companyId);
+  const status = idx < 0 ? null : ["ok", "nao_conferivel", "divergente", null][idx % 4];
+  return { status, em: status ? `${competencia}-28T10:00:00.000Z` : null };
+}
+
 function mockFaturamentoDaCompetencia(companyId, competencia) {
   const circular = getCircularRecord(companyId, competencia);
   if (circular?.receitaBruta != null) return Number(circular.receitaBruta);
@@ -880,6 +893,8 @@ export function createMockApi() {
         podeFechar: false, blockers: [],
         semFaturamento: circular?.semFaturamento === true,
         semFaturamentoEm: circular?.semFaturamentoEm || null,
+        semFaturamentoConferencia: circular?.semFaturamentoConferencia || null,
+        conferenciaAdn: mockConferenciaAdn(companyId, competencia),
         faturamentoEmit: mockFaturamentoDaCompetencia(companyId, competencia),
         serpro: {
           // NOT_FOUND conta como buscado: a chamada saiu e foi cobrada do mesmo jeito.
@@ -912,6 +927,17 @@ export function createMockApi() {
           message: `A competência tem R$ ${fat.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em notas emitidas autorizadas. Não dá para marcar como sem faturamento.`,
         };
       }
+      // A segunda recusa: divergência é PROVA de nota faltando, não falta de informação.
+      const conf = mockConferenciaAdn(companyId, competencia).status;
+      if (ok && conf === "divergente") {
+        return {
+          ok: false,
+          error: "SEM_FATURAMENTO_CONFERENCIA_DIVERGENTE",
+          faltantes: 1,
+          message: "A conferência contra o ADN encontrou 1 nota(s) que o ADN tem e nós não. Resolva a divergência antes de afirmar que o mês não teve faturamento.",
+        };
+      }
+      const conferencia = conf === "ok" ? "ok" : (conf ? "nao_conferivel" : "sem_conferencia");
       const chave = makeCircularKey(companyId, competencia);
       const atual = mockMonthlyCirculars.get(chave) || {
         id: `mock-circular-${companyId}-${competencia}`, portalClientId: companyId, competencia,
@@ -920,8 +946,9 @@ export function createMockApi() {
         ...atual,
         semFaturamento: Boolean(ok),
         semFaturamentoEm: ok ? new Date().toISOString() : null,
+        semFaturamentoConferencia: ok ? conferencia : null,
       });
-      return { ok: true, competencia, semFaturamento: Boolean(ok) };
+      return { ok: true, competencia, semFaturamento: Boolean(ok), conferencia: ok ? conferencia : null };
     },
     async listParcelasPendentesBaixa() {
       await delay();

@@ -121,6 +121,8 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
   const [semFaturamento, setSemFaturamento] = useState(false);
   const [faturamentoEmit, setFaturamentoEmit] = useState(null);
   const [semFatBusy, setSemFatBusy] = useState(false);
+  // Segunda fonte do faturamento: { status: "ok"|"divergente"|"nao_conferivel"|null, em }.
+  const [conferenciaAdn, setConferenciaAdn] = useState(null);
 
   const problemas = useMemo(() => {
     const out = [];
@@ -161,6 +163,7 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
         setChecklist(r?.checklist || { folhaProlabore: r?.folhaProlaboreOk === true });
         setSemFaturamento(r?.semFaturamento === true);
         setFaturamentoEmit(r?.faturamentoEmit ?? null);
+        setConferenciaAdn(r?.conferenciaAdn || null);
         onState?.(Boolean(r?.fechado));
         // Payload inteiro para quem precisa de mais que o booleano de fechado — hoje, o menu do
         // SERPRO, que lê `r.serpro` para avisar "já buscado em <data>" ANTES de gastar de novo.
@@ -226,6 +229,12 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
   }
 
   const temFaturamento = Number(faturamentoEmit || 0) > 0;
+  // Zero de faturamento e "não conseguimos ver o faturamento" são a MESMA leitura na tela. Quando
+  // o ADN não confirmou, o contador precisa saber que está afirmando por conta própria — o
+  // servidor aceita, mas grava que aceitou sem conferir.
+  const statusConferencia = String(conferenciaAdn?.status || "");
+  const conferenciaDivergente = statusConferencia === "divergente";
+  const semConferencia = !fechado && !temFaturamento && !conferenciaDivergente && statusConferencia !== "ok";
 
   const pendentes = CHECKLIST_ITENS.filter((i) => checklist[i.chave] !== true);
   const bloqueadoPorChecklist = !fechado && pendentes.length > 0;
@@ -252,24 +261,39 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
           title={
             temFaturamento
               ? `A competência tem ${fmtMoedaCurta(faturamentoEmit)} em notas emitidas — não dá para marcar sem faturamento.`
-              : "Afirma que a competência não teve faturamento. Folha, despesas e parcelas seguem normais."
+              : conferenciaDivergente
+                ? "A conferência contra o ADN está divergente: o ADN tem nota que não temos. Resolva antes de afirmar que o mês não teve faturamento."
+                : semConferencia
+                  ? "Não conseguimos conferir esta competência contra o ADN — marcar aqui é uma afirmação sua, e fica registrada como tal."
+                  : "Afirma que a competência não teve faturamento. Folha, despesas e parcelas seguem normais."
           }
           style={{
             display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.78rem", fontWeight: 600,
             padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap",
-            border: `1px solid ${semFaturamento ? "#FFB347" : "#44475A"}`,
-            color: semFaturamento ? "#FFB347" : temFaturamento ? "#6272A4" : "#aeb6d3",
-            cursor: semFatBusy || temFaturamento ? "not-allowed" : "pointer", userSelect: "none",
+            border: `1px solid ${semFaturamento ? "#FFB347" : conferenciaDivergente ? "#FF5757" : "#44475A"}`,
+            color: semFaturamento ? "#FFB347" : (temFaturamento || conferenciaDivergente) ? "#6272A4" : "#aeb6d3",
+            cursor: semFatBusy || temFaturamento || conferenciaDivergente ? "not-allowed" : "pointer", userSelect: "none",
           }}
         >
           <input
             type="checkbox"
             checked={semFaturamento}
-            disabled={semFatBusy || (temFaturamento && !semFaturamento)}
+            // Divergência desabilita como o faturamento desabilita: nos dois casos há EVIDÊNCIA
+            // contra a afirmação, e a recusa viria do servidor de qualquer jeito.
+            disabled={semFatBusy || ((temFaturamento || conferenciaDivergente) && !semFaturamento)}
             onChange={toggleSemFaturamento}
-            style={{ cursor: semFatBusy || temFaturamento ? "not-allowed" : "pointer" }}
+            style={{ cursor: semFatBusy || temFaturamento || conferenciaDivergente ? "not-allowed" : "pointer" }}
           />
           Mês sem faturamento
+          {/* Não conseguimos conferir ≠ conferimos e deu zero. O aviso é o que separa os dois. */}
+          {semConferencia && (
+            <span style={{ color: "#8A8FA3", fontWeight: 400 }} title="Município fora do ADN, certificado ausente/vencido ou competência ainda não conferida.">
+              · sem conferência do ADN
+            </span>
+          )}
+          {conferenciaDivergente && (
+            <span style={{ color: "#FF5757", fontWeight: 400 }}>· conferência divergente</span>
+          )}
         </label>
       )}
       {!fechado && (

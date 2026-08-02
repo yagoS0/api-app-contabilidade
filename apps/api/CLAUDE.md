@@ -437,6 +437,25 @@ apuração. Duas cópias dessa query divergiriam, e aí apuração e fechamento 
 mês teve receita, com o contador no meio. O `GET` do fechamento devolve `faturamentoEmit`, então o
 alternador já nasce desabilitado com o motivo — ninguém descobre a recusa clicando.
 
+**A segunda recusa: conferência do ADN.** Faturamento zero e "não conseguimos ver o faturamento"
+são a **mesma leitura** — município fora do ADN, A1 vencido ou cursor NSU travado devolvem zero sem
+que ninguém tenha provado ausência de receita. Então a rota também lê
+`ApuracaoSnapshot.conferenciaStatus`:
+
+| status | efeito |
+|---|---|
+| `divergente` (o ADN tem chave que nós não temos) | **409 `SEM_FATURAMENTO_CONFERENCIA_DIVERGENTE`**, com a contagem de faltantes. Não é falta de informação, é PROVA de nota faltando — mesma trava que `salvarFechamento` já aplica |
+| `ok` | aceita, grava `semFaturamentoConferencia = "ok"` |
+| `nao_conferivel` | aceita, grava `"nao_conferivel"` |
+| nunca conferida (sem snapshot) | aceita, grava `"sem_conferencia"` |
+
+Exigir conferência `"ok"` inutilizaria o campo em **toda** empresa de município fora do ADN —
+justamente onde ele mais serve (decisão do dono). Por isso o sistema aceita e **registra que
+aceitou sem conferir**: a coluna existe para dar para auditar depois. O GET devolve
+`conferenciaAdn { status, em }`, então a tela avisa "· sem conferência do ADN" **antes** do clique e
+desabilita o alternador na divergência (mesmo tratamento do faturamento > 0: nos dois há evidência
+contra a afirmação).
+
 **Efeito:** `getRequirements` (`guideCompliance.js`) deixa de exigir o DAS (decisão do dono: a tag
 **some**, não fica amarela como o `VAZIO`). Pré-query simétrica à do `parcDasAtivoSet` — uma query
 para a carteira, não uma por empresa. O lembrete de transmitir a declaração zerada **não se perde**:

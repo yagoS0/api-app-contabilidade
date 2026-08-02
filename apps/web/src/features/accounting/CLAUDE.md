@@ -55,6 +55,14 @@ confirma que algo FOI lançado; este afirma que algo NÃO EXISTIU. Nasce desabil
 no `title`, quando a competência tem nota emitida (`faturamentoEmit` do mesmo GET). Marcar faz a
 tag DAS sumir do card no dashboard.
 
+**Duas evidências desabilitam, uma terceira só avisa** (`conferenciaAdn` do mesmo GET):
+- `faturamentoEmit > 0` e conferência **`divergente`** desabilitam — nos dois há evidência CONTRA a
+  afirmação, e o servidor recusaria de qualquer jeito.
+- Conferência `nao_conferivel` ou inexistente mostra **"· sem conferência do ADN"** e deixa marcar.
+  Zero de faturamento e "não conseguimos ver o faturamento" se parecem na tela e significam coisas
+  opostas; o aviso é o que separa os dois. Bloquear aí inutilizaria o campo em toda empresa de
+  município fora do ADN. O servidor grava COMO foi verificado (`semFaturamentoConferencia`).
+
 ## "Falta para fechar" — a tira sob o cadeado
 
 O cadeado sempre soube o que faltava: `problemas` (lançamento em branco / conta em branco / D≠C,

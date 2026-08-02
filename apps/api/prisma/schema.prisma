@@ -1011,6 +1011,16 @@ model CompanyMonthlyCircular {
   semFaturamento              Boolean?
   semFaturamentoEm            DateTime?
   semFaturamentoPor           String?
+  /// COMO a afirmação foi verificada contra o ADN no momento em que foi feita:
+  /// `"ok"` (conferimos e bateu) · `"nao_conferivel"` (município fora do ADN, sem certificado)
+  /// · `"sem_conferencia"` (nunca conferida).
+  ///
+  /// Existe porque "faturamento zero" e "não conseguimos ver o faturamento" se parecem no banco e
+  /// significam coisas opostas. Município fora do ADN, A1 vencido ou cursor NSU travado devolvem
+  /// zero sem que ninguém tenha provado ausência de receita — bloquear aí inutilizaria o campo
+  /// justamente nessas empresas, então o sistema aceita e REGISTRA que aceitou sem conferir.
+  /// Conferência `"divergente"` (o ADN tem nota que nós não temos) é o único caso que RECUSA.
+  semFaturamentoConferencia   String?
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 

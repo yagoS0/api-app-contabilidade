@@ -1312,6 +1312,7 @@ export function createAccountingEntriesRouter({ log }) {
           serproLastSyncAt: true,
           semFaturamento: true,
           semFaturamentoEm: true,
+          semFaturamentoConferencia: true,
           ...CHECKLIST_SELECT,
         },
       });
@@ -1320,6 +1321,16 @@ export function createAccountingEntriesRouter({ log }) {
       // O faturamento viaja junto para o alternador já nascer desabilitado com o motivo, em vez de
       // o contador descobrir a recusa clicando.
       const faturamentoEmit = await faturamentoEmitDaCompetencia(portalClientId, competencia).catch(() => null);
+      // Segunda fonte do faturamento: sem snapshot, `status: null` = nunca conferida (que é
+      // diferente de "conferimos e não deu para conferir" — `nao_conferivel`).
+      const snapConferencia = await prisma.apuracaoSnapshot.findUnique({
+        where: { portalClientId_competencia: { portalClientId, competencia } },
+        select: { conferenciaStatus: true, conferidaEm: true },
+      }).catch(() => null);
+      const conferenciaAdn = {
+        status: snapConferencia?.conferenciaStatus || null,
+        em: snapConferencia?.conferidaEm || null,
+      };
       // Checklist manual (folha/pró-labore, despesas, receitas, provisões, pagamentos).
       const pendentes = checklistPendentes(circular);
       const checklist = Object.fromEntries(
@@ -1340,6 +1351,11 @@ export function createAccountingEntriesRouter({ log }) {
         serpro,
         semFaturamento: circular?.semFaturamento === true,
         semFaturamentoEm: circular?.semFaturamentoEm || null,
+        // Como a afirmação FOI verificada (quando já existe) e como ELA SERIA verificada agora.
+        // O segundo é o que permite avisar ANTES do clique que não vai dar para conferir — a
+        // recusa por divergência o contador precisa saber que existe antes de tentar.
+        semFaturamentoConferencia: circular?.semFaturamentoConferencia || null,
+        conferenciaAdn,
         faturamentoEmit,
       });
     } catch (err) {
@@ -1462,6 +1478,7 @@ export function createAccountingEntriesRouter({ log }) {
     const ok = req.body?.ok === true;
 
     try {
+      let conferencia = "sem_conferencia";
       if (ok) {
         // Mesma definição de faturamento que a apuração usa — importada, não copiada.
         const faturamento = await faturamentoEmitDaCompetencia(portalClientId, competencia);
@@ -1473,11 +1490,40 @@ export function createAccountingEntriesRouter({ log }) {
             message: `A competência tem R$ ${faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em notas emitidas autorizadas. Não dá para marcar como sem faturamento.`,
           });
         }
+
+        // ⚠ Zero de faturamento e "não conseguimos ver o faturamento" são a MESMA leitura aqui.
+        // Município fora do ADN, A1 vencido ou cursor NSU travado devolvem zero sem que ninguém
+        // tenha provado ausência de receita. A conferência do ADN é a segunda fonte:
+        //
+        //  - `divergente` = o ADN tem chave que nós não temos. Isso não é falta de informação, é
+        //    PROVA de nota faltando → recusa, mesma trava que `salvarFechamento` já aplica.
+        //  - `nao_conferivel` / nunca conferida = aceita, mas GRAVA que foi aceita sem conferir.
+        //    Exigir conferência "ok" inutilizaria o campo em toda empresa de município fora do
+        //    ADN — justamente onde ele mais serve (decisão do dono).
+        const snap = await prisma.apuracaoSnapshot.findUnique({
+          where: { portalClientId_competencia: { portalClientId, competencia } },
+          select: { conferenciaStatus: true, conferenciaResultado: true },
+        });
+        const status = String(snap?.conferenciaStatus || "");
+        if (status === "divergente") {
+          const faltantes = Array.isArray(snap?.conferenciaResultado?.faltantes)
+            ? snap.conferenciaResultado.faltantes.length
+            : null;
+          return res.status(409).json({
+            ok: false,
+            error: "SEM_FATURAMENTO_CONFERENCIA_DIVERGENTE",
+            faltantes,
+            message: faltantes
+              ? `A conferência contra o ADN encontrou ${faltantes} nota(s) que o ADN tem e nós não. Resolva a divergência antes de afirmar que o mês não teve faturamento.`
+              : "A conferência contra o ADN está divergente. Resolva a divergência antes de afirmar que o mês não teve faturamento.",
+          });
+        }
+        conferencia = status === "ok" ? "ok" : (status ? "nao_conferivel" : "sem_conferencia");
       }
 
       const dados = ok
-        ? { semFaturamento: true, semFaturamentoEm: new Date(), semFaturamentoPor: req.auth?.user?.id || null }
-        : { semFaturamento: false, semFaturamentoEm: null, semFaturamentoPor: null };
+        ? { semFaturamento: true, semFaturamentoEm: new Date(), semFaturamentoPor: req.auth?.user?.id || null, semFaturamentoConferencia: conferencia }
+        : { semFaturamento: false, semFaturamentoEm: null, semFaturamentoPor: null, semFaturamentoConferencia: null };
 
       const existing = await prisma.companyMonthlyCircular.findUnique({
         where: { portalClientId_competencia: { portalClientId, competencia } },
@@ -1486,7 +1532,7 @@ export function createAccountingEntriesRouter({ log }) {
       if (existing) await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data: dados });
       else await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, ...dados } });
 
-      return res.json({ ok: true, competencia, semFaturamento: ok });
+      return res.json({ ok: true, competencia, semFaturamento: ok, conferencia: ok ? conferencia : null });
     } catch (err) {
       log.error({ err, portalClientId, competencia }, "Falha ao marcar mês sem faturamento");
       return res.status(500).json({ ok: false, error: "internal_error" });
