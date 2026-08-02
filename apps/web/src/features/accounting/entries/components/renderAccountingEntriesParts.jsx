@@ -772,7 +772,13 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
   const rowBgHover = "#202334";
   return (
     <>
-      <tr style={{ background: isSelected ? "#2a2b3d" : rowBg, ...incompleteRowStyle, outline: isSelected ? "1px solid #BD93F9" : "none" }} onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = rowBgHover; }} onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = rowBg; }}>
+      {/* `id` é o alvo do "Falta para fechar": a tira do cadeado rola até a linha do lançamento
+          com problema. */}
+      {/* ⚠ `outline` estava declarado DUAS vezes aqui — o segundo sobrescrevia o do
+          `incompleteRowStyle` mesmo com a linha não selecionada, então o contorno ciano de
+          "falta um lado" nunca apareceu. Agora a seleção vence quando há seleção, e o aviso de
+          incompleto aparece quando não há. */}
+      <tr id={`lanc-${entry.id}`} style={{ background: isSelected ? "#2a2b3d" : rowBg, ...incompleteRowStyle, ...(isSelected ? { outline: "1px solid #BD93F9", outlineOffset: 0 } : incompleteRowStyle ? null : { outline: "none" }) }} onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = rowBgHover; }} onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = rowBg; }}>
         <td style={{ ...TDv, textAlign: "center", padding: "8px 4px" }}>
           {onToggleSelect && (
             <input

@@ -39,7 +39,78 @@ function fmtDataHora(iso) {
   return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData }) {
+/**
+ * Leva o olho até o lançamento com problema e o marca por um instante. Rolar sem marcar deixa o
+ * contador procurando qual das linhas da tela era a errada.
+ */
+function irAteOLancamento(id) {
+  const el = document.getElementById(`lanc-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  const antes = el.style.outline;
+  el.style.outline = "2px solid #FFB347";
+  el.style.outlineOffset = "-2px";
+  window.setTimeout(() => { el.style.outline = antes; }, 2200);
+}
+
+/**
+ * O que falta para fechar, SEM precisar clicar no cadeado e levar um alerta.
+ *
+ * As duas listas já existiam dentro do cadeado — viravam `title` e `window.alert`, ou seja, só
+ * apareciam para quem já suspeitava. Aqui elas ficam à vista, e cada lançamento com problema leva
+ * até a linha.
+ *
+ * ⚠ `problemas` é conferência do LADO DO CLIENTE sobre os lançamentos carregados. Com filtro de
+ * tipo/origem/status ativo, o servidor enxerga mais do que esta tela — por isso o aviso.
+ */
+function FaltaParaFechar({ problemas, pendentes, filtroAtivo }) {
+  const [aberto, setAberto] = useState(false);
+  if (!problemas.length && !pendentes.length) return null;
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end",
+      fontSize: "0.76rem", color: "#FFB347", maxWidth: 560, textAlign: "right",
+    }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+        <strong style={{ color: "#FFB347" }}>Falta para fechar:</strong>
+        {pendentes.length > 0 && <span>confirmar {pendentes.map((p) => p.label).join(", ")}</span>}
+        {pendentes.length > 0 && problemas.length > 0 && <span style={{ color: "#6272A4" }}>·</span>}
+        {problemas.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setAberto((v) => !v)}
+            style={{ background: "transparent", border: "none", color: "#FF5757", font: "inherit", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+          >
+            {problemas.length} lançamento{problemas.length > 1 ? "s" : ""} com problema {aberto ? "▴" : "▾"}
+          </button>
+        )}
+      </div>
+      {aberto && (
+        <ul style={{ listStyle: "none", margin: 0, padding: "6px 10px", background: "#24253A", border: "1px solid #44475A", borderRadius: 8, maxHeight: 180, overflowY: "auto", width: "100%" }}>
+          {problemas.map((p) => (
+            <li key={p.id} style={{ padding: "2px 0" }}>
+              <button
+                type="button"
+                onClick={() => irAteOLancamento(p.id)}
+                style={{ background: "transparent", border: "none", color: "#F8F8F2", font: "inherit", cursor: "pointer", textAlign: "right", width: "100%" }}
+                title="Ir até o lançamento"
+              >
+                {p.historico || p.id} — <span style={{ color: "#FF5757" }}>{p.motivo}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {filtroAtivo && (
+        <span style={{ color: "#8A8FA3" }}>
+          conferido só sobre os lançamentos filtrados — limpe os filtros para ver o mês inteiro
+        </span>
+      )}
+    </div>
+  );
+}
+
+function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo }) {
   const [fechado, setFechado] = useState(false);
   const [busy, setBusy] = useState(false);
   // Checklist (Q47 + Lote C): { folhaProlabore, despesas, receitas, provisoes, pagamentos }
@@ -168,6 +239,7 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
         : `Pronta para fechar (${competencia}). Clique no cadeado para fechar.`;
   const btnDisabled = busy || bloqueadoPorChecklist;
   return (
+    <>
     <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       {/* Checklist de conferência — some quando o mês já está fechado.
           Sem o rótulo abaixo eram cinco caixas soltas ao lado do cadeado: não dava pra saber se
@@ -243,6 +315,8 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
         {fechado ? "Fechada" : "Fechar mês"}
       </button>
     </div>
+    {!fechado && <FaltaParaFechar problemas={problemas} pendentes={pendentes} filtroAtivo={filtroAtivo} />}
+    </>
   );
 }
 
@@ -789,13 +863,15 @@ export function AccountingEntriesTab({
         >
           + Adicionar lançamento
         </button>
-        <div style={{ marginLeft: "auto" }}>
+        {/* Coluna: o cadeado em cima, a tira "Falta para fechar" logo abaixo dele. */}
+        <div style={{ marginLeft: "auto", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
           <FechamentoCadeado
             companyId={companyId}
             competencia={activeComp}
             entries={entries}
             onState={(closed) => { setMonthClosed(closed); if (closed) setAdding(false); }}
             onFechamentoData={(dados) => setBuscasSerpro(dados?.serpro || null)}
+            filtroAtivo={Boolean(filters.tipo || filters.origem || filters.status)}
           />
         </div>
       </div>

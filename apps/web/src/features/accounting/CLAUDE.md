@@ -55,6 +55,26 @@ confirma que algo FOI lançado; este afirma que algo NÃO EXISTIU. Nasce desabil
 no `title`, quando a competência tem nota emitida (`faturamentoEmit` do mesmo GET). Marcar faz a
 tag DAS sumir do card no dashboard.
 
+## "Falta para fechar" — a tira sob o cadeado
+
+O cadeado sempre soube o que faltava: `problemas` (lançamento em branco / conta em branco / D≠C,
+com grupo de parcelamento e folha somados **em conjunto**) e `pendentes` (check-list). Só que os
+dois viravam `title` e `window.alert` — apareciam depois do clique falhar, para quem já suspeitava.
+
+Agora saem numa tira logo abaixo do cadeado: *"Falta para fechar: confirmar Provisões, Pagamentos ·
+2 lançamentos com problema"*. A contagem abre a lista, e cada item **rola até a linha** e a marca
+por 2s (`irAteOLancamento` → `id="lanc-<entryId>"` no `<tr>`). Problema de GRUPO (chave =
+`parcelamentoId`/lote) não tem linha própria: o clique não acha elemento e não faz nada — de
+propósito, melhor que rolar para a linha errada.
+
+⚠ **A conferência é do lado do cliente, sobre os lançamentos carregados.** Com filtro de
+tipo/origem/status ativo o servidor enxerga mais que a tela, então a tira avisa. O backend continua
+sendo quem recusa; isto é só antecipação.
+
+Junto disso: o `<tr>` declarava `outline` **duas vezes**, e o segundo (`isSelected ? … : "none"`)
+apagava o contorno ciano de `incompleteRowStyle` mesmo sem seleção — o aviso de "falta um lado"
+nunca tinha aparecido na tela.
+
 ## Fechamento contábil (Q17)
 
 API: `getFechamentoContabil`, `fecharFechamentoContabil`, `reabrirFechamentoContabil`
