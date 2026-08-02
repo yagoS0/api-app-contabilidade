@@ -2331,22 +2331,27 @@ export function createMockApi() {
     // ── Calendário fiscal (mock) ───────────────────────────────────────────────────────────
     // Popula o mês pedido: guias em dias fixos, um marco do escritório e um da empresa. Mês vazio
     // não deixaria conferir a grade, que é justamente o que precisa ser visto.
-    async getCalendario(mes) {
+    // `companyId` é filtro OPCIONAL, como no backend. O mock antigo ignorava o argumento, então a
+    // visão por empresa (aba dentro da empresa) era invisível offline.
+    async getCalendario(mes, companyId) {
       await delay(80);
       const [y, m] = String(mes || "2026-07").split("-").map(Number);
       const diasNoMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
       const iso = (d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      // Ids REAIS das empresas do mock — com ids fictícios ("c1") o filtro por empresa descartaria
+      // todas as guias e a visão dentro da empresa mostraria só obrigações.
+      const e0 = mockCompanies[0] || {}; const e1 = mockCompanies[1] || {}; const e2 = mockCompanies[2] || {};
       const porDia = {
         15: [
-          { tipo: "guia", id: "g1", titulo: "INSS", companyId: "c1", empresa: "Farrell - Brakus", competencia: mes, valor: 193.03, resolvido: false },
-          { tipo: "guia", id: "g2", titulo: "INSS", companyId: "c2", empresa: "Schultz and Sons", competencia: mes, valor: 421.9, resolvido: true },
+          { tipo: "guia", id: "g1", titulo: "INSS", companyId: e0.companyId, empresa: e0.razao, competencia: mes, valor: 193.03, resolvido: false },
+          { tipo: "guia", id: "g2", titulo: "INSS", companyId: e1.companyId, empresa: e1.razao, competencia: mes, valor: 421.9, resolvido: true },
         ],
         20: [
-          { tipo: "guia", id: "g3", titulo: "SIMPLES", companyId: "c1", empresa: "Farrell - Brakus", competencia: mes, valor: 1441.25, resolvido: false },
-          { tipo: "guia", id: "g4", titulo: "SIMPLES", companyId: "c3", empresa: "Kirlin - Kris", competencia: mes, valor: 2380.11, resolvido: false },
+          { tipo: "guia", id: "g3", titulo: "SIMPLES", companyId: e0.companyId, empresa: e0.razao, competencia: mes, valor: 1441.25, resolvido: false },
+          { tipo: "guia", id: "g4", titulo: "SIMPLES", companyId: e2.companyId, empresa: e2.razao, competencia: mes, valor: 2380.11, resolvido: false },
         ],
         1: [{ tipo: "marco", id: "mk1", titulo: "CBS passa a ser cobrada", descricao: "Fim da fase de teste", importancia: "ALTA", companyId: null, empresa: null, doEscritorio: true }],
-        8: [{ tipo: "marco", id: "mk2", titulo: "Reuniao com o cliente", importancia: "BAIXA", companyId: "c1", empresa: "Farrell - Brakus", doEscritorio: false }],
+        8: [{ tipo: "marco", id: "mk2", titulo: "Reuniao com o cliente", importancia: "BAIXA", companyId: e0.companyId, empresa: e0.razao, doEscritorio: false }],
       };
 
       // Quinta fonte: as obrigações cadastradas, no mesmo formato do backend. Vêm do estado real do
@@ -2354,18 +2359,30 @@ export function createMockApi() {
       const hojeStr = new Date().toISOString().slice(0, 10);
       for (const o of mockObrigacoes) {
         if (!o.ativa) continue;
+        if (companyId && o.companyId !== companyId) continue;
         for (const oc of o.ocorrencias) {
           if (!oc.dataVencimento.startsWith(mes)) continue;
           const dia = Number(oc.dataVencimento.slice(8));
           const situacao = oc.status === "CONCLUIDA" ? "CONCLUIDA"
             : oc.dataVencimento < hojeStr ? "VENCIDA" : "PENDENTE";
           porDia[dia] = [...(porDia[dia] || []), {
-            tipo: "obrigacao", id: oc.ocorrenciaId, titulo: o.nome, categoria: o.categoria,
+            tipo: "obrigacao", id: oc.ocorrenciaId, obrigacaoId: o.obrigacaoId,
+            // Mesma chave do backend: regra quando vem de regra, senão o nome normalizado.
+            grupoChave: o.regraId || `nome:${String(o.nome || "").trim().toLowerCase()}`,
+            titulo: o.nome, categoria: o.categoria,
             cor: o.cor, companyId: o.companyId, empresa: o.empresa,
             competencia: oc.competenciaRef, data: oc.dataVencimento, situacao,
             resolvido: oc.status === "CONCLUIDA",
             conclusaoAutomatica: Boolean(o.verificador), fonteConclusao: oc.fonteConclusao,
           }];
+        }
+      }
+
+      // Guias e marcos também respeitam o filtro de empresa (o backend filtra na query).
+      if (companyId) {
+        for (const dia of Object.keys(porDia)) {
+          porDia[dia] = porDia[dia].filter((i) => i.companyId == null || i.companyId === companyId);
+          if (!porDia[dia].length) delete porDia[dia];
         }
       }
       return {

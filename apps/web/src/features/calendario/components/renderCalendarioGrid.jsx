@@ -82,25 +82,33 @@ function diasDaSemana(dataBase) {
   });
 }
 
+const ehObrigacao = (item) => item.tipo === "obrigacao" || item.tipo === "obrigacaoGrupo";
+
 function corDoItem(item) {
   if (item.tipo === "marco") return COR[String(item.importancia || "MEDIA").toLowerCase()] || COR.marco;
-  if (item.tipo === "obrigacao") return item.resolvido ? COR.obrigacaoFeita : COR.obrigacao;
+  if (ehObrigacao(item)) return item.resolvido ? COR.obrigacaoFeita : COR.obrigacao;
   return item.resolvido ? COR.guiaPaga : COR.guia;
 }
 
 /** Vencida ganha marca vermelha independente da cor da categoria — atraso vence a categoria. */
 function estaVencida(item) {
-  return item.tipo === "obrigacao" && item.situacao === "VENCIDA";
+  return ehObrigacao(item) && item.situacao === "VENCIDA";
 }
 
 function simboloDoItem(item) {
   if (item.tipo === "marco") return "◆";
-  if (item.tipo === "obrigacao") return "▸";
+  if (ehObrigacao(item)) return "▸";
   return "•";
 }
 
 function rotuloDoItem(item) {
   if (item.tipo === "marco") return item.titulo;
+  if (item.tipo === "obrigacaoGrupo") {
+    // Conta as EM ABERTO, não o total: "EFD-Contribuições · 38" num dia em que as 38 já foram
+    // feitas é mentira. Com tudo concluído o número some e sobra o nome, riscado.
+    const abertas = item.pendentes + item.vencidas;
+    return abertas > 0 ? `${item.titulo} · ${abertas}` : item.titulo;
+  }
   return `${item.titulo}${item.empresa ? ` · ${item.empresa}` : ""}`;
 }
 
@@ -116,11 +124,15 @@ function Chip({ item, onAbrir, arrastavel }) {
       }}
       onClick={(e) => { e.stopPropagation(); onAbrir(item); }}
       onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onAbrir(item); } }}
-      title={`${rotuloDoItem(item)}${item.valor != null ? ` · ${fmtMoney(item.valor)}` : ""}${
-        item.tipo === "obrigacao"
-          ? item.resolvido ? " · concluída" : estaVencida(item) ? " · VENCIDA" : " · a entregar"
-          : item.resolvido ? " · pago" : ""
-      }${arrastavel ? " · arraste para mudar o dia" : ""}`}
+      title={
+        item.tipo === "obrigacaoGrupo"
+          ? `${item.titulo} — ${item.total} empresa(s): ${item.pendentes} a entregar, ${item.vencidas} vencida(s), ${item.concluidas} concluída(s). Clique para ver e concluir por empresa.`
+          : `${rotuloDoItem(item)}${item.valor != null ? ` · ${fmtMoney(item.valor)}` : ""}${
+            item.tipo === "obrigacao"
+              ? item.resolvido ? " · concluída" : estaVencida(item) ? " · VENCIDA" : " · a entregar"
+              : item.resolvido ? " · pago" : ""
+          }${arrastavel ? " · arraste para mudar o dia" : ""}`
+      }
       style={{
         display: "flex", alignItems: "center", gap: 4, padding: "1px 5px", borderRadius: 4,
         background: `${corDoItem(item)}22`, borderLeft: `2px solid ${corDoItem(item)}`,
@@ -420,6 +432,58 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
     return saida;
   }, [porDia, categorias]);
 
+  /**
+   * Agrupa as OBRIGAÇÕES do dia por `grupoChave`. Guia e marco passam intactos.
+   *
+   * Uma regra do escritório aplicada a 38 empresas gerava 38 chips no mesmo dia. Guia continua uma
+   * por empresa porque o valor e o vencimento são de cada uma — agrupar esconderia justamente o
+   * que o contador procura ali.
+   *
+   * ⚠ Deriva de `porDiaVisivel`, NÃO de `porDia`: o filtro de categoria casa por `i.tipo`, e o
+   * item agrupado tem tipo "obrigacaoGrupo". Agrupar antes de filtrar mataria o checkbox
+   * "Obrigações" em silêncio.
+   */
+  const porDiaAgrupado = useMemo(() => {
+    const saida = {};
+    for (const [data, itens] of Object.entries(porDiaVisivel)) {
+      const grupos = new Map();
+      const outros = [];
+      for (const it of itens) {
+        if (it.tipo !== "obrigacao") { outros.push(it); continue; }
+        const chave = it.grupoChave || `id:${it.id}`;
+        if (!grupos.has(chave)) {
+          grupos.set(chave, {
+            tipo: "obrigacaoGrupo", grupoChave: chave, id: `grupo-${chave}-${data}`,
+            titulo: it.titulo, categoria: it.categoria, cor: it.cor, data,
+            total: 0, pendentes: 0, vencidas: 0, concluidas: 0, ocorrencias: [],
+          });
+        }
+        const g = grupos.get(chave);
+        g.total += 1;
+        if (it.situacao === "VENCIDA") g.vencidas += 1;
+        else if (it.situacao === "CONCLUIDA") g.concluidas += 1;
+        else g.pendentes += 1;
+        g.ocorrencias.push(it);
+      }
+      for (const g of grupos.values()) {
+        // "Resolvido" só quando NADA está em aberto — é o que risca o chip.
+        g.resolvido = g.pendentes === 0 && g.vencidas === 0;
+        g.situacao = g.vencidas > 0 ? "VENCIDA" : g.resolvido ? "CONCLUIDA" : "PENDENTE";
+      }
+      saida[data] = [...outros, ...grupos.values()];
+    }
+    return saida;
+  }, [porDiaVisivel]);
+
+  // Guarda a CHAVE, não o objeto. Guardando o objeto, depois de concluir uma empresa o painel
+  // seguiria mostrando a lista de antes da conclusão até alguém re-clicar no chip.
+  const [grupoSelecionado, setGrupoSelecionado] = useState(null); // { grupoChave, data }
+  const grupoAberto = useMemo(() => {
+    if (!grupoSelecionado) return null;
+    const doDia = porDiaAgrupado[grupoSelecionado.data] || [];
+    return doDia.find((i) => i.tipo === "obrigacaoGrupo" && i.grupoChave === grupoSelecionado.grupoChave) || null;
+  }, [grupoSelecionado, porDiaAgrupado]);
+
   // Agenda: lista cronológica do período, só com dia que tem algo. Dia vazio numa lista é ruído —
   // ao contrário da grade, onde o vazio é a própria informação ("nada vence aqui").
   const diasDaAgenda = useMemo(() => {
@@ -429,11 +493,11 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
     const saida = [];
     for (let d = 1; d <= total; d += 1) {
       const data = `${ano}-${pad2(mes)}-${pad2(d)}`;
-      const itens = porDiaVisivel[data] || [];
+      const itens = porDiaAgrupado[data] || [];
       if (itens.length) saida.push({ data, dia: d, itens });
     }
     return saida;
-  }, [visao, competencia, porDiaVisivel]);
+  }, [visao, competencia, porDiaAgrupado]);
 
   function alternarCategoria(chave) {
     setCategorias((atual) => {
@@ -443,13 +507,25 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
     });
   }
 
-  async function concluirOcorrencia(item) {
+  async function concluirOcorrencia(item, { fecharDetalhe = true } = {}) {
     try {
       const out = await api.concluirOcorrencia(item.id);
       if (out?.ok === false) { setErro(out.message || "Não foi possível concluir."); return; }
-      setDetalhe(null);
+      if (fecharDetalhe) setDetalhe(null);
       await carregar();
     } catch (err) { setErro(err?.message || "Não foi possível concluir."); }
+  }
+
+  /** Chip de grupo abre o painel lateral; guia e marco seguem no modal de detalhe de sempre. */
+  function abrirItem(item) {
+    setCriando(null);
+    if (item.tipo === "obrigacaoGrupo") {
+      setDetalhe(null);
+      setSidebarAberta(true);
+      setGrupoSelecionado({ grupoChave: item.grupoChave, data: item.data });
+      return;
+    }
+    setDetalhe(item);
   }
 
   // Só rotula a competência quando há mais de uma na tela. No mês (o caso normal) o rótulo seria
@@ -561,9 +637,72 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
           style={
             estreita
               ? { flex: "1 1 100%", display: "flex", flexDirection: "column", gap: 14, paddingBottom: 12, borderBottom: `1px solid ${COR.borda}` }
-              : { flex: "0 0 190px", maxWidth: 190, display: "flex", flexDirection: "column", gap: 14 }
+              // Cresce enquanto há grupo aberto: a lista de empresas precisa de largura para o
+              // nome não virar reticências. Sem grupo, volta aos 190px.
+              : { flex: `0 0 ${grupoAberto ? 260 : 190}px`, maxWidth: grupoAberto ? 260 : 190, display: "flex", flexDirection: "column", gap: 14 }
           }
         >
+          {/* Painel do grupo: as empresas que têm a obrigação daquele dia. Fica ACIMA do
+              mini-calendário e do filtro, sem substituir nenhum dos dois — os dois seguem
+              alcançáveis enquanto o grupo está aberto. */}
+          {grupoAberto && (
+            <div style={{ border: `1px solid ${COR.obrigacao}`, borderRadius: 8, padding: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <strong style={{ color: COR.texto, fontSize: "0.82rem", lineHeight: 1.2 }}>{grupoAberto.titulo}</strong>
+                <button
+                  type="button" onClick={() => setGrupoSelecionado(null)} title="Fechar"
+                  style={{ marginLeft: "auto", background: "none", border: "none", color: COR.suave, cursor: "pointer", fontSize: "0.9rem", padding: 0 }}
+                >
+                  ✕
+                </button>
+              </div>
+              <div style={{ fontSize: "0.68rem", color: COR.suave, marginBottom: 8 }}>
+                {grupoAberto.data.split("-").reverse().join("/")} · {grupoAberto.pendentes + grupoAberto.vencidas} em aberto de {grupoAberto.total}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 260, overflowY: "auto" }}>
+                {grupoAberto.ocorrencias.map((oc) => (
+                  <div key={oc.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem" }}>
+                    <span
+                      title={oc.situacao === "VENCIDA" ? "Vencida" : oc.resolvido ? "Concluída" : "A entregar"}
+                      style={{
+                        width: 6, height: 6, borderRadius: 999, flex: "0 0 auto",
+                        background: oc.situacao === "VENCIDA" ? COR.vencida : oc.resolvido ? COR.obrigacaoFeita : COR.obrigacao,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onOpenCompany?.(oc.companyId, oc.competencia)}
+                      title={oc.empresa || ""}
+                      style={{
+                        flex: "1 1 auto", minWidth: 0, textAlign: "left", background: "none", border: "none",
+                        color: oc.resolvido ? COR.suave : COR.texto, cursor: onOpenCompany ? "pointer" : "default",
+                        padding: 0, font: "inherit", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                        textDecoration: oc.resolvido ? "line-through" : "none",
+                      }}
+                    >
+                      {oc.empresa || "—"}
+                    </button>
+                    {/* Sem botão na automática: o backend recusa o clique, e oferecer é pior que
+                        não oferecer. Concluída também não mostra — não há o que fazer. */}
+                    {!oc.resolvido && !oc.conclusaoAutomatica && (
+                      <button
+                        type="button"
+                        onClick={() => concluirOcorrencia(oc, { fecharDetalhe: false })}
+                        title="Marcar como concluída"
+                        style={{ background: "none", border: "none", color: "#69FF47", cursor: "pointer", fontSize: "0.8rem", padding: "0 2px" }}
+                      >
+                        ✓
+                      </button>
+                    )}
+                    {oc.conclusaoAutomatica && !oc.resolvido && (
+                      <span title="Conclui sozinha quando o sistema observar o serviço feito" style={{ color: COR.marco, fontSize: "0.7rem" }}>auto</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <MiniCalendario
             competencia={competencia}
             selecionado={referencia}
@@ -620,7 +759,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
               </div>
               <div style={{ flex: "1 1 auto", minWidth: 0 }}>
                 {d.itens.map((it, i) => (
-                  <Chip key={`${it.tipo}-${it.id || i}`} item={it} onAbrir={(x) => { setCriando(null); setDetalhe(x); }} arrastavel={false} />
+                  <Chip key={`${it.tipo}-${it.id || i}`} item={it} onAbrir={abrirItem} arrastavel={false} />
                 ))}
               </div>
             </div>
@@ -643,13 +782,13 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
               <Celula
                 key={dia.data}
                 dia={dia}
-                itens={porDiaVisivel[dia.data] || []}
+                itens={porDiaAgrupado[dia.data] || []}
                 ehHoje={dia.data === hoje}
                 altura={alturaCelula}
                 compacta={visao !== "mes"}
                 feriado={feriadosPorDia[dia.data] || null}
                 onCriar={(data) => { setDetalhe(null); setCriando({ data }); }}
-                onAbrir={(item) => { setCriando(null); setDetalhe(item); }}
+                onAbrir={abrirItem}
                 onMover={moverMarco}
               />
             ))}

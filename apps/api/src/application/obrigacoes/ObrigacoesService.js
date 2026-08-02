@@ -433,7 +433,8 @@ export async function ocorrenciasDoPeriodo({ portalIds, inicio, fim, companyId =
     include: {
       obrigacao: {
         select: {
-          nome: true, categoria: true, cor: true, verificador: true, portalClientId: true,
+          id: true, nome: true, categoria: true, cor: true, verificador: true,
+          regraId: true, portalClientId: true,
           portalClient: { select: { razao: true } },
         },
       },
@@ -443,6 +444,12 @@ export async function ocorrenciasDoPeriodo({ portalIds, inicio, fim, companyId =
   return ocorrencias.map((oc) => ({
     tipo: "obrigacao",
     id: oc.id,
+    obrigacaoId: oc.obrigacao.id,
+    // Chave de agrupamento do calendário: uma regra do escritório aplicada a 38 empresas geraria
+    // 38 chips no mesmo dia. O `nome` sozinho NÃO serve — duas empresas podem ter obrigações de
+    // mesmo nome vindas de regras diferentes, e agrupar juntaria coisas que não são a mesma.
+    // Campo aditivo: quem já consome a lista plana não muda.
+    grupoChave: oc.obrigacao.regraId || `nome:${String(oc.obrigacao.nome || "").trim().toLowerCase()}`,
     titulo: oc.obrigacao.nome,
     categoria: oc.obrigacao.categoria,
     cor: oc.obrigacao.cor,

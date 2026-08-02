@@ -36,6 +36,26 @@ enquanto está aberta.
 perguntas diferentes; obrigação **vencida** ganha contorno vermelho por cima da cor da categoria.
 `fmtMoney` só aparece em guia — obrigação não tem valor.
 
+### Agrupamento por obrigação + painel de empresas
+
+Uma regra aplicada a 38 empresas gerava 38 chips no mesmo dia. As **obrigações** agrupam por
+`grupoChave` (= `regraId`, ou `nome:<normalizado>` quando avulsa — o nome sozinho juntaria
+obrigações homônimas de regras diferentes); **guia continua uma por empresa**, porque valor e
+vencimento são de cada uma. O chip conta as **em aberto**, não o total: "· 6" num dia com tudo
+concluído seria mentira, então o número some e sobra o nome riscado.
+
+Três armadilhas, todas reais:
+- `porDiaAgrupado` deriva de **`porDiaVisivel`**, não de `porDia`. O filtro de categoria casa por
+  `i.tipo`, e o item agrupado é `"obrigacaoGrupo"` — agrupar antes de filtrar mata o checkbox
+  "Obrigações" em silêncio.
+- O estado guarda a **chave** (`{grupoChave, data}`), não o objeto. Guardando o objeto, concluir
+  uma empresa deixaria o painel mostrando a lista pré-conclusão até alguém re-clicar no chip.
+- O painel **não substitui** a sidebar: entra acima do mini-calendário e do filtro, e ela cresce
+  de 190 para 260px enquanto há grupo aberto.
+
+Na linha da empresa, o ✓ some quando a obrigação é `conclusaoAutomatica` (o backend recusa o
+clique) e quando já está concluída.
+
 ## Dashboard — reorganização (Lote C)
 
 - **Duas visões** (`modoVisao` em `renderCompaniesHomePage`): **Cards** (uma competência) e
