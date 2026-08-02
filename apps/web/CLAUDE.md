@@ -71,9 +71,15 @@ const data = await api.getAccountingEntries(companyId);
 
 ### Roteamento
 
-- React Router (configurado em `App.jsx`)
-- Rotas de firma e cliente separadas por prefixo `/firm/` e `/client/`
-- Proteção de rota via componente wrapper de autenticação
+⚠ **Não existe `<Routes>` no `App.jsx`.** O React Router está montado (o app usa `useLocation` /
+`useNavigate`), mas o despacho é uma **cadeia de `if (session.page === …)`** dentro do `App.jsx`; o
+`page` sai de `pathToPageName(location.pathname)` em `useManageAuthSession.js`. Quem procurar por
+`<Route>` para entender a navegação não acha nada.
+
+- **Página nova = duas peças**: entrada em `PAGE_TO_PATH` + `pathToPageName`, **e** o bloco `if`
+  correspondente no `App.jsx`. Só a primeira metade não dá erro: a URL cai no fallback
+  (`companies`) em silêncio, que foi o destino de `/calendario` e `/pendencias` por um tempo.
+- Proteção: `ensureSession()` manda pro `/login` sem token; não há wrapper de rota.
 
 ### Estilo
 
@@ -85,8 +91,9 @@ const data = await api.getAccountingEntries(companyId);
 
 Ler antes de mexer; atualizar ao terminar: `src/features/companies/`,
 `src/features/guides/`, `src/features/accounting/`.
-- **Aba default da empresa = Lançamentos** (`useManageCompaniesWorkspace.deriveCompanyDetailTab`
-  + `useManageAuthSession` → `/companies/:id/lancamentos`).
+- **Aba default da empresa = Anotações** (`useManageCompaniesWorkspace.deriveCompanyDetailTab`
+  + `useManageAuthSession` → `/companies/:id/anotacoes`). Era Lançamentos até a Anotações virar
+  grupo próprio — particularidade da empresa se lê ANTES de mexer em número.
 - **Dashboard** filtra por competência (default mês anterior, `changeDashboardCompetencia`)
   e por pendências; tags por estado (verde/amarelo=vazio/vermelho); card inteiro muda de
   cor quando a empresa está **fechada** (contábil).

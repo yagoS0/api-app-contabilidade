@@ -13,6 +13,7 @@ import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
+import { ObrigacoesPage } from "./features/obrigacoes/components/renderObrigacoesPage";
 import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
@@ -254,6 +255,18 @@ function App() {
     );
   }
 
+  // Cadastro de obrigações do escritório: página própria, alcançada por Configurações ▾. Saiu do
+  // seletor de visões do dashboard — lá se OLHA a carteira; aqui se define o que ela deve entregar.
+  if (session.page === "obrigacoes") {
+    return (
+      <ObrigacoesPage
+        api={api}
+        empresas={companiesWorkspace.companiesState.companies}
+        onBack={() => session.setPage("companies")}
+      />
+    );
+  }
+
   if (session.page === "rotinas") {
     return (
       <RotinasPage
@@ -456,6 +469,7 @@ function App() {
       onOpenApuracao={() => session.setPage("apuracao")}
       onOpenRotinas={() => session.setPage("rotinas")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
+      onOpenObrigacoes={() => session.setPage("obrigacoes")}
       backgroundJobs={backgroundJobs}
       api={api}
 

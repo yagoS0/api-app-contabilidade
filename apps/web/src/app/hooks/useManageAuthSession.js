@@ -16,8 +16,10 @@ const PAGE_TO_PATH = {
   chartOfAccountsGlobal: "/firm-settings/chart",
   apuracao: "/apuracao",
   rotinas: "/rotinas",
-  calendario: "/calendario",
-  pendencias: "/pendencias",
+  // `calendario` e `pendencias` saíram: nunca tiveram bloco correspondente no App.jsx, então as
+  // URLs caíam no dashboard em silêncio. O calendário é visão do dashboard; Pendências virou aba
+  // dentro de Consultas.
+  obrigacoes: "/obrigacoes",
   serproFuncoes: "/funcoes-serpro",
 };
 
@@ -39,8 +41,7 @@ function pathToPageName(pathname) {
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";
   if (pathname === "/apuracao") return "apuracao";
   if (pathname === "/rotinas") return "rotinas";
-  if (pathname === "/calendario") return "calendario";
-  if (pathname === "/pendencias") return "pendencias";
+  if (pathname === "/obrigacoes") return "obrigacoes";
   if (pathname === "/funcoes-serpro") return "serproFuncoes";
   // O download de notas virou aba dentro de "Funções em lote" — links antigos caem lá.
   if (pathname === "/download-notas") return "serproFuncoes";

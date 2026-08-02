@@ -12,6 +12,7 @@
 // entregar", não "o que falta nesta empresa".
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppShell } from "../../../components/layout/AppShell";
 import { Button } from "../../../components/ui/Button";
 import { RegrasObrigacao } from "./renderRegrasObrigacao";
 
@@ -343,15 +344,20 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
   // atrás estaria desatualizada.
   if (verRegras) {
     return (
-      <RegrasObrigacao
-        api={api}
-        empresas={empresas}
-        onVoltar={() => { setVerRegras(false); carregar(); }}
-      />
+      <AppShell>
+        <RegrasObrigacao
+          api={api}
+          empresas={empresas}
+          onVoltar={() => { setVerRegras(false); carregar(); }}
+        />
+      </AppShell>
     );
   }
 
+  // Página inteira (Configurações ▾ → Obrigações do escritório), não mais um bloco embutido no
+  // dashboard — daí o AppShell aqui dentro, como nas outras páginas de topo.
   return (
+    <AppShell>
     <section aria-label="Obrigações">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         {onBack && <Button variant="secondary" onClick={onBack}>← Voltar</Button>}
@@ -490,5 +496,6 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
         />
       )}
     </section>
+    </AppShell>
   );
 }

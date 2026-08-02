@@ -6,7 +6,6 @@ import { Button } from "../../../../components/ui/Button";
 import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
 import { AnnualGrid } from "../components/renderAnnualGrid";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
-import { ObrigacoesPage } from "../../../obrigacoes/components/renderObrigacoesPage";
 
 // Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
 function SettingsMenu({ items }) {
@@ -95,6 +94,7 @@ export function CompaniesHomePage({
   onOpenApuracao,
   onOpenRotinas,
   onOpenSerproFuncoes,
+  onOpenObrigacoes,
   onLogout,
   onOpenCompany,
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
@@ -305,6 +305,10 @@ export function CompaniesHomePage({
             )}
             <SettingsMenu
               items={[
+                // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
+                // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
+                // seletor de visões e entrou aqui.
+                { label: "Obrigações do escritório", onClick: onOpenObrigacoes },
                 { label: "Configuração SERPRO", onClick: onOpenGuideSettings },
                 { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
                 { label: "Pendências (debug)", onClick: onOpenPendingReport },
@@ -347,13 +351,14 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* Quatro visões da MESMA carteira: cards (uma competência), grade anual (12 meses),
-              calendário (o que vence no dia) e obrigações (o que EU preciso entregar). O calendário
-              era uma página separada; virou visão porque é a mesma pergunta — "como está a
-              carteira" — só com outro eixo de tempo. Obrigações fica ao lado dele porque responde
-              a mesma coisa em outra forma: lista em vez de grade. */}
+          {/* Três visões da MESMA carteira: cards (uma competência), grade anual (12 meses) e
+              calendário (o que vence no dia). O calendário era uma página separada; virou visão
+              porque é a mesma pergunta — "como está a carteira" — só com outro eixo de tempo.
+              Obrigações SAIU daqui: cadastrar obrigação é configuração do escritório, não uma
+              forma de olhar a carteira; foi para o menu Configurações. O que se ENTREGA continua
+              visível aqui, dentro do calendário. */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {[["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"], ["obrigacoes", "Obrigações"]].map(([key, label]) => (
+            {[["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"]].map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -528,9 +533,7 @@ export function CompaniesHomePage({
           </section>
           )}
 
-          {modoVisao === "obrigacoes" ? (
-            <ObrigacoesPage api={api} empresas={companies} />
-          ) : modoVisao === "calendario" ? (
+          {modoVisao === "calendario" ? (
             <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
           ) : modoVisao === "ano" ? (
             <AnnualGrid api={api} onOpenCompany={onOpenCompany} />

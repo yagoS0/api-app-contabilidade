@@ -6,19 +6,29 @@ Feature da carteira de empresas: dashboard (lista), detalhe (abas), formulário,
 
 - `list/` — **Dashboard** (`pages/renderCompaniesHomePage.jsx`, `components/renderCompanyCard.jsx`).
 - `detail/` — página de detalhe da empresa com abas (`pages/renderCompanyDetailPage.jsx`,
-  `components/renderCompanyDetailHeader.jsx`). **Aba default = Lançamentos (Q17)**.
+  `components/renderCompanyDetailHeader.jsx`). **Aba default = Anotações** (era Lançamentos: se a
+  empresa tem particularidade, ela precisa ser lida antes de mexer em qualquer número).
 - `form/`, `certificate/`.
 
-## Dashboard — quatro visões
+## Dashboard — três visões
 
-`modoVisao` em `renderCompaniesHomePage`: **Cards · Ano · Calendário · Obrigações**. As duas
-últimas não são "listas de empresa" — são o mesmo recorte da carteira por outro eixo. **Obrigações**
-(`features/obrigacoes/components/renderObrigacoesPage.jsx`) responde "o que EU preciso entregar",
-enquanto o calendário mostra o mesmo no formato de grade. Obrigação **não é guia**: guia é o que o
-cliente paga, obrigação é o serviço do contador — por isso a tela não fala em valor nem pagamento.
-Obrigação com `conclusaoAutomatica` **não mostra botão de concluir**: o backend recusaria o clique.
-Dentro de Obrigações, o botão **Regras do escritório** (`renderRegrasObrigacao.jsx`) aplica uma
-obrigação a várias empresas — é o que substitui o catálogo pré-carregado.
+`modoVisao` em `renderCompaniesHomePage`: **Cards · Ano · Calendário**. A última não é "lista de
+empresa" — é o mesmo recorte da carteira por outro eixo (o tempo).
+
+**Obrigações saiu do seletor de visões** e virou página própria em **Configurações ▾ → Obrigações
+do escritório** (`/obrigacoes`, `features/obrigacoes/components/renderObrigacoesPage.jsx`).
+Cadastrar obrigação **define** o que a carteira passa a dever; as visões **olham** a carteira — são
+verbos diferentes. O que se entrega continua visível no calendário, que é onde se trabalha.
+
+Obrigação **não é guia**: guia é o que o cliente paga, obrigação é o serviço do contador — por isso
+a tela não fala em valor nem pagamento. Obrigação com `conclusaoAutomatica` **não mostra botão de
+concluir**: o backend recusaria o clique. Dentro dela, **Regras do escritório**
+(`renderRegrasObrigacao.jsx`) aplica uma obrigação a várias empresas — é o que substitui o catálogo
+pré-carregado.
+
+⚠ `PAGE_TO_PATH`/`pathToPageName` (`useManageAuthSession.js`) tinham `calendario` e `pendencias`
+**sem bloco correspondente no `App.jsx`** — as URLs caíam no dashboard em silêncio. Foram removidas
+junto. Entrada nova só vale acompanhada do `if (session.page === …)`.
 
 ### Calendário (`features/calendario/components/renderCalendarioGrid.jsx`)
 
@@ -75,8 +85,8 @@ pendência de outra). Marco do escritório (`portalClientId: null`) continua apa
 
 ## Dashboard — reorganização (Lote C)
 
-- **Duas visões** (`modoVisao` em `renderCompaniesHomePage`): **Cards** (uma competência) e
-  **Ano** (`components/renderAnnualGrid.jsx` → `GET /firm/companies/annual?ano=`). Na grade anual
+- **Cards** (uma competência) e **Ano** (`components/renderAnnualGrid.jsx` →
+  `GET /firm/companies/annual?ano=`) — o Calendário entrou depois. Na grade anual
   cada célula tem **dois** indicadores — ■ fechamento contábil e ● apuração transmitida (são
   coisas diferentes e podem divergir; por isso não viram um só). Clicar abre a empresa **naquela
   competência** (`onOpenCompany(companyId, competencia)` → `setFilter("competencia", …)` no App).
@@ -146,9 +156,11 @@ mexendo (fixação exclusiva, seleção múltipla), e um mock imutável passaria
 
 ## Abas do detalhe
 
-Ordem/roteamento: `useManageCompaniesWorkspace.deriveCompanyDetailTab` (default `lancamentos`)
-+ `HEADER_TABS` (Lançamentos primeiro). Navegação ao abrir empresa:
-`useManageAuthSession` → `/companies/:id/lancamentos`.
+Ordem/roteamento: `useManageCompaniesWorkspace.deriveCompanyDetailTab` (default `anotacoes`)
++ `GROUPS` em `renderCompanyDetailHeader.jsx` (Anotações primeiro, no primeiro nível). Navegação ao
+abrir empresa: `useManageAuthSession` → `/companies/:id/anotacoes`. Aba nova exige **três** peças:
+entrada em `GROUPS`, par em `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT` e bloco `if` no
+`renderCompanyDetailPage`. Faltando o par, a URL cai em Anotações sem erro nenhum.
 
 ## Padrões
 
