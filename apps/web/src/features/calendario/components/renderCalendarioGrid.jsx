@@ -214,58 +214,6 @@ function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compact
 }
 
 /**
- * Mini-calendário da sidebar: navegação rápida.
- *
- * O ponto embaixo do dia é o que faz ele valer a pena — sem isso é um seletor de data qualquer,
- * e o contador teria que abrir cada dia para descobrir onde há algo.
- */
-function MiniCalendario({ competencia, selecionado, hoje, temItens, onEscolher }) {
-  const semanas = semanasDoMes(competencia);
-  const [ano, mes] = competencia.split("-").map(Number);
-  return (
-    <div>
-      <div style={{ fontSize: "0.72rem", color: COR.suave, textTransform: "capitalize", marginBottom: 6 }}>
-        {MESES[mes - 1]} {ano}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 1 }}>
-        {DIAS_SEMANA.map((d) => (
-          <div key={d} style={{ fontSize: "0.56rem", color: COR.suave, textAlign: "center" }}>{d[0]}</div>
-        ))}
-        {semanas.flat().map((d) => {
-          const ehHoje = d.data === hoje;
-          const ehSelecionado = d.data === selecionado;
-          return (
-            <button
-              key={d.data}
-              type="button"
-              onClick={() => onEscolher(d.data)}
-              title={d.data.split("-").reverse().join("/")}
-              style={{
-                aspectRatio: "1", border: "none", borderRadius: 4, cursor: "pointer", padding: 0,
-                fontSize: "0.62rem", lineHeight: 1, position: "relative",
-                background: ehHoje ? COR.hoje : ehSelecionado ? "rgba(189,147,249,0.25)" : "transparent",
-                color: ehHoje ? "#1A1B26" : d.doMes ? COR.texto : "#4a4d63",
-                fontWeight: ehHoje || ehSelecionado ? 700 : 400,
-              }}
-            >
-              {d.dia}
-              {temItens(d.data) && !ehHoje && (
-                <span
-                  style={{
-                    position: "absolute", bottom: 1, left: "50%", transform: "translateX(-50%)",
-                    width: 3, height: 3, borderRadius: 999, background: COR.suave,
-                  }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/**
  * Tela estreita = celular. Só decide o DEFAULT; o contador troca de visão à vontade depois.
  *
  * Largura 0 significa "ainda não sei" (container escondido, iframe sem layout), não "estreita" —
@@ -500,6 +448,56 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
     return doDia.find((i) => i.tipo === "obrigacaoGrupo" && i.grupoChave === grupoSelecionado.grupoChave) || null;
   }, [grupoSelecionado, porDiaAgrupado]);
 
+  /**
+   * A lista de empresas do painel esquerdo. Ela existe SEMPRE — é a carteira ao lado do calendário,
+   * não um painel que aparece quando se clica em algo. Clicar numa obrigação apenas a ESTREITA
+   * para as empresas que têm aquela obrigação naquele dia.
+   *
+   * Sem grupo aberto: toda a carteira, com quantas obrigações cada uma tem em aberto no mês visível
+   * — o número é o que transforma a lista em ordem de trabalho em vez de um índice.
+   * Com grupo aberto: só as empresas daquele grupo, cada uma com a situação e o ✓ para concluir.
+   */
+  const obrigacoesPorEmpresa = useMemo(() => {
+    const mapa = new Map();
+    for (const itens of Object.values(porDiaVisivel)) {
+      for (const it of itens) {
+        if (it.tipo !== "obrigacao" || !it.companyId) continue;
+        const atual = mapa.get(it.companyId) || { abertas: 0, vencidas: 0, total: 0 };
+        atual.total += 1;
+        if (it.situacao === "VENCIDA") { atual.vencidas += 1; atual.abertas += 1; }
+        else if (it.situacao !== "CONCLUIDA") atual.abertas += 1;
+        mapa.set(it.companyId, atual);
+      }
+    }
+    return mapa;
+  }, [porDiaVisivel]);
+
+  const linhasDoPainel = useMemo(() => {
+    if (grupoAberto) {
+      return grupoAberto.ocorrencias.map((oc) => ({
+        chave: oc.id,
+        companyId: oc.companyId,
+        nome: oc.empresa || "—",
+        competencia: oc.competencia,
+        situacao: oc.situacao,
+        resolvido: oc.resolvido,
+        conclusaoAutomatica: oc.conclusaoAutomatica,
+        ocorrencia: oc,
+      }));
+    }
+    return empresas.map((e) => {
+      const cont = obrigacoesPorEmpresa.get(e.companyId) || { abertas: 0, vencidas: 0, total: 0 };
+      return {
+        chave: e.companyId,
+        companyId: e.companyId,
+        nome: e.razao,
+        abertas: cont.abertas,
+        vencidas: cont.vencidas,
+        semObrigacao: cont.total === 0,
+      };
+    });
+  }, [grupoAberto, empresas, obrigacoesPorEmpresa]);
+
   // Agenda: lista cronológica do período, só com dia que tem algo. Dia vazio numa lista é ruído —
   // ao contrário da grade, onde o vazio é a própria informação ("nada vence aqui").
   const diasDaAgenda = useMemo(() => {
@@ -656,64 +654,88 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
           style={
             estreita
               ? { flex: "1 1 100%", display: "flex", flexDirection: "column", gap: 14, paddingBottom: 12, borderBottom: `1px solid ${COR.borda}` }
-              // Cresce enquanto há grupo aberto: a lista de empresas precisa de largura para o
-              // nome não virar reticências. Sem grupo, volta aos 190px.
-              : { flex: `0 0 ${grupoAberto ? 260 : 190}px`, maxWidth: grupoAberto ? 260 : 190, display: "flex", flexDirection: "column", gap: 14 }
+              : { flex: "0 0 232px", maxWidth: 232, display: "flex", flexDirection: "column", gap: 14 }
           }
         >
-          {/* Painel do grupo: as empresas que têm a obrigação daquele dia. Fica ACIMA do
-              mini-calendário e do filtro, sem substituir nenhum dos dois — os dois seguem
-              alcançáveis enquanto o grupo está aberto. */}
-          {grupoAberto && (
-            <div style={{ border: `1px solid ${COR.obrigacao}`, borderRadius: 8, padding: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                <strong style={{ color: COR.texto, fontSize: "0.82rem", lineHeight: 1.2 }}>{grupoAberto.titulo}</strong>
-                <button
-                  type="button" onClick={() => setGrupoSelecionado(null)} title="Fechar"
-                  style={{ marginLeft: "auto", background: "none", border: "none", color: COR.suave, cursor: "pointer", fontSize: "0.9rem", padding: 0 }}
-                >
-                  ✕
-                </button>
-              </div>
-              <div style={{ fontSize: "0.68rem", color: COR.suave, marginBottom: 8 }}>
-                {grupoAberto.data.split("-").reverse().join("/")} · {grupoAberto.pendentes + grupoAberto.vencidas} em aberto de {grupoAberto.total}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 260, overflowY: "auto" }}>
-                {grupoAberto.ocorrencias.map((oc) => (
-                  <div key={oc.id} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem" }}>
+          {/* A CARTEIRA, ao lado do calendário. Ela não aparece e some conforme o clique: está
+              sempre ali, com todas as empresas. Clicar numa obrigação do calendário apenas a
+              ESTREITA para quem tem aquela obrigação — e o ✕ devolve a lista inteira.
+              Dentro da aba de uma empresa não há o que listar, então o bloco não existe. */}
+          {!companyIdFixo && (
+            <div style={{ border: `1px solid ${grupoAberto ? COR.obrigacao : COR.borda}`, borderRadius: 8, padding: 8 }}>
+              {grupoAberto ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <strong style={{ color: COR.texto, fontSize: "0.8rem", lineHeight: 1.2 }}>{grupoAberto.titulo}</strong>
+                    <button
+                      type="button" onClick={() => setGrupoSelecionado(null)} title="Ver todas as empresas"
+                      style={{ marginLeft: "auto", background: "none", border: "none", color: COR.suave, cursor: "pointer", fontSize: "0.9rem", padding: 0 }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div style={{ fontSize: "0.68rem", color: COR.suave, marginBottom: 8 }}>
+                    {grupoAberto.data.split("-").reverse().join("/")} · {grupoAberto.pendentes + grupoAberto.vencidas} em aberto de {grupoAberto.total}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: "0.7rem", color: COR.suave, textTransform: "uppercase", marginBottom: 8 }}>
+                  Empresas · {linhasDoPainel.length}
+                </div>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 420, overflowY: "auto" }}>
+                {!linhasDoPainel.length && (
+                  <span style={{ fontSize: "0.72rem", color: COR.suave }}>Nenhuma empresa.</span>
+                )}
+                {linhasDoPainel.map((linha) => (
+                  <div key={linha.chave} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem" }}>
                     <span
-                      title={oc.situacao === "VENCIDA" ? "Vencida" : oc.resolvido ? "Concluída" : "A entregar"}
+                      title={
+                        grupoAberto
+                          ? (linha.situacao === "VENCIDA" ? "Vencida" : linha.resolvido ? "Concluída" : "A entregar")
+                          : linha.vencidas > 0 ? `${linha.vencidas} vencida(s)` : linha.abertas > 0 ? `${linha.abertas} a entregar` : "nada em aberto no mês"
+                      }
                       style={{
                         width: 6, height: 6, borderRadius: 999, flex: "0 0 auto",
-                        background: oc.situacao === "VENCIDA" ? COR.vencida : oc.resolvido ? COR.obrigacaoFeita : COR.obrigacao,
+                        background: grupoAberto
+                          ? (linha.situacao === "VENCIDA" ? COR.vencida : linha.resolvido ? COR.obrigacaoFeita : COR.obrigacao)
+                          : linha.vencidas > 0 ? COR.vencida : linha.abertas > 0 ? COR.obrigacao : COR.borda,
                       }}
                     />
                     <button
                       type="button"
-                      onClick={() => onOpenCompany?.(oc.companyId, oc.competencia)}
-                      title={oc.empresa || ""}
+                      onClick={() => onOpenCompany?.(linha.companyId, linha.competencia)}
+                      title={linha.nome}
                       style={{
                         flex: "1 1 auto", minWidth: 0, textAlign: "left", background: "none", border: "none",
-                        color: oc.resolvido ? COR.suave : COR.texto, cursor: onOpenCompany ? "pointer" : "default",
+                        color: linha.resolvido ? COR.suave : COR.texto, cursor: onOpenCompany ? "pointer" : "default",
                         padding: 0, font: "inherit", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                        textDecoration: oc.resolvido ? "line-through" : "none",
+                        textDecoration: linha.resolvido ? "line-through" : "none",
                       }}
                     >
-                      {oc.empresa || "—"}
+                      {linha.nome}
                     </button>
+                    {/* Fora do grupo o número é quantas obrigações a empresa tem em aberto no mês
+                        visível — some no zero, senão a coluna vira uma fileira de "0". */}
+                    {!grupoAberto && linha.abertas > 0 && (
+                      <span style={{ color: linha.vencidas > 0 ? COR.vencida : COR.suave, flex: "0 0 auto" }}>
+                        {linha.abertas}
+                      </span>
+                    )}
                     {/* Sem botão na automática: o backend recusa o clique, e oferecer é pior que
                         não oferecer. Concluída também não mostra — não há o que fazer. */}
-                    {!oc.resolvido && !oc.conclusaoAutomatica && (
+                    {grupoAberto && !linha.resolvido && !linha.conclusaoAutomatica && (
                       <button
                         type="button"
-                        onClick={() => concluirOcorrencia(oc, { fecharDetalhe: false })}
+                        onClick={() => concluirOcorrencia(linha.ocorrencia, { fecharDetalhe: false })}
                         title="Marcar como concluída"
                         style={{ background: "none", border: "none", color: "#69FF47", cursor: "pointer", fontSize: "0.8rem", padding: "0 2px" }}
                       >
                         ✓
                       </button>
                     )}
-                    {oc.conclusaoAutomatica && !oc.resolvido && (
+                    {grupoAberto && linha.conclusaoAutomatica && !linha.resolvido && (
                       <span title="Conclui sozinha quando o sistema observar o serviço feito" style={{ color: COR.marco, fontSize: "0.7rem" }}>auto</span>
                     )}
                   </div>
@@ -722,13 +744,6 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
             </div>
           )}
 
-          <MiniCalendario
-            competencia={competencia}
-            selecionado={referencia}
-            hoje={hoje}
-            temItens={(data) => Boolean((porDiaVisivel[data] || []).length)}
-            onEscolher={(data) => setReferencia(data)}
-          />
           <div>
             <div style={{ fontSize: "0.7rem", color: COR.suave, textTransform: "uppercase", marginBottom: 6 }}>
               Mostrar
@@ -752,8 +767,11 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         </aside>
       )}
 
-      {/* Drawer aberto no celular esconde a grade: são duas coisas disputando 375px. */}
-      <div style={{ flex: "1 1 auto", minWidth: 0, display: estreita && sidebarAberta ? "none" : "block" }}>
+      {/* Drawer aberto no celular esconde a grade: são duas coisas disputando 375px.
+          ⚠ `flex-basis: 0`, não `auto`: com `auto` a base é o tamanho do CONTEÚDO, e a grade de 7
+          colunas pede ~1185px. Somada aos 232px do painel isso estoura a linha, o `flex-wrap`
+          entra e o painel vai parar EM CIMA da grade em vez de ao lado dela. */}
+      <div style={{ flex: "1 1 0", minWidth: 0, display: estreita && sidebarAberta ? "none" : "block" }}>
       {visao === "agenda" ? (
         <div style={{ border: `1px solid ${COR.borda}`, borderRadius: 8, overflow: "hidden" }}>
           {!diasDaAgenda.length && (

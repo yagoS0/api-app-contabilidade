@@ -38,9 +38,21 @@ células ilegíveis num celular. `ehTelaEstreita()` trata largura 0 como *descon
 estreita — sem isso a tela abre em modo celular num container ainda sem layout e fica assim, porque
 `visao`/`sidebarAberta` são valores iniciais e não se recalculam.
 
-Sidebar com mini-calendário (pontinho no dia que tem evento) e filtro por categoria — o filtro age
-na **exibição**, não na busca. Em tela estreita ela vira **drawer**: largura total e a grade some
-enquanto está aberta.
+**À esquerda fica a CARTEIRA**, não um painel que aparece e some: a lista com **todas** as empresas
+está sempre ali, e clicar numa obrigação do calendário apenas a **estreita** para quem tem aquela
+obrigação naquele dia (o ✕ devolve a lista inteira). Fora do filtro, cada empresa mostra quantas
+obrigações tem em aberto no mês visível — o número some no zero, senão a coluna vira uma fileira de
+"0". Dentro da aba de uma empresa o bloco não existe: não há o que listar.
+
+O **mini-calendário saiu** (decisão do dono): a navegação por dia já está nos ‹ › e no "Hoje", e ele
+ocupava a altura que a lista de empresas precisa.
+
+Abaixo da lista, o filtro por categoria — que age na **exibição**, não na busca. Em tela estreita a
+sidebar vira **drawer**: largura total e a grade some enquanto está aberta.
+
+⚠ A grade usa `flex: 1 1 0`, **não** `auto`. Com `auto` a base é o tamanho do conteúdo (~1185px
+numa grade de 7 colunas); somada aos 232px do painel isso estoura a linha, o `flex-wrap` entra e o
+painel vai parar **em cima** da grade em vez de ao lado dela.
 
 **Guia e obrigação têm cores e símbolos distintos** (`•` laranja × `▸` verde) porque respondem a
 perguntas diferentes; obrigação **vencida** ganha contorno vermelho por cima da cor da categoria.
@@ -54,14 +66,12 @@ obrigações homônimas de regras diferentes); **guia continua uma por empresa**
 vencimento são de cada uma. O chip conta as **em aberto**, não o total: "· 6" num dia com tudo
 concluído seria mentira, então o número some e sobra o nome riscado.
 
-Três armadilhas, todas reais:
+Duas armadilhas, as duas reais:
 - `porDiaAgrupado` deriva de **`porDiaVisivel`**, não de `porDia`. O filtro de categoria casa por
   `i.tipo`, e o item agrupado é `"obrigacaoGrupo"` — agrupar antes de filtrar mata o checkbox
   "Obrigações" em silêncio.
 - O estado guarda a **chave** (`{grupoChave, data}`), não o objeto. Guardando o objeto, concluir
-  uma empresa deixaria o painel mostrando a lista pré-conclusão até alguém re-clicar no chip.
-- O painel **não substitui** a sidebar: entra acima do mini-calendário e do filtro, e ela cresce
-  de 190 para 260px enquanto há grupo aberto.
+  uma empresa deixaria a lista mostrando o estado pré-conclusão até alguém re-clicar no chip.
 
 Na linha da empresa, o ✓ some quando a obrigação é `conclusaoAutomatica` (o backend recusa o
 clique) e quando já está concluída.
