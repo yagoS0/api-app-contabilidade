@@ -25,7 +25,15 @@ const CHECKLIST_ITENS = [
   { chave: "pagamentos",     label: "Pagamentos",       title: "Confirme que os pagamentos do mês foram lançados." },
 ];
 
-function FechamentoCadeado({ companyId, competencia, entries, onState }) {
+/** ISO → "12/05/2026 14:31". Sem data conhecida devolve "data desconhecida", nunca "Invalid Date". */
+function fmtDataHora(iso) {
+  if (!iso) return "data desconhecida";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "data desconhecida";
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData }) {
   const [fechado, setFechado] = useState(false);
   const [busy, setBusy] = useState(false);
   // Checklist (Q47 + Lote C): { folhaProlabore, despesas, receitas, provisoes, pagamentos }
@@ -70,6 +78,10 @@ function FechamentoCadeado({ companyId, competencia, entries, onState }) {
         // `checklist` é o formato novo; o fallback cobre um backend ainda sem ele (só a folha).
         setChecklist(r?.checklist || { folhaProlabore: r?.folhaProlaboreOk === true });
         onState?.(Boolean(r?.fechado));
+        // Payload inteiro para quem precisa de mais que o booleano de fechado — hoje, o menu do
+        // SERPRO, que lê `r.serpro` para avisar "já buscado em <data>" ANTES de gastar de novo.
+        // Callback separado de propósito: `onState` também é chamado pelo `toggle()`, sem payload.
+        onFechamentoData?.(r || null);
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -276,6 +288,9 @@ export function AccountingEntriesTab({
   filters,
   onFilterChange,
   onLoad,
+  // Buscas PAGAS no SERPRO, disparadas pelo menu "SERPRO". Ausentes = item desabilitado.
+  onSyncSerproPgdas,
+  onCaptureSerproLp,
   onCreateEntry,
   onUpdateEntry,
   onDeleteEntry,
@@ -329,7 +344,14 @@ export function AccountingEntriesTab({
   const [showCreateParcelamento, setShowCreateParcelamento] = useState(false);
 
   // Parcelamento Simples Nacional só faz sentido para empresas regime SIMPLES.
-  const isSimples = String(companyRegime || "").trim().toUpperCase() === "SIMPLES";
+  const regimeUpper = String(companyRegime || "").trim().toUpperCase();
+  const isSimples = regimeUpper === "SIMPLES";
+  // Tem que casar EXATAMENTE com a guarda do backend (`LucroPresumidoProvisaoService`), inclusive
+  // LUCRO_REAL — se divergir, o botão aparece e a rota devolve 409 na cara do contador.
+  const isPresumido = regimeUpper === "LUCRO_PRESUMIDO" || regimeUpper === "LUCRO_REAL";
+  // Estado das buscas pagas nesta competência, vindo do GET do fechamento. `null` = ainda não sei.
+  const [buscasSerpro, setBuscasSerpro] = useState(null);
+  const [buscandoSerpro, setBuscandoSerpro] = useState(null); // "extrato" | "presumido"
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [adding, setAdding] = useState(false); // Q18: linha de novo lançamento inline
@@ -380,6 +402,47 @@ export function AccountingEntriesTab({
   const now = new Date();
   const defaultComp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const activeComp = filters.competencia || defaultComp;
+
+  /**
+   * Busca no SERPRO, confirmando ANTES quando já foi buscado nesta competência.
+   *
+   * A confirmação lê o estado que veio do GET, nunca a resposta do POST: quando o POST responde, a
+   * chamada paga já saiu. E o Presumido são DUAS chamadas por clique (declaração + DARF), então um
+   * duplo clique distraído custa quatro.
+   *
+   * Avisa e deixa seguir — refazer é legítimo depois de uma retificação; o que não pode é gastar
+   * sem saber.
+   */
+  async function buscarNoSerpro(qual) {
+    if (buscandoSerpro) return;
+    const jaBuscado = qual === "extrato" ? buscasSerpro?.extrato : buscasSerpro?.presumido;
+    if (jaBuscado?.buscado) {
+      const oQue = qual === "extrato" ? "Este extrato" : "Estes tributos";
+      // eslint-disable-next-line no-alert
+      const seguir = window.confirm(
+        `${oQue} já ${qual === "extrato" ? "foi buscado" : "foram buscados"} em ${fmtDataHora(jaBuscado.em)}.\n\n`
+        + "Buscar de novo consome uma nova consulta paga no SERPRO e sobrescreve os valores da "
+        + "competência.\n\nBuscar mesmo assim?",
+      );
+      if (!seguir) return;
+    }
+    setBuscandoSerpro(qual);
+    try {
+      // Os dois handlers recebem `{competencia}`, não a string solta.
+      if (qual === "extrato") await onSyncSerproPgdas?.(companyId, { competencia: activeComp });
+      else await onCaptureSerproLp?.(companyId, { competencia: activeComp });
+    } finally {
+      setBuscandoSerpro(null);
+      // Marca no `finally`, não no sucesso: a chamada paga saiu do mesmo jeito, e o que a
+      // confirmação protege é o BOLSO, não o resultado. O pré-voo vem do GET do fechamento, que só
+      // roda na montagem e ao trocar de competência — sem isto, o segundo clique na mesma sessão
+      // não avisaria nada, que é justamente o caso para o qual a confirmação existe.
+      setBuscasSerpro((atual) => ({
+        ...(atual || {}),
+        [qual]: { ...(atual?.[qual] || {}), buscado: true, em: new Date().toISOString() },
+      }));
+    }
+  }
 
   // Navegação rápida de competência (setas ◀ ▶ no título): ±1 mês.
   function shiftCompetencia(n) {
@@ -526,6 +589,54 @@ export function AccountingEntriesTab({
               }] : []),
             ]}
           />
+          {/* Buscar no SERPRO o que a competência já tem lá: o extrato do Simples (que traz as
+              receitas e o DAS) ou os tributos do Presumido. Fica AQUI, e não só na aba Fiscal,
+              porque é aqui que o contador está quando percebe que falta lançamento — e a aba de
+              Apuração nem existe para o Presumido.
+
+              ⚠ São chamadas PAGAS. O menu lê `buscasSerpro` (do GET do fechamento) para confirmar
+              antes de repetir, e trava enquanto uma busca está em voo. */}
+          <ActionMenu
+            label="SERPRO"
+            accent="#FFB347"
+            items={[
+              ...(isSimples ? [{
+                label: buscandoSerpro === "extrato" ? "Buscando extrato…" : "Buscar extrato do Simples",
+                hint: buscasSerpro?.extrato?.buscado
+                  ? `Já buscado em ${fmtDataHora(buscasSerpro.extrato.em)}`
+                  : "Traz receitas e DAS da competência e gera os lançamentos",
+                onClick: () => buscarNoSerpro("extrato"),
+                disabled: Boolean(buscandoSerpro) || monthClosed || !onSyncSerproPgdas,
+              }] : []),
+              ...(isPresumido ? [{
+                label: buscandoSerpro === "presumido" ? "Buscando tributos…" : "Buscar tributos do Presumido",
+                // `disponivel === false` = a integração está desligada no servidor. Dizer isso ANTES
+                // do clique poupa o contador de descobrir pelo 409.
+                hint: buscasSerpro?.presumido?.disponivel === false
+                  ? "Integração do Presumido desligada — a consulta ainda não foi validada em produção."
+                  : buscasSerpro?.presumido?.buscado
+                    ? `Já buscado em ${fmtDataHora(buscasSerpro.presumido.em)}`
+                    : "Traz PIS, COFINS, IRPJ e CSLL da competência",
+                onClick: () => buscarNoSerpro("presumido"),
+                disabled: Boolean(buscandoSerpro) || monthClosed || !onCaptureSerproLp
+                  || buscasSerpro?.presumido?.disponivel === false,
+              }] : []),
+              // Regime fora dos dois: item desabilitado que NOMEIA o regime. Um menu que some
+              // deixa o contador procurando; um item que explica encerra a dúvida.
+              ...(!isSimples && !isPresumido ? [{
+                label: `Sem busca para ${regimeUpper || "regime não definido"}`,
+                hint: "A busca automática existe para Simples Nacional e Lucro Presumido/Real.",
+                onClick: () => {},
+                disabled: true,
+              }] : []),
+              ...(monthClosed ? [{
+                label: "Mês fechado",
+                hint: "Reabra a empresa para buscar de novo — a busca grava lançamentos.",
+                onClick: () => {},
+                disabled: true,
+              }] : []),
+            ]}
+          />
           {/* Filtros saíram da caixa: abrem num modal, deixando a caixa superior enxuta. */}
           <button
             type="button"
@@ -627,6 +738,7 @@ export function AccountingEntriesTab({
             competencia={activeComp}
             entries={entries}
             onState={(closed) => { setMonthClosed(closed); if (closed) setAdding(false); }}
+            onFechamentoData={(dados) => setBuscasSerpro(dados?.serpro || null)}
           />
         </div>
       </div>

@@ -8,6 +8,7 @@ import { resolvePayrollTemplate } from "../../application/accounting/payrollTemp
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
+import { INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
 import { parseExcelBuffer, findHistoricoMatches, upsertHistoricoFromImport } from "../../application/accounting/excelImport.js";
 import { sanitizeFilename } from "../../lib/httpHeaders.js";
 // Q47: baixa do INSS pela Circular (guia sintética) — reusa o serviço de pagamento do INSS.
@@ -1344,7 +1345,9 @@ export function createAccountingEntriesRouter({ log }) {
     // A guia do LP usa `sourceFileId` determinístico como chave de upsert
     // (`LucroPresumidoProvisaoService.js:61`), então ela é a marca exata de "já busquei" — a mesma
     // em que o worker se apoia. `updatedAt` é a data que a mensagem mostra.
-    let presumido = { buscado: false, em: null };
+    // A flag viaja junto para a tela poder DESABILITAR o item com o motivo, em vez de deixar o
+    // contador descobrir pelo 409 depois do clique.
+    let presumido = { buscado: false, em: null, disponivel: INTEGRACAO_SERPRO_DCTFWEB_LP };
     try {
       const portal = await prisma.portalClient.findUnique({
         where: { id: portalClientId },
@@ -1357,7 +1360,7 @@ export function createAccountingEntriesRouter({ log }) {
           select: { updatedAt: true, status: true },
         });
         if (guia && guia.status === "PROCESSED") {
-          presumido = { buscado: true, em: guia.updatedAt };
+          presumido = { ...presumido, buscado: true, em: guia.updatedAt };
         }
       }
     } catch {

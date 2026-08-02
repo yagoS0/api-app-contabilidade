@@ -97,6 +97,16 @@ function SitfisTabWrapper({ companyId }) {
 export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
+  // ⚠ O regime mora em `legacyCompany` (é do cadastro legado) e NUNCA no topo do payload — o
+  // `buildFirmCompanyPayload` só o inclui dentro de `legacyCompany`. Ler do topo devolvia
+  // `undefined` sempre, e três telas dependiam disso em silêncio: "+ Parcelamento Simples" nunca
+  // aparecia, e o filtro por regime da Circular e do "+ Subir Guia" recebia undefined.
+  const companyRegime =
+    selectedCompany?.legacyCompany?.regimeTributario
+    || selectedCompany?.legacyCompany?.tipoTributario
+    || selectedCompany?.regimeTributario
+    || selectedCompany?.tipoTributario
+    || null;
   // Q11.1: state do modal de exclusão (zona de risco)
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
@@ -136,6 +146,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             filters={accountingPanel.filters}
             onFilterChange={accountingPanel.onFilterChange}
             onLoad={accountingPanel.onLoadEntries}
+            onSyncSerproPgdas={accountingPanel.onSyncSerproPgdas}
+            onCaptureSerproLp={accountingPanel.onCaptureSerproLp}
             onCreateEntry={accountingPanel.onCreateEntry}
             onCreateFolha={accountingPanel.onCreateFolha}
             onLoadPayrollTemplate={accountingPanel.onLoadPayrollTemplate}
@@ -147,7 +159,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onPreviewExcel={accountingPanel.onPreviewExcel}
             onImportExcel={accountingPanel.onImportExcel}
             onCreateParcelamento={accountingPanel.onCreateParcelamento}
-            companyRegime={selectedCompany?.regimeTributario || selectedCompany?.tipoTributario}
+            companyRegime={companyRegime}
             accountingFunctions={accountingPanel.accountingFunctions}
             savingEntry={accountingPanel.savingEntry}
             accounts={accountingPanel.accounts}
@@ -190,7 +202,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
             companyId={companyId}
-            companyRegime={selectedCompany?.regimeTributario || selectedCompany?.tipoTributario}
+            companyRegime={companyRegime}
             guides={guidesPanel.guides}
             loadingGuides={guidesPanel.loading}
             onResendGuide={guidesPanel.onResendGuide}
@@ -459,7 +471,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <ErrorBoundary>
           <Suspense fallback={<TabLoadingFallback />}>
           <CircularTab
-            companyRegime={selectedCompany?.regimeTributario || selectedCompany?.tipoTributario}
+            companyRegime={companyRegime}
             circularData={circularPanel.circularData}
             loading={circularPanel.loading}
             year={circularPanel.year}

@@ -41,6 +41,13 @@ function App() {
       if (session.page === "companyDetail" && companiesWorkspace.companiesState.selectedCompanyId === companyId) {
         const competencia = payload?.circular?.competencia || accountingWorkspace.circularCompetencia;
         await accountingWorkspace.loadCircular(accountingWorkspace.circularYear, competencia);
+        // A busca GERA lançamentos, então a lista da aba Lançamentos também precisa recarregar.
+        // Só a Circular era recarregada — não incomodava enquanto o botão de buscar vivia na aba
+        // Apuração, onde não há tabela de lançamento na tela. Com o botão em Lançamentos, o
+        // contador buscava e não via nada aparecer.
+        if (companiesWorkspace.companyDetailTab === "lancamentos") {
+          await accountingWorkspace.loadAccountingEntries();
+        }
       }
     },
     onInssSynced: async (companyId, payload) => {
@@ -319,6 +326,10 @@ function App() {
           filters: accountingWorkspace.accountingEntriesState.filters,
           onFilterChange: (key, value) => accountingWorkspace.accountingEntriesState.setFilter(key, value),
           onLoadEntries: () => accountingWorkspace.loadAccountingEntries(),
+          // Buscas PAGAS no SERPRO, do menu "SERPRO" da aba. Vêm do workspace de EMPRESAS porque
+          // é lá que moram o feedback e o refresh (`onPgdasSynced`) que as duas disparam.
+          onSyncSerproPgdas: companiesWorkspace.handleSyncSerproPgdas,
+          onCaptureSerproLp: companiesWorkspace.handleCaptureSerproLp,
           onCreateEntry: accountingWorkspace.handleCreateEntry,
           onCreateFolha: accountingWorkspace.handleCreateFolha,
           onLoadPayrollTemplate: accountingWorkspace.handleLoadPayrollTemplate,

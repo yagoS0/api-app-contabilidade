@@ -104,6 +104,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
   const [checkingSerproProcuration, setCheckingSerproProcuration] = useState(false);
   const [capturingSerproPgdasd, setCapturingSerproPgdasd] = useState(false);
   const [syncingSerproPgdas, setSyncingSerproPgdas] = useState(false);
+  const [capturingSerproLp, setCapturingSerproLp] = useState(false);
   const [syncingSerproInss, setSyncingSerproInss] = useState(false);
   const [recalcInssBusy, setRecalcInssBusy] = useState(false); // Q53: recálculo explícito do INSS na aba Guias
   const [liberarGuiasBusy, setLiberarGuiasBusy] = useState(false); // Portal Cliente (#3.1): liberar/revogar guias ao cliente
@@ -394,6 +395,52 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       return false;
     } finally {
       setSyncingSerproPgdas(false);
+    }
+  }
+
+  /**
+   * Busca os tributos do Lucro Presumido da competência (PIS, COFINS, IRPJ e CSLL numa consulta).
+   *
+   * Espelha `handleSyncSerproPgdas` de propósito: mesmo feedback, mesmo refresh. Antes disto o
+   * único caminho era `runSerproOp("presumido")`, da página Consultas — que devolve `{ok,message}`
+   * e não toca no feedback nem recarrega a tela da empresa.
+   *
+   * "DCTFWeb ainda não transmitida" é estado NORMAL, não erro: a rota devolve 200 com `ok:false`,
+   * e tratar isso como falha faria o contador procurar problema onde não há.
+   */
+  async function handleCaptureSerproLp(companyId, input = {}) {
+    if (!companyId) {
+      feedback.setError("Selecione uma empresa para buscar os tributos do Presumido.");
+      return false;
+    }
+    const competencia = String(input?.competencia || "").trim();
+    if (!competencia) {
+      feedback.setError("Informe a competência para buscar os tributos do Presumido.");
+      return false;
+    }
+    setCapturingSerproLp(true);
+    feedback.clearFeedback();
+    try {
+      const payload = await api.captureSerproLp(companyId, { competencia });
+      if (payload?.ok === false) {
+        feedback.setMessage(payload?.message || "Nada a buscar nesta competência.");
+        return null;
+      }
+      const qtd = payload?.result?.debitos?.length || 0;
+      feedback.setMessage(
+        qtd
+          ? `Tributos do Presumido buscados: ${qtd} provisão(ões) na competência.`
+          : "Consulta feita, mas não havia débito nesta competência.",
+      );
+      if (typeof onPgdasSynced === "function") {
+        try { await onPgdasSynced(companyId, payload?.result || null); } catch { /* best-effort */ }
+      }
+      return payload?.result || null;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao buscar os tributos do Presumido.");
+      return false;
+    } finally {
+      setCapturingSerproLp(false);
     }
   }
 
@@ -979,6 +1026,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     checkingSerproProcuration,
     capturingSerproPgdasd,
     syncingSerproPgdas,
+    capturingSerproLp,
     syncingSerproInss,
     serproProcurationStatus,
     serproWorkerStatus,
@@ -998,6 +1046,7 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleCheckSerproProcuration,
     handleCaptureSerproPgdasd,
     handleSyncSerproPgdas,
+    handleCaptureSerproLp,
     handleSyncSerproInss,
     runSerproOp,
     loadSerproWorkerStatus,

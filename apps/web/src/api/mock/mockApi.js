@@ -873,7 +873,9 @@ export function createMockApi() {
             em: circular?.serproLastSyncAt || null,
             status: circular?.serproSyncStatus || null,
           },
-          presumido: { buscado: Boolean(lpEm), em: lpEm },
+          // No mock a integração é sempre "disponível": não há flag de servidor para consultar, e
+          // desligar aqui esconderia a tela que se quer conferir offline.
+          presumido: { buscado: Boolean(lpEm), em: lpEm, disponivel: true },
         },
       };
     },
