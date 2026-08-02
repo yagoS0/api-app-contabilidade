@@ -472,12 +472,20 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
     return mapa;
   }, [porDiaVisivel]);
 
+  // A ocorrência traz só a razão; o CNPJ vem da carteira. Sem este de-para, a lista filtrada
+  // perderia o CNPJ que a lista completa mostra — a mesma empresa apareceria de dois jeitos.
+  const cnpjPorEmpresa = useMemo(
+    () => new Map(empresas.map((e) => [e.companyId, e.cnpj])),
+    [empresas],
+  );
+
   const linhasDoPainel = useMemo(() => {
     if (grupoAberto) {
       return grupoAberto.ocorrencias.map((oc) => ({
         chave: oc.id,
         companyId: oc.companyId,
         nome: oc.empresa || "—",
+        cnpj: cnpjPorEmpresa.get(oc.companyId) || null,
         competencia: oc.competencia,
         situacao: oc.situacao,
         resolvido: oc.resolvido,
@@ -491,12 +499,13 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         chave: e.companyId,
         companyId: e.companyId,
         nome: e.razao,
+        cnpj: e.cnpj || null,
         abertas: cont.abertas,
         vencidas: cont.vencidas,
         semObrigacao: cont.total === 0,
       };
     });
-  }, [grupoAberto, empresas, obrigacoesPorEmpresa]);
+  }, [grupoAberto, empresas, obrigacoesPorEmpresa, cnpjPorEmpresa]);
 
   // Agenda: lista cronológica do período, só com dia que tem algo. Dia vazio numa lista é ruído —
   // ao contrário da grade, onde o vazio é a própria informação ("nada vence aqui").
@@ -638,6 +647,27 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         </div>
       </div>
 
+      {/* Legenda/filtro EM CIMA, em linha — não na lateral. Ao lado do calendário fica só a lista
+          de empresas; a legenda é sobre o que a GRADE mostra, e ali embaixo da lista competia por
+          altura com ela. Continua agindo na exibição, não na busca. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${COR.borda}` }}>
+        {CATEGORIAS.map((c) => (
+          <label
+            key={c.chave}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.8rem", color: categorias.has(c.chave) ? COR.texto : COR.suave, cursor: "pointer", userSelect: "none" }}
+          >
+            <input
+              type="checkbox"
+              checked={categorias.has(c.chave)}
+              onChange={() => alternarCategoria(c.chave)}
+              style={{ accentColor: c.cor }}
+            />
+            <span style={{ width: 10, height: 10, borderRadius: 3, background: c.cor, flex: "0 0 auto" }} />
+            {c.rotulo}
+          </label>
+        ))}
+      </div>
+
       {erro && (
         <div style={{ padding: "8px 12px", borderRadius: 6, background: "rgba(255,71,87,0.12)", border: "1px solid #FF4757", color: "#FF4757", marginBottom: 10, fontSize: "0.82rem" }}>
           {erro}
@@ -654,42 +684,51 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
           style={
             estreita
               ? { flex: "1 1 100%", display: "flex", flexDirection: "column", gap: 14, paddingBottom: 12, borderBottom: `1px solid ${COR.borda}` }
-              : { flex: "0 0 232px", maxWidth: 232, display: "flex", flexDirection: "column", gap: 14 }
+              : { flex: "0 0 288px", maxWidth: 288, display: "flex", flexDirection: "column", gap: 14 }
           }
         >
-          {/* A CARTEIRA, ao lado do calendário. Ela não aparece e some conforme o clique: está
-              sempre ali, com todas as empresas. Clicar numa obrigação do calendário apenas a
-              ESTREITA para quem tem aquela obrigação — e o ✕ devolve a lista inteira.
-              Dentro da aba de uma empresa não há o que listar, então o bloco não existe. */}
+          {/* A CARTEIRA, ao lado do calendário — e SÓ ela: a legenda subiu para o topo. Ela não
+              aparece e some conforme o clique: está sempre ali, com todas as empresas. Clicar numa
+              obrigação do calendário apenas a ESTREITA para quem tem aquela obrigação — e o ✕
+              devolve a lista inteira. Dentro da aba de uma empresa não há o que listar. */}
           {!companyIdFixo && (
-            <div style={{ border: `1px solid ${grupoAberto ? COR.obrigacao : COR.borda}`, borderRadius: 8, padding: 8 }}>
-              {grupoAberto ? (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <strong style={{ color: COR.texto, fontSize: "0.8rem", lineHeight: 1.2 }}>{grupoAberto.titulo}</strong>
-                    <button
-                      type="button" onClick={() => setGrupoSelecionado(null)} title="Ver todas as empresas"
-                      style={{ marginLeft: "auto", background: "none", border: "none", color: COR.suave, cursor: "pointer", fontSize: "0.9rem", padding: 0 }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div style={{ fontSize: "0.68rem", color: COR.suave, marginBottom: 8 }}>
-                    {grupoAberto.data.split("-").reverse().join("/")} · {grupoAberto.pendentes + grupoAberto.vencidas} em aberto de {grupoAberto.total}
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: "0.7rem", color: COR.suave, textTransform: "uppercase", marginBottom: 8 }}>
-                  Empresas · {linhasDoPainel.length}
-                </div>
-              )}
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 3, maxHeight: 420, overflowY: "auto" }}>
-                {!linhasDoPainel.length && (
-                  <span style={{ fontSize: "0.72rem", color: COR.suave }}>Nenhuma empresa.</span>
+            <div style={{ border: `1px solid ${grupoAberto ? COR.obrigacao : COR.borda}`, borderRadius: 10, overflow: "hidden" }}>
+              <div style={{ padding: "10px 12px", borderBottom: `1px solid ${COR.borda}`, background: "#20222E" }}>
+                {grupoAberto ? (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <strong style={{ color: COR.texto, fontSize: "0.9rem", lineHeight: 1.25 }}>{grupoAberto.titulo}</strong>
+                      <button
+                        type="button" onClick={() => setGrupoSelecionado(null)} title="Ver todas as empresas"
+                        style={{ marginLeft: "auto", background: "none", border: "none", color: COR.suave, cursor: "pointer", fontSize: "1rem", padding: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ fontSize: "0.74rem", color: COR.suave, marginTop: 3 }}>
+                      {grupoAberto.data.split("-").reverse().join("/")} · {grupoAberto.pendentes + grupoAberto.vencidas} em aberto de {grupoAberto.total}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <strong style={{ color: COR.texto, fontSize: "0.9rem" }}>Empresas</strong>
+                    <span style={{ color: COR.suave, fontSize: "0.8rem", marginLeft: 6 }}>{linhasDoPainel.length}</span>
+                  </>
                 )}
-                {linhasDoPainel.map((linha) => (
-                  <div key={linha.chave} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: "0.72rem" }}>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", maxHeight: 560, overflowY: "auto" }}>
+                {!linhasDoPainel.length && (
+                  <span style={{ fontSize: "0.8rem", color: COR.suave, padding: "12px" }}>Nenhuma empresa.</span>
+                )}
+                {linhasDoPainel.map((linha, idx) => (
+                  <div
+                    key={linha.chave}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "9px 12px",
+                      borderTop: idx === 0 ? "none" : `1px solid ${COR.borda}`,
+                    }}
+                  >
                     <span
                       title={
                         grupoAberto
@@ -697,7 +736,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                           : linha.vencidas > 0 ? `${linha.vencidas} vencida(s)` : linha.abertas > 0 ? `${linha.abertas} a entregar` : "nada em aberto no mês"
                       }
                       style={{
-                        width: 6, height: 6, borderRadius: 999, flex: "0 0 auto",
+                        width: 8, height: 8, borderRadius: 999, flex: "0 0 auto",
                         background: grupoAberto
                           ? (linha.situacao === "VENCIDA" ? COR.vencida : linha.resolvido ? COR.obrigacaoFeita : COR.obrigacao)
                           : linha.vencidas > 0 ? COR.vencida : linha.abertas > 0 ? COR.obrigacao : COR.borda,
@@ -709,17 +748,36 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                       title={linha.nome}
                       style={{
                         flex: "1 1 auto", minWidth: 0, textAlign: "left", background: "none", border: "none",
-                        color: linha.resolvido ? COR.suave : COR.texto, cursor: onOpenCompany ? "pointer" : "default",
-                        padding: 0, font: "inherit", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                        textDecoration: linha.resolvido ? "line-through" : "none",
+                        cursor: onOpenCompany ? "pointer" : "default", padding: 0, font: "inherit",
                       }}
                     >
-                      {linha.nome}
+                      <span style={{
+                        display: "block", fontSize: "0.86rem", fontWeight: 600, lineHeight: 1.25,
+                        color: linha.resolvido ? COR.suave : COR.texto,
+                        textDecoration: linha.resolvido ? "line-through" : "none",
+                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      }}>
+                        {linha.nome}
+                      </span>
+                      {/* CNPJ embaixo do nome: é como o contador confere que é a empresa certa —
+                          razões sociais se parecem, CNPJ não. */}
+                      {linha.cnpj && (
+                        <span style={{ display: "block", fontSize: "0.72rem", color: COR.suave, lineHeight: 1.3, marginTop: 1 }}>
+                          {linha.cnpj}
+                        </span>
+                      )}
                     </button>
                     {/* Fora do grupo o número é quantas obrigações a empresa tem em aberto no mês
                         visível — some no zero, senão a coluna vira uma fileira de "0". */}
                     {!grupoAberto && linha.abertas > 0 && (
-                      <span style={{ color: linha.vencidas > 0 ? COR.vencida : COR.suave, flex: "0 0 auto" }}>
+                      <span
+                        title={`${linha.abertas} obrigação(ões) em aberto no mês`}
+                        style={{
+                          flex: "0 0 auto", fontSize: "0.74rem", fontWeight: 700, borderRadius: 999,
+                          padding: "1px 7px", color: linha.vencidas > 0 ? COR.vencida : COR.obrigacao,
+                          border: `1px solid ${linha.vencidas > 0 ? COR.vencida : COR.obrigacao}`,
+                        }}
+                      >
                         {linha.abertas}
                       </span>
                     )}
@@ -730,40 +788,19 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                         type="button"
                         onClick={() => concluirOcorrencia(linha.ocorrencia, { fecharDetalhe: false })}
                         title="Marcar como concluída"
-                        style={{ background: "none", border: "none", color: "#69FF47", cursor: "pointer", fontSize: "0.8rem", padding: "0 2px" }}
+                        style={{ background: "none", border: "none", color: "#69FF47", cursor: "pointer", fontSize: "1rem", padding: "0 2px", flex: "0 0 auto" }}
                       >
                         ✓
                       </button>
                     )}
                     {grupoAberto && linha.conclusaoAutomatica && !linha.resolvido && (
-                      <span title="Conclui sozinha quando o sistema observar o serviço feito" style={{ color: COR.marco, fontSize: "0.7rem" }}>auto</span>
+                      <span title="Conclui sozinha quando o sistema observar o serviço feito" style={{ color: COR.marco, fontSize: "0.72rem", flex: "0 0 auto" }}>auto</span>
                     )}
                   </div>
                 ))}
               </div>
             </div>
           )}
-
-          <div>
-            <div style={{ fontSize: "0.7rem", color: COR.suave, textTransform: "uppercase", marginBottom: 6 }}>
-              Mostrar
-            </div>
-            {CATEGORIAS.map((c) => (
-              <label
-                key={c.chave}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", color: COR.texto, padding: "3px 0", cursor: "pointer" }}
-              >
-                <input
-                  type="checkbox"
-                  checked={categorias.has(c.chave)}
-                  onChange={() => alternarCategoria(c.chave)}
-                  style={{ accentColor: c.cor }}
-                />
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: c.cor, flex: "0 0 auto" }} />
-                {c.rotulo}
-              </label>
-            ))}
-          </div>
         </aside>
       )}
 

@@ -38,17 +38,20 @@ células ilegíveis num celular. `ehTelaEstreita()` trata largura 0 como *descon
 estreita — sem isso a tela abre em modo celular num container ainda sem layout e fica assim, porque
 `visao`/`sidebarAberta` são valores iniciais e não se recalculam.
 
-**À esquerda fica a CARTEIRA**, não um painel que aparece e some: a lista com **todas** as empresas
-está sempre ali, e clicar numa obrigação do calendário apenas a **estreita** para quem tem aquela
-obrigação naquele dia (o ✕ devolve a lista inteira). Fora do filtro, cada empresa mostra quantas
-obrigações tem em aberto no mês visível — o número some no zero, senão a coluna vira uma fileira de
-"0". Dentro da aba de uma empresa o bloco não existe: não há o que listar.
+**À esquerda fica a CARTEIRA e só ela**, não um painel que aparece e some: a lista com **todas** as
+empresas está sempre ali, e clicar numa obrigação do calendário apenas a **estreita** para quem tem
+aquela obrigação naquele dia (o ✕ devolve a lista inteira). Cada linha traz **razão social e o CNPJ
+embaixo** — é como o contador confere que é a empresa certa; razões sociais se parecem, CNPJ não.
+Fora do filtro, um contador mostra quantas obrigações a empresa tem em aberto no mês visível — some
+no zero, senão a coluna vira uma fileira de "0". Dentro da aba de uma empresa o bloco não existe.
 
-O **mini-calendário saiu** (decisão do dono): a navegação por dia já está nos ‹ › e no "Hoje", e ele
-ocupava a altura que a lista de empresas precisa.
+Duas coisas saíram da lateral por decisão do dono:
+- O **mini-calendário**, de vez (a função foi deletada): a navegação por dia já está nos ‹ › e no
+  "Hoje", e ele ocupava a altura que a lista precisa.
+- A **legenda/filtro de categoria**, que subiu para uma linha no topo. Ela é sobre o que a GRADE
+  mostra; embaixo da lista competia por altura com ela. Segue agindo na **exibição**, não na busca.
 
-Abaixo da lista, o filtro por categoria — que age na **exibição**, não na busca. Em tela estreita a
-sidebar vira **drawer**: largura total e a grade some enquanto está aberta.
+Em tela estreita a sidebar vira **drawer**: largura total e a grade some enquanto está aberta.
 
 ⚠ A grade usa `flex: 1 1 0`, **não** `auto`. Com `auto` a base é o tamanho do conteúdo (~1185px
 numa grade de 7 colunas); somada aos 232px do painel isso estoura a linha, o `flex-wrap` entra e o
