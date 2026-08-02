@@ -179,6 +179,26 @@ const mockObrigacoes = mockCompanies.length
     ]
   : [];
 
+// Feriados de 2026 — os mesmos que `scripts/semear-feriados.mjs` grava, para a tela poder ser
+// conferida no mock. Carnaval e Corpus Christi entram por decisão do dono (são ponto facultativo
+// federal, não feriado, mas banco não opera).
+const MOCK_FERIADOS = {
+  "2026-01-01": "Confraternização Universal",
+  "2026-02-16": "Carnaval (segunda)",
+  "2026-02-17": "Carnaval (terça)",
+  "2026-04-03": "Sexta-feira Santa",
+  "2026-04-21": "Tiradentes",
+  "2026-05-01": "Dia do Trabalho",
+  "2026-06-04": "Corpus Christi",
+  "2026-07-09": "Revolução Constitucionalista (SP)",
+  "2026-09-07": "Independência do Brasil",
+  "2026-10-12": "Nossa Senhora Aparecida",
+  "2026-11-02": "Finados",
+  "2026-11-15": "Proclamação da República",
+  "2026-11-20": "Consciência Negra",
+  "2026-12-25": "Natal",
+};
+
 // ── Regras do escritório ──────────────────────────────────────────────────────────────────────
 const mockRegras = [];
 
@@ -2159,7 +2179,13 @@ export function createMockApi() {
       }
       return {
         ok: true, competencia: mes, diasNoMes,
-        dias: Array.from({ length: diasNoMes }, (_, i) => ({ dia: i + 1, data: iso(i + 1), itens: porDia[i + 1] || [] })),
+        dias: Array.from({ length: diasNoMes }, (_, i) => ({
+          dia: i + 1,
+          data: iso(i + 1),
+          itens: porDia[i + 1] || [],
+          // Feriado é propriedade do DIA, não item: não se clica nem se conclui.
+          feriado: MOCK_FERIADOS[iso(i + 1)] || null,
+        })),
         pendenciasDoMes: [
           { tipo: "apuracao", companyId: "c1", empresa: "Farrell - Brakus", competencia: mes, titulo: "Apuracao nao transmitida", estado: "calculada" },
           { tipo: "fechamento", companyId: "c2", empresa: "Schultz and Sons", competencia: mes, titulo: "Mes contabil nao fechado" },

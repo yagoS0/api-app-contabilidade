@@ -66,7 +66,7 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
   };
   if (!alvos.length) return vazio;
 
-  const [empresas, guias, snapshots, circulares, marcos, obrigacoes] = await Promise.all([
+  const [empresas, guias, snapshots, circulares, marcos, obrigacoes, feriadosCrus, empresaFiltrada] = await Promise.all([
     prisma.portalClient.findMany({ where: { id: { in: alvos } }, select: { id: true, razao: true } }),
     // Guias com vencimento DENTRO do mês. `status: VAZIO` fica de fora: ausência confirmada não é
     // obrigação a cumprir, e poluiria o dia com algo que já foi resolvido.
@@ -97,6 +97,21 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
     }),
     // Quinta fonte. Já sai no formato de item do dia, com a situação derivada.
     ocorrenciasDoPeriodo({ portalIds: alvos, inicio: limites.inicio, fim: limites.fim }),
+    // Feriados: NÃO são evento, são propriedade do DIA — por isso saem numa lista à parte e não
+    // entram em `itens`. Um feriado não se clica nem se conclui; ele explica por que a obrigação
+    // foi antecipada.
+    //
+    // Municipal só entra quando o calendário está filtrado por UMA empresa. Na visão do escritório
+    // inteiro, marcar o dia como feriado por causa de uma cidade diria a coisa errada sobre as
+    // outras — a maioria das empresas trabalha normalmente naquele dia.
+    prisma.feriado.findMany({
+      where: { data: { gte: limites.inicio, lt: limites.fim } },
+      select: { data: true, nome: true, abrangencia: true, municipio: true },
+      orderBy: { data: "asc" },
+    }),
+    companyId
+      ? prisma.portalClient.findUnique({ where: { id: companyId }, select: { municipio: true } })
+      : Promise.resolve(null),
   ]);
 
   const razaoPor = new Map(empresas.map((e) => [e.id, e.razao]));
@@ -162,11 +177,22 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
     });
   }
 
+  const municipioAlvo = String(empresaFiltrada?.municipio || "").trim().toLowerCase();
+  const feriadoPorDia = new Map();
+  for (const f of feriadosCrus) {
+    if (String(f.abrangencia || "").toUpperCase() === "MUNICIPAL") {
+      const mun = String(f.municipio || "").trim().toLowerCase();
+      if (!municipioAlvo || mun !== municipioAlvo) continue;
+    }
+    const chave = diaISO(f.data);
+    if (chave && !feriadoPorDia.has(chave)) feriadoPorDia.set(chave, f.nome);
+  }
+
   const dias = [];
   for (let d = 1; d <= limites.diasNoMes; d += 1) {
     const chave = `${limites.ano}-${pad2(limites.mes)}-${pad2(d)}`;
     const itens = porDia.get(chave) || [];
-    dias.push({ dia: d, data: chave, itens });
+    dias.push({ dia: d, data: chave, itens, feriado: feriadoPorDia.get(chave) || null });
   }
 
   return {

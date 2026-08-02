@@ -137,7 +137,7 @@ function Chip({ item, onAbrir, arrastavel }) {
   );
 }
 
-function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compacta }) {
+function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compacta, feriado }) {
   const [sobre, setSobre] = useState(false);
   const MAX = compacta ? 8 : 3;
   const visiveis = itens.slice(0, MAX);
@@ -154,10 +154,14 @@ function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compact
         const id = e.dataTransfer.getData("text/plain");
         if (id) onMover(id, dia.data);
       }}
-      title="Clique para marcar uma data"
+      title={feriado ? `${feriado} — feriado. Clique para marcar uma data` : "Clique para marcar uma data"}
       style={{
         minHeight: altura, padding: 4, cursor: "pointer", overflow: "hidden",
-        background: sobre ? "rgba(189,147,249,0.14)" : dia.doMes ? COR.fundo : COR.fundoFora,
+        // Feriado tinge o FUNDO do dia. Não vira chip: um feriado não se clica nem se conclui, e
+        // ocuparia a linha de um evento de verdade. Ele explica por que a obrigação foi antecipada.
+        background: sobre ? "rgba(189,147,249,0.14)"
+          : feriado ? "rgba(255,121,198,0.10)"
+          : dia.doMes ? COR.fundo : COR.fundoFora,
         borderTop: `1px solid ${COR.borda}`,
         borderLeft: `1px solid ${COR.borda}`,
       }}
@@ -174,6 +178,16 @@ function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compact
         >
           {dia.dia}
         </span>
+        {feriado && !compacta && (
+          <span
+            style={{
+              fontSize: "0.6rem", color: "#FF79C6", whiteSpace: "nowrap", overflow: "hidden",
+              textOverflow: "ellipsis", maxWidth: "70%", textAlign: "right",
+            }}
+          >
+            {feriado}
+          </span>
+        )}
       </div>
       {visiveis.map((it, i) => (
         <Chip key={`${it.tipo}-${it.id || i}`} item={it} onAbrir={onAbrir} arrastavel={it.tipo === "marco"} />
@@ -261,6 +275,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
   const [sidebarAberta, setSidebarAberta] = useState(() => !ehTelaEstreita());
   const [estreita, setEstreita] = useState(ehTelaEstreita);
   const [porDia, setPorDia] = useState({});
+  const [feriadosPorDia, setFeriadosPorDia] = useState({});
   const [pendencias, setPendencias] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -283,18 +298,23 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
       if (visao === "semana") for (const d of diasDaSemana(referencia)) meses.add(d.data.slice(0, 7));
       const respostas = await Promise.all([...meses].map((m) => api.getCalendario(m, companyId || undefined)));
       const mapa = {};
+      const feriados = {};
       // A semana que cruza dois meses traz duas listas de pendência, e a mesma empresa costuma
       // aparecer nas duas (apuração de junho E de julho em aberto). São pendências DIFERENTES, mas
       // a chave impede que uma resposta repetida vire linha duplicada.
       const vistas = new Map();
       for (const out of respostas) {
         if (out?.ok === false) { setErro(out?.message || "Não foi possível carregar."); continue; }
-        for (const d of out?.dias || []) mapa[d.data] = [...(mapa[d.data] || []), ...(d.itens || [])];
+        for (const d of out?.dias || []) {
+          mapa[d.data] = [...(mapa[d.data] || []), ...(d.itens || [])];
+          if (d.feriado) feriados[d.data] = d.feriado;
+        }
         for (const p of out?.pendenciasDoMes || []) {
           vistas.set(`${p.tipo}|${p.companyId}|${p.competencia}`, p);
         }
       }
       setPorDia(mapa);
+      setFeriadosPorDia(feriados);
       setPendencias([...vistas.values()]);
     } catch (err) {
       setErro(err?.message || "Não foi possível carregar o calendário.");
@@ -592,6 +612,11 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
                 <div style={{ fontSize: "0.66rem", color: COR.suave, textTransform: "uppercase" }}>
                   {DIAS_SEMANA[new Date(`${d.data}T00:00:00Z`).getUTCDay()]}
                 </div>
+                {feriadosPorDia[d.data] && (
+                  <div style={{ fontSize: "0.58rem", color: "#FF79C6", lineHeight: 1.2, marginTop: 2 }}>
+                    {feriadosPorDia[d.data]}
+                  </div>
+                )}
               </div>
               <div style={{ flex: "1 1 auto", minWidth: 0 }}>
                 {d.itens.map((it, i) => (
@@ -622,6 +647,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany }) {
                 ehHoje={dia.data === hoje}
                 altura={alturaCelula}
                 compacta={visao !== "mes"}
+                feriado={feriadosPorDia[dia.data] || null}
                 onCriar={(data) => { setDetalhe(null); setCriando({ data }); }}
                 onAbrir={(item) => { setCriando(null); setDetalhe(item); }}
                 onMover={moverMarco}

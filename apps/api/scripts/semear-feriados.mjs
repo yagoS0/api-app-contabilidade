@@ -4,20 +4,21 @@
 //   node scripts/semear-feriados.mjs --aplicar          → grava
 //   node scripts/semear-feriados.mjs --de=2026 --ate=2028 --aplicar
 //
-// ⚠ O QUE ESTE SCRIPT NÃO INSERE, E POR QUÊ
+// CARNAVAL, CORPUS CHRISTI E CONSCIÊNCIA NEGRA — decisão do dono (2026-07-30)
 //
-// Feriado é fato jurídico, e o projeto não chuta fato jurídico (regra 1). Três casos ficam de
-// fora, listados no fim da execução para o dono decidir:
+// Carnaval (segunda e terça) e Corpus Christi são PONTO FACULTATIVO federal, não feriado. Levantei
+// a distinção; o dono decidiu tratá-los como dia não útil, porque na prática banco não opera e o
+// escritório não trabalha. Consciência Negra (20/11) entrou junto, por decisão dele.
 //
-//   • Carnaval (segunda e terça) e Corpus Christi — são PONTO FACULTATIVO federal, não feriado,
-//     ainda que banco não opere. Inseri-los antecipa vencimento por conta própria; deixá-los de
-//     fora, no máximo, não antecipa. A falha segura é não inserir.
-//   • Consciência Negra (20/11) — passou a feriado nacional por lei recente. Como é fato jurídico
-//     externo, entra só com a confirmação do dono.
-//   • Feriado MUNICIPAL — varia por cidade e não há como derivar. Cadastro à parte.
+// Efeito combinado: o calendário AVISA que o dia é feriado, e obrigação que cai ali é antecipada
+// para o dia útil anterior. O `ajusteDiaUtil` de cada obrigação continua mandando — quem escolheu
+// POSTERGAR ou MANTER segue como escolheu.
+//
+// Continua de fora o feriado MUNICIPAL: varia por cidade e não há como derivar. Cadastro à parte,
+// com `abrangencia: "MUNICIPAL"` e o nome do município como está em `PortalClient.municipio`.
 //
 // Feriado ausente da tabela não quebra nada: o ajuste de dia útil continua tratando fim de semana,
-// que é a maioria dos casos, e a data simplesmente não se move pelo feriado desconhecido.
+// e a data simplesmente não se move pelo feriado desconhecido.
 
 import { prisma } from "../src/infrastructure/db/prisma.js";
 
@@ -72,6 +73,12 @@ function menosDias(data, dias) {
   return d;
 }
 
+function maisDias(data, dias) {
+  const d = new Date(data.getTime());
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d;
+}
+
 const iso = (d) => d.toISOString().slice(0, 10);
 
 async function main() {
@@ -80,14 +87,19 @@ async function main() {
     for (const [mes, dia, nome] of FIXOS) {
       linhas.push({ data: new Date(Date.UTC(ano, mes - 1, dia)), abrangencia: "NACIONAL", municipio: null, nome });
     }
-    // Sexta-feira Santa: dois dias antes da Páscoa. É feriado nacional, diferente de Carnaval e
-    // Corpus Christi, que são ponto facultativo.
-    linhas.push({
-      data: menosDias(domingoDePascoa(ano), 2),
-      abrangencia: "NACIONAL",
-      municipio: null,
-      nome: "Sexta-feira Santa",
-    });
+    // Consciência Negra — fixo, mas separado dos demais por ter entrado por decisão do dono.
+    linhas.push({ data: new Date(Date.UTC(ano, 10, 20)), abrangencia: "NACIONAL", municipio: null, nome: "Consciência Negra" });
+
+    // Móveis, todos derivados da Páscoa.
+    const pascoa = domingoDePascoa(ano);
+    for (const [dias, nome] of [
+      [48, "Carnaval (segunda)"],
+      [47, "Carnaval (terça)"],
+      [2, "Sexta-feira Santa"],
+    ]) {
+      linhas.push({ data: menosDias(pascoa, dias), abrangencia: "NACIONAL", municipio: null, nome });
+    }
+    linhas.push({ data: maisDias(pascoa, 60), abrangencia: "NACIONAL", municipio: null, nome: "Corpus Christi" });
   }
   linhas.sort((a, b) => a.data - b.data);
 
@@ -101,14 +113,12 @@ async function main() {
     console.log(`\n${r.count} inserido(s); os repetidos foram ignorados (unique data+abrangência+município).`);
   }
 
-  console.log("\n── NÃO inseridos, precisam da sua decisão ──────────────────────────────────");
-  console.log("  • Carnaval (segunda e terça) e Corpus Christi — ponto facultativo federal, não");
-  console.log("    feriado. Banco não opera, mas inserir por conta própria anteciparia vencimento.");
-  console.log("  • Consciência Negra (20/11) — virou feriado nacional por lei recente; como é fato");
-  console.log("    jurídico externo, só entra com a sua confirmação.");
-  console.log("  • Feriados MUNICIPAIS — variam por cidade; não há como derivar.");
-  console.log("\nEnquanto não entrarem, o ajuste de dia útil segue tratando fim de semana (a maioria");
-  console.log("dos casos) e não move a data pelo feriado que ele não conhece.");
+  console.log("\n── Fica de fora ───────────────────────────────────────────────────────────");
+  console.log("  • Feriados MUNICIPAIS — variam por cidade e não há como derivar. Cadastre com");
+  console.log("    abrangencia MUNICIPAL e o município igual ao de PortalClient.municipio; só as");
+  console.log("    empresas daquela cidade são afetadas.");
+  console.log("\nCarnaval e Corpus Christi entram como dia não útil por decisão do dono, embora");
+  console.log("sejam ponto facultativo federal e não feriado.");
 }
 
 main()
