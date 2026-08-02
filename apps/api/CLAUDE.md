@@ -379,7 +379,30 @@ Workers opt-in (default desligados): `GUIDE_EMAIL_WORKER_ENABLED`,
 
 Flags de integração SERPRO (default OFF até validar no trial):
 `INTEGRACAO_SERPRO_SITFIS` (ligada), `INTEGRACAO_SERPRO_PAGTOWEB` (OFF — não validado),
-`INTEGRACAO_SERPRO_PARCELAMENTO`. Ver `config.js` para os idServiço/versão.
+`INTEGRACAO_SERPRO_PARCELAMENTO`, `INTEGRACAO_SERPRO_DCTFWEB_LP` (OFF — `CONSDECCOMPLETA33` é
+`verificadoTrial:false`). Ver `config.js` para os idServiço/versão.
+
+## Buscar impostos pela aba Lançamentos — as duas chamadas são PAGAS
+
+O contador busca extrato do Simples e tributos do Presumido de dentro de Lançamentos, na
+competência que está na tela. **Nada disso é serviço novo** — só a rota existente ganhou guardas:
+
+| | Rota | Chamadas pagas por clique |
+|---|---|---|
+| Simples | `POST .../circular/:competencia/sync-pgdas` | 2 (`CONSDECLARACAO13` + `CONSULTIMADECREC14`) |
+| Presumido | `POST .../serpro/lp/capture` | 2 (`CONSDECCOMPLETA33` + `GERARGUIA31`) |
+
+⚠ **Nenhuma das duas tinha trava.** Só o worker se protegia (`serproSyncStatus === "SUCCESS"` /
+guia LP existente); o caminho manual repetia a cobrança a cada clique. Hoje:
+
+- **Pré-voo no GET `.../fechamento-contabil/:competencia`** (bloco `serpro`): a tela lê o que já foi
+  buscado **antes** do POST e confirma com o contador. A resposta do POST chegaria tarde demais.
+  **`NOT_FOUND` conta como buscado** — a chamada saiu e foi cobrada igual.
+- A marca do LP é a guia com `sourceFileId = serpro:dctfweb:lp:<cnpj>:<competencia>` — o mesmo
+  campo em que o worker se apoia, e `updatedAt` dá a data da mensagem.
+- **Mês fechado → 409 `MES_FECHADO`** nas duas. Elas gravam `AccountingEntry`, e sem a guarda o
+  botão vira o caminho fácil de escrever num mês fechado sem rastro de reabertura. A guarda fica na
+  **rota**, não no serviço: o worker segue livre.
 
 ## Regras
 

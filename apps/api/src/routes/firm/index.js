@@ -90,7 +90,7 @@ import {
 } from "../../application/fiscal/serpro/CompanyRotinasService.js";
 import { capturePgdasGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproGuidesService.js";
 import { syncSerproInssForCompany, probeConsultarDeclaracaoCompleta, probeEmitirDarfDctfweb } from "../../application/fiscal/serpro/SerproDctfwebService.js";
-import { SERPRO_DCTFWEB_LP_PROBE_ENABLED } from "../../config.js";
+import { SERPRO_DCTFWEB_LP_PROBE_ENABLED, INTEGRACAO_SERPRO_DCTFWEB_LP } from "../../config.js";
 import { capturarLpDaCompetencia } from "../../application/fiscal/lp/LucroPresumidoProvisaoService.js";
 import { capturarParcelaGuideForCompany } from "../../application/fiscal/serpro/CaptureSerproParcelaService.js";
 import { getStoredProcurationStatus, SerproProcurationService } from "../../application/fiscal/serpro/SerproProcurationService.js";
@@ -3426,6 +3426,29 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const competencia = String(req.body?.competencia || req.query?.competencia || "").trim();
       if (!portalClientId) return res.status(400).json({ ok: false, error: "company_id_required" });
       if (!/^\d{4}-\d{2}$/.test(competencia)) return res.status(400).json({ ok: false, error: "competencia_required", message: "competência YYYY-MM" });
+
+      // ⚠ Cada chamada aqui são DUAS consultas PAGAS ao SERPRO: a declaração completa
+      // (CONSDECCOMPLETA33) e a emissão do DARF (GERARGUIA31). A flag existe porque o contrato do
+      // CONSDECCOMPLETA33 está marcado `verificadoTrial: false` — é spike, não foi exercido contra
+      // uma empresa real. Ligar só depois de validar, como foi feito com SITFIS e PAGTOWEB.
+      if (!INTEGRACAO_SERPRO_DCTFWEB_LP) {
+        return res.status(409).json({
+          ok: false,
+          error: "INTEGRACAO_DESLIGADA",
+          message: "A consulta do Lucro Presumido está desligada (INTEGRACAO_SERPRO_DCTFWEB_LP). O contrato do CONSDECCOMPLETA33 ainda não foi validado em produção.",
+        });
+      }
+
+      // Grava provisões contábeis (`generateProvisionsFromGuide`), então respeita o mês fechado
+      // igual ao lançamento manual. Guarda na ROTA, não no serviço: o worker segue livre.
+      if (await isMonthClosed(portalClientId, competencia)) {
+        return res.status(409).json({
+          ok: false,
+          error: "MES_FECHADO",
+          message: "O mês está fechado. Reabra antes de buscar os tributos de novo.",
+        });
+      }
+
       try {
         const result = await capturarLpDaCompetencia({ portalClientId, competencia });
         return res.json({ ok: true, result });

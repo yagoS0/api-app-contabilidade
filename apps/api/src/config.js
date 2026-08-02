@@ -226,6 +226,14 @@ export const SERPRO_CERT_COMPANY_ID = (process.env.SERPRO_CERT_COMPANY_ID || "")
 // ligar só pra rodar o spike e desligar depois. Não persiste nada.
 export const SERPRO_DCTFWEB_LP_PROBE_ENABLED = process.env.SERPRO_DCTFWEB_LP_PROBE_ENABLED === "1";
 
+// Busca dos tributos do Lucro Presumido (CONSDECCOMPLETA33 + GERARGUIA31) pela aba Lançamentos.
+// OFF por padrão pelo mesmo motivo do PAGTOWEB: o contrato do CONSDECCOMPLETA33 é `verificadoTrial:
+// false` — veio da spec, não foi exercido contra empresa real, e o parse dos débitos sai por regex
+// do texto do PDF. Pôr o botão na frente do contador promove isso a ferramenta diária; a flag
+// existe para essa promoção ser uma decisão, não um efeito colateral. São 2 chamadas PAGAS por
+// clique (a declaração e o DARF).
+export const INTEGRACAO_SERPRO_DCTFWEB_LP = process.env.INTEGRACAO_SERPRO_DCTFWEB_LP === "1";
+
 // Q40: PAGTOWEB (confirmação de pagamento por comprovante de arrecadação) — flag OFF por padrão.
 // ⚠ NÃO INVENTAR: idServiço/payload precisam ser confirmados no catálogo oficial + validados no
 // sandbox antes de ligar a flag. Defaults abaixo são o palpite da spec (verificadoTrial:false).

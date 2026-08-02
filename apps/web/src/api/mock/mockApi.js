@@ -497,6 +497,56 @@ function getCircularRecord(companyId, competencia) {
   return mockMonthlyCirculars.get(makeCircularKey(companyId, competencia)) || null;
 }
 
+// Marca das buscas do Presumido já feitas — o equivalente, no mock, à guia com `sourceFileId`
+// determinístico que o backend usa como chave de idempotência. É o que faz a confirmação
+// "já buscado em <data>" ser exercitável offline; sem ela, o mock nunca chega ao segundo clique.
+const mockBuscasLp = new Map(); // "companyId|competencia" -> ISO
+
+/**
+ * Provisões do Lucro Presumido: uma por tributo, como `generateProvisionsFromGuide` faz de verdade.
+ * O mock antigo devolvia sucesso com `debitos: []` e não escrevia nada — o botão diria "deu certo"
+ * e nenhum lançamento apareceria, que é o pior tipo de mock: passa no teste e esconde o defeito.
+ */
+function synthesizeLpEntries(companyId, competencia, debitos) {
+  const list = mockEntriesByCompany.get(companyId) || [];
+  const CONTA_POR_TRIBUTO = { PIS: "403", COFINS: "404", IRPJ: "405", CSLL: "406" };
+  for (const d of debitos) {
+    const entryId = `mock-lp-${companyId}-${competencia}-${d.tributo}`;
+    const idx = list.findIndex((item) => item.id === entryId);
+    const valor = Number(d.debitoApurado || 0);
+    if (!(valor > 0)) { if (idx >= 0) list.splice(idx, 1); continue; }
+    const entry = {
+      id: entryId,
+      portalClientId: companyId,
+      circularId: `mock-circular-${companyId}-${competencia}`,
+      ruleId: `rule-LP-${d.tributo}`,
+      eventType: `PROVISAO_${d.tributo}`,
+      data: new Date(`${competencia}-28T00:00:00.000Z`).toISOString(),
+      competencia,
+      historico: `VR REF ${d.tributo} - ${competencia.slice(5)}/${competencia.slice(0, 4)}`,
+      tipo: "PROVISAO",
+      subtipo: d.tributo,
+      origem: "SERPRO",
+      loteImportacao: `SERPRO-LP-${competencia}`,
+      status: "RASCUNHO",
+      statusPagamento: "ABERTO",
+      openEntryId: null,
+      lines: [
+        { id: `${entryId}-d`, entryId, conta: CONTA_POR_TRIBUTO[d.tributo] || "", tipo: "D", valor, ordem: 0 },
+        { id: `${entryId}-c`, entryId, conta: "5", tipo: "C", valor, ordem: 1 },
+      ],
+      totalD: valor,
+      totalC: valor,
+      valor,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (idx >= 0) list[idx] = entry;
+    else list.push(entry);
+  }
+  mockEntriesByCompany.set(companyId, list);
+}
+
 export function createMockApi() {
   let accessToken = "";
 
@@ -803,14 +853,28 @@ export function createMockApi() {
       await delay();
       return { ok: true, removed: 1 };
     },
-    async getFechamentoContabil(_companyId, competencia) {
+    async getFechamentoContabil(companyId, competencia) {
       await delay();
+      // O estado das buscas vem do MESMO estado que os mocks de busca escrevem — é isso que
+      // permite exercitar offline a confirmação "já buscado em <data>" no segundo clique.
+      const circular = getCircularRecord(companyId, competencia);
+      const status = String(circular?.serproSyncStatus || "").toUpperCase();
+      const lpEm = mockBuscasLp.get(`${companyId}|${competencia}`) || null;
       // Checklist com um item pendente de propósito, pra dar pra ver o estado bloqueado na tela.
       return {
         ok: true, competencia, fechado: false, folhaProlaboreOk: true,
         checklist: { folhaProlabore: true, despesas: true, receitas: true, provisoes: false, pagamentos: false },
         checklistPendentes: [{ chave: "provisoes", label: "Provisões lançadas" }, { chave: "pagamentos", label: "Pagamentos lançados" }],
         podeFechar: false, blockers: [],
+        serpro: {
+          // NOT_FOUND conta como buscado: a chamada saiu e foi cobrada do mesmo jeito.
+          extrato: {
+            buscado: status === "SUCCESS" || status === "NOT_FOUND",
+            em: circular?.serproLastSyncAt || null,
+            status: circular?.serproSyncStatus || null,
+          },
+          presumido: { buscado: Boolean(lpEm), em: lpEm },
+        },
       };
     },
     async setFolhaProlabore(_companyId, competencia, ok) {
@@ -1010,8 +1074,49 @@ export function createMockApi() {
       };
     },
     async captureSerproLp(companyId, input = {}) {
-      await delay();
-      return { ok: true, result: { cabecalho: {}, debitos: [], totais: { principal: 0, juros: 0, multa: 0, total: 0 }, provisao: { ok: true } } };
+      await delay(500);
+      const company = mockCompanies.find((item) => item.companyId === companyId);
+      if (!company) throw new Error("PORTAL_COMPANY_NOT_FOUND");
+      const competencia = String(input.competencia || "2026-06");
+
+      // Os quatro tributos numa consulta só, como o CONSDECCOMPLETA33 devolve de verdade.
+      const debitos = [
+        { codigoReceita: "8109", tributo: "PIS", descricao: "PIS/PASEP" },
+        { codigoReceita: "2172", tributo: "COFINS", descricao: "COFINS" },
+        { codigoReceita: "2089", tributo: "IRPJ", descricao: "IRPJ" },
+        { codigoReceita: "2372", tributo: "CSLL", descricao: "CSLL" },
+      ].map((t) => {
+        const v = Number(faker.finance.amount({ min: 120, max: 9000, dec: 2 }));
+        return { ...t, debitoApurado: v, saldoAPagar: v };
+      });
+      const principal = Number(debitos.reduce((s, d) => s + d.debitoApurado, 0).toFixed(2));
+
+      const chave = makeCircularKey(companyId, competencia);
+      const circular = {
+        ...(mockMonthlyCirculars.get(chave) || {
+          id: `mock-circular-${companyId}-${competencia}`,
+          portalClientId: companyId,
+          competencia,
+          createdAt: new Date().toISOString(),
+        }),
+        acrescimos: Object.fromEntries(
+          debitos.map((d) => [d.tributo, { principal: d.debitoApurado, juros: 0, multa: 0 }]),
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+      mockMonthlyCirculars.set(chave, circular);
+      synthesizeLpEntries(companyId, competencia, debitos);
+      mockBuscasLp.set(`${companyId}|${competencia}`, new Date().toISOString());
+
+      return {
+        ok: true,
+        result: {
+          cabecalho: { cnpj: company.cnpj, competencia, numeroRecibo: faker.string.numeric(17) },
+          debitos,
+          totais: { debitoApurado: principal, saldoAPagar: principal, porTributo: circular.acrescimos },
+          provisao: { ok: true, guideId: `mock-guia-lp-${companyId}-${competencia}` },
+        },
+      };
     },
     async syncSerproInss(companyId, input = {}) {
       await delay();

@@ -1230,6 +1230,18 @@ export function createAccountingEntriesRouter({ log }) {
     if (!portalClientId) return res.status(400).json({ ok: false, error: "company_id_required" });
     if (!competencia) return res.status(400).json({ ok: false, error: "competencia_required" });
 
+    // Esta rota GRAVA lançamentos (`generateEntriesFromCircular`), então tem que respeitar o mês
+    // fechado igual ao "+ Adicionar lançamento" e ao marcar Vazio. Sem isto, o botão novo na aba
+    // vira o caminho fácil para escrever dentro de um mês já fechado, sem rastro de reabertura.
+    // A guarda fica na ROTA e não no serviço de propósito: o worker continua podendo sincronizar.
+    if (await isMonthClosed(portalClientId, competencia)) {
+      return res.status(409).json({
+        ok: false,
+        error: "MES_FECHADO",
+        message: "O mês está fechado. Reabra antes de buscar o extrato de novo.",
+      });
+    }
+
     try {
       const result = await syncPgdasByCompetencia({
         portalClientId,
@@ -1311,6 +1323,50 @@ export function createAccountingEntriesRouter({ log }) {
       .map(([chave, c]) => ({ chave, label: c.label }));
   }
 
+  /**
+   * O que já foi buscado no SERPRO nesta competência — para a tela AVISAR antes de gastar de novo.
+   *
+   * As duas consultas são PAGAS e as rotas manuais não têm trava (só o worker tem). Pior: a do
+   * Presumido são DUAS chamadas por clique (a declaração e o DARF). Sem isto, um duplo clique é uma
+   * cobrança dupla, e a tela não tem como saber — a resposta do POST chega tarde demais.
+   *
+   * ⚠ `NOT_FOUND` conta como buscado: a chamada saiu e foi cobrada do mesmo jeito. Tratar como "não
+   * buscado" convidaria o contador a repetir de graça o que já custou.
+   */
+  async function estadoDasBuscasSerpro({ portalClientId, competencia, circular }) {
+    const status = String(circular?.serproSyncStatus || "").toUpperCase();
+    const extrato = {
+      buscado: status === "SUCCESS" || status === "NOT_FOUND",
+      em: circular?.serproLastSyncAt || null,
+      status: circular?.serproSyncStatus || null,
+    };
+
+    // A guia do LP usa `sourceFileId` determinístico como chave de upsert
+    // (`LucroPresumidoProvisaoService.js:61`), então ela é a marca exata de "já busquei" — a mesma
+    // em que o worker se apoia. `updatedAt` é a data que a mensagem mostra.
+    let presumido = { buscado: false, em: null };
+    try {
+      const portal = await prisma.portalClient.findUnique({
+        where: { id: portalClientId },
+        select: { cnpj: true },
+      });
+      const cnpj = String(portal?.cnpj || "").replace(/\D+/g, "");
+      if (cnpj) {
+        const guia = await prisma.guide.findUnique({
+          where: { sourceFileId: `serpro:dctfweb:lp:${cnpj}:${competencia}` },
+          select: { updatedAt: true, status: true },
+        });
+        if (guia && guia.status === "PROCESSED") {
+          presumido = { buscado: true, em: guia.updatedAt };
+        }
+      }
+    } catch {
+      // Pré-voo é conveniência: se falhar, a tela pergunta sem a data em vez de travar o GET.
+    }
+
+    return { extrato, presumido };
+  }
+
   // Q17: FECHAMENTO CONTÁBIL do mês ─────────────────────────────────────────
   // GET estado + bloqueios (lançamentos em branco / desbalanceados).
   router.get("/fechamento-contabil/:competencia", requireFirmCompanyAccess(), async (req, res) => {
@@ -1320,9 +1376,16 @@ export function createAccountingEntriesRouter({ log }) {
     try {
       const circular = await prisma.companyMonthlyCircular.findUnique({
         where: { portalClientId_competencia: { portalClientId, competencia } },
-        select: { fechadoContabilEm: true, fechadoContabilPor: true, ...CHECKLIST_SELECT },
+        select: {
+          fechadoContabilEm: true,
+          fechadoContabilPor: true,
+          serproSyncStatus: true,
+          serproLastSyncAt: true,
+          ...CHECKLIST_SELECT,
+        },
       });
       const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
+      const serpro = await estadoDasBuscasSerpro({ portalClientId, competencia, circular });
       // Checklist manual (folha/pró-labore, despesas, receitas, provisões, pagamentos).
       const pendentes = checklistPendentes(circular);
       const checklist = Object.fromEntries(
@@ -1340,6 +1403,7 @@ export function createAccountingEntriesRouter({ log }) {
         checklistPendentes: pendentes,
         podeFechar: validation.ok && pendentes.length === 0,
         blockers: validation.blockers,
+        serpro,
       });
     } catch (err) {
       log.error({ err }, "Falha ao consultar fechamento contábil");
