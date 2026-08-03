@@ -2895,7 +2895,42 @@ export function createMockApi() {
         },
       };
     },
-    async calcularFechamento() { await delay(150); return { ok: true, result: { dasValor: 0, rbt12: 0, mensagens: [] } }; },
+    // Antes devolvia SEMPRE `ok:true` com `dasValor: 0` — ou seja, o caminho de erro do Calcular
+    // não existia offline, e foi exatamente ali que o bug morava (o erro chegava e era engolido).
+    // Agora o mock reproduz os DOIS desfechos que o backend real produz:
+    //  1. recusa `ok:false` — a guarda anti-zero da Q55 (`APURACAO_ZERADA_COM_FATURAMENTO`): as
+    //     atividades somam zero numa empresa que TEM faturamento. É alcançável na tela (basta
+    //     zerar o valor da atividade) e o mock tem 120.000 fixos de faturamento;
+    //  2. 200 SEM `valoresDevidos` — a RFB responde só com mensagens, `dasValor` fica null e a
+    //     caixa de resultado precisa avisar em vez de pintar de verde com "—".
+    // ⚠ A mensagem do caso 2 é ROTULADA como mock de propósito: não inventamos texto da RFB.
+    async calcularFechamento(_companyId, _competencia, payload = {}) {
+      await delay(150);
+      const atividades = Array.isArray(payload.atividades) ? payload.atividades : [];
+      const somaAtividades = atividades.reduce(
+        (s, a) => s + Number(a?.valorInterno || 0) + Number(a?.valorExterno || 0), 0,
+      );
+      if (atividades.length && somaAtividades === 0) {
+        return {
+          ok: false,
+          error: "APURACAO_ZERADA_COM_FATURAMENTO",
+          message: "Empresa com faturamento de R$ 120000.00 na competência, mas as atividades somam R$ 0,00. Classifique/preencha as receitas antes de apurar.",
+        };
+      }
+      const folha = Array.isArray(payload.folhaMensal12) ? payload.folhaMensal12 : [];
+      const totalFolha = folha.reduce((s, f) => s + Number(f?.valor || 0), 0);
+      if (atividades.some((a) => a?.sujeitoFatorR) && totalFolha === 0) {
+        return {
+          ok: true,
+          result: {
+            dasValor: null,
+            rbt12: null,
+            mensagens: ["MOCK: cenário de retorno sem valores devidos, para conferir a tela. Não é texto da RFB."],
+          },
+        };
+      }
+      return { ok: true, result: { dasValor: 12345.67, rbt12: 480000, mensagens: [] } };
+    },
     async salvarFechamento() { await delay(80); return { ok: true, result: { snapshot: { estado: "fechada" } } }; },
     async transmitirFechamento() { await delay(200); return { ok: true, result: { numeroDeclaracao: "MOCK-1", dasValor: 0 } }; },
     async reabrirFechamento() { await delay(80); return { ok: true, result: { snapshot: { estado: "calculada" } } }; },

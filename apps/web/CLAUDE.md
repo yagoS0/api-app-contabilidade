@@ -63,6 +63,19 @@ import { api } from '@/api';
 const data = await api.getAccountingEntries(companyId);
 ```
 
+### ⚠ Feedback: passe o objeto INTEIRO, nunca `{message, error}`
+
+`useManageAppFeedback` expõe `message`/`error` **e** `notifySuccess`/`notifyError`/`notifyInfo`.
+Várias features chamam `feedback?.notifyError?.(…)` — com a função ausente isso é **no-op
+silencioso**, e o optional call não deixa nem um erro no console.
+
+O `App.jsx` remontava o objeto como `{ message, error }` ao passar para a página de detalhe da
+empresa. Resultado: **todo** erro do `FechamentoModal` (SERPRO, cert do escritório não configurado,
+apuração zerada com faturamento, timeout) sumia sem uma linha na tela — o sintoma era "o botão
+Calcular não faz nada". O backend nunca engoliu nada; era o front que descartava.
+
+Regra: `feedback={feedback}`. Se precisar restringir, restrinja no componente, não na passagem.
+
 ### Estado
 
 - Preferir estado local (`useState`) para UI efêmera

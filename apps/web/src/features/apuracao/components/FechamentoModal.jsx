@@ -397,12 +397,32 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
               </div>
             )}
 
-            {/* Resultado */}
+            {/* Resultado.
+                ⚠ `dasValor` é `null` quando a RFB responde 200 SEM `valoresDevidos` — e isso
+                acontece: o retorno traz só `mensagens` explicando o que ela recusou. Antes a caixa
+                pintava de verde, mostrava "—" e jogava as mensagens fora, então "calculou e não
+                apareceu nada" era literalmente o que a tela fazia. Sem DAS a caixa fica âmbar e as
+                mensagens da RFB aparecem — elas são a única explicação que existe. */}
             {resultado && (
-              <div style={{ padding: 12, background: "rgba(105,255,71,0.10)", border: "1px solid #69FF47", borderRadius: 6 }}>
-                <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase" }}>DAS calculado (oficial SERPRO)</div>
-                <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#69FF47" }}>{fmtMoney(resultado.dasValor)}</div>
+              <div style={{
+                padding: 12, borderRadius: 6,
+                background: resultado.dasValor != null ? "rgba(105,255,71,0.10)" : "rgba(255,179,71,0.10)",
+                border: `1px solid ${resultado.dasValor != null ? "#69FF47" : "#FFB347"}`,
+              }}>
+                <div style={{ fontSize: "0.7rem", color: PANEL.muted, textTransform: "uppercase" }}>
+                  {resultado.dasValor != null ? "DAS calculado (oficial SERPRO)" : "A RFB não devolveu valor devido"}
+                </div>
+                {resultado.dasValor != null && (
+                  <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "#69FF47" }}>{fmtMoney(resultado.dasValor)}</div>
+                )}
                 {resultado.rbt12 != null && <div style={{ fontSize: "0.75rem", color: PANEL.muted }}>RBT12 usado: {fmtMoney(resultado.rbt12)}</div>}
+                {Array.isArray(resultado.mensagens) && resultado.mensagens.length > 0 && (
+                  <ul style={{ margin: "8px 0 0", paddingLeft: 18, fontSize: "0.75rem", color: PANEL.muted }}>
+                    {resultado.mensagens.map((m, i) => (
+                      <li key={i}>{typeof m === "string" ? m : (m?.texto || m?.mensagem || JSON.stringify(m))}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
 

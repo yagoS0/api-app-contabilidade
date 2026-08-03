@@ -404,7 +404,11 @@ function App() {
         }}
         notasPanel={notasFiscais}
         certPanel={{ api, feedback }}
-        feedback={{ message: feedback.message, error: feedback.error }}
+        /* ⚠ O objeto INTEIRO, não `{message, error}`. Remontado, ele perdia `notifyError`/
+           `notifySuccess`, e `feedback?.notifyError?.(…)` com a função ausente é no-op SILENCIOSO:
+           todo erro do FechamentoModal (SERPRO, cert do escritório, sem movimento com faturamento,
+           timeout) sumia sem uma linha na tela. Era o "Calcular não faz nada". */
+        feedback={feedback}
         dangerActions={{
           saving: companiesWorkspace.companyDangerSaving,
           onSuspend: (reason) => companiesWorkspace.handleSuspendCompany(
