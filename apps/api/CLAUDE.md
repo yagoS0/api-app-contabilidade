@@ -429,6 +429,41 @@ Flags de integração SERPRO (default OFF até validar no trial):
 `INTEGRACAO_SERPRO_PARCELAMENTO`, `INTEGRACAO_SERPRO_DCTFWEB_LP` (OFF — `CONSDECCOMPLETA33` é
 `verificadoTrial:false`). Ver `config.js` para os idServiço/versão.
 
+## Guarda de custo do SERPRO — registro + duas travas
+
+As chamadas do Integra Contador são **pagas**, e até aqui não havia nem registro nem teto. Dois
+episódios reais: o ajuste de "período desnecessário" da folha removia da lista errada e nunca
+convergia, queimando **até 14 consultas por clique sem entregar nada**; e as buscas manuais
+repetiam a cobrança a cada clique (só o worker se protegia).
+
+**Tudo passa por `SerproHttpClient.request`** — é lá que a guarda vive, e a identificação da chamada
+sai do **próprio envelope `pedidoDados`** (contribuinte + idServiço), não de um parâmetro do
+chamador. Isso é o que a torna infalível: uma chamada nova escrita amanhã já nasce registrada e
+travada, sem ninguém precisar lembrar de nada. Os 21 pontos de chamada não foram tocados.
+
+| Trava | Regra | Por quê |
+|---|---|---|
+| **Cooldown** (`SERPRO_COOLDOWN_SEGUNDOS`, 300s) | mesma empresa + serviço + **mesmo payload** dentro da janela → recusa | mata duplo clique e laço que reenvia o idêntico. O payload entra no hash **de propósito**: corrigir um valor e recalcular não é repetição, é trabalho |
+| **Teto diário por empresa** (`SERPRO_TETO_DIARIO_EMPRESA`, 60) | chamadas por CNPJ no dia civil de São Paulo | pega laço defeituoso concentrado numa empresa |
+
+⚠ O teto conta **`ok` e `erro`**: chamada que chegou ao SERPRO e voltou com rejeição de negócio foi
+cobrada igual. Contar só o sucesso deixaria de fora exatamente o laço que o teto existe para pegar —
+ele falhava 14 vezes seguidas. O cooldown, esse, só olha `ok`, para não bloquear retry de falha
+transitória.
+
+**Os números NÃO são limite do SERPRO** (isso é contrato, não se inventa) — são o orçamento que nós
+impomos, folgados por padrão. Ajuste com o consumo real: `scripts/diag-consumo-serpro.mjs [dias]`
+mostra gasto por serviço, por origem, por empresa e o **pico por empresa/dia**, que é o número a
+comparar com o teto.
+
+**Escape:** `podeForcarSerpro` exige **ADMIN e `?forcar=1`** — as duas coisas. ADMIN sem pedir não
+fura (senão o teto não avisaria ninguém); pedir sem ser ADMIN não fura (senão a guarda seria
+contornável pela URL). Fica gravado em `serpro_chamadas.forcado` com o usuário.
+
+O contexto (origem, usuário, `forcar`) viaja por **AsyncLocalStorage** (`serproCallContext.js`), não
+por parâmetro: o client está a 3–4 saltos de quem sabe essas coisas, e uma guarda que depende de
+alguém repassar um argumento morre na primeira chamada nova.
+
 ## Buscar impostos pela aba Lançamentos — as duas chamadas são PAGAS
 
 O contador busca extrato do Simples e tributos do Presumido de dentro de Lançamentos, na

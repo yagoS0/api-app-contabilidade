@@ -23,6 +23,7 @@ import { carregarAtividades } from "../../application/notas/apuracao/v2/Atividad
 import { resolverPerfilFiscal, normalizarPerfilConfig } from "../../application/notas/apuracao/v2/PerfilFiscalService.js";
 import { sugerirAnexosDaCompetencia } from "../../application/notas/apuracao/v2/SugestaoAnexoService.js";
 import { conferirCompetencia } from "../../application/notas/apuracao/v2/ConferenciaAdnService.js";
+import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 
 const REGIMES_VALIDOS = new Set(["SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI"]);
 
@@ -49,6 +50,7 @@ export function createApuracaoV2Router({ log } = {}) {
     if (String(err?.code || "").startsWith("SERPRO_")) return 400;
     return 500;
   }
+
 
   // ─── Cadastro Fiscal ──────────────────────────────────────────────────────
   // GET cadastro-fiscal (com sugestão CNAE→tipoReceita)
@@ -476,7 +478,13 @@ export function createApuracaoV2Router({ log } = {}) {
       const competencia = String(req.params.competencia);
       const { atividades, folhaMensal12, regimeApuracao, semMovimento } = req.body || {};
       try {
-        const result = await calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento: Boolean(semMovimento) });
+        // As chamadas ao SERPRO daqui pra baixo são PAGAS. O contexto leva quem disparou (para o
+        // registro) e o `forcar`, que só um ADMIN consegue pedir — é o escape do teto diário
+        // quando o fechamento está em cima do prazo. Fica gravado quem forçou.
+        const result = await comContextoSerpro(
+          { origem: "fechamento:calcular", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
+          () => calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento: Boolean(semMovimento) }),
+        );
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha calcularFechamento");
@@ -517,7 +525,10 @@ export function createApuracaoV2Router({ log } = {}) {
           "Digite a competência exata pra confirmar a transmissão (proteção contra envio acidental).");
       }
       try {
-        const result = await transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id });
+        const result = await comContextoSerpro(
+          { origem: "fechamento:transmitir", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
+          () => transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id }),
+        );
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha transmitirFechamento");
@@ -560,7 +571,10 @@ export function createApuracaoV2Router({ log } = {}) {
           "Confirme explicitamente que deseja RETIFICAR (retransmitir a declaração à Receita).");
       }
       try {
-        const result = await transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id, retificar: true });
+        const result = await comContextoSerpro(
+          { origem: "fechamento:retificar", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
+          () => transmitirFechamento({ portalClientId, competencia, userId: req.auth?.user?.id, retificar: true }),
+        );
         return res.json({ ok: true, result });
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha retificar (transmitir)");

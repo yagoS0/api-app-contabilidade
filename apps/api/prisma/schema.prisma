@@ -1305,6 +1305,41 @@ model FiscalExecutionLog {
   @@map("fiscal_execution_logs")
 }
 
+/// TODA chamada ao SERPRO, registrada no ponto único por onde elas passam (`SerproHttpClient`).
+///
+/// As chamadas do Integra Contador são PAGAS e, até aqui, não havia como responder "quanto esta
+/// empresa consumiu neste mês" nem impedir um laço defeituoso de queimar dezenas delas — foi o que
+/// aconteceu com o ajuste de períodos da folha, que gastava até 14 consultas por clique sem
+/// entregar resultado.
+///
+/// `cnpj` é o do CONTRIBUINTE (a empresa), extraído do próprio envelope `pedidoDados`, não passado
+/// pelo chamador: assim nenhuma chamada nova escapa do registro por esquecimento.
+/// `assinatura` é o hash do payload — é o que distingue "clicou de novo na mesma coisa" de "mudou
+/// algo e recalculou", e sustenta o cooldown sem atrapalhar quem corrigiu um valor.
+model SerproChamada {
+  id             String   @id @default(cuid())
+  cnpj           String // contribuinte, só dígitos; "" quando a chamada não tem contribuinte
+  portalClientId String? // resolvido pelo CNPJ quando existe empresa cadastrada
+  idSistema      String?
+  idServico      String? // GERARDAS12, TRANSDECLARACAO11, CONSDECCOMPLETA33, …
+  rota           String // /Emitir, /Declarar, /Consultar, /Apoiar
+  assinatura     String // hash do payload
+  status         String // ok | erro | recusada_cooldown | recusada_teto
+  httpStatus     Int?
+  erroCodigo     String?
+  duracaoMs      Int?
+  origem         String? // rota/worker que disparou
+  userId         String?
+  forcado        Boolean  @default(false) // passou por cima de um teto, com quem e quando no log
+  createdAt      DateTime @default(now())
+
+  @@index([cnpj, createdAt(sort: Desc)])
+  @@index([portalClientId, createdAt(sort: Desc)])
+  @@index([idServico, createdAt(sort: Desc)])
+  @@index([assinatura, createdAt(sort: Desc)])
+  @@map("serpro_chamadas")
+}
+
 // Q12.A: itens de uma nota (NF-e ou NFS-e). Classificação por anexo SN vem em Q12.C.
 model NotaItem {
   id             String       @id @default(uuid())

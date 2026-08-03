@@ -8,6 +8,7 @@ import { resolvePayrollTemplate } from "../../application/accounting/payrollTemp
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
+import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS,
   CHECKLIST_FECHAMENTO, CHECKLIST_SELECT, checklistPendentes,
@@ -1188,11 +1189,16 @@ export function createAccountingEntriesRouter({ log }) {
     }
 
     try {
-      const result = await syncPgdasByCompetencia({
-        portalClientId,
-        competencia,
-        contratanteCnpj: contratanteCnpj || undefined,
-      });
+      // Duas chamadas PAGAS por clique (CONSDECLARACAO13 + CONSULTIMADECREC14). O contexto leva
+      // quem disparou para o registro e permite ao ADMIN furar o teto diário com `?forcar=1`.
+      const result = await comContextoSerpro(
+        { origem: "lancamentos:extrato-simples", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
+        () => syncPgdasByCompetencia({
+          portalClientId,
+          competencia,
+          contratanteCnpj: contratanteCnpj || undefined,
+        }),
+      );
       return res.json({ ok: true, result });
     } catch (err) {
       const code = err?.code || "SERPRO_PGDASD_SYNC_FAILED";

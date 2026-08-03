@@ -32,6 +32,7 @@ import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
+import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistPendentes,
 } from "../../application/accounting/fechamentoBlockers.js";
@@ -3520,7 +3521,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       try {
-        const result = await capturarLpDaCompetencia({ portalClientId, competencia });
+        // Duas chamadas PAGAS por clique (CONSDECCOMPLETA33 + GERARGUIA31) — a mais cara da casa.
+        const result = await comContextoSerpro(
+          { origem: "lancamentos:tributos-presumido", userId: req.auth?.user?.id, forcar: podeForcarSerpro(req) },
+          () => capturarLpDaCompetencia({ portalClientId, competencia }),
+        );
         return res.json({ ok: true, result });
       } catch (err) {
         const code = err?.code || "SERPRO_DCTFWEB_LP_CAPTURE_FAILED";

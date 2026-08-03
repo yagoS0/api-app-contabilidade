@@ -257,6 +257,19 @@ export const SERPRO_SITFIS_SERVICE_RELATORIO = (
 // a página de cenários trial ainda mostra "1.0" — por isso deixamos env-overridável (confirmar no trial/homolog).
 export const SERPRO_SITFIS_VERSAO = (process.env.SERPRO_SITFIS_VERSAO || "2.0").trim();
 
+// === Guarda de custo das chamadas SERPRO ===
+// As chamadas do Integra Contador são PAGAS. Estes tetos NÃO são limites do SERPRO (não inventamos
+// número de contrato) — são o orçamento QUE NÓS impomos, aplicado no ponto único por onde todas as
+// chamadas passam. Os defaults são deliberadamente folgados: existem para pegar laço defeituoso e
+// clique repetido, não para atrapalhar fechamento. Ajuste com o consumo real de
+// `serpro_chamadas` (script `diag-consumo-serpro.mjs`).
+export const SERPRO_GUARDA_ATIVA = process.env.SERPRO_GUARDA_ATIVA !== "0";
+// Chamada IDÊNTICA (mesma empresa + serviço + payload) repetida dentro da janela → recusada.
+// Payload diferente não é chamada repetida: corrigir um valor e recalcular passa direto.
+export const SERPRO_COOLDOWN_SEGUNDOS = Number(process.env.SERPRO_COOLDOWN_SEGUNDOS || 300);
+// Teto de chamadas por CNPJ por dia (America/Sao_Paulo), somando todos os serviços.
+export const SERPRO_TETO_DIARIO_EMPRESA = Number(process.env.SERPRO_TETO_DIARIO_EMPRESA || 60);
+
 // === API Keys ===
 const rawApiKeys = process.env.API_KEYS || "";
 export const API_KEYS = rawApiKeys
