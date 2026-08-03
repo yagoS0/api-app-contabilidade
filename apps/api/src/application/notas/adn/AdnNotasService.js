@@ -11,16 +11,12 @@
 // Estado: PortalSyncState.adnNsuCursor (separado do legado lastCursor).
 // Persistência: direto em PortalInvoice + NotaItem (módulo Notas).
 
-import fs from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { fetchDfeNFSe, AdnNacionalClientError } from "../adn-nacional/AdnNacionalClient.js";
 import { parseXmlMetadata, parseNfseEvento } from "../../nfse/AdnXmlMetadata.js";
 import { log } from "../../../config.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
-import { resolveCertificatePath } from "../../../infrastructure/storage/CertStorage.js";
-import { decryptBytes } from "../../../utils/crypto.js";
-import { getResolvedSerproCredentials } from "../../fiscal/serpro/SerproRuntimeSettings.js";
 import { ESTADOS } from "../CompetenciaStateMachine.js";
 
 // Q12.B+++: sync inicial pode ter milhares de notas históricas (NSU=0
@@ -45,52 +41,32 @@ export class AdnNotasSyncError extends Error {
   }
 }
 
-// ─── Resolução de cert (mesmo padrão do DfeSyncService) ─────────────────────
-
-async function loadOfficeCert() {
-  const creds = await getResolvedSerproCredentials().catch((err) => {
-    throw new AdnNotasSyncError("OFFICE_CERT_NOT_CONFIGURED",
-      `Cert do escritório não configurado em Configurações da Firma → SERPRO. (${err?.message})`);
-  });
-  if (!creds?.certificate?.hasCertificate) {
-    throw new AdnNotasSyncError("OFFICE_CERT_NOT_CONFIGURED", "Cert do escritório não está configurado.");
-  }
-  if (!creds.certificate.passwordConfigured) {
-    throw new AdnNotasSyncError("OFFICE_CERT_PASSWORD_MISSING", "Senha do cert do escritório não está configurada.");
-  }
-  if (creds.certificate.pfxBase64) {
-    return {
-      // Q30/Q35: decryptBytes decifra o PFX cifrado (local ou KMS; no-op se legado em claro).
-      pfxBuffer: await decryptBytes(Buffer.from(creds.certificate.pfxBase64, "base64")),
-      password: creds.certificate.password,
-    };
-  }
-  const certPath = resolveCertificatePath(creds.certificate.storageKey);
-  if (!certPath || !fs.existsSync(certPath)) {
-    throw new AdnNotasSyncError("OFFICE_CERT_FILE_NOT_FOUND", `Arquivo não encontrado: ${certPath}`);
-  }
-  return { pfxBuffer: await decryptBytes(fs.readFileSync(certPath)), password: creds.certificate.password };
-}
+// ─── Resolução de cert ──────────────────────────────────────────────────────
 
 async function resolveCertWithFallback(portalClientId) {
-  // Q12.B+++: ADN Contribuinte exige cert digital DO CNPJ que consulta.
-  // O cert do escritório não tem cadastro no gov.br/nfse pra atuar em nome
-  // das empresas — então A1 da empresa é PREFERIDO (oposto do DfeSyncService).
+  // Q12.B+++: o ADN Contribuinte identifica o contribuinte pelo CERTIFICADO (SAN do ICP-Brasil).
+  // O CNPJ que passamos em `fetchDfeNFSe` é só validado — o path é `/DFe/{NSU}` e não carrega
+  // CNPJ nenhum. Ou seja: quem consulta é o dono do cert, ponto.
+  //
+  // ⚠ POR ISSO NÃO EXISTE MAIS FALLBACK PRO CERT DO ESCRITÓRIO.
+  // O fallback antigo supunha que o cert do escritório daria 404 no gov.br/nfse ("provavelmente vai
+  // dar 404, mas mantém pra não bloquear"). A suposição estava errada: o escritório É cadastrado
+  // lá, então o ADN respondia com as notas DO ESCRITÓRIO — e elas eram gravadas debaixo da empresa
+  // cliente, como notas DEST (o CNPJ não bate, então caíam em "recebidas"). Nota de uma empresa
+  // aparecendo em outra é erro de dado com consequência fiscal, e silencioso.
+  //
+  // Sem A1 da empresa, a resposta certa é NÃO CONSULTAR e dizer o que falta. É o mesmo caminho que
+  // o `ConferenciaAdnService` já seguia.
   const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE })
     .catch(() => ({ source: "none" }));
   if (r.source === "company_a1") {
     return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
   }
 
-  // Fallback (provavelmente vai dar 404 no ADN, mas mantém pra não bloquear
-  // quem tem o escritório cadastrado lá).
-  try {
-    const office = await loadOfficeCert();
-    return { pfxBuffer: office.pfxBuffer, password: office.password, via: "office_cert_fallback" };
-  } catch {
-    throw new AdnNotasSyncError("NO_COMPANY_CERT",
-      "Esta empresa não tem certificado A1 cadastrado. Vá em Editar Cadastro → Certificado e faça upload do PFX da empresa.");
-  }
+  throw new AdnNotasSyncError("NO_COMPANY_CERT",
+    "Esta empresa não tem certificado A1 cadastrado. O ADN identifica o contribuinte pelo próprio "
+    + "certificado, então consultar com o do escritório traria as notas DELE, não as desta empresa. "
+    + "Vá em Editar Cadastro → Certificado e faça upload do PFX da empresa.");
 }
 
 // ─── Decodificação do XML ──────────────────────────────────────────────────
@@ -131,8 +107,29 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
 
   // Papel: EMIT se prestador é a empresa; senão DEST. NFS-e quase sempre EMIT
   // (a empresa só recebe DFe de NFS-e em casos específicos).
+  const cnpjEmpresa = String(companyCnpj || "").replace(/\D+/g, "");
   const cnpjPrestador = metadata.cnpjPrestador || "";
-  const papel = cnpjPrestador && cnpjPrestador === String(companyCnpj || "").replace(/\D+/g, "") ? "EMIT" : "DEST";
+  const cnpjTomador = metadata.cnpjTomador || "";
+  const papel = cnpjPrestador && cnpjPrestador === cnpjEmpresa ? "EMIT" : "DEST";
+
+  // ── A nota é MESMO desta empresa? ────────────────────────────────────────────────────────
+  // Cinturão de segurança independente de como o certificado foi resolvido. Se a empresa não é nem
+  // prestadora nem tomadora, o documento não é dela — e gravar assim mesmo é o que fazia as notas
+  // do escritório aparecerem na carteira do cliente (como DEST, porque o CNPJ não batia).
+  //
+  // Isto pega uma classe inteira, não um caso: cert do escritório, A1 errado subido na empresa
+  // errada, ou qualquer futura mudança na resolução de certificado. Nenhuma delas avisa sozinha.
+  //
+  // Só rejeita quando HÁ CNPJ e ele não bate. Metadado sem nenhum dos dois (parser que não achou o
+  // campo) não é evidência de nota alheia — aí grava, porque descartar por falta de dado
+  // esconderia nota legítima, que é o erro oposto e igualmente caro.
+  if (cnpjEmpresa && (cnpjPrestador || cnpjTomador)
+      && cnpjPrestador !== cnpjEmpresa && cnpjTomador !== cnpjEmpresa) {
+    return {
+      status: "rejeitada_outro_cnpj",
+      reason: `documento de ${cnpjPrestador || "?"} → ${cnpjTomador || "?"}, empresa é ${cnpjEmpresa}`,
+    };
+  }
 
   const competenciaDate = metadata.competencia || metadata.dataEmissao || null;
   const fechada = await isCompetenciaFechada(tx, { portalClientId, competenciaDate });

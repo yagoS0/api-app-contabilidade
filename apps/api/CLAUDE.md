@@ -201,6 +201,34 @@ Serviço assíncrono em 2 etapas, resolvido inline (~28s) ou devolvido como `pro
 - A busca **só marca** a guia como paga (`pagamentoLocalizado`); quem faz o lançamento de baixa é o
   contador, pela Circular — ver "Guias na Circular".
 
+## ⚠ ADN: quem consulta é o CERTIFICADO — nunca use o do escritório
+
+O ADN Contribuinte identifica o contribuinte pela **SAN do certificado ICP-Brasil**. O path é
+`/DFe/{NSU}` e **não carrega CNPJ nenhum**: o `cnpj` passado a `fetchDfeNFSe` é apenas validado.
+Ou seja, quem consulta é o dono do cert — ponto.
+
+`AdnNotasService` tinha um fallback para o cert do **escritório** quando a empresa não tinha A1,
+apoiado numa suposição escrita no próprio código: *"provavelmente vai dar 404, mas mantém pra não
+bloquear"*. A suposição estava errada — o escritório **é** cadastrado no gov.br/nfse, então o ADN
+respondia com **as notas dele**, que eram gravadas debaixo da empresa cliente. Entravam como
+**DEST** (o CNPJ não bate, então caem em "recebidas"), o que poupou o faturamento — que usa EMIT
+autorizada — mas sujou a aba de Notas, a conferência ADN e as contagens da empresa.
+
+Hoje: **sem A1 da empresa, não se consulta** (`NO_COMPANY_CERT`, com o motivo na mensagem). É o
+mesmo caminho que o `ConferenciaAdnService` já seguia; o `AdnSyncService` legado também sempre
+exigiu o cert da empresa (`ADN_CERT_REQUIRED`).
+
+**Cinturão de segurança na ingestão:** `upsertNfseFromItem` recusa (`rejeitada_outro_cnpj`) todo
+documento em que a empresa não seja nem prestadora nem tomadora. Isso pega a classe inteira, não o
+caso: cert do escritório, A1 errado subido na empresa errada, ou qualquer mudança futura na
+resolução de certificado — nenhuma delas avisa sozinha. Só recusa quando **há** CNPJ e ele não
+bate: metadado sem nenhum dos dois não é evidência de nota alheia, e descartar por falta de dado
+esconderia nota legítima (o erro oposto, igualmente caro).
+
+**Dados já contaminados:** `scripts/diag-notas-de-outro-cnpj.mjs [cnpj]` lista as notas cuja empresa
+não é nem prestadora nem tomadora, marcando as **EMIT** (essas afetariam faturamento e apuração).
+Só leitura — não apaga nada, porque nota fiscal não volta e a decisão é do contador.
+
 ## Robustez NFS-e/ADN — ledger append-only (Fase 1)
 
 Roadmap completo em **`docs/robustez-nfse-adn.md`** (raiz do repo). Captura deve virar *fluxo de
