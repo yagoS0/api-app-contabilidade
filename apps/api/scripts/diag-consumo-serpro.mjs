@@ -9,6 +9,7 @@
 
 import { prisma } from "../src/infrastructure/db/prisma.js";
 import { SERPRO_COOLDOWN_SEGUNDOS, SERPRO_TETO_DIARIO_EMPRESA, SERPRO_GUARDA_ATIVA } from "../src/config.js";
+import { consumoDoMes } from "../src/application/fiscal/serpro/SerproCallGuard.js";
 
 const dias = Number(process.argv[2]) || 7;
 const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
@@ -23,7 +24,16 @@ const chamadas = await prisma.serproChamada.findMany({
 });
 
 console.log(`GUARDA: ${SERPRO_GUARDA_ATIVA ? "ativa" : "DESLIGADA"} · cooldown ${SERPRO_COOLDOWN_SEGUNDOS}s · teto ${SERPRO_TETO_DIARIO_EMPRESA}/empresa/dia`);
-console.log(`JANELA: últimos ${dias} dia(s) — ${chamadas.length} registro(s)\n`);
+
+// O teto global é derivado da carteira, então mostrar a CONTA é mais útil que mostrar o número:
+// quando ele apertar, é aqui que se vê se a carteira cresceu ou se o consumo por empresa subiu.
+const mes = await consumoDoMes();
+const barra = (f) => `[${"#".repeat(Math.min(20, Math.round(f * 20))).padEnd(20, "·")}]`;
+console.log(`MÊS CORRENTE: ${mes.usadas} de ${mes.teto}  ${barra(mes.fracao)} ${Math.round(mes.fracao * 100)}%`);
+console.log(`   teto = ${mes.empresasAtivas} empresas ativas × ${mes.orcamentoPorEmpresa} por empresa · restam ${mes.restantes}`);
+if (mes.estourado) console.log("   ⚠ TETO ESTOURADO — chamadas novas estão sendo recusadas (ADMIN pode forçar com ?forcar=1)");
+else if (mes.alerta) console.log("   ⚠ acima do limiar de alerta — reveja SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA antes de estourar");
+console.log(`\nJANELA: últimos ${dias} dia(s) — ${chamadas.length} registro(s)\n`);
 
 if (!chamadas.length) {
   console.log("Nenhuma chamada registrada. Se isso surpreende, confira se o deploy já subiu com a guarda.");

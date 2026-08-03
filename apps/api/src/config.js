@@ -270,6 +270,23 @@ export const SERPRO_COOLDOWN_SEGUNDOS = Number(process.env.SERPRO_COOLDOWN_SEGUN
 // Teto de chamadas por CNPJ por dia (America/Sao_Paulo), somando todos os serviços.
 export const SERPRO_TETO_DIARIO_EMPRESA = Number(process.env.SERPRO_TETO_DIARIO_EMPRESA || 60);
 
+// Teto GLOBAL do escritório, no mês civil. Ele NÃO é um número fixo de propósito: é derivado da
+// carteira (`empresas ativas × orçamento por empresa`), porque teto fixo vira armadilha exatamente
+// quando o escritório cresce — a carteira dobra, o consumo legítimo dobra, e o teto de ontem passa
+// a barrar trabalho normal no pior momento do mês.
+//
+// O orçamento por empresa é folgado DE PROPÓSITO. Um mês pesado de UMA empresa custa, somando tudo:
+// extrato (2) + guia DAS (1) + calcular (1–3) + transmitir (1) + pós-transmissão (3) + INSS/DCTFWeb
+// (2–3) + SITFIS (2) + confirmação de pagamento (1–2) ≈ 15–20. O default dobra isso para absorver
+// correção, retificação e retentativa. Não é limite do SERPRO — é freio contra laço defeituoso.
+export const SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA = Number(process.env.SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA || 40);
+// Piso: carteira pequena não pode ficar sufocada por um teto proporcional minúsculo.
+export const SERPRO_TETO_MENSAL_MINIMO = Number(process.env.SERPRO_TETO_MENSAL_MINIMO || 500);
+// Trava absoluta opcional (0 = sem trava). Só use se o contrato tiver um número rígido.
+export const SERPRO_TETO_MENSAL_ABSOLUTO = Number(process.env.SERPRO_TETO_MENSAL_ABSOLUTO || 0);
+// A partir de que fração do teto o sistema começa a AVISAR (sem bloquear).
+export const SERPRO_ALERTA_FRACAO = Number(process.env.SERPRO_ALERTA_FRACAO || 0.8);
+
 // === API Keys ===
 const rawApiKeys = process.env.API_KEYS || "";
 export const API_KEYS = rawApiKeys

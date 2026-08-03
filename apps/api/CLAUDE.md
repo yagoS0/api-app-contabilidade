@@ -445,6 +445,20 @@ travada, sem ninguém precisar lembrar de nada. Os 21 pontos de chamada não for
 |---|---|---|
 | **Cooldown** (`SERPRO_COOLDOWN_SEGUNDOS`, 300s) | mesma empresa + serviço + **mesmo payload** dentro da janela → recusa | mata duplo clique e laço que reenvia o idêntico. O payload entra no hash **de propósito**: corrigir um valor e recalcular não é repetição, é trabalho |
 | **Teto diário por empresa** (`SERPRO_TETO_DIARIO_EMPRESA`, 60) | chamadas por CNPJ no dia civil de São Paulo | pega laço defeituoso concentrado numa empresa |
+| **Teto mensal do escritório** | `empresas ativas × SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA` (40), com piso `SERPRO_TETO_MENSAL_MINIMO` (500) e trava absoluta opcional | é o que protege a fatura de um lote fora de controle, que o teto por empresa não enxerga |
+
+⚠ **O teto global é DERIVADO da carteira, nunca um número fixo.** Número fixo vira armadilha
+exatamente quando o escritório cresce: a carteira dobra, o consumo legítimo dobra, e o teto de
+ontem passa a barrar trabalho normal — no fim do mês, que é o pior momento possível. Derivado, ele
+acompanha sozinho. O orçamento por empresa é folgado: um mês pesado de UMA empresa custa ~15–20
+chamadas (extrato 2 + guia 1 + calcular 1–3 + transmitir 1 + pós 3 + INSS/DCTFWeb 2–3 + SITFIS 2 +
+pagamento 1–2), e o default dobra isso para absorver correção e retentativa.
+
+Ele é o **último** a ser checado (o mais caro) e **falha ABERTO**: se a contagem der erro, a chamada
+passa. Uma guarda de orçamento que derruba o fechamento por problema no próprio contador de
+orçamento seria pior que o gasto que evita. Em `SERPRO_ALERTA_FRACAO` (80%) começa a **avisar** sem
+bloquear — `GET /firm/serpro/consumo` devolve `{usadas, teto, restantes, fracao, alerta, estourado}`
+para a tela mostrar o teto chegando. Bloqueio que aparece de surpresa é o mesmo que travar o app.
 
 ⚠ O teto conta **`ok` e `erro`**: chamada que chegou ao SERPRO e voltou com rejeição de negócio foi
 cobrada igual. Contar só o sucesso deixaria de fora exatamente o laço que o teto existe para pegar —

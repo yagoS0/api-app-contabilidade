@@ -26,7 +26,11 @@
 
 import crypto from "node:crypto";
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { SERPRO_GUARDA_ATIVA, SERPRO_COOLDOWN_SEGUNDOS, SERPRO_TETO_DIARIO_EMPRESA } from "../../../config.js";
+import {
+  SERPRO_GUARDA_ATIVA, SERPRO_COOLDOWN_SEGUNDOS, SERPRO_TETO_DIARIO_EMPRESA,
+  SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA, SERPRO_TETO_MENSAL_MINIMO, SERPRO_TETO_MENSAL_ABSOLUTO,
+  SERPRO_ALERTA_FRACAO,
+} from "../../../config.js";
 import { contextoSerproAtual } from "./serproCallContext.js";
 
 export class SerproGuardError extends Error {
@@ -66,6 +70,54 @@ function inicioDoDiaSaoPaulo(agora = new Date()) {
   const deslocamentoMs = agora.getTime() - emSp.getTime();
   const meiaNoiteSp = new Date(emSp.getFullYear(), emSp.getMonth(), emSp.getDate(), 0, 0, 0, 0);
   return new Date(meiaNoiteSp.getTime() + deslocamentoMs);
+}
+
+/** Início do MÊS civil em São Paulo, em UTC — o teto global acompanha o mês do contador. */
+function inicioDoMesSaoPaulo(agora = new Date()) {
+  const emSp = new Date(agora.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+  const deslocamentoMs = agora.getTime() - emSp.getTime();
+  const primeiroDiaSp = new Date(emSp.getFullYear(), emSp.getMonth(), 1, 0, 0, 0, 0);
+  return new Date(primeiroDiaSp.getTime() + deslocamentoMs);
+}
+
+/**
+ * O teto global do mês, DERIVADO da carteira.
+ *
+ * Número fixo vira armadilha quando o escritório cresce: a carteira dobra, o consumo legítimo
+ * dobra, e o teto de ontem passa a barrar trabalho normal — no fim do mês, que é o pior momento
+ * possível. Derivando de `empresas ativas × orçamento por empresa`, ele acompanha sozinho.
+ *
+ * O piso protege a carteira pequena de um teto proporcional minúsculo. A trava absoluta só entra
+ * quando alguém a configura de propósito (contrato com número rígido).
+ */
+export async function tetoMensalGlobal() {
+  const empresas = await prisma.portalClient.count({ where: { status: { not: "INATIVA" } } }).catch(() => 0);
+  const derivado = empresas * SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA;
+  const teto = Math.max(derivado, SERPRO_TETO_MENSAL_MINIMO);
+  return SERPRO_TETO_MENSAL_ABSOLUTO > 0 ? Math.min(teto, SERPRO_TETO_MENSAL_ABSOLUTO) : teto;
+}
+
+/** Consumo do mês corrente + o teto vigente. É o que a tela e o script mostram. */
+export async function consumoDoMes() {
+  const desde = inicioDoMesSaoPaulo();
+  const [usadas, teto, empresas] = await Promise.all([
+    prisma.serproChamada.count({ where: { status: { in: ["ok", "erro"] }, createdAt: { gte: desde } } }).catch(() => 0),
+    tetoMensalGlobal(),
+    prisma.portalClient.count({ where: { status: { not: "INATIVA" } } }).catch(() => 0),
+  ]);
+  const fracao = teto > 0 ? usadas / teto : 0;
+  return {
+    desde,
+    usadas,
+    teto,
+    empresasAtivas: empresas,
+    orcamentoPorEmpresa: SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA,
+    restantes: Math.max(0, teto - usadas),
+    fracao: Math.round(fracao * 100) / 100,
+    // "alerta" é aviso, não bloqueio: dá tempo de reagir ANTES de alguém esbarrar no teto.
+    alerta: fracao >= SERPRO_ALERTA_FRACAO && fracao < 1,
+    estourado: usadas >= teto,
+  };
 }
 
 async function resolverPortalClientId(cnpj) {
@@ -142,6 +194,28 @@ export async function autorizarChamada({ payload, rota }) {
           "SERPRO_TETO_DIARIO",
           `Esta empresa já consumiu ${usadas} consultas pagas ao SERPRO hoje (teto ${SERPRO_TETO_DIARIO_EMPRESA}). Um ADMIN pode liberar, ou tente amanhã.`,
           { usadas, teto: SERPRO_TETO_DIARIO_EMPRESA },
+        );
+      }
+      return { ...base, portalClientId, inicio: Date.now(), forcado: true };
+    }
+  }
+
+  // 3) Teto GLOBAL do mês, derivado da carteira.
+  // Fica por último de propósito: é o mais caro de calcular e o que menos deve disparar. E falha
+  // ABERTO — se a contagem der erro, a chamada passa. Uma guarda de orçamento que derruba o
+  // fechamento por causa de um problema no próprio contador de orçamento seria pior que o gasto
+  // que ela evita.
+  if (SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA > 0) {
+    const mes = await consumoDoMes().catch(() => null);
+    if (mes?.estourado) {
+      if (!ctx.forcar) {
+        await registrar({ ...base, portalClientId, status: "recusada_teto" });
+        throw new SerproGuardError(
+          "SERPRO_TETO_MENSAL_ESCRITORIO",
+          `O escritório já consumiu ${mes.usadas} consultas pagas ao SERPRO neste mês (teto ${mes.teto}, `
+          + `= ${mes.empresasAtivas} empresas × ${mes.orcamentoPorEmpresa}). Um ADMIN pode liberar; `
+          + `se o consumo normal cresceu, aumente SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA.`,
+          { usadas: mes.usadas, teto: mes.teto, empresasAtivas: mes.empresasAtivas },
         );
       }
       return { ...base, portalClientId, inicio: Date.now(), forcado: true };

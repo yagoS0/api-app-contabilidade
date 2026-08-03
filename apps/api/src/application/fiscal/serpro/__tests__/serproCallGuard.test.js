@@ -66,6 +66,30 @@ describe("contexto da chamada", () => {
   });
 });
 
+describe("teto global derivado da carteira", () => {
+  // Teto fixo vira armadilha quando o escritório cresce: a carteira dobra, o consumo legítimo
+  // dobra, e o teto de ontem passa a barrar trabalho normal no fim do mês. Aqui trava-se a conta.
+  const calcular = (empresas, orcamento, minimo, absoluto) => {
+    const derivado = empresas * orcamento;
+    const teto = Math.max(derivado, minimo);
+    return absoluto > 0 ? Math.min(teto, absoluto) : teto;
+  };
+
+  test("acompanha a carteira — dobrar as empresas dobra o teto", () => {
+    expect(calcular(40, 40, 500, 0)).toBe(1600);
+    expect(calcular(80, 40, 500, 0)).toBe(3200);
+  });
+
+  test("o piso protege carteira pequena de um teto proporcional minúsculo", () => {
+    expect(calcular(3, 40, 500, 0)).toBe(500);
+  });
+
+  test("a trava absoluta só entra quando configurada de propósito", () => {
+    expect(calcular(100, 40, 500, 0)).toBe(4000);
+    expect(calcular(100, 40, 500, 2500)).toBe(2500);
+  });
+});
+
 describe("podeForcarSerpro", () => {
   test("exige ADMIN **e** pedido explícito", () => {
     expect(podeForcarSerpro({ auth: { user: { role: "admin" } }, query: { forcar: "1" } })).toBe(true);

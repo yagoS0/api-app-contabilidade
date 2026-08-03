@@ -33,6 +33,7 @@ import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
+import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistPendentes,
 } from "../../application/accounting/fechamentoBlockers.js";
@@ -4501,6 +4502,18 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // C9: resumo dos processos rodando em segundo plano — alimenta o selo "N processos" do dashboard.
   // Só CONTAGEM + progresso agregado (2 counts curtos), pra poder ser chamado em polling barato.
   // Envio de e-mails em lote NÃO entra: é chamada bloqueante, não job de fundo.
+  // Consumo do mês das chamadas PAGAS ao SERPRO + o teto vigente.
+  // Existe para o teto ser VISTO chegando: um bloqueio que aparece de surpresa no fim do mês é o
+  // mesmo que travar o app. Em erro devolve vazio — isto é informação, não pode derrubar tela.
+  router.get("/serpro/consumo", async (_req, res) => {
+    try {
+      return res.json({ ok: true, ...(await consumoDoMes()) });
+    } catch (err) {
+      log?.warn?.({ err: err?.message }, "Falha ao consultar consumo SERPRO");
+      return res.json({ ok: false });
+    }
+  });
+
   router.get("/jobs/ativos", async (_req, res) => {
     try {
       const [notas, sitfis] = await Promise.all([
