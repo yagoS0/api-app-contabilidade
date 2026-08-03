@@ -88,17 +88,11 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const folhaSerie = pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) }));
 
   // Conferência da folha: o backend deriva dos lançamentos contábeis (FolhaDerivadaService).
-  // Serve para COMPARAR com o que é digitado — o Fator R decide Anexo III ou V e, até aqui, esse
-  // número não tinha nenhuma segunda fonte.
+  // Por ora só usamos o SINAL de que existe folha lançada — os valores por mês saíram da tela até
+  // serem conferidos contra a base real (ver o comentário na grade, abaixo).
   const derivada = dados?.folhaDerivada || null;
   const derivadaDisponivel = Boolean(derivada?.disponivel);
-  // Casa pelo MESMO formato que o modal já usa em `pasAnteriores` ("YYYY-MM"). A série do backend
-  // também traz `pa` numérico (AAAAMM, formato do PGDAS-D), e usar aquele aqui não casava com
-  // nada — a comparação por mês ficava silenciosamente vazia.
-  const derivadaPorPa = new Map((derivada?.porMes || []).map((m) => [String(m.competencia), Number(m.valor)]));
-  const totalDerivado = Number(derivada?.total || 0);
   const totalDigitado = folhaSerie.reduce((s, f) => s + Number(f.valor || 0), 0);
-  const folhaConfere = derivadaDisponivel && Math.abs(totalDigitado - totalDerivado) <= 0.01;
 
   function setAtvValor(idx, campo, valor) {
     setAtividades((prev) => prev.map((a, i) => i === idx ? { ...a, [campo]: Number(valor) || 0 } : a));
@@ -343,55 +337,45 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   ★ Folha de salários (12 meses) — pro Fator-R. A RFB decide Anexo III↔V.
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 6 }}>
-                  {pasAnteriores(competencia).map((pa) => {
-                    // Valor derivado dos lançamentos daquele mês, para comparar célula a célula.
-                    const derivadoMes = derivadaPorPa.get(String(pa));
-                    const digitadoMes = Number(folha[pa] || 0);
-                    const divergeMes = derivadaDisponivel && derivadoMes != null
-                      && Math.abs(derivadoMes - digitadoMes) > 0.01;
-                    return (
-                      <label key={pa} style={{ fontSize: "0.7rem", color: PANEL.muted, display: "flex", flexDirection: "column", gap: 2 }}>
-                        {pa}
-                        <input
-                          type="number" step="0.01" value={folha[pa] || ""}
-                          onChange={(e) => setFolha((p) => ({ ...p, [pa]: e.target.value }))}
-                          placeholder="0,00"
-                          style={divergeMes ? { ...inputS, borderColor: "#FFB347" } : inputS}
-                        />
-                        {divergeMes && (
-                          <span style={{ color: "#FFB347", fontSize: "0.65rem" }} title="Soma dos lançamentos de folha desta competência">
-                            lançado: {fmtMoney(derivadoMes)}
-                          </span>
-                        )}
-                      </label>
-                    );
-                  })}
+                  {pasAnteriores(competencia).map((pa) => (
+                    <label key={pa} style={{ fontSize: "0.7rem", color: PANEL.muted, display: "flex", flexDirection: "column", gap: 2 }}>
+                      {pa}
+                      <input
+                        type="number" step="0.01" value={folha[pa] || ""}
+                        onChange={(e) => setFolha((p) => ({ ...p, [pa]: e.target.value }))}
+                        placeholder="0,00"
+                        style={inputS}
+                      />
+                    </label>
+                  ))}
                 </div>
 
-                {/* CONFERÊNCIA — mostra os DOIS números, nunca escolhe. Os lançamentos podem estar
-                    incompletos numa empresa recém-migrada; substituir o valor do contador por um
-                    derivado incompleto trocaria um erro raro por um sistemático. */}
+                {/* CONFERÊNCIA — hoje só AVISA que existe folha lançada, sem número.
+                    O valor derivado estava errado por dois defeitos que se somavam (contava o
+                    lançamento de PAGAMENTO junto com a provisão, e a janela de 12 meses vinha um mês
+                    à frente da grade). Os dois foram corrigidos no `FolhaDerivadaService`, mas o
+                    número só volta para cá depois de conferido contra a base real
+                    (`scripts/diag-folha-derivada.mjs`). Número errado ao lado de um campo que decide
+                    Anexo III↔V é pior que número nenhum. */}
                 {derivadaDisponivel && (
                   <div style={{
                     marginTop: 8, padding: "8px 10px", borderRadius: 6, fontSize: "0.75rem",
-                    background: folhaConfere ? "rgba(105,255,71,0.08)" : "rgba(255,179,71,0.10)",
-                    border: `1px solid ${folhaConfere ? "#69FF47" : "#FFB347"}`,
-                    color: folhaConfere ? "#69FF47" : "#FFB347",
+                    background: "rgba(139,233,253,0.08)", border: "1px solid #8BE9FD", color: "#8BE9FD",
                   }}>
-                    {folhaConfere ? (
-                      <>✓ Confere com os lançamentos de folha ({fmtMoney(totalDerivado)}).</>
-                    ) : (
-                      <>
-                        Digitado <strong>{fmtMoney(totalDigitado)}</strong> · lançamentos somam{" "}
-                        <strong>{fmtMoney(totalDerivado)}</strong> · diferença{" "}
-                        <strong>{fmtMoney(Math.abs(totalDigitado - totalDerivado))}</strong>.
-                        <div style={{ color: PANEL.muted, marginTop: 4 }}>
-                          Conferência, não correção — os lançamentos podem estar incompletos.
-                          {derivada?.mesesComLancamento != null
-                            && ` Há folha lançada em ${derivada.mesesComLancamento} dos 12 meses.`}
-                        </div>
-                      </>
-                    )}
+                    Há folha lançada em <strong>{derivada?.mesesComLancamento ?? "?"} dos 12 meses</strong>{" "}
+                    da janela — confira os lançamentos antes de digitar.
+                  </div>
+                )}
+                {/* Fator-R com folha zerada: a RFB recebe 12 zeros como se fossem folha de verdade,
+                    Fator-R dá 0 e a empresa cai no Anexo V sem erro nenhum. Avisa, não bloqueia. */}
+                {totalDigitado === 0 && derivadaDisponivel && (
+                  <div style={{
+                    marginTop: 6, padding: "8px 10px", borderRadius: 6, fontSize: "0.75rem",
+                    background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", color: "#FFB347",
+                  }}>
+                    ⚠ A folha está zerada e a atividade é sujeita ao Fator-R. Calculando assim, o
+                    Fator-R dá zero e a RFB aplica o <strong>Anexo V</strong> — mas há folha lançada
+                    no período.
                   </div>
                 )}
               </div>

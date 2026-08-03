@@ -99,6 +99,43 @@ function findAccountByHints(accounts, hints) {
   return null;
 }
 
+/**
+ * As contas de DESPESA de folha e pró-labore desta empresa (o lado `role: "salary"` dos templates).
+ *
+ * Existe porque a conferência do Fator-R precisa distinguir "débito de folha" de "débito qualquer".
+ * O lançamento de PAGAMENTO também é `tipo:"FOLHA"` e também tem uma perna de débito — mas ela vai
+ * para "Salários a Pagar" (passivo), não para a despesa. Somar os dois conta o bruto e depois conta
+ * de novo a parte dele que foi paga.
+ *
+ * Os `accountHints` ficam num lugar só, aqui: duplicá-los no serviço de conferência faria as duas
+ * resoluções divergirem com o tempo, e aí a conferência passaria a somar conta diferente da que o
+ * modal de folha usa para lançar.
+ *
+ * @returns {Promise<Set<string>>} códigos de conta; vazio quando o plano de contas não casa com
+ *   nenhuma dica (empresa recém-migrada) — quem chama decide o que fazer com isso.
+ */
+export async function resolverContasDespesaFolha({ portalClientId }) {
+  const rawAccounts = await prisma.chartOfAccount.findMany({
+    where: { OR: [{ portalClientId: String(portalClientId) }, { portalClientId: null }] },
+    select: { codigo: true, nome: true, portalClientId: true },
+    orderBy: { codigo: "asc" },
+  });
+  const byCodigo = new Map();
+  for (const acc of rawAccounts) {
+    const existing = byCodigo.get(acc.codigo);
+    if (!existing || (acc.portalClientId && !existing.portalClientId)) byCodigo.set(acc.codigo, acc);
+  }
+  const accounts = [...byCodigo.values()];
+
+  const codigos = new Set();
+  for (const kind of ["FOLHA", "PROLABORE"]) {
+    const linha = PAYROLL_TEMPLATES[kind].lines.find((l) => l.role === "salary");
+    const match = linha ? findAccountByHints(accounts, linha.accountHints) : null;
+    if (match?.codigo) codigos.add(String(match.codigo));
+  }
+  return codigos;
+}
+
 export async function resolvePayrollTemplate({ portalClientId, kind, competencia }) {
   const template = PAYROLL_TEMPLATES[String(kind || "").toUpperCase()];
   if (!template) {

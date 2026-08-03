@@ -248,9 +248,33 @@ segundo número, para comparar. Entra no `getDadosFechamento` como `folhaDerivad
 `FechamentoModal` mostra os dois lado a lado — total e **por competência**, destacando a célula do
 mês que diverge.
 
-**O que é somado:** o total de DÉBITO dos lançamentos `tipo: "FOLHA"` (subtipo FOLHA ou PROLABORE)
-das 12 competências. Nos dois templates de `payrollTemplate.js` a única linha de débito é a despesa
-bruta (salário ou pró-labore); os créditos são retenções e líquido. Somar créditos duplicaria.
+**O que é somado:** o débito na **conta de despesa** de folha/pró-labore (`role: "salary"` dos
+templates), nas 12 competências **anteriores** à de referência.
+
+⚠ **Já foi "todo débito de todo lançamento `tipo:"FOLHA"`", e estava errado por três motivos que se
+somavam no mesmo número:**
+
+| # | Defeito | Efeito na tela |
+|---|---|---|
+| 1 | **A janela vinha um mês à frente.** `competenciasDe12Meses` terminava NA competência; a grade do modal (`pasAnteriores`) usa os 12 meses **anteriores** — que é a janela do Fator-R e do RBT12 | o mês do PA entrava no total e na contagem **sem ter célula**: "há folha lançada em 3 dos 12 meses" com só 2 rótulos. E o mês mais antigo da grade nunca era conferido — ficava sem rótulo, indistinguível de "confere" |
+| 2 | **O lançamento de PAGAMENTO é `tipo:"FOLHA"`.** Desde a Q52 a rota `/entries/folha` grava a baixa no mesmo lote (D "Salários a Pagar" / C caixa) | o mês contava o bruto **e depois contava de novo a parte dele que foi paga** |
+| 3 | **A regra ignorava a conta.** Débito em despesa é folha; débito em passivo é quitação de folha | o valor por mês saía inflado exatamente nos meses com pagamento lançado |
+
+O comentário antigo do serviço ("a ÚNICA linha de débito é a despesa bruta") descrevia o lançamento
+**composto** de antes da Q52 e ficou falso quando cada linha virou um lançamento de uma perna só.
+
+As contas saem de **`resolverContasDespesaFolha`** (`payrollTemplate.js`) — a mesma fonte de
+`accountHints` que o modal de folha usa para lançar. Duplicá-las faria a conferência somar conta
+diferente da que o lançamento usa. Sem conta resolvida (plano de contas que não casa com nenhuma
+dica), cai numa segunda regra: entry com D **e** C em duas pernas é pagamento e fica de fora — pela
+rota, provisão tem exatamente uma perna e baixa tem exatamente duas. O retorno traz
+`contasConsideradas` para distinguir "não tem folha" de "não achei a conta".
+
+⚠ **Os valores por mês estão FORA da tela** até serem conferidos contra a base real com
+`scripts/diag-folha-derivada.mjs <cnpj> <competencia>` (só leitura, mostra lançamento por lançamento
+o que a regra antiga somava e o que a nova soma). O modal hoje só avisa *"há folha lançada em N dos
+12 meses"*, sem número: número errado ao lado de um campo que decide Anexo III↔V é pior que número
+nenhum.
 
 **O que NÃO é:** a base do Fator R. A base é regra fiscal (LC 123/06) e pode incluir ou excluir
 parcelas que o sistema não separa. Isto é a soma do que foi LANÇADO, oferecida como conferência.
