@@ -231,11 +231,12 @@ function App() {
         apuracaoApi={api}
         feedback={feedback}
         onBack={() => session.setPage("companies")}
-        onOpenCompanyNotas={(pcId) => {
-          companiesWorkspace.companiesState.setSelectedCompanyId(pcId);
-          session.setPage("companyDetail");
-          companiesWorkspace.setCompanyDetailTab("notasFiscais");
-        }}
+        /* Era uma sequência de três passos que se atropelavam: `setSelectedCompanyId` (assíncrono),
+           `setPage("companyDetail")` sem id (que caía no fallback e ia pra lista) e
+           `setCompanyDetailTab` lendo o id VELHO do estado — o último navigate vencia e abria a
+           empresa anterior. É o "clico na ERISANGELA e abre a CHAYM". Agora é uma navegação só,
+           com o id explícito; o estado passa a seguir a URL sozinho. */
+        onOpenCompanyNotas={(pcId) => companiesWorkspace.openCompanyTab(pcId, "notasFiscais")}
       />
     );
   }

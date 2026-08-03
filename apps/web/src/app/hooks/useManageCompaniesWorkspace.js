@@ -56,6 +56,21 @@ function dashboardPrevMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/**
+ * A EMPRESA da URL. `/companies/<id>/<aba>` → `<id>`; qualquer outra rota → "".
+ *
+ * ⚠ Isto conserta uma classe inteira de bug, não um caso: a ABA sempre veio da URL, mas a EMPRESA
+ * era estado solto (`useCompanies`). Duas fontes de verdade para a mesma tela, e a URL mudava sem
+ * o estado acompanhar — clicava-se numa empresa e aparecia outra, a anterior (ou a primeira da
+ * carteira, por causa do auto-seleciona do `loadCompanies`). Acontecia em navegação por link,
+ * botão voltar do browser e refresh.
+ */
+function deriveCompanyIdFromPath(pathname) {
+  const m = String(pathname || "").match(/^\/companies\/([^/]+)/);
+  const seg = m?.[1] || "";
+  return seg && seg !== "new" ? seg : "";
+}
+
 function deriveCompanyDetailTab(pathname) {
   // Q17: Lançamentos é a aba default ao abrir uma empresa.
   const match = pathname.match(/^\/companies\/[^\/]+\/([^\/]+)/);
@@ -76,18 +91,43 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
 
   // Q8.C.3: companyDetailTab derivado da URL. setCompanyDetailTab vira adapter pra navigate.
   const companyDetailTab = deriveCompanyDetailTab(location.pathname);
-  function setCompanyDetailTab(tab) {
+
+  // A URL MANDA na empresa, como já mandava na aba. Sem isto, as duas discordavam: a URL apontava
+  // para uma empresa e a tela renderizava outra — a que estava no estado. Um `setSelectedCompanyId`
+  // esquecido em qualquer ponto de navegação (link, voltar do browser, refresh) reproduzia o bug.
+  const companyIdDaUrl = deriveCompanyIdFromPath(location.pathname);
+  useEffect(() => {
+    if (companyIdDaUrl && companyIdDaUrl !== companiesState.selectedCompanyId) {
+      companiesState.setSelectedCompanyId(companyIdDaUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyIdDaUrl]);
+  /**
+   * Abre uma aba de uma empresa ESPECÍFICA. Use esta quando estiver trocando de empresa.
+   *
+   * ⚠ O `setCompanyDetailTab` abaixo resolve a empresa sozinho, e é aí que mora a armadilha: quem
+   * fazia `setSelectedCompanyId(novaEmpresa)` e logo em seguida `setCompanyDetailTab("x")` navegava
+   * para a empresa ANTERIOR — o `set` do React não é visível no mesmo closure, então a segunda
+   * chamada ainda lia o valor velho. Era exatamente o "clico na ERISANGELA e abre a CHAYM".
+   */
+  function openCompanyTab(companyId, tab) {
     const segment = TAB_TO_SEGMENT[tab];
     if (!segment) {
-      console.warn(`[setCompanyDetailTab] tab desconhecida: ${tab}`);
+      console.warn(`[openCompanyTab] tab desconhecida: ${tab}`);
       return;
     }
-    const cid = companiesState.selectedCompanyId;
-    if (!cid) {
-      console.warn("[setCompanyDetailTab] sem companyId — não é possível navegar");
+    if (!companyId) {
+      console.warn("[openCompanyTab] sem companyId — não é possível navegar");
       return;
     }
-    navigate(`/companies/${cid}/${segment}`);
+    navigate(`/companies/${companyId}/${segment}`);
+  }
+
+  function setCompanyDetailTab(tab) {
+    // Resolve pela URL primeiro: ela é a fonte de verdade e nunca está atrasada em relação a um
+    // `setState` que ainda não renderizou. O estado fica só como retaguarda para quem chama isto
+    // de fora de uma página de empresa.
+    openCompanyTab(companyIdDaUrl || companiesState.selectedCompanyId, tab);
   }
   const [submittingCompany, setSubmittingCompany] = useState(false);
   // Q17: competência do dashboard (default = mês anterior). Trocar recarrega a lista.
@@ -141,7 +181,12 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     try {
       const data = await api.listCompanies(competencia);
       companiesState.setCompanies(data);
-      if (!companiesState.selectedCompanyId && data.length > 0) {
+      // ⚠ NUNCA auto-selecionar quando a URL já diz qual empresa é. Este atalho ("nenhuma
+      // selecionada → pega a primeira da lista") era a causa direta do caso mais visível: abrir
+      // `/companies/<X>/apuracao` por link ou refresh começa com o estado vazio, a lista carrega, e
+      // o app escolhia a PRIMEIRA empresa da carteira — que não tem nada a ver com a URL. Fora de
+      // uma página de empresa o atalho segue valendo, que é para o que ele existe.
+      if (!companyIdDaUrl && !companiesState.selectedCompanyId && data.length > 0) {
         companiesState.setSelectedCompanyId(data[0].companyId);
       }
     } catch (err) {
@@ -873,7 +918,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     guidesState.setRecalculatingGuideId("");
     createCompanyForm.reset();
     editCompanyForm.reset();
-    setCompanyDetailTab("lancamentos");
+    // NÃO navega. Isto roda no logout e na sessão expirada, logo depois de `clearSession()` mandar
+    // para /login — um navigate aqui desfaria o redirect e jogaria o usuário DESLOGADO de volta
+    // numa página de empresa. E não há aba a resetar: ela é derivada da URL.
     setGuideSettings(null);
     setJobEnabled(false);
     setSerproProcurationStatus(null);
@@ -1018,6 +1065,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     editCompanyForm,
     companyDetailTab,
     setCompanyDetailTab,
+    // Trocando de empresa? Use esta, com o id explícito — `setCompanyDetailTab` resolve a empresa
+    // sozinho e leva para a anterior quando o `setSelectedCompanyId` ainda não renderizou.
+    openCompanyTab,
     submittingCompany,
     submittingCompanyEdit,
     jobEnabled,

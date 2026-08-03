@@ -195,6 +195,28 @@ mexendo (fixação exclusiva, seleção múltipla), e um mock imutável passaria
 
 ## Abas do detalhe
 
+### ⚠ A URL manda na EMPRESA, não só na aba
+
+Por muito tempo a **aba** vinha da URL mas a **empresa** era estado solto (`useCompanies`). Duas
+fontes de verdade para a mesma tela — e quando elas discordavam, a URL apontava para uma empresa e a
+tela mostrava outra. O sintoma: *"clico na ERISANGELA e abre a CHAYM"*, em várias telas diferentes.
+
+Eram três defeitos somados:
+
+1. **`loadCompanies` auto-selecionava `data[0]`** quando nada estava selecionado. Abrir
+   `/companies/<X>/…` por link ou refresh começa com o estado vazio → o app escolhia a **primeira
+   empresa da carteira**, que não tem relação nenhuma com a URL. Hoje o atalho só vale **fora** de
+   uma página de empresa.
+2. **Nada sincronizava o estado com a URL.** Um efeito faz a URL vencer sempre — link, voltar do
+   browser e refresh passaram a funcionar sozinhos.
+3. **`setSelectedCompanyId(nova)` seguido de `setCompanyDetailTab(…)`** navegava para a empresa
+   ANTERIOR: o `set` do React não é visível no mesmo closure, então a segunda chamada lia o valor
+   velho. Trocando de empresa, use **`openCompanyTab(companyId, tab)`** com o id explícito;
+   `setCompanyDetailTab` resolve pela URL e serve para trocar de aba **dentro** da mesma empresa.
+
+`resetWorkspace` **não navega**: roda no logout, logo depois de `clearSession()` mandar para
+`/login`, e um navigate ali devolveria o usuário deslogado para uma página de empresa.
+
 Ordem/roteamento: `useManageCompaniesWorkspace.deriveCompanyDetailTab` (default `anotacoes`)
 + `GROUPS` em `renderCompanyDetailHeader.jsx` (Anotações primeiro, no primeiro nível). Navegação ao
 abrir empresa: `useManageAuthSession` → `/companies/:id/anotacoes`. Aba nova exige **três** peças:
