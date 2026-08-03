@@ -244,31 +244,64 @@ async function folhasSalarioSeAplicavel(atividades, folhaMensal12) {
   return temFatorR ? lista.map((f) => ({ pa: f.pa, valor: f.valor })) : [];
 }
 
-// A RFB só aceita receitasBrutasAnteriores dos meses que ela NÃO tem declarados; para os demais
-// rejeita com "SN-Entregar: Foi enviada receita bruta de um período desnecessário: MM/AAAA. Remova
-// este período e tente novamente." Fazemos literalmente isso: remove o PA apontado e re-executa,
-// até a lista convergir (pior caso: 12 remoções → lista vazia, campo omitido do payload).
-// Qualquer OUTRO erro propaga intacto (não mascara rejeições reais).
-const RE_PERIODO_DESNECESSARIO = /per[íi]odo desnecess[áa]rio:?\s*(\d{2})\/(\d{4})/i;
-async function executarComAjusteReceitas(executar, { receitasBrutasAnteriores, ...params }) {
-  let detalhe = [...(receitasBrutasAnteriores || [])];
-  const removidos = [];
-  for (let tentativa = 0; tentativa <= 13; tentativa += 1) {
+// A RFB só aceita, tanto em `receitasBrutasAnteriores` quanto em `folhasSalario`, os meses que ela
+// NÃO tem declarados. Para os demais rejeita a declaração inteira apontando o mês:
+//
+//   "SN-Entregar: Foi enviada receita bruta de um período desnecessário: MM/AAAA. Remova este
+//    período e tente novamente."
+//   "SN-Entregar: Foi enviada folha de um período desnecessário: 07/2025. Remova este período e
+//    tente novamente."
+//
+// Fazemos literalmente o que ela manda: remove o PA apontado da lista CERTA e re-executa, até
+// convergir (pior caso: as duas listas esvaziam e os campos somem do payload — a RFB usa o que ela
+// já tem). Qualquer OUTRO erro propaga intacto: não mascaramos rejeição real.
+//
+// ⚠ O ajuste da FOLHA foi o bug que travava o Calcular de toda empresa com Fator-R. O regex antigo
+// casava com as duas mensagens mas removia sempre de `receitasBrutasAnteriores`: quando a queixa
+// era de folha, ou o mês não estava na lista de receitas e o erro voltava intacto (Calcular "não
+// fazia nada", porque a mensagem ainda era engolida pelo front), ou estava, e aí comia um mês de
+// receita que a RFB precisava, repetindo até estourar em 14 chamadas SERPRO por clique.
+//
+// Por isso o subject entra no regex: é ele que decide de QUAL lista remover.
+const RE_PERIODO_DESNECESSARIO = /foi enviada\s+(folha|receita bruta)[^:]*per[íi]odo desnecess[áa]rio:?\s*(\d{2})\/(\d{4})/i;
+// Guarda de compatibilidade: se a RFB mudar a frase e o subject não casar, volta ao comportamento
+// antigo (tratar como receita) em vez de deixar de ajustar.
+const RE_PERIODO_DESNECESSARIO_SEM_SUJEITO = /per[íi]odo desnecess[áa]rio:?\s*(\d{2})\/(\d{4})/i;
+
+// Exportada para teste: a regra de "de qual lista remover" já saiu errada uma vez e travou o
+// Calcular de toda empresa com Fator-R, sem deixar rastro nenhum.
+export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnteriores, folhasSalario, ...params }) {
+  let receitas = [...(receitasBrutasAnteriores || [])];
+  let folhas = [...(folhasSalario || [])];
+  const removidos = { receitas: [], folhas: [] };
+  // Teto: as duas listas têm 12 meses cada, então 24 remoções + margem. Antes era 13, dimensionado
+  // só para as receitas — com as duas listas ele podia estourar antes de convergir.
+  for (let tentativa = 0; tentativa <= 26; tentativa += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const resultado = await executar({ ...params, receitasBrutasAnteriores: detalhe });
-      return { resultado, receitasAceitas: detalhe, periodosRemovidos: removidos };
+      const resultado = await executar({ ...params, receitasBrutasAnteriores: receitas, folhasSalario: folhas });
+      return { resultado, receitasAceitas: receitas, folhasAceitas: folhas, periodosRemovidos: removidos };
     } catch (err) {
-      const m = String(err?.message || "").match(RE_PERIODO_DESNECESSARIO);
-      if (!m) throw err;
-      const pa = `${m[2]}-${m[1]}`; // "06/2025" → "2025-06"
-      const antes = detalhe.length;
-      detalhe = detalhe.filter((r) => String(r.pa) !== pa);
-      if (detalhe.length === antes) throw err; // PA não está na lista → evita loop infinito
-      removidos.push(pa);
+      const msg = String(err?.message || "");
+      const comSujeito = msg.match(RE_PERIODO_DESNECESSARIO);
+      const generico = comSujeito ? null : msg.match(RE_PERIODO_DESNECESSARIO_SEM_SUJEITO);
+      if (!comSujeito && !generico) throw err;
+
+      const ehFolha = comSujeito ? /folha/i.test(comSujeito[1]) : false;
+      const [mes, ano] = comSujeito ? [comSujeito[2], comSujeito[3]] : [generico[1], generico[2]];
+      const pa = `${ano}-${mes}`; // "06/2025" → "2025-06"
+
+      const alvo = ehFolha ? folhas : receitas;
+      const depois = alvo.filter((r) => String(r.pa) !== pa);
+      if (depois.length === alvo.length) throw err; // PA não está na lista → evita loop infinito
+      if (ehFolha) { folhas = depois; removidos.folhas.push(pa); }
+      else { receitas = depois; removidos.receitas.push(pa); }
     }
   }
-  throw new FechamentoError("RECEITAS_ANTERIORES_NAO_CONVERGIU", "A RFB rejeitou as receitas brutas anteriores repetidamente.");
+  throw new FechamentoError(
+    "RECEITAS_ANTERIORES_NAO_CONVERGIU",
+    "A RFB rejeitou os períodos anteriores (receita bruta / folha) repetidamente.",
+  );
 }
 
 /**
@@ -300,7 +333,7 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
 
   const sim = new PgdasSimulacaoService();
   const folhasSalario = await folhasSalarioSeAplicavel(atividades, folhaMensal12);
-  const { resultado, receitasAceitas, periodosRemovidos } = await executarComAjusteReceitas(
+  const { resultado, receitasAceitas, periodosRemovidos } = await executarComAjusteDePeriodos(
     (p) => sim.simular(p),
     {
       contratanteCnpj, contribuinteCnpj, competencia,
@@ -540,10 +573,10 @@ export async function transmitirFechamento({ portalClientId, competencia, userId
   const rbt = await getRbt12({ portalClientId, competencia });
   let resultado;
   try {
-    // Auto-ajuste das receitas anteriores também aqui: a rejeição "período desnecessário" ocorre
-    // ANTES de a declaração ser aceita, então re-tentar com a lista corrigida é seguro. O cache
-    // já convergido pelo Calcular torna o retry raro.
-    const exec = await executarComAjusteReceitas(
+    // Auto-ajuste dos períodos anteriores (receita bruta E folha) também aqui: a rejeição "período
+    // desnecessário" ocorre ANTES de a declaração ser aceita, então re-tentar com a lista corrigida
+    // é seguro. O cache já convergido pelo Calcular torna o retry raro.
+    const exec = await executarComAjusteDePeriodos(
       (p) => sim.transmitir(p),
       {
         contratanteCnpj, contribuinteCnpj, competencia,

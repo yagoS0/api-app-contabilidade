@@ -124,6 +124,16 @@ router.get('/', requireAuth, requireRole(['FIRM_ADMIN']), async (req, res) => {
   vêm de `getResolvedSerproCredentials` — **uma só config**, prod por padrão).
 
 **Regras CRÍTICAS do PGDAS-D (validadas contra a API real):**
+- ⚠ **"Período desnecessário" vale para as DUAS listas.** A RFB só aceita, em
+  `receitasBrutasAnteriores` **e** em `folhasSalario`, os meses que ela ainda não tem declarados;
+  para os demais rejeita a declaração inteira apontando o mês:
+  `"Foi enviada receita bruta de um período desnecessário: MM/AAAA"` e
+  `"Foi enviada folha de um período desnecessário: 07/2025"` (as duas frases confirmadas em
+  produção). `executarComAjusteDePeriodos` remove o mês da lista CERTA e re-executa.
+  **O subject no regex é o que decide de qual lista remover** — sem ele, a queixa de folha removia
+  de receitas: ou o erro voltava intacto (e o Calcular de toda empresa com Fator-R "não fazia
+  nada"), ou comia um mês de receita que a RFB precisava e repetia até estourar o teto, gastando
+  até 14 chamadas SERPRO por clique. Coberto por `__tests__/ajustePeriodos.test.js`.
 - O contador escolhe **ATIVIDADE** (`idAtividade`), NÃO o anexo. A RFB decide
   anexo, faixa, III↔V do Fator-R, repartição e DAS. A gente só envia atividades.
 - Mercado interno/externo é codificado no próprio `idAtividade` (ex: 1=interno,
@@ -270,11 +280,12 @@ dica), cai numa segunda regra: entry com D **e** C em duas pernas é pagamento e
 rota, provisão tem exatamente uma perna e baixa tem exatamente duas. O retorno traz
 `contasConsideradas` para distinguir "não tem folha" de "não achei a conta".
 
-⚠ **Os valores por mês estão FORA da tela** até serem conferidos contra a base real com
-`scripts/diag-folha-derivada.mjs <cnpj> <competencia>` (só leitura, mostra lançamento por lançamento
-o que a regra antiga somava e o que a nova soma). O modal hoje só avisa *"há folha lançada em N dos
-12 meses"*, sem número: número errado ao lado de um campo que decide Anexo III↔V é pior que número
-nenhum.
+**Conferido contra a base real** com `scripts/diag-folha-derivada.mjs <cnpj> <competencia>` (só
+leitura; imprime lançamento por lançamento o que a regra antiga somava e o que a nova soma, com as
+contas). Na CHAYM 2026-07 o resultado foi exatamente o previsto: provisão `D 426 PRO LABORE
+5.000,00` + pagamento `D 233 4.450,00` davam os **9.450,00** que apareciam na tela; a regra nova
+fica nos **5.000,00** (o bruto, já com o INSS de 550 que sai no crédito). Use esse script sempre
+que o número da tela for contestado — ele mostra o porquê, não só o total.
 
 **O que NÃO é:** a base do Fator R. A base é regra fiscal (LC 123/06) e pode incluir ou excluir
 parcelas que o sistema não separa. Isto é a soma do que foi LANÇADO, oferecida como conferência.
