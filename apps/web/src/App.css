@@ -621,12 +621,6 @@
   letter-spacing: -0.02em;
 }
 
-.dashboard-home__subtitle {
-  margin: 2px 0 0;
-  color: #6272a4;
-  font-size: 0.8125rem;
-}
-
 .dashboard-home__user {
   margin-left: auto;
 }
@@ -698,16 +692,6 @@
 
 .dashboard-home__action--accent:hover:not(:disabled) {
   background: #ac7ef4;
-}
-
-.dashboard-home__filters {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr) minmax(220px, 1fr);
-  gap: 16px;
-  align-items: end;
-  padding: 16px;
-  border-radius: 12px;
-  background: #24253a;
 }
 
 .dashboard-filter-field {
@@ -1008,7 +992,7 @@
 }
 
 .company-tile {
-  background: #24253a;
+  background: var(--bg-surface);
   border: 1px solid transparent;
   border-radius: 12px;
   box-shadow: none;
@@ -1025,7 +1009,7 @@
 
 .company-tile:hover {
   transform: translateY(-1px);
-  border-color: #353754;
+  border-color: var(--border);
   box-shadow: 0 12px 28px rgba(17, 18, 27, 0.2);
 }
 
@@ -1038,13 +1022,13 @@
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  color: #f8f8f2;
+  color: var(--text);
 }
 
 .company-tile p {
   margin: 0;
   font-size: 0.875rem;
-  color: #6272a4;
+  color: var(--text-faint);
 }
 
 .company-serpro-status {
@@ -1053,69 +1037,12 @@
   gap: 6px;
 }
 
-.company-serpro-status__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  font-size: 0.6875rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: #1a1b26;
-}
-
-.company-serpro-status__badge--ok {
-  color: #69ff47;
-}
-
-.company-serpro-status__badge--off {
-  color: #ff5555;
-}
-
 .compliance-tags {
   margin: 0;
   min-height: 1.35em;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.compliance-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.6875rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: #1a1b26;
-}
-
-.compliance-tag--miss {
-  color: #ff6b6b;
-}
-
-.compliance-tag--ok {
-  color: #69ff47;
-}
-
-.compliance-tag--neutral {
-  color: #aeb6d3;
-}
-
-/* PARC_DAS — empresa com parcelamento Simples Nacional ativo.
-   Laranja para destacar visualmente como categoria especial (não é OK nem MISS). */
-.compliance-tag--accent {
-  color: #ffb347;
-  border-color: rgba(255, 179, 71, 0.32);
-  background: rgba(255, 179, 71, 0.08);
-  font-weight: 700;
 }
 
 .company-tile__action {
@@ -1458,10 +1385,6 @@ th {
   .dashboard-home__user-meta {
     width: 100%;
     justify-items: start;
-  }
-
-  .dashboard-home__filters {
-    grid-template-columns: 1fr;
   }
 
   .cards-grid--dashboard {

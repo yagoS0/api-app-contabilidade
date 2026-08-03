@@ -30,6 +30,35 @@
   --success-cta-hover: #58eb38;
   --success-cta-text: #1a1b26;
 
+  /* ─── ESTADO ─────────────────────────────────────────────────────────────────────────────────
+     REGRA DE OURO: cor forte = precisa de ação AGORA. Neutro = cinza. Concluído = verde discreto.
+     Vermelho NUNCA para estado que não bloqueia o fechamento.
+
+     Por que isto existe: a tela de Empresas usava vermelho e âmbar em quase tudo — "falta apurar"
+     aparecia em âmbar em 29 de 30 empresas. Quando o padrão grita, a exceção some. Cada token
+     abaixo tem UM significado, e usá-lo fora dele reintroduz o problema.
+
+     Todo estado tem par `-surface` (fundo translúcido). Sem o par, o código cai no truque
+     `${cor}22` — concatenação de hex, que não funciona com `var()`. */
+  --state-danger: #FF5757;                            /* bloqueia o fechamento */
+  --state-danger-surface: rgba(255, 87, 87, 0.14);
+  --state-warn: #FFB347;                              /* ação rápida disponível (enviar) */
+  --state-warn-surface: rgba(255, 179, 71, 0.14);
+  --state-ok: #69FF47;                                /* concluído */
+  --state-ok-surface: rgba(105, 255, 71, 0.12);
+  --state-neutral: #A7B0C0;                           /* padrão: falta apurar, vazio, zerada */
+  --state-neutral-surface: rgba(255, 255, 255, 0.06);
+  --state-closed: #2DD4BF;                            /* fechada — fora do fluxo de trabalho */
+  --state-closed-surface: rgba(45, 212, 191, 0.10);
+
+  /* ─── ACENTOS ────────────────────────────────────────────────────────────────────────────────
+     Identidade e categoria (regime tributário), NUNCA estado. Ter cor de categoria ajuda a
+     agrupar de relance; usar as cores de estado para isso é o que embaralhava a leitura. */
+  --accent-cyan: #8BE9FD;      /* Simples Nacional */
+  --accent-orange: #FFB86C;    /* Lucro Presumido */
+  --accent-purple: #BD93F9;    /* Lucro Real; também é o foco/seleção */
+  --accent-pink: #FF79C6;      /* folha */
+
   --radius: 10px;
   --radius-sm: 8px;
   --shadow: 0 1px 3px rgba(15, 23, 42, 0.06);

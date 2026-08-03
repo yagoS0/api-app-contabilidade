@@ -26,7 +26,7 @@ Cada app tem seu próprio `CLAUDE.md` com regras específicas.
 | Camada     | Tecnologia                              |
 |------------|-----------------------------------------|
 | Backend    | Node.js 20, Express.js, Prisma, PostgreSQL |
-| Frontend   | React 19, Vite, TailwindCSS             |
+| Frontend   | React 19, Vite, CSS custom properties (`styles/tokens.css`) + estilo inline. **Sem Tailwind** |
 | Parser     | Python 3.12, FastAPI, pdfplumber        |
 | Auth       | JWT + RBAC                              |
 | Email      | Gmail API (delegação) / Nodemailer SMTP |

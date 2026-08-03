@@ -40,18 +40,33 @@ export function getComplianceTags(guideCompliance) {
   ];
 }
 
-// Q17: cores por estado da tag (amarelo = vazio confirmado).
-const TAG_STATE_COLOR = { present: "#69FF47", vazio: "#FFB347", missing: "#FF5757" };
+// Q17: cores por estado da tag (cinza = vazio confirmado, ver `tokens.css`).
+const TAG_STATE_COLOR = {
+  present: "var(--state-ok)",
+  vazio: "var(--state-neutral)",
+  missing: "var(--state-danger)",
+};
 
-// C6: os selos de identidade da empresa (regime · SERPRO · A1) agora usam UM design só —
-// pílula com borda colorida. Antes SERPRO era badge com classe CSS e A1 era fonte colorida.
-function Pill({ color, title, children }) {
+/**
+ * Pílula da linha de identidade.
+ *
+ * ⚠ Dois tipos de selo se misturavam aqui e passaram a ter visuais distintos:
+ *
+ * - **configuração** (`tone="config"`) — parc, folha, SERPRO, A1. São atributos da empresa, não
+ *   eventos do mês. Fundo neutro e texto secundário: informam sem competir.
+ * - **categoria** (`tone="categoria"`) — o regime. Ganha cor de ACENTO (nunca de estado), porque
+ *   agrupar Simples × Presumido de relance é útil e não tem nada a ver com urgência.
+ *
+ * A cor de ESTADO (vermelho/âmbar/verde) fica reservada para o que precisa de ação. Era isso que
+ * estava embaralhado: com quase tudo colorido, nada se destacava.
+ */
+function Pill({ color, tone = "config", title, children }) {
+  const estilo = tone === "categoria"
+    ? { border: `1px solid ${color}`, color }
+    : { border: "1px solid transparent", background: "var(--state-neutral-surface)", color: color || "var(--text-muted)" };
   return (
     <span
-      style={{
-        fontSize: "0.7rem", fontWeight: 700, padding: "1px 8px", borderRadius: 999,
-        border: `1px solid ${color}`, color,
-      }}
+      style={{ fontSize: "0.7rem", fontWeight: 700, padding: "1px 8px", borderRadius: 999, ...estilo }}
       title={title}
     >
       {children}
@@ -65,7 +80,7 @@ function Pill({ color, title, children }) {
 // "parc" ao lado do regime, junto da identidade da empresa.
 const FISCAL_META = {
   COM_PENDENCIA: {
-    label: `${SITUACAO_FISCAL_SIMBOLO.COM_PENDENCIA} Pendência`, color: "#FF4757",
+    label: `${SITUACAO_FISCAL_SIMBOLO.COM_PENDENCIA} Pendência`, color: "var(--state-danger)",
     title: "Situação fiscal: empresa COM PENDÊNCIA (SITFIS)",
   },
 };
@@ -80,7 +95,7 @@ export function CompanyCard({ company, onAccess }) {
   const certExpiresAt = legacy?.certExpiresAt ? new Date(legacy.certExpiresAt) : null;
   const certExpirado = hasCert && certExpiresAt && certExpiresAt.getTime() < Date.now();
   const certAtivo = hasCert && !certExpirado;
-  const certColor = certAtivo ? "#69FF47" : certExpirado ? "#FF5757" : "#6272A4";
+  const certColor = certAtivo ? "var(--state-ok)" : certExpirado ? "var(--state-warn)" : "var(--text-faint)";
   const certTitle = certAtivo
     ? `Certificado A1 ativo${certExpiresAt ? ` — válido até ${certExpiresAt.toLocaleDateString("pt-BR")}` : " — validade desconhecida"}`
     : certExpirado
@@ -97,7 +112,7 @@ export function CompanyCard({ company, onAccess }) {
   // Q17: empresa FECHADA (contábil) → card inteiro fica verde-azulado (teal) + cadeado no título.
   const fechada = Boolean(company?.fechamentoContabil?.fechado);
   const cardStyle = fechada
-    ? { background: "rgba(45,212,191,0.10)", borderColor: "#2DD4BF" }
+    ? { background: "var(--state-closed-surface)", borderColor: "var(--state-closed)" }
     : undefined;
   const fechadaTitle = fechada
     ? `Empresa fechada${company.fechamentoContabil?.fechadoEm ? ` em ${new Date(company.fechamentoContabil.fechadoEm).toLocaleDateString("pt-BR")}` : ""}`
@@ -105,9 +120,9 @@ export function CompanyCard({ company, onAccess }) {
   // Regime tributário — tag Simples/Presumido/Real (vem do cadastro legado).
   const regime = legacy?.regimeTributario || null;
   const regimeLabel = rotuloRegime(regime) || null;
-  const regimeColor = regime === "SIMPLES" ? "#8BE9FD"
-    : regime === "LUCRO_PRESUMIDO" ? "#FFB86C"
-    : regime === "LUCRO_REAL" ? "#BD93F9" : "#6272A4";
+  const regimeColor = regime === "SIMPLES" ? "var(--accent-cyan)"
+    : regime === "LUCRO_PRESUMIDO" ? "var(--accent-orange)"
+    : regime === "LUCRO_REAL" ? "var(--accent-purple)" : "var(--text-faint)";
   // Empresa zerada (sem movimento) — só enviamos obrigações zeradas; não há guias/impostos.
   const zerada = Boolean(company?.empresaZerada);
   // C6: "Enviado" substitui as tags de guia só quando TODAS as guias do mês foram enviadas.
@@ -129,11 +144,11 @@ export function CompanyCard({ company, onAccess }) {
           {company.razao}
           {fechada && <span title={fechadaTitle} style={{ marginLeft: 6 }}>🔒</span>}
         </h3>
-        <p style={{ color: "#FFFFFF" }}>CNPJ: {company.cnpj}</p>
+        <p style={{ color: "var(--text)" }}>CNPJ: {company.cnpj}</p>
         {/* C6: identidade da empresa — regime, SERPRO e A1 juntos e no MESMO design (pílula). */}
         <p style={{ margin: "4px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {regimeLabel && (
-            <Pill color={regimeColor} title={`Regime tributário: ${regimeLabel}`}>{regimeLabel}</Pill>
+            <Pill tone="categoria" color={regimeColor} title={`Regime tributário: ${regimeLabel}`}>{regimeLabel}</Pill>
           )}
           {/* SELO SÓ PARA EXCEÇÃO. Antes "SERPRO" e "A1" apareciam em TODAS as empresas — e selo
               que nunca varia não informa nada: ocupa espaço e não distingue ninguém. O estado
@@ -141,27 +156,29 @@ export function CompanyCard({ company, onAccess }) {
               que está faltando ou vencendo. */}
           {/* Parcelamento fica JUNTO da tributação: é característica da empresa, não do mês. */}
           {emParcelamento && (
-            <Pill color="#FFB347" title="Empresa com parcelamento — há parcelas a acompanhar">parc</Pill>
+            <Pill title="Empresa com parcelamento — há parcelas a acompanhar">parc</Pill>
           )}
           {/* Folha entra aqui pelo mesmo motivo do parc: é característica da empresa, não evento
               do mês. Não contraria a regra do "selo só para exceção" logo abaixo — aquela vale
               para ESTADO (SERPRO apto, A1 válido), onde o normal é silêncio. Aqui o campo varia
               entre empresas e é o que diz quais obrigações trabalhistas fazem sentido. */}
           {temFolha && (
-            <Pill color="#FF79C6" title="Empresa com folha de pagamento (empregado registrado)">folha</Pill>
+            <Pill title="Empresa com folha de pagamento (empregado registrado)">folha</Pill>
           )}
-          {/* Presente = silêncio. Faltando = a própria palavra, em vermelho. Não "sem SERPRO":
-              a ausência já é dita pela cor, e o "sem" só alongava a pílula. */}
+          {/* Presente = silêncio; faltando = a própria palavra. Estes dois pedem ação (sem A1 não
+              se captura NFS-e; sem procuração não se busca no SERPRO), mas NÃO bloqueiam o
+              fechamento — por isso âmbar, não vermelho. O vermelho fica para quem trava o mês. */}
           {!serproEligible && (
-            <Pill color="#FF5757" title="Empresa NÃO apta ao fluxo SERPRO — confira procuração e certificado">
-              SERPRO
+            <Pill color="var(--state-warn)" title="Empresa NÃO apta ao fluxo SERPRO — confira procuração e certificado">
+              ⚠ SERPRO
             </Pill>
           )}
           {!certAtivo && (
-            <Pill color="#FF5757" title={certTitle}>A1</Pill>
+            <Pill color="var(--state-warn)" title={certTitle}>⚠ A1</Pill>
           )}
+          {/* Zerada é informativo, não exige ação: neutro, com ícone próprio. */}
           {zerada && (
-            <Pill color="#FFB347" title="Empresa zerada (sem movimento) — só enviamos obrigações zeradas">
+            <Pill title="Empresa zerada (sem movimento) — só enviamos obrigações zeradas">
               🚫 Zerada
             </Pill>
           )}
@@ -171,9 +188,12 @@ export function CompanyCard({ company, onAccess }) {
         {/* Q52: selo de empresa apurada (apuração transmitida/confirmada na competência). */}
         {/* Mesma regra: apuração transmitida é o esperado. O que merece destaque é a que AINDA
             NÃO foi — é ela que tem trabalho pendente. */}
+        {/* ⚠ CINZA, não âmbar. No começo do mês 29 de 30 empresas estão "falta apurar" — é o
+            estado PADRÃO, não a exceção. Em âmbar, a tela inteira alertava e nada se destacava.
+            Cor forte fica para o que precisa de ação agora. */}
         {!apurada && (
           <span
-            style={{ fontSize: "0.82rem", fontWeight: 700, padding: "2px 6px", color: "#FFB347" }}
+            style={{ fontSize: "0.82rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-neutral)" }}
             title={apuradaTitle}
           >
             Falta apurar
@@ -193,10 +213,10 @@ export function CompanyCard({ company, onAccess }) {
       {/* Q52: total de notas emitidas da competência filtrada no dashboard. */}
       {notas && (
         <p
-          style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#aeb6d3" }}
+          style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "var(--text-muted)" }}
           title={`${notas.quantidade || 0} nota(s) emitida(s) autorizada(s) na competência ${notas.competencia || ""}`}
         >
-          Notas emitidas: <strong style={{ color: notasTotal > 0 ? "#F8F8F2" : "#6272A4" }}>
+          Notas emitidas: <strong style={{ color: notasTotal > 0 ? "var(--text)" : "var(--text-faint)" }}>
             R$ {notasTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </strong>
         </p>
@@ -204,7 +224,7 @@ export function CompanyCard({ company, onAccess }) {
       <p className="compliance-tags" aria-label="Status de guias obrigatórias">
         {zerada ? (
           <span
-            style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "#FFB347" }}
+            style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-neutral)" }}
             title="Empresa zerada (sem movimento) — sem guias/impostos; enviamos apenas obrigações zeradas"
           >
             Empresa zerada — sem obrigações com imposto
@@ -214,7 +234,7 @@ export function CompanyCard({ company, onAccess }) {
              Guia nova/recalculada/retificada volta pra PENDING no backend → todasEnviadas vira
              false → as tags reaparecem até o novo envio. */
           <span
-            style={{ fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px", color: "#69FF47" }}
+            style={{ fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-ok)" }}
             title={`As ${envio.total} guia(s) do mês (${envio.competencia || ""}) foram enviadas ao cliente`}
           >
             📤 Enviado
@@ -224,7 +244,9 @@ export function CompanyCard({ company, onAccess }) {
         {tags.map((tag) => {
           // Q17: só a BORDA colorida por estado; texto neutro; cantos mais quadrados.
           // accent (PARC_DAS) = laranja; present=verde, vazio=amarelo, missing=vermelho.
-          const color = tag.accent ? "#FFB347" : (TAG_STATE_COLOR[tag.state] || (tag.ok ? "#69FF47" : "#FF5757"));
+          const color = tag.accent
+            ? "var(--state-warn)"
+            : (TAG_STATE_COLOR[tag.state] || (tag.ok ? "var(--state-ok)" : "var(--state-danger)"));
           const title = tag.accent
             ? `${tag.label} — parcelamento ativo`
             : tag.state === "vazio"
@@ -247,7 +269,7 @@ export function CompanyCard({ company, onAccess }) {
             característica da empresa, não obrigação daquele mês. A tag "PARC DAS" segue nesta
             linha: essa sim é a PARCELA aberta na competência. */}
         {!tags.length && !temParcelamento ? (
-          <span style={{ fontSize: "0.72rem", padding: "2px 6px", color: "#aeb6d3" }}>
+          <span style={{ fontSize: "0.72rem", padding: "2px 6px", color: "var(--text-muted)" }}>
             Sem obrigações
           </span>
         ) : null}

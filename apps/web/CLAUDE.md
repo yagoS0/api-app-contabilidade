@@ -96,7 +96,26 @@ Regra: `feedback={feedback}`. Se precisar restringir, restrinja no componente, n
 
 ### Estilo
 
-- TailwindCSS — classes utilitárias diretamente nos componentes
+⚠ **NÃO existe Tailwind neste projeto.** Não há `tailwind.config`, nem a dependência, nem as
+diretivas no CSS — a afirmação anterior era herdada de scaffold e fazia qualquer um escrever
+`className="flex gap-2"` para nada renderizar.
+
+O que existe são **três camadas**, nesta ordem de preferência:
+
+1. **`src/styles/tokens.css`** — as design tokens (cores, espaçamento, raio). É a fonte da verdade;
+   `index.css` já a importa. **Cor nova entra aqui, não no componente.**
+2. **`App.css`** — layout e componentes de esqueleto (`.company-tile`, `.cards-grid`, `.btn*`).
+   Consome os tokens via `var(--…)`.
+3. **`style={{}}` inline** — é o sistema de fato no resto do app (~2.200 objetos). Aceitável, desde
+   que os **valores venham de `var(--…)`**, não de hex literal.
+
+**Tokens de ESTADO têm significado fixo** (`--state-danger` bloqueia o fechamento, `--state-warn` é
+ação rápida, `--state-ok` concluído, `--state-neutral` é o padrão). Usar um fora do seu significado
+recria o problema que o redesign resolveu: quando quase tudo é vermelho, nada se destaca.
+
+⚠ Todo token de estado tem par **`-surface`**. Não derive fundo com `` `${cor}22` `` — concatenação
+de hex quebra em silêncio assim que a cor vira `var(--…)`.
+
 - Não criar arquivos CSS por componente
 - Componentes de UI reutilizáveis ficam em `src/components/`
 

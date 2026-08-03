@@ -28,7 +28,7 @@ function SettingsMenu({ items }) {
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
-          background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
+          background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8,
           boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 220, overflow: "hidden",
         }}>
           {usable.map((it) => (
@@ -38,9 +38,9 @@ function SettingsMenu({ items }) {
               onClick={() => { setOpen(false); it.onClick(); }}
               style={{
                 display: "block", width: "100%", textAlign: "left", padding: "9px 14px",
-                background: "transparent", border: "none", color: "#F8F8F2", cursor: "pointer", fontSize: "0.85rem",
+                background: "transparent", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.85rem",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "#2f3147"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {it.label}
@@ -64,8 +64,8 @@ function hasPendingCompliance(company) {
 }
 
 // Q17: filtros compactos (campos menores), com competência junto deles.
-const FILTER_LABEL = { display: "grid", gap: 3, fontSize: "0.68rem", color: "#aeb6d3", textTransform: "uppercase", letterSpacing: "0.03em" };
-const FILTER_CONTROL = { background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.8rem", colorScheme: "dark" };
+const FILTER_LABEL = { display: "grid", gap: 3, fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.03em" };
+const FILTER_CONTROL = { background: "var(--bg-page)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "5px 8px", fontSize: "0.8rem", colorScheme: "dark" };
 // C7: setas de navegação da competência (‹ ›).
 const COMP_ARROW = { ...FILTER_CONTROL, padding: "5px 9px", cursor: "pointer", fontWeight: 700, lineHeight: 1 };
 
@@ -313,8 +313,8 @@ export function CompaniesHomePage({
                 padding: "10px 14px",
                 borderRadius: 8,
                 background: "rgba(255,179,71,0.15)",
-                border: "1px solid #FFB347",
-                color: "#FFB347",
+                border: "1px solid var(--state-warn)",
+                color: "var(--state-warn)",
                 fontSize: "0.875rem",
                 display: "flex",
                 alignItems: "center",
@@ -421,14 +421,14 @@ export function CompaniesHomePage({
               style={{
                 display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 12,
                 padding: "6px 12px", borderRadius: 999,
-                background: "rgba(139,233,253,0.10)", border: "1px solid #8BE9FD", color: "#8BE9FD",
+                background: "var(--state-neutral-surface)", border: "1px solid var(--accent-cyan)", color: "var(--accent-cyan)",
                 fontSize: "0.82rem", fontWeight: 600,
               }}
               title="Downloads em lote rodando no servidor. Acompanhe o progresso em Consultas."
             >
               ⏳ {backgroundJobs.total} processo{backgroundJobs.total > 1 ? "s" : ""} em segundo plano
               {backgroundJobs.empresas > 0 && (
-                <span style={{ color: "#A7B0C0", fontWeight: 400 }}>
+                <span style={{ color: "var(--state-neutral)", fontWeight: 400 }}>
                   ({backgroundJobs.processadas}/{backgroundJobs.empresas} empresas)
                 </span>
               )}
@@ -449,9 +449,9 @@ export function CompaniesHomePage({
                 onClick={() => setModoVisao(key)}
                 style={{
                   padding: "5px 14px", borderRadius: 999, cursor: "pointer", fontSize: "0.82rem", fontWeight: 600,
-                  border: `1px solid ${modoVisao === key ? "#BD93F9" : "#44475A"}`,
+                  border: `1px solid ${modoVisao === key ? "var(--accent-purple)" : "var(--border)"}`,
                   background: modoVisao === key ? "rgba(189,147,249,0.16)" : "transparent",
-                  color: modoVisao === key ? "#F8F8F2" : "#A7B0C0",
+                  color: modoVisao === key ? "var(--text)" : "var(--state-neutral)",
                 }}
               >
                 {label}
@@ -466,26 +466,31 @@ export function CompaniesHomePage({
               fechamento é pior que número nenhum. */}
           {modoVisao === "cards" && contagemTravas && (
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ fontSize: "0.74rem", color: "#8A8FA3", fontWeight: 700, marginRight: 2 }}>
+              <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>
                 FECHAMENTO DO MÊS
               </span>
+              {/* ⚠ Cada estado carrega a cor E a superfície. O código antigo derivava o fundo com
+                  `${cor}22` — concatenação de hex, que quebra em silêncio quando `cor` vira
+                  `var(--state-ok)` (o resultado seria `var(--state-ok)22`). É por isso que todo
+                  token de estado tem par `-surface` em `tokens.css`. */}
               {[
-                ["all", `Todas · ${contagemTravas.total}`, "#A7B0C0"],
-                ["prontas", `✅ Prontas para fechar · ${contagemTravas.prontas}`, "#69FF47"],
-                ["checklist", `☐ Falta check-list · ${contagemTravas.checklist}`, "#FFB347"],
-                ["problemas", `⚠ Lançamento com problema · ${contagemTravas.problemas}`, "#FF5757"],
-              ].map(([chave, label, cor]) => {
+                ["all", `Todas · ${contagemTravas.total}`, "var(--state-neutral)", "var(--state-neutral-surface)"],
+                ["prontas", `✅ Prontas para fechar · ${contagemTravas.prontas}`, "var(--state-ok)", "var(--state-ok-surface)"],
+                ["checklist", `☐ Falta check-list · ${contagemTravas.checklist}`, "var(--state-warn)", "var(--state-warn-surface)"],
+                ["problemas", `⚠ Lançamento com problema · ${contagemTravas.problemas}`, "var(--state-danger)", "var(--state-danger-surface)"],
+              ].map(([chave, label, cor, superficie]) => {
                 const ativo = travaFiltro === chave;
                 return (
                   <button
                     key={chave}
                     type="button"
+                    aria-pressed={ativo}
                     onClick={() => setTravaFiltro(ativo ? "all" : chave)}
                     style={{
                       padding: "4px 12px", borderRadius: 999, cursor: "pointer", fontSize: "0.78rem", fontWeight: 600,
-                      border: `1px solid ${ativo ? cor : "#44475A"}`,
-                      background: ativo ? `${cor}22` : "transparent",
-                      color: ativo ? cor : "#A7B0C0",
+                      border: `1px solid ${ativo ? cor : "var(--border)"}`,
+                      background: ativo ? superficie : "transparent",
+                      color: ativo ? cor : "var(--state-neutral)",
                     }}
                   >
                     {label}
@@ -501,7 +506,7 @@ export function CompaniesHomePage({
                   disabled={fechandoLote}
                   style={{
                     padding: "4px 12px", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700,
-                    border: "1px solid #2DD4BF", background: "rgba(45,212,191,0.14)", color: "#2DD4BF",
+                    border: "1px solid var(--state-closed)", background: "var(--state-closed-surface)", color: "var(--state-closed)",
                     cursor: fechandoLote ? "wait" : "pointer",
                   }}
                 >
@@ -509,7 +514,7 @@ export function CompaniesHomePage({
                 </button>
               )}
               {contagemTravas.fechadas > 0 && (
-                <span style={{ fontSize: "0.74rem", color: "#2DD4BF" }}>
+                <span style={{ fontSize: "0.74rem", color: "var(--state-closed)" }}>
                   🔒 {contagemTravas.fechadas} já fechada{contagemTravas.fechadas > 1 ? "s" : ""}
                 </span>
               )}
@@ -584,7 +589,7 @@ export function CompaniesHomePage({
                     // Ancorado à DIREITA do botão: crescendo pra esquerda ele não vaza pra fora
                     // da tela quando o botão está na ponta direita da barra de filtros.
                     position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 30,
-                    background: "#21222C", border: "1px solid #44475A", borderRadius: 10,
+                    background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 10,
                     padding: 12, display: "grid", gap: 10, width: 240, maxWidth: "90vw",
                     boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
                   }}

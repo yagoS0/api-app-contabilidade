@@ -1,23 +1,28 @@
-// Q12.A.4: paleta + util pra badges de estado (consistente com ACCOUNTING_PANEL).
+// Q12.A.4: paleta + util pra badges de estado.
+//
+// ⚠ ESTE ARQUIVO É A ALAVANCA DA PALETA: 20 arquivos o importam (notas, apuração, apuracao-v2).
+// Repontar os valores para `var(--…)` de `styles/tokens.css` propaga o visual por todos eles sem
+// tocar em nenhum consumidor. Não voltar a escrever hex aqui — foi assim que o app acumulou dois
+// vermelhos e quatro cinzas de texto concorrentes.
 
 export const PANEL = {
-  surface: "#21222C",
-  field: "#282A36",
-  border: "#44475A",
-  text: "#F8F8F2",
-  muted: "#aeb6d3",
-  accent: "#8BE9FD",
+  surface: "var(--bg-subtle)",
+  field: "var(--bg-subtle)",
+  border: "var(--border)",
+  text: "var(--text)",
+  muted: "var(--text-muted)",
+  accent: "var(--accent-cyan)",
 };
 
 export const ESTADO_COLORS = {
-  aberto:         { bg: "rgba(170, 178, 200, 0.10)", text: "#aeb6d3", border: "#aeb6d3", icon: "⚪", label: "aberto" },
-  em_conferencia: { bg: "rgba(255, 179, 71, 0.15)",  text: "#FFB347", border: "#FFB347", icon: "🟡", label: "em conferência" },
-  fechado:        { bg: "rgba(139, 233, 253, 0.15)", text: "#8BE9FD", border: "#8BE9FD", icon: "🔵", label: "fechado" },
-  calculado:      { bg: "rgba(189, 147, 249, 0.15)", text: "#BD93F9", border: "#BD93F9", icon: "🟣", label: "calculado" },
-  revisado:       { bg: "rgba(189, 147, 249, 0.25)", text: "#BD93F9", border: "#BD93F9", icon: "🟣", label: "revisado" },
-  transmitido:    { bg: "rgba(105, 255, 71, 0.15)",  text: "#69FF47", border: "#69FF47", icon: "🟢", label: "transmitido" },
-  confirmado:     { bg: "rgba(105, 255, 71, 0.25)",  text: "#69FF47", border: "#69FF47", icon: "✅", label: "confirmado" },
-  erro:           { bg: "rgba(255, 71, 87, 0.15)",   text: "#FF4757", border: "#FF4757", icon: "🔴", label: "erro" },
+  aberto:         { bg: "var(--state-neutral-surface)", text: "var(--text-muted)",     border: "var(--text-muted)",     icon: "⚪", label: "aberto" },
+  em_conferencia: { bg: "var(--state-warn-surface)",    text: "var(--state-warn)",     border: "var(--state-warn)",     icon: "🟡", label: "em conferência" },
+  fechado:        { bg: "var(--state-neutral-surface)", text: "var(--accent-cyan)",    border: "var(--accent-cyan)",    icon: "🔵", label: "fechado" },
+  calculado:      { bg: "var(--state-neutral-surface)", text: "var(--accent-purple)",  border: "var(--accent-purple)",  icon: "🟣", label: "calculado" },
+  revisado:       { bg: "var(--state-neutral-surface)", text: "var(--accent-purple)",  border: "var(--accent-purple)",  icon: "🟣", label: "revisado" },
+  transmitido:    { bg: "var(--state-ok-surface)",      text: "var(--state-ok)",       border: "var(--state-ok)",       icon: "🟢", label: "transmitido" },
+  confirmado:     { bg: "var(--state-ok-surface)",      text: "var(--state-ok)",       border: "var(--state-ok)",       icon: "✅", label: "confirmado" },
+  erro:           { bg: "var(--state-danger-surface)",  text: "var(--state-danger)",   border: "var(--state-danger)",   icon: "🔴", label: "erro" },
 };
 
 export function StateBadge({ estado }) {
