@@ -1896,6 +1896,9 @@ model SitfisDownloadJob {
 model NotasCapturaJob {
   id            String   @id @default(uuid())
   status        String   @default("processando") // processando | concluido | erro
+  // manual (aba Consultas) | automatico (worker). O worker registrar as varreduras é o que responde
+  // "rodou hoje?" sem abrir log de container — a pergunta que ficou 29 dias sem resposta.
+  origem        String   @default("manual")
   alvos         Json // ["NFSE"] | ["NFE"] | ["NFSE","NFE"]
   companyIds    Json // string[] de portalClientId
   totalEmpresas Int

@@ -279,6 +279,7 @@ export function jobToResponse(job) {
   return {
     jobId: job.id,
     status: job.status,
+    origem: job.origem || "manual",
     alvos: Array.isArray(job.alvos) ? job.alvos : [],
     totalEmpresas: job.totalEmpresas,
     processadas: job.processadas,

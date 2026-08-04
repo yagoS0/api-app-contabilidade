@@ -57,8 +57,17 @@ async function resolveCertWithFallback(portalClientId) {
   //
   // Sem A1 da empresa, a resposta certa é NÃO CONSULTAR e dizer o que falta. É o mesmo caminho que
   // o `ConferenciaAdnService` já seguia.
+  // ⚠ NÃO ENGULA O ERRO. Este `.catch` já devolveu "esta empresa não tem certificado A1 cadastrado"
+  // para uma empresa que TEM certificado — só que de outro CNPJ, ou com senha que não abre. A
+  // mensagem mandava cadastrar um certificado que já estava lá, e o contador ficava girando.
+  // Cada causa tem conserto diferente: trocar o arquivo × redigitar a senha × cadastrar o primeiro.
   const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.NFSE })
-    .catch(() => ({ source: "none" }));
+    .catch((err) => {
+      if (err?.code === "CERT_CNPJ_MISMATCH" || err?.code === "CERT_PASSWORD_DECRYPT_FAILED") {
+        throw new AdnNotasSyncError(err.code, err.message);
+      }
+      return { source: "none" };
+    });
   if (r.source === "company_a1") {
     return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
   }
@@ -353,11 +362,31 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
           const r = await upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPlain, metadata });
           byStatus[r.status] = (byStatus[r.status] || 0) + 1;
         }
-        // Cursor avança +1 (próximo NSU a buscar — convenção do ADN)
-        const newCursor = maxNsuThisIter + 1n;
-        await persistCursor(tx, { clientId: portalClientId, newCursor });
+        // ⚠ O CURSOR GUARDA O ÚLTIMO NSU QUE JÁ TEMOS — NÃO o "próximo a buscar".
+        //
+        // `ultNSU` quer dizer "último NSU recebido", e o ADN devolve os documentos POSTERIORES a
+        // ele (exclusivo). Aqui se guardava `maxNSU + 1` e se enviava isso como `ultNSU`, ou seja,
+        // pedia-se sempre "depois do próximo" — e o documento exatamente naquele NSU nunca voltava.
+        //
+        // Medido contra o ADN de produção (ARAUJO BARRETO, 04/08/2026), com 7 documentos no banco
+        // e cursor em 8:
+        //     ultNSU=6 -> DOCUMENTOS_LOCALIZADOS, NSUs 7 e 8
+        //     ultNSU=7 -> DOCUMENTOS_LOCALIZADOS, NSU 8
+        //     ultNSU=8 -> NENHUM_DOCUMENTO_LOCALIZADO
+        // A nota de 07/07 estava no NSU 8 e era pulada em toda consulta, sem erro nenhum: a
+        // resposta era um `NENHUM_DOCUMENTO_LOCALIZADO` legítimo. Por isso o sintoma era "a empresa
+        // ficou sem notas mesmo tendo emitido", e nada aparecia em log ou em `adnLastError`.
+        //
+        // Efeito acumulado: como cada varredura recomeçava do cursor inflado, o PRIMEIRO documento
+        // de cada nova rodada era perdido — não só um por empresa.
+        await persistCursor(tx, { clientId: portalClientId, newCursor: maxNsuThisIter });
       });
-      cursor = maxNsuThisIter + 1n;
+
+      // Nenhum item trouxe NSU utilizável → o cursor não anda, e insistir seria buscar o mesmo lote
+      // até estourar MAX_ITERATIONS. Antes o `+1` mascarava isso avançando às cegas (e pulando
+      // documento). Parar é honesto: a próxima execução tenta de novo do mesmo ponto.
+      if (maxNsuThisIter === cursor) break;
+      cursor = maxNsuThisIter;
 
       // Q42: sem maxNSU no ADN, o fim é o lote INCOMPLETO (< 50). Enquanto vier lote cheio,
       // continua puxando os próximos 50. Isso substitui a varredura 1-em-1.

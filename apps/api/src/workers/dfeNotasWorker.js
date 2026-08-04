@@ -36,27 +36,44 @@ function minutesSince(date) {
   return Math.floor((Date.now() - new Date(date).getTime()) / 60000);
 }
 
-async function listEligibleCompanies() {
-  // CNPJs ativos com A1 cadastrado na Company legacy
+/**
+ * TODAS as empresas ativas, cada uma com o veredito de elegibilidade — nunca uma lista já filtrada.
+ *
+ * ⚠ Aqui morava um `filter` que DESCARTAVA empresa sem A1 (ou com A1 vencido) sem deixar rastro. O
+ * log dizia "N CNPJs elegíveis" e pronto: quem olhava não tinha como saber quantas nem chegaram a
+ * ser tentadas. Foi assim que a captura ficou 29 dias parada em produção sem ninguém perceber.
+ *
+ * Agora quem decide o que fazer com a inelegível é o laço — e ele REGISTRA o motivo.
+ */
+async function listCompaniesComElegibilidade() {
   const portals = await prisma.portalClient.findMany({
     where: { cnpj: { not: "" }, status: { not: "SUSPENSA" } },
     select: { id: true, razao: true, cnpj: true, companyId: true },
   });
-  const companyIds = portals.map((p) => p.companyId).filter(Boolean);
-  if (companyIds.length === 0) return [];
+  if (!portals.length) return [];
 
-  const companies = await prisma.company.findMany({
-    where: { id: { in: companyIds } },
-    select: { id: true, certStorageKey: true, certExpiresAt: true },
-  });
+  const companyIds = portals.map((p) => p.companyId).filter(Boolean);
+  const companies = companyIds.length
+    ? await prisma.company.findMany({
+      where: { id: { in: companyIds } },
+      select: { id: true, certStorageKey: true, certExpiresAt: true },
+    })
+    : [];
   const byId = new Map(companies.map((c) => [c.id, c]));
 
-  return portals.filter((p) => {
+  return portals.map((p) => {
     const c = byId.get(p.companyId);
-    if (!c?.certStorageKey) return false;
-    // ignora certs expirados
-    if (c.certExpiresAt && new Date(c.certExpiresAt) < new Date()) return false;
-    return true;
+    if (!c?.certStorageKey) {
+      return { portal: p, elegivel: false, motivo: "sem certificado A1 da empresa" };
+    }
+    if (c.certExpiresAt && new Date(c.certExpiresAt) < new Date()) {
+      return {
+        portal: p,
+        elegivel: false,
+        motivo: `certificado A1 vencido em ${new Date(c.certExpiresAt).toLocaleDateString("pt-BR")}`,
+      };
+    }
+    return { portal: p, elegivel: true, motivo: null };
   });
 }
 
@@ -66,11 +83,21 @@ export async function runDfeNotasWorkerOnce(options = {}) {
 
   const startedAt = Date.now();
   const results = { dfe: [], adn: [], manifest: [] };
+  const inelegiveis = [];
   try {
-    const portals = await listEligibleCompanies();
-    log.info({ count: portals.length }, "[dfeNotasWorker] CNPJs elegíveis");
+    const empresas = await listCompaniesComElegibilidade();
+    const elegiveis = empresas.filter((e) => e.elegivel);
+    log.info({ total: empresas.length, elegiveis: elegiveis.length }, "[dfeNotasWorker] CNPJs do ciclo");
 
-    for (const portal of portals) {
+    for (const { portal, elegivel, motivo } of empresas) {
+      // Inelegível NÃO some mais em silêncio: entra no resumo com o motivo. Antes o `filter`
+      // descartava antes do laço e o log só dizia "N elegíveis" — quem lia não tinha como saber
+      // quantas nem chegaram a ser tentadas.
+      if (!elegivel) {
+        inelegiveis.push({ portalClientId: portal.id, razao: portal.razao, cnpj: portal.cnpj, motivo });
+        log.warn({ portalClientId: portal.id, razao: portal.razao, motivo }, "[dfeNotasWorker] empresa NÃO tentada");
+        continue;
+      }
       // Lê estado atual
       // eslint-disable-next-line no-await-in-loop
       const state = await prisma.portalSyncState.findUnique({
@@ -151,6 +178,49 @@ export async function runDfeNotasWorkerOnce(options = {}) {
       }
     }
 
+    // ─── REGISTRO DA VARREDURA ────────────────────────────────────────────────────────────────
+    // Mesmas tabelas do lote manual da aba Consultas, para as duas origens aparecerem lado a lado.
+    // Sem isto, "a rotina rodou hoje?" só se responde abrindo log de container — e foi por isso que
+    // ela ficou 29 dias parada em produção sem ninguém notar.
+    const dadosPorId = new Map(empresas.map(({ portal }) => [portal.id, portal]));
+    const paraItem = (r, alvo) => {
+      const portal = dadosPorId.get(r.portalClientId) || {};
+      const base = { portalClientId: r.portalClientId, razao: portal.razao || null, cnpj: portal.cnpj || null, alvo };
+      if (r.skipped) {
+        const min = String(r.reason || "").match(/wait_(\d+)min/)?.[1];
+        return { ...base, status: "aguardando", motivo: min ? `consultada há pouco — próxima em ${min} min` : r.reason || null };
+      }
+      if (r.ok === false || r.error) {
+        if (r.reason === "backoff_active") return { ...base, status: "aguardando", motivo: "em espera após erro" };
+        return { ...base, status: "erro", motivo: String(r.reason || r.error || r.message || "falha").slice(0, 200) };
+      }
+      const docs = Number(r.totalDocs || 0);
+      return { ...base, status: docs > 0 ? "capturou" : "nada_novo", totalDocs: docs, novos: docs };
+    };
+    // As inelegíveis entram PRIMEIRO e uma vez por alvo: são justamente as que sumiam antes, e a
+    // tela precisa mostrá-las junto das demais, não numa nota de rodapé.
+    const itensDoRegistro = inelegiveis.flatMap((i) => ["NFSE", "NFE"].map((alvo) => ({
+      portalClientId: i.portalClientId, razao: i.razao, cnpj: i.cnpj,
+      alvo, status: "pulada", motivo: i.motivo,
+    })));
+    for (const r of results.dfe) itensDoRegistro.push(paraItem(r, "NFE"));
+    for (const r of results.adn) itensDoRegistro.push(paraItem(r, "NFSE"));
+
+    const totalNotas = itensDoRegistro.reduce((s, i) => s + Number(i.totalDocs || 0), 0);
+    // Best-effort: falhar ao gravar o registro não pode invalidar uma varredura que JÁ capturou nota.
+    await prisma.notasCapturaJob.create({
+      data: {
+        status: "concluido",
+        origem: "automatico",
+        alvos: ["NFSE", "NFE"],
+        companyIds: empresas.map(({ portal }) => portal.id),
+        totalEmpresas: empresas.length,
+        processadas: empresas.length,
+        totalNotas,
+        itens: { createMany: { data: itensDoRegistro } },
+      },
+    }).catch((err) => log.warn({ err: err?.message }, "[dfeNotasWorker] falha ao registrar a varredura"));
+
     const dfeHeartbeats = results.dfe.filter((d) => d.heartbeat).length;
     const adnHeartbeats = results.adn.filter((a) => a.heartbeat).length;
     const manifestSent = results.manifest.reduce((s, r) => s + (r.sent || 0), 0);
@@ -158,7 +228,9 @@ export async function runDfeNotasWorkerOnce(options = {}) {
     return {
       skipped: false,
       durationMs: Date.now() - startedAt,
-      totalCnpjs: portals.length,
+      totalCnpjs: elegiveis.length,
+      // Sai no retorno para o disparo manual mostrar quem ficou de fora, e por quê.
+      naoTentadas: inelegiveis,
       heartbeats: { dfe: dfeHeartbeats, adn: adnHeartbeats },
       manifest: { totalSent: manifestSent, details: results.manifest },
       dfe: results.dfe,

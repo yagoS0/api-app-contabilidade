@@ -317,6 +317,12 @@ export function NotasCapturaContent({ api, companies }) {
                   <span style={{ color: STATUS_JOB[j.status]?.color || "var(--text-muted)", fontWeight: 700 }}>
                     {STATUS_JOB[j.status]?.label || j.status}
                   </span>
+                  {" · "}
+                  {/* Distinguir automática de manual é o que responde "a rotina rodou hoje?" sem
+                      abrir log de container. */}
+                  <span style={{ color: j.origem === "automatico" ? "var(--accent-cyan)" : "var(--text-faint)" }}>
+                    {j.origem === "automatico" ? "rotina" : "manual"}
+                  </span>
                   {" · "}{fmtDataHora(j.criadoEm)}
                   {" · "}{j.totalEmpresas} empresa(s)
                   {" · "}{j.totalNotas || 0} nota(s)

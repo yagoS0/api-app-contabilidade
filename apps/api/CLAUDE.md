@@ -231,6 +231,40 @@ mora só no upload protege o futuro e deixa o passado como está. Erro: **`CERT_
   ausência de dado não é prova de certificado alheio, e recusar por falta de informação derrubaria
   empresa legítima. Quem pega o resto é o cinturão de ingestão, abaixo.
 
+## ⚠ ADN: `ultNSU` é EXCLUSIVO — o cursor guarda o último que já temos
+
+`ultNSU` quer dizer **"último NSU que eu já recebi"**, e o ADN devolve os documentos
+**posteriores** a ele. O cursor guardava `maxNSU + 1` e enviava isso como `ultNSU` — pedia "depois
+do próximo", e **o documento exatamente naquele NSU nunca voltava**.
+
+Medido contra o ADN de produção (ARAUJO BARRETO, 04/08/2026), com 7 documentos no banco e cursor 8:
+
+```
+ultNSU=6 -> DOCUMENTOS_LOCALIZADOS, NSUs 7 e 8
+ultNSU=7 -> DOCUMENTOS_LOCALIZADOS, NSU 8
+ultNSU=8 -> NENHUM_DOCUMENTO_LOCALIZADO
+```
+
+**Por que ficou tanto tempo sem ser visto:** a resposta era um `NENHUM_DOCUMENTO_LOCALIZADO`
+legítimo. Sem exceção, sem `adnLastError`, sem log — a captura devolvia `ok:true, totalDocs:0`,
+idêntico a "não há nota nova". O sintoma na tela era "a empresa ficou sem notas mesmo tendo
+emitido".
+
+⚠ **O estrago é por RODADA, não por empresa.** Como cada varredura recomeçava do cursor inflado, o
+**primeiro documento de cada nova rodada** se perdia.
+
+⚠ **`PortalInvoice` não guarda o NSU**, então não dá para saber quais documentos foram pulados. A
+recuperação é **zerar o cursor e varrer de novo** — a ingestão é idempotente (dedup por
+`chaveAcesso`, ou `idNfse` quando não há chave) e nunca rebaixa cancelamento.
+`scripts/recuperar-nsu-pulados.mjs` recua o cursor (dry-run por padrão) e **não chama o ADN**: quem
+varre é a captura, na hora que o escritório escolher.
+
+**A SEFAZ (DFe) não tem esse problema:** `DfeSyncService` guarda o `ultNSU` que a **própria SEFAZ
+devolve** na resposta, em vez de calcular. Guardar o que o servidor diz é a forma certa nos dois.
+
+Regressão coberta por `notas/__tests__/adnCursorNsu.test.js`, com um ADN falso que implementa a
+semântica exclusiva real.
+
 ## ⚠ ADN: quem consulta é o CERTIFICADO — nunca use o do escritório
 
 O ADN Contribuinte identifica o contribuinte pela **SAN do certificado ICP-Brasil**. O path é
