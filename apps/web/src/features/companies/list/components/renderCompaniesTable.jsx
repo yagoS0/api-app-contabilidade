@@ -14,7 +14,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { getComplianceTags } from "./renderCompanyCard";
-import { GuiaChip, todasConcluidas, todasPorGerar, ehParcela } from "./renderGuiaChip";
+import { GuiaChip, Popover, todasConcluidas, todasPorGerar, ehParcela } from "./renderGuiaChip";
 import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
 import { estadoApuracao, detalheApuracao } from "../lib/estadoApuracao";
 import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
@@ -108,6 +108,67 @@ function PopoverConfig({ company, onFechar }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/**
+ * O chip agregado das guias por gerar — clicável, com a lista de QUAIS faltam.
+ *
+ * ⚠ Condensar quatro chips num só resolve o muro vermelho, mas cobra um preço: o detalhe some. O
+ * `title` do HTML não paga essa conta — ele não é descobrível (ninguém sabe que há algo ali), some
+ * ao mover o mouse e não existe no toque. Por isso o agregado abre o MESMO popover dos outros
+ * chips: a informação continua a um clique, e o gesto é o que o contador já aprendeu no chip de
+ * parcelamento.
+ */
+function ChipGuiasFaltando({ tributos, empresa, competencia, acoes }) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <span style={{ position: "relative", display: "inline-block" }}>
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        aria-label={`${tributos.length} guias por gerar: ${tributos.map((t) => t.label).join(", ")}`}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+          fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+          background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
+          color: "var(--state-danger)", cursor: "pointer", font: "inherit", lineHeight: 1.6,
+        }}
+      >
+        <span aria-hidden="true">⚠</span>{tributos.length} guias
+      </button>
+
+      {aberto && (
+        <Popover onFechar={() => setAberto(false)}>
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>
+            {tributos.length} guias por gerar · {competencia}
+          </div>
+          <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
+            Todas dependem da mesma coisa: apurar o mês.
+          </div>
+          <ul style={{ margin: "0 0 10px", padding: 0, listStyle: "none", display: "grid", gap: 3 }}>
+            {tributos.map((t) => (
+              <li key={t.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span aria-hidden="true" style={{ color: "var(--state-danger)" }}>⚠</span>
+                <span style={{ color: "var(--text)" }}>{t.label}</span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => acoes.onAbrirEmpresa?.(empresa.companyId)}
+            style={{
+              padding: "5px 10px", borderRadius: 6, cursor: "pointer", background: "transparent",
+              border: "1px solid var(--border)", color: "var(--text)", font: "inherit",
+              fontSize: "0.76rem", fontWeight: 600,
+            }}
+          >
+            Abrir apuração
+          </button>
+        </Popover>
+      )}
+    </span>
   );
 }
 
@@ -291,17 +352,12 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
                que este redesign existe para derrubar. Assim que os estados divergirem, os chips
                voltam sozinhos — porque aí o detalhe passa a informar. */
             <>
-              <span
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
-                  fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                  background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
-                  color: "var(--state-danger)",
-                }}
-                title={`Ainda por gerar: ${tags.filter((t) => !ehParcela(t)).map((t) => t.label).join(" · ")}`}
-              >
-                ⚠ {tags.filter((t) => !ehParcela(t)).length} guias
-              </span>
+              <ChipGuiasFaltando
+                tributos={tags.filter((t) => !ehParcela(t))}
+                empresa={company}
+                competencia={competencia}
+                acoes={acoesGuia || {}}
+              />
               {/* A parcela nunca entra no agregado: ela não vem de apurar, vem de capturar o
                   parcelamento. Somá-la ali mandaria o contador para a ação errada. */}
               {tags.filter(ehParcela).map((tag) => (

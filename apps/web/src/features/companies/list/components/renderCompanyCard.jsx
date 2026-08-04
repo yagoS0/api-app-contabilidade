@@ -2,7 +2,7 @@ import { Button } from "../../../../components/ui/Button";
 import { rotuloRegime, SITUACAO_FISCAL_SIMBOLO } from "../../../../lib/vocabulario";
 import { GuiaChip, todasConcluidas } from "./renderGuiaChip";
 import { estadoCertificado } from "../lib/certificado";
-import { empresaSemObrigacoes, TEXTO_ZERADA, TITULO_ZERADA } from "../lib/estadoDominante";
+import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
 
 // Tributos potencialmente exibidos no card de compliance.
 // A ordem aqui define a ordem visual das tags (DAS primeiro para Simples; depois Presumidos; PARC_DAS no fim).
@@ -245,11 +245,18 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
           o browser fecha o parágrafo sozinho e o React reclama de nesting a cada render. */}
       <div className="compliance-tags" aria-label="Status de guias obrigatórias">
         {zerada ? (
+          /* Mesma TAG da tabela, não a frase inteira: card e tabela contando a mesma história com
+             o mesmo tamanho. A explicação vive no `title`, que é onde ela é procurada. */
           <span
-            style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-neutral)" }}
             title={TITULO_ZERADA}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+              fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+              background: "var(--state-neutral-surface)", border: "1px solid var(--state-neutral)",
+              color: "var(--state-neutral)",
+            }}
           >
-            ◌ {TEXTO_ZERADA}
+            <span aria-hidden="true">◌</span>Zerada
           </span>
         ) : concluidas ? (
           /* ⚠ "Guias CONCLUÍDAS", não "enviadas": estado terminal inclui a guia enviada E a

@@ -39,7 +39,7 @@ const fmtData = (iso) => {
 };
 const fmtMoeda = (v) => `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
-function Popover({ children, onFechar }) {
+export function Popover({ children, onFechar }) {
   const ref = useRef(null);
   useEffect(() => {
     function aoClicarFora(e) { if (ref.current && !ref.current.contains(e.target)) onFechar(); }

@@ -98,5 +98,4 @@ export function empresaSemObrigacoes(company) {
   return Boolean(company?.empresaZerada);
 }
 
-export const TEXTO_ZERADA = "Empresa zerada — sem obrigações com imposto";
 export const TITULO_ZERADA = "Empresa zerada (sem movimento) — sem guias/impostos; enviamos apenas obrigações zeradas";
