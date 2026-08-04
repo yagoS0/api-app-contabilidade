@@ -90,7 +90,10 @@ export function detalheApuracao(estado, trava) {
     return `${n} lançamento(s) com problema — corrija antes de fechar`;
   }
   if (estado.chave === "fechar") {
-    const pend = trava?.checklistPendentes || [];
+    // ⚠ `checklistPendentes` devolve OBJETOS `{ chave, label }` (ver `fechamentoBlockers.js`), não
+    // strings. Um `join` direto imprimia "[object Object] · [object Object]" no tooltip. O fallback
+    // aceita as duas formas para o dia em que o backend simplificar o contrato.
+    const pend = (trava?.checklistPendentes || []).map((p) => (typeof p === "string" ? p : p?.label || p?.chave)).filter(Boolean);
     return pend.length
       ? `Falta no check-list: ${pend.join(" · ")}`
       : "Check-list completo — pronta para fechar";

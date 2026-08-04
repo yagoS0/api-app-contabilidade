@@ -15,7 +15,7 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { getComplianceTags } from "./renderCompanyCard";
 import { GuiaChip, todasConcluidas, todasPorGerar, ehParcela } from "./renderGuiaChip";
-import { empresaSemObrigacoes, TEXTO_ZERADA, TITULO_ZERADA } from "../lib/estadoDominante";
+import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
 import { estadoApuracao, detalheApuracao } from "../lib/estadoApuracao";
 import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
 import { rotuloRegime } from "../../../../lib/vocabulario";
@@ -31,19 +31,30 @@ import { estadoCertificado } from "../lib/certificado";
 // verde logo abaixo, misturando andamento do mês com relação com a Receita.
 
 /**
- * A severidade da LINHA = a pior das três colunas. É ela que ordena.
+ * O quanto as GUIAS de uma empresa pedem atenção. Mesma escala das outras colunas.
+ *
+ * 0 = falta gerar (ou conflito) · 1 = gerada, falta enviar · 2 = tudo terminal · 3 = nada a entregar.
+ *
+ * ⚠ Empresa zerada não tem guia a entregar — as tags "faltando" dela são artefato, não trabalho.
+ * Sem esta guarda ela subia ao topo como se tivesse guia atrasada.
+ */
+function severidadeGuias(company) {
+  if (empresaSemObrigacoes(company)) return 3;
+  const tags = getComplianceTags(company.guideCompliance);
+  if (!tags.length) return 3;
+  if (tags.some((t) => t.state === "missing" || t.state === "conflito")) return 0;
+  if (tags.some((t) => t.state === "gerada")) return 1;
+  return 2;
+}
+
+/**
+ * A severidade da LINHA = a pior das três colunas. É ela que ordena por padrão.
  * 0 = danger · 1 = warning · 2 = neutro · 3 = fechada (sempre por último, fora do fluxo).
  */
 function severidadeDaLinha(company, trava) {
   const ap = estadoApuracao(company, trava);
   if (ap.chave === "fechada") return 3;
-  const fiscal = situacaoFiscalDaLinha(company).estado.severidade;
-  // Empresa zerada não tem guia a entregar — as tags "faltando" dela são artefato, não trabalho.
-  // Sem esta guarda ela subia ao topo como se tivesse guia atrasada.
-  const tags = empresaSemObrigacoes(company) ? [] : getComplianceTags(company.guideCompliance);
-  const guias = tags.some((t) => t.state === "missing" || t.state === "conflito") ? 0
-    : tags.some((t) => t.state === "gerada") ? 1 : 2;
-  return Math.min(ap.severidade, fiscal, guias);
+  return Math.min(ap.severidade, situacaoFiscalDaLinha(company).estado.severidade, severidadeGuias(company));
 }
 
 const CELULA = { padding: "8px 10px", borderTop: "1px solid var(--border)", verticalAlign: "middle" };
@@ -110,6 +121,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
   const agregarGuias = todasPorGerar(tags);
   const zerada = empresaSemObrigacoes(company);
   const fiscal = situacaoFiscalDaLinha(company);
+  const cert = estadoCertificado(company);
   const regime = company?.legacyCompany?.regimeTributario || null;
   const notasTotal = Number(company?.notasEmitidas?.total || 0);
 
@@ -161,14 +173,32 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
       <td style={{ ...CELULA, position: "relative" }}>
-        <span
-          role="button"
-          tabIndex={-1}
-          onClick={() => setConfig((v) => !v)}
-          title="Ver certificado, SERPRO, folha e e-mail"
-          style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, color: "var(--text)", lineHeight: 1.25, cursor: "pointer" }}
-        >
-          {nomeRender}
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span
+            role="button"
+            tabIndex={-1}
+            onClick={() => setConfig((v) => !v)}
+            title="Ver certificado, SERPRO, folha e e-mail"
+            style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text)", lineHeight: 1.25, cursor: "pointer" }}
+          >
+            {nomeRender}
+          </span>
+          {/* ⚠ A TAG DE CERTIFICADO FICA NA LINHA, por decisão do dono — o plano v2 mandava tudo
+              que é configuração para o popover, e sem A1 não se captura NFS-e: é a única
+              configuração que faz a empresa parar de receber nota sem avisar.
+              Presente = silêncio: selo que aparece em toda linha não distingue ninguém.
+              Cinza, não âmbar: falta certificado não trava o fechamento do mês. */}
+          {!cert.ativo && (
+            <span
+              title={cert.titulo}
+              style={{
+                fontSize: "0.64rem", fontWeight: 700, padding: "0 6px", borderRadius: 999,
+                background: "var(--state-neutral-surface)", color: cert.cor, whiteSpace: "nowrap",
+              }}
+            >
+              {cert.rotulo}
+            </span>
+          )}
         </span>
         {/* ⚠ REGIME DEIXOU DE SER COLUNA. Ele é atributo de leitura ocasional ("esta é do
             Presumido?"), não indicador de trabalho — e uma coluna inteira para ele roubava largura
@@ -232,10 +262,20 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
       <td style={{ ...CELULA }}>
         <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {zerada ? (
-            /* Empresa zerada não tem guia. Dizer isso é diferente de não mostrar nada: a coluna
-               vazia significaria "não sabemos", e aqui sabemos. */
-            <span style={{ fontSize: "0.72rem", color: "var(--state-neutral)" }} title={TITULO_ZERADA}>
-              ◌ {TEXTO_ZERADA}
+            /* Empresa zerada não tem guia. Dizer isso é diferente de não mostrar nada — coluna
+               vazia significaria "não sabemos", e aqui sabemos. Mas basta a TAG: a frase inteira
+               ocupava a coluna toda e desalinhava a leitura das outras linhas. A explicação fica no
+               title, que é onde ela é procurada. */
+            <span
+              title={TITULO_ZERADA}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+                fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                background: "var(--state-neutral-surface)", border: "1px solid var(--state-neutral)",
+                color: "var(--state-neutral)",
+              }}
+            >
+              <span aria-hidden="true">◌</span>Zerada
             </span>
           ) : concluidas ? (
             <span
@@ -260,7 +300,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
                 }}
                 title={`Ainda por gerar: ${tags.filter((t) => !ehParcela(t)).map((t) => t.label).join(" · ")}`}
               >
-                ⚠ {tags.filter((t) => !ehParcela(t)).length} guias · falta apurar
+                ⚠ {tags.filter((t) => !ehParcela(t)).length} guias
               </span>
               {/* A parcela nunca entra no agregado: ela não vem de apurar, vem de capturar o
                   parcelamento. Somá-la ali mandaria o contador para a ação errada. */}
@@ -307,7 +347,22 @@ export function CompaniesTable({ companies, travas, competencia, onOpenCompany, 
       copia.sort((a, b) => {
         if (ordem.campo === "empresa") return dir * String(a.razao || "").localeCompare(String(b.razao || ""));
         if (ordem.campo === "notas") return dir * (Number(a.notasEmitidas?.total || 0) - Number(b.notasEmitidas?.total || 0));
-        if (ordem.campo === "apuracao") return dir * (estadoApuracao(a, trava(a)).severidade - estadoApuracao(b, trava(b)).severidade);
+        // Cada coluna de indicador ordena pela SUA severidade — e o segundo clique inverte, que é
+        // como se pede a pergunta oposta: "quais guias faltam?" no primeiro, "quais já estão
+        // completas?" no segundo. Desempate alfabético em todas, senão empresas de mesmo estado
+        // trocam de lugar a cada recarga.
+        if (ordem.campo === "apuracao") {
+          const p = estadoApuracao(a, trava(a)).severidade - estadoApuracao(b, trava(b)).severidade;
+          return p !== 0 ? dir * p : String(a.razao || "").localeCompare(String(b.razao || ""));
+        }
+        if (ordem.campo === "fiscal") {
+          const p = situacaoFiscalDaLinha(a).estado.severidade - situacaoFiscalDaLinha(b).estado.severidade;
+          return p !== 0 ? dir * p : String(a.razao || "").localeCompare(String(b.razao || ""));
+        }
+        if (ordem.campo === "guias") {
+          const p = severidadeGuias(a) - severidadeGuias(b);
+          return p !== 0 ? dir * p : String(a.razao || "").localeCompare(String(b.razao || ""));
+        }
         // ⚠ Padrão: o PIOR estado entre as TRÊS colunas de indicadores, não só o da apuração. Uma
         // empresa apurada e fechada no prazo, mas com pendência na Receita, precisa subir — ordenar
         // só pelo mês a esconderia no meio da lista. Desempate alfabético para a ordem não "dançar"
@@ -364,8 +419,8 @@ export function CompaniesTable({ companies, travas, competencia, onOpenCompany, 
           <tr>
             <Cabecalho campo="empresa" largura="26%">Empresa</Cabecalho>
             <Cabecalho campo="apuracao" largura="16%">Apuração</Cabecalho>
-            <Cabecalho largura="18%">Situação fiscal</Cabecalho>
-            <Cabecalho largura="22%">Guias</Cabecalho>
+            <Cabecalho campo="fiscal" largura="18%">Situação fiscal</Cabecalho>
+            <Cabecalho campo="guias" largura="22%">Guias</Cabecalho>
             <Cabecalho campo="notas" alinhar="right" largura="10%">Notas</Cabecalho>
             <th scope="col" data-coluna-acao style={{ ...CABECALHO, textAlign: "right" }}>Ação</th>
           </tr>

@@ -121,8 +121,16 @@ function makeCompanies(count = 6) {
       // pro aviso de pendência fiscal (SITFIS) e pro selo PARC.
       guidesEnvio: { competencia: null, total: 2, enviadas: i % 3 === 0 ? 2 : 1, todasEnviadas: i % 3 === 0 },
       fiscalSituacao: i === 0 ? "COM_PENDENCIA" : i === 1 ? "EM_PARCELAMENTO" : i === 2 ? "REGULAR" : null,
-      fiscalCheckedAt: i <= 2 ? new Date().toISOString() : null,
+      // ⚠ Uma consulta VELHA e uma NUNCA feita são casos diferentes e precisam dos dois no mock:
+      // a velha rebaixa o chip para "Consultar (Xd)", a nunca feita mostra só "Consultar".
+      fiscalCheckedAt: i === 0 || i === 1 ? new Date().toISOString()
+        : i === 2 ? new Date(Date.now() - 45 * 86400000).toISOString()
+          : null,
       temParcelamento: i === 1,
+      // ⚠ SEM ISTO O MOCK NUNCA PRODUZ "Falta fechar". O campo não existia aqui, então a coluna
+      // Apuração só sabia mostrar "falta apurar" e o estado âmbar — com seu tooltip de check-list —
+      // não tinha como ser exercitado em lugar nenhum antes de ir para produção.
+      apuracao: { apurada: i === 2 || i === 4, estado: i === 2 || i === 4 ? "transmitida" : null },
     };
   });
 }
