@@ -5,6 +5,7 @@ import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
 import { AnnualGrid } from "../components/renderAnnualGrid";
+import { CompaniesTable } from "../components/renderCompaniesTable";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
 
 // Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
@@ -105,8 +106,26 @@ export function CompaniesHomePage({
   message,
   error,
 }) {
-  // C8: duas formas de ver a carteira — cards (competência única) ou grade anual (12 meses).
-  const [modoVisao, setModoVisao] = useState("cards"); // "cards" | "ano"
+  // Quatro formas de ver a MESMA carteira: tabela (densa, o padrão no desktop), cards (padrão no
+  // celular), grade anual e calendário.
+  //
+  // ⚠ A escolha PERSISTE. Antes era `useState` puro: quem preferia cards voltava para o padrão a
+  // cada refresh. E o padrão depende da largura — a tabela de 6 colunas não sobrevive a 375px,
+  // e o card mostra 8 empresas onde a tabela mostra 15+.
+  const [modoVisao, setModoVisao] = useState(() => {
+    try {
+      const salvo = localStorage.getItem("dashboard:modoVisao");
+      if (salvo) return salvo;
+    } catch { /* localStorage bloqueado (modo privado) não pode derrubar a tela */ }
+    // `window.innerWidth` 0 significa "ainda não sei" (container sem layout), não "estreito" —
+    // a mesma armadilha que já fez o calendário abrir em modo celular numa janela grande.
+    const largura = typeof window !== "undefined" ? window.innerWidth : 0;
+    return largura === 0 || largura >= 1024 ? "tabela" : "cards";
+  });
+  function trocarVisao(modo) {
+    setModoVisao(modo);
+    try { localStorage.setItem("dashboard:modoVisao", modo); } catch { /* idem */ }
+  }
   const [search, setSearch] = useState("");
   const [documentFilter, setDocumentFilter] = useState("pending");
   const [serproFilter, setSerproFilter] = useState("all");
@@ -483,11 +502,11 @@ export function CompaniesHomePage({
               forma de olhar a carteira; foi para o menu Configurações. O que se ENTREGA continua
               visível aqui, dentro do calendário. */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-            {[["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"]].map(([key, label]) => (
+            {[["tabela", "Tabela"], ["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"]].map(([key, label]) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => setModoVisao(key)}
+                onClick={() => trocarVisao(key)}
                 style={{
                   padding: "5px 14px", borderRadius: 999, cursor: "pointer", fontSize: "0.82rem", fontWeight: 600,
                   border: `1px solid ${modoVisao === key ? "var(--accent-purple)" : "var(--border)"}`,
@@ -505,7 +524,7 @@ export function CompaniesHomePage({
               empresa e olhar o cadeado. Aqui ela vira contagem, e cada contagem vira lista de
               trabalho. Some inteira quando o servidor não responde: um número errado sobre
               fechamento é pior que número nenhum. */}
-          {modoVisao === "cards" && contagemTravas && (
+          {(modoVisao === "cards" || modoVisao === "tabela") && contagemTravas && (
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>
                 FECHAMENTO DO MÊS
@@ -563,7 +582,7 @@ export function CompaniesHomePage({
           )}
 
           {/* Os filtros abaixo são da visão de cards — a grade anual tem navegação própria (ano). */}
-          {modoVisao === "cards" && (
+          {(modoVisao === "cards" || modoVisao === "tabela") && (
           <section
             aria-label="Filtros"
             style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 16 }}
@@ -724,6 +743,15 @@ export function CompaniesHomePage({
             <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
           ) : modoVisao === "ano" ? (
             <AnnualGrid api={api} onOpenCompany={onOpenCompany} />
+          ) : modoVisao === "tabela" ? (
+            <CompaniesTable
+              companies={filteredCompanies}
+              travas={travas}
+              competencia={dashboardCompetencia}
+              onOpenCompany={onOpenCompany}
+              acoesGuia={acoesGuia}
+              busca={search}
+            />
           ) : (
           <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
             {filteredCompanies.map((company) => (
@@ -732,7 +760,9 @@ export function CompaniesHomePage({
           </section>
           )}
 
-          {!loadingCompanies && filteredCompanies.length === 0 ? (
+          {/* A tabela já diz "nenhuma empresa" na própria linha vazia — repetir aqui duplicaria a
+              mensagem embaixo dela. */}
+          {!loadingCompanies && modoVisao !== "tabela" && filteredCompanies.length === 0 ? (
             <p className="text-muted dashboard-home__empty">Nenhuma empresa encontrada para os filtros atuais.</p>
           ) : null}
         </section>
