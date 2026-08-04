@@ -555,6 +555,19 @@ model Guide {
   liberadaEm      DateTime?
   liberadaPor     String? // userId do contador que liberou (auditoria)
 
+  /// Auditoria da marcação "sem movimento" (`status = "VAZIO"`).
+  ///
+  /// Marcar uma guia como vazia é DECLARAÇÃO FISCAL — o contador afirma que aquele tributo não
+  /// tem guia naquele mês —, não uma preferência de tela. Por isso quem e quando ficam gravados e
+  /// aparecem no popover do chip, com opção de desfazer.
+  ///
+  /// ⚠ Antes isto reusava `reviewedByUserId`/`reviewedAt`, que o registro MANUAL de guia também
+  /// escreve: não dava para distinguir "marquei vazio" de "registrei uma guia à mão", e nem
+  /// `toGuideResponse` os expunha. Campos próprios, no mesmo molde de `liberadaEm`/`liberadaPor`.
+  vazioEm         DateTime?
+  vazioPor        String? // userId do contador que afirmou a ausência
+  vazioMotivo     String? // opcional, texto livre do contador
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

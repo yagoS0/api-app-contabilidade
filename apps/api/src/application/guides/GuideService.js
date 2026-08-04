@@ -259,6 +259,11 @@ export function toGuideResponse(item) {
     // Portal Cliente (#3.1): liberação ao cliente (selo no contador + gate no /client).
     liberadaCliente: Boolean(item.liberadaCliente),
     liberadaEm: item.liberadaEm ? new Date(item.liberadaEm).toISOString() : null,
+    // Auditoria do "sem movimento" (status VAZIO). Sai no contrato porque a tela mostra quem
+    // afirmou e quando — marcar vazio é declaração fiscal, e declaração sem autor não se audita.
+    vazioEm: item.vazioEm ? new Date(item.vazioEm).toISOString() : null,
+    vazioPor: item.vazioPor || null,
+    vazioMotivo: item.vazioMotivo || null,
     createdAt: item.createdAt?.toISOString?.() || null,
     updatedAt: item.updatedAt?.toISOString?.() || null,
   };

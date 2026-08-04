@@ -34,6 +34,9 @@ import { createObrigacoesRouter } from "./obrigacoes.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
+// Mesma definição de faturamento da apuração — a recusa de "marcar guia vazia" precisa concordar
+// com a de "mês sem faturamento", senão as duas telas divergem sobre se o mês teve receita.
+import { faturamentoEmitDaCompetencia } from "../../application/notas/apuracao/v2/FechamentoService.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistPendentes,
 } from "../../application/accounting/fechamentoBlockers.js";
@@ -2302,19 +2305,50 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       if (existing && existing.status === "PROCESSED") {
         return res.status(409).json({ ok: false, error: "guide_already_present" });
       }
+
+      // ⚠ RECUSA CONTRA A EVIDÊNCIA. Marcar vazio é DECLARAÇÃO FISCAL — o contador afirma que não
+      // houve movimento. Com nota emitida autorizada na competência, a afirmação contradiz o que o
+      // próprio sistema enxerga, e afirmar assim é o que produz DAS faltando sem ninguém perceber.
+      // Mesmo espírito (e mesma função de faturamento) do `SEM_FATURAMENTO_COM_RECEITA`.
+      const faturamento = await faturamentoEmitDaCompetencia(portalClientId, competencia).catch(() => 0);
+      if (faturamento > 0) {
+        return res.status(409).json({
+          ok: false,
+          error: "GUIA_VAZIA_COM_FATURAMENTO",
+          faturamento,
+          message: `A competência tem R$ ${faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em notas emitidas autorizadas. Não dá para marcar esta guia como sem movimento.`,
+        });
+      }
+
+      // Auditoria em campos PRÓPRIOS. `reviewedAt`/`reviewedByUserId` seguem sendo escritos por
+      // compatibilidade, mas o registro manual de guia também os usa — não davam para distinguir
+      // "marquei vazio" de "registrei guia à mão", e nem apareciam no contrato.
+      const auditoria = {
+        vazioEm: new Date(),
+        vazioPor: req.auth?.user?.id || null,
+        vazioMotivo: String(req.body?.motivo || "").trim() || null,
+      };
       const guide = existing
         ? await prisma.guide.update({
             where: { id: existing.id },
-            data: { status: "VAZIO", source: "MANUAL", reviewedByUserId: req.auth?.user?.id || null, reviewedAt: new Date() },
+            data: {
+              status: "VAZIO", source: "MANUAL",
+              reviewedByUserId: req.auth?.user?.id || null, reviewedAt: new Date(),
+              ...auditoria,
+            },
           })
         : await prisma.guide.create({
             data: {
               portalClientId, tipo, competencia,
               status: "VAZIO", source: "MANUAL",
               reviewedByUserId: req.auth?.user?.id || null, reviewedAt: new Date(),
+              ...auditoria,
             },
           });
-      return res.json({ ok: true, guideId: guide.id, status: guide.status });
+      return res.json({
+        ok: true, guideId: guide.id, status: guide.status,
+        vazioEm: guide.vazioEm, vazioPor: guide.vazioPor, vazioMotivo: guide.vazioMotivo,
+      });
     } catch (err) {
       log.error({ err }, "Falha ao marcar guia como Vazio");
       return res.status(500).json({ ok: false, error: "guide_vazio_failed", message: err?.message });
@@ -2332,6 +2366,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const competencia = normalizeCompetencia(req.body?.competencia || req.query?.competencia || "");
     if (!portalClientId || !competencia) {
       return res.status(400).json({ ok: false, error: "params_required" });
+    }
+    // Simétrico ao POST: se o mês está fechado, não se marca NEM se desmarca. A assimetria antiga
+    // deixava desfazer uma afirmação fiscal dentro de um mês já fechado, sem reabertura.
+    if (await isMonthClosed(portalClientId, competencia)) {
+      return res.status(409).json({ ok: false, error: "mes_fechado", message: "Mês fechado — reabra a empresa para alterar guias desta competência." });
     }
     try {
       const result = await prisma.guide.deleteMany({

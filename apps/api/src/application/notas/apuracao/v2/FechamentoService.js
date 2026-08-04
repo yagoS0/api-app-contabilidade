@@ -45,10 +45,48 @@ export async function faturamentoEmitDaCompetencia(portalClientId, competencia) 
   if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) return 0;
   const { gte, lt } = rangeMes(competencia);
   const agg = await prisma.portalInvoice.aggregate({
-    where: { clientId: String(portalClientId), papel: "EMIT", statusEfetivo: "autorizada", competencia: { gte, lt } },
+    where: { ...whereFaturamentoEmit(competencia), clientId: String(portalClientId), competencia: { gte, lt } },
     _sum: { total: true },
   });
   return round2(Number(agg._sum?.total || 0));
+}
+
+/**
+ * O QUE CONTA COMO FATURAMENTO — uma definição só, para todo mundo.
+ *
+ * Nota EMIT autorizada. Nem rascunho, nem cancelada, nem recebida. Está isolada aqui porque já são
+ * cinco chamadores (guarda anti-zero, "mês sem faturamento", transmissão zerada, conferência do
+ * chip de guia vazia) e cada cópia desta cláusula é uma chance de duas telas discordarem sobre se
+ * o mês teve receita.
+ */
+function whereFaturamentoEmit() {
+  return { papel: "EMIT", statusEfetivo: "autorizada" };
+}
+
+/**
+ * Faturamento da competência para VÁRIAS empresas, numa query só.
+ *
+ * Existe para o chip de guia "vazia" poder ser confrontado com a realidade sem uma query por
+ * empresa: marcar sem movimento é declaração fiscal, e se depois aparecer nota emitida naquele mês
+ * o chip precisa voltar a pedir ação.
+ *
+ * @returns {Promise<Map<string, number>>} portalClientId → total (só quem tem > 0)
+ */
+export async function faturamentoEmitPorEmpresa({ portalIds, competencia }) {
+  const mapa = new Map();
+  if (!Array.isArray(portalIds) || !portalIds.length) return mapa;
+  if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) return mapa;
+  const { gte, lt } = rangeMes(competencia);
+  const linhas = await prisma.portalInvoice.groupBy({
+    by: ["clientId"],
+    where: { ...whereFaturamentoEmit(), clientId: { in: portalIds }, competencia: { gte, lt } },
+    _sum: { total: true },
+  });
+  for (const l of linhas) {
+    const total = round2(Number(l._sum?.total || 0));
+    if (total > 0) mapa.set(l.clientId, total);
+  }
+  return mapa;
 }
 
 /** Receita do mês segregada por tipoReceita + mercado (interno/externo). */
