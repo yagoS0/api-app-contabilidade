@@ -256,3 +256,27 @@ export function todasConcluidas(tags) {
   const exigidas = (tags || []).filter((t) => t.state !== "na");
   return exigidas.length > 0 && exigidas.every((t) => t.state === "enviada" || t.state === "vazio");
 }
+
+/**
+ * A PARCELA fica de fora das agregações e sempre tem chip próprio.
+ *
+ * Ela não vem de apurar: vem de capturar o parcelamento. Juntá-la num "N guias · falta apurar"
+ * mandaria o contador para a ação errada.
+ */
+export const ehParcela = (t) => t.key === "parcDas";
+
+/**
+ * Todas as guias de TRIBUTO ainda por gerar? Aí um chip só basta.
+ *
+ * ⚠ Isto existe por causa do Lucro Presumido: IRPJ + CSLL + PIS/COFINS + ISS viram QUATRO chips
+ * vermelhos por empresa no começo do mês — um muro vermelho que reaparece em toda linha e volta a
+ * esconder a exceção, que foi o problema que o redesign inteiro existe para resolver.
+ *
+ * No estado inicial os quatro dependem da MESMA ação (apurar), então o detalhe individual não
+ * carrega informação: são quatro maneiras de dizer a mesma coisa. Assim que os estados divergem
+ * (PIS enviado, IRPJ pendente), aí sim o detalhe importa e os chips voltam.
+ */
+export function todasPorGerar(tags) {
+  const tributos = (tags || []).filter((t) => t.state !== "na" && !ehParcela(t));
+  return tributos.length > 1 && tributos.every((t) => t.state === "missing");
+}

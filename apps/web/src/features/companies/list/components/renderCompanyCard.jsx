@@ -30,8 +30,14 @@ export function getComplianceTags(guideCompliance) {
   for (const { key, label } of COMPLIANCE_CANDIDATES) {
     const node = guideCompliance[key];
     if (node?.required) {
+      // A parcela se identifica pelo número: "Parcela 3/60" diz o que precisa ser entregue ESTE
+      // mês. "Parcelamento" (a existência do acordo) é assunto da coluna Situação fiscal — dizer o
+      // mesmo nos dois lugares foi o que fez o parcelamento aparecer duplicado.
+      const rotulo = key === "parcDas" && node.numeroParcela && node.quantidadeParcelas
+        ? `Parcela ${node.numeroParcela}/${node.quantidadeParcelas}`
+        : label;
       tags.push({
-        key, label, ok: Boolean(node.ok),
+        key, label: rotulo, ok: Boolean(node.ok),
         // `present` é o formato antigo — sem `emailStatus` não dá para saber se foi enviada,
         // então cai em "gerada", que é o estado que ainda pede ação.
         state: node.state === "present" ? "gerada" : (node.state || (node.ok ? "gerada" : "missing")),
@@ -49,6 +55,7 @@ export function getComplianceTags(guideCompliance) {
         numeroParcelamento: node.numeroParcelamento || null,
         numeroParcela: node.numeroParcela || null,
         quantidadeParcelas: node.quantidadeParcelas || null,
+        atrasada: Boolean(node.atrasada),
       });
     }
   }

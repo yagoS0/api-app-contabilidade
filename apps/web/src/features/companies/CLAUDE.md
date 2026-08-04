@@ -268,6 +268,61 @@ abrir empresa: `useManageAuthSession` → `/companies/:id/anotacoes`. Aba nova e
 entrada em `GROUPS`, par em `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT` e bloco `if` no
 `renderCompanyDetailPage`. Faltando o par, a URL cai em Anotações sem erro nenhum.
 
+## TRÊS PERGUNTAS, TRÊS COLUNAS
+
+`Empresa · Apuração · Situação fiscal · Guias · Notas · Ação`. A leitura esquerda→direita é o fluxo
+de trabalho: *como está o mês?* (nosso) · *como está com o fisco?* (dívida do cliente) · *o que falta
+entregar?*
+
+⚠ **Cada célula de indicador tem NO MÁXIMO UM CHIP.** A versão anterior empilhava duas linhas de
+status na mesma célula e produzia combinações sem sentido — "Falta apurar" com "Sem pendência" verde
+logo abaixo, misturando andamento do mês com relação com a Receita.
+
+**Regime deixou de ser coluna** (vai na 2ª linha da Empresa, junto do CNPJ): é atributo de leitura
+ocasional, não indicador de trabalho, e uma coluna inteira roubava largura das três que dizem o que
+fazer hoje. **Nenhum selo de configuração (A1/SERPRO/parc) aparece na linha** — só no popover do nome.
+
+### `lib/estadoApuracao.js` — o enum que quatro coisas compartilham
+
+`problema → falta fechar → falta apurar → fechada`. Coluna Apuração, chips de filtro do topo,
+segmentos da barra de progresso e peso de ordenação saem **todos daqui**. Antes eram quatro cálculos
+paralelos sobre `travas`, e divergiam na mesma tela.
+
+⚠ **"Falta apurar" é CINZA e só se sai dele com `apuracao.apurada === true`.** `podeFechar` fala do
+fechamento CONTÁBIL e não prova apuração fiscal; usá-lo como sinal fazia a carteira inteira nascer
+em "Falta fechar" (âmbar) no dia 1 — o paredão de volta, em outra cor. A barra nasce cinza e vai
+colorindo (cinza → âmbar → verde): conta a história do mês em vez de gritar o mês inteiro.
+
+### `lib/situacaoFiscal.js` — cinco estados, e o que NÃO envelhece
+
+`Em dia` (sem pill: estado bom não grita) · `Com pendência` · `Parcelamento X/N` (**acento**, não
+âmbar — é situação gerenciada, não alarme) · `Parcela atrasada` · `Consultar (Xd)`.
+
+- **Sem contagem de pendências.** Não existe número gravado; ele só sairia do parser heurístico do
+  PDF (`verificadoTrial: false`). Decisão do dono: chip sem número, lista no popover.
+- ⚠ **Frescor rebaixa só o BOM.** Consulta com mais de `DIAS_PARA_ENVELHECER` (30) vira
+  "Consultar (Xd)" — mas **pendência e parcela atrasada não envelhecem**: dívida conhecida não some
+  porque a consulta é antiga, e trocá-la por "Consultar" esconderia problema que já sabemos existir.
+- ⚠ **O clique CONFIRMA antes de consultar.** SITFIS é **paga**, tem trava de 4h por empresa, e o
+  limite do `/Apoiar` é **por contratante** — cliques distraídos numa lista de 30 linhas viram fatura
+  e podem travar a consulta de toda a carteira.
+
+### Coluna Guias — agregação
+
+Enquanto **todas** as guias de tributo estão em "falta gerar", vira **um** chip: `⚠ N guias · falta
+apurar`. É o antídoto do Lucro Presumido, onde IRPJ + CSLL + PIS/COFINS + ISS davam quatro chips
+vermelhos por linha dizendo a mesma coisa. Divergiu o estado, os chips voltam — aí o detalhe informa.
+A **parcela nunca entra no agregado** (`ehParcela`): ela não vem de apurar, vem de capturar o
+parcelamento. Rótulo `Parcela X/N`; a existência do acordo é assunto da coluna Situação fiscal, e
+dizer isso nos dois lugares foi o que duplicou o parcelamento.
+
+### Filtros
+
+⚠ **Nenhum filtro pode estar ativo sem chip removível visível** com o painel fechado — critério
+inegociável. O painel antigo escondia o estado atrás de um botão e o contador via a carteira pela
+metade sem entender por quê (o "filtro fantasma"). Contagem do botão e chips saem da MESMA lista.
+O filtro "Fechamento" **saiu**: duplicava os chips do topo, e dava para os dois se contradizerem.
+
 ## A LINHA da tabela: quatro regras que vivem em `list/lib/`
 
 Card e tabela contam a MESMA história. Cada regra abaixo já existiu em duas cópias, e em cada caso a

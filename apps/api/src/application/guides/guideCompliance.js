@@ -114,6 +114,10 @@ export async function computeGuideComplianceMap(rows, competencia) {
         select: {
           portalClientId: true, id: true, emailStatus: true, emailSentAt: true,
           numeroParcela: true, quantidadeParcelas: true,
+          // Parcelamento EM DIA e parcelamento EM ATRASO pedem reações opostas do contador — um é
+          // acordo funcionando, o outro é risco de rescisão. Sem vencimento e pagamento não dá para
+          // distinguir os dois, e a listagem acabaria pintando os dois iguais.
+          vencimento: true, paymentStatus: true,
           parcelamento: { select: { tipo: true, numeroParcelamento: true } },
         },
         orderBy: { numeroParcela: "asc" },
@@ -132,6 +136,13 @@ export async function computeGuideComplianceMap(rows, competencia) {
         quantidadeParcelas: g.quantidadeParcelas || null,
         tipoParcelamento: g.parcelamento?.tipo || null,
         numeroParcelamento: g.parcelamento?.numeroParcelamento || null,
+        // Vencida E não paga. `PAID` vence a data: parcela paga no vencimento não é atraso, e
+        // marcar como atraso mandaria o contador atrás de algo já resolvido.
+        atrasada: Boolean(
+          g.vencimento
+          && new Date(g.vencimento) < new Date()
+          && String(g.paymentStatus || "").toUpperCase() !== "PAID",
+        ),
       });
     }
   }
@@ -357,6 +368,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
       numeroParcelamento: parcGuia?.numeroParcelamento || null,
       numeroParcela: parcGuia?.numeroParcela || null,
       quantidadeParcelas: parcGuia?.quantidadeParcelas || null,
+      atrasada: Boolean(parcGuia?.atrasada),
     };
     map.set(portalId, {
       ...current, inss, das, irpj, csll, pisCofins, iss, parcDas,

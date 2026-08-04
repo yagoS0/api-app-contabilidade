@@ -8,6 +8,7 @@ import { AnnualGrid } from "../components/renderAnnualGrid";
 import { CompaniesTable } from "../components/renderCompaniesTable";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
 import { estadoCertificado } from "../lib/certificado";
+import { APURACAO, ORDEM_APURACAO, contarApuracao, estadoApuracao } from "../lib/estadoApuracao";
 
 // Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
 function SettingsMenu({ items }) {
@@ -174,13 +175,12 @@ export function CompaniesHomePage({
   const [fiscalFilter, setFiscalFilter] = useState("all"); // all | comPendencia | semPendencia | emParcelamento
   const [regimeFilter, setRegimeFilter] = useState("all"); // all | SIMPLES | LUCRO_PRESUMIDO
   // Fechamento CONTÁBIL do mês filtrado (o mesmo 🔒 do card) — não confundir com apuração.
-  const [fechamentoFilter, setFechamentoFilter] = useState("all"); // all | fechadas | abertas
   // C7: os filtros secundários ficam num painel; só busca e competência seguem aparentes.
   const [showFilters, setShowFilters] = useState(false);
   // F2: "o que trava a carteira" — resposta agregada do servidor para a competência da tela.
   // Não vem do card: o card sabe se a empresa está fechada, não POR QUE ela ainda não pode ser.
   const [travas, setTravas] = useState(null);          // Map companyId → linha do servidor
-  const [travaFiltro, setTravaFiltro] = useState("all"); // all | prontas | checklist | problemas
+  const [travaFiltro, setTravaFiltro] = useState("all"); // all | problema | fechar | apurar | fechada | enviar
   const [fechandoLote, setFechandoLote] = useState(false);
   const carregarTravas = useCallback(async () => {
     if (!api?.getCarteiraFechamento || !dashboardCompetencia) { setTravas(null); return; }
@@ -211,6 +211,18 @@ export function CompaniesHomePage({
    */
   const acoesGuia = useMemo(() => ({
     onAbrirEmpresa: (companyId) => onOpenCompany?.(companyId),
+    /**
+     * Consulta a situação fiscal DE UMA empresa, direto da listagem.
+     *
+     * ⚠ Chamada PAGA, com trava de 4h por empresa — e o limite do `/Apoiar` é por CONTRATANTE, ou
+     * seja, do escritório inteiro. Quem confirma o custo é o chip (mini-confirm antes de chamar);
+     * aqui só resta recarregar a lista para o chip trocar de estado sozinho.
+     */
+    onConsultarFiscal: async (companyId) => {
+      const out = await api.getSitfis?.(companyId).catch((e) => ({ ok: false, message: e?.message }));
+      await onRefreshCompanies?.();
+      return out;
+    },
     onEnviar: async (guideId) => {
       const out = await api.liberarGuiaCliente(guideId);
       if (out?.ok === false) return out;
@@ -243,11 +255,21 @@ export function CompaniesHomePage({
     return {
       total: linhas.length,
       prontas: linhas.filter((l) => l.podeFechar).length,
-      checklist: linhas.filter((l) => !l.fechado && l.checklistPendentes?.length > 0).length,
-      problemas: linhas.filter((l) => !l.fechado && l.blockers?.length > 0).length,
       fechadas: linhas.filter((l) => l.fechado).length,
     };
   }, [travas]);
+
+  /**
+   * As contagens do PIPELINE DO MÊS — a mesma leitura da coluna Apuração, não um cálculo paralelo.
+   *
+   * ⚠ Isto substituiu quatro contagens que rodavam por conta própria sobre `travas`. Elas
+   * divergiam da coluna: dava para a barra dizer uma coisa e a linha da empresa dizer outra, na
+   * mesma tela. Chip de filtro, barra de progresso e ordenação saem TODOS de `estadoApuracao`.
+   */
+  const contagemApuracao = useMemo(
+    () => (travas ? contarApuracao(companies || [], travas) : null),
+    [companies, travas],
+  );
 
   /** Empresas com pelo menos uma guia GERADA e não enviada — a ação rápida do fim do mês. */
   const empresasFaltaEnviar = useMemo(() => {
@@ -267,17 +289,24 @@ export function CompaniesHomePage({
    * de guia existir; o chip cinza é o outro lado da mesma decisão.
    */
   const segmentosProgresso = useMemo(() => {
-    if (!contagemTravas?.total) return [];
-    const { total, fechadas, prontas, checklist, problemas } = contagemTravas;
-    const resto = Math.max(0, total - fechadas - prontas - checklist - problemas);
-    return [
-      { chave: "fechadas",  n: fechadas,  cor: "var(--state-closed)",  rotulo: "fechadas" },
-      { chave: "prontas",   n: prontas,   cor: "var(--state-ok)",      rotulo: "prontas para fechar" },
-      { chave: "checklist", n: checklist, cor: "var(--state-warn)",    rotulo: "falta check-list" },
-      { chave: "problemas", n: problemas, cor: "var(--state-danger)",  rotulo: "lançamento com problema" },
-      { chave: "all",       n: resto,     cor: "var(--state-neutral)", rotulo: "falta apurar" },
-    ].filter((s) => s.n > 0);
-  }, [contagemTravas]);
+    if (!contagemApuracao?.total) return [];
+    // ⚠ ORDEM CINZA → ÂMBAR → VERDE, e é ela que mata o paredão.
+    //
+    // A barra antiga pintava "falta check-list" de âmbar e, no começo do mês, praticamente toda a
+    // carteira caía ali: uma faixa âmbar de ponta a ponta, alarmando durante trinta dias seguidos.
+    // Agora "falta apurar" — que É o estado normal do dia 1 — é CINZA, e a barra nasce cinza e vai
+    // colorindo conforme o trabalho anda. Ela conta a história do mês em vez de gritar o mês
+    // inteiro; quando fica âmbar, é porque de fato há coisa esperando ação.
+    return ORDEM_APURACAO
+      .map((chave) => ({
+        chave,
+        n: contagemApuracao[chave] || 0,
+        cor: APURACAO[chave].cor,
+        rotulo: APURACAO[chave].rotulo.toLowerCase(),
+      }))
+      .filter((s) => s.n > 0)
+      .sort((a, b) => ORDEM_APURACAO.indexOf(b.chave) - ORDEM_APURACAO.indexOf(a.chave));
+  }, [contagemApuracao]);
 
   /**
    * Fecha, uma a uma, as empresas que o servidor disse estarem prontas.
@@ -323,16 +352,6 @@ export function CompaniesHomePage({
     );
   }
   // "pending" é o default de Documentos (não conta como filtro ativo).
-  const filtrosAtivos = [
-    documentFilter !== "pending",
-    serproFilter !== "all",
-    emailFilter !== "all",
-    apuracaoFilter !== "all",
-    certFilter !== "all",
-    fiscalFilter !== "all",
-    regimeFilter !== "all",
-    fechamentoFilter !== "all",
-  ].filter(Boolean).length;
   // ⚠ Os filtros ativos vão IMPRESSOS no papel. Uma folha filtrada que não diz que está filtrada
   // mente por omissão — quem a receber vai contar as empresas e concluir que a carteira é aquela.
   const ROTULO_FILTRO = {
@@ -342,20 +361,46 @@ export function CompaniesHomePage({
     apuracaoFilter: { rotulo: "Apuração", valores: { apurados: "apurados", naoApurados: "não apurados" } },
     certFilter: { rotulo: "Certificado", valores: { comCert: "com certificado válido", semCert: "sem certificado", vencido: "certificado vencido" } },
     fiscalFilter: { rotulo: "Situação fiscal", valores: { comPendencia: "com pendência", semPendencia: "sem pendência", emParcelamento: "em parcelamento" } },
-    regimeFilter: { rotulo: "Regime" },
-    fechamentoFilter: { rotulo: "Fechamento", valores: { fechadas: "fechadas", abertas: "abertas" } },
+    // Sem o de-para, o chip mostrava a constante crua ("Regime: LUCRO_PRESUMIDO") — o valor do
+    // banco vazando para a tela.
+    regimeFilter: { rotulo: "Regime", valores: { SIMPLES: "Simples Nacional", LUCRO_PRESUMIDO: "Lucro Presumido", LUCRO_REAL: "Lucro Real" } },
   };
   const valoresFiltro = {
     documentFilter, serproFilter, emailFilter, apuracaoFilter,
-    certFilter, fiscalFilter, regimeFilter, fechamentoFilter,
+    certFilter, fiscalFilter, regimeFilter,
   };
-  const descricaoFiltros = Object.entries(valoresFiltro)
+  // Cada filtro precisa saber se DESLIGAR sozinho — é isso que permite o chip removível.
+  const RESET_FILTRO = {
+    documentFilter: () => setDocumentFilter("pending"),
+    serproFilter: () => setSerproFilter("all"),
+    emailFilter: () => setEmailFilter("all"),
+    apuracaoFilter: () => setApuracaoFilter("all"),
+    certFilter: () => setCertFilter("all"),
+    fiscalFilter: () => setFiscalFilter("all"),
+    regimeFilter: () => setRegimeFilter("all"),
+  };
+
+  /**
+   * Os filtros ativos, prontos para virar chip.
+   *
+   * ⚠ CRITÉRIO INEGOCIÁVEL: nenhum filtro pode estar ligado sem rastro visível com o painel
+   * fechado. O painel antigo escondia o estado atrás de um botão, e o contador via uma carteira
+   * pela metade sem entender por quê — o "filtro fantasma", que fazia empresa parecer sumida.
+   */
+  const chipsDeFiltro = Object.entries(valoresFiltro)
     .filter(([chave, valor]) => valor !== "all" && !(chave === "documentFilter" && valor === "pending"))
     .map(([chave, valor]) => {
       const meta = ROTULO_FILTRO[chave] || {};
-      return `${meta.rotulo || chave}: ${meta.valores?.[valor] || valor}`;
-    })
-    .join(" · ");
+      return {
+        chave,
+        texto: `${meta.rotulo || chave}: ${meta.valores?.[valor] || valor}`,
+        remover: RESET_FILTRO[chave],
+      };
+    });
+  const descricaoFiltros = chipsDeFiltro.map((c) => c.texto).join(" · ");
+  // A contagem sai da MESMA lista que desenha os chips — dois cálculos dariam no botão dizendo "3"
+  // com dois chips na barra.
+  const filtrosAtivos = chipsDeFiltro.length;
 
   function limparFiltros() {
     setDocumentFilter("pending");
@@ -386,10 +431,10 @@ export function CompaniesHomePage({
         } else {
           const t = travas?.get(company?.companyId);
           if (!t) return false;
-          if (travaFiltro === "prontas" && !t.podeFechar) return false;
-          if (travaFiltro === "checklist" && !(!t.fechado && t.checklistPendentes?.length > 0)) return false;
-          if (travaFiltro === "problemas" && !(!t.fechado && t.blockers?.length > 0)) return false;
-          if (travaFiltro === "fechadas" && !t.fechado) return false;
+          // O recorte usa o MESMO `estadoApuracao` do chip e da coluna. Antes cada um relia
+          // `travas` do seu jeito, e clicar num chip trazia um conjunto diferente do que o chip
+          // tinha acabado de contar.
+          if (estadoApuracao(company, t).chave !== travaFiltro) return false;
         }
       }
       if (emailFilter === "notSent" && company?.monthEmailSent) return false;
@@ -409,11 +454,9 @@ export function CompaniesHomePage({
       if (fiscalFilter === "comPendencia" && fiscal !== "COM_PENDENCIA") return false;
       if (fiscalFilter === "semPendencia" && fiscal !== "REGULAR") return false;
       if (fiscalFilter === "emParcelamento" && fiscal !== "EM_PARCELAMENTO") return false;
-      if (fechamentoFilter !== "all") {
-        const fechada = Boolean(company?.fechamentoContabil?.fechado);
-        if (fechamentoFilter === "fechadas" && !fechada) return false;
-        if (fechamentoFilter === "abertas" && fechada) return false;
-      }
+      // ⚠ O filtro "Fechamento" SAIU do painel: os chips de Apuração no topo já respondem a mesma
+      // pergunta, e dois controles para o mesmo estado divergem — dava para filtrar "abertas" no
+      // painel e "fechadas" no chip, e a tela ficava vazia sem explicar por quê.
       if (regimeFilter !== "all") {
         const regime = String(company?.legacyCompany?.regimeTributario || company?.regimeTributario || "").trim().toUpperCase();
         if (regime !== regimeFilter) return false;
@@ -441,7 +484,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, fechamentoFilter, travaFiltro, travas, empresasFaltaEnviar]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, travaFiltro, travas, empresasFaltaEnviar]);
 
   return (
     <div className="dashboard-home-page">
@@ -669,22 +712,23 @@ export function CompaniesHomePage({
               empresa e olhar o cadeado. Aqui ela vira contagem, e cada contagem vira lista de
               trabalho. Some inteira quando o servidor não responde: um número errado sobre
               fechamento é pior que número nenhum. */}
-          {(modoVisao === "cards" || modoVisao === "tabela") && contagemTravas && (
+          {(modoVisao === "cards" || modoVisao === "tabela") && contagemApuracao && (
             <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", fontWeight: 700, marginRight: 2 }}>
-                FECHAMENTO DO MÊS
+                APURAÇÃO DO MÊS
               </span>
-              {/* ⚠ Cada estado carrega a cor E a superfície. O código antigo derivava o fundo com
-                  `${cor}22` — concatenação de hex, que quebra em silêncio quando `cor` vira
-                  `var(--state-ok)` (o resultado seria `var(--state-ok)22`). É por isso que todo
-                  token de estado tem par `-surface` em `tokens.css`. */}
+              {/* ⚠ Estes chips SÃO a coluna Apuração, contada. Vêm do mesmo `estadoApuracao` que
+                  desenha o chip de cada linha e que ordena a lista — antes eram um cálculo próprio
+                  sobre `travas`, e as duas leituras discordavam na mesma tela.
+                  Cada estado carrega cor E superfície: derivar o fundo com `${cor}22` quebra em
+                  silêncio assim que a cor vira `var(--…)`. */}
               {[
-                ["all", `Todas · ${contagemTravas.total}`, "var(--state-neutral)", "var(--state-neutral-surface)"],
-                ["prontas", `✅ Prontas para fechar · ${contagemTravas.prontas}`, "var(--state-ok)", "var(--state-ok-surface)"],
-                ["checklist", `☐ Falta check-list · ${contagemTravas.checklist}`, "var(--state-warn)", "var(--state-warn-surface)"],
-                ["problemas", `⚠ Lançamento com problema · ${contagemTravas.problemas}`, "var(--state-danger)", "var(--state-danger-surface)"],
+                ["all", `Todas · ${contagemApuracao.total}`, "var(--state-neutral)", "var(--state-neutral-surface)"],
+                ...ORDEM_APURACAO
+                  .filter((k) => contagemApuracao[k] > 0)
+                  .map((k) => [k, `${APURACAO[k].icone} ${APURACAO[k].rotulo} · ${contagemApuracao[k]}`, APURACAO[k].cor, APURACAO[k].fundo]),
                 // A pergunta mais frequente da SEGUNDA METADE do fluxo: as guias já existem, falta
-                // mandar. Sai da leitura dos chips, não do agregado de fechamento.
+                // mandar. Sai da leitura dos chips de guia, não do pipeline do mês.
                 ["enviar", `✈ Falta enviar guia · ${contagemFaltaEnviar}`, "var(--state-warn)", "var(--state-warn-surface)"],
               ].map(([chave, label, cor, superficie]) => {
                 const ativo = travaFiltro === chave;
@@ -771,37 +815,42 @@ export function CompaniesHomePage({
               />
             </label>
 
-            {/* C7: competência com setas ‹ › pra andar mês a mês (antes só o picker). */}
-            {onChangeCompetencia && (
-              <label style={FILTER_LABEL}>
-                Competência
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {/* ⚠ O SELETOR DE COMPETÊNCIA QUE FICAVA AQUI FOI REMOVIDO. Havia dois na mesma tela —
+                este e o do título — controlando o mesmo estado. Dois controles para uma coisa só
+                fazem o usuário duvidar de qual vale, e um deles sempre parece não funcionar. Ficou
+                o do título ("Empresas · ‹ Julho de 2026 ›"), que é onde o contexto da tela mora. */}
+
+            {/* Chips do que está ATIVO — o rastro que o painel fechado não pode esconder. */}
+            {chipsDeFiltro.length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {chipsDeFiltro.map((c) => (
                   <button
+                    key={c.chave}
                     type="button"
-                    onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
-                    style={COMP_ARROW}
-                    aria-label="Competência anterior"
-                    title="Mês anterior"
+                    onClick={c.remover}
+                    title="Remover este filtro"
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px",
+                      borderRadius: 999, cursor: "pointer", fontSize: "0.76rem", fontWeight: 600,
+                      border: "1px solid var(--accent-purple)", background: "rgba(189,147,249,0.16)",
+                      color: "var(--text)", font: "inherit",
+                    }}
                   >
-                    ‹
+                    {c.texto}<span aria-hidden="true" style={{ color: "var(--text-muted)" }}>✕</span>
                   </button>
-                  <input
-                    type="month"
-                    value={dashboardCompetencia || ""}
-                    onChange={(e) => onChangeCompetencia(e.target.value)}
-                    style={{ ...FILTER_CONTROL, width: 150 }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, 1))}
-                    style={COMP_ARROW}
-                    aria-label="Próxima competência"
-                    title="Próximo mês"
-                  >
-                    ›
-                  </button>
-                </span>
-              </label>
+                ))}
+                <button
+                  type="button"
+                  onClick={limparFiltros}
+                  style={{
+                    padding: "4px 10px", borderRadius: 999, cursor: "pointer", fontSize: "0.76rem",
+                    background: "transparent", border: "1px solid var(--border)",
+                    color: "var(--text-muted)", font: "inherit",
+                  }}
+                >
+                  Limpar tudo
+                </button>
+              </div>
             )}
 
             {/* C7: os demais filtros saem da barra e vão pra um painel — o dono só quer
@@ -822,8 +871,12 @@ export function CompaniesHomePage({
                     // Ancorado à DIREITA do botão: crescendo pra esquerda ele não vaza pra fora
                     // da tela quando o botão está na ponta direita da barra de filtros.
                     position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 30,
-                    background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 10,
-                    padding: 12, display: "grid", gap: 10, width: 240, maxWidth: "90vw",
+                    background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 10,
+                    // ⚠ DUAS COLUNAS, e não uma tira alta. O painel de uma coluna descia por cima
+                    // da tabela e o contador perdia de vista justamente as linhas que estava
+                    // tentando filtrar. Em duas colunas ele cabe acima dos dados.
+                    padding: 14, display: "grid", gridTemplateColumns: "repeat(2, minmax(160px, 1fr))",
+                    gap: 12, maxWidth: "min(90vw, 380px)",
                     boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
                   }}
                 >
@@ -846,7 +899,7 @@ export function CompaniesHomePage({
                   </label>
 
                   <label style={FILTER_LABEL}>
-                    Enviados
+                    Envio de guias
                     <select value={emailFilter} onChange={(event) => setEmailFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
                       <option value="all">Todas</option>
                       <option value="sent">Só enviados</option>
@@ -885,15 +938,6 @@ export function CompaniesHomePage({
                   </label>
 
                   <label style={FILTER_LABEL}>
-                    Fechamento
-                    <select value={fechamentoFilter} onChange={(event) => setFechamentoFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
-                      <option value="all">Todas</option>
-                      <option value="fechadas">Fechadas</option>
-                      <option value="abertas">Abertas</option>
-                    </select>
-                  </label>
-
-                  <label style={FILTER_LABEL}>
                     Regime
                     <select value={regimeFilter} onChange={(event) => setRegimeFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
                       <option value="all">Todos</option>
@@ -902,11 +946,18 @@ export function CompaniesHomePage({
                     </select>
                   </label>
 
-                  {filtrosAtivos > 0 && (
-                    <Button type="button" variant="secondary" onClick={limparFiltros}>
+                  {/* Rodapé ocupando as duas colunas. "Aplicar" só FECHA o painel: os selects já
+                      filtram ao mudar, e segurar a aplicação até o clique faria a lista mentir
+                      enquanto o painel estivesse aberto. O botão existe para dar um jeito óbvio de
+                      sair — não para adiar o efeito. */}
+                  <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, justifyContent: "flex-end", borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                    <Button type="button" variant="secondary" onClick={limparFiltros} disabled={filtrosAtivos === 0}>
                       Limpar filtros
                     </Button>
-                  )}
+                    <Button type="button" onClick={() => setShowFilters(false)}>
+                      Aplicar
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

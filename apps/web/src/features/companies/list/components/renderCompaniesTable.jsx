@@ -14,13 +14,37 @@
 import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { getComplianceTags } from "./renderCompanyCard";
-import { GuiaChip, todasConcluidas } from "./renderGuiaChip";
-import {
-  estadoDominante, pesoUrgencia, situacaoFiscalDaEmpresa,
-  empresaSemObrigacoes, TEXTO_ZERADA, TITULO_ZERADA,
-} from "../lib/estadoDominante";
+import { GuiaChip, todasConcluidas, todasPorGerar, ehParcela } from "./renderGuiaChip";
+import { empresaSemObrigacoes, TEXTO_ZERADA, TITULO_ZERADA } from "../lib/estadoDominante";
+import { estadoApuracao, detalheApuracao } from "../lib/estadoApuracao";
+import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
 import { rotuloRegime } from "../../../../lib/vocabulario";
 import { estadoCertificado } from "../lib/certificado";
+
+// TRÊS PERGUNTAS, TRÊS COLUNAS — e a leitura esquerda→direita é o próprio fluxo de trabalho:
+//   Apuração ......... como está o mês?          (trabalho nosso)
+//   Situação fiscal .. como está com o fisco?    (dívida do cliente)
+//   Guias ............ o que falta entregar?     (o que sai para o cliente)
+//
+// ⚠ Cada célula tem NO MÁXIMO UM CHIP. A versão anterior empilhava duas linhas de status na mesma
+// célula e produzia combinações que não queriam dizer nada — "Falta apurar" com "Sem pendência" em
+// verde logo abaixo, misturando andamento do mês com relação com a Receita.
+
+/**
+ * A severidade da LINHA = a pior das três colunas. É ela que ordena.
+ * 0 = danger · 1 = warning · 2 = neutro · 3 = fechada (sempre por último, fora do fluxo).
+ */
+function severidadeDaLinha(company, trava) {
+  const ap = estadoApuracao(company, trava);
+  if (ap.chave === "fechada") return 3;
+  const fiscal = situacaoFiscalDaLinha(company).estado.severidade;
+  // Empresa zerada não tem guia a entregar — as tags "faltando" dela são artefato, não trabalho.
+  // Sem esta guarda ela subia ao topo como se tivesse guia atrasada.
+  const tags = empresaSemObrigacoes(company) ? [] : getComplianceTags(company.guideCompliance);
+  const guias = tags.some((t) => t.state === "missing" || t.state === "conflito") ? 0
+    : tags.some((t) => t.state === "gerada") ? 1 : 2;
+  return Math.min(ap.severidade, fiscal, guias);
+}
 
 const CELULA = { padding: "8px 10px", borderTop: "1px solid var(--border)", verticalAlign: "middle" };
 const CABECALHO = {
@@ -78,15 +102,31 @@ function PopoverConfig({ company, onFechar }) {
 
 function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca }) {
   const [config, setConfig] = useState(false);
-  const estado = estadoDominante(company, trava);
-  const fechada = estado.chave === "fechada";
+  const [consultando, setConsultando] = useState(false);
+  const apuracao = estadoApuracao(company, trava);
+  const fechada = apuracao.chave === "fechada";
   const tags = getComplianceTags(company.guideCompliance);
   const concluidas = todasConcluidas(tags);
+  const agregarGuias = todasPorGerar(tags);
   const zerada = empresaSemObrigacoes(company);
-  const fiscal = situacaoFiscalDaEmpresa(company);
-  const cert = estadoCertificado(company);
+  const fiscal = situacaoFiscalDaLinha(company);
   const regime = company?.legacyCompany?.regimeTributario || null;
   const notasTotal = Number(company?.notasEmitidas?.total || 0);
+
+  // ⚠ A consulta SITFIS é PAGA, tem trava de 4h por empresa, e o limite do `/Apoiar` é por
+  // CONTRATANTE — ou seja, por escritório inteiro. Numa lista de trinta linhas, cliques distraídos
+  // viram fatura E podem travar a consulta de todas as outras. Por isso o clique confirma primeiro,
+  // dizendo o custo, em vez de disparar direto.
+  async function consultarFiscal() {
+    if (consultando) return;
+    const ok = window.confirm(
+      `Consultar a situação fiscal de ${company.razao}?\n\n`
+      + "É uma consulta paga ao SERPRO, limitada a 1 por empresa a cada 4 horas.",
+    );
+    if (!ok) return;
+    setConsultando(true);
+    try { await acoesGuia?.onConsultarFiscal?.(company.companyId); } finally { setConsultando(false); }
+  }
 
   // Destaque do trecho buscado: com 30 empresas de nome parecido, achar a certa no meio da lista é
   // metade do trabalho.
@@ -121,69 +161,70 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
       <td style={{ ...CELULA, position: "relative" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span
-            role="button"
-            tabIndex={-1}
-            onClick={() => setConfig((v) => !v)}
-            title="Ver certificado, SERPRO, folha e e-mail"
-            style={{ fontSize: "0.86rem", fontWeight: 600, color: "var(--text)", lineHeight: 1.25, cursor: "pointer" }}
-          >
-            {nomeRender}
-          </span>
-          {/* Presente = silêncio. Só a falta aparece — selo que nunca varia não distingue ninguém.
-              Cinza: sem A1 não se captura NFS-e, mas não trava o fechamento do mês. */}
-          {!cert.ativo && (
-            <span
-              title={cert.titulo}
-              style={{
-                fontSize: "0.64rem", fontWeight: 700, padding: "0 6px", borderRadius: 999,
-                background: "var(--state-neutral-surface)", color: cert.cor, whiteSpace: "nowrap",
-              }}
-            >
-              {cert.rotulo}
-            </span>
-          )}
+        <span
+          role="button"
+          tabIndex={-1}
+          onClick={() => setConfig((v) => !v)}
+          title="Ver certificado, SERPRO, folha e e-mail"
+          style={{ display: "block", fontSize: "0.875rem", fontWeight: 500, color: "var(--text)", lineHeight: 1.25, cursor: "pointer" }}
+        >
+          {nomeRender}
         </span>
-        <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-muted)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-          {company.cnpj || "—"}
+        {/* ⚠ REGIME DEIXOU DE SER COLUNA. Ele é atributo de leitura ocasional ("esta é do
+            Presumido?"), não indicador de trabalho — e uma coluna inteira para ele roubava largura
+            das três que respondem o que fazer hoje. Aqui, junto do CNPJ, continua a um olhar.
+            O selo A1 também saiu daqui: configuração vive no popover do nome, e nada mais. */}
+        <span style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+          {regime && <span style={{ color: corRegime(regime) }}>{rotuloRegime(regime)}</span>}
+          {regime && " · "}
+          <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{company.cnpj || "—"}</span>
         </span>
         {config && <PopoverConfig company={company} onFechar={() => setConfig(false)} />}
       </td>
 
-      <td style={CELULA}>
-        {regime && (
-          <span style={{
-            fontSize: "0.7rem", fontWeight: 700, padding: "1px 8px", borderRadius: 999,
-            border: `1px solid ${corRegime(regime)}`, color: corRegime(regime), whiteSpace: "nowrap",
-          }}>
-            {rotuloRegime(regime)}
-          </span>
-        )}
-      </td>
-
+      {/* APURAÇÃO — o pipeline do mês. Um chip, quatro estados possíveis, nada empilhado. */}
       <td style={CELULA}>
         <span
-          title={estado.rotulo}
+          title={detalheApuracao(apuracao, trava)}
           style={{
             display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
             fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-            background: estado.fundo, border: `1px solid ${estado.cor}`, color: estado.cor,
+            background: apuracao.fundo, border: `1px solid ${apuracao.cor}`, color: apuracao.cor,
           }}
         >
-          <span aria-hidden="true">{estado.icone}</span>{estado.rotulo}
+          <span aria-hidden="true">{apuracao.icone}</span>{apuracao.rotulo}
         </span>
-        {/* Segunda linha: a situação fiscal que o chip dominante não disse. Discreta de propósito —
-            informa sem competir com o que exige ação. `Fiscal não consultada` aparece aqui como
-            estado próprio: nunca pode ser confundido com "sem pendência". */}
-        {fiscal && (
-          <span
-            title={fiscal.em
-              ? `Situação fiscal (SITFIS) consultada em ${new Date(fiscal.em).toLocaleDateString("pt-BR")}`
-              : "Situação fiscal (SITFIS) nunca consultada para esta empresa"}
-            style={{ display: "block", marginTop: 2, fontSize: "0.68rem", color: fiscal.cor, whiteSpace: "nowrap" }}
+      </td>
+
+      {/* SITUAÇÃO FISCAL — a relação com a Receita. Estado bom não ganha pill: não grita. */}
+      <td style={CELULA}>
+        {fiscal.precisaConsultar ? (
+          <button
+            type="button"
+            onClick={consultarFiscal}
+            disabled={consultando}
+            title={`${fiscal.titulo} — clique para consultar no SERPRO`}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+              fontSize: "0.72rem", fontWeight: 600, padding: "2px 8px", borderRadius: 999,
+              background: "transparent", border: "1px dashed var(--border)", color: "var(--text-faint)",
+              cursor: consultando ? "wait" : "pointer", font: "inherit",
+            }}
           >
-            {fiscal.rotulo}
+            {consultando ? "consultando…" : <><span aria-hidden="true">{fiscal.estado.icone}</span>{fiscal.rotulo}</>}
+          </button>
+        ) : (
+          <span
+            title={fiscal.titulo}
+            style={fiscal.estado.pill
+              ? {
+                display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+                fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                background: fiscal.estado.fundo, border: `1px solid ${fiscal.estado.cor}`, color: fiscal.estado.cor,
+              }
+              : { display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", fontSize: "0.72rem", color: fiscal.estado.cor }}
+          >
+            <span aria-hidden="true">{fiscal.estado.icone}</span>{fiscal.rotulo}
           </span>
         )}
       </td>
@@ -203,6 +244,30 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
             >
               ✓ Guias concluídas
             </span>
+          ) : agregarGuias ? (
+            /* ⚠ UM chip no lugar de quatro vermelhos. No Lucro Presumido são IRPJ + CSLL +
+               PIS/COFINS + ISS, e no começo do mês os quatro dizem a mesma coisa e pedem a mesma
+               ação. Quatro repetições da mesma informação em toda linha recriavam o muro vermelho
+               que este redesign existe para derrubar. Assim que os estados divergirem, os chips
+               voltam sozinhos — porque aí o detalhe passa a informar. */
+            <>
+              <span
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+                  fontSize: "0.72rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                  background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
+                  color: "var(--state-danger)",
+                }}
+                title={`Ainda por gerar: ${tags.filter((t) => !ehParcela(t)).map((t) => t.label).join(" · ")}`}
+              >
+                ⚠ {tags.filter((t) => !ehParcela(t)).length} guias · falta apurar
+              </span>
+              {/* A parcela nunca entra no agregado: ela não vem de apurar, vem de capturar o
+                  parcelamento. Somá-la ali mandaria o contador para a ação errada. */}
+              {tags.filter(ehParcela).map((tag) => (
+                <GuiaChip key={tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />
+              ))}
+            </>
           ) : tags.length ? tags.map((tag) => (
             <GuiaChip key={tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />
           )) : (
@@ -242,14 +307,17 @@ export function CompaniesTable({ companies, travas, competencia, onOpenCompany, 
       copia.sort((a, b) => {
         if (ordem.campo === "empresa") return dir * String(a.razao || "").localeCompare(String(b.razao || ""));
         if (ordem.campo === "notas") return dir * (Number(a.notasEmitidas?.total || 0) - Number(b.notasEmitidas?.total || 0));
-        if (ordem.campo === "status") return dir * (pesoUrgencia(a, trava(a)) - pesoUrgencia(b, trava(b)));
-        // Padrão: urgência, com desempate alfabético — sem ele a ordem "dança" entre recargas.
-        const p = pesoUrgencia(a, trava(a)) - pesoUrgencia(b, trava(b));
+        if (ordem.campo === "apuracao") return dir * (estadoApuracao(a, trava(a)).severidade - estadoApuracao(b, trava(b)).severidade);
+        // ⚠ Padrão: o PIOR estado entre as TRÊS colunas de indicadores, não só o da apuração. Uma
+        // empresa apurada e fechada no prazo, mas com pendência na Receita, precisa subir — ordenar
+        // só pelo mês a esconderia no meio da lista. Desempate alfabético para a ordem não "dançar"
+        // entre recargas.
+        const p = severidadeDaLinha(a, trava(a)) - severidadeDaLinha(b, trava(b));
         return p !== 0 ? p : String(a.razao || "").localeCompare(String(b.razao || ""));
       });
       return copia;
     };
-    const ehFechada = (c) => estadoDominante(c, trava(c)).chave === "fechada";
+    const ehFechada = (c) => estadoApuracao(c, trava(c)).chave === "fechada";
     return {
       abertas: ordenar((companies || []).filter((c) => !ehFechada(c))),
       fechadas: ordenar((companies || []).filter(ehFechada)),
@@ -272,8 +340,8 @@ export function CompaniesTable({ companies, travas, competencia, onOpenCompany, 
     proxima?.focus();
   }
 
-  const Cabecalho = ({ campo, children, alinhar }) => (
-    <th scope="col" style={{ ...CABECALHO, textAlign: alinhar || "left" }}>
+  const Cabecalho = ({ campo, children, alinhar, largura }) => (
+    <th scope="col" style={{ ...CABECALHO, textAlign: alinhar || "left", width: largura }}>
       {campo ? (
         <button
           type="button"
@@ -294,11 +362,11 @@ export function CompaniesTable({ companies, travas, competencia, onOpenCompany, 
         </caption>
         <thead>
           <tr>
-            <Cabecalho campo="empresa">Empresa</Cabecalho>
-            <Cabecalho>Regime</Cabecalho>
-            <Cabecalho campo="status">Status</Cabecalho>
-            <Cabecalho>Guias</Cabecalho>
-            <Cabecalho campo="notas" alinhar="right">Notas</Cabecalho>
+            <Cabecalho campo="empresa" largura="26%">Empresa</Cabecalho>
+            <Cabecalho campo="apuracao" largura="16%">Apuração</Cabecalho>
+            <Cabecalho largura="18%">Situação fiscal</Cabecalho>
+            <Cabecalho largura="22%">Guias</Cabecalho>
+            <Cabecalho campo="notas" alinhar="right" largura="10%">Notas</Cabecalho>
             <th scope="col" data-coluna-acao style={{ ...CABECALHO, textAlign: "right" }}>Ação</th>
           </tr>
         </thead>
