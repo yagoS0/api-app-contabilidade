@@ -56,8 +56,9 @@ function getRequirements({ hasProlabore, regimeTributario, hasParcDasAtivo }) {
     csllRequired: presumido,
     pisCofinsRequired: presumido,
     issRequired: presumido,
-    // Parcelamento DAS — só "required" quando há parcelas em ABERTO na competência atual.
-    // Tag PARC_DAS no Card da Home só aparece se a empresa tem parcelamento ativo.
+    // Parcelamento — só "required" quando há PARCELA na competência: guia de parcelamento
+    // capturada (caminho SERPRO/V2) ou lançamento `PARC_DAS` em aberto (modal manual antigo).
+    // Ver as duas pré-queries em `computeGuideComplianceMap`.
     parcDasRequired: Boolean(hasParcDasAtivo),
   };
 }
@@ -77,21 +78,62 @@ export async function computeGuideComplianceMap(rows, competencia) {
   const map = new Map();
   const needQuery = [];
 
-  // Pre-query: empresas com parcelamento DAS ativo (qualquer parcela ABERTA na competência).
-  // É feito antes para que `getRequirements` saiba se a tag PARC_DAS deve aparecer.
+  // Pre-query: a empresa tem PARCELA nesta competência? Duas fontes, porque são dois caminhos
+  // reais e nenhum cobre o outro:
+  //
+  // (1) `AccountingEntry` com `subtipo:"PARC_DAS"` — escrito SÓ pelo modal manual antigo
+  //     (`routes/firm/accountingEntries.js`, POST /entries/parcelamento). O V1 grava
+  //     `PARC_SIMPLES`/`PARC_INSS`; o V2 grava `PARC_<TIPO>` (PARC_PARCSN…) e só na competência de
+  //     ABERTURA. Ou seja: esta query sozinha quase nunca casa.
+  // (2) a GUIA da parcela — é assim que o caminho de hoje (SERPRO/V2) materializa a parcela do mês:
+  //     `CaptureSerproParcelaService` grava uma Guide e `ParcelamentoV2Service` carimba
+  //     `parcelamentoId`. O V2 NÃO cria linha por parcela (`numeroParcela: null` em todo entry).
+  //
+  // É a (2) que tem PDF, e-mail e vencimento — logo é ela que alimenta o chip.
   const allPortalIds = rows.map((r) => r.portalId).filter(Boolean);
   let parcDasAtivoSet = new Set();
+  const parcGuiaByPortal = new Map();
   if (allPortalIds.length > 0) {
-    const parcEntries = await prisma.accountingEntry.findMany({
-      where: {
-        portalClientId: { in: allPortalIds },
-        subtipo: "PARC_DAS",
-        statusPagamento: "ABERTO",
-        competencia,
-      },
-      select: { portalClientId: true },
-    });
+    const [parcEntries, parcGuides] = await Promise.all([
+      prisma.accountingEntry.findMany({
+        where: {
+          portalClientId: { in: allPortalIds },
+          subtipo: "PARC_DAS",
+          statusPagamento: "ABERTO",
+          competencia,
+        },
+        select: { portalClientId: true },
+      }),
+      prisma.guide.findMany({
+        where: {
+          portalClientId: { in: allPortalIds },
+          competencia,
+          parcelamentoId: { not: null },
+          status: "PROCESSED",
+        },
+        select: {
+          portalClientId: true, id: true, emailStatus: true, emailSentAt: true,
+          numeroParcela: true, quantidadeParcelas: true,
+          parcelamento: { select: { tipo: true, numeroParcelamento: true } },
+        },
+        orderBy: { numeroParcela: "asc" },
+      }),
+    ]);
     parcDasAtivoSet = new Set(parcEntries.map((e) => e.portalClientId));
+    for (const g of parcGuides) {
+      // Primeiro a chegar vence — a ordem é estável e duas parcelas do mesmo parcelamento na mesma
+      // competência não deveriam existir.
+      if (!g.portalClientId || parcGuiaByPortal.has(g.portalClientId)) continue;
+      parcGuiaByPortal.set(g.portalClientId, {
+        guideId: g.id,
+        emailStatus: g.emailStatus || null,
+        emailSentAt: g.emailSentAt || null,
+        numeroParcela: g.numeroParcela || null,
+        quantidadeParcelas: g.quantidadeParcelas || null,
+        tipoParcelamento: g.parcelamento?.tipo || null,
+        numeroParcelamento: g.parcelamento?.numeroParcelamento || null,
+      });
+    }
   }
 
   // Pre-query simétrica à de cima: meses declarados SEM FATURAMENTO. Uma query para a carteira
@@ -107,7 +149,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
 
   for (const row of rows) {
     const regime = normalizeRegimeFromLegacy(row.legacy);
-    const hasParcDasAtivo = parcDasAtivoSet.has(row.portalId);
+    const hasParcDasAtivo = parcDasAtivoSet.has(row.portalId) || parcGuiaByPortal.has(row.portalId);
     const req = getRequirements({
       hasProlabore: Boolean(row.hasProlabore),
       regimeTributario: regime,
@@ -130,9 +172,10 @@ export async function computeGuideComplianceMap(rows, competencia) {
       csll: node(req.csllRequired),
       pisCofins: node(req.pisCofinsRequired),
       iss: node(req.issRequired),
-      // Parcelamento DAS: required=true significa "tem parcela ABERTA";
-      // ok=false enquanto não pagar (a tag aparece amarela/laranja no card).
-      parcDas: { required: req.parcDasRequired, ok: !req.parcDasRequired },
+      // Parcelamento ganha o MESMO ciclo de vida dos outros (missing → gerada → enviada). Antes era
+      // `{required, ok}` sem `state`, e `todasConcluidas` no front exige estado terminal — então o
+      // selo "✓ Guias concluídas" nunca condensava numa empresa com parcelamento.
+      parcDas: node(req.parcDasRequired),
       ok:
         !req.inssRequired && !req.dasRequired
         && !req.irpjRequired && !req.csllRequired
@@ -146,6 +189,9 @@ export async function computeGuideComplianceMap(rows, competencia) {
       req.inssRequired || req.dasRequired
       || req.irpjRequired || req.csllRequired
       || req.pisCofinsRequired || req.issRequired
+      // Sem isto, a empresa cujo ÚNICO nó exigido é a parcela sai do laço final e fica `missing`
+      // para sempre — mesmo com a guia da parcela existindo.
+      || req.parcDasRequired
     ) needQuery.push(row.portalId);
   }
 
@@ -162,6 +208,11 @@ export async function computeGuideComplianceMap(rows, competencia) {
       // esse tipo (não pode ser split) — sem ela, as tags IRPJ/CSLL/PIS-COFINS do card ficavam
       // vermelhas mesmo com a guia capturada. A composição abaixo resolve o tributo de cada uma.
       tipo: { in: ["INSS", "SIMPLES", "IRPJ", "CSLL", "PIS", "COFINS", "ISS", "DARF", "OUTRA"] },
+      // ⚠ A PARCELA de parcelamento é gravada como `tipo:"SIMPLES"` (CaptureSerproParcelaService).
+      // Sem este filtro ela satisfazia o nó `das`: a empresa aparecia com "DAS gerada" sem nunca
+      // ter gerado o DAS do mês — foi o que o dono viu na ERISANGELA. Ela tem nó PRÓPRIO
+      // (`parcDas`), alimentado pela pré-query lá em cima.
+      parcelamentoId: null,
     },
     // `id`, `emailStatus` e `emailSentAt` entram para a listagem poder distinguir "gerada" de
     // "enviada" e ENVIAR direto do chip — antes ela só sabia o agregado "3 de 5 enviadas", sem
@@ -293,9 +344,25 @@ export async function computeGuideComplianceMap(rows, competencia) {
     const csll = resolveNode(current.csll, pres.get("CSLL"), vaz.get("CSLL"), { faturamento });
     const pisCofins = resolveNode(current.pisCofins, pres.get("PIS_COFINS"), vaz.get("PIS_COFINS"), { faturamento });
     const iss = resolveNode(current.iss, pres.get("ISS"), vaz.get("ISS"), { faturamento });
+    // Parcela NÃO tem marcador VAZIO (não se declara ausência de parcela contratada) e
+    // `semFaturamento` não vale aqui: mês sem receita não suspende parcelamento — mesma regra já
+    // escrita acima ("folha, ISS e parcelas seguem exigidas"). Por isso os dois últimos argumentos
+    // ficam vazios de propósito.
+    const parcGuia = parcGuiaByPortal.get(portalId);
+    const parcDas = {
+      ...resolveNode(current.parcDas, parcGuia, undefined, {}),
+      // Contexto para o popover do chip: "PARCSN nº 123 · parcela 3/60". É o que impede o chip de
+      // se apresentar como "PARC DAS" numa parcela de INSS.
+      tipoParcelamento: parcGuia?.tipoParcelamento || null,
+      numeroParcelamento: parcGuia?.numeroParcelamento || null,
+      numeroParcela: parcGuia?.numeroParcela || null,
+      quantidadeParcelas: parcGuia?.quantidadeParcelas || null,
+    };
     map.set(portalId, {
-      ...current, inss, das, irpj, csll, pisCofins, iss,
-      ok: inss.ok && das.ok && irpj.ok && csll.ok && pisCofins.ok && iss.ok,
+      ...current, inss, das, irpj, csll, pisCofins, iss, parcDas,
+      // `parcDas.ok` entra no agregado: parcela do mês sem guia É pendência. O `base.ok` lá em cima
+      // já a considerava — as duas metades discordavam entre si.
+      ok: inss.ok && das.ok && irpj.ok && csll.ok && pisCofins.ok && iss.ok && parcDas.ok,
     });
   }
 

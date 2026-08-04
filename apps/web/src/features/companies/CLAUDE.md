@@ -268,6 +268,53 @@ abrir empresa: `useManageAuthSession` → `/companies/:id/anotacoes`. Aba nova e
 entrada em `GROUPS`, par em `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT` e bloco `if` no
 `renderCompanyDetailPage`. Faltando o par, a URL cai em Anotações sem erro nenhum.
 
+## A LINHA da tabela: quatro regras que vivem em `list/lib/`
+
+Card e tabela contam a MESMA história. Cada regra abaixo já existiu em duas cópias, e em cada caso a
+mesma empresa apareceu de dois jeitos dependendo da visão.
+
+| Regra | Onde | O que se corrigiu |
+|---|---|---|
+| Estado dominante + ordenação | `lib/estadoDominante.js` | — |
+| Situação fiscal da 2ª linha | `estadoDominante.situacaoFiscalDaEmpresa` | ver abaixo |
+| Empresa zerada não tem guia | `estadoDominante.empresaSemObrigacoes` | a regra existia só no card; a tabela mostrava seis chips vermelhos na mesma empresa |
+| Certificado A1 | `lib/certificado.js` | o filtro olhava só a PRESENÇA, então empresa com A1 **vencido** — a que não captura NFS-e — caía em "com certificado" |
+
+### Coluna Status: a situação fiscal ocupou o degrau do check-list
+
+A cascata é `Fechada → ⚠ Pendência → ⚠ Pendência fiscal → Falta apurar → Zerada → Pronta p/ fechar`,
+e `ORDEM_URGENCIA` ordena a lista por ela.
+
+- **Só `COM_PENDENCIA` ocupa o degrau.** Regular, em parcelamento, processando e nunca consultada
+  não exigem ação e não podem passar na frente de "falta apurar" — "✓ Sem pendência" como estado
+  dominante de uma empresa que ninguém apurou troca informação útil por informação que engana. Esses
+  valores aparecem na **segunda linha** da célula, discretos.
+- ⚠ **`fiscalSituacao: null` NUNCA lê como "sem pendência".** Vira `○ Fiscal não consultada`
+  (`chaveSituacaoFiscal` → `NAO_CONSULTADA`, em `lib/vocabulario.js`). Afirmar algo sobre o fisco sem
+  ter consultado é o erro caro; um círculo vazio é o barato.
+- **O sinal do check-list não se perdeu:** o chip de filtro `☐ Falta check-list · N` e o fechamento
+  em lote leem `contagemTravas` / `trava.checklistPendentes` direto, não `estadoDominante`.
+
+### A linha NÃO navega
+
+Só o botão **Acessar** abre a empresa — no mouse e no teclado. Com chips, popovers e botão de enviar
+e-mail na mesma linha, clicar em qualquer ponto virava navegação por acidente. As setas ↑↓ continuam
+movendo o foco entre linhas (isso é leitura), e o clique no **nome** abre o popover de configuração.
+
+### Imprimir
+
+Botão ao lado do seletor de visão. Ele **força a visão Tabela e expande as fechadas** antes de
+`window.print()` — as fechadas ficam colapsadas na tela de propósito, e imprimir assim entregaria uma
+lista incompleta **em silêncio**. Por isso o clique só liga a flag `imprimindo`; quem chama
+`window.print()` é um efeito, depois do render.
+
+O estilo vive num bloco `@media print` no `App.css`, todo com **`!important`** — é a única alavanca
+da cascata contra os ~2.200 `style={{}}` inline; sem ele o fundo escuro vai para a impressora.
+Marcadores no DOM: `data-print-area` (o que sai), `data-print-only` (cabeçalho do papel, escondido na
+tela), `data-print-tabela` (zera `overflow`/`max-height`), `data-coluna-acao` (some no papel).
+⚠ O cabeçalho impresso lista **os filtros ativos** — folha filtrada que não diz que está filtrada
+mente por omissão.
+
 ## Padrões
 
 - Componentes recebem dados/handlers por props; estado de workspace em

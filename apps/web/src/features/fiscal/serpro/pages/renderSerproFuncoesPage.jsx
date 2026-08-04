@@ -5,6 +5,7 @@ import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { NotasDownloadContent } from "../../../notas/download/pages/renderNotasDownloadPage";
+import { NotasCapturaContent } from "../../../notas/captura/pages/renderNotasCapturaPage";
 import { PendenciasContent } from "../../../pendencias/pages/renderPendenciasPage";
 
 // Q47: página top-level "Consultas" — separada da "Configuração SERPRO" (credenciais +
@@ -49,7 +50,7 @@ function expandRange(from, to) {
 }
 
 export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, message, error, pendenciasPanel }) {
-  const [view, setView] = useState("funcoes"); // "funcoes" | "download" | "sitfis"
+  const [view, setView] = useState("funcoes"); // "funcoes" | "sitfis" | "captura" | "download"
   const [selectedOps, setSelectedOps] = useState(() => new Set());
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [dateFrom, setDateFrom] = useState(currentCompetencia);
@@ -193,25 +194,33 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
   return (
     <PageShell
       title="Consultas"
-      subtitle="Buscas SERPRO em lote, situação fiscal das empresas e download de notas por período."
+      subtitle="Buscas SERPRO em lote, situação fiscal, consulta de notas no ADN/SEFAZ e download de XML por período."
       onBack={onBack}
     >
       <AppShell className="serpro-settings-shell">
         <div>
-          {/* Mini-nav: Buscas SERPRO × Situação Fiscal × Download de notas */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {/* Mini-nav. ⚠ "Consultar notas" vem ANTES de "Download de notas" de propósito: consultar
+              é o que traz nota nova do ADN/SEFAZ; baixar só empacota o que já está no banco. Na
+              ordem contrária, quem procurava "buscar as notas" achava primeiro a aba que não busca
+              nada — e concluía, com um ZIP vazio na mão, que não havia notas. */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
             <button type="button" onClick={() => setView("funcoes")} style={chip(view === "funcoes")}>
               Buscas SERPRO
             </button>
             <button type="button" onClick={() => setView("sitfis")} style={chip(view === "sitfis")}>
               Situação Fiscal
             </button>
+            <button type="button" onClick={() => setView("captura")} style={chip(view === "captura")}>
+              Consultar notas
+            </button>
             <button type="button" onClick={() => setView("download")} style={chip(view === "download")}>
               Download de notas
             </button>
           </div>
 
-          {view === "download" ? (
+          {view === "captura" ? (
+            <NotasCapturaContent api={api} companies={companies} />
+          ) : view === "download" ? (
             <NotasDownloadContent api={api} companies={companies} />
           ) : view === "sitfis" ? (
             <PendenciasContent pendenciasPanel={pendenciasPanel} />

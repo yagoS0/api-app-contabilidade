@@ -1,6 +1,8 @@
 import { Button } from "../../../../components/ui/Button";
 import { rotuloRegime, SITUACAO_FISCAL_SIMBOLO } from "../../../../lib/vocabulario";
 import { GuiaChip, todasConcluidas } from "./renderGuiaChip";
+import { estadoCertificado } from "../lib/certificado";
+import { empresaSemObrigacoes, TEXTO_ZERADA, TITULO_ZERADA } from "../lib/estadoDominante";
 
 // Tributos potencialmente exibidos no card de compliance.
 // A ordem aqui define a ordem visual das tags (DAS primeiro para Simples; depois Presumidos; PARC_DAS no fim).
@@ -11,8 +13,10 @@ const COMPLIANCE_CANDIDATES = [
   { key: "pisCofins", label: "PIS/COFINS" },
   { key: "iss",       label: "ISS" },
   { key: "inss",      label: "INSS" },
-  // PARC_DAS — só aparece quando há parcelamento ativo. tone diferenciado (laranja) no render.
-  { key: "parcDas",   label: "PARC DAS", accent: true },
+  // ⚠ "Parcelamento", não "PARC DAS": desde que a guia da parcela deixou de satisfazer o nó do DAS,
+  // uma parcela de INSS parcelado também cai aqui — chamá-la de DAS seria trocar um erro por outro.
+  // O tipo real (PARCSN, PERT_SN…) e o número da parcela ficam no popover do chip.
+  { key: "parcDas",   label: "Parcelamento" },
 ];
 
 export function getComplianceTags(guideCompliance) {
@@ -23,11 +27,11 @@ export function getComplianceTags(guideCompliance) {
   // Itera todos os candidatos e inclui só os marcados como required pelo backend
   // (que decide com base no regime tributário + pró-labore).
   const tags = [];
-  for (const { key, label, accent } of COMPLIANCE_CANDIDATES) {
+  for (const { key, label } of COMPLIANCE_CANDIDATES) {
     const node = guideCompliance[key];
     if (node?.required) {
       tags.push({
-        key, label, ok: Boolean(node.ok), accent: Boolean(accent),
+        key, label, ok: Boolean(node.ok),
         // `present` é o formato antigo — sem `emailStatus` não dá para saber se foi enviada,
         // então cai em "gerada", que é o estado que ainda pede ação.
         state: node.state === "present" ? "gerada" : (node.state || (node.ok ? "gerada" : "missing")),
@@ -40,6 +44,11 @@ export function getComplianceTags(guideCompliance) {
         vazioMotivo: node.vazioMotivo || null,
         faturamento: node.faturamento || 0,
         origem: node.origem || null,
+        // Só o nó `parcDas` traz estes — identificam QUAL acordo e QUAL parcela no popover.
+        tipoParcelamento: node.tipoParcelamento || null,
+        numeroParcelamento: node.numeroParcelamento || null,
+        numeroParcela: node.numeroParcela || null,
+        quantidadeParcelas: node.quantidadeParcelas || null,
       });
     }
   }
@@ -101,16 +110,9 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
   // Q52: selo de certificado A1 da empresa — verde (ativo), vermelho (vencido), apagado (sem cert).
   // certExpiresAt null com cert presente conta como ativo (upload legado sem validade extraída).
   const legacy = company?.legacyCompany || null;
-  const hasCert = Boolean(legacy?.certStorageKey);
-  const certExpiresAt = legacy?.certExpiresAt ? new Date(legacy.certExpiresAt) : null;
-  const certExpirado = hasCert && certExpiresAt && certExpiresAt.getTime() < Date.now();
-  const certAtivo = hasCert && !certExpirado;
-  const certColor = certAtivo ? "var(--state-ok)" : certExpirado ? "var(--state-warn)" : "var(--text-faint)";
-  const certTitle = certAtivo
-    ? `Certificado A1 ativo${certExpiresAt ? ` — válido até ${certExpiresAt.toLocaleDateString("pt-BR")}` : " — validade desconhecida"}`
-    : certExpirado
-      ? `Certificado A1 vencido em ${certExpiresAt.toLocaleDateString("pt-BR")}`
-      : "Empresa sem certificado A1";
+  // A leitura do certificado é UMA só (card, tabela e filtro) — antes eram três, e a do filtro
+  // olhava só a presença, deixando empresa com A1 VENCIDO passar por "com certificado".
+  const cert = estadoCertificado(company);
   // Q52: total de notas emitidas da competência filtrada + selo de apuração transmitida.
   const notas = company?.notasEmitidas || null;
   const notasTotal = Number(notas?.total || 0);
@@ -134,7 +136,8 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
     : regime === "LUCRO_PRESUMIDO" ? "var(--accent-orange)"
     : regime === "LUCRO_REAL" ? "var(--accent-purple)" : "var(--text-faint)";
   // Empresa zerada (sem movimento) — só enviamos obrigações zeradas; não há guias/impostos.
-  const zerada = Boolean(company?.empresaZerada);
+  // Mesma função da tabela: a regra vivia só aqui e a tabela mostrava chips na mesma empresa.
+  const zerada = empresaSemObrigacoes(company);
   // C6: situação fiscal do SITFIS (⚠ ao lado de "apurada") e parcelamento ativo (selo PARC).
   const temParcelamento = Boolean(company?.temParcelamento);
   const temFolha = Boolean(company?.temFolha);
@@ -180,8 +183,11 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
               ⚠ SERPRO
             </Pill>
           )}
-          {!certAtivo && (
-            <Pill color="var(--state-warn)" title={certTitle}>⚠ A1</Pill>
+          {/* Cinza, não âmbar: âmbar é ação rápida disponível e vermelho é o que trava o
+              fechamento. Certificado faltando não é nem um nem outro — é configuração. Estava em
+              âmbar, e com isso a mesma empresa contava histórias diferentes no card e na tabela. */}
+          {!cert.ativo && (
+            <Pill color={cert.cor} title={cert.titulo}>{cert.rotulo}</Pill>
           )}
           {/* Zerada é informativo, não exige ação: neutro, com ícone próprio. */}
           {zerada && (
@@ -228,13 +234,15 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
           </strong>
         </p>
       )}
-      <p className="compliance-tags" aria-label="Status de guias obrigatórias">
+      {/* `div`, não `p`: o chip abre um popover `<div>`, e `<div>` dentro de `<p>` é HTML inválido —
+          o browser fecha o parágrafo sozinho e o React reclama de nesting a cada render. */}
+      <div className="compliance-tags" aria-label="Status de guias obrigatórias">
         {zerada ? (
           <span
             style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-neutral)" }}
-            title="Empresa zerada (sem movimento) — sem guias/impostos; enviamos apenas obrigações zeradas"
+            title={TITULO_ZERADA}
           >
-            Empresa zerada — sem obrigações com imposto
+            ◌ {TEXTO_ZERADA}
           </span>
         ) : concluidas ? (
           /* ⚠ "Guias CONCLUÍDAS", não "enviadas": estado terminal inclui a guia enviada E a
@@ -250,28 +258,17 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
         ) : (
         <>
         {tags.map((tag) => (
-          tag.accent ? (
-            /* PARC DAS não é guia: é a PARCELA aberta na competência. Segue como selo simples. */
-            <span
-              key={tag.label}
-              style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-warn)" }}
-              title={`${tag.label} — parcelamento ativo`}
-            >
-              {tag.label}
-            </span>
-          ) : (
-            <GuiaChip
-              key={tag.label}
-              tag={tag}
-              empresa={company}
-              competencia={company?.guideCompliance?.competencia || ""}
-              acoes={acoesGuia || {}}
-            />
-          )
+          <GuiaChip
+            key={tag.label}
+            tag={tag}
+            empresa={company}
+            competencia={company?.guideCompliance?.competencia || ""}
+            acoes={acoesGuia || {}}
+          />
         ))}
         {/* O selo PARC que ficava aqui subiu para junto da tributação — parcelamento é
-            característica da empresa, não obrigação daquele mês. A tag "PARC DAS" segue nesta
-            linha: essa sim é a PARCELA aberta na competência. */}
+            característica da empresa, não obrigação daquele mês. O chip "Parcelamento" segue nesta
+            linha: esse sim é a PARCELA da competência, com o mesmo ciclo de vida das outras guias. */}
         {!tags.length && !temParcelamento ? (
           <span style={{ fontSize: "0.72rem", padding: "2px 6px", color: "var(--text-muted)" }}>
             Sem obrigações
@@ -279,7 +276,7 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
         ) : null}
         </>
         )}
-      </p>
+      </div>
       <Button type="button" className="company-tile__action" onClick={() => onAccess(company.companyId)}>
         Acessar
       </Button>

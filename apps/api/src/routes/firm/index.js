@@ -50,6 +50,11 @@ import {
   jobToResponse as notasDownloadJobToResponse,
 } from "../../application/notas/download/NotasDownloadService.js";
 import {
+  criarNotasCapturaJob,
+  getNotasCapturaJob,
+  listNotasCapturaJobs,
+} from "../../application/notas/captura/NotasCapturaService.js";
+import {
   criarSitfisDownloadJob,
   sitfisJobToResponse,
 } from "../../application/fiscal/serpro/SitfisDownloadService.js";
@@ -64,7 +69,7 @@ import {
   toPendingGuideReportItem,
   toGuideResponse,
 } from "../../application/guides/GuideService.js";
-import { normalizeCompetencia, normalizeGuideType } from "../../application/guides/guideContract.js";
+import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia } from "../../application/guides/guideContract.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import {
   getGuideRuntimeSettings,
@@ -2517,6 +2522,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       select: {
         id: true, portalClientId: true, tipo: true, competencia: true, valor: true, vencimento: true,
         status: true, emailStatus: true, emailSentAt: true, extracted: true,
+        // A parcela de parcelamento também é `tipo:"SIMPLES"` — é este campo que a separa do DAS.
+        parcelamentoId: true,
       },
     });
 
@@ -2578,8 +2585,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         byKey.set(key, row);
       }
       // Q16: a guia de Simples é gravada como tipo "SIMPLES"; a coluna da matriz é "DAS".
-      const rawUpper = String(g.tipo || "").toUpperCase();
-      const upper = rawUpper === "SIMPLES" ? "DAS" : rawUpper;
+      // ⚠ E a PARCELA de parcelamento também é "SIMPLES" — vai para a coluna PARC_DAS, não DAS.
+      // A regra mora em `guideContract` porque o compliance do dashboard precisa da MESMA, e duas
+      // cópias fariam as duas telas discordarem sobre a mesma guia.
+      const upper = colunaMatrizDaGuia(g);
       const isVazio = g.status === "VAZIO";
       const stamp = {
         guideId: g.id,
@@ -2614,7 +2623,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     for (const p of parcelamentos) {
       const key = rowKey(p.portalClientId, p.competencia);
       const row = byKey.get(key);
-      if (row) row.tiposGuias.PARC_DAS = { entryId: p.id, isParcelamento: true };
+      // A GUIA da parcela (tem PDF, é enviável) vence a linha leve de rastreio do V1 — senão o
+      // carimbo da guia era sobrescrito por um marcador sem documento e a parcela deixava de poder
+      // ser selecionada no envio.
+      if (row && !row.tiposGuias.PARC_DAS) row.tiposGuias.PARC_DAS = { entryId: p.id, isParcelamento: true };
     }
 
     // Separa por regime, agora mantendo as múltiplas linhas (empresa+competência) por grupo.
@@ -4538,6 +4550,61 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
   });
 
+  // ===========================================================================
+  // CONSULTA DE NOTAS EM LOTE — a captura de verdade (ADN/SEFAZ).
+  //
+  // ⚠ NÃO é `/notas-download`. Aquele zipa o XML que JÁ está no banco e conclui "com sucesso" mesmo
+  // quando a captura nunca rodou — foi o que escondeu a rotina automática quebrada. Este chama o
+  // ADN e a SEFAZ e traz nota nova, devolvendo UMA LINHA POR EMPRESA (inclusive as puladas, com o
+  // motivo), que é o ponto todo.
+  // ===========================================================================
+
+  // POST /firm/notas-captura  body: { companyIds: [], alvos: ["NFSE","NFE"] }
+  router.post("/notas-captura", async (req, res) => {
+    const { companyIds, alvos } = req.body || {};
+    try {
+      // ⚠ Isolamento multi-tenant: só entram ids que EXISTEM na carteira, nunca o que veio no
+      // payload. Mesmo cuidado do /notas-download.
+      const ids = Array.isArray(companyIds) ? companyIds.map(String).filter(Boolean) : [];
+      const existentes = await prisma.portalClient.findMany({
+        where: { id: { in: ids } },
+        select: { id: true },
+      });
+      const result = await criarNotasCapturaJob({
+        portalClientIds: existentes.map((c) => c.id),
+        alvos,
+        triggeredBy: req.auth?.user?.id || null,
+      });
+      return res.json({ ok: true, job: result });
+    } catch (err) {
+      const badCodes = ["NO_COMPANIES", "NO_TARGETS"];
+      log.warn({ err: err?.message }, "Falha ao criar consulta de notas em lote");
+      return res.status(badCodes.includes(err?.code) ? 400 : 500)
+        .json({ ok: false, error: err?.code || "notas_captura_failed", message: err?.message });
+    }
+  });
+
+  // GET /firm/notas-captura — últimas consultas ("Consultas recentes"): sair da página e voltar
+  // não pode perder o resultado, senão o contador dispara de novo (e gasta chamada de novo).
+  router.get("/notas-captura", async (_req, res) => {
+    try {
+      return res.json({ ok: true, jobs: await listNotasCapturaJobs(10) });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: "notas_captura_list_failed", message: err?.message });
+    }
+  });
+
+  // GET /firm/notas-captura/:jobId — polling (traz os itens por empresa)
+  router.get("/notas-captura/:jobId", async (req, res) => {
+    try {
+      const job = await getNotasCapturaJob(req.params.jobId);
+      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      return res.json({ ok: true, job });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: "notas_captura_get_failed", message: err?.message });
+    }
+  });
+
   // C9: resumo dos processos rodando em segundo plano — alimenta o selo "N processos" do dashboard.
   // Só CONTAGEM + progresso agregado (2 counts curtos), pra poder ser chamado em polling barato.
   // Envio de e-mails em lote NÃO entra: é chamada bloqueante, não job de fundo.
@@ -4555,15 +4622,16 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   router.get("/jobs/ativos", async (_req, res) => {
     try {
-      const [notas, sitfis] = await Promise.all([
-        prisma.notasDownloadJob.findMany({
-          where: { status: "processando" },
-          select: { id: true, totalEmpresas: true, processadas: true },
-        }),
-        prisma.sitfisDownloadJob.findMany({
-          where: { status: "processando" },
-          select: { id: true, totalEmpresas: true, processadas: true },
-        }),
+      const emAndamento = {
+        where: { status: "processando" },
+        select: { id: true, totalEmpresas: true, processadas: true },
+      };
+      const [notas, sitfis, captura] = await Promise.all([
+        prisma.notasDownloadJob.findMany(emAndamento),
+        prisma.sitfisDownloadJob.findMany(emAndamento),
+        // A consulta em lote é a mais demorada das três (chama ADN/SEFAZ empresa por empresa) —
+        // é justamente a que o contador precisa ver rodando ao sair da página.
+        prisma.notasCapturaJob.findMany(emAndamento),
       ]);
       const mapa = (arr, tipo) => arr.map((j) => ({
         tipo,
@@ -4571,7 +4639,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         total: Number(j.totalEmpresas || 0),
         processadas: Number(j.processadas || 0),
       }));
-      const jobs = [...mapa(notas, "notas"), ...mapa(sitfis, "sitfis")];
+      const jobs = [...mapa(notas, "notas"), ...mapa(sitfis, "sitfis"), ...mapa(captura, "captura-notas")];
       return res.json({ ok: true, total: jobs.length, jobs });
     } catch (err) {
       // Nunca derruba o dashboard por causa do selo — devolve vazio.

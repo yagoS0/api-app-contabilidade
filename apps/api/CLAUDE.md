@@ -201,6 +201,36 @@ Serviço assíncrono em 2 etapas, resolvido inline (~28s) ou devolvido como `pro
 - A busca **só marca** a guia como paga (`pagamentoLocalizado`); quem faz o lançamento de baixa é o
   contador, pela Circular — ver "Guias na Circular".
 
+## ⚠ REGRA DO DONO: notas só com o A1 da PRÓPRIA empresa
+
+> *"O A1 do escritório nunca deve consultar notas, e um A1 de outro CNPJ nunca deve ser usado em
+> outra empresa."*
+
+Vale para **as duas capturas**, e as duas já tentaram furar essa regra por caminhos diferentes:
+
+| | O que tinha | Consequência | Hoje |
+|---|---|---|---|
+| **ADN (NFS-e)** | fallback para o cert do escritório | o escritório **é** cadastrado no gov.br/nfse → voltavam as notas DELE, gravadas na empresa cliente | `NO_COMPANY_CERT` |
+| **SEFAZ (NF-e)** | `loadOfficeCert()` como 2º caminho | a SEFAZ rejeita (cStat 593), mas o erro chegava tarde e confuso | `NO_COMPANY_CERT` · função **removida** |
+
+⚠ **Procuração e-CAC não reabre isso.** Ela autoriza o escritório a agir no e-CAC; não transforma o
+certificado dele no certificado do cliente perante o ADN ou a SEFAZ. `resolveCertForCompany` pode
+devolver `source:"procuracao_escritorio"`, e **nenhum dos dois serviços de notas aceita esse source**.
+
+**A checagem de dono do certificado roda na LEITURA**, em `CertResolver.loadCompanyCert`, não só no
+upload. A rota de upload já recusa arquivo de CNPJ divergente (`inspectPfx` → `cert_cnpj_mismatch`),
+mas é validação recente: todo certificado subido antes dela nunca passou por conferência. Guarda que
+mora só no upload protege o futuro e deixa o passado como está. Erro: **`CERT_CNPJ_MISMATCH`**.
+
+- **Mesma função** (`security/inspectPfx.js`) nas duas portas — duas heurísticas para ler o CNPJ do
+  subject divergiriam, e o arquivo passaria numa e seria recusado na outra.
+- **14 dígitos exatos**, igual ao upload. (Consequência conhecida: cert da matriz não serve para a
+  filial. É o comportamento que já existia; mudar isso é decisão do dono, não detalhe de
+  implementação.)
+- ⚠ **CNPJ ilegível não bloqueia.** e-CPF ou subject fora do padrão ICP-Brasil só geram aviso no log:
+  ausência de dado não é prova de certificado alheio, e recusar por falta de informação derrubaria
+  empresa legítima. Quem pega o resto é o cinturão de ingestão, abaixo.
+
 ## ⚠ ADN: quem consulta é o CERTIFICADO — nunca use o do escritório
 
 O ADN Contribuinte identifica o contribuinte pela **SAN do certificado ICP-Brasil**. O path é
@@ -246,6 +276,64 @@ eventos por NSU*, não *snapshot por data*. Fase 1 (fundação) já no código, 
   Município fora do ADN / sem cert = `nao_conferivel` (não trava). Sob demanda:
   `POST /firm/companies/:id/fechamento/:competencia/conferencia`; ferramenta de prod: `scripts/conferir-adn.mjs`.
   O scan do ADN só é validável em produção (cert + ADN reais).
+
+## ⚠ Parcela de parcelamento NÃO é o DAS do mês
+
+A parcela é gravada como `tipo:"SIMPLES"` (`CaptureSerproParcelaService`), **igual ao DAS**, e o que
+separa as duas é o **`parcelamentoId`** (carimbado por `ParcelamentoV2Service`). Sem esse filtro a
+parcela satisfazia o nó `das` do compliance: a empresa aparecia com "DAS gerada" sem nunca ter
+gerado o DAS. Aconteceu em **duas telas ao mesmo tempo** (dashboard e `GET /guides/batch-report`),
+porque cada uma tinha a sua leitura.
+
+A regra mora em **`isGuiaDeParcelamento` / `colunaMatrizDaGuia`** (`guides/guideContract.js`) e é
+consumida pelos dois lados. Não reescrever no consumidor — foi assim que divergiram.
+
+- `guideCompliance` exclui a parcela da query principal (`parcelamentoId: null`) e a resolve num nó
+  **próprio** (`parcDas`), com o mesmo ciclo de vida dos outros (`missing → gerada → enviada`).
+- ⚠ **`vazio` e `semFaturamento` não valem para parcela.** Não se declara ausência de parcela
+  contratada, e mês sem receita não suspende parcelamento.
+- ⚠ **A pré-query de `AccountingEntry` com `subtipo:"PARC_DAS"` quase nunca casa.** Esse valor só é
+  escrito pelo modal manual antigo (`accountingEntries.js`, `POST /entries/parcelamento`); o V1
+  grava `PARC_SIMPLES`/`PARC_INSS` e o **V2 grava `PARC_<TIPO>` (PARC_PARCSN…) só na competência de
+  ABERTURA**, sem linha por parcela (`numeroParcela: null` em todo entry). No caminho de hoje a
+  parcela do mês existe como **Guide**, não como lançamento — por isso a segunda pré-query.
+- O rótulo na UI é **"Parcelamento"**, não "PARC DAS": uma parcela de **INSS** parcelado também cai
+  nesse nó, e chamá-la de DAS seria trocar um erro por outro.
+- Efeito de virada: empresa do Simples com parcela no mês passa a mostrar **DAS faltando** de
+  verdade. É o comportamento correto, mas acende vermelho onde antes havia silêncio.
+
+## Consulta de NOTAS em lote ≠ Download de notas
+
+| | O que faz | Onde |
+|---|---|---|
+| **`/firm/notas-captura`** | **CONSULTA** ADN/SEFAZ e traz nota nova | `notas/captura/NotasCapturaService.js` |
+| `/firm/notas-download` | zipa o `PortalInvoice.xmlRaw` que **já está** no banco | `notas/download/NotasDownloadService.js` |
+
+⚠ **Foi essa confusão que escondeu a rotina automática quebrada.** Empresa sem captura gera pasta
+vazia no ZIP e o job de download termina **"concluído" com zero notas** — a tela dizia que deu certo
+justamente quando não tinha dado, e o contador acabou consultando as trinta empresas na mão.
+
+O lote de captura **não tem lógica nova**: chama `syncAdnNotasForCompany` / `syncDfeForCompany`, as
+mesmas dos botões por empresa e do worker. O que ele acrescenta é **`NotasCapturaItem`: uma linha por
+empresa × alvo, inclusive para a empresa PULADA, com o motivo**. Essa é a razão de existir do
+modelo — `dfeNotasWorker.listEligibleCompanies` descarta empresa sem cert dentro de um `filter` e
+não deixa rastro, então "10 processadas" nunca disse quantas nem foram tentadas.
+
+Pré-condições, todas viram item visível: sem A1 da empresa (NFS-e) · A1 vencido · sem inscrição
+estadual (NF-e) · backoff ativo · empresa suspensa · **consultada há < 1h (NF-e)**.
+
+⚠ **O intervalo de 1h é a NT 2014.002**, e é regra externa: estourar devolve "Consumo Indevido"
+(cStat 656) e **bloqueia aquele CNPJ por uma hora** na SEFAZ — o oposto do que o lote quer. Mesmo
+número do worker (`DFE_NOTAS_WORKER_INTERVAL_MIN`) de propósito; duas janelas para a mesma regra
+dariam no bloqueio que ambas evitam. O ADN não tem regra equivalente (lá o espaçamento de 1,1s entre
+chamadas já protege).
+
+**Quando "a rotina não trouxe nada":** `scripts/diag-captura-notas.mjs` (só leitura, zero chamada
+externa) mostra por empresa o certificado, o cursor NSU, a última sincronização e o último erro, com
+um veredito por linha. **Antes dele, confira `DFE_NOTAS_WORKER_ENABLED=1` no ambiente** — se a flag
+estiver desligada a rotina nunca rodou, e nenhum dado do script explica coisa alguma. O worker
+também **não grava log de execução** no banco (diferente dos workers SERPRO, que gravam
+`SerproExecutionLog`), então o estado por empresa é a única evidência que sobra.
 
 ## ⚠ Armazenamento de PDFs — exige Volume no Railway
 

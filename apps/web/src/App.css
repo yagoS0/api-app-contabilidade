@@ -1621,3 +1621,88 @@ th {
     justify-content: flex-start;
   }
 }
+
+/* ─── IMPRESSÃO DA LISTAGEM DE EMPRESAS ───────────────────────────────────────────────────────
+   O contador precisa levar a carteira no papel (ou em PDF) para uma reunião.
+
+   ⚠ POR QUE TUDO AQUI TEM `!important`
+   O app é estilizado por ~2.200 objetos `style={{}}` inline, e declaração inline vence folha de
+   estilo — MENOS quando a folha usa `!important`. Sem ele, o fundo escuro (#1A1B26) iria para a
+   impressora: tinta desperdiçada e texto ilegível. Não é força bruta, é a única alavanca que a
+   cascata oferece contra estilo inline.
+
+   A receita "imprimir só um pedaço" não depende da estrutura do AppShell: esconde tudo por
+   `visibility` e reacende só a área marcada, que é então posicionada no topo da página. Assim ela
+   sobrevive a qualquer mudança de layout em volta.
+
+   A classe no `body` é ligada pelo botão Imprimir e desligada no `afterprint` — sem ela, um Ctrl+P
+   em outra tela não é afetado. */
+@media print {
+  @page {
+    /* Paisagem: são cinco colunas, e a de guias tem até quatro chips no Lucro Presumido. */
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  body.imprimindo-listagem > * {
+    visibility: hidden !important;
+  }
+
+  body.imprimindo-listagem [data-print-area],
+  body.imprimindo-listagem [data-print-area] * {
+    visibility: visible !important;
+  }
+
+  body.imprimindo-listagem [data-print-area] {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    background: #fff !important;
+  }
+
+  /* Fundo escuro, sombras e bordas translúcidas não têm equivalente no papel. */
+  body.imprimindo-listagem [data-print-area] * {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    border-color: #999 !important;
+    /* Fechadas eram desenhadas com opacity .55 — cinza claro some na impressão. */
+    opacity: 1 !important;
+  }
+
+  /* O contêiner rolável cortaria a lista na primeira página. */
+  body.imprimindo-listagem [data-print-tabela] {
+    max-height: none !important;
+    overflow: visible !important;
+    border: none !important;
+  }
+
+  /* Cabeçalho REPETE em toda página — sem isso, da segunda folha em diante ninguém sabe qual
+     coluna é qual. E `sticky` não faz sentido em papel. */
+  body.imprimindo-listagem thead {
+    display: table-header-group !important;
+  }
+  body.imprimindo-listagem [data-print-area] th {
+    position: static !important;
+    border-bottom: 1px solid #333 !important;
+  }
+  body.imprimindo-listagem [data-print-area] tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  body.imprimindo-listagem [data-print-area] td {
+    border-top: 1px solid #ddd !important;
+  }
+
+  /* "Acessar" é um botão: no papel é um retângulo sem função. */
+  body.imprimindo-listagem [data-coluna-acao] {
+    display: none !important;
+  }
+
+  /* O cabeçalho do papel (competência, data, total, filtros) só existe na impressão. */
+  body.imprimindo-listagem [data-print-only] {
+    display: block !important;
+    margin-bottom: 10px;
+  }
+}

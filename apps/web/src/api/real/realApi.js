@@ -1216,6 +1216,17 @@ export function createRealApi() {
     async listNotasDownloads() {
       return request(`/firm/notas-download`);
     },
+    // CONSULTA de notas em lote — captura no ADN/SEFAZ. ⚠ Não confundir com o download acima, que
+    // só zipa XML já capturado e conclui "com sucesso" mesmo quando não há nada no banco.
+    async createNotasCaptura(payload) {
+      return request(`/firm/notas-captura`, { method: "POST", body: JSON.stringify(payload || {}) });
+    },
+    async listNotasCapturas() {
+      return request(`/firm/notas-captura`);
+    },
+    async getNotasCaptura(jobId) {
+      return request(`/firm/notas-captura/${jobId}`);
+    },
     // C9: contagem dos processos em segundo plano (downloads de notas / situações fiscais).
     async getJobsAtivos() {
       return request(`/firm/jobs/ativos`);

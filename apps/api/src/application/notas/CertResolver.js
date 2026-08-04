@@ -15,6 +15,10 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { readStoredCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
 import { auditCertAccess } from "../security/CertAccessAudit.js";
 import { decryptSecret } from "../../utils/crypto.js";
+// Mesmo inspetor que a rota de UPLOAD usa. Duas heurísticas para ler o CNPJ do certificado
+// divergiriam, e aí o arquivo passaria numa porta e seria recusado na outra.
+import { inspectPfx } from "../security/inspectPfx.js";
+import { log } from "../../config.js";
 
 export const SERVICOS = Object.freeze({
   NFSE: "NFSE",
@@ -43,7 +47,7 @@ async function findActiveProcuracao({ portalClientId, servico }) {
 async function loadCompanyCert(portalClientId) {
   const portal = await prisma.portalClient.findUnique({
     where: { id: portalClientId },
-    select: { companyId: true },
+    select: { companyId: true, cnpj: true },
   });
   if (!portal?.companyId) return null;
 
@@ -62,6 +66,41 @@ async function loadCompanyCert(portalClientId) {
       password = await decryptSecret(company.certPasswordEnc);
     } catch (err) {
       throw new CertResolutionError("CERT_PASSWORD_DECRYPT_FAILED", "Falha ao descriptografar a senha do certificado", { cause: err });
+    }
+  }
+
+  // ─── O certificado é MESMO desta empresa? ───────────────────────────────────────────────────
+  //
+  // Regra do dono: *"um A1 de outro CNPJ nunca deve ser usado em outra empresa"*. O upload já
+  // recusa arquivo de CNPJ diferente (`inspectPfx` + `cert_cnpj_mismatch` na rota), mas essa
+  // validação é RECENTE — todo certificado subido antes dela nunca passou por conferência nenhuma.
+  //
+  // Por isso a checagem também acontece na LEITURA, que é por onde todo consumidor passa (ADN,
+  // SEFAZ, e o que vier depois). Uma guarda que mora só no upload protege o futuro e deixa o
+  // passado como está; esta pega os dois.
+  //
+  // Mesma regra do upload (14 dígitos exatos), de propósito: duas definições de "o certificado é
+  // desta empresa" acabariam divergindo, e aí o arquivo passaria numa porta e seria recusado na
+  // outra.
+  //
+  // ⚠ Certificado cujo CNPJ não dá para ler (e-CPF, subject fora do padrão ICP-Brasil) NÃO é
+  // bloqueado: ausência de dado não é prova de que o certificado é alheio, e recusar por falta de
+  // informação derrubaria empresa legítima. Fica o aviso no log, e a guarda de ingestão do ADN
+  // continua sendo o segundo cinto.
+  const portalCnpj = String(portal.cnpj || "").replace(/\D+/g, "");
+  if (portalCnpj) {
+    let certCnpj = null;
+    try {
+      certCnpj = inspectPfx(pfxBuffer, password || "").cnpj;
+    } catch (err) {
+      log.warn({ portalClientId, code: err?.code }, "[CertResolver] não foi possível inspecionar o PFX da empresa");
+    }
+    if (certCnpj && certCnpj !== portalCnpj) {
+      throw new CertResolutionError("CERT_CNPJ_MISMATCH",
+        `O certificado cadastrado pertence ao CNPJ ${certCnpj}, mas esta empresa é ${portalCnpj}. `
+        + "Um A1 de outro CNPJ não pode ser usado por esta empresa — suba o certificado correto em "
+        + "Editar Cadastro → Certificado A1.",
+        { portalClientId, certCnpj, portalCnpj });
     }
   }
 

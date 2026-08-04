@@ -15,8 +15,12 @@ import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { getComplianceTags } from "./renderCompanyCard";
 import { GuiaChip, todasConcluidas } from "./renderGuiaChip";
-import { estadoDominante, pesoUrgencia } from "../lib/estadoDominante";
+import {
+  estadoDominante, pesoUrgencia, situacaoFiscalDaEmpresa,
+  empresaSemObrigacoes, TEXTO_ZERADA, TITULO_ZERADA,
+} from "../lib/estadoDominante";
 import { rotuloRegime } from "../../../../lib/vocabulario";
+import { estadoCertificado } from "../lib/certificado";
 
 const CELULA = { padding: "8px 10px", borderTop: "1px solid var(--border)", verticalAlign: "middle" };
 const CABECALHO = {
@@ -37,12 +41,13 @@ function corRegime(regime) {
 /** Configuração da empresa (A1, SERPRO, parc, folha) — sai da linha para não competir com estado. */
 function PopoverConfig({ company, onFechar }) {
   const ref = useRef(null);
-  const legacy = company?.legacyCompany || null;
-  const temCert = Boolean(legacy?.certStorageKey);
-  const certExpira = legacy?.certExpiresAt ? new Date(legacy.certExpiresAt) : null;
-  const certVencido = temCert && certExpira && certExpira.getTime() < Date.now();
+  const cert = estadoCertificado(company);
   const linhas = [
-    ["Certificado A1", !temCert ? "não cadastrado" : certVencido ? `vencido em ${certExpira.toLocaleDateString("pt-BR")}` : "ativo"],
+    ["Certificado A1", cert.chave === "ausente"
+      ? "não cadastrado"
+      : cert.chave === "vencido"
+        ? `vencido em ${cert.expiraEm.toLocaleDateString("pt-BR")}`
+        : cert.expiraEm ? `ativo até ${cert.expiraEm.toLocaleDateString("pt-BR")}` : "ativo"],
     ["SERPRO", company?.serproStatus?.eligible ? "apta" : "não apta — confira procuração e certificado"],
     ["Folha", company?.temFolha ? "tem empregado registrado" : "sem folha"],
     ["Parcelamento", (company?.temParcelamento || company?.fiscalSituacao === "EM_PARCELAMENTO") ? "ativo" : "não"],
@@ -77,6 +82,9 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
   const fechada = estado.chave === "fechada";
   const tags = getComplianceTags(company.guideCompliance);
   const concluidas = todasConcluidas(tags);
+  const zerada = empresaSemObrigacoes(company);
+  const fiscal = situacaoFiscalDaEmpresa(company);
+  const cert = estadoCertificado(company);
   const regime = company?.legacyCompany?.regimeTributario || null;
   const notasTotal = Number(company?.notasEmitidas?.total || 0);
 
@@ -101,26 +109,41 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
   }
 
   return (
+    /* ⚠ A LINHA NÃO NAVEGA. Clicar em qualquer ponto abria a empresa, e com chips, popovers e
+       botão de enviar e-mail na mesma linha isso virava navegação por acidente. Só o botão
+       "Acessar" abre — no mouse e no teclado. As setas ↑↓ continuam movendo o foco entre linhas,
+       porque isso é leitura, não ação. */
     <tr
       tabIndex={0}
       data-linha-empresa={company.companyId}
-      onClick={() => onOpenCompany?.(company.companyId)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") { e.preventDefault(); onOpenCompany?.(company.companyId); }
-      }}
-      style={{ cursor: "pointer", opacity: fechada ? 0.55 : 1, outlineOffset: -2 }}
+      style={{ opacity: fechada ? 0.55 : 1, outlineOffset: -2 }}
       onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
       <td style={{ ...CELULA, position: "relative" }}>
-        <span
-          role="button"
-          tabIndex={-1}
-          onClick={(e) => { e.stopPropagation(); setConfig((v) => !v); }}
-          title="Ver certificado, SERPRO, folha e e-mail"
-          style={{ display: "block", fontSize: "0.86rem", fontWeight: 600, color: "var(--text)", lineHeight: 1.25 }}
-        >
-          {nomeRender}
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span
+            role="button"
+            tabIndex={-1}
+            onClick={() => setConfig((v) => !v)}
+            title="Ver certificado, SERPRO, folha e e-mail"
+            style={{ fontSize: "0.86rem", fontWeight: 600, color: "var(--text)", lineHeight: 1.25, cursor: "pointer" }}
+          >
+            {nomeRender}
+          </span>
+          {/* Presente = silêncio. Só a falta aparece — selo que nunca varia não distingue ninguém.
+              Cinza: sem A1 não se captura NFS-e, mas não trava o fechamento do mês. */}
+          {!cert.ativo && (
+            <span
+              title={cert.titulo}
+              style={{
+                fontSize: "0.64rem", fontWeight: 700, padding: "0 6px", borderRadius: 999,
+                background: "var(--state-neutral-surface)", color: cert.cor, whiteSpace: "nowrap",
+              }}
+            >
+              {cert.rotulo}
+            </span>
+          )}
         </span>
         <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-muted)", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
           {company.cnpj || "—"}
@@ -150,11 +173,30 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
         >
           <span aria-hidden="true">{estado.icone}</span>{estado.rotulo}
         </span>
+        {/* Segunda linha: a situação fiscal que o chip dominante não disse. Discreta de propósito —
+            informa sem competir com o que exige ação. `Fiscal não consultada` aparece aqui como
+            estado próprio: nunca pode ser confundido com "sem pendência". */}
+        {fiscal && (
+          <span
+            title={fiscal.em
+              ? `Situação fiscal (SITFIS) consultada em ${new Date(fiscal.em).toLocaleDateString("pt-BR")}`
+              : "Situação fiscal (SITFIS) nunca consultada para esta empresa"}
+            style={{ display: "block", marginTop: 2, fontSize: "0.68rem", color: fiscal.cor, whiteSpace: "nowrap" }}
+          >
+            {fiscal.rotulo}
+          </span>
+        )}
       </td>
 
-      <td style={{ ...CELULA }} onClick={(e) => e.stopPropagation()}>
+      <td style={{ ...CELULA }}>
         <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {concluidas ? (
+          {zerada ? (
+            /* Empresa zerada não tem guia. Dizer isso é diferente de não mostrar nada: a coluna
+               vazia significaria "não sabemos", e aqui sabemos. */
+            <span style={{ fontSize: "0.72rem", color: "var(--state-neutral)" }} title={TITULO_ZERADA}>
+              ◌ {TEXTO_ZERADA}
+            </span>
+          ) : concluidas ? (
             <span
               style={{ fontSize: "0.74rem", fontWeight: 700, color: "var(--state-ok)" }}
               title={tags.map((t) => `${t.label}: ${t.state === "vazio" ? "sem movimento" : "enviada"}`).join(" · ")}
@@ -162,13 +204,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
               ✓ Guias concluídas
             </span>
           ) : tags.length ? tags.map((tag) => (
-            tag.accent ? (
-              <span key={tag.label} style={{ fontSize: "0.7rem", fontWeight: 700, color: "var(--state-warn)" }} title={`${tag.label} — parcelamento ativo`}>
-                {tag.label}
-              </span>
-            ) : (
-              <GuiaChip key={tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />
-            )
+            <GuiaChip key={tag.label} tag={tag} empresa={company} competencia={competencia} acoes={acoesGuia || {}} />
           )) : (
             <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>—</span>
           )}
@@ -179,7 +215,7 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
         {fmtMoeda(notasTotal)}
       </td>
 
-      <td style={{ ...CELULA, textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+      <td data-coluna-acao style={{ ...CELULA, textAlign: "right" }}>
         <Button type="button" onClick={() => onOpenCompany?.(company.companyId)} style={{ minHeight: 28, padding: "4px 12px", fontSize: "0.78rem" }}>
           Acessar
         </Button>
@@ -188,10 +224,15 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
   );
 }
 
-export function CompaniesTable({ companies, travas, competencia, onOpenCompany, acoesGuia, busca }) {
+export function CompaniesTable({ companies, travas, competencia, onOpenCompany, acoesGuia, busca, imprimindo }) {
   const [ordem, setOrdem] = useState({ campo: "urgencia", asc: true });
   const [mostrarFechadas, setMostrarFechadas] = useState(false);
   const corpoRef = useRef(null);
+
+  // ⚠ NA IMPRESSÃO AS FECHADAS SAEM SEMPRE. Elas ficam colapsadas na tela de propósito (estão fora
+  // do fluxo de trabalho), mas imprimir assim entregaria uma lista INCOMPLETA sem avisar ninguém —
+  // e uma folha que omite empresas em silêncio é pior que folha nenhuma.
+  const fechadasVisiveis = mostrarFechadas || Boolean(imprimindo);
 
   const { abertas, fechadas } = useMemo(() => {
     const trava = (c) => travas?.get?.(c.companyId);
@@ -246,7 +287,7 @@ export function CompaniesTable({ companies, travas, competencia, onOpenCompany, 
   );
 
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "auto", maxHeight: "calc(100vh - 320px)" }}>
+    <div data-print-tabela style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "auto", maxHeight: "calc(100vh - 320px)" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }} onKeyDown={aoTeclar}>
         <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
           Empresas da carteira na competência {competencia}, com estado do fechamento e guias do mês.
@@ -258,7 +299,7 @@ export function CompaniesTable({ companies, travas, competencia, onOpenCompany, 
             <Cabecalho campo="status">Status</Cabecalho>
             <Cabecalho>Guias</Cabecalho>
             <Cabecalho campo="notas" alinhar="right">Notas</Cabecalho>
-            <Cabecalho alinhar="right">Ação</Cabecalho>
+            <th scope="col" data-coluna-acao style={{ ...CABECALHO, textAlign: "right" }}>Ação</th>
           </tr>
         </thead>
         <tbody ref={corpoRef}>
@@ -277,19 +318,19 @@ export function CompaniesTable({ companies, travas, competencia, onOpenCompany, 
                 <button
                   type="button"
                   onClick={() => setMostrarFechadas((v) => !v)}
-                  aria-expanded={mostrarFechadas}
+                  aria-expanded={fechadasVisiveis}
                   style={{
                     width: "100%", textAlign: "left", padding: "8px 10px", background: "var(--bg-subtle)",
                     border: "none", color: "var(--state-closed)", font: "inherit", fontSize: "0.76rem",
                     fontWeight: 700, cursor: "pointer",
                   }}
                 >
-                  {mostrarFechadas ? "▾" : "▸"} Fechadas ({fechadas.length})
+                  {fechadasVisiveis ? "▾" : "▸"} Fechadas ({fechadas.length})
                 </button>
               </td>
             </tr>
           )}
-          {mostrarFechadas && fechadas.map((c) => (
+          {fechadasVisiveis && fechadas.map((c) => (
             <Linha
               key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}

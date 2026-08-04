@@ -1883,6 +1883,62 @@ model SitfisDownloadJob {
   @@map("sitfis_download_jobs")
 }
 
+// Consulta de NOTAS em lote — captura de verdade (ADN/SEFAZ), não empacotamento.
+//
+// ⚠ NÃO CONFUNDIR COM `NotasDownloadJob`. Aquele lê `PortalInvoice.xmlRaw` que JÁ está no banco e
+// zipa; se a captura nunca rodou, ele conclui com sucesso e zero notas — foi exatamente o que
+// escondeu a rotina automática quebrada. Este aqui CHAMA o ADN/SEFAZ e traz nota nova.
+//
+// O item por empresa é a razão de existir do modelo. O worker automático descarta empresa sem
+// certificado dentro de um `filter`, sem deixar rastro: quem olha o resultado vê "10 empresas
+// processadas" e não sabe que 6 nem foram tentadas. Aqui TODA empresa selecionada vira uma linha,
+// inclusive — principalmente — a que foi pulada, com o motivo escrito.
+model NotasCapturaJob {
+  id            String   @id @default(uuid())
+  status        String   @default("processando") // processando | concluido | erro
+  alvos         Json // ["NFSE"] | ["NFE"] | ["NFSE","NFE"]
+  companyIds    Json // string[] de portalClientId
+  totalEmpresas Int
+  processadas   Int      @default(0) // empresas concluídas (capturadas OU puladas)
+  totalNotas    Int      @default(0) // documentos novos gravados
+  erroMensagem  String?
+  triggeredBy   String? // userId
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  itens NotasCapturaItem[]
+
+  @@index([status, createdAt])
+  @@map("notas_captura_jobs")
+}
+
+model NotasCapturaItem {
+  id             String   @id @default(uuid())
+  jobId          String
+  portalClientId String
+  razao          String?
+  cnpj           String?
+  alvo           String // NFSE | NFE
+  // capturou (trouxe documento) | nada_novo | pulada (pré-condição) | aguardando (janela/backoff) | erro
+  status         String
+  motivo         String? // texto pronto para a tela: "sem certificado A1", "faltam 42 min"…
+  totalDocs      Int      @default(0)
+  novos          Int      @default(0)
+  // Documentos que o ADN devolveu e a guarda de CNPJ recusou. Precisa de coluna PRÓPRIA: é a única
+  // forma de uma empresa "ficar sem notas mesmo tendo emitido" em silêncio — o documento chega,
+  // entra em `totalDocs` e é descartado. Sem este número, recusa indevida (CNPJ de filial, CPF,
+  // cadastro errado) fica idêntica a "não havia nota".
+  recusadas      Int      @default(0)
+  cursorAntes    String?
+  cursorDepois   String?
+  createdAt      DateTime @default(now())
+
+  job NotasCapturaJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("notas_captura_items")
+}
+
 // ── Ledger append-only de documentos fiscais (Robustez NFS-e/ADN — Fase 1) ──────────────
 // Fundação do modelo por FLUXO DE EVENTOS (não snapshot por data). Documentos e eventos são
 // IMUTÁVEIS (append-only): correção = novo registro, nunca UPDATE. O status é PROJEÇÃO

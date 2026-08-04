@@ -15,11 +15,6 @@
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
-import { readStoredCompanyPfx } from "../../../infrastructure/storage/CertStorage.js";
-import { decryptSecret, decryptBytes } from "../../../utils/crypto.js";
-import { resolveCertificatePath } from "../../../infrastructure/storage/CertStorage.js";
-import { getResolvedSerproCredentials } from "../../fiscal/serpro/SerproRuntimeSettings.js";
-import fs from "node:fs";
 import { fetchDistNSU, DfeClientError } from "./DfeClient.js";
 import { parseDistDFeResponse, parseDocZip } from "./DfeParser.js";
 import { ESTADOS } from "../CompetenciaStateMachine.js";
@@ -35,71 +30,47 @@ export class DfeSyncError extends Error {
   }
 }
 
-/**
- * Carrega o cert do escritório (mesmo usado pelo SERPRO via aba Configurações).
- * Reusa SerproRuntimeSettings.getResolvedSerproCredentials — não duplica config.
- *
- * Pré-requisito operacional: a empresa precisa ter PROCURAÇÃO e-CAC outorgando
- * NFe/DFe ao CNPJ do escritório (registrada presencialmente no e-CAC).
- * A SEFAZ valida o vínculo "procurador (cert) → outorgante (CNPJ no <CNPJ> do SOAP)".
- */
-async function loadOfficeCert() {
-  const creds = await getResolvedSerproCredentials().catch((err) => {
-    throw new DfeSyncError("OFFICE_CERT_NOT_CONFIGURED",
-      `Cert do escritório não está configurado em Configurações da Firma → SERPRO. (${err?.message || err})`);
-  });
-
-  if (!creds?.certificate?.hasCertificate || !creds?.certificate?.storageKey) {
-    throw new DfeSyncError("OFFICE_CERT_NOT_CONFIGURED",
-      "Cert do escritório não está configurado em Configurações da Firma → SERPRO.");
-  }
-  if (!creds.certificate.passwordConfigured) {
-    throw new DfeSyncError("OFFICE_CERT_PASSWORD_MISSING",
-      "Senha do cert do escritório não está configurada.");
-  }
-
-  // Caso 1: PFX salvo direto no banco (base64). Q30/Q35: decryptBytes decifra (local ou KMS; no-op se legado).
-  if (creds.certificate.pfxBase64) {
-    return {
-      pfxBuffer: await decryptBytes(Buffer.from(creds.certificate.pfxBase64, "base64")),
-      password: creds.certificate.password,
-    };
-  }
-
-  // Caso 2: PFX salvo em disco (storageKey)
-  const certPath = resolveCertificatePath(creds.certificate.storageKey);
-  if (!certPath || !fs.existsSync(certPath)) {
-    throw new DfeSyncError("OFFICE_CERT_FILE_NOT_FOUND",
-      `Arquivo do cert do escritório não encontrado em ${certPath || "(path nulo)"}.`);
-  }
-  return { pfxBuffer: await decryptBytes(fs.readFileSync(certPath)), password: creds.certificate.password };
-}
+// ⚠ `loadOfficeCert` foi REMOVIDO daqui, junto com o fallback que o usava.
+//
+// Ele carregava o certificado do ESCRITÓRIO para consultar notas de empresa CLIENTE — exatamente o
+// que o dono proibiu: *"o A1 do escritório nunca deve consultar notas"*. A configuração do cert do
+// escritório continua existindo em `SerproRuntimeSettings`, e continua certa para o SERPRO (Integra
+// Contador), que É um serviço prestado pelo escritório com o certificado dele. Notas, não: ali quem
+// fala é o contribuinte.
 
 /**
- * Q12.B+++ FIX: SEFAZ exige que o CNPJ-base do cert apresentado bata com o
- * CNPJ consultado (cStat 593 rejeita). Cert do escritório NUNCA vai funcionar
- * pra empresa cliente (CNPJs-base diferentes). Por isso:
+ * A1 DA PRÓPRIA EMPRESA — e nada mais.
  *
- *   1) A1 da própria empresa (regra SEFAZ — preferido)
- *   2) Cert escritório (fallback útil SÓ se empresa for o próprio escritório)
- *   3) Erro NO_COMPANY_CERT com instrução clara
+ * ⚠ AQUI EXISTIA UM FALLBACK PARA O CERT DO ESCRITÓRIO, e ele foi REMOVIDO por decisão do dono:
+ * *"o A1 do escritório nunca deve consultar notas, e um A1 de outro CNPJ nunca deve ser usado em
+ * outra empresa"*.
+ *
+ * O mesmo fallback já tinha causado estrago do lado do ADN: lá o escritório É cadastrado no
+ * gov.br/nfse, então a consulta voltava com as notas DELE, gravadas debaixo da empresa cliente. Na
+ * SEFAZ o desfecho é diferente — cStat 593 (`CERT_CNPJ_MISMATCH`) rejeita porque o CNPJ-base do
+ * cert não bate — mas o defeito é o mesmo: o sistema tenta consultar em nome de quem não é o
+ * contribuinte. Manter o caminho aberto só produzia erro tardio e confuso onde cabia uma recusa
+ * clara e imediata.
+ *
+ * Procuração e-CAC também NÃO reabre isso para notas: ela permite ao escritório agir no e-CAC, não
+ * torna o certificado dele o certificado do cliente perante o ADN.
  */
 async function resolveCertWithFallback(portalClientId) {
-  // 1) A1 da empresa — único caminho válido pra SEFAZ DFe na maioria dos casos
   const r = await resolveCertForCompany({ portalClientId, servico: SERVICOS.DFE })
-    .catch(() => ({ source: "none" }));
+    .catch((err) => {
+      // Mismatch é diferente de ausência: o certificado EXISTE, mas é de outro CNPJ. Propaga com o
+      // código próprio para a tela dizer o que fazer (trocar o arquivo, não "cadastrar um").
+      if (err?.code === "CERT_CNPJ_MISMATCH") throw new DfeSyncError("CERT_CNPJ_MISMATCH", err.message);
+      return { source: "none" };
+    });
   if (r.source === "company_a1") {
     return { pfxBuffer: r.pfxBuffer, password: r.password, via: "company_a1" };
   }
 
-  // 2) Fallback escritório (só vai funcionar se o escritório for a própria empresa)
-  try {
-    const office = await loadOfficeCert();
-    return { pfxBuffer: office.pfxBuffer, password: office.password, via: "office_cert_fallback" };
-  } catch {
-    throw new DfeSyncError("NO_COMPANY_CERT",
-      "Esta empresa não tem certificado A1 cadastrado. Vá em Editar Cadastro → 🔐 Certificado A1 e faça upload do PFX da empresa (a SEFAZ exige cert do próprio CNPJ — cert do escritório não funciona).");
-  }
+  throw new DfeSyncError("NO_COMPANY_CERT",
+    "Esta empresa não tem certificado A1 próprio cadastrado. A SEFAZ exige o certificado do próprio "
+    + "CNPJ (cStat 593) — o do escritório não vale e não é usado. Vá em Editar Cadastro → 🔐 "
+    + "Certificado A1 e faça upload do PFX da empresa.");
 }
 
 function deriveUF(portalClient) {

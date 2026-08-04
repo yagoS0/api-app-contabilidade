@@ -7,6 +7,7 @@ import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard"
 import { AnnualGrid } from "../components/renderAnnualGrid";
 import { CompaniesTable } from "../components/renderCompaniesTable";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
+import { estadoCertificado } from "../lib/certificado";
 
 // Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
 function SettingsMenu({ items }) {
@@ -138,12 +139,37 @@ export function CompaniesHomePage({
     setModoVisao(modo);
     try { localStorage.setItem("dashboard:modoVisao", modo); } catch { /* idem */ }
   }
+
+  // ─── IMPRESSÃO ───────────────────────────────────────────────────────────────────────────────
+  // Duas coisas precisam acontecer ANTES do diálogo do navegador abrir: a visão vira tabela (cards
+  // em papel não servem) e as fechadas se expandem. Por isso não dá para chamar `window.print()`
+  // no clique — o React ainda não renderizou. O clique só liga a flag; o efeito imprime depois do
+  // render, que é o único momento em que o DOM já está do jeito que vai para o papel.
+  const [imprimindo, setImprimindo] = useState(false);
+  useEffect(() => {
+    if (!imprimindo) return undefined;
+    document.body.classList.add("imprimindo-listagem");
+    const limpar = () => setImprimindo(false);
+    window.addEventListener("afterprint", limpar);
+    // Um quadro de folga para o layout assentar antes do snapshot da impressão.
+    const t = window.setTimeout(() => window.print(), 60);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("afterprint", limpar);
+      document.body.classList.remove("imprimindo-listagem");
+    };
+  }, [imprimindo]);
+
+  function imprimirListagem() {
+    if (modoVisao !== "tabela") trocarVisao("tabela");
+    setImprimindo(true);
+  }
   const [search, setSearch] = useState("");
   const [documentFilter, setDocumentFilter] = useState("pending");
   const [serproFilter, setSerproFilter] = useState("all");
   const [emailFilter, setEmailFilter] = useState("all"); // all | sent | notSent (Q16)
   const [apuracaoFilter, setApuracaoFilter] = useState("all"); // all | apurados | naoApurados
-  const [certFilter, setCertFilter] = useState("all"); // all | comCert | semCert
+  const [certFilter, setCertFilter] = useState("all"); // all | comCert | semCert | vencido
   // Situação fiscal (SITFIS) e regime — combinam com os demais filtros.
   const [fiscalFilter, setFiscalFilter] = useState("all"); // all | comPendencia | semPendencia | emParcelamento
   const [regimeFilter, setRegimeFilter] = useState("all"); // all | SIMPLES | LUCRO_PRESUMIDO
@@ -307,6 +333,30 @@ export function CompaniesHomePage({
     regimeFilter !== "all",
     fechamentoFilter !== "all",
   ].filter(Boolean).length;
+  // ⚠ Os filtros ativos vão IMPRESSOS no papel. Uma folha filtrada que não diz que está filtrada
+  // mente por omissão — quem a receber vai contar as empresas e concluir que a carteira é aquela.
+  const ROTULO_FILTRO = {
+    documentFilter: { rotulo: "Documentos", valores: { pending: null, all: "todos", withDocs: "com documento", withoutDocs: "sem documento" } },
+    serproFilter: { rotulo: "SERPRO", valores: { aptas: "aptas", naoAptas: "não aptas" } },
+    emailFilter: { rotulo: "E-mail do mês", valores: { sent: "enviado", notSent: "não enviado" } },
+    apuracaoFilter: { rotulo: "Apuração", valores: { apurados: "apurados", naoApurados: "não apurados" } },
+    certFilter: { rotulo: "Certificado", valores: { comCert: "com certificado válido", semCert: "sem certificado", vencido: "certificado vencido" } },
+    fiscalFilter: { rotulo: "Situação fiscal", valores: { comPendencia: "com pendência", semPendencia: "sem pendência", emParcelamento: "em parcelamento" } },
+    regimeFilter: { rotulo: "Regime" },
+    fechamentoFilter: { rotulo: "Fechamento", valores: { fechadas: "fechadas", abertas: "abertas" } },
+  };
+  const valoresFiltro = {
+    documentFilter, serproFilter, emailFilter, apuracaoFilter,
+    certFilter, fiscalFilter, regimeFilter, fechamentoFilter,
+  };
+  const descricaoFiltros = Object.entries(valoresFiltro)
+    .filter(([chave, valor]) => valor !== "all" && !(chave === "documentFilter" && valor === "pending"))
+    .map(([chave, valor]) => {
+      const meta = ROTULO_FILTRO[chave] || {};
+      return `${meta.rotulo || chave}: ${meta.valores?.[valor] || valor}`;
+    })
+    .join(" · ");
+
   function limparFiltros() {
     setDocumentFilter("pending");
     setSerproFilter("all");
@@ -346,9 +396,13 @@ export function CompaniesHomePage({
       if (emailFilter === "sent" && !company?.monthEmailSent) return false;
       if (apuracaoFilter === "apurados" && !company?.apuracao?.apurada) return false;
       if (apuracaoFilter === "naoApurados" && company?.apuracao?.apurada) return false;
-      const temCert = Boolean(company?.legacyCompany?.certStorageKey);
-      if (certFilter === "comCert" && !temCert) return false;
-      if (certFilter === "semCert" && temCert) return false;
+      // ⚠ "Com certificado" agora quer dizer certificado VÁLIDO. Antes olhava só a presença, e
+      // empresa com A1 vencido — justamente a que não captura NFS-e — caía no grupo dos que estão
+      // em dia. A leitura é a mesma da pílula na linha (`estadoCertificado`).
+      const cert = estadoCertificado(company);
+      if (certFilter === "comCert" && !cert.ativo) return false;
+      if (certFilter === "semCert" && cert.chave !== "ausente") return false;
+      if (certFilter === "vencido" && cert.chave !== "vencido") return false;
       // Situação fiscal (SITFIS). "Sem pendência" = REGULAR de verdade: empresa nunca consultada
       // (fiscalSituacao null) NÃO entra — não afirmamos que está limpa sem ter consultado.
       const fiscal = String(company?.fiscalSituacao || "");
@@ -576,7 +630,7 @@ export function CompaniesHomePage({
               Obrigações SAIU daqui: cadastrar obrigação é configuração do escritório, não uma
               forma de olhar a carteira; foi para o menu Configurações. O que se ENTREGA continua
               visível aqui, dentro do calendário. */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center" }}>
             {[["tabela", "Tabela"], ["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"]].map(([key, label]) => (
               <button
                 key={key}
@@ -592,6 +646,22 @@ export function CompaniesHomePage({
                 {label}
               </button>
             ))}
+            {/* Imprimir mora ao lado das visões porque É uma visão — a da carteira no papel. Ele
+                troca para Tabela sozinho e expande as fechadas: imprimir a lista pela metade, em
+                silêncio, seria pior que não ter o botão. */}
+            <button
+              type="button"
+              onClick={imprimirListagem}
+              disabled={imprimindo}
+              title="Imprimir a listagem (ou salvar em PDF). Sai em tabela, com as fechadas incluídas."
+              style={{
+                marginLeft: "auto", padding: "5px 14px", borderRadius: 999,
+                cursor: imprimindo ? "wait" : "pointer", fontSize: "0.82rem", fontWeight: 600,
+                border: "1px solid var(--border)", background: "transparent", color: "var(--state-neutral)",
+              }}
+            >
+              🖨 {imprimindo ? "Preparando…" : "Imprimir"}
+            </button>
           </div>
 
           {/* F2 — o que trava a carteira nesta competência.
@@ -797,8 +867,9 @@ export function CompaniesHomePage({
                     Certificado
                     <select value={certFilter} onChange={(event) => setCertFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
                       <option value="all">Todas</option>
-                      <option value="comCert">Com certificado</option>
+                      <option value="comCert">Com certificado válido</option>
                       <option value="semCert">Sem certificado</option>
+                      <option value="vencido">Certificado vencido</option>
                     </select>
                   </label>
 
@@ -847,14 +918,30 @@ export function CompaniesHomePage({
           ) : modoVisao === "ano" ? (
             <AnnualGrid api={api} onOpenCompany={onOpenCompany} />
           ) : modoVisao === "tabela" ? (
-            <CompaniesTable
-              companies={filteredCompanies}
-              travas={travas}
-              competencia={dashboardCompetencia}
-              onOpenCompany={onOpenCompany}
-              acoesGuia={acoesGuia}
-              busca={search}
-            />
+            <div data-print-area>
+              {/* Só existe no papel (`display:none` na tela, ligado pelo @media print). É o que
+                  permite conferir a folha meses depois: qual competência, quando foi impressa,
+                  quantas empresas e — o mais importante — se estava filtrada. */}
+              <div data-print-only style={{ display: "none" }}>
+                <h2 style={{ margin: 0, fontSize: "1.05rem" }}>
+                  Empresas · {rotuloCompetencia(dashboardCompetencia)}
+                </h2>
+                <p style={{ margin: "2px 0 0", fontSize: "0.78rem" }}>
+                  {filteredCompanies.length} empresa(s) · impresso em {new Date().toLocaleString("pt-BR")}
+                  {descricaoFiltros ? ` · Filtros — ${descricaoFiltros}` : " · sem filtros"}
+                  {search.trim() ? ` · Busca: "${search.trim()}"` : ""}
+                </p>
+              </div>
+              <CompaniesTable
+                companies={filteredCompanies}
+                travas={travas}
+                competencia={dashboardCompetencia}
+                onOpenCompany={onOpenCompany}
+                acoesGuia={acoesGuia}
+                busca={search}
+                imprimindo={imprimindo}
+              />
+            </div>
           ) : (
           <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
             {filteredCompanies.map((company) => (

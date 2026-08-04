@@ -125,6 +125,23 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
   // esconderia nota legítima, que é o erro oposto e igualmente caro.
   if (cnpjEmpresa && (cnpjPrestador || cnpjTomador)
       && cnpjPrestador !== cnpjEmpresa && cnpjTomador !== cnpjEmpresa) {
+    // ⚠ ESTA RECUSA PRECISA APARECER NO LOG, com os três CNPJs.
+    //
+    // A guarda está certa em princípio, mas ela é a ÚNICA coisa no fluxo capaz de fazer uma empresa
+    // "ficar sem notas mesmo tendo emitido" em silêncio — o documento é lido, contado em
+    // `totalDocs`, e descartado sem deixar registro. Do lado de fora isso é indistinguível de "não
+    // havia nota".
+    //
+    // E há dois desfechos opostos que só os CNPJs distinguem:
+    //   • prestador = CNPJ do ESCRITÓRIO  → recusa CORRETA (é a nota do escritório, não do cliente);
+    //   • prestador = a própria empresa com outro sufixo de filial, ou CPF onde o cadastro tem CNPJ,
+    //     ou CNPJ digitado errado no cadastro → recusa INDEVIDA, e a nota legítima some.
+    //
+    // Sem esta linha não dá para saber qual dos dois aconteceu sem reprocessar tudo.
+    log.warn(
+      { portalClientId, cnpjEmpresa, cnpjPrestador: cnpjPrestador || null, cnpjTomador: cnpjTomador || null, chaveAcesso, idNfse },
+      "[ADN] documento RECUSADO: nem prestador nem tomador é a empresa",
+    );
     return {
       status: "rejeitada_outro_cnpj",
       reason: `documento de ${cnpjPrestador || "?"} → ${cnpjTomador || "?"}, empresa é ${cnpjEmpresa}`,

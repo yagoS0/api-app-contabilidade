@@ -53,14 +53,28 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
     return { required, ok: false, state: "missing" };
   };
 
+  // ⚠ Uma empresa a cada três tem PARCELA no mês, e ela convive com o DAS em vez de substituí-lo.
+  // O mock precisa exercitar isso: enquanto a parcela satisfazia o nó do DAS, a tela mostrava a
+  // empresa em dia com um DAS que nunca existiu — e nenhum mock mostrava a diferença.
+  const temParcela = requeridos.das && indice % 3 === 0;
+  const parcDas = temParcela
+    ? {
+      required: true, ok: true, state: cenario === 2 ? "enviada" : "gerada",
+      guideId: `mock-parcela-${companyId}`,
+      emailStatus: cenario === 2 ? "SENT" : "PENDING",
+      emailSentAt: cenario === 2 ? new Date().toISOString() : null,
+      tipoParcelamento: "PARCSN", numeroParcelamento: "1234567",
+      numeroParcela: 3, quantidadeParcelas: 60,
+    }
+    : { required: false, ok: true, state: "na" };
+
   const nos = {
     das: no("das"), inss: no("inss"), irpj: no("irpj"),
-    csll: no("csll"), pisCofins: no("pisCofins"), iss: no("iss"),
+    csll: no("csll"), pisCofins: no("pisCofins"), iss: no("iss"), parcDas,
   };
   return {
     competencia,
     ...nos,
-    parcDas: { required: false, ok: true },
     expected: requeridos.inss ? "INSS" : requeridos.das ? "SIMPLES" : null,
     ok: Object.values(nos).every((n) => n.ok),
   };
@@ -75,6 +89,16 @@ function makeCompanies(count = 6) {
     // tela que os dois selos são independentes, em vez de sempre aparecerem juntos.
     const temFolha = i === 1 || i === 2;
     const regimeTributario = i === 1 ? "LUCRO_PRESUMIDO" : "SIMPLES";
+    // Certificado A1: a MAIORIA em dia, uma sem e uma vencida. O selo só aparece na exceção, então
+    // um mock onde nenhuma empresa tem cert faz a pílula aparecer em todas — e aí ela não distingue
+    // ninguém, que é exatamente o defeito que ela existe para evitar.
+    const semCert = i === 3;
+    const certVencido = i === 4;
+    const certExpiresAt = certVencido
+      ? new Date(Date.now() - 40 * 24 * 3600 * 1000).toISOString()
+      : new Date(Date.now() + 200 * 24 * 3600 * 1000).toISOString();
+    // Empresa zerada (sem movimento): a coluna de guias precisa dizer isso em vez de listar chips.
+    const empresaZerada = i === 5;
     return {
       companyId,
       razao: faker.company.name(),
@@ -83,8 +107,14 @@ function makeCompanies(count = 6) {
       guideNotificationEmail: ownerEmail,
       hasProlabore,
       temFolha,
+      empresaZerada,
       email: null,
-      legacyCompany: { regimeTributario, tipoTributario: regimeTributario },
+      legacyCompany: {
+        regimeTributario,
+        tipoTributario: regimeTributario,
+        certStorageKey: semCert ? null : `mock-cert-${companyId}`,
+        certExpiresAt: semCert ? null : certExpiresAt,
+      },
       // Recalculado a cada `listCompanies` (ver abaixo) — aqui é só o valor inicial da carga.
       guideCompliance: mockGuideComplianceRow({ companyId, indice: i, hasProlabore, regimeTributario }),
       // C6: paridade com o real — o card usa estes campos pro toggle guias⇄"Enviado",
@@ -330,6 +360,9 @@ let mockAnotacoes = [
   { id: "mock-nota-2", texto: "Sócio entrou em 04/2026 — conferir pró-labore.", importancia: "ALTA", fixada: false, createdAt: "2026-07-20T12:00:00.000Z" },
   { id: "mock-nota-3", texto: "Enviar balancete trimestral ao contador do grupo.", importancia: "MEDIA", fixada: false, createdAt: "2026-06-11T12:00:00.000Z" },
 ];
+// Consultas de notas em lote já disparadas nesta sessão — dá para sair da aba e voltar achando o
+// resultado, que é o comportamento que evita o contador disparar (e pagar) de novo.
+let mockCapturas = [];
 const mockGuideSettings = {
   pdfReaderConfigured: true,
 };
@@ -2023,7 +2056,17 @@ export function createMockApi() {
         if (regime === "SIMPLES") {
           if (captured >= 1) row.tiposGuias.DAS = { guideId: faker.string.uuid(), valor: 500 };
           if (captured >= 2) row.tiposGuias.INSS = { guideId: faker.string.uuid(), valor: 250 };
-          if (idx % 4 === 0) row.tiposGuias.PARC_DAS = { entryId: faker.string.uuid(), isParcelamento: true };
+          // A coluna PARC carrega DOIS conteúdos e o mock precisa dos dois: guia de parcela
+          // capturada (com PDF — ENVIÁVEL, entra em pendingGuideIds) e rastreio do parcelamento
+          // sem documento (só informa). Enquanto o mock só tinha o segundo, a regressão que fazia a
+          // parcela sumir do envio em lote não aparecia em lugar nenhum.
+          if (idx % 4 === 0) {
+            row.tiposGuias.PARC_DAS = { entryId: faker.string.uuid(), isParcelamento: true };
+          } else if (idx % 4 === 1) {
+            const parcelaId = faker.string.uuid();
+            row.tiposGuias.PARC_DAS = { guideId: parcelaId, valor: 320, emailStatus: "PENDING" };
+            row.pendingGuideIds.push(parcelaId);
+          }
           simples.push(row);
         } else {
           if (captured >= 1) row.tiposGuias.IRPJ = { guideId: faker.string.uuid(), valor: 800 };
@@ -2792,6 +2835,62 @@ export function createMockApi() {
       mockAnotacoes = mockAnotacoes.filter((n) => n.id !== noteId);
       return { ok: true, removida: { id: noteId } };
     },
+    // ─── CONSULTA DE NOTAS EM LOTE ──────────────────────────────────────────────────────────
+    // ⚠ Este mock NÃO pode ser "tudo deu certo". A tela existe para mostrar POR QUE uma empresa
+    // não foi consultada — se o mock só devolve sucesso, o único caminho que importa nunca é
+    // exercitado, e foi assim que a rotina quebrada passou meses sem ser vista.
+    // Um desfecho diferente por empresa, ciclando: capturou · nada novo · sem A1 · aguardando · erro.
+    async createNotasCaptura({ companyIds, alvos } = {}) {
+      await delay(200);
+      const ids = (companyIds || []).filter(Boolean);
+      const alvosOk = (alvos || ["NFSE"]).map((a) => String(a).toUpperCase());
+      const DESFECHOS = [
+        { status: "capturou", motivo: null, totalDocs: 12, novos: 12 },
+        { status: "nada_novo", motivo: null, totalDocs: 0, novos: 0 },
+        { status: "pulada", motivo: "sem certificado A1 da empresa", totalDocs: 0, novos: 0 },
+        { status: "aguardando", motivo: "consultada há 18 min — a SEFAZ só permite 1×/hora (faltam 42 min)", totalDocs: 0, novos: 0 },
+        { status: "erro", motivo: "ADN_REJEICAO: cursor NSU inválido para o contribuinte", totalDocs: 0, novos: 0 },
+        // O desfecho que era invisível: o ADN devolveu documento e a guarda de CNPJ descartou.
+        // Sem ele no mock, a tela que existe para expor esse caso nunca o mostra.
+        {
+          status: "recusado", totalDocs: 8, novos: 0, recusadas: 8,
+          motivo: "8 documento(s) recusado(s): nem prestador nem tomador é o CNPJ desta empresa. Confira o CNPJ do cadastro (matriz × filial, CPF) — ou são notas de outro contribuinte.",
+        },
+      ];
+      const itens = [];
+      ids.forEach((id, i) => {
+        const c = mockCompanies.find((x) => x.companyId === id) || {};
+        alvosOk.forEach((alvo, j) => {
+          const d = DESFECHOS[(i + j) % DESFECHOS.length];
+          itens.push({
+            portalClientId: id, razao: c.razao || "Empresa mock", cnpj: c.cnpj || null,
+            alvo, ...d,
+            cursorAntes: "1200", cursorDepois: d.status === "capturou" ? "1212" : "1200",
+          });
+        });
+      });
+      const job = {
+        jobId: `mock-captura-${Date.now()}`,
+        status: "concluido",
+        alvos: alvosOk,
+        totalEmpresas: ids.length,
+        processadas: ids.length,
+        totalNotas: itens.reduce((s, i) => s + i.totalDocs, 0),
+        erroMensagem: null,
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+        itens,
+      };
+      mockCapturas = [job, ...mockCapturas].slice(0, 10);
+      return { ok: true, job };
+    },
+    async listNotasCapturas() { await delay(60); return { ok: true, jobs: mockCapturas.map(({ itens, ...j }) => j) }; },
+    async getNotasCaptura(jobId) {
+      await delay(60);
+      const job = mockCapturas.find((j) => j.jobId === jobId);
+      return job ? { ok: true, job } : { ok: false, error: "job_not_found" };
+    },
+
     async listNotasDownloads() { await delay(60); return { ok: true, jobs: [] }; },
     async getNotasDownload(jobId) {
       await delay(60);

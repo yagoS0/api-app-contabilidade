@@ -19,6 +19,35 @@ export const GUIDE_STATUSES = Object.freeze([
   "ERROR",
 ]);
 
+/**
+ * A guia é uma PARCELA de parcelamento?
+ *
+ * ⚠ Existe porque o `tipo` não responde isso. A parcela do Simples é gravada com `tipo:"SIMPLES"`
+ * (`CaptureSerproParcelaService`), exatamente como o DAS do mês — o que separa as duas é o
+ * `parcelamentoId`, carimbado por `ParcelamentoV2Service`. Quem esquece disso mostra a parcela como
+ * se fosse o DAS da competência, e a empresa parece em dia com um DAS que nunca foi gerado (foi o
+ * que aconteceu na ERISANGELA, em DUAS telas ao mesmo tempo).
+ *
+ * Uma parcela de INSS parcelado também cai aqui — por isso o rótulo do destino é "Parcelamento",
+ * não "PARC DAS".
+ */
+export function isGuiaDeParcelamento(guide) {
+  return Boolean(guide?.parcelamentoId);
+}
+
+/**
+ * Coluna da matriz de guias (tela de envio em lote) para uma guia.
+ *
+ * Duas traduções, e as duas já foram esquecidas alguma vez:
+ * - `SIMPLES` é o `tipo` gravado; a coluna se chama `DAS`;
+ * - parcela vai para a coluna `PARC_DAS`, **antes** da tradução acima.
+ */
+export function colunaMatrizDaGuia(guide) {
+  if (isGuiaDeParcelamento(guide)) return "PARC_DAS";
+  const tipo = String(guide?.tipo || "").toUpperCase();
+  return tipo === "SIMPLES" ? "DAS" : tipo;
+}
+
 export function normalizeGuideType(value) {
   const normalized = String(value || "")
     .trim()

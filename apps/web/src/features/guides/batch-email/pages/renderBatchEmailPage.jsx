@@ -26,7 +26,13 @@ function getPreviousMonthCompetencia() {
 const COLUMNS_SIMPLES = [
   { key: "DAS",      label: "DAS" },
   { key: "INSS",     label: "INSS" },
-  { key: "PARC_DAS", label: "PARC", isInfoOnly: true },  // info-only: parcelamento não tem PDF próprio
+  // ⚠ A coluna PARC carrega DOIS conteúdos e só um deles é enviável:
+  //   • guia da parcela (SERPRO/V2) — tem PDF, tem e-mail, PRECISA entrar no envio;
+  //   • linha leve de rastreio do V1 (`isParcelamento`) — sem documento, só informa.
+  // Enquanto o "info-only" era da COLUNA, o segundo caso apagava o primeiro: empresa cuja única
+  // pendência do mês era a parcela sumia do filtro "só pendentes" e ninguém conseguia selecioná-la.
+  // Por isso a distinção passou para o VALOR da célula.
+  { key: "PARC_DAS", label: "PARC" },
 ];
 
 const COLUMNS_PRESUMIDO = [
@@ -42,12 +48,13 @@ const cellBaseStyle = {
   borderBottom: `1px solid ${PANEL.border}`, whiteSpace: "nowrap",
 };
 
-function GuideStatusCell({ value, column }) {
+function GuideStatusCell({ value }) {
   // Q16/Q17: 4 estados — ✗ ausente / "vazio" (amarelo) / "contendo guia" / "enviado".
   if (!value) {
     return <td style={{ ...cellBaseStyle, color: PANEL.danger }} title="Sem guia">✗</td>;
   }
-  if (column.isInfoOnly) {
+  // Rastreio do parcelamento sem guia capturada: informa, não anexa.
+  if (value.isParcelamento) {
     return <td style={{ ...cellBaseStyle, color: PANEL.warning }} title="Parcelamento ativo (sem PDF para anexar)">●</td>;
   }
   // Q17: marcador VAZIO = ausência confirmada pelo contador (não é guia enviável).
@@ -82,9 +89,9 @@ const rowKey = (row) => `${row.portalClientId}::${row.competencia}`;
 function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggleAll, onlyPending, showCompetencia }) {
   // Q16: só é "enviável" se tem guia NÃO enviada (SENT = display-only, não re-seleciona).
   const rowHasSendable = (row) => columns.some((c) => {
-    const cell = !c.isInfoOnly && row.tiposGuias?.[c.key];
-    // VAZIO não é enviável (sem PDF); SENT é display-only.
-    return cell && !cell.vazio && cell.emailStatus !== "SENT";
+    const cell = row.tiposGuias?.[c.key];
+    // VAZIO não é enviável (sem PDF); rastreio de parcelamento idem; SENT é display-only.
+    return cell && !cell.vazio && !cell.isParcelamento && cell.emailStatus !== "SENT";
   });
   const visibleRows = onlyPending ? rows.filter(rowHasSendable) : rows;
 
@@ -163,7 +170,7 @@ function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggle
                       <td style={{ ...cellBaseStyle, color: PANEL.text, fontWeight: 600 }}>{row.competencia || "—"}</td>
                     )}
                     {columns.map((col) => (
-                      <GuideStatusCell key={col.key} value={row.tiposGuias?.[col.key]} column={col} />
+                      <GuideStatusCell key={col.key} value={row.tiposGuias?.[col.key]} />
                     ))}
                   </tr>
                 );

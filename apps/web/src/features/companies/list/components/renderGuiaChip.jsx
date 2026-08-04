@@ -99,6 +99,10 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
 
   const meta = ESTADO[tag.state] || ESTADO.missing;
   const destinatario = empresa?.guideNotificationEmail || empresa?.ownerEmail || null;
+  // ⚠ Parcela de parcelamento NÃO aceita "marcar sem movimento": ausência de parcela não se declara
+  // — ou o acordo tem parcela no mês, ou não tem. Marcar vazio ali seria afirmar algo que o
+  // parcelamento já responde sozinho.
+  const ehParcela = tag.key === "parcDas";
 
   async function executar(fn) {
     if (ocupado) return;
@@ -141,6 +145,16 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
           <div style={{ fontWeight: 700, marginBottom: 2 }}>{tag.label} · {competencia}</div>
           <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>{meta.rotulo}</div>
 
+          {/* Qual parcelamento e qual parcela — sem isto o chip diria só "Parcelamento", e numa
+              empresa com mais de um acordo não dá para saber de qual se trata. */}
+          {ehParcela && (tag.tipoParcelamento || tag.numeroParcela) && (
+            <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
+              {tag.tipoParcelamento || "Parcelamento"}
+              {tag.numeroParcelamento ? ` nº ${tag.numeroParcelamento}` : ""}
+              {tag.numeroParcela ? ` · parcela ${tag.numeroParcela}${tag.quantidadeParcelas ? `/${tag.quantidadeParcelas}` : ""}` : ""}
+            </div>
+          )}
+
           {tag.state === "conflito" && (
             <div style={{ marginBottom: 8, color: "var(--state-danger)" }}>
               Marcada como sem movimento, mas a competência tem <strong>{fmtMoeda(tag.faturamento)}</strong> em
@@ -166,7 +180,17 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
 
           {/* A BIFURCAÇÃO, no lugar onde ela aparece: gerar a guia OU afirmar que não houve
               movimento. Marcar vazio é declaração fiscal — pede confirmação e grava quem/quando. */}
-          {tag.state === "missing" && (
+          {tag.state === "missing" && ehParcela && (
+            <>
+              <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
+                A parcela do mês ainda não foi capturada. Busque o parcelamento na aba Guias da
+                empresa.
+              </div>
+              <BotaoAcao onClick={() => acoes.onAbrirEmpresa?.(empresa.companyId)}>Abrir empresa</BotaoAcao>
+            </>
+          )}
+
+          {tag.state === "missing" && !ehParcela && (
             <>
               <input
                 value={motivo}

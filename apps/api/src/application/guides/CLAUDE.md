@@ -34,6 +34,21 @@ Consequências práticas (duas armadilhas já corrigidas):
   composição** (igual faz com DARF), senão as tags IRPJ/CSLL/PIS-COFINS do card ficam vermelhas
   mesmo com a guia capturada. PIS e COFINS caem no mesmo grupo `PIS_COFINS`.
 
+## ⚠ Parcela de parcelamento é `tipo:"SIMPLES"` — o que a separa do DAS é `parcelamentoId`
+
+`CaptureSerproParcelaService` grava a parcela como `tipo:"SIMPLES"`, exatamente como o DAS do mês;
+`ParcelamentoV2Service` carimba `parcelamentoId`. Quem filtra só por `tipo` mostra a parcela como se
+fosse o DAS — e a empresa parece em dia com um DAS que nunca foi gerado.
+
+A decisão vive em **`isGuiaDeParcelamento` / `colunaMatrizDaGuia`** (`guideContract.js`), consumida
+pelo compliance E pelo `batch-report`. Grep por `parcelamentoId` antes de mexer em qualquer query de
+`Guide` que filtre por `tipo`.
+
+O nó `parcDas` tem o mesmo ciclo dos outros (`missing → gerada → enviada`), alimentado pela GUIA da
+parcela. **`vazio`/`semFaturamento` não valem ali**: ausência de parcela contratada não se declara, e
+mês sem receita não suspende parcelamento. Rótulo na UI: **"Parcelamento"** (uma parcela de INSS
+parcelado também cai nesse nó).
+
 ## Compliance (guideCompliance.js)
 
 `computeGuideComplianceMap(rows, competencia)` retorna por empresa, por tributo, um nó
