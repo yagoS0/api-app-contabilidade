@@ -273,6 +273,14 @@ export async function syncDfeForCompany({ portalClientId, env = "prod" }) {
   let iterations = 0;
   let lastMaxNSU = 0n;
 
+  // Mesma razão do lado do ADN: "olhei" precisa ser gravado separado de "recebi", senão empresa
+  // quieta e captura quebrada ficam idênticas no diagnóstico. Best-effort.
+  await prisma.portalSyncState.upsert({
+    where: { clientId: portalClientId },
+    create: { clientId: portalClientId, dfeLastAttemptAt: new Date() },
+    update: { dfeLastAttemptAt: new Date() },
+  }).catch(() => null);
+
   try {
     while (iterations < MAX_ITERATIONS) {
       iterations++;

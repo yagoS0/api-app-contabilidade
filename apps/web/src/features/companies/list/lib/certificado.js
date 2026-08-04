@@ -14,6 +14,32 @@ export const CERT_ESTADOS = {
   ausente:  { chave: "ausente" },
 };
 
+/**
+ * "A captura de notas desta empresa parou?" — vem pronto do backend (`capturaParada.js`), que
+ * compara o silêncio atual com o MAIOR intervalo que a própria empresa já teve.
+ *
+ * ⚠ É SUSPEITA, não veredito. Só o ADN sabe se existe nota que não temos; quem prova é a
+ * conferência contra a fonte autoritativa. Por isso o texto fala em "sem nota há N dias" e não em
+ * "faltando nota" — afirmar falta sem ter consultado seria o mesmo erro que já matamos na situação
+ * fiscal.
+ *
+ * Devolve `null` quando não há o que dizer (empresa nova, histórico curto, ou tudo normal).
+ */
+export function avisoCapturaParada(company) {
+  const c = company?.capturaNotas;
+  if (!c?.suspeita) return null;
+  return {
+    rotulo: `⏸ Sem nota há ${c.diasSemDocumento}d`,
+    cor: "var(--state-warn)",
+    titulo: `Nenhuma nota emitida capturada há ${c.diasSemDocumento} dias — o maior intervalo já `
+      + `observado nesta empresa foi de ${c.maiorIntervaloDias} dias. `
+      + (c.ultimaTentativaEm
+        ? `A última busca foi em ${new Date(c.ultimaTentativaEm).toLocaleString("pt-BR")} e não trouxe nada. `
+        : "Não há registro de busca recente. ")
+      + "Pode ser mês parado — ou captura travada. Confira em Consultas → Consultar notas.",
+  };
+}
+
 export function estadoCertificado(company, agora = Date.now()) {
   const legacy = company?.legacyCompany || null;
   const temCert = Boolean(legacy?.certStorageKey);

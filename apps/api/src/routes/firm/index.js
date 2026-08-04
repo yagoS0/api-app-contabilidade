@@ -54,6 +54,7 @@ import {
   getNotasCapturaJob,
   listNotasCapturaJobs,
 } from "../../application/notas/captura/NotasCapturaService.js";
+import { capturaParadaPorEmpresa } from "../../application/notas/capturaParada.js";
 import {
   criarSitfisDownloadJob,
   sitfisJobToResponse,
@@ -289,6 +290,10 @@ async function attachFiscalParcelamentoToCompaniesList(data) {
     for (const s of status) situacaoByPortal.set(s.portalClientId, s);
     for (const p of parcs) comParcelamento.add(p.portalClientId);
   }
+  // "A captura de notas desta empresa parou?" — a pergunta que ficou 29 dias sem ser feita, porque
+  // captura travada e empresa quieta davam exatamente a mesma resposta na tela.
+  const captura = await capturaParadaPorEmpresa(portalIds).catch(() => new Map());
+
   return data.map((item) => {
     const s = situacaoByPortal.get(item.companyId) || null;
     return {
@@ -297,6 +302,7 @@ async function attachFiscalParcelamentoToCompaniesList(data) {
       fiscalSituacao: s?.situacao || null,
       fiscalCheckedAt: s?.checkedAt || null,
       temParcelamento: comParcelamento.has(item.companyId),
+      capturaNotas: captura.get(item.companyId) || null,
     };
   });
 }

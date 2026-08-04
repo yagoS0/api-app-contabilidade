@@ -707,6 +707,17 @@ model PortalSyncState {
   adnLastSyncAt   DateTime?
   adnLastError    String?
   adnBackoffUntil DateTime?
+  // ⚠ "OLHEI" É DIFERENTE DE "RECEBI", e confundir os dois custou 29 dias.
+  //
+  // `adnLastSyncAt`/`dfeLastSyncAt` só são gravados quando vem documento — são "última vez que
+  // recebemos algo". Enquanto o cursor estava travado, a ARAUJO BARRETO era varrida todo dia com
+  // sucesso e o campo continuava em 06/07: no diagnóstico ela parecia abandonada, e uma empresa
+  // legitimamente quieta parecia idêntica a uma com a captura quebrada.
+  //
+  // Estes dois registram a TENTATIVA, sempre — deu documento ou não. É a diferença entre
+  // "ninguém olhou" e "olhamos e não veio nada", que é onde o defeito se escondia.
+  adnLastAttemptAt DateTime?
+  dfeLastAttemptAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

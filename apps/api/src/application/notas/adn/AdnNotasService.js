@@ -308,6 +308,17 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
   let totalDocs = 0;
   let iterations = 0;
 
+  // ⚠ MARCA A TENTATIVA ANTES DE CONSULTAR — "olhei" é diferente de "recebi".
+  // `adnLastSyncAt` só é gravado quando vem documento (dentro de `persistCursor`). Com o cursor
+  // travado, a empresa era varrida todo dia e o campo continuava velho: no diagnóstico ela parecia
+  // abandonada, e "empresa quieta" ficava indistinguível de "captura quebrada". Best-effort — não
+  // vale abortar uma captura boa porque o carimbo falhou.
+  await prisma.portalSyncState.upsert({
+    where: { clientId: portalClientId },
+    create: { clientId: portalClientId, adnLastAttemptAt: new Date() },
+    update: { adnLastAttemptAt: new Date() },
+  }).catch(() => null);
+
   try {
     while (iterations < MAX_ITERATIONS) {
       iterations++;
