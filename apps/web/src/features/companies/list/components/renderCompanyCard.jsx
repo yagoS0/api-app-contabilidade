@@ -1,5 +1,6 @@
 import { Button } from "../../../../components/ui/Button";
 import { rotuloRegime, SITUACAO_FISCAL_SIMBOLO } from "../../../../lib/vocabulario";
+import { GuiaChip, todasConcluidas } from "./renderGuiaChip";
 
 // Tributos potencialmente exibidos no card de compliance.
 // A ordem aqui define a ordem visual das tags (DAS primeiro para Simples; depois Presumidos; PARC_DAS no fim).
@@ -17,15 +18,29 @@ const COMPLIANCE_CANDIDATES = [
 export function getComplianceTags(guideCompliance) {
   if (!guideCompliance || typeof guideCompliance !== "object") return [];
 
-  // Novo formato: cada tributo é um nó { required, ok }.
+  // Novo formato: cada tributo é um nó com o CICLO DE VIDA
+  // (missing → gerada → enviada, ou missing → vazio; mais `conflito`).
   // Itera todos os candidatos e inclui só os marcados como required pelo backend
   // (que decide com base no regime tributário + pró-labore).
   const tags = [];
   for (const { key, label, accent } of COMPLIANCE_CANDIDATES) {
     const node = guideCompliance[key];
     if (node?.required) {
-      // Q17: state present/vazio/missing → cor verde/amarelo/vermelho (só na tag).
-      tags.push({ label, ok: Boolean(node.ok), accent: Boolean(accent), state: node.state || (node.ok ? "present" : "missing") });
+      tags.push({
+        key, label, ok: Boolean(node.ok), accent: Boolean(accent),
+        // `present` é o formato antigo — sem `emailStatus` não dá para saber se foi enviada,
+        // então cai em "gerada", que é o estado que ainda pede ação.
+        state: node.state === "present" ? "gerada" : (node.state || (node.ok ? "gerada" : "missing")),
+        // Carimbo da guia: é o que permite enviar e auditar a marcação direto do chip.
+        guideId: node.guideId || null,
+        emailStatus: node.emailStatus || null,
+        emailSentAt: node.emailSentAt || null,
+        vazioEm: node.vazioEm || null,
+        vazioPor: node.vazioPor || null,
+        vazioMotivo: node.vazioMotivo || null,
+        faturamento: node.faturamento || 0,
+        origem: node.origem || null,
+      });
     }
   }
   if (tags.length > 0) return tags;
@@ -39,13 +54,6 @@ export function getComplianceTags(guideCompliance) {
     },
   ];
 }
-
-// Q17: cores por estado da tag (cinza = vazio confirmado, ver `tokens.css`).
-const TAG_STATE_COLOR = {
-  present: "var(--state-ok)",
-  vazio: "var(--state-neutral)",
-  missing: "var(--state-danger)",
-};
 
 /**
  * Pílula da linha de identidade.
@@ -85,8 +93,10 @@ const FISCAL_META = {
   },
 };
 
-export function CompanyCard({ company, onAccess }) {
+export function CompanyCard({ company, onAccess, acoesGuia }) {
   const tags = getComplianceTags(company.guideCompliance);
+  // Condensa só quando TODAS estão em estado terminal (enviada ou sem movimento).
+  const concluidas = todasConcluidas(tags);
   const serproEligible = Boolean(company?.serproStatus?.eligible);
   // Q52: selo de certificado A1 da empresa — verde (ativo), vermelho (vencido), apagado (sem cert).
   // certExpiresAt null com cert presente conta como ativo (upload legado sem validade extraída).
@@ -125,9 +135,6 @@ export function CompanyCard({ company, onAccess }) {
     : regime === "LUCRO_REAL" ? "var(--accent-purple)" : "var(--text-faint)";
   // Empresa zerada (sem movimento) — só enviamos obrigações zeradas; não há guias/impostos.
   const zerada = Boolean(company?.empresaZerada);
-  // C6: "Enviado" substitui as tags de guia só quando TODAS as guias do mês foram enviadas.
-  const envio = company?.guidesEnvio || null;
-  const todasEnviadas = Boolean(envio?.todasEnviadas);
   // C6: situação fiscal do SITFIS (⚠ ao lado de "apurada") e parcelamento ativo (selo PARC).
   const temParcelamento = Boolean(company?.temParcelamento);
   const temFolha = Boolean(company?.temFolha);
@@ -229,42 +236,39 @@ export function CompanyCard({ company, onAccess }) {
           >
             Empresa zerada — sem obrigações com imposto
           </span>
-        ) : todasEnviadas ? (
-          /* C6: guias do mês todas enviadas → o "Enviado" ocupa o LUGAR das tags de guia.
-             Guia nova/recalculada/retificada volta pra PENDING no backend → todasEnviadas vira
-             false → as tags reaparecem até o novo envio. */
+        ) : concluidas ? (
+          /* ⚠ "Guias CONCLUÍDAS", não "enviadas": estado terminal inclui a guia enviada E a
+             marcada sem movimento. Condensar só é seguro quando não há mais nada a fazer — antes
+             disso, esconder detalhe é esconder trabalho. Guia nova/recalculada volta a PENDING no
+             backend, o estado deixa de ser terminal e os chips reaparecem. */
           <span
-            style={{ fontSize: "0.9rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-ok)" }}
-            title={`As ${envio.total} guia(s) do mês (${envio.competencia || ""}) foram enviadas ao cliente`}
+            style={{ fontSize: "0.85rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-ok)" }}
+            title={tags.map((t) => `${t.label}: ${t.state === "vazio" ? "sem movimento" : "enviada"}`).join(" · ")}
           >
-            📤 Enviado
+            ✓ Guias concluídas
           </span>
         ) : (
         <>
-        {tags.map((tag) => {
-          // Q17: só a BORDA colorida por estado; texto neutro; cantos mais quadrados.
-          // accent (PARC_DAS) = laranja; present=verde, vazio=amarelo, missing=vermelho.
-          const color = tag.accent
-            ? "var(--state-warn)"
-            : (TAG_STATE_COLOR[tag.state] || (tag.ok ? "var(--state-ok)" : "var(--state-danger)"));
-          const title = tag.accent
-            ? `${tag.label} — parcelamento ativo`
-            : tag.state === "vazio"
-              ? `${tag.label} — sem guia (confirmado)`
-              : tag.ok ? `${tag.label} em dia` : `${tag.label} pendente`;
-          return (
+        {tags.map((tag) => (
+          tag.accent ? (
+            /* PARC DAS não é guia: é a PARCELA aberta na competência. Segue como selo simples. */
             <span
               key={tag.label}
-              style={{
-                // Q18: sem borda — a cor vai na FONTE (estado verde/amarelo/vermelho).
-                fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color,
-              }}
-              title={title}
+              style={{ fontSize: "0.72rem", fontWeight: 700, padding: "2px 6px", color: "var(--state-warn)" }}
+              title={`${tag.label} — parcelamento ativo`}
             >
               {tag.label}
             </span>
-          );
-        })}
+          ) : (
+            <GuiaChip
+              key={tag.label}
+              tag={tag}
+              empresa={company}
+              competencia={company?.guideCompliance?.competencia || ""}
+              acoes={acoesGuia || {}}
+            />
+          )
+        ))}
         {/* O selo PARC que ficava aqui subiu para junto da tributação — parcelamento é
             característica da empresa, não obrigação daquele mês. A tag "PARC DAS" segue nesta
             linha: essa sim é a PARCELA aberta na competência. */}

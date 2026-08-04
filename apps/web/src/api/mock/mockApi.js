@@ -6,16 +6,63 @@ function delay(ms = 250) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function mockGuideComplianceRow({ hasProlabore, regimeTributario, inssOk, dasOk }) {
+// Marcações de "sem movimento" feitas na sessão, chave `companyId|tipo`. Estado de VERDADE, não
+// retorno fixo: o ciclo da guia só dá para conferir offline se marcar vazio realmente mudar o chip
+// e o desfazer realmente voltar. Mock imutável passaria por esses caminhos sem testar nenhum.
+const mockVazios = new Map(); // chave → { vazioEm, vazioPor, vazioMotivo }
+const chaveVazio = (companyId, tipo) => `${companyId}|${String(tipo || "").toUpperCase()}`;
+
+// Chave do compliance → tipo de Guide (mesmo de-para do backend; PIS representa o grupo PIS/COFINS).
+const MOCK_TRIBUTO_TIPO = {
+  das: "SIMPLES", inss: "INSS", irpj: "IRPJ", csll: "CSLL", pisCofins: "PIS", iss: "ISS",
+};
+
+/**
+ * Compliance do mock com o CICLO DE VIDA completo — os cinco estados que o chip desenha.
+ *
+ * Cada empresa cai num cenário diferente de propósito (pelo índice): sem isso a tela só mostraria
+ * um estado e os outros quatro nunca seriam vistos antes de produção.
+ */
+function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTributario, competencia = "2026-02", faturamento = 0 }) {
   const regime = String(regimeTributario || "SIMPLES").toUpperCase();
-  const inssRequired = Boolean(hasProlabore);
-  const dasRequired = regime === "SIMPLES";
+  const presumido = regime === "LUCRO_PRESUMIDO" || regime === "LUCRO_REAL";
+  const requeridos = {
+    das: regime === "SIMPLES",
+    inss: Boolean(hasProlabore),
+    irpj: presumido, csll: presumido, pisCofins: presumido, iss: presumido,
+  };
+
+  // Cenário por empresa: 0 falta tudo · 1 gerada (falta enviar) · 2 enviada · 3 vazio · 4 conflito.
+  const cenario = indice % 5;
+  const no = (chave) => {
+    const required = requeridos[chave];
+    if (!required) return { required: false, ok: true, state: "na" };
+
+    const marcado = mockVazios.get(chaveVazio(companyId, MOCK_TRIBUTO_TIPO[chave]));
+    if (marcado) {
+      // Marcação feita AGORA na tela. Com faturamento na competência vira conflito, igual ao real.
+      return faturamento > 0
+        ? { required, ok: false, state: "conflito", faturamento, origem: "guia_vazia", ...marcado }
+        : { required, ok: true, state: "vazio", origem: "guia_vazia", ...marcado };
+    }
+
+    if (cenario === 1) return { required, ok: true, state: "gerada", guideId: `mock-guia-${companyId}-${chave}`, emailStatus: "PENDING" };
+    if (cenario === 2) return { required, ok: true, state: "enviada", guideId: `mock-guia-${companyId}-${chave}`, emailStatus: "SENT", emailSentAt: new Date().toISOString() };
+    if (cenario === 3) return { required, ok: true, state: "vazio", origem: "guia_vazia", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock", vazioMotivo: null };
+    if (cenario === 4) return { required, ok: false, state: "conflito", faturamento: 17640, origem: "guia_vazia", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock" };
+    return { required, ok: false, state: "missing" };
+  };
+
+  const nos = {
+    das: no("das"), inss: no("inss"), irpj: no("irpj"),
+    csll: no("csll"), pisCofins: no("pisCofins"), iss: no("iss"),
+  };
   return {
-    competencia: "2026-02",
-    inss: { required: inssRequired, ok: inssRequired ? Boolean(inssOk) : true },
-    das: { required: dasRequired, ok: dasRequired ? Boolean(dasOk) : true },
-    expected: inssRequired ? "INSS" : dasRequired ? "SIMPLES" : null,
-    ok: (inssRequired ? Boolean(inssOk) : true) && (dasRequired ? Boolean(dasOk) : true),
+    competencia,
+    ...nos,
+    parcDas: { required: false, ok: true },
+    expected: requeridos.inss ? "INSS" : requeridos.das ? "SIMPLES" : null,
+    ok: Object.values(nos).every((n) => n.ok),
   };
 }
 
@@ -38,12 +85,8 @@ function makeCompanies(count = 6) {
       temFolha,
       email: null,
       legacyCompany: { regimeTributario, tipoTributario: regimeTributario },
-      guideCompliance: mockGuideComplianceRow({
-        hasProlabore,
-        regimeTributario,
-        inssOk: i % 2 === 1,
-        dasOk: i % 2 === 0,
-      }),
+      // Recalculado a cada `listCompanies` (ver abaixo) — aqui é só o valor inicial da carga.
+      guideCompliance: mockGuideComplianceRow({ companyId, indice: i, hasProlabore, regimeTributario }),
       // C6: paridade com o real — o card usa estes campos pro toggle guias⇄"Enviado",
       // pro aviso de pendência fiscal (SITFIS) e pro selo PARC.
       guidesEnvio: { competencia: null, total: 2, enviadas: i % 3 === 0 ? 2 : 1, todasEnviadas: i % 3 === 0 },
@@ -615,9 +658,26 @@ export function createMockApi() {
         name: "Usuario Mock",
       };
     },
-    async listCompanies() {
+    async listCompanies(competencia) {
       await delay();
-      return mockCompanies;
+      // A competência da tela manda: sem isso o compliance ficava preso num mês fixo e o caminho
+      // de SUCESSO de "marcar sem movimento" era intestável offline (o mês fixo tinha faturamento,
+      // então a recusa disparava sempre).
+      const comp = competencia || "2026-07";
+      // Recalcula o compliance a cada chamada: é assim que marcar/desfazer "sem movimento" na tela
+      // muda o chip de verdade. Devolvendo o objeto congelado da carga, o botão pareceria funcionar
+      // e nada mudaria — o mesmo mock inerte que já escondeu bug duas vezes neste projeto.
+      return mockCompanies.map((c, i) => ({
+        ...c,
+        guideCompliance: mockGuideComplianceRow({
+          companyId: c.companyId,
+          indice: i,
+          hasProlabore: c.hasProlabore,
+          regimeTributario: c.legacyCompany?.regimeTributario,
+          competencia: comp,
+          faturamento: mockFaturamentoDaCompetencia(c.companyId, comp),
+        }),
+      }));
     },
     async createCompany(input) {
       await delay();
@@ -870,13 +930,30 @@ export function createMockApi() {
         },
       };
     },
-    async markGuideVazio() {
+    // Marcar/desfazer "sem movimento" MEXE no estado do mock, e a recusa é aplicada de verdade:
+    // é o único jeito de conferir offline a bifurcação do ciclo e a trava contra faturamento.
+    async markGuideVazio(portalClientId, tipo, competencia, motivo) {
       await delay();
-      return { ok: true, status: "VAZIO" };
+      const fat = mockFaturamentoDaCompetencia(portalClientId, competencia);
+      if (fat > 0) {
+        return {
+          ok: false,
+          error: "GUIA_VAZIA_COM_FATURAMENTO",
+          faturamento: fat,
+          message: `A competência tem R$ ${fat.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em notas emitidas autorizadas. Não dá para marcar esta guia como sem movimento.`,
+        };
+      }
+      mockVazios.set(chaveVazio(portalClientId, tipo), {
+        vazioEm: new Date().toISOString(),
+        vazioPor: "Usuario Mock",
+        vazioMotivo: String(motivo || "").trim() || null,
+      });
+      return { ok: true, status: "VAZIO", guideId: `mock-vazio-${portalClientId}-${tipo}` };
     },
-    async undoGuideVazio() {
+    async undoGuideVazio(portalClientId, tipo) {
       await delay();
-      return { ok: true, removed: 1 };
+      const existia = mockVazios.delete(chaveVazio(portalClientId, tipo));
+      return { ok: true, removed: existia ? 1 : 0 };
     },
     async getFechamentoContabil(companyId, competencia) {
       await delay();

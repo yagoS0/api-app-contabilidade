@@ -383,11 +383,12 @@ export function createRealApi() {
       const suffix = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
       return request(`/firm/companies/${companyId}/guides/expected${suffix}`);
     },
-    // Q17: marcar "não há guia neste mês" (Vazio) → campo amarelo
-    async markGuideVazio(portalClientId, tipo, competencia) {
+    // Marcar "não houve movimento neste mês" (Vazio). É declaração fiscal: grava quem/quando no
+    // servidor e é RECUSADA (409) se houver nota emitida na competência. `motivo` é opcional.
+    async markGuideVazio(portalClientId, tipo, competencia, motivo) {
       return request("/firm/guides/vazio", {
         method: "POST",
-        body: JSON.stringify({ portalClientId, tipo, competencia }),
+        body: JSON.stringify({ portalClientId, tipo, competencia, motivo: motivo || undefined }),
       });
     },
     async undoGuideVazio(portalClientId, tipo, competencia) {

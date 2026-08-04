@@ -139,6 +139,47 @@ export function CompaniesHomePage({
   }, [api, dashboardCompetencia]);
   useEffect(() => { carregarTravas(); }, [carregarTravas]);
 
+  /**
+   * Ações do chip de guia, feitas DA LISTAGEM — sem entrar na empresa.
+   *
+   * ⚠ Enviar e-mail é ação externa e irreversível: quem confirma é o popover do chip (destinatário
+   * à vista), nunca o clique. Aqui só se executa o que já foi confirmado.
+   *
+   * Depois de qualquer uma delas a lista é recarregada: o estado do chip vem do servidor, e sem o
+   * reload ele mostraria o valor de antes da ação — o mesmo tipo de mentira que o "mock inerte"
+   * produzia offline.
+   *
+   * O objeto é extensível de propósito: o canal de WhatsApp entra aqui como mais uma ação quando a
+   * conta na Meta estiver liberada, sem redesenhar o chip.
+   */
+  const acoesGuia = useMemo(() => ({
+    onAbrirEmpresa: (companyId) => onOpenCompany?.(companyId),
+    onEnviar: async (guideId) => {
+      const out = await api.liberarGuiaCliente(guideId);
+      if (out?.ok === false) return out;
+      // `sent:false` com ok:true acontece quando a liberação passou mas o e-mail falhou — o chip
+      // precisa dizer isso em vez de pintar de verde.
+      if (out && out.sent === false) {
+        onRefreshCompanies?.();
+        return { ok: false, message: out.message || "Guia liberada, mas o e-mail não saiu. Tente de novo." };
+      }
+      onRefreshCompanies?.();
+      return out;
+    },
+    onMarcarVazio: async (companyId, tipo, competencia, motivo) => {
+      const out = await api.markGuideVazio(companyId, tipo, competencia || dashboardCompetencia, motivo);
+      if (out?.ok === false) return out;
+      onRefreshCompanies?.();
+      return out;
+    },
+    onDesfazerVazio: async (companyId, tipo, competencia) => {
+      const out = await api.undoGuideVazio(companyId, tipo, competencia || dashboardCompetencia);
+      if (out?.ok === false) return out;
+      onRefreshCompanies?.();
+      return out;
+    },
+  }), [api, dashboardCompetencia, onOpenCompany, onRefreshCompanies]);
+
   const contagemTravas = useMemo(() => {
     if (!travas) return null;
     const linhas = [...travas.values()];
@@ -686,7 +727,7 @@ export function CompaniesHomePage({
           ) : (
           <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
             {filteredCompanies.map((company) => (
-              <CompanyCard key={company.companyId} company={company} onAccess={onOpenCompany} />
+              <CompanyCard key={company.companyId} company={company} onAccess={onOpenCompany} acoesGuia={acoesGuia} />
             ))}
           </section>
           )}
