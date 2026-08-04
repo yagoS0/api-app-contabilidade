@@ -70,6 +70,18 @@ const FILTER_CONTROL = { background: "var(--bg-page)", border: "1px solid var(--
 // C7: setas de navegação da competência (‹ ›).
 const COMP_ARROW = { ...FILTER_CONTROL, padding: "5px 9px", cursor: "pointer", fontWeight: 700, lineHeight: 1 };
 
+const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+/** "2026-07" → "julho de 2026". Sem `Date` — a competência é texto, não instante no tempo. */
+function rotuloCompetencia(competencia) {
+  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return competencia || "—";
+  const mes = MESES_PT[Number(m[2]) - 1];
+  // Capitaliza só a primeira letra: `text-transform: capitalize` viraria "Julho De 2026".
+  return `${mes.charAt(0).toUpperCase()}${mes.slice(1)} de ${m[1]}`;
+}
+
 // C7: anda N meses na competência YYYY-MM (aceita negativo). Sem dependência de Date pra não
 // escorregar em fuso — é aritmética de ano/mês pura.
 function shiftCompetencia(competencia, delta) {
@@ -211,6 +223,36 @@ export function CompaniesHomePage({
     };
   }, [travas]);
 
+  /** Empresas com pelo menos uma guia GERADA e não enviada — a ação rápida do fim do mês. */
+  const empresasFaltaEnviar = useMemo(() => {
+    const set = new Set();
+    for (const c of companies || []) {
+      if (getComplianceTags(c.guideCompliance).some((t) => t.state === "gerada")) set.add(c.companyId);
+    }
+    return set;
+  }, [companies]);
+  const contagemFaltaEnviar = empresasFaltaEnviar.size;
+
+  /**
+   * Progresso do fechamento, em segmentos proporcionais.
+   *
+   * ⚠ VAZIO CONTA COMO CONCLUÍDO — é o ponto todo da bifurcação: empresa sem movimento não pode
+   * parecer eternamente pendente. Aqui isso entra pelo `podeFechar`/`fechado`, que já não dependem
+   * de guia existir; o chip cinza é o outro lado da mesma decisão.
+   */
+  const segmentosProgresso = useMemo(() => {
+    if (!contagemTravas?.total) return [];
+    const { total, fechadas, prontas, checklist, problemas } = contagemTravas;
+    const resto = Math.max(0, total - fechadas - prontas - checklist - problemas);
+    return [
+      { chave: "fechadas",  n: fechadas,  cor: "var(--state-closed)",  rotulo: "fechadas" },
+      { chave: "prontas",   n: prontas,   cor: "var(--state-ok)",      rotulo: "prontas para fechar" },
+      { chave: "checklist", n: checklist, cor: "var(--state-warn)",    rotulo: "falta check-list" },
+      { chave: "problemas", n: problemas, cor: "var(--state-danger)",  rotulo: "lançamento com problema" },
+      { chave: "all",       n: resto,     cor: "var(--state-neutral)", rotulo: "falta apurar" },
+    ].filter((s) => s.n > 0);
+  }, [contagemTravas]);
+
   /**
    * Fecha, uma a uma, as empresas que o servidor disse estarem prontas.
    *
@@ -287,11 +329,18 @@ export function CompaniesHomePage({
       // não uma ordenação. Empresa sem linha no agregado fica de fora de qualquer recorte: dizer
       // "pronta" sem ter a resposta do servidor seria pior que omitir.
       if (travaFiltro !== "all") {
-        const t = travas?.get(company?.companyId);
-        if (!t) return false;
-        if (travaFiltro === "prontas" && !t.podeFechar) return false;
-        if (travaFiltro === "checklist" && !(!t.fechado && t.checklistPendentes?.length > 0)) return false;
-        if (travaFiltro === "problemas" && !(!t.fechado && t.blockers?.length > 0)) return false;
+        // "Falta enviar guia" sai dos CHIPS, não do agregado de fechamento — é a única do conjunto
+        // que fala de guia, não de lançamento.
+        if (travaFiltro === "enviar") {
+          if (!empresasFaltaEnviar.has(company?.companyId)) return false;
+        } else {
+          const t = travas?.get(company?.companyId);
+          if (!t) return false;
+          if (travaFiltro === "prontas" && !t.podeFechar) return false;
+          if (travaFiltro === "checklist" && !(!t.fechado && t.checklistPendentes?.length > 0)) return false;
+          if (travaFiltro === "problemas" && !(!t.fechado && t.blockers?.length > 0)) return false;
+          if (travaFiltro === "fechadas" && !t.fechado) return false;
+        }
       }
       if (emailFilter === "notSent" && company?.monthEmailSent) return false;
       if (emailFilter === "sent" && !company?.monthEmailSent) return false;
@@ -338,7 +387,7 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, fechamentoFilter, travaFiltro, travas]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, fechamentoFilter, travaFiltro, travas, empresasFaltaEnviar]);
 
   return (
     <div className="dashboard-home-page">
@@ -350,7 +399,30 @@ export function CompaniesHomePage({
                 {/* Subtítulo removido: descrevia o óbvio ("busca, filtros e acesso rápido") numa
                     tela que JÁ é a carteira, e ainda vinha sem acentuação. Legenda que explica o
                     que se vê é sinal de que a tela não se explica sozinha. */}
-                <h1 className="dashboard-home__title">Empresas</h1>
+                {/* A COMPETÊNCIA SOBE PARA O TÍTULO. Ela é o contexto de tudo o que a tela mostra —
+                    contadores, guias, notas, fechamento — e estava perdida no meio dos filtros,
+                    onde parecia mais um recorte opcional. Aqui fica claro que o mês é o assunto. */}
+                <h1 className="dashboard-home__title" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  Empresas
+                  <span style={{ color: "var(--text-faint)", fontWeight: 400 }}>·</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <button
+                      type="button"
+                      onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, -1))}
+                      title="Mês anterior" aria-label="Mês anterior"
+                      style={{ ...COMP_ARROW, fontSize: "0.9rem" }}
+                    >‹</button>
+                    <span style={{ fontSize: "1.05rem", color: "var(--text-muted)", fontWeight: 600, minWidth: 150, textAlign: "center" }}>
+                      {rotuloCompetencia(dashboardCompetencia)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onChangeCompetencia(shiftCompetencia(dashboardCompetencia, 1))}
+                      title="Próximo mês" aria-label="Próximo mês"
+                      style={{ ...COMP_ARROW, fontSize: "0.9rem" }}
+                    >›</button>
+                  </span>
+                </h1>
               </div>
             </div>
 
@@ -396,9 +468,12 @@ export function CompaniesHomePage({
           )}
 
           <nav className="dashboard-home__actions" aria-label="Atalhos">
+            {/* ⚠ "Nova empresa" deixou de ser verde. Dois botões verdes lado a lado competem entre
+                si e nenhum vira o primário de verdade. O verde fica com "Envio de e-mails em
+                lote", que é A ação do fluxo mensal; criar empresa é episódico. */}
             <Button
-              variant="success"
-              className="dashboard-home__action dashboard-home__action--success"
+              variant="secondary"
+              className="dashboard-home__action"
               onClick={() => {
                 if (globalChartStatus && !globalChartStatus.isConfigured) {
                   const faltantes = (globalChartStatus.tiposFaltantes || []).join(", ");
@@ -538,6 +613,9 @@ export function CompaniesHomePage({
                 ["prontas", `✅ Prontas para fechar · ${contagemTravas.prontas}`, "var(--state-ok)", "var(--state-ok-surface)"],
                 ["checklist", `☐ Falta check-list · ${contagemTravas.checklist}`, "var(--state-warn)", "var(--state-warn-surface)"],
                 ["problemas", `⚠ Lançamento com problema · ${contagemTravas.problemas}`, "var(--state-danger)", "var(--state-danger-surface)"],
+                // A pergunta mais frequente da SEGUNDA METADE do fluxo: as guias já existem, falta
+                // mandar. Sai da leitura dos chips, não do agregado de fechamento.
+                ["enviar", `✈ Falta enviar guia · ${contagemFaltaEnviar}`, "var(--state-warn)", "var(--state-warn-surface)"],
               ].map(([chave, label, cor, superficie]) => {
                 const ativo = travaFiltro === chave;
                 return (
@@ -573,11 +651,36 @@ export function CompaniesHomePage({
                   {fechandoLote ? "Fechando…" : `🔒 Fechar as ${contagemTravas.prontas}`}
                 </button>
               )}
-              {contagemTravas.fechadas > 0 && (
-                <span style={{ fontSize: "0.74rem", color: "var(--state-closed)" }}>
-                  🔒 {contagemTravas.fechadas} já fechada{contagemTravas.fechadas > 1 ? "s" : ""}
-                </span>
-              )}
+            </div>
+          )}
+
+          {/* A BARRA DE PROGRESSO. Os números acima dizem quanto falta; a barra diz o quanto já
+              andou — é a única coisa na tela que responde "estou perto do fim do mês?".
+              Cada segmento é o mesmo filtro dos chips: clicar aplica o recorte. */}
+          {(modoVisao === "cards" || modoVisao === "tabela") && segmentosProgresso.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <div
+                role="img"
+                aria-label={`Progresso do fechamento: ${segmentosProgresso.map((s) => `${s.n} ${s.rotulo}`).join(", ")}`}
+                style={{ display: "flex", flex: "1 1 auto", height: 6, borderRadius: 999, overflow: "hidden", background: "var(--state-neutral-surface)" }}
+              >
+                {segmentosProgresso.map((s) => (
+                  <button
+                    key={s.chave}
+                    type="button"
+                    title={`${s.n} ${s.rotulo} — clique para filtrar`}
+                    onClick={() => setTravaFiltro(travaFiltro === s.chave ? "all" : s.chave)}
+                    style={{
+                      flex: `${s.n} 0 0`, background: s.cor, border: "none", padding: 0,
+                      cursor: "pointer", height: "100%",
+                      opacity: travaFiltro === "all" || travaFiltro === s.chave ? 1 : 0.35,
+                    }}
+                  />
+                ))}
+              </div>
+              <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                {contagemTravas.fechadas}/{contagemTravas.total} fechadas
+              </span>
             </div>
           )}
 

@@ -733,6 +733,16 @@
   gap: 16px;
 }
 
+/* Cards são o padrão ABAIXO de 1024px (acima disso a tabela assume) — e nesta faixa duas colunas
+   é o limite em que o card ainda cabe sem espremer os chips de guia. */
+@media (max-width: 1023px) {
+  .cards-grid--dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 639px) {
+  .cards-grid--dashboard { grid-template-columns: 1fr; }
+}
+
 .dashboard-home__empty {
   margin: 0;
   color: #aeb6d3;

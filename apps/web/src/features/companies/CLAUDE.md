@@ -10,10 +10,55 @@ Feature da carteira de empresas: dashboard (lista), detalhe (abas), formulário,
   empresa tem particularidade, ela precisa ser lida antes de mexer em qualquer número).
 - `form/`, `certificate/`.
 
-## Dashboard — três visões
+## Dashboard — quatro visões
 
-`modoVisao` em `renderCompaniesHomePage`: **Cards · Ano · Calendário**. A última não é "lista de
-empresa" — é o mesmo recorte da carteira por outro eixo (o tempo).
+`modoVisao` em `renderCompaniesHomePage`: **Tabela · Cards · Ano · Calendário**. As duas primeiras
+listam a carteira do mês; as outras são o mesmo recorte por outro eixo (o tempo).
+
+**Tabela é o padrão em ≥1024px; cards abaixo disso** — a grade de 6 colunas não sobrevive a 375px,
+e o card mostra 8 empresas onde a tabela mostra 15+. A escolha **persiste** em `localStorage`
+(antes era `useState` puro e quem preferia cards voltava ao padrão a cada refresh).
+⚠ `window.innerWidth === 0` conta como *"ainda não sei"*, não como estreito — a mesma armadilha que
+já fez o calendário abrir em modo celular numa janela grande.
+
+### A regra de cor (`styles/tokens.css`)
+
+**Cor forte = precisa de ação agora.** Neutro = cinza. Concluído = verde discreto. Vermelho **nunca**
+para estado que não bloqueia o fechamento. Era isso que estava embaralhado: "falta apurar" aparecia
+em âmbar em 29 de 30 empresas — quando o padrão grita, a exceção some.
+
+Separação que sustenta a regra: **configuração** (parc, folha, A1, SERPRO) usa pílula neutra;
+**categoria** (regime) usa cor de acento; **estado** usa os tokens `--state-*`, sempre com ícone
+além da cor. Todo token de estado tem par `-surface` — não derive fundo com `` `${cor}22` ``,
+que quebra em silêncio assim que a cor vira `var(--…)`.
+
+### Ciclo de vida da guia (`renderGuiaChip.jsx`)
+
+```
+                    ┌─→ ✈ gerada ─→ ✓ enviada        (terminais bons)
+  ⚠ falta gerar ────┤
+                    └─→ ⊘ vazio                      (terminal: ausência confirmada)
+```
+Mais `conflito` (marcada sem movimento **mas** há nota emitida) e `na` (não exigido → o chip **não
+renderiza**). Três tipos de ausência, três visuais — é o que a regra antiga ("a tag some quando a
+guia é gerada") não conseguia dizer.
+
+Do chip saem as ações, sem entrar na empresa: **enviar** (confirmação com destinatário à vista —
+ação externa nunca dispara no clique) e **marcar sem movimento** (declaração fiscal: grava
+quem/quando, mostra no popover, permite desfazer, e é **recusada** se houver faturamento).
+`✓ Guias concluídas` condensa só quando **todas** estão em estado terminal — enviada **ou** vazio.
+
+⚠ No Lucro Presumido, IRPJ/CSLL/PIS-COFINS compartilham o **mesmo `guideId`** (uma DARF só).
+
+### Estado dominante (`lib/estadoDominante.js`)
+
+Um chip por empresa, por prioridade: Fechada (vence tudo, é terminal) → Pendência → Falta check-list
+→ Falta apurar → Zerada → Pronta p/ fechar. Fica numa função **só** porque vem de **duas fontes que
+não se conhecem** — o agregado `/companies/fechamento` e o payload da empresa; duas cópias fariam a
+mesma empresa aparecer de dois jeitos conforme a visão.
+
+A ordem de urgência ordena a lista por padrão, com **desempate alfabético** (sem ele a ordem "dança"
+entre recargas). Fechadas vão para o fim, colapsadas.
 
 **Obrigações saiu do seletor de visões** e virou página própria em **Configurações ▾ → Obrigações
 do escritório** (`/obrigacoes`, `features/obrigacoes/components/renderObrigacoesPage.jsx`).
