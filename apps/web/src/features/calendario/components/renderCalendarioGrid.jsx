@@ -684,7 +684,9 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   });
 
   return (
-    <section aria-label="Calendário fiscal">
+    /* Largura de trabalho (~90%). A grade de mês são 7 colunas que precisam caber vários eventos
+       por dia; estreita, cada célula vira uma pilha de "+N". */
+    <section aria-label="Calendário fiscal" style={{ width: "var(--content-wide)", margin: "0 auto" }}>
       {/* Cabeçalho: navegação à esquerda, granularidade à direita — como no Google Calendar. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
         <button

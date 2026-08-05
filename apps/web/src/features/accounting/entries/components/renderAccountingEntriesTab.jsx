@@ -281,8 +281,10 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
         que produziu o layout torto. */
     <div
       style={{
-        display: "flex", flexDirection: "column", gap: 8,
-        width: 268, maxWidth: "100%", padding: "10px 12px",
+        // A largura é da COLUNA que o hospeda, não do painel: assim ele acompanha quando a linha
+        // quebra no estreito, sem um segundo número para sincronizar.
+        display: "flex", flexDirection: "column", gap: 7,
+        width: "100%", padding: "9px 10px",
         borderRadius: 12, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.surface,
         boxSizing: "border-box",
       }}
@@ -771,9 +773,13 @@ export function AccountingEntriesTab({
   const activeFilterCount = ["tipo", "origem", "status"].filter((k) => filters?.[k]).length;
 
   return (
-    <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--space-4)" }}>
+    /* ⚠ A MARGEM LATERAL VIVE AQUI, UMA VEZ SÓ (`--content-gutter`, 5%).
+       Era um `maxWidth: 1600` repetido em quatro blocos com `margin: auto` — quatro lugares para
+       manter em sincronia, e um teto fixo que deixava ~900px em branco num monitor de 2560. Com o
+       padding no contêiner, cada bloco interno é simplesmente `width: 100%` e acompanha sozinho. */
+    <div style={{ width: "100%", background: ACCOUNTING_PANEL.page, padding: "var(--space-3) var(--content-gutter)", boxSizing: "border-box" }}>
       {/* Caixa superior no mesmo padrão das pílulas: fundo sólido + borda roxa + cantos macios. */}
-      <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface, maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
+      <div style={{ display: "grid", gap: 12, marginBottom: 10, padding: 16, borderRadius: 16, border: "1px solid rgba(189,147,249,0.28)", background: ACCOUNTING_PANEL.surface }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <ActionMenu
             label="Configurações"
@@ -968,10 +974,10 @@ export function AccountingEntriesTab({
       {message && message !== "Lançamento adicionado." && <p style={{ color: "var(--success)", margin: "0 0 8px", fontSize: "0.875rem" }}>{message}</p>}
       {error && <p style={{ color: "var(--danger)", margin: "0 0 8px", fontSize: "0.875rem" }}>{error}</p>}
 
-      {/* Q18: toolbar junto da tabela (mesma largura/centralização) — Adicionar + painel de fechamento.
-          ⚠ `flex-start`, não `center`: o painel de fechamento tem ~300px de altura, e centralizado
-          o "+ Adicionar lançamento" ficava boiando no meio dele, longe da tabela que ele alimenta. */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap", maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
+      {/* Q18: toolbar junto da tabela — só o primário. O painel de fechamento desceu para o lado
+          da TABELA (ver abaixo): ele fala do mês inteiro, e aqui em cima empurrava a tabela ~300px
+          para baixo, à custa de três ou quatro lançamentos a menos visíveis de primeira. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap" }}>
         <button
           type="button"
           onClick={() => setAdding(true)}
@@ -984,17 +990,6 @@ export function AccountingEntriesTab({
         >
           + Adicionar lançamento
         </button>
-        {/* Coluna: o cadeado em cima, a tira "Falta para fechar" logo abaixo dele. */}
-        <div style={{ marginLeft: "auto", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-          <FechamentoCadeado
-            companyId={companyId}
-            competencia={activeComp}
-            entries={entries}
-            onState={(closed) => { setMonthClosed(closed); if (closed) setAdding(false); }}
-            onFechamentoData={(dados) => setBuscasSerpro(dados?.serpro || null)}
-            filtroAtivo={Boolean(filters.tipo || filters.origem || filters.status)}
-          />
-        </div>
       </div>
 
       {selectedCount > 0 && (
@@ -1002,7 +997,7 @@ export function AccountingEntriesTab({
           display: "flex", alignItems: "center", gap: 12,
           background: "#2D2F45", border: "1px solid #44475A", borderRadius: 8,
           padding: "8px 14px", marginTop: 8, fontSize: "0.875rem", color: ACCOUNTING_PANEL.text,
-          maxWidth: 1600, marginLeft: "auto", marginRight: "auto", boxSizing: "border-box",
+          boxSizing: "border-box",
         }}>
           <span style={{ fontWeight: 700, color: "#BD93F9" }}>
             {selectedCount} selecionado{selectedCount !== 1 ? "s" : ""}
@@ -1034,8 +1029,19 @@ export function AccountingEntriesTab({
         </div>
       )}
 
-      {/* Q18: tabela centralizada e mais estreita (Histórico fica perto do Valor). */}
-      <div style={{ overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20, maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
+      {/* ⚠ TABELA E PAINEL DE FECHAMENTO LADO A LADO.
+          O painel ficava ACIMA da tabela, na linha do "+ Adicionar": com ~300px de altura, empurrava
+          a tabela para baixo e comia três ou quatro lançamentos da primeira olhada. Ele fala do MÊS,
+          não de uma linha — ao lado, fica visível o tempo todo sem disputar altura com o trabalho.
+
+          `alignItems: flex-start` para o painel não esticar até o fim de uma tabela de 60 linhas.
+          `flexWrap` + `flex: "1 1 620px"` na tabela: abaixo de ~900px úteis o painel desce sozinho
+          em vez de espremer as colunas. */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginTop: 4, flexWrap: "wrap" }}>
+      {/* ⚠ `minWidth: 0` é o que permite ESTA coluna encolher. Sem ele o flex usa a largura
+          intrínseca da tabela como piso, e a linha estoura para fora da página em vez de a tabela
+          rolar dentro do próprio contêiner. */}
+      <div style={{ flex: "1 1 620px", minWidth: 0, overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.surface, padding: 20, boxSizing: "border-box" }}>
         {/* Q32: título da competência acima do cabeçalho (ex.: MAIO/2026).
             ⚠ As setas ◀ ▶ que ficavam aqui SAÍRAM: quem navega a competência é o seletor do header,
             um só para a empresa inteira. O título FICA — ele não é controle, é o rótulo do que a
@@ -1157,6 +1163,22 @@ export function AccountingEntriesTab({
             );
           })()}
         </table>
+      </div>
+
+        {/* Coluna direita — o painel do mês, ao lado do trabalho do mês.
+            ⚠ ESTREITO DE PROPÓSITO (206px). A 268px ele competia com a tabela: são cinco rótulos
+            curtos e um botão, e a largura sobrando só empurrava colunas de lançamento para a
+            rolagem. O painel é referência de canto de olho; a tabela é onde se trabalha. */}
+        <div style={{ flex: "0 0 206px", maxWidth: "100%" }}>
+          <FechamentoCadeado
+            companyId={companyId}
+            competencia={activeComp}
+            entries={entries}
+            onState={(closed) => { setMonthClosed(closed); if (closed) setAdding(false); }}
+            onFechamentoData={(dados) => setBuscasSerpro(dados?.serpro || null)}
+            filtroAtivo={Boolean(filters.tipo || filters.origem || filters.status)}
+          />
+        </div>
       </div>
 
       {showOFX && (

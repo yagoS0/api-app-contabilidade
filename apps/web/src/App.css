@@ -5,6 +5,16 @@
   padding: var(--space-5) var(--space-4) var(--space-6);
 }
 
+/* Shell das telas de DADOS: usa a página inteira menos ~5% de cada lado.
+   ⚠ `max-width: none` é obrigatório — sem ele o `max-width: var(--content-max)` de `.layout`
+   continua vencendo e o `width: 90%` não tem efeito nenhum acima de 1200px, que é justamente
+   onde ele importa. */
+.layout--wide {
+  width: var(--content-wide);
+  max-width: none;
+  padding-inline: 0;
+}
+
 .dashboard-home-page {
   min-height: 100vh;
   background: #1a1b26;
@@ -13,14 +23,20 @@
 .dashboard-home-shell {
   min-height: 100vh;
   background: #1a1b26;
-  /* Mais largo que o padrão (1200px): com 1200 menos o padding sobrava espaço pra 3 cards, não 4.
-     A carteira é a única tela que ganha de verdade com largura — mais empresas por olhada. */
-  max-width: 1560px;
+  /* Era um teto fixo de 1560px ("mais largo que o padrão, cabem 4 cards"). Virou a largura de
+     trabalho compartilhada: num monitor de 2560px o teto fixo deixava mil pixels em branco. */
+  width: var(--content-wide);
+  max-width: none;
 }
 
 .guides-page-shell {
   min-height: 100vh;
   background: #1a1b26;
+  /* Guias herdava os 1200px de `.layout` — a tabela tem tipo, competência, valor, vencimento,
+     status de envio e ações, e vivia truncando com meia tela vazia ao lado. */
+  width: var(--content-wide);
+  max-width: none;
+  padding-inline: 0;
 }
 
 .company-form-page-shell {

@@ -198,7 +198,9 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
 
   return (
     // Q63: maxWidth sem margem automática colava o módulo à esquerda — centraliza como em Lançamentos.
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100, marginLeft: "auto", marginRight: "auto", width: "100%" }}>
+    /* Era `maxWidth: 1100`. A aba tem as tabelas da memória de cálculo e a grade de PAs — em
+       1100px elas rolavam na horizontal com meia tela vazia ao lado. Largura de trabalho (~90%). */
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, width: "var(--content-wide)", marginLeft: "auto", marginRight: "auto" }}>
       <SecaoTabs secao={secao} setSecao={setSecao} pendCount={pendencias.length} />
 
       {/* ── APURAÇÃO ──────────────────────────────────────────────────── */}

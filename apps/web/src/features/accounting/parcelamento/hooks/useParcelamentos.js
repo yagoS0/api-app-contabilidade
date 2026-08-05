@@ -142,5 +142,14 @@ export function useParcelamentos({ api, companyId, status = null }) {
     return res;
   }
 
-  return { parcelamentos, loading, error, saving, load, create, ingest, getContasProvisao, consultarSerpro, getConfig, saveConfig, linkGuide, payParcela, rescindir, vincularEntry };
+  // ⚠ `listConferencia`/`aprovarConferencia` FALTAVAM neste retorno, e as duas existem desde a
+  // Q28 Fase 3. O efeito era o painel "Conferência de parcelas" QUEBRAR ao montar:
+  // `ConferenciaParcelasPanel` faz `await listConferencia()` sem catch, então recebia `undefined`
+  // e estourava `TypeError: listConferencia is not a function` — a fila de conferência nunca
+  // apareceu na aba Parcelamento. Rotas e mock sempre estiveram de pé; era só o repasse.
+  return {
+    parcelamentos, loading, error, saving, load, create, ingest, getContasProvisao, consultarSerpro,
+    getConfig, saveConfig, linkGuide, payParcela, rescindir, vincularEntry,
+    listConferencia, aprovarConferencia,
+  };
 }

@@ -897,7 +897,9 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
   }
 
   return (
-    <div style={{ padding: "var(--space-3) var(--space-4)", width: "100%", background: "#1A1B26", minHeight: "100%" }}>
+    /* Margem lateral pela token compartilhada (~5%): a matriz é 12 meses × N tributos e é a tela
+       que mais ganha com largura — cada coluna visível é uma rolagem horizontal a menos. */
+    <div style={{ padding: "var(--space-3) var(--content-gutter)", width: "100%", background: "#1A1B26", minHeight: "100%", boxSizing: "border-box" }}>
       {/* Cabeçalho */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: "1.6rem", fontWeight: 700, color: "#F8F8F2" }}>Circular</h2>

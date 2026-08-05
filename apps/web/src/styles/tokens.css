@@ -70,7 +70,19 @@
   --space-5: 24px;
   --space-6: 32px;
 
+  /* Largura de LEITURA — formulários e fichas. Linha longa demais cansa: o olho perde a volta
+     para o começo da próxima. Continua valendo onde se lê texto e se preenche campo. */
   --content-max: 1200px;
+
+  /* ⚠ Largura de TRABALHO — telas de dados (tabelas, matrizes, listas de registros).
+     Decisão do dono: usar o máximo da página, deixando ~5% de margem de cada lado. Uma tabela
+     não é texto: cada coluna a mais visível é uma rolagem horizontal a menos, e a Circular
+     (12 meses × N tributos) e os Lançamentos (7 colunas + histórico) viviam espremidos em 1200px
+     enquanto sobrava metade da tela em branco.
+     Muda aqui, muda em todas — não repetir o número nos componentes. */
+  --content-wide: 90%;
+  --content-gutter: 5%;
+
   --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
 }
 

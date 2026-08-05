@@ -63,7 +63,9 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
   }
 
   return (
-    <div style={{ padding: 24, color: PANEL.text, maxWidth: 1400, margin: "0 auto" }}>
+    /* Largura de trabalho (~90%). A tabela de notas tem número, chave, tomador, valor, data,
+       status e ações — era a que mais truncava em 1400px. */
+    <div style={{ padding: "24px 0", color: PANEL.text, width: "var(--content-wide)", margin: "0 auto" }}>
       {error && (
         <div style={{ padding: 12, marginBottom: 16, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757" }}>
           {error}

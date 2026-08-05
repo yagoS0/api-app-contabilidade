@@ -95,7 +95,9 @@ export function CompanyDocumentsTab({ docs }) {
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 24px", color: PANEL.text }}>
+    /* Lista de registros (contrato social, cartão CNPJ, inscrições) — largura de trabalho.
+       A FICHA da empresa continua estreita de propósito: lá se LÊ texto, e linha longa cansa. */
+    <div style={{ width: "var(--content-wide)", margin: "0 auto", padding: "20px 0", color: PANEL.text }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
         <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Documentos</h2>
         <span style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
