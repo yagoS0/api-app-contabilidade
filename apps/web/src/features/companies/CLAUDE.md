@@ -77,9 +77,37 @@ junto. Entrada nova só vale acompanhada do `if (session.page === …)`.
 
 ### Calendário (`features/calendario/components/renderCalendarioGrid.jsx`)
 
+⚠ **COR = ESTADO. CATEGORIA = FORMA.** Era o contrário — a categoria era a cor (guia âmbar,
+obrigação verde, marco roxo) e o estado ia num sufixo de texto. Resultado: **obrigação pendente
+nascia VERDE**, a cor de "concluído", e a já entregue virava cinza; guia nascia âmbar sempre,
+inclusive a que vence daqui a três semanas. Hoje a cor responde *preciso agir?* (`vencida` vermelho ·
+`aFazer` âmbar, vence hoje · `futura` cinza · `resolvida` verde) e a forma responde *que tipo de
+coisa é?* (`▮` guia · `▤` obrigação · `◆` marco) — a forma é o que sobrevive ao dessaturado.
+
+- **Marco fica fora da escala de estado** (segue pela importância): é lembrete, não trabalho, e não
+  existe marco "concluído".
+- `estaVencida` valia **só para obrigação** (`situacao === "VENCIDA"`, campo que o backend só manda
+  para elas): guia vencida e não paga tinha a cor da que vence semana que vem. A data do evento no
+  calendário **é** o vencimento.
+- **O dia herda a pior cor** entre seus eventos (faixa à esquerda, `piorEstadoDoDia`). A célula
+  mostra 3 itens (8 na compacta) e esconde o resto num "+N" — o vencido podia estar entre os
+  escondidos, e o dia ficava igual a um dia tranquilo. Resolvido **não** pinta a borda: estado bom
+  não grita.
+
 Quatro visões: **Mês · Semana · Dia · Agenda**, com atalhos `M S D A` e `T` (hoje) — ignorados
-quando o foco está num campo. **Agenda é o default em tela estreita**: a grade de mês vira 42
-células ilegíveis num celular. `ehTelaEstreita()` trata largura 0 como *desconhecida*, não como
+quando o foco está num campo. **Agenda é o default em tela estreita E dentro da empresa**
+(`companyIdFixo`): uma empresa tem 3–6 eventos no mês, e a grade gasta 42 células para mostrar 4
+marcadores; na página principal, com trinta empresas, a densidade é a informação e a grade continua
+sendo o padrão. A grade de mês vira 42 células ilegíveis num celular.
+
+⚠ Virar padrão dentro da empresa expôs dois defeitos que a agenda tinha desde sempre: as setas
+`‹ ›` andavam **um dia** (a lista é montada a partir de `competencia`, ou seja cobre o MÊS — o
+clique mudava a referência sem mudar a lista, e a seta parecia não funcionar) e o rótulo do período
+caía no cálculo da **semana**, anunciando "3 ago – 9 ago" para uma lista que ia até o dia 31.
+
+**Empty state:** a tela não sabe distinguir "mês sem evento" de "empresa sem obrigação configurada"
+sem uma segunda consulta — então **não afirma**. Diz o que é verdade ("Nenhum evento em setembro de
+2027"), oferece o próximo mês, e só dentro da empresa lembra onde se configura obrigação. `ehTelaEstreita()` trata largura 0 como *desconhecida*, não como
 estreita — sem isso a tela abre em modo celular num container ainda sem layout e fica assim, porque
 `visao`/`sidebarAberta` são valores iniciais e não se recalculam.
 
@@ -376,6 +404,10 @@ e-mail na mesma linha, clicar em qualquer ponto virava navegação por acidente.
 movendo o foco entre linhas (isso é leitura), e o clique no **nome** abre o popover de configuração.
 
 ### Imprimir
+
+⚠ **A regra de impressão não é mais só da listagem.** `body.imprimindo-listagem` virou
+**`body.imprimindo`**, e a Circular reusa o mesmo bloco `@media print` (a segunda cópia divergiria
+na primeira correção). Quem quiser imprimir marca `data-print-area` e liga a classe no `body`.
 
 Botão ao lado do seletor de visão. Ele **força a visão Tabela e expande as fechadas** antes de
 `window.print()` — as fechadas ficam colapsadas na tela de propósito, e imprimir assim entregaria uma

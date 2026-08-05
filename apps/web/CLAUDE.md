@@ -119,6 +119,17 @@ de hex quebra em silêncio assim que a cor vira `var(--…)`.
 - Não criar arquivos CSS por componente
 - Componentes de UI reutilizáveis ficam em `src/components/`
 
+⚠ **Verde é CONCLUÍDO — nunca use verde em botão de ação primária.** Um botão verde de "faça isto"
+ensina o contrário exatamente nas telas onde o verde precisa ser lido como "está fechado" (o rodapé
+`D = C ✓ ok`, a guia paga, a obrigação entregue). Ação primária é o **accent**. Pelo mesmo motivo,
+âmbar é "pendência", não decoração: um menu permanentemente âmbar (era o caso do SERPRO) treina o
+olho a ignorar a cor que significa "falta enviar".
+
+⚠ **Impressão é uma regra só, compartilhada:** bloco `@media print` no `App.css`, ligado por
+`body.imprimindo` + `data-print-area` (mais `data-print-only` e `data-print-tabela`). Todo
+`!important` ali é proposital — é a única alavanca da cascata contra os ~2.200 `style={{}}` inline.
+Tela nova que precise imprimir **reusa**, não copia.
+
 ## Blocos com CLAUDE.md próprio (Q17)
 
 Ler antes de mexer; atualizar ao terminar: `src/features/companies/`,

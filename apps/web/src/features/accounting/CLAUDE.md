@@ -26,6 +26,54 @@ plano de contas, funções/templates, importações (OFX/Excel).
   parcelamento existente, pagamento; abertura é a única provisão; contas em branco + memória.
 - `functions/`, `chart-of-accounts/`, `rules/`, `historicos/`, `ofx-import/`, `excel-import/`.
 
+## ⚠ A COMPETÊNCIA É GLOBAL — mora no header da empresa, não na aba
+
+Eram **duas**, com defaults **diferentes**: os lançamentos nasciam no mês anterior (competência
+fechada, como o contador trabalha) e a Circular no mês corrente. Trocar de aba mudava o mês sem
+dizer nada, e as duas telas mostravam períodos diferentes da mesma empresa.
+
+A fonte é **`accountingEntriesState.filters.competencia`** (`useManageAccountingEntries`), escrita
+pelo `CompetenciaSwitcher` do `renderCompanyDetailHeader`. Escolhida porque o `useEffect` de carga
+já observa `filters`: escrever ali recarrega sozinho, sem um segundo caminho de sincronização para
+divergir. `circularCompetencia` virou um alias derivado — **não é mais estado**.
+
+- Helpers em **`src/lib/competencia.js`** (`formatCompetencia`, `deslocarCompetencia`,
+  `competenciaPadrao`, `competenciaAtual`). Ficam fora de `accounting/` porque o header é da feature
+  `companies` e importar entre features viraria a segunda cópia.
+- O **ano da matriz da Circular** nasce do ano da competência, não de `new Date().getFullYear()`:
+  em janeiro a competência é dezembro do ano anterior, e a Circular abria no ano novo, vazia,
+  justamente no mês em que se fecha o ano. Mudar de ano no header leva a matriz junto (com os dois
+  valores passados explicitamente ao `loadCircular` — o default do parâmetro é o valor do render
+  anterior).
+- **`TABS_COM_COMPETENCIA`** (no header) decide onde o seletor aparece: hoje `lancamentos` e
+  `circular`. Aba entra na lista quando passa a **filtrar** por competência. Seletor que não comanda
+  nada é pior que seletor nenhum — a pessoa muda o mês, nada muda, e passa a duvidar do controle
+  também onde ele funciona.
+
+## ⚠ Circular: vencida ≠ a vencer (`circular/lib/estadoGuia.js`)
+
+`statusPagamento === "ABERTO"` pintava tudo de **vermelho** — a guia que vence daqui a duas semanas
+com a mesma força da que venceu há dois meses. Vermelho é "bloqueia/vencido"; gasto no prazo normal
+ele para de apontar o que atrasou.
+
+Uma leitura só alimenta **a cor da célula, o chip do popover e os totais do rodapé** (12 testes):
+
+- **Vence HOJE ainda é a vencer** — comparar timestamps crus faria a guia do dia nascer vencida às
+  00:01. Tudo passa por `inicioDoDia`.
+- ⚠ **Sem vencimento não se afirma atraso.** Cai em `ABERTA`, neutra, com o texto dizendo que a data
+  não é conhecida. E o rodapé tem balde **próprio** (`semData`): somá-lo em "a vencer" faria o total
+  afirmar um prazo que a célula logo acima se recusa a afirmar.
+- O `vencimento` (e `envios`) vêm no `select` de `sourceGuide` em `routes/firm/accountingEntries.js`
+  — sem eles a regra não tem o que ler.
+- **Envio no popover sai de `envios_guia`**, não de `emailStatus`, e o **destino vem do envio**,
+  nunca do cadastro (já produziu na tela "Enviada por WhatsApp para <e-mail>").
+- **Desfazer baixa leva `baixaIds` inteiro** e confirma antes: são até três lançamentos (principal,
+  juros, multa) e a guia reabre.
+
+**Impressão:** o bloco `@media print` do `App.css` deixou de ser da listagem —
+`body.imprimindo-listagem` virou **`body.imprimindo`**, e a Circular reusa a mesma regra
+(`data-print-area` / `data-print-only` / `data-print-tabela`) em vez de ganhar a segunda cópia.
+
 ## Padrões
 
 - Componentes recebem dados/handlers por **props** (hooks/pages chamam a API). Exceções
