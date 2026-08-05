@@ -13,6 +13,8 @@ const CODIGO_TRIBUTO = {
   "2172": "COFINS",
   "2089": "IRPJ",
   "2372": "CSLL",
+  // Confirmado no relatório oficial: "3208-06 IRRF - ALUG E ROYALTIES PAGOS A PF".
+  "3208": "IRRF",
 };
 
 // Identifica o tributo pelo NOME que vem na descrição do extrato da DCTFWeb — é a fonte confiável
@@ -23,6 +25,13 @@ export function tributoDaDescricao(descricao) {
   if (/COFINS|FINANCIAMENTO DA SEGURIDADE/.test(s)) return "COFINS";
   if (/\bPIS\b|PIS\/PASEP|PASEP/.test(s)) return "PIS";
   if (/CSLL|SOBRE O LUCRO L[IÍ]QUIDO|CONTRIBUI[CÇ][AÃ]O SOCIAL/.test(s)) return "CSLL";
+  // ⚠ IRRF ANTES DE IRPJ, e a ordem aqui é a regra inteira.
+  //
+  // A linha do IRPJ casa `IMPOSTO.*RENDA`. Uma descrição de IRRF escrita por extenso — "IMPOSTO DE
+  // RENDA RETIDO NA FONTE" — cairia nela e o IRRF viraria IRPJ. Isso é pior que cair em "outros":
+  // o valor entraria na linha de um tributo que a empresa pode nem dever, com aparência de certo.
+  // Testar o mais específico primeiro é o que impede o genérico de capturá-lo.
+  if (/\bIRRF\b|RETIDO NA FONTE|RETEN[CÇ][AÃ]O NA FONTE/.test(s)) return "IRRF";
   if (/IRPJ|IMPOSTO.*RENDA|RENDA.*PESSOA(S)? JUR/.test(s)) return "IRPJ";
   return null;
 }

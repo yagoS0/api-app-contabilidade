@@ -26,6 +26,19 @@ export const CODIGO_RECEITA_TO_EVENT = Object.freeze({
   "2372": "DARF_CSLL", "2484": "DARF_CSLL", "6012": "DARF_CSLL",
   "8109": "DARF_PIS",
   "2172": "DARF_COFINS",
+  // IRRF — retenção na fonte. Confirmado no relatório oficial da DCTFWeb:
+  // "3208-06 IRRF - ALUG E ROYALTIES PAGOS A PF".
+  //
+  // ⚠ Sem esta linha o 3208 caía no fallback `DARF_OUTROS`, e o estrago não parava na etiqueta: a
+  // conta contábil é memorizada POR eventType, então o IRRF herdava a conta de qualquer outro
+  // tributo que já tivesse passado por `DARF_OUTROS` — foi assim que ele saiu debitando
+  // "240 INSS A PAGAR". Classificação errada não fica só na tela; ela contamina o lançamento.
+  //
+  // ⚠ SÓ O 3208 ENTRA. Existem outros códigos de IRRF (por natureza do rendimento), mas nenhum
+  // deles está confirmado por fonte oficial aqui — e chutar código de receita é exatamente o que a
+  // regra 1 proíbe. O que não estiver comprovado continua em OUTROS_TRIBUTOS, que é visível e
+  // conferível, em vez de virar um IRRF inventado.
+  "3208": "DARF_IRRF",
 });
 
 // Mapeia eventType DARF_* → subtipo da matriz Circular
@@ -35,6 +48,23 @@ export const EVENT_TO_SUBTIPO = Object.freeze({
   DARF_IRPJ: "IRPJ",
   DARF_CSLL: "CSLL",
   DARF_ISS: "ISS",
+  // A linha "IRRF" já existe na Circular (`renderCircularTab`, regimes: "all") e ficava sempre
+  // vazia — não por falta de IRRF, mas porque ele era despejado em "Outros Tributos".
+  DARF_IRRF: "IRRF",
+  DARF_OUTROS: "OUTROS_TRIBUTOS",
+});
+
+// O NOME do tributo, para o histórico. O `subtipo` é a LINHA da Circular e agrupa PIS com COFINS de
+// propósito; usá-lo no texto do lançamento fazia duas linhas diferentes aparecerem as duas como
+// "PIS_COFINS", distinguíveis só pelo código de receita entre parênteses. O agrupamento é certo na
+// matriz e errado na descrição — são perguntas diferentes.
+export const EVENT_TO_TRIBUTO = Object.freeze({
+  DARF_PIS: "PIS",
+  DARF_COFINS: "COFINS",
+  DARF_IRPJ: "IRPJ",
+  DARF_CSLL: "CSLL",
+  DARF_ISS: "ISS",
+  DARF_IRRF: "IRRF",
   DARF_OUTROS: "OUTROS_TRIBUTOS",
 });
 
@@ -47,6 +77,7 @@ const NOME_TRIBUTO_TO_EVENT = Object.freeze({
   IRPJ: "DARF_IRPJ",
   CSLL: "DARF_CSLL",
   ISS: "DARF_ISS",
+  IRRF: "DARF_IRRF",
 });
 
 function pickEventType(tipoUpper, codigo, tributo) {
@@ -148,9 +179,14 @@ export async function generateProvisionsFromGuide({ guideId, tx = null }) {
     const created = [];
     for (const l of linhas) {
       const subtipo = EVENT_TO_SUBTIPO[l.eventType] || "OUTROS_TRIBUTOS";
+      // ⚠ O histórico usa o TRIBUTO; o subtipo continua sendo a linha da Circular. Antes o texto
+      // saía do subtipo, e PIS e COFINS — que compartilham a linha de propósito — apareciam os dois
+      // como "PIS_COFINS", diferenciados só pelo código entre parênteses. Duas linhas de imposto
+      // distintas com o mesmo nome na tela de lançamentos.
+      const nomeTributo = EVENT_TO_TRIBUTO[l.eventType] || subtipo;
       const historico = l.codigo
-        ? `${subtipo} - ${guide.competencia} (cód ${l.codigo})`
-        : `${subtipo} - ${guide.competencia}`;
+        ? `${nomeTributo} - ${guide.competencia} (cód ${l.codigo})`
+        : `${nomeTributo} - ${guide.competencia}`;
 
       // Lookup contas memorizadas (vazio se nunca foi preenchido)
       const memorized = await lookupAccountsFromHistorico(ctx, {
