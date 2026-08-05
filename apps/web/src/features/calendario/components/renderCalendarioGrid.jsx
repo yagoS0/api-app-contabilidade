@@ -19,17 +19,31 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const COR = {
   fundo: "#21222C", fundoFora: "#1B1C24", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
-  guia: "#FFB347", guiaPaga: "#6272A4", marco: "#BD93F9", hoje: "#8BE9FD",
-  obrigacao: "#50FA7B", obrigacaoFeita: "#6272A4", vencida: "#FF5555",
+  marco: "#BD93F9", hoje: "#8BE9FD",
+  // Cores de ESTADO — as mesmas quatro do resto do app.
+  vencida: "#FF5555",   // passou do prazo e não foi feito
+  aFazer: "#FFB347",    // vence hoje: ação rápida pendente
+  resolvida: "#50FA7B", // feito
+  futura: "#6272A4",    // ainda não é trabalho de hoje
   alta: "#FF5555", media: "#BD93F9", baixa: "#6272A4",
 };
 
-// Guia e obrigação precisam ser distinguíveis à primeira vista porque respondem a perguntas
-// diferentes: "o cliente paga" × "eu entrego". Cores separadas, e não um tom do mesmo laranja.
+// ⚠ COR = ESTADO. CATEGORIA = FORMA.
+//
+// Era o contrário: a categoria era a COR (guia âmbar, obrigação verde, marco roxo) e o estado
+// aparecia só num sufixo de texto. Duas consequências, as duas ruins:
+//
+// • Obrigação PENDENTE nascia VERDE — a cor de "concluído" — e a obrigação já entregue virava
+//   cinza. Exatamente ao contrário do que a tela precisava dizer.
+// • Guia nascia ÂMBAR sempre, inclusive a que vence daqui a três semanas, gastando a cor de
+//   "ação rápida pendente" no compromisso mais tranquilo do mês.
+//
+// Agora a cor responde "preciso agir?" e a forma responde "que tipo de coisa é?". A forma é o que
+// sobrevive ao teste do screenshot dessaturado (princípio 2): sem cor, ▮ ▤ ◆ continuam distintos.
 const CATEGORIAS = [
-  { chave: "guia", rotulo: "Guias (cliente paga)", cor: "#FFB347" },
-  { chave: "obrigacao", rotulo: "Obrigações (eu entrego)", cor: "#50FA7B" },
-  { chave: "marco", rotulo: "Marcos", cor: "#BD93F9" },
+  { chave: "guia", rotulo: "Guias (cliente paga)", forma: "▮", cor: COR.suave },
+  { chave: "obrigacao", rotulo: "Obrigações (eu entrego)", forma: "▤", cor: COR.suave },
+  { chave: "marco", rotulo: "Marcos", forma: "◆", cor: COR.marco },
 ];
 
 const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -84,21 +98,59 @@ function diasDaSemana(dataBase) {
 
 const ehObrigacao = (item) => item.tipo === "obrigacao" || item.tipo === "obrigacaoGrupo";
 
-function corDoItem(item) {
+/**
+ * A cor de um item = o seu ESTADO. Ver o bloco de CATEGORIAS para o porquê da inversão.
+ *
+ * ⚠ MARCO É EXCEÇÃO e continua pela importância: marco não é trabalho a fazer, é lembrete
+ * ("mudou a alíquota", "reunião com o cliente"). Não existe marco "concluído", então pintá-lo pela
+ * mesma escala diria que todo lembrete de amanhã está pendente.
+ */
+function corDoItem(item, hoje = hojeISO()) {
   if (item.tipo === "marco") return COR[String(item.importancia || "MEDIA").toLowerCase()] || COR.marco;
-  if (ehObrigacao(item)) return item.resolvido ? COR.obrigacaoFeita : COR.obrigacao;
-  return item.resolvido ? COR.guiaPaga : COR.guia;
+  if (item.resolvido) return COR.resolvida;
+  if (estaVencida(item, hoje)) return COR.vencida;
+  // Futuro é CINZA, não âmbar: uma obrigação que vence dia 20 não é ação pendente no dia 2, e
+  // acender o mês inteiro de âmbar no dia 1 é o mesmo paredão que a listagem já teve de desmontar.
+  if (item.data && item.data > hoje) return COR.futura;
+  return COR.aFazer;
 }
 
-/** Vencida ganha marca vermelha independente da cor da categoria — atraso vence a categoria. */
-function estaVencida(item) {
-  return ehObrigacao(item) && item.situacao === "VENCIDA";
+/**
+ * Passou do prazo sem ter sido feito.
+ *
+ * ⚠ Antes isto valia SÓ para obrigação (`situacao === "VENCIDA"`, um campo que o backend só manda
+ * para elas). Guia vencida e não paga ficava com a mesma cor da guia que vence semana que vem — o
+ * mesmo defeito que a Circular tinha. A data do evento no calendário é o vencimento.
+ */
+function estaVencida(item, hoje = hojeISO()) {
+  if (item.resolvido) return false;
+  if (ehObrigacao(item) && item.situacao === "VENCIDA") return true;
+  return Boolean(item.data) && item.data < hoje;
 }
 
+/**
+ * A pior cor entre os eventos de um dia — `null` quando não há nada a sinalizar.
+ *
+ * Marco fica FORA: ele é lembrete, não trabalho, e um marco de importância alta (vermelho) faria o
+ * dia gritar "atrasado" sem nada estar atrasado. Resolvido também não pinta a borda: estado bom não
+ * grita (princípio 6), e um dia todo verde disputaria atenção com os que pedem ação.
+ */
+function piorEstadoDoDia(itens, hoje = hojeISO()) {
+  const ordem = [COR.vencida, COR.aFazer];
+  let melhorIndice = -1;
+  for (const it of itens || []) {
+    if (it.tipo === "marco") continue;
+    const i = ordem.indexOf(corDoItem(it, hoje));
+    if (i >= 0 && (melhorIndice === -1 || i < melhorIndice)) melhorIndice = i;
+  }
+  return melhorIndice === -1 ? null : ordem[melhorIndice];
+}
+
+/** A FORMA é a categoria — e é o que sobrevive ao screenshot dessaturado. */
 function simboloDoItem(item) {
-  if (item.tipo === "marco") return "◆";
-  if (ehObrigacao(item)) return "▸";
-  return "•";
+  if (item.tipo === "marco") return "◆";      // losango: marco
+  if (ehObrigacao(item)) return "▤";          // documento: eu entrego
+  return "▮";                                  // boleto: o cliente paga
 }
 
 function rotuloDoItem(item) {
@@ -156,6 +208,11 @@ function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compact
   const MAX = compacta ? 8 : 3;
   const visiveis = itens.slice(0, MAX);
   const excedente = itens.length - visiveis.length;
+  // ⚠ O DIA HERDA A PIOR COR ENTRE SEUS EVENTOS.
+  // Com `MAX` de 3 (ou 8 na compacta), o evento vencido pode estar justamente entre os que ficaram
+  // fora, atrás de um "+4". A borda do dia é o único sinal que não depende de o item caber: um dia
+  // com atraso escondido no excedente ficava indistinguível de um dia tranquilo.
+  const pior = piorEstadoDoDia(itens);
 
   return (
     <div
@@ -178,6 +235,9 @@ function Celula({ dia, itens, ehHoje, altura, onCriar, onAbrir, onMover, compact
           : dia.doMes ? COR.fundo : COR.fundoFora,
         borderTop: `1px solid ${COR.borda}`,
         borderLeft: `1px solid ${COR.borda}`,
+        // A herança entra como faixa à ESQUERDA, não como fundo: fundo colorido brigaria com o
+        // realce do feriado e com o do arrasto, que já ocupam essa camada.
+        ...(pior ? { boxShadow: `inset 3px 0 0 0 ${pior}` } : null),
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
@@ -233,9 +293,16 @@ function ehTelaEstreita() {
  *   (`window`), e dentro da empresa apertar "d" trocaria a visão de qualquer lugar da tela.
  */
 export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFixo = null }) {
-  // No celular a grade de mês vira 42 células de 40px onde nada é legível. A AGENDA — lista
-  // cronológica por dia — é a única visão que funciona nessa largura, então é o default lá.
-  const [visao, setVisao] = useState(() => (ehTelaEstreita() ? "agenda" : "mes"));
+  // DEFAULT DA VISÃO — duas razões diferentes levam ao mesmo lugar:
+  //
+  // • No celular a grade de mês vira 42 células de 40px onde nada é legível.
+  // • ⚠ DENTRO DE UMA EMPRESA (`companyIdFixo`) a grade mensal fica 90% vazia: uma empresa tem
+  //   3–6 eventos no mês, e 42 células para mostrar 4 marcadores obrigam a varrer a grade inteira
+  //   para descobrir o que já dava para ler numa lista de quatro linhas. Na página principal, com
+  //   trinta empresas, a grade continua sendo o padrão certo — ali a densidade é a informação.
+  //
+  // Continua sendo só o DEFAULT: Mês/Semana/Dia seguem disponíveis nos dois casos.
+  const [visao, setVisao] = useState(() => (ehTelaEstreita() || companyIdFixo ? "agenda" : "mes"));
   const [referencia, setReferencia] = useState(hojeISO); // dia âncora da navegação
   const [companyId, setCompanyId] = useState(companyIdFixo || "");
   const [categorias, setCategorias] = useState(() => new Set(CATEGORIAS.map((c) => c.chave)));
@@ -357,7 +424,12 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   function navegar(passo) {
     const [y, m, d] = referencia.split("-").map(Number);
     const base = new Date(Date.UTC(y, m - 1, d));
-    if (visao === "mes") base.setUTCMonth(base.getUTCMonth() + passo);
+    // ⚠ AGENDA ANDA POR MÊS, como a grade. `diasDaAgenda` monta a lista a partir de `competencia`
+    // — ou seja, cobre o MÊS inteiro —, mas a agenda caía no `else` e avançava um DIA. O clique em
+    // › mudava a referência sem mudar o mês, então a lista continuava idêntica: a seta parecia não
+    // funcionar, e só depois de ~30 cliques o mês virava. Ficou escondido enquanto a agenda era só
+    // o default do celular; virando o padrão dentro da empresa, é o primeiro gesto de todo mundo.
+    if (visao === "mes" || visao === "agenda") base.setUTCMonth(base.getUTCMonth() + passo);
     else if (visao === "semana") base.setUTCDate(base.getUTCDate() + 7 * passo);
     else base.setUTCDate(base.getUTCDate() + passo);
     setReferencia(iso(base));
@@ -365,7 +437,9 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
 
   const periodo = useMemo(() => {
     const [y, m, d] = referencia.split("-").map(Number);
-    if (visao === "mes") return `${MESES[m - 1]} de ${y}`;
+    // Agenda cobre o mês inteiro — o rótulo tem que dizer isso. Caía no cálculo da SEMANA e
+    // anunciava "3 ago – 9 ago" para uma lista que ia até o dia 31.
+    if (visao === "mes" || visao === "agenda") return `${MESES[m - 1]} de ${y}`;
     if (visao === "dia") return `${d} de ${MESES[m - 1]} de ${y}`;
     const semana = diasDaSemana(referencia);
     const ini = semana[0]; const fim = semana[6];
@@ -662,10 +736,23 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               onChange={() => alternarCategoria(c.chave)}
               style={{ accentColor: c.cor }}
             />
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: c.cor, flex: "0 0 auto" }} />
+            {/* A legenda mostra a FORMA, que é o que a categoria virou. Um quadradinho colorido
+                aqui ensinaria de novo que categoria é cor — justamente o que se desfez. */}
+            <span style={{ color: c.cor, flex: "0 0 auto", fontSize: "0.9rem", lineHeight: 1 }}>{c.forma}</span>
             {c.rotulo}
           </label>
         ))}
+        {/* Sem esta segunda metade, a legenda explicaria só metade do desenho e a cor ficaria por
+            adivinhação — que é o que acontecia antes, quando ela significava outra coisa. */}
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 12, fontSize: "0.74rem", color: COR.suave, flexWrap: "wrap" }}>
+          <span style={{ color: COR.suave }}>cor = estado:</span>
+          {[["vencida", "vencido"], ["aFazer", "vence hoje"], ["futura", "a vencer"], ["resolvida", "resolvido"]].map(([k, r]) => (
+            <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: COR[k], flex: "0 0 auto" }} />
+              {r}
+            </span>
+          ))}
+        </span>
       </div>
 
       {erro && (
@@ -691,8 +778,10 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               aparece e some conforme o clique: está sempre ali, com todas as empresas. Clicar numa
               obrigação do calendário apenas a ESTREITA para quem tem aquela obrigação — e o ✕
               devolve a lista inteira. Dentro da aba de uma empresa não há o que listar. */}
+          {/* Borda do painel expandido: destaque de SELEÇÃO, não de estado — por isso o accent
+              (`hoje`, ciano) e não uma cor semântica, que seria lida como "este grupo está bem". */}
           {!companyIdFixo && (
-            <div style={{ border: `1px solid ${grupoAberto ? COR.obrigacao : COR.borda}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ border: `1px solid ${grupoAberto ? COR.hoje : COR.borda}`, borderRadius: 10, overflow: "hidden" }}>
               <div style={{ padding: "10px 12px", borderBottom: `1px solid ${COR.borda}`, background: "#20222E" }}>
                 {grupoAberto ? (
                   <>
@@ -737,9 +826,12 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                       }
                       style={{
                         width: 8, height: 8, borderRadius: 999, flex: "0 0 auto",
+                        // Estado, não categoria: resolvida = verde, vencida = vermelho, em aberto =
+                        // âmbar. Antes "em aberto" era o verde da categoria obrigação, e resolvida
+                        // era cinza — a leitura exatamente invertida.
                         background: grupoAberto
-                          ? (linha.situacao === "VENCIDA" ? COR.vencida : linha.resolvido ? COR.obrigacaoFeita : COR.obrigacao)
-                          : linha.vencidas > 0 ? COR.vencida : linha.abertas > 0 ? COR.obrigacao : COR.borda,
+                          ? (linha.situacao === "VENCIDA" ? COR.vencida : linha.resolvido ? COR.resolvida : COR.aFazer)
+                          : linha.vencidas > 0 ? COR.vencida : linha.abertas > 0 ? COR.aFazer : COR.resolvida,
                       }}
                     />
                     <button
@@ -774,8 +866,8 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                         title={`${linha.abertas} obrigação(ões) em aberto no mês`}
                         style={{
                           flex: "0 0 auto", fontSize: "0.74rem", fontWeight: 700, borderRadius: 999,
-                          padding: "1px 7px", color: linha.vencidas > 0 ? COR.vencida : COR.obrigacao,
-                          border: `1px solid ${linha.vencidas > 0 ? COR.vencida : COR.obrigacao}`,
+                          padding: "1px 7px", color: linha.vencidas > 0 ? COR.vencida : COR.aFazer,
+                          border: `1px solid ${linha.vencidas > 0 ? COR.vencida : COR.aFazer}`,
                         }}
                       >
                         {linha.abertas}
@@ -811,9 +903,27 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       <div style={{ flex: "1 1 0", minWidth: 0, display: estreita && sidebarAberta ? "none" : "block" }}>
       {visao === "agenda" ? (
         <div style={{ border: `1px solid ${COR.borda}`, borderRadius: 8, overflow: "hidden" }}>
-          {!diasDaAgenda.length && (
-            <div style={{ padding: "24px 16px", textAlign: "center", color: COR.suave, fontSize: "0.85rem" }}>
-              Nada neste período.
+          {/* ⚠ VAZIO MUDO NUNCA (princípio 7). Era só "Nada neste período." — e "nada" ali pode ser
+              duas coisas muito diferentes: o mês não tem evento, ou a empresa não tem obrigação
+              configurada nenhuma. A tela não sabe qual das duas é sem uma segunda consulta, então
+              ela NÃO afirma: diz o que é verdade (não há evento NESTE mês), oferece o próximo mês,
+              que é a dúvida seguinte, e só dentro da empresa lembra onde se configura obrigação.
+              Afirmar "esta empresa não tem obrigações" sem ter verificado seria inventar. */}
+          {!diasDaAgenda.length && !carregando && (
+            <div style={{ padding: "26px 16px", textAlign: "center", color: COR.suave, fontSize: "0.85rem", display: "grid", gap: 10, justifyItems: "center" }}>
+              <span>Nenhum evento em {periodo}.</span>
+              <button
+                type="button"
+                onClick={() => navegar(1)}
+                style={{ background: "transparent", border: `1px solid ${COR.borda}`, borderRadius: 6, color: COR.texto, font: "inherit", fontSize: "0.8rem", padding: "5px 12px", cursor: "pointer" }}
+              >
+                Ver o próximo mês →
+              </button>
+              {companyIdFixo && (
+                <span style={{ fontSize: "0.75rem" }}>
+                  Obrigações desta empresa se configuram no Calendário, na página principal.
+                </span>
+              )}
             </div>
           )}
           {diasDaAgenda.map((d) => (
@@ -892,7 +1002,9 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                   background: COR.fundo, border: `1px solid ${COR.borda}`, color: COR.texto, textAlign: "left",
                 }}
               >
-                <span style={{ color: COR.guia }}>{p.titulo}</span>
+                {/* Pendência do mês É trabalho pendente — âmbar é a cor certa aqui (antes era a
+                    cor da categoria "guia", que nem sempre é do que se trata). */}
+                <span style={{ color: COR.aFazer }}>{p.titulo}</span>
                 <span style={{ color: COR.suave }}> · {p.empresa}</span>
                 {/* Com dois meses na tela, "Apuração não transmitida · Farrell" aparece duas vezes e
                     nada distingue uma da outra — só a competência diz de qual mês é cada uma. */}
