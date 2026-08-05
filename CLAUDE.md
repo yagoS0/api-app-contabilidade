@@ -114,6 +114,17 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   só pelo botão, **1× a cada 4h**.
   - ⚠ **Exige Volume no Railway em `/app/storage`** — sem ele o filesystem é efêmero e **todo
     deploy apaga os PDFs** (guias e relatórios SITFIS). Ver `apps/api/CLAUDE.md`.
+- [~] **WhatsApp — Entrega 1: envio de guias pelo canal** — **PAUSADO aguardando número para o
+  cadastro na Meta**. Roadmap e estado completo em **`docs/whatsapp-entrega-1.md`**.
+  - **F1 e F2 prontas na `dev`** e seguras para subir junto de qualquer outra entrega: F1 é inerte
+    (tabelas e rotas que ninguém chama ainda) e F2 preserva o comportamento (`foiEnviadaComLegado`).
+  - **F2 é a mudança estrutural:** `Guide.emailStatus` deixou de ser o estado de envio. Quem
+    responde "esta guia foi enviada?" agora é **`envios_guia`** (um registro por guia × canal) — um
+    campo só não representa "enviada por WhatsApp e ainda não por e-mail". Enviada = terminal em
+    QUALQUER canal. **Rodar `scripts/backfill-envio-guia.mjs` depois do deploy.**
+  - F3–F6 (Cloud API, webhook, envio em lote, recebimento) **não iniciadas**: dependem de
+    credenciais reais. Escrevê-las sem poder exercê-las é o que a regra 1 proíbe — e o
+    `CONSDECCOMPLETA33` do LP está OFF até hoje por exatamente isso.
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 
