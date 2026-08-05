@@ -107,3 +107,27 @@ describe("aplicarStatusDoProvedor — NUNCA rebaixa", () => {
     expect(await aplicarStatusDoProvedor({ providerMessageId: "wamid.?", status: "read" })).toBeNull();
   });
 });
+
+describe("foiEnviadaComLegado — a janela entre o deploy e o backfill", () => {
+  it("guia SEM envio registrado mas com emailStatus SENT continua enviada", async () => {
+    // ⚠ Sem isto, no intervalo entre subir a F2 e rodar o backfill a carteira INTEIRA aparece como
+    // não enviada — e o contador reenvia guias que o cliente já recebeu. Não é invenção:
+    // `emailStatus: SENT` é exatamente o dado que o backfill converteria.
+    const { foiEnviadaComLegado } = await import("../EnvioGuiaService.js");
+    expect(foiEnviadaComLegado([], { emailStatus: "SENT" })).toBe(true);
+  });
+
+  it("guia sem envio e sem SENT continua não enviada", async () => {
+    const { foiEnviadaComLegado } = await import("../EnvioGuiaService.js");
+    expect(foiEnviadaComLegado([], { emailStatus: "PENDING" })).toBe(false);
+    expect(foiEnviadaComLegado([], {})).toBe(false);
+  });
+
+  it("HAVENDO envio, ele manda — o legado não mascara o canal", async () => {
+    // Guia cujo e-mail consta SENT mas cujo envio falhou: quem vale é o envio. Deixar o legado
+    // vencer aqui esconderia uma falha real atrás de um campo velho.
+    const { foiEnviadaComLegado } = await import("../EnvioGuiaService.js");
+    expect(foiEnviadaComLegado([{ canal: "EMAIL", status: "falhou" }], { emailStatus: "SENT" })).toBe(false);
+    expect(foiEnviadaComLegado([{ canal: "WHATSAPP", status: "entregue" }], { emailStatus: null })).toBe(true);
+  });
+});

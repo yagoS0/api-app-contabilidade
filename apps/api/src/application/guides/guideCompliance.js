@@ -3,7 +3,7 @@ import { GUIDE_COMPLIANCE_COMPETENCIA } from "../../config.js";
 // Faturamento vem da MESMA função que a apuração usa. Duas definições de "o mês teve receita"
 // fariam o chip da guia e o fechamento discordarem — com o contador no meio.
 import { faturamentoEmitPorEmpresa } from "../notas/apuracao/v2/FechamentoService.js";
-import { enviosPorGuia, foiEnviada, envioParaExibir } from "./EnvioGuiaService.js";
+import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "./EnvioGuiaService.js";
 
 /**
  * Competência YYYY-MM usada para alertas de guia (env fixo ou mês civil anterior).
@@ -136,7 +136,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
       const exibirParc = envioParaExibir(enviosParc);
       parcGuiaByPortal.set(g.portalClientId, {
         guideId: g.id,
-        enviada: foiEnviada(enviosParc),
+        enviada: foiEnviadaComLegado(enviosParc, g),
         canalEnvio: exibirParc?.canal || null,
         envioStatus: exibirParc?.status || null,
         envioEm: exibirParc?.lidoEm || exibirParc?.entregueEm || exibirParc?.enviadoEm || null,
@@ -287,7 +287,9 @@ export async function computeGuideComplianceMap(rows, competencia) {
       guideId: g.id,
       // A resposta agora vem dos envios; `emailStatus` continua no carimbo só como detalhe de
       // transporte, para quem ainda quiser saber especificamente do e-mail.
-      enviada: foiEnviada(envios),
+      // Tolera guia ainda não convertida pelo backfill — ver `foiEnviadaComLegado`. Sem isto, a
+      // janela entre o deploy e o script mostra a carteira inteira como não enviada.
+      enviada: foiEnviadaComLegado(envios, g),
       canalEnvio: exibir?.canal || null,
       envioStatus: exibir?.status || null,
       envioEm: exibir?.lidoEm || exibir?.entregueEm || exibir?.enviadoEm || null,

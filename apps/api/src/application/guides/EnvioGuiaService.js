@@ -28,6 +28,26 @@ export function foiEnviada(envios) {
   return (envios || []).some((e) => STATUS_TERMINAL.includes(String(e.status)));
 }
 
+/**
+ * A mesma pergunta, tolerando guia que ainda não foi convertida pelo backfill.
+ *
+ * ⚠ POR QUE ESTE CAMINHO EXISTE
+ * Entre o deploy e o `backfill-envio-guia.mjs` há uma janela: a tabela está vazia e o código já lê
+ * dela. Sem esta tolerância, nessa janela a carteira INTEIRA aparece como não enviada — e o
+ * contador reenvia guias que o cliente já recebeu. Depender de "rodar o script rápido" seria trocar
+ * uma garantia por uma corrida.
+ *
+ * Não é invenção: `emailStatus: SENT` é exatamente o dado que o backfill converteria. A tolerância
+ * só vale quando NÃO existe nenhum envio registrado — assim que houver um, ele manda, e uma guia
+ * cujo e-mail falhou mas o WhatsApp entregou continua sendo lida corretamente pelos envios.
+ *
+ * É caminho de TRANSIÇÃO: depois do backfill rodado em todos os ambientes, ele fica inerte.
+ */
+export function foiEnviadaComLegado(envios, guideLegado) {
+  if (envios && envios.length) return foiEnviada(envios);
+  return String(guideLegado?.emailStatus || "").toUpperCase() === "SENT";
+}
+
 /** O envio mais "adiantado" — é o que o popover do chip mostra. */
 export function envioParaExibir(envios) {
   const ordem = { lido: 4, entregue: 3, enviado: 2, enviando: 1, pendente: 0, falhou: -1 };
