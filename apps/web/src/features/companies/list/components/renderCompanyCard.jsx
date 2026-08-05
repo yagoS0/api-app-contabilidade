@@ -45,6 +45,14 @@ export function getComplianceTags(guideCompliance) {
         guideId: node.guideId || null,
         emailStatus: node.emailStatus || null,
         emailSentAt: node.emailSentAt || null,
+        // O envio agora tem CANAL. É o que permite o popover dizer "WhatsApp · 05/08 14:32 ·
+        // ✓✓ lida" em vez de assumir e-mail — e é a informação que o contador usa para saber por
+        // onde a guia chegou (ou não) ao cliente.
+        canalEnvio: node.canalEnvio || null,
+        envioStatus: node.envioStatus || null,
+        envioEm: node.envioEm || null,
+        envioErro: node.envioErro || null,
+        envioDestino: node.envioDestino || null,
         vazioEm: node.vazioEm || null,
         vazioPor: node.vazioPor || null,
         vazioMotivo: node.vazioMotivo || null,

@@ -34,9 +34,31 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
 
   // Cenário por empresa: 0 falta tudo · 1 gerada (falta enviar) · 2 enviada · 3 vazio · 4 conflito.
   const cenario = indice % 5;
+  // ⚠ UMA EMPRESA COM ESTADOS MISTURADOS, sempre.
+  //
+  // Sem ela, todas as guias de uma empresa compartilham o mesmo estado — e dois comportamentos
+  // ficam impossíveis de ver: a regra de "individualizar os chips quando os estados divergem" (que
+  // existe justamente para o Lucro Presumido) e o popover de um chip "enviada" sozinho, com canal e
+  // ✓✓. Os dois só aparecem quando a empresa tem uma guia enviada ao lado de outra pendente.
+  const misturada = indice === 1;
   const no = (chave) => {
     const required = requeridos[chave];
     if (!required) return { required: false, ok: true, state: "na" };
+
+    if (misturada) {
+      // PIS/COFINS já foi (por WhatsApp, lida); IRPJ ainda espera envio; o resto falta gerar.
+      if (chave === "pisCofins") {
+        return {
+          required, ok: true, state: "enviada", guideId: `mock-guia-${companyId}-${chave}`,
+          canalEnvio: "WHATSAPP", envioStatus: "lido", envioEm: new Date().toISOString(),
+          envioDestino: "+55 (21) 99999-8888",
+        };
+      }
+      if (chave === "irpj") {
+        return { required, ok: true, state: "gerada", guideId: `mock-guia-${companyId}-${chave}`, emailStatus: "PENDING" };
+      }
+      return { required, ok: false, state: "missing" };
+    }
 
     const marcado = mockVazios.get(chaveVazio(companyId, MOCK_TRIBUTO_TIPO[chave]));
     if (marcado) {
@@ -47,7 +69,19 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
     }
 
     if (cenario === 1) return { required, ok: true, state: "gerada", guideId: `mock-guia-${companyId}-${chave}`, emailStatus: "PENDING" };
-    if (cenario === 2) return { required, ok: true, state: "enviada", guideId: `mock-guia-${companyId}-${chave}`, emailStatus: "SENT", emailSentAt: new Date().toISOString() };
+    // ⚠ Metade das enviadas sai por WhatsApp no mock, de propósito: o popover mostra canal e as
+    // confirmações ✓✓ que só o WhatsApp dá, e um mock 100% e-mail nunca exercitaria esse caminho.
+    if (cenario === 2) {
+      const porWhats = indice % 2 === 0;
+      return {
+        required, ok: true, state: "enviada", guideId: `mock-guia-${companyId}-${chave}`,
+        emailStatus: porWhats ? null : "SENT",
+        emailSentAt: porWhats ? null : new Date().toISOString(),
+        canalEnvio: porWhats ? "WHATSAPP" : "EMAIL",
+        envioStatus: porWhats ? "lido" : "enviado",
+        envioEm: new Date().toISOString(),
+      };
+    }
     if (cenario === 3) return { required, ok: true, state: "vazio", origem: "guia_vazia", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock", vazioMotivo: null };
     if (cenario === 4) return { required, ok: false, state: "conflito", faturamento: 17640, origem: "guia_vazia", vazioEm: new Date().toISOString(), vazioPor: "Usuario Mock" };
     return { required, ok: false, state: "missing" };

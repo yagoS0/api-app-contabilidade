@@ -13,6 +13,10 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
     accountingEntry: { findMany: jest.fn() },
     companyMonthlyCircular: { findMany: jest.fn() },
     guide: { findMany: jest.fn() },
+    // O estado de envio deixou de sair de `emailStatus`: vem de `envios_guia`, um registro por
+    // canal. O default vazio significa "gerada, ainda nao enviada" -- que e o caso da maioria dos
+    // testes aqui.
+    envioGuia: { findMany: jest.fn(async () => []) },
   },
 }));
 
@@ -43,6 +47,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   prisma.accountingEntry.findMany.mockResolvedValue([]);
   prisma.companyMonthlyCircular.findMany.mockResolvedValue([]);
+  // Sem envio registrado = guia gerada e ainda não enviada, que é o estado da maioria dos casos
+  // testados aqui. Quem quiser "enviada" registra o envio explicitamente.
+  prisma.envioGuia.findMany.mockResolvedValue([]);
   mockGuides();
 });
 
@@ -77,9 +84,15 @@ describe("parcela de parcelamento × DAS", () => {
         parcelamento: { tipo: "PARCSN", numeroParcelamento: "123" },
       }],
     });
+    // ⚠ "Enviada" vem dos ENVIOS, não de `emailStatus` — o campo continua no payload como detalhe
+    // de transporte, mas quem decide o estado é `envios_guia`.
+    prisma.envioGuia.findMany.mockResolvedValue([
+      { guideId: "g-parc", canal: "EMAIL", status: "entregue", entregueEm: new Date("2026-06-01") },
+    ]);
 
     const { parcDas } = map(await computeGuideComplianceMap([linhaSimples], COMP));
     expect(parcDas.state).toBe("enviada");
+    expect(parcDas.canalEnvio).toBe("EMAIL");
     expect(parcDas.tipoParcelamento).toBe("PARCSN");
     expect(parcDas.numeroParcelamento).toBe("123");
     expect(parcDas.numeroParcela).toBe(3);
@@ -98,6 +111,13 @@ describe("parcela de parcelamento × DAS", () => {
         vazioEm: null, vazioPor: null, vazioMotivo: null,
       }],
     });
+    // O DAS foi enviado; a parcela não. Cada nó tem o SEU envio — é o que garante que um não
+    // contamina o outro.
+    prisma.envioGuia.findMany.mockImplementation(async ({ where }) => (
+      (where?.guideId?.in || []).includes("g-das")
+        ? [{ guideId: "g-das", canal: "EMAIL", status: "enviado", enviadoEm: new Date("2026-06-01") }]
+        : []
+    ));
 
     const c = map(await computeGuideComplianceMap([linhaSimples], COMP));
     expect(c.das.state).toBe("enviada");

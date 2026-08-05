@@ -24,6 +24,8 @@ export const TRIBUTO_TIPO = {
   das: "SIMPLES", inss: "INSS", irpj: "IRPJ", csll: "CSLL", pisCofins: "PIS", iss: "ISS",
 };
 
+const CANAL_ROTULO = { EMAIL: "e-mail", WHATSAPP: "WhatsApp" };
+
 const ESTADO = {
   missing:  { icone: "⚠", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "falta gerar" },
   gerada:   { icone: "✈", cor: "var(--state-warn)",    fundo: "var(--state-warn-surface)",    rotulo: "gerada, falta enviar" },
@@ -173,8 +175,25 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
 
           {tag.state === "enviada" && (
             <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
-              Enviada{fmtData(tag.emailSentAt) ? ` em ${fmtData(tag.emailSentAt)}` : ""}
-              {destinatario ? ` para ${destinatario}` : ""}.
+              {/* Por ONDE saiu importa: com dois canais, "enviada" sem o canal deixa o contador sem
+                  saber onde procurar quando o cliente diz que não recebeu. */}
+              {/* ⚠ O destino sai DO ENVIO. Usar o e-mail do cadastro aqui fazia o popover dizer
+                  "enviada por WhatsApp para fulano@email.com" — e o contador iria procurar a
+                  mensagem no lugar errado quando o cliente dissesse que não recebeu. O e-mail da
+                  empresa só entra quando o próprio canal foi e-mail. */}
+              Enviada{CANAL_ROTULO[tag.canalEnvio] ? ` por ${CANAL_ROTULO[tag.canalEnvio]}` : ""}
+              {fmtData(tag.envioEm || tag.emailSentAt) ? ` em ${fmtData(tag.envioEm || tag.emailSentAt)}` : ""}
+              {(() => {
+                const destino = tag.envioDestino
+                  || (tag.canalEnvio === "WHATSAPP" ? null : destinatario);
+                return destino ? ` para ${destino}` : "";
+              })()}.
+              {/* Entregue e lida são confirmações do WhatsApp; o e-mail não as tem. Mostrar só
+                  quando existem evita sugerir uma confirmação que o canal não dá. */}
+              {tag.envioStatus === "entregue" && <div style={{ marginTop: 2 }}>✓✓ entregue</div>}
+              {tag.envioStatus === "lido" && (
+                <div style={{ marginTop: 2, color: "var(--accent-cyan)" }}>✓✓ lida</div>
+              )}
             </div>
           )}
 

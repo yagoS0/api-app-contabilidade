@@ -3,6 +3,7 @@ import { GUIDE_COMPLIANCE_COMPETENCIA } from "../../config.js";
 // Faturamento vem da MESMA função que a apuração usa. Duas definições de "o mês teve receita"
 // fariam o chip da guia e o fechamento discordarem — com o contador no meio.
 import { faturamentoEmitPorEmpresa } from "../notas/apuracao/v2/FechamentoService.js";
+import { enviosPorGuia, foiEnviada, envioParaExibir } from "./EnvioGuiaService.js";
 
 /**
  * Competência YYYY-MM usada para alertas de guia (env fixo ou mês civil anterior).
@@ -124,12 +125,22 @@ export async function computeGuideComplianceMap(rows, competencia) {
       }),
     ]);
     parcDasAtivoSet = new Set(parcEntries.map((e) => e.portalClientId));
+    // A parcela é uma guia como as outras: o estado de envio dela vem da mesma fonte, senão o chip
+    // de parcelamento continuaria preso ao e-mail enquanto os demais já leem o canal.
+    const enviosDasParcelas = await enviosPorGuia(parcGuides.map((g) => g.id));
     for (const g of parcGuides) {
       // Primeiro a chegar vence — a ordem é estável e duas parcelas do mesmo parcelamento na mesma
       // competência não deveriam existir.
       if (!g.portalClientId || parcGuiaByPortal.has(g.portalClientId)) continue;
+      const enviosParc = enviosDasParcelas.get(g.id) || [];
+      const exibirParc = envioParaExibir(enviosParc);
       parcGuiaByPortal.set(g.portalClientId, {
         guideId: g.id,
+        enviada: foiEnviada(enviosParc),
+        canalEnvio: exibirParc?.canal || null,
+        envioStatus: exibirParc?.status || null,
+        envioEm: exibirParc?.lidoEm || exibirParc?.entregueEm || exibirParc?.enviadoEm || null,
+        envioErro: exibirParc?.erroMensagemUsuario || null,
         emailStatus: g.emailStatus || null,
         emailSentAt: g.emailSentAt || null,
         numeroParcela: g.numeroParcela || null,
@@ -235,6 +246,15 @@ export async function computeGuideComplianceMap(rows, competencia) {
     },
   });
 
+  // ⚠ O ESTADO DE ENVIO NÃO SAI MAIS DE `emailStatus`.
+  //
+  // Ele respondia "esta guia foi enviada?" enquanto havia UM canal. Com o WhatsApp, um campo só não
+  // representa "enviada por WhatsApp e ainda não por e-mail" — e o contador pode escolher "Ambos".
+  // `envios_guia` tem um registro por canal; enviada = terminal em QUALQUER um deles.
+  //
+  // Uma query para todas as guias da carteira, no mesmo molde das pré-queries acima.
+  const enviosPorGuiaId = await enviosPorGuia(guides.map((g) => g.id));
+
   // Faturamento da competência, uma query para a carteira inteira. É o que permite desmentir uma
   // marcação de "sem movimento" que envelheceu: nota emitida depois da marcação devolve o chip ao
   // vermelho. Mesma definição de faturamento da apuração — importada, não copiada.
@@ -261,8 +281,22 @@ export async function computeGuideComplianceMap(rows, competencia) {
     if (!g.portalClientId) continue;
     const tipo = String(g.tipo || "").toUpperCase();
     const target = g.status === "VAZIO" ? vazioByPortal : presentByPortal;
+    const envios = enviosPorGuiaId.get(g.id) || [];
+    const exibir = envioParaExibir(envios);
     const stamp = {
       guideId: g.id,
+      // A resposta agora vem dos envios; `emailStatus` continua no carimbo só como detalhe de
+      // transporte, para quem ainda quiser saber especificamente do e-mail.
+      enviada: foiEnviada(envios),
+      canalEnvio: exibir?.canal || null,
+      envioStatus: exibir?.status || null,
+      envioEm: exibir?.lidoEm || exibir?.entregueEm || exibir?.enviadoEm || null,
+      envioErro: exibir?.erroMensagemUsuario || null,
+      // ⚠ O destino vem DO ENVIO, não do cadastro. São coisas diferentes: o cadastro diz para onde
+      // mandaríamos hoje, o envio diz para onde FOI. Sem isto o popover mostrava o e-mail da
+      // empresa ao lado de "enviada por WhatsApp" — e o contador iria procurar a mensagem no lugar
+      // errado quando o cliente dissesse que não recebeu.
+      envioDestino: exibir?.destino || null,
       emailStatus: g.emailStatus || null,
       emailSentAt: g.emailSentAt || null,
       vazioEm: g.vazioEm || null,
@@ -304,10 +338,17 @@ export async function computeGuideComplianceMap(rows, competencia) {
 
     if (presente) {
       // Guia existe: falta enviá-la ou já foi. É esta distinção que a listagem não conseguia fazer.
-      const enviada = String(presente.emailStatus || "").toUpperCase() === "SENT";
+      //
+      // ⚠ "Enviada" agora é terminal em QUALQUER canal (ver `EnvioGuiaService.foiEnviada`). Se foi
+      // por e-mail e o WhatsApp falhou, ela chegou — cobrar o segundo canal transformaria uma
+      // escolha de conveniência em pendência.
       return {
-        ...node, ok: true, state: enviada ? "enviada" : "gerada",
+        ...node, ok: true, state: presente.enviada ? "enviada" : "gerada",
         guideId: presente.guideId,
+        canalEnvio: presente.canalEnvio,
+        envioStatus: presente.envioStatus,
+        envioEm: presente.envioEm,
+        envioErro: presente.envioErro,
         emailStatus: presente.emailStatus,
         emailSentAt: presente.emailSentAt,
       };
