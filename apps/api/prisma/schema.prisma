@@ -328,6 +328,10 @@ model PortalClient {
   /// Empresa zerada / sem movimento: não gera impostos; só enviamos obrigações zeradas.
   /// No card, oculta as guias/obrigações e sinaliza que é zerada.
   empresaZerada          Boolean   @default(false)
+  /// Por onde a guia sai por padrão. Default EMAIL de propósito: ninguém é migrado de canal à
+  /// revelia — o WhatsApp entra empresa a empresa, conforme o cliente autoriza (ver optIn em
+  /// ContatoWhatsapp). "PERGUNTAR" faz o confirm de envio pedir o canal toda vez.
+  canalPadraoEnvio       String    @default("EMAIL") // EMAIL | WHATSAPP | PERGUNTAR
   inscricaoMunicipal     String?
   uf                     String?
   municipio              String?
@@ -360,6 +364,7 @@ model PortalClient {
   parcelamentos           Parcelamento[]
   procuracoes             Procuracao[]
   pendenciasPosFechamento PendenciaPosFechamento[]
+  contatosWhatsapp        ContatoWhatsapp[]
   // Q14 — refundação da apuração (cadastro como autoridade)
   cadastroFiscal          CadastroFiscal?
   produtosServicos        ProdutoServico[]
@@ -498,6 +503,79 @@ model CompanyFiscalStatus {
   @@map("company_fiscal_status")
 }
 
+// ─── WHATSAPP ────────────────────────────────────────────────────────────────────────────────
+// Contato de WhatsApp da empresa. É o equivalente do `PortalClient.guideNotificationEmail`, mas
+// como TABELA porque uma empresa pode ter mais de um destinatário (sócio, financeiro) e porque o
+// opt-in precisa de data e origem próprios.
+model ContatoWhatsapp {
+  id             String    @id @default(uuid())
+  portalClientId String
+  nome           String
+  papel          String? // "financeiro", "sócio"… — texto livre, é rótulo de tela
+  /// SEMPRE E.164 (`5521999998888`), normalizado no cadastro. Guardar com máscara faria a
+  /// comparação com o `waId` que a Meta devolve falhar em silêncio no webhook.
+  telefoneE164   String
+  /// ID do usuário na Meta, descoberto no primeiro contato. É por ele que o webhook encontra o
+  /// contato — o número que a Meta devolve nem sempre bate dígito a dígito com o cadastrado
+  /// (no Brasil, o 9 do celular).
+  waId           String?
+  /// ⚠ OPT-IN É BLOQUEIO, NÃO AVISO. Sem data aqui, a empresa não recebe template: é exigência de
+  /// política da Meta e é o que protege o número de denúncia por spam. Perder o número por
+  /// denúncia derruba o canal com TODOS os clientes de uma vez.
+  optInEm        DateTime?
+  optInOrigem    String? // contrato | formulario | verbal_registrado | …
+  ativo          Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, telefoneE164])
+  @@index([waId])
+  @@map("contatos_whatsapp")
+}
+
+// O ESTADO DE ENVIO DE UMA GUIA, por canal.
+//
+// ⚠ Até aqui quem respondia "esta guia foi enviada?" era `Guide.emailStatus` — e é dele que o chip
+// da listagem e o `guideCompliance` derivam o estado `enviada`. Isso funcionava enquanto havia UM
+// canal. Com o WhatsApp, um campo só não consegue representar "enviada por WhatsApp, ainda não por
+// e-mail", e o próprio plano oferece "Ambos".
+//
+// Esta tabela passa a ser a fonte da verdade do ENVIO; `emailStatus` continua existindo como
+// detalhe de transporte do e-mail (o worker de e-mail segue escrevendo nele).
+model EnvioGuia {
+  id                  String    @id @default(uuid())
+  guideId             String
+  canal               String // EMAIL | WHATSAPP
+  status              String    @default("pendente") // pendente|enviando|enviado|entregue|lido|falhou
+  /// Para onde foi de fato: e-mail ou E.164. Guardado no envio (não lido do cadastro na hora de
+  /// exibir) porque o contato pode mudar depois — o histórico tem que dizer para onde FOI.
+  destino             String?
+  /// `wamid` no WhatsApp. Chave de correlação dos eventos de status do webhook e de idempotência.
+  providerMessageId   String?
+  erroCodigo          String?
+  /// Mensagem JÁ TRADUZIDA para o contador. Código cru da Meta não chega na tela — mesma lição do
+  /// `validation_failed`, que mostrava o código e escondia o motivo.
+  erroMensagemUsuario String?
+  tentativas          Int       @default(0)
+  proximaTentativaEm  DateTime?
+  enviadoEm           DateTime?
+  entregueEm          DateTime?
+  lidoEm              DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  guide Guide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+
+  /// ⚠ É esta constraint que torna reexecutar o lote inofensivo: a segunda passada encontra o
+  /// registro e não redispara.
+  @@unique([guideId, canal])
+  @@index([status, proximaTentativaEm])
+  @@index([providerMessageId])
+  @@map("envios_guia")
+}
+
 model Guide {
   id                       String    @id @default(uuid())
   portalClientId           String?
@@ -588,6 +666,7 @@ model Guide {
   legacyCompany   Company?         @relation(fields: [legacyCompanyId], references: [id], onDelete: SetNull)
   parcelamento    Parcelamento?    @relation("GuideParcelamento", fields: [parcelamentoId], references: [id], onDelete: SetNull)
   tributosParcela TributoParcela[]
+  envios          EnvioGuia[]
 
   // Q21: ingestão idempotente da mesma parcela (parcial WHERE parcelamentoId NOT NULL via SQL).
   @@unique([parcelamentoId, numeroParcela])

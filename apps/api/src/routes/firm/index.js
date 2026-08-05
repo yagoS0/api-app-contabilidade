@@ -54,6 +54,9 @@ import {
   getNotasCapturaJob,
   listNotasCapturaJobs,
 } from "../../application/notas/captura/NotasCapturaService.js";
+import {
+  listarContatos, salvarContato, removerContato, ContatoWhatsappError, CANAL_PADRAO,
+} from "../../application/whatsapp/ContatoWhatsappService.js";
 import { capturaParadaPorEmpresa } from "../../application/notas/capturaParada.js";
 import {
   criarSitfisDownloadJob,
@@ -2410,6 +2413,99 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) {
       log.error({ err }, "Falha ao desfazer Vazio");
       return res.status(500).json({ ok: false, error: "guide_vazio_undo_failed", message: err?.message });
+    }
+  });
+
+  // ─── CONTATOS DE WHATSAPP ──────────────────────────────────────────────────────────────────
+  // Pré-requisito do envio pelo canal. Sem contato com opt-in, a empresa cai para e-mail no lote.
+
+  router.get("/companies/:companyId/contatos-whatsapp", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      return res.json({ ok: true, contatos: await listarContatos(req.params.companyId) });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar contatos de WhatsApp");
+      return res.status(500).json({ ok: false, error: "contatos_list_failed", message: err?.message });
+    }
+  });
+
+  router.post("/companies/:companyId/contatos-whatsapp", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      const contato = await salvarContato({ portalClientId: req.params.companyId, ...(req.body || {}) });
+      return res.json({ ok: true, contato });
+    } catch (err) {
+      // Erro de validação é do USUÁRIO e tem conserto na tela — 400 com a mensagem pronta, não 500.
+      if (err instanceof ContatoWhatsappError) {
+        return res.status(400).json({ ok: false, error: err.code, message: err.message });
+      }
+      log.error({ err }, "Falha ao salvar contato de WhatsApp");
+      return res.status(500).json({ ok: false, error: "contato_save_failed", message: err?.message });
+    }
+  });
+
+  router.delete("/companies/:companyId/contatos-whatsapp/:contatoId", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    try {
+      await removerContato(req.params.contatoId);
+      return res.json({ ok: true });
+    } catch (err) {
+      log.error({ err }, "Falha ao remover contato de WhatsApp");
+      return res.status(500).json({ ok: false, error: "contato_delete_failed", message: err?.message });
+    }
+  });
+
+  // A CARTEIRA INTEIRA × contato — é a tela de importação assistida.
+  //
+  // ⚠ Sem ela o primeiro lote nasce manco: o contador teria que abrir empresa por empresa para
+  // descobrir quais têm contato. Aqui ele vê as trinta de uma vez, com as vazias em destaque.
+  router.get("/contatos-whatsapp", async (req, res) => {
+    try {
+      const portalIds = await empresasVisiveis(req);
+      const [empresas, contatos] = await Promise.all([
+        prisma.portalClient.findMany({
+          where: { id: { in: portalIds } },
+          select: { id: true, razao: true, cnpj: true, canalPadraoEnvio: true, guideNotificationEmail: true },
+          orderBy: { razao: "asc" },
+        }),
+        prisma.contatoWhatsapp.findMany({
+          where: { portalClientId: { in: portalIds } },
+          orderBy: { createdAt: "asc" },
+        }),
+      ]);
+      const porEmpresa = new Map();
+      for (const c of contatos) {
+        if (!porEmpresa.has(c.portalClientId)) porEmpresa.set(c.portalClientId, []);
+        porEmpresa.get(c.portalClientId).push(c);
+      }
+      return res.json({
+        ok: true,
+        empresas: empresas.map((e) => {
+          const lista = porEmpresa.get(e.id) || [];
+          const comOptIn = lista.find((c) => c.optInEm && c.ativo);
+          return {
+            ...e,
+            contatos: lista,
+            // Os três estados que a tela precisa distinguir — e que o contador conserta de formas
+            // diferentes: cadastrar, pedir autorização, ou nada.
+            situacao: !lista.length ? "sem_contato" : !comOptIn ? "sem_optin" : "ok",
+          };
+        }),
+      });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar contatos da carteira");
+      return res.status(500).json({ ok: false, error: "contatos_carteira_failed", message: err?.message });
+    }
+  });
+
+  router.patch("/companies/:companyId/canal-envio", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const canal = String(req.body?.canalPadraoEnvio || "").toUpperCase();
+    if (!CANAL_PADRAO.includes(canal)) {
+      return res.status(400).json({ ok: false, error: "canal_invalido", message: `Canal deve ser um de: ${CANAL_PADRAO.join(", ")}` });
+    }
+    try {
+      await prisma.portalClient.update({ where: { id: String(req.params.companyId) }, data: { canalPadraoEnvio: canal } });
+      return res.json({ ok: true, canalPadraoEnvio: canal });
+    } catch (err) {
+      log.error({ err }, "Falha ao definir canal de envio");
+      return res.status(500).json({ ok: false, error: "canal_update_failed", message: err?.message });
     }
   });
 
