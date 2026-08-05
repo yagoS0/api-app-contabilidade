@@ -24,7 +24,7 @@ function JanelaBtn({ active, onClick, children }) {
   );
 }
 
-export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false }) {
+export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, competencia: competenciaGlobal }) {
   const {
     loading, error, reload,
     dfeState, dfeSyncing, syncDfe, clearDfeError,
@@ -47,6 +47,14 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false }) {
       setNotasFilters({ ...notasFilters, type: janelaAtiva, offset: 0 });
     }
   }, [janelaAtiva, notasFilters, setNotasFilters]);
+
+  // A competência da EMPRESA (seletor do header) manda no filtro. Mesmo padrão do effect acima:
+  // só escreve quando muda de fato, senão vira laço com o effect de carga do hook.
+  useEffect(() => {
+    if (competenciaGlobal && notasFilters.competencia !== competenciaGlobal) {
+      setNotasFilters({ ...notasFilters, competencia: competenciaGlobal, offset: 0 });
+    }
+  }, [competenciaGlobal, notasFilters, setNotasFilters]);
 
   function onPickFiles(e) {
     const files = Array.from(e.target.files || []);

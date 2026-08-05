@@ -15,14 +15,32 @@ function StatusBadge({ status }) {
 }
 
 function FilterBar({ filters, onChange, onApply, loading, total }) {
+  // `local` é o RASCUNHO dos campos que só valem depois de "Filtrar" (hoje, a busca textual).
+  // ⚠ Ele é uma cópia feita no MOUNT e nunca ressincroniza. Isso é de propósito para o rascunho —
+  // digitar não pode ser desfeito por um render —, mas é veneno para campo que muda de FORA: a
+  // competência agora vem do header, e `local` guardava a de quando a aba montou. Duas
+  // consequências, as duas silenciosas: o rótulo mostrava o mês velho, e clicar em "Filtrar"
+  // reenviava esse mês velho, desfazendo a escolha feita no topo da página.
+  //
+  // Por isso a competência é lida SEMPRE de `filters` (a fonte de verdade) e injetada no apply.
   const [local, setLocal] = useState(filters);
   function patch(k, v) { setLocal((p) => ({ ...p, [k]: v, offset: 0 })); }
-  function apply() { onChange(local); onApply(local); }
+  function apply() {
+    const efetivo = { ...local, competencia: filters.competencia };
+    onChange(efetivo);
+    onApply(efetivo);
+  }
 
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 12 }}>
-      <input type="month" value={local.competencia || ""} onChange={(e) => patch("competencia", e.target.value)}
-        style={inputStyle} />
+      {/* ⚠ Sem `input type="month"`: a competência é da EMPRESA e vem do seletor do header.
+          Aqui ela ainda por cima ficava atrás de um botão "Filtrar" — o campo mostrava um mês e a
+          tabela mostrava outro até alguém clicar, então os dois controles chegavam a discordar
+          dentro da MESMA tela. O valor continua à vista, como rótulo, porque filtro ativo sem
+          rastro visível é o "filtro fantasma" que a listagem já teve de resolver. */}
+      <span style={{ fontSize: "0.8rem", color: PANEL.muted, whiteSpace: "nowrap" }}>
+        Competência: <strong style={{ color: PANEL.text }}>{filters.competencia || "todas"}</strong>
+      </span>
       <input type="text" value={local.search || ""} onChange={(e) => patch("search", e.target.value)}
         placeholder="Buscar (CNPJ, nome, número, chave)" style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
       <button onClick={apply} disabled={loading}

@@ -89,9 +89,14 @@ const companyDocsApi = createApiClient();
 // O CalendarioGrid chama a API por conta própria (mesmo padrão do SITFIS e do Apuração v2) —
 // a página de detalhe não tem `api` em escopo.
 const obrigacoesApi = createApiClient();
-function ApuracaoV2TabWrapper({ companyId, feedback, razao }) {
+function ApuracaoV2TabWrapper({ companyId, feedback, razao, competencia, onCompetenciaChange }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
-  return <ApuracaoV2Tab panel={panel} api={apuracaoV2Api} companyId={companyId} feedback={feedback} razao={razao} />;
+  return (
+    <ApuracaoV2Tab
+      panel={panel} api={apuracaoV2Api} companyId={companyId} feedback={feedback} razao={razao}
+      competencia={competencia} onCompetenciaChange={onCompetenciaChange}
+    />
+  );
 }
 
 // Q41: wrapper que instancia o hook da Situação Fiscal (SITFIS) — companyId = portalClient id.
@@ -213,6 +218,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <Suspense fallback={<TabLoadingFallback />}>
           <CompanyGuidesTable
             companyId={companyId}
+            competencia={circularPanel?.competencia}
             companyRegime={companyRegime}
             guides={guidesPanel.guides}
             loadingGuides={guidesPanel.loading}
@@ -422,6 +428,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               <NotasFiscaisTab
                 notasPanel={notasPanel}
                 hasInscricaoEstadual={Boolean(String(selectedCompany?.legacyCompany?.inscricaoEstadual || "").trim())}
+                competencia={circularPanel?.competencia}
               />
             </Suspense>
           </ErrorBoundary>
@@ -447,7 +454,11 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         <div style={{ flex: 1, padding: 24 }}>
           <ErrorBoundary>
             <Suspense fallback={<TabLoadingFallback />}>
-              <ApuracaoV2TabWrapper companyId={companyId} feedback={feedback} razao={selectedCompany?.razao} />
+              <ApuracaoV2TabWrapper
+                companyId={companyId} feedback={feedback} razao={selectedCompany?.razao}
+                competencia={circularPanel?.competencia}
+                onCompetenciaChange={circularPanel?.onCompetenciaChange}
+              />
             </Suspense>
           </ErrorBoundary>
         </div>

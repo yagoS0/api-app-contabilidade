@@ -2,14 +2,27 @@ import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../
 
 // ⚠ ABAS QUE VIVEM NUMA COMPETÊNCIA — e são as ÚNICAS que mostram o seletor.
 //
-// O plano dizia "todas as abas acompanham". Ao ligar, ficou claro que "todas" não é o que se quer:
-// Cadastro, Documentos e Situação Fiscal não têm mês nenhum, e um seletor que não comanda nada é
-// pior que seletor nenhum — a pessoa muda o mês, a tela não muda, e passa a duvidar do controle
-// também onde ele funciona. Aba entra nesta lista quando passa a FILTRAR por competência.
+// O plano dizia "todas as abas acompanham". "Todas" ao pé da letra não é o que se quer: Cadastro,
+// Documentos, Anotações, Plano de Contas e Situação Fiscal não têm mês nenhum, e um seletor que não
+// comanda nada é pior que seletor nenhum — a pessoa muda o mês, a tela não muda, e passa a duvidar
+// do controle também onde ele funciona.
 //
-// Guias e Obrigações ainda não estão aqui: Obrigações renderiza o `CalendarioGrid`, que tem
-// navegação de mês própria (unificação é a E1.3), e a aba de Guias hoje não filtra por competência.
-const TABS_COM_COMPETENCIA = new Set(["lancamentos", "circular"]);
+// Aba entra nesta lista quando passa a FILTRAR por competência, e cada uma teve de ceder o seu
+// controle local (era o mesmo defeito repetido cinco vezes: dois seletores para um valor):
+//
+//   lancamentos     ← setas ◀ ▶ sobre a tabela + input no painel de filtros
+//   circular        ← já usava a do painel; o ano da matriz acompanha
+//   cadastroFiscal  ← `useState(competenciaAnterior())` PRÓPRIO, em dois `input type="month"`
+//   guides          ← `filterCompetencia`, cujo "ver todas" só existia apagando o campo
+//   notasFiscais    ← campo dentro de um form com botão "Filtrar" (discordava da tabela até o clique)
+//
+// Parcelamento fica de fora de propósito: lá a competência é a de ABERTURA de um parcelamento que
+// se está criando — um dado sendo escrito, não um período sendo olhado. Amarrá-la ao header faria
+// o seletor da tela mudar o conteúdo de um formulário.
+//
+// Obrigações também: o `CalendarioGrid` navega por mês com controle próprio, que já é o único
+// daquela tela e serve à página principal do calendário do mesmo jeito.
+const TABS_COM_COMPETENCIA = new Set(["lancamentos", "circular", "cadastroFiscal", "guides", "notasFiscais"]);
 
 // Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);

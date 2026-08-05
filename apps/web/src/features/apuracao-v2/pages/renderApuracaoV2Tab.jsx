@@ -78,10 +78,16 @@ function Kpi({ label, value, cor, title }) {
   );
 }
 
-export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
+export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competencia: competenciaGlobal, onCompetenciaChange }) {
   const [secao, setSecao] = useState("apuracao");
   const [resolvendo, setResolvendo] = useState(null);
-  const [competencia, setCompetencia] = useState(competenciaAnterior());
+  // ⚠ A COMPETÊNCIA É DA EMPRESA, não desta aba — vem do seletor do header.
+  // Era `useState(competenciaAnterior())`: sair de Lançamentos em maio e entrar aqui mostrava
+  // junho, sem nada indicar a troca. A apuração é o ato fiscal do mês; apurar a competência errada
+  // por causa de dois seletores discordando é o erro mais caro que esta tela pode produzir.
+  // O fallback local cobre a aba montada fora da página de detalhe (não há chamador assim hoje).
+  const competencia = competenciaGlobal || competenciaAnterior();
+  const setCompetencia = onCompetenciaChange || (() => {});
 
   // ── Apuração (fechamento) ─────────────────────────────────────────────
   const [fechDados, setFechDados] = useState(null);
@@ -199,10 +205,13 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
       {secao === "apuracao" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
-            <label style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
+            {/* ⚠ Sem `input type="month"` aqui: quem troca a competência é o seletor do header, um
+                só para a empresa inteira. O RÓTULO fica — ele diz sobre que mês esta barra fala,
+                e sumir com ele deixaria os botões "Calcular / Fechar" sem período à vista. */}
+            <span style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
               Competência
-              <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={inputStyle} />
-            </label>
+              <strong style={{ fontSize: "0.95rem", color: PANEL.text, paddingBottom: 4 }}>{competencia}</strong>
+            </span>
             <span style={{ fontSize: "0.82rem", color: PANEL.muted, paddingBottom: 6 }}>Estado: <EstadoBadge estado={estado} /></span>
             <div style={{ flex: 1 }} />
             <button onClick={() => setFechando({ retificar: false })} style={btnPrimary} disabled={fechLoading}>
@@ -274,10 +283,13 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
       {secao === "sugestao" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14, color: PANEL.text }}>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
-            <label style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
+            {/* ⚠ Sem `input type="month"` aqui: quem troca a competência é o seletor do header, um
+                só para a empresa inteira. O RÓTULO fica — ele diz sobre que mês esta barra fala,
+                e sumir com ele deixaria os botões "Calcular / Fechar" sem período à vista. */}
+            <span style={{ display: "grid", gap: 3, fontSize: "0.75rem", color: PANEL.muted }}>
               Competência
-              <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={inputStyle} />
-            </label>
+              <strong style={{ fontSize: "0.95rem", color: PANEL.text, paddingBottom: 4 }}>{competencia}</strong>
+            </span>
             <button onClick={sugerir} disabled={sugLoading}
               style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#8BE9FD", color: "#000", cursor: sugLoading ? "default" : "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: sugLoading ? 0.6 : 1 }}>
               {sugLoading ? "Carregando…" : "Sugerir"}

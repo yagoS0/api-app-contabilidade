@@ -270,13 +270,27 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
       ? `${motivoBloqueio} — resolva antes de fechar ${competencia}.`
       : `Pronta para fechar (${competencia}).`;
   return (
-    <>
-    {/* `flex-start`: o checklist virou um bloco de 6 linhas — centralizado, ele empurrava o cadeado
-        e o alternador de faturamento para o meio da altura dele. */}
-    <div style={{ display: "inline-flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-      {/* Checklist de conferência — some quando o mês já está fechado.
-          Sem o rótulo abaixo eram cinco caixas soltas ao lado do cadeado: não dava pra saber se
-          filtravam a tabela ou se eram confirmações. São confirmações manuais do contador. */}
+    /* ⚠ UM PAINEL, NÃO TRÊS PEÇAS SOLTAS NUMA LINHA.
+        O alternador de faturamento, o check-list e o cadeado eram três elementos independentes num
+        `inline-flex` com `wrap`. Quando o check-list virou card (uma linha por item), a linha
+        estourou: o card ia parar no meio da tela com um vão à direita, o botão caía sozinho embaixo
+        e nada mais dizia que as três coisas eram O MESMO ASSUNTO. Agora são um bloco fechado, com
+        título, largura fixa e o botão no rodapé — que é o que "check-list como painel" queria dizer.
+
+        ⚠ Sem `inline-flex` e sem `flexWrap`: com largura fixa não há o que quebrar, e foi a quebra
+        que produziu o layout torto. */
+    <div
+      style={{
+        display: "flex", flexDirection: "column", gap: 8,
+        width: 268, maxWidth: "100%", padding: "10px 12px",
+        borderRadius: 12, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.surface,
+        boxSizing: "border-box",
+      }}
+    >
+      <span style={{ fontSize: "0.7rem", color: "#8A8FA3", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+        Fechamento de {formatCompetenciaTitulo(competencia)}
+      </span>
+
       {/* Separado do "Confiro que lancei" de propósito: aquilo confirma que algo FOI lançado,
           isto afirma que algo NÃO EXISTIU. Misturar os dois faria parecer um sexto item de
           conferência — e o contador marcaria sem pensar no que está declarando. */}
@@ -292,9 +306,10 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
                   : "Afirma que a competência não teve faturamento. Folha, despesas e parcelas seguem normais."
           }
           style={{
-            display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.78rem", fontWeight: 600,
-            padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap",
-            border: `1px solid ${semFaturamento ? "#FFB347" : conferenciaDivergente ? "#FF5757" : "#44475A"}`,
+            display: "flex", alignItems: "flex-start", gap: 7, fontSize: "0.78rem", fontWeight: 600,
+            padding: "6px 8px", borderRadius: 8,
+            border: `1px solid ${semFaturamento ? "#FFB347" : conferenciaDivergente ? "#FF5757" : ACCOUNTING_PANEL.border}`,
+            background: ACCOUNTING_PANEL.field,
             color: semFaturamento ? "#FFB347" : (temFaturamento || conferenciaDivergente) ? "#6272A4" : "#aeb6d3",
             cursor: semFatBusy || temFaturamento || conferenciaDivergente ? "not-allowed" : "pointer", userSelect: "none",
           }}
@@ -306,18 +321,23 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
             // contra a afirmação, e a recusa viria do servidor de qualquer jeito.
             disabled={semFatBusy || ((temFaturamento || conferenciaDivergente) && !semFaturamento)}
             onChange={toggleSemFaturamento}
-            style={{ cursor: semFatBusy || temFaturamento || conferenciaDivergente ? "not-allowed" : "pointer" }}
+            style={{ marginTop: 1, cursor: semFatBusy || temFaturamento || conferenciaDivergente ? "not-allowed" : "pointer" }}
           />
-          Mês sem faturamento
-          {/* Não conseguimos conferir ≠ conferimos e deu zero. O aviso é o que separa os dois. */}
-          {semConferencia && (
-            <span style={{ color: "#8A8FA3", fontWeight: 400 }} title="Município fora do ADN, certificado ausente/vencido ou competência ainda não conferida.">
-              · sem conferência do ADN
-            </span>
-          )}
-          {conferenciaDivergente && (
-            <span style={{ color: "#FF5757", fontWeight: 400 }}>· conferência divergente</span>
-          )}
+          {/* ⚠ A ressalva vai para a LINHA DE BAIXO, não emendada no rótulo. Com `nowrap` num pill,
+              "Mês sem faturamento · sem conferência do ADN" era uma tira de ~300px que sozinha
+              estourava a largura da linha — foi ela quem começou a quebra do layout. */}
+          <span style={{ display: "grid", gap: 1 }}>
+            <span>Mês sem faturamento</span>
+            {/* Não conseguimos conferir ≠ conferimos e deu zero. O aviso é o que separa os dois. */}
+            {semConferencia && (
+              <span style={{ color: "#8A8FA3", fontWeight: 400, fontSize: "0.72rem" }} title="Município fora do ADN, certificado ausente/vencido ou competência ainda não conferida.">
+                sem conferência do ADN
+              </span>
+            )}
+            {conferenciaDivergente && (
+              <span style={{ color: "#FF5757", fontWeight: 400, fontSize: "0.72rem" }}>conferência divergente</span>
+            )}
+          </span>
         </label>
       )}
       {/* ⚠ O CHECKLIST VIROU PAINEL — uma linha por item, não cinco caixas soltas em fila.
@@ -325,12 +345,9 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
           com o cadeado, e nada dizia que eram confirmações do contador (pareciam filtros). Em
           linhas, cada item tem rótulo, estado e espaço para dizer de onde veio o check. */}
       {!fechado && (
-        <div
-          style={{
-            display: "grid", gap: 2, minWidth: 230, padding: "8px 10px",
-            borderRadius: 12, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.field,
-          }}
-        >
+        <div style={{ display: "grid", gap: 2 }}>
+          {/* Sem caixa própria: o card externo já delimita o assunto, e uma borda dentro da outra
+              lia como um segundo painel independente. */}
           <span style={{ fontSize: "0.7rem", color: "#8A8FA3", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 2 }}>
             Confiro que lancei
           </span>
@@ -366,30 +383,47 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
       {/* Selo do mês fechado: QUANDO e por QUEM. Os dois já vinham do backend e a tela descartava —
           sobrava um "🔒 Fechada" que não dizia se o fechamento foi ontem ou em março. */}
       {fechado && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.78rem", color: "#2DD4BF", fontWeight: 600 }}>
-          ✓ Mês fechado
-          {fechadoEm && <span style={{ color: "#aeb6d3", fontWeight: 400 }}>em {fmtDataCurta(fechadoEm)}</span>}
-          {fechadoPorNome && <span style={{ color: "#aeb6d3", fontWeight: 400 }}>por {fechadoPorNome}</span>}
+        <span style={{ display: "grid", gap: 2, fontSize: "0.78rem", color: "#2DD4BF", fontWeight: 600 }}>
+          <span>✓ Mês fechado</span>
+          {(fechadoEm || fechadoPorNome) && (
+            <span style={{ color: "#aeb6d3", fontWeight: 400, fontSize: "0.72rem" }}>
+              {fechadoEm ? `em ${fmtDataCurta(fechadoEm)}` : ""}
+              {fechadoEm && fechadoPorNome ? " · " : ""}
+              {fechadoPorNome ? `por ${fechadoPorNome}` : ""}
+            </span>
+          )}
         </span>
       )}
 
-      <button
-        type="button"
-        onClick={toggle}
-        disabled={btnDisabled}
-        title={title}
-        style={{
-          display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px",
-          borderRadius: 8, cursor: btnDisabled ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 700,
-          background: "transparent", color, border: `1px solid ${color}`, opacity: btnDisabled ? 0.6 : 1,
-        }}
-      >
-        <span style={{ fontSize: "1rem" }}>{fechado ? "🔒" : "🔓"}</span>
-        {fechado ? "Reabrir" : motivoBloqueio ? `Fechar mês — ${motivoBloqueio}` : "Fechar mês"}
-      </button>
+      {/* Rodapé do painel: o motivo do bloqueio fica numa LINHA PRÓPRIA, não dentro do botão.
+          "Fechar mês — Faltam: Folha/Pró-labore, Despesas, Receitas, Provisões, Pagamentos" virava
+          um botão de 500px de largura — foi o que empurrou o cadeado para fora da linha. O botão
+          volta a ter o tamanho de um botão e o motivo fica logo abaixo, onde pode quebrar em duas
+          linhas sem deformar nada. */}
+      <div style={{ display: "grid", gap: 5, marginTop: 2 }}>
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={btnDisabled}
+          title={title}
+          style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+            width: "100%", padding: "7px 12px",
+            borderRadius: 8, cursor: btnDisabled ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 700,
+            background: "transparent", color, border: `1px solid ${color}`, opacity: btnDisabled ? 0.6 : 1,
+          }}
+        >
+          <span style={{ fontSize: "1rem" }}>{fechado ? "🔒" : "🔓"}</span>
+          {fechado ? "Reabrir mês" : "Fechar mês"}
+        </button>
+        {motivoBloqueio && (
+          <span style={{ fontSize: "0.72rem", color: "#FF5757", lineHeight: 1.35 }}>
+            Faltam: {motivoBloqueio.startsWith("Faltam: ") ? motivoBloqueio.slice(8) : motivoBloqueio}
+          </span>
+        )}
+        {!fechado && <FaltaParaFechar problemas={problemas} filtroAtivo={filtroAtivo} />}
+      </div>
     </div>
-    {!fechado && <FaltaParaFechar problemas={problemas} filtroAtivo={filtroAtivo} />}
-    </>
   );
 }
 
@@ -934,8 +968,10 @@ export function AccountingEntriesTab({
       {message && message !== "Lançamento adicionado." && <p style={{ color: "var(--success)", margin: "0 0 8px", fontSize: "0.875rem" }}>{message}</p>}
       {error && <p style={{ color: "var(--danger)", margin: "0 0 8px", fontSize: "0.875rem" }}>{error}</p>}
 
-      {/* Q18: toolbar junto da tabela (mesma largura/centralização) — Adicionar + cadeado */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap", maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
+      {/* Q18: toolbar junto da tabela (mesma largura/centralização) — Adicionar + painel de fechamento.
+          ⚠ `flex-start`, não `center`: o painel de fechamento tem ~300px de altura, e centralizado
+          o "+ Adicionar lançamento" ficava boiando no meio dele, longe da tabela que ele alimenta. */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap", maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
         <button
           type="button"
           onClick={() => setAdding(true)}

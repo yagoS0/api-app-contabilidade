@@ -316,6 +316,7 @@ function formatPaymentStatus(status) {
 
 export function CompanyGuidesTable({
   companyId,
+  competencia: competenciaGlobal,  // do seletor do header — uma competência para a empresa inteira
   companyRegime,  // regime tributário da empresa: filtra opções do dropdown "+ Subir Guia"
   guides,
   loadingGuides,
@@ -374,7 +375,14 @@ export function CompanyGuidesTable({
     [companyRegime],
   );
   // Q19: filtro único de competência (mês), default = mês anterior ao atual.
-  const [filterCompetencia, setFilterCompetencia] = useState(prevMonthCompetencia());
+  // ⚠ A COMPETÊNCIA VEM DO HEADER. O que sobra aqui é "ver todas" — e ele virou EXPLÍCITO.
+  //
+  // Era um `input type="month"` com o mês anterior por padrão, e o único jeito de ver o histórico
+  // era APAGAR o conteúdo do campo — gesto que ninguém descobre e que, feito sem querer, deixava a
+  // tela mostrando guias de todos os meses sem dizer que estava fazendo isso. Agora o mês é o da
+  // empresa (um controle só) e o histórico é uma caixa com nome.
+  const [verTodasCompetencias, setVerTodasCompetencias] = useState(false);
+  const filterCompetencia = verTodasCompetencias ? "" : (competenciaGlobal || prevMonthCompetencia());
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
   // Guia já enviada aguardando confirmação de reenvio (modal do "Liberar ao cliente").
@@ -807,13 +815,26 @@ export function CompanyGuidesTable({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 8 }}>
           <h2 className="guides-list-panel__title" style={{ margin: 0 }}>Guias</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <label style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6 }}>
-              Competência:
+            <label
+              style={{ fontSize: "0.8rem", color: "#aeb6d3", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", userSelect: "none" }}
+              title="Mostra as guias de todas as competências, ignorando o mês do topo da página."
+            >
               <input
-                type="month" value={filterCompetencia} onChange={(e) => setFilterCompetencia(e.target.value)}
-                style={{ background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "4px 8px", colorScheme: "dark" }}
+                type="checkbox"
+                checked={verTodasCompetencias}
+                onChange={() => setVerTodasCompetencias((v) => !v)}
+                style={{ cursor: "pointer" }}
               />
+              Ver todas as competências
             </label>
+            {/* Filtro ativo NUNCA fica sem rastro visível — mesma regra que a listagem já aplica.
+                Sem esta linha, a tabela mostrando doze meses seria indistinguível de um mês
+                cheio, e é assim que se confere uma guia achando que é de outro período. */}
+            {!verTodasCompetencias && (
+              <span style={{ fontSize: "0.8rem", color: "#aeb6d3" }}>
+                Competência: <strong style={{ color: "#F8F8F2" }}>{filterCompetencia}</strong>
+              </span>
+            )}
           </div>
         </div>
 
