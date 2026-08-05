@@ -1037,9 +1037,19 @@ export function createMockApi() {
       const circular = getCircularRecord(companyId, competencia);
       const status = String(circular?.serproSyncStatus || "").toUpperCase();
       const lpEm = mockBuscasLp.get(`${companyId}|${competencia}`) || null;
+      // ⚠ `fechado` sai do REGISTRO, não de um literal. Era `false` fixo: `fecharFechamentoContabil`
+      // gravava em `mockMonthlyCirculars` e este GET seguia dizendo "aberto", então o selo de mês
+      // fechado e o botão Reabrir eram inalcançáveis offline — exatamente os estados que o mock
+      // existe para deixar conferir.
+      const fechadoEm = circular?.fechadoContabilEm || null;
       // Checklist com um item pendente de propósito, pra dar pra ver o estado bloqueado na tela.
       return {
-        ok: true, competencia, fechado: false, folhaProlaboreOk: true,
+        ok: true, competencia,
+        fechado: Boolean(fechadoEm),
+        fechadoEm,
+        fechadoPor: circular?.fechadoContabilPor || null,
+        fechadoPorNome: fechadoEm ? "Usuário Mock" : null,
+        folhaProlaboreOk: true,
         checklist: { folhaProlabore: true, despesas: true, receitas: true, provisoes: false, pagamentos: false },
         checklistPendentes: [{ chave: "provisoes", label: "Provisões lançadas" }, { chave: "pagamentos", label: "Pagamentos lançados" }],
         podeFechar: false, blockers: [],

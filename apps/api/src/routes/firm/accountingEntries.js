@@ -1379,6 +1379,16 @@ export function createAccountingEntriesRouter({ log }) {
         status: snapConferencia?.conferenciaStatus || null,
         em: snapConferencia?.conferidaEm || null,
       };
+      // Quem fechou, por NOME. `fechadoContabilPor` guarda o id do usuário, e o selo da tela
+      // ("Mês fechado em DD/MM por …") com um uuid não informa nada a ninguém. Best-effort: a
+      // consulta falhar, ou o usuário ter sido removido, não pode derrubar o GET do fechamento —
+      // o selo cai para a data sozinha, que é o dado que importa.
+      const fechadoPorNome = circular?.fechadoContabilPor
+        ? await prisma.user
+          .findUnique({ where: { id: circular.fechadoContabilPor }, select: { name: true, email: true } })
+          .then((u) => u?.name || u?.email || null)
+          .catch(() => null)
+        : null;
       // Checklist manual (folha/pró-labore, despesas, receitas, provisões, pagamentos).
       const pendentes = checklistPendentes(circular);
       const checklist = Object.fromEntries(
@@ -1390,6 +1400,7 @@ export function createAccountingEntriesRouter({ log }) {
         fechado: Boolean(circular?.fechadoContabilEm),
         fechadoEm: circular?.fechadoContabilEm || null,
         fechadoPor: circular?.fechadoContabilPor || null,
+        fechadoPorNome,
         // Mantido no payload: a UI antiga (e o gate do fechamento) já liam este nome.
         folhaProlaboreOk: checklist.folhaProlabore,
         checklist,

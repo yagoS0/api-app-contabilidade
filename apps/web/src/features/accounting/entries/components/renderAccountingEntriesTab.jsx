@@ -44,7 +44,12 @@ function fmtDataHora(iso) {
  * contador procurando qual das linhas da tela era a errada.
  */
 function irAteOLancamento(id) {
-  const el = document.getElementById(`lanc-${id}`);
+  rolarAteEDestacar(`lanc-${id}`);
+}
+
+/** Rola até um `id` do DOM e o marca por ~2s. Elemento ausente = não faz nada (nunca rola errado). */
+function rolarAteEDestacar(domId) {
+  const el = document.getElementById(domId);
   if (!el) return;
   el.scrollIntoView({ block: "center", behavior: "smooth" });
   const antes = el.style.outline;
@@ -63,9 +68,9 @@ function irAteOLancamento(id) {
  * ⚠ `problemas` é conferência do LADO DO CLIENTE sobre os lançamentos carregados. Com filtro de
  * tipo/origem/status ativo, o servidor enxerga mais do que esta tela — por isso o aviso.
  */
-function FaltaParaFechar({ problemas, pendentes, filtroAtivo }) {
+function FaltaParaFechar({ problemas, filtroAtivo }) {
   const [aberto, setAberto] = useState(false);
-  if (!problemas.length && !pendentes.length) return null;
+  if (!problemas.length) return null;
   return (
     <div style={{
       display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end",
@@ -73,17 +78,17 @@ function FaltaParaFechar({ problemas, pendentes, filtroAtivo }) {
     }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
         <strong style={{ color: "#FFB347" }}>Falta para fechar:</strong>
-        {pendentes.length > 0 && <span>confirmar {pendentes.map((p) => p.label).join(", ")}</span>}
-        {pendentes.length > 0 && problemas.length > 0 && <span style={{ color: "#6272A4" }}>·</span>}
-        {problemas.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setAberto((v) => !v)}
-            style={{ background: "transparent", border: "none", color: "#FF5757", font: "inherit", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
-          >
-            {problemas.length} lançamento{problemas.length > 1 ? "s" : ""} com problema {aberto ? "▴" : "▾"}
-          </button>
-        )}
+        {/* ⚠ As pendências do CHECK-LIST saíram daqui — hoje elas são o texto do próprio botão
+            ("Fechar mês — Faltam: Provisões, Pagamentos"), e a mesma frase duas vezes a 40px de
+            distância faz procurar a diferença entre elas. O que sobra aqui é o que o botão NÃO
+            consegue dizer: a lista de lançamentos com problema, cada um clicável até a linha. */}
+        <button
+          type="button"
+          onClick={() => setAberto((v) => !v)}
+          style={{ background: "transparent", border: "none", color: "#FF5757", font: "inherit", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+        >
+          {problemas.length} lançamento{problemas.length > 1 ? "s" : ""} com problema {aberto ? "▴" : "▾"}
+        </button>
       </div>
       {aberto && (
         <ul style={{ listStyle: "none", margin: 0, padding: "6px 10px", background: "#24253A", border: "1px solid #44475A", borderRadius: 8, maxHeight: 180, overflowY: "auto", width: "100%" }}>
@@ -112,6 +117,8 @@ function FaltaParaFechar({ problemas, pendentes, filtroAtivo }) {
 
 function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo }) {
   const [fechado, setFechado] = useState(false);
+  const [fechadoEm, setFechadoEm] = useState(null);
+  const [fechadoPorNome, setFechadoPorNome] = useState(null);
   const [busy, setBusy] = useState(false);
   // Checklist (Q47 + Lote C): { folhaProlabore, despesas, receitas, provisoes, pagamentos }
   const [checklist, setChecklist] = useState({});
@@ -159,6 +166,8 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
       .then((r) => {
         if (!alive) return;
         setFechado(Boolean(r?.fechado));
+        setFechadoEm(r?.fechadoEm || null);
+        setFechadoPorNome(r?.fechadoPorNome || null);
         // `checklist` é o formato novo; o fallback cobre um backend ainda sem ele (só a folha).
         setChecklist(r?.checklist || { folhaProlabore: r?.folhaProlaboreOk === true });
         setSemFaturamento(r?.semFaturamento === true);
@@ -178,28 +187,31 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
   async function toggle() {
     if (busy) return;
     if (fechado) {
+      // ⚠ Reabrir passa por confirmação. Reabrir é o que destrava a escrita num mês já entregue —
+      // as buscas do SERPRO e o "+ Adicionar" respondem a este estado — e não tinha nem um "tem
+      // certeza?", enquanto EXCLUIR um lançamento tinha. O peso estava invertido.
+      const quando = fechadoEm ? ` (fechado em ${fmtDataCurta(fechadoEm)})` : "";
+      if (!window.confirm(`Reabrir ${competencia}${quando}?\n\nO mês volta a aceitar lançamentos e buscas no SERPRO.`)) return;
       setBusy(true);
-      try { await fechamentoApi.reabrirFechamentoContabil(companyId, competencia); setFechado(false); onState?.(false); }
-      catch (e) { window.alert(e?.message || "Falha ao reabrir."); }
+      try {
+        await fechamentoApi.reabrirFechamentoContabil(companyId, competencia);
+        setFechado(false); setFechadoEm(null); setFechadoPorNome(null); onState?.(false);
+      } catch (e) { window.alert(e?.message || "Falha ao reabrir."); }
       finally { setBusy(false); }
       return;
     }
-    if (problemas.length > 0) {
-      // eslint-disable-next-line no-alert
-      window.alert(
-        `Não é possível fechar: ${problemas.length} lançamento(s) com problema.\n\n`
-        + problemas.slice(0, 10).map((p) => `• ${p.historico || p.id}: ${p.motivo}`).join("\n")
-      );
-      return;
-    }
-    if (pendentes.length > 0) {
-      // eslint-disable-next-line no-alert
-      window.alert(`Confirme antes de fechar:\n\n${pendentes.map((p) => `• ${p.label}`).join("\n")}`);
-      return;
-    }
+    // ⚠ Os dois alertas que ficavam aqui SUMIRAM. O motivo do bloqueio agora está no painel ANTES
+    // do clique (`FaltaParaFechar` + o botão desabilitado que nomeia o que falta): alerta é a
+    // resposta chegando depois da tentativa, para quem já suspeitava. O botão nem chega a chamar.
+    if (problemas.length > 0 || pendentes.length > 0) return;
     setBusy(true);
-    try { await fechamentoApi.fecharFechamentoContabil(companyId, competencia); setFechado(true); onState?.(true); }
-    catch (e) { window.alert(e?.message || "Falha ao fechar."); }
+    try {
+      const r = await fechamentoApi.fecharFechamentoContabil(companyId, competencia);
+      setFechado(true);
+      setFechadoEm(r?.fechadoEm || new Date().toISOString());
+      setFechadoPorNome(r?.fechadoPorNome || null);
+      onState?.(true);
+    } catch (e) { window.alert(e?.message || "Falha ao fechar."); }
     finally { setBusy(false); }
   }
 
@@ -239,17 +251,29 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
   const pendentes = CHECKLIST_ITENS.filter((i) => checklist[i.chave] !== true);
   const bloqueadoPorChecklist = !fechado && pendentes.length > 0;
   const color = fechado ? "#2DD4BF" : (problemas.length > 0 || bloqueadoPorChecklist) ? "#FF5757" : "#69FF47";
-  const title = fechado
-    ? `Empresa fechada (${competencia}). Clique para reabrir.`
+
+  // ⚠ O MOTIVO DO BLOQUEIO É TEXTO NO BOTÃO, não `title`.
+  // `title` só existe depois de parar o mouse em cima — quem clica direto recebia um `window.alert`
+  // com a resposta que a tela já tinha. E `problemas` nem desabilitava o botão: ele parecia
+  // clicável, era clicado, e respondia com alerta. Agora os dois bloqueiam igual e se explicam.
+  const motivoBloqueio = fechado
+    ? null
     : problemas.length > 0
-      ? `${problemas.length} lançamento(s) com problema — corrija antes de fechar.`
-      : bloqueadoPorChecklist
-        ? `Falta confirmar: ${pendentes.map((p) => p.label).join(", ")}.`
-        : `Pronta para fechar (${competencia}). Clique no cadeado para fechar.`;
-  const btnDisabled = busy || bloqueadoPorChecklist;
+      ? `${problemas.length} lançamento${problemas.length > 1 ? "s" : ""} com problema`
+      : pendentes.length > 0
+        ? `Faltam: ${pendentes.map((p) => p.label).join(", ")}`
+        : null;
+  const btnDisabled = busy || Boolean(motivoBloqueio);
+  const title = fechado
+    ? `Mês fechado. Clique para reabrir — o mês volta a aceitar lançamentos.`
+    : motivoBloqueio
+      ? `${motivoBloqueio} — resolva antes de fechar ${competencia}.`
+      : `Pronta para fechar (${competencia}).`;
   return (
     <>
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+    {/* `flex-start`: o checklist virou um bloco de 6 linhas — centralizado, ele empurrava o cadeado
+        e o alternador de faturamento para o meio da altura dele. */}
+    <div style={{ display: "inline-flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
       {/* Checklist de conferência — some quando o mês já está fechado.
           Sem o rótulo abaixo eram cinco caixas soltas ao lado do cadeado: não dava pra saber se
           filtravam a tabela ou se eram confirmações. São confirmações manuais do contador. */}
@@ -296,34 +320,59 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
           )}
         </label>
       )}
+      {/* ⚠ O CHECKLIST VIROU PAINEL — uma linha por item, não cinco caixas soltas em fila.
+          Em fila horizontal os cinco rótulos brigavam por espaço com o alternador de faturamento e
+          com o cadeado, e nada dizia que eram confirmações do contador (pareciam filtros). Em
+          linhas, cada item tem rótulo, estado e espaço para dizer de onde veio o check. */}
       {!fechado && (
-        <span style={{ fontSize: "0.72rem", color: "#8A8FA3", fontWeight: 600, whiteSpace: "nowrap" }}>
-          Confiro que lancei:
+        <div
+          style={{
+            display: "grid", gap: 2, minWidth: 230, padding: "8px 10px",
+            borderRadius: 12, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.field,
+          }}
+        >
+          <span style={{ fontSize: "0.7rem", color: "#8A8FA3", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 2 }}>
+            Confiro que lancei
+          </span>
+          {CHECKLIST_ITENS.map((item) => {
+            const marcado = checklist[item.chave] === true;
+            const gravando = checkBusy === item.chave;
+            return (
+              <label
+                key={item.chave}
+                title={item.title}
+                style={{
+                  display: "flex", alignItems: "center", gap: 7, padding: "3px 2px",
+                  fontSize: "0.78rem", fontWeight: 600,
+                  color: marcado ? "#69FF47" : "#aeb6d3",
+                  cursor: gravando ? "default" : "pointer", userSelect: "none",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={marcado}
+                  disabled={Boolean(checkBusy)}
+                  onChange={() => toggleItem(item.chave)}
+                  style={{ cursor: gravando ? "default" : "pointer" }}
+                />
+                <span style={{ flex: 1 }}>{item.label}</span>
+                {gravando && <span style={{ fontSize: "0.68rem", color: "#8A8FA3", fontWeight: 400 }}>salvando…</span>}
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Selo do mês fechado: QUANDO e por QUEM. Os dois já vinham do backend e a tela descartava —
+          sobrava um "🔒 Fechada" que não dizia se o fechamento foi ontem ou em março. */}
+      {fechado && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.78rem", color: "#2DD4BF", fontWeight: 600 }}>
+          ✓ Mês fechado
+          {fechadoEm && <span style={{ color: "#aeb6d3", fontWeight: 400 }}>em {fmtDataCurta(fechadoEm)}</span>}
+          {fechadoPorNome && <span style={{ color: "#aeb6d3", fontWeight: 400 }}>por {fechadoPorNome}</span>}
         </span>
       )}
-      {!fechado && CHECKLIST_ITENS.map((item) => {
-        const marcado = checklist[item.chave] === true;
-        const gravando = checkBusy === item.chave;
-        return (
-          <label
-            key={item.chave}
-            title={item.title}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 5, fontSize: "0.78rem", fontWeight: 600,
-              color: marcado ? "#69FF47" : "#aeb6d3", cursor: gravando ? "default" : "pointer", userSelect: "none",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={marcado}
-              disabled={Boolean(checkBusy)}
-              onChange={() => toggleItem(item.chave)}
-              style={{ cursor: gravando ? "default" : "pointer" }}
-            />
-            {item.label}
-          </label>
-        );
-      })}
+
       <button
         type="button"
         onClick={toggle}
@@ -336,12 +385,19 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
         }}
       >
         <span style={{ fontSize: "1rem" }}>{fechado ? "🔒" : "🔓"}</span>
-        {fechado ? "Fechada" : "Fechar mês"}
+        {fechado ? "Reabrir" : motivoBloqueio ? `Fechar mês — ${motivoBloqueio}` : "Fechar mês"}
       </button>
     </div>
-    {!fechado && <FaltaParaFechar problemas={problemas} pendentes={pendentes} filtroAtivo={filtroAtivo} />}
+    {!fechado && <FaltaParaFechar problemas={problemas} filtroAtivo={filtroAtivo} />}
     </>
   );
+}
+
+/** Data ISO → "05/08/2026". Vazio vira string vazia — nunca "Invalid Date" na tela. */
+function fmtDataCurta(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("pt-BR");
 }
 
 function ActionMenu({ label, items, accent }) {
@@ -599,24 +655,6 @@ export function AccountingEntriesTab({
     }
   }
 
-  // Navegação rápida de competência (setas ◀ ▶ no título): ±1 mês.
-  function shiftCompetencia(n) {
-    const m = String(activeComp).match(/^(\d{4})-(\d{2})$/);
-    if (!m) return;
-    let total = Number(m[1]) * 12 + (Number(m[2]) - 1) + n;
-    const y = Math.floor(total / 12);
-    const mo = (total % 12) + 1;
-    onFilterChange("competencia", `${y}-${String(mo).padStart(2, "0")}`);
-  }
-
-  const totals = useMemo(() => {
-    const summary = {};
-    entries.forEach((entry) => {
-      summary[entry.tipo] = (summary[entry.tipo] || 0) + Number(entry.totalD || entry.valor || 0);
-    });
-    return summary;
-  }, [entries]);
-
   const listedTotals = useMemo(() => entries.reduce((acc, entry) => {
     const lines = Array.isArray(entry.lines) ? entry.lines : [];
     const totalD = entry.totalD ?? lines.filter((line) => line.tipo === "D").reduce((sum, line) => sum + Number(line.valor || 0), 0);
@@ -718,9 +756,9 @@ export function AccountingEntriesTab({
               { label: "Exportar CSV", hint: "Lançamentos por competência", onClick: () => setShowCsvExport(true), disabled: !onExportCsv },
             ]}
           />
+          {/* Sem `accent`: um primário por tela, e ele é o "+ Adicionar lançamento". */}
           <ActionMenu
             label="Funções"
-            accent="#BD93F9"
             items={[
               { label: "+ Folha / Pró-labore", hint: "Lançamento composto pré-preenchido", onClick: () => setShowPayroll(true), disabled: !onLoadPayrollTemplate },
               // Parcelamento Simples Nacional só aparece para empresas regime SIMPLES.
@@ -751,9 +789,11 @@ export function AccountingEntriesTab({
 
               ⚠ São chamadas PAGAS. O menu lê `buscasSerpro` (do GET do fechamento) para confirmar
               antes de repetir, e trava enquanto uma busca está em voo. */}
+          {/* ⚠ Sem `accent="#FFB347"`. Âmbar significa "ação rápida PENDENTE", e este menu é uma
+              porta, não uma pendência: ficava permanentemente aceso em toda competência, inclusive
+              nas já buscadas, treinando o olho a ignorar âmbar — que é a cor de "falta enviar". */}
           <ActionMenu
             label="SERPRO"
-            accent="#FFB347"
             items={[
               ...(isSimples ? [{
                 label: buscandoSerpro === "extrato" ? "Buscando extrato…" : "Buscar extrato do Simples",
@@ -804,12 +844,30 @@ export function AccountingEntriesTab({
           </button>
         </div>
 
+        {/* Resumo por seção — chips CLICÁVEIS que rolam até o grupo correspondente na tabela.
+            ⚠ A fonte passou a ser `groupTotals`, a MESMA das seções. Era `totals`, agregado pelo
+            `entry.tipo` cru: um tipo desconhecido aparecia aqui com valor próprio e, na tabela,
+            estava somado dentro de "OUTRO" — dois números diferentes para o mesmo dinheiro, na
+            mesma tela, e o chip apontava para uma seção que não existia. */}
         {entries.length > 0 && (
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            {Object.entries(totals).map(([tipo, value]) => (
-              <span key={tipo} style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text }}>
-                <strong style={{ color: ACCOUNTING_PANEL.text }}>{TIPO_LABELS[tipo] || tipo}:</strong> R$ {fmtValor(value)}
-              </span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {TIPO_GROUP_ORDER.filter((tipo) => groupedEntries[tipo]?.length).map((tipo) => (
+              <button
+                key={tipo}
+                type="button"
+                onClick={() => rolarAteEDestacar(`secao-${tipo}`)}
+                title={`Ir até ${TIPO_GROUP_LABELS[tipo] || tipo} na tabela`}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "5px 10px", borderRadius: 999,
+                  border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.field,
+                  color: ACCOUNTING_PANEL.text, font: "inherit", fontSize: "0.75rem", cursor: "pointer",
+                }}
+              >
+                <strong>{TIPO_GROUP_LABELS[tipo] || tipo}</strong>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>R$ {fmtValor(groupTotals[tipo])}</span>
+                <span style={{ color: ACCOUNTING_PANEL.muted }}>({groupedEntries[tipo].length})</span>
+              </button>
             ))}
           </div>
         )}
@@ -827,10 +885,10 @@ export function AccountingEntriesTab({
               <button type="button" onClick={() => setShowFilters(false)} style={{ background: "none", border: "none", color: ACCOUNTING_PANEL.muted, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
             </div>
             <div style={{ display: "grid", gap: 14 }}>
-              <label style={filterLabelStyle}>
-                Competência
-                <input type="month" value={activeComp} onChange={(e) => onFilterChange("competencia", e.target.value)} style={{ ...filterControlStyle, colorScheme: "dark" }} />
-              </label>
+              {/* ⚠ Competência NÃO é filtro deste painel — é estado da EMPRESA, e mora no header.
+                  Aqui ela era o terceiro controle do mesmo valor (com as setas e o input do topo),
+                  e o painel fechado ainda escondia qual estava valendo. Filtro que some atrás de um
+                  botão foi o "filtro fantasma" que a listagem já teve de resolver. */}
               <label style={filterLabelStyle}>
                 Tipo
                 <select value={filters.tipo || ""} onChange={(e) => onFilterChange("tipo", e.target.value)} style={filterControlStyle}>
@@ -883,7 +941,10 @@ export function AccountingEntriesTab({
           onClick={() => setAdding(true)}
           disabled={adding || monthClosed}
           title={monthClosed ? "Mês fechado — reabra a empresa para lançar." : undefined}
-          style={{ minHeight: 34, padding: "7px 16px", border: "none", borderRadius: 8, background: (adding || monthClosed) ? "#44475A" : "#69FF47", color: (adding || monthClosed) ? "#888" : "#1A1B26", font: "inherit", fontSize: "0.875rem", fontWeight: 700, cursor: (adding || monthClosed) ? "default" : "pointer" }}
+          /* ⚠ ERA VERDE (#69FF47). Verde quer dizer CONCLUÍDO no vocabulário de cores do app — um
+             botão verde de "faça isto" ensina o contrário exatamente na tela onde o verde do
+             rodapé ("✓ ok", D=C) precisa ser lido como "está fechado". Ação primária é o accent. */
+          style={{ minHeight: 34, padding: "7px 16px", border: "none", borderRadius: 8, background: (adding || monthClosed) ? "#44475A" : ACCOUNTING_PANEL.accent, color: (adding || monthClosed) ? "#888" : "#1A1B26", font: "inherit", fontSize: "0.875rem", fontWeight: 700, cursor: (adding || monthClosed) ? "default" : "pointer" }}
         >
           + Adicionar lançamento
         </button>
@@ -939,29 +1000,14 @@ export function AccountingEntriesTab({
 
       {/* Q18: tabela centralizada e mais estreita (Histórico fica perto do Valor). */}
       <div style={{ overflowX: "auto", borderRadius: 16, border: `1px solid ${ACCOUNTING_PANEL.border}`, marginTop: 4, background: ACCOUNTING_PANEL.surface, padding: 20, maxWidth: 1600, marginLeft: "auto", marginRight: "auto" }}>
-        {/* Q32: título da competência acima do cabeçalho (ex.: MAIO/2026). Q39: setas ◀ ▶ pra navegar. */}
+        {/* Q32: título da competência acima do cabeçalho (ex.: MAIO/2026).
+            ⚠ As setas ◀ ▶ que ficavam aqui SAÍRAM: quem navega a competência é o seletor do header,
+            um só para a empresa inteira. O título FICA — ele não é controle, é o rótulo do que a
+            tabela está mostrando, e some no papel se sair daqui (a impressão não leva o header). */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, marginBottom: 14 }}>
-          <button
-            type="button"
-            onClick={() => shiftCompetencia(-1)}
-            aria-label="Competência anterior"
-            title="Competência anterior"
-            style={{ background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 8, width: 34, height: 34, fontSize: "1.1rem", cursor: "pointer", lineHeight: 1 }}
-          >
-            ◀
-          </button>
           <div style={{ minWidth: 200, textAlign: "center", fontSize: "1.4rem", fontWeight: 800, letterSpacing: "0.04em", color: ACCOUNTING_PANEL.text }}>
             {formatCompetenciaTitulo(activeComp)}
           </div>
-          <button
-            type="button"
-            onClick={() => shiftCompetencia(1)}
-            aria-label="Próxima competência"
-            title="Próxima competência"
-            style={{ background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 8, width: 34, height: 34, fontSize: "1.1rem", cursor: "pointer", lineHeight: 1 }}
-          >
-            ▶
-          </button>
         </div>
         <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed", fontSize: "0.9375rem", borderRadius: 16, overflow: "hidden" }}>
           <colgroup>
@@ -990,7 +1036,8 @@ export function AccountingEntriesTab({
               const groupSome = groupIds.some((id) => selectedIds.has(id));
               return (
                 <Fragment key={tipo}>
-                  <tr style={{ background: ACCOUNTING_PANEL.field }}>
+                  {/* Âncora dos metric chips da toolbar (`secao-<tipo>`). */}
+                  <tr id={`secao-${tipo}`} style={{ background: ACCOUNTING_PANEL.field }}>
                     <td
                       colSpan={7}
                       style={{

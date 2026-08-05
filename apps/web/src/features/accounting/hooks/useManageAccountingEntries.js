@@ -1,20 +1,15 @@
 import { useState } from "react";
-
-// Competência inicial do filtro: mês ANTERIOR ao atual (formato YYYY-MM).
-// Contadores trabalham com competência fechada — mês corrente normalmente está vazio.
-function getPreviousMonthCompetencia() {
-  const now = new Date();
-  // Setar dia 1 evita problemas de fim-de-mês (ex: 31 jan → fev). Recuamos um mês daí.
-  const ref = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, "0")}`;
-}
+// ⚠ `filters.competencia` deixou de ser filtro só desta aba: virou a COMPETÊNCIA GLOBAL da empresa,
+// escrita pelo seletor do header (ver `useManageAccountingWorkspace`). O default mora em
+// `lib/competencia` porque a Circular parte dele também — eram duas cópias com meses diferentes.
+import { competenciaPadrao } from "../../../lib/competencia";
 
 export function useAccountingEntries() {
   const [entries, setEntries] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
-    competencia: getPreviousMonthCompetencia(),
+    competencia: competenciaPadrao(),
     tipo: "",
     origem: "",
     status: "",

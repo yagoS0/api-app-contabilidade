@@ -280,13 +280,32 @@ logo abaixo, misturando andamento do mês com relação com a Receita.
 
 **Regime deixou de ser coluna** (vai na 2ª linha da Empresa, junto do CNPJ): é atributo de leitura
 ocasional, não indicador de trabalho, e uma coluna inteira roubava largura das três que dizem o que
-fazer hoje. **Nenhum selo de configuração (A1/SERPRO/parc) aparece na linha** — só no popover do nome.
+fazer hoje. Selos de configuração (SERPRO, parcelamento) vão para o **popover do nome** — com **uma
+exceção**, abaixo.
+
+⚠ **A tag `A1` FICA na linha, e isso é decisão do dono — não esquecimento.**
+
+O plano de refinamento mandava mover todo selo de configuração para o popover, e foi o que se fez.
+O dono reverteu na hora: *"voce tirou a tag de certificado, coloque de volta"*. O motivo tem peso
+técnico, não é preferência: **certificado ausente ou vencido faz a empresa parar de receber nota sem
+avisar ninguém** — `AdnNotasService` recusa com `NO_COMPANY_CERT`, a captura devolve sucesso com zero
+documentos, e o sintoma só aparece semanas depois como "a empresa ficou sem notas". Informação que
+some silenciosamente não pode morar atrás de um clique.
+
+A tag segue as duas regras que a mantêm barata: aparece **só na exceção** (`certificado.js` devolve
+`rotulo: "A1"` para ausente e vencido) e é **cinza**, badge de configuração — nunca um token
+semântico, senão vira mais um vermelho competindo com as três colunas de trabalho.
 
 ### `lib/estadoApuracao.js` — o enum que quatro coisas compartilham
 
 `problema → falta fechar → falta apurar → fechada`. Coluna Apuração, chips de filtro do topo,
 segmentos da barra de progresso e peso de ordenação saem **todos daqui**. Antes eram quatro cálculos
 paralelos sobre `travas`, e divergiam na mesma tela.
+
+⚠ **"Fechada" é TEAL (`--state-closed`), não verde** — o plano pedia verde. Verde quer dizer
+*concluído* no vocabulário de cores; fechada quer dizer **fora do fluxo de trabalho**, que não é a
+mesma coisa. Com verde, "guias todas enviadas" e "mês fechado" ficariam indistinguíveis num relance,
+e é justamente o mês fechado que sai da lista de trabalho (opacidade 0.6, agrupado no fim).
 
 ⚠ **"Falta apurar" é CINZA e só se sai dele com `apuracao.apurada === true`.** `podeFechar` fala do
 fechamento CONTÁBIL e não prova apuração fiscal; usá-lo como sinal fazia a carteira inteira nascer

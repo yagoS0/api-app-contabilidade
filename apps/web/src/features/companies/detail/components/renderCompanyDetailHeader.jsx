@@ -1,3 +1,16 @@
+import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
+
+// ⚠ ABAS QUE VIVEM NUMA COMPETÊNCIA — e são as ÚNICAS que mostram o seletor.
+//
+// O plano dizia "todas as abas acompanham". Ao ligar, ficou claro que "todas" não é o que se quer:
+// Cadastro, Documentos e Situação Fiscal não têm mês nenhum, e um seletor que não comanda nada é
+// pior que seletor nenhum — a pessoa muda o mês, a tela não muda, e passa a duvidar do controle
+// também onde ele funciona. Aba entra nesta lista quando passa a FILTRAR por competência.
+//
+// Guias e Obrigações ainda não estão aqui: Obrigações renderiza o `CalendarioGrid`, que tem
+// navegação de mês própria (unificação é a E1.3), e a aba de Guias hoje não filtra por competência.
+const TABS_COM_COMPETENCIA = new Set(["lancamentos", "circular"]);
+
 // Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
 // clicar num grupo navega pro seu 1º sub-tab. Nada de roteamento novo — só reagrupa o header.
@@ -72,8 +85,50 @@ function isSimplesCompany(company) {
   return String(regime).trim().toUpperCase() === "SIMPLES";
 }
 
-export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, canEditCompany = false }) {
+// O seletor de competência da empresa. Um só controle, no header, para as abas que têm mês.
+function CompetenciaSwitcher({ competencia, onChange }) {
+  // ⚠ Não se navega para além do mês corrente: não há o que apurar num mês que não terminou, e
+  // uma tela vazia de outubro/2027 se parece com erro de carga. O limite é do CONTROLE, não do
+  // dado — competência que já veio à frente (vinda de link ou de estado antigo) continua exibida.
+  const teto = competenciaAtual();
+  const proxima = deslocarCompetencia(competencia, 1);
+  const noTeto = competencia >= teto;
+
+  return (
+    <div className="company-topbar__competencia" role="group" aria-label="Competência">
+      <button
+        type="button"
+        className="company-topbar__competencia-nav"
+        onClick={() => onChange(deslocarCompetencia(competencia, -1))}
+        aria-label="Competência anterior"
+        title="Competência anterior"
+      >
+        ‹
+      </button>
+      <span className="company-topbar__competencia-valor" aria-live="polite">
+        {formatCompetencia(competencia)}
+      </span>
+      <button
+        type="button"
+        className="company-topbar__competencia-nav"
+        onClick={noTeto ? undefined : () => onChange(proxima)}
+        disabled={noTeto}
+        aria-label="Próxima competência"
+        /* Opção desabilitada sempre diz por quê (princípio 7: ausência nunca é resposta). */
+        title={noTeto ? "Este é o mês corrente — não há competência posterior para trabalhar" : "Próxima competência"}
+      >
+        ›
+      </button>
+    </div>
+  );
+}
+
+export function CompanySectionHeader({
+  company, activeTab, onBack, onTabChange, canEditCompany = false,
+  competencia, onCompetenciaChange,
+}) {
   const simples = isSimplesCompany(company);
+  const mostraCompetencia = Boolean(competencia && onCompetenciaChange && TABS_COM_COMPETENCIA.has(activeTab));
   const groups = GROUPS.map((g) => ({
     ...g,
     tabs: g.tabs.filter((t) => !t.soApuraSimples || simples),
@@ -116,6 +171,15 @@ export function CompanySectionHeader({ company, activeTab, onBack, onTabChange, 
             );
           })}
         </nav>
+
+        {/* ⚠ TERCEIRA coluna do grid, não ao lado do nome (o plano dizia "ao lado do nome/CNPJ").
+            O `.company-topbar` é `1fr auto 1fr` justamente para o menu ficar centrado de verdade
+            sem ser empurrado pelo nome da empresa; um quarto filho entre marca e menu jogaria o
+            menu para a coluna da folga e descentralizaria o header em TODAS as abas. A folga da
+            direita já existia vazia, e o controle global fica no mesmo nível hierárquico do menu. */}
+        {mostraCompetencia && (
+          <CompetenciaSwitcher competencia={competencia} onChange={onCompetenciaChange} />
+        )}
       </div>
 
       {/* Nível 2 — sub-abas do grupo ativo, em formato de aba (Chrome). Oculto quando o grupo

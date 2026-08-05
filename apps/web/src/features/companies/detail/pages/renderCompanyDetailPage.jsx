@@ -140,6 +140,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
 
         {/* Conteúdo full-width — sem restrição de max-width */}
@@ -203,6 +205,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
 
         <AppShell className="guides-page-shell">
@@ -250,6 +254,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
         <div style={{ flex: 1 }}>
           <Suspense fallback={<TabLoadingFallback />}>
@@ -278,6 +284,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
         <div style={{ flex: 1 }}>
           <CompanyFichaTab
@@ -301,6 +309,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
@@ -325,6 +335,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
 
         <AppShell className="company-form-page-shell">
@@ -401,6 +413,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
@@ -427,6 +441,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
         <div style={{ flex: 1, padding: 24 }}>
           <ErrorBoundary>
@@ -449,6 +465,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
@@ -472,6 +490,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
 
         <div style={{ flex: 1 }}>
@@ -518,6 +538,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
@@ -549,6 +571,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           onBack={onBack}
           onTabChange={switchTab}
           canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
         />
         <div style={{ flex: 1 }}>
           <ErrorBoundary>

@@ -726,6 +726,8 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showBaixa, setShowBaixa] = useState(false);
+  // Ações da linha: discretas em repouso, nítidas no hover/foco. Ver `acaoLinhaStyle`.
+  const [linhaAtiva, setLinhaAtiva] = useState(false);
   const exported = entry.status === "EXPORTADO";
   const isTemplate = entry.origem === "TEMPLATE" || entry.placeholder === true;
   const lines = entry.lines || [];
@@ -778,7 +780,7 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
           `incompleteRowStyle` mesmo com a linha não selecionada, então o contorno ciano de
           "falta um lado" nunca apareceu. Agora a seleção vence quando há seleção, e o aviso de
           incompleto aparece quando não há. */}
-      <tr id={`lanc-${entry.id}`} style={{ background: isSelected ? "#2a2b3d" : rowBg, ...incompleteRowStyle, ...(isSelected ? { outline: "1px solid #BD93F9", outlineOffset: 0 } : incompleteRowStyle ? null : { outline: "none" }) }} onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = rowBgHover; }} onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = rowBg; }}>
+      <tr id={`lanc-${entry.id}`} style={{ background: isSelected ? "#2a2b3d" : rowBg, ...incompleteRowStyle, ...(isSelected ? { outline: "1px solid #BD93F9", outlineOffset: 0 } : incompleteRowStyle ? null : { outline: "none" }) }} onMouseEnter={(e) => { setLinhaAtiva(true); if (!isSelected) e.currentTarget.style.background = rowBgHover; }} onMouseLeave={(e) => { setLinhaAtiva(false); if (!isSelected) e.currentTarget.style.background = rowBg; }} onFocus={() => setLinhaAtiva(true)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setLinhaAtiva(false); }}>
         <td style={{ ...TDv, textAlign: "center", padding: "8px 4px" }}>
           {onToggleSelect && (
             <input
@@ -791,10 +793,13 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
           )}
         </td>
         <td style={{ ...TDv, fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtDate(entry.data)}</td>
-        <td style={{ ...TDv, textAlign: isSimple ? "center" : "left" }} colSpan={isSimple ? 1 : 2}>
-          {isSimple ? <><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{dLine?.conta ? dLine.conta : <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span>{dA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{dA.nome}</div>}</> : <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
+        {/* ⚠ `title` com código + nome: a coluna é estreita e o nome vem cortado por reticências.
+            "RECEITA DE SERVIÇOS PRE…" e "RECEITA DE SERVIÇOS PRO…" viram a mesma coisa na tela, e
+            é assim que se confere um lançamento na conta errada sem enxergar. */}
+        <td style={{ ...TDv, textAlign: isSimple ? "center" : "left" }} colSpan={isSimple ? 1 : 2} title={dA ? `${dLine?.conta} — ${dA.nome}` : undefined}>
+          {isSimple ? <><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{dLine?.conta ? dLine.conta : <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span>{dA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{dA.nome}</div>}</> :<div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
         </td>
-        {isSimple && <td style={{ ...TDv, textAlign: "center" }}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{cLine?.conta ? cLine.conta : <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span>{cA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{cA.nome}</div>}</td>}
+        {isSimple && <td style={{ ...TDv, textAlign: "center" }} title={cA ? `${cLine?.conta} — ${cA.nome}` : undefined}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{cLine?.conta ? cLine.conta :<span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span>{cA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{cA.nome}</div>}</td>}
         <td style={{ ...TDv, fontSize: "0.9375rem" }} title={entry.historico}>
           <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.historico || "—"}</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
@@ -816,7 +821,15 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
         <td style={{ ...TDv, textAlign: "right", borderRight: "none" }}>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
             {isTemplate && <TemplateBadge />}
-            {!exported && <><button type="button" onClick={startEdit} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#BD93F9" }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} style={{ ...PANEL_ICON_BUTTON_STYLE, background: "#FF4757" }}>⌫</button></>}
+            {/* ⚠ AÇÕES DISCRETAS EM REPOUSO. Eram roxo e VERMELHO fixos em toda linha: numa
+                competência de 40 lançamentos, 40 botões vermelhos permanentes. Vermelho é a cor de
+                "bloqueia/vencido" — gasto assim, ele para de significar isso justamente onde a tela
+                precisa dele (D≠C, mês travado). O vermelho da exclusão vive no CONFIRM.
+
+                Não usamos `opacity: 0`: o ícone continua legível em repouso, só sem cor. Ação que
+                só existe depois do hover é ação que quem não passa o mouse nunca descobre — e some
+                para leitor de tela e para teclado. Por isso `onFocus` também acende a linha. */}
+            {!exported && <><button type="button" onClick={startEdit} disabled={saving} title="Editar lançamento" aria-label="Editar lançamento" style={{ ...PANEL_ICON_BUTTON_STYLE, background: linhaAtiva ? ACCOUNTING_PANEL.accent : "transparent", color: linhaAtiva ? "#1A1B26" : ACCOUNTING_PANEL.muted, border: `1px solid ${linhaAtiva ? "transparent" : ACCOUNTING_PANEL.border}` }}>✎</button><button type="button" onClick={() => onDelete(entry.id)} disabled={saving} title="Excluir lançamento" aria-label="Excluir lançamento" style={{ ...PANEL_ICON_BUTTON_STYLE, background: linhaAtiva ? "#FF4757" : "transparent", color: linhaAtiva ? "#F8F8F2" : ACCOUNTING_PANEL.muted, border: `1px solid ${linhaAtiva ? "transparent" : ACCOUNTING_PANEL.border}` }}>⌫</button></>}
             {exported && <span style={{ fontSize: "0.7rem", color: ACCOUNTING_PANEL.text }}>exportado</span>}
           </div>
         </td>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAccountingEntries } from "../../features/accounting/hooks/useManageAccountingEntries";
 import { useChartOfAccounts } from "../../features/accounting/hooks/useManageChartOfAccounts";
+import { parseCompetencia, competenciaPadrao } from "../../lib/competencia";
 
 export function useManageAccountingWorkspace({ api, page, selectedCompanyId, companyDetailTab, feedback }) {
   const accountingEntriesState = useAccountingEntries();
@@ -11,11 +12,42 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   const [approvingCircularEntryId, setApprovingCircularEntryId] = useState("");
   const [circularData, setCircularData] = useState(null);
   const [loadingCircular, setLoadingCircular] = useState(false);
-  const [circularYear, setCircularYear] = useState(new Date().getFullYear());
-  const [circularCompetencia, setCircularCompetencia] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
+  // ⚠ O ano da matriz nasce do ANO DA COMPETÊNCIA, não do relógio.
+  // A competência de trabalho é o mês fechado, então em JANEIRO ela aponta para dezembro do ano
+  // anterior — com `new Date().getFullYear()` a Circular abria no ano novo, vazia, exatamente no
+  // mês em que se fecha o ano. Depois de aberta o seletor de ano é livre: ele navega a MATRIZ
+  // (12 meses são o eixo dela), enquanto a competência diz em que mês se está trabalhando.
+  const [circularYear, setCircularYear] = useState(
+    () => parseCompetencia(competenciaPadrao())?.ano || new Date().getFullYear(),
+  );
+
+  // ⚠ COMPETÊNCIA GLOBAL — uma só para a empresa inteira.
+  //
+  // Eram DUAS, com defaults DIFERENTES: os lançamentos nasciam no mês anterior (competência
+  // fechada, que é como o contador trabalha) e a Circular no mês corrente. Trocar de aba mudava o
+  // mês sem dizer nada, e cada tela mostrava um período diferente da mesma empresa — a pessoa
+  // comparava número de julho com número de agosto sem ter como perceber.
+  //
+  // A fonte agora é `accountingEntriesState.filters.competencia`, porque o `useEffect` de carga dos
+  // lançamentos já observa `filters`: escrever ali recarrega sozinho, sem um segundo caminho de
+  // sincronização para divergir. O default vence o do calendário do escritório (mês anterior), o
+  // mesmo do dashboard.
+  const circularCompetencia = accountingEntriesState.filters.competencia;
+  function setCircularCompetencia(value) {
+    if (!value) return;
+    accountingEntriesState.setFilter("competencia", value);
+    // Mudou de ANO no header? A matriz vai junto — senão a pessoa trabalha em dezembro/2025 olhando
+    // a grade de 2026. Trocar só o mês DENTRO do ano não mexe na matriz (ela já mostra os 12).
+    //
+    // ⚠ O reload leva os DOIS valores novos explicitamente. `handleCircularYearChange` chamaria
+    // `loadCircular(ano)` e a competência cairia no default do parâmetro — que é o valor DESTE
+    // render, ainda o antigo. A revisão da Circular viria do mês errado, calada.
+    const ano = parseCompetencia(value)?.ano;
+    if (ano && ano !== circularYear) {
+      setCircularYear(ano);
+      loadCircular(ano, value);
+    }
+  }
   const [entriesMessage, setEntriesMessage] = useState("");
   const [entriesError, setEntriesError] = useState("");
 
@@ -241,6 +273,21 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
   }
 
+  /**
+   * O texto do confirm de exclusão, com histórico, data e valor do lançamento.
+   * Lançamento não encontrado na lista carregada cai na frase genérica — melhor perguntar de forma
+   * vaga do que afirmar dados de outro lançamento.
+   */
+  function descreverExclusao(entryId) {
+    const e = (accountingEntriesState.entries || []).find((x) => x.id === entryId);
+    if (!e) return "Excluir este lançamento?";
+    const valor = Number(e.totalD || e.totalC || e.valor || 0)
+      .toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const data = e.data ? new Date(e.data).toLocaleDateString("pt-BR") : "";
+    const partes = [e.historico || "Lançamento sem histórico", data, `R$ ${valor}`].filter(Boolean);
+    return `Excluir o lançamento?\n\n${partes.join(" · ")}\n\nEsta ação não pode ser desfeita.`;
+  }
+
   async function handleDeleteEntryNoConfirm(entryId) {
     if (!selectedCompanyId) return;
     setSavingEntry(true);
@@ -259,7 +306,10 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
 
   async function handleDeleteEntry(entryId) {
     if (!selectedCompanyId) return;
-    if (!window.confirm("Excluir este lançamento?")) return;
+    // ⚠ O confirm NOMEIA o que vai sumir. "Excluir este lançamento?" é indistinguível de linha para
+    // linha: quem clicou no ⌫ errado lê a mesma frase que leria no certo, confirma, e só descobre
+    // o engano quando o mês não fecha. Ação irreversível repete os dados no texto (regra 5).
+    if (!window.confirm(descreverExclusao(entryId))) return;
     setSavingEntry(true);
     setEntriesError("");
     setEntriesMessage("");
