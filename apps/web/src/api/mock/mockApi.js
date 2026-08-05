@@ -2372,8 +2372,91 @@ export function createMockApi() {
       mockEntriesByCompany.set(companyId, list);
       return { ok: true, created: transactions.length, failed: 0, loteImportacao };
     },
-    getEntriesExportCsvUrl(companyId) {
-      return `#mock-csv-export-${companyId}`;
+    /**
+     * ⚠ CSV DE VERDADE, não `#mock-...`.
+     * Devolvendo uma âncora falsa, `handleExportEntriesCsv` batia em `url.startsWith("#")` e
+     * abortava com "não disponível no modo mock" — e junto com ele abortavam a marcação de
+     * exportado, o feedback de quantos foram marcados e o alerta de reexportação. Ou seja: o ciclo
+     * inteiro da exportação era inconferível offline, que é justamente onde ele se confere.
+     * `data:` URL é buscável por `fetch` e vira blob igual à resposta do servidor.
+     */
+    getEntriesExportCsvUrl(companyId, params = {}) {
+      const ini = params.competenciaInicio || params.competencia || "";
+      const fim = params.competenciaFim || params.competencia || "";
+      const lista = (mockEntriesByCompany.get(companyId) || [])
+        .filter((e) => (!ini || e.competencia >= ini) && (!fim || e.competencia <= fim))
+        .filter((e) => String(e.tipo || "").toUpperCase() !== "PARCELA");
+      const linhas = ["Data;Debito;Credito;Historico;Valor"];
+      for (const e of lista) {
+        const d = (e.lines || []).find((l) => String(l.tipo).toUpperCase() === "D");
+        const c = (e.lines || []).find((l) => String(l.tipo).toUpperCase() === "C");
+        const valor = Number(d?.valor || c?.valor || 0).toFixed(2).replace(".", ",");
+        linhas.push([e.data || "", d?.conta || "", c?.conta || "", String(e.historico || "").replace(/;/g, ","), valor].join(";"));
+      }
+      return `data:text/csv;charset=utf-8,${encodeURIComponent(`﻿${linhas.join("\n")}`)}`;
+    },
+
+    // As duas escrevem no MESMO estado que o pré-voo lê — é o que permite exercitar offline o
+    // ciclo inteiro: exportar → reexportar (com o alerta) → reabrir → o alerta some.
+    async confirmarExportacao(companyId, { competenciaInicio, competenciaFim }) {
+      await delay(80);
+      const lista = mockEntriesByCompany.get(companyId) || [];
+      let marcados = 0;
+      for (const e of lista) {
+        if (e.competencia >= competenciaInicio && e.competencia <= competenciaFim && e.status === "CONFIRMADO") {
+          e.status = "EXPORTADO"; marcados += 1;
+        }
+      }
+      return { ok: true, marcados };
+    },
+    async reabrirExportacao(companyId, { competenciaInicio, competenciaFim }) {
+      await delay(80);
+      const lista = mockEntriesByCompany.get(companyId) || [];
+      let reabertos = 0;
+      for (const e of lista) {
+        if (e.competencia >= competenciaInicio && e.competencia <= competenciaFim && e.status === "EXPORTADO") {
+          e.status = "CONFIRMADO"; reabertos += 1;
+        }
+      }
+      return { ok: true, reabertos };
+    },
+
+    // Pré-voo da exportação. Calculado sobre os MESMOS lançamentos do mock, não inventado: é assim
+    // que dá para conferir offline a tela de erros/alertas — inclusive o caso de lote limpo.
+    async getExportPreflight(companyId, competencia) {
+      await delay(120);
+      const lista = (mockEntriesByCompany.get(companyId) || [])
+        .filter((e) => e.competencia === competencia && String(e.tipo || "").toUpperCase() !== "PARCELA");
+      const erros = []; const alertas = [];
+      let totalD = 0; let totalC = 0; let linhas = 0;
+      const plano = new Set((mockChartOfAccounts.get(companyId) || []).map((a) => String(a.codigo)));
+      for (const e of lista) {
+        const ls = e.lines || [];
+        if (!ls.length) { erros.push({ entryId: e.id, historico: e.historico, motivo: "lançamento sem nenhuma linha", ocorrencias: 1 }); continue; }
+        let d = 0; let c = 0;
+        for (const l of ls) {
+          linhas += 1;
+          const v = Number(l.valor || 0);
+          if (String(l.tipo).toUpperCase() === "D") { d += v; totalD += v; } else { c += v; totalC += v; }
+          const cod = String(l.conta || "").trim();
+          if (!cod) erros.push({ entryId: e.id, historico: e.historico, motivo: "linha sem conta", ocorrencias: 1 });
+          else if (plano.size && !plano.has(cod)) erros.push({ entryId: e.id, historico: e.historico, motivo: `conta ${cod} não existe no plano`, ocorrencias: 1 });
+        }
+        if (Math.abs(d - c) > 0.01 && !e.parcelamentoId) {
+          erros.push({ entryId: e.id, historico: e.historico, motivo: "débito ≠ crédito", ocorrencias: 1 });
+        }
+      }
+      const circ = getCircularRecord(companyId, competencia);
+      const mesFechado = Boolean(circ?.fechadoContabilEm);
+      if (!mesFechado) alertas.push({ entryId: null, historico: null, motivo: "o mês ainda não foi fechado contabilmente", ocorrencias: 1 });
+      const jaExportados = lista.filter((e) => e.status === "EXPORTADO").length;
+      if (jaExportados > 0) {
+        alertas.push({ entryId: null, historico: null, motivo: `${jaExportados} lançamento${jaExportados > 1 ? "s" : ""} desta competência já foi exportado antes`, ocorrencias: 1 });
+      }
+      return {
+        ok: true, competencia, erros, alertas, mesFechado, jaExportados,
+        totais: { entries: lista.length, linhas, totalD, totalC, diferenca: Math.abs(totalD - totalC) },
+      };
     },
 
     // ── Históricos (mock) ──────────────────────────────────────────────────

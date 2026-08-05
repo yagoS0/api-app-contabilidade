@@ -1268,6 +1268,14 @@ export function AccountingEntriesTab({
           defaultCompetencia={activeComp}
           onExport={(rangeOptions) => onExportCsv(rangeOptions)}
           onClose={() => setShowCsvExport(false)}
+          onPreflight={(comp) => fechamentoApi.getExportPreflight(companyId, comp)}
+          onReabrir={async (comp) => {
+            await fechamentoApi.reabrirExportacao(companyId, { competenciaInicio: comp, competenciaFim: comp });
+            await onLoad?.();
+          }}
+          /* ⚠ FECHA o modal antes de rolar. Sem isso o `scrollIntoView` acerta a linha certa
+             debaixo do overlay, e a tela parece não ter feito nada. */
+          onIrAteLancamento={(entryId) => { setShowCsvExport(false); setTimeout(() => irAteOLancamento(entryId), 60); }}
         />
       )}
       {showExcel && (

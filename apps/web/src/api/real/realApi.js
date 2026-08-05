@@ -1159,6 +1159,20 @@ export function createRealApi() {
       return `${baseUrl}/firm/companies/${companyId}/entries/export/csv${suffix}`;
     },
 
+    /** O que o ERP recusaria nesta competência — consultado ANTES de baixar o arquivo. */
+    async getExportPreflight(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/entries/export/preflight?competencia=${encodeURIComponent(competencia)}`);
+    },
+
+    /** Marca a competência como exportada — chamado DEPOIS do download dar certo. */
+    async confirmarExportacao(companyId, body) {
+      return request(`/firm/companies/${companyId}/entries/export/confirmar`, { method: "POST", body: JSON.stringify(body) });
+    },
+    /** Desfaz a marca de exportado (o "Reabrir" da exportação). */
+    async reabrirExportacao(companyId, body) {
+      return request(`/firm/companies/${companyId}/entries/export/reabrir`, { method: "POST", body: JSON.stringify(body) });
+    },
+
     async runCompanyFiscalAction(companyId, input) {
       return request(`/firm/companies/${companyId}/fiscal/run`, {
         method: "POST",

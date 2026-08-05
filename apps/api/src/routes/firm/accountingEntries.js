@@ -364,6 +364,46 @@ function validateLines(lines) {
   return { ok: true, totalD, totalC, diferenca, balanced: diferenca <= 0.01 };
 }
 
+/**
+ * As contas usadas existem no plano da empresa?
+ *
+ * ⚠ POR QUE ISTO É UMA CHECAGEM SEPARADA, NA ROTA
+ * `validateLines` só exigia que a conta não fosse VAZIA. Digitar "9999" — um código que não existe
+ * no plano — salvava sem uma palavra, e o erro só aparecia lá na frente, na exportação para o ERP,
+ * longe do lançamento que o causou e às vezes semanas depois. Quem recebe o erro nem sempre é quem
+ * digitou, e a essa altura o lançamento já entrou em conciliação e fechamento.
+ *
+ * Fica na ROTA, e não dentro de `createEntry`: a captura do SERPRO e os workers resolvem conta por
+ * template e não podem ser derrubados por um plano de contas incompleto no meio de uma sincronia.
+ * Mesmo critério da guarda de `MES_FECHADO`.
+ *
+ * Conta GLOBAL (`portalClientId: null`) vale para todas as empresas — por isso o `OR`.
+ */
+/** Mesma mensagem em vários lançamentos vira UMA linha, com a contagem. */
+function dedupePorTexto(itens) {
+  const porMotivo = new Map();
+  for (const i of itens) {
+    const atual = porMotivo.get(i.motivo);
+    if (atual) { atual.ocorrencias += 1; continue; }
+    porMotivo.set(i.motivo, { ...i, ocorrencias: 1 });
+  }
+  return [...porMotivo.values()];
+}
+
+async function contasInexistentes(prisma, portalClientId, lines) {
+  const codigos = [...new Set((lines || []).map((l) => String(l.conta || "").trim()).filter(Boolean))];
+  if (!codigos.length) return [];
+  const achadas = await prisma.chartOfAccount.findMany({
+    where: {
+      codigo: { in: codigos },
+      OR: [{ portalClientId }, { portalClientId: null }],
+    },
+    select: { codigo: true },
+  });
+  const conhecidas = new Set(achadas.map((a) => a.codigo));
+  return codigos.filter((c) => !conhecidas.has(c));
+}
+
 // Q17: valida se a competência pode ser FECHADA (fechamento contábil).
 // Bloqueia por lançamento: em branco (sem linhas / conta vazia) OU D≠C (desbalanceado).
 // Ignora linhas de rastreio de parcela (tipo="PARCELA") e a abertura/baixas de parcelamento
@@ -1568,6 +1608,185 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
+  /**
+   * PRÉ-VOO DA EXPORTAÇÃO — o que o ERP recusaria, dito ANTES de baixar o arquivo.
+   *
+   * ⚠ POR QUE EXISTE
+   * A exportação despejava o CSV sem olhar nada. O erro aparecia do outro lado, no ERP, sem dizer
+   * qual lançamento o causou — e voltava como "o arquivo não entrou", que é o pior formato possível
+   * para quem precisa consertar sete linhas no meio de trezentas.
+   *
+   * ⚠ ERRO ≠ ALERTA, e a diferença é quem decide:
+   *   • ERRO   bloqueia. É o que o ERP recusa: lançamento em branco, conta em branco, D≠C, conta
+   *            fora do plano. Não há julgamento a fazer — está quebrado.
+   *   • ALERTA confirma. É o que PODE estar certo e só o contador sabe: conta ainda não confirmada
+   *            no ERP (`PENDENTE_ERP`) e mês contábil ainda aberto. Transformar isso em bloqueio
+   *            inutilizaria a exportação de quem trabalha com o ERP em implantação.
+   *
+   * A regra estrutural NÃO é reescrita aqui: vem de `computeFechamentoBlockers`, a mesma que o
+   * cadeado da aba Lançamentos e a visão de carteira usam. Uma segunda cópia faria a exportação
+   * discordar do fechamento sobre o mesmo mês.
+   */
+  router.get("/entries/export/preflight", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.query?.competencia || "").trim();
+    if (!competencia) return res.status(400).json({ ok: false, error: "competencia_required" });
+
+    try {
+      const entries = await prisma.accountingEntry.findMany({
+        where: { portalClientId, competencia, tipo: { not: "PARCELA" } },
+        select: { ...SELECT_PARA_BLOQUEIOS, id: true, historico: true, competencia: true, status: true },
+      });
+
+      const { blockers } = computeFechamentoBlockers(entries, competencia);
+      const MOTIVOS = {
+        em_branco: "lançamento sem nenhuma linha",
+        conta_em_branco: "linha sem conta",
+        desbalanceado: "débito ≠ crédito",
+        parcelamento_desbalanceado: "grupo de parcelamento com débito ≠ crédito",
+        folha_desbalanceada: "lote de folha com débito ≠ crédito",
+      };
+      const erros = blockers.map((b) => ({
+        entryId: b.entryId || null,
+        historico: b.historico || "(sem histórico)",
+        motivo: MOTIVOS[b.motivo] || b.motivo,
+      }));
+
+      // Contas usadas × plano de contas. Uma query para a competência inteira.
+      const codigosUsados = [...new Set(
+        entries.flatMap((e) => (e.lines || []).map((l) => String(l.conta || "").trim())).filter(Boolean),
+      )];
+      const contasDoPlano = codigosUsados.length
+        ? await prisma.chartOfAccount.findMany({
+          where: { codigo: { in: codigosUsados }, OR: [{ portalClientId }, { portalClientId: null }] },
+          select: { codigo: true, status: true },
+        })
+        : [];
+      const porCodigo = new Map(contasDoPlano.map((c) => [c.codigo, c]));
+
+      const alertas = [];
+      for (const e of entries) {
+        for (const l of e.lines || []) {
+          const cod = String(l.conta || "").trim();
+          if (!cod) continue;
+          const conta = porCodigo.get(cod);
+          if (!conta) {
+            erros.push({ entryId: e.id, historico: e.historico || "(sem histórico)", motivo: `conta ${cod} não existe no plano` });
+          } else if (conta.status === "PENDENTE_ERP") {
+            alertas.push({ entryId: e.id, historico: e.historico || "(sem histórico)", motivo: `conta ${cod} ainda não confirmada no ERP` });
+          }
+        }
+      }
+
+      const circular = await prisma.companyMonthlyCircular.findUnique({
+        where: { portalClientId_competencia: { portalClientId, competencia } },
+        select: { fechadoContabilEm: true },
+      });
+      if (!circular?.fechadoContabilEm) {
+        alertas.push({ entryId: null, historico: null, motivo: "o mês ainda não foi fechado contabilmente" });
+      }
+
+      // ⚠ REEXPORTAÇÃO. Não bloqueia — reexportar é legítimo (o ERP recusou o arquivo, o contador
+      // trocou de sistema). Mas mandar o mesmo mês duas vezes sem saber disso duplica lançamento
+      // do outro lado, e o único jeito de descobrir é pela conciliação, semanas depois.
+      const jaExportados = entries.filter((e) => e.status === "EXPORTADO").length;
+      if (jaExportados > 0) {
+        alertas.push({
+          entryId: null,
+          historico: null,
+          motivo: `${jaExportados} lançamento${jaExportados > 1 ? "s" : ""} desta competência já foi exportado antes`,
+        });
+      }
+
+      let totalD = 0; let totalC = 0; let linhas = 0;
+      for (const e of entries) {
+        for (const l of e.lines || []) {
+          linhas += 1;
+          const v = Number(l.valor || 0);
+          if (String(l.tipo).toUpperCase() === "D") totalD += v; else totalC += v;
+        }
+      }
+
+      return res.json({
+        ok: true,
+        competencia,
+        // ⚠ Erro repetido não vira linha repetida: a mesma conta inexistente em oito lançamentos
+        // encheria a tela e escondera os outros problemas.
+        erros: dedupePorTexto(erros),
+        alertas: dedupePorTexto(alertas),
+        totais: { entries: entries.length, linhas, totalD, totalC, diferenca: Math.abs(totalD - totalC) },
+        mesFechado: Boolean(circular?.fechadoContabilEm),
+        jaExportados,
+      });
+    } catch (err) {
+      log.error({ err, portalClientId, competencia }, "preflight da exportação falhou");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  /**
+   * MARCA a competência como exportada, DEPOIS do download ter dado certo.
+   *
+   * ⚠ POR QUE UM POST SEPARADO, E NÃO DENTRO DO GET DO CSV
+   * O download é um GET, e GET não pode ter efeito colateral: um prefetch do browser, um clique
+   * duplo ou um antivírus abrindo o link marcariam a competência sem ninguém ter exportado nada.
+   * O front baixa o arquivo (já via `fetch` + blob) e só então confirma.
+   *
+   * ⚠ O QUE ISTO LIGA — e por que importa
+   * `status: "EXPORTADO"` JÁ existia no schema e JÁ era respeitado em três lugares
+   * (`AccountingEntryGeneratorService`, `GuideToProvisionService`, `ParcelamentoService` recusam
+   * sobrescrever quem está exportado), mas **nada no sistema inteiro escrevia esse valor**. Ou
+   * seja: a proteção contra sobrescrever o que já foi para a contabilidade nunca pôde disparar —
+   * uma recaptura do SERPRO podia reescrever um lançamento já entregue, em silêncio.
+   *
+   * A reabertura (`/export/reabrir`) existe pelo mesmo motivo que o mês fechado tem "Reabrir":
+   * marca que não se desfaz vira armadilha na primeira correção legítima.
+   */
+  router.post("/entries/export/confirmar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const { competenciaInicio, competenciaFim } = req.body || {};
+    if (!competenciaInicio || !competenciaFim) {
+      return res.status(400).json({ ok: false, error: "competencia_required" });
+    }
+    try {
+      const where = {
+        portalClientId,
+        competencia: { gte: String(competenciaInicio), lte: String(competenciaFim) },
+        tipo: { not: "PARCELA" },
+        // Rascunho não vai para o ERP e não deve ser marcado como se tivesse ido.
+        status: "CONFIRMADO",
+      };
+      const { count } = await prisma.accountingEntry.updateMany({ where, data: { status: "EXPORTADO" } });
+      return res.json({ ok: true, marcados: count });
+    } catch (err) {
+      log.error({ err, portalClientId }, "falha ao marcar lançamentos como exportados");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  /** Desfaz a marca de exportado — o "Reabrir" da exportação. */
+  router.post("/entries/export/reabrir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const { competenciaInicio, competenciaFim } = req.body || {};
+    if (!competenciaInicio || !competenciaFim) {
+      return res.status(400).json({ ok: false, error: "competencia_required" });
+    }
+    try {
+      const { count } = await prisma.accountingEntry.updateMany({
+        where: {
+          portalClientId,
+          competencia: { gte: String(competenciaInicio), lte: String(competenciaFim) },
+          status: "EXPORTADO",
+        },
+        data: { status: "CONFIRMADO" },
+      });
+      return res.json({ ok: true, reabertos: count });
+    } catch (err) {
+      log.error({ err, portalClientId }, "falha ao reabrir lançamentos exportados");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
   // GET /firm/companies/:companyId/entries/export/csv
   // Query params:
   //   - competencia=YYYY-MM (m\u00EAs \u00FAnico)  OU
@@ -2161,6 +2380,19 @@ export function createAccountingEntriesRouter({ log }) {
       });
     }
 
+    // ⚠ Conta que não existe no plano é recusada AQUI, não na exportação.
+    const desconhecidas = await contasInexistentes(prisma, portalClientId, lines);
+    if (desconhecidas.length) {
+      return res.status(400).json({
+        error: "conta_inexistente",
+        contas: desconhecidas,
+        // A mensagem nomeia as contas: "conta_inexistente" sozinho manda procurar em sete linhas.
+        message: desconhecidas.length === 1
+          ? `A conta ${desconhecidas[0]} não existe no plano de contas desta empresa.`
+          : `Estas contas não existem no plano de contas desta empresa: ${desconhecidas.join(", ")}.`,
+      });
+    }
+
     const competencia = `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`;
 
     // Q18: não permite lançar em mês fechado (fechamento contábil).
@@ -2300,6 +2532,21 @@ export function createAccountingEntriesRouter({ log }) {
       } else if (isTemplate && lines.length > 0) {
         // Template sendo preenchido com linhas válidas: promover a MANUAL
         data.origem = "MANUAL";
+      }
+
+      // Mesma guarda do POST: conta fora do plano é recusada na EDIÇÃO também. Sem isto, bastava
+      // criar certo e depois trocar o código pelo caminho da edição para o furo continuar aberto.
+      if (lines.length > 0) {
+        const desconhecidas = await contasInexistentes(prisma, portalClientId, lines);
+        if (desconhecidas.length) {
+          return res.status(400).json({
+            error: "conta_inexistente",
+            contas: desconhecidas,
+            message: desconhecidas.length === 1
+              ? `A conta ${desconhecidas[0]} não existe no plano de contas desta empresa.`
+              : `Estas contas não existem no plano de contas desta empresa: ${desconhecidas.join(", ")}.`,
+          });
+        }
       }
     }
 

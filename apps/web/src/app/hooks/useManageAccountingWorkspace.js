@@ -441,6 +441,23 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
       link.download = `lancamentos-${suffix}.csv`;
       document.body.appendChild(link);
       link.click();
+      // ⚠ A MARCA VEM DEPOIS DO DOWNLOAD, e só se ele deu certo.
+      // Marcar antes (ou dentro do GET) diria "exportado" para um arquivo que a rede derrubou.
+      // Best-effort: se a marcação falhar, o arquivo JÁ está na mão do contador — derrubar a
+      // exportação por causa dela seria trocar um aviso perdido por um trabalho perdido.
+      if (api.confirmarExportacao && (params.competenciaInicio || params.competencia)) {
+        const ini = params.competenciaInicio || params.competencia;
+        const fim = params.competenciaFim || params.competencia;
+        try {
+          const r = await api.confirmarExportacao(selectedCompanyId, { competenciaInicio: ini, competenciaFim: fim });
+          await loadAccountingEntries(selectedCompanyId);
+          setEntriesMessage(
+            r?.marcados
+              ? `Exportado. ${r.marcados} lançamento${r.marcados > 1 ? "s" : ""} marcado${r.marcados > 1 ? "s" : ""} como exportado${r.marcados > 1 ? "s" : ""}.`
+              : "Exportado.",
+          );
+        } catch { setEntriesMessage("Exportado (não foi possível marcar os lançamentos)."); }
+      }
       document.body.removeChild(link);
       URL.revokeObjectURL(objectUrl);
     } catch (err) {

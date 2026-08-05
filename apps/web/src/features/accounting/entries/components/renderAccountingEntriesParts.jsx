@@ -205,6 +205,29 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
   );
 }
 
+/**
+ * Códigos usados no lançamento que NÃO existem no plano de contas carregado.
+ *
+ * ⚠ POR QUE ISTO BLOQUEIA O SALVAR, e não só pinta de vermelho.
+ * Digitar um código inexistente sempre foi possível: o backend só exigia que a conta não fosse
+ * vazia. O lançamento entrava, participava da conciliação e do fechamento, e o erro só aparecia
+ * na EXPORTAÇÃO para o ERP — longe do lançamento que o causou, às vezes semanas depois, e para
+ * quem não o digitou. O servidor agora recusa (`conta_inexistente`); esta guarda é a antecipação,
+ * para o contador não descobrir clicando em Salvar.
+ *
+ * Sem plano carregado (`accounts` vazio) NÃO acusa nada: ausência de dado não é prova de conta
+ * inexistente, e travar o lançamento porque a lista ainda não chegou seria pior que o erro tardio.
+ */
+export function contasDesconhecidas(lines, accounts) {
+  if (!accounts?.length) return [];
+  const conhecidas = new Set(accounts.map((a) => String(a.codigo)));
+  return [...new Set(
+    (lines || [])
+      .map((l) => String(l?.conta || "").trim())
+      .filter((c) => c && !conhecidas.has(c)),
+  )];
+}
+
 export function LineEditor({ lines, onChange, accounts }) {
   function updateLine(idx, field, val) { onChange(lines.map((l, i) => i === idx ? { ...l, [field]: val } : l)); }
   function removeLine(idx) { onChange(lines.filter((_, i) => i !== idx)); }
@@ -530,7 +553,8 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
   const balanced = Math.abs(totalD - totalC) < 0.01 && totalD > 0;
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(activeLines);
   const listedBalanceDelta = Number(listedTotalD || 0) - Number(listedTotalC || 0);
-  const canSave = dateVal && historico && balanced && !duplicateAcrossSides && !saving;
+  const contasForaDoPlano = contasDesconhecidas(activeLines, accounts);
+  const canSave = dateVal && historico && balanced && !duplicateAcrossSides && !contasForaDoPlano.length && !saving;
 
   function reset() {
     setContaD(""); setContaC(""); setHistorico(""); setValor(""); setComplexMode(false); setComplexLines([{ tipo: "D", conta: "", valor: "" }, { tipo: "C", conta: "", valor: "" }]);
@@ -578,6 +602,15 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
       {duplicateAcrossSides ? (
         <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "#FF4757", fontWeight: 600 }}>
           Débito e crédito não podem usar a mesma conta.
+        </div>
+      ) : null}
+      {/* O bloqueio se explica ANTES do clique — e diz o que fazer, não só o que está errado. */}
+      {contasForaDoPlano.length > 0 ? (
+        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "#FF4757", fontWeight: 600 }}>
+          {contasForaDoPlano.length === 1 ? "A conta " : "As contas "}
+          {contasForaDoPlano.join(", ")}
+          {contasForaDoPlano.length === 1 ? " não existe" : " não existem"} no plano desta empresa
+          <span style={{ fontWeight: 400, color: ACCOUNTING_PANEL.muted }}> — cadastre em Configurações → Plano de contas.</span>
         </div>
       ) : null}
       {hasConta && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}><span>Tipo detectado:</span><span style={{ fontWeight: 700, color: "#1A1B26", background: detected.tipo === "PROVISAO" ? "#FFB347" : detected.tipo === "RECEITA" ? "#69FF47" : "#BD93F9", border: "none", borderRadius: 999, padding: "4px 10px" }}>{tipoDetectadoLabel}</span></div>}
@@ -640,8 +673,9 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   const lines = [{ tipo: "D", conta: contaD, valor }, { tipo: "C", conta: contaC, valor }];
   const balanced = Number(valor) > 0;
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
+  const contasForaDoPlano = contasDesconhecidas(lines, accounts);
   // Lançamento de 1 perna é válido (em aberto) — basta D OU C preenchido. [[nao-mudar-forma-lancamentos]]
-  const canSave = dateVal && historico && balanced && (contaD || contaC) && !duplicateAcrossSides && !saving;
+  const canSave = dateVal && historico && balanced && (contaD || contaC) && !duplicateAcrossSides && !contasForaDoPlano.length && !saving;
 
   function reset() {
     setContaD(""); setContaC(""); setHistorico(""); setValor("");
@@ -706,6 +740,11 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
           onFillFromHistory={(hist, hl) => { if (hist) setHistorico(hist); if (hl?.length) { const d = hl.find((l) => l.tipo === "D"); const c = hl.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(String(d.valor)); } }}
           onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} competencia={activeComp} />
         {duplicateAcrossSides ? <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>Débito e crédito não podem ser a mesma conta.</div> : null}
+        {contasForaDoPlano.length > 0 ? (
+          <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>
+            {contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa.
+          </div>
+        ) : null}
       </td>
       <td style={cell}>
         <input ref={valRef} type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)}
@@ -1388,13 +1427,69 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
 // CsvExportModal — escolhe intervalo de competências (AAAA-MM até AAAA-MM)
 // =============================================================================
 
-export function CsvExportModal({ defaultCompetencia, onExport, onClose }) {
+/**
+ * Uma linha da conferência. Clicável quando há lançamento de origem — apontar um problema sem
+ * levar até ele obriga a caçar a linha no meio de trezentas.
+ *
+ * Alerta de escopo do MÊS (mês não fechado) não tem `entryId`: aí não é botão, porque um clique
+ * que não vai a lugar nenhum é pior que texto.
+ */
+function ItemConferencia({ item, cor, rotulo, onIr }) {
+  const podeIr = Boolean(item.entryId && onIr);
+  const conteudo = (
+    <>
+      <span style={{ color: cor, fontWeight: 800, fontSize: "0.66rem", letterSpacing: "0.04em" }}>{rotulo}</span>
+      <span style={{ color: "#F8F8F2" }}>{item.motivo}</span>
+      {item.ocorrencias > 1 && <span style={{ color: "#8A8FA3" }}>· {item.ocorrencias}×</span>}
+      {item.historico && <span style={{ color: "#8A8FA3", overflow: "hidden", textOverflow: "ellipsis" }}>· {item.historico}</span>}
+    </>
+  );
+  const estilo = {
+    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+    fontSize: "0.76rem", textAlign: "left", padding: "3px 6px", borderRadius: 6,
+    border: `1px solid ${cor}44`, background: `${cor}14`,
+  };
+  if (!podeIr) return <span style={estilo}>{conteudo}</span>;
+  return (
+    <button type="button" onClick={() => onIr(item.entryId)} title="Ir até o lançamento" style={{ ...estilo, width: "100%", cursor: "pointer", font: "inherit" }}>
+      {conteudo}
+    </button>
+  );
+}
+
+export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPreflight, onIrAteLancamento, onReabrir }) {
   const [inicio, setInicio] = useState(defaultCompetencia || "");
   const [fim, setFim] = useState(defaultCompetencia || "");
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [conferindo, setConferindo] = useState(false);
+  const [preflight, setPreflight] = useState(null);
 
   const validFormat = (v) => /^\d{4}-(0[1-9]|1[0-2])$/.test(String(v || ""));
+
+  // ⚠ A CONFERÊNCIA É DE UM MÊS SÓ, e é por isso que ela só roda com início = fim.
+  // O pré-voo responde "o que o ERP recusaria nesta competência"; fingir que ele cobre um intervalo
+  // de doze meses seria dar um "tudo certo" que não foi verificado — pior que não conferir.
+  const mesUnico = validFormat(inicio) && inicio === fim;
+
+  // Trocar o intervalo invalida a conferência anterior. Sem isto, o painel continuaria verde
+  // enquanto o usuário exporta OUTRO mês — exatamente o "verificado" que engana.
+  useEffect(() => { setPreflight(null); }, [inicio, fim]);
+
+  const temErros = (preflight?.erros?.length || 0) > 0;
+  const temAlertas = (preflight?.alertas?.length || 0) > 0;
+
+  async function conferir() {
+    if (!mesUnico || !onPreflight) return;
+    setError(""); setConferindo(true);
+    try {
+      setPreflight(await onPreflight(inicio));
+    } catch (err) {
+      setError(err?.message || "Não foi possível conferir o lote.");
+    } finally {
+      setConferindo(false);
+    }
+  }
 
   async function handleExport() {
     setError("");
@@ -1405,6 +1500,16 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose }) {
     if (fim < inicio) {
       setError("A competência final deve ser maior ou igual à inicial.");
       return;
+    }
+    // Erro é ERRO: não há confirmação que faça o ERP aceitar um lançamento desbalanceado.
+    if (temErros) {
+      setError("Corrija os erros abaixo antes de exportar — o ERP recusaria o arquivo.");
+      return;
+    }
+    // Alerta CONFIRMA. A frase repete o que está em jogo em vez de perguntar "tem certeza?".
+    if (temAlertas) {
+      const lista = preflight.alertas.map((a) => `• ${a.motivo}`).join("\n");
+      if (!window.confirm(`Exportar mesmo assim?\n\n${lista}\n\nO arquivo será gerado com estes alertas.`)) return;
     }
     setExporting(true);
     try {
@@ -1471,10 +1576,74 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose }) {
           </div>
         )}
 
+        {/* ── CONFERÊNCIA DO LOTE ────────────────────────────────────────────
+            O resultado do pré-voo. Erro bloqueia (é o que o ERP recusa), alerta confirma (é o que
+            PODE estar certo e só o contador sabe). Cada item leva até a linha de origem — apontar
+            um problema sem levar até ele obriga a caçar sete linhas no meio de trezentas. */}
+        {onPreflight && (
+          <div style={{ marginTop: 4, marginBottom: 10, padding: 10, borderRadius: 8, border: "1px solid #44475A", background: "#1A1B26" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: "0.8rem" }}>Conferência do lote</strong>
+              <Button variant="secondary" onClick={conferir} disabled={!mesUnico || conferindo}>
+                {conferindo ? "Conferindo…" : preflight ? "Conferir de novo" : "Conferir"}
+              </Button>
+              {/* Opção desabilitada NUNCA fica sem explicação. */}
+              {!mesUnico && (
+                <span style={{ fontSize: "0.75rem", color: "#8A8FA3" }}>
+                  a conferência é de um mês por vez — deixe início e fim iguais
+                </span>
+              )}
+            </div>
+
+            {preflight && (
+              <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                <div style={{ fontSize: "0.76rem", color: "#aeb6d3" }}>
+                  {preflight.totais.entries} lançamento{preflight.totais.entries !== 1 ? "s" : ""} ·{" "}
+                  {preflight.totais.linhas} linha{preflight.totais.linhas !== 1 ? "s" : ""} · D R$ {fmtValor(preflight.totais.totalD)} · C R$ {fmtValor(preflight.totais.totalC)}
+                  {preflight.totais.diferenca > 0.01
+                    ? <span style={{ color: "#FF5757", fontWeight: 700 }}> · diferença R$ {fmtValor(preflight.totais.diferenca)}</span>
+                    : <span style={{ color: "#69FF47", fontWeight: 700 }}> · ✓ ok</span>}
+                </div>
+
+                {preflight.erros.map((e, i) => (
+                  <ItemConferencia key={`e${i}`} item={e} cor="#FF5757" rotulo="ERRO" onIr={onIrAteLancamento} />
+                ))}
+                {preflight.alertas.map((a, i) => (
+                  <ItemConferencia key={`a${i}`} item={a} cor="#FFB347" rotulo="ALERTA" onIr={onIrAteLancamento} />
+                ))}
+
+                {/* Princípio 7: ausência nunca é resposta — o lote limpo DIZ que está limpo. */}
+                {!temErros && !temAlertas && (
+                  <span style={{ fontSize: "0.78rem", color: "#69FF47" }}>✓ Nenhum problema encontrado neste lote.</span>
+                )}
+
+                {/* ⚠ SAÍDA PARA A MARCA DE EXPORTADO.
+                    Lançamento exportado não pode mais ser editado (é a proteção contra alterar o
+                    que já foi para a contabilidade). Sem um "reabrir" AQUI, a primeira correção
+                    legítima depois de uma exportação viraria um beco sem saída — a mesma razão
+                    pela qual o mês fechado tem "Reabrir". */}
+                {preflight.jaExportados > 0 && onReabrir && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!window.confirm(`Reabrir ${preflight.jaExportados} lançamento(s) de ${inicio}?\n\nEles voltam a ser editáveis e deixam de constar como enviados à contabilidade.`)) return;
+                      await onReabrir(inicio);
+                      await conferir();
+                    }}
+                    style={{ justifySelf: "start", background: "transparent", border: "1px solid #FFB347", color: "#FFB347", borderRadius: 6, padding: "4px 10px", font: "inherit", fontSize: "0.75rem", cursor: "pointer" }}
+                  >
+                    ↩ Reabrir os lançamentos exportados
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
           <Button variant="secondary" onClick={onClose} disabled={exporting}>Cancelar</Button>
-          <Button variant="primary" onClick={handleExport} disabled={exporting}>
-            {exporting ? "Exportando..." : "Exportar"}
+          <Button variant="primary" onClick={handleExport} disabled={exporting || temErros}>
+            {exporting ? "Exportando..." : temErros ? "Corrija os erros para exportar" : "Exportar"}
           </Button>
         </div>
       </div>
