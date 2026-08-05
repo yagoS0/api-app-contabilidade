@@ -66,6 +66,10 @@ export class SerproHttpClient {
       await concluirChamada(autorizacao, {
         httpStatus: error?.response?.status ?? null,
         erroCodigo: mapeado?.code || "SERPRO_ERROR",
+        // O código do SERPRO é genérico (`SERPRO_BUSINESS_ERROR` para tudo). É a MENSAGEM que
+        // distingue "período desnecessário" de "declaração já transmitida" de "CNPJ sem procuração"
+        // — e sem ela o log registra que a chamada foi cobrada sem registrar por quê.
+        erroMensagem: mapeado?.message || error?.message || null,
       });
       throw mapeado;
     }

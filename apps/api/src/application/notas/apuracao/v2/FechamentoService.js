@@ -13,7 +13,7 @@ import { getResolvedSerproCredentials } from "../../../fiscal/serpro/SerproRunti
 import { SerproPgdasdService } from "../../../fiscal/serpro/SerproPgdasdService.js";
 import { PgdasSimulacaoService, parseRetornoSimulacao } from "../../../fiscal/serpro/PgdasSimulacaoService.js";
 import { montarAtividadesDefault, carregarAtividades } from "./AtividadeResolver.js";
-import { getRbt12, gravarDaSimulacao } from "./RbtExtratoService.js";
+import { getRbt12, lerPeriodosAceitos, gravarPeriodosAceitos } from "./RbtExtratoService.js";
 import { lerConfigMemory, salvarConfigMemory } from "./ApuracaoConfigMemoryService.js";
 import { detectarDisparidades } from "./DisparidadeService.js";
 
@@ -371,27 +371,52 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
 
   const sim = new PgdasSimulacaoService();
   const folhasSalario = await folhasSalarioSeAplicavel(atividades, folhaMensal12);
-  const { resultado, receitasAceitas, periodosRemovidos } = await executarComAjusteDePeriodos(
+
+  // ─── PARTIR DA LISTA QUE A RFB JÁ ACEITOU ─────────────────────────────────────────────────
+  //
+  // O laço abaixo converge por tentativa e erro: a RFB rejeita apontando um mês "desnecessário", o
+  // código remove aquele mês e re-executa — e **cada re-execução é uma chamada COBRADA**. Medido em
+  // produção: 18 rejeições para 1 sucesso na mesma empresa, e exatamente o mesmo custo repetido no
+  // dia seguinte. 75 das 214 chamadas pagas do mês (35%) eram esse laço.
+  //
+  // A lista aceita SEMPRE foi calculada e devolvida pelo laço — só era jogada fora, porque a
+  // gravação estava atrás de `if (resultado.rbt12 != null)` e o simulador devolve `rbt12: null`
+  // sempre (a RFB não retorna RBT12). Guarda que nunca podia ser verdadeira.
+  //
+  // Palpite BOM, não verdade: se a empresa transmitir uma declaração retroativa, o conjunto muda e
+  // a lista envelhece — a RFB rejeita, o laço reconverge e regrava. Pior caso volta a ser o de hoje.
+  const aceitos = await lerPeriodosAceitos({ portalClientId, competencia }).catch(() => null);
+  const podar = (lista, aceitosPa) => (
+    Array.isArray(aceitosPa) && aceitosPa.length
+      ? (lista || []).filter((r) => aceitosPa.includes(String(r.pa)))
+      : (lista || [])
+  );
+  const receitasIniciais = podar(rbt.detalhePorMes, aceitos?.receitas);
+  const folhasIniciais = podar(folhasSalario, aceitos?.folhas);
+
+  const { resultado, receitasAceitas, folhasAceitas, periodosRemovidos } = await executarComAjusteDePeriodos(
     (p) => sim.simular(p),
     {
       contratanteCnpj, contribuinteCnpj, competencia,
       regimeApuracao: regimeApuracao || "COMPETENCIA",
       atividades: atividades || [],
-      receitasBrutasAnteriores: rbt.detalhePorMes || [],
-      folhasSalario,
+      receitasBrutasAnteriores: receitasIniciais,
+      folhasSalario: folhasIniciais,
       permitirSemMovimento: semMovimento && semAtividades,
     },
   );
 
-  // Se a RFB devolveu RBT12 oficial, grava no cache (fonte SIMULACAO) — com a lista ACEITA
-  // (já sem os meses "desnecessários"), pro transmitir reusar sem retry.
-  if (resultado.rbt12 != null) {
-    await gravarDaSimulacao({
-      portalClientId, competencia,
-      rbt12: resultado.rbt12,
-      receitasBrutasAnteriores: receitasAceitas,
-    }).catch(() => null);
-  }
+  // Guarda o que a RFB aceitou — as DUAS listas. `gravarDaSimulacao` só cobria as receitas, e é a
+  // FOLHA que precisa ser podada nas empresas de Fator-R (exatamente as que mais gastavam).
+  //
+  // ⚠ Sem tocar em `rbt12` nem em `origem`: a RFB não devolve RBT12, então o número continua sendo
+  // nosso. Gravá-lo como "veio da simulação" promoveria a confiabilidade de um dado que nós
+  // calculamos — o tipo de mentira de procedência que este projeto não aceita.
+  await gravarPeriodosAceitos({
+    portalClientId, competencia,
+    receitas: receitasAceitas,
+    folhas: folhasAceitas,
+  }).catch(() => null);
 
   // Memória da última config (anexo/atividades/folha/regime) já no Calcular — antes só o Salvar
   // gravava, e quando o cálculo falhava a escolha se perdia. Best-effort.

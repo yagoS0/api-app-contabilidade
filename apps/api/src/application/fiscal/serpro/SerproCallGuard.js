@@ -225,8 +225,21 @@ export async function autorizarChamada({ payload, rota }) {
   return { ...base, portalClientId, inicio: Date.now(), forcado: false };
 }
 
-/** Fecha o registro da chamada autorizada, com o desfecho. */
-export async function concluirChamada(autorizacao, { httpStatus = null, erroCodigo = null } = {}) {
+/**
+ * Fecha o registro da chamada autorizada, com o desfecho.
+ *
+ * ⚠ A MENSAGEM ENTRA JUNTO DO CÓDIGO, e não é detalhe.
+ *
+ * O log guardava só `erroCodigo`, e o código do SERPRO é genérico: 75 chamadas do mês foram
+ * gravadas como `SERPRO_BUSINESS_ERROR` — 35% de todo o orçamento pago, sem uma palavra sobre o
+ * motivo. Descobrir que eram rejeições de "período desnecessário" exigiu cruzar contagem por
+ * serviço, agrupamento por minuto e leitura de código. Com a mensagem, a mesma pergunta se responde
+ * com um `groupBy`.
+ *
+ * Truncada em 300 caracteres: é diagnóstico, não arquivo — e mensagem de erro do SERPRO às vezes
+ * carrega o payload inteiro.
+ */
+export async function concluirChamada(autorizacao, { httpStatus = null, erroCodigo = null, erroMensagem = null } = {}) {
   if (!autorizacao) return;
   const { inicio, ...base } = autorizacao;
   await registrar({
@@ -234,6 +247,7 @@ export async function concluirChamada(autorizacao, { httpStatus = null, erroCodi
     status: erroCodigo ? "erro" : "ok",
     httpStatus,
     erroCodigo,
+    erroMensagem: erroMensagem ? String(erroMensagem).slice(0, 300) : null,
     duracaoMs: inicio ? Date.now() - inicio : null,
   });
 }

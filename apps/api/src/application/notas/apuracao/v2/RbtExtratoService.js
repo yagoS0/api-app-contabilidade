@@ -112,6 +112,17 @@ export async function getRbt12({ portalClientId, competencia, forceRefresh = fal
  * Grava no cache o RBT12 oficial vindo da simulação SERPRO (fonte preferida).
  * Chamado pelo endpoint [Calcular] quando a simulação retorna rbt12/receitasBrutasAnteriores.
  */
+// ⚠ SEM CHAMADORES, de propósito — e é a história inteira do desperdício.
+//
+// Ela existia para guardar o RBT12 "oficial" da simulação, e o `FechamentoService` a chamava atrás
+// de `if (resultado.rbt12 != null)`. Só que `PgdasSimulacaoService` devolve `rbt12: null` SEMPRE —
+// a RFB não retorna esse número, o que o próprio comentário de lá diz. A guarda nunca podia ser
+// verdadeira: a lista aceita era calculada, devolvida pelo laço e descartada, e o [Calcular]
+// redescobria tudo por tentativa e erro na chamada seguinte.
+//
+// Quem guarda a memória agora é `gravarPeriodosAceitos`, abaixo: só os PERÍODOS, sem mexer no
+// `rbt12` nem em `origem`. Esta fica como registro do que não funcionou — se um dia a RFB passar a
+// devolver RBT12, é aqui que ele entra.
 export async function gravarDaSimulacao({ portalClientId, competencia, rbt12, receitasBrutasAnteriores }) {
   const detalhe = Array.isArray(receitasBrutasAnteriores) && receitasBrutasAnteriores.length
     ? receitasBrutasAnteriores.map((r) => ({
@@ -124,6 +135,54 @@ export async function gravarDaSimulacao({ portalClientId, competencia, rbt12, re
     detalhePorMes: detalhe,
     origem: "SIMULACAO",
   });
+}
+
+/**
+ * Os PAs que a RFB ACEITOU na última simulação — a memória que faltava.
+ *
+ * ⚠ Isto NÃO é `gravarDaSimulacao`. Aquela grava o RBT12 com `origem: "SIMULACAO"` e está atrás de
+ * `if (resultado.rbt12 != null)` no `FechamentoService` — condição que nunca é verdadeira, porque a
+ * RFB não devolve RBT12 (`PgdasSimulacaoService` retorna `null` sempre, com comentário explicando).
+ * Ou seja: a lista aceita era calculada pelo laço, devolvida, e descartada. Toda vez.
+ *
+ * Aqui guardamos SÓ os períodos, sem tocar em `rbt12` nem em `origem`: o valor continua sendo nosso
+ * e não pode ser promovido a "veio da simulação". Quais meses ela aceita, sim, é informação dela.
+ */
+export async function gravarPeriodosAceitos({ portalClientId, competencia, receitas, folhas }) {
+  const paDe = (lista) => [...new Set((lista || []).map((r) => String(r?.pa ?? r)).filter(Boolean))];
+  const periodosAceitos = { receitas: paDe(receitas), folhas: paDe(folhas) };
+  const existing = await prisma.rbtExtratoCache.findUnique({
+    where: { portalClientId_competencia: { portalClientId, competencia } },
+    select: { id: true },
+  });
+  // Sem linha no cache não há o que anexar — o `getRbt12` cria uma no fallback local antes de
+  // qualquer simulação, então na prática ela existe. Não criar aqui evita inventar um RBT12.
+  if (!existing) return null;
+  return prisma.rbtExtratoCache.update({
+    where: { id: existing.id },
+    data: { periodosAceitos, periodosAceitosEm: new Date() },
+  });
+}
+
+/**
+ * Lê os períodos aceitos guardados. `null` quando nunca houve simulação bem-sucedida.
+ *
+ * Quem usa deve tratar isto como PALPITE BOM, não como verdade: se a empresa transmitir uma
+ * declaração retroativa, o conjunto de períodos "necessários" muda e a lista envelhece. Aí a RFB
+ * rejeita de novo, o laço reconverge e regrava — o pior caso volta a ser o de hoje.
+ */
+export async function lerPeriodosAceitos({ portalClientId, competencia }) {
+  const c = await prisma.rbtExtratoCache.findUnique({
+    where: { portalClientId_competencia: { portalClientId, competencia } },
+    select: { periodosAceitos: true, periodosAceitosEm: true },
+  });
+  const p = c?.periodosAceitos;
+  if (!p || typeof p !== "object") return null;
+  return {
+    receitas: Array.isArray(p.receitas) ? p.receitas : [],
+    folhas: Array.isArray(p.folhas) ? p.folhas : [],
+    em: c.periodosAceitosEm || null,
+  };
 }
 
 async function upsertCache({ portalClientId, competencia, rbt12, detalhePorMes, origem }) {

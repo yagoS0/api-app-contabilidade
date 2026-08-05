@@ -1351,6 +1351,12 @@ model SerproChamada {
   status         String // ok | erro | recusada_cooldown | recusada_teto
   httpStatus     Int?
   erroCodigo     String?
+  // ⚠ O código do SERPRO é GENÉRICO: 75 chamadas de um mês inteiro entraram como
+  // `SERPRO_BUSINESS_ERROR` — 35% do orçamento pago, sem uma palavra sobre o motivo. Era a
+  // rejeição de "período desnecessário" do laço de convergência, e descobrir isso exigiu cruzar
+  // contagem por serviço com agrupamento por minuto. A mensagem responde a mesma pergunta com um
+  // `groupBy`. Truncada em 300 caracteres: é diagnóstico, não arquivo.
+  erroMensagem   String?
   duracaoMs      Int?
   origem         String? // rota/worker que disparou
   userId         String?
@@ -1803,6 +1809,18 @@ model RbtExtratoCache {
   rbt12          Decimal  @db.Decimal(18, 2)
   detalhePorMes  Json // [{ pa, valorInterno, valorExterno }] (12 meses anteriores)
   origem         String // SIMULACAO | EXTRATO | PARCIAL_LOCAL
+  // Os PAs que a RFB ACEITOU na última simulação — `{ receitas: ["2025-06", …], folhas: [...] }`.
+  //
+  // ⚠ Por que fica separado do `detalhePorMes` e não mexe em `origem`: a RFB **não devolve RBT12**
+  // (`PgdasSimulacaoService` retorna `rbt12: null` sempre). O número continua sendo NOSSO, e
+  // gravá-lo como `origem: "SIMULACAO"` promoveria a confiabilidade de um dado que nós mesmos
+  // calculamos — mentira de procedência. Já QUAIS PERÍODOS ela aceita é conhecimento legítimo
+  // vindo dela: ela rejeita apontando o mês.
+  //
+  // Sem isto, cada [Calcular] redescobria a lista por tentativa e erro: 18 rejeições cobradas para
+  // 1 sucesso, e o mesmo custo de novo no dia seguinte, na mesma empresa.
+  periodosAceitos Json?
+  periodosAceitosEm DateTime?
   capturadoEm    DateTime @default(now())
 
   @@unique([portalClientId, competencia])

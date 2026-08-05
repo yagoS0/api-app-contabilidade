@@ -641,8 +641,42 @@ transitória.
 
 **Os números NÃO são limite do SERPRO** (isso é contrato, não se inventa) — são o orçamento que nós
 impomos, folgados por padrão. Ajuste com o consumo real: `scripts/diag-consumo-serpro.mjs [dias]`
-mostra gasto por serviço, por origem, por empresa e o **pico por empresa/dia**, que é o número a
-comparar com o teto.
+mostra gasto por serviço, por origem, por empresa, os **erros por motivo** e o **pico por
+empresa/dia**, que é o número a comparar com o teto.
+
+### ⚠ O laço de convergência do PGDAS-D era 35% do orçamento
+
+Medido em produção (30 dias): **214 chamadas cobradas, 77 delas erro — e 75 desses erros eram
+`TRANSDECLARACAO11`**. Agrupando por minuto, o padrão era inequívoco:
+
+```
+CHAYM   03/08 18:34 → 18 erros + 1 ok
+CHAYM   04/08 17:01 → 18 erros + 1 ok    ← mesmo custo no dia seguinte
+IOHANNA 03/08 20:18 → 16 erros + 1 ok
+LENTE   04/08 16:15 →  0 erros + 2 ok    ← lista já batia
+```
+
+`executarComAjusteDePeriodos` descobre por tentativa e erro quais PAs a RFB aceita, e **cada
+tentativa é cobrada**. A lista aceita sempre foi calculada e devolvida pelo laço — só que a gravação
+estava atrás de **`if (resultado.rbt12 != null)`**, e `PgdasSimulacaoService` devolve `rbt12: null`
+SEMPRE (a RFB não retorna esse número). Guarda que nunca podia ser verdadeira: 19 chamadas para
+produzir 1 resultado, repetidas do zero no dia seguinte.
+
+Hoje `gravarPeriodosAceitos`/`lerPeriodosAceitos` (`RbtExtratoService`) guardam as **duas** listas em
+`RbtExtratoCache.periodosAceitos`, e o `calcularFechamento` parte delas.
+
+- ⚠ **Sem tocar em `rbt12` nem em `origem`.** A RFB não devolve RBT12 — o número é NOSSO. Gravá-lo
+  como `origem: "SIMULACAO"` promoveria a confiabilidade de um dado que nós calculamos. Já *quais
+  períodos ela aceita* é informação dela, e essa sim se guarda.
+- ⚠ **As DUAS listas.** `gravarDaSimulacao` (agora sem chamadores) só cobria receitas — e é a
+  **folha** que precisa ser podada nas empresas de Fator-R, exatamente as que mais gastavam.
+- É **palpite bom, não verdade**: declaração retroativa muda o conjunto, a lista envelhece, a RFB
+  rejeita e o laço reconverge e regrava. Pior caso volta a ser o de antes.
+- Regressão em `apuracao/v2/__tests__/periodosAceitos.test.js`.
+
+⚠ **`erroCodigo` do SERPRO é genérico** (`SERPRO_BUSINESS_ERROR` para tudo). Sem `erroMensagem` o log
+registra que a chamada foi cobrada sem registrar por quê — descobrir o laço exigiu cruzar contagem
+por serviço com agrupamento por minuto. A coluna existe agora; o diagnóstico agrupa por motivo.
 
 **Escape:** `podeForcarSerpro` exige **ADMIN e `?forcar=1`** — as duas coisas. ADMIN sem pedir não
 fura (senão o teto não avisaria ninguém); pedir sem ser ADMIN não fura (senão a guarda seria

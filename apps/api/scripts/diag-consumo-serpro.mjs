@@ -18,7 +18,7 @@ const chamadas = await prisma.serproChamada.findMany({
   where: { createdAt: { gte: desde } },
   select: {
     cnpj: true, portalClientId: true, idServico: true, rota: true,
-    status: true, erroCodigo: true, duracaoMs: true, origem: true, forcado: true, createdAt: true,
+    status: true, erroCodigo: true, erroMensagem: true, duracaoMs: true, origem: true, forcado: true, createdAt: true,
   },
   orderBy: { createdAt: "desc" },
 });
@@ -69,6 +69,18 @@ function agrupar(lista, chave) {
 
 console.log("POR SERVIÇO");
 for (const [servico, n] of agrupar(cobradas, (c) => c.idServico)) console.log(`  ${String(n).padStart(5)}  ${servico}`);
+
+// ⚠ ERRO COBRADO É DINHEIRO SEM ENTREGA, e é onde o desperdício se esconde. Num mês real, 75 de
+// 214 chamadas (35%) eram rejeições do laço de convergência do PGDAS-D — todas gravadas com o
+// mesmo código genérico. Agrupar por MENSAGEM é o que separa "a RFB recusou o período" de "o
+// certificado expirou": problemas diferentes, consertos diferentes.
+const comErro = cobradas.filter((c) => c.status === "erro");
+if (comErro.length) {
+  console.log(`\nERROS COBRADOS (${comErro.length}) — por serviço e motivo`);
+  for (const [chave, n] of agrupar(comErro, (c) => `${c.idServico} · ${c.erroCodigo || "(sem código)"} · ${(c.erroMensagem || "(sem mensagem — chamada anterior ao registro)").slice(0, 90)}`)) {
+    console.log(`  ${String(n).padStart(5)}  ${chave}`);
+  }
+}
 
 console.log("\nPOR ORIGEM (quem disparou)");
 for (const [origem, n] of agrupar(cobradas, (c) => c.origem)) console.log(`  ${String(n).padStart(5)}  ${origem}`);
