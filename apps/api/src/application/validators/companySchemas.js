@@ -57,7 +57,15 @@ export const companyCreateSchema = z.object({
 
 // PATCH /firm/companies/:companyId — atualiza empresa (CNPJ é ignorado downstream — imutável)
 export const companyUpdateSchema = z.object({
-  ownerEmail: z.string().email().optional().nullable(),
+  // ⚠ `""` PRECISA PASSAR. O formulário manda string vazia quando o campo está em branco
+  // (`buildCompanyPayload` faz `String(input.ownerEmail || "")`), e `""` é uma string — então
+  // `.optional()` e `.nullable()` não pegam: o valor chega em `.email()` e a atualização INTEIRA
+  // era rejeitada com `validation_failed`, em toda empresa, mesmo sem ninguém tocar no e-mail.
+  //
+  // O `guideNotificationEmail` logo acima já tinha `.or(z.literal(""))` — alguém tropeçou nisso lá
+  // e remendou só naquele campo. Aqui vale a mesma regra: campo em branco na EDIÇÃO significa "não
+  // mexer", não "e-mail inválido".
+  ownerEmail: z.string().email().or(z.literal("")).optional().nullable(),
   company: z.object({
     ...companyBaseFields,
     cnpj: z.string().optional(), // pode vir mas é ignorado (CNPJ imutável)

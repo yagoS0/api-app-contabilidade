@@ -75,6 +75,21 @@ function mapKnownError(payload, status) {
     return String(payload?.message || "").trim() || "O SERPRO rejeitou a operação (erro de negócio).";
   }
 
+  // ⚠ VALIDAÇÃO REJEITADA: o backend diz EXATAMENTE qual campo e por quê, em `payload.issues`
+  // (`companySchemas.validateCompanyInput`). Este fallback devolvia só o código seco —
+  // "validation_failed" — e o detalhe ia para o lixo. Do lado de fora era indistinguível de um erro
+  // sem causa: o contador via um código, não sabia qual campo corrigir, e o cadastro ficava travado
+  // sem pista nenhuma. Mesma família do `feedback={feedback}` que já custou uma semana aqui.
+  if (Array.isArray(payload?.issues) && payload.issues.length) {
+    const detalhes = payload.issues
+      .slice(0, 4)
+      .map((i) => (i?.path ? `${i.path}: ${i.message}` : i?.message))
+      .filter(Boolean)
+      .join(" · ");
+    const resto = payload.issues.length > 4 ? ` (+${payload.issues.length - 4})` : "";
+    return `Não foi possível salvar — ${detalhes}${resto}`;
+  }
+
   // Fallback: prefere a mensagem humana do backend ({error, message}) antes do código cru.
   return reason || String(payload?.message || "").trim() || payload?.error || `request_failed_${status}`;
 }
@@ -96,7 +111,12 @@ function omitIfEmpty(value) {
 
 function buildCompanyPayload(input) {
   return {
-    ownerEmail: String(input.ownerEmail || "").trim().toLowerCase(),
+    // ⚠ Campo em branco vira `undefined`, NUNCA `""`. Mandar string vazia dizia ao backend "o
+    // e-mail do dono é esta string", e `""` não é e-mail: o PATCH inteiro voltava
+    // `validation_failed` em toda empresa, mesmo sem ninguém ter tocado nesse campo. Ausente
+    // significa "não mexer" — que é o que um campo vazio quer dizer numa edição.
+    // Na CRIAÇÃO o schema exige o campo, então ausente vira um erro claro e específico.
+    ownerEmail: omitIfEmpty(String(input.ownerEmail || "").toLowerCase()),
     ownerName: String(input.ownerName || "").trim() || null,
     ownerPassword: String(input.ownerPassword || ""),
     hasProlabore: Boolean(input.hasProlabore),

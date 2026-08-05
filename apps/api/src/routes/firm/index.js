@@ -1128,8 +1128,27 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       if (err?.code === "OWNER_PASSWORD_REQUIRED") {
         return res.status(400).json({ error: "owner_password_required_min_8" });
       }
-      log.error({ err }, "Falha ao criar empresa no portal firm");
-      return res.status(500).json({ error: "internal_error" });
+      // ⚠ NEM TODA FALHA AQUI É "ERRO INTERNO". As duas de baixo são respostas do banco a um dado
+      // do formulário, e têm conserto do lado de quem cadastra — devolvê-las como 500 genérico
+      // manda o contador procurar bug onde há só um CNPJ repetido, sem nenhuma pista na tela.
+      if (err?.code === "P2002") {
+        const campo = Array.isArray(err?.meta?.target) ? err.meta.target.join(", ") : (err?.meta?.target || "");
+        return res.status(409).json({
+          error: "empresa_ja_cadastrada",
+          message: `Já existe registro com este valor${campo ? ` em: ${campo}` : ""}. `
+            + "Se a empresa já está na carteira, edite-a em vez de criar de novo.",
+        });
+      }
+      if (err?.code === "P2003") {
+        return res.status(400).json({
+          error: "referencia_invalida",
+          message: "Um dos vínculos do cadastro aponta para um registro que não existe.",
+        });
+      }
+      // O código do Prisma vai junto na resposta: sem ele, diagnosticar exige acesso ao log do
+      // container — foi exatamente o que travou este caso. A mensagem interna continua fora.
+      log.error({ err, code: err?.code, meta: err?.meta }, "Falha ao criar empresa no portal firm");
+      return res.status(500).json({ error: "internal_error", code: err?.code || null });
     }
   });
 
