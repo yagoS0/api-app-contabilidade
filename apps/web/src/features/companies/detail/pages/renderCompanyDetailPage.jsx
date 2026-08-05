@@ -500,6 +500,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <CircularTab
             companyId={companyId}
             companyRegime={companyRegime}
+            /* Só para o cabeçalho da IMPRESSÃO: a folha sai sem o header do app, e uma tabela de
+               12 meses sem o nome da empresa serve para qualquer uma. */
+            companyName={selectedCompany?.razao}
             circularData={circularPanel.circularData}
             loading={circularPanel.loading}
             year={circularPanel.year}

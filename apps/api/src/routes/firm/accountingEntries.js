@@ -681,11 +681,22 @@ export function createAccountingEntriesRouter({ log }) {
           sourceGuide: {
             select: {
               id: true,
+              tipo: true,
               paymentStatus: true,
               paymentStatusSource: true,
               paymentConfirmedAt: true,
               serproLastCheckResult: true,
               comprovantePdfFileId: true,
+              // ⚠ O VENCIMENTO É O QUE SEPARA "a vencer" DE "vencida".
+              // Sem ele a Circular pintava de VERMELHO toda guia em aberto — a que vence daqui a
+              // duas semanas com a mesma força da que venceu há dois meses. Vermelho é a cor de
+              // "bloqueia/vencido"; gasto no prazo normal, ele deixa de apontar o que realmente
+              // atrasou. É o mesmo paredão que a listagem já teve de desmontar.
+              vencimento: true,
+              // Envio ao cliente, para a linha "Enviada ao cliente" do popover da célula.
+              // `emailStatus` é legado de transporte; a verdade do ENVIO mora em `envios_guia`.
+              emailStatus: true,
+              envios: { select: { canal: true, status: true, destino: true, enviadoEm: true, entregueEm: true, lidoEm: true } },
             },
           },
         },

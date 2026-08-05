@@ -149,7 +149,7 @@ export function CompaniesHomePage({
   const [imprimindo, setImprimindo] = useState(false);
   useEffect(() => {
     if (!imprimindo) return undefined;
-    document.body.classList.add("imprimindo-listagem");
+    document.body.classList.add("imprimindo");
     const limpar = () => setImprimindo(false);
     window.addEventListener("afterprint", limpar);
     // Um quadro de folga para o layout assentar antes do snapshot da impressão.
@@ -157,7 +157,7 @@ export function CompaniesHomePage({
     return () => {
       window.clearTimeout(t);
       window.removeEventListener("afterprint", limpar);
-      document.body.classList.remove("imprimindo-listagem");
+      document.body.classList.remove("imprimindo");
     };
   }, [imprimindo]);
 

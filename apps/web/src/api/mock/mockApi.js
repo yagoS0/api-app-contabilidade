@@ -2163,7 +2163,15 @@ export function createMockApi() {
       }
       // Fixture: uma provisão ABERTA garante o botão "Dar baixa" no mock (o modal de baixa só
       // aparece a partir dela). Sem isso não dá pra conferir o modal sem backend.
+      //
+      // ⚠ São DUAS abertas, com vencimentos opostos de propósito: uma já vencida e uma ainda no
+      // prazo. A distinção "vencida × a vencer" é a mudança central da Circular, e com uma única
+      // fixture (ou com guias sem `vencimento`) ela seria invisível offline — o mock mostraria a
+      // tela antiga e passaria a impressão de que nada mudou.
       if (provisoes.length === 0) {
+        const hoje = new Date();
+        const diasAtras = (n) => new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - n).toISOString();
+        const daquiA = (n) => new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + n).toISOString();
         provisoes.push({
           id: "mock-provisao-das",
           competencia: meses[5],
@@ -2179,6 +2187,34 @@ export function createMockApi() {
             { conta: "553", tipo: "C", valor: 1234.56, ordem: 1 },
           ],
           baixas: [],
+          // Vencida há 12 dias e JÁ ENVIADA por WhatsApp — exercita o vermelho com contagem de
+          // atraso e a linha "Enviada ao cliente" saindo de `envios`, não de `emailStatus`.
+          sourceGuide: {
+            id: "mock-guia-das", tipo: "DAS", vencimento: diasAtras(12),
+            paymentStatus: "OPEN", emailStatus: "PENDING",
+            envios: [{ canal: "WHATSAPP", status: "entregue", destino: "5521999998888", enviadoEm: diasAtras(14), entregueEm: diasAtras(14) }],
+          },
+        });
+        provisoes.push({
+          id: "mock-provisao-inss",
+          competencia: meses[6],
+          tipo: "PROVISAO",
+          subtipo: "INSS",
+          eventType: "INSS",
+          statusPagamento: "ABERTO",
+          valor: 487.3,
+          totalD: 487.3,
+          totalC: 487.3,
+          lines: [
+            { conta: "240", tipo: "D", valor: 487.3, ordem: 0 },
+            { conta: "553", tipo: "C", valor: 487.3, ordem: 1 },
+          ],
+          baixas: [],
+          // Ainda no prazo e NÃO enviada — o âmbar "A vencer · dd/mm" e o "ainda não" do envio.
+          sourceGuide: {
+            id: "mock-guia-inss", tipo: "INSS", vencimento: daquiA(9),
+            paymentStatus: "OPEN", emailStatus: "PENDING", envios: [],
+          },
         });
       }
       return { year: y, provisoes, receitas };

@@ -5,6 +5,9 @@ import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entr
 // Cliente próprio: a busca de pagamento é uma chamada pontual da própria aba (mesmo padrão
 // auto-contido de FechamentoContabilPanel/ExpectedGuidesPanel).
 import { createApiClient } from "../../../../api/client";
+// A regra que separa "a vencer" de "vencida" — uma leitura para a cor da célula, o chip do popover
+// e os totais do rodapé. Ver `lib/estadoGuia.js`.
+import { aparenciaDaGuia, totaisEmAberto } from "../lib/estadoGuia";
 
 // Subtipos universais + flag de regimes que os exibem.
 // "all" = qualquer regime; array = só esses regimes.
@@ -300,6 +303,91 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
   );
 }
 
+// ─── ResumoDaGuia (cabeçalho do popover da célula) ───────────────────────────
+
+/** Uma linha "rótulo · valor" do resumo. Valor ausente não vira linha — ausência não é resposta. */
+function LinhaResumo({ rotulo, valor, cor, forte }) {
+  if (valor == null || valor === "") return null;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "2px 4px", fontSize: "0.72rem" }}>
+      <span style={{ color: "#8A8FA3" }}>{rotulo}</span>
+      <span style={{ color: cor || "#F8F8F2", fontWeight: forte ? 800 : 600, whiteSpace: "nowrap" }}>{valor}</span>
+    </div>
+  );
+}
+
+/**
+ * O cabeçalho do popover: que guia é, em que estado, por quanto e até quando.
+ *
+ * ⚠ O ENVIO SAI DE `envios_guia`, não de `emailStatus`. `emailStatus` é detalhe de transporte do
+ * e-mail; com o WhatsApp no ar ele não sabe dizer "enviada por WhatsApp". `foiEnviadaComLegado` é a
+ * regra do backend — aqui a leitura é a mesma, incluindo a tolerância à guia ainda não convertida
+ * pelo backfill (envios vazio + emailStatus SENT = enviada).
+ */
+function ResumoDaGuia({ entry, acrescimo, aparencia }) {
+  const guia = entry?.sourceGuide || null;
+  const principal = Number(acrescimo?.principal ?? entry?.valor ?? entry?.totalD ?? 0) || 0;
+  const juros = Number(acrescimo?.acrescimo || 0) || 0;
+  const atualizado = entry?.recalculatedToValor != null ? Number(entry.recalculatedToValor) : (principal + juros);
+
+  const TERMINAIS = ["enviado", "entregue", "lido"];
+  const envios = guia?.envios || [];
+  const envio = envios.find((e) => TERMINAIS.includes(String(e.status)));
+  const enviadaLegado = !envios.length && String(guia?.emailStatus || "").toUpperCase() === "SENT";
+  const canal = envio ? (String(envio.canal) === "WHATSAPP" ? "WhatsApp" : "e-mail") : null;
+  const dataEnvio = envio ? (envio.lidoEm || envio.entregueEm || envio.enviadoEm) : null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "2px 4px 6px" }}>
+        <strong style={{ fontSize: "0.78rem", color: "#F8F8F2" }}>
+          {guia?.tipo || entry?.subtipo || "Guia"}
+          {entry?.competencia ? ` · ${fmtCompetenciaLonga(entry.competencia)}` : ""}
+        </strong>
+        <span style={{ fontSize: "0.65rem", fontWeight: 700, color: aparencia.cor, border: `1px solid ${aparencia.cor}`, borderRadius: 999, padding: "1px 7px", whiteSpace: "nowrap" }}>
+          {aparencia.rotulo}
+        </span>
+      </div>
+
+      <LinhaResumo rotulo="Valor original" valor={principal ? `R$ ${fmtValor(principal)}` : null} />
+      {juros > 0 && (
+        <LinhaResumo
+          rotulo={entry?.recalculatedAt ? `Juros/multa (${fmtDate(entry.recalculatedAt)})` : "Juros/multa"}
+          valor={`+ R$ ${fmtValor(juros)}`}
+          cor="#FFB347"
+        />
+      )}
+      {juros > 0 && <LinhaResumo rotulo="Valor atualizado" valor={`R$ ${fmtValor(atualizado)}`} forte />}
+      <LinhaResumo rotulo="Vencimento" valor={guia?.vencimento ? fmtDate(guia.vencimento) : null} />
+      {Number.isFinite(Number(entry?.saldo)) && String(entry?.statusPagamento).toUpperCase() === "PARCIAL" && (
+        <LinhaResumo rotulo="Saldo a pagar" valor={`R$ ${fmtValor(entry.saldo)}`} cor="#6EA8FF" forte />
+      )}
+
+      {/* ⚠ O DESTINO VEM DO ENVIO, não do cadastro. Mostrar o e-mail cadastrado ao lado de "enviada
+          por WhatsApp" já produziu na tela a frase "Enviada por WhatsApp para <e-mail>". */}
+      {(envio || enviadaLegado) ? (
+        <LinhaResumo
+          rotulo="Enviada ao cliente"
+          valor={`✓ ${dataEnvio ? fmtDate(dataEnvio) : "sim"}${canal ? ` · ${canal}` : ""}`}
+          cor="#69FF47"
+        />
+      ) : (
+        // Princípio 7: ausência nunca é resposta. Sem esta linha, "ainda não enviada" e "não sei"
+        // se pareceriam — os dois seriam a falta de uma linha.
+        guia && <LinhaResumo rotulo="Enviada ao cliente" valor="ainda não" cor="#8A8FA3" />
+      )}
+    </div>
+  );
+}
+
+/** "2026-06" → "Junho/2026". Serve ao cabeçalho do popover. */
+function fmtCompetenciaLonga(comp) {
+  const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const [yyyy, mm] = String(comp || "").split("-");
+  const i = Number(mm) - 1;
+  return (!yyyy || i < 0 || i > 11) ? String(comp || "") : `${meses[i]}/${yyyy}`;
+}
+
 // ─── PagamentoCell ───────────────────────────────────────────────────────────
 
 // Q31: célula só com NÚMERO; cor implícita (vermelho=aberto, verde=pago, amarelo=vinculado a
@@ -337,12 +425,14 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
   const baixaIds = (entry.baixas || []).map((b) => b.id).filter(Boolean);
   const saldo = Number(entry.saldo);
 
-  // Cor implícita do número:
-  let color = "#FF4757"; let bg = "rgba(255,71,87,0.06)"; // em aberto (vermelho)
-  if (placeholder) { color = "#6272A4"; bg = "transparent"; }
-  else if (isParcial) { color = "#6EA8FF"; bg = "rgba(110,168,255,0.08)"; } // parcial (azul)
-  else if (!isAberto) { color = "#69FF47"; bg = "rgba(105,255,71,0.06)"; } // pago (verde)
-  else if (isVinculado) { color = "#FFB347"; bg = "rgba(255,179,71,0.08)"; } // vinculado a parcelamento (amarelo)
+  // ⚠ A COR SAI DE `estadoDaGuia`, e ela olha o VENCIMENTO.
+  // Antes toda guia em aberto era vermelha: a que vence daqui a duas semanas com a mesma força da
+  // que venceu há dois meses. Ver `lib/estadoGuia.js` para o porquê e para os testes.
+  const aparencia = aparenciaDaGuia(entry);
+  let color = aparencia.cor;
+  let bg = aparencia.fundo;
+  // Vinculada a parcelamento vence a leitura de prazo: a dívida está sendo gerenciada, não atrasada.
+  if (isVinculado && isAberto) { color = "#FFB347"; bg = "rgba(255,179,71,0.08)"; }
   // Pagamento LOCALIZADO no SERPRO mas ainda SEM lançamento: continua "em aberto" na cor (há
   // trabalho a fazer), mas ganha a tag "paga" — o dinheiro saiu, falta o contador lançar.
   const pagamentoLocalizado = Boolean(entry.pagamentoLocalizado) && isOpenLike;
@@ -366,67 +456,82 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
 
   return (
     <td style={{ position: "relative", background: bg, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", width: COL_W, minWidth: COL_W, color: "#F8F8F2" }}>
+      {/* AFFORDANCE: célula com ação ganha hover (superfície elevada), cursor e foco visível; a
+          célula "—" (sem provisão) não é interativa e sai antes, lá em cima. Teclado: Tab foca,
+          Enter/Espaço abrem (é um <button>), Esc fecha. Sem isso, "clique na célula" era uma regra
+          que só quem já sabia descobria. */}
       {hasActions ? (
         <button
           onClick={() => setOpen((o) => !o)}
-          title={isVinculado ? "Vinculado a parcelamento" : (isParcial ? `Parcial — saldo R$ ${fmtValor(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
-          style={{ background: "transparent", border: "none", cursor: "pointer", color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", width: "100%", padding: "2px 0" }}
+          onKeyDown={(e) => { if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); } }}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          title={isVinculado && isAberto ? "Vinculado a parcelamento — abra para ver os detalhes." : `${aparencia.titulo} Clique para ver os detalhes.`}
+          style={{
+            background: open ? "#2b2d45" : "transparent",
+            border: "1px solid transparent", borderRadius: 6, cursor: "pointer",
+            color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", width: "100%", padding: "2px 0",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; e.currentTarget.style.borderColor = "#44475A"; }}
+          onMouseLeave={(e) => { if (!open) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; } }}
         >
           {numText}
         </button>
       ) : (
         <span
-          title={isSynthetic ? "Gerada a partir da guia INSS" : (isParcial ? `Parcial — saldo R$ ${fmtValor(saldo)}` : (isAberto ? "Em aberto" : "Pago"))}
+          title={isSynthetic ? `Gerada a partir da guia INSS. ${aparencia.titulo}` : aparencia.titulo}
           style={{ color, fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap", display: "inline-block", padding: "2px 0" }}
         >
           {numText}
         </span>
       )}
-      {entry.recalculatedAt && entry.recalculatedToValor != null && (
-        <div
-          style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}
-          title={`Guia recalculada em ${fmtDate(entry.recalculatedAt)}. Valor original: R$ ${fmtValor(entry.recalculatedFromValor)}. Atualizado: R$ ${fmtValor(entry.recalculatedToValor)}.`}
-        >
-          ↻ R$ {fmtValor(entry.recalculatedToValor)}
-        </div>
+      {/* ⚠ NA CÉLULA, NO MÁXIMO UM ÍCONE.
+          Aqui empilhavam-se até QUATRO linhas de 6px numa coluna de ~90px — "↻ R$ …", "+R$ … j/m",
+          "paga dd/mm", "saldo R$ …" — cada uma com a informação de verdade escondida num `title`,
+          que só aparece para quem para o mouse em cima. Todas essas linhas migraram para o
+          `ResumoDaGuia`, onde têm rótulo e espaço. O que sobra na célula é um sinal por vez:
+
+          • ⚠  juros/multa correndo (o valor está no popover)
+          • ⏳ pagamento localizado no SERPRO, falta lançar a baixa
+          • ✅ quitada
+      */}
+      {!placeholder && (temAcrescimo || entry.recalculatedAt) && isOpenLike && !pagamentoLocalizado && (
+        <div style={{ fontSize: "0.7rem", lineHeight: 1.1, color: "#FFB347" }} title="Tem juros/multa — abra a célula para ver o valor atualizado.">⚠</div>
       )}
-      {/* Frente B: acréscimo (juros/multa) destacado + edição do split principal/juros/multa. */}
-      {temAcrescimo && (
-        <div title={`Valor original R$ ${fmtValor(acrescimo.principal)} + juros/multa R$ ${fmtValor(acrescimo.acrescimo)}`} style={{ fontSize: "0.6rem", fontWeight: 700, color: "#FFB347", whiteSpace: "nowrap" }}>
-          +R$ {fmtValor(acrescimo.acrescimo)} j/m
-        </div>
-      )}
-      {/* Baixa parcial por quota: mostra o saldo restante (azul) na célula. */}
       {pagamentoLocalizado && (
         <div
+          style={{ fontSize: "0.7rem", lineHeight: 1.1 }}
           title={entry.comprovante?.dataArrecadacao
             ? `Pagamento localizado no SERPRO em ${entry.comprovante.dataArrecadacao} — falta lançar a baixa.`
             : "Pagamento localizado no SERPRO — falta lançar a baixa."}
-          style={{ fontSize: "0.62rem", fontWeight: 700, color: "#69FF47", lineHeight: 1.2 }}
         >
-          paga{entry.comprovante?.dataArrecadacao ? ` ${entry.comprovante.dataArrecadacao.slice(0, 5)}` : ""}
+          ⏳
         </div>
       )}
-      {!placeholder && isParcial && Number.isFinite(saldo) && (
-        <div style={{ fontSize: "0.6rem", fontWeight: 700, color: "#6EA8FF", whiteSpace: "nowrap" }} title={`Pago R$ ${fmtValor(entry.abatido)} de R$ ${fmtValor(valor)} — ${entry.quotasPagas || 0} quota(s)`}>
-          saldo R$ {fmtValor(saldo)}
-        </div>
-      )}
-      {/* Ícone único de "pago" — só quando totalmente quitado (baixa manual ou confirmação SERPRO).
-          Só indicador visual (não clicável); o tooltip traz data/origem quando houver. */}
+      {/* ✓ simples, não ✅. O emoji desenha um check DENTRO DE UM QUADRADO verde e lê como caixa
+          marcada — sugerindo uma interação que não existe (ele é só indicador). Além disso emoji
+          não respeita a paleta: chegava sempre no mesmo verde, ao lado de um número que pode estar
+          em quatro cores diferentes. */}
       {!placeholder && !isOpenLike && (
         <div
-          style={{ fontSize: "0.85rem", lineHeight: 1.1 }}
+          style={{ fontSize: "0.8rem", lineHeight: 1.1, color: "#69FF47", fontWeight: 800 }}
           title={`Pagamento confirmado${entry.sourceGuide?.paymentConfirmedAt ? ` em ${fmtDate(entry.sourceGuide.paymentConfirmedAt)}` : ""}${entry.sourceGuide?.paymentStatusSource === "SERPRO" ? " (via SERPRO)" : ""}${entry.sourceGuide?.comprovantePdfFileId ? " — comprovante de arrecadação disponível" : ""}.`}
         >
-          ✅
+          ✓
         </div>
       )}
       {open && hasActions && (
         <div
           onMouseLeave={() => setOpen(false)}
-          style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "#24253A", border: "1px solid #44475A", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.45)", padding: 6, minWidth: 190, display: "flex", flexDirection: "column", gap: 2 }}
+          style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "#24253A", border: "1px solid #44475A", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.45)", padding: 6, minWidth: 250, display: "flex", flexDirection: "column", gap: 2 }}
         >
+          {/* ⚠ O POPOVER DEIXOU DE SER SÓ UM MENU DE AÇÕES.
+              Valor original, juros/multa, valor atualizado, vencimento e envio ao cliente moravam
+              como micro-anotações DENTRO da célula — uma coluna de ~90px com até quatro linhas de
+              6px empilhadas, cada uma com a informação real escondida num `title`. Aqui elas têm
+              rótulo e cabem. Na célula fica o número e, no máximo, um ícone. */}
+          <ResumoDaGuia entry={entry} acrescimo={acrescimo} aparencia={aparencia} />
+          <div style={{ borderTop: "1px solid #44475A", margin: "4px 0 2px" }} />
           {onEdit && !isSynthetic && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar</button>}
           {/* INSS sintético aberto: edita valor/juros/multa (vai p/ acrescimos.INSS) no mesmo modal. */}
           {canEditInss && <button onClick={() => { setOpen(false); onEdit(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>✎ Editar valor/juros/multa</button>}
@@ -447,7 +552,12 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           {/* "Dar baixa" — provisões reais E INSS sintético (Q47). Em PARCIAL, abre nova quota. */}
           {isOpenLike && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Dar baixa (próxima quota)" : "Dar baixa"}</button>}
           {/* "Cancelar baixa" — DAS/quota (provisão real) E INSS sintético (Q52). Em PARCIAL cancela a última quota. */}
-          {baixaId && onCancelBaixa && <button onClick={() => { setOpen(false); onCancelBaixa(baixaIds); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Cancelar última quota" : (baixaIds.length > 1 ? `Cancelar baixa (${baixaIds.length} lançamentos)` : "Cancelar baixa")}</button>}
+          {/* ⚠ "DESFAZER BAIXA", não "cancelar" — e leva a guia inteira.
+              Uma guia tem até TRÊS baixas (principal, juros e multa são lançamentos separados, em
+              contas diferentes). Desfazer uma de três deixaria dois lançamentos órfãos com a guia
+              reaberta; por isso `baixaIds` inteiro. O rótulo diz quantos lançamentos vão embora
+              justamente para que ninguém descubra depois. */}
+          {baixaId && onCancelBaixa && <button onClick={() => { setOpen(false); onCancelBaixa(baixaIds); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "↩ Desfazer última quota" : (baixaIds.length > 1 ? `↩ Desfazer baixa (${baixaIds.length} lançamentos)` : "↩ Desfazer baixa")}</button>}
           {onVincular && !isSynthetic && (
             isVinculado ? (
               <button onClick={() => { setOpen(false); onDesvincular(entry); }} style={{ ...menuBtn, color: "#FFB347" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Desvincular do parcelamento</button>
@@ -554,6 +664,7 @@ export function CircularTab({
   onLoad,
   accounts,
   companyRegime,  // regime tributário da empresa: filtra linhas exibidas (DAS só Simples; IRPJ/CSLL/PIS_COFINS/ISS só Presumido)
+  companyName,    // só para o cabeçalho da impressão (o papel sai sem o header do app)
   onCreateBaixa,
   savingBaixa,
   onLoadBaixaTemplate,
@@ -597,6 +708,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
   const [editEntry, setEditEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [cancellingBaixaId, setCancellingBaixaId] = useState(null);
+  const [imprimindo, setImprimindo] = useState(false);
   const currentYear = new Date().getFullYear();
 
   // Q31: o quadro NÃO mostra os lançamentos do parcelamento (subtipo PARC_*) — eles ficam só nos
@@ -630,16 +742,27 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
     return byRegime.filter((r) => usedSubtipos.has(r.key));
   }, [quadroProvisoes, companyRegime]);
 
+  // ⚠ "Em aberto" DIVIDIDO em vencido × a vencer.
+  // Um total único soma dívida atrasada com compromisso futuro e responde a pergunta errada: em
+  // agosto, "R$ 8.400 em aberto" pode ser tudo vencido ou tudo com prazo, e é a diferença entre
+  // pagar hoje com multa e programar. A separação sai de `totaisEmAberto` — a mesma regra que
+  // pinta as células, para o rodapé não discordar da coluna acima dele.
   const abertoByMonth = useMemo(() => {
     const totals = {};
+    const porMes = new Map();
     for (const p of quadroProvisoes) {
-      if (p.placeholder || p.origem === "TEMPLATE") continue;
-      if (p.statusPagamento === "ABERTO") {
-        totals[p.competencia] = (totals[p.competencia] || 0) + (Number(p.totalD) || 0);
-      } else if (p.statusPagamento === "PARCIAL") {
-        // Parcial conta só o SALDO restante como "em aberto".
-        totals[p.competencia] = (totals[p.competencia] || 0) + (Number(p.saldo) || 0);
-      }
+      if (!porMes.has(p.competencia)) porMes.set(p.competencia, []);
+      porMes.get(p.competencia).push(p);
+    }
+    for (const [comp, itens] of porMes) {
+      const t = totaisEmAberto(itens);
+      totals[comp] = {
+        vencido: t.vencido,
+        // Parcial entra aqui pelo SALDO: tem prazo corrente e ainda deve.
+        aVencer: t.aVencer + t.parcial,
+        semData: t.semData,
+        total: t.vencido + t.aVencer + t.parcial + t.semData,
+      };
     }
     return totals;
   }, [quadroProvisoes]);
@@ -651,7 +774,9 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
   const yy = String(year).slice(2);
   const cellNum = (colKey, comp) => {
     if (colKey === "__FAT__") return Number(circularData?.receitas?.[comp]) || 0;
-    if (colKey === "__ABERTO__") return Number(abertoByMonth[comp]) || 0;
+    // Trimestre e ano continuam somando o TOTAL em aberto — a divisão vencido × a vencer é uma
+    // leitura do mês, e agregar "vencido" num trimestre já encerrado não diria nada de novo.
+    if (colKey === "__ABERTO__") return Number(abertoByMonth[comp]?.total) || 0;
     const e = matrix[`${colKey}__${comp}`];
     return e ? Number(e.totalD || e.valor || 0) : 0;
   };
@@ -732,10 +857,31 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
   }
   // Recebe UM id ou a LISTA de ids do lote (principal + juros + multa). Cancelar parcialmente
   // deixaria lançamentos órfãos e a guia reaberta — o pior dos dois mundos.
+  // IMPRESSÃO — mesma mecânica da listagem, e de propósito: o clique só liga a flag, e quem chama
+  // `window.print()` é o efeito, DEPOIS do render. Chamar no clique imprimiria o DOM anterior.
+  // A CSS é a compartilhada (`body.imprimindo` + `data-print-area`, em App.css).
+  useEffect(() => {
+    if (!imprimindo) return undefined;
+    document.body.classList.add("imprimindo");
+    const limpar = () => setImprimindo(false);
+    window.addEventListener("afterprint", limpar);
+    const t = window.setTimeout(() => window.print(), 60);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("afterprint", limpar);
+      document.body.classList.remove("imprimindo");
+    };
+  }, [imprimindo]);
+
   async function handleCancelBaixa(ids) {
     if (!onCancelBaixa) return;
     const lista = Array.isArray(ids) ? ids.filter(Boolean) : [ids].filter(Boolean);
     if (!lista.length) return;
+    // ⚠ Isto APAGA lançamentos contábeis (até três: principal, juros, multa) e REABRE a guia. Não
+    // tinha confirmação nenhuma, enquanto excluir um lançamento pela aba Lançamentos tinha — o
+    // mesmo estrago, por um caminho mais curto. O texto diz quantos vão embora.
+    const quantos = lista.length > 1 ? `${lista.length} lançamentos de baixa` : "o lançamento de baixa";
+    if (!window.confirm(`Desfazer a baixa?\n\nIsto apaga ${quantos} e reabre a guia como não paga.`)) return;
     setCancellingBaixaId(lista[0]);
     try {
       // Sequencial de propósito: a rota reabre a guia ao apagar, e disparar em paralelo deixaria a
@@ -787,6 +933,16 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
           >
             Atualizar
           </button>
+          <button
+            onClick={() => setImprimindo(true)}
+            title="Imprimir o extrato anual (ou salvar em PDF)."
+            style={{
+              background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
+              height: 28, padding: "0 10px", cursor: "pointer", fontSize: "0.8125rem",
+            }}
+          >
+            🖨 Imprimir
+          </button>
         </div>
       </div>
 
@@ -820,7 +976,16 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
       )}
 
       {!loading && circularData && (
-        <div style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
+        <div data-print-area>
+          {/* Cabeçalho que só existe no PAPEL: a folha sai sem o header do app, e uma tabela de
+              12 meses sem empresa nem ano é indistinguível da de qualquer outra empresa. */}
+          <div data-print-only style={{ display: "none" }}>
+            <h2 style={{ margin: "0 0 2px" }}>Extrato anual de guias — {year}</h2>
+            <p style={{ margin: "0 0 10px", fontSize: "0.85rem" }}>
+              {companyName || ""}{companyName ? " · " : ""}Emitido em {new Date().toLocaleDateString("pt-BR")}
+            </p>
+          </div>
+          <div data-print-tabela style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
           <table style={{ width: (1 + visibleRows.length + 2) * COL_W, minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", color: "#F8F8F2" }}>
             <thead>
               <tr style={{ background: "#282A36" }}>
@@ -868,7 +1033,32 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                       />
                     ))}
                     <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtValor(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
-                    <td style={extraCellStyle}>{aberto ? <span style={{ color: "#FF4757", fontWeight: 700 }}>R$ {fmtValor(aberto)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
+                    {/* Vencido em VERMELHO, a vencer em ÂMBAR — e cada um com o seu rótulo, porque
+                        cor sozinha não é estado (princípio 2). Nada em aberto vira "—", não "R$ 0,00":
+                        zero e ausência se leem igual num relance e significam a mesma coisa aqui. */}
+                    <td style={extraCellStyle}>
+                      {aberto?.total ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 1, alignItems: "center" }}>
+                          {aberto.vencido > 0 && (
+                            <span style={{ color: "#FF4757", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias que já passaram do vencimento.">
+                              R$ {fmtValor(aberto.vencido)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>vencido</span>
+                            </span>
+                          )}
+                          {aberto.aVencer > 0 && (
+                            <span style={{ color: "#FFB347", fontWeight: 700, whiteSpace: "nowrap" }} title="Guias em aberto ainda dentro do prazo.">
+                              R$ {fmtValor(aberto.aVencer)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>a vencer</span>
+                            </span>
+                          )}
+                          {/* Rótulo próprio: chamar isto de "a vencer" seria afirmar um prazo que
+                              a célula acima se recusa a afirmar. */}
+                          {aberto.semData > 0 && (
+                            <span style={{ color: "#FFB347", fontWeight: 700, whiteSpace: "nowrap" }} title="Em aberto — o vencimento destas guias não é conhecido, então não dá para dizer se já venceram.">
+                              R$ {fmtValor(aberto.semData)} <span style={{ fontSize: "0.62rem", fontWeight: 600 }}>em aberto</span>
+                            </span>
+                          )}
+                        </div>
+                      ) : <span style={{ color: "#44475A" }}>—</span>}
+                    </td>
                   </tr>
                 )];
                 if ((i + 1) % 3 === 0) {
@@ -894,6 +1084,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
               </tr>
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
