@@ -607,6 +607,14 @@ const circularApi = createApiClient();
  * lançamento nenhum (`amount > 0` no gerador), então a linha do mês ficava idêntica à de um mês em
  * que ninguém buscou nada. O selo "zerado" é a diferença entre "não há imposto" e "não sabemos".
  */
+/**
+ * CÉLULA da coluna "Extrato" — os PDFs da declaração e do recibo do PGDAS-D.
+ *
+ * ⚠ ISTO MORAVA DENTRO DA CÉLULA DO MÊS. Eram dois links de 0.62rem ("extrato" "recibo")
+ * espremidos embaixo de "Abr/26", e o aviso de arquivo ausente — uma frase inteira — quebrava em
+ * duas linhas dentro de uma coluna de ~90px, empurrando a altura da linha da tabela inteira. Dois
+ * documentos que se ABREM não são um detalhe do rótulo do mês: são uma ação, e ação tem coluna.
+ */
 function ExtratoDoMes({ comp, info, companyId }) {
   const [erro, setErro] = useState("");
   if (!info) return null;
@@ -625,30 +633,37 @@ function ExtratoDoMes({ comp, info, companyId }) {
     }
   }
 
-  const link = {
-    background: "none", border: "none", padding: 0, cursor: "pointer",
-    font: "inherit", fontSize: "0.62rem", color: "#8BE9FD", textDecoration: "underline",
+  // Botões de verdade, com área clicável: os links de 0.62rem tinham ~40px de alvo.
+  const botao = {
+    display: "inline-flex", alignItems: "center", gap: 3,
+    background: "transparent", border: "1px solid #44475A", borderRadius: 6,
+    padding: "3px 7px", cursor: "pointer",
+    font: "inherit", fontSize: "0.7rem", color: "#8BE9FD",
   };
 
   return (
-    <span style={{ display: "block", marginTop: 2, fontWeight: 400, whiteSpace: "nowrap" }}>
+    <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 3, fontWeight: 400 }}>
+      <span style={{ display: "inline-flex", gap: 4 }}>
+        {info.temDeclaracao && (
+          <button type="button" onClick={() => abrir("declaracao")} style={botao} title="Extrato da declaração do PGDAS-D (PDF)">
+            📄 Extrato
+          </button>
+        )}
+        {info.temRecibo && (
+          <button type="button" onClick={() => abrir("recibo")} style={botao} title="Recibo de entrega da declaração (PDF)">
+            🧾 Recibo
+          </button>
+        )}
+      </span>
+      {/* "Zerado" fica AQUI e não no rótulo do mês: é atributo da declaração transmitida, que é
+          exatamente o assunto desta coluna. */}
       {info.semFaturamento && (
         <span title="Declaração do PGDAS-D transmitida sem valor — o mês foi marcado como sem faturamento"
-          style={{ fontSize: "0.62rem", color: "#A7B0C0", marginRight: 6 }}>
+          style={{ fontSize: "0.66rem", color: "#A7B0C0", whiteSpace: "nowrap" }}>
           ◌ zerado
         </span>
       )}
-      {info.temDeclaracao && (
-        <button type="button" onClick={() => abrir("declaracao")} style={link} title="Extrato da declaração (PDF)">
-          extrato
-        </button>
-      )}
-      {info.temRecibo && (
-        <button type="button" onClick={() => abrir("recibo")} style={{ ...link, marginLeft: 6 }} title="Recibo da declaração (PDF)">
-          recibo
-        </button>
-      )}
-      {erro && <span style={{ display: "block", fontSize: "0.6rem", color: "#FF5757" }}>{erro}</span>}
+      {erro && <span style={{ fontSize: "0.62rem", color: "#FF5757", lineHeight: 1.25 }}>{erro}</span>}
     </span>
   );
 }
@@ -768,6 +783,11 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
   }, [quadroProvisoes]);
 
   const monthKeys = MONTH_LABELS.map((_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
+
+  // A coluna "Extrato" só aparece se ALGUM mês do ano tiver declaração/recibo do PGDAS-D. Coluna
+  // vazia os doze meses seria largura tirada das que têm número — e no Lucro Presumido, onde não
+  // existe PGDAS-D, ela nunca teria conteúdo nenhum.
+  const temExtratoNoAno = monthKeys.some((c) => circularData?.extrato?.[c]);
 
   // Q31: quadro transposto — meses nas linhas, impostos nas colunas (+ Faturamento, Total em aberto).
   // Valor numérico de uma coluna num mês (impostos via matrix; colunas especiais por chave).
@@ -988,7 +1008,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
             </p>
           </div>
           <div data-print-tabela style={{ overflowX: "auto", border: "1px solid #44475A", borderRadius: 6, background: "#21222C" }}>
-          <table style={{ width: (1 + visibleRows.length + 2) * COL_W, minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", color: "#F8F8F2" }}>
+          <table style={{ width: (1 + visibleRows.length + 2 + (temExtratoNoAno ? 1 : 0)) * COL_W, minWidth: "100%", borderCollapse: "collapse", tableLayout: "fixed", color: "#F8F8F2" }}>
             <thead>
               <tr style={{ background: "#282A36" }}>
                 <th style={headStickyStyle}>Mês</th>
@@ -997,6 +1017,10 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                 ))}
                 <th style={{ ...headCellStyle, color: "#8BE9FD" }}>Faturamento</th>
                 <th style={{ ...headCellStyle, color: "#FF4757" }}>Total em aberto</th>
+                {/* Coluna própria para os PDFs do PGDAS-D — antes eram dois links miúdos dentro da
+                    célula do mês. Só existe quando ALGUM mês do ano tem documento: coluna vazia o
+                    ano inteiro é largura tirada das que têm número. */}
+                {temExtratoNoAno && <th style={headCellStyle}>Extrato</th>}
               </tr>
             </thead>
             <tbody>
@@ -1006,7 +1030,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                   (INSS/DAS sintéticos). Agora só declara vazio quando NÃO HÁ NADA no ano. */}
               {visibleRows.length === 0 && sumYear("__ABERTO__") === 0 && sumYear("__FAT__") === 0 && (
                 <tr>
-                  <td colSpan={3 + visibleRows.length} style={{ padding: 24, textAlign: "center", color: "#aeb6d3", fontStyle: "italic" }}>
+                  <td colSpan={3 + visibleRows.length + (temExtratoNoAno ? 1 : 0)} style={{ padding: 24, textAlign: "center", color: "#aeb6d3", fontStyle: "italic" }}>
                     Nenhuma provisão registrada para {year}.
                   </td>
                 </tr>
@@ -1018,7 +1042,6 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                   <tr key={comp}>
                     <td style={monthStickyStyle}>
                       {MONTH_LABELS[i]}/{yy}
-                      <ExtratoDoMes comp={comp} info={circularData.extrato?.[comp]} companyId={companyId} />
                     </td>
                     {visibleRows.map((col) => (
                       <PagamentoCell
@@ -1061,6 +1084,13 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         </div>
                       ) : <span style={{ color: "#44475A" }}>—</span>}
                     </td>
+                    {temExtratoNoAno && (
+                      <td style={extraCellStyle}>
+                        {circularData.extrato?.[comp]
+                          ? <ExtratoDoMes comp={comp} info={circularData.extrato[comp]} companyId={companyId} />
+                          : <span style={{ color: "#44475A" }}>—</span>}
+                      </td>
+                    )}
                   </tr>
                 )];
                 if ((i + 1) % 3 === 0) {
@@ -1072,6 +1102,9 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                       {visibleRows.map((col) => { const v = sumQuarter(col.key, qi); return <td key={col.key} style={{ ...triStyle, color: "#aeb6d3" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })}
                       {(() => { const v = sumQuarter("__FAT__", qi); return <td style={{ ...triStyle, color: "#8BE9FD" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
                       {(() => { const v = sumQuarter("__ABERTO__", qi); return <td style={{ ...triStyle, color: "#FF4757" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
+                      {/* Não há "extrato do trimestre" — a declaração é mensal. Célula vazia para a
+                          linha não ficar com uma coluna a menos e desalinhar a grade inteira. */}
+                      {temExtratoNoAno && <td style={triStyle} />}
                     </tr>
                   );
                 }
@@ -1083,6 +1116,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                 {visibleRows.map((col) => { const v = sumYear(col.key); return <td key={col.key} style={{ ...subCellStyle, fontWeight: 800 }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })}
                 {(() => { const v = sumYear("__FAT__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#8BE9FD" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
                 {(() => { const v = sumYear("__ABERTO__"); return <td style={{ ...subCellStyle, fontWeight: 800, color: "#FF4757" }}>{v ? `R$ ${fmtValor(v)}` : "—"}</td>; })()}
+                {temExtratoNoAno && <td style={subCellStyle} />}
               </tr>
             </tbody>
           </table>

@@ -308,6 +308,14 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
   const [categorias, setCategorias] = useState(() => new Set(CATEGORIAS.map((c) => c.chave)));
   const [sidebarAberta, setSidebarAberta] = useState(() => !ehTelaEstreita());
   const [estreita, setEstreita] = useState(ehTelaEstreita);
+
+  // ⚠ DENTRO DE UMA EMPRESA NÃO HÁ PAINEL LATERAL.
+  // O único conteúdo do `<aside>` é a CARTEIRA (a lista de empresas), que já era condicionada a
+  // `!companyIdFixo` — resultado: na aba da empresa a barra renderizava como uma coluna VAZIA de
+  // 288px, roubando largura da grade, e o botão ☰ alternava o nada. Foi o que o dono viu: "esse
+  // menu lateral não faz nada". Aqui ele deixa de existir, junto com o botão que o abre.
+  const temSidebar = !companyIdFixo;
+  const sidebarVisivel = temSidebar && sidebarAberta;
   const [porDia, setPorDia] = useState({});
   const [feriadosPorDia, setFeriadosPorDia] = useState({});
   const [pendencias, setPendencias] = useState([]);
@@ -689,12 +697,14 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
     <section aria-label="Calendário fiscal" style={{ width: "var(--content-wide)", margin: "0 auto" }}>
       {/* Cabeçalho: navegação à esquerda, granularidade à direita — como no Google Calendar. */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-        <button
-          type="button" onClick={() => setSidebarAberta((v) => !v)} style={btn(false)}
-          title={sidebarAberta ? "Esconder painel" : "Mostrar painel"} aria-expanded={sidebarAberta}
-        >
-          ☰
-        </button>
+        {temSidebar && (
+          <button
+            type="button" onClick={() => setSidebarAberta((v) => !v)} style={btn(false)}
+            title={sidebarAberta ? "Esconder painel" : "Mostrar painel"} aria-expanded={sidebarAberta}
+          >
+            ☰
+          </button>
+        )}
         <button type="button" onClick={() => navegar(-1)} style={btn(false)} title="Anterior">‹</button>
         <button type="button" onClick={() => navegar(1)} style={btn(false)} title="Próximo">›</button>
         <button type="button" onClick={() => setReferencia(hojeISO())} style={btn(false)} title="Hoje (T)">Hoje</button>
@@ -764,7 +774,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
       )}
 
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-      {sidebarAberta && (
+      {sidebarVisivel && (
         <aside
           aria-label="Painel do calendário"
           // Em tela estreita ela vira DRAWER: ocupa a largura toda e a grade fica escondida
@@ -902,7 +912,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
           ⚠ `flex-basis: 0`, não `auto`: com `auto` a base é o tamanho do CONTEÚDO, e a grade de 7
           colunas pede ~1185px. Somada aos 232px do painel isso estoura a linha, o `flex-wrap`
           entra e o painel vai parar EM CIMA da grade em vez de ao lado dela. */}
-      <div style={{ flex: "1 1 0", minWidth: 0, display: estreita && sidebarAberta ? "none" : "block" }}>
+      <div style={{ flex: "1 1 0", minWidth: 0, display: estreita && sidebarVisivel ? "none" : "block" }}>
       {visao === "agenda" ? (
         <div style={{ border: `1px solid ${COR.borda}`, borderRadius: 8, overflow: "hidden" }}>
           {/* ⚠ VAZIO MUDO NUNCA (princípio 7). Era só "Nada neste período." — e "nada" ali pode ser

@@ -2217,7 +2217,16 @@ export function createMockApi() {
           },
         });
       }
-      return { year: y, provisoes, receitas };
+      // ⚠ O mock NUNCA devolvia `extrato`, então a coluna "Extrato" da Circular (os PDFs da
+      // declaração e do recibo do PGDAS-D) era invisível offline — não dava para conferir nem o
+      // botão, nem o aviso de arquivo ausente, nem o selo "◌ zerado". Três meses cobrindo os três
+      // casos que a tela precisa distinguir.
+      const extrato = {
+        [meses[3]]: { temDeclaracao: true, temRecibo: true, semFaturamento: false },
+        [meses[4]]: { temDeclaracao: true, temRecibo: false, semFaturamento: true },
+        [meses[5]]: { temDeclaracao: true, temRecibo: true, semFaturamento: false },
+      };
+      return { year: y, provisoes, receitas, extrato };
     },
     async getCircularAccountingEntries(companyId, competencia) {
       await delay();

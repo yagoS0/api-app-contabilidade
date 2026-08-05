@@ -124,14 +124,19 @@ export function resolveHistoricoText(text, competencia) {
 }
 
 // Q18: colunas Tipo e Status removidas da tabela (tipo continua no payload/editor).
+// ⚠ Débito/Crédito eram 150px porque carregavam o NOME da conta numa segunda linha. O nome virou
+// hover (`title` com "código — nome"), e o que sobrou na célula é um código de 3 a 6 dígitos: 150px
+// para mostrar "266" é largura tirada do Histórico, que é a coluna onde de fato se lê o lançamento
+// e a única que vinha truncando ("PROVISÃO PARCSN Nº 2 — parcelamento a pa…").
+// Ações também encolheu: são dois botões-ícone de 24px, não 170px de coluna.
 export const COLS = [
   { label: "", align: "center", width: "36px" },
-  { label: "Data", align: "left", width: "128px" },
-  { label: "Débito", align: "center", width: "150px" },
-  { label: "Crédito", align: "center", width: "150px" },
+  { label: "Data", align: "left", width: "104px" },
+  { label: "Débito", align: "center", width: "86px" },
+  { label: "Crédito", align: "center", width: "86px" },
   { label: "Histórico", align: "left", width: "auto" },
-  { label: "Valor (R$)", align: "right", width: "132px" },
-  { label: "Ações", align: "right", width: "170px" },
+  { label: "Valor (R$)", align: "right", width: "116px" },
+  { label: "Ações", align: "right", width: "92px" },
 ];
 
 // Q18: nº total de colunas (para colSpan de linhas full-width).

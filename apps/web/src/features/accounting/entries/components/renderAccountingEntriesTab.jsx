@@ -283,14 +283,17 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
       style={{
         // A largura é da COLUNA que o hospeda, não do painel: assim ele acompanha quando a linha
         // quebra no estreito, sem um segundo número para sincronizar.
-        display: "flex", flexDirection: "column", gap: 7,
-        width: "100%", padding: "9px 10px",
+        display: "flex", flexDirection: "column", gap: 6,
+        width: "100%", padding: "8px 8px",
         borderRadius: 12, border: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.surface,
         boxSizing: "border-box",
       }}
     >
-      <span style={{ fontSize: "0.7rem", color: "#8A8FA3", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-        Fechamento de {formatCompetenciaTitulo(competencia)}
+      {/* Só "FECHAMENTO": a competência já está escrita no seletor do header E no título grande
+          sobre a tabela, a poucos centímetros. Uma terceira vez não informa — só ocupa a largura
+          que a tabela precisa. */}
+      <span style={{ fontSize: "0.68rem", color: "#8A8FA3", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+        Fechamento
       </span>
 
       {/* Separado do "Confiro que lancei" de propósito: aquilo confirma que algo FOI lançado,
@@ -308,8 +311,8 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
                   : "Afirma que a competência não teve faturamento. Folha, despesas e parcelas seguem normais."
           }
           style={{
-            display: "flex", alignItems: "flex-start", gap: 7, fontSize: "0.78rem", fontWeight: 600,
-            padding: "6px 8px", borderRadius: 8,
+            display: "flex", alignItems: "flex-start", gap: 5, fontSize: "0.72rem", fontWeight: 600,
+            padding: "5px 6px", borderRadius: 8,
             border: `1px solid ${semFaturamento ? "#FFB347" : conferenciaDivergente ? "#FF5757" : ACCOUNTING_PANEL.border}`,
             background: ACCOUNTING_PANEL.field,
             color: semFaturamento ? "#FFB347" : (temFaturamento || conferenciaDivergente) ? "#6272A4" : "#aeb6d3",
@@ -323,7 +326,7 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
             // contra a afirmação, e a recusa viria do servidor de qualquer jeito.
             disabled={semFatBusy || ((temFaturamento || conferenciaDivergente) && !semFaturamento)}
             onChange={toggleSemFaturamento}
-            style={{ marginTop: 1, cursor: semFatBusy || temFaturamento || conferenciaDivergente ? "not-allowed" : "pointer" }}
+            style={{ width: 13, height: 13, flex: "0 0 auto", marginTop: 1, cursor: semFatBusy || temFaturamento || conferenciaDivergente ? "not-allowed" : "pointer" }}
           />
           {/* ⚠ A ressalva vai para a LINHA DE BAIXO, não emendada no rótulo. Com `nowrap` num pill,
               "Mês sem faturamento · sem conferência do ADN" era uma tira de ~300px que sozinha
@@ -361,8 +364,8 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
                 key={item.chave}
                 title={item.title}
                 style={{
-                  display: "flex", alignItems: "center", gap: 7, padding: "3px 2px",
-                  fontSize: "0.78rem", fontWeight: 600,
+                  display: "flex", alignItems: "center", gap: 5, padding: "2px 0",
+                  fontSize: "0.72rem", fontWeight: 600,
                   color: marcado ? "#69FF47" : "#aeb6d3",
                   cursor: gravando ? "default" : "pointer", userSelect: "none",
                 }}
@@ -372,10 +375,12 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
                   checked={marcado}
                   disabled={Boolean(checkBusy)}
                   onChange={() => toggleItem(item.chave)}
-                  style={{ cursor: gravando ? "default" : "pointer" }}
+                  /* 13px: o padrão do browser (~16px) somava 3px de largura por linha num painel
+                     de 152px — e a caixa continua confortável de acertar com o mouse. */
+                  style={{ width: 13, height: 13, flex: "0 0 auto", cursor: gravando ? "default" : "pointer" }}
                 />
-                <span style={{ flex: 1 }}>{item.label}</span>
-                {gravando && <span style={{ fontSize: "0.68rem", color: "#8A8FA3", fontWeight: 400 }}>salvando…</span>}
+                <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
+                {gravando && <span style={{ fontSize: "0.66rem", color: "#8A8FA3", fontWeight: 400 }}>…</span>}
               </label>
             );
           })}
@@ -397,11 +402,12 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
         </span>
       )}
 
-      {/* Rodapé do painel: o motivo do bloqueio fica numa LINHA PRÓPRIA, não dentro do botão.
-          "Fechar mês — Faltam: Folha/Pró-labore, Despesas, Receitas, Provisões, Pagamentos" virava
-          um botão de 500px de largura — foi o que empurrou o cadeado para fora da linha. O botão
-          volta a ter o tamanho de um botão e o motivo fica logo abaixo, onde pode quebrar em duas
-          linhas sem deformar nada. */}
+      {/* Rodapé: só o botão.
+          ⚠ A LINHA "Faltam: Folha/Pró-labore, Despesas, …" SAIU, e não é perda de informação —
+          é o fim de uma repetição. Os itens que faltam são exatamente as caixas DESMARCADAS logo
+          acima, a três centímetros de distância: escrever os mesmos cinco nomes de novo, em
+          vermelho, era a lista mais comprida do painel dizendo o que o painel inteiro já mostrava.
+          O motivo continua acessível no `title` do botão para quem não fizer a ligação. */}
       <div style={{ display: "grid", gap: 5, marginTop: 2 }}>
         <button
           type="button"
@@ -409,20 +415,17 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
           disabled={btnDisabled}
           title={title}
           style={{
-            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-            width: "100%", padding: "7px 12px",
-            borderRadius: 8, cursor: btnDisabled ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 700,
+            display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
+            width: "100%", padding: "6px 8px",
+            borderRadius: 8, cursor: btnDisabled ? "not-allowed" : "pointer", fontSize: "0.76rem", fontWeight: 700,
             background: "transparent", color, border: `1px solid ${color}`, opacity: btnDisabled ? 0.6 : 1,
           }}
         >
-          <span style={{ fontSize: "1rem" }}>{fechado ? "🔒" : "🔓"}</span>
-          {fechado ? "Reabrir mês" : "Fechar mês"}
+          <span style={{ fontSize: "0.9rem" }}>{fechado ? "🔒" : "🔓"}</span>
+          {fechado ? "Reabrir" : "Fechar mês"}
         </button>
-        {motivoBloqueio && (
-          <span style={{ fontSize: "0.72rem", color: "#FF5757", lineHeight: 1.35 }}>
-            Faltam: {motivoBloqueio.startsWith("Faltam: ") ? motivoBloqueio.slice(8) : motivoBloqueio}
-          </span>
-        )}
+        {/* Lançamento com problema NÃO sai: ele não está visível em lugar nenhum do painel, e cada
+            item leva até a linha da tabela. É informação que só existe aqui. */}
         {!fechado && <FaltaParaFechar problemas={problemas} filtroAtivo={filtroAtivo} />}
       </div>
     </div>
@@ -1166,10 +1169,11 @@ export function AccountingEntriesTab({
       </div>
 
         {/* Coluna direita — o painel do mês, ao lado do trabalho do mês.
-            ⚠ ESTREITO DE PROPÓSITO (206px). A 268px ele competia com a tabela: são cinco rótulos
-            curtos e um botão, e a largura sobrando só empurrava colunas de lançamento para a
-            rolagem. O painel é referência de canto de olho; a tabela é onde se trabalha. */}
-        <div style={{ flex: "0 0 206px", maxWidth: "100%" }}>
+            ⚠ ESTREITO DE PROPÓSITO (152px). Começou em 268 e encolheu três vezes: são cinco
+            rótulos curtos e um botão, e cada pixel a mais aqui é um pixel a menos de coluna de
+            lançamento. O painel é referência de canto de olho; a tabela é onde se trabalha.
+            152px é o piso: abaixo disso "Folha/Pró-labore" quebra em duas linhas. */}
+        <div style={{ flex: "0 0 152px", maxWidth: "100%" }}>
           <FechamentoCadeado
             companyId={companyId}
             competencia={activeComp}

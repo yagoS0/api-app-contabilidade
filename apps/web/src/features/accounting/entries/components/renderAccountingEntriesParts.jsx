@@ -793,13 +793,20 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
           )}
         </td>
         <td style={{ ...TDv, fontSize: "0.9375rem", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmtDate(entry.data)}</td>
-        {/* ⚠ `title` com código + nome: a coluna é estreita e o nome vem cortado por reticências.
-            "RECEITA DE SERVIÇOS PRE…" e "RECEITA DE SERVIÇOS PRO…" viram a mesma coisa na tela, e
-            é assim que se confere um lançamento na conta errada sem enxergar. */}
+        {/* ⚠ O NOME DA CONTA SAIU DA CÉLULA E VIROU HOVER.
+            Ele era uma segunda linha de 0.75rem sob o código, e a coluna é estreita demais para
+            ele: chegava sempre cortado — "PARCELAMENTO SIM…", "RECEITA DE SERVIÇOS PRE…" e
+            "RECEITA DE SERVIÇOS PRO…" ficam idênticos truncados, que é como se confere um
+            lançamento na conta errada sem enxergar. Pior, a linha DOBRAVA a altura de toda linha
+            da tabela para entregar um texto ilegível.
+
+            Agora a célula mostra só o código (que é o que se compara de relance) e o `title` traz
+            "código — nome completo" no hover, sem corte. `cursor: help` sinaliza que há mais ali —
+            senão o hover seria mais uma coisa que só quem já sabe descobre. */}
         <td style={{ ...TDv, textAlign: isSimple ? "center" : "left" }} colSpan={isSimple ? 1 : 2} title={dA ? `${dLine?.conta} — ${dA.nome}` : undefined}>
-          {isSimple ? <><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{dLine?.conta ? dLine.conta : <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span>{dA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{dA.nome}</div>}</> :<div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
+          {isSimple ? <span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem", cursor: dA ? "help" : undefined }}>{dLine?.conta ? dLine.conta : <span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span> :<div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ fontSize: "0.875rem", color: ACCOUNTING_PANEL.muted }}>{dCount}D / {cCount}C</span><button onClick={() => setExpanded((v) => !v)} style={{ fontSize: "0.75rem", background: ACCOUNTING_PANEL.surface, border: `1px solid ${ACCOUNTING_PANEL.border}`, color: ACCOUNTING_PANEL.text, borderRadius: 3, padding: "1px 6px", cursor: "pointer" }}>{expanded ? "▼" : "▶"}</button></div>}
         </td>
-        {isSimple && <td style={{ ...TDv, textAlign: "center" }} title={cA ? `${cLine?.conta} — ${cA.nome}` : undefined}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem" }}>{cLine?.conta ? cLine.conta :<span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span>{cA && <div style={{ fontSize: "0.75rem", color: ACCOUNTING_PANEL.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{cA.nome}</div>}</td>}
+        {isSimple && <td style={{ ...TDv, textAlign: "center" }} title={cA ? `${cLine?.conta} — ${cA.nome}` : undefined}><span style={{ display: "block", textAlign: "center", fontWeight: 700, fontSize: "0.9375rem", cursor: cA ? "help" : undefined }}>{cLine?.conta ? cLine.conta :<span style={{ color: ACCOUNTING_PANEL.muted, fontWeight: 400 }}>—</span>}</span></td>}
         <td style={{ ...TDv, fontSize: "0.9375rem" }} title={entry.historico}>
           <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.historico || "—"}</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }}>
