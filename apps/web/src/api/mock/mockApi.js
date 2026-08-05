@@ -1495,6 +1495,11 @@ export function createMockApi() {
       const tinyPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
       return new Blob([tinyPdf], { type: "application/pdf" });
     },
+    async fetchPgdasPdfBlob() {
+      await delay();
+      const tinyPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
+      return new Blob([tinyPdf], { type: "application/pdf" });
+    },
     async runSerproPaymentConfirmation() {
       await delay(500);
       return { ok: true, result: { total: 0, paid: 0, open: 0, errors: 0, results: [] } };

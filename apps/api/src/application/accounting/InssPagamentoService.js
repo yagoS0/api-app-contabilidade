@@ -6,6 +6,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { isMonthClosed } from "./fechamentoContabil.js";
 import { PAYROLL_TEMPLATES } from "./payrollTemplate.js";
+import { CONTA_JUROS, CONTA_MULTA } from "./contasAcrescimo.js";
 
 function competenciaFromDate(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -91,15 +92,31 @@ async function matchAccountByHints(portalClientId, normalizedHints) {
  * Idempotente; lança erro `MES_FECHADO` se o mês do pagamento estiver fechado.
  *
  * Q47: aceita override manual do modal "Dar baixa" da Circular:
- *  - `lines` (array {conta, tipo, valor}) → usa essas partidas em vez de resolver contas automaticamente;
+ *  - `lines` (array {conta, tipo, valor, papel}) → usa essas partidas em vez de resolver contas;
  *  - `historico` → texto do lançamento (senão usa o padrão "PAGO INSS - MM/AAAA").
- * Sem override (fluxo automático do confirm-payment), resolve conta INSS/caixa da folha como antes.
+ *
+ * `rateio` ({principal, juros, multa}) é o caminho AUTOMÁTICO com acréscimo: vem do comprovante de
+ * arrecadação já validado (`parseComprovanteArrecadacao` só devolve os três quando a soma fecha com
+ * o total). O serviço resolve as contas e marca os papéis — o chamador não precisa saber de conta
+ * nenhuma, que é o motivo de o rateio entrar aqui em vez de o worker montar `lines`.
+ *
+ * Sem override e sem rateio, resolve conta INSS/caixa da folha e faz um lançamento só.
+ *
+ * ⚠ GUIA PAGA EM ATRASO SEM RATEIO CONFIÁVEL NÃO GERA LANÇAMENTO (`sem_rateio_do_acrescimo`).
+ * O `guide.valor` de uma guia em atraso já inclui juros e multa; lançar esse total contra "INSS a
+ * Recolher" amortizaria o passivo por mais do que foi provisionado e esconderia despesa do mês do
+ * pagamento dentro do principal. Sem saber a divisão, a resposta certa é não lançar e deixar para o
+ * contador — regra 5 do projeto: nunca gravar ato contábil por suposição. Pago em dia segue com um
+ * lançamento só, que é o correto: ali não há acréscimo a separar.
  */
-export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dataPagamento, historico, lines, userId }) {
+export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dataPagamento, historico, lines, rateio, userId }) {
   void userId; // reservado p/ auditoria futura
   const guide = await prisma.guide.findFirst({
     where: { id: String(guideId), portalClientId },
-    select: { id: true, tipo: true, competencia: true, valor: true, lancamentoId: true, baixada: true },
+    select: {
+      id: true, tipo: true, competencia: true, valor: true, lancamentoId: true, baixada: true,
+      vencimento: true,
+    },
   });
   if (!guide) return { skipped: true, reason: "guide_not_found" };
   if (String(guide.tipo || "").toUpperCase() !== "INSS") return { skipped: true, reason: "nao_e_inss" };
@@ -149,6 +166,21 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
 
   // Override manual (modal da Circular) tem prioridade; senão resolve as contas da folha do mês.
   const hasOverride = Array.isArray(lines) && lines.length > 0;
+  const acrescimoDoRateio = round2(rateio?.juros) + round2(rateio?.multa);
+  const temRateio = Boolean(rateio) && round2(rateio.principal) > 0 && acrescimoDoRateio > 0;
+
+  // Pago depois do vencimento ⇒ o valor da guia embute acréscimo. Sem rateio para dividir, não há
+  // lançamento honesto a fazer.
+  const pagoEmAtraso = Boolean(guide.vencimento) && data > new Date(guide.vencimento);
+  if (!hasOverride && !temRateio && pagoEmAtraso) {
+    return {
+      skipped: true,
+      reason: "sem_rateio_do_acrescimo",
+      message: "Guia paga em atraso sem o rateio de juros e multa do comprovante. "
+        + "Dê a baixa pelo modal da Circular, que separa principal, juros e multa.",
+    };
+  }
+
   let contaInss = null;
   let contaCaixa = null;
   let entryLines;
@@ -157,8 +189,22 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
       conta: String(l.conta || "").trim(),
       tipo: String(l.tipo || "").toUpperCase() === "C" ? "C" : "D",
       valor: round2(l.valor),
+      // ⚠ O papel PRECISA atravessar. Ele é o que `separarPorPapel` lê; sem repassar, toda linha
+      // do modal virava principal e a baixa saía num bloco só — o defeito relatado pelo dono.
+      papel: l.papel ? String(l.papel).toUpperCase() : undefined,
       ordem: i,
     }));
+  } else if (temRateio) {
+    // Caminho automático COM acréscimo: monta as três pernas já com papel, e deixa
+    // `separarPorPapel` fazer o resto. Nenhuma lógica de separação nova.
+    contaInss = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
+    contaCaixa = await resolveCaixaAccount(portalClientId);
+    entryLines = [
+      { conta: contaInss || "", tipo: "D", valor: round2(rateio.principal), papel: "PRINCIPAL", ordem: 0 },
+      { conta: CONTA_JUROS, tipo: "D", valor: round2(rateio.juros), papel: "JUROS", ordem: 1 },
+      { conta: CONTA_MULTA, tipo: "D", valor: round2(rateio.multa), papel: "MULTA", ordem: 2 },
+      { conta: contaCaixa || "", tipo: "C", valor, ordem: 3 },
+    ].filter((l) => l.tipo === "C" || l.valor > 0); // componente zerado não vira lançamento
   } else {
     // Conta "INSS a Recolher" vem da folha da competência da guia (decisão do dono); caixa por hints.
     contaInss = await resolveInssAccountFromFolha(portalClientId, guide.competencia);
@@ -170,10 +216,18 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
   }
   const historicoFinal = String(historico || "").trim() || `PAGO INSS - ${competenciaLabel(guide.competencia)}`;
 
-  // Sem papéis marcados (fluxo automático, sem modal) segue lançamento único — não há juros/multa
-  // separados pra dividir.
-  const grupos = hasOverride ? separarPorPapel(entryLines) : [];
+  // Sem papel marcado em lugar nenhum, é lançamento único — não há o que dividir.
+  const grupos = (hasOverride || temRateio) ? separarPorPapel(entryLines) : [];
   const separar = grupos.length > 1;
+
+  // ⚠ `papel` é campo de ROTEAMENTO, não coluna. `AccountingEntryLine` não o tem, e mandá-lo no
+  // `createMany` quebra o Prisma.
+  const paraGravar = (l, ordem) => ({
+    conta: String(l.conta || "").trim(),
+    tipo: String(l.tipo || "").toUpperCase() === "C" ? "C" : "D",
+    valor: round2(l.valor),
+    ordem,
+  });
 
   const SUFIXO_HISTORICO = { PRINCIPAL: "", JUROS: " (juros)", MULTA: " (multa)" };
 
@@ -193,7 +247,7 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
 
     if (!separar) {
       const entry = await tx.accountingEntry.create({
-        data: { ...base, historico: historicoFinal, lines: { createMany: { data: entryLines } } },
+        data: { ...base, historico: historicoFinal, lines: { createMany: { data: entryLines.map(paraGravar) } } },
         include: { lines: true },
       });
       await tx.guide.update({
@@ -206,7 +260,7 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
     const criados = [];
     for (const g of grupos) {
       const linhasGrupo = [
-        ...g.debitos.map((l, i) => ({ conta: String(l.conta || "").trim(), tipo: "D", valor: round2(l.valor), ordem: i })),
+        ...g.debitos.map((l, i) => paraGravar(l, i)),
         // Cada lançamento credita o caixa pelo SEU total → fecha D=C sozinho.
         { conta: g.contaCaixa, tipo: "C", valor: g.total, ordem: g.debitos.length },
       ];

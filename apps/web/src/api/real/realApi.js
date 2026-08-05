@@ -694,6 +694,25 @@ export function createRealApi() {
     async deleteCompanyNote(companyId, noteId) {
       return request(`/firm/companies/${companyId}/anotacoes/${noteId}`, { method: "DELETE" });
     },
+    // O extrato do Simples (declaração/recibo do PGDAS-D). Mesmo padrão do SITFIS: o `<a href>`
+    // não carrega o token, então o PDF vem como blob autenticado.
+    async fetchPgdasPdfBlob(companyId, competencia, tipo = "declaracao") {
+      const baseUrl = getApiBaseUrl();
+      const headers = {};
+      const tok = accessToken || readStoredToken();
+      if (tok) headers.Authorization = `Bearer ${tok}`;
+      const res = await fetch(
+        `${baseUrl}/firm/companies/${companyId}/pgdas/${encodeURIComponent(competencia)}/pdf?tipo=${encodeURIComponent(tipo)}`,
+        { method: "GET", headers },
+      );
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        const err = new Error(payload?.message || "O arquivo não está mais no armazenamento.");
+        err.code = payload?.error || "PGDAS_PDF_FETCH_FAILED";
+        throw err;
+      }
+      return res.blob();
+    },
     async fetchSitfisPdfBlob(companyId) {
       const baseUrl = getApiBaseUrl();
       const headers = {};

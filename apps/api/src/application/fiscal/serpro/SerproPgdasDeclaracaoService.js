@@ -2,6 +2,9 @@ import { Buffer } from "node:buffer";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
 import { generateEntriesFromCircular } from "../../accounting/AccountingEntryGeneratorService.js";
+// As duas travas de "sem faturamento" vivem no service, não na rota — é o que impede este caminho
+// automático de afirmar algo que o caminho manual recusaria.
+import { marcarSemFaturamento } from "../../accounting/semFaturamento.js";
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { markGuideOpenBySerpro, markGuidePaidBySerpro } from "../../guides/GuidePaymentStatusService.js";
 import { capturePgdasGuideForCompany } from "./CaptureSerproGuidesService.js";
@@ -708,12 +711,56 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
       now: new Date(),
     });
 
+    // ─── DECLARAÇÃO ZERADA MARCA O MÊS ────────────────────────────────────────────────────────
+    //
+    // `generateEntriesFromCircular` só gera evento quando o valor é > 0. Numa declaração zerada ele
+    // devolve zero lançamento — e a aba Lançamentos fica IDÊNTICA a "ninguém buscou nada". O extrato
+    // foi sincronizado, o PDF foi salvo, e a tela não sabia dizer se o mês estava zerado ou parado.
+    //
+    // A declaração transmitida à Receita é a prova mais forte que existe de que o mês não teve
+    // receita — mais forte que o checkbox do contador. Por isso `semFaturamentoPor: null`: quem
+    // afirma aqui não é uma pessoa, é a declaração.
+    //
+    // ⚠ Só vale para o zerado TRANSMITIDO. O caminho `NOT_FOUND` (nenhuma declaração no período)
+    // não passa por aqui de propósito — ali não existe declaração, e não há o que afirmar.
+    const declaracaoZerada = !(Number(receitaBruta) > 0) && !(Number(dasTotal) > 0);
+    let semFaturamento = null;
+    if (declaracaoZerada) {
+      // A recusa é RETORNO, não exceção: se houver nota emitida, a marcação não acontece e a
+      // captura segue normal. O chip de guia já tem o estado `conflito` para essa situação — a tela
+      // avisa, o sistema não afirma.
+      semFaturamento = await marcarSemFaturamento({
+        portalClientId: company.id,
+        competencia: competenciaStorage,
+        ok: true,
+        userId: null,
+        origem: "extrato_pgdas_zerado",
+      }).catch((err) => ({ ok: false, error: "erro", message: err?.message }));
+
+      if (!semFaturamento.ok) {
+        // eslint-disable-next-line no-console
+        console.warn("[PGDAS-D] extrato zerado NÃO marcou o mês como sem faturamento", {
+          portalClientId: company.id, competencia: competenciaStorage, motivo: semFaturamento.error,
+        });
+        await prisma.companyMonthlyCircular.update({
+          where: { id: finalCircular.id },
+          data: {
+            metadata: {
+              ...(finalCircular.metadata && typeof finalCircular.metadata === "object" ? finalCircular.metadata : {}),
+              semFaturamentoRecusado: { erro: semFaturamento.error, mensagem: semFaturamento.message, em: new Date().toISOString() },
+            },
+          },
+        }).catch(() => null);
+      }
+    }
+
     return {
       company,
       circular: finalCircular,
       guide: guideResult.guide,
       guideFetchError: guideResult.error,
       accounting,
+      semFaturamento,
       dados,
       dasIndex,
       files: {

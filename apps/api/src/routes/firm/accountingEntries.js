@@ -8,6 +8,8 @@ import { resolvePayrollTemplate } from "../../application/accounting/payrollTemp
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
+import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/accounting/contasAcrescimo.js";
+import { marcarSemFaturamento } from "../../application/accounting/semFaturamento.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS,
@@ -117,8 +119,8 @@ function deriveBaixaEventType(entry) {
 // Usado na baixa pra somar linhas de despesa quando a guia veio recalculada.
 // Contas conferidas no plano de contas (ChartOfAccount): 501 = JUROS, 506 = MULTAS (ambas DESPESA/DEVEDORA).
 const SUBTIPO_TO_ACRESCIMO_TRIB = { DAS: ["DAS"], INSS: ["INSS"], IRPJ: ["IRPJ"], CSLL: ["CSLL"], PIS_COFINS: ["PIS", "COFINS"], ISS: ["ISS"] };
-const CONTA_JUROS = "501"; // JUROS
-const CONTA_MULTA = "506"; // MULTAS
+// 501/502 vinham escritos aqui, no script de remediação e como literal no modal do front. Três
+// cópias de um código de conta divergem sem ninguém notar — agora vêm de `contasAcrescimo.js`.
 async function acrescimoDoEntry(client, portalClientId, entry) {
   const keys = SUBTIPO_TO_ACRESCIMO_TRIB[String(entry?.subtipo || "").toUpperCase()];
   if (!keys || !entry?.competencia) return null;
@@ -143,7 +145,6 @@ async function acrescimoDoEntry(client, portalClientId, entry) {
 // ── Baixa parcial por quota (IRPJ/CSLL trimestral: até 3 quotas com saldo) ───────────────
 // O PRINCIPAL abatido por uma baixa = débitos que NÃO são acréscimo (juros 501 / multa 506).
 // Assim uma baixa parcial só amortiza o passivo da provisão; juros/multa de quota não contam no saldo.
-const CONTAS_ACRESCIMO = new Set([CONTA_JUROS, CONTA_MULTA]); // 501, 506
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 function principalAbatidoDaBaixa(baixa) {
   const lines = baixa?.lines || [];
@@ -727,7 +728,15 @@ export function createAccountingEntriesRouter({ log }) {
       }),
       prisma.companyMonthlyCircular.findMany({
         where: { portalClientId, competencia: { in: meses } },
-        select: { competencia: true, dasTotal: true, acrescimos: true },
+        select: {
+          competencia: true, dasTotal: true, acrescimos: true,
+          // Os PDFs do extrato existem no storage desde sempre; o que faltava era a Circular saber
+          // que existem para oferecer o botão. Só o ID viaja — a URL gravada é `file:///…` no
+          // provider LOCAL, inútil no browser; quem serve o arquivo é a rota `/pgdas/:comp/pdf`.
+          pgdasDeclaracaoFileId: true, pgdasReciboFileId: true,
+          // Extrato zerado marca o mês; a Circular mostra isso junto do que veio (ou não veio).
+          semFaturamento: true,
+        },
       }),
       prisma.guide.findMany({
         where: {
@@ -764,7 +773,24 @@ export function createAccountingEntriesRouter({ log }) {
           include: { lines: { orderBy: { ordem: "asc" } } },
         })
       : [];
-    const inssBaixaByGuide = new Map(inssBaixas.map((b) => [b.sourceGuideId, b]));
+    // ⚠ UMA GUIA PODE TER TRÊS BAIXAS — principal, juros e multa são lançamentos separados.
+    //
+    // Aqui havia `new Map(inssBaixas.map((b) => [b.sourceGuideId, b]))`, que guarda só a ÚLTIMA:
+    // a Circular enxergava uma baixa de três, e "Cancelar baixa" mandava esse id sozinho —
+    // apagando um lançamento (provavelmente o da multa) e deixando os outros dois órfãos, com a
+    // guia reaberta. O agrupamento passa a ser por guia, e o PRINCIPAL vem primeiro porque é ele
+    // que a UI mostra como "a" baixa.
+    const inssBaixasByGuide = new Map();
+    for (const b of inssBaixas) {
+      if (!inssBaixasByGuide.has(b.sourceGuideId)) inssBaixasByGuide.set(b.sourceGuideId, []);
+      inssBaixasByGuide.get(b.sourceGuideId).push(b);
+    }
+    for (const lista of inssBaixasByGuide.values()) {
+      // Sufixo no histórico é o que distingue os três (" (juros)" / " (multa)") — o principal não
+      // tem sufixo, então ele é o que NÃO casa.
+      lista.sort((a, b) => Number(/\((juros|multa)\)/i.test(a.historico)) - Number(/\((juros|multa)\)/i.test(b.historico)));
+    }
+    const inssBaixaByGuide = new Map([...inssBaixasByGuide].map(([guiaId, lista]) => [guiaId, lista[0]]));
 
     const receitasPorComp = {};
     for (const e of receitas) {
@@ -832,6 +858,19 @@ export function createAccountingEntriesRouter({ log }) {
     const acrescimosByMonth = {};
     for (const c of circulars) {
       if (c?.acrescimos && typeof c.acrescimos === "object") acrescimosByMonth[c.competencia] = c.acrescimos;
+    }
+
+    // O extrato de cada mês: quais PDFs existem e se o mês foi declarado sem faturamento. É o que
+    // permite à Circular mostrar "declaração zerada" em vez de uma linha vazia idêntica a
+    // "ninguém buscou nada".
+    const extratoByMonth = {};
+    for (const c of circulars) {
+      if (!c?.pgdasDeclaracaoFileId && !c?.pgdasReciboFileId && !c?.semFaturamento) continue;
+      extratoByMonth[c.competencia] = {
+        temDeclaracao: Boolean(c.pgdasDeclaracaoFileId),
+        temRecibo: Boolean(c.pgdasReciboFileId),
+        semFaturamento: Boolean(c.semFaturamento),
+      };
     }
 
     // Provisões sintéticas a partir das guias INSS (não há lançamento contábil PROVISAO para INSS).
@@ -906,7 +945,9 @@ export function createAccountingEntriesRouter({ log }) {
           { id: null, entryId: null, conta: "INSS", tipo: "C", valor, ordem: 1, historico: null },
         ],
         // Q52.INSS: quando pago, expõe a baixa real (id p/ cancelar + entry completo p/ editar).
-        baixas: baixa ? [{ id: baixa.id }] : [],
+        // TODAS as baixas da guia: cancelar precisa apagar o lote inteiro (principal +
+        // juros + multa), senão sobram lançamentos órfãos com a guia reaberta.
+        baixas: (inssBaixasByGuide.get(g.id) || []).map((b) => ({ id: b.id })),
         baixaEntry,
         totalD: valor,
         totalC: valor,
@@ -981,7 +1022,7 @@ export function createAccountingEntriesRouter({ log }) {
             { id: null, entryId: null, conta: "DAS", tipo: "D", valor, ordem: 0, historico: null },
             { id: null, entryId: null, conta: "DAS", tipo: "C", valor, ordem: 1, historico: null },
           ],
-          baixas: baixa ? [{ id: baixa.id }] : [],
+          baixas: (inssBaixasByGuide.get(g.id) || []).map((b) => ({ id: b.id })),
           baixaEntry: baixa
             ? {
                 id: baixa.id, data: baixa.data, competencia: baixa.competencia,
@@ -1014,6 +1055,7 @@ export function createAccountingEntriesRouter({ log }) {
       ],
       receitas: receitasPorComp,
       acrescimos: acrescimosByMonth,
+      extrato: extratoByMonth,
     });
   });
 
@@ -1484,61 +1526,20 @@ export function createAccountingEntriesRouter({ log }) {
     const ok = req.body?.ok === true;
 
     try {
-      let conferencia = "sem_conferencia";
-      if (ok) {
-        // Mesma definição de faturamento que a apuração usa — importada, não copiada.
-        const faturamento = await faturamentoEmitDaCompetencia(portalClientId, competencia);
-        if (faturamento > 0) {
-          return res.status(409).json({
-            ok: false,
-            error: "SEM_FATURAMENTO_COM_RECEITA",
-            faturamento,
-            message: `A competência tem R$ ${faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em notas emitidas autorizadas. Não dá para marcar como sem faturamento.`,
-          });
-        }
-
-        // ⚠ Zero de faturamento e "não conseguimos ver o faturamento" são a MESMA leitura aqui.
-        // Município fora do ADN, A1 vencido ou cursor NSU travado devolvem zero sem que ninguém
-        // tenha provado ausência de receita. A conferência do ADN é a segunda fonte:
-        //
-        //  - `divergente` = o ADN tem chave que nós não temos. Isso não é falta de informação, é
-        //    PROVA de nota faltando → recusa, mesma trava que `salvarFechamento` já aplica.
-        //  - `nao_conferivel` / nunca conferida = aceita, mas GRAVA que foi aceita sem conferir.
-        //    Exigir conferência "ok" inutilizaria o campo em toda empresa de município fora do
-        //    ADN — justamente onde ele mais serve (decisão do dono).
-        const snap = await prisma.apuracaoSnapshot.findUnique({
-          where: { portalClientId_competencia: { portalClientId, competencia } },
-          select: { conferenciaStatus: true, conferenciaResultado: true },
-        });
-        const status = String(snap?.conferenciaStatus || "");
-        if (status === "divergente") {
-          const faltantes = Array.isArray(snap?.conferenciaResultado?.faltantes)
-            ? snap.conferenciaResultado.faltantes.length
-            : null;
-          return res.status(409).json({
-            ok: false,
-            error: "SEM_FATURAMENTO_CONFERENCIA_DIVERGENTE",
-            faltantes,
-            message: faltantes
-              ? `A conferência contra o ADN encontrou ${faltantes} nota(s) que o ADN tem e nós não. Resolva a divergência antes de afirmar que o mês não teve faturamento.`
-              : "A conferência contra o ADN está divergente. Resolva a divergência antes de afirmar que o mês não teve faturamento.",
-          });
-        }
-        conferencia = status === "ok" ? "ok" : (status ? "nao_conferivel" : "sem_conferencia");
-      }
-
-      const dados = ok
-        ? { semFaturamento: true, semFaturamentoEm: new Date(), semFaturamentoPor: req.auth?.user?.id || null, semFaturamentoConferencia: conferencia }
-        : { semFaturamento: false, semFaturamentoEm: null, semFaturamentoPor: null, semFaturamentoConferencia: null };
-
-      const existing = await prisma.companyMonthlyCircular.findUnique({
-        where: { portalClientId_competencia: { portalClientId, competencia } },
-        select: { id: true },
+      // ⚠ As duas recusas moram no SERVICE, não aqui. O extrato zerado do PGDAS-D marca por outro
+      // caminho, e uma trava que vive no handler HTTP não protege quem não passa por ele.
+      const r = await marcarSemFaturamento({
+        portalClientId,
+        competencia,
+        ok,
+        userId: req.auth?.user?.id || null,
+        origem: "manual",
       });
-      if (existing) await prisma.companyMonthlyCircular.update({ where: { id: existing.id }, data: dados });
-      else await prisma.companyMonthlyCircular.create({ data: { portalClientId, competencia, ...dados } });
-
-      return res.json({ ok: true, competencia, semFaturamento: ok, conferencia: ok ? conferencia : null });
+      if (!r.ok) {
+        const status = r.error === "competencia_required" ? 400 : 409;
+        return res.status(status).json(r);
+      }
+      return res.json({ ok: true, competencia, semFaturamento: r.semFaturamento, conferencia: r.conferencia });
     } catch (err) {
       log.error({ err, portalClientId, competencia }, "Falha ao marcar mês sem faturamento");
       return res.status(500).json({ ok: false, error: "internal_error" });

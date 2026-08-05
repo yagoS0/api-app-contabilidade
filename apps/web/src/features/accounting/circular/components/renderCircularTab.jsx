@@ -330,7 +330,11 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
   const isSynthetic = entry.synthetic === true;
   const valor = entry.valor || entry.totalD;
   // baixas existem quando parcial ou pago; usado tanto p/ cancelar a última quota quanto p/ INSS.
+  // ⚠ UMA GUIA PODE TER TRÊS BAIXAS (principal, juros, multa). `baixas[0]` é o principal — serve
+  // para saber SE existe baixa e para editar. Cancelar, não: cancelar um de três deixa dois
+  // lançamentos órfãos com a guia reaberta, então o cancelamento leva a lista inteira.
   const baixaId = entry.baixas?.[0]?.id ?? null;
+  const baixaIds = (entry.baixas || []).map((b) => b.id).filter(Boolean);
   const saldo = Number(entry.saldo);
 
   // Cor implícita do número:
@@ -443,7 +447,7 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           {/* "Dar baixa" — provisões reais E INSS sintético (Q47). Em PARCIAL, abre nova quota. */}
           {isOpenLike && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Dar baixa (próxima quota)" : "Dar baixa"}</button>}
           {/* "Cancelar baixa" — DAS/quota (provisão real) E INSS sintético (Q52). Em PARCIAL cancela a última quota. */}
-          {baixaId && onCancelBaixa && <button onClick={() => { setOpen(false); onCancelBaixa(baixaId); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Cancelar última quota" : "Cancelar baixa"}</button>}
+          {baixaId && onCancelBaixa && <button onClick={() => { setOpen(false); onCancelBaixa(baixaIds); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Cancelar última quota" : (baixaIds.length > 1 ? `Cancelar baixa (${baixaIds.length} lançamentos)` : "Cancelar baixa")}</button>}
           {onVincular && !isSynthetic && (
             isVinculado ? (
               <button onClick={() => { setOpen(false); onDesvincular(entry); }} style={{ ...menuBtn, color: "#FFB347" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Desvincular do parcelamento</button>
@@ -482,7 +486,65 @@ function FaturamentoCell({ valor }) {
 
 const circularApi = createApiClient();
 
+/**
+ * O EXTRATO do mês, na coluna do mês.
+ *
+ * Os PDFs da declaração e do recibo do PGDAS-D já eram salvos no storage desde sempre — só não
+ * havia rota que os servisse, então ficavam guardados e invisíveis. É aqui que eles aparecem: ao
+ * lado do mês, junto do que foi gerado a partir deles.
+ *
+ * ⚠ E é aqui que a DECLARAÇÃO ZERADA deixa de ser silêncio. Um extrato sem valor não gera
+ * lançamento nenhum (`amount > 0` no gerador), então a linha do mês ficava idêntica à de um mês em
+ * que ninguém buscou nada. O selo "zerado" é a diferença entre "não há imposto" e "não sabemos".
+ */
+function ExtratoDoMes({ comp, info, companyId }) {
+  const [erro, setErro] = useState("");
+  if (!info) return null;
+
+  async function abrir(tipo) {
+    setErro("");
+    try {
+      const blob = await circularApi.fetchPgdasPdfBlob(companyId, comp, tipo);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      // O Railway apaga o filesystem a cada deploy sem volume: "registro existe, arquivo não" é
+      // caso real. Avisa em vez de quebrar — mesmo tratamento da aba Situação Fiscal.
+      setErro(e?.message || "O arquivo não está mais no armazenamento.");
+    }
+  }
+
+  const link = {
+    background: "none", border: "none", padding: 0, cursor: "pointer",
+    font: "inherit", fontSize: "0.62rem", color: "#8BE9FD", textDecoration: "underline",
+  };
+
+  return (
+    <span style={{ display: "block", marginTop: 2, fontWeight: 400, whiteSpace: "nowrap" }}>
+      {info.semFaturamento && (
+        <span title="Declaração do PGDAS-D transmitida sem valor — o mês foi marcado como sem faturamento"
+          style={{ fontSize: "0.62rem", color: "#A7B0C0", marginRight: 6 }}>
+          ◌ zerado
+        </span>
+      )}
+      {info.temDeclaracao && (
+        <button type="button" onClick={() => abrir("declaracao")} style={link} title="Extrato da declaração (PDF)">
+          extrato
+        </button>
+      )}
+      {info.temRecibo && (
+        <button type="button" onClick={() => abrir("recibo")} style={{ ...link, marginLeft: 6 }} title="Recibo da declaração (PDF)">
+          recibo
+        </button>
+      )}
+      {erro && <span style={{ display: "block", fontSize: "0.6rem", color: "#FF5757" }}>{erro}</span>}
+    </span>
+  );
+}
+
 export function CircularTab({
+  companyId,
   circularData,
   loading,
   year,
@@ -668,11 +730,20 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
     if (r2(principal) <= 0 && r2(juros) <= 0 && r2(multa) <= 0) return null;
     return { principal: r2(principal), juros: r2(juros), multa: r2(multa), acrescimo: r2(juros + multa) };
   }
-  async function handleCancelBaixa(baixaId) {
+  // Recebe UM id ou a LISTA de ids do lote (principal + juros + multa). Cancelar parcialmente
+  // deixaria lançamentos órfãos e a guia reaberta — o pior dos dois mundos.
+  async function handleCancelBaixa(ids) {
     if (!onCancelBaixa) return;
-    setCancellingBaixaId(baixaId);
+    const lista = Array.isArray(ids) ? ids.filter(Boolean) : [ids].filter(Boolean);
+    if (!lista.length) return;
+    setCancellingBaixaId(lista[0]);
     try {
-      await onCancelBaixa(baixaId);
+      // Sequencial de propósito: a rota reabre a guia ao apagar, e disparar em paralelo deixaria a
+      // ordem das reaberturas ao acaso.
+      for (const id of lista) {
+        // eslint-disable-next-line no-await-in-loop
+        await onCancelBaixa(id);
+      }
       await onLoad(year, competencia);
     } finally {
       setCancellingBaixaId(null);
@@ -778,7 +849,10 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                 const aberto = abertoByMonth[comp];
                 const rows = [(
                   <tr key={comp}>
-                    <td style={monthStickyStyle}>{MONTH_LABELS[i]}/{yy}</td>
+                    <td style={monthStickyStyle}>
+                      {MONTH_LABELS[i]}/{yy}
+                      <ExtratoDoMes comp={comp} info={circularData.extrato?.[comp]} companyId={companyId} />
+                    </td>
                     {visibleRows.map((col) => (
                       <PagamentoCell
                         key={col.key}

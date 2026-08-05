@@ -74,8 +74,8 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
 
   const comprovantePdfFileId = await salvarComprovante({ guide, result, logger });
   await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId });
-  await gerarBaixaSePreciso({ guide, userId, logger });
-  return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId };
+  const baixa = await gerarBaixaSePreciso({ guide, comprovante: result?.comprovante, userId, logger });
+  return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId, baixa };
 }
 
 /**
@@ -151,17 +151,52 @@ async function salvarComprovante({ guide, result, logger }) {
   }
 }
 
-/** Baixa contábil (best-effort, idempotente): INSS e parcelas geram lançamento de pagamento. */
-async function gerarBaixaSePreciso({ guide, userId, logger }) {
+/**
+ * Baixa contábil (best-effort, idempotente): INSS e parcelas geram lançamento de pagamento.
+ *
+ * ⚠ O RATEIO DO COMPROVANTE ATRAVESSA. Antes esta função chamava a baixa do INSS SEM linhas, e o
+ * serviço caía no caminho de lançamento único pelo `guide.valor` — que numa guia em atraso já inclui
+ * juros e multa. Isso debitava "INSS a Recolher" pelo total, amortizando o passivo por mais do que
+ * foi provisionado e enterrando despesa do mês do pagamento dentro do principal. Não era um
+ * problema de apresentação: o saldo da conta ficava errado.
+ *
+ * O comprovante já traz a quebra validada (`parseComprovanteArrecadacao` só devolve os três
+ * componentes quando `principal + juros + multa` fecha com o total). Passando o rateio, a separação
+ * que já existe faz o resto.
+ *
+ * Quando a quebra NÃO é confiável, o serviço se recusa a lançar (`sem_rateio_do_acrescimo`) e a
+ * guia fica paga sem lançamento, para o contador dar a baixa pelo modal — que separa. É a regra 5:
+ * nunca gravar ato contábil por suposição.
+ */
+async function gerarBaixaSePreciso({ guide, comprovante, userId, logger }) {
   const tipoUpper = String(guide.tipo || "").toUpperCase();
   try {
     if (guide.parcelamentoId) {
-      await gerarPagamentoParcelaFromGuide({ portalClientId: guide.portalClientId, guideId: guide.id, userId });
-    } else if (tipoUpper === "INSS") {
-      await gerarPagamentoInssFromGuide({ portalClientId: guide.portalClientId, guideId: guide.id, userId });
+      return await gerarPagamentoParcelaFromGuide({ portalClientId: guide.portalClientId, guideId: guide.id, userId });
     }
+    if (tipoUpper === "INSS") {
+      const rateio = comprovante?.confiavel
+        ? { principal: comprovante.principal, juros: comprovante.juros, multa: comprovante.multa }
+        : null;
+      const r = await gerarPagamentoInssFromGuide({
+        portalClientId: guide.portalClientId, guideId: guide.id, userId,
+        dataPagamento: comprovante?.dataArrecadacao || undefined,
+        rateio,
+      });
+      if (r?.reason === "sem_rateio_do_acrescimo") {
+        // Não é falha: é recusa consciente. Precisa aparecer, senão o contador não sabe que sobrou
+        // trabalho — e "guia paga sem lançamento" é indistinguível de "esqueci de lançar".
+        logger?.warn?.(
+          { guideId: guide.id, competencia: guide.competencia, confiavel: comprovante?.confiavel ?? null },
+          "PAGTOWEB: baixa do INSS NÃO lançada — guia em atraso sem rateio confiável de juros/multa",
+        );
+      }
+      return r;
+    }
+    return { skipped: true, reason: "tipo_sem_baixa_automatica" };
   } catch (err) {
     logger?.warn?.({ err: err?.message, guideId: guide.id }, "PAGTOWEB: baixa contábil não gerada (segue)");
+    return { skipped: true, reason: "erro", message: err?.message };
   }
 }
 

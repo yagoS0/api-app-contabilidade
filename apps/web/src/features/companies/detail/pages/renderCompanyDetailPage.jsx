@@ -478,6 +478,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
           <ErrorBoundary>
           <Suspense fallback={<TabLoadingFallback />}>
           <CircularTab
+            companyId={companyId}
             companyRegime={companyRegime}
             circularData={circularPanel.circularData}
             loading={circularPanel.loading}

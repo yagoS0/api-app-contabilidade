@@ -71,6 +71,50 @@ eles são **despesa do mês do pagamento**. Componente zerado **não** gera lan�
   parcelamento V2 (que já usava `criarLancamentosIndividuais`).
 - Legado: `scripts/separar-baixas-agrupadas.mjs` separa baixas antigas que ficaram agrupadas.
 
+### ⚠ Como a regra estava furada na prática (e os quatro furos)
+
+A regra existia, estava documentada e implementada — e o INSS em atraso continuava saindo em bloco.
+
+1. **`papel` era descartado antes de ser lido.** `InssPagamentoService` remapeava as linhas do modal
+   para `{conta, tipo, valor, ordem}` e **perdia o `papel`**; `separarPorPapel` então via toda linha
+   sem papel, tratava tudo como principal, achava UM grupo e caía no lançamento único. O modal
+   estava certo o tempo todo. Era a causa raiz.
+2. **O worker de pagamento chamava sem linhas** (`SerproPaymentConfirmationService`), gerando um
+   entry pelo **valor cheio da guia** — que em atraso já inclui juros e multa. Isso amortizava o
+   passivo por mais do que foi provisionado. Hoje o **rateio do comprovante atravessa**
+   (`gerarPagamentoInssFromGuide({rateio})`) e a separação existente faz o resto.
+3. **`acr.contaJuros` sem optional chaining** no modal derrubava o pré-preenchimento com um
+   `TypeError` engolido por um `.catch(() => {})` — quando o acréscimo vinha do comprovante e não da
+   circular. Sem erro na tela: o contador via um modal "normal" com duas linhas.
+4. **`if (!tpl) return`** descartava o comprovante inteiro em empresa sem folha lançada. Sem template
+   falta só a CONTA; os valores continuam válidos.
+
+⚠ **Guia paga em ATRASO sem rateio confiável NÃO gera lançamento** (`sem_rateio_do_acrescimo`).
+`parseComprovanteArrecadacao` só devolve a quebra quando a soma fecha com o total; sem ela, dividir
+o acréscimo entre 501 e 506 seria inventar. Pago em dia segue com um lançamento só — ali não há
+acréscimo a separar. Decisão do dono, regra 5.
+
+⚠ **Uma guia tem até TRÊS baixas.** O `Map` por `sourceGuideId` na Circular guardava só a última, e
+"Cancelar baixa" apagava um lançamento deixando dois órfãos com a guia reaberta. Hoje `baixas[]`
+traz o lote inteiro (o principal primeiro) e o cancelamento leva todos.
+
+Contas de acréscimo: **`contasAcrescimo.js`** (501 juros / 506 multa). Estavam escritas em quatro
+lugares — rota, script, serviço e literal no front.
+
+## "Mês sem faturamento" — as travas moram no service
+
+`semFaturamento.js` → `marcarSemFaturamento({portalClientId, competencia, ok, userId, origem})`.
+
+As duas recusas (`SEM_FATURAMENTO_COM_RECEITA`, `SEM_FATURAMENTO_CONFERENCIA_DIVERGENTE`) viviam
+dentro do handler HTTP. Isso bastava enquanto o único caminho era o clique do contador — mas o
+**extrato zerado do PGDAS-D passou a marcar sozinho**, e um caminho automático gravando direto no
+Prisma nasceria sem nenhuma das duas.
+
+- Recusa é **retorno**, não exceção: o caminho automático precisa seguir a captura normalmente
+  depois de uma recusa.
+- No automático, **`semFaturamentoPor: null`** — quem afirma é a declaração transmitida à Receita,
+  não uma pessoa. Carimbar um usuário seria atribuir a alguém uma afirmação que ele não fez.
+
 ## Valor corrigido pelo contador manda
 
 Ao editar o valor de um tributo na Circular, as LINHAS do lançamento acompanham (`edicaoManual` em

@@ -140,6 +140,20 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
     }
   }
 
+  // O PDF vem por blob autenticado, não por `<a href>`: a rota exige o token no header, e a URL
+  // gravada no banco é `file:///…` quando o storage é LOCAL.
+  async function abrirExtratoPdf(tipo) {
+    try {
+      const blob = await api.fetchPgdasPdfBlob?.(companyId, competencia, tipo);
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      feedback?.notifyError?.(err?.message || "O arquivo não está mais no armazenamento.");
+    }
+  }
+
   // ── Sugestão (state no pai → sobrevive à troca de sub-aba) ─────────────
   const [sugData, setSugData] = useState(null);
   const [sugLoading, setSugLoading] = useState(false);
@@ -226,11 +240,17 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                 <Kpi label="Receita bruta" value={`${fmtMoney(extDados.receitaBruta)}`} />
                 <Kpi label="DAS (Receita)" value={`${fmtMoney(extDados.dasTotal ?? extDados.impostoApurado)}`} cor="#8BE9FD" />
-                {extrato?.files?.declaracaoUrl && (
-                  <a href={extrato.files.declaracaoUrl} target="_blank" rel="noreferrer" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>Declaração (PDF)</a>
+                {/* ⚠ Estes dois botões existiam e NUNCA apareciam: liam `files.declaracaoUrl`, e o
+                    backend devolve `files.declaracaoFileId`. O campo errado é sempre `undefined`,
+                    então a condição nunca era verdadeira — botão escrito, nunca renderizado.
+                    E não dá para usar a URL mesmo quando ela existe: com o provider LOCAL ela é
+                    `file:///…`. Quem serve o arquivo é a rota `/pgdas/:competencia/pdf`, com o
+                    token no header — por isso blob, não `<a href>`. */}
+                {extrato?.files?.declaracaoFileId && (
+                  <button type="button" onClick={() => abrirExtratoPdf("declaracao")} style={btnGhost}>Declaração (PDF)</button>
                 )}
-                {extrato?.files?.reciboUrl && (
-                  <a href={extrato.files.reciboUrl} target="_blank" rel="noreferrer" style={{ ...btnGhost, display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>Recibo (PDF)</a>
+                {extrato?.files?.reciboFileId && (
+                  <button type="button" onClick={() => abrirExtratoPdf("recibo")} style={btnGhost}>Recibo (PDF)</button>
                 )}
               </div>
             )}

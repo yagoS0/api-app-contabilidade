@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 
+// Mesmos códigos do backend (`application/accounting/contasAcrescimo.js`). Ficavam como literais
+// "501"/"506" soltos aqui — quarta cópia de um código de conta que já divergia em três lugares.
+const CONTA_JUROS = "501";
+const CONTA_MULTA = "506";
+
 const SUBTIPO_LABELS = {
   DAS: "DAS / Simples Nacional",
   IRRF: "IRRF",
@@ -37,7 +42,11 @@ function LineEditor({ lines, onChange, accounts }) {
     onChange(lines.filter((_, i) => i !== idx));
   }
   function addLine(tipo) {
-    onChange([...lines, { tipo, conta: "", valor: "" }]);
+    // Débito nasce como PRINCIPAL — mesmo default do backend para linha sem papel, então o que a
+    // tela mostra é o que vai acontecer. Antes a linha nascia SEM papel e não havia como marcá-la:
+    // o contador digitava juros como linha extra e o backend, por não ver papel, tratava tudo como
+    // principal e devolvia um lançamento em bloco.
+    onChange([...lines, { tipo, conta: "", valor: "", papel: tipo === "D" ? "PRINCIPAL" : undefined }]);
   }
 
   const totalD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
@@ -53,6 +62,9 @@ function LineEditor({ lines, onChange, accounts }) {
         <thead>
           <tr style={{ background: "#282A36" }}>
             <th style={{ padding: "4px 6px", width: 52, textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>D/C</th>
+            {/* O papel é o que decide se a baixa sai em um lançamento ou em três. Ficava invisível:
+                só o pré-preenchimento sabia marcá-lo, e linha digitada à mão ia sem nada. */}
+            <th style={{ padding: "4px 6px", width: 104, textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>Papel</th>
             <th style={{ padding: "4px 6px", textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>Conta</th>
             <th style={{ padding: "4px 6px", width: 120, textAlign: "right", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>Valor (R$)</th>
             <th style={{ padding: "4px 6px", width: 28 }} />
@@ -67,6 +79,24 @@ function LineEditor({ lines, onChange, accounts }) {
                   <option value="D">D</option>
                   <option value="C">C</option>
                 </select>
+              </td>
+              <td style={{ padding: "2px 4px" }}>
+                {/* Só o débito tem papel — o crédito é sempre a contrapartida (caixa/banco), e cada
+                    lançamento separado credita o SEU total. */}
+                {l.tipo === "D" ? (
+                  <select
+                    value={l.papel || "PRINCIPAL"}
+                    onChange={(e) => updateLine(i, "papel", e.target.value)}
+                    title="Principal amortiza o passivo; juros e multa são despesa do mês do pagamento e viram lançamentos próprios."
+                    style={{ ...INPUT, width: "100%" }}
+                  >
+                    <option value="PRINCIPAL">Principal</option>
+                    <option value="JUROS">Juros</option>
+                    <option value="MULTA">Multa</option>
+                  </select>
+                ) : (
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-faint)" }}>contrapartida</span>
+                )}
               </td>
               <td style={{ padding: "2px 4px" }}>
                 <input
@@ -109,7 +139,7 @@ function LineEditor({ lines, onChange, accounts }) {
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={2} style={{ padding: "4px 6px", fontSize: "0.75rem" }}>
+            <td colSpan={3} style={{ padding: "4px 6px", fontSize: "0.75rem" }}>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => addLine("D")}
                   style={{ fontSize: "0.7rem", background: "rgba(139,233,253,0.12)", color: "#8BE9FD", border: "1px solid #8BE9FD", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
@@ -189,12 +219,23 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         setSaldoInfo(res?.saldoInfo || null);
         setQuotaNumero(res?.quotaNumero || 1);
         const tpl = res?.template;
-        if (!tpl) return;
+        // ⚠ Sem template NÃO se descarta o comprovante.
+        //
+        // Aqui havia `if (!tpl) return;` antes de qualquer uso do comprovante. Empresa sem folha
+        // lançada devolve `template: null` (`reason: "sem_conta_folha"`), e com isso o rateio
+        // INTEIRO — principal, juros e multa, já validado contra o total — ia para o lixo. O modal
+        // abria com as duas linhas padrão e o contador salvava um bloco só, sem ver erro nenhum.
+        //
+        // O que falta sem template é apenas a CONTA de débito; os valores continuam válidos. Então
+        // o pré-preenchimento acontece de qualquer jeito, com a conta em branco para o contador
+        // escolher — que é infinitamente melhor que perder a separação.
+        if (!tpl && !comprovante) return;
+
         // Baixa parcial: tpl.valor já vem como o SALDO restante (não o principal cheio).
         // Comprovante do SERPRO vence a estimativa da circular: são os valores efetivamente pagos.
         const principal = comprovante?.principal != null
           ? Number(comprovante.principal)
-          : (Number(tpl.valor || valorBase) || 0);
+          : (Number(tpl?.valor || valorBase) || 0);
         const juros = comprovante?.juros != null ? Number(comprovante.juros) : (Number(acr?.juros) || 0);
         const multa = comprovante?.multa != null ? Number(comprovante.multa) : (Number(acr?.multa) || 0);
         const acrescimoTotal = Math.round((juros + multa) * 100) / 100;
@@ -203,13 +244,19 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         // `papel` marca o que cada linha representa. O backend usa isso pra separar a baixa em
         // lançamentos independentes (principal / juros / multa) — derivar pelo número da conta não
         // serviria, porque o contador pode trocar a conta aqui no modal.
-        const newLines = [{ tipo: "D", conta: tpl.debitAccountCode || "", valor: principal.toFixed(2), papel: "PRINCIPAL" }];
-        if (juros > 0) newLines.push({ tipo: "D", conta: acr.contaJuros || "501", valor: juros.toFixed(2), papel: "JUROS" });
-        if (multa > 0) newLines.push({ tipo: "D", conta: acr.contaMulta || "506", valor: multa.toFixed(2), papel: "MULTA" });
-        newLines.push({ tipo: "C", conta: tpl.creditAccountCode || "", valor: (principal + acrescimoTotal).toFixed(2), papel: "CAIXA" });
+        //
+        // ⚠ `acr?.` — SEM o optional chaining isto derrubava tudo em silêncio. Quando o acréscimo
+        // vem do COMPROVANTE e não da circular, `res.acrescimo` é `null`, e `acr.contaJuros`
+        // lançava `TypeError` — engolido pelo `.catch()` lá embaixo. `setLines` nunca rodava, o
+        // modal ficava com as duas linhas padrão, e o contador não via erro nenhum: via um modal
+        // "normal" que produzia um lançamento em bloco.
+        const newLines = [{ tipo: "D", conta: tpl?.debitAccountCode || "", valor: principal.toFixed(2), papel: "PRINCIPAL" }];
+        if (juros > 0) newLines.push({ tipo: "D", conta: acr?.contaJuros || CONTA_JUROS, valor: juros.toFixed(2), papel: "JUROS" });
+        if (multa > 0) newLines.push({ tipo: "D", conta: acr?.contaMulta || CONTA_MULTA, valor: multa.toFixed(2), papel: "MULTA" });
+        newLines.push({ tipo: "C", conta: tpl?.creditAccountCode || "", valor: (principal + acrescimoTotal).toFixed(2), papel: "CAIXA" });
         setLines(newLines);
-        if (tpl.historico) setHistorico(tpl.historico);
-        setTemplateApplied(tpl.scope || "GLOBAL");
+        if (tpl?.historico) setHistorico(tpl.historico);
+        if (tpl) setTemplateApplied(tpl.scope || "GLOBAL");
       })
       .catch(() => { /* silencioso — fallback ao comportamento manual */ });
     return () => { canceled = true; };

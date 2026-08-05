@@ -3772,6 +3772,48 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
   );
 
+  // O EXTRATO do Simples (declaração e recibo do PGDAS-D) em PDF.
+  //
+  // Os arquivos já eram salvos no storage desde sempre (`saveBase64Pdf`), mas **não havia rota que
+  // os servisse** — ficavam guardados e invisíveis, e por isso pareciam não estar sendo salvos.
+  //
+  // ⚠ Serve pelo `*FileId` (chave do storage), NUNCA pelo `*FileUrl`: com o provider LOCAL a URL
+  // gravada é `file:///…`, inútil no browser.
+  //
+  // Molde idêntico ao do SITFIS logo acima, inclusive no tratamento de arquivo ausente: o Railway
+  // apaga o filesystem a cada deploy sem volume montado, então "registro existe, arquivo não" é um
+  // caso REAL e não pode quebrar a tela.
+  router.get(
+    "/companies/:companyId/pgdas/:competencia/pdf",
+    requireFirmCompanyAccess(),
+    async (req, res) => {
+      const portalCompanyId = String(req.params.companyId || "").trim();
+      const competencia = String(req.params.competencia || "").trim();
+      const tipo = String(req.query?.tipo || "declaracao").toLowerCase();
+      if (!/^\d{4}-\d{2}$/.test(competencia)) return res.status(400).json({ error: "competencia_required" });
+      if (tipo !== "declaracao" && tipo !== "recibo") return res.status(400).json({ error: "tipo_invalido" });
+
+      const circular = await prisma.companyMonthlyCircular.findUnique({
+        where: { portalClientId_competencia: { portalClientId: portalCompanyId, competencia } },
+        select: { pgdasDeclaracaoFileId: true, pgdasReciboFileId: true },
+      });
+      const key = tipo === "recibo" ? circular?.pgdasReciboFileId : circular?.pgdasDeclaracaoFileId;
+      if (!key) return res.status(404).json({ error: "pdf_not_available" });
+
+      try {
+        const buf = await GuideStorageService.create().downloadBuffer({ key });
+        if (!buf?.length) return res.status(404).json({ error: "pdf_not_available" });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename="${sanitizeFilename(`pgdas-${tipo}-${competencia}.pdf`)}"`);
+        res.setHeader("Cache-Control", "private, max-age=300");
+        return res.send(buf);
+      } catch (err) {
+        log.warn({ err: err?.message, portalCompanyId, competencia, tipo }, "PGDAS: falha ao ler PDF do storage");
+        return res.status(404).json({ error: "pdf_not_available" });
+      }
+    }
+  );
+
   // Q40 Fase C: relatório de situação fiscal (SITFIS) por empresa. Resolve o polling inline (≤~28s);
   // grava a última consulta em CompanyFiscalStatus. Se não ficar pronto, responde processando=true.
   router.post(

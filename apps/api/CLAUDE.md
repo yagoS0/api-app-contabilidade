@@ -369,6 +369,30 @@ estiver desligada a rotina nunca rodou, e nenhum dado do script explica coisa al
 também **não grava log de execução** no banco (diferente dos workers SERPRO, que gravam
 `SerproExecutionLog`), então o estado por empresa é a única evidência que sobra.
 
+## Extrato do Simples: salvo, visível, e o zerado marca o mês
+
+Os PDFs da declaração e do recibo do PGDAS-D **sempre foram salvos** (`saveBase64Pdf` →
+`GuideStorageService`, ids em `CompanyMonthlyCircular.pgdasDeclaracaoFileId`/`pgdasReciboFileId`) e o
+payload bruto fica em `metadata`. O que não existia era **rota que os servisse** — ficavam guardados
+e invisíveis, e por isso pareciam não estar sendo salvos.
+
+- `GET /firm/companies/:id/pgdas/:competencia/pdf?tipo=declaracao|recibo` — molde do SITFIS,
+  inclusive no tratamento de arquivo ausente (sem volume no Railway, "registro existe, arquivo não"
+  é caso real).
+- ⚠ **Sempre pelo `*FileId`, nunca pelo `*FileUrl`**: com provider LOCAL a URL é `file:///…`.
+- O front lia `files.declaracaoUrl` e o backend devolve `files.declaracaoFileId` — o botão
+  "Declaração (PDF)" da Apuração existia e **nunca renderizava**.
+
+**Declaração ZERADA marca "Mês sem faturamento".** `generateEntriesFromCircular` só gera evento com
+`amount > 0`, então um extrato zerado produzia zero lançamento e deixava a aba Lançamentos idêntica
+a "ninguém buscou nada". A declaração transmitida à Receita é prova mais forte que o checkbox do
+contador, então ela marca sozinha — passando pelo `marcarSemFaturamento`, com as **mesmas duas
+travas** do caminho manual (ver `application/accounting/CLAUDE.md`).
+
+⚠ **Só o zerado TRANSMITIDO marca.** O caminho `NOT_FOUND` (nenhuma declaração no período) não
+marca: ali não existe declaração, e não há o que afirmar. Recusa não é erro do sync — grava o
+conflito em `metadata.semFaturamentoRecusado` e a captura segue.
+
 ## ⚠ Armazenamento de PDFs — exige Volume no Railway
 
 Provider default = **LOCAL** (`GUIDE_LOCAL_STORAGE_DIR`, default `./storage/guides` → `/app/storage/guides`).
