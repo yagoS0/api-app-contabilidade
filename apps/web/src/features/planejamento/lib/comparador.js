@@ -1,0 +1,141 @@
+// COMPARADOR DE REGIMES — responde "qual sai mais barato", com as premissas à vista.
+//
+// ⚠ O QUE ESTE MÓDULO NÃO FAZ: escolher o regime. Ele calcula e ordena; a decisão é do contador, e
+// depende de coisas que o simulador não vê (obrigações acessórias, crédito de ICMS do cliente,
+// planejamento sucessório, risco de fiscalização). A tela chama isso de "simulação de apoio à
+// decisão", nunca de parecer.
+
+import { custoAnualSimples, anexoPorFatorR, folhaParaFatorR } from "./simplesNacional";
+import { custoAnualPresumido } from "./lucroPresumido";
+import { PIS_COFINS_NAO_CUMULATIVO, IRPJ, CSLL_ALIQUOTA, ENCARGOS_FOLHA, FONTES_VERIFICADAS_EM } from "./tabelasFiscais";
+
+/**
+ * LUCRO REAL — FONTES_FISCAIS §3.
+ *
+ * ⚠ DEPENDE DE DOIS DADOS QUE O SISTEMA NÃO PODE PRESUMIR: a margem real e o volume de créditos de
+ * PIS/COFINS sobre insumos. Sem eles não há resultado — devolve `indisponivel` com o que falta, em
+ * vez de um número que pareceria comparável e não seria. Foi para isso que o documento de fontes
+ * abriu um alerta de escopo.
+ */
+export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCofins = null, folhaAnual = 0, aliquotaIss = null }) {
+  if (margemLucro == null || creditosPisCofins == null) {
+    return {
+      regime: "Lucro Real",
+      indisponivel: true,
+      faltam: [
+        margemLucro == null ? "a margem de lucro real (lucro ÷ receita)" : null,
+        creditosPisCofins == null ? "o valor anual de créditos de PIS/COFINS sobre insumos" : null,
+      ].filter(Boolean),
+      motivo: "O Lucro Real não se estima: sem a margem e os créditos, qualquer número aqui seria chute.",
+    };
+  }
+
+  const receita = Number(receitaAnual) || 0;
+  const lucro = receita * Number(margemLucro);
+  const irpj = lucro * IRPJ.aliquota;
+  const adicional = Math.max(0, lucro / 4 - IRPJ.limiteAdicionalTrimestral) * IRPJ.adicional * 4;
+  const csll = lucro * CSLL_ALIQUOTA;
+  const pisCofinsBruto = receita * PIS_COFINS_NAO_CUMULATIVO.total;
+  // Crédito não gera saldo negativo de imposto na simulação: o que passa vira crédito acumulado,
+  // que é outro assunto (e outro fluxo de caixa).
+  const pisCofins = Math.max(0, pisCofinsBruto - Number(creditosPisCofins));
+  const cpp = (Number(folhaAnual) || 0) * ENCARGOS_FOLHA.cppPatronal;
+  const iss = aliquotaIss == null ? 0 : receita * Number(aliquotaIss);
+  const total = irpj + adicional + csll + pisCofins + cpp + iss;
+
+  return {
+    regime: "Lucro Real",
+    porTributo: { irpj, adicionalIrpj: adicional, csll, pisCofins, cpp, ...(aliquotaIss == null ? {} : { iss }) },
+    total,
+    cargaEfetiva: receita > 0 ? total / receita : null,
+    premissas: [
+      `Margem de lucro informada: ${(Number(margemLucro) * 100).toFixed(1).replace(".", ",")}%`,
+      `PIS/COFINS não cumulativo (9,25%) menos ${brl(creditosPisCofins)} de créditos informados`,
+      "Compensação de prejuízos fiscais NÃO considerada (trava de 30% — Lei 9.065/1995, art. 15)",
+    ],
+    naoConsiderado: ["Compensação de prejuízo fiscal acumulado", "ICMS e substituição tributária"],
+  };
+}
+
+/**
+ * Compara os regimes viáveis e ordena do mais barato ao mais caro.
+ *
+ * ⚠ `anexoSimples` pode vir do FATOR R quando a atividade está sujeita a ele (§ 5º-M): aí o anexo
+ * não é escolha, é consequência da folha — e o resultado traz a margem, porque é o alavancador de
+ * planejamento mais direto que existe no Simples.
+ */
+export function compararRegimes({
+  receitaAnual, rbt12 = null, folhaAnual = 0,
+  anexoSimples = null, sujeitoAoFatorR = false,
+  atividadePresumido = "servicos", aliquotaIss = null,
+  margemLucro = null, creditosPisCofins = null,
+  anoBase = 2026,
+}) {
+  const rbt = rbt12 == null ? receitaAnual : rbt12;
+
+  // Sujeito ao Fator R: o anexo sai da folha, não de uma escolha.
+  const anexoResolvido = sujeitoAoFatorR ? anexoPorFatorR(folhaAnual, rbt) : anexoSimples;
+
+  const simples = anexoResolvido
+    ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual })
+    : null;
+  const presumido = custoAnualPresumido({ receitaAnual, atividade: atividadePresumido, folhaAnual, aliquotaIss, anoBase });
+  const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss });
+
+  const candidatos = [simples, presumido, real].filter(Boolean);
+  const comparaveis = candidatos.filter((c) => !c.indisponivel && c.elegivel !== false);
+  comparaveis.sort((a, b) => a.total - b.total);
+
+  const vencedor = comparaveis[0] || null;
+  const segundo = comparaveis[1] || null;
+
+  return {
+    // A tela MOSTRA esta data: simulação sem vigência envelhece calada, e 2026 mudou três vezes.
+    fontesVerificadasEm: FONTES_VERIFICADAS_EM,
+    anoBase,
+    regimes: candidatos,
+    vencedor,
+    // A economia só existe se houver com quem comparar — com um regime só, não há "economia".
+    economiaAnual: vencedor && segundo ? segundo.total - vencedor.total : null,
+    fatorR: sujeitoAoFatorR ? folhaParaFatorR(folhaAnual, rbt) : null,
+    anexoResolvido,
+    // ⚠ Aviso obrigatório: o produto entrega simulação de apoio, não parecer tributário.
+    aviso: "Simulação de apoio à decisão, com base nas tabelas vigentes. Não substitui análise tributária.",
+  };
+}
+
+/**
+ * PONTO DE EQUILÍBRIO — a receita em que dois regimes empatam.
+ *
+ * ⚠ Busca numérica, não fórmula fechada: a carga do Simples é degrau (faixas do RBT12) e a do
+ * Presumido tem quebra na majoração da LC 224 e no adicional de IRPJ. Uma fórmula única só valeria
+ * dentro de uma faixa, e daria resposta errada exatamente na virada — que é onde a pergunta importa.
+ *
+ * Devolve `null` quando não há cruzamento no intervalo: dizer "empata em R$ X" sem que empate seria
+ * pior que dizer que não empata.
+ */
+export function pontoDeEquilibrio({ de = 100_000, ate = 4_800_000, passo = 10_000, ...args }) {
+  let anterior = null;
+  for (let receita = de; receita <= ate; receita += passo) {
+    const r = compararRegimes({ ...args, receitaAnual: receita, rbt12: receita });
+    const s = r.regimes.find((x) => x.regime === "Simples Nacional");
+    const p = r.regimes.find((x) => x.regime === "Lucro Presumido");
+    if (!s || !p || s.indisponivel || p.indisponivel) continue;
+    const sinal = Math.sign(s.total - p.total);
+    if (anterior != null && sinal !== 0 && sinal !== anterior) {
+      return {
+        receita,
+        // A frase-resposta, não só o número: é ela que o contador leva para a reunião.
+        frase: sinal > 0
+          ? `Acima de aproximadamente ${brl(receita)} de receita anual, o Lucro Presumido passa a compensar.`
+          : `Acima de aproximadamente ${brl(receita)} de receita anual, o Simples Nacional passa a compensar.`,
+      };
+    }
+    if (sinal !== 0) anterior = sinal;
+  }
+  return null;
+}
+
+function brl(v) {
+  return Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
