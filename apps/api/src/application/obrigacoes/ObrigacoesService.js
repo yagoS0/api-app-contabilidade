@@ -435,6 +435,12 @@ export async function ocorrenciasDoPeriodo({ portalIds, inicio, fim, companyId =
         select: {
           id: true, nome: true, categoria: true, cor: true, verificador: true,
           regraId: true, portalClientId: true,
+          // ⚠ Os dois abaixo são o que permite a tela sair de 3 estados (pendente/vencida/
+          // concluída) para o CICLO de 4 (aguardando → aberta → urgente → transmitida).
+          // `antecedenciaLembreteDias` é a janela DECLARADA pelo escritório: sem ela a tela teria
+          // de cravar um número de dias, que numa obrigação mensal deixaria tudo urgente o mês
+          // inteiro. `periodicidade` distingue a anual, que é a que aparece na listagem principal.
+          periodicidade: true, antecedenciaLembreteDias: true,
           portalClient: { select: { razao: true } },
         },
       },
@@ -453,6 +459,8 @@ export async function ocorrenciasDoPeriodo({ portalIds, inicio, fim, companyId =
     titulo: oc.obrigacao.nome,
     categoria: oc.obrigacao.categoria,
     cor: oc.obrigacao.cor,
+    periodicidade: oc.obrigacao.periodicidade,
+    antecedenciaLembreteDias: oc.obrigacao.antecedenciaLembreteDias,
     companyId: oc.obrigacao.portalClientId,
     empresa: oc.obrigacao.portalClient?.razao || null,
     competencia: oc.competenciaRef,

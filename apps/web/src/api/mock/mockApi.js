@@ -290,6 +290,11 @@ const mockObrigacoes = mockCompanies.length
         mesReferencia: 5,
         diaVencimento: 31,
         defasagemMeses: 5,
+        // ⚠ Janela de 60 dias, não os 5 do default. Numa obrigação ANUAL o lembrete de 5 dias é
+        // irreal — e, com ele, a fixture pularia de "aguardando" direto para "urgente" na véspera,
+        // deixando o ciclo que esta entrega acrescenta invisível offline. O número é escolha de
+        // FIXTURE, não regra fiscal: quem declara a janela de verdade é o escritório.
+        antecedenciaLembreteDias: 60,
       }),
     ]
   : [];
@@ -2748,6 +2753,11 @@ export function createMockApi() {
             grupoChave: o.regraId || `nome:${String(o.nome || "").trim().toLowerCase()}`,
             titulo: o.nome, categoria: o.categoria,
             cor: o.cor, companyId: o.companyId, empresa: o.empresa,
+            // Sem estes dois o ciclo (aguardando → aberta → urgente) cai sempre no default de 5
+            // dias no mock, e a distinção entre uma anual a 40 dias e uma a 2 ficaria invisível
+            // offline — que é justamente o que esta entrega acrescenta.
+            periodicidade: o.periodicidade || "MENSAL",
+            antecedenciaLembreteDias: o.antecedenciaLembreteDias ?? 5,
             competencia: oc.competenciaRef, data: oc.dataVencimento, situacao,
             resolvido: oc.status === "CONCLUIDA",
             conclusaoAutomatica: Boolean(o.verificador), fonteConclusao: oc.fonteConclusao,

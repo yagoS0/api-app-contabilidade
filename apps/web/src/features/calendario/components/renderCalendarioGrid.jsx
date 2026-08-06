@@ -16,6 +16,9 @@
 // contador criou) pode ser arrastado para outro dia.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// O ciclo da obrigação (aguardando → aberta → urgente → transmitida) mora numa lib própria porque
+// o calendário, a aba da empresa e o chip da listagem principal precisam da MESMA leitura.
+import { cicloDaOcorrencia, aparenciaDaOcorrencia, CICLO } from "../../obrigacoes/lib/cicloObrigacao";
 
 const COR = {
   fundo: "#21222C", fundoFora: "#1B1C24", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
@@ -108,8 +111,24 @@ const ehObrigacao = (item) => item.tipo === "obrigacao" || item.tipo === "obriga
 function corDoItem(item, hoje = hojeISO()) {
   if (item.tipo === "marco") return COR[String(item.importancia || "MEDIA").toLowerCase()] || COR.marco;
   if (item.resolvido) return COR.resolvida;
+
+  // ⚠ OBRIGAÇÃO tem CICLO, não binário. Antes era "venceu ou não venceu": uma DEFIS a 40 dias e
+  // uma a 2 dias ficavam idênticas na tela. Agora o corte sai de `antecedenciaLembreteDias` — a
+  // janela que o próprio escritório declarou naquela obrigação — em vez de um número fixo que numa
+  // mensal acenderia o mês inteiro. Ver `features/obrigacoes/lib/cicloObrigacao.js`.
+  if (ehObrigacao(item) && item.data) {
+    const estado = cicloDaOcorrencia(
+      { dataVencimento: item.data, status: item.resolvido ? "CONCLUIDA" : "PENDENTE" },
+      item.antecedenciaLembreteDias,
+      new Date(`${hoje}T00:00:00`),
+    );
+    if (estado === CICLO.VENCIDA || estado === CICLO.URGENTE) return COR.vencida;
+    if (estado === CICLO.ABERTA) return COR.aFazer;
+    return COR.futura;
+  }
+
   if (estaVencida(item, hoje)) return COR.vencida;
-  // Futuro é CINZA, não âmbar: uma obrigação que vence dia 20 não é ação pendente no dia 2, e
+  // Futuro é CINZA, não âmbar: uma guia que vence dia 20 não é ação pendente no dia 2, e
   // acender o mês inteiro de âmbar no dia 1 é o mesmo paredão que a listagem já teve de desmontar.
   if (item.data && item.data > hoje) return COR.futura;
   return COR.aFazer;
@@ -180,10 +199,21 @@ function Chip({ item, onAbrir, arrastavel }) {
       onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onAbrir(item); } }}
       title={
         item.tipo === "obrigacaoGrupo"
-          ? `${item.titulo} — ${item.total} empresa(s): ${item.pendentes} a entregar, ${item.vencidas} vencida(s), ${item.concluidas} concluída(s). Clique para ver e concluir por empresa.`
+          /* A contagem de dias entra AQUI também: no calendário da carteira o chip que se vê é o
+             agrupado, e sem isso a distinção entre 40 e 2 dias ficaria só na cor. */
+          ? `${item.titulo} · ${aparenciaDaOcorrencia(
+            { dataVencimento: item.data, status: item.resolvido ? "CONCLUIDA" : "PENDENTE" },
+            item.antecedenciaLembreteDias,
+          ).rotulo} — ${item.total} empresa(s): ${item.pendentes} a entregar, ${item.vencidas} vencida(s), ${item.concluidas} concluída(s). Clique para ver e concluir por empresa.`
+          /* ⚠ O tooltip da obrigação carrega a CONTAGEM DE DIAS. "a entregar" é a mesma frase para
+             uma DEFIS a 40 dias e uma a 2 — e é exatamente a diferença que decide o que fazer
+             hoje. `aparenciaDaOcorrencia` devolve "A entregar · 12 dias" / "Vencida · 3 dias". */
           : `${rotuloDoItem(item)}${item.valor != null ? ` · ${fmtMoney(item.valor)}` : ""}${
             item.tipo === "obrigacao"
-              ? item.resolvido ? " · concluída" : estaVencida(item) ? " · VENCIDA" : " · a entregar"
+              ? ` · ${aparenciaDaOcorrencia(
+                { dataVencimento: item.data, status: item.resolvido ? "CONCLUIDA" : "PENDENTE" },
+                item.antecedenciaLembreteDias,
+              ).rotulo}`
               : item.resolvido ? " · pago" : ""
           }${arrastavel ? " · arraste para mudar o dia" : ""}`
       }
@@ -509,6 +539,15 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
         if (it.situacao === "VENCIDA") g.vencidas += 1;
         else if (it.situacao === "CONCLUIDA") g.concluidas += 1;
         else g.pendentes += 1;
+        // ⚠ O GRUPO PRECISA CARREGAR A JANELA, senão `corDoItem` cai no default de 5 dias e a
+        // obrigação ANUAL fica cinza até a véspera — perdendo exatamente o ciclo que esta entrega
+        // acrescenta. Vale a MAIOR janela do grupo: ela abre mais cedo, e sub-avisar uma entrega
+        // anual custa mais caro que avisar cedo demais.
+        g.antecedenciaLembreteDias = Math.max(
+          Number(g.antecedenciaLembreteDias) || 0,
+          Number(it.antecedenciaLembreteDias) || 0,
+        );
+        g.periodicidade = g.periodicidade || it.periodicidade;
         g.ocorrencias.push(it);
       }
       for (const g of grupos.values()) {
@@ -1090,7 +1129,11 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                   ? detalhe.fonteConclusao === "AUTOMATICA"
                     ? "concluída pelo sistema"
                     : "concluída"
-                  : estaVencida(detalhe) ? "VENCIDA" : "a entregar"}
+                  /* Mesma leitura do chip e da cor — com os dias, que é o que se quer saber aqui. */
+                  : aparenciaDaOcorrencia(
+                    { dataVencimento: detalhe.data, status: "PENDENTE" },
+                    detalhe.antecedenciaLembreteDias,
+                  ).rotulo}
                 {detalhe.conclusaoAutomatica && !detalhe.resolvido && (
                   <div style={{ marginTop: 4 }}>
                     Conclui sozinha quando o sistema observar o serviço feito — não precisa marcar.
