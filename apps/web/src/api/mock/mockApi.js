@@ -2444,6 +2444,38 @@ export function createMockApi() {
      * inteiro da exportação era inconferível offline, que é justamente onde ele se confere.
      * `data:` URL é buscável por `fetch` e vira blob igual à resposta do servidor.
      */
+    /**
+     * Relatório de resumo — calculado sobre os MESMOS lançamentos do mock.
+     *
+     * ⚠ Inclui a competência SEM lançamento com `semLancamento: true`, como o backend. Um mock que
+     * devolvesse só os meses com movimento faria a série parecer contínua offline e esconderia
+     * justamente o caso que a tela trata em separado (barra tracejada e "sem lançamento").
+     */
+    async getRelatorioResumo(companyId, de, ate) {
+      await delay(160);
+      const lista = (mockEntriesByCompany.get(companyId) || [])
+        .filter((e) => e.competencia >= de && e.competencia <= ate)
+        .filter((e) => String(e.tipo || "").toUpperCase() !== "PARCELA");
+      const porComp = new Map();
+      for (const e of lista) {
+        if (!porComp.has(e.competencia)) porComp.set(e.competencia, { competencia: e.competencia, porTipo: {}, total: 0 });
+        const b = porComp.get(e.competencia);
+        const v = (e.lines || []).filter((l) => String(l.tipo).toUpperCase() === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
+        const tipo = String(e.tipo || "OUTRO").toUpperCase();
+        b.porTipo[tipo] = (b.porTipo[tipo] || 0) + v;
+        b.total += v;
+      }
+      const linhas = [];
+      let [ano, mes] = de.split("-").map(Number);
+      const [af, mf] = ate.split("-").map(Number);
+      while (ano < af || (ano === af && mes <= mf)) {
+        const comp = `${ano}-${String(mes).padStart(2, "0")}`;
+        linhas.push(porComp.get(comp) || { competencia: comp, porTipo: {}, total: 0, semLancamento: true });
+        mes += 1; if (mes > 12) { mes = 1; ano += 1; }
+      }
+      return { ok: true, de, ate, linhas };
+    },
+
     // ── Espelho da DEFIS ──────────────────────────────────────────────────
     // Guardado por (empresa, ano), como a unique do modelo: reabrir a tela continua o MESMO
     // espelho. Sem isso o mock daria a impressão de que salvar funciona e o rascunho sumiria.

@@ -50,6 +50,9 @@ const GROUPS = [
       // escritório entrega até uma data, não tributo a pagar. O cabeçalho do CalendarioFiscalService
       // argumenta isso — guia é do cliente, obrigação é do contador.
       { key: "obrigacoes", label: "Obrigações" },
+      // Relatórios fica em Contabilidade porque relata o que foi LANÇADO. É a única aba com
+      // intervalo próprio — ver o comentário em TABS_COM_COMPETENCIA logo acima.
+      { key: "relatorios", label: "Relatórios" },
     ],
   },
   {

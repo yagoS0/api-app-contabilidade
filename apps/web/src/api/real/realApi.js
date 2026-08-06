@@ -1181,6 +1181,11 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/defis/${ano}/transmitida`, { method: "POST", body: JSON.stringify({}) });
     },
 
+    /** Receitas e despesas por competência num intervalo — a base dos relatórios. */
+    async getRelatorioResumo(companyId, de, ate) {
+      return request(`/firm/companies/${companyId}/relatorios/resumo?de=${encodeURIComponent(de)}&ate=${encodeURIComponent(ate)}`);
+    },
+
     /** O que o ERP recusaria nesta competência — consultado ANTES de baixar o arquivo. */
     async getExportPreflight(companyId, competencia) {
       return request(`/firm/companies/${companyId}/entries/export/preflight?competencia=${encodeURIComponent(competencia)}`);

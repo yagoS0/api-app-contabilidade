@@ -89,6 +89,9 @@ const companyDocsApi = createApiClient();
 // O CalendarioGrid chama a API por conta própria (mesmo padrão do SITFIS e do Apuração v2) —
 // a página de detalhe não tem `api` em escopo.
 const obrigacoesApi = createApiClient();
+const RelatoriosTab = lazy(() =>
+  import("../../../relatorios/components/RelatoriosTab").then((m) => ({ default: m.RelatoriosTab })),
+);
 // Carregado sob demanda: são ~40 campos e a especificação inteira da DEFIS, e quem abre a aba de
 // Obrigações quase sempre quer o calendário, não o espelho.
 const EspelhoDefis = lazy(() =>
@@ -667,6 +670,40 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               {/* Sem companyId ainda, o calendário buscaria a carteira INTEIRA dentro da página de
                   uma empresa — espera a empresa carregar antes de montar. */}
               {companyId ? <ObrigacoesDaEmpresa companyId={companyId} /> : <TabLoadingFallback />}
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+        <Feedback message={feedback.message} error={feedback.error} />
+      </div>
+    );
+  }
+
+  if (companyDetailTab === "relatorios") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="relatorios"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        />
+        <div style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              {companyId ? (
+                <RelatoriosTab
+                  companyId={companyId}
+                  /* ⚠ A competência global é a ÂNCORA do intervalo, não o intervalo em si: os
+                     períodos oferecidos (mês, trimestre, ano, 12 meses) terminam nela. Por isso
+                     esta aba NÃO está em `TABS_COM_COMPETENCIA` — o seletor do header não aparece
+                     aqui, e quem manda no período são os chips da própria tela. */
+                  competenciaReferencia={circularPanel?.competencia}
+                  razaoSocial={selectedCompany?.razao}
+                />
+              ) : <TabLoadingFallback />}
             </Suspense>
           </ErrorBoundary>
         </div>

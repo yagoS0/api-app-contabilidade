@@ -1837,6 +1837,78 @@ export function createAccountingEntriesRouter({ log }) {
   });
 
   // GET /firm/companies/:companyId/entries
+  /**
+   * RELATÓRIO — receitas e despesas por competência, num intervalo.
+   *
+   * ⚠ O QUE ESTE RELATÓRIO É, E O QUE ELE NÃO É
+   * Ele soma o que foi LANÇADO, por competência e por tipo. Não é balanço nem balancete: aqueles
+   * exigem saldo por conta com classificação patrimonial (ativo/passivo/PL), e o plano de contas
+   * deste projeto guarda `tipo` (ATIVO|PASSIVO|RECEITA|DESPESA|PATRIMONIO) mas não os saldos
+   * acumulados nem os ajustes de encerramento. Entregar "balancete" a partir do que existe seria
+   * um demonstrativo com nome de peça contábil — e alguém o mandaria para o cliente.
+   *
+   * Por isso a tela NÃO oferece balanço/balancete como opção desabilitada: opção que existe e não
+   * funciona ensina que o produto é capenga; opção que não existe, com o motivo dito uma vez, é
+   * escopo declarado.
+   *
+   * ⚠ O INTERVALO É PRÓPRIO desta tela, e é a única exceção documentada à competência global da
+   * empresa: relatório de um mês só não é relatório — a pergunta aqui é a evolução.
+   */
+  router.get("/relatorios/resumo", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const de = String(req.query?.de || "").trim();
+    const ate = String(req.query?.ate || "").trim();
+    if (!/^\d{4}-\d{2}$/.test(de) || !/^\d{4}-\d{2}$/.test(ate)) {
+      return res.status(400).json({ ok: false, error: "intervalo_invalido" });
+    }
+    if (ate < de) return res.status(400).json({ ok: false, error: "intervalo_invertido" });
+
+    try {
+      const entries = await prisma.accountingEntry.findMany({
+        where: {
+          portalClientId,
+          competencia: { gte: de, lte: ate },
+          // Parcela é rastreio, não movimento do mês — mesma exclusão do CSV e da tabela.
+          tipo: { not: "PARCELA" },
+        },
+        select: { competencia: true, tipo: true, lines: { select: { tipo: true, valor: true } } },
+      });
+
+      // Soma pelo DÉBITO das linhas: é a convenção que a Circular e a tabela de lançamentos já
+      // usam para "quanto foi este lançamento". Trocar aqui faria o relatório discordar delas.
+      const porCompetencia = new Map();
+      for (const e of entries) {
+        const chave = e.competencia;
+        if (!porCompetencia.has(chave)) porCompetencia.set(chave, { competencia: chave, porTipo: {}, total: 0 });
+        const bucket = porCompetencia.get(chave);
+        const valor = (e.lines || [])
+          .filter((l) => String(l.tipo).toUpperCase() === "D")
+          .reduce((s, l) => s + Number(l.valor || 0), 0);
+        const tipo = String(e.tipo || "OUTRO").toUpperCase();
+        bucket.porTipo[tipo] = (bucket.porTipo[tipo] || 0) + valor;
+        bucket.total += valor;
+      }
+
+      // ⚠ Competência SEM lançamento entra na série com zero, não some. Uma série que pula meses
+      // esconde justamente o mês em que ninguém lançou nada — que é o que o relatório deveria
+      // gritar. Ausência vira zero explícito, não buraco.
+      const linhas = [];
+      let [ano, mes] = de.split("-").map(Number);
+      const [anoFim, mesFim] = ate.split("-").map(Number);
+      while (ano < anoFim || (ano === anoFim && mes <= mesFim)) {
+        const comp = `${ano}-${String(mes).padStart(2, "0")}`;
+        linhas.push(porCompetencia.get(comp) || { competencia: comp, porTipo: {}, total: 0, semLancamento: true });
+        mes += 1;
+        if (mes > 12) { mes = 1; ano += 1; }
+      }
+
+      return res.json({ ok: true, de, ate, linhas });
+    } catch (err) {
+      log.error({ err, portalClientId, de, ate }, "falha ao montar o relatório de resumo");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
   router.get("/entries", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const { competencia, tipo, subtipo, origem, status, statusPagamento, page = "1", limit = "50" } = req.query || {};
