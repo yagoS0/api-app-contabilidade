@@ -1,0 +1,188 @@
+// CASOS DOURADOS — validação EXTERNA do motor.
+//
+// ⚠ POR QUE ESTE ARQUIVO EXISTE SEPARADO DE `motorFiscal.test.js`
+// Aquele verifica CONSISTÊNCIA INTERNA: a soma da partilha fecha, a redistribuição bate com a
+// efetiva, o teto trava onde deve. Tudo isso continua passando se um número da tabela tiver sido
+// transcrito errado — a soma fecha igual, só que sobre a alíquota errada. Consistência interna não
+// pega erro de transcrição; caso dourado pega.
+//
+// Cada valor esperado abaixo foi CALCULADO À MÃO contra as tabelas do documento FONTES FISCAIS, com
+// a conta escrita no comentário. Se um teste daqui quebrar depois de mexer nas tabelas, a pergunta
+// certa é "a tabela mudou por ato normativo?" — e não "como faço o teste passar?".
+//
+// ⚠ NÃO CONFRONTADO CONTRA O PGDAS-D AO VIVO. O simulador oficial (TRANSDECLARACAO11) é chamada
+// PAGA e por empresa real; queimar chamadas para conferir tabela é decisão do dono, não minha. O
+// caminho existe e está pronto (`PgdasSimulacaoService.simular`): quando o dono quiser, os casos de
+// Simples abaixo são os que valem a pena confrontar, porque cobrem faixa, teto de ISS e Anexo IV.
+
+import { aliquotaEfetiva, repartirPorTributo, custoAnualSimples } from "../simplesNacional";
+import { custoAnualPresumido } from "../lucroPresumido";
+import { ANEXOS } from "../tabelasFiscais";
+
+/** Compara em pontos percentuais com 6 casas — erro de transcrição aparece muito antes disso. */
+const efetiva = (anexo, rbt12) => Number(aliquotaEfetiva(anexo, rbt12).toFixed(8));
+const reais = (v) => Number(Number(v).toFixed(2));
+
+describe("Anexo I — Comércio, 3ª faixa", () => {
+  // RBT12 500.000 → faixa 3 (9,50% / PD 13.860)
+  // (500.000 × 0,095 − 13.860) / 500.000 = (47.500 − 13.860) / 500.000 = 33.640 / 500.000
+  it("efetiva de 6,728%", () => {
+    expect(efetiva(ANEXOS.I, 500_000)).toBeCloseTo(0.06728, 8);
+  });
+
+  it("DAS de R$ 33.640,00 sobre receita de 500 mil", () => {
+    const r = custoAnualSimples({ anexoChave: "I", rbt12: 500_000, receitaAnual: 500_000, folhaAnual: 0 });
+    expect(reais(r.das)).toBe(33_640);
+  });
+
+  it("repartição por tributo, valor a valor", () => {
+    // Partilha da 3ª faixa: IRPJ 5,50 · CSLL 3,50 · Cofins 12,74 · PIS 2,76 · CPP 42,00 · ICMS 33,50
+    const t = custoAnualSimples({ anexoChave: "I", rbt12: 500_000, receitaAnual: 500_000 }).porTributo;
+    expect(reais(t.irpj)).toBe(1_850.20);   // 33.640 × 5,50%
+    expect(reais(t.csll)).toBe(1_177.40);   // 33.640 × 3,50%
+    expect(reais(t.cofins)).toBe(4_285.74); // 33.640 × 12,74%
+    expect(reais(t.pis)).toBe(928.46);      // 33.640 × 2,76%
+    expect(reais(t.cpp)).toBe(14_128.80);   // 33.640 × 42,00%
+    expect(reais(t.icms)).toBe(11_269.40);  // 33.640 × 33,50%
+  });
+});
+
+describe("Anexo II — Indústria, 5ª faixa", () => {
+  // (2.000.000 × 0,147 − 85.500) / 2.000.000 = (294.000 − 85.500) / 2.000.000 = 208.500 / 2.000.000
+  it("efetiva de 10,425%", () => {
+    expect(efetiva(ANEXOS.II, 2_000_000)).toBeCloseTo(0.104250, 8);
+  });
+
+  it("o IPI aparece na repartição — é o anexo que o tem", () => {
+    const t = repartirPorTributo(ANEXOS.II, 2_000_000).porTributo;
+    // 10,425% × 7,50% = 0,781875% da receita
+    expect(t.ipi).toBeCloseTo(0.00781875, 10);
+  });
+});
+
+describe("Anexo III — 5ª faixa, LOGO ABAIXO do teto de ISS", () => {
+  // (2.000.000 × 0,21 − 125.640) / 2.000.000 = 294.360 / 2.000.000 = 14,718%
+  // Gatilho do teto: 14,92537%. 14,718% < gatilho → partilha normal.
+  it("efetiva de 14,718%", () => {
+    expect(efetiva(ANEXOS.III, 2_000_000)).toBeCloseTo(0.14718, 8);
+  });
+
+  it("⚠ o ISS fica em 4,93% da receita — abaixo dos 5%, e é POR ISSO que o teto não precisa agir", () => {
+    // 14,718% × 33,50% = 4,930530%. O gatilho da tabela não é um número solto: é exatamente o
+    // ponto em que 33,5% da efetiva alcança 5% da receita. Este teste amarra os dois.
+    const t = repartirPorTributo(ANEXOS.III, 2_000_000);
+    expect(t.tetoIssAplicado).toBe(false);
+    expect(t.porTributo.iss).toBeCloseTo(0.04930530, 8);
+    expect(t.porTributo.iss).toBeLessThan(0.05);
+  });
+});
+
+describe("Anexo III — 5ª faixa, ACIMA do teto de ISS", () => {
+  // (3.000.000 × 0,21 − 125.640) / 3.000.000 = 504.360 / 3.000.000 = 16,812%
+  it("efetiva de 16,812%", () => {
+    expect(efetiva(ANEXOS.III, 3_000_000)).toBeCloseTo(0.16812, 8);
+  });
+
+  it("⚠ sem o teto o ISS seria 5,632% — acima do máximo legal", () => {
+    // 16,812% × 33,50% = 5,63202%. É a prova de que o teto não é enfeite: sem ele o DAS cobraria
+    // mais ISS do que a lei permite ao município.
+    expect(0.16812 * 0.335).toBeCloseTo(0.0563202, 7);
+  });
+
+  it("com o teto: ISS em 5% e o excedente redistribuído, valor a valor", () => {
+    // Excedente = 16,812% − 5% = 11,812%
+    const t = repartirPorTributo(ANEXOS.III, 3_000_000).porTributo;
+    expect(t.iss).toBeCloseTo(0.05, 10);
+    expect(t.irpj).toBeCloseTo(0.11812 * 0.0602, 10);   // 0,7110824%
+    expect(t.csll).toBeCloseTo(0.11812 * 0.0526, 10);   // 0,6213112%
+    expect(t.cofins).toBeCloseTo(0.11812 * 0.1928, 10); // 2,2773536%
+    expect(t.pis).toBeCloseTo(0.11812 * 0.0418, 10);    // 0,4937416%
+    expect(t.cpp).toBeCloseTo(0.11812 * 0.6526, 10);    // 7,7085112%
+  });
+});
+
+describe("Anexo IV — 5ª faixa, com teto de ISS E CPP por fora", () => {
+  // (3.000.000 × 0,22 − 183.780) / 3.000.000 = 476.220 / 3.000.000 = 15,874%
+  it("efetiva de 15,874%", () => {
+    expect(efetiva(ANEXOS.IV, 3_000_000)).toBeCloseTo(0.15874, 8);
+  });
+
+  it("teto do IV dispara em 12,5%, não em 14,92537%", () => {
+    const t = repartirPorTributo(ANEXOS.IV, 3_000_000);
+    expect(t.tetoIssAplicado).toBe(true);
+    expect(t.porTributo.iss).toBeCloseTo(0.05, 10);
+    // Excedente = 15,874% − 5% = 10,874%
+    expect(t.porTributo.irpj).toBeCloseTo(0.10874 * 0.3133, 10);
+    expect(t.porTributo.cpp).toBeUndefined(); // não há CPP na partilha do IV
+  });
+
+  it("⚠ o custo total soma a CPP por fora: R$ 476.220 de DAS + R$ 120.000 de INSS patronal", () => {
+    // Folha de 600.000 × 20% = 120.000. Total = 596.220,00.
+    const r = custoAnualSimples({ anexoChave: "IV", rbt12: 3_000_000, receitaAnual: 3_000_000, folhaAnual: 600_000 });
+    expect(reais(r.das)).toBe(476_220);
+    expect(reais(r.cppPorFora)).toBe(120_000);
+    expect(reais(r.total)).toBe(596_220);
+  });
+});
+
+describe("Anexo V — 4ª faixa", () => {
+  // (1.000.000 × 0,205 − 17.100) / 1.000.000 = 187.900 / 1.000.000 = 18,79%
+  it("efetiva de 18,79%", () => {
+    expect(efetiva(ANEXOS.V, 1_000_000)).toBeCloseTo(0.1879, 8);
+  });
+
+  it("DAS de R$ 187.900,00 sobre receita de 1 milhão", () => {
+    const r = custoAnualSimples({ anexoChave: "V", rbt12: 1_000_000, receitaAnual: 1_000_000 });
+    expect(reais(r.das)).toBe(187_900);
+  });
+});
+
+describe("LC 224/2025 — a virada, com os DOIS limites de 2026", () => {
+  it("⚠ receita de R$ 4,5 mi: a CSLL JÁ é majorada e o IRPJ AINDA NÃO", () => {
+    // Este é o caso dourado que mais importa da LC 224, porque o resultado é contraintuitivo:
+    // a base da CSLL fica MAIOR que a do IRPJ, apesar de as duas presunções serem 32%.
+    //   IRPJ  → 4.500.000 < 5.000.000  → sem majoração → 4.500.000 × 32% = 1.440.000
+    //   CSLL  → 4.500.000 > 3.750.000  → majorada      → 3.750.000 × 32% + 750.000 × 35,2%
+    //                                                  = 1.200.000 + 264.000 = 1.464.000
+    const r = custoAnualPresumido({ receitaAnual: 4_500_000, atividade: "servicos", anoBase: 2026 });
+    expect(reais(r.porTributo.irpj)).toBe(reais(1_440_000 * 0.15)); // 216.000,00
+    expect(reais(r.porTributo.csll)).toBe(reais(1_464_000 * 0.09)); // 131.760,00
+    // A prova do ponto: base de CSLL maior que a de IRPJ com a mesma presunção nominal.
+    expect(r.porTributo.csll / 0.09).toBeGreaterThan(r.porTributo.irpj / 0.15);
+  });
+
+  it("receita de R$ 6 mi: os dois majorados, cada um pelo seu limite", () => {
+    //   IRPJ → 5.000.000 × 32% + 1.000.000 × 35,2% = 1.600.000 + 352.000 = 1.952.000
+    //   CSLL → 3.750.000 × 32% + 2.250.000 × 35,2% = 1.200.000 + 792.000 = 1.992.000
+    const r = custoAnualPresumido({ receitaAnual: 6_000_000, atividade: "servicos", anoBase: 2026 });
+    expect(reais(r.porTributo.irpj)).toBe(reais(1_952_000 * 0.15)); // 292.800,00
+    expect(reais(r.porTributo.csll)).toBe(reais(1_992_000 * 0.09)); // 179.280,00
+  });
+
+  it("adicional de IRPJ sobre a base majorada, por trimestre", () => {
+    // Base IRPJ 1.952.000 / 4 = 488.000 por trimestre; (488.000 − 60.000) × 10% × 4 = 171.200
+    const r = custoAnualPresumido({ receitaAnual: 6_000_000, atividade: "servicos", anoBase: 2026 });
+    expect(reais(r.porTributo.adicionalIrpj)).toBe(171_200);
+  });
+
+  it("PIS/COFINS cumulativo sobre a receita cheia, sem majoração nenhuma", () => {
+    // A LC 224 mexeu na PRESUNÇÃO de IRPJ/CSLL. PIS/COFINS continuam 0,65% + 3% da receita.
+    const r = custoAnualPresumido({ receitaAnual: 6_000_000, atividade: "servicos", anoBase: 2026 });
+    expect(reais(r.porTributo.pis)).toBe(39_000);
+    expect(reais(r.porTributo.cofins)).toBe(180_000);
+  });
+});
+
+describe("Presumido — comércio, sem majoração", () => {
+  it("receita de R$ 2 mi: presunções de 8% (IRPJ) e 12% (CSLL)", () => {
+    //   IRPJ  → base 160.000 × 15% = 24.000; adicional: 40.000/tri < 60.000 → zero
+    //   CSLL  → base 240.000 × 9%  = 21.600
+    //   PIS/COFINS → 2.000.000 × 3,65% = 73.000
+    const r = custoAnualPresumido({ receitaAnual: 2_000_000, atividade: "comercio", anoBase: 2026 });
+    expect(reais(r.porTributo.irpj)).toBe(24_000);
+    expect(reais(r.porTributo.adicionalIrpj)).toBe(0);
+    expect(reais(r.porTributo.csll)).toBe(21_600);
+    expect(reais(r.porTributo.pis + r.porTributo.cofins)).toBe(73_000);
+    expect(reais(r.total)).toBe(118_600);
+  });
+});

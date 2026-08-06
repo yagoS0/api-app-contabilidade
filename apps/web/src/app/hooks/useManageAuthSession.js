@@ -20,6 +20,8 @@ const PAGE_TO_PATH = {
   // URLs caíam no dashboard em silêncio. O calendário é visão do dashboard; Pendências virou aba
   // dentro de Consultas.
   obrigacoes: "/obrigacoes",
+  // Simulacao livre nao exige empresa: e a tela de reuniao com prospect.
+  planejamento: "/planejamento",
   serproFuncoes: "/funcoes-serpro",
 };
 
@@ -41,6 +43,7 @@ function pathToPageName(pathname) {
   if (pathname === "/firm-settings/chart") return "chartOfAccountsGlobal";
   if (pathname === "/apuracao") return "apuracao";
   if (pathname === "/rotinas") return "rotinas";
+  if (pathname === "/planejamento") return "planejamento";
   if (pathname === "/obrigacoes") return "obrigacoes";
   if (pathname === "/funcoes-serpro") return "serproFuncoes";
   // O download de notas virou aba dentro de "Funções em lote" — links antigos caem lá.

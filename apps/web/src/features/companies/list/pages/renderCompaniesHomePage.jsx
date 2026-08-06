@@ -108,6 +108,7 @@ export function CompaniesHomePage({
   onOpenBatchEmail,
   onOpenApuracao,
   onOpenRotinas,
+  onOpenPlanejamento,
   onOpenSerproFuncoes,
   onOpenObrigacoes,
   onLogout,
@@ -610,6 +611,13 @@ export function CompaniesHomePage({
             {onOpenRotinas && (
               <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenRotinas}>
                 Rotinas
+              </Button>
+            )}
+            {/* Fica no dashboard, e nao dentro de uma empresa, de proposito: a simulacao LIVRE e o
+                cenario de reuniao com prospect, quando a empresa ainda nao existe no sistema. */}
+            {onOpenPlanejamento && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenPlanejamento}>
+                Planejamento
               </Button>
             )}
             {/* C10: "Pendências" saiu do dashboard — virou a aba "Situação Fiscal"

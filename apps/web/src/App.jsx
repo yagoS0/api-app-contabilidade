@@ -8,6 +8,7 @@ import { CompanyDetailPage } from "./features/companies/detail/pages/renderCompa
 import { SerproSettingsPage } from "./features/fiscal/serpro/pages/renderSerproSettingsPage";
 import { SerproFuncoesPage } from "./features/fiscal/serpro/pages/renderSerproFuncoesPage";
 import { RotinasPage } from "./features/fiscal/rotinas/pages/renderRotinasPage";
+import { PlanejamentoPage } from "./features/planejamento/pages/renderPlanejamentoPage";
 import { GuideUploadPage } from "./features/guides/upload/pages/renderGuideUploadPage";
 import { LoginPage } from "./features/auth/login/pages/renderLoginPage";
 import { PendingGuidesPage } from "./features/guides/pending/pages/renderPendingGuidesPage";
@@ -268,6 +269,15 @@ function App() {
     );
   }
 
+  // ⚠ NÃO exige empresa selecionada — de propósito. A simulação livre é o cenário de reunião com
+  // prospect: a empresa ainda não existe no sistema, e exigir cadastro para simular mataria
+  // justamente o uso comercial do módulo.
+  if (session.page === "planejamento") {
+    return (
+      <PlanejamentoPage onVoltar={() => session.switchPage("companies")} />
+    );
+  }
+
   if (session.page === "rotinas") {
     return (
       <RotinasPage
@@ -392,13 +402,6 @@ function App() {
           onLoadCircular: accountingWorkspace.loadCircular,
           onSaveCircular: accountingWorkspace.handleSaveCircular,
           onApproveAccountingEntry: accountingWorkspace.handleApproveCircularEntry,
-          runningFiscalAction: accountingWorkspace.runningFiscalAction,
-          lastFiscalResult: accountingWorkspace.lastFiscalResult,
-          onSearchGuides: accountingWorkspace.handleSearchGuides,
-          onCheckPayments: accountingWorkspace.handleCheckPayments,
-          onSyncInss: accountingWorkspace.handleSyncInss,
-          executions: accountingWorkspace.fiscalExecutions,
-          loadingExecutions: accountingWorkspace.loadingFiscalExecutions,
           error: accountingWorkspace.entriesError,
           message: accountingWorkspace.entriesMessage,
           onCancelBaixa: accountingWorkspace.handleDeleteEntryNoConfirm,
@@ -473,6 +476,7 @@ function App() {
       onOpenBatchEmail={() => session.setPage("batchEmail")}
       onOpenApuracao={() => session.setPage("apuracao")}
       onOpenRotinas={() => session.setPage("rotinas")}
+      onOpenPlanejamento={() => session.setPage("planejamento")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenObrigacoes={() => session.setPage("obrigacoes")}
       backgroundJobs={backgroundJobs}

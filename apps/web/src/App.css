@@ -1776,6 +1776,13 @@ th {
     display: none !important;
   }
 
+  /* Marcador genérico para o que não faz sentido no papel — o próprio botão "Imprimir", por
+     exemplo, que sairia impresso convidando a imprimir de novo. `data-coluna-acao` é específico
+     de tabela; este serve a qualquer elemento. */
+  body.imprimindo [data-print-hide] {
+    display: none !important;
+  }
+
   /* O cabeçalho do papel (competência, data, total, filtros) só existe na impressão. */
   body.imprimindo [data-print-only] {
     display: block !important;

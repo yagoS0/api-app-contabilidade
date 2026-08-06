@@ -18,14 +18,39 @@ export function faixaDoRbt12(anexo, rbt12) {
 }
 
 /**
+ * ⚠⚠ PENDÊNCIA NOMEADA DO MOTOR — INÍCIO DE ATIVIDADE (art. 18, § 2º).
+ *
+ * `aliquotaEfetiva` devolve `null` quando não há RBT12. Isso é SEGURO (melhor ausência de número
+ * que número errado com cara de comparável), mas NÃO É A REGRA FINAL: a lei sabe calcular esse
+ * caso. Empresa em início de atividade tem proporcionalização própria — no primeiro mês, a receita
+ * do próprio mês × 12; nos meses seguintes, a média dos meses de atividade × 12
+ * (LC 123/2006, art. 18, § 2º, operacionalizado na Resolução CGSN 140/2018).
+ *
+ * Ou seja: com a regra implementada, o RBT12 nunca é zero de fato, e o `null` de hoje recusa um
+ * cálculo que existe. Isso importa mais do que parece — **empresa recém-aberta escolhendo regime é
+ * um dos usuários mais prováveis deste módulo**, e é exatamente quem cai no `null`.
+ *
+ * O que falta para implementar: `mesesDeAtividade` como entrada (não dá para inferir da receita),
+ * e ler a Resolução CGSN 140/2018 para a proporcionalização dos meses seguintes ao primeiro —
+ * não transcrita no documento de fontes, então não pode ser escrita por dedução (regra 1).
+ *
+ * Até lá, `null` + mensagem explícita. Registrado aqui, e não só no roadmap, para quem mexer no
+ * motor saber que este comportamento é PROVISÓRIO e por quê.
+ */
+export const PENDENCIA_INICIO_ATIVIDADE = Object.freeze({
+  regra: "LC 123/2006, art. 18, § 2º — proporcionalização do RBT12 em início de atividade",
+  faltam: ["número de meses de atividade (entrada do usuário)", "Resolução CGSN 140/2018 para os meses seguintes ao primeiro"],
+  comportamentoAtual: "devolve null e a tela diz que falta o RBT12",
+});
+
+/**
  * ALÍQUOTA EFETIVA — FONTES_FISCAIS §1.2 (LC 123/2006, art. 18, §§ 1º e 1º-A):
  *
  *     [(RBT12 × ALIQ_nominal) − PD] / RBT12
  *
- * ⚠ RBT12 ZERO não tem alíquota efetiva: a fórmula divide por ele. Empresa nova (menos de 13 meses)
- * exige a proporcionalização do art. 18, § 2º — que depende de quantos meses de atividade existem,
- * e isso é dado de entrada, não inferência. Sem RBT12 devolvemos `null` e quem chama diz que falta
- * o dado, em vez de exibir 0% ou a alíquota nominal (que seria sempre mais alta que a real).
+ * ⚠ RBT12 ZERO devolve `null`, não 0%: a fórmula divide por ele, e 0% faria a empresa nova parecer
+ * isenta enquanto a nominal a faria parecer mais cara que a real. Ver `PENDENCIA_INICIO_ATIVIDADE`
+ * acima — este `null` é provisório, não a regra final.
  */
 export function aliquotaEfetiva(anexo, rbt12) {
   const v = Number(rbt12) || 0;
