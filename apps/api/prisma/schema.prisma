@@ -2328,3 +2328,47 @@ model DefisEspelho {
   @@index([portalClientId])
   @@map("defis_espelhos")
 }
+
+/// ENTREGA DE OBRIGAÇÃO POR ARQUIVO — o rastro de "gerar → transmitir no programa oficial → recibo".
+///
+/// ⚠ POR QUE ESTE MODELO É GENÉRICO, E NÃO "EfdContribuicoes"
+/// EFD-Contribuições, ECD, ECF e EFD-Fiscal seguem exatamente o mesmo ciclo: um arquivo de leiaute
+/// fixo é gerado, validado e assinado NO PROGRAMA OFICIAL da Receita (PVA), transmitido por lá, e
+/// o que volta é um recibo. Uma tabela por obrigação seria a mesma estrutura copiada quatro vezes,
+/// e a quarta divergiria. `tipo` é string livre pelo mesmo motivo que `Obrigacao.categoria` é: o
+/// vocabulário é do escritório, não nosso.
+///
+/// ⚠ ISTO NÃO TRANSMITE NADA, e não gera o arquivo tampouco. `transmitidaEm` é MARCA MANUAL: o
+/// contador confirma que transmitiu no PVA. O que o sistema guarda é o rastro — sem ele, "a EFD de
+/// março foi entregue?" só se responde abrindo o programa oficial.
+model EntregaObrigacaoArquivo {
+  id             String @id @default(uuid())
+  portalClientId String
+  /// EFD_CONTRIBUICOES | ECD | ECF | … — o escritório nomeia.
+  tipo           String
+  /// "YYYY-MM" para as mensais; "YYYY" para as anuais (ECD/ECF).
+  competencia    String
+
+  /// O arquivo entregue ao PVA. Hoje SEMPRE vem de upload: o app não gera o leiaute (ver o
+  /// comentário da tela). Guardado pelo `GuideStorageService`, como os PDFs de guia.
+  arquivoFileId String?
+  arquivoNome   String?
+
+  /// O recibo devolvido pelo programa oficial — é ele que fecha a obrigação.
+  reciboFileId String?
+  reciboNome   String?
+
+  /// Marca manual do contador. Nunca escrita por automação.
+  transmitidaEm    DateTime?
+  transmitidaPorId String?
+
+  observacao String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Uma entrega por empresa, por tipo, por competência.
+  @@unique([portalClientId, tipo, competencia])
+  @@index([portalClientId, tipo])
+  @@map("entregas_obrigacao_arquivo")
+}

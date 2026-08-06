@@ -12,6 +12,7 @@ import { useApuracaoV2 } from "../../../apuracao-v2/hooks/useApuracaoV2";
 // Q41: hook próprio da aba Situação Fiscal (SITFIS)
 import { useSitfis } from "../../../fiscal/sitfis/hooks/useSitfis";
 import { createApiClient } from "../../../../api/client";
+import { competenciaPadrao, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
 import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useCompanyDocuments";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
@@ -97,6 +98,9 @@ const RelatoriosTab = lazy(() =>
 const EspelhoDefis = lazy(() =>
   import("../../../obrigacoes/defis/components/EspelhoDefis").then((m) => ({ default: m.EspelhoDefis })),
 );
+const EntregaPorArquivo = lazy(() =>
+  import("../../../obrigacoes/entregas/components/EntregaPorArquivo").then((m) => ({ default: m.EntregaPorArquivo })),
+);
 /**
  * A aba Obrigações da empresa: o calendário + a porta de entrada do ESPELHO DA DEFIS.
  *
@@ -108,11 +112,19 @@ const EspelhoDefis = lazy(() =>
  * qualquer mês de 2026 quer o espelho de 2025. Abrir no ano corrente mostraria um espelho de um
  * ano que nem terminou.
  */
+const setaEfd = {
+  background: "transparent", border: "1px solid #44475A", color: "#F8F8F2", borderRadius: 6,
+  padding: "2px 9px", font: "inherit", fontSize: "0.85rem", cursor: "pointer", lineHeight: 1.2,
+};
+
 function ObrigacoesDaEmpresa({ companyId }) {
   const [abrirDefis, setAbrirDefis] = useState(false);
   const [anoDefis, setAnoDefis] = useState(() => new Date().getFullYear() - 1);
   const [espelhoSalvo, setEspelhoSalvo] = useState(null);
   const [carregando, setCarregando] = useState(false);
+  // A EFD-Contribuições é MENSAL e a DEFIS é ANUAL — dois períodos diferentes na mesma aba, cada um
+  // com o seu seletor. Um só campo obrigaria um dos dois a mentir sobre o próprio período.
+  const [competenciaEfd, setCompetenciaEfd] = useState(() => competenciaPadrao());
 
   async function abrir() {
     setCarregando(true);
@@ -142,6 +154,24 @@ function ObrigacoesDaEmpresa({ companyId }) {
         >
           {carregando ? "Abrindo…" : "📄 Espelho da DEFIS"}
         </button>
+      </div>
+
+      {/* ⚠ A EFD-Contribuições fica ACIMA do calendário, não como uma ocorrência dentro dele.
+          Ela não é um dia na agenda: é um trabalho de três passos, dois deles FORA do app, e a
+          pergunta que ela precisa responder ("esta competência já foi entregue?") não cabe num
+          marcador de célula. Aparece para toda empresa, sempre — decidir aqui quem é dispensado
+          seria julgar dispensa fiscal em silêncio, e obrigação que some da tela vira obrigação
+          esquecida. */}
+      <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "grid", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Entrega mensal:</span>
+          <button type="button" onClick={() => setCompetenciaEfd((c) => deslocarCompetencia(c, -1))} style={setaEfd} aria-label="Competência anterior">‹</button>
+          <strong style={{ fontSize: "0.82rem", minWidth: 130, textAlign: "center" }}>{formatCompetencia(competenciaEfd)}</strong>
+          <button type="button" onClick={() => setCompetenciaEfd((c) => deslocarCompetencia(c, 1))} style={setaEfd} aria-label="Próxima competência">›</button>
+        </div>
+        <Suspense fallback={<TabLoadingFallback />}>
+          <EntregaPorArquivo companyId={companyId} competencia={competenciaEfd} />
+        </Suspense>
       </div>
 
       <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId} />

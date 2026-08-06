@@ -1181,6 +1181,18 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/defis/${ano}/transmitida`, { method: "POST", body: JSON.stringify({}) });
     },
 
+    // ── Entrega por arquivo (EFD-Contribuições, ECD, ECF) ─────────────────
+    // ⚠ Não geram nem transmitem arquivo nenhum: guardam o RASTRO da entrega feita no PVA.
+    async getEntregasObrigacao(companyId, tipo) {
+      return request(`/firm/companies/${companyId}/entregas/${tipo}`);
+    },
+    async salvarEntregaObrigacao(companyId, tipo, competencia, patch) {
+      return request(`/firm/companies/${companyId}/entregas/${tipo}/${competencia}`, {
+        method: "PUT",
+        body: JSON.stringify(patch || {}),
+      });
+    },
+
     /** Receitas e despesas por competência num intervalo — a base dos relatórios. */
     async getRelatorioResumo(companyId, de, ate) {
       return request(`/firm/companies/${companyId}/relatorios/resumo?de=${encodeURIComponent(de)}&ate=${encodeURIComponent(ate)}`);

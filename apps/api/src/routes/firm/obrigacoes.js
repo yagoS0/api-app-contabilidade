@@ -240,6 +240,74 @@ export function createObrigacoesRouter({ log } = {}) {
     } catch (err) { return falhar(res, err, { regraId }); }
   });
 
+  // ── ENTREGA POR ARQUIVO (EFD-Contribuições, ECD, ECF…) ─────────────────────────────────────
+  //
+  // ⚠ NADA AQUI GERA NEM TRANSMITE ARQUIVO. O leiaute da EFD-Contribuições (Guia Prático, blocos
+  // 0/A/C/D/F/M/1/9) não está no projeto, e escrevê-lo por dedução produziria um arquivo que o
+  // validador recusa — ou, pior, aceita com dado errado. A validação, a assinatura e a transmissão
+  // acontecem no PROGRAMA OFICIAL da Receita (PVA), e é assim mesmo: não existe API para isso.
+  //
+  // O que estas rotas guardam é o RASTRO. Sem ele, "a EFD de março foi entregue?" só se responde
+  // abrindo o programa oficial, empresa por empresa — que é exatamente o trabalho que o app existe
+  // para poupar. A obrigação continua rastreável mesmo sem o app gerar coisa alguma.
+
+  router.get("/companies/:companyId/entregas/:tipo", async (req, res) => {
+    const companyId = String(req.params.companyId);
+    const tipo = String(req.params.tipo).toUpperCase();
+    try {
+      const portalIds = await empresasVisiveis(req);
+      if (!portalIds.includes(companyId)) {
+        return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      }
+      const entregas = await prisma.entregaObrigacaoArquivo.findMany({
+        where: { portalClientId: companyId, tipo },
+        orderBy: { competencia: "desc" },
+        take: 24,
+      });
+      return res.json({ ok: true, tipo, entregas });
+    } catch (err) { return falhar(res, err, { companyId, tipo }); }
+  });
+
+  router.put("/companies/:companyId/entregas/:tipo/:competencia", async (req, res) => {
+    const companyId = String(req.params.companyId);
+    const tipo = String(req.params.tipo).toUpperCase();
+    const competencia = String(req.params.competencia).trim();
+    // Aceita "YYYY-MM" (mensais) e "YYYY" (ECD/ECF, que são anuais).
+    if (!/^\d{4}(-\d{2})?$/.test(competencia)) {
+      return res.status(400).json({ ok: false, error: "competencia_invalida" });
+    }
+    try {
+      const portalIds = await empresasVisiveis(req);
+      if (!portalIds.includes(companyId)) {
+        return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      }
+      const body = req.body || {};
+      // ⚠ Só os campos enviados são tocados. Anexar o recibo não pode apagar o arquivo, e vice-versa
+      // — são dois passos separados, feitos em momentos diferentes.
+      const data = {};
+      for (const c of ["arquivoFileId", "arquivoNome", "reciboFileId", "reciboNome", "observacao"]) {
+        if (body[c] !== undefined) data[c] = body[c] || null;
+      }
+      if (body.transmitida === true) {
+        data.transmitidaEm = new Date();
+        data.transmitidaPorId = req.auth?.user?.id || null;
+      }
+      // Desmarcar é explícito: `transmitida: false` desfaz. Sem isso, um erro de marcação viraria
+      // permanente — e a EFD é obrigação que se retifica.
+      if (body.transmitida === false) {
+        data.transmitidaEm = null;
+        data.transmitidaPorId = null;
+      }
+
+      const entrega = await prisma.entregaObrigacaoArquivo.upsert({
+        where: { portalClientId_tipo_competencia: { portalClientId: companyId, tipo, competencia } },
+        create: { portalClientId: companyId, tipo, competencia, ...data },
+        update: data,
+      });
+      return res.json({ ok: true, entrega });
+    } catch (err) { return falhar(res, err, { companyId, tipo, competencia }); }
+  });
+
   // ── ESPELHO DA DEFIS ───────────────────────────────────────────────────────────────────────
   //
   // ⚠ NADA AQUI TRANSMITE. A DEFIS é transmitida NO PORTAL do Simples Nacional. Estas rotas

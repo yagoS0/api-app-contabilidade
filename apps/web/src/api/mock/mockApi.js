@@ -461,6 +461,8 @@ const mockChartOfAccounts = new Map();
 let mockNfseSeq = 0;
 // Espelhos da DEFIS por `empresa|ano` — mesma chave da unique do modelo.
 const mockDefisEspelhos = new Map();
+// Entregas por arquivo (EFD-Contribuições, ECD, ECF) por `empresa|tipo|competência`.
+const mockEntregasObrigacao = new Map();
 const mockEntriesByCompany = new Map();
 const mockMonthlyCirculars = new Map();
 
@@ -2474,6 +2476,31 @@ export function createMockApi() {
         mes += 1; if (mes > 12) { mes = 1; ano += 1; }
       }
       return { ok: true, de, ate, linhas };
+    },
+
+    // ── Entrega por arquivo (EFD-Contribuições, ECD, ECF) ─────────────────
+    async getEntregasObrigacao(companyId, tipo) {
+      await delay(120);
+      const entregas = [...mockEntregasObrigacao.values()]
+        .filter((e) => e.portalClientId === companyId && e.tipo === tipo)
+        .sort((a, b) => b.competencia.localeCompare(a.competencia));
+      return { ok: true, tipo, entregas };
+    },
+    async salvarEntregaObrigacao(companyId, tipo, competencia, patch = {}) {
+      await delay(180);
+      const chave = `${companyId}|${tipo}|${competencia}`;
+      const atual = mockEntregasObrigacao.get(chave) || { portalClientId: companyId, tipo, competencia };
+      const novo = { ...atual };
+      // ⚠ Mesma regra parcial da rota real: só o que veio é tocado. Se o mock zerasse os outros
+      // campos, anexar o recibo apagaria o arquivo AQUI e não em produção — e o mock mentiria
+      // sobre o próprio fluxo que existe para exercitar.
+      for (const c of ["arquivoFileId", "arquivoNome", "reciboFileId", "reciboNome", "observacao"]) {
+        if (patch[c] !== undefined) novo[c] = patch[c] || null;
+      }
+      if (patch.transmitida === true) novo.transmitidaEm = new Date().toISOString();
+      if (patch.transmitida === false) novo.transmitidaEm = null;
+      mockEntregasObrigacao.set(chave, novo);
+      return { ok: true, entrega: novo };
     },
 
     // ── Espelho da DEFIS ──────────────────────────────────────────────────
