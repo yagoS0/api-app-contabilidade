@@ -6,6 +6,10 @@
 // opcional — mesma decisão já tomada no calendário.
 
 import { Router } from "express";
+// O espelho da DEFIS é guardado direto (uma tabela, um upsert) — não há regra de negócio a
+// encapsular num service, e criar um só para repassar o Prisma seria a abstração prematura que o
+// projeto proíbe.
+import { prisma } from "../../infrastructure/db/prisma.js";
 import {
   ObrigacaoError,
   VERIFICADORES,
@@ -234,6 +238,91 @@ export function createObrigacoesRouter({ log } = {}) {
       const out = await removerExcecao({ portalIds, regraId, companyId: String(req.params.companyId) });
       return res.json({ ok: true, ...out });
     } catch (err) { return falhar(res, err, { regraId }); }
+  });
+
+  // ── ESPELHO DA DEFIS ───────────────────────────────────────────────────────────────────────
+  //
+  // ⚠ NADA AQUI TRANSMITE. A DEFIS é transmitida NO PORTAL do Simples Nacional. Estas rotas
+  // guardam a folha de transcrição (para o contador não perder ~40 campos digitados ao fechar a
+  // aba) e registram, como MARCA MANUAL, que ele transmitiu. A forma canônica do payload vive em
+  // `apps/web/src/features/obrigacoes/defis/lib/defisSpec.js`, com a citação do manual da RFB.
+  //
+  // O ano vem na URL porque é a chave junto da empresa (unique `portalClientId + anoCalendario`):
+  // reabrir a tela continua o MESMO espelho, nunca cria outro.
+
+  /** Ano-calendário válido? Fora de faixa é erro de rota, não dado a gravar. */
+  function anoValido(v) {
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 2000 && n <= 2100 ? n : null;
+  }
+
+  router.get("/companies/:companyId/defis/:ano", async (req, res) => {
+    const companyId = String(req.params.companyId);
+    const ano = anoValido(req.params.ano);
+    if (!ano) return res.status(400).json({ ok: false, error: "ano_invalido" });
+    try {
+      const portalIds = await empresasVisiveis(req);
+      if (!portalIds.includes(companyId)) {
+        return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      }
+      const espelho = await prisma.defisEspelho.findUnique({
+        where: { portalClientId_anoCalendario: { portalClientId: companyId, anoCalendario: ano } },
+      });
+      // ⚠ Espelho inexistente NÃO é 404: é uma folha em branco, que é o estado normal do primeiro
+      // acesso. Devolver erro faria a tela mostrar falha onde não há nada de errado.
+      return res.json({ ok: true, espelho: espelho || null, dados: espelho?.dados || null });
+    } catch (err) { return falhar(res, err, { companyId, ano }); }
+  });
+
+  router.put("/companies/:companyId/defis/:ano", async (req, res) => {
+    const companyId = String(req.params.companyId);
+    const ano = anoValido(req.params.ano);
+    if (!ano) return res.status(400).json({ ok: false, error: "ano_invalido" });
+    const dados = req.body?.dados;
+    if (!dados || typeof dados !== "object") {
+      return res.status(400).json({ ok: false, error: "dados_obrigatorios" });
+    }
+    try {
+      const portalIds = await empresasVisiveis(req);
+      if (!portalIds.includes(companyId)) {
+        return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      }
+      const espelho = await prisma.defisEspelho.upsert({
+        where: { portalClientId_anoCalendario: { portalClientId: companyId, anoCalendario: ano } },
+        create: { portalClientId: companyId, anoCalendario: ano, dados },
+        // ⚠ O update NÃO toca em `transmitidaEm` nem no recibo. Salvar rascunho depois de marcar
+        // transmitida não pode apagar o registro da entrega — desfazer a marca é ato próprio.
+        update: { dados },
+      });
+      return res.json({ ok: true, espelho });
+    } catch (err) { return falhar(res, err, { companyId, ano }); }
+  });
+
+  router.post("/companies/:companyId/defis/:ano/transmitida", async (req, res) => {
+    const companyId = String(req.params.companyId);
+    const ano = anoValido(req.params.ano);
+    if (!ano) return res.status(400).json({ ok: false, error: "ano_invalido" });
+    try {
+      const portalIds = await empresasVisiveis(req);
+      if (!portalIds.includes(companyId)) {
+        return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
+      }
+      const existente = await prisma.defisEspelho.findUnique({
+        where: { portalClientId_anoCalendario: { portalClientId: companyId, anoCalendario: ano } },
+      });
+      // ⚠ Marcar transmitida sem espelho salvo seria registrar uma entrega sem o que foi entregue.
+      if (!existente) return res.status(409).json({ ok: false, error: "espelho_nao_salvo" });
+
+      const espelho = await prisma.defisEspelho.update({
+        where: { id: existente.id },
+        data: {
+          transmitidaEm: new Date(),
+          transmitidaPorId: req.auth?.user?.id || null,
+          reciboFileId: req.body?.reciboFileId || existente.reciboFileId || null,
+        },
+      });
+      return res.json({ ok: true, espelho });
+    } catch (err) { return falhar(res, err, { companyId, ano }); }
   });
 
   return router;
