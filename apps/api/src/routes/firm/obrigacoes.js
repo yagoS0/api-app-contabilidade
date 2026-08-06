@@ -268,6 +268,32 @@ export function createObrigacoesRouter({ log } = {}) {
     } catch (err) { return falhar(res, err, { companyId, tipo }); }
   });
 
+  /**
+   * ⚠ GUARDA DE OBRIGATORIEDADE — optante do Simples Nacional NÃO entrega EFD-Contribuições
+   * (IN RFB 1.252/2012; Guia Prático v1.35, Cap. I, Seção 3). A tela já não oferece o fluxo, mas a
+   * aba aberta antes de a empresa migrar para o Simples ainda pode enviar o PUT, e um registro de
+   * "entregue" numa empresa dispensada é pior que nenhum: ele responde a pergunta errada com
+   * confiança.
+   *
+   * ⚠ E A GUARDA SÓ RECUSA COM CERTEZA. Regime ausente ou desconhecido PASSA — `mapRegime` do
+   * apuracaoV2 assume Simples por default porque lá o default é inofensivo; aqui ele bloquearia
+   * trabalho legítimo de toda empresa sem regime cadastrado. Bloquear por falta de dado é o erro
+   * caro nesta direção.
+   */
+  async function dispensadaPorRegime(portalClientId) {
+    const pc = await prisma.portalClient
+      .findUnique({ where: { id: portalClientId }, select: { companyId: true } })
+      .catch(() => null);
+    if (!pc?.companyId) return null;
+    const company = await prisma.company
+      .findUnique({ where: { id: pc.companyId }, select: { regimeTributario: true, optanteSimples: true } })
+      .catch(() => null);
+    const raw = String(company?.regimeTributario || "").toUpperCase();
+    if (/MEI/.test(raw)) return "microempreendedor individual";
+    if (/SIMPLES/.test(raw) || company?.optanteSimples === true) return "optante pelo Simples Nacional";
+    return null;
+  }
+
   router.put("/companies/:companyId/entregas/:tipo/:competencia", async (req, res) => {
     const companyId = String(req.params.companyId);
     const tipo = String(req.params.tipo).toUpperCase();
@@ -281,6 +307,19 @@ export function createObrigacoesRouter({ log } = {}) {
       if (!portalIds.includes(companyId)) {
         return res.status(404).json({ ok: false, error: "empresa_nao_encontrada" });
       }
+      // A guarda vale para EFD-Contribuições; ECD e ECF têm outro rol de obrigados e não passam
+      // por aqui (a dispensa do Simples é específica desta obrigação).
+      if (tipo === "EFD_CONTRIBUICOES") {
+        const dispensa = await dispensadaPorRegime(companyId);
+        if (dispensa) {
+          return res.status(409).json({
+            ok: false,
+            error: "OBRIGACAO_NAO_DEVIDA",
+            message: `Empresa ${dispensa} — a EFD-Contribuições não é devida nos períodos abrangidos pelo regime (IN RFB 1.252/2012).`,
+          });
+        }
+      }
+
       const body = req.body || {};
       // ⚠ Só os campos enviados são tocados. Anexar o recibo não pode apagar o arquivo, e vice-versa
       // — são dois passos separados, feitos em momentos diferentes.

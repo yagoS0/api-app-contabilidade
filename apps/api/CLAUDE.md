@@ -619,6 +619,21 @@ propósito: zerar os outros campos lá quebraria o fluxo no mock e não em produ
 usam o ano. Uma tabela por obrigação seria a mesma estrutura copiada quatro vezes, e a quarta
 divergiria.
 
+### Guarda de obrigatoriedade — e por que ela só recusa COM CERTEZA
+
+Optante do Simples Nacional **não entrega EFD-Contribuições** (IN RFB 1.252/2012; Guia Prático
+v1.35, Cap. I, Seção 3). O PUT recusa com **409 `OBRIGACAO_NAO_DEVIDA`** — a tela já não oferece o
+fluxo, mas aba aberta antes de a empresa migrar ainda envia, e um "entregue" gravado numa empresa
+dispensada responde a pergunta errada com confiança.
+
+⚠ **Regime ausente ou desconhecido PASSA.** `mapRegime` (`apuracaoV2.js`) assume Simples por
+default porque lá o default é inofensivo; copiá-lo aqui bloquearia trabalho legítimo de toda
+empresa sem regime cadastrado. Nesta direção, bloquear por falta de dado é o erro caro — o oposto
+da regra do front, onde ausência de regime vira o terceiro estado (`indefinida`) e não afirma nada.
+
+A guarda vale **só para `EFD_CONTRIBUICOES`**: ECD e ECF têm outro rol de obrigados, e a dispensa
+do Simples é específica desta obrigação.
+
 ## Endpoints agregados do dashboard (Lote C)
 
 - `GET /firm/companies/annual?ano=` — grade 12 meses × empresas: fechamento contábil

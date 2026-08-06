@@ -117,7 +117,7 @@ const setaEfd = {
   padding: "2px 9px", font: "inherit", fontSize: "0.85rem", cursor: "pointer", lineHeight: 1.2,
 };
 
-function ObrigacoesDaEmpresa({ companyId }) {
+function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
   const [abrirDefis, setAbrirDefis] = useState(false);
   const [anoDefis, setAnoDefis] = useState(() => new Date().getFullYear() - 1);
   const [espelhoSalvo, setEspelhoSalvo] = useState(null);
@@ -159,9 +159,12 @@ function ObrigacoesDaEmpresa({ companyId }) {
       {/* ⚠ A EFD-Contribuições fica ACIMA do calendário, não como uma ocorrência dentro dele.
           Ela não é um dia na agenda: é um trabalho de três passos, dois deles FORA do app, e a
           pergunta que ela precisa responder ("esta competência já foi entregue?") não cabe num
-          marcador de célula. Aparece para toda empresa, sempre — decidir aqui quem é dispensado
-          seria julgar dispensa fiscal em silêncio, e obrigação que some da tela vira obrigação
-          esquecida. */}
+          marcador de célula.
+
+          ⚠ O BLOCO APARECE SEMPRE, mas o que ele mostra depende do REGIME: optante do Simples
+          Nacional nunca entrega EFD-Contribuições (IN RFB 1.252/2012), e para ela o bloco diz a
+          dispensa com a norma citada, no lugar dos três passos. Não é o mesmo que sumir — some da
+          tela quem não deve nada, e aí ninguém sabe se foi dispensa ou esquecimento. */}
       <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "grid", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Entrega mensal:</span>
@@ -170,7 +173,7 @@ function ObrigacoesDaEmpresa({ companyId }) {
           <button type="button" onClick={() => setCompetenciaEfd((c) => deslocarCompetencia(c, 1))} style={setaEfd} aria-label="Próxima competência">›</button>
         </div>
         <Suspense fallback={<TabLoadingFallback />}>
-          <EntregaPorArquivo companyId={companyId} competencia={competenciaEfd} />
+          <EntregaPorArquivo companyId={companyId} regime={companyRegime} competencia={competenciaEfd} />
         </Suspense>
       </div>
 
@@ -699,7 +702,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             <Suspense fallback={<TabLoadingFallback />}>
               {/* Sem companyId ainda, o calendário buscaria a carteira INTEIRA dentro da página de
                   uma empresa — espera a empresa carregar antes de montar. */}
-              {companyId ? <ObrigacoesDaEmpresa companyId={companyId} /> : <TabLoadingFallback />}
+              {companyId ? <ObrigacoesDaEmpresa companyId={companyId} companyRegime={companyRegime} /> : <TabLoadingFallback />}
             </Suspense>
           </ErrorBoundary>
         </div>

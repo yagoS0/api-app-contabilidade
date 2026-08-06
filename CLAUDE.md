@@ -137,10 +137,23 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     a **data de vigência das tabelas e os avisos de escopo impressos**, porque circula sozinho.
     Início de atividade coberto — ver `docs/fontes-fiscais-inicio-atividade.md`.
   - **EFD-Contribuições / entrega por arquivo** (`obrigacoes/entregas/`, modelo genérico
-    `EntregaObrigacaoArquivo`) — ⚠ **não gera** (o leiaute do Guia Prático não está no projeto) e
-    ⚠ **não transmite** (validação/assinatura/transmissão são do PVA, sem API). O que existe é o
-    **rastro** em três passos, com o "onde acontece" no rótulo de cada um. Serve também a ECD/ECF
-    (`competencia` aceita "YYYY-MM" e "YYYY").
+    `EntregaObrigacaoArquivo`) — o **rastro** em três passos, com o "onde acontece" no rótulo de
+    cada um. Serve também a ECD/ECF (`competencia` aceita "YYYY-MM" e "YYYY").
+    - ⚠ **Optante do Simples Nacional NÃO entrega** (IN RFB 1.252/2012; Guia Prático v1.35, Cap. I,
+      Seção 3). A regra vive em `entregas/lib/obrigatoriedadeEfd.js` (19 testes) e tem **três**
+      respostas: `obrigada`, `dispensada` e **`indefinida`** — sem regime cadastrado não se afirma
+      nem uma coisa nem outra. A tela mostra a dispensa **com a norma citada** no lugar do fluxo;
+      isso não é o mesmo que sumir, e a distinção é o ponto: some da tela quem não deve nada, e aí
+      ninguém sabe se foi dispensa ou esquecimento.
+    - ⚠ Dispensas que dependem de dado que não temos (imunidade com contribuições ≤ R$ 10 mil, mês
+      sem receita, inatividade) **não são aplicadas** — viajam nomeadas junto da obrigação.
+      Dezembro traz aviso próprio: consolida no registro **0120** os meses dispensados do ano.
+    - ⚠ **Ainda não gera o arquivo.** O leiaute oficial (Guia Prático v1.35) está versionado em
+      `docs/leiaute-efd-contribuicoes/` com hash — mas faltam as **tabelas 4.3.x** (ficam atrás de
+      postback ASP.NET, e são dados por vigência, não constantes) e o gate de aceite nº 1,
+      **validar no PVA**, que não é executável neste ambiente. Ler o README de lá antes de retomar.
+    - **Não transmite**, e o motivo é outro: validação/assinatura/transmissão são do PVA, sem API —
+      esse limite não muda nem com o gerador pronto.
   - **Não construído, e por quê:** NFS-e recorrentes (sem model/scheduler); motivo de rejeição da
     NFS-e na lista (`ServiceInvoice` não tem o campo); chip anual da DEFIS na listagem principal
     (falta agregação no backend); Bloco 3 (Apuração do Lucro Presumido) segue travado no probe do
