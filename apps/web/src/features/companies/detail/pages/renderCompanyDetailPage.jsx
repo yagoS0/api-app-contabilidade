@@ -89,6 +89,79 @@ const companyDocsApi = createApiClient();
 // O CalendarioGrid chama a API por conta própria (mesmo padrão do SITFIS e do Apuração v2) —
 // a página de detalhe não tem `api` em escopo.
 const obrigacoesApi = createApiClient();
+// Carregado sob demanda: são ~40 campos e a especificação inteira da DEFIS, e quem abre a aba de
+// Obrigações quase sempre quer o calendário, não o espelho.
+const EspelhoDefis = lazy(() =>
+  import("../../../obrigacoes/defis/components/EspelhoDefis").then((m) => ({ default: m.EspelhoDefis })),
+);
+/**
+ * A aba Obrigações da empresa: o calendário + a porta de entrada do ESPELHO DA DEFIS.
+ *
+ * ⚠ O espelho é o trabalho anual que não cabe no calendário — a DEFIS tem ~40 campos numerados e
+ * uma ficha por estabelecimento. Deixá-lo só como uma ocorrência no dia 31/03 seria transformar a
+ * entrega mais pesada do ano numa linha de agenda. Aqui ele é botão, ao lado do calendário.
+ *
+ * ⚠ O ANO PADRÃO é o ANTERIOR: a DEFIS de 2025 se entrega em 2026, então quem abre a tela em
+ * qualquer mês de 2026 quer o espelho de 2025. Abrir no ano corrente mostraria um espelho de um
+ * ano que nem terminou.
+ */
+function ObrigacoesDaEmpresa({ companyId }) {
+  const [abrirDefis, setAbrirDefis] = useState(false);
+  const [anoDefis, setAnoDefis] = useState(() => new Date().getFullYear() - 1);
+  const [espelhoSalvo, setEspelhoSalvo] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+
+  async function abrir() {
+    setCarregando(true);
+    try {
+      const r = await obrigacoesApi.getDefisEspelho?.(companyId, anoDefis);
+      setEspelhoSalvo(r?.dados || r?.espelho?.dados || null);
+    } catch { setEspelhoSalvo(null); }
+    finally { setCarregando(false); setAbrirDefis(true); }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Entrega anual:</span>
+        <input
+          type="number"
+          value={anoDefis}
+          onChange={(e) => setAnoDefis(Number(e.target.value) || anoDefis)}
+          style={{ width: 92, background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.82rem" }}
+          aria-label="Ano-calendário da DEFIS"
+        />
+        <button
+          type="button"
+          onClick={abrir}
+          disabled={carregando}
+          style={{ background: "transparent", border: "1px solid #BD93F9", color: "#BD93F9", borderRadius: 6, padding: "5px 12px", font: "inherit", fontSize: "0.8rem", cursor: "pointer" }}
+        >
+          {carregando ? "Abrindo…" : "📄 Espelho da DEFIS"}
+        </button>
+      </div>
+
+      <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId} />
+
+      {abrirDefis && (
+        <Suspense fallback={<TabLoadingFallback />}>
+          <EspelhoDefis
+            anoCalendario={anoDefis}
+            valorInicial={espelhoSalvo}
+            onSalvar={(e) => obrigacoesApi.salvarDefisEspelho?.(companyId, anoDefis, e)}
+            onMarcarTransmitida={async (e) => {
+              await obrigacoesApi.salvarDefisEspelho?.(companyId, anoDefis, e);
+              await obrigacoesApi.marcarDefisTransmitida?.(companyId, anoDefis);
+              setAbrirDefis(false);
+            }}
+            onClose={() => setAbrirDefis(false)}
+          />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+
 function ApuracaoV2TabWrapper({ companyId, feedback, razao, competencia, onCompetenciaChange }) {
   const panel = useApuracaoV2({ api: apuracaoV2Api, companyId, feedback });
   return (
@@ -593,7 +666,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             <Suspense fallback={<TabLoadingFallback />}>
               {/* Sem companyId ainda, o calendário buscaria a carteira INTEIRA dentro da página de
                   uma empresa — espera a empresa carregar antes de montar. */}
-              {companyId ? <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId} /> : <TabLoadingFallback />}
+              {companyId ? <ObrigacoesDaEmpresa companyId={companyId} /> : <TabLoadingFallback />}
             </Suspense>
           </ErrorBoundary>
         </div>

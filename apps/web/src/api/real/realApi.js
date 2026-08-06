@@ -1168,6 +1168,19 @@ export function createRealApi() {
       return request("/nfse/issue", { method: "POST", body: JSON.stringify(payload) });
     },
 
+    // ── Espelho da DEFIS ──────────────────────────────────────────────────
+    // ⚠ Nenhuma destas transmite. A DEFIS é transmitida NO PORTAL; `marcarDefisTransmitida` só
+    // registra do nosso lado que o contador transmitiu, com o recibo.
+    async getDefisEspelho(companyId, ano) {
+      return request(`/firm/companies/${companyId}/defis/${ano}`);
+    },
+    async salvarDefisEspelho(companyId, ano, dados) {
+      return request(`/firm/companies/${companyId}/defis/${ano}`, { method: "PUT", body: JSON.stringify({ dados }) });
+    },
+    async marcarDefisTransmitida(companyId, ano) {
+      return request(`/firm/companies/${companyId}/defis/${ano}/transmitida`, { method: "POST", body: JSON.stringify({}) });
+    },
+
     /** O que o ERP recusaria nesta competência — consultado ANTES de baixar o arquivo. */
     async getExportPreflight(companyId, competencia) {
       return request(`/firm/companies/${companyId}/entries/export/preflight?competencia=${encodeURIComponent(competencia)}`);

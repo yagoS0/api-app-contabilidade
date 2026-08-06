@@ -459,6 +459,8 @@ const mockChartOfAccounts = new Map();
 // Sequencial das notas emitidas no mock — número e chave precisam ser distintos a cada emissão,
 // senão duas notas seguidas pareceriam a mesma na tela de resultado.
 let mockNfseSeq = 0;
+// Espelhos da DEFIS por `empresa|ano` — mesma chave da unique do modelo.
+const mockDefisEspelhos = new Map();
 const mockEntriesByCompany = new Map();
 const mockMonthlyCirculars = new Map();
 
@@ -2388,6 +2390,28 @@ export function createMockApi() {
      * inteiro da exportação era inconferível offline, que é justamente onde ele se confere.
      * `data:` URL é buscável por `fetch` e vira blob igual à resposta do servidor.
      */
+    // ── Espelho da DEFIS ──────────────────────────────────────────────────
+    // Guardado por (empresa, ano), como a unique do modelo: reabrir a tela continua o MESMO
+    // espelho. Sem isso o mock daria a impressão de que salvar funciona e o rascunho sumiria.
+    async getDefisEspelho(companyId, ano) {
+      await delay(120);
+      return mockDefisEspelhos.get(`${companyId}|${ano}`) || null;
+    },
+    async salvarDefisEspelho(companyId, ano, dados) {
+      await delay(180);
+      const atual = mockDefisEspelhos.get(`${companyId}|${ano}`) || {};
+      const novo = { ...atual, portalClientId: companyId, anoCalendario: Number(ano), dados };
+      mockDefisEspelhos.set(`${companyId}|${ano}`, novo);
+      return { ok: true, espelho: novo };
+    },
+    async marcarDefisTransmitida(companyId, ano) {
+      await delay(180);
+      const atual = mockDefisEspelhos.get(`${companyId}|${ano}`) || { portalClientId: companyId, anoCalendario: Number(ano), dados: null };
+      const novo = { ...atual, transmitidaEm: new Date().toISOString() };
+      mockDefisEspelhos.set(`${companyId}|${ano}`, novo);
+      return { ok: true, espelho: novo };
+    },
+
     getEntriesExportCsvUrl(companyId, params = {}) {
       const ini = params.competenciaInicio || params.competencia || "";
       const fim = params.competenciaFim || params.competencia || "";

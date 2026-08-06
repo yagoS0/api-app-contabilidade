@@ -2292,3 +2292,39 @@ model Feriado {
   @@index([data])
   @@map("feriados")
 }
+
+/// ESPELHO DA DEFIS — a folha de transcrição de um ano-calendário.
+///
+/// ⚠ ISTO NÃO TRANSMITE NADA. A DEFIS é transmitida NO PORTAL do Simples Nacional; o espelho
+/// existe para o contador transcrever de cima para baixo sem procurar campo, com o que o sistema
+/// já sabe pré-preenchido. Por isso `transmitidaEm` é uma MARCA manual (o contador diz que
+/// transmitiu) acompanhada do recibo — não é prova de transmissão nossa.
+///
+/// ⚠ O payload é JSON de propósito. São ~40 campos numerados, mais listas repetíveis (sócios,
+/// exportadoras, UFs, municípios) e uma ficha por estabelecimento. Modelar isso em colunas
+/// congelaria a estrutura da DEFIS no schema — e ela muda por ato normativo, fora do nosso
+/// controle. A forma canônica vive em `features/obrigacoes/defis/lib/defisSpec.js`, com a citação
+/// do manual oficial.
+model DefisEspelho {
+  id             String @id @default(uuid())
+  portalClientId String
+  /// Ano-calendário a que a declaração se refere (a DEFIS de 2025 é entregue em 2026).
+  anoCalendario  Int
+
+  /// O espelho inteiro, na forma de `defisSpec.espelhoVazio()`.
+  dados Json
+
+  /// Marca manual: o contador confirma que transmitiu no portal. Nunca escrita por automação.
+  transmitidaEm   DateTime?
+  transmitidaPorId String?
+  /// Recibo de entrega guardado pelo `GuideStorageService` (mesmo caminho dos PDFs de guia).
+  reciboFileId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Um espelho por empresa por ano — reabrir a tela continua o mesmo, não cria outro.
+  @@unique([portalClientId, anoCalendario])
+  @@index([portalClientId])
+  @@map("defis_espelhos")
+}
