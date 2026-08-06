@@ -451,6 +451,9 @@ const mockSerproProcurationByCompany = new Map();
 
 // Plano de contas mock (por empresa)
 const mockChartOfAccounts = new Map();
+// Sequencial das notas emitidas no mock — número e chave precisam ser distintos a cada emissão,
+// senão duas notas seguidas pareceriam a mesma na tela de resultado.
+let mockNfseSeq = 0;
 const mockEntriesByCompany = new Map();
 const mockMonthlyCirculars = new Map();
 
@@ -2394,6 +2397,39 @@ export function createMockApi() {
         linhas.push([e.data || "", d?.conta || "", c?.conta || "", String(e.historico || "").replace(/;/g, ","), valor].join(";"));
       }
       return `data:text/csv;charset=utf-8,${encodeURIComponent(`﻿${linhas.join("\n")}`)}`;
+    },
+
+    /**
+     * Emissão de NFS-e no mock.
+     *
+     * ⚠ RECUSA COM AS MESMAS REGRAS DO VALIDADOR REAL (`validators/nfsePayload.js`). Um mock que
+     * aceita tudo faz o wizard parecer pronto e esconde exatamente o que ele existe para evitar:
+     * mandar para a prefeitura um payload que o servidor recusaria.
+     *
+     * Devolve `issued` — o caminho `pending` (prefeitura demorando) é real, mas simulá-lo aqui
+     * exigiria inventar um relógio de retorno que não corresponde a nada.
+     */
+    async emitirNfse(payload) {
+      await delay(400);
+      const doc = String(payload?.tomador?.cnpjCpf || "").replace(/\D/g, "");
+      if (doc.length !== 11 && doc.length !== 14) throw new Error("tomador_documento_invalido");
+      if (!String(payload?.tomador?.nome || "").trim()) throw new Error("tomador_nome_obrigatorio");
+      if (!String(payload?.servico?.descricao || "").trim()) throw new Error("servico_descricao_obrigatoria");
+      const valor = Number(payload?.servico?.valorServicos);
+      if (!Number.isFinite(valor) || valor <= 0) throw new Error("servico_valor_invalido");
+      const seq = (mockNfseSeq += 1);
+      return {
+        status: "issued",
+        nfse: {
+          id: `mock-nfse-${seq}`,
+          status: "issued",
+          numeroNfse: String(1000 + seq),
+          chaveAcesso: `35${String(seq).padStart(42, "0")}`,
+          tomadorNome: payload.tomador.nome,
+          tomadorDoc: doc,
+          valorServicos: valor,
+        },
+      };
     },
 
     // As duas escrevem no MESMO estado que o pré-voo lê — é o que permite exercitar offline o

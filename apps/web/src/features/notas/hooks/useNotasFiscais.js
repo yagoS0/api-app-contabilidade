@@ -256,6 +256,10 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   }
 
   return {
+    // A aba precisa dele para emitir (o payload da NFS-e carrega `companyId`). Estava só no escopo
+    // do hook: sem isso, a tela teria de recebê-lo por um segundo caminho e os dois poderiam
+    // divergir ao trocar de empresa com a aba aberta.
+    companyId,
     ano, setAno,
     competencias, procuracoes, pendencias,
     loading, saving, error,

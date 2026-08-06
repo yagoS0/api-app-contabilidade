@@ -1159,6 +1159,15 @@ export function createRealApi() {
       return `${baseUrl}/firm/companies/${companyId}/entries/export/csv${suffix}`;
     },
 
+    /**
+     * Emite uma NFS-e. O corpo é EXATAMENTE o que `validators/nfsePayload.js` aceita — quem monta
+     * é o wizard, e o preview obrigatório é a última porta antes desta chamada.
+     * ⚠ Ato fiscal irreversível: não chamar sem confirmação explícita do contador.
+     */
+    async emitirNfse(payload) {
+      return request("/nfse/issue", { method: "POST", body: JSON.stringify(payload) });
+    },
+
     /** O que o ERP recusaria nesta competência — consultado ANTES de baixar o arquivo. */
     async getExportPreflight(companyId, competencia) {
       return request(`/firm/companies/${companyId}/entries/export/preflight?competencia=${encodeURIComponent(competencia)}`);

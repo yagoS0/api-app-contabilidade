@@ -9,6 +9,12 @@ import { DfeCapturePanel } from "./DfeCapturePanel";
 import { AdnCapturePanel } from "./AdnCapturePanel";
 import { NotasList } from "./NotasList";
 import { NotasResumo } from "./NotasResumo";
+import { EmitirNfseWizard } from "./EmitirNfseWizard";
+import { createApiClient } from "../../../api/client";
+
+// Cliente próprio, mesmo padrão auto-contido do SITFIS e do Apuração v2 — a aba já recebe tudo
+// por props e não tem `api` em escopo.
+const nfseApi = createApiClient();
 
 function JanelaBtn({ active, onClick, children }) {
   return (
@@ -29,6 +35,7 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
     loading, error, reload,
     dfeState, dfeSyncing, syncDfe, clearDfeError,
     adnState, adnSyncing, syncAdn, clearAdnError,
+    companyId,
     notas, notasFilters, setNotasFilters, notasSummary,
     loadingNotas, loadNotas,
     importing, importNotas, marcarNotaStatus,
@@ -36,6 +43,7 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
 
   // NFS-e é a janela padrão; NF-e só existe com inscrição estadual.
   const [janela, setJanela] = useState("NFSE");
+  const [emitindo, setEmitindo] = useState(false);
   const janelaAtiva = (janela === "NFE" && !hasInscricaoEstadual) ? "NFSE" : janela;
   const notasDaJanela = notas.filter((n) => n.type === janelaAtiva);
 
@@ -83,10 +91,24 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
         </div>
       )}
 
-      {/* Barra de captura da janela ativa: consultar (+ importar XML só na de serviço). */}
+      {/* ⚠ EMITIR é o PRIMÁRIO da janela de NFS-e; buscar e importar viram secundários.
+          A aba nasceu só para CAPTURAR nota que já existe, e emitir — que é o que a empresa faz
+          para faturar — não tinha porta nenhuma na tela, embora o backend (`POST /nfse/issue`)
+          esteja de pé há tempos. Só na janela de NFS-e: NF-e de venda não se emite por aqui. */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
         {janelaAtiva === "NFSE" ? (
           <>
+            <button
+              type="button"
+              onClick={() => setEmitindo(true)}
+              style={{
+                padding: "8px 16px", borderRadius: 6, border: "none",
+                background: "var(--accent-cyan)", color: "#0b0b12",
+                fontSize: "0.85rem", fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              + Emitir nota
+            </button>
             <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} onClearError={clearAdnError} />
             <label style={{
               display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 6,
@@ -135,6 +157,17 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
 
       {loading && notas.length === 0 && (
         <div style={{ padding: 24, textAlign: "center", color: PANEL.muted }}>Carregando…</div>
+      )}
+
+      {emitindo && (
+        <EmitirNfseWizard
+          companyId={companyId}
+          onEmitir={(payload) => nfseApi.emitirNfse(payload)}
+          onClose={() => setEmitindo(false)}
+          /* A nota recém-emitida precisa APARECER na lista — senão o contador emite, fecha o
+             assistente e não vê nada mudar, e a dúvida "será que saiu?" leva a emitir de novo. */
+          onEmitida={() => { reload?.(); loadNotas?.(notasFilters); }}
+        />
       )}
     </div>
   );
