@@ -114,6 +114,37 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   só pelo botão, **1× a cada 4h**.
   - ⚠ **Exige Volume no Railway em `/app/storage`** — sem ele o filesystem é efêmero e **todo
     deploy apaga os PDFs** (guias e relatórios SITFIS). Ver `apps/api/CLAUDE.md`.
+- [~] **PLANO MESTRE — entregas 1 a 8** (Bloco 8/chat é de outro agente; **Entrega 7,
+  Departamento Pessoal, deixada de lado a pedido do dono**).
+  - **Competência global da empresa** (`lib/competencia.js` + `CompetenciaSwitcher` no header):
+    Lançamentos, Circular, Cadastro Fiscal, Guias e Notas Fiscais passaram a ler a MESMA
+    competência. Antes eram duas, com defaults diferentes, discordando em silêncio.
+  - **Regras de tela viraram lib com teste próprio:** `circular/lib/estadoGuia.js` (12),
+    `obrigacoes/lib/cicloObrigacao.js` (15), `relatorios/lib/periodoRelatorio.js` (18).
+  - **Espelho da DEFIS** (`obrigacoes/defis/`) — a especificação de campos como DADO
+    (`defisSpec.js`, `DEFIS_FONTE.verificadoNoPortal: false`). **Não transmite**: a DEFIS é
+    transmitida no portal, e `marcarDefisTransmitida` só registra o recibo do nosso lado.
+    ⚠ `PERGUNTAS_MUNICIPIO` está **deliberadamente vazio** — o manual não traz lista fechada.
+  - **Relatórios** (sub-aba de Contabilidade) — intervalo PRÓPRIO, a única exceção à competência
+    global. ⚠ **Balanço e balancete não aparecem nem desabilitados**: exigem saldo por conta com
+    classificação patrimonial, e entregar isso a partir de lançamentos seria um demonstrativo com
+    NOME DE PEÇA CONTÁBIL. Período anterior tem o **mesmo tamanho**; base zero **não vira
+    percentual**; mês sem lançamento entra na série **com zero**, visualmente distinto.
+  - **Planejamento tributário** (`features/planejamento/`) — motor local com as tabelas em
+    `tabelasFiscais.js`, cada valor citando a lei; 81 testes, dos quais 20 são **casos dourados
+    calculados à mão**. ⚠ A **recusa de calcular tem o mesmo peso visual do resultado**
+    (`CardRegime.jsx`): número ausente diagramado em cinza vira ausência de dúvida. O PDF sai com
+    a **data de vigência das tabelas e os avisos de escopo impressos**, porque circula sozinho.
+    Início de atividade coberto — ver `docs/fontes-fiscais-inicio-atividade.md`.
+  - **EFD-Contribuições / entrega por arquivo** (`obrigacoes/entregas/`, modelo genérico
+    `EntregaObrigacaoArquivo`) — ⚠ **não gera** (o leiaute do Guia Prático não está no projeto) e
+    ⚠ **não transmite** (validação/assinatura/transmissão são do PVA, sem API). O que existe é o
+    **rastro** em três passos, com o "onde acontece" no rótulo de cada um. Serve também a ECD/ECF
+    (`competencia` aceita "YYYY-MM" e "YYYY").
+  - **Não construído, e por quê:** NFS-e recorrentes (sem model/scheduler); motivo de rejeição da
+    NFS-e na lista (`ServiceInvoice` não tem o campo); chip anual da DEFIS na listagem principal
+    (falta agregação no backend); Bloco 3 (Apuração do Lucro Presumido) segue travado no probe do
+    `CONSDECCOMPLETA33`.
 - [~] **WhatsApp — Entrega 1: envio de guias pelo canal** — **PAUSADO aguardando número para o
   cadastro na Meta**. Roadmap e estado completo em **`docs/whatsapp-entrega-1.md`**.
   - **F1 e F2 prontas na `dev`** e seguras para subir junto de qualquer outra entrega: F1 é inerte

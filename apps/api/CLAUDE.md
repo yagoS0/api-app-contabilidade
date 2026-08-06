@@ -594,6 +594,31 @@ zera os flags de e-mail da guia DAS (`liberarReenvio`); numa transmissão normal
   - Nos dois, havendo guia SERPRO **e** upload no mesmo mês, a do **SERPRO vence** (autoritativa) —
     senão a linha apareceria duplicada.
 
+## Entrega por arquivo — o app NÃO gera e NÃO transmite (e são dois motivos diferentes)
+
+`EntregaObrigacaoArquivo` + `GET/PUT /firm/companies/:id/entregas/:tipo[/:competencia]`
+(`routes/firm/obrigacoes.js`). Serve EFD-Contribuições, ECD, ECF e EFD-Fiscal — o mesmo ciclo:
+arquivo gerado fora → validado/assinado/transmitido no **PVA** → recibo.
+
+Os dois limites não têm a mesma causa, e tratá-los como um só esconderia o segundo:
+
+| | Por quê | Muda se…? |
+|---|---|---|
+| **não gera o arquivo** | o leiaute (Guia Prático da RFB, blocos 0/A/C/D/F/M/1/9) **não está no projeto**; deduzi-lo produz arquivo que o validador recusa — ou que ele **aceita com dado errado**, que é declaração falsa (regra 1) | sim, com o leiaute oficial em mãos |
+| **não transmite** | validação, assinatura e transmissão são etapas do **programa oficial**, e não existe API | **não** — segue fora do app mesmo com o leiaute |
+
+O que se guarda é o **rastro**: sem ele, "a EFD de março foi entregue?" só se responde abrindo o
+PVA, empresa por empresa. `transmitidaEm` é **marca manual do contador**, nunca escrita por
+automação, e `transmitida: false` **desfaz** (a EFD se retifica).
+
+⚠ **O PUT só toca o que foi enviado.** Anexar o recibo não pode apagar o arquivo, e vice-versa —
+são passos separados, feitos em momentos diferentes. O mock repete a mesma regra parcial de
+propósito: zerar os outros campos lá quebraria o fluxo no mock e não em produção.
+
+⚠ **`tipo` é string livre e `competencia` aceita `"YYYY-MM"` e `"YYYY"`** — as anuais (ECD/ECF)
+usam o ano. Uma tabela por obrigação seria a mesma estrutura copiada quatro vezes, e a quarta
+divergiria.
+
 ## Endpoints agregados do dashboard (Lote C)
 
 - `GET /firm/companies/annual?ano=` — grade 12 meses × empresas: fechamento contábil
