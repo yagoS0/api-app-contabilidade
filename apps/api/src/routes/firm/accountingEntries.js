@@ -118,7 +118,13 @@ function deriveBaixaEventType(entry) {
 // Frente B / item 2: acréscimo (juros+multa) do tributo do lançamento, lido de circular.acrescimos.
 // Usado na baixa pra somar linhas de despesa quando a guia veio recalculada.
 // Contas conferidas no plano de contas (ChartOfAccount): 501 = JUROS, 506 = MULTAS (ambas DESPESA/DEVEDORA).
-const SUBTIPO_TO_ACRESCIMO_TRIB = { DAS: ["DAS"], INSS: ["INSS"], IRPJ: ["IRPJ"], CSLL: ["CSLL"], PIS_COFINS: ["PIS", "COFINS"], ISS: ["ISS"] };
+// 1:1 desde que PIS e COFINS ganharam linha própria na Circular — cada um lê o SEU acréscimo.
+// `PIS_COFINS` fica no mapa para lançamento ANTIGO ainda não convertido pelo script de separação:
+// sem ele, o juros/multa daqueles meses sumiria da tela até a migração rodar.
+const SUBTIPO_TO_ACRESCIMO_TRIB = {
+  DAS: ["DAS"], INSS: ["INSS"], IRPJ: ["IRPJ"], CSLL: ["CSLL"],
+  PIS: ["PIS"], COFINS: ["COFINS"], PIS_COFINS: ["PIS", "COFINS"], ISS: ["ISS"],
+};
 // 501/502 vinham escritos aqui, no script de remediação e como literal no modal do front. Três
 // cópias de um código de conta divergem sem ninguém notar — agora vêm de `contasAcrescimo.js`.
 async function acrescimoDoEntry(client, portalClientId, entry) {

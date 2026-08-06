@@ -29,10 +29,26 @@ describe("código de receita → tributo", () => {
     expect(EVENT_TO_TRIBUTO[CODIGO_RECEITA_TO_EVENT["8109"]]).toBe("PIS");
   });
 
-  it("PIS e COFINS continuam compartilhando a LINHA da Circular", () => {
-    // O agrupamento é certo na matriz e errado na descrição: são perguntas diferentes.
-    expect(EVENT_TO_SUBTIPO.DARF_PIS).toBe("PIS_COFINS");
-    expect(EVENT_TO_SUBTIPO.DARF_COFINS).toBe("PIS_COFINS");
+  it("⚠ PIS e COFINS têm LINHAS SEPARADAS na Circular — compartilhá-las escondia um lançamento", () => {
+    // Este teste afirmava o CONTRÁRIO ("continuam compartilhando a LINHA"), e o agrupamento parecia
+    // certo porque o DARF do LP é um documento só. Não era: a matriz da Circular é indexada por
+    // `subtipo__competencia`, então as duas provisões caíam na MESMA célula e uma era DESCARTADA na
+    // exibição. Medido no banco de dev: 10 lançamentos, DOIS por competência em 5 meses — metade
+    // invisível. A célula mostrava o valor de um tributo enquanto o "Total em aberto" somava os
+    // dois, e dar baixa pela célula deixava a outra provisão aberta, sem ninguém ver.
+    expect(EVENT_TO_SUBTIPO.DARF_PIS).toBe("PIS");
+    expect(EVENT_TO_SUBTIPO.DARF_COFINS).toBe("COFINS");
+    expect(EVENT_TO_SUBTIPO.DARF_PIS).not.toBe(EVENT_TO_SUBTIPO.DARF_COFINS);
+  });
+
+  it("os 4 tributos do DARF do LP caem em 4 linhas DISTINTAS da Circular", () => {
+    // É o invariante que a separação existe para garantir: um DARF consolidado vira quatro
+    // provisões, e cada uma precisa da própria célula para ter a própria baixa. Se dois voltarem a
+    // colidir num subtipo, a Circular descarta um deles em silêncio.
+    const codigos = ["8109", "2172", "2089", "2372"]; // PIS · COFINS · IRPJ · CSLL
+    const subtipos = codigos.map((c) => EVENT_TO_SUBTIPO[CODIGO_RECEITA_TO_EVENT[c]]);
+    expect(subtipos).toEqual(["PIS", "COFINS", "IRPJ", "CSLL"]);
+    expect(new Set(subtipos).size).toBe(4);
   });
 
   it("código desconhecido continua em OUTROS_TRIBUTOS — não vira IRRF chutado", () => {

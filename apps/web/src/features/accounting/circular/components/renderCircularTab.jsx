@@ -20,7 +20,14 @@ const SUBTIPO_ROWS_ALL = [
   { key: "PARC_DAS",        label: "Parc. Simples Nacional",        regimes: ["SIMPLES"] },
   { key: "IRPJ",            label: "IRPJ",                          regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
   { key: "CSLL",            label: "CSLL",                          regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
-  { key: "PIS_COFINS",      label: "PIS/COFINS",                    regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
+  // ⚠ PIS e COFINS têm LINHA PRÓPRIA — eram uma só ("PIS/COFINS"), e isso escondia um lançamento.
+  // A matriz é indexada por `subtipo__competencia`: com o mesmo subtipo, as duas provisões caíam na
+  // mesma célula e uma era DESCARTADA. A célula mostrava o valor de um tributo enquanto o "Total em
+  // aberto" somava os dois, e dar baixa pela célula deixava a outra aberta e invisível.
+  // O DARF continua sendo UM documento para gerar e enviar (ver `guideCompliance`); o que se separa
+  // aqui é a BAIXA, que é por tributo e em contas diferentes.
+  { key: "PIS",             label: "PIS",                           regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
+  { key: "COFINS",          label: "COFINS",                        regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
   { key: "ISS",             label: "ISS",                           regimes: ["LUCRO_PRESUMIDO", "LUCRO_REAL"] },
   { key: "INSS",            label: "INSS / CPP",                    regimes: "all" },
   { key: "IRRF",            label: "IRRF",                          regimes: "all" },
@@ -42,9 +49,11 @@ function getSubtipoRowsForRegime(regime) {
 const SUBTIPO_ROWS = SUBTIPO_ROWS_ALL;
 
 // Frente B: subtipo da matriz → chave(s) do tributo em circular.acrescimos.
-// PIS_COFINS agrega PIS + COFINS (a matriz tem uma linha só).
+// Agora é 1:1 — PIS e COFINS têm linha própria, então cada um lê o SEU acréscimo. Enquanto
+// `PIS_COFINS` mapeava para os dois, o juros/multa de um aparecia somado ao do outro na única
+// célula que existia.
 const SUBTIPO_TO_ACRESCIMO = {
-  DAS: ["DAS"], INSS: ["INSS"], IRPJ: ["IRPJ"], CSLL: ["CSLL"], PIS_COFINS: ["PIS", "COFINS"], ISS: ["ISS"],
+  DAS: ["DAS"], INSS: ["INSS"], IRPJ: ["IRPJ"], CSLL: ["CSLL"], PIS: ["PIS"], COFINS: ["COFINS"], ISS: ["ISS"],
 };
 
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];

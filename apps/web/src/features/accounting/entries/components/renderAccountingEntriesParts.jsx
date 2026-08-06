@@ -280,7 +280,15 @@ function detectSubtipoFromNome(nome) {
   if (n.includes("SIMPLES") || n.includes("DAS")) return "DAS";
   if (n.includes("IRRF") || (n.includes("IMPOSTO") && n.includes("RENDA"))) return "IRRF";
   if (n.includes("ISS")) return "ISS";
-  if (n.includes("PIS") || n.includes("COFINS")) return "PIS_COFINS";
+  // ⚠ PIS e COFINS separados: no plano de contas são contas distintas ("PIS A RECOLHER",
+  // "COFINS A RECOLHER"), então a detecção é exata — "COFINS" não contém "PIS".
+  // Conta COMBINADA ("PIS/COFINS A RECOLHER") é o único caso ambíguo: vence quem aparece primeiro
+  // no nome, o que é determinístico e segue a ordem de leitura. Isto é SUGESTÃO num lançamento
+  // manual — o contador escolhe o subtipo final na lista —, então um palpite explicável aqui não
+  // grava nada errado sozinho.
+  if (n.includes("PIS") && n.includes("COFINS")) return n.indexOf("PIS") < n.indexOf("COFINS") ? "PIS" : "COFINS";
+  if (n.includes("COFINS")) return "COFINS";
+  if (n.includes("PIS")) return "PIS";
   if (n.includes("FGTS")) return "FGTS";
   if (n.includes("FERI")) return "FERIAS";
   if (n.includes("13") || n.includes("DECIMO") || n.includes("NATALINO")) return "DECIMO_TERCEIRO";

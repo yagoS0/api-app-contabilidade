@@ -6,7 +6,10 @@ export const SUBTIPO_OPTIONS = [
   { key: "DAS", label: "DAS / Simples Nacional" },
   { key: "IRRF", label: "IRRF" },
   { key: "ISS", label: "ISS" },
-  { key: "PIS_COFINS", label: "PIS/COFINS" },
+  // PIS e COFINS são subtipos separados: a baixa é por tributo, em contas diferentes. Ver o
+  // comentário em `EVENT_TO_SUBTIPO` (api/application/accounting/GuideToProvisionService.js).
+  { key: "PIS", label: "PIS" },
+  { key: "COFINS", label: "COFINS" },
   { key: "FGTS", label: "FGTS" },
   { key: "FERIAS", label: "Férias" },
   { key: "DECIMO_TERCEIRO", label: "13º Salário" },

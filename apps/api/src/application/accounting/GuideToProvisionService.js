@@ -42,9 +42,28 @@ export const CODIGO_RECEITA_TO_EVENT = Object.freeze({
 });
 
 // Mapeia eventType DARF_* → subtipo da matriz Circular
+//
+// ⚠ PIS E COFINS SÃO LINHAS SEPARADAS — e já foram uma só.
+//
+// O DARF do Lucro Presumido é UM documento com até quatro tributos, e agrupar PIS com COFINS aqui
+// parecia coerente com isso. Não era: o `subtipo` é a chave da matriz da Circular
+// (`${subtipo}__${competencia}`), então as DUAS provisões caíam na MESMA célula e uma delas era
+// simplesmente descartada na exibição. A célula mostrava o valor de um tributo enquanto a coluna
+// "Total em aberto" somava os dois — a mesma tela se contradizendo —, e a baixa pela célula atingia
+// só a provisão exibida, deixando a outra aberta e invisível.
+//
+// A fronteira certa é: **envio agrupado, baixa separada.**
+//   • `guideCompliance` CONTINUA agrupando PIS+COFINS no nó `PIS_COFINS`: ali a pergunta é "o que
+//     falta entregar?", e o que se entrega é um DARF só. Separar lá faria a listagem cobrar duas
+//     guias que não existem.
+//   • Aqui a pergunta é "o que falta BAIXAR?", e são dois lançamentos, em contas diferentes.
+//
+// Lançamentos antigos gravados com `subtipo: "PIS_COFINS"` são convertidos por
+// `scripts/separar-subtipo-pis-cofins.mjs` — o `eventType` já distingue os dois, então a conversão
+// é determinística, sem inferência.
 export const EVENT_TO_SUBTIPO = Object.freeze({
-  DARF_PIS: "PIS_COFINS",
-  DARF_COFINS: "PIS_COFINS",
+  DARF_PIS: "PIS",
+  DARF_COFINS: "COFINS",
   DARF_IRPJ: "IRPJ",
   DARF_CSLL: "CSLL",
   DARF_ISS: "ISS",
@@ -54,10 +73,12 @@ export const EVENT_TO_SUBTIPO = Object.freeze({
   DARF_OUTROS: "OUTROS_TRIBUTOS",
 });
 
-// O NOME do tributo, para o histórico. O `subtipo` é a LINHA da Circular e agrupa PIS com COFINS de
-// propósito; usá-lo no texto do lançamento fazia duas linhas diferentes aparecerem as duas como
-// "PIS_COFINS", distinguíveis só pelo código de receita entre parênteses. O agrupamento é certo na
-// matriz e errado na descrição — são perguntas diferentes.
+// O NOME do tributo, para o histórico do lançamento.
+//
+// Continua existindo separado do `EVENT_TO_SUBTIPO` mesmo agora que os dois coincidem para PIS e
+// COFINS: são perguntas diferentes (um é a LINHA da matriz, o outro é o texto que o contador lê), e
+// `OUTROS_TRIBUTOS` mostra que elas podem voltar a divergir. Fundi-los economizaria seis linhas e
+// amarraria o rótulo da tela à chave de agrupamento.
 export const EVENT_TO_TRIBUTO = Object.freeze({
   DARF_PIS: "PIS",
   DARF_COFINS: "COFINS",

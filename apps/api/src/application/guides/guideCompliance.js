@@ -261,6 +261,16 @@ export async function computeGuideComplianceMap(rows, competencia) {
   const faturamentoPorEmpresa = await faturamentoEmitPorEmpresa({ portalIds, competencia })
     .catch(() => new Map());
 
+  // ⚠ PIS E COFINS FICAM AGRUPADOS AQUI — E ISSO NÃO É INCONSISTÊNCIA COM A CIRCULAR.
+  //
+  // Do lado contábil eles foram SEPARADOS (`EVENT_TO_SUBTIPO`, em accounting/GuideToProvisionService):
+  // a baixa é por tributo, em contas diferentes. Aqui a pergunta é outra — "o que falta ENTREGAR?"
+  // — e o que se entrega é **um DARF consolidado**, com os quatro tributos dentro. Separar este
+  // grupo faria a listagem cobrar duas guias que não existem, e a empresa apareceria eternamente
+  // com "COFINS faltando" depois de o DARF já ter sido gerado e enviado.
+  //
+  // A fronteira é: **envio agrupado, baixa separada.** Se um dia o DARF puder ser emitido por
+  // tributo, aí sim isto muda junto.
   const CODIGO_TO_GROUP = {
     "2089": "IRPJ", "2362": "IRPJ", "2456": "IRPJ", "0220": "IRPJ",
     "2372": "CSLL", "2484": "CSLL", "6012": "CSLL",

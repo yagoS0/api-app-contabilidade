@@ -2226,6 +2226,40 @@ export function createMockApi() {
             paymentStatus: "OPEN", emailStatus: "PENDING", envios: [],
           },
         });
+
+        // ⚠ PIS e COFINS da MESMA competência, com VALORES DIFERENTES e vindos do MESMO DARF.
+        // É a fixture que torna o defeito visível: enquanto os dois compartilhavam o subtipo
+        // `PIS_COFINS`, a matriz (indexada por `subtipo__competencia`) descartava um deles — a
+        // célula mostrava 1.100,00 OU 4.800,00, nunca os dois, e o "Total em aberto" somava 5.900,00.
+        // Valores distintos de propósito: se voltarem a colidir, dá para ver QUAL sumiu.
+        const darfLp = {
+          id: "mock-guia-darf-lp", tipo: "OUTRA", vencimento: daquiA(11),
+          paymentStatus: "OPEN", emailStatus: "PENDING", envios: [],
+        };
+        provisoes.push({
+          id: "mock-provisao-pis",
+          competencia: meses[6],
+          tipo: "PROVISAO", subtipo: "PIS", eventType: "DARF_PIS",
+          statusPagamento: "ABERTO",
+          valor: 1100, totalD: 1100, totalC: 1100,
+          lines: [
+            { conta: "268", tipo: "D", valor: 1100, ordem: 0 },
+            { conta: "553", tipo: "C", valor: 1100, ordem: 1 },
+          ],
+          baixas: [], sourceGuide: darfLp,
+        });
+        provisoes.push({
+          id: "mock-provisao-cofins",
+          competencia: meses[6],
+          tipo: "PROVISAO", subtipo: "COFINS", eventType: "DARF_COFINS",
+          statusPagamento: "ABERTO",
+          valor: 4800, totalD: 4800, totalC: 4800,
+          lines: [
+            { conta: "269", tipo: "D", valor: 4800, ordem: 0 },
+            { conta: "553", tipo: "C", valor: 4800, ordem: 1 },
+          ],
+          baixas: [], sourceGuide: darfLp,
+        });
       }
       // ⚠ O mock NUNCA devolvia `extrato`, então a coluna "Extrato" da Circular (os PDFs da
       // declaração e do recibo do PGDAS-D) era invisível offline — não dava para conferir nem o

@@ -10,7 +10,11 @@ const SUBTIPO_LABELS = {
   DAS: "DAS / Simples Nacional",
   IRRF: "IRRF",
   ISS: "ISS",
-  PIS_COFINS: "PIS/COFINS",
+  PIS: "PIS",
+  COFINS: "COFINS",
+  // Mantido para lançamento ANTIGO que ainda não passou pelo script de separação — sem isto o modal
+  // mostraria o subtipo cru na tela em vez do rótulo.
+  PIS_COFINS: "PIS/COFINS (a separar)",
   FGTS: "FGTS",
   FERIAS: "Férias",
   DECIMO_TERCEIRO: "13º Salário",
