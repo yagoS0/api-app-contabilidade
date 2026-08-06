@@ -15,7 +15,10 @@ import { INTEGRACAO_SERPRO_PAGTOWEB } from "../../../config.js";
 // Q40 Fase A/B: confirmação de pagamento de guias via comprovante oficial (PAGTOWEB).
 // O número do documento (DAS/DARF/INSS) fica em guide.extracted.numeroDocumento (não é coluna).
 
-function getGuideNumeroDocumento(guide) {
+// Exportado para que o probe do PAGAMENTOS71 leia o número pelos MESMOS campos. Uma segunda
+// leitura divergiria justamente no caso raro (`numeroDoc`/`numeroDas` das guias antigas), e o
+// probe concluiria "a guia não tem número" sobre uma guia que o worker enxerga.
+export function getGuideNumeroDocumento(guide) {
   const extracted = guide?.extracted && typeof guide.extracted === "object" ? guide.extracted : {};
   const raw = extracted.numeroDocumento ?? extracted.numeroDoc ?? extracted.numeroDas ?? null;
   const doc = String(raw || "").trim();

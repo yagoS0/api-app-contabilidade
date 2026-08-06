@@ -201,6 +201,41 @@ Serviço assíncrono em 2 etapas, resolvido inline (~28s) ou devolvido como `pro
 - A busca **só marca** a guia como paga (`pagamentoLocalizado`); quem faz o lançamento de baixa é o
   contador, pela Circular — ver "Guias na Circular".
 
+### O comprovante não serve para dar baixa POR TRIBUTO (e o `PAGAMENTOS71` talvez sirva)
+
+O DARF do Lucro Presumido é **um documento com até quatro tributos** (PIS, COFINS, IRPJ, CSLL).
+Para **enviar**, isso está certo — é uma guia só, e `guideCompliance` mantém PIS+COFINS agrupados
+de propósito. Para **dar baixa**, não: são quatro provisões, em contas diferentes.
+
+O `COMPARRECADACAO72` **não fecha essa conta**: devolve só o PDF, e `parseComprovanteArrecadacao`
+lê o bloco "Totais" do documento inteiro — sem quebra por código de receita. Ratear os quatro por
+conta própria seria inferência virando lançamento contábil (regra 1). Hoje o worker **marca a guia
+do LP como paga** e para aí: `gerarBaixaSePreciso` trata `parcelamentoId` e INSS, e o resto cai em
+`tipo_sem_baixa_automatica`.
+
+| | idServiço | endpoint | devolve |
+|---|---|---|---|
+| hoje | `COMPARRECADACAO72` | `/Emitir` | PDF do comprovante (lido por heurística) |
+| candidato | `PAGAMENTOS71` | `/Consultar` ⚠ | `valorPrincipal`/`valorMulta`/`valorJuros` como CAMPOS + `desmembramentos`, cada um com sua `receitaPrincipal` |
+
+Filtros confirmados na documentação: **`intervaloDataArrecadacao` e `codigoReceitaLista`**, mais
+`primeiroDaPagina`/`tamanhoDaPagina`. ⚠ **Não há filtro por número de documento documentado** — o
+casamento com a nossa guia se faz depois, pelo `numeroDocumento` de cada pagamento da resposta, e
+**por dígitos**: as guias guardam o número COM máscara.
+
+⚠ **Duas coisas não saem da fonte oficial** e estão marcadas no probe: o **endpoint** (o doc do
+serviço não o declara; `/Consultar` vem do padrão já validado do próprio código — consulta que
+devolve dados vai em `/Consultar`, emissão de documento vai em `/Emitir`) e **`versaoSistema`** (os
+exemplos oficiais do PAGAMENTOS71 não trazem o campo, então não é enviado).
+
+⚠ **Documentado, NUNCA exercido.** `SERPRO_PAGTOWEB_SERVICE_PAGAMENTOS` existe em `config.js` e
+**nenhum código de produção o consome**. Antes de escrever o serviço, rodar
+**`scripts/probe-pagamentos71.mjs`** (`--confirmo`, chamada paga, não grava nada), que responde as
+três perguntas que a documentação não responde: o DARF consolidado volta inteiro ou partido; o
+desmembramento traz `receitaPrincipal`; multa e juros vêm por desmembramento ou só no total. Sem as
+duas últimas não há baixa por tributo sem ratear. Fazer ao contrário é como nasceu o
+`CONSDECCOMPLETA33`, OFF até hoje.
+
 ## ⚠ REGRA DO DONO: notas só com o A1 da PRÓPRIA empresa
 
 > *"O A1 do escritório nunca deve consultar notas, e um A1 de outro CNPJ nunca deve ser usado em

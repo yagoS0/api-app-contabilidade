@@ -243,6 +243,18 @@ export const SERPRO_PAGTOWEB_SERVICE_COMPROVANTE = (
   process.env.SERPRO_PAGTOWEB_SERVICE_COMPROVANTE || "COMPARRECADACAO72"
 ).trim();
 
+// Consulta Pagamentos — o serviço que devolve o pagamento com valores ESTRUTURADOS
+// (valorPrincipal/valorMulta/valorJuros) e a quebra por `desmembramentos`, cada um com sua
+// `receitaPrincipal`. É o que permite dar baixa por tributo num DARF consolidado do Lucro
+// Presumido, que o COMPARRECADACAO72 não permite (ele devolve só o PDF do comprovante, e o
+// rateio sai de heurística sobre o texto, sem quebra por código de receita).
+// Fonte: apicenter SERPRO, integra-pagamento/pagtoweb/servicos/consulta_pagamento.
+// ⚠ Documentado, NUNCA exercido. Ver scripts/probe-pagamentos71.mjs — nenhum código de produção
+// deve consumi-lo antes de o probe rodar contra a API real.
+export const SERPRO_PAGTOWEB_SERVICE_PAGAMENTOS = (
+  process.env.SERPRO_PAGTOWEB_SERVICE_PAGAMENTOS || "PAGAMENTOS71"
+).trim();
+
 // Q40: SITFIS (relatório de situação fiscal, assíncrono em 2 etapas) — flag OFF por padrão.
 // ⚠ NÃO INVENTAR: idServiço/payload/polling confirmar no catálogo oficial + sandbox antes de ligar.
 export const INTEGRACAO_SERPRO_SITFIS = process.env.INTEGRACAO_SERPRO_SITFIS === "1";
