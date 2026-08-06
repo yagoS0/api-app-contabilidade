@@ -1515,6 +1515,26 @@ export function createMockApi() {
                     anotacoes: ["52682158202601001"], naoInterpretado: [],
                   },
                   {
+                    // ⚠ O CASO DO LUCRO PRESUMIDO — que o mock não cobria.
+                    // Só havia códigos do Simples aqui (4406, 1099, "SIMPLES NAC."), todos curtos.
+                    // No Presumido a coluna "Receita" traz a DENOMINAÇÃO inteira do código, e são
+                    // strings de ~40 caracteres: é com elas que a tabela de 9 colunas fica ilegível.
+                    // As de PIS e COFINS abaixo são as REAIS, conferidas contra o relatório da
+                    // DCTFWeb do dono (ver `classificacaoTributoDarf.test.js`); as de IRPJ e CSLL
+                    // ficam só com código e tributo, porque a denominação exata não está confirmada
+                    // por fonte oficial e o mock não é lugar de inventar rótulo fiscal.
+                    titulo: "Pendência - Débito (SIEF) — Lucro Presumido",
+                    descricao: [],
+                    colunas: ["Receita", "PA/Exerc.", "Dt. Vcto", "Vl. Original", "Sdo. Devedor", "Multa", "Juros", "Sdo. Dev. Cons.", "Situação"],
+                    registros: [
+                      { "Receita": "2089-01 IRPJ", "PA/Exerc.": "1º TRI/2026", "Dt. Vcto": "30/04/2026", "Vl. Original": "12.480,00", "Sdo. Devedor": "12.480,00", "Multa": "2.496,00", "Juros": "534,72", "Sdo. Dev. Cons.": "15.510,72", "Situação": "DEVEDOR" },
+                      { "Receita": "2372-01 CSLL", "PA/Exerc.": "1º TRI/2026", "Dt. Vcto": "30/04/2026", "Vl. Original": "7.488,00", "Sdo. Devedor": "7.488,00", "Multa": "1.497,60", "Juros": "320,83", "Sdo. Dev. Cons.": "9.306,43", "Situação": "DEVEDOR" },
+                      { "Receita": "8109-02 PIS - FATURAMENTO - PJ EM GERAL", "PA/Exerc.": "03/2026", "Dt. Vcto": "25/04/2026", "Vl. Original": "1.352,90", "Sdo. Devedor": "1.352,90", "Multa": "270,58", "Juros": "57,96", "Sdo. Dev. Cons.": "1.681,44", "Situação": "DEVEDOR" },
+                      { "Receita": "2172-01 COFINS - FATURAMENTO/PJ EM GERAL", "PA/Exerc.": "03/2026", "Dt. Vcto": "25/04/2026", "Vl. Original": "6.240,00", "Sdo. Devedor": "6.240,00", "Multa": "1.248,00", "Juros": "267,36", "Sdo. Dev. Cons.": "7.755,36", "Situação": "DEVEDOR" },
+                    ],
+                    anotacoes: [], naoInterpretado: [],
+                  },
+                  {
                     titulo: "Pendência - Processo Fiscal (SIEF)",
                     descricao: [], colunas: ["Processo", "Situação", "Localização"],
                     registros: [{ "Processo": "10642.032.115/2026-17", "Situação": "DEVEDOR", "Localização": "SETOR PROC ELETRONICO REFIS-DRFRJ2-RJ" }],
