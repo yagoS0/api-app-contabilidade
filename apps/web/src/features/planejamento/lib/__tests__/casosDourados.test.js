@@ -15,7 +15,9 @@
 // caminho existe e está pronto (`PgdasSimulacaoService.simular`): quando o dono quiser, os casos de
 // Simples abaixo são os que valem a pena confrontar, porque cobrem faixa, teto de ISS e Anexo IV.
 
-import { aliquotaEfetiva, repartirPorTributo, custoAnualSimples } from "../simplesNacional";
+import {
+  aliquotaEfetiva, repartirPorTributo, custoAnualSimples, rbt12InicioAtividade,
+} from "../simplesNacional";
 import { custoAnualPresumido } from "../lucroPresumido";
 import { ANEXOS } from "../tabelasFiscais";
 
@@ -134,6 +136,63 @@ describe("Anexo V — 4ª faixa", () => {
   it("DAS de R$ 187.900,00 sobre receita de 1 milhão", () => {
     const r = custoAnualSimples({ anexoChave: "V", rbt12: 1_000_000, receitaAnual: 1_000_000 });
     expect(reais(r.das)).toBe(187_900);
+  });
+});
+
+describe("Início de atividade — Anexo I, com a conta escrita (art. 18, § 2º)", () => {
+  // A regra vem da Resolução CGSN 140/2018, art. 22, §§ 2º a 4º — conferida no texto oficial, não
+  // no documento FONTES FISCAIS, que não a transcreve. Os números abaixo são calculados à mão
+  // contra a tabela do Anexo I, exatamente como os demais casos dourados deste arquivo.
+
+  it("1º mês: receita de R$ 30.000 no mês → RBT12 de R$ 360.000 e efetiva de 5,65%", () => {
+    // § 2º: RBT12 = 30.000 × 12 = 360.000 → 2ª faixa do Anexo I (7,30% / PD 5.940).
+    // (360.000 × 0,073 − 5.940) / 360.000 = (26.280 − 5.940) / 360.000 = 20.340 / 360.000 = 5,65%
+    const r = rbt12InicioAtividade({ mesesDeAtividade: 1, receitasMensais: [30_000] });
+    expect(reais(r.rbt12)).toBe(360_000);
+    expect(efetiva(ANEXOS.I, r.rbt12)).toBeCloseTo(0.0565, 8);
+  });
+
+  it("⚠ 2º mês: o mês corrente fica FORA da média — 5,65%, não 7,575%", () => {
+    // Série [30.000, 90.000], apurando o 2º mês.
+    //   § 3º (certo)     → média dos ANTERIORES = 30.000 → RBT12 360.000 → 2ª faixa → 5,65%
+    //   meses decorridos → (30.000 + 90.000)/2 = 60.000 → RBT12 720.000 → 3ª faixa (9,50%/13.860)
+    //                      (720.000 × 0,095 − 13.860)/720.000 = 54.540/720.000 = 7,575%
+    // Quase dois pontos percentuais de diferença — é o que está em jogo na leitura do § 3º.
+    const r = rbt12InicioAtividade({ mesesDeAtividade: 2, receitasMensais: [30_000, 90_000] });
+    expect(reais(r.rbt12)).toBe(360_000);
+    expect(efetiva(ANEXOS.I, r.rbt12)).toBeCloseTo(0.0565, 8);
+    // E a prova de que o caminho errado daria outro número:
+    expect(efetiva(ANEXOS.I, 720_000)).toBeCloseTo(0.07575, 8);
+  });
+
+  it("DAS de R$ 20.340,00 no 1º mês de atividade, sobre receita anualizada de R$ 360.000", () => {
+    // 360.000 × 5,65% = 20.340,00 — o próprio numerador da fórmula, como sempre que a receita
+    // anual coincide com o RBT12.
+    const r = custoAnualSimples({ anexoChave: "I", rbt12: null, receitaAnual: 360_000, mesesDeAtividade: 1 });
+    expect(reais(r.das)).toBe(20_340);
+    expect(reais(r.rbt12Utilizado)).toBe(360_000);
+  });
+
+  it("⚠ a transição para o 13º mês muda a faixa, e por isso muda a alíquota", () => {
+    // Seis meses a 10.000, depois seis a 50.000 (empresa em rampa, o caso real de quem abriu agora).
+    const serie = [...Array(6).fill(10_000), ...Array(6).fill(50_000)];
+
+    // 12º mês (§ 3º): média dos onze anteriores = (6 × 10.000 + 5 × 50.000) / 11
+    //               = 310.000 / 11 = 28.181,8181... → × 12 = 338.181,82 → 2ª faixa
+    const m12 = rbt12InicioAtividade({ mesesDeAtividade: 12, receitasMensais: serie });
+    expect(reais(m12.rbt12)).toBe(reais((310_000 / 11) * 12)); // 338.181,82
+
+    // 13º mês (§ 1º): RBT12 real = 6 × 10.000 + 6 × 50.000 = 360.000
+    const m13 = rbt12InicioAtividade({ mesesDeAtividade: 13, receitasMensais: serie });
+    expect(reais(m13.rbt12)).toBe(360_000);
+
+    // As duas caem na 2ª faixa, mas em pontos diferentes dela — e a PD fixa de 5.940 pesa mais
+    // sobre o RBT12 menor, então o 12º mês sai com alíquota MENOR que o 13º.
+    //   12º → 0,073 − 5.940/338.181,82 = 5,5436%
+    //   13º → 0,073 − 5.940/360.000    = 5,6500%
+    expect(efetiva(ANEXOS.I, m12.rbt12)).toBeCloseTo(0.073 - 5_940 / ((310_000 / 11) * 12), 8);
+    expect(efetiva(ANEXOS.I, m13.rbt12)).toBeCloseTo(0.0565, 8);
+    expect(aliquotaEfetiva(ANEXOS.I, m12.rbt12)).toBeLessThan(aliquotaEfetiva(ANEXOS.I, m13.rbt12));
   });
 });
 

@@ -5,7 +5,7 @@
 // planejamento sucessório, risco de fiscalização). A tela chama isso de "simulação de apoio à
 // decisão", nunca de parecer.
 
-import { custoAnualSimples, anexoPorFatorR, folhaParaFatorR } from "./simplesNacional";
+import { custoAnualSimples, anexoPorFatorR, folhaParaFatorR, rbt12InicioAtividade } from "./simplesNacional";
 import { custoAnualPresumido } from "./lucroPresumido";
 import { PIS_COFINS_NAO_CUMULATIVO, IRPJ, CSLL_ALIQUOTA, ENCARGOS_FOLHA, FONTES_VERIFICADAS_EM } from "./tabelasFiscais";
 
@@ -63,21 +63,35 @@ export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCo
  * ⚠ `anexoSimples` pode vir do FATOR R quando a atividade está sujeita a ele (§ 5º-M): aí o anexo
  * não é escolha, é consequência da folha — e o resultado traz a margem, porque é o alavancador de
  * planejamento mais direto que existe no Simples.
+ *
+ * ⚠ `mesesDeAtividade` (1 a 12) SUBSTITUI o RBT12 informado pelo proporcionalizado da regra de
+ * início de atividade — e substitui também o que entra no FATOR R, que se calcula sobre o RBT12
+ * (§ 5º-J). Deixar o Fator R com o RBT12 vazio da empresa nova daria "sem fator" numa tela que
+ * acabou de conseguir calcular o anexo.
  */
 export function compararRegimes({
   receitaAnual, rbt12 = null, folhaAnual = 0,
   anexoSimples = null, sujeitoAoFatorR = false,
   atividadePresumido = "servicos", aliquotaIss = null,
   margemLucro = null, creditosPisCofins = null,
+  mesesDeAtividade = null, receitasMensais = null,
   anoBase = 2026,
 }) {
-  const rbt = rbt12 == null ? receitaAnual : rbt12;
+  const inicio = mesesDeAtividade == null
+    ? null
+    : rbt12InicioAtividade({
+      mesesDeAtividade,
+      receitasMensais,
+      receitaMensalMedia: (Number(receitaAnual) || 0) / 12,
+    });
+
+  const rbt = inicio ? inicio.rbt12 : (rbt12 == null ? receitaAnual : rbt12);
 
   // Sujeito ao Fator R: o anexo sai da folha, não de uma escolha.
   const anexoResolvido = sujeitoAoFatorR ? anexoPorFatorR(folhaAnual, rbt) : anexoSimples;
 
   const simples = anexoResolvido
-    ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual })
+    ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual, mesesDeAtividade, receitasMensais })
     : null;
   const presumido = custoAnualPresumido({ receitaAnual, atividade: atividadePresumido, folhaAnual, aliquotaIss, anoBase });
   const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss });
@@ -99,6 +113,8 @@ export function compararRegimes({
     economiaAnual: vencedor && segundo ? segundo.total - vencedor.total : null,
     fatorR: sujeitoAoFatorR ? folhaParaFatorR(folhaAnual, rbt) : null,
     anexoResolvido,
+    // A tela precisa DIZER que o RBT12 virou premissa — ver requisito 4 do módulo.
+    inicioAtividade: inicio,
     // ⚠ Aviso obrigatório: o produto entrega simulação de apoio, não parecer tributário.
     aviso: "Simulação de apoio à decisão, com base nas tabelas vigentes. Não substitui análise tributária.",
   };
@@ -116,11 +132,19 @@ export function compararRegimes({
  */
 export function pontoDeEquilibrio({ de = 100_000, ate = 4_800_000, passo = 10_000, ...args }) {
   let anterior = null;
+  // ⚠ A SÉRIE MENSAL NÃO ENTRA NA VARREDURA. Ela descreve o cenário real; aqui a receita é
+  // hipótese que varia a cada passo, e uma série fixa contra uma receita variável descreveria duas
+  // empresas diferentes no mesmo cálculo. O regime de início de atividade continua valendo, sob a
+  // premissa de receita uniforme — que é o que a varredura sabe representar.
+  const { receitasMensais: _serieDoCenario, ...varredura } = args;
+
   for (let receita = de; receita <= ate; receita += passo) {
-    const r = compararRegimes({ ...args, receitaAnual: receita, rbt12: receita });
+    const r = compararRegimes({ ...varredura, receitaAnual: receita, rbt12: receita });
     const s = r.regimes.find((x) => x.regime === "Simples Nacional");
     const p = r.regimes.find((x) => x.regime === "Lucro Presumido");
-    if (!s || !p || s.indisponivel || p.indisponivel) continue;
+    // `elegivel === false` não tem `total`: sem esta guarda a subtração vira NaN e o sinal do
+    // cruzamento passa a ser NaN em silêncio, devolvendo "não empata" onde há empate.
+    if (!s || !p || s.indisponivel || p.indisponivel || s.elegivel === false || p.elegivel === false) continue;
     const sinal = Math.sign(s.total - p.total);
     if (anterior != null && sinal !== 0 && sinal !== anterior) {
       return {

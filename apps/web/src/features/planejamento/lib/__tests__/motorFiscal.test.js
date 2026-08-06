@@ -7,6 +7,7 @@
 import {
   aliquotaEfetiva, repartirPorTributo, fatorR, anexoPorFatorR, folhaParaFatorR,
   custoAnualSimples, podeOptarPorReceita, faixaDoRbt12,
+  rbt12InicioAtividade, INICIO_ATIVIDADE, limiteProporcionalInicioAtividade,
 } from "../simplesNacional";
 import { custoAnualPresumido, baseComMajoracao, adicionalIrpjAnual, avisoTravaServicos16 } from "../lucroPresumido";
 import { ANEXOS, MAJORACAO_LC224, FATOR_R_LIMITE } from "../tabelasFiscais";
@@ -65,6 +66,131 @@ describe("alíquota efetiva — [(RBT12 × ALIQ) − PD] / RBT12 (§1.2)", () =>
     expect(faixaDoRbt12(ANEXOS.I, 180_000.01).faixa).toBe(2);
     expect(faixaDoRbt12(ANEXOS.I, 3_600_000).faixa).toBe(5);
     expect(faixaDoRbt12(ANEXOS.I, 3_600_000.01).faixa).toBe(6);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIMPLES — início de atividade (art. 18, § 2º / CGSN 140/2018, art. 22)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("início de atividade — RBT12 proporcionalizado", () => {
+  // Série em rampa: é o formato real de quem abriu agora, e é a única forma de distinguir
+  // "média dos meses anteriores" de "média dos meses decorridos". Com receita constante as duas
+  // dão o mesmo número e o teste não provaria nada.
+  const rampa = [10_000, 20_000, 30_000, 40_000];
+
+  it("1º mês: a receita do PRÓPRIO mês × 12 (§ 2º)", () => {
+    // É o único mês em que o mês de apuração entra na própria conta — não há anterior.
+    const r = rbt12InicioAtividade({ mesesDeAtividade: 1, receitasMensais: rampa });
+    perto(r.rbt12, 120_000, 1e-9); // 10.000 × 12
+    expect(r.regra).toBe("art. 22, § 2º");
+    expect(r.proporcionalizado).toBe(true);
+  });
+
+  it("⚠ 2º mês: média dos meses ANTERIORES — o mês corrente NÃO entra (§ 3º)", () => {
+    // A armadilha da regra. O § 3º diz "meses anteriores ao do período de apuração":
+    //   certo  → 10.000 / 1 × 12 = 120.000
+    //   errado → (10.000 + 20.000) / 2 × 12 = 180.000  ← "meses decorridos", como diz muito resumo
+    // A diferença não é acadêmica: 180.000 é exatamente a fronteira da 1ª faixa.
+    const r = rbt12InicioAtividade({ mesesDeAtividade: 2, receitasMensais: rampa });
+    perto(r.rbt12, 120_000, 1e-9);
+    expect(r.rbt12).not.toBeCloseTo(180_000, 6);
+    expect(r.mesesNaMedia).toBe(1);
+    expect(r.regra).toBe("art. 22, § 3º");
+  });
+
+  it("4º mês: média dos três anteriores × 12", () => {
+    // (10.000 + 20.000 + 30.000) / 3 = 20.000 → × 12 = 240.000. O 4º mês (40.000) fica de fora.
+    const r = rbt12InicioAtividade({ mesesDeAtividade: 4, receitasMensais: rampa });
+    perto(r.rbt12, 240_000, 1e-9);
+    expect(r.mesesNaMedia).toBe(3);
+  });
+
+  it("⚠ a transição do 12º para o 13º mês: proporcionalizado vira REAL (§ 4º, II)", () => {
+    // Seis meses a 10.000 e seis a 50.000 — soma de 360.000 no ano.
+    const serie = [...Array(6).fill(10_000), ...Array(6).fill(50_000)];
+
+    // 12º mês, ainda § 3º: média dos ONZE anteriores = (60.000 + 250.000) / 11 = 28.181,81...
+    const m12 = rbt12InicioAtividade({ mesesDeAtividade: 12, receitasMensais: serie });
+    expect(m12.proporcionalizado).toBe(true);
+    perto(m12.rbt12, (310_000 / 11) * 12, 1e-6); // 338.181,82
+
+    // 13º mês: acabou a proporcionalização — RBT12 real dos 12 meses anteriores = 360.000.
+    const m13 = rbt12InicioAtividade({ mesesDeAtividade: 13, receitasMensais: serie });
+    expect(m13.proporcionalizado).toBe(false);
+    expect(m13.regra).toBe("art. 22, § 1º");
+    perto(m13.rbt12, 360_000, 1e-9);
+    expect(m13.mesesNaMedia).toBe(12);
+
+    // E a virada MUDA o número: se os dois coincidissem, o teste não provaria a transição.
+    expect(Math.abs(m13.rbt12 - m12.rbt12)).toBeGreaterThan(20_000);
+  });
+
+  it("o 12º mês é o último proporcionalizado", () => {
+    const serie = Array(20).fill(10_000);
+    expect(rbt12InicioAtividade({ mesesDeAtividade: 12, receitasMensais: serie }).proporcionalizado).toBe(true);
+    expect(rbt12InicioAtividade({ mesesDeAtividade: 13, receitasMensais: serie }).proporcionalizado).toBe(false);
+    expect(INICIO_ATIVIDADE.ultimoMesProporcionalizado).toBe(12);
+  });
+
+  it("⚠ com receita UNIFORME, § 2º e § 3º convergem — é a premissa que a tela declara", () => {
+    // A tela trabalha em ano, não em série mensal: ela assume receita mensal uniforme. Sob essa
+    // premissa o mês de atividade deixa de alterar o RBT12, e é por isso que a tela pode pedir só
+    // `mesesDeAtividade` sem pedir doze campos. A premissa está na tela, não escondida aqui.
+    const valores = [1, 2, 5, 9, 12].map(
+      (m) => rbt12InicioAtividade({ mesesDeAtividade: m, receitaMensalMedia: 30_000 }).rbt12,
+    );
+    for (const v of valores) perto(v, 360_000, 1e-9);
+  });
+
+  it("⚠ receita zero vale R$ 1,00 SÓ na fórmula (art. 21, par. único)", () => {
+    // Sem o piso, a divisão por zero apagaria a alíquota de quem abriu e ainda não faturou. Com ele,
+    // a empresa cai na 1ª faixa (PD zero) e a efetiva sai igual à nominal — e o DAS sai zero de
+    // qualquer forma, porque incide sobre receita zero.
+    const r = rbt12InicioAtividade({ mesesDeAtividade: 1, receitaMensalMedia: 0 });
+    expect(r.rbt12).toBe(0);            // o fato: não houve receita
+    expect(r.rbt12ParaAliquota).toBe(1); // a convenção de cálculo, separada do fato
+    perto(aliquotaEfetiva(ANEXOS.I, r.rbt12ParaAliquota), 0.04, 1e-9);
+  });
+
+  it("sem meses de atividade válidos não há regra — devolve null, não um palpite", () => {
+    expect(rbt12InicioAtividade({ mesesDeAtividade: 0, receitaMensalMedia: 10_000 })).toBeNull();
+    expect(rbt12InicioAtividade({ mesesDeAtividade: null, receitaMensalMedia: 10_000 })).toBeNull();
+    // Meses informados, mas nenhuma receita: não dá para proporcionalizar o que não se sabe.
+    expect(rbt12InicioAtividade({ mesesDeAtividade: 3 })).toBeNull();
+  });
+
+  it("⚠⚠ a empresa nova DEIXA de cair em `indisponivel` — era o bug que a regra fecha", () => {
+    // Antes: sem RBT12 histórico, `custoAnualSimples` recusava calcular e a empresa recém-aberta
+    // (usuária mais provável do módulo) não conseguia comparar regime nenhum.
+    const semHistorico = custoAnualSimples({ anexoChave: "I", rbt12: 0, receitaAnual: 500_000 });
+    expect(semHistorico.indisponivel).toBe(true);
+
+    const inicio = custoAnualSimples({ anexoChave: "I", rbt12: 0, receitaAnual: 500_000, mesesDeAtividade: 3 });
+    expect(inicio.indisponivel).toBeUndefined();
+    expect(inicio.total).toBeGreaterThan(0);
+    // E o resultado DIZ que o RBT12 é premissa, não histórico.
+    expect(inicio.inicioAtividade.proporcionalizado).toBe(true);
+    expect(inicio.premissas.some((p) => /PROPORCIONALIZADO/.test(p))).toBe(true);
+  });
+
+  it("no 13º mês a premissa some — o RBT12 voltou a ser real", () => {
+    const r = custoAnualSimples({ anexoChave: "I", rbt12: 0, receitaAnual: 500_000, mesesDeAtividade: 13 });
+    expect(r.inicioAtividade.proporcionalizado).toBe(false);
+    expect(r.premissas.some((p) => /PROPORCIONALIZADO/.test(p))).toBe(false);
+  });
+
+  it("⚠ o Fator R também sai do RBT12 proporcionalizado, não do vazio", () => {
+    // O Fator R se calcula sobre o RBT12 (§ 5º-J). Deixá-lo com o RBT12 vazio da empresa nova daria
+    // "sem fator" numa tela que acabou de conseguir calcular o anexo.
+    const r = compararRegimes({
+      receitaAnual: 1_000_000, folhaAnual: 300_000, sujeitoAoFatorR: true,
+      atividadePresumido: "servicos", mesesDeAtividade: 2, rbt12: null,
+    });
+    expect(r.inicioAtividade.proporcionalizado).toBe(true);
+    perto(r.inicioAtividade.rbt12, 1_000_000, 1e-6); // (1.000.000 / 12) × 12
+    expect(r.fatorR).not.toBeNull();
+    expect(r.anexoResolvido).toBe("III"); // 300.000 / 1.000.000 = 30% ≥ 28%
   });
 });
 
@@ -179,6 +305,141 @@ describe("⚠ Anexo IV: CPP FORA do DAS (§1.6)", () => {
     const iii = custoAnualSimples({ ...args, anexoChave: "III" });
     expect(iv.das).toBeLessThan(iii.das);          // só o DAS: o IV parece barato
     expect(iv.total).toBeGreaterThan(iii.das);     // com a CPP por fora, a conta vira
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIMPLES — limite PROPORCIONAL no ano de início (art. 3º, §§ 2º e 10 a 13)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("⚠⚠ guarda: limite proporcional do ano de início de atividade", () => {
+  it("o limite é R$ 400.000 por mês de atividade, não R$ 4,8 mi", () => {
+    // CGSN 140/2018, art. 3º, caput. Empresa aberta em outubro → 3 meses → R$ 1,2 mi.
+    const g = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 0 });
+    perto(g.limite, 1_200_000);
+    perto(g.sublimite, 900_000); // 3 × R$ 300.000 (art. 12, § 2º)
+  });
+
+  it("⚠ o cenário que a guarda existe para barrar: passa no teto anual e estoura o proporcional", () => {
+    // R$ 1,5 mi passa folgado no teto de R$ 4,8 mi — e estoura o limite de 3 meses (R$ 1,2 mi) em
+    // 25%, que é acima da tolerância. Sem esta checagem o simulador diria "opte pelo Simples".
+    const semGuarda = podeOptarPorReceita(1_500_000);
+    expect(semGuarda.pode).toBe(true);
+
+    const comGuarda = podeOptarPorReceita(1_500_000, { mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 1_500_000 });
+    expect(comGuarda.pode).toBe(false);
+    expect(comGuarda.inicioAtividade.efeitoExclusao).toBe("retroativo_ao_inicio");
+  });
+
+  it("⚠ o degrau de 20% muda a CONSEQUÊNCIA, não só a mensagem (§§ 10 e 12)", () => {
+    // Limite de 3 meses = R$ 1.200.000. Tolerância de 20% = R$ 240.000.
+    //   R$ 1.400.000 → excesso de 200.000 (≤ 240.000) → efeitos no ano seguinte
+    //   R$ 1.500.000 → excesso de 300.000 (>  240.000) → RETROAGE ao início
+    const dentroDaTolerancia = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 1_400_000 });
+    expect(dentroDaTolerancia.excedeu).toBe(true);
+    expect(dentroDaTolerancia.efeitoExclusao).toBe("ano_calendario_subsequente");
+
+    const acimaDaTolerancia = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 1_500_000 });
+    expect(acimaDaTolerancia.efeitoExclusao).toBe("retroativo_ao_inicio");
+  });
+
+  it("exatamente 20% de excesso ainda NÃO retroage — o § 12 diz 'não superior a 20%'", () => {
+    // Fronteira: R$ 1.200.000 + 20% = R$ 1.440.000. Um `>=` no lugar de `>` faria a empresa que
+    // parou exatamente no degrau perder o ano inteiro.
+    const g = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 1_440_000 });
+    expect(g.efeitoExclusao).toBe("ano_calendario_subsequente");
+    const acima = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 1_440_000.01 });
+    expect(acima.efeitoExclusao).toBe("retroativo_ao_inicio");
+  });
+
+  it("⚠ fração de mês conta como mês COMPLETO (art. 3º, § 2º)", () => {
+    // Quem abriu em 20 de setembro tem setembro inteiro: 4 meses até dezembro. Arredondar para
+    // baixo daria R$ 1,2 mi de limite em vez de R$ 1,6 mi e acusaria estouro onde não há.
+    const g = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3.3, receitaNoAnoDeInicio: 1_500_000 });
+    expect(g.meses).toBe(4);
+    perto(g.limite, 1_600_000);
+    expect(g.excedeu).toBe(false);
+  });
+
+  it("no ano cheio (12 meses) o limite proporcional reencontra o teto do Simples", () => {
+    const g = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 12, receitaNoAnoDeInicio: 0 });
+    perto(g.limite, 4_800_000);
+    perto(g.sublimite, 3_600_000);
+  });
+
+  it("a margem até estourar vem em REAIS — é o que dá para decidir", () => {
+    const g = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 1_000_000 });
+    perto(g.margem, 200_000);
+    perto(g.consumoDoLimite, 1_000_000 / 1_200_000, 1e-9);
+    expect(g.excedeu).toBe(false);
+  });
+
+  it("⚠ excesso RETROATIVO derruba o regime da comparação — não vence quem não pode optar", () => {
+    // Sem isso, o card diria "MENOR CARGA" para um regime do qual a empresa será excluída com
+    // efeitos retroativos ao início das atividades.
+    const r = custoAnualSimples({
+      anexoChave: "I", rbt12: null, receitaAnual: 6_000_000, receitasMensais: Array(3).fill(500_000),
+      mesesDeAtividade: 3,
+    });
+    expect(r.elegivel).toBe(false);
+    expect(r.motivo).toMatch(/retroage ao início das atividades/);
+    expect(r.elegibilidadeInicioAtividade.efeitoExclusao).toBe("retroativo_ao_inicio");
+  });
+
+  it("excesso dentro da tolerância mantém o cálculo do ano, com o aviso na premissa", () => {
+    // ⚠ A receita PRECISA estar concentrada no mês corrente, e não é detalhe do teste: o RBT12 do
+    // 3º mês olha só os meses ANTERIORES (§ 3º), enquanto o limite proporcional olha o período
+    // INTEIRO. Série [100k, 100k, 1,2 mi]:
+    //   RBT12  = média(100k, 100k) × 12 = 1.200.000  → dentro do teto do Simples
+    //   período = 100k + 100k + 1,2 mi  = 1.400.000  → estoura o limite de 1.200.000 em 200.000
+    //   200.000 ≤ 20% de 1.200.000 (240.000) → fica no Simples este ano, sai no seguinte
+    const r = custoAnualSimples({
+      anexoChave: "I", rbt12: null, receitaAnual: 1_400_000, receitasMensais: [100_000, 100_000, 1_200_000],
+      mesesDeAtividade: 3,
+    });
+    expect(r.elegivel).toBeUndefined();
+    expect(r.elegibilidadeInicioAtividade.efeitoExclusao).toBe("ano_calendario_subsequente");
+    expect(r.premissas.some((p) => /excluída a partir do ano-calendário seguinte/.test(p))).toBe(true);
+  });
+
+  it("⚠ sob receita UNIFORME a guarda não dispara sozinha — quem a faz morder é a série", () => {
+    // Com receita uniforme, receita do período = (anual/12) × meses e limite = 400.000 × meses:
+    // os dois crescem juntos, então o proporcional só estoura quando o anual também estouraria.
+    // É por isso que o detalhamento mês a mês não é luxo — é o que dá dentes a esta checagem.
+    const uniforme = custoAnualSimples({ anexoChave: "I", rbt12: null, receitaAnual: 4_000_000, mesesDeAtividade: 3 });
+    expect(uniforme.elegibilidadeInicioAtividade.excedeu).toBe(false);
+
+    // Mesma receita anual projetada, mas concentrada nos meses já decorridos: agora estoura.
+    const emRampa = custoAnualSimples({
+      anexoChave: "I", rbt12: null, receitaAnual: 4_000_000,
+      receitasMensais: [200_000, 600_000, 1_600_000], mesesDeAtividade: 3,
+    });
+    expect(emRampa.elegibilidadeInicioAtividade.excedeu).toBe(true);
+  });
+
+  it("do 13º mês em diante a guarda não se aplica — a empresa saiu do ano de início", () => {
+    const r = custoAnualSimples({ anexoChave: "I", rbt12: 500_000, receitaAnual: 500_000, mesesDeAtividade: 13 });
+    expect(r.elegibilidadeInicioAtividade).toBeNull();
+  });
+
+  it("meses fora de 1 a 12 não produzem limite — não se inventa proporção", () => {
+    expect(limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 0, receitaNoAnoDeInicio: 10 })).toBeNull();
+    expect(limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 13, receitaNoAnoDeInicio: 10 })).toBeNull();
+  });
+
+  it("o sublimite de ICMS/ISS tem o MESMO degrau de 20%, com efeito próprio (art. 12, § 4º)", () => {
+    // Sublimite de 3 meses = R$ 900.000; tolerância = R$ 180.000.
+    const dentro = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 1_050_000 });
+    expect(dentro.excedeuSublimite).toBe(true);
+    expect(dentro.efeitoSublimite).toBe("ano_calendario_subsequente");
+
+    const acima = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 3, receitaNoAnoDeInicio: 1_150_000 });
+    expect(acima.efeitoSublimite).toBe("retroativo_ao_inicio");
+  });
+
+  it("UF com sublimite reduzido usa R$ 150.000/mês — e é PARÂMETRO, não escolha do motor", () => {
+    const g = limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio: 4, receitaNoAnoDeInicio: 0, sublimiteMensal: 150_000 });
+    perto(g.sublimite, 600_000); // 4 × 150.000, par do sublimite de R$ 1,8 mi (art. 9º, caput)
   });
 });
 

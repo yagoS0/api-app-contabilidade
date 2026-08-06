@@ -9,6 +9,7 @@
 
 import {
   ANEXOS, FATOR_R_LIMITE, LIMITES_SIMPLES, ENCARGOS_FOLHA, ISS_FAIXA_LEGAL,
+  LIMITE_PROPORCIONAL_INICIO,
 } from "./tabelasFiscais";
 
 /** A faixa do RBT12 dentro de um anexo. Acima do teto de EPP não há faixa — a empresa não pode optar. */
@@ -18,30 +19,104 @@ export function faixaDoRbt12(anexo, rbt12) {
 }
 
 /**
- * ⚠⚠ PENDÊNCIA NOMEADA DO MOTOR — INÍCIO DE ATIVIDADE (art. 18, § 2º).
+ * INÍCIO DE ATIVIDADE — o RBT12 PROPORCIONALIZADO (art. 18, § 2º).
  *
- * `aliquotaEfetiva` devolve `null` quando não há RBT12. Isso é SEGURO (melhor ausência de número
- * que número errado com cara de comparável), mas NÃO É A REGRA FINAL: a lei sabe calcular esse
- * caso. Empresa em início de atividade tem proporcionalização própria — no primeiro mês, a receita
- * do próprio mês × 12; nos meses seguintes, a média dos meses de atividade × 12
- * (LC 123/2006, art. 18, § 2º, operacionalizado na Resolução CGSN 140/2018).
+ * Empresa recém-aberta não tem 12 meses de história, e a lei não manda esperar um ano: manda
+ * proporcionalizar. Fontes conferidas em 06/08/2026, no texto oficial — não no documento FONTES
+ * FISCAIS, que não transcreve esta regra:
  *
- * Ou seja: com a regra implementada, o RBT12 nunca é zero de fato, e o `null` de hoje recusa um
- * cálculo que existe. Isso importa mais do que parece — **empresa recém-aberta escolhendo regime é
- * um dos usuários mais prováveis deste módulo**, e é exatamente quem cai no `null`.
+ *   LC 123/2006, art. 18, § 2º (red. LC 155/2016) — texto compilado do Planalto:
+ *     "Em caso de início de atividade, os valores de receita bruta acumulada constantes dos Anexos
+ *      I a V desta Lei Complementar devem ser proporcionalizados ao número de meses de atividade
+ *      no período."
  *
- * O que falta para implementar: `mesesDeAtividade` como entrada (não dá para inferir da receita),
- * e ler a Resolução CGSN 140/2018 para a proporcionalização dos meses seguintes ao primeiro —
- * não transcrita no documento de fontes, então não pode ser escrita por dedução (regra 1).
+ *   Resolução CGSN 140/2018, art. 22 — a OPERACIONALIZAÇÃO, que é o que dá para codar:
+ *     § 2º  no 1º mês de atividade, o sujeito passivo utiliza como receita bruta total acumulada
+ *           "a receita auferida no próprio mês de apuração multiplicada por 12";
+ *     § 3º  "nos 11 (onze) meses posteriores ao do início de atividade", utiliza "a média aritmética
+ *           da receita bruta total auferida nos meses ANTERIORES ao do período de apuração,
+ *           multiplicada por 12";
+ *     § 4º  início no ano-calendário anterior ao da opção: regra do § 3º até completar 12 meses de
+ *           atividade, e a do § 1º (RBT12 real) a partir do 13º mês.
  *
- * Até lá, `null` + mensagem explícita. Registrado aqui, e não só no roadmap, para quem mexer no
- * motor saber que este comportamento é PROVISÓRIO e por quê.
+ *   Resolução CGSN 140/2018, art. 21, parágrafo único:
+ *     "Apenas para efeito de determinação das alíquotas efetivas, quando a RBT12 [...] for igual a
+ *      zero, considerar-se-á R$ 1,00 (um real)."
+ *
+ * ⚠ O § 3º DIZ "MESES ANTERIORES", NÃO "MESES DECORRIDOS" — e a diferença muda o número. No 2º mês
+ * a média é a receita do 1º mês sozinha; o mês corrente NÃO entra. Boa parte do material de
+ * terceiros descreve a regra como "receita acumulada ÷ meses decorridos × 12", que inclui o mês
+ * corrente e dá outro resultado. O texto acima foi conferido em duas fontes independentes; quem
+ * for mexer aqui confere na Resolução, não em blog.
+ *
+ * ⚠ A PROPORCIONALIZAÇÃO É DO § 2º DO ART. 18, QUE FALA DAS TABELAS. O art. 3º, § 2º proporcionaliza
+ * outra coisa — o LIMITE de enquadramento no ano de início ("proporcional ao número de meses [...]
+ * inclusive as frações de meses"). São regras distintas: uma escolhe a faixa, a outra decide se a
+ * empresa continua podendo ser do Simples. `podeOptarPorReceita` NÃO implementa a segunda.
  */
-export const PENDENCIA_INICIO_ATIVIDADE = Object.freeze({
-  regra: "LC 123/2006, art. 18, § 2º — proporcionalização do RBT12 em início de atividade",
-  faltam: ["número de meses de atividade (entrada do usuário)", "Resolução CGSN 140/2018 para os meses seguintes ao primeiro"],
-  comportamentoAtual: "devolve null e a tela diz que falta o RBT12",
+export const INICIO_ATIVIDADE = Object.freeze({
+  /** Do 1º ao 12º mês o RBT12 é proporcionalizado; do 13º em diante é o real (art. 22, § 4º, II). */
+  ultimoMesProporcionalizado: 12,
+  /** Art. 21, parágrafo único — vale só dentro da fórmula da alíquota, nunca como faturamento. */
+  rbt12ZeroValePor: 1,
+  fonte: "LC 123/2006, art. 18, § 2º; Resolução CGSN 140/2018, arts. 21, par. único, e 22, §§ 2º a 4º",
 });
+
+/**
+ * O RBT12 de quem está em início de atividade, mês a mês.
+ *
+ * `mesesDeAtividade` é o número do mês de apuração dentro da atividade (1 = primeiro mês). É
+ * ENTRADA OBRIGATÓRIA e não se infere da receita: duas empresas com o mesmo faturamento acumulado
+ * podem estar no 2º ou no 9º mês, e a alíquota sai diferente.
+ *
+ * A receita entra de uma de duas formas, e a escolha não é estética:
+ *  • `receitasMensais` — a série real, índice 0 = 1º mês. É a única forma que exercita o § 3º de
+ *    verdade, porque só com receita variável a média dos meses anteriores difere do mês corrente.
+ *  • `receitaMensalMedia` — receita mensal uniforme. É o que a TELA tem (ela trabalha em ano, não
+ *    em série), e é premissa declarada, não simplificação escondida.
+ */
+export function rbt12InicioAtividade({ mesesDeAtividade, receitasMensais = null, receitaMensalMedia = null }) {
+  const n = Math.trunc(Number(mesesDeAtividade));
+  if (!Number.isFinite(n) || n < 1) return null;
+
+  const serie = Array.isArray(receitasMensais) ? receitasMensais.map((v) => Number(v) || 0) : null;
+  const media = receitaMensalMedia == null ? null : Number(receitaMensalMedia) || 0;
+  if (!serie && media == null) return null;
+
+  // A receita de um mês (1-based): da série quando ela existe, da média uniforme quando não.
+  const mes = (i) => (serie ? (serie[i - 1] ?? 0) : media);
+  const somar = (de, ate) => {
+    let s = 0;
+    for (let i = de; i <= ate; i += 1) s += mes(i);
+    return s;
+  };
+
+  // 13º mês em diante: o § 4º, II devolve a regra do § 1º — RBT12 real dos 12 meses anteriores.
+  if (n > INICIO_ATIVIDADE.ultimoMesProporcionalizado) {
+    return resultadoRbt12({ rbt12: somar(n - 12, n - 1), proporcionalizado: false, regra: "art. 22, § 1º", mesesNaMedia: 12, mesAtividade: n });
+  }
+
+  // § 2º — o ÚNICO caso em que o próprio mês de apuração entra na conta.
+  if (n === 1) {
+    return resultadoRbt12({ rbt12: mes(1) * 12, proporcionalizado: true, regra: "art. 22, § 2º", mesesNaMedia: 1, mesAtividade: n });
+  }
+
+  // § 3º — média dos meses ANTERIORES ao de apuração; o corrente fica de fora.
+  return resultadoRbt12({ rbt12: (somar(1, n - 1) / (n - 1)) * 12, proporcionalizado: true, regra: "art. 22, § 3º", mesesNaMedia: n - 1, mesAtividade: n });
+}
+
+function resultadoRbt12({ rbt12, proporcionalizado, regra, mesesNaMedia, mesAtividade }) {
+  return Object.freeze({
+    rbt12,
+    // ⚠ SÓ para a fórmula (art. 21, par. único). Não é faturamento e não vai para a tela como tal:
+    // exibir "RBT12 de R$ 1,00" seria trocar uma convenção de cálculo por um fato sobre a empresa.
+    rbt12ParaAliquota: rbt12 === 0 ? INICIO_ATIVIDADE.rbt12ZeroValePor : rbt12,
+    proporcionalizado,
+    regra,
+    mesesNaMedia,
+    mesAtividade,
+  });
+}
 
 /**
  * ALÍQUOTA EFETIVA — FONTES_FISCAIS §1.2 (LC 123/2006, art. 18, §§ 1º e 1º-A):
@@ -49,8 +124,15 @@ export const PENDENCIA_INICIO_ATIVIDADE = Object.freeze({
  *     [(RBT12 × ALIQ_nominal) − PD] / RBT12
  *
  * ⚠ RBT12 ZERO devolve `null`, não 0%: a fórmula divide por ele, e 0% faria a empresa nova parecer
- * isenta enquanto a nominal a faria parecer mais cara que a real. Ver `PENDENCIA_INICIO_ATIVIDADE`
- * acima — este `null` é provisório, não a regra final.
+ * isenta enquanto a nominal a faria parecer mais cara que a real.
+ *
+ * ⚠⚠ E POR QUE O R$ 1,00 DO ART. 21, PAR. ÚNICO NÃO É APLICADO AQUI. A Resolução manda tratar
+ * RBT12 zero como R$ 1,00 — o que joga a empresa na 1ª faixa (PD zero) e faz a efetiva sair igual à
+ * nominal. Isso é correto quando o zero é um FATO (não houve receita). Aqui, `rbt12` zero quase
+ * sempre significa outra coisa: o usuário não informou. Aplicar o R$ 1,00 nesse caso daria alíquota
+ * de 1ª faixa a uma empresa de R$ 3 mi de receita — exatamente o "número errado com cara de
+ * comparável" que este `null` existe para impedir. O piso legal é aplicado onde o zero é conhecido:
+ * em `rbt12InicioAtividade`, via `rbt12ParaAliquota`.
  */
 export function aliquotaEfetiva(anexo, rbt12) {
   const v = Number(rbt12) || 0;
@@ -138,14 +220,72 @@ export function folhaParaFatorR(folha12m, rbt12) {
  * paga 20% de INSS patronal por fora, como qualquer outra. Comparar o Anexo IV com outro regime sem
  * somar isso faz ele parecer artificialmente barato — o próprio documento de fontes abre um alerta
  * para esse erro. Aqui a soma é obrigatória e aparece separada no resultado.
+ *
+ * ⚠ `mesesDeAtividade` (1 = primeiro mês) LIGA A REGRA DE INÍCIO DE ATIVIDADE e, com ela, uma
+ * PREMISSA: sem série mensal, a receita informada é lida como projeção ANUALIZADA, e a média mensal
+ * é ela ÷ 12. Sob receita uniforme o RBT12 proporcionalizado coincide com a receita anual — o que
+ * muda não é o número, é ele existir: antes desta entrada a empresa nova caía em `indisponivel`.
+ * Com receita em rampa (o caso real de quem abriu agora) a série muda o resultado, e aí o motor
+ * precisa dela — passe `receitasMensais`.
+ *
+ * ⚠⚠ E LIGA TAMBÉM A GUARDA DE ELEGIBILIDADE (art. 3º, § 2º). Quando o excesso sobre o limite
+ * proporcional passa de 20%, a exclusão RETROAGE ao início das atividades: os números do Simples
+ * para o ano deixam de valer, e por isso o resultado sai `elegivel: false` — o comparador tira o
+ * regime da disputa em vez de coroá-lo vencedor. Até 20%, a empresa fica no regime neste ano e sai
+ * no seguinte (§ 12): o cálculo do ano continua válido, e o que vai junto é o aviso.
  */
-export function custoAnualSimples({ anexoChave, rbt12, receitaAnual, folhaAnual = 0 }) {
+export function custoAnualSimples({
+  anexoChave, rbt12, receitaAnual, folhaAnual = 0,
+  mesesDeAtividade = null, receitasMensais = null,
+  mesesNoAnoDeInicio = null, sublimiteMensal,
+}) {
   const anexo = ANEXOS[anexoChave];
   if (!anexo) return null;
-  const rep = repartirPorTributo(anexo, rbt12);
-  if (!rep) return { indisponivel: true, motivo: "Sem RBT12 não há alíquota efetiva — informe a receita dos 12 meses anteriores." };
 
+  const serie = Array.isArray(receitasMensais) ? receitasMensais.map((v) => Number(v) || 0) : null;
   const receita = Number(receitaAnual) || 0;
+  const mediaMensal = receita / 12;
+
+  const inicio = mesesDeAtividade == null
+    ? null
+    : rbt12InicioAtividade({ mesesDeAtividade, receitasMensais: serie, receitaMensalMedia: mediaMensal });
+
+  // ⚠ A guarda só vale DENTRO do ano-calendário de início. Do 13º mês em diante a empresa já está
+  // no ano seguinte, onde vale o limite anual cheio.
+  //
+  // ⚠ NÃO COBERTO, DE PROPÓSITO: a CGSN 140/2018, art. 3º, § 3º, I manda usar o limite proporcional
+  // também para a OPÇÃO de quem abriu no ano-calendário anterior — o que exigiria a receita daquele
+  // ano como entrada própria, que a tela não tem. Assumir que os meses informados caem todos no ano
+  // simulado erra para o lado ESTRITO (limite menor, aviso a mais), nunca para o lado que deixaria
+  // passar um estouro.
+  const guarda = (inicio && inicio.proporcionalizado)
+    ? limiteProporcionalInicioAtividade({
+      mesesNoAnoDeInicio: mesesNoAnoDeInicio ?? mesesDeAtividade,
+      receitaNoAnoDeInicio: serie
+        ? serie.slice(0, mesesNoAnoDeInicio ?? mesesDeAtividade).reduce((s, v) => s + v, 0)
+        : mediaMensal * (mesesNoAnoDeInicio ?? mesesDeAtividade),
+      sublimiteMensal,
+    })
+    : null;
+
+  // Só a exclusão RETROATIVA invalida o ano simulado; a que só produz efeitos no ano seguinte, não.
+  if (guarda?.efeitoExclusao === "retroativo_ao_inicio") {
+    return {
+      regime: "Simples Nacional",
+      elegivel: false,
+      elegibilidadeInicioAtividade: guarda,
+      motivo: `Receita de ${brl(guarda.receita)} nos ${guarda.meses} meses de atividade ultrapassa em mais de 20% o limite proporcional de ${brl(guarda.limite)} `
+        + `(${guarda.meses} × ${brl(LIMITE_PROPORCIONAL_INICIO.porMes)}). A exclusão retroage ao início das atividades — LC 123/2006, art. 3º, §§ 2º e 10.`,
+    };
+  }
+
+  // Na fórmula entra o piso do art. 21, par. único; o que a tela mostra é o RBT12 de verdade.
+  const rbtParaAliquota = inicio ? inicio.rbt12ParaAliquota : rbt12;
+  const rbtExibido = inicio ? inicio.rbt12 : rbt12;
+
+  const rep = repartirPorTributo(anexo, rbtParaAliquota);
+  if (!rep) return { indisponivel: true, motivo: "Sem RBT12 não há alíquota efetiva — informe a receita dos 12 meses anteriores ou os meses de atividade, se a empresa estiver começando." };
+
   const das = rep.aliquotaEfetiva * receita;
 
   // A CPP por fora incide sobre a FOLHA, não sobre a receita.
@@ -160,6 +300,12 @@ export function custoAnualSimples({ anexoChave, rbt12, receitaAnual, folhaAnual 
     das,
     cppPorFora,
     total: das + cppPorFora,
+    rbt12Utilizado: rbtExibido,
+    // Presente só em início de atividade — é o que a tela usa para dizer que o RBT12 é premissa.
+    inicioAtividade: inicio,
+    // Presente só em início de atividade — traz a margem até o limite proporcional, e é o que o
+    // card usa para avisar que a elegibilidade está por um fio ANTES de ela se perder.
+    elegibilidadeInicioAtividade: guarda,
     // Carga sobre a receita, já com o que sai por fora — é o número comparável entre regimes.
     cargaEfetiva: receita > 0 ? (das + cppPorFora) / receita : null,
     porTributo: Object.fromEntries(
@@ -167,24 +313,110 @@ export function custoAnualSimples({ anexoChave, rbt12, receitaAnual, folhaAnual 
     ),
     premissas: [
       `${anexo.nome} (${anexo.fonte})`,
-      `RBT12 de ${brl(rbt12)} → ${rep.faixa}ª faixa`,
+      inicio?.proporcionalizado
+        ? `RBT12 PROPORCIONALIZADO de ${brl(rbtExibido)} → ${rep.faixa}ª faixa — empresa no ${inicio.mesAtividade}º mês de atividade, sem 12 meses de histórico (LC 123/2006, art. 18, § 2º; Resolução CGSN 140/2018, ${inicio.regra})`
+        : `RBT12 de ${brl(rbtExibido)} → ${rep.faixa}ª faixa`,
+      guarda
+        ? `Limite proporcional do ano de início: ${brl(guarda.limite)} (${guarda.meses} × ${brl(LIMITE_PROPORCIONAL_INICIO.porMes)}) — receita de ${brl(guarda.receita)} no período (LC 123/2006, art. 3º, § 2º)`
+        : null,
+      guarda?.efeitoExclusao === "ano_calendario_subsequente"
+        ? "⚠ Limite proporcional ultrapassado em até 20%: a empresa permanece no Simples neste ano e é excluída a partir do ano-calendário seguinte (art. 3º, § 12)"
+        : null,
       rep.tetoIssAplicado ? "Teto de ISS de 5% aplicado, com redistribuição aos federais" : null,
       anexo.cppForaDoDas ? `CPP de 20% somada POR FORA sobre folha de ${brl(folhaAnual)} — no Anexo IV ela não está no DAS` : null,
     ].filter(Boolean),
   };
 }
 
-/** Pode optar pelo Simples por RECEITA? As demais vedações (art. 17) não são avaliadas aqui. */
-export function podeOptarPorReceita(rbt12) {
+/**
+ * ⚠⚠ GUARDA DE ELEGIBILIDADE — LIMITE PROPORCIONAL NO ANO DE INÍCIO (art. 3º, §§ 2º e 10 a 13).
+ *
+ * Esta função não melhora número nenhum: ela impede um estrago. O cenário que ela existe para
+ * barrar é o pior deste módulo — o simulador diz a uma empresa aberta em setembro que "o Simples
+ * vence", ela opta, e a receita dos meses de atividade estoura um limite que ninguém verificou.
+ * A consequência não é pagar um pouco mais: é EXCLUSÃO RETROATIVA AO INÍCIO DAS ATIVIDADES, com
+ * todos os tributos do período refeitos pelas normas gerais (CGSN 140/2018, art. 3º, § 1º).
+ *
+ * O efeito MUDA COM O TAMANHO DO EXCESSO, e é por isso que não basta um booleano:
+ *   • excesso ≤ 20% do limite proporcional → efeitos só no ano-calendário SEGUINTE (§ 12);
+ *   • excesso  > 20%                       → efeitos RETROATIVOS ao início (§ 10).
+ *
+ * ⚠ "INCLUSIVE AS FRAÇÕES DE MESES" (art. 3º, § 2º): quem abriu em 20 de setembro tem SETEMBRO
+ * inteiro na conta — 4 meses até dezembro, não 3,3. Arredondar para baixo daria um limite menor que
+ * o legal e acusaria estouro onde não há.
+ *
+ * `mesesNoAnoDeInicio` é o número de meses de atividade DENTRO do ano-calendário de início — não é
+ * o mesmo `mesesDeAtividade` do RBT12, que atravessa o ano-calendário (art. 22, § 4º). Para uma
+ * empresa que abriu em novembro e apura em janeiro, são 2 meses ali e 3 meses de atividade aqui.
+ */
+export function limiteProporcionalInicioAtividade({
+  mesesNoAnoDeInicio,
+  receitaNoAnoDeInicio,
+  sublimiteMensal = LIMITE_PROPORCIONAL_INICIO.sublimitePorMes,
+}) {
+  const meses = Math.ceil(Number(mesesNoAnoDeInicio)); // fração de mês conta como mês completo
+  if (!Number.isFinite(meses) || meses < 1 || meses > 12) return null;
+
+  const receita = Number(receitaNoAnoDeInicio) || 0;
+  const limite = LIMITE_PROPORCIONAL_INICIO.porMes * meses;
+  const sublimite = sublimiteMensal * meses;
+
+  const excesso = Math.max(0, receita - limite);
+  const excessoSublimite = Math.max(0, receita - sublimite);
+  const tolerancia = LIMITE_PROPORCIONAL_INICIO.toleranciaSemRetroatividade;
+
+  // Sobra até estourar, e quanto do limite já foi consumido — é o que alimenta o aviso "por um fio".
+  const margem = limite - receita;
+  const consumoDoLimite = limite > 0 ? receita / limite : null;
+
+  return Object.freeze({
+    meses,
+    limite,
+    sublimite,
+    receita,
+    margem,
+    consumoDoLimite,
+    excedeu: excesso > 0,
+    excesso,
+    // O degrau do § 12: acima de 20% do limite, a exclusão retroage ao início das atividades.
+    efeitoExclusao: excesso <= 0
+      ? null
+      : (excesso > limite * tolerancia ? "retroativo_ao_inicio" : "ano_calendario_subsequente"),
+    excedeuSublimite: excessoSublimite > 0,
+    excessoSublimite,
+    // Regra gêmea do art. 12, § 4º — mesmo degrau de 20%, mas o efeito é perder ICMS/ISS no DAS.
+    efeitoSublimite: excessoSublimite <= 0
+      ? null
+      : (excessoSublimite > sublimite * tolerancia ? "retroativo_ao_inicio" : "ano_calendario_subsequente"),
+    fonte: LIMITE_PROPORCIONAL_INICIO.fonte,
+  });
+}
+
+/**
+ * Pode optar pelo Simples por RECEITA? As demais vedações (art. 17) não são avaliadas aqui.
+ *
+ * ⚠ O segundo argumento liga a guarda de INÍCIO DE ATIVIDADE. Sem ele a função avalia o limite
+ * anual cheio, que é o certo para empresa estabelecida e o ERRADO para quem abriu no meio do ano:
+ * uma empresa aberta em outubro com R$ 1,5 mi de receita passa folgada no teto de R$ 4,8 mi e
+ * estoura o limite proporcional de R$ 1,2 mi (3 meses × R$ 400 mil).
+ */
+export function podeOptarPorReceita(rbt12, { mesesNoAnoDeInicio = null, receitaNoAnoDeInicio = null, sublimiteMensal } = {}) {
   const v = Number(rbt12) || 0;
+
+  const inicio = mesesNoAnoDeInicio == null
+    ? null
+    : limiteProporcionalInicioAtividade({ mesesNoAnoDeInicio, receitaNoAnoDeInicio, sublimiteMensal });
+
   return {
-    pode: v <= LIMITES_SIMPLES.epp,
-    acimaDoSublimite: v > LIMITES_SIMPLES.sublimiteIcmsIss,
+    // No ano de início quem manda é o limite proporcional, não o anual (art. 3º, § 2º).
+    pode: inicio ? !inicio.excedeu : v <= LIMITES_SIMPLES.epp,
+    acimaDoSublimite: inicio ? inicio.excedeuSublimite : v > LIMITES_SIMPLES.sublimiteIcmsIss,
     // ⚠ Acima do sublimite ICMS e ISS SAEM do DAS e são recolhidos por fora, pelas regras
     // estaduais/municipais — que são parâmetro de entrada, não cálculo nosso.
-    aviso: v > LIMITES_SIMPLES.sublimiteIcmsIss && v <= LIMITES_SIMPLES.epp
+    aviso: !inicio && v > LIMITES_SIMPLES.sublimiteIcmsIss && v <= LIMITES_SIMPLES.epp
       ? "Acima do sublimite de R$ 3,6 mi: ICMS e ISS saem do DAS e passam a ser recolhidos por fora."
       : null,
+    inicioAtividade: inicio,
   };
 }
 

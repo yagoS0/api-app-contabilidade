@@ -38,6 +38,9 @@ const num = (v) => {
 export function PlanejamentoPage({ empresa = null, onVoltar }) {
   const [receita, setReceita] = useState("");
   const [rbt12, setRbt12] = useState("");
+  const [mesesAtividade, setMesesAtividade] = useState("");
+  const [detalharMeses, setDetalharMeses] = useState(false);
+  const [serieMensal, setSerieMensal] = useState([]);
   const [folha, setFolha] = useState("");
   const [anexo, setAnexo] = useState("III");
   const [sujeitoFatorR, setSujeitoFatorR] = useState(false);
@@ -57,6 +60,37 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
     if (empresa.aliquotaIss != null) setIss(String(empresa.aliquotaIss * 100));
   }, [empresa]);
 
+  // ⚠ SÓ do 1º ao 12º mês. Do 13º em diante a empresa TEM os 12 meses de histórico, e o RBT12 real
+  // volta a ser o campo comum — a transição do art. 22, § 4º, II é isto, na tela. Passar um valor
+  // ≥ 13 ao motor faria ele sobrescrever o RBT12 informado pelo derivado, sem o usuário pedir.
+  const mesesInicioAtividade = useMemo(() => {
+    const n = num(mesesAtividade);
+    return n != null && n >= 1 && n <= 12 ? Math.trunc(n) : null;
+  }, [mesesAtividade]);
+
+  // ⚠ O DETALHAMENTO SÓ APARECE EM INÍCIO DE ATIVIDADE, E ISSO É PROPOSITAL. No motor a série
+  // mensal alimenta duas coisas — o RBT12 proporcionalizado e o limite proporcional do ano de
+  // início — e as duas só existem nesse caso. Para empresa estabelecida o RBT12 é informado
+  // direto, e doze campos que não mudam número nenhum seriam um controle mentiroso: dão ao usuário
+  // a impressão de estar refinando a conta enquanto o resultado fica igual.
+  const podeDetalhar = mesesInicioAtividade != null;
+  const detalhando = podeDetalhar && detalharMeses;
+
+  // Ao abrir, cada mês já vem com a receita uniforme — o usuário EDITA o que sabe, não digita tudo.
+  useEffect(() => {
+    if (!detalhando) return;
+    setSerieMensal((atual) => {
+      const media = (num(receita) || 0) / 12;
+      const padrao = media ? String(Math.round(media * 100) / 100) : "";
+      return Array.from({ length: mesesInicioAtividade }, (_, i) => atual[i] ?? padrao);
+    });
+  }, [detalhando, mesesInicioAtividade, receita]);
+
+  const receitasMensais = useMemo(() => {
+    if (!detalhando) return null;
+    return Array.from({ length: mesesInicioAtividade }, (_, i) => num(serieMensal[i]) || 0);
+  }, [detalhando, mesesInicioAtividade, serieMensal]);
+
   const entradas = useMemo(() => ({
     receitaAnual: num(receita) || 0,
     rbt12: num(rbt12) ?? num(receita),
@@ -67,7 +101,9 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
     aliquotaIss: num(iss) == null ? null : num(iss) / 100,
     margemLucro: num(margem) == null ? null : num(margem) / 100,
     creditosPisCofins: num(creditos),
-  }), [receita, rbt12, folha, anexo, sujeitoFatorR, atividade, iss, margem, creditos]);
+    mesesDeAtividade: mesesInicioAtividade,
+    receitasMensais,
+  }), [receita, rbt12, folha, anexo, sujeitoFatorR, atividade, iss, margem, creditos, mesesInicioAtividade, receitasMensais]);
 
   const temReceita = entradas.receitaAnual > 0;
   const resultado = useMemo(() => (temReceita ? compararRegimes(entradas) : null), [entradas, temReceita]);
@@ -79,13 +115,39 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
   // A economia de migrar de anexo pelo Fator R: a diferença entre o V e o III, com os mesmos dados.
   const economiaAnexo = useMemo(() => {
     if (!temReceita || !sujeitoFatorR) return null;
-    const v = custoAnualSimples({ anexoChave: "V", rbt12: entradas.rbt12, receitaAnual: entradas.receitaAnual, folhaAnual: entradas.folhaAnual });
-    const iii = custoAnualSimples({ anexoChave: "III", rbt12: entradas.rbt12, receitaAnual: entradas.receitaAnual, folhaAnual: entradas.folhaAnual });
+    const comum = {
+      rbt12: entradas.rbt12,
+      receitaAnual: entradas.receitaAnual,
+      folhaAnual: entradas.folhaAnual,
+      mesesDeAtividade: entradas.mesesDeAtividade,
+    };
+    const v = custoAnualSimples({ ...comum, anexoChave: "V" });
+    const iii = custoAnualSimples({ ...comum, anexoChave: "III" });
     if (!v || !iii || v.indisponivel || iii.indisponivel) return null;
     return v.total - iii.total;
   }, [entradas, temReceita, sujeitoFatorR]);
 
   const avisoTrava = temReceita && atividade === "servicos" ? avisoTravaServicos16(entradas.receitaAnual) : null;
+
+  // ⚠ EXIGÊNCIA DE PRODUTO, NÃO ENFEITE. Em início de atividade o RBT12 é PREMISSA, não histórico —
+  // e é premissa que muda o número. Sem esta frase, "RBT12 de R$ 360.000" se lê como faturamento
+  // apurado, e o contador leva à reunião um dado que a empresa nunca teve.
+  const inicio = resultado?.inicioAtividade?.proporcionalizado ? resultado.inicioAtividade : null;
+
+  // ⚠ A PREMISSA EM USO SAI ESCRITA. Dois PDFs da mesma empresa com números diferentes precisam
+  // explicar por quê no próprio papel — senão a diferença parece erro de cálculo, e quem recebe não
+  // tem como saber que um saiu de receita uniforme e o outro da série informada.
+  const premissaReceita = detalhando
+    ? "série mensal informada"
+    : `receita uniforme de ${brl(entradas.receitaAnual / 12)} por mês (receita anual ÷ 12)`;
+
+  const premissaInicio = inicio
+    ? `Empresa no ${inicio.mesAtividade}º mês de atividade: o RBT12 de ${brl(inicio.rbt12)} NÃO é histórico real — `
+      + "é a receita anualizada pela regra de início de atividade (LC 123/2006, art. 18, § 2º; "
+      + `Resolução CGSN 140/2018, art. 22, ${inicio.regra.replace("art. 22, ", "")}). `
+      + `Premissa de receita: ${premissaReceita}. `
+      + "A partir do 13º mês passa a valer o RBT12 real dos 12 meses anteriores."
+    : null;
   const issForaDaFaixa = num(iss) != null && (num(iss) / 100 < ISS_FAIXA_LEGAL.minimo || num(iss) / 100 > ISS_FAIXA_LEGAL.maximo);
 
   useEffect(() => {
@@ -121,7 +183,25 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
               <input value={receita} onChange={(e) => setReceita(e.target.value)} inputMode="decimal" placeholder="0,00" style={campo} />
             </label>
             <label style={rotulo}>RBT12 (R$) — receita dos 12 meses anteriores
-              <input value={rbt12} onChange={(e) => setRbt12(e.target.value)} inputMode="decimal" placeholder="igual à receita anual" style={campo} />
+              <input
+                value={mesesInicioAtividade ? "" : rbt12}
+                onChange={(e) => setRbt12(e.target.value)}
+                inputMode="decimal"
+                disabled={Boolean(mesesInicioAtividade)}
+                placeholder={mesesInicioAtividade ? "proporcionalizado — empresa em início de atividade" : "igual à receita anual"}
+                style={{ ...campo, opacity: mesesInicioAtividade ? 0.5 : 1 }}
+              />
+            </label>
+            {/* ⚠ Entrada, não inferência: a receita não diz em que mês a empresa está. Duas empresas
+                com o mesmo acumulado podem estar no 2º ou no 9º mês, e a alíquota sai diferente. */}
+            <label style={rotulo}>Meses de atividade — só se a empresa está começando
+              <input
+                value={mesesAtividade}
+                onChange={(e) => setMesesAtividade(e.target.value)}
+                inputMode="numeric"
+                placeholder="vazio = 12 meses ou mais"
+                style={campo}
+              />
             </label>
             <label style={rotulo}>Folha anual, com pró-labore (R$)
               <input value={folha} onChange={(e) => setFolha(e.target.value)} inputMode="decimal" placeholder="0,00" style={campo} />
@@ -156,6 +236,71 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
             </label>
           </div>
 
+          {mesesInicioAtividade && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: "0.78rem", color: C.alerta }}>
+                ⚠ Início de atividade: o RBT12 deixa de ser digitado e passa a ser <strong>proporcionalizado</strong> a
+                partir da receita informada — o campo acima está desativado de propósito.
+              </div>
+
+              {/* ⚠ SUGESTÃO ATIVA, NÃO CAIXINHA MUDA. O efeito da rampa é invisível para quem não
+                  conhece a regra: o usuário não tem como adivinhar que detalhar os meses pode
+                  baixar a alíquota E revelar um estouro de limite. Se a tela não disser, o padrão
+                  (receita uniforme) vira a resposta por omissão. */}
+              {!detalharMeses && (
+                <div style={{ padding: "8px 10px", borderRadius: 8, border: `1px solid ${C.borda}`, fontSize: "0.78rem", lineHeight: 1.5 }}>
+                  Empresa em rampa costuma pagar <strong>menos</strong> nos primeiros meses — e é também
+                  quando o limite proporcional pode estourar sem aparecer no total do ano.{" "}
+                  <button
+                    type="button"
+                    onClick={() => setDetalharMeses(true)}
+                    style={{ background: "transparent", border: "none", color: C.accent, font: "inherit", fontSize: "0.78rem", textDecoration: "underline", cursor: "pointer", padding: 0 }}
+                  >
+                    Detalhar a receita mês a mês
+                  </button>{" "}
+                  para ver o efeito.
+                </div>
+              )}
+
+              {detalhando && (
+                <div style={{ padding: 10, borderRadius: 8, border: `1px solid ${C.borda}`, display: "grid", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <strong style={{ fontSize: "0.78rem" }}>Receita mês a mês ({mesesInicioAtividade} {mesesInicioAtividade === 1 ? "mês" : "meses"})</strong>
+                    <button
+                      type="button"
+                      onClick={() => { setDetalharMeses(false); setSerieMensal([]); }}
+                      style={{ background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "3px 9px", font: "inherit", fontSize: "0.74rem", cursor: "pointer" }}
+                    >
+                      Voltar à receita uniforme
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
+                    {Array.from({ length: mesesInicioAtividade }, (_, i) => (
+                      <label key={i} style={rotulo}>{i + 1}º mês
+                        <input
+                          value={serieMensal[i] ?? ""}
+                          onChange={(e) => setSerieMensal((a) => { const p = [...a]; p[i] = e.target.value; return p; })}
+                          inputMode="decimal"
+                          style={campo}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: "0.74rem", color: C.muted, lineHeight: 1.5 }}>
+                    A <strong>receita anual</strong> continua sendo a base da comparação entre regimes. A série
+                    define o <strong>RBT12 proporcionalizado</strong> (média dos meses anteriores × 12) e a receita
+                    acumulada que o <strong>limite proporcional</strong> do ano de início verifica.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {num(mesesAtividade) != null && !mesesInicioAtividade && (
+            <div style={{ fontSize: "0.78rem", color: C.alerta }}>
+              Informe de 1 a 12 meses. Do 13º mês em diante a empresa já tem os 12 meses de histórico:
+              deixe o campo vazio e preencha o RBT12 real.
+            </div>
+          )}
           {issForaDaFaixa && (
             <div style={{ fontSize: "0.78rem", color: C.alerta }}>
               A alíquota de ISS informada está fora da faixa legal de 2% a 5% (LC 116/2003) — confira o cadastro.
@@ -184,7 +329,18 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
               <p style={{ margin: "0 0 10px", fontSize: "0.8rem" }}>
                 <strong>Tabelas fiscais verificadas em {resultado.fontesVerificadasEm}.</strong> {resultado.aviso}
               </p>
+              {/* A premissa vai IMPRESSA: o PDF circula sem esta tela por perto, e um RBT12
+                  proporcionalizado sem a ressalva vira faturamento real aos olhos de quem receber. */}
+              {premissaInicio && (
+                <p style={{ margin: "0 0 10px", fontSize: "0.8rem" }}><strong>⚠ {premissaInicio}</strong></p>
+              )}
             </div>
+
+            {premissaInicio && (
+              <div data-print-hide style={{ padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.alerta}`, fontSize: "0.82rem", lineHeight: 1.5, color: C.alerta }}>
+                ⚠ {premissaInicio}
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {resultado.regimes.map((r) => (

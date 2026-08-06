@@ -33,6 +33,46 @@ export const LIMITES_SIMPLES = Object.freeze({
 export const FATOR_R_LIMITE = 0.28;
 
 /**
+ * FONTES_FISCAIS §1.10 — LIMITE PROPORCIONAL NO ANO-CALENDÁRIO DE INÍCIO DE ATIVIDADE.
+ *
+ * ⚠ ISTO NÃO É A MESMA PROPORCIONALIZAÇÃO DO RBT12 (§1.9). Aquela escolhe a FAIXA; esta decide se a
+ * empresa PODE CONTINUAR no Simples. Confundir as duas é fácil e caro: o RBT12 proporcionalizado
+ * sai de "média × 12", este limite sai de "valor fixo por mês × meses".
+ *
+ * LC 123/2006, art. 3º, § 2º: "No caso de início de atividade no próprio ano-calendário, o limite a
+ * que se refere o caput deste artigo será proporcional ao número de meses em que a microempresa ou
+ * a empresa de pequeno porte houver exercido atividade, INCLUSIVE AS FRAÇÕES DE MESES."
+ *
+ * Resolução CGSN 140/2018, art. 3º, caput — a operacionalização, com o valor por mês já dado:
+ *   "No ano-calendário de início de atividade, cada um dos limites previstos no § 1º do art. 2º
+ *    será de R$ 400.000,00, multiplicados pelo número de meses compreendidos entre o início de
+ *    atividade e o final do respectivo ano-calendário, considerada a fração de mês como mês
+ *    completo."
+ *
+ * E o sublimite de ICMS/ISS tem regra gêmea — Resolução CGSN 140/2018, art. 12, § 2º: R$ 300.000,00
+ * (ou R$ 150.000,00, conforme o caso) por mês.
+ */
+export const LIMITE_PROPORCIONAL_INICIO = Object.freeze({
+  /** CGSN 140/2018, art. 3º, caput. É 4.800.000 ÷ 12, mas está na norma como valor próprio. */
+  porMes: 400_000,
+  /** CGSN 140/2018, art. 12, § 2º — par do sublimite de R$ 3,6 mi (art. 9º, § 1º). */
+  sublimitePorMes: 300_000,
+  /**
+   * O outro valor do art. 12, § 2º: par do sublimite de R$ 1,8 mi que o DF e os Estados com até 1%
+   * do PIB PODEM adotar (art. 9º, caput). Qual vale é PARÂMETRO DE ENTRADA (§9) — depende da UF e
+   * da opção dela para o ano. Está aqui nomeado, não escolhido.
+   */
+  sublimitePorMesUfReduzida: 150_000,
+  /**
+   * ⚠ O DEGRAU QUE MUDA A CONSEQUÊNCIA, não só a mensagem (LC 123/2006, art. 3º, §§ 12 e 13;
+   * CGSN 140/2018, art. 3º, § 2º, e art. 12, § 4º): excesso de até 20% adia os efeitos para o
+   * ano-calendário seguinte; acima de 20%, a exclusão RETROAGE ao início das atividades.
+   */
+  toleranciaSemRetroatividade: 0.20,
+  fonte: "LC 123/2006, art. 3º, §§ 2º e 9º a 13; Resolução CGSN 140/2018, arts. 3º, 9º e 12",
+});
+
+/**
  * As seis faixas são as MESMAS para todos os anexos (RBT12), o que muda é alíquota e PD.
  * `ate: Infinity` na 6ª não existe: o teto do Simples é o próprio limite de EPP.
  */

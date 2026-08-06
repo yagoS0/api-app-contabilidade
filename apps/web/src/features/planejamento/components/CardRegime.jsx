@@ -24,6 +24,49 @@ const ROTULO_TRIBUTO = {
   iss: "ISS", ipi: "IPI",
 };
 
+/**
+ * ⚠ O GATILHO DE 80% É ESCOLHA DE PRODUTO, NÃO REGRA LEGAL — e por isso mora aqui, na tela, e não
+ * em `tabelasFiscais.js`, onde todo valor aponta para a lei. A lei só conhece dois pontos: dentro
+ * do limite, e fora dele (com o degrau de 20% definindo o efeito). O aviso antecipado existe porque
+ * a empresa que já consumiu 80% do limite proporcional ainda pode decidir — depois de estourar,
+ * não pode mais.
+ */
+const CONSUMO_PARA_AVISAR = 0.8;
+
+function AvisoLimiteProporcional({ guarda }) {
+  const perto = guarda.consumoDoLimite != null && guarda.consumoDoLimite >= CONSUMO_PARA_AVISAR;
+  if (!guarda.excedeu && !perto) return null;
+
+  // Ultrapassou até 20%: continua no Simples ESTE ano e sai no seguinte. É aviso, não bloqueio —
+  // o bloqueio (retroativo) nem chega aqui, porque vira `elegivel: false` no motor.
+  const jaEstourou = guarda.excedeu;
+
+  return (
+    <div style={{ marginTop: 10, padding: 8, borderRadius: 8, border: `1px solid ${C.alerta}`, background: "rgba(255,179,71,0.10)", fontSize: "0.76rem" }}>
+      <strong style={{ color: C.alerta }}>
+        {jaEstourou ? "Limite proporcional ultrapassado" : "Elegibilidade por um fio"}
+      </strong>
+      <div style={{ marginTop: 4, lineHeight: 1.5 }}>
+        {jaEstourou ? (
+          <>
+            A receita de {brl(guarda.receita)} nos {guarda.meses} meses de atividade passou do limite
+            proporcional de <strong>{brl(guarda.limite)}</strong> em {brl(guarda.excesso)}. Como o excesso
+            não chega a 20%, a empresa permanece no Simples neste ano e é <strong>excluída a partir do
+            ano-calendário seguinte</strong> (LC 123/2006, art. 3º, § 12).
+          </>
+        ) : (
+          <>
+            No ano de início o limite não é R$ 4,8 mi: é <strong>{brl(guarda.limite)}</strong> ({guarda.meses}{" "}
+            {guarda.meses === 1 ? "mês" : "meses"} × R$ 400.000). Faltam <strong>{brl(guarda.margem)}</strong> para
+            estourar. Passando dele em mais de 20%, a exclusão <strong>retroage ao início das atividades</strong> —
+            os tributos de todo o período são refeitos pelas normas gerais (art. 3º, §§ 2º e 10).
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function CardRegime({ resultado, vencedor, aberto, onToggle }) {
   if (!resultado) return null;
 
@@ -75,6 +118,14 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle }) {
       {inelegivel ? (
         <div style={{ fontSize: "1rem", fontWeight: 700, color: C.alerta }}>
           A empresa não é elegível a este regime com esta receita.
+          {/* ⚠ A INELEGIBILIDADE PRECISA DIZER O PORQUÊ E A CONSEQUÊNCIA. "Não é elegível" manda o
+              usuário embora sem saber o que fazer; o motivo do limite proporcional é acionável —
+              ele muda com a receita dos meses de atividade, que é decisão da empresa. */}
+          {resultado.motivo && (
+            <div style={{ marginTop: 6, fontSize: "0.8rem", fontWeight: 400, color: C.texto }}>
+              {resultado.motivo}
+            </div>
+          )}
         </div>
       ) : (
         <>
@@ -84,6 +135,15 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle }) {
           </div>
           {resultado.anexo && <div style={{ fontSize: "0.78rem", color: C.muted, marginTop: 4 }}>{resultado.anexo} · {resultado.faixa}ª faixa</div>}
           {resultado.atividade && <div style={{ fontSize: "0.78rem", color: C.muted, marginTop: 4 }}>{resultado.atividade}</div>}
+
+          {/* ⚠⚠ ELEGIBILIDADE POR UM FIO — no CORPO do card, junto do número que ela pode anular.
+              O resultado aqui não pode ser binário: entre "cabe" e "não cabe" existe a faixa em que
+              a empresa ainda cabe mas está a poucos reais de não caber, e quem lê "MENOR CARGA" sem
+              esse aviso opta sem saber o que arrisca. A consequência vai escrita junto, porque
+              "atenção ao limite" não diz que os tributos do período podem ser refeitos. */}
+          {resultado.elegibilidadeInicioAtividade && (
+            <AvisoLimiteProporcional guarda={resultado.elegibilidadeInicioAtividade} />
+          )}
 
           {/* ⚠ O QUE FICOU DE FORA VAI NO CORPO DO CARD, NÃO EM RODAPÉ.
               Um total que não inclui o ISS parece completo; quem lê o número grande e o aviso longe
