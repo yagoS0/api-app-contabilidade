@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
+import { valorUtilizavel } from "../lib/valorFormula";
 import {
   ACCOUNTING_PANEL,
   INPUT,
@@ -643,7 +644,10 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
       contaD: d?.conta || "",
       contaC: c?.conta || "",
       historico: entry.historico || "",
-      valor: v ? String(v) : "",
+      // Formato BR ("1.234,56") e não `String(v)` ("1234.56"): é o mesmo formato que a tabela
+      // exibe e que o parser lê de volta sem ambiguidade. Abrir a edição num formato e ler noutro
+      // é como o valor mudaria sozinho ao salvar sem ninguém ter tocado no campo.
+      valor: v ? fmtValor(v) : "",
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -678,8 +682,13 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   }
 
   const detected = useMemo(() => detectTipoFromAccounts(contaD, contaC, accounts), [contaD, contaC, accounts]);
+  // ⚠ UMA LEITURA SÓ do que foi digitado. Antes `Number(valor)` aparecia em três lugares — o gate
+  // do Salvar, o payload e a init da edição — e três leituras independentes da mesma string é
+  // exatamente como elas divergiriam depois. Aqui a célula aceita fórmula (`=10+10`), então
+  // "o que está escrito" e "quanto vale" deixaram de ser a mesma coisa.
+  const leitura = useMemo(() => valorUtilizavel(valor), [valor]);
   const lines = [{ tipo: "D", conta: contaD, valor }, { tipo: "C", conta: contaC, valor }];
-  const balanced = Number(valor) > 0;
+  const balanced = leitura.ok && !leitura.vazio;
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
   const contasForaDoPlano = contasDesconhecidas(lines, accounts);
   // Lançamento de 1 perna é válido (em aberto) — basta D OU C preenchido. [[nao-mudar-forma-lancamentos]]
@@ -700,7 +709,9 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
       data: dateVal,
       historico,
       tipo: isEdit ? entry.tipo : detected.tipo,
-      lines: filled.map((l, i) => ({ conta: String(l.conta).trim(), tipo: l.tipo, valor: Number(l.valor || 0), ordem: i })),
+      // O valor vai da MESMA leitura que habilitou o Salvar — nunca de um `Number()` novo sobre o
+      // texto, que devolveria NaN para "=10+10" e 0 para o `|| 0` logo em seguida.
+      lines: filled.map((l, i) => ({ conta: String(l.conta).trim(), tipo: l.tipo, valor: leitura.valor, ordem: i })),
     };
     if (isEdit) {
       // Q38: preserva o tipo/subtipo do lançamento (não re-detecta).
@@ -745,7 +756,7 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
       </td>
       <td style={cell}>
         <SmartHistoricoInput value={historico} onChange={setHistorico}
-          onFillFromHistory={(hist, hl) => { if (hist) setHistorico(hist); if (hl?.length) { const d = hl.find((l) => l.tipo === "D"); const c = hl.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(String(d.valor)); } }}
+          onFillFromHistory={(hist, hl) => { if (hist) setHistorico(hist); if (hl?.length) { const d = hl.find((l) => l.tipo === "D"); const c = hl.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(fmtValor(d.valor)); } }}
           onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} competencia={activeComp} />
         {duplicateAcrossSides ? <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>Débito e crédito não podem ser a mesma conta.</div> : null}
         {contasForaDoPlano.length > 0 ? (
@@ -755,9 +766,31 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
         ) : null}
       </td>
       <td style={cell}>
-        <input ref={valRef} type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00"
+        {/* ⚠ `type="text"`, NÃO `type="number"`. Com `number` o browser devolve `""` para todo
+            conteúdo que ele considera inválido — o `=` de uma fórmula zera o campo e a fórmula
+            nunca chega ao handler. Não é preferência de estilo: é pré-requisito. `inputMode`
+            mantém o teclado numérico no celular. */}
+        <input ref={valRef} type="text" inputMode="decimal" autoComplete="off" value={valor} onChange={(e) => setValor(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00 ou =10+10"
+          // Ao sair do campo a fórmula VIRA o resultado — é o "=10+10 e vira 20" do pedido. Só
+          // resolve quando deu certo: fórmula quebrada continua na tela como o usuário escreveu,
+          // senão ele perde o que digitou e não sabe o que estava errado.
+          //
+          // ⚠ Lê o estado ATUAL na função de update, não o `leitura` do closure. Salvar com Enter
+          // limpa o campo (`reset`), e um blur logo depois com o valor antigo em closure
+          // RE-PREENCHERIA a linha nova com o valor do lançamento que acabou de ser salvo.
+          onBlur={() => setValor((atual) => { const r = valorUtilizavel(atual); return r.ok && !r.vazio ? fmtValor(r.valor) : atual; })}
           style={{ ...PANEL_FIELD_STYLE, textAlign: "right", padding: "0 6px", minWidth: 0 }} />
+        {/* ⚠ A PRÉVIA É O QUE TORNA A REGRA DO SEPARADOR SEGURA — não é enfeite.
+            "2.500" pode ser dois mil e quinhentos ou dois e cinquenta, e o texto não distingue.
+            Mostrar como o app leu ANTES de salvar transforma ambiguidade silenciosa em conferência
+            de um relance. Fica DENTRO do <td>, abaixo do input — mesmo padrão dos avisos de conta
+            duplicada e conta fora do plano: a célula cresce em altura e as colunas não se mexem. */}
+        {!leitura.vazio && (
+          <div style={{ fontSize: "0.72rem", marginTop: 2, textAlign: "right", color: leitura.ok ? ACCOUNTING_PANEL.muted : "#FF4757" }}>
+            {leitura.ok ? `= ${fmtValor(leitura.valor)}` : leitura.mensagem}
+          </div>
+        )}
       </td>
       <td style={{ ...cell, textAlign: "right" }}>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "nowrap", whiteSpace: "nowrap" }}>

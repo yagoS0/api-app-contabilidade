@@ -26,6 +26,54 @@ plano de contas, funções/templates, importações (OFX/Excel).
   parcelamento existente, pagamento; abertura é a única provisão; contas em branco + memória.
 - `functions/`, `chart-of-accounts/`, `rules/`, `historicos/`, `ofx-import/`, `excel-import/`.
 
+## A célula de valor aceita fórmula (`entries/lib/valorFormula.js`)
+
+Digitar `=10+10` na célula de valor da linha de lançamento resulta em 20 — o contador deixa de
+calcular fora e transcrever, que é onde se erra dígito. Vale só no `DraftEntryRow` (que serve
+**criar e editar**); folha, baixa, parcelamento, guias e o `LineEditor` continuam como estavam.
+
+- **`type="text"`, não `type="number"`** — não é estilo, é pré-requisito: com `number` o browser
+  devolve `""` para conteúdo que considera inválido, então o `=` zerava o campo e a fórmula nunca
+  chegava ao handler. Consequência: some a filtragem nativa de letras, e o tokenizer passa a ser a
+  única barreira (por isso caractere fora do alfabeto é **erro**, nunca ignorado).
+- **Sem `eval`/`new Function`.** É texto de usuário virando lançamento contábil; o avaliador é
+  escrito à mão e só conhece `+ - * / ( )`. Não há `eval` em lugar nenhum deste repositório.
+- **Nunca devolve 0 por desistência.** Fórmula quebrada devolve `{ok:false, erro}` e o Salvar
+  desabilita com o motivo à vista. O `Number(l.valor || 0)` que existia no payload virava `NaN || 0`
+  = **R$ 0,00 gravado em silêncio** no instante em que o campo aceitasse `=`.
+- **Uma leitura só.** `Number(valor)` aparecia em três lugares (gate do Salvar, payload, init da
+  edição); hoje um `useMemo` alimenta os três. Com fórmula, "o que está escrito" e "quanto vale"
+  deixaram de ser a mesma coisa.
+
+### ⚠ A regra do separador decimal — gramática estrita, não heurística
+
+Em pt-BR `,` é decimal e `.` é milhar, mas quem usa teclado numérico digita `.` como decimal. Ler
+errado não dá um valor um pouco diferente: dá um valor **1000× maior ou menor**.
+
+Duas formas canônicas são aceitas — pt-BR (`1.234,56`, `1.234`, `1234,56`, `1234`) e ponto-decimal
+sem agrupamento (`10.5`, `10.50`, `1234.56`). **Todo o resto é recusado com erro nomeado.** O que
+segura a regra é o **agrupamento de 3 dígitos obrigatório** no milhar: é ele que distingue `1.234`
+de `1.23.4`.
+
+| entrada | resultado | por quê |
+|---|---|---|
+| `1,234.56` | **recusado** | vírgula antes de ponto é en-US, não pt-BR. Lido como brasileiro viraria 1,23 — 1000× para baixo, vindo de um copiar-e-colar de planilha |
+| `1.23.4` · `1.2345,67` · `1234.500` | **recusado** | grupos de milhar inválidos |
+| `1.500` | 1500 | ambiguidade real (pode ser 1,50), resolvida como pt-BR — ver abaixo |
+
+⚠ **A PRÉVIA NÃO É ENFEITE — é ela que torna a última linha segura.** `1.500` querendo dizer R$ 1,50
+é indistinguível pelo texto; a prévia mostra `= 1.500,00` **antes** de salvar, e por isso ela
+aparece com **qualquer** conteúdo, não só com `=`. Quem remover a prévia deixa a regra perigosa.
+Ela mora dentro do `<td>`, abaixo do input — mesmo padrão dos avisos de conta duplicada e conta
+fora do plano, e a coluna é `116px` fixa (`COLS`), então nada empurra nada.
+
+⚠ **Mudança de comportamento em produção:** antes, `type="number"` fazia `1.234` valer **1,23**;
+agora vale **1.234,00**. É consequência de tirar o `number`, não da fórmula em si — e é a leitura
+correta num sistema contábil brasileiro, mas quem tinha memória muscular vai sentir.
+
+Regra em `lib/` com 48 testes próprios; `components/__tests__/draftEntryRowValor.test.jsx` cobre só
+a **ligação** (prévia, gate do Salvar, número no payload), não a aritmética de novo.
+
 ## ⚠ A COMPETÊNCIA É GLOBAL — mora no header da empresa, não na aba
 
 Eram **duas**, com defaults **diferentes**: os lançamentos nasciam no mês anterior (competência
@@ -49,6 +97,42 @@ divergir. `circularCompetencia` virou um alias derivado — **não é mais estad
   `circular`. Aba entra na lista quando passa a **filtrar** por competência. Seletor que não comanda
   nada é pior que seletor nenhum — a pessoa muda o mês, nada muda, e passa a duvidar do controle
   também onde ele funciona.
+
+## ⚠ A aba Lançamentos NÃO pagina — quem pagina é a rota, e o front percorre tudo
+
+`GET /entries` pagina, e o **default dela é 50**. `loadAccountingEntries` não mandava
+`page`/`limit`, então só a **primeira página** chegava: competência com mais de 50 lançamentos
+exibia os 50 mais antigos (`orderBy: data asc`) e escondia o resto. Os que "sumiam" eram sempre os
+do **fim do mês**.
+
+Não há controle de paginação na aba — nada na tela sugere que exista uma página 2.
+
+⚠ **O rodapé se contradizia, e essa é a assinatura do defeito.** A contagem sai de `total` (o
+`count` do backend, sempre certo) e as somas D/C saem de `entries` (só o que chegou). Num mês de
+450 lançamentos o rodapé dizia:
+
+```
+450 lançamentos no total · D R$ <soma de 50> · C R$ <soma de 50>   ✓ ok
+```
+
+O **`✓ ok` aparecia** porque os 50 carregados batem entre si — cada lançamento é balanceado, então
+um corte no meio da lista continua fechando. Número certo ao lado de soma errada, carimbado de
+conferido. Quem contar as linhas visíveis contra o "450" acha o problema; o selo verde diz que não
+há problema.
+
+⚠ O **gate de fechamento não foi afetado**: `validateFechamentoContabil` / `fechamentoBlockers`
+fazem a própria query no banco. Era a tela que mentia, não a trava.
+
+O **CSV nunca teve limite** (`/entries/export/csv` não pagina) — tela e exportação discordavam, e
+foi assim que apareceu. Se a lista for contestada de novo, comparar com o CSV é o teste mais rápido.
+
+Hoje `loadAccountingEntries` percorre as páginas até completar `total`, pedindo **200 por chamada**
+(= teto do backend; pedir mais não traz mais). Mês com até 200 lançamentos continua sendo **uma
+única requisição**, igual antes. O teto fica no backend de propósito — é guarda da query, não regra
+de tela. Página vazia com `total` ainda por alcançar **avisa na tela**: lista incompleta em silêncio
+é exatamente o defeito que isto corrige. Regressão em
+`app/hooks/__tests__/useManageAccountingWorkspace.test.js` (conta CHAMADAS, não formato de
+lançamento — um teste que olhasse só a 1ª página passaria com o bug de volta).
 
 ## ⚠ Circular: vencida ≠ a vencer (`circular/lib/estadoGuia.js`)
 
