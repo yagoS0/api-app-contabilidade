@@ -78,14 +78,30 @@ async function memorizeMapaContaTributoTx(client, { tipoParcelamento, entry, use
 // NÃO credita caixa (esse era o bug: provisão e pagamento compartilhavam o mesmo papel de conta).
 // As contas saem em branco quando não mapeadas (contador preenche; o sistema aprende).
 async function linhasProvisao(tx, { portalClientId, tipoParcelamento, dto }) {
-  // Provisão da dívida consolidada (espelha o lançamento real do contador, e é EDITÁVEL pela config):
-  //   D principal (265) + D juros (501) [+ D multa (502)] / C parcelamento a pagar (553, = total).
-  // O crédito (PARC) é o passivo — debitado depois no pagamento. NÃO credita caixa.
+  // Provisão da adesão: **D principal (265) / C parcelamento a pagar (553, = principal)**.
+  // Não credita caixa — o passivo é debitado depois, a cada parcela paga.
+  //
+  // ⚠ JUROS E MULTA NÃO ENTRAM AQUI. DECISÃO DO DONO: "juros e multa vêm apenas da confirmação do
+  // pagamento, que vem do SERPRO".
+  //
+  // O que havia antes: `D principal + D juros [+ D multa] / C passivo (= consolidado)`. Como o
+  // pagamento de cada parcela debita o passivo SÓ pelo principal e lança juros/multa em 501/506,
+  // o encargo era reconhecido DUAS VEZES no resultado — uma na adesão, outra a cada parcela — e o
+  // passivo ficava com resíduo permanente igual a `juros + multa` do contrato: parcelamento
+  // quitado com saldo vivo em "Parcelamento a Pagar", para sempre.
+  //
+  // Com o passivo nascendo só do principal, a soma das amortizações o zera, e juros e multa
+  // aparecem uma vez só — no mês em que foram efetivamente pagos, que é onde a despesa financeira
+  // pertence.
+  //
+  // ⚠ CONSEQUÊNCIA ACEITA, e o dono decidiu sabendo: o passivo passa a registrar o PRINCIPAL, não
+  // a dívida consolidada do contrato (que legalmente inclui multa e juros). O balanço deixa de
+  // espelhar o valor assinado no acordo.
+  //
+  // `dto.valorJuros` e `dto.valorMulta` continuam gravados no PARCELAMENTO (dado do contrato);
+  // o que mudou é que não viram lançamento na adesão.
   const principal = round2(dto.valorPrincipal) || 0;
-  const juros = round2(dto.valorJuros) || 0;
-  const multa = round2(dto.valorMulta) || 0;
-  const debitos = [{ tipoLinha: "PRINCIPAL", valor: principal }, { tipoLinha: "JUROS", valor: juros }];
-  if (multa > 0) debitos.splice(1, 0, { tipoLinha: "MULTA", valor: multa });
+  const debitos = [{ tipoLinha: "PRINCIPAL", valor: principal }];
 
   const lines = [];
   let ordem = 0;

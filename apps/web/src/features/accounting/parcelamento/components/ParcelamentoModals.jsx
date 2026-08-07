@@ -69,12 +69,19 @@ const TIPOS_PARC = [
 // em branco (ou pré-preenchidas da memória) e são memorizadas após o 1º preenchimento.
 // A composição por tributo é guardada pra montar o pagamento futuro (juros LIDO).
 // ─────────────────────────────────────────────────────────────────────────
-// Provisão da dívida (espelha o lançamento real; editável): D principal + D juros / C parcelamento a
-// pagar (passivo, = total). Crédito = soma dos débitos. NÃO credita caixa.
+// Provisão da adesão: D principal / C parcelamento a pagar (passivo). Crédito = soma dos débitos.
+// NÃO credita caixa.
+//
+// ⚠ A LINHA DE JUROS SAIU DAQUI. Decisão do dono: "juros e multa vêm apenas da confirmação do
+// pagamento, que vem do SERPRO". Deixar a linha pré-preenchida no modal desfaria a correção pela
+// mão do contador — ele preencheria a conta, o valor viria do contrato, e o encargo voltaria a ser
+// reconhecido duas vezes (uma na adesão, outra a cada parcela). O passivo então nunca zeraria.
+//
+// Continua EDITÁVEL: quem precisar de uma linha diferente adiciona pelo "+". O que mudou é o que a
+// tela SUGERE — e sugestão em formulário de lançamento é o que quase todo mundo aceita.
 const PROV_LINHAS_PADRAO = [
   { tipoLinha: "PRINCIPAL", label: "Principal", tipo: "D", conta: "", valor: "" },
-  { tipoLinha: "JUROS", label: "Juros", tipo: "D", conta: "", valor: "" },
-  { tipoLinha: "PARC", label: "Parcelamento a pagar (total)", tipo: "C", conta: "", valor: "" },
+  { tipoLinha: "PARC", label: "Parcelamento a pagar (principal)", tipo: "C", conta: "", valor: "" },
 ];
 
 // Q28 Fase 1: config de COMO o pagamento de cada parcela será lançado (papel/lado/conta — sem valor;
@@ -528,7 +535,8 @@ export function ParcelamentoEntradaModal({ parcelamentosAtivos = [], onChooseAtt
 // Q28 Fase 2: ParcelamentoConfigModal — ver/editar a config de lançamento (provisão + pagamento)
 // de um parcelamento específico (acessível pela Circular/aba Guias).
 // ─────────────────────────────────────────────────────────────────────────
-const CFG_PROV_PADRAO = [{ tipoLinha: "PRINCIPAL", tipo: "D", conta: "" }, { tipoLinha: "JUROS", tipo: "D", conta: "" }, { tipoLinha: "PARC", tipo: "C", conta: "" }];
+// Sem JUROS, pelo mesmo motivo de `PROV_LINHAS_PADRAO`: a provisão da adesão carrega só o principal.
+const CFG_PROV_PADRAO = [{ tipoLinha: "PRINCIPAL", tipo: "D", conta: "" }, { tipoLinha: "PARC", tipo: "C", conta: "" }];
 const CFG_PAG_PADRAO = [{ tipoLinha: "PARC", tipo: "D", conta: "" }, { tipoLinha: "JUROS", tipo: "D", conta: "" }, { tipoLinha: "CAIXA", tipo: "C", conta: "" }];
 const ROLE_LABEL = { PRINCIPAL: "Principal", JUROS: "Juros", MULTA: "Multa", PARC: "Parcelamento a pagar (passivo)", CAIXA: "Caixa / Banco", CONTRAPARTIDA: "Contrapartida (despesa/reclasse)" };
 const normCfgRow = (r) => ({ tipoLinha: r?.tipoLinha || "PARC", tipo: r?.tipo === "C" ? "C" : "D", conta: r?.conta || "" });

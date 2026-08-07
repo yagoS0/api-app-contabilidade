@@ -385,6 +385,22 @@ function validateLines(lines) {
  *
  * Conta GLOBAL (`portalClientId: null`) vale para todas as empresas — por isso o `OR`.
  */
+/**
+ * "dd/mm/aaaa" → `Date` (meio-dia local). Qualquer outra coisa vira `null`.
+ *
+ * ⚠ EXISTE PORQUE O DADO ESTÁ GRAVADO NO FORMATO BR dentro do JSON `extracted.comprovante`, e a
+ * mesma chave é `Date` em outros pontos do código. `new Date("07/08/2026")` lê como 7 de AGOSTO
+ * (formato americano) — e esse erro viraria data de lançamento contábil, em silêncio.
+ * Meio-dia para não escorregar de dia por fuso.
+ */
+function dataBrParaDate(valor) {
+  const m = String(valor || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const [, dia, mes, ano] = m;
+  const d = new Date(Number(ano), Number(mes) - 1, Number(dia), 12, 0, 0);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /** Mesma mensagem em vários lançamentos vira UMA linha, com a contagem. */
 function dedupePorTexto(itens) {
   const porMotivo = new Map();
@@ -3788,9 +3804,33 @@ export function createAccountingEntriesRouter({ log }) {
       const { gerarPagamentoParcelaFromGuide } = await import(
         "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
       );
+
+      // ⚠ A DATA DO PAGAMENTO VEM DO COMPROVANTE, NÃO DO CLIQUE.
+      // Sem isto a baixa caía na competência do dia em que o contador clicou: parcela paga em
+      // 20/03 e lançada em 05/04 virava saída de caixa de abril — o balancete de março fechava com
+      // dinheiro que já tinha saído. E o pior: a data certa já estava impressa na própria linha do
+      // painel, ao lado do botão.
+      //
+      // ⚠ `dataArrecadacao` é gravada como STRING BR ("dd/mm/aaaa"), não ISO — `new Date()` leria
+      // "07/08/2026" como 7 de agosto no formato americano, ou como Invalid Date. Por isso o parse
+      // é explícito, e data ilegível vira `undefined` (o serviço cai em "hoje", como antes) em vez
+      // de virar uma data errada: lançar na competência errada é pior que lançar na de hoje.
+      const guiaComComprovante = await prisma.guide.findFirst({
+        where: { id: guideId, portalClientId },
+        select: { extracted: true },
+      });
+      const dataPagamento = dataBrParaDate(guiaComComprovante?.extracted?.comprovante?.dataArrecadacao);
+
       const out = await gerarPagamentoParcelaFromGuide({
         portalClientId, guideId, userId: req.auth?.user?.id,
+        ...(dataPagamento ? { dataPagamento } : {}),
       });
+      // ⚠ `skipped` NÃO é sucesso silencioso. O serviço recusa com `ja_baixada` quando a parcela já
+      // tem lançamento — e a rota devolvia 201 `ok:true` mesmo assim, então o contador clicava, não
+      // acontecia nada, e ele não recebia aviso: a linha só sumia da lista.
+      if (out?.skipped) {
+        return res.status(200).json({ ok: false, skipped: true, motivo: out.reason, resultado: out });
+      }
       return res.status(201).json({ ok: true, resultado: out });
     } catch (err) {
       if (err?.code === "MES_FECHADO") {

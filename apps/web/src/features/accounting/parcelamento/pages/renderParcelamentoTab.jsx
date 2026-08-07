@@ -46,6 +46,24 @@ function ParcelasPendentesBaixa({ companyId }) {
     setLancando(guideId);
     try {
       const out = await parcelaApi.lancarBaixaParcela(companyId, guideId);
+      // ⚠ RECUSA NÃO É SUCESSO. O servidor pode responder `skipped` — a parcela já tem lançamento,
+      // o parcelamento não tem provisão de abertura, o comprovante não é de parcela. Antes tudo
+      // isso voltava como 201 `ok:true`: o contador clicava, a linha sumia da lista e ele ficava
+      // achando que lançou. Agora a recusa aparece com o motivo.
+      if (out?.skipped) {
+        const MOTIVOS = {
+          ja_baixada: "esta parcela já tem lançamento de baixa.",
+          provisao_inexistente: "o parcelamento não tem a provisão de abertura — lance a adesão antes.",
+          sem_composicao: "a parcela não tem composição por tributo, então não dá para separar principal, juros e multa.",
+          comprovante_nao_e_parcela: "o documento arrecadado não é uma parcela deste parcelamento.",
+          nao_e_parcela: "esta guia não pertence a um parcelamento.",
+          guide_not_found: "guia não encontrada.",
+          parcelamento_not_found: "parcelamento não encontrado.",
+        };
+        window.alert(`Nada foi lançado: ${MOTIVOS[out.motivo] || out.motivo || "o servidor recusou."}`);
+        await carregar();
+        return;
+      }
       if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao lançar.");
       await carregar();
     } catch (err) {
