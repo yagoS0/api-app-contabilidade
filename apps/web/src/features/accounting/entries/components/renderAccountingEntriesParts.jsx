@@ -27,12 +27,55 @@ const TIPO_COLOR = {
   PATRIMONIO: { fg: "#1A1B26", bg: "#BD93F9", border: "#BD93F9" },
 };
 
+/**
+ * ⚠ O DROPDOWN É `position: fixed` — e coordenada fixa não acompanha o scroll.
+ *
+ * `fixed` é obrigatório aqui: a tabela de lançamentos tem `overflow` e recortava um dropdown
+ * `absolute`. O preço é que a lista fica ancorada a um ponto da JANELA, não ao campo: ao rolar a
+ * tabela com a lista aberta, o campo subia e a lista ficava parada — sobre OUTRA linha. Quem
+ * escolhesse ali estaria preenchendo o campo de cima com a sugestão de baixo.
+ *
+ * Por isso o `scroll` é escutado em CAPTURA: quem rola é um container interno, e evento de scroll
+ * de elemento não borbulha até o `window`. Só enquanto aberto — fechado não há o que medir.
+ */
+function useCoordenadasAncoradas(open, anchorRef, chaveDeRemedicao, folga = 3) {
+  const [coords, setCoords] = useState(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const medir = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setCoords({ left: r.left, top: r.bottom + folga, width: r.width });
+    };
+    medir();
+    window.addEventListener("scroll", medir, true);
+    window.addEventListener("resize", medir);
+    return () => {
+      window.removeEventListener("scroll", medir, true);
+      window.removeEventListener("resize", medir);
+    };
+  }, [open, anchorRef, chaveDeRemedicao, folga]);
+  return coords;
+}
+
+/**
+ * ⚠ SUGESTÃO NÃO ENTRA NA ORDEM DE TABULAÇÃO (`tabIndex={-1}`).
+ *
+ * São `<button>`, então nasciam tabuláveis: com a lista aberta, o Tab do campo de conta caía DENTRO
+ * das sugestões em vez de ir ao próximo campo — e, como o handler é `onMouseDown`, a sugestão que o
+ * Tab acabara de focar não podia ser aceita por tecla nenhuma. O teclado entrava num beco.
+ * A escolha por teclado é o par ↑↓ + Enter/Tab, tratado no input; o mouse continua no `onMouseDown`
+ * (que precisa do `preventDefault` para o blur não fechar a lista antes do clique).
+ */
 function AccountSuggestionRow({ account, onClick, rowRef, selected, onHover }) {
   const isDevedora = account.natureza === "DEVEDORA";
   const tc = TIPO_COLOR[account.tipo] || TIPO_COLOR.DESPESA;
   return (
     <button
       ref={rowRef}
+      type="button"
+      tabIndex={-1}
       onMouseDown={(e) => { e.preventDefault(); onClick(); }}
       onMouseEnter={onHover}
       style={{
@@ -65,6 +108,8 @@ function HistoricoSuggestionRow({ item, onClick, rowRef, selected, onHover }) {
   return (
     <button
       ref={rowRef}
+      type="button"
+      tabIndex={-1}
       onMouseDown={(e) => { e.preventDefault(); onClick(); }}
       onMouseEnter={onHover}
       style={{
@@ -116,6 +161,7 @@ function TemplateBadge() {
 function AccountSearchInput({ value, onChange, accounts, placeholder }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [selIdx, setSelIdx] = useState(-1);
   const ref = useRef(null);
   // sincroniza query com value externo quando muda de fora (ex: ao carregar entry)
   useEffect(() => { setQuery(String(value || "")); }, [value]);
@@ -141,17 +187,43 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
     onChange(String(acc.codigo));
     setQuery(String(acc.codigo));
     setOpen(false);
+    setSelIdx(-1);
   }
 
+  // Digitou de novo? O destaque volta ao zero. Manter o índice enquanto a lista muda embaixo dele
+  // é como o Tab confirmaria uma conta que a pessoa nunca chegou a ver destacada.
+  useEffect(() => { setSelIdx(-1); }, [query]);
+
+  /**
+   * ⚠ CONTRATO ÚNICO DE TECLADO das três caixas de sugestão (aqui, `AccountCodeInput` e
+   * `SmartHistoricoInput`) — antes cada uma tinha o seu, e este campo era o divergente.
+   *
+   *   ↑ ↓      destacam uma sugestão (↓ também ABRE a lista fechada)
+   *   Enter    confirma a sugestão DESTACADA; sem destaque, segue o fluxo normal do campo
+   *   Tab      confirma a sugestão DESTACADA e vai ao próximo campo; sem destaque, só fecha a
+   *            lista e vai ao próximo campo
+   *   Esc      fecha a LISTA (e só isso — o `stopPropagation` impede que o `<tr>` do rascunho
+   *            entenda o Esc como "cancelar o lançamento")
+   *
+   * A escolha que muda o comportamento deste campo é o Tab: ele selecionava `matches[0]`
+   * sozinho. Num campo de CONTA CONTÁBIL isso troca em silêncio o que o contador digitou pelo
+   * primeiro palpite da lista — e "1.1.01" digitado inteiro casa por prefixo com "1.1.010", que
+   * pode muito bem ser o primeiro da ordem do plano. Substituição de conta sem ninguém ter
+   * apontado para ela é o tipo de erro que só aparece na exportação, semanas depois. Por isso
+   * confirmar passou a exigir um destaque explícito; para o fluxo comum (digitar e seguir) o Tab
+   * continua sendo uma tecla só, e agora ele leva ao PRÓXIMO CAMPO em vez de entrar na lista.
+   */
   function handleKeyDown(e) {
-    if (e.key === "Enter" || e.key === "Tab") {
-      if (matches.length > 0) {
-        e.preventDefault();
-        pick(matches[0]);
-      }
-    } else if (e.key === "Escape") {
-      setOpen(false);
+    if (open && matches.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setSelIdx((i) => Math.min(i + 1, matches.length - 1)); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setSelIdx((i) => Math.max(i - 1, 0)); return; }
+      if (e.key === "Enter") { if (selIdx >= 0) { e.preventDefault(); e.stopPropagation(); pick(matches[selIdx]); } return; }
+      // Sem `preventDefault`: o foco precisa seguir para o próximo campo, que é o ponto do Tab.
+      if (e.key === "Tab") { if (selIdx >= 0) pick(matches[selIdx]); else setOpen(false); return; }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); setSelIdx(-1); return; }
+      return;
     }
+    if (e.key === "ArrowDown" && matches.length > 0) { e.preventDefault(); setOpen(true); setSelIdx(0); }
   }
 
   return (
@@ -171,6 +243,7 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
+        onBlur={() => { setOpen(false); setSelIdx(-1); }}
         onKeyDown={handleKeyDown}
         style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", fontWeight: 700, width: "100%" }}
       />
@@ -181,20 +254,21 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
           borderRadius: 6, boxShadow: "0 8px 28px rgba(0,0,0,0.25)",
           minWidth: 320, maxWidth: 480, maxHeight: 260, overflowY: "auto",
         }}>
-          {matches.map((a) => (
+          {matches.map((a, i) => (
             <button
               key={a.codigo}
               type="button"
+              tabIndex={-1}
               onMouseDown={(e) => { e.preventDefault(); pick(a); }}
               style={{
                 display: "block", width: "100%", textAlign: "left",
                 padding: "6px 10px", border: "none",
                 borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`,
-                background: ACCOUNTING_PANEL.field,
+                background: selIdx === i ? ACCOUNTING_PANEL.surface : ACCOUNTING_PANEL.field,
+                outline: selIdx === i ? "2px solid #69FF47" : "none", outlineOffset: "-2px",
                 color: ACCOUNTING_PANEL.text, cursor: "pointer", fontSize: "0.78rem",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.surface; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.field; }}
+              onMouseEnter={() => setSelIdx(i)}
             >
               <div style={{ fontWeight: 700 }}>{a.codigo} · {a.nome}</div>
               <div style={{ fontSize: "0.65rem", color: ACCOUNTING_PANEL.muted }}>{a.tipo || "—"}</div>
@@ -345,6 +419,8 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
   );
   const ref = useRef(null);
   const debounceRef = useRef(null);
+  const [selIdx, setSelIdx] = useState(-1);
+  const itemRefs = useRef([]);
 
   // Q51: o campo aceita CÓDIGO ou PALAVRA-CHAVE ("caixa", "energia"…). Com letras, sugere
   // contas do plano pelo NOME e históricos pelo texto; selecionar preenche o código.
@@ -366,12 +442,7 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
   }, [value, accounts, isKeyword]);
 
   // Q31 fix: o dropdown é position:fixed (a tabela tem overflow:hidden e cortava a sugestão).
-  const [coords, setCoords] = useState(null);
-  useEffect(() => {
-    if (!open || !ref.current) return;
-    const r = ref.current.getBoundingClientRect();
-    setCoords({ left: r.left, top: r.bottom + 3, width: r.width });
-  }, [open, historicos.length, matchedAccounts.length]);
+  const coords = useCoordenadasAncoradas(open, ref, historicos.length + matchedAccounts.length);
 
   useEffect(() => {
     const v = String(value || "").trim();
@@ -386,7 +457,16 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
       try {
         const results = await buscar();
         setHistoricosRaw(Array.isArray(results) ? results : []);
-        if (results.length > 0) setOpen(true);
+        // ⚠ AQUI HAVIA UM `setOpen(true)` — e era ele que abria a lista sem ninguém ter pedido.
+        //
+        // O efeito reage ao VALOR, não a quem o escreveu. Três caminhos escrevem sem que haja
+        // usuário digitando: abrir a linha em modo edição (os campos já vêm preenchidos),
+        // preencher a conta programaticamente — inclusive a própria sugestão que acabou de ser
+        // escolhida, que reabria a lista ~300 ms depois de fechá-la — e qualquer re-render que
+        // trocasse a identidade das funções de busca.
+        //
+        // Abrir agora é decisão de quem digita: `onChange` do input, `onFocus` com sugestão
+        // pronta e ↓. Chegar resultado só REABASTECE a lista; se ela estiver aberta, aparece.
       } catch {}
     }, 300);
     return () => clearTimeout(debounceRef.current);
@@ -398,17 +478,67 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
     return () => document.removeEventListener("mousedown", fn);
   }, []);
 
+  // A lista exibida na ordem em que é RENDERIZADA (plano de contas e depois históricos) — o índice
+  // do destaque tem de ser o mesmo que o olho conta na tela.
+  const itens = useMemo(
+    () => [
+      ...matchedAccounts.map((a) => ({ _type: "account", ...a })),
+      ...historicos.map((h) => ({ _type: "historico", ...h })),
+    ],
+    [matchedAccounts, historicos],
+  );
+  useEffect(() => { setSelIdx(-1); }, [value]);
+  useEffect(() => { if (selIdx >= 0 && itemRefs.current[selIdx]) itemRefs.current[selIdx].scrollIntoView?.({ block: "nearest" }); }, [selIdx]);
+
+  function aplicar(item) {
+    if (item._type === "account") onChange(String(item.codigo));
+    else onSelectHistorico?.(item.text, item.contaDebito, item.contaCredito);
+    setOpen(false);
+    setSelIdx(-1);
+  }
+
+  // Mesmo contrato de teclado do `AccountSearchInput` — ver o comentário grande lá em cima.
+  // O que este campo não consome é repassado ao `onKeyDown` do pai (é ele que leva o Enter ao
+  // próximo campo); consumir e repassar levaria o foco embora junto com a escolha.
+  function handleKeyDown(e) {
+    const temItens = itens.length > 0;
+    if (e.key === "ArrowDown" && temItens) {
+      e.preventDefault();
+      if (!open) { setOpen(true); setSelIdx(0); } else setSelIdx((i) => Math.min(i + 1, itens.length - 1));
+      return;
+    }
+    if (open && temItens) {
+      if (e.key === "ArrowUp") { e.preventDefault(); setSelIdx((i) => Math.max(i - 1, 0)); return; }
+      if (e.key === "Enter" && selIdx >= 0) { e.preventDefault(); e.stopPropagation(); aplicar(itens[selIdx]); return; }
+      if (e.key === "Tab") { if (selIdx >= 0) aplicar(itens[selIdx]); else setOpen(false); return; }
+      // ⚠ Esc fecha a LISTA, não o lançamento. Sem o `stopPropagation` ele borbulhava até o `<tr>`
+      // do `DraftEntryRow`, que o lê como "sair da linha": quem só queria se livrar do dropdown
+      // perdia tudo o que já tinha digitado. Com a lista fechada o Esc passa adiante de novo — aí
+      // sim ele fecha a linha, que é o único momento em que isso é o pedido.
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); setSelIdx(-1); return; }
+    }
+    onKeyDown?.(e);
+  }
+
   return (
     <div ref={ref} style={{ flexShrink: 0, position: "relative", minWidth: 0 }}>
       {/* Q51: aceita letras (palavra-chave) — antes o replace(/\D/g) apagava o que não era dígito. */}
-      <input ref={inputRef} id={id} type="text" value={value} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onKeyDown={onKeyDown} onFocus={() => (historicos.length > 0 || matchedAccounts.length > 0) && setOpen(true)} placeholder={placeholder || "Cód. ou palavra"} autoComplete="off" style={{ ...PANEL_FIELD_STYLE, padding: "0 8px", textAlign: "center" }} />
+      {/* ⚠ `onFocus` NÃO abre mais a lista, e `onBlur` fecha.
+          Abrir no foco parecia inofensivo até o campo chegar preenchido: em modo edição, tabular
+          por uma linha já digitada fazia um dropdown pular em cada campo, um por tecla. Abrir é
+          decisão de quem digita (ou pede com ↓).
+          Sem o `onBlur`, a lista continuava aberta depois do Tab levar o foco embora — e, como ela
+          é `position: fixed`, duas listas de campos diferentes se sobrepunham na tela. O clique do
+          mouse na sugestão não passa por aqui: o `onMouseDown` faz `preventDefault`, então o foco
+          nunca chega a sair do input. */}
+      <input ref={inputRef} id={id} type="text" value={value} onChange={(e) => { onChange(e.target.value); setOpen(true); }} onKeyDown={handleKeyDown} onBlur={() => { setOpen(false); setSelIdx(-1); }} placeholder={placeholder || "Cód. ou palavra"} autoComplete="off" style={{ ...PANEL_FIELD_STYLE, padding: "0 8px", textAlign: "center" }} />
       {open && coords && (matchedAccounts.length > 0 || historicos.length > 0) && (
         <div style={{ position: "fixed", top: coords.top, left: coords.left, zIndex: 1000, background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 6, boxShadow: "0 8px 28px rgba(0,0,0,0.35)", minWidth: Math.max(300, coords.width), maxHeight: 260, overflowY: "auto" }}>
           {matchedAccounts.length > 0 && (
             <>
-              <SectionLabel>Plano de contas</SectionLabel>
-              {matchedAccounts.map((a) => (
-                <button key={a.codigo} onMouseDown={(e) => { e.preventDefault(); onChange(String(a.codigo)); setOpen(false); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.field, border: "none", cursor: "pointer", color: ACCOUNTING_PANEL.text }} onMouseEnter={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.surface; }} onMouseLeave={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.field; }}>
+              <SectionLabel>Plano de contas — ↑↓ Enter/Tab para escolher</SectionLabel>
+              {matchedAccounts.map((a, i) => (
+                <button key={a.codigo} type="button" tabIndex={-1} ref={(el) => (itemRefs.current[i] = el)} onMouseDown={(e) => { e.preventDefault(); aplicar({ _type: "account", ...a }); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, background: selIdx === i ? ACCOUNTING_PANEL.surface : ACCOUNTING_PANEL.field, outline: selIdx === i ? "2px solid #8BE9FD" : "none", outlineOffset: "-2px", border: "none", cursor: "pointer", color: ACCOUNTING_PANEL.text }} onMouseEnter={() => setSelIdx(i)}>
                   <span style={{ fontWeight: 700, fontSize: "0.8rem" }}>{a.codigo}</span>
                   <span style={{ marginLeft: 6, fontSize: "0.75rem", color: ACCOUNTING_PANEL.muted }}>{a.nome}</span>
                 </button>
@@ -416,8 +546,8 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
             </>
           )}
           {historicos.length > 0 && <SectionLabel>{isKeyword ? `Históricos com "${value}"` : `Históricos do código ${value}`}</SectionLabel>}
-          {historicos.map((h, i) => (
-            <button key={h.id || i} onMouseDown={(e) => { e.preventDefault(); onSelectHistorico?.(h.text, h.contaDebito, h.contaCredito); setOpen(false); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, background: ACCOUNTING_PANEL.field, border: "none", cursor: "pointer", color: ACCOUNTING_PANEL.text }} onMouseEnter={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.surface; }} onMouseLeave={(e) => { e.currentTarget.style.background = ACCOUNTING_PANEL.field; }}>
+          {historicos.map((h, i) => { const globalIdx = matchedAccounts.length + i; return (
+            <button key={h.id || i} type="button" tabIndex={-1} ref={(el) => (itemRefs.current[globalIdx] = el)} onMouseDown={(e) => { e.preventDefault(); aplicar({ _type: "historico", ...h }); }} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${ACCOUNTING_PANEL.border}`, background: selIdx === globalIdx ? ACCOUNTING_PANEL.surface : ACCOUNTING_PANEL.field, outline: selIdx === globalIdx ? "2px solid #BD93F9" : "none", outlineOffset: "-2px", border: "none", cursor: "pointer", color: ACCOUNTING_PANEL.text }} onMouseEnter={() => setSelIdx(globalIdx)}>
               <div style={{ fontSize: "0.8rem", fontWeight: 600 }}>{h.text}</div>
               <div style={{ fontSize: "0.65rem", color: ACCOUNTING_PANEL.muted, display: "flex", gap: 6, alignItems: "center" }}>
                 {h.contaDebito && <span style={{ color: "#8BE9FD", fontWeight: 700 }}>D:{h.contaDebito}</span>}
@@ -425,7 +555,7 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
                 <span style={{ fontSize: "0.6rem", padding: "1px 5px", borderRadius: 999, background: h.scope === "GLOBAL" ? "#44475A" : "#BD93F9", color: h.scope === "GLOBAL" ? "#F8F8F2" : "#1A1B26" }}>{h.scope === "GLOBAL" ? "Global" : "Empresa"}</span>
               </div>
             </button>
-          ))}
+          ); })}
         </div>
       )}
     </div>
@@ -442,7 +572,6 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
     [historicosRaw, competencia],
   );
   const [selIdx, setSelIdx] = useState(-1);
-  const [coords, setCoords] = useState(null); // Q31 fix: dropdown position:fixed (escapa do overflow da tabela)
   const ref = useRef(null);
   const itemRefs = useRef([]);
   const debounceRef = useRef(null);
@@ -460,9 +589,17 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
   }, [value, onSearchHistoricos]);
 
   const allItems = useMemo(() => [...historicos.map((h) => ({ _type: "historico", ...h })), ...accts.map((a) => ({ _type: "account", ...a }))], [historicos, accts]);
-  useEffect(() => { if (allItems.length > 0 && value.trim().length >= 2) setOpen(true); }, [allItems.length, value]);
-  useEffect(() => { if (open && ref.current) { const r = ref.current.getBoundingClientRect(); setCoords({ left: r.left, top: r.bottom + 4, width: r.width }); } }, [open, allItems.length]);
-  useEffect(() => { if (selIdx >= 0 && itemRefs.current[selIdx]) itemRefs.current[selIdx].scrollIntoView({ block: "nearest" }); }, [selIdx]);
+  // ⚠ AQUI HAVIA UM EFEITO QUE ABRIA A LISTA SOZINHO — `if (allItems.length > 0 && …) setOpen(true)`.
+  //
+  // Ele reagia ao conteúdo do campo sem saber quem o escreveu, e três coisas escrevem sem usuário
+  // nenhum digitando: abrir a linha em modo edição (o histórico já vem preenchido), o
+  // `onFillFromHistory` disparado ao escolher um histórico no campo de CONTA, e a própria escolha
+  // feita aqui (que fecha a lista e via o texto mudar logo em seguida).
+  //
+  // E ele era redundante para o caso legítimo: quem digita já abre a lista pelo `onChange` do
+  // input; quando as sugestões chegam, ela só se preenche. Aberto continua aberto.
+  const coords = useCoordenadasAncoradas(open, ref, allItems.length, 4);
+  useEffect(() => { if (selIdx >= 0 && itemRefs.current[selIdx]) itemRefs.current[selIdx].scrollIntoView?.({ block: "nearest" }); }, [selIdx]);
   useEffect(() => { setSelIdx(-1); }, [allItems.length]);
 
   function selectItem(item) {
@@ -499,7 +636,14 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
     if (e.key === "ArrowDown") { e.preventDefault(); setSelIdx((i) => Math.min(i + 1, allItems.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSelIdx((i) => Math.max(i - 1, 0)); }
     else if (e.key === "Enter" && selIdx >= 0) { e.preventDefault(); e.stopPropagation(); selectItem(allItems[selIdx]); }
-    else if (e.key === "Escape") { setOpen(false); setSelIdx(-1); }
+    // Mesmo contrato dos campos de conta: Tab confirma o que está DESTACADO e segue para o próximo
+    // campo; sem destaque, só tira a lista do caminho. Sem `preventDefault` — o foco tem de andar.
+    else if (e.key === "Tab") { if (selIdx >= 0) selectItem(allItems[selIdx]); else setOpen(false); }
+    // ⚠ `stopPropagation` — o Esc estava fechando o LANÇAMENTO INTEIRO.
+    // Este componente vive dentro do `<tr>` do `DraftEntryRow`, que trata Esc como "sair da linha".
+    // Fechar a lista e perder tudo o que já foi digitado eram a mesma tecla. Agora o Esc só chega
+    // ao `<tr>` quando não há lista aberta para fechar antes.
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); setSelIdx(-1); }
   }
 
   useEffect(() => {
@@ -510,10 +654,12 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
 
   return (
     <div ref={ref} style={{ position: "relative", width: "100%" }}>
-      <input ref={inputRef} type="text" value={value} placeholder="Histórico do lançamento..." onChange={(e) => { onChange(e.target.value); setOpen(true); }} onFocus={() => allItems.length > 0 && setOpen(true)} onKeyDown={handleKeyDown} style={{ ...PANEL_FIELD_STYLE, fontSize: "1.0625rem", fontWeight: 500, ...inputStyle }} />
+      {/* Ver o comentário do `AccountCodeInput`: o foco deixou de abrir a lista (campo preenchido,
+          em modo edição, fazia um dropdown pular a cada Tab) e o blur a fecha. */}
+      <input ref={inputRef} type="text" value={value} placeholder="Histórico do lançamento..." onChange={(e) => { onChange(e.target.value); setOpen(true); }} onBlur={() => { setOpen(false); setSelIdx(-1); }} onKeyDown={handleKeyDown} style={{ ...PANEL_FIELD_STYLE, fontSize: "1.0625rem", fontWeight: 500, ...inputStyle }} />
       {open && coords && allItems.length > 0 && (
         <div style={{ position: "fixed", top: coords.top, left: coords.left, zIndex: 1000, background: ACCOUNTING_PANEL.field, border: `1px solid ${ACCOUNTING_PANEL.border}`, borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.4)", minWidth: Math.max(420, coords.width), maxWidth: 760, maxHeight: 440, overflowY: "auto" }}>
-          {historicos.length > 0 && <><SectionLabel>Históricos salvos — ↑↓ Enter para selecionar</SectionLabel>{historicos.map((h, i) => <HistoricoSuggestionRow key={h.id || i} rowRef={(el) => (itemRefs.current[i] = el)} selected={selIdx === i} item={h} onClick={() => selectItem({ _type: "historico", ...h })} onHover={() => setSelIdx(i)} />)}</>}
+          {historicos.length > 0 && <><SectionLabel>Históricos salvos — ↑↓ Enter/Tab para escolher</SectionLabel>{historicos.map((h, i) => <HistoricoSuggestionRow key={h.id || i} rowRef={(el) => (itemRefs.current[i] = el)} selected={selIdx === i} item={h} onClick={() => selectItem({ _type: "historico", ...h })} onHover={() => setSelIdx(i)} />)}</>}
           {accts.length > 0 && <><SectionLabel>Plano de contas</SectionLabel>{accts.map((a, i) => { const globalIdx = historicos.length + i; return <AccountSuggestionRow key={a.codigo} rowRef={(el) => (itemRefs.current[globalIdx] = el)} selected={selIdx === globalIdx} account={a} onClick={() => selectItem({ _type: "account", ...a })} onHover={() => setSelIdx(globalIdx)} />; })}</>}
         </div>
       )}

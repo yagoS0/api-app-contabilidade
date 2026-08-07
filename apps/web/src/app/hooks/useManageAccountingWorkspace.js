@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAccountingEntries } from "../../features/accounting/hooks/useManageAccountingEntries";
 import { useChartOfAccounts } from "../../features/accounting/hooks/useManageChartOfAccounts";
 import { parseCompetencia, competenciaPadrao } from "../../lib/competencia";
@@ -226,15 +226,30 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
   }
 
-  async function searchHistoricos(q) {
-    if (!selectedCompanyId) return [];
-    return api.searchHistoricos(selectedCompanyId, q);
-  }
+  // ⚠ ESTAS DUAS SÃO MEMOIZADAS DE PROPÓSITO — elas viram DEPENDÊNCIA DE EFEITO lá embaixo.
+  //
+  // Descem inteiras até `AccountCodeInput`/`SmartHistoricoInput` (via App → aba Lançamentos), onde
+  // entram no array de deps do `useEffect` que busca as sugestões. Como `function` declaration,
+  // ganhavam identidade nova a CADA render do workspace: o efeito era desmontado e remontado, o
+  // `clearTimeout` do debounce zerava a contagem, e a busca só saía se o app ficasse ~300 ms sem
+  // renderizar. Com o efeito reabrindo o dropdown (comportamento anterior), a lista de sugestões
+  // ainda voltava sozinha na cara de quem já tinha escolhido.
+  // Nada aqui depende de estado de render — só de `api` (módulo, estável) e da empresa aberta.
+  const searchHistoricos = useCallback(
+    async (q) => {
+      if (!selectedCompanyId) return [];
+      return api.searchHistoricos(selectedCompanyId, q);
+    },
+    [api, selectedCompanyId],
+  );
 
-  async function getHistoricosByCode(codigo) {
-    if (!selectedCompanyId) return [];
-    return api.getHistoricosByCode(selectedCompanyId, codigo);
-  }
+  const getHistoricosByCode = useCallback(
+    async (codigo) => {
+      if (!selectedCompanyId) return [];
+      return api.getHistoricosByCode(selectedCompanyId, codigo);
+    },
+    [api, selectedCompanyId],
+  );
 
   async function loadAllHistoricos() {
     if (!selectedCompanyId) return [];
