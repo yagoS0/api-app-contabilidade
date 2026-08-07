@@ -83,11 +83,34 @@ if (!cnpjArg || cnpjArg.length !== 14 || !DATA_ISO.test(de || "") || !DATA_ISO.t
 // por padrão o probe traz TUDO do período, que é o que mostra se o DARF veio inteiro ou partido.
 const TRIBUTO_POR_CODIGO = { 8109: "PIS", 2172: "COFINS", 2089: "IRPJ", 2372: "CSLL", 3208: "IRRF" };
 
-// Informativo. Best-effort de propósito: um tropeço no banco não pode impedir o aviso de custo.
-const empresa = await prisma.portalClient.findFirst({
-  where: { cnpj: cnpjArg },
-  select: { razao: true, cnpj: true, companyId: true },
-}).catch(() => null);
+// ⚠ "NÃO ACHEI" E "NÃO CONSEGUI PERGUNTAR" SÃO COISAS DIFERENTES, e confundi-las aqui foi um
+// defeito real: com o banco inalcançável (rodando fora da rede do Railway, onde
+// `postgres.railway.internal` não resolve), o `.catch(() => null)` de antes anunciava
+// "CNPJ não está na carteira" — uma afirmação falsa — e seguia oferecendo a chamada PAGA.
+// A chamada nem poderia sair: as credenciais do SERPRO vivem no `AppSetting`, no mesmo banco.
+let empresa = null;
+let erroBanco = null;
+try {
+  empresa = await prisma.portalClient.findFirst({
+    where: { cnpj: cnpjArg },
+    select: { razao: true, cnpj: true, companyId: true },
+  });
+} catch (e) {
+  const linhas = String(e?.message || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  erroBanco = linhas.find((l) => /reach|connect|denied|ECONN|timeout|does not exist/i.test(l)) || e?.code || "falha ao consultar o banco";
+}
+
+if (erroBanco) {
+  console.error(`\n✕ BANCO INALCANÇÁVEL: ${erroBanco}`);
+  console.error("\nO probe para aqui de propósito. As credenciais do SERPRO ficam cifradas no");
+  console.error("`AppSetting`, neste mesmo banco — sem ele a consulta não teria como sair, e");
+  console.error("seguir daria a impressão de que faltou só confirmar.");
+  console.error("\nRodando fora da rede do Railway, `postgres.railway.internal` não resolve.");
+  console.error("Ou rode de dentro do ambiente, ou aponte para um endereço alcançável.");
+  await prisma.$disconnect().catch(() => {});
+  process.exit(1);
+}
+
 if (empresa) {
   const legacy = empresa.companyId
     ? await prisma.company.findUnique({ where: { id: empresa.companyId }, select: { regimeTributario: true } }).catch(() => null)
@@ -114,7 +137,10 @@ const guiasLp = await prisma.guide.findMany({
 }).catch((e) => {
   // Falha aqui é informativa, não fatal — mas em SILÊNCIO ela viraria "esta empresa não tem DARF",
   // que é uma afirmação falsa e justamente a que o probe usa como referência de comparação.
-  console.log(`⚠ não consegui listar as guias de LP: ${e?.message?.split("\n")[0]}`);
+  // ⚠ A PRIMEIRA linha da mensagem do Prisma vem VAZIA (o erro é formatado em bloco), e imprimi-la
+  // crua produzia um aviso sem conteúdo — pior que não avisar, porque parece um aviso resolvido.
+  const linhas = String(e?.message || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  console.log(`⚠ não consegui listar as guias de LP: ${linhas[linhas.length - 1] || e?.code || "erro desconhecido"}`);
   return [];
 });
 if (guiasLp.length) {
