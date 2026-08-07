@@ -1,0 +1,120 @@
+import { ehGuiaDeParcelamento, rotuloParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../rotuloGuia";
+
+describe("ehGuiaDeParcelamento", () => {
+  it("decide pelo vínculo, nunca pelo tipo", () => {
+    expect(ehGuiaDeParcelamento({ tipo: "SIMPLES", parcelamentoId: "p1" })).toBe(true);
+    expect(ehGuiaDeParcelamento({ tipo: "SIMPLES", parcelamentoId: null })).toBe(false);
+    // Parcela de INSS parcelado também é parcelamento.
+    expect(ehGuiaDeParcelamento({ tipo: "INSS", parcelamentoId: "p2" })).toBe(true);
+  });
+});
+
+describe("rotuloParcelamento", () => {
+  it("traz modalidade, número do parcelamento e parcela atual/total", () => {
+    expect(rotuloParcelamento({
+      tipo: "SIMPLES",
+      parcelamentoId: "p1",
+      parcelamentoTipo: "PARCSN",
+      parcelamentoNumero: "1",
+      numeroParcela: 3,
+      quantidadeParcelas: 10,
+    })).toBe("PARCSN Nº 1 · 3/10");
+  });
+
+  it("⚠ NUNCA cai no tipo da guia quando a modalidade é nula — era assim que saía 'SIMPLES'", () => {
+    const rotulo = rotuloParcelamento({
+      tipo: "SIMPLES",
+      parcelamentoId: "p1",
+      parcelamentoTipo: null,
+      parcelamentoNumero: null,
+      numeroParcela: 4,
+      quantidadeParcelas: 10,
+    });
+    expect(rotulo).toBe("Parcelamento · 4/10");
+    expect(rotulo).not.toMatch(/SIMPLES/);
+  });
+
+  it("omite o número do parcelamento quando ele não veio", () => {
+    expect(rotuloParcelamento({
+      parcelamentoId: "p1",
+      parcelamentoTipo: "PERT_SN",
+      numeroParcela: 2,
+      quantidadeParcelas: 24,
+    })).toBe("PERT_SN · 2/24");
+  });
+
+  it("sem o total, não inventa denominador", () => {
+    const rotulo = rotuloParcelamento({
+      parcelamentoId: "p1",
+      parcelamentoTipo: "PARCSN",
+      parcelamentoNumero: "9",
+      numeroParcela: 3,
+      quantidadeParcelas: null,
+    });
+    expect(rotulo).toBe("PARCSN Nº 9 · parcela 3");
+    expect(rotulo).not.toContain("/");
+  });
+
+  it("sem número de parcela, sobra só a identificação do acordo", () => {
+    expect(rotuloParcelamento({
+      parcelamentoId: "p1",
+      parcelamentoTipo: "PARCSN",
+      parcelamentoNumero: "1234567",
+    })).toBe("PARCSN Nº 1234567");
+  });
+});
+
+describe("rotuloTipoGuia", () => {
+  it("o parcelamento é decidido ANTES do tipo", () => {
+    expect(rotuloTipoGuia({
+      tipo: "SIMPLES",
+      parcelamentoId: "p1",
+      parcelamentoTipo: "PARCSN",
+      parcelamentoNumero: "1",
+      numeroParcela: 3,
+      quantidadeParcelas: 10,
+    })).toBe("PARCSN Nº 1 · 3/10");
+  });
+
+  it("guia normal do Simples continua sendo SIMPLES", () => {
+    expect(rotuloTipoGuia({ tipo: "SIMPLES", parcelamentoId: null })).toBe("SIMPLES");
+  });
+
+  it("a DARF consolidada do LP mostra os tributos contidos, não 'OUTRA'", () => {
+    expect(rotuloTipoGuia({
+      tipo: "OUTRA",
+      extracted: { composicao: [{ tributo: "PIS" }, { tributo: "COFINS" }, { tributo: "PIS" }] },
+    })).toBe("PIS · COFINS");
+  });
+
+  it("'OUTRA' sem composição não vira outra coisa", () => {
+    expect(rotuloTipoGuia({ tipo: "OUTRA" })).toBe("OUTRA");
+  });
+
+  it("guia sem tipo não vira string vazia", () => {
+    expect(rotuloTipoGuia({})).toBe("-");
+  });
+});
+
+describe("tituloTipoGuia", () => {
+  it("mostra o label do parcelamento, que não cabe na coluna", () => {
+    expect(tituloTipoGuia({
+      parcelamentoId: "p1",
+      parcelamentoLabel: "RE-PARCELAMENTO SIMPLES NACIONAL DE SET/OUT/2024",
+    })).toBe("RE-PARCELAMENTO SIMPLES NACIONAL DE SET/OUT/2024");
+  });
+
+  it("sem label, não inventa tooltip", () => {
+    expect(tituloTipoGuia({ parcelamentoId: "p1" })).toBeUndefined();
+    expect(tituloTipoGuia({ tipo: "SIMPLES" })).toBeUndefined();
+  });
+
+  it("lista os impostos da DARF consolidada", () => {
+    const titulo = tituloTipoGuia({
+      tipo: "OUTRA",
+      extracted: { composicao: [{ denominacao: "PIS - FATURAMENTO", total: 100 }] },
+    });
+    expect(titulo).toContain("PIS - FATURAMENTO");
+    expect(titulo).toContain("100,00");
+  });
+});

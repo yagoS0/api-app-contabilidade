@@ -4,6 +4,7 @@ import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
 import { ParcelamentoIngestaoModal, ParcelamentoEntradaModal } from "../../../accounting/parcelamento/components/ParcelamentoModals";
+import { rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -162,44 +163,6 @@ const S = {
   error: { fontSize: 12, color: "#FF5555", marginBottom: 10 },
   checkbox: { width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" },
 };
-
-// LP vem como guia consolidada "OUTRA" com composição por tributo. Nome curto de cada imposto
-// contido (IRRF · PIS · COFINS) no lugar de "OUTRA/OUTROS"; a descrição completa vai no tooltip.
-function composicaoDaGuia(guide) {
-  const comp = guide?.extracted?.composicao;
-  return Array.isArray(comp) ? comp : [];
-}
-function tributoCurto(c) {
-  if (c?.tributo) return String(c.tributo).trim();
-  const den = String(c?.denominacao || "").trim();
-  if (den) return (den.split(/\s*[-–—]\s*/)[0] || den).trim(); // "IRRF - ALUG..." → "IRRF"
-  return String(c?.codigo || "").trim() || "?";
-}
-// Rótulo curto na coluna Tipo.
-function tipoGuiaLabel(guide) {
-  const tipo = String(guide?.tipo || "");
-  if (tipo.toUpperCase() === "OUTRA") {
-    const comp = composicaoDaGuia(guide);
-    if (comp.length) {
-      const nomes = [...new Set(comp.map(tributoCurto).filter(Boolean))];
-      if (nomes.length) return nomes.join(" · ");
-    }
-  }
-  return tipo || "-";
-}
-// Descrição completa (tooltip): cada imposto contido na guia consolidada + valor.
-function tipoGuiaTitle(guide) {
-  if (String(guide?.tipo || "").toUpperCase() !== "OUTRA") return undefined;
-  const comp = composicaoDaGuia(guide);
-  if (!comp.length) return undefined;
-  return "Impostos contidos nesta guia:\n" + comp
-    .map((c) => {
-      const nome = c?.denominacao || tributoCurto(c);
-      const valor = c?.total != null ? ` — R$ ${Number(c.total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "";
-      return `• ${nome}${valor}`;
-    })
-    .join("\n");
-}
 
 function MetadataDialog({ initial, onSave, onCancel, saving }) {
   const [form, setForm] = useState({
@@ -621,7 +584,7 @@ export function CompanyGuidesTable({
           <div style={S.modal}>
             <h3 style={S.title}>Guia já enviada</h3>
             <p style={{ fontSize: 13, color: "#6272A4", margin: "0 0 16px" }}>
-              Esta guia ({resendConfirm.tipo} · {resendConfirm.competencia}) já foi enviada ao cliente por
+              Esta guia ({rotuloTipoGuia(resendConfirm)} · {resendConfirm.competencia}) já foi enviada ao cliente por
               e-mail. Deseja reenviar?
             </p>
             <div style={S.btnRow}>
@@ -889,13 +852,11 @@ export function CompanyGuidesTable({
                         style={S.checkbox}
                         checked={isSelected}
                         onChange={() => toggleOne(guideId)}
-                        aria-label={`Selecionar guia ${guide.tipo} ${guide.competencia}`}
+                        aria-label={`Selecionar guia ${rotuloTipoGuia(guide)} ${guide.competencia}`}
                       />
                     </span>
-                    <span className="guides-grid__cell guides-grid__cell--type" role="cell" title={tipoGuiaTitle(guide)}>
-                      {guide.parcelamentoId
-                        ? `Parc. ${guide.parcelamentoTipo || guide.tipo || ""}${guide.parcelamentoNumero ? ` nº${guide.parcelamentoNumero}` : ""}${guide.numeroParcela ? ` (${guide.numeroParcela})` : ""}`.trim()
-                        : tipoGuiaLabel(guide)}
+                    <span className="guides-grid__cell guides-grid__cell--type" role="cell" title={tituloTipoGuia(guide)}>
+                      {rotuloTipoGuia(guide)}
                     </span>
                     <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{guide.competencia || "-"}</span>
                     <span className="guides-grid__cell guides-grid__cell--valor guides-grid__money" role="cell">

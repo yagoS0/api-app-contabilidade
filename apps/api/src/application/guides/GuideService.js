@@ -1,7 +1,12 @@
 import crypto from "node:crypto";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "./GuideStorageService.js";
-import { fileNameForGuide, normalizeCompetencia, normalizeGuideType } from "./guideContract.js";
+import {
+  fileNameForGuide,
+  normalizeCompetencia,
+  normalizeGuideType,
+  SELECT_PARCELAMENTO_DA_GUIA,
+} from "./guideContract.js";
 import { isMonthClosed } from "../accounting/fechamentoContabil.js";
 import { canGuideConfirmPayment, canGuideRecalculate } from "./GuidePaymentStatusService.js";
 
@@ -129,7 +134,7 @@ export async function listGuidesByCompany({
       skip,
       take,
       // Q24: traz a relação de parcelamento pra rotular a guia como parcelamento (não "DAS").
-      include: { parcelamento: { select: { id: true, tipo: true, numeroParcelamento: true, label: true } } },
+      include: { parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA } },
     }),
     prisma.guide.count({ where }),
   ]);
@@ -212,6 +217,9 @@ export async function listPendingGuidesReport({
             cnpj: true,
           },
         },
+        // A parcela é `tipo:"SIMPLES"` como o DAS do mês: sem o parcelamento, esta listagem
+        // apresentava as duas com o mesmo nome.
+        parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA },
       },
     }),
     prisma.guide.count({ where }),
@@ -243,6 +251,9 @@ export function toGuideResponse(item) {
     // Q24: vínculo de parcelamento (pra UI rotular a guia como parcelamento, não "DAS").
     parcelamentoId: item.parcelamentoId || null,
     numeroParcela: item.numeroParcela != null ? Number(item.numeroParcela) : null,
+    // ⚠ Sem o TOTAL, "parcela 3" não diz se o acordo está no começo ou acabando — que é a única
+    // leitura útil do número. O campo já era gravado (`ParcelamentoV2Service`) e só não saía daqui.
+    quantidadeParcelas: item.quantidadeParcelas != null ? Number(item.quantidadeParcelas) : null,
     anoMesParcela: item.anoMesParcela || null,
     baixada: Boolean(item.baixada),
     parcelaEstado: item.parcelaEstado || null, // Q28 Fase 3
@@ -280,6 +291,13 @@ export function toPendingGuideReportItem(item) {
     valor: item.valor ? Number(item.valor) : null,
     vencimento: item.vencimento ? new Date(item.vencimento).toISOString() : null,
     status: item.status || null,
+    // Mesmos campos de parcelamento do `toGuideResponse`: as duas listagens usam o MESMO helper de
+    // rótulo no front, e um contrato pela metade faria a parcela voltar a se chamar "SIMPLES" aqui.
+    parcelamentoId: item.parcelamentoId || null,
+    numeroParcela: item.numeroParcela != null ? Number(item.numeroParcela) : null,
+    quantidadeParcelas: item.quantidadeParcelas != null ? Number(item.quantidadeParcelas) : null,
+    parcelamentoTipo: item.parcelamento?.tipo || null,
+    parcelamentoNumero: item.parcelamento?.numeroParcelamento || null,
     emailStatus: item.emailStatus || null,
     emailAttempts: Number(item.emailAttempts || 0),
     emailLastError: item.emailLastError || null,

@@ -1,4 +1,5 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { SELECT_PARCELAMENTO_DA_GUIA } from "./guideContract.js";
 
 function normalizeValue(value) {
   return String(value || "").trim().toUpperCase();
@@ -44,6 +45,10 @@ async function updateGuidePaymentStatus(guideId, data) {
   return prisma.guide.update({
     where: { id: String(guideId) },
     data,
+    // A guia atualizada volta para a tela e substitui a linha da listagem. Sem o parcelamento junto,
+    // confirmar o pagamento de uma PARCELA rebaixava o rótulo dela para o do DAS do mês — a linha
+    // mudava de nome no clique, sem que nada tivesse mudado no banco.
+    include: { parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA } },
   });
 }
 

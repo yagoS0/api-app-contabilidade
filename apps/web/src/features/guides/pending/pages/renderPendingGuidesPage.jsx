@@ -3,6 +3,7 @@ import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
+import { rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 
 export function PendingGuidesPage({
   guides,
@@ -78,7 +79,7 @@ export function PendingGuidesPage({
                     </td>
                     <td>{guide.companyName || "—"}</td>
                     <td>{guide.cnpj || "—"}</td>
-                    <td>{guide.tipo || "—"}</td>
+                    <td title={tituloTipoGuia(guide)}>{rotuloTipoGuia(guide)}</td>
                     <td>{guide.competencia || "—"}</td>
                     <td>{fmtMoney(guide.valor)}</td>
                     <td>{fmtDate(guide.vencimento)}</td>

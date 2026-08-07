@@ -44,6 +44,29 @@ A decisão vive em **`isGuiaDeParcelamento` / `colunaMatrizDaGuia`** (`guideCont
 pelo compliance E pelo `batch-report`. Grep por `parcelamentoId` antes de mexer em qualquer query de
 `Guide` que filtre por `tipo`.
 
+⚠ **O `where` também aponta para o `guideContract`.** `isGuiaDeParcelamento` não roda dentro do
+banco, então quem filtrava escrevia `parcelamentoId: { not: null }` na mão — e era assim que a regra
+ganhava uma cópia por consumidor. Hoje `WHERE_GUIA_DE_PARCELAMENTO` / `WHERE_GUIA_SEM_PARCELAMENTO`
+saem do mesmo arquivo (usados pelas duas queries de `guideCompliance`).
+
+### O rótulo só existe se a relação vier junto
+
+`parcelamentoId` é coluna ESCALAR da guia: chega sempre, mesmo sem `include`. Modalidade e número do
+parcelamento não — vêm da relação. Sem ela a UI sabia que era parcela e não sabia de qual acordo,
+caía no `tipo` e imprimia **"SIMPLES"**, o nome do DAS do mês.
+
+**`SELECT_PARCELAMENTO_DA_GUIA`** (`guideContract.js`) é o que se carrega junto de toda guia que vai
+para a tela: `listGuidesByCompany`, `listPendingGuidesReport` e `updateGuidePaymentStatus` (esta
+última porque a guia atualizada **substitui a linha da listagem** — sem a relação, confirmar o
+pagamento de uma parcela rebaixava o rótulo dela no clique).
+
+⚠ **Modalidade nula é caso REAL, não defeito de carga.** `ParcelamentoService.createParcelamento`
+(V1, o modal manual) nunca grava `tipo` nem `numeroParcelamento`; só o V2 grava. Por isso o front
+degrada para o rótulo genérico **"Parcelamento"** em vez de completar com o `tipo` da guia.
+
+`toGuideResponse` expõe `quantidadeParcelas` além de `numeroParcela`: "parcela 3" sem o total não
+diz se o acordo está no começo ou acabando.
+
 O nó `parcDas` tem o mesmo ciclo dos outros (`missing → gerada → enviada`), alimentado pela GUIA da
 parcela. **`vazio`/`semFaturamento` não valem ali**: ausência de parcela contratada não se declara, e
 mês sem receita não suspende parcelamento. Rótulo na UI: **"Parcelamento"** (uma parcela de INSS

@@ -169,6 +169,67 @@ function makeCompanies(count = 6) {
   });
 }
 
+// Competência default da aba Guias (mês anterior) — a fixture de parcelamento precisa cair nela,
+// senão só aparece depois de marcar "Ver todas as competências" e ninguém a encontra.
+function competenciaAnteriorMock() {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * As DUAS caras de uma parcela de parcelamento, na empresa que tem `temParcelamento`.
+ *
+ * ⚠ As duas são `tipo:"SIMPLES"`, iguais ao DAS do mês — é esse o ponto. A segunda vem SEM
+ * modalidade (parcelamento criado pelo caminho V1, que não grava `tipo` nem `numeroParcelamento`):
+ * era ela que fazia a tela imprimir "Parc. SIMPLES", e sem ela no mock a correção não é conferível
+ * offline.
+ */
+function makeParcelaGuides(company) {
+  const competencia = competenciaAnteriorMock();
+  const base = {
+    portalClientId: company.companyId,
+    tipo: "SIMPLES",
+    competencia,
+    status: "PROCESSED",
+    emailStatus: "PENDING",
+    paymentStatus: "OPEN",
+    paymentStatusSource: "SERPRO",
+    paymentConfirmedAt: null,
+    serproLastCheckedAt: new Date().toISOString(),
+    serproLastCheckResult: "FOUND",
+    serproService: "GERARDAS161",
+    canConfirmPayment: true,
+    canRecalculate: false,
+    vencimento: new Date(Date.now() + 7 * 86400000).toISOString(),
+  };
+  return [
+    {
+      ...base,
+      id: `mock-parcela-completa-${company.companyId}`,
+      valor: "812.44",
+      parcelamentoId: `mock-parc-${company.companyId}`,
+      parcelamentoTipo: "PARCSN",
+      parcelamentoNumero: "1234567",
+      parcelamentoLabel: "RE-PARCELAMENTO SIMPLES NACIONAL DE SET/OUT/2024",
+      numeroParcela: 3,
+      quantidadeParcelas: 10,
+    },
+    {
+      ...base,
+      id: `mock-parcela-sem-modalidade-${company.companyId}`,
+      valor: "512.10",
+      parcelamentoId: `mock-parc-v1-${company.companyId}`,
+      parcelamentoTipo: null,
+      parcelamentoNumero: null,
+      parcelamentoLabel: "PARCELAMENTO INSS 2023 (lançado à mão)",
+      numeroParcela: 4,
+      quantidadeParcelas: 10,
+    },
+  ];
+}
+
 function makeGuidesByCompany(companies) {
   const guidesByCompany = new Map();
   for (const company of companies) {
@@ -198,6 +259,7 @@ function makeGuidesByCompany(companies) {
         canRecalculate: paymentStatus !== "PAID", // Q29: vencida ou em aberto (não só vencida)
       };
     });
+    if (company.temParcelamento) guides.unshift(...makeParcelaGuides(company));
     guidesByCompany.set(company.companyId, guides);
   }
   return guidesByCompany;
@@ -1768,6 +1830,13 @@ export function createMockApi() {
             valor: Number(guide.valor),
             vencimento: null,
             status: guide.status,
+            // Espelha `toPendingGuideReportItem`: sem estes campos a parcela se chamaria "SIMPLES"
+            // aqui e "PARCSN Nº … · 3/10" na aba Guias — a mesma guia com dois nomes.
+            parcelamentoId: guide.parcelamentoId || null,
+            numeroParcela: guide.numeroParcela ?? null,
+            quantidadeParcelas: guide.quantidadeParcelas ?? null,
+            parcelamentoTipo: guide.parcelamentoTipo || null,
+            parcelamentoNumero: guide.parcelamentoNumero || null,
             emailStatus: guide.emailStatus,
             emailAttempts: faker.number.int({ min: 0, max: 3 }),
             emailLastError: guide.emailStatus === "ERROR" ? "smtp_timeout" : null,

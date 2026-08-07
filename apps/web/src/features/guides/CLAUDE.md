@@ -13,6 +13,31 @@ envio em lote e o painel de guias esperadas.
 - `capture/` — modal de captura SERPRO. `batch-email/` — envio em lote (3 estados por
   célula: ausente X / contendo guia / enviado).
 
+## ⚠ Como uma guia se chama na tela — `lib/rotuloGuia.js`, e só ele
+
+O nome da guia **não sai do `tipo`**: a parcela de parcelamento é `tipo:"SIMPLES"` igual ao DAS do
+mês, e a DARF do LP é `tipo:"OUTRA"`. A regra morava **inline no JSX** de `renderCompanyGuidesTable`,
+então toda listagem que não repetisse aquela expressão mostrava a parcela como se fosse o DAS.
+
+`rotuloTipoGuia(guide)` / `tituloTipoGuia(guide)` / `ehGuiaDeParcelamento(guide)` (espelho de
+`isGuiaDeParcelamento` do backend). Usados pela **aba Guias** (a caixa "Ver todas as competências" é
+filtro da mesma tabela) e pela página de **guias pendentes**. Listagem nova usa o helper.
+
+Formato: **`PARCSN Nº 1234567 · 3/10`** — modalidade · número do parcelamento · parcela atual/total.
+
+- ⚠ **A modalidade sai CRUA (`PARCSN`, `PERT_SN`…).** O dono pediu **"PARC SN"**, mas não existe no
+  projeto nenhuma tabela de abreviação de modalidade — só rótulos longos
+  (`ParcelamentoModals.jsx`: `"Simples Nacional (PARCSN)"`). Escrever uma aqui seria inventar
+  vocabulário fiscal. **Pendente de decisão do dono.**
+- ⚠ **Nada é deduzido do `tipo` da guia.** O fallback antigo era `parcelamentoTipo || tipo`: com a
+  modalidade nula (parcelamento criado pelo caminho V1, que não grava `tipo`) ele imprimia
+  literalmente **"Parc. SIMPLES"** — o nome do DAS do mês, o oposto do que se queria. Modalidade
+  desconhecida vira **"Parcelamento"**, o mesmo genérico do chip do dashboard (uma parcela de INSS
+  parcelado também cai aqui).
+- Cada pedaço só aparece com o dado presente. Total ausente **não** vira `3/?`.
+- Depende de `parcelamentoTipo` / `parcelamentoNumero` / `quantidadeParcelas` no contrato — se o
+  rótulo voltar a degradar, o suspeito nº 1 é a relação `parcelamento` não estar no `include`.
+
 ## Padrões
 
 - A lista de guias e ações chegam por props (hooks/pages). O `ExpectedGuidesPanel` é

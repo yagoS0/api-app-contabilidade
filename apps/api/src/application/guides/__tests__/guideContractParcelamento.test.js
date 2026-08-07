@@ -2,7 +2,13 @@
 // do dashboard (chip da listagem) e o `batch-report` (matriz do envio em lote). Quando cada uma
 // tinha a sua leitura, as duas mostravam a mesma guia de jeitos diferentes — e as duas erradas.
 
-import { isGuiaDeParcelamento, colunaMatrizDaGuia } from "../guideContract.js";
+import {
+  isGuiaDeParcelamento,
+  colunaMatrizDaGuia,
+  WHERE_GUIA_DE_PARCELAMENTO,
+  WHERE_GUIA_SEM_PARCELAMENTO,
+  SELECT_PARCELAMENTO_DA_GUIA,
+} from "../guideContract.js";
 
 describe("isGuiaDeParcelamento", () => {
   it("o que decide é o parcelamentoId, não o tipo", () => {
@@ -37,5 +43,22 @@ describe("colunaMatrizDaGuia", () => {
   it("os demais tipos passam direto", () => {
     expect(colunaMatrizDaGuia({ tipo: "INSS" })).toBe("INSS");
     expect(colunaMatrizDaGuia({ tipo: "darf" })).toBe("DARF");
+  });
+});
+
+describe("filtros Prisma", () => {
+  it("os dois lados concordam com isGuiaDeParcelamento", () => {
+    // O `where` e o predicado precisam responder a MESMA pergunta: é a divergência entre eles que
+    // faz uma tela contar a parcela como DAS e a outra não.
+    expect(WHERE_GUIA_DE_PARCELAMENTO).toEqual({ parcelamentoId: { not: null } });
+    expect(WHERE_GUIA_SEM_PARCELAMENTO).toEqual({ parcelamentoId: null });
+  });
+
+  it("o select do parcelamento traz o que a tela precisa para NOMEAR a guia", () => {
+    // Sem modalidade e número, a UI sabe que é parcela mas não de qual acordo — e cai no `tipo`,
+    // que é "SIMPLES" e nomeia o DAS do mês.
+    expect(SELECT_PARCELAMENTO_DA_GUIA.tipo).toBe(true);
+    expect(SELECT_PARCELAMENTO_DA_GUIA.numeroParcelamento).toBe(true);
+    expect(SELECT_PARCELAMENTO_DA_GUIA.label).toBe(true);
   });
 });

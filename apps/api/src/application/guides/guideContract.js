@@ -36,6 +36,32 @@ export function isGuiaDeParcelamento(guide) {
 }
 
 /**
+ * A MESMA pergunta acima, do lado do banco.
+ *
+ * ⚠ `isGuiaDeParcelamento` não roda dentro de uma query, então quem precisa filtrar acabava
+ * escrevendo `parcelamentoId: { not: null }` (ou `: null`) na mão — foi assim que a regra ficou
+ * reimplementada em cada consumidor e as telas começaram a discordar sobre a mesma guia. Estes dois
+ * filtros existem para que o `where` também aponte para este arquivo, e não para uma cópia.
+ */
+export const WHERE_GUIA_DE_PARCELAMENTO = Object.freeze({ parcelamentoId: { not: null } });
+export const WHERE_GUIA_SEM_PARCELAMENTO = Object.freeze({ parcelamentoId: null });
+
+/**
+ * O que se precisa saber do parcelamento para NOMEAR a guia na tela.
+ *
+ * ⚠ Sem isto a resposta trazia `parcelamentoId` (coluna escalar da própria guia, sempre presente) e
+ * nada mais: a UI sabia que era parcela mas não de qual acordo, caía no `tipo` da guia e imprimia
+ * "SIMPLES" — o mesmo rótulo do DAS do mês, que é justamente o que o `parcelamentoId` existe para
+ * desfazer. Quem carrega a guia para exibir carrega isto junto.
+ */
+export const SELECT_PARCELAMENTO_DA_GUIA = Object.freeze({
+  id: true,
+  tipo: true,
+  numeroParcelamento: true,
+  label: true,
+});
+
+/**
  * Coluna da matriz de guias (tela de envio em lote) para uma guia.
  *
  * Duas traduções, e as duas já foram esquecidas alguma vez:

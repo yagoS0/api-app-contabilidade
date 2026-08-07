@@ -4,6 +4,12 @@ import { GUIDE_COMPLIANCE_COMPETENCIA } from "../../config.js";
 // fariam o chip da guia e o fechamento discordarem — com o contador no meio.
 import { faturamentoEmitPorEmpresa } from "../notas/apuracao/v2/FechamentoService.js";
 import { enviosPorGuia, foiEnviadaComLegado, envioParaExibir } from "./EnvioGuiaService.js";
+// "Esta guia é de parcelamento?" tem UMA fonte — inclusive quando a pergunta é feita ao banco.
+import {
+  SELECT_PARCELAMENTO_DA_GUIA,
+  WHERE_GUIA_DE_PARCELAMENTO,
+  WHERE_GUIA_SEM_PARCELAMENTO,
+} from "./guideContract.js";
 
 /**
  * Competência YYYY-MM usada para alertas de guia (env fixo ou mês civil anterior).
@@ -109,7 +115,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
         where: {
           portalClientId: { in: allPortalIds },
           competencia,
-          parcelamentoId: { not: null },
+          ...WHERE_GUIA_DE_PARCELAMENTO,
           status: "PROCESSED",
         },
         select: {
@@ -119,7 +125,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
           // acordo funcionando, o outro é risco de rescisão. Sem vencimento e pagamento não dá para
           // distinguir os dois, e a listagem acabaria pintando os dois iguais.
           vencimento: true, paymentStatus: true,
-          parcelamento: { select: { tipo: true, numeroParcelamento: true } },
+          parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA },
         },
         orderBy: { numeroParcela: "asc" },
       }),
@@ -234,7 +240,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
       // Sem este filtro ela satisfazia o nó `das`: a empresa aparecia com "DAS gerada" sem nunca
       // ter gerado o DAS do mês — foi o que o dono viu na ERISANGELA. Ela tem nó PRÓPRIO
       // (`parcDas`), alimentado pela pré-query lá em cima.
-      parcelamentoId: null,
+      ...WHERE_GUIA_SEM_PARCELAMENTO,
     },
     // `id`, `emailStatus` e `emailSentAt` entram para a listagem poder distinguir "gerada" de
     // "enviada" e ENVIAR direto do chip — antes ela só sabia o agregado "3 de 5 enviadas", sem
