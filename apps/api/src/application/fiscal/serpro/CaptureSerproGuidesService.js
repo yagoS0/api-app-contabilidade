@@ -7,7 +7,7 @@ import {
 import { generateEntriesFromCircular } from "../../accounting/AccountingEntryGeneratorService.js";
 import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
-import { normalizeCompetencia } from "../../guides/guideContract.js";
+import { normalizeCompetencia, WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import {
   SerproPgdasdService,
@@ -564,6 +564,22 @@ export async function capturePgdasGuideForCompany({
     };
   }
 
+  // Limpa DAS duplicado da mesma competência — a captura pode rodar de novo (recálculo, retentativa)
+  // e a guia nova substitui a anterior.
+  //
+  // ⚠ `parcelamentoId: null` NÃO É DETALHE — sem ele isto APAGA PARCELA DE PARCELAMENTO.
+  // A parcela é gravada com exatamente os três valores filtrados aqui — `tipo:"SIMPLES"`,
+  // `source:"SERPRO"`, `status:"PROCESSED"` (`CaptureSerproParcelaService.js:89,92,97`) — porque a
+  // parcela do Simples é indistinguível do DAS do mês por tipo; o que as separa é só o vínculo.
+  //
+  // O estrago não era hipotético nem raro: quem dispara é a captura NORMAL do DAS, que roda toda vez
+  // que se busca o extrato da competência. Ela levava junto a parcela daquele mês e, com ela,
+  // `lancamentoId`, `baixada`, `dataBaixa` e — por cascade — todo o `TributoParcela`. O parcelamento
+  // perdia a parcela e o vínculo com o lançamento contábil já feito, sem uma linha de aviso.
+  //
+  // É a mesma regra que `guideCompliance` e o rótulo da guia já aplicam: **decide o VÍNCULO, nunca o
+  // tipo**. `WHERE_GUIA_SEM_PARCELAMENTO` é a forma compartilhada dessa pergunta — usada aqui para
+  // não virar a quarta cópia local dela.
   await prisma.guide.deleteMany({
     where: {
       portalClientId: portalClient.id,
@@ -571,6 +587,7 @@ export async function capturePgdasGuideForCompany({
       tipo: "SIMPLES",
       source: "SERPRO",
       status: "PROCESSED",
+      ...WHERE_GUIA_SEM_PARCELAMENTO,
       NOT: { id: guide.id },
     },
   });
