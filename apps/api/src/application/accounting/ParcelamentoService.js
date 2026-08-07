@@ -10,6 +10,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "./AccountingEntryGeneratorService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
+import { avaliarRiscoRescisao } from "./parcelamento/riscoRescisao.js";
 
 // Q16: contas D/C do parcelamento começam EM BRANCO e são memorizadas por papel de
 // linha (igual às guias do Simples). A memória usa AccountingHistorico keyed por
@@ -630,12 +631,35 @@ function decorateParcelamento(parc) {
   const principalPago = parcelasPagas * principalPerParcela;
   const totalValue = Number(parc.totalValue) || 0;
   const saldoRestante = Math.max(0, totalValue - principalPago);
+
+  // ⚠ RISCO DE RESCISÃO — a informação que muda o dia do contador. Rescindido, o saldo vai para a
+  // Dívida Ativa e as reduções de multa da adesão são restabelecidas; e isso chega por acúmulo
+  // silencioso, sem ninguém decidir nada.
+  //
+  // ⚠ DERIVA DE `vencimento` + PAGAMENTO, não de `parcelaEstado`. A coluna depende de um recálculo
+  // periódico, e recálculo que não rodou mostraria "tudo em dia" justamente na empresa que está a
+  // uma prestação da rescisão. Aqui não há como o dado envelhecer.
+  //
+  // ⚠ `quitada` inclui `baixada` de propósito: pagamento parcial NÃO quita a prestação, e quem
+  // marca parcial não marca PAID. Parcelamento já rescindido não é avaliado — não há mais o que
+  // prevenir.
+  const risco = parc.status === "RESCINDIDO"
+    ? null
+    : avaliarRiscoRescisao({
+      parcelas: guides.map((g) => ({
+        numeroParcela: g.numeroParcela ?? null,
+        vencimento: g.vencimento,
+        quitada: g.paymentStatus === "PAID" || Boolean(g.baixada),
+      })),
+    });
+
   return {
     ...parc,
     parcelasPagas,
     parcelasTotal: isV2 ? guides.length : parcelas.length,
     principalPago,
     saldoRestante,
+    risco,
   };
 }
 
@@ -655,7 +679,9 @@ export async function listParcelamentos({ portalClientId, status }) {
           baixas: { include: { lines: true } },
         },
       },
-      guides: { select: { id: true, numeroParcela: true, valor: true, paymentStatus: true, baixada: true, competencia: true, anoMesParcela: true } },
+      // ⚠ `vencimento` é o que decide se uma parcela está EM ATRASO — sem ele o risco de rescisão
+      // não tem como ser calculado e sairia como "não avaliável" em toda empresa.
+      guides: { select: { id: true, numeroParcela: true, valor: true, paymentStatus: true, baixada: true, competencia: true, anoMesParcela: true, vencimento: true } },
       templateOpening: { select: { id: true, name: true } },
       templatePayment: { select: { id: true, name: true } },
       templateRescision: { select: { id: true, name: true } },

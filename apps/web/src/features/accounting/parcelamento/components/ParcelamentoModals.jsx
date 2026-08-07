@@ -1063,6 +1063,48 @@ function ParcMetric({ label, value, accent }) {
   );
 }
 
+/**
+ * O aviso de risco de rescisão no card do parcelamento.
+ *
+ * ⚠ Rescindido, o saldo remanescente vai para a Dívida Ativa da União e as reduções de multa da
+ * adesão são restabelecidas. E isso chega por ACÚMULO SILENCIOSO — ninguém decide rescindir. Este
+ * aviso é a única coisa na tela que antecipa o desfecho.
+ *
+ * ⚠ SEM ATRASO NÃO APARECE NADA. Uma tarja verde de "em dia" em todo card treinaria o olho a
+ * ignorar a faixa inteira, e aí a vermelha também passaria batido.
+ *
+ * ⚠ A CITAÇÃO LEGAL SÓ É IMPRESSA QUANDO CONFERIDA (`regra.citacaoConferida`). A regra em texto
+ * aparece sempre — ela orienta; o NÚMERO do artigo, não, porque o contador confia nele e age.
+ */
+function RiscoRescisao({ risco }) {
+  if (!risco?.avaliavel || risco.nivel === "ok") return null;
+
+  const critico = risco.nivel === "rescindivel" || risco.nivel === "critico";
+  const cor = critico ? "var(--state-danger)" : "var(--state-warn)";
+  const fundo = critico ? "var(--state-danger-surface)" : "var(--state-warn-surface)";
+
+  const titulo = risco.nivel === "rescindivel"
+    ? `Parcelamento em risco de rescisão — ${risco.emAtraso} prestações em atraso`
+    : risco.emAtraso === 1
+      ? "1 prestação em atraso"
+      : `${risco.emAtraso} prestações em atraso — a próxima rescinde`;
+
+  return (
+    <div style={{ padding: "6px 9px", borderRadius: 6, background: fundo, border: `1px solid ${cor}` }}>
+      <div style={{ color: cor, fontWeight: 700, fontSize: "0.72rem" }}>{titulo}</div>
+      <div style={{ color: PANEL.muted, fontSize: "0.66rem", marginTop: 2 }}>
+        Rescinde com {risco.regra.descricao}.
+        {risco.regra.citacaoConferida ? ` (${risco.regra.id})` : ""}
+      </div>
+      {risco.parcelasEmAtraso?.length > 0 && (
+        <div style={{ color: PANEL.muted, fontSize: "0.66rem", marginTop: 2 }}>
+          Em atraso: {risco.parcelasEmAtraso.map((x) => x.numeroParcela ?? "?").join(", ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenCreate, getConfig, saveConfig, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
   const [configParc, setConfigParc] = useState(null); // { id, label }
   const [rescParc, setRescParc] = useState(null);      // parcelamento sendo rescindido
@@ -1104,6 +1146,8 @@ export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenC
                 <div style={{ color: PANEL.text, fontWeight: 700, fontSize: "0.85rem" }}>{p.label}</div>
                 <span style={{ flexShrink: 0, padding: "1px 6px", borderRadius: 999, background: `${statusColor}33`, color: statusColor, fontWeight: 700, fontSize: "0.62rem" }}>{p.status}</span>
               </div>
+
+              <RiscoRescisao risco={p.risco} />
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                 <ParcMetric label="Valor" value={`R$ ${fmtMoney(p.principalTotal)}`} />

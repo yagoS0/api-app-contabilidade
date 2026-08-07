@@ -3495,7 +3495,52 @@ export function createMockApi() {
     async applyAccountingFunction() { await delay(80); return { ok: true, entries: [] }; },
 
     // ── Q9: Parcelamentos stubs ─────────────────────────────────────────
-    async listParcelamentos() { await delay(80); return []; },
+    // ⚠ Este mock era `[]`, e por isso a aba Parcelamento não tinha COMO ser conferida offline —
+    // nenhuma mudança no card aparecia. Os três casos abaixo existem para exercitar o aviso de
+    // risco de rescisão nos seus três desfechos: em dia, uma em atraso, e já rescindível.
+    // As datas são relativas a hoje, senão o mock envelhece e os três viram "rescindível".
+    async listParcelamentos() {
+      await delay(80);
+      const dia = 24 * 60 * 60 * 1000;
+      const em = (n) => new Date(Date.now() + n * dia).toISOString();
+      const parc = (over) => ({
+        id: over.id, label: over.label, tipo: over.tipo, status: over.status || "ATIVO",
+        numeroParcelamento: over.numeroParcelamento, principalTotal: 12000, jurosTotal: 1800,
+        valorMulta: 600, totalValue: 14400, principalPerParcela: 1200, numParcelas: 12,
+        parcelasPagas: over.parcelasPagas, parcelasTotal: over.parcelas.length,
+        principalPago: over.parcelasPagas * 1200, saldoRestante: 14400 - over.parcelasPagas * 1200,
+        observacoes: null, parcelas: [], guides: [], risco: over.risco,
+      });
+      const regra = {
+        id: "IN_RFB_2063_2022_ART_18",
+        descricao: "3 prestações, consecutivas ou não; ou 2 se as demais estiverem pagas ou a última vencida",
+        limiteAbsoluto: 3, limiteComDemaisPagas: 2,
+        // ⚠ false de propósito: é assim que o back devolve enquanto a redação vigente não for
+        // conferida na fonte oficial, e a tela precisa saber esconder o número do artigo.
+        citacaoConferida: false,
+      };
+      return [
+        parc({
+          id: "parc-ok", label: "PARCSN 2026 — em dia", tipo: "PARCSN", numeroParcelamento: "1010",
+          parcelasPagas: 4, parcelas: [1, 2, 3, 4],
+          risco: { nivel: "ok", caso: null, emAtraso: 0, vencidas: 4, faltamParaRescindir: 3, parcelasEmAtraso: [], regra, avaliavel: true },
+        }),
+        parc({
+          id: "parc-atencao", label: "PARCMEI 2025 — uma em atraso", tipo: "PARCMEI", numeroParcelamento: "2020",
+          parcelasPagas: 3, parcelas: [1, 2, 3, 4],
+          risco: { nivel: "atencao", caso: null, emAtraso: 1, vencidas: 4, faltamParaRescindir: 2, parcelasEmAtraso: [{ numeroParcela: 4, vencimento: em(-20) }], regra, avaliavel: true },
+        }),
+        parc({
+          id: "parc-risco", label: "PARCSN 2024 — risco de rescisão", tipo: "PARCSN", numeroParcelamento: "3030",
+          parcelasPagas: 2, parcelas: [1, 2, 3, 4, 5],
+          risco: {
+            nivel: "rescindivel", caso: "I", emAtraso: 3, vencidas: 5, faltamParaRescindir: 0,
+            parcelasEmAtraso: [{ numeroParcela: 3, vencimento: em(-80) }, { numeroParcela: 4, vencimento: em(-50) }, { numeroParcela: 5, vencimento: em(-20) }],
+            regra, avaliavel: true,
+          },
+        }),
+      ];
+    },
     async getParcelamento() { await delay(80); return null; },
     async createParcelamento() { await delay(80); return { ok: true, data: null }; },
     async ingestParcelamento() { await delay(80); return { ok: true, data: { parcelamentoId: "mock", criouParcelamento: true } }; },
