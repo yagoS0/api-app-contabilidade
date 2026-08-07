@@ -40,14 +40,65 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
   }
 
+  // A tabela mostra TODOS os lançamentos da competência — ela não pagina.
+  //
+  // ⚠ A rota `GET /entries` pagina, e o default dela é 50. Como esta função não mandava
+  // `page`/`limit`, só a PRIMEIRA página chegava: mês com mais de 50 lançamentos exibia os
+  // 50 mais antigos (`orderBy: data asc`) e escondia o resto **sem nenhum aviso na tela** —
+  // não há controle de paginação na aba, e o `total` não é renderizado em lugar nenhum. O
+  // sintoma era "lançamento sumindo", e não há controle de paginação na aba que sugerisse
+  // existir uma página 2.
+  //
+  // O RODAPÉ ESTAVA SE CONTRADIZENDO, e é a assinatura do defeito: a contagem sai de
+  // `total` (o `count` do backend, sempre certo) e as somas D/C saem de `entries` (só o
+  // que chegou). Num mês de 450 lançamentos ele dizia "450 lançamentos no total · D <soma
+  // de 50> · C <soma de 50> ✓ ok" — com o "✓ ok" e tudo, porque os 50 carregados batem
+  // entre si. Número certo ao lado de soma errada, carimbado de conferido.
+  // (O gate de fechamento não foi afetado: `validateFechamentoContabil` /
+  // `fechamentoBlockers` fazem a própria query no banco.)
+  //
+  // O CSV nunca teve limite (`/entries/export/csv` não pagina), então tela e exportação
+  // discordavam — é o teste mais rápido se a lista for contestada de novo.
+  //
+  // O teto de 200 por chamada fica no backend de propósito (guarda da query). Quem percorre
+  // as páginas é aqui: até 200 lançamentos no mês continua sendo UMA requisição, igual antes.
   async function loadAccountingEntries(companyId = selectedCompanyId) {
     if (!companyId) return;
     accountingEntriesState.setLoading(true);
     setEntriesError("");
     try {
-      const result = await api.getAccountingEntries(companyId, accountingEntriesState.filters);
-      accountingEntriesState.setEntries(result.data);
-      accountingEntriesState.setTotal(result.total);
+      const PAGINA = 200; // = teto do backend; pedir mais não traz mais
+      const primeira = await api.getAccountingEntries(companyId, {
+        ...accountingEntriesState.filters,
+        page: 1,
+        limit: PAGINA,
+      });
+      const todos = [...primeira.data];
+      const total = Number(primeira.total || 0);
+
+      // `numeroPagina`, não `page`: o hook já recebe uma prop `page` (qual tela do app está
+      // aberta). Um contador de paginação com esse nome a sombreia dentro do laço.
+      for (let numeroPagina = 2; todos.length < total; numeroPagina += 1) {
+        const proxima = await api.getAccountingEntries(companyId, {
+          ...accountingEntriesState.filters,
+          page: numeroPagina,
+          limit: PAGINA,
+        });
+        // Página vazia com `total` ainda por alcançar é o servidor se contradizendo.
+        // Parar aqui evita laço infinito, mas NÃO pode ser silencioso: exibir menos do que
+        // existe sem dizer nada é exatamente o defeito que esta função passou a corrigir.
+        if (!proxima.data.length) {
+          setEntriesError(
+            `Carregados ${todos.length} de ${total} lançamentos — o servidor parou de responder ` +
+              `com dados. A lista está incompleta; recarregue antes de fechar o mês.`
+          );
+          break;
+        }
+        todos.push(...proxima.data);
+      }
+
+      accountingEntriesState.setEntries(todos);
+      accountingEntriesState.setTotal(total);
     } catch (err) {
       setEntriesError(err?.message || "Falha ao carregar lançamentos.");
       accountingEntriesState.setEntries([]);
