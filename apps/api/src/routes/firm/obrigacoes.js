@@ -251,7 +251,31 @@ export function createObrigacoesRouter({ log } = {}) {
   // abrindo o programa oficial, empresa por empresa — que é exatamente o trabalho que o app existe
   // para poupar. A obrigação continua rastreável mesmo sem o app gerar coisa alguma.
 
+  /**
+   * ⚠ ENTREGA POR ARQUIVO DESLIGADA em 07/08/2026, por decisão do dono. NÃO É BUG: o fluxo foi
+   * construído e conferido no mock, mas nunca exercido contra a API real nem contra uma entrega de
+   * verdade, e a EFD vai ser desenvolvida em separado, com atenção própria.
+   *
+   * A trava é dupla de propósito: só a tela deixaria a rota aberta para uma aba já carregada; só a
+   * rota deixaria a tela oferecendo o que o backend recusa. O par fica em
+   * `apps/web/src/features/obrigacoes/entregas/lib/liberacao.js`.
+   *
+   * Antes de religar, ler `docs/efd-contribuicoes-onde-paramos.md`.
+   */
+  const ENTREGA_ARQUIVO_LIBERADA = false;
+
+  function recusarSeDesligada(res) {
+    if (ENTREGA_ARQUIVO_LIBERADA) return false;
+    res.status(503).json({
+      ok: false,
+      error: "ENTREGA_ARQUIVO_DESLIGADA",
+      message: "O registro de entrega por arquivo está desligado enquanto a EFD-Contribuições não for concluída.",
+    });
+    return true;
+  }
+
   router.get("/companies/:companyId/entregas/:tipo", async (req, res) => {
+    if (recusarSeDesligada(res)) return undefined;
     const companyId = String(req.params.companyId);
     const tipo = String(req.params.tipo).toUpperCase();
     try {
@@ -295,6 +319,7 @@ export function createObrigacoesRouter({ log } = {}) {
   }
 
   router.put("/companies/:companyId/entregas/:tipo/:competencia", async (req, res) => {
+    if (recusarSeDesligada(res)) return undefined;
     const companyId = String(req.params.companyId);
     const tipo = String(req.params.tipo).toUpperCase();
     const competencia = String(req.params.competencia).trim();

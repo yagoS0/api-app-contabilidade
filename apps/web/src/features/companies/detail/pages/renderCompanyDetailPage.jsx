@@ -13,6 +13,7 @@ import { useApuracaoV2 } from "../../../apuracao-v2/hooks/useApuracaoV2";
 import { useSitfis } from "../../../fiscal/sitfis/hooks/useSitfis";
 import { createApiClient } from "../../../../api/client";
 import { competenciaPadrao, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
+import { ENTREGA_POR_ARQUIVO_LIBERADA } from "../../../obrigacoes/entregas/lib/liberacao";
 import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useCompanyDocuments";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
@@ -165,17 +166,23 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
           Nacional nunca entrega EFD-Contribuições (IN RFB 1.252/2012), e para ela o bloco diz a
           dispensa com a norma citada, no lugar dos três passos. Não é o mesmo que sumir — some da
           tela quem não deve nada, e aí ninguém sabe se foi dispensa ou esquecimento. */}
-      <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "grid", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Entrega mensal:</span>
-          <button type="button" onClick={() => setCompetenciaEfd((c) => deslocarCompetencia(c, -1))} style={setaEfd} aria-label="Competência anterior">‹</button>
-          <strong style={{ fontSize: "0.82rem", minWidth: 130, textAlign: "center" }}>{formatCompetencia(competenciaEfd)}</strong>
-          <button type="button" onClick={() => setCompetenciaEfd((c) => deslocarCompetencia(c, 1))} style={setaEfd} aria-label="Próxima competência">›</button>
+      {/* ⚠ DESLIGADO em 07/08/2026 por decisão do dono — ver `entregas/lib/liberacao.js` e
+          `docs/efd-contribuicoes-onde-paramos.md`. Não é bug: o fluxo nunca foi exercido contra a
+          API real, e a EFD merece desenvolvimento próprio. Nada foi apagado; é uma trava de uma
+          linha, e o backend recusa pelo mesmo motivo. */}
+      {ENTREGA_POR_ARQUIVO_LIBERADA && (
+        <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "grid", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Entrega mensal:</span>
+            <button type="button" onClick={() => setCompetenciaEfd((c) => deslocarCompetencia(c, -1))} style={setaEfd} aria-label="Competência anterior">‹</button>
+            <strong style={{ fontSize: "0.82rem", minWidth: 130, textAlign: "center" }}>{formatCompetencia(competenciaEfd)}</strong>
+            <button type="button" onClick={() => setCompetenciaEfd((c) => deslocarCompetencia(c, 1))} style={setaEfd} aria-label="Próxima competência">›</button>
+          </div>
+          <Suspense fallback={<TabLoadingFallback />}>
+            <EntregaPorArquivo companyId={companyId} regime={companyRegime} competencia={competenciaEfd} />
+          </Suspense>
         </div>
-        <Suspense fallback={<TabLoadingFallback />}>
-          <EntregaPorArquivo companyId={companyId} regime={companyRegime} competencia={competenciaEfd} />
-        </Suspense>
-      </div>
+      )}
 
       <CalendarioGrid api={obrigacoesApi} companyIdFixo={companyId} />
 
