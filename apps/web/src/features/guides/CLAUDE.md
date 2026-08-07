@@ -38,6 +38,37 @@ Formato: **`PARCSN Nº 1234567 · 3/10`** — modalidade · número do parcelame
 - Depende de `parcelamentoTipo` / `parcelamentoNumero` / `quantidadeParcelas` no contrato — se o
   rótulo voltar a degradar, o suspeito nº 1 é a relação `parcelamento` não estar no `include`.
 
+## ⚠ A barra de ações também decide pelo VÍNCULO — não só o rótulo
+
+O rótulo não foi o único lugar que lia o `tipo`. A barra "Ações da guia selecionada"
+(`list/renderCompanyGuidesTable.jsx`) escolhia o **Recalcular** por `tipo === "SIMPLES"`, então a
+PARCELA ganhava o botão que dispara o **PGDAS-D do mês**. E **o backend não recusa**:
+`canGuideRecalculate` (`api/.../GuidePaymentStatusService.js`) só olha `source`/`tipo`/pago, e a
+parcela é SERPRO + SIMPLES + OPEN. O clique era destrutivo, não um erro tratado:
+
+1. `POST /guides/:id/recalculate` emite o DAS do mês (chamada **PAGA**) passando o id da PARCELA
+   como `existingGuideId`;
+2. `createOrUpdateGuideFromProcessing` faz **UPDATE nessa linha** — valor, vencimento, PDF,
+   `sourceFileId`, `hash`, `extracted`. `parcelamentoId` não está no update e **sobrevive**: a linha
+   segue se chamando "PARCSN Nº X · 3/10" com o DAS do mês dentro;
+3. `capturePgdasGuideForCompany` termina com um `deleteMany` das outras guias SIMPLES/SERPRO da
+   competência — **filtrando por `tipo`, sem `parcelamentoId`**: o DAS de verdade vai junto;
+4. a rota chama o worker de e-mail e **manda o PDF trocado ao cliente**.
+
+Hoje a parcela mantém o botão **visível e desabilitado**, com o motivo no `title` — mesmo
+tratamento que o INSS já pago recebe. **Sumir seria pior:** a parcela senta na mesma tabela que o
+DAS, com o mesmo `tipo`, e sem explicação a saída natural é selecionar a linha de cima.
+
+⚠ **Não há ação de "recalcular parcela" para onde rotear.** A única emissão de parcela é
+`capturarParcelaGuideForCompany` → `emitirDasParcela`, e ela **pula parcela já capturada**
+(`jaExiste`). Ligar o botão ali exigiria mudar essa idempotência + uma chamada SERPRO nova.
+
+**Confirmar pagamento** e **Liberar ao cliente** NÃO têm o problema, e o motivo é o mesmo nos dois:
+agem sobre ESTA guia sem reemitir nada — um marca `paymentStatus=PAID` (o lançamento da parcela
+vive na aba Parcelamento), o outro envia o PDF desta linha, que numa parcela é o DAS da parcela.
+
+Ligação coberta em `list/components/__tests__/renderCompanyGuidesTable.test.jsx` (8 testes).
+
 ## Padrões
 
 - A lista de guias e ações chegam por props (hooks/pages). O `ExpectedGuidesPanel` é

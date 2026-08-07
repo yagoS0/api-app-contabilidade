@@ -4,7 +4,7 @@ import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
 import { ParcelamentoIngestaoModal, ParcelamentoEntradaModal } from "../../../accounting/parcelamento/components/ParcelamentoModals";
-import { rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
+import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -392,15 +392,44 @@ export function CompanyGuidesTable({
   // Ações da guia selecionada -------------------------------------------------
   // Recalcular é UM botão só: detecta o tipo e chama o endpoint certo.
   //   INSS  → sync SERPRO DCTFweb da competência   ·  DAS/SIMPLES → recálculo PGDAS-D da guia.
+  //
+  // ⚠ A PARCELA de parcelamento é decidida ANTES do tipo — ela é `tipo:"SIMPLES"`, idêntica ao DAS
+  // do mês, e caía inteira na regra do DAS acima. **O backend não recusa**: `canGuideRecalculate`
+  // (`GuidePaymentStatusService.js`) só olha `source`/`tipo`/pago, e a parcela é SERPRO + SIMPLES +
+  // OPEN (`CaptureSerproParcelaService`). O que acontecia ao clicar:
+  //   1. `POST /guides/:id/recalculate` passa na guarda e emite o **DAS DO MÊS** (PGDAS-D, chamada
+  //      PAGA) passando o id da PARCELA como `existingGuideId`;
+  //   2. `createOrUpdateGuideFromProcessing` faz UPDATE nessa linha — valor, vencimento, PDF,
+  //      `sourceFileId`, `hash` e `extracted` viram os do DAS do mês. `parcelamentoId` não está no
+  //      update e sobrevive, então a linha segue se chamando "PARCSN Nº X · 3/10" com o DAS dentro;
+  //   3. `capturePgdasGuideForCompany` termina apagando as outras guias SIMPLES/SERPRO da
+  //      competência — filtrando por `tipo`, sem `parcelamentoId`: o DAS de verdade do mês vai junto;
+  //   4. a rota ainda chama o worker de e-mail e **manda o PDF trocado ao cliente**.
+  // É a mesma classe de erro da ERISANGELA, agora destrutiva. Quem decide é o VÍNCULO, nunca o tipo.
   const selTipo = String(selectedGuide?.tipo || "").toUpperCase();
-  const isInss = selTipo === "INSS";
-  const isDas = selTipo === "SIMPLES";
-  const canShowRecalcular = isInss || isDas;
+  const ehParcela = ehGuiaDeParcelamento(selectedGuide);
+  const isInss = !ehParcela && selTipo === "INSS";
+  const isDas = !ehParcela && selTipo === "SIMPLES";
+  // A parcela mantém o botão VISÍVEL e desabilitado, com o motivo no `title` — mesmo tratamento que
+  // o INSS já pago recebe logo abaixo. Sumir seria pior: a parcela senta na mesma tabela que o DAS,
+  // e sem explicação a saída natural é selecionar a linha de cima e recalcular aquela.
+  const canShowRecalcular = isInss || isDas || ehParcela;
   const inssPaid = String(selectedGuide?.paymentStatus || "").toUpperCase() === "PAID";
-  const recalcDisabled = isDas
-    ? (!selectedGuide?.canRecalculate || !!recalculatingGuideId)
-    : (inssPaid || !!recalcInssBusy);
-  const recalcBusy = isDas ? (recalculatingGuideId === selectedGuideId) : !!recalcInssBusy;
+  let recalcDisabled;
+  if (ehParcela) recalcDisabled = true;
+  else if (isDas) recalcDisabled = !selectedGuide?.canRecalculate || !!recalculatingGuideId;
+  else recalcDisabled = inssPaid || !!recalcInssBusy;
+  const recalcBusy = !ehParcela && (isDas ? (recalculatingGuideId === selectedGuideId) : !!recalcInssBusy);
+  // O "porquê" viaja com o botão: desabilitado sem motivo à vista vira chamado de suporte.
+  let recalcTitle;
+  if (ehParcela) {
+    recalcTitle = "Parcela de parcelamento não se recalcula aqui: Recalcular emite o DAS do MÊS "
+      + "(PGDAS-D), que é outro documento. A parcela é emitida pelo parcelamento, na captura do SERPRO.";
+  } else if (isInss) {
+    recalcTitle = "Busca/recalcula no SERPRO a guia de INSS desta competência. Guia já paga é bloqueada.";
+  } else {
+    recalcTitle = "Recalcula a guia do DAS no PGDAS-D.";
+  }
   // "Liberar ao cliente" substitui o Reenviar: se a guia já foi enviada, confirma reenvio no modal.
   const alreadySent = String(selectedGuide?.emailStatus || "").toUpperCase() === "SENT";
 
@@ -691,13 +720,17 @@ export function CompanyGuidesTable({
                   variant="secondary" size="sm"
                   disabled={recalcDisabled}
                   onClick={handleRecalcularDispatch}
-                  title={isInss
-                    ? "Busca/recalcula no SERPRO a guia de INSS desta competência. Guia já paga é bloqueada."
-                    : "Recalcula a guia do DAS no PGDAS-D."}
+                  title={recalcTitle}
                 >
                   {recalcBusy ? "Recalculando..." : "Recalcular"}
                 </Button>
               )}
+              {/* ⚠ Confirmar pagamento e Liberar ao cliente (abaixo) NÃO têm o problema do
+                  Recalcular, e a diferença é a mesma nos dois: eles agem sobre ESTA guia, sem
+                  reemitir nada. `POST /guides/:id/confirm-payment` só marca `paymentStatus=PAID`
+                  (o lançamento da parcela vive na aba Parcelamento) e `.../liberar-cliente` envia
+                  o PDF desta linha — que numa parcela é o DAS da parcela. Pagar e liberar uma
+                  parcela são atos reais; recalcular é que não existe para ela. */}
               <Button
                 variant="secondary" size="sm"
                 disabled={!selectedGuide?.canConfirmPayment || !!confirmingGuideId}

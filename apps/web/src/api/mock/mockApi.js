@@ -201,7 +201,11 @@ function makeParcelaGuides(company) {
     serproLastCheckResult: "FOUND",
     serproService: "GERARDAS161",
     canConfirmPayment: true,
-    canRecalculate: false,
+    // ⚠ `true` de propósito, e não é descuido: é o que o backend real devolve.
+    // `canGuideRecalculate` só olha `source`/`tipo`/pago, e a parcela é SERPRO + SIMPLES + OPEN —
+    // por isso ela ganhava um "Recalcular" habilitado que emite o DAS do MÊS por cima dela. Com
+    // `false` aqui, o mock desabilitava o botão por outro motivo e escondia o defeito offline.
+    canRecalculate: true,
     vencimento: new Date(Date.now() + 7 * 86400000).toISOString(),
   };
   return [
