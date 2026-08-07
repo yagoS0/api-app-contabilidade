@@ -253,15 +253,28 @@ async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamen
   const resolver = async (tipoLinha, codigoTributo) =>
     contaPorPapel[tipoLinha] || await resolverConta(tx, { portalClientId, tipoParcelamento, tipoLinha, codigoTributo });
 
-  // AMORTIZAÇÃO — principal + multa + juros do código-tributo debitam o PASSIVO, não a despesa.
+  // ⚠ SÓ O PRINCIPAL AMORTIZA O PASSIVO, porque só o principal foi provisionado na adesão
+  // (`linhasProvisao`: D principal / C parcelamento a pagar = principal). Debitar aqui também a
+  // multa e os juros consolidados levaria o passivo a NEGATIVO ao longo do contrato — credita-se
+  // `principalTotal` e debitar-se-ia `principalTotal + multa + juros`.
+  //
+  // Multa e juros do código-tributo são despesa DO MÊS DO PAGAMENTO, junto com o TJLP: nenhum dos
+  // três foi reconhecido na adesão, e é aqui que entram, uma vez só.
   for (const item of classificacao.itensTributo) {
-    const valor = round2(item.principal + item.multa + item.juros);
-    if (valor <= 0) continue;
-    const conta = await resolver("PARC", item.codigo);
-    lines.push({ conta, tipo: "D", valor, ordem: ordem++, tipoLinha: "PARC", codigoTributo: item.codigo });
+    for (const [tipoLinha, valor] of [["PARC", item.principal], ["MULTA", item.multa], ["JUROS", item.juros]]) {
+      if (!valor || round2(valor) <= 0) continue;
+      const conta = await resolver(tipoLinha, item.codigo);
+      lines.push({ conta, tipo: "D", valor: round2(valor), ordem: ordem++, tipoLinha, codigoTributo: item.codigo });
+    }
   }
 
-  // ENCARGO CORRENTE — o TJLP do mês é despesa da competência do pagamento.
+  // ENCARGO CORRENTE — o TJLP do mês, também despesa da competência do pagamento.
+  //
+  // ⚠ O QUE A SEPARAÇÃO POR CÓDIGO AINDA ENTREGA, mesmo com TJLP e juros consolidados caindo no
+  // mesmo papel por padrão: cada linha carrega o CÓDIGO DE RECEITA real (0380, 2089…), e o
+  // `MapaContaTributo` indexa por `(tipoLinha, codigoTributo)`. Então dá para mandar o TJLP para
+  // uma conta própria sem inventar papel novo. Pelo caminho antigo isso é impossível — lá o
+  // `codigoTributo` gravado é o NOME do tributo ("DAS"), um só para a parcela inteira.
   for (const item of classificacao.itensTjlp) {
     const valor = round2(item.total);
     if (valor <= 0) continue;

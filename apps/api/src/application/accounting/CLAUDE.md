@@ -110,21 +110,30 @@ Dentro de UMA parcela convivem duas naturezas contábeis:
 0380 TJLP - IRPJ - Parcelamentos       -      -  11,78   ← encargo CORRENTE do mês
 ```
 
-**Principal, multa E juros dos códigos-tributo são todos parte do valor consolidado** — aquele que
-a adesão já provisionou e que o passivo `PARC` (553) guarda. Só as linhas de **TJLP** são despesa
-nova. No comprovante real: 57,52 de juros = **29,54 de amortização + 27,98 de encargo**.
+⚠ **QUEM MANDA NA BAIXA É A REGRA DA ADESÃO.** `linhasProvisao` reconhece **só o principal**
+(decisão do dono: *"juros e multa vêm apenas da confirmação do pagamento, que vem do SERPRO"*), então
+o passivo `PARC` (553) nasce valendo `principalTotal`. Segue daí que **só o principal pode
+amortizá-lo**: debitar também multa e juros levaria o passivo a **negativo** ao longo do contrato.
+Multa, juros consolidados e TJLP são todos **despesa do mês do pagamento** — nenhum foi reconhecido
+na adesão.
 
-⚠ **`linhasPagamento` (o caminho sem comprovante) erra isso duas vezes ao mesmo tempo:** debita o
-passivo **só pelo principal** e joga multa e juros em despesa. Como a adesão (`linhasProvisao`) já
-debitou multa e juros contra 501/506 e creditou `PARC` pelo **consolidado**, o resultado é (a) o
-mesmo custo reconhecido duas vezes e (b) um resíduo permanente em 553 igual a
-`jurosTotal + valorMulta`, que nenhuma parcela baixa.
+Consequência aceita e decidida: o passivo passa a registrar o **principal**, não a dívida
+consolidada do contrato. O balanço deixa de espelhar o valor assinado no acordo.
 
-⚠ O comentário de `linhasProvisao` (topo da função) diz "reconhece SÓ o principal" e o código
-debita juros e multa. O **código** é o comportamento; o comentário está obsoleto.
+⚠ **Este par já esteve desalinhado, e o efeito é silencioso.** Enquanto a provisão creditava o
+consolidado, a baixa amortizava por principal+multa+juros e fechava; quando a provisão passou a
+reconhecer só o principal, a mesma baixa passou a **furar o passivo para baixo**. As duas funções
+têm de ser lidas juntas — mudar uma sem a outra não gera erro, gera saldo errado.
 
-**`linhasPagamentoDoComprovante`** faz o certo — `D PARC` = principal+multa+juros do código-tributo,
-`D JUROS` = total do TJLP, `C CAIXA` = a soma — e só roda **com o comprovante na mão**:
+**`linhasPagamentoDoComprovante`** faz `D PARC` = principal · `D MULTA` = multa · `D JUROS` = juros
+do código-tributo **e** o total do TJLP · `C CAIXA` = a soma. No R1: `392,58 / 78,48 / 57,52 /
+528,58`, onde os 57,52 são 29,54 de juros consolidados + 27,98 de TJLP.
+
+**O que ele entrega além do caminho antigo**, já que TJLP e juros consolidados caem no mesmo papel:
+o **código de receita real** em cada linha. `MapaContaTributo` indexa por `(tipoLinha,
+codigoTributo)`, então dá para dar conta própria ao TJLP sem inventar papel. Pelo caminho antigo é
+impossível — lá o `codigoTributo` gravado é o **nome** do tributo (`"DAS"`), um só para a parcela
+inteira. E só roda **com o comprovante na mão**:
 
 ⚠ **Quem distingue as naturezas é o CÓDIGO DE RECEITA, e ele só existe no comprovante.**
 `TributoParcela.codigoTributo` guarda o **nome** do tributo (`"DAS"` na base), porque

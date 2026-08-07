@@ -1,14 +1,18 @@
 // A BAIXA DA PARCELA A PARTIR DO COMPROVANTE — as duas naturezas dentro do mesmo documento.
 //
-// ⚠ O DEFEITO QUE ISTO CORRIGE. Na adesão, o passivo do parcelamento (PARC) é creditado pelo valor
-// CONSOLIDADO — principal + multa + juros da consolidação — e os três já viram despesa ali. Na
-// baixa, o caminho antigo debita o passivo SÓ pelo principal e joga multa e juros em despesa de
-// novo. Duas consequências somadas: o custo é reconhecido duas vezes, e o passivo guarda para
-// sempre um resíduo igual a `jurosConsolidado + multaConsolidada`.
+// ⚠ A REGRA QUE MANDA AQUI É A DA ADESÃO. `linhasProvisao` reconhece SÓ O PRINCIPAL (decisão do
+// dono: "juros e multa vêm apenas da confirmação do pagamento"), então o passivo nasce valendo
+// `principalTotal`. Segue daí que só o PRINCIPAL pode amortizá-lo: debitar também multa e juros
+// levaria o passivo a NEGATIVO ao longo do contrato.
 //
-// O comprovante resolve porque o CÓDIGO DE RECEITA diz qual é qual:
-//   códigos-tributo (2089, 8109, …) → dívida consolidada sendo AMORTIZADA  → debita o passivo
-//   códigos TJLP    (0380, 0389, …) → encargo CORRENTE do mês              → despesa
+// Multa, juros consolidados e TJLP são todos despesa DO MÊS DO PAGAMENTO — nenhum foi reconhecido
+// na adesão, e é na baixa que entram, uma vez só.
+//
+// ⚠ ENTÃO O QUE O COMPROVANTE AINDA ENTREGA, se TJLP e juros consolidados caem no mesmo papel? O
+// CÓDIGO DE RECEITA REAL em cada linha (0380, 2089…). O `MapaContaTributo` indexa por
+// `(tipoLinha, codigoTributo)`, então dá para dar conta própria ao TJLP sem papel novo. Pelo
+// caminho antigo isso é impossível: lá o `codigoTributo` gravado é o NOME do tributo ("DAS"), um
+// só para a parcela inteira.
 
 import { parseComposicaoComprovante } from "../../../fiscal/serpro/parseComposicaoComprovante";
 import { classificarDocumentoArrecadado } from "../../../fiscal/serpro/classificarDocumentoArrecadado";
@@ -21,8 +25,9 @@ function montarLinhas(classificacao) {
   const r2 = (n) => Math.round(n * 100) / 100;
   const linhas = [];
   for (const i of classificacao.itensTributo) {
-    const valor = r2(i.principal + i.multa + i.juros);
-    if (valor > 0) linhas.push({ tipo: "D", tipoLinha: "PARC", codigoTributo: i.codigo, valor });
+    for (const [tipoLinha, valor] of [["PARC", i.principal], ["MULTA", i.multa], ["JUROS", i.juros]]) {
+      if (r2(valor) > 0) linhas.push({ tipo: "D", tipoLinha, codigoTributo: i.codigo, valor: r2(valor) });
+    }
   }
   for (const i of classificacao.itensTjlp) {
     if (r2(i.total) > 0) linhas.push({ tipo: "D", tipoLinha: "JUROS", codigoTributo: i.codigo, valor: r2(i.total) });
@@ -35,9 +40,12 @@ const linhas = montarLinhas(classificarDocumentoArrecadado(parseComposicaoCompro
 const soma = (f) => Math.round(linhas.filter(f).reduce((s, l) => s + l.valor, 0) * 100) / 100;
 
 describe("R1 — o lançamento da parcela", () => {
-  it("⚠ D passivo 500,60 · D despesa 27,98 · C caixa 528,58", () => {
-    expect(soma((l) => l.tipoLinha === "PARC")).toBe(500.6);
-    expect(soma((l) => l.tipoLinha === "JUROS")).toBe(27.98);
+  it("⚠ D passivo 392,58 · D multa 78,48 · D juros 57,52 · C caixa 528,58", () => {
+    // O passivo recebe SÓ o principal — é o que a adesão provisionou.
+    expect(soma((l) => l.tipoLinha === "PARC")).toBe(392.58);
+    expect(soma((l) => l.tipoLinha === "MULTA")).toBe(78.48);
+    // Juros = 29,54 consolidados + 27,98 de TJLP. Os dois são despesa deste mês.
+    expect(soma((l) => l.tipoLinha === "JUROS")).toBe(57.52);
     expect(soma((l) => l.tipoLinha === "CAIXA")).toBe(528.58);
   });
 
@@ -46,25 +54,29 @@ describe("R1 — o lançamento da parcela", () => {
     expect(soma((l) => l.tipo === "D")).toBe(soma((l) => l.tipo === "C"));
   });
 
-  it("⚠ multa e juros do CÓDIGO-TRIBUTO amortizam o passivo — não viram despesa", () => {
-    // É aqui que mora a dupla contagem do caminho antigo: 78,48 de multa + 29,54 de juros já
-    // foram reconhecidos como despesa na adesão, e ele os reconheceria de novo.
-    const irpj = linhas.find((l) => l.codigoTributo === "2089");
-    expect(irpj).toMatchObject({ tipoLinha: "PARC", valor: 210.58 });   // 163,40 + 32,66 + 14,52
-    expect(soma((l) => l.tipoLinha === "PARC")).toBe(392.58 + 78.48 + 29.54);
+  it("⚠ o passivo é amortizado EXATAMENTE pelo que a adesão provisionou", () => {
+    // A adesão credita PARC pelo principal (`linhasProvisao` reconhece só ele). Debitar aqui
+    // também multa e juros levaria o passivo a NEGATIVO ao longo do contrato — foi esse o erro
+    // corrigido quando a provisão passou a reconhecer só o principal.
+    expect(soma((l) => l.tipoLinha === "PARC")).toBe(392.58);
+    expect(soma((l) => l.tipoLinha === "PARC")).not.toBe(500.6);
   });
 
-  it("⚠ e o passivo NÃO fica com resíduo: a amortização é o consolidado da parcela", () => {
-    // No caminho antigo o passivo só recebia os 392,58 de principal, e os 108,02 de multa (78,48)
-    // + juros (29,54) consolidados nunca baixavam — ficavam no 553 para sempre.
-    expect(soma((l) => l.tipoLinha === "PARC")).not.toBe(392.58);
-    expect(soma((l) => l.tipoLinha === "PARC") - 392.58).toBeCloseTo(108.02, 2);
+  it("cada tributo amortiza pelo SEU principal, itemizado", () => {
+    const irpj = linhas.filter((l) => l.codigoTributo === "2089");
+    expect(irpj.find((l) => l.tipoLinha === "PARC").valor).toBe(163.4);
+    expect(irpj.find((l) => l.tipoLinha === "MULTA").valor).toBe(32.66);
+    expect(irpj.find((l) => l.tipoLinha === "JUROS").valor).toBe(14.52);
   });
 
-  it("só o TJLP vira despesa, e um lançamento por código", () => {
-    const tjlp = linhas.filter((l) => l.tipoLinha === "JUROS");
-    expect(tjlp.map((l) => l.codigoTributo)).toEqual(["0380", "0389", "0391", "0387"]);
+  it("⚠ o TJLP é reconhecível pelo CÓDIGO, e é isso que sobrevive à mudança da provisão", () => {
+    // TJLP e juros consolidados caem no mesmo papel por padrão. O que o comprovante entrega é o
+    // código real em cada linha: `MapaContaTributo` indexa por (tipoLinha, codigoTributo), então
+    // dá para dar conta própria ao TJLP. Pelo caminho antigo o código gravado é "DAS".
+    const tjlp = linhas.filter((l) => ["0380", "0389", "0391", "0387"].includes(l.codigoTributo));
+    expect(tjlp.every((l) => l.tipoLinha === "JUROS")).toBe(true);
     expect(tjlp.map((l) => l.valor)).toEqual([11.78, 1.62, 7.06, 7.52]);
+    expect(Math.round(tjlp.reduce((s, l) => s + l.valor, 0) * 100) / 100).toBe(27.98);
   });
 
   it("cada linha carrega o código — é o que deixa a conta parametrizável por tributo", () => {
