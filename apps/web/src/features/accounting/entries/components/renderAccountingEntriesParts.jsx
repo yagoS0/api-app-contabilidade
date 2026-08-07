@@ -792,9 +792,22 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
           </div>
         )}
       </td>
+      {/* ⚠ AÇÕES EMPILHADAS, NÃO LADO A LADO — e isto conserta uma regressão.
+          A coluna "Ações" foi estreitada para 92px (`COLS`, em `accountingEntriesShared`) porque nas
+          linhas NORMAIS ela tem só dois ícones de 24px. A linha de rascunho, porém, tem dois botões
+          de TEXTO: "Salvar" + "Sair"/"Cancelar" somam ~127-155px numa caixa de conteúdo de 76px. Com
+          `flexWrap: nowrap` e `justify-content: flex-end`, o excesso transbordava **para a esquerda**
+          — e como os botões têm fundo opaco, cobriam o campo Valor, que fica logo ao lado.
+
+          Empilhar resolve sem alargar a coluna para as outras 99% das linhas: o rascunho já é alto
+          (tem inputs), então o crescimento vertical não custa nada, e cada botão cabe sozinho nos
+          76px. `minWidth: 0` deixa o flex encolher em vez de estourar. */}
       <td style={{ ...cell, textAlign: "right" }}>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "nowrap", whiteSpace: "nowrap" }}>
-          <Button size="sm" variant="success" onClick={handleSave} disabled={!canSave}>{saving ? "..." : "Salvar"}</Button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "stretch", minWidth: 0 }}>
+          {/* ⚠ Não é mais `variant="success"`. Verde significa CONCLUÍDO no vocabulário do app
+              (`apps/web/CLAUDE.md`) — um botão verde de "faça isto" ensina o contrário na mesma tela
+              em que o verde do rodapé (D = C ✓ ok) precisa ser lido como "está fechado". */}
+          <Button size="sm" variant="primary" onClick={handleSave} disabled={!canSave}>{saving ? "..." : "Salvar"}</Button>
           <Button size="sm" variant="secondary" onClick={() => onClose?.()}>{isEdit ? "Cancelar" : "Sair"}</Button>
         </div>
       </td>
