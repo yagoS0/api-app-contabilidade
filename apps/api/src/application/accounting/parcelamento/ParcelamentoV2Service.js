@@ -7,7 +7,7 @@
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { normalizeParcelamentoDTO, normalizeParcelaDTO, round2Decimal as round2 } from "./contracts.js";
 import { validarParcela } from "./invariantes.js";
-import { estadoEmAberto, PARCELA_ESTADOS } from "./parcelaStateMachine.js";
+import { estadoEmAberto, estadoRecalculado, podeTransicionar, ESTADOS_EM_ABERTO, PARCELA_ESTADOS } from "./parcelaStateMachine.js";
 import { isMonthClosed } from "../fechamentoContabil.js";
 
 function competenciaFromDate(date) {
@@ -351,7 +351,13 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
     // 2/3) Q28: só quando há GUIA (caminho manual). No caminho SERPRO (sem guia), o worker traz as
     // guias depois — aqui criamos só o parcelamento + provisão + config.
     if (guideId) {
-      // Anexa a guia à parcela (idempotente por unique (parcelamentoId, numeroParcela))
+      // ⚠ O ESTADO INICIAL SÓ VALE SE FOR MESMO INICIAL. A ingestão é idempotente e roda de novo
+      // na recaptura; escrevendo `estadoEmAberto` sem olhar o estado atual, uma parcela já
+      // PAGA_A_CONFERIR (ou CONFIRMADA) voltava para PREVISTA — o pagamento desaparecia da fila de
+      // conferência sem deixar rastro. `podeTransicionar` recusa exatamente isso, e é a primeira
+      // vez que essa tabela de transições é consultada por alguém.
+      const atual = await tx.guide.findUnique({ where: { id: guideId }, select: { parcelaEstado: true } });
+      const inicial = estadoEmAberto(parc.vencimento);
       await tx.guide.update({
         where: { id: guideId },
         data: {
@@ -359,8 +365,7 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
           numeroParcela: parc.numeroParcela,
           quantidadeParcelas: parc.quantidadeParcelas || parcelamento.numParcelas,
           anoMesParcela: parc.anoMesParcela,
-          // Q28 Fase 3: estado inicial da parcela (a vencer × vencida).
-          parcelaEstado: estadoEmAberto(parc.vencimento),
+          ...(podeTransicionar(atual?.parcelaEstado, inicial) ? { parcelaEstado: inicial } : {}),
         },
       });
       // Persiste TributoParcela (idempotente por (guideId, codigoTributo))
@@ -526,6 +531,47 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
     });
     return { ok: true, pagamentoId };
   });
+}
+
+/**
+ * Reavalia o estado das parcelas EM ABERTO contra o calendário: a vencer × vencida.
+ *
+ * ⚠ POR QUE ISTO PRECISA EXISTIR. `estadoEmAberto` só era chamado UMA VEZ, na ingestão. Uma
+ * parcela ingerida antes do vencimento ficava `PREVISTA` **para sempre** — inclusive meses depois
+ * de vencida e não paga. O atraso não aparecia em tela nenhuma, e é justamente ele que o alerta de
+ * risco de rescisão precisa contar. Sem este recálculo, o contador de prestações não quitadas
+ * ficaria eternamente em zero, o que é pior que não ter alerta: parece que está tudo em dia.
+ *
+ * Roda sem argumento (carteira inteira) ou por empresa. Não gera lançamento, não toca em valor —
+ * só move estado, e só o que o relógio autoriza mover.
+ *
+ * @returns {Promise<{avaliadas: number, atualizadas: number, porEstado: object}>}
+ */
+export async function recalcularEstadosParcelasEmAberto({ portalClientId = null, agora = new Date() } = {}) {
+  const guias = await prisma.guide.findMany({
+    where: {
+      parcelamentoId: { not: null },
+      parcelaEstado: { in: ESTADOS_EM_ABERTO },
+      baixada: false,
+      ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+    },
+    select: { id: true, parcelaEstado: true, vencimento: true, paymentStatus: true },
+  });
+
+  const porEstado = {};
+  let atualizadas = 0;
+  for (const g of guias) {
+    // ⚠ Guia paga fora do fluxo da parcela (baixa manual, por exemplo) não vira "em atraso" porque
+    // o vencimento passou. O filtro por `baixada` não pega esse caso — o estado do PAGAMENTO pega.
+    if (String(g.paymentStatus || "").toUpperCase() === "PAID") continue;
+    const novo = estadoRecalculado({ estadoAtual: g.parcelaEstado, vencimento: g.vencimento, agora });
+    if (!novo) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await prisma.guide.update({ where: { id: g.id }, data: { parcelaEstado: novo } });
+    porEstado[novo] = (porEstado[novo] || 0) + 1;
+    atualizadas += 1;
+  }
+  return { avaliadas: guias.length, atualizadas, porEstado };
 }
 
 /**

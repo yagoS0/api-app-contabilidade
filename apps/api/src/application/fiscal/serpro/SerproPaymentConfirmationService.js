@@ -6,7 +6,7 @@ import {
   markGuideOpenBySerpro,
 } from "../../guides/GuidePaymentStatusService.js";
 import { gerarPagamentoInssFromGuide } from "../../accounting/InssPagamentoService.js";
-import { gerarPagamentoParcelaFromGuide } from "../../accounting/parcelamento/ParcelamentoV2Service.js";
+import { gerarPagamentoParcelaFromGuide, recalcularEstadosParcelasEmAberto } from "../../accounting/parcelamento/ParcelamentoV2Service.js";
 import { confirmarPagamento } from "./SerproPagtoWebService.js";
 import { classificarDocumentoArrecadado } from "./classificarDocumentoArrecadado.js";
 import { consultarDasIndexPorCompetencia } from "./SerproPgdasDeclaracaoService.js";
@@ -245,6 +245,18 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
   if (!portalClientId) {
     const ids = await idsComRotinaAtiva("pagamento");
     filtroRotina = { portalClientId: { in: [...ids] } };
+  }
+
+  // Põe o estado das parcelas em aberto em dia com o calendário antes de varrer. É a única
+  // rotina periódica que já passa por parcela, então é aqui que o recálculo pega carona — sem
+  // ela, parcela ingerida antes do vencimento ficava `PREVISTA` para sempre.
+  // ⚠ Best-effort: é atualização de rótulo, não ato fiscal. Falhar aqui não pode impedir a
+  // confirmação de pagamento, que é o trabalho de verdade desta rotina.
+  try {
+    const rec = await recalcularEstadosParcelasEmAberto({ portalClientId });
+    if (rec.atualizadas) logger?.info?.(rec, "parcelas: estado recalculado contra o calendário");
+  } catch (err) {
+    logger?.warn?.({ err: err?.message }, "parcelas: recálculo de estado falhou (segue com a confirmação)");
   }
 
   const where = {
