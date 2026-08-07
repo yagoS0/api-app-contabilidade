@@ -184,11 +184,19 @@ export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, nu
       // que permite baixar na data certa em vez de "hoje" + valor devido da guia.
       // Best-effort: falha na leitura NÃO invalida o pagamento (o PDF é a prova).
       let comprovante = null;
+      // A COMPOSIÇÃO POR CÓDIGO DE RECEITA, do mesmo texto. É ela que distingue, dentro de uma
+      // parcela de parcelamento, a dívida consolidada sendo amortizada (códigos-tributo) do
+      // encargo corrente do mês (códigos TJLP) — duas naturezas contábeis no mesmo documento.
+      // O bloco "Totais" que o `comprovante` traz não permite essa separação.
+      let composicao = null;
       try {
         const pdfParse = (await import("pdf-parse")).default;
         const { parseComprovanteArrecadacao } = await import("./parseComprovanteArrecadacao.js");
+        const { parseComposicaoComprovante } = await import("./parseComposicaoComprovante.js");
         const out = await pdfParse(pdfBuffer);
-        comprovante = parseComprovanteArrecadacao(out?.text || "");
+        const texto = out?.text || "";
+        comprovante = parseComprovanteArrecadacao(texto);
+        composicao = parseComposicaoComprovante(texto);
       } catch (err) {
         logger?.warn?.({ err: err?.message }, "PAGTOWEB: não consegui ler o texto do comprovante (segue com o PDF)");
       }
@@ -198,6 +206,7 @@ export async function confirmarPagamento({ contratanteCnpj, contribuinteCnpj, nu
         // `confiavel:false` = não conseguimos a quebra com segurança (a soma não fechou) →
         // quem chama deve pedir conferência humana em vez de lançar valores.
         comprovante,
+        composicao,
         mensagem: null,
         verificadoTrial: VERIFICADO_TRIAL,
         rawPayload: data,

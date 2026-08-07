@@ -101,6 +101,46 @@ traz o lote inteiro (o principal primeiro) e o cancelamento leva todos.
 Contas de acréscimo: **`contasAcrescimo.js`** (501 juros / 506 multa). Estavam escritas em quatro
 lugares — rota, script, serviço e literal no front.
 
+### ⚠ Parcela de parcelamento: "juros" é DUAS coisas, e só o código de receita separa
+
+Dentro de UMA parcela convivem duas naturezas contábeis:
+
+```
+2089 IRPJ - Lucro presumido       163,40  32,66  14,52   ← dívida CONSOLIDADA sendo amortizada
+0380 TJLP - IRPJ - Parcelamentos       -      -  11,78   ← encargo CORRENTE do mês
+```
+
+**Principal, multa E juros dos códigos-tributo são todos parte do valor consolidado** — aquele que
+a adesão já provisionou e que o passivo `PARC` (553) guarda. Só as linhas de **TJLP** são despesa
+nova. No comprovante real: 57,52 de juros = **29,54 de amortização + 27,98 de encargo**.
+
+⚠ **`linhasPagamento` (o caminho sem comprovante) erra isso duas vezes ao mesmo tempo:** debita o
+passivo **só pelo principal** e joga multa e juros em despesa. Como a adesão (`linhasProvisao`) já
+debitou multa e juros contra 501/506 e creditou `PARC` pelo **consolidado**, o resultado é (a) o
+mesmo custo reconhecido duas vezes e (b) um resíduo permanente em 553 igual a
+`jurosTotal + valorMulta`, que nenhuma parcela baixa.
+
+⚠ O comentário de `linhasProvisao` (topo da função) diz "reconhece SÓ o principal" e o código
+debita juros e multa. O **código** é o comportamento; o comentário está obsoleto.
+
+**`linhasPagamentoDoComprovante`** faz o certo — `D PARC` = principal+multa+juros do código-tributo,
+`D JUROS` = total do TJLP, `C CAIXA` = a soma — e só roda **com o comprovante na mão**:
+
+⚠ **Quem distingue as naturezas é o CÓDIGO DE RECEITA, e ele só existe no comprovante.**
+`TributoParcela.codigoTributo` guarda o **nome** do tributo (`"DAS"` na base), porque
+`serproParcelamentoMap.js:99` alimenta `codigoTributo` e `nomeTributo` do **mesmo** campo do SERPRO
+(`x.tributo`). Sem comprovante não há separação possível, e supor qual parte é amortização seria
+inventar lançamento — por isso o caminho antigo continua intacto em vez de "melhorado por palpite".
+
+⚠ **Guia com `parcelamentoId` cujo comprovante NÃO é parcela não gera lançamento**
+(`comprovante_nao_e_parcela`, com `warn`). Um DARF pago em atraso tem multa e juros exatamente como
+uma parcela tem; baixar por engano amortizaria dívida que não foi paga.
+
+A conta segue parametrizável sem papel novo: cada linha carrega o `codigoTributo`, e o
+`MapaContaTributo` já indexa por `(tipoLinha, codigoTributo)` — dá para mandar o TJLP 0380 para
+conta diferente da dos juros comuns. Parsing e classificação ficam em
+`fiscal/serpro/parseComposicaoComprovante.js` e `classificarDocumentoArrecadado.js`.
+
 ## "Mês sem faturamento" — as travas moram no service
 
 `semFaturamento.js` → `marcarSemFaturamento({portalClientId, competencia, ok, userId, origem})`.

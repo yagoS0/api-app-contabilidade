@@ -208,6 +208,60 @@ async function linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, 
 }
 
 /**
+ * Linhas do pagamento a partir da COMPOSIÇÃO DO COMPROVANTE, que separa as duas naturezas.
+ *
+ * ⚠ POR QUE ESTE CAMINHO EXISTE. Dentro de UMA parcela convivem duas coisas diferentes:
+ *
+ *   2089 IRPJ - Lucro presumido       163,40  32,66  14,52   ← dívida CONSOLIDADA sendo amortizada
+ *   0380 TJLP - IRPJ - Parcelamentos       -      -  11,78   ← encargo CORRENTE do mês
+ *
+ * O principal, a multa E os juros dos códigos-tributo são todos parte do valor consolidado — que
+ * já foi provisionado na adesão e é o que o passivo (PARC) guarda. Só o TJLP é despesa nova.
+ * `linhasPagamento` debita o passivo apenas pelo principal e joga multa e juros em despesa, o que
+ * nesta composição reconhece de novo um custo já reconhecido E deixa o passivo sem baixar a parte
+ * de multa/juros — para sempre. Conferido no comprovante real: 57,52 de juros são 29,54 de
+ * amortização + 27,98 de encargo.
+ *
+ * ⚠ SÓ VALE COM O COMPROVANTE NA MÃO. Quem distingue as duas naturezas é o CÓDIGO DE RECEITA, e
+ * ele só existe no comprovante — `TributoParcela.codigoTributo` guarda o NOME do tributo ("DAS"),
+ * porque `serproParcelamentoMap` alimenta código e nome do mesmo campo do SERPRO. Sem comprovante
+ * não há como separar, e supor qual parte é amortização seria inventar lançamento contábil.
+ *
+ * A conta continua parametrizável: cada linha carrega o `codigoTributo`, então o `MapaContaTributo`
+ * (que já indexa por `tipoLinha` + `codigoTributo`) permite mandar o TJLP 0380 para uma conta
+ * diferente da dos juros comuns, sem papel novo.
+ */
+async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamento, classificacao, contaPorPapel = {} }) {
+  const lines = [];
+  let ordem = 0;
+  const resolver = async (tipoLinha, codigoTributo) =>
+    contaPorPapel[tipoLinha] || await resolverConta(tx, { portalClientId, tipoParcelamento, tipoLinha, codigoTributo });
+
+  // AMORTIZAÇÃO — principal + multa + juros do código-tributo debitam o PASSIVO, não a despesa.
+  for (const item of classificacao.itensTributo) {
+    const valor = round2(item.principal + item.multa + item.juros);
+    if (valor <= 0) continue;
+    const conta = await resolver("PARC", item.codigo);
+    lines.push({ conta, tipo: "D", valor, ordem: ordem++, tipoLinha: "PARC", codigoTributo: item.codigo });
+  }
+
+  // ENCARGO CORRENTE — o TJLP do mês é despesa da competência do pagamento.
+  for (const item of classificacao.itensTjlp) {
+    const valor = round2(item.total);
+    if (valor <= 0) continue;
+    const conta = await resolver("JUROS", item.codigo);
+    lines.push({ conta, tipo: "D", valor, ordem: ordem++, tipoLinha: "JUROS", codigoTributo: item.codigo });
+  }
+
+  // ⚠ O crédito sai da soma das duas naturezas, não de um total recebido de fora: é essa
+  // identidade que faz o lote fechar, e ela é conferida logo abaixo.
+  const totalDebitos = round2(lines.reduce((s, l) => s + l.valor, 0));
+  const contaCaixa = await resolver("CAIXA", null);
+  lines.push({ conta: contaCaixa, tipo: "C", valor: totalDebitos, ordem: ordem++, tipoLinha: "CAIXA", codigoTributo: null });
+  return lines;
+}
+
+/**
  * Ingestão de uma guia de parcela (manual ou SERPRO já normalizado em DTO).
  * Cria/anexa o Parcelamento, persiste TributoParcela, dispara PROVISÃO (1ª vez) + PAGAMENTO.
  * Tudo em uma transação.
@@ -385,7 +439,7 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
  * @returns {Promise<{ ok?, pagamentoId?, skipped?, reason? }>}
  * @throws {Error} code "MES_FECHADO" quando a competência do pagamento está fechada.
  */
-export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, dataPagamento, userId }) {
+export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, dataPagamento, userId, classificacaoComprovante = null }) {
   const guide = await prisma.guide.findFirst({
     where: { id: String(guideId), portalClientId },
     select: { id: true, parcelamentoId: true, numeroParcela: true, lancamentoId: true, competencia: true, vencimento: true },
@@ -407,8 +461,21 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
   if (!parcelamento) return { skipped: true, reason: "parcelamento_not_found" };
   if (!parcelamento.aberturaEntryId) return { skipped: true, reason: "provisao_inexistente" };
 
-  const tributosParcela = await prisma.tributoParcela.findMany({ where: { guideId: guide.id } });
-  if (!tributosParcela.length) return { skipped: true, reason: "sem_composicao" };
+  // ⚠ CONFLITO: a guia está vinculada a um parcelamento, mas o documento arrecadado NÃO é uma
+  // parcela. Não se lança nada — registra e avisa. Um DARF pago em atraso tem multa e juros
+  // exatamente como uma parcela tem, e baixar por engano amortizaria dívida que não foi paga.
+  const usaComprovante = Boolean(classificacaoComprovante?.classificavel);
+  if (usaComprovante && classificacaoComprovante.tipo !== "PARCELA_PARCELAMENTO") {
+    return { skipped: true, reason: "comprovante_nao_e_parcela", tipoDocumento: classificacaoComprovante.tipo };
+  }
+
+  // A composição do comprovante dispensa a do banco — e precisa dispensar: parcelamento de DARF
+  // não é capturado hoje (só PARCSN/PARCSN_ESPECIAL/RELP_SN), então essas parcelas não têm
+  // `TributoParcela` nenhum e morreriam aqui em `sem_composicao`.
+  const tributosParcela = usaComprovante
+    ? []
+    : await prisma.tributoParcela.findMany({ where: { guideId: guide.id } });
+  if (!usaComprovante && !tributosParcela.length) return { skipped: true, reason: "sem_composicao" };
 
   const data = dataPagamento ? new Date(dataPagamento) : new Date();
   const competencia = competenciaFromDate(data);
@@ -434,7 +501,11 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
   }
 
   return prisma.$transaction(async (tx) => {
-    const pagLines = await linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, contaPorPapel });
+    // Com comprovante, o CÓDIGO DE RECEITA separa amortização de encargo corrente; sem ele, o
+    // caminho antigo, que não tem como fazer essa distinção.
+    const pagLines = usaComprovante
+      ? await linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamento, classificacao: classificacaoComprovante, contaPorPapel })
+      : await linhasPagamento(tx, { portalClientId, tipoParcelamento, parcela, contaPorPapel });
     // Q24: cada componente vira um lançamento individual (1 perna). Balanço fecha no conjunto.
     const entries = await criarLancamentosIndividuais(tx, {
       portalClientId, parcelamentoId: parcelamento.id, linhas: pagLines,

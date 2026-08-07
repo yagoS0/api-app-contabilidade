@@ -8,6 +8,7 @@ import {
 import { gerarPagamentoInssFromGuide } from "../../accounting/InssPagamentoService.js";
 import { gerarPagamentoParcelaFromGuide } from "../../accounting/parcelamento/ParcelamentoV2Service.js";
 import { confirmarPagamento } from "./SerproPagtoWebService.js";
+import { classificarDocumentoArrecadado } from "./classificarDocumentoArrecadado.js";
 import { consultarDasIndexPorCompetencia } from "./SerproPgdasDeclaracaoService.js";
 import { idsComRotinaAtiva } from "./CompanyRotinasService.js";
 import { INTEGRACAO_SERPRO_PAGTOWEB } from "../../../config.js";
@@ -77,7 +78,7 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
 
   const comprovantePdfFileId = await salvarComprovante({ guide, result, logger });
   await markGuidePaidByComprovante({ guideId: guide.id, comprovantePdfFileId });
-  const baixa = await gerarBaixaSePreciso({ guide, comprovante: result?.comprovante, userId, logger });
+  const baixa = await gerarBaixaSePreciso({ guide, comprovante: result?.comprovante, composicao: result?.composicao, userId, logger });
   return { ok: true, pago: true, guideId: guide.id, comprovantePdfFileId, baixa };
 }
 
@@ -171,11 +172,37 @@ async function salvarComprovante({ guide, result, logger }) {
  * guia fica paga sem lançamento, para o contador dar a baixa pelo modal — que separa. É a regra 5:
  * nunca gravar ato contábil por suposição.
  */
-async function gerarBaixaSePreciso({ guide, comprovante, userId, logger }) {
+async function gerarBaixaSePreciso({ guide, comprovante, composicao, userId, logger }) {
   const tipoUpper = String(guide.tipo || "").toUpperCase();
   try {
     if (guide.parcelamentoId) {
-      return await gerarPagamentoParcelaFromGuide({ portalClientId: guide.portalClientId, guideId: guide.id, userId });
+      // ⚠ A COMPOSIÇÃO POR CÓDIGO É O QUE PERMITE BAIXAR CERTO. Numa parcela, os códigos-tributo
+      // são dívida consolidada sendo amortizada (debitam o passivo) e os códigos TJLP são encargo
+      // corrente (despesa do mês). Sem ela o pagamento cai no caminho antigo, que debita o passivo
+      // só pelo principal e reconhece multa e juros como despesa nova.
+      const classificacaoComprovante = composicao ? classificarDocumentoArrecadado(composicao) : null;
+      const r = await gerarPagamentoParcelaFromGuide({
+        portalClientId: guide.portalClientId, guideId: guide.id, userId,
+        // ⚠ A data é a da ARRECADAÇÃO, não "hoje". Sem ela a baixa caía na competência em que o
+        // worker rodou, que pode ser outro mês — e o mês do pagamento é o da despesa do TJLP.
+        dataPagamento: comprovante?.dataArrecadacao || undefined,
+        classificacaoComprovante,
+      });
+      // Recusa consciente, e precisa aparecer: guia paga sem lançamento é indistinguível de
+      // "esqueci de lançar". Mesmo tratamento do `sem_rateio_do_acrescimo` do INSS.
+      if (r?.reason === "comprovante_nao_e_parcela") {
+        logger?.warn?.(
+          { guideId: guide.id, competencia: guide.competencia, tipoDocumento: r.tipoDocumento },
+          "PAGTOWEB: guia vinculada a parcelamento, mas o documento arrecadado NÃO é parcela — nada lançado",
+        );
+      }
+      if (classificacaoComprovante?.alertas?.length) {
+        logger?.warn?.(
+          { guideId: guide.id, alertas: classificacaoComprovante.alertas },
+          "PAGTOWEB: divergência entre código de receita e texto na composição — conferir",
+        );
+      }
+      return r;
     }
     if (tipoUpper === "INSS") {
       const rateio = comprovante?.confiavel
