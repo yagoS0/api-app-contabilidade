@@ -344,22 +344,6 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     return `Excluir o lançamento?\n\n${partes.join(" · ")}\n\nEsta ação não pode ser desfeita.`;
   }
 
-  async function handleDeleteEntryNoConfirm(entryId) {
-    if (!selectedCompanyId) return;
-    setSavingEntry(true);
-    setEntriesError("");
-    setEntriesMessage("");
-    try {
-      await api.deleteAccountingEntry(selectedCompanyId, entryId);
-      await loadAccountingEntries(selectedCompanyId);
-      setEntriesMessage("Lançamento excluído.");
-    } catch (err) {
-      setEntriesError(err?.message || "Falha ao excluir lançamento.");
-    } finally {
-      setSavingEntry(false);
-    }
-  }
-
   // ══════════════════════════════════════════════════════════════════════════════════════════
   // ESTORNO DA BAIXA — a porta nova
   // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -616,8 +600,9 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     loadAccountingEntries,
     loadCircular,
     handleCreateBaixa,
-    handleDeleteEntryNoConfirm,
-    // Estorno da baixa (Circular) — substituem o par `handleDeleteEntryNoConfirm` + N DELETEs.
+    // Estorno da baixa (Circular) — substituíram o `handleDeleteEntryNoConfirm` + N DELETEs que
+    // moravam aqui. O DELETE de baixa com vínculo agora responde 409 `USE_ESTORNO`, então aquele
+    // par não tinha mais como funcionar: desfazer baixa exige motivo e conferência do total.
     handlePreviewEstorno,
     handleEstornarBaixa,
     searchHistoricos,
