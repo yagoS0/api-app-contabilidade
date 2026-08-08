@@ -240,6 +240,24 @@ describe("Tab é do formulário, não da lista", () => {
     expect(listaDeContasVisivel()).toBe(false);
   });
 
+  it("⚠ Enter COM sugestão destacada confirma a sugestão e NÃO navega para o próximo campo", () => {
+    // O contrapeso da cadeia de Enter (abaixo): a navegação só pode valer quando o Enter não tem
+    // trabalho a fazer na lista. Confirmar a sugestão E pular de campo na mesma tecla levaria o
+    // foco embora junto com a escolha, e quem quisesse conferir o que aceitou já estaria noutro
+    // campo.
+    montar();
+    const campoD = screen.getByPlaceholderText("D");
+    const campoC = screen.getByPlaceholderText("C");
+
+    fireEvent.change(campoD, { target: { value: "426" } });
+    fireEvent.keyDown(campoD, { key: "ArrowDown" });
+    fireEvent.keyDown(campoD, { key: "Enter" });
+
+    expect(campoD.value).toBe("426");
+    expect(listaDeContasVisivel()).toBe(false);
+    expect(document.activeElement).not.toBe(campoC);
+  });
+
   it("Enter com sugestão destacada aplica o histórico e as duas contas", async () => {
     // O caminho que preenche o lançamento inteiro sem mouse: um histórico salvo traz D e C junto.
     montar();
@@ -255,5 +273,138 @@ describe("Tab é do formulário, não da lista", () => {
     expect(screen.getByPlaceholderText("D").value).toBe("426");
     expect(screen.getByPlaceholderText("C").value).toBe("5");
     expect(listaDeHistoricosVisivel()).toBe(false);
+  });
+});
+
+// A competência de teste ("2026-07") só nasce no dia 1 quando NÃO é o mês corrente
+// (`getCompRange` usa o dia de hoje se ele cair dentro da competência). Congelar o relógio é o que
+// impede a suíte de contar uma história diferente em julho de 2026.
+const RELOGIO = new Date("2026-08-07T12:00:00Z");
+
+describe("o campo do dia não corrige em silêncio", () => {
+  it("⚠ nasce preenchido com 1 e SELECIONA o conteúdo ao focar — digitar 15 não pode virar 115", () => {
+    // A causa raiz do "115": o campo herda o dia 1 da competência e o cursor caía DEPOIS dele.
+    // Selecionar no foco faz o primeiro dígito digitado substituir o que estava lá.
+    jest.setSystemTime(RELOGIO);
+    montar();
+    const dia = screen.getByPlaceholderText("Dia");
+    expect(dia.value).toBe("1");
+
+    act(() => { dia.focus(); });
+    expect(dia.selectionStart).toBe(0);
+    expect(dia.selectionEnd).toBe(1);
+  });
+
+  it("⚠ 115 é preso em 31 — e o CAMPO passa a dizer 31, em vez de exibir 115 e guardar 31", () => {
+    // Este é o defeito inteiro: `handleDayChange` sempre prendeu o dia no último do mês, mas o
+    // texto continuava sendo o que a pessoa digitou. A tela dizia uma coisa, o payload levava
+    // outra, e nada na interface apontava a diferença — numa DATA de lançamento contábil.
+    jest.setSystemTime(RELOGIO);
+    montar();
+    const dia = screen.getByPlaceholderText("Dia");
+
+    fireEvent.change(dia, { target: { value: "115" } });
+    expect(screen.getByText("→ dia 31")).toBeInTheDocument(); // a correção aparece antes de sair
+
+    fireEvent.blur(dia);
+    expect(dia.value).toBe("31"); // e o campo passa a mostrar o que o sistema guardou
+  });
+
+  it("dia que coube não ganha aviso nenhum — o sinal só existe quando houve correção", () => {
+    jest.setSystemTime(RELOGIO);
+    montar();
+    const dia = screen.getByPlaceholderText("Dia");
+
+    fireEvent.change(dia, { target: { value: "15" } });
+    expect(screen.queryByText(/→ dia/)).toBeNull();
+
+    fireEvent.blur(dia);
+    expect(dia.value).toBe("15");
+  });
+});
+
+describe("o Enter segue a MESMA ordem do Tab", () => {
+  it("⚠ Dia → D → C → Histórico → Valor — e não Dia → Histórico → beco sem saída", () => {
+    // A ordem visual e de tabulação (`COLS`) sempre foi essa. O Enter ia Dia → Histórico e MORRIA
+    // ali, porque o campo de histórico não repassava tecla nenhuma ao formulário: quem lançava
+    // pelo Enter ficava preso no meio da linha, quem usava Tab passava.
+    jest.setSystemTime(RELOGIO);
+    montar();
+    const dia = screen.getByPlaceholderText("Dia");
+    const campoD = screen.getByPlaceholderText("D");
+    const campoC = screen.getByPlaceholderText("C");
+    const campoHist = screen.getByPlaceholderText(/Histórico/i);
+    const campoValor = screen.getByPlaceholderText(/R\$ 0,00/);
+
+    fireEvent.keyDown(dia, { key: "Enter" });
+    expect(document.activeElement).toBe(campoD);
+
+    fireEvent.keyDown(campoD, { key: "Enter" });
+    expect(document.activeElement).toBe(campoC);
+
+    fireEvent.keyDown(campoC, { key: "Enter" });
+    expect(document.activeElement).toBe(campoHist);
+
+    fireEvent.keyDown(campoHist, { key: "Enter" });
+    expect(document.activeElement).toBe(campoValor);
+  });
+
+  it("no Histórico com a lista ABERTA e nada destacado, o Enter segue para o Valor", async () => {
+    // Sem destaque não há o que confirmar, então vale o fluxo normal do campo — mesma regra que os
+    // campos de conta já seguiam. Fechar a lista fica por conta do blur.
+    jest.setSystemTime(RELOGIO);
+    montar();
+    const campoHist = screen.getByPlaceholderText(/Histórico/i);
+
+    fireEvent.change(campoHist, { target: { value: "pag" } });
+    await deixarAsSugestoesChegarem();
+    expect(listaDeHistoricosVisivel()).toBe(true);
+
+    fireEvent.keyDown(campoHist, { key: "Enter" });
+    expect(document.activeElement).toBe(screen.getByPlaceholderText(/R\$ 0,00/));
+  });
+});
+
+describe("no último campo o Enter salva — ou diz por que não salvou", () => {
+  function preencherLinha() {
+    fireEvent.change(screen.getByPlaceholderText("Dia"), { target: { value: "15" } });
+    fireEvent.change(screen.getByPlaceholderText("D"), { target: { value: "426" } });
+    fireEvent.change(screen.getByPlaceholderText(/Histórico/i), { target: { value: "PAGAMENTO" } });
+    fireEvent.change(screen.getByPlaceholderText(/R\$ 0,00/), { target: { value: "100" } });
+  }
+
+  it("linha completa: o Enter no Valor salva o lançamento", async () => {
+    jest.setSystemTime(RELOGIO);
+    const { onSave } = montar();
+    preencherLinha();
+
+    fireEvent.keyDown(screen.getByPlaceholderText(/R\$ 0,00/), { key: "Enter" });
+    await act(async () => {});
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0]).toMatchObject({ data: "2026-07-15", historico: "PAGAMENTO" });
+  });
+
+  it("⚠ linha incompleta: o Enter NÃO falha em silêncio — o motivo aparece na tela", () => {
+    // Trocar "Enter não leva a lugar nenhum" por "Enter não faz nada e não diz por quê" seria
+    // trocar um defeito por outro. O gate do Salvar virou um MOTIVO justamente para isto.
+    jest.setSystemTime(RELOGIO);
+    const { onSave } = montar();
+    fireEvent.change(screen.getByPlaceholderText(/R\$ 0,00/), { target: { value: "100" } });
+
+    fireEvent.keyDown(screen.getByPlaceholderText(/R\$ 0,00/), { key: "Enter" });
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Informe o histórico.")).toBeInTheDocument();
+  });
+
+  it("o aviso some sozinho quando o que faltava é preenchido", () => {
+    jest.setSystemTime(RELOGIO);
+    montar();
+    fireEvent.keyDown(screen.getByPlaceholderText(/R\$ 0,00/), { key: "Enter" });
+    expect(screen.getByText(/Informe/)).toBeInTheDocument();
+
+    preencherLinha();
+    expect(screen.queryByText(/Informe/)).toBeNull();
   });
 });

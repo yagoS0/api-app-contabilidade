@@ -562,7 +562,7 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
   );
 }
 
-export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSearchHistoricos, accounts, inputRef, inputStyle, preserveTypedText = false, competencia = null }) {
+export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSearchHistoricos, accounts, inputRef, inputStyle, preserveTypedText = false, competencia = null, onKeyDown = null }) {
   const [open, setOpen] = useState(false);
   const [historicosRaw, setHistoricosRaw] = useState([]);
   // Q50: históricos vêm tokenizados ({{competencia}}) — resolve pra competência do lançamento ATUAL,
@@ -628,22 +628,30 @@ export function SmartHistoricoInput({ value, onChange, onFillFromHistory, onSear
     setSelIdx(-1);
   }
 
+  // Mesmo contrato de teclado dos campos de conta — ver o comentário grande no `AccountSearchInput`.
+  // O que a LISTA não consome é repassado ao `onKeyDown` do pai: é assim que o Enter deste campo
+  // chega ao próximo campo do formulário. Antes este `return` engolia tudo, e o Enter no Histórico
+  // não levava a lugar nenhum (o campo era o fim da cadeia).
   function handleKeyDown(e) {
     if (!open || allItems.length === 0) {
-      if (e.key === "ArrowDown" && allItems.length > 0) { setOpen(true); setSelIdx(0); e.preventDefault(); }
+      if (e.key === "ArrowDown" && allItems.length > 0) { setOpen(true); setSelIdx(0); e.preventDefault(); return; }
+      onKeyDown?.(e);
       return;
     }
-    if (e.key === "ArrowDown") { e.preventDefault(); setSelIdx((i) => Math.min(i + 1, allItems.length - 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setSelIdx((i) => Math.max(i - 1, 0)); }
-    else if (e.key === "Enter" && selIdx >= 0) { e.preventDefault(); e.stopPropagation(); selectItem(allItems[selIdx]); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setSelIdx((i) => Math.min(i + 1, allItems.length - 1)); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); setSelIdx((i) => Math.max(i - 1, 0)); return; }
+    if (e.key === "Enter" && selIdx >= 0) { e.preventDefault(); e.stopPropagation(); selectItem(allItems[selIdx]); return; }
     // Mesmo contrato dos campos de conta: Tab confirma o que está DESTACADO e segue para o próximo
     // campo; sem destaque, só tira a lista do caminho. Sem `preventDefault` — o foco tem de andar.
-    else if (e.key === "Tab") { if (selIdx >= 0) selectItem(allItems[selIdx]); else setOpen(false); }
+    if (e.key === "Tab") { if (selIdx >= 0) selectItem(allItems[selIdx]); else setOpen(false); return; }
     // ⚠ `stopPropagation` — o Esc estava fechando o LANÇAMENTO INTEIRO.
     // Este componente vive dentro do `<tr>` do `DraftEntryRow`, que trata Esc como "sair da linha".
     // Fechar a lista e perder tudo o que já foi digitado eram a mesma tecla. Agora o Esc só chega
     // ao `<tr>` quando não há lista aberta para fechar antes.
-    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); setSelIdx(-1); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setOpen(false); setSelIdx(-1); return; }
+    // Enter SEM destaque (e qualquer outra tecla) segue o fluxo normal do campo — é o que mantém a
+    // navegação viva com a lista aberta sem quebrar o "Enter confirma o destacado".
+    onKeyDown?.(e);
   }
 
   useEffect(() => {
@@ -805,9 +813,13 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   const [historico, setHistorico] = useState(() => initial?.historico || "");
   const [valor, setValor] = useState(() => initial?.valor || "");
   const dayRef = useRef(null);
+  const dRef = useRef(null);
   const cRef = useRef(null);
   const histRef = useRef(null);
   const valRef = useRef(null);
+  // Motivo do Enter no Valor não ter salvado. Só aparece depois da tentativa — antes disso não há
+  // nada a explicar, e um aviso permanente numa linha recém-aberta seria ruído.
+  const [avisoSalvar, setAvisoSalvar] = useState(null);
 
   useEffect(() => {
     if (isEdit) return; // edição não re-deriva a data pela competência ativa
@@ -827,6 +839,28 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
     if (y && m) setDateVal(`${y}-${m}-${String(day).padStart(2, "0")}`);
   }
 
+  /**
+   * ⚠ O CLAMP DO DIA DEIXOU DE SER SILENCIOSO — e o campo deixou de nascer armadilhado.
+   *
+   * O campo nasce preenchido (dia 1, quando a competência não é o mês corrente) e NÃO selecionava o
+   * conteúdo ao focar: quem digitava "15" obtinha "115", que o `handleDayChange` prendia em 31 sem
+   * que o texto do campo mudasse. A tela dizia 115, o payload levava 31, e ninguém era avisado —
+   * numa DATA DE LANÇAMENTO CONTÁBIL, que é o campo em que errar custa mais caro.
+   *
+   * Duas correções, porque uma só não basta:
+   *   1. `select()` no foco — ataca a causa: o "1" herdado some no primeiro dígito digitado.
+   *   2. O valor corrigido APARECE. Enquanto o texto diverge do dia guardado a célula mostra
+   *      "→ dia 31"; ao sair do campo, o próprio texto passa a ser o dia guardado. O princípio do
+   *      projeto é que ausência de sinal nunca é resposta: valor que o sistema corrigiu sozinho
+   *      precisa aparecer corrigido no campo, não só no payload.
+   *
+   * Corrigir e mostrar (em vez de recusar e travar) porque o clamp acerta o mês na esmagadora
+   * maioria dos casos — "31" em fevereiro é o dia 28, e obrigar a redigitar não informaria mais
+   * do que dizer qual dia ficou.
+   */
+  const diaGuardado = dateVal ? Number(String(dateVal).slice(8)) : null;
+  const diaFoiCorrigido = !isEdit && dayStr !== "" && diaGuardado != null && String(diaGuardado) !== String(Number(dayStr));
+
   const detected = useMemo(() => detectTipoFromAccounts(contaD, contaC, accounts), [contaD, contaC, accounts]);
   // ⚠ UMA LEITURA SÓ do que foi digitado. Antes `Number(valor)` aparecia em três lugares — o gate
   // do Salvar, o payload e a init da edição — e três leituras independentes da mesma string é
@@ -834,14 +868,36 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   // "o que está escrito" e "quanto vale" deixaram de ser a mesma coisa.
   const leitura = useMemo(() => valorUtilizavel(valor), [valor]);
   const lines = [{ tipo: "D", conta: contaD, valor }, { tipo: "C", conta: contaC, valor }];
-  const balanced = leitura.ok && !leitura.vazio;
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
   const contasForaDoPlano = contasDesconhecidas(lines, accounts);
-  // Lançamento de 1 perna é válido (em aberto) — basta D OU C preenchido. [[nao-mudar-forma-lancamentos]]
-  const canSave = dateVal && historico && balanced && (contaD || contaC) && !duplicateAcrossSides && !contasForaDoPlano.length && !saving;
+  /**
+   * ⚠ O GATE DO SALVAR VIROU UM MOTIVO, NÃO UM BOOLEANO — pelo mesmo argumento do `leitura`.
+   *
+   * Enquanto era só `canSave`, o botão desabilitava sem dizer por quê e o `handleSave` tinha um
+   * `if (!canSave) return` mudo. Com o Enter passando a salvar a linha, esse `return` viraria a
+   * troca de um defeito por outro: Enter que tenta salvar linha incompleta e falha em silêncio.
+   * Uma leitura só alimenta o botão (`disabled` + `title`) e o aviso do Enter.
+   *
+   * Lançamento de 1 perna é válido (em aberto) — basta D OU C preenchido.
+   * [[nao-mudar-forma-lancamentos]]
+   */
+  const motivoNaoSalva = saving ? "Salvando…"
+    : !dateVal ? "Informe o dia do lançamento."
+      : !historico ? "Informe o histórico."
+        : (!contaD && !contaC) ? "Informe ao menos uma conta (débito ou crédito)."
+          : leitura.vazio ? "Informe o valor."
+            : !leitura.ok ? leitura.mensagem
+              : duplicateAcrossSides ? "Débito e crédito não podem ser a mesma conta."
+                : contasForaDoPlano.length ? `${contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa.`
+                  : null;
+  const canSave = !motivoNaoSalva;
+  // Resolvido o que faltava, o aviso sai sozinho: manter na tela um motivo já corrigido treina o
+  // olho a ignorar a linha inteira.
+  useEffect(() => { if (canSave) setAvisoSalvar(null); }, [canSave]);
 
   function reset() {
     setContaD(""); setContaC(""); setHistorico(""); setValor("");
+    setAvisoSalvar(null);
     const { defaultDate: nd } = getCompRange(activeComp);
     setDateVal(nd); setDayStr(nd ? String(Number(nd.slice(8))) : "");
     setTimeout(() => dayRef.current?.focus(), 30);
@@ -878,37 +934,62 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   return (
     <tr style={{ background: "#202334", outline: "2px solid #69FF47", outlineOffset: "-2px" }} onKeyDown={onKeyDown}>
       <td style={{ ...cell, textAlign: "center" }} />
+      {/* ⚠ A CADEIA DO ENTER SEGUE A MESMA ORDEM DO TAB — Dia → D → C → Histórico → Valor.
+          Ela ia Dia → Histórico e MORRIA ali (o Histórico não repassava tecla nenhuma), enquanto a
+          ordem visual e de tabulação (`COLS`) é Dia → D → C → Histórico → Valor. Quem usava Enter
+          ficava preso no meio do formulário; quem usava Tab passava. Duas ordens para os mesmos
+          cinco campos é uma a mais do que cabe na memória de quem lança cem linhas por dia.
+
+          Isto NÃO conflita com o contrato do teclado das sugestões: com o dropdown aberto e uma
+          sugestão destacada, o Enter é consumido lá dentro (confirma a sugestão) e nunca chega
+          aqui. A navegação só vale quando não há destaque — que é o fluxo "digitei, segue". */}
       <td style={cell}>
         {isEdit ? (
           // Q47.1: coluna estreita — reduz o padding p/ o date (dd/mm/aaaa + ícone) não cortar o valor.
           <input ref={dayRef} type="date" value={dateVal || ""} onChange={(e) => setDateVal(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); dRef.current?.focus(); } }}
             style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark", padding: "0 4px", minWidth: 0 }} />
         ) : (
           <input ref={dayRef} type="text" inputMode="numeric" placeholder="Dia" value={dayStr}
             onChange={(e) => handleDayChange(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); histRef.current?.focus(); } }}
+            // Seleciona o conteúdo ao focar: o campo nasce com o dia 1 e, sem isto, digitar "15"
+            // produzia "115". Vale também no `reset()`, que refoca a linha nova.
+            onFocus={(e) => e.target.select()}
+            // Sair do campo alinha o texto ao dia que ficou guardado — ver o comentário do clamp.
+            onBlur={() => { if (dayStr !== "" && diaGuardado != null) setDayStr(String(diaGuardado)); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); dRef.current?.focus(); } }}
             style={{ ...PANEL_FIELD_STYLE, textAlign: "center" }} />
         )}
+        {diaFoiCorrigido ? (
+          <div style={{ fontSize: "0.72rem", color: "#FFB347", marginTop: 2, textAlign: "center" }}>→ dia {diaGuardado}</div>
+        ) : null}
       </td>
       <td style={cell}>
         <AccountCodeInput value={contaD} onChange={setContaD} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode}
           onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); cRef.current?.focus(); } }} placeholder="D" competencia={activeComp} onSearchHistoricos={onSearchHistoricos} />
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); cRef.current?.focus(); } }} placeholder="D" inputRef={dRef} competencia={activeComp} onSearchHistoricos={onSearchHistoricos} />
       </td>
       <td style={cell}>
         <AccountCodeInput value={contaC} onChange={setContaC} accounts={accounts} onGetHistoricosByCode={onGetHistoricosByCode}
           onSelectHistorico={(text, cD, cC) => { if (text) setHistorico(text); if (cD) setContaD(cD); if (cC) setContaC(cC); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }} placeholder="C" inputRef={cRef} competencia={activeComp} onSearchHistoricos={onSearchHistoricos} />
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); histRef.current?.focus(); } }} placeholder="C" inputRef={cRef} competencia={activeComp} onSearchHistoricos={onSearchHistoricos} />
       </td>
       <td style={cell}>
         <SmartHistoricoInput value={historico} onChange={setHistorico}
           onFillFromHistory={(hist, hl) => { if (hist) setHistorico(hist); if (hl?.length) { const d = hl.find((l) => l.tipo === "D"); const c = hl.find((l) => l.tipo === "C"); if (d?.conta) setContaD(d.conta); if (c?.conta) setContaC(c.conta); if (d?.valor) setValor(fmtValor(d.valor)); } }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); valRef.current?.focus(); } }}
           onSearchHistoricos={onSearchHistoricos} accounts={accounts} inputRef={histRef} competencia={activeComp} />
         {duplicateAcrossSides ? <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>Débito e crédito não podem ser a mesma conta.</div> : null}
         {contasForaDoPlano.length > 0 ? (
           <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>
             {contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa.
           </div>
+        ) : null}
+        {/* O Enter no Valor tentou salvar e não deu: o motivo aparece aqui, na célula larga, junto
+            dos outros bloqueios. Omitido quando o bloqueio já tem mensagem própria logo acima —
+            dizer a mesma coisa duas vezes em cores diferentes é o começo de não ler nenhuma. */}
+        {avisoSalvar && !duplicateAcrossSides && !contasForaDoPlano.length ? (
+          <div style={{ fontSize: "0.72rem", color: "#FFB347", marginTop: 2 }}>{avisoSalvar}</div>
         ) : null}
       </td>
       <td style={cell}>
@@ -917,7 +998,14 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
             nunca chega ao handler. Não é preferência de estilo: é pré-requisito. `inputMode`
             mantém o teclado numérico no celular. */}
         <input ref={valRef} type="text" inputMode="decimal" autoComplete="off" value={valor} onChange={(e) => setValor(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }} placeholder="R$ 0,00 ou =10+10"
+          // Último campo da cadeia: o Enter SALVA a linha. Quando não dá para salvar ele diz o
+          // motivo em vez de não fazer nada — o `if (!canSave) return` mudo do `handleSave` seria,
+          // aqui, um Enter que "não funciona" sem nunca explicar por quê.
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            if (canSave) { setAvisoSalvar(null); handleSave(); } else setAvisoSalvar(motivoNaoSalva);
+          }} placeholder="R$ 0,00 ou =10+10"
           // Ao sair do campo a fórmula VIRA o resultado — é o "=10+10 e vira 20" do pedido. Só
           // resolve quando deu certo: fórmula quebrada continua na tela como o usuário escreveu,
           // senão ele perde o que digitou e não sabe o que estava errado.
@@ -953,7 +1041,8 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
           {/* ⚠ Não é mais `variant="success"`. Verde significa CONCLUÍDO no vocabulário do app
               (`apps/web/CLAUDE.md`) — um botão verde de "faça isto" ensina o contrário na mesma tela
               em que o verde do rodapé (D = C ✓ ok) precisa ser lido como "está fechado". */}
-          <Button size="sm" variant="primary" onClick={handleSave} disabled={!canSave}>{saving ? "..." : "Salvar"}</Button>
+          {/* Botão desabilitado sem explicação é o mesmo silêncio do Enter que não salva. */}
+          <Button size="sm" variant="primary" onClick={handleSave} disabled={!canSave} title={motivoNaoSalva || "Salvar (Enter)"}>{saving ? "..." : "Salvar"}</Button>
           <Button size="sm" variant="secondary" onClick={() => onClose?.()}>{isEdit ? "Cancelar" : "Sair"}</Button>
         </div>
       </td>
