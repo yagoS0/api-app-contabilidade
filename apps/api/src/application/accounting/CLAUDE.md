@@ -119,14 +119,46 @@ para dar o motivo legível no caminho normal. Duas requisições simultâneas �
 passavam AS DUAS por elas antes de qualquer uma escrever, e saíam **dois lotes amortizando o mesmo
 passivo pela mesma guia**.
 
-⚠ **O banco não segura isso.** O unique `(sourceGuideId, eventType)` foi desenhado para as
-PROVISÕES (uma por tributo, cada uma com seu `eventType`); os lançamentos de baixa nascem com
-`eventType` **NULL**, e no Postgres NULLs são distintos em UNIQUE. E não dá para trocar por um
-índice mais apertado: os N lançamentos do lote compartilham todas as colunas que identificariam a
-baixa, então o índice recusaria o segundo lançamento **legítimo** — derrubaria a baixa inteira em
-vez de impedir a duplicada. O idioma da reserva já existia em `GuideLockService` e
+⚠ **O unique antigo não segura isso.** `(sourceGuideId, eventType)` foi desenhado para as PROVISÕES
+(uma por tributo, cada uma com seu `eventType`) e continua valendo lá — `GuideToProvisionService`
+faz a idempotência por ele. Os lançamentos de baixa nascem com `eventType` **NULL**, e no Postgres
+NULLs são distintos em UNIQUE. O idioma da reserva já existia em `GuideLockService` e
 `GuideLiberacaoService`. Regressão: `__tests__/baixaInssDuplicada.test.js` e
 `parcelamento/__tests__/baixaParcelaDuplicada.test.js`.
+
+### O cinto do banco por baixo da reserva (migration `20260808120000_add_baixa_tipo_linha`)
+
+Por muito tempo a resposta foi "não dá para apertar o índice": os N lançamentos do lote
+compartilhavam todas as colunas que identificariam a baixa, então qualquer índice sobre elas
+recusaria o **segundo lançamento legítimo** — derrubaria a baixa inteira em vez de impedir a
+duplicada. A premissa era verdadeira; o que faltava era uma coluna que **separasse as linhas do
+mesmo lote**.
+
+Ela já existia em `AccountingEntryLine` (`tipoLinha`/`codigoTributo`, Q21). Como cada lançamento de
+baixa é de **uma perna só**, o papel da linha É o papel do lançamento — então os dois campos foram
+denormalizados em `accounting_entries`:
+
+```sql
+CHECK  chk_baixa_tipo_linha : "tipo" <> 'BAIXA' OR "tipoLinha" IS NOT NULL           -- NOT VALID
+UNIQUE uq_baixa_guia_linha  : ("sourceGuideId","tipoLinha",COALESCE("codigoTributo",''))
+                              WHERE "tipo"='BAIXA' AND "sourceGuideId" IS NOT NULL
+                                                   AND "tipoLinha" IS NOT NULL
+```
+
+- ⚠ **`COALESCE`, nunca a coluna crua.** Baixa de um tributo só (INSS, rota genérica) tem
+  `codigoTributo` NULL — e NULLs distintos em UNIQUE são exatamente a porta por onde o `eventType`
+  passava. Com o `COALESCE` as duas duplicatas colidem na primeira linha do lote.
+- ⚠ **O CHECK vale no UPDATE também**, inclusive sobre linha antiga (é o que `NOT VALID` *não*
+  isenta). Por isso a migration **faz o backfill** das baixas já gravadas — sem ele, exportar a
+  competência ou editar uma baixa velha passaria a estourar 23514.
+- ⚠ **Toda escrita de `tipo:"BAIXA"` tem de preencher `tipoLinha`.** Quem sabe o papel passa o papel
+  (INSS, parcelamento V1/V2, `POST /entries/:id/baixa`, `scripts/separar-baixas-agrupadas.mjs`); os
+  caminhos genéricos (`POST`/`PUT /entries`, import de OFX/Excel, `applyAccountingFunction`,
+  templates de parcelamento) usam **`tipoLinhaDaBaixa()`** (`tipoLinhaBaixa.js`), cujo padrão é
+  `TOTAL` — "lançamento inteiro, sem decomposição". Chamá-los de PRINCIPAL afirmaria que amortizam o
+  passivo e que juros/multa estão em outro lugar, o que ninguém sabe.
+- Isto é **cinto**, não substituto da reserva atômica: a reserva evita o trabalho perdido e dá o
+  motivo legível; o índice é o que impede a linha de entrar se a reserva algum dia falhar.
 
 ⚠ **Uma guia tem até TRÊS baixas.** O `Map` por `sourceGuideId` na Circular guardava só a última, e
 "Cancelar baixa" apagava um lançamento deixando dois órfãos com a guia reaberta. Hoje `baixas[]`

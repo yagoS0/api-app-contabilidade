@@ -11,6 +11,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "./AccountingEntryGeneratorService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
 import { avaliarRiscoRescisao } from "./parcelamento/riscoRescisao.js";
+import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
 
 // Q16: contas D/C do parcelamento começam EM BRANCO e são memorizadas por papel de
 // linha (igual às guias do Simples). A memória usa AccountingHistorico keyed por
@@ -245,6 +246,9 @@ export async function createParcelamento({
         competencia: normCompetencia,
         historico: openHistorico,
         tipo: tplEntry.tipo, // PROVISAO
+        // O tipo vem do TEMPLATE: é PROVISAO nos seeds, mas uma função de abertura customizada
+        // pode trazer BAIXA, e aí o CHECK `chk_baixa_tipo_linha` cobra o papel.
+        tipoLinha: tipoLinhaDaBaixa(tplEntry.tipo),
         subtipo: tplEntry.subtipo || null,
         origem: "MANUAL",
         loteImportacao: `PARC-${parcelamento.id.slice(0, 8)}-ABERTURA`,
@@ -430,6 +434,10 @@ export async function confirmParcelaPayment({
           competencia: provEntry.competencia,
           historico,
           tipo: "BAIXA",
+          // O papel já era decidido acima (`isJurosEntry`, que também escolhe o valor e a memória
+          // de contas PAY_JUROS/PAY_PRINCIPAL) — aqui ele só sobe para a coluna que o CHECK
+          // `chk_baixa_tipo_linha` cobra. Sem `sourceGuideId`, estas linhas ficam fora do índice.
+          tipoLinha: isJurosEntry ? "JUROS" : "PRINCIPAL",
           subtipo: tplEntry.subtipo || provEntry.subtipo,
           origem: "MANUAL",
           loteImportacao: `PARC-${parc.id.slice(0, 8)}-PAGTO-${String(numeroParcela).padStart(2, "0")}`,
@@ -581,6 +589,9 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
             data: dataEntry, competencia: parc.competenciaInicial,
             historico: `${historico} — ${label}`,
             tipo: tipoEntry, subtipo: subtipoEntry, origem: "MANUAL",
+            // `tipoEntry` vem do template de rescisão quando existe — pode ser BAIXA.
+            tipoLinha: ln.tipoLinha || tipoLinhaDaBaixa(tipoEntry),
+            codigoTributo: ln.codigoTributo || null,
             loteImportacao: loteRescisao,
             status: "RASCUNHO", statusPagamento: "NA",
             lines: { createMany: { data: [{ conta: ln.conta || "", tipo: ln.tipo, valor: Number(ln.valor) || 0, ordem: 0, tipoLinha: ln.tipoLinha || null, codigoTributo: ln.codigoTributo || null }] } },
@@ -596,6 +607,7 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
           portalClientId, parcelamentoId: parc.id, numeroParcela: null,
           data: dataEntry, competencia: parc.competenciaInicial,
           historico, tipo: tipoEntry, subtipo: subtipoEntry, origem: "MANUAL",
+          tipoLinha: tipoLinhaDaBaixa(tipoEntry),
           loteImportacao: loteRescisao,
           status: "RASCUNHO", statusPagamento: "NA",
           lines: { createMany: { data: lines } },

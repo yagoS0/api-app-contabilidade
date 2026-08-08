@@ -126,14 +126,15 @@ describe("reserva atômica da guia", () => {
   });
 });
 
-// ⚠ POR QUE NÃO HÁ ÍNDICE ÚNICO PARCIAL COBRINDO ISTO NO BANCO.
+// A FORMA DO LOTE — a premissa que decide o que o banco consegue impedir.
 //
 // Um índice único precisa de UMA linha por baixa para morder. Uma baixa de INSS em atraso são até
-// três lançamentos (principal, juros, multa), e eles compartilham TODAS as colunas que
-// identificariam a baixa. Qualquer índice único sobre essas colunas recusaria o SEGUNDO lançamento
-// legítimo do mesmo lote, isto é, derrubaria a baixa inteira em vez de impedir a duplicada.
+// três lançamentos (principal, juros, multa), e nas colunas ANTIGAS eles compartilham tudo o que
+// identificaria a baixa. Um índice em `sourceGuideId` sozinho recusaria o SEGUNDO lançamento
+// legítimo do mesmo lote — derrubaria a baixa inteira em vez de impedir a duplicada. Estes dois
+// testes prendem essa premissa: é ela que explica por que o índice tem a forma que tem.
 describe("a forma do lote (é o que decide o que o banco consegue impedir)", () => {
-  it("os lançamentos do lote são indistinguíveis entre si nas colunas de AccountingEntry", async () => {
+  it("os lançamentos do lote são indistinguíveis entre si nas colunas ANTIGAS de AccountingEntry", async () => {
     await baixar();
     expect(__criados.length).toBeGreaterThan(1);
     const chave = (e) => JSON.stringify([
@@ -147,5 +148,50 @@ describe("a forma do lote (é o que decide o que o banco consegue impedir)", () 
   it("⚠ `eventType` nasce NULL em todos — é por isso que o unique (sourceGuideId, eventType) não morde", async () => {
     await baixar();
     for (const e of __criados) expect(e.eventType ?? null).toBeNull();
+  });
+});
+
+// ⚠ O QUE DESTRAVOU O ÍNDICE: o PAPEL da linha subiu para o cabeçalho.
+//
+// `tipoLinha` já existia em `AccountingEntryLine` (Q21) e agora existe também em
+// `accounting_entries`. Com ele, a chave (`sourceGuideId`, `tipoLinha`,
+// `COALESCE("codigoTributo",'')`) SEPARA os três lançamentos legítimos do mesmo lote e REPETE nos
+// três de uma segunda baixa da mesma guia — que é exatamente o que um índice único precisa.
+//
+// ⚠ O `COALESCE` não é enfeite: aqui `codigoTributo` é NULL (a guia de INSS é de um tributo só), e
+// sem ele os NULLs voltariam a ser distintos em UNIQUE — a mesma armadilha do `eventType`.
+//
+// ⚠ E o `tipoLinha` é COBRADO pelo banco: `CHECK chk_baixa_tipo_linha` recusa BAIXA sem papel. Um
+// caminho que esqueça de preencher não falha aqui (não há banco no teste) — falha em PRODUÇÃO.
+const chaveDoIndice = (e) => JSON.stringify([e.sourceGuideId, e.tipoLinha, e.codigoTributo ?? ""]);
+
+describe("a chave composta separa o lote legítimo e repete na duplicada", () => {
+  it("toda baixa nasce com tipoLinha (senão o CHECK do banco derruba o lote inteiro)", async () => {
+    await baixar();
+    expect(__criados).toHaveLength(3);
+    for (const e of __criados) expect(e.tipoLinha).toBeTruthy();
+    expect(__criados.map((e) => e.tipoLinha)).toEqual(["PRINCIPAL", "JUROS", "MULTA"]);
+  });
+
+  it("⚠ as três chaves do MESMO lote são DISTINTAS — o índice não recusa baixa legítima", async () => {
+    await baixar();
+    const chaves = new Set(__criados.map(chaveDoIndice));
+    expect(chaves.size).toBe(__criados.length);
+  });
+
+  it("⚠ a segunda baixa da mesma guia REPETE as chaves — é isso que o índice pega", async () => {
+    await baixar();
+    const primeiroLote = __criados.map(chaveDoIndice);
+    await baixar(); // a reserva atômica está mockada em `count: 1`; aqui interessa só a chave
+    const segundoLote = __criados.slice(primeiroLote.length).map(chaveDoIndice);
+    expect(segundoLote).toEqual(primeiroLote);
+  });
+
+  it("o ramo do lançamento ÚNICO (pago em dia) também nasce com papel — e é o principal", async () => {
+    await gerarPagamentoInssFromGuide({
+      portalClientId: "p1", guideId: "g1", dataPagamento: new Date("2026-07-18T00:00:00Z"),
+    });
+    expect(__criados).toHaveLength(1);
+    expect(__criados[0].tipoLinha).toBe("PRINCIPAL");
   });
 });

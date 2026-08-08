@@ -9,6 +9,7 @@ import { normalizeParcelamentoDTO, normalizeParcelaDTO, round2Decimal as round2 
 import { validarParcela } from "./invariantes.js";
 import { estadoEmAberto, estadoRecalculado, podeTransicionar, ESTADOS_EM_ABERTO, PARCELA_ESTADOS } from "./parcelaStateMachine.js";
 import { isMonthClosed } from "../fechamentoContabil.js";
+import { tipoLinhaDaBaixa } from "../tipoLinhaBaixa.js";
 
 function competenciaFromDate(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -150,6 +151,15 @@ async function criarLancamentosIndividuais(tx, {
         portalClientId, parcelamentoId, numeroParcela: null,
         openEntryId: openEntryId || null,
         sourceGuideId: sourceGuideId || null,
+        // ⚠ O PAPEL SOBE PARA O CABEÇALHO. Cada lançamento daqui é de UMA perna, então o papel da
+        // linha é o papel do lançamento — e é essa dupla que o índice único parcial
+        // `uq_baixa_guia_linha` usa para distinguir as N linhas legítimas desta baixa das linhas
+        // de uma baixa DUPLICADA da mesma guia (que repetiria papel e código, linha a linha).
+        // `codigoTributo` só quando existe de verdade (vem do `TributoParcela` ou do comprovante).
+        // O `|| tipoLinhaDaBaixa(tipo)` é a rede: linha sem papel num lançamento de BAIXA violaria
+        // o CHECK do banco (23514) e derrubaria a baixa inteira. Aqui hoje toda linha tem papel.
+        tipoLinha: ln.tipoLinha || tipoLinhaDaBaixa(tipo),
+        codigoTributo: ln.codigoTributo || null,
         data, competencia,
         historico: `${historicoBase} — ${label}`,
         tipo, subtipo, origem,

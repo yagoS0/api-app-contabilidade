@@ -269,8 +269,16 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
     };
 
     if (!separar) {
+      // ⚠ `tipoLinha` é OBRIGATÓRIO em toda baixa (CHECK `chk_baixa_tipo_linha`), e aqui ele é
+      // exato: com um grupo só, o papel é o daquele grupo; sem grupo nenhum é o caminho da guia
+      // paga em dia, um lançamento só, que É o principal (não há acréscimo a separar).
       const entry = await tx.accountingEntry.create({
-        data: { ...base, historico: historicoFinal, lines: { createMany: { data: entryLines.map(paraGravar) } } },
+        data: {
+          ...base,
+          tipoLinha: grupos[0]?.papel || "PRINCIPAL",
+          historico: historicoFinal,
+          lines: { createMany: { data: entryLines.map(paraGravar) } },
+        },
         include: { lines: true },
       });
       await tx.guide.update({
@@ -289,7 +297,14 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
         { conta: g.contaCaixa, tipo: "C", valor: g.total, ordem: g.debitos.length },
       ];
       const entry = await tx.accountingEntry.create({
-        data: { ...base, historico: `${historicoFinal}${SUFIXO_HISTORICO[g.papel] || ""}`, lines: { createMany: { data: linhasGrupo } } },
+        data: {
+          ...base,
+          // O papel sobe para o cabeçalho: é ele que faz o índice `uq_baixa_guia_linha` distinguir
+          // principal, juros e multa DESTA baixa (legítimos) de uma segunda baixa da mesma guia.
+          tipoLinha: g.papel,
+          historico: `${historicoFinal}${SUFIXO_HISTORICO[g.papel] || ""}`,
+          lines: { createMany: { data: linhasGrupo } },
+        },
         include: { lines: true },
       });
       criados.push({ papel: g.papel, id: entry.id, valor: g.total });

@@ -1,5 +1,6 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
+import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
 
 // INSS_DCTFWEB removido: INSS deve ser lançado manualmente em conjunto com folha/pró-labore.
 //
@@ -432,6 +433,10 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, existingEntry, p
         competencia: circular.competencia,
         historico,
         tipo: event.tipo,
+        // `EVENT_DEFINITIONS` só emite RECEITA e PROVISAO hoje — mas `BAIXA_DAS_SIMPLES` já existe
+        // como eventType em `accountingEntryRules.js`, e uma entrada nova nesse mapa faria este
+        // caminho gravar BAIXA sem papel, violando o CHECK `chk_baixa_tipo_linha` em produção.
+        tipoLinha: tipoLinhaDaBaixa(event.tipo),
         subtipo: event.subtipo || null,
         origem: "SERPRO",
         loteImportacao: `SERPRO-${circular.competencia}`,

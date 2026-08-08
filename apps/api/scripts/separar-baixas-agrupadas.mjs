@@ -113,6 +113,10 @@ try {
               competencia: b.competencia,
               historico: `${b.historico}${SUFIXO[papel] || ""}`,
               tipo: "BAIXA",
+              // O papel já é o critério deste script (`grupos`); aqui ele sobe para a coluna que o
+              // CHECK `chk_baixa_tipo_linha` cobra. É também o que faz o índice único parcial
+              // aceitar os TRÊS lançamentos separados da mesma guia sem confundi-los com duplicata.
+              tipoLinha: papel,
               subtipo: b.subtipo,
               // @@unique acima: só o PRINCIPAL carrega o eventType. É também o correto — a memória
               // de contas (AccountingHistorico) é do par do tributo, não de juros/multa.

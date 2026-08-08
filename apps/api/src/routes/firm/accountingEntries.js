@@ -9,6 +9,7 @@ import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/accounting/contasAcrescimo.js";
+import { tipoLinhaDaBaixa } from "../../application/accounting/tipoLinhaBaixa.js";
 import { marcarSemFaturamento } from "../../application/accounting/semFaturamento.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import {
@@ -2509,6 +2510,10 @@ export function createAccountingEntriesRouter({ log }) {
             origem,
             statusPagamento,
             status: "RASCUNHO",
+            // O contador pode escolher "Baixa" no seletor de tipo, e toda baixa precisa de
+            // `tipoLinha` (CHECK `chk_baixa_tipo_linha`). Aqui não há papel nenhum a declarar — é
+            // um lançamento inteiro, digitado à mão — então vai o padrão TOTAL.
+            tipoLinha: tipoLinhaDaBaixa(tipo),
           },
         });
         await tx.accountingEntryLine.createMany({
@@ -2593,6 +2598,13 @@ export function createAccountingEntriesRouter({ log }) {
     if (body.statusPagamento !== undefined) data.statusPagamento = String(body.statusPagamento).toUpperCase();
     if (body.status !== undefined && ["RASCUNHO", "CONFIRMADO"].includes(String(body.status))) {
       data.status = String(body.status);
+    }
+    // ⚠ O CHECK `chk_baixa_tipo_linha` também vale no UPDATE. Duas formas de cair nele aqui:
+    // trocar o tipo de um lançamento qualquer para BAIXA, e editar uma baixa antiga que ainda
+    // esteja sem papel (a migration fez o backfill, mas não custa não depender disso). Nos dois
+    // casos completa com o padrão — nunca sobrescreve um papel já gravado.
+    if ((data.tipo || existing.tipo) === "BAIXA" && !existing.tipoLinha) {
+      data.tipoLinha = tipoLinhaDaBaixa("BAIXA");
     }
 
     const lines = body.lines;
@@ -3022,6 +3034,11 @@ export function createAccountingEntriesRouter({ log }) {
               competencia,
               historico: `${historico}${SUFIXO_PAPEL[g.papel] || ""}`,
               tipo: "BAIXA",
+              // Q61: papel no cabeçalho — obrigatório em toda baixa (CHECK `chk_baixa_tipo_linha`).
+              // Aqui não há guia (`sourceGuideId` nulo), então estas linhas ficam fora do índice
+              // único; o papel entra pelo mesmo motivo que o sufixo do histórico entra: é o que
+              // distingue principal de juros e multa no lote.
+              tipoLinha: g.papel,
               // Q37: o eventType alimenta a memória de contas — e há @@unique(portalClientId,
               // competencia, eventType, origem), então SÓ o lançamento do principal pode carregá-lo.
               // Repetir nos três violaria a constraint e derrubaria a baixa inteira. Também é o
@@ -3271,6 +3288,9 @@ export function createAccountingEntriesRouter({ log }) {
                 loteImportacao,
                 status: "RASCUNHO",
                 statusPagamento: "NA",
+                // `tipo` vem do payload classificado na tela e pode ser BAIXA; toda baixa precisa
+                // de `tipoLinha` (CHECK `chk_baixa_tipo_linha`). Extrato não traz papel de linha.
+                tipoLinha: tipoLinhaDaBaixa(tipo),
               },
             });
             await tx.accountingEntryLine.createMany({
@@ -3402,6 +3422,8 @@ export function createAccountingEntriesRouter({ log }) {
                 loteImportacao,
                 status: "RASCUNHO",
                 statusPagamento: "NA",
+                // Mesma razão do OFX: `tipo` vem da planilha e pode ser BAIXA.
+                tipoLinha: tipoLinhaDaBaixa(tipo),
               },
             });
             await tx.accountingEntryLine.createMany({

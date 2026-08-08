@@ -126,15 +126,16 @@ describe("reserva atômica da guia", () => {
   });
 });
 
-// ⚠ POR QUE NÃO HÁ ÍNDICE ÚNICO PARCIAL COBRINDO ISTO NO BANCO.
+// A FORMA DO LOTE — a premissa que decide o que o banco consegue impedir.
 //
 // Um índice único precisa de UMA linha por baixa para morder. Uma baixa de parcela são N
 // lançamentos de uma perna só (principal, multa, juros, caixa — até um par por tributo do
-// comprovante), e eles compartilham TODAS as colunas que identificariam a baixa. Qualquer índice
-// único sobre essas colunas recusaria o SEGUNDO lançamento legítimo do mesmo lote, isto é,
-// derrubaria a baixa inteira em vez de impedir a duplicada.
+// comprovante), e nas colunas ANTIGAS eles compartilham tudo o que identificaria a baixa. Um índice
+// em `sourceGuideId` sozinho recusaria o SEGUNDO lançamento legítimo do mesmo lote, isto é,
+// derrubaria a baixa inteira em vez de impedir a duplicada. É essa premissa que os dois testes
+// abaixo prendem — e é ela que explica a forma da chave na parte seguinte.
 describe("a forma do lote (é o que decide o que o banco consegue impedir)", () => {
-  it("os lançamentos do lote são indistinguíveis entre si nas colunas de AccountingEntry", async () => {
+  it("os lançamentos do lote são indistinguíveis entre si nas colunas ANTIGAS de AccountingEntry", async () => {
     await baixar();
     expect(__criados.length).toBeGreaterThan(1);
     const chave = (e) => JSON.stringify([
@@ -148,5 +149,57 @@ describe("a forma do lote (é o que decide o que o banco consegue impedir)", () 
   it("⚠ `eventType` nasce NULL em todos — é por isso que o unique (sourceGuideId, eventType) não morde", async () => {
     await baixar();
     for (const e of __criados) expect(e.eventType ?? null).toBeNull();
+  });
+});
+
+// ⚠ O QUE DESTRAVOU O ÍNDICE: o PAPEL da linha subiu para o cabeçalho.
+//
+// `tipoLinha`/`codigoTributo` já existiam em `AccountingEntryLine` (Q21) — cada lançamento daqui é
+// de UMA perna, então o papel da linha É o papel do lançamento. Denormalizados em
+// `accounting_entries`, eles dão ao banco a chave (`sourceGuideId`, `tipoLinha`,
+// `COALESCE("codigoTributo",'')`), que SEPARA as N linhas legítimas do lote e REPETE nas linhas de
+// uma segunda baixa da mesma guia. É o índice `uq_baixa_guia_linha`.
+//
+// ⚠ POR QUE `COALESCE` E NÃO A COLUNA CRUA: a linha do CAIXA não tem código de tributo. Com a
+// coluna crua ela cairia num NULL, e no Postgres NULLs são DISTINTOS em UNIQUE — duas baixas
+// passariam pela mesma porta por onde o `eventType` NULL passava. É o mesmo defeito com outro nome.
+//
+// ⚠ E o papel é COBRADO pelo banco (`CHECK chk_baixa_tipo_linha`): caminho de baixa que não
+// preencher não falha aqui (não há banco no teste) — falha em PRODUÇÃO, com o lote inteiro.
+const chaveDoIndice = (e) => JSON.stringify([e.sourceGuideId, e.tipoLinha, e.codigoTributo ?? ""]);
+
+describe("a chave composta separa o lote legítimo e repete na duplicada", () => {
+  it("toda baixa nasce com tipoLinha (senão o CHECK do banco derruba o lote inteiro)", async () => {
+    await baixar();
+    expect(__criados).toHaveLength(4);
+    for (const e of __criados) expect(e.tipoLinha).toBeTruthy();
+    // principal (amortiza o passivo) · juros · multa · caixa — a decomposição do comprovante.
+    expect(__criados.map((e) => e.tipoLinha)).toEqual(["PARC", "JUROS", "MULTA", "CAIXA"]);
+  });
+
+  it("⚠ as quatro chaves do MESMO lote são DISTINTAS — o índice não recusa baixa legítima", async () => {
+    await baixar();
+    const chaves = new Set(__criados.map(chaveDoIndice));
+    expect(chaves.size).toBe(__criados.length);
+  });
+
+  it("⚠ o código do tributo viaja junto — é ele que separa DOIS tributos no mesmo papel", async () => {
+    // Uma parcela com dois tributos: sem `codigoTributo` na chave, os dois PARC colidiriam e a
+    // baixa legítima seria recusada. É o caso do DARF do Lucro Presumido (quatro tributos).
+    prisma.tributoParcela.findMany.mockResolvedValue([
+      { codigoTributo: "2089", nomeTributo: "IRPJ", principal: 100, multa: 0, juros: 0, total: 100 },
+      { codigoTributo: "0561", nomeTributo: "IRRF", principal: 50, multa: 0, juros: 0, total: 50 },
+    ]);
+    await baixar();
+    expect(__criados.map((e) => e.tipoLinha)).toEqual(["PARC", "PARC", "CAIXA"]);
+    expect(new Set(__criados.map(chaveDoIndice)).size).toBe(3);
+  });
+
+  it("⚠ a segunda baixa da mesma guia REPETE as chaves — é isso que o índice pega", async () => {
+    await baixar();
+    const primeiroLote = __criados.map(chaveDoIndice);
+    await baixar(); // a reserva atômica está mockada em `count: 1`; aqui interessa só a chave
+    const segundoLote = __criados.slice(primeiroLote.length).map(chaveDoIndice);
+    expect(segundoLote).toEqual(primeiroLote);
   });
 });

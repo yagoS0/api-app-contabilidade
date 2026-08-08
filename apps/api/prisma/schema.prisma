@@ -1014,6 +1014,13 @@ model AccountingEntry {
   // numeroParcela=null para a entry de ABERTURA e para entries de RESCISÃO.
   parcelamentoId        String?
   numeroParcela         Int?
+  // Papel da linha DENORMALIZADO do `AccountingEntryLine` (que já os tem, Q21). Existem para dar ao
+  // banco uma chave que SEPARA os N lançamentos legítimos de uma mesma baixa e REPETE na duplicada
+  // — ver migration `20260808120000_add_baixa_tipo_linha`.
+  // PRINCIPAL | PARC | JUROS | MULTA | CAIXA | CONTRAPARTIDA | TOTAL (TOTAL = lançamento inteiro,
+  // sem decomposição por papel: baixa digitada à mão, importada ou vinda de função).
+  tipoLinha             String?
+  codigoTributo         String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -1028,7 +1035,19 @@ model AccountingEntry {
   parcelamentoAbertura Parcelamento?           @relation("ParcAberturaEntry")
 
   @@unique([portalClientId, competencia, eventType, origem])
+  // ⚠ MANTIDO DE PROPÓSITO mesmo não mordendo as BAIXAS. Ele vale para as PROVISÕES, que é para
+  // quem foi feito: `GuideToProvisionService` grava uma por tributo, cada uma com `eventType`
+  // próprio, e faz a idempotência por ele (`where: { uniq_entry_per_guide_event: ... }`). Removê-lo
+  // tiraria a única trava contra provisão duplicada por guia e quebraria aquele upsert.
   @@unique([sourceGuideId, eventType], name: "uniq_entry_per_guide_event")
+  // ⚠ NÃO DECLARÁVEIS AQUI (o Prisma não modela CHECK nem índice por EXPRESSÃO) — vivem só no SQL
+  // da migration `20260808120000_add_baixa_tipo_linha`:
+  //   CHECK  chk_baixa_tipo_linha : tipo <> 'BAIXA' OR "tipoLinha" IS NOT NULL
+  //   UNIQUE uq_baixa_guia_linha  : ("sourceGuideId","tipoLinha",COALESCE("codigoTributo",''))
+  //                                 WHERE tipo='BAIXA' AND "sourceGuideId" IS NOT NULL
+  //                                                    AND "tipoLinha" IS NOT NULL
+  // NÃO transformar o unique em `@@unique([sourceGuideId, tipoLinha, codigoTributo])`: sem o
+  // COALESCE os NULLs voltam a ser distintos e a duplicata passa — é a armadilha que ele fecha.
   @@index([portalClientId])
   @@index([portalClientId, competencia])
   @@index([portalClientId, tipo])

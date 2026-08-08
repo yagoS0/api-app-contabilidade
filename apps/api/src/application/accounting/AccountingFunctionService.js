@@ -5,6 +5,7 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { applyTemplate, formatCompetenciaLabel } from "./AccountingEntryGeneratorService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
+import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
 
 function getLastDayOfCompetencia(competencia) {
   const normalized = normalizeCompetencia(competencia);
@@ -174,6 +175,10 @@ export async function applyAccountingFunction({ portalClientId, functionId, comp
           portalClientId: String(portalClientId),
           data, competencia: normCompetencia, historico,
           tipo, subtipo,
+          // ⚠ O template MANDA no tipo, e ele pode ser BAIXA — os seeds de PARCELAMENTO_PAYMENT
+          // são, e o modal deixa o contador escolher. Toda baixa precisa de `tipoLinha` (CHECK
+          // `chk_baixa_tipo_linha`), e a função de lançamento não tem papel de linha para declarar.
+          tipoLinha: tipoLinhaDaBaixa(tipo),
           origem: "MANUAL",
           loteImportacao,
           status: "RASCUNHO",
