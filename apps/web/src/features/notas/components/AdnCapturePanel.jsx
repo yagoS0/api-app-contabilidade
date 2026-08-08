@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PANEL } from "./notasStyles";
+import { Button } from "../../../components/ui/Button";
 
 export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError }) {
   const [env, setEnv] = useState("prod");
@@ -10,16 +11,9 @@ export function AdnCapturePanel({ adnState, adnSyncing, onSync, onClearError }) 
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-      <button onClick={() => onSync({ env })} disabled={adnSyncing || inBackoff}
-        style={{
-          padding: "8px 14px", borderRadius: 6, border: "none",
-          background: inBackoff ? PANEL.border : "#BD93F9",
-          color: inBackoff ? PANEL.muted : "#000",
-          cursor: (adnSyncing || inBackoff) ? "not-allowed" : "pointer",
-          fontSize: "0.85rem", fontWeight: 600,
-        }}>
+      <Button onClick={() => onSync({ env })} disabled={adnSyncing || inBackoff}>
         {adnSyncing ? "Capturando…" : "🔄 Buscar NFS-e"}
-      </button>
+      </Button>
       <select value={env} onChange={(e) => setEnv(e.target.value)} disabled={adnSyncing}
         style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 8px", fontSize: "0.8rem" }}>
         <option value="prod">Produção</option>

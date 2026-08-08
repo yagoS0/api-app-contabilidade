@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PANEL } from "./notasStyles";
+import { Button } from "../../../components/ui/Button";
 
 const SERVICOS = [
   { value: "NFSE", label: "NFS-e (ADN / Emissor Nacional)" },
@@ -56,14 +57,10 @@ export function ProcuracaoCreateModal({ saving, onCreate, onClose }) {
         {err && <div style={{ color: "#FF4757", fontSize: "0.8rem", marginBottom: 12 }}>{err}</div>}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={onClose} disabled={saving}
-            style={{ padding: "8px 16px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer" }}>
-            Cancelar
-          </button>
-          <button onClick={handle} disabled={saving}
-            style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#69FF47", color: "#000", cursor: "pointer", fontWeight: 600 }}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={handle} disabled={saving}>
             {saving ? "Salvando…" : "Cadastrar"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

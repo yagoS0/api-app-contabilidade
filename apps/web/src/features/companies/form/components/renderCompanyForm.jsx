@@ -622,7 +622,7 @@ export function CompanyForm({
       <RegimeHistoricoEditor historico={form.regimeHistorico} onChange={(next) => onChange("regimeHistorico", next)} />
 
       <div className="full form-actions">
-        <Button type="submit" variant="success" className="company-form-page__submit" disabled={submitting || cnpjLoading}>
+        <Button type="submit" variant="primary" className="company-form-page__submit" disabled={submitting || cnpjLoading}>
           {submitting ? "Salvando..." : submitLabel}
         </Button>
       </div>
@@ -643,7 +643,7 @@ export function CompanyForm({
             {status === "SUSPENSA" ? (
               onResume && (
                 <Button
-                  type="button" variant="success"
+                  type="button" variant="primary"
                   onClick={onResume}
                   disabled={dangerSaving}
                 >

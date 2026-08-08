@@ -90,7 +90,7 @@ export function PendenciasContent({ pendenciasPanel }) {
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
             <Button
               type="button"
-              variant="success"
+              variant="primary"
               disabled={!someSelected || running}
               onClick={() => consultarLote?.(rows.filter((r) => selectedIds.has(r.companyId)).map((r) => r.companyId))}
             >

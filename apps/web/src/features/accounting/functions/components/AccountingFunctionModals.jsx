@@ -129,7 +129,7 @@ export function FunctionListModal({ functions, loading, onApply, onEdit, onDelet
           </div>
         </div>
         <div style={{ display: "flex", gap: 4 }}>
-          <Button size="sm" variant="success" onClick={() => onApply(f)}>Aplicar</Button>
+          <Button size="sm" variant="primary" onClick={() => onApply(f)}>Aplicar</Button>
           {!isSystem && !isGlobal && (
             <>
               <Button size="sm" variant="secondary" onClick={() => onEdit(f)}>Editar</Button>
@@ -161,7 +161,7 @@ export function FunctionListModal({ functions, loading, onApply, onEdit, onDelet
         </div>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <Button variant="success" onClick={onCreate}>+ Nova função</Button>
+          <Button variant="primary" onClick={onCreate}>+ Nova função</Button>
         </div>
 
         {loading && <div style={{ color: PANEL.muted, padding: 20, textAlign: "center" }}>Carregando…</div>}
@@ -353,7 +353,7 @@ export function FunctionEditModal({ initial, accounts, saving, onSave, onClose }
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
             <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-            <Button variant="success" onClick={handleSave} disabled={saving}>
+            <Button variant="primary" onClick={handleSave} disabled={saving}>
               {saving ? "Salvando…" : "Salvar função"}
             </Button>
           </div>
@@ -446,7 +446,7 @@ export function FunctionApplyModal({ func, defaultCompetencia, saving, onApply, 
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-          <Button variant="success" onClick={handleApply} disabled={saving}>
+          <Button variant="primary" onClick={handleApply} disabled={saving}>
             {saving ? "Aplicando…" : "Aplicar função"}
           </Button>
         </div>

@@ -4,6 +4,7 @@ import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
+import { Tabs } from "../../../../components/ui/Tabs";
 import { NotasDownloadContent } from "../../../notas/download/pages/renderNotasDownloadPage";
 import { NotasCapturaContent } from "../../../notas/captura/pages/renderNotasCapturaPage";
 import { PendenciasContent } from "../../../pendencias/pages/renderPendenciasPage";
@@ -184,10 +185,14 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
     return <span style={{ color: "#FF4757", fontSize: "0.78rem" }} title={r.message || ""}>⚠ {r.message || "erro"}</span>;
   }
 
+  // ⚠ Isto NÃO é aba — é a pílula de SELEÇÃO das funções, e cada uma embrulha um checkbox. Aba
+  // escolhe UMA e troca o conteúdo; aqui marcam-se várias e nada muda de tela. Por isso continua
+  // com contorno e tinta (o vocabulário de "marcado") em vez de virar `Tabs`.
   const chip = (active) => ({
     display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 20,
-    border: `1px solid ${active ? "#BD93F9" : "#44475A"}`, background: active ? "rgba(189,147,249,0.16)" : "transparent",
-    color: active ? "#F8F8F2" : "#A7B0C0", fontSize: "0.82rem", fontWeight: 600,
+    border: `1px solid ${active ? "var(--accent-purple)" : "var(--border)"}`,
+    background: active ? "var(--accent-purple-surface)" : "transparent",
+    color: active ? "var(--text)" : "var(--state-neutral)", fontSize: "0.82rem", fontWeight: 600,
     cursor: running ? "default" : "pointer", userSelect: "none",
   });
 
@@ -203,20 +208,19 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
               é o que traz nota nova do ADN/SEFAZ; baixar só empacota o que já está no banco. Na
               ordem contrária, quem procurava "buscar as notas" achava primeiro a aba que não busca
               nada — e concluía, com um ZIP vazio na mão, que não havia notas. */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-            <button type="button" onClick={() => setView("funcoes")} style={chip(view === "funcoes")}>
-              Buscas SERPRO
-            </button>
-            <button type="button" onClick={() => setView("sitfis")} style={chip(view === "sitfis")}>
-              Situação Fiscal
-            </button>
-            <button type="button" onClick={() => setView("captura")} style={chip(view === "captura")}>
-              Consultar notas
-            </button>
-            <button type="button" onClick={() => setView("download")} style={chip(view === "download")}>
-              Download de notas
-            </button>
-          </div>
+          <Tabs
+            ariaLabel="Consultas"
+            align="start"
+            style={{ marginBottom: 16 }}
+            items={[
+              { key: "funcoes", label: "Buscas SERPRO" },
+              { key: "sitfis", label: "Situação Fiscal" },
+              { key: "captura", label: "Consultar notas" },
+              { key: "download", label: "Download de notas" },
+            ]}
+            active={view}
+            onChange={setView}
+          />
 
           {view === "captura" ? (
             <NotasCapturaContent api={api} companies={companies} />
@@ -280,7 +284,7 @@ export function SerproFuncoesPage({ api, settings, companies, onRunOp, onBack, m
 
             {/* 3) Rodar */}
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
-              <Button type="button" variant="success" disabled={!canRun || !someOpSelected || !someSelected} onClick={runSelected}>
+              <Button type="button" variant="primary" disabled={!canRun || !someOpSelected || !someSelected} onClick={runSelected}>
                 {running ? `Rodando… (${progress.done}/${progress.total})` : "▶ Rodar"}
               </Button>
               <span style={{ fontSize: "0.78rem", color: "#6b7280" }}>

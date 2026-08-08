@@ -1048,7 +1048,7 @@ export function ParcelamentoCreateModal({
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
             <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-            <Button variant="success" onClick={handleCreate} disabled={saving}>
+            <Button variant="primary" onClick={handleCreate} disabled={saving}>
               {saving ? "Criando…" : "Criar parcelamento"}
             </Button>
           </div>
@@ -1140,7 +1140,7 @@ export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenC
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <strong style={{ color: PANEL.text, fontSize: "0.95rem" }}>Parcelamentos ({parcelamentos.length})</strong>
-        {onOpenCreate && <Button size="sm" variant="success" onClick={onOpenCreate}>+ Novo</Button>}
+        {onOpenCreate && <Button size="sm" variant="primary" onClick={onOpenCreate}>+ Novo</Button>}
       </div>
 
       {/* Cards (sem dropdown) */}
@@ -1263,7 +1263,7 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
     <div style={{ background: PANEL.surface, border: "1px solid #FFB347", borderRadius: 8, overflow: "hidden", marginBottom: 12 }}>
       <div style={{ padding: "10px 14px", borderBottom: `1px solid ${PANEL.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <strong style={{ color: "#FFB347", fontSize: "0.9rem" }}>Conferência de parcelas ({items.length})</strong>
-        <Button size="sm" variant="success" onClick={aprovar} disabled={busy || !sel.size}>{busy ? "Aprovando…" : `Aprovar (${sel.size})`}</Button>
+        <Button size="sm" variant="primary" onClick={aprovar} disabled={busy || !sel.size}>{busy ? "Aprovando…" : `Aprovar (${sel.size})`}</Button>
       </div>
       {items.map((it) => (
         <label key={it.guideId} style={{ display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 10, alignItems: "center", padding: "8px 14px", borderBottom: `1px solid ${PANEL.border}`, cursor: it.estado === "PAGA_A_CONFERIR" ? "pointer" : "default" }}>
@@ -1349,7 +1349,7 @@ export function ParcelaPaymentModal({ parcelamento, parcela, saving, onConfirm, 
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-            <Button variant="success" onClick={handleConfirm} disabled={saving}>
+            <Button variant="primary" onClick={handleConfirm} disabled={saving}>
               {saving ? "Confirmando…" : "Confirmar pagamento"}
             </Button>
           </div>
@@ -1481,7 +1481,7 @@ export function GuideLinkParcelamentoModal({
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
             <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-            <Button variant="success" onClick={handleSubmit} disabled={saving}>
+            <Button variant="primary" onClick={handleSubmit} disabled={saving}>
               {option === "new" ? "Continuar para criação…" : "Confirmar"}
             </Button>
           </div>

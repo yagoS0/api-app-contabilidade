@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 import { PANEL } from "../../notas/components/notasStyles";
+import { Button } from "../../../components/ui/Button";
 
 const ANEXO_COR = {
   "Anexo I": "#8BE9FD", "Anexo II": "#8BE9FD",
@@ -64,10 +65,9 @@ export function AbaFiscalPanel({ panel }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12, color: PANEL.text }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: "1.05rem", fontWeight: 600 }}>Atividades permitidas</div>
-        <button onClick={salvar} disabled={panel.saving}
-          style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#69FF47", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: panel.saving ? 0.6 : 1 }}>
+        <Button onClick={salvar} disabled={panel.saving}>
           {panel.saving ? "Salvando…" : "Salvar perfil"}
-        </button>
+        </Button>
       </div>
 
       {perfil?.temFatorR && (

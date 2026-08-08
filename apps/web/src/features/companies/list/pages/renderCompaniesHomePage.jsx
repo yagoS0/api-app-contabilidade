@@ -3,6 +3,7 @@ import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
+import { Tabs } from "../../../../components/ui/Tabs";
 import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
 import { AnnualGrid } from "../components/renderAnnualGrid";
 import { CompaniesTable } from "../components/renderCompaniesTable";
@@ -597,7 +598,7 @@ export function CompaniesHomePage({
             </Button>
             {/* Q17: ordem — Nova empresa · Envio de e-mails · Apuração · Configurações */}
             {onOpenBatchEmail && (
-              <Button variant="success" className="dashboard-home__action dashboard-home__action--success" onClick={onOpenBatchEmail}>
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenBatchEmail}>
                 Envio de e-mails em lote
               </Button>
             )}
@@ -682,37 +683,36 @@ export function CompaniesHomePage({
               forma de olhar a carteira; foi para o menu Configurações. O que se ENTREGA continua
               visível aqui, dentro do calendário. */}
           <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center" }}>
-            {[["tabela", "Tabela"], ["cards", "Cards"], ["ano", "Ano"], ["calendario", "Calendário"]].map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => trocarVisao(key)}
-                style={{
-                  padding: "5px 14px", borderRadius: 999, cursor: "pointer", fontSize: "0.82rem", fontWeight: 600,
-                  border: `1px solid ${modoVisao === key ? "var(--accent-purple)" : "var(--border)"}`,
-                  background: modoVisao === key ? "rgba(189,147,249,0.16)" : "transparent",
-                  color: modoVisao === key ? "var(--text)" : "var(--state-neutral)",
-                }}
-              >
-                {label}
-              </button>
-            ))}
+            {/* `mode="view"`: trocar de visão não navega, então é `aria-pressed`, não
+                `aria-current="page"`. */}
+            <Tabs
+              mode="view"
+              ariaLabel="Visão da carteira"
+              items={[
+                { key: "tabela", label: "Tabela" },
+                { key: "cards", label: "Cards" },
+                { key: "ano", label: "Ano" },
+                { key: "calendario", label: "Calendário" },
+              ]}
+              active={modoVisao}
+              onChange={trocarVisao}
+            />
             {/* Imprimir mora ao lado das visões porque É uma visão — a da carteira no papel. Ele
                 troca para Tabela sozinho e expande as fechadas: imprimir a lista pela metade, em
-                silêncio, seria pior que não ter o botão. */}
-            <button
+                silêncio, seria pior que não ter o botão.
+                ⚠ NÃO entra na barra de abas: é ação, não recorte — clicar nele não deixa a barra
+                num estado "selecionado". */}
+            <Button
               type="button"
+              size="sm"
+              variant="secondary"
               onClick={imprimirListagem}
               disabled={imprimindo}
               title="Imprimir a listagem (ou salvar em PDF). Sai em tabela, com as fechadas incluídas."
-              style={{
-                marginLeft: "auto", padding: "5px 14px", borderRadius: 999,
-                cursor: imprimindo ? "wait" : "pointer", fontSize: "0.82rem", fontWeight: 600,
-                border: "1px solid var(--border)", background: "transparent", color: "var(--state-neutral)",
-              }}
+              style={{ marginLeft: "auto" }}
             >
               🖨 {imprimindo ? "Preparando…" : "Imprimir"}
-            </button>
+            </Button>
           </div>
 
           {/* F2 — o que trava a carteira nesta competência.

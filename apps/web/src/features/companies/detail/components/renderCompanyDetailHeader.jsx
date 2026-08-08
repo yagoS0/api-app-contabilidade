@@ -1,4 +1,6 @@
 import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
+import { BackButton } from "../../../../components/ui/BackButton";
+import { Tabs } from "../../../../components/ui/Tabs";
 
 // ⚠ ABAS QUE VIVEM NUMA COMPETÊNCIA — e são as ÚNICAS que mostram o seletor.
 //
@@ -157,10 +159,11 @@ export function CompanySectionHeader({
 
   return (
     <header className="company-section-header">
-      {/* Voltar fica FORA da barra (pílula) — só a seta, mesmo padrão de design. */}
-      <button type="button" className="company-section-header__back" onClick={onBack} aria-label="Voltar" title="Voltar">
-        ←
-      </button>
+      {/* Voltar fica FORA da barra (pílula), à esquerda — a posição não mudou.
+          ⚠ O que mudou: era só a seta, num quadrado de 40×40 com raio 12. O resto do app usava
+          "← Voltar" numa pílula de 33px com raio 14, e a seta sozinha aqui obrigava a reaprender
+          onde é a saída ao entrar na empresa. Agora é o mesmo `BackButton` das outras 12 telas. */}
+      <BackButton onClick={onBack} title="Voltar" />
 
       {/* Barra em pílula: nome da empresa + os 3 grupos juntos. */}
       <div className="company-topbar">
@@ -168,25 +171,25 @@ export function CompanySectionHeader({
           <strong className="company-topbar__name">{company?.razao || "Empresa"}</strong>
           <span className="company-topbar__cnpj">{company?.cnpj || "CNPJ não informado"}</span>
         </div>
-        <nav className="company-topbar__nav" aria-label="Grupos da empresa">
-          {groups.map((group) => {
-            const isActive = group.key === activeGroup.key;
-            const isDisabled = group.requiresEdit && !canEditCompany;
-            return (
-              <button
-                key={group.key}
-                type="button"
-                className={`company-topbar__link${isActive ? " is-active" : ""}`}
-                onClick={isDisabled ? undefined : () => onTabChange(group.tabs[0].key)}
-                disabled={isDisabled}
-                aria-current={isActive ? "page" : undefined}
-                title={isDisabled ? "Apenas admin ou contador pode editar." : undefined}
-              >
-                {group.label}
-              </button>
-            );
-          })}
-        </nav>
+        {/* Nível 1 — grupos. `pill={false}`: já está dentro da pílula do topbar; uma segunda
+            faixa arredondada aqui viraria pílula dentro de pílula. */}
+        <Tabs
+          className="company-topbar__nav"
+          items={groups.map((group) => ({
+            key: group.key,
+            label: group.label,
+            disabled: Boolean(group.requiresEdit && !canEditCompany),
+            title: group.requiresEdit && !canEditCompany ? "Apenas admin ou contador pode editar." : undefined,
+          }))}
+          active={activeGroup.key}
+          onChange={(key) => {
+            const grupo = groups.find((g) => g.key === key);
+            if (grupo) onTabChange(grupo.tabs[0].key);
+          }}
+          ariaLabel="Grupos da empresa"
+          pill={false}
+          size="lg"
+        />
 
         {/* ⚠ TERCEIRA coluna do grid, não ao lado do nome (o plano dizia "ao lado do nome/CNPJ").
             O `.company-topbar` é `1fr auto 1fr` justamente para o menu ficar centrado de verdade
@@ -201,24 +204,14 @@ export function CompanySectionHeader({
       {/* Nível 2 — sub-abas do grupo ativo, em formato de aba (Chrome). Oculto quando o grupo
           tem só 1 (ex.: Cadastro → abre direto a ficha). */}
       {subTabs.length > 1 && (
-        <nav className="company-section-header__subtabs" aria-label={`Seções de ${activeGroup.label}`}>
-          <div className="company-section-header__subtabs-pill">
-            {subTabs.map((tab) => {
-              const isActive = tab.key === activeTab;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={`company-section-header__subtab${isActive ? " is-active" : ""}`}
-                  onClick={isActive ? undefined : () => onTabChange(tab.key)}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
+        <div className="company-section-header__subtabs">
+          <Tabs
+            items={subTabs}
+            active={activeTab}
+            onChange={onTabChange}
+            ariaLabel={`Seções de ${activeGroup.label}`}
+          />
+        </div>
       )}
     </header>
   );

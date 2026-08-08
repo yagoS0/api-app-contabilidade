@@ -1,6 +1,7 @@
 // Q12.B+++.1: modal de upload do A1 da empresa.
 
 import { useState } from "react";
+import { Button } from "../../../../components/ui/Button";
 
 const PANEL = { surface: "#21222C", field: "#282A36", border: "#44475A", text: "#F8F8F2", muted: "#aeb6d3" };
 
@@ -65,14 +66,10 @@ export function CompanyCertificateUploadModal({ saving, onUpload, onClose }) {
         )}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={onClose} disabled={saving}
-            style={{ padding: "8px 16px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer" }}>
-            Cancelar
-          </button>
-          <button onClick={handle} disabled={saving || !file || !password}
-            style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#69FF47", color: "#000", cursor: "pointer", fontWeight: 600 }}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button onClick={handle} disabled={saving || !file || !password}>
             {saving ? "Enviando…" : "Enviar"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -58,7 +58,7 @@ export function SitfisTab({ sitfisPanel }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <Button variant="success" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>
+          <Button variant="primary" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>
             {consulting ? "Consultando…" : "Consultar situação fiscal agora"}
           </Button>
           {bloqueado && (

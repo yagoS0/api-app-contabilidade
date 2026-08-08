@@ -184,7 +184,7 @@ export function NotasDownloadContent({ api, companies }) {
                   {PAPEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </label>
-              <Button type="button" variant="success" disabled={creating || running || !someSelected} onClick={iniciarDownload}>
+              <Button type="button" variant="primary" disabled={creating || running || !someSelected} onClick={iniciarDownload}>
                 {creating ? "Criando…" : "⬇ Baixar notas"}
               </Button>
               <span style={{ fontSize: "0.78rem", color: "#6b7280", paddingBottom: 8 }}>
@@ -213,7 +213,7 @@ export function NotasDownloadContent({ api, companies }) {
                     {job.status === "concluido" && ` — ${job.totalNotas || 0} nota(s)${job.arquivoBytes ? `, ${fmtBytes(job.arquivoBytes)}` : ""}`}
                   </div>
                   {job.status === "concluido" && (
-                    <Button type="button" variant="success" disabled={downloadingId === job.id} onClick={() => baixarZip(job)}>
+                    <Button type="button" variant="primary" disabled={downloadingId === job.id} onClick={() => baixarZip(job)}>
                       {downloadingId === job.id ? "Baixando…" : `⬇ Baixar ZIP`}
                     </Button>
                   )}

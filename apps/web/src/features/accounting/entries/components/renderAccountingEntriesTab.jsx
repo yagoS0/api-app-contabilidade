@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createApiClient } from "../../../../api/client";
+import { Button } from "../../../../components/ui/Button";
 import { HistoricosModal } from "../../historicos/components/renderHistoricosModal";
 import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal";
 import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
@@ -981,18 +982,18 @@ export function AccountingEntriesTab({
           da TABELA (ver abaixo): ele fala do mês inteiro, e aqui em cima empurrava a tabela ~300px
           para baixo, à custa de três ou quatro lançamentos a menos visíveis de primeira. */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4, marginBottom: 8, flexWrap: "wrap" }}>
-        <button
+        {/* ⚠ ERA VERDE (#69FF47). Verde quer dizer CONCLUÍDO no vocabulário de cores do app — um
+            botão verde de "faça isto" ensina o contrário exatamente na tela onde o verde do
+            rodapé ("✓ ok", D=C) precisa ser lido como "está fechado". Ação primária é o accent.
+            O estilo à mão (altura 34, raio 8) também saiu: é o `Button` do app. */}
+        <Button
           type="button"
           onClick={() => setAdding(true)}
           disabled={adding || monthClosed}
           title={monthClosed ? "Mês fechado — reabra a empresa para lançar." : undefined}
-          /* ⚠ ERA VERDE (#69FF47). Verde quer dizer CONCLUÍDO no vocabulário de cores do app — um
-             botão verde de "faça isto" ensina o contrário exatamente na tela onde o verde do
-             rodapé ("✓ ok", D=C) precisa ser lido como "está fechado". Ação primária é o accent. */
-          style={{ minHeight: 34, padding: "7px 16px", border: "none", borderRadius: 8, background: (adding || monthClosed) ? "#44475A" : ACCOUNTING_PANEL.accent, color: (adding || monthClosed) ? "#888" : "#1A1B26", font: "inherit", fontSize: "0.875rem", fontWeight: 700, cursor: (adding || monthClosed) ? "default" : "pointer" }}
         >
           + Adicionar lançamento
-        </button>
+        </Button>
       </div>
 
       {selectedCount > 0 && (

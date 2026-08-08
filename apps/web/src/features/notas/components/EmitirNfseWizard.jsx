@@ -18,6 +18,7 @@
 
 import { useMemo, useState } from "react";
 import { PANEL } from "./notasStyles";
+import { Button } from "../../../components/ui/Button";
 
 const PASSOS = ["Tomador", "Serviço", "Valores", "Conferir"];
 
@@ -271,36 +272,39 @@ export function EmitirNfseWizard({ companyId, onEmitir, onClose, onEmitida }) {
         )}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "space-between", marginTop: 16 }}>
-          <button
+          {/* Voltar de PASSO, não de tela — por isso é `Button variant="secondary"` e não o
+              `BackButton`, que é a saída da página. Os outros assistentes (OFX, Excel, regras de
+              obrigação) já escreviam exatamente isto. */}
+          <Button
             type="button"
+            variant="secondary"
             onClick={() => (passo === 0 ? onClose() : setPasso(passo - 1))}
             disabled={enviando}
-            style={{ padding: "8px 14px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer" }}
           >
-            {passo === 0 ? "Cancelar" : "← Voltar"}
-          </button>
+            {passo === 0 ? "Cancelar" : "Voltar"}
+          </Button>
 
           {/* ⚠ O botão Emitir SÓ existe no passo de conferência. Não é uma decisão de estilo: é a
               garantia de que ninguém emite sem ver o espelho. */}
           {passo < 3 ? (
-            <button
+            <Button
               type="button"
               onClick={() => setPasso(passo + 1)}
               disabled={!podeAvancar}
               title={podeAvancar ? undefined : problemasAtuais.join(" · ")}
-              style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: podeAvancar ? PANEL.accent : "#44475A", color: podeAvancar ? "#000" : "#888", fontWeight: 700, cursor: podeAvancar ? "pointer" : "not-allowed" }}
             >
               Continuar →
-            </button>
+            </Button>
           ) : (
-            <button
+            /* ⚠ Era verde #69FF47. Emitir nota é o oposto de "concluído" — é o ato fiscal
+               acontecendo. Ação primária usa o accent. */
+            <Button
               type="button"
               onClick={emitir}
               disabled={enviando || !prontoParaEmitir}
-              style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: (enviando || !prontoParaEmitir) ? "#44475A" : "#69FF47", color: (enviando || !prontoParaEmitir) ? "#888" : "#1A1B26", fontWeight: 700, cursor: (enviando || !prontoParaEmitir) ? "not-allowed" : "pointer" }}
             >
               {enviando ? "Emitindo…" : "Emitir nota"}
-            </button>
+            </Button>
           )}
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { Button } from "../../../../components/ui/Button";
 
 const TIPO_OPTIONS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
 const NATUREZA_OPTIONS = ["DEVEDORA", "CREDORA"];
@@ -314,9 +315,9 @@ export function ChartOfAccountsModal({
                 {NATUREZA_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
               </select>
             </label>
-            <button type="submit" disabled={saving || !form.codigo || !form.nome} style={{ ...ACTION, alignSelf: "end", background: PANEL.success, borderColor: PANEL.success, color: PANEL.page }}>
+            <Button type="submit" disabled={saving || !form.codigo || !form.nome} style={{ alignSelf: "end" }}>
               {saving ? "..." : "Adicionar"}
-            </button>
+            </Button>
           </div>
           <p style={{ marginTop: "var(--space-2)", color: PANEL.muted, fontSize: "0.875rem" }}>
             Contas adicionadas aqui ficam marcadas como <strong>Pendente ERP</strong> até serem criadas no ERP e confirmadas.

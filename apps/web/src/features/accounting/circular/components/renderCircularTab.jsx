@@ -6,6 +6,7 @@ import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entr
 // Cliente próprio: a busca de pagamento é uma chamada pontual da própria aba (mesmo padrão
 // auto-contido de FechamentoContabilPanel/ExpectedGuidesPanel).
 import { createApiClient } from "../../../../api/client";
+import { Button } from "../../../../components/ui/Button";
 // A regra que separa "a vencer" de "vencida" — uma leitura para a cor da célula, o chip do popover
 // e os totais do rodapé. Ver `lib/estadoGuia.js`.
 import { aparenciaDaGuia, totaisEmAberto } from "../lib/estadoGuia";
@@ -292,20 +293,11 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
             >
               Cancelar
             </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || (!isAcrOnly && isDuplicate)}
-              style={{
-                height: 34, padding: "0 20px",
-                background: "#69FF47", color: "#1A1B26",
-                border: "none", borderRadius: 4,
-                fontWeight: 700, fontSize: "0.875rem",
-                cursor: saving || (!isAcrOnly && isDuplicate) ? "default" : "pointer",
-                opacity: saving || (!isAcrOnly && isDuplicate) ? 0.6 : 1,
-              }}
-            >
+            {/* ⚠ Era verde #69FF47 — na tela cujo rodapé usa verde para "D = C ✓ ok". O botão
+                de salvar competia com o sinal de fechado a dois palmos de distância. */}
+            <Button onClick={handleSave} disabled={saving || (!isAcrOnly && isDuplicate)}>
               {saving ? "Salvando..." : "Salvar"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -948,8 +940,13 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
         <h2 style={{ margin: 0, fontSize: "1.6rem", fontWeight: 700, color: "#F8F8F2" }}>Circular</h2>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+          {/* Setas de ANO. `aria-label` porque "←" não é nome: quem navega por leitor de tela ouvia
+              "seta para a esquerda". O seletor de competência do header da empresa já nomeava as
+              suas — este era o único par mudo. */}
           <button
             onClick={() => onYearChange(year - 1)}
+            aria-label="Ano anterior"
+            title="Ano anterior"
             style={{
               background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
               width: 28, height: 28, cursor: "pointer", fontSize: "0.875rem",
@@ -961,6 +958,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
           <button
             onClick={() => onYearChange(year + 1)}
             disabled={year >= currentYear + 1}
+            aria-label="Próximo ano"
             style={{
               background: "#24253A", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2",
               width: 28, height: 28, cursor: year >= currentYear + 1 ? "default" : "pointer",

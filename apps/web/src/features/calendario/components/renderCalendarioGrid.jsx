@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // O ciclo da obrigação (aguardando → aberta → urgente → transmitida) mora numa lib própria porque
 // o calendário, a aba da empresa e o chip da listagem principal precisam da MESMA leitura.
 import { cicloDaOcorrencia, aparenciaDaOcorrencia, CICLO } from "../../obrigacoes/lib/cicloObrigacao";
+import { Tabs } from "../../../components/ui/Tabs";
 
 const COR = {
   fundo: "#21222C", fundoFora: "#1B1C24", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
@@ -764,11 +765,16 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               {empresas.map((e) => <option key={e.companyId} value={e.companyId}>{e.razao}</option>)}
             </select>
           )}
-          {[["mes", "Mês", "M"], ["semana", "Semana", "S"], ["dia", "Dia", "D"], ["agenda", "Agenda", "A"]].map(([k, label, tecla]) => (
-            <button key={k} type="button" onClick={() => setVisao(k)} style={btn(visao === k)} title={companyIdFixo ? label : `${label} (${tecla})`}>
-              {label}
-            </button>
-          ))}
+          <Tabs
+            mode="view"
+            size="sm"
+            ariaLabel="Granularidade do calendário"
+            items={[["mes", "Mês", "M"], ["semana", "Semana", "S"], ["dia", "Dia", "D"], ["agenda", "Agenda", "A"]].map(
+              ([k, label, tecla]) => ({ key: k, label, title: companyIdFixo ? label : `${label} (${tecla})` }),
+            )}
+            active={visao}
+            onChange={setVisao}
+          />
         </div>
       </div>
 
