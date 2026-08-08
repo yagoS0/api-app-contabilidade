@@ -30,8 +30,13 @@ import {
 import { markGuidePaidManual } from "../../application/guides/GuidePaymentStatusService.js";
 // Q50: históricos agnósticos de competência (chave normalizada com {{competencia}}).
 import { normalizarHistorico } from "../../application/accounting/historicoCompetencia.js";
-// Estorno da baixa: a parcela volta ao estado que o calendário manda (regra na máquina de estados).
-import { estadoAposEstorno } from "../../application/accounting/parcelamento/parcelaStateMachine.js";
+// Saldo da provisão — mesma conta usada pelo estorno (ver `saldoProvisao.js`).
+import { computeSaldoProvisao } from "../../application/accounting/saldoProvisao.js";
+// ESTORNO DA BAIXA: transição administrativa nomeada, com motivo obrigatório, auditoria e
+// contra-lançamento quando a competência da baixa está fechada.
+import {
+  previewEstorno, executarEstorno, EstornoRecusado, MOTIVO_MIN,
+} from "../../application/accounting/EstornoBaixaService.js";
 
 // Q16/Q37: memória de contas por (empresa, eventType). Grava/atualiza AccountingHistorico para que o
 // próximo lançamento do mesmo evento (provisão automática OU baixa) venha com D/C pré-preenchidos —
@@ -152,15 +157,11 @@ async function acrescimoDoEntry(client, portalClientId, entry) {
 }
 
 // ── Baixa parcial por quota (IRPJ/CSLL trimestral: até 3 quotas com saldo) ───────────────
-// O PRINCIPAL abatido por uma baixa = débitos que NÃO são acréscimo (juros 501 / multa 506).
-// Assim uma baixa parcial só amortiza o passivo da provisão; juros/multa de quota não contam no saldo.
+// `computeSaldoProvisao`/`principalAbatidoDaBaixa` MORAVAM AQUI e foram para
+// `application/accounting/saldoProvisao.js` — o ESTORNO precisa da mesma conta (o contra-lançamento
+// de mês fechado tem de SUBTRAIR do abatido), e duas cópias fariam a tela de baixa e o estorno
+// discordarem sobre quanto a empresa ainda deve.
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-function principalAbatidoDaBaixa(baixa) {
-  const lines = baixa?.lines || [];
-  return lines
-    .filter((l) => String(l.tipo).toUpperCase() === "D" && !CONTAS_ACRESCIMO.has(String(l.conta).trim()))
-    .reduce((s, l) => s + Number(l.valor || 0), 0);
-}
 // ── Separação da baixa em lançamentos independentes (principal / juros / multa) ──────────────
 // Regra do projeto: cada componente é um LANÇAMENTO próprio, balanceado contra o caixa. Um único
 // lançamento 3D/1C escondia que juros e multa são DESPESA do mês, e não amortização do passivo.
@@ -183,17 +184,6 @@ function separarLinhasPorPapel(linhas) {
     grupos.push({ papel, debitos: doGrupo, total, contaCaixa });
   }
   return grupos;
-}
-
-// Saldo de uma provisão = principal (D da provisão) − principal já abatido pelas baixas.
-// entry deve vir com `lines` e `baixas: { lines }`.
-function computeSaldoProvisao(entry) {
-  const lines = entry?.lines || [];
-  const principal = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
-  const baixas = Array.isArray(entry?.baixas) ? entry.baixas : [];
-  const abatido = r2(baixas.reduce((s, b) => s + principalAbatidoDaBaixa(b), 0));
-  const saldoRaw = r2(principal - abatido);
-  return { principal: r2(principal), abatido, saldo: saldoRaw > 0 ? saldoRaw : 0, quotasPagas: baixas.length };
 }
 
 // ---------------------------------------------------------------------------
@@ -2778,101 +2768,136 @@ export function createAccountingEntriesRouter({ log }) {
     // do mês fechado sem nenhum rastro de reabertura, que é o mesmo estrago pelo caminho inverso.
     // A assimetria em relação à criação é essa: lá a competência vem da data digitada, aqui ela já
     // está gravada — perguntar pelo mês de hoje deixaria passar exatamente o caso que importa.
+    //
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // ⚠ ESTA TRAVA VALE PARA **TODO** LANÇAMENTO, NÃO SÓ PARA BAIXAS. É INTENCIONAL.
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    //
+    // Decisão do dono, registrada aqui porque "consertar o escopo" desta trava parece, de fora,
+    // uma correção óbvia — e não é: *"qualquer DELETE em competência fechada corrompe um saldo
+    // que já foi reportado"*. Não importa se o lançamento é uma baixa, uma despesa, uma receita ou
+    // uma provisão: se o mês foi fechado, os números dele saíram para fora. Apagar qualquer linha
+    // depois disso muda um total que alguém já leu, sem deixar sinal nenhum de que a competência
+    // foi mexida.
+    //
+    // Os DOIS fluxos legítimos, e nenhum deles é afrouxar isto aqui:
+    //   1. REABRIR a competência (o ato fica gravado em `CompanyMonthlyCircular`) e então corrigir;
+    //   2. ESTORNAR na competência ABERTA — `POST /entries/:entryId/estorno`, que em mês fechado
+    //      preserva o lançamento e gera contra-lançamento no mês corrente.
+    //
+    // Restringir esta trava às baixas reabriria, para todos os outros tipos, exatamente o buraco
+    // que ela fechou.
     if (await isMonthClosed(portalClientId, existing.competencia)) {
       return res.status(409).json({
         error: "MES_FECHADO",
         competencia: existing.competencia,
-        message: `Mês ${existing.competencia} fechado — reabra a empresa antes de excluir este lançamento.`,
+        message: `Mês ${existing.competencia} fechado — reabra a competência ou estorne pelo caminho do estorno (contra-lançamento no mês aberto).`,
       });
     }
 
-    // ⚠ ERA UM `if / else if`, E O PRIMEIRO RAMO COMIA O SEGUNDO.
-    // A baixa de parcela nasce com os DOIS campos (`ParcelamentoV2Service`: `openEntryId` = provisão
-    // de abertura, `sourceGuideId` = a guia da parcela). Casando só o ramo do `openEntryId`, o
-    // lançamento sumia mas a guia continuava `baixada:true` com `lancamentoId` apontando para um
-    // registro que não existe mais (`Guide.lancamentoId` não tem FK — ninguém o anula). A parcela
-    // saía da fila de pendentes e `gerarPagamentoParcelaFromGuide` respondia `ja_baixada` PARA
-    // SEMPRE: não havia caminho de tela que refizesse aquela baixa.
-    // Os dois efeitos são necessários e independentes — não são alternativas.
+    // ⚠ ESTORNO DE BAIXA NÃO PASSA MAIS POR AQUI — E A RECUSA É EXPLÍCITA.
+    //
+    // Apagar uma baixa nunca foi "excluir um lançamento": é desfazer um pagamento, reabrir uma
+    // guia, devolver um passivo e mover a parcela de estado. Enquanto isso era EFEITO de um DELETE,
+    // não havia onde exigir o motivo nem onde gravar quem desfez — e o mesmo verbo servia para
+    // apagar uma despesa digitada errado e para desfazer a quitação de uma parcela confirmada.
+    //
+    // A porta é `POST /entries/:entryId/estorno`, que exige motivo e grava auditoria. Recusar aqui
+    // é o que impede a exigência do motivo de ser contornável pelo verbo antigo — e a recusa chega
+    // como recusa, com o caminho na resposta, nunca como um 200 silencioso.
     if (existing.tipo === "BAIXA" && (existing.openEntryId || existing.sourceGuideId)) {
-      await prisma.$transaction(async (tx) => {
-        await tx.accountingEntry.delete({ where: { id: entryId } });
-
-        if (existing.openEntryId) {
-          // Baixa parcial: recalcula o status pelas baixas RESTANTES (pode ainda estar PARCIAL).
-          const open = await tx.accountingEntry.findFirst({
-            where: { id: existing.openEntryId, portalClientId },
-            include: {
-              lines: { orderBy: { ordem: "asc" } },
-              baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
-            },
-          });
-          if (open) {
-            const s = computeSaldoProvisao(open);
-            const status = s.abatido <= 0.009 ? "ABERTO" : (s.saldo <= 0.009 ? "PAGO" : "PARCIAL");
-            await tx.accountingEntry.update({ where: { id: open.id }, data: { statusPagamento: status } });
-          }
-        }
-
-        if (existing.sourceGuideId) {
-          // Q52.INSS / estorno da parcela: apaga o lançamento e devolve a guia à fila.
-          // ⚠ UMA BAIXA TEM ATÉ TRÊS LANÇAMENTOS (principal, juros, multa — INSS e parcela usam a
-          // mesma regra). Reabrir a guia ao apagar o PRIMEIRO deixaria dois lançamentos órfãos
-          // debitando contas de uma guia que voltou a "não paga" — pior que não reverter. Por isso
-          // a guia só volta quando NÃO SOBRA NENHUMA baixa dela; enquanto sobrar, o que se corrige
-          // é o ponteiro `lancamentoId` (que pode ter ficado apontando para o que acabou de sumir).
-          const restantes = await tx.accountingEntry.findMany({
-            where: { sourceGuideId: existing.sourceGuideId, portalClientId, tipo: "BAIXA" },
-            select: { id: true },
-            orderBy: { createdAt: "asc" },
-          });
-          const guide = await tx.guide.findFirst({
-            where: { id: existing.sourceGuideId, portalClientId },
-            select: {
-              id: true, paymentStatusSource: true, lancamentoId: true,
-              parcelamentoId: true, parcelaEstado: true, vencimento: true,
-            },
-          });
-          if (guide && restantes.length) {
-            if (guide.lancamentoId === entryId) {
-              await tx.guide.update({ where: { id: guide.id }, data: { lancamentoId: restantes[0].id } });
-            }
-          } else if (guide) {
-            // Só reverte o PAGAMENTO se ele veio DESTA baixa (fonte MANUAL); não desfaz confirmação
-            // do SERPRO — o dinheiro saiu, o comprovante existe, e o que se está desfazendo é o
-            // lançamento contábil, não o fato.
-            const fromManual = String(guide.paymentStatusSource || "").toUpperCase() === "MANUAL";
-            // Parcela: o estado volta ao que o calendário manda (a vencer × vencida). Guia comum
-            // (INSS, DARF) não tem `parcelaEstado` e o helper devolve null.
-            const estadoEstornado = estadoAposEstorno({
-              estadoAtual: guide.parcelaEstado,
-              vencimento: guide.vencimento,
-            });
-            await tx.guide.update({
-              where: { id: guide.id },
-              data: {
-                baixada: false,
-                dataBaixa: null,
-                lancamentoId: null,
-                ...(estadoEstornado ? { parcelaEstado: estadoEstornado } : {}),
-                ...(fromManual
-                  ? {
-                      paymentStatus: "OPEN",
-                      paymentStatusSource: null,
-                      paymentConfirmedAt: null,
-                      paymentConfirmedByUserId: null,
-                      serproLastCheckResult: null,
-                    }
-                  : {}),
-              },
-            });
-          }
-        }
+      return res.status(409).json({
+        error: "USE_ESTORNO",
+        entryId,
+        rota: `/firm/companies/${portalClientId}/entries/${entryId}/estorno`,
+        motivoMinimo: MOTIVO_MIN,
+        message: "Esta é uma baixa: desfazê-la é um estorno, e estorno exige motivo registrado. Use a rota de estorno (ela também mostra, antes, tudo o que será desfeito).",
       });
-    } else {
-      await prisma.accountingEntry.delete({ where: { id: entryId } });
     }
+
+    // ⚠ O QUE SOBRA AQUI É O DELETE DE VERDADE: lançamento comum, em mês aberto. Toda a lógica
+    // de desfazer baixa (reabrir a guia, devolver o passivo, mover o estado da parcela) saiu deste
+    // arquivo e virou `EstornoBaixaService`, com motivo e auditoria — ver a recusa `USE_ESTORNO`
+    // acima.
+    await prisma.accountingEntry.delete({ where: { id: entryId } });
     return res.json({ ok: true });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // ESTORNO DA BAIXA — a transição administrativa
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // Duas rotas, e as duas são necessárias:
+  //
+  //   GET  .../estorno/preview  — o que será desfeito, COM VALORES, antes de qualquer escrita
+  //   POST .../estorno          — executa, exigindo motivo
+  //
+  // ⚠ O PREVIEW NÃO É CONVENIÊNCIA DE TELA. Estorno é ato de consequência: some um pagamento do
+  // razão, um passivo volta a existir, uma parcela volta para a fila e — em mês fechado — nasce um
+  // lançamento novo numa competência que ainda vai ser fechada. Quem confirma tem de ver o lote
+  // inteiro (uma baixa são até três, ou quatro, lançamentos), o modo, a competência do
+  // contra-lançamento e o risco de rescisão que sobra depois. O `totalEstornado` devolvido aqui é o
+  // que o POST aceita de volta como conferência: se a baixa mudou entre a tela e o clique, ele
+  // recusa em vez de desfazer algo diferente do que foi confirmado.
+  const HTTP_POR_CODIGO = {
+    lancamento_nao_encontrado: 404,
+    lancamento_ja_exportado: 400,
+    LOTE_JA_EXPORTADO: 409,
+    NAO_E_BAIXA: 400,
+    MOTIVO_OBRIGATORIO: 400,
+    MES_CORRENTE_FECHADO: 409,
+    CONFERENCIA_DIVERGENTE: 409,
+    LOTE_MUDOU: 409,
+  };
+  function responderRecusa(res, err) {
+    if (!(err instanceof EstornoRecusado)) throw err;
+    // Os campos extras do erro (competência, mínimo do motivo, totais divergentes) sobem junto: a
+    // recusa tem de dar ao contador o que ele precisa para agir, não só um código.
+    const extra = { ...err };
+    delete extra.code; delete extra.name;
+    return res.status(HTTP_POR_CODIGO[err.code] || 400).json({ error: err.code, message: err.message, ...extra });
+  }
+
+  // GET /firm/companies/:companyId/entries/:entryId/estorno/preview
+  router.get("/entries/:entryId/estorno/preview", requireFirmCompanyAccess(), async (req, res) => {
+    try {
+      const preview = await previewEstorno({
+        portalClientId: String(req.params.companyId),
+        entryId: String(req.params.entryId),
+      });
+      return res.json({ ok: true, ...preview });
+    } catch (err) {
+      return responderRecusa(res, err);
+    }
+  });
+
+  // POST /firm/companies/:companyId/entries/:entryId/estorno   { motivo, totalConferido? }
+  router.post("/entries/:entryId/estorno", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const body = req.body || {};
+    try {
+      const out = await executarEstorno({
+        portalClientId: String(req.params.companyId),
+        entryId: String(req.params.entryId),
+        motivo: body.motivo,
+        // ⚠ O total é OPCIONAL na API e obrigatório na prática: quem passou pelo preview o tem. Não
+        // é exigido porque um caminho de correção (script de remediação, por exemplo) não tem tela
+        // para conferir — e recusar por falta de um número que ninguém mostrou seria trocar uma
+        // guarda por um bloqueio.
+        totalConferido: body.totalConferido != null ? Number(body.totalConferido) : null,
+        userId: req.auth?.user?.id || null,
+      });
+      log?.info?.({
+        msg: "estorno de baixa",
+        portalClientId: String(req.params.companyId),
+        entryId: String(req.params.entryId),
+        modo: out.modo,
+        total: out.totalEstornado,
+        userId: req.auth?.user?.id || null,
+      });
+      return res.json(out);
+    } catch (err) {
+      return responderRecusa(res, err);
+    }
   });
 
   // GET /firm/companies/:companyId/entries/:entryId/baixa-template

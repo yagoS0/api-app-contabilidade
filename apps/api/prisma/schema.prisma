@@ -378,6 +378,7 @@ model PortalClient {
   anotacoes               CompanyNote[]
   MarcoFiscal             MarcoFiscal[]
   obrigacoes              Obrigacao[]
+  estornosBaixa           EstornoBaixa[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -1021,6 +1022,11 @@ model AccountingEntry {
   // sem decomposição por papel: baixa digitada à mão, importada ou vinda de função).
   tipoLinha             String?
   codigoTributo         String?
+  /// CONTRA-LANÇAMENTO DE ESTORNO: a baixa (em mês FECHADO) que este lançamento espelha invertida.
+  ///
+  /// ⚠ Preenchido SÓ em lançamentos `tipo:"ESTORNO"`, e é ele que faz `computeSaldoProvisao`
+  /// SUBTRAIR em vez de somar. Sem FK de propósito — ver a migration `20260808150000_add_estorno_baixa`.
+  estornoDeEntryId      String?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -1033,6 +1039,7 @@ model AccountingEntry {
   baixas               AccountingEntry[]       @relation("BaixaToOpen")
   parcelamento         Parcelamento?           @relation("ParcelamentoParcelas", fields: [parcelamentoId], references: [id], onDelete: SetNull)
   parcelamentoAbertura Parcelamento?           @relation("ParcAberturaEntry")
+  estornosQueEspelha   EstornoBaixa[]          @relation("EstornoContraLancamento")
 
   @@unique([portalClientId, competencia, eventType, origem])
   // ⚠ MANTIDO DE PROPÓSITO mesmo não mordendo as BAIXAS. Ele vale para as PROVISÕES, que é para
@@ -1059,7 +1066,68 @@ model AccountingEntry {
   @@index([ruleId])
   @@index([sourceGuideId])
   @@index([parcelamentoId])
+  @@index([estornoDeEntryId])
   @@map("accounting_entries")
+}
+
+/// AUDITORIA DO ESTORNO DE BAIXA — quem desfez, quando e POR QUÊ.
+///
+/// ⚠ POR QUE NÃO SÃO COLUNAS NO LANÇAMENTO. No mês ABERTO o estorno APAGA os lançamentos de baixa.
+/// Auditoria gravada na linha apagada some junto com o fato que deveria explicar, e "quem desfez
+/// esta baixa?" é justamente a pergunta que se faz meses depois, quando o lançamento já não existe.
+///
+/// ⚠ `motivo` é NOT NULL **e** tem CHECK de tamanho mínimo no banco. A rota recusa antes, com
+/// mensagem legível; o CHECK é o que garante que nenhum caminho de escrita futuro grave um estorno
+/// mudo — a mesma disciplina do `chk_baixa_tipo_linha`.
+///
+/// Os campos `*Original` são CÓPIA, não referência: o registro tem de continuar legível depois de a
+/// linha original desaparecer. Por isso `entryIdOriginal` é texto sem FK.
+model EstornoBaixa {
+  id                  String   @id @default(uuid())
+  portalClientId      String
+
+  // O que foi desfeito (cópia imutável)
+  entryIdOriginal     String
+  competenciaOriginal String
+  historicoOriginal   String
+  valorOriginal       Decimal  @db.Decimal(18, 2)
+  tipoLinha           String?
+  codigoTributo       String?
+  guideId             String?
+  parcelamentoId      String?
+  openEntryId         String?
+
+  /// DELECAO (mês aberto: o lançamento foi apagado) | CONTRA_LANCAMENTO (mês fechado: o lançamento
+  /// FICA e nasce um espelho invertido `tipo:"ESTORNO"` na competência aberta).
+  modo                String
+  contraLancamentoId  String?
+  competenciaContra   String?
+
+  motivo              String
+  estornadoPorUserId  String?
+  estornadoEm         DateTime @default(now())
+
+  /// Rastro da transição administrativa (parcelaStateMachine.js): ... → ESTORNADA.
+  parcelaEstadoAnterior String?
+  parcelaEstadoNovo     String?
+  /// Recálculo disparado logo após o estorno (riscoRescisao.js) — o número que justificava a
+  /// urgência, ou a falta dela, no momento da decisão.
+  riscoNivel            String?
+  riscoEmAtraso         Int?
+
+  createdAt DateTime @default(now())
+
+  portalClient     PortalClient     @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  contraLancamento AccountingEntry? @relation("EstornoContraLancamento", fields: [contraLancamentoId], references: [id], onDelete: SetNull)
+
+  // ⚠ NÃO DECLARÁVEIS AQUI (o Prisma não modela CHECK) — vivem só no SQL da migration
+  // `20260808150000_add_estorno_baixa`:
+  //   CHECK chk_estorno_motivo : length(btrim("motivo")) >= 5
+  //   CHECK chk_estorno_modo   : "modo" IN ('DELECAO','CONTRA_LANCAMENTO')
+  @@index([portalClientId])
+  @@index([guideId])
+  @@index([entryIdOriginal])
+  @@map("estornos_baixa")
 }
 
 model CompanyMonthlyCircular {

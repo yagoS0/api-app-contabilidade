@@ -11,6 +11,7 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "./AccountingEntryGeneratorService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
 import { avaliarRiscoRescisao } from "./parcelamento/riscoRescisao.js";
+import { parcelaQuitada } from "./parcelamento/recalculoParcelamento.js";
 import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
 
 // Q16: contas D/C do parcelamento começam EM BRANCO e são memorizadas por papel de
@@ -637,7 +638,7 @@ function decorateParcelamento(parc) {
   // guias baixadas/PAID quando não há linhas de rastreio (compat com o modelo Q16 legado).
   const isV2 = parcelas.length === 0 && guides.length > 0;
   const parcelasPagas = isV2
-    ? guides.filter((g) => g.paymentStatus === "PAID" || g.baixada).length
+    ? guides.filter(parcelaQuitada).length
     : parcelas.filter((p) => p.statusPagamento === "PAGO").length;
   const principalPerParcela = Number(parc.principalPerParcela) || 0;
   const principalPago = parcelasPagas * principalPerParcela;
@@ -655,13 +656,18 @@ function decorateParcelamento(parc) {
   // ⚠ `quitada` inclui `baixada` de propósito: pagamento parcial NÃO quita a prestação, e quem
   // marca parcial não marca PAID. Parcelamento já rescindido não é avaliado — não há mais o que
   // prevenir.
+  //
+  // ⚠ O PREDICADO VEM DE FORA (`parcelaQuitada`, em `parcelamento/recalculoParcelamento.js`). Ele
+  // estava escrito aqui, duas vezes, e o estorno precisava da MESMA resposta na hora de desfazer a
+  // baixa. Uma terceira cópia faria a listagem e o estorno discordarem sobre quantas prestações
+  // estão quitadas — que é o número de onde sai o alerta de rescisão.
   const risco = parc.status === "RESCINDIDO"
     ? null
     : avaliarRiscoRescisao({
       parcelas: guides.map((g) => ({
         numeroParcela: g.numeroParcela ?? null,
         vencimento: g.vencimento,
-        quitada: g.paymentStatus === "PAID" || Boolean(g.baixada),
+        quitada: parcelaQuitada(g),
       })),
     });
 

@@ -63,6 +63,22 @@ o mesmo estrago da criação, pelo caminho inverso. A assimetria é só a leitur
 criação ela vem da data digitada, no estorno já está gravada — perguntar pelo mês corrente deixaria
 passar exatamente o caso que importa.
 
+### ⚠ A trava do DELETE vale para **TODO** lançamento — e isso é INTENCIONAL
+
+Está escrito aqui porque, de fora, "restringir a trava às baixas" parece uma correção de escopo
+óbvia. Não é. **Decisão do dono:** *"qualquer DELETE em competência fechada corrompe um saldo que
+já foi reportado"*. Não importa o tipo — baixa, despesa, receita, provisão: se o mês foi fechado,
+os números dele saíram para fora, e apagar qualquer linha depois disso muda um total que alguém já
+leu, sem nenhum sinal de que a competência foi mexida.
+
+Os **dois** fluxos legítimos, e nenhum deles é afrouxar a trava:
+
+1. **reabrir a competência** (o ato fica gravado em `CompanyMonthlyCircular`) e então corrigir;
+2. **estornar na competência aberta** — `POST /entries/:entryId/estorno`, abaixo, que em mês
+   fechado preserva o lançamento e gera contra-lançamento no mês corrente.
+
+O mesmo aviso está no comentário da rota, em `routes/firm/accountingEntries.js`.
+
 ## Baixa: principal, juros e multa são LANÇAMENTOS SEPARADOS
 
 Regra do dono. Cada componente vira um `AccountingEntry` próprio, balanceado contra o caixa:
@@ -164,28 +180,112 @@ UNIQUE uq_baixa_guia_linha  : ("sourceGuideId","tipoLinha",COALESCE("codigoTribu
 "Cancelar baixa" apagava um lançamento deixando dois órfãos com a guia reaberta. Hoje `baixas[]`
 traz o lote inteiro (o principal primeiro) e o cancelamento leva todos.
 
-### Estorno da baixa (`DELETE /entries/:entryId`) — devolver a guia à fila
+### Estorno da baixa (`POST /entries/:entryId/estorno`) — transição administrativa
 
-⚠ **Era um `if / else if`, e o primeiro ramo comia o segundo.** A baixa de PARCELA nasce com os
-DOIS vínculos (`openEntryId` = provisão de abertura do parcelamento · `sourceGuideId` = a guia da
-parcela), então casava só o ramo do `openEntryId` e **nunca chegava** ao que reabre a guia. O
-lançamento sumia e a guia continuava `baixada:true` com `lancamentoId` apontando para um registro
-apagado — **`Guide.lancamentoId` não tem FK, ninguém o anula**. A parcela sumia da fila de
-pendentes (que exige `baixada:false`) e `gerarPagamentoParcelaFromGuide` respondia `ja_baixada`
-**para sempre**: nenhuma tela conseguia refazer aquela baixa. Os dois efeitos são independentes e
-os dois são necessários — não são alternativas.
+⚠ **A PORTA MUDOU.** O estorno era EFEITO do `DELETE /entries/:entryId`. Hoje é uma operação
+nomeada, e o DELETE de uma baixa com vínculo responde **409 `USE_ESTORNO`** apontando a rota nova.
+Sem essa recusa, a exigência do motivo seria contornável pelo verbo antigo. Serviço:
+`EstornoBaixaService.js`.
+
+| | rota | o que faz |
+|---|---|---|
+| conferência | `GET .../entries/:id/estorno/preview` | o lote inteiro **com valores**, o modo, a competência do contra-lançamento e o risco atual. Não escreve nada |
+| execução | `POST .../entries/:id/estorno` | `{ motivo, totalConferido? }` |
+
+**As três exigências:**
+
+1. **Motivo obrigatório** (mín. 5 caracteres) → `400 MOTIVO_OBRIGATORIO`, checado **antes de
+   qualquer leitura**. Auditoria em `EstornoBaixa` (`estornos_baixa`): quem, quando, por quê, o que
+   foi desfeito (cópia do histórico/valor — no modo `DELECAO` a linha original some), o rastro de
+   estado e o risco de rescisão do momento. É tabela, e não colunas no lançamento, exatamente
+   porque no mês aberto o lançamento é apagado. `motivo` tem CHECK no banco.
+2. **Mês fechado → contra-lançamento, nunca DELETE** (abaixo).
+3. **Recálculo disparado** dentro da transação, depois das escritas: `recalcularParcelamento`
+   (`parcelamento/recalculoParcelamento.js`) chama **`avaliarRiscoRescisao`** — a regra da
+   IN RFB 2.063/2022 não é recalculada em lugar nenhum, é reusada. O predicado `parcelaQuitada`
+   também mora lá e é o mesmo que `decorateParcelamento` usa.
+
+**O estorno é do LOTE, sempre.** Uma baixa são até três (ou quatro) lançamentos; estornar um
+deixaria os outros órfãos. O `totalEstornado` do preview volta no POST como `totalConferido`: se a
+baixa mudou entre a tela e o clique (outra sessão, ou o worker de confirmação acrescentando o juros
+ao lote), a resposta é **409 `CONFERENCIA_DIVERGENTE`** em vez de desfazer algo diferente do que foi
+confirmado.
+
+#### ⚠ Mês fechado: o contra-lançamento, e por que ele NÃO é `tipo:"BAIXA"`
+
+Baixa em competência fechada **não é apagada**. O lançamento fica onde está e nasce um **espelho
+invertido** (mesmas contas, mesmos valores, D↔C trocados) na competência **de hoje**. Sem isso, a
+trava de mês fechado do DELETE viraria letra morta por esta porta lateral — o caminho fácil de
+apagar lançamento de mês fechado sem rastro de reabertura.
+
+A competência do espelho é a **de hoje**, não "a primeira aberta que eu achar": procurar um mês
+aberto seria escolher a data de um fato contábil por conveniência. Mês corrente também fechado →
+**409 `MES_CORRENTE_FECHADO`**, com o caminho na mensagem.
+
+**O espelho é `tipo:"ESTORNO"`, e isso é o ponto mais delicado da fase.** Como `BAIXA` ele bateria
+nas duas travas de `20260808120000_add_baixa_tipo_linha`:
+
+| trava | o que aconteceria |
+|---|---|
+| `CHECK chk_baixa_tipo_linha` | passaria (o papel do espelho é o da linha original) |
+| `UNIQUE uq_baixa_guia_linha` | **23505**. Em mês fechado a baixa original CONTINUA na tabela, e o espelho repete `(sourceGuideId, tipoLinha, codigoTributo)` — que é, letra por letra, a assinatura de uma baixa **duplicada**. O índice não tem como distinguir "a segunda baixa" de "o espelho da primeira" |
+
+Afrouxar o índice reabriria a janela que ele fechou; inventar um papel (`ESTORNO_PARC`) seria mentir
+sobre o papel da linha para escapar de uma trava. A saída é semântica: **o espelho não é uma
+baixa** — baixa amortiza passivo, ele devolve passivo. Com `tipo:"ESTORNO"` as duas travas ficam
+inertes **por construção** (ambas são parciais em `tipo='BAIXA'`), sem que nenhuma seja tocada.
+
+⚠ **E não é só o índice: é a aritmética.** `computeSaldoProvisao` soma os débitos não-acréscimo de
+tudo que pendura em `openEntryId` — e o espelho pendura lá de propósito, é o que devolve a provisão
+ao aberto. Contado como baixa, o **débito de CAIXA** do espelho (`D caixa / C 553`) viraria MAIS
+amortização e a provisão iria para o lado errado **em dobro**, sem erro nenhum na tela. A conta saiu
+da fábrica de rotas para **`saldoProvisao.js`** (o estorno precisava da mesma) e agora separa por
+`tipo`: baixa soma os débitos, estorno subtrai os créditos. Regressão em
+`__tests__/saldoProvisaoEstorno.test.js`.
+
+O espelho carrega `sourceGuideId` (rastreável a partir da guia — seguro, as travas são parciais) e
+`parcelamentoId` (**obrigatório**: o lote do parcelamento só balanceia em GRUPO, e sem ele
+`computeFechamentoBlockers` veria quatro lançamentos desbalanceados e travaria o fechamento
+seguinte). `eventType` é **null** — só a baixa original carrega o evento, senão o segundo estorno do
+mesmo evento no mesmo mês violaria `@@unique([portalClientId, competencia, eventType, origem])`.
+
+#### O estado da parcela: `ESTORNADA`
+
+`estadoAposEstorno` **não pula mais** `podeTransicionar` — a máquina ganhou uma segunda tabela,
+`TRANSICOES_ADMINISTRATIVAS`, e `podeTransicionar(de, para, { administrativa: true })`. Assim
+"CONFIRMADA é terminal" continua **literalmente verdadeiro no fluxo de ida** (`TRANSICOES.CONFIRMADA
+=== []`) e o desfazer é uma transição declarada, não uma exceção de código.
+
+⚠ **O destino deixou de ser o calendário.** Voltar a `PREVISTA`/`EM_ATRASO` deixava a parcela
+estornada indistinguível de uma que nunca foi paga: o rastro sumia no instante em que o estorno
+acontecia. Hoje ela vai para **`ESTORNADA`**, que persiste — e continua na fila, porque a fila é
+`baixada:false`, não `parcelaEstado`. É **intermediário**: sai para `PAGA_A_CONFERIR` num novo
+pagamento. O relógio não o move (`estadoRecalculado` só toca `ESTADOS_EM_ABERTO`), e a reingestão
+não o apaga (`podeTransicionar(ESTORNADA, PREVISTA)` é false).
+
+⚠ **`CANCELADA` não volta, e agora isso é DADO**: ela simplesmente não está na tabela
+administrativa.
+
+### O que o estorno preserva do desenho anterior
+
+⚠ **Os DOIS efeitos são necessários e independentes — não são alternativas.** A baixa de PARCELA
+nasce com os dois vínculos (`openEntryId` = provisão de abertura do parcelamento · `sourceGuideId` =
+a guia da parcela). Quando isto era um `if / else if`, o primeiro ramo comia o segundo: o lançamento
+sumia e a guia continuava `baixada:true` com `lancamentoId` apontando para um registro apagado —
+**`Guide.lancamentoId` não tem FK, ninguém o anula**. A parcela sumia da fila de pendentes (que
+exige `baixada:false`) e `gerarPagamentoParcelaFromGuide` respondia `ja_baixada` **para sempre**:
+nenhuma tela conseguia refazer aquela baixa.
 
 ⚠ **A guia só volta quando NÃO SOBRA nenhuma baixa dela.** Como são até três lançamentos, reabrir a
-guia ao apagar o primeiro deixaria dois órfãos debitando contas de uma guia "não paga" — pior que
-não reverter. Enquanto sobrar baixa, o que se corrige é o ponteiro `lancamentoId`. (O front já
-apaga o lote inteiro, em sequência; a regra não depende disso.)
+guia deixando um no razão criaria órfãos debitando contas de uma guia "não paga" — pior que não
+reverter. Enquanto sobrar baixa, o que se corrige é o ponteiro `lancamentoId`. O estorno leva o lote
+inteiro, mas a guarda continua: `tipo:"BAIXA"` no filtro é o que mantém o **contra-lançamento** fora
+da conta (ele é `ESTORNO`), senão a guia nunca mais reabriria.
 
-- **Estado da parcela:** `estadoAposEstorno` (`parcelamento/parcelaStateMachine.js`) devolve a
-  parcela ao estado do CALENDÁRIO (a vencer × vencida). Ele **não passa** por `podeTransicionar` de
-  propósito: aquela tabela descreve o caminho para a frente (`PAGA_A_CONFERIR` só avança para
-  `CONFIRMADA`/`DIVERGENTE`), e estorno é rebobinar, não avançar. `CANCELADA` não volta.
 - **Pagamento:** só é desfeito quando `paymentStatusSource === "MANUAL"`. Confirmação do SERPRO
   fica — o dinheiro saiu; o que se desfaz é o lançamento, não o fato.
+- **Provisão de abertura:** recalculada nos DOIS modos — na deleção porque as baixas sumiram, no
+  contra-lançamento porque o espelho passou a subtrair.
 
 Contas de acréscimo: **`contasAcrescimo.js`** (501 juros / 506 multa). Estavam escritas em quatro
 lugares — rota, script, serviço e literal no front.

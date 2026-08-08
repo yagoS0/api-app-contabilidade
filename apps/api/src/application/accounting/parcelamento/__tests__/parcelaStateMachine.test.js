@@ -8,10 +8,12 @@
 
 import {
   PARCELA_ESTADOS, ESTADOS_EM_ABERTO, podeTransicionar, estadoEmAberto, estadoRecalculado,
-  estadoAposEstorno,
+  estadoAposEstorno, podeEstornar,
 } from "../parcelaStateMachine";
 
-const { PREVISTA, EM_ATRASO, PAGA_A_CONFERIR, DIVERGENTE, CONFIRMADA, CANCELADA } = PARCELA_ESTADOS;
+const {
+  PREVISTA, EM_ATRASO, PAGA_A_CONFERIR, DIVERGENTE, CONFIRMADA, CANCELADA, ESTORNADA,
+} = PARCELA_ESTADOS;
 const ONTEM = new Date("2026-08-06T12:00:00Z");
 const HOJE = new Date("2026-08-07T12:00:00Z");
 const AMANHA = new Date("2026-08-08T12:00:00Z");
@@ -81,35 +83,84 @@ describe("estadoRecalculado", () => {
   });
 });
 
-// ESTORNO — desfazer a baixa devolve a parcela à fila.
+// ESTORNO — a transição ADMINISTRATIVA, agora nomeada e declarada.
 //
-// ⚠ O defeito que isto cobre: apagar o lançamento de baixa deixava a guia `PAGA_A_CONFERIR` sem
-// lançamento nenhum. Fora da fila de pendentes (que exige `baixada:false`) e sem baixa de verdade
-// na conferência: invisível nas duas telas, e sem caminho para refazer.
+// ⚠ O QUE MUDOU AQUI, E POR QUÊ. `estadoAposEstorno` existia, devolvia o estado do CALENDÁRIO e
+// **pulava** `podeTransicionar` com um comentário explicando que "estorno é rebobinar, não avançar".
+// A observação estava certa; a forma, não — regra que vive num comentário é regra que o próximo
+// caminho de escrita não consulta. Duas coisas foram promovidas a DADO:
+//
+//   1. `TRANSICOES_ADMINISTRATIVAS`, uma tabela própria para o desfazer. É por ela que `CONFIRMADA`
+//      tem saída, sem que "CONFIRMADA é terminal" deixe de ser verdade no fluxo de IDA.
+//   2. `ESTORNADA`, um estado de destino próprio. O salto direto para PREVISTA/EM_ATRASO deixava a
+//      parcela estornada indistinguível de uma que nunca foi paga — o rastro do estorno sumia no
+//      instante em que ele acontecia.
+describe("transição administrativa (estorno)", () => {
+  it("⚠ CONFIRMADA continua terminal NO FLUXO DE IDA — e é isso que o estado ESTORNADA preserva", () => {
+    // A afirmação antiga ("CONFIRMADA é terminal") continua literalmente verdadeira aqui...
+    expect(podeTransicionar(CONFIRMADA, ESTORNADA)).toBe(false);
+    expect(podeTransicionar(CONFIRMADA, PREVISTA)).toBe(false);
+    // ...e a saída existe, declarada, só pela porta administrativa.
+    expect(podeTransicionar(CONFIRMADA, ESTORNADA, { administrativa: true })).toBe(true);
+  });
+
+  it("o default de `podeTransicionar` é NÃO administrativo — nenhum caminho automático estorna sem pedir", () => {
+    for (const de of [PAGA_A_CONFERIR, DIVERGENTE, CONFIRMADA]) {
+      expect(podeTransicionar(de, ESTORNADA)).toBe(false);
+      expect(podeTransicionar(de, ESTORNADA, { administrativa: true })).toBe(true);
+    }
+  });
+
+  it("o flag administrativo NÃO abre o fluxo de ida — ele só ACRESCENTA o desfazer", () => {
+    // Se o flag liberasse a tabela inteira, a reingestão passaria a poder rebaixar uma parcela paga
+    // — o defeito que `podeTransicionar` existe para impedir.
+    expect(podeTransicionar(PAGA_A_CONFERIR, PREVISTA, { administrativa: true })).toBe(false);
+    expect(podeTransicionar(CONFIRMADA, PAGA_A_CONFERIR, { administrativa: true })).toBe(false);
+  });
+
+  it("⚠ ESTORNADA é INTERMEDIÁRIO: sai para um novo pagamento, não regride sozinha", () => {
+    expect(podeTransicionar(ESTORNADA, PAGA_A_CONFERIR)).toBe(true);
+    expect(podeTransicionar(ESTORNADA, CANCELADA)).toBe(true);
+    // Voltar a PREVISTA/EM_ATRASO apagaria o rastro, que é a única razão de o estado existir.
+    expect(podeTransicionar(ESTORNADA, PREVISTA, { administrativa: true })).toBe(false);
+    expect(podeTransicionar(ESTORNADA, EM_ATRASO, { administrativa: true })).toBe(false);
+  });
+
+  it("⚠ e o relógio não a move: `estadoRecalculado` só toca os dois estados EM ABERTO", () => {
+    expect(estadoRecalculado({ estadoAtual: ESTORNADA, vencimento: ONTEM, agora: HOJE })).toBeNull();
+    expect(ESTADOS_EM_ABERTO).not.toContain(ESTORNADA);
+  });
+});
+
 describe("estadoAposEstorno", () => {
-  it("⚠ paga a conferir volta ao que o CALENDÁRIO manda — o estorno rebobina, não avança", () => {
-    // `podeTransicionar(PAGA_A_CONFERIR, EM_ATRASO)` é false de propósito (é a guarda da
-    // reingestão). Desfazer a baixa é outra pergunta, e por isso não passa por lá.
-    expect(podeTransicionar(PAGA_A_CONFERIR, EM_ATRASO)).toBe(false);
-    expect(estadoAposEstorno({ estadoAtual: PAGA_A_CONFERIR, vencimento: ONTEM, agora: HOJE })).toBe(EM_ATRASO);
-    expect(estadoAposEstorno({ estadoAtual: PAGA_A_CONFERIR, vencimento: AMANHA, agora: HOJE })).toBe(PREVISTA);
+  it("paga a conferir, divergente e confirmada vão para ESTORNADA", () => {
+    for (const de of [PAGA_A_CONFERIR, DIVERGENTE, CONFIRMADA]) {
+      expect(estadoAposEstorno({ estadoAtual: de })).toBe(ESTORNADA);
+      expect(podeEstornar(de)).toBe(true);
+    }
   });
 
-  it("parcela já CONFIRMADA na conferência também volta — senão fica travada para sempre", () => {
-    expect(estadoAposEstorno({ estadoAtual: CONFIRMADA, vencimento: ONTEM, agora: HOJE })).toBe(EM_ATRASO);
-    expect(estadoAposEstorno({ estadoAtual: DIVERGENTE, vencimento: AMANHA, agora: HOJE })).toBe(PREVISTA);
+  it("⚠ CANCELADA não ressuscita — e agora isso é DADO, não um `if`", () => {
+    // Parcela cancelada saiu do acordo; ressuscitá-la por um estorno inventaria uma parcela a pagar
+    // que ninguém contratou de volta. Ela simplesmente não está na tabela administrativa.
+    expect(podeEstornar(CANCELADA)).toBe(false);
+    expect(estadoAposEstorno({ estadoAtual: CANCELADA })).toBeNull();
   });
 
-  it("⚠ CANCELADA não ressuscita pela porta dos fundos de um DELETE", () => {
-    expect(estadoAposEstorno({ estadoAtual: CANCELADA, vencimento: ONTEM, agora: HOJE })).toBeNull();
+  it("parcela que nunca foi paga não tem baixa a desfazer", () => {
+    expect(estadoAposEstorno({ estadoAtual: PREVISTA })).toBeNull();
+    expect(estadoAposEstorno({ estadoAtual: EM_ATRASO })).toBeNull();
   });
 
   it("guia que não é parcela (INSS, DARF) não tem estado — devolve null", () => {
-    expect(estadoAposEstorno({ estadoAtual: null, vencimento: ONTEM, agora: HOJE })).toBeNull();
+    expect(podeEstornar(null)).toBe(false);
+    expect(estadoAposEstorno({ estadoAtual: null })).toBeNull();
   });
 
-  it("já no estado certo devolve null (não reescreve à toa)", () => {
-    expect(estadoAposEstorno({ estadoAtual: EM_ATRASO, vencimento: ONTEM, agora: HOJE })).toBeNull();
-    expect(estadoAposEstorno({ estadoAtual: PREVISTA, vencimento: AMANHA, agora: HOJE })).toBeNull();
+  it("⚠ NÃO depende mais do vencimento — o destino é o rastro, não o calendário", () => {
+    // Chamadas antigas passavam `vencimento`/`agora`; ignorá-los é intencional, e este teste é o
+    // que impede alguém de "restaurar" o comportamento antigo sem perceber o que ele apagava.
+    expect(estadoAposEstorno({ estadoAtual: CONFIRMADA, vencimento: ONTEM, agora: HOJE })).toBe(ESTORNADA);
+    expect(estadoAposEstorno({ estadoAtual: CONFIRMADA, vencimento: AMANHA, agora: HOJE })).toBe(ESTORNADA);
   });
 });

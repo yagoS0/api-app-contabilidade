@@ -1,5 +1,20 @@
 // Q28 Fase 3 — máquina de estados da PARCELA (guia de parcelamento).
 // PREVISTA → EM_ATRASO → PAGA_A_CONFERIR → CONFIRMADA  (DIVERGENTE como desvio; CANCELADA encerra).
+//
+// ⚠ A máquina tem DUAS TABELAS, e a distinção entre elas é o que resolve o conflito antigo.
+//
+// `TRANSICOES` é o **fluxo de ida**: para onde a parcela pode AVANÇAR sozinha, empurrada pela
+// ingestão, pelo relógio ou pelo pagamento. Nele `CONFIRMADA` é terminal — e continua sendo, ao pé
+// da letra (`TRANSICOES.CONFIRMADA === []`).
+//
+// `TRANSICOES_ADMINISTRATIVAS` é o **desfazer**: um ato humano, deliberado, com motivo registrado,
+// que reconhece que o fato que levou a parcela até ali deixou de existir. Ele NÃO é um avanço, e
+// por isso não cabia na primeira tabela; mas também não podia continuar sendo o que era —
+// **exceção de código**, uma função que pulava `podeTransicionar` com um comentário explicando por
+// quê. Regra que vive num comentário é regra que o próximo caminho de escrita não consulta.
+//
+// Hoje o estorno é uma transição NOMEADA e DECLARADA (`podeEstornar` / `estadoAposEstorno`), com
+// destino próprio — `ESTORNADA` — em vez de saltar direto para o estado do calendário.
 
 export const PARCELA_ESTADOS = {
   PREVISTA: "PREVISTA",
@@ -8,8 +23,25 @@ export const PARCELA_ESTADOS = {
   DIVERGENTE: "DIVERGENTE",
   CONFIRMADA: "CONFIRMADA",
   CANCELADA: "CANCELADA",
+  /**
+   * A baixa desta parcela foi DESFEITA. Estado intermediário: a parcela voltou à fila (a guia
+   * volta a `baixada:false`) e segue esperando um novo lançamento de pagamento.
+   *
+   * ⚠ POR QUE ELE EXISTE, E POR QUE ELE PERSISTE. O estorno antes devolvia a parcela direto ao
+   * estado do CALENDÁRIO (`PREVISTA`/`EM_ATRASO`), e o resultado era indistinguível de uma parcela
+   * que nunca foi paga. Meses depois, ninguém olhando a linha conseguia responder "esta parcela já
+   * teve uma baixa que alguém desfez?" — e essa é exatamente a pergunta que se faz quando o número
+   * não bate. `ESTORNADA` responde na própria coluna; o motivo, o autor e a data ficam em
+   * `estornos_baixa`.
+   *
+   * ⚠ ELE NÃO TIRA A PARCELA DA FILA. A fila de pendentes de baixa é `baixada:false` (não
+   * `parcelaEstado`), e o estorno restaura isso. A conferência (`PAGA_A_CONFERIR`/`DIVERGENTE`)
+   * também não o inclui — correto: não há mais pagamento a conferir.
+   */
+  ESTORNADA: "ESTORNADA",
 };
 
+// Fluxo de IDA — para onde a parcela avança sozinha.
 const TRANSICOES = {
   PREVISTA: ["EM_ATRASO", "PAGA_A_CONFERIR", "DIVERGENTE", "CANCELADA"],
   EM_ATRASO: ["PAGA_A_CONFERIR", "DIVERGENTE", "CANCELADA", "PREVISTA"],
@@ -17,11 +49,47 @@ const TRANSICOES = {
   DIVERGENTE: ["PAGA_A_CONFERIR", "CONFIRMADA", "CANCELADA"],
   CONFIRMADA: [],
   CANCELADA: [],
+  // ⚠ `ESTORNADA` é INTERMEDIÁRIO, não terminal: a parcela volta a ser pagável. O que ela NÃO faz é
+  // regredir sozinha para PREVISTA/EM_ATRASO — isso apagaria o rastro do estorno, que é a única
+  // razão de o estado existir. Quem a tira de lá é um novo pagamento (ou o cancelamento do acordo).
+  ESTORNADA: ["PAGA_A_CONFERIR", "DIVERGENTE", "CANCELADA"],
 };
 
-export function podeTransicionar(de, para) {
+/**
+ * Transições ADMINISTRATIVAS — o desfazer, nunca o avançar.
+ *
+ * ⚠ É a ÚNICA porta de saída de `CONFIRMADA`, e é de propósito: "terminal" descreve o fluxo de
+ * ida, não a impossibilidade de corrigir um erro. Uma parcela confirmada por engano ficaria
+ * travada para sempre — e a saída de fato existia, escondida numa função que ignorava a tabela.
+ *
+ * ⚠ `CANCELADA` NÃO ESTÁ AQUI. Parcela cancelada saiu do acordo; ressuscitá-la por um estorno
+ * inventaria uma parcela a pagar que ninguém contratou de volta.
+ * ⚠ `PREVISTA`/`EM_ATRASO` também não: não há baixa a desfazer numa parcela que nunca foi paga.
+ */
+const TRANSICOES_ADMINISTRATIVAS = {
+  PAGA_A_CONFERIR: ["ESTORNADA"],
+  DIVERGENTE: ["ESTORNADA"],
+  CONFIRMADA: ["ESTORNADA"],
+};
+
+/**
+ * @param {string|null} de estado atual (null = sem estado prévio)
+ * @param {string} para estado pretendido
+ * @param {{administrativa?: boolean}} [opts] `administrativa:true` habilita TAMBÉM a tabela do
+ *   desfazer. O default é `false`: nenhum caminho automático estorna nada por acidente.
+ */
+export function podeTransicionar(de, para, { administrativa = false } = {}) {
   if (!de) return true; // sem estado prévio → aceita o estado inicial
-  return (TRANSICOES[de] || []).includes(para);
+  const permitidas = administrativa
+    ? [...(TRANSICOES[de] || []), ...(TRANSICOES_ADMINISTRATIVAS[de] || [])]
+    : (TRANSICOES[de] || []);
+  return permitidas.includes(para);
+}
+
+/** A parcela neste estado pode ter a baixa desfeita? (transição administrativa nomeada) */
+export function podeEstornar(estadoAtual) {
+  if (!estadoAtual) return false; // guia sem estado de parcela (INSS, DARF) — nada a rebobinar
+  return podeTransicionar(estadoAtual, PARCELA_ESTADOS.ESTORNADA, { administrativa: true });
 }
 
 // Estado "em aberto" derivado do vencimento: PREVISTA (a vencer) vs EM_ATRASO (vencida).
@@ -36,26 +104,24 @@ export function estadoEmAberto(vencimento, now = new Date()) {
 export const ESTADOS_EM_ABERTO = Object.freeze([PARCELA_ESTADOS.PREVISTA, PARCELA_ESTADOS.EM_ATRASO]);
 
 /**
- * O estado da parcela DEPOIS de a baixa ser desfeita (estorno), ou `null` quando não há o que mexer.
+ * O estado da parcela DEPOIS de a baixa ser desfeita, ou `null` quando não há o que mexer.
  *
- * ⚠ ESTORNO NÃO É TRANSIÇÃO — É REBOBINAR, e por isso ele NÃO passa por `podeTransicionar`.
- * A tabela `TRANSICOES` descreve o caminho para FRENTE: `PAGA_A_CONFERIR` só sai para `CONFIRMADA`
- * ou `DIVERGENTE`, e `CONFIRMADA` não sai de lugar nenhum. Isso está certo enquanto o que se
- * pergunta é "para onde a parcela pode avançar". Apagar o lançamento de baixa é outra pergunta: o
- * fato que levou a parcela até ali deixou de existir, então ela volta ao estado que o CALENDÁRIO
- * manda (a vencer × vencida), exatamente como na ingestão.
+ * ⚠ ISTO ERA UMA EXCEÇÃO DE CÓDIGO E VIROU UMA TRANSIÇÃO NOMEADA. A função existia, devolvia o
+ * estado do CALENDÁRIO (a vencer × vencida) e **não passava** por `podeTransicionar`, com um
+ * comentário explicando que "estorno é rebobinar, não avançar". A observação estava certa; a forma,
+ * não: uma regra que só vive num comentário é uma regra que o próximo caminho de escrita não
+ * consulta. Hoje o estorno tem tabela própria (`TRANSICOES_ADMINISTRATIVAS`) e destino próprio.
  *
- * Sem isto, apagar a baixa deixava a parcela `PAGA_A_CONFERIR` sem lançamento nenhum: fora da fila
- * de pendentes (que exige `baixada:false`) e fora da fila de conferência útil — invisível nas duas.
+ * ⚠ E O DESTINO NÃO É MAIS O CALENDÁRIO. Devolver a parcela a `PREVISTA`/`EM_ATRASO` a deixava
+ * indistinguível de uma parcela que nunca foi paga — o rastro do estorno sumia da linha no mesmo
+ * instante em que ele acontecia. O destino é `ESTORNADA`, que diz o que houve e continua na fila.
  *
- * ⚠ `CANCELADA` não volta. Parcela cancelada saiu do acordo; ressuscitá-la pela porta dos fundos de
- * um DELETE de lançamento inventaria uma parcela a pagar que ninguém contratou de volta.
+ * ⚠ `CANCELADA` não volta, e agora isso é DADO, não `if`: ela simplesmente não está na tabela
+ * administrativa. Parcela cancelada saiu do acordo; ressuscitá-la por um estorno inventaria uma
+ * parcela a pagar que ninguém contratou de volta.
  */
-export function estadoAposEstorno({ estadoAtual, vencimento, agora = new Date() }) {
-  if (!estadoAtual) return null; // guia sem estado de parcela (INSS, DARF) — nada a rebobinar
-  if (estadoAtual === PARCELA_ESTADOS.CANCELADA) return null;
-  const novo = estadoEmAberto(vencimento, agora);
-  return novo === estadoAtual ? null : novo;
+export function estadoAposEstorno({ estadoAtual }) {
+  return podeEstornar(estadoAtual) ? PARCELA_ESTADOS.ESTORNADA : null;
 }
 
 /**
