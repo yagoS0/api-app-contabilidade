@@ -404,7 +404,11 @@ function App() {
           onApproveAccountingEntry: accountingWorkspace.handleApproveCircularEntry,
           error: accountingWorkspace.entriesError,
           message: accountingWorkspace.entriesMessage,
-          onCancelBaixa: accountingWorkspace.handleDeleteEntryNoConfirm,
+          // ⚠ Era `onCancelBaixa: handleDeleteEntryNoConfirm`, que ia no `DELETE /entries/:id` —
+          // rota que hoje recusa toda baixa com vínculo (`409 USE_ESTORNO`), porque desfazer uma
+          // baixa exige motivo registrado. A porta agora é o par prévia + estorno.
+          onPreviewEstorno: accountingWorkspace.handlePreviewEstorno,
+          onEstornarBaixa: accountingWorkspace.handleEstornarBaixa,
         }}
         notasPanel={notasFiscais}
         certPanel={{ api, feedback }}

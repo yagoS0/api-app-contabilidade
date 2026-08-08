@@ -51,14 +51,6 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   const [entriesMessage, setEntriesMessage] = useState("");
   const [entriesError, setEntriesError] = useState("");
 
-  // Fiscal operation state
-  const [runningFiscalAction, setRunningFiscalAction] = useState(null);
-  const [lastFiscalResult, setLastFiscalResult] = useState(null);
-
-  // Fiscal execution history
-  const [fiscalExecutions, setFiscalExecutions] = useState([]);
-  const [loadingFiscalExecutions, setLoadingFiscalExecutions] = useState(false);
-
   async function loadChartOfAccounts(companyId = selectedCompanyId) {
     if (!companyId) return;
     chartOfAccountsState.setLoading(true);
@@ -76,10 +68,8 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
   //
   // ⚠ A rota `GET /entries` pagina, e o default dela é 50. Como esta função não mandava
   // `page`/`limit`, só a PRIMEIRA página chegava: mês com mais de 50 lançamentos exibia os
-  // 50 mais antigos (`orderBy: data asc`) e escondia o resto **sem nenhum aviso na tela** —
-  // não há controle de paginação na aba, e o `total` não é renderizado em lugar nenhum. O
-  // sintoma era "lançamento sumindo", e não há controle de paginação na aba que sugerisse
-  // existir uma página 2.
+  // 50 mais antigos (`orderBy: data asc`) e escondia o resto. O sintoma era "lançamento
+  // sumindo", e não há controle de paginação na aba que sugerisse existir uma página 2.
   //
   // O RODAPÉ ESTAVA SE CONTRADIZENDO, e é a assinatura do defeito: a contagem sai de
   // `total` (o `count` do backend, sempre certo) e as somas D/C saem de `entries` (só o
@@ -370,6 +360,44 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ESTORNO DA BAIXA — a porta nova
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // Desfazer uma baixa deixou de ser um `DELETE /entries/:id`: a rota recusa toda baixa com vínculo
+  // com `409 USE_ESTORNO`, porque enquanto isso era EFEITO de um DELETE não havia onde exigir o
+  // motivo nem onde gravar quem desfez. Hoje são duas chamadas — a prévia, que é o que o contador
+  // CONFERE, e a execução, que exige `motivo` e devolve o `totalConferido` para o servidor validar.
+  //
+  // ⚠ AS DUAS RELANÇAM O ERRO, e é isso que as diferencia dos outros handlers deste arquivo. Eles
+  // capturam e escrevem em `entriesError` porque a tela deles tem uma faixa de erro; aqui quem
+  // mostra é o MODAL, que é onde o contador está olhando e onde ele pode corrigir o motivo e tentar
+  // de novo. Engolir aqui faria cada 409 (motivo curto, total divergente, mês corrente fechado)
+  // virar um botão que não faz nada — recusa silenciosa, que é o pior desfecho possível num ato de
+  // consequência.
+  async function handlePreviewEstorno(entryId) {
+    if (!selectedCompanyId) return null;
+    return api.previewEstornoBaixa(selectedCompanyId, entryId);
+  }
+
+  async function handleEstornarBaixa(entryId, { motivo, totalConferido } = {}) {
+    if (!selectedCompanyId) return null;
+    setEntriesError("");
+    setEntriesMessage("");
+    const out = await api.estornarBaixa(selectedCompanyId, entryId, { motivo, totalConferido });
+    // O estorno mexe nos lançamentos da competência (apaga, ou cria o contra-lançamento no mês
+    // corrente): a aba Lançamentos precisa recarregar junto, senão ela segue mostrando o que já
+    // não existe. A Circular é recarregada por quem chamou (ela tem ano + competência próprios).
+    await loadAccountingEntries(selectedCompanyId);
+    const qtd = Array.isArray(out?.lancamentosDesfeitos) ? out.lancamentosDesfeitos.length : 0;
+    setEntriesMessage(
+      out?.modo === "CONTRA_LANCAMENTO"
+        ? `Baixa estornada com contra-lançamento em ${out.competenciaContraLancamento} (a competência original está fechada).`
+        : `Baixa estornada — ${qtd || "os"} lançamento${qtd === 1 ? "" : "s"} desfeito${qtd === 1 ? "" : "s"}.`,
+    );
+    return out;
+  }
+
   async function handleDeleteEntry(entryId) {
     if (!selectedCompanyId) return;
     // ⚠ O confirm NOMEIA o que vai sumir. "Excluir este lançamento?" é indistinguível de linha para
@@ -545,70 +573,6 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     setCircularData(null);
   }
 
-  async function loadFiscalExecutions(companyId = selectedCompanyId, competencia = circularCompetencia) {
-    if (!companyId || !api.getFiscalExecutions) return;
-    setLoadingFiscalExecutions(true);
-    try {
-      const data = await api.getFiscalExecutions(companyId, { competencia, limit: 20 });
-      setFiscalExecutions(Array.isArray(data) ? data : []);
-    } catch {
-      setFiscalExecutions([]);
-    } finally {
-      setLoadingFiscalExecutions(false);
-    }
-  }
-
-  // Fiscal action handlers
-  async function handleRunFiscalAction(action, competencia = circularCompetencia) {
-    if (!selectedCompanyId) return;
-    if (runningFiscalAction) return; // Prevent concurrent executions
-
-    setRunningFiscalAction(action);
-    setEntriesError("");
-    setEntriesMessage("");
-
-    try {
-      const result = await api.runCompanyFiscalAction(selectedCompanyId, {
-        action,
-        competencia,
-      });
-
-      setLastFiscalResult(result);
-
-      if (result?.result?.status === "completed") {
-        setEntriesMessage(`${action.replace("_", " ")}: operação concluída com sucesso.`);
-        // Reload circular after successful action
-        if (["search_guides", "sync_inss"].includes(action)) {
-          await loadCircular(circularYear, competencia);
-        }
-      } else if (result?.result?.status === "skipped") {
-        setEntriesMessage(`${action.replace("_", " ")}: operação ignorada. ${result?.result?.reason || ""}`);
-      }
-
-      // Refresh execution history after any action
-      await loadFiscalExecutions(selectedCompanyId, competencia);
-    } catch (err) {
-      setEntriesError(err?.message || `Falha ao executar ${action}`);
-      setLastFiscalResult(null);
-      // Refresh history even on failure (backend logs the failed attempt)
-      await loadFiscalExecutions(selectedCompanyId, competencia);
-    } finally {
-      setRunningFiscalAction(null);
-    }
-  }
-
-  async function handleSearchGuides(competencia = circularCompetencia) {
-    return handleRunFiscalAction("search_guides", competencia);
-  }
-
-  async function handleCheckPayments(competencia = circularCompetencia) {
-    return handleRunFiscalAction("check_payments", competencia);
-  }
-
-  async function handleSyncInss(competencia = circularCompetencia) {
-    return handleRunFiscalAction("sync_inss", competencia);
-  }
-
   useEffect(() => {
     if (page === "companyDetail" && selectedCompanyId) {
       setEntriesMessage("");
@@ -618,14 +582,6 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedCompanyId]);
-
-  // Load fiscal execution history when company or competencia changes
-  useEffect(() => {
-    if (selectedCompanyId && companyDetailTab === "circular") {
-      loadFiscalExecutions(selectedCompanyId, circularCompetencia);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCompanyId, circularCompetencia, companyDetailTab]);
 
   // Q18: carrega lançamentos + plano de contas ao abrir a aba Lançamentos e
   // recarrega quando os filtros mudam (competência/tipo/origem/status). Antes a carga
@@ -656,16 +612,14 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     approvingCircularEntryId,
     entriesMessage,
     entriesError,
-    runningFiscalAction,
-    lastFiscalResult,
-    fiscalExecutions,
-    loadingFiscalExecutions,
-    loadFiscalExecutions,
     loadChartOfAccounts,
     loadAccountingEntries,
     loadCircular,
     handleCreateBaixa,
     handleDeleteEntryNoConfirm,
+    // Estorno da baixa (Circular) — substituem o par `handleDeleteEntryNoConfirm` + N DELETEs.
+    handlePreviewEstorno,
+    handleEstornarBaixa,
     searchHistoricos,
     getHistoricosByCode,
     loadAllHistoricos,
@@ -692,10 +646,6 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     setCircularCompetencia,
     handleSaveCircular,
     handleApproveCircularEntry,
-    handleRunFiscalAction,
-    handleSearchGuides,
-    handleCheckPayments,
-    handleSyncInss,
     resetWorkspace,
   };
 }

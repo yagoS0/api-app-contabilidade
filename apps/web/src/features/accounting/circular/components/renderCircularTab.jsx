@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
+import { EstornoBaixaModal } from "./EstornoBaixaModal";
 import { SmartHistoricoInput, LineEditor, hasDuplicateAccountAcrossSides } from "../../entries/components/renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, PANEL_FIELD_STYLE, SUBTIPO_OPTIONS } from "../../entries/lib/accountingEntriesShared";
 // Cliente próprio: a busca de pagamento é uma chamada pontual da própria aba (mesmo padrão
@@ -401,7 +402,7 @@ function fmtCompetenciaLonga(comp) {
 
 // Q31: célula só com NÚMERO; cor implícita (vermelho=aberto, verde=pago, amarelo=vinculado a
 // parcelamento). Clicar abre o menu de ações (Editar / Dar baixa / Vincular a parcelamento).
-function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null, onBuscarPagamento }) {
+function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosAtivos = [], onVincular, onDesvincular, acrescimo = null, onBuscarPagamento }) {
   const [open, setOpen] = useState(false);
   const [selParc, setSelParc] = useState("");
   const temAcrescimo = acrescimo && acrescimo.acrescimo > 0;
@@ -459,8 +460,8 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
   const hasActions =
     canBaixaInss
     || canEditInss
-    || (canManageInssBaixa && (Boolean(onCancelBaixa) || (Boolean(onEdit) && Boolean(entry.baixaEntry))))
-    || (!isSynthetic && (Boolean(onEdit) || (isOpenLike && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onCancelBaixa)) || Boolean(onVincular)));
+    || (canManageInssBaixa && (Boolean(onDesfazerBaixa) || (Boolean(onEdit) && Boolean(entry.baixaEntry))))
+    || (!isSynthetic && (Boolean(onEdit) || (isOpenLike && Boolean(onBaixa)) || (Boolean(baixaId) && Boolean(onDesfazerBaixa)) || Boolean(onVincular)));
   const numText = fmtValor(valor) ? `R$ ${fmtValor(valor)}` : "—";
 
   return (
@@ -560,13 +561,18 @@ function PagamentoCell({ entry, onBaixa, onEdit, onCancelBaixa, parcelamentosAti
           )}
           {/* "Dar baixa" — provisões reais E INSS sintético (Q47). Em PARCIAL, abre nova quota. */}
           {isOpenLike && onBaixa && <button onClick={() => { setOpen(false); onBaixa(entry); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "Dar baixa (próxima quota)" : "Dar baixa"}</button>}
-          {/* "Cancelar baixa" — DAS/quota (provisão real) E INSS sintético (Q52). Em PARCIAL cancela a última quota. */}
+          {/* "Desfazer baixa" — DAS/quota (provisão real) E INSS sintético (Q52). Em PARCIAL, a última quota. */}
           {/* ⚠ "DESFAZER BAIXA", não "cancelar" — e leva a guia inteira.
               Uma guia tem até TRÊS baixas (principal, juros e multa são lançamentos separados, em
               contas diferentes). Desfazer uma de três deixaria dois lançamentos órfãos com a guia
               reaberta; por isso `baixaIds` inteiro. O rótulo diz quantos lançamentos vão embora
-              justamente para que ninguém descubra depois. */}
-          {baixaId && onCancelBaixa && <button onClick={() => { setOpen(false); onCancelBaixa(baixaIds); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "↩ Desfazer última quota" : (baixaIds.length > 1 ? `↩ Desfazer baixa (${baixaIds.length} lançamentos)` : "↩ Desfazer baixa")}</button>}
+              justamente para que ninguém descubra depois.
+
+              ⚠ ESTE BOTÃO NÃO CHAMA MAIS O `DELETE`. Ele abre o ESTORNO, que exige motivo e mostra
+              antes o que vai ser desfeito, com valores. O backend recusa o verbo antigo com
+              `409 USE_ESTORNO` — sem essa recusa a exigência do motivo seria contornável por ele, e
+              nascia morta. */}
+          {baixaId && onDesfazerBaixa && <button onClick={() => { setOpen(false); onDesfazerBaixa(baixaIds); }} style={menuBtn} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>{isParcial ? "↩ Desfazer última quota" : (baixaIds.length > 1 ? `↩ Desfazer baixa (${baixaIds.length} lançamentos)` : "↩ Desfazer baixa")}</button>}
           {onVincular && !isSynthetic && (
             isVinculado ? (
               <button onClick={() => { setOpen(false); onDesvincular(entry); }} style={{ ...menuBtn, color: "#FFB347" }} onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>Desvincular do parcelamento</button>
@@ -697,7 +703,12 @@ export function CircularTab({
   onUpdateEntry,
   onSearchHistoricos,
   onGetHistoricosByCode, // sugestão de contas por código no config de parcelamento
-  onCancelBaixa,
+  // ESTORNO DA BAIXA — duas chamadas, e as duas são necessárias. A prévia é o que se CONFERE
+  // (o lote com valores, o modo, a competência do contra-lançamento); a execução exige o motivo.
+  // O `onCancelBaixa` que existia aqui ia no `DELETE /entries/:id`, que hoje responde
+  // `409 USE_ESTORNO` para toda baixa com vínculo.
+  onPreviewEstorno,
+  onEstornarBaixa,
   parcelamentos, // Q9: hook completo (parcelamentos, payParcela, rescindir, etc)
   onSaveCircular, // Frente B: salva acrescimos (principal/juros/multa) da circular
   savingCircular,
@@ -731,7 +742,10 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
   }
   const [editEntry, setEditEntry] = useState(null);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [cancellingBaixaId, setCancellingBaixaId] = useState(null);
+  // O lote de baixa cujo estorno está sendo confirmado — `{ entryId, quantos }`. O `entryId` é o
+  // PRINCIPAL: a prévia do servidor carrega o lote inteiro a partir de qualquer um deles (pela
+  // guia), então mandar o primeiro basta e não há como confirmar um pedaço do lote.
+  const [estornoAlvo, setEstornoAlvo] = useState(null);
   const [imprimindo, setImprimindo] = useState(false);
   const currentYear = new Date().getFullYear();
 
@@ -902,27 +916,27 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
     };
   }, [imprimindo]);
 
-  async function handleCancelBaixa(ids) {
-    if (!onCancelBaixa) return;
+  // ⚠ ISTO DEIXOU DE SER UM `window.confirm` + N `DELETE`.
+  //
+  // O laço que apagava os lançamentos um a um morreu com a promoção do estorno a transição nomeada:
+  // `DELETE /entries/:id` de uma baixa com vínculo responde `409 USE_ESTORNO`. E a troca não é só de
+  // rota — um "tem certeza?" não é confirmação de ato de consequência. Some um pagamento do razão,
+  // um passivo volta a existir e uma parcela volta para a fila; quem confirma tem de VER o lote,
+  // com valores, e dizer POR QUÊ. É o modal que faz isso, com a prévia do servidor.
+  function handleAbrirEstorno(ids) {
+    if (!onEstornarBaixa || !onPreviewEstorno) return;
     const lista = Array.isArray(ids) ? ids.filter(Boolean) : [ids].filter(Boolean);
     if (!lista.length) return;
-    // ⚠ Isto APAGA lançamentos contábeis (até três: principal, juros, multa) e REABRE a guia. Não
-    // tinha confirmação nenhuma, enquanto excluir um lançamento pela aba Lançamentos tinha — o
-    // mesmo estrago, por um caminho mais curto. O texto diz quantos vão embora.
-    const quantos = lista.length > 1 ? `${lista.length} lançamentos de baixa` : "o lançamento de baixa";
-    if (!window.confirm(`Desfazer a baixa?\n\nIsto apaga ${quantos} e reabre a guia como não paga.`)) return;
-    setCancellingBaixaId(lista[0]);
-    try {
-      // Sequencial de propósito: a rota reabre a guia ao apagar, e disparar em paralelo deixaria a
-      // ordem das reaberturas ao acaso.
-      for (const id of lista) {
-        // eslint-disable-next-line no-await-in-loop
-        await onCancelBaixa(id);
-      }
-      await onLoad(year, competencia);
-    } finally {
-      setCancellingBaixaId(null);
-    }
+    setEstornoAlvo({ entryId: lista[0], quantos: lista.length });
+  }
+
+  async function handleConfirmarEstorno({ entryId, motivo, totalConferido }) {
+    // Sem try/catch de propósito: a recusa (motivo curto, total divergente, mês corrente fechado)
+    // tem de CHEGAR AO MODAL, que é onde o contador está olhando e onde ele pode corrigir. Engolir
+    // aqui transformaria todo 409 num botão que não faz nada.
+    const out = await onEstornarBaixa(entryId, { motivo, totalConferido });
+    await onLoad(year, competencia);
+    return out;
   }
 
   return (
@@ -1059,7 +1073,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         onBaixa={(entry) => setBaixaEntry(entry)}
                         onBuscarPagamento={handleBuscarPagamento}
                         onEdit={(onUpdateEntry || onSaveCircular) ? (entry) => setEditEntry(entry) : null}
-                        onCancelBaixa={onCancelBaixa ? handleCancelBaixa : null}
+                        onDesfazerBaixa={(onEstornarBaixa && onPreviewEstorno) ? handleAbrirEstorno : null}
                         parcelamentosAtivos={parcelamentosAtivos}
                         onVincular={parcelamentos?.vincularEntry ? handleVincular : null}
                         onDesvincular={handleDesvincular}
@@ -1161,6 +1175,18 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
           onClose={() => setEditEntry(null)}
           onSearchHistoricos={onSearchHistoricos}
           acrescimosComp={circularData?.acrescimos?.[editEntry.competencia] || {}}
+        />
+      )}
+
+      {/* Estorno da baixa — a confirmação que REPETE OS DADOS (lote com valores, modo, guia) e
+          exige o motivo. Substitui o `window.confirm` + N `DELETE` que o backend recusa hoje. */}
+      {estornoAlvo && (
+        <EstornoBaixaModal
+          entryId={estornoAlvo.entryId}
+          quantosLancamentos={estornoAlvo.quantos}
+          onLoadPreview={onPreviewEstorno}
+          onConfirm={handleConfirmarEstorno}
+          onClose={() => setEstornoAlvo(null)}
         />
       )}
     </div>

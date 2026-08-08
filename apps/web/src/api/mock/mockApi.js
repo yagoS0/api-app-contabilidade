@@ -723,6 +723,137 @@ function mockFaturamentoDaCompetencia(companyId, competencia) {
 // "já buscado em <data>" ser exercitável offline; sem ela, o mock nunca chega ao segundo clique.
 const mockBuscasLp = new Map(); // "companyId|competencia" -> ISO
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// ESTORNO DA BAIXA — a fixture que faltava
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// ⚠ TODA fixture da Circular era ABERTA, com `baixas: []`. Sem uma baixa PAGA no mock, o botão
+// "↩ Desfazer baixa" nunca aparecia offline — o único fluxo da aba que não dava para conferir sem
+// backend era justamente o que mais precisa ser conferido antes de subir.
+//
+// São TRÊS lançamentos (principal, juros, multa em contas diferentes), porque o lote é o caso real:
+// uma fixture de um lançamento só produziria uma prévia e um `totalConferido` que o servidor de
+// verdade nunca devolveria, e o mock passaria a esconder exatamente o que a tela existe para
+// mostrar. É uma PARCELA de parcelamento de propósito — é ela que "volta para a fila".
+const MOCK_ESTORNO_PROVISAO_ID = "mock-provisao-parcela-paga";
+const MOCK_ESTORNO_GUIA_ID = "mock-guia-parcela-paga";
+const MOCK_ESTORNO_LOTE = [
+  {
+    id: "mock-baixa-principal",
+    historico: "PAGO PARCELA 03/12 - PARCELAMENTO SIMPLES NACIONAL",
+    tipoLinha: "PRINCIPAL", codigoTributo: "DAS", valor: 392.58,
+    linhas: [{ conta: "553", tipo: "D", valor: 392.58 }, { conta: "111", tipo: "C", valor: 392.58 }],
+  },
+  {
+    id: "mock-baixa-juros",
+    historico: "PAGO PARCELA 03/12 - PARCELAMENTO SIMPLES NACIONAL (juros)",
+    tipoLinha: "JUROS", codigoTributo: "DAS", valor: 57.52,
+    linhas: [{ conta: "501", tipo: "D", valor: 57.52 }, { conta: "111", tipo: "C", valor: 57.52 }],
+  },
+  {
+    id: "mock-baixa-multa",
+    historico: "PAGO PARCELA 03/12 - PARCELAMENTO SIMPLES NACIONAL (multa)",
+    tipoLinha: "MULTA", codigoTributo: "DAS", valor: 78.48,
+    linhas: [{ conta: "506", tipo: "D", valor: 78.48 }, { conta: "111", tipo: "C", valor: 78.48 }],
+  },
+];
+// Só os DÉBITOS somam — igual ao `totalEstornado` do serviço. A perna de CAIXA em crédito, somada,
+// contaria o mesmo dinheiro duas vezes na tela de confirmação.
+const MOCK_ESTORNO_TOTAL = Math.round(
+  MOCK_ESTORNO_LOTE.reduce(
+    (s, l) => s + l.linhas.filter((x) => x.tipo === "D").reduce((a, x) => a + x.valor, 0), 0,
+  ) * 100,
+) / 100;
+
+// Estornos já feitos no mock — é o que faz a parcela VOLTAR PARA A FILA depois do estorno, em vez
+// de a tela recarregar idêntica e o fluxo terminar sem nenhuma consequência visível.
+const mockEstornosFeitos = new Map(); // companyId -> Set(entryId de baixa)
+
+function mockLoteJaEstornado(companyId) {
+  return (mockEstornosFeitos.get(companyId) || new Set()).size > 0;
+}
+
+// A competência da baixa fica numa função só porque DUAS coisas a leem: a fixture da Circular e a
+// prévia do estorno (que decide DELECAO × CONTRA_LANCAMENTO olhando se o mês está fechado). Duas
+// cópias fariam o mock oferecer o botão num mês e conferir o fechamento de outro.
+function mockEstornoCompetencia() {
+  return `${new Date().getFullYear()}-08`;
+}
+
+/**
+ * O LOTE que será desfeito, com valores — a mesma resposta que `previewEstorno` devolve.
+ *
+ * É função de módulo (e não um método do objeto) porque o `estornarBaixa` a chama para conferir o
+ * total e os bloqueios: uma segunda cópia da regra faria o mock aprovar na prévia o que ele mesmo
+ * recusaria na execução.
+ */
+function buildMockEstornoPreview(companyId, entryId) {
+  if (!MOCK_ESTORNO_LOTE.some((l) => l.id === entryId) || mockLoteJaEstornado(companyId)) {
+    throw mockRecusa("lancamento_nao_encontrado", "Lançamento não encontrado.");
+  }
+  const competenciaOriginal = mockEstornoCompetencia();
+  // ⚠ MÊS FECHADO NÃO APAGA: o lançamento fica onde está e nasce um espelho invertido na
+  // competência de HOJE. O mock lê o mesmo `mockMonthlyCirculars` que o cadeado da aba Lançamentos
+  // escreve — fechar o mês pela tela é o que faz este caminho aparecer, como em produção.
+  const mesFechado = Boolean(getCircularRecord(companyId, competenciaOriginal)?.fechadoContabilEm);
+  const hoje = new Date();
+  const competenciaHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const modo = mesFechado ? "CONTRA_LANCAMENTO" : "DELECAO";
+  const bloqueios = [];
+  if (modo === "CONTRA_LANCAMENTO"
+    && Boolean(getCircularRecord(companyId, competenciaHoje)?.fechadoContabilEm)) {
+    // Recusa explícita, COM O CAMINHO DE SAÍDA na mensagem: não existe terceiro lugar honesto para
+    // pôr este lançamento, e escolher sozinho outra competência aberta seria inventar a data de um
+    // fato contábil para não ter de dizer não.
+    bloqueios.push({
+      code: "MES_CORRENTE_FECHADO",
+      competencia: competenciaHoje,
+      message: `A baixa está em ${competenciaOriginal}, que já foi fechada, então o estorno tem de sair como contra-lançamento em ${competenciaHoje} — que também está fechada. Reabra ${competenciaHoje} para estornar.`,
+    });
+  }
+  const dataDaBaixa = new Date(`${competenciaOriginal}-20T00:00:00.000Z`).toISOString();
+  return {
+    ok: true,
+    modo,
+    mesFechado,
+    competenciaOriginal,
+    competenciaContraLancamento: modo === "CONTRA_LANCAMENTO" ? competenciaHoje : null,
+    lancamentos: MOCK_ESTORNO_LOTE.map((l) => ({
+      id: l.id,
+      historico: l.historico,
+      competencia: competenciaOriginal,
+      data: dataDaBaixa,
+      tipoLinha: l.tipoLinha,
+      codigoTributo: l.codigoTributo,
+      valor: l.valor,
+      linhas: l.linhas,
+    })),
+    totalEstornado: MOCK_ESTORNO_TOTAL,
+    guia: {
+      id: MOCK_ESTORNO_GUIA_ID, tipo: "DAS", competencia: competenciaOriginal,
+      numeroParcela: 3, vencimento: dataDaBaixa, valor: MOCK_ESTORNO_TOTAL,
+      parcelaEstado: "CONFIRMADA", parcelaEstadoAposEstorno: "ESTORNADA",
+      paymentStatusSource: "MANUAL", pagamentoSeraDesfeito: true, reabre: true,
+    },
+    provisao: {
+      id: "mock-abertura-parc", historico: "ABERTURA PARCELAMENTO SIMPLES NACIONAL",
+      competencia: `${hoje.getFullYear()}-01`, statusPagamento: "PARCIAL",
+    },
+    parcelamentoId: "mock-parc-1",
+    recalculoAtual: { risco: { nivel: "BAIXO", emAtraso: 0 } },
+    motivoObrigatorio: true,
+    bloqueios,
+  };
+}
+
+/** Erro de recusa do mock — com o MESMO código do backend, senão o mock só conhece o caminho feliz. */
+function mockRecusa(code, message, extra = {}) {
+  const err = new Error(message);
+  err.code = code;
+  Object.assign(err, extra);
+  return err;
+}
+
 /**
  * Provisões do Lucro Presumido: uma por tributo, como `generateProvisionsFromGuide` faz de verdade.
  * O mock antigo devolvia sucesso com `debitos: []` e não escrevia nada — o botão diria "deu certo"
@@ -1120,7 +1251,24 @@ export function createMockApi() {
       // fechado e o botão Reabrir eram inalcançáveis offline — exatamente os estados que o mock
       // existe para deixar conferir.
       const fechadoEm = circular?.fechadoContabilEm || null;
-      // Checklist com um item pendente de propósito, pra dar pra ver o estado bloqueado na tela.
+      // ⚠ O CHECK-LIST SAI DO REGISTRO, pelo mesmo motivo que o `fechado` saiu — e era o mesmo
+      // defeito, um degrau adiante. Ele era um literal com dois itens pendentes ("de propósito, pra
+      // dar pra ver o estado bloqueado"), e `setChecklistFechamento` não gravava nada: marcar as
+      // caixas não mudava o retorno, `podeFechar` era `false` fixo, e **nenhum mês podia ser
+      // fechado offline**. Tudo o que depende de competência FECHADA ficava inalcançável no mock —
+      // inclusive o estorno em mês fechado (contra-lançamento) e a recusa `MES_CORRENTE_FECHADO`.
+      // O estado bloqueado continua sendo o inicial: as duas caixas nascem desmarcadas.
+      const checklist = {
+        folhaProlabore: true, despesas: true, receitas: true, provisoes: false, pagamentos: false,
+        ...(circular?.checklist || {}),
+      };
+      const ROTULOS_CHECKLIST = {
+        folhaProlabore: "Folha/Pró-labore lançados", despesas: "Despesas lançadas",
+        receitas: "Receitas lançadas", provisoes: "Provisões lançadas", pagamentos: "Pagamentos lançados",
+      };
+      const checklistPendentes = Object.entries(checklist)
+        .filter(([, ok]) => !ok)
+        .map(([chave]) => ({ chave, label: ROTULOS_CHECKLIST[chave] || chave }));
       return {
         ok: true, competencia,
         fechado: Boolean(fechadoEm),
@@ -1128,9 +1276,11 @@ export function createMockApi() {
         fechadoPor: circular?.fechadoContabilPor || null,
         fechadoPorNome: fechadoEm ? "Usuário Mock" : null,
         folhaProlaboreOk: true,
-        checklist: { folhaProlabore: true, despesas: true, receitas: true, provisoes: false, pagamentos: false },
-        checklistPendentes: [{ chave: "provisoes", label: "Provisões lançadas" }, { chave: "pagamentos", label: "Pagamentos lançados" }],
-        podeFechar: false, blockers: [],
+        checklist,
+        checklistPendentes,
+        // Empresa já fechada não "pode fechar" — ela ESTÁ fechada (mesma regra do agregado real).
+        podeFechar: !fechadoEm && checklistPendentes.length === 0,
+        blockers: [],
         semFaturamento: circular?.semFaturamento === true,
         semFaturamentoEm: circular?.semFaturamentoEm || null,
         semFaturamentoConferencia: circular?.semFaturamentoConferencia || null,
@@ -1205,8 +1355,17 @@ export function createMockApi() {
         comprovante: { dataArrecadacao: "13/07/2026", principal: 178.31, juros: 12.94, multa: 1.78, total: 193.03, meioPagamento: "PIX", confiavel: true },
       };
     },
-    async setChecklistFechamento(_companyId, competencia, item, ok) {
+    async setChecklistFechamento(companyId, competencia, item, ok) {
       await delay();
+      // ⚠ GRAVA. Era um retorno de sucesso que não escrevia nada: a caixa marcava na tela, o
+      // próximo GET devolvia o literal de novo, e o cadeado nunca destravava.
+      const chave = makeCircularKey(companyId, competencia);
+      const atual = mockMonthlyCirculars.get(chave)
+        || { id: `mock-circular-${companyId}-${competencia}`, portalClientId: companyId, competencia };
+      mockMonthlyCirculars.set(chave, {
+        ...atual,
+        checklist: { ...(atual.checklist || {}), [item]: Boolean(ok) },
+      });
       return { ok: true, competencia, item, valor: Boolean(ok) };
     },
     // Fechar/reabrir GRAVAM na circular do mock. Sem isso o fechamento em lote "dava certo" e a
@@ -2101,6 +2260,64 @@ export function createMockApi() {
       mockEntriesByCompany.set(companyId, list.filter((e) => e.id !== entryId));
       return { ok: true };
     },
+
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // ESTORNO DA BAIXA — mock com os MESMOS códigos de recusa do backend
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    //
+    // ⚠ Um mock que só conhece o caminho feliz esconde exatamente o que esta tela existe para
+    // mostrar. As recusas são a razão de ser da confirmação: motivo curto, total divergente e mês
+    // corrente fechado precisam CHEGAR À TELA com o motivo, e não há como conferir isso offline se
+    // o mock sempre responde 200. Por isso as três estão aqui, com `err.code` igual ao do servidor.
+    async previewEstornoBaixa(companyId, entryId) {
+      await delay();
+      return buildMockEstornoPreview(companyId, entryId);
+    },
+    async estornarBaixa(companyId, entryId, { motivo, totalConferido } = {}) {
+      await delay();
+      // ⚠ O MOTIVO É A PRIMEIRA COISA CHECADA, antes de qualquer leitura — igual ao serviço. E o
+      // teste é sobre o texto APARADO: campo obrigatório que aceita espaço em branco não é
+      // obrigatório.
+      const motivoLimpo = String(motivo || "").trim();
+      if (motivoLimpo.length < 5) {
+        throw mockRecusa(
+          "MOTIVO_OBRIGATORIO",
+          "Informe o motivo do estorno (mínimo 5 caracteres). Desfazer uma baixa confirmada é o tipo de operação que alguém vai questionar meses depois.",
+          { minimo: 5 },
+        );
+      }
+      const preview = buildMockEstornoPreview(companyId, entryId);
+      if (preview.bloqueios.length) {
+        const b = preview.bloqueios[0];
+        throw mockRecusa(b.code, b.message, { competencia: b.competencia });
+      }
+      if (totalConferido != null && Math.abs(Number(totalConferido) - preview.totalEstornado) > 0.01) {
+        throw mockRecusa(
+          "CONFERENCIA_DIVERGENTE",
+          `O que está para ser estornado (R$ ${preview.totalEstornado.toFixed(2)}) não é o que foi confirmado (R$ ${Number(totalConferido).toFixed(2)}). A baixa mudou desde que a tela foi aberta — confira de novo.`,
+          { totalEstornado: preview.totalEstornado, totalConferido: Number(totalConferido) },
+        );
+      }
+      const feitos = mockEstornosFeitos.get(companyId) || new Set();
+      for (const l of MOCK_ESTORNO_LOTE) feitos.add(l.id);
+      mockEstornosFeitos.set(companyId, feitos);
+      return {
+        ok: true,
+        modo: preview.modo,
+        motivo: motivoLimpo,
+        estornoIds: MOCK_ESTORNO_LOTE.map((l) => `estorno-${l.id}`),
+        lancamentosDesfeitos: preview.lancamentos,
+        totalEstornado: preview.totalEstornado,
+        contraLancamentos: preview.modo === "CONTRA_LANCAMENTO"
+          ? preview.lancamentos.map((l) => ({ id: `espelho-${l.id}`, historico: `ESTORNO ${l.historico} (${l.competencia})`, competencia: preview.competenciaContraLancamento }))
+          : [],
+        competenciaContraLancamento: preview.competenciaContraLancamento,
+        guia: { id: MOCK_ESTORNO_GUIA_ID, baixada: false, parcelaEstado: "ESTORNADA", paymentStatus: "OPEN" },
+        parcelaEstadoAnterior: "CONFIRMADA",
+        parcelaEstadoNovo: "ESTORNADA",
+        recalculo: { risco: { nivel: "BAIXO", emAtraso: 0 } },
+      };
+    },
     async createBaixa(companyId, entryId, { data, historico, lines }) {
       await delay();
       const list = mockEntriesByCompany.get(companyId) || [];
@@ -2354,6 +2571,43 @@ export function createMockApi() {
             { conta: "553", tipo: "C", valor: 4800, ordem: 1 },
           ],
           baixas: [], sourceGuide: darfLp,
+        });
+      }
+
+      // ⚠ A PARCELA JÁ PAGA — a única fixture com `baixas`, e por isso a única célula que oferece
+      // "↩ Desfazer baixa". Depois do estorno ela volta ABERTA, com a guia de novo `OPEN`: é o
+      // aceite do fluxo ("a parcela volta para a fila") acontecendo de verdade offline, e não um
+      // recarregamento que devolve a tela idêntica.
+      //
+      // ⚠ FORA do `if (provisoes.length === 0)` de propósito. As demais fixtures são um fallback
+      // para empresa sem lançamento; esta cobre um FLUXO, e dentro do `if` ela desaparecia
+      // exatamente nas empresas que têm dados — que são as que alguém abre para conferir.
+      const compEstorno = mockEstornoCompetencia();
+      if (meses.includes(compEstorno)) {
+        const estornada = mockLoteJaEstornado(companyId);
+        const hojeMenos = (n) => {
+          const d = new Date();
+          d.setDate(d.getDate() - n);
+          return d.toISOString();
+        };
+        provisoes.push({
+          id: MOCK_ESTORNO_PROVISAO_ID,
+          competencia: compEstorno,
+          tipo: "PROVISAO", subtipo: "DAS", eventType: "PARC_DAS_PAGAMENTO",
+          statusPagamento: estornada ? "ABERTO" : "PAGO",
+          valor: MOCK_ESTORNO_TOTAL, totalD: MOCK_ESTORNO_TOTAL, totalC: MOCK_ESTORNO_TOTAL,
+          lines: [
+            { conta: "553", tipo: "D", valor: MOCK_ESTORNO_TOTAL, ordem: 0 },
+            { conta: "111", tipo: "C", valor: MOCK_ESTORNO_TOTAL, ordem: 1 },
+          ],
+          baixas: estornada ? [] : MOCK_ESTORNO_LOTE.map((l) => ({ id: l.id })),
+          sourceGuide: {
+            id: MOCK_ESTORNO_GUIA_ID, tipo: "DAS", vencimento: hojeMenos(20),
+            paymentStatus: estornada ? "OPEN" : "PAID",
+            paymentStatusSource: estornada ? null : "MANUAL",
+            paymentConfirmedAt: estornada ? null : hojeMenos(18),
+            emailStatus: "SENT", envios: [],
+          },
         });
       }
       // ⚠ O mock NUNCA devolvia `extrato`, então a coluna "Extrato" da Circular (os PDFs da

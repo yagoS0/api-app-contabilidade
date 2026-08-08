@@ -646,7 +646,8 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onUpdateEntry={accountingPanel.onUpdateEntry}
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
-            onCancelBaixa={circularPanel.onCancelBaixa}
+            onPreviewEstorno={circularPanel.onPreviewEstorno}
+            onEstornarBaixa={circularPanel.onEstornarBaixa}
             parcelamentos={accountingPanel.parcelamentos}
             onSaveCircular={circularPanel.onSaveCircular}
             savingCircular={circularPanel.savingCircular}

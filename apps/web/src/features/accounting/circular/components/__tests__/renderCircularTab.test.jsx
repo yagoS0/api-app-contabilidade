@@ -1,363 +1,467 @@
-import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+// A CIRCULAR NA TELA — o que a regra decide e o componente precisa mostrar.
+//
+// ⚠ Esta suíte nunca tinha rodado: quebrava em tempo de PARSE no `import.meta.env` de
+// `src/api/client.js` (ver `apps/web/babel.config.js`), e "1 failed" virou paisagem. O que ela
+// descrevia era o painel "Operações Fiscais" e o histórico de execuções — removidos na Q7.2
+// (as ações moraram para as abas Guias/Configurações). Teste verde sobre uma tela que não existe
+// mais é pior que teste nenhum, então foram substituídos pelo que a aba faz hoje: popover da
+// célula, vencida × a vencer e desfazer baixa.
+//
+// A REGRA em si (estadoDaGuia/aparenciaDaGuia/totaisEmAberto) tem cobertura própria em
+// `../../lib/__tests__/estadoGuia.test.js`. Aqui se testa a LIGAÇÃO: que a cor da célula, o chip do
+// popover e o rodapé saem da mesma leitura, e que a tela não contradiz a regra.
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { CircularTab } from "../renderCircularTab.jsx";
 
 jest.mock("../../../baixa/components/renderBaixaModal", () => ({
   BaixaModal: () => null,
 }));
 
-describe("CircularTab", () => {
-  const defaultProps = {
-    circularData: {
-      circular: {
-        receitaBruta: "10000",
-        receitaServicos: "",
-        receitaVendas: "",
-        dasTotal: "500",
-        inssTotal: "300",
-        inssVencimento: "",
-        inssStatus: "",
-      },
-      provisoes: [],
-      entries: [],
-    },
+const VERMELHO = "rgb(255, 71, 87)";   // #FF4757 — vencida
+const AMBAR = "rgb(255, 179, 71)";     // #FFB347 — a vencer / em aberto sem data
+const VERDE = "rgb(105, 255, 71)";     // #69FF47 — paga
+
+// Meio-dia LOCAL de N dias a partir de hoje. O horário importa: a data crua "2026-03-20" seria
+// parseada como UTC e viraria o dia 19 em qualquer fuso a oeste — o teste passaria a depender da
+// máquina. E são datas RELATIVAS, não fixas, porque `aparenciaDaGuia` lê o relógio de verdade.
+function emDias(n) {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  return d.toISOString();
+}
+
+const HOJE = new Date();
+const ANO = HOJE.getFullYear();
+const COMP = `${ANO}-${String(HOJE.getMonth() + 1).padStart(2, "0")}`;
+
+function guia(over = {}) {
+  return { id: "g1", tipo: "DAS", envios: [], ...over };
+}
+
+function provisao(over = {}) {
+  return {
+    id: "e1",
+    subtipo: "DAS",
+    competencia: COMP,
+    statusPagamento: "ABERTO",
+    valor: 1234.56,
+    baixas: [],
+    sourceGuide: guia({ vencimento: emDias(-12) }),
+    ...over,
+  };
+}
+
+function renderTab(provisoes, { acrescimos = {}, ...over } = {}) {
+  const props = {
+    companyId: "c1",
+    circularData: { provisoes, receitas: {}, acrescimos, extrato: {}, entries: [] },
     loading: false,
-    year: 2026,
-    competencia: "2026-01",
+    year: ANO,
+    competencia: COMP,
+    companyRegime: "SIMPLES",
+    accounts: [],
     onCompetenciaChange: jest.fn(),
     onYearChange: jest.fn(),
-    onLoad: jest.fn(),
-    onSaveCircular: jest.fn(),
-    savingCircular: false,
-    onApproveAccountingEntry: jest.fn(),
-    approvingCircularEntryId: null,
-    accounts: [],
+    onLoad: jest.fn().mockResolvedValue(undefined),
     onCreateBaixa: jest.fn(),
     savingBaixa: false,
+    onUpdateEntry: jest.fn(),
+    onSaveCircular: jest.fn(),
+    savingCircular: false,
+    // ⚠ Estorno, não DELETE. `onCancelBaixa` ficou aqui DE PROPÓSITO, como prop morta: é o que
+    // torna a regressão literal — nenhum caminho da tela pode voltar a chamá-lo (a rota antiga
+    // responde `409 USE_ESTORNO` para toda baixa com vínculo).
+    onCancelBaixa: jest.fn().mockResolvedValue(undefined),
+    onPreviewEstorno: jest.fn().mockResolvedValue(previewPadrao()),
+    onEstornarBaixa: jest.fn().mockResolvedValue({ ok: true, modo: "DELECAO", lancamentosDesfeitos: [] }),
+    ...over,
   };
+  return { props, ...render(<CircularTab {...props} />) };
+}
 
-  describe("OperationalBlock", () => {
-    it("renders operational block when handlers are provided", () => {
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: null,
-        lastFiscalResult: null,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: jest.fn(),
-        onSyncInss: jest.fn(),
-      };
+/**
+ * A prévia do servidor — o LOTE, com valores. É ela que a confirmação repete na tela.
+ * Três lançamentos porque uma baixa são até três (principal, juros e multa, em contas diferentes).
+ */
+function previewPadrao(over = {}) {
+  return {
+    ok: true,
+    modo: "DELECAO",
+    mesFechado: false,
+    competenciaOriginal: COMP,
+    competenciaContraLancamento: null,
+    lancamentos: [
+      { id: "b1", historico: "PAGO PARCELA 03/12", competencia: COMP, tipoLinha: "PRINCIPAL", valor: 392.58, linhas: [] },
+      { id: "b2", historico: "PAGO PARCELA 03/12 (juros)", competencia: COMP, tipoLinha: "JUROS", valor: 57.52, linhas: [] },
+      { id: "b3", historico: "PAGO PARCELA 03/12 (multa)", competencia: COMP, tipoLinha: "MULTA", valor: 78.48, linhas: [] },
+    ],
+    totalEstornado: 528.58,
+    guia: {
+      id: "g1", tipo: "DAS", numeroParcela: 3, valor: 528.58,
+      parcelaEstado: "CONFIRMADA", parcelaEstadoAposEstorno: "ESTORNADA",
+      paymentStatusSource: "MANUAL", pagamentoSeraDesfeito: true, reabre: true,
+    },
+    parcelamentoId: "parc-1",
+    motivoObrigatorio: true,
+    bloqueios: [],
+    ...over,
+  };
+}
 
-      render(<CircularTab {...props} />);
+/** Erro de recusa com CÓDIGO — é assim que a camada de api entrega o 4xx do backend. */
+function recusa(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
 
-      expect(screen.getByText(/Operações Fiscais/i)).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Buscar Guias/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Verificar Pagtos/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Sincronizar INSS/i })).toBeInTheDocument();
-    });
+/**
+ * Espera o modal do estorno sair do "Carregando…".
+ *
+ * ⚠ O `<dialog>` aparece ANTES da prévia: ele monta e só então busca no servidor o que será
+ * desfeito. Esperar só pelo papel `dialog` deixava o teste correndo contra o carregamento — passava
+ * ou falhava conforme o microtask, que é o pior tipo de teste instável.
+ */
+async function esperarPrevia() {
+  await screen.findByRole("dialog", { name: "Desfazer baixa" });
+  await waitFor(() =>
+    expect(screen.queryByText("Carregando o que será desfeito…")).not.toBeInTheDocument());
+}
 
-    it("does not render operational block when handlers are not provided", () => {
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: null,
-        lastFiscalResult: null,
-        onSearchGuides: null,
-        onCheckPayments: null,
-        onSyncInss: null,
-      };
+/** Abre o popover da célula cujo número é `texto` e devolve o botão da célula. */
+function abrirCelula(texto) {
+  const botao = screen.getByRole("button", { name: texto });
+  fireEvent.click(botao);
+  return botao;
+}
 
-      render(<CircularTab {...props} />);
+describe("a cor da célula É o estado — e nunca viaja sozinha", () => {
+  it("vencida sai vermelha, e o popover diz há quantos dias", () => {
+    renderTab([provisao({ valor: 1234.56, sourceGuide: guia({ vencimento: emDias(-12) }) })]);
 
-      expect(screen.queryByText(/Operações Fiscais/i)).not.toBeInTheDocument();
-    });
-
-    it("calls onSearchGuides when search button is clicked", () => {
-      const mockSearchGuides = jest.fn();
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: null,
-        lastFiscalResult: null,
-        onSearchGuides: mockSearchGuides,
-        onCheckPayments: jest.fn(),
-        onSyncInss: jest.fn(),
-      };
-
-      render(<CircularTab {...props} />);
-
-      fireEvent.click(screen.getByRole("button", { name: /Buscar Guias/i }));
-      expect(mockSearchGuides).toHaveBeenCalled();
-    });
-
-    it("calls onCheckPayments when check button is clicked", () => {
-      const mockCheckPayments = jest.fn();
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: null,
-        lastFiscalResult: null,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: mockCheckPayments,
-        onSyncInss: jest.fn(),
-      };
-
-      render(<CircularTab {...props} />);
-
-      fireEvent.click(screen.getByRole("button", { name: /Verificar Pagtos/i }));
-      expect(mockCheckPayments).toHaveBeenCalled();
-    });
-
-    it("calls onSyncInss when sync button is clicked", () => {
-      const mockSyncInss = jest.fn();
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: null,
-        lastFiscalResult: null,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: jest.fn(),
-        onSyncInss: mockSyncInss,
-      };
-
-      render(<CircularTab {...props} />);
-
-      fireEvent.click(screen.getByRole("button", { name: /Sincronizar INSS/i }));
-      expect(mockSyncInss).toHaveBeenCalled();
-    });
-
-    it("disables buttons when action is in progress", () => {
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: "search_guides",
-        lastFiscalResult: null,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: jest.fn(),
-        onSyncInss: jest.fn(),
-      };
-
-      render(<CircularTab {...props} />);
-
-      const buttons = screen.getAllByRole("button").filter((btn) =>
-        [/Buscar Guias/i, /Verificar Pagtos/i, /Sincronizar INSS/i].some((regex) =>
-          regex.test(btn.textContent)
-        )
-      );
-
-      buttons.forEach((btn) => {
-        expect(btn).toBeDisabled();
-      });
-    });
-
-    it("shows progress indicator for action in progress", () => {
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: "search_guides",
-        lastFiscalResult: null,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: jest.fn(),
-        onSyncInss: jest.fn(),
-      };
-
-      render(<CircularTab {...props} />);
-
-      expect(screen.getByText(/⏳ Buscando.../i)).toBeInTheDocument();
-    });
-
-    it("displays last fiscal result when available", () => {
-      const mockResult = {
-        result: {
-          action: "search_guides",
-          status: "completed",
-          guidesFound: 5,
-          guidesCaptured: 3,
-        },
-      };
-
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: null,
-        lastFiscalResult: mockResult,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: jest.fn(),
-        onSyncInss: jest.fn(),
-      };
-
-      render(<CircularTab {...props} />);
-
-      expect(screen.getByText(/✓ Concluído/i)).toBeInTheDocument();
-      expect(screen.getByText(/Guias encontradas: 5/i)).toBeInTheDocument();
-    });
-
-    it("displays check_payments result with payment counts", () => {
-      const mockResult = {
-        result: {
-          action: "check_payments",
-          status: "completed",
-          guidesChecked: 10,
-          guidesPaid: 6,
-          guidesOverdue: 2,
-          guidesOpen: 2,
-        },
-      };
-
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: null,
-        lastFiscalResult: mockResult,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: jest.fn(),
-        onSyncInss: jest.fn(),
-      };
-
-      render(<CircularTab {...props} />);
-
-      expect(screen.getByText(/Verificadas: 10/i)).toBeInTheDocument();
-      expect(screen.getByText(/Pagas: 6/i)).toBeInTheDocument();
-    });
-
-    it("displays result with different styling for incomplete status", () => {
-      const mockResult = {
-        result: {
-          action: "sync_inss",
-          status: "skipped",
-          reason: "declaration_not_transmitted",
-        },
-      };
-
-      const props = {
-        ...defaultProps,
-        runningFiscalAction: null,
-        lastFiscalResult: mockResult,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: jest.fn(),
-        onSyncInss: jest.fn(),
-      };
-
-      render(<CircularTab {...props} />);
-
-      expect(screen.getByText(/⚠ Ignorado/i)).toBeInTheDocument();
-    });
-
-    it("accepts competencia in operational block display", () => {
-      const props = {
-        ...defaultProps,
-        competencia: "2026-05",
-        runningFiscalAction: null,
-        lastFiscalResult: null,
-        onSearchGuides: jest.fn(),
-        onCheckPayments: jest.fn(),
-        onSyncInss: jest.fn(),
-      };
-
-      render(<CircularTab {...props} />);
-
-      expect(screen.getByText(/Operações Fiscais para 2026-05/i)).toBeInTheDocument();
-    });
+    const celula = abrirCelula("R$ 1.234,56");
+    expect(celula).toHaveStyle({ color: VERMELHO });
+    expect(screen.getByText("Vencida · 12 dias")).toBeInTheDocument();
   });
 
-  describe("ExecutionHistoryPanel", () => {
-    const baseProps = {
-      ...defaultProps,
-      runningFiscalAction: null,
-      lastFiscalResult: null,
-      onSearchGuides: jest.fn(),
-      onCheckPayments: jest.fn(),
-      onSyncInss: jest.fn(),
-    };
+  it("dentro do prazo sai ÂMBAR e diz a data — não é a mesma coisa que vencida", () => {
+    renderTab([provisao({ valor: 900, sourceGuide: guia({ vencimento: emDias(9) }) })]);
 
-    it("shows loading state when loadingExecutions is true", () => {
-      render(<CircularTab {...baseProps} executions={[]} loadingExecutions={true} />);
-      expect(screen.getByText(/Carregando.../i)).toBeInTheDocument();
+    const celula = abrirCelula("R$ 900,00");
+    expect(celula).toHaveStyle({ color: AMBAR });
+    expect(screen.getByText(/^A vencer · \d{2}\/\d{2}$/)).toBeInTheDocument();
+    expect(screen.queryByText(/Vencida/)).not.toBeInTheDocument();
+  });
+
+  it("⚠ sem vencimento a tela NÃO afirma atraso — diz 'Em aberto'", () => {
+    renderTab([provisao({ valor: 500, sourceGuide: guia({ vencimento: null }) })]);
+
+    const celula = abrirCelula("R$ 500,00");
+    expect(celula).toHaveStyle({ color: AMBAR });
+    expect(screen.getByText("Em aberto")).toBeInTheDocument();
+    expect(screen.queryByText(/Vencida/)).not.toBeInTheDocument();
+  });
+
+  it("paga sai verde e ganha o ✓ na célula", () => {
+    renderTab([provisao({
+      valor: 300,
+      statusPagamento: "PAGO",
+      baixas: [{ id: "b1" }],
+      sourceGuide: guia({ vencimento: emDias(-40) }),
+    })]);
+
+    const celula = abrirCelula("R$ 300,00");
+    expect(celula).toHaveStyle({ color: VERDE });
+    expect(screen.getByText("✓")).toBeInTheDocument();
+    expect(screen.getByText("Paga")).toBeInTheDocument();
+  });
+
+  it("provisão prevista não é dívida: sem ✓ e sem alarme", () => {
+    renderTab([provisao({ valor: 700, placeholder: true, sourceGuide: null })]);
+
+    abrirCelula("R$ 700,00");
+    expect(screen.getByText("Prevista")).toBeInTheDocument();
+    expect(screen.queryByText("✓")).not.toBeInTheDocument();
+  });
+});
+
+describe("o popover — onde mora o que estava escondido em `title`", () => {
+  it("abre no clique e fecha no segundo", () => {
+    renderTab([provisao()]);
+
+    const celula = screen.getByRole("button", { name: "R$ 1.234,56" });
+    expect(celula).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(celula);
+    expect(celula).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Valor original")).toBeInTheDocument();
+
+    fireEvent.click(celula);
+    expect(celula).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Valor original")).not.toBeInTheDocument();
+  });
+
+  it("na célula só o ⚠; juros/multa e valor atualizado ficam no popover, com rótulo", () => {
+    renderTab(
+      [provisao({ valor: 1000, sourceGuide: guia({ vencimento: emDias(-30) }) })],
+      { acrescimos: { [COMP]: { DAS: { principal: 1000, juros: 30, multa: 20 } } } },
+    );
+
+    // O sinal na célula é UM ícone — o valor não cabe ali.
+    expect(screen.getByTitle(/Tem juros\/multa/)).toHaveTextContent("⚠");
+
+    abrirCelula("R$ 1.000,00");
+    expect(screen.getByText("Juros/multa")).toBeInTheDocument();
+    expect(screen.getByText("+ R$ 50,00")).toBeInTheDocument();
+    expect(screen.getByText("Valor atualizado")).toBeInTheDocument();
+    expect(screen.getByText("R$ 1.050,00")).toBeInTheDocument();
+  });
+
+  it("o envio ao cliente sai de envios_guia, com o canal do envio", () => {
+    renderTab([provisao({
+      valor: 800,
+      sourceGuide: guia({
+        vencimento: emDias(5),
+        emailStatus: "PENDING", // ⚠ o campo legado diria "não enviada"; quem responde é `envios`
+        envios: [{ canal: "WHATSAPP", status: "entregue", entregueEm: emDias(-2) }],
+      }),
+    })]);
+
+    abrirCelula("R$ 800,00");
+    expect(screen.getByText("Enviada ao cliente")).toBeInTheDocument();
+    expect(screen.getByText(/^✓ .+ · WhatsApp$/)).toBeInTheDocument();
+  });
+
+  it("sem envio a linha continua lá dizendo 'ainda não' — ausência não é resposta", () => {
+    renderTab([provisao({ valor: 640, sourceGuide: guia({ vencimento: emDias(5), envios: [] }) })]);
+
+    abrirCelula("R$ 640,00");
+    expect(screen.getByText("Enviada ao cliente")).toBeInTheDocument();
+    expect(screen.getByText("ainda não")).toBeInTheDocument();
+  });
+});
+
+describe("desfazer baixa — ESTORNO, não DELETE", () => {
+  const pagaComTres = () => provisao({
+    valor: 2000,
+    statusPagamento: "PAGO",
+    // principal, juros e multa são TRÊS lançamentos separados, em contas diferentes.
+    baixas: [{ id: "b1" }, { id: "b2" }, { id: "b3" }],
+    sourceGuide: guia({ vencimento: emDias(-50) }),
+  });
+
+  /** Abre a célula paga, clica em "Desfazer baixa" e espera a PRÉVIA chegar. */
+  async function abrirEstorno(over = {}) {
+    const r = renderTab([pagaComTres()], over);
+    abrirCelula("R$ 2.000,00");
+    fireEvent.click(screen.getByRole("button", { name: /↩ Desfazer baixa/ }));
+    await esperarPrevia();
+    return r;
+  }
+
+  it("o rótulo diz quantos lançamentos vão embora", () => {
+    renderTab([pagaComTres()]);
+
+    abrirCelula("R$ 2.000,00");
+    expect(screen.getByRole("button", { name: "↩ Desfazer baixa (3 lançamentos)" })).toBeInTheDocument();
+  });
+
+  it("⚠ NÃO chama mais o DELETE — pede a PRÉVIA do lote ao servidor", async () => {
+    const { props } = await abrirEstorno();
+
+    // A rota antiga responde `409 USE_ESTORNO` para toda baixa com vínculo: se este caminho voltar,
+    // o botão volta a estar quebrado em produção.
+    expect(props.onCancelBaixa).not.toHaveBeenCalled();
+    // O PRINCIPAL basta: o servidor carrega o lote inteiro a partir dele (pela guia), e assim não
+    // há como confirmar um pedaço do lote.
+    expect(props.onPreviewEstorno).toHaveBeenCalledWith("b1");
+  });
+
+  it("a prévia mostra os VALORES — confirmação repete os dados, não pergunta 'tem certeza?'", async () => {
+    await abrirEstorno();
+
+    expect(screen.getByText("PAGO PARCELA 03/12")).toBeInTheDocument();
+    expect(screen.getByText("R$ 392,58")).toBeInTheDocument();
+    expect(screen.getByText("R$ 57,52")).toBeInTheDocument();
+    expect(screen.getByText("R$ 78,48")).toBeInTheDocument();
+    // O total é o que volta como `totalConferido` — é o número que o contador declara ter visto.
+    expect(screen.getByText("Total a estornar")).toBeInTheDocument();
+    expect(screen.getByText("R$ 528,58")).toBeInTheDocument();
+    // E o que acontece com a guia depois.
+    expect(screen.getByText("A guia volta para a fila")).toBeInTheDocument();
+    expect(screen.getByText(/CONFIRMADA → ESTORNADA/)).toBeInTheDocument();
+  });
+
+  it("motivo curto NÃO deixa confirmar — e diz quanto falta", async () => {
+    await abrirEstorno();
+
+    const confirmar = screen.getByRole("button", { name: "Desfazer 3 lançamentos" });
+    expect(confirmar).toBeDisabled();
+    expect(screen.getByText(/Mínimo de 5 caracteres/)).toBeInTheDocument();
+
+    // ⚠ Espaço em branco não é motivo: campo obrigatório que aceita espaço não é obrigatório.
+    fireEvent.change(screen.getByPlaceholderText(/baixa lançada na guia errada/), { target: { value: "      " } });
+    expect(confirmar).toBeDisabled();
+
+    fireEvent.change(screen.getByPlaceholderText(/baixa lançada na guia errada/), { target: { value: "baixa na guia errada" } });
+    expect(confirmar).toBeEnabled();
+  });
+
+  it("confirmar manda o motivo E o total conferido, e recarrega a Circular", async () => {
+    const { props } = await abrirEstorno();
+
+    fireEvent.change(screen.getByPlaceholderText(/baixa lançada na guia errada/), { target: { value: "  pagamento era da parcela 04  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer 3 lançamentos" }));
+
+    await waitFor(() => expect(props.onEstornarBaixa).toHaveBeenCalledWith(
+      "b1",
+      // O motivo vai APARADO; o total é o da prévia, não um recalculado na tela.
+      { motivo: "pagamento era da parcela 04", totalConferido: 528.58 },
+    ));
+    await waitFor(() => expect(props.onLoad).toHaveBeenCalledWith(ANO, COMP));
+  });
+
+  it("desistir não estorna nada", async () => {
+    const { props } = await abrirEstorno();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(props.onEstornarBaixa).not.toHaveBeenCalled();
+    expect(props.onCancelBaixa).not.toHaveBeenCalled();
+  });
+
+  it("guia em aberto não oferece desfazer — não há o que desfazer", () => {
+    renderTab([provisao({ valor: 111 })]);
+
+    abrirCelula("R$ 111,00");
+    expect(screen.queryByText(/Desfazer baixa/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dar baixa" })).toBeInTheDocument();
+  });
+});
+
+// ⚠ AUSÊNCIA NUNCA É RESPOSTA. Cada recusa do servidor tem uma saída diferente — corrigir o campo,
+// recarregar a prévia, reabrir a competência — e nenhuma delas é descobrível se a tela só deixar de
+// fazer nada. Um por um, porque foi o silêncio de UM deles que quebraria o fluxo em produção.
+describe("as recusas do estorno chegam à tela, com o motivo", () => {
+  const pagaComTres = () => provisao({
+    valor: 2000, statusPagamento: "PAGO",
+    baixas: [{ id: "b1" }, { id: "b2" }, { id: "b3" }],
+    sourceGuide: guia({ vencimento: emDias(-50) }),
+  });
+
+  async function abrir(over) {
+    renderTab([pagaComTres()], over);
+    abrirCelula("R$ 2.000,00");
+    fireEvent.click(screen.getByRole("button", { name: /↩ Desfazer baixa/ }));
+    await esperarPrevia();
+  }
+
+  it("MES_CORRENTE_FECHADO vem como BLOQUEIO da prévia e trava a confirmação", async () => {
+    await abrir({
+      onPreviewEstorno: jest.fn().mockResolvedValue(previewPadrao({
+        modo: "CONTRA_LANCAMENTO",
+        mesFechado: true,
+        competenciaContraLancamento: "2026-09",
+        bloqueios: [{
+          code: "MES_CORRENTE_FECHADO",
+          competencia: "2026-09",
+          message: "A baixa está em 2026-06, que já foi fechada … Reabra 2026-09 para estornar.",
+        }],
+      })),
     });
 
-    it("shows empty state when executions array is empty", () => {
-      render(<CircularTab {...baseProps} executions={[]} loadingExecutions={false} />);
-      expect(screen.getByText(/Nenhuma execução registrada/i)).toBeInTheDocument();
+    // A mensagem traz o CAMINHO DE SAÍDA, não só o código.
+    expect(screen.getByText(/Reabra 2026-09 para estornar/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Desfazer 3 lançamentos" })).toBeDisabled();
+  });
+
+  it("mês fechado sem bloqueio avisa que NÃO apaga — nasce contra-lançamento", async () => {
+    await abrir({
+      onPreviewEstorno: jest.fn().mockResolvedValue(previewPadrao({
+        modo: "CONTRA_LANCAMENTO", mesFechado: true, competenciaContraLancamento: "2026-09",
+      })),
     });
 
-    it("renders execution entries with status badges", () => {
-      const executions = [
-        {
-          id: "log-1",
-          portalClientId: "c1",
-          competencia: "2026-01",
-          action: "search_guides",
-          status: "completed",
-          startedAt: "2026-01-15T10:00:00Z",
-          completedAt: "2026-01-15T10:00:03Z",
-          guidesFound: 3,
-          guidesCaptured: 2,
-          entriesGenerated: 5,
-        },
-        {
-          id: "log-2",
-          portalClientId: "c1",
-          competencia: "2026-01",
-          action: "check_payments",
-          status: "failed",
-          startedAt: "2026-01-15T11:00:00Z",
-          errorCode: "SERPRO_SERVICE_UNAVAILABLE",
-          errorMessage: "Service unavailable",
-        },
-      ];
+    expect(screen.getByText(/não serão apagados/)).toBeInTheDocument();
+    expect(screen.getByText("09/2026")).toBeInTheDocument();
+  });
 
-      render(<CircularTab {...baseProps} executions={executions} loadingExecutions={false} />);
-
-      expect(screen.getAllByText(/Concluído/i).length).toBeGreaterThan(0);
-      expect(screen.getByText(/Falhou/i)).toBeInTheDocument();
-      // "Buscar Guias" and "Verificar Pagtos" appear in both buttons and history entries
-      expect(screen.getAllByText(/Buscar Guias/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/Verificar Pagtos/i).length).toBeGreaterThan(0);
+  it("CONFERENCIA_DIVERGENTE aparece depois do clique — a baixa mudou desde a prévia", async () => {
+    await abrir({
+      onEstornarBaixa: jest.fn().mockRejectedValue(recusa(
+        "CONFERENCIA_DIVERGENTE",
+        "O que está para ser estornado (R$ 610,10) não é o que foi confirmado (R$ 528,58).",
+      )),
     });
 
-    it("shows error message for failed executions", () => {
-      const executions = [
-        {
-          id: "log-fail",
-          portalClientId: "c1",
-          competencia: "2026-01",
-          action: "sync_inss",
-          status: "failed",
-          startedAt: "2026-01-15T12:00:00Z",
-          errorCode: "SERPRO_TIMEOUT",
-          errorMessage: "Request timed out",
-        },
-      ];
+    fireEvent.change(screen.getByPlaceholderText(/baixa lançada na guia errada/), { target: { value: "conferindo de novo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer 3 lançamentos" }));
 
-      render(<CircularTab {...baseProps} executions={executions} loadingExecutions={false} />);
+    expect(await screen.findByText(/não é o que foi confirmado/)).toBeInTheDocument();
+  });
 
-      expect(screen.getByText(/Request timed out/i)).toBeInTheDocument();
+  it("MOTIVO_OBRIGATORIO do servidor também aparece (o gate da tela não é o único)", async () => {
+    await abrir({
+      onEstornarBaixa: jest.fn().mockRejectedValue(recusa(
+        "MOTIVO_OBRIGATORIO",
+        "Informe o motivo do estorno (mínimo 5 caracteres).",
+      )),
     });
 
-    it("shows skip reason for skipped executions", () => {
-      const executions = [
-        {
-          id: "log-skip",
-          portalClientId: "c1",
-          competencia: "2026-01",
-          action: "sync_inss",
-          status: "skipped",
-          startedAt: "2026-01-15T12:00:00Z",
-          skipReason: "declaration_not_transmitted",
-        },
-      ];
+    fireEvent.change(screen.getByPlaceholderText(/baixa lançada na guia errada/), { target: { value: "motivo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Desfazer 3 lançamentos" }));
 
-      render(<CircularTab {...baseProps} executions={executions} loadingExecutions={false} />);
+    expect(await screen.findByText(/mínimo 5 caracteres/)).toBeInTheDocument();
+  });
 
-      expect(screen.getByText(/declaration not transmitted/i)).toBeInTheDocument();
+  it("recusa da PRÉVIA some com o fluxo, nunca com a explicação", async () => {
+    await abrir({
+      onPreviewEstorno: jest.fn().mockRejectedValue(recusa(
+        "LOTE_JA_EXPORTADO",
+        "A baixa tem 3 lançamento(s) e um deles já foi exportado. O lote é estornado inteiro ou nenhum.",
+      )),
     });
 
-    it("shows record count in panel header", () => {
-      const executions = [
-        {
-          id: "log-1", portalClientId: "c1", competencia: "2026-01",
-          action: "search_guides", status: "completed", startedAt: "2026-01-15T10:00:00Z",
-        },
-        {
-          id: "log-2", portalClientId: "c1", competencia: "2026-01",
-          action: "check_payments", status: "completed", startedAt: "2026-01-15T11:00:00Z",
-        },
-      ];
+    expect(await screen.findByText(/já foi exportado/)).toBeInTheDocument();
+    // Sem prévia não há o que confirmar — e sem o que confirmar não há campo de motivo.
+    expect(screen.queryByPlaceholderText(/baixa lançada na guia errada/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Desfazer 3 lançamentos" })).toBeDisabled();
+  });
+});
 
-      render(<CircularTab {...baseProps} executions={executions} loadingExecutions={false} />);
+describe("Total em aberto — somar vencido com a vencer responde a pergunta errada", () => {
+  it("o rodapé do mês separa vencido, a vencer e sem data", () => {
+    renderTab([
+      provisao({ id: "a", subtipo: "DAS", valor: 1000, sourceGuide: guia({ id: "ga", vencimento: emDias(-20) }) }),
+      provisao({ id: "b", subtipo: "INSS", valor: 200, sourceGuide: guia({ id: "gb", tipo: "INSS", vencimento: emDias(6) }) }),
+      provisao({ id: "c", subtipo: "IRRF", valor: 30, sourceGuide: guia({ id: "gc", tipo: "IRRF", vencimento: null }) }),
+    ]);
 
-      expect(screen.getByText(/2 registros/i)).toBeInTheDocument();
-    });
+    expect(screen.getByText("vencido").parentElement).toHaveTextContent("R$ 1.000,00");
+    expect(screen.getByText("a vencer").parentElement).toHaveTextContent("R$ 200,00");
+    // ⚠ Rótulo PRÓPRIO: chamar isto de "a vencer" afirmaria um prazo que a célula acima se recusa
+    // a afirmar — a mesma tela dizendo duas coisas.
+    expect(screen.getByText("em aberto").parentElement).toHaveTextContent("R$ 30,00");
+  });
+
+  it("mês sem nada em aberto não inventa linha de vencido", () => {
+    renderTab([provisao({ valor: 400, statusPagamento: "PAGO", baixas: [{ id: "b1" }] })]);
+
+    expect(screen.queryByText("vencido")).not.toBeInTheDocument();
+    expect(screen.queryByText("a vencer")).not.toBeInTheDocument();
+  });
+});
+
+describe("estados de carga", () => {
+  it("carregando não mostra a tabela", () => {
+    renderTab([], { loading: true });
+    expect(screen.getByText("Carregando...")).toBeInTheDocument();
+    expect(screen.queryByText("Total em aberto")).not.toBeInTheDocument();
+  });
+
+  it("sem dados, diz o que fazer", () => {
+    renderTab([], { circularData: null });
+    expect(screen.getByText(/Nenhum dado disponível/)).toBeInTheDocument();
   });
 });

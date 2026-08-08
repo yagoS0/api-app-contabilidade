@@ -297,7 +297,19 @@ export function createRealApi() {
       if (response.status === 401 && typeof unauthorizedHandler === "function") {
         unauthorizedHandler({ path, payload, status: response.status });
       }
-      throw new Error(normalizeError(payload, response.status));
+      // ⚠ O CÓDIGO DA RECUSA SOBE JUNTO DA MENSAGEM.
+      // `throw new Error(mensagem)` descartava `payload.error`, e há tela que precisa AGIR por
+      // código, não só exibir texto: o estorno da baixa distingue motivo curto (400
+      // MOTIVO_OBRIGATORIO, que se corrige no próprio campo), total divergente (409
+      // CONFERENCIA_DIVERGENTE, que exige recarregar a prévia) e mês corrente fechado (409
+      // MES_CORRENTE_FECHADO, que só se resolve reabrindo a competência) — três recusas com três
+      // saídas diferentes, indistinguíveis por uma string.
+      // São campos ACRESCENTADOS, não uma troca: quem só lê `err.message` continua igual.
+      const err = new Error(normalizeError(payload, response.status));
+      err.code = String(payload?.error || "").trim() || null;
+      err.status = response.status;
+      err.payload = payload;
+      throw err;
     }
     return payload;
   }
@@ -1033,6 +1045,34 @@ export function createRealApi() {
     async deleteAccountingEntry(companyId, entryId) {
       return request(`/firm/companies/${companyId}/entries/${entryId}`, {
         method: "DELETE",
+      });
+    },
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    // ESTORNO DA BAIXA — a porta nova (o DELETE acima recusa a baixa com 409 `USE_ESTORNO`)
+    // ═══════════════════════════════════════════════════════════════════════════════════════
+    //
+    // Desfazer uma baixa nunca foi "excluir um lançamento": some um pagamento do razão, um passivo
+    // volta a existir e uma parcela volta para a fila. Enquanto isso era EFEITO do DELETE não havia
+    // onde exigir o motivo nem onde gravar quem desfez; hoje o backend recusa o verbo antigo de
+    // propósito, senão a exigência do motivo seria contornável por ele.
+    //
+    // As DUAS chamadas são necessárias. O preview não é conveniência de tela: é o que o contador
+    // CONFERE antes de confirmar, e o `totalEstornado` que ele devolve volta no POST como
+    // `totalConferido` — se a baixa mudou entre a tela e o clique (outra sessão, ou o worker de
+    // confirmação de pagamento acrescentando o juros ao lote), o servidor recusa com 409 em vez de
+    // desfazer algo diferente do que foi confirmado.
+    async previewEstornoBaixa(companyId, entryId) {
+      return request(`/firm/companies/${companyId}/entries/${entryId}/estorno/preview`);
+    },
+    async estornarBaixa(companyId, entryId, { motivo, totalConferido } = {}) {
+      return request(`/firm/companies/${companyId}/entries/${entryId}/estorno`, {
+        method: "POST",
+        // `totalConferido` só viaja quando existe: a rota o trata como OPCIONAL (um script de
+        // remediação não tem tela para conferir), e mandar `null` seria dizer "conferi zero".
+        body: JSON.stringify({
+          motivo,
+          ...(totalConferido != null ? { totalConferido: Number(totalConferido) } : {}),
+        }),
       });
     },
     async createBaixa(companyId, entryId, input) {
