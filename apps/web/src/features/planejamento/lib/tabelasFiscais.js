@@ -33,10 +33,10 @@ export const LIMITES_SIMPLES = Object.freeze({
 export const FATOR_R_LIMITE = 0.28;
 
 /**
- * FONTES_FISCAIS §1.10 — LIMITE PROPORCIONAL NO ANO-CALENDÁRIO DE INÍCIO DE ATIVIDADE.
+ * FONTES_FISCAIS §1.13 — LIMITE PROPORCIONAL NO ANO-CALENDÁRIO DE INÍCIO DE ATIVIDADE.
  *
- * ⚠ ISTO NÃO É A MESMA PROPORCIONALIZAÇÃO DO RBT12 (§1.9). Aquela escolhe a FAIXA; esta decide se a
- * empresa PODE CONTINUAR no Simples. Confundir as duas é fácil e caro: o RBT12 proporcionalizado
+ * ⚠ ISTO NÃO É A MESMA PROPORCIONALIZAÇÃO DO RBT12 (§1.12). Aquela escolhe a FAIXA; esta decide se
+ * a empresa PODE CONTINUAR no Simples. Confundir as duas é fácil e caro: o RBT12 proporcionalizado
  * sai de "média × 12", este limite sai de "valor fixo por mês × meses".
  *
  * LC 123/2006, art. 3º, § 2º: "No caso de início de atividade no próprio ano-calendário, o limite a

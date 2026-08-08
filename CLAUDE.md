@@ -131,11 +131,13 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     NOME DE PEÇA CONTÁBIL. Período anterior tem o **mesmo tamanho**; base zero **não vira
     percentual**; mês sem lançamento entra na série **com zero**, visualmente distinto.
   - **Planejamento tributário** (`features/planejamento/`) — motor local com as tabelas em
-    `tabelasFiscais.js`, cada valor citando a lei; 81 testes, dos quais 20 são **casos dourados
+    `tabelasFiscais.js`, cada valor citando a lei; 95 testes, dos quais 24 são **casos dourados
     calculados à mão**. ⚠ A **recusa de calcular tem o mesmo peso visual do resultado**
     (`CardRegime.jsx`): número ausente diagramado em cinza vira ausência de dúvida. O PDF sai com
     a **data de vigência das tabelas e os avisos de escopo impressos**, porque circula sozinho.
-    Início de atividade coberto — ver `docs/fontes-fiscais-inicio-atividade.md`.
+    Início de atividade coberto — RBT12 proporcionalizado e **guarda do limite proporcional** de
+    enquadramento (estouro pode excluir a empresa retroativamente): `docs/fontes-fiscais.md`
+    §1.12 e §1.13.
   - **EFD-Contribuições / entrega por arquivo** (`obrigacoes/entregas/`, modelo genérico
     `EntregaObrigacaoArquivo`) — o **rastro** em três passos, com o "onde acontece" no rótulo de
     cada um. Serve também a ECD/ECF (`competencia` aceita "YYYY-MM" e "YYYY").

@@ -141,6 +141,22 @@ Ler antes de mexer; atualizar ao terminar: `src/features/companies/`,
   e por pendências; tags por estado (verde/amarelo=vazio/vermelho); card inteiro muda de
   cor quando a empresa está **fechada** (contábil).
 
+## Testes (Jest) — `import.meta.env` quebra em tempo de PARSE
+
+O Jest roda em CommonJS: `import.meta` é erro de sintaxe, e o arquivo inteiro morre **antes do
+primeiro teste**. Quem paga não é quem escreve — é quem **importa**. `src/api/client.js` derrubava
+por transitividade qualquer suíte que chegasse nele (foi o que manteve
+`circular/components/__tests__/renderCircularTab.test.jsx` sem rodar nenhuma vez, com o `npm test`
+reportando "1 failed" como paisagem).
+
+Resolvido na raiz: `babel.config.js` reescreve `import.meta.env` → `process.env` **só no env
+`test`** (no build quem substitui é o Vite, e `process` não existe no browser). Ou seja: **importar
+`createApiClient` num componente testado não exige mock nenhum** — não há regra para lembrar.
+
+- Rodar: `npm test -w @contabilidade/web`. **0 suíte falhando** é o estado esperado.
+- Regra de tela vive em `lib/` com teste próprio (ex.: `circular/lib/estadoGuia.js`); o teste de
+  componente cobre a **ligação** (cor, chip, rodapé saindo da mesma leitura), não a regra de novo.
+
 ## Regras
 
 - Toda feature nova precisa de entrada no `mockApi.js` antes de integrar o real

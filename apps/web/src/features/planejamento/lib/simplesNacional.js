@@ -19,11 +19,10 @@ export function faixaDoRbt12(anexo, rbt12) {
 }
 
 /**
- * INÍCIO DE ATIVIDADE — o RBT12 PROPORCIONALIZADO (art. 18, § 2º).
+ * INÍCIO DE ATIVIDADE — o RBT12 PROPORCIONALIZADO — FONTES_FISCAIS §1.12 (art. 18, § 2º).
  *
  * Empresa recém-aberta não tem 12 meses de história, e a lei não manda esperar um ano: manda
- * proporcionalizar. Fontes conferidas em 06/08/2026, no texto oficial — não no documento FONTES
- * FISCAIS, que não transcreve esta regra:
+ * proporcionalizar. Fontes conferidas em 06/08/2026, no texto oficial:
  *
  *   LC 123/2006, art. 18, § 2º (red. LC 155/2016) — texto compilado do Planalto:
  *     "Em caso de início de atividade, os valores de receita bruta acumulada constantes dos Anexos
@@ -329,7 +328,8 @@ export function custoAnualSimples({
 }
 
 /**
- * ⚠⚠ GUARDA DE ELEGIBILIDADE — LIMITE PROPORCIONAL NO ANO DE INÍCIO (art. 3º, §§ 2º e 10 a 13).
+ * ⚠⚠ GUARDA DE ELEGIBILIDADE — LIMITE PROPORCIONAL NO ANO DE INÍCIO.
+ * FONTES_FISCAIS §1.13 (LC 123/2006, art. 3º, §§ 2º e 10 a 13).
  *
  * Esta função não melhora número nenhum: ela impede um estrago. O cenário que ela existe para
  * barrar é o pior deste módulo — o simulador diz a uma empresa aberta em setembro que "o Simples
