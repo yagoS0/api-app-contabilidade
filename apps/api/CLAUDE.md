@@ -673,10 +673,33 @@ Workers opt-in (default desligados): `GUIDE_EMAIL_WORKER_ENABLED`,
 `DFE_NOTAS_WORKER_ENABLED`, `APURACAO_BATCH_WORKER_ENABLED`,
 `SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED`, `CONFERENCIA_ADN_WORKER_ENABLED`.
 
-Flags de integração SERPRO (default OFF até validar no trial):
-`INTEGRACAO_SERPRO_SITFIS` (ligada), `INTEGRACAO_SERPRO_PAGTOWEB` (OFF — não validado),
-`INTEGRACAO_SERPRO_PARCELAMENTO`, `INTEGRACAO_SERPRO_DCTFWEB_LP` (OFF — `CONSDECCOMPLETA33` é
-`verificadoTrial:false`). Ver `config.js` para os idServiço/versão.
+### ⚠ Flags de integração: o DEFAULT do código não é o ESTADO da produção
+
+Todas exigem **`=== "1"` exato**, e o default de `config.js` é OFF. Isso quer dizer que
+`config.js`, `.env.example` e este arquivo dizem só qual é o **ponto de partida** — nenhum dos três
+sabe o que está ligado no ar. **Leia o ambiente** (sem imprimir segredo):
+
+```
+railway variables --service api-app-contabilidade --kv | grep -E "^INTEGRACAO_|_WORKER_ENABLED="
+```
+
+Medido em **produção** (`perfect-upliftment` / `production`) em **2026-08-08**:
+
+| flag | produção | observação |
+|---|---|---|
+| `INTEGRACAO_SERPRO_SITFIS` | **1** | validada end-to-end |
+| `INTEGRACAO_SERPRO_PAGTOWEB` | **1** | `COMPARRECADACAO72` validado em produção real (2026-07-28) — ver a seção do PAGTOWEB acima |
+| `INTEGRACAO_SERPRO_DCTFWEB_LP` | **1** | ⚠ ligada, mas o `CONSDECCOMPLETA33` segue `verificadoTrial:false` |
+| `INTEGRACAO_SERPRO_PARCELAMENTO` | **não definida → OFF** | logo, a captura automática de parcela (`CaptureSerproParcelaService`) **não roda** |
+| `SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED` | **não definida → OFF** | a integração está ligada, mas o cron não sobe (`server.js:184`): a confirmação só acontece por clique |
+
+⚠ **Este quadro envelhece.** Ele registra uma medição datada, não uma verdade permanente — antes de
+dimensionar qualquer coisa que dependa de uma flag, **rode o comando acima**. A linha anterior deste
+arquivo dizia "PAGTOWEB OFF — não validado" enquanto a produção o tinha ligado e a seção logo acima
+descrevia a validação em produção real; acreditar no rótulo custou o dimensionamento errado de uma
+fase inteira.
+
+Ver `config.js` para os idServiço/versão.
 
 ## Guarda de custo do SERPRO — registro + duas travas
 
