@@ -8,6 +8,7 @@
 
 import {
   PARCELA_ESTADOS, ESTADOS_EM_ABERTO, podeTransicionar, estadoEmAberto, estadoRecalculado,
+  estadoAposEstorno,
 } from "../parcelaStateMachine";
 
 const { PREVISTA, EM_ATRASO, PAGA_A_CONFERIR, DIVERGENTE, CONFIRMADA, CANCELADA } = PARCELA_ESTADOS;
@@ -77,5 +78,38 @@ describe("estadoRecalculado", () => {
 
   it("os estados em aberto são só dois", () => {
     expect(ESTADOS_EM_ABERTO).toEqual([PREVISTA, EM_ATRASO]);
+  });
+});
+
+// ESTORNO — desfazer a baixa devolve a parcela à fila.
+//
+// ⚠ O defeito que isto cobre: apagar o lançamento de baixa deixava a guia `PAGA_A_CONFERIR` sem
+// lançamento nenhum. Fora da fila de pendentes (que exige `baixada:false`) e sem baixa de verdade
+// na conferência: invisível nas duas telas, e sem caminho para refazer.
+describe("estadoAposEstorno", () => {
+  it("⚠ paga a conferir volta ao que o CALENDÁRIO manda — o estorno rebobina, não avança", () => {
+    // `podeTransicionar(PAGA_A_CONFERIR, EM_ATRASO)` é false de propósito (é a guarda da
+    // reingestão). Desfazer a baixa é outra pergunta, e por isso não passa por lá.
+    expect(podeTransicionar(PAGA_A_CONFERIR, EM_ATRASO)).toBe(false);
+    expect(estadoAposEstorno({ estadoAtual: PAGA_A_CONFERIR, vencimento: ONTEM, agora: HOJE })).toBe(EM_ATRASO);
+    expect(estadoAposEstorno({ estadoAtual: PAGA_A_CONFERIR, vencimento: AMANHA, agora: HOJE })).toBe(PREVISTA);
+  });
+
+  it("parcela já CONFIRMADA na conferência também volta — senão fica travada para sempre", () => {
+    expect(estadoAposEstorno({ estadoAtual: CONFIRMADA, vencimento: ONTEM, agora: HOJE })).toBe(EM_ATRASO);
+    expect(estadoAposEstorno({ estadoAtual: DIVERGENTE, vencimento: AMANHA, agora: HOJE })).toBe(PREVISTA);
+  });
+
+  it("⚠ CANCELADA não ressuscita pela porta dos fundos de um DELETE", () => {
+    expect(estadoAposEstorno({ estadoAtual: CANCELADA, vencimento: ONTEM, agora: HOJE })).toBeNull();
+  });
+
+  it("guia que não é parcela (INSS, DARF) não tem estado — devolve null", () => {
+    expect(estadoAposEstorno({ estadoAtual: null, vencimento: ONTEM, agora: HOJE })).toBeNull();
+  });
+
+  it("já no estado certo devolve null (não reescreve à toa)", () => {
+    expect(estadoAposEstorno({ estadoAtual: EM_ATRASO, vencimento: ONTEM, agora: HOJE })).toBeNull();
+    expect(estadoAposEstorno({ estadoAtual: PREVISTA, vencimento: AMANHA, agora: HOJE })).toBeNull();
   });
 });

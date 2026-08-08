@@ -29,6 +29,8 @@ import {
 import { markGuidePaidManual } from "../../application/guides/GuidePaymentStatusService.js";
 // Q50: históricos agnósticos de competência (chave normalizada com {{competencia}}).
 import { normalizarHistorico } from "../../application/accounting/historicoCompetencia.js";
+// Estorno da baixa: a parcela volta ao estado que o calendário manda (regra na máquina de estados).
+import { estadoAposEstorno } from "../../application/accounting/parcelamento/parcelaStateMachine.js";
 
 // Q16/Q37: memória de contas por (empresa, eventType). Grava/atualiza AccountingHistorico para que o
 // próximo lançamento do mesmo evento (provisão automática OU baixa) venha com D/C pré-preenchidos —
@@ -2759,52 +2761,100 @@ export function createAccountingEntriesRouter({ log }) {
     if (existing.status === "EXPORTADO") {
       return res.status(400).json({ error: "lancamento_ja_exportado" });
     }
-
-    if (existing.tipo === "BAIXA" && existing.openEntryId) {
-      await prisma.$transaction(async (tx) => {
-        await tx.accountingEntry.delete({ where: { id: entryId } });
-        // Baixa parcial: recalcula o status pelas baixas RESTANTES (pode ainda estar PARCIAL).
-        const open = await tx.accountingEntry.findFirst({
-          where: { id: existing.openEntryId, portalClientId },
-          include: {
-            lines: { orderBy: { ordem: "asc" } },
-            baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
-          },
-        });
-        if (open) {
-          const s = computeSaldoProvisao(open);
-          const status = s.abatido <= 0.009 ? "ABERTO" : (s.saldo <= 0.009 ? "PAGO" : "PARCIAL");
-          await tx.accountingEntry.update({ where: { id: open.id }, data: { statusPagamento: status } });
-        }
+    // ⚠ MÊS FECHADO TAMBÉM BLOQUEIA APAGAR — e a competência que manda é a DO LANÇAMENTO, não a de
+    // hoje. Criar lançamento em mês fechado já era 409 (`POST /entries`); apagar mudava os números
+    // do mês fechado sem nenhum rastro de reabertura, que é o mesmo estrago pelo caminho inverso.
+    // A assimetria em relação à criação é essa: lá a competência vem da data digitada, aqui ela já
+    // está gravada — perguntar pelo mês de hoje deixaria passar exatamente o caso que importa.
+    if (await isMonthClosed(portalClientId, existing.competencia)) {
+      return res.status(409).json({
+        error: "MES_FECHADO",
+        competencia: existing.competencia,
+        message: `Mês ${existing.competencia} fechado — reabra a empresa antes de excluir este lançamento.`,
       });
-    } else if (existing.tipo === "BAIXA" && existing.sourceGuideId) {
-      // Q52.INSS: cancelar baixa do INSS — apaga o lançamento e reabre a guia (volta a vermelho).
-      // Só reverte o pagamento se ele veio DESTA baixa (fonte MANUAL); não desfaz confirmação do SERPRO.
+    }
+
+    // ⚠ ERA UM `if / else if`, E O PRIMEIRO RAMO COMIA O SEGUNDO.
+    // A baixa de parcela nasce com os DOIS campos (`ParcelamentoV2Service`: `openEntryId` = provisão
+    // de abertura, `sourceGuideId` = a guia da parcela). Casando só o ramo do `openEntryId`, o
+    // lançamento sumia mas a guia continuava `baixada:true` com `lancamentoId` apontando para um
+    // registro que não existe mais (`Guide.lancamentoId` não tem FK — ninguém o anula). A parcela
+    // saía da fila de pendentes e `gerarPagamentoParcelaFromGuide` respondia `ja_baixada` PARA
+    // SEMPRE: não havia caminho de tela que refizesse aquela baixa.
+    // Os dois efeitos são necessários e independentes — não são alternativas.
+    if (existing.tipo === "BAIXA" && (existing.openEntryId || existing.sourceGuideId)) {
       await prisma.$transaction(async (tx) => {
         await tx.accountingEntry.delete({ where: { id: entryId } });
-        const guide = await tx.guide.findFirst({
-          where: { id: existing.sourceGuideId, portalClientId },
-          select: { id: true, paymentStatusSource: true },
-        });
-        if (guide) {
-          const fromManual = String(guide.paymentStatusSource || "").toUpperCase() === "MANUAL";
-          await tx.guide.update({
-            where: { id: guide.id },
-            data: {
-              baixada: false,
-              dataBaixa: null,
-              lancamentoId: null,
-              ...(fromManual
-                ? {
-                    paymentStatus: "OPEN",
-                    paymentStatusSource: null,
-                    paymentConfirmedAt: null,
-                    paymentConfirmedByUserId: null,
-                    serproLastCheckResult: null,
-                  }
-                : {}),
+
+        if (existing.openEntryId) {
+          // Baixa parcial: recalcula o status pelas baixas RESTANTES (pode ainda estar PARCIAL).
+          const open = await tx.accountingEntry.findFirst({
+            where: { id: existing.openEntryId, portalClientId },
+            include: {
+              lines: { orderBy: { ordem: "asc" } },
+              baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
             },
           });
+          if (open) {
+            const s = computeSaldoProvisao(open);
+            const status = s.abatido <= 0.009 ? "ABERTO" : (s.saldo <= 0.009 ? "PAGO" : "PARCIAL");
+            await tx.accountingEntry.update({ where: { id: open.id }, data: { statusPagamento: status } });
+          }
+        }
+
+        if (existing.sourceGuideId) {
+          // Q52.INSS / estorno da parcela: apaga o lançamento e devolve a guia à fila.
+          // ⚠ UMA BAIXA TEM ATÉ TRÊS LANÇAMENTOS (principal, juros, multa — INSS e parcela usam a
+          // mesma regra). Reabrir a guia ao apagar o PRIMEIRO deixaria dois lançamentos órfãos
+          // debitando contas de uma guia que voltou a "não paga" — pior que não reverter. Por isso
+          // a guia só volta quando NÃO SOBRA NENHUMA baixa dela; enquanto sobrar, o que se corrige
+          // é o ponteiro `lancamentoId` (que pode ter ficado apontando para o que acabou de sumir).
+          const restantes = await tx.accountingEntry.findMany({
+            where: { sourceGuideId: existing.sourceGuideId, portalClientId, tipo: "BAIXA" },
+            select: { id: true },
+            orderBy: { createdAt: "asc" },
+          });
+          const guide = await tx.guide.findFirst({
+            where: { id: existing.sourceGuideId, portalClientId },
+            select: {
+              id: true, paymentStatusSource: true, lancamentoId: true,
+              parcelamentoId: true, parcelaEstado: true, vencimento: true,
+            },
+          });
+          if (guide && restantes.length) {
+            if (guide.lancamentoId === entryId) {
+              await tx.guide.update({ where: { id: guide.id }, data: { lancamentoId: restantes[0].id } });
+            }
+          } else if (guide) {
+            // Só reverte o PAGAMENTO se ele veio DESTA baixa (fonte MANUAL); não desfaz confirmação
+            // do SERPRO — o dinheiro saiu, o comprovante existe, e o que se está desfazendo é o
+            // lançamento contábil, não o fato.
+            const fromManual = String(guide.paymentStatusSource || "").toUpperCase() === "MANUAL";
+            // Parcela: o estado volta ao que o calendário manda (a vencer × vencida). Guia comum
+            // (INSS, DARF) não tem `parcelaEstado` e o helper devolve null.
+            const estadoEstornado = estadoAposEstorno({
+              estadoAtual: guide.parcelaEstado,
+              vencimento: guide.vencimento,
+            });
+            await tx.guide.update({
+              where: { id: guide.id },
+              data: {
+                baixada: false,
+                dataBaixa: null,
+                lancamentoId: null,
+                ...(estadoEstornado ? { parcelaEstado: estadoEstornado } : {}),
+                ...(fromManual
+                  ? {
+                      paymentStatus: "OPEN",
+                      paymentStatusSource: null,
+                      paymentConfirmedAt: null,
+                      paymentConfirmedByUserId: null,
+                      serproLastCheckResult: null,
+                    }
+                  : {}),
+              },
+            });
+          }
         }
       });
     } else {
@@ -2943,6 +2993,18 @@ export function createAccountingEntriesRouter({ log }) {
     const novoStatus = abatidoAcumulado + 0.01 >= saldoAtual.principal ? "PAGO" : "PARCIAL";
 
     const competencia = `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`;
+
+    // ⚠ ERA O ÚNICO ATO CONTÁBIL SEM A TRAVA DE MÊS FECHADO. A baixa do INSS
+    // (`InssPagamentoService`), a da parcela (`ParcelamentoV2Service`), o `POST /entries`, a guia
+    // manual e as buscas do SERPRO já paravam aqui; esta rota, que grava até três lançamentos,
+    // passava direto. A competência é a da DATA DO PAGAMENTO — a mesma leitura das outras.
+    if (await isMonthClosed(portalClientId, competencia)) {
+      return res.status(409).json({
+        error: "MES_FECHADO",
+        competencia,
+        message: `Mês ${competencia} fechado — reabra a empresa antes de dar a baixa.`,
+      });
+    }
 
     try {
       const result = await prisma.$transaction(async (tx) => {

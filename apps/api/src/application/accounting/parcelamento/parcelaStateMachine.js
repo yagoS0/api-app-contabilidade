@@ -36,6 +36,29 @@ export function estadoEmAberto(vencimento, now = new Date()) {
 export const ESTADOS_EM_ABERTO = Object.freeze([PARCELA_ESTADOS.PREVISTA, PARCELA_ESTADOS.EM_ATRASO]);
 
 /**
+ * O estado da parcela DEPOIS de a baixa ser desfeita (estorno), ou `null` quando não há o que mexer.
+ *
+ * ⚠ ESTORNO NÃO É TRANSIÇÃO — É REBOBINAR, e por isso ele NÃO passa por `podeTransicionar`.
+ * A tabela `TRANSICOES` descreve o caminho para FRENTE: `PAGA_A_CONFERIR` só sai para `CONFIRMADA`
+ * ou `DIVERGENTE`, e `CONFIRMADA` não sai de lugar nenhum. Isso está certo enquanto o que se
+ * pergunta é "para onde a parcela pode avançar". Apagar o lançamento de baixa é outra pergunta: o
+ * fato que levou a parcela até ali deixou de existir, então ela volta ao estado que o CALENDÁRIO
+ * manda (a vencer × vencida), exatamente como na ingestão.
+ *
+ * Sem isto, apagar a baixa deixava a parcela `PAGA_A_CONFERIR` sem lançamento nenhum: fora da fila
+ * de pendentes (que exige `baixada:false`) e fora da fila de conferência útil — invisível nas duas.
+ *
+ * ⚠ `CANCELADA` não volta. Parcela cancelada saiu do acordo; ressuscitá-la pela porta dos fundos de
+ * um DELETE de lançamento inventaria uma parcela a pagar que ninguém contratou de volta.
+ */
+export function estadoAposEstorno({ estadoAtual, vencimento, agora = new Date() }) {
+  if (!estadoAtual) return null; // guia sem estado de parcela (INSS, DARF) — nada a rebobinar
+  if (estadoAtual === PARCELA_ESTADOS.CANCELADA) return null;
+  const novo = estadoEmAberto(vencimento, agora);
+  return novo === estadoAtual ? null : novo;
+}
+
+/**
  * O estado que a parcela DEVERIA ter hoje, ou `null` quando não há nada a mudar.
  *
  * ⚠ ESTE RECÁLCULO NÃO EXISTIA, e a ausência dele é silenciosa da pior forma: `estadoEmAberto` só

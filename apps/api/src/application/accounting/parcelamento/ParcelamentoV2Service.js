@@ -535,6 +535,28 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
   }
 
   return prisma.$transaction(async (tx) => {
+    // ⚠ A GUIA É RESERVADA ANTES DE QUALQUER LANÇAMENTO — e é isto que impede a baixa DUPLICADA.
+    //
+    // As duas verificações lá em cima (`guide.lancamentoId` e `baixaExistente`) são
+    // check-then-act FORA da transação: duas requisições simultâneas (duplo clique, worker do
+    // SERPRO confirmando o pagamento no mesmo instante em que o contador clica "dar baixa")
+    // passavam AS DUAS pela verificação antes de qualquer uma escrever, e o resultado eram dois
+    // lotes de lançamento amortizando o mesmo passivo pela mesma parcela. O banco não segurava:
+    // o unique `(sourceGuideId, eventType)` não morde porque estes lançamentos nascem com
+    // `eventType` NULL, e no Postgres NULLs são distintos em UNIQUE.
+    //
+    // Este `updateMany` condicional é a reserva atômica — o mesmo recurso do banco que
+    // `GuideLockService`/`GuideLiberacaoService` já usam. Em READ COMMITTED a segunda transação
+    // fica bloqueada na LINHA da guia até a primeira commitar e então reavalia o `where` contra o
+    // dado novo: `lancamentoId` deixou de ser nulo, `count` volta 0, e ela desiste sem escrever
+    // nada. As verificações de cima continuam onde estão — elas dão o motivo legível no caminho
+    // normal; esta é a que vale quando há corrida.
+    const reserva = await tx.guide.updateMany({
+      where: { id: guide.id, portalClientId, lancamentoId: null },
+      data: { baixada: true, dataBaixa: data },
+    });
+    if (reserva.count !== 1) return { skipped: true, reason: "ja_baixada" };
+
     // Com comprovante, o CÓDIGO DE RECEITA separa amortização de encargo corrente; sem ele, o
     // caminho antigo, que não tem como fazer essa distinção.
     const pagLines = usaComprovante
@@ -555,8 +577,9 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
     const pagamentoId = entries[0]?.id || null;
     await tx.guide.update({
       where: { id: guide.id },
+      // `baixada`/`dataBaixa` já foram gravados na reserva acima; aqui completa o vínculo.
       // Q28 Fase 3: pagamento lançado (RASCUNHO) → entra na fila de conferência (PAGA_A_CONFERIR).
-      data: { baixada: true, dataBaixa: data, lancamentoId: pagamentoId, parcelaEstado: PARCELA_ESTADOS.PAGA_A_CONFERIR },
+      data: { lancamentoId: pagamentoId, parcelaEstado: PARCELA_ESTADOS.PAGA_A_CONFERIR },
     });
     return { ok: true, pagamentoId };
   });

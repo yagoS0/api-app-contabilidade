@@ -21,7 +21,7 @@ Lógica de lançamentos contábeis, provisões, baixas, parcelamentos e fechamen
 | `AccountingEntryGeneratorService.js` | gera lançamentos a partir da circular/extrato; `lookupAccountsFromHistorico`, `applyTemplate`, `generateEntriesFromCircular` |
 | `GuideToProvisionService.js` | guia PROCESSED → provisão (contas em branco + memória) |
 | `ParcelamentoService.js` | parcelamento (Q9/Q16 legado): **1 provisão (abertura)** + N linhas leves `tipo="PARCELA"`; baixa por pagamento contra a abertura; contas em branco + memória por linha (`memorizeParcelamentoLineAccounts`) |
-| `parcelamento/ParcelamentoV2Service.js` | parcelamento v2 (Q21/Q23). **Q23 — gatilho do SERPRO:** a 1ª parcela é **manual** → `ingestParcelamentoFromGuide` cria **só a PROVISÃO** (≥3 linhas: D=principal, D=juros, C=total; `provisaoLines` editadas no modal ou `linhasProvisao` padrão; contas via `MapaContaTributo`, em branco até aprender) + vincula guia + `TributoParcela`. **NÃO** cria pagamento. A provisão setar `aberturaEntryId` ⇒ **ativa a busca automática** do worker. O **pagamento** (BAIXA, juros LIDO) é gerado por `gerarPagamentoParcelaFromGuide` ao marcar a guia como **paga** (`confirm-payment`), data = dia do clique; **bloqueia** se o mês estiver fechado. `resolverContasProvisao` pré-preenche o modal. Memória: `memorizeMapaContaTributo`. |
+| `parcelamento/ParcelamentoV2Service.js` | parcelamento v2 (Q21/Q23). **Q23 — gatilho do SERPRO:** a 1ª parcela é **manual** → `ingestParcelamentoFromGuide` cria **só a PROVISÃO** (≥3 linhas: D=principal, D=juros, C=total; `provisaoLines` editadas no modal ou `linhasProvisao` padrão; contas via `MapaContaTributo`, em branco até aprender) + vincula guia + `TributoParcela`. **NÃO** cria pagamento. A provisão setar `aberturaEntryId` ⇒ **ativa a busca automática** do worker. O **pagamento** (BAIXA, juros LIDO) é gerado por `gerarPagamentoParcelaFromGuide` ao marcar a guia como **paga** (`confirm-payment`), data = dia do clique; **bloqueia** se o mês estiver fechado. `resolverContasProvisao` pré-preenche o modal. Memória: `memorizeMapaContaTributo`. ⚠ A baixa começa **reservando a guia** (`updateMany` condicional em `lancamentoId: null`, dentro da transação) — é o que impede baixa DUPLICADA em corrida; as duas verificações de idempotência de cima são check-then-act e só servem para dar o motivo legível. |
 | `ParcelamentoSeeds.js` | templates `AccountingFunction kind=PARCELAMENTO_OPENING/PAYMENT/RESCISION` (legado Q9/Q16) |
 | `AccountingFunctionService.js` | funções/templates de lançamento reutilizáveis |
 
@@ -52,6 +52,16 @@ em `fechamentoContabil.js`. Usado para **bloquear**: criar lançamento (`POST /e
 `MES_FECHADO` quando `source !== "SERPRO"` — a captura automática do SERPRO não é afetada) e
 marcar guia **Vazio** (`POST /guides/vazio` → 409). No front, a aba Lançamentos desabilita
 "+ Adicionar" (via `FechamentoCadeado.onState`) e o painel de guias esperadas desabilita "Vazio".
+
+⚠ **A baixa genérica era o único ato contábil sem a trava.** `POST /entries/:id/baixa` grava até
+três lançamentos e passava direto; hoje responde **409 `MES_FECHADO`** pela competência da **data do
+pagamento**, igual INSS (`InssPagamentoService`) e parcela (`ParcelamentoV2Service`).
+
+⚠ **`DELETE /entries/:entryId` também trava — e pela competência DO LANÇAMENTO, não a de hoje.**
+Apagar lançamento de mês fechado muda os números do mês fechado sem nenhum rastro de reabertura; é
+o mesmo estrago da criação, pelo caminho inverso. A assimetria é só a leitura da competência: na
+criação ela vem da data digitada, no estorno já está gravada — perguntar pelo mês corrente deixaria
+passar exatamente o caso que importa.
 
 ## Baixa: principal, juros e multa são LANÇAMENTOS SEPARADOS
 
@@ -97,6 +107,29 @@ acréscimo a separar. Decisão do dono, regra 5.
 ⚠ **Uma guia tem até TRÊS baixas.** O `Map` por `sourceGuideId` na Circular guardava só a última, e
 "Cancelar baixa" apagava um lançamento deixando dois órfãos com a guia reaberta. Hoje `baixas[]`
 traz o lote inteiro (o principal primeiro) e o cancelamento leva todos.
+
+### Estorno da baixa (`DELETE /entries/:entryId`) — devolver a guia à fila
+
+⚠ **Era um `if / else if`, e o primeiro ramo comia o segundo.** A baixa de PARCELA nasce com os
+DOIS vínculos (`openEntryId` = provisão de abertura do parcelamento · `sourceGuideId` = a guia da
+parcela), então casava só o ramo do `openEntryId` e **nunca chegava** ao que reabre a guia. O
+lançamento sumia e a guia continuava `baixada:true` com `lancamentoId` apontando para um registro
+apagado — **`Guide.lancamentoId` não tem FK, ninguém o anula**. A parcela sumia da fila de
+pendentes (que exige `baixada:false`) e `gerarPagamentoParcelaFromGuide` respondia `ja_baixada`
+**para sempre**: nenhuma tela conseguia refazer aquela baixa. Os dois efeitos são independentes e
+os dois são necessários — não são alternativas.
+
+⚠ **A guia só volta quando NÃO SOBRA nenhuma baixa dela.** Como são até três lançamentos, reabrir a
+guia ao apagar o primeiro deixaria dois órfãos debitando contas de uma guia "não paga" — pior que
+não reverter. Enquanto sobrar baixa, o que se corrige é o ponteiro `lancamentoId`. (O front já
+apaga o lote inteiro, em sequência; a regra não depende disso.)
+
+- **Estado da parcela:** `estadoAposEstorno` (`parcelamento/parcelaStateMachine.js`) devolve a
+  parcela ao estado do CALENDÁRIO (a vencer × vencida). Ele **não passa** por `podeTransicionar` de
+  propósito: aquela tabela descreve o caminho para a frente (`PAGA_A_CONFERIR` só avança para
+  `CONFIRMADA`/`DIVERGENTE`), e estorno é rebobinar, não avançar. `CANCELADA` não volta.
+- **Pagamento:** só é desfeito quando `paymentStatusSource === "MANUAL"`. Confirmação do SERPRO
+  fica — o dinheiro saiu; o que se desfaz é o lançamento, não o fato.
 
 Contas de acréscimo: **`contasAcrescimo.js`** (501 juros / 506 multa). Estavam escritas em quatro
 lugares — rota, script, serviço e literal no front.
