@@ -10,8 +10,8 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "./AccountingEntryGeneratorService.js";
 import { normalizeCompetencia } from "../guides/guideContract.js";
-import { avaliarRiscoRescisao } from "./parcelamento/riscoRescisao.js";
-import { parcelaQuitada } from "./parcelamento/recalculoParcelamento.js";
+import { quadroDasParcelas, SELECT_PARCELA_PARA_QUADRO } from "./parcelamento/recalculoParcelamento.js";
+import { sincronizarParcelas, addMonths, buildDateOfMonth } from "./parcelamento/parcelaSync.js";
 import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
 
 // Q16: contas D/C do parcelamento começam EM BRANCO e são memorizadas por papel de
@@ -111,22 +111,11 @@ async function resolveOpeningTemplate(tx, { templateOpeningFunctionId, kind, por
   });
 }
 
-function addMonths(competenciaInicial, n) {
-  // competenciaInicial = YYYY-MM, n = offset (0 = mesma competência)
-  const [yyyy, mm] = String(competenciaInicial).split("-").map(Number);
-  if (!yyyy || !mm) return competenciaInicial;
-  const date = new Date(Date.UTC(yyyy, mm - 1 + n, 1));
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function buildDateOfMonth(competencia, dayOfMonth) {
-  const [yyyy, mm] = String(competencia).split("-").map(Number);
-  if (!yyyy || !mm) return new Date();
-  // Se dia não existir (ex: 31 em fev), usa último dia.
-  const lastDay = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
-  const day = Math.min(Math.max(Number(dayOfMonth) || 1, 1), lastDay);
-  return new Date(Date.UTC(yyyy, mm - 1, day, 12, 0, 0));
-}
+// ⚠ `addMonths`/`buildDateOfMonth` MUDARAM DE CASA, NÃO DE COMPORTAMENTO — foram para
+// `parcelamento/parcelaSync.js` (importadas no topo). Eram locais deste arquivo, e a F2.1 passou a
+// precisar EXATAMENTE do mesmo calendário para materializar as linhas de `parcelas`. Duas cópias
+// fariam a linha leve `tipo="PARCELA"` do V1 e a parcela contratada da mesma prestação caírem em
+// meses diferentes — sem erro nenhum, só duas datas de vencimento para a mesma obrigação.
 
 function buildContext({ competencia, company, parcelamento, numeroParcela }) {
   return {
@@ -307,6 +296,11 @@ export async function createParcelamento({
       });
     }
 
+    // 5) F2.1 — materializa as PARCELAS do contrato. Dentro da transação de propósito: um
+    //    parcelamento que existisse sem suas parcelas apareceria como "0 de 0" na tela, que é
+    //    exatamente o defeito que esta fase fecha.
+    await sincronizarParcelas(tx, { portalClientId, parcelamentoId: parcelamento.id });
+
     return tx.parcelamento.findUnique({
       where: { id: parcelamento.id },
       include: {
@@ -364,6 +358,11 @@ export async function linkGuideToParcela({ portalClientId, guideId, parcelamento
         where: { id: { in: deletable.map((e) => e.id) } },
       });
     }
+
+    // 3) F2.1 — a guia acabou de virar parcela nº N; casa a linha de `parcelas` com ela. Sem isto
+    //    a parcela ficaria sem guia e, portanto, sem evidência de pagamento: o vínculo existiria no
+    //    banco e não apareceria em contador nenhum.
+    await sincronizarParcelas(tx, { portalClientId, parcelamentoId });
 
     return updated;
   });
@@ -632,18 +631,24 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
 // (tipo="PARCELA"); pagas = statusPagamento PAGO. Saldo = total − principais já baixados.
 function decorateParcelamento(parc) {
   if (!parc) return parc;
-  const parcelas = Array.isArray(parc.parcelas) ? parc.parcelas : [];
-  const guides = Array.isArray(parc.guides) ? parc.guides : [];
-  // Q24: v2 não usa linhas tipo=PARCELA — as parcelas são as guias vinculadas. Conta pagas pelas
-  // guias baixadas/PAID quando não há linhas de rastreio (compat com o modelo Q16 legado).
-  const isV2 = parcelas.length === 0 && guides.length > 0;
-  const parcelasPagas = isV2
-    ? guides.filter(parcelaQuitada).length
-    : parcelas.filter((p) => p.statusPagamento === "PAGO").length;
-  const principalPerParcela = Number(parc.principalPerParcela) || 0;
-  const principalPago = parcelasPagas * principalPerParcela;
-  const totalValue = Number(parc.totalValue) || 0;
-  const saldoRestante = Math.max(0, totalValue - principalPago);
+  // Linhas leves `tipo="PARCELA"` — o rastreio do V1 (`createParcelamento`). Nome herdado da API.
+  const linhasV1 = Array.isArray(parc.parcelas) ? parc.parcelas : [];
+  // F2.1: as prestações do contrato, como linhas próprias. Existem para V1 e V2.
+  const parcelas = Array.isArray(parc.parcelasContratadas) ? parc.parcelasContratadas : [];
+
+  // ⚠ A BIFURCAÇÃO ERA `parcelas.length === 0 && guides.length > 0`, E O SEGUNDO TERMO ERA O BUG.
+  //
+  // Ele fazia a versão do parcelamento depender de quantas GUIAS já tinham chegado. Um parcelamento
+  // V2 sem nenhuma guia — que é EXATAMENTE o débito automático, onde guia não existe por definição,
+  // e também o V2 recém-criado pelo caminho SERPRO (`ingestParcelamentoFromGuide` sem `guideId`) —
+  // caía no ramo V1, contava linhas de rastreio que o V2 nunca cria, e reportava "0 de 0" com o
+  // risco não avaliável. O acordo de 52 prestações chegava na tela como vazio.
+  //
+  // O discriminador VERDADEIRO não tem nada a ver com guia: o V1 SEMPRE cria N linhas
+  // `tipo="PARCELA"` (`createParcelamento` recusa `numParcelas < 1`, então N ≥ 1) e o V2 NUNCA cria
+  // nenhuma (`numeroParcela: null` em todo entry dele). A presença dessas linhas é o fato que
+  // separa as duas versões, e é só ela que decide aqui.
+  const isV1 = linhasV1.length > 0;
 
   // ⚠ RISCO DE RESCISÃO — a informação que muda o dia do contador. Rescindido, o saldo vai para a
   // Dívida Ativa e as reduções de multa da adesão são restabelecidas; e isso chega por acúmulo
@@ -653,31 +658,42 @@ function decorateParcelamento(parc) {
   // periódico, e recálculo que não rodou mostraria "tudo em dia" justamente na empresa que está a
   // uma prestação da rescisão. Aqui não há como o dado envelhecer.
   //
+  // ⚠ A REGRA NÃO MUDOU — A FONTE MUDOU. `quadroDasParcelas` (em `recalculoParcelamento.js`) chama
+  // o mesmo `avaliarRiscoRescisao` de sempre, com a mesma IN RFB 2.063/2022; o que ele passou a
+  // receber são as PARCELAS contratadas em vez das guias, e só aquelas sobre as quais existe
+  // evidência de pagamento. É o mesmo lugar de onde o estorno tira o número que grava na auditoria
+  // — uma segunda cópia faria listagem e estorno discordarem sobre quantas prestações estão
+  // quitadas, que é o número de onde sai o alerta.
+  const quadro = quadroDasParcelas(parcelas, { status: parc.status });
+
+  // ⚠ O NUMERADOR E O DENOMINADOR SAEM DA MESMA LISTA. Antes o numerador contava guias e o
+  // denominador contava outra coisa — parcela sem guia era invisível numa ponta e presente na
+  // outra. No V1 os dois continuam vindo das linhas de rastreio (lá o `statusPagamento` do próprio
+  // lançamento é o fato de pagamento, e a tabela `parcelas` não o conhece); no V2, das parcelas.
+  const parcelasPagas = isV1
+    ? linhasV1.filter((p) => p.statusPagamento === "PAGO").length
+    : quadro.parcelasPagas;
+  const parcelasTotal = isV1 ? linhasV1.length : quadro.parcelasTotal;
+  const principalPerParcela = Number(parc.principalPerParcela) || 0;
+  const principalPago = parcelasPagas * principalPerParcela;
+  const totalValue = Number(parc.totalValue) || 0;
+  const saldoRestante = Math.max(0, totalValue - principalPago);
+
   // ⚠ `quitada` inclui `baixada` de propósito: pagamento parcial NÃO quita a prestação, e quem
   // marca parcial não marca PAID. Parcelamento já rescindido não é avaliado — não há mais o que
-  // prevenir.
-  //
-  // ⚠ O PREDICADO VEM DE FORA (`parcelaQuitada`, em `parcelamento/recalculoParcelamento.js`). Ele
-  // estava escrito aqui, duas vezes, e o estorno precisava da MESMA resposta na hora de desfazer a
-  // baixa. Uma terceira cópia faria a listagem e o estorno discordarem sobre quantas prestações
-  // estão quitadas — que é o número de onde sai o alerta de rescisão.
-  const risco = parc.status === "RESCINDIDO"
-    ? null
-    : avaliarRiscoRescisao({
-      parcelas: guides.map((g) => ({
-        numeroParcela: g.numeroParcela ?? null,
-        vencimento: g.vencimento,
-        quitada: parcelaQuitada(g),
-      })),
-    });
-
+  // prevenir. O predicado vem de fora (`parcelaRowQuitada`, que chama o `parcelaQuitada` de sempre).
   return {
     ...parc,
     parcelasPagas,
-    parcelasTotal: isV2 ? guides.length : parcelas.length,
+    parcelasTotal,
+    // ⚠ Prestações sobre as quais não há NENHUMA evidência de pagamento (sem guia e sem baixa
+    // registrada). Elas ficam FORA do cálculo de risco de propósito: ausência de guia não é prova
+    // de inadimplência, e contá-la acenderia alerta vermelho em todo débito automático. O número
+    // viaja nomeado para que "0 de 52" não seja lido como "52 em atraso".
+    parcelasSemEvidencia: isV1 ? 0 : quadro.parcelasSemEvidencia,
     principalPago,
     saldoRestante,
-    risco,
+    risco: quadro.risco,
   };
 }
 
@@ -700,6 +716,8 @@ export async function listParcelamentos({ portalClientId, status }) {
       // ⚠ `vencimento` é o que decide se uma parcela está EM ATRASO — sem ele o risco de rescisão
       // não tem como ser calculado e sairia como "não avaliável" em toda empresa.
       guides: { select: { id: true, numeroParcela: true, valor: true, paymentStatus: true, baixada: true, competencia: true, anoMesParcela: true, vencimento: true } },
+      // F2.1: a fonte dos contadores e do risco. `guides` acima segue servido à tela como estava.
+      parcelasContratadas: { select: SELECT_PARCELA_PARA_QUADRO, orderBy: { numeroParcela: "asc" } },
       templateOpening: { select: { id: true, name: true } },
       templatePayment: { select: { id: true, name: true } },
       templateRescision: { select: { id: true, name: true } },
@@ -720,6 +738,8 @@ export async function getParcelamento({ portalClientId, parcelamentoId }) {
         include: { lines: true, baixas: { include: { lines: true } } },
       },
       guides: true,
+      // F2.1: a fonte dos contadores e do risco (ver `decorateParcelamento`).
+      parcelasContratadas: { select: SELECT_PARCELA_PARA_QUADRO, orderBy: { numeroParcela: "asc" } },
       templateOpening: true,
       templatePayment: true,
       templateRescision: true,

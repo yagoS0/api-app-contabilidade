@@ -10,6 +10,8 @@ import { validarParcela } from "./invariantes.js";
 import { estadoEmAberto, estadoRecalculado, podeTransicionar, ESTADOS_EM_ABERTO, PARCELA_ESTADOS } from "./parcelaStateMachine.js";
 import { isMonthClosed } from "../fechamentoContabil.js";
 import { tipoLinhaDaBaixa } from "../tipoLinhaBaixa.js";
+import { sincronizarParcelas } from "./parcelaSync.js";
+import { SELECT_PARCELA_PARA_QUADRO } from "./recalculoParcelamento.js";
 
 function competenciaFromDate(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -458,6 +460,12 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
     // Q23: NÃO cria pagamento aqui. A BAIXA é gerada depois, ao marcar a guia como paga
     // (gerarPagamentoParcelaFromGuide). A guia entra na circular como provisão ABERTO.
 
+    // 5) F2.1 — materializa/atualiza as PARCELAS do contrato e casa a guia recém-vinculada com a
+    //    sua. ⚠ RODA MESMO QUANDO NÃO HÁ `guideId`: é justamente o caminho SERPRO (parcelamento
+    //    criado antes de qualquer guia chegar) que produzia o "0 de 0" com risco não avaliável.
+    //    Idempotente — a recaptura passa por aqui a cada parcela e não duplica nada.
+    await sincronizarParcelas(tx, { portalClientId, parcelamentoId: parcelamento.id });
+
     return {
       ok: true,
       parcelamentoId: parcelamento.id,
@@ -610,19 +618,26 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
  * @returns {Promise<{avaliadas: number, atualizadas: number, porEstado: object}>}
  */
 export async function recalcularEstadosParcelasEmAberto({ portalClientId = null, agora = new Date() } = {}) {
-  const guias = await prisma.guide.findMany({
+  const escopo = portalClientId ? { portalClientId: String(portalClientId) } : {};
+
+  // ⚠ F2.1 — A VARREDURA PASSOU A SER ANCORADA NA PARCELA, NÃO NA GUIA.
+  //
+  // O estado (`parcelaEstado`) continua morando na GUIA, e continua sendo escrito nela: enquanto a
+  // baixa for por guia, mover esse campo para cá criaria duas colunas de estado para a mesma
+  // prestação. O que muda é de onde a lista sai — a prestação é a unidade, a guia é o documento
+  // dela. Sem isso, "quantas prestações estão em aberto?" só sabia contar as que tinham documento.
+  const parcelas = await prisma.parcela.findMany({
     where: {
-      parcelamentoId: { not: null },
-      parcelaEstado: { in: ESTADOS_EM_ABERTO },
-      baixada: false,
-      ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+      ...escopo,
+      guia: { parcelaEstado: { in: ESTADOS_EM_ABERTO }, baixada: false },
     },
-    select: { id: true, parcelaEstado: true, vencimento: true, paymentStatus: true },
+    select: { id: true, guia: { select: { id: true, parcelaEstado: true, vencimento: true, paymentStatus: true } } },
   });
 
   const porEstado = {};
   let atualizadas = 0;
-  for (const g of guias) {
+  for (const p of parcelas) {
+    const g = p.guia;
     // ⚠ Guia paga fora do fluxo da parcela (baixa manual, por exemplo) não vira "em atraso" porque
     // o vencimento passou. O filtro por `baixada` não pega esse caso — o estado do PAGAMENTO pega.
     if (String(g.paymentStatus || "").toUpperCase() === "PAID") continue;
@@ -633,35 +648,55 @@ export async function recalcularEstadosParcelasEmAberto({ portalClientId = null,
     porEstado[novo] = (porEstado[novo] || 0) + 1;
     atualizadas += 1;
   }
-  return { avaliadas: guias.length, atualizadas, porEstado };
+
+  // ⚠ AS PRESTAÇÕES SEM DOCUMENTO NÃO SOMEM DO RELATÓRIO — elas não têm estado a recalcular (não há
+  // guia onde gravá-lo), mas existem e são devidas. Antes elas nem eram contáveis; reportá-las
+  // separadamente é a diferença entre "não há nada em aberto" e "há isto aqui que não sei avaliar".
+  const semGuia = await prisma.parcela.count({
+    where: { ...escopo, guiaId: null, origemBaixa: null },
+  });
+
+  return { avaliadas: parcelas.length, atualizadas, porEstado, semGuia };
 }
 
 /**
  * Q28 Fase 3 — Fila de conferência: lista as parcelas pagas a conferir + divergentes.
  */
 export async function listarConferenciaParcelas({ portalClientId }) {
-  const guides = await prisma.guide.findMany({
-    where: { portalClientId, parcelaEstado: { in: [PARCELA_ESTADOS.PAGA_A_CONFERIR, PARCELA_ESTADOS.DIVERGENTE] } },
+  // F2.1: ancorada na PARCELA (a unidade), com a guia junto (o documento e, hoje, o estado).
+  // O filtro é o mesmo de antes; o que muda é que agora existe uma linha de parcela por trás de
+  // cada item, então `numeroParcela` vem do contrato e não fica nulo quando a guia não o tem.
+  const parcelas = await prisma.parcela.findMany({
+    where: {
+      portalClientId,
+      guia: { parcelaEstado: { in: [PARCELA_ESTADOS.PAGA_A_CONFERIR, PARCELA_ESTADOS.DIVERGENTE] } },
+    },
     select: {
       id: true, parcelamentoId: true, numeroParcela: true, anoMesParcela: true, competencia: true,
-      valor: true, dataBaixa: true, parcelaEstado: true, lancamentoId: true,
+      guia: {
+        select: {
+          id: true, numeroParcela: true, anoMesParcela: true, competencia: true,
+          valor: true, dataBaixa: true, parcelaEstado: true, lancamentoId: true,
+        },
+      },
       parcelamento: { select: { label: true, tipo: true, numeroParcelamento: true } },
     },
-    orderBy: { dataBaixa: "desc" },
+    orderBy: { guia: { dataBaixa: "desc" } },
     take: 200,
   });
-  return guides.map((g) => ({
-    guideId: g.id,
-    parcelamentoId: g.parcelamentoId,
-    parcelamentoLabel: g.parcelamento?.label || null,
-    tipo: g.parcelamento?.tipo || null,
-    numeroParcelamento: g.parcelamento?.numeroParcelamento || null,
-    numeroParcela: g.numeroParcela,
-    competencia: g.competencia,
-    anoMesParcela: g.anoMesParcela,
-    valor: g.valor != null ? Number(g.valor) : null,
-    dataBaixa: g.dataBaixa,
-    estado: g.parcelaEstado,
+  return parcelas.map((p) => ({
+    parcelaId: p.id,
+    guideId: p.guia.id,
+    parcelamentoId: p.parcelamentoId,
+    parcelamentoLabel: p.parcelamento?.label || null,
+    tipo: p.parcelamento?.tipo || null,
+    numeroParcelamento: p.parcelamento?.numeroParcelamento || null,
+    numeroParcela: p.numeroParcela ?? p.guia.numeroParcela,
+    competencia: p.guia.competencia ?? p.competencia,
+    anoMesParcela: p.guia.anoMesParcela ?? p.anoMesParcela,
+    valor: p.guia.valor != null ? Number(p.guia.valor) : null,
+    dataBaixa: p.guia.dataBaixa,
+    estado: p.guia.parcelaEstado,
   }));
 }
 

@@ -668,6 +668,9 @@ model Guide {
   parcelamento    Parcelamento?    @relation("GuideParcelamento", fields: [parcelamentoId], references: [id], onDelete: SetNull)
   tributosParcela TributoParcela[]
   envios          EnvioGuia[]
+  /// F2.1: a PARCELA que esta guia materializa (quando é guia de parcelamento). Lado inverso —
+  /// a FK mora em `parcelas.guiaId`. A guia continua sendo a autoridade sobre o PAGAMENTO.
+  parcela         Parcela?         @relation("GuideParcela")
 
   // Q21: ingestão idempotente da mesma parcela (parcial WHERE parcelamentoId NOT NULL via SQL).
   @@unique([parcelamentoId, numeroParcela])
@@ -1403,11 +1406,77 @@ model Parcelamento {
   parcelas          AccountingEntry[]   @relation("ParcelamentoParcelas")
   guides            Guide[]             @relation("GuideParcelamento")
 
+  /// F2.1: as PARCELAS do contrato, como linhas próprias. Ver `model Parcela`.
+  /// ⚠ Nome diferente de `parcelas` de propósito — aquele campo é `AccountingEntry[]` (as linhas
+  /// leves `tipo="PARCELA"` do V1) e é lido pela tela. Renomeá-lo trocaria o significado de um
+  /// campo já servido pela API.
+  parcelasContratadas Parcela[] @relation("ParcelamentoParcelasContratadas")
+
   // Q21: vínculo determinístico — impede cabeçalho duplicado (parcial WHERE numeroParcelamento NOT NULL via SQL).
   @@unique([portalClientId, tipo, numeroParcelamento])
   @@index([portalClientId, status])
   @@index([portalClientId, kind])
   @@map("parcelamentos")
+}
+
+// F2.1 — A PARCELA COMO ENTIDADE. Até aqui uma parcela ERA uma `Guide` com `parcelamentoId`, e o
+// módulo inteiro derivava estado disso: contadores, risco de rescisão, fila de pendentes, fila de
+// conferência e recálculo de atraso varriam `guides`.
+//
+// ⚠ O DEFEITO QUE ISSO FECHA: parcela sem guia não existia. Um parcelamento em DÉBITO AUTOMÁTICO —
+// onde não há guia nenhuma, por definição — aparecia como "0 de 0", e o alerta de rescisão saía
+// como não avaliável. O contador via um acordo de 52 prestações reportado como vazio.
+//
+// ⚠ E O QUE ELA **NÃO** FAZ: não duplica o estado de PAGAMENTO. Enquanto o caminho de baixa for
+// por guia (`gerarPagamentoParcelaFromGuide` exige `guideId` na assinatura, na guarda de
+// idempotência e no efeito colateral), quem responde "esta prestação foi quitada?" continua sendo
+// a GUIA. Copiar `baixada`/`paymentStatus` para cá criaria duas respostas para a mesma pergunta e
+// elas divergiriam no primeiro estorno. Aqui mora o CONTRATO (quais prestações existem, quando
+// vencem); lá mora o FATO (foi paga).
+model Parcela {
+  id             String @id @default(uuid())
+  parcelamentoId String
+  /// Denormalizado do parcelamento: as varreduras da carteira filtram por empresa sem join.
+  portalClientId String
+
+  /// ⚠ NULO É CASO REAL, não descuido: `normalizeParcelaDTO` aceita `numeroParcela: null`, e existe
+  /// guia vinculada a parcelamento sem número. Ela ganha linha própria (chaveada por `guiaId`) em
+  /// vez de ficar de fora — guia é evidência, e evidência não se descarta por falta de rótulo.
+  numeroParcela Int?
+
+  /// Calendário CONTRATADO (derivado de `competenciaInicial` + `diaPagamento`, a mesma conta que
+  /// `createParcelamento` já faz para as linhas leves do V1). É PLANO, não fato: quando há guia, o
+  /// vencimento real é o dela, e quem lê resolve `guia.vencimento ?? parcela.vencimento`.
+  competencia   String? // YYYY-MM
+  anoMesParcela String? // YYYYMM
+  vencimento    DateTime?
+  valorPrevisto Decimal?  @db.Decimal(18, 2)
+
+  /// A guia que materializou esta parcela — OPCIONAL, e é esse "opcional" a razão da tabela existir.
+  guiaId String? @unique
+
+  /// F2.2 — a baixa SEM GUIA (débito automático). ⚠ HOJE SEMPRE NULO, e isto não é coluna morta:
+  /// é o ponto onde a F2.2 grava a evidência de quitação de uma parcela que nunca teve guia.
+  /// `parcelaRowQuitada` já a lê, então a F2.2 muda UMA escrita, não as derivações.
+  /// Enquanto for nulo e não houver guia, a parcela é "sem evidência" — nem quitada, nem inadimplida.
+  origemBaixa String? // GUIA | DEBITO_AUTOMATICO | MANUAL
+  baixadaEm   DateTime?
+
+  /// Como a linha nasceu: CONTRATO (materializada do cabeçalho) | GUIA (existe guia para ela).
+  origem String @default("CONTRATO")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parcelamento Parcelamento @relation("ParcelamentoParcelasContratadas", fields: [parcelamentoId], references: [id], onDelete: Cascade)
+  guia         Guide?       @relation("GuideParcela", fields: [guiaId], references: [id], onDelete: SetNull)
+
+  /// Idempotência da materialização. ⚠ No Postgres NULLs são distintos em UNIQUE, então as linhas
+  /// sem número não colidem entre si — o que as separa é o `guiaId` unique acima.
+  @@unique([parcelamentoId, numeroParcela])
+  @@index([parcelamentoId])
+  @@index([portalClientId, parcelamentoId])
+  @@map("parcelas")
 }
 
 // Q21 (spec v2): composição por tributo de uma guia de parcela.

@@ -3629,33 +3629,44 @@ export function createAccountingEntriesRouter({ log }) {
   router.get("/parcelamentos/parcelas-pendentes-baixa", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     try {
-      const guias = await prisma.guide.findMany({
+      // F2.1: ancorada na PARCELA. O filtro de pendência é o MESMO (a guia é que carrega o
+      // pagamento e a baixa, e o caminho de baixa continua sendo por guia), mas a linha devolvida
+      // passa a saber que prestação ela é — `numeroParcela` vinha nulo aqui porque nem era lido.
+      const pendentes = await prisma.parcela.findMany({
         where: {
           portalClientId,
-          parcelamentoId: { not: null },
-          status: "PROCESSED",
-          paymentStatus: "PAID",
-          baixada: false,
-          lancamentoId: null,
+          guia: {
+            status: "PROCESSED",
+            paymentStatus: "PAID",
+            baixada: false,
+            lancamentoId: null,
+          },
         },
         select: {
-          id: true, tipo: true, competencia: true, valor: true, vencimento: true,
-          parcelamentoId: true, extracted: true, paymentConfirmedAt: true,
+          id: true, numeroParcela: true, parcelamentoId: true,
+          guia: {
+            select: {
+              id: true, tipo: true, competencia: true, valor: true, vencimento: true,
+              extracted: true, paymentConfirmedAt: true,
+            },
+          },
         },
-        orderBy: { competencia: "asc" },
+        orderBy: { guia: { competencia: "asc" } },
         take: 100,
       });
       return res.json({
         ok: true,
-        parcelas: guias.map((g) => ({
-          guideId: g.id,
-          competencia: g.competencia,
-          valor: g.valor != null ? Number(g.valor) : null,
-          vencimento: g.vencimento,
-          parcelamentoId: g.parcelamentoId,
-          confirmadoEm: g.paymentConfirmedAt,
+        parcelas: pendentes.map((p) => ({
+          parcelaId: p.id,
+          guideId: p.guia.id,
+          numeroParcela: p.numeroParcela,
+          competencia: p.guia.competencia,
+          valor: p.guia.valor != null ? Number(p.guia.valor) : null,
+          vencimento: p.guia.vencimento,
+          parcelamentoId: p.parcelamentoId,
+          confirmadoEm: p.guia.paymentConfirmedAt,
           // Dados do comprovante (quando a busca no SERPRO já rodou) pra mostrar data/valores reais.
-          comprovante: g.extracted && typeof g.extracted === "object" ? g.extracted.comprovante || null : null,
+          comprovante: p.guia.extracted && typeof p.guia.extracted === "object" ? p.guia.extracted.comprovante || null : null,
         })),
       });
     } catch (err) {

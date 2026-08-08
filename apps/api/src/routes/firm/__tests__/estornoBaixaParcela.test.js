@@ -38,6 +38,8 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       update: jest.fn(async (args) => ({ id: "g1", ...args.data })),
     },
     parcelamento: { findFirst: jest.fn(async () => null) },
+    // F2.1: `recalcularParcelamento` passou a ler as PARCELAS contratadas em vez das guias.
+    parcela: { findMany: jest.fn(async () => []) },
     estornoBaixa: { create: jest.fn(async () => ({ id: "est1" })) },
   };
   return {
@@ -50,6 +52,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
       },
       guide: { findFirst: jest.fn(async () => null), findMany: jest.fn(async () => []) },
       parcelamento: { findFirst: jest.fn(async () => null) },
+      parcela: { findMany: jest.fn(async () => []) },
       companyMonthlyCircular: { findFirst: jest.fn(async () => null) },
       $transaction: jest.fn(async (cb) => cb(tx)),
     },
@@ -334,11 +337,20 @@ describe("POST /entries/:entryId/estorno — a guia volta à fila", () => {
 describe("POST /entries/:entryId/estorno — recálculo do risco de rescisão", () => {
   it("⚠ o estorno DEVOLVE o quadro recalculado — não deixa para a próxima abertura de tela", async () => {
     // Três prestações vencidas e não quitadas depois do estorno = a regra da IN RFB 2.063/2022 (I).
+    // ⚠ F2.1: a fonte do recálculo passou a ser `parcela` (a prestação) em vez de `guide` (o
+    // documento). A REGRA é a mesma — `avaliarRiscoRescisao`, com a citação não conferida; o que
+    // muda é quem entrega a lista. Cada parcela traz a guia dela, que é quem diz se foi paga.
     const vencida = (n) => ({
-      id: `g${n}`, numeroParcela: n, vencimento: new Date(`2026-0${n}-20T00:00:00Z`),
-      paymentStatus: "OPEN", baixada: false,
+      id: `p${n}`, numeroParcela: n, vencimento: new Date(`2026-0${n}-20T00:00:00Z`), origemBaixa: null,
+      guia: { id: `g${n}`, vencimento: new Date(`2026-0${n}-20T00:00:00Z`), paymentStatus: "OPEN", baixada: false },
     });
-    __tx.guide.findMany.mockResolvedValue([vencida(4), vencida(5), vencida(6), { ...GUIA_DA_PARCELA, paymentStatus: "OPEN", baixada: false }]);
+    __tx.parcela.findMany.mockResolvedValue([
+      vencida(4), vencida(5), vencida(6),
+      {
+        id: "p3", numeroParcela: 3, vencimento: GUIA_DA_PARCELA.vencimento, origemBaixa: null,
+        guia: { ...GUIA_DA_PARCELA, paymentStatus: "OPEN", baixada: false },
+      },
+    ]);
     const res = await estornar({ motivo: MOTIVO });
     expect(res.status).toBe(200);
     expect(res.body.recalculo).toMatchObject({ parcelasPagas: 0, emAtraso: 4 });
@@ -360,7 +372,10 @@ describe("POST /entries/:entryId/estorno — recálculo do risco de rescisão", 
   it("o recálculo roda DEPOIS das escritas — o número é o do mundo já estornado", async () => {
     const ordem = [];
     __tx.guide.update.mockImplementation(async () => { ordem.push("guia"); return { id: "g1" }; });
-    __tx.guide.findMany.mockImplementation(async () => { ordem.push("recalculo"); return [{ ...GUIA_DA_PARCELA }]; });
+    __tx.parcela.findMany.mockImplementation(async () => {
+      ordem.push("recalculo");
+      return [{ id: "p3", numeroParcela: 3, vencimento: GUIA_DA_PARCELA.vencimento, origemBaixa: null, guia: { ...GUIA_DA_PARCELA } }];
+    });
     await estornar({ motivo: MOTIVO });
     expect(ordem).toEqual(["guia", "recalculo"]);
   });

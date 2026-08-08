@@ -25,6 +25,60 @@ Lógica de lançamentos contábeis, provisões, baixas, parcelamentos e fechamen
 | `ParcelamentoSeeds.js` | templates `AccountingFunction kind=PARCELAMENTO_OPENING/PAYMENT/RESCISION` (legado Q9/Q16) |
 | `AccountingFunctionService.js` | funções/templates de lançamento reutilizáveis |
 
+## F2.1 — a PARCELA virou entidade (`model Parcela` / tabela `parcelas`)
+
+Até aqui **uma parcela ERA uma `Guide`** com `parcelamentoId` (unique `(parcelamentoId,
+numeroParcela)`), e o módulo inteiro derivava estado disso. A consequência é que **parcela sem guia
+não existia** — e parcelamento em **débito automático** não tem guia nenhuma, por definição. Ele
+chegava na tela como "0 de 0", risco não avaliável.
+
+| | antes | agora |
+|---|---|---|
+| contadores (`decorateParcelamento`) | numerador = guias quitadas; denominador = `guides.length` | os dois de `parcelasContratadas` |
+| risco (`riscoRescisao`) | `guides.map(...)` | as parcelas, **só as que têm evidência** |
+| fila de pendentes (`/parcelamentos/parcelas-pendentes-baixa`) | varre `prisma.guide` | varre `prisma.parcela` (guia no join) |
+| fila de conferência (`listarConferenciaParcelas`) | varre `prisma.guide` | idem |
+| recálculo de atraso (`recalcularEstadosParcelasEmAberto`) | varre `prisma.guide` | idem, + `semGuia` |
+| `recalcularParcelamento` | `parcelasTotal: guides.length \|\| numParcelas` | `quadroDasParcelas` |
+
+⚠ **A tabela NÃO duplica o estado de pagamento.** Não há `baixada` nem `paymentStatus` nela.
+Enquanto o caminho de baixa for por guia (`gerarPagamentoParcelaFromGuide` exige `guideId` na
+assinatura, na guarda `sourceGuideId` e no efeito em `guide.baixada`/`lancamentoId` — a **F2.2**),
+quem responde "foi quitada?" é a **guia**. Aqui mora o **contrato** (quais prestações existem,
+quando vencem); lá mora o **fato**. Uma cópia divergiria no primeiro estorno.
+
+⚠ **`origemBaixa` é hoje sempre NULO, e não é coluna morta:** é onde a F2.2 grava a baixa de uma
+parcela que nunca teve guia. `parcelaRowQuitada` já a lê — a F2.2 muda **uma escrita**, não as
+derivações.
+
+⚠ **Prestação SEM EVIDÊNCIA não é inadimplente.** Materializar o cronograma e passar as parcelas
+sem guia como `quitada:false` acenderia **RESCINDÍVEL em todo débito automático saudável** —
+inadimplência derivada de ausência de dado (regra 1 ao contrário), e um alerta que acende sempre é
+o que `riscoRescisao.js` já se recusa a produzir. Elas ficam **fora** do cálculo e viajam nomeadas
+em **`parcelasSemEvidencia`**. Consequência aceita: parcelamento sem nenhuma guia continua com
+`risco.avaliavel = false` — mas agora com `0 de 52` e o motivo explícito, não `0 de 0`.
+
+⚠ **A bifurcação V1/V2 não olha mais para guia.** Era `parcelas.length === 0 && guides.length > 0`;
+o segundo termo fazia a **versão** depender de quantos documentos tinham chegado. O discriminador é
+só o primeiro: o V1 (`createParcelamento`) sempre cria N linhas `tipo="PARCELA"` (N ≥ 1), o V2 nunca
+cria nenhuma.
+
+- Derivação única: **`quadroDasParcelas`** + `parcelaRowQuitada` / `temEvidenciaDePagamento` /
+  `SELECT_PARCELA_PARA_QUADRO`, em `parcelamento/recalculoParcelamento.js` (junto do `parcelaQuitada`
+  que já existia, e **chamando-o** — a regra da IN RFB 2.063/2022 não foi reescrita).
+- Materialização: **`parcelamento/parcelaSync.js`** (`sincronizarParcelas`, idempotente), chamada em
+  `createParcelamento`, `linkGuideToParcela` e `ingestParcelamentoFromGuide` — esta última **também
+  quando não há `guideId`**, que é o caminho SERPRO. `addMonths`/`buildDateOfMonth` mudaram de casa
+  para lá (o mesmo calendário do V1 e das linhas de `parcelas`; duas cópias dariam dois vencimentos
+  para a mesma obrigação).
+- ⚠ `competenciaInicial = '1970-01'` é **sentinela**, não data (`ingestParcelamentoFromGuide` grava
+  `compLabel || "1970-01"`). Dela não sai cronograma — as datas ficam nulas.
+- Migration `20260808180000_add_parcela`: **não escreve em `"Guide"` nem em
+  `"accounting_entries"`** (garantia estrutural, testada), e **aborta com `RAISE EXCEPTION`** se
+  alguma guia de parcelamento ficar sem linha em `parcelas`.
+- Regressão: `parcelamento/__tests__/parcelaComoEntidade.test.js` (19) e
+  `__tests__/decorateParcelamentoBifurcacao.test.js` (4).
+
 ## Fechamento contábil do mês (Q17/Q18)
 
 Distinto do `estado` da apuração (módulo Notas). Campos em `CompanyMonthlyCircular`:

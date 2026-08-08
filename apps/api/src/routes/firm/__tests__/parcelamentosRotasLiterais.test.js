@@ -18,9 +18,11 @@ jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
   },
 }));
 
+// F2.1: a fila de pendentes passou a ser ancorada em `parcela` (a prestação) em vez de `guide`
+// (o documento). Este teste é sobre ORDEM DE ROTA, não sobre a fonte — o mock acompanha a troca.
 jest.mock("../../../infrastructure/db/prisma.js", () => ({
   prisma: {
-    guide: { findMany: jest.fn(async () => []) },
+    parcela: { findMany: jest.fn(async () => []) },
   },
 }));
 
@@ -56,14 +58,14 @@ beforeEach(() => {
 
 describe("GET /parcelamentos/* — literais antes do curinga :parcId", () => {
   it("parcelas-pendentes-baixa NÃO é engolida pelo :parcId", async () => {
-    prisma.guide.findMany.mockResolvedValue([]);
+    prisma.parcela.findMany.mockResolvedValue([]);
 
     const res = await request(makeApp()).get("/firm/companies/p1/parcelamentos/parcelas-pendentes-baixa");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, parcelas: [] });
     // A prova de que foi o handler certo: o do curinga nem seria consultado.
-    expect(prisma.guide.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.parcela.findMany).toHaveBeenCalledTimes(1);
     expect(getParcelamento).not.toHaveBeenCalled();
   });
 
