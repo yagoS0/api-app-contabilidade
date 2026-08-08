@@ -19,7 +19,11 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
         return entry;
       }),
     },
-    guide: { update: jest.fn(async () => ({})) },
+    guide: {
+      // A baixa começa reservando a guia (updateMany condicional) — ver `baixaInssDuplicada.test.js`.
+      updateMany: jest.fn(async () => ({ count: 1 })),
+      update: jest.fn(async () => ({})),
+    },
   };
   return {
     __criados: criados,

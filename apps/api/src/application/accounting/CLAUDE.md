@@ -104,6 +104,30 @@ A regra existia, estava documentada e implementada — e o INSS em atraso contin
 o acréscimo entre 501 e 506 seria inventar. Pago em dia segue com um lançamento só — ali não há
 acréscimo a separar. Decisão do dono, regra 5.
 
+### ⚠ A baixa começa RESERVANDO a guia (senão duplica em corrida)
+
+Vale para o INSS (`InssPagamentoService.gerarPagamentoInssFromGuide`) e para a parcela
+(`ParcelamentoV2Service.gerarPagamentoParcelaFromGuide`), pelo mesmo motivo e com o mesmo código:
+dentro do `$transaction`, **antes de qualquer lançamento**, um `updateMany` condicional em
+`lancamentoId: null` grava `baixada/dataBaixa` e só segue se `count === 1`; o `update` final apenas
+completa o `lancamentoId`.
+
+As verificações de idempotência de cima (`guide.lancamentoId || guide.baixada` e a busca por uma
+BAIXA com o mesmo `sourceGuideId`) são **check-then-act fora da transação** e continuam servindo só
+para dar o motivo legível no caminho normal. Duas requisições simultâneas — duplo clique, ou o
+`SerproPaymentConfirmationService` confirmando o pagamento no instante do clique do contador —
+passavam AS DUAS por elas antes de qualquer uma escrever, e saíam **dois lotes amortizando o mesmo
+passivo pela mesma guia**.
+
+⚠ **O banco não segura isso.** O unique `(sourceGuideId, eventType)` foi desenhado para as
+PROVISÕES (uma por tributo, cada uma com seu `eventType`); os lançamentos de baixa nascem com
+`eventType` **NULL**, e no Postgres NULLs são distintos em UNIQUE. E não dá para trocar por um
+índice mais apertado: os N lançamentos do lote compartilham todas as colunas que identificariam a
+baixa, então o índice recusaria o segundo lançamento **legítimo** — derrubaria a baixa inteira em
+vez de impedir a duplicada. O idioma da reserva já existia em `GuideLockService` e
+`GuideLiberacaoService`. Regressão: `__tests__/baixaInssDuplicada.test.js` e
+`parcelamento/__tests__/baixaParcelaDuplicada.test.js`.
+
 ⚠ **Uma guia tem até TRÊS baixas.** O `Map` por `sourceGuideId` na Circular guardava só a última, e
 "Cancelar baixa" apagava um lançamento deixando dois órfãos com a guia reaberta. Hoje `baixas[]`
 traz o lote inteiro (o principal primeiro) e o cancelamento leva todos.

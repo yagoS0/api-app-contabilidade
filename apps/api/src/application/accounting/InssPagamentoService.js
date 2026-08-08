@@ -232,6 +232,29 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
   const SUFIXO_HISTORICO = { PRINCIPAL: "", JUROS: " (juros)", MULTA: " (multa)" };
 
   return prisma.$transaction(async (tx) => {
+    // ⚠ A GUIA É RESERVADA ANTES DE QUALQUER LANÇAMENTO — e é isto que impede a baixa DUPLICADA.
+    //
+    // As duas verificações lá em cima (`guide.lancamentoId || guide.baixada` e `baixaExistente`)
+    // são check-then-act FORA da transação: duas requisições simultâneas (duplo clique, ou o
+    // worker `SerproPaymentConfirmationService` confirmando o pagamento no mesmo instante em que o
+    // contador clica "dar baixa") passavam AS DUAS pela verificação antes de qualquer uma
+    // escrever, e o resultado eram dois lotes de lançamento amortizando o mesmo passivo pela mesma
+    // guia. O banco não segurava: o unique `(sourceGuideId, eventType)` não morde porque estes
+    // lançamentos nascem com `eventType` NULL, e no Postgres NULLs são distintos em UNIQUE.
+    //
+    // Este `updateMany` condicional é a reserva atômica — o mesmo recurso do banco que
+    // `GuideLockService`/`GuideLiberacaoService` já usam, e o mesmo padrão de
+    // `gerarPagamentoParcelaFromGuide`. Em READ COMMITTED a segunda transação fica bloqueada na
+    // LINHA da guia até a primeira commitar e então reavalia o `where` contra o dado novo:
+    // `lancamentoId` deixou de ser nulo, `count` volta 0, e ela desiste sem escrever nada. As
+    // verificações de cima continuam onde estão — elas dão o motivo legível no caminho normal;
+    // esta é a que vale quando há corrida.
+    const reserva = await tx.guide.updateMany({
+      where: { id: guide.id, portalClientId, lancamentoId: null },
+      data: { baixada: true, dataBaixa: data },
+    });
+    if (reserva.count !== 1) return { skipped: true, reason: "ja_baixada" };
+
     const base = {
       portalClientId,
       sourceGuideId: guide.id,
@@ -252,7 +275,8 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
       });
       await tx.guide.update({
         where: { id: guide.id },
-        data: { baixada: true, dataBaixa: data, lancamentoId: entry.id },
+        // `baixada`/`dataBaixa` já foram gravados na reserva acima; aqui completa o vínculo.
+        data: { lancamentoId: entry.id },
       });
       return { ok: true, pagamentoId: entry.id, lancamentos: 1, contaInss: contaInss || null, contaCaixa: contaCaixa || null };
     }
@@ -276,7 +300,8 @@ export async function gerarPagamentoInssFromGuide({ portalClientId, guideId, dat
     const principal = criados.find((c) => c.papel === "PRINCIPAL") || criados[0];
     await tx.guide.update({
       where: { id: guide.id },
-      data: { baixada: true, dataBaixa: data, lancamentoId: principal.id },
+      // `baixada`/`dataBaixa` já foram gravados na reserva acima; aqui completa o vínculo.
+      data: { lancamentoId: principal.id },
     });
     return {
       ok: true,

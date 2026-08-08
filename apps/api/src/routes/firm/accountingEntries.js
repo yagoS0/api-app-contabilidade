@@ -3554,6 +3554,69 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
+  // ⚠ As duas rotas LITERAIS abaixo têm que ficar ANTES de `/parcelamentos/:parcId` — o Express casa
+  // na ordem de registro, e o curinga (que responde 404 `parcelamento_not_found`, nunca `next()`)
+  // engoliria "contas-provisao" e "parcelas-pendentes-baixa" como se fossem um id. Mesmo cuidado que
+  // `/companies/annual` e `/companies/fechamento` já tomam com `/companies/:companyId`.
+
+  // Q23 — GET /firm/companies/:companyId/parcelamentos/contas-provisao?tipo=PARCSN
+  // Devolve as contas memorizadas (MapaContaTributo) das linhas-padrão da provisão pra pré-preencher
+  // o modal: { PARC_DAS, MULTA, JUROS, TOTAL } (string vazia quando ainda não aprendida).
+  router.get("/parcelamentos/contas-provisao", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const tipoParcelamento = String(req.query.tipo || "").trim().toUpperCase();
+    if (!tipoParcelamento) return res.status(400).json({ ok: false, error: "tipo_required" });
+    try {
+      const { resolverContasProvisao } = await import("../../application/accounting/parcelamento/ParcelamentoV2Service.js");
+      const contas = await resolverContasProvisao({ portalClientId, tipoParcelamento });
+      return res.json({ ok: true, contas });
+    } catch (err) {
+      log.error({ err }, "Falha ao resolver contas de provisão");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
+  // Parcelas com pagamento marcado mas SEM lançamento — alimenta o painel da aba Parcelamento.
+  // A baixa da parcela saiu do "confirmar pagamento" e passou a ser ato deliberado aqui, no mesmo
+  // lugar onde as parcelas são acompanhadas (espelha o que a Circular faz com os tributos).
+  router.get("/parcelamentos/parcelas-pendentes-baixa", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    try {
+      const guias = await prisma.guide.findMany({
+        where: {
+          portalClientId,
+          parcelamentoId: { not: null },
+          status: "PROCESSED",
+          paymentStatus: "PAID",
+          baixada: false,
+          lancamentoId: null,
+        },
+        select: {
+          id: true, tipo: true, competencia: true, valor: true, vencimento: true,
+          parcelamentoId: true, extracted: true, paymentConfirmedAt: true,
+        },
+        orderBy: { competencia: "asc" },
+        take: 100,
+      });
+      return res.json({
+        ok: true,
+        parcelas: guias.map((g) => ({
+          guideId: g.id,
+          competencia: g.competencia,
+          valor: g.valor != null ? Number(g.valor) : null,
+          vencimento: g.vencimento,
+          parcelamentoId: g.parcelamentoId,
+          confirmadoEm: g.paymentConfirmedAt,
+          // Dados do comprovante (quando a busca no SERPRO já rodou) pra mostrar data/valores reais.
+          comprovante: g.extracted && typeof g.extracted === "object" ? g.extracted.comprovante || null : null,
+        })),
+      });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar parcelas pendentes de baixa");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
   // GET /firm/companies/:companyId/parcelamentos/:parcId
   router.get("/parcelamentos/:parcId", requireFirmCompanyAccess(), async (req, res) => {
     const portalClientId = String(req.params.companyId);
@@ -3591,23 +3654,6 @@ export function createAccountingEntriesRouter({ log }) {
       const status = knownErrors.includes(code) ? 400 : 500;
       if (status === 500) log.error({ err }, "Falha ao criar parcelamento");
       return res.status(status).json({ ok: false, error: code });
-    }
-  });
-
-  // Q23 — GET /firm/companies/:companyId/parcelamentos/contas-provisao?tipo=PARCSN
-  // Devolve as contas memorizadas (MapaContaTributo) das linhas-padrão da provisão pra pré-preencher
-  // o modal: { PARC_DAS, MULTA, JUROS, TOTAL } (string vazia quando ainda não aprendida).
-  router.get("/parcelamentos/contas-provisao", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
-    const portalClientId = String(req.params.companyId);
-    const tipoParcelamento = String(req.query.tipo || "").trim().toUpperCase();
-    if (!tipoParcelamento) return res.status(400).json({ ok: false, error: "tipo_required" });
-    try {
-      const { resolverContasProvisao } = await import("../../application/accounting/parcelamento/ParcelamentoV2Service.js");
-      const contas = await resolverContasProvisao({ portalClientId, tipoParcelamento });
-      return res.json({ ok: true, contas });
-    } catch (err) {
-      log.error({ err }, "Falha ao resolver contas de provisão");
-      return res.status(500).json({ ok: false, error: "internal_error" });
     }
   });
 
@@ -3815,49 +3861,6 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
-  // POST /firm/companies/:companyId/parcelamentos/:parcId/rescindir
-  // body: { dataRescisao?, observacoes?, rescisaoLines? }
-  // Parcelas com pagamento marcado mas SEM lançamento — alimenta o painel da aba Parcelamento.
-  // A baixa da parcela saiu do "confirmar pagamento" e passou a ser ato deliberado aqui, no mesmo
-  // lugar onde as parcelas são acompanhadas (espelha o que a Circular faz com os tributos).
-  router.get("/parcelamentos/parcelas-pendentes-baixa", requireFirmCompanyAccess(), async (req, res) => {
-    const portalClientId = String(req.params.companyId);
-    try {
-      const guias = await prisma.guide.findMany({
-        where: {
-          portalClientId,
-          parcelamentoId: { not: null },
-          status: "PROCESSED",
-          paymentStatus: "PAID",
-          baixada: false,
-          lancamentoId: null,
-        },
-        select: {
-          id: true, tipo: true, competencia: true, valor: true, vencimento: true,
-          parcelamentoId: true, extracted: true, paymentConfirmedAt: true,
-        },
-        orderBy: { competencia: "asc" },
-        take: 100,
-      });
-      return res.json({
-        ok: true,
-        parcelas: guias.map((g) => ({
-          guideId: g.id,
-          competencia: g.competencia,
-          valor: g.valor != null ? Number(g.valor) : null,
-          vencimento: g.vencimento,
-          parcelamentoId: g.parcelamentoId,
-          confirmadoEm: g.paymentConfirmedAt,
-          // Dados do comprovante (quando a busca no SERPRO já rodou) pra mostrar data/valores reais.
-          comprovante: g.extracted && typeof g.extracted === "object" ? g.extracted.comprovante || null : null,
-        })),
-      });
-    } catch (err) {
-      log.error({ err }, "Falha ao listar parcelas pendentes de baixa");
-      return res.status(500).json({ ok: false, error: "internal_error" });
-    }
-  });
-
   // Lança a baixa de UMA parcela (a partir da guia). Mês fechado bloqueia — aqui SIM há lançamento.
   router.post("/parcelamentos/parcelas/:guideId/baixa", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
@@ -3903,6 +3906,8 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
+  // POST /firm/companies/:companyId/parcelamentos/:parcId/rescindir
+  // body: { dataRescisao?, observacoes?, rescisaoLines? }
   router.post("/parcelamentos/:parcId/rescindir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const parcelamentoId = String(req.params.parcId);
