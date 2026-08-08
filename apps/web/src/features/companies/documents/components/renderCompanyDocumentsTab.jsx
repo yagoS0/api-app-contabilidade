@@ -105,7 +105,7 @@ export function CompanyDocumentsTab({ docs }) {
         </span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
           {/* O botão faz exatamente o que arrastar faz: escolhe o arquivo e cai na mesma pergunta. */}
-          <button type="button" style={btn("#69FF47")} disabled={subindo} onClick={() => inputRef.current?.click()}>
+          <button type="button" style={btn("var(--accent-purple)")} disabled={subindo} onClick={() => inputRef.current?.click()}>
             {subindo ? "Enviando…" : "+ Adicionar documento"}
           </button>
           <input
@@ -128,7 +128,7 @@ export function CompanyDocumentsTab({ docs }) {
         }}>
           <strong style={{ fontSize: "0.82rem" }}>{totalSelecionado} selecionado(s)</strong>
           <button type="button" style={btn("#8BE9FD")} onClick={baixarSelecionados}>⬇ Baixar</button>
-          <button type="button" style={btn("#69FF47")} disabled={enviando} onClick={aoEnviar}>
+          <button type="button" style={btn("var(--accent-purple)")} disabled={enviando} onClick={aoEnviar}>
             {enviando ? "Enviando…" : "✉ Enviar por e-mail"}
           </button>
           <button type="button" style={{ ...btn(), marginLeft: "auto" }} onClick={limparSelecao}>Limpar seleção</button>
@@ -237,7 +237,7 @@ export function CompanyDocumentsTab({ docs }) {
 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button type="button" style={btn()} disabled={subindo} onClick={cancelarFila}>Cancelar</button>
-              <button type="button" style={btn("#69FF47")} disabled={subindo} onClick={confirmarDocumento}>
+              <button type="button" style={btn("var(--accent-purple)")} disabled={subindo} onClick={confirmarDocumento}>
                 {subindo ? "Enviando…" : "Guardar"}
               </button>
             </div>

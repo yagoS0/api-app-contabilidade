@@ -410,8 +410,8 @@ export function EspelhoDefis({
                 }}
                 style={{
                   background: "transparent", borderRadius: 6, padding: "6px 12px", font: "inherit", fontSize: "0.8rem",
-                  border: `1px solid ${conferencia.erros.length ? C.borda : C.ok}`,
-                  color: conferencia.erros.length ? C.muted : C.ok,
+                  border: `1px solid ${conferencia.erros.length ? C.borda : C.accent}`,
+                  color: conferencia.erros.length ? C.muted : C.accent,
                   cursor: conferencia.erros.length ? "not-allowed" : "pointer",
                 }}
               >

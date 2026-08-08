@@ -937,7 +937,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                         type="button"
                         onClick={() => concluirOcorrencia(linha.ocorrencia, { fecharDetalhe: false })}
                         title="Marcar como concluída"
-                        style={{ background: "none", border: "none", color: "#69FF47", cursor: "pointer", fontSize: "1rem", padding: "0 2px", flex: "0 0 auto" }}
+                        style={{ background: "none", border: "none", color: "var(--accent-purple)", cursor: "pointer", fontSize: "1rem", padding: "0 2px", flex: "0 0 auto" }}
                       >
                         ✓
                       </button>
@@ -1100,7 +1100,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
             </select>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button type="button" onClick={() => setCriando(null)} style={btn(false)}>Cancelar</button>
-              <button type="submit" disabled={salvando} style={{ ...btn(true), borderColor: "#69FF47", color: "#69FF47" }}>
+              <button type="submit" disabled={salvando} style={btn(true)}>
                 {salvando ? "Salvando…" : "Salvar"}
               </button>
             </div>
@@ -1157,7 +1157,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                 <button
                   type="button"
                   onClick={() => concluirOcorrencia(detalhe)}
-                  style={{ ...btn(true), borderColor: "#69FF47", color: "#69FF47" }}
+                  style={btn(true)}
                 >
                   ✓ Marcar como concluída
                 </button>

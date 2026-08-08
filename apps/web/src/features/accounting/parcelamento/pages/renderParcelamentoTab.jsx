@@ -113,7 +113,7 @@ function ParcelasPendentesBaixa({ companyId }) {
                     disabled={Boolean(lancando)}
                     style={{
                       padding: "4px 10px", borderRadius: 6, cursor: lancando ? "default" : "pointer",
-                      background: "transparent", border: "1px solid #69FF47", color: "#69FF47",
+                      background: "transparent", border: "1px solid var(--accent-purple)", color: "var(--accent-purple)",
                       fontSize: "0.78rem", fontWeight: 700,
                     }}
                   >
