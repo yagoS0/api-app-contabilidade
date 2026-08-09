@@ -144,9 +144,22 @@ function buildContext({ competencia, company, parcelamento, numeroParcela }) {
  * Cria parcelamento + 1 entry de abertura + N entries de provisão de parcela.
  * Se sourceGuideId vier, linka a guia à parcela `linkGuideAsParcelaNum` (default 1 = entrada).
  */
+// ⚠ `templatePaymentFunctionId` NÃO É MAIS GRAVADO (decisão do dono, passo 1 de 2).
+//
+// O campo virou WRITE-ONLY quando a F2.3 removeu `confirmParcelaPayment`, seu único leitor: nada
+// mais consultava o template de pagamento do parcelamento. Continuar gravando um ponteiro que
+// ninguém segue faz o próximo leitor achar que existe um caminho de baixa por template — e há um
+// só, `ParcelamentoV2Service.gerarPagamentoParcelaFromGuide`, que parte do comprovante.
+//
+// ⚠ A COLUNA CONTINUA NO SCHEMA. O drop é uma migration SEPARADA, depois do deploy estabilizar —
+// empilhá-lo nesta janela somaria uma migration pendente ao risco. Ver o comentário no
+// `schema.prisma` (`model Parcelamento`).
+//
+// O parâmetro segue ACEITO no body da rota (o modal V1 do front ainda o envia) e é simplesmente
+// IGNORADO: recusá-lo transformaria uma limpeza interna em 400 numa tela que ainda existe.
 export async function createParcelamento({
   portalClientId, label, kind,
-  templateOpeningFunctionId, templatePaymentFunctionId, templateRescisionFunctionId,
+  templateOpeningFunctionId, templateRescisionFunctionId,
   numEntradas = 0, numParcelas,
   principalPerParcela, principalTotal, jurosTotal,
   dataAbertura, competenciaInicial, diaPagamento = 1, periodosReferenciados,
@@ -183,7 +196,8 @@ export async function createParcelamento({
       data: {
         portalClientId, label, kind,
         templateOpeningFunctionId: templateOpeningFunctionId || null,
-        templatePaymentFunctionId: templatePaymentFunctionId || null,
+        // `templatePaymentFunctionId` sai daqui de propósito — ver o comentário sobre o campo
+        // write-only acima da assinatura desta função.
         templateRescisionFunctionId: templateRescisionFunctionId || null,
         numEntradas, numParcelas,
         principalPerParcela: principal,
@@ -596,7 +610,10 @@ export async function listParcelamentos({ portalClientId, status }) {
       // F2.1: a fonte dos contadores e do risco. `guides` acima segue servido à tela como estava.
       parcelasContratadas: { select: SELECT_PARCELA_PARA_QUADRO, orderBy: { numeroParcela: "asc" } },
       templateOpening: { select: { id: true, name: true } },
-      templatePayment: { select: { id: true, name: true } },
+      // ⚠ `templatePayment` SAIU DO SELECT junto com a escrita do `templatePaymentFunctionId`: era o
+      // único leitor que restava do campo, e ele lia para servir à tela um nome que nenhuma tela
+      // consome (o front não referencia `templatePayment` em lugar nenhum). Mantê-lo carregado
+      // faria a coluna parecer viva no dia do drop.
       templateRescision: { select: { id: true, name: true } },
     },
     orderBy: { createdAt: "desc" },

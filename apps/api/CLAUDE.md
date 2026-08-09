@@ -395,14 +395,23 @@ consumida pelos dois lados. Não reescrever no consumidor — foi assim que dive
   **próprio** (`parcDas`), com o mesmo ciclo de vida dos outros (`missing → gerada → enviada`).
 - ⚠ **`vazio` e `semFaturamento` não valem para parcela.** Não se declara ausência de parcela
   contratada, e mês sem receita não suspende parcelamento.
-- ⚠ **A pré-query de `AccountingEntry` com `subtipo:"PARC_DAS"` não casa mais NUNCA.** Esse valor só
-  era escrito pelo modal manual antigo (`accountingEntries.js`, `POST /entries/parcelamento`), e a
-  **F2.3 removeu essa rota** — produção tinha ZERO lançamentos com esse subtipo, ela nunca foi
-  usada. O V1 grava `PARC_SIMPLES`/`PARC_INSS` e o **V2 grava `PARC_<TIPO>` (PARC_PARCSN…) só na
-  competência de ABERTURA**, sem linha por parcela (`numeroParcela: null` em todo entry). No caminho
-  de hoje a parcela do mês existe como **Guide**, não como lançamento — por isso a segunda pré-query,
-  que é a que sustenta o chip. A primeira ficou como leitura de dado LEGADO; removê-la mexe no que
-  alimenta o dashboard da carteira inteira e é decisão do dono.
+- ⚠ **A pré-query de `AccountingEntry` com `subtipo:"PARC_DAS"` FOI REMOVIDA** (decisão do dono).
+  Restou **UMA** pré-query alimentando o nó `parcDas`: a **GUIA** da parcela. Esse é o caminho de
+  hoje — `CaptureSerproParcelaService` grava a Guide, `ParcelamentoV2Service` carimba o
+  `parcelamentoId`, e é ela que tem PDF, e-mail e vencimento.
+  - **Por que sair:** era **inalcançável**, não "quase nunca casava". O único escritor de
+    `subtipo:"PARC_DAS"` era o modal manual antigo (`POST /entries/parcelamento`), removido na
+    F2.3 — produção tinha ZERO lançamentos com ele. Nenhum caminho vivo grava esse valor: o **V1**
+    (`ParcelamentoService.createParcelamento`) grava `PARC_<kind>` com kind ∈
+    `SIMPLES|INSS|DARF|OUTRO`; o **V2** grava `PARC_<TIPO>` com TIPO ∈ `TIPOS_PARCELAMENTO`
+    (`PARCSN`, `RELP_SN`, …), e só na competência de ABERTURA; os seeds usam
+    `PARC_DAS_ABERTURA`/`PARC_DAS_RESCISAO`, que a igualdade exata da query não alcançava.
+    Custava uma varredura de `accounting_entries` sobre a **carteira inteira**, a cada montagem do
+    dashboard, para devolver sempre vazio.
+  - **O que NÃO mudou:** o nó `parcDas` continua com o mesmo ciclo (`missing → gerada → enviada`),
+    alimentado pela guia — que já era a única fonte com efeito prático.
+  - Regressão: `guides/__tests__/guideComplianceParcelamento.test.js` trava as duas metades (um
+    lançamento legado não acende o nó, **e** `accountingEntry.findMany` não é mais chamado).
 - O rótulo na UI é **"Parcelamento"**, não "PARC DAS": uma parcela de **INSS** parcelado também cai
   nesse nó, e chamá-la de DAS seria trocar um erro por outro.
 - Efeito de virada: empresa do Simples com parcela no mês passa a mostrar **DAS faltando** de

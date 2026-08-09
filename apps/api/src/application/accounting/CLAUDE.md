@@ -45,7 +45,7 @@ escopo que a ingestão já gravava. Corrigir a conta num parcelamento muda o pad
 | `GuideToProvisionService.js` | guia PROCESSED → provisão (contas em branco + memória) |
 | `ParcelamentoService.js` | parcelamento (Q9/Q16 legado): **1 provisão (abertura)** + N linhas leves `tipo="PARCELA"`; contas em branco + memória por linha (`memorizeParcelamentoLineAccounts`). ⚠ **F2.3 removeu `getParcelamento`, `linkGuideToParcela` e `confirmParcelaPayment`** com as três rotas órfãs que só elas serviam — não havia chamador, e produção não tem um único parcelamento V1. Sobrou `createParcelamento` + `rescindirParcelamento` + `listParcelamentos`; a baixa de parcela é **uma só**, `ParcelamentoV2Service.gerarPagamentoParcelaFromGuide`. |
 | `parcelamento/ParcelamentoV2Service.js` | parcelamento v2 (Q21/Q23). **Q23 — gatilho do SERPRO:** a 1ª parcela é **manual** → `ingestParcelamentoFromGuide` cria **só a PROVISÃO** (≥3 linhas: D=principal, D=juros, C=total; `provisaoLines` editadas no modal ou `linhasProvisao` padrão; contas via `MapaContaTributo`, em branco até aprender) + vincula guia + `TributoParcela`. **NÃO** cria pagamento. A provisão setar `aberturaEntryId` ⇒ **ativa a busca automática** do worker. O **pagamento** (BAIXA, juros LIDO) é gerado por `gerarPagamentoParcelaFromGuide` ao marcar a guia como **paga** (`confirm-payment`), data = dia do clique; **bloqueia** se o mês estiver fechado. `resolverContasProvisao` pré-preenche o modal. Memória: `memorizeMapaContaTributo`. ⚠ A baixa começa **reservando a guia** (`updateMany` condicional em `lancamentoId: null`, dentro da transação) — é o que impede baixa DUPLICADA em corrida; as duas verificações de idempotência de cima são check-then-act e só servem para dar o motivo legível. |
-| `ParcelamentoSeeds.js` | templates `AccountingFunction kind=PARCELAMENTO_OPENING/PAYMENT/RESCISION` (legado Q9/Q16) |
+| `ParcelamentoSeeds.js` | templates `AccountingFunction kind=PARCELAMENTO_OPENING/PAYMENT/RESCISION` (legado Q9/Q16). ⚠ **Os `PARCELAMENTO_PAYMENT` não têm mais leitor POR KIND no back** (`resolveOpeningTemplate` só busca `OPENING`; `RESCISION` ainda é lido pela FK `templateRescision`) — mas **não são código morto**: entram na lista genérica de funções de lançamento e podem ser aplicados à mão pelo contador via `applyAccountingFunction`, que é justamente o caminho que `AccountingFunctionService` documenta como "o template MANDA no tipo, e ele pode ser BAIXA". Quem filtra por esse `kind` hoje é só o modal V1 do front. |
 | `AccountingFunctionService.js` | funções/templates de lançamento reutilizáveis |
 
 ## F2.1 — a PARCELA virou entidade (`model Parcela` / tabela `parcelas`)
@@ -130,10 +130,23 @@ Consequência aceita: um V1 novo conta por evidência, não pelo `statusPagament
 não se perde nada, porque a única escrita daquele campo era `confirmParcelaPayment`, a rota órfã
 removida na mesma fase.
 
-⚠ **Leftover conhecido:** `templatePaymentFunctionId` e os seeds `AccountingFunction
-kind=PARCELAMENTO_PAYMENT` ficaram **write-only** — `createParcelamento` ainda os grava (e o modal
-V1 do front ainda os exige), mas o único leitor era `confirmParcelaPayment`. Removê-los é decisão do
-dono: mexe em coluna e no modal do front.
+### ⚠ `templatePaymentFunctionId` — a ESCRITA saiu; a COLUNA fica, aguardando drop
+
+O campo virou write-only quando a F2.3 removeu `confirmParcelaPayment`, seu único leitor.
+`createParcelamento` **parou de gravá-lo** e `listParcelamentos` **parou de carregar** a relação
+`templatePayment` (que era o último leitor restante, e servia à tela um nome que nenhuma tela
+consome). Passo 2, **decisão do dono**: *"para de gravar neste ciclo, dropa a coluna numa migration
+separada depois do deploy estabilizar — não empilhe o drop na mesma janela"*.
+
+- ⚠ **NÃO existe migration desta limpeza.** A coluna, a FK e a relação continuam no
+  `schema.prisma`, marcadas com o motivo. Quem for dropar mexe em três pontos:
+  `Parcelamento.templatePaymentFunctionId`, `Parcelamento.templatePayment` e o lado
+  `ParcPaymentTemplate` de `AccountingFunction`.
+- ⚠ **O parâmetro segue ACEITO e ignorado** em `POST /parcelamentos`: o modal V1 do front ainda o
+  envia (e ainda **obriga** a escolher um template de pagamento). Recusá-lo transformaria uma
+  limpeza interna em 400 numa tela que ainda existe.
+- ⚠ **Os seeds `kind="PARCELAMENTO_PAYMENT"` NÃO morreram junto** — ver a linha do
+  `ParcelamentoSeeds.js` na tabela acima. O que morreu foi o ponteiro do `Parcelamento` para eles.
 
 - Derivação única: **`quadroDasParcelas`** + `parcelaRowQuitada` / `temEvidenciaDePagamento` /
   `SELECT_PARCELA_PARA_QUADRO`, em `parcelamento/recalculoParcelamento.js` (junto do `parcelaQuitada`

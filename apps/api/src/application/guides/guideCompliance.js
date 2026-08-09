@@ -143,9 +143,9 @@ function getRequirements({ hasProlabore, regimeTributario, hasParcDasAtivo }) {
     csllRequired: presumido,
     pisCofinsRequired: presumido,
     issRequired: presumido,
-    // Parcelamento — só "required" quando há PARCELA na competência: guia de parcelamento
-    // capturada (caminho SERPRO/V2) ou lançamento `PARC_DAS` em aberto (modal manual antigo).
-    // Ver as duas pré-queries em `computeGuideComplianceMap`.
+    // Parcelamento — só "required" quando há PARCELA na competência, e a evidência é UMA: a guia
+    // de parcelamento capturada (caminho SERPRO/V2). Ver a pré-query em `computeGuideComplianceMap`
+    // (a segunda, por lançamento `PARC_DAS`, era inalcançável e foi removida — motivo lá).
     parcDasRequired: Boolean(hasParcDasAtivo),
   };
 }
@@ -165,58 +165,47 @@ export async function computeGuideComplianceMap(rows, competencia) {
   const map = new Map();
   const needQuery = [];
 
-  // Pre-query: a empresa tem PARCELA nesta competência? Duas fontes, porque são dois caminhos
-  // reais e nenhum cobre o outro:
+  // Pre-query: a empresa tem PARCELA nesta competência? A fonte é UMA — a GUIA da parcela.
+  // É assim que o caminho de hoje (SERPRO/V2) materializa a parcela do mês:
+  // `CaptureSerproParcelaService` grava uma Guide e `ParcelamentoV2Service` carimba
+  // `parcelamentoId`. O V2 NÃO cria linha por parcela (`numeroParcela: null` em todo entry).
+  // É ela que tem PDF, e-mail e vencimento — logo é ela que alimenta o chip.
   //
-  // (1) `AccountingEntry` com `subtipo:"PARC_DAS"`. O V1 grava `PARC_SIMPLES`/`PARC_INSS`; o V2
-  //     grava `PARC_<TIPO>` (PARC_PARCSN…) e só na competência de ABERTURA. Ou seja: esta query
-  //     sozinha quase nunca casava.
-  //     ⚠ F2.3 — E AGORA NÃO CASA MAIS NUNCA: o ÚNICO escritor desse subtipo era o modal manual
-  //     antigo (`POST /entries/parcelamento`), removido nesta fase por nunca ter sido usado —
-  //     produção tem ZERO lançamentos com ele. A query fica como leitura de dado LEGADO, não como
-  //     caminho vivo; removê-la é mexer no que alimenta o chip do dashboard de toda a carteira, e
-  //     essa é decisão do dono, não efeito colateral da limpeza da rota.
-  // (2) a GUIA da parcela — é assim que o caminho de hoje (SERPRO/V2) materializa a parcela do mês:
-  //     `CaptureSerproParcelaService` grava uma Guide e `ParcelamentoV2Service` carimba
-  //     `parcelamentoId`. O V2 NÃO cria linha por parcela (`numeroParcela: null` em todo entry).
-  //
-  // É a (2) que tem PDF, e-mail e vencimento — logo é ela que alimenta o chip.
+  // ⚠ HAVIA UMA SEGUNDA PRÉ-QUERY, sobre `AccountingEntry` com `subtipo:"PARC_DAS"`, e ela foi
+  // REMOVIDA (decisão do dono). Ela era INALCANÇÁVEL: o único escritor daquele subtipo era o modal
+  // manual antigo (`POST /entries/parcelamento`), removido na F2.3 — produção tinha ZERO lançamentos
+  // com ele. **Nenhum caminho vivo escreve `PARC_DAS`**, e isso é verificável no código:
+  //   · V1 — `ParcelamentoService.createParcelamento` grava `PARC_${kind}` com
+  //     kind ∈ SIMPLES | INSS | DARF | OUTRO (o `kind` do `model Parcelamento`);
+  //   · V2 — `ParcelamentoV2Service` grava `PARC_${tipo}` com tipo ∈ `TIPOS_PARCELAMENTO`
+  //     (PARCSN, PARCSN_ESPECIAL, PERT_SN, RELP_SN, PARCMEI…, INSS, OUTRO);
+  //   · seeds — `ParcelamentoSeeds` usa `PARC_DAS_ABERTURA`/`PARC_DAS_RESCISAO`, que não são
+  //     `PARC_DAS` (a query era por igualdade exata, não prefixo).
+  // Nenhum produz `PARC_DAS`. A query custava uma varredura de `accounting_entries` sobre a
+  // carteira inteira, a cada montagem do dashboard, para devolver sempre vazio.
   const allPortalIds = rows.map((r) => r.portalId).filter(Boolean);
-  let parcDasAtivoSet = new Set();
   const parcGuiaByPortal = new Map();
   if (allPortalIds.length > 0) {
-    const [parcEntries, parcGuides] = await Promise.all([
-      prisma.accountingEntry.findMany({
-        where: {
-          portalClientId: { in: allPortalIds },
-          subtipo: "PARC_DAS",
-          statusPagamento: "ABERTO",
-          competencia,
-        },
-        select: { portalClientId: true },
-      }),
-      prisma.guide.findMany({
-        where: {
-          portalClientId: { in: allPortalIds },
-          competencia,
-          ...WHERE_GUIA_DE_PARCELAMENTO,
-          status: "PROCESSED",
-        },
-        select: {
-          portalClientId: true, id: true, emailStatus: true, emailSentAt: true,
-          // O motivo da falha de envio, para o chip poder dizer POR QUE não saiu (ver `resolveNode`).
-          emailLastError: true, emailAttempts: true,
-          numeroParcela: true, quantidadeParcelas: true,
-          // Parcelamento EM DIA e parcelamento EM ATRASO pedem reações opostas do contador — um é
-          // acordo funcionando, o outro é risco de rescisão. Sem vencimento e pagamento não dá para
-          // distinguir os dois, e a listagem acabaria pintando os dois iguais.
-          vencimento: true, paymentStatus: true,
-          parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA },
-        },
-        orderBy: { numeroParcela: "asc" },
-      }),
-    ]);
-    parcDasAtivoSet = new Set(parcEntries.map((e) => e.portalClientId));
+    const parcGuides = await prisma.guide.findMany({
+      where: {
+        portalClientId: { in: allPortalIds },
+        competencia,
+        ...WHERE_GUIA_DE_PARCELAMENTO,
+        status: "PROCESSED",
+      },
+      select: {
+        portalClientId: true, id: true, emailStatus: true, emailSentAt: true,
+        // O motivo da falha de envio, para o chip poder dizer POR QUE não saiu (ver `resolveNode`).
+        emailLastError: true, emailAttempts: true,
+        numeroParcela: true, quantidadeParcelas: true,
+        // Parcelamento EM DIA e parcelamento EM ATRASO pedem reações opostas do contador — um é
+        // acordo funcionando, o outro é risco de rescisão. Sem vencimento e pagamento não dá para
+        // distinguir os dois, e a listagem acabaria pintando os dois iguais.
+        vencimento: true, paymentStatus: true,
+        parcelamento: { select: SELECT_PARCELAMENTO_DA_GUIA },
+      },
+      orderBy: { numeroParcela: "asc" },
+    });
     // A parcela é uma guia como as outras: o estado de envio dela vem da mesma fonte, senão o chip
     // de parcelamento continuaria preso ao e-mail enquanto os demais já leem o canal.
     const enviosDasParcelas = await enviosPorGuia(parcGuides.map((g) => g.id));
@@ -265,7 +254,7 @@ export async function computeGuideComplianceMap(rows, competencia) {
 
   for (const row of rows) {
     const regime = normalizeRegimeFromLegacy(row.legacy);
-    const hasParcDasAtivo = parcDasAtivoSet.has(row.portalId) || parcGuiaByPortal.has(row.portalId);
+    const hasParcDasAtivo = parcGuiaByPortal.has(row.portalId);
     const req = getRequirements({
       hasProlabore: Boolean(row.hasProlabore),
       regimeTributario: regime,

@@ -1369,6 +1369,24 @@ model Parcelamento {
 
   // Templates (3 kinds em AccountingFunction): abertura, pagamento da parcela, rescisão
   templateOpeningFunctionId   String?
+
+  /// ⚠ MORTO — NÃO ESCREVER, NÃO LER. Aguardando DROP em migration própria.
+  ///
+  /// O único LEITOR era `ParcelamentoService.confirmParcelaPayment`, a segunda porta de "dar baixa
+  /// numa parcela" (pelo template, em vez do comprovante), removida na F2.3 junto com a rota órfã
+  /// `POST /parcelamentos/:parcId/parcelas/:num/pagar`. A partir daí o campo era WRITE-ONLY:
+  /// `createParcelamento` gravava um ponteiro que ninguém seguia. A ESCRITA saiu agora — a coluna
+  /// não recebe valor novo desde então, e `listParcelamentos` deixou de carregar a relação.
+  ///
+  /// ⚠ A COLUNA E A FK CONTINUAM AQUI DE PROPÓSITO. Decisão do dono: o drop é uma migration
+  /// SEPARADA, depois de o deploy desta limpeza estabilizar — uma migration pendente a mais na
+  /// mesma janela já é risco suficiente. Quem for dropar: remover ESTE campo, a relação
+  /// `templatePayment` abaixo e o lado `ParcPaymentTemplate` em `AccountingFunction`.
+  ///
+  /// ⚠ Isto NÃO condena os seeds `AccountingFunction kind="PARCELAMENTO_PAYMENT"`
+  /// (`ParcelamentoSeeds.js`): eles seguem servidos na lista de funções de lançamento e podem ser
+  /// aplicados à mão pelo contador (`applyAccountingFunction`). O que morreu foi o PONTEIRO daqui
+  /// para eles, não os templates.
   templatePaymentFunctionId   String?
   templateRescisionFunctionId String?
 
@@ -1431,6 +1449,8 @@ model Parcelamento {
 
   portalClient      PortalClient        @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
   templateOpening   AccountingFunction? @relation("ParcOpeningTemplate", fields: [templateOpeningFunctionId], references: [id], onDelete: SetNull)
+  /// ⚠ Relação do campo MORTO `templatePaymentFunctionId` (ver o comentário lá em cima). Sem
+  /// leitor: sai junto no DROP.
   templatePayment   AccountingFunction? @relation("ParcPaymentTemplate", fields: [templatePaymentFunctionId], references: [id], onDelete: SetNull)
   templateRescision AccountingFunction? @relation("ParcRescisionTemplate", fields: [templateRescisionFunctionId], references: [id], onDelete: SetNull)
   parcelas          AccountingEntry[]   @relation("ParcelamentoParcelas")

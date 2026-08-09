@@ -160,15 +160,21 @@ describe("parcela de parcelamento × DAS", () => {
     expect(c.parcDas.state).toBe("gerada");
   });
 
-  it("parcelamento vindo do modal manual antigo (lançamento PARC_DAS) também exige o nó", async () => {
-    // O caminho V1/manual é o único que grava `subtipo:"PARC_DAS"`. Sem guia capturada, a parcela
-    // do mês está FALTANDO — e é isso que o chip precisa dizer.
+  it("lançamento `PARC_DAS` NÃO alimenta mais o nó — a pré-query de AccountingEntry saiu", async () => {
+    // A pré-query sobre `AccountingEntry subtipo:"PARC_DAS"` era INALCANÇÁVEL: o único escritor
+    // daquele subtipo era `POST /entries/parcelamento` (removida na F2.3), e nenhum caminho vivo o
+    // grava — o V1 grava `PARC_<kind>` (SIMPLES|INSS|DARF|OUTRO) e o V2 grava `PARC_<TIPO>`
+    // (PARCSN, RELP_SN, …). Ela custava uma varredura de `accounting_entries` sobre a carteira
+    // inteira para devolver sempre vazio, e foi removida por decisão do dono.
+    //
+    // Este teste trava as DUAS metades: mesmo com um lançamento legado respondendo à query, quem
+    // materializa a parcela do mês é a GUIA — e a varredura não acontece mais.
     prisma.accountingEntry.findMany.mockResolvedValue([{ portalClientId: PORTAL }]);
 
     const c = map(await computeGuideComplianceMap([linhaSimples], COMP));
-    expect(c.parcDas.required).toBe(true);
-    expect(c.parcDas.state).toBe("missing");
-    expect(c.ok).toBe(false);
+    expect(c.parcDas.required).toBe(false);
+    expect(c.parcDas.state).toBe("na");
+    expect(prisma.accountingEntry.findMany).not.toHaveBeenCalled();
   });
 });
 
