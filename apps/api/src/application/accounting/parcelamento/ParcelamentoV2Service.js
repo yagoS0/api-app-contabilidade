@@ -5,7 +5,13 @@
 // service. As contas saem do MapaContaTributo (em branco quando não mapeada — nunca bloqueia).
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
-import { normalizeParcelamentoDTO, normalizeParcelaDTO, round2Decimal as round2 } from "./contracts.js";
+// ⚠ A REGRA DE FAMÍLIA VEM DA FONTE ÚNICA (`contracts.js`), onde `TIPOS_PARCELAMENTO` vive.
+// `grupoDoParcelamento` decide quem integra a busca automática do SERPRO; `chaveMemoriaContas`
+// colapsa a chave do `MapaContaTributo` para a família. Nenhuma das duas toca a modalidade CRUA.
+import {
+  normalizeParcelamentoDTO, normalizeParcelaDTO, round2Decimal as round2,
+  grupoDoParcelamento, chaveMemoriaContas,
+} from "./contracts.js";
 import { validarParcela } from "./invariantes.js";
 import { estadoEmAberto, estadoRecalculado, podeTransicionar, ESTADOS_EM_ABERTO, PARCELA_ESTADOS } from "./parcelaStateMachine.js";
 import { isMonthClosed } from "../fechamentoContabil.js";
@@ -25,7 +31,14 @@ function competenciaFromDate(date) {
 // ── MapaContaTributo: resolução com fallback (cliente→global, tributo→geral) ──
 // Usa findFirst (não findUnique): o Prisma não aceita unique composto com portalClientId null.
 async function resolverConta(tx, { portalClientId, tipoParcelamento, tipoLinha, codigoTributo }) {
-  const tp = String(tipoParcelamento || "OUTRO");
+  // ⚠ AQUI — E SÓ AQUI — A MODALIDADE COLAPSA PARA A FAMÍLIA. O colapso é do PONTO DE LEITURA da
+  // memória, nunca da variável `tipoParcelamento` do chamador: ela segue crua para
+  // `subtipo: PARC_<TIPO>` e `historicoBase: PROVISÃO <TIPO>`, e mexer nela mudaria a forma e o
+  // histórico do lançamento contábil. Todo leitor do `MapaContaTributo` passa por esta função
+  // (provisão, baixa e o pré-preenchimento do modal via `resolverContasProvisao`), então uma
+  // conta preenchida em PERT_SN passa a ser encontrada por RELP_SN — que é o ponto: sem isso,
+  // seis das oito modalidades não tinham uma linha sequer e resolviam em branco toda vez.
+  const tp = chaveMemoriaContas(tipoParcelamento) || "OUTRO";
   const candidatos = [
     { portalClientId, codigoTributo: codigoTributo || null },
     { portalClientId: null, codigoTributo: codigoTributo || null },
@@ -60,6 +73,11 @@ export async function memorizeMapaContaTributo({ portalClientId, entry, userId }
 // do PUT /entries (prisma) quanto pela ingestão da provisão (tx, Q23). Best-effort.
 async function memorizeMapaContaTributoTx(client, { tipoParcelamento, entry, userId }) {
   if (!entry?.lines || !Array.isArray(entry.lines)) return;
+  // ⚠ A ESCRITA COLAPSA PELA MESMA REGRA DA LEITURA. Se aprendesse na modalidade crua e
+  // `resolverConta` lesse na família, o contador corrigiria a conta num RELP_SN e o sistema
+  // continuaria devolvendo em branco — a memória gravada numa chave que ninguém lê é o defeito
+  // que as DUAS memórias de conta do parcelamento já produziram uma vez.
+  const chave = chaveMemoriaContas(tipoParcelamento) || "OUTRO";
   for (const ln of entry.lines) {
     const conta = String(ln.conta || "").trim();
     const tipoLinha = ln.tipoLinha || null;
@@ -67,13 +85,13 @@ async function memorizeMapaContaTributoTx(client, { tipoParcelamento, entry, use
     const codigoTributo = ln.codigoTributo || null;
     // findFirst (não upsert): Prisma não aceita unique composto com portalClientId null.
     const found = await client.mapaContaTributo.findFirst({
-      where: { portalClientId: null, tipoParcelamento, tipoLinha, codigoTributo },
+      where: { portalClientId: null, tipoParcelamento: chave, tipoLinha, codigoTributo },
     }).catch(() => null);
     if (found) {
       await client.mapaContaTributo.update({ where: { id: found.id }, data: { contaId: conta, updatedAt: new Date() } }).catch(() => {});
     } else {
       await client.mapaContaTributo.create({
-        data: { portalClientId: null, tipoParcelamento, tipoLinha, codigoTributo, contaId: conta, createdByUserId: userId || null },
+        data: { portalClientId: null, tipoParcelamento: chave, tipoLinha, codigoTributo, contaId: conta, createdByUserId: userId || null },
       }).catch(() => {});
     }
   }
@@ -368,7 +386,13 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
           numeroParcelamento: dto.numeroParcelamento,
           origem: dto.origem,
           // Q28 Fase 4: sn_mei integra SERPRO; outros (PGFN/estadual/municipal) é 100% manual.
-          grupo: /^PARC(SN|MEI)/i.test(String(dto.tipo || "")) ? "sn_mei" : "outros",
+          // ⚠ ERA UM PREFIXO (`/^PARC(SN|MEI)/i`), e o prefixo deixava PERT_SN, RELP_SN, PERT_MEI e
+          // RELP_MEI fora: as quatro caíam em "outros" e ficavam invisíveis para os dois filtros de
+          // busca automática (`grupo: { not: "outros" }`), em silêncio. Metade das modalidades do
+          // Simples/MEI nunca era capturada. A lista fechada de `grupoDoParcelamento` é o que
+          // impede o defeito de voltar — e `PARCSN_ESPECIAL`/`PARCMEI_ESPECIAL`, que já casavam
+          // com o prefixo, continuam em `sn_mei`.
+          grupo: grupoDoParcelamento(dto.tipo),
           numParcelas: dto.quantidadeParcelas || parc.quantidadeParcelas || 1,
           parcelaInicial: parc.numeroParcela || 1,
           principalPerParcela: round2(parc.valorTotal), // referência (campo legado obrigatório)

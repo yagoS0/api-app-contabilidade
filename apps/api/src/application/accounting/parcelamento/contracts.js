@@ -15,6 +15,94 @@ export const TIPOS_PARCELAMENTO = [
   "OUTRO",
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AS DUAS FAMÍLIAS — fonte ÚNICA do backend
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// POR QUE MORA AQUI: é neste arquivo que `TIPOS_PARCELAMENTO` vive, e a família é uma
+// propriedade da própria lista de tipos — separá-las faria a lista crescer num arquivo e a
+// família noutro, que é exatamente como as cópias parciais nasceram. O módulo é PURO (sem
+// prisma, sem express), então o service, o worker e a rota importam sem arrastar dependência.
+//
+// ⚠ NÃO DÁ PARA IMPORTAR A CÓPIA DO FRONT (`apps/web/src/lib/vocabulario.js`): o `Dockerfile`
+// não copia `packages/`, e cruzar apps quebraria o boot em produção. Esta é a fonte do BACKEND;
+// as duas dizem a mesma coisa e cada uma serve à sua camada.
+//
+// ⚠ A LISTA É FECHADA DE PROPÓSITO — nada de prefixo `^PARCSN`. Foi um prefixo
+// (`/^PARC(SN|MEI)/`) que deixou PERT_SN, RELP_SN, PERT_MEI e RELP_MEI fora da busca automática
+// do SERPRO em silêncio: as quatro não casam com ele. Lista fechada é o que separa "modalidade
+// conhecida" de "modalidade nova".
+
+export const FAMILIAS_PARCELAMENTO = Object.freeze({
+  SIMPLES_NACIONAL: Object.freeze({
+    // ⚠ A chave de memória de contas é a modalidade JÁ SEMEADA (`MapaContaTributoSeeds`), não um
+    // rótulo novo: colapsar para uma chave inédita orfanaria as 5 linhas que já existem.
+    chaveMemoria: "PARCSN",
+    modalidades: Object.freeze(["PARCSN", "PARCSN_ESPECIAL", "PERT_SN", "RELP_SN"]),
+  }),
+  MEI: Object.freeze({
+    chaveMemoria: "PARCMEI",
+    modalidades: Object.freeze(["PARCMEI", "PARCMEI_ESPECIAL", "PERT_MEI", "RELP_MEI"]),
+  }),
+});
+
+/** Conhecidas e SEM família — não colapsam, e isso é o desenho, não uma lacuna.
+ *  INSS é parcelamento previdenciário (manual, sem auto-search); OUTRO é o balde do
+ *  PGFN/estadual/municipal. Chamar qualquer um dos dois de "Simples" seria inventar natureza. */
+export const MODALIDADES_SEM_FAMILIA = Object.freeze(["INSS", "OUTRO"]);
+
+const FAMILIA_DA_MODALIDADE = new Map(
+  Object.entries(FAMILIAS_PARCELAMENTO).flatMap(([familia, { modalidades }]) =>
+    modalidades.map((m) => [m, familia])),
+);
+
+/** A família de uma modalidade crua, ou `null` (INSS/OUTRO e qualquer modalidade nova). */
+export function familiaDaModalidade(tipoCru) {
+  const cru = String(tipoCru || "").trim().toUpperCase();
+  return FAMILIA_DA_MODALIDADE.get(cru) || null;
+}
+
+export const GRUPO_SN_MEI = "sn_mei";
+export const GRUPO_OUTROS = "outros";
+
+/**
+ * `Parcelamento.grupo` — quem integra a busca automática do SERPRO.
+ *
+ * `sn_mei` = as OITO modalidades das duas famílias. `outros` = INSS, OUTRO e **modalidade
+ * desconhecida**: os dois filtros de busca automática são `grupo: { not: "outros" }`
+ * (`workers/serproPgdasdWorker.js` e `routes/firm/.../serpro/parcelamento/capture`), e mandar
+ * uma modalidade que ninguém conhece para a captura seria supor que ela é do Simples. O front
+ * levanta REVISÃO nesse caso; aqui o equivalente conservador é ficar de fora — a captura é ato
+ * externo e pago, e o caminho manual continua aberto.
+ */
+export function grupoDoParcelamento(tipoCru) {
+  return familiaDaModalidade(tipoCru) ? GRUPO_SN_MEI : GRUPO_OUTROS;
+}
+
+/**
+ * A chave do `MapaContaTributo` — COLAPSADA PARA A FAMÍLIA.
+ *
+ * Decisão do dono: *"colapsar para 'PARC SN' está certo na camada da regra contábil e da memória
+ * de contas — o tratamento é idêntico entre PARCSN, PARCSN-ESP, PERTSN e RELPSN, e fragmentar a
+ * memória de padrão em nove chaves só faria o contador preencher a mesma tríade de contas nove
+ * vezes."*
+ *
+ * ⚠ ISTO É CHAVE DE MEMÓRIA, NÃO A MODALIDADE. A modalidade CRUA continua gravada em
+ * `Parcelamento.tipo` e continua alimentando `subtipo: PARC_<TIPO>` e
+ * `historicoBase: PROVISÃO <TIPO>`. Colapsar na variável mudaria a FORMA e o HISTÓRICO do
+ * lançamento contábil — proibido sem pedido explícito — e apagaria da contabilidade a distinção
+ * entre PERT e RELP, que têm reduções de multa e juros: não mudam as contas, mudam os valores.
+ *
+ * Fora das duas famílias (INSS, OUTRO, modalidade nova) devolve o valor CRU: sem família não há
+ * para onde colapsar, e colapsar por palpite mandaria um acordo de natureza desconhecida para o
+ * padrão de contas do Simples sem que ninguém visse.
+ */
+export function chaveMemoriaContas(tipoCru) {
+  const cru = String(tipoCru || "").trim().toUpperCase();
+  const familia = familiaDaModalidade(cru);
+  return familia ? FAMILIAS_PARCELAMENTO[familia].chaveMemoria : cru;
+}
+
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;

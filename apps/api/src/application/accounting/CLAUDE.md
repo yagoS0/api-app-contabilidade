@@ -33,6 +33,42 @@ quando o modal mandava `provisaoLines` — correção posterior nunca era aprend
 (campo que só os lançamentos do V2 preenchem), então num lançamento V1 ela é no-op. Best-effort, como
 já eram.
 
+### ⚠ AS DUAS FAMÍLIAS DE MODALIDADE — a fonte é `parcelamento/contracts.js`
+
+`TIPOS_PARCELAMENTO` tem dez valores: quatro do **Simples Nacional** (`PARCSN`, `PARCSN_ESPECIAL`,
+`PERT_SN`, `RELP_SN`), quatro do **MEI** (`PARCMEI`, `PARCMEI_ESPECIAL`, `PERT_MEI`, `RELP_MEI`), mais
+`INSS` e `OUTRO`, que **não têm família e não colapsam**. A regra mora em `contracts.js`
+(`FAMILIAS_PARCELAMENTO`, `familiaDaModalidade`, `grupoDoParcelamento`, `chaveMemoriaContas`) — é lá
+que a lista de tipos vive, e o módulo é puro, então service, worker e rota importam sem arrastar
+prisma. A cópia do front (`apps/web/src/lib/vocabulario.js`) **não é importável**: o `Dockerfile` não
+copia `packages/` e cruzar apps quebra o boot.
+
+⚠ **O bug que isso corrigiu:** `Parcelamento.grupo` saía de `/^PARC(SN|MEI)/i`, e `PERT_SN`,
+`RELP_SN`, `PERT_MEI` e `RELP_MEI` **não casam com o prefixo**. As quatro caíam em `grupo: "outros"`
+e os dois filtros da busca automática são `grupo: { not: "outros" }` (`workers/serproPgdasdWorker.js`
+e a rota `.../serpro/parcelamento/capture`): **metade das modalidades do Simples/MEI era invisível
+para a captura do SERPRO, em silêncio**. `PARCSN_ESPECIAL`/`PARCMEI_ESPECIAL` casavam com o prefixo e
+sempre estiveram certas. A lista agora é FECHADA — modalidade desconhecida fica em `outros` (fora da
+captura, que é ato externo e pago) em vez de entrar por parecer com um prefixo.
+
+⚠ **`grupo` só é escrito na CRIAÇÃO.** A reingestão não o atualiza (de propósito — ela não remexe em
+cabeçalho já materializado), então **contratos PERT/RELP criados antes desta correção continuam com
+`grupo="outros"`** e seguem fora da captura até um backfill. Decisão do dono.
+
+⚠ **A chave do `MapaContaTributo` COLAPSA PARA A FAMÍLIA** (`PARCSN` / `PARCMEI` — exatamente as
+chaves que `MapaContaTributoSeeds` semeia, então nada é orfanado). Decisão do dono: o tratamento
+contábil é idêntico dentro da família, e fragmentar em nove chaves faria o contador preencher a mesma
+tríade nove vezes. **O colapso vive dentro de `resolverConta` e `memorizeMapaContaTributoTx`, os dois
+únicos pontos que leem e escrevem a memória — NUNCA na variável `tipoParcelamento`**, que segue crua
+para `subtipo: PARC_<TIPO>` e `historicoBase: PROVISÃO <TIPO>`. Colapsar na origem mudaria a forma e o
+histórico do lançamento e apagaria a distinção entre PERT e RELP, que têm reduções de multa e juros —
+não mudam as contas, mudam os valores. Regressão: `__tests__/familiaModalidadeParcelamento.test.js`
+(32), cujo bloco "a modalidade CRUA sobrevive" existe justamente para reprovar essa "simplificação".
+
+⚠ **`Parcelamento.kind`** (`(tipo === "INSS" || tipo.startsWith("PARCMEI")) ? "INSS" : "SIMPLES"`) é
+uma **quarta leitura parcial da família** e **não foi tocada**: é campo de compat legado, todo leitor
+faz `parc.tipo || parc.kind` (e `tipo` sempre vence), e mudá-la alteraria dado gravado sem pedido.
+
 ⚠ **O escopo do que o V2 aprende é GLOBAL** (`portalClientId: null`), por desenho da Q21 — é o mesmo
 escopo que a ingestão já gravava. Corrigir a conta num parcelamento muda o padrão para os próximos de
 **qualquer** empresa (o override por cliente existe na tabela e hoje não é escrito por ninguém).

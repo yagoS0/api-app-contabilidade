@@ -86,6 +86,20 @@ console.log(`\n   ⚠ "parcelamentos invisíveis" (POST /entries/parcelamento):`
 console.log(`      ${n(invisiveis?.[0]?.lancamentos)} lançamento(s) em ${n(invisiveis?.[0]?.empresas)} empresa(s)`);
 console.log(`      Não têm cabeçalho, card, parcela nem risco de rescisão. Nenhuma aba os mostra.`);
 
+// ⚠ `grupo` decide se o parcelamento entra na busca automática do SERPRO (o filtro é
+// `grupo: { not: "outros" }`). Ele só é escrito na CRIAÇÃO — a reingestão não o atualiza. Como
+// `/^PARC(SN|MEI)/i` não casava com PERT/RELP, contratos dessas modalidades gravados antes da
+// correção ficaram em "outros" e seguem invisíveis. Esta é a lista que decide se há backfill a fazer.
+const porTipoGrupo = await prisma.parcelamento.findMany({
+  select: { tipo: true, grupo: true, numeroParcelamento: true, status: true },
+});
+console.log(`\n   tipo × grupo (o que decide a captura automática):`);
+for (const x of porTipoGrupo) {
+  const familia = /^(PARCSN|PERT_SN|RELP_SN|PARCMEI|PERT_MEI|RELP_MEI)/.test(x.tipo || "");
+  const preso = familia && x.grupo === "outros";
+  console.log(`      ${x.tipo || "(sem tipo)"} nº ${x.numeroParcelamento || "—"} · ${x.status} · grupo=${x.grupo || "(nulo)"}${preso ? "  ⚠ PRESO EM outros — precisa de backfill" : ""}`);
+}
+
 // ─── 3. Cronogramas sem data ─────────────────────────────────────────────────────────────────
 linha();
 console.log("\n3) CRONOGRAMA UTILIZÁVEL?\n");
