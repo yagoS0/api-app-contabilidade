@@ -43,7 +43,6 @@ export function GuideCaptureModal({
   mode,                 // "upload" | "complete"
   initialTipo,          // tipo pré-selecionado vindo do dropdown
   initialMetadata,      // {tipo, competencia, valor, vencimento} pré-existentes (complete)
-  initialIsParcelamento = false, // veio do "Subir Guia → ... (parcelamento)"
   pdfFile,              // File local (modo upload)
   loadPdfBlob,          // () => Promise<Blob> (modo complete)
   onSave,               // (metadata) => Promise<{ok, error?, message?}>
@@ -55,9 +54,6 @@ export function GuideCaptureModal({
     competencia: initialMetadata?.competencia || "",
     valor: initialMetadata?.valor != null ? String(initialMetadata.valor) : "",
     vencimento: initialMetadata?.vencimento ? String(initialMetadata.vencimento).slice(0, 10) : "",
-    // Decisão explícita do contador olhando o PDF. Quando marcada, vence a heurística por
-    // tipo de guia lá na tabela (que só adivinha). Não marcada = a heurística decide, como antes.
-    isParcelamento: Boolean(initialMetadata?.isParcelamento) || Boolean(initialIsParcelamento),
   });
   const [error, setError] = useState("");
 
@@ -117,7 +113,6 @@ export function GuideCaptureModal({
       competencia: form.competencia,
       valor: form.valor !== "" ? Number(form.valor) : null,
       vencimento: form.vencimento || null,
-      isParcelamento: form.isParcelamento,
     };
     try {
       const res = await onSave(payload);
@@ -252,22 +247,10 @@ export function GuideCaptureModal({
             />
           </div>
 
-          <div style={{ paddingTop: 4 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.875rem" }}>
-              <input
-                type="checkbox"
-                style={{ width: 16, height: 16, flex: "none", cursor: "pointer" }}
-                checked={form.isParcelamento}
-                onChange={(e) => setField("isParcelamento", e.target.checked)}
-              />
-              <span>Esta guia é de parcelamento</span>
-            </label>
-            {form.isParcelamento && (
-              <p style={{ margin: "6px 0 0 24px", fontSize: "0.75rem", color: PANEL.muted, lineHeight: 1.4 }}>
-                Ao salvar, você escolhe o parcelamento (novo ou existente) e as contas.
-              </p>
-            )}
-          </div>
+          {/* ⚠ O CHECKBOX "Esta guia é de parcelamento" SAIU (R1). Ele era o gatilho do modal-surpresa
+              que abria DEPOIS de salvar e podia criar um contrato de até 60 meses como efeito
+              colateral de um upload. Guia de parcelamento agora tem caminho próprio e explícito:
+              "+ Subir Guia → PARCELAMENTO", onde o contrato é escolhido ANTES do documento. */}
 
           <div style={{ flex: 1 }} />
 

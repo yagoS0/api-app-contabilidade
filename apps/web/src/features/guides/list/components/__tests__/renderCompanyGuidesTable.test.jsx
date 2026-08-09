@@ -25,9 +25,11 @@ jest.mock("../../../../../api/client", () => ({
 jest.mock("../../../capture/components/renderGuideCaptureModal", () => ({
   GuideCaptureModal: () => null,
 }));
-jest.mock("../../../../accounting/parcelamento/components/ParcelamentoModals", () => ({
-  ParcelamentoIngestaoModal: () => null,
-  ParcelamentoEntradaModal: () => null,
+// ⚠ O modal de anexo trocou de casa e de desenho (R4): era `ParcelamentoIngestaoModal` +
+// `ParcelamentoEntradaModal`, os dois do fluxo guia-first. Hoje é o `GuiaDeParcelamentoModal`, com o
+// parcelamento no primeiro campo.
+jest.mock("../GuiaDeParcelamentoModal", () => ({
+  GuiaDeParcelamentoModal: () => null,
 }));
 
 const COMP = "2026-03";
@@ -160,5 +162,41 @@ describe("As outras ações da barra seguem valendo para a parcela", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Liberar ao cliente" }));
     expect(props.onLiberarGuia).toHaveBeenCalledWith("g-parc");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// R4/R1 — a guia de parcelamento virou ANEXO, e o desenho guia-first saiu do menu.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("+ Subir Guia → PARCELAMENTO", () => {
+  const parcelamentosFake = () => ({
+    parcelamentos: [{ id: "p1", status: "ATIVO", tipo: "PARCSN", numeroParcelamento: "1234567" }],
+    ingest: jest.fn().mockResolvedValue({ ok: true }),
+    saving: false,
+  });
+
+  it("PARCELAMENTO é um TIPO NORMAL do menu — não um item à parte", () => {
+    renderTabela([], { onUploadGuide: jest.fn(), parcelamentos: parcelamentosFake() });
+    fireEvent.click(screen.getByRole("button", { name: /Subir Guia/ }));
+
+    expect(screen.getByRole("button", { name: "PARCELAMENTO" })).toBeEnabled();
+    // ⚠ O item antigo (âmbar, fora da lista de tipos) abria o modal de três opções que CRIAVA
+    // parcelamento a partir da guia.
+    expect(screen.queryByRole("button", { name: "Parcelamento…" })).toBeNull();
+  });
+
+  it("PARCELAMENTO vale em QUALQUER regime — parcelamento de INSS existe no Presumido também", () => {
+    renderTabela([], { onUploadGuide: jest.fn(), companyRegime: "LUCRO_PRESUMIDO", parcelamentos: parcelamentosFake() });
+    fireEvent.click(screen.getByRole("button", { name: /Subir Guia/ }));
+    expect(screen.getByRole("button", { name: "PARCELAMENTO" })).toBeInTheDocument();
+  });
+
+  it("⚠ desabilitado COM MOTIVO quando os parcelamentos não foram carregados", () => {
+    renderTabela([], { onUploadGuide: jest.fn(), parcelamentos: null });
+    fireEvent.click(screen.getByRole("button", { name: /Subir Guia/ }));
+
+    const item = screen.getByRole("button", { name: "PARCELAMENTO" });
+    expect(item).toBeDisabled();
+    expect(item.getAttribute("title")).toMatch(/não foram carregados/i);
   });
 });

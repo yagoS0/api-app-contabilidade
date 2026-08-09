@@ -912,6 +912,13 @@ mockPagamentosLocalizados.set("mock-guia-pendente-baixa", {
   competencia: "2026-05", parcelamentoId: "parc-ok",
 });
 
+// ⚠ OS PARCELAMENTOS CRIADOS NESTA SESSÃO DO MOCK (F2.3 — parcelamento-first).
+// O wizard "+ Novo parcelamento" cria o CONTRATO sem guia nenhuma; sem guardar o resultado aqui, a
+// lista voltaria sempre a mesma e a criação pareceria não fazer nada — e o aceite da fase
+// ("registrar um migrado, 23ª de 60, sem PDF, e o card mostrar 22 pagas / 38 restantes") não teria
+// como ser exercido offline.
+const mockParcelamentosCriados = new Map(); // id → parcelamento decorado (formato de listParcelamentos)
+
 // Estornos já feitos no mock — é o que faz a parcela VOLTAR PARA A FILA depois do estorno, em vez
 // de a tela recarregar idêntica e o fluxo terminar sem nenhuma consequência visível.
 const mockEstornosFeitos = new Map(); // companyId -> Set(entryId de baixa)
@@ -1525,8 +1532,22 @@ export function createMockApi() {
       }));
       return { ok: true, parcelas };
     },
+    // ⚠ A RECUSA TAMBÉM É UM DESFECHO, e ela vem do servidor como `skipped` com um MOTIVO — não
+    // como erro. Enquanto o mock só sabia responder `ok:true`, o painel de baixa só podia ser
+    // conferido offline no caminho feliz, e é justamente a recusa que a tela precisa mostrar na
+    // linha (antes ela saía num `window.alert` que some ao clicar OK). Os prefixos espelham o
+    // `DESFECHO_BUSCA_MOCK`: cada guia da fixture exerce um caminho.
     async lancarBaixaParcela(companyId, guideId) {
       await delay();
+      const id = String(guideId || "");
+      const RECUSAS = [
+        ["mock-guia-naolocalizado", "comprovante_nao_e_parcela"],
+        ["mock-guia-cooldown", "provisao_inexistente"],
+        ["mock-guia-baixada", "ja_baixada"],
+        ["mock-guia-semdoc", "sem_composicao"],
+      ];
+      const motivo = (RECUSAS.find(([prefixo]) => id.startsWith(prefixo)) || [])[1];
+      if (motivo) return { ok: false, skipped: true, motivo };
       mockPagamentosLocalizados.delete(guideId);
       return { ok: true, resultado: { pagamentoId: "mock-baixa-parcela" } };
     },
@@ -2567,51 +2588,10 @@ export function createMockApi() {
       await delay();
       return { ok: true, inssBaixa: { ok: true } };
     },
-    // Mock do parcelamento Simples Nacional — cria N entries no array mock.
-    async createParcelamentoSimples(companyId, payload = {}) {
-      await delay();
-      const numParcelas = Math.min(60, Math.max(1, Number(payload.numParcelas) || 1));
-      const principalValue = Number(payload.principalValue || 0);
-      const jurosValue = Number(payload.jurosValue || 0);
-      const totalLinha = principalValue + jurosValue;
-      const comp = String(payload.competenciaInicial || "");
-      const [y, m] = comp.split("-").map(Number);
-      const dia = Math.min(31, Math.max(1, Number(payload.diaPagamento) || 1));
-      const loteImportacao = `PARC_DAS-${Date.now()}`;
-      const list = mockEntriesByCompany.get(companyId) || [];
-      const created = [];
-      for (let i = 0; i < numParcelas; i++) {
-        const compN = new Date(Date.UTC(y, m - 1 + i, 1));
-        const compStr = `${compN.getUTCFullYear()}-${String(compN.getUTCMonth() + 1).padStart(2, "0")}`;
-        const lastDay = new Date(Date.UTC(compN.getUTCFullYear(), compN.getUTCMonth() + 1, 0)).getUTCDate();
-        const dataN = new Date(Date.UTC(compN.getUTCFullYear(), compN.getUTCMonth(), Math.min(dia, lastDay)));
-        const id = faker.string.uuid();
-        const historicoN = `VR REF ${payload.label || "PARCELAMENTO SIMPLES NACIONAL"} EM ${numParcelas} PARCELAS N/${i + 1}`;
-        list.push({
-          id,
-          portalClientId: companyId,
-          data: dataN.toISOString(),
-          competencia: compStr,
-          historico: historicoN,
-          tipo: "PROVISAO",
-          subtipo: "PARC_DAS",
-          origem: "MANUAL",
-          loteImportacao,
-          status: "RASCUNHO",
-          statusPagamento: "ABERTO",
-          lines: [
-            { id: faker.string.uuid(), entryId: id, conta: payload.principalAccount, tipo: "D", valor: principalValue, ordem: 0 },
-            ...(jurosValue > 0 ? [{ id: faker.string.uuid(), entryId: id, conta: payload.jurosAccount, tipo: "D", valor: jurosValue, ordem: 1 }] : []),
-            { id: faker.string.uuid(), entryId: id, conta: payload.contraAccount, tipo: "C", valor: totalLinha, ordem: 2 },
-          ],
-          totalD: totalLinha, totalC: totalLinha, valor: totalLinha,
-          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-        });
-        created.push({ parcela: i + 1, entryId: id, competencia: compStr, data: dataN.toISOString(), valor: totalLinha });
-      }
-      mockEntriesByCompany.set(companyId, list);
-      return { ok: true, loteImportacao, created, totalParcelas: numParcelas };
-    },
+    // ⚠ `createParcelamentoSimples` FOI REMOVIDA (F2.3), junto da rota
+    // `POST /firm/companies/:id/entries/parcelamento` que ela espelhava. O par mock/real precisa
+    // sumir junto: um mock que continua respondendo `ok:true` para uma rota que o backend removeu
+    // é a forma mais eficiente de esconder um 404 até a produção.
     async getBatchEmailReport(competencia) {
       await delay(200);
       const ref = competencia || "2026-04";
@@ -4034,11 +4014,17 @@ export function createMockApi() {
     async deleteAccountingFunction() { await delay(80); return { ok: true }; },
     async applyAccountingFunction() { await delay(80); return { ok: true, entries: [] }; },
 
-    // ── Q9: Parcelamentos stubs ─────────────────────────────────────────
+    // ── Parcelamentos (mock COM ESTADO) ─────────────────────────────────
     // ⚠ Este mock era `[]`, e por isso a aba Parcelamento não tinha COMO ser conferida offline —
-    // nenhuma mudança no card aparecia. Os três casos abaixo existem para exercitar o aviso de
-    // risco de rescisão nos seus três desfechos: em dia, uma em atraso, e já rescindível.
+    // nenhuma mudança no card aparecia. Os três casos fixos abaixo existem para exercitar o aviso
+    // de risco de rescisão nos seus três desfechos: em dia, uma em atraso, e já rescindível.
     // As datas são relativas a hoje, senão o mock envelhece e os três viram "rescindível".
+    //
+    // ⚠ F2.3 — ELE AGORA GUARDA O QUE O WIZARD CRIA. Sem isso o aceite da fase ("registrar um
+    // parcelamento migrado — 23ª de 60, saldo declarado, débito automático — SEM NENHUM PDF, e o
+    // card mostrar 22 pagas (históricas) / 38 restantes") não teria como ser exercido offline: a
+    // lista voltaria sempre a mesma e a criação pareceria não fazer nada. Mock que só sabe o
+    // caminho feliz esconde exatamente o que a tela existe para mostrar.
     async listParcelamentos() {
       await delay(80);
       const dia = 24 * 60 * 60 * 1000;
@@ -4073,7 +4059,17 @@ export function createMockApi() {
         return {
           id: over.id, label: over.label, tipo: over.tipo, status: over.status || "ATIVO",
           numeroParcelamento: over.numeroParcelamento, principalTotal: 12000, jurosTotal: 1800,
-          valorMulta: 600, totalValue: 14400, principalPerParcela: 1200, numParcelas: 12,
+          // ⚠ `numParcelas` ACOMPANHA as linhas. Fixo em 12 com 3 ou 4 linhas, o mock ensinava uma
+          // contradição: o card dizia "0 de 3" (prestações materializadas) e o modal de anexo dizia
+          // "parcela 3 de 12" (cabeçalho do contrato) — dois denominadores para a mesma pergunta.
+          // Em produção `sincronizarParcelas` materializa exatamente `numParcelas` linhas.
+          valorMulta: 600, totalValue: 14400, principalPerParcela: 1200, numParcelas: linhas.length,
+          valorParcelaReferencia: 1200,
+          // F2.3: os três campos novos do contrato. `formaPagamento: null` no primeiro é o
+          // NÃO DECLARADO — o terceiro estado, que não é nenhum dos outros dois.
+          formaPagamento: over.formaPagamento ?? null,
+          diaPagamento: over.diaPagamento ?? 1,
+          saldoConsolidado: over.saldoConsolidado ?? null,
           parcelasPagas: over.parcelasPagas, parcelasTotal: linhas.length,
           principalPago: over.parcelasPagas * 1200, saldoRestante: 14400 - over.parcelasPagas * 1200,
           observacoes: null, parcelas: [], guides, risco: over.risco,
@@ -4081,7 +4077,7 @@ export function createMockApi() {
             id: `${over.id}-p${l.n}`,
             numeroParcela: l.n,
             vencimento: l.vencimento,
-            origemBaixa: null,
+            origemBaixa: l.historica ? "HISTORICO" : null,
             guia: l.guia
               ? { id: l.guia, vencimento: l.vencimento, paymentStatus: l.pago ? "PAID" : "OPEN", baixada: Boolean(l.baixada) }
               : null,
@@ -4096,10 +4092,10 @@ export function createMockApi() {
         // conferida na fonte oficial, e a tela precisa saber esconder o número do artigo.
         citacaoConferida: false,
       };
-      return [
+      const fixos = [
         parc({
           id: "parc-ok", label: "PARCSN 2026 — em dia", tipo: "PARCSN", numeroParcelamento: "1010",
-          parcelasPagas: 2,
+          parcelasPagas: 2, formaPagamento: "GUIA_MENSAL", diaPagamento: 20, saldoConsolidado: 12000,
           // As quatro situações da coluna Situação, em ordem: baixada · paga aguardando lançamento ·
           // em aberto com documento (é a que se clica) · em aberto SEM documento (desabilitada).
           linhas: [
@@ -4112,11 +4108,13 @@ export function createMockApi() {
         }),
         parc({
           id: "parc-atencao", label: "PARCMEI 2025 — uma em atraso", tipo: "PARCMEI", numeroParcelamento: "2020",
-          parcelasPagas: 1,
+          parcelasPagas: 1, diaPagamento: 10,
           // As RECUSAS pagas do SERPRO, uma por linha — é o único jeito de exercê-las sem gastar
           // chamada real. `jaConsultada` faz a confirmação avisar que a guia já foi consultada.
           linhas: [
-            { n: 1, guia: "mock-guia-naolocalizado-1", competencia: "2026-04", vencimento: em(-95), jaConsultada: true },
+            // ⚠ `pago: true` aqui NÃO é enfeite: `parcelasPagas: 1` sem nenhuma linha quitada fazia
+            // o card se contradizer — "1 de 4" no progresso e "próxima prestação: 1" logo abaixo.
+            { n: 1, guia: "mock-guia-naolocalizado-1", competencia: "2026-04", vencimento: em(-95), pago: true, baixada: true, jaConsultada: true },
             { n: 2, guia: "mock-guia-cooldown-2", competencia: "2026-05", vencimento: em(-65) },
             { n: 3, guia: "mock-guia-tetodia-3", competencia: "2026-06", vencimento: em(-35) },
             { n: 4, guia: "mock-guia-tetomes-4", competencia: "2026-07", vencimento: em(-20) },
@@ -4125,7 +4123,7 @@ export function createMockApi() {
         }),
         parc({
           id: "parc-risco", label: "PARCSN 2024 — risco de rescisão", tipo: "PARCSN", numeroParcelamento: "3030",
-          parcelasPagas: 0,
+          parcelasPagas: 0, formaPagamento: "DEBITO_AUTOMATICO", diaPagamento: 5,
           // Integração desligada, falha de rede, e a prestação SEM GUIA (débito automático).
           linhas: [
             { n: 1, guia: "mock-guia-desligado-1", competencia: "2026-03", vencimento: em(-80) },
@@ -4139,19 +4137,160 @@ export function createMockApi() {
           },
         }),
       ];
+      // Os criados nesta sessão vêm primeiro — é o que o contador acabou de fazer.
+      return [...mockParcelamentosCriados.values(), ...fixos];
     },
-    async getParcelamento() { await delay(80); return null; },
     async createParcelamento() { await delay(80); return { ok: true, data: null }; },
-    async ingestParcelamento() { await delay(80); return { ok: true, data: { parcelamentoId: "mock", criouParcelamento: true } }; },
-    async getContasProvisao() { await delay(40); return { ok: true, contas: { CONTRAPARTIDA: "", PARC: "" } }; },
-    async consultarParcelamentoSerpro() { await delay(60); return { ok: true, parcelamento: { tipo: "PARCSN", numeroParcelamento: "0", valorTotal: null, quantidadeParcelas: null, situacao: "mock", origem: "SERPRO" } }; },
+
+    // ⚠ A PORTA DO PARCELAMENTO-FIRST. `guideId` AUSENTE é o caminho principal, não a exceção:
+    // cria o CONTRATO sem documento nenhum. Com `guideId`, apenas ANEXA a guia a uma prestação de
+    // um contrato que já existe — e NÃO confirma pagamento nem lança baixa.
+    async ingestParcelamento(companyId, body = {}) {
+      await delay(120);
+      const header = body.header || {};
+      const numero = String(header.numeroParcelamento || "").trim();
+
+      // ── Caminho de RECUSA, exercitável na tela: nº "0" devolve o erro de composição do backend.
+      if (numero === "0") {
+        const err = new Error("Σ dos tributos não fecha com o valor total da parcela.");
+        err.error = "COMPOSICAO_INVALIDA";
+        throw err;
+      }
+      if (!numero) {
+        const err = new Error("Informe o nº do parcelamento.");
+        err.error = "numero_parcelamento_required";
+        throw err;
+      }
+
+      const chave = `${header.tipo}|${numero}`;
+      const existente = [...mockParcelamentosCriados.values()].find((p) => `${p.tipo}|${p.numeroParcelamento}` === chave);
+
+      // ── ANEXAR guia a um contrato existente ────────────────────────────────────────────────────
+      if (body.guideId) {
+        const alvo = existente;
+        if (!alvo) {
+          const err = new Error("Parcelamento não encontrado para esta guia.");
+          err.error = "parcelamento_not_found";
+          throw err;
+        }
+        const n = Number(header.numeroParcela);
+        const linha = alvo.parcelasContratadas.find((p) => p.numeroParcela === n);
+        if (linha) {
+          linha.guia = { id: body.guideId, vencimento: header.vencimento || linha.vencimento, paymentStatus: "OPEN", baixada: false };
+          alvo.guides.push({
+            id: body.guideId, numeroParcela: n, valor: alvo.valorParcelaReferencia,
+            paymentStatus: "OPEN", baixada: false,
+            competencia: (header.anoMesParcela || "").replace(/^(\d{4})(\d{2})$/, "$1-$2"),
+            anoMesParcela: header.anoMesParcela, vencimento: header.vencimento || linha.vencimento,
+            numeroDocumento: `07202600009${String(n).padStart(3, "0")}`,
+            comprovante: null, paymentConfirmedAt: null,
+            serproLastCheckedAt: null, serproLastCheckResult: null,
+          });
+        }
+        // ⚠ NADA DE PAGAMENTO AQUI. Anexar é só anexar — o `paymentStatus` continua OPEN.
+        return { ok: true, data: { parcelamentoId: alvo.id, criouParcelamento: false, marcadasHistorico: 0 } };
+      }
+
+      // ── CRIAR o contrato, SEM GUIA ─────────────────────────────────────────────────────────────
+      const total = Math.max(1, Number(header.quantidadeParcelas) || 1);
+      const jaPagas = Math.max(0, Math.min(total - 1, Number(body.parcelasJaPagas) || 0));
+      const compInicial = String(header.anoMesParcela || "").replace(/^(\d{4})(\d{2})$/, "$1-$2");
+      const diaVenc = Math.min(31, Math.max(1, Number(header.diaPagamento) || 1));
+      const linhas = [];
+      for (let n = 1; n <= total; n += 1) {
+        const m = compInicial.match(/^(\d{4})-(\d{2})$/);
+        let vencimento = null;
+        if (m) {
+          const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1 + (n - 1), 1));
+          const ultimo = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+          vencimento = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), Math.min(diaVenc, ultimo), 12)).toISOString();
+        }
+        linhas.push({
+          id: `novo-${numero}-p${n}`,
+          numeroParcela: n,
+          // ⚠ SEM `competencia`, de propósito: `SELECT_PARCELA_PARA_QUADRO` (o select real que
+          // alimenta `parcelasContratadas`) não a traz. Um mock que a mandasse esconderia o campo
+          // Competência do modal de anexo nascendo vazio em produção — foi assim que o defeito
+          // apareceu. Quem precisa dela a deriva do vencimento (`competenciaDaParcela`).
+          vencimento,
+          // ⚠ `HISTORICO` é VOCABULÁRIO de `origemBaixa`, não coluna nova: as N primeiras contam
+          // como quitadas e NÃO geram lançamento nenhum.
+          origemBaixa: n <= jaPagas ? "HISTORICO" : null,
+          guia: null,
+        });
+      }
+      const valorParcela = Number(header.valorPrincipal) && total
+        ? Math.round((Number(header.valorPrincipal) / Math.max(1, total - jaPagas)) * 100) / 100
+        : null;
+      const novo = {
+        id: `novo-${numero}`,
+        label: `PARCELAMENTO ${header.tipo}${numero ? ` Nº ${numero}` : ""}`,
+        tipo: header.tipo,
+        numeroParcelamento: numero,
+        status: "ATIVO",
+        numParcelas: total,
+        principalTotal: Number(header.valorPrincipal) || 0,
+        jurosTotal: Number(header.valorJuros) || 0,
+        valorMulta: Number(header.valorMulta) || 0,
+        totalValue: Number(header.valorTotal) || Number(header.valorPrincipal) || 0,
+        principalPerParcela: valorParcela,
+        valorParcelaReferencia: valorParcela,
+        formaPagamento: header.formaPagamento || null,
+        diaPagamento: diaVenc,
+        saldoConsolidado: header.saldoConsolidado ?? null,
+        observacoes: header.descricao || null,
+        parcelasPagas: jaPagas,
+        parcelasTotal: total,
+        // Prestação sem guia e sem baixa não tem evidência nenhuma — e isso NÃO é inadimplência.
+        parcelasSemEvidencia: total - jaPagas,
+        principalPago: 0,
+        saldoRestante: Number(header.valorTotal) || 0,
+        parcelas: [],
+        guides: [],
+        parcelasContratadas: linhas,
+        // ⚠ Sem evidência de pagamento nenhuma, o risco NÃO é avaliável — acender "rescindível" num
+        // débito automático saudável seria inventar inadimplência a partir de ausência de dado.
+        risco: { avaliavel: false, nivel: null, emAtraso: 0, parcelasEmAtraso: [], regra: null },
+      };
+      mockParcelamentosCriados.set(novo.id, novo);
+      return { ok: true, data: { parcelamentoId: novo.id, criouParcelamento: true, marcadasHistorico: jaPagas } };
+    },
+
+    // ⚠ A MEMÓRIA DE CONTAS É DO ESCRITÓRIO E NASCE VAZIA numa modalidade nova. É essa distinção
+    // que o passo 3 do wizard usa para abrir em modo edição na PRIMEIRA VEZ de uma modalidade —
+    // um mock que sempre devolvesse contas esconderia esse caminho inteiro.
+    async getContasProvisao(companyId, tipo) {
+      await delay(40);
+      const comMemoria = ["PARCSN", "PARCMEI"];
+      if (comMemoria.includes(String(tipo || "").toUpperCase())) {
+        return { ok: true, contas: { PRINCIPAL: "265", PARC: "553", JUROS: "501", CAIXA: "111" } };
+      }
+      return { ok: true, contas: { PRINCIPAL: "", PARC: "", JUROS: "", CAIXA: "" } };
+    },
+
+    // ⚠ CAMINHO DE FALHA ESPERADO, e é o estado REAL de produção: a flag
+    // `INTEGRACAO_SERPRO_PARCELAMENTO` está DESLIGADA, então a rota responde 400 com a mensagem.
+    // O mock que devolvia dados fazia o atalho do wizard parecer funcionar offline e falhar só no
+    // ar — exatamente o caso que a tela precisa tratar como recusa nomeada.
+    // O número `999` devolve dados, para o caminho feliz também ser exercível.
+    async consultarParcelamentoSerpro(companyId, { numeroParcelamento } = {}) {
+      await delay(60);
+      if (String(numeroParcelamento || "").trim() === "999") {
+        return { ok: true, parcelamento: { tipo: "PARCSN", numeroParcelamento: "999", valorTotal: 45600, quantidadeParcelas: 60, situacao: "EM_DIA", origem: "SERPRO" } };
+      }
+      const err = new Error("Integração SERPRO de parcelamento está desligada — ative após validar no sandbox para buscar por código.");
+      err.error = "SERPRO_PARC_FLAG_OFF";
+      throw err;
+    },
     async getParcelamentoConfig() { await delay(40); return { ok: true, parcelamento: { id: "mock", configProvisao: null, configPagamento: null } }; },
     async saveParcelamentoConfig() { await delay(40); return { ok: true, parcelamento: { id: "mock" } }; },
     async getConferenciaParcelas() { await delay(40); return { ok: true, items: [] }; },
     async aprovarConferenciaParcelas() { await delay(40); return { ok: true, aprovadas: 0 }; },
-    async linkGuideToParcelamento() { await delay(80); return { ok: true }; },
-    async payParcela() { await delay(80); return { ok: true, baixas: [] }; },
-    async rescindirParcelamento() { await delay(80); return { ok: true }; },
+    async rescindirParcelamento(companyId, parcId) {
+      await delay(80);
+      mockParcelamentosCriados.delete(parcId);
+      return { ok: true };
+    },
     async vincularEntryParcelamento() { await delay(40); return { ok: true }; },
 
     // ── Onboarding (funil pré-cadastro) ─────────────────────────────────

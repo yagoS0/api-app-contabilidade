@@ -1,20 +1,24 @@
-// Aba "Parcelamento" (grupo Contabilidade). Antes esta lista morava no rodapé da Circular;
-// foi movida pra cá pra ter espaço próprio. A CRIAÇÃO de parcelamento continua vindo de
-// Lançamentos/Guias (fluxo de ingestão da 1ª parcela) — aqui é a visão de gerenciar os que
-// já existem: conferência de parcelas pagas, lista, config de contas e rescisão.
+// Aba "Parcelamento" (grupo Contabilidade) — e, desde a F2.3, a PORTA DE ENTRADA do parcelamento.
 //
-// A BAIXA da parcela também é feita aqui (antes saía sozinha ao confirmar o pagamento da guia):
-// o ato contábil de cada domínio vive no lugar onde ele é acompanhado — tributos na Circular,
-// parcelas nesta aba.
+// ⚠ A CRIAÇÃO INVERTEU. Antes o parcelamento nascia como efeito colateral de subir uma guia; hoje
+// ele é um CONTRATO de dívida, criado aqui pelo botão "+ Novo parcelamento", sem documento nenhum.
+// A guia é evidência MENSAL e OPCIONAL — não existe em débito automático nem nas prestações de um
+// acordo migrado de outra contabilidade — e entra depois, pelo "+ Subir Guia → PARCELAMENTO".
+//
+// Esta aba também é onde as parcelas são acompanhadas: conferência, baixa, contas e rescisão. O ato
+// contábil de cada domínio vive no lugar onde ele é acompanhado — tributos na Circular, parcelas
+// aqui.
 //
 // Dados: hook useParcelamentos (accountingPanel.parcelamentos). Ele carrega sozinho no mount
-// e recarrega após cada ação (rescindir/config/conferência), então não precisa de reload manual.
+// e recarrega após cada ação (rescindir/config/conferência/criação).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ParcelamentosList, ConferenciaParcelasPanel } from "../components/ParcelamentoModals";
+import { ParcelamentoWizard } from "../components/ParcelamentoWizard";
+import { Button } from "../../../../components/ui/Button";
 import { createApiClient } from "../../../../api/client";
 
-const PANEL = { text: "#F8F8F2", muted: "#A7B0C0" };
+const PANEL = { text: "#F8F8F2", muted: "#A7B0C0", border: "#44475A", surface: "#21222C", field: "#282A36" };
 const parcelaApi = createApiClient();
 
 function fmtMoney(v) {
@@ -23,77 +27,165 @@ function fmtMoney(v) {
     : "—";
 }
 
-// Parcelas com pagamento marcado e SEM lançamento — o que falta o contador lançar.
-function ParcelasPendentesBaixa({ companyId, refreshKey = 0 }) {
+// Os motivos de RECUSA da baixa, cada um com a saída que o contador precisa.
+const MOTIVOS_RECUSA = {
+  ja_baixada: "esta parcela já tem lançamento de baixa.",
+  provisao_inexistente: "o parcelamento não tem a provisão de abertura — lance a adesão antes.",
+  sem_composicao: "a parcela não tem composição por tributo, então não dá para separar principal, juros e multa.",
+  comprovante_nao_e_parcela: "o documento arrecadado não é uma parcela deste parcelamento.",
+  nao_e_parcela: "esta guia não pertence a um parcelamento.",
+  guide_not_found: "guia não encontrada.",
+  parcelamento_not_found: "parcelamento não encontrado.",
+};
+
+/**
+ * ⚠ AUSÊNCIA NUNCA É RESPOSTA. Este painel fazia `if (!carregando && parcelas.length === 0) return
+ * null` sobre um `catch { setParcelas([]) }`: uma falha de rede produzia EXATAMENTE o mesmo pixel
+ * que "não há nada pendente" — zero. O padrão certo já existia no módulo (`ParcelasDoAcordo`):
+ * o motivo em texto VISÍVEL, não só no `title`.
+ *
+ * Os três estados são distintos agora: carregando · falhou (com o motivo e "Tentar de novo") ·
+ * vazio de verdade (dito, não escondido).
+ */
+function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAtendido }) {
   const [parcelas, setParcelas] = useState([]);
-  const [carregando, setCarregando] = useState(false);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState(null);
   const [lancando, setLancando] = useState(null);
+  const [desfechos, setDesfechos] = useState({}); // guideId → { tom, texto }
+  const [foco, setFoco] = useState(null);          // parcelamentoId destacado pela barra do card
+  const secaoRef = useRef(null);
 
   const carregar = useCallback(async () => {
-    if (!companyId || !parcelaApi?.listParcelasPendentesBaixa) return;
+    if (!companyId) { setCarregando(false); return; }
+    if (!parcelaApi?.listParcelasPendentesBaixa) {
+      setErro("A fila de parcelas pendentes não está disponível neste modo de API.");
+      setCarregando(false);
+      return;
+    }
     setCarregando(true);
+    setErro(null);
     try {
       const out = await parcelaApi.listParcelasPendentesBaixa(companyId);
       setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
-    } catch { setParcelas([]); }
-    finally { setCarregando(false); }
-    // `refreshKey` é a dependência que faz a fila recarregar quando um "Buscar pagamento" na linha
-    // da parcela localiza o comprovante — é exatamente aí que a parcela ENTRA nesta lista, e sem
-    // isso ela só apareceria no próximo F5.
+    } catch (err) {
+      // ⚠ O `catch` NÃO zera mais a lista em silêncio: ele guarda o motivo e a tela o mostra.
+      setErro(err?.message || "Não foi possível carregar as parcelas pendentes de baixa.");
+    } finally { setCarregando(false); }
+    // `refreshKey` recarrega quando um "Buscar pagamento" na linha da parcela localiza o
+    // comprovante — é exatamente aí que a parcela ENTRA nesta lista.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, refreshKey]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  async function lancar(guideId) {
-    if (lancando) return;
-    setLancando(guideId);
+  // ─── o que a barra de ações do card pede ──────────────────────────────────────────────────────
+  // `Dar baixa` traz o contador ATÉ a fila (rolando e destacando); `Baixa em lote` roda todas as
+  // pendentes daquele contrato, depois de uma confirmação que LISTA cada uma. Nenhum dos dois
+  // inventa rota: os dois usam `POST /parcelamentos/parcelas/:guideId/baixa`, uma por parcela.
+  useEffect(() => {
+    if (!pedido) return;
+    setFoco(pedido.parcelamentoId || null);
+    secaoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (pedido.lote) baixarEmLote(pedido.parcelamentoId);
+    onPedidoAtendido?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedido?.nonce]);
+
+  function confirmacaoDaBaixa(p) {
+    const quando = p.comprovante?.dataArrecadacao
+      || (p.confirmadoEm ? new Date(p.confirmadoEm).toLocaleDateString("pt-BR") : "data do comprovante não conhecida");
+    return `parcela ${p.numeroParcela ?? "?"} — competência ${p.competencia || "?"}, valor ${fmtMoney(p.valor)}, pagamento em ${quando}`;
+  }
+
+  async function executarBaixa(p) {
+    setDesfechos((d) => ({ ...d, [p.guideId]: null }));
     try {
-      const out = await parcelaApi.lancarBaixaParcela(companyId, guideId);
-      // ⚠ RECUSA NÃO É SUCESSO. O servidor pode responder `skipped` — a parcela já tem lançamento,
-      // o parcelamento não tem provisão de abertura, o comprovante não é de parcela. Antes tudo
-      // isso voltava como 201 `ok:true`: o contador clicava, a linha sumia da lista e ele ficava
-      // achando que lançou. Agora a recusa aparece com o motivo.
+      const out = await parcelaApi.lancarBaixaParcela(companyId, p.guideId);
+      // ⚠ RECUSA NÃO É SUCESSO, E NÃO SOME. Antes o motivo saía num `window.alert` que desaparece
+      // ao clicar OK; agora fica NA LINHA, como o `Desfecho` do `ParcelasDoAcordo` já fazia.
       if (out?.skipped) {
-        const MOTIVOS = {
-          ja_baixada: "esta parcela já tem lançamento de baixa.",
-          provisao_inexistente: "o parcelamento não tem a provisão de abertura — lance a adesão antes.",
-          sem_composicao: "a parcela não tem composição por tributo, então não dá para separar principal, juros e multa.",
-          comprovante_nao_e_parcela: "o documento arrecadado não é uma parcela deste parcelamento.",
-          nao_e_parcela: "esta guia não pertence a um parcelamento.",
-          guide_not_found: "guia não encontrada.",
-          parcelamento_not_found: "parcelamento não encontrado.",
-        };
-        window.alert(`Nada foi lançado: ${MOTIVOS[out.motivo] || out.motivo || "o servidor recusou."}`);
-        await carregar();
+        setDesfechos((d) => ({
+          ...d,
+          [p.guideId]: { tom: "warn", texto: `Nada foi lançado: ${MOTIVOS_RECUSA[out.motivo] || out.motivo || "o servidor recusou."}` },
+        }));
         return;
       }
       if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao lançar.");
-      await carregar();
+      setDesfechos((d) => ({ ...d, [p.guideId]: { tom: "ok", texto: "Baixa lançada." } }));
     } catch (err) {
-      window.alert(err?.message || "Falha ao lançar a baixa da parcela.");
+      setDesfechos((d) => ({ ...d, [p.guideId]: { tom: "danger", texto: err?.message || "Falha ao lançar a baixa da parcela." } }));
+    }
+  }
+
+  async function baixarEmLote(parcelamentoId) {
+    const alvo = parcelas.filter((p) => !parcelamentoId || p.parcelamentoId === parcelamentoId);
+    if (!alvo.length) {
+      // ⚠ Nada a fazer TAMBÉM é resposta — e precisa ser dita, senão "cliquei e não aconteceu nada".
+      setDesfechos((d) => ({ ...d, __lote: { tom: "warn", texto: "Nenhuma parcela paga deste contrato está aguardando lançamento." } }));
+      return;
+    }
+    const lista = alvo.map((p) => `· ${confirmacaoDaBaixa(p)}`).join("\n");
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(
+      `Dar baixa em ${alvo.length} parcela(s):\n\n${lista}\n\n`
+      + "Cada uma GRAVA lançamentos contábeis (principal, juros e multa separados) e amortiza o "
+      + "passivo do parcelamento. Confirmar?",
+    )) return;
+    setLancando("__lote");
+    try {
+      for (const p of alvo) {
+        // eslint-disable-next-line no-await-in-loop
+        await executarBaixa(p);
+      }
+      await carregar();
     } finally { setLancando(null); }
   }
 
-  if (!carregando && parcelas.length === 0) return null;
+  async function lancar(p) {
+    if (lancando) return;
+    // ⚠ ATO DE CONSEQUÊNCIA CONFIRMA REPETINDO OS DADOS. A baixa grava até quatro lançamentos e
+    // amortiza passivo; antes saía num clique só, sem nada entre a intenção e o razão.
+    const texto = `Dar baixa na ${confirmacaoDaBaixa(p)}.\n\n`
+      + "Isto GRAVA lançamentos contábeis (principal, juros e multa em lançamentos separados) e "
+      + "amortiza o passivo do parcelamento. Confirmar?";
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(texto)) return;
+
+    setLancando(p.guideId);
+    try {
+      await executarBaixa(p);
+      await carregar();
+    } finally { setLancando(null); }
+  }
 
   const th = { padding: "6px 8px", textAlign: "left", fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase" };
-  const td = { padding: "6px 8px", fontSize: "0.82rem", color: PANEL.text };
+  const td = { padding: "6px 8px", fontSize: "0.82rem", color: PANEL.text, verticalAlign: "top" };
 
-  return (
-    <section style={{ background: "#21222C", border: "1px solid #FFB347", borderRadius: 10, padding: 14 }}>
-      <div style={{ marginBottom: 8 }}>
-        <strong style={{ color: "#FFB347", fontSize: "0.9rem" }}>
-          Parcelas pagas aguardando lançamento ({parcelas.length})
-        </strong>
-        <div style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
-          O pagamento já foi confirmado; falta gerar a baixa contábil.
+  const corpo = () => {
+    if (carregando) return <div style={{ color: PANEL.muted, fontSize: "0.8rem" }}>Carregando as parcelas pagas…</div>;
+    if (erro) {
+      return (
+        <div role="status" style={{ padding: "8px 10px", borderRadius: 6, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)" }}>
+          <div style={{ color: "var(--state-danger)", fontWeight: 700, fontSize: "0.74rem" }}>Não foi possível saber se há parcelas pendentes</div>
+          <div style={{ color: PANEL.muted, fontSize: "0.7rem", marginTop: 2, lineHeight: 1.4 }}>
+            {erro} — isto <strong>não</strong> quer dizer que não há nada pendente.
+          </div>
+          <button type="button" onClick={carregar} style={{ marginTop: 6, background: "transparent", border: "1px solid var(--accent-purple)", color: "var(--accent-purple)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700 }}>
+            Tentar de novo
+          </button>
         </div>
-      </div>
+      );
+    }
+    if (!parcelas.length) {
+      return <div style={{ color: PANEL.muted, fontSize: "0.78rem" }}>Nenhuma parcela paga aguardando lançamento.</div>;
+    }
+    return (
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#282A36" }}>
+            <tr style={{ background: PANEL.field }}>
+              <th style={th}>Parc.</th>
               <th style={th}>Competência</th>
               <th style={{ ...th, textAlign: "right" }}>Valor</th>
               <th style={th}>Pagamento</th>
@@ -101,45 +193,109 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0 }) {
             </tr>
           </thead>
           <tbody>
-            {parcelas.map((p) => (
-              <tr key={p.guideId} style={{ borderTop: "1px solid #2b2d45" }}>
-                <td style={td}>{p.competencia}</td>
-                <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(p.valor)}</td>
-                <td style={{ ...td, color: PANEL.muted }}>
-                  {p.comprovante?.dataArrecadacao
-                    ? `${p.comprovante.dataArrecadacao} (comprovante)`
-                    : (p.confirmadoEm ? new Date(p.confirmadoEm).toLocaleDateString("pt-BR") : "—")}
-                </td>
-                <td style={{ ...td, textAlign: "right" }}>
-                  <button
-                    type="button"
-                    onClick={() => lancar(p.guideId)}
-                    disabled={Boolean(lancando)}
-                    style={{
-                      padding: "4px 10px", borderRadius: 6, cursor: lancando ? "default" : "pointer",
-                      background: "transparent", border: "1px solid var(--accent-purple)", color: "var(--accent-purple)",
-                      fontSize: "0.78rem", fontWeight: 700,
-                    }}
-                  >
-                    {lancando === p.guideId ? "Lançando…" : "Dar baixa"}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {parcelas.map((p) => {
+              const desfecho = desfechos[p.guideId];
+              const emVoo = lancando === p.guideId || lancando === "__lote";
+              const destacada = Boolean(foco) && p.parcelamentoId === foco;
+              return (
+                <tr key={p.guideId} style={{
+                  borderTop: `1px solid ${PANEL.border}`,
+                  background: destacada ? "var(--accent-purple-surface)" : "transparent",
+                }}>
+                  <td style={{ ...td, fontFamily: "monospace" }}>{p.numeroParcela ?? "?"}</td>
+                  <td style={td}>{p.competencia}</td>
+                  <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(p.valor)}</td>
+                  <td style={{ ...td, color: PANEL.muted }}>
+                    {p.comprovante?.dataArrecadacao
+                      ? `${p.comprovante.dataArrecadacao} (comprovante)`
+                      : (p.confirmadoEm ? new Date(p.confirmadoEm).toLocaleDateString("pt-BR") : "—")}
+                  </td>
+                  <td style={{ ...td, textAlign: "right", minWidth: 200 }}>
+                    <button
+                      type="button"
+                      onClick={() => lancar(p)}
+                      disabled={Boolean(lancando)}
+                      // ⚠ DESABILITADO SEMPRE COM O MOTIVO — o projeto proíbe o contrário.
+                      title={lancando ? "Aguarde: outra baixa está sendo lançada." : "Grava os lançamentos de baixa desta parcela (pede confirmação)."}
+                      style={{
+                        padding: "4px 10px", borderRadius: 6, cursor: lancando ? "not-allowed" : "pointer",
+                        background: "transparent", border: "1px solid var(--accent-purple)", color: "var(--accent-purple)",
+                        fontSize: "0.78rem", fontWeight: 700, whiteSpace: "nowrap",
+                      }}
+                    >
+                      {emVoo ? "Lançando…" : "Dar baixa"}
+                    </button>
+                    {desfecho && (
+                      <div role="status" style={{
+                        marginTop: 4, padding: "5px 8px", borderRadius: 6, textAlign: "left", lineHeight: 1.35,
+                        fontSize: "0.68rem",
+                        color: PANEL.muted,
+                        background: desfecho.tom === "ok" ? "var(--state-ok-surface)" : desfecho.tom === "danger" ? "var(--state-danger-surface)" : "var(--state-warn-surface)",
+                        border: `1px solid ${desfecho.tom === "ok" ? "var(--state-ok)" : desfecho.tom === "danger" ? "var(--state-danger)" : "var(--state-warn)"}`,
+                      }}>
+                        {desfecho.texto}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+    );
+  };
+
+  const corBorda = erro ? "var(--state-danger)" : parcelas.length ? "var(--state-warn)" : PANEL.border;
+  const desfechoLote = desfechos.__lote;
+  return (
+    <section ref={secaoRef} style={{ background: PANEL.surface, border: `1px solid ${corBorda}`, borderRadius: 10, padding: 14, scrollMarginTop: 16 }}>
+      <div style={{ marginBottom: 8 }}>
+        <strong style={{ color: parcelas.length ? "var(--state-warn)" : PANEL.text, fontSize: "0.9rem" }}>
+          Parcelas pagas aguardando lançamento{parcelas.length ? ` (${parcelas.length})` : ""}
+        </strong>
+        <div style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
+          O pagamento já foi confirmado; falta gerar a baixa contábil.
+          {foco && " Destacadas: as do contrato que você clicou."}
+        </div>
+      </div>
+      {desfechoLote && (
+        <div role="status" style={{
+          marginBottom: 8, padding: "6px 9px", borderRadius: 6, fontSize: "0.72rem", color: PANEL.muted,
+          background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+        }}>
+          {desfechoLote.texto}
+        </div>
+      )}
+      {corpo()}
     </section>
   );
 }
 
-export function ParcelamentoTab({ companyId, parcelamentos, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
+export function ParcelamentoTab({
+  companyId, parcelamentos, accounts = [], onSearchHistoricos, onGetHistoricosByCode, onIrParaGuias,
+  // R4 — o "＋ Criar novo…" do modal de anexo de guia chega aqui já pedindo o wizard aberto.
+  abrirWizardAoMontar = false, onWizardAberto,
+}) {
   // Recarga da fila de baixa pendente depois de um pagamento localizado na linha da parcela.
   const [baixaRefreshKey, setBaixaRefreshKey] = useState(0);
+  const [wizardAberto, setWizardAberto] = useState(false);
+
+  useEffect(() => {
+    if (!abrirWizardAoMontar) return;
+    setWizardAberto(true);
+    onWizardAberto?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirWizardAoMontar]);
+  // O que a barra de ações do card pede à fila de baixa. `nonce` porque o MESMO pedido pode ser
+  // repetido (clicar "Dar baixa" duas vezes no mesmo contrato tem de rolar duas vezes).
+  const [pedidoBaixa, setPedidoBaixa] = useState(null);
+  const pedirBaixa = useCallback((parc, lote) => {
+    setPedidoBaixa({ parcelamentoId: parc?.id || null, lote: Boolean(lote), nonce: Date.now() });
+  }, []);
 
   // ⚠ MESMA ROTA DAS OUTRAS GUIAS. Uma parcela É uma `Guide` com `parcelamentoId`, então
-  // `buscarPagamentoGuia(guideId)` é literalmente a chamada que a Circular já faz nos tributos —
-  // não existe caminho novo de backend aqui.
+  // `buscarPagamentoGuia(guideId)` é literalmente a chamada que a Circular já faz nos tributos.
   const buscarPagamentoParcela = useCallback(async (guideId) => {
     if (!parcelaApi?.buscarPagamentoGuia) {
       const err = new Error("A busca de pagamento não está disponível neste modo de API.");
@@ -162,15 +318,34 @@ export function ParcelamentoTab({ companyId, parcelamentos, accounts = [], onSea
     /* Largura de trabalho (~90%): a lista de parcelamentos tem parcela, valor, vencimento, status
        e ações por linha, e em 1100px as colunas truncavam com a tela sobrando. */
     <div style={{ padding: "24px 0", width: "var(--content-wide)", margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
-      <div>
-        <h1 style={{ margin: 0, fontSize: "1.15rem", color: PANEL.text }}>Parcelamentos</h1>
-        <span style={{ fontSize: "0.85rem", color: PANEL.muted }}>
-          Conferência de parcelas, baixa das parcelas pagas, contas de lançamento e rescisão.
-          Novos parcelamentos entram pela guia (Lançamentos / Guias).
-        </span>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: "1.15rem", color: PANEL.text }}>Parcelamentos</h1>
+          <span style={{ fontSize: "0.85rem", color: PANEL.muted }}>
+            O contrato entra aqui, sem guia nenhuma. A guia de cada mês é evidência opcional e se
+            anexa depois, pelo <strong>+ Subir Guia → PARCELAMENTO</strong> na aba Guias.
+          </span>
+        </div>
+        <Button variant="primary" type="button" onClick={() => setWizardAberto(true)}>+ Novo parcelamento</Button>
       </div>
 
-      <ParcelasPendentesBaixa companyId={companyId} refreshKey={baixaRefreshKey} />
+      {/* ⚠ `error` do hook aparece: `useParcelamentos` já o guardava e a tela o descartava, então
+          falha ao listar parcelamentos era indistinguível de "esta empresa não tem parcelamento". */}
+      {parcelamentos.error && (
+        <div role="status" style={{ padding: "8px 12px", borderRadius: 8, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)" }}>
+          <div style={{ color: "var(--state-danger)", fontWeight: 700, fontSize: "0.78rem" }}>Não foi possível carregar os parcelamentos</div>
+          <div style={{ color: PANEL.muted, fontSize: "0.72rem", marginTop: 2 }}>
+            {parcelamentos.error} — a lista abaixo pode estar incompleta.
+          </div>
+        </div>
+      )}
+
+      <ParcelasPendentesBaixa
+        companyId={companyId}
+        refreshKey={baixaRefreshKey}
+        pedido={pedidoBaixa}
+        onPedidoAtendido={() => setPedidoBaixa(null)}
+      />
 
       <ConferenciaParcelasPanel
         listConferencia={parcelamentos.listConferencia}
@@ -181,6 +356,7 @@ export function ParcelamentoTab({ companyId, parcelamentos, accounts = [], onSea
         parcelamentos={(parcelamentos.parcelamentos || []).filter((p) => p.status !== "RESCINDIDO")}
         loading={parcelamentos.loading}
         onRescindir={(parcId, body) => parcelamentos.rescindir(parcId, body)}
+        onOpenCreate={() => setWizardAberto(true)}
         getConfig={parcelamentos.getConfig}
         saveConfig={parcelamentos.saveConfig}
         accounts={accounts}
@@ -188,7 +364,23 @@ export function ParcelamentoTab({ companyId, parcelamentos, accounts = [], onSea
         onGetHistoricosByCode={onGetHistoricosByCode}
         onBuscarPagamentoParcela={buscarPagamentoParcela}
         onParcelaAtualizada={aposLocalizarPagamento}
+        onDarBaixa={(parc) => pedirBaixa(parc, false)}
+        onBaixaEmLote={(parc) => pedirBaixa(parc, true)}
+        onSubirGuia={onIrParaGuias ? () => onIrParaGuias() : null}
       />
+
+      {wizardAberto && (
+        <ParcelamentoWizard
+          onIngest={(body) => parcelamentos.ingest(body)}
+          onConsultSerpro={parcelamentos.consultarSerpro}
+          getContasProvisao={parcelamentos.getContasProvisao}
+          accounts={accounts}
+          onSearchHistoricos={onSearchHistoricos}
+          onGetHistoricosByCode={onGetHistoricosByCode}
+          saving={parcelamentos.saving}
+          onClose={() => setWizardAberto(false)}
+        />
+      )}
     </div>
   );
 }

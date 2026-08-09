@@ -73,14 +73,33 @@ function situacaoDaLinha(linha) {
  * @param {function} onBuscar      `(guideId) => Promise<resposta>` — o par mock/real
  *                                 `buscarPagamentoGuia`. A tela NUNCA chama fetch direto.
  * @param {function} onBuscou      recarrega o que mudou (parcelamentos + fila de baixa pendente)
+ * @param {boolean}  [aberto]      controlado pelo card (o item "Histórico" do menu ⋯ abre o MESMO
+ *                                 bloco); ausente ⇒ o componente controla sozinho, como antes.
+ * @param {function} [onAlternar]
  */
-export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou }) {
-  const [aberto, setAberto] = useState(false);
+export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onAlternar }) {
+  const [abertoLocal, setAbertoLocal] = useState(false);
+  const controlado = typeof aberto === "boolean";
+  const estaAberto = controlado ? aberto : abertoLocal;
+  const alternar = () => (controlado ? onAlternar?.() : setAbertoLocal((a) => !a));
   const [buscando, setBuscando] = useState(null);   // guideId em voo
   const [desfechos, setDesfechos] = useState({});   // guideId → resumo
 
   const linhas = montarParcelasDoAcordo(parcelamento);
-  if (!linhas.length) return null;
+
+  // ⚠ AUSÊNCIA NUNCA É RESPOSTA. Isto era `if (!linhas.length) return null` — e o bloco inteiro
+  // sumia sem dizer por quê. Zero prestações materializadas não é o mesmo que "este acordo não tem
+  // parcelas": é sinal de que o cronograma não foi materializado (competência-sentinela `1970-01`,
+  // por exemplo), e some justamente no contrato que precisa ser olhado.
+  if (!linhas.length) {
+    return (
+      <div style={{ borderTop: `1px solid ${PANEL.border}`, paddingTop: 8, fontSize: "0.68rem", color: PANEL.muted, lineHeight: 1.4 }}>
+        Este acordo não tem nenhuma prestação materializada — não há cronograma para acompanhar nem
+        pagamento para buscar. Costuma acontecer quando a competência da 1ª parcela não foi informada
+        na adesão.
+      </div>
+    );
+  }
 
   async function buscar(linha) {
     if (buscando || !onBuscar) return;
@@ -114,17 +133,17 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou }) {
     <div style={{ borderTop: `1px solid ${PANEL.border}`, paddingTop: 8 }}>
       <button
         type="button"
-        onClick={() => setAberto((a) => !a)}
-        aria-expanded={aberto}
+        onClick={alternar}
+        aria-expanded={estaAberto}
         style={{
           background: "transparent", border: "none", color: "var(--accent-purple)",
           cursor: "pointer", fontWeight: 700, fontSize: "0.72rem", padding: 0,
         }}
       >
-        {aberto ? "▾" : "▸"} Parcelas ({linhas.length}) — buscar pagamento
+        {estaAberto ? "▾" : "▸"} Parcelas ({linhas.length}) — buscar pagamento
       </button>
 
-      {aberto && (
+      {estaAberto && (
         <div style={{ marginTop: 8, overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>

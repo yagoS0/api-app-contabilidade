@@ -701,7 +701,7 @@ export function CircularTab({
   // `409 USE_ESTORNO` para toda baixa com vínculo.
   onPreviewEstorno,
   onEstornarBaixa,
-  parcelamentos, // Q9: hook completo (parcelamentos, payParcela, rescindir, etc)
+  parcelamentos, // Q9: hook completo (parcelamentos, ingest, rescindir, conferência)
   onSaveCircular, // Frente B: salva acrescimos (principal/juros/multa) da circular
   savingCircular,
 }) {

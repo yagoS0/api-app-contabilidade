@@ -21,6 +21,53 @@ envio em lote e o painel de guias esperadas.
   selecionável**: o envio manual alcança `ERROR`, então a mudança é de exibição, não de
   elegibilidade.
 
+## ⚠ `PARCELAMENTO` é um tipo do menu "+ Subir Guia" — e a guia é ANEXO, não gatilho (R4)
+
+`list/components/GuiaDeParcelamentoModal.jsx`, com as regras em `lib/anexoParcelamento.js`
+(23 testes) e a ligação em `list/components/__tests__/renderCompanyGuidesTable.test.jsx`.
+
+O contrato **já existe** (nasce no wizard da aba Parcelamentos, sem documento nenhum). Este modal
+põe o **parcelamento no primeiro campo**, deriva o vínculo do cronograma
+(*"Será vinculada à parcela {n} de {total} — alterar"*) e pré-preenche competência, vencimento e
+valor **pelo contrato**. `＋ Criar novo…` leva à aba Parcelamentos com o wizard já aberto.
+
+⚠ **ANEXAR É SÓ ANEXAR.** O caminho antigo, ao anexar uma parcela a um parcelamento existente,
+chamava `onConfirmGuidePayment` logo em seguida — dentro de um `try {} catch {}` **mudo**. Anexar o
+documento CONFIRMAVA o pagamento dele, e quando a confirmação falhava (mês fechado, por exemplo)
+nada na UI dizia. Confirmar pagamento continua sendo o botão da barra de ações; a baixa contábil
+continua sendo ato deliberado na aba Parcelamento.
+
+⚠ **O TIPO DA GUIA DEIXOU DE SER FORÇADO A `"SIMPLES"`.** Os dois caminhos do modal antigo faziam
+`handleStartUpload("SIMPLES", true)` — inclusive ao anexar parcela de **INSS**, que ficava gravada
+com o tipo do DAS do mês. Hoje `tipoGuiaSugerido(modalidade)` **sugere** (INSS → `INSS`;
+PARCSN/PERT_SN/RELP_SN/PARCMEI/PERT_MEI/RELP_MEI → `SIMPLES`, que é como
+`CaptureSerproParcelaService` grava a parcela do SERPRO; o resto → `OUTRA`) e o select fica à vista
+para o contador discordar. Não é tabela de-para fixa: é sugestão.
+
+⚠ **DUPLICIDADE AVISA, NUNCA RECUSA.** Reemissão é legítima (guia vencida, recalculada com juros
+novos). `avisosDeDuplicidade` faz duas leituras — a prestação já tem guia · já existe guia do mesmo
+contrato naquela competência — e o salvar pede **confirmação explícita** repetindo os avisos.
+
+⚠ **O PDF É OBRIGATÓRIO AQUI, e não por escolha de tela.**
+`POST /firm/companies/:id/guides/upload` é a **única** porta de criação de guia no backend e recusa
+sem arquivo (`file_required`); não existe rota de guia sem PDF. O que é opcional é a **guia** — o
+contrato vive sem ela (débito automático não emite nenhuma) — e o motivo está escrito na tela, não
+escondido numa validação.
+
+⚠ **O denominador do "de quantas?" é `parcelasTotal`, o mesmo do card** — não `numParcelas`. Os dois
+coincidem em produção (`sincronizarParcelas` materializa `numParcelas` linhas); duas respostas para
+a mesma pergunta no mesmo fluxo é o defeito.
+
+### O que saiu junto (R1)
+
+- **checkbox "Esta guia é de parcelamento"** (`capture/components/renderGuideCaptureModal.jsx`) — era
+  o gatilho do modal-surpresa que abria DEPOIS de salvar e podia criar um contrato de 60 meses como
+  efeito colateral de um upload;
+- **item "Parcelamento…"** do menu (âmbar, fora da lista de tipos) e o modal de 3 opções;
+- **a heurística de fallback por tipo** em `handleCompleteSave`, que abria o vínculo de parcelamento
+  para toda guia `SIMPLES|INSS|DARF|PIS|COFINS|IRPJ|CSLL|ISS` — ou seja, praticamente toda guia do
+  sistema — sem ninguém ter dito que aquilo era parcela.
+
 ## ⚠ Como uma guia se chama na tela — `lib/rotuloGuia.js`, e só ele
 
 O nome da guia **não sai do `tipo`**: a parcela de parcelamento é `tipo:"SIMPLES"` igual ao DAS do

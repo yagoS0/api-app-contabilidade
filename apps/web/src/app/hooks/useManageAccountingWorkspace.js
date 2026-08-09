@@ -457,13 +457,9 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     return result;
   }
 
-  // F3: Cria N parcelas de um parcelamento Simples Nacional em transação no backend.
-  async function handleCreateParcelamento(payload) {
-    if (!selectedCompanyId) return null;
-    const result = await api.createParcelamentoSimples(selectedCompanyId, payload);
-    await loadAccountingEntries(selectedCompanyId);
-    return result;
-  }
+  // ⚠ `handleCreateParcelamento` FOI REMOVIDO (F2.3). Ele chamava `createParcelamentoSimples` →
+  // `POST /entries/parcelamento`, rota removida no backend. Criação de parcelamento é o wizard da
+  // aba Parcelamentos (`useParcelamentos.ingest` → `POST /parcelamentos/ingestao`).
 
   async function handleCreateAccount(input) {
     if (!selectedCompanyId) return;
@@ -621,7 +617,6 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     handleImportOFX,
     handlePreviewExcel,
     handleImportExcel,
-    handleCreateParcelamento,
     handleCreateAccount,
     handleUpdateAccount,
     handleDeleteAccount,

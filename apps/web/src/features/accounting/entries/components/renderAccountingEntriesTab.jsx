@@ -4,7 +4,6 @@ import { Button } from "../../../../components/ui/Button";
 import { HistoricosModal } from "../../historicos/components/renderHistoricosModal";
 import { ImportOFXModal } from "../../ofx-import/components/renderImportOfxModal";
 import { ImportExcelModal } from "../../excel-import/components/renderImportExcelModal";
-import { ParcelamentoModal } from "../../parcelamento/components/renderParcelamentoModal";
 import { AccountRow, DraftEntryRow } from "./renderAccountingEntriesParts";
 import { ACCOUNTING_PANEL, COLS, ORIGEM_LABELS, STATUS_LABELS, TIPO_LABELS, TIPO_GROUP_ORDER, TIPO_GROUP_LABELS, TIPO_GROUP_ACCENT, fmtValor, formatCompetenciaTitulo } from "../lib/accountingEntriesShared";
 import { PayrollEntryModal, CsvExportModal } from "./renderAccountingEntriesParts";
@@ -571,13 +570,11 @@ export function AccountingEntriesTab({
   onOpenChartOfAccountsTab,
   onPreviewExcel,
   onImportExcel,
-  // F3: Parcelamento Simples Nacional
-  onCreateParcelamento,
-  companyRegime,  // regime tributário — controla visibilidade do botão "Novo Parcelamento"
+  companyRegime,  // regime tributário — controla a visibilidade dos itens do menu SERPRO
   // Q6: Funções de Lançamento
   accountingFunctions,  // { functions, loading, saving, create, update, remove, apply } do hook useAccountingFunctions
   // Q9: Parcelamentos
-  parcelamentos,        // { parcelamentos, loading, saving, create, linkGuide, payParcela, rescindir } do hook useParcelamentos
+  parcelamentos,        // { parcelamentos, loading, saving, create, ingest, rescindir } do hook useParcelamentos
 }) {
   const [showOFX, setShowOFX] = useState(false);
   const [showHistoricos, setShowHistoricos] = useState(false);
@@ -585,8 +582,6 @@ export function AccountingEntriesTab({
   const [showCsvExport, setShowCsvExport] = useState(false);
   const [showFilters, setShowFilters] = useState(false);   // filtros saíram da caixa → modal
   const [showExcel, setShowExcel] = useState(false);
-  const [showParcelamento, setShowParcelamento] = useState(false);
-  const [savingParcelamento, setSavingParcelamento] = useState(false);
   // Q6: Funções de Lançamento — modais
   const [showFunctionsList, setShowFunctionsList] = useState(false);
   const [editingFunction, setEditingFunction] = useState(null);    // null=fechado, {}=nova, {id,...}=editando existente
@@ -805,13 +800,12 @@ export function AccountingEntriesTab({
             label="Funções"
             items={[
               { label: "+ Folha / Pró-labore", hint: "Lançamento composto pré-preenchido", onClick: () => setShowPayroll(true), disabled: !onLoadPayrollTemplate },
-              // Parcelamento Simples Nacional só aparece para empresas regime SIMPLES.
-              ...(isSimples ? [{
-                label: "+ Parcelamento Simples",
-                hint: "Cria N parcelas (provisão recorrente)",
-                onClick: () => setShowParcelamento(true),
-                disabled: !onCreateParcelamento,
-              }] : []),
+              // ⚠ "+ Parcelamento Simples" SAIU (R1) — o botão CHAMAVA UMA ROTA QUE NÃO EXISTE MAIS.
+              // Ele batia em `POST /entries/parcelamento`, removida no backend junto do subtipo
+              // `PARC_DAS` que só ela escrevia (produção tem ZERO lançamentos com esse subtipo — a
+              // rota nunca foi usada). Clicar aqui dava 404. O parcelamento hoje nasce na aba
+              // Parcelamentos, pelo "+ Novo parcelamento", como CONTRATO — não como N provisões
+              // recorrentes lançadas de uma vez.
               // Q6: Funções customizadas (templates reutilizáveis)
               ...(accountingFunctions ? [{
                 label: "Aplicar função…",
@@ -1287,23 +1281,6 @@ export function AccountingEntriesTab({
           onClose={() => setShowExcel(false)}
         />
       )}
-      {showParcelamento && (
-        <ParcelamentoModal
-          accounts={accounts}
-          defaultCompetencia={activeComp}
-          saving={savingParcelamento}
-          onSave={async (payload) => {
-            setSavingParcelamento(true);
-            try {
-              return await onCreateParcelamento(payload);
-            } finally {
-              setSavingParcelamento(false);
-            }
-          }}
-          onClose={() => setShowParcelamento(false)}
-        />
-      )}
-
       {/* Q6: Funções de Lançamento */}
       {showFunctionsList && accountingFunctions && (
         <FunctionListModal

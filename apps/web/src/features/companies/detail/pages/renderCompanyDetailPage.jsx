@@ -238,6 +238,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     || null;
   // Q11.1: state do modal de exclusão (zona de risco)
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  // R4 — "＋ Criar novo…" no modal de anexo de guia: leva à aba Parcelamentos E abre o wizard.
+  // Sem esta intenção, o clique só trocava de aba e o contador tinha de achar o botão de novo —
+  // que é onde a intenção se perde. A criação continua tendo UMA porta só (o wizard).
+  const [abrirWizardParcelamento, setAbrirWizardParcelamento] = useState(false);
 
   function switchTab(tab) {
     setCompanyDetailTab(tab);
@@ -289,7 +293,6 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onImportOFX={accountingPanel.onImportOFX}
             onPreviewExcel={accountingPanel.onPreviewExcel}
             onImportExcel={accountingPanel.onImportExcel}
-            onCreateParcelamento={accountingPanel.onCreateParcelamento}
             companyRegime={companyRegime}
             accountingFunctions={accountingPanel.accountingFunctions}
             savingEntry={accountingPanel.savingEntry}
@@ -355,7 +358,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             onIdentifyGuide={guidesPanel.onIdentifyGuide}
             onFetchGuidePdf={guidesPanel.onFetchGuidePdf}
             parcelamentos={accountingPanel.parcelamentos}
-            accountingFunctions={accountingPanel.accountingFunctions}
+            /* "＋ Criar novo…" no modal de anexo leva ao WIZARD, que vive na aba Parcelamentos —
+               uma porta de criação só, em vez de um segundo formulário aqui. */
+            onCriarParcelamento={() => { setAbrirWizardParcelamento(true); switchTab("parcelamento"); }}
             accounts={accountingPanel.accounts}
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
@@ -682,6 +687,11 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 accounts={accountingPanel.accounts}
                 onSearchHistoricos={accountingPanel.onSearchHistoricos}
                 onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
+                /* A guia é anexada na aba Guias (+ Subir Guia → PARCELAMENTO). O card leva até lá
+                   em vez de mostrar um item desabilitado sem saída. */
+                onIrParaGuias={() => switchTab("guides")}
+                abrirWizardAoMontar={abrirWizardParcelamento}
+                onWizardAberto={() => setAbrirWizardParcelamento(false)}
               />
             </Suspense>
           </ErrorBoundary>

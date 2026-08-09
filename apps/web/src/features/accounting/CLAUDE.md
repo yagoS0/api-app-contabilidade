@@ -22,9 +22,74 @@ plano de contas, funções/templates, importações (OFX/Excel).
 - `circular/` — **Circular** (`renderCircularTab.jsx`): matriz linha (tipo) × 12 meses +
   **resumo por TRIMESTRE (Q1–Q4) e ANUAL por linha** (Q17), calculado da mesma matriz
   exibida (fonte única). Embaixo, `ParcelamentosList`.
-- `parcelamento/` — modais (`ParcelamentoModals.jsx`): criação via 1ª guia, vínculo a
-  parcelamento existente, pagamento; abertura é a única provisão; contas em branco + memória.
+- `parcelamento/` — o **contrato** e o que gira em torno dele. Ver a seção "Parcelamento-first"
+  abaixo: a criação é o `ParcelamentoWizard.jsx` (3 passos, **sem guia nenhuma**), os cards e a
+  rescisão vivem em `ParcelamentoModals.jsx`, e as regras em `lib/wizardParcelamento.js` +
+  `lib/cartaoParcelamento.js`, com teste próprio.
 - `functions/`, `chart-of-accounts/`, `rules/`, `historicos/`, `ofx-import/`, `excel-import/`.
+
+## ⚠ PARCELAMENTO-FIRST: o CONTRATO antes do documento (F2.3)
+
+O parcelamento nascia como efeito colateral de subir uma guia. Ele é um **contrato de dívida** de
+até 60 meses; a guia é evidência **mensal e opcional** — não existe em débito automático nem nas
+prestações de um acordo migrado de outra contabilidade. A tela inverteu junto com o backend.
+
+| onde | o quê |
+|---|---|
+| **aba Parcelamentos** | `+ Novo parcelamento` → `ParcelamentoWizard.jsx`. 3 passos, cria o contrato por `POST /parcelamentos/ingestao` **com `guideId: null`** |
+| **aba Guias** | `+ Subir Guia → PARCELAMENTO` → `guides/list/components/GuiaDeParcelamentoModal.jsx`. ANEXA uma guia a uma prestação de um contrato que já existe |
+
+**Regras em `lib/`, com teste próprio:** `wizardParcelamento.js` (27) · `cartaoParcelamento.js` (19)
+· `guides/lib/anexoParcelamento.js` (23). Os componentes só ligam.
+
+⚠ **A COMPETÊNCIA DA 1ª PARCELA É COLETADA, e não é a da parcela atual.** O backend grava
+`competenciaInicial = header.anoMesParcela` e deriva TODO o cronograma dela
+(`parcelaSync.calendarioDaParcela`). Mandar a competência da parcela ATUAL — que é o que o caminho
+guia-first faz — desloca o cronograma pelo número de prestações já pagas: num contrato migrado na
+23ª de 60 são **22 meses de erro em todo vencimento**, e é o vencimento que decide atraso quando não
+há guia. Sem ela e sem guia, o backend grava a sentinela `1970-01` e o cronograma nasce sem datas.
+
+⚠ **`saldoConsolidado` é INFORMATIVO e NUNCA vira lançamento.** No passo 3 ele aparece ao lado do que
+de fato será provisionado (`valor da parcela × restantes`), como **conferência**. A divergência entre
+os dois é **alerta, não bloqueio** — juros embutidos nas prestações são normais.
+
+⚠ **NÃO EXISTE CHECKBOX "salvar como padrão da modalidade", e a ausência é deliberada.**
+`memorizeMapaContaTributo` grava SEMPRE com `portalClientId: null` (escopo do escritório): preencher
+as contas de uma empresa já vira o padrão de todas, e o override por cliente existe na tabela mas
+ninguém o escreve. Um checkbox prometeria uma escolha que não existe e desmarcá-lo não faria nada.
+No lugar dele há uma frase permanente dizendo que a memória é global.
+
+⚠ **Primeira vez de uma modalidade** (`getContasProvisao` volta tudo em branco): o passo 3 abre
+DIRETO em modo edição. Tabela read-only vazia esperaria que o contador descobrisse sozinho que
+existe um link "Editar lançamentos".
+
+⚠ **`parcelasJaPagas` NÃO gera lançamento.** As N primeiras prestações viram `origemBaixa:
+"HISTORICO"` — vocabulário de uma coluna que já existia, não estado novo. Não houve pagamento nosso
+para lançar. O card conta quantas são (`contarHistoricas`) e diz "22 de 60 (22 históricas)": sem
+isso, um contrato migrado exibe 22 pagamentos que este escritório nunca lançou e alguém vai
+procurá-los no razão.
+
+⚠ **`parcela.competencia` NÃO VEM NO PAYLOAD.** `SELECT_PARCELA_PARA_QUADRO` traz `id`,
+`numeroParcela`, `vencimento`, `origemBaixa` e a guia — e é ele que alimenta `parcelasContratadas`.
+Quem precisa da competência a DERIVA do vencimento contratado (`anexoParcelamento.competenciaDaParcela`),
+que por construção cai dentro do mês da competência. Ler `parcela.competencia` devolve `undefined`
+em produção e deixa o campo do modal de anexo vazio — defeito encontrado no mock, que espelha o
+select real de propósito.
+
+### O que SAIU (R1), e por que cada um era o desenho antigo
+
+| removido | era |
+|---|---|
+| `Lançamentos → Funções → + Parcelamento Simples` (+ `renderParcelamentoModal.jsx`, `createParcelamentoSimples` mock/real, `handleCreateParcelamento`) | chamava `POST /entries/parcelamento`, **removida no backend** — o botão dava **404**. Criava N provisões `subtipo: "PARC_DAS"`; produção tem ZERO lançamentos com esse subtipo |
+| `ParcelamentoIngestaoModal` ("Registrar 1ª parcela") | modal-surpresa que abria SOZINHO depois de salvar uma guia |
+| `ParcelamentoEntradaModal` ("Novo parcelamento", 3 opções) | podia CRIAR o contrato a partir da guia, e forçava o tipo da guia a `"SIMPLES"` nos dois caminhos |
+| `ParcelaPaymentModal`, `GuideLinkParcelamentoModal` | UI das rotas `/parcelas/:num/pagar` e `/link-guide`, removidas no backend; nenhuma tinha chamador |
+| `getParcelamento`, `linkGuideToParcelamento`, `payParcela` (mock **e** real) | rotas removidas. Mock que sobrevive à rota que espelha é como um 404 chega à produção sem ninguém ver |
+
+⚠ **`ParcelamentoCreateModal` (V1, por template) ficou** — ele é o leftover que
+`apps/api/src/application/accounting/CLAUDE.md` marca como **decisão do dono**. Hoje ele é
+**inalcançável pela UI**: o item "+ Novo parcelamento…" do menu Funções depende da prop
+`parcelamentos`, que `renderCompanyDetailPage` **não passa** para a aba Lançamentos.
 
 ## Buscar pagamento da parcela — na LINHA, e a mesma rota das outras guias
 

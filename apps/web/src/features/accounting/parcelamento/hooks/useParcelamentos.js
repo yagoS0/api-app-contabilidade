@@ -81,11 +81,14 @@ export function useParcelamentos({ api, companyId, status = null }) {
   }
 
   // Q28 Fase 3: fila de conferência de parcelas.
+  //
+  // ⚠ O `catch { return []; }` SAIU DAQUI. Ele transformava falha de rede em "fila vazia", e o
+  // painel — que escondia a si mesmo quando a lista era vazia — produzia o MESMO pixel para
+  // "não há nada a conferir" e "não consegui perguntar". A recusa agora sobe, e
+  // `ConferenciaParcelasPanel` a mostra com o motivo e o "Tentar de novo".
   async function listConferencia() {
-    try {
-      const res = await api.getConferenciaParcelas(companyId);
-      return Array.isArray(res?.items) ? res.items : [];
-    } catch { return []; }
+    const res = await api.getConferenciaParcelas(companyId);
+    return Array.isArray(res?.items) ? res.items : [];
   }
   async function aprovarConferencia(guideIds) {
     setSaving(true); setError(null);
@@ -99,29 +102,13 @@ export function useParcelamentos({ api, companyId, status = null }) {
     } finally { setSaving(false); }
   }
 
-  async function linkGuide(parcId, { guideId, numeroParcela }) {
-    setSaving(true); setError(null);
-    try {
-      const res = await api.linkGuideToParcelamento(companyId, parcId, { guideId, numeroParcela });
-      await load();
-      return res;
-    } catch (err) {
-      setError(err?.message || "Falha ao vincular guia.");
-      throw err;
-    } finally { setSaving(false); }
-  }
-
-  async function payParcela(parcId, numeroParcela, { jurosValor, dataPagamento }) {
-    setSaving(true); setError(null);
-    try {
-      const res = await api.payParcela(companyId, parcId, numeroParcela, { jurosValor, dataPagamento });
-      await load();
-      return res;
-    } catch (err) {
-      setError(err?.message || "Falha ao confirmar pagamento.");
-      throw err;
-    } finally { setSaving(false); }
-  }
+  // ⚠ `linkGuide` E `payParcela` FORAM REMOVIDAS (F2.3), com as rotas que serviam:
+  //   · `POST /parcelamentos/:parcId/link-guide`
+  //   · `POST /parcelamentos/:parcId/parcelas/:num/pagar`
+  // As duas operavam sobre as linhas leves `tipo="PARCELA"` que só o V1 cria; produção não tem um
+  // parcelamento V1 e nenhuma tela as chamava. Hoje a guia se ANEXA pelo "+ Subir Guia →
+  // PARCELAMENTO" (que é `POST /parcelamentos/ingestao`, o mesmo `ingest` acima) e a baixa é uma
+  // só: `POST /parcelamentos/parcelas/:guideId/baixa`, na aba Parcelamento.
 
   async function rescindir(parcId, body = {}) {
     setSaving(true); setError(null);
@@ -149,7 +136,7 @@ export function useParcelamentos({ api, companyId, status = null }) {
   // apareceu na aba Parcelamento. Rotas e mock sempre estiveram de pé; era só o repasse.
   return {
     parcelamentos, loading, error, saving, load, create, ingest, getContasProvisao, consultarSerpro,
-    getConfig, saveConfig, linkGuide, payParcela, rescindir, vincularEntry,
+    getConfig, saveConfig, rescindir, vincularEntry,
     listConferencia, aprovarConferencia,
   };
 }

@@ -422,9 +422,8 @@ function App() {
           onImportOFX: accountingWorkspace.handleImportOFX,
           onPreviewExcel: accountingWorkspace.handlePreviewExcel,
           onImportExcel: accountingWorkspace.handleImportExcel,
-          onCreateParcelamento: accountingWorkspace.handleCreateParcelamento,
           accountingFunctions, // Q6: hook completo (functions, loading, saving, create/update/remove/apply)
-          parcelamentos,       // Q9: hook de parcelamentos (parcelamentos, create, linkGuide, payParcela, rescindir)
+          parcelamentos,       // Q9: hook de parcelamentos (parcelamentos, ingest, rescindir, conferência)
           savingEntry: accountingWorkspace.savingEntry,
           accounts: accountingWorkspace.chartOfAccountsState.accounts,
           onLoadAccounts: () => accountingWorkspace.loadChartOfAccounts(),

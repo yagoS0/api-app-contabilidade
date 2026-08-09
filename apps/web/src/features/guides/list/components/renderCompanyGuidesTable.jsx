@@ -3,7 +3,7 @@ import { createApiClient } from "../../../../api/client";
 import { Button } from "../../../../components/ui/Button";
 import { fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
-import { ParcelamentoIngestaoModal, ParcelamentoEntradaModal } from "../../../accounting/parcelamento/components/ParcelamentoModals";
+import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
@@ -124,7 +124,16 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
 }
 
 // Tipos sempre disponíveis (qualquer regime).
+//
+// ⚠ `PARCELAMENTO` É UM TIPO NORMAL DESTE MENU, e isso é a entrega R4. Ele não é um tipo de guia no
+// banco (a guia de uma parcela continua sendo SIMPLES/INSS/…): é o TIPO DE OPERAÇÃO — "esta guia é
+// evidência de uma prestação de um contrato que já existe" — e abre o modal em que o parcelamento
+// vem primeiro. O item anterior era uma entrada à parte, âmbar, chamada "Parcelamento…", que abria
+// um modal de três opções capaz de CRIAR o contrato a partir da guia: exatamente o guia-first que
+// esta fase inverteu.
 const GUIDE_TYPES = ["SIMPLES", "INSS", "FGTS", "DARF", "ISS", "PIS", "COFINS", "IRPJ", "CSLL", "OUTRA"];
+
+export const TIPO_UPLOAD_PARCELAMENTO = "PARCELAMENTO";
 
 // Filtro contextual: empresas Simples não têm IRPJ/CSLL/PIS/COFINS/ISS (são exclusivos de Presumidos).
 // Quando o regime não é conhecido, mostra tudo (comportamento conservador — usuário não fica travado).
@@ -136,7 +145,8 @@ const GUIDE_TYPES_BY_REGIME = {
 
 function getAvailableGuideTypes(regimeTributario) {
   const r = String(regimeTributario || "").trim().toUpperCase();
-  return GUIDE_TYPES_BY_REGIME[r] || GUIDE_TYPES;
+  // PARCELAMENTO vale para QUALQUER regime: um parcelamento de INSS existe em Presumido também.
+  return [...(GUIDE_TYPES_BY_REGIME[r] || GUIDE_TYPES), TIPO_UPLOAD_PARCELAMENTO];
 }
 
 const S = {
@@ -299,23 +309,27 @@ export function CompanyGuidesTable({
   // Novos: identificação/completar guia já existente + fetch do PDF para o iframe.
   onIdentifyGuide,
   onFetchGuidePdf,
-  // Q9.7: hook de parcelamentos + funções; quando setados, dispara modal de linking
-  // após identificação bem-sucedida da guia.
+  // Hook de parcelamentos: alimenta o "+ Subir Guia → PARCELAMENTO" (lista de contratos ativos +
+  // `ingest`, que é quem vincula a guia à prestação).
   parcelamentos,
-  accountingFunctions,
-  // Sugestão de contas nos campos D/C do modal de ingestão de parcelamento — mesmo
-  // autocomplete (plano de contas + históricos) usado em Lançamentos, Circular e OFX.
+  // Leva à criação do contrato (o wizard, na aba Parcelamentos) a partir do "＋ Criar novo…".
+  onCriarParcelamento,
+  // Sugestão de contas nos campos D/C — mesmo autocomplete usado em Lançamentos, Circular e OFX.
   accounts = [],
   onSearchHistoricos,
   onGetHistoricosByCode,
 }) {
-  // Q9.7: state do modal de linking (guia recém-identificada aguardando decisão de vincular)
-  const [linkingGuide, setLinkingGuide] = useState(null);
-  // Q28 Fase 1: modal de entrada (SERPRO × manual) + prefill vindo da consulta SERPRO (sem guia).
-  const [entradaOpen, setEntradaOpen] = useState(false);
-  const [serproPrefill, setSerproPrefill] = useState(null);
-  // Anexar a um parcelamento ATIVO existente: a guia subida vira a próxima parcela dele.
-  const [attachParc, setAttachParc] = useState(null);
+  // R4 — "+ Subir Guia → PARCELAMENTO": anexar uma guia a um contrato que JÁ EXISTE.
+  //
+  // ⚠ O QUE SAIU DAQUI (R1): `linkingGuide` (o modal-surpresa "Registrar 1ª parcela" que aparecia
+  // DEPOIS de salvar a guia), `entradaOpen`/`serproPrefill` (o modal "Novo parcelamento" de três
+  // opções) e `attachParc` (o desvio que subia a guia com tipo forçado e ainda confirmava o
+  // pagamento dela). Os três eram o desenho guia-first.
+  const [anexoParcelamentoOpen, setAnexoParcelamentoOpen] = useState(false);
+  const [anexoArquivo, setAnexoArquivo] = useState(null);
+  const [anexoParcelamentoId, setAnexoParcelamentoId] = useState("");
+  const [anexoSaving, setAnexoSaving] = useState(false);
+  const anexoFileInputRef = useRef(null);
   // "Marcar vazio": força recarga do dropdown + da lista de guias quando o estado muda.
   const [vazioRefreshKey, setVazioRefreshKey] = useState(0);
   async function refreshAfterVazio() {
@@ -353,7 +367,6 @@ export function CompanyGuidesTable({
 
   // Upload flow (modal split): tipo escolhido no dropdown + arquivo + estado de salvamento
   const [uploadTipo, setUploadTipo] = useState(null);  // "DAS"|"INSS"|... — null = modal fechado
-  const [uploadAsParcelamento, setUploadAsParcelamento] = useState(false); // Q22: upload→ingestão parcelamento
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -474,11 +487,19 @@ export function CompanyGuidesTable({
     setSelectedIds(new Set());
   }
 
-  // Fluxo novo de upload: usuário escolhe tipo no dropdown → file picker → modal split com PDF lado-a-lado
-  // Q22: asParcelamento=true → ao salvar, abre o modal de ingestão de parcelamento (não fecha só).
-  function handleStartUpload(tipo, asParcelamento = false) {
+  // Fluxo de upload: usuário escolhe tipo no dropdown → file picker → modal split com PDF lado-a-lado.
+  //
+  // ⚠ `PARCELAMENTO` NÃO É UM TIPO DE GUIA — é o tipo de OPERAÇÃO, e desvia para o modal em que o
+  // contrato vem primeiro (`GuiaDeParcelamentoModal`). Lá o PDF é escolhido DEPOIS do parcelamento,
+  // porque é o contrato que pré-preenche competência, vencimento e valor.
+  function handleStartUpload(tipo) {
     setUploadMenuOpen(false);
-    setUploadAsParcelamento(asParcelamento);
+    if (tipo === TIPO_UPLOAD_PARCELAMENTO) {
+      setAnexoArquivo(null);
+      setAnexoParcelamentoId("");
+      setAnexoParcelamentoOpen(true);
+      return;
+    }
     setUploadTipo(tipo);
     // Dispara file picker no próximo tick (precisa do input já no DOM)
     requestAnimationFrame(() => fileInputRef.current?.click());
@@ -500,16 +521,11 @@ export function CompanyGuidesTable({
     if (!uploadFile || !onUploadGuide) return { ok: false };
     const result = await onUploadGuide(uploadFile, { ...metadata, tipo: uploadTipo || metadata.tipo });
     if (result?.ok || (result && !result.needsMetadata)) {
-      // Sucesso: fecha modal
       setUploadFile(null);
       setUploadTipo(null);
-      // O checkbox do modal manda: o contador acabou de olhar o PDF. O `uploadAsParcelamento`
-      // (vindo do dropdown "Subir Guia → ... parcelamento") só semeia o valor inicial dele.
-      const isParc = metadata?.isParcelamento ?? uploadAsParcelamento;
-      if (isParc && result?.guide) {
-        setLinkingGuide(result.guide);
-      }
-      setUploadAsParcelamento(false);
+      // ⚠ NÃO HÁ MAIS MODAL-SURPRESA PÓS-SALVAR. Subir uma guia normal salva a guia e acaba: o
+      // "Registrar 1ª parcela do parcelamento" que abria sozinho aqui era o guia-first — ele fazia
+      // um contrato de até 60 meses nascer como efeito colateral de um upload.
       return { ok: true };
     }
     return { ok: false, message: result?.message || result?.error || "Falha ao enviar guia." };
@@ -518,7 +534,43 @@ export function CompanyGuidesTable({
   function handleCaptureCancel() {
     setUploadFile(null);
     setUploadTipo(null);
-    setUploadAsParcelamento(false);
+  }
+
+  // ─── R4: anexar guia a um parcelamento ────────────────────────────────────────────────────────
+  function handleAnexoFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) setAnexoArquivo(file);
+  }
+
+  async function handleAnexoSalvar({ metadata, header }) {
+    if (!onUploadGuide || !parcelamentos) return { ok: false, message: "Upload indisponível." };
+    setAnexoSaving(true);
+    try {
+      const result = await onUploadGuide(anexoArquivo, metadata);
+      const guide = result?.guide || result;
+      const guideId = guide?.guideId || guide?.id;
+      if (!guideId) {
+        return { ok: false, message: result?.message || result?.error || "A guia não foi criada — nada foi vinculado." };
+      }
+      // Vincula a guia à prestação do contrato. `POST /parcelamentos/ingestao` com o parcelamento
+      // já existente NÃO recria a provisão (`aberturaEntryId` já está setado) — ele só casa a guia
+      // com a parcela e grava a composição.
+      //
+      // ⚠ E SÓ ISSO. O caminho antigo chamava `onConfirmGuidePayment(gid)` logo aqui, dentro de um
+      // `try { } catch {}` mudo: anexar o documento CONFIRMAVA o pagamento dele, e quando essa
+      // confirmação falhava (mês fechado, por exemplo) ninguém ficava sabendo.
+      await parcelamentos.ingest({ guideId, header });
+      setAnexoParcelamentoOpen(false);
+      setAnexoArquivo(null);
+      setAnexoParcelamentoId("");
+      if (onRefresh) await onRefresh();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: err?.message || "Falha ao anexar a guia ao parcelamento." };
+    } finally {
+      setAnexoSaving(false);
+    }
   }
 
   // Fluxo de completar guia já existente (modal split com fetch do PDF)
@@ -529,21 +581,11 @@ export function CompanyGuidesTable({
     try {
       const result = await onIdentifyGuide(gid, metadata);
       if (result?.ok !== false) {
-        const guideAfter = { ...completingGuide, ...metadata, guideId: gid, id: gid };
-        // A escolha explícita do contador no modal vence. Antes, a heurística por tipo abria o
-        // modal de vínculo em TODA guia SIMPLES/INSS/DARF — inclusive nas que não são parcela.
-        // A heurística fica só como fallback pra quem chamar isto sem a flag.
-        let abrirVinculo;
-        if (metadata?.isParcelamento !== undefined) {
-          abrirVinculo = metadata.isParcelamento;
-        } else {
-          const tipoUpper = String(guideAfter.tipo || metadata?.tipo || "").toUpperCase();
-          abrirVinculo = ["SIMPLES", "INSS", "DARF", "PIS", "COFINS", "IRPJ", "CSLL", "ISS"].includes(tipoUpper);
-        }
-        // Q21: o modal de ingestão v2 não depende de accountingFunctions.
-        if (parcelamentos && abrirVinculo) {
-          setLinkingGuide(guideAfter);
-        }
+        // ⚠ A HEURÍSTICA DE FALLBACK POR TIPO SAIU (R1). Ela abria o modal de vínculo de
+        // parcelamento em TODA guia `SIMPLES|INSS|DARF|PIS|COFINS|IRPJ|CSLL|ISS` — ou seja, em
+        // praticamente toda guia do sistema — mesmo sem ninguém ter dito que aquilo era parcela.
+        // Completar uma guia agora completa a guia e acaba; anexar guia a parcelamento é um caminho
+        // próprio e explícito ("+ Subir Guia → PARCELAMENTO").
         setCompletingGuide(null);
         return { ok: true };
       }
@@ -587,7 +629,6 @@ export function CompanyGuidesTable({
         <GuideCaptureModal
           mode="upload"
           initialTipo={uploadTipo}
-          initialIsParcelamento={uploadAsParcelamento}
           pdfFile={uploadFile}
           onSave={handleCaptureSave}
           onClose={handleCaptureCancel}
@@ -668,15 +709,28 @@ export function CompanyGuidesTable({
                     }}>
                       Tipo de guia
                     </div>
+                    {/* ⚠ PARCELAMENTO é o ÚLTIMO da lista e um item NORMAL — sem cor própria, sem
+                        separador âmbar. O item antigo ("Parcelamento…", âmbar, fora da lista de
+                        tipos) sinalizava um caminho especial que criava contrato a partir de guia. */}
                     {availableUploadTypes.map((tipo) => (
                       <button
                         key={tipo}
                         type="button"
                         onClick={() => handleStartUpload(tipo)}
+                        disabled={tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos}
+                        title={tipo === TIPO_UPLOAD_PARCELAMENTO
+                          ? (parcelamentos
+                            ? "Anexa a guia a uma prestação de um parcelamento que já existe."
+                            : "Indisponível: os parcelamentos desta empresa não foram carregados.")
+                          : undefined}
                         style={{
                           display: "block", width: "100%", textAlign: "left",
                           padding: "8px 12px", background: "transparent", border: "none",
-                          color: "#F8F8F2", fontSize: "0.875rem", cursor: "pointer", fontWeight: 500,
+                          borderTop: tipo === TIPO_UPLOAD_PARCELAMENTO ? "1px solid #44475A" : "none",
+                          color: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "#6272A4" : "#F8F8F2",
+                          fontSize: "0.875rem",
+                          cursor: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "not-allowed" : "pointer",
+                          fontWeight: 500,
                         }}
                         onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
@@ -684,21 +738,6 @@ export function CompanyGuidesTable({
                         {tipo}
                       </button>
                     ))}
-                    {/* Q28: abre o modal de ENTRADA (consultar nº no SERPRO ou subir guia). */}
-                    <button
-                      type="button"
-                      onClick={() => { setUploadMenuOpen(false); setEntradaOpen(true); }}
-                      style={{
-                        display: "block", width: "100%", textAlign: "left",
-                        padding: "8px 12px", background: "transparent", border: "none",
-                        borderTop: "1px solid #44475A",
-                        color: "#FFB347", fontSize: "0.875rem", cursor: "pointer", fontWeight: 600,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                    >
-                      Parcelamento…
-                    </button>
                   </div>
                 )}
               </div>
@@ -949,45 +988,30 @@ export function CompanyGuidesTable({
         )}
       </div>
 
-      {/* Q28 Fase 1: porta de entrada do parcelamento — consultar nº no SERPRO ou subir guia. */}
-      {entradaOpen && parcelamentos && (
-        <ParcelamentoEntradaModal
-          parcelamentosAtivos={parcelamentos.parcelamentos || []}
-          onChooseAttach={(parc) => { setEntradaOpen(false); setAttachParc(parc); handleStartUpload("SIMPLES", true); }}
-          onConsultSerpro={parcelamentos.consultarSerpro}
-          onResolved={(prefill) => { setEntradaOpen(false); setSerproPrefill(prefill); }}
-          onChooseUpload={() => { setEntradaOpen(false); setAttachParc(null); handleStartUpload("SIMPLES", true); }}
-          onClose={() => setEntradaOpen(false)}
-        />
-      )}
-
-      {/* Q23/Q28: passo de config — provisão + pagamento. Com guia (manual) OU prefill SERPRO (sem guia). */}
-      {(linkingGuide || serproPrefill) && parcelamentos && (
-        <ParcelamentoIngestaoModal
-          guide={linkingGuide}
-          prefill={serproPrefill}
-          existingParc={attachParc}
-          saving={parcelamentos.saving}
-          getContasProvisao={parcelamentos.getContasProvisao}
-          accounts={accounts}
-          onSearchHistoricos={onSearchHistoricos}
-          onGetHistoricosByCode={onGetHistoricosByCode}
-          onSkip={() => { setLinkingGuide(null); setSerproPrefill(null); setAttachParc(null); }}
-          onClose={() => { setLinkingGuide(null); setSerproPrefill(null); setAttachParc(null); }}
-          onIngest={async (body) => {
-            // Propaga erro pro modal exibir (antes era engolido → "nada acontecia").
-            await parcelamentos.ingest(body);
-            // Anexo a parcelamento existente: contabiliza a parcela (gera a baixa "PARC X/Y").
-            const gid = linkingGuide?.guideId || linkingGuide?.id;
-            if (attachParc && gid && onConfirmGuidePayment) {
-              try { await onConfirmGuidePayment(gid); } catch { /* handler já exibe o erro (ex.: mês fechado) */ }
-            }
-            setLinkingGuide(null);
-            setSerproPrefill(null);
-            setAttachParc(null);
-            if (onRefresh) onRefresh();
-          }}
-        />
+      {/* R4 — "+ Subir Guia → PARCELAMENTO": o contrato primeiro, a guia como anexo dele. */}
+      {anexoParcelamentoOpen && parcelamentos && (
+        <>
+          <input
+            ref={anexoFileInputRef}
+            type="file"
+            accept="application/pdf"
+            style={{ display: "none" }}
+            onChange={handleAnexoFileChange}
+          />
+          <GuiaDeParcelamentoModal
+            parcelamentosAtivos={parcelamentos.parcelamentos || []}
+            guias={guides}
+            arquivo={anexoArquivo}
+            onEscolherArquivo={() => anexoFileInputRef.current?.click()}
+            /* "＋ Criar novo…" leva ao wizard, que vive na aba Parcelamentos — a mesma porta de
+               criação, sem uma segunda cópia do formulário aqui. */
+            onCriarNovoParcelamento={onCriarParcelamento ? () => { setAnexoParcelamentoOpen(false); onCriarParcelamento(); } : null}
+            parcelamentoIdInicial={anexoParcelamentoId}
+            saving={anexoSaving || uploadingGuide}
+            onSalvar={handleAnexoSalvar}
+            onClose={() => { setAnexoParcelamentoOpen(false); setAnexoArquivo(null); }}
+          />
+        </>
       )}
     </section>
   );

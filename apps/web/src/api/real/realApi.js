@@ -878,10 +878,10 @@ export function createRealApi() {
       const payload = await request(`/firm/companies/${companyId}/parcelamentos${suffix}`);
       return Array.isArray(payload?.data) ? payload.data : [];
     },
-    async getParcelamento(companyId, parcId) {
-      const payload = await request(`/firm/companies/${companyId}/parcelamentos/${parcId}`);
-      return payload?.data || null;
-    },
+    // ⚠ `getParcelamento` FOI REMOVIDA (F2.3), com a rota `GET /parcelamentos/:parcId`. Ela devolvia
+    // o MESMO objeto decorado que `listParcelamentos` já devolve para a lista inteira e não tinha um
+    // chamador sequer — enquanto existia, era o curinga que engolia as rotas literais de
+    // `/parcelamentos/` registradas depois dela.
     async createParcelamento(companyId, body) {
       return request(`/firm/companies/${companyId}/parcelamentos`, {
         method: "POST",
@@ -926,18 +926,11 @@ export function createRealApi() {
         body: JSON.stringify({ guideIds }),
       });
     },
-    async linkGuideToParcelamento(companyId, parcId, { guideId, numeroParcela }) {
-      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/link-guide`, {
-        method: "POST",
-        body: JSON.stringify({ guideId, numeroParcela }),
-      });
-    },
-    async payParcela(companyId, parcId, numeroParcela, { jurosValor, dataPagamento }) {
-      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/parcelas/${numeroParcela}/pagar`, {
-        method: "POST",
-        body: JSON.stringify({ jurosValor, dataPagamento }),
-      });
-    },
+    // ⚠ `linkGuideToParcelamento` E `payParcela` FORAM REMOVIDAS (F2.3), com as rotas
+    // `POST /parcelamentos/:parcId/link-guide` e `POST /parcelamentos/:parcId/parcelas/:num/pagar`.
+    // As duas operavam sobre as linhas leves `tipo="PARCELA"` que só o V1 cria; produção não tem um
+    // parcelamento V1 e nenhuma tela as chamava. Vincular guia hoje é `ingestParcelamento` com
+    // `guideId`; a baixa é `lancarBaixaParcela`.
     async rescindirParcelamento(companyId, parcId, { dataRescisao, observacoes, rescisaoLines } = {}) {
       return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/rescindir`, {
         method: "POST",
@@ -1091,13 +1084,11 @@ export function createRealApi() {
         body: JSON.stringify(input),
       });
     },
-    // Cria N parcelas de um parcelamento (Simples Nacional, INSS, etc.) em transação.
-    async createParcelamentoSimples(companyId, payload) {
-      return request(`/firm/companies/${companyId}/entries/parcelamento`, {
-        method: "POST",
-        body: JSON.stringify(payload || {}),
-      });
-    },
+    // ⚠ `createParcelamentoSimples` FOI REMOVIDA (F2.3). Ela chamava
+    // `POST /firm/companies/:id/entries/parcelamento`, uma rota que **não existe mais** no backend —
+    // o botão que a acionava ("Lançamentos → Funções → + Parcelamento Simples") dava 404. Ela criava
+    // N provisões com `subtipo: "PARC_DAS"`, e produção tem ZERO lançamentos com esse subtipo: a
+    // rota nunca foi usada. Parcelamento hoje é CONTRATO, criado por `ingestParcelamento`.
     // Matriz "empresa × tipo de guia" para a página de envio em lote.
     async getBatchEmailReport(competencia) {
       const q = competencia ? `?competencia=${encodeURIComponent(competencia)}` : "";
