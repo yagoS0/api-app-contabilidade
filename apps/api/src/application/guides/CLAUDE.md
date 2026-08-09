@@ -9,7 +9,13 @@ status de pagamento/e-mail, lock de captura e envio.
   A guia do Simples é `tipo="SIMPLES"` (a coluna/seção de UI chama "DAS").
 - `status`: PENDING|PROCESSING|PROCESSED|NEEDS_REVIEW|ERROR|**VAZIO**.
   **VAZIO (Q17)** = marcador "não há guia neste mês" (sem PDF) — ausência confirmada.
-- `emailStatus`: PENDING|SENDING|SENT|ERROR. `paymentStatus`: OPEN|PAID|OVERDUE.
+- `emailStatus`: PENDING|SENDING|SENT|ERROR — **e NULL**. `paymentStatus`: OPEN|PAID|OVERDUE.
+  ⚠ **NULL é estado real, não ausência de dado.** A coluna é `String?` **sem `@default`**: guia que
+  passa por `GuideService` nasce `"PENDING"`, mas a **DARF consolidada do LP** é criada direto por
+  `LucroPresumidoProvisaoService` e nasce NULL. E **`IN` do SQL nunca casa com NULL** — foi assim
+  que o envio em lote passou a pular essa guia em silêncio, oferecendo-a na matriz e respondendo
+  `ok: true, sent: 0`. Quem precisa perguntar "ainda pode ser enviada?" usa
+  **`whereGuiaPendenteDeEnvio()`** (`guideContract.js`), nunca um `in` escrito à mão.
 - `valorOriginal` = valor da 1ª captura (imutável em recálculo).
 - **Confirmar pagamento** (`POST /firm/guides/:id/confirm-payment` → `markGuidePaidManual`): seta
   `paymentStatus=PAID`. **Q23:** se a guia é de **parcelamento** (`parcelamentoId`), também gera o

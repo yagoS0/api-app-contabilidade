@@ -5,6 +5,7 @@ import { EmailService } from "../infrastructure/mail/EmailService.js";
 import { releaseGuideLock, tryAcquireGuideLock } from "../application/guides/GuideLockService.js";
 import { resolveCompanyNotificationEmail } from "../application/guides/GuideScheduledEmailService.js";
 import { guideTypeEmailLabel } from "../application/guides/guideEmailCopy.js";
+import { whereGuiaPendenteDeEnvio } from "../application/guides/guideContract.js";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -154,14 +155,12 @@ export async function runGuideEmailWorkerOnce(options = {}) {
   if (!locked) return { skipped: true, reason: "lock_active" };
   try {
     const now = new Date();
+    // Mesma pergunta do envio em lote, mesma fonte (`guideContract`). A diferença é só o `now`:
+    // aqui guia em ERROR espera a janela de retry; no envio manual, não.
     const guides = await prisma.guide.findMany({
       where: {
         status: "PROCESSED",
-        OR: [
-          { emailStatus: null },
-          { emailStatus: "PENDING" },
-          { emailStatus: "ERROR", emailNextRetryAt: { lte: now } },
-        ],
+        ...whereGuiaPendenteDeEnvio(now),
       },
       orderBy: { updatedAt: "asc" },
       take: batchSize,

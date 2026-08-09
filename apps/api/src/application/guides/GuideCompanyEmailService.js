@@ -7,6 +7,7 @@ import { EmailService } from "../../infrastructure/mail/EmailService.js";
 import { getGuidePdfBuffer } from "./GuideService.js";
 import { guideTypeEmailLabel } from "./guideEmailCopy.js";
 import { resolveCompanyNotificationEmail } from "./GuideScheduledEmailService.js";
+import { whereGuiaPendenteDeEnvio } from "./guideContract.js";
 
 function safeTempName(name) {
   return String(name || "guia.pdf").replace(/[\\/]+/g, "-");
@@ -263,13 +264,20 @@ export async function sendCompanyGuidesEmail({ portalClientId, competencia }) {
     throw err;
   }
 
-  // Busca guides PENDING/ERROR da competência específica.
+  // Guias da competência que ainda podem ser enviadas.
+  //
+  // ⚠ A regra vem do `guideContract`, e o `emailStatus` NULL entra. Aqui estava escrito
+  // `{ in: ["PENDING","ERROR"] }`, e `IN` do SQL não casa com NULL: a DARF consolidada do Lucro
+  // Presumido — a única guia que nasce sem `emailStatus` — era oferecida pela matriz do lote e
+  // depois excluída dos anexos, com a rota respondendo `ok: true, sent: 0`.
+  //
+  // Sem `retryAntesDe`: envio manual não espera janela de retry. Quem clicou quer agora.
   const guides = await prisma.guide.findMany({
     where: {
       portalClientId: portal.id,
       competencia,
       status: "PROCESSED",
-      emailStatus: { in: ["PENDING", "ERROR"] },
+      ...whereGuiaPendenteDeEnvio(),
     },
     orderBy: { updatedAt: "asc" },
   });

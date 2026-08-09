@@ -82,6 +82,14 @@ export async function provisionarLpDaDeclaracao({
       sourceFileId,
       status: "PROCESSED",
       paymentStatus: "OPEN",
+      // ⚠ SÓ NO `create`. A coluna é `String?` sem `@default`, e esta era a única guia do sistema
+      // que nascia NULL — toda outra passa por `GuideService`, que grava "PENDING". O NULL fazia o
+      // envio em lote pular a guia em silêncio (`IN` do SQL não casa com NULL).
+      //
+      // ⚠ E NUNCA no `update`: a recaptura do LP roda de novo sobre a mesma guia, e reescrever o
+      // `emailStatus` aqui devolveria para "PENDING" uma guia já enviada — o contador reenviaria
+      // o que o cliente já recebeu.
+      emailStatus: "PENDING",
       extracted,
     },
     update: {

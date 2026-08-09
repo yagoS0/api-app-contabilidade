@@ -47,6 +47,38 @@ export const WHERE_GUIA_DE_PARCELAMENTO = Object.freeze({ parcelamentoId: { not:
 export const WHERE_GUIA_SEM_PARCELAMENTO = Object.freeze({ parcelamentoId: null });
 
 /**
+ * "Esta guia ainda pode ser enviada?", do lado do banco.
+ *
+ * ⚠ **`emailStatus` NULL CONTA COMO PENDENTE**, e esquecer isso custou envio silenciosamente não
+ * feito. A coluna é `String?` **sem `@default`**: guia que passa por `GuideService` nasce
+ * `"PENDING"`, mas a DARF consolidada do Lucro Presumido é criada direto por
+ * `LucroPresumidoProvisaoService` e nascia **NULL**.
+ *
+ * E `IN` do SQL **nunca casa com NULL**. Então `{ in: ["PENDING","ERROR"] }` excluía essa guia dos
+ * anexos — enquanto a matriz do envio em lote a INCLUI e a oferece como pendente. O contador
+ * clicava, a rota respondia `ok: true, sent: 0`, e a célula continuava "📄 guia". Clicar de novo
+ * repetia o nada. **Sucesso reportado sobre trabalho não feito**, que é a pior forma do erro.
+ *
+ * Eram três leituras da mesma pergunta (o laço automático, a matriz e o envio em lote) e só uma
+ * estava errada — exatamente o modo de falha que os filtros acima existem para impedir.
+ *
+ * @param {Date|null} [retryAntesDe] informado, guia em `ERROR` só entra se `emailNextRetryAt` já
+ *   venceu. É a trava do laço AUTOMÁTICO. O envio manual **não** a usa, de propósito: quem clicou
+ *   quer agora, e adiar sem dizer por quê seria o mesmo defeito com outra roupa.
+ */
+export function whereGuiaPendenteDeEnvio(retryAntesDe = null) {
+  return {
+    OR: [
+      { emailStatus: null },
+      { emailStatus: "PENDING" },
+      retryAntesDe
+        ? { emailStatus: "ERROR", emailNextRetryAt: { lte: retryAntesDe } }
+        : { emailStatus: "ERROR" },
+    ],
+  };
+}
+
+/**
  * O que se precisa saber do parcelamento para NOMEAR a guia na tela.
  *
  * ⚠ Sem isto a resposta trazia `parcelamentoId` (coluna escalar da própria guia, sempre presente) e
