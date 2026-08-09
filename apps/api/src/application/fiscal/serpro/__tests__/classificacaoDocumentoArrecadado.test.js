@@ -100,8 +100,15 @@ describe("⚠ código × texto: o texto confere, nunca classifica", () => {
     expect(c.encargoCorrente).toBe(7.97);
   });
 
-  it("a semente cobre os quatro códigos vistos nos comprovantes reais", () => {
-    expect(Object.keys(CODIGOS_TJLP_PARCELAMENTO).sort()).toEqual(["0380", "0387", "0389", "0391"]);
+  it("a semente cobre os códigos vistos em evidência real", () => {
+    // ⚠ ERAM QUATRO, COM ZERO À ESQUERDA. Mudou em 2026-08-09 por evidência nova, não por gosto:
+    // o probe do `PAGAMENTOS71` rodou contra a produção (contribuinte 55387580000103) e mostrou
+    // que a API devolve os códigos SEM o zero — e trouxe um quinto, `16` (TJLP IRRF), que os
+    // comprovantes em PDF que originaram esta lista não tinham.
+    //
+    // A forma canônica passou a ser a da API. Quem compara passa por `normalizarCodigoReceita`,
+    // então o PDF (que imprime "0380") continua casando. Ver `codigoTjlpNormalizado.test.js`.
+    expect(Object.keys(CODIGOS_TJLP_PARCELAMENTO).sort()).toEqual(["16", "380", "387", "389", "391"]);
   });
 });
 

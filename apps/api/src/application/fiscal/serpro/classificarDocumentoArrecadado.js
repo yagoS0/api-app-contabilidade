@@ -29,11 +29,33 @@ const r2 = (n) => Math.round(n * 100) / 100;
  * texto (é exatamente o que `codigo_desconhecido_com_texto_de_parcelamento` recusa a fazer).
  */
 export const CODIGOS_TJLP_PARCELAMENTO = Object.freeze({
-  "0380": "TJLP - IRPJ - Parcelamentos",
-  "0389": "TJLP - PIS - Parcelamentos",
-  "0391": "TJLP - CSLL - Parcelamentos",
-  "0387": "TJLP - COFINS - Parcelamentos",
+  "380": "TJLP IRPJ - Parcelamento",
+  "389": "TJLP PIS - Parcelamento",
+  "391": "TJLP CSLL - Parcelamento",
+  "387": "TJLP Cofins - Parcelamento",
+  // Acrescentado em 2026-08-09 com evidência: aparece no PAGAMENTOS71 da SINTROPIA, nos documentos
+  // 7032614056493560 e 7032617226440598, sempre ao lado do IRRF 3208.
+  "16": "TJLP IRRF - Parcelamento",
 });
+
+/**
+ * ⚠ AS DUAS FONTES ESCREVEM O MESMO CÓDIGO DE FORMAS DIFERENTES, e isso já era uma bomba armada.
+ *
+ * O PDF do comprovante imprime **com zero à esquerda** (`"0380"`), e é de lá que
+ * `parseComposicaoComprovante` extrai. O `PAGAMENTOS71` devolve **sem** (`"380"`, e `"16"` para o
+ * TJLP do IRRF). Comparar cru faria `Object.hasOwn(tabela, "380")` dar **false**: todo item de
+ * parcelamento vindo da consulta escaparia da classificação e o documento cairia em
+ * `RECOLHIMENTO_EM_ATRASO` — amortização de parcelamento virando despesa de acréscimo, sem um
+ * aviso. A falha seria silenciosa porque "tem juros" é verdade nos dois casos.
+ *
+ * A forma canônica aqui é **sem zero à esquerda**, que é a que a API devolve. Quem comparar código
+ * de receita neste projeto passa por aqui.
+ */
+export function normalizarCodigoReceita(codigo) {
+  const so = String(codigo ?? "").replace(/\D/g, "");
+  if (!so) return "";
+  return so.replace(/^0+/, "") || "0";
+}
 
 export const TIPO_DOCUMENTO = Object.freeze({
   PARCELA_PARCELAMENTO: "PARCELA_PARCELAMENTO",
@@ -66,7 +88,11 @@ export function classificarDocumentoArrecadado(composicao, { codigosTjlp = CODIG
   }
 
   const itens = composicao.itens;
-  const eTjlp = (i) => Object.hasOwn(codigosTjlp, i.codigo);
+  // ⚠ SEMPRE normalizado dos DOIS lados: a tabela injetada pode vir do PDF (com zero à esquerda) e
+  // o item pode vir do PAGAMENTOS71 (sem). Comparar cru é o defeito descrito em
+  // `normalizarCodigoReceita`.
+  const tabelaNormalizada = new Set(Object.keys(codigosTjlp).map(normalizarCodigoReceita));
+  const eTjlp = (i) => tabelaNormalizada.has(normalizarCodigoReceita(i.codigo));
   const itensTjlp = itens.filter(eTjlp);
   const itensTributo = itens.filter((i) => !eTjlp(i));
 
