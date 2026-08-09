@@ -69,6 +69,19 @@ describe("GET /parcelamentos/* — literais alcançáveis, sem curinga na frente
     expect(prisma.parcela.findMany).toHaveBeenCalledTimes(1);
   });
 
+  // A fila da prestação SEM GUIA — a literal nova. Mesma disciplina: ela é a única porta de onde
+  // sai o `parcelaId` da baixa por declaração; engolida por um curinga, a baixa volta a ser
+  // inalcançável e o sintoma seria um 404 falando de parcelamento inexistente.
+  it("parcelas-sem-guia-pendentes NÃO é engolida por um curinga", async () => {
+    prisma.parcela.findMany.mockResolvedValue([]);
+
+    const res = await request(makeApp()).get("/firm/companies/p1/parcelamentos/parcelas-sem-guia-pendentes");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, parcelas: [] });
+    expect(prisma.parcela.findMany).toHaveBeenCalledTimes(1);
+  });
+
   it("contas-provisao NÃO é engolida por um curinga", async () => {
     const res = await request(makeApp()).get("/firm/companies/p1/parcelamentos/contas-provisao?tipo=PARCSN");
 

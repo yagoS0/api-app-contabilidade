@@ -62,8 +62,17 @@ describe("o 'Dar baixa' do card responde mesmo quando não há o que baixar", ()
     await act(async () => { fireEvent.click(darBaixaDoCard()); });
 
     expect(screen.getByText(/Nenhuma parcela de OUTRO 2026/i)).toBeTruthy();
-    // ⚠ E NOMEIA A CAPACIDADE QUE FALTA, em vez de deixar o contador procurando o que fez de errado.
-    expect(screen.getByText(/ainda não existe no sistema/i)).toBeTruthy();
+    // ⚠ ESTA ASSERÇÃO MUDOU JUNTO COM A CAPACIDADE, e a mudança é o ponto.
+    //
+    // Ela exigia a frase "ainda não existe no sistema" — a resposta honesta ENQUANTO a baixa sem
+    // documento de fato não existia. Com a fila "Prestações vencidas sem guia" no ar, aquela frase
+    // virou MENTIRA: mandaria o contador embora convencido de que não há saída, com a saída na
+    // mesma tela, logo abaixo. O que a tela deve continuar fazendo é o que sempre fez — não
+    // esconder o vazio e dizer PARA ONDE IR.
+    // Duas ocorrências, e as duas importam: o aviso APONTA a outra fila, e a outra fila EXISTE.
+    expect(screen.getAllByText(/Prestações vencidas sem guia/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/onde a baixa é declarada por você/i)).toBeTruthy();
+    expect(screen.queryByText(/ainda não existe no sistema/i)).toBeNull();
   });
 
   // A afirmação falsa que existia: "Destacadas: as do contrato que você clicou", com zero destacadas.

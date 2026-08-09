@@ -3623,6 +3623,45 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
+  // ⚠ A OUTRA FILA — e ela responde OUTRA PERGUNTA, de propósito.
+  //
+  // A de cima diz *"a guia foi paga, falta lançar"*: existe um SINAL EXTERNO (o `paymentStatus`
+  // que veio do SERPRO) e ela só repete o que ele diz. Esta diz *"esta prestação venceu e não há
+  // guia; você declara que foi debitada?"* — não há sinal nenhum, a evidência é a declaração do
+  // contador, e é a `POST .../parcelas/:parcelaId/baixa-manual` que a recebe.
+  //
+  // Sem esta rota aquela baixa é inalcançável: não havia de onde tirar o `parcelaId` — a fila de
+  // cima filtra por `guia`, e prestação sem guia não tem por onde entrar nela. Um contrato inteiro
+  // em débito automático ficava com fila vazia para sempre, com 60 prestações não baixáveis.
+  //
+  // ⚠ O CRITÉRIO NÃO MORA AQUI. `whereParcelaSemGuiaPendente` + `linhaDaFilaSemGuia` vivem em
+  // `recalculoParcelamento.js`, junto de `quadroDasParcelas` e do `SELECT_PARCELA_PARA_QUADRO` que
+  // esta rota REUSA (com `competencia` e `valorPrevisto`, que passaram a sair de lá). Escrever o
+  // filtro na rota criaria a terceira definição de atraso do módulo.
+  //
+  // ⚠ Devolve a linha COMPLETA (prestação, competência, valor e o contrato) numa resposta só —
+  // sem isso o front faria uma chamada ao contrato por linha, e são até 60 por acordo.
+  router.get("/parcelamentos/parcelas-sem-guia-pendentes", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    try {
+      const {
+        whereParcelaSemGuiaPendente, SELECT_PARCELA_FILA_SEM_GUIA, linhaDaFilaSemGuia,
+      } = await import("../../application/accounting/parcelamento/recalculoParcelamento.js");
+      const agora = new Date();
+      const pendentes = await prisma.parcela.findMany({
+        where: whereParcelaSemGuiaPendente({ portalClientId, agora }),
+        select: SELECT_PARCELA_FILA_SEM_GUIA,
+        // A mais antiga primeiro: é a que está mais perto de contar para a regra de rescisão.
+        orderBy: [{ vencimento: "asc" }, { numeroParcela: "asc" }],
+        take: 200,
+      });
+      return res.json({ ok: true, parcelas: pendentes.map((p) => linhaDaFilaSemGuia(p, agora)) });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar parcelas sem guia pendentes de baixa");
+      return res.status(500).json({ ok: false, error: "internal_error" });
+    }
+  });
+
   // ⚠ `GET /parcelamentos/:parcId` FOI REMOVIDA (F2.3), e com ela o `getParcelamento` do
   // `ParcelamentoService`. Ela devolvia o MESMO objeto decorado que `GET /parcelamentos` já devolve
   // para a lista inteira, e não tinha um chamador sequer — o wrapper existia no cliente HTTP do

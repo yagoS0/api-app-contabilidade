@@ -454,6 +454,25 @@ export function createRealApi() {
     async lancarBaixaParcela(companyId, guideId) {
       return request(`/firm/companies/${companyId}/parcelamentos/parcelas/${guideId}/baixa`, { method: "POST" });
     },
+    // ⚠ A OUTRA FILA — prestação SEM guia, vencida e sem baixa. Ela responde outra pergunta: aqui
+    // não há `paymentStatus` do SERPRO dizendo que foi pago, porque não há documento nenhum
+    // (débito automático). É a única porta de onde sai o `parcelaId` da baixa por declaração.
+    async listParcelasSemGuiaPendentes(companyId) {
+      return request(`/firm/companies/${companyId}/parcelamentos/parcelas-sem-guia-pendentes`);
+    },
+    // ⚠ `totalConferido` é OBRIGATÓRIO — o servidor recalcula `principal + juros + multa` e recusa
+    // com 409 `CONFERENCIA_DIVERGENTE` se não bater. Ele NÃO deriva o acréscimo por subtração.
+    async lancarBaixaManualParcela(companyId, parcelaId, body = {}) {
+      return request(`/firm/companies/${companyId}/parcelamentos/parcelas/${parcelaId}/baixa-manual`, {
+        method: "POST",
+        body: JSON.stringify({
+          dataPagamento: body.dataPagamento ?? null,
+          valorJuros: body.valorJuros ?? 0,
+          valorMulta: body.valorMulta ?? 0,
+          totalConferido: body.totalConferido,
+        }),
+      });
+    },
     // Busca o comprovante no SERPRO e só REGISTRA (não lança) — a baixa segue sendo do contador.
     async buscarPagamentoGuia(guideId) {
       return request(`/firm/guides/${guideId}/buscar-pagamento`, { method: "POST" });

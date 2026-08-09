@@ -14,6 +14,7 @@
 
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { avaliarRiscoRescisao } from "./riscoRescisao.js";
+import { estadoEmAberto, PARCELA_ESTADOS } from "./parcelaStateMachine.js";
 
 /**
  * A prestação está QUITADA para efeito da regra de rescisão?
@@ -98,14 +99,149 @@ export function quadroDasParcelas(parcelas, { status = null, agora = new Date() 
   };
 }
 
-/** O que as derivações precisam ler de cada parcela — uma lista só, para não divergirem. */
+/**
+ * O que as derivações precisam ler de cada parcela — uma lista só, para não divergirem.
+ *
+ * ⚠ `competencia` e `valorPrevisto` ENTRARAM AQUI, e não numa segunda leitura. Os dois são fato do
+ * CONTRATO (que prestação é, quanto ela vale), da mesma natureza de `numeroParcela`/`vencimento`
+ * que já estavam — e a ausência do primeiro já mordeu: `parcelasContratadas` alimenta a tela, o
+ * modal de anexo lia `parcela.competencia` e recebia `undefined` em produção, com o campo nascendo
+ * vazio. A fila de prestações SEM GUIA (abaixo) precisa dos dois para renderizar a linha inteira;
+ * lê-los num `select` próprio seria a segunda fonte que diverge na primeira mudança de coluna.
+ *
+ * ⚠ `valorPrevisto` é `Decimal` do Prisma — quem o usa como número converte (`Number(...)`), como
+ * `sincronizarParcelas` e `gerarPagamentoParcelaManual` já fazem.
+ */
 export const SELECT_PARCELA_PARA_QUADRO = Object.freeze({
   id: true,
   numeroParcela: true,
+  competencia: true,
   vencimento: true,
+  valorPrevisto: true,
   origemBaixa: true,
   guia: { select: { id: true, vencimento: true, paymentStatus: true, baixada: true } },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A FILA DA PRESTAÇÃO **SEM GUIA** — a outra pergunta, e ela não é a mesma da fila que já existe.
+//
+// `/parcelamentos/parcelas-pendentes-baixa` responde *"a guia foi paga, falta lançar"*: há um SINAL
+// EXTERNO (o `paymentStatus` que veio do SERPRO) e a fila só repete o que ele diz. Ela filtra por
+// `guia: { paymentStatus: "PAID", … }` — prestação sem guia não tem por onde entrar nela, e um
+// contrato inteiro em débito automático fica com fila vazia para sempre.
+//
+// Esta responde *"esta prestação venceu e não há guia; você declara que foi debitada?"*. Não há
+// sinal nenhum: a evidência é a declaração do contador, e é por isso que a resposta desta fila
+// nunca pode ser apresentada como se fosse a da outra.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fim do dia CIVIL de `agora`.
+ *
+ * ⚠ É SÓ A JANELA DA FILA, NÃO UMA DEFINIÇÃO DE ATRASO. Quem diz se a prestação está vencida
+ * continua sendo `estadoEmAberto` (`parcelaStateMachine.js`), o mesmo predicado
+ * (`vencimento < agora`) que `avaliarRiscoRescisao` usa na linha 58 do `riscoRescisao.js`. O que
+ * este fim-de-dia acrescenta é EXCLUSIVAMENTE a prestação que vence HOJE — que no débito
+ * automático é justamente a que o contador tem em mãos, e que o projeto já trata como "a vencer"
+ * (não vencida) em `circular/lib/estadoGuia.js`. Ela entra na fila e sai rotulada `VENCE_HOJE`,
+ * nunca como atraso.
+ */
+export function fimDoDiaDe(agora = new Date()) {
+  const d = new Date(agora);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+/**
+ * O critério de "entra na fila", como DADO — para que a rota, o teste e um eventual segundo
+ * consumidor leiam a mesma coisa.
+ *
+ * As três condições, e de onde cada uma vem:
+ *
+ * | condição | de onde |
+ * |---|---|
+ * | `guiaId: null` | é a pré-condição da própria baixa por declaração: `gerarPagamentoParcelaManual` recusa com `parcela_tem_guia` e aponta o outro caminho. Listar prestação com guia aqui seria oferecer o botão que o servidor recusa |
+ * | `origemBaixa: null` | é o predicado de quitação da parcela sem guia (`parcelaRowQuitada` só pergunta isso), e é a MESMA coluna da reserva atômica da baixa. Cobre `MANUAL`, `DEBITO_AUTOMATICO` e `HISTORICO` de uma vez |
+ * | `vencimento <= fim de hoje` | vencida pelo predicado de sempre, mais a que vence hoje (ver `fimDoDiaDe`). Prestação futura fica fora: ela não é "não paga", é "ainda não devida" — a mesma recusa que `avaliarRiscoRescisao` já faz |
+ *
+ * ⚠ Prestação SEM VENCIMENTO fica de fora, e isso é o contrário de esconder: sem data não se
+ * afirma que venceu (`competenciaInicial` sentinela `1970-01` faz o cronograma nascer sem datas).
+ * Ela continua contada em `parcelasSemEvidencia`, no card do contrato, com o nome dela.
+ *
+ * ⚠ Parcelamento RESCINDIDO fica de fora pela MESMA decisão de `quadroDasParcelas` — lá o risco é
+ * `null` porque "não há mais o que prevenir". Uma fila de trabalho sobre um acordo morto seria
+ * trabalho inventado.
+ */
+export function whereParcelaSemGuiaPendente({ portalClientId = null, agora = new Date() } = {}) {
+  return {
+    ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),
+    guiaId: null,
+    origemBaixa: null,
+    vencimento: { not: null, lte: fimDoDiaDe(agora) },
+    parcelamento: { is: { status: { not: "RESCINDIDO" } } },
+  };
+}
+
+/** O que a linha da fila precisa além do quadro: o CONTRATO, para o front não fazer N+1. */
+export const SELECT_PARCELA_FILA_SEM_GUIA = Object.freeze({
+  ...SELECT_PARCELA_PARA_QUADRO,
+  parcelamentoId: true,
+  parcelamento: {
+    select: {
+      id: true, label: true, tipo: true, kind: true, numParcelas: true,
+      numeroParcelamento: true, formaPagamento: true, status: true,
+      // ⚠ `aberturaEntryId` NÃO é enfeite: sem provisão de abertura a baixa é recusada
+      // (`provisao_inexistente`), e o contador merece saber disso ANTES de preencher o formulário.
+      aberturaEntryId: true,
+    },
+  },
+});
+
+/** `VENCIDA` (o predicado de sempre) ou `VENCE_HOJE` (só a janela da fila). */
+export function situacaoDaPrestacaoSemGuia(parcela, agora = new Date()) {
+  return estadoEmAberto(parcela?.vencimento, agora) === PARCELA_ESTADOS.EM_ATRASO
+    ? "VENCIDA"
+    : "VENCE_HOJE";
+}
+
+/**
+ * A linha da fila, pronta para renderizar — parcela, competência, valor e contrato numa resposta só.
+ *
+ * ⚠ `podeBaixar` REPETE AS GUARDAS DA ROTA DE BAIXA, e não as substitui. Quem recusa continua sendo
+ * `gerarPagamentoParcelaManual` (é ele que enxerga o estado do momento do clique); isto é
+ * antecipação, para que o botão nunca fique desabilitado sem o motivo à vista.
+ */
+export function linhaDaFilaSemGuia(p, agora = new Date()) {
+  const parc = p?.parcelamento || null;
+  const valorPrevisto = p?.valorPrevisto != null ? Number(p.valorPrevisto) : null;
+  const semProvisao = !parc?.aberturaEntryId;
+  const semValor = !(Number.isFinite(valorPrevisto) && valorPrevisto > 0);
+  return {
+    parcelaId: p.id,
+    numeroParcela: p.numeroParcela ?? null,
+    competencia: p.competencia ?? null,
+    vencimento: p.vencimento ?? null,
+    // O PRINCIPAL vem do contrato — a tela o mostra como leitura, nunca como campo editável, pelo
+    // mesmo motivo que o serviço o lê de `parcelas.valorPrevisto` e não do body.
+    valorPrevisto,
+    situacao: situacaoDaPrestacaoSemGuia(p, agora),
+    parcelamentoId: p.parcelamentoId ?? parc?.id ?? null,
+    parcelamento: parc
+      ? {
+        id: parc.id,
+        label: parc.label,
+        tipo: parc.tipo || parc.kind || null,
+        numParcelas: parc.numParcelas ?? null,
+        numeroParcelamento: parc.numeroParcelamento ?? null,
+        // Já exibido no card; viaja aqui para a fila poder dizer "é assim que este contrato paga".
+        formaPagamento: parc.formaPagamento ?? null,
+        temProvisaoDeAbertura: Boolean(parc.aberturaEntryId),
+      }
+      : null,
+    podeBaixar: !semProvisao && !semValor,
+    motivoBloqueio: semProvisao ? "provisao_inexistente" : (semValor ? "sem_valor_previsto" : null),
+  };
+}
 
 /**
  * Recalcula o quadro do parcelamento DEPOIS de um estorno (ou de qualquer mudança de baixa).

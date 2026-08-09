@@ -15,17 +15,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ParcelamentosList, ConferenciaParcelasPanel } from "../components/ParcelamentoModals";
 import { ParcelamentoWizard } from "../components/ParcelamentoWizard";
+import { BaixaManualParcelaModal } from "../components/BaixaManualParcelaModal";
+import { rotuloDaSituacao, explicarRecusa, formatarMoeda } from "../lib/baixaManualParcela";
 import { Button } from "../../../../components/ui/Button";
 import { createApiClient } from "../../../../api/client";
 
 const PANEL = { text: "#F8F8F2", muted: "#A7B0C0", border: "#44475A", surface: "#21222C", field: "#282A36" };
 const parcelaApi = createApiClient();
 
-function fmtMoney(v) {
-  return Number.isFinite(Number(v))
-    ? Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-    : "—";
-}
+// Uma formatação só para as DUAS filas — elas mostram valores lado a lado na mesma tela, e duas
+// cópias divergiriam no primeiro ajuste de casas decimais.
+const fmtMoney = formatarMoeda;
 
 // Os motivos de RECUSA da baixa, cada um com a saída que o contador precisa.
 const MOTIVOS_RECUSA = {
@@ -195,7 +195,15 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
           <tbody>
             {parcelas.map((p) => {
               const desfecho = desfechos[p.guideId];
-              const emVoo = lancando === p.guideId || lancando === "__lote";
+              // ⚠ `Boolean(p.guideId) &&` NÃO É REDUNDANTE, é a mina que já explodiu uma vez.
+              // `lancando` nasce `null`, e uma linha sem guia tem `guideId: null` — `null === null`
+              // é `true`, e TODAS as linhas nasceriam dizendo "Lançando…" sem ninguém ter clicado.
+              // Foi exatamente isso que fez 60 prestações afirmarem "Buscando…" em
+              // `ParcelasDoAcordo` (consultas PAGAS anunciadas em voo), e o conserto de lá é este
+              // mesmo. Hoje esta fila filtra por `guia`, então `guideId` nunca é nulo — a guarda
+              // existe porque essa garantia é de QUERY, não de tipo, e a fila irmã (prestações sem
+              // guia, logo abaixo) é feita das linhas que a violariam.
+              const emVoo = (Boolean(p.guideId) && lancando === p.guideId) || lancando === "__lote";
               const destacada = Boolean(foco) && p.parcelamentoId === foco.id;
               return (
                 <tr key={p.guideId} style={{
@@ -268,14 +276,13 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
         </div>
       </div>
 
-      {/* ⚠ A RESPOSTA HONESTA DO "DAR BAIXA" QUE NÃO ACHA NADA — e ela nomeia a capacidade que
-          FALTA, em vez de fingir que o contrato está em ordem. A fila é alimentada por
-          `guia.paymentStatus = PAID` (a rota `parcelas-pendentes-baixa` filtra por `guia`), então
-          prestação SEM guia não tem por onde entrar aqui. Isso não é caso de borda: débito
-          automático não emite documento nenhum, e é assim que uma classe inteira de clientes paga.
-          Dar baixa a partir do extrato, sem guia, é uma funcionalidade que ainda não existe — e
-          dizer isso é decisão de produto do dono, não algo que a tela deva esconder atrás de um
-          botão desabilitado. */}
+      {/* ⚠ A RESPOSTA HONESTA DO "DAR BAIXA" QUE NÃO ACHA NADA — ela diz por que esta fila está
+          vazia para aquele contrato E para onde ir.
+
+          ⚠ ESTE TEXTO MUDOU, E TINHA DE MUDAR. Ele afirmava que "dar baixa a partir do extrato, sem
+          documento, ainda não existe no sistema" — verdade até a fila irmã existir, e MENTIRA a
+          partir dela. Deixar a frase antiga mandaria o contador embora convencido de que não há
+          saída, com a saída na tela logo abaixo. */}
       {focadas === 0 && (
         <div role="status" style={{
           marginBottom: 8, padding: "8px 10px", borderRadius: 6, lineHeight: 1.45,
@@ -285,11 +292,12 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
           <div style={{ color: "var(--state-warn)", fontWeight: 700, marginBottom: 2 }}>
             Nenhuma parcela de {foco.label || "deste contrato"} está aguardando lançamento
           </div>
-          Uma prestação só entra nesta fila quando o pagamento dela está confirmado <strong>na
-          guia</strong> — pela busca do comprovante no SERPRO (botão na linha da parcela) ou pelo
-          “Confirmar pagamento” da aba Guias. Prestação <strong>sem guia</strong> — débito
-          automático, ou contrato migrado de outra contabilidade — não tem por onde entrar:
-          dar baixa a partir do extrato, sem documento, ainda não existe no sistema.
+          Uma prestação só entra <strong>nesta</strong> fila quando o pagamento dela está confirmado{" "}
+          <strong>na guia</strong> — pela busca do comprovante no SERPRO (botão na linha da parcela)
+          ou pelo “Confirmar pagamento” da aba Guias. Prestação <strong>sem guia</strong> — débito
+          automático, ou contrato migrado de outra contabilidade — não tem por onde entrar aqui:
+          ela vai para <strong>“Prestações vencidas sem guia”</strong>, logo abaixo, onde a baixa é
+          declarada por você em vez de lida de um documento.
         </div>
       )}
       {desfechoLote && (
@@ -301,6 +309,212 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
         </div>
       )}
       {corpo()}
+    </section>
+  );
+}
+
+/**
+ * A FILA DA PRESTAÇÃO **SEM GUIA** — e ela é um painel SEPARADO de propósito.
+ *
+ * ⚠ SÃO DUAS PERGUNTAS DIFERENTES, e juntá-las numa lista só faria o contador tratar declaração e
+ * prova como a mesma coisa:
+ *
+ *   · o painel acima responde *"a guia foi paga, falta lançar"* — há um SINAL EXTERNO (o
+ *     `paymentStatus` que veio do SERPRO). A ação é um clique: os valores vêm do documento.
+ *   · este responde *"esta prestação venceu e não há guia; você declara que foi debitada?"* — não
+ *     há sinal nenhum. A ação é um FORMULÁRIO: juros e multa são declarados, o total tem de fechar,
+ *     e o que se grava é `origemBaixa: "MANUAL"` com "(declarado)" no razão.
+ *
+ * Uma lista única com um rótulo de seção ainda teria UMA coluna de ação, UM botão "Dar baixa" e um
+ * "Baixa em lote" varrendo as duas metades — exatamente o apagamento da diferença. Os desfechos, as
+ * recusas e o próprio verbo também não coincidem ("Dar baixa" × "Declarar"). Separados, cada fila
+ * pode dizer o que sabe e o que NÃO sabe.
+ *
+ * ⚠ A COR NÃO É ÂMBAR. Âmbar, neste projeto, é a pendência que o sistema CONSTATOU — e é o que a
+ * fila de cima é. Aqui o sistema constatou apenas que a prestação venceu sem evidência, e
+ * `recalculoParcelamento.js` se recusa explicitamente a chamar isso de inadimplência (ausência de
+ * guia não é prova de não-pagamento). Pintar de âmbar seria a tela afirmando uma pendência que a
+ * regra logo atrás dela se nega a afirmar. O accent diz "há trabalho seu aqui" sem carimbar atraso;
+ * o rótulo por linha (`Vencida` / `Vence hoje`) é que carrega o estado, e ele vem do servidor.
+ */
+function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBaixaLancada }) {
+  const [parcelas, setParcelas] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState(null);
+  const [alvo, setAlvo] = useState(null);       // a prestação cujo modal está aberto
+  const [desfechos, setDesfechos] = useState({}); // parcelaId → { tom, texto }
+
+  const carregar = useCallback(async () => {
+    if (!companyId) { setCarregando(false); return; }
+    if (!parcelaApi?.listParcelasSemGuiaPendentes) {
+      setErro("A fila de prestações sem guia não está disponível neste modo de API.");
+      setCarregando(false);
+      return;
+    }
+    setCarregando(true);
+    setErro(null);
+    try {
+      const out = await parcelaApi.listParcelasSemGuiaPendentes(companyId);
+      setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
+    } catch (err) {
+      // ⚠ O `catch` NÃO zera a lista: falha e vazio são o mesmo pixel e significam o oposto.
+      setErro(err?.message || "Não foi possível carregar as prestações sem guia.");
+    } finally { setCarregando(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, refreshKey]);
+
+  useEffect(() => { carregar(); }, [carregar]);
+
+  async function declarar({ parcelaId, dataPagamento, valorJuros, valorMulta, totalConferido }) {
+    const out = await parcelaApi.lancarBaixaManualParcela(companyId, parcelaId, {
+      dataPagamento, valorJuros, valorMulta, totalConferido,
+    });
+    // ⚠ `skipped` NÃO é sucesso silencioso — a rota devolve o motivo, e ele sobe como erro para o
+    // modal mostrá-lo sem fechar (o contador perderia o que digitou).
+    if (out?.skipped || out?.ok === false) {
+      const err = new Error(out?.message || out?.resultado?.message || "");
+      err.code = out?.motivo || out?.error;
+      throw err;
+    }
+    setAlvo(null);
+    setDesfechos((d) => ({ ...d, [parcelaId]: { tom: "ok", texto: "Baixa declarada e lançada." } }));
+    await carregar();
+    await onBaixaLancada?.();
+  }
+
+  const th = { padding: "6px 8px", textAlign: "left", fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase" };
+  const td = { padding: "6px 8px", fontSize: "0.82rem", color: PANEL.text, verticalAlign: "top" };
+
+  const corpo = () => {
+    if (carregando) return <div style={{ color: PANEL.muted, fontSize: "0.8rem" }}>Carregando as prestações sem guia…</div>;
+    if (erro) {
+      return (
+        <div role="status" style={{ padding: "8px 10px", borderRadius: 6, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)" }}>
+          <div style={{ color: "var(--state-danger)", fontWeight: 700, fontSize: "0.74rem" }}>
+            Não foi possível saber se há prestações sem guia vencidas
+          </div>
+          <div style={{ color: PANEL.muted, fontSize: "0.7rem", marginTop: 2, lineHeight: 1.4 }}>
+            {erro} — isto <strong>não</strong> quer dizer que não há nenhuma.
+          </div>
+          <button type="button" onClick={carregar} style={{ marginTop: 6, background: "transparent", border: "1px solid var(--accent-purple)", color: "var(--accent-purple)", borderRadius: 6, padding: "3px 10px", cursor: "pointer", fontSize: "0.72rem", fontWeight: 700 }}>
+            Tentar de novo
+          </button>
+        </div>
+      );
+    }
+    if (!parcelas.length) {
+      // ⚠ FILA VAZIA DIZ QUE ESTÁ VAZIA — e diz o que "vazia" significa aqui, que não é "tudo pago".
+      return (
+        <div style={{ color: PANEL.muted, fontSize: "0.78rem", lineHeight: 1.45 }}>
+          Nenhuma prestação sem guia venceu até hoje sem baixa. Prestações <strong>futuras</strong> não
+          entram (ainda não são devidas) e prestações <strong>com guia</strong> vão para a fila acima.
+        </div>
+      );
+    }
+    return (
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: PANEL.field }}>
+              <th style={th}>Parc.</th>
+              <th style={th}>Contrato</th>
+              <th style={th}>Competência</th>
+              <th style={th}>Vencimento</th>
+              <th style={{ ...th, textAlign: "right" }}>Principal</th>
+              <th style={th} />
+            </tr>
+          </thead>
+          <tbody>
+            {parcelas.map((p) => {
+              const desfecho = desfechos[p.parcelaId];
+              const destacada = Boolean(foco) && p.parcelamentoId === foco.id;
+              const sit = rotuloDaSituacao(p.situacao);
+              const bloqueio = p.motivoBloqueio ? explicarRecusa(p.motivoBloqueio) : null;
+              return (
+                <tr key={p.parcelaId} style={{
+                  borderTop: `1px solid ${PANEL.border}`,
+                  background: destacada ? "var(--accent-purple-surface)" : "transparent",
+                }}>
+                  <td style={{ ...td, fontFamily: "monospace" }}>
+                    {p.numeroParcela ?? "?"}
+                    <span style={{ color: PANEL.muted }}>/{p.parcelamento?.numParcelas ?? "?"}</span>
+                  </td>
+                  <td style={{ ...td, color: PANEL.muted, maxWidth: 220 }}>{p.parcelamento?.label || "—"}</td>
+                  <td style={td}>{p.competencia || "—"}</td>
+                  <td style={td}>
+                    {p.vencimento ? new Date(p.vencimento).toLocaleDateString("pt-BR") : "—"}
+                    <div style={{ color: sit.cor, fontSize: "0.68rem", fontWeight: 700 }} title={sit.titulo}>
+                      {sit.texto}
+                    </div>
+                  </td>
+                  <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{formatarMoeda(p.valorPrevisto)}</td>
+                  <td style={{ ...td, textAlign: "right", minWidth: 210 }}>
+                    <button
+                      type="button"
+                      onClick={() => setAlvo(p)}
+                      disabled={Boolean(bloqueio)}
+                      // ⚠ DESABILITADO SEMPRE COM O MOTIVO — e o motivo também sai em texto abaixo,
+                      // porque `title` some junto com o mouse.
+                      title={bloqueio || "Abre a declaração: você informa juros e multa, e confere o total antes de gravar."}
+                      style={{
+                        padding: "4px 10px", borderRadius: 6, cursor: bloqueio ? "not-allowed" : "pointer",
+                        background: "transparent",
+                        border: `1px solid ${bloqueio ? PANEL.border : "var(--accent-purple)"}`,
+                        color: bloqueio ? PANEL.muted : "var(--accent-purple)",
+                        fontSize: "0.78rem", fontWeight: 700, whiteSpace: "nowrap",
+                      }}
+                    >
+                      Declarar baixa…
+                    </button>
+                    {bloqueio && (
+                      <div style={{ marginTop: 4, fontSize: "0.67rem", color: "var(--state-warn)", textAlign: "left", lineHeight: 1.35 }}>
+                        {bloqueio}
+                      </div>
+                    )}
+                    {desfecho && (
+                      <div role="status" style={{
+                        marginTop: 4, padding: "5px 8px", borderRadius: 6, textAlign: "left", lineHeight: 1.35,
+                        fontSize: "0.68rem", color: PANEL.muted,
+                        background: desfecho.tom === "ok" ? "var(--state-ok-surface)" : "var(--state-warn-surface)",
+                        border: `1px solid ${desfecho.tom === "ok" ? "var(--state-ok)" : "var(--state-warn)"}`,
+                      }}>
+                        {desfecho.texto}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
+  const corBorda = erro ? "var(--state-danger)" : parcelas.length ? "var(--accent-purple)" : PANEL.border;
+  return (
+    <section style={{ background: PANEL.surface, border: `1px solid ${corBorda}`, borderRadius: 10, padding: 14 }}>
+      <div style={{ marginBottom: 8 }}>
+        <strong style={{ color: parcelas.length ? "var(--accent-purple)" : PANEL.text, fontSize: "0.9rem" }}>
+          Prestações vencidas sem guia{parcelas.length ? ` (${parcelas.length})` : ""}
+        </strong>
+        {/* ⚠ A FRASE QUE SEPARA AS DUAS FILAS. Sem ela, a segunda tabela parece "mais do mesmo". */}
+        <div style={{ color: PANEL.muted, fontSize: "0.78rem", lineHeight: 1.45 }}>
+          Aqui <strong>não há documento nenhum</strong> — é assim que o débito automático paga. O
+          sistema só sabe que a prestação venceu e que não há evidência; quem afirma que o dinheiro
+          saiu é <strong>você</strong>, e a baixa fica gravada como declaração.
+        </div>
+      </div>
+
+      {corpo()}
+
+      {alvo && (
+        <BaixaManualParcelaModal
+          linha={alvo}
+          onConfirmar={declarar}
+          onClose={() => setAlvo(null)}
+        />
+      )}
     </section>
   );
 }
@@ -323,7 +537,12 @@ export function ParcelamentoTab({
   // O que a barra de ações do card pede à fila de baixa. `nonce` porque o MESMO pedido pode ser
   // repetido (clicar "Dar baixa" duas vezes no mesmo contrato tem de rolar duas vezes).
   const [pedidoBaixa, setPedidoBaixa] = useState(null);
+  // O mesmo contrato destacado nas DUAS filas. É estado próprio (e não `pedidoBaixa`, que é
+  // consumido e zerado) porque o destaque tem de sobreviver ao atendimento do pedido — a prestação
+  // que o contador procura pode estar na segunda fila, não na primeira.
+  const [focoContrato, setFocoContrato] = useState(null);
   const pedirBaixa = useCallback((parc, lote) => {
+    setFocoContrato(parc?.id ? { id: parc.id, label: parc.label || null } : null);
     setPedidoBaixa({
       parcelamentoId: parc?.id || null, label: parc?.label || null,
       lote: Boolean(lote), nonce: Date.now(),
@@ -381,6 +600,16 @@ export function ParcelamentoTab({
         refreshKey={baixaRefreshKey}
         pedido={pedidoBaixa}
         onPedidoAtendido={() => setPedidoBaixa(null)}
+      />
+
+      {/* ⚠ A SEGUNDA FILA, e ela é separada de propósito — ver o comentário do componente. Ela vem
+          DEPOIS porque a de cima tem prova (o comprovante do SERPRO) e esta tem declaração; a ordem
+          na tela ensina qual é o caminho preferível quando os dois existem. */}
+      <ParcelasSemGuiaPendentes
+        companyId={companyId}
+        refreshKey={baixaRefreshKey}
+        foco={focoContrato}
+        onBaixaLancada={aposLocalizarPagamento}
       />
 
       <ConferenciaParcelasPanel

@@ -69,12 +69,16 @@ para lançar. O card conta quantas são (`contarHistoricas`) e diz "22 de 60 (22
 isso, um contrato migrado exibe 22 pagamentos que este escritório nunca lançou e alguém vai
 procurá-los no razão.
 
-⚠ **`parcela.competencia` NÃO VEM NO PAYLOAD.** `SELECT_PARCELA_PARA_QUADRO` traz `id`,
-`numeroParcela`, `vencimento`, `origemBaixa` e a guia — e é ele que alimenta `parcelasContratadas`.
-Quem precisa da competência a DERIVA do vencimento contratado (`anexoParcelamento.competenciaDaParcela`),
-que por construção cai dentro do mês da competência. Ler `parcela.competencia` devolve `undefined`
-em produção e deixa o campo do modal de anexo vazio — defeito encontrado no mock, que espelha o
-select real de propósito.
+⚠ **`parcela.competencia` PASSOU A VIR NO PAYLOAD** — e `valorPrevisto` junto. Os dois entraram em
+`SELECT_PARCELA_PARA_QUADRO` (o select COMPARTILHADO, não um segundo), porque a fila de prestações
+sem guia precisa dos dois para renderizar a linha inteira. Antes o select trazia só `id`,
+`numeroParcela`, `vencimento`, `origemBaixa` e a guia, e ler `parcela.competencia` devolvia
+`undefined` em produção — foi assim que o campo do modal de anexo nasceu vazio.
+
+⚠ **A derivação a partir do vencimento CONTINUA** (`anexoParcelamento.competenciaDaParcela`) e não
+foi trocada por leitura direta: o vencimento contratado cai por construção dentro do mês da
+competência, e as duas concordam. O mock espelha o select real de propósito — inclusive nos dois
+campos novos.
 
 ### O que SAIU (R1), e por que cada um era o desenho antigo
 
@@ -146,15 +150,63 @@ Presumido, não vão ter parcelas pois são em débito automático"*. `estadoBus
 — diz os dois desfechos. Mandar um cliente de débito automático esperar a captura do SERPRO é
 mandá-lo esperar um documento que nunca chega.
 
-⚠ **"Não consigo dar baixa" é OUTRO defeito, e no fundo é uma CAPACIDADE QUE FALTA (F2.2).** A fila
-"Parcelas pagas aguardando lançamento" é alimentada por `guia.paymentStatus = PAID` — a rota
-`parcelas-pendentes-baixa` filtra por `guia`. Prestação **sem guia não tem por onde entrar**. O
-`Dar baixa` do card não lança nada: ele navega até a fila e destaca. Com zero parcelas do contrato
-ali, ele rolava a página e o subtítulo ainda dizia *"Destacadas: as do contrato que você clicou"* —
-silêncio indistinguível de botão quebrado. Hoje a fila **diz** que não há nenhuma daquele contrato e
-**nomeia** o que falta (baixa a partir do extrato, sem documento, não existe). ⚠ **Não "consertar"
-desabilitando o botão de baixa** — desabilitar seria dizer a uma classe inteira de clientes que a
-baixa nunca vai funcionar; construir a F2.2 é decisão do dono.
+⚠ **"Não consigo dar baixa" era uma CAPACIDADE QUE FALTAVA — e ela agora EXISTE.** A fila
+"Parcelas pagas aguardando lançamento" é alimentada por `guia.paymentStatus = PAID` (a rota
+`parcelas-pendentes-baixa` filtra por `guia`), então prestação **sem guia não tem por onde entrar
+nela**. O `Dar baixa` do card não lança nada: ele navega até a fila e destaca. Com zero parcelas do
+contrato ali, ele rolava a página e o subtítulo ainda dizia *"Destacadas: as do contrato que você
+clicou"* — silêncio indistinguível de botão quebrado.
+
+Hoje a fila diz que não há nenhuma daquele contrato **e aponta a fila irmã**, logo abaixo. Ver
+"As DUAS filas de baixa", a seguir. ⚠ **A frase antiga daquele aviso ("dar baixa a partir do
+extrato, sem documento, ainda não existe no sistema") FOI REMOVIDA**: era verdade enquanto a
+segunda fila não existia e virou mentira no instante em que ela subiu — mandaria o contador embora
+convencido de que não há saída, com a saída na mesma tela. `parcelamentoBaixaFila.test.jsx` trava a
+troca nos dois sentidos.
+
+## As DUAS filas de baixa — e por que NÃO são uma lista com duas seções
+
+`pages/renderParcelamentoTab.jsx` tem dois painéis, um sob o outro, e a separação é o conteúdo:
+
+| painel | pergunta | evidência | ação |
+|---|---|---|---|
+| **Parcelas pagas aguardando lançamento** | *"a guia foi paga, falta lançar"* | **sinal externo**: o `paymentStatus` do SERPRO | **um clique** — data e valores vêm do documento |
+| **Prestações vencidas sem guia** | *"esta prestação venceu e não há guia; você declara que foi debitada?"* | **nenhuma** — a declaração do contador | **um formulário** — juros e multa digitados, total conferido |
+
+Uma lista só, ainda que com rótulo de seção, teria UMA coluna de ação, UM verbo e um "baixa em
+lote" varrendo as duas metades — o apagamento exato da diferença entre declaração e prova. Os
+desfechos e as recusas também não coincidem.
+
+⚠ **A fila nova NÃO é âmbar.** Âmbar aqui é a pendência que o sistema CONSTATOU, e é o que a fila de
+cima é. Nesta, o sistema constatou apenas que a prestação venceu sem evidência — e
+`recalculoParcelamento.js` se recusa explicitamente a chamar isso de inadimplência (ausência de guia
+não é prova de não-pagamento). Pintá-la de âmbar seria a tela afirmando uma pendência que a regra
+atrás dela se nega a afirmar. Ela usa o **accent**; o estado por linha (`Vencida` / `Vence hoje`)
+vem do **servidor**, e a tela não recalcula atraso.
+
+**Regra em `lib/baixaManualParcela.js`** (26 testes) — a decomposição, os sete motivos de recusa, o
+texto da confirmação. `components/BaixaManualParcelaModal.jsx` só liga.
+`pages/__tests__/parcelamentoFilaSemGuia.test.jsx` (9) cobre a ligação.
+
+⚠ **JUROS E MULTA SÃO ENTRADA, e a conta é feita PARA FRENTE.** O servidor recusa (409
+`CONFERENCIA_DIVERGENTE`) todo total que não bata com `principal + juros + multa` — ele **não**
+deriva o acréscimo por subtração. O modal mostra os quatro lançamentos que vão ser gravados
+(`D PARC` amortiza o passivo · `D JUROS` · `D MULTA` despesa do mês · `C CAIXA`) **antes** do clique,
+e o `totalConferido` que sobe é exatamente o número exibido. Componente zerado não vira linha, igual
+ao backend. A leitura do valor **reusa `entries/lib/valorFormula.js`** — a mesma gramática estrita de
+separador decimal que impede `1.500` virar 1,50.
+
+⚠ **O PRINCIPAL NÃO É CAMPO.** Vem de `parcelas.valorPrevisto`; digitá-lo faria da baixa uma segunda
+fonte para o valor da prestação.
+
+⚠ **A tela DIZ que é declaração, não prova** — no topo do modal e repetido na confirmação. O dado
+grava `origemBaixa: "MANUAL"` e o histórico sai com "(declarado)"; quando a via SERPRO existir, ela
+gravará outra coisa, e o contador precisa saber qual das duas está fazendo.
+
+⚠ **`lancando === p.guideId` era a MESMA MINA de `ParcelasDoAcordo`.** `lancando` nasce `null` e
+prestação sem guia tem `guideId: null` — `null === null` é `true`, e toda linha nasceria dizendo
+"Lançando…" sem ninguém clicar. Hoje é `Boolean(p.guideId) && lancando === p.guideId`. A fila da
+prova só recebe linhas com guia, mas isso é garantia de **query**, não de tipo.
 
 ⚠ **O mock conhece TODOS os caminhos de recusa** (`DESFECHO_BUSCA_MOCK`, por prefixo do `guideId`) e
 a fixture de `listParcelamentos` tem uma linha para cada estado — inclusive a prestação **sem guia**

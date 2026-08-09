@@ -59,7 +59,7 @@ chegava na tela como "0 de 0", risco não avaliável.
 |---|---|---|
 | contadores (`decorateParcelamento`) | numerador = guias quitadas; denominador = `guides.length` | os dois de `parcelasContratadas` |
 | risco (`riscoRescisao`) | `guides.map(...)` | as parcelas, **só as que têm evidência** |
-| fila de pendentes (`/parcelamentos/parcelas-pendentes-baixa`) | varre `prisma.guide` | varre `prisma.parcela` (guia no join) |
+| fila de pendentes (`/parcelamentos/parcelas-pendentes-baixa`) | varre `prisma.guide` | varre `prisma.parcela` (guia no join) — e ganhou uma **irmã**, `/parcelamentos/parcelas-sem-guia-pendentes`, para a prestação que não tem guia nenhuma (ver F2.2) |
 | fila de conferência (`listarConferenciaParcelas`) | varre `prisma.guide` | idem |
 | recálculo de atraso (`recalcularEstadosParcelasEmAberto`) | varre `prisma.guide` | idem, + `semGuia` |
 | `recalcularParcelamento` | `parcelasTotal: guides.length \|\| numParcelas` | `quadroDasParcelas` |
@@ -159,11 +159,62 @@ não é reescrita — `quadroDasParcelas`/`avaliarRiscoRescisao` são os mesmos 
 (nem `baixada`, nem `paymentStatus`), e duplicar o estado de pagamento lá foi evitado na F2.1 de
 propósito.
 
-⚠ **Ainda NÃO existe rota que LISTE as parcelas sem guia pendentes de baixa.**
-`/parcelamentos/parcelas-pendentes-baixa` filtra por `guia`, então o front não tem de onde tirar o
-`parcelaId`. É o que falta para a via ficar clicável.
-
 Regressão: `parcelamento/__tests__/baixaParcelaSemGuia.test.js` (25).
+
+### A FILA — `GET /parcelamentos/parcelas-sem-guia-pendentes` (a porta de onde sai o `parcelaId`)
+
+Sem ela a baixa acima era **inalcançável**: `/parcelamentos/parcelas-pendentes-baixa` filtra por
+`guia: { paymentStatus: "PAID", … }`, e prestação sem guia não tem por onde entrar. Um contrato
+inteiro em débito automático ficava com fila vazia para sempre, com 60 prestações não baixáveis.
+
+⚠ **SÃO DUAS PERGUNTAS, E POR ISSO SÃO DUAS ROTAS E DOIS PAINÉIS.**
+
+| | pergunta | evidência |
+|---|---|---|
+| `parcelas-pendentes-baixa` | *"a guia foi paga, falta lançar"* | **sinal externo** — o `paymentStatus` que veio do SERPRO. A tela só repete o documento |
+| `parcelas-sem-guia-pendentes` | *"esta prestação venceu e não há guia; você declara que foi debitada?"* | **nenhuma** — a evidência é a declaração do contador |
+
+Uma lista só, ainda que com rótulo de seção, teria UMA coluna de ação e um "baixa em lote" varrendo
+as duas metades: seria o contador tratando declaração e prova como a mesma coisa.
+
+**O critério de "entra na fila" mora em `recalculoParcelamento.js`** (`whereParcelaSemGuiaPendente`,
+`SELECT_PARCELA_FILA_SEM_GUIA`, `linhaDaFilaSemGuia`, `situacaoDaPrestacaoSemGuia`), junto de
+`quadroDasParcelas` — não na rota. Cada condição vem de algo que já existia:
+
+| condição | de onde |
+|---|---|
+| `guiaId: null` | é a pré-condição da própria baixa (`gerarPagamentoParcelaManual` recusa `parcela_tem_guia`). Listar prestação com guia seria oferecer o botão que o servidor recusa |
+| `origemBaixa: null` | o predicado de quitação de `parcelaRowQuitada`, e a mesma coluna da reserva atômica. Cobre `MANUAL`/`DEBITO_AUTOMATICO`/`HISTORICO` de uma vez |
+| `vencimento <= fim de HOJE` | vencida é `venc < agora`, o predicado **idêntico** de `avaliarRiscoRescisao` e de `estadoEmAberto`. O fim-do-dia acrescenta só quem **vence hoje** — que no débito automático é a prestação que o contador tem em mãos |
+| parcelamento não `RESCINDIDO` | mesma decisão de `quadroDasParcelas` (lá o risco é `null`: "não há mais o que prevenir") |
+
+⚠ **NÃO EXISTE UMA TERCEIRA DEFINIÇÃO DE ATRASO.** O rótulo por linha (`VENCIDA` / `VENCE_HOJE`)
+sai de **`estadoEmAberto`** (`parcelaStateMachine.js`); o fim-do-dia é só a **janela** da fila.
+Quem vence hoje entra e é rotulada `VENCE_HOJE`, nunca "vencida" — a mesma leitura que
+`circular/lib/estadoGuia.js` já usa ("vence HOJE ainda é a vencer").
+Travado por `parcelamento/__tests__/filaParcelasSemGuia.test.js` (15), que compara os predicados
+lado a lado.
+
+⚠ **Prestação SEM VENCIMENTO fica de fora, e isso não é escondê-la:** sem data não se afirma que
+venceu (a sentinela `1970-01` faz o cronograma nascer sem datas). Ela segue contada em
+`parcelasSemEvidencia`, no card, com o nome dela.
+
+⚠ **A linha volta COMPLETA — prestação, competência, valor e o CONTRATO.** Sem isso o front faria
+uma chamada ao contrato por linha, e são até 60 por acordo. `podeBaixar` + `motivoBloqueio`
+(`provisao_inexistente`, `sem_valor_previsto`) antecipam as guardas da rota de baixa **sem
+substituí-las**: quem recusa continua sendo `gerarPagamentoParcelaManual`, que enxerga o estado do
+momento do clique. A linha bloqueada **continua listada** — escondê-la faria o contrato parecer em
+ordem justamente onde ele não está.
+
+⚠ **`SELECT_PARCELA_PARA_QUADRO` GANHOU `competencia` E `valorPrevisto`** — na fonte compartilhada,
+não num `select` próprio da fila. Os dois são fato do contrato, da mesma natureza de
+`numeroParcela`/`vencimento`; a ausência do primeiro já mordeu (o modal de anexo lia
+`parcela.competencia` e recebia `undefined` em produção). `SELECT_PARCELA_FILA_SEM_GUIA` **estende**
+esse select — o teste verifica campo a campo que não o reescreve.
+
+⚠ **É uma rota LITERAL** e vale a mesma disciplina de ordem das outras duas
+(`parcelamentosRotasLiterais.test.js` cobre as três): engolida por um curinga, a baixa por
+declaração volta a ser inalcançável, com um 404 falando de parcelamento inexistente.
 
 ## F2.3 — parcelamento-first: o contrato antes do documento
 

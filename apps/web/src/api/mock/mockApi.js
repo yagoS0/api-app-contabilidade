@@ -1001,6 +1001,235 @@ function buildMockEstornoPreview(companyId, entryId) {
 }
 
 /** Erro de recusa do mock — com o MESMO código do backend, senão o mock só conhece o caminho feliz. */
+// ── FIXTURE DOS PARCELAMENTOS — no MÓDULO, e não dentro de um endpoint ───────────────────────
+//
+// ⚠ ELA SUBIU PARA CÁ porque agora DUAS filas leem os mesmos contratos: `parcelas-pendentes-baixa`
+// (a prestação COM guia, cujo pagamento o SERPRO confirmou) e `parcelas-sem-guia-pendentes` (a
+// prestação SEM documento nenhum, que só o contador pode declarar). Reconstruir os contratos
+// dentro de cada endpoint faria as duas discordarem sobre quantas prestações existem e quais têm
+// documento — a divergência que a fila nova existe justamente para NÃO criar.
+/** "2026-07" a partir de um ISO — a competência que `calendarioDaParcela` grava em produção. */
+function competenciaDoVencimentoMock(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function construirParcelamentosFixos() {
+  const dia = 24 * 60 * 60 * 1000;
+  const em = (n) => new Date(Date.now() + n * dia).toISOString();
+      // ⚠ `linhas` descreve as PRESTAÇÕES, e é o que faz a busca de pagamento ser conferível
+      // offline. Cada entrada vira uma `parcelaContratada` (o contrato: qual prestação existe e
+      // quando vence) mais, quando há, uma `guide` (o fato: valor, pagamento, número do documento).
+      // `guia: null` é o caso REAL do débito automático — prestação contratada sem documento
+      // nenhum para consultar; ela existe aqui de propósito, senão o botão desabilitado por "sem
+      // guia" nunca apareceria no mock.
+      const parc = (over) => {
+        const linhas = over.linhas || [];
+        const guides = linhas.filter((l) => l.guia).map((l, i) => ({
+          id: l.guia,
+          numeroParcela: l.n,
+          valor: 1200 + i,
+          paymentStatus: l.pago ? "PAID" : "OPEN",
+          baixada: Boolean(l.baixada),
+          competencia: l.competencia,
+          anoMesParcela: l.competencia,
+          vencimento: l.vencimento,
+          // ⚠ `null` aqui é o caso que o dono precisa ver desabilitado COM MOTIVO: sem número de
+          // documento o PAGTOWEB não tem o que consultar (é a entrada de tudo lá).
+          numeroDocumento: l.semDocumento ? null : `0720260000${1000 + l.n}`,
+          comprovante: l.pago
+            ? { dataArrecadacao: "05/07/2026", principal: 1180.22, juros: 12.94, multa: 6.84, total: 1200, meioPagamento: "PIX", confiavel: true }
+            : null,
+          paymentConfirmedAt: l.pago ? em(-3) : null,
+          serproLastCheckedAt: l.jaConsultada ? em(-1) : null,
+          serproLastCheckResult: l.jaConsultada ? "NAO_LOCALIZADO" : null,
+        }));
+        return {
+          id: over.id, label: over.label, tipo: over.tipo, status: over.status || "ATIVO",
+          numeroParcelamento: over.numeroParcelamento, principalTotal: 12000, jurosTotal: 1800,
+          // ⚠ `numParcelas` ACOMPANHA as linhas. Fixo em 12 com 3 ou 4 linhas, o mock ensinava uma
+          // contradição: o card dizia "0 de 3" (prestações materializadas) e o modal de anexo dizia
+          // "parcela 3 de 12" (cabeçalho do contrato) — dois denominadores para a mesma pergunta.
+          // Em produção `sincronizarParcelas` materializa exatamente `numParcelas` linhas.
+          valorMulta: 600, totalValue: 14400, principalPerParcela: 1200, numParcelas: linhas.length,
+          valorParcelaReferencia: 1200,
+          // F2.3: os três campos novos do contrato. `formaPagamento: null` no primeiro é o
+          // NÃO DECLARADO — o terceiro estado, que não é nenhum dos outros dois.
+          formaPagamento: over.formaPagamento ?? null,
+          diaPagamento: over.diaPagamento ?? 1,
+          saldoConsolidado: over.saldoConsolidado ?? null,
+          parcelasPagas: over.parcelasPagas, parcelasTotal: linhas.length,
+          principalPago: over.parcelasPagas * 1200, saldoRestante: 14400 - over.parcelasPagas * 1200,
+          observacoes: null, parcelas: [], guides, risco: over.risco,
+          // ⚠ ESPELHA `SELECT_PARCELA_PARA_QUADRO` — inclusive nos campos que ele passou a trazer.
+          // `competencia` e `valorPrevisto` ENTRARAM no select compartilhado do backend nesta fase
+          // (a fila da prestação sem guia precisa dos dois para renderizar a linha inteira). Mock
+          // que não os traga esconderia no offline exatamente a coluna que a tela nova mostra — foi
+          // assim que o campo do modal de anexo nasceu vazio da última vez, só que ao contrário.
+          //
+          // ⚠ A competência é DERIVADA do vencimento quando a linha não a declara, porque é isso
+          // que o backend faz: `calendarioDaParcela` a calcula de `competenciaInicial + n` e grava
+          // em `parcelas.competencia`. Deixá-la nula aqui inventaria uma ausência que produção não
+          // tem.
+          parcelasContratadas: linhas.map((l) => ({
+            id: `${over.id}-p${l.n}`,
+            numeroParcela: l.n,
+            competencia: l.competencia || competenciaDoVencimentoMock(l.vencimento),
+            vencimento: l.vencimento,
+            valorPrevisto: 1200,
+            origemBaixa: l.historica ? "HISTORICO" : null,
+            guia: l.guia
+              ? { id: l.guia, vencimento: l.vencimento, paymentStatus: l.pago ? "PAID" : "OPEN", baixada: Boolean(l.baixada) }
+              : null,
+          })),
+        };
+      };
+      const regra = {
+        id: "IN_RFB_2063_2022_ART_18",
+        descricao: "3 prestações, consecutivas ou não; ou 2 se as demais estiverem pagas ou a última vencida",
+        limiteAbsoluto: 3, limiteComDemaisPagas: 2,
+        // ⚠ false de propósito: é assim que o back devolve enquanto a redação vigente não for
+        // conferida na fonte oficial, e a tela precisa saber esconder o número do artigo.
+        citacaoConferida: false,
+      };
+      const fixos = [
+        parc({
+          id: "parc-ok", label: "PARCSN 2026 — em dia", tipo: "PARCSN", numeroParcelamento: "1010",
+          parcelasPagas: 2, formaPagamento: "GUIA_MENSAL", diaPagamento: 20, saldoConsolidado: 12000,
+          // As quatro situações da coluna Situação, em ordem: baixada · paga aguardando lançamento ·
+          // em aberto com documento (é a que se clica) · em aberto SEM documento (desabilitada).
+          linhas: [
+            { n: 1, guia: "mock-guia-baixada-1", competencia: "2026-04", vencimento: em(-100), pago: true, baixada: true },
+            { n: 2, guia: "mock-guia-pendente-baixa", competencia: "2026-05", vencimento: em(-70), pago: true },
+            { n: 3, guia: "mock-guia-ok-3", competencia: "2026-06", vencimento: em(-40) },
+            { n: 4, guia: "mock-guia-semdoc-4", competencia: "2026-07", vencimento: em(-10), semDocumento: true },
+          ],
+          risco: { nivel: "ok", caso: null, emAtraso: 0, vencidas: 4, faltamParaRescindir: 3, parcelasEmAtraso: [], regra, avaliavel: true },
+        }),
+        parc({
+          id: "parc-atencao", label: "PARCMEI 2025 — uma em atraso", tipo: "PARCMEI", numeroParcelamento: "2020",
+          parcelasPagas: 1, diaPagamento: 10,
+          // As RECUSAS pagas do SERPRO, uma por linha — é o único jeito de exercê-las sem gastar
+          // chamada real. `jaConsultada` faz a confirmação avisar que a guia já foi consultada.
+          linhas: [
+            // ⚠ `pago: true` aqui NÃO é enfeite: `parcelasPagas: 1` sem nenhuma linha quitada fazia
+            // o card se contradizer — "1 de 4" no progresso e "próxima prestação: 1" logo abaixo.
+            { n: 1, guia: "mock-guia-naolocalizado-1", competencia: "2026-04", vencimento: em(-95), pago: true, baixada: true, jaConsultada: true },
+            { n: 2, guia: "mock-guia-cooldown-2", competencia: "2026-05", vencimento: em(-65) },
+            { n: 3, guia: "mock-guia-tetodia-3", competencia: "2026-06", vencimento: em(-35) },
+            { n: 4, guia: "mock-guia-tetomes-4", competencia: "2026-07", vencimento: em(-20) },
+          ],
+          risco: { nivel: "atencao", caso: null, emAtraso: 1, vencidas: 4, faltamParaRescindir: 2, parcelasEmAtraso: [{ numeroParcela: 4, vencimento: em(-20) }], regra, avaliavel: true },
+        }),
+        parc({
+          id: "parc-risco", label: "PARCSN 2024 — risco de rescisão", tipo: "PARCSN", numeroParcelamento: "3030",
+          parcelasPagas: 0, formaPagamento: "DEBITO_AUTOMATICO", diaPagamento: 5,
+          // Integração desligada, falha de rede, e a prestação SEM GUIA (débito automático).
+          linhas: [
+            { n: 1, guia: "mock-guia-desligado-1", competencia: "2026-03", vencimento: em(-80) },
+            { n: 2, guia: "mock-guia-falhou-2", competencia: "2026-04", vencimento: em(-50) },
+            { n: 3, guia: null, competencia: "2026-05", vencimento: em(-20) },
+          ],
+          risco: {
+            nivel: "rescindivel", caso: "I", emAtraso: 3, vencidas: 5, faltamParaRescindir: 0,
+            parcelasEmAtraso: [{ numeroParcela: 3, vencimento: em(-80) }, { numeroParcela: 4, vencimento: em(-50) }, { numeroParcela: 5, vencimento: em(-20) }],
+            regra, avaliavel: true,
+          },
+        }),
+        // ⚠ O CASO REAL DO DONO (incidente de produção): um contrato MIGRADO de 60 prestações,
+        // NENHUMA com guia capturada (a flag `INTEGRACAO_SERPRO_PARCELAMENTO` está OFF), e com
+        // atraso. É a fixture que expõe o que 3 ou 4 linhas escondiam: 60 linhas idênticas, cada
+        // uma repetindo o mesmo parágrafo de "sem guia", dentro de um card de ~360px.
+        // Sem ela o mock só conhece contratos curtos, e o caminho feliz esconde o defeito.
+        parc({
+          id: "parc-migrado-60", label: "OUTRO 2026 — migrado, 60 prestações sem guia", tipo: "OUTRO",
+          // ⚠ `formaPagamento` AUSENTE de propósito: é o default do backend e o valor de TODO
+          // contrato criado antes de `139c4efe` — inclusive o do dono. É o caso em que a tela não
+          // pode afirmar se a guia vai chegar ou se não existe.
+          numeroParcelamento: "3", parcelasPagas: 0, diaPagamento: 20,
+          saldoConsolidado: 38037.74,
+          linhas: Array.from({ length: 60 }, (_, i) => ({
+            n: i + 1, guia: null, competencia: null, vencimento: em(-35 + i * 30),
+          })),
+          risco: {
+            nivel: "atencao", caso: null, emAtraso: 1, vencidas: 1, faltamParaRescindir: 2,
+            parcelasEmAtraso: [{ numeroParcela: 1, vencimento: em(-35) }], regra, avaliavel: true,
+          },
+        }),
+      ];
+  return fixos;
+}
+
+// ── A FILA DA PRESTAÇÃO SEM GUIA, no mock ────────────────────────────────────────────────────
+//
+// ⚠ ELA É DERIVADA DOS MESMOS CONTRATOS, e não de uma segunda lista escrita à mão: é assim que o
+// mock consegue mostrar a prestação SAINDO da fila depois da declaração (que é o aceite da fase) em
+// vez de fingir um sucesso sobre uma fixture congelada.
+//
+// O que ela reproduz do backend, condição por condição: sem guia · `origemBaixa` nulo · vencimento
+// até o FIM DE HOJE (quem vence hoje entra, e entra como `VENCE_HOJE`, não como vencida) ·
+// parcelamento não rescindido.
+
+/** parcelaId → a declaração feita nesta sessão. É o `origemBaixa: "MANUAL"` do mock. */
+const mockBaixasManuais = new Map();
+
+/**
+ * As recusas por prestação — cada uma existe para exercer uma guarda da rota real.
+ *
+ * ⚠ Mock que só sabe o caminho feliz esconde exatamente o que esta tela existe para mostrar. As
+ * outras quatro recusas (`parcela_ja_baixada`, `CONFERENCIA_OBRIGATORIA`, `CONFERENCIA_DIVERGENTE`
+ * e `MES_FECHADO`) não precisam de fixture: elas caem sozinhas do estado — declarar duas vezes,
+ * mandar total ausente/errado, ou escolher uma data em competência que o cadeado da aba Lançamentos
+ * fechou.
+ */
+const RECUSAS_BAIXA_MANUAL_MOCK = Object.freeze({
+  // A corrida real: a captura do SERPRO vinculou uma guia entre a listagem e o clique. A rota
+  // recusa e APONTA o outro caminho, porque as duas guardas de idempotência não se enxergam.
+  "parc-migrado-60-p2": "parcela_tem_guia",
+  // Contrato migrado cuja adesão nunca foi lançada: sem provisão de abertura não há passivo a
+  // amortizar. Esta chega DESABILITADA na tela, com o motivo à vista — nunca só desabilitada.
+  "parc-risco-p3": "provisao_inexistente",
+});
+
+function construirFilaSemGuiaMock() {
+  const agora = Date.now();
+  const fimDeHoje = new Date();
+  fimDeHoje.setHours(23, 59, 59, 999);
+
+  const linhas = [];
+  for (const p of [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]) {
+    if (p.status === "RESCINDIDO") continue;
+    for (const c of p.parcelasContratadas || []) {
+      if (c.guia || c.origemBaixa || mockBaixasManuais.has(c.id)) continue;
+      if (!c.vencimento) continue; // sem data não se afirma que venceu
+      if (new Date(c.vencimento).getTime() > fimDeHoje.getTime()) continue; // futura ≠ não paga
+      const semProvisao = RECUSAS_BAIXA_MANUAL_MOCK[c.id] === "provisao_inexistente";
+      const bloqueio = semProvisao ? "provisao_inexistente" : (c.valorPrevisto ? null : "sem_valor_previsto");
+      linhas.push({
+        parcelaId: c.id,
+        numeroParcela: c.numeroParcela ?? null,
+        competencia: c.competencia ?? null,
+        vencimento: c.vencimento,
+        valorPrevisto: c.valorPrevisto ?? null,
+        situacao: new Date(c.vencimento).getTime() < agora ? "VENCIDA" : "VENCE_HOJE",
+        parcelamentoId: p.id,
+        parcelamento: {
+          id: p.id, label: p.label, tipo: p.tipo, numParcelas: p.numParcelas,
+          numeroParcelamento: p.numeroParcelamento, formaPagamento: p.formaPagamento ?? null,
+          temProvisaoDeAbertura: !semProvisao,
+        },
+        podeBaixar: !bloqueio,
+        motivoBloqueio: bloqueio,
+      });
+    }
+  }
+  // A mais antiga primeiro — é a que está mais perto de contar para a regra de rescisão.
+  linhas.sort((a, b) => new Date(a.vencimento).getTime() - new Date(b.vencimento).getTime());
+  return linhas;
+}
+
 function mockRecusa(code, message, extra = {}) {
   const err = new Error(message);
   err.code = code;
@@ -1550,6 +1779,87 @@ export function createMockApi() {
       if (motivo) return { ok: false, skipped: true, motivo };
       mockPagamentosLocalizados.delete(guideId);
       return { ok: true, resultado: { pagamentoId: "mock-baixa-parcela" } };
+    },
+
+    // ── A OUTRA FILA: prestação SEM GUIA, vencida e sem baixa ────────────────────────────────────
+    // ⚠ Ela responde OUTRA pergunta. Acima, o SERPRO já disse que a guia foi paga e falta lançar;
+    // aqui não há documento nenhum (débito automático), e quem afirma que o dinheiro saiu é o
+    // contador. Por isso a resposta traz o CONTRATO junto de cada linha: sem isso o front faria uma
+    // chamada por prestação, e são até 60 por acordo.
+    async listParcelasSemGuiaPendentes() {
+      await delay();
+      return { ok: true, parcelas: construirFilaSemGuiaMock() };
+    },
+
+    // ⚠ TODAS AS GUARDAS DA ROTA REAL PASSAM POR AQUI — inclusive a conferência do total, que é o
+    // ato de consequência desta via: o servidor recalcula `principal + juros + multa` e RECUSA se
+    // não bater com o que a tela conferiu. Ele não deriva o acréscimo por subtração, e o mock
+    // também não: um mock que aceitasse qualquer total deixaria a divergência aparecer só em
+    // produção, no lançamento.
+    async lancarBaixaManualParcela(companyId, parcelaId, body = {}) {
+      await delay();
+      const id = String(parcelaId || "");
+
+      if (mockBaixasManuais.has(id)) {
+        throw mockRecusa("parcela_ja_baixada", "Esta prestação já foi baixada.", {
+          payload: { ok: false, skipped: true, motivo: "parcela_ja_baixada" },
+        });
+      }
+      const linha = construirFilaSemGuiaMock().find((l) => l.parcelaId === id);
+      if (!linha) {
+        throw mockRecusa("parcela_not_found", "Prestação não encontrada.", {
+          payload: { ok: false, skipped: true, motivo: "parcela_not_found" },
+        });
+      }
+      const recusa = RECUSAS_BAIXA_MANUAL_MOCK[id];
+      if (recusa) {
+        throw mockRecusa(recusa, `O servidor recusou: ${recusa}.`, {
+          payload: { ok: false, skipped: true, motivo: recusa },
+        });
+      }
+
+      const principal = Number(linha.valorPrevisto);
+      if (!Number.isFinite(principal) || principal <= 0) {
+        throw mockRecusa("sem_valor_previsto", "A prestação não tem valor previsto no contrato.", {
+          payload: { ok: false, skipped: true, motivo: "sem_valor_previsto" },
+        });
+      }
+      const juros = Number(body.valorJuros || 0);
+      const multa = Number(body.valorMulta || 0);
+      if (juros < 0 || multa < 0) {
+        throw mockRecusa("acrescimo_negativo", "Juros e multa não podem ser negativos.", {
+          payload: { ok: false, skipped: true, motivo: "acrescimo_negativo" },
+        });
+      }
+      const total = Math.round((principal + juros + multa + Number.EPSILON) * 100) / 100;
+      if (body.totalConferido == null || !Number.isFinite(Number(body.totalConferido))) {
+        throw mockRecusa("CONFERENCIA_OBRIGATORIA", "Confirme o total da baixa (principal + juros + multa).");
+      }
+      if (Math.abs(Number(body.totalConferido) - total) > 0.01) {
+        throw mockRecusa(
+          "CONFERENCIA_DIVERGENTE",
+          `O total que o servidor calcula (R$ ${total.toFixed(2)}) não é o que foi conferido `
+          + `(R$ ${Number(body.totalConferido).toFixed(2)}). Confira de novo.`,
+        );
+      }
+
+      // ⚠ MÊS FECHADO pela competência da DATA DO PAGAMENTO — e o mock lê o MESMO
+      // `mockMonthlyCirculars` que o cadeado da aba Lançamentos escreve. Fechar o mês pela tela é o
+      // que faz este caminho aparecer, exatamente como em produção.
+      const data = body.dataPagamento ? new Date(`${body.dataPagamento}T12:00:00`) : new Date();
+      const competencia = competenciaDoVencimentoMock(data.toISOString());
+      if (getCircularRecord(companyId, competencia)?.fechadoContabilEm) {
+        throw mockRecusa("MES_FECHADO", `Mês ${competencia} fechado — reabra antes de baixar a parcela.`);
+      }
+
+      mockBaixasManuais.set(id, { declaradaEm: new Date().toISOString(), principal, juros, multa, total });
+      return {
+        ok: true,
+        resultado: {
+          pagamentoId: `mock-baixa-manual-${id}`,
+          origemBaixa: "MANUAL", competencia, principal, juros, multa, total,
+        },
+      };
     },
     // ⚠ Mesmo shape do real (`POST /firm/guides/:id/buscar-pagamento`), INCLUSIVE nas recusas —
     // ver `DESFECHO_BUSCA_MOCK` acima para o porquê de cada caminho existir aqui.
@@ -4027,138 +4337,8 @@ export function createMockApi() {
     // caminho feliz esconde exatamente o que a tela existe para mostrar.
     async listParcelamentos() {
       await delay(80);
-      const dia = 24 * 60 * 60 * 1000;
-      const em = (n) => new Date(Date.now() + n * dia).toISOString();
-      // ⚠ `linhas` descreve as PRESTAÇÕES, e é o que faz a busca de pagamento ser conferível
-      // offline. Cada entrada vira uma `parcelaContratada` (o contrato: qual prestação existe e
-      // quando vence) mais, quando há, uma `guide` (o fato: valor, pagamento, número do documento).
-      // `guia: null` é o caso REAL do débito automático — prestação contratada sem documento
-      // nenhum para consultar; ela existe aqui de propósito, senão o botão desabilitado por "sem
-      // guia" nunca apareceria no mock.
-      const parc = (over) => {
-        const linhas = over.linhas || [];
-        const guides = linhas.filter((l) => l.guia).map((l, i) => ({
-          id: l.guia,
-          numeroParcela: l.n,
-          valor: 1200 + i,
-          paymentStatus: l.pago ? "PAID" : "OPEN",
-          baixada: Boolean(l.baixada),
-          competencia: l.competencia,
-          anoMesParcela: l.competencia,
-          vencimento: l.vencimento,
-          // ⚠ `null` aqui é o caso que o dono precisa ver desabilitado COM MOTIVO: sem número de
-          // documento o PAGTOWEB não tem o que consultar (é a entrada de tudo lá).
-          numeroDocumento: l.semDocumento ? null : `0720260000${1000 + l.n}`,
-          comprovante: l.pago
-            ? { dataArrecadacao: "05/07/2026", principal: 1180.22, juros: 12.94, multa: 6.84, total: 1200, meioPagamento: "PIX", confiavel: true }
-            : null,
-          paymentConfirmedAt: l.pago ? em(-3) : null,
-          serproLastCheckedAt: l.jaConsultada ? em(-1) : null,
-          serproLastCheckResult: l.jaConsultada ? "NAO_LOCALIZADO" : null,
-        }));
-        return {
-          id: over.id, label: over.label, tipo: over.tipo, status: over.status || "ATIVO",
-          numeroParcelamento: over.numeroParcelamento, principalTotal: 12000, jurosTotal: 1800,
-          // ⚠ `numParcelas` ACOMPANHA as linhas. Fixo em 12 com 3 ou 4 linhas, o mock ensinava uma
-          // contradição: o card dizia "0 de 3" (prestações materializadas) e o modal de anexo dizia
-          // "parcela 3 de 12" (cabeçalho do contrato) — dois denominadores para a mesma pergunta.
-          // Em produção `sincronizarParcelas` materializa exatamente `numParcelas` linhas.
-          valorMulta: 600, totalValue: 14400, principalPerParcela: 1200, numParcelas: linhas.length,
-          valorParcelaReferencia: 1200,
-          // F2.3: os três campos novos do contrato. `formaPagamento: null` no primeiro é o
-          // NÃO DECLARADO — o terceiro estado, que não é nenhum dos outros dois.
-          formaPagamento: over.formaPagamento ?? null,
-          diaPagamento: over.diaPagamento ?? 1,
-          saldoConsolidado: over.saldoConsolidado ?? null,
-          parcelasPagas: over.parcelasPagas, parcelasTotal: linhas.length,
-          principalPago: over.parcelasPagas * 1200, saldoRestante: 14400 - over.parcelasPagas * 1200,
-          observacoes: null, parcelas: [], guides, risco: over.risco,
-          parcelasContratadas: linhas.map((l) => ({
-            id: `${over.id}-p${l.n}`,
-            numeroParcela: l.n,
-            vencimento: l.vencimento,
-            origemBaixa: l.historica ? "HISTORICO" : null,
-            guia: l.guia
-              ? { id: l.guia, vencimento: l.vencimento, paymentStatus: l.pago ? "PAID" : "OPEN", baixada: Boolean(l.baixada) }
-              : null,
-          })),
-        };
-      };
-      const regra = {
-        id: "IN_RFB_2063_2022_ART_18",
-        descricao: "3 prestações, consecutivas ou não; ou 2 se as demais estiverem pagas ou a última vencida",
-        limiteAbsoluto: 3, limiteComDemaisPagas: 2,
-        // ⚠ false de propósito: é assim que o back devolve enquanto a redação vigente não for
-        // conferida na fonte oficial, e a tela precisa saber esconder o número do artigo.
-        citacaoConferida: false,
-      };
-      const fixos = [
-        parc({
-          id: "parc-ok", label: "PARCSN 2026 — em dia", tipo: "PARCSN", numeroParcelamento: "1010",
-          parcelasPagas: 2, formaPagamento: "GUIA_MENSAL", diaPagamento: 20, saldoConsolidado: 12000,
-          // As quatro situações da coluna Situação, em ordem: baixada · paga aguardando lançamento ·
-          // em aberto com documento (é a que se clica) · em aberto SEM documento (desabilitada).
-          linhas: [
-            { n: 1, guia: "mock-guia-baixada-1", competencia: "2026-04", vencimento: em(-100), pago: true, baixada: true },
-            { n: 2, guia: "mock-guia-pendente-baixa", competencia: "2026-05", vencimento: em(-70), pago: true },
-            { n: 3, guia: "mock-guia-ok-3", competencia: "2026-06", vencimento: em(-40) },
-            { n: 4, guia: "mock-guia-semdoc-4", competencia: "2026-07", vencimento: em(-10), semDocumento: true },
-          ],
-          risco: { nivel: "ok", caso: null, emAtraso: 0, vencidas: 4, faltamParaRescindir: 3, parcelasEmAtraso: [], regra, avaliavel: true },
-        }),
-        parc({
-          id: "parc-atencao", label: "PARCMEI 2025 — uma em atraso", tipo: "PARCMEI", numeroParcelamento: "2020",
-          parcelasPagas: 1, diaPagamento: 10,
-          // As RECUSAS pagas do SERPRO, uma por linha — é o único jeito de exercê-las sem gastar
-          // chamada real. `jaConsultada` faz a confirmação avisar que a guia já foi consultada.
-          linhas: [
-            // ⚠ `pago: true` aqui NÃO é enfeite: `parcelasPagas: 1` sem nenhuma linha quitada fazia
-            // o card se contradizer — "1 de 4" no progresso e "próxima prestação: 1" logo abaixo.
-            { n: 1, guia: "mock-guia-naolocalizado-1", competencia: "2026-04", vencimento: em(-95), pago: true, baixada: true, jaConsultada: true },
-            { n: 2, guia: "mock-guia-cooldown-2", competencia: "2026-05", vencimento: em(-65) },
-            { n: 3, guia: "mock-guia-tetodia-3", competencia: "2026-06", vencimento: em(-35) },
-            { n: 4, guia: "mock-guia-tetomes-4", competencia: "2026-07", vencimento: em(-20) },
-          ],
-          risco: { nivel: "atencao", caso: null, emAtraso: 1, vencidas: 4, faltamParaRescindir: 2, parcelasEmAtraso: [{ numeroParcela: 4, vencimento: em(-20) }], regra, avaliavel: true },
-        }),
-        parc({
-          id: "parc-risco", label: "PARCSN 2024 — risco de rescisão", tipo: "PARCSN", numeroParcelamento: "3030",
-          parcelasPagas: 0, formaPagamento: "DEBITO_AUTOMATICO", diaPagamento: 5,
-          // Integração desligada, falha de rede, e a prestação SEM GUIA (débito automático).
-          linhas: [
-            { n: 1, guia: "mock-guia-desligado-1", competencia: "2026-03", vencimento: em(-80) },
-            { n: 2, guia: "mock-guia-falhou-2", competencia: "2026-04", vencimento: em(-50) },
-            { n: 3, guia: null, competencia: "2026-05", vencimento: em(-20) },
-          ],
-          risco: {
-            nivel: "rescindivel", caso: "I", emAtraso: 3, vencidas: 5, faltamParaRescindir: 0,
-            parcelasEmAtraso: [{ numeroParcela: 3, vencimento: em(-80) }, { numeroParcela: 4, vencimento: em(-50) }, { numeroParcela: 5, vencimento: em(-20) }],
-            regra, avaliavel: true,
-          },
-        }),
-        // ⚠ O CASO REAL DO DONO (incidente de produção): um contrato MIGRADO de 60 prestações,
-        // NENHUMA com guia capturada (a flag `INTEGRACAO_SERPRO_PARCELAMENTO` está OFF), e com
-        // atraso. É a fixture que expõe o que 3 ou 4 linhas escondiam: 60 linhas idênticas, cada
-        // uma repetindo o mesmo parágrafo de "sem guia", dentro de um card de ~360px.
-        // Sem ela o mock só conhece contratos curtos, e o caminho feliz esconde o defeito.
-        parc({
-          id: "parc-migrado-60", label: "OUTRO 2026 — migrado, 60 prestações sem guia", tipo: "OUTRO",
-          // ⚠ `formaPagamento` AUSENTE de propósito: é o default do backend e o valor de TODO
-          // contrato criado antes de `139c4efe` — inclusive o do dono. É o caso em que a tela não
-          // pode afirmar se a guia vai chegar ou se não existe.
-          numeroParcelamento: "3", parcelasPagas: 0, diaPagamento: 20,
-          saldoConsolidado: 38037.74,
-          linhas: Array.from({ length: 60 }, (_, i) => ({
-            n: i + 1, guia: null, competencia: null, vencimento: em(-35 + i * 30),
-          })),
-          risco: {
-            nivel: "atencao", caso: null, emAtraso: 1, vencidas: 1, faltamParaRescindir: 2,
-            parcelasEmAtraso: [{ numeroParcela: 1, vencimento: em(-35) }], regra, avaliavel: true,
-          },
-        }),
-      ];
       // Os criados nesta sessão vêm primeiro — é o que o contador acabou de fazer.
-      return [...mockParcelamentosCriados.values(), ...fixos];
+      return [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()];
     },
     async createParcelamento() { await delay(80); return { ok: true, data: null }; },
 
