@@ -765,6 +765,40 @@ const MOCK_ESTORNO_TOTAL = Math.round(
   ) * 100,
 ) / 100;
 
+// ─── Busca de pagamento da PARCELA (PAGTOWEB) ────────────────────────────────────────────────
+// ⚠ MOCK QUE SÓ CONHECE O CAMINHO FELIZ ESCONDE EXATAMENTE O QUE ESTA TELA PRECISA MOSTRAR.
+// A busca do comprovante é uma chamada PAGA ao SERPRO, e ela recusa de seis maneiras diferentes,
+// cada uma exigindo uma saída diferente do contador: esperar o cooldown, pedir liberação a um
+// ADMIN, ligar uma flag de ambiente, recapturar a guia, ou simplesmente esperar mais alguns dias.
+// Um mock que devolvesse sempre `encontrado: true` deixaria os cinco caminhos de recusa sem NENHUM
+// exercício offline — que é a única forma de conferi-los sem gastar dinheiro no SERPRO real.
+//
+// O desfecho é escolhido pelo PREFIXO do guideId, para que cada caminho tenha uma linha clicável
+// própria na aba Parcelamento.
+const DESFECHO_BUSCA_MOCK = [
+  ["mock-guia-ok", { encontrado: true }],
+  ["mock-guia-naolocalizado", { encontrado: false, motivo: "Pagamento ainda não localizado no SERPRO." }],
+  ["mock-guia-semdoc", { encontrado: false, motivo: "Guia sem número de documento — o comprovante é localizado por ele." }],
+  ["mock-guia-cooldown", { falha: { code: "SERPRO_CHAMADA_REPETIDA", status: 502, message: "Esta mesma consulta ao SERPRO (COMPARRECADACAO72) foi feita há pouco e é paga. Aguarde 247s ou mude algo antes de repetir." } }],
+  ["mock-guia-tetodia", { falha: { code: "SERPRO_TETO_DIARIO", status: 502, message: "Esta empresa já consumiu 60 consultas pagas ao SERPRO hoje (teto 60). Um ADMIN pode liberar, ou tente amanhã." } }],
+  ["mock-guia-tetomes", { falha: { code: "SERPRO_TETO_MENSAL_ESCRITORIO", status: 502, message: "O escritório já consumiu 1240 consultas pagas ao SERPRO neste mês (teto 1240, = 31 empresas × 40). Um ADMIN pode liberar; se o consumo normal cresceu, aumente SERPRO_ORCAMENTO_MENSAL_POR_EMPRESA." } }],
+  ["mock-guia-desligado", { falha: { code: "SERPRO_PAGTOWEB_DISABLED", status: 502, message: "serpro_pagtoweb_disabled" } }],
+  ["mock-guia-falhou", { falha: { code: "PAGTOWEB_FALHOU", status: 502, message: "socket hang up" } }],
+];
+
+// Pagamentos já localizados nesta sessão do mock — é o que faz a parcela MUDAR na tela depois da
+// busca (vira "paga · falta lançar" e entra na fila de baixa pendente). Sem isto o clique
+// terminaria com um texto na tela e a lista idêntica, e o fluxo nunca seria conferido de verdade.
+const mockPagamentosLocalizados = new Map(); // guideId → comprovante
+// Uma parcela já nasce paga-e-sem-lançamento, para que o painel "Parcelas pagas aguardando
+// lançamento" (e o motivo pelo qual o botão de busca dela fica desabilitado) apareçam sem depender
+// de alguém clicar antes.
+mockPagamentosLocalizados.set("mock-guia-pendente-baixa", {
+  dataArrecadacao: "05/07/2026", principal: 1180.22, juros: 12.94, multa: 6.84,
+  total: 1200, meioPagamento: "PIX", confiavel: true,
+  competencia: "2026-05", parcelamentoId: "parc-ok",
+});
+
 // Estornos já feitos no mock — é o que faz a parcela VOLTAR PARA A FILA depois do estorno, em vez
 // de a tela recarregar idêntica e o fluxo terminar sem nenhuma consequência visível.
 const mockEstornosFeitos = new Map(); // companyId -> Set(entryId de baixa)
@@ -1342,18 +1376,52 @@ export function createMockApi() {
     },
     async listParcelasPendentesBaixa() {
       await delay();
-      return { ok: true, parcelas: [] };
+      // A fila é alimentada pelo que a busca localizou nesta sessão — mais a parcela que já nasce
+      // paga na fixture (`mock-guia-pendente-baixa`), pra a fila não depender de ninguém clicar.
+      const parcelas = [...mockPagamentosLocalizados.entries()].map(([guideId, c], i) => ({
+        parcelaId: `mock-parcela-${guideId}`,
+        guideId,
+        numeroParcela: i + 1,
+        competencia: c.competencia || "2026-07",
+        valor: c.total ?? 1200,
+        vencimento: null,
+        parcelamentoId: c.parcelamentoId || "parc-ok",
+        confirmadoEm: c.confirmadoEm || new Date().toISOString(),
+        comprovante: c,
+      }));
+      return { ok: true, parcelas };
     },
-    async lancarBaixaParcela() {
+    async lancarBaixaParcela(companyId, guideId) {
       await delay();
+      mockPagamentosLocalizados.delete(guideId);
       return { ok: true, resultado: { pagamentoId: "mock-baixa-parcela" } };
     },
-    async buscarPagamentoGuia() {
+    // ⚠ Mesmo shape do real (`POST /firm/guides/:id/buscar-pagamento`), INCLUSIVE nas recusas —
+    // ver `DESFECHO_BUSCA_MOCK` acima para o porquê de cada caminho existir aqui.
+    async buscarPagamentoGuia(guideId) {
       await delay();
-      return {
-        ok: true, encontrado: true,
-        comprovante: { dataArrecadacao: "13/07/2026", principal: 178.31, juros: 12.94, multa: 1.78, total: 193.03, meioPagamento: "PIX", confiavel: true },
+      const id = String(guideId || "");
+      const caso = (DESFECHO_BUSCA_MOCK.find(([prefixo]) => id.startsWith(prefixo)) || [])[1]
+        || { encontrado: true };
+
+      if (caso.falha) {
+        // O `realApi` sobe `code`/`status` junto da mensagem; o mock faz igual, senão a tela
+        // distinguiria as recusas em produção e não no mock — o oposto do que serve.
+        const err = new Error(caso.falha.message);
+        err.code = caso.falha.code;
+        err.status = caso.falha.status;
+        err.payload = { ok: false, error: caso.falha.code, reason: caso.falha.message };
+        throw err;
+      }
+      if (!caso.encontrado) {
+        return { ok: true, encontrado: false, motivo: caso.motivo };
+      }
+      const comprovante = {
+        dataArrecadacao: "13/07/2026", principal: 178.31, juros: 12.94, multa: 1.78,
+        total: 193.03, meioPagamento: "PIX", confiavel: true,
       };
+      mockPagamentosLocalizados.set(id, { ...comprovante, competencia: "2026-07" });
+      return { ok: true, encontrado: true, comprovante };
     },
     async setChecklistFechamento(companyId, competencia, item, ok) {
       await delay();
@@ -3830,14 +3898,51 @@ export function createMockApi() {
       await delay(80);
       const dia = 24 * 60 * 60 * 1000;
       const em = (n) => new Date(Date.now() + n * dia).toISOString();
-      const parc = (over) => ({
-        id: over.id, label: over.label, tipo: over.tipo, status: over.status || "ATIVO",
-        numeroParcelamento: over.numeroParcelamento, principalTotal: 12000, jurosTotal: 1800,
-        valorMulta: 600, totalValue: 14400, principalPerParcela: 1200, numParcelas: 12,
-        parcelasPagas: over.parcelasPagas, parcelasTotal: over.parcelas.length,
-        principalPago: over.parcelasPagas * 1200, saldoRestante: 14400 - over.parcelasPagas * 1200,
-        observacoes: null, parcelas: [], guides: [], risco: over.risco,
-      });
+      // ⚠ `linhas` descreve as PRESTAÇÕES, e é o que faz a busca de pagamento ser conferível
+      // offline. Cada entrada vira uma `parcelaContratada` (o contrato: qual prestação existe e
+      // quando vence) mais, quando há, uma `guide` (o fato: valor, pagamento, número do documento).
+      // `guia: null` é o caso REAL do débito automático — prestação contratada sem documento
+      // nenhum para consultar; ela existe aqui de propósito, senão o botão desabilitado por "sem
+      // guia" nunca apareceria no mock.
+      const parc = (over) => {
+        const linhas = over.linhas || [];
+        const guides = linhas.filter((l) => l.guia).map((l, i) => ({
+          id: l.guia,
+          numeroParcela: l.n,
+          valor: 1200 + i,
+          paymentStatus: l.pago ? "PAID" : "OPEN",
+          baixada: Boolean(l.baixada),
+          competencia: l.competencia,
+          anoMesParcela: l.competencia,
+          vencimento: l.vencimento,
+          // ⚠ `null` aqui é o caso que o dono precisa ver desabilitado COM MOTIVO: sem número de
+          // documento o PAGTOWEB não tem o que consultar (é a entrada de tudo lá).
+          numeroDocumento: l.semDocumento ? null : `0720260000${1000 + l.n}`,
+          comprovante: l.pago
+            ? { dataArrecadacao: "05/07/2026", principal: 1180.22, juros: 12.94, multa: 6.84, total: 1200, meioPagamento: "PIX", confiavel: true }
+            : null,
+          paymentConfirmedAt: l.pago ? em(-3) : null,
+          serproLastCheckedAt: l.jaConsultada ? em(-1) : null,
+          serproLastCheckResult: l.jaConsultada ? "NAO_LOCALIZADO" : null,
+        }));
+        return {
+          id: over.id, label: over.label, tipo: over.tipo, status: over.status || "ATIVO",
+          numeroParcelamento: over.numeroParcelamento, principalTotal: 12000, jurosTotal: 1800,
+          valorMulta: 600, totalValue: 14400, principalPerParcela: 1200, numParcelas: 12,
+          parcelasPagas: over.parcelasPagas, parcelasTotal: linhas.length,
+          principalPago: over.parcelasPagas * 1200, saldoRestante: 14400 - over.parcelasPagas * 1200,
+          observacoes: null, parcelas: [], guides, risco: over.risco,
+          parcelasContratadas: linhas.map((l) => ({
+            id: `${over.id}-p${l.n}`,
+            numeroParcela: l.n,
+            vencimento: l.vencimento,
+            origemBaixa: null,
+            guia: l.guia
+              ? { id: l.guia, vencimento: l.vencimento, paymentStatus: l.pago ? "PAID" : "OPEN", baixada: Boolean(l.baixada) }
+              : null,
+          })),
+        };
+      };
       const regra = {
         id: "IN_RFB_2063_2022_ART_18",
         descricao: "3 prestações, consecutivas ou não; ou 2 se as demais estiverem pagas ou a última vencida",
@@ -3849,17 +3954,39 @@ export function createMockApi() {
       return [
         parc({
           id: "parc-ok", label: "PARCSN 2026 — em dia", tipo: "PARCSN", numeroParcelamento: "1010",
-          parcelasPagas: 4, parcelas: [1, 2, 3, 4],
+          parcelasPagas: 2,
+          // As quatro situações da coluna Situação, em ordem: baixada · paga aguardando lançamento ·
+          // em aberto com documento (é a que se clica) · em aberto SEM documento (desabilitada).
+          linhas: [
+            { n: 1, guia: "mock-guia-baixada-1", competencia: "2026-04", vencimento: em(-100), pago: true, baixada: true },
+            { n: 2, guia: "mock-guia-pendente-baixa", competencia: "2026-05", vencimento: em(-70), pago: true },
+            { n: 3, guia: "mock-guia-ok-3", competencia: "2026-06", vencimento: em(-40) },
+            { n: 4, guia: "mock-guia-semdoc-4", competencia: "2026-07", vencimento: em(-10), semDocumento: true },
+          ],
           risco: { nivel: "ok", caso: null, emAtraso: 0, vencidas: 4, faltamParaRescindir: 3, parcelasEmAtraso: [], regra, avaliavel: true },
         }),
         parc({
           id: "parc-atencao", label: "PARCMEI 2025 — uma em atraso", tipo: "PARCMEI", numeroParcelamento: "2020",
-          parcelasPagas: 3, parcelas: [1, 2, 3, 4],
+          parcelasPagas: 1,
+          // As RECUSAS pagas do SERPRO, uma por linha — é o único jeito de exercê-las sem gastar
+          // chamada real. `jaConsultada` faz a confirmação avisar que a guia já foi consultada.
+          linhas: [
+            { n: 1, guia: "mock-guia-naolocalizado-1", competencia: "2026-04", vencimento: em(-95), jaConsultada: true },
+            { n: 2, guia: "mock-guia-cooldown-2", competencia: "2026-05", vencimento: em(-65) },
+            { n: 3, guia: "mock-guia-tetodia-3", competencia: "2026-06", vencimento: em(-35) },
+            { n: 4, guia: "mock-guia-tetomes-4", competencia: "2026-07", vencimento: em(-20) },
+          ],
           risco: { nivel: "atencao", caso: null, emAtraso: 1, vencidas: 4, faltamParaRescindir: 2, parcelasEmAtraso: [{ numeroParcela: 4, vencimento: em(-20) }], regra, avaliavel: true },
         }),
         parc({
           id: "parc-risco", label: "PARCSN 2024 — risco de rescisão", tipo: "PARCSN", numeroParcelamento: "3030",
-          parcelasPagas: 2, parcelas: [1, 2, 3, 4, 5],
+          parcelasPagas: 0,
+          // Integração desligada, falha de rede, e a prestação SEM GUIA (débito automático).
+          linhas: [
+            { n: 1, guia: "mock-guia-desligado-1", competencia: "2026-03", vencimento: em(-80) },
+            { n: 2, guia: "mock-guia-falhou-2", competencia: "2026-04", vencimento: em(-50) },
+            { n: 3, guia: null, competencia: "2026-05", vencimento: em(-20) },
+          ],
           risco: {
             nivel: "rescindivel", caso: "I", emAtraso: 3, vencidas: 5, faltamParaRescindir: 0,
             parcelasEmAtraso: [{ numeroParcela: 3, vencimento: em(-80) }, { numeroParcela: 4, vencimento: em(-50) }, { numeroParcela: 5, vencimento: em(-20) }],

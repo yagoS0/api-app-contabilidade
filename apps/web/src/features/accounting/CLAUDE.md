@@ -26,6 +26,43 @@ plano de contas, funções/templates, importações (OFX/Excel).
   parcelamento existente, pagamento; abertura é a única provisão; contas em branco + memória.
 - `functions/`, `chart-of-accounts/`, `rules/`, `historicos/`, `ofx-import/`, `excel-import/`.
 
+## Buscar pagamento da parcela — na LINHA, e a mesma rota das outras guias
+
+`parcelamento/components/ParcelasDoAcordo.jsx` + a regra em `parcelamento/lib/parcelaBusca.js`
+(24 testes; a ligação em `components/__tests__/parcelasDoAcordoBusca.test.jsx`, 16).
+
+Uma parcela **É uma `Guide`** com `parcelamentoId`, então o botão chama exatamente a mesma
+`POST /firm/guides/:id/buscar-pagamento` que a Circular já usa nos tributos
+(`renderCircularTab.handleBuscarPagamento`). **Não há caminho novo de backend.** O que mudou de lado
+do servidor foi só o `select`: `listParcelamentos` passou a derivar `numeroDocumento` (e
+`serproLastCheckedAt`) das guias — sem isso a tela não tinha como desabilitar o botão com o motivo,
+porque o número do documento não saía por nenhuma rota (nem o `toGuideResponse` o expõe).
+
+⚠ **A busca NÃO lança nada.** Ela marca a guia como paga e guarda o comprovante; a baixa continua
+sendo ato deliberado, no painel "Parcelas pagas aguardando lançamento" logo acima — para onde a
+linha migra depois (o painel recarrega por `refreshKey`).
+
+⚠ **A chamada é PAGA e recusa de seis maneiras**, cada uma com saída diferente para o contador:
+`SERPRO_CHAMADA_REPETIDA` (cooldown de 5 min), `SERPRO_TETO_DIARIO`,
+`SERPRO_TETO_MENSAL_ESCRITORIO`, `SERPRO_PAGTOWEB_DISABLED`, `PAGTOWEB_FALHOU`, e o **"não
+localizado"**, que **não é erro** — sai em tom neutro, distinto do vermelho de falha. Antes do POST,
+um `confirm` **repete documento, valor e competência** e avisa se a guia já foi consultada.
+
+⚠ **`SERPRO_PAGTOWEB_DISABLED` chega com `message === "serpro_pagtoweb_disabled"`** — a mensagem do
+servidor É o código. `motivoDaFalha` descarta mensagem sem espaço em branco e usa o texto
+explicativo; exibi-la crua poria o nome de uma flag de ambiente no lugar do motivo.
+
+⚠ **`ParcelamentosList` não desmonta mais a lista durante a recarga**
+(`loading && !parcelamentos.length`). `useParcelamentos.load()` liga `loading` em TODA ação, e a
+troca por "Carregando…" apagava o desfecho da busca no mesmo tick em que ele aparecia: o acordeão
+fechava e não sobrava nada na tela — indistinguível de "o botão não fez nada", num clique que
+custou dinheiro.
+
+⚠ **O mock conhece TODOS os caminhos de recusa** (`DESFECHO_BUSCA_MOCK`, por prefixo do `guideId`) e
+a fixture de `listParcelamentos` tem uma linha para cada estado — inclusive a prestação **sem guia**
+(débito automático) e a guia **sem `numeroDocumento`**. Mock que só soubesse o caminho feliz
+esconderia exatamente o que esta tela existe para mostrar.
+
 ## A célula de valor aceita fórmula (`entries/lib/valorFormula.js`)
 
 Digitar `=10+10` na célula de valor da linha de lançamento resulta em 20 — o contador deixa de

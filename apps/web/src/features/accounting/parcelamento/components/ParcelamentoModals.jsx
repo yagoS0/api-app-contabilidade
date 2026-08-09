@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { AccountCodeInput } from "../../entries/components/renderAccountingEntriesParts";
+import { ParcelasDoAcordo } from "./ParcelasDoAcordo";
 
 // Fechamento dos modais deste arquivo: ESC fecha, clicar fora NÃO.
 // Clique no backdrop fechava e fazia perder o preenchimento inteiro sem confirmação —
@@ -1113,12 +1114,31 @@ function RiscoRescisao({ risco }) {
   );
 }
 
-export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenCreate, getConfig, saveConfig, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
+export function ParcelamentosList({
+  parcelamentos, loading, onRescindir, onOpenCreate, getConfig, saveConfig,
+  accounts = [], onSearchHistoricos, onGetHistoricosByCode,
+  // Busca do pagamento na LINHA da parcela (pedido do dono). Opcionais: a Circular embeda esta
+  // mesma lista e lá a confirmação de pagamento já vive no popover da célula, então sem os dois
+  // handlers o bloco simplesmente não aparece.
+  onBuscarPagamentoParcela, onParcelaAtualizada,
+}) {
   const [configParc, setConfigParc] = useState(null); // { id, label }
   const [rescParc, setRescParc] = useState(null);      // parcelamento sendo rescindido
   const [rescBusy, setRescBusy] = useState(false);
 
-  if (loading) {
+  // ⚠ RECARGA NÃO DESMONTA A LISTA — e isso não é polimento.
+  //
+  // `useParcelamentos.load()` liga `loading` em TODA recarga, e toda ação da tela recarrega
+  // (rescindir, salvar config, e agora localizar um pagamento). Trocando a lista inteira por
+  // "Carregando…" nesse instante, os cards são DESMONTADOS e voltam zerados: o bloco de parcelas
+  // que estava aberto fecha sozinho e o desfecho da busca — *"Pagamento localizado em 13/07/2026"* —
+  // é apagado no mesmo tick em que apareceria. Quem clicou vê o acordeão fechar e mais nada, que é
+  // indistinguível de "o botão não fez nada". Numa chamada PAGA ao SERPRO, o convite é clicar de
+  // novo.
+  //
+  // O spinner só faz sentido quando não há NADA para mostrar; sobre uma lista já carregada, a
+  // recarga acontece por baixo.
+  if (loading && !(parcelamentos && parcelamentos.length)) {
     return <div style={{ padding: 20, color: PANEL.muted, textAlign: "center" }}>Carregando parcelamentos…</div>;
   }
   if (!parcelamentos || parcelamentos.length === 0) {
@@ -1172,6 +1192,14 @@ export function ParcelamentosList({ parcelamentos, loading, onRescindir, onOpenC
                 <div style={{ fontSize: "0.72rem", color: PANEL.muted, whiteSpace: "pre-wrap", borderTop: `1px solid ${PANEL.border}`, paddingTop: 8 }}>
                   <span style={{ color: PANEL.text, fontWeight: 600 }}>Descrição: </span>{p.observacoes}
                 </div>
+              )}
+
+              {onBuscarPagamentoParcela && (
+                <ParcelasDoAcordo
+                  parcelamento={p}
+                  onBuscar={onBuscarPagamentoParcela}
+                  onBuscou={onParcelaAtualizada}
+                />
               )}
 
               <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: "auto" }}>

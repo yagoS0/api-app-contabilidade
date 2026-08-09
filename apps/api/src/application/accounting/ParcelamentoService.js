@@ -627,6 +627,32 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
   });
 }
 
+/**
+ * A guia da parcela, como a TELA precisa dela.
+ *
+ * ⚠ O `numeroDocumento` é a entrada de TUDO no PAGTOWEB — sem ele a busca do comprovante não tem o
+ * que consultar, e o SERPRO nem chega a ser chamado (a rota `buscar-pagamento` já recusa antes).
+ * Ele mora dentro de `extracted`, e até aqui não saía do backend por nenhum caminho: nem o
+ * `toGuideResponse` (que expõe só `extracted.composicao`) nem esta listagem. A consequência é que a
+ * tela não tinha como desabilitar o botão de busca com o motivo — a única forma de descobrir que a
+ * guia não tem número era clicar e ler a recusa.
+ *
+ * ⚠ O `extracted` INTEIRO não sai daqui, pelo mesmo motivo que `toGuideResponse` não o expõe: ele
+ * carrega o `rawPayload` da integração. O que sai é o número e a leitura do comprovante — os dois
+ * dados que a linha da parcela mostra.
+ */
+function guiaDaParcelaParaTela(guia) {
+  if (!guia || typeof guia !== "object") return guia;
+  if (!("extracted" in guia)) return guia;
+  const extracted = guia.extracted && typeof guia.extracted === "object" ? guia.extracted : {};
+  const { extracted: _descartado, ...resto } = guia;
+  return {
+    ...resto,
+    numeroDocumento: String(extracted.numeroDocumento || "").trim() || null,
+    comprovante: extracted.comprovante || null,
+  };
+}
+
 // Q16: enriquece o parcelamento com saldo/quanto-falta. Parcelas são linhas leves
 // (tipo="PARCELA"); pagas = statusPagamento PAGO. Saldo = total − principais já baixados.
 function decorateParcelamento(parc) {
@@ -684,6 +710,7 @@ function decorateParcelamento(parc) {
   // prevenir. O predicado vem de fora (`parcelaRowQuitada`, que chama o `parcelaQuitada` de sempre).
   return {
     ...parc,
+    guides: Array.isArray(parc.guides) ? parc.guides.map(guiaDaParcelaParaTela) : parc.guides,
     parcelasPagas,
     parcelasTotal,
     // ⚠ Prestações sobre as quais não há NENHUMA evidência de pagamento (sem guia e sem baixa
@@ -715,7 +742,18 @@ export async function listParcelamentos({ portalClientId, status }) {
       },
       // ⚠ `vencimento` é o que decide se uma parcela está EM ATRASO — sem ele o risco de rescisão
       // não tem como ser calculado e sairia como "não avaliável" em toda empresa.
-      guides: { select: { id: true, numeroParcela: true, valor: true, paymentStatus: true, baixada: true, competencia: true, anoMesParcela: true, vencimento: true } },
+      // ⚠ `extracted` entra aqui SÓ para virar `numeroDocumento`/`comprovante` em
+      // `guiaDaParcelaParaTela` — ele não chega ao cliente (carrega rawPayload da integração).
+      // `serproLastCheckedAt`/`Result` é o que deixa a tela dizer "já consultada há X" ANTES de
+      // gastar outra chamada paga no PAGTOWEB.
+      guides: {
+        select: {
+          id: true, numeroParcela: true, valor: true, paymentStatus: true, baixada: true,
+          competencia: true, anoMesParcela: true, vencimento: true,
+          extracted: true, paymentConfirmedAt: true,
+          serproLastCheckedAt: true, serproLastCheckResult: true,
+        },
+      },
       // F2.1: a fonte dos contadores e do risco. `guides` acima segue servido à tela como estava.
       parcelasContratadas: { select: SELECT_PARCELA_PARA_QUADRO, orderBy: { numeroParcela: "asc" } },
       templateOpening: { select: { id: true, name: true } },

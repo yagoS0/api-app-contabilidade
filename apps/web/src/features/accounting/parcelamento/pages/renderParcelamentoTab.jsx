@@ -24,7 +24,7 @@ function fmtMoney(v) {
 }
 
 // Parcelas com pagamento marcado e SEM lançamento — o que falta o contador lançar.
-function ParcelasPendentesBaixa({ companyId }) {
+function ParcelasPendentesBaixa({ companyId, refreshKey = 0 }) {
   const [parcelas, setParcelas] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [lancando, setLancando] = useState(null);
@@ -37,7 +37,11 @@ function ParcelasPendentesBaixa({ companyId }) {
       setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
     } catch { setParcelas([]); }
     finally { setCarregando(false); }
-  }, [companyId]);
+    // `refreshKey` é a dependência que faz a fila recarregar quando um "Buscar pagamento" na linha
+    // da parcela localiza o comprovante — é exatamente aí que a parcela ENTRA nesta lista, e sem
+    // isso ela só apareceria no próximo F5.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, refreshKey]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -130,6 +134,26 @@ function ParcelasPendentesBaixa({ companyId }) {
 }
 
 export function ParcelamentoTab({ companyId, parcelamentos, accounts = [], onSearchHistoricos, onGetHistoricosByCode }) {
+  // Recarga da fila de baixa pendente depois de um pagamento localizado na linha da parcela.
+  const [baixaRefreshKey, setBaixaRefreshKey] = useState(0);
+
+  // ⚠ MESMA ROTA DAS OUTRAS GUIAS. Uma parcela É uma `Guide` com `parcelamentoId`, então
+  // `buscarPagamentoGuia(guideId)` é literalmente a chamada que a Circular já faz nos tributos —
+  // não existe caminho novo de backend aqui.
+  const buscarPagamentoParcela = useCallback(async (guideId) => {
+    if (!parcelaApi?.buscarPagamentoGuia) {
+      const err = new Error("A busca de pagamento não está disponível neste modo de API.");
+      err.code = "BUSCA_INDISPONIVEL";
+      throw err;
+    }
+    return parcelaApi.buscarPagamentoGuia(guideId);
+  }, []);
+
+  const aposLocalizarPagamento = useCallback(async () => {
+    setBaixaRefreshKey((k) => k + 1);
+    await parcelamentos?.load?.();
+  }, [parcelamentos]);
+
   if (!parcelamentos) {
     return <div style={{ padding: 24, color: PANEL.muted }}>Carregando…</div>;
   }
@@ -146,7 +170,7 @@ export function ParcelamentoTab({ companyId, parcelamentos, accounts = [], onSea
         </span>
       </div>
 
-      <ParcelasPendentesBaixa companyId={companyId} />
+      <ParcelasPendentesBaixa companyId={companyId} refreshKey={baixaRefreshKey} />
 
       <ConferenciaParcelasPanel
         listConferencia={parcelamentos.listConferencia}
@@ -162,6 +186,8 @@ export function ParcelamentoTab({ companyId, parcelamentos, accounts = [], onSea
         accounts={accounts}
         onSearchHistoricos={onSearchHistoricos}
         onGetHistoricosByCode={onGetHistoricosByCode}
+        onBuscarPagamentoParcela={buscarPagamentoParcela}
+        onParcelaAtualizada={aposLocalizarPagamento}
       />
     </div>
   );
