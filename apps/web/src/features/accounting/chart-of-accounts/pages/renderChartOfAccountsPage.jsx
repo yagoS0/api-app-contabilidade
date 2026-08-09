@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState } from "react";
+import { BackButton } from "../../../../components/ui/BackButton";
+import { Button } from "../../../../components/ui/Button";
 
 const TIPO_OPTIONS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
 const NATUREZA_OPTIONS = ["DEVEDORA", "CREDORA"];
@@ -291,7 +293,7 @@ export function ChartOfAccountsPage({
                 </>}
           </p>
         </div>
-        {onBack && <button type="button" onClick={onBack} style={ACTION}>Voltar</button>}
+        {onBack && <BackButton onClick={onBack} />}
       </div>
 
       {message && <p style={{ margin: "0 0 12px", padding: "10px 14px", background: "rgba(105,255,71,0.12)", color: PANEL.success, borderRadius: 8, fontSize: "0.9rem" }}>{message}</p>}
@@ -337,9 +339,12 @@ export function ChartOfAccountsPage({
               {NATUREZA_OPTIONS.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
-          <button type="submit" disabled={saving || !form.codigo || !form.nome} style={{ ...ACTION, alignSelf: "end", background: PANEL.success, borderColor: PANEL.success, color: PANEL.page }}>
+          {/* ⚠ Era verde (#69FF47). Adicionar conta é ação, e verde é "concluído" — aqui, aliás,
+              ao lado do selo verde "Confirmada" da tabela logo abaixo, que precisa ser lido como
+              estado. Ação primária usa o accent. */}
+          <Button type="submit" disabled={saving || !form.codigo || !form.nome} style={{ alignSelf: "end" }}>
             {saving ? "..." : "Adicionar"}
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -397,14 +402,9 @@ export function ChartOfAccountsPage({
           >
             {bulkBusy ? "..." : `Confirmar ERP${selectedPendingCount > 0 ? ` (${selectedPendingCount})` : ""}`}
           </button>
-          <button
-            type="button"
-            onClick={handleBulkDelete}
-            disabled={bulkBusy}
-            style={{ ...ACTION, background: PANEL.danger, borderColor: PANEL.danger, color: "#fff" }}
-          >
+          <Button type="button" variant="danger" onClick={handleBulkDelete} disabled={bulkBusy}>
             {bulkBusy ? "..." : "Excluir selecionadas"}
-          </button>
+          </Button>
           <button
             type="button"
             onClick={clearSelection}
@@ -505,13 +505,16 @@ export function ChartOfAccountsPage({
                         ) : (
                           <>
                             {isPending && (
-                              <button type="button" onClick={() => handleConfirm(account.codigo)} disabled={saving} style={{ ...ACTION, marginRight: 6 }}>
+                              <Button type="button" size="sm" variant="secondary" onClick={() => handleConfirm(account.codigo)} disabled={saving} style={{ marginRight: 6 }}>
                                 Confirmar ERP
-                              </button>
+                              </Button>
                             )}
-                            <button type="button" onClick={() => handleDelete(account.codigo)} disabled={saving} style={{ ...ACTION, background: PANEL.danger, borderColor: PANEL.danger, color: "#fff" }}>
+                            {/* ⚠ Era vermelho SÓLIDO com raio 16 — o `.btn-danger` do app é fundo
+                                translúcido com texto vermelho. Vermelho chapado numa coluna inteira
+                                de linhas é o "paredão" que o redesign de cores desfez. */}
+                            <Button type="button" size="sm" variant="danger" onClick={() => handleDelete(account.codigo)} disabled={saving}>
                               Excluir
-                            </button>
+                            </Button>
                           </>
                         )}
                       </td>

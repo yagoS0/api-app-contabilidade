@@ -19,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // O ciclo da obrigação (aguardando → aberta → urgente → transmitida) mora numa lib própria porque
 // o calendário, a aba da empresa e o chip da listagem principal precisam da MESMA leitura.
 import { cicloDaOcorrencia, aparenciaDaOcorrencia, CICLO } from "../../obrigacoes/lib/cicloObrigacao";
+import { Tabs } from "../../../components/ui/Tabs";
 
 const COR = {
   fundo: "#21222C", fundoFora: "#1B1C24", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
@@ -764,11 +765,16 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
               {empresas.map((e) => <option key={e.companyId} value={e.companyId}>{e.razao}</option>)}
             </select>
           )}
-          {[["mes", "Mês", "M"], ["semana", "Semana", "S"], ["dia", "Dia", "D"], ["agenda", "Agenda", "A"]].map(([k, label, tecla]) => (
-            <button key={k} type="button" onClick={() => setVisao(k)} style={btn(visao === k)} title={companyIdFixo ? label : `${label} (${tecla})`}>
-              {label}
-            </button>
-          ))}
+          <Tabs
+            mode="view"
+            size="sm"
+            ariaLabel="Granularidade do calendário"
+            items={[["mes", "Mês", "M"], ["semana", "Semana", "S"], ["dia", "Dia", "D"], ["agenda", "Agenda", "A"]].map(
+              ([k, label, tecla]) => ({ key: k, label, title: companyIdFixo ? label : `${label} (${tecla})` }),
+            )}
+            active={visao}
+            onChange={setVisao}
+          />
         </div>
       </div>
 
@@ -931,7 +937,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                         type="button"
                         onClick={() => concluirOcorrencia(linha.ocorrencia, { fecharDetalhe: false })}
                         title="Marcar como concluída"
-                        style={{ background: "none", border: "none", color: "#69FF47", cursor: "pointer", fontSize: "1rem", padding: "0 2px", flex: "0 0 auto" }}
+                        style={{ background: "none", border: "none", color: "var(--accent-purple)", cursor: "pointer", fontSize: "1rem", padding: "0 2px", flex: "0 0 auto" }}
                       >
                         ✓
                       </button>
@@ -1094,7 +1100,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
             </select>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button type="button" onClick={() => setCriando(null)} style={btn(false)}>Cancelar</button>
-              <button type="submit" disabled={salvando} style={{ ...btn(true), borderColor: "#69FF47", color: "#69FF47" }}>
+              <button type="submit" disabled={salvando} style={btn(true)}>
                 {salvando ? "Salvando…" : "Salvar"}
               </button>
             </div>
@@ -1151,7 +1157,7 @@ export function CalendarioGrid({ api, empresas = [], onOpenCompany, companyIdFix
                 <button
                   type="button"
                   onClick={() => concluirOcorrencia(detalhe)}
-                  style={{ ...btn(true), borderColor: "#69FF47", color: "#69FF47" }}
+                  style={btn(true)}
                 >
                   ✓ Marcar como concluída
                 </button>

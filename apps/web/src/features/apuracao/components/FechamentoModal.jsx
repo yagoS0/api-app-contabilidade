@@ -462,7 +462,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
               <button onClick={handleSalvar} disabled={acting || !resultado}
                 style={btn("#FFB347")} title={!resultado ? "Calcule antes de salvar" : ""}>💾 Salvar (fechar)</button>
               <button onClick={() => setShowTransmit(true)} disabled={acting || !resultado}
-                style={btn(retificar ? "#BD93F9" : "#69FF47")} title={!resultado ? "Calcule antes de transmitir" : ""}>
+                style={btn("#BD93F9")} title={!resultado ? "Calcule antes de transmitir" : ""}>
                 {retificar ? "🔄 Retransmitir (retificadora)" : "📤 Apurar/Transmitir"}
               </button>
             </div>

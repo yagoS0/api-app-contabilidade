@@ -322,45 +322,8 @@
   min-width: 0;
 }
 
-.company-section-header__back,
-.company-section-header__tab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 33px;
-  padding: 8px 14px;
-  border: 0;
-  border-radius: 16px;
-  background: #24253a;
-  color: #f8f8f2;
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
-}
-
-.company-section-header__back {
-  width: 40px;
-  min-height: 40px;
-  padding: 0;
-  border: 1px solid rgba(189, 147, 249, 0.28);
-  border-radius: 12px;
-  font-size: 1.2rem;
-  font-weight: 700;
-}
-
-.company-section-header__back:hover,
-.company-section-header__tab:hover:not(:disabled):not(.is-active) {
-  background: #2b2d45;
-}
-
-.company-section-header__back:focus-visible,
-.company-section-header__tab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.28);
-}
+/* `.company-section-header__back` e `.company-section-header__tab` foram removidos: o voltar virou
+   `.btn-back` (BackButton) e as abas viraram `.app-tab` (Tabs). */
 
 .company-section-header__company {
   display: flex;
@@ -395,17 +358,6 @@
   gap: 8px;
 }
 
-.company-section-header__tab.is-active {
-  background: #bd93f9;
-  color: #1a1b26;
-  font-weight: 700;
-  cursor: default;
-}
-
-.company-section-header__tab:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 
 /* Nível 1 (grupos) e nível 2 (sub-abas) ficam em linhas próprias, alinhados à esquerda —
    os principais em cima, os secundários logo abaixo (não mais à direita). */
@@ -512,52 +464,6 @@
   gap: 4px; /* já vai na coluna central do grid — sem margens auto */
 }
 
-.company-topbar__link {
-  position: relative;
-  padding: 8px 16px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #cdd0e8;
-  font: inherit;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease;
-}
-
-.company-topbar__link:hover:not(:disabled):not(.is-active) {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
-}
-
-.company-topbar__link.is-active {
-  color: #ffffff;
-  font-weight: 700;
-  cursor: default;
-}
-
-.company-topbar__link.is-active::after {
-  content: "";
-  position: absolute;
-  right: 16px;
-  bottom: 1px;
-  left: 16px;
-  height: 2px;
-  border-radius: 2px;
-  background: #bd93f9;
-}
-
-.company-topbar__link:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.company-topbar__link:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.28);
-}
-
 /* Nível 2 — sub-abas no MESMO estilo da barra principal: pílula com gradiente + borda roxa,
    centralizada; a ativa marcada com sublinhado roxo (igual ao menu principal). */
 /* Faixa de largura total (própria linha, abaixo do topo) que só CENTRALIZA a pílula interna.
@@ -567,62 +473,6 @@
   display: flex;
   justify-content: center;
   margin-top: 8px;
-}
-
-.company-section-header__subtabs-pill {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  max-width: 100%;
-  padding: 5px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(189, 147, 249, 0.28);
-  background: #24253a;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
-}
-
-.company-section-header__subtab {
-  position: relative;
-  padding: 7px 16px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #cdd0e8;
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.company-section-header__subtab:hover:not(.is-active) {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
-}
-
-.company-section-header__subtab.is-active {
-  color: #ffffff;
-  font-weight: 700;
-  cursor: default;
-}
-
-.company-section-header__subtab.is-active::after {
-  content: "";
-  position: absolute;
-  right: 16px;
-  bottom: 1px;
-  left: 16px;
-  height: 2px;
-  border-radius: 2px;
-  background: #bd93f9;
-}
-
-.company-section-header__subtab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.28);
 }
 
 /* Panels */
@@ -745,15 +595,8 @@
   background: #2b2d45;
 }
 
-.dashboard-home__action--success {
-  background: #69ff47;
-  color: #1a1b26;
-}
-
-.dashboard-home__action--success:hover:not(:disabled) {
-  background: #58eb38;
-}
-
+/* `--success` (verde #69ff47) saiu: "Envio de e-mails em lote" é ação, e verde é concluído.
+   Ficou `--accent`, que é o que o resto da fileira de atalhos já usava. */
 .dashboard-home__action--accent {
   background: #bd93f9;
   color: #1a1b26;
@@ -975,6 +818,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Ícone/seta + rótulo no mesmo botão precisam de respiro. Sem isto cada chamador resolvia com um
+     espaço literal no JSX (`← Voltar`), que some no `trim()` do nome acessível e não é ajustável. */
+  gap: var(--space-2);
   border-radius: var(--radius-sm);
   border: 1px solid transparent;
   font-weight: 600;
@@ -1038,13 +884,112 @@
   filter: brightness(0.97);
 }
 
-.btn-success {
-  background: var(--success-cta);
-  color: var(--success-cta-text);
+/* ⚠ `.btn-success` FOI REMOVIDO — e a ausência é a regra, não uma limpeza.
+   Verde é CONCLUÍDO (rodapé `D = C ✓ ok`, guia paga, obrigação entregue). Um botão verde de
+   "faça isto" ensina o contrário na mesma tela. Ação primária é `.btn-primary`.
+   O `Button` também não aceita mais `variant="success"`: cai em `primary`. */
+
+/* ─── Voltar — UM só, em todo o app ───────────────────────────────────────────
+   Herda `.btn.btn-secondary` (fundo, cor e borda saem dos tokens); aqui ficam só as medidas que
+   fazem dele um voltar: a altura de 33px e o raio de 14px que o PageShell já usava em 12 páginas —
+   era a forma mais espalhada, então é ela que fica. Ver `components/ui/BackButton.jsx`. */
+.btn-back {
+  min-height: 33px;
+  padding: 0 14px;
+  border-radius: 14px;
+  font-size: 0.875rem;
+  white-space: nowrap;
 }
 
-.btn-success:hover:not(:disabled) {
-  background: var(--success-cta-hover);
+/* ─── Abas — UMA só, em todo o app ────────────────────────────────────────────
+   Render em `components/ui/Tabs.jsx`. Não escreva barra de aba nova em `style={{}}`: foi assim que
+   a mesma barra ganhou raio 6/8/20/999 e cinco tamanhos de fonte em telas vizinhas. */
+.app-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+}
+
+.app-tabs--center { justify-content: center; }
+.app-tabs--start { justify-content: flex-start; }
+.app-tabs--end { justify-content: flex-end; }
+
+.app-tabs--pill {
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-purple-border);
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+
+.app-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 16px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tab-ink);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.app-tabs--lg .app-tab { padding: 8px 16px; font-size: 0.95rem; }
+.app-tabs--sm .app-tab { padding: 5px 11px; font-size: 0.78rem; }
+.app-tabs--sm.app-tabs--pill { padding: 4px 8px; }
+
+.app-tab:hover:not(:disabled):not(.is-active) {
+  background: var(--state-neutral-surface);
+  color: var(--text);
+}
+
+.app-tab.is-active {
+  color: var(--text);
+  font-weight: 700;
+  cursor: default;
+}
+
+/* O sublinhado é o que marca a ativa. Recuado nas laterais para acompanhar o rótulo, não a caixa. */
+.app-tab.is-active::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: 1px;
+  left: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-purple);
+}
+
+.app-tabs--sm .app-tab.is-active::after { right: 11px; left: 11px; }
+
+.app-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.app-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-purple-border);
+}
+
+/* Contador de pendência na aba (ex.: Sugestão · 3). Vermelho aqui É estado — o número diz que há
+   coisa parada esperando decisão, que é o significado de `--state-danger`. */
+.app-tab__badge {
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: var(--state-danger);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
 }
 
 /* Cards */
@@ -1565,34 +1510,6 @@ th {
   flex: 1 1 auto;
 }
 
-.page-shell__back {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 33px;
-  padding: 8px 14px;
-  border: 0;
-  border-radius: 14px;
-  background: #24253a;
-  color: #f8f8f2;
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.12s ease;
-  white-space: nowrap;
-}
-
-.page-shell__back:hover {
-  background: #2b2d45;
-}
-
-.page-shell__back:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(189, 147, 249, 0.28);
-}
-
 .page-shell__title-block {
   display: flex;
   flex-direction: column;
@@ -1618,48 +1535,6 @@ th {
   white-space: nowrap;
 }
 
-.page-shell__tabs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.page-shell__tab {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 33px;
-  padding: 8px 14px;
-  border: 0;
-  border-radius: 16px;
-  background: #24253a;
-  color: #f8f8f2;
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, opacity 0.12s ease;
-}
-
-.page-shell__tab:hover:not(:disabled):not(.is-active) {
-  background: #2b2d45;
-}
-
-.page-shell__tab.is-active {
-  background: #bd93f9;
-  color: #1a1b26;
-  font-weight: 700;
-  cursor: default;
-}
-
-.page-shell__tab:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .page-shell__actions {
   display: flex;
   flex-wrap: wrap;
@@ -1680,12 +1555,12 @@ th {
   }
 
   .page-shell__brand,
-  .page-shell__tabs,
+  .page-shell__header > .app-tabs,
   .page-shell__actions {
     width: 100%;
   }
 
-  .page-shell__tabs,
+  .page-shell__header > .app-tabs,
   .page-shell__actions {
     justify-content: flex-start;
   }

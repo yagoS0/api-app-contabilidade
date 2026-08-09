@@ -58,7 +58,7 @@ export function SitfisTab({ sitfisPanel }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, color: "#F8F8F2" }}>Situação Fiscal</h2>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <Button variant="success" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>
+          <Button variant="primary" disabled={consulting || bloqueado} onClick={consultar} title={tituloBotao}>
             {consulting ? "Consultando…" : "Consultar situação fiscal agora"}
           </Button>
           {bloqueado && (
@@ -121,7 +121,7 @@ export function SitfisTab({ sitfisPanel }) {
                       <a
                         href={pdfUrl}
                         download="situacao-fiscal.pdf"
-                        style={{ padding: "6px 12px", borderRadius: 6, background: "rgba(105,255,71,0.12)", border: "1px solid #69FF47", color: "#69FF47", fontSize: "0.82rem", fontWeight: 700, textDecoration: "none" }}
+                        style={{ padding: "6px 12px", borderRadius: 6, background: "var(--accent-purple-surface)", border: "1px solid var(--accent-purple)", color: "var(--accent-purple)", fontSize: "0.82rem", fontWeight: 700, textDecoration: "none" }}
                       >
                         ⬇ Baixar PDF
                       </a>

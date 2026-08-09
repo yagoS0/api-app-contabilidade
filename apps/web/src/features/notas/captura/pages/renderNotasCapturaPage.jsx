@@ -161,7 +161,7 @@ export function NotasCapturaContent({ api, companies }) {
             </div>
           </div>
 
-          <Button type="button" variant="success" disabled={criando || rodando || !algumaMarcada} onClick={consultar}>
+          <Button type="button" variant="primary" disabled={criando || rodando || !algumaMarcada} onClick={consultar}>
             {criando ? "Iniciando…" : "🔄 Consultar notas"}
           </Button>
           <span style={{ fontSize: "0.78rem", color: "var(--text-faint)", paddingBottom: 8 }}>

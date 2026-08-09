@@ -143,7 +143,7 @@ export function SerproSettingsPage({
               </div>
 
               <div className="serpro-settings-form__actions">
-                <Button type="submit" variant="success" disabled={saving}>
+                <Button type="submit" variant="primary" disabled={saving}>
                   {saving ? "Salvando..." : "Salvar configuração"}
                 </Button>
               </div>
@@ -190,7 +190,7 @@ export function SerproSettingsPage({
                 </label>
               </div>
               <div className="serpro-settings-form__actions">
-                <Button type="submit" variant="success" disabled={uploadingCertificate || !certificateFile || !certificatePassword}>
+                <Button type="submit" variant="primary" disabled={uploadingCertificate || !certificateFile || !certificatePassword}>
                   {uploadingCertificate ? "Enviando..." : "Enviar certificado"}
                 </Button>
                 <Button type="button" variant="danger" disabled={deletingCertificate || !settings?.certificate?.hasCertificate} onClick={onDeleteCertificate}>

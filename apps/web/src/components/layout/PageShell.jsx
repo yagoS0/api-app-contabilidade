@@ -23,6 +23,9 @@
  *  - `headerExtra` (opcional): nó adicional após o subtítulo, dentro do bloco brand.
  *  - `contentClassName` / `contentStyle`: customização do container de conteúdo.
  */
+import { BackButton } from "../ui/BackButton";
+import { Tabs } from "../ui/Tabs";
+
 export function PageShell({
   title,
   subtitle,
@@ -41,16 +44,7 @@ export function PageShell({
     <div className="page-shell">
       <header className="page-shell__header">
         <div className="page-shell__brand">
-          {onBack && (
-            <button
-              type="button"
-              className="page-shell__back"
-              onClick={onBack}
-              aria-label={backLabel}
-            >
-              ← {backLabel}
-            </button>
-          )}
+          {onBack && <BackButton onClick={onBack} label={backLabel} />}
 
           {(title || subtitle) && (
             <div className="page-shell__title-block">
@@ -61,26 +55,13 @@ export function PageShell({
           )}
         </div>
 
-        {Array.isArray(tabs) && tabs.length > 0 && (
-          <nav className="page-shell__tabs" aria-label="Navegação da página">
-            {tabs.map((tab) => {
-              const isActive = tab.key === activeTab;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={`page-shell__tab${isActive ? " is-active" : ""}`}
-                  onClick={isActive || tab.disabled ? undefined : () => onTabChange?.(tab.key)}
-                  disabled={tab.disabled}
-                  aria-current={isActive ? "page" : undefined}
-                  title={tab.title}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
-        )}
+        <Tabs
+          items={tabs}
+          active={activeTab}
+          onChange={onTabChange}
+          ariaLabel="Navegação da página"
+          align="end"
+        />
 
         {actions && <div className="page-shell__actions">{actions}</div>}
       </header>

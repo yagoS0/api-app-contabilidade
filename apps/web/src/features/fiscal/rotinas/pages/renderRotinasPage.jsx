@@ -339,7 +339,7 @@ export function RotinasPage({
             </div>
 
             <div className="serpro-settings-form__actions" style={{ marginTop: 16 }}>
-              <Button type="button" variant="success" disabled={saving || loading} onClick={handleSave}>
+              <Button type="button" variant="primary" disabled={saving || loading} onClick={handleSave}>
                 {saving ? "Salvando..." : "Salvar rotinas"}
               </Button>
               <Button type="button" variant="secondary" disabled={loading} onClick={load}>

@@ -132,7 +132,7 @@ export function CompanyNotesTab({ notes }) {
           </select>
           <button
             type="button"
-            style={{ ...btn("#69FF47"), marginLeft: "auto" }}
+            style={{ ...btn("var(--accent-purple)"), marginLeft: "auto" }}
             disabled={salvando || !texto.trim()}
             onClick={aoCriar}
           >

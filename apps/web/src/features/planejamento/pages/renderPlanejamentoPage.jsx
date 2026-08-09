@@ -23,6 +23,7 @@ import { ATIVIDADES_PRESUMIDO, avisoTravaServicos16 } from "../lib/lucroPresumid
 import { ANEXOS, ISS_FAIXA_LEGAL } from "../lib/tabelasFiscais";
 import { CardRegime } from "../components/CardRegime";
 import { GaugeFatorR } from "../components/GaugeFatorR";
+import { BackButton } from "../../../components/ui/BackButton";
 
 const C = { page: "#1A1B26", surface: "#24253A", borda: "#44475A", texto: "#F8F8F2", muted: "#A7B0C0", accent: "#BD93F9", alerta: "#FFB347" };
 const campo = { background: "#1A1B26", border: `1px solid ${C.borda}`, borderRadius: 6, color: C.texto, padding: "7px 9px", fontSize: "0.86rem", width: "100%", boxSizing: "border-box" };
@@ -168,7 +169,7 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
       <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "grid", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {onVoltar && (
-            <button type="button" onClick={onVoltar} style={{ background: "transparent", border: `1px solid ${C.borda}`, color: C.texto, borderRadius: 6, padding: "5px 11px", font: "inherit", cursor: "pointer" }}>←</button>
+            <BackButton onClick={onVoltar} />
           )}
           <h1 style={{ margin: 0, fontSize: "1.2rem" }}>Planejamento tributário</h1>
           <span style={{ fontSize: "0.8rem", color: C.muted }}>

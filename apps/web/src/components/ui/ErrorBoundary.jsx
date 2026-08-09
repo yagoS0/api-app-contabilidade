@@ -1,4 +1,5 @@
 import React from "react";
+import { Button } from "./Button";
 
 /**
  * Captura erros de runtime em componentes filhos e exibe stack trace na tela
@@ -73,16 +74,9 @@ export class ErrorBoundary extends React.Component {
             Esta aba estava aberta durante uma atualização e ficou com a versão anterior. Recarregue
             para continuar — nenhum dado foi perdido.
           </p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            style={{
-              padding: "8px 16px", background: "var(--success-cta)", color: "var(--success-cta-text)",
-              border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 700,
-            }}
-          >
+          <Button type="button" onClick={() => window.location.reload()}>
             Recarregar
-          </button>
+          </Button>
         </div>
       );
     }

@@ -75,10 +75,9 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
           <span style={{ color: PANEL.muted, fontSize: "0.82rem" }}>
             {selected.size} selecionada(s) · {fechadasCount} fechada(s)
           </span>
-          <button onClick={apurarEmLote} disabled={selected.size === 0}
-            style={{ marginLeft: "auto", background: selected.size > 0 ? "#69FF47" : PANEL.border, color: "#000", border: "none", borderRadius: 6, padding: "8px 16px", cursor: selected.size > 0 ? "pointer" : "not-allowed", fontSize: "0.85rem", fontWeight: 600 }}>
+          <Button onClick={apurarEmLote} disabled={selected.size === 0} style={{ marginLeft: "auto" }}>
             📤 Apurar em lote ({selected.size})
-          </button>
+          </Button>
         </div>
 
         {/* Resumo — Q19: só nº de empresas e empresas fechadas */}

@@ -15,6 +15,7 @@ import {
   PERGUNTAS_MUNICIPIO, espelhoVazio, estabelecimentoVazio,
 } from "../lib/defisSpec";
 import { conferirEspelho } from "../lib/defisValidacoes";
+import { Tabs } from "../../../../components/ui/Tabs";
 
 const C = {
   fundo: "#21222C", surface: "#24253A", borda: "#44475A", texto: "#F8F8F2",
@@ -183,24 +184,16 @@ export function EspelhoDefis({
           <span style={{ color: C.muted }}>Prazo de referência: {DEFIS_FONTE.prazo}.</span>
         </div>
 
-        {/* Trilha dos blocos, na ordem das telas do portal. */}
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 12 }}>
-          {DEFIS_BLOCOS.map((b, i) => (
-            <button
-              key={b.chave}
-              type="button"
-              onClick={() => setBloco(i)}
-              style={{
-                fontSize: "0.7rem", fontWeight: 700, padding: "3px 9px", borderRadius: 999, cursor: "pointer",
-                border: `1px solid ${i === bloco ? C.accent : C.borda}`,
-                background: i === bloco ? "rgba(189,147,249,0.16)" : "transparent",
-                color: i === bloco ? C.texto : C.muted,
-              }}
-            >
-              {i + 1}. {b.titulo}
-            </button>
-          ))}
-        </div>
+        {/* Trilha dos blocos, na ordem das telas do portal. `size="sm"` porque são onze rótulos
+            longos dentro de um modal — no tamanho padrão a barra ocupa três linhas. */}
+        <Tabs
+          size="sm"
+          ariaLabel="Blocos da DEFIS"
+          style={{ marginBottom: 12 }}
+          items={DEFIS_BLOCOS.map((b, i) => ({ key: b.chave, label: `${i + 1}. ${b.titulo}` }))}
+          active={DEFIS_BLOCOS[bloco]?.chave}
+          onChange={(chave) => setBloco(DEFIS_BLOCOS.findIndex((b) => b.chave === chave))}
+        />
 
         {bloco === 0 && (
           <label style={{ display: "grid", gap: 4, fontSize: "0.82rem" }}>
@@ -417,8 +410,8 @@ export function EspelhoDefis({
                 }}
                 style={{
                   background: "transparent", borderRadius: 6, padding: "6px 12px", font: "inherit", fontSize: "0.8rem",
-                  border: `1px solid ${conferencia.erros.length ? C.borda : C.ok}`,
-                  color: conferencia.erros.length ? C.muted : C.ok,
+                  border: `1px solid ${conferencia.erros.length ? C.borda : C.accent}`,
+                  color: conferencia.erros.length ? C.muted : C.accent,
                   cursor: conferencia.erros.length ? "not-allowed" : "pointer",
                 }}
               >

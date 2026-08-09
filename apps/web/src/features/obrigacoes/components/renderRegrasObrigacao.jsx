@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/Button";
+import { BackButton } from "../../../components/ui/BackButton";
 
 const COR = {
   fundo: "#21222C", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
@@ -371,9 +372,9 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
           <div style={{ display: "flex", gap: 8 }}>
             {passo > 0 && <Button type="button" variant="secondary" onClick={() => setPasso(passo - 1)} disabled={salvando}>Voltar</Button>}
             {passo < 2 ? (
-              <Button type="button" variant="success" onClick={() => setPasso(passo + 1)} disabled={!podeAvancar}>Avançar</Button>
+              <Button type="button" variant="primary" onClick={() => setPasso(passo + 1)} disabled={!podeAvancar}>Avançar</Button>
             ) : (
-              <Button type="button" variant="success" onClick={salvar} disabled={salvando || !totalPrevia || Boolean(impedimento)}>
+              <Button type="button" variant="primary" onClick={salvar} disabled={salvando || !totalPrevia || Boolean(impedimento)}>
                 {salvando ? "Aplicando…" : editando ? "Salvar regra" : "Criar regra"}
               </Button>
             )}
@@ -458,12 +459,12 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
   return (
     <section aria-label="Regras do escritório">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        <Button variant="secondary" onClick={onVoltar}>← Obrigações</Button>
+        <BackButton onClick={onVoltar} label="Obrigações" />
         <h2 style={{ margin: 0, color: COR.texto, fontSize: "1.1rem" }}>Regras do escritório</h2>
         <span style={{ color: COR.suave, fontSize: "0.78rem" }}>uma obrigação, várias empresas</span>
         {carregando && <span style={{ color: COR.suave, fontSize: "0.75rem" }}>carregando…</span>}
         <div style={{ marginLeft: "auto" }}>
-          <Button variant="success" onClick={() => setWizard({ inicial: null })}>+ Nova regra</Button>
+          <Button variant="primary" onClick={() => setWizard({ inicial: null })}>+ Nova regra</Button>
         </div>
       </div>
 

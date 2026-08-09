@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Button } from "../../../components/ui/Button";
+import { BackButton } from "../../../components/ui/BackButton";
 import { RegrasObrigacao } from "./renderRegrasObrigacao";
 
 const COR = {
@@ -223,7 +224,7 @@ function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, salvand
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
           <Button type="button" variant="secondary" onClick={onFechar} disabled={salvando}>Cancelar</Button>
-          <Button type="submit" variant="success" disabled={salvando}>
+          <Button type="submit" variant="primary" disabled={salvando}>
             {salvando ? "Salvando…" : editando ? "Salvar" : "Criar obrigação"}
           </Button>
         </div>
@@ -360,7 +361,7 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
     <AppShell>
     <section aria-label="Obrigações">
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        {onBack && <Button variant="secondary" onClick={onBack}>← Voltar</Button>}
+        {onBack && <BackButton onClick={onBack} />}
         <h1 style={{ margin: 0, color: COR.texto, fontSize: "1.25rem" }}>Obrigações</h1>
         <span style={{ color: COR.suave, fontSize: "0.78rem" }}>
           o que o escritório precisa entregar
@@ -368,7 +369,7 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
         {carregando && <span style={{ color: COR.suave, fontSize: "0.75rem" }}>carregando…</span>}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Button variant="secondary" onClick={() => setVerRegras(true)}>Regras do escritório</Button>
-          <Button variant="success" onClick={() => { setErroModal(null); setModal({ inicial: null }); }}>
+          <Button variant="primary" onClick={() => { setErroModal(null); setModal({ inicial: null }); }}>
             + Nova obrigação
           </Button>
         </div>

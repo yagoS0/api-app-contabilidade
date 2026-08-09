@@ -14,6 +14,8 @@ import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
 import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
 import { SugestaoAnexoTabela } from "../components/SugestaoAnexoPanel";
 import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
+import { Tabs } from "../../../components/ui/Tabs";
+import { Button } from "../../../components/ui/Button";
 
 function competenciaAnterior() {
   const d = new Date();
@@ -43,30 +45,7 @@ function SecaoTabs({ secao, setSecao, pendCount }) {
     { key: "cadastro", label: "Perfil fiscal" },
     { key: "sugestao", label: "Sugestão", badge: pendCount },
   ];
-  return (
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-      {itens.map((it) => {
-        const ativo = secao === it.key;
-        return (
-          <button key={it.key} type="button" onClick={() => setSecao(it.key)}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              padding: "7px 16px", borderRadius: 8, cursor: ativo ? "default" : "pointer",
-              border: `1px solid ${ativo ? "#BD93F9" : PANEL.border}`,
-              background: ativo ? "rgba(189,147,249,0.16)" : "transparent",
-              color: ativo ? PANEL.text : PANEL.muted, fontSize: "0.85rem", fontWeight: ativo ? 700 : 600,
-            }}>
-            {it.label}
-            {it.badge ? (
-              <span style={{ background: "#FF4757", color: "#fff", borderRadius: 999, fontSize: "0.68rem", padding: "1px 6px", fontWeight: 700 }}>
-                {it.badge}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
-  );
+  return <Tabs items={itens} active={secao} onChange={setSecao} ariaLabel="Seções da apuração" align="start" />;
 }
 
 function Kpi({ label, value, cor, title }) {
@@ -188,8 +167,8 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
 
   const pendencias = panel.pendencias || [];
   const inputStyle = { background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px", fontSize: "0.85rem", colorScheme: "dark" };
-  const btnPrimary = { padding: "8px 16px", borderRadius: 6, border: "none", background: "#BD93F9", color: "#000", cursor: "pointer", fontSize: "0.85rem", fontWeight: 700 };
-  const btnGhost = { padding: "8px 14px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer", fontSize: "0.82rem", fontWeight: 600 };
+  /* `btnPrimary`/`btnGhost` foram removidos: eram o `Button` redesenhado à mão com raio 6 e
+     altura 31 — a mesma dupla primário/secundário, dois pixels fora. */
 
   const fat = fechDados?.faturamento || {};
   const estado = fechDados?.estado || snap?.estado;
@@ -216,13 +195,13 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
             </span>
             <span style={{ fontSize: "0.82rem", color: PANEL.muted, paddingBottom: 6 }}>Estado: <EstadoBadge estado={estado} /></span>
             <div style={{ flex: 1 }} />
-            <button onClick={() => setFechando({ retificar: false })} style={btnPrimary} disabled={fechLoading}>
+            <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
-            </button>
+            </Button>
             {estado === "transmitida" && (
-              <button onClick={abrirRetificar} style={btnGhost} title="Reabrir para corrigir e retransmitir como retificadora.">
+              <Button variant="secondary" onClick={abrirRetificar} title="Reabrir para corrigir e retransmitir como retificadora.">
                 🔄 Retificar
-              </button>
+              </Button>
             )}
           </div>
 
@@ -243,9 +222,9 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <strong style={{ fontSize: "0.9rem" }}>Extrato do Simples Nacional</strong>
-              <button onClick={buscarExtrato} style={btnGhost} disabled={extratoLoading}>
+              <Button variant="secondary" onClick={buscarExtrato} disabled={extratoLoading}>
                 {extratoLoading ? "Buscando…" : "Buscar extrato"}
-              </button>
+              </Button>
             </div>
             {extDados && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
@@ -258,10 +237,10 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
                     `file:///…`. Quem serve o arquivo é a rota `/pgdas/:competencia/pdf`, com o
                     token no header — por isso blob, não `<a href>`. */}
                 {extrato?.files?.declaracaoFileId && (
-                  <button type="button" onClick={() => abrirExtratoPdf("declaracao")} style={btnGhost}>Declaração (PDF)</button>
+                  <Button type="button" variant="secondary" onClick={() => abrirExtratoPdf("declaracao")}>Declaração (PDF)</Button>
                 )}
                 {extrato?.files?.reciboFileId && (
-                  <button type="button" onClick={() => abrirExtratoPdf("recibo")} style={btnGhost}>Recibo (PDF)</button>
+                  <Button type="button" variant="secondary" onClick={() => abrirExtratoPdf("recibo")}>Recibo (PDF)</Button>
                 )}
               </div>
             )}
@@ -292,13 +271,13 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
               Competência
               <strong style={{ fontSize: "0.95rem", color: PANEL.text, paddingBottom: 4 }}>{competencia}</strong>
             </span>
-            <button onClick={sugerir} disabled={sugLoading}
-              style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#8BE9FD", color: "#000", cursor: sugLoading ? "default" : "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: sugLoading ? 0.6 : 1 }}>
+            {/* Era ciano (#8BE9FD), a cor de categoria do Simples — ver `tokens.css`. */}
+            <Button variant="secondary" onClick={sugerir} disabled={sugLoading}>
               {sugLoading ? "Carregando…" : "Sugerir"}
-            </button>
-            <button onClick={classificar} disabled={classificando} style={{ ...btnPrimary, opacity: classificando ? 0.6 : 1 }}>
+            </Button>
+            <Button onClick={classificar} disabled={classificando}>
               {classificando ? "Classificando…" : "Classificar competência"}
-            </button>
+            </Button>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -326,10 +305,9 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
                     )}
                   </div>
                   {p.tipo === "ITEM_SEM_REGRA" && (
-                    <button onClick={() => setResolvendo(p)}
-                      style={{ ...btnPrimary, flex: "none", fontSize: "0.8rem" }}>
+                    <Button size="sm" onClick={() => setResolvendo(p)} style={{ flex: "none" }}>
                       Classificar
-                    </button>
+                    </Button>
                   )}
                 </div>
               ))

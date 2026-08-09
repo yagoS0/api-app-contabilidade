@@ -289,7 +289,7 @@ export function HistoricosModal({ onClose, onLoadAll, onUpdate, onDelete }) {
                         <div style={{ display: "flex", gap: 4, flexWrap: "nowrap" }}>
                           {isEditing ? (
                             <>
-                              <button type="button" onClick={() => saveEdit(h)} disabled={saving} style={{ ...ACTION, background: PANEL.success, borderColor: PANEL.success, color: PANEL.page }}>
+                              <button type="button" onClick={() => saveEdit(h)} disabled={saving} style={{ ...ACTION, background: "var(--primary)", borderColor: "var(--primary)", color: "#fff" }}>
                                 {saving ? "..." : "Salvar"}
                               </button>
                               <button type="button" onClick={() => setEditingId(null)} disabled={saving} style={ACTION}>

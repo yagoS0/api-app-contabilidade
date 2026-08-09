@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createApiClient } from "../../../api/client";
+import { Tabs } from "../../../components/ui/Tabs";
 import {
   intervalosDisponiveis, periodoAnterior, variacao, somaPorTipo, somaTotal,
 } from "../lib/periodoRelatorio";
@@ -84,21 +85,16 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
     <div style={{ width: "var(--content-wide)", margin: "0 auto", padding: "16px 0", color: C.texto, display: "grid", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }} data-print-hide>
         <strong style={{ fontSize: "0.9rem" }}>Relatórios</strong>
-        {opcoes.map((o) => (
-          <button
-            key={o.chave}
-            type="button"
-            onClick={() => setIntervalo(o.chave)}
-            style={{
-              fontSize: "0.76rem", padding: "4px 11px", borderRadius: 999, cursor: "pointer", font: "inherit",
-              border: `1px solid ${o.chave === intervalo ? C.accent : C.borda}`,
-              background: o.chave === intervalo ? "rgba(189,147,249,0.16)" : "transparent",
-              color: o.chave === intervalo ? C.texto : C.muted,
-            }}
-          >
-            {o.rotulo}
-          </button>
-        ))}
+        {/* Recorte de período — `mode="view"`: escolhe UM e troca o que a tela mostra, que é o
+            comportamento de aba. Não navega, então é `aria-pressed`. */}
+        <Tabs
+          mode="view"
+          size="sm"
+          ariaLabel="Período do relatório"
+          items={opcoes.map((o) => ({ key: o.chave, label: o.rotulo }))}
+          active={intervalo}
+          onChange={setIntervalo}
+        />
         <span style={{ fontSize: "0.75rem", color: C.muted }}>
           {escolhido ? `${escolhido.de} a ${escolhido.ate}` : ""}
         </span>

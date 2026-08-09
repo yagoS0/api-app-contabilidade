@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PANEL, fmtMoney, fmtDate } from "./notasStyles";
+import { Button } from "../../../components/ui/Button";
 
 const PAPEL_BADGE = {
   EMIT: { bg: "rgba(105,255,71,0.15)", color: "#69FF47", label: "Emitida" },
@@ -43,10 +44,9 @@ function FilterBar({ filters, onChange, onApply, loading, total }) {
       </span>
       <input type="text" value={local.search || ""} onChange={(e) => patch("search", e.target.value)}
         placeholder="Buscar (CNPJ, nome, número, chave)" style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
-      <button onClick={apply} disabled={loading}
-        style={{ padding: "8px 14px", background: PANEL.accent, color: "#000", border: "none", borderRadius: 6, fontWeight: 600, cursor: "pointer" }}>
+      <Button size="sm" onClick={apply} disabled={loading}>
         {loading ? "..." : "Filtrar"}
-      </button>
+      </Button>
       <span style={{ marginLeft: "auto", color: PANEL.muted, fontSize: "0.8rem" }}>
         {total} nota(s)
       </span>

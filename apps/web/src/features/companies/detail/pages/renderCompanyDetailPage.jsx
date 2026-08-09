@@ -6,6 +6,7 @@ import { CompanyFichaTab } from "../components/renderCompanyFichaTab";
 import { PageHeader } from "../../../../components/layout/PageHeader";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
+import { BackButton } from "../../../../components/ui/BackButton";
 import { ErrorBoundary } from "../../../../components/ui/ErrorBoundary";
 // Q14.2: hook próprio da Apuração v2 (escopo da empresa atual)
 import { useApuracaoV2 } from "../../../apuracao-v2/hooks/useApuracaoV2";
@@ -760,7 +761,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
       <PageHeader
           title={selectedCompany?.razao || "Empresa"}
           description="Dados cadastrais, guias e lançamentos contábeis."
-          actions={<Button variant="secondary" onClick={onBack}>Voltar</Button>}
+          actions={<BackButton onClick={onBack} />}
       />
 
       {selectedCompany && (

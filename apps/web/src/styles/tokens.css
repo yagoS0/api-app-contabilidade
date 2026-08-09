@@ -59,6 +59,16 @@
   --accent-purple: #BD93F9;    /* Lucro Real; também é o foco/seleção */
   --accent-pink: #FF79C6;      /* folha */
 
+  /* Pares translúcidos do roxo. Mesma razão do `-surface` dos estados: sem eles o código escreve
+     `rgba(189,147,249,0.16)` à mão, e foi assim que a MESMA barra de abas apareceu com sete
+     opacidades e cinco raios diferentes pelo app. Aba/seleção usa daqui, não do literal. */
+  --accent-purple-surface: rgba(189, 147, 249, 0.16);
+  --accent-purple-border: rgba(189, 147, 249, 0.28);
+
+  /* Tinta do rótulo de aba INATIVA — mais apagada que `--text`, mais viva que `--text-muted`.
+     A ativa usa `--text` cheio; é o contraste entre as duas que diz qual está selecionada. */
+  --tab-ink: #cdd0e8;
+
   --radius: 10px;
   --radius-sm: 8px;
   --shadow: 0 1px 3px rgba(15, 23, 42, 0.06);

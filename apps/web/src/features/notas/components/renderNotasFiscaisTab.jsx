@@ -11,24 +11,12 @@ import { NotasList } from "./NotasList";
 import { NotasResumo } from "./NotasResumo";
 import { EmitirNfseWizard } from "./EmitirNfseWizard";
 import { createApiClient } from "../../../api/client";
+import { Tabs } from "../../../components/ui/Tabs";
+import { Button } from "../../../components/ui/Button";
 
 // Cliente próprio, mesmo padrão auto-contido do SITFIS e do Apuração v2 — a aba já recebe tudo
 // por props e não tem `api` em escopo.
 const nfseApi = createApiClient();
-
-function JanelaBtn({ active, onClick, children }) {
-  return (
-    <button type="button" onClick={onClick}
-      style={{
-        padding: "8px 16px", borderRadius: 999, cursor: "pointer", fontSize: "0.85rem", fontWeight: 600,
-        border: `1px solid ${active ? PANEL.accent : PANEL.border}`,
-        background: active ? "rgba(189,147,249,0.15)" : "transparent",
-        color: active ? PANEL.text : PANEL.muted,
-      }}>
-      {children}
-    </button>
-  );
-}
 
 export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, competencia: competenciaGlobal }) {
   const {
@@ -85,10 +73,18 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
 
       {/* Toggle das duas janelas — NF-e só aparece com inscrição estadual. */}
       {hasInscricaoEstadual && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          <JanelaBtn active={janelaAtiva === "NFSE"} onClick={() => setJanela("NFSE")}>Notas de serviço (NFS-e)</JanelaBtn>
-          <JanelaBtn active={janelaAtiva === "NFE"} onClick={() => setJanela("NFE")}>Notas de venda (NF-e)</JanelaBtn>
-        </div>
+        <Tabs
+          mode="view"
+          ariaLabel="Janela de notas"
+          align="start"
+          style={{ marginBottom: 16 }}
+          items={[
+            { key: "NFSE", label: "Notas de serviço (NFS-e)" },
+            { key: "NFE", label: "Notas de venda (NF-e)" },
+          ]}
+          active={janelaAtiva}
+          onChange={setJanela}
+        />
       )}
 
       {/* ⚠ EMITIR é o PRIMÁRIO da janela de NFS-e; buscar e importar viram secundários.
@@ -98,17 +94,15 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
         {janelaAtiva === "NFSE" ? (
           <>
-            <button
+            {/* ⚠ Era ciano (`--accent-cyan`). Ciano é a cor de CATEGORIA do Simples Nacional
+                (`tokens.css`) — usá-la como CTA colocava a mesma cor em "esta empresa é do Simples"
+                e em "clique aqui". Ação primária é o accent do botão. */}
+            <Button
               type="button"
               onClick={() => setEmitindo(true)}
-              style={{
-                padding: "8px 16px", borderRadius: 6, border: "none",
-                background: "var(--accent-cyan)", color: "#0b0b12",
-                fontSize: "0.85rem", fontWeight: 700, cursor: "pointer",
-              }}
             >
               + Emitir nota
-            </button>
+            </Button>
             <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} onClearError={clearAdnError} />
             <label style={{
               display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 6,
