@@ -6,6 +6,7 @@ import {
   normalizeCompetencia,
   normalizeGuideType,
   SELECT_PARCELAMENTO_DA_GUIA,
+  whereGuiaPendenteDeEnvio,
 } from "./guideContract.js";
 import { isMonthClosed } from "../accounting/fechamentoContabil.js";
 import { canGuideConfirmPayment, canGuideRecalculate } from "./GuidePaymentStatusService.js";
@@ -191,9 +192,21 @@ export async function listPendingGuidesReport({
   const skip = (pageNum - 1) * take;
   const normalizedCompetencia = normalizeCompetencia(competencia);
   const normalizedEmailStatus = emailStatus ? String(emailStatus).toUpperCase() : null;
+  // ⚠ A QUARTA CÓPIA DA MESMA PERGUNTA — e ela ficou para trás.
+  //
+  // `{ OR: [PENDING, ERROR, SENDING] }` tinha exatamente o defeito que o commit a61649d0 corrigiu
+  // no worker e no envio em lote: **não alcança `emailStatus: null`**, e a DARF consolidada do
+  // Lucro Presumido nasce NULL (`LucroPresumidoProvisaoService`, coluna `String?` sem `@default`).
+  // Resultado: a única página do sistema que mostra o MOTIVO da falha de envio nunca listou as
+  // guias do LP. Aqui o `IN` nem era o culpado — a lista foi escrita à mão, o que é a mesma coisa.
+  //
+  // A regra vem do `guideContract`. `SENDING` entra POR CIMA dela, e só nesta tela: as outras
+  // consultas excluem `SENDING` de propósito (pegá-la duplicaria o e-mail em voo), mas aqui a
+  // pergunta é de DIAGNÓSTICO — uma guia presa em `SENDING` por um processo morto é invisível para
+  // todo o resto do sistema, e este é o único lugar onde ela pode aparecer.
   const pendingEmailFilter = normalizedEmailStatus
     ? { emailStatus: normalizedEmailStatus }
-    : { OR: [{ emailStatus: "PENDING" }, { emailStatus: "ERROR" }, { emailStatus: "SENDING" }] };
+    : { OR: [...whereGuiaPendenteDeEnvio().OR, { emailStatus: "SENDING" }] };
   const where = {
     status: "PROCESSED",
     ...(portalClientId ? { portalClientId: String(portalClientId) } : {}),

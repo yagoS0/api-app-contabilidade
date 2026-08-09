@@ -79,6 +79,26 @@ export function whereGuiaPendenteDeEnvio(retryAntesDe = null) {
 }
 
 /**
+ * "A ÚLTIMA tentativa de envio desta guia FALHOU?"
+ *
+ * ⚠ Existe porque `ERROR` é um estado terminal na prática, e ninguém o trata como tal. O worker
+ * grava `emailStatus:"ERROR"` + `emailLastError` + **`emailNextRetryAt`**, mas **nada drena esse
+ * retry**: o laço automático foi removido na Q55 (`server.js`, "nada roda sozinho"). O campo é
+ * escrito e apodrece. A guia fica em `ERROR` até alguém, por acaso, clicar de novo.
+ *
+ * Por isso a pergunta virou contrato: as telas onde o contador já olha (chip do dashboard, matriz
+ * do envio em lote) pintavam `ERROR` **igual a `PENDING`** — âmbar "gerada, falta enviar", que é o
+ * estado de quem nunca foi tentado. Falha indistinguível de "ainda não tentei" é ausência fazendo
+ * as vezes de resposta.
+ *
+ * ⚠ **Falhou NÃO impede enviar de novo.** `whereGuiaPendenteDeEnvio()` (acima) continua alcançando
+ * a guia em `ERROR` — a distinção é de EXIBIÇÃO, e o caminho de ação é o mesmo botão de sempre.
+ */
+export function envioDeEmailFalhou(guide) {
+  return String(guide?.emailStatus || "").toUpperCase() === "ERROR";
+}
+
+/**
  * O que se precisa saber do parcelamento para NOMEAR a guia na tela.
  *
  * ⚠ Sem isto a resposta trazia `parcelamentoId` (coluna escalar da própria guia, sempre presente) e

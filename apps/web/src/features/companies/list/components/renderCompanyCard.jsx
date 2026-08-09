@@ -45,6 +45,11 @@ export function getComplianceTags(guideCompliance) {
         guideId: node.guideId || null,
         emailStatus: node.emailStatus || null,
         emailSentAt: node.emailSentAt || null,
+        // O MOTIVO da falha de envio (`state: "falhou"`). Sem ele o chip diria só "falhou", e o
+        // contador teria que abrir a empresa para descobrir o porquê — que é o passo em que o
+        // aviso se perde.
+        emailLastError: node.emailLastError || null,
+        emailAttempts: Number(node.emailAttempts || 0),
         // O envio agora tem CANAL. É o que permite o popover dizer "WhatsApp · 05/08 14:32 ·
         // ✓✓ lida" em vez de assumir e-mail — e é a informação que o contador usa para saber por
         // onde a guia chegou (ou não) ao cliente.

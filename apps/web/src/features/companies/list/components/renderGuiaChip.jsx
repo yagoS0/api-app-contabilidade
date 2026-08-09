@@ -1,7 +1,7 @@
 // O chip de guia — o ciclo de vida de uma obrigação, na listagem.
 //
 //                       ┌─→ ✈ gerada ─→ ✓ enviada        (terminais bons)
-//   ⚠ falta gerar ──────┤
+//   ⚠ falta gerar ──────┤        └────→ ✖ falhou         (tentou e NÃO saiu; nada tenta de novo)
 //                       └─→ ⊘ vazio                      (terminal: ausência confirmada)
 //
 // POR QUE ELE EXISTE
@@ -29,6 +29,17 @@ const CANAL_ROTULO = { EMAIL: "e-mail", WHATSAPP: "WhatsApp" };
 const ESTADO = {
   missing:  { icone: "⚠", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "falta gerar" },
   gerada:   { icone: "✈", cor: "var(--state-warn)",    fundo: "var(--state-warn-surface)",    rotulo: "gerada, falta enviar" },
+  // ⚠ ESTE ESTADO EXISTIA NO BANCO E NÃO EXISTIA NA TELA. A guia cujo envio falhou tem
+  // `emailStatus:"ERROR"` + `emailLastError` + `emailNextRetryAt` — e **nada drena esse retry**
+  // (o laço automático saiu na Q55). Ela ficava âmbar "gerada, falta enviar", exatamente igual à
+  // guia que nunca foi tentada, e por isso ninguém era avisado de nada: a falha só saía do banco
+  // se alguém, por acaso, clicasse de novo.
+  //
+  // Vermelho e não âmbar: âmbar é "há trabalho de rotina a fazer", e no fim do mês metade da
+  // carteira está em âmbar. Isto aqui é uma tentativa que já foi feita e falhou — a mesma urgência
+  // de "falta gerar", com ícone próprio (a regra de aceite pede que um screenshot dessaturado
+  // continue legível, e ✖ ≠ ⚠ ≠ ✈).
+  falhou:   { icone: "✖", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "o envio FALHOU — ninguém tentará de novo" },
   enviada:  { icone: "✓", cor: "var(--state-ok)",      fundo: "var(--state-ok-surface)",      rotulo: "enviada ao cliente" },
   vazio:    { icone: "⊘", cor: "var(--state-neutral)", fundo: "var(--state-neutral-surface)", rotulo: "sem movimento (confirmado)" },
   conflito: { icone: "⚠", cor: "var(--state-danger)",  fundo: "var(--state-danger-surface)",  rotulo: "marcada sem movimento, mas há faturamento" },
@@ -140,6 +151,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
         <span aria-hidden="true">{meta.icone}</span>
         {tag.label}
         {tag.state === "gerada" && <span style={{ fontWeight: 500 }}>enviar</span>}
+        {tag.state === "falhou" && <span style={{ fontWeight: 500 }}>não saiu</span>}
       </button>
 
       {aberto && (
@@ -233,9 +245,34 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
             </>
           )}
 
+          {/* ⚠ O MOTIVO É A METADE QUE FALTAVA. "Falhou" sem o porquê manda o contador procurar em
+              outro lugar — e os lugares existem (aba Guias da empresa, página de pendências de
+              e-mail), mas ninguém sabe que existem. O texto do erro vem cru do provedor de e-mail
+              (`emailLastError`), e é isso mesmo que se quer: traduzi-lo aqui seria inventar
+              categoria em cima de mensagem de terceiro. */}
+          {tag.state === "falhou" && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ color: "var(--state-danger)", marginBottom: 4 }}>
+                A última tentativa de envio <strong>falhou</strong>
+                {tag.emailAttempts > 1 ? ` (${tag.emailAttempts} tentativas)` : ""} e{" "}
+                <strong>nada vai tentar de novo sozinho</strong> — esta guia só sai se você mandar.
+              </div>
+              {tag.emailLastError && (
+                <div style={{ color: "var(--text-muted)", wordBreak: "break-word" }}>
+                  Motivo: <code style={{ fontSize: "0.72rem" }}>{tag.emailLastError}</code>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Envio é ação EXTERNA e irreversível: nunca dispara no clique do chip, sempre depois
-              de confirmar com destinatário à vista. */}
-          {tag.state === "gerada" && (
+              de confirmar com destinatário à vista.
+
+              ⚠ `falhou` compartilha ESTE botão de propósito: o caminho de ação é o mesmo (o envio
+              manual não espera janela de retry — `whereGuiaPendenteDeEnvio()` sem `retryAntesDe`),
+              e dar um botão separado a "tentar de novo" sugeriria que existe um mecanismo de
+              retentativa em algum lugar. Não existe: é o mesmo envio, de novo. */}
+          {(tag.state === "gerada" || tag.state === "falhou") && (
             <>
               <div style={{ color: "var(--text-muted)", marginBottom: 8 }}>
                 Enviar ao cliente {destinatario ? <strong>{destinatario}</strong> : "(sem e-mail cadastrado)"}.
@@ -244,7 +281,7 @@ export function GuiaChip({ tag, empresa, competencia, acoes = {} }) {
                 tom="ok" disabled={ocupado || !tag.guideId}
                 onClick={() => executar(() => acoes.onEnviar?.(tag.guideId, empresa))}
               >
-                {ocupado ? "Enviando…" : "✈ Enviar e-mail"}
+                {ocupado ? "Enviando…" : (tag.state === "falhou" ? "✈ Tentar enviar de novo" : "✈ Enviar e-mail")}
               </BotaoAcao>
             </>
           )}

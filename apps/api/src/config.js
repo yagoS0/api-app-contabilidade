@@ -106,12 +106,24 @@ export const AWS_KMS_SECRET_ACCESS_KEY =
 
 // === Ingestão de Guias ===
 // PDFs entram por upload no portal e são gravados em `Guide.pdfBytes` (PostgreSQL).
-export const GUIDE_WORKER_ENABLED = process.env.GUIDE_WORKER_ENABLED === "1";
-export const GUIDE_WORKER_INTERVAL_SECONDS = Math.max(
-  30,
-  Number(process.env.GUIDE_WORKER_INTERVAL_SECONDS || 120)
-);
-export const GUIDE_EMAIL_WORKER_ENABLED = process.env.GUIDE_EMAIL_WORKER_ENABLED === "1";
+//
+// ⚠ DUAS FLAGS FORAM REMOVIDAS DAQUI, E ISSO É PROPOSITAL — NÃO AS RECRIE.
+//
+// | flag | consumidores que ela tinha |
+// |---|---|
+// | `GUIDE_WORKER_ENABLED` + `GUIDE_WORKER_INTERVAL_SECONDS` | **nenhum**, nem no `/status` |
+// | `GUIDE_EMAIL_WORKER_ENABLED` | **um**: `routes/status.js`, que só a ECOAVA |
+//
+// Nenhuma delas tinha um `if (...)` em lugar nenhum do código. Uma flag que não faz nada não é
+// inofensiva: ela **responde a pergunta errada com confiança**. O próprio dono viu
+// `GUIDE_EMAIL_WORKER_ENABLED=0` em produção e apontou a flag como causa do envio não funcionar —
+// pista falsa, e o diagnóstico real (o filtro `IN` que não casa com NULL, commit a61649d0) levou
+// mais tempo por causa dela.
+//
+// Fazê-las "funcionar" exigiria ressuscitar o laço automático, e "o envio é 100% manual" é decisão
+// do dono, escrita no `server.js` (Q55). Então elas SOMEM — e o `/status` passou a afirmar o que é
+// verdade (`emailDispatch.mode: "manual"`) em vez de ecoar um valor sem consequência.
+// Ver `routes/status.js`, `.env.example` e `apps/api/CLAUDE.md`.
 export const SERPRO_PGDASD_WORKER_ENABLED = process.env.SERPRO_PGDASD_WORKER_ENABLED === "1";
 export const SERPRO_DCTFWEB_WORKER_ENABLED = process.env.SERPRO_DCTFWEB_WORKER_ENABLED === "1";
 // Q40: cron próprio de confirmação de pagamento (PAGTOWEB). Agenda vem do SerproRuntimeSettings.

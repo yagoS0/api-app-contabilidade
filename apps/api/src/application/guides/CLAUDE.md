@@ -15,7 +15,18 @@ status de pagamento/e-mail, lock de captura e envio.
   `LucroPresumidoProvisaoService` e nasce NULL. E **`IN` do SQL nunca casa com NULL** — foi assim
   que o envio em lote passou a pular essa guia em silêncio, oferecendo-a na matriz e respondendo
   `ok: true, sent: 0`. Quem precisa perguntar "ainda pode ser enviada?" usa
-  **`whereGuiaPendenteDeEnvio()`** (`guideContract.js`), nunca um `in` escrito à mão.
+  **`whereGuiaPendenteDeEnvio()`** (`guideContract.js`), nunca um `in` escrito à mão — nem uma lista
+  `OR` escrita à mão, que dá no mesmo: `listPendingGuidesReport` tinha a **quarta** cópia, e por
+  causa dela a página "Pendências de e-mail" (a única que mostra o motivo da falha) nunca listou a
+  DARF do Lucro Presumido.
+  ⚠ **`ERROR` é estado PARADO, não transitório.** `emailNextRetryAt` é gravado e **ninguém o
+  drena** — o laço automático saiu na Q55. Quem pergunta "a última tentativa falhou?" usa
+  **`envioDeEmailFalhou(guide)`**, a MESMA leitura no chip do dashboard e na matriz do lote (duas
+  cópias fariam as telas discordarem sobre a mesma guia, como já aconteceu com `parcelamentoId`).
+  O ciclo de vida ganhou o estado **`falhou`** em `resolveNode` (`guideCompliance.js`, agora
+  **exportado** — o teste importa a função real em vez de manter réplica): vermelho, com
+  `emailLastError` junto, **sem mexer em `ok`** (a guia existe; o que falhou foi o envio) e **sem
+  ser terminal** (senão o card condensaria em "✓ Guias concluídas" na empresa que não recebeu).
 - `valorOriginal` = valor da 1ª captura (imutável em recálculo).
 - **Confirmar pagamento** (`POST /firm/guides/:id/confirm-payment` → `markGuidePaidManual`): seta
   `paymentStatus=PAID`. **Q23:** se a guia é de **parcelamento** (`parcelamentoId`), também gera o

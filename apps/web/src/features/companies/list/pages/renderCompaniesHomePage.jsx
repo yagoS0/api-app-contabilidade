@@ -274,11 +274,19 @@ export function CompaniesHomePage({
     [companies, travas],
   );
 
-  /** Empresas com pelo menos uma guia GERADA e não enviada — a ação rápida do fim do mês. */
+  /**
+   * Empresas com pelo menos uma guia gerada e NÃO enviada — a ação rápida do fim do mês.
+   *
+   * ⚠ `falhou` conta aqui. Ela é o caso mais agudo de "falta enviar": já se tentou, não saiu, e
+   * nada tentará de novo. Fora deste recorte, a empresa cujo e-mail falhou desaparecia justamente
+   * do filtro que existe para varrer os envios pendentes.
+   */
   const empresasFaltaEnviar = useMemo(() => {
     const set = new Set();
     for (const c of companies || []) {
-      if (getComplianceTags(c.guideCompliance).some((t) => t.state === "gerada")) set.add(c.companyId);
+      if (getComplianceTags(c.guideCompliance).some((t) => t.state === "gerada" || t.state === "falhou")) {
+        set.add(c.companyId);
+      }
     }
     return set;
   }, [companies]);
@@ -645,7 +653,11 @@ export function CompaniesHomePage({
                 { label: "Obrigações do escritório", onClick: onOpenObrigacoes },
                 { label: "Configuração SERPRO", onClick: onOpenGuideSettings },
                 { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
-                { label: "Pendências (debug)", onClick: onOpenPendingReport },
+                // ⚠ Chamava-se "Pendências (debug)". É a ÚNICA tela que lista guia por guia o
+                // status do e-mail, as tentativas e o `emailLastError` — e o rótulo "(debug)"
+                // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
+                // escondida atrás de um aviso de "não mexa" é o mesmo que não existir.
+                { label: "Pendências de e-mail", onClick: onOpenPendingReport },
               ]}
             />
             {/* Atualizar lista vira um ícone discreto */}

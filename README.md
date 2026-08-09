@@ -67,7 +67,7 @@ Configuração (.env)
    - `JWT_SECRET`: segredo usado para assinar o token retornado por `/auth/login`. Opcionalmente ajuste `JWT_EXPIRES_IN` (padrão `1h`).
    - `DATABASE_URL`: string de conexão PostgreSQL (ex.: `postgresql://user:pass@host:5432/db`).
    - Opções de e-mail: `USE_GMAIL_API` + `GMAIL_DELEGATED_USER` **ou** SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`).
-   - Opções extras: `LOG_LEVEL`, `TZ`, `HOST`, `PORT`, `PDF_READER_URL`, `GUIDE_EMAIL_WORKER_ENABLED`.
+   - Opções extras: `LOG_LEVEL`, `TZ`, `HOST`, `PORT`, `PDF_READER_URL`.
    - Em produção, mantenha `GOOGLE_APPLICATION_CREDENTIALS`, `API_KEYS` e `DATABASE_URL` em um Secrets Manager/App Runner Secret e apenas exporte as variáveis em runtime.
 
 Banco de dados (PostgreSQL) - API
@@ -191,7 +191,12 @@ Guias (upload + pdf-reader + PostgreSQL):
 - Envio de PDF pelo portal (`POST /firm/guides/upload`); o binário é persistido em `Guide.pdfBytes` no Postgres após o parse.
 - Leitor de PDF (FastAPI `apps/pdf-reader`): `PDF_READER_URL` (base URL; a API usa `POST /extract` e `GET /health`).
 - Guias antigas podem ainda ter `storageKey` (S3/R2/local); novas usam só o banco.
-- Worker de e-mail: `GUIDE_EMAIL_WORKER_ENABLED=1`. Envio por dia da empresa e `POST /firm/guides/emails/run-scheduled` permanecem disponíveis; não há agendamento por cron no processo da API.
+- Envio de guias por e-mail: **100% manual** (Q55 — `server.js`: "nada roda sozinho"). Não há laço,
+  não há fila e `emailNextRetryAt` é gravado mas nunca drenado. As portas de envio são a página
+  "Envio de e-mails em lote", "Liberar ao cliente" e `POST /firm/guides/emails/send-pending|send-selected`.
+  ⚠ `GUIDE_EMAIL_WORKER_ENABLED` e `GUIDE_WORKER_ENABLED` **foram removidas**: nenhuma tinha um `if`
+  atrás de si, e ler a primeira como `0` sugeria explicar "o e-mail não sai" sem explicar nada. Quem
+  quiser conferir o modo lê `GET /status` → `guides.emailDispatch`.
 
 Fluxo sugerido:
 ```bash

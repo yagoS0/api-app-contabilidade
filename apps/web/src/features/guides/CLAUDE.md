@@ -10,8 +10,16 @@ envio em lote e o painel de guias esperadas.
   via `GET /firm/companies/:id/guides/expected`), cada uma com 3 estados —
   **presente** (verde, mostra dados), **vazio** (amarelo, botão "desfazer") e **faltando**
   (vermelho, botão **"Vazio"**). Botão Vazio chama `markGuideVazio`/`undoGuideVazio`.
-- `capture/` — modal de captura SERPRO. `batch-email/` — envio em lote (3 estados por
-  célula: ausente X / contendo guia / enviado).
+- `capture/` — modal de captura SERPRO. `batch-email/` — envio em lote (**5 estados** por célula:
+  ausente ✗ / ⊘ vazio / 📄 guia / **✖ falhou** / ✓ enviado).
+  ⚠ **`✖ falhou` é o estado que faltava.** A célula pintava PENDING, ERROR e `null` tudo como
+  "📄 guia": na única tela em que o contador decide o que enviar, a tentativa que FALHOU tinha a
+  mesma cara da que nunca foi feita — e nada tenta de novo sozinho (Q55). O `emailStatus` já vinha
+  no payload e era descartado no render. Agora vem com **`falhou` + `emailLastError` +
+  `emailAttempts`**, o motivo fica no `title`, e uma **faixa no topo** conta as falhas e seleciona
+  só elas num clique (varrer 30 linhas × 8 colunas com os olhos não é aviso). A linha **continua
+  selecionável**: o envio manual alcança `ERROR`, então a mudança é de exibição, não de
+  elegibilidade.
 
 ## ⚠ Como uma guia se chama na tela — `lib/rotuloGuia.js`, e só ele
 

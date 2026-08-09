@@ -36,9 +36,16 @@ que quebra em silêncio assim que a cor vira `var(--…)`.
 
 ```
                     ┌─→ ✈ gerada ─→ ✓ enviada        (terminais bons)
-  ⚠ falta gerar ────┤
+  ⚠ falta gerar ────┤        └────→ ✖ falhou         (tentou e não saiu; NÃO é terminal)
                     └─→ ⊘ vazio                      (terminal: ausência confirmada)
 ```
+
+⚠ **`✖ falhou` existia no banco e não existia na tela.** `emailStatus:"ERROR"` caía no mesmo
+`state: "gerada"` do PENDING e pintava âmbar "gerada, falta enviar" — o estado de quem **nunca foi
+tentado**. Como nada drena `emailNextRetryAt` (o laço saiu na Q55), a guia ficava assim até alguém
+clicar por acaso. Hoje: vermelho com ícone próprio, `emailLastError` e nº de tentativas no popover,
+e o botão vira **"✈ Tentar enviar de novo"** — o MESMO envio (não há mecanismo de retentativa para
+sugerir). Ele conta como urgência 0 na tabela e entra no recorte "falta enviar" do topo.
 Mais `conflito` (marcada sem movimento **mas** há nota emitida) e `na` (não exigido → o chip **não
 renderiza**). Três tipos de ausência, três visuais — é o que a regra antiga ("a tag some quando a
 guia é gerada") não conseguia dizer.

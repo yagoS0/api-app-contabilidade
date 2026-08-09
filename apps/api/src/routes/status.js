@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../infrastructure/db/prisma.js";
-import { PDF_READER_URL, GUIDE_EMAIL_WORKER_ENABLED, SERPRO_PGDASD_WORKER_ENABLED } from "../config.js";
+import { PDF_READER_URL, SERPRO_PGDASD_WORKER_ENABLED } from "../config.js";
 
 async function checkPdfReaderHealth() {
   const url = String(PDF_READER_URL || "").trim().replace(/\/+$/, "");
@@ -49,7 +49,22 @@ export function createStatusRouter({ ensureAuthorized }) {
       ok: true,
       guides: {
         flow: "portal_upload_pdf_reader_postgres_email",
-        guideEmailWorkerEnabled: GUIDE_EMAIL_WORKER_ENABLED,
+        // ⚠ Aqui ecoava `guideEmailWorkerEnabled: GUIDE_EMAIL_WORKER_ENABLED` — o ÚNICO consumidor
+        // daquela flag em todo o projeto, e ele só a repetia. Não existia `if` nenhum atrás dela.
+        // Ler `false` aqui parecia explicar "o envio de e-mail não está funcionando"; não explicava
+        // nada, e mandou o diagnóstico para o lado errado (a causa real era o filtro que não casava
+        // com `emailStatus` NULL, commit a61649d0).
+        //
+        // O que este endpoint pode afirmar com verdade é o MODO: desde a Q55 (`server.js`, "nada
+        // roda sozinho") não há laço, e `emailNextRetryAt` é escrito mas nunca drenado. Um campo
+        // constante incomoda menos que um campo que mente — e, se um dia o envio voltar a ser
+        // automático, este bloco é o lugar que precisa mudar junto.
+        emailDispatch: {
+          mode: "manual",
+          loopAutomatico: false,
+          retryAutomatico: false,
+          motivo: "Q55 — nada roda sozinho; o envio sai por clique (envio em lote / liberar ao cliente)",
+        },
         serproPgdasdWorkerEnabled: SERPRO_PGDASD_WORKER_ENABLED,
         serproPgdasdLastRun: latestSerproRun
           ? {

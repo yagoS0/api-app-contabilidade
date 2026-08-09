@@ -10,6 +10,9 @@ function delay(ms = 250) {
 // retorno fixo: o ciclo da guia só dá para conferir offline se marcar vazio realmente mudar o chip
 // e o desfazer realmente voltar. Mock imutável passaria por esses caminhos sem testar nenhum.
 const mockVazios = new Map(); // chave → { vazioEm, vazioPor, vazioMotivo }
+// Guias cuja liberação já foi TENTADA nesta sessão do mock. A 1ª tentativa simula o lock global
+// preso (`guides_email_lock`, TTL 5 min) e a 2ª envia — ver `liberarGuiaCliente`.
+const mockLiberacoesTentadas = new Set();
 const chaveVazio = (companyId, tipo) => `${companyId}|${String(tipo || "").toUpperCase()}`;
 
 // Chave do compliance → tipo de Guide (mesmo de-para do backend; PIS representa o grupo PIS/COFINS).
@@ -33,6 +36,12 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
   };
 
   // Cenário por empresa: 0 falta tudo · 1 gerada (falta enviar) · 2 enviada · 3 vazio · 4 conflito.
+  //
+  // ⚠ `falhou` NÃO entra neste rodízio, e sim na empresa MISTURADA abaixo. Um sexto cenário
+  // deslocaria o cenário de todas as outras empresas — e, pior, cairia numa empresa qualquer da
+  // lista, inclusive numa ZERADA, onde o card nem desenha chip (`empresaSemObrigacoes`). A empresa
+  // misturada é onde ele precisa aparecer de qualquer forma: o ponto de `falhou` é justamente não
+  // se confundir com `gerada`, e só lado a lado isso se confere.
   const cenario = indice % 5;
   // ⚠ UMA EMPRESA COM ESTADOS MISTURADOS, sempre.
   //
@@ -56,6 +65,18 @@ function mockGuideComplianceRow({ companyId, indice = 0, hasProlabore, regimeTri
       }
       if (chave === "irpj") {
         return { required, ok: true, state: "gerada", guideId: `mock-guia-${companyId}-${chave}`, emailStatus: "PENDING" };
+      }
+      // ⚠ CSLL com o envio FALHADO, ao lado do IRPJ apenas "gerada". Era este par que a tela não
+      // sabia distinguir: os dois caíam em âmbar "gerada, falta enviar", e a guia que NÃO chegou ao
+      // cliente tinha a mesma cara da que só está esperando a vez. Como nada drena
+      // `emailNextRetryAt` (o laço saiu na Q55), ela ficava assim até alguém clicar por acaso.
+      // `ok: true` de propósito — a guia existe; o que falhou foi o envio.
+      if (chave === "csll") {
+        return {
+          required, ok: true, state: "falhou", guideId: `mock-guia-${companyId}-${chave}`,
+          emailStatus: "ERROR", emailAttempts: 3,
+          emailLastError: "550 5.1.1 The email account that you tried to reach does not exist",
+        };
       }
       return { required, ok: false, state: "missing" };
     }
@@ -1262,8 +1283,29 @@ export function createMockApi() {
         if (target) {
           target.liberadaCliente = true;
           target.liberadaEm = new Date().toISOString();
+          // ⚠ O CAMINHO DO LOCK PRESO PRECISA EXISTIR NO MOCK. É ele que produzia a mensagem
+          // "ficará em fila" — a promessa de um mecanismo que não existe (o laço automático saiu na
+          // Q55). Sem um jeito de exercê-lo, a única forma de ver o texto era em produção, com uma
+          // guia real não chegando ao cliente.
+          //
+          // Regra: a PRIMEIRA tentativa de cada guia cai no lock; a segunda envia. É o roteiro real
+          // (o lock vence em até 5 min e o clique volta a funcionar) e é o único jeito de conferir
+          // que a mensagem honesta aparece E que "tentar de novo" resolve — que é exatamente o que
+          // ela promete. Um mock que sempre envia deixaria o ramo do lock sem nenhuma prova.
+          if (!mockLiberacoesTentadas.has(guideId)) {
+            mockLiberacoesTentadas.add(guideId);
+            return {
+              // ⚠ O `emailStatus` NÃO muda: o worker nem chegou a rodar. Devolver "PENDING" aqui
+              // era a segunda mentira da mesma resposta (idem backend).
+              ok: true, guideId, liberadas: 1, emailStatus: target.emailStatus || null, sent: false,
+              envio: { feito: false, motivo: "envio_ocupado", podeTentarNovamente: true },
+              message: "Guia liberada ao cliente, mas o e-mail NÃO foi enviado: há outro envio em "
+                + "andamento (ou um envio anterior que travou). Não há reenvio automático: se você "
+                + "não clicar de novo, esta guia não sai. Tente novamente em até 5 minutos.",
+            };
+          }
           target.emailStatus = "SENT";
-          return { ok: true, guideId, liberadas: 1, emailStatus: "SENT", sent: true };
+          return { ok: true, guideId, liberadas: 1, emailStatus: "SENT", sent: true, envio: { feito: true } };
         }
       }
       throw new Error("not_found");
@@ -2594,7 +2636,18 @@ export function createMockApi() {
         const captured = faker.helpers.arrayElement([0, 1, 2, 2, 3]);
         if (regime === "SIMPLES") {
           if (captured >= 1) row.tiposGuias.DAS = { guideId: faker.string.uuid(), valor: 500 };
-          if (captured >= 2) row.tiposGuias.INSS = { guideId: faker.string.uuid(), valor: 250 };
+          // ⚠ Uma em cada cinco empresas tem o INSS em ERROR, com o motivo. A célula "✖ falhou" e a
+          // faixa de aviso do topo não têm como ser conferidas num mock em que todo envio ou está
+          // pendente ou já saiu — e era assim que a matriz pintava ERROR igual a PENDING.
+          if (captured >= 2) {
+            const falhou = idx % 5 === 2;
+            row.tiposGuias.INSS = falhou
+              ? {
+                guideId: faker.string.uuid(), valor: 250, emailStatus: "ERROR", falhou: true,
+                emailAttempts: 2, emailLastError: "connect ETIMEDOUT smtp.gmail.com:465",
+              }
+              : { guideId: faker.string.uuid(), valor: 250 };
+          }
           // A coluna PARC carrega DOIS conteúdos e o mock precisa dos dois: guia de parcela
           // capturada (com PDF — ENVIÁVEL, entra em pendingGuideIds) e rastreio do parcelamento
           // sem documento (só informa). Enquanto o mock só tinha o segundo, a regressão que fazia a

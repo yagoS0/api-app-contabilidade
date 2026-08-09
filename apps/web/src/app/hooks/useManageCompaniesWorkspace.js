@@ -397,10 +397,12 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     feedback.clearFeedback();
     try {
       const payload = await api.captureSerproPgdasd(companyId, input);
-      feedback.setMessage("Guia PGDAS-D capturada com sucesso.");
+      // ⚠ DEPOIS do reload: `loadGuides` abre com `feedback.clearFeedback()` e engolia esta
+      // mensagem — o clique terminava mudo.
       if (companiesState.selectedCompanyId === companyId) {
         await loadGuides(companyId);
       }
+      feedback.setMessage("Guia PGDAS-D capturada com sucesso.");
       return payload?.result || null;
     } catch (err) {
       feedback.setError(err?.message || "Falha ao capturar guia PGDAS-D.");
@@ -652,9 +654,18 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     guidesState.setResendingGuideId(guideId);
     feedback.clearFeedback();
     try {
-      await api.resendGuideEmail(guideId);
-      feedback.setMessage("Guia colocada na fila de reenvio.");
+      const r = await api.resendGuideEmail(guideId);
+      // ⚠ A ORDEM IMPORTA: `loadGuides` começa com `feedback.clearFeedback()`. Setar a mensagem
+      // antes dele APAGA a mensagem — o clique não devolvia retorno nenhum à tela, nem de sucesso
+      // nem de falha. "O sistema diz que fez" tem uma variante pior: o sistema não diz nada.
       await loadGuides();
+      // ⚠ Dizia "Guia colocada na fila de reenvio". Não existe fila: o laço automático saiu na Q55
+      // e nada drena `emailNextRetryAt`. O reenvio é SÍNCRONO — ou saiu agora, ou não saiu.
+      if (r?.sent === false) {
+        feedback.setError(r?.message || "O e-mail NÃO foi enviado. Nada tenta de novo sozinho — clique novamente.");
+      } else {
+        feedback.setMessage("Guia reenviada.");
+      }
     } catch (err) {
       feedback.setError(err?.message || "Falha ao reenviar guia");
     } finally {
@@ -671,6 +682,11 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     feedback.clearFeedback();
     try {
       const res = await api.confirmGuidePayment(guideId);
+      // ⚠ O RELOAD VEM PRIMEIRO. `loadGuides` abre com `feedback.clearFeedback()`, e enquanto ele
+      // rodava DEPOIS todas as mensagens abaixo eram apagadas antes de aparecer — inclusive as que
+      // pedem uma ação do contador ("Lance a baixa na Circular", "nenhuma provisão correspondente
+      // foi encontrada"). O clique terminava mudo.
+      await loadGuides();
       // Q23: guia de parcela gera a baixa do pagamento; mensagem reflete o resultado.
       // A resposta diz se a Circular foi atualizada — não afirmamos "✅ na Circular" sem ter sido.
       // Comprovante do SERPRO: quando `aplicado`, a baixa saiu com a DATA e os VALORES reais.
@@ -699,7 +715,6 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       } else {
         feedback.setMessage("Guia marcada como paga. Lance a baixa na Circular.");
       }
-      await loadGuides();
       // A Circular lê AccountingEntry.statusPagamento, que acabou de mudar — sem este reload a
       // aba mostrava dado velho (antes só as guias eram recarregadas).
       await onGuidePaymentConfirmed?.();
@@ -725,12 +740,25 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     try {
       const payload = await api.recalculateGuide(guideId);
       const skipped = Boolean(payload?.emailDispatch?.skipped);
-      feedback.setMessage(
-        skipped
-          ? "Guia recalculada, mas o envio automático está ocupado no momento."
-          : "Guia recalculada e enviada para a fila de e-mail."
-      );
+      const enviadas = Number(payload?.emailDispatch?.sent || 0);
+      // ⚠ `loadGuides` limpa o feedback — a mensagem tem que vir DEPOIS dele, senão some.
       await loadGuides();
+      // ⚠ Dizia "enviada para a fila de e-mail" / "o envio automático está ocupado". Não há fila e
+      // não há envio automático (Q55). O recálculo dispara o envio SÍNCRONO da guia nova; o que a
+      // tela pode afirmar é se ele saiu, e o que fazer quando não saiu.
+      if (skipped) {
+        feedback.setError(
+          "Guia recalculada, mas o e-mail NÃO foi enviado: há outro envio em andamento (ou um envio "
+          + "anterior que travou). Nada tenta de novo sozinho — use 'Liberar ao cliente' em até 5 minutos.",
+        );
+      } else if (enviadas > 0) {
+        feedback.setMessage("Guia recalculada e enviada ao cliente.");
+      } else {
+        feedback.setError(
+          "Guia recalculada, mas o e-mail NÃO foi enviado. Nada tenta de novo sozinho — "
+          + "use 'Liberar ao cliente' para tentar agora.",
+        );
+      }
     } catch (err) {
       feedback.setError(err?.message || "Falha ao recalcular guia");
     } finally {
@@ -754,8 +782,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     feedback.clearFeedback();
     try {
       await api.syncSerproInss(companyId, { competencia });
-      feedback.setMessage(`INSS de ${competencia} recalculado/atualizado.`);
+      // ⚠ DEPOIS do reload — `loadGuides` limpa o feedback (mesmo defeito dos vizinhos).
       await loadGuides(companyId);
+      feedback.setMessage(`INSS de ${competencia} recalculado/atualizado.`);
     } catch (err) {
       feedback.setError(err?.message || "Falha ao recalcular o INSS.");
     } finally {
@@ -773,10 +802,20 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     feedback.clearFeedback();
     try {
       const r = await api.liberarGuiaCliente(guideId);
-      feedback.setMessage(r?.sent
-        ? "Guia liberada ao cliente e enviada por e-mail."
-        : (r?.message || "Guia liberada ao cliente; e-mail em processamento."));
+      // ⚠ `sent: false` NÃO É SUCESSO. A liberação ao app do cliente deu certo, o e-mail não — e a
+      // mensagem do backend ("o e-mail NÃO foi enviado…") aparecia em VERDE, na caixa de sucesso,
+      // logo abaixo de um botão que o contador acabou de clicar. Verde é a cor de "pode ir embora";
+      // era a última coisa que ele via antes de ir. O chip do dashboard já fazia isso certo
+      // (`renderCompaniesHomePage.acoesGuia.onEnviar`); esta metade tinha ficado para trás.
+      // ⚠ A ORDEM IMPORTA: `loadGuides` abre com `feedback.clearFeedback()`. Enquanto a mensagem
+      // era setada ANTES dele, o clique em "Liberar ao cliente" não devolvia NADA à tela — nem o
+      // sucesso, nem a falha, nem a (falsa) promessa de fila. O contador via só o selo 📤 aparecer.
       await loadGuides(companyId);
+      if (r?.sent) {
+        feedback.setMessage("Guia liberada ao cliente e enviada por e-mail.");
+      } else {
+        feedback.setError(r?.message || "Guia liberada, mas o e-mail não saiu. Tente enviar de novo.");
+      }
     } catch (err) {
       feedback.setError(err?.message || "Falha ao liberar a guia ao cliente.");
     } finally {
@@ -800,14 +839,16 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       const skipped = Number(result?.skipped || 0);
       const sent = Number(result?.sent || 0);
       const failed = Number(result?.failedToSend || 0);
-      const emailSuffix = result?.emailDispatch?.skipped
-        ? " O envio automático não pôde iniciar porque outro envio já está em andamento."
-        : "";
-      feedback.setMessage(
-        `Upload concluído: ${processed} processadas, ${errors} com erro, ${skipped} ignoradas. ` +
-          `E-mails: ${sent} enviados, ${failed} falhas.${emailSuffix}`
-      );
+      // ⚠ Falava em "envio automático". O upload NÃO envia nada desde a Q55: a rota devolve
+      // `emailDispatch: { attempted:false, reason:"batch_email_only" }` — as guias nascem PENDING e
+      // esperam um clique. "Não pôde iniciar" sugeria que ele iniciaria mais tarde; não inicia.
+      const emailSuffix = sent > 0 || failed > 0
+        ? ` E-mails: ${sent} enviados, ${failed} falhas.`
+        : " Nenhum e-mail foi enviado: o envio é manual (use 'Envio de e-mails em lote').";
       await loadUnidentifiedGuides();
+      feedback.setMessage(
+        `Upload concluído: ${processed} processadas, ${errors} com erro, ${skipped} ignoradas.${emailSuffix}`
+      );
       return true;
     } catch (err) {
       feedback.setError(err?.message || "Falha ao enviar e processar guias.");

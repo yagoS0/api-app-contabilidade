@@ -42,7 +42,11 @@ function severidadeGuias(company) {
   if (empresaSemObrigacoes(company)) return 3;
   const tags = getComplianceTags(company.guideCompliance);
   if (!tags.length) return 3;
-  if (tags.some((t) => t.state === "missing" || t.state === "conflito")) return 0;
+  // ⚠ `falhou` entra no degrau 0, junto de `missing`. Ele não é "gerada, falta enviar" (degrau 1,
+  // trabalho de rotina do fim do mês): é uma tentativa JÁ FEITA que não deu certo e que ninguém vai
+  // repetir sozinha. Deixá-lo no 1 afundaria a empresa afetada no meio da carteira, que é
+  // exatamente o efeito que a ordenação existe para evitar.
+  if (tags.some((t) => t.state === "missing" || t.state === "conflito" || t.state === "falhou")) return 0;
   if (tags.some((t) => t.state === "gerada")) return 1;
   return 2;
 }

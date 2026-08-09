@@ -613,6 +613,98 @@ falha de rede/SERPRO não pode desfazer nada — volta como `skipped` no payload
 zera os flags de e-mail da guia DAS (`liberarReenvio`); numa transmissão normal a guia já nasce
 `PENDING`.
 
+## Envio de guias por e-mail — MANUAL, sem fila, e a falha precisa aparecer
+
+O envio é 100% manual desde a **Q55** (`server.js`: *"nada roda sozinho"*). Isso tem duas
+consequências que já produziram defeito, e as duas são sobre o sistema **dizer que fez**.
+
+### 1. Não existe fila — e nenhuma mensagem pode dizer que existe
+
+`POST /firm/guides/:guideId/liberar-cliente` e `POST /firm/guides/:guideId/resend-email` chamam
+`runGuideEmailWorkerSelected` de forma **síncrona**, e esse worker toma o lock global
+`guides_email_lock` (TTL **5 min**). Lock preso — envio de verdade em andamento **ou** processo
+morto com o TTL ainda correndo — devolve `{ skipped: true, reason: "lock_active" }`.
+
+A rota respondia **"Guia liberada; envio de e-mail ocupado no momento — ficará em fila."** Não há
+fila: o laço foi removido e **nada drena `emailNextRetryAt`**. A guia não saía, e o contador ia
+embora achando que o cliente ia receber.
+
+As frases moram em **`application/guides/guideEmailCopy.js`** (`mensagemEnvioNaoFeitoPorLock`,
+`mensagemEnvioFalhou`, `GUIA_AGUARDA_ENVIO_MANUAL`) — escrevê-las no lugar de uso foi como a
+promessa ganhou **quatro** cópias. `__tests__/envioSemFila.test.js` trava o texto **e varre os
+literais de `routes/firm/index.js`** atrás da reescrita à mão.
+
+⚠ **`sent: false` não é sucesso.** A liberação ao app do cliente e o e-mail terminam separado; a
+resposta traz `envio: { feito, motivo, podeTentarNovamente }` e o front mostra em **vermelho**
+(`useManageCompaniesWorkspace.handleLiberarGuia`), não na caixa verde.
+
+⚠ `resend-email` lia `result.guides[0]` — o worker devolve **`results`**. `sent` nunca era `true` e
+o motivo nunca chegava à tela: reenvio bem-sucedido respondia "Tentativa de reenvio realizada.
+Verifique o status."
+
+### 2. A guia em `ERROR` fica em `ERROR` para sempre — então ela tem estado próprio na tela
+
+`processOneGuide` grava `emailStatus:"ERROR"` + `emailLastError` + `emailNextRetryAt`. **Ninguém
+drena o retry.** O que tornava isso invisível não era o banco — era a tela: `ERROR` e `PENDING`
+caíam no mesmo visual, âmbar "gerada, falta enviar", o estado de quem **nunca foi tentado**.
+
+A pergunta é uma só, **`envioDeEmailFalhou(guide)`** (`guideContract.js`), e alimenta três lugares:
+
+| Onde | Antes | Agora |
+|---|---|---|
+| chip do dashboard (`renderGuiaChip`) | `state: "gerada"`, âmbar | `state: "falhou"`, vermelho `✖`, motivo e nº de tentativas no popover, botão **"Tentar enviar de novo"** |
+| matriz do envio em lote | `📄 guia` | `✖ falhou` + motivo no `title` + **faixa no topo** contando as falhas, com botão que seleciona só elas |
+| "Pendências de e-mail" | rótulo **"(debug)"** no menu | rótulo honesto; é a única tela com status/tentativas/`emailLastError` por guia |
+
+⚠ **`falhou` NÃO mexe em `ok`.** A guia existe — o que falhou foi o envio. `ok` responde "a
+obrigação está materializada?" e alimenta filtro de pendências e agregado de fechamento. A
+visibilidade é assunto de `state`. E `falhou` **não é terminal**: `todasConcluidas` continua falsa,
+senão o card condensaria em "✓ Guias concluídas" justamente na empresa que não recebeu.
+
+⚠ **Enviada vence falhou.** Envio é terminal em QUALQUER canal; um `ERROR` de e-mail anterior a um
+envio que deu certo é história, não pendência.
+
+⚠ **A regra de exibição não mexe na elegibilidade.** `whereGuiaPendenteDeEnvio()` continua
+alcançando `ERROR` — a linha segue selecionável e o mesmo clique tenta de novo.
+
+⚠ `listPendingGuidesReport` tinha o **mesmo defeito do commit a61649d0 em uma quarta cópia**:
+`{ OR: [PENDING, ERROR, SENDING] }` escrito à mão **não alcança `emailStatus` NULL**, e a DARF
+consolidada do LP nasce NULL. A única tela que mostra o motivo da falha nunca listou as guias do
+Lucro Presumido. Hoje reusa `whereGuiaPendenteDeEnvio()` e acrescenta `SENDING` **só ali** (é tela
+de diagnóstico: guia presa em `SENDING` por processo morto é invisível para todo o resto).
+
+### 3. O lote NÃO toma o lock — e isso é decisão medida, não esquecimento
+
+`POST /guides/batch-send` é um laço **sequencial e bloqueante** sobre os itens que o front manda
+(empresa × competência; "Todas pendentes" multiplica pelas competências em atraso). Ele **não**
+toma `guides_email_lock`, e o envio por guia **toma** — então dois contadores podem, em teoria,
+disparar envio concorrente sobre a mesma guia.
+
+**Simetrizar seria trocar um risco estreito por um bug pior.** Medido:
+
+- **O TTL não cobre o laço.** Ponto de ruptura = `300 s / N`: **10,0 s** por empresa com 30,
+  **7,5 s** com 40, **2,5 s** se forem 3 competências pendentes de 40 empresas. O custo típico de
+  um envio (1–3 s) cabe; o **pior caso não**: `EmailService` **não configura timeout nenhum**, e os
+  defaults do nodemailer 6.10.1 (medidos em `node_modules/nodemailer/lib/smtp-connection/index.js`)
+  são `connectionTimeout` **120 s** e `socketTimeout` **600 s**. **Uma única empresa pendurada
+  estoura o TTL sozinha** — 10 min é o dobro dele. O custo determinístico (mkdtemp + anexos +
+  limpeza) é ruído: **0,07–0,5 s** por empresa, medido.
+- **Lock vencido é ROUBADO, não renovado.** `tryAcquireGuideLock` faz `updateMany` quando
+  `lockedUntil <= now`. Estourar o TTL no meio do lote não "protege menos": dois processos passam a
+  se achar donos, e o `finally` do primeiro chama `releaseGuideLock`, que zera `lockedUntil` **do
+  segundo**. O lote longo quebraria a proteção que o envio por guia hoje tem.
+- **A janela real é menor do que parece.** `sendCompanyGuidesEmail` marca as guias como `SENDING`
+  num único `updateMany` **antes** de qualquer I/O, e `whereGuiaPendenteDeEnvio()` não casa com
+  `SENDING`: um segundo lote sobre a mesma empresa não pega nada.
+- **O que sobra:** `runGuideEmailWorkerSelected` **não** filtra por `emailStatus` — clicar "Liberar
+  ao cliente" numa guia que um lote acabou de marcar `SENDING` manda um segundo e-mail. ⚠ **Não
+  feche isso com uma guarda de `SENDING`:** guia presa em `SENDING` (processo morto) já é invisível
+  para os dois caminhos de envio, e o clique direto é a **única** saída que resta. Recusá-lo trocaria
+  um e-mail duplicado raro por um beco sem saída permanente e silencioso — o erro mais caro dos dois.
+
+**Como medir de verdade quando quiser rever:** `sendCompanyGuidesEmail` já devolve `durationMs` por
+empresa, e `batch-send` os repassa em `results[]`. Um lote real responde a pergunta com número.
+
 ## Guias na Circular — quem alimenta cada linha
 
 - **DARF / PIS / COFINS / IRPJ / CSLL / ISS:** viram `AccountingEntry` PROVISAO de verdade, via
@@ -702,7 +794,7 @@ PDF_READER_URL   (URL do serviço FastAPI)
 PORT             (default 3000)
 ```
 
-Workers opt-in (default desligados): `GUIDE_EMAIL_WORKER_ENABLED`,
+Workers opt-in (default desligados):
 `SERPRO_PGDASD_WORKER_ENABLED`, `SERPRO_DCTFWEB_WORKER_ENABLED`,
 `DFE_NOTAS_WORKER_ENABLED`, `APURACAO_BATCH_WORKER_ENABLED`,
 `SERPRO_PAYMENT_CONFIRMATION_WORKER_ENABLED`, `CONFERENCIA_ADN_WORKER_ENABLED`.

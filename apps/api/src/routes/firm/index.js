@@ -81,7 +81,14 @@ import {
   toPendingGuideReportItem,
   toGuideResponse,
 } from "../../application/guides/GuideService.js";
-import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia } from "../../application/guides/guideContract.js";
+import { normalizeCompetencia, normalizeGuideType, colunaMatrizDaGuia, envioDeEmailFalhou } from "../../application/guides/guideContract.js";
+// ⚠ As mensagens de "não foi enviado" moram no domínio, não aqui: era escrevendo-as no lugar de uso
+// que a promessa de uma fila inexistente ganhou quatro cópias. Ver `guideEmailCopy.js`.
+import {
+  GUIA_AGUARDA_ENVIO_MANUAL,
+  mensagemEnvioFalhou,
+  mensagemEnvioNaoFeitoPorLock,
+} from "../../application/guides/guideEmailCopy.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import {
   getGuideRuntimeSettings,
@@ -1918,7 +1925,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             ...item,
             email: {
               status: "PENDING",
-              message: "Guia processada e colocada na fila. O envio automático será tentado depois.",
+              // ⚠ Dizia "colocada na fila. O envio automático será tentado depois." — duas frases
+              // falsas na mesma linha desde a Q55: não há fila e não há envio automático.
+              message: GUIA_AGUARDA_ENVIO_MANUAL,
             },
           };
         }
@@ -2461,6 +2470,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       select: {
         id: true, portalClientId: true, tipo: true, competencia: true, valor: true, vencimento: true,
         status: true, emailStatus: true, emailSentAt: true, extracted: true,
+        // ⚠ O MOTIVO DA FALHA ENTRA NA MATRIZ. `emailStatus:"ERROR"` já vinha, mas a célula pintava
+        // ERROR igual a PENDING ("📄 guia") — a tentativa que falhou ficava indistinguível da que
+        // nunca foi feita, na única tela onde o contador decide o que enviar. Sem `emailLastError`
+        // a distinção seria "falhou, não sei por quê", que manda ele procurar em outro lugar.
+        // `emailAttempts` diz se foi um tropeço ou uma falha teimosa.
+        emailLastError: true, emailAttempts: true,
         // A parcela de parcelamento também é `tipo:"SIMPLES"` — é este campo que a separa do DAS.
         parcelamentoId: true,
       },
@@ -2537,6 +2552,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         vazio: isVazio,
         emailStatus: g.emailStatus || null,
         emailSentAt: g.emailSentAt || null,
+        // A pergunta "a última tentativa falhou?" vem do `guideContract` — a MESMA que o chip do
+        // dashboard usa. Duas leituras de `emailStatus` fariam as duas telas discordarem sobre a
+        // mesma guia, que é exatamente como o `parcelamentoId` divergiu.
+        falhou: envioDeEmailFalhou(g),
+        emailLastError: g.emailLastError || null,
+        emailAttempts: Number(g.emailAttempts || 0),
       };
 
       if (upper === "DARF") {
@@ -3173,27 +3194,42 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // Permite ao contador clicar "Reenviar" e ter feedback imediato (SENT ou ERROR).
       try {
         const result = await runGuideEmailWorkerSelected({ guideIds: [updated.id] });
-        const guideResult = Array.isArray(result?.guides) ? result.guides[0] : null;
-        const sent = guideResult?.emailStatus === "SENT";
+        if (result?.skipped) {
+          return res.json({
+            ok: true,
+            guideId: updated.id,
+            emailStatus: updated.emailStatus || null,
+            sent: false,
+            envio: { feito: false, motivo: "envio_ocupado", podeTentarNovamente: true },
+            message: mensagemEnvioNaoFeitoPorLock(),
+          });
+        }
+        // ⚠ O worker devolve `results`, NÃO `guides` — isto lia `result.guides[0]` e obtinha
+        // `undefined` SEMPRE. Consequências: `sent` nunca era true (reenvio bem-sucedido dizia
+        // "Tentativa de reenvio realizada. Verifique o status.") e o motivo da falha nunca chegava
+        // à tela. Uma rota que nunca sabe o que aconteceu é o mesmo defeito das mensagens de fila,
+        // por outro caminho: o contador fica sem saber se saiu.
+        const item = Array.isArray(result?.results) ? result.results[0] : null;
+        const sent = item?.status === "SENT";
         return res.json({
           ok: true,
           guideId: updated.id,
-          emailStatus: guideResult?.emailStatus || "PENDING",
+          emailStatus: item?.status || null,
           sent,
+          envio: sent ? { feito: true } : { feito: false, motivo: item?.code || "envio_falhou", podeTentarNovamente: true },
           message: sent
             ? "Guia reenviada com sucesso."
-            : (guideResult?.emailLastError
-              ? `Falha no reenvio: ${guideResult.emailLastError}`
-              : "Tentativa de reenvio realizada. Verifique o status."),
+            : mensagemEnvioFalhou(item?.reason || "o envio não foi confirmado"),
         });
       } catch (err) {
         log.warn({ err: err?.message || err, guideId: updated.id }, "Falha no reenvio síncrono");
         return res.json({
           ok: true,
           guideId: updated.id,
-          emailStatus: "PENDING",
+          emailStatus: "ERROR",
           sent: false,
-          message: "Reenvio em fila — não foi possível enviar agora. Verifique os logs.",
+          envio: { feito: false, motivo: "envio_falhou", podeTentarNovamente: true },
+          message: mensagemEnvioFalhou(err?.message),
         });
       }
     }
@@ -3228,12 +3264,29 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       // 1) marca esta guia como liberada ao cliente (no-op se já liberada)
       const lib = await liberarGuiaCliente({ guideId: guide.id, userId });
       // 2) envia SÓ esta guia por e-mail — síncrono, feedback imediato ao contador
+      //
+      // ⚠ A LIBERAÇÃO E O E-MAIL SÃO DUAS COISAS, E PODEM TERMINAR DIFERENTE. A guia fica liberada
+      // ao app do cliente mesmo quando o e-mail não sai — por isso `ok: true` com `sent: false`, e
+      // por isso a mensagem precisa dizer QUAL das duas falhou. Dizer só "Guia liberada" seria
+      // reportar sucesso sobre metade do trabalho.
+      const prefixo = "Guia liberada ao cliente, mas ";
       try {
         const result = await runGuideEmailWorkerSelected({ guideIds: [guide.id] });
         if (result?.skipped) {
+          // ⚠ Aqui dizia "ficará em fila". NÃO EXISTE FILA (Q55: o laço automático foi removido e
+          // nada drena `emailNextRetryAt`). O contador lia a promessa, fechava a tela, e a guia
+          // nunca saía. Ver `guideEmailCopy.js`.
           return res.json({
-            ok: true, guideId: guide.id, liberadas: lib.liberadas, emailStatus: "PENDING", sent: false,
-            message: "Guia liberada; envio de e-mail ocupado no momento — ficará em fila.",
+            ok: true,
+            guideId: guide.id,
+            liberadas: lib.liberadas,
+            // O `emailStatus` da guia NÃO foi tocado — o worker nem chegou a rodar. Devolvê-lo como
+            // "PENDING" era a segunda mentira da mesma resposta: uma guia que estava em ERROR
+            // aparecia como se tivesse voltado a ser uma pendência limpa.
+            emailStatus: guide.emailStatus || null,
+            sent: false,
+            envio: { feito: false, motivo: "envio_ocupado", podeTentarNovamente: true },
+            message: mensagemEnvioNaoFeitoPorLock(prefixo),
           });
         }
         const item = Array.isArray(result?.results) ? result.results[0] : null;
@@ -3244,15 +3297,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           liberadas: lib.liberadas,
           emailStatus: item?.status || null,
           sent,
+          envio: sent
+            ? { feito: true }
+            : { feito: false, motivo: item?.code || "envio_falhou", podeTentarNovamente: true },
           message: sent
             ? "Guia liberada e enviada ao cliente."
-            : (item?.reason ? `Guia liberada; falha no e-mail: ${item.reason}` : "Guia liberada; envio de e-mail em processamento."),
+            // Sem item não há como afirmar "em processamento": nada processa em segundo plano.
+            : mensagemEnvioFalhou(item?.reason || "o envio não foi confirmado", prefixo),
         });
       } catch (err) {
         log.warn({ err: err?.message || err, guideId: guide.id }, "Falha no envio síncrono ao liberar guia");
         return res.json({
           ok: true, guideId: guide.id, liberadas: lib.liberadas, emailStatus: null, sent: false,
-          message: "Guia liberada; e-mail em fila — verifique os logs.",
+          envio: { feito: false, motivo: "envio_falhou", podeTentarNovamente: true },
+          message: mensagemEnvioFalhou(err?.message, prefixo),
         });
       }
     }

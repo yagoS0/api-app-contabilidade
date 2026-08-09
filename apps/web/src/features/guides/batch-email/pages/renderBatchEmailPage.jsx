@@ -49,7 +49,7 @@ const cellBaseStyle = {
 };
 
 function GuideStatusCell({ value }) {
-  // Q16/Q17: 4 estados — ✗ ausente / "vazio" (amarelo) / "contendo guia" / "enviado".
+  // Q16/Q17: 5 estados — ✗ ausente / "vazio" (amarelo) / "contendo guia" / "enviado" / "falhou".
   if (!value) {
     return <td style={{ ...cellBaseStyle, color: PANEL.danger }} title="Sem guia">✗</td>;
   }
@@ -74,7 +74,32 @@ function GuideStatusCell({ value }) {
       </td>
     );
   }
-  // contendo guia (PENDING/ERROR/null) — capturada, ainda não enviada
+  // ⚠ A TENTATIVA QUE FALHOU NÃO PODE PARECER A QUE NUNCA FOI FEITA.
+  //
+  // Esta célula pintava PENDING, ERROR e null tudo como "📄 guia". O `emailStatus` já vinha no
+  // payload e era jogado fora aqui — então a única tela onde o contador decide o que enviar
+  // mostrava a guia que falhou exatamente como a que está esperando a vez. Como nada drena
+  // `emailNextRetryAt` (o laço saiu na Q55), essa guia ficava em ERROR até alguém clicar por acaso.
+  //
+  // Continua SELECIONÁVEL: o envio manual alcança `ERROR` (`whereGuiaPendenteDeEnvio()` sem janela
+  // de retry), então marcar a linha e clicar "Enviar e-mails" tenta de novo agora. A mudança é de
+  // exibição, não de elegibilidade.
+  if (value.falhou || value.emailStatus === "ERROR") {
+    const tentativas = Number(value.emailAttempts || 0);
+    return (
+      <td
+        style={{ ...cellBaseStyle, color: PANEL.danger, fontWeight: 600 }}
+        title={
+          `O ENVIO FALHOU${tentativas > 1 ? ` (${tentativas} tentativas)` : ""} e nada tentará de novo sozinho.`
+          + `${value.emailLastError ? ` Motivo: ${value.emailLastError}.` : ""}`
+          + ` Selecione a linha e clique em "Enviar e-mails" para tentar agora. ${valorTitle}`
+        }
+      >
+        ✖ falhou
+      </td>
+    );
+  }
+  // contendo guia (PENDING/null) — capturada, ainda não tentada
   return (
     <td style={{ ...cellBaseStyle, color: PANEL.accent }} title={`Contendo guia (não enviada). ${valorTitle}`}>
       📄 guia
@@ -187,7 +212,8 @@ function CompanySection({ title, rows, columns, selectedKeys, onToggle, onToggle
  * Página "Envio de e-mails em lote".
  *
  * Mostra todas as empresas em 2 seções (Simples + Presumido), com colunas por tipo de guia.
- * - Azul 📄 guia = guia capturada (PENDING/ERROR, ainda não enviada)
+ * - Azul 📄 guia = guia capturada, ainda não tentada
+ * - Vermelho ✖ falhou = tentou enviar e NÃO saiu (motivo no `title`); segue selecionável
  * - Verde ✓ enviado = guia já enviada por e-mail (display-only)
  * - Vermelho ✗ = guia ainda não capturada
  * - Amarelo ⊘ vazio = marcada como "sem guia no mês" (ausência confirmada, não enviável)
@@ -257,6 +283,24 @@ export function BatchEmailPage({
   const simples = report?.simples || [];
   const presumidos = report?.presumidos || [];
   const competenciasPresentes = report?.competenciasPresentes || [];
+
+  /**
+   * Quem FALHOU, contado uma vez por linha (empresa × competência).
+   *
+   * ⚠ O aviso não pode depender de varrer a matriz com os olhos. Numa carteira de 30+ empresas,
+   * uma célula vermelha no meio de oito colunas passa batido — e ela é justamente o caso em que
+   * ninguém mais vai olhar, porque nada tenta de novo sozinho. Por isso o número sobe para o topo,
+   * junto do botão que seleciona exatamente essas linhas.
+   */
+  const linhasComFalha = useMemo(() => {
+    const chaves = [];
+    for (const row of [...simples, ...presumidos, ...(report?.outros || [])]) {
+      const celulas = Object.values(row?.tiposGuias || {});
+      const falhou = celulas.some((c) => c && (c.falhou || c.emailStatus === "ERROR"));
+      if (falhou) chaves.push(rowKey(row));
+    }
+    return chaves;
+  }, [simples, presumidos, report]);
   // Mostra coluna de competência quando exibindo várias (filtro "Todas")
   const showCompetencia = !competencia;
 
@@ -315,6 +359,32 @@ export function BatchEmailPage({
           )}
         </div>
 
+        {/* ⚠ AUSÊNCIA NÃO É RESPOSTA: sem esta faixa, "nenhum aviso" é o que a tela mostra tanto
+            quando está tudo certo quanto quando três clientes não receberam a guia. Ela só aparece
+            havendo falha — aviso permanente vira paisagem. */}
+        {!loading && linhasComFalha.length > 0 && (
+          <div style={{
+            display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap",
+            marginBottom: 18, padding: "10px 14px", borderRadius: 8,
+            background: "rgba(255,87,87,0.10)", border: `1px solid ${PANEL.danger}`,
+            color: PANEL.text, fontSize: "0.85rem",
+          }}>
+            <strong style={{ color: PANEL.danger }}>✖</strong>
+            <span>
+              <strong>{linhasComFalha.length}</strong> envio{linhasComFalha.length === 1 ? "" : "s"} falhou
+              {linhasComFalha.length === 1 ? "" : "ram"} e <strong>não há retentativa automática</strong> —
+              essas guias não chegaram ao cliente. Passe o mouse na célula <strong>✖ falhou</strong> para o motivo.
+            </span>
+            <Button
+              variant="secondary"
+              onClick={() => toggleAllInSection(linhasComFalha, true)}
+              style={{ marginLeft: "auto" }}
+            >
+              Selecionar as {linhasComFalha.length} com falha
+            </Button>
+          </div>
+        )}
+
         {loading ? (
           <p style={{ color: PANEL.muted }}>Carregando…</p>
         ) : (
@@ -345,6 +415,7 @@ export function BatchEmailPage({
               borderRadius: 8, fontSize: "0.75rem", color: PANEL.muted, display: "flex", gap: 24, flexWrap: "wrap",
             }}>
               <span><strong style={{ color: PANEL.accent }}>📄 guia</strong> Contendo guia — não enviada (será anexada)</span>
+              <span><strong style={{ color: PANEL.danger }}>✖ falhou</strong> Tentou e não saiu — passe o mouse para o motivo</span>
               <span><strong style={{ color: PANEL.success }}>✓ enviado</strong> E-mail já enviado</span>
               <span><strong style={{ color: PANEL.danger }}>✗</strong> Sem guia</span>
               <span><strong style={{ color: PANEL.warning }}>●</strong> Parcelamento ativo (info, sem anexo de PDF)</span>
