@@ -1221,6 +1221,51 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/defis/${ano}/transmitida`, { method: "POST", body: JSON.stringify({}) });
     },
 
+    // ── Onboarding (funil pré-cadastro) ───────────────────────────────────
+    // ⚠ Estas rotas NÃO ficam sob `/firm/companies/:id` — a ficha existe justamente porque a
+    // empresa ainda não existe.
+    async criarOnboarding(origem) {
+      return request("/firm/onboardings", { method: "POST", body: JSON.stringify({ origem }) });
+    },
+    async listarOnboardings({ origem, status, q, incluirRascunhos } = {}) {
+      const qs = new URLSearchParams();
+      if (origem) qs.set("origem", origem);
+      if (status) qs.set("status", status);
+      if (q) qs.set("q", q);
+      if (incluirRascunhos) qs.set("incluirRascunhos", "1");
+      const sufixo = qs.toString();
+      return request(`/firm/onboardings${sufixo ? `?${sufixo}` : ""}`);
+    },
+    async getOnboarding(id) {
+      return request(`/firm/onboardings/${id}`);
+    },
+    async salvarOnboarding(id, patch) {
+      return request(`/firm/onboardings/${id}`, { method: "PATCH", body: JSON.stringify(patch || {}) });
+    },
+    async salvarEtapaOnboarding(id, etapaId, patch) {
+      return request(`/firm/onboardings/${id}/etapas/${etapaId}`, {
+        method: "PATCH", body: JSON.stringify(patch || {}),
+      });
+    },
+    /**
+     * ⚠ Recebe o MESMO payload de `createCompany` (ou `{ vincularPortalClientId }` na recuperação).
+     * ⚠ NÃO exercer em `real_with_mock_fallback`: o Proxy de `api/client.js` cai no mock em
+     * QUALQUER throw, e um 409 legítimo (CNPJ já na carteira) viraria sucesso falso.
+     */
+    async converterOnboarding(id, payload) {
+      return request(`/firm/onboardings/${id}/convert`, {
+        method: "POST", body: JSON.stringify(payload || {}),
+      });
+    },
+    async desistirOnboarding(id, motivo) {
+      return request(`/firm/onboardings/${id}/desistir`, {
+        method: "POST", body: JSON.stringify({ motivo: motivo || "" }),
+      });
+    },
+    async descartarOnboarding(id) {
+      return request(`/firm/onboardings/${id}`, { method: "DELETE" });
+    },
+
     // ── Entrega por arquivo (EFD-Contribuições, ECD, ECF) ─────────────────
     // ⚠ Não geram nem transmitem arquivo nenhum: guardam o RASTRO da entrega feita no PVA.
     async getEntregasObrigacao(companyId, tipo) {

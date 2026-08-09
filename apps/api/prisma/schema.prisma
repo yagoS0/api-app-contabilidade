@@ -379,6 +379,9 @@ model PortalClient {
   MarcoFiscal             MarcoFiscal[]
   obrigacoes              Obrigacao[]
   estornosBaixa           EstornoBaixa[]
+  /// Contraparte da relação do funil de onboarding. NENHUMA coluna nova é criada em
+  /// `portal_clients`: a FK mora em `onboardings.portalClientId`.
+  onboarding              Onboarding?
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -2527,4 +2530,118 @@ model EntregaObrigacaoArquivo {
   @@unique([portalClientId, tipo, competencia])
   @@index([portalClientId, tipo])
   @@map("entregas_obrigacao_arquivo")
+}
+
+/// ONBOARDING — o funil PRÉ-CADASTRO de cliente novo.
+///
+/// ⚠ POR QUE UMA TABELA PRÓPRIA, E NÃO UM `PortalClient` INCOMPLETO
+/// `PortalClient.cnpj` é `@unique` NOT NULL e a criação de empresa é tudo-ou-nada (CNPJ válido,
+/// razão social, regime, CNAE, endereço completo, e-mail e senha do dono numa só requisição). Isso
+/// serve para quem já tem tudo em mãos — e não serve para o que acontece ANTES: a empresa que ainda
+/// vai abrir (não tem CNPJ), a que está trocando de contador (a papelada chega em partes), a que
+/// está parada. Não existe empresa provisória no modelo atual; forçar uma criaria CNPJ falso na
+/// carteira. Aqui o preenchimento é PARCIAL por definição, e a conversão chama o mesmo
+/// `provisionarEmpresa` do botão "Nova empresa".
+///
+/// ⚠ HÍBRIDO COLUNA/JSON, de propósito: vira COLUNA só o que aparece em `where`, `orderBy` ou no
+/// card da lista; todo o resto mora em `dados`, na forma de `rascunhoVazio(origem)` do
+/// `onboardingSpec.js`. Mesmo precedente do `dados` de `DefisEspelho`. Promover cada campo do
+/// formulário a coluna significaria uma migração por pergunta nova.
+///
+/// ⚠ `status` e `origem` são String, não enum do Prisma — é a convenção deste schema
+/// (`PortalClient.status`, `Obrigacao.periodicidade`). Enum transforma cada valor novo em migração.
+model Onboarding {
+  id String @id @default(uuid())
+
+  /// ABERTURA | TRANSFERENCIA | INATIVA — a única variável que muda a trilha do funil.
+  origem String
+  /// RASCUNHO | RECEBIDO | EM_TRILHA | CONVERTIDO | DESISTIU
+  status String @default("RASCUNHO")
+  /// ESCRITORIO | CLIENTE — quem digitou a ficha. É o que decide o TEXTO do selo de dado
+  /// declarado: "declarado pelo cliente" só quando CLIENTE; no preenchimento interno o selo lê
+  /// "declarado no atendimento", senão ele mentiria sobre um dado que o próprio contador digitou.
+  /// Na Fase 1 só existe ESCRITORIO (o link público é Fase 2).
+  origemPreenchimento String @default("ESCRITORIO")
+
+  /// ⚠ NULLABLE e NÃO-UNIQUE de propósito: abertura de empresa não tem CNPJ, e duas fichas podem
+  /// citar o mesmo CNPJ (cliente que desistiu e voltou). O unique de verdade é o de
+  /// `PortalClient.cnpj`, cobrado só na conversão.
+  cnpj String?
+  /// Na abertura guarda o NOME PRETENDIDO, que ainda não é razão social de ninguém.
+  razaoSocial String?
+
+  /// Promovidos a coluna porque a busca da lista procura por eles.
+  responsavelNome     String?
+  responsavelEmail    String?
+  responsavelTelefone String?
+
+  /// Checagem BRANDA: o e-mail do responsável já tem conta no portal. Serve de aviso na tela para
+  /// o contador não criar um segundo login para a mesma pessoa. NUNCA bloqueia — uma pessoa com
+  /// duas empresas é caso normal, e o provisionamento já sabe reusar `User` existente.
+  emailJaCadastrado Boolean @default(false)
+
+  /// Tudo o mais, na forma de `rascunhoVazio(origem)`. A forma canônica vive na spec do front.
+  dados Json @default("{}")
+
+  /// Último passo do wizard alcançado — só para reabrir a ficha onde o preenchimento parou.
+  ultimoPasso String?
+  /// Quando a ficha foi FINALIZADA (deixou de ser rascunho). É o instante em que a checklist é
+  /// materializada a partir do template da origem.
+  enviadoEm   DateTime?
+  criadoPorId String?
+
+  /// ⚠ Id do PORTAL CLIENT, nunca da Company legada — os dois existem e são diferentes, e o
+  /// certificado A1 mora na legada. Chamar isto de `companyId` é o erro que a armadilha nº 3 do
+  /// plano descreve.
+  portalClientId String? @unique
+  portalClient   PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+
+  convertidoEm     DateTime?
+  convertidoPorId  String?
+  desistiuEm       DateTime?
+  motivoDesistencia String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  etapas OnboardingEtapa[]
+
+  @@index([status, origem])
+  @@index([cnpj])
+  @@index([responsavelEmail])
+  @@map("onboardings")
+}
+
+/// A CHECKLIST do escritório para aquele onboarding, materializada no "finalizar".
+///
+/// ⚠ `titulo` e `descricao` são CÓPIA do template (`etapasTemplate.js`), não leitura viva. Editar o
+/// catálogo depois não pode reescrever a checklist de quem já está em trilha — mesma disciplina do
+/// `OcorrenciaObrigacao.competenciaRef`.
+model OnboardingEtapa {
+  id           String     @id @default(uuid())
+  onboardingId String
+  onboarding   Onboarding @relation(fields: [onboardingId], references: [id], onDelete: Cascade)
+
+  /// Chave estável da etapa dentro da origem (ex: "certificado_a1").
+  chave     String
+  titulo    String
+  descricao String?
+  ordem     Int
+
+  /// SITFIS | CERTIFICADO_A1 | DOCUMENTOS | CONVERSAO | null — o efeito colateral que o card
+  /// oferece. ⚠ Os três primeiros exigem `PortalClient`, logo só existem PÓS-conversão.
+  acao        String?
+  obrigatoria Boolean @default(true)
+
+  concluidaEm    DateTime?
+  concluidaPorId String?
+  observacao     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// É o que torna o "finalizar" reexecutável: repetir com `skipDuplicates` não duplica a lista.
+  @@unique([onboardingId, chave])
+  @@index([onboardingId, ordem])
+  @@map("onboarding_etapas")
 }

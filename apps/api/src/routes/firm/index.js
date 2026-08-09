@@ -1,5 +1,4 @@
 import { Router } from "express";
-import bcrypt from "bcryptjs";
 import multer from "multer";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { requireAuth } from "../../middlewares/requireAuth.js";
@@ -17,7 +16,6 @@ import {
   validateAndNormalizeCompanyProfile,
 } from "../../application/company/companyProfile.js";
 import {
-  companyCreateSchema,
   companyUpdateSchema,
   validateCompanyInput,
 } from "../../application/validators/companySchemas.js";
@@ -31,6 +29,7 @@ import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
+import { createOnboardingsRouter } from "./onboardings.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
@@ -40,7 +39,6 @@ import { faturamentoEmitDaCompetencia } from "../../application/notas/apuracao/v
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS, CHECKLIST_SELECT, checklistPendentes,
 } from "../../application/accounting/fechamentoBlockers.js";
-import { aplicarRegrasAEmpresaNova } from "../../application/obrigacoes/RegrasObrigacaoService.js";
 import { criarBatchJob, runApuracaoBatchOnce } from "../../workers/apuracaoBatchWorker.js";
 // Q48: download de notas em lote (ZIP em segundo plano)
 import fsNotasDownload from "node:fs";
@@ -64,6 +62,16 @@ import {
 } from "../../application/fiscal/serpro/SitfisDownloadService.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
+// Plano de contas global: pré-requisito para criar empresa. Mora em `application/accounting`
+// porque o provisionamento (chamado também pela conversão de onboarding) precisa da MESMA guarda.
+import { getGlobalChartStatus } from "../../application/accounting/globalChartStatus.js";
+// Criar empresa é UM ato com DUAS portas (botão "Nova empresa" e conversão de onboarding).
+// O corpo mora no service; aqui fica só a porta HTTP.
+import {
+  CompanyProvisioningError,
+  aplicarPosCriacao,
+  provisionarEmpresa,
+} from "../../application/companies/CompanyProvisioningService.js";
 import {
   getFriendlyGuideMessage,
   getGuidePdfBuffer,
@@ -137,10 +145,6 @@ import {
   SERPRO_PGDASD_SERVICE_NORMAL,
 } from "../../application/fiscal/serpro/SerproPgdasdService.js";
 
-// Plano de contas global precisa cobrir os 5 tipos básicos antes de qualquer empresa ser criada.
-// Lançamentos automáticos (DAS, faturamento, etc) dependem desse plano mínimo configurado.
-const REQUIRED_GLOBAL_TIPOS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
-
 // C11: intervalo mínimo entre duas consultas SITFIS da MESMA empresa (4h). Abrir a aba mostra o
 // relatório salvo; só o botão "Consultar" chama o SERPRO, e mesmo assim respeitando esta janela.
 const SITFIS_MIN_INTERVALO_MS = 4 * 60 * 60 * 1000;
@@ -192,25 +196,6 @@ function friendlyRecalcMessage(code, { competencia } = {}, fallback) {
     default:
       return fallback || "Falha ao recalcular guia PGDAS-D no SERPRO.";
   }
-}
-
-async function getGlobalChartStatus() {
-  const counts = await prisma.chartOfAccount.groupBy({
-    by: ["tipo"],
-    where: { portalClientId: null },
-    _count: { _all: true },
-  });
-  const presentTipos = new Set(
-    counts.map((c) => String(c.tipo || "").toUpperCase()).filter(Boolean)
-  );
-  const missingTipos = REQUIRED_GLOBAL_TIPOS.filter((t) => !presentTipos.has(t));
-  const totalAccounts = counts.reduce((s, c) => s + Number(c._count?._all || 0), 0);
-  return {
-    isConfigured: missingTipos.length === 0,
-    totalAccounts,
-    tiposPresentes: [...presentTipos],
-    tiposFaltantes: missingTipos,
-  };
 }
 
 async function attachGuideComplianceToCompaniesList(data, competenciaArg) {
@@ -930,229 +915,62 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     return res.json({ items });
   });
 
+  // A criação de empresa mora em `application/companies/CompanyProvisioningService.js`. Esta rota
+  // é a PORTA HTTP: resolve quem chamou, resolve o escopo multi-tenant (que precisa de `req`) e
+  // traduz o erro de domínio em resposta. A conversão de onboarding chama o mesmo service — foi
+  // para isso que ele saiu daqui.
   router.post("/companies", async (req, res) => {
     const body = req.body || {};
-
-    // Q8.A.4: validação rigorosa via Zod ANTES da lógica de negócio.
-    // Roda em paralelo com a normalização legada — Zod rejeita formatos ruins (CNPJ inválido,
-    // senha fraca, email inválido) antes do código alcançar Prisma.
-    const zodResult = validateCompanyInput(companyCreateSchema, body);
-    if (!zodResult.ok) return res.status(zodResult.status).json(zodResult.body);
-
-    const ownerEmail = String(body.ownerEmail || "")
-      .trim()
-      .toLowerCase();
-    const ownerName = body.ownerName ? String(body.ownerName).trim() : null;
-    const ownerPassword = String(body.ownerPassword || "").trim();
-    const companyInput = body.company && typeof body.company === "object" ? body.company : body;
-    const parsedCompany = validateAndNormalizeCompanyProfile(companyInput);
-    if (!parsedCompany.ok) return res.status(400).json({ error: parsedCompany.error });
-    const normalizedCompany = parsedCompany.data;
-    const cnpj = normalizedCompany.cnpj;
-    const razao = normalizedCompany.razaoSocial;
-    const inscricaoMunicipalInput = String(companyInput.inscricaoMunicipal || "").trim() || null;
-
-    if (!ownerEmail) return res.status(400).json({ error: "owner_email_required" });
-
-    // Plano de contas global é PRÉ-REQUISITO para criar empresas.
-    // Lançamentos automáticos (DAS, faturamento, etc) dependem de um plano mínimo.
+    let criada;
     try {
-      const globalStatus = await getGlobalChartStatus();
-      if (!globalStatus.isConfigured) {
-        return res.status(400).json({
-          ok: false,
-          error: "global_chart_of_accounts_not_configured",
-          message: `Configure o plano de contas global antes de criar empresas. Faltam contas dos tipos: ${globalStatus.tiposFaltantes.join(", ")}.`,
-          missingTipos: globalStatus.tiposFaltantes,
-        });
-      }
-    } catch (chartErr) {
-      log.warn({ err: chartErr }, "Falha ao verificar plano global (seguindo o fluxo)");
-    }
-
-    try {
-      const result = await prisma.$transaction(async (tx) => {
-        let ownerUser = await tx.user.findUnique({ where: { email: ownerEmail } });
-        if (!ownerUser) {
-          if (!ownerPassword || ownerPassword.length < 8) {
-            const err = new Error("owner_password_required_min_8");
-            err.code = "OWNER_PASSWORD_REQUIRED";
-            throw err;
-          }
-          ownerUser = await tx.user.create({
-            data: {
-              email: ownerEmail,
-              name: ownerName,
-              passwordHash: await bcrypt.hash(ownerPassword, 10),
-              role: "user",
-              status: "active",
-              accountType: "CLIENT",
-            },
-          });
-        }
-
-        let legacyClient = await tx.client.findUnique({ where: { email: ownerEmail } });
-        if (!legacyClient) {
-          const login = ownerEmail;
-          legacyClient = await tx.client.create({
-            data: {
-              name: ownerName || ownerEmail,
-              email: ownerEmail,
-              login,
-              passwordHash: ownerPassword
-                ? await bcrypt.hash(ownerPassword, 10)
-                : await bcrypt.hash(`tmp-${Date.now()}`, 10),
-            },
-          });
-        }
-
-        const legacyCompany = await tx.company.create({
-          data: {
-            clientId: legacyClient.id,
-            cnpj,
-            razaoSocial: razao,
-            nomeFantasia: normalizedCompany.nomeFantasia,
-            email: normalizedCompany.email || null,
-            telefone: normalizedCompany.telefone,
-            endereco: enderecoToSingleLine(normalizedCompany.endereco),
-            enderecoJson: normalizedCompany.endereco,
-            atividades: [
-              normalizedCompany.cnaePrincipal,
-              ...normalizedCompany.cnaesSecundarios,
-            ],
-            tipoTributario: normalizedCompany.regimeTributario,
-            regimeTributario: normalizedCompany.regimeTributario,
-            anexoSimples: normalizedCompany.simples?.anexo || null,
-            simplesAnexo: normalizedCompany.simples?.anexo || null,
-            simplesDataOpcao: normalizedCompany.simples?.dataOpcao || null,
-            cnaePrincipal: normalizedCompany.cnaePrincipal,
-            cnaesSecundarios: normalizedCompany.cnaesSecundarios,
-            inscricaoMunicipal: inscricaoMunicipalInput ?? normalizedCompany.inscricaoMunicipal,
-            // ── Ficha de cadastro (muito disso já vem preenchido da BrasilAPI) ──
-            inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
-            inscricaoEstadual: normalizedCompany.inscricaoEstadual,
-            inscricaoEstadualData: normalizedCompany.inscricaoEstadualData,
-            porte: normalizedCompany.porte,
-            naturezaJuridica: normalizedCompany.naturezaJuridica,
-            capitalSocial: normalizedCompany.capitalSocial,
-            dataAbertura: normalizedCompany.dataAbertura,
-            abriuCom: normalizedCompany.abriuCom,
-            numeroRegistro: normalizedCompany.numeroRegistro,
-            tipoRegistro: normalizedCompany.tipoRegistro,
-            diarioNumero: normalizedCompany.diarioNumero,
-            desoneracao: normalizedCompany.desoneracao,
-            alteracaoNumero: normalizedCompany.alteracaoNumero,
-            alteracaoData: normalizedCompany.alteracaoData,
-            quantidadeSocios: normalizedCompany.socios
-              ? normalizedCompany.socios.filter((s) => !s.dataSaida).length
-              : null,
-            ...(normalizedCompany.socios?.length
-              ? { partners: { create: normalizedCompany.socios } }
-              : {}),
-            ...(normalizedCompany.regimeHistorico?.length
-              ? { regimeHistorico: { create: normalizedCompany.regimeHistorico } }
-              : {}),
-          },
-        });
-
-        const portal = await tx.portalClient.create({
-          data: {
-            companyId: legacyCompany.id,
-            razao,
-            cnpj,
-            guideNotificationEmail: normalizedCompany.guideNotificationEmail || null,
-            hasProlabore: Boolean(body.hasProlabore),
-            temFolha: Boolean(body.temFolha),
-            empresaZerada: Boolean(body.empresaZerada),
-            inscricaoMunicipal: inscricaoMunicipalInput,
-            uf: normalizedCompany.endereco?.uf || null,
-            municipio: normalizedCompany.endereco?.cidade || null,
-          },
-        });
-
-        await tx.companyClientUser.upsert({
-          where: {
-            companyId_userId: {
-              companyId: portal.id,
-              userId: ownerUser.id,
-            },
-          },
-          create: {
-            companyId: portal.id,
-            userId: ownerUser.id,
-            role: "OWNER",
-            status: "ACTIVE",
-          },
-          update: {
-            role: "OWNER",
-            status: "ACTIVE",
-          },
-        });
-
-        await tx.companyFirmAccess.upsert({
-          where: {
-            companyId_userId: {
-              companyId: portal.id,
-              userId: String(req.auth.user.id),
-            },
-          },
-          create: {
-            companyId: portal.id,
-            userId: String(req.auth.user.id),
-            role: "FIRM_ADMIN",
-            status: "ACTIVE",
-            scopes: [],
-          },
-          update: {
-            role: "FIRM_ADMIN",
-            status: "ACTIVE",
-          },
-        });
-
-        return { portalId: portal.id, companyId: portal.id, ownerUserId: ownerUser.id };
+      criada = await provisionarEmpresa({
+        body,
+        actorUserId: String(req.auth?.user?.id || ""),
+        log,
       });
-
-      // Regras do escritório com "aplicar a novas empresas": a empresa recém-criada já nasce com
-      // as obrigações que se encaixam no filtro dela.
-      //
-      // FORA da transação e best-effort de propósito: a empresa JÁ está criada quando chegamos
-      // aqui, então uma falha aqui não pode desfazer o cadastro. No pior caso a obrigação entra na
-      // próxima vez que a regra for salva.
-      let regrasAplicadas = null;
-      try {
-        const portalIds = await empresasVisiveis(req);
-        regrasAplicadas = await aplicarRegrasAEmpresaNova({ portalClientId: result.portalId, portalIds });
-      } catch (err) {
-        log.warn({ err: err?.message || err, companyId: result.portalId }, "Regras de obrigação não aplicadas à empresa nova");
-      }
-
-      return res.status(201).json({ ok: true, ...result, regrasAplicadas });
     } catch (err) {
-      if (err?.code === "OWNER_PASSWORD_REQUIRED") {
-        return res.status(400).json({ error: "owner_password_required_min_8" });
+      if (err instanceof CompanyProvisioningError) {
+        // O código do Prisma vai junto na resposta: sem ele, diagnosticar exige acesso ao log do
+        // container — foi exatamente o que travou este caso. A mensagem interna continua fora.
+        if (err.status >= 500) {
+          log.error(
+            { err: err.cause || err, code: err.cause?.code, meta: err.cause?.meta },
+            "Falha ao criar empresa no portal firm"
+          );
+        }
+        return res.status(err.status).json(err.body);
       }
-      // ⚠ NEM TODA FALHA AQUI É "ERRO INTERNO". As duas de baixo são respostas do banco a um dado
-      // do formulário, e têm conserto do lado de quem cadastra — devolvê-las como 500 genérico
-      // manda o contador procurar bug onde há só um CNPJ repetido, sem nenhuma pista na tela.
-      if (err?.code === "P2002") {
-        const campo = Array.isArray(err?.meta?.target) ? err.meta.target.join(", ") : (err?.meta?.target || "");
-        return res.status(409).json({
-          error: "empresa_ja_cadastrada",
-          message: `Já existe registro com este valor${campo ? ` em: ${campo}` : ""}. `
-            + "Se a empresa já está na carteira, edite-a em vez de criar de novo.",
-        });
-      }
-      if (err?.code === "P2003") {
-        return res.status(400).json({
-          error: "referencia_invalida",
-          message: "Um dos vínculos do cadastro aponta para um registro que não existe.",
-        });
-      }
-      // O código do Prisma vai junto na resposta: sem ele, diagnosticar exige acesso ao log do
-      // container — foi exatamente o que travou este caso. A mensagem interna continua fora.
-      log.error({ err, code: err?.code, meta: err?.meta }, "Falha ao criar empresa no portal firm");
+      log.error({ err }, "Falha ao criar empresa no portal firm");
       return res.status(500).json({ error: "internal_error", code: err?.code || null });
     }
+
+    // `empresasVisiveis` fica AQUI: é a única parte que depende de `req`.
+    let regrasAplicadas = null;
+    try {
+      const portalIds = await empresasVisiveis(req);
+      ({ regrasAplicadas } = await aplicarPosCriacao({
+        portalClientId: criada.portalId,
+        portalIds,
+        regime: criada.regime,
+        log,
+      }));
+    } catch (err) {
+      log.warn(
+        { err: err?.message || err, companyId: criada.portalId },
+        "Pós-criação da empresa nova falhou"
+      );
+    }
+
+    // ⚠ Os campos são listados um a um de propósito: `provisionarEmpresa` devolve mais coisa
+    // (regime, cnpj, razão) para o pós-criação e para o onboarding, e espalhar o retorno mudaria
+    // o contrato deste endpoint sem ninguém notar.
+    return res.status(201).json({
+      ok: true,
+      portalId: criada.portalId,
+      companyId: criada.companyId,
+      ownerUserId: criada.ownerUserId,
+      regrasAplicadas,
+    });
   });
 
   router.patch(
@@ -4454,6 +4272,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Obrigações — também do ESCRITÓRIO (a pergunta é "o que EU preciso entregar, em toda a
   // carteira"), então monta na raiz de /firm com filtro de empresa opcional.
   router.use("/", createObrigacoesRouter({ log }));
+
+  // Onboarding — funil PRÉ-cadastro. Monta na RAIZ de /firm, não sob `/companies/:companyId`:
+  // a ficha existe justamente porque a empresa ainda NÃO existe.
+  router.use("/", createOnboardingsRouter({ log }));
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...

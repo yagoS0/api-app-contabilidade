@@ -15,6 +15,9 @@ import { PendingGuidesPage } from "./features/guides/pending/pages/renderPending
 import { BatchEmailPage } from "./features/guides/batch-email/pages/renderBatchEmailPage";
 import { GlobalChartOfAccountsPage } from "./features/accounting/chart-of-accounts/pages/renderGlobalChartOfAccountsPage";
 import { ObrigacoesPage } from "./features/obrigacoes/components/renderObrigacoesPage";
+import { OnboardingsPage } from "./features/onboarding/pages/renderOnboardingsPage";
+import { OnboardingWizardPage } from "./features/onboarding/pages/renderOnboardingWizardPage";
+import { OnboardingDetailPage } from "./features/onboarding/pages/renderOnboardingDetailPage";
 import { useManageAppFeedback } from "./app/hooks/useManageAppFeedback";
 import { useManageAuthSession } from "./app/hooks/useManageAuthSession";
 import { useManageCompaniesWorkspace } from "./app/hooks/useManageCompaniesWorkspace";
@@ -278,6 +281,56 @@ function App() {
     );
   }
 
+  // ── Onboarding — funil pré-cadastro (molde curto de `obrigacoes`) ────────────
+  // ⚠ O id sai do PATHNAME, como em `companyDetail`: não há `<Routes>` neste app, então quem lê o
+  // parâmetro é este bloco.
+  if (session.page === "onboardings") {
+    return (
+      <OnboardingsPage
+        api={api}
+        onVoltar={() => session.setPage("companies")}
+        onNovo={async () => {
+          // A ficha nasce no primeiro clique — é o que permite salvar rascunho desde a 1ª tela.
+          // (E é por isso que a lista esconde rascunho por padrão: eles acumulam.)
+          const criada = await api.criarOnboarding("TRANSFERENCIA");
+          const id = criada?.onboarding?.id;
+          if (id) session.setPage("onboardingWizard", { onboardingId: id });
+        }}
+        onAbrir={(item) =>
+          session.setPage(
+            item.status === "RASCUNHO" ? "onboardingWizard" : "onboardingDetail",
+            { onboardingId: item.id }
+          )
+        }
+      />
+    );
+  }
+
+  if (session.page === "onboardingWizard") {
+    const onboardingId = decodeURIComponent(location.pathname.split("/")[2] || "");
+    return (
+      <OnboardingWizardPage
+        api={api}
+        onboardingId={onboardingId}
+        onVoltar={() => session.setPage("onboardings")}
+        onAbrirDetalhe={(id) => session.setPage("onboardingDetail", { onboardingId: id })}
+      />
+    );
+  }
+
+  if (session.page === "onboardingDetail") {
+    const onboardingId = decodeURIComponent(location.pathname.split("/")[2] || "");
+    return (
+      <OnboardingDetailPage
+        api={api}
+        onboardingId={onboardingId}
+        onVoltar={() => session.setPage("onboardings")}
+        onEditar={(id) => session.setPage("onboardingWizard", { onboardingId: id })}
+        onAbrirEmpresa={(portalClientId) => session.setPage("companyDetail", { companyId: portalClientId })}
+      />
+    );
+  }
+
   if (session.page === "rotinas") {
     return (
       <RotinasPage
@@ -483,6 +536,7 @@ function App() {
       onOpenPlanejamento={() => session.setPage("planejamento")}
       onOpenSerproFuncoes={() => session.setPage("serproFuncoes")}
       onOpenObrigacoes={() => session.setPage("obrigacoes")}
+      onOpenOnboardings={() => session.setPage("onboardings")}
       backgroundJobs={backgroundJobs}
       api={api}
 

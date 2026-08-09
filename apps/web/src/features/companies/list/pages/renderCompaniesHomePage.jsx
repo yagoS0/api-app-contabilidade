@@ -111,6 +111,7 @@ export function CompaniesHomePage({
   onOpenPlanejamento,
   onOpenSerproFuncoes,
   onOpenObrigacoes,
+  onOpenOnboardings,
   onLogout,
   onOpenCompany,
   globalChartStatus, // { isConfigured, tiposFaltantes, ... } — pré-requisito para criar empresa
@@ -595,6 +596,14 @@ export function CompaniesHomePage({
                 <span style={{ marginLeft: 6, fontSize: "0.7rem" }} aria-label="Plano global incompleto">⚠</span>
               )}
             </Button>
+            {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
+                "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
+                ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
+            {onOpenOnboardings && (
+              <Button variant="secondary" className="dashboard-home__action" onClick={onOpenOnboardings}>
+                Onboardings
+              </Button>
+            )}
             {/* Q17: ordem — Nova empresa · Envio de e-mails · Apuração · Configurações */}
             {onOpenBatchEmail && (
               <Button variant="success" className="dashboard-home__action dashboard-home__action--success" onClick={onOpenBatchEmail}>

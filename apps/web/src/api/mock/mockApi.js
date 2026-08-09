@@ -527,6 +527,98 @@ const mockChartOfAccounts = new Map();
 let mockNfseSeq = 0;
 // Espelhos da DEFIS por `empresa|ano` — mesma chave da unique do modelo.
 const mockDefisEspelhos = new Map();
+
+// ── Onboarding (funil pré-cadastro) ───────────────────────────────────────────
+// `Map` no topo do módulo, com a chave espelhando a PK do Prisma — assim o rascunho sobrevive à
+// navegação e ao F5 dentro da mesma sessão do app.
+const mockOnboardings = new Map();
+const mockOnboardingEtapas = new Map(); // onboardingId -> etapa[]
+let mockOnboardingSeq = 0;
+
+// ⚠ STAND-IN do catálogo do servidor (`application/onboarding/etapasTemplate.js`), que é a
+// AUTORIDADE — a trilha real mora só lá, para que quem preenche o formulário não escolha o que o
+// escritório tem de conferir. O que precisa ser fiel aqui é o COMPORTAMENTO (materializar no
+// finalizar, sem duplicar ao repetir), não o texto: sem isso, o único caminho que exercita essa
+// regra ficaria offline.
+const MOCK_ETAPAS_POR_ORIGEM = {
+  ABERTURA: [
+    { chave: "contato_inicial", titulo: "Contato inicial registrado", acao: null },
+    { chave: "definicao_societaria", titulo: "Definição societária e de atividade", acao: null },
+    { chave: "viabilidade_registro", titulo: "Viabilidade e registro na Junta", acao: null },
+    { chave: "cnpj_definitivo", titulo: "CNPJ definitivo em mãos", acao: null },
+    { chave: "conversao", titulo: "Empresa criada no portal", acao: "CONVERSAO" },
+    { chave: "certificado_a1", titulo: "Certificado A1 da empresa instalado", acao: "CERTIFICADO_A1" },
+    { chave: "documentos", titulo: "Documentos societários arquivados", acao: "DOCUMENTOS" },
+  ],
+  TRANSFERENCIA: [
+    { chave: "contato_inicial", titulo: "Contato inicial registrado", acao: null },
+    { chave: "procuracao_ecac", titulo: "Procuração eletrônica no e-CAC", acao: null },
+    { chave: "certificado_a1", titulo: "Certificado A1 da empresa instalado", acao: "CERTIFICADO_A1" },
+    { chave: "documentos", titulo: "Documentos recebidos do contador anterior", acao: "DOCUMENTOS" },
+    { chave: "sitfis", titulo: "Situação fiscal consultada (SITFIS)", acao: "SITFIS" },
+    { chave: "conferencia_debitos", titulo: "Débitos declarados conferidos contra o SITFIS", acao: null },
+    { chave: "conversao", titulo: "Empresa criada no portal", acao: "CONVERSAO" },
+  ],
+  INATIVA: [
+    { chave: "contato_inicial", titulo: "Contato inicial registrado", acao: null },
+    { chave: "procuracao_ecac", titulo: "Procuração eletrônica no e-CAC", acao: null },
+    { chave: "sitfis", titulo: "Situação fiscal consultada (SITFIS)", acao: "SITFIS" },
+    { chave: "levantamento_obrigacoes", titulo: "Obrigações em atraso levantadas", acao: null },
+    { chave: "decisao_reativar_ou_baixar", titulo: "Decisão: reativar ou dar baixa", acao: null },
+    { chave: "conversao", titulo: "Empresa criada no portal", acao: "CONVERSAO" },
+    { chave: "certificado_a1", titulo: "Certificado A1 da empresa instalado", acao: "CERTIFICADO_A1" },
+  ],
+};
+
+// As mesmas cinco colunas de `extrairColunas` no servidor. Aqui a razão é a mesma: a busca da lista
+// e o card leem a coluna, não o JSON.
+function mockColunasDoOnboarding(dados) {
+  const d = dados || {};
+  const texto = (v) => (String(v ?? "").trim() || null);
+  const digitos = String(d.cnpj ?? "").replace(/\D+/g, "");
+  return {
+    cnpj: digitos.length === 14 ? digitos : null,
+    razaoSocial: texto(d.razaoSocial),
+    responsavelNome: texto(d.responsavelNome),
+    responsavelEmail: texto(d.responsavelEmail)?.toLowerCase() || null,
+    responsavelTelefone: texto(d.responsavelTelefone),
+  };
+}
+
+function mockEtapasDe(id) {
+  return (mockOnboardingEtapas.get(id) || []).slice().sort((a, b) => a.ordem - b.ordem);
+}
+
+function mockOnboardingComEtapas(id) {
+  const registro = mockOnboardings.get(id);
+  if (!registro) return null;
+  return { ...registro, etapas: mockEtapasDe(id) };
+}
+
+function mockMaterializarEtapas(id, origem) {
+  const atuais = mockOnboardingEtapas.get(id) || [];
+  const jaTem = new Set(atuais.map((e) => e.chave));
+  const template = MOCK_ETAPAS_POR_ORIGEM[origem] || [];
+  // ⚠ `skipDuplicates` do servidor, implementado: repetir o "finalizar" NÃO pode duplicar a
+  // checklist — a segunda cópia viria com tudo desmarcado, desfazendo visualmente o trabalho feito.
+  template.forEach((etapa, indice) => {
+    if (jaTem.has(etapa.chave)) return;
+    atuais.push({
+      id: `mock-et-${++mockOnboardingSeq}`,
+      onboardingId: id,
+      chave: etapa.chave,
+      titulo: etapa.titulo,
+      descricao: null,
+      ordem: indice + 1,
+      acao: etapa.acao,
+      obrigatoria: true,
+      concluidaEm: null,
+      concluidaPorId: null,
+      observacao: null,
+    });
+  });
+  mockOnboardingEtapas.set(id, atuais);
+}
 // Entregas por arquivo (EFD-Contribuições, ECD, ECF) por `empresa|tipo|competência`.
 const mockEntregasObrigacao = new Map();
 const mockEntriesByCompany = new Map();
@@ -4008,6 +4100,161 @@ export function createMockApi() {
     async payParcela() { await delay(80); return { ok: true, baixas: [] }; },
     async rescindirParcelamento() { await delay(80); return { ok: true }; },
     async vincularEntryParcelamento() { await delay(40); return { ok: true }; },
+
+    // ── Onboarding (funil pré-cadastro) ─────────────────────────────────
+    async criarOnboarding(origem) {
+      await delay(180);
+      const registro = {
+        id: `mock-onb-${++mockOnboardingSeq}`,
+        origem: String(origem || "").toUpperCase(),
+        status: "RASCUNHO",
+        origemPreenchimento: "ESCRITORIO",
+        cnpj: null, razaoSocial: null,
+        responsavelNome: null, responsavelEmail: null, responsavelTelefone: null,
+        emailJaCadastrado: false,
+        dados: {},
+        ultimoPasso: null, enviadoEm: null, portalClientId: null,
+        convertidoEm: null, desistiuEm: null, motivoDesistencia: null,
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      };
+      mockOnboardings.set(registro.id, registro);
+      mockOnboardingEtapas.set(registro.id, []);
+      return { ok: true, onboarding: { ...registro, etapas: [] } };
+    },
+
+    async listarOnboardings({ origem, status, q, incluirRascunhos } = {}) {
+      await delay(120);
+      const busca = String(q || "").trim().toLowerCase();
+      const digitos = busca.replace(/\D+/g, "");
+      const itens = [...mockOnboardings.values()]
+        .filter((o) => (origem ? o.origem === origem : true))
+        .filter((o) => (status ? o.status === status : (incluirRascunhos ? true : o.status !== "RASCUNHO")))
+        .filter((o) => {
+          if (!busca) return true;
+          const alvo = [o.razaoSocial, o.responsavelNome, o.responsavelEmail].filter(Boolean).join(" ").toLowerCase();
+          return alvo.includes(busca) || (digitos.length >= 3 && String(o.cnpj || "").includes(digitos));
+        })
+        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        .map((o) => {
+          const etapas = mockEtapasDe(o.id);
+          return { ...o, progresso: { total: etapas.length, concluidas: etapas.filter((e) => e.concluidaEm).length } };
+        });
+      return { ok: true, itens };
+    },
+
+    async getOnboarding(id) {
+      await delay(120);
+      const registro = mockOnboardingComEtapas(id);
+      if (!registro) {
+        const err = new Error("Onboarding não encontrado.");
+        err.code = "onboarding_nao_encontrado";
+        err.status = 404;
+        throw err;
+      }
+      return { ok: true, onboarding: registro };
+    },
+
+    async salvarOnboarding(id, patch = {}) {
+      await delay(180);
+      const atual = mockOnboardings.get(id);
+      if (!atual) throw Object.assign(new Error("Onboarding não encontrado."), { code: "onboarding_nao_encontrado", status: 404 });
+      // ⚠ Convertido é SOMENTE LEITURA — o mock repete a trava do servidor, senão o único caminho
+      // que a exercita fica offline.
+      if (atual.status === "CONVERTIDO") {
+        throw Object.assign(new Error("Este onboarding já virou empresa."), { code: "onboarding_convertido", status: 409 });
+      }
+
+      // ⚠ TROCAR DE ORIGEM ZERA `dados`, e o mock faz isso DE VERDADE. Se só o servidor zerasse, o
+      // modo mock deixaria o rascunho antigo sobreviver e a regressão só apareceria em produção.
+      if (patch.origem && patch.origem !== atual.origem) {
+        atual.origem = patch.origem;
+        atual.dados = {};
+        atual.ultimoPasso = null;
+        Object.assign(atual, mockColunasDoOnboarding({}));
+      } else if (patch.dados !== undefined) {
+        // SUBSTITUI, não mescla.
+        atual.dados = patch.dados || {};
+        Object.assign(atual, mockColunasDoOnboarding(atual.dados));
+      }
+
+      if (patch.ultimoPasso !== undefined && !patch.origem) {
+        atual.ultimoPasso = patch.ultimoPasso || null;
+      }
+
+      if (patch.finalizar === true) {
+        if (atual.status === "RASCUNHO") {
+          atual.status = "RECEBIDO";
+          atual.enviadoEm = new Date().toISOString();
+        }
+        mockMaterializarEtapas(atual.id, atual.origem);
+      }
+
+      atual.updatedAt = new Date().toISOString();
+      mockOnboardings.set(atual.id, atual);
+      return { ok: true, onboarding: mockOnboardingComEtapas(atual.id) };
+    },
+
+    async salvarEtapaOnboarding(id, etapaId, patch = {}) {
+      await delay(180);
+      const registro = mockOnboardings.get(id);
+      const etapas = mockOnboardingEtapas.get(id) || [];
+      const etapa = etapas.find((e) => e.id === etapaId);
+      if (!registro || !etapa) throw Object.assign(new Error("Etapa não encontrada."), { code: "etapa_nao_encontrada", status: 404 });
+      if (patch.concluida !== undefined) {
+        etapa.concluidaEm = patch.concluida ? new Date().toISOString() : null;
+        etapa.concluidaPorId = patch.concluida ? "mock-user" : null;
+      }
+      if (patch.observacao !== undefined) etapa.observacao = patch.observacao || null;
+      // A primeira etapa concluída promove sozinha.
+      if (patch.concluida === true && registro.status === "RECEBIDO") registro.status = "EM_TRILHA";
+      registro.updatedAt = new Date().toISOString();
+      return { ok: true, etapa, onboarding: mockOnboardingComEtapas(id) };
+    },
+
+    async converterOnboarding(id, payload = {}) {
+      await delay(180);
+      const registro = mockOnboardings.get(id);
+      if (!registro) throw Object.assign(new Error("Onboarding não encontrado."), { code: "onboarding_nao_encontrado", status: 404 });
+      if (registro.status === "CONVERTIDO") {
+        throw Object.assign(new Error("Este onboarding já foi convertido."), { code: "onboarding_convertido", status: 409 });
+      }
+      const portalClientId = payload.vincularPortalClientId || `mock-portal-${++mockOnboardingSeq}`;
+      registro.portalClientId = portalClientId;
+      registro.status = "CONVERTIDO";
+      registro.convertidoEm = new Date().toISOString();
+      registro.updatedAt = new Date().toISOString();
+      return {
+        ok: true,
+        vinculado: Boolean(payload.vincularPortalClientId),
+        portalClientId,
+        regrasAplicadas: { regrasAvaliadas: 0, obrigacoesCriadas: 0 },
+        onboarding: mockOnboardingComEtapas(id),
+      };
+    },
+
+    async desistirOnboarding(id, motivo) {
+      await delay(180);
+      const registro = mockOnboardings.get(id);
+      if (!registro) throw Object.assign(new Error("Onboarding não encontrado."), { code: "onboarding_nao_encontrado", status: 404 });
+      registro.status = "DESISTIU";
+      registro.desistiuEm = new Date().toISOString();
+      registro.motivoDesistencia = motivo || null;
+      registro.updatedAt = new Date().toISOString();
+      return { ok: true, onboarding: mockOnboardingComEtapas(id) };
+    },
+
+    async descartarOnboarding(id) {
+      await delay(180);
+      const registro = mockOnboardings.get(id);
+      if (registro && registro.status !== "RASCUNHO") {
+        throw Object.assign(new Error("Só um rascunho pode ser descartado."), {
+          code: "somente_rascunho_pode_ser_descartado", status: 409,
+        });
+      }
+      mockOnboardings.delete(id);
+      mockOnboardingEtapas.delete(id);
+      return { ok: true };
+    },
 
     // ── Q11.1: stubs Suspender/Reativar/Excluir ─────────────────────────
     async suspendCompany() { await delay(80); return { ok: true }; },

@@ -184,6 +184,21 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   - F3–F6 (Cloud API, webhook, envio em lote, recebimento) **não iniciadas**: dependem de
     credenciais reais. Escrevê-las sem poder exercê-las é o que a regra 1 proíbe — e o
     `CONSDECCOMPLETA33` do LP está OFF até hoje por exatamente isso.
+- [~] **Onboarding de clientes — Fase 1 (lado do escritório)** — funil PRÉ-cadastro com tabela
+  própria (`onboardings` + `onboarding_etapas`), que **aceita preenchimento parcial**, tem trilha de
+  etapas por origem (`ABERTURA | TRANSFERENCIA | INATIVA`) e termina chamando o **mesmo**
+  provisionamento do botão "Nova empresa". Detalhes e armadilhas em
+  **`apps/web/src/features/onboarding/CLAUDE.md`**.
+  - **Fase 0 (refator) veio primeiro e é o que sustenta o resto:** teste de caracterização de
+    `POST /firm/companies` (a rota mais crítica do sistema **não tinha nenhum teste**), depois
+    `getGlobalChartStatus` → `application/accounting/globalChartStatus.js`, depois a extração de
+    `CompanyProvisioningService`. O teste roda **sem edição** contra o código extraído.
+  - **Mudança de comportamento da rota antiga:** o pós-criação agora semeia as `CompanyRotina` da
+    empresa nova. Antes elas só nasciam quando alguém abria a página Rotinas e o seed rodava.
+  - **Fase 2 (link público com token de uso único) NÃO foi feita** — e não é reuso: o único token
+    opaco do projeto não tem campo de consumo, então uso único exige modelo novo.
+  - ⚠ **Migração `20260809120000_add_onboarding` escrita mas NUNCA APLICADA** — não há banco
+    alcançável nesta máquina. Rodar `prisma:migrate:deploy` + `:status` antes de usar.
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 

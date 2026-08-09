@@ -20,12 +20,22 @@ const PAGE_TO_PATH = {
   // URLs caíam no dashboard em silêncio. O calendário é visão do dashboard; Pendências virou aba
   // dentro de Consultas.
   obrigacoes: "/obrigacoes",
+  // Funil pré-cadastro. `onboardingDetail` e `onboardingWizard` ficam `null` porque a URL leva um
+  // id — o mapa não resolve rota com id, e por isso os dois têm RAMO PRÓPRIO em `setPage` (é o
+  // mesmo motivo de `companyDetail` estar null aqui).
+  onboardings: "/onboardings",
+  onboardingDetail: null,
+  onboardingWizard: null,
   // Simulacao livre nao exige empresa: e a tela de reuniao com prospect.
   planejamento: "/planejamento",
   serproFuncoes: "/funcoes-serpro",
 };
 
-function pathToPageName(pathname) {
+// ⚠ EXPORTADA SÓ PARA TESTE. A última linha desta função é um fallback SILENCIOSO para
+// `companies`: uma página nova cujo ramo esteja faltando fica inalcançável sem erro nenhum, sem
+// log, sem 404 — foi o destino de `/calendario` e `/pendencias` por um tempo. Um teste é a única
+// forma de essa falha aparecer antes do usuário.
+export function pathToPageName(pathname) {
   if (pathname === "/" || pathname === "") return "companies";
   if (pathname === "/login") return "login";
   if (pathname === "/companies") return "companies";
@@ -45,6 +55,17 @@ function pathToPageName(pathname) {
   if (pathname === "/rotinas") return "rotinas";
   if (pathname === "/planejamento") return "planejamento";
   if (pathname === "/obrigacoes") return "obrigacoes";
+  // ⚠ Estes três ramos precisam existir ANTES do fallback da última linha. O `return "companies"`
+  // lá embaixo é SILENCIOSO: faltando um ramo, a URL abre o dashboard sem nenhum erro — foi o
+  // destino de `/calendario` e `/pendencias` por um tempo, e ninguém percebeu.
+  if (pathname === "/onboardings") return "onboardings";
+  if (pathname === "/onboardings/new") return "onboardings";
+  if (pathname.startsWith("/onboardings/")) {
+    const seg = pathname.split("/")[2] || "";
+    const sufixo = pathname.split("/")[3] || "";
+    if (!seg) return "onboardings";
+    return sufixo === "editar" ? "onboardingWizard" : "onboardingDetail";
+  }
   if (pathname === "/funcoes-serpro") return "serproFuncoes";
   // O download de notas virou aba dentro de "Funções em lote" — links antigos caem lá.
   if (pathname === "/download-notas") return "serproFuncoes";
@@ -66,7 +87,17 @@ export function useManageAuthSession({ api, tokenStorageKey, feedback }) {
   // setPage(name) — compat: callsites antigos seguem funcionando.
   // Para "companyDetail" o caller normalmente faz `setSelectedCompanyId(id)` antes e depois `setPage("companyDetail")`;
   // por isso resolvemos a URL com base no companyId já presente (via param ou via aviso).
-  function setPage(name, { companyId } = {}) {
+  function setPage(name, { companyId, onboardingId } = {}) {
+    // ⚠ RAMO PRÓPRIO para rota com id: `PAGE_TO_PATH` só sabe traduzir caminho fixo, e sem isto
+    // o `else` mandaria a navegação para `/companies` com um `console.warn` que ninguém lê.
+    if (name === "onboardingDetail" || name === "onboardingWizard") {
+      const oid = onboardingId || params.onboardingId;
+      if (!oid) {
+        console.warn(`[setPage(${name})] onboardingId ausente, voltando pra /onboardings`);
+        return navigate("/onboardings");
+      }
+      return navigate(name === "onboardingWizard" ? `/onboardings/${oid}/editar` : `/onboardings/${oid}`);
+    }
     if (name === "companyDetail") {
       const cid = companyId || params.companyId;
       if (!cid) {
