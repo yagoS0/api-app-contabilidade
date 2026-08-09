@@ -9,6 +9,10 @@ import { normalizeParcelamentoDTO, normalizeParcelaDTO, round2Decimal as round2 
 import { validarParcela } from "./invariantes.js";
 import { estadoEmAberto, estadoRecalculado, podeTransicionar, ESTADOS_EM_ABERTO, PARCELA_ESTADOS } from "./parcelaStateMachine.js";
 import { isMonthClosed } from "../fechamentoContabil.js";
+// ⚠ O VOCABULÁRIO DE `parcelas.origemBaixa` VEM DA FONTE ÚNICA (`ancoraBaixa.js`), não de literais.
+// É o mesmo registro que o estorno despacha e que o teste de contrato itera: uma via de baixa nova
+// que grave um valor fora dele não teria estorno, e ninguém veria.
+import { ORIGEM_BAIXA } from "../ancoraBaixa.js";
 import { tipoLinhaDaBaixa } from "../tipoLinhaBaixa.js";
 import { sincronizarParcelas } from "./parcelaSync.js";
 import { SELECT_PARCELA_PARA_QUADRO, recalcularParcelamento } from "./recalculoParcelamento.js";
@@ -549,7 +553,7 @@ async function marcarParcelasHistoricas(tx, { portalClientId, parcelamentoId, qu
     // uma prestação anterior à nossa entrada não se sabe, e preencher com o vencimento contratado
     // (ou com "hoje" fingindo ser o pagamento) inventaria dado. O que se sabe é quando foi
     // declarado — e é isso que fica gravado.
-    data: { origemBaixa: "HISTORICO", baixadaEm: new Date() },
+    data: { origemBaixa: ORIGEM_BAIXA.HISTORICO, baixadaEm: new Date() },
   });
   return r.count;
 }
@@ -864,7 +868,7 @@ export async function gerarPagamentoParcelaManual({
     const reserva = await tx.parcela.updateMany({
       where: { id: parcela.id, portalClientId, origemBaixa: null, guiaId: null },
       data: {
-        origemBaixa: "MANUAL",
+        origemBaixa: ORIGEM_BAIXA.MANUAL,
         // ⚠ AQUI `baixadaEm` É A DATA DO PAGAMENTO DECLARADO — diferente de uma parcela
         // `HISTORICO`, onde ela é a data da DECLARAÇÃO porque a do pagamento não se sabe. Aqui se
         // sabe: o contador está declarando justamente quando o débito saiu da conta, e é essa data
@@ -920,7 +924,7 @@ export async function gerarPagamentoParcelaManual({
       lancamentos: entries.length,
       parcelaId: parcela.id,
       numeroParcela: parcela.numeroParcela ?? null,
-      origemBaixa: "MANUAL",
+      origemBaixa: ORIGEM_BAIXA.MANUAL,
       principal,
       juros,
       multa,

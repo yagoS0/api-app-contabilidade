@@ -1515,6 +1515,10 @@ model Parcela {
   /// contabilidade). Ela é quitada para efeito de contagem e de risco, e **não gera
   /// `AccountingEntry`** — não houve pagamento NOSSO para lançar; a provisão da adesão também não
   /// existe para o período dela.
+  /// ⚠ F2.5 — ESTE VOCABULÁRIO DEIXOU DE SER PROSA: ele vive em
+  /// `application/accounting/ancoraBaixa.js` (`ORIGENS_BAIXA_PARCELA`), com a ÂNCORA de cada via, e
+  /// é de lá que os escritores tiram o valor e que o teste de contrato do estorno itera. Origem
+  /// acrescentada aqui e não lá é origem cujo estorno ninguém escreveu.
   origemBaixa String? // GUIA | DEBITO_AUTOMATICO | MANUAL | HISTORICO
   /// ⚠ QUANDO É `HISTORICO`, ISTO É A DATA DA DECLARAÇÃO, NÃO A DO PAGAMENTO. A data em que o
   /// contribuinte pagou uma parcela anterior à nossa entrada não é conhecida, e preenchê-la com o

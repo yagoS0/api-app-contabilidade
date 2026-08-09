@@ -2790,6 +2790,12 @@ export function createAccountingEntriesRouter({ log }) {
     MES_CORRENTE_FECHADO: 409,
     CONFERENCIA_DIVERGENTE: 409,
     LOTE_MUDOU: 409,
+    // F2.5 — as recusas da âncora PARCELA (baixa sem guia). As duas são conflito de estado, e as
+    // duas existem para NÃO estornar pela metade: sem saber qual prestação limpar, ou com ela
+    // mudada no meio, a alternativa seria lançamento estornado com prestação presa em baixada.
+    PARCELA_NAO_IDENTIFICADA: 409,
+    PARCELA_MUDOU: 409,
+    ANCORA_SEM_REVERSOR: 409,
   };
   function responderRecusa(res, err) {
     if (!(err instanceof EstornoRecusado)) throw err;

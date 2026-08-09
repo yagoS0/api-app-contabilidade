@@ -480,6 +480,75 @@ O espelho carrega `sourceGuideId` (rastreável a partir da guia — seguro, as t
 seguinte). `eventType` é **null** — só a baixa original carrega o evento, senão o segundo estorno do
 mesmo evento no mesmo mês violaria `@@unique([portalClientId, competencia, eventType, origem])`.
 
+#### F2.5 — o estorno DESPACHA PELA ÂNCORA DA BAIXA (um serviço só, sem irmão)
+
+`EstornoBaixaService` reabria a **guia**. A F2.2 abriu uma segunda via de baixa
+(`gerarPagamentoParcelaManual`, sem guia, ancorada na **parcela**, gravando
+`parcelas.origemBaixa = "MANUAL"`) e o estorno **não a alcançava**: sem guia não há guia a reabrir,
+`origemBaixa` não era limpo, e a prestação ficava baixada **para sempre** — fora da fila, com
+`parcela_ja_baixada` a cada nova tentativa. É, letra por letra, o defeito que a F2.4 corrigiu do
+lado da guia. Medido em produção antes de mexer: **zero** parcelas com `origemBaixa='MANUAL'` (111
+parcelas, todas nulas) — não havia dado retroativo a tratar.
+
+⚠ **A correção NÃO é um `EstornoBaixaParcelaService` ao lado** — seria reproduzir a estrutura que
+gerou o bug (dois serviços que divergem na próxima invariante; o projeto já tem o precedente das
+DUAS memórias de conta e das QUATRO cópias do filtro de envio). **Baixa e estorno operam sobre a
+MESMA âncora, sempre.**
+
+| âncora | quando | o que o estorno reverte |
+|---|---|---|
+| `GUIA` | `sourceGuideId` presente | reabre a guia (`baixada`/`dataBaixa`/`lancamentoId`/`parcelaEstado`) — caminho intocado |
+| `PARCELA` | sem guia, com `parcelamentoId` | `parcelas.origemBaixa` → **null** e `baixadaEm` → **null** |
+| `LANCAMENTO` | nem um nem outro (baixa genérica) | nada além dos lançamentos — decisão declarada, não `if` que não casou |
+
+Os **lançamentos** são estornados igual nos três (deleção em mês aberto, contra-lançamento
+`tipo:"ESTORNO"` em mês fechado), e o `recalcularParcelamento` roda depois, dentro da transação.
+
+- **A fonte única é `ancoraBaixa.js`**: `ANCORAS`, `ORIGENS_BAIXA_PARCELA` (o vocabulário de
+  `parcelas.origemBaixa`, com a âncora de cada via), `ORIGEM_BAIXA` (os valores que os **escritores**
+  importam — `ParcelamentoV2Service` não grava mais o literal) e `ancoraDoLancamento(entry)`, que lê
+  a âncora **do próprio lançamento**, nunca de um parâmetro.
+- **O despacho é `EstornoBaixaService.REVERSORES`**, indexado pelas âncoras.
+- ⚠ **O LOTE também passou a despachar.** `carregarLote` fazia `if (!sourceGuideId) return [entry]`,
+  então a baixa sem guia era estornada **um lançamento por vez** — ela também nasce com até quatro
+  (principal, juros, multa, caixa), e desfazer só o principal deixaria juros e multa no razão com a
+  prestação já livre. Sem guia, o lote é reunido por `(parcelamentoId, numeroParcela)` + o
+  `loteImportacao`.
+- ⚠ **A prestação sem guia NÃO tem coluna de estado.** `parcelaEstado` mora na **guia** (a F2.1
+  evitou a segunda cópia de propósito), então aqui não há `estadoAposEstorno` a chamar: o estado
+  derivado **é** a ausência de `origemBaixa` (`parcelaRowQuitada` só pergunta isso), e limpá-la
+  devolve a prestação ao que o calendário manda — de volta a `parcelasSemEvidencia`, nem quitada nem
+  inadimplida.
+- ⚠ **Atomicidade:** a limpeza roda **dentro da mesma transação** dos lançamentos, com `updateMany`
+  condicional no `origemBaixa` lido no preview. `count !== 1` lança **`PARCELA_MUDOU`** de dentro da
+  transação, e o Postgres desfaz tudo (outro estorno em paralelo, ou guia vinculada no meio).
+- ⚠ **A prestação é procurada pelo que pode FICAR PRESO** — `origemBaixa` preenchido, casando
+  `(parcelamentoId, numeroParcela)`; `guiaId` **fora** do filtro, porque a captura do SERPRO pode
+  vincular uma guia depois da baixa por declaração e é justamente essa prestação que precisaria ser
+  limpa. Três desfechos, três respostas: **uma** → limpa; **nenhuma** → segue (não há nada preso —
+  é o V1 aplicado por template, que nunca escreveu em `parcelas`, e o estorno repetido; recusar
+  seria obstruir correção legítima por falta de dado); **duas ou mais** → **409
+  `PARCELA_NAO_IDENTIFICADA`** antes de qualquer escrita, porque escolher uma deixaria a outra
+  baixada no cadastro e livre no razão para sempre.
+- **Auditoria:** na âncora PARCELA, `parcelaEstadoAnterior` recebe o `origemBaixa` desfeito
+  (`MANUAL`, …) e `parcelaEstadoNovo` fica nulo. Os dois vocabulários não colidem (os da guia são
+  `PREVISTA`/`PAGA_A_CONFERIR`/…), e deixar a linha muda seria a auditoria não registrar nada
+  justamente na via que não tem guia para contar a história.
+- ⚠ **`HISTORICO` está fora do estorno, e o motivo é DADO** (`motivoNaoEstornavel` no registro): ela
+  **não gera `AccountingEntry`**, então não há baixa a estornar — desfazê-la é corrigir a declaração
+  de prestações já pagas na adesão.
+
+**O contrato, não o caso:** `__tests__/estornoContratoOrigens.test.js` (20) itera
+`ORIGENS_ESTORNAVEIS` **da fonte única** e exige de cada uma a mesma invariante — lançamentos
+estornados (lote inteiro, nos dois modos), âncora restaurada por completo, auditoria gravada. Quem
+acrescentar a via do SERPRO (`DETPAGTOPARC165`, que gravará `DEBITO_AUTOMATICO`) já está dentro da
+parametrização; quem inventar uma **âncora nova sem reversor** vê vermelho até implementá-la.
+Verificado por experimento (executado, não afirmado): desligando o ramo PARCELA de
+`ancoraDoLancamento` — que é, linha por linha, o serviço de antes — o contrato fica **11 vermelhos**,
+todos nas origens sem guia, e `GUIA` continua verde; acrescentando uma origem com âncora
+desconhecida, **3 vermelhos**. Depois de cada experimento o código foi devolvido ao estado correto e
+a suíte rodada de novo.
+
 #### O estado da parcela: `ESTORNADA`
 
 `estadoAposEstorno` **não pula mais** `podeTransicionar` — a máquina ganhou uma segunda tabela,
