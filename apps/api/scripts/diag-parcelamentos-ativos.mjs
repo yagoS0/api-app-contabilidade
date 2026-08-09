@@ -20,12 +20,14 @@
 import { prisma } from "../src/infrastructure/db/prisma.js";
 
 const dia = (d) => (d ? new Date(d).toISOString().slice(0, 10) : "—");
+/** O número do documento mora dentro do `extracted`, não numa coluna. */
+const doc = (g) => g?.extracted?.numeroDocumento || null;
 const brl = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const parcelamentos = await prisma.parcelamento.findMany({
   select: {
     id: true, tipo: true, numeroParcelamento: true, status: true, numParcelas: true,
-    portalClient: { select: { id: true, nome: true, cnpj: true, regimeTributario: true } },
+    portalClient: { select: { id: true, razao: true, cnpj: true } },
   },
   orderBy: { createdAt: "desc" },
 });
@@ -43,15 +45,18 @@ for (const p of parcelamentos) {
   // A parcela é uma Guide com `parcelamentoId`. Paga = tem data de baixa ou paymentStatus PAID.
   const guias = await prisma.guide.findMany({
     where: { parcelamentoId: p.id },
+    // ⚠ `numeroDocumento` NÃO é coluna da Guide — ele mora dentro de `extracted` (Json). Pedi-lo
+    // no `select` derruba a query. Isso importa além deste script: casar o pagamento do
+    // PAGAMENTOS71 com a nossa guia significa ler JSON, não comparar coluna.
     select: {
       numeroParcela: true, competencia: true, valor: true, paymentStatus: true,
-      dataBaixa: true, numeroDocumento: true, vencimento: true,
+      dataBaixa: true, vencimento: true, extracted: true,
     },
     orderBy: { numeroParcela: "asc" },
   });
 
   const pagas = guias.filter((g) => g.paymentStatus === "PAID" || g.dataBaixa);
-  const comDoc = guias.filter((g) => g.numeroDocumento);
+  const comDoc = guias.filter((g) => doc(g));
   linhas.push({ p, guias, pagas, comDoc });
 }
 
@@ -62,7 +67,9 @@ for (const { p, guias, pagas, comDoc } of linhas) {
   const e = p.portalClient;
   const marca = pagas.length ? "✔" : "·";
   console.log("─".repeat(96));
-  console.log(`${marca} ${e?.nome || "(sem empresa)"} · ${e?.cnpj || "?"} · ${e?.regimeTributario || "regime ?"}`);
+  // ⚠ `regimeTributario` NÃO é campo de `PortalClient` — o regime mora no cadastro fiscal. Pedi-lo
+  // aqui derrubava a query inteira com erro de validação do Prisma.
+  console.log(`${marca} ${e?.razao || "(sem empresa)"} · ${e?.cnpj || "?"}`);
   console.log(`   ${p.tipo || "(modalidade não gravada)"} nº ${p.numeroParcelamento || "—"} · ${p.status} · ${p.numParcelas || "?"} parcelas contratadas`);
   console.log(`   guias: ${guias.length} · com numeroDocumento: ${comDoc.length} · PAGAS: ${pagas.length}`);
 
@@ -71,7 +78,7 @@ for (const { p, guias, pagas, comDoc } of linhas) {
     const de = datas.length ? dia(datas[0]) : "?";
     const ate = datas.length ? dia(datas[datas.length - 1]) : "?";
     for (const g of pagas.slice(-4)) {
-      console.log(`      parcela ${g.numeroParcela ?? "?"} · comp ${g.competencia} · ${brl(g.valor)} · baixa ${dia(g.dataBaixa)} · doc ${g.numeroDocumento || "—"}`);
+      console.log(`      parcela ${g.numeroParcela ?? "?"} · comp ${g.competencia} · ${brl(g.valor)} · baixa ${dia(g.dataBaixa)} · doc ${doc(g) || "—"}`);
     }
     console.log(`   → probe: --cnpj=${e?.cnpj || "?"} --de=${de} --ate=${ate}`);
   } else {
