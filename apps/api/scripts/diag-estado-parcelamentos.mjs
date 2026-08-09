@@ -116,6 +116,38 @@ try {
   console.log("   ⚠ falha ao ler `mapa_conta_tributo`:", err?.message);
 }
 
+// ─── 5. ⚠ Baixa MANUAL (F2.2) já existente — a que o estorno ainda não alcança ────────────────
+linha();
+console.log("\n5) ⚠ BAIXA POR DECLARAÇÃO (F2.2) — o estorno ainda NÃO a alcança\n");
+console.log("   `EstornoBaixaService` reabre a GUIA. Numa baixa sem guia não há guia a reabrir, e");
+console.log("   `parcelas.origemBaixa` não é limpo — a parcela ficaria presa, que é exatamente o");
+console.log("   defeito que a F2.4 corrigiu. Se já existir alguma, o estorno novo precisa alcançá-la");
+console.log("   RETROATIVAMENTE.\n");
+
+const manuais = await prisma.$queryRaw`
+  SELECT count(*)::int AS n FROM "parcelas" WHERE "origemBaixa" = 'MANUAL'`;
+const nManuais = manuais?.[0]?.n || 0;
+console.log(`   parcelas com origemBaixa = 'MANUAL': ${n(nManuais)}`);
+
+const lancManuais = await prisma.$queryRaw`
+  SELECT count(*)::int AS n FROM "accounting_entries"
+   WHERE tipo = 'BAIXA' AND "sourceGuideId" IS NULL AND "parcelamentoId" IS NOT NULL`;
+console.log(`   lançamentos de BAIXA sem guia ancorados em parcelamento: ${n(lancManuais?.[0]?.n)}`);
+
+const porOrigem = await prisma.$queryRaw`
+  SELECT COALESCE("origemBaixa", '(nula)') AS origem, count(*)::int AS n
+    FROM "parcelas" GROUP BY 1 ORDER BY 2 DESC`;
+console.log(`\n   distribuição de origemBaixa em "parcelas":`);
+for (const o of porOrigem) console.log(`      ${o.origem}: ${n(o.n)}`);
+
+if (nManuais === 0) {
+  console.log(`\n   ✓ NENHUMA. O estorno pode ser escrito sem tratar dado retroativo —`);
+  console.log(`     e a janela para fechá-lo antes da primeira baixa manual ainda está aberta.`);
+} else {
+  console.log(`\n   ⚠ EXISTEM ${n(nManuais)}. Cada uma está hoje IRREVERSÍVEL pela interface.`);
+  console.log(`     O estorno precisa alcançá-las, e isso amplia o passo 2.`);
+}
+
 linha();
 console.log("\nNada foi alterado.");
 await prisma.$disconnect();
