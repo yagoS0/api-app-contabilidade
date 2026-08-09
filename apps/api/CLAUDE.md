@@ -228,13 +228,47 @@ serviço não o declara; `/Consultar` vem do padrão já validado do próprio c�
 devolve dados vai em `/Consultar`, emissão de documento vai em `/Emitir`) e **`versaoSistema`** (os
 exemplos oficiais do PAGAMENTOS71 não trazem o campo, então não é enviado).
 
-⚠ **Documentado, NUNCA exercido.** `SERPRO_PAGTOWEB_SERVICE_PAGAMENTOS` existe em `config.js` e
-**nenhum código de produção o consome**. Antes de escrever o serviço, rodar
-**`scripts/probe-pagamentos71.mjs`** (`--confirmo`, chamada paga, não grava nada), que responde as
-três perguntas que a documentação não responde: o DARF consolidado volta inteiro ou partido; o
-desmembramento traz `receitaPrincipal`; multa e juros vêm por desmembramento ou só no total. Sem as
-duas últimas não há baixa por tributo sem ratear. Fazer ao contrário é como nasceu o
-`CONSDECCOMPLETA33`, OFF até hoje.
+### ✅ EXERCIDO em 2026-08-09 — as três perguntas voltaram SIM
+
+`scripts/probe-pagamentos71.mjs` rodou contra a produção em dois contribuintes. **A quebra por
+tributo existe**: `receitaPrincipal` em **73/73** e **22/22** desmembramentos, com `valorMulta` e
+`valorJuros` próprios em cada um. O DARF consolidado volta **inteiro**, com N desmembramentos.
+`/Consultar` e a ausência de `versaoSistema` estavam certos (`versaoSistema=1.0` também passa).
+
+⚠ **MAS ISSO NÃO AUTORIZA PARTIR O DAS DO SIMPLES.** Regra do dono (2026-08-09):
+
+> *"a guia do Simples vem desmembrada nos impostos, porém contabilizamos junto, como DAS Simples
+> Nacional."*
+
+O `PAGAMENTOS71` devolve o DAS partido em seis (`1001` IRPJ-SN, `1002` CSLL-SN, `1004` Cofins-SN,
+`1005` PIS-SN, `1006` INSS-SN, `1010` ISS-SN) — e **isso é informação, não instrução**. O DAS é
+**um** lançamento. Quem partir em seis muda a forma do lançamento contábil sem pedido, que é
+proibido.
+
+**A baixa por tributo vale para a DARF consolidada do LUCRO PRESUMIDO**, e só: lá são quatro
+provisões de verdade, em contas diferentes (PIS, COFINS, IRPJ, CSLL), e é esse rateio que hoje não
+se consegue fazer sem inferência.
+
+**Discriminador estruturado**, medido: `tipo.codigo` vem `"9"` (DOCUMENTO DE ARRECADAÇÃO DO SIMPLES
+NACIONAL) ou `"4"` (DOCUMENTO DE ARRECADAÇÃO DE RECEITAS FEDERAIS). Não é preciso adivinhar pelo
+texto.
+
+⚠ **Ainda NÃO conhecidos: os códigos de TJLP do parcelamento do SIMPLES (PARCSN).** A rodada no
+contribuinte do Simples não trouxe nenhum item de parcelamento — a empresa não tinha parcela paga
+na janela. `CODIGOS_TJLP_PARCELAMENTO` cobre os de DARF (`380`/`389`/`391`/`387`) e o do IRRF
+(`16`); sem os do PARCSN, uma parcela do Simples é classificada como recolhimento em atraso.
+Para escolher o CNPJ certo antes de gastar chamada: `scripts/diag-parcelamentos-ativos.mjs`.
+
+⚠ **O código de receita chega em DUAS escritas.** O PDF do comprovante imprime com zero à esquerda
+(`"0380"`); o `PAGAMENTOS71` devolve sem (`"380"`, `"16"`). Comparar cru faz a classificação errar
+em silêncio — use `normalizarCodigoReceita` (`classificarDocumentoArrecadado.js`).
+
+⚠ **O `numeroDocumento` também diverge:** as guias guardam **com máscara e com zero à esquerda**
+(`07.16.26218.4614539-3`, 17 dígitos); a API devolve 16 dígitos sem o zero. Casar por dígitos crus
+falha. Ainda não há casamento implementado — quando houver, normalizar os dois lados.
+
+`SERPRO_PAGTOWEB_SERVICE_PAGAMENTOS` existe em `config.js` e **nenhum código de produção o consome
+ainda** — o probe provou o contrato, o serviço é o próximo passo.
 
 ## ⚠ REGRA DO DONO: notas só com o A1 da PRÓPRIA empresa
 
