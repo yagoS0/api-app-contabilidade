@@ -18,7 +18,37 @@ describe("rotuloParcelamento", () => {
       parcelamentoNumero: "1",
       numeroParcela: 3,
       quantidadeParcelas: 10,
-    })).toBe("PARCSN Nº 1 · 3/10");
+    })).toBe("PARC SN Nº 1 · 3/10");
+  });
+
+  // ── A LIGAÇÃO COM O DE-PARA (a regra em si tem teste próprio em `lib/vocabulario`) ──
+  it("as 4 modalidades do Simples chegam à coluna como PARC SN", () => {
+    for (const m of ["PARCSN", "PARCSN_ESPECIAL", "PERT_SN", "RELP_SN"]) {
+      expect(rotuloParcelamento({ parcelamentoId: "p1", parcelamentoTipo: m })).toBe("PARC SN");
+    }
+  });
+
+  it("as 4 do MEI chegam como PARC MEI — a família não se mistura na tela", () => {
+    for (const m of ["PARCMEI", "PARCMEI_ESPECIAL", "PERT_MEI", "RELP_MEI"]) {
+      expect(rotuloParcelamento({ parcelamentoId: "p1", parcelamentoTipo: m })).toBe("PARC MEI");
+    }
+  });
+
+  it("⚠ a parcela de INSS parcelado NÃO vira PARC SN", () => {
+    const rotulo = rotuloParcelamento({ tipo: "INSS", parcelamentoId: "p1", parcelamentoTipo: "INSS" });
+    expect(rotulo).toBe("INSS");
+    expect(rotulo).not.toMatch(/PARC SN/);
+  });
+
+  it("⚠ modalidade desconhecida sai CRUA com o sinal de revisão — nunca colapsada", () => {
+    const rotulo = rotuloParcelamento({
+      parcelamentoId: "p1",
+      parcelamentoTipo: "TRANSACAO_PGFN",
+      numeroParcela: 1,
+      quantidadeParcelas: 12,
+    });
+    expect(rotulo).toBe("TRANSACAO_PGFN ⚠ · 1/12");
+    expect(rotulo).not.toMatch(/PARC SN/);
   });
 
   it("⚠ NUNCA cai no tipo da guia quando a modalidade é nula — era assim que saía 'SIMPLES'", () => {
@@ -40,7 +70,7 @@ describe("rotuloParcelamento", () => {
       parcelamentoTipo: "PERT_SN",
       numeroParcela: 2,
       quantidadeParcelas: 24,
-    })).toBe("PERT_SN · 2/24");
+    })).toBe("PARC SN · 2/24");
   });
 
   it("sem o total, não inventa denominador", () => {
@@ -51,7 +81,7 @@ describe("rotuloParcelamento", () => {
       numeroParcela: 3,
       quantidadeParcelas: null,
     });
-    expect(rotulo).toBe("PARCSN Nº 9 · parcela 3");
+    expect(rotulo).toBe("PARC SN Nº 9 · parcela 3");
     expect(rotulo).not.toContain("/");
   });
 
@@ -60,7 +90,7 @@ describe("rotuloParcelamento", () => {
       parcelamentoId: "p1",
       parcelamentoTipo: "PARCSN",
       parcelamentoNumero: "1234567",
-    })).toBe("PARCSN Nº 1234567");
+    })).toBe("PARC SN Nº 1234567");
   });
 });
 
@@ -73,7 +103,7 @@ describe("rotuloTipoGuia", () => {
       parcelamentoNumero: "1",
       numeroParcela: 3,
       quantidadeParcelas: 10,
-    })).toBe("PARCSN Nº 1 · 3/10");
+    })).toBe("PARC SN Nº 1 · 3/10");
   });
 
   it("guia normal do Simples continua sendo SIMPLES", () => {
@@ -107,6 +137,34 @@ describe("tituloTipoGuia", () => {
   it("sem label, não inventa tooltip", () => {
     expect(tituloTipoGuia({ parcelamentoId: "p1" })).toBeUndefined();
     expect(tituloTipoGuia({ tipo: "SIMPLES" })).toBeUndefined();
+  });
+
+  // ⚠ O COLAPSO É NÃO DESTRUTIVO ATÉ A TELA. A coluna diz "PARC SN"; o título diz de qual das
+  // quatro modalidades veio. Sem isto, "veio como RELP_SN" só se responderia abrindo o banco.
+  it("⚠ depois do colapso, a modalidade CRUA continua na tela", () => {
+    const titulo = tituloTipoGuia({
+      parcelamentoId: "p1",
+      parcelamentoTipo: "RELP_SN",
+      parcelamentoLabel: "RE-PARCELAMENTO SIMPLES NACIONAL",
+    });
+    expect(titulo).toContain("RELP_SN");
+    expect(titulo).toContain("RE-PARCELAMENTO SIMPLES NACIONAL");
+  });
+
+  it("a modalidade crua aparece mesmo sem label do contador", () => {
+    expect(tituloTipoGuia({ parcelamentoId: "p1", parcelamentoTipo: "PERT_MEI" })).toContain("PERT_MEI");
+  });
+
+  it("modalidade desconhecida leva o motivo da revisão junto", () => {
+    const titulo = tituloTipoGuia({ parcelamentoId: "p1", parcelamentoTipo: "TRANSACAO_PGFN" });
+    expect(titulo).toContain("TRANSACAO_PGFN");
+    expect(titulo).toMatch(/não reconhecida/i);
+  });
+
+  it("INSS não ganha aviso de revisão — ele é conhecido, só não colapsa", () => {
+    const titulo = tituloTipoGuia({ parcelamentoId: "p1", parcelamentoTipo: "INSS" });
+    expect(titulo).toContain("INSS");
+    expect(titulo).not.toMatch(/não reconhecida/i);
   });
 
   it("lista os impostos da DARF consolidada", () => {

@@ -5,6 +5,8 @@
 // a guia é EVIDÊNCIA MENSAL de UMA prestação dele. Por isso o parcelamento vem primeiro no modal, e
 // tudo o mais (competência, vencimento, valor) é derivado DO CONTRATO.
 
+import { resolverModalidadeParcelamento } from "../../../lib/vocabulario";
+
 /**
  * ⚠ A MODALIDADE ERA FORÇADA A "SIMPLES" NOS DOIS CAMINHOS DO MODAL ANTIGO
  * (`renderCompanyGuidesTable`: `handleStartUpload("SIMPLES", true)` tanto no "anexar a existente"
@@ -14,17 +16,21 @@
  * A correção não é uma tabela de-para fixa: é uma SUGESTÃO, com o select à vista para o contador
  * discordar. O que se sabe com segurança é só isto:
  *   · parcelamento de INSS/previdenciário é pago em guia de INSS;
- *   · parcelamento do Simples/MEI (PARCSN·PERT_SN·RELP_SN·PARCMEI·PERT_MEI·RELP_MEI) é pago em DAS,
+ *   · parcelamento do Simples/MEI (as DUAS famílias de `FAMILIAS_PARCELAMENTO`) é pago em DAS,
  *     que é o `tipo: "SIMPLES"` deste sistema — é assim que `CaptureSerproParcelaService` grava a
  *     parcela capturada do SERPRO;
  *   · "OUTRO" não diz qual documento é, então cai em "OUTRA" e o contador escolhe.
+ *
+ * ⚠ QUEM DIZ SE A MODALIDADE É DE UMA DAS FAMÍLIAS É O DE-PARA, não um regex daqui. A lista das 8
+ * modalidades estava escrita aqui E em `lib/vocabulario.js`; duas cópias divergiriam na primeira
+ * modalidade nova do catálogo do SERPRO — a tela mostraria "PARC SN" e a sugestão de tipo cairia em
+ * "OUTRA", ou o contrário. Modalidade desconhecida cai em "OUTRA", que é o que já acontecia.
  */
 export function tipoGuiaSugerido(modalidade) {
   const m = String(modalidade || "").trim().toUpperCase();
   if (!m) return "OUTRA";
   if (m === "INSS") return "INSS";
-  if (/^(PARCSN|PERT_SN|RELP_SN|PARCMEI|PERT_MEI|RELP_MEI)/.test(m)) return "SIMPLES";
-  return "OUTRA";
+  return resolverModalidadeParcelamento(m).familia ? "SIMPLES" : "OUTRA";
 }
 
 /**

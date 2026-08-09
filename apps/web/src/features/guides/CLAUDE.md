@@ -78,12 +78,38 @@ então toda listagem que não repetisse aquela expressão mostrava a parcela com
 `isGuiaDeParcelamento` do backend). Usados pela **aba Guias** (a caixa "Ver todas as competências" é
 filtro da mesma tabela) e pela página de **guias pendentes**. Listagem nova usa o helper.
 
-Formato: **`PARCSN Nº 1234567 · 3/10`** — modalidade · número do parcelamento · parcela atual/total.
+Formato: **`PARC SN Nº 1234567 · 3/10`** — modalidade · número do parcelamento · parcela atual/total.
 
-- ⚠ **A modalidade sai CRUA (`PARCSN`, `PERT_SN`…).** O dono pediu **"PARC SN"**, mas não existe no
-  projeto nenhuma tabela de abreviação de modalidade — só rótulos longos
-  (`ParcelamentoModals.jsx`: `"Simples Nacional (PARCSN)"`). Escrever uma aqui seria inventar
-  vocabulário fiscal. **Pendente de decisão do dono.**
+### ⚠ A modalidade COLAPSA em duas famílias — e o de-para é NÃO DESTRUTIVO
+
+O de-para **não mora aqui**: é `resolverModalidadeParcelamento`, em **`src/lib/vocabulario.js`**, a
+camada onde o projeto já traduz enum do banco para palavra do contador. `rotuloGuia` só a consome.
+
+| entrada | rótulo | colapsa? |
+|---|---|---|
+| `PARCSN` · `PARCSN_ESPECIAL` · `PERT_SN` · `RELP_SN` | **PARC SN** | sim |
+| `PARCMEI` · `PARCMEI_ESPECIAL` · `PERT_MEI` · `RELP_MEI` | **PARC MEI** | sim |
+| `INSS` · `OUTRO` | o próprio valor | **não** |
+| qualquer outra | o valor cru **+ `⚠`** | **não** — levanta revisão |
+| ausente | `Parcelamento` | — |
+
+- ⚠ **São DUAS famílias, não uma.** `TIPOS_PARCELAMENTO` (`contracts.js`) tem **dez** valores: os 8
+  oficiais (4 SN + 4 MEI) mais `INSS` e `OUTRO`.
+- ⚠ **`INSS` NUNCA vira "PARC SN".** É parcelamento previdenciário; colapsá-lo seria trocar um erro
+  por outro — o mesmo erro que este arquivo existe para evitar.
+- ⚠ **Modalidade nova NÃO colapsa por palpite**: aparece crua com `⚠`, seguindo o precedente de
+  `classificarDocumentoArrecadado.js` (código de receita desconhecido levanta alerta e **se recusa a
+  classificar**). O catálogo do SERPRO evolui.
+- ⚠ **AUSÊNCIA de modalidade não levanta revisão** (parcelamento do caminho V1 não grava `tipo`):
+  alerta que acende sempre é alerta que ninguém lê.
+- ⚠ **O CRU CONTINUA CHEGANDO À TELA.** Nada foi reescrito no banco e **nenhum campo novo** foi
+  criado — a modalidade sempre esteve em `Parcelamento.tipo` e viaja como `guide.parcelamentoTipo`.
+  `tituloTipoGuia` põe `Modalidade (SERPRO): RELP_SN` no `title` da linha: PERT e RELP têm reduções
+  de multa e juros que a família não distingue, e *"veio como RELP_SN"* precisa ser recuperável numa
+  auditoria.
+- A lista das 8 é **fechada** (nada de prefixo `^PARCSN`) — é ela que separa "conhecida" de "nova".
+  `tipoGuiaSugerido` (`lib/anexoParcelamento.js`) passou a **consumir** o mesmo de-para em vez de
+  repetir o regex das 8 modalidades.
 - ⚠ **Nada é deduzido do `tipo` da guia.** O fallback antigo era `parcelamentoTipo || tipo`: com a
   modalidade nula (parcelamento criado pelo caminho V1, que não grava `tipo`) ele imprimia
   literalmente **"Parc. SIMPLES"** — o nome do DAS do mês, o oposto do que se queria. Modalidade
