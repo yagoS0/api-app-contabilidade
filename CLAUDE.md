@@ -167,7 +167,20 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   - **F2 é a mudança estrutural:** `Guide.emailStatus` deixou de ser o estado de envio. Quem
     responde "esta guia foi enviada?" agora é **`envios_guia`** (um registro por guia × canal) — um
     campo só não representa "enviada por WhatsApp e ainda não por e-mail". Enviada = terminal em
-    QUALQUER canal. **Rodar `scripts/backfill-envio-guia.mjs` depois do deploy.**
+    QUALQUER canal.
+  - ⚠ **NÃO RODE `scripts/backfill-envio-guia.mjs` ENQUANTO A F5 NÃO EXISTIR.** Esta linha já
+    mandou o contrário, e seguir a instrução antiga quebra o dashboard de forma permanente.
+    Auditado em 2026-08-08: **nenhum caminho de envio escreve em `envios_guia`** — as funções de
+    escrita de `EnvioGuiaService` (`registrarEnvio`, `marcarEnviado`, …) não têm um chamador
+    sequer fora dos testes, porque a F5 não foi iniciada. Quem grava é só o backfill.
+    E `foiEnviadaComLegado` desliga a tolerância na **primeira linha que existir**
+    (`if (envios && envios.length)`), não por guia. Como o backfill converte **todos** os estados
+    (`PENDING`/`ERROR` viram `pendente`/`falhou`), toda guia que estivesse pendente naquele
+    instante ficaria `enviada: false` **para sempre** no `guideCompliance`, mesmo depois de
+    enviada: card do dashboard eternamente aberto, "✓ Guias concluídas" que nunca condensa — com a
+    aba Guias da empresa mostrando "✓ enviado" ao lado. **Com a tabela vazia está tudo correto**
+    (medido em produção: 0 registros, e o legado responde por todo mundo). A instrução de backfill
+    só volta a valer quando o envio passar a gravar na tabela nova.
   - F3–F6 (Cloud API, webhook, envio em lote, recebimento) **não iniciadas**: dependem de
     credenciais reais. Escrevê-las sem poder exercê-las é o que a regra 1 proíbe — e o
     `CONSDECCOMPLETA33` do LP está OFF até hoje por exatamente isso.
