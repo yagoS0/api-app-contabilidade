@@ -65,13 +65,105 @@ chegava na tela como "0 de 0", risco não avaliável.
 | `recalcularParcelamento` | `parcelasTotal: guides.length \|\| numParcelas` | `quadroDasParcelas` |
 
 ⚠ **A tabela NÃO duplica o estado de pagamento.** Não há `baixada` nem `paymentStatus` nela.
-Enquanto o caminho de baixa for por guia (`gerarPagamentoParcelaFromGuide` exige `guideId` na
-assinatura, na guarda `sourceGuideId` e no efeito em `guide.baixada`/`lancamentoId` — a **F2.2**),
-quem responde "foi quitada?" é a **guia**. Aqui mora o **contrato** (quais prestações existem,
+No caminho de baixa **por guia** (`gerarPagamentoParcelaFromGuide` exige `guideId` na assinatura, na
+guarda `sourceGuideId` e no efeito em `guide.baixada`/`lancamentoId`), quem responde "foi quitada?"
+é a **guia**. Na parcela **sem guia** quem responde é `origemBaixa` — ver a F2.2, abaixo; e são duas
+colunas para dois fatos diferentes, não duas respostas para o mesmo. Aqui mora o **contrato** (quais prestações existem,
 quando vencem); lá mora o **fato**. Uma cópia divergiria no primeiro estorno.
 
 ⚠ **`origemBaixa` é onde se grava a quitação de uma parcela que nunca teve guia.**
 `parcelaRowQuitada` já a lê — quem grava muda **uma escrita**, não as derivações.
+
+## F2.2 — a baixa da parcela SEM GUIA, por DECLARAÇÃO (`gerarPagamentoParcelaManual`)
+
+Débito automático **não emite documento**: o dinheiro sai da conta e pronto. Decisão do dono:
+*"alguns parcelamentos, ainda mais no Lucro Presumido, não vão ter parcelas pois são em débito
+automático"* — não é borda, é o caso NORMAL de uma classe inteira de clientes. Como toda a baixa
+era ancorada na guia, essas prestações **não tinham como ser baixadas**: 60 contratadas, nenhuma
+baixável.
+
+Função **irmã** de `gerarPagamentoParcelaFromGuide` (que **não foi tocada** — é o caminho de quem
+tem guia), ancorada na **parcela**. Rota:
+`POST .../parcelamentos/parcelas/:parcelaId/baixa-manual`, body
+`{ dataPagamento?, valorJuros?, valorMulta?, totalConferido }`.
+
+| | via da **prova** | via da **declaração** ← esta |
+|---|---|---|
+| fonte | `DETPAGTOPARC165` (SERPRO) | o contador sabe que foi debitado |
+| chave | `(numeroParcelamento, anoMesParcela)` | a própria parcela |
+| existe? | **não** — depende do vínculo ao SERPRO | sim |
+
+⚠ **A distinção fica no DADO, em três níveis**, não só em comentário: `parcelas.origemBaixa =
+"MANUAL"` (o vocabulário da coluna já previa `DEBITO_AUTOMATICO` para a via SERPRO) ·
+`AccountingEntry.origem = "MANUAL"` · o histórico diz `(declarado)`, em texto, no razão. Quem
+auditar depois distingue "o contador afirmou" de "a Receita provou".
+
+⚠ **A forma do lançamento é a MESMA** — `linhasPagamento` + `resolverConta`, contas de
+`configPagamento`/`MapaContaTributo`. Uma variante faria as duas baixas divergirem no primeiro
+ajuste de conta.
+
+⚠ **Juros e multa são DECLARADOS, e o total é a SOMA — nunca derivado por subtração.** Sem
+documento ninguém mais sabe o encargo; derivar `total - principal` é como o encargo já foi
+reconhecido em dobro no passado (ver `linhasProvisao`). O **principal vem do contrato**
+(`parcelas.valorPrevisto`), não da tela.
+
+### ⚠ A idempotência: o índice do banco NÃO alcança este caminho
+
+`uq_baixa_guia_linha` é parcial em `"sourceGuideId" IS NOT NULL`, e uma baixa sem guia nasce com
+`sourceGuideId` **NULL** — cai **fora** do índice. A guarda equivalente é a **reserva atômica da
+parcela**, mesmo idioma da guia com a coluna trocada: dentro da transação, antes de qualquer
+escrita, `parcela.updateMany({ where: { id, portalClientId, origemBaixa: null, guiaId: null } })`
+grava `origemBaixa/baixadaEm` e só segue com `count === 1`. `guiaId: null` viaja no `where` de
+propósito — se a captura do SERPRO vincular uma guia entre a leitura e a transação, esta baixa
+desiste em vez de correr em paralelo com a outra.
+
+⚠ **Falta o cinto do banco, e a migration é decisão do dono** (que pediu para não empilhar
+migration na mesma janela de deploy). O SQL equivalente, sem coluna nova — os lançamentos passaram
+a gravar `numeroParcela`, que com `parcelamentoId` é o que resta identificando a prestação:
+
+```sql
+CREATE UNIQUE INDEX CONCURRENTLY uq_baixa_parcela_linha
+  ON "accounting_entries" ("parcelamentoId","numeroParcela","tipoLinha",COALESCE("codigoTributo",''))
+  WHERE "tipo" = 'BAIXA' AND "sourceGuideId" IS NULL
+    AND "parcelamentoId" IS NOT NULL AND "numeroParcela" IS NOT NULL AND "tipoLinha" IS NOT NULL;
+```
+
+`COALESCE` pelo mesmo motivo do índice da guia (aqui `codigoTributo` é **sempre** NULL: sem guia
+não há `TributoParcela`). `CONCURRENTLY` não roda dentro de transação — a migration precisa do
+`-- CreateIndex` fora do bloco transacional, ou sem `CONCURRENTLY` aceitando o lock.
+
+⚠ **Ele não cobre parcela com `numeroParcela` NULL.** Hoje isso não acontece neste caminho (as
+únicas parcelas sem número nascem de guia, em `parcelaSync`, e parcela **com guia é recusada**
+aqui), mas é garantia de fluxo, não estrutural. A versão à prova disso exige coluna
+`accounting_entries."parcelaId"` + `UNIQUE (parcelaId, tipoLinha, COALESCE(codigoTributo,''))`.
+
+### As guardas
+
+| situação | resposta |
+|---|---|
+| parcela **com guia** | `parcela_tem_guia` (409) **apontando a rota da guia** — dois caminhos abertos para a mesma prestação é convite a baixa dupla, e as guardas não se enxergam |
+| já baixada (`origemBaixa` preenchido, ou reserva devolve 0) | `parcela_ja_baixada` (409) |
+| mês fechado (competência da **data do pagamento**) | `MES_FECHADO` (409) — a baixa grava `AccountingEntry` |
+| sem provisão de abertura | `provisao_inexistente` (409) |
+| sem `valorPrevisto` | `sem_valor_previsto` (422) — não se inventa o principal |
+
+⚠ **Ato de consequência:** `totalConferido` é **obrigatório** (400 `CONFERENCIA_OBRIGATORIA`) e o
+servidor recalcula `valorPrevisto + juros + multa`; divergiu → **409 `CONFERENCIA_DIVERGENTE`** com
+a decomposição na resposta. Mesmo padrão de `EstornoBaixaService`.
+
+⚠ **`recalcularParcelamento` roda DEPOIS das escritas e DENTRO da transação** (mesma disciplina do
+estorno): o número devolvido a quem clicou é o do estado já baixado, e a regra da IN RFB 2.063/2022
+não é reescrita — `quadroDasParcelas`/`avaliarRiscoRescisao` são os mesmos de `decorateParcelamento`.
+
+⚠ **Nada é gravado de volta na `parcela` além da reserva**: `parcelas` não tem `lancamentoId`
+(nem `baixada`, nem `paymentStatus`), e duplicar o estado de pagamento lá foi evitado na F2.1 de
+propósito.
+
+⚠ **Ainda NÃO existe rota que LISTE as parcelas sem guia pendentes de baixa.**
+`/parcelamentos/parcelas-pendentes-baixa` filtra por `guia`, então o front não tem de onde tirar o
+`parcelaId`. É o que falta para a via ficar clicável.
+
+Regressão: `parcelamento/__tests__/baixaParcelaSemGuia.test.js` (25).
 
 ## F2.3 — parcelamento-first: o contrato antes do documento
 

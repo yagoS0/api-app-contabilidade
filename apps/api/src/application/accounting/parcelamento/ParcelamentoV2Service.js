@@ -11,7 +11,7 @@ import { estadoEmAberto, estadoRecalculado, podeTransicionar, ESTADOS_EM_ABERTO,
 import { isMonthClosed } from "../fechamentoContabil.js";
 import { tipoLinhaDaBaixa } from "../tipoLinhaBaixa.js";
 import { sincronizarParcelas } from "./parcelaSync.js";
-import { SELECT_PARCELA_PARA_QUADRO } from "./recalculoParcelamento.js";
+import { SELECT_PARCELA_PARA_QUADRO, recalcularParcelamento } from "./recalculoParcelamento.js";
 
 function competenciaFromDate(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -143,6 +143,12 @@ const LINHA_LABEL = {
 async function criarLancamentosIndividuais(tx, {
   portalClientId, parcelamentoId, linhas, data, competencia, tipo, subtipo, origem, lote,
   historicoBase, statusPagamento = "ABERTO", openEntryId = null, sourceGuideId = null,
+  // ⚠ DEFAULT `null` = exatamente o que estava escrito aqui como literal até agora, então nenhum
+  // chamador existente muda de comportamento. Só a baixa SEM GUIA o preenche, e por um motivo
+  // concreto: sem `sourceGuideId` os lançamentos dela caem FORA do índice `uq_baixa_guia_linha`, e
+  // o par `(parcelamentoId, numeroParcela)` é a única coisa em `accounting_entries` que identifica
+  // a prestação. Ver o SQL proposto em `gerarPagamentoParcelaManual`.
+  numeroParcela = null,
 }) {
   const created = [];
   for (const ln of linhas) {
@@ -150,7 +156,7 @@ async function criarLancamentosIndividuais(tx, {
     // eslint-disable-next-line no-await-in-loop
     const e = await tx.accountingEntry.create({
       data: {
-        portalClientId, parcelamentoId, numeroParcela: null,
+        portalClientId, parcelamentoId, numeroParcela,
         openEntryId: openEntryId || null,
         sourceGuideId: sourceGuideId || null,
         // ⚠ O PAPEL SOBE PARA O CABEÇALHO. Cada lançamento daqui é de UMA perna, então o papel da
@@ -671,6 +677,256 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
       data: { lancamentoId: pagamentoId, parcelaEstado: PARCELA_ESTADOS.PAGA_A_CONFERIR },
     });
     return { ok: true, pagamentoId };
+  });
+}
+
+/**
+ * F2.2 — BAIXA DA PARCELA **SEM GUIA**, ancorada na PARCELA e por DECLARAÇÃO do contador.
+ *
+ * ⚠ POR QUE ELA EXISTE, E POR QUE NÃO É CASO DE BORDA. Parcelamento em **débito automático** não
+ * emite documento: o dinheiro sai da conta e pronto. Não há guia, nunca vai haver, e o dono
+ * confirmou que isso é o caso NORMAL de uma classe inteira de clientes (sobretudo no Lucro
+ * Presumido). O sistema inteiro ancorava a baixa na guia — `gerarPagamentoParcelaFromGuide` exige
+ * `guideId` na assinatura, na guarda de idempotência (`sourceGuideId`) e no efeito colateral
+ * (`guide.baixada`/`lancamentoId`) — então para esses contratos a baixa simplesmente não existia:
+ * 60 prestações contratadas e nenhuma forma de baixar uma sequer.
+ *
+ * ⚠ ESTA É A VIA DA **DECLARAÇÃO**, NÃO A DA PROVA. Há duas fontes possíveis de evidência para uma
+ * parcela sem guia, e elas não valem o mesmo:
+ *
+ *   | via | fonte | chave | existe hoje? |
+ *   |---|---|---|---|
+ *   | **prova** | `DETPAGTOPARC165` (SERPRO) | `(numeroParcelamento, anoMesParcela)` | não — depende do vínculo ao SERPRO |
+ *   | **declaração** | o contador sabe que foi debitado e lança | a própria parcela | **é esta** |
+ *
+ * A distinção fica GRAVADA, não só neste comentário, em três níveis:
+ *   1. `parcelas.origemBaixa = "MANUAL"` — o vocabulário da coluna já previa `DEBITO_AUTOMATICO`
+ *      para quando a via SERPRO existir. Quem auditar depois distingue "o contador afirmou" de
+ *      "a Receita provou" olhando UMA coluna;
+ *   2. `AccountingEntry.origem = "MANUAL"` (a via SERPRO gravará `"SERPRO"`, como a ingestão já faz);
+ *   3. o histórico de cada lançamento diz `(declarado)`, em texto, para quem só lê o razão.
+ *
+ * ⚠ A FORMA DO LANÇAMENTO É A MESMA da baixa por guia — `D parcelamento a pagar · D juros · D multa
+ * / C caixa`, montada por `linhasPagamento` com as contas saindo de `configPagamento`/
+ * `MapaContaTributo` pelo MESMO `resolverConta`. Escrever uma variante aqui faria as duas formas de
+ * baixa divergirem no primeiro ajuste de conta, com o contador no meio.
+ *
+ * ⚠ JUROS E MULTA SÃO **DECLARADOS**, e não derivados. Num débito automático sem documento ninguém
+ * mais sabe quanto foi encargo. Isso é entrada de usuário, não invenção — mas derivar juros por
+ * SUBTRAÇÃO (`total - principal`) seria inventar, e é exatamente assim que o encargo já foi
+ * reconhecido em dobro no passado (o episódio está documentado em `linhasProvisao`). O principal
+ * vem da parcela (`valorPrevisto`), o total é a SOMA, e a soma é conferida contra o que o contador
+ * viu na tela.
+ *
+ * ⚠ NÃO SUBSTITUI `gerarPagamentoParcelaFromGuide`. Parcela que TEM guia é recusada aqui e apontada
+ * para lá: deixar os dois caminhos abertos para a mesma prestação é convite a baixa dupla — cada um
+ * tem a sua guarda, e nenhuma das duas enxerga a outra.
+ *
+ * @param {Object}   opts
+ * @param {string}   opts.portalClientId
+ * @param {string}   opts.parcelaId       a linha de `parcelas` (o CONTRATO), não a guia
+ * @param {string|Date} [opts.dataPagamento] default = agora
+ * @param {number}   [opts.valorJuros]    DECLARADO pelo contador (0 quando não houve)
+ * @param {number}   [opts.valorMulta]    DECLARADO pelo contador (0 quando não houve)
+ * @param {number}   opts.totalConferido  OBRIGATÓRIO — o total que o contador viu e confirmou
+ * @param {string}   [opts.userId]
+ * @returns {Promise<{ok?, pagamentoId?, lancamentos?, total?, recalculo?, skipped?, reason?}>}
+ * @throws {Error} code `MES_FECHADO` · `CONFERENCIA_OBRIGATORIA` · `CONFERENCIA_DIVERGENTE`
+ */
+export async function gerarPagamentoParcelaManual({
+  portalClientId, parcelaId, dataPagamento, valorJuros, valorMulta, totalConferido, userId,
+}) {
+  void userId; // reservado p/ auditoria futura (o mesmo TODO que `gerarPagamentoInssFromGuide` tem)
+
+  const parcela = await prisma.parcela.findFirst({
+    where: { id: String(parcelaId), portalClientId },
+    select: {
+      id: true, parcelamentoId: true, numeroParcela: true, competencia: true,
+      valorPrevisto: true, guiaId: true, origemBaixa: true,
+    },
+  });
+  if (!parcela) return { skipped: true, reason: "parcela_not_found" };
+
+  // ⚠ RECUSA NOMEADA, COM O CAMINHO CERTO NA MENSAGEM. Uma prestação com guia tem evidência real e
+  // documento; a baixa dela é a por guia, que lê a composição (`TributoParcela`) em vez de aceitar
+  // juros declarado. Aceitar as duas portas para a mesma parcela é o convite a lançá-la duas vezes:
+  // as guardas de idempotência são DIFERENTES (`guide.lancamentoId` lá, `origemBaixa` aqui) e
+  // nenhuma enxerga a outra.
+  if (parcela.guiaId) {
+    return {
+      skipped: true,
+      reason: "parcela_tem_guia",
+      guideId: parcela.guiaId,
+      message: "Esta prestação tem guia — dê a baixa pelo caminho da guia, que lê a composição do "
+        + "documento em vez de aceitar juros e multa declarados.",
+    };
+  }
+  if (parcela.origemBaixa) {
+    return { skipped: true, reason: "parcela_ja_baixada", origemBaixa: parcela.origemBaixa };
+  }
+
+  const parcelamento = await prisma.parcelamento.findFirst({
+    where: { id: parcela.parcelamentoId, portalClientId },
+    select: { id: true, tipo: true, kind: true, numParcelas: true, aberturaEntryId: true, configPagamento: true },
+  });
+  if (!parcelamento) return { skipped: true, reason: "parcelamento_not_found" };
+  // Mesma pré-condição da baixa por guia: sem provisão de abertura não há passivo a amortizar, e o
+  // `openEntryId` do lote ficaria nulo (a provisão nunca voltaria ao saldo certo num estorno).
+  if (!parcelamento.aberturaEntryId) return { skipped: true, reason: "provisao_inexistente" };
+
+  // ⚠ O PRINCIPAL VEM DO CONTRATO, NÃO DA TELA. `valorPrevisto` é o que `sincronizarParcelas`
+  // materializou do cabeçalho do parcelamento. Sem ele não há o que amortizar, e aceitar um valor
+  // digitado no lugar transformaria a baixa numa segunda fonte para o valor da prestação.
+  const principal = round2(parcela.valorPrevisto != null ? Number(parcela.valorPrevisto) : NaN);
+  if (!Number.isFinite(principal) || principal <= 0) {
+    return { skipped: true, reason: "sem_valor_previsto" };
+  }
+  const juros = round2(valorJuros);
+  const multa = round2(valorMulta);
+  if (juros < 0 || multa < 0) return { skipped: true, reason: "acrescimo_negativo" };
+  const total = round2(principal + juros + multa);
+
+  // ⚠ ATO DE CONSEQUÊNCIA: A ROTA RECEBE O QUE FOI CONFERIDO E RECUSA SE DIVERGIR.
+  // Mesmo padrão de `EstornoBaixaService.executarEstorno` (`totalConferido`), e aqui ele é
+  // OBRIGATÓRIO — não há chamador legado para preservar, e a operação grava `AccountingEntry` a
+  // partir de números que o contador DECLAROU. Confirmar sem repetir os dados é confirmar o quê?
+  if (totalConferido == null || !Number.isFinite(Number(totalConferido))) {
+    const err = new Error(
+      "Confirme o total da baixa (principal + juros + multa). A baixa por declaração grava "
+      + "lançamento contábil a partir de números informados por você — ela repete o total para que "
+      + "você confirme o que está prestes a sair.",
+    );
+    err.code = "CONFERENCIA_OBRIGATORIA";
+    err.detalhe = { principal, juros, multa, total };
+    throw err;
+  }
+  if (Math.abs(round2(totalConferido) - total) > 0.01) {
+    const err = new Error(
+      `O total que o servidor calcula (R$ ${total.toFixed(2)}) não é o que foi conferido `
+      + `(R$ ${round2(totalConferido).toFixed(2)}). Principal R$ ${principal.toFixed(2)} vem do `
+      + `contrato; juros R$ ${juros.toFixed(2)} e multa R$ ${multa.toFixed(2)} são os declarados. `
+      + "Confira de novo.",
+    );
+    err.code = "CONFERENCIA_DIVERGENTE";
+    err.detalhe = { principal, juros, multa, total, totalConferido: round2(totalConferido) };
+    throw err;
+  }
+
+  const data = dataPagamento ? new Date(dataPagamento) : new Date();
+  if (Number.isNaN(data.getTime())) return { skipped: true, reason: "data_invalida" };
+  const competencia = competenciaFromDate(data);
+  // A baixa grava `AccountingEntry` — a mesma trava da baixa por guia, do INSS e da baixa genérica.
+  if (await isMonthClosed(portalClientId, competencia)) {
+    const err = new Error(`Mês ${competencia} fechado — reabra antes de baixar a parcela.`);
+    err.code = "MES_FECHADO";
+    throw err;
+  }
+
+  const tipoParcelamento = parcelamento.tipo || parcelamento.kind || "OUTRO";
+
+  // Contas por papel vindas da CONFIG do parcelamento — a MESMA leitura da baixa por guia.
+  const contaPorPapel = {};
+  for (const l of Array.isArray(parcelamento.configPagamento) ? parcelamento.configPagamento : []) {
+    if (l?.tipoLinha && String(l.conta || "").trim()) contaPorPapel[l.tipoLinha] = String(l.conta).trim();
+  }
+
+  // ⚠ A COMPOSIÇÃO SINTÉTICA, com `codigoTributo: null` — e o nulo é honesto. `TributoParcela` é
+  // chaveado por `guideId`; sem guia não há composição por tributo, e inventar um código de receita
+  // para preencher a coluna faria o `MapaContaTributo` aprender uma conta sob um código que nunca
+  // veio da Receita. `resolverConta` já trata `codigoTributo` nulo (cai no mapeamento geral do
+  // papel), que é exatamente o que se sabe aqui.
+  const parcelaParaLinhas = {
+    tributos: [{ codigoTributo: null, nomeTributo: null, principal, multa, juros, total }],
+    valorTotal: total,
+  };
+
+  return prisma.$transaction(async (tx) => {
+    // ⚠ A PARCELA É RESERVADA ANTES DE QUALQUER LANÇAMENTO — e é ela, não a guia, o recurso a
+    // reservar neste caminho.
+    //
+    // O cinto que existe hoje não alcança aqui: `uq_baixa_guia_linha` é parcial em
+    // `"sourceGuideId" IS NOT NULL`, e uma baixa sem guia nasce com `sourceGuideId` NULL — cai
+    // FORA do índice. As duas verificações lá em cima (`guiaId`, `origemBaixa`) são check-then-act
+    // FORA da transação, exatamente como eram as da guia antes de a reserva existir: duplo clique
+    // passa pelas duas antes de qualquer uma escrever, e saem dois lotes amortizando o mesmo
+    // passivo pela mesma prestação.
+    //
+    // Este `updateMany` condicional é a reserva atômica — o mesmo recurso do banco que
+    // `gerarPagamentoParcelaFromGuide` e `InssPagamentoService` já usam, com a coluna trocada:
+    // `origemBaixa: null` é o "ainda não baixada" da parcela. Em READ COMMITTED a segunda
+    // transação fica bloqueada na LINHA da parcela até a primeira commitar, reavalia o `where`
+    // contra o dado novo (`origemBaixa` deixou de ser nulo), `count` volta 0, e desiste sem
+    // escrever nada.
+    //
+    // ⚠ `guiaId: null` VIAJA NO `where` de propósito: se uma guia for vinculada a esta prestação
+    // entre a leitura e a transação (a captura do SERPRO roda sozinha), a reserva deixa de casar e
+    // a baixa por declaração desiste — em vez de correr em paralelo com a baixa por guia.
+    const reserva = await tx.parcela.updateMany({
+      where: { id: parcela.id, portalClientId, origemBaixa: null, guiaId: null },
+      data: {
+        origemBaixa: "MANUAL",
+        // ⚠ AQUI `baixadaEm` É A DATA DO PAGAMENTO DECLARADO — diferente de uma parcela
+        // `HISTORICO`, onde ela é a data da DECLARAÇÃO porque a do pagamento não se sabe. Aqui se
+        // sabe: o contador está declarando justamente quando o débito saiu da conta, e é essa data
+        // que decide a competência do lançamento logo abaixo.
+        baixadaEm: data,
+      },
+    });
+    if (reserva.count !== 1) return { skipped: true, reason: "parcela_ja_baixada" };
+
+    // ⚠ MESMO CONSTRUTOR DE LINHAS DA BAIXA POR GUIA. Nada de variante: `linhasPagamento` resolve
+    // as contas por papel (config → MapaContaTributo → em branco) e emite
+    // `D PARC / D JUROS / D MULTA / C CAIXA`, pulando componente zerado.
+    const pagLines = await linhasPagamento(tx, {
+      portalClientId, tipoParcelamento, parcela: parcelaParaLinhas, contaPorPapel,
+    });
+
+    const entries = await criarLancamentosIndividuais(tx, {
+      portalClientId, parcelamentoId: parcelamento.id, linhas: pagLines,
+      data, competencia,
+      tipo: "BAIXA", subtipo: `PARC_${tipoParcelamento}`,
+      // Nível 2 da distinção declaração × prova: quando a via SERPRO existir, ela gravará "SERPRO".
+      origem: "MANUAL",
+      lote: `PARCV2-${parcelamento.id.slice(0, 8)}-PAGM-${parcela.numeroParcela || "x"}`,
+      // Nível 3: em texto, no razão, para quem nunca vai abrir a coluna `origemBaixa`.
+      historicoBase: `PAGAMENTO ${tipoParcelamento} PARC ${parcela.numeroParcela || "?"}/`
+        + `${parcelamento.numParcelas || "?"} - ${competencia} (declarado)`,
+      statusPagamento: "PAGO",
+      openEntryId: parcelamento.aberturaEntryId,
+      // ⚠ SEM GUIA — e é justamente este nulo que tira o lote do alcance de `uq_baixa_guia_linha`.
+      sourceGuideId: null,
+      // O que resta em `accounting_entries` para identificar a prestação. Ver o SQL proposto no
+      // relatório desta fase.
+      numeroParcela: parcela.numeroParcela ?? null,
+    });
+    const pagamentoId = entries[0]?.id || null;
+
+    // ⚠ NÃO HÁ PONTEIRO DE VOLTA A GRAVAR. `parcelas` não tem `lancamentoId` (nem `baixada`, nem
+    // `paymentStatus`): a tabela guarda o CONTRATO, e duplicar o estado de pagamento nela foi
+    // deliberadamente evitado na F2.1 para não haver duas respostas divergindo no primeiro estorno.
+    // A reserva acima já gravou tudo o que a parcela precisa dizer sobre esta baixa.
+
+    // ⚠ O RECÁLCULO VEM DEPOIS DAS ESCRITAS E DENTRO DA TRANSAÇÃO — mesma disciplina do estorno,
+    // pelo mesmo motivo: o número devolvido a quem clicou tem de ser o do estado JÁ baixado. E a
+    // regra da IN RFB 2.063/2022 não é recalculada aqui: `recalcularParcelamento` chama
+    // `avaliarRiscoRescisao`, a mesma que `decorateParcelamento` usa.
+    const recalculo = await recalcularParcelamento(tx, {
+      portalClientId, parcelamentoId: parcelamento.id,
+    });
+
+    return {
+      ok: true,
+      pagamentoId,
+      lancamentos: entries.length,
+      parcelaId: parcela.id,
+      numeroParcela: parcela.numeroParcela ?? null,
+      origemBaixa: "MANUAL",
+      principal,
+      juros,
+      multa,
+      total,
+      recalculo,
+    };
   });
 }
 

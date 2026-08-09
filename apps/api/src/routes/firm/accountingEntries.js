@@ -2138,7 +2138,9 @@ export function createAccountingEntriesRouter({ log }) {
   // ⚠ Ela também era a ÚNICA escrita de `subtipo="PARC_DAS"` no sistema. `guideCompliance` mantinha
   // uma pré-query atrás desse valor "que quase nunca casa" (o V1 grava `PARC_SIMPLES`/`PARC_INSS`, o
   // V2 grava `PARC_<TIPO>`); em produção ela nunca casou com nada, porque esta rota nunca foi usada:
-  // zero lançamentos com esse subtipo. Ela reconhecia, além disso, JUROS NA ADESÃO — a forma de
+  // zero lançamentos com esse subtipo. **Essa pré-query TAMBÉM já saiu** (decisão do dono): sem
+  // escritor ela era inalcançável, e custava uma varredura da carteira inteira para devolver vazio.
+  // Ela reconhecia, além disso, JUROS NA ADESÃO — a forma de
   // lançamento que `linhasProvisao` abandonou de propósito, por reconhecer o encargo duas vezes.
   //
   // Quem cria parcelamento hoje é `POST /parcelamentos/ingestao` (contrato + provisão + cronograma).
@@ -3627,10 +3629,14 @@ export function createAccountingEntriesRouter({ log }) {
   // colisão de voltar quando alguém registrar o próximo curinga.
 
   // POST /firm/companies/:companyId/parcelamentos
-  // body: { label, kind, templateOpeningFunctionId, templatePaymentFunctionId, templateRescisionFunctionId,
+  // body: { label, kind, templateOpeningFunctionId, templateRescisionFunctionId,
   //         numEntradas, numParcelas, principalPerParcela, principalTotal, jurosTotal,
   //         dataAbertura, competenciaInicial, diaPagamento, periodosReferenciados,
   //         sourceGuideId, linkGuideAsParcelaNum }
+  //
+  // ⚠ `templatePaymentFunctionId` continua CHEGANDO no body (o modal V1 do front ainda o envia) e é
+  // IGNORADO — `createParcelamento` parou de gravá-lo. O campo era write-only desde que a F2.3
+  // removeu seu único leitor (`confirmParcelaPayment`); a coluna sai numa migration própria depois.
   router.post("/parcelamentos", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const userId = req.auth?.user?.id;
@@ -3876,6 +3882,62 @@ export function createAccountingEntriesRouter({ log }) {
       }
       log.error({ err: err?.message, guideId }, "Falha ao lançar baixa da parcela");
       return res.status(500).json({ ok: false, error: err?.code || "internal_error", message: err?.message });
+    }
+  });
+
+  // ⚠ A BAIXA DA PARCELA **SEM GUIA** — a via da DECLARAÇÃO (débito automático).
+  //
+  // Rota SEPARADA da de cima, e o segmento final (`baixa-manual`) é o que a distingue — não há
+  // colisão com `/parcelas/:guideId/baixa`. Duas portas porque são duas coisas diferentes: lá o
+  // parâmetro é a GUIA e a composição vem do documento; aqui o parâmetro é a PARCELA (o contrato) e
+  // juros/multa são DECLARADOS pelo contador, porque num débito automático não existe documento
+  // nenhum de onde lê-los. O serviço recusa cada uma no terreno da outra.
+  //
+  // ⚠ `totalConferido` É OBRIGATÓRIO no body — ato de consequência. A rota grava `AccountingEntry`
+  // a partir de números informados pelo próprio contador; o servidor recalcula
+  // `valorPrevisto + juros + multa` e recusa (409 `CONFERENCIA_DIVERGENTE`) se não bater com o que
+  // foi conferido na tela. Mesmo padrão que `EstornoBaixaService` já usa.
+  //
+  // body: { dataPagamento?, valorJuros?, valorMulta?, totalConferido }
+  router.post("/parcelamentos/parcelas/:parcelaId/baixa-manual", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelaId = String(req.params.parcelaId);
+    const { dataPagamento, valorJuros, valorMulta, totalConferido } = req.body || {};
+    try {
+      const { gerarPagamentoParcelaManual } = await import(
+        "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
+      );
+      const out = await gerarPagamentoParcelaManual({
+        portalClientId, parcelaId, userId: req.auth?.user?.id,
+        dataPagamento, valorJuros, valorMulta, totalConferido,
+      });
+      // ⚠ `skipped` NÃO é sucesso silencioso — mesma lição da rota da guia logo acima, onde o 201
+      // `ok:true` numa recusa fazia o contador clicar e a linha só sumir da lista. Cada motivo tem
+      // o status que o descreve, para a tela poder dizer o que houve.
+      if (out?.skipped) {
+        const status = {
+          parcela_not_found: 404,
+          parcelamento_not_found: 404,
+          parcela_tem_guia: 409,
+          parcela_ja_baixada: 409,
+          provisao_inexistente: 409,
+          sem_valor_previsto: 422,
+          acrescimo_negativo: 400,
+          data_invalida: 400,
+        }[out.reason] || 400;
+        return res.status(status).json({ ok: false, skipped: true, motivo: out.reason, resultado: out });
+      }
+      return res.status(201).json({ ok: true, resultado: out });
+    } catch (err) {
+      const code = err?.code;
+      if (code === "MES_FECHADO" || code === "CONFERENCIA_DIVERGENTE") {
+        return res.status(409).json({ ok: false, error: code, message: err.message, detalhe: err.detalhe });
+      }
+      if (code === "CONFERENCIA_OBRIGATORIA") {
+        return res.status(400).json({ ok: false, error: code, message: err.message, detalhe: err.detalhe });
+      }
+      log.error({ err: err?.message, parcelaId }, "Falha ao lançar baixa manual da parcela");
+      return res.status(500).json({ ok: false, error: code || "internal_error", message: err?.message });
     }
   });
 

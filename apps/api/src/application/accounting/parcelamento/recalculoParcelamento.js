@@ -35,9 +35,10 @@ export function parcelaQuitada(guide) {
  * a guia; a parcela não guarda cópia de `baixada`/`paymentStatus` justamente para não haver duas
  * respostas divergindo no primeiro estorno.
  *
- * `origemBaixa` é o outro caminho, e hoje ele é sempre nulo: é onde a F2.2 vai gravar a baixa de uma
- * parcela que nunca teve guia (débito automático). Estando lido aqui, a F2.2 muda UMA escrita e
- * todas as derivações passam a enxergar a quitação sozinhas.
+ * `origemBaixa` é o outro caminho, e a **F2.2 já grava nele**: `gerarPagamentoParcelaManual`
+ * (baixa por DECLARAÇÃO de uma parcela que nunca teve guia — débito automático) escreve `"MANUAL"`,
+ * e `marcarParcelasHistoricas` escreve `"HISTORICO"`. A previsão se confirmou ao pé da letra: estando
+ * lido aqui, a F2.2 mudou UMA escrita e todas as derivações passaram a enxergar a quitação sozinhas.
  */
 export function parcelaRowQuitada(parcela) {
   if (parcela?.origemBaixa) return true;
