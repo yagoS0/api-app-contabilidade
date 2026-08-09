@@ -112,6 +112,18 @@ try {
   for (const m of mapa) console.log(`   ${m.escopo}: ${n(m.n)}`);
   console.log(`   ⚠ o escritor grava SEMPRE com portalClientId NULL — o override existe no leitor e`);
   console.log(`     não existe no escritor. "Salvar como padrão da modalidade" já acontece, sem checkbox.`);
+
+  // ⚠ QUAIS chaves existem decide se dá para colapsar a memória para a família.
+  // Os seeds cobrem só PARCSN e PARCMEI. Linha aprendida sob PERT_SN/RELP_SN/… seria ORFANADA
+  // pelo colapso (não apagada — a modalidade voltaria calada ao padrão da família).
+  const chaves = await prisma.$queryRaw`
+    SELECT "tipoParcelamento", count(*)::int AS n
+      FROM "mapa_conta_tributo" GROUP BY 1 ORDER BY 2 DESC`;
+  console.log(`\n   chaves gravadas (tipoParcelamento):`);
+  for (const c of chaves) {
+    const semeada = c.tipoParcelamento === "PARCSN" || c.tipoParcelamento === "PARCMEI";
+    console.log(`      ${c.tipoParcelamento}: ${n(c.n)}${semeada ? "  (semeada)" : "  ⚠ APRENDIDA — colapsar orfana"}`);
+  }
 } catch (err) {
   console.log("   ⚠ falha ao ler `mapa_conta_tributo`:", err?.message);
 }
