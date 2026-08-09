@@ -49,6 +49,55 @@ describe("o botão vive na LINHA da parcela", () => {
   });
 });
 
+// ⚠ INCIDENTE DE PRODUÇÃO (e1ec3a8e). Um contrato de 60 prestações SEM GUIA abria com as 60 linhas
+// dizendo "Buscando…" sem ninguém ter clicado: `buscando` nasce `null`, a prestação sem guia tem
+// `guideId: null`, e `buscando === linha.guideId` era `null === null` = **true**. A tela afirmava
+// que 60 consultas PAGAS estavam em voo, num botão que nem chamada faz.
+describe("nada está 'Buscando…' antes de alguém clicar", () => {
+  function semGuia(quantas, formaPagamento = null) {
+    render(
+      <ParcelasDoAcordo
+        parcelamento={{
+          id: "parc1", label: "OUTRO 3", numParcelas: quantas, formaPagamento, guides: [],
+          parcelasContratadas: Array.from({ length: quantas }, (_, i) => ({
+            id: `p${i + 1}`, numeroParcela: i + 1, vencimento: null, guia: null,
+          })),
+        }}
+        onBuscar={jest.fn()}
+        onBuscou={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Parcelas \(/ }));
+  }
+
+  it("60 prestações sem guia: nenhuma diz 'Buscando…'", () => {
+    semGuia(60);
+    expect(screen.queryByRole("button", { name: /Buscando/ })).toBeNull();
+    expect(botoesBusca()).toHaveLength(60);
+  });
+
+  it("e todas nascem desabilitadas, com o motivo à vista", () => {
+    semGuia(60);
+    for (const btn of botoesBusca()) expect(btn).toBeDisabled();
+    expect(screen.getByText(/não tem guia capturada/i)).toBeTruthy();
+  });
+
+  // ⚠ O motivo aparece UMA vez para o grupo — não 60 — e a contagem diz a quantas vale.
+  it("o parágrafo do motivo não se repete 60 vezes", () => {
+    semGuia(60);
+    expect(screen.getAllByText(/não tem guia capturada/i)).toHaveLength(1);
+    expect(screen.getByText(/Todas as 60 prestações/)).toBeTruthy();
+  });
+
+  // A correção de premissa do dono: em débito automático a guia NÃO vai chegar, e a tela não pode
+  // mandar esperá-la.
+  it("débito automático não manda esperar captura nem upload", () => {
+    semGuia(3, "DEBITO_AUTOMATICO");
+    expect(screen.getByText(/não vai existir/i)).toBeTruthy();
+    expect(screen.queryByText(/captura do SERPRO ou por upload/i)).toBeNull();
+  });
+});
+
 describe("desabilitado NUNCA sem explicação", () => {
   it("sem numeroDocumento: desabilitado, com o motivo no title E visível na linha", () => {
     montar({ guides: [guia({ numeroDocumento: null })] });
@@ -92,6 +141,31 @@ describe("o clique não é gratuito nem silencioso", () => {
     const { onBuscar } = montar();
     await act(async () => { fireEvent.click(botoesBusca()[0]); });
     expect(onBuscar).not.toHaveBeenCalled();
+  });
+});
+
+// ⚠ O estado de "em voo" é POR LINHA. Clicar numa parcela não pode fazer as outras 59 afirmarem
+// que também estão consultando o SERPRO — cada consulta é paga, e a tela é o único lugar onde o
+// contador vê quantas saíram.
+describe("clicar numa linha não muda o rótulo das outras", () => {
+  afterEach(() => { window.confirm.mockRestore?.(); });
+
+  it("só a linha clicada diz 'Buscando…'", async () => {
+    jest.spyOn(window, "confirm").mockReturnValue(true);
+    let liberar;
+    const onBuscar = jest.fn(() => new Promise((resolve) => { liberar = () => resolve({ ok: true, encontrado: false }); }));
+    montar({
+      guides: [guia({ id: "g1", numeroParcela: 1 }), guia({ id: "g2", numeroParcela: 2 }), guia({ id: "g3", numeroParcela: 3 })],
+      onBuscar,
+    });
+
+    await act(async () => { fireEvent.click(botoesBusca()[0]); });
+
+    expect(screen.getAllByRole("button", { name: /Buscando/ })).toHaveLength(1);
+    expect(botoesBusca()).toHaveLength(2);      // as outras duas mantêm o rótulo
+
+    await act(async () => { liberar(); });
+    expect(screen.queryByRole("button", { name: /Buscando/ })).toBeNull();
   });
 });
 

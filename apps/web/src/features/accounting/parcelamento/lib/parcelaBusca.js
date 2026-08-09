@@ -51,6 +51,11 @@ function linhaDaParcela({ parcelaId, numeroParcela, vencimentoContratado, guia, 
     competencia: guia?.competencia || guia?.anoMesParcela || null,
     valor: guia?.valor != null ? Number(guia.valor) : null,
     guideId: guia?.id || null,
+    // ⚠ A FORMA DE PAGAMENTO É DO CONTRATO, e ela VIAJA NA LINHA porque é ela que decide se
+    // "sem guia" é um estado transitório ou o estado definitivo desta prestação. Em débito
+    // automático a guia não existe por definição — mandar esperar a captura do SERPRO seria
+    // mandar esperar um documento que nunca vai chegar.
+    formaPagamento: parc?.formaPagamento || null,
     numeroDocumento: guia?.numeroDocumento || null,
     paymentStatus: String(guia?.paymentStatus || "").toUpperCase() || null,
     baixada: Boolean(guia?.baixada),
@@ -61,22 +66,61 @@ function linhaDaParcela({ parcelaId, numeroParcela, vencimentoContratado, guia, 
 }
 
 /**
- * O botão de busca desta linha: pode clicar, e se não, POR QUÊ.
+ * ⚠ "SEM GUIA" NÃO QUER DIZER A MESMA COISA NOS TRÊS CONTRATOS, e a diferença é de trabalho, não
+ * de redação.
  *
- * ⚠ O projeto proíbe desabilitado sem explicação. Todo ramo de `podeBuscar: false` devolve um
- * `motivo` que vai para o `title` do botão.
+ * Em **débito automático** a prestação é debitada na conta e **não gera guia** — é o caso normal de
+ * uma classe inteira de clientes (o dono: *"alguns parcelamentos, ainda mais no Lucro Presumido,
+ * não vão ter parcelas pois são em débito automático"*). Dizer a esse contador que "a guia entra
+ * pela captura do SERPRO ou por upload" é mandá-lo esperar um documento que **nunca vai chegar**, e
+ * uma espera inútil é pior que nenhuma explicação.
+ *
+ * Em **guia mensal** a mesma frase é verdadeira: falta capturar.
+ *
+ * E `formaPagamento: null` é o **não declarado** — o default do backend, e o valor de todo contrato
+ * criado antes de `139c4efe`. Aqui não se afirma nem uma coisa nem outra: o texto diz os dois
+ * desfechos e o que separa um do outro, porque inventar qual é seria inventar o dado.
  */
-export function estadoBuscaParcela(linha) {
-  if (!linha?.guideId) {
+function motivoSemGuia(formaPagamento) {
+  if (formaPagamento === "DEBITO_AUTOMATICO") {
     return {
-      podeBuscar: false,
+      rotulo: "débito automático — sem guia",
+      motivo: "Este parcelamento é pago por débito automático: a prestação sai direto da conta e "
+        + "não gera guia, então não existe documento para consultar no PAGTOWEB — e não vai "
+        + "existir. O pagamento se comprova pelo extrato bancário, não por comprovante do SERPRO.",
+    };
+  }
+  if (formaPagamento === "GUIA_MENSAL") {
+    return {
+      rotulo: "sem guia capturada",
       motivo: "Esta prestação ainda não tem guia capturada — não existe documento para consultar no "
         + "PAGTOWEB. A guia entra pela captura do SERPRO ou por upload na aba Guias.",
     };
   }
+  return {
+    rotulo: "sem guia capturada",
+    motivo: "Esta prestação não tem guia capturada, então não há documento para consultar no "
+      + "PAGTOWEB. A forma de pagamento deste parcelamento não foi declarada: se for débito "
+      + "automático, guia não existe e não vai existir; se for guia mensal, ela entra pela captura "
+      + "do SERPRO ou por upload na aba Guias.",
+  };
+}
+
+/**
+ * O botão de busca desta linha: pode clicar, e se não, POR QUÊ.
+ *
+ * ⚠ O projeto proíbe desabilitado sem explicação. Todo ramo de `podeBuscar: false` devolve um
+ * `motivo` que vai para o `title` do botão — e um `rotulo` curto, que é o que cabe NA LINHA quando
+ * o mesmo motivo se repete em 60 prestações (ver `agruparBloqueios`).
+ */
+export function estadoBuscaParcela(linha) {
+  if (!linha?.guideId) {
+    return { podeBuscar: false, ...motivoSemGuia(linha?.formaPagamento || null) };
+  }
   if (linha.paymentStatus === "PAID") {
     return {
       podeBuscar: false,
+      rotulo: linha.baixada ? "baixa já lançada" : "falta lançar a baixa",
       motivo: linha.baixada
         ? "Pagamento já localizado e baixa já lançada — não há o que consultar."
         : "Pagamento já localizado. Falta só lançar a baixa (painel \"Parcelas pagas aguardando "
@@ -86,14 +130,51 @@ export function estadoBuscaParcela(linha) {
   if (!linha.numeroDocumento) {
     return {
       podeBuscar: false,
+      rotulo: "guia sem nº de documento",
       motivo: "Esta guia não tem número de documento, e é por ele que o comprovante é localizado no "
         + "PAGTOWEB — sem ele a busca não tem o que consultar. Recapture a parcela no SERPRO.",
     };
   }
   return {
     podeBuscar: true,
+    rotulo: null,
     motivo: "Consulta o comprovante desta parcela no SERPRO (PAGTOWEB). A chamada é PAGA.",
   };
+}
+
+/**
+ * Os motivos de bloqueio do acordo, UM POR MOTIVO, com as prestações de cada um.
+ *
+ * ⚠ POR QUE AGRUPAR. Um contrato de 60 prestações sem guia repetia o MESMO parágrafo 60 vezes,
+ * dentro de um card de 360px. O texto não estava errado — estava 60 vezes, e uma parede de
+ * explicação idêntica não se lê: vira textura. Aqui a explicação aparece UMA vez, dizendo em
+ * quantas prestações vale e quais são; a linha guarda só o rótulo curto, e o `title` do botão
+ * continua com o texto inteiro.
+ *
+ * ⚠ Isto NÃO esconde nada: nenhuma linha some, nenhum motivo some. O que sai é a repetição.
+ */
+export function agruparBloqueios(linhas) {
+  const porMotivo = new Map();
+  for (const linha of Array.isArray(linhas) ? linhas : []) {
+    const estado = estadoBuscaParcela(linha);
+    if (estado.podeBuscar) continue;
+    const atual = porMotivo.get(estado.motivo)
+      || { rotulo: estado.rotulo, motivo: estado.motivo, numeros: [] };
+    atual.numeros.push(linha.numeroParcela ?? null);
+    porMotivo.set(estado.motivo, atual);
+  }
+  return [...porMotivo.values()].map((g) => ({ ...g, quantidade: g.numeros.length }));
+}
+
+/**
+ * "1, 2, 3, 4, 5 e mais 55" — a lista de prestações de um grupo sem virar ela mesma uma parede.
+ * ⚠ O que é cortado é DITO ("e mais 55"), nunca omitido em silêncio.
+ */
+export function resumoDosNumeros(numeros, limite = 8) {
+  const uteis = (numeros || []).filter((n) => n != null);
+  if (!uteis.length) return "";
+  if (uteis.length <= limite) return uteis.join(", ");
+  return `${uteis.slice(0, limite).join(", ")} e mais ${uteis.length - limite}`;
 }
 
 function fmtQuando(iso) {

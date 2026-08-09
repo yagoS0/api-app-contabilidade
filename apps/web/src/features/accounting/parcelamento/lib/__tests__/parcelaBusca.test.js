@@ -1,6 +1,6 @@
 import {
   montarParcelasDoAcordo, estadoBuscaParcela, textoDaConfirmacao,
-  resumoDoResultado, motivoDaFalha,
+  resumoDoResultado, motivoDaFalha, agruparBloqueios, resumoDosNumeros,
 } from "../parcelaBusca";
 
 const guia = (over = {}) => ({
@@ -106,6 +106,134 @@ describe("estadoBuscaParcela — desabilitado SEMPRE com motivo", () => {
       { guideId: "g1", numeroDocumento: "1" },
     ];
     for (const c of casos) expect(String(estadoBuscaParcela(c).motivo || "").trim()).not.toBe("");
+  });
+});
+
+// ⚠ INCIDENTE DE PRODUÇÃO. "Sem guia" não quer dizer a mesma coisa nos três contratos, e o dono
+// foi explícito: *"alguns parcelamentos, ainda mais no Lucro Presumido, não vão ter parcelas pois
+// são em débito automático"*. Mandar esse contador esperar a captura do SERPRO é mandá-lo esperar
+// um documento que nunca vai chegar.
+describe("sem guia — o motivo depende da FORMA DE PAGAMENTO do contrato", () => {
+  const semGuia = (formaPagamento) => {
+    const [linha] = montarParcelasDoAcordo({
+      formaPagamento,
+      guides: [],
+      parcelasContratadas: [{ id: "p1", numeroParcela: 1, vencimento: null, guia: null }],
+    });
+    return estadoBuscaParcela(linha);
+  };
+
+  it("a forma de pagamento do CONTRATO chega à linha", () => {
+    const [linha] = montarParcelasDoAcordo({
+      formaPagamento: "DEBITO_AUTOMATICO",
+      guides: [],
+      parcelasContratadas: [{ id: "p1", numeroParcela: 1, guia: null }],
+    });
+    expect(linha.formaPagamento).toBe("DEBITO_AUTOMATICO");
+  });
+
+  it("débito automático NÃO manda esperar guia nenhuma — ela não existe e não vai existir", () => {
+    const e = semGuia("DEBITO_AUTOMATICO");
+    expect(e.podeBuscar).toBe(false);
+    expect(e.motivo).toMatch(/débito automático/i);
+    expect(e.motivo).toMatch(/não vai existir/i);
+    // A regressão que importa: nada de "capture no SERPRO" nem "suba na aba Guias".
+    expect(e.motivo).not.toMatch(/captura do SERPRO/i);
+    expect(e.motivo).not.toMatch(/upload na aba Guias/i);
+  });
+
+  it("guia mensal manda capturar, porque ali a guia realmente vai chegar", () => {
+    const e = semGuia("GUIA_MENSAL");
+    expect(e.motivo).toMatch(/captura do SERPRO/i);
+    expect(e.motivo).toMatch(/aba Guias/i);
+  });
+
+  // ⚠ `null` é o DEFAULT do backend e o valor de todo contrato anterior a `139c4efe`. Não se
+  // inventa qual é: o texto diz os dois desfechos e o que separa um do outro.
+  it("forma não declarada não afirma nenhum dos dois — diz os dois", () => {
+    const e = semGuia(null);
+    expect(e.motivo).toMatch(/não foi declarada/i);
+    expect(e.motivo).toMatch(/débito automático/i);
+    expect(e.motivo).toMatch(/guia mensal/i);
+  });
+
+  it("todo bloqueio tem rótulo curto para a linha, além do texto inteiro", () => {
+    for (const forma of ["DEBITO_AUTOMATICO", "GUIA_MENSAL", null]) {
+      const e = semGuia(forma);
+      expect(String(e.rotulo || "").trim()).not.toBe("");
+      expect(e.rotulo.length).toBeLessThan(e.motivo.length);
+    }
+    expect(estadoBuscaParcela({ guideId: "g1", numeroDocumento: null }).rotulo).toMatch(/documento/i);
+    expect(estadoBuscaParcela({ guideId: "g1", paymentStatus: "PAID" }).rotulo).toMatch(/baixa/i);
+  });
+});
+
+// ⚠ 60 prestações sem guia repetiam o MESMO parágrafo 60 vezes num card de 360px. O texto estava
+// certo; estava 60 vezes. Agrupar tira a repetição, não a informação.
+describe("agruparBloqueios — o motivo uma vez, dizendo em quais prestações vale", () => {
+  const acordo = (over) => montarParcelasDoAcordo({
+    numParcelas: 60,
+    guides: [],
+    parcelasContratadas: Array.from({ length: 60 }, (_, i) => ({
+      id: `p${i + 1}`, numeroParcela: i + 1, guia: null,
+    })),
+    ...over,
+  });
+
+  it("60 prestações no mesmo estado viram UM grupo, com a contagem", () => {
+    const grupos = agruparBloqueios(acordo());
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].quantidade).toBe(60);
+    expect(grupos[0].numeros).toHaveLength(60);
+  });
+
+  it("estados diferentes ficam em grupos diferentes, cada um com suas prestações", () => {
+    const linhas = montarParcelasDoAcordo({
+      formaPagamento: "GUIA_MENSAL",
+      guides: [
+        guia({ id: "g1", numeroParcela: 1, paymentStatus: "PAID", baixada: true }),
+        guia({ id: "g2", numeroParcela: 2, numeroDocumento: null }),
+      ],
+      parcelasContratadas: [
+        { id: "p1", numeroParcela: 1, guia: { id: "g1" } },
+        { id: "p2", numeroParcela: 2, guia: { id: "g2" } },
+        { id: "p3", numeroParcela: 3, guia: null },
+      ],
+    });
+    const grupos = agruparBloqueios(linhas);
+    expect(grupos).toHaveLength(3);
+    expect(grupos.map((g) => g.numeros)).toEqual([[1], [2], [3]]);
+  });
+
+  // A linha que PODE buscar não é bloqueio nenhum — não vira grupo.
+  it("prestação liberada não entra em grupo nenhum", () => {
+    const linhas = montarParcelasDoAcordo({
+      guides: [guia()],
+      parcelasContratadas: [{ id: "p1", numeroParcela: 1, guia: { id: "g1" } }],
+    });
+    expect(agruparBloqueios(linhas)).toEqual([]);
+  });
+
+  it("não quebra com entrada vazia", () => {
+    expect(agruparBloqueios(null)).toEqual([]);
+    expect(agruparBloqueios([])).toEqual([]);
+  });
+});
+
+// ⚠ O que é cortado é DITO. Um "…" mudo esconderia quantas prestações ficaram de fora.
+describe("resumoDosNumeros — o corte é anunciado, nunca silencioso", () => {
+  it("lista tudo quando cabe", () => {
+    expect(resumoDosNumeros([1, 2, 3])).toBe("1, 2, 3");
+  });
+
+  it("acima do limite diz quantas sobraram", () => {
+    expect(resumoDosNumeros(Array.from({ length: 60 }, (_, i) => i + 1), 8))
+      .toBe("1, 2, 3, 4, 5, 6, 7, 8 e mais 52");
+  });
+
+  it("ignora prestação sem número em vez de imprimir 'null'", () => {
+    expect(resumoDosNumeros([1, null, 3])).toBe("1, 3");
+    expect(resumoDosNumeros([])).toBe("");
   });
 });
 

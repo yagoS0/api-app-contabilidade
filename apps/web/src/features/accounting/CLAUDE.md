@@ -123,6 +123,39 @@ troca por "Carregando…" apagava o desfecho da busca no mesmo tick em que ele a
 fechava e não sobrava nada na tela — indistinguível de "o botão não fez nada", num clique que
 custou dinheiro.
 
+### ⚠ Incidente de produção (pós-`e1ec3a8e`) — um contrato de 60 prestações SEM GUIA
+
+Três defeitos distintos, todos reproduzíveis na fixture `parc-migrado-60` do `mockApi`:
+
+1. **As 60 linhas diziam "Buscando…" sem ninguém clicar.** `buscando` nasce `null` e a prestação sem
+   guia tem `guideId: null` — `buscando === linha.guideId` era `null === null` = **true**. A tela
+   afirmava 60 consultas PAGAS em voo. Hoje: `Boolean(linha.guideId) && buscando === linha.guideId`.
+2. **A tabela vazava para fora do card.** Ela precisa de ~640px e o card fechado tem ~360px; o
+   `overflowX: auto` empurrava a coluna da AÇÃO (botão + motivo) para fora da área visível, e quem
+   rolava via o texto cortado no meio da palavra pela ESQUERDA. Hoje o card com o histórico **aberto
+   ocupa a linha inteira do grid** (`gridColumn: "1 / -1"` em `ParcelamentosList`) e a tabela cabe.
+3. **60 parágrafos idênticos.** O motivo agora sai **uma vez por grupo** (`agruparBloqueios`), com a
+   contagem e as prestações; a linha guarda o `rotulo` curto e o `title` do botão mantém o texto
+   inteiro. **Nenhuma linha e nenhum motivo somem** — some a repetição.
+
+⚠ **"SEM GUIA" NÃO É CASO DE BORDA.** Palavras do dono: *"alguns parcelamentos, ainda mais no Lucro
+Presumido, não vão ter parcelas pois são em débito automático"*. `estadoBuscaParcela` lê
+`linha.formaPagamento` (que `montarParcelasDoAcordo` copia do contrato) e tem **três** textos:
+`DEBITO_AUTOMATICO` diz que a guia não existe **e não vai existir**; `GUIA_MENSAL` manda capturar;
+`null` (o default do backend, e o valor de todo contrato anterior a `139c4efe`) **não afirma qual é**
+— diz os dois desfechos. Mandar um cliente de débito automático esperar a captura do SERPRO é
+mandá-lo esperar um documento que nunca chega.
+
+⚠ **"Não consigo dar baixa" é OUTRO defeito, e no fundo é uma CAPACIDADE QUE FALTA (F2.2).** A fila
+"Parcelas pagas aguardando lançamento" é alimentada por `guia.paymentStatus = PAID` — a rota
+`parcelas-pendentes-baixa` filtra por `guia`. Prestação **sem guia não tem por onde entrar**. O
+`Dar baixa` do card não lança nada: ele navega até a fila e destaca. Com zero parcelas do contrato
+ali, ele rolava a página e o subtítulo ainda dizia *"Destacadas: as do contrato que você clicou"* —
+silêncio indistinguível de botão quebrado. Hoje a fila **diz** que não há nenhuma daquele contrato e
+**nomeia** o que falta (baixa a partir do extrato, sem documento, não existe). ⚠ **Não "consertar"
+desabilitando o botão de baixa** — desabilitar seria dizer a uma classe inteira de clientes que a
+baixa nunca vai funcionar; construir a F2.2 é decisão do dono.
+
 ⚠ **O mock conhece TODOS os caminhos de recusa** (`DESFECHO_BUSCA_MOCK`, por prefixo do `guideId`) e
 a fixture de `listParcelamentos` tem uma linha para cada estado — inclusive a prestação **sem guia**
 (débito automático) e a guia **sem `numeroDocumento`**. Mock que só soubesse o caminho feliz

@@ -17,7 +17,7 @@
 import { useState } from "react";
 import {
   montarParcelasDoAcordo, estadoBuscaParcela, textoDaConfirmacao,
-  resumoDoResultado, motivoDaFalha,
+  resumoDoResultado, motivoDaFalha, agruparBloqueios, resumoDosNumeros,
 } from "../lib/parcelaBusca";
 
 const PANEL = { field: "#282A36", border: "#44475A", text: "#F8F8F2", muted: "#aeb6d3" };
@@ -86,6 +86,7 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
   const [desfechos, setDesfechos] = useState({});   // guideId → resumo
 
   const linhas = montarParcelasDoAcordo(parcelamento);
+  const bloqueios = agruparBloqueios(linhas);
 
   // ⚠ AUSÊNCIA NUNCA É RESPOSTA. Isto era `if (!linhas.length) return null` — e o bloco inteiro
   // sumia sem dizer por quê. Zero prestações materializadas não é o mesmo que "este acordo não tem
@@ -144,7 +145,42 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
       </button>
 
       {estaAberto && (
-        <div style={{ marginTop: 8, overflowX: "auto" }}>
+        <div style={{ marginTop: 8 }}>
+          {/* ⚠ O MOTIVO UMA VEZ, PARA O GRUPO — não 60 vezes, uma por linha.
+              Num contrato de 60 prestações sem guia, o mesmo parágrafo se repetia em toda linha
+              dentro de um card de 360px: o texto certo, ilegível por repetição. Aqui ele aparece
+              uma vez, DIZENDO em quantas prestações vale e quais são; a linha guarda o rótulo
+              curto e o botão continua com o texto inteiro no `title`. Nenhuma linha e nenhum
+              motivo somem — some a repetição. */}
+          {bloqueios.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+              {bloqueios.map((g) => (
+                <div
+                  key={g.motivo}
+                  role="note"
+                  style={{
+                    padding: "6px 9px", borderRadius: 6,
+                    background: "var(--state-neutral-surface)", border: `1px solid ${PANEL.border}`,
+                  }}
+                >
+                  <div style={{ color: PANEL.text, fontWeight: 700, fontSize: "0.7rem" }}>
+                    {g.quantidade === linhas.length && linhas.length > 1
+                      ? `Todas as ${linhas.length} prestações: ${g.rotulo}`
+                      : `${g.quantidade} ${g.quantidade === 1 ? "prestação" : "prestações"}: ${g.rotulo}`}
+                  </div>
+                  <div style={{ color: PANEL.muted, fontSize: "0.68rem", marginTop: 2, lineHeight: 1.4 }}>
+                    {g.motivo}
+                  </div>
+                  {g.quantidade !== linhas.length && resumoDosNumeros(g.numeros) && (
+                    <div style={{ color: PANEL.muted, fontSize: "0.64rem", marginTop: 2 }}>
+                      Prestações: {resumoDosNumeros(g.numeros)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: PANEL.field }}>
@@ -159,7 +195,12 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
               {linhas.map((linha) => {
                 const estado = estadoBuscaParcela(linha);
                 const sit = situacaoDaLinha(linha);
-                const emVoo = buscando === linha.guideId;
+                // ⚠ `Boolean(linha.guideId)` NÃO É DEFENSIVO — é o conserto do incidente.
+                // `buscando` nasce `null` e a prestação SEM GUIA tem `guideId: null`, então
+                // `buscando === linha.guideId` era `null === null` = **true**: as 60 linhas de um
+                // contrato sem guia abriam dizendo "Buscando…" sem ninguém ter clicado, num botão
+                // que nem chamada faz. Uma linha só entra em voo se ela TEM documento.
+                const emVoo = Boolean(linha.guideId) && buscando === linha.guideId;
                 const desfecho = linha.guideId ? desfechos[linha.guideId] : null;
                 return (
                   <tr key={linha.key} style={{ borderTop: `1px solid ${PANEL.border}` }}>
@@ -194,12 +235,12 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
                       >
                         {emVoo ? "Buscando…" : "🔎 Buscar pagamento"}
                       </button>
-                      {/* O motivo do bloqueio também fica VISÍVEL, não só no hover: `title` não
-                          existe em toque, e esta tela vai ser usada com o SERPRO real do outro
-                          lado. */}
+                      {/* O motivo continua VISÍVEL sem hover (`title` não existe em toque) — o
+                          texto inteiro está no bloco acima, e aqui fica o rótulo que amarra a
+                          linha ao grupo. */}
                       {!estado.podeBuscar && !desfecho && (
-                        <div style={{ fontSize: "0.64rem", color: PANEL.muted, marginTop: 3, textAlign: "left", lineHeight: 1.35 }}>
-                          {estado.motivo}
+                        <div style={{ fontSize: "0.64rem", color: PANEL.muted, marginTop: 3, textAlign: "right", lineHeight: 1.35 }}>
+                          {estado.rotulo}
                         </div>
                       )}
                       {desfecho && <Desfecho resumo={desfecho} />}
@@ -209,6 +250,7 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
               })}
             </tbody>
           </table>
+          </div>
           <div style={{ fontSize: "0.64rem", color: PANEL.muted, marginTop: 6, lineHeight: 1.4 }}>
             A busca consulta o comprovante no SERPRO (PAGTOWEB) e só REGISTRA o que encontrou — ela
             não lança nada. Pagamento localizado vira linha no painel “Parcelas pagas aguardando

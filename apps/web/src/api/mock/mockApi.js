@@ -4136,6 +4136,26 @@ export function createMockApi() {
             regra, avaliavel: true,
           },
         }),
+        // ⚠ O CASO REAL DO DONO (incidente de produção): um contrato MIGRADO de 60 prestações,
+        // NENHUMA com guia capturada (a flag `INTEGRACAO_SERPRO_PARCELAMENTO` está OFF), e com
+        // atraso. É a fixture que expõe o que 3 ou 4 linhas escondiam: 60 linhas idênticas, cada
+        // uma repetindo o mesmo parágrafo de "sem guia", dentro de um card de ~360px.
+        // Sem ela o mock só conhece contratos curtos, e o caminho feliz esconde o defeito.
+        parc({
+          id: "parc-migrado-60", label: "OUTRO 2026 — migrado, 60 prestações sem guia", tipo: "OUTRO",
+          // ⚠ `formaPagamento` AUSENTE de propósito: é o default do backend e o valor de TODO
+          // contrato criado antes de `139c4efe` — inclusive o do dono. É o caso em que a tela não
+          // pode afirmar se a guia vai chegar ou se não existe.
+          numeroParcelamento: "3", parcelasPagas: 0, diaPagamento: 20,
+          saldoConsolidado: 38037.74,
+          linhas: Array.from({ length: 60 }, (_, i) => ({
+            n: i + 1, guia: null, competencia: null, vencimento: em(-35 + i * 30),
+          })),
+          risco: {
+            nivel: "atencao", caso: null, emAtraso: 1, vencidas: 1, faltamParaRescindir: 2,
+            parcelasEmAtraso: [{ numeroParcela: 1, vencimento: em(-35) }], regra, avaliavel: true,
+          },
+        }),
       ];
       // Os criados nesta sessão vêm primeiro — é o que o contador acabou de fazer.
       return [...mockParcelamentosCriados.values(), ...fixos];

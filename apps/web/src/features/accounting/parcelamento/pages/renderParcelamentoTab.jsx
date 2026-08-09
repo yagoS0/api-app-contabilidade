@@ -53,7 +53,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
   const [erro, setErro] = useState(null);
   const [lancando, setLancando] = useState(null);
   const [desfechos, setDesfechos] = useState({}); // guideId → { tom, texto }
-  const [foco, setFoco] = useState(null);          // parcelamentoId destacado pela barra do card
+  const [foco, setFoco] = useState(null);          // { id, label } destacado pela barra do card
   const secaoRef = useRef(null);
 
   const carregar = useCallback(async () => {
@@ -85,7 +85,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
   // inventa rota: os dois usam `POST /parcelamentos/parcelas/:guideId/baixa`, uma por parcela.
   useEffect(() => {
     if (!pedido) return;
-    setFoco(pedido.parcelamentoId || null);
+    setFoco(pedido.parcelamentoId ? { id: pedido.parcelamentoId, label: pedido.label || null } : null);
     secaoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     if (pedido.lote) baixarEmLote(pedido.parcelamentoId);
     onPedidoAtendido?.();
@@ -196,7 +196,7 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
             {parcelas.map((p) => {
               const desfecho = desfechos[p.guideId];
               const emVoo = lancando === p.guideId || lancando === "__lote";
-              const destacada = Boolean(foco) && p.parcelamentoId === foco;
+              const destacada = Boolean(foco) && p.parcelamentoId === foco.id;
               return (
                 <tr key={p.guideId} style={{
                   borderTop: `1px solid ${PANEL.border}`,
@@ -248,6 +248,14 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
 
   const corBorda = erro ? "var(--state-danger)" : parcelas.length ? "var(--state-warn)" : PANEL.border;
   const desfechoLote = desfechos.__lote;
+  // ⚠ "CLIQUEI EM DAR BAIXA E NÃO ACONTECEU NADA" — era literalmente isto.
+  // O `Dar baixa` do card não lança: ele TRAZ o contador até esta fila e destaca as parcelas do
+  // contrato clicado. Quando o contrato não tem nenhuma parcela aqui, o clique rolava a página e o
+  // subtítulo ainda dizia "Destacadas: as do contrato que você clicou" — com zero destacadas. Um
+  // botão que promete uma ação e entrega silêncio é indistinguível de um botão quebrado.
+  const focadas = foco && !erro && !carregando
+    ? parcelas.filter((p) => p.parcelamentoId === foco.id).length
+    : null;
   return (
     <section ref={secaoRef} style={{ background: PANEL.surface, border: `1px solid ${corBorda}`, borderRadius: 10, padding: 14, scrollMarginTop: 16 }}>
       <div style={{ marginBottom: 8 }}>
@@ -256,9 +264,34 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
         </strong>
         <div style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
           O pagamento já foi confirmado; falta gerar a baixa contábil.
-          {foco && " Destacadas: as do contrato que você clicou."}
+          {focadas > 0 && " Destacadas: as do contrato que você clicou."}
         </div>
       </div>
+
+      {/* ⚠ A RESPOSTA HONESTA DO "DAR BAIXA" QUE NÃO ACHA NADA — e ela nomeia a capacidade que
+          FALTA, em vez de fingir que o contrato está em ordem. A fila é alimentada por
+          `guia.paymentStatus = PAID` (a rota `parcelas-pendentes-baixa` filtra por `guia`), então
+          prestação SEM guia não tem por onde entrar aqui. Isso não é caso de borda: débito
+          automático não emite documento nenhum, e é assim que uma classe inteira de clientes paga.
+          Dar baixa a partir do extrato, sem guia, é uma funcionalidade que ainda não existe — e
+          dizer isso é decisão de produto do dono, não algo que a tela deva esconder atrás de um
+          botão desabilitado. */}
+      {focadas === 0 && (
+        <div role="status" style={{
+          marginBottom: 8, padding: "8px 10px", borderRadius: 6, lineHeight: 1.45,
+          fontSize: "0.74rem", color: PANEL.muted,
+          background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+        }}>
+          <div style={{ color: "var(--state-warn)", fontWeight: 700, marginBottom: 2 }}>
+            Nenhuma parcela de {foco.label || "deste contrato"} está aguardando lançamento
+          </div>
+          Uma prestação só entra nesta fila quando o pagamento dela está confirmado <strong>na
+          guia</strong> — pela busca do comprovante no SERPRO (botão na linha da parcela) ou pelo
+          “Confirmar pagamento” da aba Guias. Prestação <strong>sem guia</strong> — débito
+          automático, ou contrato migrado de outra contabilidade — não tem por onde entrar:
+          dar baixa a partir do extrato, sem documento, ainda não existe no sistema.
+        </div>
+      )}
       {desfechoLote && (
         <div role="status" style={{
           marginBottom: 8, padding: "6px 9px", borderRadius: 6, fontSize: "0.72rem", color: PANEL.muted,
@@ -291,7 +324,10 @@ export function ParcelamentoTab({
   // repetido (clicar "Dar baixa" duas vezes no mesmo contrato tem de rolar duas vezes).
   const [pedidoBaixa, setPedidoBaixa] = useState(null);
   const pedirBaixa = useCallback((parc, lote) => {
-    setPedidoBaixa({ parcelamentoId: parc?.id || null, lote: Boolean(lote), nonce: Date.now() });
+    setPedidoBaixa({
+      parcelamentoId: parc?.id || null, label: parc?.label || null,
+      lote: Boolean(lote), nonce: Date.now(),
+    });
   }, []);
 
   // ⚠ MESMA ROTA DAS OUTRAS GUIAS. Uma parcela É uma `Guide` com `parcelamentoId`, então

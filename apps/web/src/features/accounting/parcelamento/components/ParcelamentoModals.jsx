@@ -906,7 +906,15 @@ export function ParcelamentosList({
           const faltam = restantesDoContrato(p);
           const historicoAberto = abertos.has(p.id);
           return (
-            <div key={p.id} style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+            /* ⚠ O CARD ABERTO OCUPA A LINHA INTEIRA — e isto é o conserto do vazamento, não
+               estética. O card fechado vive numa coluna de ~360px; a tabela de parcelas precisa de
+               ~640px (parcela · vencimento · valor · situação · ação). Ela cabia num `overflowX:
+               auto`, o que quer dizer que a coluna da AÇÃO — o botão e o motivo — ficava fora da
+               área visível, alcançável só por rolagem horizontal. Rolando, o texto do motivo
+               aparecia cortado no meio da palavra, pela ESQUERDA. Uma tabela que só se lê rolando
+               dentro de um card de 360px não é uma tabela; é informação escondida atrás de um
+               gesto que ninguém adivinha. Aberto, o card ganha a linha e a tabela cabe. */
+            <div key={p.id} style={{ gridColumn: historicoAberto ? "1 / -1" : "auto", background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
               {/* Cabeçalho: modalidade + nº, e o badge de status. */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                 <div>
