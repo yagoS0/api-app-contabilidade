@@ -2,10 +2,17 @@
 //
 // Operações:
 //   - createParcelamento: gera cabeçalho + 1 entry de ABERTURA + N entries de provisão de parcela
-//   - linkGuideToParcela: associa uma Guide existente a uma parcela específica
-//   - confirmParcelaPayment: gera baixa(s) da parcela usando template + juros do mês
 //   - rescindirParcelamento: gera entry de RESCISÃO + marca status RESCINDIDO
-//   - listParcelamentos / getParcelamento: consultas
+//   - listParcelamentos: consulta
+//
+// ⚠ TRÊS FUNÇÕES SAÍRAM DAQUI NA F2.3, com as rotas que só elas serviam (nenhuma tinha chamador, e
+// produção não tem um único parcelamento V1):
+//   · `getParcelamento`      — `GET /parcelamentos/:parcId`, que devolvia o mesmo objeto decorado
+//                              que `GET /parcelamentos` já devolve para a lista inteira;
+//   · `linkGuideToParcela`   — `POST /parcelamentos/:parcId/link-guide`;
+//   · `confirmParcelaPayment`— `POST /parcelamentos/:parcId/parcelas/:num/pagar`, uma SEGUNDA porta
+//                              de "dar baixa numa parcela", pelo template em vez do comprovante.
+// A baixa de parcela hoje é uma só: `ParcelamentoV2Service.gerarPagamentoParcelaFromGuide`.
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { applyTemplate, formatCompetenciaLabel, lookupAccountsFromHistorico } from "./AccountingEntryGeneratorService.js";
@@ -313,172 +320,6 @@ export async function createParcelamento({
 }
 
 /**
- * Associa uma Guide existente a uma parcela específica.
- *
- * Q11.3 (reforço): se a guia já tinha gerado provisão automática via
- * GuideToProvisionService (caso comum: contador sobe guia → entry de provisão é criada
- * imediatamente; só DEPOIS o contador linka ao parcelamento), apaga essas entries pra
- * evitar provisão duplicada. A provisão correta é a que foi criada no createParcelamento.
- *
- * Não toca em entries de outras origens (manuais, baixas etc).
- */
-export async function linkGuideToParcela({ portalClientId, guideId, parcelamentoId, numeroParcela }) {
-  const parc = await prisma.parcelamento.findFirst({
-    where: { id: parcelamentoId, portalClientId },
-  });
-  if (!parc) throw new Error("parcelamento_not_found");
-  if (numeroParcela < 1 || numeroParcela > parc.numParcelas) {
-    throw new Error("numero_parcela_out_of_range");
-  }
-  const guide = await prisma.guide.findFirst({
-    where: { id: guideId, portalClientId },
-  });
-  if (!guide) throw new Error("guide_not_found");
-
-  return prisma.$transaction(async (tx) => {
-    // 1) Linka a guia ao parcelamento + número da parcela
-    const updated = await tx.guide.update({
-      where: { id: guideId },
-      data: { parcelamentoId, numeroParcela },
-    });
-
-    // 2) Apaga entries de provisão que possam ter sido auto-criadas por GuideToProvisionService
-    // pra essa guia. Filtro: sourceGuideId = guideId AND NÃO pertence a esse parcelamento
-    // (entries do parcelamento têm parcelamentoId setado e não vêm com sourceGuideId).
-    const deletable = await tx.accountingEntry.findMany({
-      where: {
-        sourceGuideId: guideId,
-        parcelamentoId: null,
-        status: { not: "EXPORTADO" }, // não apaga se já foi exportado pro contábil
-      },
-      select: { id: true },
-    });
-    if (deletable.length > 0) {
-      await tx.accountingEntry.deleteMany({
-        where: { id: { in: deletable.map((e) => e.id) } },
-      });
-    }
-
-    // 3) F2.1 — a guia acabou de virar parcela nº N; casa a linha de `parcelas` com ela. Sem isto
-    //    a parcela ficaria sem guia e, portanto, sem evidência de pagamento: o vínculo existiria no
-    //    banco e não apareceria em contador nenhum.
-    await sincronizarParcelas(tx, { portalClientId, parcelamentoId });
-
-    return updated;
-  });
-}
-
-/**
- * Confirma pagamento de uma parcela.
- * Usa template PARCELAMENTO_PAYMENT (2 entries: principal + juros). Principal vem fixo
- * de parc.principalPerParcela; juros vem do input. Se juros=0, só cria a baixa do principal.
- * Cria entries de BAIXA com openEntryId apontando para a provisão da parcela.
- */
-export async function confirmParcelaPayment({
-  portalClientId, parcelamentoId, numeroParcela,
-  jurosValor = 0, dataPagamento, userId,
-}) {
-  const parc = await prisma.parcelamento.findFirst({
-    where: { id: parcelamentoId, portalClientId },
-    include: {
-      templatePayment: { include: { entries: { include: { lines: { orderBy: { ordem: "asc" } } }, orderBy: { ordem: "asc" } } } },
-      parcelas: { where: { numeroParcela, tipo: "PARCELA" }, include: { lines: true } },
-      portalClient: { select: { razao: true, cnpj: true } },
-    },
-  });
-  if (!parc) throw new Error("parcelamento_not_found");
-  if (parc.status !== "ATIVO") throw new Error("parcelamento_not_active");
-  const provEntry = parc.parcelas[0];
-  if (!provEntry) throw new Error("parcela_not_found");
-  if (provEntry.statusPagamento === "PAGO") throw new Error("parcela_already_paid");
-  if (!parc.templatePayment) throw new Error("payment_template_not_configured");
-
-  const principal = Number(parc.principalPerParcela);
-  const juros = Number(jurosValor) || 0;
-  const dataPgto = dataPagamento ? new Date(dataPagamento) : new Date();
-  const ctx = buildContext({
-    competencia: provEntry.competencia,
-    company: parc.portalClient,
-    parcelamento: parc,
-    numeroParcela,
-  });
-
-  return prisma.$transaction(async (tx) => {
-    const createdBaixas = [];
-
-    for (const tplEntry of parc.templatePayment.entries) {
-      // Decide se é a entry de "principal" ou "juros" pelo texto/ordem
-      const isJurosEntry = /juros/i.test(tplEntry.historico);
-      const valor = isJurosEntry ? juros : principal;
-
-      // Pula a baixa de juros se juros == 0
-      if (isJurosEntry && valor <= 0) continue;
-
-      const historico = applyTemplate(tplEntry.historico, ctx);
-      const role = isJurosEntry ? "PAY_JUROS" : "PAY_PRINCIPAL";
-      // Contas D/C em branco na 1ª vez; memorizadas por papel de linha (Q16).
-      const baixaLines = [];
-      for (const ln of tplEntry.lines) {
-        const conta = await lookupLineConta(tx, {
-          portalClientId, kind: parc.kind, role, ordem: ln.ordem, tipo: ln.tipo,
-        });
-        baixaLines.push({ conta, tipo: ln.tipo, valor, ordem: ln.ordem });
-      }
-
-      const baixa = await tx.accountingEntry.create({
-        data: {
-          portalClientId,
-          parcelamentoId: parc.id,
-          numeroParcela,
-          data: dataPgto,
-          competencia: provEntry.competencia,
-          historico,
-          tipo: "BAIXA",
-          // O papel já era decidido acima (`isJurosEntry`, que também escolhe o valor e a memória
-          // de contas PAY_JUROS/PAY_PRINCIPAL) — aqui ele só sobe para a coluna que o CHECK
-          // `chk_baixa_tipo_linha` cobra. Sem `sourceGuideId`, estas linhas ficam fora do índice.
-          tipoLinha: isJurosEntry ? "JUROS" : "PRINCIPAL",
-          subtipo: tplEntry.subtipo || provEntry.subtipo,
-          origem: "MANUAL",
-          loteImportacao: `PARC-${parc.id.slice(0, 8)}-PAGTO-${String(numeroParcela).padStart(2, "0")}`,
-          status: "RASCUNHO",
-          statusPagamento: "NA",
-          // openEntryId aponta pra LINHA DA PARCELA (rastreio) — é o vínculo de auditoria
-          // "baixa desta parcela". A redução da dívida é o próprio lançamento D=553/C=caixa.
-          openEntryId: provEntry.id,
-          lines: { createMany: { data: baixaLines } },
-        },
-      });
-      createdBaixas.push(baixa);
-    }
-
-    // Marca provisão como PAGA
-    await tx.accountingEntry.update({
-      where: { id: provEntry.id },
-      data: { statusPagamento: "PAGO" },
-    });
-
-    // Verifica se TODAS as parcelas estão pagas → marca parcelamento como QUITADO
-    const remaining = await tx.accountingEntry.count({
-      where: {
-        parcelamentoId: parc.id,
-        tipo: "PARCELA", // só linhas de rastreio contam pra QUITADO (não baixas/abertura)
-        numeroParcela: { not: null },
-        statusPagamento: { not: "PAGO" },
-      },
-    });
-    if (remaining === 0) {
-      await tx.parcelamento.update({
-        where: { id: parc.id },
-        data: { status: "QUITADO" },
-      });
-    }
-
-    return { ok: true, baixas: createdBaixas, parcelaPaga: numeroParcela };
-  });
-}
-
-/**
  * Rescinde parcelamento: gera entry de RESCISÃO + marca status RESCINDIDO.
  * Valores remanescentes (parcelas ainda em aberto) são computados automaticamente.
  */
@@ -653,28 +494,27 @@ function guiaDaParcelaParaTela(guia) {
   };
 }
 
-// Q16: enriquece o parcelamento com saldo/quanto-falta. Parcelas são linhas leves
-// (tipo="PARCELA"); pagas = statusPagamento PAGO. Saldo = total − principais já baixados.
+// Q16: enriquece o parcelamento com saldo/quanto-falta.
+//
+// ⚠ F2.3 — A BIFURCAÇÃO V1/V2 MORREU AQUI, e o que ela custava era a MESMA ROTA devolver semânticas
+// diferentes conforme o ramo: no V1, `parcelasPagas`/`parcelasTotal` saíam do `statusPagamento` das
+// linhas leves `tipo="PARCELA"` e `parcelasSemEvidencia` era zerado à força; no V2, os três saíam de
+// `quadroDasParcelas`. Duas contagens com o mesmo nome no mesmo payload, decididas por um detalhe
+// interno que a tela não vê.
+//
+// Ela pôde morrer porque produção não tem um único parcelamento V1 (medido), e porque a fonte única
+// já existe: `sincronizarParcelas` materializa `parcelas` para os DOIS caminhos —
+// `createParcelamento` (V1) a chama desde a F2.1, exatamente como `ingestParcelamentoFromGuide`.
+// Então o denominador é o contrato e o numerador é a evidência, sempre, para todo mundo.
+//
+// ⚠ CONSEQUÊNCIA ACEITA E MEDIDA: um V1 criado de hoje em diante conta prestação paga por
+// EVIDÊNCIA (guia quitada ou `origemBaixa`), não mais pelo `statusPagamento` da linha leve. Isso não
+// perde nada, porque a única escrita daquele `statusPagamento` era `confirmParcelaPayment` — a rota
+// órfã removida nesta mesma fase. Não havia como marcá-lo, e agora não há mais quem o leia.
 function decorateParcelamento(parc) {
   if (!parc) return parc;
-  // Linhas leves `tipo="PARCELA"` — o rastreio do V1 (`createParcelamento`). Nome herdado da API.
-  const linhasV1 = Array.isArray(parc.parcelas) ? parc.parcelas : [];
   // F2.1: as prestações do contrato, como linhas próprias. Existem para V1 e V2.
   const parcelas = Array.isArray(parc.parcelasContratadas) ? parc.parcelasContratadas : [];
-
-  // ⚠ A BIFURCAÇÃO ERA `parcelas.length === 0 && guides.length > 0`, E O SEGUNDO TERMO ERA O BUG.
-  //
-  // Ele fazia a versão do parcelamento depender de quantas GUIAS já tinham chegado. Um parcelamento
-  // V2 sem nenhuma guia — que é EXATAMENTE o débito automático, onde guia não existe por definição,
-  // e também o V2 recém-criado pelo caminho SERPRO (`ingestParcelamentoFromGuide` sem `guideId`) —
-  // caía no ramo V1, contava linhas de rastreio que o V2 nunca cria, e reportava "0 de 0" com o
-  // risco não avaliável. O acordo de 52 prestações chegava na tela como vazio.
-  //
-  // O discriminador VERDADEIRO não tem nada a ver com guia: o V1 SEMPRE cria N linhas
-  // `tipo="PARCELA"` (`createParcelamento` recusa `numParcelas < 1`, então N ≥ 1) e o V2 NUNCA cria
-  // nenhuma (`numeroParcela: null` em todo entry dele). A presença dessas linhas é o fato que
-  // separa as duas versões, e é só ela que decide aqui.
-  const isV1 = linhasV1.length > 0;
 
   // ⚠ RISCO DE RESCISÃO — a informação que muda o dia do contador. Rescindido, o saldo vai para a
   // Dívida Ativa e as reduções de multa da adesão são restabelecidas; e isso chega por acúmulo
@@ -692,14 +532,13 @@ function decorateParcelamento(parc) {
   // quitadas, que é o número de onde sai o alerta.
   const quadro = quadroDasParcelas(parcelas, { status: parc.status });
 
-  // ⚠ O NUMERADOR E O DENOMINADOR SAEM DA MESMA LISTA. Antes o numerador contava guias e o
-  // denominador contava outra coisa — parcela sem guia era invisível numa ponta e presente na
-  // outra. No V1 os dois continuam vindo das linhas de rastreio (lá o `statusPagamento` do próprio
-  // lançamento é o fato de pagamento, e a tabela `parcelas` não o conhece); no V2, das parcelas.
-  const parcelasPagas = isV1
-    ? linhasV1.filter((p) => p.statusPagamento === "PAGO").length
-    : quadro.parcelasPagas;
-  const parcelasTotal = isV1 ? linhasV1.length : quadro.parcelasTotal;
+  // ⚠ O NUMERADOR E O DENOMINADOR SAEM DA MESMA LISTA, PARA TODO PARCELAMENTO. Antes o numerador
+  // contava guias e o denominador contava outra coisa — parcela sem guia era invisível numa ponta e
+  // presente na outra. Hoje `parcelasTotal` são as prestações CONTRATADAS e `parcelasPagas` são
+  // aquelas dentre elas com evidência de quitação (guia paga/baixada ou `origemBaixa`, o que
+  // inclui `HISTORICO`: prestação quitada antes de o contrato entrar no sistema).
+  const parcelasPagas = quadro.parcelasPagas;
+  const parcelasTotal = quadro.parcelasTotal;
   const principalPerParcela = Number(parc.principalPerParcela) || 0;
   const principalPago = parcelasPagas * principalPerParcela;
   const totalValue = Number(parc.totalValue) || 0;
@@ -717,7 +556,7 @@ function decorateParcelamento(parc) {
     // registrada). Elas ficam FORA do cálculo de risco de propósito: ausência de guia não é prova
     // de inadimplência, e contá-la acenderia alerta vermelho em todo débito automático. O número
     // viaja nomeado para que "0 de 52" não seja lido como "52 em atraso".
-    parcelasSemEvidencia: isV1 ? 0 : quadro.parcelasSemEvidencia,
+    parcelasSemEvidencia: quadro.parcelasSemEvidencia,
     principalPago,
     saldoRestante,
     risco: quadro.risco,
@@ -763,25 +602,4 @@ export async function listParcelamentos({ portalClientId, status }) {
     orderBy: { createdAt: "desc" },
   });
   return rows.map(decorateParcelamento);
-}
-
-export async function getParcelamento({ portalClientId, parcelamentoId }) {
-  const parc = await prisma.parcelamento.findFirst({
-    where: { id: parcelamentoId, portalClientId },
-    include: {
-      aberturaEntry: { include: { lines: true } },
-      parcelas: {
-        where: { tipo: "PARCELA" },
-        orderBy: { numeroParcela: "asc" },
-        include: { lines: true, baixas: { include: { lines: true } } },
-      },
-      guides: true,
-      // F2.1: a fonte dos contadores e do risco (ver `decorateParcelamento`).
-      parcelasContratadas: { select: SELECT_PARCELA_PARA_QUADRO, orderBy: { numeroParcela: "asc" } },
-      templateOpening: true,
-      templatePayment: true,
-      templateRescision: true,
-    },
-  });
-  return decorateParcelamento(parc);
 }

@@ -168,10 +168,14 @@ export async function computeGuideComplianceMap(rows, competencia) {
   // Pre-query: a empresa tem PARCELA nesta competência? Duas fontes, porque são dois caminhos
   // reais e nenhum cobre o outro:
   //
-  // (1) `AccountingEntry` com `subtipo:"PARC_DAS"` — escrito SÓ pelo modal manual antigo
-  //     (`routes/firm/accountingEntries.js`, POST /entries/parcelamento). O V1 grava
-  //     `PARC_SIMPLES`/`PARC_INSS`; o V2 grava `PARC_<TIPO>` (PARC_PARCSN…) e só na competência de
-  //     ABERTURA. Ou seja: esta query sozinha quase nunca casa.
+  // (1) `AccountingEntry` com `subtipo:"PARC_DAS"`. O V1 grava `PARC_SIMPLES`/`PARC_INSS`; o V2
+  //     grava `PARC_<TIPO>` (PARC_PARCSN…) e só na competência de ABERTURA. Ou seja: esta query
+  //     sozinha quase nunca casava.
+  //     ⚠ F2.3 — E AGORA NÃO CASA MAIS NUNCA: o ÚNICO escritor desse subtipo era o modal manual
+  //     antigo (`POST /entries/parcelamento`), removido nesta fase por nunca ter sido usado —
+  //     produção tem ZERO lançamentos com ele. A query fica como leitura de dado LEGADO, não como
+  //     caminho vivo; removê-la é mexer no que alimenta o chip do dashboard de toda a carteira, e
+  //     essa é decisão do dono, não efeito colateral da limpeza da rota.
   // (2) a GUIA da parcela — é assim que o caminho de hoje (SERPRO/V2) materializa a parcela do mês:
   //     `CaptureSerproParcelaService` grava uma Guide e `ParcelamentoV2Service` carimba
   //     `parcelamentoId`. O V2 NÃO cria linha por parcela (`numeroParcela: null` em todo entry).

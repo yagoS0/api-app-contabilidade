@@ -1386,6 +1386,33 @@ model Parcelamento {
   diaPagamento          Int       @default(1)
   periodosReferenciados String?
 
+  /// F2.3 — COMO O CONTRIBUINTE PAGA ESTE CONTRATO: `DEBITO_AUTOMATICO` | `GUIA_MENSAL`.
+  ///
+  /// ⚠ NULO É O TERCEIRO ESTADO, E É O DEFAULT DE PROPÓSITO: "ninguém declarou ainda". Não há
+  /// default não-nulo porque carimbar um dos dois valores nos contratos que já existem seria
+  /// AFIRMAR um fato do mundo real que ninguém informou (regra 1) — e é justamente a forma de
+  /// pagamento que decide se a ausência de guia é normal ou é documento faltando. Mesma disciplina
+  /// de `CompanyMonthlyCircular.semFaturamento` (tri-estado) e de `verificadoTrial`.
+  ///
+  /// ⚠ ELE NÃO ALIMENTA O RISCO DE RESCISÃO, e isso é decisão, não pendência. Hoje o sistema
+  /// INFERE débito automático pela ausência de guia (`temEvidenciaDePagamento`), e prestação sem
+  /// evidência fica FORA do cálculo — nem quitada, nem inadimplida. Fazer `GUIA_MENSAL` transformar
+  /// "sem guia" em "em atraso" derivaria inadimplência de ausência de dado, exatamente o que
+  /// `recalculoParcelamento.js` se recusa a fazer. Este campo troca INFERÊNCIA por DECLARAÇÃO
+  /// (exibida, conferível); quem decide atraso continua sendo evidência de pagamento.
+  formaPagamento String? // DEBITO_AUTOMATICO | GUIA_MENSAL | null (não declarado)
+
+  /// F2.3 — SALDO DEVEDOR CONSOLIDADO DECLARADO (informativo, na data em que foi informado).
+  ///
+  /// ⚠ ELE **NÃO** ALIMENTA LANÇAMENTO NENHUM. NUNCA. Não vira provisão, não vira baixa, não entra
+  /// em `linhasProvisao`. A provisão da adesão reconhece **só o principal** (`principalTotal`) —
+  /// decisão do dono, e o motivo está escrito em `ParcelamentoV2Service.linhasProvisao`: creditar o
+  /// consolidado reconhecia o encargo DUAS VEZES (uma na adesão, outra a cada parcela paga) e
+  /// deixava resíduo permanente em "Parcelamento a Pagar", com o contrato já quitado.
+  /// Este campo existe para EXIBIR e para CONFERIR contra o extrato do SERPRO. Quem o ligar a um
+  /// lançamento reabre aquele defeito.
+  saldoConsolidado Decimal? @db.Decimal(18, 2)
+
   // Q28 Fase 1: configuração de lançamento POR PARCELAMENTO (papéis/contas), independente entre
   // PROVISÃO e PAGAMENTO. Cada uma = lista de linhas { papel, tipo (D|C), conta }. Quando nula, o
   // sistema usa os papéis padrão + MapaContaTributo (memória). Editável pela Circular/aba Guias (Fase 2).
@@ -1458,11 +1485,20 @@ model Parcela {
   /// A guia que materializou esta parcela — OPCIONAL, e é esse "opcional" a razão da tabela existir.
   guiaId String? @unique
 
-  /// F2.2 — a baixa SEM GUIA (débito automático). ⚠ HOJE SEMPRE NULO, e isto não é coluna morta:
-  /// é o ponto onde a F2.2 grava a evidência de quitação de uma parcela que nunca teve guia.
-  /// `parcelaRowQuitada` já a lê, então a F2.2 muda UMA escrita, não as derivações.
+  /// F2.2 — a baixa SEM GUIA (débito automático). É o ponto onde se grava a evidência de quitação
+  /// de uma parcela que nunca teve guia. `parcelaRowQuitada` já a lê, então gravar aqui muda UMA
+  /// escrita, não as derivações.
   /// Enquanto for nulo e não houver guia, a parcela é "sem evidência" — nem quitada, nem inadimplida.
-  origemBaixa String? // GUIA | DEBITO_AUTOMATICO | MANUAL
+  ///
+  /// F2.3 — `HISTORICO` entrou no VOCABULÁRIO (não é coluna nova, não precisou de migration):
+  /// prestação quitada ANTES de o contrato entrar no sistema (parcelamento migrado de outra
+  /// contabilidade). Ela é quitada para efeito de contagem e de risco, e **não gera
+  /// `AccountingEntry`** — não houve pagamento NOSSO para lançar; a provisão da adesão também não
+  /// existe para o período dela.
+  origemBaixa String? // GUIA | DEBITO_AUTOMATICO | MANUAL | HISTORICO
+  /// ⚠ QUANDO É `HISTORICO`, ISTO É A DATA DA DECLARAÇÃO, NÃO A DO PAGAMENTO. A data em que o
+  /// contribuinte pagou uma parcela anterior à nossa entrada não é conhecida, e preenchê-la com o
+  /// vencimento contratado (ou com "hoje" fingindo ser o pagamento) seria inventar dado.
   baixadaEm   DateTime?
 
   /// Como a linha nasceu: CONTRATO (materializada do cabeçalho) | GUIA (existe guia para ela).

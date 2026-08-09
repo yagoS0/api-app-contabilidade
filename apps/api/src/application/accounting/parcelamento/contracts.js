@@ -51,8 +51,27 @@ export function normalizeParcelaDTO(raw = {}) {
   };
 }
 
+/**
+ * F2.3 — as duas formas de pagar um parcelamento, como VOCABULÁRIO FECHADO.
+ *
+ * ⚠ O terceiro estado é `null` = NÃO DECLARADO, e ele não é a mesma coisa que nenhum dos dois.
+ * Valor desconhecido também cai em `null`: aceitar uma string livre aqui deixaria a coluna
+ * (que tem CHECK no banco) derrubar a ingestão inteira por causa de um typo do payload.
+ */
+export const FORMAS_PAGAMENTO = ["DEBITO_AUTOMATICO", "GUIA_MENSAL"];
+
+export function normalizeFormaPagamento(raw) {
+  const v = String(raw || "").trim().toUpperCase();
+  return FORMAS_PAGAMENTO.includes(v) ? v : null;
+}
+
 /** Normaliza o ParcelamentoDTO (cabeçalho consolidado). */
 export function normalizeParcelamentoDTO(raw = {}) {
+  // ⚠ `diaPagamento`: 1..31, clampado. É ele que gera o cronograma (`parcelaSync.calendarioDaParcela`)
+  // e, portanto, a data que decide ATRASO quando não há guia. Ausente ⇒ `null`, e quem grava decide
+  // o que fazer com a ausência — devolver 1 aqui esconderia "não informado" atrás de um dia válido,
+  // que é exatamente como os 3 contratos de produção acabaram todos com vencimento no dia 1.
+  const dia = raw.diaPagamento != null ? Math.trunc(Number(raw.diaPagamento)) : null;
   return {
     tipo: String(raw.tipo || "OUTRO").trim().toUpperCase(),
     numeroParcelamento: raw.numeroParcelamento != null ? String(raw.numeroParcelamento).trim() : null,
@@ -64,6 +83,12 @@ export function normalizeParcelamentoDTO(raw = {}) {
     parcelaInicial: raw.parcelaInicial != null ? Number(raw.parcelaInicial) : null,
     dataAdesao: raw.dataAdesao || null,
     origem: String(raw.origem || "MANUAL").toUpperCase(),
+    // F2.3 — o contrato passa a carregar COMO se paga e QUANTO ainda se deve.
+    formaPagamento: normalizeFormaPagamento(raw.formaPagamento),
+    diaPagamento: Number.isFinite(dia) ? Math.min(31, Math.max(1, dia)) : null,
+    // ⚠ INFORMATIVO. Não vira lançamento em lugar nenhum — ver o comentário do campo no schema e o
+    // motivo em `ParcelamentoV2Service.linhasProvisao`.
+    saldoConsolidado: raw.saldoConsolidado != null ? round2(raw.saldoConsolidado) : null,
   };
 }
 

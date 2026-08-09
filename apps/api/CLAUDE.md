@@ -395,11 +395,14 @@ consumida pelos dois lados. Não reescrever no consumidor — foi assim que dive
   **próprio** (`parcDas`), com o mesmo ciclo de vida dos outros (`missing → gerada → enviada`).
 - ⚠ **`vazio` e `semFaturamento` não valem para parcela.** Não se declara ausência de parcela
   contratada, e mês sem receita não suspende parcelamento.
-- ⚠ **A pré-query de `AccountingEntry` com `subtipo:"PARC_DAS"` quase nunca casa.** Esse valor só é
-  escrito pelo modal manual antigo (`accountingEntries.js`, `POST /entries/parcelamento`); o V1
-  grava `PARC_SIMPLES`/`PARC_INSS` e o **V2 grava `PARC_<TIPO>` (PARC_PARCSN…) só na competência de
-  ABERTURA**, sem linha por parcela (`numeroParcela: null` em todo entry). No caminho de hoje a
-  parcela do mês existe como **Guide**, não como lançamento — por isso a segunda pré-query.
+- ⚠ **A pré-query de `AccountingEntry` com `subtipo:"PARC_DAS"` não casa mais NUNCA.** Esse valor só
+  era escrito pelo modal manual antigo (`accountingEntries.js`, `POST /entries/parcelamento`), e a
+  **F2.3 removeu essa rota** — produção tinha ZERO lançamentos com esse subtipo, ela nunca foi
+  usada. O V1 grava `PARC_SIMPLES`/`PARC_INSS` e o **V2 grava `PARC_<TIPO>` (PARC_PARCSN…) só na
+  competência de ABERTURA**, sem linha por parcela (`numeroParcela: null` em todo entry). No caminho
+  de hoje a parcela do mês existe como **Guide**, não como lançamento — por isso a segunda pré-query,
+  que é a que sustenta o chip. A primeira ficou como leitura de dado LEGADO; removê-la mexe no que
+  alimenta o dashboard da carteira inteira e é decisão do dono.
 - O rótulo na UI é **"Parcelamento"**, não "PARC DAS": uma parcela de **INSS** parcelado também cai
   nesse nó, e chamá-la de DAS seria trocar um erro por outro.
 - Efeito de virada: empresa do Simples com parcela no mês passa a mostrar **DAS faltando** de

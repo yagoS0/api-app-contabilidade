@@ -1,15 +1,20 @@
-// ORDEM DE REGISTRO — as rotas literais de `/parcelamentos/` têm que vir ANTES do curinga.
+// ORDEM DE REGISTRO — as rotas literais de `/parcelamentos/` têm que vir ANTES de qualquer curinga.
 //
-// ⚠ O defeito: `GET /parcelamentos/:parcId` estava registrado antes de
+// ⚠ O defeito original: `GET /parcelamentos/:parcId` estava registrado antes de
 // `GET /parcelamentos/contas-provisao` e `GET /parcelamentos/parcelas-pendentes-baixa`. O Express casa
-// na ORDEM DE REGISTRO, e o handler do curinga responde `404 parcelamento_not_found` quando não acha —
-// nunca chama `next()`. Então "contas-provisao" e "parcelas-pendentes-baixa" eram lidos como se fossem
+// na ORDEM DE REGISTRO, e o handler do curinga respondia `404 parcelamento_not_found` quando não achava —
+// nunca chamava `next()`. Então "contas-provisao" e "parcelas-pendentes-baixa" eram lidos como se fossem
 // um id de parcelamento e as duas rotas ficavam INALCANÇÁVEIS.
 //
 // O sintoma não parecia de roteamento: o painel de parcelas pendentes de baixa (aba Parcelamento) e o
 // pré-preenchimento do modal de provisão recebiam um 404 de negócio, com uma mensagem que descrevia um
 // parcelamento inexistente. É o mesmo cuidado que `/companies/annual` e `/companies/fechamento` já
-// tomam com `/companies/:companyId` — este teste é o que impede a ordem de voltar a inverter.
+// tomam com `/companies/:companyId`.
+//
+// ⚠ F2.3 — O CURINGA `GET /parcelamentos/:parcId` FOI REMOVIDO (rota órfã do V1, sem chamador), e é
+// por isso que este teste continua existindo em vez de sumir junto: ele agora guarda DUAS coisas.
+// Que as literais respondem, e que NENHUM curinga de um segmento voltou a ser registrado antes
+// delas — o defeito não é da rota que saiu, é da ordem, e a ordem é o que se pode reintroduzir.
 
 jest.mock("../../../middlewares/requireFirmCompanyAccess.js", () => ({
   requireFirmCompanyAccess: () => (req, res, next) => {
@@ -30,15 +35,10 @@ jest.mock("../../../application/accounting/parcelamento/ParcelamentoV2Service.js
   resolverContasProvisao: jest.fn(async () => ({ PARC_DAS: "", MULTA: "", JUROS: "", TOTAL: "" })),
 }));
 
-jest.mock("../../../application/accounting/ParcelamentoService.js", () => ({
-  getParcelamento: jest.fn(async () => null),
-}));
-
 import express from "express";
 import request from "supertest";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { resolverContasProvisao } from "../../../application/accounting/parcelamento/ParcelamentoV2Service.js";
-import { getParcelamento } from "../../../application/accounting/ParcelamentoService.js";
 import { createAccountingEntriesRouter } from "../accountingEntries.js";
 
 const log = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
@@ -49,6 +49,8 @@ function makeApp() {
   const parent = express.Router();
   parent.use("/companies/:companyId", createAccountingEntriesRouter({ log }));
   app.use("/firm", parent);
+  // Sentinela: se alguma rota do router responder, este 404 nunca é alcançado.
+  app.use((req, res) => res.status(404).json({ ok: false, error: "no_route" }));
   return app;
 }
 
@@ -56,35 +58,32 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-describe("GET /parcelamentos/* — literais antes do curinga :parcId", () => {
-  it("parcelas-pendentes-baixa NÃO é engolida pelo :parcId", async () => {
+describe("GET /parcelamentos/* — literais alcançáveis, sem curinga na frente", () => {
+  it("parcelas-pendentes-baixa NÃO é engolida por um curinga", async () => {
     prisma.parcela.findMany.mockResolvedValue([]);
 
     const res = await request(makeApp()).get("/firm/companies/p1/parcelamentos/parcelas-pendentes-baixa");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, parcelas: [] });
-    // A prova de que foi o handler certo: o do curinga nem seria consultado.
     expect(prisma.parcela.findMany).toHaveBeenCalledTimes(1);
-    expect(getParcelamento).not.toHaveBeenCalled();
   });
 
-  it("contas-provisao NÃO é engolida pelo :parcId", async () => {
+  it("contas-provisao NÃO é engolida por um curinga", async () => {
     const res = await request(makeApp()).get("/firm/companies/p1/parcelamentos/contas-provisao?tipo=PARCSN");
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
     expect(resolverContasProvisao).toHaveBeenCalledWith({ portalClientId: "p1", tipoParcelamento: "PARCSN" });
-    expect(getParcelamento).not.toHaveBeenCalled();
   });
 
-  it("o curinga continua respondendo por um id de verdade", async () => {
-    getParcelamento.mockResolvedValue({ id: "parc1", label: "Parcelamento" });
-
+  // ⚠ F2.3 — A PROVA DE QUE O CURINGA SAIU. Um id qualquer não pode mais ser atendido por rota
+  // nenhuma deste router: se alguém reintroduzir `GET /parcelamentos/:parcId`, este teste quebra —
+  // e é aí que as duas literais acima voltam a correr risco de serem engolidas.
+  it("um id solto não casa com rota nenhuma (o curinga do V1 foi removido)", async () => {
     const res = await request(makeApp()).get("/firm/companies/p1/parcelamentos/parc1");
 
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, data: { id: "parc1", label: "Parcelamento" } });
-    expect(getParcelamento).toHaveBeenCalledWith({ portalClientId: "p1", parcelamentoId: "parc1" });
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ ok: false, error: "no_route" });
   });
 });

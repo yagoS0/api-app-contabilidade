@@ -18,8 +18,16 @@ function toAnoMes(competencia) {
  * @param {Object} input
  * @param {Object} input.guide  — Guide (usa competencia/vencimento + extracted.composicao como default)
  * @param {Object} input.header — { tipo, numeroParcelamento, quantidadeParcelas, numeroParcela,
- *                                   valorPrincipal, valorMulta, valorJuros, valorTotal, dataAdesao, anoMesParcela?, vencimento? }
+ *                                   valorPrincipal, valorMulta, valorJuros, valorTotal, dataAdesao, anoMesParcela?, vencimento?,
+ *                                   formaPagamento?, diaPagamento?, saldoConsolidado? }
  * @param {Array}  [input.tributos] — composição informada manualmente; se ausente, usa guide.extracted.composicao
+ *
+ * ⚠ `guide` É OPCIONAL, E ISSO É O CORAÇÃO DO "PARCELAMENTO-FIRST". Todo acesso a ele aqui é por
+ * optional chaining: sem guia, a composição fica vazia, o valor da parcela cai em 0 e a competência
+ * inicial precisa vir do HEADER (`anoMesParcela`). Sem `anoMesParcela` e sem guia,
+ * `ingestParcelamentoFromGuide` grava a sentinela `1970-01` e o cronograma sai SEM DATAS — o
+ * contrato aparece como "0 de N" com risco não avaliável. Não é defeito novo; é a consequência de
+ * não haver nenhuma data confiável, e está documentada em `parcelaSync.COMPETENCIA_SENTINELA`.
  */
 export function buildDTOsFromManual({ guide, header = {}, tributos }) {
   const composicao = Array.isArray(tributos) && tributos.length
@@ -64,6 +72,12 @@ export function buildDTOsFromManual({ guide, header = {}, tributos }) {
     valorJuros: header.valorJuros,
     dataAdesao: header.dataAdesao,
     origem: "MANUAL",
+    // F2.3 — dados do CONTRATO, coletados no modal. `diaPagamento` alimenta o cronograma
+    // (`parcelaSync`), que é a data que decide atraso quando não há guia; `saldoConsolidado` é
+    // informativo e não vira lançamento; `formaPagamento` é declaração (null = não declarado).
+    formaPagamento: header.formaPagamento,
+    diaPagamento: header.diaPagamento,
+    saldoConsolidado: header.saldoConsolidado,
   });
 
   return { parcelamentoDTO, parcelaDTO };

@@ -316,6 +316,7 @@ async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamen
  * @param {Array}  [opts.pagamentoLines] (Q28: config de COMO o pagamento será lançado — papel/conta)
  * @param {string} [opts.guideId]        (Q28: opcional — caminho SERPRO cria o parcelamento SEM guia;
  *                                         o worker traz as guias depois)
+ * @param {number} [opts.parcelasJaPagas] (F2.3: prestações quitadas ANTES de o contrato entrar aqui)
  * @param {string} [opts.userId]
  * @returns {Promise<{ ok, parcelamentoId, provisaoId?, criouParcelamento }>}
  *
@@ -323,7 +324,7 @@ async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamen
  * ser criado aqui — é gerado depois, ao marcar a guia como paga (gerarPagamentoParcelaFromGuide).
  * Q28: guarda a CONFIG de provisão e de pagamento por parcelamento (papel/lado/conta), pra reusar.
  */
-export async function ingestParcelamentoFromGuide({ portalClientId, guideId, parcelamentoDTO, parcelaDTO, provisaoLines, pagamentoLines, descricao, userId }) {
+export async function ingestParcelamentoFromGuide({ portalClientId, guideId, parcelamentoDTO, parcelaDTO, provisaoLines, pagamentoLines, descricao, parcelasJaPagas, userId }) {
   const dto = normalizeParcelamentoDTO(parcelamentoDTO);
   const parc = normalizeParcelaDTO(parcelaDTO);
 
@@ -367,6 +368,18 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
           totalValue: round2(dto.valorTotal || parc.valorTotal),
           valorParcelaReferencia: round2(parc.valorTotal),
           competenciaInicial: compLabel || "1970-01",
+          // ⚠ F2.3 — `diaPagamento` FINALMENTE VEM DO MODAL. A coluna sempre existiu (default 1) e
+          // sempre alimentou o cronograma (`parcelaSync.calendarioDaParcela`), que é a data que
+          // decide ATRASO quando não há guia — mas o modal nunca a coletava, e por isso os
+          // contratos de produção têm todas as prestações vencendo no dia 1. Ausente ⇒ não
+          // escrevemos nada e o default do banco (1) vale, como antes.
+          ...(dto.diaPagamento != null ? { diaPagamento: dto.diaPagamento } : {}),
+          // F2.3 — declaração, não inferência. `null` = não declarado (o comportamento segue o de
+          // hoje: a evidência de pagamento é que responde por "foi paga?").
+          formaPagamento: dto.formaPagamento || undefined,
+          // ⚠ F2.3 — INFORMATIVO. NÃO alimenta lançamento: a provisão reconhece só o principal
+          // (`linhasProvisao`, e o motivo está escrito lá). Serve para exibir e conferir.
+          saldoConsolidado: dto.saldoConsolidado != null ? dto.saldoConsolidado : undefined,
           dataAdesao: dto.dataAdesao ? new Date(dto.dataAdesao) : null,
           status: "ATIVO",
           configProvisao: cfgProvisao || undefined,
@@ -377,7 +390,7 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
         },
       });
       criouParcelamento = true;
-    } else if (cfgProvisao || cfgPagamento || descricao) {
+    } else if (cfgProvisao || cfgPagamento || descricao || dto.formaPagamento || dto.saldoConsolidado != null) {
       // Q28/Q31: parcelamento já existe — completa/atualiza config e/ou descrição quando o modal mandou.
       await tx.parcelamento.update({
         where: { id: parcelamento.id },
@@ -385,6 +398,14 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
           ...(cfgProvisao ? { configProvisao: cfgProvisao } : {}),
           ...(cfgPagamento ? { configPagamento: cfgPagamento } : {}),
           ...(descricao ? { observacoes: String(descricao) } : {}),
+          // F2.3 — declaração e saldo declarado se ATUALIZAM na reingestão: a forma de pagamento
+          // pode ser informada depois da criação, e o saldo consolidado é, por definição, o de HOJE.
+          ...(dto.formaPagamento ? { formaPagamento: dto.formaPagamento } : {}),
+          ...(dto.saldoConsolidado != null ? { saldoConsolidado: dto.saldoConsolidado } : {}),
+          // ⚠ `diaPagamento` NÃO ENTRA AQUI. O cronograma já foi materializado em `parcelas`, e
+          // `sincronizarParcelas` só CRIA as que faltam — mudar o dia no cabeçalho sem mover as
+          // linhas deixaria o contrato dizendo uma data e as prestações dizendo outra, com o atraso
+          // sendo decidido pelas linhas. Remexer em data de parcela já gravada é decisão do dono.
         },
       });
     }
@@ -466,15 +487,65 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
     //    Idempotente — a recaptura passa por aqui a cada parcela e não duplica nada.
     await sincronizarParcelas(tx, { portalClientId, parcelamentoId: parcelamento.id });
 
+    // 6) F2.3 — AS PRESTAÇÕES QUITADAS ANTES DE O CONTRATO ENTRAR AQUI.
+    const marcadasHistorico = await marcarParcelasHistoricas(tx, {
+      portalClientId, parcelamentoId: parcelamento.id, quantidade: parcelasJaPagas,
+    });
+
     return {
       ok: true,
       parcelamentoId: parcelamento.id,
       provisaoId,
       criouParcelamento,
       composicaoOk,
+      marcadasHistorico,
       empresa: company?.razao || null,
     };
   });
+}
+
+/**
+ * F2.3 — marca as N primeiras prestações como QUITADAS ANTES DO SISTEMA (`origemBaixa: "HISTORICO"`).
+ *
+ * ⚠ ESTADO NOVO NÃO FOI CRIADO, E ISSO É O PONTO. A coluna `origemBaixa` já existia e já era lida:
+ * `parcelaRowQuitada` a trata como quitação e `temEvidenciaDePagamento` a trata como evidência.
+ * Acrescentar `HISTORICO` ao VOCABULÁRIO faz todas as derivações — contadores, risco de rescisão,
+ * `parcelasSemEvidencia`, o `semGuia` do recálculo de atraso — enxergarem a prestação sozinhas.
+ * Uma coluna nova (`paga_historico`) daria uma segunda resposta para uma pergunta que já tem uma,
+ * e as duas divergiriam no primeiro estorno.
+ *
+ * ⚠ NÃO GERA `AccountingEntry`, e não é omissão: não houve pagamento NOSSO para lançar. A parcela
+ * foi quitada sob outra contabilidade; lançar uma baixa aqui debitaria um passivo que a provisão
+ * desta adesão nem reconheceu (a provisão nasce com o principal do saldo que RESTA).
+ *
+ * ⚠ IDEMPOTENTE E NÃO DESTRUTIVA: só toca prestação SEM guia e SEM `origemBaixa`. Uma parcela que
+ * já tem guia é evidência real e não pode ser sobrescrita por uma declaração de histórico —
+ * a reingestão roda a cada recaptura e passaria por aqui de novo.
+ */
+async function marcarParcelasHistoricas(tx, { portalClientId, parcelamentoId, quantidade }) {
+  const n = Math.trunc(Number(quantidade));
+  if (!Number.isFinite(n) || n < 1) return 0;
+
+  const alvo = await tx.parcela.findMany({
+    where: {
+      parcelamentoId, portalClientId,
+      numeroParcela: { lte: n, not: null },
+      guiaId: null,
+      origemBaixa: null,
+    },
+    select: { id: true },
+  });
+  if (!alvo.length) return 0;
+
+  const r = await tx.parcela.updateMany({
+    where: { id: { in: alvo.map((p) => p.id) } },
+    // ⚠ `baixadaEm` AQUI É A DATA DA DECLARAÇÃO, NÃO A DO PAGAMENTO. Quando o contribuinte pagou
+    // uma prestação anterior à nossa entrada não se sabe, e preencher com o vencimento contratado
+    // (ou com "hoje" fingindo ser o pagamento) inventaria dado. O que se sabe é quando foi
+    // declarado — e é isso que fica gravado.
+    data: { origemBaixa: "HISTORICO", baixadaEm: new Date() },
+  });
+  return r.count;
 }
 
 /**

@@ -14,13 +14,36 @@ Lógica de lançamentos contábeis, provisões, baixas, parcelamentos e fechamen
   contas começam em branco e são aprendidas no 1º preenchimento (auto-save do `PUT /entries`).
   Reusada por DARF/Simples e por parcelamento (`PARC_<KIND>_OPEN#n` / `_PAY_PRINCIPAL` / `_PAY_JUROS`).
 
+### ⚠ O parcelamento tem DUAS memórias de conta — e até a F2.3 só a errada era alimentada
+
+| | tabela | chave | quem LÊ |
+|---|---|---|---|
+| **V1** | `AccountingHistorico` | `(empresa, "PARC_<KIND>_<ROLE>#<ordem>")` — depende da **ordem** da linha no template | `lookupLineConta`, só em `createParcelamento` |
+| **V2** | `MapaContaTributo` | `(cliente\|global, tipoParcelamento, tipoLinha, codigoTributo)` — depende do **papel** da linha | `resolverConta`: toda provisão, toda baixa e o pré-preenchimento do modal |
+
+O auto-save do `PUT /entries` chamava **só** `memorizeParcelamentoLineAccounts` (a do V1). Num
+lançamento do V2 ela até escrevia algo — o 1º entry da provisão vira role `OPEN` porque é ele que
+`aberturaEntryId` aponta, e as baixas viram `PAY_JUROS`/`PAY_PRINCIPAL` pelo histórico — mas escrevia
+**na tabela que o V2 nunca lê**. O contador corrigia a conta, o sistema dizia que aprendeu, e o
+parcelamento seguinte vinha em branco de novo. `memorizeMapaContaTributo` existia para isso desde a
+Q21 e estava **exportada sem um único chamador**: a memória do V2 só era alimentada na ingestão,
+quando o modal mandava `provisaoLines` — correção posterior nunca era aprendida.
+
+**Hoje as duas são chamadas**, e nenhuma atrapalha a outra: a do V2 exige `tipoLinha` **na linha**
+(campo que só os lançamentos do V2 preenchem), então num lançamento V1 ela é no-op. Best-effort, como
+já eram.
+
+⚠ **O escopo do que o V2 aprende é GLOBAL** (`portalClientId: null`), por desenho da Q21 — é o mesmo
+escopo que a ingestão já gravava. Corrigir a conta num parcelamento muda o padrão para os próximos de
+**qualquer** empresa (o override por cliente existe na tabela e hoje não é escrito por ninguém).
+
 ## Arquivos principais
 
 | Arquivo | Papel |
 |---|---|
 | `AccountingEntryGeneratorService.js` | gera lançamentos a partir da circular/extrato; `lookupAccountsFromHistorico`, `applyTemplate`, `generateEntriesFromCircular` |
 | `GuideToProvisionService.js` | guia PROCESSED → provisão (contas em branco + memória) |
-| `ParcelamentoService.js` | parcelamento (Q9/Q16 legado): **1 provisão (abertura)** + N linhas leves `tipo="PARCELA"`; baixa por pagamento contra a abertura; contas em branco + memória por linha (`memorizeParcelamentoLineAccounts`) |
+| `ParcelamentoService.js` | parcelamento (Q9/Q16 legado): **1 provisão (abertura)** + N linhas leves `tipo="PARCELA"`; contas em branco + memória por linha (`memorizeParcelamentoLineAccounts`). ⚠ **F2.3 removeu `getParcelamento`, `linkGuideToParcela` e `confirmParcelaPayment`** com as três rotas órfãs que só elas serviam — não havia chamador, e produção não tem um único parcelamento V1. Sobrou `createParcelamento` + `rescindirParcelamento` + `listParcelamentos`; a baixa de parcela é **uma só**, `ParcelamentoV2Service.gerarPagamentoParcelaFromGuide`. |
 | `parcelamento/ParcelamentoV2Service.js` | parcelamento v2 (Q21/Q23). **Q23 — gatilho do SERPRO:** a 1ª parcela é **manual** → `ingestParcelamentoFromGuide` cria **só a PROVISÃO** (≥3 linhas: D=principal, D=juros, C=total; `provisaoLines` editadas no modal ou `linhasProvisao` padrão; contas via `MapaContaTributo`, em branco até aprender) + vincula guia + `TributoParcela`. **NÃO** cria pagamento. A provisão setar `aberturaEntryId` ⇒ **ativa a busca automática** do worker. O **pagamento** (BAIXA, juros LIDO) é gerado por `gerarPagamentoParcelaFromGuide` ao marcar a guia como **paga** (`confirm-payment`), data = dia do clique; **bloqueia** se o mês estiver fechado. `resolverContasProvisao` pré-preenche o modal. Memória: `memorizeMapaContaTributo`. ⚠ A baixa começa **reservando a guia** (`updateMany` condicional em `lancamentoId: null`, dentro da transação) — é o que impede baixa DUPLICADA em corrida; as duas verificações de idempotência de cima são check-then-act e só servem para dar o motivo legível. |
 | `ParcelamentoSeeds.js` | templates `AccountingFunction kind=PARCELAMENTO_OPENING/PAYMENT/RESCISION` (legado Q9/Q16) |
 | `AccountingFunctionService.js` | funções/templates de lançamento reutilizáveis |
@@ -47,9 +70,46 @@ assinatura, na guarda `sourceGuideId` e no efeito em `guide.baixada`/`lancamento
 quem responde "foi quitada?" é a **guia**. Aqui mora o **contrato** (quais prestações existem,
 quando vencem); lá mora o **fato**. Uma cópia divergiria no primeiro estorno.
 
-⚠ **`origemBaixa` é hoje sempre NULO, e não é coluna morta:** é onde a F2.2 grava a baixa de uma
-parcela que nunca teve guia. `parcelaRowQuitada` já a lê — a F2.2 muda **uma escrita**, não as
-derivações.
+⚠ **`origemBaixa` é onde se grava a quitação de uma parcela que nunca teve guia.**
+`parcelaRowQuitada` já a lê — quem grava muda **uma escrita**, não as derivações.
+
+## F2.3 — parcelamento-first: o contrato antes do documento
+
+O parcelamento nascia como efeito colateral de subir uma guia. Ele é um **contrato de dívida** de
+até 60 meses; a guia é evidência **mensal e opcional** — não existe em débito automático nem nas
+prestações de um acordo migrado de outra contabilidade.
+
+| o quê | onde | nota |
+|---|---|---|
+| criar **sem guia** | `POST /parcelamentos/ingestao` com `guideId` ausente | já funcionava ponta a ponta (rota → `buildDTOsFromManual` → `ingestParcelamentoFromGuide`); ⚠ **sem guia, `header.anoMesParcela` é obrigatório na prática** — sem ele a competência cai na sentinela `1970-01` e o cronograma nasce **sem datas** |
+| `formaPagamento` | `Parcelamento` | `DEBITO_AUTOMATICO`\|`GUIA_MENSAL`\|**NULL = não declarado**. Troca inferência por declaração; **não** alimenta o risco (ver abaixo) |
+| `saldoConsolidado` | `Parcelamento` | ⚠ **informativo — NUNCA vira lançamento** |
+| `diaPagamento` | `header.diaPagamento` → cronograma | a coluna sempre existiu (default 1) e sempre alimentou `parcelaSync`; o que faltava era **coletá-la** |
+| parcela paga **antes** do sistema | `parcelasJaPagas: N` → `parcelas.origemBaixa = "HISTORICO"` | **sem estado novo e sem migration** |
+
+⚠ **`HISTORICO` é vocabulário, não coluna.** `parcelaRowQuitada` (que só pergunta se há
+`origemBaixa`) e `temEvidenciaDePagamento` já a enxergam: a prestação conta como **quitada**, entra
+no risco como `quitada:true` e some de `parcelasSemEvidencia` — tudo sem uma linha nova de
+derivação. Uma coluna `paga_historico` daria uma segunda resposta a uma pergunta que já tem uma.
+
+⚠ **Ela NÃO gera `AccountingEntry`**, e não é omissão: não houve pagamento nosso para lançar, e a
+provisão desta adesão reconhece o principal do saldo que **resta**.
+
+⚠ **`baixadaEm` de uma `HISTORICO` é a data da DECLARAÇÃO, não a do pagamento** — essa não se sabe,
+e preenchê-la com o vencimento contratado seria inventar dado.
+
+⚠ **`formaPagamento` não decide atraso.** Fazer `GUIA_MENSAL` transformar "prestação vencida sem
+guia" em inadimplência derivaria inadimplência de **ausência de dado** — exatamente o que
+`recalculoParcelamento.js` se recusa a fazer, e o que acenderia RESCINDÍVEL em toda empresa cuja
+captura simplesmente não rodou. Quem decide atraso continua sendo evidência de pagamento.
+
+⚠ **Os 3 contratos de produção seguem com o cronograma no dia 1** (o modal nunca coletou
+`diaPagamento`). `sincronizarParcelas` só **cria** as prestações que faltam — não move data de
+prestação já gravada —, e a reingestão **deliberadamente não atualiza** `diaPagamento` no cabeçalho:
+mudar o dia sem mover as linhas deixaria contrato e prestações discordando, com o atraso sendo
+decidido pelas linhas. Recalcular é possível e é decisão do dono (ver o relatório da fase).
+
+Regressão: `parcelamento/__tests__/parcelamentoSemGuia.test.js` (18).
 
 ⚠ **Prestação SEM EVIDÊNCIA não é inadimplente.** Materializar o cronograma e passar as parcelas
 sem guia como `quitada:false` acenderia **RESCINDÍVEL em todo débito automático saudável** —
@@ -58,19 +118,31 @@ o que `riscoRescisao.js` já se recusa a produzir. Elas ficam **fora** do cálcu
 em **`parcelasSemEvidencia`**. Consequência aceita: parcelamento sem nenhuma guia continua com
 `risco.avaliavel = false` — mas agora com `0 de 52` e o motivo explícito, não `0 de 0`.
 
-⚠ **A bifurcação V1/V2 não olha mais para guia.** Era `parcelas.length === 0 && guides.length > 0`;
-o segundo termo fazia a **versão** depender de quantos documentos tinham chegado. O discriminador é
-só o primeiro: o V1 (`createParcelamento`) sempre cria N linhas `tipo="PARCELA"` (N ≥ 1), o V2 nunca
-cria nenhuma.
+⚠ **A bifurcação V1/V2 MORREU (F2.3).** Ela já tinha perdido o termo errado (era
+`parcelas.length === 0 && guides.length > 0`, e o segundo fazia a **versão** depender de quantos
+documentos tinham chegado); agora saiu inteira. O que ela custava era a **mesma rota devolver
+semânticas diferentes com os mesmos nomes de campo**: no ramo V1 `parcelasPagas`/`parcelasTotal`
+saíam do `statusPagamento` das linhas leves e `parcelasSemEvidencia` era zerado à força.
+
+Hoje **todo** parcelamento conta igual: denominador = prestações **contratadas** (`parcelas`,
+materializadas por `sincronizarParcelas` nos DOIS caminhos), numerador = **evidência** de quitação.
+Consequência aceita: um V1 novo conta por evidência, não pelo `statusPagamento` da linha leve — e
+não se perde nada, porque a única escrita daquele campo era `confirmParcelaPayment`, a rota órfã
+removida na mesma fase.
+
+⚠ **Leftover conhecido:** `templatePaymentFunctionId` e os seeds `AccountingFunction
+kind=PARCELAMENTO_PAYMENT` ficaram **write-only** — `createParcelamento` ainda os grava (e o modal
+V1 do front ainda os exige), mas o único leitor era `confirmParcelaPayment`. Removê-los é decisão do
+dono: mexe em coluna e no modal do front.
 
 - Derivação única: **`quadroDasParcelas`** + `parcelaRowQuitada` / `temEvidenciaDePagamento` /
   `SELECT_PARCELA_PARA_QUADRO`, em `parcelamento/recalculoParcelamento.js` (junto do `parcelaQuitada`
   que já existia, e **chamando-o** — a regra da IN RFB 2.063/2022 não foi reescrita).
 - Materialização: **`parcelamento/parcelaSync.js`** (`sincronizarParcelas`, idempotente), chamada em
-  `createParcelamento`, `linkGuideToParcela` e `ingestParcelamentoFromGuide` — esta última **também
-  quando não há `guideId`**, que é o caminho SERPRO. `addMonths`/`buildDateOfMonth` mudaram de casa
-  para lá (o mesmo calendário do V1 e das linhas de `parcelas`; duas cópias dariam dois vencimentos
-  para a mesma obrigação).
+  `createParcelamento` e `ingestParcelamentoFromGuide` — esta última **também quando não há
+  `guideId`**, que é o caminho SERPRO e o "parcelamento-first". `addMonths`/`buildDateOfMonth`
+  mudaram de casa para lá (o mesmo calendário do V1 e das linhas de `parcelas`; duas cópias dariam
+  dois vencimentos para a mesma obrigação).
 - ⚠ `competenciaInicial = '1970-01'` é **sentinela**, não data (`ingestParcelamentoFromGuide` grava
   `compLabel || "1970-01"`). Dela não sai cronograma — as datas ficam nulas.
 - Migration `20260808180000_add_parcela`: **não escreve em `"Guide"` nem em

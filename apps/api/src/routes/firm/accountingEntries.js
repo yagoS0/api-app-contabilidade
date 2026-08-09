@@ -2127,123 +2127,27 @@ export function createAccountingEntriesRouter({ log }) {
 
   // ─── Lançamentos ─────────────────────────────────────────────────────────
 
-  // POST /firm/companies/:companyId/entries/parcelamento
-  // Cria N parcelas de um parcelamento (Simples Nacional, INSS, etc.) em uma transaction.
-  // Cada parcela vira 1 AccountingEntry com subtipo=PARC_DAS, tipo=PROVISAO, statusPagamento=ABERTO,
-  // com 3 linhas: D principal + D juros + C contrapartida (total = principal + juros).
-  // Histórico inclui "N/<numero>" para identificar a parcela ("N/1", "N/2", ..., "N/9").
-  router.post(
-    "/entries/parcelamento",
-    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
-    async (req, res) => {
-      const portalClientId = String(req.params.companyId);
-      const body = req.body || {};
-
-      const principalAccount = String(body.principalAccount || "").trim();
-      const jurosAccount = String(body.jurosAccount || "").trim();
-      const contraAccount = String(body.contraAccount || "").trim();
-      const principalValue = Number(body.principalValue);
-      const jurosValue = Number(body.jurosValue || 0);
-      const numParcelas = Math.min(60, Math.max(1, Number(body.numParcelas) || 1));
-      const competenciaInicial = String(body.competenciaInicial || "").trim();
-      const diaPagamento = Math.min(31, Math.max(1, Number(body.diaPagamento) || 1));
-      const periodosReferenciados = String(body.periodosReferenciados || "").trim();
-      const labelParcelamento = String(body.label || "PARCELAMENTO SIMPLES NACIONAL").trim();
-
-      // Validações
-      if (!principalAccount || !contraAccount) {
-        return res.status(400).json({ error: "contas_principal_e_contrapartida_obrigatorias" });
-      }
-      if (!Number.isFinite(principalValue) || principalValue <= 0) {
-        return res.status(400).json({ error: "principal_value_invalido" });
-      }
-      if (!/^\d{4}-\d{2}$/.test(competenciaInicial)) {
-        return res.status(400).json({ error: "competencia_inicial_invalida" });
-      }
-      // Se houver juros, jurosAccount é obrigatório
-      if (Number.isFinite(jurosValue) && jurosValue > 0 && !jurosAccount) {
-        return res.status(400).json({ error: "juros_account_required" });
-      }
-
-      // Helpers locais
-      function addMonthsToCompetencia(comp, n) {
-        const [yyyy, mm] = comp.split("-").map(Number);
-        const date = new Date(Date.UTC(yyyy, mm - 1 + n, 1));
-        return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-      }
-      function buildDate(comp, dayOfMonth) {
-        const [yyyy, mm] = comp.split("-").map(Number);
-        // Se o dia não existir no mês (ex: 31 em fev), usa o último dia.
-        const lastDay = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate();
-        const dayReal = Math.min(dayOfMonth, lastDay);
-        return new Date(Date.UTC(yyyy, mm - 1, dayReal));
-      }
-
-      const totalLinha = Number(((principalValue + (jurosValue || 0)) * 100).toFixed(0)) / 100;
-      const loteImportacao = `PARC_DAS-${Date.now()}`;
-      const created = [];
-
-      try {
-        await prisma.$transaction(async (tx) => {
-          for (let i = 0; i < numParcelas; i++) {
-            const competenciaN = addMonthsToCompetencia(competenciaInicial, i);
-            const dataN = buildDate(competenciaN, diaPagamento);
-            const numeroParcela = i + 1;
-            const sufixoPeriodos = periodosReferenciados ? ` DE ${periodosReferenciados}` : "";
-            const historicoPrincipal =
-              `VR REF ${labelParcelamento}${sufixoPeriodos} EM ${numParcelas} PARCELAS N/${numeroParcela}`;
-            const historicoJuros =
-              `VR REF JUROS S/${labelParcelamento}${sufixoPeriodos} EM ${numParcelas} PARCELAS N/${numeroParcela}`;
-
-            const entry = await tx.accountingEntry.create({
-              data: {
-                portalClientId,
-                data: dataN,
-                competencia: competenciaN,
-                historico: historicoPrincipal,
-                tipo: "PROVISAO",
-                subtipo: "PARC_DAS",
-                origem: "MANUAL",
-                loteImportacao,
-                status: "RASCUNHO",
-                statusPagamento: "ABERTO",
-              },
-            });
-
-            const linhas = [
-              {
-                entryId: entry.id, conta: principalAccount, tipo: "D",
-                valor: principalValue, ordem: 0, historico: historicoPrincipal,
-              },
-            ];
-            if (jurosValue > 0) {
-              linhas.push({
-                entryId: entry.id, conta: jurosAccount, tipo: "D",
-                valor: jurosValue, ordem: 1, historico: historicoJuros,
-              });
-            }
-            linhas.push({
-              entryId: entry.id, conta: contraAccount, tipo: "C",
-              valor: totalLinha, ordem: linhas.length, historico: historicoPrincipal,
-            });
-
-            await tx.accountingEntryLine.createMany({ data: linhas });
-            created.push({
-              parcela: numeroParcela,
-              entryId: entry.id,
-              competencia: competenciaN,
-              data: dataN.toISOString(),
-              valor: totalLinha,
-            });
-          }
-        });
-        return res.status(201).json({ ok: true, loteImportacao, created, totalParcelas: numParcelas });
-      } catch (err) {
-        log.error({ err }, "Erro ao criar parcelamento Simples Nacional");
-        return res.status(500).json({ ok: false, error: "internal_error", message: err?.message });
-      }
-    },
-  );
+  // ⚠ `POST /entries/parcelamento` FOI REMOVIDA (F2.3).
+  //
+  // Ela criava um LOTE DE LANÇAMENTOS que fingia ser um parcelamento: N `AccountingEntry`
+  // `tipo=PROVISAO`, `subtipo="PARC_DAS"`, um por mês, com D principal + D juros + C contrapartida.
+  // Sem cabeçalho `Parcelamento`, sem card na aba Parcelamento, sem linha em `parcelas`, sem número
+  // de parcelamento, sem risco de rescisão, sem baixa. Um parcelamento que o módulo de parcelamento
+  // não enxergava — e cujas provisões a Circular também não sabia rotear.
+  //
+  // ⚠ Ela também era a ÚNICA escrita de `subtipo="PARC_DAS"` no sistema. `guideCompliance` mantinha
+  // uma pré-query atrás desse valor "que quase nunca casa" (o V1 grava `PARC_SIMPLES`/`PARC_INSS`, o
+  // V2 grava `PARC_<TIPO>`); em produção ela nunca casou com nada, porque esta rota nunca foi usada:
+  // zero lançamentos com esse subtipo. Ela reconhecia, além disso, JUROS NA ADESÃO — a forma de
+  // lançamento que `linhasProvisao` abandonou de propósito, por reconhecer o encargo duas vezes.
+  //
+  // Quem cria parcelamento hoje é `POST /parcelamentos/ingestao` (contrato + provisão + cronograma).
+  //
+  // ⚠ O FRONT AINDA TEM O CAMINHO LIGADO: menu "Funções" → "+ Parcelamento Simples"
+  // (`renderAccountingEntriesTab.jsx`) → `onCreateParcelamento` (`App.jsx`) →
+  // `handleCreateParcelamento` (`useManageAccountingWorkspace.js`) → `createParcelamentoSimples`
+  // (`api/real/realApi.js`). O botão passa a responder 404 até o front removê-lo — nunca foi
+  // exercido em produção, mas está na tela.
 
   // POST /firm/companies/:companyId/entries/folha
   // Q52: cada linha do modal de Folha/Pró-labore vira UM lançamento individual (1 perna),
@@ -2705,8 +2609,32 @@ export function createAccountingEntriesRouter({ log }) {
         });
       }
 
-      // Q16: entries de parcelamento (abertura/baixa) memorizam contas POR LINHA, pra a
-      // próxima abertura/baixa da mesma empresa (mesmo kind) vir pré-preenchida.
+      // ⚠ AS DUAS MEMÓRIAS DE CONTA DO PARCELAMENTO — E ATÉ A F2.3 SÓ A ERRADA ERA ALIMENTADA.
+      //
+      // Elas são estruturas diferentes, com chaves diferentes, e cada versão do módulo lê a sua:
+      //
+      //   V1 — `AccountingHistorico`, chave `(empresa, "PARC_<KIND>_<ROLE>#<ordem>")`.
+      //        Escrita por `memorizeParcelamentoLineAccounts`. Lida por `lookupLineConta`, que só
+      //        `createParcelamento` (V1) chama. Depende da ORDEM da linha no template.
+      //   V2 — `MapaContaTributo`, chave `(cliente|global, tipoParcelamento, tipoLinha, codigoTributo)`.
+      //        Lida por `resolverConta` — ou seja, por TODA provisão e TODA baixa do V2, e pelo
+      //        pré-preenchimento do modal (`resolverContasProvisao`). Depende do PAPEL da linha.
+      //
+      // O auto-save chamava só a primeira. Num lançamento V2 ela até escrevia algo (o 1º entry da
+      // provisão vira role OPEN, porque é ele que `aberturaEntryId` aponta; as baixas viram
+      // PAY_JUROS/PAY_PRINCIPAL pelo histórico) — mas escrevia na tabela que o V2 NUNCA LÊ. O
+      // resultado é que o contador corrigia a conta de um parcelamento, o sistema dizia que
+      // aprendeu, e o parcelamento seguinte vinha com o campo em branco de novo.
+      //
+      // `memorizeMapaContaTributo` existia para isso desde a Q21 e estava EXPORTADA SEM UM ÚNICO
+      // CHAMADOR — a memória do V2 só era alimentada na ingestão, quando o modal mandava
+      // `provisaoLines`; correção posterior nunca era aprendida.
+      //
+      // ⚠ AS DUAS CONTINUAM SENDO CHAMADAS, e nenhuma atrapalha a outra: cada uma ignora o que não
+      // é dela. A do V1 só grava linha com conta e deriva o papel de `aberturaEntryId`/histórico; a
+      // do V2 exige `tipoLinha` NA LINHA (`if (!conta || !tipoLinha) continue`), campo que só os
+      // lançamentos do V2 preenchem — num lançamento V1 ela é no-op. Best-effort, como já eram:
+      // falha aqui nunca derruba o save.
       if (existing.parcelamentoId && Array.isArray(updated?.lines) && updated.lines.length > 0) {
         try {
           const { memorizeParcelamentoLineAccounts } = await import(
@@ -2718,7 +2646,19 @@ export function createAccountingEntriesRouter({ log }) {
             entry: updated,
           });
         } catch (memErr) {
-          log.warn({ memErr }, "Falha ao memorizar contas de parcelamento (não crítico)");
+          log.warn({ memErr }, "Falha ao memorizar contas de parcelamento V1 (não crítico)");
+        }
+        try {
+          const { memorizeMapaContaTributo } = await import(
+            "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
+          );
+          await memorizeMapaContaTributo({
+            portalClientId,
+            entry: updated,
+            userId: req.auth?.user?.id,
+          });
+        } catch (memErr) {
+          log.warn({ memErr }, "Falha ao memorizar MapaContaTributo (não crítico)");
         }
       }
 
@@ -3675,20 +3615,16 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
-  // GET /firm/companies/:companyId/parcelamentos/:parcId
-  router.get("/parcelamentos/:parcId", requireFirmCompanyAccess(), async (req, res) => {
-    const portalClientId = String(req.params.companyId);
-    const parcelamentoId = String(req.params.parcId);
-    try {
-      const { getParcelamento } = await import("../../application/accounting/ParcelamentoService.js");
-      const data = await getParcelamento({ portalClientId, parcelamentoId });
-      if (!data) return res.status(404).json({ ok: false, error: "parcelamento_not_found" });
-      return res.json({ ok: true, data });
-    } catch (err) {
-      log.error({ err }, "Falha ao obter parcelamento");
-      return res.status(500).json({ ok: false, error: "internal_error" });
-    }
-  });
+  // ⚠ `GET /parcelamentos/:parcId` FOI REMOVIDA (F2.3), e com ela o `getParcelamento` do
+  // `ParcelamentoService`. Ela devolvia o MESMO objeto decorado que `GET /parcelamentos` já devolve
+  // para a lista inteira, e não tinha um chamador sequer — o wrapper existia no cliente HTTP do
+  // front e nenhuma tela o invocava. Enquanto existia, ela era também o curinga que engolia as
+  // rotas literais de `/parcelamentos/` registradas depois dela (defeito já corrigido uma vez,
+  // travado por `__tests__/parcelamentosRotasLiterais.test.js`).
+  //
+  // As literais acima continuam tendo de vir ANTES de qualquer rota com `:parcId`: `/config` e
+  // `/rescindir` têm segmento extra e não colidem hoje, mas a ordem é a disciplina que impede a
+  // colisão de voltar quando alguém registrar o próximo curinga.
 
   // POST /firm/companies/:companyId/parcelamentos
   // body: { label, kind, templateOpeningFunctionId, templatePaymentFunctionId, templateRescisionFunctionId,
@@ -3820,17 +3756,33 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
-  // Q21 (spec v2) — POST /firm/companies/:companyId/parcelamentos/ingestao
-  // Sobe uma guia MANUAL como parcela de parcelamento → cria/anexa parcelamento +
-  // PROVISÃO (1ª vez) + PAGAMENTO por composição (juros LIDO). body:
-  //   { guideId, header: { tipo, numeroParcelamento, quantidadeParcelas, numeroParcela,
-  //                        valorPrincipal, valorMulta, valorJuros, valorTotal, dataAdesao,
-  //                        anoMesParcela?, vencimento? }, tributos?: [{codigoTributo,principal,multa,juros,total}] }
+  // Q21 (spec v2) / F2.3 — POST /firm/companies/:companyId/parcelamentos/ingestao
+  //
+  // ⚠ ESTA É A PORTA DO "PARCELAMENTO-FIRST". O parcelamento é um CONTRATO de dívida que vive até
+  // 60 meses; a guia é evidência MENSAL e OPCIONAL — ela não existe em débito automático, e não
+  // existe em contrato migrado de outra contabilidade. Por isso `guideId` é opcional aqui, em
+  // `buildDTOsFromManual` e em `ingestParcelamentoFromGuide`: os três caminhos já aceitavam a
+  // ausência, e é essa cadeia inteira que sustenta criar o contrato sem documento nenhum.
+  //
+  // ⚠ SEM GUIA, A COMPETÊNCIA INICIAL TEM DE VIR NO HEADER (`anoMesParcela`, "YYYYMM" ou "YYYY-MM").
+  // Sem ela e sem guia, o serviço grava a sentinela `1970-01` e o cronograma nasce SEM DATAS — o
+  // contrato aparece como "0 de N" com risco não avaliável. Não é bug: é o que se sabe quando não
+  // há data confiável (`parcelaSync.COMPETENCIA_SENTINELA`).
+  //
+  // body:
+  //   { guideId?, parcelasJaPagas?,
+  //     header: { tipo, numeroParcelamento, quantidadeParcelas, numeroParcela,
+  //               valorPrincipal, valorMulta, valorJuros, valorTotal, dataAdesao,
+  //               anoMesParcela?, vencimento?, descricao?,
+  //               formaPagamento?  ("DEBITO_AUTOMATICO" | "GUIA_MENSAL"; ausente = NÃO DECLARADO),
+  //               diaPagamento?    (1..31 — alimenta o cronograma, que é a data que decide atraso),
+  //               saldoConsolidado? (INFORMATIVO — não vira lançamento) },
+  //     tributos?: [{codigoTributo,principal,multa,juros,total}] }
   // Se `tributos` ausente, usa a composição já extraída do PDF (guide.extracted.composicao).
   router.post("/parcelamentos/ingestao", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const userId = req.auth?.user?.id;
-    const { guideId, header, tributos, provisaoLines, pagamentoLines } = req.body || {};
+    const { guideId, header, tributos, provisaoLines, pagamentoLines, parcelasJaPagas } = req.body || {};
     // Q28: guideId é OPCIONAL — caminho SERPRO cria o parcelamento sem guia (o worker traz as guias).
     if (!header?.tipo) return res.status(400).json({ ok: false, error: "tipo_required" });
     // Q23: nº do parcelamento é obrigatório (necessário pra busca automática do SERPRO).
@@ -3850,7 +3802,13 @@ export function createAccountingEntriesRouter({ log }) {
       const { buildDTOsFromManual } = await import("../../application/accounting/parcelamento/entradaManual.js");
       const { ingestParcelamentoFromGuide } = await import("../../application/accounting/parcelamento/ParcelamentoV2Service.js");
       const { parcelamentoDTO, parcelaDTO } = buildDTOsFromManual({ guide, header, tributos });
-      const data = await ingestParcelamentoFromGuide({ portalClientId, guideId: guide?.id || null, parcelamentoDTO, parcelaDTO, provisaoLines, pagamentoLines, descricao: header?.descricao, userId });
+      const data = await ingestParcelamentoFromGuide({
+        portalClientId, guideId: guide?.id || null, parcelamentoDTO, parcelaDTO,
+        provisaoLines, pagamentoLines, descricao: header?.descricao,
+        // F2.3: N prestações quitadas ANTES do sistema → `origemBaixa: "HISTORICO"`, sem lançamento.
+        parcelasJaPagas,
+        userId,
+      });
       return res.status(201).json({ ok: true, data });
     } catch (err) {
       const code = err?.code || "internal_error";
@@ -3862,62 +3820,19 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
-  // POST /firm/companies/:companyId/parcelamentos/:parcId/link-guide
-  // body: { guideId, numeroParcela }
-  router.post("/parcelamentos/:parcId/link-guide", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
-    const portalClientId = String(req.params.companyId);
-    const parcelamentoId = String(req.params.parcId);
-    const { guideId, numeroParcela } = req.body || {};
-    if (!guideId || !numeroParcela) {
-      return res.status(400).json({ ok: false, error: "guideId_and_numeroParcela_required" });
-    }
-    try {
-      const { linkGuideToParcela } = await import("../../application/accounting/ParcelamentoService.js");
-      const data = await linkGuideToParcela({ portalClientId, guideId, parcelamentoId, numeroParcela: Number(numeroParcela) });
-      return res.json({ ok: true, data });
-    } catch (err) {
-      const code = err?.message || "internal_error";
-      const map = {
-        parcelamento_not_found: 404,
-        guide_not_found: 404,
-        numero_parcela_out_of_range: 400,
-      };
-      const status = map[code] || 500;
-      if (status === 500) log.error({ err }, "Falha ao linkar guia ao parcelamento");
-      return res.status(status).json({ ok: false, error: code });
-    }
-  });
-
-  // POST /firm/companies/:companyId/parcelamentos/:parcId/parcelas/:num/pagar
-  // body: { jurosValor, dataPagamento? }
-  router.post("/parcelamentos/:parcId/parcelas/:num/pagar", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
-    const portalClientId = String(req.params.companyId);
-    const parcelamentoId = String(req.params.parcId);
-    const numeroParcela = Number(req.params.num);
-    const { jurosValor, dataPagamento } = req.body || {};
-    const userId = req.auth?.user?.id;
-    try {
-      const { confirmParcelaPayment } = await import("../../application/accounting/ParcelamentoService.js");
-      const data = await confirmParcelaPayment({
-        portalClientId, parcelamentoId, numeroParcela,
-        jurosValor: Number(jurosValor) || 0,
-        dataPagamento, userId,
-      });
-      return res.status(201).json(data);
-    } catch (err) {
-      const code = err?.message || "internal_error";
-      const map = {
-        parcelamento_not_found: 404,
-        parcelamento_not_active: 400,
-        parcela_not_found: 404,
-        parcela_already_paid: 400,
-        payment_template_not_configured: 400,
-      };
-      const status = map[code] || 500;
-      if (status === 500) log.error({ err }, "Falha ao confirmar pagamento de parcela");
-      return res.status(status).json({ ok: false, error: code });
-    }
-  });
+  // ⚠ DUAS ROTAS DO V1 FORAM REMOVIDAS AQUI (F2.3), junto com os serviços que só elas chamavam:
+  //
+  //   · `POST /parcelamentos/:parcId/link-guide`            → `linkGuideToParcela`
+  //   · `POST /parcelamentos/:parcId/parcelas/:num/pagar`   → `confirmParcelaPayment`
+  //
+  // As duas operavam sobre as LINHAS LEVES `tipo="PARCELA"` que só o V1 (`createParcelamento`) cria,
+  // e a segunda dependia de um `AccountingFunction kind=PARCELAMENTO_PAYMENT` configurado. Produção
+  // não tem um único parcelamento V1 — e nenhuma tela chamava nenhuma das duas.
+  //
+  // A baixa da parcela hoje é UMA só, logo abaixo: por GUIA, com o juros LIDO da composição, e ela
+  // é a que a aba Parcelamento usa. Ter duas portas para "dar baixa numa parcela", com semânticas
+  // diferentes (uma pelo template, outra pelo comprovante), era o convite a lançar a mesma parcela
+  // de dois jeitos.
 
   // Lança a baixa de UMA parcela (a partir da guia). Mês fechado bloqueia — aqui SIM há lançamento.
   router.post("/parcelamentos/parcelas/:guideId/baixa", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
