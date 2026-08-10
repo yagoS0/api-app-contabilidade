@@ -4565,17 +4565,40 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // o front acompanha por polling no GET e baixa o arquivo pronto em /arquivo.
   // ===========================================================================
 
+  /**
+   * ⚠ AS EMPRESAS DO PEDIDO QUE SÃO MESMO DA CARTEIRA DE QUEM PEDIU.
+   *
+   * As três rotas de lote abaixo (`/notas-download`, `/notas-captura`, `/sitfis-download`) filtravam
+   * `companyIds` por `{ id: { in: ids } }` — o que só prova que a empresa **existe no banco**, não
+   * que ela é do escritório de quem está pedindo. Duas delas ainda traziam o comentário "só entram
+   * ids que EXISTEM na carteira", que era a intenção certa com a query errada.
+   *
+   * Consequência real: um usuário do escritório A, mandando ids do escritório B, disparava consulta
+   * ao ADN e **baixava os XMLs** de empresas que não são dele. Multi-tenancy por `firmAccess` é
+   * inegociável neste projeto, e este era o furo.
+   *
+   * A cláusula correta já existia 250 linhas acima, em `/firm/apuracao` — mas escrita inline, e a
+   * cópia inline é como as três de baixo divergiram. Aqui é uma função só, e as três a chamam.
+   *
+   * ⚠ Silencioso de propósito: id fora da carteira é DESCARTADO, não vira erro. Responder "essa
+   * empresa não é sua" confirmaria a existência do id para quem está sondando.
+   */
+  async function idsDaCarteira(req, companyIds) {
+    const ids = Array.isArray(companyIds) ? companyIds.map(String).filter(Boolean) : [];
+    if (!ids.length) return [];
+    const userId = String(req.auth?.user?.id || "");
+    const where = { id: { in: ids } };
+    // admin/contador enxergam a carteira toda — mesma regra de `/companies` e `/firm/apuracao`.
+    if (!isAdminLikeUser(req.auth?.user)) where.firmAccess = { some: { userId } };
+    const existentes = await prisma.portalClient.findMany({ where, select: { id: true } });
+    return existentes.map((c) => c.id);
+  }
+
   // POST /firm/notas-download  body: { companyIds:[], competenciaDe, competenciaAte, tipo?, papel? }
   router.post("/notas-download", async (req, res) => {
     const { companyIds, competenciaDe, competenciaAte, tipo, papel } = req.body || {};
     try {
-      // Só empresas que existem (evita ids inventados no payload).
-      const ids = Array.isArray(companyIds) ? companyIds.map(String).filter(Boolean) : [];
-      const existentes = await prisma.portalClient.findMany({
-        where: { id: { in: ids } },
-        select: { id: true },
-      });
-      const validIds = existentes.map((c) => c.id);
+      const validIds = await idsDaCarteira(req, companyIds);
       const result = await criarNotasDownloadJob({
         companyIds: validIds,
         competenciaDe,
@@ -4606,15 +4629,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.post("/notas-captura", async (req, res) => {
     const { companyIds, alvos } = req.body || {};
     try {
-      // ⚠ Isolamento multi-tenant: só entram ids que EXISTEM na carteira, nunca o que veio no
-      // payload. Mesmo cuidado do /notas-download.
-      const ids = Array.isArray(companyIds) ? companyIds.map(String).filter(Boolean) : [];
-      const existentes = await prisma.portalClient.findMany({
-        where: { id: { in: ids } },
-        select: { id: true },
-      });
+      // ⚠ Isolamento multi-tenant: só entram ids da carteira DE QUEM PEDIU — ver `idsDaCarteira`.
+      // Esta rota chama o ADN de verdade, então o furo aqui era consulta externa em nome de empresa
+      // alheia, não só leitura.
       const result = await criarNotasCapturaJob({
-        portalClientIds: existentes.map((c) => c.id),
+        portalClientIds: await idsDaCarteira(req, companyIds),
         alvos,
         triggeredBy: req.auth?.user?.id || null,
       });
@@ -4748,9 +4767,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // POST /firm/sitfis-download  body: { companyIds:[] }
   router.post("/sitfis-download", async (req, res) => {
     try {
-      const ids = Array.isArray(req.body?.companyIds) ? req.body.companyIds.map(String).filter(Boolean) : [];
-      const existentes = await prisma.portalClient.findMany({ where: { id: { in: ids } }, select: { id: true } });
-      const result = await criarSitfisDownloadJob({ companyIds: existentes.map((c) => c.id), userId: req.auth?.user?.id });
+      const result = await criarSitfisDownloadJob({
+        companyIds: await idsDaCarteira(req, req.body?.companyIds),
+        userId: req.auth?.user?.id,
+      });
       return res.json(result);
     } catch (err) {
       log.warn({ err: err?.message }, "Falha ao criar download de SITFIS");
