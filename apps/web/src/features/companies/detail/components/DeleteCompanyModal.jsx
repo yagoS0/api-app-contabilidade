@@ -108,7 +108,6 @@ export function DeleteCompanyModal({ company, saving, onConfirm, onClose }) {
             variant="danger"
             onClick={handleDelete}
             disabled={!canDelete}
-            style={canDelete ? { background: "#FF4757", color: "white" } : { background: "#44475A", color: "#888", cursor: "not-allowed" }}
           >
             {saving ? "Excluindo…" : "Excluir definitivamente"}
           </Button>

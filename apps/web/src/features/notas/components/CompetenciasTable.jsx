@@ -1,26 +1,28 @@
+import { Button } from "../../../components/ui/Button";
 import { PANEL, StateBadge, fmtMoney } from "./notasStyles";
 
 const MES_LABELS = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 
+// ⚠ `Fechar` era ciano e `Reabrir` era âmbar — token de ESTADO em botão de AÇÃO. O ciano é a
+// categoria (competência FECHADA) e o âmbar é PENDÊNCIA; pintar o botão com a cor do estado que ele
+// produz faz o comando parecer o estado, e o `StateBadge` da mesma linha — que é onde a cor
+// realmente significa alguma coisa — perde a exclusividade. Ambos são a ação da linha: accent.
 function CompActions({ comp, onFechar, onReabrir, onDetalhar, saving }) {
   const estado = comp.estado;
   return (
     <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
-      <button onClick={() => onDetalhar(comp)} disabled={saving}
-        style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer", fontSize: "0.75rem" }}>
+      <Button size="sm" variant="secondary" onClick={() => onDetalhar(comp)} disabled={saving}>
         Detalhar
-      </button>
+      </Button>
       {(estado === "aberto" || estado === "em_conferencia") && (
-        <button onClick={() => onFechar(comp.competencia)} disabled={saving}
-          style={{ padding: "4px 8px", borderRadius: 4, border: "none", background: "#8BE9FD", color: "#000", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600 }}>
+        <Button size="sm" onClick={() => onFechar(comp.competencia)} disabled={saving}>
           Fechar
-        </button>
+        </Button>
       )}
       {["fechado","calculado","revisado","transmitido","confirmado","erro"].includes(estado) && (
-        <button onClick={() => onReabrir(comp.competencia)} disabled={saving}
-          style={{ padding: "4px 8px", borderRadius: 4, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600 }}>
+        <Button size="sm" onClick={() => onReabrir(comp.competencia)} disabled={saving}>
           Reabrir
-        </button>
+        </Button>
       )}
     </div>
   );

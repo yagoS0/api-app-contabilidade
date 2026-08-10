@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "../../../components/ui/Button";
 import { PANEL } from "./notasStyles";
 
 export function ReabrirCompetenciaModal({ competencia, saving, onConfirm, onClose }) {
@@ -33,14 +34,14 @@ export function ReabrirCompetenciaModal({ competencia, saving, onConfirm, onClos
         </label>
         {err && <div style={{ color: "#FF4757", fontSize: "0.8rem", marginBottom: 12 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button onClick={onClose} disabled={saving}
-            style={{ padding: "8px 16px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer" }}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancelar
-          </button>
-          <button onClick={handle} disabled={saving || !reason.trim()}
-            style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontWeight: 600 }}>
+          </Button>
+          {/* Âmbar aqui era a cor da pendência que a reabertura CRIA, não do comando. */}
+          <Button onClick={handle} disabled={saving || !reason.trim()}
+            title={!reason.trim() ? "Informe o motivo para reabrir" : ""}>
             {saving ? "Reabrindo…" : "Reabrir"}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

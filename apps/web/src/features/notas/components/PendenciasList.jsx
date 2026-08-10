@@ -1,3 +1,4 @@
+import { Button } from "../../../components/ui/Button";
 import { PANEL, fmtDate } from "./notasStyles";
 
 export function PendenciasList({ pendencias, saving, onReabrir, onResolver }) {
@@ -27,15 +28,17 @@ export function PendenciasList({ pendencias, saving, onReabrir, onResolver }) {
                 {p.observacoes && <span style={{ color: PANEL.muted, display: "block", fontSize: "0.75rem" }}>{p.observacoes}</span>}
               </td>
               <td style={{ padding: 6, color: PANEL.muted }}>{fmtDate(p.createdAt)}</td>
+              {/* O âmbar da caixa (a pendência CONSTATADA) fica — ali a cor é informação. O botão
+                  não: "Reabrir competência" é ação, e ação primária é o accent. */}
               <td style={{ padding: 6, textAlign: "right" }}>
-                <button onClick={() => onReabrir(p.competencia)} disabled={saving}
-                  style={{ padding: "4px 8px", borderRadius: 4, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontSize: "0.75rem", marginRight: 4, fontWeight: 600 }}>
-                  Reabrir competência
-                </button>
-                <button onClick={() => onResolver(p.id)} disabled={saving}
-                  style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.muted, cursor: "pointer", fontSize: "0.75rem" }}>
-                  Ignorar
-                </button>
+                <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                  <Button size="sm" onClick={() => onReabrir(p.competencia)} disabled={saving}>
+                    Reabrir competência
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => onResolver(p.id)} disabled={saving}>
+                    Ignorar
+                  </Button>
+                </div>
               </td>
             </tr>
           ))}

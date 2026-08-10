@@ -393,15 +393,17 @@ export function ChartOfAccountsPage({
           <span style={{ color: PANEL.accent, fontWeight: 700 }}>
             {selectedCount} selecionada{selectedCount !== 1 ? "s" : ""}
           </span>
-          <button
+          {/* ⚠ Era `#8BE9FD` sólido — ciano é CATEGORIA no vocabulário do app, e o mesmo ciano
+              identifica o selo "pendente de ERP" logo abaixo (linha ~487). O botão que resolve a
+              pendência tinha a cor da pendência. É a ação primária da barra: accent. */}
+          <Button
             type="button"
             onClick={handleBulkConfirm}
             disabled={bulkBusy || selectedPendingCount === 0}
             title={selectedPendingCount === 0 ? "Selecione contas pendentes de ERP" : `Confirmar ${selectedPendingCount} pendente${selectedPendingCount !== 1 ? "s" : ""}`}
-            style={{ ...ACTION, background: "#8BE9FD", borderColor: "#8BE9FD", color: PANEL.page, opacity: selectedPendingCount === 0 ? 0.5 : 1 }}
           >
             {bulkBusy ? "..." : `Confirmar ERP${selectedPendingCount > 0 ? ` (${selectedPendingCount})` : ""}`}
-          </button>
+          </Button>
           <Button type="button" variant="danger" onClick={handleBulkDelete} disabled={bulkBusy}>
             {bulkBusy ? "..." : "Excluir selecionadas"}
           </Button>

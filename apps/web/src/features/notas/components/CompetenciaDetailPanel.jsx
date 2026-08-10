@@ -1,3 +1,4 @@
+import { Button } from "../../../components/ui/Button";
 import { PANEL, StateBadge, fmtMoney, fmtDate } from "./notasStyles";
 
 function Field({ label, value, mono }) {
@@ -44,17 +45,16 @@ export function CompetenciaDetailPanel({ comp, saving, onFechar, onReabrir, onCl
       </div>
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        {/* Mesmo motivo do `CompetenciasTable`: ciano/âmbar aqui eram estado usado como cor de ação. */}
         {(comp.estado === "aberto" || comp.estado === "em_conferencia") && (
-          <button onClick={() => onFechar(comp.competencia)} disabled={saving}
-            style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#8BE9FD", color: "#000", cursor: "pointer", fontWeight: 600 }}>
+          <Button onClick={() => onFechar(comp.competencia)} disabled={saving}>
             🔒 Fechar competência
-          </button>
+          </Button>
         )}
         {["fechado","calculado","revisado","transmitido","confirmado","erro"].includes(comp.estado) && (
-          <button onClick={() => onReabrir(comp.competencia)} disabled={saving}
-            style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#FFB347", color: "#000", cursor: "pointer", fontWeight: 600 }}>
+          <Button onClick={() => onReabrir(comp.competencia)} disabled={saving}>
             🔓 Reabrir competência
-          </button>
+          </Button>
         )}
       </div>
     </section>

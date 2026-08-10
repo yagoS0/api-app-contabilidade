@@ -1,5 +1,6 @@
 // Q14.2.e — Form do Cadastro Fiscal (regime, CNAEs, sublimite).
 import { useEffect, useState } from "react";
+import { Button } from "../../../components/ui/Button";
 import { PANEL } from "../../notas/components/notasStyles";
 
 const REGIMES = [
@@ -127,10 +128,10 @@ export function CadastroFiscalForm({ cadastro, cnaePrincipalRef, saving, onSave 
       </label>
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <button type="submit" disabled={saving}
-          style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#BD93F9", color: "#000", cursor: "pointer", fontSize: "0.9rem", fontWeight: 600 }}>
+        {/* `#BD93F9` era o accent escrito como hex literal — o valor vem do token, via `Button`. */}
+        <Button type="submit" disabled={saving}>
           {saving ? "Salvando…" : "💾 Salvar cadastro"}
-        </button>
+        </Button>
       </div>
     </form>
   );

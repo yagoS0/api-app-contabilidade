@@ -661,8 +661,9 @@ export function CompanyForm({
                     onSuspend(reason.trim() || null);
                   }}
                   disabled={dangerSaving}
-                  style={{ background: "#FFB347", color: "#1A1B26" }}
                 >
+                  {/* ⚠ O âmbar inline foi removido: `--state-warn` é PENDÊNCIA ("falta enviar"), não
+                      cor de comando — e a caixa "Zona de Risco" em volta já carrega o peso. */}
                   {dangerSaving ? "Suspendendo…" : "Suspender empresa"}
                 </Button>
               )
@@ -670,9 +671,10 @@ export function CompanyForm({
             {onDelete && (
               <Button
                 type="button"
+                variant="danger"
                 onClick={onDelete}
                 disabled={dangerSaving}
-                style={{ background: "#FF4757", color: "white", marginLeft: "auto" }}
+                style={{ marginLeft: "auto" }}
               >
                 Excluir empresa…
               </Button>

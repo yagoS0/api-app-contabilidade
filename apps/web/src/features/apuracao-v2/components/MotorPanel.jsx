@@ -1,6 +1,7 @@
 // Q14.3.c — Painel do motor de apuração local.
 // Permite contador escolher competência + apurar + ver DAS calculado por anexo.
 import { useState } from "react";
+import { Button } from "../../../components/ui/Button";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 
 function defaultCompetencia() {
@@ -54,10 +55,10 @@ export function MotorPanel({ panel }) {
           <input type="number" step="0.01" value={folha12m} onChange={(e) => setFolha12m(e.target.value)}
             placeholder="opcional" style={{ background: PANEL.field, border: `1px solid ${PANEL.border}`, borderRadius: 6, color: PANEL.text, padding: "6px 10px", width: 140 }} />
         </label>
-        <button onClick={handleApurar} disabled={panel.saving}
-          style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: "#BD93F9", color: "#000", cursor: "pointer", fontSize: "0.9rem", fontWeight: 600 }}>
+        {/* `#BD93F9` era o accent escrito como hex literal — o valor vem do token, via `Button`. */}
+        <Button onClick={handleApurar} disabled={panel.saving}>
           {panel.saving ? "Calculando…" : "🧮 Apurar agora"}
-        </button>
+        </Button>
       </div>
 
       {/* Resultado: blockers OU snapshot */}

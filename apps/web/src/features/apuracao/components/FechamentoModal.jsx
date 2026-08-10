@@ -2,6 +2,7 @@
 // Faturamento (read-only, das notas), folha 12m (grade), atividades (editável),
 // aviso de disparidade, alíquota/DAS calculado. Botões: Calcular | Salvar | Transmitir.
 import { useEffect, useState } from "react";
+import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { CadastroFiscalForm } from "../../apuracao-v2/components/CadastroFiscalForm";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
@@ -456,15 +457,24 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
             )}
 
             {/* Botões */}
+            {/* ⚠ O accent (ação primária) ANDA COM O PASSO, e isso é decisão, não descuido.
+                Sem `resultado` os dois últimos botões nascem desabilitados: pintar de accent um
+                controle que não pode ser clicado faz do elemento mais alto da tela o único
+                inutilizável — a hierarquia passaria a apontar pra parede. Então antes de calcular o
+                accent é o 🧮 Calcular (o único ato possível); depois de calcular ele passa pro
+                📤 Apurar/Transmitir, que é o ato que a tela existe pra fazer. Em qualquer instante
+                há UM accent, e ele é sempre o próximo passo legítimo.
+                As cores antigas eram token de ESTADO em botão de AÇÃO (ciano = categoria,
+                âmbar = pendência) — ver `apps/web/CLAUDE.md`. */}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <button onClick={handleCalcular} disabled={acting || (atividades.length === 0 && !semMovimento)}
-                style={btn("#8BE9FD")}>{acting ? "…" : (atividades.length === 0 && semMovimento ? "🧮 Calcular sem movimento" : "🧮 Calcular (simulação)")}</button>
-              <button onClick={handleSalvar} disabled={acting || !resultado}
-                style={btn("#FFB347")} title={!resultado ? "Calcule antes de salvar" : ""}>💾 Salvar (fechar)</button>
-              <button onClick={() => setShowTransmit(true)} disabled={acting || !resultado}
-                style={btn("#BD93F9")} title={!resultado ? "Calcule antes de transmitir" : ""}>
+              <Button onClick={handleCalcular} disabled={acting || (atividades.length === 0 && !semMovimento)}
+                variant={resultado ? "secondary" : "primary"}>{acting ? "…" : (atividades.length === 0 && semMovimento ? "🧮 Calcular sem movimento" : "🧮 Calcular (simulação)")}</Button>
+              <Button onClick={handleSalvar} disabled={acting || !resultado}
+                variant="secondary" title={!resultado ? "Calcule antes de salvar" : ""}>💾 Salvar (fechar)</Button>
+              <Button onClick={() => setShowTransmit(true)} disabled={acting || !resultado}
+                variant={resultado ? "primary" : "secondary"} title={!resultado ? "Calcule antes de transmitir" : ""}>
                 {retificar ? "🔄 Retransmitir (retificadora)" : "📤 Apurar/Transmitir"}
-              </button>
+              </Button>
             </div>
 
             {/* Confirmação de transmissão individual */}
@@ -482,7 +492,10 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
                   <input value={confirmComp} onChange={(e) => setConfirmComp(e.target.value)} placeholder={competencia} style={{ ...inputS, fontFamily: "monospace", flex: 1 }} />
-                  <button onClick={handleTransmitir} disabled={acting || confirmComp !== competencia} style={btn("#FF4757", "#fff")}>{acting ? "Transmitindo…" : "Confirmar"}</button>
+                  {/* Este é o clique irreversível do lado da Receita — `danger` é o único lugar
+                      desta tela onde o vermelho é a AÇÃO, e ele já vive dentro da caixa de
+                      confirmação com a competência digitada. */}
+                  <Button onClick={handleTransmitir} disabled={acting || confirmComp !== competencia} variant="danger">{acting ? "Transmitindo…" : "Confirmar"}</Button>
                 </div>
               </div>
             )}
@@ -493,6 +506,6 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   );
 }
 
-function btn(bg, color = "#000") {
-  return { padding: "8px 14px", borderRadius: 6, border: "none", background: bg, color, cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 };
-}
+// ⚠ O helper `btn(bg, color)` foi REMOVIDO. Ele existia só pra pintar botão com hex literal, e os
+// hexes que recebia eram tokens de ESTADO (#8BE9FD categoria, #FFB347 pendência) usados como cor
+// de AÇÃO. Botão do app é `components/ui/Button.jsx`; não recrie um irmão aqui.
