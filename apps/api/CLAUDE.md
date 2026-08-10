@@ -1177,6 +1177,64 @@ Regressão: `apuracao/v2/__tests__/declaracaoZerada.test.js` (8).
 delas já estão fechadas. O `salvarFechamento` sequer é alcançado: sem snapshot ele responde
 `NAO_CALCULADA`, e o botão Salvar nasce desabilitado.
 
+### "Empresa zerada" — o botão registra o que já foi feito; ele NÃO entrega nada
+
+⚠ **A premissa mudou no meio da investigação, e a versão final é esta** (dono, 10/08/2026):
+*"os meses estão entregues sim, foram entregues à mão"*. As ~190 competências zeradas **já foram
+declaradas** no portal do gov.br. O que faltava não era a entrega — era o portal **saber** dela: ele
+exibia pendência que não existe.
+
+O botão vive no `FechamentoModal` (`features/apuracao/components/EmpresaZeradaPanel.jsx`) e alimenta
+**duas peças que já existiam**, nenhuma delas nova:
+
+| afirmação | onde mora | quem escreve |
+|---|---|---|
+| "o mês não teve receita" | `CompanyMonthlyCircular.semFaturamento` (tri-estado, com as duas travas) | `marcarSemFaturamento` — **o mesmo** serviço da aba Lançamentos, com as recusas intactas |
+| "a declaração foi entregue FORA do portal" | `EntregaObrigacaoArquivo`, tipo **`PGDAS_D`** | `registrarEntregaExternaPgdas` (`FechamentoService`), rota `POST .../fechamento/:comp/entrega-externa` |
+
+⚠ **Por que `EntregaObrigacaoArquivo` e não coluna nova.** Ela já é, letra por letra, "obrigação
+entregue no programa/portal oficial, marcada À MÃO, nunca escrita por automação, com recibo e
+observação", chaveada por (empresa, tipo, competência) — o mesmo desenho da DEFIS. Uma coluna em
+`ApuracaoSnapshot` seria pior: as 190 competências **não têm snapshot**, e criar um só para guardar
+a marca exigiria inventar `rbt12`/`receitaPorTipo` (NOT NULL) — dado fiscal fabricado num registro
+auditável. `empresaZerada` (PortalClient) não serve: é da EMPRESA inteira, não da competência.
+
+⚠ **A flag `ENTREGA_ARQUIVO_LIBERADA = false` (`routes/firm/obrigacoes.js`) NÃO foi tocada.** Ela
+desliga o fluxo de entrega por **arquivo** (EFD, upload/PVA), que é outra frente; o PGDAS-D não tem
+arquivo a subir e entra pela rota da apuração.
+
+**As CINCO respostas para "onde está a declaração desta competência?"** vivem numa leitura só,
+`apps/web/src/features/apuracao/lib/entregaPgdas.js` (16 testes), e a procedência é o que as separa:
+
+| estado | de onde vem | cor |
+|---|---|---|
+| transmitida pelo portal | `ApuracaoSnapshot.estado="transmitida"` **com** `numeroDeclaracao` | verde |
+| **capturada da RFB** (entregue à mão) | `CompanyMonthlyCircular.pgdasNumeroDeclaracao` — extrato do PGDAS-D | verde |
+| declarada pelo contador | `EntregaObrigacaoArquivo(PGDAS_D).transmitidaEm` | **neutro** |
+| **entrega desconhecida** | extrato nunca consultado (`serproSyncStatus` nulo) | âmbar |
+| não entregue | extrato consultado e `NOT_FOUND` | vermelho |
+
+- ⚠ **"Não sabemos" não pode se parecer com "está devendo".** Vermelho só depois de a Receita ter
+  sido perguntada e ter respondido que não há declaração; sem consulta, a resposta honesta é
+  "desconhecida" (âmbar = ação rápida disponível: buscar o extrato).
+- ⚠ **A âncora da prova é a COLUNA `pgdasNumeroDeclaracao`, nunca o PDF do `metadata`.** 20 das 102
+  circulares com marca de PGDAS-D já perderam o bloco do `metadata` (sync posterior sobrescreveu,
+  ou é formato antigo); a coluna sobreviveu. Perder o PDF não pode virar "não foi entregue".
+- ⚠ **Afirmação não vira prova.** O campo de recibo é livre, opcional e **nunca preenchido por
+  padrão**; a tela diz "declarado pelo contador" e nomeia o caminho para comprovar (buscar o
+  extrato). E quando a prova JÁ existe, a confirmação **não pergunta** — trocar a prova capturada
+  por uma palavra seria perder procedência, o mesmo defeito que impede gravar o RBT12 como
+  "veio da simulação".
+- ⚠ **Evidência CONTRA a afirmação aparece**: registro de entrega + extrato `NOT_FOUND` consultado
+  **depois** dele → `declarada_fora_desmentida`, em vermelho. Extrato anterior ao registro não
+  desmente nada (a foto é mais velha que o fato).
+- ⚠ `registrarEntregaExternaPgdas` **recusa** (`ENTREGA_EXTERNA_JA_TRANSMITIDA`, 409) quando a
+  competência já consta transmitida pelo portal: seriam duas histórias sobre a mesma declaração.
+- **Nada disto transmite**, e nenhum estado daqui autoriza transmitir. Fechar como empresa zerada
+  resolve o mês **do nosso lado**; a obrigação perante a Receita continua sendo outra pergunta — e é
+  exatamente por isso que ela tem um bloco próprio, visível, na aba Apuração da empresa (não só
+  dentro do modal).
+
 ## Regras
 
 - Nunca hardcodar credenciais ou URLs — usar `config.js`

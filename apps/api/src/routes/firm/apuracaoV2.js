@@ -17,6 +17,7 @@ import {
   salvarFechamento,
   transmitirFechamento,
   reabrirFechamento,
+  registrarEntregaExternaPgdas,
   FechamentoError,
 } from "../../application/notas/apuracao/v2/FechamentoService.js";
 import { carregarAtividades } from "../../application/notas/apuracao/v2/AtividadeResolver.js";
@@ -533,6 +534,51 @@ export function createApuracaoV2Router({ log } = {}) {
       } catch (err) {
         log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha transmitirFechamento");
         return bad(res, err?.code === "ESTADO_INVALIDO" ? 409 : statusForFechamentoErr(err), err?.code || "transmitir_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  /**
+   * Registra que o PGDAS-D desta competência foi entregue **FORA do portal** (gov.br), ou desfaz
+   * esse registro.
+   *
+   * ⚠ NÃO TRANSMITE NADA, e não é prova. É a afirmação do contador — mesma natureza da marca da
+   * DEFIS e da entrega por arquivo, e guardada no mesmo modelo (`EntregaObrigacaoArquivo`,
+   * tipo `PGDAS_D`). A prova continua sendo o número que o extrato da RFB devolve
+   * (`CompanyMonthlyCircular.pgdasNumeroDeclaracao`), e a tela mostra as duas coisas com nomes
+   * diferentes.
+   *
+   * ⚠ ATO DE CONSEQUÊNCIA CONFIRMA REPETINDO OS DADOS: afirmar entrega de declaração é responder
+   * "esta obrigação está cumprida?" por um mês inteiro. `confirmCompetencia` é exigido na MARCAÇÃO
+   * (não no desfazer — desfazer devolve a competência ao estado de pendência, que é o lado seguro).
+   */
+  router.post(
+    "/fechamento/:competencia/entrega-externa",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia);
+      const { entregue, confirmCompetencia, observacao } = req.body || {};
+      if (entregue === true && confirmCompetencia !== competencia) {
+        return bad(res, 400, "confirm_competencia_mismatch",
+          "Confirme a competência exata para registrar a entrega feita fora do portal.");
+      }
+      try {
+        const result = await registrarEntregaExternaPgdas({
+          portalClientId, competencia,
+          entregue: entregue === true,
+          observacao,
+          userId: req.auth?.user?.id || null,
+        });
+        return res.json({ ok: true, result });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha ao registrar entrega externa do PGDAS-D");
+        return bad(
+          res,
+          err?.code === "ENTREGA_EXTERNA_JA_TRANSMITIDA" ? 409 : statusForFechamentoErr(err),
+          err?.code || "entrega_externa_failed",
+          err?.message || "Erro",
+        );
       }
     }
   );

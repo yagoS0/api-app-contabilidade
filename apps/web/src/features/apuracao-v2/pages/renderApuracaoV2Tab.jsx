@@ -14,6 +14,7 @@ import { ResolverPendenciaModal } from "../components/ResolverPendenciaModal";
 import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
 import { SugestaoAnexoTabela } from "../components/SugestaoAnexoPanel";
 import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
+import { entregaPgdasDoFechamento, CORES_TOM } from "../../apuracao/lib/entregaPgdas";
 import { Tabs } from "../../../components/ui/Tabs";
 import { Button } from "../../../components/ui/Button";
 
@@ -212,6 +213,28 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
             <Kpi label="Receita 12 meses" title={`${RBT12_NOME} (RBT12)`} value={`${fmtMoney(fechDados?.rbt12)}`} />
             <Kpi label="DAS apurado" value={dasApurado != null ? `${fmtMoney(dasApurado)}` : "—"} cor="#8BE9FD" />
           </div>
+          {/* ⚠ ESTA FAIXA É A TELA DOS "TRÊS MESES DEPOIS".
+              Uma competência fechada como EMPRESA ZERADA não passa pelo `estado` da apuração (não
+              há snapshot: 190 competências zeradas em produção, 190 sem snapshot), então a linha
+              "Estado: pendente" acima é tudo o que ela mostrava — indistinguível de um mês que
+              ninguém tocou, e mais ainda de um mês entregue. Aqui a competência diz o que é: zerada
+              do nosso lado, e ONDE está a declaração (entregue por aqui · entregue fora · devendo).
+              A regra é a mesma do modal, importada — não reescrita. */}
+          {fechDados?.semFaturamento && (() => {
+            const entrega = entregaPgdasDoFechamento(fechDados);
+            const { cor, fundo } = CORES_TOM[entrega.tom];
+            return (
+              <div style={{ padding: 10, background: fundo, border: `1px solid ${cor}`, borderRadius: 8, color: cor, fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: 3 }}>
+                <strong>
+                  Empresa zerada nesta competência
+                  {fechDados?.semFaturamentoEm ? ` (marcada em ${fmtDate(fechDados.semFaturamentoEm)})` : ""}
+                  {" · "}
+                  {entrega.provada ? "✓" : "⚠"} {entrega.rotulo}
+                </strong>
+                <span style={{ color: PANEL.muted }}>{entrega.detalhe}</span>
+              </div>
+            );
+          })()}
           {fechDados?.cadastroCompleto === false && (
             <div style={{ padding: 10, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 8, color: "#FFB347", fontSize: "0.82rem" }}>
               ⚠ Cadastro fiscal incompleto (sem CNAE). Ajuste na aba Cadastro antes de fechar.

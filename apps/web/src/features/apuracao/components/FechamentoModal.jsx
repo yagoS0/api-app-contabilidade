@@ -6,6 +6,7 @@ import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { CadastroFiscalForm } from "../../apuracao-v2/components/CadastroFiscalForm";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
+import { EmpresaZeradaPanel } from "./EmpresaZeradaPanel";
 
 function pasAnteriores(competencia, n = 12) {
   const [y, m] = String(competencia).split("-").map(Number);
@@ -363,6 +364,26 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                     {dados?.empresaZerada ? " (Empresa marcada como zerada.)" : ""}
                   </span>
                 </label>
+              )}
+
+              {/* EMPRESA ZERADA — o pedido do dono, e a fronteira que ele NÃO atravessa.
+                  Aparece quando a competência não tem receita (ou já foi marcada), porque é aí que
+                  a pergunta "isto está resolvido?" tem três respostas possíveis. A caixa acima
+                  ("Declarar SEM MOVIMENTO") continua sendo o caminho de TRANSMITIR daqui; esta é o
+                  registro do que aconteceu FORA. As duas coexistem de propósito — colapsá-las faria
+                  "fechei aqui" e "entreguei lá" virarem a mesma frase na tela. */}
+              {(dados?.semMovimentoDisponivel || dados?.semFaturamento) && (
+                <div style={{ marginTop: 8 }}>
+                  <EmpresaZeradaPanel
+                    api={api}
+                    feedback={feedback}
+                    dados={dados}
+                    portalClientId={portalClientId}
+                    competencia={competencia}
+                    razao={razao}
+                    onChanged={async () => { await load(); onChanged?.(); }}
+                  />
+                </div>
               )}
             </div>
 

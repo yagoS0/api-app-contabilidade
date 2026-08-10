@@ -148,6 +148,92 @@ async function montarAtividadesDoCnae({ cnaePrincipal, faturamentoInterno = 0, f
   return out;
 }
 
+// ─── A DECLARAÇÃO ENTREGUE **FORA** DO PORTAL ──────────────────────────────────────────────────
+//
+// Fato novo do dono (10/08/2026): *"já fiz envios antes para a Receita com a empresa sem
+// faturamento"*. Ou seja, a declaração zerada É entregue — só que não por aqui (as 190 competências
+// zeradas medidas em produção não têm um único `ApuracaoSnapshot`). Logo existem TRÊS desfechos, e
+// nenhum pode se parecer com o outro na tela:
+//
+//   1. entregue POR AQUI      → `ApuracaoSnapshot.estado === "transmitida"` (+ `numeroDeclaracao`)
+//   2. entregue POR FORA      → esta marca, e/ou o número que o extrato da RFB devolve
+//   3. NÃO entregue           → nenhuma das duas. É a perigosa: vira obrigação esquecida
+//
+// ⚠ POR QUE `EntregaObrigacaoArquivo`, E NÃO UMA COLUNA NOVA
+// Ela já é, letra por letra, "obrigação entregue no programa/portal oficial, marcada À MÃO pelo
+// contador, nunca escrita por automação, com recibo e observação", chaveada por
+// (empresa, tipo, competência). É o mesmo desenho que a DEFIS usa. Uma coluna nova em
+// `ApuracaoSnapshot` seria pior por dois motivos: os 190 casos NÃO TÊM snapshot, e criar um só
+// para guardar esta marca exigiria inventar `rbt12`/`receitaPorTipo` (NOT NULL) — dado fiscal
+// fabricado num registro auditável.
+//
+// ⚠ ISTO NÃO TRANSMITE NADA e NÃO É PROVA. `transmitidaEm` aqui é a afirmação do contador. A prova
+// é `CompanyMonthlyCircular.pgdasNumeroDeclaracao`, que vem do índice da própria RFB. Os dois ficam
+// em campos separados de propósito: promovida a comprovação, a afirmação faria o portal responder
+// "entregue" a partir de nada além de um clique.
+export const TIPO_ENTREGA_PGDAS = "PGDAS_D";
+
+export async function lerEntregaExternaPgdas({ portalClientId, competencia }) {
+  return prisma.entregaObrigacaoArquivo.findUnique({
+    where: {
+      portalClientId_tipo_competencia: {
+        portalClientId, tipo: TIPO_ENTREGA_PGDAS, competencia,
+      },
+    },
+    select: { transmitidaEm: true, transmitidaPorId: true, observacao: true },
+  }).catch(() => null);
+}
+
+/**
+ * Registra (ou desfaz) a afirmação "esta declaração foi entregue FORA do portal".
+ *
+ * ⚠ RECUSA quando a apuração desta competência já consta como transmitida POR AQUI: seriam duas
+ * histórias sobre a mesma entrega, e a segunda apagaria a primeira na leitura. A saída vai na
+ * mensagem.
+ *
+ * Desmarcar é explícito (`entregue: false`) — erro de marcação não pode virar permanente.
+ */
+export async function registrarEntregaExternaPgdas({
+  portalClientId, competencia, entregue, observacao = null, userId = null,
+}) {
+  if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+    throw new FechamentoError("competencia_required", "Competência inválida.");
+  }
+  const snapshot = await prisma.apuracaoSnapshot.findUnique({
+    where: { portalClientId_competencia: { portalClientId, competencia } },
+    select: { estado: true, numeroDeclaracao: true },
+  }).catch(() => null);
+  if (entregue && snapshot?.estado === "transmitida") {
+    throw new FechamentoError(
+      "ENTREGA_EXTERNA_JA_TRANSMITIDA",
+      "Esta competência já consta como TRANSMITIDA pelo portal"
+      + (snapshot.numeroDeclaracao ? ` (declaração ${snapshot.numeroDeclaracao})` : "")
+      + ". Não dá para registrar também uma entrega feita fora — seriam duas histórias sobre a "
+      + "mesma declaração. Se a transmissão daqui não aconteceu de fato, reabra a apuração antes.",
+    );
+  }
+
+  const texto = String(observacao || "").trim();
+  const data = entregue
+    ? {
+      transmitidaEm: new Date(),
+      transmitidaPorId: userId,
+      observacao: texto || null,
+    }
+    : { transmitidaEm: null, transmitidaPorId: null, observacao: null };
+
+  const entrega = await prisma.entregaObrigacaoArquivo.upsert({
+    where: {
+      portalClientId_tipo_competencia: {
+        portalClientId, tipo: TIPO_ENTREGA_PGDAS, competencia,
+      },
+    },
+    create: { portalClientId, tipo: TIPO_ENTREGA_PGDAS, competencia, ...data },
+    update: data,
+  });
+  return { ok: true, competencia, entregueFora: Boolean(entregue), entrega };
+}
+
 /**
  * Dados pro modal de fechamento. Pré-preenche atividades/folha da memória de config.
  */
@@ -168,10 +254,19 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
   }
   const cnaePrincipalEfetivo = cadastro?.cnaePrincipal || companyCnae?.cnaePrincipal || null;
   // Afirmação de "mês sem faturamento" feita no fechamento contábil — entra aqui só como dica.
+  //
+  // ⚠ `pgdasNumeroDeclaracao` e `serproLastSyncAt` viajam junto porque são a PROVA de entrega que
+  // não é nossa: o número vem do índice da RFB (`CONSDECLARACAO13`, via `syncPgdasByCompetencia`).
+  // É ele que distingue "a declaração existe na Receita" de "o contador diz que entregou".
   const circularDoMes = await prisma.companyMonthlyCircular.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
-    select: { semFaturamento: true },
+    select: {
+      semFaturamento: true, semFaturamentoEm: true, semFaturamentoConferencia: true,
+      pgdasNumeroDeclaracao: true, pgdasDeclaracaoFileId: true,
+      serproSyncStatus: true, serproLastSyncAt: true,
+    },
   }).catch(() => null);
+  const entregaExterna = await lerEntregaExternaPgdas({ portalClientId, competencia });
   const { receitaPorTipoMercado: rtm, receitaPorTipo, semClassificacao } =
     await receitaPorTipoMercado({ portalClientId, competencia });
 
@@ -227,6 +322,31 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     // Afirmação POR MÊS feita na aba Lançamentos (`CompanyMonthlyCircular.semFaturamento`).
     // Só DICA para a UI pré-marcar a caixa — não decide nada aqui: quem transmite é o contador.
     semFaturamento: circularDoMes?.semFaturamento === true,
+    semFaturamentoEm: circularDoMes?.semFaturamentoEm || null,
+    semFaturamentoConferencia: circularDoMes?.semFaturamentoConferencia || null,
+    // ─── ONDE ESTÁ A DECLARAÇÃO DESTA COMPETÊNCIA ────────────────────────────────────────────
+    // Fatos crus, sem veredito: quem os combina é `features/apuracao/lib/entregaPgdas.js`, do lado
+    // da tela, numa cópia só. Combinar aqui TAMBÉM daria duas leituras da mesma pergunta — o
+    // defeito que mais reapareceu neste projeto.
+    entregaPgdas: {
+      // A RFB confirmando que a declaração existe (extrato do PGDAS-D). É PROVA, e não é nossa.
+      //
+      // ⚠ A ÂNCORA É A COLUNA, NUNCA O PDF. O `metadata` guarda declaração/recibo/autenticação em
+      // base64, mas 20 das 102 circulares com marca de PGDAS-D já perderam esse bloco (sync
+      // posterior sobrescreveu, ou é formato antigo). `pgdasNumeroDeclaracao` é coluna e
+      // sobreviveu — perder o PDF não pode virar "não foi entregue".
+      numeroDeclaracaoRfb: circularDoMes?.pgdasNumeroDeclaracao || null,
+      temPdfDaDeclaracao: Boolean(circularDoMes?.pgdasDeclaracaoFileId),
+      // ⚠ "Nunca consultamos" ≠ "consultamos e não há". `NOT_FOUND` é a Receita respondendo que não
+      // existe declaração no período; `null` é ninguém ter perguntado. Sem esta distinção, toda
+      // competência que ninguém buscou apareceria como obrigação em aberto.
+      extratoStatus: circularDoMes?.serproSyncStatus || null,
+      extratoConsultadoEm: circularDoMes?.serproLastSyncAt || null,
+      // O contador afirmando que entregou fora do portal. É AFIRMAÇÃO — nunca vira prova sozinha.
+      declaradaForaEm: entregaExterna?.transmitidaEm || null,
+      declaradaForaPor: entregaExterna?.transmitidaPorId || null,
+      declaradaForaObservacao: entregaExterna?.observacao || null,
+    },
     receitaPorTipo,
     semClassificacao,
     atividades,
@@ -355,11 +475,18 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
 // é transmitido. O que muda é só o que o contador lê — a frase da RFB continua citada literalmente
 // (não se reescreve mensagem de órgão), com o contexto que falta em volta dela.
 //
-// ⚠ O QUE NÃO SE SABE, E POR ISSO NÃO É INVENTADO (regra 1/4): qual é o formato oficial do
-// PGDAS-D **sem movimento** no Integra Contador. Hoje `buildDeclaracaoPayload` monta a declaração
-// zerada como `estabelecimentos[0].atividades: []` + `receitaPaCompetencia*: 0` — e é isso que a
-// RFB está recusando. Enquanto o formato correto não vier de documentação oficial ou do dono,
-// nenhuma tentativa de adivinhá-lo entra aqui.
+// ⚠ A CAUSA FOI ENCONTRADA E CORRIGIDA — esta função virou REDE, não explicação do defeito.
+//
+// O payload zerado saía com `estabelecimentos[0].atividades: []`, e a forma que a RFB aceita é
+// **omitir a chave**. Está na documentação oficial do `TRANSDECLARACAO11` ("Se não houve atividade
+// para o estabelecimento, não enviar esta lista") e na AÇÃO do próprio erro, no catálogo de
+// mensagens do PGDAS-D (`MSG_ISN_023`). Corrigido em `buildDeclaracaoPayload`, com teste de forma
+// em `fiscal/serpro/__tests__/buildDeclaracaoPayloadZerada.test.js`.
+//
+// ⚠ MAS A CORREÇÃO NÃO FOI EXERCIDA CONTRA A RECEITA — nenhuma chamada real foi feita depois dela
+// (regra 5: não se dispara ato fiscal para testar). Então esta tradução FICA: se a recusa voltar, o
+// contador precisa ler algo melhor que a frase de campo da RFB, e o texto tem de dizer que o
+// formato documentado já está sendo enviado — senão manda investigar o que já foi investigado.
 const RE_ATIVIDADE_MAIOR_QUE_ZERO = /valor da atividade deve ser maior que zero/i;
 
 export function traduzirRecusaDeclaracaoZerada(err, declaracaoZerada) {
@@ -368,11 +495,12 @@ export function traduzirRecusaDeclaracaoZerada(err, declaracaoZerada) {
   if (!RE_ATIVIDADE_MAIOR_QUE_ZERO.test(msg)) return err;
   return new FechamentoError(
     "DECLARACAO_ZERADA_RECUSADA_RFB",
-    "A Receita recusou a declaração SEM MOVIMENTO no formato que este portal envia "
-    + `(atividades vazias, receita R$ 0,00). Resposta da RFB: "${msg}". `
-    + "Nada foi transmitido. O formato oficial do PGDAS-D sem movimento ainda não está confirmado "
-    + "aqui — enquanto isso, a declaração zerada desta competência precisa ser entregue fora do "
-    + "portal, e o mês pode ser marcado como \"Mês sem faturamento\" na aba Lançamentos.",
+    "A Receita recusou a declaração SEM MOVIMENTO. **Nada foi transmitido.** "
+    + `Resposta da RFB: "${msg}". `
+    + "⚠ Isto não deveria mais acontecer: o portal já envia a declaração zerada no formato que a "
+    + "documentação oficial descreve (sem a lista de atividades). Se esta mensagem apareceu, a "
+    + "causa é outra e precisa ser investigada — entregue esta competência pelo portal do PGDAS-D "
+    + "e registre a entrega aqui.",
     { rfb: msg },
   );
 }
