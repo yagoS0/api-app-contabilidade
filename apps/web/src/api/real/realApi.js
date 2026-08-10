@@ -473,6 +473,23 @@ export function createRealApi() {
         }),
       });
     },
+    // ⚠ O VALOR **CONTRATADO** DA PRESTAÇÃO — não o pago. Ele é `parcelas.valorPrevisto` (o que o
+    // acordo diz que a prestação vale, e o que a baixa amortiza do passivo); o PAGO continua sendo
+    // `principal + juros + multa` da baixa. São chamadas separadas porque são fatos separados: a
+    // diferença entre os dois é informação (juros, atraso), e colapsá-los num campo só a apagaria.
+    //
+    // ⚠ `valorAnteriorConferido` é OBRIGATÓRIO e vai SEMPRE — inclusive `null`, que significa "o
+    // contrato não tinha valor". A chave ausente é recusada com 400 `CONFERENCIA_OBRIGATORIA`:
+    // alterar o contrato é ato de consequência, e a confirmação repete o que era e o que passa a ser.
+    async corrigirValorPrevistoParcela(companyId, parcelaId, body = {}) {
+      return request(`/firm/companies/${companyId}/parcelamentos/parcelas/${parcelaId}/valor-previsto`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          valorPrevisto: body.valorPrevisto,
+          valorAnteriorConferido: body.valorAnteriorConferido ?? null,
+        }),
+      });
+    },
     // Busca o comprovante no SERPRO e só REGISTRA (não lança) — a baixa segue sendo do contador.
     async buscarPagamentoGuia(guideId) {
       return request(`/firm/guides/${guideId}/buscar-pagamento`, { method: "POST" });
@@ -954,6 +971,35 @@ export function createRealApi() {
       return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/rescindir`, {
         method: "POST",
         body: JSON.stringify({ dataRescisao, observacoes, rescisaoLines }),
+      });
+    },
+    // ── OS ATOS DO CONTRATO: excluir, e desfazer a rescisão ─────────────────
+    //
+    // ⚠ CADA UM TEM PREVIEW PRÓPRIO, e o preview NÃO ESCREVE NADA. A confirmação precisa dos
+    // números de AGORA (quantas prestações, quantas guias, quantos lançamentos, quanto somam, quais
+    // competências estão fechadas) — só o servidor sabe. Um "tem certeza?" sem esses números pede a
+    // decisão e sonega o que a sustenta, que é o oposto de dar autonomia ao contador.
+    async previewExclusaoParcelamento(companyId, parcId) {
+      const payload = await request(`/firm/companies/${companyId}/parcelamentos/${parcId}/exclusao/preview`);
+      return payload?.preview || null;
+    },
+    // ⚠ `totalConferido` é o número que o contador VIU. O servidor recompara e recusa com 409
+    // `CONFERENCIA_DIVERGENTE` se o contrato mudou entre a tela e o clique (o worker trouxe mais uma
+    // guia, outra sessão lançou uma baixa). Sem mandá-lo, essa guarda não existe.
+    async excluirParcelamento(companyId, parcId, { motivo, totalConferido } = {}) {
+      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/exclusao`, {
+        method: "POST",
+        body: JSON.stringify({ motivo, totalConferido: totalConferido ?? null }),
+      });
+    },
+    async previewDesfazerRescisao(companyId, parcId) {
+      const payload = await request(`/firm/companies/${companyId}/parcelamentos/${parcId}/desfazer-rescisao/preview`);
+      return payload?.preview || null;
+    },
+    async desfazerRescisaoParcelamento(companyId, parcId, { motivo } = {}) {
+      return request(`/firm/companies/${companyId}/parcelamentos/${parcId}/desfazer-rescisao`, {
+        method: "POST",
+        body: JSON.stringify({ motivo }),
       });
     },
     // Q31 Parte D: vincula/desvincula uma provisão (competência aberta) a um parcelamento (só marca).

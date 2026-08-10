@@ -379,6 +379,8 @@ model PortalClient {
   MarcoFiscal             MarcoFiscal[]
   obrigacoes              Obrigacao[]
   estornosBaixa           EstornoBaixa[]
+  /// Contraparte de `atos_parcelamento`. NENHUMA coluna nova em `portal_clients` — a FK mora lá.
+  atosParcelamento        AtoParcelamento[]
   /// Contraparte da relação do funil de onboarding. NENHUMA coluna nova é criada em
   /// `portal_clients`: a FK mora em `onboardings.portalClientId`.
   onboarding              Onboarding?
@@ -1202,6 +1204,86 @@ model EstornoBaixa {
   @@index([guideId])
   @@index([entryIdOriginal])
   @@map("estornos_baixa")
+}
+
+/// AUDITORIA DOS ATOS ADMINISTRATIVOS DO CONTRATO — excluir o parcelamento, desfazer a rescisão.
+///
+/// ⚠ MESMO DESENHO DE `estornos_baixa`, E PELO MESMO MOTIVO: no modo DELECAO as linhas que este
+/// registro explica DEIXAM DE EXISTIR (inclusive a própria linha de `parcelamentos`), então a
+/// auditoria não pode morar nelas. Todo campo `*Original` é CÓPIA, não referência — é o que mantém o
+/// registro legível sozinho seis meses depois, quando alguém perguntar "cadê o parcelamento nº 3?".
+///
+/// ⚠ `parcelamentoId` é TEXTO SEM FK, de propósito. O contrato que ele identifica normalmente não
+/// existe mais; uma FK com SET NULL zeraria justamente o dado que dá sentido ao registro, e uma com
+/// RESTRICT impediria a exclusão de acontecer. Mesma decisão de `EstornoBaixa.entryIdOriginal`.
+///
+/// ⚠ `motivo` é NOT NULL **e** tem CHECK de tamanho no banco: é ele que transforma "apagou" em
+/// "decidiu e assinou", e o CHECK garante que nenhum caminho de escrita futuro grave um ato mudo.
+model AtoParcelamento {
+  id             String @id @default(uuid())
+  portalClientId String
+  /// Sem FK — ver o comentário acima.
+  parcelamentoId String
+
+  /// EXCLUSAO | RESCISAO_DESFEITA (CHECK no banco).
+  ato String
+
+  // ── O CONTRATO, COMO ELE ERA (cópia imutável) ─────────────────────────────────────────────
+  labelOriginal              String
+  tipoOriginal               String?
+  numeroParcelamentoOriginal String?
+  statusOriginal             String
+  competenciaInicial         String?
+  totalValueOriginal         Decimal? @db.Decimal(18, 2)
+
+  // ── O QUE FOI DESFEITO, EM NÚMEROS ────────────────────────────────────────────────────────
+  /// Os mesmos números que a confirmação mostrou ao contador. Guardá-los é o que permite conferir
+  /// depois se o que ele viu foi o que aconteceu.
+  prestacoesRemovidas      Int      @default(0)
+  prestacoesQuitadas       Int      @default(0)
+  guiasDesvinculadas       Int      @default(0)
+  lancamentosApagados      Int      @default(0)
+  lancamentosPreservados   Int      @default(0)
+  contraLancamentosCriados Int      @default(0)
+  valorTotalDesfeito       Decimal  @default(0) @db.Decimal(18, 2)
+  /// Lista separada por vírgula — as competências que estavam FECHADAS e por isso ganharam espelho.
+  competenciasFechadas     String?
+
+  /// DELECAO (nada em competência fechada: as linhas saíram) | CONTRA_LANCAMENTO (sobrou linha em
+  /// mês fechado: ela FICA e nasce o espelho invertido na competência de hoje).
+  modo              String
+  competenciaContra String?
+  /// ⚠ `false` quer dizer que a linha de `parcelamentos` SOBREVIVEU, com `status="EXCLUIDO"`. Ela é
+  /// a âncora do grupo que `computeFechamentoBlockers` usa para somar D/C dos lançamentos de uma
+  /// perna só; apagá-la travaria o fechamento do mês. Ver `AtosParcelamentoService.js`.
+  cabecalhoRemovido Boolean @default(false)
+
+  motivo             String
+  executadoPorUserId String?
+  executadoEm        DateTime @default(now())
+
+  /// Risco de rescisão logo APÓS o ato (só faz sentido no `RESCISAO_DESFEITA`: é o contrato que
+  /// volta a existir, e ele pode voltar já rescindível).
+  riscoNivel    String?
+  riscoEmAtraso Int?
+
+  /// A cópia item a item do que saiu (lançamentos e guias). No modo DELECAO é a única coisa que
+  /// resta deles.
+  detalhe Json?
+
+  createdAt DateTime @default(now())
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  // ⚠ NÃO DECLARÁVEIS AQUI (o Prisma não modela CHECK) — vivem só no SQL da migration
+  // `20260810160000_add_atos_parcelamento`:
+  //   CHECK chk_ato_parc_motivo : length(btrim("motivo")) >= 5
+  //   CHECK chk_ato_parc_modo   : "modo" IN ('DELECAO','CONTRA_LANCAMENTO')
+  //   CHECK chk_ato_parc_ato    : "ato"  IN ('EXCLUSAO','RESCISAO_DESFEITA')
+  @@index([portalClientId])
+  @@index([parcelamentoId])
+  @@index([ato])
+  @@map("atos_parcelamento")
 }
 
 model CompanyMonthlyCircular {

@@ -221,8 +221,10 @@ export function linhaDaFilaSemGuia(p, agora = new Date()) {
     numeroParcela: p.numeroParcela ?? null,
     competencia: p.competencia ?? null,
     vencimento: p.vencimento ?? null,
-    // O PRINCIPAL vem do contrato — a tela o mostra como leitura, nunca como campo editável, pelo
-    // mesmo motivo que o serviço o lê de `parcelas.valorPrevisto` e não do body.
+    // ⚠ O PRINCIPAL É O VALOR **CONTRATADO**, e a baixa continua lendo-o de `parcelas.valorPrevisto`
+    // — nunca do body dela. O que mudou é que ele passou a ser CORRIGÍVEL, por uma rota própria
+    // (`PATCH .../parcelas/:parcelaId/valor-previsto`): a fonte segue única, e a correção escreve
+    // NA fonte em vez de contorná-la. Corrigir o contrato e declarar um pagamento são dois atos.
     valorPrevisto,
     situacao: situacaoDaPrestacaoSemGuia(p, agora),
     parcelamentoId: p.parcelamentoId ?? parc?.id ?? null,
@@ -239,7 +241,88 @@ export function linhaDaFilaSemGuia(p, agora = new Date()) {
       }
       : null,
     podeBaixar: !semProvisao && !semValor,
+    // ⚠ OS DOIS MOTIVOS NÃO SE RESOLVEM NO MESMO LUGAR, e a tela precisa saber disso:
+    // `provisao_inexistente` exige lançar a adesão (outra tela); `sem_valor_previsto` se resolve
+    // NO PRÓPRIO modal de baixa, corrigindo o valor contratado. Por isso o `podeBaixar` continua
+    // falso nos dois (o servidor recusaria a baixa AGORA, nos dois casos) mas o segundo não é
+    // beco sem saída — ele é o estado normal de todo contrato criado sem guia.
     motivoBloqueio: semProvisao ? "provisao_inexistente" : (semValor ? "sem_valor_previsto" : null),
+    corrigivelNaTela: !semProvisao && semValor,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ⚠ A AUSÊNCIA DEIXA DE SER MUDA — as prestações que a RESCISÃO tirou da fila
+//
+// `whereParcelaSemGuiaPendente` exclui o parcelamento RESCINDIDO, e a exclusão está CERTA: o risco é
+// `null` porque "não há mais o que prevenir", e uma fila de trabalho sobre um acordo morto é
+// trabalho inventado. O defeito nunca foi o filtro — foi o SILÊNCIO dele.
+//
+// Medido no dia 10/08/2026: os dois contratos rescindidos de uma mesma empresa somam **70
+// prestações**, e as 69 vencidas sumiram da fila de uma vez. Fila vazia é EXATAMENTE o mesmo pixel
+// de "não há nada pendente", então o dono passou o dia concluindo que a baixa sem guia não
+// funcionava — e ela funcionava.
+//
+// O conserto não é passar a incluí-las (isso desfaria a decisão acima). É a fila passar a DIZER
+// quantas ficaram de fora, de quais contratos, e por quê — com o caminho para reverter. É a mesma
+// regra que o resto do módulo já segue: **ausência nunca é resposta**.
+//
+// ⚠ O PREDICADO É DERIVADO DO DA FILA, não reescrito. Ele é, literalmente, "a mesma pergunta com o
+// status invertido" — e é assim que se garante que o número mostrado ("N prestações fora da fila")
+// conta EXATAMENTE as linhas que entrariam se o contrato não estivesse rescindido. Uma segunda
+// cópia do filtro faria a fila e o aviso discordarem, que é a forma mais cara possível de contar
+// isso ao contador.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+export function whereParcelaForaDaFilaPorRescisao({ portalClientId = null, agora = new Date() } = {}) {
+  const { parcelamento: _daFila, ...mesmasCondicoes } = whereParcelaSemGuiaPendente({ portalClientId, agora });
+  return { ...mesmasCondicoes, parcelamento: { is: { status: "RESCINDIDO" } } };
+}
+
+/** O contrato precisa vir junto: o aviso nomeia o acordo, e o botão de reverter precisa do id. */
+export const SELECT_PARCELA_FORA_DA_FILA = Object.freeze({
+  id: true,
+  numeroParcela: true,
+  vencimento: true,
+  parcelamentoId: true,
+  parcelamento: {
+    select: { id: true, label: true, tipo: true, kind: true, numeroParcelamento: true, status: true },
+  },
+});
+
+/**
+ * O aviso, agrupado POR CONTRATO — não uma lista de 69 linhas.
+ *
+ * ⚠ Sessenta e nove parágrafos idênticos é o defeito que este módulo já cometeu uma vez (as 60
+ * prestações "sem guia" repetindo o mesmo motivo dentro de um card de 360px). O que o contador
+ * precisa saber é: QUANTAS, de QUAL acordo, e o que fazer. A prestação individual não acrescenta
+ * nada aqui — ela volta a aparecer, uma a uma, no instante em que a rescisão for desfeita.
+ */
+export function resumoForaDaFilaPorRescisao(parcelas) {
+  const porContrato = new Map();
+  for (const p of parcelas || []) {
+    const parc = p?.parcelamento || null;
+    const id = p?.parcelamentoId || parc?.id || null;
+    if (!id) continue;
+    if (!porContrato.has(id)) {
+      porContrato.set(id, {
+        parcelamentoId: id,
+        label: parc?.label || null,
+        tipo: parc?.tipo || parc?.kind || null,
+        numeroParcelamento: parc?.numeroParcelamento || null,
+        status: parc?.status || "RESCINDIDO",
+        prestacoes: 0,
+      });
+    }
+    porContrato.get(id).prestacoes += 1;
+  }
+  const contratos = [...porContrato.values()].sort((a, b) => b.prestacoes - a.prestacoes);
+  return {
+    prestacoes: contratos.reduce((s, c) => s + c.prestacoes, 0),
+    contratos,
+    // O motivo viaja como DADO, não como frase montada na rota: quem exibe escolhe a forma, mas não
+    // reinventa a causa.
+    motivo: "PARCELAMENTO_RESCINDIDO",
   };
 }
 

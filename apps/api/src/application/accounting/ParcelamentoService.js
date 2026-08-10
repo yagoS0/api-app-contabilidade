@@ -582,7 +582,21 @@ function decorateParcelamento(parc) {
  */
 export async function listParcelamentos({ portalClientId, status }) {
   const rows = await prisma.parcelamento.findMany({
-    where: { portalClientId, ...(status ? { status } : {}) },
+    where: {
+      portalClientId,
+      // ⚠ O CONTRATO EXCLUÍDO NÃO VOLTA À LISTA — mas a linha dele pode ter sobrevivido.
+      //
+      // `excluirParcelamento` apaga o cabeçalho quando dá; quando SOBRA lançamento em competência
+      // fechada, ele não pode apagar (a FK `accounting_entries.parcelamentoId` é SET NULL, e sem a
+      // chave do grupo os lançamentos de uma perna só viram `desbalanceado` e travam o fechamento —
+      // ver `AtosParcelamentoService.js`). Nesse caso a linha fica com `status="EXCLUIDO"`, sem
+      // prestações e sem guias, como âncora do grupo.
+      //
+      // Ela é filtrada AQUI, na fonte, e não em cada tela: "excluí e ele continua aparecendo" é
+      // exatamente o desfecho que a exclusão existe para não produzir, e uma filtragem por consumidor
+      // seria a primeira a ser esquecida. Quem precisar auditar a chama por `?status=EXCLUIDO`.
+      ...(status ? { status } : { status: { not: "EXCLUIDO" } }),
+    },
     include: {
       aberturaEntry: { include: { lines: { orderBy: { ordem: "asc" } } } },
       parcelas: {

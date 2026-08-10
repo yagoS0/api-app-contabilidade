@@ -86,6 +86,13 @@
 
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { ANCORAS, ancoraDoLancamento } from "./ancoraBaixa.js";
+// ⚠ O ESPELHO SAIU DAQUI PARA `contraLancamento.js`, e não por arrumação: a EXCLUSÃO do
+// parcelamento e o DESFAZER da rescisão (`parcelamento/AtosParcelamentoService.js`) precisam
+// EXATAMENTE do mesmo espelho, com as mesmas quatro decisões (tipo ESTORNO, eventType nulo,
+// openEntryId/sourceGuideId preservados, parcelamentoId obrigatório). Uma segunda cópia divergiria
+// na primeira trava nova do banco — e as travas aqui são parciais em `tipo='BAIXA'`, o que só
+// funciona enquanto TODO espelho for gravado do mesmo jeito. O comportamento não mudou.
+import { criarContraLancamento, competenciaDe } from "./contraLancamento.js";
 import { isMonthClosed } from "./fechamentoContabil.js";
 import { estadoAposEstorno, PARCELA_ESTADOS } from "./parcelamento/parcelaStateMachine.js";
 import { recalcularParcelamento } from "./parcelamento/recalculoParcelamento.js";
@@ -108,10 +115,10 @@ export class EstornoRecusado extends Error {
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-export function competenciaDe(date) {
-  const d = date instanceof Date ? date : new Date(date);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
+// ⚠ `competenciaDe` MUDOU DE CASA (para `contraLancamento.js`, junto do espelho que a usa) e
+// continua exportada daqui: ela é importada por outros módulos, e trocar o caminho de import em
+// arquivos que não têm nada a ver com esta mudança é como um "refactor" vira regressão.
+export { competenciaDe };
 
 /** Valor do lançamento = soma dos DÉBITOS (numa perna só, é a própria perna). */
 function valorDoLancamento(entry) {
@@ -574,56 +581,16 @@ export async function executarEstorno({
     const contraLancamentos = [];
     if (preview.modo === MODO.CONTRA_LANCAMENTO) {
       for (const e of lote) {
+        // ⚠ O ESPELHO É O DE `contraLancamento.js` — as quatro decisões (tipo ESTORNO, eventType
+        // nulo, openEntryId/sourceGuideId preservados, parcelamentoId obrigatório) estão
+        // documentadas lá, e agora valem para os TRÊS atos que desfazem lançamento neste módulo.
         // eslint-disable-next-line no-await-in-loop
-        const espelho = await tx.accountingEntry.create({
-          data: {
-            portalClientId,
-            data: agora,
-            competencia: preview.competenciaContraLancamento,
-            historico: `ESTORNO ${e.historico} (${e.competencia})`,
-            // ⚠ NÃO É "BAIXA". Ver o cabeçalho: como BAIXA colidiria com `uq_baixa_guia_linha`
-            // (a original continua na tabela) e seria contado como MAIS amortização.
-            tipo: "ESTORNO",
-            subtipo: e.subtipo,
-            origem: "MANUAL",
-            status: "RASCUNHO",
-            statusPagamento: "NA",
-            // ⚠ `eventType: null` — só a baixa original carrega o evento. Repetir violaria
-            // `@@unique([portalClientId, competencia, eventType, origem])` assim que houvesse dois
-            // estornos do mesmo evento no mesmo mês.
-            eventType: null,
-            // O vínculo com a provisão FICA: é ele que permite a `computeSaldoProvisao` subtrair o
-            // que a baixa original ainda soma (ela não foi apagada).
-            openEntryId: e.openEntryId,
-            // ⚠ A GUIA FICA VINCULADA: sem isso, o contra-lançamento não seria rastreável a partir
-            // da guia. É seguro porque as duas travas do banco são parciais em `tipo='BAIXA'`, e
-            // porque a busca por baixas restantes filtra por `tipo:"BAIXA"`.
-            sourceGuideId: e.sourceGuideId,
-            // ⚠ O lote do parcelamento só balanceia EM GRUPO (cada lançamento tem uma perna só), e
-            // `computeFechamentoBlockers` agrupa por `parcelamentoId`. Sem carregá-lo, os espelhos
-            // apareceriam como quatro lançamentos desbalanceados e travariam o fechamento do mês
-            // seguinte.
-            parcelamentoId: e.parcelamentoId,
-            loteImportacao: `ESTORNO-${String(e.id).slice(0, 8)}`,
-            tipoLinha: e.tipoLinha,
-            codigoTributo: e.codigoTributo,
-            estornoDeEntryId: e.id,
-            lines: {
-              createMany: {
-                // O ESPELHO: mesmas contas, mesmos valores, D↔C invertidos. Nada de "conta de
-                // estorno" — o que desfaz um débito em 553 é um crédito em 553, na própria conta.
-                data: (e.lines || []).map((l, i) => ({
-                  conta: l.conta,
-                  tipo: String(l.tipo).toUpperCase() === "D" ? "C" : "D",
-                  valor: Number(l.valor || 0),
-                  ordem: i,
-                  tipoLinha: l.tipoLinha || null,
-                  codigoTributo: l.codigoTributo || null,
-                })),
-              },
-            },
-          },
-          select: { id: true, historico: true, competencia: true },
+        const espelho = await criarContraLancamento(tx, {
+          portalClientId,
+          entry: e,
+          competencia: preview.competenciaContraLancamento,
+          agora,
+          rotulo: "ESTORNO",
         });
         contraLancamentos.push(espelho);
       }

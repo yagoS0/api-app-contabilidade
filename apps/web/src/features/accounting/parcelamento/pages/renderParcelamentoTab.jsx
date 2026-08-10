@@ -16,7 +16,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ParcelamentosList, ConferenciaParcelasPanel } from "../components/ParcelamentoModals";
 import { ParcelamentoWizard } from "../components/ParcelamentoWizard";
 import { BaixaManualParcelaModal } from "../components/BaixaManualParcelaModal";
+import { ExclusaoParcelamentoModal, DesfazerRescisaoModal } from "../components/AtoParcelamentoModal";
 import { rotuloDaSituacao, explicarRecusa, formatarMoeda } from "../lib/baixaManualParcela";
+import { avisoForaDaFila } from "../lib/exclusaoParcelamento";
 import { Button } from "../../../../components/ui/Button";
 import { createApiClient } from "../../../../api/client";
 
@@ -337,8 +339,12 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
  * regra logo atrás dela se nega a afirmar. O accent diz "há trabalho seu aqui" sem carimbar atraso;
  * o rótulo por linha (`Vencida` / `Vence hoje`) é que carrega o estado, e ele vem do servidor.
  */
-function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBaixaLancada }) {
+function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBaixaLancada, onDesfazerRescisao }) {
   const [parcelas, setParcelas] = useState([]);
+  // ⚠ O QUE A FILA ESCONDEU. Ver `avisoForaDaFila`: prestação de acordo RESCINDIDO não entra aqui
+  // (e faz certo), mas a ausência dela era MUDA — 69 prestações de dois contratos sumiram de uma vez
+  // e a fila vazia ficou indistinguível de "não há nada pendente".
+  const [foraDaFila, setForaDaFila] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [alvo, setAlvo] = useState(null);       // a prestação cujo modal está aberto
@@ -356,6 +362,7 @@ function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBa
     try {
       const out = await parcelaApi.listParcelasSemGuiaPendentes(companyId);
       setParcelas(Array.isArray(out?.parcelas) ? out.parcelas : []);
+      setForaDaFila(avisoForaDaFila(out?.foraDaFila));
     } catch (err) {
       // ⚠ O `catch` NÃO zera a lista: falha e vazio são o mesmo pixel e significam o oposto.
       setErro(err?.message || "Não foi possível carregar as prestações sem guia.");
@@ -380,6 +387,32 @@ function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBa
     setDesfechos((d) => ({ ...d, [parcelaId]: { tom: "ok", texto: "Baixa declarada e lançada." } }));
     await carregar();
     await onBaixaLancada?.();
+  }
+
+  /**
+   * Corrige o valor CONTRATADO da prestação (`parcelas.valorPrevisto`) — outro ato, outra rota.
+   *
+   * ⚠ NÃO É "quanto eu paguei". O que foi pago a mais entra em juros/multa na mesma tela; isto
+   * reescreve o que o ACORDO diz que a prestação vale, e persiste: é o número que a próxima tela
+   * mostra. Por isso ele não viaja no body da baixa — dois fatos, duas chamadas.
+   */
+  async function corrigirValorContratado({ parcelaId, valorPrevisto, valorAnteriorConferido }) {
+    if (!parcelaApi?.corrigirValorPrevistoParcela) {
+      const err = new Error("A alteração do valor contratado não está disponível neste modo de API.");
+      err.code = "CORRECAO_INDISPONIVEL";
+      throw err;
+    }
+    const out = await parcelaApi.corrigirValorPrevistoParcela(companyId, parcelaId, {
+      valorPrevisto, valorAnteriorConferido,
+    });
+    // ⚠ `skipped` NÃO é sucesso silencioso — mesma lição da baixa: sobe como erro para o modal
+    // mostrar o motivo sem fechar (fechar apagaria o que foi digitado).
+    if (out?.skipped || out?.ok === false) {
+      const err = new Error(out?.message || out?.resultado?.message || "");
+      err.code = out?.motivo || out?.error;
+      throw err;
+    }
+    return out;
   }
 
   const th = { padding: "6px 8px", textAlign: "left", fontSize: "0.7rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase" };
@@ -429,7 +462,16 @@ function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBa
               const desfecho = desfechos[p.parcelaId];
               const destacada = Boolean(foco) && p.parcelamentoId === foco.id;
               const sit = rotuloDaSituacao(p.situacao);
-              const bloqueio = p.motivoBloqueio ? explicarRecusa(p.motivoBloqueio) : null;
+              // ⚠ OS DOIS BLOQUEIOS NÃO SÃO O MESMO, E TRATÁ-LOS IGUAL FECHAVA A ÚNICA SAÍDA.
+              // `provisao_inexistente` se resolve em OUTRA tela (lançar a adesão) — o botão fica
+              // desabilitado com o motivo. `sem_valor_previsto` se resolve NESTE modal: é o estado
+              // em que TODA prestação de um contrato criado sem guia nasce (`valorPrevisto = 0`),
+              // e a mensagem antiga mandava "corrigir o valor da parcela no contrato" — um caminho
+              // nomeado e inexistente. Desabilitar aqui era o sistema decidindo no lugar do
+              // contador, calado, sobre um número que é dele.
+              const corrigivelNaTela = p.motivoBloqueio === "sem_valor_previsto";
+              const bloqueio = p.motivoBloqueio && !corrigivelNaTela ? explicarRecusa(p.motivoBloqueio) : null;
+              const aviso = corrigivelNaTela ? explicarRecusa(p.motivoBloqueio) : null;
               return (
                 <tr key={p.parcelaId} style={{
                   borderTop: `1px solid ${PANEL.border}`,
@@ -447,7 +489,16 @@ function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBa
                       {sit.texto}
                     </div>
                   </td>
-                  <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{formatarMoeda(p.valorPrevisto)}</td>
+                  <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>
+                    {formatarMoeda(p.valorPrevisto)}
+                    {/* ⚠ AUSÊNCIA NUNCA É RESPOSTA: "R$ 0,00" na coluna Principal é indistinguível
+                        de uma prestação que realmente vale zero. Aqui ela é nomeada. */}
+                    {corrigivelNaTela && (
+                      <div style={{ fontSize: "0.66rem", color: "var(--state-warn)", fontWeight: 700 }}>
+                        sem valor no contrato
+                      </div>
+                    )}
+                  </td>
                   <td style={{ ...td, textAlign: "right", minWidth: 210 }}>
                     <button
                       type="button"
@@ -455,7 +506,10 @@ function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBa
                       disabled={Boolean(bloqueio)}
                       // ⚠ DESABILITADO SEMPRE COM O MOTIVO — e o motivo também sai em texto abaixo,
                       // porque `title` some junto com o mouse.
-                      title={bloqueio || "Abre a declaração: você informa juros e multa, e confere o total antes de gravar."}
+                      title={bloqueio
+                        || (corrigivelNaTela
+                          ? "Abre a declaração: informe o valor contratado desta prestação (ela nasceu sem valor), mais juros e multa."
+                          : "Abre a declaração: você informa juros e multa, e confere o total antes de gravar.")}
                       style={{
                         padding: "4px 10px", borderRadius: 6, cursor: bloqueio ? "not-allowed" : "pointer",
                         background: "transparent",
@@ -464,11 +518,18 @@ function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBa
                         fontSize: "0.78rem", fontWeight: 700, whiteSpace: "nowrap",
                       }}
                     >
-                      Declarar baixa…
+                      {corrigivelNaTela ? "Informar valor e baixar…" : "Declarar baixa…"}
                     </button>
                     {bloqueio && (
                       <div style={{ marginTop: 4, fontSize: "0.67rem", color: "var(--state-warn)", textAlign: "left", lineHeight: 1.35 }}>
                         {bloqueio}
+                      </div>
+                    )}
+                    {/* O motivo continua VISÍVEL mesmo quando não desabilita — o que mudou é que
+                        agora ele vem com a saída, e a saída é este mesmo botão. */}
+                    {aviso && (
+                      <div style={{ marginTop: 4, fontSize: "0.67rem", color: PANEL.muted, textAlign: "left", lineHeight: 1.35 }}>
+                        {aviso}
                       </div>
                     )}
                     {desfecho && (
@@ -508,6 +569,50 @@ function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBa
 
       {corpo()}
 
+      {/* ⚠ A AUSÊNCIA DEIXANDO DE SER MUDA — e ela vem DEPOIS da lista de propósito: primeiro o que
+          existe para fazer, depois o que foi tirado daqui e por quê.
+
+          Este é, literalmente, metade do problema que o dono relatou. As prestações de um acordo
+          RESCINDIDO continuam FORA da fila (fila de trabalho sobre acordo morto é trabalho
+          inventado — a mesma decisão que `quadroDasParcelas` toma ao zerar o risco). O que mudou é
+          que agora a fila DIZ quantas ficaram de fora, de qual contrato, e oferece o caminho de
+          volta no mesmo lugar. Sem isso, "0 prestações" e "12 prestações escondidas" são o mesmo
+          pixel — e foi assim que ele passou o dia achando que a baixa sem guia não funcionava. */}
+      {foraDaFila && !carregando && !erro && (
+        <div
+          role="status"
+          style={{
+            marginTop: 10, padding: "9px 11px", borderRadius: 6, lineHeight: 1.45,
+            fontSize: "0.75rem", color: PANEL.muted,
+            background: "var(--state-neutral-surface)", border: `1px dashed ${PANEL.border}`,
+          }}
+        >
+          <div style={{ color: PANEL.text, fontWeight: 700, marginBottom: 2 }}>{foraDaFila.titulo}</div>
+          {foraDaFila.detalhe}
+          <ul style={{ margin: "6px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 4 }}>
+            {foraDaFila.linhas.map((l) => (
+              <li key={l.parcelamentoId} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ color: PANEL.text }}>{l.texto}</span>
+                {onDesfazerRescisao && (
+                  <button
+                    type="button"
+                    onClick={() => onDesfazerRescisao(l.parcelamentoId)}
+                    title="Abre a confirmação: mostra o que volta, exige motivo e grava quem desfez."
+                    style={{
+                      background: "transparent", border: "1px solid var(--accent-purple)",
+                      color: "var(--accent-purple)", borderRadius: 4, padding: "1px 8px",
+                      cursor: "pointer", fontSize: "0.68rem", fontWeight: 700,
+                    }}
+                  >
+                    Desfazer rescisão…
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {alvo && (
         <BaixaManualParcelaModal
           linha={alvo}
@@ -515,6 +620,99 @@ function ParcelasSemGuiaPendentes({ companyId, refreshKey = 0, foco = null, onBa
           onClose={() => setAlvo(null)}
         />
       )}
+    </section>
+  );
+}
+
+/**
+ * OS CONTRATOS RESCINDIDOS — visíveis, e com as duas saídas.
+ *
+ * ⚠ ELES ERAM INVISÍVEIS. `ParcelamentosList` recebia `.filter((p) => p.status !== "RESCINDIDO")`, e
+ * o backend nunca escondeu nada: quem sumia com o contrato era a tela. O efeito é o pior possível
+ * para o pedido do dono — ele tinha um contrato rescindido POR ENGANO, com prestações sumindo da
+ * fila de baixa, e nenhuma tela onde vê-lo. Contrato invisível é contrato incorrigível: sem esta
+ * seção, "excluir o parcelamento errado" não teria de onde ser clicado.
+ *
+ * ⚠ ELES FICAM SEPARADOS, e não misturados na lista principal. Um acordo rescindido não é trabalho
+ * em curso: ele não tem risco a acompanhar (`quadroDasParcelas` devolve `risco: null`), não tem
+ * prestação em fila e não recebe baixa. Misturá-lo com os ativos faria o contador procurar
+ * pendência onde não há — e é o mesmo motivo pelo qual esta seção nasce FECHADA quando não há
+ * nenhum: seção vazia permanente é ruído que treina o olho a pular a região inteira.
+ */
+function ContratosRescindidos({ parcelamentos, onDesfazer, onExcluir }) {
+  const rescindidos = (parcelamentos || []).filter((p) => p.status === "RESCINDIDO");
+  if (!rescindidos.length) return null;
+
+  return (
+    <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 14 }}>
+      <div style={{ marginBottom: 8 }}>
+        <strong style={{ color: PANEL.text, fontSize: "0.9rem" }}>
+          Contratos rescindidos ({rescindidos.length})
+        </strong>
+        <div style={{ color: PANEL.muted, fontSize: "0.78rem", lineHeight: 1.45 }}>
+          Rescindido, o acordo sai das filas de baixa e deixa de ter risco a acompanhar — as
+          prestações dele não somem do sistema, elas deixam de ser cobradas aqui. Se a rescisão foi
+          por engano, desfaça; se o contrato nunca deveria ter existido, exclua.
+        </div>
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {rescindidos.map((p) => (
+          <div
+            key={p.id}
+            style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+              flexWrap: "wrap", padding: "8px 10px", borderRadius: 8,
+              background: PANEL.field, border: `1px solid ${PANEL.border}`,
+            }}
+          >
+            <div style={{ minWidth: 220 }}>
+              <div style={{ color: PANEL.text, fontSize: "0.82rem", fontWeight: 700 }}>
+                {p.tipo || "Parcelamento"}{p.numeroParcelamento ? ` nº ${p.numeroParcelamento}` : ""}
+              </div>
+              <div style={{ color: PANEL.muted, fontSize: "0.7rem" }}>
+                {p.label}
+                {" · "}
+                {p.parcelasTotal ?? 0} {(p.parcelasTotal ?? 0) === 1 ? "prestação" : "prestações"}
+                {p.parcelasPagas ? ` · ${p.parcelasPagas} quitada(s)` : ""}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => onDesfazer?.(p)}
+                disabled={!onDesfazer}
+                title={onDesfazer
+                  ? "Mostra o que volta (prestações, lançamentos, risco), exige motivo e grava quem desfez."
+                  : "Desfazer rescisão não está disponível neste modo de API."}
+                style={{
+                  background: "transparent", border: "1px solid var(--accent-purple)",
+                  color: onDesfazer ? "var(--accent-purple)" : PANEL.muted, borderRadius: 4,
+                  padding: "3px 10px", cursor: onDesfazer ? "pointer" : "not-allowed",
+                  fontSize: "0.72rem", fontWeight: 700,
+                }}
+              >
+                Desfazer rescisão…
+              </button>
+              <button
+                type="button"
+                onClick={() => onExcluir?.(p)}
+                disabled={!onExcluir}
+                title={onExcluir
+                  ? "Mostra tudo o que será desfeito, com números, exige motivo e grava o ato."
+                  : "Exclusão não está disponível neste modo de API."}
+                style={{
+                  background: "transparent", border: "1px solid var(--state-danger)",
+                  color: onExcluir ? "var(--state-danger)" : PANEL.muted, borderRadius: 4,
+                  padding: "3px 10px", cursor: onExcluir ? "pointer" : "not-allowed",
+                  fontSize: "0.72rem", fontWeight: 700,
+                }}
+              >
+                Excluir contrato…
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -565,6 +763,27 @@ export function ParcelamentoTab({
     await parcelamentos?.load?.();
   }, [parcelamentos]);
 
+  // ── OS ATOS DO CONTRATO ─────────────────────────────────────────────────────────────────────
+  // ⚠ UM ESTADO SÓ para os dois modais (`{ tipo, parcelamento }`). Dois estados independentes
+  // deixariam os dois abertos ao mesmo tempo se alguém clicasse rápido — e são atos opostos sobre o
+  // MESMO contrato.
+  const [ato, setAto] = useState(null);
+  const contratos = parcelamentos?.parcelamentos || [];
+  const abrirDesfazerPorId = useCallback((parcelamentoId) => {
+    const alvo = contratos.find((p) => p.id === parcelamentoId);
+    // O aviso da fila manda só o id; sem o contrato na lista, o modal ainda funciona (a prévia vem
+    // do servidor) — o que faltaria é só o rótulo no topo.
+    setAto({ tipo: "DESFAZER", parcelamento: alvo || { id: parcelamentoId } });
+  }, [contratos]);
+
+  // Depois de excluir ou desfazer, AS DUAS FILAS recarregam junto com a lista: a exclusão tira
+  // prestações da fila de baixa e o desfazer as devolve. Recarregar só a lista deixaria a fila
+  // mostrando prestação de um contrato que não existe mais.
+  const aposAto = useCallback(async () => {
+    setBaixaRefreshKey((k) => k + 1);
+    await parcelamentos?.load?.();
+  }, [parcelamentos]);
+
   if (!parcelamentos) {
     return <div style={{ padding: 24, color: PANEL.muted }}>Carregando…</div>;
   }
@@ -610,6 +829,7 @@ export function ParcelamentoTab({
         refreshKey={baixaRefreshKey}
         foco={focoContrato}
         onBaixaLancada={aposLocalizarPagamento}
+        onDesfazerRescisao={parcelamentos.previewDesfazerRescisao ? abrirDesfazerPorId : null}
       />
 
       <ConferenciaParcelasPanel
@@ -632,7 +852,41 @@ export function ParcelamentoTab({
         onDarBaixa={(parc) => pedirBaixa(parc, false)}
         onBaixaEmLote={(parc) => pedirBaixa(parc, true)}
         onSubirGuia={onIrParaGuias ? () => onIrParaGuias() : null}
+        onExcluir={parcelamentos.previewExclusao ? (parc) => setAto({ tipo: "EXCLUSAO", parcelamento: parc }) : null}
       />
+
+      {/* ⚠ ELES DEIXARAM DE SER INVISÍVEIS. A lista acima filtra `status !== "RESCINDIDO"` desde
+          sempre, e o backend nunca escondeu nada — era a tela. Contrato invisível é contrato
+          incorrigível, e era exatamente esse o caso do dono. */}
+      <ContratosRescindidos
+        parcelamentos={contratos}
+        onDesfazer={parcelamentos.previewDesfazerRescisao ? (parc) => setAto({ tipo: "DESFAZER", parcelamento: parc }) : null}
+        onExcluir={parcelamentos.previewExclusao ? (parc) => setAto({ tipo: "EXCLUSAO", parcelamento: parc }) : null}
+      />
+
+      {ato?.tipo === "EXCLUSAO" && (
+        <ExclusaoParcelamentoModal
+          parcelamento={ato.parcelamento}
+          onLoadPreview={() => parcelamentos.previewExclusao(ato.parcelamento.id)}
+          onConfirm={async ({ motivo, totalConferido }) => {
+            await parcelamentos.excluir(ato.parcelamento.id, { motivo, totalConferido });
+            await aposAto();
+          }}
+          onClose={() => setAto(null)}
+        />
+      )}
+
+      {ato?.tipo === "DESFAZER" && (
+        <DesfazerRescisaoModal
+          parcelamento={ato.parcelamento}
+          onLoadPreview={() => parcelamentos.previewDesfazerRescisao(ato.parcelamento.id)}
+          onConfirm={async ({ motivo }) => {
+            await parcelamentos.desfazerRescisao(ato.parcelamento.id, { motivo });
+            await aposAto();
+          }}
+          onClose={() => setAto(null)}
+        />
+      )}
 
       {wizardAberto && (
         <ParcelamentoWizard

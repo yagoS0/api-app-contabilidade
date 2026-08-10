@@ -3647,6 +3647,9 @@ export function createAccountingEntriesRouter({ log }) {
       const {
         whereParcelaSemGuiaPendente, SELECT_PARCELA_FILA_SEM_GUIA, linhaDaFilaSemGuia,
       } = await import("../../application/accounting/parcelamento/recalculoParcelamento.js");
+      const { conferenciaDoPassivoPorContrato } = await import(
+        "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
+      );
       const agora = new Date();
       const pendentes = await prisma.parcela.findMany({
         where: whereParcelaSemGuiaPendente({ portalClientId, agora }),
@@ -3655,7 +3658,43 @@ export function createAccountingEntriesRouter({ log }) {
         orderBy: [{ vencimento: "asc" }, { numeroParcela: "asc" }],
         take: 200,
       });
-      return res.json({ ok: true, parcelas: pendentes.map((p) => linhaDaFilaSemGuia(p, agora)) });
+      const linhas = pendentes.map((p) => linhaDaFilaSemGuia(p, agora));
+
+      // ⚠ O QUE **NÃO** ESTÁ NESTA LISTA, E POR QUÊ — a ausência deixando de ser muda.
+      //
+      // O filtro por parcelamento RESCINDIDO continua (fila de trabalho sobre acordo morto é
+      // trabalho inventado, e `quadroDasParcelas` toma a mesma decisão). O que mudou é que a fila
+      // passou a CONTAR o que ela escondeu: sem isso, um contrato rescindido leva 69 prestações
+      // embora de uma vez e a tela vazia fica indistinguível de "não há nada pendente" — foi
+      // exatamente assim que o dono passou o dia achando que a baixa sem guia não funcionava.
+      //
+      // ⚠ O predicado NÃO é reescrito aqui: `whereParcelaForaDaFilaPorRescisao` é o MESMO
+      // `whereParcelaSemGuiaPendente` com o status invertido, para que o número do aviso conte
+      // exatamente as linhas que voltariam à fila se a rescisão fosse desfeita.
+      const {
+        whereParcelaForaDaFilaPorRescisao, SELECT_PARCELA_FORA_DA_FILA, resumoForaDaFilaPorRescisao,
+      } = await import("../../application/accounting/parcelamento/recalculoParcelamento.js");
+      const escondidas = await prisma.parcela.findMany({
+        where: whereParcelaForaDaFilaPorRescisao({ portalClientId, agora }),
+        select: SELECT_PARCELA_FORA_DA_FILA,
+        take: 500,
+      });
+      const foraDaFila = resumoForaDaFilaPorRescisao(escondidas);
+
+      // ⚠ A CONSEQUÊNCIA VIAJA JUNTO, para que ela possa ser mostrada ANTES do clique. O contador
+      // pode corrigir o valor CONTRATADO da prestação (é o `valorPrevisto`, e é ele que a baixa
+      // amortiza do passivo); a conferência diz quanto as prestações somam contra o principal que a
+      // adesão provisionou. ⚠ INFORMATIVA — nunca bloqueia. O número certo sai do contrato, e quem
+      // decide é o contador; o sistema informa e registra. Duas queries para todos os contratos.
+      const conferencias = await conferenciaDoPassivoPorContrato(prisma, {
+        portalClientId,
+        parcelamentoIds: linhas.map((l) => l.parcelamentoId),
+      });
+      return res.json({
+        ok: true,
+        parcelas: linhas.map((l) => ({ ...l, conferenciaPassivo: conferencias[l.parcelamentoId] || null })),
+        foraDaFila,
+      });
     } catch (err) {
       log.error({ err }, "Falha ao listar parcelas sem guia pendentes de baixa");
       return res.status(500).json({ ok: false, error: "internal_error" });
@@ -3986,6 +4025,69 @@ export function createAccountingEntriesRouter({ log }) {
     }
   });
 
+  // ⚠ CORRIGIR O VALOR **CONTRATADO** DE UMA PRESTAÇÃO — e ele NÃO é o valor pago.
+  //
+  // O módulo tem dois números com o mesmo apelido: o CONTRATADO (`parcelas.valorPrevisto`, o que o
+  // acordo diz que a prestação vale — é ele que a baixa amortiza do passivo) e o PAGO
+  // (`principal + juros + multa`, o que saiu da conta). A diferença entre os dois é informação, não
+  // erro de digitação, e continua sendo expressa em juros/multa na baixa. Esta rota mexe SÓ no
+  // primeiro, e por isso é uma rota própria em vez de um campo a mais no body da baixa.
+  //
+  // ⚠ ELA NÃO GRAVA LANÇAMENTO NENHUM. A forma do lançamento não muda: a baixa seguinte lê o valor
+  // corrigido pelo mesmo `linhasPagamento` (`D PARC / D JUROS / D MULTA / C CAIXA`), e D=C continua
+  // fechando no lote por construção.
+  //
+  // ⚠ POR QUE ELA PRECISOU EXISTIR: contrato criado pelo wizard (sem guia e sem composição por
+  // tributo) nasce com todas as prestações em `valorPrevisto = 0`, e a fila devolve
+  // `sem_valor_previsto` em todas — com a mensagem mandando "corrija o valor da parcela no
+  // contrato", que era exatamente o que não havia como fazer.
+  //
+  // body: { valorPrevisto, valorAnteriorConferido }   ⚠ o segundo é o ato de consequência
+  router.patch(
+    "/parcelamentos/parcelas/:parcelaId/valor-previsto",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const parcelaId = String(req.params.parcelaId);
+      const body = req.body || {};
+      try {
+        const { corrigirValorPrevistoParcela } = await import(
+          "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
+        );
+        const out = await corrigirValorPrevistoParcela({
+          portalClientId, parcelaId, userId: req.auth?.user?.id,
+          valorPrevisto: body.valorPrevisto,
+          // ⚠ `undefined` (chave ausente) e `null` ("não havia valor") são DIFERENTES aqui: o
+          // serviço recusa a primeira com `CONFERENCIA_OBRIGATORIA` e aceita a segunda como uma
+          // conferência legítima. Usar `?? null` colapsaria as duas e mataria a exigência.
+          ...("valorAnteriorConferido" in body
+            ? { valorAnteriorConferido: body.valorAnteriorConferido }
+            : {}),
+        });
+        if (out?.skipped) {
+          const status = {
+            parcela_not_found: 404,
+            parcela_tem_guia: 409,
+            parcela_ja_baixada: 409,
+            valor_invalido: 400,
+          }[out.reason] || 400;
+          return res.status(status).json({ ok: false, skipped: true, motivo: out.reason, resultado: out });
+        }
+        return res.json({ ok: true, resultado: out });
+      } catch (err) {
+        const code = err?.code;
+        if (code === "CONFERENCIA_DIVERGENTE") {
+          return res.status(409).json({ ok: false, error: code, message: err.message, detalhe: err.detalhe });
+        }
+        if (code === "CONFERENCIA_OBRIGATORIA") {
+          return res.status(400).json({ ok: false, error: code, message: err.message, detalhe: err.detalhe });
+        }
+        log.error({ err: err?.message, parcelaId }, "Falha ao corrigir o valor previsto da parcela");
+        return res.status(500).json({ ok: false, error: code || "internal_error", message: err?.message });
+      }
+    },
+  );
+
   // POST /firm/companies/:companyId/parcelamentos/:parcId/rescindir
   // body: { dataRescisao?, observacoes?, rescisaoLines? }
   router.post("/parcelamentos/:parcId/rescindir", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
@@ -4012,6 +4114,118 @@ export function createAccountingEntriesRouter({ log }) {
       const status = map[code] || 500;
       if (status === 500) log.error({ err }, "Falha ao rescindir parcelamento");
       return res.status(status).json({ ok: false, error: code });
+    }
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // OS ATOS ADMINISTRATIVOS DO CONTRATO — excluir, e desfazer a rescisão
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // Pedido do dono: *"Devo poder excluir um parcelamento... o parcelamento estava errado"*, com a
+  // régua *"deve dar autonomia ao contador"*. Autonomia aqui é precisa: o servidor **não bloqueia**
+  // a decisão dele (inclusive com prestação já baixada) — ele MOSTRA O PESO, com números reais, e
+  // exige MOTIVO. Ver `parcelamento/AtosParcelamentoService.js`, onde as cinco regras estão escritas.
+  //
+  // ⚠ Cada ato tem DUAS rotas, como o estorno: um `preview` que **não escreve nada** e a execução.
+  // A confirmação precisa dos números de AGORA — só o servidor sabe quantas prestações, quantas
+  // guias e quantos lançamentos existem, e um "tem certeza?" sem esses números é o oposto de dar
+  // autonomia: é pedir uma decisão sem entregar a informação que a sustenta.
+  //
+  // ⚠ Traduções de status: as recusas de negócio nunca viram 500. `MOTIVO_OBRIGATORIO` é 400 (falta
+  // dado do contador); tudo que é estado do mundo (mês fechado, lote exportado, contrato mudou) é
+  // 409, com a mensagem dizendo o caminho de saída.
+  const STATUS_ATO_PARCELAMENTO = {
+    parcelamento_nao_encontrado: 404,
+    MOTIVO_OBRIGATORIO: 400,
+    CONFERENCIA_DIVERGENTE: 409,
+    CONTRATO_MUDOU: 409,
+    MES_CORRENTE_FECHADO: 409,
+    LOTE_JA_EXPORTADO: 409,
+    PARCELAMENTO_NAO_RESCINDIDO: 409,
+  };
+  function responderAto(res, err, contexto) {
+    const code = err?.code || "internal_error";
+    const status = STATUS_ATO_PARCELAMENTO[code] || 500;
+    if (status === 500) log.error({ err: err?.message, ...contexto }, "Falha em ato de parcelamento");
+    return res.status(status).json({
+      ok: false, error: code, message: err?.message, detalhe: err?.detalhe,
+      competencia: err?.competencia, entryId: err?.entryId,
+    });
+  }
+
+  // GET /firm/companies/:companyId/parcelamentos/:parcId/exclusao/preview
+  // O que vai acontecer, com números reais. NÃO ESCREVE NADA.
+  router.get("/parcelamentos/:parcId/exclusao/preview", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelamentoId = String(req.params.parcId);
+    try {
+      const { previewExclusaoParcelamento } = await import(
+        "../../application/accounting/parcelamento/AtosParcelamentoService.js"
+      );
+      const preview = await previewExclusaoParcelamento({ portalClientId, parcelamentoId });
+      return res.json({ ok: true, preview });
+    } catch (err) {
+      return responderAto(res, err, { parcelamentoId });
+    }
+  });
+
+  // POST /firm/companies/:companyId/parcelamentos/:parcId/exclusao   { motivo, totalConferido? }
+  //
+  // ⚠ POST, e não DELETE, pelo mesmo motivo do estorno: isto é um ATO com motivo obrigatório e
+  // corpo de conferência, não a remoção de um recurso. Um `DELETE` com body é o convite a alguém
+  // chamá-lo sem body — e sem body não há motivo, que é a exigência número um.
+  router.post("/parcelamentos/:parcId/exclusao", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelamentoId = String(req.params.parcId);
+    try {
+      const { excluirParcelamento } = await import(
+        "../../application/accounting/parcelamento/AtosParcelamentoService.js"
+      );
+      const resultado = await excluirParcelamento({
+        portalClientId, parcelamentoId,
+        motivo: req.body?.motivo,
+        totalConferido: req.body?.totalConferido ?? null,
+        userId: req.auth?.user?.id,
+      });
+      return res.json(resultado);
+    } catch (err) {
+      return responderAto(res, err, { parcelamentoId, msg: "exclusão de parcelamento" });
+    }
+  });
+
+  // GET/POST .../parcelamentos/:parcId/desfazer-rescisao[/preview]
+  //
+  // ⚠ `rescindirParcelamento` NÃO TINHA INVERSO. Quem rescindiu o contrato errado ficava com uma
+  // saída só — excluir um acordo que talvez quisesse manter, perdendo prestações e histórico junto.
+  router.get("/parcelamentos/:parcId/desfazer-rescisao/preview", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelamentoId = String(req.params.parcId);
+    try {
+      const { previewDesfazerRescisao } = await import(
+        "../../application/accounting/parcelamento/AtosParcelamentoService.js"
+      );
+      const preview = await previewDesfazerRescisao({ portalClientId, parcelamentoId });
+      return res.json({ ok: true, preview });
+    } catch (err) {
+      return responderAto(res, err, { parcelamentoId });
+    }
+  });
+
+  router.post("/parcelamentos/:parcId/desfazer-rescisao", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const parcelamentoId = String(req.params.parcId);
+    try {
+      const { desfazerRescisaoParcelamento } = await import(
+        "../../application/accounting/parcelamento/AtosParcelamentoService.js"
+      );
+      const resultado = await desfazerRescisaoParcelamento({
+        portalClientId, parcelamentoId,
+        motivo: req.body?.motivo,
+        userId: req.auth?.user?.id,
+      });
+      return res.json(resultado);
+    } catch (err) {
+      return responderAto(res, err, { parcelamentoId, msg: "desfazer rescisão" });
     }
   });
 

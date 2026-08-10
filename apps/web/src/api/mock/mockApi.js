@@ -1200,6 +1200,14 @@ mockPagamentosLocalizados.set("mock-guia-pendente-baixa", {
 // como ser exercido offline.
 const mockParcelamentosCriados = new Map(); // id → parcelamento decorado (formato de listParcelamentos)
 
+// ⚠ OS ATOS DO CONTRATO, no mock — e eles precisam ter CONSEQUÊNCIA VISÍVEL, senão o aceite não é
+// exercível offline. Excluir tem de fazer o card SUMIR (das duas filas junto); desfazer a rescisão
+// tem de fazer o contrato VOLTAR e suas prestações reaparecerem na fila "vencidas sem guia" — que é,
+// literalmente, o problema que o dono relatou ("não consigo dar baixa em parcelamento sem guia").
+// As fixturas são reconstruídas a cada chamada, então o estado da sessão mora nestes dois conjuntos.
+const mockParcelamentosExcluidos = new Set(); // id → contrato que o contador excluiu nesta sessão
+const mockRescisoesDesfeitas = new Set();     // id → contrato cuja rescisão foi desfeita nesta sessão
+
 // Estornos já feitos no mock — é o que faz a parcela VOLTAR PARA A FILA depois do estorno, em vez
 // de a tela recarregar idêntica e o fluxo terminar sem nenhuma consequência visível.
 const mockEstornosFeitos = new Map(); // companyId -> Set(entryId de baixa)
@@ -1359,7 +1367,13 @@ function construirParcelamentosFixos() {
             numeroParcela: l.n,
             competencia: l.competencia || competenciaDoVencimentoMock(l.vencimento),
             vencimento: l.vencimento,
-            valorPrevisto: 1200,
+            // ⚠ `over.valorPrevistoParcela: 0` NÃO é enfeite de fixture — é o estado em que TODO
+            // contrato criado pelo wizard nasce hoje. `buildDTOsFromManual` deriva o valor da
+            // parcela da SOMA DOS TRIBUTOS; sem guia e sem composição essa soma é 0, então
+            // `valorParcelaReferencia` é 0 e `sincronizarParcelas` materializa as N prestações com
+            // `valorPrevisto = 0`. A fila devolve `sem_valor_previsto` em todas. Um mock que só
+            // conhecesse 1200 esconderia exatamente o caso que o dono está vivendo.
+            valorPrevisto: over.valorPrevistoParcela ?? 1200,
             origemBaixa: l.historica ? "HISTORICO" : null,
             guia: l.guia
               ? { id: l.guia, vencimento: l.vencimento, paymentStatus: l.pago ? "PAID" : "OPEN", baixada: Boolean(l.baixada) }
@@ -1439,8 +1453,52 @@ function construirParcelamentosFixos() {
             parcelasEmAtraso: [{ numeroParcela: 1, vencimento: em(-35) }], regra, avaliavel: true,
           },
         }),
+        // ⚠ O CONTRATO QUE NASCEU SEM VALOR — o que o wizard produz hoje, e o motivo de o "valor
+        // original da parcela" ter virado pedido do dono. As três prestações vêm com
+        // `valorPrevisto: 0`, então a fila as devolve com `motivoBloqueio: "sem_valor_previsto"` e a
+        // mensagem manda "corrigir o valor da parcela no contrato" — que até agora era um caminho
+        // nomeado e inexistente. É nesta fixture que a correção do valor contratado se exercita.
+        parc({
+          id: "parc-wizard-sem-valor", label: "PARCSN 2026 — criado pelo wizard, sem valor",
+          tipo: "PARCSN", numeroParcelamento: "4040", parcelasPagas: 0,
+          formaPagamento: "DEBITO_AUTOMATICO", diaPagamento: 15, saldoConsolidado: 3600,
+          valorPrevistoParcela: 0,
+          linhas: [
+            { n: 1, guia: null, competencia: "2026-05", vencimento: em(-45) },
+            { n: 2, guia: null, competencia: "2026-06", vencimento: em(-15) },
+            { n: 3, guia: null, competencia: "2026-07", vencimento: em(15) },
+          ],
+          risco: { nivel: "ok", caso: null, emAtraso: 0, vencidas: 0, faltamParaRescindir: 3, parcelasEmAtraso: [], regra, avaliavel: false },
+        }),
+        // ⚠ O CONTRATO RESCINDIDO — a CASCA VAZIA medida em produção (10/08/2026), e a fixture sem a
+        // qual metade desta fase é invisível offline.
+        //
+        // O que ela reproduz, ponto por ponto: `status: "RESCINDIDO"`, ZERO lançamento contábil,
+        // `aberturaEntryId` nulo (por isso `parcelasPagas: 0` e nenhuma provisão), prestações
+        // VENCIDAS e SEM GUIA. É esse contrato que tira 12 prestações da fila de baixa sem uma
+        // palavra — o silêncio que fez o dono concluir que a baixa sem guia não funcionava.
+        //
+        // ⚠ Ele tem de continuar aparecendo em `listParcelamentos` (o backend devolve rescindidos;
+        // quem escondia era a tela). Se ele sumir daqui, a seção "Contratos rescindidos" e o botão
+        // de desfazer a rescisão deixam de ser exercíveis, e volta o estado em que o contrato errado
+        // era invisível e, portanto, incorrigível.
+        parc({
+          id: "parc-rescindido", label: "OUTRO 2026 — rescindido por engano", tipo: "OUTRO",
+          numeroParcelamento: "3", parcelasPagas: 0, diaPagamento: 20,
+          status: mockRescisoesDesfeitas.has("parc-rescindido") ? "ATIVO" : "RESCINDIDO",
+          formaPagamento: "DEBITO_AUTOMATICO", saldoConsolidado: 38037.74,
+          valorPrevistoParcela: 633.96,
+          linhas: Array.from({ length: 12 }, (_, i) => ({
+            n: i + 1, guia: null, competencia: null, vencimento: em(-330 + i * 30),
+          })),
+          // Rescindido, o risco é `null` no backend ("não há mais o que prevenir"). Depois de
+          // desfeita a rescisão ele volta a ser avaliado — e é isso que o preview antecipa.
+          risco: mockRescisoesDesfeitas.has("parc-rescindido")
+            ? { nivel: "rescindivel", caso: "I", emAtraso: 12, vencidas: 12, faltamParaRescindir: 0, parcelasEmAtraso: [], regra, avaliavel: true }
+            : null,
+        }),
       ];
-  return fixos;
+  return fixos.filter((p) => !mockParcelamentosExcluidos.has(p.id));
 }
 
 // ── A FILA DA PRESTAÇÃO SEM GUIA, no mock ────────────────────────────────────────────────────
@@ -1455,6 +1513,16 @@ function construirParcelamentosFixos() {
 
 /** parcelaId → a declaração feita nesta sessão. É o `origemBaixa: "MANUAL"` do mock. */
 const mockBaixasManuais = new Map();
+
+/**
+ * parcelaId → o valor CONTRATADO corrigido nesta sessão (`parcelas.valorPrevisto` do backend).
+ *
+ * ⚠ É UM MAPA SEPARADO DE `mockBaixasManuais` porque são dois fatos diferentes, e o mock existe
+ * para não deixar essa diferença sumir: aqui mora quanto o ACORDO diz que a prestação vale; lá,
+ * quanto foi PAGO (principal + juros + multa). Guardar os dois no mesmo lugar seria, no offline, o
+ * mesmo colapso que a tela evita.
+ */
+const mockValoresPrevistosCorrigidos = new Map();
 
 /**
  * As recusas por prestação — cada uma existe para exercer uma guarda da rota real.
@@ -1487,13 +1555,19 @@ function construirFilaSemGuiaMock() {
       if (!c.vencimento) continue; // sem data não se afirma que venceu
       if (new Date(c.vencimento).getTime() > fimDeHoje.getTime()) continue; // futura ≠ não paga
       const semProvisao = RECUSAS_BAIXA_MANUAL_MOCK[c.id] === "provisao_inexistente";
-      const bloqueio = semProvisao ? "provisao_inexistente" : (c.valorPrevisto ? null : "sem_valor_previsto");
+      // ⚠ A CORREÇÃO DO VALOR CONTRATADO VENCE A FIXTURE — é assim que o mock mostra a edição
+      // PERSISTINDO (a prestação sai de "sem valor previsto" e passa a ser baixável). Sem isso o
+      // contador corrigiria e veria o número antigo voltar, que é o defeito que a fase evita.
+      const valorPrevisto = mockValoresPrevistosCorrigidos.has(c.id)
+        ? mockValoresPrevistosCorrigidos.get(c.id)
+        : (c.valorPrevisto ?? null);
+      const bloqueio = semProvisao ? "provisao_inexistente" : (valorPrevisto ? null : "sem_valor_previsto");
       linhas.push({
         parcelaId: c.id,
         numeroParcela: c.numeroParcela ?? null,
         competencia: c.competencia ?? null,
         vencimento: c.vencimento,
-        valorPrevisto: c.valorPrevisto ?? null,
+        valorPrevisto,
         situacao: new Date(c.vencimento).getTime() < agora ? "VENCIDA" : "VENCE_HOJE",
         parcelamentoId: p.id,
         parcelamento: {
@@ -1509,6 +1583,127 @@ function construirFilaSemGuiaMock() {
   // A mais antiga primeiro — é a que está mais perto de contar para a regra de rescisão.
   linhas.sort((a, b) => new Date(a.vencimento).getTime() - new Date(b.vencimento).getTime());
   return linhas;
+}
+
+/**
+ * ⚠ O QUE A FILA ESCONDEU — e é a razão de esta função existir separada, e não de um `if` dentro da
+ * de cima.
+ *
+ * `construirFilaSemGuiaMock` pula o parcelamento RESCINDIDO (o backend também: fila de trabalho
+ * sobre acordo morto é trabalho inventado). O problema nunca foi o filtro — foi ele ser MUDO: a fila
+ * vazia é o mesmo pixel de "não há nada pendente", e foi assim que 69 prestações de dois contratos
+ * sumiram sem uma palavra em produção.
+ *
+ * ⚠ AS CONDIÇÕES SÃO AS MESMAS DA FILA, com o status invertido — igualzinho ao backend
+ * (`whereParcelaForaDaFilaPorRescisao` é derivado de `whereParcelaSemGuiaPendente`). Se as duas
+ * divergirem, o aviso passa a contar linhas que não voltariam para a fila, e a tela mente.
+ */
+function construirForaDaFilaMock() {
+  const fimDeHoje = new Date();
+  fimDeHoje.setHours(23, 59, 59, 999);
+
+  const porContrato = new Map();
+  for (const p of [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]) {
+    if (p.status !== "RESCINDIDO") continue; // ← a única condição diferente da fila
+    for (const c of p.parcelasContratadas || []) {
+      if (c.guia || c.origemBaixa || mockBaixasManuais.has(c.id)) continue;
+      if (!c.vencimento) continue;
+      if (new Date(c.vencimento).getTime() > fimDeHoje.getTime()) continue;
+      if (!porContrato.has(p.id)) {
+        porContrato.set(p.id, {
+          parcelamentoId: p.id, label: p.label, tipo: p.tipo,
+          numeroParcelamento: p.numeroParcelamento, status: p.status, prestacoes: 0,
+        });
+      }
+      porContrato.get(p.id).prestacoes += 1;
+    }
+  }
+  const contratos = [...porContrato.values()].sort((a, b) => b.prestacoes - a.prestacoes);
+  return {
+    prestacoes: contratos.reduce((s, c) => s + c.prestacoes, 0),
+    contratos,
+    motivo: "PARCELAMENTO_RESCINDIDO",
+  };
+}
+
+/**
+ * A PRÉVIA DA EXCLUSÃO, montada a partir do contrato de verdade.
+ *
+ * ⚠ ELA NÃO É FIXTURE CONGELADA de propósito: é esta prévia que a tela mostra ANTES do clique, e é
+ * ela que separa "tem certeza?" de uma confirmação que repete os DADOS. Números redondos escritos à
+ * mão esconderiam exatamente o que esta fase existe para provar.
+ *
+ * ⚠ E o MÊS FECHADO sai do mesmo `mockMonthlyCirculars` que o cadeado da aba Lançamentos escreve —
+ * fechar 01/2026 pela tela é o que faz o caminho do contra-lançamento aparecer aqui, como em
+ * produção. Uma flag própria do mock deixaria as duas telas discordando.
+ */
+function construirPreviewExclusaoMock(companyId, parcId) {
+  const parc = [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]
+    .find((p) => p.id === parcId);
+  if (!parc) throw mockRecusa("parcelamento_nao_encontrado", "Parcelamento não encontrado.");
+
+  const prestacoes = parc.parcelasContratadas || [];
+  const quitadas = prestacoes.filter((c) => c.origemBaixa || c.guia?.baixada || c.guia?.paymentStatus === "PAID").length;
+  const guias = (parc.guides || []).map((g) => ({
+    id: g.id, tipo: parc.tipo === "INSS" ? "INSS" : "SIMPLES", competencia: g.competencia,
+    numeroParcela: g.numeroParcela, valor: g.valor, baixada: Boolean(g.baixada),
+    paymentStatus: g.paymentStatus,
+    // O mesmo de-para do backend: sem `parcelamentoId` a guia sai da coluna PARC_DAS e volta a
+    // valer como a guia do tributo dela naquele mês.
+    deColuna: "PARC_DAS", paraColuna: parc.tipo === "INSS" ? "INSS" : "DAS",
+  }));
+
+  // A provisão da adesão, quando o contrato tem uma. `parc-risco` é o migrado sem provisão e
+  // `parc-rescindido` é a casca vazia medida em produção (zero lançamento).
+  const temProvisao = parc.id !== "parc-risco" && parc.id !== "parc-rescindido";
+  const compProvisao = "2026-01";
+  const fechada = Boolean(getCircularRecord(companyId, compProvisao)?.fechadoContabilEm);
+  const lista = temProvisao
+    ? [{
+      id: `${parc.id}-prov`, tipo: "PROVISAO", competencia: compProvisao,
+      historico: `PROVISÃO ${parc.tipo} — principal`, tipoLinha: "PRINCIPAL", status: "RASCUNHO",
+      valor: Number(parc.principalTotal) || 0, mesFechado: fechada,
+    }]
+    : [];
+  const hoje = new Date();
+  const competenciaHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+  const contra = fechada && temProvisao;
+
+  return {
+    parcelamento: {
+      id: parc.id, label: parc.label, tipo: parc.tipo,
+      numeroParcelamento: parc.numeroParcelamento, status: parc.status,
+      competenciaInicial: compProvisao, numParcelas: parc.numParcelas,
+      totalValue: Number(parc.totalValue) || 0, temProvisaoDeAbertura: temProvisao,
+    },
+    modo: contra ? "CONTRA_LANCAMENTO" : "DELECAO",
+    competenciaContraLancamento: contra ? competenciaHoje : null,
+    competenciasFechadas: contra ? [compProvisao] : [],
+    // ⚠ Sobrando lançamento em mês fechado, o cabeçalho NÃO é removido — é ele que segura o grupo
+    // do fechamento. A tela diz isso; "excluí e ele ainda existe" sem explicação é pior.
+    cabecalhoRemovido: !contra,
+    prestacoes: { total: prestacoes.length, quitadas, semEvidencia: parc.parcelasSemEvidencia ?? 0 },
+    guias: {
+      total: guias.length,
+      baixadas: guias.filter((g) => g.baixada).length,
+      voltamAContarComo: [...new Set(guias.map((g) => g.paraColuna))],
+      lista: guias,
+    },
+    lancamentos: {
+      total: lista.length,
+      apagados: contra ? 0 : lista.length,
+      preservados: contra ? lista.length : 0,
+      linhasDeRastreio: 0,
+      lista,
+    },
+    totalDesfeito: lista.reduce((s, l) => s + l.valor, 0),
+    motivoObrigatorio: true,
+    avisos: [
+      ...(quitadas > 0 ? [{ code: "PRESTACOES_COM_BAIXA", quantidade: quitadas }] : []),
+      ...(guias.length ? [{ code: "GUIAS_DESVINCULADAS", quantidade: guias.length }] : []),
+    ],
+    bloqueios: [],
+  };
 }
 
 function mockRecusa(code, message, extra = {}) {
@@ -2067,9 +2262,10 @@ export function createMockApi() {
     // aqui não há documento nenhum (débito automático), e quem afirma que o dinheiro saiu é o
     // contador. Por isso a resposta traz o CONTRATO junto de cada linha: sem isso o front faria uma
     // chamada por prestação, e são até 60 por acordo.
+    // ⚠ `foraDaFila` VIAJA SEMPRE, inclusive vazio — é ele que faz a fila vazia parar de ser muda.
     async listParcelasSemGuiaPendentes() {
       await delay();
-      return { ok: true, parcelas: construirFilaSemGuiaMock() };
+      return { ok: true, parcelas: construirFilaSemGuiaMock(), foraDaFila: construirForaDaFilaMock() };
     },
 
     // ⚠ TODAS AS GUARDAS DA ROTA REAL PASSAM POR AQUI — inclusive a conferência do total, que é o
@@ -2139,6 +2335,87 @@ export function createMockApi() {
         resultado: {
           pagamentoId: `mock-baixa-manual-${id}`,
           origemBaixa: "MANUAL", competencia, principal, juros, multa, total,
+        },
+      };
+    },
+    /**
+     * O valor CONTRATADO da prestação — e ele NÃO é o valor pago.
+     *
+     * ⚠ TODAS AS GUARDAS DA ROTA REAL ESTÃO AQUI, inclusive a conferência do "era". Alterar o
+     * contrato é ato de consequência: o servidor confere o valor anterior que a tela mostrou e
+     * recusa (409 `CONFERENCIA_DIVERGENTE`) se ele tiver mudado no meio. Um mock que aceitasse
+     * qualquer coisa deixaria a recusa aparecer só em produção — e ela é a que protege o contador
+     * de reescrever um contrato a partir de um "antes" que ele nunca viu.
+     */
+    async corrigirValorPrevistoParcela(companyId, parcelaId, body = {}) {
+      await delay();
+      const id = String(parcelaId || "");
+
+      if (mockBaixasManuais.has(id)) {
+        throw mockRecusa(
+          "parcela_ja_baixada",
+          "Esta prestação já foi baixada, e o lançamento foi gravado com o valor antigo. Estorne a baixa antes.",
+          { payload: { ok: false, skipped: true, motivo: "parcela_ja_baixada" } },
+        );
+      }
+      const linha = construirFilaSemGuiaMock().find((l) => l.parcelaId === id);
+      if (!linha) {
+        throw mockRecusa("parcela_not_found", "Prestação não encontrada.", {
+          payload: { ok: false, skipped: true, motivo: "parcela_not_found" },
+        });
+      }
+      const novo = Math.round((Number(body.valorPrevisto) + Number.EPSILON) * 100) / 100;
+      if (!Number.isFinite(novo) || novo <= 0) {
+        throw mockRecusa("valor_invalido", "O valor contratado da prestação tem de ser maior que zero.", {
+          payload: { ok: false, skipped: true, motivo: "valor_invalido" },
+        });
+      }
+      const anterior = linha.valorPrevisto ?? null;
+      const conferido = body.valorAnteriorConferido == null ? null : Number(body.valorAnteriorConferido);
+      const bate = anterior == null ? conferido == null : (conferido != null && Math.abs(conferido - anterior) <= 0.01);
+      if (!bate) {
+        throw mockRecusa(
+          "CONFERENCIA_DIVERGENTE",
+          `O valor atual desta prestação no contrato é ${anterior == null ? "ausente" : `R$ ${anterior.toFixed(2)}`}, `
+          + `e a tela conferiu ${conferido == null ? "ausente" : `R$ ${conferido.toFixed(2)}`}. Recarregue a fila.`,
+        );
+      }
+
+      mockValoresPrevistosCorrigidos.set(id, novo);
+
+      // A CONFERÊNCIA DO PASSIVO, calculada de verdade — a soma das prestações que ainda vão
+      // amortizar × o principal que a adesão provisionou. ⚠ INFORMATIVA, nunca bloqueio: o número
+      // certo sai do contrato, não deste código. Prestação `HISTORICO` fica de fora (não gera
+      // lançamento nenhum), igual ao backend.
+      const contrato = [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]
+        .find((p) => p.id === linha.parcelamentoId) || null;
+      const amortizaveis = (contrato?.parcelasContratadas || []).filter((c) => c.origemBaixa !== "HISTORICO");
+      const somaPrestacoes = Math.round(amortizaveis.reduce((s, c) => {
+        const v = mockValoresPrevistosCorrigidos.has(c.id)
+          ? mockValoresPrevistosCorrigidos.get(c.id)
+          : Number(c.valorPrevisto || 0);
+        return s + (Number.isFinite(v) ? v : 0);
+      }, 0) * 100) / 100;
+      const principalProvisionado = contrato?.principalTotal != null ? Number(contrato.principalTotal) : null;
+
+      return {
+        ok: true,
+        resultado: {
+          parcelaId: id,
+          numeroParcela: linha.numeroParcela,
+          competencia: linha.competencia,
+          valorAnterior: anterior,
+          valorPrevisto: novo,
+          semMudanca: anterior != null && Math.abs(anterior - novo) <= 0.01,
+          conferencia: {
+            prestacoesAmortizaveis: amortizaveis.length,
+            prestacoesHistoricas: (contrato?.parcelasContratadas || []).length - amortizaveis.length,
+            somaPrestacoes,
+            principalProvisionado,
+            diferenca: principalProvisionado != null
+              ? Math.round((somaPrestacoes - principalProvisionado) * 100) / 100
+              : null,
+          },
         },
       };
     },
@@ -4921,6 +5198,91 @@ export function createMockApi() {
       await delay(80);
       mockParcelamentosCriados.delete(parcId);
       return { ok: true };
+    },
+
+    // ── OS ATOS DO CONTRATO ─────────────────────────────────────────────────────────────────────
+    //
+    // ⚠ O PREVIEW É A METADE QUE IMPORTA, e por isso o mock o monta de verdade a partir do contrato
+    // (prestações, guias, quitadas), em vez de devolver uma fixture congelada: é ele que a tela
+    // mostra antes do clique, e um mock que devolvesse números redondos esconderia exatamente o que
+    // esta fase existe para provar — que a confirmação repete os DADOS, não um "tem certeza?".
+    //
+    // ⚠ O MOCK TAMBÉM CONHECE OS CAMINHOS DE RECUSA (mês fechado e motivo curto). Mock que só sabe o
+    // caminho feliz deixa a recusa aparecer pela primeira vez em produção.
+    async previewExclusaoParcelamento(companyId, parcId) {
+      await delay(60);
+      return construirPreviewExclusaoMock(companyId, parcId);
+    },
+
+    async excluirParcelamento(companyId, parcId, { motivo, totalConferido } = {}) {
+      await delay(120);
+      if (String(motivo || "").trim().length < 5) {
+        throw mockRecusa("MOTIVO_OBRIGATORIO", "Informe o motivo (mínimo 5 caracteres).");
+      }
+      const preview = construirPreviewExclusaoMock(companyId, parcId);
+      // ⚠ A CONFERÊNCIA DO TOTAL É REAL NO MOCK, pelo mesmo motivo da baixa manual: ela é a guarda
+      // que impede excluir algo diferente do que foi confirmado, e um mock permissivo deixaria a
+      // divergência aparecer só em produção.
+      if (totalConferido != null && Math.abs(Number(totalConferido) - preview.totalDesfeito) > 0.01) {
+        throw mockRecusa("CONFERENCIA_DIVERGENTE", "O contrato mudou desde que a tela abriu — confira de novo.");
+      }
+      mockParcelamentosExcluidos.add(parcId);
+      mockParcelamentosCriados.delete(parcId);
+      return {
+        ok: true, atoId: `mock-ato-${parcId}`, modo: preview.modo,
+        cabecalhoRemovido: preview.cabecalhoRemovido,
+        prestacoesRemovidas: preview.prestacoes.total,
+        guiasDesvinculadas: preview.guias.total,
+        lancamentosApagados: preview.lancamentos.apagados,
+        lancamentosPreservados: preview.lancamentos.preservados,
+        totalDesfeito: preview.totalDesfeito,
+      };
+    },
+
+    async previewDesfazerRescisao(companyId, parcId) {
+      await delay(60);
+      const parc = [...mockParcelamentosCriados.values(), ...construirParcelamentosFixos()]
+        .find((p) => p.id === parcId);
+      if (!parc) throw mockRecusa("parcelamento_nao_encontrado", "Parcelamento não encontrado.");
+      const bloqueios = parc.status === "RESCINDIDO" ? [] : [{
+        code: "PARCELAMENTO_NAO_RESCINDIDO",
+        message: `Este parcelamento está ${parc.status} — não há rescisão a desfazer.`,
+      }];
+      const fimDeHoje = new Date();
+      fimDeHoje.setHours(23, 59, 59, 999);
+      const voltamParaFila = (parc.parcelasContratadas || []).filter((c) => !c.guia && !c.origemBaixa
+        && c.vencimento && new Date(c.vencimento).getTime() <= fimDeHoje.getTime()).length;
+      return {
+        parcelamento: {
+          id: parc.id, label: parc.label, tipo: parc.tipo,
+          numeroParcelamento: parc.numeroParcelamento, status: parc.status, numParcelas: parc.numParcelas,
+        },
+        modo: "DELECAO",
+        competenciaContraLancamento: null,
+        competenciasFechadas: [],
+        // ⚠ ZERO LANÇAMENTO É O CASO REAL: os dois contratos rescindidos de produção são cascas
+        // vazias — a rescisão não gerou lançamento nenhum porque não havia provisão a estornar.
+        lancamentos: { total: 0, preservados: 0, lista: [] },
+        totalDesfeito: 0,
+        prestacoes: {
+          total: (parc.parcelasContratadas || []).length,
+          quitadas: 0,
+          semEvidencia: parc.parcelasSemEvidencia ?? 0,
+          voltamParaFila,
+        },
+        riscoAoReativar: { avaliavel: true, nivel: "rescindivel", emAtraso: voltamParaFila },
+        motivoObrigatorio: true,
+        bloqueios,
+      };
+    },
+
+    async desfazerRescisaoParcelamento(companyId, parcId, { motivo } = {}) {
+      await delay(120);
+      if (String(motivo || "").trim().length < 5) {
+        throw mockRecusa("MOTIVO_OBRIGATORIO", "Informe o motivo (mínimo 5 caracteres).");
+      }
+      mockRescisoesDesfeitas.add(parcId);
+      return { ok: true, atoId: `mock-ato-${parcId}`, status: "ATIVO", modo: "DELECAO" };
     },
     async vincularEntryParcelamento() { await delay(40); return { ok: true }; },
 

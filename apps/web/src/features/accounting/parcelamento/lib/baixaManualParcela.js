@@ -15,9 +15,22 @@
 // frente e mostrada antes do clique; o `totalConferido` que sobe é exatamente o número que o
 // contador leu.
 //
-// ⚠ O PRINCIPAL NÃO É CAMPO. Ele vem de `parcelas.valorPrevisto` (o contrato) e viaja read-only:
-// aceitar um valor digitado no lugar transformaria a baixa numa segunda fonte para o valor da
-// prestação.
+// ⚠ O PRINCIPAL É O VALOR **CONTRATADO**, E AGORA ELE É EDITÁVEL — MAS COMO CONTRATO, NÃO COMO
+// "quanto eu paguei". A distinção é o coração desta tela e não pode sumir:
+//
+//   · **contratado** (`parcelas.valorPrevisto`) — quanto o ACORDO diz que a prestação vale. É ele
+//     que a baixa debita do passivo (`D PARC`), que a fila mostra na coluna Principal, e que
+//     `sincronizarParcelas` materializou do cabeçalho. Editá-lo altera o CONTRATO: persiste, e é o
+//     que a próxima tela mostra. Por isso vai por uma chamada PRÓPRIA
+//     (`corrigirValorPrevistoParcela`), com confirmação que diz o que era e o que passa a ser.
+//   · **pago** — `principal + juros + multa`, o que saiu da conta (`C CAIXA`). Ele legitimamente
+//     difere do contratado, e essa diferença é INFORMAÇÃO (juros, TJLP, atraso), não erro de
+//     digitação: ela continua expressa em juros/multa, e nunca é absorvida no principal.
+//
+// ⚠ Digitar no principal NÃO é "declarar o que paguei a mais". Quem pagou mais declara o acréscimo;
+// o principal só muda quando o CONTRATO estava errado — que é o caso de todo contrato criado pelo
+// wizard, cujas prestações nascem valendo R$ 0,00 (o valor da parcela é derivado da soma dos
+// tributos, e sem guia essa soma é zero).
 
 import { avaliarValor, MENSAGENS_VALOR } from "../../entries/lib/valorFormula.js";
 
@@ -55,23 +68,71 @@ export function lerAcrescimo(texto) {
 }
 
 /**
+ * Lê o campo do PRINCIPAL — o valor **contratado** da prestação.
+ *
+ * ⚠ VAZIO AQUI **É** ERRO, ao contrário de juros e multa. Prestação sem acréscimo é o caso comum;
+ * prestação que vale zero não existe — e um principal vazio virando 0 produziria uma baixa que
+ * amortiza nada do passivo e credita só o acréscimo no caixa. A mesma gramática estrita de
+ * separador decimal (`avaliarValor`) é reusada: aqui um `1.500` lido como 1,50 seria um passivo
+ * amortizado 1000× a menos.
+ */
+export function lerPrincipal(texto) {
+  const r = avaliarValor(texto);
+  if (!r.ok) return { ok: false, valor: null, erro: r.erro, mensagem: r.mensagem };
+  if (r.vazio) {
+    return {
+      ok: false, valor: null, erro: "sem_valor_previsto",
+      mensagem: "Informe o valor contratado desta prestação — o principal não se inventa, "
+        + "e é ele que a baixa vai amortizar do passivo.",
+    };
+  }
+  if (r.valor <= 0) {
+    return {
+      ok: false, valor: null, erro: "valor_invalido",
+      mensagem: "O valor contratado da prestação tem de ser maior que zero.",
+    };
+  }
+  return { ok: true, valor: round2(r.valor) };
+}
+
+/**
  * A decomposição do que vai ser lançado, montada PARA FRENTE.
  *
  * Devolve sempre a mesma forma. `ok:false` desabilita o envio COM O MOTIVO (nunca sem) — e nunca
  * devolve um total "otimista" com um dos campos ilegível, que é como um número errado chegaria a
  * `totalConferido` e o servidor recusaria depois de o contador já ter confirmado.
+ *
+ * ⚠ `textoPrincipal` AUSENTE (`undefined`) mantém o comportamento antigo — principal lido direto de
+ * `valorPrevisto`, read-only. Presente, ele é a EDIÇÃO do valor contratado, e `principalAlterado`
+ * diz que o CONTRATO vai mudar. Os dois números viajam separados de propósito: `principalContratado`
+ * é o que está gravado hoje, `principal` é o que vai valer — e é essa dupla que a confirmação
+ * repete ("era X, passa a ser Y"). Colapsá-los num campo só apagaria o "era".
  */
-export function decomporBaixa({ valorPrevisto, textoJuros = "", textoMulta = "" } = {}) {
-  const principal = valorPrevisto != null ? round2(valorPrevisto) : null;
+export function decomporBaixa({ valorPrevisto, textoPrincipal, textoJuros = "", textoMulta = "" } = {}) {
+  const contratado = valorPrevisto != null && Number.isFinite(Number(valorPrevisto))
+    ? round2(valorPrevisto)
+    : null;
+  const editando = textoPrincipal !== undefined;
+  const p = editando ? lerPrincipal(textoPrincipal) : { ok: true, valor: contratado };
+  const principal = p.valor;
   const j = lerAcrescimo(textoJuros);
   const m = lerAcrescimo(textoMulta);
 
   const base = {
     principal, juros: j.valor, multa: m.valor,
+    principalContratado: contratado,
+    // ⚠ Contratado ausente (a prestação nasceu sem valor) com principal digitado TAMBÉM é alteração
+    // do contrato: `null → 1.200,00` é o caso do contrato criado pelo wizard, e é o mais comum.
+    principalAlterado: Number.isFinite(principal)
+      && (contratado == null || Math.abs(principal - contratado) > 0.01),
+    erroPrincipal: p.ok ? null : p.mensagem,
     erroJuros: j.ok ? null : j.mensagem,
     erroMulta: m.ok ? null : m.mensagem,
   };
 
+  if (!p.ok) {
+    return { ...base, total: null, ok: false, erro: p.erro, mensagem: p.mensagem };
+  }
   if (!Number.isFinite(principal) || principal <= 0) {
     return {
       ...base, total: null, ok: false,
@@ -122,8 +183,13 @@ export const MOTIVOS_BAIXA_MANUAL = Object.freeze({
     + "(no lançamento) — ela volta para esta fila.",
   provisao_inexistente: "O parcelamento não tem a provisão de abertura, então não há passivo a amortizar. "
     + "Lance a adesão antes.",
-  sem_valor_previsto: "A prestação não tem valor previsto no contrato, e o principal não se inventa. "
-    + "Corrija o valor da parcela no contrato.",
+  // ⚠ ESTE TEXTO MUDOU, E TINHA DE MUDAR. Ele mandava "corrigir o valor da parcela no contrato" —
+  // um caminho NOMEADO e INEXISTENTE: não havia rota nenhuma que o fizesse, e a prestação ficava
+  // não baixável para sempre. Hoje a correção existe, e é aqui mesmo, no campo Principal.
+  sem_valor_previsto: "A prestação nasceu sem valor no contrato (é o que acontece quando o contrato "
+    + "é criado sem guia). Informe o valor contratado no campo Principal — ele passa a valer para "
+    + "esta prestação em todas as telas.",
+  valor_invalido: "O valor contratado da prestação tem de ser maior que zero.",
   acrescimo_negativo: "Juros e multa não podem ser negativos.",
   data_invalida: "A data do pagamento não foi entendida.",
   parcela_not_found: "Prestação não encontrada — a lista pode estar desatualizada. Recarregue a fila.",
@@ -147,6 +213,37 @@ export function codigoDaRecusa(err) {
   return err?.code || err?.payload?.motivo || err?.payload?.error || err?.motivo || err?.error || null;
 }
 
+/**
+ * As recusas da CORREÇÃO DO VALOR CONTRATADO — outra rota, outros desfechos.
+ *
+ * ⚠ ELAS NÃO SÃO AS DA BAIXA, e por isso não reusam `MOTIVOS_BAIXA_MANUAL`: os mesmos códigos
+ * (`parcela_tem_guia`, `parcela_ja_baixada`) significam coisas diferentes aqui. Na baixa,
+ * "tem guia" manda o contador para a outra fila; na correção, ele quer dizer que o valor vem do
+ * DOCUMENTO e não se digita. Reusar o texto mandaria o contador para uma fila que não resolve o
+ * problema dele.
+ */
+export const MOTIVOS_CORRECAO_VALOR = Object.freeze({
+  parcela_tem_guia: "Esta prestação tem guia — o valor dela vem do documento, não se digita. "
+    + "Corrija a guia (ou recapture o comprovante) em vez do contrato.",
+  parcela_ja_baixada: "Esta prestação já foi baixada, e o lançamento dela foi gravado com o valor "
+    + "antigo. Mudar o contrato agora deixaria o razão e o cadastro discordando: estorne a baixa "
+    + "(no lançamento), corrija o valor e lance de novo.",
+  parcela_not_found: "Prestação não encontrada — a lista pode estar desatualizada. Recarregue a fila.",
+  valor_invalido: "O valor contratado da prestação tem de ser maior que zero.",
+  CONFERENCIA_OBRIGATORIA: "O servidor exige saber qual era o valor anterior. Recarregue a fila e "
+    + "tente de novo.",
+  CONFERENCIA_DIVERGENTE: "O valor que está gravado no contrato não é o que esta tela mostrou — "
+    + "alguém pode tê-lo mudado. Recarregue a fila e confira antes de alterar.",
+});
+
+export function explicarRecusaCorrecao(codigo, mensagemDoServidor) {
+  const conhecido = MOTIVOS_CORRECAO_VALOR[codigo];
+  if (conhecido) return conhecido;
+  const texto = String(mensagemDoServidor || "").trim();
+  if (texto && /\s/.test(texto)) return texto;
+  return "O servidor recusou a alteração do valor e não disse por quê.";
+}
+
 export function explicarRecusa(codigo, mensagemDoServidor) {
   const conhecido = MOTIVOS_BAIXA_MANUAL[codigo];
   if (conhecido) return conhecido;
@@ -165,7 +262,7 @@ export function explicarRecusa(codigo, mensagemDoServidor) {
  * "(declarado)": quando a via SERPRO existir, ela gravará outra coisa. O contador precisa saber
  * qual das duas ele está fazendo — é a única diferença entre "a Receita provou" e "eu afirmei".
  */
-export function textoDaConfirmacao({ linha, decomposicao, dataPagamento }) {
+export function textoDaConfirmacao({ linha, decomposicao, dataPagamento, consequencia = null }) {
   const n = linha?.numeroParcela ?? "?";
   const de = linha?.parcelamento?.numParcelas ?? "?";
   const contrato = linha?.parcelamento?.label || "este contrato";
@@ -176,10 +273,43 @@ export function textoDaConfirmacao({ linha, decomposicao, dataPagamento }) {
   const partes = [
     `Declarar o pagamento da prestação ${n} de ${de} — ${contrato}${comp}.`,
     "",
-    `Principal (do contrato): ${formatarMoeda(decomposicao?.principal)}`,
+  ];
+
+  // ⚠ A ALTERAÇÃO DO CONTRATO É UM SEGUNDO ATO, E ELE VEM PRIMEIRO NA CONFIRMAÇÃO — dizendo o que
+  // ERA e o que PASSA A SER. É a exigência do "ato de consequência": alterar `valorPrevisto` não
+  // muda só esta baixa, muda o que toda tela vai mostrar sobre esta prestação daqui em diante.
+  if (decomposicao?.principalAlterado) {
+    const antes = decomposicao.principalContratado == null
+      ? "sem valor (a prestação nasceu sem valor no contrato)"
+      : formatarMoeda(decomposicao.principalContratado);
+    partes.push(
+      "⚠ ISTO ALTERA O CONTRATO, e não só esta baixa:",
+      `   valor contratado da prestação ${n}: ${antes} → ${formatarMoeda(decomposicao.principal)}`,
+      "   O novo valor passa a ser o que todas as telas mostram desta prestação, e é ele que a",
+      "   baixa vai amortizar do passivo do parcelamento. As demais prestações NÃO são tocadas.",
+    );
+    // ⚠ A CONSEQUÊNCIA VAI NA CONFIRMAÇÃO, não só na tela. Ela é o número que diz se o passivo do
+    // parcelamento fecha — e é decisão do contador, não bloqueio: aparece para ele saber, não
+    // para impedi-lo.
+    if (consequencia && Number.isFinite(Number(consequencia.soma))) {
+      partes.push(
+        `   As ${consequencia.prestacoes ?? "?"} prestações que ainda amortizam passam a somar `
+        + `${formatarMoeda(consequencia.soma)}`
+        + (consequencia.provisionado == null
+          ? " (não há provisão de abertura registrada para comparar)."
+          : `, contra ${formatarMoeda(consequencia.provisionado)} de principal provisionado na adesão`
+            + `${Math.abs(consequencia.diferenca) <= 0.01
+              ? " — fecham." : ` — sobra ${formatarMoeda(consequencia.diferenca)} de diferença.`}`),
+      );
+    }
+    partes.push("");
+  }
+
+  partes.push(
+    `Principal (valor contratado): ${formatarMoeda(decomposicao?.principal)}`,
     `Juros (declarado por você): ${formatarMoeda(decomposicao?.juros)}`,
     `Multa (declarada por você): ${formatarMoeda(decomposicao?.multa)}`,
-    `TOTAL: ${formatarMoeda(decomposicao?.total)}`,
+    `TOTAL PAGO: ${formatarMoeda(decomposicao?.total)}`,
     `Data do pagamento: ${quando}`,
     "",
     "Isto GRAVA lançamentos contábeis (principal, juros e multa separados) e amortiza o passivo do",
@@ -187,7 +317,7 @@ export function textoDaConfirmacao({ linha, decomposicao, dataPagamento }) {
     "histórico sai com \"(declarado)\".",
     "",
     "Confirmar?",
-  ];
+  );
   return partes.join("\n");
 }
 

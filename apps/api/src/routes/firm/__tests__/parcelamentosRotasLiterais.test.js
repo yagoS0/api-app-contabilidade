@@ -31,8 +31,15 @@ jest.mock("../../../infrastructure/db/prisma.js", () => ({
   },
 }));
 
+// ⚠ `conferenciaDoPassivoPorContrato` PRECISA ESTAR AQUI, e a falta dela deixou este teste VERMELHO.
+// A rota `parcelas-sem-guia-pendentes` passou a chamá-la para mandar a conferência do passivo junto
+// de cada linha; um `jest.mock` com factory devolve EXATAMENTE o objeto declarado, então o export
+// ausente virava `undefined`, a chamada estourava `TypeError` e a rota respondia 500 — um teste de
+// ORDEM DE ROTA falhando por um mock incompleto, que é o pior tipo de vermelho: ele não fala do que
+// quebrou. Mock de módulo tem de acompanhar o que a rota passa a usar.
 jest.mock("../../../application/accounting/parcelamento/ParcelamentoV2Service.js", () => ({
   resolverContasProvisao: jest.fn(async () => ({ PARC_DAS: "", MULTA: "", JUROS: "", TOTAL: "" })),
+  conferenciaDoPassivoPorContrato: jest.fn(async () => ({})),
 }));
 
 import express from "express";
@@ -78,8 +85,16 @@ describe("GET /parcelamentos/* — literais alcançáveis, sem curinga na frente
     const res = await request(makeApp()).get("/firm/companies/p1/parcelamentos/parcelas-sem-guia-pendentes");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, parcelas: [] });
-    expect(prisma.parcela.findMany).toHaveBeenCalledTimes(1);
+    // ⚠ A RESPOSTA GANHOU `foraDaFila`, E ELE VEM MESMO VAZIO — é o que faz a fila vazia parar de
+    // ser muda. `parcelas: []` sozinho é indistinguível de "não há nada pendente"; com o resumo, a
+    // tela consegue dizer "não há nada" OU "há N prestações fora daqui porque o acordo está
+    // rescindido". Por isso a segunda query (as escondidas) é obrigatória, e não condicional.
+    expect(res.body).toEqual({
+      ok: true,
+      parcelas: [],
+      foraDaFila: { prestacoes: 0, contratos: [], motivo: "PARCELAMENTO_RESCINDIDO" },
+    });
+    expect(prisma.parcela.findMany).toHaveBeenCalledTimes(2);
   });
 
   it("contas-provisao NÃO é engolida por um curinga", async () => {

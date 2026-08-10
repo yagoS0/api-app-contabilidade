@@ -846,6 +846,9 @@ export function ParcelamentosList({
   // R3 — a barra de ações do card. Todos opcionais pelo mesmo motivo: a Circular embeda esta lista
   // e lá não há fila de baixa nem aba Guias para onde ir.
   onDarBaixa, onBaixaEmLote, onSubirGuia,
+  // ⚠ EXCLUIR O CONTRATO — pedido do dono. Opcional pelo mesmo motivo dos outros; quem o passa é a
+  // aba Parcelamentos, que tem o modal de confirmação com os números reais.
+  onExcluir,
 }) {
   const [configParc, setConfigParc] = useState(null); // { id, label }
   const [rescParc, setRescParc] = useState(null);      // parcelamento sendo rescindido
@@ -1031,6 +1034,19 @@ export function ParcelamentosList({
                       onClick: () => setRescParc(p),
                       tom: "var(--state-danger)",
                       separador: true,
+                    },
+                    // ⚠ EXCLUIR ≠ RESCINDIR, e o menu tem de deixar isso claro — são as duas ações
+                    // mais parecidas na aparência e as mais opostas no significado. RESCINDIR é um
+                    // FATO DO MUNDO: o acordo caiu, o saldo vai para a Dívida Ativa, as reduções da
+                    // adesão são restabelecidas — e o app não desfaz isso na Receita. EXCLUIR é um
+                    // ato sobre o REGISTRO: este contrato não deveria estar aqui. Quem confunde os
+                    // dois rescinde um acordo saudável para apagar um cadastro errado.
+                    onExcluir && {
+                      label: "Excluir parcelamento…",
+                      onClick: () => onExcluir(p),
+                      title: "Para contrato lançado errado. Mostra o que será desfeito, com números, "
+                        + "e exige motivo. NÃO é a rescisão do acordo perante a Receita.",
+                      tom: "var(--state-danger)",
                     },
                   ]}
                 />
