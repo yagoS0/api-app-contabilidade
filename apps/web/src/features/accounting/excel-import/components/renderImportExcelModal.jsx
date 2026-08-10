@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtValor } from "../../entries/lib/accountingEntriesShared";
 
@@ -36,7 +36,27 @@ function fmtDateBR(iso) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
-export function ImportExcelModal({ accounts = [], onPreview, onCommit, onClose }) {
+// ⚠ Referência ESTÁVEL para "sem contas" — `accounts = []` no parâmetro cria um array NOVO a cada
+// render, e array novo derrota a memoização abaixo em silêncio.
+const SEM_CONTAS = [];
+
+// O `<datalist>` do plano de contas era montado UMA VEZ POR LINHA (e mais duas no preenchimento em
+// lote), cada um com uma `<option>` por conta — e todos os `id` eram diferentes só por cópia-e-cola:
+// o conteúdo era idêntico. Com o plano real desta base (593 a 1.199 contas), 10 linhas custavam
+// ~197 ms POR TECLA no Chrome; 50 linhas, ~747 ms. Agora é UM `<datalist>` para o modal inteiro,
+// e ele é memoizado — `accounts` não muda enquanto se digita, então o React pula a subárvore.
+// ⚠ Sem `areEqual` customizado: a comparação rasa padrão está correta, e comparador à mão é o
+// caminho conhecido para o campo parar de atualizar.
+const ID_LISTA_CONTAS = "excel-acc";
+const ListaDeContas = memo(function ListaDeContas({ id, accounts }) {
+  return (
+    <datalist id={id}>
+      {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
+    </datalist>
+  );
+});
+
+export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, onClose }) {
   const [step, setStep] = useState("upload"); // "upload" | "review"
   const [file, setFile] = useState(null);
   const [transactions, setTransactions] = useState([]);
@@ -203,7 +223,7 @@ export function ImportExcelModal({ accounts = [], onPreview, onCommit, onClose }
                         <td style={{ padding: "5px 8px" }}>
                           <input
                             type="text"
-                            list={`excel-acc-${idx}`}
+                            list={ID_LISTA_CONTAS}
                             value={t.contaDebito || ""}
                             onChange={(e) => updateRow(idx, { contaDebito: e.target.value })}
                             placeholder="—"
@@ -214,16 +234,13 @@ export function ImportExcelModal({ accounts = [], onPreview, onCommit, onClose }
                         <td style={{ padding: "5px 8px" }}>
                           <input
                             type="text"
-                            list={`excel-acc-${idx}`}
+                            list={ID_LISTA_CONTAS}
                             value={t.contaCredito || ""}
                             onChange={(e) => updateRow(idx, { contaCredito: e.target.value })}
                             placeholder="—"
                             disabled={t.skip}
                             style={{ ...inputStyle, fontWeight: 700, color: t.contaCredito ? "#69FF47" : PANEL.muted, textAlign: "center" }}
                           />
-                          <datalist id={`excel-acc-${idx}`}>
-                            {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
-                          </datalist>
                         </td>
                         <td style={{ padding: "5px 8px", fontSize: "0.78rem" }}>
                           {t.skip ? <span style={{ color: PANEL.muted }}>—</span>
@@ -252,12 +269,15 @@ export function ImportExcelModal({ accounts = [], onPreview, onCommit, onClose }
               </table>
             </div>
 
+            {/* UMA lista para o modal inteiro — a tabela e o preenchimento em lote apontam para ela. */}
+            <ListaDeContas id={ID_LISTA_CONTAS} accounts={accounts} />
+
             {pendingRows > 0 && (
               <div style={{ display: "flex", gap: 8, alignItems: "center", padding: 10, background: PANEL.field, borderRadius: 6, marginBottom: 12 }}>
                 <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>Aplicar a todas pendentes:</span>
                 <input
                   type="text"
-                  list="excel-bulk-d"
+                  list={ID_LISTA_CONTAS}
                   value={bulkD}
                   onChange={(e) => setBulkD(e.target.value)}
                   placeholder="Débito"
@@ -265,18 +285,12 @@ export function ImportExcelModal({ accounts = [], onPreview, onCommit, onClose }
                 />
                 <input
                   type="text"
-                  list="excel-bulk-c"
+                  list={ID_LISTA_CONTAS}
                   value={bulkC}
                   onChange={(e) => setBulkC(e.target.value)}
                   placeholder="Crédito"
                   style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkC ? "#69FF47" : PANEL.muted, textAlign: "center" }}
                 />
-                <datalist id="excel-bulk-d">
-                  {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
-                </datalist>
-                <datalist id="excel-bulk-c">
-                  {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
-                </datalist>
                 <Button variant="secondary" size="sm" onClick={applyBulkFill} disabled={!bulkD && !bulkC}>
                   Aplicar
                 </Button>

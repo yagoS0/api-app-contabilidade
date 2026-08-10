@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtValor } from "../../entries/lib/accountingEntriesShared";
 import { SmartHistoricoInput, AccountCodeInput } from "../../entries/components/renderAccountingEntriesParts";
@@ -43,6 +43,34 @@ function fmtDateBR(iso) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
+// ⚠ Referência ESTÁVEL para "sem contas". `accounts = []` no parâmetro cria um array NOVO a cada
+// render, e um array novo derrota qualquer memoização adiante — o custo voltaria calado.
+const SEM_CONTAS = [];
+
+/**
+ * ⚠ O `<datalist>` do plano de contas fora do caminho do render.
+ *
+ * Estes dois `<datalist>` viviam no corpo do componente e eram RECONSTRUÍDOS a cada tecla, com uma
+ * `<option>` por conta dentro. Como o plano de contas real desta base tem de 593 a 1.199 contas
+ * (`chart_of_accounts.portalClientId` NULO é conta global, válida para todas as empresas — por isso
+ * o número é alto até em empresa nova), isso é um imposto FIXO por tecla, independente de quantas
+ * linhas o extrato tenha: medido no Chrome, ~7 ms com 20 contas e ~184 ms com 1.000.
+ *
+ * `React.memo` com a comparação RASA padrão resolve: `id` é literal e `accounts` é a mesma
+ * referência entre teclas (a digitação mexe em `transactions`, não no plano), então o React pula a
+ * subárvore inteira.
+ *
+ * ⚠ NADA de `areEqual` customizado. A comparação rasa está correta aqui, e comparador escrito à mão
+ * é exatamente como "lento" vira "campo que não atualiza" — que é infinitamente pior.
+ */
+const ListaDeContas = memo(function ListaDeContas({ id, accounts }) {
+  return (
+    <datalist id={id}>
+      {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
+    </datalist>
+  );
+});
+
 /**
  * Modal de importação OFX — versão otimizada para digitação rápida.
  *
@@ -59,7 +87,7 @@ function fmtDateBR(iso) {
  *  3. Commit: onImport(transactions) → cria entries + auto-save de histórico
  */
 export function ImportOFXModal({
-  accounts = [],
+  accounts = SEM_CONTAS,
   onPreview,
   onImport,
   onSearchHistoricos,
@@ -90,6 +118,7 @@ export function ImportOFXModal({
       const list = Array.isArray(res?.transactions) ? res.transactions : [];
       if (list.length === 0) {
         setError("Nenhuma transação encontrada no arquivo.");
+        setLoading(false);
         return;
       }
       const hydrated = list.map((t) => ({
@@ -99,12 +128,17 @@ export function ImportOFXModal({
         contaCredito: t.match?.contaCredito || "",
         skip: false,
       }));
-      setTransactions(hydrated);
       rowRefs.current = hydrated.map(() => ({}));
+      // ⚠ Os três estados no MESMO lote — `setLoading(false)` estava num `finally`, e a tabela
+      // inteira renderizava DUAS vezes ao abrir a revisão (uma para os dados, outra só para apagar
+      // o "Lendo…"). O `finally` saiu por isso; em troca, cada caminho de saída tem de destravar o
+      // botão por conta própria, e é o que os três testes de `importOfxDigitacao` cobrem — botão
+      // preso em "Lendo…" é um defeito bem pior que um render a mais.
+      setTransactions(hydrated);
       setStep("review");
+      setLoading(false);
     } catch (err) {
       setError(err?.message || "Falha ao ler o arquivo OFX.");
-    } finally {
       setLoading(false);
     }
   }
@@ -499,12 +533,8 @@ export function ImportOFXModal({
                   placeholder="Crédito"
                   style={{ ...inputStyle, width: 110, fontWeight: 700, color: bulkC ? PANEL.success : PANEL.muted, textAlign: "center" }}
                 />
-                <datalist id="ofx-bulk-d">
-                  {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
-                </datalist>
-                <datalist id="ofx-bulk-c">
-                  {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
-                </datalist>
+                <ListaDeContas id="ofx-bulk-d" accounts={accounts} />
+                <ListaDeContas id="ofx-bulk-c" accounts={accounts} />
                 <Button variant="secondary" size="sm" onClick={applyBulkFill} disabled={!bulkD && !bulkC && !bulkH}>
                   Aplicar
                 </Button>
