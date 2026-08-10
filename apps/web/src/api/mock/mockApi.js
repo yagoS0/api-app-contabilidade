@@ -169,6 +169,12 @@ function makeCompanies(count = 6) {
         tipoTributario: regimeTributario,
         certStorageKey: semCert ? null : `mock-cert-${companyId}`,
         certExpiresAt: semCert ? null : certExpiresAt,
+        // ⚠ SEM ISSO A JANELA DE NF-e NÃO EXISTE OFFLINE. `renderCompanyDetailPage` só monta o
+        // toggle NFS-e⇄NF-e com `legacyCompany.inscricaoEstadual` preenchida, e NENHUMA empresa do
+        // mock tinha uma — metade da aba Notas Fiscais (e a NF-e, que é o caso FEIO: sem XML, sem
+        // tomador e sem nenhum item) era inalcançável sem backend. Só a 2ª empresa tem IE: a maioria
+        // dos clientes é de serviço, e ter IE em todas apagaria o caminho "empresa só de NFS-e".
+        inscricaoEstadual: i === 1 ? "11.222.333" : "",
       },
       // Recalculado a cada `listCompanies` (ver abaixo) — aqui é só o valor inicial da carga.
       guideCompliance: mockGuideComplianceRow({ companyId, indice: i, hasProlabore, regimeTributario }),
@@ -549,6 +555,276 @@ let mockNfseSeq = 0;
 // Espelhos da DEFIS por `empresa|ano` — mesma chave da unique do modelo.
 const mockDefisEspelhos = new Map();
 
+// ── Notas fiscais (listagem + íntegra) ────────────────────────────────────────
+//
+// ⚠ ESTE MOCK É GRANDE DE PROPÓSITO. O anterior tinha DUAS notas, e por isso o caminho que quebrou
+// em produção era **inalcançável offline**: a tabela pagina de 100 em 100, e com 2 notas ninguém
+// nunca via a paginação, o rodapé "mostrando 1–100 de 247" nem o que acontece quando o mês tem
+// mais nota do que a página. Medido na base real (10/08/2026): **2.717 notas** numa única
+// competência (empresa × 2026-07 × EMIT × NFS-e), e **8 células empresa×competência acima de 500**
+// — o teto duro da rota. 247 aqui é o menor número que exercita 3 páginas.
+//
+// Os casos FEIOS são os da base real, com as contagens que os motivaram:
+//   • 62 notas sem `numero`, sem `emitenteNome` e sem `total`
+//   • 1 nota sem `chaveAcesso`, sem `papel` e sem `statusEfetivo`
+//   • 556 canceladas
+//   • 29 NF-e — TODAS sem `xmlRaw`, sem `tomadorNome`/`tomadorDoc` e sem nenhum item
+//   • 16.128 de 16.128 NFS-e COM `xmlRaw` gravado (4,4–11,4 KB)
+// ⚠ Os CNPJs e as razões sociais são FABRICADOS (mesmo formato, dígitos inventados).
+
+// ⚠ Acompanha o default da aba (mês ANTERIOR ao atual, igual `prevMonthCompetencia` do hook), em
+// vez de um mês fixo: fixo, o mock envelhece e a aba abre vazia no default — e uma tela vazia por
+// data velha se parece com uma tela vazia por defeito, que é exatamente o que não se pode confundir.
+const MOCK_NOTAS_COMPETENCIA = (() => {
+  const n = new Date();
+  const d = new Date(n.getFullYear(), n.getMonth() - 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+})();
+const MOCK_XML_NFSE = [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">',
+  "  <infNFSe>",
+  "    <nNFSe>__NUMERO__</nNFSe>",
+  "    <dhProc>2026-06-__DIA__T09:14:22-03:00</dhProc>",
+  "    <emit><CNPJ>00000000000191</CNPJ><xNome>EMPRESA EXEMPLO MOCK LTDA</xNome></emit>",
+  "    <valores><vServ>__VALOR__</vServ></valores>",
+  "    <serv><cTribNac>080201</cTribNac><xDescServ>__DESCRICAO__</xDescServ></serv>",
+  "  </infNFSe>",
+  "</NFSe>",
+].join("\n");
+
+function mockXmlDaNota(n) {
+  return MOCK_XML_NFSE
+    .replace("__NUMERO__", n.numero || "")
+    .replace("__DIA__", String(new Date(n.issueDate).getUTCDate()).padStart(2, "0"))
+    .replace("__VALOR__", n.total || "0.00")
+    .replace("__DESCRICAO__", (n.__descricao || "").slice(0, 60));
+}
+
+function mockNota(over) {
+  return {
+    id: null, type: "NFSE", papel: "EMIT", statusEfetivo: "autorizada", status: "EMITIDA",
+    chaveAcesso: null, numero: null, serie: null,
+    competencia: `${MOCK_NOTAS_COMPETENCIA}-01T00:00:00.000Z`,
+    issueDate: `${MOCK_NOTAS_COMPETENCIA}-10T00:00:00.000Z`,
+    total: null, emitenteNome: null, emitenteDoc: null, tomadorNome: null, tomadorDoc: null,
+    competenciaPosFechamento: false,
+    // O VÍNCULO e a HISTÓRIA. `chaveSubstituida` é coluna ("eu substituo aquela"); `ciclo` é a
+    // leitura derivada que a rota compõe (cancelada × substituída × substituta × "não temos o
+    // evento"). Nulo/ausente na esmagadora maioria — como em produção.
+    chaveSubstituida: null, motivoSubstituicao: null,
+    // ⚠ `eventoRegistrado: false` numa nota CANCELADA quer dizer "não sabemos", nunca "não houve".
+    // O default aqui é o estado real da base: nenhum evento guardado.
+    ciclo: {
+      situacao: "autorizada", ehSubstituta: false, substitui: null, motivoSubstituicao: null,
+      substituidaPor: null, evento: null, eventoRegistrado: false, avisos: [],
+    },
+    // Campos só da íntegra (a listagem não os devolve).
+    idNfse: null, idDps: null, pdfUrl: null, xmlHash: null, lastSyncAt: null,
+    createdAt: `${MOCK_NOTAS_COMPETENCIA}-10T12:00:00.000Z`,
+    updatedAt: `${MOCK_NOTAS_COMPETENCIA}-10T12:00:00.000Z`,
+    __temXml: true, __descricao: null, __codigoServico: null, __cfop: null, __ncm: null,
+    ...over,
+  };
+}
+
+const mockNotas = (() => {
+  const out = [];
+  const dia = (i) => String((i % 28) + 1).padStart(2, "0");
+  const chave = (i) => `330455722553875800001030000000${String(13000 + i).padStart(5, "0")}26088969924${String(100 + (i % 900))}`;
+  const servicos = [
+    ["080201", "CURSO EAD - POS-GRADUACAO - PROCESSO CIVIL"],
+    ["170101", "ASSINATURA MENSAL - PLATAFORMA DE ENSINO"],
+    ["010701", "SUPORTE TECNICO E MANUTENCAO DE SISTEMA"],
+    ["140201", "CONSULTORIA EM GESTAO EMPRESARIAL"],
+  ];
+
+  // 240 NFS-e emitidas "normais" — o volume que faz a paginação existir.
+  for (let i = 0; i < 240; i++) {
+    const [cod, desc] = servicos[i % servicos.length];
+    out.push(mockNota({
+      id: `mock-nfse-${i + 1}`,
+      numero: String(13000 + i),
+      chaveAcesso: chave(i),
+      issueDate: `${MOCK_NOTAS_COMPETENCIA}-${dia(i)}T00:00:00.000Z`,
+      total: (89.9 + i * 7.35).toFixed(2),
+      emitenteNome: "EMPRESA EXEMPLO MOCK LTDA", emitenteDoc: "00000000000191",
+      tomadorNome: `TOMADOR MOCK ${String(i + 1).padStart(3, "0")} LTDA`,
+      tomadorDoc: `1122233300${String(i % 90).padStart(2, "0")}91`,
+      __descricao: desc, __codigoServico: cod,
+    }));
+  }
+
+  // FEIO 1 — a nota mutilada: sem número, sem emitente, sem valor (62 assim na base real).
+  out.push(mockNota({
+    id: "mock-nfse-mutilada",
+    chaveAcesso: chave(900),
+    issueDate: `${MOCK_NOTAS_COMPETENCIA}-05T00:00:00.000Z`,
+    tomadorNome: "TOMADOR MOCK 900 LTDA",
+    __descricao: "SERVICO SEM DESCRICAO NO DOCUMENTO", __codigoServico: null,
+  }));
+
+  // FEIO 2 — sem chave, sem papel, sem statusEfetivo: só o `idNfse` identifica (1 assim na base).
+  out.push(mockNota({
+    id: "mock-nfse-sem-chave",
+    numero: "13990", papel: null, statusEfetivo: null,
+    idNfse: "3304557202606000000013990",
+    issueDate: `${MOCK_NOTAS_COMPETENCIA}-06T00:00:00.000Z`,
+    total: "1250.00",
+    emitenteNome: "EMPRESA EXEMPLO MOCK LTDA", emitenteDoc: "00000000000191",
+    tomadorNome: "TOMADOR MOCK 901 LTDA",
+    __descricao: "CONSULTORIA AVULSA", __codigoServico: "140201",
+  }));
+
+  // FEIO 3 — cancelada (556 na base). Fica FORA do faturamento e só aparece com o toggle ligado.
+  out.push(mockNota({
+    id: "mock-nfse-cancelada",
+    numero: "13991", statusEfetivo: "cancelada", status: "CANCELADA",
+    chaveAcesso: chave(901),
+    issueDate: `${MOCK_NOTAS_COMPETENCIA}-12T00:00:00.000Z`,
+    total: "800.00",
+    emitenteNome: "EMPRESA EXEMPLO MOCK LTDA", emitenteDoc: "00000000000191",
+    tomadorNome: "TOMADOR MOCK 902 LTDA",
+    // ⚠ ESTE É O ESTADO DE 556 NOTAS EM PRODUÇÃO: cancelada, e sem o evento guardado. A captura só
+    // passou a gravar o evento em 10/08/2026 — do que veio antes não temos data nem motivo, e a
+    // tela precisa dizer isso em vez de se calar (calar-se é afirmar "não houve evento").
+    ciclo: {
+      situacao: "cancelada", ehSubstituta: false, substitui: null, motivoSubstituicao: null,
+      substituidaPor: null, evento: null, eventoRegistrado: false,
+      avisos: [{
+        codigo: "evento_nao_registrado",
+        texto: "Esta nota está marcada como cancelada, mas nós não guardamos o evento de "
+          + "cancelamento — não temos a data, o motivo, nem se foi cancelamento simples ou "
+          + "substituição. Isso NÃO quer dizer que o evento não existiu.",
+      }],
+    },
+    __descricao: "CURSO CANCELADO A PEDIDO DO ALUNO", __codigoServico: "080201",
+  }));
+
+  // FEIO 7 — O CICLO INTEIRO: cancelada → substituída → substituta.
+  //
+  // É o caso que o dono descreveu ("cancelamos essa nota, emitimos outra e depois a substituímos")
+  // e o que a aba não sabia contar: 22 pares reais na base. As três notas abaixo cobrem as três
+  // leituras que precisam ser DIFERENTES na tela — e a quarta, que é a pior:
+  //   · 13993 — cancelada por substituição, COM o evento gravado (sabemos data e motivo)
+  //   · 13994 — a substituta, que declara quem substituiu
+  //   · 13991 (acima) — cancelada SEM evento: 556 assim em produção. "Não temos o evento" tem de
+  //     aparecer diferente de "não houve evento".
+  out.push(mockNota({
+    id: "mock-nfse-substituida",
+    numero: "13993", statusEfetivo: "cancelada", status: "CANCELADA",
+    chaveAcesso: chave(903),
+    issueDate: `${MOCK_NOTAS_COMPETENCIA}-15T00:00:00.000Z`,
+    total: "2300.00",
+    emitenteNome: "EMPRESA EXEMPLO MOCK LTDA", emitenteDoc: "00000000000191",
+    tomadorNome: "TOMADOR MOCK 904 LTDA",
+    ciclo: {
+      situacao: "substituida", ehSubstituta: false, substitui: null, motivoSubstituicao: null,
+      substituidaPor: { notaId: "mock-nfse-substituta", numero: "13994", chaveAcesso: chave(904), naBase: true },
+      evento: {
+        tipo: "canc_por_substituicao", tpEvento: "105102", nSeqEvento: 1,
+        dataEvento: `${MOCK_NOTAS_COMPETENCIA}-16T10:30:00.000Z`, motivo: "valor da nota esta incorreto",
+      },
+      eventoRegistrado: true, avisos: [],
+    },
+    __descricao: "CONSULTORIA COM VALOR CORRIGIDO DEPOIS", __codigoServico: "140201",
+  }));
+  out.push(mockNota({
+    id: "mock-nfse-substituta",
+    numero: "13994", chaveAcesso: chave(904),
+    chaveSubstituida: chave(903), motivoSubstituicao: "valor da nota esta incorreto",
+    issueDate: `${MOCK_NOTAS_COMPETENCIA}-16T00:00:00.000Z`,
+    total: "2100.00",
+    emitenteNome: "EMPRESA EXEMPLO MOCK LTDA", emitenteDoc: "00000000000191",
+    tomadorNome: "TOMADOR MOCK 904 LTDA",
+    ciclo: {
+      situacao: "autorizada", ehSubstituta: true,
+      substitui: { notaId: "mock-nfse-substituida", numero: "13993", chaveAcesso: chave(903), naBase: true },
+      motivoSubstituicao: "valor da nota esta incorreto",
+      substituidaPor: null, evento: null, eventoRegistrado: false, avisos: [],
+    },
+    __descricao: "CONSULTORIA COM VALOR CORRIGIDO DEPOIS", __codigoServico: "140201",
+  }));
+
+  // FEIO 4 — chegou em competência já FECHADA.
+  out.push(mockNota({
+    id: "mock-nfse-pos-fechamento",
+    numero: "13992", chaveAcesso: chave(902),
+    issueDate: `${MOCK_NOTAS_COMPETENCIA}-28T00:00:00.000Z`,
+    total: "3400.00", competenciaPosFechamento: true,
+    emitenteNome: "EMPRESA EXEMPLO MOCK LTDA", emitenteDoc: "00000000000191",
+    tomadorNome: "TOMADOR MOCK 903 LTDA",
+    __descricao: "SERVICO LANCADO APOS O FECHAMENTO", __codigoServico: "010701",
+  }));
+
+  // FEIO 5 — NFS-e RECEBIDA (papel DEST): a empresa é a tomadora, não a emitente.
+  for (let i = 0; i < 12; i++) {
+    out.push(mockNota({
+      id: `mock-nfse-dest-${i + 1}`,
+      papel: "DEST", numero: String(4400 + i), chaveAcesso: chave(700 + i),
+      issueDate: `${MOCK_NOTAS_COMPETENCIA}-${dia(i + 3)}T00:00:00.000Z`,
+      total: (310.5 + i * 44).toFixed(2),
+      emitenteNome: `PRESTADOR MOCK ${i + 1} LTDA`, emitenteDoc: `4455566600${String(i).padStart(2, "0")}31`,
+      tomadorNome: "EMPRESA EXEMPLO MOCK LTDA", tomadorDoc: "00000000000191",
+      __descricao: "SERVICOS DE APOIO ADMINISTRATIVO", __codigoServico: "170101",
+    }));
+  }
+
+  // FEIO 6 — NF-e: 29 na base real, TODAS `papel: DEST`, TODAS sem XML, sem tomador e SEM ITEM.
+  // É o caso em que a íntegra tem de dizer "não temos" três vezes seguidas sem parecer defeito.
+  for (let i = 0; i < 9; i++) {
+    out.push(mockNota({
+      id: `mock-nfe-${i + 1}`,
+      type: "NFE", papel: "DEST",
+      numero: String(14520 + i).padStart(9, "0"), serie: "001",
+      chaveAcesso: `332608058760120026565500100001452${String(i).padStart(2, "0")}1580128212`,
+      issueDate: `${MOCK_NOTAS_COMPETENCIA}-${dia(i + 2)}T00:00:00.000Z`,
+      total: (5890.66 + i * 120).toFixed(2),
+      emitenteNome: `FORNECEDOR MOCK ${i + 1} LTDA`, emitenteDoc: `7788899900${String(i).padStart(2, "0")}12`,
+      tomadorNome: null, tomadorDoc: null,
+      __temXml: false, __descricao: null, __codigoServico: null,
+    }));
+  }
+
+  return out;
+})();
+
+// Aplica os MESMOS filtros da rota real — sem isso o mock "pagina" sobre um universo diferente do
+// que o resumo conta, e as duas caixas discordariam offline como já discordaram em produção.
+function mockFiltrarNotas(filters = {}) {
+  const { papel, type, search, incluirCanceladas, competencia } = filters;
+  const s = String(search || "").trim().toLowerCase();
+  return mockNotas.filter((n) => {
+    // ⚠ A competência FILTRA de verdade. Ignorá-la faria a mesma lista aparecer em todo mês, e o
+    // seletor do header pareceria funcionar sem funcionar — o mock tem de errar onde o real erra.
+    if (competencia && /^\d{4}-\d{2}$/.test(competencia) && !String(n.competencia).startsWith(competencia)) return false;
+    if (papel && n.papel !== String(papel).toUpperCase()) return false;
+    if (type && n.type !== String(type).toUpperCase()) return false;
+    if (String(incluirCanceladas || "") !== "1" && n.statusEfetivo === "cancelada") return false;
+    if (s) {
+      const alvo = [n.chaveAcesso, n.numero, n.emitenteNome, n.emitenteDoc, n.tomadorNome]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (!alvo.includes(s)) return false;
+    }
+    return true;
+  });
+}
+
+// A listagem devolve só as colunas da rota real — os campos `__*` e os da íntegra ficam de fora.
+function mockNotaDeLista(n) {
+  return {
+    id: n.id, type: n.type, papel: n.papel, statusEfetivo: n.statusEfetivo, status: n.status,
+    chaveAcesso: n.chaveAcesso, numero: n.numero, serie: n.serie,
+    competencia: n.competencia, issueDate: n.issueDate, total: n.total,
+    emitenteNome: n.emitenteNome, emitenteDoc: n.emitenteDoc,
+    tomadorNome: n.tomadorNome, tomadorDoc: n.tomadorDoc,
+    competenciaPosFechamento: n.competenciaPosFechamento,
+    // A rota real devolve os dois na LISTA (não só na íntegra): sem eles a tabela não consegue
+    // distinguir cancelada de substituída, e voltaria a pintar tudo com a mesma palavra.
+    chaveSubstituida: n.chaveSubstituida, ciclo: n.ciclo,
+  };
+}
+
 // ── Onboarding (funil pré-cadastro) ───────────────────────────────────────────
 // `Map` no topo do módulo, com a chave espelhando a PK do Prisma — assim o rascunho sobrevive à
 // navegação e ao F5 dentro da mesma sessão do app.
@@ -642,6 +918,11 @@ function mockMaterializarEtapas(id, origem) {
 }
 // Entregas por arquivo (EFD-Contribuições, ECD, ECF) por `empresa|tipo|competência`.
 const mockEntregasObrigacao = new Map();
+// A declaração do PGDAS-D entregue FORA do portal (gov.br), por `empresa|competência`. É a
+// AFIRMAÇÃO do contador — no backend mora no mesmo `EntregaObrigacaoArquivo`, tipo `PGDAS_D`.
+// ⚠ Separada da prova (`pgdasNumeroDeclaracao`, que vem do extrato da RFB) aqui também: um mock
+// que colapsasse as duas esconderia exatamente a distinção que a tela existe para mostrar.
+const mockEntregaPgdasExterna = new Map();
 const mockEntriesByCompany = new Map();
 const mockMonthlyCirculars = new Map();
 
@@ -4183,34 +4464,80 @@ export function createMockApi() {
       });
       return { ok: true, competencia: comp, empresas };
     },
-    // Duas notas fixas — uma autorizada e uma CANCELADA — pra dar pra conferir sem backend que a
-    // caixa "Canceladas" mostra/esconde de verdade. Sem a cancelada no mock, a tela ficava igual
-    // nos dois estados e o toggle parecia funcionar mesmo quebrado.
+    // ⚠ PAGINA DE VERDADE. Com 2 notas fixas (como era antes) a paginação e o rodapé
+    // "mostrando 1–100 de 247" eram inalcançáveis offline — e truncar em silêncio foi exatamente
+    // o defeito relatado. `total` é o do UNIVERSO filtrado, nunca o tamanho da página: é essa
+    // diferença que a tela precisa mostrar.
     async listNotas(_companyId, filters = {}) {
       await delay(60);
-      const todas = [
-        { id: "mock-nota-1", type: "NFSE", papel: "EMIT", statusEfetivo: "autorizada", status: "EMITIDA",
-          chaveAcesso: null, numero: "101", serie: null, competencia: "2026-06-01T00:00:00.000Z",
-          issueDate: "2026-06-10T00:00:00.000Z", total: "1500.00", emitenteNome: "EMPRESA MOCK",
-          emitenteDoc: "00000000000191", tomadorNome: "CLIENTE MOCK", tomadorDoc: null, competenciaPosFechamento: false },
-        { id: "mock-nota-2", type: "NFSE", papel: "EMIT", statusEfetivo: "cancelada", status: "CANCELADA",
-          chaveAcesso: null, numero: "102", serie: null, competencia: "2026-06-01T00:00:00.000Z",
-          issueDate: "2026-06-12T00:00:00.000Z", total: "800.00", emitenteNome: "EMPRESA MOCK",
-          emitenteDoc: "00000000000191", tomadorNome: "CLIENTE MOCK", tomadorDoc: null, competenciaPosFechamento: false },
-      ];
-      const notas = String(filters.incluirCanceladas || "") === "1"
-        ? todas
-        : todas.filter((n) => n.statusEfetivo !== "cancelada");
-      return { ok: true, total: notas.length, limit: 100, offset: 0, notas };
+      const universo = mockFiltrarNotas(filters);
+      const limit = Math.min(Number(filters.limit) || 100, 500);
+      const offset = Math.max(Number(filters.offset) || 0, 0);
+      // Mesma ordenação da rota real: emissão desc.
+      const ordenadas = [...universo].sort(
+        (a, b) => new Date(b.issueDate) - new Date(a.issueDate) || String(a.id).localeCompare(String(b.id)),
+      );
+      return {
+        ok: true, total: universo.length, limit, offset,
+        notas: ordenadas.slice(offset, offset + limit).map(mockNotaDeLista),
+      };
+    },
+    // A ÍNTEGRA de uma nota — mesmo contrato do backend, inclusive nos casos em que NÃO temos:
+    // NF-e sem XML e sem nenhum item, nota sem chave identificada só pelo `idNfse`.
+    async getNota(_companyId, notaId) {
+      await delay(60);
+      const n = mockNotas.find((x) => x.id === notaId);
+      if (!n) {
+        const err = new Error("Nota não encontrada nesta empresa.");
+        err.code = "nota_nao_encontrada";
+        throw err;
+      }
+      const xml = n.__temXml ? mockXmlDaNota(n) : null;
+      // Sem item é caso REAL (29 de 29 NF-e), não falha do mock.
+      const itens = n.__descricao || n.__codigoServico || n.__cfop ? [{
+        id: `${n.id}-item-1`,
+        descricao: n.__descricao, codigoServico: n.__codigoServico,
+        cfop: n.__cfop, ncm: n.__ncm, valor: n.total,
+        // Classificação v2 nunca rodou na base real: 16.127 de 16.127 itens com `tipoReceita` nulo.
+        tipoReceita: null, anexoResolvido: null, sujeitoFatorR: false,
+        flagST: false, flagMonofasico: false, flagExportacao: false, classificadoEm: null,
+      }] : [];
+      return {
+        ok: true,
+        nota: {
+          ...mockNotaDeLista(n),
+          idNfse: n.idNfse, idDps: n.idDps, pdfUrl: n.pdfUrl, xmlHash: n.xmlHash,
+          lastSyncAt: n.lastSyncAt, createdAt: n.createdAt, updatedAt: n.updatedAt,
+          itens,
+          xml: {
+            disponivel: Boolean(xml),
+            bytes: xml ? xml.length : null,
+            conteudo: xml,
+            truncadoPorTamanho: false,
+          },
+        },
+      };
     },
     async getNotasSummary(_companyId, filtros = {}) {
       await delay(60);
-      // Números fixos só pra conferir o resumo da aba Notas Fiscais sem backend.
+      // ⚠ Sai do MESMO conjunto que a tabela pagina. Antes eram números fixos (14 notas) — com a
+      // tabela mostrando 247, as caixas do resumo e o rodapé se contradiziam dentro da mesma tela,
+      // e offline não dava pra distinguir "o resumo está errado" de "o mock é grosseiro".
+      // O resumo NÃO respeita `papel` (as caixas Emitidas/Recebidas SÃO o seletor de papel).
+      const universo = mockFiltrarNotas({ ...filtros, papel: null, incluirCanceladas: "1" });
+      let totalNotas = 0, totalEmitido = 0, totalRecebido = 0, countNfe = 0, countNfse = 0, countCanceladas = 0;
+      for (const n of universo) {
+        if (n.statusEfetivo === "cancelada") { countCanceladas++; continue; }
+        totalNotas++;
+        if (n.type === "NFE") countNfe++; else if (n.type === "NFSE") countNfse++;
+        const v = Number(n.total || 0);
+        if (n.papel === "DEST") totalRecebido += v; else totalEmitido += v;
+      }
       return {
         ok: true,
         ano: filtros.ano || new Date().getUTCFullYear(),
         filtersApplied: { type: filtros.type || null, competencia: filtros.competencia || null },
-        totals: { totalNotas: 14, totalEmitido: 48250.75, totalRecebido: 9310.4, countNfe: 5, countNfse: 9, countCanceladas: 2 },
+        totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
         byMonth: [],
       };
     },
@@ -4260,13 +4587,37 @@ export function createMockApi() {
       // TRAZER o ANEXO"): é essa linha que escondia a caixa dentro do ramo "lista vazia".
       const fat = mockFaturamentoDaCompetencia(companyId, competencia);
       const zerada = fat === 0;
+      // ⚠ A MARCA DE "EMPRESA ZERADA" E O ESTADO DA ENTREGA PRECISAM SOBREVIVER AO RELOAD AQUI.
+      // Era `semFaturamento: false` fixo: marcar a competência e reabrir o modal mostrava tudo de
+      // novo como se ninguém tivesse marcado nada — justamente o caminho que se quer conferir
+      // offline. Agora lê a mesma Circular que `setSemFaturamento` escreve.
+      const circular = mockMonthlyCirculars.get(makeCircularKey(companyId, competencia)) || {};
+      const entregaFora = mockEntregaPgdasExterna.get(makeCircularKey(companyId, competencia)) || null;
+      // `razao`/`cnpj` fazem parte do contrato do backend (`getDadosFechamento`) e faltavam aqui.
+      // A confirmação de "empresa zerada" REPETE empresa e competência — sem o CNPJ, o mock
+      // mostrava uma confirmação diferente da de produção, que é justamente onde o erro custa.
+      const empresa = mockCompanies.find((c) => c.companyId === companyId) || null;
       return {
         ok: true,
         dados: {
+          razao: empresa?.razao || null,
+          cnpj: empresa?.cnpj || null,
           faturamento: zerada ? { interno: 0, externo: 0, total: 0 } : { interno: 120000, externo: 0, total: 120000 },
           semMovimentoDisponivel: zerada,
           empresaZerada: false,
-          semFaturamento: false,
+          semFaturamento: circular.semFaturamento === true,
+          semFaturamentoEm: circular.semFaturamentoEm || null,
+          semFaturamentoConferencia: circular.semFaturamentoConferencia || null,
+          // Fatos crus, como no backend: quem os combina é `features/apuracao/lib/entregaPgdas.js`.
+          entregaPgdas: {
+            numeroDeclaracaoRfb: circular.pgdasNumeroDeclaracao || null,
+            temPdfDaDeclaracao: Boolean(circular.pgdasDeclaracaoFileId),
+            extratoStatus: circular.serproSyncStatus || null,
+            extratoConsultadoEm: circular.serproLastSyncAt || null,
+            declaradaForaEm: entregaFora?.transmitidaEm || null,
+            declaradaForaPor: entregaFora?.transmitidaPorId || null,
+            declaradaForaObservacao: entregaFora?.observacao || null,
+          },
           atividades: [{ idAtividade: 11, descricao: "Serviços sujeitos ao Fator R", anexoImplicito: "III", mercado: "interno", sujeitoFatorR: true, valorInterno: zerada ? 0 : 120000, valorExterno: 0 }],
           rbt12: 480000, disparidades: [], estado: "aberta", regimeApuracao: "COMPETENCIA",
           // Digitado: 5.000 em todos os meses. Derivado: 5.000, MENOS num mês (4.200) — divergência
@@ -4326,17 +4677,26 @@ export function createMockApi() {
               : "Sem atividades pra calcular. Adicione a atividade, ou marque \"Declarar SEM MOVIMENTO\" se o mês realmente não teve receita.",
           };
         }
-        // ⚠ A RECUSA DA RECEITA À DECLARAÇÃO ZERADA — texto MEDIDO em produção (10/08/2026,
-        // `serpro_chamadas`, HTTP 400), não inventado. É o desfecho real de hoje, e o mock existe
-        // para que ele possa ser lido na tela sem gastar uma chamada paga.
+        // ⚠ A DECLARAÇÃO ZERADA PASSA — e é o desfecho que precisa ser caminhável offline.
+        //
+        // O mock devolvia aqui a recusa da RFB ("O valor da atividade deve ser maior que zero"),
+        // que era o desfecho real enquanto o payload saía com `atividades: []`. A causa foi
+        // corrigida em `buildDeclaracaoPayload` (a chave é OMITIDA quando não há atividade, como a
+        // documentação do TRANSDECLARACAO11 manda), então manter a recusa aqui ensinaria offline um
+        // comportamento que o backend não tem mais.
+        //
+        // ⚠ A recusa continua coberta — em `apuracao/v2/__tests__/declaracaoZerada.test.js`, onde
+        // ela é exceção testada, e não a paisagem de quem abre a tela.
+        //
+        // ⚠ E o DAS zero não é "nada a pagar por engano": mês sem receita não gera DAS, e a
+        // declaração continua sendo obrigatória (Manual PGDAS-D/DEFIS §6.4.1).
         return {
-          ok: false,
-          error: "DECLARACAO_ZERADA_RECUSADA_RFB",
-          message: "A Receita recusou a declaração SEM MOVIMENTO no formato que este portal envia "
-            + "(atividades vazias, receita R$ 0,00). Resposta da RFB: \"SN-Entregar: O valor da atividade deve ser maior que zero.\". "
-            + "Nada foi transmitido. O formato oficial do PGDAS-D sem movimento ainda não está confirmado "
-            + "aqui — enquanto isso, a declaração zerada desta competência precisa ser entregue fora do "
-            + "portal, e o mês pode ser marcado como \"Mês sem faturamento\" na aba Lançamentos.",
+          ok: true,
+          result: {
+            dasValor: 0,
+            rbt12: 0,
+            mensagens: ["MOCK: declaração sem movimento — receita R$ 0,00, nenhuma atividade informada."],
+          },
         };
       }
       const folha = Array.isArray(payload.folhaMensal12) ? payload.folhaMensal12 : [];
@@ -4357,6 +4717,29 @@ export function createMockApi() {
     async transmitirFechamento() { await delay(200); return { ok: true, result: { numeroDeclaracao: "MOCK-1", dasValor: 0 } }; },
     async reabrirFechamento() { await delay(80); return { ok: true, result: { snapshot: { estado: "calculada" } } }; },
     async retificarFechamento() { await delay(200); return { ok: true, result: { numeroDeclaracao: "MOCK-RET-1", dasValor: 0 } }; },
+    // ⚠ Registra a AFIRMAÇÃO de entrega feita fora do portal — não transmite nada e não vira prova.
+    // A recusa da confirmação é reproduzida de propósito: é ato de consequência.
+    async registrarEntregaPgdasExterna(companyId, competencia, { entregue, confirmCompetencia, observacao } = {}) {
+      await delay(80);
+      if (entregue === true && confirmCompetencia !== competencia) {
+        return {
+          ok: false,
+          error: "confirm_competencia_mismatch",
+          message: "Confirme a competência exata para registrar a entrega feita fora do portal.",
+        };
+      }
+      const chave = makeCircularKey(companyId, competencia);
+      if (entregue === true) {
+        mockEntregaPgdasExterna.set(chave, {
+          transmitidaEm: new Date().toISOString(),
+          transmitidaPorId: "mock-user",
+          observacao: String(observacao || "").trim() || null,
+        });
+      } else {
+        mockEntregaPgdasExterna.delete(chave);
+      }
+      return { ok: true, result: { competencia, entregueFora: entregue === true } };
+    },
     async listAtividadesPgdasd() { await delay(40); return { ok: true, atividades: [] }; },
     async criarApuracaoBatch() { await delay(100); return { ok: true, jobId: "mock-job", totalEmpresas: 0 }; },
     async getApuracaoBatch() { await delay(60); return { ok: true, job: { status: "completed", okCount: 0, errorCount: 0, pendenteCount: 0, totalEmpresas: 0 }, items: [] }; },

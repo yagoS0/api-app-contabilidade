@@ -9,10 +9,115 @@ const PAPEL_BADGE = {
   DEST: { bg: "rgba(139,233,253,0.15)", color: "#8BE9FD", label: "Recebida" },
 };
 
-function StatusBadge({ status }) {
-  const s = String(status || "autorizada").toLowerCase();
-  const color = s === "cancelada" ? "#FF4757" : s === "rejeitada" ? "#FFB347" : "#69FF47";
-  return <span style={{ color, fontSize: "0.7rem", fontWeight: 600 }}>{s}</span>;
+// ⚠ O FALLBACK NÃO PODE SER VERDE, E ISSO JÁ ERA UMA BOMBA ARMADA.
+//
+// A regra antiga era `cancelada ? vermelho : rejeitada ? âmbar : VERDE` — ou seja, **qualquer
+// valor desconhecido virava "autorizada"**, inclusive `null`. Enquanto só existiam dois valores no
+// banco isso passou despercebido; no instante em que um terceiro aparecesse (`substituida`), a
+// nota apareceria em VERDE, contaria no resumo, ofereceria o botão "Cancelar" — e continuaria
+// FORA do faturamento, que exige `=== "autorizada"`. Duas telas discordando em silêncio sobre a
+// mesma nota, que é o defeito que este projeto mais persegue.
+//
+// Verde agora é só o que foi RECONHECIDO como autorizado. O que não se reconhece sai em neutro e
+// diz que não se reconhece — ausência de rótulo conhecido não é presunção de normalidade.
+// (Mesma semântica do `StatusChip` do `NotaDetailModal`, de propósito: uma nota não pode ter uma
+// cor na lista e outra no detalhe.)
+const STATUS_COR = {
+  autorizada: "var(--state-ok)",
+  cancelada: "var(--state-danger)",
+  // Substituída pede leitura, não é erro nem conclusão: a nota foi TROCADA por outra e o valor
+  // dela migrou. Mesmo token que o detalhe já usa.
+  substituida: "var(--state-warn)",
+  rejeitada: "var(--state-warn)",
+};
+
+function StatusBadge({ status, ciclo }) {
+  // `ciclo.situacao` (quando o backend o manda) NOMEIA o que aconteceu; `statusEfetivo` só diz se
+  // conta ou não conta. Preferir o primeiro é o que faz "substituída" aparecer como substituída.
+  const bruto = ciclo?.situacao || status;
+  const s = bruto == null ? null : String(bruto).toLowerCase();
+  const cor = (s && STATUS_COR[s]) || "var(--state-neutral)";
+  const conhecido = Boolean(s && STATUS_COR[s]);
+
+  // ⚠ "Não temos o evento" ≠ "não houve evento". Uma nota cancelada sem o evento gravado (556 na
+  // base) não pode se apresentar com a mesma confiança de uma cujo cancelamento nós registramos.
+  const semEvento = ciclo && ciclo.eventoRegistrado === false && ciclo.situacao !== "autorizada";
+
+  return (
+    <span
+      style={{ color: cor, fontSize: "0.7rem", fontWeight: 600, fontStyle: conhecido ? "normal" : "italic" }}
+      title={
+        !conhecido
+          ? `Situação não reconhecida (${s ?? "sem valor"}) — não presuma que está autorizada.`
+          : semEvento
+            ? "Não guardamos o evento desta nota (data e motivo). Isso não quer dizer que não houve evento."
+            : undefined
+      }
+    >
+      {s ?? "situação não registrada"}
+      {semEvento && <span style={{ color: "var(--text-faint)", fontWeight: 400 }}> · sem evento</span>}
+    </span>
+  );
+}
+
+// ⚠ QUANTAS NOTAS EXISTEM vs QUANTAS ESTÃO NA TELA — a tabela pagina, e o rodapé tem de dizer isso.
+//
+// O rodapé mostrava `notas.length`, ou seja, o tamanho da PÁGINA: com o limite em 100, um mês de
+// 2.717 notas exibia 100 e escrevia "100 nota(s)". Não havia como distinguir isso de um mês que
+// realmente teve 100 notas — truncar em silêncio se parece com "é só isso que existe".
+// Medido na base de produção em 10/08/2026: 8 células empresa×competência acima de 100 notas, e as
+// MESMAS 8 acima de 500 (o teto duro da rota) — a maior com 2.717.
+// O `total` do servidor sempre existiu na resposta e não era usado por ninguém.
+function Paginacao({ total, offset, limit, carregados, loading, onOffset }) {
+  const temTudo = total != null && carregados >= total && offset === 0;
+  const inicio = total === 0 ? 0 : offset + 1;
+  const fim = offset + carregados;
+  const podeVoltar = offset > 0;
+  const podeAvancar = total != null && fim < total;
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+      flexWrap: "wrap", marginTop: 12, paddingTop: 10, borderTop: `1px solid ${PANEL.border}`,
+    }}>
+      <span style={{ fontSize: "0.78rem", color: PANEL.muted }}>
+        {temTudo ? (
+          <>Mostrando <strong style={{ color: PANEL.text }}>{total}</strong> nota(s) — todas as da competência.</>
+        ) : (
+          <>
+            Mostrando <strong style={{ color: PANEL.text }}>{inicio}–{fim}</strong> de{" "}
+            <strong style={{ color: PANEL.text }}>{total ?? "?"}</strong> nota(s).{" "}
+            {podeAvancar && (
+              <span style={{ color: "var(--state-warn)" }}>
+                Há mais notas nesta competência do que cabem nesta página.
+              </span>
+            )}
+          </>
+        )}
+      </span>
+      {(podeVoltar || podeAvancar) && (
+        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {/* ⚠ Botão desabilitado NOMEIA o motivo — não fica mudo. */}
+          <Button
+            variant="secondary" size="sm"
+            disabled={!podeVoltar || loading}
+            title={podeVoltar ? "Página anterior" : "Você já está na primeira página"}
+            onClick={() => onOffset(Math.max(offset - limit, 0))}
+          >
+            ‹ Anterior
+          </Button>
+          <Button
+            variant="secondary" size="sm"
+            disabled={!podeAvancar || loading}
+            title={podeAvancar ? "Próxima página" : "Não há mais notas depois desta página"}
+            onClick={() => onOffset(offset + limit)}
+          >
+            Próxima ›
+          </Button>
+        </span>
+      )}
+    </div>
+  );
 }
 
 function FilterBar({ filters, onChange, onApply, loading, total }) {
@@ -47,8 +152,11 @@ function FilterBar({ filters, onChange, onApply, loading, total }) {
       <Button size="sm" onClick={apply} disabled={loading}>
         {loading ? "..." : "Filtrar"}
       </Button>
+      {/* ⚠ Este número é o TOTAL do servidor (quantas casam com o filtro), não o tamanho da página.
+          Eram a mesma coisa quando a lista não paginava; deixaram de ser quando passou a paginar,
+          e é justamente a diferença que estava escondida. O detalhamento fica no rodapé. */}
       <span style={{ marginLeft: "auto", color: PANEL.muted, fontSize: "0.8rem" }}>
-        {total} nota(s)
+        {total ?? "?"} nota(s) no filtro
       </span>
     </div>
   );
@@ -58,7 +166,17 @@ const inputStyle = {
   borderRadius: 6, color: PANEL.text, padding: "8px 10px", fontSize: "0.85rem",
 };
 
-export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus }) {
+export function NotasList({ notas, total, filters, onFiltersChange, onApply, loading, onMarcarStatus, onAbrirNota }) {
+  const limit = Number(filters?.limit) || 100;
+  const offset = Number(filters?.offset) || 0;
+
+  // Trocar de página é trocar o `offset` do filtro — o hook recarrega sozinho.
+  function irPara(novoOffset) {
+    const f = { ...filters, offset: novoOffset };
+    onFiltersChange(f);
+    onApply(f);
+  }
+
   return (
     <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
       <FilterBar filters={filters} onChange={onFiltersChange} onApply={onApply} loading={loading} total={total ?? notas.length} />
@@ -89,7 +207,28 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
               {notas.map((n) => {
                 const pap = PAPEL_BADGE[n.papel] || { bg: "transparent", color: PANEL.muted, label: "—" };
                 return (
-                  <tr key={n.id} style={{ borderTop: `1px solid ${PANEL.border}`, color: PANEL.text }}>
+                  /* A LINHA INTEIRA ABRE A NOTA — no mouse e no teclado. É o "clicar na nota e ver
+                     todas as informações": a lista fica enxuta e a profundidade vem daqui.
+                     `tabIndex`/`onKeyDown` seguem o padrão de `tr[data-linha-empresa]` da tabela de
+                     empresas (o anel de foco de `tokens.css` já alcança este seletor). */
+                  <tr
+                    key={n.id}
+                    data-linha-nota={n.id}
+                    tabIndex={onAbrirNota ? 0 : undefined}
+                    role={onAbrirNota ? "button" : undefined}
+                    aria-label={onAbrirNota ? `Ver a nota ${n.numero || n.id} por inteiro` : undefined}
+                    title={onAbrirNota ? "Clique para ver a nota por inteiro" : undefined}
+                    onClick={onAbrirNota ? () => onAbrirNota(n.id) : undefined}
+                    onKeyDown={onAbrirNota ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onAbrirNota(n.id); }
+                    } : undefined}
+                    onMouseEnter={(e) => { if (onAbrirNota) e.currentTarget.style.background = "var(--bg-page)"; }}
+                    onMouseLeave={(e) => { if (onAbrirNota) e.currentTarget.style.background = "transparent"; }}
+                    style={{
+                      borderTop: `1px solid ${PANEL.border}`, color: PANEL.text,
+                      cursor: onAbrirNota ? "pointer" : "default", outlineOffset: -2,
+                    }}
+                  >
                     <td style={td}>{fmtDate(n.issueDate)}</td>
                     <td style={td}>
                       <span style={{ padding: "2px 8px", borderRadius: 10, fontSize: "0.7rem", fontWeight: 600,
@@ -110,13 +249,15 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                       {n.tomadorNome || "—"}
                     </td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(n.total)}</td>
-                    <td style={td}><StatusBadge status={n.statusEfetivo || n.status} /></td>
+                    <td style={td}><StatusBadge status={n.statusEfetivo || n.status} ciclo={n.ciclo} /></td>
                     <td style={{ ...td, fontSize: "0.7rem", fontFamily: "monospace", color: PANEL.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}
                         title={n.chaveAcesso}>
                       {n.chaveAcesso ? `…${n.chaveAcesso.slice(-12)}` : "—"}
                     </td>
                     {onMarcarStatus && (
-                      <td style={td}>
+                      /* ⚠ A célula de ação PARA o clique antes de ele subir para a linha: senão
+                         cancelar uma nota abriria o detalhe por cima do confirm. */
+                      <td style={td} onClick={(e) => e.stopPropagation()}>
                         {String(n.statusEfetivo || "").toLowerCase() === "cancelada" ? (
                           <button onClick={() => onMarcarStatus(n.id, "autorizada")} title="Reativar (volta a contar no faturamento)"
                             style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "var(--state-ok)", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -136,6 +277,20 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Fica fora do `notas.length > 0` de propósito: numa página vazia depois de avançar demais,
+          o contador e o botão "‹ Anterior" são a única saída — sem eles a tela seria só
+          "Nenhuma nota encontrada", que é a mensagem errada. */}
+      {(notas.length > 0 || (filters?.offset || 0) > 0) && (
+        <Paginacao
+          total={total}
+          offset={offset}
+          limit={limit}
+          carregados={notas.length}
+          loading={loading}
+          onOffset={irPara}
+        />
       )}
     </section>
   );

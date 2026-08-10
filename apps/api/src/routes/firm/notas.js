@@ -22,6 +22,7 @@ import {
   reabrirCompetencia,
 } from "../../application/notas/CompetenciaStateMachine.js";
 import { checkCertAvailability, SERVICOS } from "../../application/notas/CertResolver.js";
+import { montarIndiceDeCiclo, derivarCiclo } from "../../application/notas/cicloNota.js";
 import { syncDfeForCompany } from "../../application/notas/dfe/DfeSyncService.js";
 import { syncAdnNotasForCompany } from "../../application/notas/adn/AdnNotasService.js";
 import { classifyItemsForCompany } from "../../application/notas/apuracao/ClassificadorAnexos.js";
@@ -431,14 +432,48 @@ export function createNotasRouter({ log }) {
           total: true, emitenteNome: true, emitenteDoc: true,
           tomadorNome: true, tomadorDoc: true,
           competenciaPosFechamento: true,
+          chaveSubstituida: true, motivoSubstituicao: true,
         },
       }),
       prisma.portalInvoice.count({ where }),
     ]);
 
+    // ── O CICLO DE VIDA VIAJA JUNTO — em DUAS consultas para a página inteira, nunca N ──────────
+    //
+    // A lista devolvia só o retrato (`statusEfetivo`), e com ele não dá para distinguir uma nota
+    // CANCELADA de uma SUBSTITUÍDA, nem dizer que de 556 canceladas não guardamos o evento.
+    // `ciclo` é LEITURA derivada: não muda nenhum filtro, nenhum total e nenhum campo existente.
+    const ids = notas.map((n) => n.id);
+    const chavesDaPagina = notas.map((n) => n.chaveAcesso).filter(Boolean);
+    const chavesSubstituidas = notas.map((n) => n.chaveSubstituida).filter(Boolean);
+
+    const [eventos, relacionadas] = await Promise.all([
+      ids.length
+        ? prisma.portalInvoiceEvent.findMany({
+          where: { clientId: portalClientId, invoiceId: { in: ids } },
+          select: { invoiceId: true, type: true, tpEvento: true, nSeqEvento: true, date: true, reason: true, chaveSubstituta: true, createdAt: true },
+        })
+        : [],
+      // As duas pontas de uma vez: a nota que ESTA substitui, e a que substituiu ESTA.
+      (chavesDaPagina.length || chavesSubstituidas.length)
+        ? prisma.portalInvoice.findMany({
+          where: {
+            clientId: portalClientId,
+            OR: [
+              ...(chavesSubstituidas.length ? [{ chaveAcesso: { in: chavesSubstituidas } }] : []),
+              ...(chavesDaPagina.length ? [{ chaveSubstituida: { in: chavesDaPagina } }] : []),
+            ],
+          },
+          select: { id: true, numero: true, chaveAcesso: true, chaveSubstituida: true },
+        })
+        : [],
+    ]);
+
+    const comCiclo = montarIndiceDeCiclo({ notas, eventos, relacionadas });
+
     return res.json({
       ok: true, total, limit, offset,
-      notas: notas.map((n) => ({
+      notas: comCiclo.map((n) => ({
         ...n,
         total: n.total != null ? n.total.toString() : null,
       })),
@@ -532,6 +567,126 @@ export function createNotasRouter({ log }) {
       filtersApplied: { papel: papel || null, type: type || null, competencia: competencia || null, search: search || null, cfop: cfop || null, servico: servico || null },
       totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
       byMonth: Object.values(byMonth).sort((a, b) => a.competencia.localeCompare(b.competencia)),
+    });
+  });
+
+  // GET /notas/:notaId → a ÍNTEGRA do que temos de UMA nota.
+  //
+  // ⚠ REGISTRADA DEPOIS DE `/notas/summary` DE PROPÓSITO. O Express casa na ordem: posta antes,
+  // esta rota engoliria `/notas/summary` lendo "summary" como id (é o mesmo cuidado que
+  // `/companies/annual` já exigiu). Teste de regressão: `__tests__/notaDetalhe.test.js`.
+  //
+  // O que ela acrescenta ao `/notas` (que é lista e continua enxuta): os itens da nota, o XML
+  // bruto, os identificadores alternativos (`idNfse`/`idDps` — a NFS-e nem sempre tem chave) e
+  // os carimbos de captura. Medido em produção (10/08/2026): **16.128 de 16.128 NFS-e têm
+  // `xmlRaw` gravado** (4,4–11,4 KB) e **16.127 têm item com descrição e código LC116** — tudo
+  // isso estava no banco sem nenhuma rota que o servisse.
+  router.get("/notas/:notaId", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const notaId = String(req.params.notaId);
+
+    const nota = await prisma.portalInvoice.findFirst({
+      where: { id: notaId, clientId: portalClientId },
+      include: { itens: { orderBy: { id: "asc" } } },
+    });
+    if (!nota) return bad(res, 404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
+
+    // ── A HISTÓRIA DA NOTA, não só o retrato ────────────────────────────────────────────────────
+    // Aqui cabem TODOS os eventos (a lista traz só o mais específico), porque é a tela onde a
+    // pergunta "o que aconteceu com esta nota?" é feita de verdade.
+    const eventos = await prisma.portalInvoiceEvent.findMany({
+      where: { clientId: portalClientId, invoiceId: nota.id },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      select: { id: true, type: true, tpEvento: true, nSeqEvento: true, date: true, reason: true, chaveSubstituta: true, createdAt: true },
+    });
+    const chavesLigadas = [nota.chaveSubstituida, ...eventos.map((e) => e.chaveSubstituta)].filter(Boolean);
+    const relacionadas = await prisma.portalInvoice.findMany({
+      where: {
+        clientId: portalClientId,
+        OR: [
+          ...(chavesLigadas.length ? [{ chaveAcesso: { in: chavesLigadas } }] : []),
+          ...(nota.chaveAcesso ? [{ chaveSubstituida: nota.chaveAcesso }] : []),
+        ],
+      },
+      select: { id: true, numero: true, chaveAcesso: true, chaveSubstituida: true, total: true, issueDate: true, statusEfetivo: true },
+    });
+    const ciclo = derivarCiclo({
+      nota,
+      // Substituição vence: é o fato mais específico quando a nota tem os dois.
+      evento: eventos.find((e) => e.type === "canc_por_substituicao") || eventos[eventos.length - 1] || null,
+      substituida: nota.chaveSubstituida
+        ? relacionadas.find((r) => r.chaveAcesso === nota.chaveSubstituida) || null : null,
+      substituta: nota.chaveAcesso
+        ? relacionadas.find((r) => r.chaveSubstituida === nota.chaveAcesso) || null : null,
+    });
+
+    // O XML viaja junto: é UMA nota, e o maior da base tem 11,4 KB. O teto existe só para o caso
+    // que a base ainda não tem (NF-e com muitos itens) — e, estourando, a resposta DIZ que existe
+    // e não coube, em vez de responder `null` como se não houvesse XML.
+    const XML_MAX_BYTES = 1_000_000;
+    const xmlBytes = nota.xmlRaw ? Buffer.byteLength(nota.xmlRaw, "utf8") : null;
+    const xmlCabe = Boolean(nota.xmlRaw) && xmlBytes <= XML_MAX_BYTES;
+
+    return res.json({
+      ok: true,
+      nota: {
+        id: nota.id,
+        type: nota.type,
+        papel: nota.papel,
+        numero: nota.numero,
+        serie: nota.serie,
+        chaveAcesso: nota.chaveAcesso,
+        idNfse: nota.idNfse,
+        idDps: nota.idDps,
+        competencia: nota.competencia,
+        issueDate: nota.issueDate,
+        status: nota.status,
+        statusEfetivo: nota.statusEfetivo,
+        // ⚠ `ciclo` é o que a tela deve ler para NOMEAR o que aconteceu (cancelada × substituída ×
+        // substituta × "não temos o evento"). `statusEfetivo` continua sendo o que a APURAÇÃO lê.
+        // Os dois não competem: um é história, o outro é dinheiro.
+        ciclo,
+        chaveSubstituida: nota.chaveSubstituida,
+        motivoSubstituicao: nota.motivoSubstituicao,
+        eventos: eventos.map((e) => ({
+          id: e.id, tipo: e.type, tpEvento: e.tpEvento, nSeqEvento: e.nSeqEvento,
+          dataEvento: e.date, motivo: e.reason, chaveSubstituta: e.chaveSubstituta,
+          capturadoEm: e.createdAt,
+        })),
+        total: decimalToString(nota.total),
+        emitenteNome: nota.emitenteNome,
+        emitenteDoc: nota.emitenteDoc,
+        tomadorNome: nota.tomadorNome,
+        tomadorDoc: nota.tomadorDoc,
+        competenciaPosFechamento: nota.competenciaPosFechamento,
+        pdfUrl: nota.pdfUrl,
+        xmlHash: nota.xmlHash,
+        lastSyncAt: nota.lastSyncAt,
+        createdAt: nota.createdAt,
+        updatedAt: nota.updatedAt,
+        itens: nota.itens.map((i) => ({
+          id: i.id,
+          descricao: i.descricao,
+          codigoServico: i.codigoServico,
+          cfop: i.cfop,
+          ncm: i.ncm,
+          valor: decimalToString(i.valor),
+          tipoReceita: i.tipoReceita,
+          anexoResolvido: i.anexoResolvido,
+          sujeitoFatorR: i.sujeitoFatorR,
+          flagST: i.flagST,
+          flagMonofasico: i.flagMonofasico,
+          flagExportacao: i.flagExportacao,
+          classificadoEm: i.classificadoEm,
+        })),
+        xml: {
+          disponivel: Boolean(nota.xmlRaw),
+          bytes: xmlBytes,
+          conteudo: xmlCabe ? nota.xmlRaw : null,
+          // Só quando existe E não coube. Ausência de XML não é truncamento.
+          truncadoPorTamanho: Boolean(nota.xmlRaw) && !xmlCabe,
+        },
+      },
     });
   });
 

@@ -10,6 +10,7 @@ import { AdnCapturePanel } from "./AdnCapturePanel";
 import { NotasList } from "./NotasList";
 import { NotasResumo } from "./NotasResumo";
 import { EmitirNfseWizard } from "./EmitirNfseWizard";
+import { NotaDetailModal } from "./NotaDetailModal";
 import { createApiClient } from "../../../api/client";
 import { Tabs } from "../../../components/ui/Tabs";
 import { Button } from "../../../components/ui/Button";
@@ -24,9 +25,10 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
     dfeState, dfeSyncing, syncDfe, clearDfeError,
     adnState, adnSyncing, syncAdn, clearAdnError,
     companyId,
-    notas, notasFilters, setNotasFilters, notasSummary,
+    notas, notasTotal, notasFilters, setNotasFilters, notasSummary,
     loadingNotas, loadNotas,
     importing, importNotas, marcarNotaStatus,
+    notaAbertaId, notaAberta, notaLoading, notaError, abrirNota, fecharNota,
   } = notasPanel;
 
   // NFS-e é a janela padrão; NF-e só existe com inscrição estadual.
@@ -146,16 +148,33 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
 
       <NotasList
         notas={notasDaJanela}
-        total={notasDaJanela.length}
+        /* ⚠ O TOTAL É O DO SERVIDOR, não `notasDaJanela.length`.
+           `notasDaJanela` é uma PÁGINA (100 por vez) já filtrada de novo no cliente — usá-la como
+           total fazia a tela escrever "100 nota(s)" num mês de 2.717 e não havia nada distinguindo
+           isso de um mês que teve 100 notas mesmo. `notasTotal` já vinha certo da rota (`total`) e
+           não era lido por ninguém. */
+        total={notasTotal}
         filters={notasFilters}
         onFiltersChange={setNotasFilters}
         onApply={(f) => loadNotas(f)}
         loading={loadingNotas}
         onMarcarStatus={marcarNotaStatus}
+        onAbrirNota={abrirNota}
       />
 
       {loading && notas.length === 0 && (
         <div style={{ padding: 24, textAlign: "center", color: PANEL.muted }}>Carregando…</div>
+      )}
+
+      {/* A ÍNTEGRA DA NOTA. Abre pelo id — o esqueleto do modal aparece na hora e o conteúdo chega
+          depois; abrir só quando a resposta volta faria o clique parecer sem efeito. */}
+      {notaAbertaId && (
+        <NotaDetailModal
+          nota={notaAberta}
+          loading={notaLoading}
+          error={notaError}
+          onClose={fecharNota}
+        />
       )}
 
       {emitindo && (

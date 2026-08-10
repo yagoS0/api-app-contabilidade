@@ -43,6 +43,13 @@ export function useNotasFiscais({ api, companyId, feedback }) {
   // contador de canceladas do resumo aponta para notas invisíveis.
   const [notasFilters, setNotasFilters] = useState({ papel: "EMIT", type: "", competencia: prevMonthCompetencia(), search: "", cfop: "", servico: "", incluirCanceladas: "", limit: 100, offset: 0 });
   const [loadingNotas, setLoadingNotas] = useState(false);
+  // Íntegra de UMA nota (clique na linha). Estado próprio: a lista é enxuta de propósito, e o
+  // detalhe carrega itens + XML, que não cabem — nem devem caber — em toda linha da tabela.
+  const [notaAberta, setNotaAberta] = useState(null);      // { id, ...campos } quando carregada
+  const [notaAbertaId, setNotaAbertaId] = useState(null);  // marcado ANTES do fetch: o modal abre
+                                                           // com o esqueleto, não depois da rede
+  const [notaLoading, setNotaLoading] = useState(false);
+  const [notaError, setNotaError] = useState(null);
 
   const loadAll = useCallback(async () => {
     if (!companyId || !api) return;
@@ -209,6 +216,36 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     }
   }
 
+  // Abre a íntegra da nota. ⚠ `api.getNota` pode não existir (implementação antiga do cliente):
+  // nesse caso o modal abre dizendo que a rota não está disponível, em vez de abrir vazio — modal
+  // em branco é indistinguível de "esta nota não tem nada".
+  const abrirNota = useCallback(async (notaId) => {
+    if (!notaId) return;
+    setNotaAbertaId(notaId);
+    setNotaAberta(null);
+    setNotaError(null);
+    if (!api?.getNota) {
+      setNotaError("Detalhe da nota indisponível nesta versão da API.");
+      return;
+    }
+    setNotaLoading(true);
+    try {
+      const out = await api.getNota(companyId, notaId);
+      setNotaAberta(out?.nota || null);
+      if (!out?.nota) setNotaError("A API respondeu sem os dados da nota.");
+    } catch (err) {
+      setNotaError(err?.message || "Falha ao carregar a nota.");
+    } finally {
+      setNotaLoading(false);
+    }
+  }, [api, companyId]);
+
+  const fecharNota = useCallback(() => {
+    setNotaAbertaId(null);
+    setNotaAberta(null);
+    setNotaError(null);
+  }, []);
+
   // Marca uma nota como cancelada (some do faturamento/apuração) ou reativa.
   async function marcarNotaStatus(notaId, statusEfetivo) {
     if (!api?.marcarNotaStatus) { feedback?.notifyError?.("Ação indisponível."); return; }
@@ -275,6 +312,8 @@ export function useNotasFiscais({ api, companyId, feedback }) {
     notas, notasTotal, notasSummary,
     notasFilters, setNotasFilters,
     loadingNotas, loadNotas, marcarNotaStatus,
+    // Íntegra da nota (clique na linha)
+    notaAbertaId, notaAberta, notaLoading, notaError, abrirNota, fecharNota,
     // Q56: import manual de notas (XML)
     importing, importResult, importNotas,
   };

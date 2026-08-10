@@ -1490,6 +1490,11 @@ export function createRealApi() {
       const suffix = q.toString() ? `?${q.toString()}` : "";
       return request(`/firm/companies/${companyId}/notas/summary${suffix}`);
     },
+    // A ÍNTEGRA de UMA nota (itens + XML bruto + identificadores + carimbos de captura).
+    // A lista continua enxuta de propósito; a profundidade vem de clicar na linha.
+    async getNota(companyId, notaId) {
+      return request(`/firm/companies/${companyId}/notas/${notaId}`);
+    },
     async marcarNotaStatus(companyId, notaId, statusEfetivo) {
       return request(`/firm/companies/${companyId}/notas/${notaId}/status`, {
         method: "PATCH", body: JSON.stringify({ statusEfetivo }),
@@ -1634,6 +1639,15 @@ export function createRealApi() {
     async transmitirFechamento(companyId, competencia, confirmCompetencia) {
       return request(`/firm/companies/${companyId}/fechamento/${competencia}/transmitir`, {
         method: "POST", body: JSON.stringify({ confirmCompetencia }),
+      });
+    },
+    // A declaração entregue FORA do portal (gov.br). ⚠ NÃO transmite nada: registra a afirmação do
+    // contador, do nosso lado, para a competência parar de parecer esquecida sem parecer entregue
+    // por aqui. `entregue:false` desfaz.
+    async registrarEntregaPgdasExterna(companyId, competencia, { entregue, confirmCompetencia, observacao } = {}) {
+      return request(`/firm/companies/${companyId}/fechamento/${competencia}/entrega-externa`, {
+        method: "POST",
+        body: JSON.stringify({ entregue: entregue === true, confirmCompetencia, observacao: observacao || null }),
       });
     },
     // Q55 — retificação: reabrir uma apuração transmitida + retransmitir como retificadora.
