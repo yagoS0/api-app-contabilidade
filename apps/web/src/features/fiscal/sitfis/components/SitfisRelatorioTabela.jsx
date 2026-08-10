@@ -11,7 +11,15 @@ const COR = { texto: "#F8F8F2", suave: "#A7B0C0", borda: "#44475A", ok: "#69FF47
 
 // Colunas de dinheiro alinham à direita e vão em fonte monoespaçada — comparar valores em coluna
 // desalinhada é onde o olho erra.
-const COLUNAS_VALOR = new Set(["Vl. Original", "Sdo. Devedor", "Multa", "Juros", "Sdo. Dev. Cons.", "Valor"]);
+// ⚠ `Vl.Original`/`Sdo.Devedor` (sem espaço) NÃO são erro de digitação: é assim que o bloco
+// "Débito com Exigibilidade Suspensa (SIEF)" imprime o cabeçalho, enquanto "Pendência - Débito
+// (SIEF)" imprime com espaço. As duas grafias existem no mesmo relatório — ver `COLUNAS_CONHECIDAS`
+// em `parseSitfisRelatorio.js`. Sem as duas, a coluna de dinheiro do bloco suspenso ficava alinhada
+// à esquerda e em fonte proporcional, que é onde o olho troca um valor pelo outro.
+const COLUNAS_VALOR = new Set([
+  "Vl. Original", "Sdo. Devedor", "Vl.Original", "Sdo.Devedor",
+  "Multa", "Juros", "Sdo. Dev. Cons.", "Valor",
+]);
 
 // ⚠ A COLUNA QUE RESPONDE A PERGUNTA.
 // A tabela tem CINCO colunas de dinheiro com valores parecidos (e "Vl. Original" e "Sdo. Devedor"

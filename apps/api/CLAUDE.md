@@ -585,6 +585,19 @@ uma lista **fechada** — é ela que separa cabeçalho de dado.
 | 4 | Régua (`______`) como linha solta | entra como célula e quebra a contagem |
 | 5 | Número da página em linha própria | filtrar todo número solto comia o `4` de "Parcelas em atraso" — o descarte é **posicional** |
 | 6 | Bloco nem sempre começa com "Pendência -" | marcador é **título + régua na MESMA linha** (`[ 	]*`, nunca `\s*`, senão a régua final rouba a linha anterior como título) |
+| 7 | **Uma célula pode vir PARTIDA em duas linhas** — o PA trimestral sai `2º` + `TRIM/2026` quando não cabe na largura da coluna | o registro fica com uma célula **a mais** que os outros, a divisão não fecha e o **bloco inteiro** é recusado por causa de um registro |
+| 8 | **O mesmo cabeçalho tem duas grafias**: `Vl. Original`/`Sdo. Devedor` em "Pendência - Débito", `Vl.Original`/`Sdo.Devedor` (colados) em "Débito com Exigibilidade Suspensa" | a varredura do cabeçalho para cedo, o resto do cabeçalho entra como dado — e a contagem pode fechar assim mesmo |
+
+### A remontagem de célula partida (armadilha 7)
+
+`fundirCelulasPartidas` + `CELULAS_PARTIDAS`. Lista **fechada**, pelo mesmo motivo de
+`COLUNAS_CONHECIDAS`: funde só o par de formatos já visto no texto real (`^[1-4][ºo°]$` seguido de
+`^TRIM/\d{4}$`), só quando os **dois** pedaços aparecem colados, nessa ordem. Meia regra não funde
+nada; quebra de formato desconhecido continua desalinhando a contagem — que é o desejado.
+
+⚠ **O valor remontado não é inventado:** `2º TRIM/2026` é literalmente o que o relatório imprime
+quando a linha **não** quebra (texto real de 46.848.383/0001-53). A regra faz as duas formas
+convergirem para a que já existe.
 
 ### A validação
 
@@ -593,13 +606,31 @@ uma lista **fechada** — é ela que separa cabeçalho de dado.
 parser original extraía valores e chegou a mostrar **"R$ 100,00" de débito numa empresa sem débito**,
 lendo o `100,00%` de participação do quadro societário.
 
+⚠ **A rede é ARITMÉTICA, e isso é um limite, não um detalhe.** Desalinhamento cujo tamanho seja
+múltiplo do número de colunas **fecha a divisão e passa**. Foi o que aconteceu com a armadilha 8:
+duas colunas não reconhecidas viravam dado, 24 linhas dividiam por 3 sem sobra, e a tela mostrava
+`30,65` debaixo de **"Receita"** — o defeito antigo, vivo em produção até 10/08/2026. Bloco novo se
+confere pela **coluna do valor** no texto real, nunca só pelo `naoInterpretado` vazio.
+
 ### Regra de exibição
 
 **A tabela nunca some.** Bloco ilegível aparece com as linhas cruas e o aviso de conferir no PDF —
 esconder passaria a impressão de "nada consta", o oposto do que se sabe.
 
-Verificado contra os dois textos reais (ATIM com 3 blocos e 6 registros; ERISANGELA só com
-parcelamento): nenhum bloco ilegível.
+Verificado contra os textos reais gravados em produção (leitura de 10/08/2026): ATIM com 3 blocos e
+11 registros; 61.324.247/0001-58 com os 6 registros do Presumido (2 trimestrais);
+46.848.383/0001-53 com o bloco suspenso; ERISANGELA só com parcelamento. Regressão em
+`serpro/__tests__/parseSitfisRelatorio.test.js` — as fixtures são **excertos do texto real**, não
+transcrição.
+
+⚠ **Um bloco continua ilegível de propósito:** 55.387.580/0001-03 repete o cabeçalho no meio da
+tabela e cola `Situação: A ANALISAR-A VENCER` na linha seguinte. Cai em `naoInterpretado` com as
+linhas cruas — que é a resposta honesta enquanto essa forma não for entendida.
+
+⚠ **DEFEITO CONHECIDO, AINDA NÃO CONSERTADO (SIEFPAR):** o número do parcelamento
+(`0211.00012.0042365911.26-69`) é **engolido** pela regra de ruído `/^[\d.]{10,}\s*-\s*.+$/`, escrita
+para descartar `52.682.158 - ATIM ENGENHARIA LTDA`. O bloco de parcelamento aparece com
+"Parcelamento:" **sem valor**. É perda de dado, não desalinhamento — a decisão de mexer é do dono.
 
 **O relatório salvo nunca é apagado por uma consulta que falha.** A gravação só sobrescreve
 `situacao`/`relatorioPdfFileId`/`texto` quando vem relatório NOVO.

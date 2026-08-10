@@ -14,7 +14,7 @@
 //
 // Então a leitura é: contar as colunas pelo cabeçalho e agrupar as linhas de dados de N em N.
 //
-// ── AS TRÊS ARMADILHAS, todas presentes no texto real ──
+// ── AS QUATRO ARMADILHAS, todas presentes no texto real ──
 //
 //  1. O CNPJ vem COLADO na primeira célula do cabeçalho:
 //       "…______CNPJ: 52.682.158/0001-92Receita"  →  a coluna é "Receita".
@@ -22,6 +22,9 @@
 //     Sem removê-lo, essas linhas entram como células e desalinham TUDO a partir dali.
 //  3. "Notificação de lançamento: 52682158202601001" vem colado no início do registro seguinte
 //     ("…0011099-01 - CP-SEGUR."). É anotação do registro ANTERIOR, e o rabo é a próxima linha.
+//  4. UMA CÉLULA PODE VIR PARTIDA EM DUAS LINHAS. O PA trimestral ("2º TRIM/2026") não cabe na
+//     largura da coluna em alguns relatórios e a extração devolve "2º" e "TRIM/2026" separados —
+//     ver `CELULAS_PARTIDAS`, abaixo.
 //
 // ── POR QUE A CONTAGEM É A VALIDAÇÃO ──
 //
@@ -41,8 +44,19 @@ const SEM_PENDENCIA = /N[ãa]o\s+foram\s+detectadas\s+pend[êe]ncias/i;
 
 // Cabeçalhos que o relatório usa. Lista FECHADA de propósito: é ela que separa cabeçalho de dado.
 // Coluna desconhecida faz o bloco cair em "não interpretado" em vez de virar tabela torta.
+//
+// ⚠ O MESMO CABEÇALHO APARECE COM E SEM ESPAÇO, e a variante é do BLOCO, não do relatório.
+// "Pendência - Débito (SIEF)" imprime `Vl. Original` / `Sdo. Devedor`; "Débito com Exigibilidade
+// Suspensa (SIEF)" imprime `Vl.Original` / `Sdo.Devedor`, colados. Confirmado nos textos reais de
+// 46.848.383/0001-53 (24/07/2026) e 55.387.580/0001-03 (06/08/2026), que trazem os dois blocos.
+// Sem as duas variantes, a varredura do cabeçalho PARAVA em "Dt. Vcto": o bloco suspenso virava uma
+// tabela de TRÊS colunas, o resto do cabeçalho entrava como registro e os valores caíam na coluna
+// errada — "30,65" debaixo de "Receita". Como 27 linhas dividem por 3 sem sobra, a contagem fechava
+// e a rede não pegava. É o defeito antigo, vivo em produção, e o conserto é reconhecer o nome real
+// da coluna — nunca afrouxar a divisão.
 const COLUNAS_CONHECIDAS = new Set([
   "Receita", "PA/Exerc.", "Dt. Vcto", "Vl. Original", "Sdo. Devedor",
+  "Vl.Original", "Sdo.Devedor",
   "Multa", "Juros", "Sdo. Dev. Cons.", "Situação",
   "Processo", "Localização",
   "Parcelas em atraso",
@@ -70,6 +84,57 @@ const ehRuido = (l) => RUIDO.some((r) => r.test(l));
 
 // "1099-01 - CP-SEGUR." — código de receita, usado para achar onde a anotação termina.
 const INICIO_REGISTRO = /(\d{4}-\d{2}\s*-\s*\D.*)$/;
+
+// ── ARMADILHA 4: CÉLULA PARTIDA EM DUAS LINHAS ──
+//
+// Uma célula é uma linha — menos quando o texto não cabe na largura da coluna no PDF. Aí a
+// extração devolve os dois pedaços em linhas separadas, e aquele registro passa a ter UMA CÉLULA A
+// MAIS que os outros. Como o agrupamento é posicional (de N em N), o resto da divisão não fecha e o
+// BLOCO INTEIRO é recusado por causa de um registro. Medido em produção (61.324.247/0001-58,
+// 10/08/2026): os 4 registros mensais traziam 9 células e os 2 trimestrais 10 — 56 linhas para 9
+// colunas, resto 2, bloco inteiro em `naoInterpretado`.
+//
+// ⚠ O VALOR REMONTADO NÃO É INVENTADO — é o mesmo que o relatório imprime quando NÃO quebra.
+// O texto de 46.848.383/0001-53 (24/07/2026) traz exatamente `2º TRIM/2026` numa linha só, no mesmo
+// campo. A regra faz as duas formas convergirem para a que já existe; não cria coluna, não cria
+// conteúdo, não muda a contagem de colunas.
+//
+// ⚠ LISTA FECHADA, pelo mesmo motivo de `COLUNAS_CONHECIDAS`: só funde o par de formatos que já foi
+// visto no relatório real, e só quando os DOIS pedaços aparecem, NESSA ordem, um colado no outro.
+// Metade do par não funde nada. Quebra de formato desconhecido continua desalinhando a contagem —
+// e é isso que se quer: o bloco cai em `naoInterpretado` com as linhas cruas, em vez de virar uma
+// tabela com valor em coluna errada.
+const CELULAS_PARTIDAS = [
+  {
+    // "2º" + "TRIM/2026" → "2º TRIM/2026" (PA/Exerc. de tributo trimestral: IRPJ, CSLL).
+    // `[ºo°]`: o indicador ordinal masculino (U+00BA) e o sinal de grau (U+00B0) são glifos
+    // parecidos e a extração de PDF troca um pelo outro; "o" cobre o caso sem acentuação.
+    nome: "PA/Exerc. trimestral",
+    inicio: /^[1-4][ºo°]$/,
+    continuacao: /^TRIM\/\d{4}$/,
+  },
+];
+
+/**
+ * Remonta as células que a extração partiu em duas linhas (armadilha 4).
+ * Só junta o par completo e adjacente descrito em `CELULAS_PARTIDAS`; qualquer outra coisa passa
+ * intacta. Nada é descartado — o pior caso é a contagem continuar não fechando.
+ */
+export function fundirCelulasPartidas(linhas) {
+  const saida = [];
+  for (let i = 0; i < linhas.length; i += 1) {
+    const regra = CELULAS_PARTIDAS.find(
+      (r) => r.inicio.test(linhas[i]) && i + 1 < linhas.length && r.continuacao.test(linhas[i + 1]),
+    );
+    if (regra) {
+      saida.push(`${linhas[i]} ${linhas[i + 1]}`);
+      i += 1;
+      continue;
+    }
+    saida.push(linhas[i]);
+  }
+  return saida;
+}
 
 /**
  * Normaliza as linhas de um bloco: tira ruído de página, separa o CNPJ colado e desgruda a
@@ -127,7 +192,10 @@ function montarTabela(linhas) {
   const colunas = [];
   while (i < linhas.length && COLUNAS_CONHECIDAS.has(linhas[i])) { colunas.push(linhas[i]); i += 1; }
 
-  const dados = linhas.slice(i);
+  // A fusão vale só para as CÉLULAS DE DADO. Cabeçalho e descrição ficam de fora de propósito:
+  // quem decide o que é coluna é `COLUNAS_CONHECIDAS`, e remontar linha antes disso mudaria a
+  // fronteira entre cabeçalho e dado.
+  const dados = fundirCelulasPartidas(linhas.slice(i));
   if (!colunas.length) return { descricao, colunas: [], registros: [], naoInterpretado: dados };
 
   // A VALIDAÇÃO: dados têm que fechar em múltiplo exato das colunas.
