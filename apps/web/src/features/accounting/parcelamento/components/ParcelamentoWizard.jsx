@@ -263,6 +263,35 @@ export function ParcelamentoWizard({
   const th = { textAlign: "left", padding: "4px 6px", fontSize: "0.66rem", color: PANEL.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" };
   const td = { padding: "4px 6px", fontSize: "0.78rem", color: PANEL.text };
 
+  // ⚠ O SELETOR D/C ESTAVA SENDO ESPREMIDO — e a largura do MODAL não tinha nada com isso.
+  //
+  // A coluna era `width: 52`, e o `<td>` cobra `padding: "4px 6px"` POR CIMA dela. Como o `FIELD`
+  // traz `width: "100%"`, sobravam 52 − 12 = **40px** para um `<select>` que o browser mede em
+  // **44px** para desenhar "D" e a seta lado a lado: os 4px que faltam saem de cima da letra, a
+  // seta come o "D". Nos modais irmãos (`ParcelamentoModals.jsx`) o MESMO select recebe 56 − 6 =
+  // 50px — é por isso que só aqui aparece.
+  //
+  // Alargar o modal não resolveria: a coluna é fixa e mede 52px igual em 1366px e em 900px de
+  // viewport (o `min(96vw, 900px)` só encolhe a Descrição, que é a coluna flexível). O que resolve
+  // é dar largura à COLUNA — os 12px extras saem da Descrição, ninguém rola nada de lado.
+  //
+  // O `minWidth` é a trava, não a folga: a seta do `<select>` é mais larga em alguns sistemas, e
+  // sem um piso o próximo tema/zoom repõe o defeito em silêncio. Ele também impede a coluna de
+  // colapsar abaixo disso quando a tabela aperta.
+  const COL_DC = 64;
+  const selectDC = { ...FIELD, padding: "4px 6px", colorScheme: "dark", minWidth: 46 };
+
+  // ⚠ E A TABELA ROLA DENTRO DELA MESMA, não some pela borda. O painel do modal é
+  // `overflowX: "hidden"`: abaixo de ~710px de viewport a tabela (640px de mínimo) já não cabia e a
+  // coluna do "×" era simplesmente CORTADA, sem barra nenhuma para alcançá-la — o mesmo desfecho
+  // que o card do parcelamento teve no incidente das 60 prestações. Alargar a coluna D/C empurra
+  // esse limiar em 12px, então a rolagem entra junto: `apps/web/CLAUDE.md` manda o conteúdo largo
+  // rolar no PRÓPRIO container, e o corpo da página nunca na horizontal — o `overflowX: "hidden"`
+  // do painel continua garantindo a segunda metade. Acima do limiar nada muda: sem transbordo, sem
+  // barra. O dropdown do `AccountCodeInput` é `position: fixed` justamente para não ser cortado por
+  // isto (ver o comentário dele), e nenhum ancestral tem `transform`, então ele segue escapando.
+  const rolagemTabela = { overflowX: "auto" };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1600, padding: 16 }}>
       <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 10, padding: 20, width: "min(96vw, 900px)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", color: PANEL.text, display: "flex", flexDirection: "column", gap: 14 }}>
@@ -447,10 +476,11 @@ export function ParcelamentoWizard({
                   </button>
                 </div>
               </div>
+              <div style={rolagemTabela}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr>
                   <th style={th}>Descrição</th>
-                  <th style={{ ...th, width: 52 }}>D/C</th>
+                  <th style={{ ...th, width: COL_DC }}>D/C</th>
                   <th style={{ ...th, width: 130 }}>Conta</th>
                   <th style={{ ...th, width: 130, textAlign: "right" }}>Valor</th>
                   {editando && <th style={{ width: 26 }} />}
@@ -466,7 +496,7 @@ export function ParcelamentoWizard({
                       <td style={td}>
                         {editando
                           ? (
-                            <select value={l.tipo} onChange={(e) => setLinhaProvisao(i, "tipo", e.target.value)} style={{ ...FIELD, padding: "4px 6px", colorScheme: "dark" }}>
+                            <select value={l.tipo} onChange={(e) => setLinhaProvisao(i, "tipo", e.target.value)} style={selectDC}>
                               <option value="D">D</option><option value="C">C</option>
                             </select>
                           )
@@ -504,6 +534,7 @@ export function ParcelamentoWizard({
                   ))}
                 </tbody>
               </table>
+              </div>
               <div style={{ textAlign: "right", fontSize: "0.72rem", color: somas.balanceado ? PANEL.muted : "var(--state-danger)", marginTop: 4 }}>
                 Σ D <strong style={{ color: PANEL.text }}>R$ {formatarMoeda(somas.debito)}</strong>
                 {" · "}Σ C <strong style={{ color: PANEL.text }}>R$ {formatarMoeda(somas.credito)}</strong>
@@ -524,10 +555,11 @@ export function ParcelamentoWizard({
                 <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>Pagamento de cada parcela</div>
                 {editando && <button type="button" onClick={addLinhaPagamento} title="Adicionar linha" style={iconBtn}>+</button>}
               </div>
+              <div style={rolagemTabela}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr>
                   <th style={th}>Descrição</th>
-                  <th style={{ ...th, width: 52 }}>D/C</th>
+                  <th style={{ ...th, width: COL_DC }}>D/C</th>
                   <th style={{ ...th, width: 130 }}>Conta</th>
                   <th style={{ ...th, width: 130, textAlign: "right" }}>Valor</th>
                   {editando && <th style={{ width: 26 }} />}
@@ -543,7 +575,7 @@ export function ParcelamentoWizard({
                       <td style={td}>
                         {editando
                           ? (
-                            <select value={l.tipo} onChange={(e) => setLinhaPagamento(i, "tipo", e.target.value)} style={{ ...FIELD, padding: "4px 6px", colorScheme: "dark" }}>
+                            <select value={l.tipo} onChange={(e) => setLinhaPagamento(i, "tipo", e.target.value)} style={selectDC}>
                               <option value="D">D</option><option value="C">C</option>
                             </select>
                           )
@@ -575,6 +607,7 @@ export function ParcelamentoWizard({
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
 
             {/* Composição por tributo — opcional, colapsada. */}

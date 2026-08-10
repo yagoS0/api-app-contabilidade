@@ -95,6 +95,26 @@ campos novos.
 **inalcançável pela UI**: o item "+ Novo parcelamento…" do menu Funções depende da prop
 `parcelamentos`, que `renderCompanyDetailPage` **não passa** para a aba Lançamentos.
 
+### ⚠ A coluna D/C do passo 3 do wizard — largura de COLUNA, não largura de modal
+
+O `<select>` D/C do `ParcelamentoWizard` (passo 3, modo "Editar lançamentos", nas DUAS tabelas)
+ficava com **40px** contra os **44px** que o browser mede para desenhar "D" e a seta lado a lado: a
+seta comia a letra. A conta é `width: 52` no `<th>` menos os `padding: "4px 6px"` que o `<td>` cobra
+por cima do `width: "100%"` do `FIELD`. Nos modais irmãos (`ParcelamentoModals.jsx`) o MESMO select
+recebe `56 − 6 = 50px`, e por isso o defeito só existia no wizard.
+
+⚠ **Alargar o modal não resolveria** — e é o reflexo errado quando o sintoma é "está espremido". A
+coluna é fixa: mede 52px igual em viewport de 1366px e de 900px, porque o `min(96vw, 900px)` do
+painel só encolhe a **Descrição**, que é a coluna flexível. Hoje são `COL_DC = 64` (os 12px saem da
+Descrição) e um `minWidth` no select, que é a TRAVA: a seta é mais larga em alguns sistemas, e sem
+piso o próximo tema/zoom repõe o defeito em silêncio.
+
+⚠ **As duas tabelas rolam dentro do próprio wrapper** (`overflowX: "auto"`). O painel é
+`overflowX: "hidden"`, então abaixo de ~710px de viewport a tabela (640px de mínimo) tinha a coluna
+do "×" **cortada, sem barra para alcançá-la** — o mesmo desfecho do incidente das 60 prestações. O
+corpo da página continua sem rolar na horizontal. O dropdown do `AccountCodeInput` é
+`position: fixed` e nenhum ancestral tem `transform`, então ele segue escapando do recorte.
+
 ## Buscar pagamento da parcela — na LINHA, e a mesma rota das outras guias
 
 `parcelamento/components/ParcelasDoAcordo.jsx` + a regra em `parcelamento/lib/parcelaBusca.js`
