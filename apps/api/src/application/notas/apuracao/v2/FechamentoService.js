@@ -14,7 +14,7 @@ import { SerproPgdasdService } from "../../../fiscal/serpro/SerproPgdasdService.
 import { PgdasSimulacaoService, parseRetornoSimulacao } from "../../../fiscal/serpro/PgdasSimulacaoService.js";
 import { montarAtividadesDefault, carregarAtividades } from "./AtividadeResolver.js";
 import { getRbt12, lerPeriodosAceitos, gravarPeriodosAceitos } from "./RbtExtratoService.js";
-import { lerConfigMemory, salvarConfigMemory } from "./ApuracaoConfigMemoryService.js";
+import { lerConfigMemory, salvarConfigMemory, normalizarFormaAtividades } from "./ApuracaoConfigMemoryService.js";
 import { detectarDisparidades } from "./DisparidadeService.js";
 
 function onlyDigits(v) { return String(v || "").replace(/\D+/g, ""); }
@@ -148,6 +148,98 @@ async function montarAtividadesDoCnae({ cnaePrincipal, faturamentoInterno = 0, f
   return out;
 }
 
+// ─── O VALOR PRÉ-PREENCHIDO VEM DA **PRÓPRIA COMPETÊNCIA** ────────────────────────────────────
+//
+// A memória (`ApuracaoConfigMemory`) tem chave `portalClientId` e **nenhuma competência**: um
+// registro por empresa, reaberto em todo mês seguinte. Enquanto ela guardava o VALOR, o valor de um
+// mês era carregado para dentro de outro — medido em produção, o faturamento de 07/2026 da ARAUJO
+// (R$ 20.301,21) aparecia em fevereiro, março, abril, maio e junho, e 10 de 10 competências SEM
+// faturamento nenhum abriam com valor > 0 na tela. Ver o cabeçalho de `ApuracaoConfigMemoryService`.
+//
+// Hoje a memória guarda só a FORMA (atividade, anexo, MERCADO) e o valor é aplicado aqui, a partir
+// do faturamento da competência que está sendo apurada.
+//
+// ⚠ O MERCADO LEMBRADO MANDA NO DESTINO DO VALOR. `NotaItem.flagExportacao` é `false` em
+// 16.153/16.153 itens (o único escritor é o parser de NF-e), então o faturamento da NFS-e chega aqui
+// SEMPRE como "interno" — inclusive o da CDA MARKETING, que presta serviço ao exterior. Jogar o
+// total sempre em `valorInterno` faria a declaração dela nascer interna, contrariando as duas que já
+// saíram corretas (`65227792202606001`, `65227792202607001`). O mercado da forma é a única fonte
+// dessa informação nesta base.
+//
+// ⚠ COM 2+ ATIVIDADES O VALOR FICA **VAZIO**, e isso é recusa deliberada. Não existe regra de rateio
+// entre atividades — nem no cadastro, nem nas notas (a classificação v2 nunca rodou: `tipoReceita` é
+// nulo em 16.153/16.153 itens). Dividir por conta própria seria o portal chutando o que vai numa
+// declaração. Campo vazio é conferido; campo preenchido errado, não. Hoje as 12 memórias têm uma
+// atividade cada, mas isso muda no dia em que alguém adicionar a segunda linha no modal.
+export function aplicarFaturamentoNaForma({ forma, faturamentoInterno = 0, faturamentoExterno = 0 }) {
+  const linhas = normalizarFormaAtividades(forma);
+  const interno = round2(faturamentoInterno);
+  const externo = round2(faturamentoExterno);
+  const total = round2(interno + externo);
+  const base = { total, indefinido: false, motivo: null, mercadoAplicado: null };
+
+  if (!linhas.length) return { atividades: [], prefill: base };
+
+  const vazias = (motivo) => ({
+    atividades: linhas.map((a) => ({ ...a, valorInterno: null, valorExterno: null })),
+    prefill: { ...base, indefinido: true, motivo },
+  });
+
+  if (linhas.length > 1) {
+    return vazias(
+      `A configuração lembrada desta empresa tem ${linhas.length} atividades, e o portal não tem `
+      + "como saber quanto do faturamento da competência cabe a cada uma — não existe regra de "
+      + "rateio. Preencha os valores.",
+    );
+  }
+
+  const [unica] = linhas;
+  // Receita interna E externa na mesma competência, com uma atividade só: a atividade do PGDAS-D é
+  // mercado-específica (o mercado está no próprio `idAtividade`), então não há linha onde pôr a
+  // outra metade. Não se escolhe uma e se esconde a outra.
+  if (interno > 0 && externo > 0) {
+    return vazias(
+      `A competência tem receita interna (${interno.toFixed(2)}) e externa (${externo.toFixed(2)}), `
+      + "mas a configuração lembrada tem uma atividade só. Adicione a atividade do outro mercado e "
+      + "preencha os valores.",
+    );
+  }
+
+  const ehExterno = String(unica.mercado || "").toUpperCase() === "EXTERNO";
+  return {
+    atividades: [{
+      ...unica,
+      valorInterno: ehExterno ? 0 : total,
+      valorExterno: ehExterno ? total : 0,
+    }],
+    prefill: { ...base, mercadoAplicado: ehExterno ? "EXTERNO" : "INTERNO" },
+  };
+}
+
+/**
+ * Completa o `mercado` de uma forma antiga a partir do CATÁLOGO oficial — nunca por suposição.
+ *
+ * O mercado é codificado no próprio `idAtividade` (ex.: 1 = interno, 3 = exterior), e `mercado` é
+ * coluna de `AtividadePgdasd`. Memória gravada antes de o campo existir na linha não pode virar
+ * "INTERNO por padrão": é justamente a empresa exportadora que perderia a informação, e o erro
+ * chegaria à declaração. As 12 memórias medidas hoje já trazem `mercado`; isto é rede.
+ */
+async function completarMercadoPeloCatalogo(forma) {
+  const linhas = Array.isArray(forma) ? forma : [];
+  const faltando = linhas.filter((a) => a && !a.mercado).map((a) => Number(a.idAtividade)).filter(Number.isFinite);
+  if (!faltando.length) return linhas;
+  const doCatalogo = await prisma.atividadePgdasd.findMany({
+    where: { idAtividade: { in: [...new Set(faltando)] } },
+    select: { idAtividade: true, mercado: true, anexoImplicito: true, sujeitoFatorR: true, tipoReceita: true, descricao: true },
+  }).catch(() => []);
+  const porId = new Map(doCatalogo.map((a) => [String(a.idAtividade), a]));
+  return linhas.map((a) => {
+    if (!a || a.mercado) return a;
+    const ref = porId.get(String(a.idAtividade));
+    return ref ? { ...ref, ...a, mercado: ref.mercado } : a;
+  });
+}
+
 // ─── A DECLARAÇÃO ENTREGUE **FORA** DO PORTAL ──────────────────────────────────────────────────
 //
 // Fato novo do dono (10/08/2026): *"já fiz envios antes para a Receita com a empresa sem
@@ -274,17 +366,33 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
   const faturamentoExterno = round2(Object.entries(rtm).filter(([k]) => k.endsWith("|EXTERNO")).reduce((s, [, v]) => s + v, 0));
 
   // Atividades default: da memória (última config) OU derivadas das notas
+  //
+  // ⚠ DA MEMÓRIA VEM A **FORMA**; O VALOR VEM DAQUI. `lerConfigMemory` já devolve a lista sem os
+  // campos de valor, e `aplicarFaturamentoNaForma` põe o faturamento DESTA competência na atividade
+  // lembrada, no mercado lembrado — ou deixa vazio quando não dá para saber (2+ atividades).
   const memory = await lerConfigMemory({ portalClientId });
   let atividades;
   let origemAtividades;
+  let prefillValor = { total: 0, indefinido: false, motivo: null, mercadoAplicado: null, origem: "nenhum" };
   if (memory?.atividadesEscolhidas && Array.isArray(memory.atividadesEscolhidas) && memory.atividadesEscolhidas.length) {
-    atividades = memory.atividadesEscolhidas;
+    const forma = await completarMercadoPeloCatalogo(memory.atividadesEscolhidas);
+    const aplicado = aplicarFaturamentoNaForma({ forma, faturamentoInterno, faturamentoExterno });
+    atividades = aplicado.atividades;
+    prefillValor = { ...aplicado.prefill, origem: "faturamento_da_competencia" };
     origemAtividades = `memoria(${memory.atualizadoEm ? new Date(memory.atualizadoEm).toISOString().slice(0,10) : "?"})`;
   } else {
     const dataRef = rangeMes(competencia).gte;
     const { atividades: def, semMapeamento } = await montarAtividadesDefault({ receitaPorTipoMercado: rtm, dataReferencia: dataRef });
     atividades = def;
     origemAtividades = "notas";
+    // ⚠ ESTE CAMINHO NÃO PASSA PELO APLICADOR, e é decisão. O valor de cada linha aqui já é o da
+    // PRÓPRIA competência, item por item, com o mercado vindo do `flagExportacao` de cada item —
+    // evidência, não memória. Rateio evidenciado não é rateio chutado; blindá-lo com a regra do
+    // "vazio com 2+ atividades" jogaria fora a única segregação que a base sabe fazer sozinha.
+    prefillValor = {
+      total: round2(faturamentoInterno + faturamentoExterno),
+      indefinido: false, motivo: null, mercadoAplicado: null, origem: "notas_classificadas",
+    };
     if (semMapeamento.length) {
       // anexa info de receita sem mapeamento (vira aviso na UI)
       atividades._semMapeamento = semMapeamento;
@@ -298,7 +406,16 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
       cnaePrincipal: cnaePrincipalEfetivo, faturamentoInterno, faturamentoExterno,
       dataReferencia: rangeMes(competencia).gte,
     });
-    if (doCnae.length) { atividades = doCnae; origemAtividades = "cnae"; }
+    if (doCnae.length) {
+      atividades = doCnae;
+      origemAtividades = "cnae";
+      // Também já sai com o faturamento da própria competência (é o que `montarAtividadesDoCnae`
+      // recebe), com a mesma segregação por item do caminho das notas.
+      prefillValor = {
+        total: round2(faturamentoInterno + faturamentoExterno),
+        indefinido: false, motivo: null, mercadoAplicado: null, origem: "cnae_da_empresa",
+      };
+    }
   }
 
   const rbt = await getRbt12({ portalClientId, competencia });
@@ -351,6 +468,10 @@ export async function getDadosFechamento({ portalClientId, competencia }) {
     semClassificacao,
     atividades,
     origemAtividades,
+    // De onde saiu o VALOR que aparece na tela, e quando ele foi deixado em branco de propósito.
+    // A tela precisa disto: campo vazio sem explicação parece campo quebrado, e o contador
+    // preencheria "o que estava lá antes" — que é exatamente o valor fantasma que saiu daqui.
+    prefillValor,
     folhaMensal12: memory?.folhaMensal12 || null,
     // CONFERÊNCIA da folha: soma dos lançamentos contábeis de folha/pró-labore dos 12 meses.
     // Não substitui `folhaMensal12` (que o contador digita) — vai ao lado, para comparar.

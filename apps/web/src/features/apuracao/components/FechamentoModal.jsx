@@ -126,8 +126,14 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   // conta" são coisas diferentes que a tela precisa conseguir distinguir.
   const contasDaConferencia = Array.isArray(derivada?.contasConsideradas) ? derivada.contasConsideradas : [];
 
+  // ⚠ CAMPO LIMPO CONTINUA LIMPO. `Number("") || 0` é `0`, e enquanto era isso que ficava no estado,
+  // apagar o campo escrevia um ZERO — indistinguível de "o contador conferiu e é zero mesmo". O
+  // backend deixa `null` de propósito quando não sabe o valor (memória com 2+ atividades: não existe
+  // regra de rateio), e essa distinção morreria na primeira tecla. `null` some no envio: tanto
+  // `somaAtividades` quanto `buildDeclaracaoPayload` leem `Number(v || 0)`.
   function setAtvValor(idx, campo, valor) {
-    setAtividades((prev) => prev.map((a, i) => i === idx ? { ...a, [campo]: Number(valor) || 0 } : a));
+    const limpo = String(valor).trim() === "" ? null : (Number(valor) || 0);
+    setAtividades((prev) => prev.map((a, i) => i === idx ? { ...a, [campo]: limpo } : a));
   }
 
   // Q19: trocar a atividade de uma linha → o anexo/mercado/Fator-R vêm junto (do catálogo).
@@ -334,10 +340,14 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                         </td>
                         <td style={{ padding: 4 }}>{a.anexoImplicito}{a.sujeitoFatorR ? " ★FR" : ""}</td>
                         <td style={{ padding: 4, textAlign: "right" }}>
-                          <input type="number" step="0.01" value={a.valorInterno || 0} onChange={(e) => setAtvValor(idx, "valorInterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
+                          {/* ⚠ `?? ""`, NUNCA `|| 0`. Com `|| 0` o campo renderiza **0** para
+                              null/undefined, e o "vazio" que o backend manda quando não sabe o
+                              valor nunca chegaria à tela — a mudança inteira ficaria invisível, com
+                              um zero fabricado no lugar do campo em branco. */}
+                          <input type="number" step="0.01" placeholder="—" value={a.valorInterno ?? ""} onChange={(e) => setAtvValor(idx, "valorInterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
                         </td>
                         <td style={{ padding: 4, textAlign: "right" }}>
-                          <input type="number" step="0.01" value={a.valorExterno || 0} onChange={(e) => setAtvValor(idx, "valorExterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
+                          <input type="number" step="0.01" placeholder="—" value={a.valorExterno ?? ""} onChange={(e) => setAtvValor(idx, "valorExterno", e.target.value)} style={{ ...inputS, width: 110, textAlign: "right" }} />
                         </td>
                         <td style={{ padding: 4, textAlign: "center" }}>
                           <button onClick={() => removeAtividade(idx)} title="Remover atividade"
@@ -347,6 +357,36 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                     ))}
                   </tbody>
                 </table>
+              )}
+
+              {/* ⚠ POR QUE O VALOR ESTÁ EM BRANCO — a explicação anda junto do campo vazio.
+                  O backend deixa o valor `null` quando a configuração lembrada tem 2+ atividades:
+                  não existe regra de rateio entre elas, e dividir por conta própria seria o portal
+                  chutando o que vai numa declaração. Campo vazio SEM motivo, porém, parece campo
+                  quebrado — e o contador reporia "o que estava lá antes", que é justamente o valor
+                  de outra competência que esta mudança tirou do caminho. */}
+              {dados?.prefillValor?.indefinido && (
+                <div style={{ marginTop: 8, padding: 10, background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)", borderRadius: 6, color: "var(--state-warn)", fontSize: "0.78rem" }}>
+                  ⚠ Os valores vieram em branco de propósito. {dados.prefillValor.motivo}
+                  {dados.prefillValor.total > 0 && (
+                    <div style={{ color: PANEL.muted, marginTop: 4 }}>
+                      Faturamento desta competência: <strong>{fmtMoney(dados.prefillValor.total)}</strong>.
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* O caminho normal: uma atividade lembrada, e o faturamento DESTA competência entrando
+                  no mercado que a memória guarda. Dizer o mercado em voz alta importa porque ele é a
+                  única informação de exportação que esta base tem — `flagExportacao` nunca é escrita
+                  para NFS-e, então a nota da empresa exportadora chega aqui como se fosse interna. */}
+              {dados?.prefillValor?.origem === "faturamento_da_competencia" && !dados.prefillValor.indefinido && atividades.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: "0.74rem", color: PANEL.muted }}>
+                  Valor pré-preenchido com o faturamento <strong>desta competência</strong> ({fmtMoney(dados.prefillValor.total)})
+                  {dados.prefillValor.mercadoAplicado === "EXTERNO"
+                    ? <> no mercado <strong>EXTERNO</strong>, como a configuração desta empresa indica.</>
+                    : <> no mercado interno.</>}
+                  {" "}A memória guarda a atividade e o anexo — nunca o valor de outro mês.
+                </div>
               )}
 
               {/* Sem movimento — FORA do ramo "lista vazia", porque quem decide é a SOMA.
