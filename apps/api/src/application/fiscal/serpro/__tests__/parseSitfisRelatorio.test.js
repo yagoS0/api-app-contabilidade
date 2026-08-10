@@ -1,16 +1,40 @@
 // AS TABELAS DO SITFIS — o que quebrava e o que não pode voltar a quebrar.
 //
 // ⚠ TODOS OS TEXTOS ABAIXO SÃO EXCERTOS DO `CompanyFiscalStatus.texto` GRAVADO EM PRODUÇÃO,
-// lidos em 2026-08-10 (só leitura). Não há fixture escrita à mão: o defeito que este arquivo cobre
-// nasceu justamente de supor a forma do texto em vez de olhá-la.
+// lidos em 2026-08-10 (só leitura), **com os IDENTIFICADORES ANONIMIZADOS**. Não há fixture escrita
+// à mão: o defeito que este arquivo cobre nasceu justamente de supor a forma do texto em vez de
+// olhá-la.
 //
-//   • 61.324.247/0001-58, relatório de 10/08/2026 — PA trimestral PARTIDO em duas linhas,
+// ── O QUE FOI TROCADO, E POR QUÊ (leia antes de "corrigir" isto) ─────────────────────────────────
+//
+// Fixture entra no histórico do git para sempre, e estes textos são relatórios da Receita de
+// clientes REAIS do escritório. Decisão do dono: **anonimizar os IDENTIFICADORES, preservando a
+// ESTRUTURA**. Foram fabricados — sempre com FORMATO IDÊNTICO (mesma quantidade de dígitos, mesma
+// pontuação, mesmo comprimento, mesmo número de palavras) — apenas:
+//
+//   CNPJ · razão social · número de parcelamento · inscrição em dívida ativa
+//
+// ⚠ **NÃO foram tocados** valores monetários, datas, códigos de receita (`8109-02`, `2172-01` — são
+// tabela pública da Receita) nem nomes de tributo. Eles são ESTRUTURA: os valores exercitam o
+// alinhamento de coluna, as datas exercitam a contagem de células. Trocá-los enfraqueceria o teste.
+//
+// ⚠ **ISTO NÃO É "FIXTURE INVENTADA"** (a regra que deixou o `CONSDECCOMPLETA33` OFF). Aquela regra
+// vale para o CONTRATO — forma da resposta, quebra de linhas, cabeçalhos, ordem das colunas, o que
+// vem colado e o que vem partido. Nada disso mudou. Os defeitos que este arquivo trava são de
+// estrutura: o PA trimestral em duas linhas, o cabeçalho colado (`Vl.Original`), a regra de descarte
+// que exige letra na cauda, a aritmética `linhas % colunas`. Nenhum deles depende de QUAIS dígitos
+// estão no CNPJ.
+//
+// ⚠ **NÃO TRAGA OS IDENTIFICADORES REAIS DE VOLTA** achando que está sendo rigoroso. A prova de que
+// a troca foi correta é que nenhuma asserção precisou mudar por causa dela.
+//
+//   • CNPJ 10.111.222/0001-58, relatório de 10/08/2026 — PA trimestral PARTIDO em duas linhas,
 //     e o bloco "Pendência – Parcelamento (SIEFPAR)" com UM parcelamento numerado
-//   • 46.848.383/0001-53, relatório de 24/07/2026 — o MESMO campo INTEIRO numa linha só,
+//   • CNPJ 20.222.333/0001-53, relatório de 24/07/2026 — o MESMO campo INTEIRO numa linha só,
 //     no bloco "Débito com Exigibilidade Suspensa (SIEF)"
-//   • 55.387.580/0001-03, relatório de 06/08/2026 — TRÊS parcelamentos numerados no SIEFPAR
-//   • 53.742.042/0001-64, relatório de 24/07/2026 — o cabeçalho da página 2 (CNPJ + razão social)
-//     caindo DENTRO de um bloco, e a inscrição em dívida ativa na seção da PGFN
+//   • CNPJ 30.333.444/0001-03, relatório de 06/08/2026 — TRÊS parcelamentos numerados no SIEFPAR
+//   • CNPJ 40.444.555/0001-64, relatório de 24/07/2026 — o cabeçalho da página 2 (CNPJ + razão
+//     social) caindo DENTRO de um bloco, e a inscrição em dívida ativa na seção da PGFN
 //
 // São esses dois primeiros textos, juntos, que provam que a remontagem não inventa valor: o
 // resultado da fusão (`2º TRIM/2026`) é literalmente o que o outro relatório imprime quando a
@@ -18,10 +42,10 @@
 
 import { parseSitfisRelatorio, fundirCelulasPartidas } from "../parseSitfisRelatorio.js";
 
-// ── 61.324.247/0001-58 · 10/08/2026 ──────────────────────────────────────────────────────────────
+// ── 10.111.222/0001-58 · 10/08/2026 ──────────────────────────────────────────────────────────────
 // Seis pendências: quatro mensais (9 células) e duas trimestrais (10 células, porque o PA quebrou).
 // 56 linhas de dado para 9 colunas → resto 2 → o bloco INTEIRO caía em "não interpretado".
-const TRIMESTRAL_PARTIDO = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Pendência - Débito (SIEF) _______________________________________________________________________________________CNPJ: 61.324.247/0001-58Receita
+const TRIMESTRAL_PARTIDO = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Pendência - Débito (SIEF) _______________________________________________________________________________________CNPJ: 10.111.222/0001-58Receita
 PA/Exerc.
 Dt. Vcto
 Vl. Original
@@ -86,19 +110,19 @@ TRIM/2026
 10,36
 1.074,53
 DEVEDOR
-Pendência – Parcelamento (SIEFPAR) ______________________________________________________________________________CNPJ: 61.324.247/0001-58Parcelamento:
-0211.00012.0042365911.26-69
+Pendência – Parcelamento (SIEFPAR) ______________________________________________________________________________CNPJ: 10.111.222/0001-58Parcelamento:
+0211.00012.0011122233.26-69
 Parcelas em Atraso:
 3
 Valor em Atraso:
 1.585,74
 Parcelamento Simplificado`;
 
-// ── 46.848.383/0001-53 · 24/07/2026 ──────────────────────────────────────────────────────────────
+// ── 20.222.333/0001-53 · 24/07/2026 ──────────────────────────────────────────────────────────────
 // Mesmo campo, MESMA empresa-tipo (Presumido), texto INTEIRO: `2º TRIM/2026` numa linha só.
 // Este bloco também é a prova da segunda grafia do cabeçalho: `Vl.Original` / `Sdo.Devedor`, colados.
 // (O prefixo "Notificação de lançamento: …" do bloco ANTERIOR foi removido para isolar este.)
-const TRIMESTRAL_INTEIRO = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Débito com Exigibilidade Suspensa (SIEF) ________________________________________________________________________CNPJ: 46.848.383/0001-53Receita
+const TRIMESTRAL_INTEIRO = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Débito com Exigibilidade Suspensa (SIEF) ________________________________________________________________________CNPJ: 20.222.333/0001-53Receita
 PA/Exerc.
 Dt. Vcto
 Vl.Original
@@ -130,33 +154,33 @@ A ANALISAR-A VENCER
 A ANALISAR-A VENCER
 `;
 
-// ── 55.387.580/0001-03 · 06/08/2026 ──────────────────────────────────────────────────────────────
+// ── 30.333.444/0001-03 · 06/08/2026 ──────────────────────────────────────────────────────────────
 // TRÊS parcelamentos, os três numerados. Note que o relatório NÃO separa um do outro: o rótulo do
 // seguinte vem colado no fim do anterior ("Parcelamento SimplificadoParcelamento:").
-const SIEFPAR_TRES = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Parcelamento com Exigibilidade Suspensa (SIEFPAR) _______________________________________________________________CNPJ: 55.387.580/0001-03Parcelamento:
-0211.00012.0056912479.26-88
+const SIEFPAR_TRES = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Parcelamento com Exigibilidade Suspensa (SIEFPAR) _______________________________________________________________CNPJ: 30.333.444/0001-03Parcelamento:
+0211.00012.0044455566.26-88
 Valor Suspenso:
 37.067,11
 Parcelamento SimplificadoParcelamento:
-0211.00012.0117250325.25-54
+0211.00012.0077788899.25-54
 Valor Suspenso:
 19.840,14
 Parcelamento SimplificadoParcelamento:
-0211.00012.0134178936.25-20
+0211.00012.0012233445.25-20
 Valor Suspenso:
 76.377,88
 Parcelamento Simplificado`;
 
-// ── 53.742.042/0001-64 · 24/07/2026 ──────────────────────────────────────────────────────────────
+// ── 40.444.555/0001-64 · 24/07/2026 ──────────────────────────────────────────────────────────────
 // A seção da RFB INTEIRA, incluindo o cabeçalho da página 2 — que cai DENTRO do bloco de débito,
-// não entre blocos. É esse texto que prova que "53.742.042 - ARAUJO BARRETO BUSINESS LTDA"
+// não entre blocos. É esse texto que prova que "40.444.555 - ALFA COMERCIAL EXEMPLAR LTDA"
 // continua sendo ruído: com essa linha entrando como célula, 45 linhas de dado viram 46 e a
 // divisão por 9 colunas deixa de fechar.
-const CABECALHO_NO_MEIO = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Pendência - Parcelamento (PARCSN/PARCMEI) _______________________________________________________________________CNPJ: 53.742.042/0001-64SIMPLES NACIONAL - EM PARCELAMENTO
+const CABECALHO_NO_MEIO = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Pendência - Parcelamento (PARCSN/PARCMEI) _______________________________________________________________________CNPJ: 40.444.555/0001-64SIMPLES NACIONAL - EM PARCELAMENTO
 Parcelas em atraso
 
 6
-Pendência - Débito (SIEF) _______________________________________________________________________________________CNPJ: 53.742.042/0001-64Receita
+Pendência - Débito (SIEF) _______________________________________________________________________________________CNPJ: 40.444.555/0001-64Receita
 PA/Exerc.
 Dt. Vcto
 Vl. Original
@@ -216,19 +240,19 @@ Página: 1 /
 MINISTÉRIO DA ECONOMIA
 Por meio do Integra Contador
 SECRETARIA ESPECIAL DA RECEITA FEDERAL DO BRASIL
-Autor pedido: 39.254.243/0001-91. Contratante: 39.254.243/0001-91
+Autor pedido: 50.555.666/0001-91. Contratante: 50.555.666/0001-91
 PROCURADORIA-GERAL DA FAZENDA NACIONAL
 24/07/2026 19:07:53
 INFORMAÇÕES DE APOIO PARA EMISSÃO DE CERTIDÃO
 CNPJ:
-53.742.042 - ARAUJO BARRETO BUSINESS LTDA
-__________________________ Diagnóstico Fiscal na Procuradoria-Geral da Fazenda Nacional _________________________Pendência - Inscrição (SIDA) ____________________________________________________________________________________CNPJ: 53.742.042/0001-64Inscrição
+40.444.555 - ALFA COMERCIAL EXEMPLAR LTDA
+__________________________ Diagnóstico Fiscal na Procuradoria-Geral da Fazenda Nacional _________________________Pendência - Inscrição (SIDA) ____________________________________________________________________________________CNPJ: 40.444.555/0001-64Inscrição
 Receita
 Inscrito em
 Ajuizado em
 Processo
 Tipo de Devedor
-70.4.24.435196-96
+70.4.24.100200-96
 1507-SIMPLESNACIONAL
 09/12/2024
 
@@ -283,7 +307,7 @@ describe("fundirCelulasPartidas — armadilha 4 (célula quebrada em duas linhas
   });
 });
 
-describe("Pendência - Débito (SIEF) com tributo trimestral (texto real de 61.324.247/0001-58)", () => {
+describe("Pendência - Débito (SIEF) com tributo trimestral (texto real de 10.111.222/0001-58)", () => {
   const bloco = blocoRfb(TRIMESTRAL_PARTIDO);
 
   it("vira tabela — nada sobra em não interpretado", () => {
@@ -321,7 +345,7 @@ describe("Pendência - Débito (SIEF) com tributo trimestral (texto real de 61.3
   });
 });
 
-describe("Débito com Exigibilidade Suspensa (SIEF) (texto real de 46.848.383/0001-53)", () => {
+describe("Débito com Exigibilidade Suspensa (SIEF) (texto real de 20.222.333/0001-53)", () => {
   const bloco = blocoRfb(TRIMESTRAL_INTEIRO);
 
   // O PA já vem inteiro aqui: a fusão tem que ser inerte, e o resultado tem que ser IDÊNTICO ao do
@@ -366,7 +390,7 @@ describe("a validação não foi afrouxada", () => {
 // ── O NÚMERO DO PARCELAMENTO ─────────────────────────────────────────────────────────────────────
 //
 // A regra de ruído `/^[\d.]{10,}\s*-\s*.+$/` existe para descartar o cabeçalho de página
-// ("52.682.158 - ATIM ENGENHARIA LTDA") e engolia o número do parcelamento junto: os dois têm a
+// ("60.666.777 - BETA TECNOLOGIA LTDA") e engolia o número do parcelamento junto: os dois têm a
 // forma "muitos dígitos e pontos, traço, mais alguma coisa". O bloco do SIEFPAR aparecia com
 // "Parcelamento:" SEM VALOR, e o contador precisava abrir o PDF para saber de qual parcelamento
 // eram as parcelas em atraso. O que separa os dois casos é a CAUDA: nome (tem letra) vs dígito
@@ -377,12 +401,12 @@ describe("a validação não foi afrouxada", () => {
 // sai em `descricao`, na ordem em que o relatório imprime. O número volta visualmente solto —
 // é o formato do bloco, e a alternativa (inventar layout) é decisão de produto.
 describe("SIEFPAR — o número do parcelamento sobrevive (textos reais)", () => {
-  it("um parcelamento: o número aparece logo depois do rótulo (61.324.247/0001-58)", () => {
+  it("um parcelamento: o número aparece logo depois do rótulo (10.111.222/0001-58)", () => {
     const bloco = blocosDe(TRIMESTRAL_PARTIDO, "RFB")[1];
     expect(bloco.titulo).toBe("Pendência – Parcelamento (SIEFPAR)");
     expect(bloco.descricao).toEqual([
       "Parcelamento:",
-      "0211.00012.0042365911.26-69",
+      "0211.00012.0011122233.26-69",
       "Parcelas em Atraso:",
       "3",
       "Valor em Atraso:",
@@ -391,19 +415,19 @@ describe("SIEFPAR — o número do parcelamento sobrevive (textos reais)", () =>
     ]);
   });
 
-  it("três parcelamentos: os três números sobrevivem, cada um junto do seu valor (55.387.580/0001-03)", () => {
+  it("três parcelamentos: os três números sobrevivem, cada um junto do seu valor (30.333.444/0001-03)", () => {
     const bloco = blocoRfb(SIEFPAR_TRES);
     expect(bloco.descricao).toEqual([
-      "Parcelamento:", "0211.00012.0056912479.26-88", "Valor Suspenso:", "37.067,11",
-      "Parcelamento SimplificadoParcelamento:", "0211.00012.0117250325.25-54", "Valor Suspenso:", "19.840,14",
-      "Parcelamento SimplificadoParcelamento:", "0211.00012.0134178936.25-20", "Valor Suspenso:", "76.377,88",
+      "Parcelamento:", "0211.00012.0044455566.26-88", "Valor Suspenso:", "37.067,11",
+      "Parcelamento SimplificadoParcelamento:", "0211.00012.0077788899.25-54", "Valor Suspenso:", "19.840,14",
+      "Parcelamento SimplificadoParcelamento:", "0211.00012.0012233445.25-20", "Valor Suspenso:", "76.377,88",
       "Parcelamento Simplificado",
     ]);
   });
 
   // O bloco de parcelamento do PARCSN/PARCMEI não traz número — traz a contagem de parcelas em
   // atraso, e "Parcelas em atraso" É uma coluna conhecida. Ele continua virando tabela de 1 coluna.
-  it("não mexe no bloco de parcelamento que já era tabela (53.742.042/0001-64)", () => {
+  it("não mexe no bloco de parcelamento que já era tabela (40.444.555/0001-64)", () => {
     const bloco = blocosDe(CABECALHO_NO_MEIO, "RFB")[0];
     expect(bloco.colunas).toEqual(["Parcelas em atraso"]);
     expect(bloco.registros).toEqual([{ "Parcelas em atraso": "6" }]);
@@ -413,7 +437,7 @@ describe("SIEFPAR — o número do parcelamento sobrevive (textos reais)", () =>
 
 // ⚠ O DESCARTE NÃO FOI AFROUXADO ALÉM DA CAUDA NUMÉRICA. Errar aqui para o lado permissivo faz o
 // cabeçalho de página virar célula e desalinhar a tabela inteira — que é o motivo de a regra
-// existir. O texto de 53.742.042/0001-64 é a prova executável: o cabeçalho da página 2 cai NO MEIO
+// existir. O texto de 40.444.555/0001-64 é a prova executável: o cabeçalho da página 2 cai NO MEIO
 // do bloco de débito, e se ele entrasse como dado a divisão (45 ÷ 9) deixaria de fechar.
 describe("a linha de CNPJ + razão social continua sendo descartada", () => {
   it("o cabeçalho da página 2 não vira célula: o bloco de débito continua fechando em 5 registros", () => {
@@ -433,14 +457,14 @@ describe("a linha de CNPJ + razão social continua sendo descartada", () => {
     });
     // A razão social não pode ter sobrado em lugar nenhum do bloco.
     const tudo = JSON.stringify(bloco);
-    expect(tudo).not.toContain("ARAUJO BARRETO BUSINESS LTDA");
+    expect(tudo).not.toContain("ALFA COMERCIAL EXEMPLAR LTDA");
     expect(tudo).not.toContain("MINISTÉRIO DA ECONOMIA");
   });
 });
 
 // ── EFEITO COLATERAL MEDIDO, e por que ele é o resultado certo ───────────────────────────────────
 //
-// A mesma regra apagava a INSCRIÇÃO em dívida ativa (`70.4.24.435196-96`) — cauda numérica, igual
+// A mesma regra apagava a INSCRIÇÃO em dívida ativa (`70.4.24.100200-96`) — cauda numérica, igual
 // ao parcelamento. Com ela de volta, o bloco "Pendência - Inscrição (SIDA)" passa de 10 para 11
 // linhas de dado e DEIXA de fechar em 2 colunas.
 //
@@ -450,11 +474,11 @@ describe("a linha de CNPJ + razão social continua sendo descartada", () => {
 // para consertá-la reconhecendo mais colunas: o registro real tem "Ajuizado em" VAZIO (a linha em
 // branco some) e um par "Situação:"/valor no fim, então nem 6 colunas fechariam. As linhas cruas,
 // com o número visível e o aviso de conferir no PDF, são a resposta honesta.
-describe("Pendência - Inscrição (SIDA) — a inscrição volta a aparecer (53.742.042/0001-64)", () => {
+describe("Pendência - Inscrição (SIDA) — a inscrição volta a aparecer (40.444.555/0001-64)", () => {
   const bloco = blocosDe(CABECALHO_NO_MEIO, "PGFN")[0];
 
   it("mostra o número da inscrição, que a regra de ruído apagava", () => {
-    expect(bloco.naoInterpretado).toContain("70.4.24.435196-96");
+    expect(bloco.naoInterpretado).toContain("70.4.24.100200-96");
   });
 
   it("não afirma colunas que não fecham — o bloco sai cru, com tudo visível", () => {

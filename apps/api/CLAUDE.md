@@ -632,9 +632,9 @@ uma lista **fechada** — é ela que separa cabeçalho de dado.
 
 | # | Armadilha | Efeito se ignorada |
 |---|---|---|
-| 1 | CNPJ **colado** na 1ª célula do cabeçalho: `______CNPJ: 52.682.158/0001-92Receita` | a coluna some |
+| 1 | CNPJ **colado** na 1ª célula do cabeçalho: `______CNPJ: 60.666.777/0001-92Receita` | a coluna some |
 | 2 | **Cabeçalho da página 2** cortando a tabela no meio | desalinha tudo dali em diante |
-| 3 | `Notificação de lançamento: 526821582026010011099-01 - CP-SEGUR.` — o próximo registro vem colado | perde um registro |
+| 3 | `Notificação de lançamento: 606667772026010011099-01 - CP-SEGUR.` — o próximo registro vem colado | perde um registro |
 | 4 | Régua (`______`) como linha solta | entra como célula e quebra a contagem |
 | 5 | Número da página em linha própria | filtrar todo número solto comia o `4` de "Parcelas em atraso" — o descarte é **posicional** |
 | 6 | Bloco nem sempre começa com "Pendência -" | marcador é **título + régua na MESMA linha** (`[ 	]*`, nunca `\s*`, senão a régua final rouba a linha anterior como título) |
@@ -649,7 +649,7 @@ uma lista **fechada** — é ela que separa cabeçalho de dado.
 nada; quebra de formato desconhecido continua desalinhando a contagem — que é o desejado.
 
 ⚠ **O valor remontado não é inventado:** `2º TRIM/2026` é literalmente o que o relatório imprime
-quando a linha **não** quebra (texto real de 46.848.383/0001-53). A regra faz as duas formas
+quando a linha **não** quebra (texto real de 20.222.333/0001-53). A regra faz as duas formas
 convergirem para a que já existe.
 
 ### A validação
@@ -670,20 +670,27 @@ confere pela **coluna do valor** no texto real, nunca só pelo `naoInterpretado`
 **A tabela nunca some.** Bloco ilegível aparece com as linhas cruas e o aviso de conferir no PDF —
 esconder passaria a impressão de "nada consta", o oposto do que se sabe.
 
-Verificado contra os textos reais gravados em produção (leitura de 10/08/2026): ATIM com 3 blocos e
-11 registros; 61.324.247/0001-58 com os 6 registros do Presumido (2 trimestrais);
-46.848.383/0001-53 com o bloco suspenso; ERISANGELA só com parcelamento. Regressão em
+Verificado contra os textos reais gravados em produção (leitura de 10/08/2026): 60.666.777/0001-92
+com 3 blocos e 11 registros; 10.111.222/0001-58 com os 6 registros do Presumido (2 trimestrais);
+20.222.333/0001-53 com o bloco suspenso; e uma empresa só com parcelamento. Regressão em
 `serpro/__tests__/parseSitfisRelatorio.test.js` — as fixtures são **excertos do texto real**, não
 transcrição.
 
-⚠ **Um bloco continua ilegível de propósito:** 55.387.580/0001-03 repete o cabeçalho no meio da
+⚠ **Os CNPJs, razões sociais, números de parcelamento e inscrições citados nesta seção são
+ANONIMIZADOS** — formato, pontuação e comprimento idênticos aos reais, dígitos fabricados, iguais
+aos das fixtures do teste. As observações e as medições são de produção; só os identificadores
+foram trocados, porque fixture entra no histórico do git para sempre. **Não traga os
+identificadores reais de volta.** Valores monetários, datas e códigos de receita **não** foram
+tocados: são estrutura (e os códigos são tabela pública da Receita).
+
+⚠ **Um bloco continua ilegível de propósito:** 30.333.444/0001-03 repete o cabeçalho no meio da
 tabela e cola `Situação: A ANALISAR-A VENCER` na linha seguinte. Cai em `naoInterpretado` com as
 linhas cruas — que é a resposta honesta enquanto essa forma não for entendida.
 
 ### ✅ CONSERTADO em 2026-08-10 — o número do parcelamento (SIEFPAR) não é mais engolido
 
 A regra de ruído era `/^[\d.]{10,}\s*-\s*.+$/`, escrita para descartar
-`52.682.158 - ATIM ENGENHARIA LTDA` (o cabeçalho de página, que cai DENTRO dos blocos). Ela engolia
+`60.666.777 - BETA TECNOLOGIA LTDA` (o cabeçalho de página, que cai DENTRO dos blocos). Ela engolia
 junto o **número do parcelamento**, que tem a mesma forma. O bloco aparecia com "Parcelamento:"
 **sem valor** — perda de dado, não desalinhamento.
 
@@ -697,9 +704,9 @@ inteiro tem **três** mudanças:
 
 | empresa | o que mudou |
 |---|---|
-| 61.324.247/0001-58 | `0211.00012.0042365911.26-69` volta ao bloco `Pendência – Parcelamento (SIEFPAR)` |
-| 55.387.580/0001-03 | os **três** números voltam ao `Parcelamento com Exigibilidade Suspensa (SIEFPAR)` |
-| 53.742.042/0001-64 | a **inscrição em dívida ativa** `70.4.24.435196-96` volta — e o bloco `Pendência - Inscrição (SIDA)` passa de TABELA a **cru** |
+| 10.111.222/0001-58 | `0211.00012.0011122233.26-69` volta ao bloco `Pendência – Parcelamento (SIEFPAR)` |
+| 30.333.444/0001-03 | os **três** números voltam ao `Parcelamento com Exigibilidade Suspensa (SIEFPAR)` |
+| 40.444.555/0001-64 | a **inscrição em dívida ativa** `70.4.24.100200-96` volta — e o bloco `Pendência - Inscrição (SIDA)` passa de TABELA a **cru** |
 
 ⚠ **O bloco do SIDA que "piorou" era o defeito antigo em pessoa.** Ele fechava por aritmética
 (10 linhas ÷ 2 colunas) com as colunas deslocadas: imprimia `Inscrito em` debaixo de **"Inscrição"**

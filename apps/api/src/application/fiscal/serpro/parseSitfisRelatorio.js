@@ -1,10 +1,16 @@
 // Lê o texto do relatório SITFIS e o transforma nas TABELAS que o PDF mostra.
 //
+// ⚠ Os CNPJs, razões sociais, números de parcelamento e inscrições citados nos comentários deste
+// arquivo (e nas fixtures de `__tests__/parseSitfisRelatorio.test.js`) são ANONIMIZADOS: formato,
+// pontuação e comprimento idênticos aos reais, dígitos fabricados. As observações são de produção;
+// só os identificadores foram trocados, porque fixture entra no histórico do git para sempre.
+// NÃO traga os identificadores reais de volta.
+//
 // ── COMO O TEXTO EXTRAÍDO REALMENTE É (conferido em produção, empresa COM pendência) ──
 //
 // O PDF mostra tabelas alinhadas, mas o texto extraído põe CADA CÉLULA EM UMA LINHA:
 //
-//   Pendência - Débito (SIEF) ______CNPJ: 52.682.158/0001-92Receita
+//   Pendência - Débito (SIEF) ______CNPJ: 60.666.777/0001-92Receita
 //   PA/Exerc.
 //   Dt. Vcto
 //   … (9 linhas de cabeçalho)
@@ -17,10 +23,10 @@
 // ── AS QUATRO ARMADILHAS, todas presentes no texto real ──
 //
 //  1. O CNPJ vem COLADO na primeira célula do cabeçalho:
-//       "…______CNPJ: 52.682.158/0001-92Receita"  →  a coluna é "Receita".
+//       "…______CNPJ: 60.666.777/0001-92Receita"  →  a coluna é "Receita".
 //  2. O CABEÇALHO DA PÁGINA 2 corta a tabela no meio (MINISTÉRIO DA ECONOMIA, data, CNPJ…).
 //     Sem removê-lo, essas linhas entram como células e desalinham TUDO a partir dali.
-//  3. "Notificação de lançamento: 52682158202601001" vem colado no início do registro seguinte
+//  3. "Notificação de lançamento: 60666777202601001" vem colado no início do registro seguinte
 //     ("…0011099-01 - CP-SEGUR."). É anotação do registro ANTERIOR, e o rabo é a próxima linha.
 //  4. UMA CÉLULA PODE VIR PARTIDA EM DUAS LINHAS. O PA trimestral ("2º TRIM/2026") não cabe na
 //     largura da coluna em alguns relatórios e a extração devolve "2º" e "TRIM/2026" separados —
@@ -48,7 +54,7 @@ const SEM_PENDENCIA = /N[ãa]o\s+foram\s+detectadas\s+pend[êe]ncias/i;
 // ⚠ O MESMO CABEÇALHO APARECE COM E SEM ESPAÇO, e a variante é do BLOCO, não do relatório.
 // "Pendência - Débito (SIEF)" imprime `Vl. Original` / `Sdo. Devedor`; "Débito com Exigibilidade
 // Suspensa (SIEF)" imprime `Vl.Original` / `Sdo.Devedor`, colados. Confirmado nos textos reais de
-// 46.848.383/0001-53 (24/07/2026) e 55.387.580/0001-03 (06/08/2026), que trazem os dois blocos.
+// 20.222.333/0001-53 (24/07/2026) e 30.333.444/0001-03 (06/08/2026), que trazem os dois blocos.
 // Sem as duas variantes, a varredura do cabeçalho PARAVA em "Dt. Vcto": o bloco suspenso virava uma
 // tabela de TRÊS colunas, o resto do cabeçalho entrava como registro e os valores caíam na coluna
 // errada — "30,65" debaixo de "Receita". Como 27 linhas dividem por 3 sem sobra, a contagem fechava
@@ -75,19 +81,19 @@ const RUIDO = [
   /^P[áa]gina:?\s*\d*\s*\/?\s*$/i,
   /^_+$/,                                        // régua solta: separador, nunca célula
   /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}$/,   // carimbo de emissão repetido por página
-  // "52.682.158 - ATIM ENGENHARIA LTDA": o CNPJ + razão social do cabeçalho de página. Precisa sair
+  // "60.666.777 - BETA TECNOLOGIA LTDA": o CNPJ + razão social do cabeçalho de página. Precisa sair
   // porque o cabeçalho da página 2 cai DENTRO de um bloco — confirmado nos textos reais de
-  // 53.742.042/0001-64, 55.387.580/0001-03 e 61.324.247/0001-58.
+  // 40.444.555/0001-64, 30.333.444/0001-03 e 10.111.222/0001-58.
   //
   // ⚠ O QUE DECIDE É A CAUDA TER LETRA, e essa exigência conserta uma PERDA DE DADO.
   // Sem ela a regra era "muitos dígitos e pontos, traço, mais qualquer coisa" — a mesma forma do
   // NÚMERO DO PARCELAMENTO, que ela engolia junto. Medido nos textos reais de produção lidos em
-  // 10/08/2026: `0211.00012.0042365911.26-69` (61.324.247/0001-58, um parcelamento) e
-  // `0211.00012.0056912479.26-88` / `.0117250325.25-54` / `.0134178936.25-20`
-  // (55.387.580/0001-03, três). Os quatro sumiam da tela: o bloco do SIEFPAR mostrava
+  // 10/08/2026: `0211.00012.0011122233.26-69` (10.111.222/0001-58, um parcelamento) e
+  // `0211.00012.0044455566.26-88` / `.0077788899.25-54` / `.0012233445.25-20`
+  // (30.333.444/0001-03, três). Os quatro sumiam da tela: o bloco do SIEFPAR mostrava
   // "Parcelamento:" sem valor, e saber de QUAL parcelamento eram as parcelas em atraso exigia
-  // abrir o PDF. A mesma regra apagava a INSCRIÇÃO em dívida ativa (`70.4.24.435196-96`,
-  // 53.742.042/0001-64) — os cinco casos numéricos observados nos 22 relatórios.
+  // abrir o PDF. A mesma regra apagava a INSCRIÇÃO em dívida ativa (`70.4.24.100200-96`,
+  // 40.444.555/0001-64) — os cinco casos numéricos observados nos 22 relatórios.
   //
   // ⚠ CONTINUA SENDO REGRA DE DESCARTE, e a exigência da letra é a formulação mais ESTREITA que
   // cobre o ruído observado: nos 22 relatórios, toda linha que precisa sair tem nome depois do
@@ -108,12 +114,12 @@ const INICIO_REGISTRO = /(\d{4}-\d{2}\s*-\s*\D.*)$/;
 // Uma célula é uma linha — menos quando o texto não cabe na largura da coluna no PDF. Aí a
 // extração devolve os dois pedaços em linhas separadas, e aquele registro passa a ter UMA CÉLULA A
 // MAIS que os outros. Como o agrupamento é posicional (de N em N), o resto da divisão não fecha e o
-// BLOCO INTEIRO é recusado por causa de um registro. Medido em produção (61.324.247/0001-58,
+// BLOCO INTEIRO é recusado por causa de um registro. Medido em produção (10.111.222/0001-58,
 // 10/08/2026): os 4 registros mensais traziam 9 células e os 2 trimestrais 10 — 56 linhas para 9
 // colunas, resto 2, bloco inteiro em `naoInterpretado`.
 //
 // ⚠ O VALOR REMONTADO NÃO É INVENTADO — é o mesmo que o relatório imprime quando NÃO quebra.
-// O texto de 46.848.383/0001-53 (24/07/2026) traz exatamente `2º TRIM/2026` numa linha só, no mesmo
+// O texto de 20.222.333/0001-53 (24/07/2026) traz exatamente `2º TRIM/2026` numa linha só, no mesmo
 // campo. A regra faz as duas formas convergirem para a que já existe; não cria coluna, não cria
 // conteúdo, não muda a contagem de colunas.
 //
@@ -175,7 +181,7 @@ function linhasDoBloco(bruto) {
     if (/^P[áa]gina:?\s*\d*\s*\/?\s*$/i.test(l0)) { aguardaNumeroDePagina = true; continue; }
     let l = l0;
 
-    // Armadilha 1: "CNPJ: 52.682.158/0001-92Receita" → sobra "Receita".
+    // Armadilha 1: "CNPJ: 60.666.777/0001-92Receita" → sobra "Receita".
     l = limpar(l.replace(/^CNPJ:\s*[\d.\-/]+/i, ""));
     if (!l) continue;
 
