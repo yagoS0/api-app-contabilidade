@@ -365,6 +365,37 @@ Uma leitura só alimenta **a cor da célula, o chip do popover e os totais do ro
 `body.imprimindo-listagem` virou **`body.imprimindo`**, e a Circular reusa a mesma regra
 (`data-print-area` / `data-print-only` / `data-print-tabela`) em vez de ganhar a segunda cópia.
 
+## Import de Excel — o histórico é SUGESTÃO editável, não decisão
+
+A tabela de revisão ganhou **uma** coluna: `Histórico (lançamento)`, entre `Descrição (planilha)` e
+`Valor`. A descrição da planilha continua visível **ao lado** — são dois fatos diferentes (o que a
+planilha escreveu × o que o escritório lança), e é essa separação que o import inteiro existe para
+resolver. O OFX já a tinha; aqui ela não tinha onde morar.
+
+**A regra vive em `excel-import/lib/historicoSugerido.js`** (10 testes); o modal só liga (4 na
+suíte de digitação, que cobrem a ligação — não a regra de novo).
+
+- `comPrefixoPago` → `PAGO ` + descrição, **sem duplicar o prefixo**. ⚠ A guarda não é hipotética:
+  **41 dos 230** registros da memória desta base já começam com "PAGO", e sem ela a sugestão daquelas
+  linhas seria "PAGO PAGO ALUGUEL".
+- ⚠ **A âncora é o TOKEN `PAGO`** (`/^pago\b/i`), não as quatro letras: "PAGAMENTO FORNECEDOR" não
+  começa com PAGO, e tratá-lo como se começasse deixaria a linha sem prefixo nenhum.
+- ⚠ **A memória VENCE o prefixo.** `match.historicoSugerido` é o histórico que o contador já escreveu
+  para aquela descrição num import anterior; refazer o "PAGO " por cima descartaria a única coisa que
+  ele ensinou ao sistema. Hoje ele é `null` nos 230 registros (o Excel nunca o gravava), então na
+  prática o prefixo é quem responde — isso muda sozinho a partir do primeiro import.
+- ⚠ **Descrição vazia NÃO vira "PAGO " solto**: campo que parece preenchido é pior que campo vazio.
+- ⚠ **Nada é gravado sem o contador ver.** O campo nasce preenchido e ele escreve por cima; o que
+  sobe no payload é o texto da tela. Esvaziá-lo cai na descrição — a **mesma** regra do backend, que
+  também aceita payload sem `historico`.
+
+⚠ **`descricao` NÃO acompanha a edição do histórico.** Ela segue crua no payload: é a chave de match
+da memória **e** a coluna `descricaoImportacao` do lançamento.
+
+⚠ **O `<datalist>` do plano de contas continua um só para o modal**, e o campo de histórico **não**
+aponta para ele — o teste de digitação ancora os campos de conta em `input[list]` justamente por
+isso (o índice bruto de `input[type=text]` quebrou quando a coluna entrou).
+
 ## Padrões
 
 - Componentes recebem dados/handlers por **props** (hooks/pages chamam a API). Exceções

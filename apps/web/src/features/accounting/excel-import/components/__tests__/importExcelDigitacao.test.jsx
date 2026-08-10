@@ -1,8 +1,8 @@
 // A DIGITAÇÃO NO MODAL DE IMPORTAÇÃO EXCEL — a versão enxuta da rede de segurança do OFX.
 //
-// Enxuta porque a tela é menor: aqui não há campo de histórico nem auto-propagação por descrição.
-// Cada linha tem Débito e Crédito e mais nada — e é justamente por ser simples que ela concentrava o
-// pior custo por tecla do app: havia UM `<datalist>` com o plano de contas inteiro **por linha**.
+// Enxuta porque a tela é menor: aqui não há auto-propagação por descrição nem atalhos de teclado.
+// Cada linha tem Histórico, Débito e Crédito e mais nada — e é justamente por ser simples que ela
+// concentrava o pior custo por tecla do app: havia UM `<datalist>` com o plano inteiro **por linha**.
 //
 // O que esta suíte protege quando esse `<datalist>` virar um só para a tabela toda:
 //
@@ -62,9 +62,12 @@ async function abrirRevisao(props = {}) {
 function linha(i) {
   return document.querySelectorAll("tbody tr")[i];
 }
+// ⚠ Ancorado em `input[list]`, não em `input[type="text"]`: a linha ganhou o campo de HISTÓRICO
+// (sugestão editável) e ele vem ANTES de D e C. Só os campos de conta apontam para o `<datalist>`
+// do plano — a âncora que sobrevive a mudança de coluna é essa, não o índice bruto.
 function campos(i) {
-  const inputs = linha(i).querySelectorAll('input[type="text"]');
-  return { d: inputs[0], c: inputs[1] };
+  const contas = linha(i).querySelectorAll("input[list]");
+  return { d: contas[0], c: contas[1], h: linha(i).querySelector('input[type="text"]:not([list])') };
 }
 function pular(i) {
   return linha(i).querySelector('input[type="checkbox"]');
@@ -178,5 +181,51 @@ describe("4. Pular tira a linha do payload do Importar", () => {
     expect(enviados.map((l) => l.rowIndex)).toEqual([3, 4]); // a 1ª linha (rowIndex 1) ficou de fora
     expect(enviados[0]).toMatchObject({ contaDebito: "311", contaCredito: "111", valor: 88 });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// A regra do prefixo mora em `lib/historicoSugerido.js`, com teste próprio. O que se cobre aqui é a
+// LIGAÇÃO: a sugestão chega ao campo, o campo é editável, e o que sobe no payload é o texto da tela.
+describe("5. o histórico é SUGESTÃO editável — e a descrição da planilha sobrevive ao lado", () => {
+  it("⚠ o campo nasce preenchido com 'PAGO ' + descrição", async () => {
+    await abrirRevisao();
+    expect(campos(0).h.value).toBe("PAGO TARIFA PACOTE");
+    expect(campos(3).h.value).toBe("PAGO FOLHA DE PAGAMENTO");
+    // A descrição crua continua VISÍVEL na linha — é ela que vai para `descricaoImportacao`.
+    expect(linha(0).textContent).toContain("TARIFA PACOTE");
+  });
+
+  it("⚠ o contador escreve por cima, e é o texto DELE que sobe", async () => {
+    const { onCommit } = await abrirRevisao();
+
+    fireEvent.change(campos(3).h, { target: { value: "FOLHA DE JULHO/2026" } });
+    await act(async () => { fireEvent.click(botao(/^Importar 1 linha$/)); });
+
+    const [linhaEnviada] = onCommit.mock.calls[0][0];
+    expect(linhaEnviada.historico).toBe("FOLHA DE JULHO/2026");
+    // ⚠ `descricao` NÃO acompanha a edição: são dois fatos diferentes, e é a separação deles que
+    // este import inteiro existe para resolver.
+    expect(linhaEnviada.descricao).toBe("FOLHA DE PAGAMENTO");
+  });
+
+  it("⚠ esvaziar o campo NÃO grava histórico vazio — cai na descrição, igual ao backend", async () => {
+    const { onCommit } = await abrirRevisao();
+
+    fireEvent.change(campos(3).h, { target: { value: "   " } });
+    await act(async () => { fireEvent.click(botao(/^Importar 1 linha$/)); });
+
+    expect(onCommit.mock.calls[0][0][0].historico).toBe("FOLHA DE PAGAMENTO");
+  });
+
+  it("a memória vence o prefixo quando o backend devolve um historicoSugerido", async () => {
+    await abrirRevisao({
+      onPreview: jest.fn().mockResolvedValue({
+        transactions: [{
+          rowIndex: 1, data: "2026-07-02", descricao: "TARIFA PACOTE", valor: 34.9,
+          match: { matchType: "exact", contaDebito: "412", contaCredito: "111", historicoSugerido: "TARIFAS BANCARIAS DO MES" },
+        }],
+      }),
+    });
+    expect(campos(0).h.value).toBe("TARIFAS BANCARIAS DO MES");
   });
 });

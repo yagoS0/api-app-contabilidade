@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtValor } from "../../entries/lib/accountingEntriesShared";
+import { historicoSugeridoDaLinha } from "../lib/historicoSugerido";
 
 const PANEL = {
   surface: "#24253A",
@@ -77,11 +78,13 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
         setError("Nenhuma transação encontrada no arquivo.");
         return;
       }
-      // Hidrata cada linha com contas a partir do match (se houver)
+      // Hidrata cada linha com contas a partir do match (se houver) e com o histórico SUGERIDO.
+      // ⚠ A sugestão nasce preenchida e é EDITÁVEL — o contador escreve por cima antes de importar.
       const hydrated = list.map((t) => ({
         ...t,
         contaDebito: t.match?.contaDebito || "",
         contaCredito: t.match?.contaCredito || "",
+        historico: historicoSugeridoDaLinha(t),
         skip: false,
       }));
       setTransactions(hydrated);
@@ -123,7 +126,10 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
       .map((t) => ({
         rowIndex: t.rowIndex,
         data: t.data,
+        // `descricao` continua sendo o texto CRU da planilha (a chave de match e, agora, a coluna
+        // `descricaoImportacao` do lançamento). `historico` é o que o contador confirmou aqui.
         descricao: t.descricao,
+        historico: String(t.historico || "").trim() || t.descricao,
         valor: Number(t.valor),
         contaDebito: t.contaDebito,
         contaCredito: t.contaCredito,
@@ -161,6 +167,7 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
             <p style={{ fontSize: "0.85rem", color: PANEL.muted, margin: "0 0 12px" }}>
               Formato esperado: planilha com colunas <strong>Data | Descrição | Valor</strong> (cabeçalho opcional).
               O sistema casa as descrições com históricos já cadastrados para preencher automaticamente as contas. Descrições novas ficam pendentes para você declarar — e a partir dali ficam memorizadas para próximos imports.
+              O <strong>histórico do lançamento</strong> vem sugerido (<em>PAGO</em> + descrição, ou o que você já escreveu antes para aquela descrição) e é <strong>editável</strong> linha a linha: nada é gravado sem você ver.
             </p>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
               <input
@@ -196,7 +203,8 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                 <thead>
                   <tr>
                     <th style={{ ...headStyle, width: 100 }}>Data</th>
-                    <th style={headStyle}>Descrição</th>
+                    <th style={{ ...headStyle, width: 220 }}>Descrição (planilha)</th>
+                    <th style={{ ...headStyle, minWidth: 220 }}>Histórico (lançamento)</th>
                     <th style={{ ...headStyle, width: 110, textAlign: "right" }}>Valor (R$)</th>
                     <th style={{ ...headStyle, width: 110, textAlign: "center" }}>Débito</th>
                     <th style={{ ...headStyle, width: 110, textAlign: "center" }}>Crédito</th>
@@ -218,7 +226,20 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
                     return (
                       <tr key={idx} style={{ background: bg, borderBottom: `1px solid ${PANEL.border}`, opacity: t.skip ? 0.4 : 1 }}>
                         <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{fmtDateBR(t.data)}</td>
-                        <td style={{ padding: "5px 8px" }}>{t.descricao}</td>
+                        <td style={{ padding: "5px 8px", color: PANEL.muted }}>{t.descricao}</td>
+                        <td style={{ padding: "5px 8px" }}>
+                          {/* SUGESTÃO editável: nasce com "PAGO " + descrição (ou com o histórico
+                              que a memória já guardava) e o contador escreve por cima. */}
+                          <input
+                            type="text"
+                            value={t.historico || ""}
+                            onChange={(e) => updateRow(idx, { historico: e.target.value })}
+                            placeholder="Histórico do lançamento"
+                            disabled={t.skip}
+                            aria-label={`Histórico da linha ${t.rowIndex}`}
+                            style={inputStyle}
+                          />
+                        </td>
                         <td style={{ padding: "5px 8px", textAlign: "right", whiteSpace: "nowrap" }}>{fmtValor(t.valor)}</td>
                         <td style={{ padding: "5px 8px" }}>
                           <input

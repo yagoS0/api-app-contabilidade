@@ -110,7 +110,8 @@ router.get('/', requireAuth, requireRole(['FIRM_ADMIN']), async (req, res) => {
   `atividades[]` do PGDAS-D (de-para via model `AtividadePgdasd`).
 - `FechamentoService.js` — orquestra o modal: getDados / calcular / salvar / transmitir.
 - `RbtExtratoService.js` — RBT12 (cache `RbtExtratoCache`; fonte SIMULACAO > local).
-- `ApuracaoConfigMemoryService.js` — memória da última config por empresa (reaparece).
+- `ApuracaoConfigMemoryService.js` — memória da **FORMA** da última config por empresa (ver seção
+  própria abaixo: ela guarda atividade/anexo/**mercado**, NUNCA o valor).
 - `DisparidadeService.js` — avisa atividade↔CNAE (nunca bloqueia).
 - `FatorRService.js`, `AliquotaResolver.js`, `MotorApuracaoService.js` — cálculo
   LOCAL (double-check; a verdade do DAS vem da RFB via simulação).
@@ -1176,6 +1177,70 @@ Regressão: `apuracao/v2/__tests__/declaracaoZerada.test.js` (8).
 `conferenciaStatus` nulo, o worker do ADN nunca as alcançou; e não é o fechamento CONTÁBIL — 11
 delas já estão fechadas. O `salvarFechamento` sequer é alcançado: sem snapshot ele responde
 `NAO_CALCULADA`, e o botão Salvar nasce desabilitado.
+
+## ⚠ A memória da apuração guarda a FORMA, nunca o VALOR — e o MERCADO é o que não pode se perder
+
+`ApuracaoConfigMemory` tem chave **`portalClientId`** e **nenhuma competência**: um registro por
+empresa, reaberto em TODO mês seguinte. Enquanto `atividadesEscolhidas` guardava
+`valorInterno`/`valorExterno`, o valor de um mês era carregado para dentro de outro.
+
+Medido em produção (12 memórias; 95 pares empresa×competência, 02/2026→07/2026):
+
+| | |
+|---|---|
+| origem do pré-preenchimento | **memória 72** · cnae 20 · notas 0 · vazio 3 |
+| com faturamento real (85) | bate 37 · **DIVERGE 48** |
+| sem faturamento real (10) | **prefill > 0 em 10 de 10** |
+
+O faturamento de 07/2026 da ARAUJO (R$ 20.301,21) aparecia em fevereiro, março, abril, maio e junho.
+
+⚠ **E isso derrotava o GATE POR SOMA em produção.** Com `somaAtividades > 0` a declaração não é lida
+como zerada, a caixa "Declarar SEM MOVIMENTO" **não renderiza** e o Calcular fica habilitado —
+chamada PAGA ao SERPRO declarando receita que não existe naquele mês. Casos vivos: IOHANNA
+R$ 3.680,00 (4 competências), CHAYM R$ 17.640,00 (3), PRISMA R$ 12.000,00 (2).
+
+**Hoje:** `salvarConfigMemory` grava só `CAMPOS_DA_FORMA` (`idAtividade`, `descricao`,
+`anexoImplicito`, **`mercado`**, `sujeitoFatorR`, `tipoReceita`), e o valor pré-preenchido vem do
+faturamento da **própria competência** (`aplicarFaturamentoNaForma`, em `FechamentoService`).
+
+⚠ **`lerConfigMemory` normaliza na LEITURA também.** As 12 memórias de produção ainda têm valor
+gravado e o script de limpeza é rodado pelo dono — quem lê não pode depender disso ter acontecido.
+
+⚠ **O MERCADO É O CAMPO QUE SÓ EXISTE AQUI, e perdê-lo chega na declaração.**
+`NotaItem.flagExportacao` é `false` em **16.153 de 16.153** itens: o único escritor é o parser de
+NF-e (`notas/dfe/DfeParser.js`, CFOP 7xxx), e a criação do item da NFS-e nunca o toca. Ou seja, todo
+faturamento de NFS-e chega ao fechamento como se fosse **interno** — inclusive o da CDA MARKETING,
+que presta serviço ao exterior. As duas declarações dela (`65227792202606001`, `65227792202607001`)
+saíram com receita **EXTERNA** por causa do `mercado` gravado nesta memória. Por isso o total vai
+para `valorInterno` **ou** `valorExterno` conforme a forma manda, nunca sempre no interno.
+Memória sem `mercado` é completada pelo **catálogo** (`AtividadePgdasd.mercado`, pelo `idAtividade`),
+nunca por suposição.
+
+⚠ **Com 2+ atividades na forma, o valor fica VAZIO (`null`), com o motivo na tela.** Não existe
+regra de rateio — nem no cadastro, nem nas notas (a classificação v2 nunca rodou: `tipoReceita` é
+nulo em 16.153/16.153 itens). Dividir por conta própria seria o portal chutando o que vai numa
+declaração. Vale também para receita interna **e** externa com uma atividade só: a atividade do
+PGDAS-D é mercado-específica, não há linha onde pôr a outra metade.
+
+⚠ **`null`, não `0`.** Zero é uma afirmação ("conferi, é zero"); ausência não é. E no front isso
+depende de **`value={a.valorInterno ?? ""}`** — com `|| 0` o campo renderiza **0** para `null` e a
+mudança inteira fica invisível, com um zero fabricado no lugar do branco (`FechamentoModal.jsx`).
+`setAtvValor` também preserva o vazio: campo apagado vira `null`, não `0`.
+
+⚠ **A FOLHA continua com valor**, de propósito: ela é `[{ pa, valor }]` de 12 meses ANTERIORES e o
+modal só reusa a célula do `pa` que bate — não há como um valor de julho aparecer como de março.
+A atividade, que não tem competência nenhuma, tinha.
+
+**Limpeza das memórias existentes:** `scripts/limpar-memoria-valor-apuracao.mjs`, **dry-run por
+padrão**, imprime a forma ANTES × DEPOIS por empresa e **aborta a escrita** se qualquer campo da
+forma mudar (com `--aplicar`, relê do banco e confere). Ela **não é pré-requisito** do conserto —
+a leitura já normaliza; o script só torna o banco consistente. Dry-run em produção (10/08/2026): 12
+memórias, 12 com valor, **0 formas mudariam, 0 sem `mercado`**, CDA MARKETING com
+`idAtividade=30 mercado=EXTERNO` idêntica antes e depois.
+
+Regressões: `apuracao/v2/__tests__/memoriaGuardaForma.test.js` (20, inclusive o gate por soma e o
+payload de `e0d13e3b`) e `web: features/apuracao/components/__tests__/fechamentoValorVazio.test.jsx`
+(8, inclusive o `?? ""`).
 
 ### "Empresa zerada" — o botão registra o que já foi feito; ele NÃO entrega nada
 

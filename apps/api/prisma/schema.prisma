@@ -1066,6 +1066,17 @@ model AccountingEntry {
   data                  DateTime
   competencia           String
   historico             String
+  /// TEXTO CRU DO ARQUIVO IMPORTADO (descrição da planilha Excel), preservado ao lado do histórico.
+  ///
+  /// ⚠ Existe porque o import de Excel gravava `historico: descricao` — o texto do arquivo entrava
+  /// no razão COMO SE FOSSE o histórico contábil, e a descrição original deixava de existir. São
+  /// dois fatos diferentes: um é o que o banco/planilha escreveu, o outro é o que o contador
+  /// lança. O OFX já os separa na tela desde sempre; aqui a separação não tinha onde morar.
+  ///
+  /// ⚠ NULLABLE E SEM BACKFILL: lançamento anterior à coluna fica `null`, que é a verdade —
+  /// ninguém sabe qual era a descrição do arquivo dele. Preencher com o `historico` atual
+  /// inventaria uma procedência.
+  descricaoImportacao   String?
   tipo                  String    @default("DESPESA") // DESPESA | RECEITA | FOLHA | PROVISAO | BAIXA | OUTRO
   subtipo               String? // SIMPLES | IRRF | ISS | PIS | COFINS | FGTS | null
   origem                String    @default("MANUAL") // MANUAL | OFX | PDF | SERPRO

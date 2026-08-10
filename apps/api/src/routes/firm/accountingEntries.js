@@ -1983,6 +1983,12 @@ export function createAccountingEntriesRouter({ log }) {
       return res.json(results.map((h) => ({
         id: h.id,
         text: h.text,
+        // ⚠ `historicoSugerido` é o histórico CONTÁBIL que o contador digitou; `text` é só a CHAVE
+        // DE MATCH (o memo do banco / a descrição da planilha, canônica com {{competencia}}). A
+        // coluna existe desde o OFX e estas rotas simplesmente não a devolviam — quem consumisse a
+        // busca recebia a chave de match no lugar do histórico, ou nada. As duas projeções são
+        // irmãs de propósito: uma delas ficar sem o campo é como as cópias divergem.
+        historicoSugerido: h.historicoSugerido || null,
         contaDebito: h.contaDebito,
         contaCredito: h.contaCredito,
         scope: h.companyPortalClientId ? "COMPANY" : "GLOBAL",
@@ -2017,6 +2023,12 @@ export function createAccountingEntriesRouter({ log }) {
       return res.json(results.map((h) => ({
         id: h.id,
         text: h.text,
+        // ⚠ `historicoSugerido` é o histórico CONTÁBIL que o contador digitou; `text` é só a CHAVE
+        // DE MATCH (o memo do banco / a descrição da planilha, canônica com {{competencia}}). A
+        // coluna existe desde o OFX e estas rotas simplesmente não a devolviam — quem consumisse a
+        // busca recebia a chave de match no lugar do histórico, ou nada. As duas projeções são
+        // irmãs de propósito: uma delas ficar sem o campo é como as cópias divergem.
+        historicoSugerido: h.historicoSugerido || null,
         contaDebito: h.contaDebito,
         contaCredito: h.contaCredito,
         scope: h.companyPortalClientId ? "COMPANY" : "GLOBAL",
@@ -3370,6 +3382,12 @@ export function createAccountingEntriesRouter({ log }) {
             const contaCredito = String(t.contaCredito || "").trim();
             const valor = Number(t.valor);
             const descricao = String(t.descricao || "").trim();
+            // ⚠ COMPATIBILIDADE: payload SEM `historico` continua caindo em `historico: descricao`,
+            // exatamente como antes. Cliente antigo (ou o modal ainda não atualizado) não quebra —
+            // ele só deixa de aproveitar a separação. Quem manda `historico` está mandando o texto
+            // que o CONTADOR viu e editou na tela; nada é gravado sem ele ver.
+            const historicoDigitado = String(t.historico || "").trim();
+            const historico = historicoDigitado || descricao;
             const dataStr = String(t.data || "").slice(0, 10);
             // Importa com ≥1 conta preenchida; só pula quando D E C estão vazias (a outra aprende depois).
             if ((!contaDebito && !contaCredito) || !descricao || !valor || !dataStr) {
@@ -3389,7 +3407,9 @@ export function createAccountingEntriesRouter({ log }) {
                 portalClientId,
                 data: dataDate,
                 competencia,
-                historico: descricao,
+                historico,
+                // O texto CRU da planilha, ao lado do histórico contábil — não no lugar dele.
+                descricaoImportacao: descricao,
                 tipo,
                 origem: "EXCEL",
                 loteImportacao,
@@ -3414,14 +3434,22 @@ export function createAccountingEntriesRouter({ log }) {
       }
 
       // Auto-save de histórico (fora da transaction principal — cada falha não derruba o batch)
+      // text = descrição da planilha (chave de match) | historicoSugerido = histórico contábil que
+      // o contador confirmou na tela. Mesmo contrato do OFX, que já gravava os dois; aqui o segundo
+      // simplesmente não era passado, e por isso `historicoSugerido` estava vazio em TODOS os 230
+      // registros da memória.
       if (userId) {
         for (const t of transactions) {
           const contaDebito = String(t.contaDebito || "").trim();
           const contaCredito = String(t.contaCredito || "").trim();
           const descricao = String(t.descricao || "").trim();
+          const historicoDigitado = String(t.historico || "").trim();
           if (!descricao || !contaDebito || !contaCredito) continue;
           await upsertHistoricoFromImport({
             userId, portalClientId, text: descricao, contaDebito, contaCredito,
+            // Sem `historico` no payload não há nada que o contador tenha escrito — gravar a
+            // própria descrição aqui faria a memória sugerir a chave de match como histórico.
+            historicoSugerido: historicoDigitado || null,
           });
         }
       }

@@ -749,6 +749,56 @@ dela (`statusPelasBaixas`) — senão a provisão corrigida pra menor ficava ete
 diferença "em aberto", e reeditar uma provisão paga a ressuscitava como ABERTO.
 Legado: `scripts/corrigir-provisao-parcial.mjs`.
 
+## Import de Excel — a memória GRAVAVA por uma chave e LIA por outra
+
+`upsertHistoricoFromImport` grava o texto passando por **`normalizarHistorico`** (Q50): "PAGO INSS -
+06/2026" vira `"PAGO INSS - {{competencia}}"`. A leitura (`findHistoricoMatches`) comparava com
+**`normalizeMatchText`** cru, que só troca pontuação por espaço — e `{` e `}` estão na classe de
+pontuação. As chaves ficavam `"pago inss competencia"` contra `"pago inss 06 2026"`: **nem o passo
+exato nem o de substring casavam**, e o alvo era exatamente a descrição recorrente de tributo, a que
+mais se repete mês a mês.
+
+Hoje as duas pontas passam por **`chaveDeMatch`** (`excelImport.js:37`), que é
+`normalizeMatchText(normalizarHistorico(texto))`. ⚠ **A ordem importa**: `normalizarHistorico`
+primeiro, porque é ele que enxerga "06/2026" e "2026-06" com a pontuação ainda intacta. E é aplicada
+nos **dois lados** (`:155` e `:175`) — o texto no banco já vem canônico desde a Q50, mas registro
+anterior a ela tem a competência crua, e re-normalizar é idempotente.
+
+⚠ **`historicoCompetencia.js` NÃO foi tocado** — a regra da competência é dele, e duas leituras dela
+divergiriam no primeiro formato novo.
+
+**Medido em produção (só leitura, `scripts/diag-match-historicos.mjs`), nos 230 registros da
+memória:** achavam alguma memória **89 antes**, **230 depois** (+141), com **0 regressões**. Dos 230,
+104 têm `{{competencia}}` e 91 têm dígito no texto. O script simula a descrição como ela viria no
+arquivo (`aplicarCompetencia(text, competência)`) e roda as **mesmas duas passadas** do serviço com
+a chave antiga e com a nova — rode-o de novo antes de mexer aqui.
+
+### `historicoSugerido` — a coluna existia, as rotas é que não a devolviam
+
+`AccountingHistorico.historicoSugerido` é o histórico **contábil** que o contador digitou; `text` é
+só a **chave de match** (o memo do banco / a descrição da planilha). O OFX gravava os dois desde
+sempre; o Excel chamava `upsertHistoricoFromImport` **sem** o campo — por isso ele estava vazio nos
+**230 de 230** registros — e `GET /historicos` nem o projetava. Hoje as **duas** projeções irmãs o
+devolvem (`routes/firm/accountingEntries.js:1991` e `:2031`); deixar uma delas sem o campo é como as
+cópias divergem.
+
+### `AccountingEntry.descricaoImportacao` — a descrição do arquivo ao lado do histórico
+
+O commit do Excel gravava `historico: descricao`: o texto da planilha entrava no razão **como se
+fosse** o histórico contábil, e a descrição original deixava de existir no INSERT. A coluna
+(`schema.prisma:1079`, migration `20260810180000_add_descricao_importacao`) é **aditiva, nullable,
+sem backfill** — lançamento antigo fica `null`, que é a verdade. `entryToResponse` faz `{...entry}`,
+então ela chega ao front sem mapper.
+
+⚠ **Isto NÃO muda a forma do lançamento** (nenhuma linha D/C, nenhum `tipoLinha`, nenhum valor).
+Quem mexer em **como o histórico é composto** está mexendo em outra coisa, e isso exige pedido
+explícito do dono.
+
+⚠ **COMPATIBILIDADE:** payload **sem** `historico` continua caindo em `historico: descricao`
+(`:3389-3390`) — cliente antigo não quebra, só deixa de aproveitar a separação. E o auto-save só
+grava `historicoSugerido` quando o contador de fato escreveu algo (`:3452`); gravar a própria
+descrição ali faria a memória sugerir a chave de match como histórico.
+
 ## Regras
 
 - **Idempotência** em geração (upsert por competência/eventType; guardas antes de criar).

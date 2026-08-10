@@ -1,0 +1,20 @@
+-- A DESCRIÇÃO DO ARQUIVO IMPORTADO PASSA A TER ONDE MORAR.
+--
+-- O import de Excel gravava `historico: descricao` (`routes/firm/accountingEntries.js`, commit do
+-- Excel): o texto da planilha entrava no razão COMO SE FOSSE o histórico contábil, e a descrição
+-- original deixava de existir no instante do INSERT. São dois fatos diferentes — um é o que a
+-- planilha escreveu, o outro é o que o contador lança — e o import de OFX já os separa na tela
+-- (colunas "Descrição (banco)" e "Histórico (lançamento)") desde sempre. O que faltava era a
+-- coluna.
+--
+-- ⚠ ADITIVA E SÓ. Um único ADD COLUMN, nullable, sem DEFAULT, sem CHECK, sem índice.
+--
+-- ⚠ SEM BACKFILL, E ISSO É A DECISÃO. Lançamento anterior a esta coluna fica NULO, que é a
+-- verdade: ninguém sabe qual era a descrição do arquivo dele. Copiar o `historico` atual para cá
+-- pareceria preservação de dado e seria o contrário — carimbaria procedência de arquivo num texto
+-- que pode ter sido digitado à mão, e depois nada distinguiria os dois casos.
+--
+-- ⚠ NÃO MUDA A FORMA DO LANÇAMENTO. Nenhuma linha D/C, nenhum `tipoLinha`, nenhum `tipo`, nenhum
+-- valor. Acrescentar um campo de procedência não é mudar a forma; quem for mexer em COMO o
+-- histórico é composto está mexendo em outra coisa, e isso exige pedido explícito do dono.
+ALTER TABLE "accounting_entries" ADD COLUMN "descricaoImportacao" TEXT;

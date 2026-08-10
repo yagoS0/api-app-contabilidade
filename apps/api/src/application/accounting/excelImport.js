@@ -17,6 +17,27 @@ export function normalizeMatchText(s) {
     .trim();
 }
 
+// ⚠ A CHAVE DE MATCH TEM DE SER A MESMA NA GRAVAÇÃO E NA LEITURA.
+//
+// `upsertHistoricoFromImport` grava o texto passando por `normalizarHistorico` — "PAGO INSS -
+// 06/2026" vira "PAGO INSS - {{competencia}}". A leitura comparava com `normalizeMatchText` cru,
+// que só troca pontuação por espaço: a memória virava `"pago inss competencia"` (as chaves `{}`
+// estão na classe de pontuação) e a descrição do arquivo virava `"pago inss 06 2026"`. Nem o passo
+// exato nem o de substring casam — e como toda descrição recorrente de tributo carrega a
+// competência, era justamente a memória mais útil que nunca era encontrada. Medido em produção:
+// 91 dos 230 registros da memória têm dígito no texto.
+//
+// A ordem importa: `normalizarHistorico` PRIMEIRO (é ele que enxerga "06/2026" e "2026-06" com a
+// pontuação intacta), `normalizeMatchText` depois. Invertida, a pontuação já teria virado espaço e
+// nenhuma competência seria reconhecida.
+//
+// Aplicada nos DOIS lados: o texto gravado já vem canônico desde a Q50, mas registro anterior a ela
+// (ou vindo de outro caminho) ainda tem a competência crua — e é idempotente, então passar de novo
+// não custa nada.
+export function chaveDeMatch(texto) {
+  return normalizeMatchText(normalizarHistorico(texto));
+}
+
 function detectColumns(firstRow) {
   // firstRow é array de cells. Devolve { dataIdx, descIdx, valorIdx }.
   // Se a primeira linha parecer header, mapeia por nome. Caso contrário usa posição padrão.
@@ -130,8 +151,8 @@ export async function findHistoricoMatches({ portalClientId, userId, description
     },
   });
 
-  // Pré-normaliza
-  const normalized = historicos.map((h) => ({ ...h, _norm: normalizeMatchText(h.text) }));
+  // Pré-normaliza — pela MESMA chave que a gravação usa (ver `chaveDeMatch`).
+  const normalized = historicos.map((h) => ({ ...h, _norm: chaveDeMatch(h.text) }));
   const exactMap = new Map();
   for (const h of normalized) {
     if (h._norm && !exactMap.has(h._norm)) exactMap.set(h._norm, h);
@@ -151,7 +172,7 @@ export async function findHistoricoMatches({ portalClientId, userId, description
   }
 
   return descriptions.map((desc) => {
-    const normInput = normalizeMatchText(desc);
+    const normInput = chaveDeMatch(desc);
     if (!normInput) return null;
     // Pass 1: exato
     const exact = exactMap.get(normInput);
