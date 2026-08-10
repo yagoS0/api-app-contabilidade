@@ -65,26 +65,60 @@ export function buildDeclaracaoPayload({
   const isCaixa = String(regimeApuracao).toUpperCase() === "CAIXA";
 
   // Cada atividade já é mercado-específica (via idAtividade). valorAtividade = o que houver.
+  const linhasAtividade = atividades
+    .map((a) => {
+      const valor = round2(Number(a.valorInterno || 0) + Number(a.valorExterno || 0));
+      if (valor <= 0) return null;
+      return {
+        idAtividade: a.idAtividade,
+        valorAtividade: valor,
+        receitasAtividade: [{
+          valor,
+          // qualificações tributárias (ST, monofásico, etc) entram aqui quando houver
+          ...(Array.isArray(a.qualificacoesTributarias) && a.qualificacoesTributarias.length
+            ? { qualificacoesTributarias: a.qualificacoesTributarias } : {}),
+          ...(Array.isArray(a.isencoes) && a.isencoes.length ? { isencoes: a.isencoes } : {}),
+          ...(Array.isArray(a.reducoes) && a.reducoes.length ? { reducoes: a.reducoes } : {}),
+        }],
+      };
+    })
+    .filter(Boolean);
+
+  // ⚠ SEM ATIVIDADE, A CHAVE NÃO VAI — é a declaração ZERADA, e a diferença é `[]` vs ausente.
+  //
+  // Era o ÚNICO defeito do PGDAS-D sem movimento. A empresa sem faturamento montava
+  // `atividades: []` (a linha de R$ 0,00 do CNAE cai no `if (valor <= 0) return null` acima) e a
+  // Receita recusava, medido em produção em 10/08/2026:
+  //
+  //     HTTP 400 — "SN-Entregar: O valor da atividade deve ser maior que zero."
+  //
+  // ⚠ ISTO NÃO É SUPOSIÇÃO — é o que a documentação oficial manda, em dois lugares:
+  //
+  //  • Esquema de entrada do TRANSDECLARACAO11 (apicenter SERPRO, lido em 10/08/2026), campo
+  //    `atividades`, verbatim: "Atividades do estabelecimento. **Se não houve atividade para o
+  //    estabelecimento, não enviar esta lista.**" — e é campo NÃO obrigatório, ao contrário de
+  //    `estabelecimentos`.
+  //  • O catálogo de mensagens do PGDAS-D traz a AÇÃO ao lado do próprio erro que recebemos
+  //    (`EntradaIncorreta-PGDASD-MSG_ISN_023`): "Caso não tenha atividade no período, o bloco
+  //    ListaAtividades não deve ser enviado." (`ListaAtividades` é o nome legado desta chave.)
+  //
+  // ⚠ E é a MESMA regra que já valia duas vezes logo abaixo: `receitasBrutasAnteriores` e
+  // `folhasSalario` são omitidos quando vazios, cada um porque a RFB trata "presente e vazio" como
+  // "informado". `atividades` era a única lista que ainda mandava `[]` — a mesma regra, com uma
+  // cópia fora de sincronia.
+  //
+  // ⚠ O QUE A DOC NÃO DIZ, dito para ninguém supor que diz: ela prescreve OMITIR, e mostra que
+  // `null` é recusado (MSG_ISN_009), mas não afirma textualmente o que faz com `[]`. A prova de que
+  // `[]` não passa é a nossa medição em produção, não a documentação.
+  //
+  // Manual do PGDAS-D e DEFIS (RFB, 17/06/2025) §6.4.1: a declaração é devida "ainda que a ME ou a
+  // EPP não tenha auferido receita em determinado PA (…) hipótese em que os campos de receita bruta
+  // deverão ser preenchidos com valor igual a zero" — e o §6.5 se chama "ATIVIDADES ECONÔMICAS COM
+  // RECEITA NO PERÍODO DE APURAÇÃO". Sem receita não há atividade a indicar. Não existe flag de
+  // "sem movimento" no PGDAS-D; a inatividade é ANUAL e mora na DEFIS (LC 123/2006 art. 25 §3º).
   const estabelecimento = {
     cnpjCompleto,
-    atividades: atividades
-      .map((a) => {
-        const valor = round2(Number(a.valorInterno || 0) + Number(a.valorExterno || 0));
-        if (valor <= 0) return null;
-        return {
-          idAtividade: a.idAtividade,
-          valorAtividade: valor,
-          receitasAtividade: [{
-            valor,
-            // qualificações tributárias (ST, monofásico, etc) entram aqui quando houver
-            ...(Array.isArray(a.qualificacoesTributarias) && a.qualificacoesTributarias.length
-              ? { qualificacoesTributarias: a.qualificacoesTributarias } : {}),
-            ...(Array.isArray(a.isencoes) && a.isencoes.length ? { isencoes: a.isencoes } : {}),
-            ...(Array.isArray(a.reducoes) && a.reducoes.length ? { reducoes: a.reducoes } : {}),
-          }],
-        };
-      })
-      .filter(Boolean),
+    ...(linhasAtividade.length ? { atividades: linhasAtividade } : {}),
   };
 
   const declaracao = {
