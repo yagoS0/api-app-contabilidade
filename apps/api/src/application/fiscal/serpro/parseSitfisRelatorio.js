@@ -75,7 +75,25 @@ const RUIDO = [
   /^P[áa]gina:?\s*\d*\s*\/?\s*$/i,
   /^_+$/,                                        // régua solta: separador, nunca célula
   /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}$/,   // carimbo de emissão repetido por página
-  /^[\d.]{10,}\s*-\s*.+$/,                       // "52.682.158 - ATIM ENGENHARIA LTDA"
+  // "52.682.158 - ATIM ENGENHARIA LTDA": o CNPJ + razão social do cabeçalho de página. Precisa sair
+  // porque o cabeçalho da página 2 cai DENTRO de um bloco — confirmado nos textos reais de
+  // 53.742.042/0001-64, 55.387.580/0001-03 e 61.324.247/0001-58.
+  //
+  // ⚠ O QUE DECIDE É A CAUDA TER LETRA, e essa exigência conserta uma PERDA DE DADO.
+  // Sem ela a regra era "muitos dígitos e pontos, traço, mais qualquer coisa" — a mesma forma do
+  // NÚMERO DO PARCELAMENTO, que ela engolia junto. Medido nos textos reais de produção lidos em
+  // 10/08/2026: `0211.00012.0042365911.26-69` (61.324.247/0001-58, um parcelamento) e
+  // `0211.00012.0056912479.26-88` / `.0117250325.25-54` / `.0134178936.25-20`
+  // (55.387.580/0001-03, três). Os quatro sumiam da tela: o bloco do SIEFPAR mostrava
+  // "Parcelamento:" sem valor, e saber de QUAL parcelamento eram as parcelas em atraso exigia
+  // abrir o PDF. A mesma regra apagava a INSCRIÇÃO em dívida ativa (`70.4.24.435196-96`,
+  // 53.742.042/0001-64) — os cinco casos numéricos observados nos 22 relatórios.
+  //
+  // ⚠ CONTINUA SENDO REGRA DE DESCARTE, e a exigência da letra é a formulação mais ESTREITA que
+  // cobre o ruído observado: nos 22 relatórios, toda linha que precisa sair tem nome depois do
+  // traço (razão social no cabeçalho, nome do responsável nos dados cadastrais). Trocar isto por
+  // "cauda numérica" invertido — descartar por formato do número — deixaria lixo virar dado.
+  /^[\d.]{10,}\s*-\s*.*\p{L}/u,
   /^Final do Relat[óo]rio$/i,
 ];
 
