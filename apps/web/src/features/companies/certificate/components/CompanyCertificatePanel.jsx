@@ -2,6 +2,7 @@
 // Mountado na aba "Editar Cadastro" embaixo do CompanyForm.
 
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "../../../../components/ui/Button";
 import { CompanyCertificateUploadModal } from "./CompanyCertificateUploadModal";
 
 const PANEL = { surface: "#21222C", field: "#282A36", border: "#44475A", text: "#F8F8F2", muted: "#aeb6d3", accent: "#8BE9FD" };
@@ -118,14 +119,15 @@ export function CompanyCertificatePanel({ api, companyId, feedback }) {
             Tem certeza? Captura de NFS-e via ADN deixará de funcionar até cadastrar novo cert.
           </p>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
-            <button onClick={() => setConfirmDelete(false)}
-              style={{ padding: "6px 12px", borderRadius: 6, border: `1px solid ${PANEL.border}`, background: "transparent", color: PANEL.text, cursor: "pointer" }}>
+            <Button size="sm" variant="secondary" onClick={() => setConfirmDelete(false)}>
               Cancelar
-            </button>
-            <button onClick={handleDelete} disabled={saving}
-              style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: "#FF4757", color: "#fff", cursor: "pointer", fontWeight: 600 }}>
+            </Button>
+            {/* Este É o passo de confirmação (a caixa em volta pergunta "tem certeza?"), então a
+                conversão para `.btn-danger` é pura: o vermelho continua no mesmo lugar, saindo do
+                token em vez de um `#FF4757` sólido inventado aqui. */}
+            <Button size="sm" variant="danger" onClick={handleDelete} disabled={saving}>
               Remover certificado
-            </button>
+            </Button>
           </div>
         </div>
       )}

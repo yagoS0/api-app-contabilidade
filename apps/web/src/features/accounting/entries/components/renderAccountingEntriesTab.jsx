@@ -85,7 +85,7 @@ function FaltaParaFechar({ problemas, filtroAtivo }) {
         <button
           type="button"
           onClick={() => setAberto((v) => !v)}
-          style={{ background: "transparent", border: "none", color: "#FF5757", font: "inherit", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+          style={{ background: "transparent", border: "none", color: "var(--state-danger)", font: "inherit", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
         >
           {problemas.length} lançamento{problemas.length > 1 ? "s" : ""} com problema {aberto ? "▴" : "▾"}
         </button>
@@ -1000,19 +1000,19 @@ export function AccountingEntriesTab({
           <span style={{ fontWeight: 700, color: "#BD93F9" }}>
             {selectedCount} selecionado{selectedCount !== 1 ? "s" : ""}
           </span>
+          {/* `#FF5757` sólido virou `.btn-danger`. A gravidade continua onde sempre esteve: o
+              `handleBulkDeleteEntries` confirma ("Esta ação não pode ser desfeita") antes de
+              chamar o backend — não é a saturação do botão que segura o clique. */}
           {onBulkDeleteEntries && (
-            <button
+            <Button
               type="button"
+              variant="danger"
+              size="sm"
               onClick={handleBulkDelete}
               disabled={bulkDeleting}
-              style={{
-                background: "#FF5757", border: "none", color: "#fff",
-                padding: "6px 14px", borderRadius: 6, fontSize: "0.875rem",
-                fontWeight: 600, cursor: bulkDeleting ? "not-allowed" : "pointer",
-              }}
             >
               {bulkDeleting ? "Excluindo..." : `Excluir selecionado${selectedCount !== 1 ? "s" : ""}`}
-            </button>
+            </Button>
           )}
           <button
             type="button"

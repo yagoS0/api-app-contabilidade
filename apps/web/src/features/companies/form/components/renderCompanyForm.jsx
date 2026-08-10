@@ -178,7 +178,7 @@ function SociosEditor({ socios, onChange }) {
                   <td style={{ padding: 3 }}><input style={MINI_INPUT} value={s.rgOrgaoEmissor} onChange={(e) => setLinha(i, "rgOrgaoEmissor", e.target.value)} placeholder="DIC/RJ" /></td>
                   <td style={{ padding: 3 }}><input style={MINI_INPUT} type="date" value={s.dataSaida} onChange={(e) => setLinha(i, "dataSaida", e.target.value)} /></td>
                   <td style={{ padding: 3, textAlign: "center" }}>
-                    <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer" }}>×</button>
+                    <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "var(--state-danger)", cursor: "pointer" }}>×</button>
                   </td>
                 </tr>
               ))}
@@ -186,7 +186,7 @@ function SociosEditor({ socios, onChange }) {
           </table>
         </div>
       )}
-      <button type="button" onClick={add} style={{ marginTop: 6, background: "none", border: "1px dashed #44475A", color: "#8BE9FD", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
+      <button type="button" onClick={add} style={{ marginTop: 6, background: "none", border: "1px dashed #44475A", color: "var(--accent-cyan)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
         + Adicionar sócio
       </button>
     </div>
@@ -245,7 +245,7 @@ function RegimeHistoricoEditor({ historico, onChange }) {
                     <input type="checkbox" checked={Boolean(r.desoneracao)} onChange={(e) => setLinha(i, "desoneracao", e.target.checked)} />
                   </td>
                   <td style={{ padding: 3, textAlign: "center" }}>
-                    <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer" }}>×</button>
+                    <button type="button" onClick={() => remove(i)} title="Remover linha" style={{ background: "transparent", border: "none", color: "var(--state-danger)", cursor: "pointer" }}>×</button>
                   </td>
                 </tr>
               ))}
@@ -253,7 +253,7 @@ function RegimeHistoricoEditor({ historico, onChange }) {
           </table>
         </div>
       )}
-      <button type="button" onClick={add} style={{ marginTop: 6, background: "none", border: "1px dashed #44475A", color: "#8BE9FD", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
+      <button type="button" onClick={add} style={{ marginTop: 6, background: "none", border: "1px dashed #44475A", color: "var(--accent-cyan)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: "0.8rem" }}>
         + Adicionar período
       </button>
     </div>

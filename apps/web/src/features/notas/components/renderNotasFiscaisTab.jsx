@@ -65,9 +65,14 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
       {error && (
         <div style={{ padding: 12, marginBottom: 16, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757" }}>
           {error}
-          <button onClick={reload} style={{ marginLeft: 12, padding: "2px 8px", borderRadius: 4, border: "none", background: "#FF4757", color: "white", cursor: "pointer" }}>
+          {/* ⚠ Este NÃO é um botão destrutivo — ele só recarrega. O `#FF4757` era a cor da CAIXA DE
+              ERRO em volta, emprestada pelo botão: exatamente o defeito que esta padronização
+              corrige, só que com vermelho em vez de âmbar. `danger` aqui mentiria sobre a ação (e,
+              sobre um fundo que já é `--state-danger` a 10%, o `.btn-danger` de superfície ficaria
+              quase invisível). O vermelho continua na caixa, onde ele é informação. */}
+          <Button variant="secondary" size="sm" onClick={reload} style={{ marginLeft: 12 }}>
             Tentar de novo
-          </button>
+          </Button>
         </div>
       )}
 

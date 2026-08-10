@@ -119,7 +119,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                       <td style={td}>
                         {String(n.statusEfetivo || "").toLowerCase() === "cancelada" ? (
                           <button onClick={() => onMarcarStatus(n.id, "autorizada")} title="Reativar (volta a contar no faturamento)"
-                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "#69FF47", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "var(--state-ok)", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
                             Reativar
                           </button>
                         ) : (

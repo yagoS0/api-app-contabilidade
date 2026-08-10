@@ -332,7 +332,7 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                         </td>
                         <td style={{ padding: 4, textAlign: "center" }}>
                           <button onClick={() => removeAtividade(idx)} title="Remover atividade"
-                            style={{ background: "transparent", border: "none", color: "#FF5757", cursor: "pointer", fontSize: "1rem", lineHeight: 1 }}>×</button>
+                            style={{ background: "transparent", border: "none", color: "var(--state-danger)", cursor: "pointer", fontSize: "1rem", lineHeight: 1 }}>×</button>
                         </td>
                       </tr>
                     ))}

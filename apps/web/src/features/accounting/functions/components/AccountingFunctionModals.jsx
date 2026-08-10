@@ -294,10 +294,9 @@ export function FunctionEditModal({ initial, accounts, saving, onSave, onClose }
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                   <strong style={{ color: PANEL.text, fontSize: "0.85rem" }}>Lançamento #{idx + 1}</strong>
                   {entries.length > 1 && (
-                    <button onClick={() => removeEntry(idx)}
-                      style={{ background: "#FF4757", color: "white", border: "none", borderRadius: 4, padding: "4px 8px", cursor: "pointer", fontSize: "0.7rem" }}>
+                    <Button variant="danger" size="sm" onClick={() => removeEntry(idx)}>
                       Remover
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <label style={{ display: "grid", gap: 4, fontSize: "0.7rem", color: PANEL.muted, marginBottom: 8 }}>
@@ -332,8 +331,12 @@ export function FunctionEditModal({ initial, accounts, saving, onSave, onClose }
                       <option value="D">D</option><option value="C">C</option>
                     </select>
                     <AccountSearch value={ln.conta} onChange={(v) => updateLine(idx, lidx, { conta: v })} accounts={accounts} />
-                    <button onClick={() => removeLine(idx, lidx)}
-                      style={{ width: 24, height: 30, border: "none", background: "#FF4757", color: "white", borderRadius: 3, cursor: "pointer", fontSize: "0.7rem" }}>✕</button>
+                    {/* ⚠ O `style` que sobrou é SÓ MEDIDA — a cor toda vem do `.btn-danger`. É o
+                        mesmo acordo do `.btn-back` no `App.css` ("aqui ficam só as medidas"): a
+                        coluna do grid tem 24px e o `.btn-sm` traz `min-height: 32px`, que estouraria
+                        a linha. Sem isto o botão não caberia, e é assim que nasce um `btn()` novo. */}
+                    <Button variant="danger" size="sm" onClick={() => removeLine(idx, lidx)}
+                      style={{ width: 24, minHeight: 30, padding: 0, fontSize: "0.7rem" }}>✕</Button>
                   </div>
                 ))}
                 <div style={{ display: "flex", gap: 4, marginTop: 6 }}>

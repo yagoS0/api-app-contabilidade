@@ -283,13 +283,13 @@ export function RotinasPage({
                               type="button"
                               onClick={() => aplicarEmLote(r.key, true)}
                               title={`Marcar ${r.label} nas selecionadas`}
-                              style={{ background: "none", border: "1px solid #69FF47", color: "#69FF47", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
+                              style={{ background: "none", border: "1px solid var(--state-ok)", color: "var(--state-ok)", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
                             >✓</button>
                             <button
                               type="button"
                               onClick={() => aplicarEmLote(r.key, false)}
                               title={`Desmarcar ${r.label} nas selecionadas`}
-                              style={{ background: "none", border: "1px solid #FF5757", color: "#FF5757", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
+                              style={{ background: "none", border: "1px solid var(--state-danger)", color: "var(--state-danger)", borderRadius: 4, fontSize: "0.65rem", cursor: "pointer", padding: "0 4px" }}
                             >✕</button>
                           </div>
                         )}

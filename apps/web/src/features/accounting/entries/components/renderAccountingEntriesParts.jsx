@@ -333,7 +333,9 @@ export function LineEditor({ lines, onChange, accounts }) {
               {resolved ? resolved.nome : (l.conta ? `⚠ código ${l.conta} não encontrado` : "— vazio —")}
             </div>
             <input type="number" step="0.01" min="0" placeholder="0,00" value={l.valor || ""} onChange={(e) => updateLine(idx, "valor", e.target.value)} style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", textAlign: "right" }} />
-            <button onClick={() => removeLine(idx)} style={{ width: 24, height: 24, border: "none", background: "#FF4757", color: "#F8F8F2", borderRadius: 3, cursor: "pointer", fontSize: "0.7rem", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+            {/* Idem `AccountingFunctionModals`: `style` só de MEDIDA, cor vinda do `.btn-danger`. */}
+            <Button variant="danger" size="sm" onClick={() => removeLine(idx)}
+              style={{ width: 24, minHeight: 24, padding: 0, fontSize: "0.7rem" }}>✕</Button>
           </div>
         );
       })}
@@ -1921,7 +1923,7 @@ export function CsvExportModal({ defaultCompetencia, onExport, onClose, onPrefli
                       await onReabrir(inicio);
                       await conferir();
                     }}
-                    style={{ justifySelf: "start", background: "transparent", border: "1px solid #FFB347", color: "#FFB347", borderRadius: 6, padding: "4px 10px", font: "inherit", fontSize: "0.75rem", cursor: "pointer" }}
+                    style={{ justifySelf: "start", background: "transparent", border: "1px solid var(--state-warn)", color: "var(--state-warn)", borderRadius: 6, padding: "4px 10px", font: "inherit", fontSize: "0.75rem", cursor: "pointer" }}
                   >
                     ↩ Reabrir os lançamentos exportados
                   </button>

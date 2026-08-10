@@ -146,11 +146,11 @@ function LineEditor({ lines, onChange, accounts }) {
             <td colSpan={3} style={{ padding: "4px 6px", fontSize: "0.75rem" }}>
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => addLine("D")}
-                  style={{ fontSize: "0.7rem", background: "rgba(139,233,253,0.12)", color: "#8BE9FD", border: "1px solid #8BE9FD", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+                  style={{ fontSize: "0.7rem", background: "rgba(139,233,253,0.12)", color: "var(--accent-cyan)", border: "1px solid var(--accent-cyan)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
                   + Débito
                 </button>
                 <button onClick={() => addLine("C")}
-                  style={{ fontSize: "0.7rem", background: "rgba(105,255,71,0.10)", color: "#69FF47", border: "1px solid #69FF47", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
+                  style={{ fontSize: "0.7rem", background: "rgba(105,255,71,0.10)", color: "var(--state-ok)", border: "1px solid var(--state-ok)", borderRadius: 4, padding: "2px 8px", cursor: "pointer" }}>
                   + Crédito
                 </button>
               </div>

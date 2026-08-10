@@ -112,7 +112,7 @@ export function SitfisTab({ sitfisPanel }) {
                       <button
                         type="button"
                         onClick={() => setVerPdf((v) => !v)}
-                        style={{ padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid #8BE9FD", color: "#8BE9FD", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
+                        style={{ padding: "6px 12px", borderRadius: 6, background: "transparent", border: "1px solid var(--accent-cyan)", color: "var(--accent-cyan)", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}
                       >
                         {verPdf ? "Ocultar PDF" : "Ver PDF oficial"}
                       </button>
