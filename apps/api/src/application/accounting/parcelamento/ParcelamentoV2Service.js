@@ -959,6 +959,210 @@ export async function gerarPagamentoParcelaManual({
 }
 
 /**
+ * A CONFERÊNCIA DO PASSIVO — a soma das prestações que ainda vão amortizar × o que a adesão
+ * provisionou.
+ *
+ * ⚠ ELA NÃO BLOQUEIA NADA, E NÃO PODE BLOQUEAR. `linhasProvisao` reconhece **só o principal**
+ * (decisão do dono, não se altera) e o passivo `PARC` nasce valendo esse principal; a soma das
+ * amortizações (`D PARC` = `valorPrevisto` de cada prestação) é o que o zera ao longo do contrato.
+ * Quando os dois não batem, o passivo termina com resíduo — mas o número certo é decisão de quem
+ * lê o contrato, não deste código. Aqui ele é **exibido**, para que a correção de um valor deixe
+ * de ser feita às cegas.
+ *
+ * ⚠ Prestação `HISTORICO` fica FORA da soma: ela não gera `AccountingEntry` (não houve pagamento
+ * nosso para lançar) e a provisão desta adesão reconhece o principal do saldo que RESTA. Contá-la
+ * faria a conferência acusar um resíduo que não existe.
+ */
+export async function conferenciaDoPassivoPorContrato(client, { portalClientId, parcelamentoIds }) {
+  const ids = [...new Set((Array.isArray(parcelamentoIds) ? parcelamentoIds : []).filter(Boolean).map(String))];
+  if (!ids.length) return {};
+
+  // ⚠ DUAS QUERIES PARA TODOS OS CONTRATOS, não duas por contrato. A fila devolve até 200
+  // prestações e elas se concentram em poucos acordos; uma consulta por linha seria N+1 numa tela
+  // que a F2.1 montou justamente para não ter nenhuma.
+  const [prestacoes, linhasPassivo] = await Promise.all([
+    client.parcela.findMany({
+      where: { parcelamentoId: { in: ids }, portalClientId },
+      select: { parcelamentoId: true, valorPrevisto: true, origemBaixa: true },
+    }),
+    client.accountingEntryLine.findMany({
+      where: {
+        tipo: "C",
+        tipoLinha: "PARC",
+        entry: { parcelamentoId: { in: ids }, portalClientId, tipo: "PROVISAO" },
+      },
+      select: { valor: true, entry: { select: { parcelamentoId: true } } },
+    }),
+  ]);
+
+  const out = {};
+  for (const id of ids) {
+    const doContrato = prestacoes.filter((p) => p.parcelamentoId === id);
+    const amortizaveis = doContrato.filter((p) => p.origemBaixa !== ORIGEM_BAIXA.HISTORICO);
+    const somaPrestacoes = round2(
+      amortizaveis.reduce((s, p) => s + (p.valorPrevisto != null ? Number(p.valorPrevisto) : 0), 0),
+    );
+    const linhas = linhasPassivo.filter((l) => l.entry?.parcelamentoId === id);
+    // ⚠ Sem provisão de abertura NÃO se afirma zero: `null` diz "não sei", que é outra coisa.
+    const principalProvisionado = linhas.length
+      ? round2(linhas.reduce((s, l) => s + Number(l.valor || 0), 0))
+      : null;
+    out[id] = {
+      prestacoesAmortizaveis: amortizaveis.length,
+      prestacoesHistoricas: doContrato.length - amortizaveis.length,
+      somaPrestacoes,
+      principalProvisionado,
+      diferenca: principalProvisionado != null ? round2(somaPrestacoes - principalProvisionado) : null,
+    };
+  }
+  return out;
+}
+
+async function conferenciaDoPassivo(client, { portalClientId, parcelamentoId }) {
+  const porContrato = await conferenciaDoPassivoPorContrato(client, {
+    portalClientId, parcelamentoIds: [parcelamentoId],
+  });
+  return porContrato[String(parcelamentoId)] || null;
+}
+
+/**
+ * CORRIGIR O VALOR **CONTRATADO** DE UMA PRESTAÇÃO (`parcelas.valorPrevisto`).
+ *
+ * ⚠ ELE NÃO É O VALOR PAGO, E A DISTINÇÃO É O MOTIVO DE ESTA FUNÇÃO EXISTIR SEPARADA DA BAIXA.
+ * Dentro do módulo convivem dois números com o mesmo apelido:
+ *
+ *   | | o que é | onde mora | o que alimenta |
+ *   |---|---|---|---|
+ *   | **contratado** | quanto o acordo diz que a prestação vale | `parcelas.valorPrevisto` | o `D PARC` da baixa (amortiza o passivo), a fila de prestações sem guia, a coluna "Principal" |
+ *   | **pago** | quanto de fato saiu da conta | `principal + juros + multa` da baixa | o `C CAIXA` do lote |
+ *
+ * A diferença entre os dois é INFORMAÇÃO (juros, TJLP, atraso), não erro de digitação — por isso
+ * ela continua expressa em juros/multa, e por isso esta função **não** aceita "o valor pago": quem
+ * pagou mais declara o acréscimo, na baixa.
+ *
+ * ⚠ POR QUE ISTO PRECISOU EXISTIR. Um contrato criado pelo wizard (parcelamento-first, sem guia e
+ * sem composição por tributo) nasce com `valorParcelaReferencia = 0` — `buildDTOsFromManual` deriva
+ * o valor da parcela da SOMA DOS TRIBUTOS, e sem guia e sem tributos essa soma é zero. Logo
+ * `sincronizarParcelas` materializa as N prestações com `valorPrevisto = 0`, e a fila devolve
+ * `motivoBloqueio: "sem_valor_previsto"` em TODAS elas. A mensagem manda "corrigir o valor da
+ * parcela no contrato" — e até aqui não havia rota nenhuma que fizesse isso. Contrato inteiro
+ * não baixável, com a saída nomeada e inexistente.
+ *
+ * ⚠ A FORMA DO LANÇAMENTO NÃO MUDA. Esta função não grava `AccountingEntry` nenhum: ela corrige o
+ * CONTRATO, e a baixa seguinte lê o valor corrigido pelo mesmo `linhasPagamento` de sempre
+ * (`D PARC / D JUROS / D MULTA / C CAIXA`). D e C continuam fechando no lote por construção.
+ *
+ * ⚠ PRESTAÇÃO JÁ BAIXADA É RECUSADA, e não por precaução: o lançamento dela JÁ foi gravado com o
+ * valor antigo. Mudar o contrato depois deixaria o razão e o cadastro contando histórias
+ * diferentes sobre a mesma prestação, sem nada na tela dizendo qual vale. A volta é o estorno.
+ *
+ * @param {Object} opts
+ * @param {string} opts.portalClientId
+ * @param {string} opts.parcelaId
+ * @param {number} opts.valorPrevisto           o valor CONTRATADO novo (> 0)
+ * @param {number|null} opts.valorAnteriorConferido  o valor que a tela mostrou (ato de consequência)
+ * @param {string} [opts.userId]
+ * @throws {Error} code `CONFERENCIA_OBRIGATORIA` · `CONFERENCIA_DIVERGENTE`
+ */
+export async function corrigirValorPrevistoParcela({
+  portalClientId, parcelaId, valorPrevisto, valorAnteriorConferido, userId,
+}) {
+  void userId; // reservado p/ auditoria futura — o mesmo TODO de `gerarPagamentoParcelaManual`
+
+  const parcela = await prisma.parcela.findFirst({
+    where: { id: String(parcelaId), portalClientId },
+    select: {
+      id: true, parcelamentoId: true, numeroParcela: true, competencia: true,
+      valorPrevisto: true, guiaId: true, origemBaixa: true,
+    },
+  });
+  if (!parcela) return { skipped: true, reason: "parcela_not_found" };
+
+  // ⚠ COM GUIA, O VALOR VEM DO DOCUMENTO. `sincronizarParcelas` copia `guia.valor` para a linha e a
+  // baixa por guia lê a composição (`TributoParcela`); aceitar um valor digitado aqui criaria a
+  // segunda fonte que o módulo inteiro evita — e ela venceria em silêncio na próxima recaptura.
+  if (parcela.guiaId) {
+    return {
+      skipped: true,
+      reason: "parcela_tem_guia",
+      guideId: parcela.guiaId,
+      message: "Esta prestação tem guia — o valor dela vem do documento, não se digita. "
+        + "Corrija a guia (ou recapture o comprovante) em vez do contrato.",
+    };
+  }
+  if (parcela.origemBaixa) {
+    return {
+      skipped: true,
+      reason: "parcela_ja_baixada",
+      origemBaixa: parcela.origemBaixa,
+      message: "Esta prestação já foi baixada, e o lançamento dela foi gravado com o valor antigo. "
+        + "Mudar o contrato agora deixaria o razão e o cadastro discordando. Estorne a baixa "
+        + "(no lançamento), corrija o valor e lance de novo.",
+    };
+  }
+
+  const novo = round2(valorPrevisto);
+  if (!Number.isFinite(novo) || novo <= 0) return { skipped: true, reason: "valor_invalido" };
+
+  const anterior = parcela.valorPrevisto != null ? round2(Number(parcela.valorPrevisto)) : null;
+
+  // ⚠ ATO DE CONSEQUÊNCIA: A CONFIRMAÇÃO DIZ O QUE ERA E O QUE PASSA A SER — e o servidor confere o
+  // "era". Mesmo padrão do `totalConferido` da baixa e do estorno: se o valor mudou entre a tela e
+  // o clique (outra sessão, ou uma reingestão do contrato), a resposta é recusa, não uma alteração
+  // sobre um "antes" que o contador nunca viu.
+  if (valorAnteriorConferido === undefined) {
+    const err = new Error(
+      "Confirme qual é o valor atual da prestação. Alterar o valor CONTRATADO muda o que a próxima "
+      + "baixa vai amortizar do passivo — a confirmação repete o que era e o que passa a ser.",
+    );
+    err.code = "CONFERENCIA_OBRIGATORIA";
+    err.detalhe = { anterior, novo };
+    throw err;
+  }
+  const conferido = valorAnteriorConferido == null ? null : round2(valorAnteriorConferido);
+  const bate = anterior == null
+    ? conferido == null
+    : (conferido != null && Math.abs(conferido - anterior) <= 0.01);
+  if (!bate) {
+    const err = new Error(
+      `O valor atual desta prestação no contrato é ${anterior == null ? "ausente" : `R$ ${anterior.toFixed(2)}`}, `
+      + `e a tela conferiu ${conferido == null ? "ausente" : `R$ ${conferido.toFixed(2)}`}. `
+      + "Alguém pode tê-lo mudado. Recarregue a fila e confira de novo.",
+    );
+    err.code = "CONFERENCIA_DIVERGENTE";
+    err.detalhe = { anterior, conferido, novo };
+    throw err;
+  }
+
+  // ⚠ A MESMA RESERVA CONDICIONAL DA BAIXA, e pelo mesmo motivo: as duas guardas acima são
+  // check-then-act FORA de qualquer transação. Entre a leitura e a escrita a captura do SERPRO pode
+  // vincular uma guia, ou uma baixa por declaração pode entrar — e o `where` reavaliado contra o
+  // dado novo faz esta correção desistir em vez de reescrever o contrato de uma prestação que
+  // acabou de ganhar lançamento.
+  const r = await prisma.parcela.updateMany({
+    where: { id: parcela.id, portalClientId, origemBaixa: null, guiaId: null },
+    data: { valorPrevisto: novo },
+  });
+  if (r.count !== 1) return { skipped: true, reason: "parcela_ja_baixada" };
+
+  const conferencia = await conferenciaDoPassivo(prisma, {
+    portalClientId, parcelamentoId: parcela.parcelamentoId,
+  });
+
+  return {
+    ok: true,
+    parcelaId: parcela.id,
+    numeroParcela: parcela.numeroParcela ?? null,
+    competencia: parcela.competencia ?? null,
+    valorAnterior: anterior,
+    valorPrevisto: novo,
+    semMudanca: anterior != null && Math.abs(anterior - novo) <= 0.01,
+    // A conferência do passivo — informativa, nunca bloqueio. Ver `conferenciaDoPassivo`.
+    conferencia,
+  };
+}
+
+/**
  * Reavalia o estado das parcelas EM ABERTO contra o calendário: a vencer × vencida.
  *
  * ⚠ POR QUE ISTO PRECISA EXISTIR. `estadoEmAberto` só era chamado UMA VEZ, na ingestão. Uma

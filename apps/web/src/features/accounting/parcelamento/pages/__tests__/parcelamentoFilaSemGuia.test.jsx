@@ -154,7 +154,16 @@ describe("o ato de consequência", () => {
     });
     // A prévia mostra o que vai ser gravado ANTES do clique.
     expect(screen.getByText(/Parcelamento a pagar/)).toBeTruthy();
-    expect(screen.getByText(/amortiza o passivo/)).toBeTruthy();
+
+    // ⚠ AS DUAS FRASES SÃO OPOSTAS, E POR ISSO A ASSERÇÃO É EXATA.
+    //
+    // A tela diz "amortiza o passivo" (o efeito da linha do PRINCIPAL) e, quando há acréscimo,
+    // "NÃO amortiza o passivo" (o aviso sobre juros/multa). Um `/amortiza o passivo/` frouxo casa
+    // com as duas — foi o que quebrou aqui quando o aviso novo entrou. Pior que quebrar: se um dia
+    // a linha do principal sumisse da prévia, o regex frouxo continuaria VERDE por causa da frase
+    // que diz o contrário. Cada uma é afirmada por inteiro, e no seu lugar.
+    expect(screen.getByText("amortiza o passivo")).toBeTruthy();
+    expect(screen.getByText(/NÃO amortiza o passivo/)).toBeTruthy();
 
     // A fila é recarregada depois da baixa; na segunda leitura a prestação já saiu.
     mockListSemGuia.mockResolvedValue({ ok: true, parcelas: [] });
