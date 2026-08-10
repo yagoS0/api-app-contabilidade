@@ -181,6 +181,38 @@ export async function fetchDfeNFSe({ cnpj, ultNSU, pfxBuffer, password, env = "p
           { status: res.status, path });
       }
 
+      // ⚠ 429 NÃO É FALHA DO SISTEMA — é um limite externo sendo respeitado, e a mensagem tem de
+      // dizer isso e QUANDO tentar de novo.
+      //
+      // Antes o 429 caía no `throw` genérico abaixo, que concatena `res.data` na mensagem. O corpo
+      // do gov.br é HTML (`<html><body><h1>429 Too Many Requests</h1>…`), então o que chegava ao
+      // contador era um despejo de HTML cru dentro de um `<span>` vermelho — a tela parecia
+      // quebrada justamente quando o sistema estava se comportando corretamente. Medido em
+      // produção (14 empresas, 09/08/2026): o texto gravado em `adnLastError` começava com
+      // `[HTTP_429] ADN Nacional retornou 429. Path: /DFe/10. Body: <html>…`.
+      //
+      // ⚠ O CÓDIGO TEM DE CONTINUAR SENDO `HTTP_429`: `AdnNotasService` decide o tamanho do backoff
+      // comparando `code === "HTTP_429"`. Trocar o código aqui alonga o bloqueio em silêncio.
+      //
+      // ⚠ `Retry-After` NÃO VEM nesta resposta — medido nas 13 ocorrências gravadas em produção, os
+      // headers eram só `content-length`, `cache-control` e `content-type`. Lemos o header quando
+      // ele existir (é de graça e é a resposta certa), mas quem decide a espera na prática é o
+      // backoff do serviço, não o servidor. Prometer "respeitamos o Retry-After" seria inventar.
+      if (res.status === 429) {
+        const retryAfterRaw = res.headers?.["retry-after"] ?? res.headers?.["Retry-After"] ?? null;
+        const retryAfterSec = retryAfterRaw != null && /^\d+$/.test(String(retryAfterRaw).trim())
+          ? Number(String(retryAfterRaw).trim())
+          : null;
+        const quando = retryAfterSec != null
+          ? `O próprio ADN pediu para aguardar ${retryAfterSec}s.`
+          : "O ADN não informou quanto esperar.";
+        throw new AdnNacionalClientError("HTTP_429",
+          `O ADN Nacional (gov.br/nfse) recusou a consulta por excesso de requisições. ` +
+          `Isso é um limite do serviço da Receita, não um defeito do sistema — nenhuma nota foi perdida ` +
+          `e a busca recomeça do mesmo ponto. ${quando}`,
+          { status: 429, path, retryAfterSec });
+      }
+
       // Outros status sem body JSON → erro real
       const bodyPreview = typeof res.data === "string"
         ? res.data.slice(0, 300)

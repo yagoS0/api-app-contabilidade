@@ -404,6 +404,28 @@ export async function syncAdnNotasForCompany({ portalClientId, env = "prod" }) {
       if (items.length < LOTE_MAX) break;
     }
 
+    // ⚠ CONSULTA QUE DEU CERTO APAGA O ERRO ANTERIOR — MESMO QUE NÃO VENHA NENHUMA NOTA.
+    //
+    // Quem zerava `adnLastError` era só `persistCursor`, e ele só roda quando VEM DOCUMENTO. Uma
+    // empresa quieta (o caso normal: `NENHUM_DOCUMENTO_LOCALIZADO` → `break` na linha ~348) saía
+    // daqui com `ok:true` sem encostar no campo. Resultado: um erro de UM dia ficava gravado para
+    // SEMPRE e a aba Notas o exibia em toda visita, em toda empresa — o defeito parecia estar
+    // acontecendo agora, quando na verdade era um eco.
+    //
+    // Medido em produção (10/08/2026): 13 empresas exibindo `[HTTP_429]` gravado em 09/08 entre
+    // 15:01 e 16:08, com o backoff de 15 min JÁ EXPIRADO havia 19h e consultas bem-sucedidas
+    // (`adnLastAttemptAt` de 30 min antes) que não limparam nada. O contador via "todas as empresas
+    // com erro" enquanto a captura estava funcionando.
+    //
+    // É o mesmo princípio da Situação Fiscal: o estado na tela tem de ser o estado de AGORA. Erro
+    // que sobrevive à consulta que o desmentiu é informação falsa, não histórico.
+    await prisma.portalSyncState
+      .updateMany({
+        where: { clientId: portalClientId },
+        data: { adnLastError: null, adnBackoffUntil: null },
+      })
+      .catch(() => null);
+
     return {
       ok: true, cnpj: companyCnpj, certVia: cert.via,
       iterations, totalDocs, byStatus,

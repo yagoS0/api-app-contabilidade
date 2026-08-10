@@ -334,6 +334,51 @@ devolve** na resposta, em vez de calcular. Guardar o que o servidor diz é a for
 Regressão coberta por `notas/__tests__/adnCursorNsu.test.js`, com um ADN falso que implementa a
 semântica exclusiva real.
 
+## ⚠ ADN: o gate de 1h se mede por "OLHEI", não por "RECEBI" (o 429 de 09/08/2026)
+
+Sintoma relatado: *"todas as empresas que entro na aba de notas estão com esse erro"*, com um
+`[HTTP_429] … Path: /DFe/10. Body: <html>…` na tela. Eram **dois defeitos empilhados**, e nenhum
+deles na aba.
+
+**1) O laço.** `dfeNotasWorker` decidia consultar o ADN com `minutesSince(adnLastSyncAt) >= 60`.
+Mas `adnLastSyncAt` **só é gravado quando vem documento** (`persistCursor`) — numa empresa que não
+emitiu nota ele fica parado para sempre, a idade cresce sem limite, e o gate de 1 hora **nunca
+fechava**. A empresa quieta era consultada a cada tick do worker, que é de **1 minuto**.
+
+Medido em produção (10/08/2026): **44 a 50 varreduras por hora**, ininterruptas desde 05/08,
+**13.000 a 16.000 consultas de NFS-e por dia** para capturar **de 9 a 32 documentos** — mais de
+99,8% voltando vazias. Foi esse volume que produziu os 429.
+
+Hoje o gate lê **`adnLastAttemptAt`** ("quando olhei"), que já era gravado em toda tentativa e
+existia só para diagnóstico. ⚠ **O heartbeat deixou de furar o intervalo**: ele olha
+`adnLastSyncAt > 7 dias`, que numa empresa quieta é a condição **permanente** — mantê-lo como `||`
+reabriria o laço sozinho em um dia (as afetadas estavam em 5,7 dias). O que ele evitava (CNPJ
+semanas sem consulta) o gate por tentativa já garante.
+
+⚠ **A SEFAZ não tem esse defeito** e é por isso que só o ADN derreteu: `DfeSyncService` grava
+`dfeLastSyncAt` em **toda** execução, com ou sem documento — lá `sinceLast` já é idade da tentativa.
+Por isso o gate do DFe ficou como estava.
+
+**2) O eco.** `adnLastError` só era zerado por `persistCursor`, que também só roda com documento.
+Empresa quieta termina em `NENHUM_DOCUMENTO_LOCALIZADO` e retorna `ok:true` **sem tocar no campo** —
+então um erro de um dia ficava gravado **para sempre**. Medido: 13 empresas exibindo o 429 gravado
+em 09/08 (15:01–16:08), com backoff expirado havia 19h e capturas bem-sucedidas 30 min antes que não
+limparam nada. Hoje toda captura bem-sucedida apaga `adnLastError`/`adnBackoffUntil`; a que falha não
+apaga nada.
+
+⚠ **Abrir a aba Notas NUNCA consultou o ADN** — `GET /adn/state` é leitura de `PortalSyncState`, e a
+consulta só sai pelo botão (`POST /adn/sync`). A aba já seguia a regra da Situação Fiscal; o texto na
+tela era eco puro. Quem for investigar sintoma parecido: **confira se é leitura antes de suspeitar de
+chamada**.
+
+⚠ **O 429 do ADN não traz `Retry-After`** — medido nas 13 ocorrências: os headers eram só
+`content-length`, `cache-control` e `content-type`. O cliente lê o header **se** ele existir, mas
+quem decide a espera na prática é o backoff de 15 min do serviço. Não escreva que respeitamos um
+`Retry-After` que não vem.
+
+Regressões: `workers/__tests__/dfeNotasWorkerIntervaloAdn.test.js` (o gate e o heartbeat) e
+`notas/__tests__/adnErroEco.test.js` (o eco, nas duas direções).
+
 ## ⚠ ADN: quem consulta é o CERTIFICADO — nunca use o do escritório
 
 O ADN Contribuinte identifica o contribuinte pela **SAN do certificado ICP-Brasil**. O path é
@@ -440,8 +485,16 @@ estadual (NF-e) · backoff ativo · empresa suspensa · **consultada há < 1h (N
 ⚠ **O intervalo de 1h é a NT 2014.002**, e é regra externa: estourar devolve "Consumo Indevido"
 (cStat 656) e **bloqueia aquele CNPJ por uma hora** na SEFAZ — o oposto do que o lote quer. Mesmo
 número do worker (`DFE_NOTAS_WORKER_INTERVAL_MIN`) de propósito; duas janelas para a mesma regra
-dariam no bloqueio que ambas evitam. O ADN não tem regra equivalente (lá o espaçamento de 1,1s entre
-chamadas já protege).
+dariam no bloqueio que ambas evitam.
+
+⚠ **"O ADN não tem regra equivalente, lá o espaçamento de 1,1s já protege" ERA FALSO** — esta linha
+morava aqui e custou uma investigação inteira. O delay de 1,1s de `AdnNotasService` é **interno a
+uma sync**: separa a 2ª iteração da 1ª, dentro da MESMA empresa. A **primeira chamada de cada
+empresa não era espaçada por nada**, e como toda varredura de carteira é um laço de *empresas*, a
+maioria absoluta das chamadas caía no caso não coberto. O ADN **é** limitado por taxa (HTTP 429) e
+hoje o espaçamento existe nos três caminhos: `AdnNotasService` (entre iterações),
+`NotasCapturaService` (400 ms entre empresas), `dfeNotasWorker` e `conferenciaAdnWorker`
+(`ADN_DELAY_MS`, 1100 ms entre empresas).
 
 **Quando "a rotina não trouxe nada":** `scripts/diag-captura-notas.mjs` (só leitura, zero chamada
 externa) mostra por empresa o certificado, o cursor NSU, a última sincronização e o último erro, com
@@ -627,10 +680,39 @@ transcrição.
 tabela e cola `Situação: A ANALISAR-A VENCER` na linha seguinte. Cai em `naoInterpretado` com as
 linhas cruas — que é a resposta honesta enquanto essa forma não for entendida.
 
-⚠ **DEFEITO CONHECIDO, AINDA NÃO CONSERTADO (SIEFPAR):** o número do parcelamento
-(`0211.00012.0042365911.26-69`) é **engolido** pela regra de ruído `/^[\d.]{10,}\s*-\s*.+$/`, escrita
-para descartar `52.682.158 - ATIM ENGENHARIA LTDA`. O bloco de parcelamento aparece com
-"Parcelamento:" **sem valor**. É perda de dado, não desalinhamento — a decisão de mexer é do dono.
+### ✅ CONSERTADO em 2026-08-10 — o número do parcelamento (SIEFPAR) não é mais engolido
+
+A regra de ruído era `/^[\d.]{10,}\s*-\s*.+$/`, escrita para descartar
+`52.682.158 - ATIM ENGENHARIA LTDA` (o cabeçalho de página, que cai DENTRO dos blocos). Ela engolia
+junto o **número do parcelamento**, que tem a mesma forma. O bloco aparecia com "Parcelamento:"
+**sem valor** — perda de dado, não desalinhamento.
+
+**O que separa os dois casos é a CAUDA depois do traço:** nome (tem letra) vs dígito verificador
+(só número). A regra passou a exigir letra: `/^[\d.]{10,}\s*-\s*.*\p{L}/u`. É a formulação mais
+estreita que cobre o ruído observado — nos 22 relatórios de produção, **toda** linha que precisa
+sair tem nome depois do traço.
+
+Medido rodando o parser sobre **os 22 `CompanyFiscalStatus.texto` de produção** (52 blocos). O diff
+inteiro tem **três** mudanças:
+
+| empresa | o que mudou |
+|---|---|
+| 61.324.247/0001-58 | `0211.00012.0042365911.26-69` volta ao bloco `Pendência – Parcelamento (SIEFPAR)` |
+| 55.387.580/0001-03 | os **três** números voltam ao `Parcelamento com Exigibilidade Suspensa (SIEFPAR)` |
+| 53.742.042/0001-64 | a **inscrição em dívida ativa** `70.4.24.435196-96` volta — e o bloco `Pendência - Inscrição (SIDA)` passa de TABELA a **cru** |
+
+⚠ **O bloco do SIDA que "piorou" era o defeito antigo em pessoa.** Ele fechava por aritmética
+(10 linhas ÷ 2 colunas) com as colunas deslocadas: imprimia `Inscrito em` debaixo de **"Inscrição"**
+e a data debaixo de **"Receita"**, e o número da inscrição não aparecia em lugar nenhum. Com o
+número de volta são 11 linhas, a divisão não fecha, e o bloco sai cru **com tudo visível** — a
+resposta honesta. Não dá para consertá-lo só reconhecendo mais colunas: o registro real tem
+`Ajuizado em` **vazio** (a linha em branco some) e um par `Situação:`/valor no fim, então nem 6
+colunas fechariam.
+
+⚠ **O SIEFPAR NÃO virou tabela.** Ele é rótulo/valor intercalado, não cabeçalho-e-dados; nenhum
+rótulo dele está em `COLUNAS_CONHECIDAS`, então o bloco inteiro sai em `descricao`, na ordem
+impressa. O número reaparece visualmente solto (o rótulo numa linha, o valor na seguinte) — é o
+formato do bloco, e tabular isso é decisão de produto.
 
 **O relatório salvo nunca é apagado por uma consulta que falha.** A gravação só sobrescreve
 `situacao`/`relatorioPdfFileId`/`texto` quando vem relatório NOVO.

@@ -558,10 +558,15 @@ export function createNotasRouter({ log }) {
         ? {
             adnNsuCursor: state.adnNsuCursor?.toString() || "0",
             adnLastSyncAt: state.adnLastSyncAt,
+            // "OLHEI" É DIFERENTE DE "RECEBI", e a tela precisa dos dois. `adnLastSyncAt` só anda
+            // quando VEM nota, então sozinho ele não distingue "a captura está quebrada" de "a
+            // empresa não emitiu nada" — e sem essa distinção a aba mostra ausência sem dizer por
+            // quê. O campo já era gravado em toda tentativa; só não chegava à UI.
+            adnLastAttemptAt: state.adnLastAttemptAt,
             adnLastError: state.adnLastError,
             adnBackoffUntil: state.adnBackoffUntil,
           }
-        : { adnNsuCursor: "0", adnLastSyncAt: null, adnLastError: null, adnBackoffUntil: null },
+        : { adnNsuCursor: "0", adnLastSyncAt: null, adnLastAttemptAt: null, adnLastError: null, adnBackoffUntil: null },
     });
   });
 

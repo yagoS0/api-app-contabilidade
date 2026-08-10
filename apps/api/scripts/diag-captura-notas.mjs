@@ -47,7 +47,30 @@ const idade = (d) => {
   return `${Math.floor(m / 1440)}d`;
 };
 
-console.log(`WORKER: ${DFE_NOTAS_WORKER_ENABLED ? "ligado" : "DESLIGADO (DFE_NOTAS_WORKER_ENABLED != 1)"} · intervalo ${DFE_NOTAS_WORKER_INTERVAL_MIN}min\n`);
+// ⚠ ESTA LINHA JÁ MENTIU, E DO PIOR JEITO: afirmando "DESLIGADO" sobre uma produção que estava
+// varrendo a carteira 45 vezes por hora.
+//
+// `DFE_NOTAS_WORKER_ENABLED` é lido do ambiente ONDE O SCRIPT RODA. A receita de uso (topo do
+// arquivo) é `railway run --service Postgres`, que injeta as variáveis do **Postgres**, não as do
+// serviço da API — a flag vem sempre indefinida, e o script imprimia "a rotina nunca rodou e nenhum
+// dado abaixo explica coisa alguma". Quem seguisse isso descartaria justamente a evidência certa.
+//
+// O que responde "o worker rodou?" é DADO, não flag: cada varredura grava um `NotasCapturaJob`
+// com `origem:"automatico"`. É isso que se lê aqui.
+const ultimaVarredura = await prisma.notasCapturaJob.findFirst({
+  where: { origem: "automatico" },
+  orderBy: { createdAt: "desc" },
+  select: { createdAt: true },
+});
+const varredurasUltimaHora = await prisma.notasCapturaJob.count({
+  where: { origem: "automatico", createdAt: { gt: new Date(Date.now() - 3600 * 1000) } },
+});
+console.log(
+  ultimaVarredura
+    ? `WORKER: rodou — última varredura automática ${idade(ultimaVarredura.createdAt)} atrás · ${varredurasUltimaHora} na última hora`
+    : "WORKER: NENHUMA varredura automática registrada — a rotina nunca rodou nesta base (confira DFE_NOTAS_WORKER_ENABLED=1 NO SERVIÇO DA API)",
+);
+console.log(`(flag lida NESTE ambiente, que pode não ser o da API: ${DFE_NOTAS_WORKER_ENABLED ? "1" : "não definida"}) · intervalo ${DFE_NOTAS_WORKER_INTERVAL_MIN}min\n`);
 
 const linhas = [];
 for (const p of portals) {
