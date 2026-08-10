@@ -846,7 +846,34 @@ model PortalInvoice {
   // Q12.A: papel da empresa nesta nota (DFe traz emissor E destinatário na mesma fonte)
   papel                    String? // EMIT | DEST
   // statusEfetivo: derivado dos eventos (cancelamento/substituição). Análise só usa autorizada.
-  statusEfetivo            String? // autorizada | cancelada | substituida | rejeitada
+  //
+  // ⚠ NA PRÁTICA SÓ DOIS VALORES SÃO ESCRITOS: `autorizada` e `cancelada`. `substituida` está
+  // aqui desde o início e NUNCA foi gravado (0 linhas em produção, medido em 10/08/2026) — e
+  // gravá-lo agora seria uma mudança de DINHEIRO disfarçada de rótulo: todo filtro de receita
+  // testa `=== "autorizada"` (FechamentoService.js:63, RbtExtratoService.js:48, CalculoFiscal.js:81,
+  // MotorApuracaoService.js:114) e todo filtro de exclusão testa `=== "cancelada"`
+  // (routes/firm/notas.js:421 esconde da aba, :515 tira dos totais do resumo). Um terceiro valor
+  // não casa com nenhum dos dois: a nota reapareceria na aba, entraria no total do resumo e
+  // continuaria FORA do faturamento — duas telas discordando em silêncio sobre a mesma nota.
+  //
+  // A distinção cancelada × substituída NÃO mora aqui. Mora em `PortalInvoiceEvent.type` (o fato,
+  // com data e motivo) e em `chaveSubstituida` (o vínculo). Ver `application/notas/cicloNota.js`,
+  // que junta os três e é o que a tela deve ler.
+  statusEfetivo            String? // autorizada | cancelada  (ver aviso acima)
+
+  // ⚠ O VÍNCULO DA SUBSTITUIÇÃO — "esta nota substitui a de chave X".
+  //
+  // Vem do XML da própria nota (`<subst><chSubstda>`, ANEXO_I v1.01), não do evento. É por isso que
+  // ele é recuperável retroativamente e o evento não: o XML da nota nós guardamos inteiro
+  // (`xmlRaw`), o do evento era descartado. `scripts/backfill-substituicao-nfse.mjs` extrai os
+  // pares que já estão na base sem chamar o ADN.
+  //
+  // Guarda a CHAVE, não o id da outra nota, e isso é deliberado: a substituída pode não estar (e em
+  // 4 casos medidos NÃO está) no nosso banco. Um id exigiria que ela existisse; a chave registra o
+  // vínculo mesmo quando a outra ponta falta — e "aponta para uma nota que não temos" é uma
+  // resposta legítima, diferente de "não aponta para ninguém".
+  chaveSubstituida         String?
+  motivoSubstituicao       String?
   // Q12.A: marca quando a nota chegou em competência já fechada (vai pra fila de pendências)
   competenciaPosFechamento Boolean @default(false)
 
@@ -865,12 +892,30 @@ model PortalInvoice {
   @@index([status, updatedAt])
   @@index([papel])
   @@index([statusEfetivo])
+  // A pergunta inversa ("quem substituiu ESTA nota?") é uma varredura por chave dentro da empresa.
+  @@index([clientId, chaveSubstituida])
 }
 
+// O FATO que aconteceu com a nota — cancelamento, substituição, manifestação.
+//
+// ⚠ ESTA TABELA EXISTIA E ESTAVA VAZIA: 0 linhas em produção para 556 NFS-e canceladas
+// (medido em 10/08/2026). O caminho ADN aplicava o evento — virava `statusEfetivo="cancelada"` —
+// e descartava tudo o mais no mesmo instante: data do fato, motivo, sequência, e a chave da nota
+// substituta. Sobrava um retrato sem história, e a distinção entre "cancelada" e "substituída"
+// não tinha onde existir.
+//
+// O que se perdeu não volta: o XML do evento nunca foi gravado, então aqueles 556 cancelamentos
+// só se recuperam relendo o ADN por NSU. Daqui para frente, o evento fica.
 model PortalInvoiceEvent {
-  id         String    @id @default(uuid())
-  clientId   String
-  invoiceId  String
+  id       String @id @default(uuid())
+  clientId String
+  // ⚠ FK OBRIGATÓRIA — evento cuja nota ainda não chegou NÃO CABE AQUI. Na prática o ADN entrega a
+  // nota antes do evento dela (o NSU da emissão é menor que o do cancelamento), e não observamos
+  // nenhum caso; mas quando acontecer, o evento é contado e perdido. Quem resolve isso é o ledger
+  // da Fase 1 (`eventos`, sem FK, chaveado por `chaveAcesso`) — ligar aquilo é decisão do dono.
+  invoiceId String
+  // cancelamento | canc_por_substituicao (ADN/NFS-e) · CANCELAMENTO | MANIFESTACAO (SEFAZ/NF-e).
+  // O vocabulário do lado NFS-e é o mesmo de `Evento.tipoEvento` (ledger), de propósito.
   type       String
   date       DateTime?
   protocol   String?
@@ -878,9 +923,22 @@ model PortalInvoiceEvent {
   payloadRaw Json?
   createdAt  DateTime  @default(now())
 
+  // Código oficial do evento (101101 cancelamento · 105102 cancelamento por substituição).
+  // ⚠ Vem do atributo `Id` (`EVT`+chave+tpEvento+nSeq), NÃO de um elemento `<tpEvento>` — ele não
+  // existe em nenhum dos 62 eventos reais capturados.
+  tpEvento   String?
+  nSeqEvento Int?
+  // "esta nota foi substituída POR aquela" — o lado espelhado de `PortalInvoice.chaveSubstituida`.
+  // Guardado como chave porque a substituta pode não estar no nosso banco.
+  chaveSubstituta String?
+
   client  PortalClient  @relation(fields: [clientId], references: [id], onDelete: Cascade)
   invoice PortalInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
+  // Idempotência: o mesmo evento reprocessado (recaptura, cursor recuado) não vira linha nova.
+  // ⚠ No PostgreSQL NULLs são distintos num índice único, então isto NÃO restringe o caminho
+  // NF-e/SEFAZ, que grava sem `nSeqEvento` — de propósito: mudar aquele caminho não é o escopo.
+  @@unique([invoiceId, type, nSeqEvento])
   @@index([clientId])
   @@index([invoiceId, date])
 }

@@ -86,11 +86,32 @@ export function parseXmlMetadata(xmlPlain) {
     }
   }
 
+  // ⚠ A NOTA SUBSTITUTA DECLARA, ELA MESMA, QUEM ELA SUBSTITUI — e isso não é o evento.
+  //
+  // São os dois lados do mesmo fato, em documentos diferentes:
+  //   • aqui, na DPS da nota nova: `<subst><chSubstda>` = "eu substituo AQUELA"
+  //   • no evento e105102 da nota velha: `<chSubstituta>` = "eu fui substituída por AQUELA"
+  // O evento pode se perder (e se perdeu: 0 linhas em PortalInvoiceEvent para 556 canceladas);
+  // este bloco não, porque viaja dentro do XML da própria nota, que guardamos inteiro. Medido em
+  // produção: 22 notas com o bloco, e nenhuma coluna que o expressasse.
+  //
+  // Leiaute oficial (ANEXO_I v1.01): NFSe/infNFSe/DPS/infDPS/subst/chSubstda.
+  //
+  // ⚠ O nó tem de ser buscado ANTES dos campos: `cMotivo`/`xMotivo` existem em mais de um lugar do
+  // XML, e procurá-los no documento inteiro traria o motivo errado.
+  const substNode = findFirstByLocalName(doc, "subst");
+  const chaveSubstituida = substNode
+    ? (getTextByLocalNames(substNode, ["chSubstda", "chSubstituida"]) || null)
+    : null;
+
   const valorServicosNumber = valorServicos ? Number(valorServicos) : null;
   const valorIssNumber = valorIss ? Number(valorIss) : null;
 
   return {
     chaveAcesso: chaveAcesso ? String(chaveAcesso).trim() : null,
+    // Nulo quando a nota não substitui ninguém — que é o caso da esmagadora maioria.
+    chaveSubstituida: chaveSubstituida ? String(chaveSubstituida).replace(/\D+/g, "") || null : null,
+    motivoSubstituicao: substNode ? (getTextByLocalNames(substNode, ["xMotivo"]) || null) : null,
     cnpjPrestador: normalizeDoc(cnpjPrestador || cnpjAutor),
     cnpjTomador: normalizeDoc(cnpjTomador),
     prestadorNome: normalizeName(prestadorNome),
@@ -116,30 +137,115 @@ export function parseXmlMetadata(xmlPlain) {
 // A validação final é contra evento REAL (logamos o XML cru); múltiplos sinais reduzem falso-negativo.
 const TP_EVENTO_CANCELAMENTO = new Set(["101101", "e101101", "105102", "e105102", "110111"]);
 
+// ⚠ CANCELAMENTO E CANCELAMENTO-POR-SUBSTITUIÇÃO NÃO SÃO O MESMO FATO.
+//
+// Este mapa existe porque `isCancelamento` (um booleano) achatava os dois num só, e o efeito no
+// banco era idêntico: a nota virava "cancelada" e a chave da substituta ia embora. Quem olhasse
+// depois não tinha como saber se a nota deixou de existir para o fisco ou se foi TROCADA por
+// outra — e são consequências diferentes na apuração.
+//
+// O vocabulário aqui é DE PROPÓSITO o mesmo do model `Evento` do ledger da Fase 1
+// (`schema.prisma:2317`), para que ligar a Fase 1 à captura seja um mapeamento direto, sem
+// tradução: `cancelamento` | `canc_por_substituicao`.
+const TIPO_POR_CODIGO = {
+  101101: "cancelamento",
+  105102: "canc_por_substituicao",
+};
+
+// O Id do evento carrega o que o corpo não traz: `EVT` + chave(50) + tpEvento(6) + nSeqEvento(3).
+// (O `infPedReg` usa `PRE` + chave(50) + tpEvento(6), sem o nSeq.)
+//
+// ⚠ ISTO NÃO É UM ATALHO — É A ÚNICA FONTE. Medido nos 62 eventos reais capturados em produção:
+// o elemento `<tpEvento>` NÃO EXISTE em nenhum deles. Ler o código só do corpo devolvia `null`
+// sempre, e a detecção sobrevivia por acaso, pelo nome do elemento (`<e101101>`) ou pela palavra
+// "cancel" na descrição. Nenhum dos dois distingue 101101 de 105102 de forma confiável.
+function lerIdDoEvento(doc) {
+  const node = findFirstByLocalName(doc, "infEvento") || findFirstByLocalName(doc, "infPedReg");
+  const id = node && typeof node.getAttribute === "function"
+    ? (node.getAttribute("Id") || node.getAttribute("id"))
+    : null;
+  const digits = String(id || "").replace(/\D+/g, "");
+  if (digits.length < 56) return { chave: null, tpEvento: null, nSeqEvento: null };
+  return {
+    chave: digits.slice(0, 50),
+    tpEvento: digits.slice(50, 56),
+    nSeqEvento: digits.length >= 59 ? Number(digits.slice(56, 59)) : null,
+  };
+}
+
 /**
  * Parseia um item TipoDocumento="EVENTO" da NFS-e Nacional (documento separado da nota).
- * O ADN entrega o evento no mesmo LoteDFe; aqui extraímos a chave da nota afetada, o tpEvento
- * e se é (ou parece ser) um cancelamento. Conservador: só marca cancelamento com sinal estrutural
- * (código de evento OU elemento de cancelamento OU descrição "cancel").
- * @returns {{ chave, tpEvento, descricao, isCancelamento }}
+ *
+ * Leiaute confirmado em documentação oficial (ANEXO_II-SEFIN_ADN-PEDREGEVT_EVT-SNNFSe v1.01,
+ * 22/01/2026) e batendo com os 62 eventos reais capturados do ADN:
+ *
+ *   evento/infEvento@Id .......................... EVT + chave(50) + tpEvento(6) + nSeq(3)
+ *   evento/pedRegEvento/infPedReg/chNFSe ......... chave da nota afetada
+ *   evento/pedRegEvento/infPedReg/dhEvento ....... quando o fato aconteceu
+ *   evento/pedRegEvento/infPedReg/e101101 ........ Cancelamento de NFS-e
+ *   evento/pedRegEvento/infPedReg/e105102 ........ Cancelamento por Substituição
+ *   evento/…/e105102/chSubstituta (50) ........... "Chave de Acesso da NFS-e substituta"
+ *
+ * @returns {{ chave, tpEvento, tipo, nSeqEvento, dhEvento, cMotivo, xMotivo, descricao,
+ *             chaveSubstituta, isCancelamento }}
  */
 export function parseNfseEvento(xmlPlain) {
-  if (!xmlPlain) return { chave: null, tpEvento: null, descricao: null, isCancelamento: false };
+  const vazio = {
+    chave: null, tpEvento: null, tipo: null, nSeqEvento: null, dhEvento: null,
+    cMotivo: null, xMotivo: null, descricao: null, chaveSubstituta: null, isCancelamento: false,
+  };
+  if (!xmlPlain) return vazio;
   const doc = new DOMParser().parseFromString(xmlPlain, "text/xml");
-  const chave = getTextByLocalNames(doc, ["chNFSe", "ChaveAcesso", "chaveAcesso", "chAcesso"]) || null;
-  const tpEvento = getTextByLocalNames(doc, ["tpEvento", "TipoEvento"]) || null;
-  const descricao = getTextByLocalNames(doc, ["xDesc", "descEvento", "xEvento", "xMotivo", "descSit"]) || null;
-  const porTp = tpEvento && TP_EVENTO_CANCELAMENTO.has(String(tpEvento).trim().toLowerCase());
-  // Alguns layouts nomeiam o elemento do evento pelo código (ex.: <e101101>, <e105102>).
-  const porElemento = Boolean(
+  const doId = lerIdDoEvento(doc);
+
+  const chave =
+    getTextByLocalNames(doc, ["chNFSe", "ChaveAcesso", "chaveAcesso", "chAcesso"]) || doId.chave || null;
+  // Corpo primeiro (se um dia o elemento existir, ele manda), Id como fonte real de hoje.
+  const tpEvento = getTextByLocalNames(doc, ["tpEvento", "TipoEvento"]) || doId.tpEvento || null;
+  const descricao = getTextByLocalNames(doc, ["xDesc", "descEvento", "xEvento", "descSit"]) || null;
+
+  // O nó do evento propriamente dito — `cMotivo`/`xMotivo` moram DENTRO dele.
+  const noEvento =
     findFirstByLocalName(doc, "e101101") || findFirstByLocalName(doc, "e105102") ||
-    findFirstByLocalName(doc, "cancNFSe") || findFirstByLocalName(doc, "cancelamento")
-  );
-  const porDescricao = descricao && /cancel/i.test(descricao);
+    findFirstByLocalName(doc, "cancNFSe") || findFirstByLocalName(doc, "cancelamento") || doc;
+
+  // ⚠ `chSubstituta` é o nome do padrão (ANEXO_II v1.01) e o único que aparece nos 6 eventos
+  // e105102 reais que capturamos. `chNFSeSubst` — que o NOSSO `NfseService.buildEventoXml` escreve
+  // ao PEDIR o evento — não existe no leiaute e não aparece em nenhum XML capturado; é lido aqui
+  // apenas por defesa, porque o evento devolvido pelo ADN ecoa o `pedRegEvento` que foi enviado.
+  // Ler os dois não pode produzir dado errado (significam a mesma coisa); ler só um pode perder.
+  const chaveSubstituta =
+    getTextByLocalNames(noEvento, ["chSubstituta", "chNFSeSubst"]) || null;
+
+  const codigo = String(tpEvento || "").replace(/\D+/g, "");
+  const tipoPorCodigo = TIPO_POR_CODIGO[codigo] || null;
+  // Sem código legível, a presença do elemento ainda nomeia o fato — é o que sobra e é honesto.
+  const tipoPorElemento = findFirstByLocalName(doc, "e105102")
+    ? "canc_por_substituicao"
+    : findFirstByLocalName(doc, "e101101") ? "cancelamento" : null;
+  // ⚠ Substituição vence: um e105102 detectado pelo elemento não pode ser rebaixado a
+  // "cancelamento" só porque o código veio ilegível — perderíamos justamente a distinção.
+  const tipo = tipoPorElemento === "canc_por_substituicao" ? "canc_por_substituicao"
+    : tipoPorCodigo || tipoPorElemento
+    // Chave substituta presente É a assinatura da substituição, mesmo sem código nem elemento.
+    || (chaveSubstituta ? "canc_por_substituicao" : null);
+
+  const porTp = tpEvento && TP_EVENTO_CANCELAMENTO.has(String(tpEvento).trim().toLowerCase());
+  const xMotivo = getTextByLocalNames(noEvento, ["xMotivo"]) || null;
+  const porDescricao = (descricao && /cancel/i.test(descricao)) || (xMotivo && /cancel/i.test(xMotivo));
+
   return {
     chave: chave ? String(chave).trim() : null,
     tpEvento: tpEvento ? String(tpEvento).trim() : null,
+    tipo,
+    nSeqEvento: getTextByLocalNames(doc, ["nSeqEvento"]) != null
+      ? Number(getTextByLocalNames(doc, ["nSeqEvento"]))
+      : doId.nSeqEvento,
+    dhEvento: parseDate(getTextByLocalNames(doc, ["dhEvento"])),
+    cMotivo: getTextByLocalNames(noEvento, ["cMotivo"]) || null,
+    xMotivo,
     descricao: descricao ? String(descricao).trim() : null,
-    isCancelamento: Boolean(porTp || porElemento || porDescricao),
+    chaveSubstituta: chaveSubstituta ? String(chaveSubstituta).replace(/\D+/g, "") || null : null,
+    isCancelamento: Boolean(porTp || tipo || porDescricao),
   };
 }

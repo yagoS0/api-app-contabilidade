@@ -187,6 +187,12 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
     status: canceladaNoXml ? "CANCELADA" : "EMITIDA",
     papel,
     statusEfetivo,
+    // ⚠ O VÍNCULO VEM DA PRÓPRIA NOTA, e é por isso que ele sobrevive onde o evento não sobreviveu.
+    // `<subst><chSubstda>` viaja dentro do XML da substituta (leiaute ANEXO_I v1.01) — o mesmo XML
+    // que já guardávamos inteiro em `xmlRaw` e do qual ninguém lia este bloco. Medido: 22 notas na
+    // base o carregam. Nulo em quem não substitui ninguém, que é a maioria esmagadora.
+    chaveSubstituida: metadata.chaveSubstituida || null,
+    motivoSubstituicao: metadata.motivoSubstituicao || null,
     competenciaPosFechamento: fechada || false,
   };
 
@@ -233,25 +239,89 @@ async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPl
 }
 
 // Trata um item TipoDocumento="EVENTO" do ADN (documento separado da nota). O cancelamento de
-// NFS-e Nacional chega aqui — não muda o XML da nota (que fica cStat=100). Loga SEMPRE o XML cru
-// (pra validar a estrutura do evento contra dado real) e, se for cancelamento, marca a nota pela
-// chave. Idempotente e reversível (botão manual). Conservador: só marca com sinal de cancelamento.
+// NFS-e Nacional chega aqui — não muda o XML da nota (que fica cStat=100).
+//
+// ⚠ ANTES, ESTA FUNÇÃO APLICAVA O EVENTO E O DESTRUÍA NO MESMO INSTANTE.
+//
+// Ela escrevia exatamente duas colunas (`statusEfetivo`/`status`) e devolvia um contador. A data
+// do fato, o motivo, a sequência e — no e105102 — a CHAVE DA NOTA SUBSTITUTA só existiam no
+// `log.info` abaixo, que envelhece e some. Medido em produção em 10/08/2026: **556 NFS-e marcadas
+// canceladas e 0 linhas em `PortalInvoiceEvent`** — de nenhuma delas se sabe quando, por quê, nem
+// se foi cancelamento simples ou substituição.
+//
+// Aquele passado não volta (o XML do evento nunca foi gravado; só relendo o ADN por NSU). Daqui
+// para frente o fato fica registrado ANTES de virar rótulo.
+//
+// ⚠ E O RÓTULO CONTINUA SENDO `cancelada` NOS DOIS TIPOS — de propósito, não por preguiça.
+// `statusEfetivo` é campo de DINHEIRO: receita filtra `= "autorizada"`, exclusão filtra
+// `= "cancelada"`. Um terceiro valor ("substituida") não casa com nenhum dos dois — a nota
+// reapareceria na aba, entraria no total do resumo e continuaria fora do faturamento. A distinção
+// entre cancelada e substituída mora no EVENTO (`type`/`chaveSubstituta`) e no VÍNCULO
+// (`PortalInvoice.chaveSubstituida`), e quem a compõe para a tela é `notas/cicloNota.js`.
 async function applyNfseEvento(tx, { portalClientId, item, xmlPlain }) {
   const evt = parseNfseEvento(xmlPlain);
   const chave = item.ChaveAcesso || item.chaveAcesso || evt.chave || null;
-  // Log cru do evento — é assim que capturamos a estrutura real (tpEvento etc.) sem precisar exportar.
+  // Log cru do evento — segue útil para ver estrutura nova antes de ela ter coluna.
   log?.info?.({
-    portalClientId, chave, tpEvento: evt.tpEvento, descricao: evt.descricao,
-    isCancelamento: evt.isCancelamento, xmlPreview: String(xmlPlain || "").slice(0, 800),
+    portalClientId, chave, tpEvento: evt.tpEvento, tipo: evt.tipo, descricao: evt.descricao,
+    chaveSubstituta: evt.chaveSubstituta, isCancelamento: evt.isCancelamento,
+    xmlPreview: String(xmlPlain || "").slice(0, 800),
   }, "ADN evento recebido");
   if (!chave) return { status: "evento_sem_chave" };
   if (!evt.isCancelamento) return { status: "evento_ignorado" };
-  // Marca a nota como cancelada (se já existir no banco). Preserva a semântica das listagens/apuração.
-  const r = await tx.portalInvoice.updateMany({
+
+  // A nota tem de existir: `PortalInvoiceEvent.invoiceId` é FK obrigatória.
+  // ⚠ Na prática o ADN entrega a nota antes do evento dela (o NSU da emissão é menor que o do
+  // cancelamento), e não observamos o caso contrário. Quando ele acontecer, o evento é CONTADO
+  // (`evento_nota_ausente`) e perdido — é o buraco que só o ledger da Fase 1 fecha, porque lá
+  // `eventos` é chaveado por `chaveAcesso` e não exige que a nota exista.
+  const nota = await tx.portalInvoice.findFirst({
     where: { clientId: portalClientId, chaveAcesso: chave },
+    select: { id: true },
+  });
+  if (!nota) return { status: "evento_nota_ausente" };
+
+  // O FATO PRIMEIRO, o rótulo depois. Se a escrita do evento falhar, é melhor não ter marcado a
+  // nota do que ter o rótulo sem a história — a transação inteira volta e a próxima captura tenta
+  // de novo (o cursor só avança com o lote persistido).
+  const tipo = evt.tipo || "cancelamento";
+  const nSeqEvento = Number.isFinite(evt.nSeqEvento) ? evt.nSeqEvento : 1;
+
+  // Idempotente: recaptura ou cursor recuado não podem duplicar o mesmo fato. A unicidade
+  // (invoiceId, type, nSeqEvento) é a mesma chave de idempotência do ledger da Fase 1.
+  const jaTem = await tx.portalInvoiceEvent.findFirst({
+    where: { invoiceId: nota.id, type: tipo, nSeqEvento },
+    select: { id: true },
+  });
+  if (!jaTem) {
+    await tx.portalInvoiceEvent.create({
+      data: {
+        clientId: portalClientId,
+        invoiceId: nota.id,
+        type: tipo,
+        tpEvento: evt.tpEvento || null,
+        nSeqEvento,
+        date: evt.dhEvento || null,
+        reason: evt.xMotivo || evt.descricao || null,
+        chaveSubstituta: evt.chaveSubstituta || null,
+        // O XML cru vai junto: é a prova, e é o que permitiria reconstruir qualquer campo que
+        // ainda não tenha coluna — exatamente o que faltou para os 556 cancelamentos anteriores.
+        payloadRaw: {
+          tpEvento: evt.tpEvento, tipo, nSeqEvento,
+          cMotivo: evt.cMotivo, xMotivo: evt.xMotivo, descricao: evt.descricao,
+          chaveSubstituta: evt.chaveSubstituta,
+          dhEvento: evt.dhEvento ? new Date(evt.dhEvento).toISOString() : null,
+          xml: xmlPlain || null,
+        },
+      },
+    });
+  }
+
+  await tx.portalInvoice.update({
+    where: { id: nota.id },
     data: { statusEfetivo: "cancelada", status: "CANCELADA" },
   });
-  return { status: r.count > 0 ? "evento_cancelou" : "evento_nota_ausente" };
+  return { status: tipo === "canc_por_substituicao" ? "evento_substituiu" : "evento_cancelou" };
 }
 
 // ─── Cursor + backoff ──────────────────────────────────────────────────────

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AMOSTRA DE LEIAUTE — NFS-e Nacional v1.01, documento de SUBSTITUIÇÃO.
+
+  ⚠ TODO IDENTIFICADOR AQUI É FABRICADO. Mesmo formato e comprimento dos reais, dígitos
+  inventados — a mesma regra das fixtures de `notas/__tests__/cicloNfse.test.js`, e pelo mesmo
+  motivo: arquivo versionado entra no histórico do git para sempre; nota de contribuinte real,
+  não. Esta amostra substitui um XML de nota REAL que ficou na raiz do repo e passou batido pela
+  anonimização. **Não traga os identificadores reais de volta.**
+
+  O que esta amostra existe para mostrar: o bloco `<subst>`/`<chSubstda>` dentro de `infDPS` —
+  "eu substituo AQUELA nota". É o único exemplo dele versionado no projeto. Quem lê o bloco é
+  `parseXmlMetadata` (`application/nfse/AdnXmlMetadata.js`), e o contraponto dele é o
+  `<chSubstituta>` do evento e105102 ("eu fui substituída por AQUELA"), que tem exemplo próprio
+  no `cicloNfse.test.js`.
+
+  Chaves fabricadas, 50 dígitos, no leiaute oficial da chave de acesso:
+    cMun(7) · ambGer(1) · tpInsc(1) · inscrição federal(14) · nNFSe(13) · AAMM(4) · cNum(9) · DV(1)
+  ⚠ O DV é FABRICADO, não calculado — esta chave não passa em validação de dígito verificador
+  (a regra oficial do DV da NFS-e Nacional não está confirmada no projeto). O mesmo vale para as
+  chaves de `cicloNfse.test.js`.
+
+  ⚠ A assinatura é PLACEHOLDER. Digest, SignatureValue e certificado foram substituídos por
+  texto fabricado — o documento NÃO valida em XMLDSig, e não pode ser usado como amostra de
+  assinatura. Valores monetários, datas, códigos de município e códigos de tributação foram
+  mantidos: são estrutura / tabela pública, não identificam ninguém.
+-->
+<NFSe versao="1.01" xmlns="http://www.sped.fazenda.gov.br/nfse">
+<infNFSe Id="NFS33045572200000000000191000000000001826011111111110">
+<xLocEmi>Rio de Janeiro</xLocEmi>
+<xLocPrestacao>Rio de Janeiro</xLocPrestacao>
+<nNFSe>18</nNFSe>
+<cLocIncid>3304557</cLocIncid>
+<xLocIncid>Rio de Janeiro</xLocIncid>
+<xTribNac>Serviços técnicos em telecomunicações e congêneres.</xTribNac>
+<xTribMun>Serviços técnicos em telecomunicações.</xTribMun>
+<verAplic>EmissorWeb_1.5.0.0</verAplic>
+<ambGer>2</ambGer><tpEmis>1</tpEmis>
+<procEmi>2</procEmi><cStat>101</cStat>
+<dhProc>2026-01-12T13:50:48-03:00</dhProc>
+<nDFSe>1234567</nDFSe><emit>
+<CNPJ>00000000000191</CNPJ>
+<xNome>EMPRESA EXEMPLO LTDA</xNome>
+<enderNac>
+<xLgr>RUA EXEMPLO</xLgr><nro>100</nro>
+<xBairro>CENTRO</xBairro>
+<cMun>3304557</cMun>
+<UF>RJ</UF>
+<CEP>20000000</CEP>
+</enderNac>
+<fone>2100000000</fone>
+</emit>
+<valores>
+<vBC>198.00</vBC>
+<pAliqAplic>5.00</pAliqAplic>
+<vISSQN>9.90</vISSQN>
+<vLiq>198.00</vLiq>
+</valores>
+<DPS versao="1.01" xmlns="http://www.sped.fazenda.gov.br/nfse">
+<infDPS Id="DPS330455720000000000019100900000000000000035">
+<tpAmb>1</tpAmb><dhEmi>2026-01-12T13:50:48-03:00</dhEmi><verAplic>EmissorWeb_1.4.0.26</verAplic>
+<serie>900</serie><nDPS>35</nDPS><dCompet>2026-01-01</dCompet><tpEmit>1</tpEmit>
+<cLocEmi>3304557</cLocEmi>
+<subst>
+<chSubstda>33045572200000000000191000000000001725120000000000</chSubstda>
+<cMotivo>99</cMotivo><xMotivo>ALIQUOTA APROXIMADA INCORRETA</xMotivo></subst>
+<prest><CNPJ>00000000000191</CNPJ><fone>2100000000</fone><regTrib>
+<opSimpNac>1</opSimpNac>
+<regEspTrib>0</regEspTrib>
+</regTrib></prest><toma>
+<CNPJ>11222333000181</CNPJ>
+<xNome>EMPRESA TOMADORA EXEMPLO LTDA</xNome><end><endNac><cMun>3106200</cMun>
+<CEP>30000000</CEP></endNac><xLgr>RUA EXEMPLO DO TOMADOR</xLgr><nro>200</nro
+><xBairro>CENTRO</xBairro></end></toma><serv><locPrest><cLocPrestacao>3304557</cLocPrestacao></locPrest><cServ><cTribNac>310104</cTribNac><cTribMun>001</cTribMun><xDescServ>serviço de telemetria</xDescServ></cServ></serv><valores><vServPrest><vServ>198.00</vServ></vServPrest><trib><tribMun><tribISSQN>1</tribISSQN><tpRetISSQN>1</tpRetISSQN></tribMun><totTrib><pTotTrib><pTotTribFed>11.33</pTotTribFed><pTotTribEst>0.00</pTotTribEst><pTotTribMun>0.00</pTotTribMun></pTotTrib></totTrib></trib></valores></infDPS></DPS></infNFSe><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#WithComments" /><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256" /><Reference URI="#NFS33045572200000000000191000000000001826011111111110"><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature" /><Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#WithComments" /></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256" /><DigestValue>DIGEST_FABRICADO_ESTA_AMOSTRA_NAO_VALIDA=</DigestValue></Reference></SignedInfo><SignatureValue>ASSINATURA_FABRICADA_ESTA_AMOSTRA_NAO_VALIDA_EM_XMLDSIG=</SignatureValue><KeyInfo><X509Data><X509Certificate>CERTIFICADO_FABRICADO_ESTA_AMOSTRA_NAO_CARREGA_CERTIFICADO_REAL=</X509Certificate></X509Data></KeyInfo></Signature></NFSe>
