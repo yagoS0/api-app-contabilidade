@@ -4239,7 +4239,7 @@ export function createMockApi() {
     // Mock com atividade SUJEITA A FATOR R e folha derivada dos lançamentos — é a única forma de
     // conferir a comparação da folha sem backend. A folha digitada vem DIFERENTE da derivada de
     // propósito: o caso que precisa avisar é a divergência, não a coincidência.
-    async getFechamento(_companyId, competencia) {
+    async getFechamento(companyId, competencia) {
       await delay(60);
       const pas = [];
       const [y, m] = String(competencia || "2026-06").split("-").map(Number);
@@ -4249,11 +4249,25 @@ export function createMockApi() {
         // envia de volta ao salvar. Usar número aqui fazia o prefill não casar.
         pas.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
       }
+      // ⚠ A EMPRESA SEM FATURAMENTO PRECISA EXISTIR AQUI — era ela que faltava.
+      // O mock devolvia 120.000 fixos, então a competência zerada (`semMovimentoDisponivel`) e a
+      // caixa "Declarar SEM MOVIMENTO" eram **inalcançáveis offline** — e foi exatamente esse o
+      // caminho que quebrou em produção sem ninguém ver. A regra é a MESMA que o resto do mock já
+      // usa (`mockFaturamentoDaCompetencia`: competência ímpar = 0), não uma convenção nova.
+      //
+      // E a lista de atividades vem preenchida com **R$ 0,00**, reproduzindo o que
+      // `montarAtividadesDoCnae` faz no backend ("emite a linha mesmo com faturamento 0, só pra
+      // TRAZER o ANEXO"): é essa linha que escondia a caixa dentro do ramo "lista vazia".
+      const fat = mockFaturamentoDaCompetencia(companyId, competencia);
+      const zerada = fat === 0;
       return {
         ok: true,
         dados: {
-          faturamento: { interno: 120000, externo: 0, total: 120000 },
-          atividades: [{ idAtividade: 11, descricao: "Serviços sujeitos ao Fator R", anexoImplicito: "III", mercado: "interno", sujeitoFatorR: true, valorInterno: 120000, valorExterno: 0 }],
+          faturamento: zerada ? { interno: 0, externo: 0, total: 0 } : { interno: 120000, externo: 0, total: 120000 },
+          semMovimentoDisponivel: zerada,
+          empresaZerada: false,
+          semFaturamento: false,
+          atividades: [{ idAtividade: 11, descricao: "Serviços sujeitos ao Fator R", anexoImplicito: "III", mercado: "interno", sujeitoFatorR: true, valorInterno: zerada ? 0 : 120000, valorExterno: 0 }],
           rbt12: 480000, disparidades: [], estado: "aberta", regimeApuracao: "COMPETENCIA",
           // Digitado: 5.000 em todos os meses. Derivado: 5.000, MENOS num mês (4.200) — divergência
           // de 800, que é a que a tela precisa apontar, inclusive na célula do mês.
@@ -4278,17 +4292,51 @@ export function createMockApi() {
     //  2. 200 SEM `valoresDevidos` — a RFB responde só com mensagens, `dasValor` fica null e a
     //     caixa de resultado precisa avisar em vez de pintar de verde com "—".
     // ⚠ A mensagem do caso 2 é ROTULADA como mock de propósito: não inventamos texto da RFB.
-    async calcularFechamento(_companyId, _competencia, payload = {}) {
+    async calcularFechamento(companyId, competencia, payload = {}) {
       await delay(150);
       const atividades = Array.isArray(payload.atividades) ? payload.atividades : [];
       const somaAtividades = atividades.reduce(
         (s, a) => s + Number(a?.valorInterno || 0) + Number(a?.valorExterno || 0), 0,
       );
-      if (atividades.length && somaAtividades === 0) {
+      // ⚠ A DECISÃO É PELA SOMA, igual ao backend — lista vazia e lista de R$ 0,00 produzem o
+      // mesmo payload, porque `buildDeclaracaoPayload` descarta a linha de valor 0.
+      if (somaAtividades === 0) {
+        // ⚠ Faturamento consultado ANTES da mensagem, na mesma ordem do backend: mandar quem tem
+        // nota "marcar sem movimento" é apontar para uma ação que a trava seguinte recusa.
+        const fat = mockFaturamentoDaCompetencia(companyId, competencia);
+        if (fat > 0) {
+          return payload.semMovimento
+            ? {
+              ok: false,
+              error: "SEM_MOVIMENTO_COM_FATURAMENTO",
+              message: `Não é possível declarar sem movimento: a empresa tem faturamento de R$ ${fat.toFixed(2)} na competência.`,
+            }
+            : {
+              ok: false,
+              error: "APURACAO_ZERADA_COM_FATURAMENTO",
+              message: `Empresa com faturamento de R$ ${fat.toFixed(2)} na competência, mas as atividades somam R$ 0,00. Classifique/preencha as receitas antes de apurar.`,
+            };
+        }
+        if (!payload.semMovimento) {
+          return {
+            ok: false,
+            error: "NO_ATIVIDADES",
+            message: atividades.length
+              ? "As atividades somam R$ 0,00. Preencha os valores, ou marque \"Declarar SEM MOVIMENTO\" se o mês realmente não teve receita."
+              : "Sem atividades pra calcular. Adicione a atividade, ou marque \"Declarar SEM MOVIMENTO\" se o mês realmente não teve receita.",
+          };
+        }
+        // ⚠ A RECUSA DA RECEITA À DECLARAÇÃO ZERADA — texto MEDIDO em produção (10/08/2026,
+        // `serpro_chamadas`, HTTP 400), não inventado. É o desfecho real de hoje, e o mock existe
+        // para que ele possa ser lido na tela sem gastar uma chamada paga.
         return {
           ok: false,
-          error: "APURACAO_ZERADA_COM_FATURAMENTO",
-          message: "Empresa com faturamento de R$ 120000.00 na competência, mas as atividades somam R$ 0,00. Classifique/preencha as receitas antes de apurar.",
+          error: "DECLARACAO_ZERADA_RECUSADA_RFB",
+          message: "A Receita recusou a declaração SEM MOVIMENTO no formato que este portal envia "
+            + "(atividades vazias, receita R$ 0,00). Resposta da RFB: \"SN-Entregar: O valor da atividade deve ser maior que zero.\". "
+            + "Nada foi transmitido. O formato oficial do PGDAS-D sem movimento ainda não está confirmado "
+            + "aqui — enquanto isso, a declaração zerada desta competência precisa ser entregue fora do "
+            + "portal, e o mês pode ser marcado como \"Mês sem faturamento\" na aba Lançamentos.",
         };
       }
       const folha = Array.isArray(payload.folhaMensal12) ? payload.folhaMensal12 : [];

@@ -342,30 +342,101 @@ export async function executarComAjusteDePeriodos(executar, { receitasBrutasAnte
   );
 }
 
+// A RECUSA DA DECLARAÇÃO ZERADA, DITA POR INTEIRO.
+//
+// O contador que apura uma empresa sem faturamento recebia, como única explicação, a frase de
+// campo da RFB — que fala de "valor da atividade" numa tela onde ele acabou de afirmar que o mês
+// não teve receita nenhuma. Medido em produção (10/08/2026, PHAOS CONSULTORIA LTDA, competência
+// sem uma única nota, duas chamadas PAGAS seguidas):
+//
+//     HTTP 400 — "SN-Entregar: O valor da atividade deve ser maior que zero."
+//
+// ⚠ A recusa é da RECEITA, não nossa, e NÃO É AFROUXADA aqui: o erro continua sendo erro e nada
+// é transmitido. O que muda é só o que o contador lê — a frase da RFB continua citada literalmente
+// (não se reescreve mensagem de órgão), com o contexto que falta em volta dela.
+//
+// ⚠ O QUE NÃO SE SABE, E POR ISSO NÃO É INVENTADO (regra 1/4): qual é o formato oficial do
+// PGDAS-D **sem movimento** no Integra Contador. Hoje `buildDeclaracaoPayload` monta a declaração
+// zerada como `estabelecimentos[0].atividades: []` + `receitaPaCompetencia*: 0` — e é isso que a
+// RFB está recusando. Enquanto o formato correto não vier de documentação oficial ou do dono,
+// nenhuma tentativa de adivinhá-lo entra aqui.
+const RE_ATIVIDADE_MAIOR_QUE_ZERO = /valor da atividade deve ser maior que zero/i;
+
+export function traduzirRecusaDeclaracaoZerada(err, declaracaoZerada) {
+  if (!declaracaoZerada) return err;
+  const msg = String(err?.message || "");
+  if (!RE_ATIVIDADE_MAIOR_QUE_ZERO.test(msg)) return err;
+  return new FechamentoError(
+    "DECLARACAO_ZERADA_RECUSADA_RFB",
+    "A Receita recusou a declaração SEM MOVIMENTO no formato que este portal envia "
+    + `(atividades vazias, receita R$ 0,00). Resposta da RFB: "${msg}". `
+    + "Nada foi transmitido. O formato oficial do PGDAS-D sem movimento ainda não está confirmado "
+    + "aqui — enquanto isso, a declaração zerada desta competência precisa ser entregue fora do "
+    + "portal, e o mês pode ser marcado como \"Mês sem faturamento\" na aba Lançamentos.",
+    { rfb: msg },
+  );
+}
+
 /**
  * [Calcular] — simulação oficial SERPRO (não transmite). Verdade do preview.
  * Persiste snapshot estado "calculada" + grava RBT12 da simulação no cache.
  */
 export async function calcularFechamento({ portalClientId, competencia, atividades, folhaMensal12, regimeApuracao, semMovimento = false }) {
-  const semAtividades = !Array.isArray(atividades) || atividades.length === 0;
-  if (semAtividades) {
-    // Declaração SEM MOVIMENTO: só permitida quando NÃO há faturamento EMIT na competência
-    // (trava de segurança — nunca declarar zerado quem tem nota). Senão, mantém o bloqueio.
-    if (semMovimento) {
-      const fat = await faturamentoEmitDaCompetencia(portalClientId, competencia);
-      if (fat > 0) {
-        throw new FechamentoError(
+  // Normaliza pra [] — o restante usa atividades.reduce/JSON.stringify.
+  atividades = Array.isArray(atividades) ? atividades : [];
+
+  // ⚠ A DECLARAÇÃO É ZERADA QUANDO AS ATIVIDADES **SOMAM** ZERO — não quando a lista está vazia.
+  //
+  // `buildDeclaracaoPayload` descarta a linha de valor 0 (`if (valor <= 0) return null`), então
+  // lista vazia e lista com R$ 0,00 produzem **o mesmo payload**. Enquanto esta guarda perguntava
+  // pelo COMPRIMENTO, a empresa sem faturamento cujo modal vinha com uma linha derivada do CNAE
+  // (`montarAtividadesDoCnae` emite a atividade mesmo com faturamento 0, só pra trazer o anexo)
+  // ou da memória da última competência passava por AQUI SEM NENHUMA VERIFICAÇÃO e ia direto para
+  // o SERPRO — chamada PAGA — para receber 400 da RFB. Medido em produção (10/08/2026, PHAOS
+  // CONSULTORIA, dois cliques, duas chamadas pagas):
+  //
+  //     HTTP 400 — "SN-Entregar: O valor da atividade deve ser maior que zero."
+  //
+  // Perguntar pela SOMA alinha esta guarda com o payload que de fato sai daqui, e faz a trava
+  // anti-zero (`SEM_MOVIMENTO_COM_FATURAMENTO`) alcançar também esse caso — que antes escapava
+  // dela por completo e só era pego DEPOIS de pagar, pela guarda de baixo.
+  const declaracaoZerada = somaAtividades(atividades) === 0;
+  if (declaracaoZerada) {
+    // ⚠ O FATURAMENTO É CONSULTADO ANTES DE ESCOLHER A MENSAGEM, e não é detalhe de redação.
+    //
+    // A recusa genérica ("marque Declarar SEM MOVIMENTO se o mês não teve receita") só é verdadeira
+    // para quem realmente não faturou. Dita a uma empresa COM nota na competência, ela aponta para
+    // uma ação que a trava seguinte recusa — mandar o contador tentar o que vai ser negado é a
+    // mesma classe de defeito que "desabilitado sem explicação".
+    //
+    // ⚠ E é aqui que mora a guarda anti-zero da Q55 (`APURACAO_ZERADA_COM_FATURAMENTO`), que ficava
+    // DEPOIS da simulação: com a decisão pela soma, nenhuma execução chegava mais nela — a guarda
+    // virava letra morta enquanto o comentário ainda a anunciava como cinto. Subi-la para cá a faz
+    // voltar a morder E economiza a chamada PAGA que ela antes só pegava depois de gastar.
+    const fat = await faturamentoEmitDaCompetencia(portalClientId, competencia);
+    if (fat > 0) {
+      throw semMovimento
+        ? new FechamentoError(
           "SEM_MOVIMENTO_COM_FATURAMENTO",
           `Não é possível declarar sem movimento: a empresa tem faturamento de R$ ${fat.toFixed(2)} na competência.`,
           { faturamento: fat },
+        )
+        : new FechamentoError(
+          "APURACAO_ZERADA_COM_FATURAMENTO",
+          `Empresa com faturamento de R$ ${fat.toFixed(2)} na competência, mas as atividades somam R$ 0,00. Classifique/preencha as receitas antes de apurar.`,
+          { faturamento: fat },
         );
-      }
-    } else {
-      throw new FechamentoError("NO_ATIVIDADES", "Sem atividades pra calcular.");
+    }
+    if (!semMovimento) {
+      throw new FechamentoError(
+        "NO_ATIVIDADES",
+        atividades.length
+          ? "As atividades somam R$ 0,00. Preencha os valores, ou marque \"Declarar SEM MOVIMENTO\" se o mês realmente não teve receita."
+          : "Sem atividades pra calcular. Adicione a atividade, ou marque \"Declarar SEM MOVIMENTO\" se o mês realmente não teve receita.",
+      );
     }
   }
-  // Normaliza pra [] (sem movimento) — o restante usa atividades.reduce/JSON.stringify.
-  atividades = Array.isArray(atividades) ? atividades : [];
+  const semAtividades = declaracaoZerada;
   const { contratanteCnpj, contribuinteCnpj } = await resolverCnpjs(portalClientId);
   const rbt = await getRbt12({ portalClientId, competencia });
 
@@ -404,7 +475,7 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
       folhasSalario: folhasIniciais,
       permitirSemMovimento: semMovimento && semAtividades,
     },
-  );
+  ).catch((err) => { throw traduzirRecusaDeclaracaoZerada(err, declaracaoZerada); });
 
   // Guarda o que a RFB aceitou — as DUAS listas. `gravarDaSimulacao` só cobria as receitas, e é a
   // FOLHA que precisa ser podada nas empresas de Fator-R (exatamente as que mais gastavam).
@@ -430,18 +501,11 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   const faturamentoInterno = round2(atividades.reduce((s, a) => s + Number(a.valorInterno || 0), 0));
   const faturamentoExterno = round2(atividades.reduce((s, a) => s + Number(a.valorExterno || 0), 0));
 
-  // Q55: GUARDA ANTI-ZERO — não gravar apuração zerada de empresa que TEM faturamento.
-  // (Empresa sem notas capturadas → faturamento 0 → não bloqueia, é "sem movimento" legítimo.)
-  if (faturamentoInterno + faturamentoExterno === 0) {
-    const fat = await faturamentoEmitDaCompetencia(portalClientId, competencia);
-    if (fat > 0) {
-      throw new FechamentoError(
-        "APURACAO_ZERADA_COM_FATURAMENTO",
-        `Empresa com faturamento de R$ ${fat.toFixed(2)} na competência, mas as atividades somam R$ 0,00. Classifique/preencha as receitas antes de apurar.`,
-        { faturamento: fat },
-      );
-    }
-  }
+  // ⚠ A guarda anti-zero da Q55 (`APURACAO_ZERADA_COM_FATURAMENTO`) MORAVA AQUI e subiu para o
+  // gate do topo. Não foi removida — `atividades` não é reatribuída entre um ponto e outro, então
+  // com a decisão pela soma esta posição passou a ser inalcançável: soma 0 já tinha lançado lá em
+  // cima, e soma > 0 nunca satisfaz a condição. Deixá-la aqui seria manter um cinto que não
+  // aperta, com o comentário afirmando que aperta.
 
   // Persiste snapshot (configurando→calculada)
   const idempotencyKey = `${portalClientId}:${competencia}:${JSON.stringify(atividades)}:${resultado.dasValor}`;

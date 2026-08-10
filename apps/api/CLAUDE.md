@@ -1112,6 +1112,71 @@ segue na pendência de apuração do calendário, que não foi tocada.
 **Não decide ato fiscal.** No `FechamentoModal` ele apenas **pré-marca** a caixa "sem movimento",
 igual `empresaZerada` já fazia; quem transmite continua sendo o contador (regra 5).
 
+## ⚠ Declaração ZERADA (sem movimento) — a RFB recusa o formato que enviamos hoje
+
+Empresa sem faturamento também tem de declarar o PGDAS-D, zerado. **Isso nunca funcionou nesta
+base.** Medido em produção (leitura, `scripts/diag-empresa-zerada.mjs`): **190** células
+empresa×competência com faturamento EMIT = 0 nos últimos 12 meses e **zero** `ApuracaoSnapshot` —
+nenhuma delas passou nem do Calcular. Dos 22 snapshots existentes, **nenhum** tem atividades
+zeradas.
+
+**A recusa é da Receita, não nossa.** `serpro_chamadas`, 10/08/2026, PHAOS CONSULTORIA LTDA
+(competência sem uma única nota), duas chamadas PAGAS seguidas, `origem: fechamento:calcular`:
+
+```
+HTTP 400 — "SN-Entregar: O valor da atividade deve ser maior que zero."
+```
+
+`buildDeclaracaoPayload` monta a zerada como `estabelecimentos[0].atividades: []` +
+`receitaPaCompetencia*: 0`, e é isso que a RFB rejeita. ⚠ **Qual é o formato oficial do PGDAS-D sem
+movimento no Integra Contador NÃO está confirmado** — regra 1/4, ninguém adivinha aqui. É a decisão
+que falta para a empresa zerada ser apurada pelo portal.
+
+**A caixa "Declarar SEM MOVIMENTO" era INALCANÇÁVEL, e por isso o modo nunca foi exercido.** Ela
+vivia dentro do ramo `atividades.length === 0` do `FechamentoModal` — e `getDadosFechamento` enche
+a lista **sem depender de receita**: pela memória da última competência, ou por
+`montarAtividadesDoCnae`, que emite a linha "mesmo com faturamento 0, só pra TRAZER o ANEXO". Em
+produção, **166 das 190** competências zeradas chegam ao modal com UMA atividade de R$ 0,00: tabela
+na tela, caixa nenhuma.
+
+**Hoje quem decide é a SOMA, não o comprimento da lista** — nos dois lados, porque é o que o payload
+de fato leva (`buildDeclaracaoPayload` descarta a linha de valor 0):
+
+| | antes | agora |
+|---|---|---|
+| caixa "sem movimento" no modal | só com lista vazia | sempre que a soma é 0 (e `semMovimentoDisponivel`) |
+| `semMovimento` enviado pelo front | `&& atividades.length === 0` | `&& soma === 0` |
+| gate de `calcularFechamento` | `atividades.length === 0` | `somaAtividades(atividades) === 0` |
+
+⚠ **Isso APERTA a trava anti-zero, não afrouxa.** A linha de R$ 0,00 escapava de
+`SEM_MOVIMENTO_COM_FATURAMENTO` por completo: com faturamento na competência ela ia ao SERPRO
+(pago) e só era pega **depois** da chamada. Agora a recusa vem antes. O botão Calcular também
+deixou de nascer desabilitado **mudo**: `title` nomeia o motivo.
+
+⚠ **`APURACAO_ZERADA_COM_FATURAMENTO` (Q55) SUBIU para o gate do topo, e isso não é arrumação.**
+Ela vivia depois da simulação, e `atividades` não é reatribuída no meio — então, com a decisão
+passando a ser pela soma, **nenhuma execução chegava mais nela**: soma 0 já lançava lá em cima e
+soma > 0 nunca satisfaz a condição. Era um cinto que não apertava, com o comentário ainda
+anunciando que apertava — a mesma classe de defeito que o gate por comprimento. No topo ela volta
+a morder **e** economiza a chamada paga.
+
+Consequência: com a soma em zero, o faturamento é consultado **antes de escolher a mensagem**.
+Quem tem nota na competência recebe `APURACAO_ZERADA_COM_FATURAMENTO` (ou
+`SEM_MOVIMENTO_COM_FATURAMENTO`, se marcou a caixa) — nunca o convite genérico a "declarar sem
+movimento", que apontaria para uma ação que a trava seguinte recusa.
+
+**A recusa da RFB é CITADA, não reescrita** (`traduzirRecusaDeclaracaoZerada`): só quando a
+declaração é zerada, a frase da Receita entra entre aspas dentro de um
+`DECLARACAO_ZERADA_RECUSADA_RFB` que diz que nada foi transmitido e qual é a saída enquanto o
+formato não for confirmado. Qualquer outra rejeição propaga intacta — não se mascara recusa real.
+Regressão: `apuracao/v2/__tests__/declaracaoZerada.test.js` (8).
+
+⚠ **O que NÃO é o bloqueio** (medido, para não ser reinvestigado): não é a
+`DIVERGENCIA_CONFERENCIA` do `salvarFechamento` — as 190 competências zeradas têm
+`conferenciaStatus` nulo, o worker do ADN nunca as alcançou; e não é o fechamento CONTÁBIL — 11
+delas já estão fechadas. O `salvarFechamento` sequer é alcançado: sem snapshot ele responde
+`NAO_CALCULADA`, e o botão Salvar nasce desabilitado.
+
 ## Regras
 
 - Nunca hardcodar credenciais ou URLs — usar `config.js`

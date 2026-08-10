@@ -88,6 +88,26 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const temFatorR = atividades.some((a) => a.sujeitoFatorR);
   const folhaSerie = pasAnteriores(competencia).map((pa) => ({ pa, valor: Number(folha[pa] || 0) }));
 
+  // ⚠ ZERADA É QUEM **SOMA** ZERO — não quem tem a lista vazia.
+  //
+  // A caixa "Declarar SEM MOVIMENTO" morava dentro do ramo `atividades.length === 0`, e por isso
+  // era INALCANÇÁVEL justamente na empresa sem faturamento: o backend preenche a lista sem
+  // depender de receita nenhuma — pela memória da última competência, ou pelo CNAE
+  // (`montarAtividadesDoCnae` emite a linha "mesmo com faturamento 0, só pra TRAZER o ANEXO").
+  // Medido em produção: 166 das 190 competências sem faturamento chegam aqui com UMA atividade de
+  // R$ 0,00 — tabela na tela, caixa nenhuma, e o botão Calcular ativo mandando ao SERPRO (pago) um
+  // payload que o próprio `buildDeclaracaoPayload` esvazia antes de enviar.
+  const somaAtividades = atividades.reduce(
+    (s, a) => s + Number(a?.valorInterno || 0) + Number(a?.valorExterno || 0), 0,
+  );
+  const declaracaoZerada = somaAtividades === 0;
+  // O backend recusa antes de gastar a chamada; aqui é só antecipação, com o motivo à vista.
+  const motivoCalcularBloqueado = !declaracaoZerada || semMovimento
+    ? ""
+    : (dados?.semMovimentoDisponivel
+      ? "As atividades somam R$ 0,00. Marque \"Declarar SEM MOVIMENTO\" se o mês não teve receita."
+      : `A empresa tem faturamento de ${fmtMoney(dados?.faturamento?.total)} na competência — preencha os valores das atividades antes de calcular.`);
+
   // Conferência da folha: o backend deriva dos lançamentos contábeis (FolhaDerivadaService).
   // Serve para COMPARAR com o que é digitado — o Fator R decide Anexo III ou V e, até aqui, esse
   // número não tinha nenhuma segunda fonte.
@@ -148,7 +168,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     try {
       const out = await api.calcularFechamento(portalClientId, competencia, {
         atividades, folhaMensal12: folhaSerie, regimeApuracao: dados?.regimeApuracao,
-        semMovimento: semMovimento && atividades.length === 0,
+        // Pela SOMA, não pelo comprimento — é o que o payload do PGDAS-D de fato leva.
+        semMovimento: semMovimento && declaracaoZerada,
       });
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       setResultado(out.result);
@@ -279,21 +300,8 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 </button>
               </div>
               {atividades.length === 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ color: PANEL.muted, fontSize: "0.8rem", padding: 10, background: PANEL.field, borderRadius: 6 }}>
-                    Nenhuma atividade. Use “+ atividade” pra adicionar, ou classifique as notas (Apuração V2).
-                  </div>
-                  {/* Sem movimento: empresa sem faturamento pode declarar o PGDAS-D zerado. */}
-                  {dados?.semMovimentoDisponivel && (
-                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 10, background: "rgba(139,233,253,0.08)", border: `1px solid #8BE9FD`, borderRadius: 6, fontSize: "0.82rem", cursor: "pointer" }}>
-                      <input type="checkbox" checked={semMovimento} onChange={(e) => setSemMovimento(e.target.checked)} style={{ marginTop: 2 }} />
-                      <span>
-                        <strong>Declarar SEM MOVIMENTO (zerado)</strong> — a empresa não teve receita nesta competência.
-                        Vai transmitir o PGDAS-D com receita <strong>R$ 0,00</strong> à Receita.
-                        {dados?.empresaZerada ? " (Empresa marcada como zerada.)" : ""}
-                      </span>
-                    </label>
-                  )}
+                <div style={{ color: PANEL.muted, fontSize: "0.8rem", padding: 10, background: PANEL.field, borderRadius: 6 }}>
+                  Nenhuma atividade. Use “+ atividade” pra adicionar, ou classifique as notas (Apuração V2).
                 </div>
               ) : (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
@@ -338,6 +346,23 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                     ))}
                   </tbody>
                 </table>
+              )}
+
+              {/* Sem movimento — FORA do ramo "lista vazia", porque quem decide é a SOMA.
+                  A empresa sem faturamento chega aqui com a atividade do CNAE (ou da memória da
+                  competência anterior) valendo R$ 0,00: a lista NÃO está vazia, e enquanto esta
+                  caixa vivia dentro daquele ramo ela nunca aparecia — o modo "sem movimento",
+                  que é o caminho da declaração zerada, era inalcançável na tela. */}
+              {dados?.semMovimentoDisponivel && declaracaoZerada && (
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: 10, marginTop: 8, background: "rgba(139,233,253,0.08)", border: "1px solid #8BE9FD", borderRadius: 6, fontSize: "0.82rem", cursor: "pointer" }}>
+                  <input type="checkbox" checked={semMovimento} onChange={(e) => setSemMovimento(e.target.checked)} style={{ marginTop: 2 }} />
+                  <span>
+                    <strong>Declarar SEM MOVIMENTO (zerado)</strong> — a empresa não teve receita nesta competência.
+                    Vai transmitir o PGDAS-D com receita <strong>R$ 0,00</strong> à Receita.
+                    {atividades.length > 0 ? " As atividades listadas somam R$ 0,00 e não vão no envio." : ""}
+                    {dados?.empresaZerada ? " (Empresa marcada como zerada.)" : ""}
+                  </span>
+                </label>
               )}
             </div>
 
@@ -467,8 +492,14 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                 As cores antigas eram token de ESTADO em botão de AÇÃO (ciano = categoria,
                 âmbar = pendência) — ver `apps/web/CLAUDE.md`. */}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <Button onClick={handleCalcular} disabled={acting || (atividades.length === 0 && !semMovimento)}
-                variant={resultado ? "secondary" : "primary"}>{acting ? "…" : (atividades.length === 0 && semMovimento ? "🧮 Calcular sem movimento" : "🧮 Calcular (simulação)")}</Button>
+              {/* ⚠ Desabilitado NOMEIA o motivo. Antes a condição era `atividades.length === 0 &&
+                  !semMovimento`: com a lista preenchida de R$ 0,00 o botão ficava ATIVO e o clique
+                  virava chamada PAGA ao SERPRO para levar 400 da RFB ("O valor da atividade deve
+                  ser maior que zero") — e, quando ficava desabilitado, ficava sem nenhum título
+                  dizendo por quê. */}
+              <Button onClick={handleCalcular} disabled={acting || Boolean(motivoCalcularBloqueado)}
+                title={motivoCalcularBloqueado}
+                variant={resultado ? "secondary" : "primary"}>{acting ? "…" : (declaracaoZerada && semMovimento ? "🧮 Calcular sem movimento" : "🧮 Calcular (simulação)")}</Button>
               <Button onClick={handleSalvar} disabled={acting || !resultado}
                 variant="secondary" title={!resultado ? "Calcule antes de salvar" : ""}>💾 Salvar (fechar)</Button>
               <Button onClick={() => setShowTransmit(true)} disabled={acting || !resultado}
@@ -485,7 +516,9 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                     ? `⚠ RETIFICADORA OFICIAL — substitui a declaração já enviada. Digite a competência (${competencia}) pra confirmar:`
                     : `⚠ Transmissão OFICIAL — digite a competência (${competencia}) pra confirmar:`}
                 </div>
-                {atividades.length === 0 && (
+                {/* Pela SOMA: a atividade listada valendo R$ 0,00 é descartada no payload, então o
+                    que sai é a declaração ZERADA — e quem vai confirmar precisa ler isso. */}
+                {declaracaoZerada && (
                   <div style={{ color: "#8BE9FD", fontSize: "0.8rem" }}>
                     Declaração <strong>SEM MOVIMENTO</strong>: será transmitido o PGDAS-D com receita R$ 0,00.
                   </div>
