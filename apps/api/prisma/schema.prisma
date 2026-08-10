@@ -1061,6 +1061,16 @@ model AccountingEntry {
   //                                                    AND "tipoLinha" IS NOT NULL
   // NÃO transformar o unique em `@@unique([sourceGuideId, tipoLinha, codigoTributo])`: sem o
   // COALESCE os NULLs voltam a ser distintos e a duplicata passa — é a armadilha que ele fecha.
+  //
+  // E a OUTRA METADE da mesma regra, na migration `20260809170000_add_uq_baixa_parcela_linha`:
+  //   UNIQUE uq_baixa_parcela_linha : ("parcelamentoId","numeroParcela","tipoLinha",
+  //                                    COALESCE("codigoTributo",''))
+  //                                   WHERE tipo='BAIXA' AND "sourceGuideId" IS NULL
+  //                                     AND "parcelamentoId"/"numeroParcela"/"tipoLinha" NOT NULL
+  // ⚠ São DUAS metades porque a âncora da baixa é DUAS: guia (quem tem documento) e prestação
+  // (débito automático, que não emite nenhum). O de cima é parcial em `sourceGuideId IS NOT NULL` e
+  // por isso NÃO alcança a baixa sem guia — foi essa lacuna que este segundo fecha. Quem criar uma
+  // terceira via de baixa precisa de um terceiro, ou nasce sem cinto de banco.
   @@index([portalClientId])
   @@index([portalClientId, competencia])
   @@index([portalClientId, tipo])
