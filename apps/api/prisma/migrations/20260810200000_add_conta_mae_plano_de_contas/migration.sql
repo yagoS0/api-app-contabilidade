@@ -1,0 +1,25 @@
+-- A CONTA MÃE PASSA A TER ONDE MORAR — e com ela a distinção sintética × analítica.
+--
+-- O plano de contas guardava só o código REDUZIDO ("5", "464"), que no ERP não carrega hierarquia
+-- nenhuma: medido no banco, ZERO pares mãe→filha são detectáveis a partir dele. Por isso não dava
+-- para saber que "5" é `111010001 CAIXA - MATRIZ` (uma folha, onde se lança) e que outras contas
+-- são de agregação, onde lançar é lançar num total. O contador só descobria isso na exportação
+-- para o ERP, longe do lançamento que causou.
+--
+-- `codigoCompleto` é o código completo do ERP; `analitica` é DERIVADO dele
+-- (`src/application/accounting/lib/derivacaoAnalitica.js`): sintética = existe outro código
+-- completo, mais longo, que começa com o dela.
+--
+-- ⚠ ADITIVA E SÓ. Dois ADD COLUMN, nullable, sem DEFAULT, sem CHECK, sem índice, sem FK.
+--
+-- ⚠ SEM BACKFILL, E ISSO É A DECISÃO. As duas colunas nascem NULAS nas 1.199 contas existentes,
+-- que é a verdade: enquanto o arquivo com o código completo não for importado, ninguém sabe qual é
+-- a conta mãe de cada uma. `analitica = false` seria pior que nulo — afirmaria que a conta é
+-- SINTÉTICA, e conta sintética sai da sugestão do dropdown de lançamento. Ausência nunca é
+-- resposta.
+--
+-- ⚠ O REDUZIDO CONTINUA SENDO A IDENTIDADE, e nada aqui o toca. `accounting_entry_lines.conta`
+-- guarda o código como TEXTO, sem FK: trocar o reduzido orfanaria todo lançamento existente sem
+-- erro nenhum na tela. O import casa POR ELE e só acrescenta estas duas colunas.
+ALTER TABLE "chart_of_accounts" ADD COLUMN "codigoCompleto" TEXT;
+ALTER TABLE "chart_of_accounts" ADD COLUMN "analitica" BOOLEAN;

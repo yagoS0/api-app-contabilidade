@@ -1,4 +1,5 @@
 import { prisma } from "../../infrastructure/db/prisma.js";
+import { rederivarAnaliticaDoEscopo } from "./chartOfAccountsAnalitica.js";
 
 /**
  * Importação compartilhada de plano de contas (PDF ou CSV).
@@ -6,6 +7,23 @@ import { prisma } from "../../infrastructure/db/prisma.js";
  *
  * Devido à limitação do Prisma de não permitir nulls em composite unique keys via upsert,
  * a função usa findFirst+update/create em vez de upsert direto.
+ *
+ * ⚠ A IDENTIDADE É O CÓDIGO REDUZIDO, E O IMPORT NUNCA A TROCA.
+ * `AccountingEntryLine.conta` guarda o código como TEXTO, sem FK. Se o import "corrigisse" o
+ * reduzido de uma conta, todo lançamento existente apontaria para um código que não existe mais —
+ * sem erro na tela, sem exceção, sem nada. Por isso o casamento é POR `codigo` e o que a coluna
+ * nova traz (`codigoCompleto`) é ACRÉSCIMO.
+ *
+ * ⚠ A ARMADILHA DAS DUAS COLUNAS DE CÓDIGO — a razão de o formato ser DECLARADO e não inferido.
+ * No arquivo real do ERP (`completo;nome;reduzido;…`) **42 códigos existem NAS DUAS colunas e 41
+ * apontam para contas DIFERENTES**:
+ *
+ *     "5" como reduzido → CAIXA - MATRIZ        "5" como completo → (-) IRPJ/CSLL (reduzida 590)
+ *     "2" como reduzido → ATIVO CIRCULANTE      "2" como completo → PASSIVO
+ *
+ * As duas colunas são só dígitos, nos dois sentidos. Lê-las na ordem errada mapeia 41 contas para o
+ * lugar errado **sem dar erro nenhum**. `detectFormat` DECLARA a ordem pela forma da linha inteira;
+ * nada aqui adivinha coluna por coluna.
  */
 
 function tipoFromContaPdf(conta) {
@@ -76,7 +94,7 @@ function splitCols(line, sep) {
   return line.split(sep).map((s) => s.replace(/^"(.*)"$/, "$1").trim());
 }
 
-function parseCsvBuffer(buffer) {
+export function parseCsvBuffer(buffer) {
   // Detecta encoding: UTF-8 → fallback latin1 se houver replacement chars
   const utf8Attempt = buffer.toString("utf-8");
   let text = utf8Attempt.includes("�") ? buffer.toString("latin1") : utf8Attempt;
@@ -115,8 +133,13 @@ function parseCsvBuffer(buffer) {
     if (cols.length < 2) continue;
     if (isHeader(cols)) continue;
 
-    let codigo, nome, tipo, natureza;
+    let codigo, nome, tipo, natureza, codigoCompleto;
     if (formato === "exportado") {
+      // ⚠ A ORDEM DAS COLUNAS É DECLARADA AQUI, e é a única coisa que separa `CAIXA - MATRIZ` de
+      // `(-) IRPJ/CSLL`. Ver a armadilha das duas colunas no topo do arquivo.
+      // ⚠ O arquivo real do ERP tem SEIS colunas (`completo;nome;reduzido;0;0;0`) — as três últimas
+      // vêm zeradas e não são lidas: significado desconhecido, e ler dado que não se entende é
+      // pior que ignorá-lo.
       const [codigoPadrao, nomeRaw, codigoReduzido] = cols;
       if (!codigoPadrao || !nomeRaw || !codigoReduzido) continue;
       if (!/^\d+$/.test(codigoReduzido)) continue;
@@ -124,6 +147,7 @@ function parseCsvBuffer(buffer) {
       nome = nomeRaw;
       tipo = tipoFromCodigoPadrao(codigoPadrao);
       natureza = naturezaFromTipo(tipo);
+      codigoCompleto = codigoPadrao;
     } else {
       [codigo, nome, tipo = "DESPESA", natureza = "DEVEDORA"] = cols;
       if (!codigo || !nome) continue;
@@ -136,12 +160,14 @@ function parseCsvBuffer(buffer) {
       }
     }
     if (!codigo || !nome) continue;
-    accounts.push({ codigo, nome, tipo, natureza });
+    // ⚠ `codigoCompleto` só viaja quando o formato o TEM. `undefined` aqui quer dizer "este arquivo
+    // não fala sobre isso" — e o upsert traduz isso em "não toca na coluna", nunca em apagá-la.
+    accounts.push({ codigo, nome, tipo, natureza, codigoCompleto });
   }
   return accounts;
 }
 
-async function upsertAccount({ portalClientId, codigo, nome, tipo, natureza, defaultStatus = "PENDENTE_ERP" }) {
+async function upsertAccount({ portalClientId, codigo, nome, tipo, natureza, codigoCompleto, defaultStatus = "PENDENTE_ERP" }) {
   // Semântica: per-empresa SEMPRE tem prioridade sobre global.
   // Cada escopo (global ou empresa) é independente — códigos podem coexistir entre escopos
   // sem conflito; na leitura, empresa vence (dedupe na rota GET).
@@ -150,15 +176,58 @@ async function upsertAccount({ portalClientId, codigo, nome, tipo, natureza, def
   const existing = await prisma.chartOfAccount.findFirst({
     where: { portalClientId: isGlobal ? null : portalClientId, codigo },
   });
+  // ⚠ Arquivo sem a coluna não APAGA a conta mãe já conhecida — só não fala sobre ela.
+  const acrescimo = codigoCompleto ? { codigoCompleto: String(codigoCompleto) } : {};
   if (existing) {
+    // ⚠ `codigo` NÃO está no `data`, e isso é a garantia, não o descuido: ele é a identidade a que
+    // `AccountingEntryLine.conta` aponta em texto.
     return prisma.chartOfAccount.update({
       where: { id: existing.id },
-      data: { nome, tipo, natureza },
+      data: { nome, tipo, natureza, ...acrescimo },
     });
   }
   return prisma.chartOfAccount.create({
-    data: { portalClientId: isGlobal ? null : portalClientId, codigo, nome, tipo, natureza, status: defaultStatus },
+    data: { portalClientId: isGlobal ? null : portalClientId, codigo, nome, tipo, natureza, ...acrescimo, status: defaultStatus },
   });
+}
+
+/**
+ * Leva `codigoCompleto` do arquivo para as contas PRÓPRIAS das empresas — casando pelo REDUZIDO,
+ * e só nele. Decisão do dono: *"atualiza tudo, mantém"* — o import atualiza o escopo global E as
+ * contas próprias das empresas.
+ *
+ * ⚠ SÓ ACRESCENTA `codigoCompleto`. Nome, tipo e natureza da conta PRÓPRIA de uma empresa são dela;
+ * o arquivo global não é autoridade sobre eles, e sobrescrevê-los apagaria em silêncio a
+ * customização que motivou a empresa a ter conta própria.
+ *
+ * ⚠ NÃO CRIA CONTA NENHUMA. Conta do arquivo que a empresa não tem continua não existindo lá —
+ * criar despejaria as 593 contas globais dentro de cada empresa, transformando um plano
+ * compartilhado em 30 cópias.
+ *
+ * @returns {Promise<Set<string>>} os `portalClientId` que tiveram alguma conta tocada
+ */
+async function propagarCodigoCompletoParaEmpresas(parsed) {
+  const comCompleto = parsed.filter((a) => a.codigoCompleto);
+  if (comCompleto.length === 0) return new Set();
+
+  const escoposTocados = new Set();
+  for (const acc of comCompleto) {
+    const alvos = await prisma.chartOfAccount.findMany({
+      where: { codigo: acc.codigo, portalClientId: { not: null } },
+      select: { id: true, portalClientId: true, codigoCompleto: true },
+    });
+    const desatualizadas = alvos.filter((a) => a.codigoCompleto !== String(acc.codigoCompleto));
+    if (desatualizadas.length === 0) {
+      for (const a of alvos) escoposTocados.add(a.portalClientId);
+      continue;
+    }
+    await prisma.chartOfAccount.updateMany({
+      where: { id: { in: desatualizadas.map((a) => a.id) } },
+      data: { codigoCompleto: String(acc.codigoCompleto) },
+    });
+    for (const a of alvos) escoposTocados.add(a.portalClientId);
+  }
+  return escoposTocados;
 }
 
 /**
@@ -198,18 +267,44 @@ export async function importChartOfAccountsFromBuffer({ portalClientId, buffer, 
     defaultStatus = defaultStatus || "PENDENTE_ERP";
   }
 
+  // ⚠ O QUE JÁ ESTAVA NO BANCO E NÃO ESTÁ NO ARQUIVO É **MANTIDO COMO ESTÁ** (decisão do dono).
+  // Nada é apagado, inativado ou zerado — e a contagem é RELATADA, porque silêncio aqui é o
+  // defeito: um arquivo parcial passaria por completo.
+  const antes = await prisma.chartOfAccount.findMany({
+    where: { portalClientId: portalClientId ?? null },
+    select: { codigo: true },
+  });
+  const noArquivo = new Set(parsed.map((a) => String(a.codigo)));
+  const mantidas = antes.filter((a) => !noArquivo.has(String(a.codigo))).map((a) => a.codigo);
+  const existentes = new Set(antes.map((a) => String(a.codigo)));
+
   const created = [];
   const skipped = [];
   const errors = [];
+  const novas = [];
   for (const acc of parsed) {
     try {
       const result = await upsertAccount({ portalClientId, ...acc, defaultStatus });
       created.push(result);
+      if (!existentes.has(String(acc.codigo))) novas.push(acc.codigo);
     } catch (err) {
       // Se conflito com global (no caso de import per-company), pular
       if (err?.code === "P2002") skipped.push(acc.codigo);
       else errors.push({ codigo: acc.codigo, reason: err?.message });
     }
+  }
+
+  // ⚠ A PROPAGAÇÃO SÓ SAI DO IMPORT **GLOBAL**. O arquivo global é o plano do escritório e é
+  // autoridade sobre a conta mãe; o CSV que uma empresa sobe é dela, e deixá-lo reescrever o plano
+  // global (e o das outras 30 empresas) faria um upload de uma empresa mudar o de todas.
+  const escoposEmpresa = portalClientId == null
+    ? await propagarCodigoCompletoParaEmpresas(parsed)
+    : new Set();
+
+  // A derivação, escopo por escopo — nunca cruzando planos.
+  const derivacao = { escopo: await rederivarAnaliticaDoEscopo(portalClientId ?? null), empresas: [] };
+  for (const empresaId of escoposEmpresa) {
+    derivacao.empresas.push({ portalClientId: empresaId, ...(await rederivarAnaliticaDoEscopo(empresaId)) });
   }
 
   if (errors.length > 0) {
@@ -221,5 +316,17 @@ export async function importChartOfAccountsFromBuffer({ portalClientId, buffer, 
     );
   }
 
-  return { ok: true, created: created.length, skipped: skipped.length, errors };
+  return {
+    ok: true,
+    created: created.length,
+    skipped: skipped.length,
+    errors,
+    // ⚠ Relatório, não enfeite: sem ele o import parcial fica indistinguível do completo.
+    novas: novas.length,
+    atualizadas: created.length - novas.length,
+    mantidas: mantidas.length,
+    mantidasCodigos: mantidas.slice(0, 20),
+    semCodigoCompleto: derivacao.escopo.semResposta,
+    derivacao,
+  };
 }

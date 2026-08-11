@@ -396,6 +396,48 @@ da memória **e** a coluna `descricaoImportacao` do lançamento.
 aponta para ele — o teste de digitação ancora os campos de conta em `input[list]` justamente por
 isso (o índice bruto de `input[type=text]` quebrou quando a coluna entrou).
 
+## A CONTA MÃE — aparece SÓ no cadastro; na tela de lançar, nada mudou de forma
+
+Palavras do dono: *"nada deve mudar na tela que digitamos, mas deixe o código mãe no cadastro do
+plano de contas"* e *"no nosso programa só colocamos código reduzido, o código mãe é apenas para
+análise do software e entendimento contábil das contas"*.
+
+| onde | o quê |
+|---|---|
+| `chart-of-accounts/pages/renderChartOfAccountsPage.jsx` | campo **"Conta mãe"** no form de adicionar **e** coluna editável por linha ("Editar" → salvar/cancelar, Enter/Esc). **O único lugar onde o código completo aparece.** |
+| `entries/` (lançamento) | a conta **sintética sai da SUGESTÃO** e a tela **nomeia** o que ela é. Nenhum campo novo, nenhuma coluna nova, nenhum código completo à vista. |
+
+⚠ **A coluna mostra TRÊS estados, e o terceiro não é "analítica":** `Sintética` (âmbar) ·
+`Analítica` (contorno neutro) · **"não informada"**, sem selo — conta sem `codigoCompleto` não tem
+resposta, e desenhá-la como analítica afirmaria o que ninguém sabe.
+
+⚠ **`codigo` (o reduzido) NÃO é editável**, aqui nem em lugar nenhum: os lançamentos apontam para ele
+em TEXTO, sem FK. Quem precisa de outro reduzido cria outra conta.
+
+### A regra em `entries/lib/contaSintetica.js` (15 testes); os componentes só ligam
+
+- `contasSugeriveis` alimenta os **dois** dropdowns (`AccountSearchInput` e `AccountCodeInput`);
+- `avisoContaSintetica` alimenta a frase, no `DraftEntryRow` **e** no `NewEntryForm`.
+
+⚠ **`analitica` é TRI-ESTADO e a comparação é `=== false`, nunca `!analitica`.** Com a negação, toda
+conta de plano ainda não reimportado (`analitica: null`) sairia sintética e **o dropdown ficaria
+vazio**. Há teste nomeando exatamente isso.
+
+⚠ **ISTO NÃO TRAVA NADA, e essa é a decisão.** O arquivo importado pode estar errado, e o contador
+sabe quando a exceção é legítima — medido em produção: **4 contas de agregação JÁ têm lançamento**
+(6 no total), incluindo uma receita de **R$ 207 mil** na conta de 1º nível. O aviso fica **fora** de
+`canSave`/`motivoNaoSalva` e é **âmbar, não vermelho**: vermelho ao lado de um Salvar habilitado
+esvaziaria o vermelho da linha logo acima, que bloqueia de verdade.
+
+⚠ **`exactCodeMatch` continua olhando o plano INTEIRO** (não os sugeríveis) — senão digitar o código
+de uma sintética manteria o dropdown aberto insistindo em outra conta.
+
+⚠ **O mock traz a conta `400` SINTÉTICA de propósito** e a `464` **sem conta mãe** (o terceiro
+estado). Mock só com folhas nunca exerceria o que esta fase existe para mostrar.
+`_derivarAnaliticaMock` é **cópia declarada** da regra do backend (`lib/derivacaoAnalitica.js`), pelo
+mesmo motivo de `src/lib/vocabulario.js`: o `Dockerfile` não copia `packages/` e cruzar apps quebra o
+boot. Quem mudar a regra muda nos dois.
+
 ## Padrões
 
 - Componentes recebem dados/handlers por **props** (hooks/pages chamam a API). Exceções

@@ -799,6 +799,77 @@ explícito do dono.
 grava `historicoSugerido` quando o contador de fato escreveu algo (`:3452`); gravar a própria
 descrição ali faria a memória sugerir a chave de match como histórico.
 
+## A CONTA MÃE — `codigoCompleto` e o tri-estado `analitica`
+
+O plano de contas guardava só o código **reduzido** (`"5"`, `"464"`), que no ERP **não carrega
+hierarquia nenhuma** — medido no banco: ZERO pares mãe→filha detectáveis a partir dele. Não havia
+como saber que `"5"` é `111010001 CAIXA - MATRIZ` (uma folha) e que outras contas são de agregação,
+onde lançar é lançar num total.
+
+| coluna | o quê |
+|---|---|
+| `chart_of_accounts.codigoCompleto` | o código completo do ERP — a "conta mãe" |
+| `chart_of_accounts.analitica` | **derivado** dele: `false` = SINTÉTICA · `true` = analítica · **`null` = sem resposta** |
+
+Migration `20260810200000_add_conta_mae_plano_de_contas`: **aditiva, nullable, sem backfill**.
+
+⚠ **`null` NÃO É `false`.** Conta que ainda não foi reimportada não tem código completo e portanto
+não tem resposta; `false` afirmaria que ela é sintética — e sintética sai da sugestão do dropdown de
+lançamento. **Ausência nunca é resposta.** Todo leitor compara `=== false`, nunca `!analitica`.
+
+### A regra é PURA e mora em `lib/derivacaoAnalitica.js` (14 testes)
+
+Sintética = **existe outro código completo, MAIS LONGO, que começa com o dela**.
+`chartOfAccountsAnalitica.js` é só a ligação com o banco (`rederivarAnaliticaDoEscopo`) — chamada
+pelo import e pelas rotas de criar/editar/excluir conta, porque a derivação é **do escopo**, não da
+linha: cadastrar `111010001` é o que torna `11101` sintética.
+
+⚠ **UM ESCOPO POR VEZ** — global com global, empresa com a própria. Cruzar escopos afirmaria
+parentesco entre planos diferentes. O erro possível tem **direção segura**: conjunto menor encontra
+menos filhas, logo produz **menos** sintéticas — no limite deixa uma mãe na sugestão, que é o estado
+de hoje. O erro caro (tirar da lista uma conta em uso) não é alcançável por conjunto pequeno.
+
+### ⚠ A ARMADILHA DAS DUAS COLUNAS — por que o formato é DECLARADO, nunca inferido
+
+No arquivo real do ERP (`completo;nome;reduzido;0;0;0`, **LATIN1**, sem cabeçalho, **593 linhas**)
+**42 códigos existem NAS DUAS colunas e 41 apontam para contas DIFERENTES**:
+
+```
+"5" como reduzido → CAIXA - MATRIZ       "5" como completo → (-) IRPJ/CSLL (reduzida 590)
+"2" como reduzido → ATIVO CIRCULANTE     "2" como completo → PASSIVO
+```
+
+As duas são só dígitos. Lidas na ordem errada, 41 contas vão para o lugar errado **sem erro nenhum**.
+`detectFormat` declara a ordem pela forma da linha inteira. ⚠ O arquivo tem **SEIS** colunas — as
+três últimas vêm zeradas (uma linha traz `2`), significado desconhecido, e por isso **não são lidas**.
+
+### O import: casa pelo REDUZIDO, só ACRESCENTA, e MANTÉM o que não veio
+
+⚠ **O reduzido é a IDENTIDADE e o import NUNCA o troca.** `AccountingEntryLine.conta` o guarda como
+TEXTO, sem FK — trocá-lo orfanaria todo lançamento existente sem erro na tela. `codigo` não entra em
+nenhum `data` de update, e isso é garantia, não descuido.
+
+- **conta do banco fora do arquivo: MANTIDA como está** (decisão do dono) — nada apagado, inativado
+  ou zerado. ⚠ E a contagem é **relatada** (`mantidas`, `semCodigoCompleto`): silêncio aqui faria um
+  arquivo parcial passar por completo.
+- **conta do arquivo fora do banco:** criada no escopo alvo (comportamento que já existia).
+- **o import GLOBAL propaga** `codigoCompleto` para as contas **próprias** das empresas, casando pelo
+  reduzido — decisão do dono (*"atualiza tudo, mantém"*). ⚠ Só essa coluna: nome/tipo/natureza da
+  conta própria são dela. ⚠ E **não cria** conta dentro de empresa nenhuma — criaria 593 cópias por
+  empresa. ⚠ O import **de uma empresa não propaga** para o global nem para as outras.
+- **PDF não traz `codigoCompleto`** (o código de lá vem pontuado, `1.1.01`; derivar por prefixo sobre
+  ele é outro problema, não medido). Fica nulo — que é a resposta honesta.
+
+Testes: `__tests__/chartOfAccountsContaMae.test.js` (12).
+
+### ⚠ O PORTÃO DE ACEITE: 4 contas EM USO saem SINTÉTICAS — e a regra está certa
+
+`scripts/diag-conta-mae.mjs` (só leitura) simula o import contra o banco. Rodado em produção,
+10/08/2026: **as colunas NÃO trocaram** (`5` = `111010001 CAIXA - MATRIZ`, **analítica**, 336
+lançamentos), mas **4 dos 42 códigos em uso são contas de agregação de verdade** — `169`, `456`,
+`365` (nível 5) e `357 RECEITAS` (nível **1**, completo `3`), somando **6 lançamentos**. É por isso
+que a regra **informa e não trava** (ver a seção do front). Rode o script antes de mexer aqui.
+
 ## Regras
 
 - **Idempotência** em geração (upsert por competência/eventType; guardas antes de criar).

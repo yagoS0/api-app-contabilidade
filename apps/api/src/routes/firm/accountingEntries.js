@@ -7,6 +7,7 @@ import { syncPgdasByCompetencia } from "../../application/fiscal/serpro/SerproPg
 import { resolvePayrollTemplate } from "../../application/accounting/payrollTemplate.js";
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
+import { rederivarAnaliticaDoEscopo } from "../../application/accounting/chartOfAccountsAnalitica.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/accounting/contasAcrescimo.js";
 import { tipoLinhaDaBaixa } from "../../application/accounting/tipoLinhaBaixa.js";
@@ -612,6 +613,9 @@ export function createAccountingEntriesRouter({ log }) {
     const nome = String(body.nome || "").trim();
     const tipo = String(body.tipo || "DESPESA").toUpperCase();
     const natureza = String(body.natureza || "DEVEDORA").toUpperCase();
+    // A "conta mãe": o código COMPLETO do ERP. Opcional — sem ele a conta nasce sem resposta sobre
+    // sintética × analítica, que é a verdade.
+    const codigoCompleto = String(body.codigoCompleto || "").trim() || null;
 
     if (!codigo) return res.status(400).json({ error: "codigo_required" });
     if (!nome) return res.status(400).json({ error: "nome_required" });
@@ -629,10 +633,13 @@ export function createAccountingEntriesRouter({ log }) {
           nome,
           tipo,
           natureza,
+          codigoCompleto,
           status: "PENDENTE_ERP",
         },
       });
-      return res.status(201).json({ ok: true, account });
+      // ⚠ A derivação é do ESCOPO, não da linha — e o escopo aqui é o plano PRÓPRIO desta empresa.
+      if (codigoCompleto) await rederivarAnaliticaDoEscopo(portalClientId);
+      return res.status(201).json({ ok: true, account: await prisma.chartOfAccount.findUnique({ where: { id: account.id } }) });
     } catch (err) {
       if (err?.code === "P2002") {
         return res.status(409).json({ error: "codigo_ja_existe" });
@@ -657,6 +664,9 @@ export function createAccountingEntriesRouter({ log }) {
     if (body.nome !== undefined) data.nome = String(body.nome).trim();
     if (body.tipo !== undefined) data.tipo = String(body.tipo).toUpperCase();
     if (body.natureza !== undefined) data.natureza = String(body.natureza).toUpperCase();
+    // ⚠ `codigo` NÃO é editável por aqui, e nunca foi: `AccountingEntryLine.conta` aponta para ele
+    // em texto, sem FK. `codigoCompleto` é o que se edita — a conta mãe, para análise.
+    if (body.codigoCompleto !== undefined) data.codigoCompleto = String(body.codigoCompleto).trim() || null;
     if (body.status !== undefined && ["CONFIRMADA", "PENDENTE_ERP"].includes(String(body.status))) {
       data.status = String(body.status);
     }
@@ -665,7 +675,11 @@ export function createAccountingEntriesRouter({ log }) {
       where: { portalClientId_codigo: { portalClientId, codigo } },
       data,
     });
-    return res.json({ ok: true, account: updated });
+    if (data.codigoCompleto !== undefined) await rederivarAnaliticaDoEscopo(portalClientId);
+    return res.json({
+      ok: true,
+      account: await prisma.chartOfAccount.findUnique({ where: { portalClientId_codigo: { portalClientId, codigo } } }) || updated,
+    });
   });
 
   // DELETE /firm/companies/:companyId/chart-of-accounts/:codigo
@@ -681,6 +695,8 @@ export function createAccountingEntriesRouter({ log }) {
     await prisma.chartOfAccount.delete({
       where: { portalClientId_codigo: { portalClientId, codigo } },
     });
+    // Excluir a ÚLTIMA filha devolve a mãe à condição de analítica — a derivação é do escopo.
+    if (existing.codigoCompleto) await rederivarAnaliticaDoEscopo(portalClientId);
     return res.json({ ok: true });
   });
 

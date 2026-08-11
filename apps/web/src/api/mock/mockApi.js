@@ -937,25 +937,101 @@ const mockHistoricos = [
 // Históricos específicos por empresa são adicionados dinamicamente em mockHistoricosByCompany
 const mockHistoricosByCompany = new Map();
 
+/**
+ * Casamento de descrição × histórico do import de Excel — a MESMA leitura de
+ * `findHistoricoMatches` (`apps/api/src/application/accounting/excelImport.js`): normaliza,
+ * tenta o EXATO e só então o substring, ficando com o de maior `usageCount`.
+ *
+ * ⚠ Duas leituras diferentes fariam o mock casar descrição que o servidor não casa (e vice-versa),
+ * e a revisão do modal chegaria à produção preenchendo outras contas — que é o defeito mais caro
+ * possível numa tela cujo produto é justamente qual conta vai em cada linha.
+ */
+function normalizarTextoMatch(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\s\-_\/.,;:!?()[\]{}]+/g, " ")
+    .trim();
+}
+
+function acharMatchDeHistorico(companyId, descricao) {
+  const alvo = normalizarTextoMatch(descricao);
+  if (!alvo) return null;
+  // `orderBy: usageCount desc` do backend — é ele que decide entre dois históricos que casam.
+  const disponiveis = [...mockHistoricos, ...(mockHistoricosByCompany.get(companyId) || [])]
+    .map((h) => ({ ...h, _norm: normalizarTextoMatch(h.text) }))
+    .filter((h) => h._norm)
+    .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0));
+
+  const montar = (h, matchType) => ({
+    historicoId: h.id,
+    text: h.text,
+    historicoSugerido: h.historicoSugerido || null,
+    contaDebito: h.contaDebito,
+    contaCredito: h.contaCredito,
+    usageCount: h.usageCount,
+    scope: h.companyPortalClientId ? "COMPANY" : "GLOBAL",
+    matchType,
+  });
+
+  const exato = disponiveis.find((h) => h._norm === alvo);
+  if (exato) return montar(exato, "exact");
+  let melhor = null;
+  for (const h of disponiveis) {
+    if (alvo.includes(h._norm) || h._norm.includes(alvo)) {
+      if (!melhor || (h.usageCount || 0) > (melhor.usageCount || 0)) melhor = h;
+    }
+  }
+  return melhor ? montar(melhor, "substring") : null;
+}
+
 // Histórico de execuções fiscais por empresa
 const mockFiscalExecutions = new Map();
 
 // Seed de plano de contas para a primeira empresa mock
 const _seedAccounts = [
   { codigo: "1", nome: "Ativo", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA" },
-  { codigo: "5", nome: "Caixa", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA" },
-  { codigo: "6", nome: "Banco Conta Corrente", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA" },
-  { codigo: "266", nome: "Impostos a Recolher", tipo: "PASSIVO", natureza: "CREDORA", status: "CONFIRMADA" },
-  { codigo: "400", nome: "Despesas Gerais", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA" },
-  { codigo: "401", nome: "Aluguel", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA" },
-  { codigo: "402", nome: "Energia Elétrica", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA" },
-  { codigo: "464", nome: "Serviços Prestados Pessoa Jurídica", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA" },
-  { codigo: "700", nome: "Receitas de Serviços", tipo: "RECEITA", natureza: "CREDORA", status: "CONFIRMADA" },
+  // ⚠ `codigoCompleto` é a CONTA MÃE (o código completo do ERP) e `analitica` é DERIVADO dele:
+  // sintética = existe outro código completo, mais longo, começando com o dela.
+  // Aqui `400` (completo `41102`) é SINTÉTICA de propósito — ela tem `401`, `402` e `464` abaixo.
+  // Um mock só com folhas nunca exerceria o que esta fase existe para mostrar: a conta de agregação
+  // sumindo da sugestão do dropdown e o aviso aparecendo quando alguém a digita mesmo assim.
+  // E `464` fica SEM conta mãe, de propósito também: é o terceiro estado (`analitica: null`) —
+  // conta que ainda não foi reimportada, que não é sintética nem analítica.
+  { codigo: "5", nome: "Caixa", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: "111010001" },
+  { codigo: "6", nome: "Banco Conta Corrente", tipo: "ATIVO", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: "111020001" },
+  { codigo: "266", nome: "Impostos a Recolher", tipo: "PASSIVO", natureza: "CREDORA", status: "CONFIRMADA", codigoCompleto: "211030001" },
+  { codigo: "400", nome: "Despesas Gerais", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: "41102" },
+  { codigo: "401", nome: "Aluguel", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: "411020001" },
+  { codigo: "402", nome: "Energia Elétrica", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: "411020002" },
+  { codigo: "464", nome: "Serviços Prestados Pessoa Jurídica", tipo: "DESPESA", natureza: "DEVEDORA", status: "CONFIRMADA", codigoCompleto: null },
+  { codigo: "700", nome: "Receitas de Serviços", tipo: "RECEITA", natureza: "CREDORA", status: "CONFIRMADA", codigoCompleto: "311020001" },
 ];
+
+/**
+ * ⚠ CÓPIA DECLARADA da regra de `apps/api/src/application/accounting/lib/derivacaoAnalitica.js`.
+ *
+ * Ela não é importável daqui: o `Dockerfile` não copia `packages/` e cruzar apps quebra o boot — o
+ * mesmo motivo pelo qual `apps/web/src/lib/vocabulario.js` já é uma cópia declarada de
+ * `parcelamento/contracts.js`. A fonte da verdade continua sendo o backend; isto existe só para o
+ * mock responder como ele responde. Quem mudar a regra muda nos dois.
+ *
+ * ⚠ Ausência nunca é resposta: sem `codigoCompleto`, `analitica` é `null`, nunca `false`.
+ */
+function _derivarAnaliticaMock(lista) {
+  const completos = lista.map((a) => (a.codigoCompleto ? String(a.codigoCompleto) : null)).filter(Boolean);
+  return lista.map((a) => {
+    const meu = a.codigoCompleto ? String(a.codigoCompleto) : null;
+    if (!meu) return { ...a, codigoCompleto: null, analitica: null };
+    const temFilha = completos.some((o) => o.length > meu.length && o.startsWith(meu));
+    return { ...a, codigoCompleto: meu, analitica: !temFilha };
+  });
+}
 for (const company of mockCompanies) {
   mockChartOfAccounts.set(
     company.companyId,
-    _seedAccounts.map((a) => ({
+    _derivarAnaliticaMock(_seedAccounts).map((a) => ({
       id: faker.string.uuid(),
       portalClientId: company.companyId,
       ...a,
@@ -3177,32 +3253,44 @@ export function createMockApi() {
         nome: String(input.nome),
         tipo: String(input.tipo || "DESPESA").toUpperCase(),
         natureza: String(input.natureza || "DEVEDORA").toUpperCase(),
+        codigoCompleto: String(input.codigoCompleto || "").trim() || null,
         status: "PENDENTE_ERP",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       list.push(account);
-      mockChartOfAccounts.set(companyId, list);
-      return { ok: true, account };
+      // ⚠ A derivação é do ESCOPO, não da linha: a conta nova pode ser a FILHA que torna outra
+      // sintética. É o que o backend faz (`rederivarAnaliticaDoEscopo`).
+      const derivada = _derivarAnaliticaMock(list);
+      mockChartOfAccounts.set(companyId, derivada);
+      return { ok: true, account: derivada.find((a) => a.id === account.id) };
     },
     async updateChartOfAccount(companyId, codigo, input) {
       await delay();
       const list = mockChartOfAccounts.get(companyId) || [];
       const idx = list.findIndex((a) => a.codigo === codigo);
       if (idx < 0) throw new Error("conta_nao_encontrada");
-      list[idx] = { ...list[idx], ...input, updatedAt: new Date().toISOString() };
-      mockChartOfAccounts.set(companyId, list);
-      return { ok: true, account: list[idx] };
+      // ⚠ `codigo` NÃO entra: os lançamentos apontam para ele em texto, sem FK.
+      const { codigo: _ignorado, ...patch } = input || {};
+      if (patch.codigoCompleto !== undefined) patch.codigoCompleto = String(patch.codigoCompleto).trim() || null;
+      list[idx] = { ...list[idx], ...patch, updatedAt: new Date().toISOString() };
+      const derivada = _derivarAnaliticaMock(list);
+      mockChartOfAccounts.set(companyId, derivada);
+      return { ok: true, account: derivada[idx] };
     },
     async deleteChartOfAccount(companyId, codigo) {
       await delay();
       const list = mockChartOfAccounts.get(companyId) || [];
-      mockChartOfAccounts.set(companyId, list.filter((a) => a.codigo !== codigo));
+      // Excluir a ÚLTIMA filha devolve a mãe à condição de analítica — por isso re-deriva.
+      mockChartOfAccounts.set(companyId, _derivarAnaliticaMock(list.filter((a) => a.codigo !== codigo)));
       return { ok: true };
     },
     async importChartOfAccountsFile() {
       await delay(600);
-      return { ok: true, created: 0, skipped: 0, errors: [] };
+      // ⚠ O contrato do import cresceu: `mantidas` (contas do banco fora do arquivo, que são
+      // PRESERVADAS) e `semCodigoCompleto` são RELATÓRIO, não enfeite — sem eles um import parcial
+      // fica indistinguível de um completo. O mock os devolve para a tela poder mostrá-los.
+      return { ok: true, created: 0, skipped: 0, errors: [], novas: 0, atualizadas: 0, mantidas: 0, mantidasCodigos: [], semCodigoCompleto: 0 };
     },
 
     // ── Lançamentos (mock) ─────────────────────────────────────────────────
@@ -3825,6 +3913,145 @@ export function createMockApi() {
       }
       mockEntriesByCompany.set(companyId, list);
       return { ok: true, created: transactions.length, failed: 0, loteImportacao };
+    },
+    /**
+     * ── Importação de Excel — o PAR do OFX acima ────────────────────────────────────────────
+     *
+     * ⚠ Estes dois só existiam no `realApi`, e por isso o modal era INCONFERÍVEL offline: o
+     * "Pré-visualizar" morria em `api.previewExcelImport is not a function` e a tabela de revisão
+     * — que é a tela inteira — nunca chegava a renderizar. No modo em que ela se desenvolve.
+     *
+     * A forma é a da rota (`POST /entries/import/excel`, `routes/firm/accountingEntries.js`):
+     *   preview → `{ ok, transactions: [{ rowIndex, data, descricao, valor, match }], total }`
+     *   commit  → `{ ok, created, failed, loteImportacao, details: { created[], failed[] } }`
+     *
+     * ⚠ `match` é o objeto INTEIRO de `findHistoricoMatches`, não só as duas contas que o
+     * `renderImportExcelModal` lê hoje. Devolver `{matchType, contaDebito, contaCredito}` passaria
+     * na tela de hoje e mentiria para a próxima que ler `usageCount` ou `scope` — é o mesmo motivo
+     * pelo qual o `previewOFX` daqui de cima carrega o match completo.
+     */
+    async previewExcelImport(companyId, file) {
+      await delay(400);
+      // A rota devolve 400 `file_required` sem arquivo. O modal já barra antes, mas mock que
+      // aceita o que o servidor recusa é uma recusa descoberta em produção.
+      if (!file) throw mockRecusa("file_required", "Selecione um arquivo Excel.");
+
+      // ⚠ O mock NÃO parseia a planilha (o `xlsx` é do backend) — o que ele espelha é o RESULTADO
+      // do parse. Por isso as linhas são FIXAS, e não sorteadas como no OFX: elas cobrem de
+      // propósito os três desfechos que a revisão desenha — casada exata, casada parcial (o
+      // substring do backend) e pendente. Sorteio devolveria ora uma tela, ora outra.
+      const AMOSTRA = [
+        { descricao: "PAGO ALUGUEL", valor: 3200 },                    // exato   → 426 / 1
+        { descricao: "PAGO CONTA DE ENERGIA CEMIG", valor: 418.77 },   // parcial → 464 / 5
+        { descricao: "MERCADO CENTRAL", valor: 88 },                   // pendente
+        { descricao: "TARIFA PACOTE DE SERVICOS", valor: 34.9 },       // pendente
+        { descricao: "PAGO INTERNET", valor: 199.9 },                  // exato   → 465 / 5
+        { descricao: "COMPRA DE MATERIAL DE ESCRITORIO", valor: 256.4 }, // pendente
+      ];
+
+      // ⚠ Datas no mês ANTERIOR, que é a competência com que a aba Lançamentos abre
+      // (`competenciaPadrao`). Linhas fora dela seriam importadas e a lista continuaria vazia: o
+      // modal diria "6 linhas importadas" e a tela atrás dele não mostraria nenhuma.
+      const hoje = new Date();
+      const mesAnterior = new Date(Date.UTC(hoje.getFullYear(), hoje.getMonth() - 1, 1));
+      const diaDoMes = (d) =>
+        `${mesAnterior.getUTCFullYear()}-${String(mesAnterior.getUTCMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+      const transactions = AMOSTRA.map((linha, i) => ({
+        // `rowIndex` é a linha da PLANILHA (o parser conta do 0, e a 0 é o cabeçalho), não o
+        // índice do array — é ele que volta no commit nomeando a linha que falhou.
+        rowIndex: i + 1,
+        data: diaDoMes(2 + i * 4),
+        descricao: linha.descricao,
+        valor: linha.valor,
+        match: acharMatchDeHistorico(companyId, linha.descricao),
+      }));
+      return { ok: true, transactions, total: transactions.length };
+    },
+    /**
+     * ⚠ A assinatura é a do real: um ARRAY de transações, **não** `{ transactions }` como o
+     * `importOFX` logo acima. Os dois modais chamam diferente e o mock segue cada um.
+     */
+    async commitExcelImport(companyId, transactions) {
+      await delay(600);
+      const linhas = Array.isArray(transactions) ? transactions : [];
+      if (!linhas.length) throw mockRecusa("transactions_required", "Nenhum lançamento para importar.");
+
+      const loteImportacao = `EXCEL-${Date.now()}`;
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const compList = mockHistoricosByCompany.get(companyId) || [];
+      const created = [];
+      const failed = [];
+
+      for (const t of linhas) {
+        const contaDebito = String(t.contaDebito || "").trim();
+        const contaCredito = String(t.contaCredito || "").trim();
+        const valor = Number(t.valor);
+        const descricao = String(t.descricao || "").trim();
+        const dataStr = String(t.data || "").slice(0, 10);
+        // Mesma recusa da rota: importa com ≥1 conta preenchida; só pula quando as DUAS faltam
+        // (a outra se aprende depois). `failed` é contagem E lista — a linha que ficou de fora
+        // tem nome, senão "5 de 6" não diz qual.
+        if ((!contaDebito && !contaCredito) || !descricao || !valor || !dataStr) {
+          failed.push({ rowIndex: t.rowIndex, reason: "campos_obrigatorios" });
+          continue;
+        }
+        const data = new Date(`${dataStr}T00:00:00.000Z`);
+        if (Number.isNaN(data.getTime())) {
+          failed.push({ rowIndex: t.rowIndex, reason: "data_invalida" });
+          continue;
+        }
+
+        const entryId = faker.string.uuid();
+        list.push({
+          id: entryId,
+          portalClientId: companyId,
+          data: data.toISOString(),
+          competencia: `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`,
+          historico: descricao,
+          tipo: String(t.tipo || "DESPESA").toUpperCase(),
+          subtipo: null,
+          origem: "EXCEL",
+          loteImportacao,
+          status: "RASCUNHO",
+          statusPagamento: "NA",
+          openEntryId: null,
+          lines: [
+            { id: faker.string.uuid(), entryId, conta: contaDebito, tipo: "D", valor, ordem: 0 },
+            { id: faker.string.uuid(), entryId, conta: contaCredito, tipo: "C", valor, ordem: 1 },
+          ],
+          totalD: valor, totalC: valor, valor,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        created.push({ rowIndex: t.rowIndex, entryId });
+
+        // Auto-save do histórico, como `upsertHistoricoFromImport` faz no commit real (e com a
+        // mesma condição: só com as DUAS contas). É o que a própria tela promete — "a partir dali
+        // ficam memorizadas para próximos imports" —, e sem isso o segundo preview do mock
+        // continuaria pendente, desmentindo a frase offline.
+        if (contaDebito && contaCredito) {
+          const existente = compList.find((h) => h.text === descricao);
+          if (existente) {
+            existente.usageCount += 1;
+          } else {
+            compList.push({
+              id: faker.string.uuid(), createdByUserId: "mock-user", companyPortalClientId: companyId,
+              text: descricao, contaDebito, contaCredito, usageCount: 1, scope: "COMPANY",
+            });
+          }
+        }
+      }
+
+      mockEntriesByCompany.set(companyId, list);
+      mockHistoricosByCompany.set(companyId, compList);
+      return {
+        ok: true,
+        created: created.length,
+        failed: failed.length,
+        loteImportacao,
+        details: { created, failed },
+      };
     },
     /**
      * ⚠ CSV DE VERDADE, não `#mock-...`.
@@ -4874,12 +5101,53 @@ export function createMockApi() {
       // A confirmação de "empresa zerada" REPETE empresa e competência — sem o CNPJ, o mock
       // mostrava uma confirmação diferente da de produção, que é justamente onde o erro custa.
       const empresa = mockCompanies.find((c) => c.companyId === companyId) || null;
+      // ─── O VALOR VEM DA PRÓPRIA COMPETÊNCIA, E A FORMA VEM DA MEMÓRIA ────────────────────────
+      //
+      // A memória perdeu o valor (`ApuracaoConfigMemory` não tem competência: guardar valor ali
+      // carregava o faturamento de um mês para dentro de outro). Sobraram TRÊS caminhos, e o mock
+      // precisa dos três — o segundo e o terceiro são os que não existiam offline:
+      //
+      //  1. uma atividade, mercado interno → o total da competência entra em `valorInterno`;
+      //  2. uma atividade, mercado EXTERNO → o total entra em `valorExterno`. É o caso da empresa
+      //     que presta serviço ao exterior; `flagExportacao` nunca é escrita para NFS-e, então SÓ a
+      //     memória sabe disso, e é aqui que se confere que a informação sobrevive;
+      //  3. DUAS atividades → valor `null` nas duas, porque não existe regra de rateio. É o caso que
+      //     prova o `?? ""` do input: com `|| 0` a tela mostraria um zero fabricado.
+      //
+      // Distribuição por índice de empresa (mesmo padrão de `mockConferenciaAdn`) — variar por
+      // competência esconderia um caminho atrás de "abra outro mês".
+      const idxEmpresa = mockCompanies.findIndex((c) => c.companyId === companyId);
+      const formaMock = idxEmpresa < 0 ? 0 : idxEmpresa % 3;
+      const atividadeFatorR = { idAtividade: 11, descricao: "Serviços sujeitos ao Fator R", anexoImplicito: "III", sujeitoFatorR: true, tipoReceita: "SERVICO_FATOR_R" };
+      const atividadesMock = formaMock === 2
+        ? [
+          { ...atividadeFatorR, mercado: "INTERNO", valorInterno: null, valorExterno: null },
+          { idAtividade: 1, descricao: "Revenda de mercadorias", anexoImplicito: "I", mercado: "INTERNO", sujeitoFatorR: false, tipoReceita: "REVENDA", valorInterno: null, valorExterno: null },
+        ]
+        : formaMock === 1
+          ? [{ ...atividadeFatorR, mercado: "EXTERNO", valorInterno: 0, valorExterno: fat }]
+          : [{ ...atividadeFatorR, mercado: "INTERNO", valorInterno: fat, valorExterno: 0 }];
+      const prefillValorMock = formaMock === 2
+        ? {
+          total: fat, indefinido: true, mercadoAplicado: null, origem: "faturamento_da_competencia",
+          motivo: "A configuração lembrada desta empresa tem 2 atividades, e o portal não tem como "
+            + "saber quanto do faturamento da competência cabe a cada uma — não existe regra de "
+            + "rateio. Preencha os valores.",
+        }
+        : {
+          total: fat, indefinido: false, motivo: null,
+          mercadoAplicado: formaMock === 1 ? "EXTERNO" : "INTERNO",
+          origem: "faturamento_da_competencia",
+        };
       return {
         ok: true,
         dados: {
           razao: empresa?.razao || null,
           cnpj: empresa?.cnpj || null,
-          faturamento: zerada ? { interno: 0, externo: 0, total: 0 } : { interno: 120000, externo: 0, total: 120000 },
+          // ⚠ O faturamento exibido é o MESMO que `mockFaturamentoDaCompetencia` devolve. Eram
+          // 120.000 fixos aqui contra 18.500,75 lá: a tela dizia um número e a recusa do Calcular
+          // citava outro — offline, o contador conferia uma incoerência que produção não tem.
+          faturamento: { interno: formaMock === 1 ? 0 : fat, externo: formaMock === 1 ? fat : 0, total: fat },
           semMovimentoDisponivel: zerada,
           empresaZerada: false,
           semFaturamento: circular.semFaturamento === true,
@@ -4895,7 +5163,9 @@ export function createMockApi() {
             declaradaForaPor: entregaFora?.transmitidaPorId || null,
             declaradaForaObservacao: entregaFora?.observacao || null,
           },
-          atividades: [{ idAtividade: 11, descricao: "Serviços sujeitos ao Fator R", anexoImplicito: "III", mercado: "interno", sujeitoFatorR: true, valorInterno: zerada ? 0 : 120000, valorExterno: 0 }],
+          atividades: atividadesMock,
+          origemAtividades: "memoria(2026-07-31)",
+          prefillValor: prefillValorMock,
           rbt12: 480000, disparidades: [], estado: "aberta", regimeApuracao: "COMPETENCIA",
           // Digitado: 5.000 em todos os meses. Derivado: 5.000, MENOS num mês (4.200) — divergência
           // de 800, que é a que a tela precisa apontar, inclusive na célula do mês.

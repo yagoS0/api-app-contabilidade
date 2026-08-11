@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { valorUtilizavel } from "../lib/valorFormula";
+import { avisoContaSintetica, contasSugeriveis } from "../lib/contaSintetica";
 import {
   ACCOUNTING_PANEL,
   INPUT,
@@ -174,10 +175,13 @@ function AccountSearchInput({ value, onChange, accounts, placeholder }) {
 
   const normalized = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
   const q = normalized(query);
-  // Se a query bate exatamente com um código existente, esconde dropdown (já está "ok")
+  // ⚠ SUGERÍVEIS ≠ EXISTENTES. A conta sintética sai da OFERTA (oferecer é o sistema dizendo "use
+  // esta") mas continua digitável, e `exactCodeMatch` segue olhando o plano INTEIRO — senão digitar
+  // o código de uma sintética manteria o dropdown aberto insistindo em outra conta.
+  const sugeriveis = useMemo(() => contasSugeriveis(accounts), [accounts]);
   const exactCodeMatch = q && accounts.some((a) => String(a.codigo).toLowerCase() === q);
   const matches = (q && !exactCodeMatch)
-    ? accounts.filter((a) =>
+    ? sugeriveis.filter((a) =>
         String(a.codigo).toLowerCase().includes(q) ||
         normalized(a.nome).includes(q)
       ).slice(0, 12)
@@ -433,13 +437,16 @@ export function AccountCodeInput({ id, value, onChange, onKeyDown, accounts, onG
   const matchedAccounts = useMemo(() => {
     const v = String(value || "").trim();
     if (!v || !Array.isArray(accounts) || accounts.length === 0) return [];
+    // ⚠ A conta SINTÉTICA sai da sugestão — ela é de agregação, e lançar nela é lançar num total.
+    // Continua digitável (quem a digitar vê o aviso na linha); o que some é a OFERTA.
+    const sugeriveis = contasSugeriveis(accounts);
     if (isKeyword) {
       if (v.length < 2) return [];
       const q = normTxt(v);
-      return accounts.filter((a) => normTxt(a.nome).includes(q)).slice(0, 8);
+      return sugeriveis.filter((a) => normTxt(a.nome).includes(q)).slice(0, 8);
     }
-    const starts = accounts.filter((a) => String(a.codigo).startsWith(v));
-    const contains = accounts.filter((a) => !String(a.codigo).startsWith(v) && String(a.codigo).includes(v));
+    const starts = sugeriveis.filter((a) => String(a.codigo).startsWith(v));
+    const contains = sugeriveis.filter((a) => !String(a.codigo).startsWith(v) && String(a.codigo).includes(v));
     return [...starts, ...contains].slice(0, 8);
   }, [value, accounts, isKeyword]);
 
@@ -719,6 +726,8 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(activeLines);
   const listedBalanceDelta = Number(listedTotalD || 0) - Number(listedTotalC || 0);
   const contasForaDoPlano = contasDesconhecidas(activeLines, accounts);
+  // ⚠ Fora do `canSave` de propósito: informa, não bloqueia.
+  const avisoSintetica = avisoContaSintetica(activeLines, accounts);
   const canSave = dateVal && historico && balanced && !duplicateAcrossSides && !contasForaDoPlano.length && !saving;
 
   function reset() {
@@ -779,6 +788,11 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
           {contasForaDoPlano.length === 1 ? " não existe" : " não existem"} no plano desta empresa
           <span style={{ fontWeight: 400, color: ACCOUNTING_PANEL.muted }}> — cadastre em Configurações → Plano de contas.</span>
         </div>
+      ) : null}
+      {/* ⚠ AVISO, NÃO BLOQUEIO — não entra em `canSave`. Âmbar porque não impede nada; vermelho
+          aqui esvaziaria o vermelho da linha acima, que impede. */}
+      {avisoSintetica ? (
+        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "#FFB347", fontWeight: 600 }}>{avisoSintetica}</div>
       ) : null}
       {hasConta && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}><span>Tipo detectado:</span><span style={{ fontWeight: 700, color: "#1A1B26", background: detected.tipo === "PROVISAO" ? "#FFB347" : detected.tipo === "RECEITA" ? "#69FF47" : "#BD93F9", border: "none", borderRadius: 999, padding: "4px 10px" }}>{tipoDetectadoLabel}</span></div>}
       {complexMode && <div style={{ marginTop: 8 }}><LineEditor lines={complexLines} onChange={setComplexLines} accounts={accounts} /></div>}
@@ -874,6 +888,10 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   const lines = [{ tipo: "D", conta: contaD, valor }, { tipo: "C", conta: contaC, valor }];
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
   const contasForaDoPlano = contasDesconhecidas(lines, accounts);
+  // ⚠ AVISO, NÃO BLOQUEIO — ele NÃO entra em `motivoNaoSalva`. O arquivo importado pode estar
+  // errado e o contador sabe quando a exceção é legítima (na base real há 6 lançamentos em conta de
+  // agregação). O sistema informa; ele decide.
+  const avisoSintetica = avisoContaSintetica(lines, accounts);
   /**
    * ⚠ O GATE DO SALVAR VIROU UM MOTIVO, NÃO UM BOOLEANO — pelo mesmo argumento do `leitura`.
    *
@@ -988,6 +1006,12 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
           <div style={{ fontSize: "0.72rem", color: "#FF4757", marginTop: 2 }}>
             {contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa.
           </div>
+        ) : null}
+        {/* ⚠ ÂMBAR, NÃO VERMELHO. Vermelho é bloqueio, e isto não bloqueia nada — pintá-lo de
+            vermelho ao lado do Salvar habilitado ensinaria a ignorar o vermelho da linha acima,
+            que bloqueia de verdade. */}
+        {avisoSintetica ? (
+          <div style={{ fontSize: "0.72rem", color: "#FFB347", marginTop: 2 }}>{avisoSintetica}</div>
         ) : null}
         {/* O Enter no Valor tentou salvar e não deu: o motivo aparece aqui, na célula larga, junto
             dos outros bloqueios. Omitido quando o bloqueio já tem mensagem própria logo acima —

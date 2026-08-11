@@ -1038,10 +1038,28 @@ model TaxDocumentExtraction {
 // ==========================
 
 model ChartOfAccount {
-  id             String   @id @default(uuid())
+  id             String @id @default(uuid())
   portalClientId String? // null = conta global (compartilhada por todas as empresas)
   codigo         String // código reduzido, ex: "5", "464"
   nome           String
+  /// A "CONTA MÃE" — o código COMPLETO do ERP, ex: "111010001" para o reduzido "5" (CAIXA - MATRIZ).
+  ///
+  /// ⚠ NÃO é identidade. Quem identifica a conta é `codigo` (o reduzido): `AccountingEntryLine.conta`
+  /// o guarda como TEXTO, sem FK, então trocar o reduzido orfanaria todo lançamento existente sem
+  /// erro nenhum na tela. Este campo existe para ANÁLISE — é dele que sai `analitica`.
+  ///
+  /// ⚠ Só aparece para o usuário no CADASTRO do plano de contas. Na tela de digitar lançamento o
+  /// contador continua vendo apenas o reduzido (decisão do dono).
+  ///
+  /// ⚠ Nullable e SEM default: conta que ainda não foi reimportada não tem código completo, e
+  /// inventar um seria fabricar hierarquia.
+  codigoCompleto String?
+  /// Derivado de `codigoCompleto` por `lib/derivacaoAnalitica.js`: `false` = SINTÉTICA (existe outro
+  /// código completo, mais longo, começando com o dela — é conta de agregação).
+  ///
+  /// ⚠ TRI-ESTADO, e o `null` é o ponto: conta sem `codigoCompleto` não tem resposta, e `false`
+  /// afirmaria que ela é sintética. **Ausência nunca é resposta.**
+  analitica      Boolean?
   tipo           String // ATIVO | PASSIVO | RECEITA | DESPESA | PATRIMONIO
   natureza       String   @default("DEVEDORA") // DEVEDORA | CREDORA
   status         String   @default("CONFIRMADA") // CONFIRMADA | PENDENTE_ERP

@@ -6,7 +6,21 @@ const TIPO_OPTIONS = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
 const NATUREZA_OPTIONS = ["DEVEDORA", "CREDORA"];
 const STATUS_OPTIONS = ["CONFIRMADA", "PENDENTE_ERP"];
 
-const EMPTY_FORM = { codigo: "", nome: "", tipo: "DESPESA", natureza: "DEVEDORA" };
+const EMPTY_FORM = { codigo: "", nome: "", codigoCompleto: "", tipo: "DESPESA", natureza: "DEVEDORA" };
+
+/**
+ * ⚠ ESTE É O ÚNICO LUGAR ONDE O CÓDIGO COMPLETO APARECE PARA O USUÁRIO.
+ *
+ * Palavras do dono: *"nada deve mudar na tela que digitamos, mas deixe o código mãe no cadastro do
+ * plano de contas"* e *"no nosso programa só colocamos código reduzido, o código mãe é apenas para
+ * análise do software e entendimento contábil das contas"*. Na tela de lançamento o contador
+ * continua vendo só o reduzido.
+ *
+ * ⚠ O QUE ELE FAZ É DECIDIR SINTÉTICA × ANALÍTICA, e conta sintética sai da sugestão do dropdown de
+ * lançamento. Por isso a tela DIZ o que vai acontecer — um campo opcional cujo efeito só aparece
+ * noutra tela é um campo que ninguém preenche direito.
+ */
+const AJUDA_CONTA_MAE = "Código completo do ERP (ex.: 111010001 para o reduzido 5). Serve à análise: quem tem outra conta abaixo dela vira SINTÉTICA e sai da sugestão do lançamento — continua digitável.";
 
 const PANEL = {
   page: "#1A1B26",
@@ -103,6 +117,10 @@ export function ChartOfAccountsPage({
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
 
+  // Edição da conta mãe: uma linha por vez (`codigo` da conta em edição) + o rascunho do campo.
+  const [editandoMae, setEditandoMae] = useState(null);
+  const [maeRascunho, setMaeRascunho] = useState("");
+
   const [filterScope, setFilterScope] = useState("all"); // "all" | "GLOBAL" | "COMPANY"
 
   const filteredAccounts = useMemo(() => {
@@ -186,6 +204,22 @@ export function ChartOfAccountsPage({
     } catch (err) { setError(err?.message || "Erro ao confirmar conta."); } finally { setSaving(false); }
   }
 
+  /**
+   * Edição da CONTA MÃE, uma conta por vez.
+   *
+   * ⚠ Só ela. O `codigo` (reduzido) NÃO é editável aqui e nunca foi: os lançamentos apontam para
+   * ele em TEXTO, sem FK (`AccountingEntryLine.conta`), então trocá-lo orfanaria o razão inteiro
+   * sem erro nenhum na tela. Quem precisa de outro reduzido cria outra conta.
+   */
+  async function handleSalvarContaMae(codigo) {
+    setSaving(true); setError("");
+    try {
+      await onUpdateAccount(codigo, { codigoCompleto: maeRascunho.trim() });
+      setEditandoMae(null);
+      setMessage(`Conta mãe de ${codigo} ${maeRascunho.trim() ? "atualizada" : "removida"}.`);
+    } catch (err) { setError(err?.message || "Erro ao salvar a conta mãe."); } finally { setSaving(false); }
+  }
+
   async function handleDelete(codigo) {
     if (!window.confirm(`Excluir a conta ${codigo}? Lançamentos existentes não serão afetados.`)) return;
     setSaving(true); setError("");
@@ -241,14 +275,27 @@ export function ChartOfAccountsPage({
       const created = Number(result?.created || 0);
       const skipped = Number(result?.skipped || 0);
       const errs = Array.isArray(result?.errors) ? result.errors : [];
+      /**
+       * ⚠ O QUE FOI **MANTIDO** TEM DE APARECER. Decisão do dono: conta que existe no banco e não
+       * está no arquivo é preservada como está — nada é apagado, inativado ou zerado. Só que sem
+       * dizer quantas foram, um arquivo PARCIAL fica indistinguível de um completo, e o contador vai
+       * embora achando que o plano inteiro foi atualizado. Silêncio aqui é o defeito.
+       */
+      const mantidas = Number(result?.mantidas || 0);
+      const semMae = Number(result?.semCodigoCompleto || 0);
+      const extra = [
+        mantidas > 0 ? `${mantidas} conta(s) do plano não estavam no arquivo e foram MANTIDAS como estão` : "",
+        semMae > 0 ? `${semMae} ficaram sem conta mãe (não classificadas como sintética nem analítica)` : "",
+      ].filter(Boolean).join(" · ");
+      const sufixo = extra ? ` — ${extra}.` : "";
 
       if (created === 0 && (errs.length > 0 || skipped > 0)) {
         const firstErr = errs[0]?.reason ? ` Primeiro erro: ${errs[0].reason}` : "";
         setError(`Nenhuma conta criada. ${errs.length} erro(s), ${skipped} ignorada(s).${firstErr}`);
       } else if (errs.length > 0) {
-        setMessage(`Importação concluída: ${created} criada(s), ${skipped} ignorada(s), ${errs.length} com erro.`);
+        setMessage(`Importação concluída: ${created} criada(s), ${skipped} ignorada(s), ${errs.length} com erro.${sufixo}`);
       } else {
-        setMessage(`Importação concluída: ${created} conta(s) criada(s)${skipped > 0 ? `, ${skipped} ignorada(s)` : ""}.`);
+        setMessage(`Importação concluída: ${created} conta(s) criada(s)${skipped > 0 ? `, ${skipped} ignorada(s)` : ""}.${sufixo}`);
       }
     } catch (err) {
       const code = err?.message || "";
@@ -309,7 +356,10 @@ export function ChartOfAccountsPage({
               <input ref={fileRef} type="file" accept=".csv,.pdf" style={{ display: "none" }} onChange={handleImportFile} disabled={importLoading} />
             </label>
             <span style={{ fontSize: "0.875rem", color: PANEL.muted }}>
-              CSV: <code>código;nome;tipo;natureza</code> — ou envie o PDF do plano de contas do ERP.
+              CSV do ERP: <code>código completo;nome;código reduzido</code> (traz a conta mãe) —
+              ou o formato antigo <code>código;nome;tipo;natureza</code>, ou o PDF do plano de contas do ERP.
+              <br />
+              O casamento é sempre pelo <strong>código reduzido</strong>, e conta que não estiver no arquivo é mantida como está.
             </span>
           </div>
         </div>
@@ -318,7 +368,7 @@ export function ChartOfAccountsPage({
       {/* Adicionar conta */}
       <form onSubmit={handleCreate} style={sectionStyle}>
         <h3 style={{ margin: "0 0 12px", fontSize: "1rem", fontWeight: 700 }}>Adicionar conta</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "7rem 1fr 8rem 8rem auto", gap: 10, alignItems: "end" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "7rem 1fr 10rem 8rem 8rem auto", gap: 10, alignItems: "end" }}>
           <label style={LABEL}>
             Código
             <input type="text" value={form.codigo} onChange={(e) => handleField("codigo", e.target.value)} placeholder="ex: 464" style={FIELD} />
@@ -326,6 +376,16 @@ export function ChartOfAccountsPage({
           <label style={LABEL}>
             Nome
             <input type="text" value={form.nome} onChange={(e) => handleField("nome", e.target.value)} placeholder="Nome da conta" style={FIELD} />
+          </label>
+          <label style={LABEL} title={AJUDA_CONTA_MAE}>
+            Conta mãe
+            <input
+              type="text"
+              value={form.codigoCompleto}
+              onChange={(e) => handleField("codigoCompleto", e.target.value)}
+              placeholder="ex: 111010001"
+              style={{ ...FIELD, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+            />
           </label>
           <label style={LABEL}>
             Tipo
@@ -346,6 +406,11 @@ export function ChartOfAccountsPage({
             {saving ? "..." : "Adicionar"}
           </Button>
         </div>
+        <p style={{ margin: "10px 0 0", color: PANEL.muted, fontSize: "0.8125rem" }}>
+          <strong style={{ color: PANEL.text }}>Conta mãe</strong> é o código completo do ERP e é <strong>opcional</strong> —
+          quem não a tiver fica sem classificação, e o sistema não afirma que é sintética. Ela não aparece na tela de
+          lançamento: lá o contador continua digitando só o código reduzido.
+        </p>
       </form>
 
       {/* Filtros */}
@@ -434,6 +499,7 @@ export function ChartOfAccountsPage({
                 <col style={{ width: "44px" }} />
                 <col style={{ width: "8rem" }} />
                 <col />
+                <col style={{ width: "15rem" }} />
                 <col style={{ width: "7rem" }} />
                 <col style={{ width: "7rem" }} />
                 <col style={{ width: "9rem" }} />
@@ -453,6 +519,7 @@ export function ChartOfAccountsPage({
                   </th>
                   <th style={{ padding: "12px", textAlign: "left", fontSize: "0.875rem" }}>Código</th>
                   <th style={{ padding: "12px", textAlign: "left", fontSize: "0.875rem" }}>Nome</th>
+                  <th style={{ padding: "12px", textAlign: "left", fontSize: "0.875rem" }} title={AJUDA_CONTA_MAE}>Conta mãe</th>
                   <th style={{ padding: "12px", textAlign: "left", fontSize: "0.875rem" }}>Tipo</th>
                   <th style={{ padding: "12px", textAlign: "left", fontSize: "0.875rem" }}>Natureza</th>
                   <th style={{ padding: "12px", textAlign: "left", fontSize: "0.875rem" }}>Status ERP</th>
@@ -492,6 +559,54 @@ export function ChartOfAccountsPage({
                         )}
                       </td>
                       <td style={CELL}>{account.nome}</td>
+                      <td style={CELL}>
+                        {editandoMae === account.codigo ? (
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input
+                              type="text"
+                              autoFocus
+                              value={maeRascunho}
+                              onChange={(e) => setMaeRascunho(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { e.preventDefault(); handleSalvarContaMae(account.codigo); }
+                                if (e.key === "Escape") { e.preventDefault(); setEditandoMae(null); }
+                              }}
+                              placeholder="ex: 111010001"
+                              style={{ ...FIELD, minHeight: 33, fontFamily: "ui-monospace, Menlo, Consolas, monospace", width: "8rem" }}
+                            />
+                            <Button type="button" size="sm" onClick={() => handleSalvarContaMae(account.codigo)} disabled={saving}>Salvar</Button>
+                            <button type="button" onClick={() => setEditandoMae(null)} style={{ background: "none", border: "none", color: PANEL.muted, cursor: "pointer", fontSize: "0.8125rem" }}>Cancelar</button>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            {account.codigoCompleto
+                              ? <span style={{ ...CODE, fontSize: "0.8125rem" }}>{account.codigoCompleto}</span>
+                              : <span style={{ fontSize: "0.8125rem", color: PANEL.muted, fontStyle: "italic" }}>não informada</span>}
+                            {/* ⚠ TRÊS estados, e o terceiro NÃO é "analítica". `analitica === null`
+                                quer dizer que a conta não tem código completo e portanto não tem
+                                resposta — desenhá-la como analítica afirmaria o que ninguém sabe. */}
+                            {account.analitica === false && (
+                              <span title="Conta de agregação: sai da sugestão do dropdown de lançamento, mas continua digitável." style={{ fontSize: "0.7rem", fontWeight: 700, color: PANEL.page, background: PANEL.warning, borderRadius: 999, padding: "2px 8px" }}>
+                                Sintética
+                              </span>
+                            )}
+                            {account.analitica === true && (
+                              <span style={{ fontSize: "0.7rem", fontWeight: 700, color: PANEL.muted, border: `1px solid ${PANEL.border}`, borderRadius: 999, padding: "2px 8px" }}>
+                                Analítica
+                              </span>
+                            )}
+                            {!isReadOnly && (
+                              <button
+                                type="button"
+                                onClick={() => { setEditandoMae(account.codigo); setMaeRascunho(account.codigoCompleto || ""); }}
+                                style={{ background: "none", border: "none", color: PANEL.accent, cursor: "pointer", fontSize: "0.8125rem", textDecoration: "underline", padding: 0 }}
+                              >
+                                Editar
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ ...CELL, fontSize: "0.875rem", color: PANEL.muted }}>{account.tipo}</td>
                       <td style={{ ...CELL, fontSize: "0.875rem", color: PANEL.muted }}>{account.natureza}</td>
                       <td style={CELL}>

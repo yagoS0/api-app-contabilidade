@@ -62,6 +62,7 @@ import {
 } from "../../application/fiscal/serpro/SitfisDownloadService.js";
 import { createAccountingEntryRulesRouter } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
+import { rederivarAnaliticaDoEscopo } from "../../application/accounting/chartOfAccountsAnalitica.js";
 // Plano de contas global: pré-requisito para criar empresa. Mora em `application/accounting`
 // porque o provisionamento (chamado também pela conversão de onboarding) precisa da MESMA guarda.
 import { getGlobalChartStatus } from "../../application/accounting/globalChartStatus.js";
@@ -4858,6 +4859,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const nome = String(body.nome || "").trim();
     const tipo = String(body.tipo || "DESPESA").toUpperCase();
     const natureza = String(body.natureza || "DEVEDORA").toUpperCase();
+    // A "conta mãe": o código COMPLETO do ERP. Opcional — sem ele a conta nasce sem resposta sobre
+    // sintética × analítica, que é a verdade.
+    const codigoCompleto = String(body.codigoCompleto || "").trim() || null;
 
     if (!codigo) return res.status(400).json({ error: "codigo_required" });
     if (!nome) return res.status(400).json({ error: "nome_required" });
@@ -4868,9 +4872,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     // a empresa simplesmente não verá esta conta global enquanto a sua existir.
     try {
       const account = await prisma.chartOfAccount.create({
-        data: { portalClientId: null, codigo, nome, tipo, natureza, status: "PENDENTE_ERP" },
+        data: { portalClientId: null, codigo, nome, tipo, natureza, codigoCompleto, status: "PENDENTE_ERP" },
       });
-      return res.status(201).json({ ok: true, account });
+      // ⚠ A conta nova pode ser a FILHA que torna outra sintética — a derivação é do escopo
+      // inteiro, não da linha. Sem isto, cadastrar `111010001` deixaria `11101` sugerível.
+      if (codigoCompleto) await rederivarAnaliticaDoEscopo(null);
+      return res.status(201).json({ ok: true, account: await prisma.chartOfAccount.findUnique({ where: { id: account.id } }) });
     } catch (err) {
       if (err?.code === "P2002") return res.status(409).json({ error: "codigo_ja_existe" });
       log.error({ err }, "Erro ao criar conta global");
@@ -4892,6 +4899,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     if (body.nome !== undefined) data.nome = String(body.nome).trim();
     if (body.tipo !== undefined) data.tipo = String(body.tipo).toUpperCase();
     if (body.natureza !== undefined) data.natureza = String(body.natureza).toUpperCase();
+    // ⚠ `codigo` NÃO é editável por aqui, e nunca foi: `AccountingEntryLine.conta` aponta para ele
+    // em texto, sem FK. `codigoCompleto` é o que se edita — a conta mãe, para análise.
+    if (body.codigoCompleto !== undefined) data.codigoCompleto = String(body.codigoCompleto).trim() || null;
     if (body.status !== undefined && ["CONFIRMADA", "PENDENTE_ERP"].includes(String(body.status))) {
       data.status = String(body.status);
     }
@@ -4900,7 +4910,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       where: { id: existing.id },
       data,
     });
-    return res.json({ ok: true, account: updated });
+    if (data.codigoCompleto !== undefined) await rederivarAnaliticaDoEscopo(null);
+    return res.json({ ok: true, account: await prisma.chartOfAccount.findUnique({ where: { id: existing.id } }) });
   });
 
   // DELETE /firm/chart-of-accounts/global/:codigo
@@ -4912,6 +4923,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
     if (!existing) return res.status(404).json({ error: "conta_nao_encontrada" });
     await prisma.chartOfAccount.delete({ where: { id: existing.id } });
+    // Excluir a ÚLTIMA filha devolve a mãe à condição de analítica — a derivação é do escopo.
+    if (existing.codigoCompleto) await rederivarAnaliticaDoEscopo(null);
     return res.json({ ok: true });
   });
 
