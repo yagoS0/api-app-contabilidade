@@ -53,6 +53,50 @@ há guia. Sem ela e sem guia, o backend grava a sentinela `1970-01` e o cronogra
 de fato será provisionado (`valor da parcela × restantes`), como **conferência**. A divergência entre
 os dois é **alerta, não bloqueio** — juros embutidos nas prestações são normais.
 
+### ⚠ A COLUNA "PAPEL" DO PASSO 3 — a casa que não existia (2026-08-12)
+
+A tabela da provisão tinha `Descrição · D/C · Conta · Valor` e **nenhuma coluna de papel**, e
+`addLinhaProvisao` cravava `tipoLinha: "PRINCIPAL"` em toda linha nova. Não existia **como dizer** que
+uma linha era juros: o contador clicava "+", escolhia a conta 501 (juros), digitava o valor — e o
+sistema gravava "principal". Foi assim que a SINTROPIA ficou torta (`configProvisao` gravado:
+`{D 265 PRINCIPAL}, {C 553 PARC}, {D 501 PRINCIPAL}`), e é o papel que vira `valorPrincipal` do
+contrato: o chute produziu `principalTotal == totalValue`.
+
+- **A linha nova nasce SEM papel** e o seletor abre em "— escolha o papel —". Papel ausente numa
+  linha com valor é **RECUSA** (`validarPasso3.provisaoPapel`, e `montarPayloadIngestao` **lança**),
+  com o backend recusando junto: **400 `PAPEL_DE_LINHA_AUSENTE`**. Antecipação na tela, trava no
+  servidor — o padrão do módulo.
+- **O papel é editável SEMPRE**, não só dentro de "Editar lançamentos": ele é declaração sobre o que
+  a linha É, e escondê-lo atrás de um link foi como ele acabou implícito.
+- ⚠ **`CAIXA` não está na lista** (`PAPEIS_PROVISAO`): a provisão da adesão **não credita caixa** — o
+  passivo é debitado depois, a cada parcela paga. Creditar caixa aqui foi o bug original da Q28.
+- ⚠ **D↔C e o papel pararam de divergir, nos dois sentidos.** Escolher o papel **leva o lado junto**
+  (`linhaComPapel`, derivação determinística de uma escolha explícita); mudar o lado para o lado
+  errado do papel é **recusado** (`papelDivergeDoLado` → `validarPasso3.provisaoLado`), nunca
+  reescrito por baixo do contador. Antes, `setLinhaProvisao` escrevia só a chave editada — e em
+  produção há um **CRÉDITO marcado `PRINCIPAL`** (`OUTRO nº 3`) nascido exatamente disso.
+
+### ⚠ A PROVISÃO PASSOU A RECONHECER JUROS E MULTA (2026-08-12) — a regra anterior está registrada
+
+`PROVISAO_PADRAO` traz **`D principal · D juros · D multa · C parcelamento a pagar`**, e o crédito é
+**um só**, pela soma. Decisão do dono: *"o juros da provisão precisa ser escrito"* · *"o parcelamento
+deve ter valor principal, juros, e valor juros + principal fechando a contrapartida"* · *"nós
+geralmente lançamos juros e multa na mesma CONTA, mas podemos separar também, opcional"*.
+
+⚠ **"Mesma conta" é sobre a CONTA, não sobre o PAPEL.** `JUROS` e `MULTA` são duas linhas com papéis
+distintos que podem apontar para a mesma conta — `MapaContaTributo` indexa por
+`(tipoLinha, codigoTributo)`, então isso é o caso normal da tabela. Colapsá-las num papel só apagaria
+a multa como fato, que é o mesmo colapso que a coluna de papel acabou de desfazer.
+
+⚠ **Componente zerado NÃO vira linha** (`linhasQueViramLancamento`) — e o corte é por **valor**, não
+por conta: a conta de multa vem pré-preenchida pela memória do escritório sozinha, e sem o corte um
+contrato sem multa gravaria um lançamento de **R$ 0,00**.
+
+⚠ **A regra ANTERIOR reconhecia só o principal**, e o motivo dela continua verdadeiro: a **baixa não
+foi alterada** e amortiza o passivo só pelo principal, então sobra resíduo permanente igual a
+`juros + multa`. Isso é decisão pendente do dono sobre a baixa — ver
+`apps/api/src/application/accounting/CLAUDE.md` e `scripts/diag-residuo-provisao-consolidada.mjs`.
+
 ⚠ **NÃO EXISTE CHECKBOX "salvar como padrão da modalidade", e a ausência é deliberada.**
 `memorizeMapaContaTributo` grava SEMPRE com `portalClientId: null` (escopo do escritório): preencher
 as contas de uma empresa já vira o padrão de todas, e o override por cliente existe na tabela mas
@@ -232,6 +276,61 @@ prova só recebe linhas com guia, mas isso é garantia de **query**, não de tip
 a fixture de `listParcelamentos` tem uma linha para cada estado — inclusive a prestação **sem guia**
 (débito automático) e a guia **sem `numeroDocumento`**. Mock que só soubesse o caminho feliz
 esconderia exatamente o que esta tela existe para mostrar.
+
+### Redesign da aba, FASE 1 — "ruído sai; capacidade e informação não"
+
+Quatro quick wins do plano do dono, sem mexer em arquitetura. **As fases 2 e 3 (caixa de pendências
+consolidada, abas Ativos|Rescindidos, mestre-detalhe, rota canônica) NÃO entraram** — e ⚠ **as duas
+filas continuam duas**: consolidá-las é Fase 2, e mesmo lá "a guia foi paga, falta lançar" e "venceu
+sem guia, você declara?" não podem virar uma ação só.
+
+| o que era repetição | onde está agora |
+|---|---|
+| o box dos rescindidos **dentro** da fila (parágrafo + lista de contratos + `Desfazer rescisão…`) **e** a seção "Contratos rescindidos" do rodapé, com o mesmo conteúdo | **só na seção**. A fila ficou com **uma linha**: a contagem + `Ver contratos rescindidos`, que rola até lá e destaca a seção por 3s |
+| `explicarRecusa(motivoBloqueio)` impresso **por linha** da fila (num contrato do wizard, em TODAS) | **banner do grupo**, uma vez (`agruparBloqueiosDaFila`), com a contagem e as prestações; a linha guarda o **badge curto** (`rotuloDoBloqueio`) e o `title` do botão segue com o texto inteiro |
+| card inteiro dizendo "Nenhuma parcela aguardando conferência" / fila vazia com moldura, título e parágrafo | **uma linha**, com o `ℹ` (`SecaoVazia`). O que "vazia" significa continua na tela, a um clique |
+| corrigir o valor de N prestações = abrir N vezes o mesmo modal | **banner com ação em lote** → `InformarValorEmLoteModal` (um valor para todas, **cada linha editável**) |
+
+⚠ **A CONTAGEM DE PRESTAÇÕES FORA DA FILA SUBIU JUNTO, e ela não é `parcelasTotal`.** Quem sabe
+quantas prestações vencidas ficaram fora da fila por causa da rescisão é a **fila** (`foraDaFila` do
+`listParcelasSemGuiaPendentes`); a seção só sabia o tamanho do contrato. O número viaja por
+`onForaDaFila` até a `ParcelamentoTab` e é desenhado **uma vez**, no contrato. Era ele que faltava
+quando 69 prestações sumiram sem uma palavra — remover a duplicação sem levá-lo junto teria
+recriado o incidente.
+
+⚠ **Contrato ÓRFÃO aparece assim mesmo.** Se `listParcelamentos` falhar, um contrato pode estar em
+`foraDaFila` e não na lista — e é justamente o que está segurando prestações fora da fila. A seção
+desenha uma linha tracejada para ele, com a contagem e o `Desfazer rescisão…` (que cai em
+`abrirDesfazerPorId`: a prévia vem do servidor, só o rótulo do topo faltaria).
+
+⚠ **`onCorrigirValorContratado` NUNCA ERA PASSADO ao `BaixaManualParcelaModal`** — a rota, o mock, a
+regra e o modal existiam, e a `renderParcelamentoTab` não ligava os fios. O campo **Principal**
+nascia `disabled` ("não está disponível neste modo de API") e **vazio**, então "Informar valor e
+declarar…" abria uma tela onde nada podia ser informado, com o botão bloqueado pedindo o valor. Foi
+ligado nesta fase (`podeCorrigirValor`, lido de `parcelaApi.corrigirValorPrevistoParcela`).
+
+**Nome da ação, o mesmo do começo ao fim** (regra do dono): linha `Declarar baixa…` → modal
+`Declarar e lançar a baixa` → `Baixa declarada e lançada.`; linha `Informar valor e declarar…` →
+modal `Informar valor e declarar a baixa` (o rótulo **muda com `principalAlterado`**, porque aí são
+DOIS atos) → mesma baixa; banner `Informar valor` → `Informar valor em N prestações` → `Valor
+informado em N prestações.`; conferência `Aprovar` → confirmação `Aprovar a baixa de N parcela(s)`.
+
+**Cor:** ⚠ **vermelho só em `Excluir contrato…`** (destrutivo) e em **falha de carga/gravação** — mais
+nada. **Uma** cor de pendência (âmbar: `N a lançar`, `Vencida`, `Sem valor`, `Sem provisão`), **uma**
+de ação (accent). ⚠ **A borda roxa do box de vencidas saiu** — não comunicava nada e gastava o accent
+numa moldura; **a moldura só muda no erro** — e, por 3s, na seção para onde o ponteiro leva. Alvo de
+clique dos botões de linha: **40px**.
+
+⚠ **`InformarValorEmLoteModal` faz UMA chamada por prestação** — não existe rota de lote, e forjar
+uma no front engoliria a conferência do "era" (`valorAnteriorConferido`), que é a guarda contra
+reescrever um contrato a partir de um antes que ninguém viu. Linha recusada mostra o motivo **na
+linha** e o lote **segue**; linha já gravada **sai do plano** (reenviá-la seria recusada por
+conferência divergente, porque o "era" dela mudou).
+
+⚠ **Regra em `lib/baixaManualParcela.js`**, com teste próprio (`agruparBloqueiosDaFila`,
+`tituloDoGrupo`, `rotuloDoBloqueio`, `planoDoLoteDeValor`, `textoDaConfirmacaoDoLote`, e o par
+`-surface` de `rotuloDaSituacao`). `resumoDosNumeros` é **importado** de `parcelaBusca.js`, não
+copiado. Os componentes só ligam.
 
 ## A célula de valor aceita fórmula (`entries/lib/valorFormula.js`)
 
@@ -414,20 +513,33 @@ resposta, e desenhá-la como analítica afirmaria o que ninguém sabe.
 ⚠ **`codigo` (o reduzido) NÃO é editável**, aqui nem em lugar nenhum: os lançamentos apontam para ele
 em TEXTO, sem FK. Quem precisa de outro reduzido cria outra conta.
 
-### A regra em `entries/lib/contaSintetica.js` (15 testes); os componentes só ligam
+### A regra em `entries/lib/contaSintetica.js` (22 testes); os componentes só ligam
 
 - `contasSugeriveis` alimenta os **dois** dropdowns (`AccountSearchInput` e `AccountCodeInput`);
+- `motivoContaSintetica` alimenta o **gate do Salvar** (`canSave`/`motivoNaoSalva`);
 - `avisoContaSintetica` alimenta a frase, no `DraftEntryRow` **e** no `NewEntryForm`.
 
 ⚠ **`analitica` é TRI-ESTADO e a comparação é `=== false`, nunca `!analitica`.** Com a negação, toda
 conta de plano ainda não reimportado (`analitica: null`) sairia sintética e **o dropdown ficaria
 vazio**. Há teste nomeando exatamente isso.
 
-⚠ **ISTO NÃO TRAVA NADA, e essa é a decisão.** O arquivo importado pode estar errado, e o contador
-sabe quando a exceção é legítima — medido em produção: **4 contas de agregação JÁ têm lançamento**
-(6 no total), incluindo uma receita de **R$ 207 mil** na conta de 1º nível. O aviso fica **fora** de
-`canSave`/`motivoNaoSalva` e é **âmbar, não vermelho**: vermelho ao lado de um Salvar habilitado
-esvaziaria o vermelho da linha logo acima, que bloqueia de verdade.
+⚠ **ISTO ERA "NÃO TRAVA NADA" — E A DECISÃO FOI REVERTIDA PELO DONO.** O motivo é externo: a ECD
+exige conta ANALÍTICA na partida (registro **I250**, `IND_CTA = "A"`, Manual do Leiaute 9 / ADE
+Cofis nº 01/2026), então lançar em conta de agregação não é exceção legítima do escritório — é um
+arquivo que o PGE do Sped Contábil recusa **na entrega**, longe do lançamento que o causou.
+
+- **Quem recusa é o BACKEND** (`POST`/`PUT /entries` → 400 `CONTA_SINTETICA`, regra em
+  `api: application/accounting/lib/gateContaSintetica.js`). Tela não é guarda; o que mora aqui é a
+  antecipação, para o contador não descobrir a recusa depois de clicar.
+- ⚠ **A trava recusa a ENTRADA, nunca a permanência — e a regra é a MESMA dos dois lados.** Na
+  edição só bloqueia a sintética que ESTA edição acrescenta (`codigosAtuais`): os **6** lançamentos
+  que já existem em conta de agregação (inclusive uma receita de **R$ 207 mil** na conta de 1º
+  nível) continuam editáveis, senão o contador ficaria preso justamente no caminho que existe para
+  movê-los. **Para qual analítica cada um vai é decisão dele** — o sistema não escolhe.
+- ⚠ **A COR SEGUE O EFEITO:** vermelho quando o Salvar está bloqueado por isto (mesmo texto do
+  `title` do botão), **âmbar** quando a conta é sintética mas o lançamento segue salvável (a
+  preexistente). Vermelho ao lado de um Salvar habilitado esvaziaria o vermelho da linha acima, que
+  bloqueia de verdade.
 
 ⚠ **`exactCodeMatch` continua olhando o plano INTEIRO** (não os sugeríveis) — senão digitar o código
 de uma sintética manteria o dropdown aberto insistindo em outra conta.

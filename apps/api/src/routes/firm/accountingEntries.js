@@ -8,6 +8,11 @@ import { resolvePayrollTemplate } from "../../application/accounting/payrollTemp
 import { PROVISAO_TO_BAIXA_EVENT } from "./accountingEntryRules.js";
 import { importChartOfAccountsFromBuffer } from "../../application/accounting/chartOfAccountsImport.js";
 import { rederivarAnaliticaDoEscopo } from "../../application/accounting/chartOfAccountsAnalitica.js";
+// A TRAVA DA CONTA SINTÉTICA — regra pura; a ligação com o banco é `recusaContaSintetica`, abaixo.
+import {
+  ERRO_CONTA_SINTETICA, resolverPlanoPorCodigo, codigosDasLinhas,
+  sinteticasIntroduzidas, filhasDiretas, mensagemRecusa,
+} from "../../application/accounting/lib/gateContaSintetica.js";
 import { isMonthClosed } from "../../application/accounting/fechamentoContabil.js";
 import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/accounting/contasAcrescimo.js";
 import { tipoLinhaDaBaixa } from "../../application/accounting/tipoLinhaBaixa.js";
@@ -418,6 +423,86 @@ async function contasInexistentes(prisma, portalClientId, lines) {
   });
   const conhecidas = new Set(achadas.map((a) => a.codigo));
   return codigos.filter((c) => !conhecidas.has(c));
+}
+
+/**
+ * A TRAVA DA CONTA SINTÉTICA — a ligação com o banco; a regra é pura, em `lib/gateContaSintetica.js`.
+ *
+ * ⚠ POR QUE ELA EXISTE NO SERVIDOR, se a tela já avisa: tela não é guarda. E o motivo de ter virado
+ * RECUSA (era aviso) é externo — o registro I250 da ECD exige `IND_CTA = "A"`, então lançamento em
+ * conta de agregação não é uma escolha do escritório: é um arquivo que o PGE do Sped Contábil
+ * recusa na entrega. Permitir seria adiar a falha para o pior momento possível.
+ *
+ * ⚠ FICA NA ROTA, não dentro do serviço — mesmo critério do `contasInexistentes` e do `MES_FECHADO`:
+ * a captura do SERPRO, os workers e os templates resolvem conta sozinhos e não podem ser derrubados
+ * no meio de uma sincronia por um plano de contas ainda não reimportado.
+ *
+ * ⚠ `codigosAtuais` É O QUE MANTÉM A CORREÇÃO POSSÍVEL. Na EDIÇÃO só se recusa o que o payload
+ * ACRESCENTA; a sintética que já estava gravada não bloqueia o `UPDATE` — senão os 6 lançamentos
+ * que já existem em conta de agregação ficariam presos justamente no caminho que existe para
+ * movê-los para a analítica certa. Ver `lib/gateContaSintetica.js`.
+ *
+ * @returns {Promise<null|object>} `null` quando passa; o corpo do 400 quando recusa.
+ */
+async function recusaContaSintetica(prisma, portalClientId, lines, { codigosAtuais = [] } = {}) {
+  const codigos = codigosDasLinhas(lines);
+  if (!codigos.length) return null;
+  const contas = await prisma.chartOfAccount.findMany({
+    where: { codigo: { in: codigos }, OR: [{ portalClientId }, { portalClientId: null }] },
+    select: { codigo: true, nome: true, analitica: true, portalClientId: true, codigoCompleto: true },
+  });
+  const plano = resolverPlanoPorCodigo(contas);
+  // ⚠ `=== false`, nunca `!analitica`: conta sem `codigoCompleto` sai `null` (não se sabe), e
+  // recusar no desconhecido travaria todo plano ainda não reimportado.
+  const achadas = sinteticasIntroduzidas(lines, codigosAtuais, plano);
+  if (!achadas.length) return null;
+
+  // As candidatas só são buscadas no caminho da RECUSA (raro), e existem para que a mensagem diga
+  // o que fazer. ⚠ O escopo é o da própria conta — global com global, empresa com a própria.
+  const candidatas = {};
+  for (const achada of achadas) {
+    const conta = plano.get(achada.codigo);
+    if (!conta?.codigoCompleto) continue;
+    const doEscopo = await prisma.chartOfAccount.findMany({
+      where: {
+        portalClientId: conta.portalClientId ?? null,
+        codigoCompleto: { startsWith: conta.codigoCompleto },
+      },
+      select: { codigo: true, nome: true, codigoCompleto: true, analitica: true },
+    });
+    candidatas[achada.codigo] = filhasDiretas(conta, doEscopo)
+      .map((f) => ({ codigo: f.codigo, nome: f.nome, codigoCompleto: f.codigoCompleto, analitica: f.analitica }));
+  }
+
+  return {
+    error: ERRO_CONTA_SINTETICA,
+    contas: achadas.map((a) => a.codigo),
+    sinteticas: achadas,
+    candidatas,
+    message: mensagemRecusa(achadas),
+  };
+}
+
+/**
+ * O conjunto de códigos SINTÉTICOS usados num lote de importação (OFX/Excel) — **uma query só**.
+ *
+ * ⚠ POR QUE O IMPORT TAMBÉM É GUARDADO, e não só a tela de lançar: dos 6 lançamentos que hoje estão
+ * em conta de agregação, **4 vieram do import de Excel** (`origem: "EXCEL"`). Travar só o `POST
+ * /entries` deixaria aberta exatamente a porta por onde a maioria deles entrou.
+ *
+ * ⚠ A RECUSA AQUI É POR LINHA, não do lote: cada import já devolve `failed[]` com o motivo, e
+ * derrubar 200 linhas boas por causa de 2 erradas seria trocar um defeito por outro.
+ */
+async function sinteticasDoLote(prisma, portalClientId, linhas) {
+  const codigos = codigosDasLinhas(linhas);
+  if (!codigos.length) return new Set();
+  const contas = await prisma.chartOfAccount.findMany({
+    where: { codigo: { in: codigos }, OR: [{ portalClientId }, { portalClientId: null }] },
+    select: { codigo: true, nome: true, analitica: true, portalClientId: true },
+  });
+  const plano = resolverPlanoPorCodigo(contas);
+  // ⚠ `=== false`, nunca `!analitica`: `null` (conta ainda não reimportada) nunca recusa.
+  return new Set(codigos.filter((c) => plano.get(c)?.analitica === false));
 }
 
 // Q17: valida se a competência pode ser FECHADA (fechamento contábil).
@@ -2414,6 +2499,11 @@ export function createAccountingEntriesRouter({ log }) {
       });
     }
 
+    // ⚠ CONTA SINTÉTICA É RECUSADA. Num lançamento NOVO não há nada preexistente a preservar, então
+    // `codigosAtuais` é vazio: qualquer conta de agregação nas linhas recusa.
+    const recusa = await recusaContaSintetica(prisma, portalClientId, lines);
+    if (recusa) return res.status(400).json(recusa);
+
     const competencia = `${data.getUTCFullYear()}-${String(data.getUTCMonth() + 1).padStart(2, "0")}`;
 
     // Q18: não permite lançar em mês fechado (fechamento contábil).
@@ -2579,6 +2669,20 @@ export function createAccountingEntriesRouter({ log }) {
               : `Estas contas não existem no plano de contas desta empresa: ${desconhecidas.join(", ")}.`,
           });
         }
+
+        // ⚠ NA EDIÇÃO A TRAVA RECUSA SÓ O QUE O PAYLOAD ACRESCENTA — e é isto que mantém possível a
+        // correção dos 6 lançamentos que já estão em conta de agregação. Recusar todo `UPDATE` que
+        // TOQUE uma sintética prenderia o dono: ele não conseguiria nem mover a linha para a
+        // analítica certa, porque essa correção é um `UPDATE` sobre uma linha sintética.
+        // Substituir a conta faz a sintética sumir do payload → passa. Acrescentar uma → recusa.
+        const linhasAtuais = await prisma.accountingEntryLine.findMany({
+          where: { entryId },
+          select: { conta: true },
+        });
+        const recusa = await recusaContaSintetica(prisma, portalClientId, lines, {
+          codigosAtuais: linhasAtuais.map((l) => l.conta),
+        });
+        if (recusa) return res.status(400).json(recusa);
       }
     }
 
@@ -3257,6 +3361,13 @@ export function createAccountingEntriesRouter({ log }) {
       const created = [];
       const failed = [];
 
+      // Mesma guarda do Excel, pelo mesmo motivo: o import é uma porta de lançamento como outra
+      // qualquer, e conta de agregação é recusada pela ECD venha ela de onde vier.
+      const sinteticasLote = await sinteticasDoLote(prisma, portalClientId, [
+        ...transactions.map((t) => ({ conta: t.contaDebito })),
+        ...transactions.map((t) => ({ conta: t.contaCredito })),
+      ]);
+
       try {
         await prisma.$transaction(async (tx) => {
           for (const t of transactions) {
@@ -3273,6 +3384,11 @@ export function createAccountingEntriesRouter({ log }) {
             const dataDate = new Date(`${dataStr}T00:00:00.000Z`);
             if (Number.isNaN(dataDate.getTime())) {
               failed.push({ rowIndex: t.rowIndex, reason: "data_invalida" });
+              continue;
+            }
+            const sinteticasDaLinha = [contaDebito, contaCredito].filter((c) => sinteticasLote.has(c));
+            if (sinteticasDaLinha.length) {
+              failed.push({ rowIndex: t.rowIndex, reason: "conta_sintetica", contas: sinteticasDaLinha });
               continue;
             }
             const competencia = `${dataDate.getUTCFullYear()}-${String(dataDate.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -3391,6 +3507,12 @@ export function createAccountingEntriesRouter({ log }) {
       const created = [];
       const failed = [];
 
+      // ⚠ 4 dos 6 lançamentos hoje em conta de agregação vieram DAQUI. A recusa é por LINHA.
+      const sinteticasLote = await sinteticasDoLote(prisma, portalClientId, [
+        ...transactions.map((t) => ({ conta: t.contaDebito })),
+        ...transactions.map((t) => ({ conta: t.contaCredito })),
+      ]);
+
       try {
         await prisma.$transaction(async (tx) => {
           for (const t of transactions) {
@@ -3413,6 +3535,13 @@ export function createAccountingEntriesRouter({ log }) {
             const dataDate = new Date(`${dataStr}T00:00:00.000Z`);
             if (Number.isNaN(dataDate.getTime())) {
               failed.push({ rowIndex: t.rowIndex, reason: "data_invalida" });
+              continue;
+            }
+            // Conta de agregação não recebe lançamento (ECD, registro I250) — a linha fica de fora
+            // NOMEANDO a conta; o resto do lote entra.
+            const sinteticasDaLinha = [contaDebito, contaCredito].filter((c) => sinteticasLote.has(c));
+            if (sinteticasDaLinha.length) {
+              failed.push({ rowIndex: t.rowIndex, reason: "conta_sintetica", contas: sinteticasDaLinha });
               continue;
             }
             const competencia = `${dataDate.getUTCFullYear()}-${String(dataDate.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -3946,7 +4075,10 @@ export function createAccountingEntriesRouter({ log }) {
       return res.status(201).json({ ok: true, data });
     } catch (err) {
       const code = err?.code || "internal_error";
-      if (code === "COMPOSICAO_INVALIDA") {
+      // ⚠ `PAPEL_DE_LINHA_AUSENTE` é RECUSA DE ENTRADA, não erro do servidor: a linha de provisão
+      // chegou sem `tipoLinha`, e supô-lo faria o contrato nascer com o principal errado (o defeito
+      // da SINTROPIA). A mensagem do serviço já traz motivo E saída — ela sobe inteira para a tela.
+      if (code === "COMPOSICAO_INVALIDA" || code === "PAPEL_DE_LINHA_AUSENTE") {
         return res.status(400).json({ ok: false, error: code, message: err.message });
       }
       log.error({ err }, "Falha na ingestão de parcelamento (v2)");

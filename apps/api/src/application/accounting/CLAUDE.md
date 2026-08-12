@@ -686,20 +686,40 @@ Dentro de UMA parcela convivem duas naturezas contábeis:
 0380 TJLP - IRPJ - Parcelamentos       -      -  11,78   ← encargo CORRENTE do mês
 ```
 
-⚠ **QUEM MANDA NA BAIXA É A REGRA DA ADESÃO.** `linhasProvisao` reconhece **só o principal**
-(decisão do dono: *"juros e multa vêm apenas da confirmação do pagamento, que vem do SERPRO"*), então
-o passivo `PARC` (553) nasce valendo `principalTotal`. Segue daí que **só o principal pode
-amortizá-lo**: debitar também multa e juros levaria o passivo a **negativo** ao longo do contrato.
-Multa, juros consolidados e TJLP são todos **despesa do mês do pagamento** — nenhum foi reconhecido
-na adesão.
+⚠ **A ADESÃO E A BAIXA ESTÃO DESALINHADAS DESDE 2026-08-12, E ISSO É CONHECIDO.** Leia as duas
+funções juntas — o desalinhamento é silencioso: não gera erro, gera saldo errado.
 
-Consequência aceita e decidida: o passivo passa a registrar o **principal**, não a dívida
-consolidada do contrato. O balanço deixa de espelhar o valor assinado no acordo.
+| | regra até 2026-08-12 | regra de hoje |
+|---|---|---|
+| `linhasProvisao` (adesão) | **só o principal** — *"juros e multa vêm apenas da confirmação do pagamento, que vem do SERPRO"* | **`D principal · D juros · D multa / C soma`** — *"o juros da provisão precisa ser escrito"*, *"o parcelamento deve ter valor principal, juros, e valor juros + principal fechando a contrapartida"*, e a multa entra junto (*"geralmente lançamos juros e multa na mesma CONTA, mas podemos separar também, opcional"*) |
+| `linhasPagamento*` (baixa) | debita `PARC` só pelo principal | **inalterada** |
 
-⚠ **Este par já esteve desalinhado, e o efeito é silencioso.** Enquanto a provisão creditava o
-consolidado, a baixa amortizava por principal+multa+juros e fechava; quando a provisão passou a
-reconhecer só o principal, a mesma baixa passou a **furar o passivo para baixo**. As duas funções
-têm de ser lidas juntas — mudar uma sem a outra não gera erro, gera saldo errado.
+Enquanto a provisão reconhecia só o principal, a baixa era a consequência necessária dela: o passivo
+`PARC` (553) nascia valendo `principalTotal`, e debitar também multa e juros o levaria a **negativo**.
+Com a provisão consolidada, a mesma baixa deixa **resíduo permanente igual a `juros + multa`** —
+parcelamento quitado com saldo vivo em "Parcelamento a Pagar", para sempre.
+
+⚠ **A BAIXA NÃO FOI ALTERADA DE PROPÓSITO: a decisão do dono descreveu a PROVISÃO, não a baixa.**
+A consequência foi medida e levada a ele — não conserte por conta própria.
+Medição (produção, 2026-08-12, `scripts/diag-residuo-provisao-consolidada.mjs`, só leitura):
+
+| contrato | passivo pela regra nova | amortização (baixa pelo principal) | **resíduo** |
+|---|---|---|---|
+| ERISANGELA · PARCSN nº 2 | 13.370,04 | 10.615,23 | **2.754,81** |
+| SINTROPIA · OUTRO nº 0211.…26-88 | 38.037,74 | 38.037,74 | 0,00 (juros/multa **não declarados** no cabeçalho — o encargo está gravado como principal) |
+| SINTROPIA · PARCSN nº 1 · OUTRO nº 3 | 100,00 · 32.200,00 | idem | 0,00 (rescindidos, sem juros declarado) |
+
+⚠ **O resíduo depende de POR ONDE a baixa entra, e a via da DECLARAÇÃO é pior.**
+`gerarPagamentoParcelaManual` debita `PARC` por **`parcelas.valorPrevisto`**, que `parcelaSync` grava
+como `valorParcelaReferencia ?? principalPerParcela` — o valor CHEIO da prestação, não o principal.
+Medido nos mesmos 4 contratos: por essa via a ERISANGELA amortizaria 13.277,03 (resíduo 93,01), e a
+SINTROPIA nº 1 amortizaria **10.000,00 contra um passivo de 100,00** (passivo a −9.900,00). Isso é
+outro defeito (`principalPerParcela` guardando o valor cheio — ver `diag-provisao-parcelamento.mjs`),
+e ele **agrava** o desalinhamento acima em vez de compensá-lo.
+
+⚠ **Mesmo par, mesmo tropeço, sinal invertido:** já houve o caso oposto — provisão creditando o
+consolidado com a baixa amortizando por principal+multa+juros, e depois a provisão virando só o
+principal, com a baixa **furando o passivo para baixo**. É o mesmo par; muda quem está na frente.
 
 **`linhasPagamentoDoComprovante`** faz `D PARC` = principal · `D MULTA` = multa · `D JUROS` = juros
 do código-tributo **e** o total do TJLP · `C CAIXA` = a soma. No R1: `392,58 / 78,48 / 57,52 /
@@ -867,8 +887,49 @@ Testes: `__tests__/chartOfAccountsContaMae.test.js` (12).
 `scripts/diag-conta-mae.mjs` (só leitura) simula o import contra o banco. Rodado em produção,
 10/08/2026: **as colunas NÃO trocaram** (`5` = `111010001 CAIXA - MATRIZ`, **analítica**, 336
 lançamentos), mas **4 dos 42 códigos em uso são contas de agregação de verdade** — `169`, `456`,
-`365` (nível 5) e `357 RECEITAS` (nível **1**, completo `3`), somando **6 lançamentos**. É por isso
-que a regra **informa e não trava** (ver a seção do front). Rode o script antes de mexer aqui.
+`365` (nível 5) e `357 RECEITAS` (nível **1**, completo `3`), somando **6 lançamentos**. Rode o
+script antes de mexer aqui.
+
+### ⚠ A TRAVA: conta sintética é RECUSADA no servidor (`lib/gateContaSintetica.js`)
+
+Isto **era** só aviso de tela ("informa e não trava"). **A decisão foi revertida pelo dono**, e o
+argumento não é de gosto: no leiaute da ECD (Manual do Leiaute 9, ADE Cofis nº 01/2026) o registro
+**I250 (Partidas do Lançamento)** exige `IND_CTA = "A"` na conta do I050 — a REGRA_CONTA_ANALITICA,
+repetida em I155, I250, I310 e I355. Descumprida, **o PGE do Sped Contábil gera erro** e a
+escrituração não sobe. Permitir não era dar liberdade: era adiar a falha para a hora da entrega,
+longe do lançamento que a causou.
+
+- A regra é **pura** (`lib/gateContaSintetica.js`, 20 testes); a ligação com o banco é
+  `recusaContaSintetica` em `routes/firm/accountingEntries.js`. Resposta: **400 `CONTA_SINTETICA`**,
+  com `contas`, `candidatas` (as **filhas diretas** de cada uma) e a mensagem dizendo o motivo **e a
+  saída**. Recusa muda é o defeito, não a recusa.
+- ⚠ **Fica na ROTA, não no serviço** — mesmo critério de `contasInexistentes` e `MES_FECHADO`: a
+  captura do SERPRO, os workers e os templates resolvem conta sozinhos e não podem ser derrubados no
+  meio de uma sincronia. Gatilhos hoje: **`POST /entries`**, **`PUT /entries`** e os **commits de
+  import** (`/entries/import/excel` e `/entries/import/ofx`).
+- ⚠ **O IMPORT É GUARDADO PORQUE FOI POR ELE QUE A MAIORIA ENTROU:** dos 6 lançamentos em conta de
+  agregação, **4 têm `origem: "EXCEL"`**. Lá a recusa é **por LINHA** (`failed[]` com
+  `reason: "conta_sintetica"` e as contas) — derrubar 200 linhas boas por causa de 2 erradas seria
+  trocar um defeito por outro. `sinteticasDoLote` resolve o lote inteiro em **uma query**.
+- ⚠ **`POST /entries/folha` NÃO é guardado** — ali as contas vêm do template de folha
+  (`resolverContasDespesaFolha`), não de digitação livre, e ele também não tem a guarda irmã de
+  `conta_inexistente`. Fica como decisão do dono.
+- ⚠ **`analitica: null` NUNCA recusa.** Conta ainda não reimportada não tem resposta, e recusar no
+  desconhecido travaria o sistema inteiro até o import rodar. `=== false`, nunca `!analitica`.
+- ⚠ **A TRAVA RECUSA A ENTRADA, NUNCA A PERMANÊNCIA.** No `PUT`, o que se compara é o que o payload
+  **acrescenta** em relação às linhas já gravadas (`sinteticasIntroduzidas`). Sem isso os 6
+  lançamentos que já existem em conta de agregação ficariam **presos**: todo `UPDATE` que tocasse a
+  linha errada seria recusado — inclusive o `UPDATE` que existe para movê-los à analítica certa.
+  Trocar a conta faz a sintética sumir do payload e passa; acrescentar uma nova recusa.
+  Regressão: `routes/firm/__tests__/gateContaSintetica.test.js` (7).
+- ⚠ **Hoje, em produção, a trava não recusa NADA** — medido em 12/08/2026: as **1.199** contas estão
+  com `analitica` **NULL** (a coluna existe; o import com `codigoCompleto` nunca rodou). Ela começa
+  a morder no primeiro import do plano. Simulando esse import, 254 contas viram sintéticas e os 6
+  lançamentos aparecem.
+- **Inventário e correção dos 6:** `scripts/corrigir-conta-sintetica.mjs`, **dry-run por padrão**,
+  com modo `--plano <csv>` que SIMULA o import (é o único jeito de ver os 6 antes dele; `--aplicar`
+  é recusado nesse modo). Ele **não escolhe o destino** — é decisão do contador — e **recusa gravar
+  em competência fechada**, apontando reabrir ou contra-lançar.
 
 ## Regras
 

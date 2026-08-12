@@ -174,8 +174,8 @@ export function normalizeParcelamentoDTO(raw = {}) {
     // F2.3 — o contrato passa a carregar COMO se paga e QUANTO ainda se deve.
     formaPagamento: normalizeFormaPagamento(raw.formaPagamento),
     diaPagamento: Number.isFinite(dia) ? Math.min(31, Math.max(1, dia)) : null,
-    // ⚠ INFORMATIVO. Não vira lançamento em lugar nenhum — ver o comentário do campo no schema e o
-    // motivo em `ParcelamentoV2Service.linhasProvisao`.
+    // ⚠ INFORMATIVO. Não vira lançamento em lugar nenhum — ver o comentário do campo no schema.
+    // Quem vira lançamento na adesão é principal/juros/multa (`ParcelamentoV2Service.linhasProvisao`).
     saldoConsolidado: raw.saldoConsolidado != null ? round2(raw.saldoConsolidado) : null,
   };
 }

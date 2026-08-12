@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtValor } from "../../entries/lib/accountingEntriesShared";
 import { SmartHistoricoInput, AccountCodeInput } from "../../entries/components/renderAccountingEntriesParts";
+import { contasSugeriveis, sinteticasNasLinhas } from "../../entries/lib/contaSintetica";
 
 const PANEL = {
   surface: "#24253A",
@@ -64,9 +65,13 @@ const SEM_CONTAS = [];
  * é exatamente como "lento" vira "campo que não atualiza" — que é infinitamente pior.
  */
 const ListaDeContas = memo(function ListaDeContas({ id, accounts }) {
+  // ⚠ A SINTÉTICA SAI DA OFERTA — mesma decisão dos dropdowns da tela de lançar (os campos por
+  // linha usam `AccountCodeInput`, que já filtra; faltavam estes dois, os do preenchimento em lote,
+  // que são justamente os que aplicam a mesma conta a dezenas de linhas de uma vez).
+  const oferecidas = contasSugeriveis(accounts);
   return (
     <datalist id={id}>
-      {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
+      {oferecidas.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
     </datalist>
   );
 });
@@ -192,8 +197,14 @@ export function ImportOFXModal({
   const pendingRows = transactions.filter(
     (t) => !t.skip && (!t.historico || !t.contaDebito || !t.contaCredito),
   ).length;
+  // ⚠ Linha em conta SINTÉTICA não vai — o servidor a recusaria (`reason: "conta_sintetica"`) e a
+  // tela só mostraria a contagem de falhas no fim, sem dizer qual nem por quê. Ver o aviso abaixo.
+  const sinteticasDaLinha = (t) => sinteticasNasLinhas(
+    [{ conta: t.contaDebito }, { conta: t.contaCredito }], accounts,
+  );
+  const bloqueadasPorSintetica = transactions.filter((t) => !t.skip && sinteticasDaLinha(t).length > 0);
   const completeRows = transactions.filter(
-    (t) => (t.contaDebito || t.contaCredito) && t.historico && !t.skip,
+    (t) => (t.contaDebito || t.contaCredito) && t.historico && !t.skip && sinteticasDaLinha(t).length === 0,
   ).length;
   const skipRows = transactions.filter((t) => t.skip).length;
   const canCommit = completeRows > 0 && !saving;
@@ -209,7 +220,7 @@ export function ImportOFXModal({
   async function handleCommit() {
     setError("");
     const toSend = transactions
-      .filter((t) => !t.skip && (t.contaDebito || t.contaCredito) && t.historico)
+      .filter((t) => !t.skip && (t.contaDebito || t.contaCredito) && t.historico && sinteticasDaLinha(t).length === 0)
       .map((t) => ({
         rowIndex: t.rowIndex,
         data: t.data,
@@ -353,6 +364,17 @@ export function ImportOFXModal({
                 </button>
               </div>
             </div>
+
+            {/* ⚠ O bloqueio se explica ANTES do clique, e NOMEIA a conta. Sem isto, estas linhas
+                subiriam para ser recusadas pelo servidor e a tela diria só "(N falhas)". */}
+            {bloqueadasPorSintetica.length > 0 && (
+              <div style={{ marginBottom: 8, fontSize: "0.8125rem", color: PANEL.danger, fontWeight: 600 }}>
+                {bloqueadasPorSintetica.length === 1 ? "1 linha não será importada" : `${bloqueadasPorSintetica.length} linhas não serão importadas`}
+                {" — conta sintética (de agregação) não recebe lançamento: "}
+                {[...new Set(bloqueadasPorSintetica.flatMap((t) => sinteticasDaLinha(t).map((s) => `${s.codigo} ${s.nome}`)))].join(", ")}
+                <span style={{ fontWeight: 400, color: PANEL.muted }}> — troque por uma analítica abaixo dela, ou ignore a linha.</span>
+              </div>
+            )}
 
             {/* Hint de atalhos */}
             <div style={{ fontSize: "0.7rem", color: PANEL.muted, marginBottom: 8, fontStyle: "italic" }}>

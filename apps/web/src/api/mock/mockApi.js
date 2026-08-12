@@ -1028,6 +1028,36 @@ function _derivarAnaliticaMock(lista) {
     return { ...a, codigoCompleto: meu, analitica: !temFilha };
   });
 }
+/**
+ * ⚠ CÓPIA DECLARADA da trava de `api/src/application/accounting/lib/gateContaSintetica.js` — mesmo
+ * motivo de `_derivarAnaliticaMock` (o backend não é importável daqui).
+ *
+ * Existe porque **mock que não conhece a recusa é como um 400 chega à produção sem ninguém ver**: a
+ * rota real responde `CONTA_SINTETICA` e o mock salvaria feliz.
+ *
+ * ⚠ Recusa a ENTRADA, nunca a permanência: `codigosAtuais` são os códigos já gravados no
+ * lançamento, e a sintética que já estava lá não bloqueia a edição (é o que mantém possível a
+ * correção dos lançamentos que já existem em conta de agregação).
+ */
+function _recusaContaSinteticaMock(companyId, lines, codigosAtuais = []) {
+  const plano = mockChartOfAccounts.get(companyId) || [];
+  if (!plano.length) return null;
+  const porCodigo = new Map(plano.map((c) => [String(c.codigo), c]));
+  const jaEstavam = new Set(codigosAtuais.map((c) => String(c ?? "").trim()).filter(Boolean));
+  const achadas = [];
+  for (const l of Array.isArray(lines) ? lines : []) {
+    const codigo = String(l?.conta || "").trim();
+    if (!codigo || jaEstavam.has(codigo) || achadas.some((a) => a.codigo === codigo)) continue;
+    // ⚠ `=== false`, nunca `!analitica`: `null` é "não se sabe" e nunca recusa.
+    if (porCodigo.get(codigo)?.analitica === false) achadas.push({ codigo, nome: porCodigo.get(codigo).nome || "" });
+  }
+  if (!achadas.length) return null;
+  const err = new Error("CONTA_SINTETICA");
+  err.code = "CONTA_SINTETICA";
+  err.contas = achadas.map((a) => a.codigo);
+  return err;
+}
+
 for (const company of mockCompanies) {
   mockChartOfAccounts.set(
     company.companyId,
@@ -1041,6 +1071,33 @@ for (const company of mockCompanies) {
   );
   mockEntriesByCompany.set(company.companyId, []);
 }
+
+// ── Plano de Contas GLOBAL (mock) ────────────────────────────────────────────
+//
+// ⚠ CÓPIA DECLARADA de `REQUIRED_GLOBAL_TIPOS` (`apps/api/src/application/accounting/
+// globalChartStatus.js`) — mesmo motivo de `_derivarAnaliticaMock`: o backend não é importável
+// daqui. Lançamento automático (DAS, faturamento) depende dos 5 tipos, e é por isso que o plano
+// global é PRÉ-REQUISITO para criar empresa: com um tipo faltando, `isConfigured` é falso e a home
+// bloqueia o botão "Nova empresa" com o aviso.
+const REQUIRED_GLOBAL_TIPOS_MOCK = ["ATIVO", "PASSIVO", "RECEITA", "DESPESA", "PATRIMONIO"];
+
+// O escopo global é UMA lista, não um Map: no banco ele é `portalClientId: null` — não há chave.
+// Seed = o mesmo plano das empresas MAIS uma conta de PATRIMÔNIO. Sem ela o mock nasceria com
+// `isConfigured: false` e o botão "Nova empresa" abriria bloqueado, que é o oposto do estado que
+// o mock existe para representar (escritório configurado).
+const _seedGlobalAccounts = [
+  ..._seedAccounts,
+  { codigo: "800", nome: "Capital Social", tipo: "PATRIMONIO", natureza: "CREDORA", status: "CONFIRMADA", codigoCompleto: "241010001" },
+];
+// ⚠ A derivação é do ESCOPO — global com global, nunca cruzando com o plano de uma empresa.
+let mockGlobalChartOfAccounts = _derivarAnaliticaMock(_seedGlobalAccounts).map((a) => ({
+  id: faker.string.uuid(),
+  // A conta global É a que não tem dono: é este `null` que a rota real traduz em `scope: "GLOBAL"`.
+  portalClientId: null,
+  ...a,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+}));
 
 // Seed provisões para a primeira empresa
 const _firstCompanyId = mockCompanies[0]?.companyId;
@@ -3293,6 +3350,104 @@ export function createMockApi() {
       return { ok: true, created: 0, skipped: 0, errors: [], novas: 0, atualizadas: 0, mantidas: 0, mantidasCodigos: [], semCodigoCompleto: 0 };
     },
 
+    // ── Plano de Contas GLOBAL (mock) ──────────────────────────────────────
+    //
+    // Espelho de `/firm/chart-of-accounts/global*`. Sem estas seis, a `GlobalChartOfAccountsPage`
+    // não abre no modo mock — e ela é justamente a tela onde o arquivo do ERP com a conta mãe é
+    // importado.
+    async getGlobalChartOfAccounts() {
+      await delay();
+      // ⚠ `scope` é DERIVADO na leitura, como na rota real: o que está guardado é
+      // `portalClientId: null`. Gravá-lo no registro daria duas fontes para o mesmo fato.
+      return mockGlobalChartOfAccounts.map((a) => ({ ...a, scope: "GLOBAL" }));
+    },
+    async getGlobalChartStatus() {
+      await delay();
+      // Formato de `GET /firm/chart-of-accounts/global/status` (`getGlobalChartStatus` no backend):
+      // conta os tipos PRESENTES e reporta os que faltam para o mínimo obrigatório.
+      const tiposPresentes = [
+        ...new Set(mockGlobalChartOfAccounts.map((a) => String(a.tipo || "").toUpperCase()).filter(Boolean)),
+      ];
+      const tiposFaltantes = REQUIRED_GLOBAL_TIPOS_MOCK.filter((t) => !tiposPresentes.includes(t));
+      return {
+        ok: true,
+        isConfigured: tiposFaltantes.length === 0,
+        totalAccounts: mockGlobalChartOfAccounts.length,
+        tiposPresentes,
+        tiposFaltantes,
+      };
+    },
+    async createGlobalChartOfAccount(input) {
+      await delay();
+      if (mockGlobalChartOfAccounts.find((a) => a.codigo === String(input.codigo))) {
+        throw new Error("codigo_ja_existe");
+      }
+      const account = {
+        id: faker.string.uuid(),
+        portalClientId: null,
+        codigo: String(input.codigo),
+        nome: String(input.nome),
+        tipo: String(input.tipo || "DESPESA").toUpperCase(),
+        natureza: String(input.natureza || "DEVEDORA").toUpperCase(),
+        codigoCompleto: String(input.codigoCompleto || "").trim() || null,
+        status: "PENDENTE_ERP",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      // ⚠ A derivação é do ESCOPO, não da linha: a conta nova pode ser a FILHA que torna outra
+      // sintética. É o que o backend faz (`rederivarAnaliticaDoEscopo(null)`).
+      mockGlobalChartOfAccounts = _derivarAnaliticaMock([...mockGlobalChartOfAccounts, account]);
+      return { ok: true, account: mockGlobalChartOfAccounts.find((a) => a.id === account.id) };
+    },
+    async updateGlobalChartOfAccount(codigo, input) {
+      await delay();
+      const idx = mockGlobalChartOfAccounts.findIndex((a) => a.codigo === codigo);
+      if (idx < 0) throw new Error("conta_nao_encontrada");
+      // ⚠ `codigo` NÃO entra: os lançamentos apontam para ele em texto, sem FK.
+      const { codigo: _ignorado, ...patch } = input || {};
+      if (patch.codigoCompleto !== undefined) patch.codigoCompleto = String(patch.codigoCompleto).trim() || null;
+      const lista = [...mockGlobalChartOfAccounts];
+      lista[idx] = { ...lista[idx], ...patch, updatedAt: new Date().toISOString() };
+      mockGlobalChartOfAccounts = _derivarAnaliticaMock(lista);
+      return { ok: true, account: mockGlobalChartOfAccounts[idx] };
+    },
+    async deleteGlobalChartOfAccount(codigo) {
+      await delay();
+      if (!mockGlobalChartOfAccounts.some((a) => a.codigo === codigo)) throw new Error("conta_nao_encontrada");
+      // Excluir a ÚLTIMA filha devolve a mãe à condição de analítica — por isso re-deriva.
+      mockGlobalChartOfAccounts = _derivarAnaliticaMock(
+        mockGlobalChartOfAccounts.filter((a) => a.codigo !== codigo)
+      );
+      return { ok: true };
+    },
+    async importGlobalChartOfAccountsFile() {
+      await delay(600);
+      /**
+       * ⚠ O mock NÃO LÊ O ARQUIVO — parsear aqui seria uma segunda cópia do parser do ERP (que tem
+       * a armadilha das duas colunas de código) vivendo no front. Então nada é criado, e TODA conta
+       * que já está no plano cai no caso "estava no banco e não veio no arquivo": **mantida como
+       * está**, exatamente a decisão do dono no import real.
+       *
+       * `mantidas` e `semCodigoCompleto` saem do estado real do mock, não de zeros fixos: são
+       * RELATÓRIO, e é com eles na tela que se distingue um import parcial de um completo.
+       */
+      const mantidasCodigos = mockGlobalChartOfAccounts.map((a) => a.codigo);
+      return {
+        ok: true,
+        created: 0,
+        skipped: 0,
+        errors: [],
+        novas: 0,
+        atualizadas: 0,
+        mantidas: mantidasCodigos.length,
+        // O backend corta em 20 — a lista é para a mensagem, não para conferência linha a linha.
+        mantidasCodigos: mantidasCodigos.slice(0, 20),
+        // ⚠ `analitica == null` é o "sem resposta" de `resumirDerivacao`, não `!analitica`:
+        // `false` é SINTÉTICA, que é uma resposta.
+        semCodigoCompleto: mockGlobalChartOfAccounts.filter((a) => a.analitica == null).length,
+      };
+    },
+
     // ── Lançamentos (mock) ─────────────────────────────────────────────────
     async getAccountingEntries(companyId, params = {}) {
       await delay();
@@ -3314,6 +3469,9 @@ export function createMockApi() {
       const totalD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
       const totalC = lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
       if (Math.abs(totalD - totalC) > 0.01) throw new Error("entry_nao_balanceada");
+      // Lançamento NOVO: não há sintética preexistente a preservar, então qualquer uma recusa.
+      const recusa = _recusaContaSinteticaMock(companyId, lines);
+      if (recusa) throw recusa;
       const data = input.data ? new Date(input.data) : new Date();
       const entryId = faker.string.uuid();
       const entry = {
@@ -3414,6 +3572,12 @@ export function createMockApi() {
         const totalD = input.lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
         const totalC = input.lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
         if (Math.abs(totalD - totalC) > 0.01) throw new Error("entry_nao_balanceada");
+        // ⚠ Só o que a edição ACRESCENTA — a sintética que já estava no lançamento não bloqueia,
+        // senão o lançamento errado ficaria preso no caminho que existe para corrigi-lo.
+        const recusaEdicao = _recusaContaSinteticaMock(
+          companyId, input.lines, (list[idx].lines || []).map((l) => l.conta),
+        );
+        if (recusaEdicao) throw recusaEdicao;
         updated.lines = input.lines.map((l, i) => ({
           id: faker.string.uuid(), entryId,
           conta: String(l.conta || ""), tipo: String(l.tipo || "D").toUpperCase(),
@@ -3999,6 +4163,13 @@ export function createMockApi() {
         const data = new Date(`${dataStr}T00:00:00.000Z`);
         if (Number.isNaN(data.getTime())) {
           failed.push({ rowIndex: t.rowIndex, reason: "data_invalida" });
+          continue;
+        }
+        // ⚠ Mesma recusa POR LINHA da rota: conta de agregação não recebe lançamento (ECD, I250).
+        // O lote não cai por causa dela — 1 linha errada não derruba 200 boas.
+        const recusaLinha = _recusaContaSinteticaMock(companyId, [{ conta: contaDebito }, { conta: contaCredito }]);
+        if (recusaLinha) {
+          failed.push({ rowIndex: t.rowIndex, reason: "conta_sintetica", contas: recusaLinha.contas });
           continue;
         }
 

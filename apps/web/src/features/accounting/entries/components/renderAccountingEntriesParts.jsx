@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { BaixaModal } from "../../baixa/components/renderBaixaModal";
 import { valorUtilizavel } from "../lib/valorFormula";
-import { avisoContaSintetica, contasSugeriveis } from "../lib/contaSintetica";
+import { avisoContaSintetica, motivoContaSintetica, contasSugeriveis } from "../lib/contaSintetica";
 import {
   ACCOUNTING_PANEL,
   INPUT,
@@ -726,9 +726,12 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(activeLines);
   const listedBalanceDelta = Number(listedTotalD || 0) - Number(listedTotalC || 0);
   const contasForaDoPlano = contasDesconhecidas(activeLines, accounts);
-  // ⚠ Fora do `canSave` de propósito: informa, não bloqueia.
+  // ⚠ ISTO ERA "AVISO, NÃO BLOQUEIO", E MUDOU: a ECD recusa partida em conta que não seja analítica
+  // (registro I250, `IND_CTA = "A"`), então o servidor recusa também. Aqui é só a ANTECIPAÇÃO —
+  // quem guarda é o backend. Este form só CRIA, então não há sintética preexistente a preservar.
+  const motivoSintetica = motivoContaSintetica(activeLines, accounts);
   const avisoSintetica = avisoContaSintetica(activeLines, accounts);
-  const canSave = dateVal && historico && balanced && !duplicateAcrossSides && !contasForaDoPlano.length && !saving;
+  const canSave = dateVal && historico && balanced && !duplicateAcrossSides && !contasForaDoPlano.length && !motivoSintetica && !saving;
 
   function reset() {
     setContaD(""); setContaC(""); setHistorico(""); setValor(""); setComplexMode(false); setComplexLines([{ tipo: "D", conta: "", valor: "" }, { tipo: "C", conta: "", valor: "" }]);
@@ -764,7 +767,7 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
           </div>
           {/* ⚠ Era verde #69FF47, na MESMA tela cujo rodapé usa verde para "D = C ✓ ok" — a linha
               de rascunho logo abaixo já tinha sido corrigida; este painel ficou para trás. */}
-          <Button type="button" onClick={handleSave} disabled={!canSave} title={!dateVal ? "Informe o dia" : !historico ? "Informe o histórico" : !balanced ? "Valor ou contas incompletos" : duplicateAcrossSides ? "Débito e crédito não podem usar a mesma conta" : "Enter"} style={{ minHeight: 41, fontSize: entryFontSize, alignSelf: "end" }}>{saving ? "..." : "Salvar"}</Button>
+          <Button type="button" onClick={handleSave} disabled={!canSave} title={!dateVal ? "Informe o dia" : !historico ? "Informe o histórico" : !balanced ? "Valor ou contas incompletos" : duplicateAcrossSides ? "Débito e crédito não podem usar a mesma conta" : motivoSintetica || "Enter"} style={{ minHeight: 41, fontSize: entryFontSize, alignSelf: "end" }}>{saving ? "..." : "Salvar"}</Button>
         </div>
         <div style={{ display: "grid", gap: 4, minWidth: 150, width: 150, paddingTop: 16 }}>
           <div style={totalCard}><span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#69FF47" }}>Débito</span><span style={{ fontSize: "0.9375rem", fontWeight: 700, color: ACCOUNTING_PANEL.text }}>R$ {fmtValor(listedTotalD)}</span></div>
@@ -789,10 +792,12 @@ export function NewEntryForm({ accounts, onSave, saving, activeComp, onSearchHis
           <span style={{ fontWeight: 400, color: ACCOUNTING_PANEL.muted }}> — cadastre em Configurações → Plano de contas.</span>
         </div>
       ) : null}
-      {/* ⚠ AVISO, NÃO BLOQUEIO — não entra em `canSave`. Âmbar porque não impede nada; vermelho
-          aqui esvaziaria o vermelho da linha acima, que impede. */}
+      {/* ⚠ A COR SEGUE O EFEITO, sempre: vermelho quando o Salvar está bloqueado por isto (o mesmo
+          texto que está no `title` do botão), âmbar quando a conta é sintética mas o lançamento
+          segue salvável. Vermelho ao lado de um Salvar habilitado esvaziaria o vermelho da linha
+          acima, que bloqueia de verdade. */}
       {avisoSintetica ? (
-        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: "#FFB347", fontWeight: 600 }}>{avisoSintetica}</div>
+        <div style={{ marginTop: 8, fontSize: "0.8125rem", color: motivoSintetica ? "#FF4757" : "#FFB347", fontWeight: 600 }}>{avisoSintetica}</div>
       ) : null}
       {hasConta && <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, fontSize: "0.8125rem", color: ACCOUNTING_PANEL.muted }}><span>Tipo detectado:</span><span style={{ fontWeight: 700, color: "#1A1B26", background: detected.tipo === "PROVISAO" ? "#FFB347" : detected.tipo === "RECEITA" ? "#69FF47" : "#BD93F9", border: "none", borderRadius: 999, padding: "4px 10px" }}>{tipoDetectadoLabel}</span></div>}
       {complexMode && <div style={{ marginTop: 8 }}><LineEditor lines={complexLines} onChange={setComplexLines} accounts={accounts} /></div>}
@@ -888,10 +893,23 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
   const lines = [{ tipo: "D", conta: contaD, valor }, { tipo: "C", conta: contaC, valor }];
   const duplicateAcrossSides = hasDuplicateAccountAcrossSides(lines);
   const contasForaDoPlano = contasDesconhecidas(lines, accounts);
-  // ⚠ AVISO, NÃO BLOQUEIO — ele NÃO entra em `motivoNaoSalva`. O arquivo importado pode estar
-  // errado e o contador sabe quando a exceção é legítima (na base real há 6 lançamentos em conta de
-  // agregação). O sistema informa; ele decide.
-  const avisoSintetica = avisoContaSintetica(lines, accounts);
+  /**
+   * ⚠ ISTO ERA "AVISO, NÃO BLOQUEIO", E A DECISÃO MUDOU — por um motivo externo: a ECD só aceita
+   * partida em conta ANALÍTICA (registro I250, `IND_CTA = "A"`), então lançar numa conta de
+   * agregação não é uma exceção legítima do escritório, é um arquivo que o PGE recusa na entrega.
+   * O servidor recusa (`POST`/`PUT /entries` → 400 `CONTA_SINTETICA`); aqui é a antecipação.
+   *
+   * ⚠ `codigosAtuais` É O QUE MANTÉM A CORREÇÃO POSSÍVEL, e é a MESMA regra do backend: na EDIÇÃO
+   * só bloqueia a sintética que ESTA edição acrescenta. Os 6 lançamentos que já existem em conta de
+   * agregação continuam editáveis — inclusive para serem movidos à analítica certa, que é o que se
+   * pede deles. Para QUAL analítica cada um vai é decisão do contador; o sistema não escolhe.
+   */
+  const codigosAtuais = useMemo(
+    () => (isEdit ? (entry?.lines || []).map((l) => l.conta) : []),
+    [isEdit, entry],
+  );
+  const motivoSintetica = motivoContaSintetica(lines, accounts, codigosAtuais);
+  const avisoSintetica = avisoContaSintetica(lines, accounts, codigosAtuais);
   /**
    * ⚠ O GATE DO SALVAR VIROU UM MOTIVO, NÃO UM BOOLEANO — pelo mesmo argumento do `leitura`.
    *
@@ -911,7 +929,8 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
             : !leitura.ok ? leitura.mensagem
               : duplicateAcrossSides ? "Débito e crédito não podem ser a mesma conta."
                 : contasForaDoPlano.length ? `${contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa.`
-                  : null;
+                  : motivoSintetica ? motivoSintetica
+                    : null;
   const canSave = !motivoNaoSalva;
   // Resolvido o que faltava, o aviso sai sozinho: manter na tela um motivo já corrigido treina o
   // olho a ignorar a linha inteira.
@@ -1007,11 +1026,12 @@ export function DraftEntryRow({ accounts, onSave, saving, activeComp, onSearchHi
             {contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa.
           </div>
         ) : null}
-        {/* ⚠ ÂMBAR, NÃO VERMELHO. Vermelho é bloqueio, e isto não bloqueia nada — pintá-lo de
-            vermelho ao lado do Salvar habilitado ensinaria a ignorar o vermelho da linha acima,
-            que bloqueia de verdade. */}
+        {/* ⚠ A COR SEGUE O EFEITO: vermelho quando ESTA edição está bloqueada por isto (o mesmo
+            texto que o Salvar mostra como motivo), âmbar quando a sintética já estava no
+            lançamento e ele segue salvável. Vermelho ao lado de um Salvar habilitado ensinaria a
+            ignorar o vermelho da linha acima, que bloqueia de verdade. */}
         {avisoSintetica ? (
-          <div style={{ fontSize: "0.72rem", color: "#FFB347", marginTop: 2 }}>{avisoSintetica}</div>
+          <div style={{ fontSize: "0.72rem", color: motivoSintetica ? "#FF4757" : "#FFB347", marginTop: 2 }}>{avisoSintetica}</div>
         ) : null}
         {/* O Enter no Valor tentou salvar e não deu: o motivo aparece aqui, na célula larga, junto
             dos outros bloqueios. Omitido quando o bloqueio já tem mensagem própria logo acima —

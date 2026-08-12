@@ -2,6 +2,8 @@ import {
   ehSintetica,
   contasSugeriveis,
   sinteticasNasLinhas,
+  sinteticasIntroduzidas,
+  motivoContaSintetica,
   avisoContaSintetica,
 } from "../contaSintetica.js";
 
@@ -74,21 +76,65 @@ describe("sinteticasNasLinhas — nomeia o que foi digitado", () => {
   });
 });
 
+describe("⚠ sinteticasIntroduzidas — recusa a ENTRADA, nunca a permanência", () => {
+  const plano = [CAIXA, RECEITAS, { codigo: "456", nome: "DESPESAS GERAIS", analitica: false }];
+
+  it("num lançamento NOVO (sem códigos atuais) toda sintética conta como acrescentada", () => {
+    expect(sinteticasIntroduzidas([{ conta: "357" }], plano, []).map((s) => s.codigo)).toEqual(["357"]);
+    expect(sinteticasIntroduzidas([{ conta: "357" }], plano).map((s) => s.codigo)).toEqual(["357"]);
+  });
+
+  it("a que JÁ ESTAVA no lançamento não é acrescentada — é o que mantém a correção possível", () => {
+    expect(sinteticasIntroduzidas([{ conta: "357" }, { conta: "5" }], plano, ["357", "5"])).toEqual([]);
+  });
+
+  it("mas acrescentar uma SEGUNDA continua sendo acrescentar", () => {
+    expect(sinteticasIntroduzidas([{ conta: "357" }, { conta: "456" }], plano, ["357"]).map((s) => s.codigo))
+      .toEqual(["456"]);
+  });
+});
+
+describe("motivoContaSintetica — o gate do Salvar", () => {
+  const plano = [CAIXA, RECEITAS, { codigo: "456", nome: "DESPESAS GERAIS", analitica: false }];
+
+  it("bloqueia o lançamento novo, nomeando a conta e a saída", () => {
+    const motivo = motivoContaSintetica([{ conta: "357" }], plano);
+    expect(motivo).toContain("357 RECEITAS");
+    expect(motivo).toContain("sintética");
+    expect(motivo.toLowerCase()).toContain("escolha uma analítica");
+  });
+
+  it("⚠ NÃO bloqueia a edição de um lançamento que já estava na sintética", () => {
+    expect(motivoContaSintetica([{ conta: "357" }], plano, ["357"])).toBeNull();
+  });
+
+  it("conta analítica e conta sem resposta não bloqueiam nada", () => {
+    expect(motivoContaSintetica([{ conta: "5" }, { conta: "464" }], [...plano, ANTIGA])).toBeNull();
+  });
+});
+
 describe("avisoContaSintetica — a frase da tela", () => {
   const plano = [CAIXA, RECEITAS, { codigo: "456", nome: "DESPESAS GERAIS", analitica: false }];
 
-  it("nomeia a conta e diz que NÃO bloqueia", () => {
+  it("no lançamento novo é o próprio motivo do bloqueio — a frase e o Salvar dizem a mesma coisa", () => {
     const aviso = avisoContaSintetica([{ conta: "357" }], plano);
+    expect(aviso).toBe(motivoContaSintetica([{ conta: "357" }], plano));
     expect(aviso).toContain("357 RECEITAS");
-    expect(aviso).toContain("sintética");
-    expect(aviso).toContain("não está bloqueado");
   });
 
   it("plural com duas contas", () => {
     const aviso = avisoContaSintetica([{ conta: "357" }, { conta: "456" }], plano);
     expect(aviso).toContain("357 RECEITAS");
     expect(aviso).toContain("456 DESPESAS GERAIS");
-    expect(aviso).toContain("estas contas são sintéticas");
+    expect(aviso).toContain("são contas sintéticas");
+  });
+
+  it("⚠ na sintética PREEXISTENTE a frase diz que o lançamento continua editável", () => {
+    const aviso = avisoContaSintetica([{ conta: "357" }], plano, ["357"]);
+    expect(aviso).toContain("357 RECEITAS");
+    expect(aviso).toContain("continua editável");
+    // Não é o texto do bloqueio: aqui não há bloqueio nenhum.
+    expect(motivoContaSintetica([{ conta: "357" }], plano, ["357"])).toBeNull();
   });
 
   it("nada a dizer devolve null — aviso permanente é aviso ignorado", () => {

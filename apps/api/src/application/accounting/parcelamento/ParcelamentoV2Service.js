@@ -99,34 +99,67 @@ async function memorizeMapaContaTributoTx(client, { tipoParcelamento, entry, use
 
 // ── Construção de linhas ──
 // Q28 Fase 0: PROVISÃO CORRETA da dívida (adesão) = D contrapartida / C parcelamento-a-pagar (passivo).
-// Reconhece SÓ O PRINCIPAL — juros/multa correm e são reconhecidos no PAGAMENTO (não na provisão).
 // NÃO credita caixa (esse era o bug: provisão e pagamento compartilhavam o mesmo papel de conta).
 // As contas saem em branco quando não mapeadas (contador preenche; o sistema aprende).
 async function linhasProvisao(tx, { portalClientId, tipoParcelamento, dto }) {
-  // Provisão da adesão: **D principal (265) / C parcelamento a pagar (553, = principal)**.
-  // Não credita caixa — o passivo é debitado depois, a cada parcela paga.
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
+  // A REGRA VIGENTE (2026-08-12) — A PROVISÃO DA ADESÃO RECONHECE O ENCARGO
   //
-  // ⚠ JUROS E MULTA NÃO ENTRAM AQUI. DECISÃO DO DONO: "juros e multa vêm apenas da confirmação do
-  // pagamento, que vem do SERPRO".
+  //     D principal
+  //     D juros
+  //     D multa
+  //     C parcelamento a pagar   = principal + juros + multa   ← contrapartida CONSOLIDADA, uma só
   //
-  // O que havia antes: `D principal + D juros [+ D multa] / C passivo (= consolidado)`. Como o
-  // pagamento de cada parcela debita o passivo SÓ pelo principal e lança juros/multa em 501/506,
-  // o encargo era reconhecido DUAS VEZES no resultado — uma na adesão, outra a cada parcela — e o
-  // passivo ficava com resíduo permanente igual a `juros + multa` do contrato: parcelamento
-  // quitado com saldo vivo em "Parcelamento a Pagar", para sempre.
+  // ⚠ COMPONENTE ZERADO NÃO VIRA LINHA — a mesma regra da baixa. Contrato sem multa fecha em
+  // `principal + juros`; sem juros nem multa, em `principal`.
   //
-  // Com o passivo nascendo só do principal, a soma das amortizações o zera, e juros e multa
-  // aparecem uma vez só — no mês em que foram efetivamente pagos, que é onde a despesa financeira
-  // pertence.
+  // ⚠ JUROS E MULTA SÃO PAPÉIS DISTINTOS, ainda que apontem para a MESMA conta. Palavras do dono
+  // (2026-08-12): *"nós geralmente lançamos juros e multa na mesma CONTA, mas podemos separar
+  // também, opcional"*. "Mesma conta" é sobre a CONTA, nunca sobre o PAPEL: `MapaContaTributo`
+  // indexa por `(tipoLinha, codigoTributo)`, então dois papéis resolvendo para a mesma conta é o
+  // caso NORMAL da tabela. Colapsar os dois num papel só apagaria a multa como fato — e é
+  // exatamente o colapso que produziu a provisão torta que esta mudança corrige.
   //
-  // ⚠ CONSEQUÊNCIA ACEITA, e o dono decidiu sabendo: o passivo passa a registrar o PRINCIPAL, não
-  // a dívida consolidada do contrato (que legalmente inclui multa e juros). O balanço deixa de
-  // espelhar o valor assinado no acordo.
+  // ── POR QUE ISTO MUDOU, E O QUE A REGRA ANTIGA PROTEGIA ────────────────────────────────────────
   //
-  // `dto.valorJuros` e `dto.valorMulta` continuam gravados no PARCELAMENTO (dado do contrato);
-  // o que mudou é que não viram lançamento na adesão.
+  // ATÉ 2026-08-12 esta função reconhecia **SÓ O PRINCIPAL**. Aquela decisão também era do dono
+  // ("juros e multa vêm apenas da confirmação do pagamento, que vem do SERPRO") e tinha um motivo
+  // concreto, que **continua verdadeiro**: como `linhasPagamento`/`linhasPagamentoDoComprovante`
+  // debitam o passivo (papel `PARC`) **só pelo principal** e jogam juros e multa em despesa
+  // (501/506), um passivo que nasce CONSOLIDADO nunca é amortizado por inteiro — sobra resíduo
+  // permanente igual a `juros + multa` do contrato, e o encargo é reconhecido DUAS VEZES no
+  // resultado (uma na adesão, outra a cada parcela). Parcelamento quitado com saldo vivo em
+  // "Parcelamento a Pagar", para sempre.
+  //
+  // A REGRA NOVA VENCE porque é pedido explícito e posterior do dono (2026-08-12):
+  //   *"o juros da provisão precisa ser escrito"*
+  //   *"o parcelamento deve ter valor principal, juros, e valor juros + principal fechando a
+  //    contrapartida"*
+  // O balanço volta a espelhar a dívida ASSINADA no acordo (que legalmente inclui multa e juros),
+  // que era o custo aceito pela regra antiga.
+  //
+  // ⚠ E O CUSTO DA REGRA NOVA É O RESÍDUO DESCRITO ACIMA — ele NÃO foi consertado aqui.
+  // A BAIXA **não foi tocada nesta mudança**: a decisão do dono descreveu a PROVISÃO, não a baixa.
+  // Quem for mexer nela precisa ler as duas funções JUNTAS (é o par que já esteve desalinhado uma
+  // vez, e o desalinhamento é silencioso: não gera erro, gera saldo errado). Enquanto a baixa
+  // amortizar só o principal, todo contrato criado por esta função termina com resíduo
+  // `juros + multa` no passivo. Medido e levado ao dono; não conserte por conta própria.
+  //
+  // `dto.valorJuros` e `dto.valorMulta` já eram gravados no PARCELAMENTO (dado do contrato) e
+  // continuam sendo; o que mudou é que agora eles TAMBÉM viram lançamento na adesão.
+  // ══════════════════════════════════════════════════════════════════════════════════════════════
   const principal = round2(dto.valorPrincipal) || 0;
-  const debitos = [{ tipoLinha: "PRINCIPAL", valor: principal }];
+  const juros = round2(dto.valorJuros) || 0;
+  const multa = round2(dto.valorMulta) || 0;
+  const debitos = [
+    { tipoLinha: "PRINCIPAL", valor: principal },
+    { tipoLinha: "JUROS", valor: juros },
+    { tipoLinha: "MULTA", valor: multa },
+  ].filter((d) => d.valor > 0);
+  // Contrato sem NENHUM valor declarado: mantém a linha de principal (zerada) em vez de devolver um
+  // crédito solto. É o desenho que existia antes desta mudança, e o único caso em que "componente
+  // zerado não vira linha" produziria um lote de uma perna só.
+  if (!debitos.length) debitos.push({ tipoLinha: "PRINCIPAL", valor: principal });
 
   const lines = [];
   let ordem = 0;
@@ -204,39 +237,78 @@ async function criarLancamentosIndividuais(tx, {
   return created;
 }
 
+/**
+ * ⚠ PAPEL AUSENTE NUMA LINHA DE PROVISÃO É **RECUSA**, NUNCA CHUTE.
+ *
+ * Havia dois defaults silenciosos gêmeos — `linhasProvisaoFromOverride` e `configFromLines` —
+ * escrevendo `|| (tipo === "C" ? "PARC" : "PRINCIPAL")`. Eles pareciam inofensivos e não eram:
+ *
+ *   · o papel `PRINCIPAL` é o que vira `valorPrincipal` do contrato (o front soma por papel), e é
+ *     ele que o passivo promete amortizar. Chutar `PRINCIPAL` num débito de JUROS faz
+ *     `principalTotal == totalValue` — foi assim que a SINTROPIA nasceu com DUAS linhas de
+ *     principal (31.003,42 na conta de principal e 7.034,32 na conta 501, de JUROS), de UMA
+ *     escrita só;
+ *   · `configFromLines` grava o mesmo chute em `Parcelamento.configProvisao`, que é de onde o
+ *     modal de RESCISÃO monta o lançamento por `valorPorPapel[tipoLinha]` — dois `PRINCIPAL` no
+ *     config pré-preenchem o MESMO valor duas vezes, e a rescisão nasce com Σ D ≠ Σ C.
+ *
+ * O papel é DECLARAÇÃO do contador, e agora ele tem onde ser dito (a coluna "Papel" do passo 3 do
+ * `ParcelamentoWizard`). Ausência de declaração é ausência de dado — e ausência de dado não vira
+ * lançamento contábil (regra 1 do projeto).
+ *
+ * @throws {Error} code `PAPEL_DE_LINHA_AUSENTE` — com o motivo E a saída na mensagem.
+ */
+const PAPEIS_PROVISAO = Object.freeze(["PRINCIPAL", "JUROS", "MULTA", "PARC", "CONTRAPARTIDA"]);
+
+function exigirPapel(linhas, onde) {
+  const semPapel = [];
+  (Array.isArray(linhas) ? linhas : []).forEach((ln, i) => {
+    if (!String(ln?.tipoLinha || "").trim()) semPapel.push(i + 1);
+  });
+  if (!semPapel.length) return;
+  const err = new Error(
+    `${onde}: ${semPapel.length === 1 ? `a linha ${semPapel[0]} está` : `as linhas ${semPapel.join(", ")} estão`} `
+    + "sem PAPEL (`tipoLinha`). O papel decide quanto do contrato é principal, quanto é juros e quanto é "
+    + "multa — e é ele que o passivo promete amortizar; supô-lo faria o parcelamento nascer com o "
+    + `principal errado. Saída: informe o papel de cada linha (${PAPEIS_PROVISAO.join(" · ")}) na coluna `
+    + "\"Papel\" do passo 3 do wizard e envie de novo. Nada foi gravado.",
+  );
+  err.code = "PAPEL_DE_LINHA_AUSENTE";
+  throw err;
+}
+
 // Q23: normaliza as linhas de provisão vindas do modal (provisaoLinesOverride) para o formato de
-// AccountingEntryLine. Cada linha: { tipoLinha?, tipo (D|C), conta?, valor }. Ignora linhas sem valor.
+// AccountingEntryLine. Cada linha: { tipoLinha, tipo (D|C), conta?, valor }. Ignora linhas sem valor.
 function linhasProvisaoFromOverride(provisaoLines) {
-  const out = [];
-  let ordem = 0;
-  for (const ln of Array.isArray(provisaoLines) ? provisaoLines : []) {
-    const tipo = String(ln.tipo || "").toUpperCase() === "C" ? "C" : "D";
-    const valor = round2(ln.valor);
-    if (!Number.isFinite(valor)) continue;
-    out.push({
-      conta: String(ln.conta || "").trim(),
-      tipo,
-      valor,
-      ordem: ordem++,
-      // Q28: crédito da provisão = PARC (passivo); débito padrão = PRINCIPAL.
-      tipoLinha: ln.tipoLinha ? String(ln.tipoLinha) : (tipo === "C" ? "PARC" : "PRINCIPAL"),
-      codigoTributo: null,
-    });
-  }
-  return out;
+  const candidatas = (Array.isArray(provisaoLines) ? provisaoLines : [])
+    .filter((ln) => Number.isFinite(round2(ln?.valor)));
+  // ⚠ RECUSA ANTES DE QUALQUER NORMALIZAÇÃO — ver `exigirPapel`.
+  exigirPapel(candidatas, "Provisão da adesão");
+  return candidatas.map((ln, ordem) => ({
+    conta: String(ln.conta || "").trim(),
+    tipo: String(ln.tipo || "").toUpperCase() === "C" ? "C" : "D",
+    valor: round2(ln.valor),
+    ordem,
+    tipoLinha: String(ln.tipoLinha).trim(),
+    codigoTributo: null,
+  }));
 }
 
 // Q28 Fase 1: normaliza linhas (provisão/pagamento) p/ guardar como CONFIG do parcelamento —
 // só papel + lado + conta (sem valor; o valor é por parcela/instância). Reusada no pagamento futuro.
-function configFromLines(lines) {
+//
+// ⚠ `exigirPapel` só é ligado para a PROVISÃO (`{ exigirPapelDeclarado: true }`). A config de
+// PAGAMENTO é lida por `linhasPagamento`/`linhasPagamentoDoComprovante` (a BAIXA), que esta mudança
+// deliberadamente não toca — apertar o contrato dela aqui mudaria a baixa por tabela.
+function configFromLines(lines, { exigirPapelDeclarado = false, onde = "Config" } = {}) {
   if (!Array.isArray(lines) || !lines.length) return null;
-  const out = lines
-    .filter((l) => l && (l.tipoLinha || String(l.conta || "").trim()))
-    .map((l) => ({
-      tipoLinha: l.tipoLinha ? String(l.tipoLinha) : (String(l.tipo).toUpperCase() === "C" ? "PARC" : "PRINCIPAL"),
-      tipo: String(l.tipo).toUpperCase() === "C" ? "C" : "D",
-      conta: String(l.conta || "").trim(),
-    }));
+  const relevantes = lines.filter((l) => l && (l.tipoLinha || String(l.conta || "").trim()));
+  if (exigirPapelDeclarado) exigirPapel(relevantes, onde);
+  const out = relevantes.map((l) => ({
+    tipoLinha: l.tipoLinha ? String(l.tipoLinha).trim() : (String(l.tipo).toUpperCase() === "C" ? "PARC" : "PRINCIPAL"),
+    tipo: String(l.tipo).toUpperCase() === "C" ? "C" : "D",
+    conta: String(l.conta || "").trim(),
+  }));
   return out.length ? out : null;
 }
 
@@ -293,13 +365,22 @@ async function linhasPagamentoDoComprovante(tx, { portalClientId, tipoParcelamen
   const resolver = async (tipoLinha, codigoTributo) =>
     contaPorPapel[tipoLinha] || await resolverConta(tx, { portalClientId, tipoParcelamento, tipoLinha, codigoTributo });
 
-  // ⚠ SÓ O PRINCIPAL AMORTIZA O PASSIVO, porque só o principal foi provisionado na adesão
-  // (`linhasProvisao`: D principal / C parcelamento a pagar = principal). Debitar aqui também a
-  // multa e os juros consolidados levaria o passivo a NEGATIVO ao longo do contrato — credita-se
-  // `principalTotal` e debitar-se-ia `principalTotal + multa + juros`.
+  // ⚠ AQUI SÓ O PRINCIPAL AMORTIZA O PASSIVO — E DESDE 2026-08-12 ISSO **NÃO** CASA MAIS COM A
+  // PROVISÃO. Leia esta função e `linhasProvisao` JUNTAS antes de mexer em qualquer uma.
   //
-  // Multa e juros do código-tributo são despesa DO MÊS DO PAGAMENTO, junto com o TJLP: nenhum dos
-  // três foi reconhecido na adesão, e é aqui que entram, uma vez só.
+  // Enquanto a provisão reconhecia só o principal, esta regra era a consequência necessária dela:
+  // o passivo nascia valendo `principalTotal`, e debitar aqui também multa e juros o levaria a
+  // NEGATIVO ao longo do contrato.
+  //
+  // A provisão MUDOU (decisão do dono, 2026-08-12: `D principal · D juros · D multa / C soma`), e
+  // **a baixa não foi alterada junto — de propósito**: o dono descreveu a provisão, não a baixa.
+  // Consequência medida e levada a ele: o passivo passa a nascer CONSOLIDADO e a ser amortizado só
+  // pelo principal, sobrando resíduo permanente igual a `juros + multa` do contrato. Isso é um
+  // desalinhamento CONHECIDO e pendente de decisão, não um descuido — e ele é silencioso: não gera
+  // erro, gera saldo errado.
+  //
+  // Multa e juros do código-tributo continuam sendo lançados aqui como despesa DO MÊS DO PAGAMENTO,
+  // junto com o TJLP.
   for (const item of classificacao.itensTributo) {
     for (const [tipoLinha, valor] of [["PARC", item.principal], ["MULTA", item.multa], ["JUROS", item.juros]]) {
       if (!valor || round2(valor) <= 0) continue;
@@ -363,7 +444,8 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
   const composicaoOk = val.ok;
 
   // Q28: config de provisão/pagamento (papel/lado/conta) pra guardar no parcelamento.
-  const cfgProvisao = configFromLines(provisaoLines);
+  // ⚠ A PROVISÃO EXIGE PAPEL DECLARADO; a de pagamento (a baixa) não foi tocada — ver `configFromLines`.
+  const cfgProvisao = configFromLines(provisaoLines, { exigirPapelDeclarado: true, onde: "Provisão da adesão" });
   const cfgPagamento = configFromLines(pagamentoLines);
 
   return prisma.$transaction(async (tx) => {
@@ -411,8 +493,8 @@ export async function ingestParcelamentoFromGuide({ portalClientId, guideId, par
           // F2.3 — declaração, não inferência. `null` = não declarado (o comportamento segue o de
           // hoje: a evidência de pagamento é que responde por "foi paga?").
           formaPagamento: dto.formaPagamento || undefined,
-          // ⚠ F2.3 — INFORMATIVO. NÃO alimenta lançamento: a provisão reconhece só o principal
-          // (`linhasProvisao`, e o motivo está escrito lá). Serve para exibir e conferir.
+          // ⚠ F2.3 — INFORMATIVO. NÃO alimenta lançamento: quem monta a provisão é `linhasProvisao`
+          // (ou o override do wizard), a partir de principal/juros/multa. Serve para exibir e conferir.
           saldoConsolidado: dto.saldoConsolidado != null ? dto.saldoConsolidado : undefined,
           dataAdesao: dto.dataAdesao ? new Date(dto.dataAdesao) : null,
           status: "ATIVO",

@@ -2,6 +2,7 @@ import { memo, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { fmtValor } from "../../entries/lib/accountingEntriesShared";
 import { historicoSugeridoDaLinha } from "../lib/historicoSugerido";
+import { contasSugeriveis, sinteticasNasLinhas } from "../../entries/lib/contaSintetica";
 
 const PANEL = {
   surface: "#24253A",
@@ -50,9 +51,13 @@ const SEM_CONTAS = [];
 // caminho conhecido para o campo parar de atualizar.
 const ID_LISTA_CONTAS = "excel-acc";
 const ListaDeContas = memo(function ListaDeContas({ id, accounts }) {
+  // ⚠ A SINTÉTICA SAI DA OFERTA, igual aos dropdowns da tela de lançar: oferecer é o sistema
+  // dizendo "use esta", e o servidor recusa a linha que a usa. Ela continua DIGITÁVEL — o campo é
+  // livre —, e é aí que a linha aparece bloqueada com o motivo.
+  const oferecidas = contasSugeriveis(accounts);
   return (
     <datalist id={id}>
-      {accounts.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
+      {oferecidas.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nome}</option>)}
     </datalist>
   );
 });
@@ -115,14 +120,30 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
   const totalRows = transactions.length;
   const matchedRows = transactions.filter((t) => t.match).length;
   const pendingRows = transactions.filter((t) => !t.match).length;
-  const completeRows = transactions.filter((t) => (t.contaDebito || t.contaCredito) && !t.skip).length;
+  /**
+   * ⚠ LINHA EM CONTA SINTÉTICA NÃO É ENVIADA — e o motivo aparece ANTES do clique.
+   *
+   * O servidor recusa a linha (`reason: "conta_sintetica"` no `failed[]`), e a tela só mostrava uma
+   * CONTAGEM de falhas: o contador via "(1 falha)" sem saber qual linha nem por quê. Mandar para
+   * ser recusado é o mesmo que recusar mudo. Aqui a linha simplesmente não conta como pronta, com o
+   * nome da conta à vista — e continua editável, que é a saída.
+   *
+   * (Dos 6 lançamentos hoje em conta de agregação na base real, 4 vieram deste import.)
+   */
+  const sinteticasDaLinha = (t) => sinteticasNasLinhas(
+    [{ conta: t.contaDebito }, { conta: t.contaCredito }], accounts,
+  );
+  const bloqueadasPorSintetica = transactions.filter((t) => !t.skip && sinteticasDaLinha(t).length > 0);
+  const completeRows = transactions.filter(
+    (t) => (t.contaDebito || t.contaCredito) && !t.skip && sinteticasDaLinha(t).length === 0,
+  ).length;
   const skipRows = transactions.filter((t) => t.skip).length;
   const canCommit = completeRows > 0 && !saving;
 
   async function handleCommit() {
     setError("");
     const toSend = transactions
-      .filter((t) => !t.skip && (t.contaDebito || t.contaCredito))
+      .filter((t) => !t.skip && (t.contaDebito || t.contaCredito) && sinteticasDaLinha(t).length === 0)
       .map((t) => ({
         rowIndex: t.rowIndex,
         data: t.data,
@@ -197,6 +218,18 @@ export function ImportExcelModal({ accounts = SEM_CONTAS, onPreview, onCommit, o
               {skipRows > 0 && <span><strong style={{ color: PANEL.muted }}>{skipRows}</strong> ignoradas</span>}
               <span style={{ color: PANEL.muted }}>{totalRows} no total</span>
             </div>
+
+            {/* ⚠ O bloqueio se explica ANTES do clique, e NOMEIA a linha e a conta — o servidor
+                recusaria estas linhas de qualquer forma, e devolver só uma contagem de falhas no
+                fim é a recusa muda que este aviso existe para evitar. */}
+            {bloqueadasPorSintetica.length > 0 && (
+              <div style={{ marginBottom: 12, fontSize: "0.8125rem", color: "#FF5757", fontWeight: 600 }}>
+                {bloqueadasPorSintetica.length === 1 ? "1 linha não será importada" : `${bloqueadasPorSintetica.length} linhas não serão importadas`}
+                {" — conta sintética (de agregação) não recebe lançamento: "}
+                {[...new Set(bloqueadasPorSintetica.flatMap((t) => sinteticasDaLinha(t).map((s) => `${s.codigo} ${s.nome}`)))].join(", ")}
+                <span style={{ fontWeight: 400, color: PANEL.muted }}> — troque por uma analítica abaixo dela, ou ignore a linha.</span>
+              </div>
+            )}
 
             <div style={{ overflowX: "auto", borderRadius: 8, border: `1px solid ${PANEL.border}`, marginBottom: 12 }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>

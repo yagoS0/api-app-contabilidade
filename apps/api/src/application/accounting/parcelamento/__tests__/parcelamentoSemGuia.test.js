@@ -56,7 +56,14 @@ jest.mock("../../../../infrastructure/db/prisma.js", () => {
         return p;
       }),
     },
-    mapaContaTributo: { findFirst: jest.fn(async () => null) },
+    // ⚠ `create`/`update` existem porque a ingestão COM `provisaoLines` memoriza as contas
+    // preenchidas (`memorizeMapaContaTributoTx`). Sem eles o caminho do override estoura em algo
+    // que nada tem a ver com o que se está exercendo.
+    mapaContaTributo: {
+      findFirst: jest.fn(async () => null),
+      create: jest.fn(async ({ data }) => ({ id: proximo("mct"), ...data })),
+      update: jest.fn(async ({ data }) => ({ ...data })),
+    },
     accountingEntry: {
       create: jest.fn(async ({ data }) => {
         const e = { id: proximo("entry"), ...data, lines: data.lines?.createMany?.data || [] };
@@ -150,16 +157,20 @@ describe("criar o contrato SEM guia nenhuma", () => {
     expect(q.risco.emAtraso).toBe(0);
   });
 
-  test("a provisão sai com a forma de sempre: D principal / C parcelamento-a-pagar (só o principal)", async () => {
+  // ⚠ CONTRATO SEM ENCARGO DECLARADO. `HEADER` não traz `valorJuros` nem `valorMulta`, e é por isso
+  // que a provisão dele tem duas pernas — não porque juros e multa fiquem de fora (desde 2026-08-12
+  // eles ENTRAM; ver o bloco "a provisão reconhece principal, juros e multa", abaixo).
+  test("sem juros nem multa declarados, a provisão é D principal / C parcelamento-a-pagar", async () => {
     await criarContrato(HEADER);
 
-    // ⚠ DOIS lançamentos de UMA perna cada — a forma NÃO mudou nesta fase, e não pode mudar:
-    // creditar o consolidado reconheceria o encargo duas vezes e deixaria resíduo no passivo.
     expect(__store.entries).toHaveLength(2);
     const debito = __store.entries.find((e) => e.tipoLinha === "PRINCIPAL");
     const credito = __store.entries.find((e) => e.tipoLinha === "PARC");
     expect(debito.lines[0]).toMatchObject({ tipo: "D", valor: 18000 });
-    expect(credito.lines[0]).toMatchObject({ tipo: "C", valor: 18000 }); // principal, NÃO 21000
+    // ⚠ 18000, não 21000: `valorTotal` do cabeçalho NÃO é a contrapartida. Ela é a SOMA DOS DÉBITOS
+    // efetivamente reconhecidos, e aqui só há um. Creditar `valorTotal` provisionaria um encargo que
+    // ninguém informou.
+    expect(credito.lines[0]).toMatchObject({ tipo: "C", valor: 18000 });
     expect(__store.entries.every((e) => e.tipo === "PROVISAO")).toBe(true);
   });
 
@@ -167,9 +178,122 @@ describe("criar o contrato SEM guia nenhuma", () => {
     await criarContrato({ ...HEADER, saldoConsolidado: 19750.42 });
 
     expect(Number(__store.parcelamentos[0].saldoConsolidado)).toBe(19750.42);
-    // A soma dos créditos continua sendo o principal — o consolidado não entrou em perna nenhuma.
+    // A soma dos créditos continua sendo a soma dos débitos — o consolidado não entrou em perna nenhuma.
     const creditos = __store.entries.flatMap((e) => e.lines).filter((l) => l.tipo === "C");
     expect(creditos.reduce((s, l) => s + l.valor, 0)).toBe(18000);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A REGRA DA PROVISÃO MUDOU EM 2026-08-12 — E A ANTERIOR ESTÁ AQUI DE PROPÓSITO
+//
+// Até essa data `linhasProvisao` reconhecia **só o principal** (decisão anterior do dono), e o motivo
+// era concreto: a baixa amortiza o passivo só pelo principal, então um passivo consolidado sobra com
+// resíduo permanente igual a `juros + multa`. A decisão nova vence — *"o juros da provisão precisa
+// ser escrito"*, *"o parcelamento deve ter valor principal, juros, e valor juros + principal fechando
+// a contrapartida"* — e a multa entra junto.
+//
+// ⚠ A BAIXA NÃO FOI ALTERADA, e o resíduo acima é consequência CONHECIDA e pendente de decisão do
+// dono. Quem for consertá-la mexe nas duas funções juntas.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("⚠ a provisão reconhece principal, juros e multa — e a contrapartida é UMA só", () => {
+  test("D principal · D juros · D multa · C soma", async () => {
+    await criarContrato({ ...HEADER, valorPrincipal: 18000, valorJuros: 2500, valorMulta: 500, valorTotal: 21000 });
+
+    expect(__store.entries).toHaveLength(4);
+    const porPapel = Object.fromEntries(__store.entries.map((e) => [e.tipoLinha, e.lines[0]]));
+    expect(porPapel.PRINCIPAL).toMatchObject({ tipo: "D", valor: 18000 });
+    expect(porPapel.JUROS).toMatchObject({ tipo: "D", valor: 2500 });
+    expect(porPapel.MULTA).toMatchObject({ tipo: "D", valor: 500 });
+    // ⚠ UM crédito só, pela soma — não são três créditos.
+    expect(__store.entries.filter((e) => e.lines[0].tipo === "C")).toHaveLength(1);
+    expect(porPapel.PARC).toMatchObject({ tipo: "C", valor: 21000 });
+  });
+
+  test("⚠ JUROS e MULTA são PAPÉIS distintos mesmo apontando para a MESMA conta", async () => {
+    // Palavras do dono: "nós geralmente lançamos juros e multa na mesma CONTA, mas podemos separar
+    // também, opcional". `MapaContaTributo` indexa por (tipoLinha, codigoTributo), então dois papéis
+    // resolvendo para a mesma conta é o caso normal — e colapsá-los apagaria a multa como fato.
+    const { prisma } = await import("../../../../infrastructure/db/prisma.js");
+    prisma.mapaContaTributo.findFirst.mockImplementation(async ({ where }) => (
+      where.tipoLinha === "JUROS" || where.tipoLinha === "MULTA" ? { contaId: "501" } : null
+    ));
+    try {
+      await criarContrato({ ...HEADER, valorJuros: 2500, valorMulta: 500 });
+      const encargos = __store.entries.filter((e) => e.lines[0].conta === "501");
+      expect(encargos.map((e) => e.tipoLinha).sort()).toEqual(["JUROS", "MULTA"]);
+      // e o histórico do razão continua distinguindo os dois
+      expect(encargos.map((e) => e.historico).sort()).toEqual([
+        expect.stringMatching(/— juros$/), expect.stringMatching(/— multa$/),
+      ]);
+    } finally {
+      prisma.mapaContaTributo.findFirst.mockImplementation(async () => null);
+    }
+  });
+
+  test("⚠ componente zerado NÃO vira linha — sem multa, a contrapartida é principal + juros", async () => {
+    await criarContrato({ ...HEADER, valorJuros: 2500, valorMulta: 0 });
+
+    expect(__store.entries.map((e) => e.tipoLinha)).toEqual(["PRINCIPAL", "JUROS", "PARC"]);
+    expect(__store.entries.find((e) => e.tipoLinha === "PARC").lines[0].valor).toBe(20500);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⚠ PAPEL AUSENTE É RECUSA, NUNCA CHUTE
+//
+// Havia dois defaults gêmeos escrevendo `|| (tipo === "C" ? "PARC" : "PRINCIPAL")`. É o chute que
+// produziu `principalTotal == totalValue` na SINTROPIA: um débito de JUROS chegou sem papel e virou
+// `PRINCIPAL` — e `configProvisao` guardou DOIS `PRINCIPAL`, que é o que o modal de rescisão lê.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("⚠ linha de provisão sem PAPEL é recusada", () => {
+  const LINHAS_SEM_PAPEL = [
+    { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: 15000 },
+    { tipo: "D", conta: "501", valor: 3000 },            // ← o juros, sem papel
+    { tipoLinha: "PARC", tipo: "C", conta: "553", valor: 18000 },
+  ];
+
+  test("recusa com o motivo E a saída, e NADA é gravado", async () => {
+    await expect(criarContrato(HEADER, { provisaoLines: LINHAS_SEM_PAPEL }))
+      .rejects.toMatchObject({ code: "PAPEL_DE_LINHA_AUSENTE" });
+
+    // ⚠ A recusa acontece ANTES da transação — nem o parcelamento nasce.
+    expect(__store.parcelamentos).toHaveLength(0);
+    expect(__store.entries).toHaveLength(0);
+  });
+
+  test("a mensagem nomeia a linha, o motivo e a saída", async () => {
+    const err = await criarContrato(HEADER, { provisaoLines: LINHAS_SEM_PAPEL }).catch((e) => e);
+    expect(err.message).toMatch(/linha 2/);
+    expect(err.message).toMatch(/principal/i);   // o motivo: o papel decide o principal
+    expect(err.message).toMatch(/Saída:/);       // e a saída
+  });
+
+  test("com o papel declarado, passa — e o papel gravado é o declarado, não o chutado", async () => {
+    const r = await criarContrato(HEADER, {
+      provisaoLines: [
+        { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: 15000 },
+        { tipoLinha: "JUROS", tipo: "D", conta: "501", valor: 3000 },
+        { tipoLinha: "PARC", tipo: "C", conta: "553", valor: 18000 },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    expect(__store.entries.map((e) => e.tipoLinha)).toEqual(["PRINCIPAL", "JUROS", "PARC"]);
+    // ⚠ E o `configProvisao` — que é o que o modal de RESCISÃO lê — não tem dois PRINCIPAL.
+    const cfg = __store.parcelamentos[0].configProvisao;
+    expect(cfg.map((l) => l.tipoLinha)).toEqual(["PRINCIPAL", "JUROS", "PARC"]);
+  });
+
+  test("⚠ a config de PAGAMENTO não foi apertada junto — a BAIXA não é tocada nesta fase", async () => {
+    const r = await criarContrato(HEADER, {
+      provisaoLines: [
+        { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: 18000 },
+        { tipoLinha: "PARC", tipo: "C", conta: "553", valor: 18000 },
+      ],
+      pagamentoLines: [{ tipo: "D", conta: "553" }, { tipo: "C", conta: "111" }], // sem papel
+    });
+    expect(r.ok).toBe(true);
+    expect(__store.parcelamentos[0].configPagamento).toHaveLength(2);
   });
 });
 
