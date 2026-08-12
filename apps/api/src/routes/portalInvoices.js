@@ -5,6 +5,9 @@ import { prisma } from "../infrastructure/db/prisma.js";
 import { decimalToNumber, dateToIso } from "../utils/serializers.js";
 import { parseDate } from "../utils/date.js";
 import { parseXmlMetadata } from "../application/nfse/AdnXmlMetadata.js";
+// ⚠ O import de XML usa A MESMA ingestão da captura automática. Ver o cabeçalho de `ingestaoNfse.js`:
+// a segunda implementação que morava aqui criava linha duplicada para nota que a captura já tinha.
+import { upsertNfseFromItem } from "../application/notas/ingestaoNfse.js";
 import { ensurePortalClientAccess } from "./middlewares/portalAccess.js";
 
 function normalizeDoc(value) {
@@ -530,56 +533,72 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
           continue;
         }
 
-        // papel/statusEfetivo espelham AdnNotasService: sem eles, card e apuração não somam a nota.
-        const papel = prestadorDoc && prestadorDoc === companyCnpj ? "EMIT" : "DEST";
-        const cancelada = meta?.situacao === "2" || meta?.situacao === "CANCELADA";
-        const data = {
-          clientId: String(clientId),
-          type: "NFSE",
-          numero: meta?.numeroNfse || null,
-          chaveAcesso: null,
-          idNfse: meta?.numeroNfse || null,
-          competencia: meta?.competencia || null,
-          issueDate: meta?.dataEmissao || null,
-          status: cancelada ? "CANCELADA" : "EMITIDA",
-          statusEfetivo: cancelada ? "cancelada" : "autorizada",
-          papel,
-          total: meta?.valorServicos || null,
-          emitenteNome: meta?.prestadorNome || null,
-          emitenteDoc: meta?.cnpjPrestador || null,
-          tomadorNome: meta?.tomadorNome || null,
-          tomadorDoc: meta?.cnpjTomador || null,
-          xmlRaw: xml,
-          xmlHash: null,
-        };
-
-        let notaId;
-        if (data.idNfse) {
-          const up = await prisma.portalInvoice.upsert({
-            where: { clientId_idNfse: { clientId: String(clientId), idNfse: data.idNfse } },
-            create: data,
-            update: data,
-            select: { id: true },
+        // ⚠ LINHA LEGADA SEM CHAVE — deixada para o dono decidir, nunca duplicada aqui.
+        //
+        // Enquanto o import tinha implementação própria, ele gravava `chaveAcesso: null` e
+        // `idNfse = numeroNfse`. Essas linhas continuam na base. Agora que a ingestão é uma só e
+        // dedupica pela CHAVE quando o XML tem chave, importar de novo o mesmo XML criaria uma
+        // SEGUNDA linha ao lado da legada — exatamente a duplicata que este conserto existe para
+        // parar de produzir.
+        //
+        // Não adotamos a linha antiga (carimbar a chave nela é escrita sobre nota fiscal, e a
+        // decisão do que fazer com as duplicatas existentes é do contador) e não criamos a nova:
+        // contamos como duplicata e dizemos qual linha está no caminho. O inventário completo sai
+        // em `scripts/diag-notas-duplicadas.mjs`.
+        //
+        // O casamento exige CHAVE no XML + mesmo número + MESMO PRESTADOR: número de NFS-e se
+        // repete entre prestadores, e recusar por número solto barraria import legítimo.
+        const chaveDoXml = meta?.chaveAcesso || null;
+        if (chaveDoXml && meta?.numeroNfse) {
+          const legado = await prisma.portalInvoice.findFirst({
+            where: {
+              clientId: String(clientId),
+              idNfse: String(meta.numeroNfse),
+              chaveAcesso: null,
+            },
+            select: { id: true, emitenteDoc: true },
           });
-          notaId = up.id;
-          updated += 1;
-        } else {
-          const cr = await prisma.portalInvoice.create({ data, select: { id: true } });
-          notaId = cr.id;
-          created += 1;
+          if (legado && normalizeDoc(legado.emitenteDoc) === prestadorDoc) {
+            duplicates += 1;
+            errors.push({
+              file: file.originalname,
+              reason: "duplicata_legado_sem_chave",
+              invoiceId: legado.id,
+            });
+            continue;
+          }
         }
 
-        // NotaItem (LC116 → alimenta o classificador na apuração), como no fluxo automático.
-        if (notaId && meta?.codigoServico) {
-          await prisma.notaItem.deleteMany({ where: { notaId } });
-          await prisma.notaItem.create({
-            data: {
-              notaId,
-              codigoServico: meta.codigoServico,
-              descricao: meta.descricaoServico || null,
-              valor: Number(meta.valorServicos || 0),
-            },
-          });
+        // ⚠ A PERSISTÊNCIA É A MESMA DA CAPTURA — `application/notas/ingestaoNfse.js`.
+        //
+        // Aqui existia uma segunda implementação, escrita à mão, que gravava `chaveAcesso: null`
+        // fixo e dedupicava por `clientId_idNfse`. A captura faz o oposto de propósito (chave
+        // quando há chave, `idNfse` só no fallback sem-chave), então o upsert do import NUNCA
+        // encontrava a linha da captura: nascia uma segunda linha da mesma nota, as duas
+        // `papel:"EMIT"`/`autorizada`, e o faturamento somava a nota duas vezes. Pior, a
+        // conferência do ADN (`getNossoConjunto`, que usa `chaveAcesso || idNfse`) passava a
+        // acusar `divergente` falso e a TRAVAR o fechamento.
+        //
+        // A titularidade acima (`nota_nao_pertence`) continua sendo do import e é mais estrita que
+        // a guarda de dentro: aqui o arquivo vem de uma pessoa, e metadado sem CNPJ nenhum é
+        // recusado. Uma transação por arquivo: nota e itens entram juntos ou não entram.
+        const r = await prisma.$transaction(async (tx) => upsertNfseFromItem(tx, {
+          portalClientId: String(clientId),
+          companyCnpj,
+          item: null,
+          xmlPlain: xml,
+          metadata: meta || {},
+        }));
+
+        if (r.status === "rejeitada_outro_cnpj") {
+          rejeitadas += 1;
+          errors.push({ file: file.originalname, reason: "nota_nao_pertence" });
+        } else if (r.status === "skipped") {
+          errors.push({ file: file.originalname, reason: r.reason || "sem_identificador" });
+        } else if (r.existia) {
+          updated += 1;
+        } else {
+          created += 1;
         }
       } catch (err) {
         errors.push({ file: file.originalname, reason: "import_failed" });

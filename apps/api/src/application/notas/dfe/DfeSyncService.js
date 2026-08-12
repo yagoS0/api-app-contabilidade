@@ -18,6 +18,7 @@ import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
 import { fetchDistNSU, DfeClientError } from "./DfeClient.js";
 import { parseDistDFeResponse, parseDocZip } from "./DfeParser.js";
 import { ESTADOS } from "../CompetenciaStateMachine.js";
+import { substituirItensPreservandoClassificacao } from "../notaItens.js";
 
 const MAX_ITERATIONS = 10;
 const BACKOFF_MINUTES_ON_ERROR = 15;
@@ -182,21 +183,13 @@ async function upsertNotaFromParsed(tx, { portalClientId, parsed, items }) {
   });
 
   // Substitui itens (full overwrite): mais simples + idempotente. Volume é pequeno.
+  //
+  // ⚠ O "full overwrite" ERA LITERAL — `deleteMany` + `createMany` apagava `tipoReceita`,
+  // `anexoResolvido`, `classificadoEm` e `sujeitoFatorR` de todo item, em silêncio. A recaptura
+  // corrige a nota; ela não pode desfazer a classificação. O casamento item-antigo × item-novo e o
+  // motivo do critério estão em `../notaItens.js`.
   if (items && items.length > 0) {
-    await tx.notaItem.deleteMany({ where: { notaId: nota.id } });
-    await tx.notaItem.createMany({
-      data: items.map((it) => ({
-        notaId: nota.id,
-        codigoServico: it.codigoServico || null,
-        ncm: it.ncm || null,
-        cfop: it.cfop || null,
-        descricao: it.descricao || null,
-        valor: it.valor || 0,
-        flagST: it.flagST || false,
-        flagMonofasico: it.flagMonofasico || false,
-        flagExportacao: it.flagExportacao || false,
-      })),
-    });
+    await substituirItensPreservandoClassificacao(tx, { notaId: nota.id, itens: items });
   }
   return { created: nota.id, status: "upserted" };
 }

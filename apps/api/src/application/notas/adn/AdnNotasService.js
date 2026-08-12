@@ -17,7 +17,11 @@ import { fetchDfeNFSe, AdnNacionalClientError } from "../adn-nacional/AdnNaciona
 import { parseXmlMetadata, parseNfseEvento } from "../../nfse/AdnXmlMetadata.js";
 import { log } from "../../../config.js";
 import { resolveCertForCompany, SERVICOS } from "../CertResolver.js";
-import { ESTADOS } from "../CompetenciaStateMachine.js";
+// ⚠ A PERSISTÊNCIA DA NFS-e NÃO MORA MAIS AQUI. `upsertNfseFromItem` foi extraída para
+// `../ingestaoNfse.js` porque o import manual de XML (`routes/portalInvoices.js`) tinha uma segunda
+// implementação da mesma regra, e as duas discordavam na chave de deduplicação — o import criava
+// uma linha nova para a nota que a captura já tinha. Ler o cabeçalho de lá antes de mexer.
+import { upsertNfseFromItem } from "../ingestaoNfse.js";
 
 // Q12.B+++: sync inicial pode ter milhares de notas históricas (NSU=0
 // significa "desde o começo"). 50 iterações × 50 docs = 2.500 docs por
@@ -91,152 +95,8 @@ function decodeXml(arquivoXml) {
   }
 }
 
-// ─── Competência fechada → vira pendência (mesmo padrão Dfe) ───────────────
-
-async function isCompetenciaFechada(tx, { portalClientId, competenciaDate }) {
-  if (!competenciaDate) return false;
-  const d = new Date(competenciaDate);
-  const comp = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  const row = await tx.companyMonthlyCircular.findFirst({
-    where: { portalClientId, competencia: comp },
-    select: { estado: true },
-  });
-  return row && [ESTADOS.FECHADO, ESTADOS.CALCULADO, ESTADOS.REVISADO, ESTADOS.TRANSMITIDO, ESTADOS.CONFIRMADO].includes(row.estado);
-}
-
 // ─── Persistência: NFS-e → PortalInvoice ───────────────────────────────────
-
-async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item, xmlPlain, metadata }) {
-  // Chave: do item ADN OU do XML (NFS-e Nacional traz a chave DENTRO do XML, não no item top-level).
-  const chaveAcesso = item.ChaveAcesso || item.chaveAcesso || metadata.chaveAcesso || null;
-  const idNfse = metadata.numeroNfse || null;
-  // Sem NENHUM identificador (nem chave nem número) não dá pra deduplicar — aí sim pula.
-  // Antes descartávamos toda NFS-e sem `item.ChaveAcesso` (a maioria!) → nota sumia da apuração.
-  if (!chaveAcesso && !idNfse) return { status: "skipped", reason: "sem_identificador" };
-
-  // Papel: EMIT se prestador é a empresa; senão DEST. NFS-e quase sempre EMIT
-  // (a empresa só recebe DFe de NFS-e em casos específicos).
-  const cnpjEmpresa = String(companyCnpj || "").replace(/\D+/g, "");
-  const cnpjPrestador = metadata.cnpjPrestador || "";
-  const cnpjTomador = metadata.cnpjTomador || "";
-  const papel = cnpjPrestador && cnpjPrestador === cnpjEmpresa ? "EMIT" : "DEST";
-
-  // ── A nota é MESMO desta empresa? ────────────────────────────────────────────────────────
-  // Cinturão de segurança independente de como o certificado foi resolvido. Se a empresa não é nem
-  // prestadora nem tomadora, o documento não é dela — e gravar assim mesmo é o que fazia as notas
-  // do escritório aparecerem na carteira do cliente (como DEST, porque o CNPJ não batia).
-  //
-  // Isto pega uma classe inteira, não um caso: cert do escritório, A1 errado subido na empresa
-  // errada, ou qualquer futura mudança na resolução de certificado. Nenhuma delas avisa sozinha.
-  //
-  // Só rejeita quando HÁ CNPJ e ele não bate. Metadado sem nenhum dos dois (parser que não achou o
-  // campo) não é evidência de nota alheia — aí grava, porque descartar por falta de dado
-  // esconderia nota legítima, que é o erro oposto e igualmente caro.
-  if (cnpjEmpresa && (cnpjPrestador || cnpjTomador)
-      && cnpjPrestador !== cnpjEmpresa && cnpjTomador !== cnpjEmpresa) {
-    // ⚠ ESTA RECUSA PRECISA APARECER NO LOG, com os três CNPJs.
-    //
-    // A guarda está certa em princípio, mas ela é a ÚNICA coisa no fluxo capaz de fazer uma empresa
-    // "ficar sem notas mesmo tendo emitido" em silêncio — o documento é lido, contado em
-    // `totalDocs`, e descartado sem deixar registro. Do lado de fora isso é indistinguível de "não
-    // havia nota".
-    //
-    // E há dois desfechos opostos que só os CNPJs distinguem:
-    //   • prestador = CNPJ do ESCRITÓRIO  → recusa CORRETA (é a nota do escritório, não do cliente);
-    //   • prestador = a própria empresa com outro sufixo de filial, ou CPF onde o cadastro tem CNPJ,
-    //     ou CNPJ digitado errado no cadastro → recusa INDEVIDA, e a nota legítima some.
-    //
-    // Sem esta linha não dá para saber qual dos dois aconteceu sem reprocessar tudo.
-    log.warn(
-      { portalClientId, cnpjEmpresa, cnpjPrestador: cnpjPrestador || null, cnpjTomador: cnpjTomador || null, chaveAcesso, idNfse },
-      "[ADN] documento RECUSADO: nem prestador nem tomador é a empresa",
-    );
-    return {
-      status: "rejeitada_outro_cnpj",
-      reason: `documento de ${cnpjPrestador || "?"} → ${cnpjTomador || "?"}, empresa é ${cnpjEmpresa}`,
-    };
-  }
-
-  const competenciaDate = metadata.competencia || metadata.dataEmissao || null;
-  const fechada = await isCompetenciaFechada(tx, { portalClientId, competenciaDate });
-  const canceladaNoXml = metadata.situacao === "CANCELADA" || metadata.situacao === "2";
-
-  // Dedup: por chaveAcesso quando houver; senão por idNfse (numeroNfse). idNfse só é escrito no
-  // fallback sem-chave — evita colisão com nota DEST de mesmo número emitida por outro prestador.
-  const where = chaveAcesso
-    ? { clientId_chaveAcesso: { clientId: portalClientId, chaveAcesso } }
-    : { clientId_idNfse: { clientId: portalClientId, idNfse } };
-
-  // Preserva o cancelamento numa re-captura: nunca rebaixa "cancelada" → "autorizada".
-  const existing = await tx.portalInvoice.findUnique({ where, select: { statusEfetivo: true } }).catch(() => null);
-  const statusEfetivo = existing?.statusEfetivo === "cancelada" || canceladaNoXml ? "cancelada" : "autorizada";
-
-  const dataToWrite = {
-    type: "NFSE",
-    numero: metadata.numeroNfse,
-    chaveAcesso: chaveAcesso || null,
-    ...(chaveAcesso ? {} : { idNfse }),
-    competencia: competenciaDate,
-    issueDate: metadata.dataEmissao,
-    total: metadata.valorServicos,
-    emitenteNome: metadata.prestadorNome,
-    emitenteDoc: metadata.cnpjPrestador,
-    tomadorNome: metadata.tomadorNome,
-    tomadorDoc: metadata.cnpjTomador,
-    xmlRaw: xmlPlain || null,
-    status: canceladaNoXml ? "CANCELADA" : "EMITIDA",
-    papel,
-    statusEfetivo,
-    // ⚠ O VÍNCULO VEM DA PRÓPRIA NOTA, e é por isso que ele sobrevive onde o evento não sobreviveu.
-    // `<subst><chSubstda>` viaja dentro do XML da substituta (leiaute ANEXO_I v1.01) — o mesmo XML
-    // que já guardávamos inteiro em `xmlRaw` e do qual ninguém lia este bloco. Medido: 22 notas na
-    // base o carregam. Nulo em quem não substitui ninguém, que é a maioria esmagadora.
-    chaveSubstituida: metadata.chaveSubstituida || null,
-    motivoSubstituicao: metadata.motivoSubstituicao || null,
-    competenciaPosFechamento: fechada || false,
-  };
-
-  if (fechada) {
-    const created = await tx.portalInvoice.upsert({
-      where,
-      create: { clientId: portalClientId, ...dataToWrite },
-      update: { competenciaPosFechamento: true, statusEfetivo },
-    });
-    const comp = competenciaDate
-      ? `${new Date(competenciaDate).getUTCFullYear()}-${String(new Date(competenciaDate).getUTCMonth() + 1).padStart(2, "0")}`
-      : "?";
-    await tx.pendenciaPosFechamento.create({
-      data: {
-        portalClientId, competencia: comp, notaId: created.id,
-        motivo: "nota_retroativa",
-        observacoes: `NFS-e ${chaveAcesso || idNfse} chegou para ${comp} (competência já fechada).`,
-      },
-    }).catch(() => null);
-    return { created: created.id, status: "pendencia_criada" };
-  }
-
-  const upserted = await tx.portalInvoice.upsert({
-    where,
-    create: { clientId: portalClientId, ...dataToWrite },
-    update: dataToWrite,
-    select: { id: true },
-  });
-
-  // Q12.C fix: NFS-e Nacional traz 1 serviço por nota — cria/atualiza NotaItem
-  // pra alimentar ClassificadorAnexos (LC116 → III/IV/V) e CalculoFiscal.
-  if (metadata.codigoServico) {
-    await tx.notaItem.deleteMany({ where: { notaId: upserted.id } });
-    await tx.notaItem.create({
-      data: {
-        notaId: upserted.id,
-        codigoServico: metadata.codigoServico,
-        descricao: metadata.descricaoServico || null,
-        valor: Number(metadata.valorServicos || 0),
-      },
-    });
-  }
-  return { status: "upserted" };
-}
+// Mora em `../ingestaoNfse.js`, compartilhada com o import manual de XML.
 
 // Trata um item TipoDocumento="EVENTO" do ADN (documento separado da nota). O cancelamento de
 // NFS-e Nacional chega aqui — não muda o XML da nota (que fica cStat=100).

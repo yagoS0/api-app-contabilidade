@@ -408,6 +408,74 @@ esconderia nota legítima (o erro oposto, igualmente caro).
 não é nem prestadora nem tomadora, marcando as **EMIT** (essas afetariam faturamento e apuração).
 Só leitura — não apaga nada, porque nota fiscal não volta e a decisão é do contador.
 
+## ⚠ NFS-e: UMA ingestão só — o import de XML criava a nota de novo
+
+O import manual (`routes/portalInvoices.js`) tinha uma **segunda implementação** da persistência, e
+ela discordava da captura exatamente na chave de deduplicação:
+
+| | chave gravada | upsert por |
+|---|---|---|
+| captura ADN | `chaveAcesso` quando há chave, **`idNfse` NULO** | `clientId_chaveAcesso` |
+| import (antes) | **`chaveAcesso: null` FIXO**, `idNfse = numeroNfse` | `clientId_idNfse` |
+
+O `idNfse` nulo na captura é **deliberado** ("evita colisão com nota DEST de mesmo número emitida
+por outro prestador"), então o upsert do import **nunca encontrava** a linha da captura e criava uma
+segunda. As duas `papel:"EMIT"` / `statusEfetivo:"autorizada"` → **o faturamento somava a nota duas
+vezes**.
+
+⚠ **O segundo efeito é pior.** `ConferenciaAdnService.getNossoConjunto` monta o nosso conjunto com
+`chaveAcesso || idNfse`: a linha importada entra pelo **número**, o ADN responde com **chaves**, o
+diff acusa `divergente` que não existe e **`salvarFechamento` TRAVA**. A única defesa contra nota
+faltando passava a acusar nota que está presente. O import também não gravava `chaveSubstituida`/
+`motivoSubstituicao`, então nota substituída importada perdia o vínculo.
+
+Hoje a regra mora em **`application/notas/ingestaoNfse.js`** (`upsertNfseFromItem`, extraída de
+`AdnNotasService`) e os dois caminhos a chamam. ⚠ **Não conserte isso "gravando a chave também no
+import"** — foi reimplementar a regra que produziu a divergência. O que o import faz **a mais**
+continua sendo dele: a titularidade (`nota_nao_pertence`, mais estrita que a guarda de dentro,
+porque lá o arquivo vem de uma pessoa) e os contadores por arquivo.
+
+- **Linhas legadas sem chave continuam na base**, e a decisão sobre elas é do dono (contador).
+  Enquanto isso, importar o XML de uma nota que só existe como linha legada **não cria a segunda
+  linha nem carimba a antiga**: conta como `duplicates` e devolve `duplicata_legado_sem_chave` com o
+  `invoiceId`. O casamento exige chave no XML + mesmo número + **mesmo prestador**.
+- Inventário: **`scripts/diag-notas-duplicadas.mjs`** (só leitura, zero chamada externa) — pares
+  duplicados por empresa, faturamento duplicado por competência, competências `divergente` com nota
+  entrando pelo número (divergência possivelmente falsa) e a linha de base de `tipoReceita`.
+- Efeito colateral desejado: import em competência **fechada** agora vira `PendenciaPosFechamento`
+  em vez de sobrescrever a base — é a regra que a captura já seguia.
+- Regressão: `notas/__tests__/ingestaoNfseUnica.test.js`, que também **varre a rota** atrás de
+  `portalInvoice.upsert`/`clientId_idNfse:` para a implementação não voltar.
+
+## ⚠ A RECAPTURA NÃO PODE APAGAR A CLASSIFICAÇÃO
+
+`AdnNotasService` e `DfeSyncService` faziam `notaItem.deleteMany` + recriação seca. Isso apagava
+`tipoReceita`, `anexoResolvido`, `classificadoEm`, `sujeitoFatorR` e zerava `flagExportacao` — **a
+recaptura destruía a classificação em silêncio**. Urgente porque a classificação retroativa está
+para rodar (`tipoReceita` nulo em 16.153/16.153 itens): classificar hoje e recapturar amanhã
+desfazia tudo, sem aviso.
+
+O casamento item-antigo × item-novo vive em **`application/notas/notaItens.js`**, e a assinatura é
+**`codigoServico | ncm | cfop | valor`**:
+
+- **os três códigos** porque são *exatamente* o que `ClassificadorService.classifyItem` lê — item de
+  códigos iguais recebe, por construção, a mesma classificação;
+- **`valor`** porque nota corrigida com valor diferente **é outro item**: ele não muda o resultado
+  do classificador, mas é o sinal de que o documento mudou de verdade. Item alterado nasce
+  `tipoReceita: null` e volta para a fila — que é o desejado;
+- **`descricao` NÃO entra**: texto livre, não classifica nada, e um espaço a mais derrubaria a
+  classificação de itens idênticos.
+
+⚠ **`flagExportacao` é preservada por OU, e só ela.** Dentro de uma assinatura igual o CFOP é o
+mesmo, então o valor derivado pelo parser de NF-e (CFOP 7xxx) é idêntico dos dois lados — o OU só
+recupera um `true` que **nenhum** caminho de ingestão escreve (a criação do item de NFS-e nunca toca
+o campo). Ver "o MERCADO é o campo que só existe aqui".
+
+Custo assimétrico, e é o que justifica a chave estreita: perder o casamento custa uma
+reclassificação (o classificador varre `tipoReceita: null` sozinho, e o que foi aprendido sobrevive
+em `RegraClassificacao`); carregar classificação para um item que mudou poria receita no anexo
+errado, sem ninguém ver.
+
 ## Robustez NFS-e/ADN — ledger append-only (Fase 1)
 
 Roadmap completo em **`docs/robustez-nfse-adn.md`** (raiz do repo). Captura deve virar *fluxo de
