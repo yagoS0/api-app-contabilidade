@@ -27,6 +27,7 @@ import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
+import { createCompanyCredentialsRouter } from "./companyCredentials.js";
 import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
@@ -4324,6 +4325,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Documentos societários + anotações da empresa (grupo "Cadastro" na UI).
   const companyDocumentsRouter = createCompanyDocumentsRouter({ log });
   router.use("/companies/:companyId", companyDocumentsRouter);
+
+  // Cofre de senhas + "outras informações" da empresa (grupo "Empresa" na UI).
+  // ⚠ Router PRÓPRIO, com gate de papel próprio — é a única superfície que devolve senha de cliente.
+  const companyCredentialsRouter = createCompanyCredentialsRouter({ log });
+  router.use("/companies/:companyId", companyCredentialsRouter);
 
   // Calendário fiscal — do ESCRITÓRIO, não por empresa: monta no nível raiz de /firm.
   router.use("/", createCalendarioRouter({ log }));
