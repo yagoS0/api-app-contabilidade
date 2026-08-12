@@ -826,6 +826,48 @@ dela (`statusPelasBaixas`) — senão a provisão corrigida pra menor ficava ete
 diferença "em aberto", e reeditar uma provisão paga a ressuscitava como ABERTO.
 Legado: `scripts/corrigir-provisao-parcial.mjs`.
 
+### ⚠ A guarda do DAS não distinguia JUROS de RETIFICADORA — e a fonte é `fonteValor`
+
+Defeito relatado pelo dono: reconsultado o extrato depois de uma **retificadora**, *"para a receita
+ele atualizou (…), mas o do imposto ele NÃO atualizou, mantendo o valor de antes"*.
+
+**O ponto exato:** `AccountingEntryGeneratorService.js`, o ramo `if (event.eventType ===
+"DAS_SIMPLES" && amountChanged && !edicaoManual)`. Ele preserva `data`, `historico` **e as LINHAS**
+e só carimba `recalculated*`. É a única bifurcação por `eventType` do arquivo — por isso
+**RECEITA_\* passa pelo ramo genérico** (que apaga e recria as linhas com o valor novo) e o DAS não.
+A mesma resposta do SERPRO alimentava duas escritas com regras diferentes.
+
+⚠ **O número novo era LIDO e descartado**, não ignorado por falta de leitura: ele fica gravado em
+`recalculatedToValor`. É o que separa "não lê" de "lê e recusa".
+
+| fonte do `dasTotal` | quem grava | o número é… | guarda |
+|---|---|---|---|
+| **`EXTRATO`** | `syncPgdasByCompetencia` — PDF da **declaração** (imposto APURADO) | a verdade declarada à Receita, inclusive na retificadora | **não morde** |
+| **`GUIA`** | `capturePgdasGuideForCompany` — **documento de arrecadação** | depois do vencimento vem com juros/multa, que não são imposto do mês | **morde** |
+
+A distinção **não** pode ser "o valor subiu": juros e retificadora são indistinguíveis pelo número.
+⚠ **O default de `fonteValor` é `GUIA`** — chamada nova que não declare a fonte nasce com a guarda
+ligada, nunca sobrescrevendo a provisão.
+
+### ⚠ E a guarda era INCONDICIONAL na prática: o "valor anterior" vinha em DOBRO
+
+`sumEntryLines` somava **as duas pernas** (D **e** C) de um lançamento balanceado. Logo
+`amountChanged` (e `findChangedValue`) eram verdadeiros **sempre**, mesmo numa reconsulta idêntica:
+`noop` era inalcançável e o DAS caía no ramo de recálculo a cada sincronia — as linhas do DAS eram
+escritas **uma vez, na criação**, e nunca mais por caminho automático. Hoje é `valorDoLancamento`,
+só os débitos (mesma leitura de `statusPelasBaixas`).
+
+A assinatura do defeito está gravada em produção: `recalculatedFromValor` é **exatamente 2×** a soma
+dos débitos em **55 de 89** provisões de DAS (ex.: ATIM 2026-02, `3.063,86 = 2 × 1.531,93`).
+
+**Medição (12/08/2026, só leitura, `scripts/diag-retificadora-imposto.mjs`):** 119 circulares com
+extrato · 15 com indício de retificadora · **12 lançamentos de DAS com valor divergente do extrato**
+(2 deles em competência retificada) · **1** de receita divergente. Rode-o antes e depois de mexer
+aqui. ⚠ **Ele não corrige nada** — acertar valor de lançamento já gravado é ato contábil do dono.
+
+Regressão: `__tests__/retificadoraAtualizaImposto.test.js` (7), cuja metade exige que a guarda
+**continue** mordendo no caminho da guia.
+
 ## Import de Excel — a memória GRAVAVA por uma chave e LIA por outra
 
 `upsertHistoricoFromImport` grava o texto passando por **`normalizarHistorico`** (Q50): "PAGO INSS -
@@ -979,14 +1021,130 @@ longe do lançamento que a causou.
   linha errada seria recusado — inclusive o `UPDATE` que existe para movê-los à analítica certa.
   Trocar a conta faz a sintética sumir do payload e passa; acrescentar uma nova recusa.
   Regressão: `routes/firm/__tests__/gateContaSintetica.test.js` (7).
-- ⚠ **Hoje, em produção, a trava não recusa NADA** — medido em 12/08/2026: as **1.199** contas estão
-  com `analitica` **NULL** (a coluna existe; o import com `codigoCompleto` nunca rodou). Ela começa
-  a morder no primeiro import do plano. Simulando esse import, 254 contas viram sintéticas e os 6
-  lançamentos aparecem.
+- ⚠ **O import do plano JÁ RODOU em produção (12/08/2026)** — a linha anterior deste arquivo dizia
+  que as 1.199 contas estavam com `analitica` NULL e que a trava não recusava nada; isso venceu.
+  Medido depois do import: **1.199 contas · 254 SINTÉTICAS · 932 analíticas · 13 sem resposta**. A
+  conta `5` saiu **analítica** (`111010001 CAIXA - MATRIZ`), como o portão de aceite exigia.
 - **Inventário e correção dos 6:** `scripts/corrigir-conta-sintetica.mjs`, **dry-run por padrão**,
-  com modo `--plano <csv>` que SIMULA o import (é o único jeito de ver os 6 antes dele; `--aplicar`
+  com modo `--plano <csv>` que SIMULA o import (era o único jeito de ver os 6 antes dele; `--aplicar`
   é recusado nesse modo). Ele **não escolhe o destino** — é decisão do contador — e **recusa gravar
   em competência fechada**, apontando reabrir ou contra-lançar.
+
+### ⚠ A trava NÃO alcança o caminho automático — quem fecha essa porta é a MEMÓRIA
+
+A trava mora em `POST`/`PUT /entries` e nos commits de import. O **extrato do SERPRO gera
+lançamento sozinho** (`generateEntriesFromCircular`) e **não passa por ela** — decisão de desenho, a
+mesma de `MES_FECHADO`/`contasInexistentes`: worker não é derrubado no meio de uma sincronia. Com a
+trava em produção e a memória apontando para sintética, o contador seria recusado na tela e o
+extrato continuaria gravando em silêncio todo mês — pior que não ter trava.
+
+**Decisão do dono (12/08/2026):** *"a guarda deve permanecer, o lançamento padrão é que deve mudar
+de contas"*. Ou seja: a trava fica como está, sem exceção para o worker, e o conserto é a memória.
+
+⚠ **Isso só é suficiente porque a memória é a ÚNICA fonte da conta nesse caminho — e isso foi
+medido, não suposto.** A ordem em `AccountingEntryGeneratorService.js:314-329`:
+
+| # | fonte | onde |
+|---|---|---|
+| 1 | `AccountingEntryRule` (empresa → global) — **VENCE a memória** | `resolveRule`, `:224-244` |
+| 2 | `AccountingHistorico` (empresa → **GLOBAL**), por `eventType` | `lookupAccountsFromHistorico`, `:251-284` |
+| 3 | `""` — conta em branco, o contador preenche e o auto-save aprende | `:328-329` |
+
+**Não há default embutido.** `EVENT_DEFINITIONS` (`:16-51`) não tem conta nenhuma e `resolveRule`
+devolve `debitAccountCode: null` na regra virtual; o comentário de `:53-55` ("Sem fallback
+hardcoded") confere com o código. Evento sem definição vira `skipped: missing_rule`, que já acende
+`hasAccountingDivergence` na circular.
+
+Medido em produção em 12/08/2026 (`scripts/corrigir-memoria-conta-sintetica.mjs`, só leitura sem
+`--mapa`): **0 `AccountingEntryRule` no banco** (nenhuma, nem global nem de empresa) · **0 linha de
+`AccountingFunction`** em sintética (6 funções, 20 linhas) · **0 `MapaContaTributo`** em sintética
+(12 registros). A memória era, de fato, a única fonte viva.
+
+⚠ **`if (!debitConta && !creditConta)` (`:320`) é um E, não um OU:** regra que traga só UM dos lados
+impede a consulta à memória e o outro lado nasce `""`. Não há regra em produção hoje; quem criar a
+primeira precisa saber disso.
+
+### ⚠ `EVENT_RULE_DEFAULTS` — o default do formulário aponta para uma SINTÉTICA (latente)
+
+`routes/firm/accountingEntryRules.js:5-29` é servido por `GET /event-types` e preenche o corpo
+omitido em `buildRuleData` (`:96`). Quem criar a regra aceitando o padrão grava **estas** contas — e
+regra vence memória. Medido contra o plano global de hoje:
+
+| evento | D | C |
+|---|---|---|
+| `RECEITA_SIMPLES` | `5` CAIXA - MATRIZ (analítica) | ⚠ **`301` PASSIVO NAO CIRCULANTE — SINTÉTICA** |
+| `DAS_SIMPLES` | `401` DEMAIS BENS DO ATIVO (analítica) | `5` CAIXA - MATRIZ (analítica) |
+| `BAIXA_DAS_SIMPLES` | (vazio) | (vazio) |
+
+⚠ **Inerte hoje, e por dois motivos independentes** — não é motivo para deixar como está, é motivo
+para não tratar como incêndio: não existe nenhuma regra gravada, e `RECEITA_SIMPLES` **não é emitido
+por `buildEventsFromCircular`** (o gerador só emite `RECEITA_SERVICO`, `RECEITA_VENDA_SEM_ST`,
+`RECEITA_VENDA_COM_ST` e `DAS_SIMPLES`). Basta uma regra criada pela tela para virar a primeira
+fonte de conta sintética que a trava não alcança. ⚠ `301` como crédito de RECEITA e `401` (conta de
+resultado de venda de ativo) como débito de provisão de DAS são de um plano anterior — **corrigi-los
+é escolher conta, e isso é do dono.** Só a medição está aqui.
+
+### A memória consertada — 3 de 8, e as 5 em que o script PAROU
+
+`scripts/corrigir-memoria-conta-sintetica.mjs`, **dry-run por padrão**. Ele **não escolhe**: a
+escrita exige `--mapa <sintetica>=<analitica>` **e** `--aplicar`; sem mapa é inventário. Recusa
+destino inexistente ou não analítico (`analitica: null` não serve — não se move memória para o
+desconhecido) e **não toca** em regra, template nem `MapaContaTributo`, que só mede.
+
+⚠ **Eram 8, não 6.** As 6 conhecidas vinham do `corrigir-conta-sintetica.mjs`, que só olha os
+códigos citados pelos lançamentos existentes. Varrendo as **230** memórias contra o plano inteiro
+aparecem mais 2 (`C=360 RECEITA DE VENDAS`, evento `RECEITA_VENDA_SEM_ST`), de uma empresa **órfã**
+(`portalClientId` sem `PortalClient`) — sem lançamento, e por isso invisíveis pelo outro caminho.
+
+⚠ **Duas populações, dois leitores.** Só a memória **com `eventType`** alimenta
+`lookupAccountsFromHistorico` (extrato do SERPRO, provisão de guia); a de `eventType` **nulo** é
+casada por TEXTO e serve ao import de Excel/OFX — cujo commit **é** guardado pela trava, então ali o
+erro aparece como `failed[] reason: conta_sintetica`, não em silêncio. Das 8: 3 com evento, 5 por
+texto.
+
+**Aplicado em 12/08/2026** com `--mapa 365=372,357=372` — destino dado pelo dono (*"a conta de
+receita de prestação de serviço seria a 372"*), que é `311020007 DEMAIS RECEITAS DE PRESTAÇÃO DE
+SERVICOS - MATRIZ`, a "DEMAIS" da família `31102`:
+
+| escopo | evento / texto | antes | depois |
+|---|---|---|---|
+| KAIZEN ENGENHARIA | `RECEITA_SERVICO` | `D=365 C=5` | **`D=372 C=5`** |
+| SINTROPIA | (texto) `VR REF RECEITA SERVIÇOS PRESTADOS` | `D=5 C=357` | **`D=5 C=372`** |
+| **GLOBAL** | (texto) `VR REF RECEITA SERVIÇOS PRESTADOS` | `D=5 C=357` | **`D=5 C=372`** |
+
+⚠ **A linha GLOBAL não se consertava sozinha** — `memorizeAccountHistorico` só a completa quando a
+conta está VAZIA, então corrigir o lançamento pela tela nunca a reescreveria.
+
+⚠ **372 já era o padrão de fato**: as memórias `RECEITA_SERVICO` de GL CONSULTORIA, PRISMA, KLAUS
+NIGRO, ERISANGELA e TALBOT já eram `D=5 C=372`. A KAIZEN é que estava fora.
+
+⚠ **E ela continua fora — o LADO não foi tocado, de propósito.** A KAIZEN ficou `D=372 C=5`
+(débito em receita, crédito em caixa), o **inverso** das outras cinco. Trocar as contas de lado é
+mudar a FORMA do lançamento [[nao-mudar-forma-lancamentos]] e exige pedido explícito. Está medido e
+nomeado aqui; o conserto é do dono.
+
+**As 5 em que o script parou, e por quê:**
+
+| memória | conta | por que parou |
+|---|---|---|
+| SINTROPIA ×2 (texto: PRINTI, RAIA DROGASIL) | `456` `41102 DESPESAS GERAIS` | **45 analíticas**. Há uma `411020036 DESPESAS DIVERSAS`, mas com fornecedores nomeados jogar tudo em "diversas" é classificação, não estrutura (decisão do dono) |
+| SINTROPIA (texto: FAST SHOP) | `169` `12308 EQUIPAMENTOS DE INFORMATICA` | filha **única** (`170`), destino mecânico — mas `372` é conta de RECEITA e não serve aqui; o comando é do dono |
+| órfã ×2 | `360` `31101 RECEITA DE VENDAS` | 6 analíticas, **nenhuma "DEMAIS"**. É receita de VENDAS, não de prestação de serviço — `372` não a alcança |
+
+### ⚠ A memória consertada NÃO preenche os 74 lançamentos em branco que já existem
+
+São **74 linhas em 37 lançamentos**, todos RASCUNHO, `origem: SERPRO` com `eventType` — o caminho
+legítimo (conta nasce vazia, é aprendida). A pergunta natural é se o próximo sync os preenche. **Não
+preenche**, e o motivo é preciso: `findChangedValue` (`AccountingEntryGeneratorService.js:286-297`)
+compara `tipo`, `circularId`, `ruleId`, `eventType` e a **soma das linhas contra o valor** — a
+`conta` não entra na comparação. Sync com o mesmo valor devolve **`noop`** e as linhas nem são
+tocadas; só o ramo `update` (valor mudou) faz `deleteMany` + `createMany` e as recria com a conta da
+memória. Ou seja, a memória consertada vale para o lançamento **NOVO**; os 37 em branco continuam em
+branco até alguém preenchê-los na tela (e aí o auto-save reaprende, agora do valor certo).
+
+Medido junto: a memória que preencheria cada um. As de `RECEITA_SERVICO` já apontam `D=5 C=372` em
+GL, PRISMA, KLAUS NIGRO, ERISANGELA e (por fallback GLOBAL) TALBOT e duas órfãs; as de `DAS_SIMPLES`
+apontam `D=557 (-) DAS- SIMPLES NACIONAL / C=265`, ambas analíticas.
 
 ## Regras
 
