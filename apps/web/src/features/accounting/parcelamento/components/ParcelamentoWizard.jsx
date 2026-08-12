@@ -14,6 +14,7 @@ import { Button } from "../../../../components/ui/Button";
 import { AccountCodeInput } from "../../entries/components/renderAccountingEntriesParts";
 import {
   MODALIDADES, FORMAS_PAGAMENTO, SITUACOES, PASSOS, ROLE_LABEL,
+  PAPEIS_PROVISAO, linhaComPapel, papelDivergeDoLado,
   estadoInicial, validarPasso, montarPayloadIngestao, oQueSePerdeAoFechar,
   textoDoRodapePasso2, somasProvisao, competenciaProximaParcela, proximaParcela,
   parcelasRestantes, vencimentoDaCompetencia, formatarMoeda, numero, inteiro, rotuloModalidade,
@@ -140,7 +141,16 @@ export function ParcelamentoWizard({
 
   function setLinhaProvisao(i, chave, valor) {
     setDados((d) => {
-      const linhas = d.provisaoLines.map((l, idx) => (idx === i ? { ...l, [chave]: valor } : l));
+      // ⚠ ESCOLHER O PAPEL LEVA O LADO JUNTO — é metade do conserto de "D↔C e papel divergem".
+      // `setLinhaProvisao` escrevia SÓ a chave editada, e por isso trocar D↔C deixava o papel para
+      // trás: em produção há um CRÉDITO marcado `PRINCIPAL` (`OUTRO nº 3`) nascido exatamente assim.
+      // A derivação só vale nesta direção (papel → lado), porque o papel é uma escolha EXPLÍCITA e o
+      // lado dele é determinístico. Na direção oposta nada é reescrito por baixo do contador: mudar
+      // o lado para o lado errado do papel é RECUSADO por `validarPasso3`, com o motivo na tela.
+      const linhas = d.provisaoLines.map((l, idx) => {
+        if (idx !== i) return l;
+        return chave === "tipoLinha" ? linhaComPapel(l, valor) : { ...l, [chave]: valor };
+      });
       // O crédito do passivo espelha o total dos DÉBITOS enquanto o contador não o edita à mão — é
       // o que mantém Σ D = Σ C sem obrigá-lo a digitar o mesmo número duas vezes.
       //
@@ -148,10 +158,15 @@ export function ParcelamentoWizard({
       // linha de CRÉDITO, o valor digitado é sobrescrito no mesmo tick: o campo "não aceita" o que
       // se escreve nele, e — pior — fica IMPOSSÍVEL desbalancear de propósito, o que faz a trava de
       // D ≠ C parecer funcionando quando na verdade nunca é alcançada.
-      if (chave === "valor" && linhas[i]?.tipo === "D") {
+      //
+      // ⚠ O ESPELHO TAMBÉM CORRE NA TROCA DE PAPEL, e por um motivo concreto desta fase: agora a
+      // contrapartida é `principal + juros + multa`, e mudar o papel de uma linha pode mudar de
+      // lado (D↔C) e portanto mudar a soma dos débitos. Sem isto, marcar uma linha como JUROS
+      // deixaria o crédito parado no valor anterior — Σ D ≠ Σ C sem ninguém ter digitado nada.
+      if ((chave === "valor" || chave === "tipoLinha") && (linhas[i]?.tipo === "D" || chave === "tipoLinha")) {
         const debito = linhas.filter((l) => l.tipo === "D").reduce((s, l) => s + numero(l.valor), 0);
         const idxParc = linhas.findIndex((l) => l.tipo === "C" && l.tipoLinha === "PARC");
-        if (idxParc >= 0) linhas[idxParc] = { ...linhas[idxParc], valor: debito ? String(Math.round(debito * 100) / 100) : "" };
+        if (idxParc >= 0 && idxParc !== i) linhas[idxParc] = { ...linhas[idxParc], valor: debito ? String(Math.round(debito * 100) / 100) : "" };
       }
       return {
         ...d,
@@ -160,7 +175,11 @@ export function ParcelamentoWizard({
       };
     });
   }
-  const addLinhaProvisao = () => setDados((d) => ({ ...d, provisaoLines: [...d.provisaoLines, { tipoLinha: "PRINCIPAL", label: "", tipo: "D", conta: "", valor: "" }] }));
+  // ⚠ A LINHA NOVA NASCE **SEM PAPEL**, e a ausência é a entrega. Ela nascia `tipoLinha: "PRINCIPAL"`
+  // cravado, e era esse chute que fazia o contador escolher a conta 501 (juros), digitar o valor e o
+  // sistema gravar "principal" — a provisão torta da SINTROPIA saiu daí. Sem papel, `validarPasso3`
+  // recusa e o backend recusa junto (400 `PAPEL_DE_LINHA_AUSENTE`): o contador PRECISA declarar.
+  const addLinhaProvisao = () => setDados((d) => ({ ...d, provisaoLines: [...d.provisaoLines, { tipoLinha: "", label: "", tipo: "D", conta: "", valor: "" }] }));
   const rmLinhaProvisao = (i) => setDados((d) => ({ ...d, provisaoLines: d.provisaoLines.length > 1 ? d.provisaoLines.filter((_, idx) => idx !== i) : d.provisaoLines }));
   const setLinhaPagamento = (i, chave, valor) => setDados((d) => ({
     ...d,
@@ -280,6 +299,13 @@ export function ParcelamentoWizard({
   // colapsar abaixo disso quando a tabela aperta.
   const COL_DC = 64;
   const selectDC = { ...FIELD, padding: "4px 6px", colorScheme: "dark", minWidth: 46 };
+
+  // ⚠ A COLUNA DE PAPEL — a casa que não existia. Mesma disciplina de largura da coluna D/C: valor
+  // fixo no `<th>` + `minWidth` no `<select>` como piso, e a folga sai da Descrição (a coluna
+  // flexível), nunca do modal. O rótulo mais longo é "Parcelamento a pagar (passivo)"; ele é
+  // truncado pelo próprio `<select>` sem empurrar a tabela.
+  const COL_PAPEL = 168;
+  const selectPapel = { ...FIELD, padding: "4px 6px", colorScheme: "dark", minWidth: 140 };
 
   // ⚠ E A TABELA ROLA DENTRO DELA MESMA, não some pela borda. O painel do modal é
   // `overflowX: "hidden"`: abaixo de ~710px de viewport a tabela (640px de mínimo) já não cabia e a
@@ -480,18 +506,49 @@ export function ParcelamentoWizard({
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr>
                   <th style={th}>Descrição</th>
+                  {/* ⚠ A COLUNA QUE FALTAVA. Sem ela não existia COMO DIZER que uma linha era juros:
+                      o contador escolhia a conta 501 e digitava o valor, e o papel gravado continuava
+                      "principal". É a causa raiz da provisão torta da SINTROPIA. */}
+                  <th style={{ ...th, width: COL_PAPEL }}>Papel</th>
                   <th style={{ ...th, width: COL_DC }}>D/C</th>
                   <th style={{ ...th, width: 130 }}>Conta</th>
                   <th style={{ ...th, width: 130, textAlign: "right" }}>Valor</th>
                   {editando && <th style={{ width: 26 }} />}
                 </tr></thead>
                 <tbody>
-                  {dados.provisaoLines.map((l, i) => (
+                  {dados.provisaoLines.map((l, i) => {
+                    const temValor = numero(l.valor) > 0;
+                    const semPapel = temValor && !String(l.tipoLinha || "").trim();
+                    const diverge = temValor && papelDivergeDoLado(l);
+                    return (
                     <tr key={`prov-${i}`} style={{ borderTop: `1px solid ${PANEL.border}` }}>
                       <td style={td}>
                         {editando
                           ? <input value={l.label} onChange={(e) => setLinhaProvisao(i, "label", e.target.value)} placeholder="descrição" style={{ ...FIELD, padding: "4px 6px" }} />
-                          : (l.label || ROLE_LABEL[l.tipoLinha] || l.tipoLinha)}
+                          : (l.label || ROLE_LABEL[l.tipoLinha] || l.tipoLinha || "—")}
+                      </td>
+                      {/* O papel é editável SEMPRE, não só em "Editar lançamentos": ele é declaração
+                          do contador sobre o que a linha É, e escondê-lo atrás de um link foi como
+                          ele acabou implícito. Fora do modo edição a linha nova (sem papel) fica
+                          nomeada — "escolha o papel" —, nunca em branco. */}
+                      <td style={td}>
+                        <select
+                          value={l.tipoLinha || ""}
+                          onChange={(e) => setLinhaProvisao(i, "tipoLinha", e.target.value)}
+                          aria-label={`Papel da linha ${i + 1} da provisão`}
+                          style={{
+                            ...selectPapel,
+                            border: `1px solid ${semPapel || diverge ? "var(--state-danger)" : PANEL.border}`,
+                          }}
+                        >
+                          <option value="">— escolha o papel —</option>
+                          {PAPEIS_PROVISAO.map((p) => <option key={p} value={p}>{ROLE_LABEL[p] || p}</option>)}
+                        </select>
+                        {diverge && (
+                          <span style={{ display: "block", fontSize: "0.64rem", color: "var(--state-danger)", marginTop: 2, lineHeight: 1.3 }}>
+                            {ROLE_LABEL[l.tipoLinha] || l.tipoLinha} não é {l.tipo === "C" ? "crédito" : "débito"} na provisão.
+                          </span>
+                        )}
                       </td>
                       <td style={td}>
                         {editando
@@ -517,9 +574,10 @@ export function ParcelamentoWizard({
                           : (l.conta || <span style={{ color: "var(--state-warn)" }}>em branco</span>)}
                       </td>
                       <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>
-                        {/* O principal é o ÚNICO número digitado aqui, mesmo fora do modo edição:
+                        {/* Os valores dos DÉBITOS são digitados aqui mesmo fora do modo edição:
                             uma tabela totalmente read-only sem valor nenhum não teria como ser
-                            preenchida sem descobrir o link "Editar lançamentos". */}
+                            preenchida sem descobrir o link "Editar lançamentos". Juros e multa
+                            ficam em branco quando não existem — componente zerado não vira linha. */}
                         {(editando || (l.tipo === "D")) ? (
                           <input value={l.valor} onChange={(e) => setLinhaProvisao(i, "valor", e.target.value)} placeholder="0,00" inputMode="decimal"
                             style={{ ...FIELD, padding: "4px 6px", textAlign: "right" }} />
@@ -531,9 +589,19 @@ export function ParcelamentoWizard({
                         </td>
                       )}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
+              </div>
+              {/* ⚠ A CONTRAPARTIDA É UMA SÓ, e o rodapé diz de que ela é feita. Sem esta frase, um
+                  contador que digitou principal, juros e multa não tem como conferir que o crédito
+                  do passivo é a SOMA dos três — que é exatamente o que o dono pediu. */}
+              <div style={{ fontSize: "0.68rem", color: PANEL.muted, marginTop: 4, lineHeight: 1.45 }}>
+                A provisão da adesão lança <strong style={{ color: PANEL.text }}>um débito por natureza</strong> (principal,
+                juros, multa) e <strong style={{ color: PANEL.text }}>um único crédito</strong> em Parcelamento a pagar,
+                pela soma dos três. Juros e multa podem apontar para a <strong style={{ color: PANEL.text }}>mesma conta</strong> —
+                o papel continua separado. Natureza sem valor não vira lançamento.
               </div>
               <div style={{ textAlign: "right", fontSize: "0.72rem", color: somas.balanceado ? PANEL.muted : "var(--state-danger)", marginTop: 4 }}>
                 Σ D <strong style={{ color: PANEL.text }}>R$ {formatarMoeda(somas.debito)}</strong>

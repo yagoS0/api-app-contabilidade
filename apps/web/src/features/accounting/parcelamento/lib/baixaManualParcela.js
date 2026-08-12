@@ -33,6 +33,12 @@
 // tributos, e sem guia essa soma é zero).
 
 import { avaliarValor, MENSAGENS_VALOR } from "../../entries/lib/valorFormula.js";
+// ⚠ REUSO, NÃO SEGUNDA CÓPIA. `resumoDosNumeros` já resolve "1, 2, 3 e mais 55" para os grupos de
+// bloqueio do acordeão; a fila usa a MESMA função, senão o corte de dois blocos que dizem a mesma
+// coisa divergiria no primeiro ajuste de limite.
+import { resumoDosNumeros } from "./parcelaBusca.js";
+
+const plural = (n, um, muitos) => (Number(n) === 1 ? um : muitos);
 
 /** Duas casas — a coluna é `Decimal(18,2)`; a mesma disciplina de `round2` no backend. */
 export function round2(n) {
@@ -321,11 +327,218 @@ export function textoDaConfirmacao({ linha, decomposicao, dataPagamento, consequ
   return partes.join("\n");
 }
 
-/** Rótulo da situação da linha. `VENCIDA` e `VENCE_HOJE` vêm do servidor — a tela não recalcula. */
+/**
+ * Rótulo da situação da linha. `VENCIDA` e `VENCE_HOJE` vêm do servidor — a tela não recalcula.
+ *
+ * ⚠ `fundo` VEM DAQUI, e é o par `-surface` do token. O estado virou BADGE curto (texto colorido
+ * solto no meio da linha some no meio dos outros textos), e badge precisa de fundo. Derivá-lo no
+ * componente reporia o truque `${cor}22`, que quebra em silêncio com `var()`.
+ */
 export function rotuloDaSituacao(situacao) {
   return situacao === "VENCE_HOJE"
-    ? { texto: "Vence hoje", cor: "var(--state-neutral)", titulo: "O vencimento contratado é hoje — ainda dá tempo." }
-    : { texto: "Vencida", cor: "var(--state-warn)", titulo: "O vencimento contratado já passou." };
+    ? {
+      texto: "Vence hoje",
+      cor: "var(--state-neutral)",
+      fundo: "var(--state-neutral-surface)",
+      titulo: "O vencimento contratado é hoje — ainda dá tempo.",
+    }
+    : {
+      texto: "Vencida",
+      cor: "var(--state-warn)",
+      fundo: "var(--state-warn-surface)",
+      titulo: "O vencimento contratado já passou.",
+    };
 }
 
-export { MENSAGENS_VALOR };
+/**
+ * O RÓTULO CURTO DO BLOQUEIO — o que cabe DENTRO da linha da tabela.
+ *
+ * ⚠ ELE NÃO SUBSTITUI O MOTIVO, ele o ancora. O parágrafo inteiro (`MOTIVOS_BAIXA_MANUAL`) continua
+ * existindo e continua VISÍVEL — uma vez, no banner do grupo, e no `title` do botão. O que sai da
+ * linha é a repetição: num contrato criado pelo wizard TODAS as prestações trazem o mesmo
+ * `sem_valor_previsto`, e o mesmo parágrafo em N linhas não se lê, vira textura. É a lição de
+ * `agruparBloqueios` no acordeão, aplicada à fila.
+ */
+export const ROTULOS_BLOQUEIO = Object.freeze({
+  sem_valor_previsto: "Sem valor",
+  provisao_inexistente: "Sem provisão",
+  parcela_tem_guia: "Tem guia",
+  parcela_ja_baixada: "Já baixada",
+  parcela_not_found: "Não encontrada",
+  parcelamento_not_found: "Contrato ausente",
+});
+
+export function rotuloDoBloqueio(motivo) {
+  if (!motivo) return null;
+  return ROTULOS_BLOQUEIO[motivo] || "Bloqueada";
+}
+
+/**
+ * ⚠ OS DOIS BLOQUEIOS NÃO SÃO O MESMO, E TRATÁ-LOS IGUAL FECHA A ÚNICA SAÍDA.
+ *
+ * `sem_valor_previsto` se resolve NESTA tela (o valor contratado é do contador, e informá-lo é a
+ * ação); `provisao_inexistente` se resolve em OUTRA (lançar a adesão). Só o primeiro habilita ação
+ * — em lote, no banner, e individual, no botão da linha.
+ */
+export function corrigivelNaTela(motivo) {
+  return motivo === "sem_valor_previsto";
+}
+
+/**
+ * AS PENDÊNCIAS DA FILA, AGRUPADAS POR MOTIVO **E POR CONTRATO**.
+ *
+ * ⚠ POR QUE POR CONTRATO, e não só por motivo: os dois motivos que a fila devolve hoje são fatos do
+ * CONTRATO, não da prestação. "O parcelamento não tem provisão de abertura" e "as prestações
+ * nasceram sem valor" valem para o acordo inteiro — e a ação em lote que o dono pediu ("3 prestações
+ * do contrato X estão sem valor" + Informar valor) só faz sentido dentro de um contrato: aplicar um
+ * valor a prestações de acordos diferentes seria reescrever dois contratos num clique.
+ *
+ * ⚠ ISTO NÃO ESCONDE NADA. Nenhuma linha sai da tabela, nenhum motivo some: cada linha continua
+ * listada, com o rótulo curto e o `title` inteiro, e o parágrafo aparece UMA vez por grupo, dizendo
+ * em quantas prestações vale e quais são. Some a repetição — a mesma fronteira de `agruparBloqueios`.
+ *
+ * ⚠ A ORDEM NÃO É ARBITRÁRIA: grupo com AÇÃO disponível vem primeiro. O contador que abre a fila com
+ * seis prestações sem valor e duas sem provisão pode resolver as seis; mandá-lo ler primeiro o
+ * bloqueio que ele não resolve aqui é enterrar a saída.
+ */
+export function agruparBloqueiosDaFila(parcelas) {
+  const porGrupo = new Map();
+  for (const p of Array.isArray(parcelas) ? parcelas : []) {
+    const motivo = p?.motivoBloqueio;
+    if (!motivo) continue;
+    const parcelamentoId = p.parcelamentoId ?? p.parcelamento?.id ?? null;
+    const chave = `${motivo}::${parcelamentoId ?? "sem-contrato"}`;
+    if (!porGrupo.has(chave)) {
+      porGrupo.set(chave, {
+        chave,
+        motivo,
+        rotulo: rotuloDoBloqueio(motivo),
+        // ⚠ O texto sai de `explicarRecusa`, a MESMA fonte do `title` do botão e da recusa do
+        // servidor. Duas redações do mesmo bloqueio é como a tela passa a discordar de si mesma.
+        texto: explicarRecusa(motivo),
+        corrigivelNaTela: corrigivelNaTela(motivo),
+        parcelamentoId,
+        label: p.parcelamento?.label || null,
+        numeros: [],
+        parcelas: [],
+      });
+    }
+    const g = porGrupo.get(chave);
+    g.numeros.push(p.numeroParcela ?? null);
+    g.parcelas.push(p);
+  }
+  return [...porGrupo.values()]
+    .map((g) => ({ ...g, quantidade: g.parcelas.length, listaDeNumeros: resumoDosNumeros(g.numeros) }))
+    .sort((a, b) => Number(b.corrigivelNaTela) - Number(a.corrigivelNaTela));
+}
+
+/**
+ * O TÍTULO DO BANNER DO GRUPO — a frase que o dono escreveu, com os números reais.
+ *
+ * ⚠ SEM O NOME DO CONTRATO ELE MENTE por omissão: numa empresa com dois acordos, "3 prestações estão
+ * sem valor" não diz de qual, e a ação em lote passa a parecer que vale para a fila inteira.
+ */
+export function tituloDoGrupo(grupo) {
+  if (!grupo) return "";
+  const n = grupo.quantidade;
+  const contrato = grupo.label ? `do contrato ${grupo.label}` : "desta fila";
+  const sujeito = `${n} ${plural(n, "prestação", "prestações")} ${contrato}`;
+  return grupo.motivo === "sem_valor_previsto"
+    ? `${sujeito} ${plural(n, "está", "estão")} sem valor`
+    : `${sujeito}: ${grupo.rotulo}`;
+}
+
+/**
+ * O PLANO DO LOTE — qual valor vai para cada prestação, e por quê.
+ *
+ * ⚠ LOTE NÃO PODE SER CAIXA-PRETA. O dono pediu "aplicando às 3 com possibilidade de editar
+ * individualmente", e é essa possibilidade que exige que o plano seja um DADO, não um efeito: cada
+ * linha diz de onde veio o número (o valor de todas, ou o que foi digitado nela) e o que ela valia
+ * antes. Sem isso, "apliquei 1.200 em 3 prestações" é uma afirmação que a tela não consegue exibir
+ * linha a linha, e o contador confirma no escuro.
+ *
+ * ⚠ UMA LINHA ILEGÍVEL NÃO DERRUBA O LOTE INTEIRO — ela sai dele, NOMEADA. Recusar tudo por causa de
+ * um campo forçaria a apagar o que já estava certo; aplicar mesmo assim gravaria um valor que
+ * ninguém leu. O gate é: só sobe o que é legível, e a tela diz quantas ficaram de fora.
+ *
+ * ⚠ `valorAnterior` VIAJA JUNTO porque a rota o EXIGE (`valorAnteriorConferido`, 400
+ * `CONFERENCIA_OBRIGATORIA` sem ele) — é a conferência do "era" que impede reescrever um contrato a
+ * partir de um antes que a tela nunca mostrou. `0` e ausente são coisas diferentes e continuam
+ * diferentes aqui: a prestação do wizard nasce com `valorPrevisto: 0`, e é isso que sobe.
+ */
+export function planoDoLoteDeValor({ parcelas, textoPadrao = "", overrides = {} } = {}) {
+  const padrao = lerPrincipal(textoPadrao);
+  const linhas = (Array.isArray(parcelas) ? parcelas : []).map((p) => {
+    const texto = overrides[p.parcelaId];
+    const individual = texto !== undefined && String(texto).trim() !== "";
+    const leitura = individual ? lerPrincipal(texto) : padrao;
+    return {
+      parcelaId: p.parcelaId,
+      numeroParcela: p.numeroParcela ?? null,
+      competencia: p.competencia || null,
+      vencimento: p.vencimento || null,
+      // ⚠ `?? null` e não `|| null`: `0` é um valor CONFERIDO (o contrato diz zero), e trocá-lo por
+      // `null` mandaria "não havia valor" para uma rota que confere exatamente essa diferença.
+      valorAnterior: p.valorPrevisto ?? null,
+      origem: individual ? "individual" : "padrao",
+      texto: individual ? String(texto) : String(textoPadrao || ""),
+      valor: leitura.ok ? leitura.valor : null,
+      erro: leitura.ok ? null : leitura.mensagem,
+    };
+  });
+  const validas = linhas.filter((l) => l.erro == null);
+  const invalidas = linhas.filter((l) => l.erro != null);
+  return {
+    linhas,
+    validas,
+    invalidas,
+    total: round2(validas.reduce((s, l) => s + l.valor, 0)),
+    ok: validas.length > 0,
+    // ⚠ DESABILITADO SEMPRE COM O MOTIVO — o projeto proíbe o contrário, e aqui o motivo mais comum
+    // (o campo "valor de todas" ainda vazio) é impossível de adivinhar olhando a lista.
+    mensagem: validas.length
+      ? null
+      : (invalidas[0]?.erro
+        || "Informe o valor contratado — ele vale para todas as prestações listadas, e cada uma pode ser editada."),
+  };
+}
+
+/**
+ * A confirmação do LOTE — repetindo prestação por prestação o que era e o que passa a ser.
+ *
+ * ⚠ ATO DE CONSEQUÊNCIA CONFIRMA REPETINDO OS DADOS, e em lote isso é mais exigente, não menos:
+ * são N contratos-linha reescritos de uma vez. A lista sai inteira de propósito — cortá-la em
+ * "e mais 5" aqui esconderia justamente as que o contador não olhou.
+ */
+export function textoDaConfirmacaoDoLote(plano, label) {
+  const n = plano?.validas?.length || 0;
+  const partes = [
+    `Informar o valor contratado de ${n} ${plural(n, "prestação", "prestações")}`
+    + `${label ? ` — ${label}` : ""}.`,
+    "",
+    "⚠ ISTO ALTERA O CONTRATO, e não lança baixa nenhuma:",
+  ];
+  for (const l of plano?.validas || []) {
+    const antes = l.valorAnterior == null || Number(l.valorAnterior) === 0
+      ? "sem valor"
+      : formatarMoeda(l.valorAnterior);
+    partes.push(
+      `   prestação ${l.numeroParcela ?? "?"}`
+      + `${l.competencia ? ` (competência ${l.competencia})` : ""}: ${antes} → ${formatarMoeda(l.valor)}`,
+    );
+  }
+  if (plano?.invalidas?.length) {
+    const fora = plano.invalidas.map((l) => l.numeroParcela ?? "?").join(", ");
+    partes.push("", `Ficam de fora (valor ilegível): ${fora}. Elas continuam sem valor.`);
+  }
+  partes.push(
+    "",
+    "O novo valor passa a ser o que todas as telas mostram destas prestações, e é ele que a baixa vai",
+    "amortizar do passivo. A baixa NÃO é lançada aqui — depois disto elas ficam prontas para declarar.",
+    "",
+    "Confirmar?",
+  );
+  return partes.join("\n");
+}
+
+export { MENSAGENS_VALOR, resumoDosNumeros };

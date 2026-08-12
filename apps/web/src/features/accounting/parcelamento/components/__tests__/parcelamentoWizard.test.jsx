@@ -130,14 +130,117 @@ describe("passo 3", () => {
 
     const valores = screen.getAllByPlaceholderText("0,00");
     fireEvent.change(valores[0], { target: { value: "45600" } });
-    // Entra em edição e desbalanceia o crédito à mão.
+    // Entra em edição e desbalanceia o CRÉDITO à mão.
+    // ⚠ O ÍNDICE É O DA LINHA DE CRÉDITO, e ele mudou quando a provisão passou a ter juros e multa:
+    // fora do modo edição só os DÉBITOS têm input (principal · juros · multa); em edição todas as
+    // quatro têm, e a de `PARC` é a última. Apontar para a 2ª (juros) não desbalancearia nada — o
+    // espelho recalcularia o crédito e o teste passaria a provar o contrário do que promete.
     await act(async () => { clicar(/Editar lançamentos/); });
     const valoresEdit = screen.getAllByPlaceholderText("0,00");
-    fireEvent.change(valoresEdit[1], { target: { value: "1" } });
+    fireEvent.change(valoresEdit[valoresEdit.length - 1], { target: { value: "1" } });
 
     await act(async () => { clicar(/Criar parcelamento/); });
     expect(onIngest).not.toHaveBeenCalled();
     expect(screen.getByText(/trava o fechamento do mês/)).toBeInTheDocument();
+  });
+
+  it("⚠ a coluna de PAPEL existe, e é ela que faltava", async () => {
+    montar();
+    await preencherPasso1();
+    await preencherPasso2();
+    await act(async () => { clicar(/Continuar/); });
+
+    // Uma linha de provisão = um seletor de papel, sempre visível (não atrás de "Editar lançamentos").
+    expect(screen.getByLabelText(/Papel da linha 1 da provisão/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Papel da linha 2 da provisão/)).toBeInTheDocument();
+    // As três naturezas de débito + o passivo têm onde ser ditas.
+    const opcoes = Array.from(screen.getByLabelText(/Papel da linha 1 da provisão/).options).map((o) => o.value);
+    expect(opcoes).toEqual(expect.arrayContaining(["PRINCIPAL", "JUROS", "MULTA", "PARC"]));
+    // ⚠ CAIXA não: a provisão da adesão não credita caixa.
+    expect(opcoes).not.toContain("CAIXA");
+  });
+
+  it("⚠ o juros da provisão é lançado, e a contrapartida é a SOMA", async () => {
+    const { onIngest } = montar();
+    await preencherPasso1();
+    await preencherPasso2();
+    await act(async () => { clicar(/Continuar/); });
+
+    const valores = screen.getAllByPlaceholderText("0,00");
+    fireEvent.change(valores[0], { target: { value: "10000" } });  // principal
+    fireEvent.change(valores[1], { target: { value: "2500" } });   // juros
+    fireEvent.change(valores[2], { target: { value: "500" } });    // multa
+
+    await act(async () => { clicar(/Criar parcelamento/); });
+    const body = onIngest.mock.calls[0][0];
+
+    expect(body.provisaoLines).toEqual([
+      { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: 10000 },
+      { tipoLinha: "JUROS", tipo: "D", conta: "501", valor: 2500 },
+      { tipoLinha: "MULTA", tipo: "D", conta: "", valor: 500 },
+      { tipoLinha: "PARC", tipo: "C", conta: "553", valor: 13000 },
+    ]);
+    expect(body.header.valorPrincipal).toBe(10000);
+    expect(body.header.valorJuros).toBe(2500);
+    expect(body.header.valorMulta).toBe(500);
+    expect(body.header.valorTotal).toBe(13000);
+  });
+
+  it("⚠ natureza sem valor NÃO vira linha — contrato sem multa fecha em principal + juros", async () => {
+    const { onIngest } = montar();
+    await preencherPasso1();
+    await preencherPasso2();
+    await act(async () => { clicar(/Continuar/); });
+
+    const valores = screen.getAllByPlaceholderText("0,00");
+    fireEvent.change(valores[0], { target: { value: "10000" } });
+    fireEvent.change(valores[1], { target: { value: "2500" } });
+
+    await act(async () => { clicar(/Criar parcelamento/); });
+    const body = onIngest.mock.calls[0][0];
+    expect(body.provisaoLines.map((l) => l.tipoLinha)).toEqual(["PRINCIPAL", "JUROS", "PARC"]);
+    expect(body.header.valorMulta).toBeNull();
+    expect(body.header.valorTotal).toBe(12500);
+  });
+
+  it("⚠ linha NOVA nasce SEM papel, e sem papel não dá para criar", async () => {
+    const { onIngest } = montar();
+    await preencherPasso1();
+    await preencherPasso2();
+    await act(async () => { clicar(/Continuar/); });
+
+    const valores = screen.getAllByPlaceholderText("0,00");
+    fireEvent.change(valores[0], { target: { value: "45600" } });
+
+    await act(async () => { clicar(/Editar lançamentos/); });
+    // O "+" da PROVISÃO (o da tabela de pagamento tem o mesmo título e vem depois).
+    await act(async () => { fireEvent.click(screen.getAllByTitle("Adicionar linha")[0]); });
+
+    // A linha nova é a 5ª e nasce em branco — NÃO cravada em PRINCIPAL (era esse chute que fazia a
+    // conta de juros ser gravada como principal).
+    const novo = screen.getByLabelText(/Papel da linha 5 da provisão/);
+    expect(novo.value).toBe("");
+
+    const valoresEdit = screen.getAllByPlaceholderText("0,00");
+    fireEvent.change(valoresEdit[valoresEdit.length - 1], { target: { value: "1000" } });
+
+    await act(async () => { clicar(/Criar parcelamento/); });
+    expect(onIngest).not.toHaveBeenCalled();
+    expect(screen.getAllByText(/sem PAPEL/i).length).toBeGreaterThan(0);
+  });
+
+  it("⚠ escolher o papel leva o LADO junto — D↔C e papel param de divergir", async () => {
+    montar();
+    await preencherPasso1();
+    await preencherPasso2();
+    await act(async () => { clicar(/Continuar/); });
+    await act(async () => { clicar(/Editar lançamentos/); });
+
+    // A linha 1 (principal, D) vira o passivo: o lado tem de virar C junto.
+    const papel1 = screen.getByLabelText(/Papel da linha 1 da provisão/);
+    await act(async () => { fireEvent.change(papel1, { target: { value: "PARC" } }); });
+    const dcs = screen.getAllByRole("combobox").filter((s) => Array.from(s.options).map((o) => o.value).join() === "D,C");
+    expect(dcs[0].value).toBe("C");
   });
 
   it("⚠ NÃO existe checkbox 'salvar como padrão da modalidade' — o texto diz que é global", async () => {

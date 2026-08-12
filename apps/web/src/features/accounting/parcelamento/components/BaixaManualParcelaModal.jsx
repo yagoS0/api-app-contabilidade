@@ -428,7 +428,13 @@ export function BaixaManualParcelaModal({ linha, onConfirmar, onCorrigirValorCon
               fontSize: "0.8rem", fontWeight: 700,
             }}
           >
-            {enviando ? "Lançando…" : "Declarar e lançar a baixa"}
+            {/* ⚠ O NOME DA AÇÃO É O MESMO DO BOTÃO QUE ABRIU ESTA TELA. A linha "sem valor" promete
+                "Informar valor e declarar…", e o rodapé respondia "Declarar e lançar a baixa" — dois
+                nomes para o mesmo ato, e o segundo escondia que o CONTRATO também vai ser gravado.
+                Quando o principal não muda, o ato é um só e o nome volta a ser um só. */}
+            {enviando
+              ? "Lançando…"
+              : (alterandoContrato ? "Informar valor e declarar a baixa" : "Declarar e lançar a baixa")}
           </button>
         </div>
       </div>

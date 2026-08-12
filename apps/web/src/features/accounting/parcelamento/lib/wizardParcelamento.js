@@ -63,12 +63,75 @@ export const PASSOS = Object.freeze([
   { id: 3, titulo: "Contabilização" },
 ]);
 
-/** Linhas-padrão da provisão da adesão. Sem JUROS: a adesão reconhece SÓ o principal (decisão do
- *  dono — juros e multa vêm da confirmação do pagamento). Espelha `PROV_LINHAS_PADRAO`. */
+/**
+ * Linhas-padrão da provisão da adesão. Espelha `ParcelamentoV2Service.linhasProvisao`:
+ *
+ *     D principal · D juros · D multa · C parcelamento a pagar (= principal + juros + multa)
+ *
+ * ⚠ A REGRA MUDOU EM 2026-08-12, E A ANTERIOR ESTÁ REGISTRADA DE PROPÓSITO. Até essa data a lista
+ * tinha só PRINCIPAL + PARC, porque a adesão reconhecia **só o principal** (decisão anterior do
+ * dono: juros e multa vinham da confirmação do pagamento). A decisão nova vence — *"o juros da
+ * provisão precisa ser escrito"*, *"o parcelamento deve ter valor principal, juros, e valor juros +
+ * principal fechando a contrapartida"* — e a multa entra junto (*"nós geralmente lançamos juros e
+ * multa na mesma CONTA, mas podemos separar também, opcional"*).
+ *
+ * ⚠ "MESMA CONTA" É SOBRE A CONTA, NUNCA SOBRE O PAPEL. JUROS e MULTA são duas linhas com papéis
+ * distintos que PODEM apontar para a mesma conta — colapsá-las num papel só apagaria a multa como
+ * fato, que é o mesmo colapso que este trabalho está desfazendo.
+ *
+ * ⚠ COMPONENTE ZERADO NÃO VIRA LINHA: as linhas nascem aqui para dar onde digitar, e
+ * `montarPayloadIngestao` descarta as que ficarem sem valor. Contrato sem multa fecha em
+ * `principal + juros`.
+ *
+ * ⚠ O CRÉDITO DA CONTRAPARTIDA É **UM SÓ** — não são três créditos. Ele espelha a soma dos débitos
+ * (ver `setLinhaProvisao` no componente).
+ */
 export const PROVISAO_PADRAO = Object.freeze([
   { tipoLinha: "PRINCIPAL", label: "Principal a provisionar", tipo: "D", conta: "", valor: "" },
+  { tipoLinha: "JUROS", label: "Juros", tipo: "D", conta: "", valor: "" },
+  { tipoLinha: "MULTA", label: "Multa", tipo: "D", conta: "", valor: "" },
   { tipoLinha: "PARC", label: "Parcelamento a pagar (passivo)", tipo: "C", conta: "", valor: "" },
 ]);
+
+/**
+ * ⚠ O PAPEL PASSOU A TER CASA NA TELA — e esta é a lista fechada do que se pode dizer.
+ *
+ * A causa raiz da provisão torta da SINTROPIA foi não existir COMO DIZER que uma linha era juros: a
+ * tabela tinha `Descrição · D/C · Conta · Valor` e `addLinhaProvisao` cravava `PRINCIPAL` em toda
+ * linha nova. O contador escolheu a conta 501 (juros) e digitou 7.034,32, e o papel gravado
+ * continuou `PRINCIPAL` — `configProvisao` prova: `{D 265 PRINCIPAL}, {C 553 PARC}, {D 501 PRINCIPAL}`.
+ *
+ * ⚠ `CAIXA` NÃO ESTÁ AQUI, e a ausência é deliberada: a provisão da adesão **não credita caixa** —
+ * o passivo é debitado depois, a cada parcela paga. Creditar caixa aqui foi o bug original da Q28
+ * (provisão e pagamento compartilhando o mesmo papel de conta).
+ */
+export const PAPEIS_PROVISAO = Object.freeze(["PRINCIPAL", "JUROS", "MULTA", "CONTRAPARTIDA", "PARC"]);
+
+/**
+ * ⚠ O LADO DE CADA PAPEL NA PROVISÃO — é isto que faz D↔C e papel PARAREM DE DIVERGIR.
+ *
+ * O segundo caso medido em produção (`OUTRO nº 3`) é um **CRÉDITO marcado `PRINCIPAL`**: trocar D↔C
+ * na tela não atualizava o papel, porque `setLinhaProvisao` só escreve a chave editada. Agora:
+ *
+ *   · escolher o PAPEL ajusta o lado (derivação determinística de uma escolha explícita);
+ *   · mudar o LADO para o lado errado do papel é **recusado** por `validarPasso3`, com o motivo e a
+ *     saída — nada é reescrito por baixo do contador.
+ */
+export const LADO_DO_PAPEL = Object.freeze({
+  PRINCIPAL: "D", JUROS: "D", MULTA: "D", CONTRAPARTIDA: "D", PARC: "C",
+});
+
+/** Aplica um papel à linha e leva o lado junto. Pura — o componente só liga. */
+export function linhaComPapel(linha, papel) {
+  const p = String(papel || "");
+  return { ...linha, tipoLinha: p, tipo: LADO_DO_PAPEL[p] || linha?.tipo || "D" };
+}
+
+/** A linha diverge quando tem papel conhecido e está no lado errado dele. */
+export function papelDivergeDoLado(linha) {
+  const esperado = LADO_DO_PAPEL[String(linha?.tipoLinha || "")];
+  return Boolean(esperado) && linha?.tipo !== esperado;
+}
 
 /** Config de COMO cada parcela será baixada. Sem valores — eles saem da baixa. */
 export const PAGAMENTO_PADRAO = Object.freeze([
@@ -246,6 +309,18 @@ export function somasProvisao(linhas) {
   return { debito: round2(debito), credito: round2(credito), balanceado: Math.abs(debito - credito) < 0.01 };
 }
 
+/**
+ * As linhas da provisão que de fato viram lançamento.
+ *
+ * ⚠ COMPONENTE ZERADO NÃO VIRA LINHA — a mesma regra da baixa. As linhas de JUROS e MULTA nascem na
+ * tabela para dar ONDE digitar, e a memória de contas do escritório pré-preenche a conta delas: sem
+ * este corte, um contrato sem multa gravaria um lançamento de **R$ 0,00** só porque a conta veio
+ * preenchida sozinha.
+ */
+export function linhasQueViramLancamento(provisaoLines) {
+  return (Array.isArray(provisaoLines) ? provisaoLines : []).filter((l) => numero(l.valor) > 0);
+}
+
 export function validarPasso3(dados) {
   const erros = {};
   const alertas = [];
@@ -253,6 +328,26 @@ export function validarPasso3(dados) {
 
   const comAlgo = linhas.filter((l) => numero(l.valor) > 0 || String(l.conta || "").trim());
   if (!comAlgo.length) erros.provisao = "Preencha ao menos uma linha da provisão.";
+
+  // ⚠ PAPEL AUSENTE É RECUSA, NÃO CHUTE — o mesmo contrato do backend
+  // (`ParcelamentoV2Service.exigirPapel`, 400 `PAPEL_DE_LINHA_AUSENTE`). O papel decide quanto do
+  // contrato é principal: chutá-lo faz `principalTotal == totalValue`, que é o defeito da SINTROPIA.
+  const lancaveis = linhasQueViramLancamento(linhas);
+  const semPapel = lancaveis.filter((l) => !String(l.tipoLinha || "").trim());
+  if (semPapel.length) {
+    erros.provisaoPapel = `${semPapel.length === 1 ? "1 linha com valor está" : `${semPapel.length} linhas com valor estão`} `
+      + "sem PAPEL. O papel é o que diz quanto do contrato é principal, quanto é juros e quanto é multa — "
+      + "e é o principal que o passivo promete amortizar. Escolha o papel na coluna \"Papel\".";
+  }
+
+  // ⚠ D↔C E PAPEL NÃO PODEM DIVERGIR. Já aconteceu em produção: um CRÉDITO marcado `PRINCIPAL`.
+  const divergentes = lancaveis.filter(papelDivergeDoLado);
+  if (divergentes.length) {
+    const nomes = divergentes.map((l) => `${ROLE_LABEL[l.tipoLinha] || l.tipoLinha} como ${l.tipo}`).join(" · ");
+    erros.provisaoLado = `Papel e lado discordam: ${nomes}. `
+      + "Na provisão da adesão principal, juros, multa e contrapartida são DÉBITO, e o parcelamento a pagar "
+      + "(passivo) é o CRÉDITO. Corrija o papel ou o lado da linha.";
+  }
 
   const { debito, credito, balanceado } = somasProvisao(linhas);
   if (debito <= 0) erros.provisaoValor = "A provisão está sem valor — informe o principal a provisionar.";
@@ -304,14 +399,29 @@ export function formatarMoeda(v) {
  * que de fato vira lançamento que precisa bater com o cabeçalho do contrato.
  */
 export function montarPayloadIngestao(dados) {
-  const linhas = (Array.isArray(dados?.provisaoLines) ? dados.provisaoLines : [])
-    .filter((l) => numero(l.valor) > 0 || String(l.conta || "").trim())
-    .map((l) => ({
-      tipoLinha: l.tipoLinha || (l.tipo === "C" ? "PARC" : "PRINCIPAL"),
-      tipo: l.tipo === "C" ? "C" : "D",
-      conta: String(l.conta || "").trim(),
-      valor: round2(numero(l.valor)),
-    }));
+  // ⚠ SÓ AS LINHAS COM VALOR — componente zerado não vira linha (ver `linhasQueViramLancamento`).
+  const lancaveis = linhasQueViramLancamento(dados?.provisaoLines);
+
+  // ⚠ O DEFAULT SILENCIOSO `|| (tipo === "C" ? "PARC" : "PRINCIPAL")` MORREU AQUI.
+  // Ele era o gêmeo do que existia em `linhasProvisaoFromOverride`/`configFromLines` no backend, e
+  // é o que produziu `principalTotal == totalValue` na SINTROPIA: um débito de JUROS que chegou sem
+  // papel virava `PRINCIPAL` sem ninguém ver. Papel ausente é RECUSA — e o backend recusa também
+  // (400 `PAPEL_DE_LINHA_AUSENTE`), então esta guarda é antecipação, não a trava.
+  const semPapel = lancaveis.filter((l) => !String(l.tipoLinha || "").trim());
+  if (semPapel.length) {
+    throw new Error(
+      `${semPapel.length === 1 ? "1 linha da provisão está" : `${semPapel.length} linhas da provisão estão`} `
+      + "sem papel. Escolha o papel de cada linha (Principal · Juros · Multa · Parcelamento a pagar) "
+      + "na coluna \"Papel\" antes de criar o parcelamento.",
+    );
+  }
+
+  const linhas = lancaveis.map((l) => ({
+    tipoLinha: String(l.tipoLinha).trim(),
+    tipo: l.tipo === "C" ? "C" : "D",
+    conta: String(l.conta || "").trim(),
+    valor: round2(numero(l.valor)),
+  }));
 
   const pagamento = (Array.isArray(dados?.pagamentoLines) ? dados.pagamentoLines : [])
     .filter((l) => l.tipoLinha || String(l.conta || "").trim())

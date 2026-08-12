@@ -9,6 +9,8 @@
 import {
   decomporBaixa, lerAcrescimo, lancamentosPrevistos, explicarRecusa, codigoDaRecusa,
   textoDaConfirmacao, rotuloDaSituacao, MOTIVOS_BAIXA_MANUAL,
+  agruparBloqueiosDaFila, tituloDoGrupo, rotuloDoBloqueio,
+  planoDoLoteDeValor, textoDaConfirmacaoDoLote,
 } from "../baixaManualParcela";
 
 describe("lerAcrescimo — vazio é zero, negativo é recusa", () => {
@@ -152,5 +154,191 @@ describe("o rótulo da situação vem do servidor — a tela não recalcula atra
 
   it("VENCIDA usa o âmbar de pendência", () => {
     expect(rotuloDaSituacao("VENCIDA")).toMatchObject({ texto: "Vencida", cor: "var(--state-warn)" });
+  });
+
+  // ⚠ O par `-surface` VEM DA REGRA, não do componente: o estado virou badge, badge precisa de
+  // fundo, e derivar fundo no JSX repõe o truque `${cor}22`, que quebra em silêncio com `var()`.
+  it("todo estado traz o par -surface do token", () => {
+    expect(rotuloDaSituacao("VENCIDA").fundo).toBe("var(--state-warn-surface)");
+    expect(rotuloDaSituacao("VENCE_HOJE").fundo).toBe("var(--state-neutral-surface)");
+  });
+});
+
+// ─── A FILA AGRUPADA (Fase 1) ───────────────────────────────────────────────────────────────────
+//
+// ⚠ O QUE ESTES TESTES PROTEGEM não é o layout, é a FRONTEIRA: some a repetição, nunca a linha nem
+// o motivo. Num contrato criado pelo wizard TODAS as prestações nascem com `sem_valor_previsto`, e
+// o mesmo parágrafo repetido linha a linha não se lê — vira textura. Agrupado, ele aparece uma vez,
+// dizendo em quantas prestações vale e quais são; e é o agrupamento que dá lugar à ação em lote.
+
+const linhaDaFila = (over = {}) => ({
+  parcelaId: "p1", numeroParcela: 1, competencia: "2026-05", vencimento: "2026-05-20T12:00:00.000Z",
+  valorPrevisto: 0, situacao: "VENCIDA", parcelamentoId: "c1",
+  parcelamento: { id: "c1", label: "PARCSN 2026", numParcelas: 3 },
+  podeBaixar: false, motivoBloqueio: "sem_valor_previsto",
+  ...over,
+});
+
+describe("agruparBloqueiosDaFila — o motivo UMA vez, por motivo e por CONTRATO", () => {
+  it("três prestações do mesmo contrato viram UM grupo, com as três nomeadas", () => {
+    const grupos = agruparBloqueiosDaFila([
+      linhaDaFila({ parcelaId: "p1", numeroParcela: 1 }),
+      linhaDaFila({ parcelaId: "p2", numeroParcela: 2 }),
+      linhaDaFila({ parcelaId: "p3", numeroParcela: 3 }),
+    ]);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].quantidade).toBe(3);
+    expect(grupos[0].numeros).toEqual([1, 2, 3]);
+    expect(grupos[0].listaDeNumeros).toBe("1, 2, 3");
+    // O parágrafo é o MESMO texto da recusa do servidor — duas redações do mesmo bloqueio é como a
+    // tela passa a discordar de si mesma.
+    expect(grupos[0].texto).toBe(explicarRecusa("sem_valor_previsto"));
+  });
+
+  // ⚠ CONTRATOS DIFERENTES NÃO SE MISTURAM: a ação em lote reescreve o CONTRATO, e aplicar um valor
+  // a prestações de dois acordos num clique seria reescrever dois contratos de uma vez.
+  it("mesmo motivo em contratos diferentes vira DOIS grupos", () => {
+    const grupos = agruparBloqueiosDaFila([
+      linhaDaFila({ parcelaId: "a1", parcelamentoId: "c1", parcelamento: { label: "A" } }),
+      linhaDaFila({ parcelaId: "b1", parcelamentoId: "c2", parcelamento: { label: "B" } }),
+    ]);
+    expect(grupos).toHaveLength(2);
+    expect(grupos.map((g) => g.parcelamentoId)).toEqual(["c1", "c2"]);
+  });
+
+  // ⚠ O GRUPO COM SAÍDA VEM PRIMEIRO. Enterrar a ação embaixo do bloqueio que não se resolve aqui é
+  // mandar o contador ler primeiro o que ele não pode fazer.
+  it("o grupo que se resolve NESTA tela vem antes do que se resolve em outra", () => {
+    const grupos = agruparBloqueiosDaFila([
+      linhaDaFila({ parcelaId: "x", motivoBloqueio: "provisao_inexistente" }),
+      linhaDaFila({ parcelaId: "y", parcelamentoId: "c9", motivoBloqueio: "sem_valor_previsto" }),
+    ]);
+    expect(grupos[0].motivo).toBe("sem_valor_previsto");
+    expect(grupos[0].corrigivelNaTela).toBe(true);
+    expect(grupos[1].corrigivelNaTela).toBe(false);
+  });
+
+  it("linha sem bloqueio não entra em grupo nenhum", () => {
+    expect(agruparBloqueiosDaFila([linhaDaFila({ podeBaixar: true, motivoBloqueio: null })])).toEqual([]);
+    expect(agruparBloqueiosDaFila(null)).toEqual([]);
+  });
+
+  // ⚠ O RÓTULO CURTO É O QUE CABE NA LINHA — ele ANCORA o motivo, não o substitui.
+  it("o rótulo curto existe para todo motivo, e nunca é o código cru", () => {
+    expect(rotuloDoBloqueio("sem_valor_previsto")).toBe("Sem valor");
+    expect(rotuloDoBloqueio("provisao_inexistente")).toBe("Sem provisão");
+    expect(rotuloDoBloqueio("motivo_que_ninguem_previu")).toBe("Bloqueada");
+    expect(rotuloDoBloqueio(null)).toBeNull();
+  });
+
+  // ⚠ SEM O NOME DO CONTRATO O TÍTULO MENTE POR OMISSÃO: com dois acordos na fila, "3 prestações
+  // estão sem valor" faz a ação em lote parecer valer para a fila inteira.
+  it("o título do grupo nomeia a contagem E o contrato", () => {
+    const [g] = agruparBloqueiosDaFila([
+      linhaDaFila({ parcelaId: "p1", numeroParcela: 1 }),
+      linhaDaFila({ parcelaId: "p2", numeroParcela: 2 }),
+      linhaDaFila({ parcelaId: "p3", numeroParcela: 3 }),
+    ]);
+    expect(tituloDoGrupo(g)).toBe("3 prestações do contrato PARCSN 2026 estão sem valor");
+  });
+
+  it("uma prestação só não vira plural", () => {
+    const [g] = agruparBloqueiosDaFila([linhaDaFila()]);
+    expect(tituloDoGrupo(g)).toBe("1 prestação do contrato PARCSN 2026 está sem valor");
+  });
+});
+
+describe("planoDoLoteDeValor — o lote é um DADO, linha a linha", () => {
+  const tres = [
+    { parcelaId: "p1", numeroParcela: 1, competencia: "2026-05", valorPrevisto: 0 },
+    { parcelaId: "p2", numeroParcela: 2, competencia: "2026-06", valorPrevisto: 0 },
+    { parcelaId: "p3", numeroParcela: 3, competencia: "2026-07", valorPrevisto: 0 },
+  ];
+
+  it("um valor vale para todas, e cada linha diz de onde veio o número", () => {
+    const plano = planoDoLoteDeValor({ parcelas: tres, textoPadrao: "1.200,00" });
+    expect(plano.ok).toBe(true);
+    expect(plano.validas).toHaveLength(3);
+    expect(plano.linhas.every((l) => l.valor === 1200 && l.origem === "padrao")).toBe(true);
+    expect(plano.total).toBe(3600);
+  });
+
+  // ⚠ A EDIÇÃO INDIVIDUAL É O PEDIDO DO DONO, e um lote que só aceitasse um número obrigaria a
+  // desfazer no detalhe o que ele acabou de fazer no atacado (entrada maior, última quebrada).
+  it("a linha editada vence o valor de todas", () => {
+    const plano = planoDoLoteDeValor({
+      parcelas: tres, textoPadrao: "1.200,00", overrides: { p2: "900,50" },
+    });
+    expect(plano.linhas.map((l) => l.valor)).toEqual([1200, 900.5, 1200]);
+    expect(plano.linhas[1].origem).toBe("individual");
+  });
+
+  // ⚠ UMA LINHA ILEGÍVEL NÃO DERRUBA O LOTE, E NÃO SOBE EM SILÊNCIO: ela sai NOMEADA.
+  it("linha ilegível fica de fora, com o motivo, e as outras seguem", () => {
+    const plano = planoDoLoteDeValor({
+      parcelas: tres, textoPadrao: "1.200,00", overrides: { p3: "1.23.4" },
+    });
+    expect(plano.validas.map((l) => l.parcelaId)).toEqual(["p1", "p2"]);
+    expect(plano.invalidas).toHaveLength(1);
+    expect(plano.invalidas[0].erro).toBeTruthy();
+    expect(plano.ok).toBe(true);
+  });
+
+  // ⚠ DESABILITADO SEMPRE COM O MOTIVO — campo vazio é o caso mais comum e o mais difícil de
+  // adivinhar olhando a lista.
+  it("sem valor nenhum, o lote não é enviável e DIZ por quê", () => {
+    const plano = planoDoLoteDeValor({ parcelas: tres, textoPadrao: "" });
+    expect(plano.ok).toBe(false);
+    expect(plano.mensagem).toMatch(/valor contratado/i);
+  });
+
+  it("valor zero ou negativo é recusado — prestação que vale zero não existe", () => {
+    expect(planoDoLoteDeValor({ parcelas: tres, textoPadrao: "0" }).ok).toBe(false);
+    expect(planoDoLoteDeValor({ parcelas: tres, textoPadrao: "-5" }).ok).toBe(false);
+  });
+
+  // ⚠ `0` E AUSENTE SÃO COISAS DIFERENTES, e continuam diferentes: a rota confere o "era", e trocar
+  // um pelo outro faria o servidor recusar — ou, pior, aceitar sobre um "antes" que ninguém viu.
+  it("o valor anterior viaja como está — zero não vira null", () => {
+    const plano = planoDoLoteDeValor({
+      parcelas: [
+        { parcelaId: "p1", numeroParcela: 1, valorPrevisto: 0 },
+        { parcelaId: "p2", numeroParcela: 2, valorPrevisto: null },
+      ],
+      textoPadrao: "100",
+    });
+    expect(plano.linhas[0].valorAnterior).toBe(0);
+    expect(plano.linhas[1].valorAnterior).toBeNull();
+  });
+});
+
+describe("a confirmação do lote REPETE prestação por prestação", () => {
+  it("diz o que era e o que passa a ser, e que NÃO lança baixa", () => {
+    const plano = planoDoLoteDeValor({
+      parcelas: [
+        { parcelaId: "p1", numeroParcela: 1, competencia: "2026-05", valorPrevisto: 0 },
+        { parcelaId: "p2", numeroParcela: 2, competencia: "2026-06", valorPrevisto: 500 },
+      ],
+      textoPadrao: "1.200,00",
+    });
+    const texto = textoDaConfirmacaoDoLote(plano, "PARCSN 2026");
+    expect(texto).toMatch(/ALTERA O CONTRATO/);
+    expect(texto).toMatch(/prestação 1 \(competência 2026-05\): sem valor →/);
+    // `\s` e não " ": `toLocaleString` pt-BR separa "R$" do número com espaço NÃO-QUEBRÁVEL.
+    expect(texto).toMatch(/prestação 2 \(competência 2026-06\): R\$\s500,00 →/);
+    // ⚠ O que ele NÃO faz é tão importante quanto o que faz: lote de valor não é lote de baixa.
+    expect(texto).toMatch(/A baixa NÃO é lançada aqui/);
+  });
+
+  it("as que ficaram de fora são NOMEADAS na confirmação", () => {
+    const plano = planoDoLoteDeValor({
+      parcelas: [
+        { parcelaId: "p1", numeroParcela: 1, valorPrevisto: 0 },
+        { parcelaId: "p2", numeroParcela: 2, valorPrevisto: 0 },
+      ],
+      textoPadrao: "1.200,00",
+      overrides: { p2: "abc" },
+    });
+    expect(textoDaConfirmacaoDoLote(plano, "PARCSN 2026")).toMatch(/Ficam de fora \(valor ilegível\): 2/);
   });
 });

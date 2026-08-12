@@ -1119,8 +1119,10 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
+    // Mesma disciplina do vazio: uma linha, não um card. "Carregando" e "não há nada" são estados
+    // distintos e continuam distintos — o que some é a moldura que os fazia pesar como a fila cheia.
     return (
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, color: PANEL.muted, fontSize: "0.8rem" }}>
+      <div style={{ marginBottom: 4, color: PANEL.muted, fontSize: "0.78rem" }}>
         Carregando a fila de conferência de parcelas…
       </div>
     );
@@ -1141,9 +1143,14 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
   }
 
   if (!items.length) {
+    // ⚠ SEÇÃO VAZIA É UMA LINHA, NÃO UM BOX — exemplo literal do dono. O card inteiro (moldura,
+    // fundo próprio, 10px de respiro em cima e embaixo) para dizer "não há nada" pesava o mesmo que
+    // a fila cheia, e a tela ensinava o olho a pular a região. O texto continua na tela; o que sai
+    // é a moldura. Ausência nunca é resposta — ausência DIAGRAMADA COMO CARD é ruído.
     return (
-      <div style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, color: PANEL.muted, fontSize: "0.78rem" }}>
-        Nenhuma parcela aguardando conferência.
+      <div style={{ marginBottom: 4, color: PANEL.muted, fontSize: "0.78rem" }}>
+        <strong style={{ color: PANEL.text, fontWeight: 600 }}>Conferência de parcelas:</strong>{" "}
+        nenhuma aguardando.
       </div>
     );
   }
@@ -1159,8 +1166,11 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
     const lista = escolhidas
       .map((it) => `· parcela ${it.numeroParcela || "?"} — ${it.competencia || it.anoMesParcela || "sem competência"} — R$ ${fmtMoney(it.valor)}`)
       .join("\n");
+    // ⚠ O NOME DA AÇÃO É O MESMO no botão, na confirmação e no desfecho. O botão diz "Aprovar" e a
+    // confirmação dizia "Confirmar os lançamentos de baixa" — dois nomes para o mesmo ato fazem o
+    // contador procurar, depois, um "Confirmar" que não existe em lugar nenhum.
     // eslint-disable-next-line no-alert
-    if (!window.confirm(`Confirmar os lançamentos de baixa de ${escolhidas.length} parcela(s)?\n\n${lista}\n\nOs lançamentos passam de RASCUNHO para CONFIRMADO.`)) return;
+    if (!window.confirm(`Aprovar a baixa de ${escolhidas.length} parcela(s)?\n\n${lista}\n\nOs lançamentos passam de RASCUNHO para CONFIRMADO.`)) return;
     setBusy(true);
     try { await aprovarConferencia([...sel]); setSel(new Set()); await reload(); } finally { setBusy(false); }
   }

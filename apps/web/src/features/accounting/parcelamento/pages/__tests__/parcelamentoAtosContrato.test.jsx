@@ -79,24 +79,54 @@ beforeEach(() => {
   mockListSemGuia.mockReset();
 });
 
+const COM_ESCONDIDAS = {
+  prestacoes: 12,
+  contratos: [{ parcelamentoId: "parc-rescindido", label: "OUTRO 2026", numeroParcelamento: "3", prestacoes: 12 }],
+  motivo: "PARCELAMENTO_RESCINDIDO",
+};
+
 describe("⚠ a ausência da rescisão deixou de ser muda", () => {
-  it("a fila vazia DIZ quantas prestações estão fora e por quê, com o caminho de volta", async () => {
-    await act(async () => {
-      montar({
-        semGuia: [],
-        foraDaFila: {
-          prestacoes: 12,
-          contratos: [{ parcelamentoId: "parc-rescindido", label: "OUTRO 2026", numeroParcelamento: "3", prestacoes: 12 }],
-          motivo: "PARCELAMENTO_RESCINDIDO",
-        },
-      });
-    });
+  // ⚠ A INFORMAÇÃO PASSOU A MORAR EM UM LUGAR SÓ (Fase 1), e este teste virou dois porque a
+  // separação é o ponto: a FILA diz que há prestações fora dela (senão a ausência volta a ser muda)
+  // e aponta; a SEÇÃO "Contratos rescindidos" guarda o contrato, a contagem e as duas saídas.
+  // Antes as duas coisas estavam nos dois lugares — a mesma frase, a mesma lista e o mesmo botão,
+  // duplicados a uma tela de distância.
+  it("a fila DIZ quantas prestações estão fora, e aponta para onde a informação está", async () => {
+    await act(async () => { montar({ semGuia: [], foraDaFila: COM_ESCONDIDAS }); });
 
     const painel = screen.getByText(/Prestações vencidas sem guia/i).closest("section");
     expect(within(painel).getByText(/12 prestações estão fora desta fila/i)).toBeTruthy();
-    expect(within(painel).getByText(/OUTRO 2026 nº 3 — 12 prestações/)).toBeTruthy();
-    // O caminho de volta fica NO MESMO LUGAR onde a falta foi percebida.
-    expect(within(painel).getAllByRole("button", { name: /Desfazer rescisão/i }).length).toBeGreaterThan(0);
+    expect(within(painel).getByRole("button", { name: /Ver contratos rescindidos/i })).toBeTruthy();
+    // ⚠ E o que saiu daqui NÃO É CAPACIDADE: o desfazer continua existindo, na seção para onde o
+    // ponteiro leva — o que saiu foi a segunda cópia dele.
+    expect(within(painel).queryByRole("button", { name: /Desfazer rescisão/i })).toBeNull();
+  });
+
+  it("a contagem de prestações fora da fila aparece no contrato, na seção dos rescindidos", async () => {
+    await act(async () => { montar({ semGuia: [], foraDaFila: COM_ESCONDIDAS }); });
+
+    // ⚠ `\(` no seletor: o ponteiro da fila também diz "Ver contratos rescindidos", e é assim que
+    // deve ser — a seção é a que traz a CONTAGEM entre parênteses.
+    const secao = screen.getByText(/Contratos rescindidos \(/i).closest("section");
+    // ⚠ ESTE NÚMERO NÃO É `parcelasTotal`. É quantas prestações VENCIDAS estão fora da fila de
+    // baixa por causa da rescisão — o número que o dono nunca viu, e o único que a seção não sabia
+    // sozinha. Ele veio da fila e é desenhado aqui, uma vez.
+    expect(within(secao).getByText(/12 prestações vencidas/i)).toBeTruthy();
+    expect(within(secao).getByText(/fora da fila de baixa por causa da rescisão/i)).toBeTruthy();
+    expect(within(secao).getByRole("button", { name: /Desfazer rescisão/i })).toBeTruthy();
+    expect(within(secao).getByRole("button", { name: /Excluir contrato/i })).toBeTruthy();
+  });
+
+  // ⚠ CONTRATO ÓRFÃO: a lista de parcelamentos pode falhar (o `error` do hook), e aí o contrato que
+  // está segurando prestações fora da fila não estaria em lugar nenhum. A seção o desenha assim
+  // mesmo — some a duplicação, nunca a informação.
+  it("contrato fora da lista ainda aparece, com a contagem e o caminho de volta", async () => {
+    await act(async () => { montar({ semGuia: [], foraDaFila: COM_ESCONDIDAS, contratos: [] }); });
+
+    const secao = screen.getByText(/Contratos rescindidos \(/i).closest("section");
+    expect(within(secao).getByText(/OUTRO 2026/)).toBeTruthy();
+    expect(within(secao).getByText(/12 prestações vencidas/i)).toBeTruthy();
+    expect(within(secao).getByRole("button", { name: /Desfazer rescisão/i })).toBeTruthy();
   });
 
   it("sem nada escondido, nenhum aviso aparece — aviso permanente é aviso ignorado", async () => {

@@ -9,6 +9,7 @@ import {
   parcelasRestantes, proximaParcela, competenciaProximaParcela, textoDoRodapePasso2,
   oQueSePerdeAoFechar, somasProvisao, somarMeses, vencimentoDaCompetencia,
   tipoGuiaSugeridoNaoExisteAqui, estadoInicial, numero,
+  PROVISAO_PADRAO, PAPEIS_PROVISAO, linhaComPapel, papelDivergeDoLado, linhasQueViramLancamento,
 } from "../wizardParcelamento";
 
 /** O contrato do aceite: migrado, 23ª de 60, débito automático, sem documento nenhum. */
@@ -198,6 +199,115 @@ describe("passo 3 — contabilização", () => {
     expect(s.debito).toBe(1200.5);
     expect(s.credito).toBe(1200.5);
     expect(s.balanceado).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A REGRA NOVA DA PROVISÃO (2026-08-12) — o juros (e a multa) são ESCRITOS, e a contrapartida fecha
+// pela SOMA. A regra anterior reconhecia só o principal; ver o comentário de `PROVISAO_PADRAO`.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("⚠ a provisão da adesão reconhece principal, juros e multa", () => {
+  const comEncargo = (over = {}) => migrado({
+    provisaoLines: [
+      { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: "10000" },
+      { tipoLinha: "JUROS", tipo: "D", conta: "501", valor: "2500" },
+      { tipoLinha: "MULTA", tipo: "D", conta: "501", valor: "500" },
+      { tipoLinha: "PARC", tipo: "C", conta: "553", valor: "13000" },
+    ],
+    ...over,
+  });
+
+  it("as linhas-padrão trazem as três naturezas e UM crédito só", () => {
+    expect(PROVISAO_PADRAO.filter((l) => l.tipo === "D").map((l) => l.tipoLinha))
+      .toEqual(["PRINCIPAL", "JUROS", "MULTA"]);
+    expect(PROVISAO_PADRAO.filter((l) => l.tipo === "C")).toEqual([
+      expect.objectContaining({ tipoLinha: "PARC" }),
+    ]);
+  });
+
+  it("a contrapartida é principal + juros + multa, e o cabeçalho reparte por papel", () => {
+    const body = montarPayloadIngestao(comEncargo());
+    expect(body.header.valorPrincipal).toBe(10000);
+    expect(body.header.valorJuros).toBe(2500);
+    expect(body.header.valorMulta).toBe(500);
+    expect(body.header.valorTotal).toBe(13000);
+    expect(validarPasso3(comEncargo()).ok).toBe(true);
+  });
+
+  it("⚠ JUROS e MULTA na MESMA CONTA continuam sendo DOIS PAPÉIS", () => {
+    // Palavras do dono: "nós geralmente lançamos juros e multa na mesma CONTA, mas podemos separar
+    // também, opcional". Mesma conta é sobre a CONTA — colapsar num papel só apagaria a multa como
+    // fato, e é o mesmo colapso que produziu a provisão torta da SINTROPIA.
+    const body = montarPayloadIngestao(comEncargo());
+    const encargos = body.provisaoLines.filter((l) => l.conta === "501");
+    expect(encargos.map((l) => l.tipoLinha)).toEqual(["JUROS", "MULTA"]);
+  });
+
+  it("⚠ componente zerado NÃO vira linha, mesmo com a conta pré-preenchida pela memória", () => {
+    // A conta de multa vem da memória do escritório sozinha; sem este corte, um contrato sem multa
+    // gravaria um lançamento de R$ 0,00.
+    const semMulta = comEncargo({
+      provisaoLines: [
+        { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: "10000" },
+        { tipoLinha: "JUROS", tipo: "D", conta: "501", valor: "2500" },
+        { tipoLinha: "MULTA", tipo: "D", conta: "501", valor: "" },
+        { tipoLinha: "PARC", tipo: "C", conta: "553", valor: "12500" },
+      ],
+    });
+    const body = montarPayloadIngestao(semMulta);
+    expect(body.provisaoLines.map((l) => l.tipoLinha)).toEqual(["PRINCIPAL", "JUROS", "PARC"]);
+    expect(body.header.valorMulta).toBeNull();
+    expect(body.header.valorTotal).toBe(12500);
+    expect(linhasQueViramLancamento(semMulta.provisaoLines)).toHaveLength(3);
+  });
+});
+
+describe("⚠ PAPEL AUSENTE É RECUSA, NUNCA CHUTE", () => {
+  const semPapel = () => migrado({
+    provisaoLines: [
+      { tipoLinha: "PRINCIPAL", tipo: "D", conta: "265", valor: "40000" },
+      { tipoLinha: "", tipo: "D", conta: "501", valor: "5600" },
+      { tipoLinha: "PARC", tipo: "C", conta: "553", valor: "45600" },
+    ],
+  });
+
+  it("o passo 3 recusa e diz por quê", () => {
+    const r = validarPasso3(semPapel());
+    expect(r.ok).toBe(false);
+    expect(r.erros.provisaoPapel).toMatch(/sem PAPEL/);
+  });
+
+  it("⚠ `montarPayloadIngestao` NÃO chuta PRINCIPAL — foi esse chute que fez principalTotal == totalValue", () => {
+    expect(() => montarPayloadIngestao(semPapel())).toThrow(/sem papel/i);
+  });
+
+  it("a lista de papéis não oferece CAIXA — a provisão da adesão não credita caixa", () => {
+    expect(PAPEIS_PROVISAO).toEqual(["PRINCIPAL", "JUROS", "MULTA", "CONTRAPARTIDA", "PARC"]);
+  });
+});
+
+describe("⚠ D↔C e o PAPEL param de divergir", () => {
+  it("escolher o papel leva o lado junto", () => {
+    expect(linhaComPapel({ tipoLinha: "PRINCIPAL", tipo: "D" }, "PARC")).toEqual({ tipoLinha: "PARC", tipo: "C" });
+    expect(linhaComPapel({ tipoLinha: "PARC", tipo: "C" }, "JUROS")).toEqual({ tipoLinha: "JUROS", tipo: "D" });
+  });
+
+  it("papel desconhecido preserva o lado em vez de inventar um", () => {
+    expect(linhaComPapel({ tipoLinha: "PARC", tipo: "C" }, "")).toEqual({ tipoLinha: "", tipo: "C" });
+  });
+
+  it("⚠ o CRÉDITO marcado PRINCIPAL é recusado — o caso vivo do `OUTRO nº 3`", () => {
+    expect(papelDivergeDoLado({ tipoLinha: "PRINCIPAL", tipo: "C" })).toBe(true);
+    expect(papelDivergeDoLado({ tipoLinha: "PARC", tipo: "D" })).toBe(true);
+    expect(papelDivergeDoLado({ tipoLinha: "JUROS", tipo: "D" })).toBe(false);
+    const r = validarPasso3(migrado({
+      provisaoLines: [
+        { tipoLinha: "PRINCIPAL", tipo: "C", conta: "265", valor: "45600" },
+        { tipoLinha: "PARC", tipo: "D", conta: "553", valor: "45600" },
+      ],
+    }));
+    expect(r.ok).toBe(false);
+    expect(r.erros.provisaoLado).toMatch(/Papel e lado discordam/);
   });
 });
 

@@ -99,9 +99,27 @@ describe("as duas filas coexistem e a diferença é DITA", () => {
 });
 
 describe("ausência nunca é resposta", () => {
-  it("fila vazia DIZ que está vazia — e diz o que 'vazia' significa aqui", async () => {
+  // ⚠ SEÇÃO VAZIA VIRA UMA LINHA (Fase 1) — e a explicação continua ALCANÇÁVEL, num `ℹ` que é um
+  // `<button>` de verdade (foco por teclado, clique no toque), não num `title`. O que saiu foi o
+  // card inteiro dizendo "não há nada"; o que NÃO saiu é o que "vazia" significa aqui, que nunca
+  // foi "tudo pago".
+  it("fila vazia DIZ que está vazia, em uma linha", async () => {
     await act(async () => { montar({ semGuia: [] }); });
-    expect(screen.getByText(/Nenhuma prestação sem guia venceu até hoje sem baixa/i)).toBeTruthy();
+    const painel = painelSemGuia();
+    expect(within(painel).getByText(/Prestações vencidas sem guia/i)).toBeTruthy();
+    expect(within(painel).getByText(/nenhuma\./i)).toBeTruthy();
+  });
+
+  it("o que 'vazia' significa continua na tela — a um clique, não num title", async () => {
+    await act(async () => { montar({ semGuia: [] }); });
+    const painel = painelSemGuia();
+    expect(within(painel).queryByText(/Nenhuma prestação sem guia venceu até hoje sem baixa/i)).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(within(painel).getByRole("button", { name: /O que isto quer dizer/i }));
+    });
+    expect(within(painel).getByText(/Nenhuma prestação sem guia venceu até hoje sem baixa/i)).toBeTruthy();
+    expect(within(painel).getByText(/vão para a fila acima/i)).toBeTruthy();
   });
 
   // Falha e vazio são o mesmo pixel e significam o oposto — o defeito que derrubou três painéis.
@@ -176,7 +194,8 @@ describe("o ato de consequência", () => {
     expect(mockBaixaManual).toHaveBeenCalledWith("c1", "parc-migrado-60-p1", expect.objectContaining({
       valorJuros: 12.94, valorMulta: 0, totalConferido: 646.9,
     }));
-    expect(screen.getByText(/Nenhuma prestação sem guia venceu até hoje sem baixa/i)).toBeTruthy();
+    // A fila ficou vazia — e vazia agora é UMA LINHA, não um card (Fase 1).
+    expect(within(painelSemGuia()).getByText(/nenhuma\./i)).toBeTruthy();
     confirmSpy.mockRestore();
   });
 
