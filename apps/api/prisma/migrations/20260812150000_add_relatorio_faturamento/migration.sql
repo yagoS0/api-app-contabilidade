@@ -1,7 +1,12 @@
 -- RELATÓRIO "Faturamento no Período — Consolidado", salvo por (empresa, competência).
 --
 -- ⚠ ADITIVA. Uma tabela nova. Nenhuma tabela existente é alterada, nenhuma coluna é dropada,
--- nenhum dado é tocado. `portal_clients` NÃO ganha coluna: a FK mora aqui.
+-- nenhum dado é tocado. `PortalClient` NÃO ganha coluna: a FK mora aqui.
+--
+-- ⚠ A TABELA É `"PortalClient"`, NÃO `portal_clients`. O model não tem `@@map`, e 38 migrations já
+-- a referenciam com esse nome. Escrever `portal_clients` aqui derrubou a produção: a FK falhou, o
+-- Prisma marcou a migration como falha e passou a recusar TODAS as seguintes (P3009) — a aplicação
+-- não subiu até a migration ser resolvida como `rolled-back` e reaplicada corrigida.
 --
 -- ⚠ POR QUE UMA TABELA NOVA E NÃO UMA COLUNA EM `apuracao_snapshots`.
 -- As competências ZERADAS não têm snapshot — foram medidas 190 células empresa×competência com
@@ -45,7 +50,7 @@ CREATE INDEX "relatorios_faturamento_portalClientId_competencia_idx"
 
 ALTER TABLE "relatorios_faturamento"
   ADD CONSTRAINT "relatorios_faturamento_portalClientId_fkey"
-  FOREIGN KEY ("portalClientId") REFERENCES "portal_clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("portalClientId") REFERENCES "PortalClient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Competência fora do formato deixa a linha inalcançável pela rota (que valida YYYY-MM) e
 -- invisível na tela — o banco recusa antes.

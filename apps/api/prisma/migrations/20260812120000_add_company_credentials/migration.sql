@@ -45,7 +45,7 @@ CREATE INDEX "company_credentials_portalClientId_idx" ON "company_credentials"("
 
 ALTER TABLE "company_credentials"
   ADD CONSTRAINT "company_credentials_portalClientId_fkey"
-  FOREIGN KEY ("portalClientId") REFERENCES "portal_clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("portalClientId") REFERENCES "PortalClient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Rótulo vazio deixa a linha impossível de identificar na listagem — e a listagem é a única coisa
 -- que se vê sem revelar nada.
@@ -81,7 +81,7 @@ CREATE INDEX "company_infos_portalClientId_idx" ON "company_infos"("portalClient
 
 ALTER TABLE "company_infos"
   ADD CONSTRAINT "company_infos_portalClientId_fkey"
-  FOREIGN KEY ("portalClientId") REFERENCES "portal_clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("portalClientId") REFERENCES "PortalClient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "company_infos"
   ADD CONSTRAINT "chk_info_rotulo" CHECK (length(btrim("rotulo")) >= 1);
@@ -130,7 +130,7 @@ ALTER TABLE "company_credential_acessos"
 
 ALTER TABLE "company_credential_acessos"
   ADD CONSTRAINT "company_credential_acessos_portalClientId_fkey"
-  FOREIGN KEY ("portalClientId") REFERENCES "portal_clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  FOREIGN KEY ("portalClientId") REFERENCES "PortalClient"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 ALTER TABLE "company_credential_acessos"
   ADD CONSTRAINT "chk_acesso_acao"
