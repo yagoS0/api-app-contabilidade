@@ -143,6 +143,43 @@ export async function listAccessibleLegacyCompanyIds(req) {
   return [...legacyIds];
 }
 
+/**
+ * Traduz "o id de empresa que o cliente mandou" para o id da **Company legada**.
+ *
+ * ⚠ POR QUE ISTO PRECISA EXISTIR. O front trabalha inteiro com **`PortalClient.id`** — é o id que
+ * a aba Notas Fiscais recebe (`selectedCompanyId`) e o que toda rota `/firm/companies/:companyId/*`
+ * espera (elas leem `req.params.companyId` como `portalClientId`). Já a rota de EMISSÃO vive no
+ * mundo legado: `NfseService.issue` faz `prisma.company.findUnique({ where: { id: data.companyId } })`
+ * e lê de lá `cnpj`, `inscricaoMunicipal`, `codigoServicoNacional/Municipal` e `rpsSerie`.
+ *
+ * São duas entidades diferentes, com PKs próprias — o id de uma NUNCA encontra a outra. Por isso a
+ * emissão não podia ter funcionado nenhuma vez: o usuário comum caía em `403 forbidden`
+ * (`listAccessibleLegacyCompanyIds` devolve ids de `Company`) e o admin, que passa direto pela
+ * checagem, seguia até o serviço e voltava `404 company_not_found`.
+ *
+ * ⚠ ESTA FUNÇÃO NÃO AUTORIZA NADA. Ela só resolve o id; quem autoriza continua sendo
+ * `ensureLegacyCompanyAccess`, chamada logo depois com o id **já resolvido** — que é justamente o
+ * que faz a checagem incidir sobre a entidade certa. Inverter a ordem (checar e depois resolver)
+ * autorizaria uma empresa e emitiria por outra.
+ *
+ * A ordem de tentativa é `Company` primeiro: quem já mandava o id legado (a rota sempre aceitou
+ * esse) continua funcionando exatamente igual. `PortalClient.companyId` é `@unique`, então a volta
+ * é 1:1 e não há ambiguidade.
+ *
+ * @returns {Promise<string|null>} id da Company legada, ou `null` quando não há a que resolver.
+ */
+export async function resolveLegacyCompanyId(rawId) {
+  const id = String(rawId || "").trim();
+  if (!id) return null;
+  const company = await prisma.company.findUnique({ where: { id }, select: { id: true } });
+  if (company?.id) return company.id;
+  const portal = await prisma.portalClient.findUnique({
+    where: { id },
+    select: { companyId: true },
+  });
+  return portal?.companyId || null;
+}
+
 export async function ensureLegacyCompanyAccess(req, res, legacyCompanyId) {
   const user = getAuthUser(req);
   if (!user) {

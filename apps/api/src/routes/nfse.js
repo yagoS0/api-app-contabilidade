@@ -2,7 +2,7 @@ import { Router } from "express";
 import { validateNfsePayload } from "../application/validators/nfsePayload.js";
 import { NfseService } from "../application/nfse/NfseService.js";
 import { NfseRepository } from "../infrastructure/db/NfseRepository.js";
-import { ensureLegacyCompanyAccess } from "./middlewares/portalAccess.js";
+import { ensureLegacyCompanyAccess, resolveLegacyCompanyId } from "./middlewares/portalAccess.js";
 
 export function createNfseRouter({ ensureAuthorized, log }) {
   const router = Router();
@@ -50,11 +50,23 @@ export function createNfseRouter({ ensureAuthorized, log }) {
     if (!validation.ok) {
       return res.status(400).json({ error: validation.error });
     }
-    const access = await ensureLegacyCompanyAccess(req, res, validation.data?.companyId);
+    // ⚠ O `companyId` que chega aqui é o **`PortalClient.id`** — é o id que a aba Notas Fiscais
+    // tem em mãos e o que o `EmitirNfseWizard` carrega no payload. Tudo daqui pra baixo (a
+    // checagem de acesso e o `NfseService.issue`) fala em **Company legada**. Sem esta tradução a
+    // rota respondia 403 para o usuário comum e 404 para o admin — nunca emitiu, nunca poderia.
+    // Ver `resolveLegacyCompanyId` para o porquê de resolver ANTES de autorizar.
+    const legacyCompanyId = await resolveLegacyCompanyId(validation.data?.companyId);
+    if (!legacyCompanyId) {
+      return res.status(404).json({ error: "company_not_found" });
+    }
+    const access = await ensureLegacyCompanyAccess(req, res, legacyCompanyId);
     if (!access.ok) return;
 
     try {
-      const result = await NfseService.issue({ data: validation.data, log });
+      const result = await NfseService.issue({
+        data: { ...validation.data, companyId: legacyCompanyId },
+        log,
+      });
       if (result.status === "rejected") {
         return res.status(422).json({
           error: "nfse_rejected",
@@ -281,6 +293,13 @@ export function createNfseRouter({ ensureAuthorized, log }) {
       }
       if (err.code === "NFSE_CNPJ_AUTOR_REQUIRED") {
         return res.status(400).json({ error: "cnpj_autor_required" });
+      }
+      // e105102: `chSubstituta` e `cMotivo` são 1-1 no ANEXO_II v1.01 (ver `buildEventoXml`).
+      if (err.code === "NFSE_CHAVE_SUBSTITUTA_REQUIRED") {
+        return res.status(400).json({ error: "chave_substituta_required" });
+      }
+      if (err.code === "NFSE_CMOTIVO_REQUIRED") {
+        return res.status(400).json({ error: "c_motivo_required" });
       }
       if (err.code === "NFSE_EVENT_FAILED") {
         return res.status(422).json({ error: "nfse_event_failed", providerData: err.providerData });

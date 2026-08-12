@@ -123,17 +123,39 @@ export function EmitirNfseWizard({ companyId, onEmitir, onClose, onEmitida }) {
   if (resultado) {
     const st = String(resultado?.status || resultado?.nfse?.status || "").toLowerCase();
     const autorizada = st.includes("issued") || st.includes("autoriz");
+    // ⚠ A MENSAGEM DO SERVIDOR NÃO PODE SER DESCARTADA.
+    // `pending` chega por dois motivos completamente diferentes, e a tela dizia a mesma frase para
+    // os dois: (a) a nota saiu e a prefeitura ainda não respondeu; (b) NADA saiu — o backend
+    // devolve `pending` com "certificado/endpoint NFSe não configurado" quando `integrationReady()`
+    // é falso (medido: nenhuma variável `NFSE_*` existe em produção, então hoje é SEMPRE o caso b).
+    // Traduzir (b) como "aguardando o retorno da prefeitura" manda o contador esperar por uma
+    // resposta que ninguém vai dar. Quando o servidor diz por quê, é o servidor que fala.
+    const recado = String(resultado?.message || "").trim();
     return (
       <div style={overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
         <div style={caixa}>
-          <h3 style={{ margin: "0 0 10px" }}>{autorizada ? "✓ Nota autorizada" : "Nota enviada"}</h3>
-          <p style={{ fontSize: "0.85rem", color: PANEL.muted, margin: "0 0 12px" }}>
-            {autorizada
-              ? "A prefeitura autorizou a nota."
-              /* "pending" NÃO é sucesso nem erro, e dizer "emitida" aqui seria afirmar o que ainda
-                 não aconteceu — a nota volta para a lista e o status se resolve na consulta. */
-              : "A nota foi registrada e está aguardando o retorno da prefeitura. O status aparece na lista assim que houver resposta."}
-          </p>
+          <h3 style={{ margin: "0 0 10px" }}>{autorizada ? "✓ Nota autorizada" : "Nota registrada"}</h3>
+          {autorizada ? (
+            <p style={{ fontSize: "0.85rem", color: PANEL.muted, margin: "0 0 12px" }}>
+              A prefeitura autorizou a nota.
+            </p>
+          ) : recado ? (
+            <div style={{
+              margin: "0 0 12px", padding: 10, borderRadius: 6, fontSize: "0.82rem",
+              background: "rgba(255,184,108,0.14)", border: "1px solid var(--state-warn, #FFB86C)",
+              color: "var(--state-warn, #FFB86C)",
+            }}>
+              <strong style={{ display: "block", marginBottom: 4 }}>A nota ainda NÃO foi emitida.</strong>
+              {recado}
+            </div>
+          ) : (
+            /* "pending" NÃO é sucesso nem erro, e dizer "emitida" aqui seria afirmar o que ainda
+               não aconteceu — a nota volta para a lista e o status se resolve na consulta. */
+            <p style={{ fontSize: "0.85rem", color: PANEL.muted, margin: "0 0 12px" }}>
+              A nota foi registrada e está aguardando o retorno da prefeitura. O status aparece na
+              lista assim que houver resposta.
+            </p>
+          )}
           <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: "0.82rem", margin: 0 }}>
             <dt style={{ color: PANEL.muted }}>Tomador</dt><dd style={{ margin: 0 }}>{String(tomador.nome).trim()}</dd>
             <dt style={{ color: PANEL.muted }}>Valor</dt><dd style={{ margin: 0 }}>{fmtBRL(valor)}</dd>

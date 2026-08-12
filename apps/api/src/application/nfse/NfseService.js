@@ -207,6 +207,34 @@ function normalizeDigits(value) {
   return String(value || "").replace(/\D+/g, "");
 }
 
+// ⚠ O BLOCO `e105102` SEGUE O LEIAUTE OFICIAL, CAMPO POR CAMPO.
+//
+// Fonte aberta e conferida em 12/08/2026 (o XSD NÃO está versionado neste repositório — não há
+// um único `.xsd` na árvore; `docs/leiaute-nfse/` só tem a amostra de DPS com `<subst>`):
+//
+//   ANEXO_II-SEFIN_ADN-PEDREGEVT_EVT-SNNFSe v1.01, baixado do portal oficial em
+//   gov.br/nfse → Documentação Técnica → Documentação Atual, arquivo
+//   `anexo_ii-sefin_adn-pedregevt_evt-snnfse-v1-01-20260122.xlsx`
+//
+// As quatro linhas que este bloco tem de obedecer (planilha "Leiaute", linhas 26–29):
+//
+//   evento/pedRegEvento/infPedReg/e105102/xDesc ......... C 1-1  5-60   "Descrição do evento:
+//                                                                        Cancelamento de NFS-e
+//                                                                        por Substituição"
+//   evento/pedRegEvento/infPedReg/e105102/cMotivo ....... N 1-1  2      código de justificativa
+//   evento/pedRegEvento/infPedReg/e105102/xMotivo ....... C 0-1  15-255 descrição do motivo
+//   evento/pedRegEvento/infPedReg/e105102/chSubstituta .. N 1-1  50     "Chave de Acesso da
+//                                                                        NFS-e substituta."
+//
+// ⚠ ERA `<chNFSeSubst>`, QUE NÃO EXISTE. A busca por `chNFSeSubst` no arquivo oficial devolve
+// ZERO ocorrências — o nome do padrão é `chSubstituta`, e é ele que aparece nos 6 eventos
+// e105102 reais que capturamos do ADN (ver `AdnXmlMetadata.parseNfseEvento`, que já lia o nome
+// certo: nós ESCREVÍAMOS um nome e LÍAMOS outro).
+//
+// ⚠ `<nNFSeSubst>` (o antigo fallback "se não tenho a chave, mando o número") TAMBÉM NÃO EXISTE
+// no leiaute — era campo inventado, e `chSubstituta` é obrigatório (ocorrência 1-1). Sem a chave
+// da substituta não há evento válido a montar, então a recusa acontece ANTES, em `sendEvent`.
+// Montar XML com campo inventado só troca uma rejeição clara por uma rejeição confusa do ADN.
 function buildEventoXml({
   tipoEvento,
   justificativa,
@@ -214,32 +242,28 @@ function buildEventoXml({
   chaveAcesso,
   cMotivo,
   chaveSubstituta,
-  numeroSubstituta,
 }) {
   const tpAmb = NFSE_ENV === "homolog" ? "2" : "1";
   const chaveDigits = normalizeDigits(chaveAcesso).slice(-50).padStart(50, "0");
   const tipoEventoNum = normalizeDigits(tipoEvento).padStart(6, "0").slice(-6);
   const eventoId = `PRE${chaveDigits}${tipoEventoNum}`;
   const dhEvento = formatDateTimeWithOffset(new Date());
-  const motivoCodigo = cMotivo || "1";
   const motivoTexto = justificativa || "Cancelamento de NFS-e";
   const eventoXml =
-    String(tipoEvento).toLowerCase() ===  "e105102"
-      ? `<e105102>
-      <xDesc>Cancelamento por substituicao</xDesc>
-      <cMotivo>${escapeXml(motivoCodigo)}</cMotivo>
+    String(tipoEvento).toLowerCase() === "e105102"
+      ? // ⚠ `cMotivo` do e105102 tem TAMANHO 2 (01, 02, 03, 04, 05, 99), diferente do e101101,
+        // que tem tamanho 1. O padStart não escolhe motivo nenhum — só formata o que o chamador
+        // mandou; quem não manda cMotivo é recusado em `sendEvent`, porque o código é uma
+        // justificativa FISCAL e não se arbitra uma (regra 1).
+        `<e105102>
+      <xDesc>Cancelamento de NFS-e por Substituição</xDesc>
+      <cMotivo>${escapeXml(normalizeDigits(cMotivo).padStart(2, "0").slice(-2))}</cMotivo>
       <xMotivo>${escapeXml(motivoTexto)}</xMotivo>
-      ${
-        chaveSubstituta
-          ? `<chNFSeSubst>${escapeXml(normalizeDigits(chaveSubstituta))}</chNFSeSubst>`
-          : numeroSubstituta
-            ? `<nNFSeSubst>${escapeXml(numeroSubstituta)}</nNFSeSubst>`
-            : ""
-      }
+      <chSubstituta>${escapeXml(normalizeDigits(chaveSubstituta).slice(-50).padStart(50, "0"))}</chSubstituta>
     </e105102>`
       : `<e101101>
       <xDesc>Cancelamento de NFS-e</xDesc>
-      <cMotivo>${escapeXml(motivoCodigo)}</cMotivo>
+      <cMotivo>${escapeXml(cMotivo || "1")}</cMotivo>
       <xMotivo>${escapeXml(motivoTexto)}</xMotivo>
     </e101101>`;
 
@@ -809,6 +833,22 @@ export class NfseService {
       err.code = "NFSE_JUSTIFICATIVA_REQUIRED";
       throw err;
     }
+    // ⚠ Os dois campos abaixo são OBRIGATÓRIOS (1-1) no e105102 pelo ANEXO_II v1.01 — ver o
+    // comentário de `buildEventoXml`. Recusar aqui é o que substituiu o fallback inventado
+    // `<nNFSeSubst>`: sem a chave da substituta não existe evento de substituição, e o código do
+    // motivo é justificativa fiscal de lista fechada (01…05, 99) que ninguém pode arbitrar.
+    if (String(tipoEvento).toLowerCase() === "e105102") {
+      if (normalizeDigits(chaveSubstituta).length !== 50) {
+        const err = new Error("chave_substituta_required");
+        err.code = "NFSE_CHAVE_SUBSTITUTA_REQUIRED";
+        throw err;
+      }
+      if (!normalizeDigits(cMotivo)) {
+        const err = new Error("c_motivo_required");
+        err.code = "NFSE_CMOTIVO_REQUIRED";
+        throw err;
+      }
+    }
 
     const client = buildAxiosClient();
     let autor = cnpjAutor;
@@ -845,7 +885,6 @@ export class NfseService {
         chaveAcesso,
         cMotivo,
         chaveSubstituta,
-        numeroSubstituta,
       });
       const signedEventoXml = signEventoXml(eventoXml);
       const eventFormat = NFSE_EVENT_FORMAT === "gzipB64" ? "gzipB64" : "xml";
