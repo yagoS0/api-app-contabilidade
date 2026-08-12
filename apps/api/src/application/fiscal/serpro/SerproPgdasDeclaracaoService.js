@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { prisma } from "../../../infrastructure/db/prisma.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
-import { generateEntriesFromCircular } from "../../accounting/AccountingEntryGeneratorService.js";
+import { generateEntriesFromCircular, FONTE_VALOR_EXTRATO } from "../../accounting/AccountingEntryGeneratorService.js";
 // As duas travas de "sem faturamento" vivem no service, não na rota — é o que impede este caminho
 // automático de afirmar algo que o caminho manual recusaria.
 import { marcarSemFaturamento } from "../../accounting/semFaturamento.js";
@@ -705,10 +705,16 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
         })
       : updated;
 
+    // ⚠ `fonteValor: EXTRATO` — o `dasTotal` acima saiu do PDF da DECLARAÇÃO (imposto APURADO),
+    // não do documento de arrecadação. Numa RETIFICADORA é este caminho que traz o imposto novo, e
+    // ele é a verdade declarada à Receita: as linhas do lançamento têm de acompanhar. Sem isto a
+    // guarda de recálculo do `AccountingEntryGeneratorService` congelava o imposto no valor
+    // anterior enquanto a receita — que não passa pela guarda — era atualizada.
     const accounting = await generateEntriesFromCircular({
       portalClientId: company.id,
       competencia: competenciaStorage,
       now: new Date(),
+      fonteValor: FONTE_VALOR_EXTRATO,
     });
 
     // ─── DECLARAÇÃO ZERADA MARCA O MÊS ────────────────────────────────────────────────────────

@@ -173,9 +173,33 @@ function statusPelasBaixas(baixas, principalNovo) {
   return abat + 0.01 >= Number(principalNovo || 0) ? "PAGO" : "PARCIAL";
 }
 
-function sumEntryLines(lines) {
-  return (lines || []).reduce((total, line) => total + Number(line?.valor || 0), 0);
+// ⚠ O VALOR DE UM LANÇAMENTO É A SOMA DAS LINHAS DE **DÉBITO**, NUNCA A DE TODAS.
+//
+// Este gerador escreve sempre um par balanceado (D=valor, C=valor). Somar as duas pernas devolvia
+// **o dobro** do valor — e esse número alimentava as duas comparações do arquivo:
+//   • `findChangedValue`  → `2×valor ≠ valor` é verdade SEMPRE, então `noop` era inalcançável e
+//     toda sincronia reescrevia as linhas;
+//   • `amountChanged` (o gatilho da guarda do DAS) → também SEMPRE verdadeiro, então a guarda de
+//     recálculo disparava a CADA reconsulta, mesmo com o valor idêntico.
+// A prova está gravada em produção: `recalculatedFromValor` é **exatamente 2×** a soma dos débitos
+// do lançamento em 55 de 89 provisões de DAS (ex.: ATIM 2026-02, `3.063,86 = 2 × 1.531,93`).
+// Mesma leitura de `statusPelasBaixas`, logo acima: quem responde "quanto vale" é o débito.
+function valorDoLancamento(lines) {
+  return (lines || [])
+    .filter((line) => String(line?.tipo || "").toUpperCase() === "D")
+    .reduce((total, line) => total + Number(line?.valor || 0), 0);
 }
+
+// De onde veio o número que está na circular — e é isso que decide se ele é a VERDADE do imposto
+// ou um total que já pode carregar juros/multa.
+//
+//  • `EXTRATO` — `syncPgdasByCompetencia`: `dasTotal` sai do PDF da DECLARAÇÃO transmitida à
+//    Receita (imposto APURADO). Retificadora entra por aqui, e o valor novo é a verdade declarada.
+//  • `GUIA`    — `capturePgdasGuideForCompany`: `dasTotal` sai do documento de arrecadação, que
+//    **depois do vencimento vem recalculado com juros e multa**. Aí o valor novo NÃO é o imposto
+//    do mês, e a provisão tem de continuar valendo o principal.
+export const FONTE_VALOR_EXTRATO = "EXTRATO";
+export const FONTE_VALOR_GUIA = "GUIA";
 
 // Frente B: amountSource → chave do tributo em `circular.acrescimos`.
 const AMOUNT_SOURCE_TO_TRIBUTO = Object.freeze({
@@ -292,11 +316,11 @@ function findChangedValue(existingEntry, nextEntry) {
     String(existingEntry.circularId || "") !== String(nextEntry.circularId || "") ||
     String(existingEntry.ruleId || "") !== String(nextEntry.ruleId || "") ||
     String(existingEntry.eventType || "") !== String(nextEntry.eventType || "") ||
-    Math.abs(Number(sumEntryLines(existingEntry.lines || [])) - Number(nextEntry.amount || 0)) > 0.01
+    Math.abs(Number(valorDoLancamento(existingEntry.lines || [])) - Number(nextEntry.amount || 0)) > 0.01
   );
 }
 
-async function upsertGeneratedEntry(tx, { edicaoManual = false, existingEntry, portalClientId, circular, rule, event, company, now }) {
+async function upsertGeneratedEntry(tx, { edicaoManual = false, fonteValor = FONTE_VALOR_GUIA, existingEntry, portalClientId, circular, rule, event, company, now }) {
   const context = {
     competencia: circular.competencia,
     competenciaLabel: formatCompetenciaLabel(circular.competencia),
@@ -360,13 +384,25 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, existingEntry, p
     }
 
     // DAS_SIMPLES: ao recalcular, manter valor/lines/data/historico originais e apenas marcar como recalculada
-    const previousAmount = sumEntryLines(existingEntry.lines || []);
+    const previousAmount = valorDoLancamento(existingEntry.lines || []);
     const amountChanged = Math.abs(Number(previousAmount) - Number(event.amount || 0)) > 0.01;
     // Recálculo AUTOMÁTICO do SERPRO (juros/multa após vencimento): preserva o lançamento
     // original e só sinaliza. Correção MANUAL do contador NÃO entra aqui — se ele alterou o
     // valor é porque o anterior estava errado, então as linhas têm que acompanhar (senão a
     // baixa do valor certo deixa a diferença em aberto como PARCIAL).
-    if (event.eventType === "DAS_SIMPLES" && amountChanged && !edicaoManual) {
+    //
+    // ⚠ E a DECLARAÇÃO também não entra. A guarda existe para o documento de arrecadação
+    // recalculado depois do vencimento — não para a RETIFICADORA, em que o extrato traz o imposto
+    // NOVO porque a declaração mudou. Sem distinguir a fonte, ela tratava a verdade declarada à
+    // Receita como se fosse acréscimo a ignorar: a receita entrava (ramo genérico, abaixo) e o
+    // imposto ficava congelado no valor anterior — com o número novo gravado em
+    // `recalculatedToValor`, isto é, LIDO e descartado. Medido em produção (12/08/2026,
+    // `scripts/diag-retificadora-imposto.mjs`).
+    //
+    // A distinção NÃO é "o valor subiu": juros e retificadora são indistinguíveis pelo número.
+    // Quem sabe é a FONTE do dado — extrato (declaração) × guia (documento com acréscimo).
+    const fonteEhDeclaracao = String(fonteValor || "").toUpperCase() === FONTE_VALOR_EXTRATO;
+    if (event.eventType === "DAS_SIMPLES" && amountChanged && !edicaoManual && !fonteEhDeclaracao) {
       const updated = await tx.accountingEntry.update({
         where: { id: existingEntry.id },
         data: {
@@ -459,7 +495,13 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, existingEntry, p
 
 // `edicaoManual`: o contador CORRIGIU o valor na Circular (o novo valor é a verdade). Sem isso, o
 // DAS cai na regra de recálculo automático, que preserva as linhas antigas de propósito.
-export async function generateEntriesFromCircular({ portalClientId, competencia, now = new Date(), edicaoManual = false }) {
+//
+// `fonteValor`: de onde veio o número da circular — `EXTRATO` (declaração transmitida, inclusive
+// RETIFICADORA) ou `GUIA` (documento de arrecadação, que pode vir recalculado com juros).
+// ⚠ O DEFAULT é `GUIA`, o conservador: quem não declara a fonte mantém a guarda ligada. Trocar o
+// default faria toda chamada nova nascer sobrescrevendo a provisão, que é justamente o estrago
+// que a guarda existe para impedir.
+export async function generateEntriesFromCircular({ portalClientId, competencia, now = new Date(), edicaoManual = false, fonteValor = FONTE_VALOR_GUIA }) {
   const normalizedPortalClientId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
   if (!normalizedPortalClientId) {
@@ -536,6 +578,7 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
       // eslint-disable-next-line no-await-in-loop
       const outcome = await upsertGeneratedEntry(tx, {
         edicaoManual,
+        fonteValor,
         existingEntry,
         portalClientId: normalizedPortalClientId,
         circular,

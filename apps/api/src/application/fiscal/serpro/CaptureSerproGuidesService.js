@@ -4,7 +4,7 @@ import {
   hashPdf,
   toGuideResponse,
 } from "../../guides/GuideService.js";
-import { generateEntriesFromCircular } from "../../accounting/AccountingEntryGeneratorService.js";
+import { generateEntriesFromCircular, FONTE_VALOR_GUIA } from "../../accounting/AccountingEntryGeneratorService.js";
 import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 import { normalizeCompetencia, WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
@@ -551,10 +551,16 @@ export async function capturePgdasGuideForCompany({
 
   let accounting = null;
   try {
+    // ⚠ `fonteValor: GUIA` — aqui o `dasTotal` vem do DOCUMENTO DE ARRECADAÇÃO, que depois do
+    // vencimento chega recalculado com juros e multa. É exatamente o caso que a guarda de
+    // recálculo do `AccountingEntryGeneratorService` existe para proteger: a provisão continua
+    // valendo o principal, e o valor novo fica só sinalizado no lançamento e na circular.
+    // (É o default do serviço; explícito porque é aqui que a guarda PRECISA morder.)
     accounting = await generateEntriesFromCircular({
       portalClientId: portalClient.id,
       competencia: normalizedCompetencia,
       now,
+      fonteValor: FONTE_VALOR_GUIA,
     });
   } catch (err) {
     accounting = {
