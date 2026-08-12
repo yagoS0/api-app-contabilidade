@@ -462,6 +462,20 @@ export function montarPayloadIngestao(dados) {
       valorJuros: somaPorPapel("JUROS") || null,
       valorTotal: credito || null,
       dataAdesao: dados?.dataAdesao || null,
+      // ⚠ O VALOR DA PARCELA PASSOU A SUBIR — ele era VALIDADO no passo 2 (`validarPasso2` recusa
+      // avançar sem ele, "maior que zero") e DESCARTADO na montagem do payload. O contador digitava
+      // um campo obrigatório que nunca chegava ao servidor.
+      //
+      // A consequência não era cosmética: sem guia e sem composição por tributo,
+      // `buildDTOsFromManual` derivava o valor da parcela da SOMA DOS TRIBUTOS — zero. Daí saíam
+      // `valorParcelaReferencia = 0` e `principalPerParcela = 0` no cabeçalho, e `parcelaSync`
+      // materializava as N prestações com `valorPrevisto = 0`: a SINTROPIA nº 1 de produção tem
+      // exatamente essa forma, com `principalPago` preso em zero para sempre e a fila de baixa
+      // recusando todas as prestações com `sem_valor_previsto`.
+      //
+      // ⚠ ELE É O VALOR CHEIO DA PRESTAÇÃO, não o principal — o principal do contrato continua
+      // saindo do papel `PRINCIPAL` das linhas da provisão (`valorPrincipal`, acima).
+      valorParcela: numero(dados?.valorParcela) || null,
       // ⚠ A COMPETÊNCIA DA 1ª PARCELA, não a da atual — ver o cabeçalho deste arquivo.
       anoMesParcela: String(dados?.competenciaPrimeiraParcela || "").replace("-", "") || null,
       descricao: String(dados?.descricao || "").trim() || null,

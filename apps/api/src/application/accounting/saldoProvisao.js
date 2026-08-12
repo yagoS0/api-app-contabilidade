@@ -29,6 +29,46 @@ export function principalAbatidoDaBaixa(baixa) {
 }
 
 /**
+ * O SALDO DO PASSIVO DE UM PARCELAMENTO — a leitura do RAZÃO, não do cabeçalho do contrato.
+ *
+ * ⚠ ELE RESPONDE UMA PERGUNTA DIFERENTE DE `saldoContratual`, e é por isso que existe com nome
+ * próprio. "Quanto falta pagar do acordo" sai do CONTRATO (principal total ÷ prestações); "quanto
+ * ainda resta em Parcelamento a Pagar" sai dos LANÇAMENTOS. Enquanto os dois moravam num nome só
+ * (`saldoRestante`), a tela dava a resposta de um deles para as duas perguntas — e nenhuma das duas
+ * estava certa, porque a base era `principalPerParcela`, que guarda coisas diferentes conforme quem
+ * escreveu (o V1 grava o principal por prestação; o V2 grava o valor CHEIO).
+ *
+ * A conta é o SALDO CREDOR do papel `PARC` dentro dos lançamentos do contrato, e cada sinal já vem
+ * do próprio lançamento — nenhum caso especial por tipo:
+ *
+ *   · provisão da adesão   `C PARC`  → reconhece o passivo            (+)
+ *   · baixa da prestação   `D PARC`  → amortiza                       (−)
+ *   · espelho do estorno   `C PARC`  → devolve o que a baixa amortizou (+)
+ *   · rescisão (estorno da provisão) `D PARC` → baixa o que sobrou    (−)
+ *
+ * ⚠ SEM NENHUMA LINHA `PARC`, A RESPOSTA É `null` — NUNCA ZERO. Contrato do V1 (`createParcelamento`)
+ * grava a abertura sem `tipoLinha` em lugar nenhum: dele não se sabe qual perna é o passivo, e zero
+ * afirmaria um acordo quitado. É o mesmo padrão de `conferenciaDoPassivoPorContrato`
+ * (`principalProvisionado: null` sem provisão) e de `analitica: null` no plano de contas.
+ *
+ * @param {Array<{tipo: string, valor: any}>} linhas linhas com `tipoLinha === "PARC"` do contrato
+ * @returns {number|null}
+ */
+export function saldoPassivoDasLinhasParc(linhas) {
+  const lista = Array.isArray(linhas) ? linhas : [];
+  if (!lista.length) return null;
+  const saldo = lista.reduce((s, l) => {
+    const v = Number(l?.valor || 0);
+    return String(l?.tipo).toUpperCase() === "C" ? s + v : s - v;
+  }, 0);
+  // ⚠ NÃO SE CORTA EM ZERO. Passivo negativo é o sintoma de que a baixa amortizou mais do que a
+  // provisão reconheceu (é exatamente o resíduo invertido que `diag-residuo-provisao-consolidada`
+  // mede), e escondê-lo atrás de um `Math.max(0, …)` apagaria da tela o número que denuncia o
+  // desalinhamento entre adesão e baixa.
+  return r2(saldo);
+}
+
+/**
  * @param {object} entry provisão com `lines` e `baixas: { lines }`
  * @returns {{principal:number, abatido:number, saldo:number, quotasPagas:number}}
  */

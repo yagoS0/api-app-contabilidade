@@ -96,6 +96,27 @@ describe("aceite literal — migrado 23ª de 60, débito automático, sem PDF", 
     // o saldo declarado continua viajando, mas como informativo
     expect(body.header.saldoConsolidado).toBe(99999);
   });
+
+  // ⚠ O CAMPO QUE ERA VALIDADO E DESCARTADO. `validarPasso2` recusa avançar sem `valorParcela`
+  // ("maior que zero") e o payload não o levava: sem guia e sem composição por tributo,
+  // `buildDTOsFromManual` derivava o valor da parcela da SOMA DOS TRIBUTOS — zero. Daí saíam
+  // `valorParcelaReferencia = 0`, `principalPerParcela = 0` e N prestações com `valorPrevisto = 0`,
+  // que é a forma da SINTROPIA nº 1 em produção: contrato inteiro não baixável.
+  it("⚠ `valorParcela` SOBE no payload — ele é o valor CHEIO de UMA prestação", () => {
+    const body = montarPayloadIngestao(dados);
+    expect(body.header.valorParcela).toBe(1200);
+    // E ele NÃO é o consolidado do acordo, que continua saindo das linhas da provisão.
+    expect(body.header.valorTotal).toBe(45600);
+  });
+
+  it("valor da parcela em branco vira `null`, não zero", () => {
+    const body = montarPayloadIngestao(migrado({ valorParcela: "" }));
+    expect(body.header.valorParcela).toBeNull();
+  });
+
+  it("lê o valor da parcela pela gramática pt-BR estrita, como o resto do módulo", () => {
+    expect(montarPayloadIngestao(migrado({ valorParcela: "1.234,56" })).header.valorParcela).toBe(1234.56);
+  });
 });
 
 describe("passo 1 — identificação", () => {

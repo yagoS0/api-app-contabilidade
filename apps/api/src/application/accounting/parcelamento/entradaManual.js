@@ -19,7 +19,9 @@ function toAnoMes(competencia) {
  * @param {Object} input.guide  — Guide (usa competencia/vencimento + extracted.composicao como default)
  * @param {Object} input.header — { tipo, numeroParcelamento, quantidadeParcelas, numeroParcela,
  *                                   valorPrincipal, valorMulta, valorJuros, valorTotal, dataAdesao, anoMesParcela?, vencimento?,
- *                                   formaPagamento?, diaPagamento?, saldoConsolidado? }
+ *                                   formaPagamento?, diaPagamento?, saldoConsolidado?, valorParcela? }
+ *                                 ⚠ `valorTotal` é o CONSOLIDADO do acordo; `valorParcela` é o valor
+ *                                 CHEIO de UMA prestação. Os dois já foram confundidos aqui.
  * @param {Array}  [input.tributos] — composição informada manualmente; se ausente, usa guide.extracted.composicao
  *
  * ⚠ `guide` É OPCIONAL, E ISSO É O CORAÇÃO DO "PARCELAMENTO-FIRST". Todo acesso a ele aqui é por
@@ -56,8 +58,18 @@ export function buildDTOsFromManual({ guide, header = {}, tributos }) {
     // valorTotal da PARCELA = soma da composição (derivado em normalizeParcelaDTO quando ausente).
     // NÃO usar header.valorTotal — esse é o CONSOLIDADO do parcelamento (vai só no parcelamentoDTO);
     // confundir os dois fazia Σ tributos != valorTotal e estourava COMPOSICAO_INVALIDA. Sem composição,
-    // cai no valor da própria guia.
-    valorTotal: trib.length ? undefined : guide?.valor,
+    // cai no valor da própria guia e, sem guia, no `valorParcela` DECLARADO pelo contador.
+    //
+    // ⚠ A ORDEM É PROVA → DECLARAÇÃO, e ela não é arbitrária: a composição por tributo e a guia são
+    // documentos; `header.valorParcela` é o que o contador digitou. Deixá-lo vencer o documento
+    // criaria a segunda fonte que este módulo evita em todo lugar (é a mesma razão de
+    // `corrigirValorPrevistoParcela` recusar prestação COM guia).
+    //
+    // ⚠ SEM ELE, O CONTRATO DO WIZARD NASCIA VALENDO ZERO. `ingestParcelamentoFromGuide` grava
+    // `valorParcelaReferencia = round2(parc.valorTotal)`, e `parcelaSync` copia isso para o
+    // `valorPrevisto` de cada prestação: contrato inteiro não baixável (`sem_valor_previsto`), com
+    // `principalPago` em zero para sempre. É a forma da SINTROPIA nº 1 em produção.
+    valorTotal: trib.length ? undefined : (guide?.valor ?? header.valorParcela ?? undefined),
     tributos: trib,
   });
 

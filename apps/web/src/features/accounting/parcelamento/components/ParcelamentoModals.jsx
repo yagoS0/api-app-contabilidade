@@ -20,6 +20,7 @@ import {
   textoDoProgresso, alertaDeAtraso, proximaPrestacao, restantes as restantesDoContrato,
   rotuloFormaPagamento, tomDoStatus,
 } from "../lib/cartaoParcelamento";
+import { baseDaRescisao, valorPorPapelDaRescisao } from "../lib/rescisaoParcelamento";
 
 // Fechamento dos modais deste arquivo: ESC fecha, clicar fora NÃO.
 // Clique no backdrop fechava e fazia perder o preenchimento inteiro sem confirmação —
@@ -229,17 +230,18 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
   const [confirmando, setConfirmando] = useState(null); // 2ª etapa da confirmação
   const num = (v) => { const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : 0; };
 
+  // ⚠ A REGRA (E A RECUSA) MORAM NA LIB, com teste próprio. O que o `|| 0` de antes fazia era
+  // transformar "não sei quanto falta" em "não falta nada" — R$ 0,00 pré-preenchido num lançamento
+  // que manda o saldo para a Dívida Ativa da União.
+  const rescisao = useMemo(() => baseDaRescisao(parc), [parc]);
+
   useEffect(() => {
     let cancel = false;
     (async () => {
-      const pagas = Number(parc?.parcelasPagas) || 0;
-      const n = Number(parc?.numParcelas) || 0;
-      const abertas = Math.max(0, n - pagas);
-      const principalRem = Number.isFinite(Number(parc?.saldoRestante)) ? Number(parc.saldoRestante) : 0;
-      const jurosTotal = Number(parc?.jurosTotal) || 0;
-      const jurosRem = n ? Math.round(jurosTotal * (abertas / n) * 100) / 100 : 0;
-      const totalRem = Math.round((principalRem + jurosRem) * 100) / 100;
-      const valorPorPapel = { PARC: totalRem, PRINCIPAL: principalRem, JUROS: jurosRem, MULTA: 0 };
+      const valorPorPapel = valorPorPapelDaRescisao(rescisao);
+      // ⚠ VALOR AUSENTE VIRA CAMPO VAZIO, NUNCA "0". É o mesmo `?? ""` que o `FechamentoModal` usa
+      // pelo mesmo motivo: com `|| 0` o input renderiza um zero fabricado e a recusa fica invisível.
+      const texto = (papel) => (valorPorPapel[papel] != null ? String(valorPorPapel[papel]) : "");
 
       let cfg = null;
       try { const p = await getConfig(parc.id); cfg = Array.isArray(p?.configProvisao) ? p.configProvisao : null; } catch { /* sem config */ }
@@ -251,12 +253,12 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
           label: ROLE_LABEL[l.tipoLinha] || l.tipoLinha,
           tipo: l.tipo === "C" ? "D" : "C",
           conta: l.conta || "",
-          valor: valorPorPapel[l.tipoLinha] != null ? String(valorPorPapel[l.tipoLinha]) : "",
+          valor: texto(l.tipoLinha),
         }))
         : [
-          { tipoLinha: "PARC", label: ROLE_LABEL.PARC, tipo: "D", conta: "", valor: String(totalRem) },
-          { tipoLinha: "PRINCIPAL", label: ROLE_LABEL.PRINCIPAL, tipo: "C", conta: "", valor: String(principalRem) },
-          { tipoLinha: "JUROS", label: ROLE_LABEL.JUROS, tipo: "C", conta: "", valor: String(jurosRem) },
+          { tipoLinha: "PARC", label: ROLE_LABEL.PARC, tipo: "D", conta: "", valor: texto("PARC") },
+          { tipoLinha: "PRINCIPAL", label: ROLE_LABEL.PRINCIPAL, tipo: "C", conta: "", valor: texto("PRINCIPAL") },
+          { tipoLinha: "JUROS", label: ROLE_LABEL.JUROS, tipo: "C", conta: "", valor: texto("JUROS") },
         ];
       setLines(base);
       setLoading(false);
@@ -275,6 +277,11 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
   // desbalanceado trava o FECHAMENTO do mês (`computeFechamentoBlockers` soma o grupo do
   // `parcelamentoId`), semanas depois, longe deste modal. Tolerância de 1 centavo, a mesma do gate.
   const desbalanceado = Math.abs(somaD - somaC) >= 0.01;
+  // ⚠ RESCISÃO DE R$ 0,00 NÃO É RESCISÃO — e ela era ALCANÇÁVEL: com as contas vindo da
+  // `configProvisao` e os valores em branco, `clean` tinha três linhas, Σ D = Σ C = 0, o gate de
+  // balanço achava tudo certo e o lote ia para o razão zerado. O zero pré-preenchido tornava esse
+  // caminho o DEFAULT nos contratos sem `principalTotal`.
+  const semValor = somaD < 0.01;
 
   async function submit() {
     setErro("");
@@ -282,6 +289,13 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
       .filter((l) => String(l.conta).trim() || num(l.valor))
       .map((l) => ({ tipoLinha: l.tipoLinha || (l.tipo === "C" ? "PRINCIPAL" : "PARC"), tipo: l.tipo, conta: String(l.conta).trim(), valor: num(l.valor) }));
     if (!clean.length) { setErro("Preencha ao menos uma linha da rescisão."); return; }
+    if (semValor) {
+      setErro(
+        "A rescisão está sem valor. O sistema não preenche esse número por você quando não o sabe — "
+        + "informe quanto ainda resta do parcelamento, conferindo o contrato.",
+      );
+      return;
+    }
     if (desbalanceado) {
       setErro(`Σ Débito (${fmtMoney(somaD)}) ≠ Σ Crédito (${fmtMoney(somaC)}). Um lote desbalanceado trava o fechamento do mês — corrija antes de rescindir.`);
       return;
@@ -314,6 +328,26 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
         </div>
         {loading ? <div style={{ color: PANEL.muted, fontSize: "0.85rem" }}>Carregando…</div> : (
           <>
+            {/* ⚠ A RECUSA APARECE NO LUGAR DO NÚMERO, e é o ponto desta mudança. Antes, contrato sem
+                principal declarado abria com R$ 0,00 nas três linhas — um formulário que PARECE
+                pronto, num ato que manda o saldo para a Dívida Ativa da União. */}
+            {!rescisao.podePrePreencher && (
+              <div
+                data-testid="rescisao-recusa"
+                style={{ fontSize: "0.78rem", color: "var(--state-danger)", background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 6, padding: "8px 10px", lineHeight: 1.5 }}
+              >
+                <strong>Não dá para sugerir os valores desta rescisão.</strong><br />
+                {rescisao.motivo}
+              </div>
+            )}
+            {rescisao.avisoDivergencia && (
+              <div
+                data-testid="rescisao-divergencia"
+                style={{ fontSize: "0.78rem", color: "var(--state-warn)", background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)", borderRadius: 6, padding: "8px 10px", lineHeight: 1.5 }}
+              >
+                {rescisao.avisoDivergencia}
+              </div>
+            )}
             <label style={{ maxWidth: 200 }}><span style={lbl}>Data da rescisão</span>
               <input type="date" value={dataRescisao} onChange={(e) => setDataRescisao(e.target.value)} style={{ ...FIELD_STYLE, colorScheme: "dark" }} />
             </label>
@@ -366,10 +400,12 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button type="button" onClick={onClose} disabled={saving || busy} style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: "0.85rem" }}>Cancelar</button>
               <Button
-                variant="danger" type="button" onClick={submit} disabled={saving || busy || desbalanceado}
+                variant="danger" type="button" onClick={submit} disabled={saving || busy || desbalanceado || semValor}
                 title={desbalanceado
                   ? "Σ Débito ≠ Σ Crédito: um lote de rescisão desbalanceado trava o fechamento do mês."
-                  : "Pede uma confirmação final antes de gravar."}
+                  : (semValor
+                    ? "A rescisão está sem valor — informe quanto ainda resta do parcelamento."
+                    : "Pede uma confirmação final antes de gravar.")}
               >
                 {saving || busy ? "Rescindindo…" : "Rescindir e lançar"}
               </Button>

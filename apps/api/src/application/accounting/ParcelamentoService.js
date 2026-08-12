@@ -20,6 +20,7 @@ import { normalizeCompetencia } from "../guides/guideContract.js";
 import { quadroDasParcelas, SELECT_PARCELA_PARA_QUADRO } from "./parcelamento/recalculoParcelamento.js";
 import { sincronizarParcelas, addMonths, buildDateOfMonth } from "./parcelamento/parcelaSync.js";
 import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
+import { saldoPassivoDasLinhasParc } from "./saldoProvisao.js";
 
 // Q16: contas D/C do parcelamento começam EM BRANCO e são memorizadas por papel de
 // linha (igual às guias do Simples). A memória usa AccountingHistorico keyed por
@@ -525,7 +526,44 @@ function guiaDaParcelaParaTela(guia) {
 // EVIDÊNCIA (guia quitada ou `origemBaixa`), não mais pelo `statusPagamento` da linha leve. Isso não
 // perde nada, porque a única escrita daquele `statusPagamento` era `confirmParcelaPayment` — a rota
 // órfã removida nesta mesma fase. Não havia como marcá-lo, e agora não há mais quem o leia.
-function decorateParcelamento(parc) {
+const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+/**
+ * O PRINCIPAL DE UMA PRESTAÇÃO — derivado do CONTRATO, e `null` quando não se sabe.
+ *
+ * ⚠ ELE NÃO SAI MAIS DE `principalPerParcela`, E ESSA É A CORREÇÃO. A coluna guarda coisas
+ * DIFERENTES conforme quem escreveu, e o nome só bate num dos dois casos:
+ *
+ *   | quem escreve | o quê |
+ *   |---|---|
+ *   | **V1** `createParcelamento` | `Number(principalPerParcela)` recebido da rota — o principal por prestação |
+ *   | **V2** `ingestParcelamentoFromGuide` | `round2(parc.valorTotal)` — o valor **CHEIO** da prestação, marcado no código como "referência (campo legado obrigatório)" |
+ *
+ * Medido em produção (`scripts/diag-provisao-parcelamento.mjs`): **4 de 4** contratos batem com
+ * `valorParcelaReferencia` (o valor cheio) e **nenhum** com `principalTotal / numParcelas`. Ler a
+ * coluna como principal fazia `principalPago` amortizar o passivo pelo valor cheio — na ERISANGELA,
+ * `ppp = 323,83` contra `principalTotal/N = 258,91`, com a baixa real debitando 300,82: três
+ * números para a mesma pergunta, e o da tela discordando do razão.
+ *
+ * ⚠ A COLUNA NÃO É CONVERTIDA NEM RENOMEADA. Ela é `NOT NULL` e o V1 depende dela; o que muda é
+ * quem a lê como principal — ninguém. Aqui o principal vem de `principalTotal / numParcelas`, que é
+ * a única fonte que diz o que promete, e **`null` quando `principalTotal` não é confiável**: sem
+ * ele não se sabe quanto do acordo é principal, e zero afirmaria que nada é.
+ */
+export function principalPorParcelaDoContrato(parc) {
+  const principalTotal = parc?.principalTotal != null ? Number(parc.principalTotal) : null;
+  const n = Number(parc?.numParcelas);
+  if (principalTotal == null || !Number.isFinite(principalTotal) || principalTotal <= 0) return null;
+  if (!Number.isFinite(n) || n < 1) return null;
+  return r2(principalTotal / n);
+}
+
+/**
+ * @param {object} parc a linha de `parcelamentos` com as relações de `listParcelamentos`
+ * @param {object} [ctx]
+ * @param {number|null} [ctx.saldoPassivo] o saldo do papel `PARC` no razão (ver `saldoPassivoDasLinhasParc`)
+ */
+function decorateParcelamento(parc, { saldoPassivo = null } = {}) {
   if (!parc) return parc;
   // F2.1: as prestações do contrato, como linhas próprias. Existem para V1 e V2.
   const parcelas = Array.isArray(parc.parcelasContratadas) ? parc.parcelasContratadas : [];
@@ -553,10 +591,30 @@ function decorateParcelamento(parc) {
   // inclui `HISTORICO`: prestação quitada antes de o contrato entrar no sistema).
   const parcelasPagas = quadro.parcelasPagas;
   const parcelasTotal = quadro.parcelasTotal;
-  const principalPerParcela = Number(parc.principalPerParcela) || 0;
-  const principalPago = parcelasPagas * principalPerParcela;
-  const totalValue = Number(parc.totalValue) || 0;
-  const saldoRestante = Math.max(0, totalValue - principalPago);
+
+  // ⚠ OS DOIS SALDOS PASSARAM A TER NOME PRÓPRIO, e `saldoRestante` SAIU.
+  //
+  // Um nome só respondia mal a duas perguntas diferentes:
+  //
+  //   | pergunta | quem responde | fonte |
+  //   |---|---|---|
+  //   | quanto ainda falta amortizar do PRINCIPAL do acordo? | `saldoContratual` | o CABEÇALHO (`principalTotal`) |
+  //   | quanto ainda resta em "Parcelamento a Pagar"?        | `saldoPassivo`    | o RAZÃO (papel `PARC`) |
+  //
+  // A conta antiga (`max(0, totalValue − parcelasPagas × principalPerParcela)`) misturava as duas:
+  // subtraía um principal de um consolidado, com o principal saindo de uma coluna que, no V2,
+  // guarda o valor CHEIO da prestação. Ela nunca respondeu nenhuma das duas.
+  //
+  // ⚠ `null` ONDE NÃO SE SABE, NUNCA ZERO — o mesmo padrão de `analitica`, de `semFaturamento`, de
+  // `obrigatoriedadeEfd` e de `conferenciaDoPassivoPorContrato`. Um zero aqui vira o valor
+  // pré-preenchido de um lançamento de RESCISÃO, que é o pior lugar possível para um número
+  // fabricado.
+  const principalPorParcela = principalPorParcelaDoContrato(parc);
+  const principalPago = principalPorParcela != null ? r2(parcelasPagas * principalPorParcela) : null;
+  const principalTotal = parc.principalTotal != null ? r2(Number(parc.principalTotal)) : null;
+  const saldoContratual = principalTotal != null && principalPago != null
+    ? Math.max(0, r2(principalTotal - principalPago))
+    : null;
 
   // ⚠ `quitada` inclui `baixada` de propósito: pagamento parcial NÃO quita a prestação, e quem
   // marca parcial não marca PAID. Parcelamento já rescindido não é avaliado — não há mais o que
@@ -571,8 +629,12 @@ function decorateParcelamento(parc) {
     // de inadimplência, e contá-la acenderia alerta vermelho em todo débito automático. O número
     // viaja nomeado para que "0 de 52" não seja lido como "52 em atraso".
     parcelasSemEvidencia: quadro.parcelasSemEvidencia,
+    // ⚠ OS QUATRO VIAJAM NOMEADOS, e três deles podem ser `null`. Quem consumir precisa tratar a
+    // ausência — é ela que impede a tela de inventar um número num ato de consequência.
+    principalPorParcela,
     principalPago,
-    saldoRestante,
+    saldoContratual,
+    saldoPassivo,
     risco: quadro.risco,
   };
 }
@@ -632,5 +694,29 @@ export async function listParcelamentos({ portalClientId, status }) {
     },
     orderBy: { createdAt: "desc" },
   });
-  return rows.map(decorateParcelamento);
+  if (!rows.length) return [];
+
+  // ⚠ UMA QUERY PARA A LISTA INTEIRA, não uma por contrato — a mesma disciplina de
+  // `conferenciaDoPassivoPorContrato` e das pré-queries do dashboard. O saldo do passivo não pode
+  // sair do `include` do cabeçalho: no V2 a provisão são N lançamentos de UMA PERNA e
+  // `aberturaEntryId` aponta só para o primeiro, então `aberturaEntry.lines` traz um pedaço do
+  // passivo e faria a soma nascer errada em silêncio.
+  const linhasPassivo = await prisma.accountingEntryLine.findMany({
+    where: {
+      tipoLinha: "PARC",
+      entry: { parcelamentoId: { in: rows.map((r) => r.id) }, portalClientId },
+    },
+    select: { tipo: true, valor: true, entry: { select: { parcelamentoId: true } } },
+  });
+  const porContrato = new Map();
+  for (const l of linhasPassivo) {
+    const id = l.entry?.parcelamentoId;
+    if (!id) continue;
+    if (!porContrato.has(id)) porContrato.set(id, []);
+    porContrato.get(id).push(l);
+  }
+
+  return rows.map((row) => decorateParcelamento(row, {
+    saldoPassivo: saldoPassivoDasLinhasParc(porContrato.get(row.id) || []),
+  }));
 }

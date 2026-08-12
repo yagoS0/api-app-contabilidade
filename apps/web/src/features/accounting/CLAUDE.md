@@ -124,6 +124,41 @@ foi trocada por leitura direta: o vencimento contratado cai por construção den
 competência, e as duas concordam. O mock espelha o select real de propósito — inclusive nos dois
 campos novos.
 
+### ⚠ O MODAL DE RESCISÃO RECUSA em vez de pré-preencher zero (2026-08-12)
+
+Ele lia `parc.saldoRestante` com um `|| 0`. Num contrato sem `principalTotal` declarado — o que o
+wizard produzia até esta data — as três linhas abriam com **R$ 0,00**: um formulário que parece
+pronto, num ato que manda o saldo remanescente para a **Dívida Ativa da União** e restabelece as
+reduções de multa da adesão. Ninguém digita zero por engano; todo mundo confirma campo já preenchido.
+
+- **A regra vive em `lib/rescisaoParcelamento.js`** (`baseDaRescisao`, `valorPorPapelDaRescisao`;
+  16 testes) e o modal só liga. `saldoRestante` **não existe mais no payload** — no lugar dele há
+  `saldoContratual` (o cabeçalho) e `saldoPassivo` (o razão), um por pergunta.
+- **Sem `saldoContratual`, nada é sugerido:** o modal abre com um bloco vermelho dizendo o motivo **e
+  a saída** (informar à mão, conferindo o contrato; ou corrigir o parcelamento antes de rescindir), e
+  os campos ficam **vazios** — `?? ""`, nunca `|| 0`, o mesmo cuidado do `FechamentoModal`.
+- ⚠ **Rescisão de R$ 0,00 era ALCANÇÁVEL e agora é recusada.** Com as contas vindo da
+  `configProvisao` e os valores zerados, Σ D = Σ C = 0 e o gate de balanço achava tudo certo: o lote
+  ia zerado para o razão. O gate novo é `Σ D < 0,01`.
+- **`saldoPassivo` é CONFERÊNCIA, nunca bloqueio:** divergindo do total a rescindir, sai um aviso
+  âmbar com a diferença **antes** do clique — o número certo é de quem lê o contrato.
+- ⚠ **A forma do lançamento não mudou:** as mesmas três linhas (`D PARC · C PRINCIPAL · C JUROS`),
+  os mesmos papéis, a mesma identidade `PARC = PRINCIPAL + JUROS`. Mudou de onde sai o principal
+  remanescente, e o que acontece quando ele não existe.
+
+### ⚠ O wizard passou a ENVIAR o valor da parcela
+
+`valorParcela` era **validado** no passo 2 (`validarPasso2`: "maior que zero") e **descartado** em
+`montarPayloadIngestao`. Sem guia e sem composição por tributo, o backend derivava o valor da parcela
+da soma dos tributos — **zero**: `valorParcelaReferencia = 0`, `principalPerParcela = 0`, N
+prestações com `valorPrevisto = 0` e a fila recusando todas com `sem_valor_previsto`. É a forma da
+SINTROPIA nº 1 em produção. Hoje ele sobe em `header.valorParcela`.
+
+⚠ **Ele é o valor CHEIO da prestação, não o principal** — o principal do contrato continua saindo do
+papel `PRINCIPAL` das linhas da provisão (`header.valorPrincipal`). E o mock parou de **inventá-lo**:
+ele dividia `valorPrincipal` pelas restantes, uma derivação que o real nunca fez, e por isso o
+defeito nunca aparecia offline.
+
 ### O que SAIU (R1), e por que cada um era o desenho antigo
 
 | removido | era |

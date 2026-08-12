@@ -552,8 +552,6 @@ const mockChartOfAccounts = new Map();
 // Sequencial das notas emitidas no mock — número e chave precisam ser distintos a cada emissão,
 // senão duas notas seguidas pareceriam a mesma na tela de resultado.
 let mockNfseSeq = 0;
-// Espelhos da DEFIS por `empresa|ano` — mesma chave da unique do modelo.
-const mockDefisEspelhos = new Map();
 
 // ── Notas fiscais (listagem + íntegra) ────────────────────────────────────────
 //
@@ -1468,9 +1466,19 @@ function construirParcelamentosFixos() {
           serproLastCheckedAt: l.jaConsultada ? em(-1) : null,
           serproLastCheckResult: l.jaConsultada ? "NAO_LOCALIZADO" : null,
         }));
+        // ⚠ `principalTotal` PODE SER NULO, e é esse caso que produz `principalPago: null` em vez de
+        // zero. Contrato do wizard cujo papel PRINCIPAL não foi declarado nasce assim; afirmar
+        // "R$ 0,00 de principal pago" seria inventar. `?? 12000` mantém as fixtures antigas iguais.
+        const principalTotalFix = over.principalTotal === null ? null : (over.principalTotal ?? 12000);
+        const principalPorParcelaFix = principalTotalFix != null && linhas.length >= 1
+          ? Math.round((principalTotalFix / linhas.length) * 100) / 100
+          : null;
+        const principalPagoFix = principalPorParcelaFix != null
+          ? Math.round(over.parcelasPagas * principalPorParcelaFix * 100) / 100
+          : null;
         return {
           id: over.id, label: over.label, tipo: over.tipo, status: over.status || "ATIVO",
-          numeroParcelamento: over.numeroParcelamento, principalTotal: 12000, jurosTotal: 1800,
+          numeroParcelamento: over.numeroParcelamento, principalTotal: principalTotalFix, jurosTotal: 1800,
           // ⚠ `numParcelas` ACOMPANHA as linhas. Fixo em 12 com 3 ou 4 linhas, o mock ensinava uma
           // contradição: o card dizia "0 de 3" (prestações materializadas) e o modal de anexo dizia
           // "parcela 3 de 12" (cabeçalho do contrato) — dois denominadores para a mesma pergunta.
@@ -1483,7 +1491,17 @@ function construirParcelamentosFixos() {
           diaPagamento: over.diaPagamento ?? 1,
           saldoConsolidado: over.saldoConsolidado ?? null,
           parcelasPagas: over.parcelasPagas, parcelasTotal: linhas.length,
-          principalPago: over.parcelasPagas * 1200, saldoRestante: 14400 - over.parcelasPagas * 1200,
+          // ⚠ O PRINCIPAL SAI DE `principalTotal / numParcelas`, NUNCA DE `principalPerParcela`.
+          // Aqui `principalTotal = 12.000` e o contrato tem `linhas.length` prestações — 1.200 é o
+          // valor CHEIO (`valorParcelaReferencia`), que é justamente o que a coluna legada guarda no
+          // V2. Multiplicar por ela era amortizar o passivo pelo valor cheio.
+          principalPorParcela: principalPorParcelaFix,
+          principalPago: principalPagoFix,
+          saldoContratual: principalTotalFix != null && principalPagoFix != null
+            ? Math.max(0, Math.round((principalTotalFix - principalPagoFix) * 100) / 100)
+            : null,
+          // O passivo do razão. `null` aqui seria o contrato V1 (sem linha de papel `PARC`).
+          saldoPassivo: Math.max(0, 14400 - over.parcelasPagas * 1200),
           observacoes: null, parcelas: [], guides, risco: over.risco,
           // ⚠ ESPELHA `SELECT_PARCELA_PARA_QUADRO` — inclusive nos campos que ele passou a trazer.
           // `competencia` e `valorPrevisto` ENTRARAM no select compartilhado do backend nesta fase
@@ -1596,6 +1614,11 @@ function construirParcelamentosFixos() {
           tipo: "PARCSN", numeroParcelamento: "4040", parcelasPagas: 0,
           formaPagamento: "DEBITO_AUTOMATICO", diaPagamento: 15, saldoConsolidado: 3600,
           valorPrevistoParcela: 0,
+          // ⚠ E SEM `principalTotal` CONFIÁVEL — é o outro lado do mesmo contrato torto: o wizard
+          // não declarou quanto do acordo é principal, então `principalPago`, `principalPorParcela`
+          // e `saldoContratual` saem **`null`**, não zero. É esta fixture que exerce a RECUSA do
+          // modal de rescisão em vez do pré-preenchimento com R$ 0,00.
+          principalTotal: null,
           linhas: [
             { n: 1, guia: null, competencia: "2026-05", vencimento: em(-45) },
             { n: 2, guia: null, competencia: "2026-06", vencimento: em(-15) },
@@ -4289,28 +4312,6 @@ export function createMockApi() {
       return { ok: true, entrega: novo };
     },
 
-    // ── Espelho da DEFIS ──────────────────────────────────────────────────
-    // Guardado por (empresa, ano), como a unique do modelo: reabrir a tela continua o MESMO
-    // espelho. Sem isso o mock daria a impressão de que salvar funciona e o rascunho sumiria.
-    async getDefisEspelho(companyId, ano) {
-      await delay(120);
-      return mockDefisEspelhos.get(`${companyId}|${ano}`) || null;
-    },
-    async salvarDefisEspelho(companyId, ano, dados) {
-      await delay(180);
-      const atual = mockDefisEspelhos.get(`${companyId}|${ano}`) || {};
-      const novo = { ...atual, portalClientId: companyId, anoCalendario: Number(ano), dados };
-      mockDefisEspelhos.set(`${companyId}|${ano}`, novo);
-      return { ok: true, espelho: novo };
-    },
-    async marcarDefisTransmitida(companyId, ano) {
-      await delay(180);
-      const atual = mockDefisEspelhos.get(`${companyId}|${ano}`) || { portalClientId: companyId, anoCalendario: Number(ano), dados: null };
-      const novo = { ...atual, transmitidaEm: new Date().toISOString() };
-      mockDefisEspelhos.set(`${companyId}|${ano}`, novo);
-      return { ok: true, espelho: novo };
-    },
-
     getEntriesExportCsvUrl(companyId, params = {}) {
       const ini = params.competenciaInicio || params.competencia || "";
       const fim = params.competenciaFim || params.competencia || "";
@@ -5568,8 +5569,21 @@ export function createMockApi() {
           guia: null,
         });
       }
-      const valorParcela = Number(header.valorPrincipal) && total
-        ? Math.round((Number(header.valorPrincipal) / Math.max(1, total - jaPagas)) * 100) / 100
+      // ⚠ O VALOR DA PRESTAÇÃO VEM DO PAYLOAD, e não mais de uma derivação inventada aqui.
+      // O mock dividia `valorPrincipal` pelas restantes — o real NÃO faz isso: `buildDTOsFromManual`
+      // deriva a parcela da composição por tributo e, sem guia e sem tributos, ela é ZERO. O mock
+      // "resolvia" sozinho o defeito que fez a SINTROPIA nº 1 nascer com `valorParcelaReferencia = 0`,
+      // e por isso ele nunca apareceu offline. Agora o wizard envia `header.valorParcela` (o valor
+      // CHEIO da prestação) e os dois lados leem o mesmo campo.
+      const valorParcela = Number(header.valorParcela) > 0 ? Math.round(Number(header.valorParcela) * 100) / 100 : 0;
+      // ⚠ O PRINCIPAL POR PRESTAÇÃO É OUTRA COISA — sai de `principalTotal / numParcelas`, e é
+      // `null` quando não se sabe (`principalPorParcelaDoContrato`, no backend).
+      const principalTotalMock = Number(header.valorPrincipal) || 0;
+      const principalPorParcela = principalTotalMock > 0 && total >= 1
+        ? Math.round((principalTotalMock / total) * 100) / 100
+        : null;
+      const principalPagoMock = principalPorParcela != null
+        ? Math.round(jaPagas * principalPorParcela * 100) / 100
         : null;
       const novo = {
         id: `novo-${numero}`,
@@ -5592,8 +5606,16 @@ export function createMockApi() {
         parcelasTotal: total,
         // Prestação sem guia e sem baixa não tem evidência nenhuma — e isso NÃO é inadimplência.
         parcelasSemEvidencia: total - jaPagas,
-        principalPago: 0,
-        saldoRestante: Number(header.valorTotal) || 0,
+        // ⚠ OS QUATRO NÚMEROS DERIVADOS, com os mesmos nomes e a mesma NULABILIDADE do backend
+        // (`decorateParcelamento`). `saldoRestante` SAIU: ele misturava o consolidado do acordo com
+        // um "principal" que vinha de `principalPerParcela` — coluna que guarda o valor CHEIO no V2.
+        principalPorParcela,
+        principalPago: principalPagoMock,
+        saldoContratual: principalTotalMock > 0 && principalPagoMock != null
+          ? Math.max(0, Math.round((principalTotalMock - principalPagoMock) * 100) / 100)
+          : null,
+        // O passivo do razão: a provisão da adesão credita `PARC` pela soma das linhas.
+        saldoPassivo: Number(header.valorTotal) || null,
         parcelas: [],
         guides: [],
         parcelasContratadas: linhas,

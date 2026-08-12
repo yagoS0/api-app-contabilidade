@@ -717,6 +717,11 @@ SINTROPIA nº 1 amortizaria **10.000,00 contra um passivo de 100,00** (passivo a
 outro defeito (`principalPerParcela` guardando o valor cheio — ver `diag-provisao-parcelamento.mjs`),
 e ele **agrava** o desalinhamento acima em vez de compensá-lo.
 
+⚠ **A LEITURA foi consertada em 2026-08-12; a BAIXA continua intocada** — ver a seção
+"`principalPerParcela` guarda DUAS coisas", logo abaixo. `parcelaSync.valorPrevisto` segue como
+está, de propósito: mudá-lo muda o `D PARC` de `gerarPagamentoParcelaManual`, que é a baixa, e a
+baixa é decisão do dono.
+
 ⚠ **Mesmo par, mesmo tropeço, sinal invertido:** já houve o caso oposto — provisão creditando o
 consolidado com a baixa amortizando por principal+multa+juros, e depois a provisão virando só o
 principal, com a baixa **furando o passivo para baixo**. É o mesmo par; muda quem está na frente.
@@ -745,6 +750,58 @@ A conta segue parametrizável sem papel novo: cada linha carrega o `codigoTribut
 `MapaContaTributo` já indexa por `(tipoLinha, codigoTributo)` — dá para mandar o TJLP 0380 para
 conta diferente da dos juros comuns. Parsing e classificação ficam em
 `fiscal/serpro/parseComposicaoComprovante.js` e `classificarDocumentoArrecadado.js`.
+
+### ⚠ `principalPerParcela` guarda DUAS coisas — e desde 2026-08-12 NINGUÉM a lê como principal
+
+A coluna é `NOT NULL` e **não foi convertida nem renomeada** (o V1 depende dela). O que mudou é
+quem a lê como se fosse o principal por prestação: ninguém.
+
+| quem escreve | o quê |
+|---|---|
+| **V1** `ParcelamentoService:175,203` | `Number(principalPerParcela)` — o principal por prestação (o nome bate) |
+| **V2** `ParcelamentoV2Service:~480` | `round2(parc.valorTotal)` — o valor **CHEIO** da prestação, marcado `// referência (campo legado obrigatório)` |
+
+Medido em produção (`scripts/diag-provisao-parcelamento.mjs`): **4 de 4** contratos batem com
+`valorParcelaReferencia` e **nenhum** com `principalTotal/numParcelas`. Ex.: ERISANGELA
+`ppp = 323,83` · `principalTotal/N = 258,91` · a baixa real debitou **300,82** — três números para a
+mesma pergunta, com o da tela discordando do razão.
+
+**`decorateParcelamento` deriva o principal do CABEÇALHO** (`principalPorParcelaDoContrato` =
+`principalTotal / numParcelas`) e devolve **`null` quando `principalTotal` não é confiável** — o
+padrão "ausência nunca é resposta" que este projeto já aplica em `analitica`, `semFaturamento`,
+`obrigatoriedadeEfd` e `conferenciaDoPassivoPorContrato`.
+
+**`saldoRestante` SAIU, e no lugar dele há DOIS nomes** — porque eram duas perguntas:
+
+| campo | pergunta | fonte | `null` quando |
+|---|---|---|---|
+| `saldoContratual` | quanto falta amortizar do **principal do acordo** | cabeçalho (`principalTotal − principalPago`) | sem `principalTotal` |
+| `saldoPassivo` | quanto resta em **"Parcelamento a Pagar"** | razão — saldo credor do papel `PARC` (`saldoPassivoDasLinhasParc`, em `saldoProvisao.js`) | sem nenhuma linha `PARC` (contrato V1) |
+
+A conta antiga (`max(0, totalValue − parcelasPagas × principalPerParcela)`) subtraía um principal de
+um consolidado, com o principal saindo da coluna que no V2 guarda o valor cheio: ela nunca respondeu
+nenhuma das duas.
+
+⚠ **`saldoPassivo` sai de UMA query para a lista inteira**, não do `include` do cabeçalho: no V2 a
+provisão são N lançamentos de **uma perna** e `aberturaEntryId` aponta só para o primeiro, então
+`aberturaEntry.lines` traria um pedaço do passivo e a soma nasceria errada em silêncio. Os sinais
+vêm do próprio lançamento (`C PARC` soma, `D PARC` subtrai), então baixa, estorno e rescisão já
+entram certos sem caso especial. Ele **não é cortado em zero**: passivo negativo é o sintoma do
+desalinhamento adesão × baixa descrito acima, e escondê-lo apagaria da tela o número que o denuncia.
+
+⚠ **A BAIXA NÃO FOI TOCADA.** `parcelaSync` continua gravando
+`valorPrevisto = valorParcelaReferencia ?? principalPerParcela`, que é o `D PARC` de
+`gerarPagamentoParcelaManual`. Mudá-lo é mudar a forma do lançamento de baixa — **decisão do dono**.
+
+⚠ **O wizard passou a enviar `header.valorParcela`** (o valor CHEIO de uma prestação). Ele era
+VALIDADO no passo 2 e DESCARTADO no payload: sem guia e sem composição por tributo,
+`buildDTOsFromManual` derivava o valor da parcela da soma dos tributos — **zero**. Daí a SINTROPIA
+nº 1 com `valorParcelaReferencia = 0`, `principalPago` preso em zero e todas as prestações
+recusadas com `sem_valor_previsto`. A ordem em `buildDTOsFromManual` é **prova → declaração**:
+composição, depois `guide.valor`, e só então o valor digitado.
+
+⚠ **Isto NÃO corrige dado já gravado.** Os contratos de produção continuam com o cabeçalho como
+está; o que mudou é como ele é lido. Correção de cabeçalho é ato contábil e é do dono.
 
 ## "Mês sem faturamento" — as travas moram no service
 

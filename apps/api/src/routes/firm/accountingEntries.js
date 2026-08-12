@@ -4039,7 +4039,11 @@ export function createAccountingEntriesRouter({ log }) {
   //               anoMesParcela?, vencimento?, descricao?,
   //               formaPagamento?  ("DEBITO_AUTOMATICO" | "GUIA_MENSAL"; ausente = NÃO DECLARADO),
   //               diaPagamento?    (1..31 — alimenta o cronograma, que é a data que decide atraso),
-  //               saldoConsolidado? (INFORMATIVO — não vira lançamento) },
+  //               saldoConsolidado? (INFORMATIVO — não vira lançamento),
+  //               valorParcela?    (o valor CHEIO de UMA prestação — NÃO confundir com `valorTotal`,
+  //                                 que é o consolidado do acordo. Sem guia e sem `tributos` ele é a
+  //                                 ÚNICA fonte de `valorParcelaReferencia`; faltando, o contrato
+  //                                 nasce valendo ZERO e nenhuma prestação fica baixável) },
   //     tributos?: [{codigoTributo,principal,multa,juros,total}] }
   // Se `tributos` ausente, usa a composição já extraída do PDF (guide.extracted.composicao).
   router.post("/parcelamentos/ingestao", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
