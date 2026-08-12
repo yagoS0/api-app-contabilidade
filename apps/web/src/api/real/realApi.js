@@ -1708,6 +1708,21 @@ export function createRealApi() {
     async getApuracaoSnapshot(companyId, competencia) {
       return request(`/firm/companies/${companyId}/apuracao-snapshot/${competencia}`);
     },
+    // ─── Relatório "Faturamento no Período — Consolidado" (empresas do Simples) ────────────────
+    //
+    // ⚠ DUAS ROTAS, E LER NÃO GERA. Um GET que gerasse faria abrir a aba recalcular a competência
+    // inteira a cada visita — e o relatório é uma FOTO, com data de geração. Quem quer a foto de
+    // agora clica em gerar. `relatorio: null` quando nunca foi gerado (ausência não é erro).
+    //
+    // ⚠ Nenhuma das duas chama ADN, SEFAZ ou SERPRO, e o POST não persiste `ApuracaoSnapshot`: o
+    // pré-apurado é o motor LOCAL em `persistir: false`. Gerar é barato e não muda o estado da
+    // apuração — é o que permite chamá-lo logo depois do Calcular.
+    async getRelatorioFaturamento(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/relatorio-faturamento/${competencia}`);
+    },
+    async gerarRelatorioFaturamento(companyId, competencia) {
+      return request(`/firm/companies/${companyId}/relatorio-faturamento/${competencia}`, { method: "POST" });
+    },
     // Módulo Fiscal (§1.3) — sugestão de anexo por nota.
     async getSugestaoAnexo(companyId, competencia) {
       return request(`/firm/companies/${companyId}/apuracao-sugestao/${competencia}`);

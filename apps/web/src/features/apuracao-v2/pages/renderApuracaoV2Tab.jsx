@@ -15,6 +15,8 @@ import { AbaFiscalPanel } from "../components/AbaFiscalPanel";
 import { SugestaoAnexoTabela } from "../components/SugestaoAnexoPanel";
 import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
 import { entregaPgdasDoFechamento, CORES_TOM } from "../../apuracao/lib/entregaPgdas";
+import { RelatorioFaturamentoPanel } from "../components/RelatorioFaturamentoPanel";
+import { estadoDaClassificacao, kpiDasApurado, CORES_TOM_RELATORIO } from "../lib/relatorioFaturamento";
 import { Tabs } from "../../../components/ui/Tabs";
 import { Button } from "../../../components/ui/Button";
 
@@ -72,11 +74,17 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
   // ── Apuração (fechamento) ─────────────────────────────────────────────
   const [fechDados, setFechDados] = useState(null);
   const [fechLoading, setFechLoading] = useState(false);
+  const [fechErro, setFechErro] = useState(null);
   const [snap, setSnap] = useState(null);
   const [fechando, setFechando] = useState(null); // { retificar } → abre o FechamentoModal
   // Extrato do Simples (o que realmente foi pra Receita) — botão explícito (bate no SERPRO).
   const [extrato, setExtrato] = useState(null);
   const [extratoLoading, setExtratoLoading] = useState(false);
+  // Relatório de faturamento salvo desta competência (GET; nunca gera sozinho).
+  const [relatorio, setRelatorio] = useState(null);
+  const [relatorioLoading, setRelatorioLoading] = useState(false);
+  const [relatorioGerando, setRelatorioGerando] = useState(false);
+  const [relatorioErro, setRelatorioErro] = useState(null);
 
   const carregarApuracao = useCallback(async () => {
     if (!api || !companyId || !/^\d{4}-\d{2}$/.test(competencia)) return;
@@ -88,16 +96,70 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
       ]);
       setFechDados(fech?.dados || fech || null);
       setSnap(snapshot?.snapshot || snapshot || null);
-    } catch {
+      setFechErro(null);
+    } catch (err) {
+      // ⚠ FALHA DE BACKEND NÃO PODE SE PARECER COM "EMPRESA SEM FATURAMENTO".
+      //
+      // Era `catch { setFechDados(null); }`: sem `notifyError`, sem log, sem estado de erro. Os
+      // KPIs renderizavam "—" e a competência ficava indistinguível de um mês zerado — que é
+      // justamente a leitura que a tela toda existe para não deixar acontecer (a mesma classe do
+      // zero fabricado e do "0 pendências" verde). O dado some do mesmo jeito, mas agora a tela
+      // diz POR QUE ele sumiu.
       setFechDados(null);
+      setSnap(null);
+      setFechErro(err?.message || "Falha ao carregar a apuração desta competência.");
+      feedback?.notifyError?.(err?.message || "Falha ao carregar a apuração desta competência.");
+      // eslint-disable-next-line no-console
+      console.error("[apuracao-v2] falha ao carregar a apuração", { companyId, competencia, err });
     } finally {
       setFechLoading(false);
     }
+  }, [api, companyId, competencia, feedback]);
+
+  // ⚠ LER NÃO GERA. Abrir a aba mostra a FOTO SALVA (ou o vazio, com o botão) — um GET que gerasse
+  // recalcularia a competência inteira a cada visita, e o relatório tem data de geração impressa.
+  const carregarRelatorio = useCallback(async () => {
+    if (!api?.getRelatorioFaturamento || !companyId || !/^\d{4}-\d{2}$/.test(competencia)) return;
+    setRelatorioLoading(true);
+    try {
+      const out = await api.getRelatorioFaturamento(companyId, competencia);
+      if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao ler o relatório");
+      setRelatorio(out?.relatorio || null);
+      setRelatorioErro(null);
+    } catch (err) {
+      setRelatorio(null);
+      setRelatorioErro(err?.message || "Falha ao ler o relatório de faturamento salvo.");
+    } finally {
+      setRelatorioLoading(false);
+    }
   }, [api, companyId, competencia]);
+
+  async function gerarRelatorio() {
+    if (!api?.gerarRelatorioFaturamento) return;
+    setRelatorioGerando(true);
+    try {
+      const out = await api.gerarRelatorioFaturamento(companyId, competencia);
+      if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao gerar o relatório");
+      setRelatorio(out?.relatorio || null);
+      setRelatorioErro(null);
+      feedback?.notifySuccess?.(`Relatório de faturamento de ${competencia} gerado e salvo.`);
+    } catch (err) {
+      setRelatorioErro(err?.message || "Falha ao gerar o relatório de faturamento.");
+      feedback?.notifyError?.(err?.message || "Falha ao gerar o relatório de faturamento.");
+    } finally {
+      setRelatorioGerando(false);
+    }
+  }
 
   useEffect(() => {
     if (secao === "apuracao") carregarApuracao();
   }, [secao, carregarApuracao]);
+
+  // O relatório também alimenta a leitura de "0 pendências" da sub-aba Sugestão — por isso ele é
+  // carregado nas duas, e não só onde é desenhado.
+  useEffect(() => {
+    if (secao === "apuracao" || secao === "sugestao") carregarRelatorio();
+  }, [secao, carregarRelatorio]);
 
   async function abrirRetificar() {
     // eslint-disable-next-line no-alert
@@ -173,8 +235,13 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
 
   const fat = fechDados?.faturamento || {};
   const estado = fechDados?.estado || snap?.estado;
-  const dasApurado = snap?.dasRetornadoSerpro ?? snap?.dasCalculadoLocal ?? null;
+  // ⚠ O KPI CARREGA A PROCEDÊNCIA. Era `dasRetornadoSerpro ?? dasCalculadoLocal` sob o rótulo
+  // único "DAS apurado": o número do nosso motor e o da Receita saíam com o MESMO nome — e
+  // `dasCalculadoLocal` é gravada pelos DOIS caminhos, então nem "nosso" ela pode ser chamada.
+  // Não dá para mostrar "portal × Receita" no relatório abaixo enquanto este KPI confunde os dois.
+  const das = kpiDasApurado(snap);
   const extDados = extrato?.dados || extrato?.circular || null;
+  const classificacao = estadoDaClassificacao({ pendencias, relatorio });
 
   return (
     // Q63: maxWidth sem margem automática colava o módulo à esquerda — centraliza como em Lançamentos.
@@ -211,8 +278,30 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
             <Kpi label="Fat. interno" value={`${fmtMoney(fat.interno)}`} />
             <Kpi label="Fat. externo" value={`${fmtMoney(fat.externo)}`} />
             <Kpi label="Receita 12 meses" title={`${RBT12_NOME} (RBT12)`} value={`${fmtMoney(fechDados?.rbt12)}`} />
-            <Kpi label="DAS apurado" value={dasApurado != null ? `${fmtMoney(dasApurado)}` : "—"} cor="#8BE9FD" />
+            <Kpi
+              label={das.label}
+              title={das.titulo}
+              value={das.valor != null ? `${fmtMoney(das.valor)}` : "—"}
+              // Procedência ambígua não ganha a cor de categoria do Simples: âmbar diz que há uma
+              // pergunta em aberto sobre o número.
+              cor={das.procedencia === "ambigua" ? "var(--state-warn)" : "var(--accent-cyan)"}
+            />
           </div>
+
+          {/* ⚠ ERRO ≠ AUSÊNCIA. Sem esta caixa, uma falha de backend deixava os KPIs em "—" com a
+              tela inteira parecendo uma empresa sem faturamento. */}
+          {fechErro && !fechLoading && (
+            <div style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: 8, color: "var(--state-danger)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ flex: 1, minWidth: 240 }}>
+                ⚠ Os dados da apuração não puderam ser carregados: {fechErro}
+                <div style={{ color: PANEL.muted, marginTop: 2 }}>
+                  Os valores acima estão vazios por falha de leitura — isto <strong>não</strong> quer
+                  dizer que a competência esteja sem faturamento.
+                </div>
+              </span>
+              <Button variant="secondary" onClick={carregarApuracao} disabled={fechLoading}>Tentar de novo</Button>
+            </div>
+          )}
           {/* ⚠ ESTA FAIXA É A TELA DOS "TRÊS MESES DEPOIS".
               Uma competência fechada como EMPRESA ZERADA não passa pelo `estado` da apuração (não
               há snapshot: 190 competências zeradas em produção, 190 sem snapshot), então a linha
@@ -240,6 +329,20 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
               ⚠ Cadastro fiscal incompleto (sem CNAE). Ajuste na aba Cadastro antes de fechar.
             </div>
           )}
+
+          {/* ⚠ O RELATÓRIO DE FATURAMENTO — pedido do dono: exibido ao calcular, SALVO, e visível
+              aqui. Ao abrir a aba mostra a foto salva (GET); gerar é um clique. Nem o GET nem o
+              POST chamam ADN/SEFAZ/SERPRO, e o POST não persiste `ApuracaoSnapshot`.
+              `imprimivel={!fechando}`: só pode existir UM `data-print-area` por página, e com o
+              modal aberto quem imprime é o de dentro dele. */}
+          <RelatorioFaturamentoPanel
+            relatorio={relatorio}
+            loading={relatorioLoading}
+            gerando={relatorioGerando}
+            erro={relatorioErro}
+            onGerar={gerarRelatorio}
+            imprimivel={!fechando}
+          />
 
           {/* Extrato do Simples — o que realmente foi pra Receita (conferência). */}
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8 }}>
@@ -305,11 +408,22 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>Pendências</div>
-            {pendencias.length === 0 ? (
-              <div style={{ padding: 16, textAlign: "center", color: "#69FF47", background: "rgba(105,255,71,0.10)", border: "1px solid #69FF47", borderRadius: 8, fontSize: "0.85rem" }}>
-                ✓ Nenhuma pendência aberta.
-              </div>
-            ) : (
+            {/* ⚠ "✓ Nenhuma pendência aberta" EM VERDE CONCLUÍA O QUE NÃO FOI FEITO.
+                Pendência só nasce quando o classificador roda e não acha regra — e `tipoReceita` é
+                nulo em 16.153/16.153 itens em produção. Ou seja: hoje a lista vazia quer dizer
+                "ninguém classificou", e o ✓ verde (que neste app significa CONCLUÍDO) afirmava o
+                contrário. Quem desempata é o relatório de faturamento da competência, que mede
+                exatamente quanta receita está sem tipo; sem ele, a resposta honesta é a terceira —
+                não sabemos —, e ela não é verde. A regra vive em `lib/relatorioFaturamento.js`. */}
+            {pendencias.length === 0 ? (() => {
+              const { cor, fundo } = CORES_TOM_RELATORIO[classificacao.tom];
+              return (
+                <div style={{ padding: 14, color: cor, background: fundo, border: `1px solid ${cor}`, borderRadius: 8, fontSize: "0.85rem", display: "flex", flexDirection: "column", gap: 4 }}>
+                  <strong>{classificacao.tom === "ok" ? "✓ " : "⚠ "}{classificacao.rotulo}</strong>
+                  <span style={{ color: PANEL.muted }}>{classificacao.detalhe}</span>
+                </div>
+              );
+            })() : (
               pendencias.map((p) => (
                 <div key={p.id}
                   style={{

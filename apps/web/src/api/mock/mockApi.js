@@ -1335,6 +1335,449 @@ function mockFaturamentoDaCompetencia(companyId, competencia) {
   return mes % 2 === 0 ? 18500.75 : 0;
 }
 
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// RELATÓRIO "Faturamento no Período — Consolidado"
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// ⚠ O MOCK EXISTE PARA OS ESTADOS RUINS SEREM CAMINHÁVEIS OFFLINE. Um mock que só conhece o
+// caminho feliz esconde exatamente o que esta tela existe para mostrar — foi o que aconteceu com a
+// caixa "Declarar SEM MOVIMENTO", inalcançável no mock justamente na empresa em que ela importa.
+// Por isso a variação é por ÍNDICE DE EMPRESA (mesmo padrão de `mockConferenciaAdn`): pedir "abra
+// outro mês" esconderia um caminho atrás de uma navegação.
+//
+//   forma 0 → NADA classificado + motor bloqueado (é o estado de 100% das empresas em produção)
+//   forma 1 → classificado + DAS oficial do SERPRO gravado (nosso × da Receita, com a diferença)
+//   forma 2 → classificado + só a coluna de PROCEDÊNCIA AMBÍGUA + conferência que NÃO fecha
+//
+// ⚠ Os `rotuloOficial` abaixo são transcrição do Manual do PGDAS-D e DEFIS (itens 6.5 e 6.6.1),
+// copiados de `RelatorioFaturamentoService.js`. Não reescrever para caber na tela.
+const mockRelatoriosFaturamento = new Map(); // "companyId|competencia" -> registro salvo
+
+const MOCK_SEGREGACAO_INDETERMINADA = {
+  codigo: "INDETERMINADA",
+  rotuloOficial: null,
+  rotuloCurto: "Segregação não apurada",
+  motivo: "O portal não extrai ST nem tributação monofásica do XML (`flagST`/`flagMonofasico` não "
+    + "têm escritor, e não há CST/CSOSN em `NotaItem`). Escolher \"Sem\" por ausência de dado seria "
+    + "responder ao PGDAS-D por default, em nome do contribuinte.",
+  fonte: "sem_dado",
+};
+
+const MOCK_QUALIFICACOES_NAO_APURADAS = {
+  estado: "NAO_APURADO",
+  codigos: [],
+  rotulos: [],
+  motivo: "O portal não extrai qualificação de receita do XML. Ausência aqui é falta de leitura, "
+    + "não ausência de qualificação.",
+};
+
+const MOCK_VOCABULARIO = {
+  fonte: "Manual do PGDAS-D e DEFIS (RFB) — item 6.5 (pp. 23-26) e item 6.6.1 (p. 27)",
+  avisoCodigos: "Os campos `codigo` são identificadores NOSSOS. A numeração oficial destas opções "
+    + "não foi conferida — só os `rotuloOficial` vêm do manual, transcritos.",
+  segregacaoRevenda: [
+    { codigo: "SEM", rotuloOficial: "Sem substituição tributária/tributação monofásica/antecipação com encerramento de tributação", rotuloCurto: "Sem ST/monofásica/antecipação" },
+    { codigo: "COM", rotuloOficial: "Com substituição tributária/tributação monofásica/antecipação com encerramento de tributação", rotuloCurto: "Com ST/monofásica/antecipação" },
+    MOCK_SEGREGACAO_INDETERMINADA,
+  ],
+  qualificacoes: [
+    { codigo: "ANTECIPACAO_COM_ENCERRAMENTO", rotuloOficial: "antecipação com encerramento de tributação" },
+    { codigo: "SUBSTITUICAO_TRIBUTARIA", rotuloOficial: "substituição tributária" },
+    { codigo: "TRIBUTACAO_MONOFASICA", rotuloOficial: "tributação monofásica" },
+    { codigo: "EXIGIBILIDADE_SUSPENSA", rotuloOficial: "exigibilidade suspensa" },
+    { codigo: "IMUNIDADE", rotuloOficial: "imunidade" },
+    { codigo: "ISENCAO_REDUCAO", rotuloOficial: "isenção/redução" },
+    { codigo: "ISENCAO_REDUCAO_CESTA_BASICA", rotuloOficial: "isenção/redução cesta básica" },
+    { codigo: "LANCAMENTO_DE_OFICIO", rotuloOficial: "lançamento de ofício" },
+  ],
+  linhasAtividadeRfb: {
+    fonte: "docs/segregacao-receitas-simples.md, seção (A) — transcrito do Manual do PGDAS-D e "
+      + "DEFIS (RFB, 17/06/2025), item 6.5, pp. 23-25",
+    baseLegal: "Resolução CGSN 140/2018, art. 25, §1º, incisos I a IX (§3º para exportação)",
+    quantidade: 14,
+    dimensoesFaltantes: {
+      mercado: "Interno × exterior. `NotaItem.flagExportacao` é `false` em 16.153/16.153 itens.",
+      segregacao: "As opções Com/Sem do item 6.5 (linhas 1 e 3) — hoje `INDETERMINADA` para todo item.",
+    },
+  },
+};
+
+const MOCK_LIMITACOES = [
+  {
+    codigo: "VALOR_CONTABIL_SEM_DESCONTOS",
+    titulo: "O valor contábil não tem os descontos de IPI, ST e ICMS-ST",
+    efeito: "Não extraímos `vIPI`, `vST` nem `vICMSST` do XML hoje. O valor de cada linha é o valor "
+      + "contábil do documento rateado pelos itens; imprimir 0,00 nessas parcelas seria afirmar uma "
+      + "conferência que não houve.",
+  },
+  {
+    codigo: "SEGREGACAO_65_NAO_APURADA",
+    titulo: "A segregação do item 6.5 (com/sem ST, monofásica, antecipação) não é apurada",
+    efeito: "As linhas de revenda saem como \"Segregação não apurada\" em vez de serem lançadas na "
+      + "opção \"Sem substituição tributária/…\" por default.",
+  },
+  {
+    codigo: "QUALIFICACOES_NAO_APURADAS",
+    titulo: "As 8 qualificações do item 6.6.1 não são apuradas",
+    efeito: "A dimensão aparece com `estado: \"NAO_APURADO\"` e o vocabulário completo, em vez de "
+      + "ser omitida — omitir faria o relatório parecer completo.",
+  },
+];
+
+const MOCK_MESES_PT = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+function mockLinhaAtividade(tipoReceita, segregacaoIndeterminada = false) {
+  if (!tipoReceita) return { origem: "TIPO_RECEITA_LOCAL", codigo: null, rotulo: null, rfb: null };
+  const dp = {
+    REVENDA_MERCADORIA: { linha: 1, descricao: "Revenda de mercadorias, exceto para o exterior", faltam: ["mercado"], linhasAlternativas: [2] },
+    SERVICO_ANEXO_III: { linha: 7, descricao: "Prestação de serviços, exceto para o exterior", faltam: ["mercado", "estado_iss", "subitem_lc116"], linhasAlternativas: [8, 9, 10] },
+  }[tipoReceita] || null;
+  const rotulos = {
+    REVENDA_MERCADORIA: "Revenda de mercadoria (Anexo I)",
+    SERVICO_ANEXO_III: "Serviço — Anexo III",
+  };
+  const base = { origem: "TIPO_RECEITA_LOCAL", codigo: tipoReceita, rotulo: rotulos[tipoReceita] || tipoReceita };
+  if (!dp) return { ...base, rfb: null };
+  const faltam = [...dp.faltam];
+  if (segregacaoIndeterminada) faltam.push("segregacao");
+  return {
+    ...base,
+    rfb: {
+      linha: dp.linha, descricao: dp.descricao,
+      // ⚠ Nunca `true`: o de-para do nosso enum (7 valores, para decidir ANEXO) para as 14 linhas
+      // da RFB é PARCIAL por construção, e é isso que impede ler "linha 7" como "é a 7".
+      completo: false, faltam, linhasAlternativas: dp.linhasAlternativas,
+      fonte: MOCK_VOCABULARIO.linhasAtividadeRfb.fonte,
+    },
+  };
+}
+
+function mockLinhaNota({ i, competencia, valor, tipo = "NFSE", ...over }) {
+  const nfe = tipo === "NFE";
+  return {
+    notaId: `mock-nota-${i}`,
+    tipoDocumento: tipo,
+    numero: String(1000 + i),
+    serie: nfe ? "1" : null,
+    chaveAcesso: nfe ? `3526${String(i).padStart(40, "0")}` : null,
+    data: `${competencia}-1${(i % 9)}T12:00:00.000Z`,
+    modelo: nfe ? "55" : null,
+    modeloRotulo: nfe ? "55" : "NFS-e",
+    modeloFonte: nfe ? "chaveAcesso" : "tipo_documento",
+    tomadorNome: `TOMADOR MOCK ${i}`,
+    tomadorDoc: `1234567800019${i % 10}`,
+    itemId: `mock-item-${i}`,
+    descricao: nfe ? `Mercadoria mock ${i}` : `Serviço mock ${i}`,
+    cfop: nfe ? "5102" : null,
+    codigoServico: nfe ? null : "17.19",
+    codigoOperacao: nfe ? "5102" : "17.19",
+    codigoOperacaoFonte: nfe ? "cfop" : "codigoServico",
+    valorContabil: Math.round(valor * 100) / 100,
+    ...over,
+  };
+}
+
+/**
+ * ⚠ O RATEIO TEM DE FECHAR NO CENTAVO. O backend rateia o total da nota pelos itens justamente
+ * para o rodapé do relatório não discordar do faturamento da competência — um mock que arredonda
+ * cada parte por conta própria produz a divergência de 1 centavo que a conferência existe para
+ * acusar, e ensinaria offline um defeito que produção não tem.
+ */
+function mockRatearPesos(total, pesos) {
+  const soma = pesos.reduce((s, p) => s + p, 0) || 1;
+  const partes = pesos.map((p) => Math.round((total * p / soma) * 100) / 100);
+  const resto = Math.round((total - partes.reduce((s, v) => s + v, 0)) * 100) / 100;
+  if (partes.length) partes[partes.length - 1] = Math.round((partes[partes.length - 1] + resto) * 100) / 100;
+  return partes;
+}
+
+function mockTotal(linhas) {
+  return {
+    itens: linhas.length,
+    valorContabil: Math.round(linhas.reduce((s, l) => s + Number(l.valorContabil || 0), 0) * 100) / 100,
+  };
+}
+
+/**
+ * A FOTO. Espelha a forma de `montarRelatorioFaturamento` — mesmo formato, mesmos nomes, mesmos
+ * três estados que a tela precisa distinguir.
+ */
+function mockRelatorioFaturamentoDados(companyId, competencia) {
+  const empresa = mockCompanies.find((c) => c.companyId === companyId) || null;
+  const idx = mockCompanies.findIndex((c) => c.companyId === companyId);
+  const forma = idx < 0 ? 0 : idx % 3;
+  const fat = mockFaturamentoDaCompetencia(companyId, competencia);
+  const [ano, mes] = String(competencia).split("-").map(Number);
+
+  const grupos = [];
+  // Pesos das 6 linhas da forma "classificada" (2 revenda · 2 serviço · 1 sem detalhe · 1 não
+  // classificado) e das 3 da forma "nada classificado" — sempre fechando no centavo.
+  const p6 = mockRatearPesos(fat, [30, 30, 15, 15, 10, 10]);
+  const p3 = mockRatearPesos(fat, [1, 1, 1]);
+  if (fat > 0) {
+    if (forma === 0) {
+      // ⚠ O ESTADO REAL DA PRODUÇÃO: `tipoReceita` nulo em 16.153/16.153 itens. Tudo cai no grupo
+      // não classificado, e o motor recusa calcular. Não é erro — é o relatório dizendo o que falta.
+      const linhas = [0, 1, 2].map((i) => mockLinhaNota({
+        i, competencia, valor: p3[i],
+        linhaAtividade: mockLinhaAtividade(null),
+        segregacao: null,
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+        motivoNaoClassificado: "item_sem_tipo_receita",
+      }));
+      grupos.push({
+        chave: "NAO_CLASSIFICADO",
+        rotulo: "NÃO CLASSIFICADO — a competência não foi classificada",
+        tipoReceita: null, classificado: false, temDetalhe: true,
+        linhaAtividade: mockLinhaAtividade(null), segregacao: null,
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+        linhas, total: mockTotal(linhas),
+      });
+    } else {
+      // Revenda: a segregação do 6.5 fica INDETERMINADA — a tela NÃO pode escrever "Sem ST".
+      const revenda = [0, 1].map((i) => mockLinhaNota({
+        i, competencia, valor: p6[i], tipo: "NFE",
+        linhaAtividade: mockLinhaAtividade("REVENDA_MERCADORIA", true),
+        segregacao: MOCK_SEGREGACAO_INDETERMINADA,
+        qualificacoes: MOCK_QUALIFICACOES_NAO_APURADAS,
+      }));
+      grupos.push({
+        chave: "REVENDA_MERCADORIA|INDETERMINADA",
+        rotulo: "Revenda de mercadoria (Anexo I) · Segregação não apurada",
+        tipoReceita: "REVENDA_MERCADORIA", classificado: true, temDetalhe: true,
+        linhaAtividade: mockLinhaAtividade("REVENDA_MERCADORIA", true),
+        segregacao: MOCK_SEGREGACAO_INDETERMINADA,
+        qualificacoes: MOCK_QUALIFICACOES_NAO_APURADAS,
+        linhas: revenda, total: mockTotal(revenda),
+      });
+
+      const servico = [2, 3].map((i) => mockLinhaNota({
+        i, competencia, valor: p6[i],
+        linhaAtividade: mockLinhaAtividade("SERVICO_ANEXO_III"),
+        segregacao: null, // o manual não faz a pergunta com/sem ST para serviço
+        qualificacoes: MOCK_QUALIFICACOES_NAO_APURADAS,
+      }));
+      grupos.push({
+        chave: "SERVICO_ANEXO_III",
+        rotulo: "Serviço — Anexo III",
+        tipoReceita: "SERVICO_ANEXO_III", classificado: true, temDetalhe: true,
+        linhaAtividade: mockLinhaAtividade("SERVICO_ANEXO_III"), segregacao: null,
+        qualificacoes: MOCK_QUALIFICACOES_NAO_APURADAS,
+        linhas: servico, total: mockTotal(servico),
+      });
+
+      // ⚠ BLOCO PRÓPRIO: "nunca recebemos o detalhe" (resumo do DFe, `items: []`) não é "ninguém
+      // classificou". Ações diferentes, responsáveis diferentes.
+      const semDetalhe = [4].map((i) => mockLinhaNota({
+        i, competencia, valor: p6[i], tipo: "NFE",
+        itemId: null, descricao: null, cfop: null, codigoServico: null,
+        codigoOperacao: null, codigoOperacaoFonte: null,
+        linhaAtividade: mockLinhaAtividade(null), segregacao: null,
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Nota sem itens capturados — não há o que qualificar." },
+        motivoNaoClassificado: "nota_sem_item",
+      }));
+      grupos.push({
+        chave: "SEM_DETALHE_CAPTURADO",
+        rotulo: "SEM DETALHE CAPTURADO — o resumo do DFe não traz os itens da nota",
+        tipoReceita: null, classificado: false, temDetalhe: false,
+        linhaAtividade: mockLinhaAtividade(null), segregacao: null,
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Nota sem itens capturados — não há o que qualificar." },
+        linhas: semDetalhe, total: mockTotal(semDetalhe),
+      });
+
+      const naoClass = [5].map((i) => mockLinhaNota({
+        i, competencia, valor: p6[i],
+        linhaAtividade: mockLinhaAtividade(null), segregacao: null,
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+        motivoNaoClassificado: "item_sem_tipo_receita",
+      }));
+      grupos.push({
+        chave: "NAO_CLASSIFICADO",
+        rotulo: "NÃO CLASSIFICADO — a competência não foi classificada",
+        tipoReceita: null, classificado: false, temDetalhe: true,
+        linhaAtividade: mockLinhaAtividade(null), segregacao: null,
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+        linhas: naoClass, total: mockTotal(naoClass),
+      });
+    }
+  }
+
+  const todasAsLinhas = grupos.flatMap((g) => g.linhas);
+  const totalMes = mockTotal(todasAsLinhas);
+  const gNaoClass = grupos.find((g) => g.chave === "NAO_CLASSIFICADO") || null;
+  const gSemDet = grupos.find((g) => g.chave === "SEM_DETALHE_CAPTURADO") || null;
+
+  const naoClassificado = {
+    valorContabil: gNaoClass ? gNaoClass.total.valorContabil : 0,
+    itens: gNaoClass ? gNaoClass.total.itens : 0,
+    notasComItensSemValor: 0,
+    fracaoDoTotal: totalMes.valorContabil > 0 && gNaoClass
+      ? Math.round((gNaoClass.total.valorContabil / totalMes.valorContabil) * 10000) / 10000
+      : 0,
+    comoResolver: "Aba Apuração → sub-aba Sugestão → botão \"Classificar competência\". Enquanto os "
+      + "itens não tiverem `tipoReceita`, o relatório não consegue dizer de que tipo de operação é a "
+      + "receita — e o motor de apuração não calcula o DAS.",
+  };
+
+  const semDetalheCapturado = {
+    valorContabil: gSemDet ? gSemDet.total.valorContabil : 0,
+    notas: gSemDet ? gSemDet.total.itens : 0,
+    fracaoDoTotal: totalMes.valorContabil > 0 && gSemDet
+      ? Math.round((gSemDet.total.valorContabil / totalMes.valorContabil) * 10000) / 10000
+      : 0,
+    somaNoTotal: true,
+    motivo: "A NF-e foi capturada pelo RESUMO do DFe (`resNFe`), que por definição não traz os itens "
+      + "da nota. Não é falta de classificação: é falta do documento completo.",
+    comoResolver: "Manifestar/baixar a NF-e completa (`procNFe`) na aba Notas Fiscais.",
+  };
+
+  // ⚠ Conferência que NÃO fecha na forma 2 — é o relatório acusando a si mesmo, e sem um caso no
+  // mock esse aviso nunca é visto antes de produção.
+  const faturamentoEmit = forma === 2 && totalMes.valorContabil > 0
+    ? Math.round((totalMes.valorContabil - 250.4) * 100) / 100
+    : totalMes.valorContabil;
+  const conferencia = {
+    totalRelatorio: totalMes.valorContabil,
+    faturamentoEmit,
+    diferenca: Math.round((totalMes.valorContabil - faturamentoEmit) * 100) / 100,
+    confere: Math.abs(totalMes.valorContabil - faturamentoEmit) < 0.01,
+  };
+
+  const circular = mockMonthlyCirculars.get(makeCircularKey(companyId, competencia)) || {};
+  const conferenciaAdn = mockConferenciaAdn(companyId, competencia);
+  const podeAfirmarAusencia = circular.semFaturamento === true || conferenciaAdn.status === "ok";
+  const ausenciaDeNotas = {
+    aplicavel: totalMes.valorContabil === 0,
+    total: totalMes.valorContabil,
+    semFaturamentoAfirmado: {
+      valor: circular.semFaturamento ?? null, // ⚠ tri-estado: `null` viaja como `null`
+      em: circular.semFaturamentoEm || null,
+      por: circular.semFaturamentoPor || null,
+      conferenciaNoMomento: circular.semFaturamentoConferencia || null,
+    },
+    conferenciaAdn: { status: conferenciaAdn.status, em: conferenciaAdn.em },
+    podeAfirmarAusencia,
+    mensagem: totalMes.valorContabil !== 0
+      ? null
+      : (podeAfirmarAusencia
+        ? "Nenhuma nota na competência, e há confirmação: "
+          + (circular.semFaturamento === true
+            ? "o contador afirmou que o mês não teve faturamento."
+            : "a conferência com o ADN fechou (`ok`).")
+        : "Nenhuma nota encontrada — isto NÃO é o mesmo que ausência de receita. Zero também é o "
+          + "que aparece quando o município está fora do ADN, quando o certificado A1 venceu ou "
+          + "quando o cursor NSU travou. Para afirmar ausência: marque \"mês sem faturamento\" na "
+          + "aba Lançamentos, ou rode a conferência com o ADN."),
+  };
+
+  // ── O pré-apurado, com as três procedências ────────────────────────────────────────────────
+  const oficialBase = { fonte: "ApuracaoSnapshot", estado: null, numeroDeclaracao: null, reciboNumero: null, transmitidoEm: null };
+  let preApurado;
+  if (forma === 0 || totalMes.valorContabil === 0) {
+    // ⚠ COMPETÊNCIA SEM RECEITA NÃO É COMPETÊNCIA POR CLASSIFICAR. Sem nota nenhuma não há o que
+    // classificar, e devolver `RECEITA_NAO_CLASSIFICADA` aqui mandaria o contador classificar o
+    // vazio. `motivo: null` com `blockers: []` é forma que o serviço real produz (o motivo sai do
+    // primeiro blocker, e sem blocker ele é `null`).
+    const semReceita = totalMes.valorContabil === 0;
+    preApurado = {
+      origem: "MOTOR_LOCAL",
+      ok: false,
+      das: null, // ⚠ `null`, nunca 0 — zero afirmaria "o DAS deste mês é zero"
+      estado: semReceita ? null : "bloqueada_pendencias",
+      motivo: semReceita ? null : {
+        code: "RECEITA_NAO_CLASSIFICADA",
+        mensagem: "A receita da competência não está classificada — os itens das notas não têm "
+          + "`tipoReceita`, e sem isso não há anexo, não há alíquota e não há DAS.",
+        detalhe: null,
+      },
+      blockers: semReceita ? [] : [{ tipo: "RECEITA_NAO_CLASSIFICADA", mensagem: "Receita não classificada" }],
+      semClassificacao: {
+        valorContabil: naoClassificado.valorContabil, itens: naoClassificado.itens,
+        fracaoDoTotal: naoClassificado.fracaoDoTotal, totalDaCompetencia: totalMes.valorContabil,
+      },
+      comoResolver: semReceita ? null : naoClassificado.comoResolver,
+      receitaPorTipo: null,
+      oficial: { ...oficialBase, dasRetornadoSerpro: null, dasCalculadoLocalNoSnapshot: null },
+      diferenca: null,
+    };
+  } else {
+    const nosso = Math.round(totalMes.valorContabil * 0.0812 * 100) / 100;
+    const oficial = forma === 1
+      // Forma 1: a Receita respondeu. Nosso × oficial, com a diferença.
+      ? {
+        ...oficialBase, estado: "transmitida", numeroDeclaracao: "MOCK-DECL-1", reciboNumero: "MOCK-REC-1",
+        transmitidoEm: `${competencia}-20T14:00:00.000Z`,
+        dasRetornadoSerpro: Math.round((nosso + 37.45) * 100) / 100,
+        dasCalculadoLocalNoSnapshot: {
+          valor: nosso, procedenciaAmbigua: true,
+          aviso: "Coluna gravada tanto pelo motor local quanto pela simulação oficial do PGDAS-D "
+            + "(FechamentoService.calcularFechamento). Não use como \"nosso cálculo\" sem conferir.",
+        },
+      }
+      // ⚠ Forma 2: SÓ a coluna ambígua. A tela não pode afirmar de quem é aquele número.
+      : {
+        ...oficialBase, estado: "calculada",
+        dasRetornadoSerpro: null,
+        dasCalculadoLocalNoSnapshot: {
+          valor: Math.round((nosso + 12.1) * 100) / 100, procedenciaAmbigua: true,
+          aviso: "Coluna gravada tanto pelo motor local quanto pela simulação oficial do PGDAS-D "
+            + "(FechamentoService.calcularFechamento). Não use como \"nosso cálculo\" sem conferir.",
+        },
+      };
+    preApurado = {
+      origem: "MOTOR_LOCAL",
+      ok: true,
+      das: nosso,
+      persistido: false,
+      rbt12: 480000,
+      fatorR: null,
+      receitaPorTipo: { REVENDA_MERCADORIA: Math.round(fat * 0.6 * 100) / 100, SERVICO_ANEXO_III: Math.round(fat * 0.3 * 100) / 100 },
+      receitaPorAnexo: { I: Math.round(fat * 0.6 * 100) / 100, III: Math.round(fat * 0.3 * 100) / 100 },
+      aliquotaEfetivaPorAnexo: { I: 0.0754, III: 0.0902 },
+      divergencias: [],
+      blockers: [],
+      motivo: null,
+      semClassificacao: {
+        valorContabil: naoClassificado.valorContabil, itens: naoClassificado.itens,
+        fracaoDoTotal: naoClassificado.fracaoDoTotal, totalDaCompetencia: totalMes.valorContabil,
+      },
+      oficial,
+      diferenca: oficial.dasRetornadoSerpro != null
+        ? Math.round((nosso - oficial.dasRetornadoSerpro) * 100) / 100
+        : null,
+    };
+  }
+
+  return {
+    versao: 2,
+    competencia,
+    competenciaExtenso: `${MOCK_MESES_PT[(mes || 1) - 1]}/${ano}`,
+    titulo: "Faturamento no Período - Consolidado",
+    subtitulo: "Documentos Emitidos",
+    empresa: {
+      portalClientId: companyId,
+      razaoSocial: empresa?.razao || "EMPRESA MOCK LTDA",
+      cnpj: empresa?.cnpj || "00.000.000/0001-00",
+      municipio: empresa?.municipio || "São Paulo",
+      uf: empresa?.uf || "SP",
+    },
+    vocabulario: MOCK_VOCABULARIO,
+    naoClassificado,
+    semDetalheCapturado,
+    ausenciaDeNotas,
+    gruposPorTipoOperacao: grupos,
+    totalMes,
+    totalConsolidado: totalMes,
+    resumoPorTipoOperacao: grupos.map((g) => ({
+      chave: g.chave, rotulo: g.rotulo, classificado: g.classificado,
+      segregacao: g.segregacao, qualificacoes: g.qualificacoes, ...g.total,
+    })),
+    conferencia,
+    preApurado,
+    limitacoes: MOCK_LIMITACOES,
+  };
+}
+
 // Marca das buscas do Presumido já feitas — o equivalente, no mock, à guia com `sourceFileId`
 // determinístico que o backend usa como chave de idempotência. É o que faz a confirmação
 // "já buscado em <data>" ser exercitável offline; sem ela, o mock nunca chega ao segundo clique.
@@ -5444,7 +5887,56 @@ export function createMockApi() {
     async resolverPendencia() { await delay(60); return { ok: true, result: { regraCriada: null, produtoCriado: null, reclassificacao: null } }; },
     async classificarV2() { await delay(120); return { ok: true, result: { processed: 0, classified: 0, pendentes: 0, byTipo: {}, byFonte: {} } }; },
     async apurarV2() { await delay(150); return { ok: true, result: { ok: true, snapshot: null, dasCalculadoLocal: 0, rbt12: 0, receitaPorAnexo: {}, aliquotaEfetivaPorAnexo: {} } }; },
-    async getApuracaoSnapshot() { await delay(40); return { ok: true, snapshot: null }; },
+    async getApuracaoSnapshot(companyId, competencia) {
+      await delay(40);
+      // ⚠ Era `snapshot: null` fixo, e por isso o KPI "DAS apurado" da aba não tinha COMO ser
+      // conferido offline — nem o valor, nem (agora) a procedência dele. O snapshot sai da mesma
+      // fonte que o relatório usa em `preApurado.oficial`: um mock com duas leituras do mesmo
+      // número acabaria mostrando um valor no KPI e outro logo abaixo, na mesma tela.
+      const dados = mockRelatorioFaturamentoDados(companyId, competencia);
+      const of = dados.preApurado?.oficial || {};
+      if (of.dasRetornadoSerpro == null && of.dasCalculadoLocalNoSnapshot == null) {
+        return { ok: true, snapshot: null };
+      }
+      return {
+        ok: true,
+        snapshot: {
+          portalClientId: companyId, competencia,
+          estado: of.estado || null,
+          dasRetornadoSerpro: of.dasRetornadoSerpro ?? null,
+          dasCalculadoLocal: of.dasCalculadoLocalNoSnapshot?.valor ?? null,
+          numeroDeclaracao: of.numeroDeclaracao || null,
+          reciboNumero: of.reciboNumero || null,
+          transmitidoEm: of.transmitidoEm || null,
+          conferenciaStatus: mockConferenciaAdn(companyId, competencia).status,
+        },
+      };
+    },
+    // ── Relatório "Faturamento no Período — Consolidado" ──────────────────────────────────────
+    //
+    // ⚠ LER NÃO GERA, e o mock precisa disso para o estado "nunca gerado" ser caminhável: abrir a
+    // aba tem de mostrar o vazio com o botão, não uma foto que apareceu sozinha.
+    async getRelatorioFaturamento(companyId, competencia) {
+      await delay(60);
+      const salvo = mockRelatoriosFaturamento.get(`${companyId}|${competencia}`) || null;
+      return { ok: true, relatorio: salvo };
+    },
+    async gerarRelatorioFaturamento(companyId, competencia) {
+      await delay(140);
+      if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
+        return { ok: false, error: "INVALID_COMPETENCIA", message: `Formato YYYY-MM esperado, recebido: ${competencia}` };
+      }
+      const relatorio = {
+        id: `mock-relatorio-${companyId}-${competencia}`,
+        portalClientId: companyId,
+        competencia,
+        dados: mockRelatorioFaturamentoDados(companyId, competencia),
+        geradoEm: new Date().toISOString(),
+        geradoPor: "mock-user",
+      };
+      mockRelatoriosFaturamento.set(`${companyId}|${competencia}`, relatorio);
+      return { ok: true, relatorio };
+    },
     async getSugestaoAnexo() { await delay(60); return { ok: true, competencia: null, totalNotas: 0, perfilConfigurado: false, anexosAtivos: [], resumo: { alta: 0, media: 0, revisao: 0, porAnexo: {} }, notas: [] }; },
     // Mock com atividade SUJEITA A FATOR R e folha derivada dos lançamentos — é a única forma de
     // conferir a comparação da folha sem backend. A folha digitada vem DIFERENTE da derivada de

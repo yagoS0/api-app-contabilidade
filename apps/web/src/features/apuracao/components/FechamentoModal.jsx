@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { Feedback } from "../../../components/ui/Feedback";
 import { CadastroFiscalForm } from "../../apuracao-v2/components/CadastroFiscalForm";
+import { RelatorioFaturamentoPanel } from "../../apuracao-v2/components/RelatorioFaturamentoPanel";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import { EmpresaZeradaPanel } from "./EmpresaZeradaPanel";
 
@@ -29,6 +30,10 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
   const [showTransmit, setShowTransmit] = useState(false);
   const [confirmComp, setConfirmComp] = useState("");
   const [semMovimento, setSemMovimento] = useState(false); // declaração zerada (empresa sem receita)
+  // Relatório de faturamento — gerado logo depois do Calcular (ver `gerarRelatorio`).
+  const [relatorio, setRelatorio] = useState(null);
+  const [relatorioGerando, setRelatorioGerando] = useState(false);
+  const [relatorioErro, setRelatorioErro] = useState(null);
   // Q44: Cadastro Fiscal acessível no próprio fluxo de apuração (a aba "Apuração V2" saiu do menu).
   const [showCadastro, setShowCadastro] = useState(false);
   const [cadastroData, setCadastroData] = useState(null); // { cadastro, cnaePrincipalRef }
@@ -170,8 +175,40 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
     return `${o.descricao || `#${o.idAtividade}`} — Anexo ${o.anexoImplicito}${o.sujeitoFatorR ? " ★FR" : ""}`;
   }
 
+  // ⚠ O RELATÓRIO DE FATURAMENTO É **GERADO** AQUI, E NÃO APENAS LIDO — a decisão e o porquê.
+  //
+  // O pedido do dono foi *"deve ser exibido esse relatorio ao calcularmos e ele deve ser salvo"*.
+  // Só exibir o salvo cumpriria a letra e falharia o sentido: na primeira apuração de uma
+  // competência não existe foto nenhuma (a tela mostraria o vazio bem no momento em que o
+  // relatório deveria aparecer), e nas seguintes apareceria a foto de ANTES do que se acabou de
+  // conferir — um relatório com data de geração velha ao lado de um DAS recém-calculado é pior
+  // que relatório nenhum.
+  //
+  // Gerar é seguro e barato: o `POST /relatorio-faturamento/:competencia` não chama ADN, SEFAZ nem
+  // SERPRO (é leitura do nosso banco), e o pré-apurado roda o motor local com `persistir: false` —
+  // ele NÃO grava `ApuracaoSnapshot` e não muda o estado da apuração da empresa.
+  //
+  // ⚠ E ELE NÃO ESTÁ NO CAMINHO DO CALCULAR. A chamada sai DEPOIS de `setResultado` e do
+  // `notifySuccess`, em `try/catch` próprio e com `acting` já liberado: o Calcular não fica mais
+  // lento nem falha por causa do relatório. Se a geração falhar, o cálculo continua valendo e o
+  // painel abaixo diz que o relatório não saiu, com "Gerar relatório" para tentar de novo.
+  async function gerarRelatorio() {
+    if (!api?.gerarRelatorioFaturamento) return;
+    setRelatorioGerando(true);
+    try {
+      const out = await api.gerarRelatorioFaturamento(portalClientId, competencia);
+      if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao gerar o relatório");
+      setRelatorio(out?.relatorio || null);
+      setRelatorioErro(null);
+    } catch (err) {
+      setRelatorio(null);
+      setRelatorioErro(err?.message || "O relatório de faturamento não foi gerado.");
+    } finally { setRelatorioGerando(false); }
+  }
+
   async function handleCalcular() {
     setActing(true);
+    let calculou = false;
     try {
       const out = await api.calcularFechamento(portalClientId, competencia, {
         atividades, folhaMensal12: folhaSerie, regimeApuracao: dados?.regimeApuracao,
@@ -181,9 +218,14 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
       if (!out?.ok) throw new Error(out?.message || out?.error || "Falha");
       setResultado(out.result);
       feedback?.notifySuccess?.(`DAS calculado: ${fmtMoney(out.result?.dasValor || 0)}`);
+      calculou = true;
     } catch (err) {
       feedback?.notifyError?.(err?.message || "Erro no cálculo (SERPRO)");
     } finally { setActing(false); }
+
+    // ⚠ FORA do try/finally do cálculo: o resultado já está na tela e os botões já foram
+    // liberados antes desta chamada começar. Ver o comentário de `gerarRelatorio`.
+    if (calculou) await gerarRelatorio();
   }
 
   async function handleSalvar() {
@@ -535,6 +577,21 @@ export function FechamentoModal({ api, feedback, portalClientId, competencia, ra
                   </ul>
                 )}
               </div>
+            )}
+
+            {/* ⚠ O RELATÓRIO APARECE AO CALCULAR — é o pedido do dono, e é aqui que ele cai.
+                Só é montado depois de haver cálculo (ou tentativa de geração): antes disso não há
+                o que mostrar, e um painel vazio no topo do modal roubaria a atenção do que a tela
+                existe para fazer. O `compacto` tira o quadro-resumo, que é o rodapé do impresso e
+                cabe melhor na aba; aqui o que importa é o detalhe por tipo de operação. */}
+            {(resultado || relatorio || relatorioGerando || relatorioErro) && (
+              <RelatorioFaturamentoPanel
+                relatorio={relatorio}
+                gerando={relatorioGerando}
+                erro={relatorioErro}
+                onGerar={gerarRelatorio}
+                compacto
+              />
             )}
 
             {/* Q44: feedback das ações (Calcular/Salvar/Transmitir) — antes os notify* eram invisíveis */}
