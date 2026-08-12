@@ -43,12 +43,51 @@ function somaAtividades(atividades) {
 // apuração e o fechamento discordariam sobre se o mês teve receita — com o contador no meio.
 export async function faturamentoEmitDaCompetencia(portalClientId, competencia) {
   if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) return 0;
-  const { gte, lt } = rangeMes(competencia);
   const agg = await prisma.portalInvoice.aggregate({
-    where: { ...whereFaturamentoEmit(competencia), clientId: String(portalClientId), competencia: { gte, lt } },
+    where: whereFaturamentoEmitDaCompetencia(portalClientId, competencia),
     _sum: { total: true },
   });
   return round2(Number(agg._sum?.total || 0));
+}
+
+/**
+ * A CLÁUSULA da população de faturamento de UMA empresa em UMA competência — extraída de
+ * `faturamentoEmitDaCompetencia`, que agora a consome.
+ *
+ * ⚠ EXISTE PARA NÃO HAVER UMA SEGUNDA QUERY EQUIVALENTE. O relatório de Faturamento no Período
+ * precisa das LINHAS (nota a nota, item a item), não da soma — e escrever um segundo `findMany`
+ * com `papel/statusEfetivo/competencia` repetidos à mão é exatamente como a apuração e o
+ * fechamento passaram a discordar sobre o mesmo mês, com o contador no meio. Quem precisar de
+ * outra forma de leitura da MESMA população parte daqui, não do zero.
+ */
+export function whereFaturamentoEmitDaCompetencia(portalClientId, competencia) {
+  const { gte, lt } = rangeMes(competencia);
+  return { ...whereFaturamentoEmit(), clientId: String(portalClientId), competencia: { gte, lt } };
+}
+
+/**
+ * As NOTAS da mesma população (com os itens), para quem precisa detalhar em vez de somar.
+ *
+ * Variante de `faturamentoEmitDaCompetencia`: mesma cláusula, mesma janela, outro formato de
+ * retorno. Somar `total` destas linhas dá exatamente o que aquela função devolve.
+ */
+export async function notasEmitDaCompetencia(portalClientId, competencia) {
+  if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) return [];
+  return prisma.portalInvoice.findMany({
+    where: whereFaturamentoEmitDaCompetencia(portalClientId, competencia),
+    select: {
+      id: true, type: true, numero: true, serie: true, chaveAcesso: true,
+      issueDate: true, competencia: true, total: true,
+      tomadorNome: true, tomadorDoc: true,
+      itens: {
+        select: {
+          id: true, valor: true, descricao: true, cfop: true, codigoServico: true, ncm: true,
+          tipoReceita: true, flagST: true, flagMonofasico: true, flagExportacao: true,
+        },
+      },
+    },
+    orderBy: [{ issueDate: "asc" }, { numero: "asc" }],
+  });
 }
 
 /**
@@ -254,7 +293,8 @@ async function completarMercadoPeloCatalogo(forma) {
 // ⚠ POR QUE `EntregaObrigacaoArquivo`, E NÃO UMA COLUNA NOVA
 // Ela já é, letra por letra, "obrigação entregue no programa/portal oficial, marcada À MÃO pelo
 // contador, nunca escrita por automação, com recibo e observação", chaveada por
-// (empresa, tipo, competência). É o mesmo desenho que a DEFIS usa. Uma coluna nova em
+// (empresa, tipo, competência). É o mesmo desenho que a EFD-Contribuições, a ECD e a ECF já
+// usam. Uma coluna nova em
 // `ApuracaoSnapshot` seria pior por dois motivos: os 190 casos NÃO TÊM snapshot, e criar um só
 // para guardar esta marca exigiria inventar `rbt12`/`receitaPorTipo` (NOT NULL) — dado fiscal
 // fabricado num registro auditável.

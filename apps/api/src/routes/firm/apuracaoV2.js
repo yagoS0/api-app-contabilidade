@@ -20,6 +20,11 @@ import {
   registrarEntregaExternaPgdas,
   FechamentoError,
 } from "../../application/notas/apuracao/v2/FechamentoService.js";
+import {
+  gerarRelatorioFaturamento,
+  lerRelatorioFaturamento,
+  RelatorioFaturamentoError,
+} from "../../application/notas/apuracao/v2/RelatorioFaturamentoService.js";
 import { carregarAtividades } from "../../application/notas/apuracao/v2/AtividadeResolver.js";
 import { resolverPerfilFiscal, normalizarPerfilConfig } from "../../application/notas/apuracao/v2/PerfilFiscalService.js";
 import { sugerirAnexosDaCompetencia } from "../../application/notas/apuracao/v2/SugestaoAnexoService.js";
@@ -543,7 +548,7 @@ export function createApuracaoV2Router({ log } = {}) {
    * esse registro.
    *
    * ⚠ NÃO TRANSMITE NADA, e não é prova. É a afirmação do contador — mesma natureza da marca da
-   * DEFIS e da entrega por arquivo, e guardada no mesmo modelo (`EntregaObrigacaoArquivo`,
+   * entrega por arquivo, e guardada no mesmo modelo (`EntregaObrigacaoArquivo`,
    * tipo `PGDAS_D`). A prova continua sendo o número que o extrato da RFB devolve
    * (`CompanyMonthlyCircular.pgdasNumeroDeclaracao`), e a tela mostra as duas coisas com nomes
    * diferentes.
@@ -665,6 +670,63 @@ export function createApuracaoV2Router({ log } = {}) {
         return res.json({ ok: true, snapshot: snap });
       } catch (err) {
         return bad(res, 500, "get_snapshot_failed", err?.message || "Erro");
+      }
+    }
+  );
+
+  // ─── Relatório "Faturamento no Período — Consolidado" ──────────────────────
+  //
+  // Duas rotas, e a divisão é deliberada: LER não gera. Um GET que gerasse o relatório faria
+  // abrir a aba recalcular a competência inteira a cada visita — e o relatório é uma FOTO, com
+  // data. Quem quer a foto de agora clica em gerar.
+  //
+  // ⚠ Nenhuma das duas chama ADN, SEFAZ ou SERPRO. O pré-apurado é o motor LOCAL, em modo
+  // `persistir: false` — ver `RelatorioFaturamentoService`. Gerar o relatório NÃO muda o estado
+  // da apuração da empresa.
+
+  // GET — o relatório salvo. `relatorio: null` quando nunca foi gerado (ausência não é erro).
+  router.get(
+    "/relatorio-faturamento/:competencia",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia || "");
+      try {
+        const relatorio = await lerRelatorioFaturamento({ portalClientId, competencia });
+        return res.json({ ok: true, relatorio });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha ao ler relatório de faturamento");
+        return bad(
+          res,
+          err instanceof RelatorioFaturamentoError ? 400 : 500,
+          err?.code || "relatorio_get_failed",
+          err?.message || "Erro",
+        );
+      }
+    }
+  );
+
+  // POST — gera (ou regera) e salva. Sobrescreve a foto anterior da mesma competência.
+  router.post(
+    "/relatorio-faturamento/:competencia",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      const competencia = String(req.params.competencia || "");
+      try {
+        const relatorio = await gerarRelatorioFaturamento({
+          portalClientId, competencia, userId: req.auth?.user?.id || null,
+        });
+        return res.json({ ok: true, relatorio });
+      } catch (err) {
+        log?.warn?.({ err: err?.message, portalClientId, competencia }, "Falha ao gerar relatório de faturamento");
+        return bad(
+          res,
+          err?.code === "PORTAL_NOT_FOUND" ? 404
+            : err instanceof RelatorioFaturamentoError ? 400 : 500,
+          err?.code || "relatorio_gerar_failed",
+          err?.message || "Erro",
+        );
       }
     }
   );

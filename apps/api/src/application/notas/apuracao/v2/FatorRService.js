@@ -50,6 +50,30 @@ export async function resolverFolha12m({ portalClientId, competencia }) {
 }
 
 /**
+ * A CONTA do Fator R, sem tocar no banco.
+ *
+ * Extraída de `calcularEPersistirFatorR`, que agora a consome — a decisão é a mesma nas duas
+ * portas, e uma segunda escrita da fórmula (ou do threshold) faria o preview e a apuração
+ * discordarem sobre o anexo da empresa, que é diferença tributária de verdade.
+ *
+ * ⚠ Existe porque há um chamador que PRECISA não gravar: o relatório de faturamento calcula o
+ * pré-apurado só para exibir, e gravar `LogDecisaoFatorR` ao abrir um relatório seria mudar o
+ * estado fiscal da empresa por causa de uma leitura.
+ *
+ * @returns {{fatorR, anexoDecidido, threshold, folha12m, rbt12}}
+ */
+export function decidirFatorR({ folha12m, rbt12 }) {
+  const f = Number(folha12m);
+  const r = Number(rbt12);
+  if (!Number.isFinite(f) || f < 0) throw new FatorRError("INVALID_FOLHA", "folha12m inválida");
+  if (!Number.isFinite(r) || r < 0) throw new FatorRError("INVALID_RBT12", "rbt12 inválido");
+
+  const fatorR = r > 0 ? +(f / r).toFixed(4) : 0;
+  const anexoDecidido = fatorR >= THRESHOLD ? "III" : "V";
+  return { fatorR, anexoDecidido, threshold: THRESHOLD, folha12m: f, rbt12: r };
+}
+
+/**
  * Calcula e persiste decisão Fator R pra (empresa, competência).
  *
  * @param {Object} opts
@@ -66,13 +90,7 @@ export async function calcularEPersistirFatorR({
   if (!portalClientId) throw new FatorRError("MISSING_PORTAL", "portalClientId obrigatório");
   if (!/^\d{4}-\d{2}$/.test(competencia)) throw new FatorRError("INVALID_COMPETENCIA", "");
 
-  const f = Number(folha12m);
-  const r = Number(rbt12);
-  if (!Number.isFinite(f) || f < 0) throw new FatorRError("INVALID_FOLHA", "folha12m inválida");
-  if (!Number.isFinite(r) || r < 0) throw new FatorRError("INVALID_RBT12", "rbt12 inválido");
-
-  const fatorR = r > 0 ? +(f / r).toFixed(4) : 0;
-  const anexoDecidido = fatorR >= THRESHOLD ? "III" : "V";
+  const { fatorR, anexoDecidido, folha12m: f, rbt12: r } = decidirFatorR({ folha12m, rbt12 });
 
   // Upsert log (1 por empresa+competência)
   const existing = await prisma.logDecisaoFatorR.findUnique({

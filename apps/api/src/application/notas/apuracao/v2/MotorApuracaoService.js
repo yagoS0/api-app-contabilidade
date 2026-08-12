@@ -23,7 +23,7 @@
 import crypto from "node:crypto";
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { resolverAliquota, calcularAliquotaEfetiva, AliquotaResolverError } from "./AliquotaResolver.js";
-import { calcularEPersistirFatorR, resolverFolha12m, FatorRError } from "./FatorRService.js";
+import { calcularEPersistirFatorR, decidirFatorR, resolverFolha12m, FatorRError } from "./FatorRService.js";
 
 export class MotorApuracaoError extends Error {
   constructor(code, message, extra = {}) {
@@ -63,9 +63,24 @@ function dataReferenciaCompetencia(competencia) {
 /**
  * Calcula apuração local pra (empresa, competência).
  *
- * @returns {Promise<{ok, snapshot, divergencias, blockers?}>}
+ * @param {Object} opts
+ * @param {boolean} [opts.persistir=true] — grava `ApuracaoSnapshot` (estado "calculada") e
+ *   `LogDecisaoFatorR`. **O default mantém o comportamento de quem já chamava.**
+ *
+ * ⚠ POR QUE EXISTE O MODO SEM PERSISTIR. Esta função sempre gravou o snapshot com
+ * `estado: "calculada"` — o que é certo para o botão Apurar, e é veneno para uma LEITURA.
+ * O relatório de faturamento mostra o DAS pré-apurado ao lado dos números do mês; se ele
+ * chamasse a função como ela estava, **abrir um relatório mudaria o estado da apuração da
+ * empresa em silêncio** (e a decisão de Fator R do mês junto). Estado fiscal muda por ato do
+ * contador, não por alguém ter aberto uma tela.
+ *
+ * Com `persistir: false` nada é escrito: `snapshot` volta `null` e `dadosSnapshot` traz o que
+ * TERIA sido gravado, para quem quiser exibir. Todo o resto do cálculo é idêntico — é o mesmo
+ * caminho, não uma segunda conta.
+ *
+ * @returns {Promise<{ok, snapshot, persistido, divergencias, blockers?}>}
  */
-export async function calcularApuracaoLocal({ portalClientId, competencia, folha12mOverride, userId }) {
+export async function calcularApuracaoLocal({ portalClientId, competencia, folha12mOverride, userId, persistir = true }) {
   if (!portalClientId) throw new MotorApuracaoError("MISSING_PORTAL", "portalClientId obrigatório");
   if (!/^\d{4}-\d{2}$/.test(competencia)) {
     throw new MotorApuracaoError("INVALID_COMPETENCIA", `Formato YYYY-MM esperado, recebido: ${competencia}`);
@@ -198,10 +213,12 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, folha
       };
     }
     try {
-      decisaoFatorR = await calcularEPersistirFatorR({
-        portalClientId, competencia,
-        folha12m, rbt12, fonteFolha,
-      });
+      // ⚠ O LOG DO FATOR R TAMBÉM É ESCRITA. Sem este desvio, o modo "não persistir" gravaria
+      // `LogDecisaoFatorR` mesmo assim — a decisão III↔V da competência, registrada por uma
+      // leitura. A conta é a mesma nos dois lados (`decidirFatorR`).
+      decisaoFatorR = persistir
+        ? await calcularEPersistirFatorR({ portalClientId, competencia, folha12m, rbt12, fonteFolha })
+        : decidirFatorR({ folha12m, rbt12 });
     } catch (err) {
       if (err instanceof FatorRError) {
         return {
@@ -291,9 +308,6 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, folha
     .digest("hex");
 
   // ─── UPSERT ApuracaoSnapshot ─────────────────────────────────────────────
-  const existing = await prisma.apuracaoSnapshot.findUnique({
-    where: { portalClientId_competencia: { portalClientId, competencia } },
-  });
   const data = {
     rbt12,
     folha12m: decisaoFatorR?.folha12m || null,
@@ -306,13 +320,23 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, folha
     idempotencyKey,
     erroMensagem: null,
   };
-  const snap = existing
-    ? await prisma.apuracaoSnapshot.update({ where: { id: existing.id }, data })
-    : await prisma.apuracaoSnapshot.create({ data: { ...data, portalClientId, competencia } });
+
+  let snap = null;
+  if (persistir) {
+    const existing = await prisma.apuracaoSnapshot.findUnique({
+      where: { portalClientId_competencia: { portalClientId, competencia } },
+    });
+    snap = existing
+      ? await prisma.apuracaoSnapshot.update({ where: { id: existing.id }, data })
+      : await prisma.apuracaoSnapshot.create({ data: { ...data, portalClientId, competencia } });
+  }
 
   return {
     ok: true,
     snapshot: snap,
+    persistido: persistir,
+    // O que TERIA sido gravado — só faz sentido no modo leitura; quem persistiu já tem o snapshot.
+    dadosSnapshot: persistir ? null : { ...data, portalClientId, competencia },
     divergencias,
     receitaPorTipo,
     receitaPorAnexo,

@@ -384,6 +384,17 @@ model PortalClient {
   /// Contraparte da relação do funil de onboarding. NENHUMA coluna nova é criada em
   /// `portal_clients`: a FK mora em `onboardings.portalClientId`.
   onboarding              Onboarding?
+  /// Cofre de senhas da empresa. ⚠ Coluna cifrada PRÓPRIA (`company_credentials.senhaCifrada`) —
+  /// senha não entra em Json de cadastro nem em campo de texto do `PortalClient`.
+  credenciais             CompanyCredential[]
+  /// "Outras informações" — texto livre por rótulo, NÃO cifrado (ver o model).
+  informacoes             CompanyInfo[]
+  /// Auditoria de leitura do cofre. FK aqui para a varredura por empresa não depender da
+  /// credencial ainda existir.
+  credenciaisAcessos      CompanyCredentialAcesso[]
+  /// Relatórios de faturamento gerados por competência. NENHUMA coluna nova em `portal_clients`:
+  /// a FK mora em `relatorios_faturamento.portalClientId`.
+  relatoriosFaturamento   RelatorioFaturamento[]
 
   @@index([cnpj])
   @@index([updatedAt])
@@ -2213,6 +2224,48 @@ model ApuracaoSnapshot {
   @@map("apuracao_snapshots")
 }
 
+/// Relatório "Faturamento no Período — Consolidado" GERADO para uma competência.
+///
+/// Uma linha por (empresa, competência). O relatório inteiro vive em `dados` (Json) — ele é um
+/// DOCUMENTO, não um conjunto de métricas: blocos por tipo de operação, linhas nota a nota,
+/// totais, quadro-resumo e o pré-apurado. Espalhá-lo em colunas obrigaria a migrar o banco a cada
+/// coluna nova do impresso.
+///
+/// ⚠ POR QUE UM MODEL PRÓPRIO E NÃO UMA COLUNA EM `ApuracaoSnapshot`.
+/// As competências ZERADAS não têm snapshot — foram medidas 190 células empresa×competência com
+/// faturamento EMIT = 0 e ZERO `ApuracaoSnapshot`. Criar um snapshot só para guardar o relatório
+/// exigiria preencher `rbt12` e `receitaPorTipo` (NOT NULL): dado fiscal FABRICADO dentro de um
+/// registro auditável, que é exatamente a armadilha descrita na seção "Empresa zerada" do
+/// `CLAUDE.md`. E a empresa sem faturamento é justamente uma das que mais precisam do relatório —
+/// é ele que mostra, preto no branco, que o mês não teve nota.
+///
+/// ⚠ É UMA FOTO, NÃO UMA FONTE. Nada aqui é autoridade sobre nada: se uma nota chegar depois
+/// (retroativa, ou cancelamento capturado tarde), este Json fica velho. É por isso que a rota de
+/// gerar REGERA por cima, e que `geradoEm` é obrigatório na leitura — a tela precisa poder dizer
+/// de quando é a foto.
+model RelatorioFaturamento {
+  id             String @id @default(uuid())
+  portalClientId String
+  competencia    String /// YYYY-MM
+
+  /// O relatório inteiro, na forma que a rota devolve. Ver `RelatorioFaturamentoService.js` —
+  /// inclusive o porquê de `ipi`/`st`/`outros`/`liquido` serem `null` e nunca `0`.
+  dados Json
+
+  geradoEm  DateTime @default(now())
+  /// `User.id` de quem mandou gerar. Nulo para geração feita fora de uma sessão.
+  geradoPor String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@unique([portalClientId, competencia])
+  @@index([portalClientId, competencia])
+  @@map("relatorios_faturamento")
+}
+
 // Log auditável da decisão mensal do Fator R (III vs V).
 // 1 linha por (empresa, competência) quando há receita SERVICO_FATOR_R.
 model LogDecisaoFatorR {
@@ -2883,4 +2936,116 @@ model OnboardingEtapa {
   @@unique([onboardingId, chave])
   @@index([onboardingId, ordem])
   @@map("onboarding_etapas")
+}
+
+// ==========================================================================================
+// Cofre de credenciais da empresa (gov.br, e-CAC, prefeitura, portal do banco, INSS…)
+//
+// ⚠ A SENHA NUNCA É GRAVADA EM CLARO. `senhaCifrada` guarda o retorno de `utils/crypto.js`
+// `encryptSecret` — o MESMO caminho do certificado A1: AES-256-GCM com envelope encryption via
+// AWS KMS quando `isKmsEnabled()` (prefixo `kms-v1:`), caindo para chave derivada de
+// `CERT_SECRET_KEY` quando não (prefixo `v1:`). A leitura detecta o formato pelo prefixo, então a
+// migração é LAZY. NÃO existe um segundo caminho de cifra neste projeto, e não deve existir:
+// seria a segunda cópia da regra mais perigosa do sistema.
+//
+// ⚠ A senha NÃO volta na listagem. `listar()` faz `select` explícito SEM `senhaCifrada` — nem o
+// texto claro nem o blob cifrado saem por ali. Ver o valor é ação separada, deliberada e AUDITADA
+// (`CompanyCredentialAcesso`).
+// ==========================================================================================
+model CompanyCredential {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  /// Rótulo livre do acesso: "gov.br", "Prefeitura SP", "Portal do banco", "e-CAC".
+  /// Livre de propósito: cada município e cada banco tem um portal, e uma lista fechada
+  /// envelheceria na primeira prefeitura nova.
+  rotulo String
+  /// Usuário/login do portal. NÃO é cifrado — sozinho ele não abre nada, e cifrá-lo esconderia da
+  /// listagem justamente o dado que identifica de qual acesso se está falando.
+  login  String?
+  /// ⚠ CIFRADO por `encryptSecret`. NUNCA sai em listagem, log ou mensagem de erro.
+  /// Null = credencial cadastrada sem senha (só login/observação) — é caso legítimo.
+  senhaCifrada String?
+  /// Anotação sobre o acesso (pergunta secreta, qual sócio é o titular, onde renovar).
+  /// ⚠ NÃO é cifrada. A tela diz isso — quem escrever senha aqui está escrevendo em claro.
+  observacao String?
+
+  criadoPorId    String?
+  atualizadoPorId String?
+  /// Quando a SENHA foi trocada pela última vez (≠ updatedAt, que muda ao editar rótulo/observação).
+  senhaAtualizadaEm DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  portalClient PortalClient                @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  acessos      CompanyCredentialAcesso[]
+
+  @@index([portalClientId])
+  @@map("company_credentials")
+}
+
+/// "Outras informações" da empresa: texto livre por rótulo (contato do contador do cliente, código
+/// de acesso não-secreto, número de protocolo, senha do wi-fi do escritório do cliente…).
+///
+/// ⚠ NÃO É CIFRADO, e a tela DIZ que não é. Campo que parece cofre e não é vale menos que campo
+/// nenhum: quem confia nele guarda segredo em claro achando que está protegido. Por isso são DUAS
+/// tabelas e duas seções na tela, e não um campo `secreto: boolean` numa só — a natureza do dado
+/// tem de estar visível antes de digitar, não depois.
+model CompanyInfo {
+  id             String @id @default(uuid())
+  portalClientId String
+
+  rotulo String
+  valor  String
+
+  criadoPorId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId])
+  @@map("company_infos")
+}
+
+/// Auditoria de acesso ao cofre — quem viu qual senha e quando.
+///
+/// ⚠ Sem isto, credencial vazada é IRRASTREÁVEL: não há como saber quem teve o valor em mãos, e
+/// portanto não há como responder a pergunta que se faz depois de um incidente. É o mesmo desenho
+/// de `estornos_baixa` e `atos_parcelamento` — tabela própria, append-only, com cópia imutável do
+/// que era o registro no momento do ato (o rótulo é copiado porque a credencial pode ser apagada
+/// depois, e um log apontando para um id que não existe mais não conta história nenhuma).
+///
+/// ⚠ NADA DA SENHA ENTRA AQUI — nem o texto claro, nem o blob cifrado, nem hash, nem tamanho.
+model CompanyCredentialAcesso {
+  id             String  @id @default(uuid())
+  portalClientId String
+  /// Sem FK obrigatória de leitura: o registro sobrevive à exclusão da credencial (SetNull).
+  credentialId   String?
+
+  /// REVELADA | CRIADA | ATUALIZADA | SENHA_ALTERADA | REMOVIDA (CHECK no banco).
+  /// `REVELADA` é a que dá sentido à tabela; as outras existem para que o histórico de uma
+  /// credencial não tenha buracos entre uma leitura e outra.
+  acao String
+
+  /// Cópia imutável — ver o comentário acima.
+  rotuloNoMomento String
+
+  usuarioId    String?
+  usuarioEmail String?
+  /// Motivo declarado pelo usuário ao revelar. Opcional: exigir texto a cada leitura treinaria a
+  /// digitar "." e transformaria a exigência em ruído.
+  motivo       String?
+  ip           String?
+  userAgent    String?
+
+  createdAt DateTime @default(now())
+
+  credential   CompanyCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  portalClient PortalClient       @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+
+  @@index([portalClientId, createdAt])
+  @@index([credentialId, createdAt])
+  @@map("company_credential_acessos")
 }
