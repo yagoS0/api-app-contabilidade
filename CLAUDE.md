@@ -125,6 +125,26 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     (`defisSpec.js`, `DEFIS_FONTE.verificadoNoPortal: false`). **Não transmite**: a DEFIS é
     transmitida no portal, e `marcarDefisTransmitida` só registra o recibo do nosso lado.
     ⚠ `PERGUNTAS_MUNICIPIO` está **deliberadamente vazio** — o manual não traz lista fechada.
+    - ⚠ **Quem NÃO é optante pelo Simples Nacional não entrega DEFIS.** A tela não perguntava o
+      regime — oferecia o espelho a toda empresa, inclusive às do Lucro Presumido (defeito relatado
+      pelo dono). A regra vive em `defis/lib/obrigatoriedadeDefis.js` (24 testes) e tem **três**
+      respostas: `obrigada`, `dispensada` e **`indefinida`** — sem regime cadastrado não se afirma
+      nem uma coisa nem outra. Mesma forma da `obrigatoriedadeEfd.js`, com o **sinal invertido**.
+      A dispensa **aparece com o motivo e a norma** (`DefisNaoDevida.jsx`) no lugar do fluxo; some
+      da tela quem não deve nada, e aí ninguém sabe se foi dispensa ou esquecimento.
+    - ⚠ **A resposta é sobre o ANO-CALENDÁRIO, não sobre "hoje".** Empresa excluída do Simples
+      continua devendo a DEFIS do ano em que foi optante ("em relação ao ano-calendário de exclusão
+      (…) a DEFIS abrangerá o período em que esteve na condição de optante" — manual, item 9.2.2), e
+      o sistema guarda só o regime atual. Por isso as hipóteses que derrubam a dispensa viajam
+      NOMEADAS junto dela, e a dispensa **não é beco sem saída**: há como abrir o espelho mesmo
+      assim, dentro da lista de hipóteses que justifica a exceção.
+    - **Fonte conferida no documento oficial** (não copiada de terceiros): Manual do PGDAS-D e DEFIS
+      (RFB), seção 9 — "deve ser prestada por contribuinte optante do Simples Nacional por pelo menos
+      um período nela abrangido" (LC 123/2006, art. 25, caput); prazo e situação especial no item
+      9.1.2, citando a **Res. CGSN 140/2018, art. 72, §§ 1º e 2º** — ou seja, o art. 72 É o
+      dispositivo da DEFIS. Medido em produção (12/08/2026): 33 empresas (22 Simples, 11 Presumido) e
+      **zero** espelhos gravados — o conserto é preventivo, não houve dado a preservar nem a apagar.
+      Script de leitura: `apps/api/scripts/diag-defis-por-regime.mjs`.
   - **Relatórios** (sub-aba de Contabilidade) — intervalo PRÓPRIO, a única exceção à competência
     global. ⚠ **Balanço e balancete não aparecem nem desabilitados**: exigem saldo por conta com
     classificação patrimonial, e entregar isso a partir de lançamentos seria um demonstrativo com

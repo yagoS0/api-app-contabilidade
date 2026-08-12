@@ -15,6 +15,11 @@ import { useSitfis } from "../../../fiscal/sitfis/hooks/useSitfis";
 import { createApiClient } from "../../../../api/client";
 import { competenciaPadrao, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
 import { ENTREGA_POR_ARQUIVO_LIBERADA } from "../../../obrigacoes/entregas/lib/liberacao";
+// ⚠ A regra de QUEM DEVE a DEFIS e o painel da dispensa entram EAGER, ao contrário do `EspelhoDefis`:
+// a decisão precisa acontecer antes de qualquer chunk, e o painel é um parágrafo. Fazer a dispensa
+// esperar um `lazy` mostraria "Carregando…" para dizer que não há trabalho a fazer.
+import { obrigatoriedadeDefis } from "../../../obrigacoes/defis/lib/obrigatoriedadeDefis";
+import { DefisNaoDevida } from "../../../obrigacoes/defis/components/DefisNaoDevida";
 import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useCompanyDocuments";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
@@ -128,6 +133,17 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
   // com o seu seletor. Um só campo obrigaria um dos dois a mentir sobre o próprio período.
   const [competenciaEfd, setCompetenciaEfd] = useState(() => competenciaPadrao());
 
+  // ⚠ A TELA NÃO PERGUNTAVA O REGIME. O botão "📄 Espelho da DEFIS" era oferecido a TODA empresa —
+  // o defeito relatado pelo dono ("empresas do presumido estão com espelho da DEFIS, mas empresas
+  // presumidas não têm DEFIS") era AUSÊNCIA de regra, não regra errada. A DEFIS é declaração do
+  // Simples Nacional; a regra (com a fonte oficial) vive em `defis/lib/obrigatoriedadeDefis.js`.
+  //
+  // Três respostas, não duas: `obrigada` abre o fluxo, `dispensada` e `indefinida` o SUBSTITUEM por
+  // um painel que diz o motivo. Empresa sem regime cadastrado não é afirmada como dispensada —
+  // ausência nunca é resposta.
+  const vereditoDefis = obrigatoriedadeDefis({ regime: companyRegime, anoCalendario: anoDefis });
+  const defisDevida = vereditoDefis.situacao === "obrigada";
+
   async function abrir() {
     setCarregando(true);
     try {
@@ -139,24 +155,43 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Entrega anual:</span>
-        <input
-          type="number"
-          value={anoDefis}
-          onChange={(e) => setAnoDefis(Number(e.target.value) || anoDefis)}
-          style={{ width: 92, background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.82rem" }}
-          aria-label="Ano-calendário da DEFIS"
+      {/* ⚠ O BLOCO APARECE SEMPRE, mas o que ele mostra depende do REGIME. A DEFIS é declaração do
+          Simples Nacional (Manual do PGDAS-D e DEFIS, seção 9; LC 123/2006, art. 25, caput), e para
+          quem não é optante a tela mostra a DISPENSA COM O MOTIVO no lugar do fluxo. Não é o mesmo
+          que sumir — some da tela quem não deve nada, e aí ninguém sabe se foi dispensa ou
+          esquecimento. Mesmo desenho da EFD-Contribuições, com o sinal invertido. */}
+      {defisDevida ? (
+        <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Entrega anual:</span>
+          <input
+            type="number"
+            value={anoDefis}
+            onChange={(e) => setAnoDefis(Number(e.target.value) || anoDefis)}
+            style={{ width: 92, background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.82rem" }}
+            aria-label="Ano-calendário da DEFIS"
+          />
+          <button
+            type="button"
+            onClick={abrir}
+            disabled={carregando}
+            style={{ background: "transparent", border: "1px solid #BD93F9", color: "#BD93F9", borderRadius: 6, padding: "5px 12px", font: "inherit", fontSize: "0.8rem", cursor: "pointer" }}
+          >
+            {carregando ? "Abrindo…" : "📄 Espelho da DEFIS"}
+          </button>
+        </div>
+      ) : (
+        <DefisNaoDevida
+          anoCalendario={anoDefis}
+          veredito={vereditoDefis}
+          // ⚠ A dispensa não pode virar BECO SEM SAÍDA. A própria regra documenta o caso em que ela
+          // é derrubada: empresa excluída do Simples continua devendo a DEFIS do ano em que foi
+          // optante, e o sistema guarda só o regime de hoje. Por isso a saída existe — escondida
+          // dentro da lista de hipóteses, que é exatamente onde o motivo dela está escrito — e só
+          // para `dispensada`: em `indefinida` a ação certa é cadastrar o regime, não contornar.
+          onAbrirMesmoAssim={vereditoDefis.situacao === "dispensada" ? abrir : null}
+          abrindo={carregando}
         />
-        <button
-          type="button"
-          onClick={abrir}
-          disabled={carregando}
-          style={{ background: "transparent", border: "1px solid #BD93F9", color: "#BD93F9", borderRadius: 6, padding: "5px 12px", font: "inherit", fontSize: "0.8rem", cursor: "pointer" }}
-        >
-          {carregando ? "Abrindo…" : "📄 Espelho da DEFIS"}
-        </button>
-      </div>
+      )}
 
       {/* ⚠ A EFD-Contribuições fica ACIMA do calendário, não como uma ocorrência dentro dele.
           Ela não é um dia na agenda: é um trabalho de três passos, dois deles FORA do app, e a
