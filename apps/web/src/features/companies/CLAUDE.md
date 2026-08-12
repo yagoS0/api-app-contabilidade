@@ -273,6 +273,34 @@ estados). São cadastrais, não fiscais — é onde o contador já procura dado 
 O mock tem estado em memória, não retorno fixo: as duas features têm regras que só dá pra conferir
 mexendo (fixação exclusiva, seleção múltipla), e um mock imutável passaria por elas sem testar nada.
 
+## Senhas e acessos (`credentials/`) — o cofre da empresa
+
+Aba do grupo **Empresa**, ao lado de Documentos (`/companies/:id/credenciais`). **Duas seções, e a
+separação é o ponto:** em cima o COFRE (senha cifrada no backend com o MESMO `encryptSecret` do
+certificado A1, nunca listada, revelação auditada); embaixo **Outras informações**, texto livre
+**não cifrado**, e a tela diz isso em letras que dá para ler. Um campo que parece cofre e não é vale
+menos que campo nenhum.
+
+- **Regra de tela em `credentials/lib/estadoCredencial.js`** (22 testes): o que ocupa o lugar da
+  senha, o motivo nomeado do botão desabilitado (do mais específico para o mais geral — "não tem
+  senha" ANTES de "você não tem permissão"), o aviso de proteção do ambiente (KMS × variável de
+  ambiente × **desconhecido**) e o `estadoDaCarga`.
+- ⚠ **Lista vazia diz TRÊS coisas** (`estadoDaCarga`): `VAZIA` (não há credencial) · `RECUSADA` (o
+  servidor respondeu não) · `SEM_RESPOSTA` (a chamada não voltou). **O que as separa é `err.status`**
+  — `request()` só o carimba quando houve resposta HTTP. Desenhar as três como "Nenhuma credencial
+  guardada" faz o contador recadastrar uma senha que existe e que ele só não está conseguindo ver.
+  Pelo mesmo motivo a **contagem some no erro**: "0 credencial(is)" é afirmação sobre a empresa.
+- ⚠ **A senha revelada vive só em `useState`** (um `Map` por credencial), nunca em
+  `localStorage`/`sessionStorage`, nunca em `title`, nunca em atributo, nunca em `console`. Recarregar
+  a lista esconde tudo de novo. A revelação é POST (`revealCompanyCredential`, `confirmado: true`) e
+  o backend grava a linha de auditoria **antes** de decifrar.
+- **Apagar confirma repetindo rótulo E login** — uma empresa tem duas linhas "gov.br" (a do sócio e a
+  da empresa) e o login é o que as separa. Apagar informação repete rótulo e valor.
+- ⚠ **Ainda NÃO há edição na tela.** `useCompanyCredentials.atualizar` e o par
+  `updateCompanyCredential` (mock/real) existem e **não têm chamador** — trocar uma senha hoje exige
+  excluir e recadastrar, e a distinção que o backend preserva com cuidado (`senha` ausente = não
+  mexer × `senha: ""` = apagar) é inalcançável pela UI.
+
 ## Abas do detalhe
 
 ### ⚠ A URL manda na EMPRESA, não só na aba

@@ -82,6 +82,11 @@ const GROUPS = [
     tabs: [
       { key: "cadastro", label: "Cadastro" },
       { key: "documentos", label: "Documentos" },
+      // Cofre de senhas + "outras informações". Fica em Empresa, ao lado de Documentos, porque é
+      // dado CADASTRAL (onde o escritório entra em nome do cliente), não trabalho do mês — e é
+      // onde o contador já procura dado de empresa. NÃO tem competência: fora de
+      // TABS_COM_COMPETENCIA de propósito.
+      { key: "credenciais", label: "Senhas e acessos" },
     ],
   },
 ];

@@ -32,6 +32,9 @@ const SEGMENT_TO_TAB = {
   configuracoes: "lancamentos",
   cadastro: "cadastro",
   documentos: "documentos",
+  // Cofre de senhas da empresa (grupo Empresa). ⚠ O PAR ABAIXO (`TAB_TO_SEGMENT`) É OBRIGATÓRIO:
+  // sem ele o clique na aba não navega e a URL cai em Anotações sem erro nenhum.
+  credenciais: "credenciais",
   anotacoes: "anotacoes",
   edit: "edit",
 };
@@ -48,6 +51,7 @@ const TAB_TO_SEGMENT = {
   planoContas: "plano-contas",
   cadastro: "cadastro",
   documentos: "documentos",
+  credenciais: "credenciais",
   anotacoes: "anotacoes",
   edit: "edit",
 };

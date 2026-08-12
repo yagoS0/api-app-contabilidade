@@ -21,6 +21,7 @@ import { ENTREGA_POR_ARQUIVO_LIBERADA } from "../../../obrigacoes/entregas/lib/l
 import { obrigatoriedadeDefis } from "../../../obrigacoes/defis/lib/obrigatoriedadeDefis";
 import { DefisNaoDevida } from "../../../obrigacoes/defis/components/DefisNaoDevida";
 import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useCompanyDocuments";
+import { useCompanyCredentials } from "../../credentials/hooks/useCompanyCredentials";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
 // e cada tab só carrega seu JS quando o contador clica nela pela 1ª vez.
@@ -80,6 +81,10 @@ const CompanyDocumentsTab = lazy(() =>
 const CompanyNotesTab = lazy(() =>
   import("../../documents/components/renderCompanyNotesTab").then((m) => ({ default: m.CompanyNotesTab }))
 );
+// Cofre de senhas + "outras informações" (grupo Empresa). Lazy pelo mesmo motivo das demais.
+const CompanyCredentialsTab = lazy(() =>
+  import("../../credentials/components/renderCompanyCredentialsTab").then((m) => ({ default: m.CompanyCredentialsTab }))
+);
 
 function CompanyDocumentsTabWrapper({ companyId, feedback }) {
   const docs = useCompanyDocuments({ api: companyDocsApi, companyId, feedback });
@@ -89,6 +94,14 @@ function CompanyDocumentsTabWrapper({ companyId, feedback }) {
 function CompanyNotesTabWrapper({ companyId, feedback }) {
   const notes = useCompanyNotes({ api: companyDocsApi, companyId, feedback });
   return <CompanyNotesTab notes={notes} />;
+}
+
+// ⚠ `feedback` INTEIRO, nunca `{ message, error }`. O hook do cofre chama `notifyError` — com a
+// função ausente o optional call vira no-op silencioso, e toda falha de carga/revelação sumiria
+// sem uma linha na tela. É o defeito que já custou uma semana no FechamentoModal.
+function CompanyCredentialsTabWrapper({ companyId, feedback }) {
+  const vault = useCompanyCredentials({ api: companyDocsApi, companyId, feedback });
+  return <CompanyCredentialsTab vault={vault} />;
 }
 
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
@@ -481,6 +494,32 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
               {ehDocumentos
                 ? <CompanyDocumentsTabWrapper companyId={companyId} feedback={feedback} />
                 : <CompanyNotesTabWrapper companyId={companyId} feedback={feedback} />}
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+        <Feedback message={feedback.message} error={feedback.error} />
+      </div>
+    );
+  }
+
+  // Cofre de senhas + "outras informações". Mesmo molde de Documentos/Anotações: ErrorBoundary por
+  // fora do Suspense, e nenhuma competência (a aba não filtra por mês).
+  if (companyDetailTab === "credenciais") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="credenciais"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        />
+        <div style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<div style={{ padding: 24, color: "#8A8FA3" }}>Carregando…</div>}>
+              <CompanyCredentialsTabWrapper companyId={companyId} feedback={feedback} />
             </Suspense>
           </ErrorBoundary>
         </div>
