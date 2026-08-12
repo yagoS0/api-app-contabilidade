@@ -500,6 +500,51 @@ let mockAnotacoes = [
   { id: "mock-nota-2", texto: "Sócio entrou em 04/2026 — conferir pró-labore.", importancia: "ALTA", fixada: false, createdAt: "2026-07-20T12:00:00.000Z" },
   { id: "mock-nota-3", texto: "Enviar balancete trimestral ao contador do grupo.", importancia: "MEDIA", fixada: false, createdAt: "2026-06-11T12:00:00.000Z" },
 ];
+// ── Cofre de senhas (mock com estado em memória) ─────────────────────────────────────────────
+//
+// ⚠ NENHUMA SENHA AQUI PARECE REAL, E ISSO É REGRA, NÃO ESTILO. Fixture entra no histórico do git
+// para sempre; uma senha plausível num mock é indistinguível de uma senha vazada, e alguém acaba
+// tentando-a em algum portal. Os valores abaixo se ANUNCIAM como falsos.
+//
+// ⚠ O mock guarda a senha num campo SEPARADO (`_senhaFalsa`) que a listagem nunca copia — é o
+// espelho da invariante do backend (`select` sem `senhaCifrada`). Um mock que devolvesse a senha
+// junto da lista faria a tela funcionar sem nunca exercitar o botão "Ver senha", que é o único
+// caminho auditado, e o defeito só apareceria em produção.
+let mockCredenciais = [
+  {
+    id: "mock-cred-1", rotulo: "gov.br", login: "12.345.678/0001-90",
+    observacao: "Titular: sócio administrador.",
+    senhaAtualizadaEm: "2026-05-14T12:00:00.000Z", createdAt: "2026-01-10T12:00:00.000Z",
+    vezesRevelada: 3, _senhaFalsa: "SENHA-FALSA-DO-MOCK-nao-use",
+  },
+  {
+    id: "mock-cred-2", rotulo: "Prefeitura (NFS-e)", login: "usuario.exemplo",
+    observacao: null,
+    senhaAtualizadaEm: null, createdAt: "2026-03-02T12:00:00.000Z",
+    vezesRevelada: 0, _senhaFalsa: "OUTRA-SENHA-FALSA-DO-MOCK",
+  },
+  // ⚠ Sem senha, de propósito: é o caso que separa "não posso ver" de "não há o que ver". Sem ele
+  // o estado `SEM_SENHA` e a primeira recusa de `podeVerSenha` nunca aparecem na tela.
+  {
+    id: "mock-cred-3", rotulo: "Portal do banco", login: null,
+    observacao: "Acesso só pelo app, com biometria do sócio — não há senha a guardar.",
+    senhaAtualizadaEm: null, createdAt: "2026-04-18T12:00:00.000Z",
+    vezesRevelada: 0, _senhaFalsa: null,
+  },
+];
+let mockInformacoes = [
+  { id: "mock-info-1", rotulo: "Contador anterior", valor: "Escritório Exemplo — (11) 0000-0000", createdAt: "2026-02-08T12:00:00.000Z" },
+  { id: "mock-info-2", rotulo: "Protocolo alvará", valor: "2026/000123-4", createdAt: "2026-06-01T12:00:00.000Z" },
+];
+// ⚠ O mock devolve `kms: false` de propósito: é o cenário de MENOR proteção, e é o único em que o
+// aviso âmbar da tela aparece. Um mock com `kms: true` deixaria o caminho que o dono precisa
+// enxergar (a chave-mestra numa variável de ambiente) sem nenhuma exibição.
+const mockCofre = {
+  kms: false,
+  algoritmo: "AES-256-GCM",
+  rotulo: "Chave derivada de CERT_SECRET_KEY (variável de ambiente do servidor)",
+};
+
 // Consultas de notas em lote já disparadas nesta sessão — dá para sair da aba e voltar achando o
 // resultado, que é o comportamento que evita o contador disparar (e pagar) de novo.
 let mockCapturas = [];
@@ -1216,6 +1261,53 @@ function synthesizeCircularEntries(companyId, circular) {
 
 function getCircularRecord(companyId, competencia) {
   return mockMonthlyCirculars.get(makeCircularKey(companyId, competencia)) || null;
+}
+
+/**
+ * O DETECTOR no mock — cópia DECLARADA de `api: application/accounting/divergenciaDeFonte.js`.
+ *
+ * Mesma razão de `_derivarAnaliticaMock`: o `Dockerfile` não copia `packages/` e cruzar apps quebra
+ * o boot, então a regra vive duas vezes. Quem mudar uma muda a outra.
+ *
+ * ⚠ E ELE PRECISA CONSEGUIR ACUSAR. `synthesizeCircularEntries` gera as linhas A PARTIR da própria
+ * circular, então offline nada jamais divergiria e o aviso seria inalcançável — o caminho feliz
+ * escondendo exatamente o que esta tela existe para mostrar. Por isso o detector compara contra o
+ * lançamento REAL da lista: editar o valor do lançamento de DAS pela aba Lançamentos (sem tocar na
+ * circular) é o que reproduz, offline, o congelamento medido em produção.
+ */
+const CAMPO_DA_CIRCULAR_POR_EVENTO = Object.freeze({
+  DAS_SIMPLES: { campo: "dasTotal", rotulo: "DAS (Simples Nacional)" },
+  RECEITA_SIMPLES: { campo: "receitaBruta", rotulo: "Receita bruta" },
+});
+
+function mockDivergenciasFonte(companyId, competencia) {
+  const circular = getCircularRecord(companyId, competencia);
+  if (!circular) return [];
+  const list = mockEntriesByCompany.get(companyId) || [];
+  const out = [];
+  for (const [eventType, def] of Object.entries(CAMPO_DA_CIRCULAR_POR_EVENTO)) {
+    const bruto = circular[def.campo];
+    // Ausência nunca é resposta: circular sem o número não afirma nada sobre o lançamento.
+    if (bruto == null || bruto === "") continue;
+    const esperado = Math.round(Number(bruto) * 100) / 100;
+    const entry = list.find((e) => e.competencia === competencia && e.eventType === eventType && e.origem === "SERPRO");
+    if (!entry) continue;
+    const lancado = Math.round((entry.lines || [])
+      .filter((l) => String(l.tipo).toUpperCase() === "D")
+      .reduce((s, l) => s + Number(l.valor || 0), 0) * 100) / 100;
+    if (Math.abs(esperado - lancado) <= 0.01) continue;
+    out.push({
+      eventType,
+      rotulo: def.rotulo,
+      campo: def.campo,
+      esperado,
+      lancado,
+      diferenca: Math.round((esperado - lancado) * 100) / 100,
+      entryId: entry.id,
+      historico: entry.historico || null,
+    });
+  }
+  return out;
 }
 
 /**
@@ -2322,6 +2414,8 @@ export function createMockApi() {
         semFaturamentoConferencia: circular?.semFaturamentoConferencia || null,
         conferenciaAdn: mockConferenciaAdn(companyId, competencia),
         faturamentoEmit: mockFaturamentoDaCompetencia(companyId, competencia),
+        // O detector: o razão ainda bate com a circular? Derivado, nunca coluna.
+        divergenciasFonte: mockDivergenciasFonte(companyId, competencia),
         serpro: {
           // NOT_FOUND conta como buscado: a chamada saiu e foi cobrada do mesmo jeito.
           extrato: {
@@ -4989,6 +5083,119 @@ export function createMockApi() {
       await delay(60);
       mockAnotacoes = mockAnotacoes.filter((n) => n.id !== noteId);
       return { ok: true, removida: { id: noteId } };
+    },
+    // ── Cofre de senhas (mock) ─────────────────────────────────────────────────────────────
+    // ⚠ Espelha a invariante do backend: a listagem NUNCA carrega a senha. `_senhaFalsa` é retirada
+    // aqui, num `map` explícito, e não por `delete` sobre o objeto — o `delete` mutaria a fixture e
+    // a senha sumiria do mock a partir da primeira listagem, fazendo "Ver senha" quebrar depois de
+    // um refresh e parecer um defeito da tela.
+    async listCompanyCredentials() {
+      await delay(60);
+      const credenciais = mockCredenciais.map(({ _senhaFalsa, ...c }) => ({ ...c, temSenha: Boolean(_senhaFalsa) }));
+      // `podeRevelar: true` para o caminho feliz ser exercitável no mock. Quem quiser ver a recusa
+      // de papel troca para `false` aqui — a tela nomeia o motivo com `papelMinimoRevelar`.
+      return { ok: true, credenciais, cofre: mockCofre, podeRevelar: true, papelMinimoRevelar: "FIRM_ADMIN" };
+    },
+    async createCompanyCredential(_companyId, { rotulo, login, senha, observacao }) {
+      await delay(100);
+      const cred = {
+        id: `mock-cred-${mockCredenciais.length + 1}`,
+        rotulo, login: login || null, observacao: observacao || null,
+        senhaAtualizadaEm: senha ? new Date().toISOString() : null,
+        createdAt: new Date().toISOString(),
+        vezesRevelada: 0,
+        _senhaFalsa: senha || null,
+      };
+      mockCredenciais = [cred, ...mockCredenciais];
+      const { _senhaFalsa, ...semSenha } = cred;
+      return { ok: true, credencial: { ...semSenha, temSenha: Boolean(_senhaFalsa) } };
+    },
+    async updateCompanyCredential(_companyId, credentialId, patch) {
+      await delay(80);
+      // Espelha a regra do backend: `senha` ausente não mexe; `senha: ""` apaga.
+      const temSenhaNoPatch = Object.prototype.hasOwnProperty.call(patch || {}, "senha");
+      mockCredenciais = mockCredenciais.map((c) => {
+        if (c.id !== credentialId) return c;
+        const novo = { ...c };
+        if (patch.rotulo !== undefined) novo.rotulo = patch.rotulo;
+        if (patch.login !== undefined) novo.login = patch.login || null;
+        if (patch.observacao !== undefined) novo.observacao = patch.observacao || null;
+        if (temSenhaNoPatch) {
+          novo._senhaFalsa = patch.senha || null;
+          novo.senhaAtualizadaEm = patch.senha ? new Date().toISOString() : null;
+        }
+        return novo;
+      });
+      const atual = mockCredenciais.find((c) => c.id === credentialId);
+      // ⚠ LANÇA, não devolve `{ ok: false }`: o real responde 404 e o `request` transforma isso em
+      // exceção. Devolvendo um objeto, a tela trataria a recusa como sucesso — recarregaria a lista
+      // e ficaria calada, e o defeito só apareceria em produção.
+      if (!atual) { const e = new Error("Credencial não encontrada."); e.code = "credencial_nao_encontrada"; e.status = 404; throw e; }
+      const { _senhaFalsa, ...semSenha } = atual;
+      return { ok: true, credencial: { ...semSenha, temSenha: Boolean(_senhaFalsa) } };
+    },
+    async deleteCompanyCredential(_companyId, credentialId) {
+      await delay(60);
+      const alvo = mockCredenciais.find((c) => c.id === credentialId);
+      mockCredenciais = mockCredenciais.filter((c) => c.id !== credentialId);
+      // `removida` traz `rotulo` igual ao real (`remover` devolve `{ id, rotulo }`) — é o que uma
+      // mensagem de confirmação teria de citar, e um mock mais pobre esconderia a falta dele.
+      return { ok: true, removida: { id: credentialId, rotulo: alvo?.rotulo ?? null } };
+    },
+    // ⚠ Recusa sem `confirmado`, igual ao servidor. Um mock permissivo aqui faria a tela passar
+    // sem nunca mandar o campo, e a recusa só apareceria em produção.
+    async revealCompanyCredential(_companyId, credentialId, { confirmado } = {}) {
+      await delay(120);
+      if (confirmado !== true) {
+        const err = new Error("Ver uma senha é registrado em auditoria. Confirme a ação para continuar.");
+        err.code = "CONFIRMACAO_OBRIGATORIA";
+        throw err;
+      }
+      const cred = mockCredenciais.find((c) => c.id === credentialId);
+      if (!cred) { const e = new Error("Credencial não encontrada."); e.code = "credencial_nao_encontrada"; throw e; }
+      if (!cred._senhaFalsa) {
+        const e = new Error("Esta credencial foi cadastrada sem senha — não há valor para mostrar.");
+        e.code = "sem_senha";
+        throw e;
+      }
+      cred.vezesRevelada = (cred.vezesRevelada || 0) + 1;
+      // `acessoId` acompanha o real (`revelarSenha` devolve o id da linha de auditoria gravada
+      // ANTES da decifra). Sem ele, o mock diria que a revelação não deixa rastro.
+      return {
+        ok: true, id: cred.id, rotulo: cred.rotulo, login: cred.login,
+        senha: cred._senhaFalsa, acessoId: `mock-acesso-${Date.now()}`,
+      };
+    },
+    async listCompanyCredentialAccesses() {
+      await delay(60);
+      return {
+        ok: true,
+        acessos: [
+          { id: "mock-ac-1", acao: "REVELADA", rotuloNoMomento: "gov.br", usuarioEmail: "contador@exemplo.com.br", createdAt: "2026-08-01T14:22:00.000Z" },
+          { id: "mock-ac-2", acao: "CRIADA", rotuloNoMomento: "gov.br", usuarioEmail: "admin@exemplo.com.br", createdAt: "2026-01-10T12:00:00.000Z" },
+        ],
+      };
+    },
+    // ── "Outras informações" (mock) — NÃO cifradas ─────────────────────────────────────────
+    async listCompanyInfos() {
+      await delay(50);
+      return { ok: true, informacoes: mockInformacoes, cifrado: false };
+    },
+    async createCompanyInfo(_companyId, { rotulo, valor }) {
+      await delay(80);
+      const info = { id: `mock-info-${mockInformacoes.length + 1}`, rotulo, valor, createdAt: new Date().toISOString() };
+      mockInformacoes = [info, ...mockInformacoes];
+      return { ok: true, informacao: info };
+    },
+    async updateCompanyInfo(_companyId, infoId, patch) {
+      await delay(60);
+      mockInformacoes = mockInformacoes.map((i) => (i.id === infoId ? { ...i, ...patch } : i));
+      return { ok: true, informacao: mockInformacoes.find((i) => i.id === infoId) };
+    },
+    async deleteCompanyInfo(_companyId, infoId) {
+      await delay(60);
+      mockInformacoes = mockInformacoes.filter((i) => i.id !== infoId);
+      return { ok: true, removida: { id: infoId } };
     },
     // ─── CONSULTA DE NOTAS EM LOTE ──────────────────────────────────────────────────────────
     // ⚠ Este mock NÃO pode ser "tudo deu certo". A tela existe para mostrar POR QUE uma empresa

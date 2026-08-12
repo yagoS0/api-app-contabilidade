@@ -115,7 +115,52 @@ function FaltaParaFechar({ problemas, filtroAtivo }) {
   );
 }
 
-function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo }) {
+/**
+ * ⚠ O DETECTOR: o razão discorda da CIRCULAR.
+ *
+ * *"A DAS, como todos os outros impostos, deve ter uma ÚNICA FONTE, um único dado de tabela que
+ * deve ser usado, e alterado caso seja alterado por uma retificação"* (dono). A circular é a
+ * fonte; o lançamento deriva dela. Quando os dois discordam, a MESMA TELA passa a mostrar dois
+ * números: na Circular, a célula do DAS imprime `circular.dasTotal` e a coluna "Total em aberto"
+ * soma o `saldo`, que sai das LINHAS do lançamento. Foi assim que a LENTE 2026-07 apareceu com
+ * 19.539,95 na célula e 18.842,28 em aberto, sem uma palavra sobre a diferença.
+ *
+ * ⚠ ELE AVISA, NÃO BLOQUEIA. Corrigir valor de lançamento é ato contábil do dono; travar o
+ * fechamento prenderia competências (inclusive já fechadas) sem oferecer saída. Mesmo tratamento
+ * que `conferenciaAdn` recebe logo acima — evidência à vista, decisão do contador.
+ *
+ * ⚠ APARECE TAMBÉM COM O MÊS FECHADO, de propósito: mês fechado com valor divergente é justamente
+ * o caso em que o número já saiu para fora, e escondê-lo aí seria esconder o pior deles.
+ */
+export function DivergenciaDeFonte({ divergencias }) {
+  const lista = divergencias || [];
+  if (!lista.length) return null;
+  return (
+    <div
+      style={{
+        display: "grid", gap: 3, padding: "5px 6px", borderRadius: 8,
+        border: "1px solid #FF5757", background: ACCOUNTING_PANEL.field,
+        fontSize: "0.72rem", color: "#FF5757", fontWeight: 600,
+      }}
+    >
+      <span>⚠ O razão não bate com o extrato</span>
+      {lista.map((d) => (
+        <span
+          key={d.eventType}
+          style={{ color: "#aeb6d3", fontWeight: 400 }}
+          title={`O extrato/declaração gravado na circular diz R$ ${fmtValor(d.esperado)}; as linhas de débito do lançamento somam R$ ${fmtValor(d.lancado)}. Corrigir valor de lançamento é ato contábil — o sistema não altera sozinho.`}
+        >
+          {d.rotulo}: extrato R$ {fmtValor(d.esperado)} · lançado R$ {fmtValor(d.lancado)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// Exportado para o teste da LIGAÇÃO (o campo do payload chegando à tela). Sem isso o detector teria
+// só teste de regra — e regra verde com fio solto é exatamente como `hasAccountingDivergence`
+// passou meses sendo gravado sem ninguém ver.
+export function FechamentoCadeado({ companyId, competencia, entries, onState, onFechamentoData, filtroAtivo }) {
   const [fechado, setFechado] = useState(false);
   const [fechadoEm, setFechadoEm] = useState(null);
   const [fechadoPorNome, setFechadoPorNome] = useState(null);
@@ -130,6 +175,8 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
   const [semFatBusy, setSemFatBusy] = useState(false);
   // Segunda fonte do faturamento: { status: "ok"|"divergente"|"nao_conferivel"|null, em }.
   const [conferenciaAdn, setConferenciaAdn] = useState(null);
+  // O DETECTOR: lançamentos gerados da circular cujo valor deixou de acompanhá-la.
+  const [divergenciasFonte, setDivergenciasFonte] = useState([]);
 
   const problemas = useMemo(() => {
     const out = [];
@@ -173,6 +220,8 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
         setSemFaturamento(r?.semFaturamento === true);
         setFaturamentoEmit(r?.faturamentoEmit ?? null);
         setConferenciaAdn(r?.conferenciaAdn || null);
+        // Backend anterior ao detector não manda o campo — lista vazia é "nada a dizer", nunca erro.
+        setDivergenciasFonte(Array.isArray(r?.divergenciasFonte) ? r.divergenciasFonte : []);
         onState?.(Boolean(r?.fechado));
         // Payload inteiro para quem precisa de mais que o booleano de fechado — hoje, o menu do
         // SERPRO, que lê `r.serpro` para avisar "já buscado em <data>" ANTES de gastar de novo.
@@ -295,6 +344,10 @@ function FechamentoCadeado({ companyId, competencia, entries, onState, onFechame
       <span style={{ fontSize: "0.68rem", color: "#8A8FA3", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
         Fechamento
       </span>
+
+      {/* ⚠ NO TOPO E SEM O GATE `!fechado`: é evidência sobre um NÚMERO, não sobre o que falta
+          fazer. Mês fechado com valor divergente é o caso em que o número já foi reportado. */}
+      <DivergenciaDeFonte divergencias={divergenciasFonte} />
 
       {/* Separado do "Confiro que lancei" de propósito: aquilo confirma que algo FOI lançado,
           isto afirma que algo NÃO EXISTIU. Misturar os dois faria parecer um sexto item de

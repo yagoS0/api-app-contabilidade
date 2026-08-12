@@ -742,6 +742,63 @@ export function createRealApi() {
     async deleteCompanyNote(companyId, noteId) {
       return request(`/firm/companies/${companyId}/anotacoes/${noteId}`, { method: "DELETE" });
     },
+    // ── Cofre de senhas da empresa ─────────────────────────────────────────────────────────
+    // ⚠ A listagem NÃO traz senha nenhuma (nem cifrada) — ver `CompanyCredentialsService.listar`.
+    // Ela traz `temSenha` e o estado do cofre, que é o que a tela precisa para dizer a verdade
+    // sobre o nível de proteção.
+    async listCompanyCredentials(companyId) {
+      return request(`/firm/companies/${companyId}/credenciais`);
+    },
+    async createCompanyCredential(companyId, { rotulo, login, senha, observacao }) {
+      return request(`/firm/companies/${companyId}/credenciais`, {
+        method: "POST",
+        body: JSON.stringify({ rotulo, login, senha, observacao }),
+      });
+    },
+    // ⚠ `patch` é repassado CRU. `senha` ausente = não mexer; `senha: ""` = apagar. Normalizar aqui
+    // (um `senha: senha || undefined`) colapsaria os dois casos e tornaria "apagar a senha"
+    // inalcançável pela tela.
+    async updateCompanyCredential(companyId, credentialId, patch) {
+      return request(`/firm/companies/${companyId}/credenciais/${credentialId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+    },
+    async deleteCompanyCredential(companyId, credentialId) {
+      return request(`/firm/companies/${companyId}/credenciais/${credentialId}`, { method: "DELETE" });
+    },
+    // ⚠ A ÚNICA chamada que devolve senha. POST de propósito: ela escreve a linha de auditoria, e um
+    // GET seria repetido de graça por refresh/prefetch, envenenando o próprio registro de leituras.
+    // `confirmado` viaja explícito — o servidor recusa sem ele (400 CONFIRMACAO_OBRIGATORIA).
+    async revealCompanyCredential(companyId, credentialId, { confirmado, motivo } = {}) {
+      return request(`/firm/companies/${companyId}/credenciais/${credentialId}/revelar`, {
+        method: "POST",
+        body: JSON.stringify({ confirmado: confirmado === true, motivo: motivo || undefined }),
+      });
+    },
+    async listCompanyCredentialAccesses(companyId, limite) {
+      const q = limite ? `?limite=${encodeURIComponent(limite)}` : "";
+      return request(`/firm/companies/${companyId}/credenciais/acessos${q}`);
+    },
+    // ── "Outras informações" da empresa — NÃO cifradas ─────────────────────────────────────
+    async listCompanyInfos(companyId) {
+      return request(`/firm/companies/${companyId}/informacoes`);
+    },
+    async createCompanyInfo(companyId, { rotulo, valor }) {
+      return request(`/firm/companies/${companyId}/informacoes`, {
+        method: "POST",
+        body: JSON.stringify({ rotulo, valor }),
+      });
+    },
+    async updateCompanyInfo(companyId, infoId, patch) {
+      return request(`/firm/companies/${companyId}/informacoes/${infoId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+    },
+    async deleteCompanyInfo(companyId, infoId) {
+      return request(`/firm/companies/${companyId}/informacoes/${infoId}`, { method: "DELETE" });
+    },
     // O extrato do Simples (declaração/recibo do PGDAS-D). Mesmo padrão do SITFIS: o `<a href>`
     // não carrega o token, então o PDF vem como blob autenticado.
     async fetchPgdasPdfBlob(companyId, competencia, tipo = "declaracao") {
@@ -1262,19 +1319,6 @@ export function createRealApi() {
      */
     async emitirNfse(payload) {
       return request("/nfse/issue", { method: "POST", body: JSON.stringify(payload) });
-    },
-
-    // ── Espelho da DEFIS ──────────────────────────────────────────────────
-    // ⚠ Nenhuma destas transmite. A DEFIS é transmitida NO PORTAL; `marcarDefisTransmitida` só
-    // registra do nosso lado que o contador transmitiu, com o recibo.
-    async getDefisEspelho(companyId, ano) {
-      return request(`/firm/companies/${companyId}/defis/${ano}`);
-    },
-    async salvarDefisEspelho(companyId, ano, dados) {
-      return request(`/firm/companies/${companyId}/defis/${ano}`, { method: "PUT", body: JSON.stringify({ dados }) });
-    },
-    async marcarDefisTransmitida(companyId, ano) {
-      return request(`/firm/companies/${companyId}/defis/${ano}/transmitida`, { method: "POST", body: JSON.stringify({}) });
     },
 
     // ── Onboarding (funil pré-cadastro) ───────────────────────────────────

@@ -868,6 +868,131 @@ aqui. ⚠ **Ele não corrige nada** — acertar valor de lançamento já gravado
 Regressão: `__tests__/retificadoraAtualizaImposto.test.js` (7), cuja metade exige que a guarda
 **continue** mordendo no caminho da guia.
 
+## A FONTE ÚNICA de cada tributo — e o DETECTOR que avisa quando o razão se afasta dela
+
+> *"A DAS, como todos os outros impostos, deve ter uma ÚNICA FONTE, um único dado de tabela que deve
+> ser usado, e alterado caso seja alterado por uma retificação por exemplo."* — o dono, 12/08/2026.
+
+⚠ **Não é pedido de conserto pontual: é regra de arquitetura.** E ela **já era o desenho** — o que
+faltava era alguém percebendo quando ele se rompe.
+
+### O mapa: cópia × artefato (nem tudo que guarda número é duplicata)
+
+| tributo | FONTE (autoridade) | lançamento | relação | pode divergir? |
+|---|---|---|---|---|
+| **DAS/Simples** | `CompanyMonthlyCircular.dasTotal` (extrato PGDAS-D), ou `acrescimos.DAS.principal` quando há juros destacados | `DAS_SIMPLES`, via `generateEntriesFromCircular` | **DERIVAÇÃO — deve seguir** | **SIM, e divergiu**: era a única bifurcação por `eventType` |
+| **Receitas** | `receitaServicos` / `receitaVendasSemST` / `receitaVendasComST` | `RECEITA_*`, mesmo gerador | **DERIVAÇÃO** | sim (ramo genérico; 1 caso medido) |
+| **INSS** | a **guia** DCTFWeb (`Guide.valor`) | ⚠ **NENHUM** — `EVENT_DEFINITIONS` não tem evento de INSS (removido: INSS é lançado à mão com a folha) | **FATO INDEPENDENTE** | não por este caminho — `circular.inssTotal` não gera lançamento, e a Circular renderiza o INSS como provisão **sintética** lida da guia |
+| **PIS · COFINS · IRPJ · CSLL · ISS · IRRF** | a **guia** (`extracted.composicao[].total`, ou `guide.valor`) | `DARF_*`, via `generateProvisionsFromGuide` | **DERIVAÇÃO — de OUTRA fonte** | não pelo mesmo defeito: aquele serviço **não tem guarda** e reescreve as linhas sempre que o valor muda (só `EXPORTADO` escapa) |
+| **Parcelamento** | `TributoParcela` (SERPRO `DETPAGTOPARC165`) | provisão + baixa (V2) | derivação | assunto próprio — ver "resíduo da provisão consolidada" |
+
+⚠ **A GUIA É ARTEFATO, NÃO CÓPIA.** Ela é o documento de arrecadação e **legitimamente** difere do
+imposto do mês depois do vencimento (juros/multa). É por isso que a guarda existe, e é por isso que
+o detector compara contra `resolveAmount` (que desvia para o `principal`) e **não** contra
+`dasTotal` cru: comparar cru acusaria o caso normal, e aviso que acende sempre ninguém lê.
+
+⚠ **Sem coluna por tributo para ISS/PIS/COFINS/IRPJ/CSLL na circular** — só DAS e INSS têm. O valor
+deles vive na guia + no lançamento (+ `acrescimos.<tributo>` quando há juros). ⚠ **`acrescimos.ISS`
+é LIDO (`routes/firm/accountingEntries.js:140`) e NUNCA ESCRITO** por caminho nenhum.
+
+### ⚠ A MESMA TELA já mostrava os dois números, e ninguém os apresentou um ao outro
+
+`enrichDasProvisao` (`routes/firm/accountingEntries.js`) substitui `valor`/`totalD` da provisão de
+DAS pelo `circular.dasTotal` — mas **não toca em `saldo`**, que `entryToResponse` calcula das
+LINHAS. Então o mesmo payload carrega os dois: a **célula** da Circular imprime a circular, e a
+coluna **"Total em aberto"** (`totaisEmAberto` lê `saldo ?? valor ?? totalD`) soma o razão. Na LENTE
+2026-07: célula **19.539,95**, em aberto **18.842,28** (= 18.347,28 do razão + 495,00 de INSS). A
+composição da célula está **certa** (DAS + INSS, confirmado pelo dono); errada era a fonte.
+
+### O detector — `divergenciaDeFonte.js`
+
+`divergenciasDeFonte(circular, entries)` → uma linha por evento cujo ΣD **não** bate com o que o
+gerador escreveria. **PURA**: quem consulta o banco é a rota (mesma disciplina de
+`computeFechamentoBlockers`).
+
+⚠ **Ele NÃO tem lista própria de eventos nem leitura própria de valor.** Importa
+`EVENT_DEFINITIONS`, `resolveAmount` e `valorDoLancamento` **do próprio gerador** — os três viraram
+`export` para isto. Uma segunda lista mediria menos do que o gerador escreve, em silêncio, que é a
+classe de defeito que ele existe para pegar. Um segundo `valorDoLancamento` reintroduziria o
+"dobro" pelo outro lado.
+
+⚠ **É DERIVADO NA LEITURA, NÃO COLUNA — e isso tem duas razões independentes.**
+
+1. **`CompanyMonthlyCircular.hasAccountingDivergence` é GUARDA MORTA.** Varredura de 12/08/2026 nos
+   dois apps: **um** escritor (`AccountingEntryGeneratorService.js:616`), **zero** leitores — nenhum
+   `select`, nenhum `where`, nenhum componente, nenhum teste. Ela vaza por acidente em dois
+   endpoints que não têm `select`, chega a `circularData.circular` no React e morre lá. Somar mais
+   um bit a ela seria alimentar a guarda que ninguém lê. (Companhia: `PendenciaPosFechamento` e
+   `ApuracaoDivergencia` estão no mesmo estado — escritas, com rota, sem tela.)
+2. **Coluna só é reescrita quando a sincronia roda.** As divergências vivas foram gravadas por
+   sincronias que já passaram; uma coluna continuaria dizendo `false`. Derivar enxerga o passado.
+   Mesma disciplina de `LedgerProjectionService.computeSituacao`.
+
+### ⚠ QUEM O LÊ, E ONDE APARECE — senão é a próxima guarda morta
+
+`GET /firm/companies/:id/fechamento-contabil/:competencia` devolve **`divergenciasFonte[]`**, ao
+lado de `conferenciaAdn` — a rota que a aba **Lançamentos** já consulta em toda abertura e em toda
+troca de competência. O leitor é `FechamentoCadeado` (`renderAccountingEntriesTab.jsx`), que renderiza
+`<DivergenciaDeFonte>` **no topo do painel Fechamento**: *"⚠ O razão não bate com o extrato · DAS
+(Simples Nacional): extrato R$ 19.539,95 · lançado R$ 18.347,28"*. Mesma moldura/vermelho de
+`conferência divergente`, que é o precedente **vivo** deste painel.
+
+- ⚠ **APARECE COM O MÊS FECHADO** (sem o gate `!fechado` dos outros blocos): mês fechado com valor
+  divergente é justamente aquele cujo número **já saiu para fora**.
+- ⚠ **AVISA, NÃO BLOQUEIA.** `podeFechar` não o consulta. Travar prenderia hoje **12 competências em
+  5 empresas** — inclusive as já fechadas — sem oferecer saída, e corrigir valor de lançamento é ato
+  contábil do dono. Mesmo tratamento que `nao_conferivel` recebe.
+- ⚠ **O mock precisa conseguir acusar.** `synthesizeCircularEntries` gera as linhas a partir da
+  própria circular, então offline nada divergiria e o aviso seria inalcançável.
+  `mockDivergenciasFonte` compara contra o lançamento **real** da lista — editar o valor do DAS pela
+  aba Lançamentos reproduz o congelamento offline. Cópia **declarada** da regra do backend, mesmo
+  motivo de `_derivarAnaliticaMock`.
+
+Regressões: `__tests__/divergenciaDeFonte.test.js` (11, metade exigindo que ele **cale**) e
+`web: features/accounting/entries/components/__tests__/divergenciaDeFonte.test.jsx` (7, que trava a
+LIGAÇÃO — o campo do payload chegando à tela, que é exatamente o fio que faltava ao
+`hasAccountingDivergence`).
+
+### O script dos 12 — `scripts/corrigir-das-divergente.mjs`, DRY-RUN, NÃO APLICADO
+
+⚠ **Nasce em dry-run e não escreve nada sem `--aplicar`.** Zero chamada ao SERPRO: o valor certo já
+está gravado (`dasTotal`, e o carimbo `recalculatedToValor` guardou a prova de que ele foi lido e
+descartado).
+
+- ⚠ **Não escreve linha à mão: chama `generateEntriesFromCircular({ fonteValor: EXTRATO,
+  edicaoManual: true })`** — o MESMO gerador. `deleteMany`+`createMany` aqui seria uma segunda forma
+  de lançamento [[nao-mudar-forma-lancamentos]]; pelo gerador vêm de graça as contas memorizadas, o
+  `statusPelasBaixas` e o balanceamento.
+- ⚠ **RECUSA competência FECHADA, sempre — inclusive com `--aplicar`**, e reconfere o fechamento no
+  instante da escrita (o dry-run pode ter sido lido ontem). A saída sai impressa: reabrir, ou
+  estornar/contra-lançar. Recusa também lançamento `EXPORTADO`.
+- **Seção 2** mede os tributos de fonte GUIA (PIS/COFINS/IRPJ/CSLL/ISS/IRRF) — o esperado é **zero**,
+  e ela **não corrige nada**: se acusar, há um caminho quebrado a mais, e o conserto é outro.
+
+**Dry-run em produção (12/08/2026, só leitura, nada gravado):**
+
+| | |
+|---|---|
+| divergências lançamento × circular | **13** — 12 de `DAS_SIMPLES` + **1** de `RECEITA_SERVICO` |
+| corrigíveis pelo script | **11** |
+| recusados por competência FECHADA | **2** — LENTE 2026-06 (fechada em 13/07), o DAS **e** a receita |
+| provisões de fonte GUIA conferidas | **23** · **divergentes: 0** |
+
+⚠ **A seção 2 voltando ZERO é a resposta a "quantos outros tributos divergem": nenhum.** Isso
+**confirma** que a causa era a bifurcação por `eventType` — ela existe num arquivo só, e só o DAS
+caía nela. PIS/COFINS/IRPJ/CSLL/ISS/IRRF passam por `generateProvisionsFromGuide`, que não tem
+guarda nenhuma; INSS não tem lançamento derivado para divergir.
+
+⚠ **A única divergência de RECEITA aponta para o LADO CONTRÁRIO** (razão 114.600,00 × circular
+107.600,00): ali o razão está MAIOR que a declaração, e nas 12 do DAS ele está sempre MENOR (a
+retificadora subiu o imposto e o lançamento ficou para trás). São sintomas diferentes no mesmo mês
+fechado, e o da receita **não** é explicado pela guarda — ela nunca alcançou `RECEITA_*`. Fica
+medido e nomeado; investigá-lo é trabalho próprio.
+
+⚠ **Os carimbos `recalculatedFromValor` são exatamente 2× o ΣD em 12 de 12** (`1.210,88 = 2 × 605,44`,
+`36.694,56 = 2 × 18.347,28`) — a assinatura do `sumEntryLines` somando as duas pernas, já corrigida
+em código e ainda visível no dado.
+
 ## Import de Excel — a memória GRAVAVA por uma chave e LIA por outra
 
 `upsertHistoricoFromImport` grava o texto passando por **`normalizarHistorico`** (Q50): "PAGO INSS -

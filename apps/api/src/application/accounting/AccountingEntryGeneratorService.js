@@ -13,7 +13,10 @@ import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
 // Contas D/C NÃO têm fallback hardcoded — vêm do `AccountingHistorico` da empresa
 // (memória aprendida do primeiro preenchimento manual pelo contador). Exceção: `DAS_SIMPLES`
 // tem fallback (`DEFAULT_ACCOUNTS_DAS`) por ser tributo padronizado.
-const EVENT_DEFINITIONS = Object.freeze({
+// ⚠ EXPORTADO para o DETECTOR (`divergenciaDeFonte.js`) saber QUAIS eventos derivam da circular e
+// de QUAL campo — sem uma segunda lista. Uma cópia divergiria no primeiro tributo novo, e o
+// detector passaria a medir menos do que o gerador escreve, em silêncio.
+export const EVENT_DEFINITIONS = Object.freeze({
   RECEITA_SERVICO: {
     tipo: "RECEITA",
     subtipo: null,
@@ -54,7 +57,7 @@ const EVENT_DEFINITIONS = Object.freeze({
 // e aguardam o 1º preenchimento manual pelo contador. O auto-save no PUT/POST de entries memoriza
 // o par (eventType, empresa) no AccountingHistorico; sync seguinte da mesma empresa auto-preenche.
 
-const AMOUNT_SOURCE_FIELD_MAP = Object.freeze({
+export const AMOUNT_SOURCE_FIELD_MAP = Object.freeze({
   receita_bruta: "receitaBruta",
   receitaBruta: "receitaBruta",
   receita_servicos: "receitaServicos",
@@ -184,7 +187,10 @@ function statusPelasBaixas(baixas, principalNovo) {
 // A prova está gravada em produção: `recalculatedFromValor` é **exatamente 2×** a soma dos débitos
 // do lançamento em 55 de 89 provisões de DAS (ex.: ATIM 2026-02, `3.063,86 = 2 × 1.531,93`).
 // Mesma leitura de `statusPelasBaixas`, logo acima: quem responde "quanto vale" é o débito.
-function valorDoLancamento(lines) {
+// ⚠ EXPORTADO para o detector (`divergenciaDeFonte.js`) medir "quanto o lançamento vale" com ESTA
+// leitura, e não com uma segunda. Somar as duas pernas foi o defeito original; uma cópia no
+// detector o reintroduziria do outro lado, e ele acusaria o dobro em toda competência sadia.
+export function valorDoLancamento(lines) {
   return (lines || [])
     .filter((line) => String(line?.tipo || "").toUpperCase() === "D")
     .reduce((total, line) => total + Number(line?.valor || 0), 0);
@@ -207,7 +213,10 @@ const AMOUNT_SOURCE_TO_TRIBUTO = Object.freeze({
   inss_total: "INSS", inssTotal: "INSS",
 });
 
-function resolveAmount(circular, amountSource) {
+// ⚠ EXPORTADO para o detector (`divergenciaDeFonte.js`) perguntar "quanto a circular manda" com
+// ESTA leitura — inclusive o desvio para `acrescimos.<tributo>.principal`. Ler `dasTotal` cru no
+// detector acusaria como divergência a guia vencida com juros, que é o caso legítimo.
+export function resolveAmount(circular, amountSource) {
   // Frente B: quando há split principal/juros/multa (guia recalculada após vencimento),
   // a PROVISÃO usa o PRINCIPAL (valor original) — os juros/multa ficam só destacados na circular.
   const tributo = AMOUNT_SOURCE_TO_TRIBUTO[amountSource];

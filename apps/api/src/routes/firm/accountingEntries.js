@@ -38,6 +38,13 @@ import { markGuidePaidManual } from "../../application/guides/GuidePaymentStatus
 import { normalizarHistorico } from "../../application/accounting/historicoCompetencia.js";
 // Saldo da provisão — mesma conta usada pelo estorno (ver `saldoProvisao.js`).
 import { computeSaldoProvisao } from "../../application/accounting/saldoProvisao.js";
+// O DETECTOR de "o razão discorda da circular". Derivado na leitura, nunca coluna — ver
+// `divergenciaDeFonte.js` para o motivo (a coluna `hasAccountingDivergence` é guarda MORTA).
+import {
+  divergenciasDeFonte,
+  SELECT_CIRCULAR_PARA_DIVERGENCIA,
+  EVENTOS_DERIVADOS_DA_CIRCULAR,
+} from "../../application/accounting/divergenciaDeFonte.js";
 // ESTORNO DA BAIXA: transição administrativa nomeada, com motivo obrigatório, auditoria e
 // contra-lançamento quando a competência da baixa está fechada.
 import {
@@ -1528,10 +1535,25 @@ export function createAccountingEntriesRouter({ log }) {
           semFaturamento: true,
           semFaturamentoEm: true,
           semFaturamentoConferencia: true,
+          ...SELECT_CIRCULAR_PARA_DIVERGENCIA,
           ...CHECKLIST_SELECT,
         },
       });
       const validation = await validateFechamentoContabil(prisma, { portalClientId, competencia });
+      // ⚠ O DETECTOR: o razão ainda bate com a circular? Deriva na LEITURA, não lê coluna — as
+      // divergências vivas hoje foram gravadas por sincronias que já passaram, e uma coluna só é
+      // reescrita quando a sincronia volta a rodar. Ver `divergenciaDeFonte.js`.
+      //
+      // ⚠ NÃO BLOQUEIA o fechamento, e isso é decisão, não esquecimento: corrigir valor de
+      // lançamento é ato contábil do dono, e um bloqueio prenderia hoje 12 competências em 5
+      // empresas — inclusive as que já estão fechadas — sem oferecer a saída. O aviso aparece
+      // ANTES do clique, do mesmo jeito que `conferenciaAdn` faz para o "sem faturamento".
+      const divergenciasFonte = await prisma.accountingEntry.findMany({
+        where: { portalClientId, competencia, origem: "SERPRO", eventType: { in: EVENTOS_DERIVADOS_DA_CIRCULAR } },
+        select: { id: true, eventType: true, origem: true, historico: true, lines: { select: { tipo: true, valor: true } } },
+      })
+        .then((entries) => divergenciasDeFonte(circular, entries))
+        .catch(() => []);
       const serpro = await estadoDasBuscasSerpro({ portalClientId, competencia, circular });
       // O faturamento viaja junto para o alternador já nascer desabilitado com o motivo, em vez de
       // o contador descobrir a recusa clicando.
@@ -1583,6 +1605,9 @@ export function createAccountingEntriesRouter({ log }) {
         semFaturamentoConferencia: circular?.semFaturamentoConferencia || null,
         conferenciaAdn,
         faturamentoEmit,
+        // ⚠ AVISA, NÃO BLOQUEIA — `podeFechar` acima não o consulta de propósito. Ver o comentário
+        // na montagem, mais acima, e `divergenciaDeFonte.js`.
+        divergenciasFonte,
       });
     } catch (err) {
       log.error({ err }, "Falha ao consultar fechamento contábil");
