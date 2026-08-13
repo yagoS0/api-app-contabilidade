@@ -2178,13 +2178,33 @@ model ApuracaoSnapshot {
   rbt12                   Decimal   @db.Decimal(18, 2)
   folha12m                Decimal?  @db.Decimal(18, 2)
   fatorR                  Decimal?  @db.Decimal(6, 4)
-  receitaPorTipo          Json // { REVENDA_MERCADORIA: x, SERVICO_FATOR_R: y, ... }
-  receitaPorAnexo         Json // derivado, com Fator R aplicado
-  // Motor próprio (cálculo local)
+  receitaPorTipo          Json // { REVENDA_MERCADORIA: x, SERVICO_FATOR_R: y, ... } — segregação do mês, dos DOIS caminhos
+  /// Derivado do NOSSO motor, com Fator R aplicado.
+  ///
+  /// ⚠ NULO = "o motor local não calculou esta competência" — NÃO é o mesmo que `{}`, que seria
+  /// "calculou e não achou anexo nenhum". Quem apura pela simulação oficial do PGDAS-D não decide
+  /// anexo (quem decide é a RFB, a partir das `atividadesEscolhidas`), então esse caminho deixa a
+  /// coluna nula em vez de gravar `{}`. Antes ele gravava `{}` e APAGAVA o que o motor tinha posto.
+  receitaPorAnexo         Json?
+  // ─── Motor próprio (cálculo LOCAL) ──────────────────────────────────────────────────────────
+  /// ⚠ SÓ O MOTOR LOCAL ESCREVE AQUI (`MotorApuracaoService.calcularApuracaoLocal`).
+  /// Até 2026-08 `FechamentoService.calcularFechamento` gravava aqui o valor da SIMULAÇÃO OFICIAL
+  /// da RFB — a coluna ora guardava o nosso número, ora o da Receita, sem nada na linha que os
+  /// distinguisse. Hoje a simulação vai em `dasSimuladoSerpro`. Ver `dasCalculadoLocalProcedencia`.
   dasCalculadoLocal       Decimal?  @db.Decimal(18, 2)
+  /// De quem é o número de `dasCalculadoLocal`: `MOTOR_LOCAL` | `AMBIGUO`. Nulo quando a coluna é
+  /// nula. `AMBIGUO` existe para os snapshots gravados ANTES da separação, cuja procedência não
+  /// pôde ser provada por nenhum outro campo da linha — inventá-la é exatamente o que a separação
+  /// veio impedir. Vocabulário em `apuracao/v2/procedenciaDas.js`.
+  dasCalculadoLocalProcedencia String?
   aliquotaEfetivaPorAnexo Json?
   vigenciaAliquota        DateTime? // qual versão de AliquotaSimplesNacional usada
-  // Cross-check SERPRO (vem depois da transmissão)
+  // ─── SERPRO: a SIMULAÇÃO e a TRANSMISSÃO são dois atos, e são duas colunas ───────────────────
+  /// DAS devolvido pela simulação oficial do PGDAS-D (`indicadorTransmissao:false`) — o que o
+  /// contador vê no [Calcular]. Nada foi declarado à RFB.
+  dasSimuladoSerpro       Decimal?  @db.Decimal(18, 2)
+  /// DAS devolvido pela TRANSMISSÃO (`indicadorTransmissao:true`) — a declaração existe na Receita.
+  /// ⚠ Nulo em PA `jaDeclarado` que não retransmitimos: ali não há valor NOSSO transmitido.
   dasRetornadoSerpro      Decimal?  @db.Decimal(18, 2)
   divergenciaValor        Decimal?  @db.Decimal(18, 2)
   // Reconciliação extrato (Fase 5)

@@ -12,12 +12,16 @@
 // COMO LER
 //  • `estado` da competência é a verdade do fluxo: `transmitida`/`confirmada` = declarado à RFB;
 //    `fechada` = pronto mas não transmitido; `bloqueada_pendencias` = tem pendência humana.
-//  • DAS prévia × declarado: apesar do nome do campo, `dasCalculadoLocal` guarda a SIMULAÇÃO do
-//    SERPRO (indicadorTransmissao:false), não o motor local — ver FechamentoService:287→343.
-//    `dasRetornadoSerpro` guarda a TRANSMISSÃO (:true). Os dois são do SERPRO. Divergir significa
-//    que o valor MUDOU entre a prévia que o contador aprovou e o que foi declarado de fato:
-//    nota capturada no intervalo, receita anterior ajustada, atividade alterada. Vale investigar
-//    caso a caso — não é erro de cálculo nosso.
+//  • DAS prévia × declarado: a prévia é `dasSimuladoSerpro` (SIMULAÇÃO, indicadorTransmissao:false)
+//    e o declarado é `dasRetornadoSerpro` (TRANSMISSÃO, :true). Os dois são do SERPRO. Divergir
+//    significa que o valor MUDOU entre a prévia que o contador aprovou e o que foi declarado de
+//    fato: nota capturada no intervalo, receita anterior ajustada, atividade alterada. Vale
+//    investigar caso a caso — não é erro de cálculo nosso.
+//    ⚠ ATÉ AGOSTO/2026 A PRÉVIA ERA GRAVADA EM `dasCalculadoLocal`, a coluna do NOSSO motor — que
+//    também escreve nela. Este script NÃO usa mais aquela coluna como prévia: nos snapshots
+//    antigos ela pode ser o número do motor, e comparar os dois produziria uma "divergência" que é
+//    só a troca de dono. Para medir quantos snapshots ficaram sem procedência provável:
+//    `scripts/diag-procedencia-das.mjs` (só leitura).
 //  • Conferência ADN nunca rodada aparece como `—`: significa que o faturamento daquela
 //    competência NUNCA foi confrontado com a autoridade nacional.
 
@@ -70,7 +74,7 @@ try {
       prisma.apuracaoSnapshot.findMany({
         where: { portalClientId: pcId, competencia: { startsWith: `${ano}-` } },
         select: {
-          competencia: true, estado: true, dasCalculadoLocal: true, dasRetornadoSerpro: true,
+          competencia: true, estado: true, dasSimuladoSerpro: true, dasRetornadoSerpro: true,
           transmitidoEm: true, numeroDeclaracao: true, conferenciaStatus: true, conferidaEm: true,
           receitaInterna: true, fechadaEm: true,
         },
@@ -107,10 +111,11 @@ try {
       if (s.conferenciaStatus) totais.conferidas += 1;
       if (s.conferenciaStatus === "divergente") totais.divergentes += 1;
 
-      // Prévia (simulação) × declarado (transmissão) — os dois vindos do SERPRO.
+      // Prévia (simulação) × declarado (transmissão) — os dois vindos do SERPRO, cada um na sua
+      // coluna desde a separação de agosto/2026.
       let divTxt = "";
-      if (s.dasCalculadoLocal != null && s.dasRetornadoSerpro != null) {
-        const dif = Number(s.dasRetornadoSerpro) - Number(s.dasCalculadoLocal);
+      if (s.dasSimuladoSerpro != null && s.dasRetornadoSerpro != null) {
+        const dif = Number(s.dasRetornadoSerpro) - Number(s.dasSimuladoSerpro);
         if (Math.abs(dif) > 0.01) {
           divTxt = `  Δ prévia×declarado ${money(dif)}`;
           totais.divergenciaDas.push({ emp: emp.razaoSocial, comp: s.competencia, dif });
@@ -121,7 +126,7 @@ try {
         ? (s.conferenciaStatus === "ok" ? "ADN ok" : s.conferenciaStatus === "divergente" ? "⚠ ADN DIVERGENTE" : "ADN n/a")
         : "ADN —";
       console.log(
-        `     ${s.competencia}  ${String(s.estado).padEnd(20)} DAS ${String(money(s.dasRetornadoSerpro ?? s.dasCalculadoLocal)).padEnd(16)} ${conf}${divTxt}`,
+        `     ${s.competencia}  ${String(s.estado).padEnd(20)} DAS ${String(money(s.dasRetornadoSerpro ?? s.dasSimuladoSerpro)).padEnd(16)} ${conf}${divTxt}`,
       );
     }
     console.log("");

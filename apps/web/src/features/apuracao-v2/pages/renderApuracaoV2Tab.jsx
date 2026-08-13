@@ -236,9 +236,10 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
   const fat = fechDados?.faturamento || {};
   const estado = fechDados?.estado || snap?.estado;
   // ⚠ O KPI CARREGA A PROCEDÊNCIA. Era `dasRetornadoSerpro ?? dasCalculadoLocal` sob o rótulo
-  // único "DAS apurado": o número do nosso motor e o da Receita saíam com o MESMO nome — e
-  // `dasCalculadoLocal` é gravada pelos DOIS caminhos, então nem "nosso" ela pode ser chamada.
-  // Não dá para mostrar "portal × Receita" no relatório abaixo enquanto este KPI confunde os dois.
+  // único "DAS apurado": o número do nosso motor e o da Receita saíam com o MESMO nome. Hoje o
+  // backend separa os três (transmitido · simulado · nosso motor) e o rótulo diz qual é.
+  // O estado "procedência ambígua" continua existindo — para os snapshots gravados ANTES da
+  // separação, cuja procedência não pôde ser provada pela própria linha.
   const das = kpiDasApurado(snap);
   const extDados = extrato?.dados || extrato?.circular || null;
   const classificacao = estadoDaClassificacao({ pendencias, relatorio });

@@ -77,13 +77,17 @@ export function procedenciaDoDas(preApurado) {
     disponivel: nossoValor != null,
   };
 
+  // ⚠ TRANSMITIDO PRIMEIRO, SIMULADO DEPOIS — e com rótulos diferentes. Os dois vêm da RFB, mas
+  // só o primeiro é uma declaração entregue; o segundo é um cálculo oficial de um PA que ainda não
+  // foi declarado. Um rótulo só ("DAS da Receita") para os dois faria a tela dizer que a obrigação
+  // está cumprida quando o contador apenas clicou em Calcular.
   const serpro = num(oficialSnap.dasRetornadoSerpro);
   if (serpro != null) {
     return {
       nosso,
       oficial: {
         valor: serpro,
-        rotulo: "DAS oficial devolvido pela Receita (SERPRO)",
+        rotulo: "DAS oficial devolvido pela Receita (SERPRO) — declaração transmitida",
         disponivel: true,
         ambiguo: false,
         aviso: null,
@@ -95,10 +99,30 @@ export function procedenciaDoDas(preApurado) {
     };
   }
 
-  // ⚠ A COLUNA DE PROCEDÊNCIA AMBÍGUA. `ApuracaoSnapshot.dasCalculadoLocal` é gravada tanto pelo
-  // motor local quanto pela simulação oficial do PGDAS-D (`FechamentoService.calcularFechamento`),
-  // e não há como distinguir pela linha. Chamá-la de "nosso" ou de "da Receita" seria escolher no
-  // escuro — a tela diz que não se sabe.
+  const simulado = num(oficialSnap.dasSimuladoSerpro);
+  if (simulado != null) {
+    return {
+      nosso,
+      oficial: {
+        valor: simulado,
+        rotulo: "DAS oficial calculado pela Receita (SERPRO) — simulação, nada transmitido",
+        disponivel: true,
+        ambiguo: false,
+        aviso: null,
+      },
+      // ⚠ ESTA SUBTRAÇÃO É O DOUBLE-CHECK, e agora ela vale: os dois lados têm dono conhecido (o
+      // nosso motor × a RFB). Era justamente por não saber de quem era o segundo número que a
+      // diferença não podia ser calculada no ramo ambíguo, logo abaixo.
+      diferenca: nossoValor != null ? +(nossoValor - simulado).toFixed(2) : null,
+      comparavel: nossoValor != null,
+    };
+  }
+
+  // ⚠ O RESÍDUO AMBÍGUO — E ELE CONTINUA VALENDO. `ApuracaoSnapshot.dasCalculadoLocal` foi, até a
+  // separação das colunas, gravada tanto pelo motor local quanto pela simulação oficial do PGDAS-D
+  // (`FechamentoService.calcularFechamento`). O backend hoje só manda este campo quando a
+  // procedência NÃO pôde ser provada pela própria linha — snapshot velho. Chamá-lo de "nosso" ou
+  // de "da Receita" seria escolher no escuro; a tela diz que não se sabe.
   const ambigua = oficialSnap.dasCalculadoLocalNoSnapshot || null;
   if (ambigua && num(ambigua.valor) != null) {
     return {
@@ -405,6 +429,11 @@ function fmtBrl(v) {
  * que separa os dois. Não dá para mostrar "nosso × da Receita" embaixo enquanto o KPI de cima
  * confunde os dois.
  *
+ * ⚠ A ORDEM É A DA FORÇA DA EVIDÊNCIA, e cada degrau tem rótulo próprio:
+ * transmitido → simulado → nosso motor (provado) → gravado sem procedência (snapshot velho).
+ * O estado ambíguo NÃO foi removido: ele deixou de ser o destino de toda competência calculada e
+ * passou a ser o que de fato é — o resíduo das linhas anteriores à separação das colunas.
+ *
  * @param {object|null} snap — `ApuracaoSnapshot`
  */
 export function kpiDasApurado(snap) {
@@ -413,19 +442,42 @@ export function kpiDasApurado(snap) {
     return {
       valor: serpro,
       label: "DAS oficial (SERPRO)",
-      titulo: "Valor devolvido pela Receita na simulação/transmissão do PGDAS-D.",
+      titulo: "Valor devolvido pela Receita na TRANSMISSÃO do PGDAS-D — a declaração existe.",
       procedencia: "rfb",
+    };
+  }
+  const simulado = num(snap?.dasSimuladoSerpro);
+  if (simulado != null) {
+    return {
+      valor: simulado,
+      // ⚠ "simulado" no rótulo, não só no tooltip: é a diferença entre "a Receita calculou" e "a
+      // declaração foi entregue", e ela decide se ainda há obrigação a cumprir no mês.
+      label: "DAS oficial simulado (SERPRO)",
+      titulo: "Valor devolvido pela Receita na SIMULAÇÃO do PGDAS-D (indicadorTransmissao:false). "
+        + "É o cálculo oficial do mês — mas nada foi transmitido ainda.",
+      procedencia: "rfb_simulado",
     };
   }
   const local = num(snap?.dasCalculadoLocal);
   if (local != null) {
+    // Procedência PROVADA: quem escreveu foi o nosso motor, e a marca viajou junto do número.
+    if (snap?.dasCalculadoLocalProcedencia === "MOTOR_LOCAL") {
+      return {
+        valor: local,
+        label: "DAS calculado pelo portal",
+        titulo: "Cálculo do NOSSO motor, com a tabela versionada de alíquotas — serve de "
+          + "conferência, não é o valor da Receita e não declara nada.",
+        procedencia: "motor_local",
+      };
+    }
     return {
       valor: local,
-      // ⚠ Ambígua por construção: a coluna é gravada pelo motor local E pela simulação oficial.
+      // ⚠ Snapshot anterior à separação: a coluna era gravada pelo motor local E pela simulação
+      // oficial, e a linha não guarda qual dos dois é. Continua sem dono, e é assim que se diz.
       label: "DAS gravado (procedência ambígua)",
-      titulo: "A coluna `dasCalculadoLocal` é gravada tanto pelo motor local quanto pela simulação "
-        + "oficial do PGDAS-D — não é possível afirmar de quem é este número. O relatório de "
-        + "faturamento mostra o cálculo do portal separado do oficial.",
+      titulo: "Snapshot anterior à separação das colunas: `dasCalculadoLocal` era gravada tanto "
+        + "pelo motor local quanto pela simulação oficial do PGDAS-D — não é possível afirmar de "
+        + "quem é este número. Recalcule a competência para obter os valores já separados.",
       procedencia: "ambigua",
     };
   }

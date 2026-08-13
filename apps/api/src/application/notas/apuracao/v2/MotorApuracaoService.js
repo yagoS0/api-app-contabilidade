@@ -24,6 +24,7 @@ import crypto from "node:crypto";
 import { prisma } from "../../../../infrastructure/db/prisma.js";
 import { resolverAliquota, calcularAliquotaEfetiva, AliquotaResolverError } from "./AliquotaResolver.js";
 import { calcularEPersistirFatorR, decidirFatorR, resolverFolha12m, FatorRError } from "./FatorRService.js";
+import { PROCEDENCIA_DAS } from "./procedenciaDas.js";
 
 export class MotorApuracaoError extends Error {
   constructor(code, message, extra = {}) {
@@ -314,6 +315,10 @@ export async function calcularApuracaoLocal({ portalClientId, competencia, folha
     fatorR: decisaoFatorR?.fatorR || null,
     receitaPorTipo, receitaPorAnexo,
     dasCalculadoLocal,
+    // ⚠ A MARCA VIAJA COM O NÚMERO, na mesma escrita. Sem ela, `dasCalculadoLocal` volta a ser uma
+    // coluna sem dono: o nome "local" não é prova de procedência — foi exatamente assim que a
+    // simulação oficial da RFB passou anos gravada aqui dentro.
+    dasCalculadoLocalProcedencia: PROCEDENCIA_DAS.MOTOR_LOCAL,
     aliquotaEfetivaPorAnexo,
     vigenciaAliquota: vigenciaAliquotaUsada,
     estado: "calculada",

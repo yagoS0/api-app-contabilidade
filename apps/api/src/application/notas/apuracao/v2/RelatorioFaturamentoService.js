@@ -62,6 +62,7 @@ import {
   notasEmitDaCompetencia,
 } from "./FechamentoService.js";
 import { calcularApuracaoLocal } from "./MotorApuracaoService.js";
+import { ehCalculoNosso } from "./procedenciaDas.js";
 
 export class RelatorioFaturamentoError extends Error {
   constructor(code, message, extra = {}) { super(message); this.code = code; Object.assign(this, extra); }
@@ -825,11 +826,16 @@ async function montarPreApurado({ portalClientId, competencia, naoClassificado, 
   const snap = await prisma.apuracaoSnapshot.findUnique({
     where: { portalClientId_competencia: { portalClientId, competencia } },
     select: {
-      estado: true, dasRetornadoSerpro: true, dasCalculadoLocal: true,
+      estado: true, dasRetornadoSerpro: true, dasSimuladoSerpro: true,
+      dasCalculadoLocal: true, dasCalculadoLocalProcedencia: true,
       numeroDeclaracao: true, reciboNumero: true, transmitidoEm: true, fechadaEm: true,
     },
   }).catch(() => null);
 
+  // ⚠ TRÊS COLUNAS, TRÊS FATOS DIFERENTES — e a ordem em que a tela deve preferi-los é esta:
+  // transmitido (a declaração existe na Receita) → simulado (a RFB calculou, nada foi declarado)
+  // → o nosso motor. Colapsá-los num campo só foi o defeito que este bloco documentava.
+  const ambigua = snap?.dasCalculadoLocal != null && !ehCalculoNosso(snap.dasCalculadoLocalProcedencia);
   const oficial = {
     fonte: "ApuracaoSnapshot",
     estado: snap?.estado || null,
@@ -837,17 +843,22 @@ async function montarPreApurado({ portalClientId, competencia, naoClassificado, 
     reciboNumero: snap?.reciboNumero || null,
     transmitidoEm: snap?.transmitidoEm ? new Date(snap.transmitidoEm).toISOString() : null,
     dasRetornadoSerpro: snap?.dasRetornadoSerpro != null ? Number(snap.dasRetornadoSerpro) : null,
-    // ⚠ ESTE CAMPO TEM PROCEDÊNCIA AMBÍGUA E POR ISSO VEM ROTULADO ASSIM.
-    // `FechamentoService.calcularFechamento` grava o valor da SIMULAÇÃO OFICIAL da RFB dentro da
-    // coluna `dasCalculadoLocal` (que o motor usa para o cálculo NOSSO), e zera `receitaPorTipo`/
-    // `receitaPorAnexo` no mesmo objeto. Ou seja: a coluna às vezes guarda o nosso número e às
-    // vezes o da Receita, e não há como distingui-los pela linha. Isso está sendo tratado por
-    // outra frente — aqui não se conserta, só não se mente sobre o que o valor é.
-    dasCalculadoLocalNoSnapshot: snap?.dasCalculadoLocal != null ? {
+    // A simulação oficial do PGDAS-D (`indicadorTransmissao:false`). É número DA RECEITA, mas não é
+    // declaração: nada foi transmitido. Antes vinha misturado em `dasCalculadoLocal`.
+    dasSimuladoSerpro: snap?.dasSimuladoSerpro != null ? Number(snap.dasSimuladoSerpro) : null,
+    // ⚠ ESTE CAMPO SÓ VIAJA QUANDO A PROCEDÊNCIA É DESCONHECIDA — e aí vem rotulado assim.
+    //
+    // `dasCalculadoLocal` marcada `MOTOR_LOCAL` é o NOSSO número e não tem nada que fazer no bloco
+    // "oficial": ela sai daqui como `null` e quem mostra o nosso cálculo é o bloco do motor, acima.
+    // O que sobra são os snapshots gravados ANTES da separação, cuja procedência não pôde ser
+    // provada por nenhum outro campo da linha. Esses continuam ambíguos, para sempre — a marca
+    // existe justamente para não inventar de quem é o número.
+    dasCalculadoLocalNoSnapshot: ambigua ? {
       valor: Number(snap.dasCalculadoLocal),
       procedenciaAmbigua: true,
-      aviso: "Coluna gravada tanto pelo motor local quanto pela simulação oficial do PGDAS-D "
-        + "(FechamentoService.calcularFechamento). Não use como \"nosso cálculo\" sem conferir.",
+      aviso: "Snapshot anterior à separação das colunas: a coluna `dasCalculadoLocal` era gravada "
+        + "tanto pelo motor local quanto pela simulação oficial do PGDAS-D, e nada na linha diz "
+        + "qual dos dois é este número. Não use como \"nosso cálculo\" sem conferir.",
     } : null,
   };
 

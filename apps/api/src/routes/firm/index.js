@@ -4393,6 +4393,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       where: { portalClientId: { in: ids }, competencia },
       select: {
         portalClientId: true, estado: true, dasCalculadoLocal: true, dasRetornadoSerpro: true,
+        dasSimuladoSerpro: true,
         rbt12: true, fatorR: true, receitaInterna: true, receitaExterna: true,
         numeroDeclaracao: true, fechadaEm: true,
       },
@@ -4456,7 +4457,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         regime: regimeDe(c),
         // Q15: estado vem do snapshot (aberta/configurando/calculada/fechada/transmitida)
         estado: snap?.estado || "aberta",
+        // ⚠ TRÊS CAMPOS PORQUE SÃO TRÊS FATOS. Até a separação das colunas, o valor que esta tabela
+        // exibia como "DAS" numa empresa `calculada` vinha de `dasCalculadoLocal` — mas era, quase
+        // sempre, a SIMULAÇÃO da RFB gravada ali dentro. Agora ela chega em `dasSimulado`, com
+        // nome. Sem este campo a coluna DAS da tela esvaziaria para toda competência calculada e
+        // não transmitida, que é a maioria.
         dasCalculado: snap?.dasCalculadoLocal != null ? Number(snap.dasCalculadoLocal) : null,
+        dasSimulado: snap?.dasSimuladoSerpro != null ? Number(snap.dasSimuladoSerpro) : null,
         dasTransmitido: snap?.dasRetornadoSerpro != null ? Number(snap.dasRetornadoSerpro) : null,
         numeroDeclaracao: snap?.numeroDeclaracao || null,
         fechadaEm: snap?.fechadaEm || null,

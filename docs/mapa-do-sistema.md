@@ -61,7 +61,8 @@ Tudo abaixo é detalhe desses oito passos.
 | ✅ | Fechamento com escolha de atividades + folha 12m | |
 | ✅ | Transmissão gera extrato + guia no mesmo retorno | |
 | ⚠️ | **Só 1 dos 43 `idAtividade` foi exercido contra a API real** | os outros vêm da especificação, com `verificadoTrial:false`. Empresa que precise de outra atividade é território não testado |
-| 🟡 | Existe um motor de cálculo local, mas **não é ele** que alimenta o snapshot | o campo `dasCalculadoLocal` guarda a **simulação do SERPRO**; o nome é herança. Comparar com `dasRetornadoSerpro` mostra se o valor mudou entre a prévia e a declaração |
+| ✅ | Cada DAS na sua coluna: `dasCalculadoLocal` (nosso motor) · `dasSimuladoSerpro` (simulação da RFB) · `dasRetornadoSerpro` (transmissão) | até 08/2026 a simulação era gravada em `dasCalculadoLocal`, a coluna do motor — que também escreve nela. A coluna ora guardava um, ora o outro. Comparar simulado × transmitido mostra se o valor mudou entre a prévia e a declaração |
+| 🟡 | Snapshots ANTIGOS podem ficar com procedência **ambígua** | `dasCalculadoLocalProcedencia = 'AMBIGUO'` nas linhas em que nem `receitaPorTipo` nem `simulacaoSerpro` provam quem escreveu. Não se inventa dono; a tela mostra "procedência ambígua". Medir: `apps/api/scripts/diag-procedencia-das.mjs` |
 
 ## 5. Lucro Presumido
 

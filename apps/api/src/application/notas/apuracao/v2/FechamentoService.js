@@ -796,6 +796,20 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
   // cima, e soma > 0 nunca satisfaz a condição. Deixá-la aqui seria manter um cinto que não
   // aperta, com o comentário afirmando que aperta.
 
+  // ─── A SEGREGAÇÃO POR TIPO DO MÊS, DE VERDADE ────────────────────────────────────────────────
+  //
+  // ⚠ Aqui se gravava `receitaPorTipo: {}` — e o comentário que acompanhava (`mantém compat com
+  // schema (NOT NULL? — confere)`) diz o que era: um preenchimento para satisfazer o NOT NULL no
+  // `create`, aplicado também no `update`. O efeito colateral era destrutivo: toda competência que
+  // passasse pelo [Calcular] tinha a segregação por tipo do mês APAGADA do snapshot, inclusive a
+  // que o motor havia acabado de calcular.
+  //
+  // O caminho da simulação TEM esse dado — é a mesma função que o `getDadosFechamento` já usa para
+  // montar o modal e que a `detectarDisparidades` já consome. Não é conta nova nem segunda
+  // definição de faturamento: é a mesma população (`EMIT` autorizada da competência), rateada item
+  // a item pelo `tipoReceita`. Custa uma leitura local; nenhuma chamada externa.
+  const { receitaPorTipo: receitaPorTipoDoMes } = await receitaPorTipoMercado({ portalClientId, competencia });
+
   // Persiste snapshot (configurando→calculada)
   const idempotencyKey = `${portalClientId}:${competencia}:${JSON.stringify(atividades)}:${resultado.dasValor}`;
   const data = {
@@ -806,9 +820,25 @@ export async function calcularFechamento({ portalClientId, competencia, atividad
     receitaInterna: faturamentoInterno,
     receitaExterna: faturamentoExterno,
     simulacaoSerpro: resultado.raw || resultado,
-    dasCalculadoLocal: resultado.dasValor != null ? round2(resultado.dasValor) : null,
-    receitaPorTipo: {},   // mantém compat com schema (NOT NULL? — confere)
-    receitaPorAnexo: {},
+    // ⚠ A SIMULAÇÃO OFICIAL DA RFB VAI NA COLUNA DA RFB, NUNCA EM `dasCalculadoLocal`.
+    //
+    // Este número é o que a Receita respondeu ao `TRANSDECLARACAO11` com
+    // `indicadorTransmissao:false`. Ele foi gravado por muito tempo em `dasCalculadoLocal` — a
+    // coluna do NOSSO motor —, e como o motor também escreve lá, a coluna passou a guardar ora um
+    // número, ora o outro, sem nada na linha que dissesse qual. A tela teve de inventar um estado
+    // ("DAS gravado — procedência ambígua") para não mentir sobre um dado fiscal.
+    //
+    // ⚠ E NÃO É `dasRetornadoSerpro`: simular não é transmitir. Ver o comentário da coluna nova.
+    dasSimuladoSerpro: resultado.dasValor != null ? round2(resultado.dasValor) : null,
+    receitaPorTipo: receitaPorTipoDoMes,
+    // ⚠ `dasCalculadoLocal`, `dasCalculadoLocalProcedencia`, `receitaPorAnexo`,
+    // `aliquotaEfetivaPorAnexo` e `vigenciaAliquota` NÃO APARECEM AQUI, e a ausência é a decisão.
+    //
+    // São o grupo de colunas do motor local: o DAS dele e a decomposição que o explica. Este
+    // caminho não calcula nenhum deles — quem decide anexo, faixa e repartição a partir das
+    // `atividadesEscolhidas` é a RFB. Sobrescrevê-los deixaria o número do motor sem a conta que o
+    // sustenta; e gravar `{}` afirmaria "calculei e não achou anexo nenhum", que é outra coisa.
+    // No `create` (não havia snapshot) `receitaPorAnexo` nasce NULO = "o motor nunca rodou aqui".
     estado: "calculada",
     idempotencyKey,
     erroMensagem: null,

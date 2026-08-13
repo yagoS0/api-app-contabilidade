@@ -40,9 +40,36 @@ describe("procedenciaDoDas — de quem é o número", () => {
     expect(r.comparavel).toBe(true);
   });
 
+  it("⚠ o SIMULADO tem rótulo PRÓPRIO — 'a Receita calculou' ≠ 'a declaração foi entregue'", () => {
+    // Depois da separação das colunas, este é o estado normal de uma competência calculada e não
+    // transmitida. Um rótulo só para os dois faria a obrigação parecer cumprida por um clique em
+    // Calcular.
+    const r = procedenciaDoDas({
+      ok: true, das: 1000,
+      oficial: { dasRetornadoSerpro: null, dasSimuladoSerpro: 1100, dasCalculadoLocalNoSnapshot: null },
+    });
+    expect(r.oficial.valor).toBe(1100);
+    expect(r.oficial.rotulo).toMatch(/simulação, nada transmitido/i);
+    expect(r.oficial.ambiguo).toBe(false);
+    // ⚠ Com os dois lados de dono conhecido, o double-check volta a ser calculável.
+    expect(r.diferenca).toBe(-100);
+    expect(r.comparavel).toBe(true);
+  });
+
+  it("o TRANSMITIDO vence o simulado quando os dois existem", () => {
+    const r = procedenciaDoDas({
+      ok: true, das: 1000,
+      oficial: { dasRetornadoSerpro: 1200, dasSimuladoSerpro: 1100 },
+    });
+    expect(r.oficial.valor).toBe(1200);
+    expect(r.oficial.rotulo).toMatch(/transmitida/i);
+  });
+
   it("⚠ coluna de PROCEDÊNCIA AMBÍGUA: não se afirma de quem é, e não se calcula diferença", () => {
-    // `dasCalculadoLocal` é gravada tanto pelo motor quanto pela simulação da RFB. Subtrair um do
-    // outro afirmaria que são coisas diferentes — podem ser o mesmo número duas vezes.
+    // Snapshot ANTERIOR à separação: `dasCalculadoLocal` era gravada tanto pelo motor quanto pela
+    // simulação da RFB. Subtrair um do outro afirmaria que são coisas diferentes — podem ser o
+    // mesmo número duas vezes. ⚠ Este estado NÃO foi removido pelo conserto: os snapshots velhos
+    // continuam no banco e continuam sem prova de procedência.
     const r = procedenciaDoDas({
       ok: true, das: 900,
       oficial: {
@@ -286,7 +313,29 @@ describe("kpiDasApurado — o rótulo único que confundia as duas origens", () 
     expect(r.procedencia).toBe("rfb");
   });
 
-  it("⚠ só `dasCalculadoLocal`: procedência AMBÍGUA, nunca 'DAS apurado' seco", () => {
+  it("simulado sem transmissão: rótulo diz SIMULADO — não é declaração entregue", () => {
+    const r = kpiDasApurado({ dasRetornadoSerpro: null, dasSimuladoSerpro: 26670.52, dasCalculadoLocal: null });
+    expect(r.valor).toBe(26670.52);
+    expect(r.label).toMatch(/simulado/i);
+    expect(r.procedencia).toBe("rfb_simulado");
+  });
+
+  it("o TRANSMITIDO vence o simulado", () => {
+    const r = kpiDasApurado({ dasRetornadoSerpro: 26670.52, dasSimuladoSerpro: 26000 });
+    expect(r.procedencia).toBe("rfb");
+    expect(r.titulo).toMatch(/TRANSMISSÃO/);
+  });
+
+  it("valor marcado MOTOR_LOCAL: é nosso, e o rótulo diz isso — sem ambiguidade", () => {
+    const r = kpiDasApurado({ dasRetornadoSerpro: null, dasSimuladoSerpro: null, dasCalculadoLocal: 26000, dasCalculadoLocalProcedencia: "MOTOR_LOCAL" });
+    expect(r.valor).toBe(26000);
+    expect(r.procedencia).toBe("motor_local");
+    expect(r.label).toMatch(/portal/i);
+  });
+
+  it("⚠ só `dasCalculadoLocal` SEM MARCA: procedência AMBÍGUA, nunca 'DAS apurado' seco", () => {
+    // ⚠ O estado ambíguo continua valendo para o snapshot antigo — a ausência de marca NÃO é
+    // tratada como "é nosso porque a coluna se chama local". Era assim que a mentira nascia.
     const r = kpiDasApurado({ dasRetornadoSerpro: null, dasCalculadoLocal: 26000 });
     expect(r.valor).toBe(26000);
     expect(r.label).toMatch(/ambígua/i);

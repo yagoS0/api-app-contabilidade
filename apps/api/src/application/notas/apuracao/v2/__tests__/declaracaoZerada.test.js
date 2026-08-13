@@ -14,7 +14,9 @@
 
 jest.mock("../../../../../infrastructure/db/prisma.js", () => ({
   prisma: {
-    portalInvoice: { aggregate: jest.fn(async () => ({ _sum: { total: 0 } })) },
+    // `findMany` porque o [Calcular] voltou a gravar a segregação por tipo do mês em vez de zerá-la
+    // (`receitaPorTipoMercado`) — sem notas, ela é `{}`, que é o correto para o mês vazio.
+    portalInvoice: { aggregate: jest.fn(async () => ({ _sum: { total: 0 } })), findMany: jest.fn(async () => []) },
     portalClient: { findUnique: jest.fn(async () => ({ cnpj: "58546710000100" })) },
     apuracaoSnapshot: { findUnique: jest.fn(async () => null), update: jest.fn(async () => ({})), create: jest.fn(async () => ({})) },
   },

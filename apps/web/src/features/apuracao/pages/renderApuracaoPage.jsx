@@ -143,7 +143,19 @@ export function ApuracaoPage({ apuracaoPanel, apuracaoApi, feedback, onBack, onO
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{it.rbt12 != null ? fmtMoney(it.rbt12) : "—"}</td>
                     <td style={{ ...td, textAlign: "right" }}>{it.fatorR != null ? `${(Number(it.fatorR) * 100).toFixed(2)}%` : "—"}</td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace", color: "#8BE9FD" }}>
-                      {it.dasTransmitido != null ? fmtMoney(it.dasTransmitido) : (it.dasCalculado != null ? fmtMoney(it.dasCalculado) : "—")}
+                      {/* Transmitido → simulado → nosso motor. Os três chegam separados do
+                          backend desde a separação das colunas; a preferência é a da força da
+                          evidência, e o `title` diz qual dos três está na célula. */}
+                      {(() => {
+                        const das = it.dasTransmitido != null
+                          ? { v: it.dasTransmitido, t: "DAS transmitido à Receita (PGDAS-D)." }
+                          : it.dasSimulado != null
+                            ? { v: it.dasSimulado, t: "DAS da SIMULAÇÃO oficial (SERPRO) — nada transmitido ainda." }
+                            : it.dasCalculado != null
+                              ? { v: it.dasCalculado, t: "DAS calculado pelo portal (conferência), não é o valor da Receita." }
+                              : null;
+                        return <span title={das?.t || ""}>{das ? fmtMoney(das.v) : "—"}</span>;
+                      })()}
                     </td>
                   </tr>
                 );

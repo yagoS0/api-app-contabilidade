@@ -666,6 +666,10 @@ function mockNota(over) {
     idNfse: null, idDps: null, pdfUrl: null, xmlHash: null, lastSyncAt: null,
     createdAt: `${MOCK_NOTAS_COMPETENCIA}-10T12:00:00.000Z`,
     updatedAt: `${MOCK_NOTAS_COMPETENCIA}-10T12:00:00.000Z`,
+    // ⚠ `eventos` é da ÍNTEGRA e é o que dá data e motivo ao cancelamento/substituição. Vazio é o
+    // estado da esmagadora maioria (0 linhas em `PortalInvoiceEvent` para as 556 canceladas): a
+    // lista de eventos vazia significa "não guardamos", nunca "não houve".
+    __eventos: [],
     __temXml: true, __descricao: null, __codigoServico: null, __cfop: null, __ncm: null,
     ...over,
   };
@@ -770,6 +774,14 @@ const mockNotas = (() => {
       },
       eventoRegistrado: true, avisos: [],
     },
+    // O evento é o FATO: com ele a tela tem data, motivo e a chave da substituta. Sem ele (o caso
+    // da 13991) sobra só "está cancelada", que é bem menos do que o contador precisa saber.
+    __eventos: [{
+      id: "mock-ev-1", tipo: "canc_por_substituicao", tpEvento: "105102", nSeqEvento: 1,
+      dataEvento: `${MOCK_NOTAS_COMPETENCIA}-16T10:30:00.000Z`,
+      motivo: "valor da nota esta incorreto", chaveSubstituta: chave(904),
+      capturadoEm: `${MOCK_NOTAS_COMPETENCIA}-16T11:02:00.000Z`,
+    }],
     __descricao: "CONSULTORIA COM VALOR CORRIGIDO DEPOIS", __codigoServico: "140201",
   }));
   out.push(mockNota({
@@ -862,9 +874,9 @@ function mockNotaDeLista(n) {
     emitenteNome: n.emitenteNome, emitenteDoc: n.emitenteDoc,
     tomadorNome: n.tomadorNome, tomadorDoc: n.tomadorDoc,
     competenciaPosFechamento: n.competenciaPosFechamento,
-    // A rota real devolve os dois na LISTA (não só na íntegra): sem eles a tabela não consegue
+    // A rota real devolve os três na LISTA (não só na íntegra): sem eles a tabela não consegue
     // distinguir cancelada de substituída, e voltaria a pintar tudo com a mesma palavra.
-    chaveSubstituida: n.chaveSubstituida, ciclo: n.ciclo,
+    chaveSubstituida: n.chaveSubstituida, motivoSubstituicao: n.motivoSubstituicao, ciclo: n.ciclo,
   };
 }
 
@@ -1346,8 +1358,12 @@ function mockFaturamentoDaCompetencia(companyId, competencia) {
 // outro mês" esconderia um caminho atrás de uma navegação.
 //
 //   forma 0 → NADA classificado + motor bloqueado (é o estado de 100% das empresas em produção)
-//   forma 1 → classificado + DAS oficial do SERPRO gravado (nosso × da Receita, com a diferença)
-//   forma 2 → classificado + só a coluna de PROCEDÊNCIA AMBÍGUA + conferência que NÃO fecha
+//   forma 1 → classificado + DAS TRANSMITIDO à Receita (nosso × oficial, com a diferença)
+//   forma 2 → classificado + conferência que NÃO fecha, em duas metades:
+//               · `idx % 6 === 2` → DAS SIMULADO pela Receita (nada transmitido) — o normal hoje
+//               · `idx % 6 === 5` → só a coluna de PROCEDÊNCIA AMBÍGUA — o snapshot LEGADO,
+//                 gravado antes de a simulação ganhar coluna própria. Continua existindo em
+//                 produção, e por isso continua caminhável aqui.
 //
 // ⚠ Os `rotuloOficial` abaixo são transcrição do Manual do PGDAS-D e DEFIS (itens 6.5 e 6.6.1),
 // copiados de `RelatorioFaturamentoService.js`. Não reescrever para caber na tela.
@@ -1697,33 +1713,48 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
       },
       comoResolver: semReceita ? null : naoClassificado.comoResolver,
       receitaPorTipo: null,
-      oficial: { ...oficialBase, dasRetornadoSerpro: null, dasCalculadoLocalNoSnapshot: null },
+      oficial: { ...oficialBase, dasRetornadoSerpro: null, dasSimuladoSerpro: null, dasCalculadoLocalNoSnapshot: null },
       diferenca: null,
     };
   } else {
     const nosso = Math.round(totalMes.valorContabil * 0.0812 * 100) / 100;
+    // ⚠ A FORMA 2 TEM DUAS METADES, e é de propósito: depois da separação das colunas convivem em
+    // produção o snapshot NOVO (simulação na coluna dela) e o snapshot VELHO (procedência que
+    // ninguém consegue provar). Se o mock só tivesse o novo, o estado "ambíguo" — que continua
+    // valendo e continua na tela — deixaria de ser caminhável offline no dia seguinte ao conserto.
+    const legado = idx >= 0 && idx % 6 === 5;
     const oficial = forma === 1
-      // Forma 1: a Receita respondeu. Nosso × oficial, com a diferença.
+      // Forma 1: a declaração foi TRANSMITIDA. Nosso × oficial, com a diferença. A simulação que a
+      // precedeu fica gravada ao lado — o KPI prefere o transmitido, e é isso que se exercita.
       ? {
         ...oficialBase, estado: "transmitida", numeroDeclaracao: "MOCK-DECL-1", reciboNumero: "MOCK-REC-1",
         transmitidoEm: `${competencia}-20T14:00:00.000Z`,
         dasRetornadoSerpro: Math.round((nosso + 37.45) * 100) / 100,
-        dasCalculadoLocalNoSnapshot: {
-          valor: nosso, procedenciaAmbigua: true,
-          aviso: "Coluna gravada tanto pelo motor local quanto pela simulação oficial do PGDAS-D "
-            + "(FechamentoService.calcularFechamento). Não use como \"nosso cálculo\" sem conferir.",
-        },
+        dasSimuladoSerpro: Math.round((nosso + 30.2) * 100) / 100,
+        dasCalculadoLocalNoSnapshot: null,
       }
-      // ⚠ Forma 2: SÓ a coluna ambígua. A tela não pode afirmar de quem é aquele número.
-      : {
-        ...oficialBase, estado: "calculada",
-        dasRetornadoSerpro: null,
-        dasCalculadoLocalNoSnapshot: {
-          valor: Math.round((nosso + 12.1) * 100) / 100, procedenciaAmbigua: true,
-          aviso: "Coluna gravada tanto pelo motor local quanto pela simulação oficial do PGDAS-D "
-            + "(FechamentoService.calcularFechamento). Não use como \"nosso cálculo\" sem conferir.",
-        },
-      };
+      : legado
+        // ⚠ Forma 2 (legado): SÓ a coluna ambígua, como os snapshots gravados ANTES da separação.
+        // A tela não pode afirmar de quem é aquele número, e não deve tentar.
+        ? {
+          ...oficialBase, estado: "calculada",
+          dasRetornadoSerpro: null,
+          dasSimuladoSerpro: null,
+          dasCalculadoLocalNoSnapshot: {
+            valor: Math.round((nosso + 12.1) * 100) / 100, procedenciaAmbigua: true,
+            aviso: "Snapshot anterior à separação das colunas: a coluna `dasCalculadoLocal` era "
+              + "gravada tanto pelo motor local quanto pela simulação oficial do PGDAS-D, e nada "
+              + "na linha diz qual dos dois é este número. Não use como \"nosso cálculo\" sem conferir.",
+          },
+        }
+        // Forma 2 (novo): a RFB calculou e NADA foi transmitido. Número oficial com dono, e a
+        // diferença contra o nosso volta a ser calculável.
+        : {
+          ...oficialBase, estado: "calculada",
+          dasRetornadoSerpro: null,
+          dasSimuladoSerpro: Math.round((nosso + 12.1) * 100) / 100,
+          dasCalculadoLocalNoSnapshot: null,
+        };
     preApurado = {
       origem: "MOTOR_LOCAL",
       ok: true,
@@ -5834,6 +5865,11 @@ export function createMockApi() {
           ...mockNotaDeLista(n),
           idNfse: n.idNfse, idDps: n.idDps, pdfUrl: n.pdfUrl, xmlHash: n.xmlHash,
           lastSyncAt: n.lastSyncAt, createdAt: n.createdAt, updatedAt: n.updatedAt,
+          // ⚠ PARIDADE COM O REAL. A rota devolve TODOS os eventos da nota na íntegra (a lista traz
+          // só o mais específico, dentro de `ciclo`). Sem isto aqui, o bloco de ciclo do detalhe era
+          // inalcançável offline — dava para ver a substituição na tabela e não dava para exercitar
+          // a tela que a explica.
+          eventos: n.__eventos || [],
           itens,
           xml: {
             disponivel: Boolean(xml),
@@ -5895,7 +5931,7 @@ export function createMockApi() {
       // número acabaria mostrando um valor no KPI e outro logo abaixo, na mesma tela.
       const dados = mockRelatorioFaturamentoDados(companyId, competencia);
       const of = dados.preApurado?.oficial || {};
-      if (of.dasRetornadoSerpro == null && of.dasCalculadoLocalNoSnapshot == null) {
+      if (of.dasRetornadoSerpro == null && of.dasSimuladoSerpro == null && of.dasCalculadoLocalNoSnapshot == null) {
         return { ok: true, snapshot: null };
       }
       return {
@@ -5904,7 +5940,12 @@ export function createMockApi() {
           portalClientId: companyId, competencia,
           estado: of.estado || null,
           dasRetornadoSerpro: of.dasRetornadoSerpro ?? null,
+          dasSimuladoSerpro: of.dasSimuladoSerpro ?? null,
+          // ⚠ Só o LEGADO chega aqui com valor, e ele vem SEM marca de procedência — que é
+          // exatamente o que o KPI precisa ver para dizer "ambígua". Snapshot novo com número
+          // nosso viria com `dasCalculadoLocalProcedencia: "MOTOR_LOCAL"`.
           dasCalculadoLocal: of.dasCalculadoLocalNoSnapshot?.valor ?? null,
+          dasCalculadoLocalProcedencia: null,
           numeroDeclaracao: of.numeroDeclaracao || null,
           reciboNumero: of.reciboNumero || null,
           transmitidoEm: of.transmitidoEm || null,

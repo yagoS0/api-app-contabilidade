@@ -154,6 +154,60 @@ DAS R$ 26.670,52, `[Sucesso-PGDASD]`). Transmissão real (`true`) ainda não
 exercida. Scripts úteis: `rodar-simulacao-pgdasd.js`, `gerar-payload-pgdasd.js`,
 `gerar-curls-trial.js`, `test-fechamento-dados.js`.
 
+### ⚠ TRÊS NÚMEROS DE DAS, TRÊS COLUNAS — a simulação NÃO mora em `dasCalculadoLocal`
+
+`ApuracaoSnapshot` tinha **duas** colunas de DAS e **três** números para guardar. O resultado:
+`FechamentoService.calcularFechamento` gravava o valor da **simulação oficial da RFB** dentro de
+`dasCalculadoLocal` — a coluna do **nosso motor**, que `MotorApuracaoService` também escreve. A
+coluna passou a guardar ora um, ora o outro, **sem nada na linha que os distinguisse**, e a tela
+teve de inventar um estado ("DAS gravado — procedência ambígua") para não mentir sobre dado fiscal.
+
+| coluna | quem escreve | o que significa |
+|---|---|---|
+| `dasCalculadoLocal` | `MotorApuracaoService.calcularApuracaoLocal` | conta NOSSA, tabela versionada de alíquotas. Conferência — não declara nada |
+| `dasSimuladoSerpro` | `FechamentoService.calcularFechamento` | a RFB calculou (`indicadorTransmissao:false`). **Nada foi transmitido** |
+| `dasRetornadoSerpro` | `FechamentoService.transmitirFechamento` | a declaração **existe na Receita** (`:true`) |
+
+⚠ **Por que coluna NOVA e não gravar a simulação em `dasRetornadoSerpro`** (a opção mais barata):
+simular não é transmitir, e o código **já depende** dessa diferença. `dasRetornadoSerpro` é escrita
+no MESMO update que `numeroDeclaracao`, `transmitidoEm` e `estado:"transmitida"` — os quatro
+descrevem um ato que aconteceu na Receita. No caminho `jaDeclarado` (PA já declarado, não
+retransmitido) ela fica **nula de propósito**: "não há valor transmitido POR NÓS". E
+`routes/firm/index.js` expõe a coluna literalmente como **`dasTransmitido`**, com
+`apuracaoBatchWorker` lendo-a como resultado da transmissão em lote. Colapsá-las faria "a Receita
+calculou R$ X" e "a declaração de R$ X foi entregue" virarem o mesmo dado.
+
+⚠ **`dasCalculadoLocalProcedencia`** (`MOTOR_LOCAL` | `AMBIGUO`, vocabulário em
+`apuracao/v2/procedenciaDas.js`) marca **de quem é** o número da primeira coluna. A **ausência** de
+marca responde "ambíguo", nunca "nosso": linha com valor e sem marca é linha velha. Tratar o
+default como nosso faria a ambiguidade sumir por omissão — que é como ela nasceu.
+
+⚠ **O `{}` em `receitaPorTipo`/`receitaPorAnexo` era destrutivo, e o motivo era outro.** O
+comentário original (`mantém compat com schema (NOT NULL? — confere)`) diz o que era: preenchimento
+para satisfazer o NOT NULL no `create`, aplicado **também no update**. Efeito medido: toda
+competência que passasse pelo [Calcular] tinha a segregação por tipo do mês **apagada** do
+snapshot. Hoje:
+- **`receitaPorTipo` volta a ser gravada de verdade** também no caminho da simulação — ela TEM esse
+  dado (`receitaPorTipoMercado`, a mesma função que o `getDadosFechamento` e a `detectarDisparidades`
+  já usam; não é segunda definição de faturamento);
+- **`receitaPorAnexo` virou anulável**: NULO = *"o motor local não calculou esta competência"*;
+  `{}` seria *"calculou e não achou anexo nenhum"*. O caminho da simulação **não decide anexo** —
+  quem decide, a partir das `atividadesEscolhidas`, é a RFB —, então ele não escreve nada no grupo
+  de colunas do motor (`dasCalculadoLocal`, `receitaPorAnexo`, `aliquotaEfetivaPorAnexo`,
+  `vigenciaAliquota`). Sobrescrevê-las deixaria o número do motor sem a conta que o sustenta.
+
+**Migration `20260813120000_add_procedencia_das` — escrita, NÃO aplicada.** O backfill desambigua
+**só o que a própria linha prova**: os dois escritores gravam objetos inteiros numa transação, e
+`receitaPorTipo` denuncia quem escreveu por último (vazio ⇒ simulação, que sempre zerava; não-vazio
+⇒ motor, que sempre grava as sete chaves de `TipoReceita`). O que não casar com nenhuma das duas
+assinaturas fica **`AMBIGUO`** — inventar procedência é o que este conserto existe para impedir.
+Medir antes, sem escrever nada: **`scripts/diag-procedencia-das.mjs`** (só leitura, zero chamada
+externa; roda antes e depois da migration e confere o gravado contra a mesma conta).
+
+Regressão: `apuracao/v2/__tests__/procedenciaDas.test.js` (11) — inclusive a trava de que o estado
+**ambíguo continua funcionando** para o snapshot antigo, dos dois lados (backend e
+`apps/web/.../lib/relatorioFaturamento.js`).
+
 ## Situação Fiscal (SITFIS) + Confirmação de pagamento (Q40/Q41/Q43)
 
 **SITFIS — situação fiscal do contribuinte** (`application/fiscal/serpro/SerproSitfisService.js`).
