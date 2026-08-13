@@ -969,14 +969,38 @@ descartado).
 - **Seção 2** mede os tributos de fonte GUIA (PIS/COFINS/IRPJ/CSLL/ISS/IRRF) — o esperado é **zero**,
   e ela **não corrige nada**: se acusar, há um caminho quebrado a mais, e o conserto é outro.
 
-**Dry-run em produção (12/08/2026, só leitura, nada gravado):**
+**✅ APLICADO EM PRODUÇÃO em 12/08/2026 — 11 corrigidos, 0 corrigíveis restantes.**
 
-| | |
-|---|---|
-| divergências lançamento × circular | **13** — 12 de `DAS_SIMPLES` + **1** de `RECEITA_SERVICO` |
-| corrigíveis pelo script | **11** |
-| recusados por competência FECHADA | **2** — LENTE 2026-06 (fechada em 13/07), o DAS **e** a receita |
-| provisões de fonte GUIA conferidas | **23** · **divergentes: 0** |
+| | antes | depois |
+|---|---|---|
+| divergências lançamento × circular | **13** — 12 de `DAS_SIMPLES` + **1** de `RECEITA_SERVICO` | **2** |
+| corrigíveis pelo script | **11** | **0** |
+| recusados por competência FECHADA | **2** — LENTE 2026-06 (fechada em 13/07), o DAS **e** a receita | **2**, os mesmos |
+| provisões de fonte GUIA conferidas | **23** · **divergentes: 0** | idem, reconferido depois da escrita |
+
+As 11: ARAUJO ×4, ATIM ×4, PRISMA, FADINI, LENTE 2026-07 — todas `DAS_SIMPLES=updated`.
+
+⚠ **E `RECEITA_SERVICO=noop` em TODAS as onze**, o que é evidência e não detalhe: a receita não foi
+tocada porque já batia, e o ramo `noop` **voltou a ser alcançável**. Enquanto `sumEntryLines` somava
+as duas pernas, `amountChanged` era verdadeiro sempre e nenhuma execução chegava nele.
+
+⚠ **DECISÃO DO DONO (12/08/2026): a LENTE 2026-06 FICA COMO ESTÁ.** *"esse da lente pode deixar como
+está"*. Não reabrir junho, não contra-lançar. O script continuará listando os dois como
+`⛔ RECUSADO · competência FECHADA` em toda execução — **isso é o esperado, não pendência**:
+
+| | razão | extrato/circular | |
+|---|---|---|---|
+| `DAS_SIMPLES` | 14.115,30 | 15.033,58 | razão MENOR — o mesmo defeito das outras onze |
+| `RECEITA_SERVICO` | 114.600,00 | 107.600,00 | razão MAIOR — **outro** defeito, ainda não diagnosticado |
+
+O da receita aponta para o lado contrário de todas as demais, e a guarda do DAS nunca alcançou
+`RECEITA_*` — investigá-lo continua sendo trabalho próprio, mas **este mês não se mexe**.
+
+⚠ **RODAR O SCRIPT DE FORA DO RAILWAY EXIGE `txTimeoutMs`.** `railway run` executa na máquina local
+e conecta pelo proxy público; a transação do gerador faz mais de dez queries e estoura o default do
+Prisma (5s) com `Transaction not found ... refers to an old closed transaction`. Aconteceu na
+primeira tentativa, o Postgres desfez tudo e **nada foi gravado** (conferido relendo o dry-run).
+O script já passa 120s; produção **não** usa o parâmetro (rede interna, default basta).
 
 ⚠ **A seção 2 voltando ZERO é a resposta a "quantos outros tributos divergem": nenhum.** Isso
 **confirma** que a causa era a bifurcação por `eventType` — ela existe num arquivo só, e só o DAS
