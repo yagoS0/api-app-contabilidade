@@ -120,7 +120,19 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     Lançamentos, Circular, Cadastro Fiscal, Guias e Notas Fiscais passaram a ler a MESMA
     competência. Antes eram duas, com defaults diferentes, discordando em silêncio.
   - **Regras de tela viraram lib com teste próprio:** `circular/lib/estadoGuia.js` (12),
-    `obrigacoes/lib/cicloObrigacao.js` (15), `relatorios/lib/periodoRelatorio.js` (18).
+    `obrigacoes/lib/cicloObrigacao.js` (15), `relatorios/lib/periodoRelatorio.js` (18),
+    `notas/lib/cicloNotaTela.js` (14).
+    - ⚠ **O detalhe da nota agora conta a SUBSTITUIÇÃO** (caso relatado pelo dono: *"cancelamos
+      essa nota, emitimos outra e depois a substituímos"*; 22 notas com `chaveSubstituida` na
+      base). O `NotaDetailModal` não lia `ciclo`/`eventos`/`chaveSubstituida`: a lista dizia
+      "substituída" em âmbar e o detalhe da MESMA nota dizia "cancelada" em vermelho. A leitura
+      agora é **uma só** (`notas/lib/cicloNotaTela.js`), consumida pelas duas telas; a REGRA
+      continua no backend (`application/notas/cicloNota.js`, intocado). O bloco mostra os dois
+      lados do vínculo (`chaveSubstituida` × `PortalInvoiceEvent.chaveSubstituta`), com motivo,
+      data, eventos e **navegação** para a nota do outro lado — e, quando ela não está na base,
+      diz isso em vez de sumir com o vínculo. O mapa de cor `statusEfetivo === "substituida"` do
+      modal era **morto** (esse campo só vale `autorizada`/`cancelada`) e hoje é alimentado por
+      `ciclo.situacao`.
   - **Espelho da DEFIS** (`obrigacoes/defis/`) — a especificação de campos como DADO
     (`defisSpec.js`, `DEFIS_FONTE.verificadoNoPortal: false`). **Não transmite**: a DEFIS é
     transmitida no portal, e `marcarDefisTransmitida` só registra o recibo do nosso lado.

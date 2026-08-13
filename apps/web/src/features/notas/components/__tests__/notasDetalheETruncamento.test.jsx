@@ -265,3 +265,154 @@ describe("detalhe da nota — ausência nunca é resposta", () => {
     expect(screen.getByText("Falha ao carregar a nota.")).toBeInTheDocument();
   });
 });
+
+// ── O CICLO NO DETALHE ───────────────────────────────────────────────────────
+//
+// O caso do dono: *"a ATIM consta uma nota; nós cancelamos essa nota, emitimos outra e depois a
+// substituímos, e a nossa aba deve mostrar isso."*
+//
+// O defeito: a LISTA lia `ciclo` e mostrava "substituida" em âmbar; o detalhe da MESMA nota lia
+// `statusEfetivo` e mostrava "cancelada" em vermelho. Duas telas discordando sobre a mesma nota.
+// Estes testes cobrem a LIGAÇÃO (a tela lê a mesma leitura da lista); a regra tem teste próprio em
+// `features/notas/lib/__tests__/cicloNotaTela.test.js`.
+
+const CH_VELHA = "33045572255387580000103000000001399326088969924100";
+const CH_NOVA = "33045572255387580000103000000001399426088969924101";
+
+const SUBSTITUIDA = {
+  ...NFSE_COMPLETA,
+  id: "nota-13993", numero: "13993", chaveAcesso: CH_VELHA,
+  status: "CANCELADA", statusEfetivo: "cancelada",
+  ciclo: {
+    situacao: "substituida", ehSubstituta: false,
+    substitui: null, motivoSubstituicao: null,
+    substituidaPor: { notaId: "nota-13994", numero: "13994", chaveAcesso: CH_NOVA, naBase: true },
+    evento: {
+      tipo: "canc_por_substituicao", tpEvento: "105102", nSeqEvento: 1,
+      dataEvento: "2026-06-16T10:30:00.000Z", motivo: "valor da nota esta incorreto",
+    },
+    eventoRegistrado: true, avisos: [],
+  },
+  eventos: [{
+    id: "ev1", tipo: "canc_por_substituicao", tpEvento: "105102", nSeqEvento: 1,
+    dataEvento: "2026-06-16T10:30:00.000Z", motivo: "valor da nota esta incorreto",
+    chaveSubstituta: CH_NOVA, capturadoEm: "2026-06-16T11:02:00.000Z",
+  }],
+};
+
+const SUBSTITUTA = {
+  ...NFSE_COMPLETA,
+  id: "nota-13994", numero: "13994", chaveAcesso: CH_NOVA,
+  chaveSubstituida: CH_VELHA, motivoSubstituicao: "valor da nota esta incorreto",
+  ciclo: {
+    situacao: "autorizada", ehSubstituta: true,
+    substitui: { notaId: "nota-13993", numero: "13993", chaveAcesso: CH_VELHA, naBase: true },
+    motivoSubstituicao: "valor da nota esta incorreto",
+    substituidaPor: null, evento: null, eventoRegistrado: false, avisos: [],
+  },
+  eventos: [],
+};
+
+describe("detalhe da nota — a substituição aparece, com os dois lados", () => {
+  it("a nota SUBSTITUÍDA não se apresenta como 'cancelada' em vermelho — a lista e o detalhe combinam", () => {
+    const { unmount } = render(
+      <NotasList notas={[{ ...SUBSTITUIDA }]} total={1} filters={FILTROS}
+        onFiltersChange={noop} onApply={noop} loading={false} />,
+    );
+    const naLista = screen.getByText("substituida");
+    expect(naLista).toHaveStyle({ color: "var(--state-warn)" });
+    unmount();
+
+    render(<NotaDetailModal nota={SUBSTITUIDA} loading={false} error={null} onClose={noop} />);
+    // O chip do cabeçalho e o do bloco de ciclo dizem a MESMA palavra que a lista disse.
+    const chips = screen.getAllByText("substituida");
+    expect(chips.length).toBeGreaterThan(0);
+    chips.forEach((c) => expect(c).toHaveStyle({ color: "var(--state-warn)" }));
+    // ⚠ E o `statusEfetivo` cru continua visível: é o campo que a APURAÇÃO lê.
+    expect(screen.getByText("Situação efetiva")).toBeInTheDocument();
+  });
+
+  it("diz POR QUAL nota foi substituída, com motivo, data e o evento", () => {
+    render(<NotaDetailModal nota={SUBSTITUIDA} loading={false} error={null} onClose={noop} />);
+
+    expect(screen.getByText("Foi substituída por")).toBeInTheDocument();
+    expect(screen.getByText("nº 13994")).toBeInTheDocument();
+    expect(screen.getAllByText(/valor da nota esta incorreto/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Motivo da substituição")).toBeInTheDocument();
+    // O evento com tpEvento 105102 é o fato — data e motivo vêm dele.
+    expect(screen.getByText(/105102/)).toBeInTheDocument();
+  });
+
+  it("dá para NAVEGAR até a nota que passou a valer", () => {
+    const onAbrirNota = jest.fn();
+    render(<NotaDetailModal nota={SUBSTITUIDA} loading={false} error={null} onClose={noop} onAbrirNota={onAbrirNota} />);
+
+    const abrir = screen.getByRole("button", { name: /Abrir esta nota/i });
+    expect(abrir).toBeEnabled();
+    fireEvent.click(abrir);
+    expect(onAbrirNota).toHaveBeenCalledWith("nota-13994");
+  });
+
+  // ⚠ Sumir com o vínculo não é resposta; dizer que a outra nota não está no sistema é.
+  it("substituta fora da base: o vínculo FICA, e o botão desabilitado diz o motivo", () => {
+    const foraDaBase = {
+      ...SUBSTITUIDA,
+      ciclo: {
+        ...SUBSTITUIDA.ciclo,
+        substituidaPor: { notaId: null, numero: null, chaveAcesso: CH_NOVA, naBase: false },
+        avisos: [{ codigo: "substituta_ausente", texto: "O evento aponta uma nota substituta que NÃO está na nossa base." }],
+      },
+    };
+    render(<NotaDetailModal nota={foraDaBase} loading={false} error={null} onClose={noop} onAbrirNota={jest.fn()} />);
+
+    expect(screen.getByText(/NÃO está na nossa base/i)).toBeInTheDocument();
+    expect(screen.getAllByText(CH_NOVA).length).toBeGreaterThan(0);
+    const abrir = screen.getByRole("button", { name: /Abrir esta nota/i });
+    expect(abrir).toBeDisabled();
+    expect(abrir).toHaveAttribute("title", expect.stringMatching(/não está no sistema/i));
+    expect(screen.getAllByText(/A nota substituta não está no sistema/i).length).toBeGreaterThan(0);
+  });
+
+  it("a SUBSTITUTA declara quem ela substituiu — e ser substituta é papel, não situação", () => {
+    render(<NotaDetailModal nota={SUBSTITUTA} loading={false} error={null} onClose={noop} onAbrirNota={jest.fn()} />);
+
+    expect(screen.getByText("substituta")).toBeInTheDocument();
+    expect(screen.getByText("Esta nota substitui")).toBeInTheDocument();
+    expect(screen.getByText("nº 13993")).toBeInTheDocument();
+    // Continua AUTORIZADA: ela é a que vale.
+    expect(screen.getAllByText("autorizada").length).toBeGreaterThan(0);
+    // ⚠ E não pode aparecer como "sem evento": ela não foi cancelada.
+    expect(screen.queryByText(/sem evento/i)).not.toBeInTheDocument();
+  });
+
+  // O quarto estado, e o mais fácil de perder.
+  it('cancelada SEM evento diz "não temos o evento", distinto de "não houve evento"', () => {
+    const semEvento = {
+      ...NFSE_COMPLETA,
+      status: "CANCELADA", statusEfetivo: "cancelada",
+      ciclo: {
+        situacao: "cancelada", ehSubstituta: false, substitui: null, motivoSubstituicao: null,
+        substituidaPor: null, evento: null, eventoRegistrado: false,
+        avisos: [{
+          codigo: "evento_nao_registrado",
+          texto: "Esta nota está marcada como cancelada, mas nós não guardamos o evento de cancelamento.",
+        }],
+      },
+      eventos: [],
+    };
+    render(<NotaDetailModal nota={semEvento} loading={false} error={null} onClose={noop} />);
+
+    expect(screen.getByText(/não guardamos o evento de cancelamento/i)).toBeInTheDocument();
+    expect(screen.getByText(/Nenhum evento guardado para esta nota/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/sem evento/i).length).toBeGreaterThan(0);
+    // ⚠ NÃO pode dizer que não foi substituída: não sabemos.
+    expect(screen.queryByText(/não foi cancelada nem substituída/i)).not.toBeInTheDocument();
+  });
+
+  it('nota normal responde "não foi cancelada nem substituída" — silêncio nomeado, não bloco vazio', () => {
+    render(<NotaDetailModal nota={{ ...NFSE_COMPLETA, eventos: [] }} loading={false} error={null} onClose={noop} />);
+
+    expect(screen.getByText(/não foi cancelada nem substituída/i)).toBeInTheDocument();
+    expect(screen.queryByText("Foi substituída por")).not.toBeInTheDocument();
+  });
+});

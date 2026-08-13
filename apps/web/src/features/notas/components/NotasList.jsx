@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PANEL, fmtMoney, fmtDate } from "./notasStyles";
 import { Button } from "../../../components/ui/Button";
+import { lerCicloDaNota } from "../lib/cicloNotaTela";
 
 const PAPEL_BADGE = {
   EMIT: { bg: "rgba(105,255,71,0.15)", color: "#69FF47", label: "Emitida" },
@@ -18,44 +19,23 @@ const PAPEL_BADGE = {
 // FORA do faturamento, que exige `=== "autorizada"`. Duas telas discordando em silêncio sobre a
 // mesma nota, que é o defeito que este projeto mais persegue.
 //
-// Verde agora é só o que foi RECONHECIDO como autorizado. O que não se reconhece sai em neutro e
-// diz que não se reconhece — ausência de rótulo conhecido não é presunção de normalidade.
-// (Mesma semântica do `StatusChip` do `NotaDetailModal`, de propósito: uma nota não pode ter uma
-// cor na lista e outra no detalhe.)
-const STATUS_COR = {
-  autorizada: "var(--state-ok)",
-  cancelada: "var(--state-danger)",
-  // Substituída pede leitura, não é erro nem conclusão: a nota foi TROCADA por outra e o valor
-  // dela migrou. Mesmo token que o detalhe já usa.
-  substituida: "var(--state-warn)",
-  rejeitada: "var(--state-warn)",
-};
-
-function StatusBadge({ status, ciclo }) {
-  // `ciclo.situacao` (quando o backend o manda) NOMEIA o que aconteceu; `statusEfetivo` só diz se
-  // conta ou não conta. Preferir o primeiro é o que faz "substituída" aparecer como substituída.
-  const bruto = ciclo?.situacao || status;
-  const s = bruto == null ? null : String(bruto).toLowerCase();
-  const cor = (s && STATUS_COR[s]) || "var(--state-neutral)";
-  const conhecido = Boolean(s && STATUS_COR[s]);
-
-  // ⚠ "Não temos o evento" ≠ "não houve evento". Uma nota cancelada sem o evento gravado (556 na
-  // base) não pode se apresentar com a mesma confiança de uma cujo cancelamento nós registramos.
-  const semEvento = ciclo && ciclo.eventoRegistrado === false && ciclo.situacao !== "autorizada";
+// ⚠ A REGRA SAIU DAQUI: mora em `features/notas/lib/cicloNotaTela.js`, com teste próprio. Ela
+// estava embutida neste componente e o `NotaDetailModal` não a lia — a lista dizia "substituída"
+// em âmbar e o detalhe da MESMA nota dizia "cancelada" em vermelho. Este componente cobre agora
+// só a LIGAÇÃO (cor, itálico, o "· sem evento"), não a regra de novo.
+function StatusBadge({ nota }) {
+  const c = lerCicloDaNota(nota);
 
   return (
     <span
-      style={{ color: cor, fontSize: "0.7rem", fontWeight: 600, fontStyle: conhecido ? "normal" : "italic" }}
-      title={
-        !conhecido
-          ? `Situação não reconhecida (${s ?? "sem valor"}) — não presuma que está autorizada.`
-          : semEvento
-            ? "Não guardamos o evento desta nota (data e motivo). Isso não quer dizer que não houve evento."
-            : undefined
-      }
+      style={{ color: c.cor, fontSize: "0.7rem", fontWeight: 600, fontStyle: c.conhecida ? "normal" : "italic" }}
+      title={c.tituloAjuda}
     >
-      {s ?? "situação não registrada"}
-      {semEvento && <span style={{ color: "var(--text-faint)", fontWeight: 400 }}> · sem evento</span>}
+      {c.rotulo}
+      {/* ⚠ "Não temos o evento" ≠ "não houve evento". Uma nota cancelada sem o evento gravado
+          (556 na base) não pode se apresentar com a mesma confiança de uma cujo cancelamento
+          nós registramos. */}
+      {c.semEvento && <span style={{ color: "var(--text-faint)", fontWeight: 400 }}> · sem evento</span>}
     </span>
   );
 }
@@ -249,7 +229,7 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                       {n.tomadorNome || "—"}
                     </td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(n.total)}</td>
-                    <td style={td}><StatusBadge status={n.statusEfetivo || n.status} ciclo={n.ciclo} /></td>
+                    <td style={td}><StatusBadge nota={n} /></td>
                     <td style={{ ...td, fontSize: "0.7rem", fontFamily: "monospace", color: PANEL.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}
                         title={n.chaveAcesso}>
                       {n.chaveAcesso ? `…${n.chaveAcesso.slice(-12)}` : "—"}

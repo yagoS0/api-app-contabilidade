@@ -17,6 +17,7 @@
 import { useState } from "react";
 import { PANEL, fmtMoney, fmtDate } from "./notasStyles";
 import { Button } from "../../../components/ui/Button";
+import { lerCicloDaNota, temHistoria } from "../lib/cicloNotaTela";
 
 const TIPO_LABEL = { NFSE: "Nota de serviço (NFS-e)", NFE: "Nota de venda (NF-e)" };
 const PAPEL_LABEL = { EMIT: "Emitida pela empresa", DEST: "Recebida pela empresa" };
@@ -73,17 +74,22 @@ function Secao({ titulo, children, aviso }) {
 
 const GRADE = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "10px 18px" };
 
-// Status usa os tokens de ESTADO no significado deles: cancelada bloqueia (danger), rejeitada pede
-// ação (warn), autorizada está concluída (ok). Verde aqui é ESTADO, nunca botão.
-const STATUS_TOKEN = {
-  cancelada: { cor: "var(--state-danger)", fundo: "var(--state-danger-surface)" },
-  rejeitada: { cor: "var(--state-warn)", fundo: "var(--state-warn-surface)" },
-  substituida: { cor: "var(--state-warn)", fundo: "var(--state-warn-surface)" },
-  autorizada: { cor: "var(--state-ok)", fundo: "var(--state-ok-surface)" },
-};
-
-function StatusChip({ status }) {
-  if (!status) {
+// ⚠ O MAPA DE COR DAQUI ESTAVA MORTO, E O PORQUÊ IMPORTA — SENÃO ALGUÉM O "CONSERTA" DE VOLTA.
+//
+// Ele vivia neste arquivo com uma entrada `substituida`, e era alimentado por `nota.statusEfetivo`.
+// Só que `statusEfetivo` NUNCA vale "substituida": tem dois valores (`autorizada`/`cancelada`),
+// zero linhas em produção com um terceiro, e o próprio schema documenta que gravá-lo quebraria os
+// filtros de dinheiro (o faturamento exige `=== "autorizada"`). Ou seja: aquele âmbar nunca acendeu
+// uma única vez, e o detalhe mostrava "cancelada" em vermelho para a nota que a lista já mostrava
+// como "substituída" em âmbar.
+//
+// Hoje o mapa mora em `../lib/cicloNotaTela.js`, é o MESMO da lista, e quem o alimenta é
+// `ciclo.situacao` — derivado do EVENTO e do VÍNCULO, não do `statusEfetivo`.
+//
+// Status usa os tokens de ESTADO no significado deles: cancelada bloqueia (danger), substituída
+// pede leitura (warn), autorizada está concluída (ok). Verde aqui é ESTADO, nunca botão.
+function StatusChip({ ciclo }) {
+  if (!ciclo.situacao) {
     return (
       <span style={{
         padding: "3px 10px", borderRadius: 12, fontSize: "0.72rem",
@@ -94,14 +100,18 @@ function StatusChip({ status }) {
       </span>
     );
   }
-  const s = String(status).toLowerCase();
-  const t = STATUS_TOKEN[s] || { cor: "var(--state-neutral)", fundo: "var(--state-neutral-surface)" };
   return (
-    <span style={{
-      padding: "3px 10px", borderRadius: 12, fontSize: "0.72rem", fontWeight: 600,
-      background: t.fundo, color: t.cor, border: `1px solid ${t.cor}`,
-    }}>
-      {s}
+    <span
+      title={ciclo.tituloAjuda}
+      style={{
+        padding: "3px 10px", borderRadius: 12, fontSize: "0.72rem", fontWeight: 600,
+        background: ciclo.fundo, color: ciclo.cor, border: `1px solid ${ciclo.cor}`,
+      }}
+    >
+      {ciclo.rotulo}
+      {/* Cancelada sem evento gravado não pode se apresentar com a mesma confiança de uma cujo
+          cancelamento nós registramos — mesma marca da lista, de propósito. */}
+      {ciclo.semEvento && <span style={{ color: "var(--text-faint)", fontWeight: 400 }}> · sem evento</span>}
     </span>
   );
 }
@@ -249,10 +259,223 @@ function BlocoItens({ itens, nota }) {
   );
 }
 
-export function NotaDetailModal({ nota, loading, error, onClose }) {
+// ── O CICLO: CANCELAMENTO E SUBSTITUIÇÃO ─────────────────────────────────────
+//
+// O caso concreto que o dono relatou: *"a ATIM consta uma nota; nós cancelamos essa nota, emitimos
+// outra e depois a substituímos, e a nossa aba deve mostrar isso."* Até aqui o detalhe não lia
+// `ciclo`, `eventos`, `chaveSubstituida` nem `motivoSubstituicao` — a lista contava a história e o
+// detalhe da mesma nota a desmentia.
+//
+// ⚠ O VÍNCULO TEM DOIS LADOS, e os dois existem no schema:
+//   • `chaveSubstituida` (coluna da própria nota) → "EU substituo aquela";
+//   • `PortalInvoiceEvent.chaveSubstituta`        → "aquela substituiu A MIM".
+// Uma nota pode ter os dois (substituiu alguém e depois foi substituída) — 3 casos medidos.
+
+// A nota do outro lado do vínculo. ⚠ `naBase: false` É RESPOSTA: quer dizer "o vínculo é real, a
+// outra nota é que não foi capturada". Sumir com o vínculo nesse caso seria esconder o fato.
+function ReferenciaNota({ rotulo, alvo, explicacao, ausente, onAbrirNota }) {
+  if (!alvo) return null;
+  const rotuloNota = alvo.numero ? `nº ${alvo.numero}` : "sem número registrado";
+  return (
+    <div style={{
+      display: "grid", gap: 6, padding: 10, borderRadius: 6,
+      background: "var(--bg-page)", border: `1px solid ${PANEL.border}`,
+    }}>
+      <span style={{ fontSize: "0.68rem", color: PANEL.muted, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        {rotulo}
+      </span>
+      <span style={{ fontSize: "0.85rem", color: PANEL.text, fontWeight: 600 }}>
+        {alvo.numero ? rotuloNota : <SemDado>{rotuloNota}</SemDado>}
+      </span>
+      <span style={{
+        fontSize: "0.7rem", color: PANEL.muted, wordBreak: "break-all",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      }}>
+        {alvo.chaveAcesso || <SemDado>sem chave de acesso</SemDado>}
+      </span>
+      {explicacao && (
+        <span style={{ fontSize: "0.74rem", color: "var(--text-faint)", lineHeight: 1.45 }}>{explicacao}</span>
+      )}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {/* A pergunta seguinte do contador é "então qual é a nota que vale?" — daqui ele chega
+            nela. ⚠ Botão desabilitado NOMEIA o motivo: sem `title` ele seria só um botão morto. */}
+        <Button
+          variant="secondary" size="sm"
+          disabled={!alvo.naBase || !alvo.notaId || !onAbrirNota}
+          title={
+            !alvo.naBase || !alvo.notaId
+              ? ausente
+              : !onAbrirNota ? "Esta tela não permite trocar de nota." : "Abrir esta nota"
+          }
+          onClick={alvo.naBase && alvo.notaId && onAbrirNota ? () => onAbrirNota(alvo.notaId) : undefined}
+        >
+          Abrir esta nota
+        </Button>
+        {(!alvo.naBase || !alvo.notaId) && <SemDado>{ausente}</SemDado>}
+      </div>
+    </div>
+  );
+}
+
+function BlocoEventos({ eventos }) {
+  const lista = Array.isArray(eventos) ? eventos : [];
+  if (!lista.length) return null;
+  const th = { padding: "6px 8px", textAlign: "left", fontWeight: 600 };
+  const td = { padding: "6px 8px", verticalAlign: "top" };
+  return (
+    <div style={{ overflowX: "auto", marginTop: 12 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
+        <thead>
+          <tr style={{ background: PANEL.field, color: PANEL.muted }}>
+            <th style={th}>Evento</th>
+            <th style={th}>Código</th>
+            <th style={th}>Data</th>
+            <th style={th}>Motivo</th>
+            <th style={th}>Capturado em</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lista.map((e, i) => (
+            <tr key={e.id || i} style={{ borderTop: `1px solid ${PANEL.border}`, color: PANEL.text }}>
+              <td style={td}>{e.tipo || <SemDado>tipo não reconhecido</SemDado>}</td>
+              <td style={{ ...td, fontFamily: "ui-monospace, monospace" }}>
+                {e.tpEvento || <SemDado>—</SemDado>}
+                {e.nSeqEvento != null ? ` · seq ${e.nSeqEvento}` : ""}
+              </td>
+              <td style={td}>{fmtDataHora(e.dataEvento) || <SemDado>sem data</SemDado>}</td>
+              <td style={{ ...td, minWidth: 180, whiteSpace: "pre-wrap" }}>
+                {e.motivo || <SemDado>sem motivo declarado</SemDado>}
+              </td>
+              <td style={td}>{fmtDataHora(e.capturadoEm) || <SemDado>—</SemDado>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BlocoCiclo({ nota, ciclo, onAbrirNota }) {
+  const eventos = Array.isArray(nota?.eventos) ? nota.eventos : [];
+
+  // ⚠ AUSÊNCIA NUNCA É RESPOSTA — mas "não foi cancelada nem substituída" É uma resposta, e é
+  // DIFERENTE de "não temos o evento". As duas precisam de frases próprias, senão a nota quieta e
+  // a nota sobre a qual não sabemos nada se parecem na tela.
+  if (!temHistoria(ciclo, eventos)) {
+    return (
+      <Secao titulo="Ciclo da nota">
+        <p style={{ margin: 0, fontSize: "0.82rem", color: PANEL.text, lineHeight: 1.5 }}>
+          Esta nota <strong>não foi cancelada nem substituída</strong>, e não substitui nenhuma
+          outra. Não há evento registrado porque não houve evento a registrar.
+        </p>
+      </Secao>
+    );
+  }
+
+  const evento = ciclo.evento;
+  const dataDoCiclo = evento?.dataEvento || null;
+  // Houve substituição de fato? Qualquer um dos dois lados do vínculo serve como evidência.
+  const ehSubstituicao = Boolean(ciclo.substitui || ciclo.substituidaPor || ciclo.situacao === "substituida");
+
+  return (
+    <Secao titulo="Ciclo da nota — cancelamento e substituição">
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+        <StatusChip ciclo={ciclo} />
+        {ciclo.ehSubstituta && (
+          <span style={{
+            padding: "3px 10px", borderRadius: 12, fontSize: "0.72rem", fontWeight: 600,
+            background: "var(--accent-purple-surface)", color: "var(--accent-purple)",
+            border: "1px solid var(--accent-purple-border)",
+          }}>
+            {/* Ser substituta é PAPEL, não situação: a nota pode ser substituta e, depois, ter sido
+                substituída também. Por isso o selo fica AO LADO, não no lugar. */}
+            substituta
+          </span>
+        )}
+      </div>
+
+      {/* ⚠ O AVISO VEM DO PRÓPRIO MÓDULO DO CICLO, com o texto dele. Reescrevê-lo aqui faria a
+          tela dizer uma coisa e a regra outra — é o mesmo erro que produziu o defeito. */}
+      {ciclo.avisos.map((a) => (
+        <p key={a.codigo} style={{
+          margin: "0 0 10px", padding: 10, borderRadius: 6, fontSize: "0.78rem", lineHeight: 1.5,
+          background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+          color: "var(--state-warn)",
+        }}>
+          {a.texto}
+        </p>
+      ))}
+
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+        <ReferenciaNota
+          rotulo="Foi substituída por"
+          alvo={ciclo.substituidaPor}
+          explicacao="Esta é a nota que passou a valer no lugar desta."
+          ausente="A nota substituta não está no sistema — ela existe (o vínculo vem do evento), mas não foi capturada."
+          onAbrirNota={onAbrirNota}
+        />
+        <ReferenciaNota
+          rotulo="Esta nota substitui"
+          alvo={ciclo.substitui}
+          explicacao="A nota anterior, que esta veio substituir."
+          ausente="A nota substituída não está no sistema — o vínculo é real (vem do XML desta nota), mas ela não foi capturada."
+          onAbrirNota={onAbrirNota}
+        />
+      </div>
+
+      <div style={{ ...GRADE, marginTop: 12 }}>
+        {/* ⚠ O RÓTULO SEGUE O FATO. Numa nota apenas CANCELADA, escrever "motivo da substituição:
+            não temos este dado" sugere uma substituição que ninguém afirmou — é o oposto do que
+            este bloco existe para fazer. Só há motivo DE SUBSTITUIÇÃO onde há substituição. */}
+        {ehSubstituicao
+          ? <Campo rotulo="Motivo da substituição" valor={ciclo.motivoSubstituicao} />
+          : (evento || ciclo.semEvento) && <Campo rotulo="Motivo do evento" valor={evento?.motivo} />}
+        {/* ⚠ Data e tipo do EVENTO só cabem numa nota que teve evento. Numa nota SUBSTITUTA
+            (autorizada, que só declara quem ela substituiu) o evento vive na nota do outro lado —
+            pedir a data aqui e responder "não temos este dado" faria parecer que falta um dado
+            nosso, quando o que falta é a pergunta. */}
+        {(evento || ciclo.semEvento) && (
+          <>
+            <Campo rotulo="Data do evento" valor={fmtDataHora(dataDoCiclo)} />
+            <Campo rotulo="Tipo do evento" valor={evento?.tipo} />
+          </>
+        )}
+      </div>
+
+      {/* ⚠ O QUARTO ESTADO. `eventoRegistrado: false` numa nota que não está autorizada significa
+          "NÃO SABEMOS", nunca "não aconteceu" — e uma tela que se cala aqui afirma mais do que
+          sabe. 556 canceladas em produção estão exatamente assim. */}
+      {ciclo.semEvento && !ciclo.avisos.length && (
+        <p style={{
+          margin: "12px 0 0", padding: 10, borderRadius: 6, fontSize: "0.78rem", lineHeight: 1.5,
+          background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+          color: "var(--state-warn)",
+        }}>
+          Não guardamos o evento desta nota — não temos a data, o motivo, nem se foi cancelamento
+          simples ou substituição. Isso <strong>não quer dizer que o evento não existiu</strong>:
+          quer dizer que ele não foi gravado por nós.
+        </p>
+      )}
+
+      {eventos.length > 0
+        ? <BlocoEventos eventos={eventos} />
+        : (
+          <p style={{ margin: "12px 0 0", fontSize: "0.76rem", color: "var(--text-faint)", lineHeight: 1.45 }}>
+            Nenhum evento guardado para esta nota.
+          </p>
+        )}
+    </Secao>
+  );
+}
+
+export function NotaDetailModal({ nota, loading, error, onClose, onAbrirNota }) {
   const titulo = nota
     ? `${TIPO_LABEL[nota.type] || nota.type || "Nota"} nº ${nota.numero || "—"}`
     : "Nota fiscal";
+
+  // A MESMA leitura da lista, do mesmo módulo. É o que impede o chip do cabeçalho de dizer
+  // "cancelada" numa nota que a tabela já mostrou como "substituída".
+  const ciclo = lerCicloDaNota(nota);
 
   return (
     <div
@@ -275,7 +498,7 @@ export function NotaDetailModal({ nota, loading, error, onClose }) {
             <h3 style={{ margin: 0, color: PANEL.text, fontSize: "1rem" }}>{titulo}</h3>
             {nota && (
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-                <StatusChip status={nota.statusEfetivo || nota.status} />
+                <StatusChip ciclo={ciclo} />
                 <span style={{ fontSize: "0.76rem", color: PANEL.muted }}>
                   {PAPEL_LABEL[nota.papel] || <SemDado>papel não registrado</SemDado>}
                 </span>
@@ -337,7 +560,14 @@ export function NotaDetailModal({ nota, loading, error, onClose }) {
               </div>
             </Secao>
 
-            <Secao titulo="Situação">
+            <Secao
+              titulo="Situação"
+              aviso={
+                "`Situação efetiva` é o campo que a APURAÇÃO lê, e ele só tem dois valores "
+                + "(autorizada / cancelada) — é dinheiro, não história. O que aconteceu com a nota "
+                + "(cancelamento, substituição, e o que não sabemos) está no bloco Ciclo da nota."
+              }
+            >
               <div style={GRADE}>
                 <Campo rotulo="Situação efetiva" valor={nota.statusEfetivo} />
                 <Campo rotulo="Status na origem" valor={nota.status} />
@@ -347,6 +577,8 @@ export function NotaDetailModal({ nota, loading, error, onClose }) {
                 />
               </div>
             </Secao>
+
+            <BlocoCiclo nota={nota} ciclo={ciclo} onAbrirNota={onAbrirNota} />
 
             <BlocoItens itens={nota.itens} nota={nota} />
             <BlocoXml xml={nota.xml} nota={nota} />

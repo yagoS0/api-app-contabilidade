@@ -174,6 +174,11 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
           loading={notaLoading}
           error={notaError}
           onClose={fecharNota}
+          /* Do detalhe se chega na nota do OUTRO lado da substituição — é a pergunta seguinte do
+             contador ("então qual é a nota que vale?"). `abrirNota` troca o conteúdo do modal
+             aberto: o esqueleto aparece na hora e o conteúdo chega depois, igual ao clique na
+             linha da tabela. */
+          onAbrirNota={abrirNota}
         />
       )}
 
