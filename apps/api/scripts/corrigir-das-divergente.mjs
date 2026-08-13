@@ -258,6 +258,13 @@ try {
         fonteValor: FONTE_VALOR_EXTRATO,
         // O contador (o dono) está mandando corrigir: as linhas acompanham.
         edicaoManual: true,
+        // ⚠ ESTE SCRIPT RODA DE FORA DO RAILWAY (`railway run` conecta pelo proxy público), então
+        // cada uma das mais de dez queries da transação paga latência de internet. Com o default
+        // do Prisma (5s) a primeira execução estourou com `Transaction not found ... refers to an
+        // old closed transaction` — o Postgres desfez tudo e NADA foi gravado (conferido rodando o
+        // dry-run de novo: as 13 divergências continuavam idênticas). Produção não usa este
+        // parâmetro: lá a rede é interna e o default sempre bastou.
+        txTimeoutMs: 120000,
       });
       const acoes = (r?.generatedEntries || []).map((g) => `${g.eventType}=${g.action}`).join(" ");
       console.log(`   ✔ ${pad(circ.portalClient?.razao || "?", 24)} ${circ.competencia} — ${acoes || "sem ação"}`);

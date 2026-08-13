@@ -510,7 +510,17 @@ async function upsertGeneratedEntry(tx, { edicaoManual = false, fonteValor = FON
 // ⚠ O DEFAULT é `GUIA`, o conservador: quem não declara a fonte mantém a guarda ligada. Trocar o
 // default faria toda chamada nova nascer sobrescrevendo a provisão, que é justamente o estrago
 // que a guarda existe para impedir.
-export async function generateEntriesFromCircular({ portalClientId, competencia, now = new Date(), edicaoManual = false, fonteValor = FONTE_VALOR_GUIA }) {
+//
+// `txTimeoutMs`: tempo da transação interativa. **Omitido = default do Prisma (5s)**, que é o
+// comportamento de todo chamador de produção e não muda.
+// ⚠ Ele existe por um motivo medido, não por precaução: rodando de FORA do Railway (um script via
+// `railway run`, que conecta pelo proxy público) cada query da transação paga a latência da
+// internet, e este bloco faz mais de uma dúzia delas. O `corrigir-das-divergente.mjs` estourou os
+// 5s e devolveu `Transaction not found ... refers to an old closed transaction` — o Postgres
+// desfez tudo, corretamente, e nada foi gravado. Dentro do Railway (worker, rota) a latência é de
+// rede interna e o default sempre bastou; subir o default para todo mundo seria afrouxar uma
+// guarda de produção para resolver um problema de quem está do lado de fora.
+export async function generateEntriesFromCircular({ portalClientId, competencia, now = new Date(), edicaoManual = false, fonteValor = FONTE_VALOR_GUIA, txTimeoutMs }) {
   const normalizedPortalClientId = String(portalClientId || "").trim();
   const normalizedCompetencia = normalizeCompetencia(competencia);
   if (!normalizedPortalClientId) {
@@ -523,6 +533,13 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
     err.code = "COMPETENCIA_REQUIRED";
     throw err;
   }
+
+  // ⚠ Sem `txTimeoutMs` NÃO se passa o objeto de opções: mandar `{ timeout: undefined }` não é o
+  // mesmo que omitir em toda versão do client, e o ponto aqui é que produção continue exatamente
+  // como estava.
+  const txOptions = Number.isFinite(txTimeoutMs) && txTimeoutMs > 0
+    ? { timeout: txTimeoutMs, maxWait: Math.min(txTimeoutMs, 15000) }
+    : undefined;
 
   return prisma.$transaction(async (tx) => {
     const company = await tx.portalClient.findUnique({
@@ -643,5 +660,5 @@ export async function generateEntriesFromCircular({ portalClientId, competencia,
       skipped,
       divergences,
     };
-  });
+  }, txOptions);
 }
