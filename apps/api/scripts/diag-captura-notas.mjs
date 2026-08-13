@@ -86,8 +86,20 @@ for (const p of portals) {
   else if (certVencido) veredito = "A1 VENCIDO → worker PULA em silêncio";
   else if (st.adnBackoffUntil && new Date(st.adnBackoffUntil) > new Date()) veredito = "ADN em backoff";
   else if (st.dfeBackoffUntil && new Date(st.dfeBackoffUntil) > new Date()) veredito = "DFe em backoff";
-  else if (!st.adnLastSyncAt && !st.dfeLastSyncAt) veredito = "NUNCA sincronizada";
-  else if (minutos(st.adnLastSyncAt) > 60 * 24 * 3) veredito = "ADN parado há dias";
+  // ⚠ O VEREDITO SAI DA TENTATIVA (`*LastAttemptAt`), NUNCA DO SYNC (`*LastSyncAt`).
+  //
+  // `adnLastSyncAt` só é gravado quando CHEGA documento (`persistCursor`). Numa empresa que não
+  // emitiu nota ele fica parado para sempre, mesmo com o worker consultando de hora em hora — e
+  // este script chegava a acusar "ADN parado há dias" em 13 empresas perfeitamente saudáveis,
+  // mandando quem investigasse procurar defeito onde não havia. É a MESMA confusão que o comentário
+  // de `PortalSyncState` no schema registra ter custado 29 dias, e que derrubou o gate de 1h em
+  // 09/08/2026 (13.000+ consultas/dia até o ADN responder 429).
+  //
+  // Medido em produção (12/08/2026): 18 empresas com A1, TODAS com `adnLastAttemptAt` de 57 min
+  // (o intervalo é 60) e `adnLastSyncAt` de 5 a 9 dias. Nenhuma delas tinha problema nenhum.
+  else if (!st.adnLastAttemptAt && !st.dfeLastAttemptAt) veredito = "NUNCA olhada (worker não chegou)";
+  else if (minutos(st.adnLastAttemptAt) > 60 * 6) veredito = "⚠ ADN SEM SER OLHADO há horas";
+  else if (!st.adnLastSyncAt) veredito = "olhando · nunca veio nota";
   else veredito = "ok";
 
   linhas.push({
@@ -96,10 +108,15 @@ for (const p of portals) {
     A1: !legacy.certStorageKey ? "não" : certVencido ? "VENCIDO" : "ok",
     IE: legacy.inscricaoEstadual ? "sim" : "não",
     adnCursor: st.adnNsuCursor ?? "—",
-    adnSync: idade(st.adnLastSyncAt),
+    // ⚠ As DUAS colunas, sempre juntas: "olhou" é o worker rodando, "recebeu" é ter vindo nota.
+    // `adnOlhou 57min · adnRecebeu 8d` é uma empresa SAUDÁVEL que não emitiu nada — mostrar só a
+    // segunda foi o que fez este script acusar defeito onde não havia.
+    adnOlhou: idade(st.adnLastAttemptAt),
+    adnRecebeu: idade(st.adnLastSyncAt),
     adnErro: (st.adnLastError || "").slice(0, 40) || "—",
     dfeCursor: st.dfeNsuCursor ?? "—",
-    dfeSync: idade(st.dfeLastSyncAt),
+    dfeOlhou: idade(st.dfeLastAttemptAt),
+    dfeRecebeu: idade(st.dfeLastSyncAt),
     dfeErro: (st.dfeLastError || "").slice(0, 40) || "—",
     veredito,
   });
@@ -108,8 +125,11 @@ for (const p of portals) {
 console.table(linhas);
 
 const semA1 = linhas.filter((l) => l.A1 !== "ok").length;
-const nunca = linhas.filter((l) => l.veredito === "NUNCA sincronizada").length;
-console.log(`\n${linhas.length} empresa(s) · ${semA1} sem A1 válido (essas o worker NUNCA tenta) · ${nunca} nunca sincronizada(s).`);
-console.log("Empresa com `adnSync: NUNCA` e `adnErro: —` não falhou na captura — o worker não chegou nela.");
+const nunca = linhas.filter((l) => l.veredito.startsWith("NUNCA olhada")).length;
+console.log(`\n${linhas.length} empresa(s) · ${semA1} sem A1 válido (essas o worker NUNCA tenta) · ${nunca} nunca olhada(s).`);
+console.log("\n⚠ LEIA `adnOlhou`, NÃO `adnRecebeu`, para saber se a captura está rodando.");
+console.log("   `adnRecebeu` só se move quando CHEGA documento — empresa que não emitiu nota fica");
+console.log("   com ele velho para sempre, e está CORRETA. Foi essa leitura trocada que fez este");
+console.log("   script acusar 13 empresas saudáveis de 'ADN parado há dias'.");
 
 await prisma.$disconnect();
