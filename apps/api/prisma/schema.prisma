@@ -419,6 +419,10 @@ model PortalClient {
   procuracoes             Procuracao[]
   pendenciasPosFechamento PendenciaPosFechamento[]
   contatosWhatsapp        ContatoWhatsapp[]
+  /// Fios de conversa ATRIBUÍDOS a esta empresa. Fio não atribuído (`DESCONHECIDO`/`AMBIGUO`)
+  /// existe com `portalClientId` nulo e não pertence a tenant nenhum — que é o correto: nulo nunca
+  /// casa com um `where` de escopo, então a fila de não vinculados não pode vazar para uma empresa.
+  conversasWhatsapp       ConversaWhatsapp[]
   // Q14 — refundação da apuração (cadastro como autoridade)
   cadastroFiscal          CadastroFiscal?
   produtosServicos        ProdutoServico[]
@@ -656,12 +660,161 @@ model EnvioGuia {
 
   guide Guide @relation(fields: [guideId], references: [id], onDelete: Cascade)
 
+  /// Os balões do fio que carregaram esta guia. ⚠ O ESTADO do envio continua sendo desta linha —
+  /// a mensagem só aponta para cá. Uma cópia do estado no fio seria a segunda resposta para
+  /// "esta guia foi enviada?".
+  mensagens MensagemWhatsapp[]
+
   /// ⚠ É esta constraint que torna reexecutar o lote inofensivo: a segunda passada encontra o
   /// registro e não redispara.
   @@unique([guideId, canal])
   @@index([status, proximaTentativaEm])
   @@index([providerMessageId])
   @@map("envios_guia")
+}
+
+// ─── WHATSAPP — A CONVERSA ───────────────────────────────────────────────────────────────────
+//
+// ⚠ A FRONTEIRA COM `envios_guia`, QUE É O QUE ESTAS DUAS TABELAS **NÃO** GUARDAM:
+//
+//   `envios_guia`        = o estado do ENVIO DE UMA GUIA (uma linha por guia × canal). É dele que
+//                          saem o chip da listagem e o `guideCompliance`. Ele já tem a escada
+//                          `pendente→enviando→enviado→entregue→lido|falhou`, o retry
+//                          (`proximaTentativaEm`), o erro JÁ TRADUZIDO e o gancho do webhook
+//                          (`aplicarStatusDoProvedor`, que nunca rebaixa).
+//   `mensagens_whatsapp` = a CONVERSA — o que foi dito, por quem, quando.
+//
+// Por isso **a mensagem não tem coluna de status**: guardá-la aqui daria uma segunda resposta para
+// "esta guia foi enviada?", pergunta que já tem dona. A ligação entre as duas é o ponteiro
+// `envioGuiaId`, e é ele — não uma cópia do estado — que faz o balão do fio mostrar o ✓✓ do envio.
+
+/// O FIO ENTRE UM NÚMERO E O ESCRITÓRIO.
+///
+/// ⚠ A CHAVE É O NÚMERO, NÃO O CONTATO — e essa é a diferença que permite representar o caso
+/// AMBIGUO. Um mesmo número fala legitimamente por mais de um CNPJ (o sócio com três empresas), e
+/// `contatos_whatsapp` permite o mesmo telefone em várias empresas de propósito. Se a conversa
+/// fosse chaveada pelo contato, a MESMA mensagem recebida teria de ser gravada N vezes, uma no
+/// histórico de cada empresa candidata — a mensagem do cliente aparecendo no fio do CNPJ errado é
+/// exatamente o vazamento que a multi-tenancy existe para impedir. Um número, um fio, uma linha.
+model ConversaWhatsapp {
+  id                 String    @id @default(uuid())
+  /// O número do cliente, E.164 sem `+`, como `contatos_whatsapp.telefoneE164`.
+  telefoneE164       String    @unique
+  /// ⚠ A EMPRESA A QUE ESTE FIO FOI ATRIBUÍDO — e NULO é resposta, não falta de dado.
+  ///
+  /// Nulo = "não vinculado": ou o número não está em cadastro nenhum (`DESCONHECIDO`), ou fala por
+  /// mais de uma empresa (`AMBIGUO`). Nos dois casos o fio existe, a mensagem está guardada e nada
+  /// some — o que não acontece é escolher uma empresa em silêncio. Quem responde de qual empresa se
+  /// trata é `resolverVinculoPorTelefone`, na LEITURA; aqui só se grava a atribuição já decidida
+  /// (automática quando o vínculo diz `VINCULADO`, humana quando ele diz `AMBIGUO`).
+  ///
+  /// ⚠ É AQUI QUE O TENANT MORA — não no contato. No esqueleto do dono a mensagem só alcançava a
+  /// empresa através de `contato_whatsapp`, e um contato apagado ou movido levava junto o escopo de
+  /// todo o histórico. `onDelete: SetNull` pelo mesmo motivo: apagar a empresa desatribui o fio (que
+  /// volta para a fila de não vinculados), nunca apaga o que o cliente escreveu.
+  portalClientId     String?
+  /// O `profile.name` que a Meta manda junto do evento, REGISTRADO COMO OBSERVADO.
+  /// ⚠ NUNCA usado para casar empresa — casar por nome é a adivinhação que `vinculoTelefone.js`
+  /// existe para não fazer. Serve para a fila de não vinculados dizer quem escreveu.
+  nomePerfilProvedor String?
+  /// Até quando o escritório leu este fio.
+  /// ⚠ INSTANTE, e não um contador `naoLidas`. Contador tem dois escritores (o webhook incrementa,
+  /// a tela zera) e diverge no primeiro evento perdido ou reentregue — e nada no banco denuncia. As
+  /// não lidas são as mensagens recebidas depois deste instante: derivadas, sempre certas.
+  lidaAteEm          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  portalClient PortalClient?      @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+  mensagens    MensagemWhatsapp[]
+
+  /// A fila "não vinculados" é uma CONSULTA (`portalClientId IS NULL`), não uma tabela: guardar o
+  /// motivo (`DESCONHECIDO`/`AMBIGUO`) numa linha o faria envelhecer — cadastrado o contato às 10h,
+  /// a linha continuaria dizendo "desconhecido". O motivo se pergunta ao vínculo, na leitura.
+  @@index([portalClientId])
+  @@map("conversas_whatsapp")
+}
+
+/// UMA MENSAGEM DO FIO. Imutável: por isso não tem `updatedAt` — mensagem não se edita.
+model MensagemWhatsapp {
+  id                 String    @id @default(uuid())
+  conversaId         String
+  /// `in` (do cliente) | `out` (nossa). Vocabulário do plano do dono; travado por CHECK no banco.
+  direcao            String
+  /// O campo `id` do objeto de mensagem da Meta (`wamid.…`).
+  ///
+  /// ⚠ **É A GARANTIA DE BANCO DA IDEMPOTÊNCIA DO WEBHOOK.** A Meta reentrega evento; com este
+  /// `@unique`, a segunda entrega do mesmo evento não CONSEGUE virar uma segunda mensagem — não
+  /// depende de o código lembrar de conferir antes. Mesmo desenho de `uq_baixa_guia_linha` e da
+  /// reserva atômica descrita no CLAUDE.md de `application/accounting/`.
+  /// Nulável porque uma mensagem NOSSA existe antes de a Meta devolver o id; para `direcao = 'in'`
+  /// o banco EXIGE o identificador (CHECK), senão a idempotência teria um buraco com forma de NULL.
+  providerMessageId  String?   @unique
+  /// O valor do campo `type` da Meta, COPIADO como veio (`text`, `document`, `image`, `template`…).
+  /// ⚠ Não se traduz para um vocabulário nosso aqui: seria inventar um de-para sem nunca ter visto
+  /// um payload real. O mesmo vocabulário serve aos dois sentidos — a API de envio usa `type` também.
+  tipo               String
+  /// O texto, quando há. Mídia não tem corpo: tem `midiaProvedorId`.
+  corpo              String?
+  /// O `id` do objeto de mídia na Meta.
+  /// ⚠ Guarda-se o ID, NUNCA a URL: a URL que a Meta devolve EXPIRA, e uma coluna `midiaUrl` com
+  /// ela dentro guardaria um link morto com cara de link. Baixar o arquivo para o storage próprio é
+  /// da fase do webhook; sem o id registrado, a mídia fica irrecuperável.
+  midiaProvedorId    String?
+  /// ⚠ O PONTO DE ENCONTRO COM `envios_guia` — e o motivo de a mensagem não ter status próprio.
+  /// Quando este balão carregou uma guia, o ESTADO daquele envio (enviado/entregue/lido/falhou,
+  /// retry, erro traduzido) mora lá, com um escritor só. Aqui fica o ponteiro.
+  envioGuiaId        String?
+  /// O instante que a Meta reportou no evento (campo `timestamp`), já convertido.
+  /// ⚠ Nulável: a ausência é dito, não presumido — ver `janela24h.js`.
+  ocorridaEmProvedor DateTime?
+  /// O instante em que NÓS gravamos. Sempre POSTERIOR ao fato (entrega do webhook + processamento).
+  /// ⚠ São dois instantes de propósito, e a janela de 24h escolhe entre eles com critério declarado
+  /// (`instanteQueAbreAJanela`): vence o mais ANTIGO, para a nossa janela nunca fechar depois da
+  /// janela da Meta.
+  registradaEm       DateTime  @default(now())
+
+  conversa  ConversaWhatsapp @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  envioGuia EnvioGuia?       @relation(fields: [envioGuiaId], references: [id], onDelete: SetNull)
+
+  /// ⚠ NENHUM `portalClientId` DENORMALIZADO AQUI, e a razão é a segurança, não a economia. A
+  /// atribuição do fio MUDA (o ambíguo que o contador resolve; a empresa apagada que vira nulo) —
+  /// uma cópia por mensagem teria um segundo escritor e, no dia em que discordasse, discordaria em
+  /// silêncio e a favor do vazamento (histórico antigo respondendo pelo escopo da empresa errada).
+  /// O tenant tem UM dono, `conversas_whatsapp.portalClientId`, e toda leitura passa por
+  /// `ConversaWhatsappService`, que escopa por ele.
+  @@index([conversaId, direcao, registradaEm])
+  @@index([envioGuiaId])
+  @@map("mensagens_whatsapp")
+}
+
+/// O TEMPLATE APROVADO NA META — o nome exato e o estado da aprovação.
+///
+/// ⚠ NASCE `DECLARADO`, E NENHUM DELES EXISTE NA META. `DECLARADO` significa "consta do nosso plano
+/// e NUNCA foi conferido na Meta" — a mesma marca de `verificadoTrial: false` e
+/// `verificadoNoLeiaute: false`. Semear `EM_ANALISE` (como fazia o esqueleto) afirmaria uma
+/// submissão que ninguém fez: o cadastro na Meta está parado à espera do número.
+/// ⚠ Por isso `nomeMeta` NASCE NULO: o nome exato só existe depois da aprovação. Copiar a chave
+/// para lá seria transformar a nossa intenção em cadastro do provedor.
+model TemplateWhatsapp {
+  /// Chave interna (`guia_disponivel`, …) — é por ela que o código pede o template.
+  chave             String    @id
+  /// O nome EXATO aprovado na Meta. Nulo enquanto não houver aprovação.
+  nomeMeta          String?
+  idioma            String    @default("pt_BR")
+  categoria         String    @default("UTILITY")
+  /// Header de documento — é o que permite anexar o PDF da guia (manual do dono, Etapa 6).
+  temDocumento      Boolean   @default(false)
+  /// DECLARADO | EM_ANALISE | APROVADO | REJEITADO. Travado por CHECK no banco.
+  /// ⚠ Só `APROVADO` autoriza envio; qualquer outro estado é recusa com motivo.
+  statusAprovacao   String    @default("DECLARADO")
+  motivoRejeicao    String?
+  /// Quando o estado foi lido da Meta. Nulo = nunca foi — e é o que separa dado nosso de dado dela.
+  conferidoNaMetaEm DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("templates_whatsapp")
 }
 
 model Guide {
