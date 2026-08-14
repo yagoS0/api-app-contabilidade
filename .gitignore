@@ -47,6 +47,14 @@ storage/
 **/storage/guides/
 **/storage/notas/
 
+# XML de nota solto na RAIZ do repo. Já aconteceu: um XML de NFS-e Nacional real
+# (nome do arquivo = chave de acesso de 50 dígitos, CNPJ/endereço/telefone do
+# prestador e do tomador dentro) ficou versionado aqui e passou batido pela
+# anonimização. A raiz não tem XML legítimo — a amostra de leiaute ANONIMIZADA
+# vive em docs/leiaute-nfse/, fora do alcance desta regra.
+# ⚠ Isto cobre só a raiz. Nota real largada em subpasta continua entrando.
+/*.xml
+
 # Build artifacts
 apps/web/dist/
 apps/api/node_modules/

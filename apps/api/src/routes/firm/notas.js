@@ -11,6 +11,7 @@
 //   POST   /competencias/:competencia/reabrir
 //   GET    /pendencias-pos-fechamento
 //   POST   /pendencias-pos-fechamento/:pendId/resolver
+//   GET    /notas/:notaId/danfse        (PDF da NFS-e, layout do Padrão Nacional — NT 008)
 
 import { Router } from "express";
 import { prisma } from "../../infrastructure/db/prisma.js";
@@ -29,6 +30,7 @@ import { classifyItemsForCompany } from "../../application/notas/apuracao/Classi
 import { calcularApuracaoParaCompetencia } from "../../application/notas/apuracao/CalculoFiscal.js";
 import { transmitirApuracao } from "../../application/notas/apuracao/ApuracaoTransmissaoService.js";
 import { conferirApuracao } from "../../application/notas/apuracao/ApuracaoConferenciaService.js";
+import { gerarDanfse } from "../../application/nfse/danfse/gerarDanfse.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -688,6 +690,104 @@ export function createNotasRouter({ log }) {
         },
       },
     });
+  });
+
+  // ─── DANFSe — o PDF da NFS-e, layout do Padrão Nacional ────────────────────
+  //
+  // A API oficial (`adn.nfse.gov.br/danfse`) foi SOBRESTADA em 03/08/2026, e a NT 008 diz que é
+  // por isso: o documento passou a ser do emissor. Sem PDF, o cliente não tem o que mandar ao
+  // tomador.
+  //
+  // ⚠ GERADO SOB DEMANDA, NÃO SALVO — e a decisão tem duas pernas:
+  //   1. o PDF é **inteiramente derivável** do `xmlRaw`, que já está guardado. Salvar seria manter
+  //      duas cópias do mesmo fato, com a segunda podendo envelhecer (correção de leiaute, QR Code
+  //      que ainda vai entrar, descrições de código que ainda faltam — tudo isso muda o PDF sem
+  //      mudar o XML);
+  //   2. o volume do Railway é EFÊMERO, e este projeto já paga esse preço: "registro existe,
+  //      arquivo não" é caso real com as guias e os relatórios SITFIS (CLAUDE.md de apps/api,
+  //      "Armazenamento de PDFs"). Um DANFSe salvo herdaria essa classe inteira de defeito —
+  //      derivado, ele nunca some. O custo é irrisório: ~40 KB e alguns milissegundos por nota.
+  //
+  // O "arquivo ausente" dos precedentes (PGDAS/SITFIS) vira aqui "XML ausente", e é respondido
+  // com a mesma honestidade: 404 dizendo QUAL é a falta.
+  router.get("/notas/:notaId/danfse", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const notaId = String(req.params.notaId);
+
+    const nota = await prisma.portalInvoice.findFirst({
+      where: { id: notaId, clientId: portalClientId },
+      select: {
+        id: true, numero: true, chaveAcesso: true, chaveSubstituida: true,
+        status: true, statusEfetivo: true, xmlRaw: true,
+      },
+    });
+    if (!nota) return bad(res, 404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
+
+    if (!nota.xmlRaw) {
+      return bad(res, 404, "xml_indisponivel",
+        "Esta nota não tem o XML guardado, e o DANFSe é gerado a partir dele — nada aqui é " +
+        "inventado. Recapture a nota para que o XML entre na base.");
+    }
+
+    // ⚠ O QR CODE É OBRIGATÓRIO (NT §2.2 e §2.4.3) E O PROJETO NÃO TEM BIBLIOTECA PARA GERÁ-LO.
+    // Enquanto a dependência não for escolhida pelo dono, a rota RECUSA por padrão: um DANFSe sem
+    // QR Code não é um DANFSe, e servi-lo em silêncio faria o contador mandar ao tomador um
+    // documento inválido achando que mandou o certo. `?semQrCode=1` é o escape consciente, para
+    // conferência de layout.
+    const semQrCode = String(req.query.semQrCode || "") === "1";
+
+    // ⚠ A MARCA D'ÁGUA VEM DO CICLO DA NOTA, NUNCA DO `chSubstda` DO XML. `chSubstda` diz "eu
+    // substituo AQUELA"; quem responde "esta foi substituída" é o evento (ou outra nota apontando
+    // para esta) — a mesma distinção que o `NotaDetailModal` já errou uma vez.
+    const eventos = await prisma.portalInvoiceEvent.findMany({
+      where: { clientId: portalClientId, invoiceId: nota.id },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      select: { type: true, chaveSubstituta: true },
+    });
+    const substituta = nota.chaveAcesso
+      ? await prisma.portalInvoice.findFirst({
+          where: { clientId: portalClientId, chaveSubstituida: nota.chaveAcesso },
+          select: { chaveAcesso: true },
+        })
+      : null;
+    const ciclo = derivarCiclo({
+      nota,
+      evento: eventos.find((e) => e.type === "canc_por_substituicao") || eventos[eventos.length - 1] || null,
+      substituta,
+    });
+    const marcaDagua =
+      ciclo?.situacao === "substituida" ? "SUBSTITUIDA"
+      : ciclo?.situacao === "cancelada" ? "CANCELADA"
+      : null;
+
+    try {
+      const { pdf, conformidade } = await gerarDanfse({
+        xml: nota.xmlRaw,
+        permitirSemQrCode: semQrCode,
+        marcaDagua,
+        incluirCanhoto: String(req.query.canhoto || "") === "1",
+      });
+
+      // A não conformidade viaja em header, não some: quem baixar o PDF consegue saber, sem abrir
+      // o arquivo, que ele ainda não está conforme e por quê.
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition",
+        `inline; filename="danfse-${(nota.chaveAcesso || nota.numero || nota.id).toString().replace(/[^\w.-]/g, "")}.pdf"`);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("X-Danfse-Conforme", conformidade.qrCode === "presente" ? "1" : "0");
+      res.setHeader("X-Danfse-Paginas", String(conformidade.paginas));
+      return res.send(pdf);
+    } catch (err) {
+      if (err?.code === "DANFSE_SEM_QRCODE") {
+        return bad(res, 503, "danfse_sem_qrcode", err.message, {
+          dependenciaFaltante: "biblioteca de geração de QR Code (a escolha é do dono)",
+        });
+      }
+      if (err?.code === "DANFSE_XML_NAO_E_NFSE" || err?.code === "DANFSE_XML_VAZIO") {
+        return bad(res, 422, "xml_nao_e_nfse", err.message);
+      }
+      throw err;
+    }
   });
 
   // ─── Q12.B+: captura NFS-e via ADN ─────────────────────────────────────────

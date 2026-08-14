@@ -477,6 +477,95 @@ Testes: `nfse/__tests__/` (`nfseNumeracao`, `nfseCertificado`, `dpsCodigos`, `de
 `emissaoDps`) + `validators/__tests__/nfsePayload`. Medir antes da migration:
 **`scripts/diag-nfse-numeracao.mjs`** (só leitura, zero chamada externa).
 
+## DANFSe — o PDF da NFS-e (NT 008), gerado por nós desde que a API oficial caiu
+
+`application/nfse/danfse/` + `GET /firm/companies/:id/notas/:notaId/danfse`. A API oficial
+(`adn.nfse.gov.br/danfse`) foi **sobrestada em 03/08/2026**, e a NT diz que é por isso: ela
+"servirá de base para a geração do DANFSe por meios de softwares de emissão de NFS-e, ERPs e
+sistemas fiscais, **motivo pelo qual** a API será sobrestada". Prazo prorrogado duas vezes
+(01/07 → 15/07 → 03/08).
+
+**Fonte versionada, com hash:** `docs/leiaute-nfse/NT_008_SE_CGNFSe_DANFSe_v1.02_2026-07-14.pdf`
+(SHA-256 `1265f403…4fb0ff`), seção RTC do portal `gov.br/nfse`. **Ler o README de lá antes de
+mexer** — ele traz item por item o que a NT exige. Regra-mãe (Res. CGNFS-e nº 3/2023, art. 13, e
+NT §2.1): *"Não poderão ser impressas informações que não constem do arquivo da NFS-e."*
+
+| arquivo | papel |
+|---|---|
+| `danfseLeiaute.js` | **transcrição** do §2.4.5: cada campo com caminho no XML, tag, altura/largura/esq/sup em cm e limite de caracteres. Nada deduzido por analogia com o DANFE da NF-e |
+| `danfseDados.js` | lê o XML **por caminho**, monta os valores |
+| `danfseDescricoes.js` | mapa código→descrição, **vazio de propósito** |
+| `gerarDanfse.js` | pdfkit; devolve `{ pdf, conformidade }` |
+
+- ⚠ **A entrada é o XML, por parâmetro.** Nada lê banco, chama ADN/SEFAZ/SERPRO nem emite. A
+  conferência contra as notas REAIS capturadas (`PortalInvoice.xmlRaw`) é o próximo passo, e é do
+  dono — o gerador já está pronto para ela.
+- ⚠ **Reusa o `pdfkit` que já existia.** Nenhuma dependência foi acrescentada.
+- ⚠ **NÃO reusar `getTextByLocalNames` (`utils/xml.js`) aqui.** Ela devolve o primeiro elemento com
+  aquele nome no documento inteiro, e o XML da NFS-e tem `CNPJ` em `emit`/`prest`/`toma`/`interm`,
+  `xNome` em quatro grupos, `cMun` em cinco e `vBC` tanto em `infNFSe/valores` quanto em
+  `IBSCBS/valores`. Num metadado isso é um campo torto; num DANFSe é **imprimir o CNPJ do prestador
+  no lugar do tomador, num documento que circula**.
+- **Gerado sob demanda, nunca salvo.** O PDF é inteiramente derivável do `xmlRaw`, que já está
+  guardado; e o volume do Railway é efêmero — "registro existe, arquivo não" já é caso real com
+  guias e SITFIS (ver "Armazenamento de PDFs"). Um DANFSe salvo herdaria essa classe inteira de
+  defeito. Custo do derivado: ~40 KB e milissegundos por nota.
+
+### ⚠ O QUE ESTÁ BLOQUEADO E POR QUÊ (nada disto é esquecimento)
+
+1. **QR Code — obrigatório (§2.2 e §2.4.3) e o projeto não tem biblioteca.** `gerarDanfse` **recusa**
+   (`DANFSE_SEM_QRCODE`) sem `qrCodePng`; a rota responde **503**. `?semQrCode=1` é escape
+   consciente, e o quadro sai carimbado "QR CODE AUSENTE" — retângulo branco em silêncio se
+   pareceria com um QR que não imprimiu. O conteúdo já está pronto:
+   `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=` + a chave. **A escolha da dependência é
+   do dono.**
+2. **As descrições dos códigos não existem no repo.** Em doze campos a NT manda "utilizar a
+   descrição das opções previstas no leiaute", e **o leiaute (XSD/Anexo I) não está versionado** —
+   a mesma ausência de `dpsCodigos.js`. A NT dá só *exemplos*, sem dizer a qual número cada um
+   corresponde. `danfseDescricoes.js` nasce vazio, imprime-se o **código cru** (conteúdo do XML,
+   art. 13 respeitado) e a pendência sai em `conformidade.descricoesPendentes`.
+3. **O DANFSe é v2.0 (multitributário) e o nosso XML é 1.01.** Um bloco inteiro (Tributação
+   IBS/CBS), mais `finNFSe`, o bloco DESTINATÁRIO e três totais saem dos grupos `IBSCBS`, que **não
+   existem no leiaute 1.01**. Pela nota 12 saem com traço; a lista está em
+   `CAMPOS_SEM_FONTE_NO_LEIAUTE_1_01` e no relatório (`camposSemFonte`).
+4. **`prest/xNome` e `prest/end` costumam vir vazios.** A NT aponta NOME e ENDEREÇO do prestador
+   para `DPS/infDPS/prest/`, mas numa NFS-e devolvida esses dados vivem em `infNFSe/emit`. **Não
+   caímos para `emit` por conta própria** — seria criar regra de leiaute. Sai traço, com aviso.
+5. **Município do prestador/tomador é CÓDIGO IBGE e a NT manda imprimir o nome.** A tabela do IBGE
+   não está no projeto (mesma falta do `Company.codigoMunicipioIbge`). Imprime-se o código;
+   `conformidade.municipiosNaoResolvidos` nomeia quais.
+6. **Fontes Arial e Microsoft Sans Serif (§2.4) não estão embutidas.** Sem os `.ttf` o render cai
+   em Helvetica **e reporta** — substituir por "parecida" em silêncio é o defeito.
+7. **Logomarca oficial não versionada** (a NT dá a URL). Sai placeholder + aviso; desenhar algo
+   parecido seria marca fabricada num documento fiscal.
+
+### ⚠ Nota 12: campo vazio leva TRAÇO — ele não some
+
+*"Os campos sem informações no XML devem ser preenchidos com um traço (-)"*. Isso **não** conflita
+com o art. 13: o traço marca ausência, não inventa conteúdo. Suprimir a linha inteira só vale nos
+casos nomeados (notas 1 e 5, e as supressões do §2.3, que condensam o bloco numa frase única e
+transferem a altura liberada para Informações Complementares).
+
+### ⚠ O transbordo de página se resolve TRUNCANDO, e o DANFSe não tem tabela de itens
+
+Não existe grupo repetitivo de itens como no DANFE: há **um** `xDescServ` (1.300) e **um** bloco de
+informações complementares (2.000). §2.1 manda cortar com **reticências (...)**; a linha de Totais
+Aproximados (nota 10) é **fixa e fica fora do truncamento**. Ou seja, "nota com muitos itens" não é
+o caso que estoura a página — e não foi preciso perguntar nada ao dono sobre isso.
+
+### ⚠ A marca d'água vem do CICLO da nota, nunca do `chSubstda` do XML
+
+`chSubstda` diz *"eu substituo AQUELA"*; quem responde *"esta foi substituída"* é o evento (ou
+outra nota apontando para esta). Carimbar SUBSTITUÍDA por causa do `chSubstda` inverteria os dois
+lados do vínculo — o mesmo defeito que o `NotaDetailModal` já teve. A rota deriva por
+`derivarCiclo` (`notas/cicloNota.js`) e passa `marcaDagua` ao gerador, que **não decide sozinho**.
+
+Regressão: `nfse/danfse/__tests__/danfse.test.js` (27) — inclusive **página única com descrição de
+16 mil caracteres**, `tpAmb=2` imprimindo a expressão e `tpAmb=1` **não** imprimindo, campo ausente
+virando traço, e a recusa sem QR Code. ⚠ O teste lê o texto do PDF com `pdf-parse`: procurar a
+frase nos bytes crus **não funciona** (pdfkit comprime os content streams) e faz o `not.toContain`
+passar por engano.
+
 ## ⚠ ADN: `ultNSU` é EXCLUSIVO — o cursor guarda o último que já temos
 
 `ultNSU` quer dizer **"último NSU que eu já recebi"**, e o ADN devolve os documentos
