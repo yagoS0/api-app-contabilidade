@@ -167,13 +167,108 @@ torna verificável: fosse a query a estreitar, a leitura alternativa ficaria inv
 
 Tudo abaixo precisa de credenciais reais para ser verificado:
 
-- **F3 — Cloud API**: `WhatsappClient`, template `guia_disponivel` com header de documento (o PDF sai
-  de `getGuidePdfBuffer`), tabela de tradução dos erros da Meta, flag `INTEGRACAO_WHATSAPP` OFF.
+- ~~**F3 — Cloud API**~~ → **codada em 14/08/2026** contra o esqueleto do dono + documentação
+  oficial da Meta. Ver a seção **"F3 — Cloud API"** abaixo. ⚠ **NADA FOI ENVIADO**, e nenhum
+  chamador existe: o módulo é inerte até a F5.
 - **F4 — Webhook**: router público em `/webhooks` (fora dos autenticados — `requireAuth` neste
   projeto é por router), `X-Hub-Signature-256`, 200 em <5s, idempotência por `wamid`.
 - **F5 — Envio individual e em lote**: escolha de canal no chip, painel de revisão, fila com
   throttling no molde do `guideEmailWorker.js`.
 - **F6 — Recebimento mínimo**: badge de respostas, lista por empresa, fila de não vinculados.
+
+## F3 — Cloud API (cliente + tradução dos erros). ⚠ NADA FOI ENVIADO, EM AMBIENTE NENHUM
+
+> Escrita a partir de **duas** fontes, e o módulo diz o tempo todo qual é qual: a **documentação
+> oficial da Meta** (URL + data em cada afirmação) e o **esqueleto do dono** (entregue em
+> 14/08/2026). Misturá-las sem marcar a procedência é o que a regra 4 proíbe.
+
+| arquivo | papel |
+|---|---|
+| `application/whatsapp/errosMeta.js` | a TRADUÇÃO — 42 códigos, puro, sem prisma e sem rede |
+| `application/whatsapp/WhatsappCloudClient.js` | o cliente, com `fetch` **injetável** |
+| `__tests__/errosMeta.test.js` (27) · `__tests__/whatsappCloudClient.test.js` (30) | 57 testes, **zero rede** |
+| `config.js` | as 5 credenciais + `INTEGRACAO_WHATSAPP` (OFF) + versão da Graph API |
+
+**Inerte por construção:** nenhuma rota, nenhum worker e nenhum serviço importa o módulo; a flag
+nasce OFF e o cliente **recusa operar** sem ela, com recusa nomeada (`WHATSAPP_NAO_CONFIGURADO`).
+
+### ⚠ O PDF SOBE COMO MÍDIA (`id`), NÃO COMO URL PÚBLICA (`link`)
+
+O esqueleto do dono manda `document: { link: pdfUrl }`, e a Meta **baixa o arquivo dessa URL** — o
+que exige URL alcançável **sem autenticação**. Guia é documento fiscal do cliente. Dois motivos para
+a outra saída (que o próprio esqueleto oferece):
+
+1. **Vazamento.** Não existe URL pública de guia neste projeto; criar uma para viabilizar o anexo
+   trocaria o problema do anexo por um documento fiscal aberto a quem tiver o link.
+2. **O volume do Railway é efêmero.** *"Registro existe, arquivo não"* já é caso REAL aqui (guias e
+   SITFIS). Uma URL que a Meta busca *depois*, apontando para arquivo que o deploy apagou, falha em
+   silêncio no meio do lote. O upload lê o PDF **agora**, pelo mesmo caminho do e-mail
+   (`getGuidePdfBuffer`, passado por parâmetro — o módulo não lê banco nem storage).
+
+Nada na fonte desqualifica o `id`: *"Either `id` or `link` is required"* põe os dois em pé de
+igualdade, e o endpoint de upload existe para isso. ⚠ O `media_id` **expira em 30 dias** (documentado)
+— serve para enviar agora, não para guardar na guia.
+
+### ⚠ 130472 — o esqueleto do dono e a Meta DISCORDAM, e a fonte venceu
+
+O esqueleto traduz `130472` como *"Este contato optou por não receber mensagens comerciais"*. Esse é,
+literalmente, o texto documentado do **`131050`** (*"This recipient has chosen to stop receiving
+marketing messages"*). A fonte oficial diz de `130472`: *"Message was not sent as part of an
+experiment"*.
+
+Seguir o esqueleto teria custado duas coisas ao mesmo tempo: o contador leria "o cliente pediu para
+sair" sobre quem nunca pediu (e pararia de mandar guia), e o `131050` de verdade ficaria sem
+tratamento próprio. A divergência está **nomeada no código** (`divergeDoEsqueleto`), com teste — não
+resolvida em silêncio. **Decisão final é do dono.**
+
+### ⚠ TRÊS respostas para "posso tentar de novo?", não duas
+
+`EnvioGuiaService.marcarFalhou` recebe `proximaTentativaEm`, e quem o preenche precisa disto:
+
+| lista | o que é | exemplos |
+|---|---|---|
+| `CODIGOS_RETENTAVEIS` | a fonte diz que reenviar é o caminho | `4`, `80007`, `130429`, `131056`, `131016` |
+| `CODIGOS_DEFINITIVOS` | reenviar igual falha igual; o conserto é noutro lugar | `131026`, `131047`, `131050`, `132001` |
+| **`CODIGOS_SEM_CLASSIFICACAO`** | ⚠ a fonte descreve o erro e **não fala em reenviar** | `131048`, `131064`, `1`, `135000` |
+
+`podeTentarDeNovo()` devolve `true` / `false` / **`null`** — mesma forma de `obrigatoriedadeEfd`
+(`obrigada`/`dispensada`/`indefinida`). **`null` não é `false` disfarçado**: quem o receber não agenda
+retentativa sozinho, deixa para o contador. Sem a terceira lista, o default arbitrado ou martelaria
+um número que não existe, ou desistiria de um limite de vazão que passaria sozinho.
+
+⚠ **`131047` chega com HTTP 429**, igual aos limites de vazão — e não é retentável. Foi por isso que
+a classificação **não** pôde ser derivada do status; cada linha carrega `baseDaRetentativa`
+(`documentada` × `derivada_do_status`) dizendo se a afirmação veio de frase da Meta ou de inferência
+nossa sobre o status.
+
+### ⚠ Código desconhecido passa CRU E NOMEADO
+
+Nunca "erro desconhecido" mudo, nunca adivinhado por faixa (`131099` não vira "algo de janela"). Sobe
+`META_131099` + o texto literal da Meta + o `fbtrace_id` (é com ele que se abre chamado), e cai em
+`NAO_DOCUMENTADA`. O esqueleto do dono tinha o fallback certo no espírito (o número junto), mas
+terminava em *"Tente novamente"* — que é justamente a arbitragem que a terceira lista existe para
+impedir.
+
+### ⚠ Segredo nunca sai, e isso é teste, não promessa
+
+Token e app secret vivem no header `Authorization` — nunca na URL, nunca no corpo, nunca em log,
+nunca na mensagem de erro. Há teste varrendo **todos** os argumentos de todas as chamadas, o log e o
+`stack` do erro atrás do token. O corpo da mensagem **não** vai para o log (LGPD, plano §3.2) e o
+telefone sai mascarado (`+55…8888`).
+
+**A rede é travada por construção nos testes:** `globalThis.fetch` é substituído por um espião que
+**estoura**. Se algum caminho esquecer o `fetch` injetado, o teste quebra com "REDE" em vez de sair
+mensagem de verdade.
+
+### O que NÃO foi feito nesta fase, e por quê
+
+- **`baixarMidia`** (está no esqueleto): é **recebimento**, F6 — precisa de decisão de storage e não
+  tem consumidor. Fora do escopo desta parte.
+- **Nenhuma rota, nenhum worker, nenhuma tela.** F4 e F5.
+- **Versão da Graph API:** `v21.0`, **do esqueleto do dono**, env-overridável
+  (`WHATSAPP_GRAPH_VERSION`). ✔ Conferida na fonte: publicada em 02/10/2024, **disponível até
+  21/01/2027**. ⚠ Ela vence — depois disso a chamada falha por versão, não por conteúdo, e o erro não
+  vai parecer com isso.
 
 ### Para retomar, o que é preciso
 

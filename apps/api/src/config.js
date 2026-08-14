@@ -433,3 +433,67 @@ if (SERPRO_ENABLE_PGDASD && !SERPRO_CONSUMER_SECRET)
   log.warn("SERPRO_CONSUMER_SECRET ausente: integracao SERPRO/PGDAS-D ficara desabilitada");
 if (SERPRO_ENABLE_PGDASD && !SERPRO_CERT_COMPANY_ID)
   log.warn("SERPRO_CERT_COMPANY_ID ausente: configure a Company legada que armazena o certificado do escritorio/procurador");
+
+// === WhatsApp Cloud API (Meta) — Entrega 1, F3 ===
+//
+// ⚠ NADA FOI ENVIADO, EM AMBIENTE NENHUM. O cadastro na Meta está em verificação; não há número,
+// não há token, nenhum template foi aprovado. A flag nasce OFF e o cliente RECUSA operar sem ela —
+// pelo mesmo motivo que `INTEGRACAO_SERPRO_PAGTOWEB` nasceu OFF: contrato documentado não é
+// contrato exercido.
+export const INTEGRACAO_WHATSAPP = process.env.INTEGRACAO_WHATSAPP === "1";
+
+// As cinco credenciais do manual (MANUAL_CADASTRO_WHATSAPP_API.md, Etapa 4).
+// ⚠ TOKEN e APP_SECRET são SEGREDO: nenhum ponto do sistema pode escrevê-los em log, em mensagem
+// de erro ou em teste. O que se registra é a AUSÊNCIA (o nome da variável), nunca o valor.
+export const WHATSAPP_TOKEN = (process.env.WHATSAPP_TOKEN || "").trim();
+export const WHATSAPP_PHONE_NUMBER_ID = (process.env.WHATSAPP_PHONE_NUMBER_ID || "").trim();
+export const WHATSAPP_WABA_ID = (process.env.WHATSAPP_WABA_ID || "").trim();
+export const WHATSAPP_APP_SECRET = (process.env.WHATSAPP_APP_SECRET || "").trim();
+export const WHATSAPP_VERIFY_TOKEN = (process.env.WHATSAPP_VERIFY_TOKEN || "").trim();
+
+// Host da Graph API. Default documentado: "Base URL: https://graph.facebook.com"
+// (developers.facebook.com/docs/whatsapp/cloud-api/reference/messages, consultado em 2026-08-14).
+export const WHATSAPP_GRAPH_BASE_URL = (
+  process.env.WHATSAPP_GRAPH_BASE_URL || "https://graph.facebook.com"
+).trim();
+
+// Versão da Graph API — faz parte do CAMINHO do endpoint
+// (`POST /{Version}/{Phone-Number-ID}/messages`, referência de Messages, consultada em 2026-08-14).
+//
+// PROCEDÊNCIA DO DEFAULT: **o esqueleto do dono** (`src/whatsapp/client.js`, que fixa
+// `https://graph.facebook.com/v21.0`). Não é escolha nossa — o manual de cadastro não cita versão.
+//
+// ✔ Conferido na fonte oficial (developers.facebook.com/docs/graph-api/changelog/versions,
+// consultado em 2026-08-14): **v21.0 foi publicada em 02/10/2024 e está disponível até
+// 21/01/2027** — ou seja, a escolha do dono é uma versão viva, não uma expirada.
+// ⚠ MAS ELA VENCE. Depois de 21/01/2027 a chamada passa a falhar por versão, não por conteúdo, e o
+// erro não vai parecer com isso. Por isso a variável existe: virar a versão é uma linha de env.
+// Versões mais novas na mesma fonte: v26.0 (29/07/2026), v25.0 (18/02/2026), v24.0 (08/10/2025),
+// v23.0 (29/05/2025), v22.0 (21/01/2025).
+// ⚠ NENHUMA versão foi exercida por este projeto — nada aqui foi enviado, em ambiente nenhum.
+export const WHATSAPP_GRAPH_VERSION = (process.env.WHATSAPP_GRAPH_VERSION || "v21.0").trim();
+/** Data em que a versão default deixa de ser aceita, conforme a página oficial de versões. */
+export const WHATSAPP_GRAPH_VERSION_DEFAULT_EXPIRA_EM = "2027-01-21";
+
+export const WHATSAPP_TIMEOUT_MS = Math.max(1000, Number(process.env.WHATSAPP_TIMEOUT_MS || 30000));
+
+// Nome e idioma do template de guia. Ficam em env porque o nome APROVADO é o que a Meta devolver na
+// análise — o do plano (`guia_disponivel`, Utility, pt_BR) é a submissão, não a aprovação.
+export const WHATSAPP_TEMPLATE_GUIA = (process.env.WHATSAPP_TEMPLATE_GUIA || "guia_disponivel").trim();
+export const WHATSAPP_TEMPLATE_IDIOMA = (process.env.WHATSAPP_TEMPLATE_IDIOMA || "pt_BR").trim();
+
+if (INTEGRACAO_WHATSAPP) {
+  // Mesmo padrão do SERPRO: com a flag ligada e credencial faltando, a integração fica desabilitada
+  // e o arranque DIZ isso. Ausência silenciosa é o que faz o contador descobrir no dia do envio.
+  for (const [nome, valor] of [
+    ["WHATSAPP_TOKEN", WHATSAPP_TOKEN],
+    ["WHATSAPP_PHONE_NUMBER_ID", WHATSAPP_PHONE_NUMBER_ID],
+    ["WHATSAPP_WABA_ID", WHATSAPP_WABA_ID],
+    ["WHATSAPP_APP_SECRET", WHATSAPP_APP_SECRET],
+    ["WHATSAPP_VERIFY_TOKEN", WHATSAPP_VERIFY_TOKEN],
+  ]) {
+    if (!valor) log.warn(`${nome} ausente: integracao WhatsApp/Cloud API ficara desabilitada`);
+  }
+  if (WHATSAPP_GRAPH_VERSION && !/^v\d+\.\d+$/.test(WHATSAPP_GRAPH_VERSION))
+    log.warn(`WHATSAPP_GRAPH_VERSION fora do formato esperado ("vNN.N"): ${WHATSAPP_GRAPH_VERSION}`);
+}
