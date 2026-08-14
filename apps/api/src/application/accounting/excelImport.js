@@ -55,7 +55,21 @@ function detectColumns(firstRow) {
 
 function parseDateCell(cell) {
   if (cell == null || cell === "") return null;
-  if (cell instanceof Date) return cell;
+  // ⚠ `XLSX.read(..., { cellDates: true })` devolve célula de data como `Date` construída no fuso
+  // LOCAL do processo. Devolvê-la crua gravava um instante (`T03:00:00Z` sob `TZ=America/Sao_Paulo`)
+  // onde todo o resto do sistema guarda DATA CIVIL em meia-noite UTC — ver `utils/dataCivil.js`.
+  //
+  // Hoje isso é INERTE e foi medido: dos 130 lançamentos de origem EXCEL em produção, **0** estão
+  // fora da meia-noite UTC, ou seja nenhum passou por aqui (as planilhas usadas trazem a data como
+  // TEXTO, que cai no ramo `br` abaixo). Mas num fuso POSITIVO o mesmo código gravaria o dia
+  // ANTERIOR, e aí o erro seria silencioso e permanente.
+  //
+  // A leitura é `getFullYear/getMonth/getDate` — os componentes LOCAIS, que são o que a pessoa viu
+  // na célula do Excel. Ler os UTC aqui reintroduziria o deslocamento pelo outro lado.
+  if (cell instanceof Date) {
+    if (Number.isNaN(cell.getTime())) return null;
+    return new Date(Date.UTC(cell.getFullYear(), cell.getMonth(), cell.getDate()));
+  }
   // Excel serial date (number)
   if (typeof cell === "number" && Number.isFinite(cell)) {
     const date = XLSX.SSF.parse_date_code(cell);
