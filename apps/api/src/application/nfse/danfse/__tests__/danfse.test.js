@@ -150,9 +150,11 @@ describe("QR Code no PDF — posição, tamanho e ORDEM DE PINTURA (§2.2 e §2.
     const { pdf } = await gerarDanfse({ xml: xmlBase });
     const cs = contentStream(pdf);
     const posImagem = cs.search(/[\d.]+ 0 0 -[\d.]+ [\d.]+ [\d.]+ cm\n\/I\d+ Do/);
-    // O sombreado do bloco "DADOS DA NFS-e": 20,40 × 2,84 cm em 0,30 / 1,48 (mais a margem).
+    // ⚠ `lastIndexOf`, não `indexOf`: o que se quer travar é que NENHUM desenho do leiaute venha
+    // depois do QR, e não só o primeiro deles. Os blocos de 20,40 cm de largura (cabeçalho, dados
+    // da NFS-e, informações complementares) são os que já passaram por cima dele uma vez.
     const larg = (20.4 * PT_CM).toFixed(6);
-    const posBloco = cs.indexOf(`${larg} `);
+    const posBloco = cs.lastIndexOf(`${larg} `);
     expect(posBloco).toBeGreaterThan(-1);
     expect(posImagem).toBeGreaterThan(posBloco);
   });
@@ -431,6 +433,182 @@ describe("marca d'água (§2.5.1 e §2.5.2)", () => {
   it("carimba quando o chamador manda — quem conhece o ciclo da nota é ele", async () => {
     const { pdf } = await gerarDanfse({ xml: xmlBase, marcaDagua: "CANCELADA" });
     expect(await textoDoPdf(pdf)).toContain("CANCELADA");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// O que a CONFERÊNCIA CONTRA UM DANFSe OFICIAL mostrou (um documento real, gerado pelo sistema
+// oficial, lido só para leiaute — nada dele entra neste repositório).
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("§2.4.2 — o rótulo impresso não é o NOME da tabela em caixa alta", () => {
+  // A tabela do §2.4.5 escreve todo NOME em maiúsculas, mas o §2.4.2 manda imprimir "com a
+  // primeira letra de cada palavra maiúscula e o restante minúsculo" — EXCETO no bloco 2.1.2
+  // (Dados de Identificação da NFS-e), que é 7 pt e caixa alta. O gerador imprimia o NOME cru em
+  // toda parte, o que deixava nove blocos fora da regra.
+  it("os campos do bloco 2.1.2 saem em CAIXA ALTA e os demais em Primeira Letra", async () => {
+    const { pdf } = await gerarDanfse({ xml: xmlBase });
+    const texto = await textoDoPdf(pdf);
+    expect(texto).toContain("CHAVE DE ACESSO DA NFS-e");
+    expect(texto).toContain("NÚMERO DA DPS");
+    expect(texto).toContain("Indicador Municipal (Inscrição)");
+    expect(texto).toContain("Simples Nacional na Data de Competência");
+    expect(texto).toContain("Descrição do Serviço");
+    expect(texto).not.toContain("INDICADOR MUNICIPAL");
+    expect(texto).not.toContain("DESCRIÇÃO DO SERVIÇO");
+  });
+
+  // "NFS-e" é nome próprio (a lista de abreviaturas da própria NT o fixa assim) e a NT escreve as
+  // duas formas para o MESMO campo. O DANFSe oficial imprime sempre "NFS-e".
+  it('"NFS-e" não vira "NFS-E" nem nos rótulos em caixa alta', async () => {
+    const { pdf } = await gerarDanfse({ xml: xmlBase });
+    expect(await textoDoPdf(pdf)).not.toContain("NFS-E");
+  });
+
+  // Em CABEÇALHO, DADOS DA NFS-e e CANHOTO a linha do §2.4.5 é a caixa delimitadora do bloco: o
+  // `esq`/`sup` dela é o do primeiro campo. Escrever o título ali imprimia "DADOS DA NFS-e" por
+  // cima de "CHAVE DE ACESSO DA NFS-e". O DANFSe oficial não traz nenhum dos dois textos.
+  it("bloco sem célula de título não imprime título nenhum", async () => {
+    const { pdf } = await gerarDanfse({ xml: xmlBase, incluirCanhoto: true });
+    const texto = await textoDoPdf(pdf);
+    expect(texto).not.toContain("DADOS DA NFS-e");
+    expect(texto).not.toContain("CANHOTO");
+    // ... mas os blocos que TÊM célula de título continuam imprimindo o seu.
+    expect(texto).toContain("PRESTADOR / FORNECEDOR");
+    expect(texto).toContain("INFORMAÇÕES COMPLEMENTARES");
+  });
+});
+
+describe("§2.2.3 — sombreado é do CABEÇALHO e dos TÍTULOS, não do bloco inteiro", () => {
+  const PT_CM = 72 / 2.54;
+  const MARGEM_CM = 0.15;
+  const CINZA = "0.9490196078431372 0.9490196078431372 0.9490196078431372 scn";
+
+  function contentStream(pdf) {
+    const s = pdf.toString("latin1");
+    const achados = [];
+    const re = /stream\r?\n/g;
+    let m;
+    while ((m = re.exec(s))) {
+      const ini = m.index + m[0].length;
+      const fim = s.indexOf("endstream", ini);
+      try {
+        const d = zlib.inflateSync(Buffer.from(s.slice(ini, fim), "latin1")).toString("latin1");
+        if (d.includes(" re")) achados.push(d);
+      } catch { /* não é conteúdo */ }
+    }
+    return achados.sort((a, b) => b.length - a.length)[0] || "";
+  }
+  // O pdfkit escreve os números com até 6 casas e SEM zeros à direita (32.88189, não 32.881890).
+  const rect = (esq, sup, larg, alt) =>
+    [esq + MARGEM_CM, sup + MARGEM_CM, larg, alt]
+      .map((v) => String(Number((v * PT_CM).toFixed(6)))).join(" ") + " re";
+
+  it("o bloco DADOS DA NFS-e (20,40 × 2,84 em 0,30/1,48) NÃO é pintado de cinza", async () => {
+    const { pdf } = await gerarDanfse({ xml: xmlBase });
+    const cs = contentStream(pdf);
+    // A caixa continua desenhada (linha divisória de 0,5 pt, §2.2.3) — o que não existe mais é o
+    // preenchimento cinza dela, que sombreava os dez campos de identificação de uma vez.
+    expect(cs).toContain(`${rect(0.3, 1.48, 20.4, 2.84)}\n/DeviceRGB CS`);
+    expect(cs).not.toContain(`${rect(0.3, 1.48, 20.4, 2.84)}\n/DeviceRGB cs\n${CINZA}`);
+  });
+
+  it("o cabeçalho e o campo 'Emitente da NFS-e' CONTINUAM sombreados — o §2.2.3 os nomeia", async () => {
+    const { pdf } = await gerarDanfse({ xml: xmlBase });
+    const cs = contentStream(pdf);
+    expect(cs).toContain(`${rect(0.3, 0.3, 20.4, 1.16)}\n/DeviceRGB cs\n${CINZA}`);
+    expect(cs).toContain(`${rect(0.3, 3.65, 5.09, 0.67)}\n/DeviceRGB cs\n${CINZA}`);
+  });
+});
+
+describe("nota 5 do §2.4.5 — linha inteira sem dado no XML pode ser suprimida", () => {
+  it("a linha de Benefício Municipal (toda vazia na amostra) some, e a supressão é declarada", async () => {
+    const { pdf, conformidade } = await gerarDanfse({ xml: xmlBase });
+    const suprimida = conformidade.linhasSuprimidas.find((l) => l.campos.includes("tpBM"));
+    expect(suprimida).toMatchObject({ bloco: "issqn", notaDaNt: 5 });
+    expect(suprimida.campos).toEqual(["tpBM", "vCalcBM", "vDedRed", "vDescIncondIssqn"]);
+    expect(await textoDoPdf(pdf)).not.toContain("Benefício Municipal");
+  });
+
+  it("linha com UM campo preenchido NÃO é suprimida — a nota exige a linha inteira vazia", async () => {
+    // A amostra traz `regEspTrib` = 0, e ele está na linha do §2.4.5 em sup 15,08.
+    const { pdf, conformidade } = await gerarDanfse({ xml: xmlBase });
+    expect(conformidade.linhasSuprimidas.some((l) => l.campos.includes("regEspTrib"))).toBe(false);
+    const texto = await textoDoPdf(pdf);
+    expect(texto).toContain("Regime Especial de Tributação do ISSQN");
+    expect(texto).toContain("Número Processo Suspensão"); // o vizinho vazio da MESMA linha fica
+  });
+
+  it("esvaziando o campo que segurava a linha, ela também é suprimida", async () => {
+    const xml = xmlBase.replace("<regEspTrib>0</regEspTrib>", "");
+    const { conformidade } = await gerarDanfse({ xml });
+    expect(conformidade.linhasSuprimidas.some((l) => l.campos.includes("regEspTrib"))).toBe(true);
+    expect(conformidade.paginas).toBe(1);
+  });
+});
+
+describe("máscaras — só as que a NT escreve no §2.4.5", () => {
+  it("cTribNac sai como nn.nn.nn, com o municipal ao lado", () => {
+    const { valores } = lerNfse(xmlBase);
+    expect(valores.cTrib).toBe("31.01.04 / 001");
+  });
+
+  it("o CEP sai como nn.nnn-nnn, e o código do IBGE sai CRU", () => {
+    // §2.4.5, CÓDIGO IBGE / CEP: "Ex.: nnnnnnn / nn.nnn-nnn". O DANFSe oficial imprime também um
+    // ponto no código do IBGE ("nn.nnnnn") — a NT não o escreve, e por isso não o replicamos.
+    const { valores } = lerNfse(xmlBase);
+    expect(valores.tomaIbgeCep).toBe("3106200 / 30.000-000");
+  });
+
+  it("comprimento fora da máscara sai cru — não se corta dígito de código fiscal para caber", () => {
+    const xml = xmlBase.replace("<cTribNac>310104</cTribNac>", "<cTribNac>31010</cTribNac>");
+    expect(lerNfse(xml).valores.cTrib).toBe("31010 / 001");
+  });
+});
+
+describe("nota 12 em campo COMPOSTO — um traço por componente", () => {
+  it("campo de duas tags ausente sai '- / -', não '-'", async () => {
+    const { pdf } = await gerarDanfse({ xml: xmlBase });
+    const texto = await textoDoPdf(pdf);
+    // `CST / cClassTrib` e `Alíquota - IBS UF / IBS Mun` vêm do grupo IBSCBS, que não existe no 1.01.
+    expect(texto).toContain("- / -");
+    expect(texto).toContain("- / - / -");
+  });
+
+  it("componente presente e componente ausente convivem na mesma célula", () => {
+    // `locPrest` = xLocPrestacao + cPaisPrestacao; a amostra só tem o primeiro.
+    const { valores } = lerNfse(xmlBase);
+    expect(valores.locPrest).toBe("Rio de Janeiro / -");
+  });
+});
+
+describe("a descrição do serviço VEM DO XML — não falta tabela para imprimi-la", () => {
+  // ⚠ Este era o achado a confirmar: o DANFSe oficial imprime "Serviços técnicos em
+  // telecomunicações." acima do rótulo "Descrição do Serviço". Ela NÃO é um dos doze campos
+  // codificados: é `xTribMun`/`xTribNac`, texto pronto dentro de `infNFSe`. O art. 13 é respeitado
+  // por construção e `danfseDescricoes.js` não tem nada a ver com isso.
+  it("usa a descrição MUNICIPAL quando ela existe (§2.4.5) e imprime sem rótulo", async () => {
+    const { valores } = lerNfse(xmlBase);
+    expect(valores.xTrib).toBe("Serviços técnicos em telecomunicações.");
+    const { pdf, conformidade } = await gerarDanfse({ xml: xmlBase });
+    expect(await textoDoPdf(pdf)).toContain("Serviços técnicos em telecomunicações.");
+    // e ela não aparece na lista de pendências de descrição — não é código a traduzir
+    expect(conformidade.descricoesPendentes.map((d) => d.campo)).not.toContain("xTrib");
+  });
+
+  it("sem a municipal, cai para a NACIONAL — nunca para o código", () => {
+    const xml = xmlBase.replace(/<xTribMun>[^<]*<\/xTribMun>/, "");
+    expect(lerNfse(xml).valores.xTrib).toBe("Serviços técnicos em telecomunicações e congêneres.");
+  });
+});
+
+describe("§2.4.3 — a descrição complementar do QR Code sai INTEIRA, em 3 linhas", () => {
+  it("a frase não é truncada com reticências", async () => {
+    const { pdf } = await gerarDanfse({ xml: xmlBase });
+    const texto = (await textoDoPdf(pdf)).replace(/\s+/g, " ");
+    // O texto que a NT manda imprimir literalmente, quebrado em 3 linhas pelo pdfkit.
+    expect(texto).toContain("A autenticidade desta NFS-e pode ser verificada");
+    expect(texto).toContain("chave de acesso no portal nacional da NFS-e");
   });
 });
 

@@ -27,6 +27,7 @@ import {
   CAMPOS_SEM_FONTE_NO_LEIAUTE_1_01,
   cm,
   urlDeConsulta,
+  linhasDoBloco,
 } from "./danfseLeiaute.js";
 import { lerNfse, valorParaImpressao } from "./danfseDados.js";
 
@@ -174,19 +175,22 @@ function desenharCabecalho(doc, dados, fontes, opcoes, conformidade) {
 
   const ident = bloco.campos.find((c) => c.id === "quadroIdentMunicipio");
   const identCaixa = celula(doc, { ...ident, sombreado: true });
+  // §2.4.5: 'Informar "Município:  CCCC / CC"'. Os rótulos dos três vêm do leiaute, já na forma do
+  // §2.4.2 ("primeira letra de cada palavra maiúscula"), não escritos à mão aqui.
+  const campoMunicipio = bloco.campos.find((c) => c.id === "municipio");
   const municipio = dados.valores.municipio;
   if (municipio) {
     doc.font(fontes.conteudo).fontSize(TIPOGRAFIA.cabecalhoMunicipioPt).fillColor(TIPOGRAFIA.cor);
-    doc.text(`Município: ${municipio}`, identCaixa.x + 2, identCaixa.y + 3, { width: identCaixa.w - 4, lineBreak: false, ellipsis: true });
+    doc.text(`${campoMunicipio.rotulo}: ${municipio}`, identCaixa.x + 2, identCaixa.y + 3, { width: identCaixa.w - 4, lineBreak: false, ellipsis: true });
   }
   // §2.4.5 posiciona os dois em `sup` 0,97 e 1,22, na mesma coluna do município (esq 15,62).
   const ambGer = bloco.campos.find((c) => c.id === "ambGer");
   const tpAmb = bloco.campos.find((c) => c.id === "tpAmb");
   doc.font(fontes.conteudo).fontSize(TIPOGRAFIA.cabecalhoAmbientePt).fillColor(TIPOGRAFIA.cor);
-  doc.text(`Ambiente gerador: ${dados.valores.ambGer ?? "-"}`, px(ambGer.esq) + 2, px(ambGer.sup), {
+  doc.text(`${ambGer.rotulo}: ${dados.valores.ambGer ?? "-"}`, px(ambGer.esq) + 2, px(ambGer.sup), {
     width: cm(ambGer.larg) - 4, lineBreak: false, ellipsis: true,
   });
-  doc.text(`Tipo de ambiente: ${dados.valores.tpAmb ?? "-"}`, px(tpAmb.esq) + 2, px(tpAmb.sup), {
+  doc.text(`${tpAmb.rotulo}: ${dados.valores.tpAmb ?? "-"}`, px(tpAmb.esq) + 2, px(tpAmb.sup), {
     width: cm(tpAmb.larg) - 4, lineBreak: false, ellipsis: true,
   });
 
@@ -269,9 +273,27 @@ function desenharQrCode(doc, dados, fontes, opcoes, conformidade) {
   // §2.2.3, e o que ela perde é um fio de 0,09 mm no topo).
   const compCaixa = celula(doc, complemento);
   doc.font(fontes.conteudo).fontSize(TIPOGRAFIA.complementoQrCodePt).fillColor(TIPOGRAFIA.cor);
-  doc.text(QR_CODE.textoComplementar, compCaixa.x + 2, compCaixa.y + 2, {
-    width: compCaixa.w - 4, height: compCaixa.h - 3, align: "center", ellipsis: true,
-  });
+
+  // ⚠ A FRASE INTEIRA, EM 3 LINHAS — ela é EXIGIDA pelo §2.4.3 ("abaixo do QR Code, a descrição
+  // complementar: '...', disposta em 3 (três) linhas, com tamanho de seis (6) pontos"), e sair
+  // cortada com reticências é imprimir menos do que a NT manda. O quadro do §2.4.5 tem 0,68 cm de
+  // altura, que a 6 pt só comporta três linhas com entrelinha apertada — daí o `lineGap` negativo.
+  // ⚠ E se ainda assim não couber, isso é REPORTADO: sem os .ttf de Arial e Microsoft Sans Serif o
+  // render cai em Helvetica, que é mais larga, e o número de linhas depende da fonte de verdade.
+  const opcoesComplemento = {
+    width: compCaixa.w - 2, align: "center", lineGap: -1, lineBreak: true,
+  };
+  const alturaDaFrase = doc.heightOfString(QR_CODE.textoComplementar, opcoesComplemento);
+  if (alturaDaFrase > compCaixa.h) {
+    conformidade.avisos.push(
+      `A descrição complementar do QR Code (§2.4.3, obrigatória e em 3 linhas de 6 pt) precisou de ` +
+      `${(alturaDaFrase / compCaixa.h * complemento.alt).toFixed(2)} cm e o quadro do §2.4.5 tem ` +
+      `${complemento.alt} cm. Ela foi impressa por inteiro, transbordando o quadro — cortá-la seria ` +
+      `imprimir menos do que a NT exige. Fornecer os .ttf (Microsoft Sans Serif é mais estreita que ` +
+      `a Helvetica de substituição) resolve.`
+    );
+  }
+  doc.text(QR_CODE.textoComplementar, compCaixa.x + 1, compCaixa.y + 1, opcoesComplemento);
 
   // ⚠ ZONA DE SILÊNCIO PINTADA NA PÁGINA, e a medida sai do LEIAUTE, não de estimativa: o espaço
   // livre acima do quadro é `quadro.sup - bloco.sup` e o abaixo é `complemento.sup - fundo do
@@ -280,10 +302,13 @@ function desenharQrCode(doc, dados, fontes, opcoes, conformidade) {
   const folgaAbaixoCm = complemento.sup - (quadro.sup + quadro.alt);
   const zonaCm = Math.min(folgaAcimaCm, folgaAbaixoCm);
 
-  // ⚠ E ELA É BRANCA POR NECESSIDADE, NÃO POR ESTÉTICA. O título do bloco "DADOS DA NFS-e" é
-  // pintado em cinza 5% sobre toda a faixa (§2.2.3 aplicado ao bloco inteiro por este gerador), e
-  // cinza encostado nos módulos é exatamente o que o §2.2 proíbe: "contraste necessário para
-  // assegurar leitura ... sem problemas". Nada de borda preta em volta do quadro, pelo mesmo motivo.
+  // ⚠ E ELA É BRANCA POR NECESSIDADE, NÃO POR ESTÉTICA — e continua branca DEPOIS de o bloco
+  // "DADOS DA NFS-e" deixar de ser pintado de cinza. O cinza 5% em toda a faixa era o motivo
+  // original (cinza encostado nos módulos é o que o §2.2 proíbe: "contraste necessário para
+  // assegurar leitura ... sem problemas"), mas a zona apaga qualquer coisa que caia ali — a linha
+  // divisória da caixa do bloco, a marca d'água K35 do §2.5.1, um sombreado futuro. Ela é a
+  // garantia de leitura, não o remendo de um sombreado específico. Nada de borda preta em volta do
+  // quadro, pelo mesmo motivo.
   doc.save()
     .rect(px(quadro.esq - zonaCm), px(quadro.sup - zonaCm),
           cm(quadro.larg + 2 * zonaCm), cm(quadro.alt + 2 * zonaCm))
@@ -412,6 +437,9 @@ export async function gerarDanfse(params = {}) {
     descricoesPendentes: [],
     municipiosNaoResolvidos: dados.meta.municipiosNaoResolvidos,
     blocosCondensados: [],
+    // Linhas retiradas pela nota 5 do §2.4.5 — supressão permitida, e por isso ela sai NOMEADA:
+    // "não imprimiu" e "não havia" precisam continuar distinguíveis.
+    linhasSuprimidas: [],
     paginas: null,
   };
 
@@ -472,56 +500,98 @@ export async function gerarDanfse(params = {}) {
       continue;
     }
 
-    // Título do bloco. Nos blocos de largura 20,40 ele é a faixa inteira; nos de 5,09 ele ocupa a
-    // primeira célula da linha e os campos seguem à direita — é assim que as coordenadas do
-    // §2.4.5 se encaixam.
+    // Título do bloco. Nos blocos de 5,09 de largura ele ocupa a primeira célula da linha e os
+    // campos seguem à direita — é assim que as coordenadas do §2.4.5 se encaixam.
+    //
+    // ⚠ NEM TODO BLOCO TEM TÍTULO A IMPRIMIR. Em CABEÇALHO, DADOS DA NFS-e e CANHOTO a linha do
+    // §2.4.5 é a CAIXA DELIMITADORA (o `esq`/`sup` do bloco coincide com o do primeiro campo), e
+    // escrever o título ali imprimia por cima do primeiro rótulo — "DADOS DA NFS-e" saía sobre
+    // "CHAVE DE ACESSO DA NFS-e". Pior: o `sombreado: true` pintava de cinza 5% os 20,40 × 2,84 cm
+    // do bloco inteiro, quando o §2.2.3 manda sombrear "o cabeçalho, os títulos de cada bloco de
+    // campos e os campos 'Emitente da NFS-e' e 'Valor Líquido da NFS-e + IBS/CBS'" — e mais nada.
+    // O DANFSe oficial confirma: não há um "DADOS DA NFS-e" nem um "CANHOTO" impressos nele.
+    // A caixa é desenhada nos dois casos (§2.2.3 pede a linha divisória de 0,5 pt); o que muda é o
+    // sombreamento e o texto, que só existem onde a linha do §2.4.5 É uma célula de título.
+    const temTitulo = bloco.tituloImpresso !== false;
     const tituloCaixa = celula(doc, {
-      esq: bloco.esq, sup: bloco.sup + deslocamento, larg: bloco.larg, alt: bloco.alt, sombreado: true,
+      esq: bloco.esq, sup: bloco.sup + deslocamento, larg: bloco.larg, alt: bloco.alt,
+      sombreado: temTitulo,
     });
-    doc.font(fontes.tituloBold).fontSize(TIPOGRAFIA.tituloBlocoPt).fillColor(TIPOGRAFIA.cor);
-    doc.text(bloco.titulo, tituloCaixa.x + 2, tituloCaixa.y + 1.5, {
-      width: tituloCaixa.w - 4, lineBreak: false, ellipsis: true,
-    });
-
-    for (const campo of bloco.campos) {
-      if (campo.id === "quadroQrCode" || campo.id === "quadroComplementoQrCode") continue;
-
-      let alt = campo.alt;
-      // O bloco elástico (§2.3 e §2.5.3): Informações Complementares absorve tudo que sobra até o
-      // canhoto — ou até onde o canhoto terminaria, quando ele é suprimido (§2.3.3).
-      if (campo.id === "infoComplementares") {
-        const canhoto = BLOCOS.find((b) => b.id === "canhoto");
-        const limite = incluirCanhoto ? canhoto.sup : canhoto.sup + canhoto.alt;
-        alt = Math.max(campo.alt, limite + deslocamento - (campo.sup + deslocamento) - 0.05);
-      }
-
-      const caixa = celula(doc, {
-        esq: campo.esq, sup: campo.sup + deslocamento, larg: campo.larg, alt,
-        sombreado: campo.sombreado === true,
-      });
-
-      if (!campo.semLabel) {
-        escreverLabel(doc, campo.nome, caixa, {
-          fonte: fontes.tituloBold,
-          tamanho: bloco.labelsEmCaixaAlta7pt ? TIPOGRAFIA.tituloCampoIdentificacaoPt : TIPOGRAFIA.tituloCampoPt,
-        });
-      }
-
-      if (campo.semFonteNoXml) continue; // canhoto: campos de preenchimento manual
-
-      const { texto, ausente, descricaoPendente, motivo } = valorParaImpressao(campo, dados.valores);
-      if (ausente) conformidade.camposAusentes.push(campo.id);
-      if (descricaoPendente) conformidade.descricoesPendentes.push({ campo: campo.id, tag: campo.tag, motivo });
-      if (CAMPOS_SEM_FONTE_NO_LEIAUTE_1_01.includes(campo.id) && ausente) {
-        conformidade.camposSemFonte.push(campo.id);
-      }
-
-      const multilinha = campo.elastico === true || campo.id === "xTrib";
-      escreverConteudo(doc, texto, caixa, fontes.conteudo, {
-        multilinha,
-        topo: campo.semLabel ? 2 : bloco.labelsEmCaixaAlta7pt ? 9 : 8,
+    if (temTitulo) {
+      doc.font(fontes.tituloBold).fontSize(TIPOGRAFIA.tituloBlocoPt).fillColor(TIPOGRAFIA.cor);
+      doc.text(bloco.titulo, tituloCaixa.x + 2, tituloCaixa.y + 1.5, {
+        width: tituloCaixa.w - 4, lineBreak: false, ellipsis: true,
       });
     }
+
+    // ⚠ NOTA 5 — "Esta linha poderá ser suprimida caso não existam dados em todos os campos da
+    // mesma linha no arquivo XML". A linha é definida pela coordenada `sup` do §2.4.5, e a
+    // supressão faz as de baixo subirem, como o §2.3 já faz com bloco inteiro. Sem isto, o bloco
+    // do ISSQN saía com duas faixas inteiras de traços — que é justamente o que o DANFSe oficial
+    // não imprime.
+    let deslocamentoNoBloco = 0;
+
+    for (const linha of linhasDoBloco(bloco)) {
+      const suprimivel =
+        linha.campos.length > 0 &&
+        linha.campos.every((c) => c.nota === 5) &&
+        linha.campos.every((c) => valorParaImpressao(c, dados.valores).ausente);
+
+      if (suprimivel) {
+        conformidade.linhasSuprimidas.push({
+          bloco: bloco.id,
+          campos: linha.campos.map((c) => c.id),
+          notaDaNt: 5,
+        });
+        deslocamentoNoBloco -= linha.alturaAteAProxima;
+        continue;
+      }
+
+      for (const campo of linha.campos) {
+        if (campo.id === "quadroQrCode" || campo.id === "quadroComplementoQrCode") continue;
+
+        const sup = campo.sup + deslocamento + deslocamentoNoBloco;
+        let alt = campo.alt;
+        // O bloco elástico (§2.3 e §2.5.3): Informações Complementares absorve tudo que sobra até o
+        // canhoto — ou até onde o canhoto terminaria, quando ele é suprimido (§2.3.3).
+        if (campo.id === "infoComplementares") {
+          const canhoto = BLOCOS.find((b) => b.id === "canhoto");
+          const limite = incluirCanhoto ? canhoto.sup : canhoto.sup + canhoto.alt;
+          alt = Math.max(campo.alt, limite - sup - 0.05);
+        }
+
+        const caixa = celula(doc, {
+          esq: campo.esq, sup, larg: campo.larg, alt,
+          sombreado: campo.sombreado === true,
+        });
+
+        // §2.4.2 — o que vai para o papel é `rotulo` (ver a nota no topo de `BLOCOS`): 6 pt com a
+        // primeira letra de cada palavra maiúscula, exceto no bloco 2.1.2, que é 7 pt e caixa alta.
+        if (!campo.semLabel) {
+          escreverLabel(doc, campo.rotulo ?? campo.nome, caixa, {
+            fonte: fontes.tituloBold,
+            tamanho: bloco.labelsEmCaixaAlta7pt ? TIPOGRAFIA.tituloCampoIdentificacaoPt : TIPOGRAFIA.tituloCampoPt,
+          });
+        }
+
+        if (campo.semFonteNoXml) continue; // canhoto: campos de preenchimento manual
+
+        const { texto, ausente, descricaoPendente, motivo } = valorParaImpressao(campo, dados.valores);
+        if (ausente) conformidade.camposAusentes.push(campo.id);
+        if (descricaoPendente) conformidade.descricoesPendentes.push({ campo: campo.id, tag: campo.tag, motivo });
+        if (CAMPOS_SEM_FONTE_NO_LEIAUTE_1_01.includes(campo.id) && ausente) {
+          conformidade.camposSemFonte.push(campo.id);
+        }
+
+        const multilinha = campo.elastico === true || campo.id === "xTrib";
+        escreverConteudo(doc, texto, caixa, fontes.conteudo, {
+          multilinha,
+          topo: campo.semLabel ? 2 : bloco.labelsEmCaixaAlta7pt ? 9 : 8,
+        });
+      }
+    }
+
+    deslocamento += deslocamentoNoBloco;
   }
 
   if (marcaDagua === "CANCELADA") desenharMarcaDagua(doc, TEXTOS.marcaDaguaCancelada, fontes);

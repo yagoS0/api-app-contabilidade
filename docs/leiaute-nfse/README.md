@@ -96,6 +96,15 @@ A NT também anuncia (item 1) que **haverá nota técnica específica** para o D
 passam a ser fato gerador de IBS/CBS sem serem, hoje, formalizadas por documento fiscal (seção
 "3.a)" da NT nº 007, de 07/02/2026). Essa nota **não está aqui**.
 
+### ⚠ A descrição do serviço NÃO é um dos códigos pendentes — ela vem no XML
+
+O DANFSe imprime, acima do rótulo "Descrição do Serviço" e **sem rótulo próprio**, a descrição do
+código de tributação: §2.4.5, campo "DESCRIÇÃO DO CÓDIGO DE TRIBUTAÇÃO NACIONAL / MUNICIPAL",
+`xTribNac + xTribMun`, em `NFSe/infNFSe/`, com a regra *"SE xTribMun <> '' ENTÃO Descrição Municipal
+SENÃO Descrição Nacional"*. A NFS-e devolvida já traz o texto pronto (a amostra versionada aqui tem
+as duas tags), então **não falta tabela nenhuma para este campo** e o art. 13 é respeitado por
+construção. Não confundir com os doze campos codificados da seção seguinte.
+
 ### ⚠ O que a NT manda imprimir e o projeto **não tem como resolver**: as descrições dos códigos
 
 Em doze campos a NT manda *"utilizar a descrição das opções previstas no leiaute"* (`tpEmit`,
@@ -109,6 +118,21 @@ Consequência adotada: `danfseDescricoes.js` nasce **vazio**, o DANFSe imprime o
 XML** (que é conteúdo do arquivo, portanto conforme o art. 13) e o gerador devolve a lista de campos
 nessa condição em `conformidade.descricoesPendentes`. Preencher esse mapa por analogia com a NF-e ou
 por leitura de blog seria inventar tabela de código fiscal.
+
+## Conferência contra um DANFSe oficial (2026-08-14)
+
+O dono forneceu **um DANFSe real, gerado pelo sistema oficial**, e o gerador foi comparado com ele
+rótulo a rótulo e bloco a bloco.
+
+⚠ **Esse arquivo NÃO está aqui e não pode entrar**: é nota fiscal de contribuinte, com CNPJ,
+endereço, telefone e e-mail de prestador **e** de tomador — a mesma classe de arquivo que já foi
+versionada por descuido uma vez e continua na história do git. Nada dele virou fixture, teste,
+exemplo ou linha desta documentação; ele serviu para ler **leiaute**, e só.
+
+O que a conferência mudou está em `apps/api/CLAUDE.md`, seção "CONFERIDO CONTRA UM DANFSe OFICIAL":
+o que a NT já exigia e não estava feito (rótulos do §2.4.2, sombreamento do §2.2.3, máscaras do
+§2.4.5, nota 5, nota 12 em campo composto) e, separadamente, **onde o oficial e a NT discordam** —
+nesses casos vale a NT, e a divergência fica escrita para o dono decidir.
 
 ## Modelo visual (Anexo I)
 

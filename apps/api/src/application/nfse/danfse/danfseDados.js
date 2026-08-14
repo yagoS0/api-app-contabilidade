@@ -96,6 +96,12 @@ function formatarValor(valor) {
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** `1.50` → `1,50%`. Só nos campos em que o §2.4.5 escreve "%" na coluna de formato. */
+function formatarPercentual(valor) {
+  const formatado = formatarValor(valor);
+  return formatado == null ? null : `${formatado}%`;
+}
+
 function formatarCnpjCpf(doc) {
   const d = String(doc || "").replace(/\D+/g, "");
   if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
@@ -103,13 +109,55 @@ function formatarCnpjCpf(doc) {
   return doc ? String(doc) : null;
 }
 
+/**
+ * ⚠ A MÁSCARA DO CEP É `nn.nnn-nnn`, E ELA ESTÁ NA NT — não é o CEP "de sempre".
+ *
+ * §2.4.5, campo CÓDIGO IBGE / CEP dos quatro blocos de pessoa: *"Concatenar os campos.
+ * Ex.: nnnnnnn / nn.nnn-nnn ou nnnnnnn / nnnnnnnnnnn (ext)"*. O ponto depois do segundo dígito é
+ * exigência escrita; o `nnnnn-nnn` que estava aqui era o hábito do CEP dos Correios.
+ */
 function formatarCep(cep) {
   const d = String(cep || "").replace(/\D+/g, "");
-  if (d.length === 8) return d.replace(/^(\d{5})(\d{3})$/, "$1-$2");
+  if (d.length === 8) return d.replace(/^(\d{2})(\d{3})(\d{3})$/, "$1.$2-$3");
   return cep ? String(cep) : null;
 }
 
-function juntar(partes, separador = " / ") {
+/**
+ * Aplica uma máscara `nn.nn.nn` (ou `n.nnnn.nn.nn`) a uma sequência de dígitos.
+ *
+ * ⚠ Só se usa onde a NT ESCREVE a máscara na coluna "Outros Campos / Observações" do §2.4.5.
+ * Máscara não conferida ali NÃO é replicada só porque o DANFSe oficial a imprime — ver o telefone
+ * e o código do IBGE, no relatório de conformidade.
+ *
+ * Comprimento diferente do que a máscara comporta sai CRU: cortar dígito de código fiscal para
+ * caber no molde seria imprimir um código que não é o do XML.
+ */
+function aplicarMascaraDeDigitos(valor, mascara) {
+  const d = String(valor ?? "").replace(/\D+/g, "");
+  if (!d) return null;
+  const cabem = (mascara.match(/n/g) || []).length;
+  if (d.length !== cabem) return String(valor).trim();
+  let i = 0;
+  return mascara.replace(/./g, (ch) => (ch === "n" ? d[i++] : ch));
+}
+
+/**
+ * Concatena os componentes de um campo composto com " / ".
+ *
+ * ⚠ COM `partes`, COMPONENTE AUSENTE VIRA TRAÇO — não some. A nota 12 do §2.4.5 manda o traço para
+ * "os campos sem informações no XML", e num campo que a NT declara como concatenação de N tags
+ * (`cMun + CEP`, `CST + cClassTrib`, `pIBSUF + pIBSMun`) cada tag é um campo. Sem isso, "- / -" e
+ * "-" ficariam indistinguíveis, e "3304557" (sem o CEP) pareceria o campo inteiro. É também o que
+ * o DANFSe oficial imprime. Sem `partes`, o comportamento antigo: componente vazio é omitido.
+ */
+function juntar(partes, separador = " / ", quantidade = null) {
+  if (quantidade) {
+    const fixas = Array.from({ length: quantidade }, (_, i) => partes[i]);
+    if (fixas.every((p) => p == null || String(p).trim() === "")) return null;
+    return fixas
+      .map((p) => (p == null || String(p).trim() === "" ? TRACO_DE_AUSENCIA : String(p).trim()))
+      .join(separador);
+  }
   const limpas = partes.filter((p) => p != null && String(p).trim() !== "");
   return limpas.length ? limpas.join(separador) : null;
 }
@@ -157,7 +205,9 @@ function contexto(infNFSe) {
       // que não temos"). Imprimimos o código; o gerador reporta em `municipiosNaoResolvidos`.
       municipio: xCidade || cMun,
       municipioEhCodigoIbge: Boolean(!xCidade && cMun),
-      ibgeCep: juntar([cMun, cep ? formatarCep(cep) : cEndPost]),
+      // §2.4.5: "nnnnnnn / nn.nnn-nnn". O código do IBGE sai CRU, com os 7 dígitos — o DANFSe
+      // oficial imprime "nn.nnnnn" aqui, e a NT não escreve esse ponto (ver conformidade).
+      ibgeCep: juntar([cMun, cep ? formatarCep(cep) : cEndPost], " / ", 2),
       endereco: logradouro,
       email: textoDe(descer(raiz, "email")),
       presente: Boolean(raiz && (textoDe(descer(raiz, "CNPJ")) || textoDe(descer(raiz, "CPF")) ||
@@ -255,7 +305,8 @@ export function lerNfse(xml) {
 
   const valores = {
     // ── CABEÇALHO ──
-    municipio: juntar([t("xLocEmi"), t("emit/enderNac/UF")]),
+    // §2.4.5: 'Informar "Município:  CCCC / CC"'. O DANFSe oficial usa hífen no lugar da barra.
+    municipio: juntar([t("xLocEmi"), t("emit/enderNac/UF")], " / ", 2),
     ambGer: t("ambGer"),
     tpAmb: t(`${DPS}/tpAmb`),
 
@@ -313,16 +364,25 @@ export function lerNfse(xml) {
     intermEmail: interm.email,
 
     // ── SERVIÇO ──
-    cTrib: juntar([t(`${DPS}/serv/cServ/cTribNac`), t("cTribMun") || t(`${DPS}/serv/cServ/cTribMun`)]),
-    cNBS: t(`${DPS}/serv/cServ/cNBS`),
-    locPrest: juntar([t("xLocPrestacao"), t(`${DPS}/serv/locPrest/cPaisPrestacao`)]),
+    // §2.4.5, coluna de observações: "nn.nn.nn / nnn" — a máscara é da NT, e o oficial a confirma.
+    cTrib: juntar(
+      [
+        aplicarMascaraDeDigitos(t(`${DPS}/serv/cServ/cTribNac`), "nn.nn.nn"),
+        t("cTribMun") || t(`${DPS}/serv/cServ/cTribMun`),
+      ],
+      " / ",
+      2
+    ),
+    // §2.4.5: "n.nnnn.nn.nn".
+    cNBS: aplicarMascaraDeDigitos(t(`${DPS}/serv/cServ/cNBS`), "n.nnnn.nn.nn"),
+    locPrest: juntar([t("xLocPrestacao"), t(`${DPS}/serv/locPrest/cPaisPrestacao`)], " / ", 2),
     // SE xTribMun <> "" ENTAO Descrição Municipal SENAO Descrição Nacional (§2.4.5).
     xTrib: t("xTribMun") || t("xTribNac"),
     xDescServ: t(`${DPS}/serv/cServ/xDescServ`),
 
     // ── ISSQN ──
     tribISSQN: t(`${DPS}/valores/trib/tribMun/tribISSQN`),
-    locIncid: juntar([t("xLocIncid"), t(`${DPS}/valores/trib/tribMun/cPaisResult`)]),
+    locIncid: juntar([t("xLocIncid"), t(`${DPS}/valores/trib/tribMun/cPaisResult`)], " / ", 2),
     regEspTrib: t(`${DPS}/prest/regTrib/regEspTrib`),
     tpImunidade: t(`${DPS}/valores/trib/tribMun/tpImunidade`),
     tpSusp: t(`${DPS}/valores/trib/tribMun/exigSusp/tpSusp`),
@@ -348,12 +408,12 @@ export function lerNfse(xml) {
     cstCClassTrib: juntar([
       t(`${DPS}/IBSCBS/valores/trib/gIBSCBS/CST`),
       t(`${DPS}/IBSCBS/valores/trib/gIBSCBS/cClassTrib`),
-    ]),
+    ], " / ", 2),
     indOpIncid: juntar([
       t(`${DPS}/IBSCBS/cIndOp`),
       t("IBSCBS/cLocalidadeIncid"),
       t("IBSCBS/xLocalidadeIncid"),
-    ]),
+    ], " / ", 3),
     exclusoesReducoesBc: (() => {
       const parcelas = [
         t(`${DPS}/valores/vDescCondIncond/vDescIncond`),
@@ -367,12 +427,17 @@ export function lerNfse(xml) {
       return formatarValor(parcelas.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0));
     })(),
     bcAposExclusoes: formatarValor(t("IBSCBS/valores/vBC")),
+    // §2.4.5 dá a máscara destes dois campos como "% / % / %" e "% / %" — é a NT que põe o símbolo
+    // aqui, não o hábito. Nos demais percentuais (pAliqAplic, pAliqEfet*) a coluna vem vazia.
     redAliq: juntar([
-      t("IBSCBS/valores/uf/pRedAliqUF"),
-      t("IBSCBS/valores/mun/pRedAliqMun"),
-      t("IBSCBS/valores/fed/pRedAliqCBS"),
-    ]),
-    aliqIbs: juntar([t("IBSCBS/valores/uf/pIBSUF"), t("IBSCBS/valores/mun/pIBSMun")]),
+      formatarPercentual(t("IBSCBS/valores/uf/pRedAliqUF")),
+      formatarPercentual(t("IBSCBS/valores/mun/pRedAliqMun")),
+      formatarPercentual(t("IBSCBS/valores/fed/pRedAliqCBS")),
+    ], " / ", 3),
+    aliqIbs: juntar([
+      formatarPercentual(t("IBSCBS/valores/uf/pIBSUF")),
+      formatarPercentual(t("IBSCBS/valores/mun/pIBSMun")),
+    ], " / ", 2),
     pAliqEfetMun: t("IBSCBS/valores/mun/pAliqEfetMun"),
     vIBSMun: formatarValor(t("IBSCBS/totCIBS/gIBS/gIBSMunTot/vIBSMun")),
     pAliqEfetUF: t("IBSCBS/valores/uf/pAliqEfetUF"),
@@ -399,7 +464,7 @@ export function lerNfse(xml) {
     // ── CANHOTO ──
     dataCientificacao: null,        // preenchimento manual — não vem do XML
     identificacaoAssinatura: null,  // idem
-    canhotoNumeroChave: juntar([t("nNFSe"), chave]),
+    canhotoNumeroChave: juntar([t("nNFSe"), chave], " / ", 2),
   };
 
   valores.infoComplementares = montarInfoComplementares(infNFSe, { t, DPS });
@@ -493,10 +558,15 @@ function montarInfoComplementares(infNFSe, { t, DPS }) {
  */
 export function valorParaImpressao(campo, valores) {
   const bruto = valores[campo.id];
+  // Campo composto TOTALMENTE ausente leva um traço por componente (ver `juntar`): a nota 12 fala
+  // de "campos", e cada tag concatenada é um campo.
+  const traco = campo.partes > 1
+    ? Array.from({ length: campo.partes }, () => TRACO_DE_AUSENCIA).join(" / ")
+    : TRACO_DE_AUSENCIA;
 
   if (campo.codificado) {
     const { resolvido, texto, motivo } = descreverCodigo(campo.tag, bruto);
-    if (!texto) return { texto: TRACO_DE_AUSENCIA, ausente: true, descricaoPendente: false };
+    if (!texto) return { texto: traco, ausente: true, descricaoPendente: false };
     return {
       texto: truncarComReticencias(texto, campo.truncaEm),
       ausente: false,
@@ -506,7 +576,7 @@ export function valorParaImpressao(campo, valores) {
   }
 
   if (bruto == null || String(bruto).trim() === "") {
-    return { texto: TRACO_DE_AUSENCIA, ausente: true, descricaoPendente: false };
+    return { texto: traco, ausente: true, descricaoPendente: false };
   }
 
   return {
@@ -516,4 +586,7 @@ export function valorParaImpressao(campo, valores) {
   };
 }
 
-export const _internos = { descer, filhosPorNome, formatarData, formatarDataHora, formatarValor, BLOCOS };
+export const _internos = {
+  descer, filhosPorNome, formatarData, formatarDataHora, formatarValor,
+  formatarCep, aplicarMascaraDeDigitos, juntar, BLOCOS,
+};

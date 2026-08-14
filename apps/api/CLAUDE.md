@@ -594,6 +594,52 @@ Símbolo de **1,52 × 1,52 cm** em **X 17,48 / Y 1,67**, com as 3 linhas de 6 pt
   escrita custa ~10 ms: 0,86 s a 296 px, 1,4 s a 370 px, 3,2 s a 592 px (em node puro, tudo < 50 ms).
   Foi por isso que a escala parou em 10 — subir dela só encarece o teste sem o dispositivo usar.
 
+### ✅ CONFERIDO CONTRA UM DANFSe OFICIAL (documento real, lido só para leiaute)
+
+O dono forneceu um DANFSe gerado pelo sistema oficial (uma página, `tpAmb=1`, leiaute 1.01).
+⚠ **Ele não entra no repositório e nada dele virou fixture, teste, comentário ou doc** — é nota
+fiscal real, com CNPJ, endereço, telefone e e-mail de prestador **e** de tomador. A conferência foi
+feita lendo posição e rótulo com `pdf-parse`. O que ele **confirmou**: traço para campo ausente;
+bloco IBS/CBS impresso **inteiro, com traços**, mesmo numa nota 1.01; destinatário e intermediário
+condensados numa frase; e o **canhoto no rodapé** (Y 28,29 medido — a ordem do content stream o põe
+primeiro no texto extraído, mas a posição é a do §2.4.5).
+
+**A pergunta mais valiosa voltou resolvida: a descrição do serviço VEM DO XML.** O que o oficial
+imprime acima do rótulo "Descrição do Serviço" é `xTribMun`/`xTribNac` (§2.4.5, campo "DESCRIÇÃO DO
+CÓDIGO DE TRIBUTAÇÃO NACIONAL / MUNICIPAL", sem label), e a amostra versionada tem as duas tags.
+**Não falta tabela nenhuma para este campo** — ele nunca foi um dos doze de `danfseDescricoes.js`,
+que continuam pendentes.
+
+Corrigido **por causa da NT** (o exemplo só confirmou):
+
+| o que estava | o que a NT diz |
+|---|---|
+| todo rótulo impresso em CAIXA ALTA (o `nome` da tabela do §2.4.5) | §2.4.2: 6 pt, "primeira letra de cada palavra maiúscula", **exceto** o bloco 2.1.2 (7 pt, caixa alta). Virou o campo `rotulo` no leiaute |
+| `"DADOS DA NFS-e"` e `"CANHOTO"` impressos **por cima** do primeiro rótulo, com o bloco inteiro em cinza 5% | §2.2.3 sombreia "cabeçalho, títulos de bloco" e dois campos. Nesses blocos a linha do §2.4.5 é a **caixa delimitadora** (o `esq`/`sup` dela é o do primeiro campo), não uma célula de título → `tituloImpresso: false` |
+| CEP como `nnnnn-nnn` | §2.4.5: **`nn.nnn-nnn`** |
+| `cTribNac` e `cNBS` crus | §2.4.5: **`nn.nn.nn / nnn`** e **`n.nnnn.nn.nn`** |
+| campo composto vazio virava **um** traço | nota 12 + coluna de formato: **um traço por componente** (`- / -`), senão "- / -" e "-" ficam indistinguíveis |
+| linha da nota 5 toda vazia saía com traços | nota 5: "poderá ser suprimida caso não existam dados em **todos** os campos da mesma linha". Implementado por `linhasDoBloco` (a linha é a coordenada `sup`), com `conformidade.linhasSuprimidas` |
+| descrição complementar do QR **truncada com reticências** | §2.4.3 exige a frase inteira "disposta em 3 linhas" — e ela é obrigatória |
+
+⚠ **Onde o oficial e a NT DISCORDAM, seguimos a NT — e a lista fica aqui para o dono decidir:**
+
+| o oficial imprime | a NT | nós |
+|---|---|---|
+| `R$` antes de todo valor monetário e `%` depois da alíquota aplicada | só escreve o símbolo na **nota 10** (Totais Aproximados) e na coluna de formato de `redAliq`/`aliqIbs` (`% / %`) | sem símbolo, exceto onde a NT o escreve |
+| código do IBGE com ponto (`nn.nnnnn`) | `nnnnnnn` | 7 dígitos crus |
+| telefone como `(nn)nnnn-nnnn` | **nenhum formato** para `fone` | cru, como está no XML |
+| `Município: <nome> - <UF>` no cabeçalho | `Informar "Município:  CCCC / CC"` | com barra |
+| `0 - PIS/COFINS/CSLL Não Retidos` (código **e** descrição) só em `tpRetPisCofins` | "utilizar a descrição destas opções", igual para os doze | código cru + pendência declarada (a descrição continua faltando) |
+| `Total do IBS/CBS` e `Valor Líquido + IBS/CBS` como **R$ 0,00** numa nota 1.01 | esses campos vêm de `IBSCBS`, inexistente no 1.01 | traço (nota 12) — imprimir 0,00 **afirmaria** que o total é zero |
+| rótulos `VALOR DA OPERAÇÃO / SERVIÇO` e `VALOR LÍQUIDO DA NFS-e` em caixa alta; canhoto em caixa alta | §2.4.2 só excetua o bloco 2.1.2 | primeira letra maiúscula |
+| `E-mail` no bloco do prestador | §2.4.5 e §2.1.3 escrevem **`EMAIL`** ali e `E-MAIL` nos outros três | a divergência da NT é preservada |
+
+**Ainda não implementado, e é regra da NT:** o campo MUNICÍPIO do cabeçalho tem a observação *"Não
+exibir, quando o item do cód. de tributação nacional informado for 99"* — a NT **não define** o que
+é "o item" dentro de um `cTribNac` de 6 dígitos (`nn.nn.nn`), e escolher um dos três pares seria
+inventar leitura de código.
+
 ### ⚠ O QUE ESTÁ BLOQUEADO E POR QUÊ (nada disto é esquecimento)
 
 1. **As descrições dos códigos não existem no repo.** Em doze campos a NT manda "utilizar a
@@ -637,7 +683,7 @@ outra nota apontando para esta). Carimbar SUBSTITUÍDA por causa do `chSubstda` 
 lados do vínculo — o mesmo defeito que o `NotaDetailModal` já teve. A rota deriva por
 `derivarCiclo` (`notas/cicloNota.js`) e passa `marcaDagua` ao gerador, que **não decide sozinho**.
 
-Regressão: `nfse/danfse/__tests__/danfse.test.js` (34) — inclusive **página única com descrição de
+Regressão: `nfse/danfse/__tests__/danfse.test.js` (50) — inclusive **página única com descrição de
 16 mil caracteres**, `tpAmb=2` imprimindo a expressão e `tpAmb=1` **não** imprimindo, campo ausente
 virando traço, e a recusa quando o QR não pode ser feito. ⚠ O teste lê o texto do PDF com
 `pdf-parse`: procurar a frase nos bytes crus **não funciona** (pdfkit comprime os content streams) e
