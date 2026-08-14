@@ -355,6 +355,109 @@ mora só no upload protege o futuro e deixa o passado como está. Erro: **`CERT_
   ausência de dado não é prova de certificado alheio, e recusar por falta de informação derrubaria
   empresa legítima. Quem pega o resto é o cinturão de ingestão, abaixo.
 
+## Emissor de NFS-e — Fase 1 (backend). ⚠ NADA FOI EMITIDO, EM NENHUM AMBIENTE
+
+> Regra do dono, sem exceção: **não emitir, cancelar ou transmitir NFS-e** em ambiente nenhum —
+> nem homologação. Esta fase torna o caminho *exercível*; ela não o exerce.
+
+**Contexto que torna tudo isto seguro:** a emissão **nunca rodou em produção**. Nenhuma variável
+`NFSE_*` está definida no Railway, `integrationReady()` sempre foi falso e toda emissão parava em
+`status:"pending"`. Não há dado legado nem comportamento a preservar — e é por isso que os cinco
+defeitos abaixo apareceriam **todos juntos** no dia em que a configuração ligasse.
+
+| # | Defeito medido | Hoje |
+|---|---|---|
+| 1 | `buildDpsId` lia `company.codigoMunicipioIbge`/`codigoMunicipio` — **nenhum dos dois existia no model** —, caía num env não definido e o `padStart` fabricava `cLocEmi="0000000"` | campo `Company.codigoMunicipioIbge` (migration **NÃO aplicada**), e vazio ⇒ **recusa** `NFSE_MUNICIPIO_NAO_CONFIGURADO` |
+| 2 | `loadCertAndKey()` usava um **PFX global** para assinar e para o mTLS nos 3 caminhos, sem conferir de quem era (+ `cachedCertInfo` de módulo: o 1º cert carregado valia para a carteira toda) | `nfseCertificado.js` resolve o A1 **por empresa** reusando `CertResolver`; sem ele, `NO_COMPANY_CERT` |
+| 3 | numeração read-modify-write **fora de transação** + `ServiceInvoice` sem nenhum `@@unique` | reserva transacional (`nfseNumeracao.js`) + `@@unique([companyId, rpsSerie, rpsNumero])` |
+| 4 | `opSimpNac="3"` cravado; `pTotTribSN` sem validação; retenção calculada em 3 variáveis **mortas**; `cLocPrestacao = cLocEmi` "por enquanto" | tudo vem do dado, e o que não se sabe **recusa** |
+| 5 | rejeição fiscal e queda de rede eram o **mesmo** `status:"rejected"`, sem coluna de motivo | 3 camadas + `falhaCamada/Codigo/Mensagem/Correcao/Em` |
+
+### ⚠ SÃO DOIS CERTIFICADOS, E ELES NÃO PODEM VIRAR UM
+
+| papel | quem valida | regra |
+|---|---|---|
+| **assinatura** do XML da DPS | o sistema nacional, ao processar | **E0718** — *"A assinatura deve ser feita com o certificado digital do emitente da DPS"* (+ Res. CGNFS-e nº 3, art. 2º, §1º, I) |
+| **transporte** (mTLS) | bloco **E1200–E1209** | **não há regra exigindo que seja o mesmo** |
+
+Hoje os dois apontam para o mesmo arquivo (o A1 da empresa) — mas são **campos separados** em
+`resolverCertificadosDaEmpresa`. Colapsá-los é o que impediria depois a figura da **procuração**
+(escritório transporta, empresa assina). E `procuracao_escritorio` **não é aceito** para assinar,
+pelo mesmo motivo que a captura não o aceita: a procuração e-CAC não transforma o certificado do
+escritório no certificado do cliente perante o sistema nacional.
+
+⚠ **Não escreva uma segunda resolução de certificado.** Quem resolve continua sendo
+`CertResolver.resolveCertForCompany` (que já confere o CNPJ do subject via `inspectPfx`) — foi
+duplicar essa resolução que fez a captura divergir no passado.
+
+### ⚠ NÃO EXISTE INUTILIZAÇÃO NA NFS-e — o número é o ativo
+
+Varrido nos 16 eventos do Anexo II e nas RNs do Anexo I: **não há evento de inutilização** (a NF-e
+tem; a NFS-e não). Número pulado é **buraco permanente**, e número repetido é **E0014**. Daí o
+desenho:
+
+- a reserva é **transacional** (`UPDATE "Company" … RETURNING`, uma instrução só). ⚠ É SQL cru de
+  propósito: `rpsNumero` é **TEXT** e o `increment` do Prisma só existe para colunas numéricas.
+  Uma coluna nova numérica seria **duas colunas com o mesmo significado** — o erro documentado em
+  "TRÊS NÚMEROS DE DAS, TRÊS COLUNAS";
+- **série obrigatória na faixa `00001–49999`** (RN **E0010**, emissor por aplicativo próprio). As
+  outras faixas são do Emissor Móvel/Web/transcrição. ⚠ A conversão "letra vira número" que existia
+  (`A`→1) foi abandonada: a série default `"UNICA"` virava **21**, sozinha;
+- **o `@@unique` é `(companyId, rpsSerie, rpsNumero)`**, e não `idDps`: `companyId` responde pelo
+  CNPJ (`Company.cnpj` é `@unique`) e pelo município emissor, então a tupla é a **mesma do E0014**.
+  `idDps` é string DERIVADA e é escrita também pela CAPTURA a partir do payload do provedor — um
+  índice ali obrigaria dado de terceiro a obedecer à nossa regra de derivação;
+- **falha reusa o número, não o queima** (`retryInvoiceId` reaproveita a mesma linha).
+
+### ⚠ AS TRÊS CAMADAS DE DESFECHO — e a do meio é a razão de existirem três
+
+| camada | a DPS chegou? | número reutilizável? | status |
+|---|---|---|---|
+| `NOSSA` (validação, sem cert, sem município, série fora da faixa) | **não** | **sim** | `falha_envio` |
+| `TRANSPORTE` (timeout, DNS, TLS, **5xx**) | **não se sabe** | **NÃO** | `falha_envio` |
+| `RECEITA` (**4xx** com `E####`) | sim, e recusou | **sim** | `rejected` |
+
+⚠ **5xx é TRANSPORTE, não recusa.** Erro de servidor pode ocorrer *depois* de a DPS ser aceita;
+tratá-lo como recusa liberaria o número de uma nota que talvez exista. Na dúvida, **reter**.
+⚠ `extrairCodigoReceita` procura só o formato `E####` no payload serializado e devolve `null` se
+não achar — a forma da resposta de erro do sistema nacional **não está documentada no projeto**
+(nenhuma emissão jamais saiu), e supor uma árvore de campos seria inventar contrato.
+
+### ⚠ A SUBSTITUIÇÃO NÃO É O EVENTO `e105102` — marcado, não consertado (Fase 4)
+
+Substituir é **`POST /nfse` com o grupo `<subst>` preenchido** (Manual dos Contribuintes §1.3.2.a;
+exemplo real em `docs/leiaute-nfse/nfse-nacional-substituicao.xml`), e **o sistema nacional gera o
+evento sozinho**. O `e105102` é o que se **lê depois**, não o que se **envia**. O caminho atual de
+`sendEvent` está **invertido**, não incompleto — e `buildDpsXml` ainda não monta `<subst>`.
+
+### Leiaute 1.00 → 1.01: **não migrado**, e é decisão de risco
+
+O publicado como Documentação Atual é o **1.01** (XSD de 11/02/2026), e há regra de expiração de
+versão (**E0001**/**E1260**) — mas ⚠ **a data de corte não está publicada**, o acréscimo (`IBSCBS`,
+reforma tributária) é **facultativo**, e o projeto **não tem o XSD versionado** (nenhum `.xsd` na
+árvore). Subir sem schema para validar troca uma rejeição conhecida por uma desconhecida. Fica na
+constante `DPS_VERSAO`, num lugar só, para virar em uma linha.
+
+### O que precisou do dono e NÃO foi inventado
+
+1. **Como `Company.codigoMunicipioIbge` será preenchido.** O município só existe como TEXTO em
+   `PortalClient.municipio`/`uf` (33/33 preenchidos, 32 no Rio). O de-para nome→IBGE exige a tabela
+   do IBGE, que não temos, e erra em homônimo. **Migration sem backfill**, de propósito.
+2. **`opSimpNac` do MEI.** Simples→`3` e não optante→`1` têm evidência (a emissão homolog aceita, e
+   a NFS-e real versionada com `opSimpNac=1` + `pTotTrib` + sem `regApTribSN`). O `2` do MEI tem
+   **só um comentário de código**, escrito no mesmo bloco que cravava o `3`. MEI **recusa**.
+3. **`totTrib` do não optante.** O ramo era inalcançável e emitia `vTotTrib` com `0.00` — que
+   **afirma carga tributária zero** (Lei 12.741/2012). A nota real usa `pTotTrib` com percentuais.
+   Passou a exigir os percentuais informados; a estrutura carece de confirmação sem o XSD.
+4. **`cLocPrestacao` diferente do emissor.** Decide para qual município o ISSQN é devido, e **não se
+   deduz do endereço do tomador** (LC 116/2003, art. 3º: `caput` + lista fechada de exceções). Virou
+   campo informável; ausente aplica a regra geral **e registra a suposição no log**.
+
+Tabelas de código com a evidência de cada linha e `verificadoNoLeiaute: false`: **`dpsCodigos.js`**.
+Testes: `nfse/__tests__/` (`nfseNumeracao`, `nfseCertificado`, `dpsCodigos`, `desfechoEmissao`,
+`emissaoDps`) + `validators/__tests__/nfsePayload`. Medir antes da migration:
+**`scripts/diag-nfse-numeracao.mjs`** (só leitura, zero chamada externa).
+
 ## ⚠ ADN: `ultNSU` é EXCLUSIVO — o cursor guarda o último que já temos
 
 `ultNSU` quer dizer **"último NSU que eu já recebi"**, e o ADN devolve os documentos

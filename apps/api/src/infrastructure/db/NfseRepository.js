@@ -23,6 +23,24 @@ function serialize(invoice) {
     status: invoice.status,
     xml: invoice.xml,
     pdfUrl: invoice.pdfUrl,
+    // ⚠ O DESFECHO PRECISA CHEGAR À TELA. Antes, o motivo da falha existia só no `log.error` de
+    // `NfseService.js` — a lista mostrava "rejeitada" e ninguém sabia se corrigia a nota ou tentava
+    // de novo. Sem estes campos no `serialize`, as colunas novas seriam gravadas e continuariam
+    // invisíveis, que é o mesmo defeito com outro nome (foi o que aconteceu com os PDFs do
+    // PGDAS-D: salvos desde sempre, sem rota que os servisse).
+    falha: invoice.falhaCamada
+      ? {
+          camada: invoice.falhaCamada,
+          codigo: invoice.falhaCodigo,
+          mensagem: invoice.falhaMensagem,
+          correcao: invoice.falhaCorrecao,
+          em: dateToIso(invoice.falhaEm),
+          // Derivado, não gravado: a camada JÁ responde a pergunta, e uma coluna a mais poderia
+          // discordar dela. `TRANSPORTE` é a única em que o desfecho é desconhecido — e, como não
+          // existe inutilização na NFS-e, número pulado é buraco permanente.
+          numeroReutilizavel: invoice.falhaCamada !== "TRANSPORTE",
+        }
+      : null,
     createdAt: dateToIso(invoice.createdAt),
     updatedAt: dateToIso(invoice.updatedAt),
   };

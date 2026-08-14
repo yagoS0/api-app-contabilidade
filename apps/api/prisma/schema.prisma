@@ -49,6 +49,20 @@ model Company {
   codigoServicoMunicipal   String?
   rpsSerie                 String?
   rpsNumero                String?
+  /// Código IBGE (7 dígitos) do município EMISSOR da DPS — o `cLocEmi` da NFS-e Nacional.
+  ///
+  /// ⚠ CRIADO VAZIO, E DE PROPÓSITO. `buildDpsId`/`buildDpsXml` liam `codigoMunicipioIbge` e
+  /// `codigoMunicipio` — **nenhum dos dois existia neste model** —, caíam no env
+  /// `NFSE_COD_MUNICIPIO` (não definido no Railway) e emitiam `cLocEmi = "0000000"` sozinhos.
+  /// Município zerado derruba a emissão inteira, e ainda por cima em silêncio.
+  ///
+  /// ⚠ O município da empresa HOJE vive em `PortalClient.municipio`/`uf`, como **TEXTO** (medido:
+  /// 33 de 33 preenchidos, 32 no Rio de Janeiro). O **código IBGE não existe em lugar nenhum** do
+  /// projeto, e o de-para nome→IBGE exige a tabela de municípios do IBGE, que não temos. Preencher
+  /// por semelhança de nome erraria em homônimo ("Bom Jesus" existe em 8 estados) e o erro só
+  /// apareceria como nota emitida no município errado. Enquanto o campo estiver nulo a emissão é
+  /// **RECUSADA com motivo** — nunca completada por palpite.
+  codigoMunicipioIbge      String?
   optanteSimples           Boolean?          @default(false)
   regimeEspecialTributacao String?
   // ── Ficha de cadastro do escritório ──────────────────────────────────────────
@@ -251,14 +265,52 @@ model ServiceInvoice {
   codigoVerificacao String?
   rpsNumero         String?
   rpsSerie          String?
+  /// pending | issued | rejected | falha_envio
+  ///
+  /// ⚠ `rejected` passou a significar SÓ **recusa fiscal do sistema nacional**. Erro nosso e
+  /// queda de rede saem como `falha_envio` — antes os três eram o mesmo `rejected`, sem nada que
+  /// os separasse. Vocabulário e regra em `application/nfse/desfechoEmissao.js`.
   status            String    @default("pending")
   xml               String?
   pdfUrl            String?
+  // ── Desfecho da tentativa de emissão ────────────────────────────────────────────────────────
+  // Antes, o motivo da falha existia SÓ no `log.error` (`NfseService.js:1148-1165`), que envelhece
+  // e some: a tela dizia "rejeitada" e ninguém sabia se corrigia a nota ou tentava de novo.
+  /// NOSSA | TRANSPORTE | RECEITA — em qual camada a emissão parou.
+  /// ⚠ `TRANSPORTE` é a que justifica o campo existir: desfecho DESCONHECIDO (o pedido saiu, a
+  /// resposta não voltou). Como **não existe inutilização na NFS-e**, número pulado é buraco
+  /// permanente e reusar às cegas arrisca E0014 — então o número fica RETIDO até alguém consultar
+  /// o Id da DPS. Nas outras duas camadas o número volta a valer.
+  falhaCamada       String?
+  /// Código do erro. `E####` quando a recusa é da Receita (E0014, E0718…); o código nomeado
+  /// interno quando a camada é NOSSA; o erro de rede (ETIMEDOUT, HTTP_502…) quando é TRANSPORTE.
+  falhaCodigo       String?
+  falhaMensagem     String?
+  /// O que fazer a respeito — é o que separa "deu erro" de "faça isto".
+  falhaCorrecao     String?
+  falhaEm           DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   company           Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   client            Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
+  /// ⚠ O QUE IDENTIFICA A NOTA, e por que são ESTAS três colunas.
+  ///
+  /// **E0014** rejeita quando já existe o conjunto *Série + Número + Código do Município Emissor
+  /// + CNPJ/CPF*. Aqui `companyId` responde pelos dois últimos: `Company.cnpj` é `@unique` (uma
+  /// empresa, um CNPJ) e o município emissor é `Company.codigoMunicipioIbge` (uma empresa, um
+  /// `cLocEmi`). Logo `(companyId, rpsSerie, rpsNumero)` é a MESMA tupla do E0014 — e nunca mais
+  /// frouxa que ela, mesmo se a empresa mudar de município.
+  ///
+  /// ⚠ **Não é `idDps`**, embora ele codifique exatamente essa tupla. `idDps` é uma STRING
+  /// DERIVADA, e é escrita também pelo caminho de CAPTURA (`upsertFromProvider`), a partir do que
+  /// o provedor devolve. Um índice ali obrigaria dado de terceiro a obedecer à nossa regra de
+  /// derivação. A tupla é o fato; `idDps` é só a codificação dele.
+  ///
+  /// ⚠ Linhas com `rpsSerie`/`rpsNumero` NULOS (as capturadas) não colidem entre si: no Postgres
+  /// NULL nunca é igual a NULL num índice único. A restrição alcança exatamente a numeração que
+  /// nós emitimos, que é a que precisa dela.
+  @@unique([companyId, rpsSerie, rpsNumero])
   @@index([companyId])
   @@index([clientId])
   @@index([idDps])

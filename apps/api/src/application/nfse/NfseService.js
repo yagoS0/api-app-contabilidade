@@ -1,8 +1,5 @@
 import https from "node:https";
-import fs from "node:fs";
 import axios from "axios";
-import crypto from "node:crypto";
-import forge from "node-forge";
 import { SignedXml } from "xml-crypto";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import { gzipSync } from "node:zlib";
@@ -10,20 +7,40 @@ import { prisma } from "../../infrastructure/db/prisma.js";
 import { NfseRepository } from "../../infrastructure/db/NfseRepository.js";
 import { parseDate } from "../../utils/date.js";
 import { findFirstByLocalName, getTextByLocalNames } from "../../utils/xml.js";
+import { resolverCertificadosDaEmpresa } from "./nfseCertificado.js";
+import { resolverOpSimpNac, resolverTpRetIssqn, RESOLUCAO } from "./dpsCodigos.js";
+import { normalizarSerie, reservarNumeracao } from "./nfseNumeracao.js";
 import {
-  NFSE_CERT_PFX_PATH,
-  NFSE_CERT_PFX_PASSWORD,
+  classificarFalha,
+  camposDeFalha,
+  CAMPOS_DE_FALHA_LIMPOS,
+  CAMADA,
+  STATUS,
+} from "./desfechoEmissao.js";
+import {
   NFSE_BASE_URL,
   NFSE_ENV,
   NFSE_PATH,
   NFSE_CONSULT_PATH,
   NFSE_DPS_PATH,
   NFSE_NFSE_PATH,
-  NFSE_COD_MUNICIPIO,
   NFSE_EVENT_FIELD,
   NFSE_EVENT_FORMAT,
   log,
 } from "../../config.js";
+
+// ⚠ VERSÃO DO LEIAUTE — 1.00, E FICAR NELE É DECISÃO, NÃO INÉRCIA.
+//
+// A Documentação Atual do portal publica o **1.01** (XSD de 11/02/2026; o pacote oficial traz
+// `Schemas/1.00` E `Schemas/1.01`). Há regra de expiração de versão (**E0001**/**E1260**), mas
+// ⚠ **a data de corte NÃO está publicada** — então migrar é decisão de risco, não urgência
+// conhecida. O que o 1.01 acrescenta é o grupo `IBSCBS` (reforma tributária), **facultativo** por
+// ora, e o projeto **não tem o XSD versionado** (não há um único `.xsd` na árvore): subir a versão
+// sem o schema para validar contra trocaria uma rejeição conhecida por uma desconhecida.
+//
+// Fica como CONSTANTE, num lugar só, para que a virada seja uma linha quando o dono decidir — e
+// não uma caçada por literais `"1.00"` espalhados. Ver o relatório da Fase 1.
+const DPS_VERSAO = "1.00";
 
 const REQUIRED_COMPANY_FIELDS = [
   "cnpj",
@@ -33,8 +50,6 @@ const REQUIRED_COMPANY_FIELDS = [
   "rpsSerie",
 ];
 
-let cachedCertInfo = null;
-
 function buildMissingFields(company) {
   const missing = [];
   for (const field of REQUIRED_COMPANY_FIELDS) {
@@ -43,37 +58,18 @@ function buildMissingFields(company) {
   return missing;
 }
 
+// ⚠ O CERTIFICADO SAIU DAQUI. `integrationReady` exigia `NFSE_CERT_PFX_PATH` +
+// `NFSE_CERT_PFX_PASSWORD` — um PFX GLOBAL, o mesmo arquivo assinando DPS de qualquer CNPJ da
+// carteira. Hoje o certificado é resolvido POR EMPRESA (`nfseCertificado.js`, E0718), e a ausência
+// dele é uma **recusa nomeada** (`NO_COMPANY_CERT`), não "integração não configurada": são coisas
+// diferentes e tinham de deixar de ser a mesma resposta. O que ainda é configuração de ambiente é
+// só o endpoint.
 function integrationReady() {
-  return Boolean(NFSE_CERT_PFX_PATH && NFSE_CERT_PFX_PASSWORD && NFSE_BASE_URL);
+  return Boolean(NFSE_BASE_URL);
 }
 
-function loadCertAndKey() {
-  if (cachedCertInfo) return cachedCertInfo;
-  const pfxBuffer = fs.readFileSync(NFSE_CERT_PFX_PATH);
-  const p12Asn1 = forge.asn1.fromDer(pfxBuffer.toString("binary"));
-  const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, NFSE_CERT_PFX_PASSWORD);
-
-  const certBag = p12.getBags({ bagType: forge.pki.oids.certBag })?.[forge.pki.oids.certBag]?.[0];
-  const keyBag =
-    p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag })?.[
-      forge.pki.oids.pkcs8ShroudedKeyBag
-    ]?.[0] ||
-    p12.getBags({ bagType: forge.pki.oids.keyBag })?.[forge.pki.oids.keyBag]?.[0];
-
-  if (!certBag?.cert || !keyBag?.key) {
-    throw new Error("NFSe: certificado ou chave não encontrados no PFX");
-  }
-
-  const certPem = forge.pki.certificateToPem(certBag.cert);
-  const keyPem = forge.pki.privateKeyToPem(keyBag.key);
-  const certBase64 = certPem.replace(/-----(BEGIN|END) CERTIFICATE-----/g, "").replace(/\s+/g, "");
-
-  cachedCertInfo = { certPem, keyPem, certBase64 };
-  return cachedCertInfo;
-}
-
-function signDpsXml(xml, infId) {
-  const { keyPem, certBase64 } = loadCertAndKey();
+function signDpsXml(xml, certificadoAssinatura) {
+  const { keyPem, certBase64 } = certificadoAssinatura;
 
   const sig = new SignedXml();
   sig.addReference("//*[local-name()='infDPS']", [
@@ -96,9 +92,13 @@ function signDpsXml(xml, infId) {
   return sig.getSignedXml();
 }
 
-function buildAxiosClient() {
+function buildAxiosClient(certificadoTransporte) {
   if (!integrationReady()) {
-    throw new Error("NFSe: integração não configurada");
+    const err = new Error(
+      "NFSe: integração não configurada — falta NFSE_BASE_URL (endpoint do sistema nacional)."
+    );
+    err.code = "NFSE_NOT_CONFIGURED";
+    throw err;
   }
 
   // Validação de base URL (precisa ter protocolo e não pode ser protocol-relative //)
@@ -121,10 +121,21 @@ function buildAxiosClient() {
     throw err;
   }
 
-  const pfxBuffer = fs.readFileSync(NFSE_CERT_PFX_PATH);
+  // ⚠ O PFX do mTLS é o **certificado de TRANSPORTE** que `nfseCertificado.js` resolveu para ESTA
+  // empresa. Antes era `fs.readFileSync(NFSE_CERT_PFX_PATH)` — um arquivo global lido do disco a
+  // cada chamada, sem ninguém conferir de quem ele era. Transporte e assinatura são campos
+  // separados (E1200–E1209 × E0718) mesmo apontando hoje para o mesmo arquivo.
+  if (!certificadoTransporte?.pfxBuffer) {
+    const err = new Error(
+      "NFSe: certificado de transporte (mTLS) não resolvido para esta empresa. O sistema nacional " +
+        "exige conexão autenticada por certificado ICP-Brasil."
+    );
+    err.code = "NO_COMPANY_CERT";
+    throw err;
+  }
   const agent = new https.Agent({
-    pfx: pfxBuffer,
-    passphrase: NFSE_CERT_PFX_PASSWORD,
+    pfx: certificadoTransporte.pfxBuffer,
+    passphrase: certificadoTransporte.password || undefined,
     rejectUnauthorized: NFSE_ENV !== "homolog",
   });
 
@@ -280,8 +291,8 @@ function buildEventoXml({
 </pedRegEvento>`;
 }
 
-function signEventoXml(xml) {
-  const { keyPem, certBase64 } = loadCertAndKey();
+function signEventoXml(xml, certificadoAssinatura) {
+  const { keyPem, certBase64 } = certificadoAssinatura;
 
   const sig = new SignedXml();
   sig.addReference("//*[local-name()='infPedReg']", [
@@ -304,31 +315,64 @@ function signEventoXml(xml) {
   return sig.getSignedXml();
 }
 
-function buildDpsId(company) {
-  const cLocEmi = (
-    (company.codigoMunicipioIbge || "").replace(/\D+/g, "") ||
-    (company.codigoMunicipio || "").replace(/\D+/g, "") ||
-    (NFSE_COD_MUNICIPIO || "").replace(/\D+/g, "")
-  )
-    .padStart(7, "0")
-    .slice(-7);
+// ⚠ O MUNICÍPIO SAÍA ZERADO, E ISSO SOZINHO DERRUBA TODA A EMISSÃO.
+//
+// A expressão original lia `company.codigoMunicipioIbge` **e** `company.codigoMunicipio` —
+// **nenhum dos dois existia no model `Company`**. Os dois eram `undefined`, a cadeia caía no env
+// `NFSE_COD_MUNICIPIO` (não definido no Railway) e o `padStart(7, "0")` transformava a string
+// vazia em `"0000000"`. Ou seja: o `cLocEmi` era fabricado pelo próprio formatador, e o `Id` da DPS
+// saía com sete zeros no lugar do município emissor.
+//
+// Agora o campo existe (migration `20260814120000_add_nfse_emissao_fase1`) e **nasce vazio**: o
+// código IBGE não existe em lugar nenhum do projeto — o município da empresa vive como TEXTO em
+// `PortalClient.municipio`/`uf`. Vazio ⇒ **recusa nomeada**, nunca `"0000000"`.
+function resolverCLocEmi(company) {
+  const bruto = String(company?.codigoMunicipioIbge || "").replace(/\D+/g, "");
+  if (bruto.length !== 7) {
+    const err = new Error(
+      "Esta empresa não tem o código IBGE do município emissor cadastrado. Ele é o `cLocEmi` da " +
+        "DPS e entra também no Id do documento — sem ele a emissão inteira é rejeitada."
+    );
+    err.code = "NFSE_MUNICIPIO_NAO_CONFIGURADO";
+    err.correcao =
+      "Cadastre o código IBGE de 7 dígitos do município da empresa. ⚠ O sistema guarda hoje apenas " +
+      "o NOME do município (PortalClient.municipio), e converter nome→IBGE por conta própria erra " +
+      "em homônimo — o código tem de ser informado, não deduzido.";
+    throw err;
+  }
+  return bruto;
+}
+
+// Id de infDPS: DPS + cLocEmi(7) + tpInsc(1) + inscFed(14) + serie(5) + nDPS(15).
+//
+// ⚠ ESTA MONTAGEM ESTAVA DUPLICADA — `buildDpsId` e `buildDpsXml` tinham as ~20 linhas idênticas,
+// cada uma com a sua cópia da resolução de município, de série e de número. Duas cópias de uma
+// chave de identidade fiscal é como elas divergem: o `Id` gravado na linha e o `Id` assinado no XML
+// poderiam deixar de ser o mesmo sem que nada reclamasse.
+function montarIdDps({ cLocEmi, company, serieVal, nDpsVal }) {
   const cnpj = (company.cnpj || "").replace(/\D+/g, "");
   const cpfCompany = (company.cpf || "").replace(/\D+/g, "");
   const isCnpj = cnpj.length === 14;
-  const tpInsc = isCnpj ? "2" : "1";
+  const tpInsc = isCnpj ? "2" : "1"; // 2=CNPJ, 1=CPF
   const inscFed = (cnpj || cpfCompany).padStart(14, "0").slice(-14);
-  const rawSerie = (company.rpsSerie || "1").toString();
-  const serieDigitsOnly = rawSerie.replace(/\D+/g, "");
-  const letterMatch = rawSerie.match(/[A-Za-z]/);
-  const letterAsNumber = letterMatch
-    ? String(letterMatch[0].toUpperCase().charCodeAt(0) - 64)
-    : "";
-  const serieNumeric = serieDigitsOnly || letterAsNumber || "1";
-  const serieVal = serieNumeric.padStart(5, "0").slice(-5);
-  const nDpsDigits = (company.rpsNumero || "1").toString().replace(/\D+/g, "");
-  const nDpsRaw = nDpsDigits || "1";
-  const nDpsVal = nDpsRaw.padStart(15, "0").slice(-15);
-  return `DPS${cLocEmi}${tpInsc}${inscFed}${serieVal}${nDpsVal}`;
+  return `DPS${cLocEmi}${tpInsc}${inscFed}${serieVal}${String(nDpsVal).padStart(15, "0").slice(-15)}`;
+}
+
+/**
+ * Id da DPS a partir da numeração JÁ RESERVADA.
+ *
+ * ⚠ `rpsSerie`/`rpsNumero` são ARGUMENTOS agora, não mais lidos de `company` na hora. Ler o
+ * contador do cadastro aqui era metade do defeito de numeração: `buildDpsId(company)` e o
+ * `update` que incrementava rodavam em momentos diferentes, fora de transação, e nada garantia
+ * que o número montado no Id fosse o mesmo que ficou reservado.
+ */
+function buildDpsId(company, { rpsSerie, rpsNumero }) {
+  return montarIdDps({
+    cLocEmi: resolverCLocEmi(company),
+    company,
+    serieVal: normalizarSerie(rpsSerie),
+    nDpsVal: String(rpsNumero).replace(/\D+/g, ""),
+  });
 }
 
 function buildConsultaPeriodoXml({ company, filters }) {
@@ -489,48 +533,30 @@ function mapProviderItem(item) {
   };
 }
 
-function buildDpsXml({ company, data }) {
+/**
+ * Monta o XML da DPS.
+ *
+ * @param {object} p.numeracao `{ rpsSerie, rpsNumero }` **já reservados** transacionalmente.
+ * @param {string|null} p.regime regime tributário real da empresa (`CadastroFiscal.regime`, com
+ *   `Company.regimeTributario` como segunda fonte). ⚠ NÃO tem default: ausente ⇒ recusa.
+ */
+function buildDpsXml({ company, data, numeracao, regime }) {
   const competencia = formatDateOnly(data.competencia);
   const valorServicosNumber = Number(data.servico.valorServicos || 0);
   const valorServicos = valorServicosNumber.toFixed(2);
-  // Alíquota: respeita o valor enviado no payload. Para opSimpNac=3 e tpRetISSQN=2/3, o provedor exige alíquota > 0 (mín 1,8%). Se ausente/<=0, dispara erro para evitar default silencioso.
   const rawAliq = data.servico.aliquota;
   const aliquota =
     rawAliq !== undefined && rawAliq !== null && rawAliq !== ""
       ? Number(rawAliq)
       : null;
-  // ISS Retido (tomador): usar 1=retido, 2=não retido (para permitir alíquota e evitar E0625).
-  const issRetido = data.servico.issRetido === true ? "2" : "1";
   const codigoServico =
     company.codigoServicoMunicipal || company.codigoServicoNacional || "";
 
-  // id de infDPS: DPS + cLocEmi(7) + tpInsc(1) + inscFed(14) + serie(5) + nDPS(15)
-  const cLocEmi = (
-    (company.codigoMunicipioIbge || "").replace(/\D+/g, "") ||
-    (company.codigoMunicipio || "").replace(/\D+/g, "") ||
-    (NFSE_COD_MUNICIPIO || "").replace(/\D+/g, "")
-  )
-    .padStart(7, "0")
-    .slice(-7);
+  const cLocEmi = resolverCLocEmi(company);
   const cnpj = (company.cnpj || "").replace(/\D+/g, "");
-  const cpfCompany = (company.cpf || "").replace(/\D+/g, "");
-  const isCnpj = cnpj.length === 14;
-  const tpInsc = isCnpj ? "2" : "1"; // 2=CNPJ, 1=CPF
-  const inscFed = (cnpj || cpfCompany).padStart(14, "0").slice(-14);
-  const rawSerie = (company.rpsSerie || "1").toString();
-  const serieDigitsOnly = rawSerie.replace(/\D+/g, "");
-  const letterMatch = rawSerie.match(/[A-Za-z]/);
-  const letterAsNumber = letterMatch
-    ? String(letterMatch[0].toUpperCase().charCodeAt(0) - 64) // A=1, B=2...
-    : "";
-  const serieNumeric = serieDigitsOnly || letterAsNumber || "1";
-  const serieVal = serieNumeric.padStart(5, "0").slice(-5); // para Id e XML
-  // nDPS para XML (sem padding) e para Id (15 dígitos)
-  const nDpsDigits = (company.rpsNumero || "1").toString().replace(/\D+/g, "");
-  const nDpsRaw = nDpsDigits || "1"; // XML sem padding
-  const nDpsVal = nDpsRaw.padStart(15, "0").slice(-15); // Id com padding 15
-  // Id: DPS + cLocEmi(7) + tpInsc(1) + inscFed(14) + serie(5) + nDPS(15)
-  const infId = `DPS${cLocEmi}${tpInsc}${inscFed}${serieVal}${nDpsVal}`;
+  const serieVal = normalizarSerie(numeracao.rpsSerie); // 5 dígitos, faixa E0010 conferida
+  const nDpsRaw = String(numeracao.rpsNumero).replace(/\D+/g, ""); // XML sem padding
+  const infId = montarIdDps({ cLocEmi, company, serieVal, nDpsVal: nDpsRaw });
 
   // Dados tomador
   const tomadorDoc = (data.tomador.doc || "").replace(/\D+/g, "");
@@ -552,11 +578,50 @@ function buildDpsXml({ company, data }) {
     .replace(/\D+/g, "")
     .slice(-3); // padrão municipal usa sufixo de 3 dígitos
   const cTribMun = cTribMunRaw || "";
-  const cLocPrestacao = cLocEmi; // por enquanto assume igual ao município do prestador
-  // TSOpSimpNac: 1=Não optante, 2=MEI, 3=Simples (ME/EPP). Empresa é Simples: use 3.
-  const opSimpNac = "3";
-  const isSimples = opSimpNac === "3";
-  const regApTribSN = "1"; // padrão para Simples ME/EPP
+
+  // ── LOCAL DA PRESTAÇÃO ───────────────────────────────────────────────────────────────────
+  //
+  // ⚠ ANTES ERA `const cLocPrestacao = cLocEmi;` com o comentário *"por enquanto assume igual ao
+  // município do prestador"*. O "por enquanto" não tinha data e não tinha alternativa: **não havia
+  // como informar um local diferente**, nem sinal de que ele havia sido assumido.
+  //
+  // O QUE ACONTECE QUANDO SÃO DIFERENTES: `cLocPrestacao` é o que determina o **município
+  // competente para o ISSQN**. Diferente do emissor, o imposto é devido no local da prestação — o
+  // que muda a alíquota aplicável e pode tornar a retenção obrigatória para o tomador. Uma DPS que
+  // declara o município errado recolhe imposto para a cidade errada; é erro fiscal com dinheiro
+  // envolvido, não um campo cosmético.
+  //
+  // ⚠ E O VALOR CERTO **NÃO SE DEDUZ DO ENDEREÇO DO TOMADOR**. A regra é a LC 116/2003, art. 3º: o
+  // serviço considera-se prestado no estabelecimento do prestador (o `caput`), **salvo** numa lista
+  // fechada de exceções por tipo de serviço (os incisos), em que passa a ser o local da execução.
+  // Implementar essa lista exige o de-para item-da-lista → regra, que este projeto não tem;
+  // adivinhar por "onde mora o tomador" produziria o município errado com aparência de acerto.
+  //
+  // Por isso: o local da prestação é **informado**, e a ausência dele cai no emissor (o `caput` da
+  // lei, que é a regra geral) — mas de forma EXPLÍCITA, com a suposição registrada no retorno em
+  // vez de escondida numa atribuição.
+  const cLocPrestacaoInformado = String(data.servico?.cLocPrestacao || "").replace(/\D+/g, "");
+  const cLocPrestacao = cLocPrestacaoInformado.length === 7 ? cLocPrestacaoInformado : cLocEmi;
+  const localPrestacaoAssumido = cLocPrestacao === cLocEmi && cLocPrestacaoInformado.length !== 7;
+
+  // ── REGIME TRIBUTÁRIO ────────────────────────────────────────────────────────────────────
+  //
+  // ⚠ `opSimpNac` ESTAVA CRAVADO EM `"3"`: **toda** empresa era declarada Simples ME/EPP no
+  // documento fiscal, inclusive as 11 do Lucro Presumido da carteira. Agora vem do regime REAL, e
+  // regime que não se sabe **recusa** — não vira "3" por omissão. Ver `dpsCodigos.js` para a
+  // evidência de cada linha da tabela e para o porquê de MEI ficar de fora.
+  const regTrib = resolverOpSimpNac(regime);
+  if (regTrib.resolucao !== RESOLUCAO.RESOLVIDO) {
+    const err = new Error(regTrib.motivo);
+    err.code = "NFSE_REGIME_INDEFINIDO";
+    err.correcao =
+      "Cadastre/confirme o regime tributário da empresa na aba Fiscal → Cadastro. O regime é " +
+      "declarado na própria DPS (opSimpNac) — emitir com o regime errado é declaração falsa.";
+    throw err;
+  }
+  const opSimpNac = regTrib.opSimpNac;
+  const isSimples = regTrib.exigeRegApTribSN;
+
   const shouldSendIM = company.inscricaoMunicipal && cLocEmi !== "3304557"; // RJ exige não enviar IM se não há CNC
   const pTotTribSNRaw = data.totTrib?.pTotTribSN;
   const pTotTribSN =
@@ -564,8 +629,42 @@ function buildDpsXml({ company, data }) {
       ? Number(pTotTribSNRaw)
       : null;
   if (isSimples && (pTotTribSN === null || Number.isNaN(pTotTribSN) || pTotTribSN < 0)) {
-    const err = new Error("missing_p_tot_trib_sn");
+    const err = new Error(
+      "A alíquota efetiva do Simples Nacional (pTotTribSN) é exigida quando opSimpNac=3 e não foi informada."
+    );
     err.code = "MISSING_P_TOT_TRIB_SN";
+    err.correcao =
+      "Informe o percentual total de tributos do Simples (pTotTribSN) no assistente de emissão. " +
+      "Ele é a alíquota efetiva da empresa na competência — sai do extrato do PGDAS-D.";
+    throw err;
+  }
+
+  // ⚠ QUEM NÃO É DO SIMPLES TAMBÉM PRECISA DECLARAR A CARGA TRIBUTÁRIA, E ESTE CAMINHO NUNCA FOI
+  // EXERCIDO. Enquanto `opSimpNac` era cravado em 3, o ramo do `else` abaixo era inalcançável — e
+  // ele emite `<vTotTribFed>0.00</vTotTribFed>` e irmãos, ou seja, **declara carga tributária
+  // ZERO**. Isso é uma afirmação (Lei 12.741/2012, a Lei da Transparência), não um preenchimento
+  // técnico: zero é o valor de quem não paga nada.
+  //
+  // A NFS-e real que temos versionada (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`, de
+  // empresa não optante) declara `<pTotTrib><pTotTribFed>11.33</pTotTribFed>…` — percentuais
+  // reais, não zeros. Ou seja, o formato que o código emite não é o que a nota real usa, **e** o
+  // valor que ele emite é falso. Como a estrutura correta não pode ser confirmada sem o XSD (que
+  // não está versionado), o caminho **recusa** em vez de declarar zero.
+  const totTribNaoSimples = data.totTrib || {};
+  const temTotTribNaoSimples =
+    [totTribNaoSimples.pTotTribFed, totTribNaoSimples.pTotTribEst, totTribNaoSimples.pTotTribMun].some(
+      (v) => v !== undefined && v !== null && v !== ""
+    );
+  if (!isSimples && !temTotTribNaoSimples) {
+    const err = new Error(
+      "Empresa não optante do Simples: a carga tributária aproximada (pTotTribFed/Est/Mun) não foi " +
+        "informada, e o código emitia 0,00 — que afirma carga zero."
+    );
+    err.code = "MISSING_TOT_TRIB_NAO_SIMPLES";
+    err.correcao =
+      "Informe os percentuais de tributos aproximados (Lei 12.741/2012). ⚠ Este caminho nunca foi " +
+      "exercido: enquanto opSimpNac era cravado em 3, nenhuma empresa do Lucro Presumido chegava " +
+      "aqui. Confirmar a estrutura do grupo totTrib com o dono antes de ligar.";
     throw err;
   }
 
@@ -585,8 +684,29 @@ function buildDpsXml({ company, data }) {
     throw err;
   }
 
-  const issRetidoFlag = data.servico?.issRetido === true;
-  const effectiveIssRetido = issRetidoFlag;
+  // ── RETENÇÃO DO ISSQN ────────────────────────────────────────────────────────────────────
+  //
+  // ⚠ A RETENÇÃO ERA CALCULADA E JOGADA FORA. Havia TRÊS variáveis mortas — `issRetido` (a partir
+  // de `data.servico.issRetido`), `issRetidoFlag` e `effectiveIssRetido` — e **nenhuma entrava no
+  // XML**: o `tpRetISSQN` era o literal `1`. Toda nota com ISS retido pelo tomador era emitida
+  // declarando que NÃO havia retenção, o que joga o recolhimento para o lado errado.
+  //
+  // ⚠ O caminho NÃO retido continua emitindo exatamente o `1` de hoje — o mesmo valor da emissão
+  // homolog aceita. Só o caminho retido muda, e ele hoje está comprovadamente errado.
+  const retencao = resolverTpRetIssqn(data.servico?.issRetido === true);
+  const tpRetISSQN = retencao.tpRetISSQN;
+
+  // Com retenção, o provedor exige alíquota > 0 — a observação que já estava no código (o erro
+  // E0625). Recusar aqui é melhor que emitir retenção sem base: a rejeição do sistema nacional
+  // viria de qualquer jeito, só que sem dizer o que corrigir.
+  if (retencao.exigeAliquota && !(aliquota > 0)) {
+    const err = new Error(
+      "ISS retido exige alíquota do ISSQN maior que zero, e nenhuma foi informada."
+    );
+    err.code = "NFSE_ISS_RETIDO_SEM_ALIQUOTA";
+    err.correcao = "Informe a alíquota de ISS da empresa no assistente de emissão.";
+    throw err;
+  }
 
   const tomadorEnderecoXml = `<end>
       <endNac>
@@ -600,7 +720,7 @@ function buildDpsXml({ company, data }) {
     </end>`;
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00">
+<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="${DPS_VERSAO}">
   <infDPS Id="${infId}">
     <tpAmb>${tpAmb}</tpAmb>
     <dhEmi>${escapeXml(dhEmi)}</dhEmi>
@@ -617,7 +737,14 @@ function buildDpsXml({ company, data }) {
       ${shouldSendIM ? `<IM>${escapeXml(company.inscricaoMunicipal)}</IM>` : ""}
       <regTrib>
         <opSimpNac>${opSimpNac}</opSimpNac>
-        <regApTribSN>${regApTribSN}</regApTribSN>
+        ${
+          // ⚠ `regApTribSN` só existe para quem É do Simples. Antes era emitido SEMPRE (cravado
+          // em "1"), o que fazia sentido enquanto `opSimpNac` também era cravado em 3. A NFS-e
+          // real de empresa não optante que temos versionada
+          // (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`) traz `<opSimpNac>1</opSimpNac>`
+          // e `<regEspTrib>` **sem `regApTribSN` no meio** — é essa a forma do grupo.
+          isSimples ? `<regApTribSN>1</regApTribSN>` : ""
+        }
         <regEspTrib>${escapeXml(company.regimeEspecialTributacao || "0")}</regEspTrib>
       </regTrib>
     </prest>
@@ -678,7 +805,7 @@ function buildDpsXml({ company, data }) {
       <trib>
         <tribMun>
           <tribISSQN>1</tribISSQN>
-          <tpRetISSQN>1</tpRetISSQN>
+          <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
         </tribMun>
         ${(() => {
           const piscofins = data.tribFed?.piscofins || {};
@@ -760,12 +887,17 @@ function buildDpsXml({ company, data }) {
             ? `<totTrib>
           <pTotTribSN>${pTotTribSN.toFixed(2)}</pTotTribSN>
         </totTrib>`
-            : `<totTrib>
-          <vTotTrib>
-            <vTotTribFed>0.00</vTotTribFed>
-            <vTotTribEst>0.00</vTotTribEst>
-            <vTotTribMun>0.00</vTotTribMun>
-          </vTotTrib>
+            : // ⚠ Não optante: PERCENTUAIS informados, não zeros cravados. A forma
+              // (`pTotTrib` com os três filhos) é a da NFS-e real versionada em
+              // `docs/leiaute-nfse/nfse-nacional-substituicao.xml`. O código anterior emitia
+              // `vTotTrib` com `0.00` — outro grupo, e afirmando carga tributária zero. Chegar
+              // aqui sem os percentuais já foi recusado acima (`MISSING_TOT_TRIB_NAO_SIMPLES`).
+              `<totTrib>
+          <pTotTrib>
+            <pTotTribFed>${Number(totTribNaoSimples.pTotTribFed ?? 0).toFixed(2)}</pTotTribFed>
+            <pTotTribEst>${Number(totTribNaoSimples.pTotTribEst ?? 0).toFixed(2)}</pTotTribEst>
+            <pTotTribMun>${Number(totTribNaoSimples.pTotTribMun ?? 0).toFixed(2)}</pTotTribMun>
+          </pTotTrib>
         </totTrib>`
         }
       </trib>
@@ -773,14 +905,16 @@ function buildDpsXml({ company, data }) {
   </infDPS>
 </DPS>`;
 
-  return { xml, infId };
+  return { xml, infId, localPrestacaoAssumido, cLocEmi, cLocPrestacao, opSimpNac, tpRetISSQN };
 }
 
-function buildDpsPayload({ company, data }) {
-  const { xml, infId } = buildDpsXml({ company, data });
-  const signedXml = signDpsXml(xml, infId);
+function buildDpsPayload({ company, data, numeracao, regime, certificadoAssinatura }) {
+  const construido = buildDpsXml({ company, data, numeracao, regime });
+  // E0718: quem assina é o certificado do EMITENTE da DPS — resolvido por empresa, nunca o PFX
+  // global que ficava em `NFSE_CERT_PFX_PATH`.
+  const signedXml = signDpsXml(construido.xml, certificadoAssinatura);
   const compressed = gzipSync(Buffer.from(signedXml, "utf-8")).toString("base64");
-  return { dpsXmlGZipB64: compressed, rawXml: signedXml, infId };
+  return { ...construido, dpsXmlGZipB64: compressed, rawXml: signedXml };
 }
 
 function buildEventoPayload({ tipoEvento, justificativa, chaveSubstituta, numeroSubstituta }) {
@@ -788,11 +922,41 @@ function buildEventoPayload({ tipoEvento, justificativa, chaveSubstituta, numero
     ambiente: NFSE_ENV === "homolog" ? "homolog" : "producao",
     tipoEvento,
     justificativa,
-    ...(NFSE_COD_MUNICIPIO ? { codigoMunicipio: NFSE_COD_MUNICIPIO } : {}),
+    // ⚠ `codigoMunicipio: NFSE_COD_MUNICIPIO` saiu daqui junto com a variável de ambiente. Ela
+    // nunca foi definida em produção e este objeto só alimenta o `log.info` — o corpo que sai de
+    // verdade é `{ [eventField]: <xml assinado> }`. Um município global também não faria sentido
+    // numa carteira multi-empresa: o emissor é da EMPRESA (`Company.codigoMunicipioIbge`).
     ...(chaveSubstituta ? { chaveSubstituta } : {}),
     ...(numeroSubstituta ? { numeroSubstituta } : {}),
     dataEvento: formatDateTimeWithOffset(new Date()),
   };
+}
+
+/**
+ * Regime tributário real da empresa, para o `opSimpNac` da DPS.
+ *
+ * ⚠ A AUTORIDADE É O `CadastroFiscal`, não a `Company`. É a mesma hierarquia que a apuração usa
+ * ("o cadastro é AUTORIDADE"), e é ela que o contador mantém na aba Fiscal → Cadastro.
+ * `Company.regimeTributario` entra como segunda leitura porque é o que existe nas empresas
+ * anteriores ao módulo fiscal.
+ *
+ * ⚠ **Não há default.** Devolver `null` é a resposta certa quando nenhuma das duas fontes sabe —
+ * `resolverOpSimpNac(null)` recusa a emissão. Um default aqui seria o defeito de novo, só que
+ * escondido uma camada mais fundo.
+ */
+async function carregarRegimeDaEmpresa(company) {
+  const portal = await prisma.portalClient.findUnique({
+    where: { companyId: company.id },
+    select: { id: true },
+  });
+  if (portal?.id) {
+    const cadastro = await prisma.cadastroFiscal.findUnique({
+      where: { portalClientId: portal.id },
+      select: { regime: true },
+    });
+    if (cadastro?.regime) return cadastro.regime;
+  }
+  return company.regimeTributario || null;
 }
 
 function maskSensitive(value) {
@@ -833,7 +997,25 @@ export class NfseService {
       err.code = "NFSE_JUSTIFICATIVA_REQUIRED";
       throw err;
     }
-    // ⚠ Os dois campos abaixo são OBRIGATÓRIOS (1-1) no e105102 pelo ANEXO_II v1.01 — ver o
+    // ⚠⚠ ESTE CAMINHO ESTÁ ERRADO PARA A SUBSTITUIÇÃO — MARCADO, NÃO CONSERTADO (Fase 4).
+    //
+    // **Substituir uma NFS-e NÃO é enviar o evento `e105102`.** Pelo Manual dos Contribuintes
+    // §1.3.2.a, a substituição é feita com um `POST /nfse` — uma DPS NOVA, com o grupo `<subst>`
+    // preenchido (`chSubstda` + `cMotivo` + `xMotivo`; há exemplo real versionado em
+    // `docs/leiaute-nfse/nfse-nacional-substituicao.xml`) — e **o sistema nacional gera o evento
+    // e105102 sozinho**, como consequência. Ou seja: o e105102 é o que se LÊ depois, não o que se
+    // ENVIA.
+    //
+    // Mandar o evento à mão, como este caminho faz, é pedir ao ADN que registre um cancelamento
+    // por substituição sem que exista a nota substituta — a nota "substituída" ficaria cancelada e
+    // a substituta nunca teria sido emitida.
+    //
+    // ⚠ NÃO CONSERTAR AGORA, POR INSTRUÇÃO: o fluxo de cancelamento/substituição é Fase 4. Fica o
+    // registro para que ninguém "complete" este caminho achando que ele só está incompleto — ele
+    // está invertido. Note que `buildDpsXml` ainda **não monta o grupo `<subst>`**, então o
+    // caminho certo também não existe ainda.
+    //
+    // ── Os dois campos abaixo são OBRIGATÓRIOS (1-1) no e105102 pelo ANEXO_II v1.01 — ver o
     // comentário de `buildEventoXml`. Recusar aqui é o que substituiu o fallback inventado
     // `<nNFSeSubst>`: sem a chave da substituta não existe evento de substituição, e o código do
     // motivo é justificativa fiscal de lista fechada (01…05, 99) que ninguém pode arbitrar.
@@ -850,22 +1032,26 @@ export class NfseService {
       }
     }
 
-    const client = buildAxiosClient();
-    let autor = cnpjAutor;
-    if (!autor) {
-      const invoice = await NfseRepository.findByChaveAcesso(chaveAcesso);
-      if (invoice?.companyId) {
-        const company = await prisma.company.findUnique({
-          where: { id: invoice.companyId },
-        });
-        autor = company?.cnpj || null;
-      }
+    // ⚠ A EMPRESA É RESOLVIDA ANTES DO CLIENTE HTTP, porque é dela que sai o certificado — tanto o
+    // que ASSINA o evento (E0718 vale para o autor do pedido de registro) quanto o do mTLS. Antes,
+    // `buildAxiosClient()` e `signEventoXml()` usavam o PFX GLOBAL, e o CNPJ do autor era só um
+    // campo de texto no XML: nada impedia declarar um CNPJ e assinar com o certificado de outro.
+    const invoice = await NfseRepository.findByChaveAcesso(chaveAcesso);
+    if (!invoice?.companyId) {
+      const err = new Error("nfse_not_found");
+      err.code = "NFSE_NOT_FOUND";
+      throw err;
     }
+    const companyDoEvento = await prisma.company.findUnique({ where: { id: invoice.companyId } });
+    const autor = cnpjAutor || companyDoEvento?.cnpj || null;
     if (!autor) {
       const err = new Error("cnpj_autor_required");
       err.code = "NFSE_CNPJ_AUTOR_REQUIRED";
       throw err;
     }
+
+    const certificados = await resolverCertificadosDaEmpresa(invoice.companyId);
+    const client = buildAxiosClient(certificados.transporte);
     const nfsePath = NFSE_NFSE_PATH.replace(/\/+$/, "");
     const requestUrl = `${client.defaults.baseURL}${nfsePath}/${encodeURIComponent(
       chaveAcesso
@@ -886,7 +1072,7 @@ export class NfseService {
         cMotivo,
         chaveSubstituta,
       });
-      const signedEventoXml = signEventoXml(eventoXml);
+      const signedEventoXml = signEventoXml(eventoXml, certificados.assinatura);
       const eventFormat = NFSE_EVENT_FORMAT === "gzipB64" ? "gzipB64" : "xml";
       const eventField = NFSE_EVENT_FIELD || "pedidoRegistroEventoXmlGZipB64";
       const eventPayloadValue =
@@ -971,7 +1157,13 @@ export class NfseService {
       throw err;
     }
 
-    const client = buildAxiosClient();
+    // ⚠ A CONSULTA TAMBÉM É PELO CERTIFICADO DA EMPRESA. É a mesma regra do ADN, já registrada no
+    // `apps/api/CLAUDE.md`: *"o A1 do escritório nunca deve consultar notas"* — o escritório É
+    // cadastrado no gov.br/nfse, então consultar com o certificado dele traz as notas DELE,
+    // gravadas debaixo da empresa cliente. Aqui isso valia para os três caminhos, porque
+    // `buildAxiosClient()` lia o PFX global.
+    const certificados = await resolverCertificadosDaEmpresa(companyId);
+    const client = buildAxiosClient(certificados.transporte);
     const idDps = filters.idDps;
     const chaveAcesso = filters.chaveAcesso || filters.numeroNfse;
     const hasPeriodo = Boolean(filters.from && filters.to);
@@ -1053,10 +1245,23 @@ export class NfseService {
   }
 
   /**
-   * Prepara e registra o pedido de emissão de NFS-e.
-   * Neste momento deixamos o status como "pending" até plugar o cliente oficial da prefeitura/Portal Nacional.
+   * Emite a NFS-e pelo padrão nacional.
+   *
+   * ⚠ A ORDEM DAS ETAPAS É A CORREÇÃO, não um detalhe de arrumação:
+   *
+   *   1. **certificado da empresa** — antes de qualquer escrita. Sem A1 próprio não há emissão
+   *      possível (E0718), e descobrir isso DEPOIS de reservar número queimaria numeração à toa;
+   *   2. **reserva transacional de série + número** — o número sai do contador e entra na linha
+   *      no MESMO commit;
+   *   3. montagem/assinatura/envio;
+   *   4. desfecho em CAMADAS (nosso × transporte × Receita).
+   *
+   * ⚠ **TENTATIVA REPETIDA REUSA A LINHA E O NÚMERO.** Como não existe inutilização na NFS-e,
+   * número pulado é buraco permanente. `retryInvoiceId` reaproveita a `ServiceInvoice` de uma
+   * tentativa anterior — e só é aceito quando a falha daquela linha LIBEROU o número (camadas
+   * `NOSSA` e `RECEITA`). Falha de `TRANSPORTE` não libera: ali o desfecho é desconhecido.
    */
-  static async issue({ data, log }) {
+  static async issue({ data, log, retryInvoiceId = null }) {
     const company = await prisma.company.findUnique({
       where: { id: data.companyId },
     });
@@ -1074,111 +1279,213 @@ export class NfseService {
       throw err;
     }
 
-    const record = await NfseRepository.createPending({
-      companyId: data.companyId,
-      clientId: data.clientId || null,
-      tomadorDoc: data.tomador.doc,
-      tomadorNome: data.tomador.nome,
-      valorServicos: data.servico.valorServicos,
-      aliquota: data.servico.aliquota,
-      issRetido: data.servico.issRetido ?? false,
-      competencia: data.competencia,
-      idDps: buildDpsId(company),
-      rpsSerie: company.rpsSerie || null,
-      rpsNumero: company.rpsNumero || null,
-      status: "pending",
-    });
-
     if (!integrationReady()) {
-      return {
-        status: "pending",
-        message:
-          "Pedido registrado, mas certificado/endpoint NFSe não configurado. Configure NFSE_CERT_PFX_PATH, NFSE_CERT_PFX_PASSWORD e NFSE_BASE_URL/NFSE_PATH.",
-        nfse: record,
-      };
+      const err = new Error(
+        "NFSe: integração não configurada — falta NFSE_BASE_URL (endpoint do sistema nacional)."
+      );
+      err.code = "NFSE_NOT_CONFIGURED";
+      throw err;
     }
 
+    // ── 1. CERTIFICADO DA PRÓPRIA EMPRESA (E0718) ────────────────────────────────────────
+    //
+    // ⚠ ANTES DE ESCREVER QUALQUER COISA. Falha aqui não deixa rastro de numeração: nada foi
+    // reservado ainda. E a recusa é NOMEADA — `NO_COMPANY_CERT`, no molde da captura —, nunca uma
+    // queda para o A1 do escritório.
+    // Recusa de PRÉ-VOO: nada foi escrito ainda, então nem linha nem numeração existem para
+    // gravar o motivo. A resposta em camadas é a mesma, com `nfse: null`.
+    const recusaAntesDeEscrever = (err, contexto) => {
+      const desfecho = classificarFalha(err);
+      log.error(
+        { companyId: company.id, code: err?.code, camada: desfecho.camada },
+        `NFS-e: emissão recusada antes de reservar numeração (${contexto})`
+      );
+      return {
+        status: desfecho.status,
+        camada: desfecho.camada,
+        codigo: desfecho.codigo,
+        message: desfecho.mensagem,
+        correcao: desfecho.correcao,
+        numeroReutilizavel: desfecho.numeroReutilizavel,
+        nfse: null,
+      };
+    };
+
+    let certificados;
+    try {
+      certificados = await resolverCertificadosDaEmpresa(company.id);
+    } catch (err) {
+      return recusaAntesDeEscrever(err, "certificado da própria empresa");
+    }
+
+    // O regime é REGRA FISCAL declarada na DPS: a autoridade é o `CadastroFiscal` (a mesma fonte
+    // que a apuração usa), com `Company.regimeTributario` como segunda leitura. Nenhuma das duas
+    // tem default.
+    const regime = await carregarRegimeDaEmpresa(company);
+
+    // ── 1.b PRÉ-VOO DO CADASTRO ───────────────────────────────────────────────────────────
+    //
+    // ⚠ TUDO O QUE DÁ PARA SABER SEM O CONTADOR É CONFERIDO ANTES DE ENCOSTAR NELE. Município
+    // emissor, série e regime são defeitos de CADASTRO: eles não dependem do número, e descobri-los
+    // depois da reserva significaria mover o contador por causa de um campo em branco. A reserva é
+    // transacional, então o número voltaria — mas o desfecho sairia como exceção não classificada
+    // (a rota responderia 500), em vez da recusa nomeada com correção que o contador precisa ler.
+    try {
+      resolverCLocEmi(company);
+      normalizarSerie(company.rpsSerie);
+      const regTrib = resolverOpSimpNac(regime);
+      if (regTrib.resolucao !== RESOLUCAO.RESOLVIDO) {
+        const err = new Error(regTrib.motivo);
+        err.code = "NFSE_REGIME_INDEFINIDO";
+        err.correcao =
+          "Cadastre/confirme o regime tributário da empresa na aba Fiscal → Cadastro. O regime é " +
+          "declarado na própria DPS (opSimpNac) — emitir com o regime errado é declaração falsa.";
+        throw err;
+      }
+    } catch (err) {
+      return recusaAntesDeEscrever(err, "cadastro da empresa");
+    }
+
+    // ── 2. NUMERAÇÃO: RESERVA TRANSACIONAL ───────────────────────────────────────────────
+    let record;
+    let numeracao;
+    if (retryInvoiceId) {
+      const anterior = await prisma.serviceInvoice.findUnique({ where: { id: retryInvoiceId } });
+      if (!anterior || anterior.companyId !== company.id) {
+        const err = new Error("invoice_not_found");
+        err.code = "NFSE_RETRY_INVOICE_NOT_FOUND";
+        throw err;
+      }
+      if (anterior.falhaCamada === CAMADA.TRANSPORTE) {
+        const err = new Error(
+          "A tentativa anterior falhou no TRANSPORTE: não se sabe se a DPS foi processada. " +
+            "Consulte o Id da DPS no sistema nacional antes de reemitir com este número."
+        );
+        err.code = "NFSE_NUMERO_EM_ESTADO_INDETERMINADO";
+        throw err;
+      }
+      numeracao = { rpsSerie: anterior.rpsSerie, rpsNumero: anterior.rpsNumero };
+      record = await NfseRepository.markIssued(anterior.id, {
+        status: STATUS.PENDING,
+        ...CAMPOS_DE_FALHA_LIMPOS,
+      });
+    } else {
+      const reserva = await reservarNumeracao({
+        companyId: company.id,
+        rpsSerie: company.rpsSerie,
+        criarLinha: (tx, { rpsSerie, rpsNumero }) =>
+          tx.serviceInvoice.create({
+            data: {
+              companyId: data.companyId,
+              clientId: data.clientId || null,
+              tomadorDoc: data.tomador.doc,
+              tomadorNome: data.tomador.nome,
+              valorServicos: data.servico.valorServicos,
+              aliquota: data.servico.aliquota,
+              issRetido: data.servico.issRetido ?? false,
+              competencia: data.competencia ? parseDate(data.competencia) : null,
+              // ⚠ O `idDps` é montado a partir do número JÁ RESERVADO, dentro da mesma transação.
+              // Antes ele saía de `buildDpsId(company)`, que relia o contador do cadastro — e o
+              // incremento acontecia num `update` separado, depois do envio.
+              idDps: buildDpsId(company, { rpsSerie, rpsNumero }),
+              rpsSerie,
+              rpsNumero,
+              status: STATUS.PENDING,
+            },
+          }),
+      });
+      numeracao = { rpsSerie: reserva.rpsSerie, rpsNumero: reserva.rpsNumero };
+      record = reserva.linha;
+    }
+
+    // ── 3. MONTAGEM, ASSINATURA E ENVIO ──────────────────────────────────────────────────
     let rawXml = null;
     let requestUrl = null;
     try {
-      const client = buildAxiosClient();
-      // Gera DPS (XML) e envia no padrão nacional (dpsXmlGZipB64).
-      const { dpsXmlGZipB64, rawXml: builtXml, infId } = buildDpsPayload({
+      const client = buildAxiosClient(certificados.transporte);
+      const construido = buildDpsPayload({
         company,
         data,
+        numeracao,
+        regime,
+        certificadoAssinatura: certificados.assinatura,
       });
-      rawXml = builtXml;
+      rawXml = construido.rawXml;
+
+      if (construido.localPrestacaoAssumido) {
+        // Ver o bloco sobre a LC 116/2003, art. 3º em `buildDpsXml`. A suposição fica no log em
+        // vez de invisível numa atribuição.
+        log.info(
+          { companyId: company.id, cLocEmi: construido.cLocEmi },
+          "NFS-e: local da prestação não informado — assumido o município do emissor (regra geral da LC 116/2003, art. 3º, caput)"
+        );
+      }
+
       requestUrl = `${client.defaults.baseURL}${NFSE_PATH}`;
       const { data: response } = await client.post(NFSE_PATH, {
-        dpsXmlGZipB64,
+        dpsXmlGZipB64: construido.dpsXmlGZipB64,
       });
 
       const issued = await NfseRepository.markIssued(record.id, {
-        status: response.status || "issued",
-        idDps: infId,
+        status: response.status || STATUS.ISSUED,
+        idDps: construido.infId,
         chaveAcesso: response.chaveAcesso || response.numeroNfse || null,
         numeroNfse: response.numeroNfse || null,
         codigoVerificacao: response.codigoVerificacao || response.codigo || null,
         xml: response.nfseXmlGZipB64 || rawXml || null,
         pdfUrl: response.pdfUrl || null,
-        rpsNumero: company.rpsNumero || null,
+        ...CAMPOS_DE_FALHA_LIMPOS,
       });
 
-      // Incrementa rpsNumero simples se existir no cadastro
-      if (company.rpsNumero) {
-        const next = String(Number(company.rpsNumero) + 1);
-        await prisma.company.update({
-          where: { id: company.id },
-          data: { rpsNumero: next },
-        });
-      }
+      // ⚠ NÃO HÁ MAIS INCREMENTO AQUI. O contador foi movido na RESERVA (etapa 2), dentro da
+      // transação. O `update` que existia neste ponto — `String(Number(company.rpsNumero) + 1)` —
+      // era o read-modify-write que gerava número repetido, e o `if (company.rpsNumero)` que o
+      // guardava fazia toda empresa de contador nulo emitir "1" para sempre.
 
       return {
-        status: issued.status || "issued",
+        status: issued.status || STATUS.ISSUED,
         message: "NFS-e emitida com sucesso (padrão nacional).",
         nfse: issued,
       };
     } catch (err) {
-      const axiosErr = err?.response;
-      const providerData = axiosErr?.data;
-      const providerDetail =
-        providerData && typeof providerData === "object"
-          ? JSON.stringify(providerData)
-          : providerData;
-      const reason =
-        axiosErr?.data?.message ||
-        axiosErr?.data?.error ||
-        axiosErr?.data?.detail ||
-        providerDetail ||
-        err.message ||
-        "Falha ao emitir NFS-e";
+      // ── 4. DESFECHO EM CAMADAS ─────────────────────────────────────────────────────────
+      //
+      // ⚠ Timeout, DNS, 500 do provedor e recusa da Receita eram TODOS `status:"rejected"`, sem
+      // coluna de motivo — e as validações NOSSAS, lançadas de dentro deste mesmo `try`, caíam no
+      // mesmo balde: uma nota que nunca saiu da máquina ficava gravada como recusada pela Receita.
+      const desfecho = classificarFalha(err);
 
       log.error(
         {
-          err: reason,
-          status: axiosErr?.status,
-          data: providerData,
+          camada: desfecho.camada,
+          codigo: desfecho.codigo,
+          err: desfecho.mensagem,
+          status: err?.response?.status,
+          data: desfecho.providerData,
           baseUrl: NFSE_BASE_URL,
           url: requestUrl,
+          rpsSerie: numeracao.rpsSerie,
+          rpsNumero: numeracao.rpsNumero,
+          numeroReutilizavel: desfecho.numeroReutilizavel,
         },
-        "Falha ao enviar NFS-e ao provedor nacional"
+        "Falha ao enviar NFS-e ao sistema nacional"
       );
 
-      const rejected = await NfseRepository.markIssued(record.id, {
-        status: "rejected",
-        codigoVerificacao: null,
-        numeroNfse: null,
-        chaveAcesso: null,
+      const gravado = await NfseRepository.markIssued(record.id, {
+        ...camposDeFalha(desfecho),
         xml: rawXml || null,
-        pdfUrl: null,
       });
 
       return {
-        status: "rejected",
-        message: reason,
-        providerData,
+        status: desfecho.status,
+        camada: desfecho.camada,
+        codigo: desfecho.codigo,
+        message: desfecho.mensagem,
+        correcao: desfecho.correcao,
+        numeroReutilizavel: desfecho.numeroReutilizavel,
+        providerData: desfecho.providerData,
         url: requestUrl,
-        nfse: rejected,
+        nfse: gravado,
       };
     }
   }

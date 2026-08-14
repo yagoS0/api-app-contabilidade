@@ -368,10 +368,21 @@ if (!AUTH_USERS.length)
   log.warn("AUTH_USERS vazio: configure pelo menos um usuário para login/password");
 if (!JWT_SECRET)
   log.warn("JWT_SECRET vazio: tokens JWT não serão emitidos");
-if (!NFSE_CERT_PFX_PATH)
-  log.warn("NFSE_CERT_PFX_PATH ausente: emissão NFS-e ficará pendente");
-if (!NFSE_CERT_PFX_PASSWORD)
-  log.warn("NFSE_CERT_PFX_PASSWORD ausente: emissão NFS-e ficará pendente");
+// ⚠ NFSE_CERT_PFX_PATH / NFSE_CERT_PFX_PASSWORD NÃO SÃO MAIS LIDOS PELA EMISSÃO.
+//
+// Eram um PFX GLOBAL — um arquivo só assinando DPS de qualquer CNPJ da carteira e servindo de mTLS
+// nos três caminhos, sem ninguém conferir de quem ele era. Hoje o certificado é resolvido POR
+// EMPRESA (`application/nfse/nfseCertificado.js`), porque **E0718** exige que a DPS seja assinada
+// pelo certificado do EMITENTE. A ausência de A1 da empresa é uma recusa nomeada
+// (`NO_COMPANY_CERT`), não uma variável de ambiente faltando.
+//
+// O aviso antigo ("emissão NFS-e ficará pendente") virou informação falsa: a emissão não depende
+// mais dessas variáveis. Elas continuam exportadas porque nada garante que não haja consumidor
+// fora daqui; removê-las é limpeza à parte.
+if (NFSE_CERT_PFX_PATH || NFSE_CERT_PFX_PASSWORD)
+  log.warn(
+    "NFSE_CERT_PFX_PATH/PASSWORD definidos, mas NÃO são mais usados: o certificado da NFS-e é o A1 da própria empresa (E0718)"
+  );
 if (!NFSE_BASE_URL)
   log.warn("NFSE_BASE_URL ausente: configure o endpoint do provedor NFS-e Nacional");
 if (NFSE_PATH === "/nfse/v1/rps")
