@@ -1117,6 +1117,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 // (`.passthrough()`) e era DESCARTADO EM SILÊNCIO no `update` — salvar respondia
                 // 200 e o campo voltava vazio na recarga.
                 codigoMunicipioIbge: normalizedCompany.codigoMunicipioIbge,
+                // ⚠ OS TRÊS QUE FALTAVAM. `codigoServicoNacional`, `codigoServicoMunicipal` e
+                // `rpsSerie` já existiam na coluna e já voltavam pelo `legacyCompanySelect` — mas
+                // não havia NENHUM caminho de escrita a partir do portal: o corpo passava pelo Zod
+                // (`.passthrough()`) e morria aqui, nesta lista. `buildMissingFields` recusava a
+                // emissão por eles e o contador não tinha por onde preenchê-los.
+                codigoServicoNacional: normalizedCompany.codigoServicoNacional,
+                codigoServicoMunicipal: normalizedCompany.codigoServicoMunicipal,
+                rpsSerie: normalizedCompany.rpsSerie,
                 // ── Ficha de cadastro ──
                 inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
                 inscricaoEstadual: normalizedCompany.inscricaoEstadual,
@@ -2268,7 +2276,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   router.post("/companies/:companyId/contatos-whatsapp", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     try {
-      const contato = await salvarContato({ portalClientId: req.params.companyId, ...(req.body || {}) });
+      // ⚠ A EMPRESA VEM DEPOIS DO SPREAD, e a ordem é a garantia: com o `portalClientId` antes, um
+      // `portalClientId` no CORPO sobrescrevia o do path — o corpo escolhendo o tenant que a
+      // autorização já havia decidido.
+      const contato = await salvarContato({ ...(req.body || {}), portalClientId: req.params.companyId });
       return res.json({ ok: true, contato });
     } catch (err) {
       // Erro de validação é do USUÁRIO e tem conserto na tela — 400 com a mensagem pronta, não 500.
@@ -2282,7 +2293,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   router.delete("/companies/:companyId/contatos-whatsapp/:contatoId", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     try {
-      await removerContato(req.params.contatoId);
+      // ⚠ A empresa do PATH viaja junto: é ela que a autorização conferiu, e sem ela o alvo seria
+      // escolhido só pelo id — um contato de outra empresa cairia dentro do acesso deste chamador.
+      await removerContato(req.params.companyId, req.params.contatoId);
       return res.json({ ok: true });
     } catch (err) {
       log.error({ err }, "Falha ao remover contato de WhatsApp");

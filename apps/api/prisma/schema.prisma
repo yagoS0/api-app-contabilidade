@@ -168,6 +168,8 @@ model User {
   companyClientUsers CompanyClientUser[]
   companyFirmAccess  CompanyFirmAccess[]
   clientSessions     ClientSession[]
+  /// Contraparte de `contatos_whatsapp.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
+  contatosWhatsapp   ContatoWhatsapp[]
 }
 
 // Sessão revogável do portal do cliente (app mobile). O refresh é opaco (aleatório),
@@ -594,13 +596,30 @@ model ContatoWhatsapp {
   optInEm        DateTime?
   optInOrigem    String? // contrato | formulario | verbal_registrado | …
   ativo          Boolean   @default(true)
+  /// QUEM é a pessoa por trás do número — e o único caminho até o papel dela.
+  ///
+  /// ⚠ `papel` (acima) é RÓTULO DE TELA, texto livre. O papel que decide o que a pessoa pode fazer é
+  /// `CompanyClientUser.role` (FINANCEIRO < CLIENT_ADMIN < OWNER), e ele só é alcançável a partir de
+  /// um `userId`. Sem este ponteiro o vínculo identifica a EMPRESA e diz, com todas as letras, que
+  /// não identifica pessoa nenhuma — casar `nome` com o nome do usuário seria adivinhar quem fala.
+  ///
+  /// ⚠ NULLABLE de propósito: contato do financeiro terceirizado, do sócio sem login no portal, ou
+  /// cadastrado antes de a pessoa ter conta é caso NORMAL. Obrigar o ponteiro tornaria o contato
+  /// incadastrável nesses casos; deixá-lo nulo é a resposta honesta ("não sei quem é").
+  ///
+  /// ⚠ VÍNCULO NÃO É AUTORIZAÇÃO. Este campo dá o caminho até o papel; quem decide continua sendo
+  /// `requireClientCompanyAccess(minRole)`. `onDelete: SetNull` porque apagar o usuário apaga a
+  /// identificação da pessoa, nunca o contato da empresa.
+  userId         String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   portalClient PortalClient @relation(fields: [portalClientId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([portalClientId, telefoneE164])
   @@index([waId])
+  @@index([userId])
   @@map("contatos_whatsapp")
 }
 

@@ -15,6 +15,15 @@ const DDI_BR = "55";
 const digitos = (v) => String(v || "").replace(/\D+/g, "");
 
 /**
+ * O MESMO `digitos` deste arquivo, exportado.
+ *
+ * ⚠ Existe para que `vinculoTelefone.js` compare números pela MESMA leitura de "só os dígitos" que
+ * a normalização usa. Uma segunda regex lá divergiria no primeiro formato novo — e divergir na
+ * comparação de telefone é a diferença entre achar a empresa certa e achar outra.
+ */
+export const somenteDigitos = digitos;
+
+/**
  * Normaliza para E.164 (sem o `+`, que é o formato que a Cloud API espera no campo `to`).
  *
  * Aceita o que o contador digita: "(21) 99999-8888", "21999998888", "5521999998888".

@@ -45,6 +45,102 @@ cd /app/apps/api && node scripts/backfill-envio-guia.mjs            # dry-run
 cd /app/apps/api && node scripts/backfill-envio-guia.mjs --aplicar
 ```
 
+## F1.5 — o VÍNCULO número → empresa (→ pessoa). Verificável sem a Meta
+
+> Feito **antes** da retomada de propósito: é o pedaço que, deixado para depois, contamina todo o
+> resto. Toda mensagem que chegar pelo canal precisa responder *"de quem é esta mensagem, e sobre
+> qual empresa ela fala?"* — e essa resposta não pode ser adivinhada. Zero credencial, zero rede.
+
+**Reusou a F1 inteira em vez de criar tabela nova:** `contatos_whatsapp` já é a tabela certa
+(`portalClientId` + `telefoneE164` + `waId`, unique `(portalClientId, telefoneE164)` — que já
+permitia o mesmo número em várias empresas) e `telefone.js` já tinha a normalização E.164. A única
+coluna nova é o ponteiro para a PESSOA.
+
+| arquivo | papel |
+|---|---|
+| `application/whatsapp/vinculoTelefone.js` | **a REGRA, pura** — sem prisma, mesma disciplina de `fechamentoBlockers.js` / `divergenciaDeFonte.js` |
+| `application/whatsapp/ContatoWhatsappService.js` | a ligação com o banco (`resolverVinculoPorTelefone`, `SELECT_CONTATO_PARA_VINCULO`) |
+| `prisma/migrations/20260814160000_add_contato_whatsapp_usuario/` | ⚠ **escrita, NÃO aplicada** — aditiva, nullable, sem backfill |
+| `scripts/diag-vinculo-whatsapp.mjs` | só leitura, zero chamada externa. **Não foi rodado** (não há banco alcançável nesta máquina) |
+
+Testes: `whatsapp/__tests__/vinculoTelefone.test.js` (22) e `vinculoContatoService.test.js` (13).
+
+### ⚠ Dois furos de multi-tenancy da F1, fechados de passagem
+
+Os dois estavam nas rotas de contato e valiam para o mesmo alvo — o cadastro em que o vínculo se
+apoia. Nenhum tinha teste.
+
+| onde | o que era | hoje |
+|---|---|---|
+| `salvarContato({id})` e `removerContato(id)` | o alvo era escolhido **só pelo id**: um contato de OUTRA empresa era editado/apagado dentro do acesso do chamador | `portalClientId` viaja no `where` das duas (`removerContato` mudou de assinatura: `(portalClientId, id)`) |
+| `POST /companies/:companyId/contatos-whatsapp` | `{ portalClientId: path, ...body }` — um `portalClientId` no **corpo** sobrescrevia o do path | o spread vem **antes**; o path é a última palavra |
+
+### As quatro respostas, cada uma com nome próprio
+
+`SITUACOES` = `TELEFONE_INVALIDO` · `DESCONHECIDO` · `AMBIGUO` · `VINCULADO`.
+
+- ⚠ **`DESCONHECIDO` não vira empresa nenhuma.** Não se casa por CNPJ solto, por nome, por
+  semelhança, nem por "só existe uma empresa com esse DDD". E ele **não** é o mesmo que
+  `TELEFONE_INVALIDO`: ali o número existe e ninguém o cadastrou, aqui não há número — colapsá-los
+  faria lixo digitado parecer cliente novo.
+- ⚠ **`AMBIGUO` tem DUAS naturezas, e as duas viajam em `ambiguidades[]`.** `EMPRESA` (o sócio com
+  três CNPJs; o escritório) e `PESSOA` (dentro da MESMA empresa, o número casou com mais de um
+  contato — possível quando as duas formas do nono dígito estão cadastradas em nomes diferentes).
+  A lista de empresas sobe junto, para o canal **perguntar** de qual se trata.
+- **Nada some em silêncio:** contato inativo deixa de identificar e sai em `descartados[]` com o
+  motivo. Contato **sem opt-in continua identificando** — opt-in é exigência para MANDAR template,
+  não para RECONHECER quem mandou; filtrar por ele faria mensagem de contato conhecido virar
+  "desconhecida" e cair em não-vinculados sem motivo aparente.
+
+### ⚠ VÍNCULO NÃO É AUTORIZAÇÃO
+
+Reconhecer o número diz QUEM é; não diz o que a pessoa pode fazer. O vínculo **devolve o papel e
+para aí** (`papelRbac`, lido de `CompanyClientUser.role`): não há peso, não há comparação, não há
+`podeEmitir`. Quem decide continua sendo `requireClientCompanyAccess(minRole)` —
+FINANCEIRO=1 < CLIENT_ADMIN=2 < OWNER=3. Uma segunda cópia da permissão é sempre a que diverge.
+
+- **`contatos_whatsapp.userId`** (nullable) é o único caminho até esse papel. ⚠ O campo `papel` que
+  já existia é **rótulo de tela** (texto livre: "financeiro", "sócio") e sobe como `rotulo` —
+  deixá-lo passar por papel do RBAC faria um rótulo digitado virar permissão.
+- **Sem `userId` o vínculo identifica a EMPRESA e diz, nomeadamente, que não identifica pessoa**
+  (`MOTIVOS_SEM_PAPEL.SEM_USUARIO`). Casar `nome` com o nome do usuário seria a adivinhação que o
+  módulo existe para não fazer. Nulo é caso NORMAL: financeiro terceirizado, sócio sem login.
+- `salvarContato` **recusa** `userId` de quem não é membro ativo da empresa
+  (`USUARIO_SEM_VINCULO`, 400) — senão o cadastro de contato criaria um vínculo que o RBAC nunca
+  concedeu.
+
+### ⚠ O NONO DÍGITO — DUAS LEITURAS NOMEADAS, e uma pergunta aberta ao dono
+
+`TOLERANCIAS.ESTRITA` (padrão, dígito a dígito) e `TOLERANCIAS.NONO_DIGITO` (usa `variantesE164`).
+**As duas são calculadas sempre**; quando discordam, `divergemPeloNonoDigito` acende e `leituras`
+mostra o que cada uma respondeu. Errar aqui erra nos dois sentidos:
+
+| leitura | o erro dela |
+|---|---|
+| **ESTRITA** | mensagem legítima vinda da outra forma cai em "não vinculado" sem motivo aparente |
+| **NONO_DIGITO** | ⚠ `variantesE164` acrescenta o 9 a **qualquer** número de 8 dígitos, inclusive a um FIXO: `552133334444` gera `5521933334444`, que pode ser o celular de outra empresa. Travado em teste — o teste **fixa o comportamento**, não afirma que ele está certo |
+
+O padrão é ESTRITA porque num ato de consequência o erro barato é perguntar de novo e o erro caro é
+emitir no CNPJ de outro. **A escolha definitiva é do dono** — `scripts/diag-vinculo-whatsapp.mjs`
+mede, na base real, em quantos números as duas leituras discordam.
+
+### ⚠ A busca é SEM escopo de tenant — e isso é o oposto de furar a multi-tenancy
+
+Não existe `portalClientId` para filtrar **antes**: a pergunta da função **é** "de qual tenant se
+trata?". A resposta é o que **produz** o escopo, e todo consumidor tem de usá-la como escopo dali em
+diante — nunca como permissão. A query lança a rede **larga** (as duas formas); quem estreita é a
+regra, com a tolerância escolhida. Fosse a query a estreitar, a leitura alternativa ficaria
+invisível e `divergemPeloNonoDigito` nunca poderia acender.
+
+### O que NÃO foi feito, e por quê
+
+- **Nada de Cloud API, webhook, envio, parser, LLM ou emissão** — F3–F6 seguem paradas por falta de
+  credencial, e escrever o que não se pode exercer é o que a regra 1 proíbe.
+- **Nenhuma rota nova.** O vínculo é exercido por teste e pelo script de diagnóstico; expor uma rota
+  de resolução antes de existir consumidor seria mais superfície inerte.
+- **Nenhuma tela.** ⚠ E isto é uma pendência conhecida: **a F1 subiu sem tela nenhuma** — não há um
+  único chamador de `/contatos-whatsapp` em `apps/web`. Hoje o vínculo só é criável pela API.
+
 ## O que falta (F3 a F6)
 
 Tudo abaixo precisa de credenciais reais para ser verificado:

@@ -213,6 +213,31 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     aba Guias da empresa mostrando "✓ enviado" ao lado. **Com a tabela vazia está tudo correto**
     (medido em produção: 0 registros, e o legado responde por todo mundo). A instrução de backfill
     só volta a valer quando o envio passar a gravar na tabela nova.
+  - **F1.5 — o VÍNCULO número → empresa (→ pessoa)**, feito **antes** da retomada porque é o pedaço
+    que, deixado para depois, contamina todo o resto. Regra **pura** em
+    `application/whatsapp/vinculoTelefone.js` (33 testes ao todo, com a ligação); a ligação com o banco em
+    `ContatoWhatsappService.resolverVinculoPorTelefone`. **Reusou a tabela da F1** — a única coluna
+    nova é `contatos_whatsapp.userId` (migration `20260814160000`, aditiva/nullable, ⚠ **NÃO
+    APLICADA**). Quatro respostas com nome próprio: `TELEFONE_INVALIDO` · **`DESCONHECIDO`** (número
+    não cadastrado **não vira empresa nenhuma** — nada de casar por CNPJ, nome, semelhança ou DDD) ·
+    **`AMBIGUO`** (o sócio com três CNPJs; ambiguidade de `EMPRESA` **e** de `PESSOA`) ·
+    `VINCULADO`.
+    - ⚠ **Vínculo não é autorização.** O módulo devolve `papelRbac` (lido de
+      `CompanyClientUser.role`) e para aí — sem peso, sem `podeEmitir`. Quem decide continua sendo
+      `requireClientCompanyAccess(minRole)`. O campo `papel` do cadastro é **rótulo de tela** e sobe
+      como `rotulo`.
+    - ⚠ **O nono dígito tem DUAS leituras NOMEADAS** (`ESTRITA`, padrão × `NONO_DIGITO`), as duas
+      calculadas sempre, com `divergemPeloNonoDigito` acendendo quando discordam. **A escolha é do
+      dono** — `variantesE164` acrescenta o 9 a qualquer número de 8 dígitos, inclusive a um fixo.
+      Medir na base real: `scripts/diag-vinculo-whatsapp.mjs` (só leitura, zero chamada externa;
+      **não foi rodado** — não há banco alcançável nesta máquina).
+    - ⚠ **Dois furos de multi-tenancy da F1 fechados de passagem**: `salvarContato({id})` e
+      `removerContato` escolhiam o alvo **só pelo id** (contato de outra empresa caía dentro do
+      acesso do chamador), e o `POST` fazia `{portalClientId: path, ...body}` — corpo sobrescrevendo
+      o path. Hoje `portalClientId` viaja no `where` das duas e o spread vem antes.
+      `removerContato` mudou de assinatura: `(portalClientId, id)`.
+    - ⚠ **A F1 subiu sem tela nenhuma** — não há um chamador de `/contatos-whatsapp` em `apps/web`.
+      Hoje o vínculo só é criável pela API. Detalhes em `docs/whatsapp-entrega-1.md`.
   - F3–F6 (Cloud API, webhook, envio em lote, recebimento) **não iniciadas**: dependem de
     credenciais reais. Escrevê-las sem poder exercê-las é o que a regra 1 proíbe — e o
     `CONSDECCOMPLETA33` do LP está OFF até hoje por exatamente isso.
