@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import fssync from "node:fs";
+import { dataCivilBR } from "../utils/dataCivil.js";
 
 const LOCK_ID = "guides_email_lock";
 const LOCK_TTL_MS = 5 * 60 * 1000;
@@ -77,9 +78,10 @@ async function processOneGuide({ guide, emailService }) {
     const typeLabel = guideTypeEmailLabel(source.tipo);
     const competenciaLabel = escapeHtml(source.competencia || "—");
     const typeLabelSafe = escapeHtml(typeLabel);
-    const vencFmt = source.vencimento
-      ? escapeHtml(new Date(source.vencimento).toLocaleDateString("pt-BR"))
-      : null;
+    // ⚠ `Guide.vencimento` é DATA CIVIL gravada em meia-noite UTC (6 de 6 conferidos em produção),
+    // e `toLocaleDateString` sem fuso usava o do processo (`TZ=America/Sao_Paulo`) — o e-mail
+    // anunciava ao CLIENTE um vencimento um dia ANTES do real. Ver `utils/dataCivil.js`.
+    const vencFmt = source.vencimento ? escapeHtml(dataCivilBR(source.vencimento)) : null;
 
     const subject = `Sua guia de ${typeLabel} — ${source.competencia || "—"}`;
     // Nome do anexo = nome da guia (label + competência), sem tipo cru / origem SERPRO.

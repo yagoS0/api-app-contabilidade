@@ -18,6 +18,7 @@ import { CONTA_JUROS, CONTA_MULTA, CONTAS_ACRESCIMO } from "../../application/ac
 import { tipoLinhaDaBaixa } from "../../application/accounting/tipoLinhaBaixa.js";
 import { marcarSemFaturamento } from "../../application/accounting/semFaturamento.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
+import { dataCivilBR } from "../../utils/dataCivil.js";
 import {
   computeFechamentoBlockers, SELECT_PARA_BLOQUEIOS,
   CHECKLIST_FECHAMENTO, CHECKLIST_SELECT, checklistPendentes,
@@ -617,8 +618,26 @@ function entriesToCsv(entries) {
   const sanitize = (s) => String(s || "").replace(/;/g, " ").replace(/[\r\n]+/g, " ").trim();
   const fmtValor = (v) => Number(v || 0).toFixed(2).replace(".", ",");
 
+  // ⚠ A DATA É CIVIL, NÃO É INSTANTE — e converter para o fuso do servidor tirava um dia de TODO
+  // lançamento exportado.
+  //
+  // `AccountingEntry.data` é gravada como MEIA-NOITE UTC (`2026-05-12T00:00:00.000Z`): ela
+  // representa o DIA do lançamento, não um momento. O código antigo fazia
+  // `new Date(e.data).toLocaleDateString("pt-BR")`, **sem `timeZone`** — e `toLocaleDateString` usa
+  // o fuso do PROCESSO. Em produção `TZ=America/Sao_Paulo`, então meia-noite UTC vira 21h do dia
+  // ANTERIOR e o CSV imprimia **11/05** para o lançamento do dia **12/05**.
+  //
+  // Medido em 13/08/2026, relatado pelo dono ("na minha tabela não tem 26/5 nem 11/5, mas o export
+  // tem"): os 621 lançamentos da base saíam com a data um dia antes, e **15 deles mudavam de MÊS**
+  // (os gravados no dia 1º viravam o último dia do mês anterior). Como este CSV é consumido por
+  // sistema contábil externo, isso não é cosmético: é lançamento entrando na competência errada.
+  //
+  // ⚠ A TABELA SEMPRE ESTEVE CERTA — ela usa `String(entry.data).slice(0, 10)`
+  // (`renderAccountingEntriesParts.jsx`), que fatia a ISO sem converter fuso nenhum. Quem divergia
+  // era o export. A regra vive em `utils/dataCivil.js` porque este NÃO é o único lugar: o e-mail
+  // de guia ao cliente tinha o mesmo defeito com `Guide.vencimento`.
   for (const e of entries) {
-    const data = e.data ? new Date(e.data).toLocaleDateString("pt-BR") : "";
+    const data = dataCivilBR(e.data);
     const entryHistorico = sanitize(e.historico);
     const lines = e.lines || [];
     const debits = lines.filter((l) => String(l.tipo).toUpperCase() === "D");
