@@ -20,16 +20,29 @@ const noop = () => {};
 // ⚠ O município emissor vem PREENCHIDO por padrão aqui porque, sem ele, a empresa não emite e o
 // assistente trava no primeiro passo — os demais testes falariam pelo motivo errado. O caso da
 // ausência tem teste próprio, no fim do arquivo.
+// ⚠ E o cadastro de emissão também vem COMPLETO por padrão, pelo mesmo motivo: `buildMissingFields`
+// recusa a emissão sem ele, e o assistente passou a dizer isso no passo 1. Os valores são os do
+// exemplo real de `docs/nfse-preenchimento.md` §12.
+const CADASTRO_COMPLETO = {
+  cnpj: "39254243000191",
+  inscricaoMunicipal: "1.234.567-8",
+  codigoServicoNacional: "171201",
+  codigoServicoMunicipal: "001",
+  rpsSerie: "00001",
+};
+
 function abrir({
   onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} })),
   regime = "SIMPLES",
   codigoMunicipioIbge = "3304557",
+  cadastroEmissao = CADASTRO_COMPLETO,
 } = {}) {
   render(
     <EmitirNfseWizard
       companyId="c-1"
       regime={regime}
       codigoMunicipioIbge={codigoMunicipioIbge}
+      cadastroEmissao={cadastroEmissao}
       onEmitir={onEmitir}
       onClose={noop}
     />
@@ -235,5 +248,63 @@ describe("empresa sem município emissor não chega ao botão Emitir", () => {
     digitar("CNPJ ou CPF do tomador", "12345678000199");
     digitar("Nome ou razão social", "ACME LTDA");
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
+  });
+});
+
+// ⚠ A RECUSA `company_missing_fields` NÃO TINHA LEITOR NA INTERFACE.
+// `buildMissingFields` (`api/application/nfse/NfseService.js`) recusa a emissão sem `cnpj`,
+// `inscricaoMunicipal`, `codigoServicoNacional`, `codigoServicoMunicipal` e `rpsSerie`; a rota
+// devolve `400 { error: "company_missing_fields", missing: [...] }` — e essa lista morria ali.
+// Três dos cinco campos, ainda por cima, não existiam em formulário nenhum: a emissão recusava por
+// eles e não havia por onde preenchê-los. Metade do defeito era o campo; a outra metade era esta.
+describe("empresa sem a configuração de emissão não chega ao botão Emitir", () => {
+  it("bloqueia no passo 1 nomeando CADA campo que falta e ONDE preenchê-lo", () => {
+    abrir({ cadastroEmissao: { cnpj: "39254243000191", inscricaoMunicipal: "1.234.567-8" } });
+
+    const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
+    // Nome de coluna (`codigoServicoNacional`) não diz nada a ninguém; rótulo e lugar, sim.
+    expect(bloco).toHaveTextContent("Código nacional do serviço");
+    expect(bloco).toHaveTextContent("Código municipal do serviço");
+    expect(bloco).toHaveTextContent("Série da DPS");
+    expect(bloco).toHaveTextContent("Editar cadastro → Emissão de NFS-e");
+    // E não acusa o que ESTÁ preenchido.
+    expect(bloco).not.toHaveTextContent("Inscrição municipal");
+
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  });
+
+  it("a inscrição municipal também é exigida — ela está na lista do servidor", () => {
+    abrir({ cadastroEmissao: { ...CADASTRO_COMPLETO, inscricaoMunicipal: null } });
+
+    const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
+    expect(bloco).toHaveTextContent("Inscrição municipal");
+    expect(bloco).toHaveTextContent("Editar cadastro → Inscrições");
+  });
+
+  it("município ausente E configuração ausente aparecem JUNTOS — são recusas diferentes", () => {
+    // O município é recusado por `resolverCLocEmi` (`NFSE_MUNICIPIO_NAO_CONFIGURADO`) e o resto por
+    // `buildMissingFields`. Mostrar um de cada vez faria o contador resolver, voltar e levar outro
+    // "não" — que é a experiência que este bloco existe para acabar.
+    abrir({ codigoMunicipioIbge: null, cadastroEmissao: {} });
+
+    const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
+    expect(bloco).toHaveTextContent("recusa a emissão inteira");
+    expect(bloco).toHaveTextContent("Série da DPS");
+  });
+
+  it("com tudo cadastrado o bloqueio some e o passo 1 anda", () => {
+    abrir();
+
+    expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
+    digitar("CNPJ ou CPF do tomador", "12345678000199");
+    digitar("Nome ou razão social", "ACME LTDA");
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
+  });
+
+  it("⚠ sem a prop o assistente NÃO afirma que falta tudo — quem não sabe, cala", () => {
+    // A prop ausente quer dizer "esta tela não recebeu o cadastro", não "o cadastro está vazio".
+    // Tratar as duas como a mesma coisa bloquearia a emissão de empresa configurada.
+    abrir({ cadastroEmissao: null });
+    expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
   });
 });

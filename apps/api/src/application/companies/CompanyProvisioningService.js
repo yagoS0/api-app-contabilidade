@@ -190,6 +190,13 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
           // mais nada: a BrasilAPI devolve o município como texto, e converter esse texto em código
           // erraria em homônimo. Empresa criada sem ele simplesmente não emite até alguém escolher.
           codigoMunicipioIbge: normalizedCompany.codigoMunicipioIbge,
+          // Configuração da emissão de NFS-e. ⚠ Mesma regra do município: **nada é derivado**. Nem
+          // o CNAE nem a atividade da BrasilAPI viram código de serviço — a lista da LC 116 e a do
+          // município não existem neste repositório, e inventá-las é o que a regra 1 proíbe.
+          // Empresa criada sem eles não emite, e o cadastro diz isso antes de alguém tentar.
+          codigoServicoNacional: normalizedCompany.codigoServicoNacional,
+          codigoServicoMunicipal: normalizedCompany.codigoServicoMunicipal,
+          rpsSerie: normalizedCompany.rpsSerie,
           // ── Ficha de cadastro (muito disso já vem preenchido da BrasilAPI) ──
           inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
           inscricaoEstadual: normalizedCompany.inscricaoEstadual,

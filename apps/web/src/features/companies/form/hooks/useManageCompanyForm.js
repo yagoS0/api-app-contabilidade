@@ -30,6 +30,12 @@ export function getInitialCompanyFormState() {
     // Código IBGE (7 dígitos) do município EMISSOR da NFS-e — o `cLocEmi` da DPS. Nasce vazio e
     // NUNCA é pré-preenchido: o contador escolhe na lista oficial (ver `SeletorMunicipioIbge`).
     codigoMunicipioIbge: "",
+    // Configuração da emissão de NFS-e (`cTribNac`, `cTribMun` e a série da DPS). ⚠ Nascem vazios e
+    // NUNCA são pré-preenchidos — nem a série: ela entra no identificador de toda nota emitida, e um
+    // valor escolhido pelo sistema seria indistinguível de um valor conferido pelo contador.
+    codigoServicoNacional: "",
+    codigoServicoMunicipal: "",
+    rpsSerie: "",
     inscricaoEstadual: "",
     inscricaoEstadualData: "",
     porte: "",
@@ -87,6 +93,12 @@ export function mapCompanyToEditForm(company) {
     // ⚠ Só de `legacyCompany`: a coluna vive em `Company`, não em `PortalClient`. Ler o
     // `municipio`/`uf` do topo como fallback seria transformar o TEXTO do endereço em código.
     codigoMunicipioIbge: String(legacy?.codigoMunicipioIbge || "").trim(),
+    // ⚠ Só de `legacyCompany`: as três colunas vivem em `Company`, não em `PortalClient`. E nada de
+    // fallback derivado (CNAE → código de serviço, ou uma série "1" quando vier vazio): campo vazio
+    // aqui é a informação de que a empresa não está configurada para emitir.
+    codigoServicoNacional: String(legacy?.codigoServicoNacional || "").trim(),
+    codigoServicoMunicipal: String(legacy?.codigoServicoMunicipal || "").trim(),
+    rpsSerie: String(legacy?.rpsSerie || "").trim(),
     inscricaoEstadual: String(legacy?.inscricaoEstadual || "").trim(),
     inscricaoEstadualData: toDateInput(legacy?.inscricaoEstadualData),
     porte: String(legacy?.porte || "").trim(),

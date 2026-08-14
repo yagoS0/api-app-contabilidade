@@ -157,6 +157,14 @@ function buildCompanyPayload(input) {
       // precisa poder voltar a ser gravado, senão limpar uma escolha errada seria impossível pela
       // tela. Quem recusa formato inválido é o normalizador do backend (e o CHECK do banco).
       codigoMunicipioIbge: txt(input.codigoMunicipioIbge),
+      // ── Configuração da emissão de NFS-e ──
+      // ⚠ Estes três já existiam na coluna e já voltavam na leitura, mas NENHUM formulário os
+      // mandava: o campo não existia em tela nenhuma. `buildMissingFields` recusava a emissão por
+      // eles e não havia por onde preenchê-los. Vão como `null` quando em branco, pelo mesmo motivo
+      // do município: desfazer uma configuração errada tem de ser possível pela tela.
+      codigoServicoNacional: txt(input.codigoServicoNacional),
+      codigoServicoMunicipal: txt(input.codigoServicoMunicipal),
+      rpsSerie: txt(input.rpsSerie),
       inscricaoEstadual: txt(input.inscricaoEstadual),
       inscricaoEstadualData: omitIfEmpty(input.inscricaoEstadualData),
       porte: txt(input.porte),

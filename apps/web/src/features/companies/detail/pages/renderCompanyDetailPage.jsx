@@ -636,6 +636,17 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 /* Município emissor da DPS — mesma fonte do formulário (`legacyCompany`), nunca o
                    `municipio` de texto do topo do payload. */
                 codigoMunicipioIbge={selectedCompany?.legacyCompany?.codigoMunicipioIbge || null}
+                /* ⚠ O QUE `buildMissingFields` CONFERE, lido da MESMA linha que ele lê: a `Company`
+                   (aqui, `legacyCompany`) — nunca o `inscricaoMunicipal` do topo do payload, que é
+                   do `PortalClient` e pode estar preenchido enquanto a coluna da `Company` não
+                   está. Ler do lugar errado faria a tela liberar uma emissão que o servidor recusa. */
+                cadastroEmissao={{
+                  cnpj: selectedCompany?.legacyCompany?.cnpj || selectedCompany?.cnpj || null,
+                  inscricaoMunicipal: selectedCompany?.legacyCompany?.inscricaoMunicipal || null,
+                  codigoServicoNacional: selectedCompany?.legacyCompany?.codigoServicoNacional || null,
+                  codigoServicoMunicipal: selectedCompany?.legacyCompany?.codigoServicoMunicipal || null,
+                  rpsSerie: selectedCompany?.legacyCompany?.rpsSerie || null,
+                }}
               />
             </Suspense>
           </ErrorBoundary>

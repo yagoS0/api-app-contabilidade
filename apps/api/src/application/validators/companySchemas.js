@@ -33,6 +33,13 @@ const companyBaseFields = {
   // ⚠ Precisa estar declarado aqui mesmo assim: `company` é um `z.object` sem `passthrough`, e
   // chave não declarada é removida do `parsed.data` sem erro nenhum.
   codigoMunicipioIbge: z.string().max(20).optional().nullable(),
+  // Configuração da emissão de NFS-e (`cTribNac`, `cTribMun` e a série da DPS). Mesmo motivo do
+  // campo acima: `company` é um `z.object` SEM `passthrough`, e chave não declarada some do
+  // `parsed.data` sem erro nenhum. Quem diz a forma de cada uma é
+  // `validateAndNormalizeCompanyProfile`, num lugar só, junto do motivo da recusa.
+  codigoServicoNacional: z.string().max(20).optional().nullable(),
+  codigoServicoMunicipal: z.string().max(20).optional().nullable(),
+  rpsSerie: z.string().max(20).optional().nullable(),
   cnaePrincipal: z.string().max(20).optional().nullable(),
   cnaesSecundarios: z.array(z.string().max(20)).max(50).optional(),
   regimeTributario: z.enum(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI", "OUTRO"]).optional().nullable(),

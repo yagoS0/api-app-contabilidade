@@ -1,4 +1,5 @@
 import { Button } from "../../../../components/ui/Button";
+import { faltasParaEmitir } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 // Ficha de cadastro — READ-ONLY, no formato da ficha que o escritório já usa em planilha.
 // É a tela de consulta do dia a dia: antes, a única forma de ver o cadastro era abrir o
@@ -79,6 +80,13 @@ function Bloco({ titulo, children, cols = 3 }) {
 export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
   const c = selectedCompany || {};
   const lg = c.legacyCompany || {};
+  // ⚠ Lido da MESMA linha que `buildMissingFields` lê — a `Company` (`legacyCompany`). A inscrição
+  // municipal do topo do payload é do `PortalClient` e pode estar preenchida enquanto a coluna da
+  // `Company` não está; a ficha diria "está tudo certo" e a emissão recusaria mesmo assim.
+  // ⚠ `cnpj` NÃO está no `legacyCompanySelect` da rota — ele só volta no topo do payload (o
+  // `PortalClient`). Sem o fallback a ficha acusaria "falta o CNPJ" em TODA empresa, que é o
+  // oposto do que este aviso existe para fazer. É o único campo desta lista com duas fontes.
+  const faltasDaEmissao = faltasParaEmitir({ ...lg, cnpj: lg.cnpj || c.cnpj });
   const end = lg.enderecoJson && typeof lg.enderecoJson === "object" ? lg.enderecoJson : {};
   const socios = Array.isArray(lg.partners) ? lg.partners : [];
   const historico = Array.isArray(lg.regimeHistorico) ? lg.regimeHistorico : [];
@@ -162,6 +170,30 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
           <div style={{ gridColumn: "span 3", fontSize: "0.75rem", color: "#FFB347" }}>
             Sem o município emissor esta empresa não emite nota de serviço — o servidor recusa a
             emissão. Preencha em <strong>Editar</strong>, escolhendo o município na lista do IBGE.
+          </div>
+        )}
+      </Bloco>
+
+      {/* ⚠ BLOCO PRÓPRIO, e não mais três linhas soltas em "Registros e inscrições": estes campos
+          não descrevem a empresa, descrevem a NOTA que este sistema emite por ela. Eles são o que
+          `buildMissingFields` confere, e até agora não apareciam em tela nenhuma — a emissão
+          recusava por eles e não havia por onde preenchê-los. */}
+      <Bloco titulo="Emissão de NFS-e">
+        <Campo label="Código nacional do serviço" value={lg.codigoServicoNacional} />
+        <Campo label="Código municipal do serviço" value={lg.codigoServicoMunicipal} />
+        <Campo label="Série da DPS" value={lg.rpsSerie} />
+        {faltasDaEmissao.length > 0 && (
+          <div style={{ gridColumn: "span 3", fontSize: "0.75rem", color: "#FFB347" }}>
+            {/* ⚠ Nomeia QUAL campo falta E ONDE ele fica. "Configuração incompleta" mandaria o
+                contador procurar; e os campos não moram todos no mesmo bloco do formulário — a
+                inscrição municipal fica em Inscrições, os outros em Emissão de NFS-e. */}
+            Enquanto faltar o que está abaixo, esta empresa <strong>não emite nota de serviço</strong>:
+            o servidor recusa a emissão inteira.
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {faltasDaEmissao.map((f) => (
+                <li key={f.campo}>{f.rotulo} — preencha em <strong>Editar</strong> → {f.onde.replace("Editar cadastro → ", "")}</li>
+              ))}
+            </ul>
           </div>
         )}
       </Bloco>

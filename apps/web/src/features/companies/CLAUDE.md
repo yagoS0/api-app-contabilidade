@@ -242,6 +242,44 @@ buscadas em runtime; o arquivo diz no cabeçalho como atualizar).
   `PortalClient`). Tem de estar em `legacyCompanySelect` (`routes/firm/index.js`), senão volta
   `undefined` e o formulário reabre vazio.
 
+## Emissão de NFS-e — os três campos DIGITADOS, e por que não viraram lista
+
+Bloco **"Emissão de NFS-e"** no formulário de edição, logo abaixo de Inscrições (onde o seletor de
+município já estava). Componente `form/components/CamposEmissaoNfse.jsx`; regra em
+`lib/nfse/cadastroEmissaoNfse.js`. São `codigoServicoNacional` (`cTribNac`),
+`codigoServicoMunicipal` (`cTribMun`) e `rpsSerie`.
+
+⚠ **Eles existiam no banco e na API e NÃO existiam em tela nenhuma.** `buildMissingFields` recusava
+a emissão por eles e não havia por onde preenchê-los — a mesma classe de defeito do município.
+
+- ⚠ **Digitado, não selecionado, e a diferença é o que existe no repositório.** O município virou
+  seletor porque a lista do IBGE está versionada aqui. A lista de serviços da **LC 116** e a lista
+  do **município** **não estão** — escrevê-las de memória, ou deduzi-las do CNAE, produziria nota
+  emitida com o serviço errado. Valida-se **forma**, nunca conteúdo; e a tela **diz** que não
+  confere o conteúdo, em vez de deixar parecer que confere.
+- ⚠ **NADA é pré-preenchido, nem a série.** `"1"` parece inofensivo e entra no identificador de
+  toda nota emitida: um valor escolhido pelo sistema seria indistinguível de um conferido pelo
+  contador. Campo vazio é a verdade sobre uma empresa não configurada.
+- **A forma, e a fonte de cada uma:** `cTribNac` 6 dígitos e `cTribMun` só dígitos
+  (`docs/nfse-preenchimento.md` §5); série 1–49999 (RN **E0010**, emissor por aplicativo próprio,
+  espelhando `nfseNumeracao.js`). ⚠ A faixa vive nos dois lados por não haver código compartilhado
+  entre front e back — se ela mudar no backend, muda aqui.
+- ⚠ **O corte dos últimos 3 dígitos do `cTribMun` é ANUNCIADO.** `buildDpsXml` faz `.slice(-3)`;
+  sem o aviso o contador informa `10203` e a nota sai com `203`, descoberto depois da emissão. O
+  comprimento do código municipal **não está provado** — por isso o campo aceita qualquer tamanho.
+- **A ausência aparece em três lugares**, todos antes da tentativa: no formulário (caixa âmbar
+  nomeando quais faltam), na **ficha** (bloco próprio, com o aviso) e no `EmitirNfseWizard`, que
+  **bloqueia no passo 1** com rótulo, motivo e onde preencher.
+- ⚠ **`faltasParaEmitir` é o espelho de `REQUIRED_COMPANY_FIELDS`** (backend), na mesma ordem, com
+  teste amarrando as duas listas. Mudou lá, muda aqui — senão a tela promete um desfecho e o
+  servidor entrega outro.
+- ⚠ **Lê-se de `legacyCompany`, não do topo do payload.** `buildMissingFields` confere a linha de
+  `Company`; a `inscricaoMunicipal` do topo é do `PortalClient` e pode estar preenchida enquanto a
+  coluna da `Company` não está. **Exceção única: `cnpj`**, que não está no `legacyCompanySelect` e
+  só volta no topo — sem esse fallback a ficha acusaria "falta o CNPJ" em toda empresa.
+- ⚠ **Prop ausente ≠ cadastro vazio.** `cadastroEmissao={null}` quer dizer "esta tela não recebeu o
+  cadastro" e **não bloqueia nada**; tratar as duas como iguais travaria empresa configurada.
+
 ## ⚠ Regime da empresa mora em `legacyCompany`
 
 `selectedCompany.regimeTributario` **não existe** — `buildFirmCompanyPayload` só devolve o regime

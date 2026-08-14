@@ -5,6 +5,7 @@ import { Button } from "../../../../components/ui/Button";
 import { companyCreateFormSchema, companyUpdateFormSchema } from "../../../../lib/schemas/companySchema";
 import { passwordChecklist } from "../../../../lib/schemas/passwordPolicy";
 import { SeletorMunicipioIbge } from "./SeletorMunicipioIbge";
+import { CamposEmissaoNfse } from "./CamposEmissaoNfse";
 
 // Q11.2: estilo padrão pra mensagens de erro inline (vermelho, abaixo do input)
 const ERROR_TEXT_STYLE = {
@@ -623,6 +624,22 @@ export function CompanyForm({
         <input type="date" value={form.inscricaoEstadualData} onChange={(event) => onChange("inscricaoEstadualData", event.target.value)} />
       </label>
       <div />
+
+      {/* ⚠ OS TRÊS CAMPOS QUE FALTAVAM FICAM AQUI, encostados no bloco Inscrições e no seletor de
+          município — juntos eles são exatamente o que `buildMissingFields` do emissor de NFS-e
+          exige, e o contador já vem a esta parte do formulário para preenchê-los. Bloco próprio, e
+          não mais três campos soltos em "Inscrições", porque o nome do grupo é o que responde
+          "para que serve isto?" a quem nunca vai emitir nota de serviço. */}
+      <CamposEmissaoNfse
+        codigoServicoNacional={form.codigoServicoNacional}
+        codigoServicoMunicipal={form.codigoServicoMunicipal}
+        rpsSerie={form.rpsSerie}
+        onChange={onChange}
+      />
+
+      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Alterações contratuais</strong>
+      </div>
       <label>
         Nº da última alteração
         <input value={form.alteracaoNumero} onChange={(event) => onChange("alteracaoNumero", event.target.value)} placeholder="2" />

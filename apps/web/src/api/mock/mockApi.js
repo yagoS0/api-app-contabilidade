@@ -187,6 +187,18 @@ function makeCompanies(count = 6) {
         inscricaoEstadual: i === 1 ? "11.222.333" : "",
         // Código do IBGE (7 dígitos) — o `cLocEmi` da DPS. Nulo = empresa que ainda não emite.
         codigoMunicipioIbge: ehMangaratiba ? "3302601" : null,
+        // ⚠ A CONFIGURAÇÃO DE EMISSÃO EM DOIS ESTADOS, e pelo mesmo motivo do município: são duas
+        // telas diferentes. Medido em produção, NENHUMA das 33 empresas tem estes campos — as
+        // colunas existem desde sempre e não havia formulário que as escrevesse. O mock precisa do
+        // caso "empresa não configurada" (a maioria, que o cadastro e o assistente têm de recusar
+        // ANTES da tentativa) e do caso configurado, para o caminho normal existir offline.
+        // Só a de Mangaratiba vem completa — a mesma que já tinha município.
+        inscricaoMunicipal: ehMangaratiba ? "1.234.567-8" : "",
+        // ⚠ NADA aqui é derivado do CNAE nem da atividade: a lista da LC 116 e a do município não
+        // existem no projeto. Estes valores são os do exemplo real de `docs/nfse-preenchimento.md`.
+        codigoServicoNacional: ehMangaratiba ? "171201" : null,
+        codigoServicoMunicipal: ehMangaratiba ? "001" : null,
+        rpsSerie: ehMangaratiba ? "00001" : null,
       },
       // Recalculado a cada `listCompanies` (ver abaixo) — aqui é só o valor inicial da carga.
       guideCompliance: mockGuideComplianceRow({ companyId, indice: i, hasProlabore, regimeTributario }),
@@ -1219,6 +1231,63 @@ function normalizarCodigoMunicipioIbgeMock(valor, atual) {
   return digitos;
 }
 
+/**
+ * Os TRÊS campos da emissão de NFS-e, com a MESMA regra do backend
+ * (`validateAndNormalizeCompanyProfile`) e os MESMOS códigos de erro. Um mock permissivo aqui
+ * deixaria passar offline exatamente o valor que o servidor recusa.
+ *
+ * Três respostas em cada um, como no município: ausente = não mexer · vazio = limpar · válido =
+ * gravar (já normalizado, para que a recarga mostre o que ficou gravado de verdade).
+ *
+ * ⚠ Nada é inventado nem sugerido: a forma de cada campo sai de fonte já versionada no repositório
+ * (`docs/nfse-preenchimento.md` §5 para os dois códigos; RN E0010 / `nfseNumeracao.js` para a
+ * série). O CONTEÚDO — qual serviço é qual código — não é conferido em lugar nenhum, porque as
+ * listas não estão no projeto.
+ */
+function normalizarCamposEmissaoNfseMock(entrada, atuais) {
+  const so = (v) => String(v ?? "").trim().replace(/\D+/g, "");
+  const resultado = {};
+
+  if (entrada.codigoServicoNacional === undefined) {
+    resultado.codigoServicoNacional = atuais.codigoServicoNacional ?? null;
+  } else if (!String(entrada.codigoServicoNacional ?? "").trim()) {
+    resultado.codigoServicoNacional = null;
+  } else {
+    const d = so(entrada.codigoServicoNacional);
+    if (d.length !== 6) throw new Error("company_codigo_servico_nacional_invalid");
+    resultado.codigoServicoNacional = d;
+  }
+
+  if (entrada.codigoServicoMunicipal === undefined) {
+    resultado.codigoServicoMunicipal = atuais.codigoServicoMunicipal ?? null;
+  } else if (!String(entrada.codigoServicoMunicipal ?? "").trim()) {
+    resultado.codigoServicoMunicipal = null;
+  } else {
+    const d = so(entrada.codigoServicoMunicipal);
+    // Sem comprimento fixo: a fonte prova que o XML leva os ÚLTIMOS 3 dígitos, não que o código
+    // publicado pelo município tenha 3.
+    if (!d) throw new Error("company_codigo_servico_municipal_invalid");
+    resultado.codigoServicoMunicipal = d;
+  }
+
+  if (entrada.rpsSerie === undefined) {
+    resultado.rpsSerie = atuais.rpsSerie ?? null;
+  } else if (!String(entrada.rpsSerie ?? "").trim()) {
+    resultado.rpsSerie = null;
+  } else {
+    const bruta = String(entrada.rpsSerie).trim();
+    const n = Number(bruta);
+    // ⚠ "UNICA" é RECUSA, nunca conversão — a tradução "letra vira número" foi abandonada no
+    // backend de propósito (série é identificação fiscal).
+    if (!/^\d+$/.test(bruta) || !Number.isInteger(n) || n < 1 || n > 49999) {
+      throw new Error("company_rps_serie_invalid");
+    }
+    resultado.rpsSerie = String(n).padStart(5, "0");
+  }
+
+  return resultado;
+}
+
 function buildCompanyPayload(input) {
   const ownerEmail = String(input.ownerEmail || "").trim().toLowerCase();
   const guideEmail =
@@ -1251,6 +1320,9 @@ function buildCompanyPayload(input) {
       regimeTributario,
       tipoTributario: regimeTributario,
       codigoMunicipioIbge: normalizarCodigoMunicipioIbgeMock(input.codigoMunicipioIbge, null),
+      // Mesma regra dos três campos de emissão: só o que foi DIGITADO no formulário. Empresa nova
+      // nasce sem eles e não emite — que é a verdade sobre uma empresa que ninguém configurou.
+      ...normalizarCamposEmissaoNfseMock(input, {}),
     },
     guideCompliance: mockGuideComplianceRow({ hasProlabore, regimeTributario, inssOk: true, dasOk: true }),
   };
@@ -2657,6 +2729,14 @@ export function createMockApi() {
           companyInput.codigoMunicipioIbge,
           legacyCurrent.codigoMunicipioIbge ?? null,
         ),
+        // ⚠ A rota real grava a IM nos DOIS lados (`PortalClient` e `Company`), e quem
+        // `buildMissingFields` lê é o da `Company` — ou seja, o `legacyCompany` daqui. Sem esta
+        // linha o assistente diria "falta inscrição municipal" offline mesmo depois de salvá-la.
+        inscricaoMunicipal: next.inscricaoMunicipal,
+        // ⚠ MESMA REGRA DO REAL nos três, com os MESMOS códigos de erro. Sem isto, a edição virava
+        // no-op offline: salvar, recarregar e ver o valor velho parece campo descartado pelo
+        // backend — que é exatamente o defeito que este trabalho consertou no real.
+        ...normalizarCamposEmissaoNfseMock(companyInput, legacyCurrent),
         enderecoJson: {
           rua: String(endereco.rua || legacyCurrent.enderecoJson?.rua || "").trim() || null,
           numero: String(endereco.numero || legacyCurrent.enderecoJson?.numero || "").trim() || null,
@@ -4982,6 +5062,17 @@ export function createMockApi() {
       const empresa = mockCompanies.find((c) => c.companyId === payload?.companyId);
       if (empresa && !String(empresa.legacyCompany?.codigoMunicipioIbge || "").trim()) {
         throw new Error("nfse_municipio_nao_configurado");
+      }
+      // ⚠ E `buildMissingFields` recusa ANTES DE TUDO — antes até do certificado. Estes três campos
+      // existiam na coluna e não tinham formulário: a emissão recusava por eles e não havia por
+      // onde preenchê-los. Agora há, e o mock precisa recusar igual, senão o caminho da empresa
+      // não configurada volta a passar offline e a morrer só no real.
+      const faltando = ["inscricaoMunicipal", "codigoServicoNacional", "codigoServicoMunicipal", "rpsSerie"]
+        .filter((campo) => empresa && !String(empresa.legacyCompany?.[campo] || "").trim());
+      if (faltando.length) {
+        const err = new Error("company_missing_fields");
+        err.missing = faltando;
+        throw err;
       }
       const doc = String(payload?.tomador?.cnpjCpf || "").replace(/\D/g, "");
       if (doc.length !== 11 && doc.length !== 14) throw new Error("tomador_documento_invalido");

@@ -472,6 +472,50 @@ constante `DPS_VERSAO`, num lugar só, para virar em uma linha.
    deduz do endereço do tomador** (LC 116/2003, art. 3º: `caput` + lista fechada de exceções). Virou
    campo informável; ausente aplica a regra geral **e registra a suposição no log**.
 
+### ⚠ `buildMissingFields` exige CINCO campos — e três deles não tinham porta nenhuma
+
+`REQUIRED_COMPANY_FIELDS` = `cnpj` · `inscricaoMunicipal` · `codigoServicoNacional` ·
+`codigoServicoMunicipal` · `rpsSerie`. Os três últimos existiam no `schema.prisma`, na API e no
+`legacyCompanySelect` (ou seja, **voltavam** para a tela) e **não tinham campo em formulário
+nenhum**: a emissão recusava por eles e não havia por onde preenchê-los pelo portal. Mesma classe do
+defeito do município — configuração que existe no model sem porta.
+
+- **Caminho backend, os três:** `validateAndNormalizeCompanyProfile` normaliza e devolve, o Zod
+  (`companySchemas.js`) declara, `tx.company.update` e `CompanyProvisioningService` gravam. ⚠ Faltar
+  em **qualquer** um desses quatro lugares = 200 com o valor jogado fora, em silêncio.
+  Regressão: `routes/firm/__tests__/companyCamposNfse.test.js` (14 testes; removendo as três linhas
+  do `update`, **seis** caem com `undefined`).
+- **A forma de cada um, e só a forma** — o CONTEÚDO não é conferido em lugar nenhum:
+  | campo | regra | erro | fonte **no repositório** |
+  |---|---|---|---|
+  | `codigoServicoNacional` (`cTribNac`) | 6 dígitos | `company_codigo_servico_nacional_invalid` | `docs/nfse-preenchimento.md` §5/§11/§12 |
+  | `codigoServicoMunicipal` (`cTribMun`) | só dígitos, **sem comprimento fixo** | `company_codigo_servico_municipal_invalid` | idem §5 |
+  | `rpsSerie` | numérica, 1–49999, gravada com 5 dígitos | `company_rps_serie_invalid` | RN **E0010** via `nfseNumeracao.js` |
+- ⚠ **NÃO EXISTE no projeto a lista de serviços da LC 116 nem a lista do município**, e por isso o
+  campo é **digitado**, não selecionado (o oposto do município, cuja lista do IBGE está versionada).
+  Nenhum de-para CNAE→serviço, nenhuma sugestão, nenhum default — inclusive **nenhuma série "1"**
+  pré-preenchida: a série entra no identificador de toda nota emitida.
+- ⚠ **O comprimento do `cTribMun` NÃO está provado.** A fonte diz "código municipal (últimos 3
+  dígitos)" e `buildDpsXml` faz `.slice(-3)` — isso descreve o **XML**, não o código que a
+  prefeitura publica. Exigir 3 no cadastro recusaria código legítimo mais longo, então não se exige;
+  a tela **anuncia** quais 3 dígitos vão para a DPS, para que o corte não seja descoberto na
+  rejeição. **Pendente de confirmação do dono.**
+- ⚠ **A faixa da série vive em DOIS lugares** (`nfseNumeracao.js` e o normalizador do cadastro):
+  aquele módulo carrega o Prisma no topo e este é um validador puro. A duplicação está **amarrada
+  por teste** — `companyCamposNfse.test.js` compara os limites com `SERIE_MIN`/`SERIE_MAX`
+  importados de lá.
+- **A recusa passou a ter leitor.** `POST /nfse` devolvia `400 { error:"company_missing_fields",
+  missing:[...] }` e **nada na interface lia essa lista** — o contador preenchia a nota inteira para
+  receber um erro genérico. Hoje o `EmitirNfseWizard` a espelha no **passo 1**
+  (`apps/web/src/lib/nfse/cadastroEmissaoNfse.js`), com rótulo, motivo e onde preencher, e a ficha
+  da empresa mostra a mesma falta. ⚠ O espelho tem de acompanhar `REQUIRED_COMPANY_FIELDS` — há
+  teste amarrando a lista e a ordem.
+- ⚠ **Dado legado pode passar a bloquear a edição do cadastro.** Série não-numérica (`"UNICA"`) ou
+  `cTribNac` com comprimento diferente de 6 gravados antes destas guardas agora devolvem **400
+  nomeado** ao salvar a empresa — o campo tem de ser corrigido. Medir antes:
+  **`scripts/diag-emissao-nfse.mjs`** (só leitura), que já conta as quatro colunas por empresa.
+  Não foi possível medir nesta máquina: **não há banco alcançável**.
+
 Tabelas de código com a evidência de cada linha e `verificadoNoLeiaute: false`: **`dpsCodigos.js`**.
 Testes: `nfse/__tests__/` (`nfseNumeracao`, `nfseCertificado`, `dpsCodigos`, `desfechoEmissao`,
 `emissaoDps`) + `validators/__tests__/nfsePayload`. Medir antes da migration:

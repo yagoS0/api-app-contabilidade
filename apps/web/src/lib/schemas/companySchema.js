@@ -50,6 +50,32 @@ export const companyCreateFormSchema = z.object({
     .regex(/^\d{7}$/, "Escolha o município na lista — o código do IBGE tem 7 dígitos")
     .or(z.literal(""))
     .optional(),
+  // ── Configuração da emissão de NFS-e ──────────────────────────────────────────────────────
+  // ⚠ Só FORMA, e só a forma que uma fonte já versionada no projeto prova. Nenhum destes três é
+  // conferido quanto ao CONTEÚDO: a lista de serviços da LC 116 e a do município não estão neste
+  // repositório, e validar contra uma lista inventada seria pior que não validar. A regra completa
+  // (com as fontes) vive em `lib/nfse/cadastroEmissaoNfse.js`.
+  // Vazio é legítimo nos três: a empresa apenas não emite, e a tela diz isso.
+  codigoServicoNacional: z
+    .string()
+    // `docs/nfse-preenchimento.md` §5: "cTribNac: código nacional (6 dígitos numéricos)".
+    .regex(/^\d{6}$/, "O código nacional do serviço tem 6 dígitos (ex.: 171201)")
+    .or(z.literal(""))
+    .optional(),
+  codigoServicoMunicipal: z
+    .string()
+    // ⚠ Sem comprimento fixo de propósito: a fonte prova que o XML leva os ÚLTIMOS 3 dígitos, não
+    // que o código publicado pelo município tenha 3. Exigir 3 recusaria código legítimo mais longo.
+    .regex(/^\d+$/, "O código municipal do serviço é numérico — informe só os dígitos")
+    .or(z.literal(""))
+    .optional(),
+  rpsSerie: z
+    .string()
+    // RN E0010: faixa 1–49999 (emissor por aplicativo próprio). Espelha `nfseNumeracao.js`.
+    .regex(/^\d+$/, "A série da DPS é numérica (RN E0010)")
+    .refine((v) => Number(v) >= 1 && Number(v) <= 49999, "A série da DPS vai de 1 a 49999 (RN E0010)")
+    .or(z.literal(""))
+    .optional(),
   enderecoRua: z.string().max(200).optional().or(z.literal("")),
   enderecoNumero: z.string().max(20).optional().or(z.literal("")),
   enderecoBairro: z.string().max(120).optional().or(z.literal("")),

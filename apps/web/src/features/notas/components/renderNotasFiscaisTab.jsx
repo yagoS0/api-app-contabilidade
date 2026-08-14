@@ -25,6 +25,8 @@ export function NotasFiscaisTab({
   competencia: competenciaGlobal,
   regime,
   codigoMunicipioIbge = null,
+  // O cadastro que `buildMissingFields` confere, vindo inteiro de `legacyCompany`.
+  cadastroEmissao = null,
 }) {
   const {
     loading, error, reload,
@@ -198,6 +200,10 @@ export function NotasFiscaisTab({
           /* O município emissor (`cLocEmi`) vive em `legacyCompany.codigoMunicipioIbge`. Vazio, a
              empresa não emite — e o assistente diz isso no primeiro passo, não na recusa. */
           codigoMunicipioIbge={codigoMunicipioIbge}
+          /* ⚠ A recusa `company_missing_fields` do servidor não tinha leitor nenhum na interface:
+             a rota devolvia a lista `missing` e ela morria ali. Agora o assistente a espelha ANTES
+             do clique, com o nome do campo e onde preenchê-lo. */
+          cadastroEmissao={cadastroEmissao}
           onEmitir={(payload) => nfseApi.emitirNfse(payload)}
           onClose={() => setEmitindo(false)}
           /* ⚠ ISTO NÃO FAZ A NOTA APARECER NA LISTA, e não é para fazer.

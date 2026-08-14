@@ -236,6 +236,62 @@ export function validateAndNormalizeCompanyProfile(input) {
     return { ok: false, error: "company_codigo_municipio_ibge_invalid" };
   }
 
+  // ── OS TRÊS CAMPOS QUE FALTAVAM PARA A EMISSÃO — e por que a FORMA é tudo o que se valida ──
+  //
+  // `buildMissingFields` (`application/nfse/NfseService.js`) recusa a emissão quando faltar
+  // `cnpj`, `inscricaoMunicipal`, `codigoServicoNacional`, `codigoServicoMunicipal` ou `rpsSerie`.
+  // Os três últimos existiam no model e na API e **não tinham campo em tela nenhuma**: a emissão
+  // recusava por eles e não havia por onde preenchê-los. Estes normalizadores são a porta.
+  //
+  // ⚠ VALIDA-SE FORMA, NUNCA CONTEÚDO. A lista de serviços da LC 116 e a lista de códigos do
+  // município **não estão neste repositório**, e escrevê-las de memória é o que a regra 1 proíbe.
+  // Então: nenhum de-para, nenhuma sugestão, nenhum default. O que o contador digitar é o que fica.
+
+  // `cTribNac` — 6 dígitos numéricos.
+  // Fonte, dentro do projeto: `docs/nfse-preenchimento.md` §5 ("cTribNac: código nacional (6
+  // dígitos numéricos). Ex.: 171201"), §11 e o exemplo §12 da única emissão que voltou `issued`.
+  const codigoServicoNacionalBruto = asString(company.codigoServicoNacional);
+  const codigoServicoNacional = onlyDigits(codigoServicoNacionalBruto);
+  if (codigoServicoNacionalBruto && codigoServicoNacional.length !== 6) {
+    return { ok: false, error: "company_codigo_servico_nacional_invalid" };
+  }
+
+  // `cTribMun` — SÓ DÍGITOS, e **sem exigência de comprimento**.
+  //
+  // ⚠ O que a fonte prova e o que ela NÃO prova. `docs/nfse-preenchimento.md` §5 diz "cTribMun:
+  // código municipal (últimos 3 dígitos). Ex.: 001" — isso descreve o que vai no XML (e
+  // `buildDpsXml` faz literalmente `.replace(/\D+/g,"").slice(-3)`), não o comprimento do código
+  // que a prefeitura publica. Exigir exatamente 3 aqui seria inventar uma máscara e recusaria um
+  // código municipal legítimo mais longo. A tela mostra ao contador quais 3 dígitos irão para a
+  // DPS, para que o corte não seja surpresa.
+  const codigoServicoMunicipalBruto = asString(company.codigoServicoMunicipal);
+  const codigoServicoMunicipal = onlyDigits(codigoServicoMunicipalBruto);
+  if (codigoServicoMunicipalBruto && !codigoServicoMunicipal) {
+    return { ok: false, error: "company_codigo_servico_municipal_invalid" };
+  }
+
+  // `rpsSerie` — numérica, na faixa 1–49999 (RN **E0010**, emissor por APLICATIVO PRÓPRIO).
+  //
+  // ⚠ A AUTORIDADE DA FAIXA É `application/nfse/nfseNumeracao.js` (`SERIE_MIN`/`SERIE_MAX`), e ela
+  // NÃO é importada aqui de propósito: aquele módulo carrega o Prisma client no topo, e este é um
+  // validador puro. A duplicação de dois inteiros está amarrada por teste
+  // (`routes/firm/__tests__/companyCamposNfse.test.js` compara os limites com os exportados de lá):
+  // se um lado mudar sem o outro, o teste cai.
+  //
+  // ⚠ Grava-se com padding de 5 dígitos, a MESMA forma que `normalizarSerie` devolve para o XML —
+  // "1" e "00001" são a mesma série, e guardar as duas escritas faria a mesma empresa parecer ter
+  // duas. Isso é normalização, não default: campo vazio continua gravando NULL.
+  const rpsSerieBruta = asString(company.rpsSerie);
+  let rpsSerie = null;
+  if (rpsSerieBruta) {
+    if (!/^\d+$/.test(rpsSerieBruta)) return { ok: false, error: "company_rps_serie_invalid" };
+    const n = Number(rpsSerieBruta);
+    if (!Number.isInteger(n) || n < 1 || n > 49999) {
+      return { ok: false, error: "company_rps_serie_invalid" };
+    }
+    rpsSerie = String(n).padStart(5, "0");
+  }
+
   return {
     ok: true,
     data: {
@@ -254,6 +310,12 @@ export function validateAndNormalizeCompanyProfile(input) {
       inscricaoMunicipal: asString(company.inscricaoMunicipal) || null,
       inscricaoMunicipalData,
       codigoMunicipioIbge: codigoMunicipioIbge || null,
+      // ── Configuração da emissão de NFS-e (o que `buildMissingFields` exige) ──
+      // ⚠ Sem estas três linhas o valor chega no corpo, passa pelo Zod e é DESCARTADO EM SILÊNCIO
+      // pela lista de colunas do `tx.company.update` — 200 na resposta e campo vazio na recarga.
+      codigoServicoNacional: codigoServicoNacional || null,
+      codigoServicoMunicipal: codigoServicoMunicipal || null,
+      rpsSerie,
       inscricaoEstadual: asString(company.inscricaoEstadual) || null,
       inscricaoEstadualData,
       porte: asString(company.porte) || null,

@@ -56,6 +56,7 @@ import {
   FONTE_P_TOT_TRIB_SN,
 } from "../lib/declaracaoNfse";
 import { impedimentoDeEmissao } from "../../../lib/municipios/municipioIbge";
+import { faltasParaEmitir } from "../../../lib/nfse/cadastroEmissaoNfse";
 
 const PASSOS = ["Tomador", "Serviço", "Valores e tributos", "Conferir"];
 
@@ -78,6 +79,12 @@ export function EmitirNfseWizard({
   companyId,
   regime: regimeCadastrado,
   codigoMunicipioIbge,
+  // ⚠ O CADASTRO DA EMPRESA, como `buildMissingFields` o lê: `{ cnpj, inscricaoMunicipal,
+  // codigoServicoNacional, codigoServicoMunicipal, rpsSerie }`, direto do `legacyCompany`. Sem esta
+  // leitura, a recusa `company_missing_fields` do servidor morria no backend: a rota devolvia a
+  // lista `missing` e NINGUÉM na interface a lia — o contador preenchia a nota inteira para receber
+  // um erro genérico, sem saber qual campo faltava nem onde preenchê-lo.
+  cadastroEmissao = null,
   onEmitir,
   onClose,
   onEmitida,
@@ -104,6 +111,10 @@ export function EmitirNfseWizard({
   const regime = useMemo(() => regimeDeclaradoNaNota(regimeCadastrado), [regimeCadastrado]);
   // O município emissor (`cLocEmi`) é da EMPRESA, não da nota: ou está no cadastro, ou nada sai.
   const municipio = useMemo(() => impedimentoDeEmissao(codigoMunicipioIbge), [codigoMunicipioIbge]);
+  // O resto da configuração da EMPRESA — o mesmo conjunto que `buildMissingFields` confere, na
+  // mesma ordem. Vazio = nada falta. ⚠ Sem `cadastroEmissao` a lista sai vazia de propósito: quem
+  // não passou a prop não sabe nada sobre o cadastro, e afirmar "falta tudo" seria pior que calar.
+  const faltas = useMemo(() => (cadastroEmissao ? faltasParaEmitir(cadastroEmissao) : []), [cadastroEmissao]);
   const leituraPTot = useMemo(
     () => lerPTotTribSN(pTotTribSN, { exigido: regime.exigePTotTribSN }),
     [pTotTribSN, regime.exigePTotTribSN],
@@ -121,6 +132,10 @@ export function EmitirNfseWizard({
       // digite aqui. Deixá-lo para o passo 3 (como o do regime) faria o contador preencher a nota
       // inteira antes de descobrir que a empresa não emite.
       municipio.bloqueia && municipio.motivoCurto,
+      // Os campos de `buildMissingFields`, na mesma posição e pelo mesmo motivo do município: são
+      // impedimentos da EMPRESA, que não se resolvem nesta tela e não dependem de nada digitado
+      // aqui. Deixá-los para o fim cobraria do contador uma nota inteira já perdida.
+      ...faltas.map((f) => f.motivoCurto),
       !docValido && "informe um CNPJ (14 dígitos) ou CPF (11 dígitos) válido",
       !String(tomador.nome).trim() && "informe o nome ou a razão social do tomador",
       !emailValido && "o e-mail informado não parece um e-mail",
@@ -138,7 +153,7 @@ export function EmitirNfseWizard({
       regime.bloqueiaEmissao && regime.motivoCurto,
     ].filter(Boolean),
     [],
-  ], [municipio, docValido, tomador.nome, emailValido, enderecoParcial, servico.descricao, valor,
+  ], [municipio, faltas, docValido, tomador.nome, emailValido, enderecoParcial, servico.descricao, valor,
     servico.issRetido, servico.aliquota, leituraPTot.problema, regime]);
 
   const problemasAtuais = problemasPorPasso[passo] || [];
@@ -292,7 +307,7 @@ export function EmitirNfseWizard({
         {/* ⚠ IMPEDIMENTO DA EMPRESA — fica ACIMA da trilha, visível em todos os passos, porque não
             é um campo que falta: é a empresa que ainda não emite. A lista de problemas do passo
             repete a versão curta; aqui vai o motivo inteiro e onde se resolve. */}
-        {municipio.bloqueia && (
+        {(municipio.bloqueia || faltas.length > 0) && (
           <div style={{
             marginBottom: 14, padding: 10, borderRadius: 6, fontSize: "0.82rem",
             background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
@@ -301,7 +316,20 @@ export function EmitirNfseWizard({
             <strong style={{ display: "block", marginBottom: 4 }}>
               Esta empresa ainda não pode emitir nota de serviço.
             </strong>
-            {municipio.motivo}
+            {municipio.bloqueia && <div>{municipio.motivo}</div>}
+            {/* ⚠ CADA CAMPO COM SEU NOME E O SEU LUGAR. A recusa do servidor devolve
+                `{ missing: ["codigoServicoNacional", …] }` — nome de coluna, que não diz a ninguém o
+                que preencher nem onde. Uma lista de "falta configuração" também não diria. */}
+            {faltas.length > 0 && (
+              <ul style={{ margin: municipio.bloqueia ? "8px 0 0" : 0, paddingLeft: 18 }}>
+                {faltas.map((f) => (
+                  <li key={f.campo} style={{ marginBottom: 4 }}>
+                    <strong>{f.rotulo}</strong> — {f.motivo}{" "}
+                    <span style={{ opacity: 0.9 }}>Preencha em {f.onde}.</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
