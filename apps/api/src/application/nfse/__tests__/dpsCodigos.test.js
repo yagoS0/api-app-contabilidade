@@ -110,3 +110,37 @@ describe("tpRetISSQN — a retenção chega ao XML", () => {
     }
   });
 });
+
+// ⚠ AS DUAS GRAFIAS DO MESMO REGIME — sem isto, 29 das 33 empresas seriam recusadas.
+//
+// `CadastroFiscal.regime` grava `SIMPLES_NACIONAL`; `Company.regimeTributario`, que é o FALLBACK e
+// alimenta a maioria, grava `SIMPLES`. Medido em produção em 14/08/2026: 4 linhas de
+// `CadastroFiscal` (todas `SIMPLES_NACIONAL`) contra 33 empresas — logo 29 caem no fallback, e 18
+// das 22 do Simples ficariam sem emitir.
+describe("resolverOpSimpNac — a grafia do fallback", () => {
+  it("⚠ `SIMPLES` (Company.regimeTributario) resolve igual a `SIMPLES_NACIONAL`", () => {
+    const curto = resolverOpSimpNac("SIMPLES");
+    const longo = resolverOpSimpNac("SIMPLES_NACIONAL");
+    expect(curto.resolucao).toBe(RESOLUCAO.RESOLVIDO);
+    expect(curto.opSimpNac).toBe(longo.opSimpNac);
+    expect(curto.exigeRegApTribSN).toBe(longo.exigeRegApTribSN);
+  });
+
+  it("aceita as variações de digitação da mesma grafia", () => {
+    for (const v of ["simples", " Simples ", "SIMPLES NACIONAL", "simples-nacional"]) {
+      expect(resolverOpSimpNac(v).resolucao).toBe(RESOLUCAO.RESOLVIDO);
+    }
+  });
+
+  it("⚠ o alias traduz a GRAFIA e NADA MAIS — regime desconhecido continua recusando", () => {
+    // É o que separa isto do `mapRegime` da apuração, que assume Simples no default. Numa DPS esse
+    // default declararia o regime da empresa por suposição.
+    for (const desconhecido of ["LUCRO_ARBITRADO", "MICROEMPRESA", "XPTO", "SIMPLE"]) {
+      expect(resolverOpSimpNac(desconhecido).resolucao).toBe(RESOLUCAO.INDEFINIDO);
+    }
+  });
+
+  it("MEI continua recusando, mesmo com o alias", () => {
+    expect(resolverOpSimpNac("MEI").resolucao).toBe(RESOLUCAO.INDEFINIDO);
+  });
+});

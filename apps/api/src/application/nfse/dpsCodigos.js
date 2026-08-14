@@ -88,11 +88,40 @@ export const MEI_NAO_MAPEADO = Object.freeze({
  *   ausência dele, de `Company.regimeTributario`.
  * @returns {{resolucao: string, opSimpNac?: string, exigeRegApTribSN?: boolean, motivo?: string, fonte?: string}}
  */
+// ⚠ O MESMO REGIME TEM DUAS GRAFIAS, EM DUAS FONTES — e ignorar isso recusaria 29 das 33 empresas.
+//
+// `CadastroFiscal.regime` (a autoridade) grava `SIMPLES_NACIONAL`; `Company.regimeTributario` (o
+// fallback, alimentado pelo formulário da empresa) grava `SIMPLES`. Medido em produção 14/08/2026:
+//
+//   Company.regimeTributario  →  SIMPLES 22 · LUCRO_PRESUMIDO 11
+//   CadastroFiscal            →  apenas 4 linhas, todas SIMPLES_NACIONAL
+//
+// Ou seja **29 de 33 empresas caem no fallback**, e sem este alias todas elas — inclusive 18 das 22
+// do Simples — seriam recusadas com `NFSE_REGIME_INDEFINIDO`, que é exatamente o que a Fase 1
+// existe para destravar.
+//
+// O projeto já convive com as duas grafias de propósito em `obrigatoriedadeDefis` e
+// `obrigatoriedadeEfd`; esta é a terceira porta, e ela precisa da mesma tolerância.
+//
+// ⚠ MAS AQUI NÃO SE REUSA `mapRegime` (`routes/firm/apuracaoV2.js`), e o motivo é o desfecho, não o
+// estilo: aquela função **assume Simples quando não reconhece** ("a maioria das empresas do app é
+// SN"). Na apuração o default é inofensivo; numa DPS ele **declararia o regime da empresa por
+// suposição** — regra 1. Aqui a normalização traduz a GRAFIA e nada mais: o que não for reconhecido
+// continua caindo em `INDEFINIDO` e recusando.
+const ALIAS_REGIME = Object.freeze({
+  SIMPLES: "SIMPLES_NACIONAL",
+  SIMPLES_NACIONAL: "SIMPLES_NACIONAL",
+  LUCRO_PRESUMIDO: "LUCRO_PRESUMIDO",
+  LUCRO_REAL: "LUCRO_REAL",
+  MEI: "MEI",
+});
+
 export function resolverOpSimpNac(regime) {
-  const chave = String(regime || "")
+  const bruta = String(regime || "")
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, "_");
+  const chave = ALIAS_REGIME[bruta] || bruta;
 
   if (!chave) {
     return {

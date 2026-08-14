@@ -19,7 +19,7 @@ import { Button } from "../../../components/ui/Button";
 // por props e não tem `api` em escopo.
 const nfseApi = createApiClient();
 
-export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, competencia: competenciaGlobal }) {
+export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, competencia: competenciaGlobal, regime }) {
   const {
     loading, error, reload,
     dfeState, dfeSyncing, syncDfe, clearDfeError,
@@ -185,10 +185,17 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
       {emitindo && (
         <EmitirNfseWizard
           companyId={companyId}
+          /* O REGIME É MOSTRADO, não escolhido: o backend declara o mesmo `opSimpNac` para toda
+             empresa, e o assistente confronta isso com o cadastro para o contador ver antes de
+             emitir. Vem de `legacyCompany.regimeTributario` (nunca do topo do payload). */
+          regime={regime}
           onEmitir={(payload) => nfseApi.emitirNfse(payload)}
           onClose={() => setEmitindo(false)}
-          /* A nota recém-emitida precisa APARECER na lista — senão o contador emite, fecha o
-             assistente e não vê nada mudar, e a dúvida "será que saiu?" leva a emitir de novo. */
+          /* ⚠ ISTO NÃO FAZ A NOTA APARECER NA LISTA, e não é para fazer.
+             A lista vem de `PortalInvoice` (captura do ADN); a nota emitida aqui é gravada em
+             `ServiceInvoice`. Recarregar só atualiza o estado da captura e o resumo — quem traz a
+             nota é o ADN, na próxima busca. O assistente diz isso em texto na tela de resultado;
+             antes ele prometia que ela apareceria "assim que houver resposta", e não aparecia. */
           onEmitida={() => { reload?.(); loadNotas?.(notasFilters); }}
         />
       )}

@@ -4905,6 +4905,13 @@ export function createMockApi() {
      *
      * Devolve `issued` — o caminho `pending` (prefeitura demorando) é real, mas simulá-lo aqui
      * exigiria inventar um relógio de retorno que não corresponde a nada.
+     *
+     * ⚠ RECUSA TAMBÉM SEM `totTrib.pTotTribSN`, e essa é a recusa que importa.
+     * O `NfseService` declara toda empresa como `opSimpNac="3"` (Simples ME/EPP) e, sendo Simples,
+     * exige o percentual: sem ele lança `MISSING_P_TOT_TRIB_SN`. O mock aceitava o payload sem o
+     * campo — ou seja, o assistente parecia completo offline e falharia 100% das vezes no real,
+     * com o erro chegando ao banco como `rejected` (rejeição fiscal) por não ser mapeado na rota.
+     * Com a recusa aqui, dá para caminhar o caso de falta sem emitir nada em lugar nenhum.
      */
     async emitirNfse(payload) {
       await delay(400);
@@ -4914,6 +4921,23 @@ export function createMockApi() {
       if (!String(payload?.servico?.descricao || "").trim()) throw new Error("servico_descricao_obrigatoria");
       const valor = Number(payload?.servico?.valorServicos);
       if (!Number.isFinite(valor) || valor <= 0) throw new Error("servico_valor_invalido");
+      // ⚠ Com ISS retido o provedor exige alíquota > 0 (erro E0625 do Padrão Nacional); o servidor
+      // recusa antes de emitir (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`). O mock recusa igual — senão a
+      // combinação "retido + alíquota da prefeitura" passa offline e morre no real.
+      const aliq = Number(payload?.servico?.aliquota);
+      if (payload?.servico?.issRetido === true && !(Number.isFinite(aliq) && aliq > 0)) {
+        throw new Error("nfse_iss_retido_sem_aliquota");
+      }
+      const pTotTribSNCru = payload?.totTrib?.pTotTribSN;
+      const pTotTribSN = pTotTribSNCru === undefined || pTotTribSNCru === null || pTotTribSNCru === ""
+        ? null
+        : Number(pTotTribSNCru);
+      if (pTotTribSN === null || Number.isNaN(pTotTribSN)) {
+        throw new Error("missing_p_tot_trib_sn");
+      }
+      // Faixa do validador real (`p_tot_trib_sn_invalido`): fora de 0–100 é outra unidade, não um
+      // número grande — provavelmente o valor em reais no lugar do percentual.
+      if (pTotTribSN < 0 || pTotTribSN > 100) throw new Error("p_tot_trib_sn_invalido");
       const seq = (mockNfseSeq += 1);
       return {
         status: "issued",

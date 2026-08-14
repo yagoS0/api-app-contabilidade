@@ -625,6 +625,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 notasPanel={notasPanel}
                 hasInscricaoEstadual={Boolean(String(selectedCompany?.legacyCompany?.inscricaoEstadual || "").trim())}
                 competencia={circularPanel?.competencia}
+                /* O assistente de emissão MOSTRA o regime que a nota vai declarar e o confronta
+                   com o do cadastro. Mesmo `companyRegime` do resto da página (mora em
+                   `legacyCompany`, nunca no topo do payload). */
+                regime={companyRegime}
               />
             </Suspense>
           </ErrorBoundary>
