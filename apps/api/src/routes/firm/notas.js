@@ -729,12 +729,16 @@ export function createNotasRouter({ log }) {
         "inventado. Recapture a nota para que o XML entre na base.");
     }
 
-    // ⚠ O QR CODE É OBRIGATÓRIO (NT §2.2 e §2.4.3) E O PROJETO NÃO TEM BIBLIOTECA PARA GERÁ-LO.
-    // Enquanto a dependência não for escolhida pelo dono, a rota RECUSA por padrão: um DANFSe sem
-    // QR Code não é um DANFSe, e servi-lo em silêncio faria o contador mandar ao tomador um
-    // documento inválido achando que mandou o certo. `?semQrCode=1` é o escape consciente, para
-    // conferência de layout.
-    const semQrCode = String(req.query.semQrCode || "") === "1";
+    // ⚠ O QR CODE É OBRIGATÓRIO (NT §2.2 e §2.4.3) e agora é gerado (dependência `qrcode`, escolhida
+    // pelo dono). A RECUSA CONTINUA: quando o QR não puder ser gerado — chave ausente no XML, falha
+    // da biblioteca — a resposta é 503, não um PDF sem QR. Servi-lo em silêncio faria o contador
+    // mandar ao tomador um documento inválido achando que mandou o certo.
+    //
+    // ⚠ `?semQrCode=1` FOI REMOVIDO, e o motivo é que ele perdeu o dele. Existia para conferir
+    // layout enquanto não havia biblioteca; hoje a conferência se faz com o QR, que é o layout real.
+    // O que sobraria é servir o documento inválido exatamente quando ele é inválido — o oposto do
+    // que o escape existia para fazer. Um escape assim, alcançável por query string, é uma
+    // tentação a um refresh de distância no dia em que o 503 incomodar alguém.
 
     // ⚠ A MARCA D'ÁGUA VEM DO CICLO DA NOTA, NUNCA DO `chSubstda` DO XML. `chSubstda` diz "eu
     // substituo AQUELA"; quem responde "esta foi substituída" é o evento (ou outra nota apontando
@@ -763,25 +767,31 @@ export function createNotasRouter({ log }) {
     try {
       const { pdf, conformidade } = await gerarDanfse({
         xml: nota.xmlRaw,
-        permitirSemQrCode: semQrCode,
         marcaDagua,
         incluirCanhoto: String(req.query.canhoto || "") === "1",
       });
 
       // A não conformidade viaja em header, não some: quem baixar o PDF consegue saber, sem abrir
-      // o arquivo, que ele ainda não está conforme e por quê.
+      // o arquivo, o que ainda falta nele.
+      //
+      // ⚠ `X-Danfse-Conforme` SAIU, e sair é mais honesto que ficar. Ele era `qrCode === "presente"`
+      // — ou seja, respondia sobre o QR Code com o nome de "o documento está conforme". Agora que o
+      // QR sempre sai (quando não sai, a resposta é 503 e não tem header nenhum), ele seria a
+      // constante "1" afirmando conformidade que o documento ainda não tem: as fontes Arial/MS Sans
+      // Serif não estão embutidas, a logomarca oficial não está versionada e doze descrições de
+      // código dependem de um leiaute que não está no repositório.
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition",
         `inline; filename="danfse-${(nota.chaveAcesso || nota.numero || nota.id).toString().replace(/[^\w.-]/g, "")}.pdf"`);
       res.setHeader("Cache-Control", "private, max-age=300");
-      res.setHeader("X-Danfse-Conforme", conformidade.qrCode === "presente" ? "1" : "0");
+      res.setHeader("X-Danfse-Qrcode", String(conformidade.qrCode));
+      res.setHeader("X-Danfse-Pendencias", String(conformidade.avisos.length));
       res.setHeader("X-Danfse-Paginas", String(conformidade.paginas));
       return res.send(pdf);
     } catch (err) {
       if (err?.code === "DANFSE_SEM_QRCODE") {
-        return bad(res, 503, "danfse_sem_qrcode", err.message, {
-          dependenciaFaltante: "biblioteca de geração de QR Code (a escolha é do dono)",
-        });
+        // ⚠ 503 e não 200-com-PDF-torto: o QR Code é obrigatório e ausência não é resposta.
+        return bad(res, 503, "danfse_sem_qrcode", err.message, { motivo: err.motivo || null });
       }
       if (err?.code === "DANFSE_XML_NAO_E_NFSE" || err?.code === "DANFSE_XML_VAZIO") {
         return bad(res, 422, "xml_nao_e_nfse", err.message);

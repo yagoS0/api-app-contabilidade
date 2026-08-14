@@ -539,12 +539,14 @@ NT §2.1): *"Não poderão ser impressas informações que não constem do arqui
 | `danfseLeiaute.js` | **transcrição** do §2.4.5: cada campo com caminho no XML, tag, altura/largura/esq/sup em cm e limite de caracteres. Nada deduzido por analogia com o DANFE da NF-e |
 | `danfseDados.js` | lê o XML **por caminho**, monta os valores |
 | `danfseDescricoes.js` | mapa código→descrição, **vazio de propósito** |
-| `gerarDanfse.js` | pdfkit; devolve `{ pdf, conformidade }` |
+| `gerarDanfse.js` | pdfkit + `qrcode`; devolve `{ pdf, conformidade }` |
 
 - ⚠ **A entrada é o XML, por parâmetro.** Nada lê banco, chama ADN/SEFAZ/SERPRO nem emite. A
   conferência contra as notas REAIS capturadas (`PortalInvoice.xmlRaw`) é o próximo passo, e é do
   dono — o gerador já está pronto para ela.
-- ⚠ **Reusa o `pdfkit` que já existia.** Nenhuma dependência foi acrescentada.
+- ⚠ **Reusa o `pdfkit` que já existia.** A única dependência acrescentada é **`qrcode`**
+  (node-qrcode), **escolhida pelo dono**: devolve PNG em Buffer e não tem binding nativo, o que
+  importa porque o build é Docker/Railway.
 - ⚠ **NÃO reusar `getTextByLocalNames` (`utils/xml.js`) aqui.** Ela devolve o primeiro elemento com
   aquele nome no documento inteiro, e o XML da NFS-e tem `CNPJ` em `emit`/`prest`/`toma`/`interm`,
   `xNome` em quatro grupos, `cMun` em cinco e `vBC` tanto em `infNFSe/valores` quanto em
@@ -553,34 +555,65 @@ NT §2.1): *"Não poderão ser impressas informações que não constem do arqui
 - **Gerado sob demanda, nunca salvo.** O PDF é inteiramente derivável do `xmlRaw`, que já está
   guardado; e o volume do Railway é efêmero — "registro existe, arquivo não" já é caso real com
   guias e SITFIS (ver "Armazenamento de PDFs"). Um DANFSe salvo herdaria essa classe inteira de
-  defeito. Custo do derivado: ~40 KB e milissegundos por nota.
+  defeito. Custo do derivado, medido: **7,4 KB** e ~90 ms por nota.
+
+### ✅ QR Code — LIGADO (§2.2 e §2.4.3). A recusa NÃO foi apagada
+
+Conteúdo: `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=` + a chave (`urlDeConsulta`).
+Símbolo de **1,52 × 1,52 cm** em **X 17,48 / Y 1,67**, com as 3 linhas de 6 pt embaixo.
+
+- ⚠ **A RECUSA CONTINUA, só deixou de ser o caminho normal.** Chave ausente no XML ou falha da
+  biblioteca ⇒ `DANFSE_SEM_QRCODE` (com `motivo`) e **503** na rota. Um DANFSe sem QR Code não é um
+  DANFSe: servi-lo em silêncio faria o contador mandar ao tomador um documento inválido achando que
+  mandou o certo. **Ausência nunca é resposta.**
+- ⚠ **`?semQrCode=1` e `permitirSemQrCode` FORAM REMOVIDOS**, e o motivo é que perderam o deles:
+  existiam para conferir layout enquanto não havia biblioteca, e hoje a conferência se faz COM o QR,
+  que é o layout de verdade. O que sobraria era servir o documento inválido exatamente quando ele é
+  inválido. Chave com comprimento ≠ 50 **não** recusa — sai com aviso, como já fazia `danfseDados`.
+- ⚠ **NÍVEL DE CORREÇÃO DE ERRO = M, E A NT NÃO O FIXA** (conferido em §2, §2.2, §2.4.3 e na tabela
+  do §2.4.5: elas dizem tamanho mínimo, posição, conteúdo e contraste — e nada sobre nível, tamanho
+  de módulo ou zona de silêncio). O envelope é fixo em 1,52 cm, então **subir o nível encolhe o
+  módulo**: L=33 módulos/0,46 mm · **M=37/0,41 mm** · Q=45/0,34 mm · H=49/0,31 mm. Contra o risco
+  real (laser comum + câmera de celular), módulo menor é piora certa; rasgo é risco eventual. O
+  relatório declara a escolha em `conformidade.qrCodeTecnico`, com `fixadoPelaNt: false`.
+- ⚠ **ZONA DE SILÊNCIO PINTADA NA PÁGINA, EM BRANCO** (0,17 cm ≈ 4,1 módulos — a folga que o próprio
+  leiaute deixa entre o quadro e o complemento). Ela **não** pode sair de dentro dos 1,52 cm: uma
+  margem embutida no PNG deixaria o símbolo em 1,25 cm, abaixo do mínimo da NT. E é branca porque o
+  bloco "DADOS DA NFS-e" é pintado em cinza 5% — cinza encostado nos módulos é o que o §2.2 proíbe.
+- ⚠ **O QR É O ÚLTIMO A SER PINTADO, e isso é defeito consertado.** PDF é pintor. O quadro do QR era
+  desenhado ANTES do laço dos blocos, e o título do bloco (20,40 × 2,84 cm, cinza 5%) passa por cima
+  dele inteiro — medido no content stream. Com a biblioteca ligada, o QR sairia **invisível** e o
+  `conformidade.qrCode = "presente"` continuaria dizendo que estava lá. Ele vem depois da marca
+  d'água pelo mesmo motivo: entre o carimbo K35 (§2.5.1) e a leitura garantida (§2.2), quem não pode
+  ceder é a leitura.
+- ⚠ **PNG em tons de cinza, SEM canal alfa** (`rendererOpts: { colorType: 0 }`), 10 px por módulo
+  (370 px em 1,52 cm = 618 dpi, logo acima dos 600 dpi de uma laser). Alfa num QR preto-e-branco é
+  dado que não existe **e** obriga o pdfkit a decodificar a imagem em JS (`splitAlphaChannel`) em vez
+  de repassar o IDAT: 153 ms → 7 ms de embutimento, e o PDF cai de ~33 KB para ~7,4 KB.
+  ⚠ O `toBuffer` empacota o PNG **linha a linha** por um stream de zlib, e dentro do jest cada
+  escrita custa ~10 ms: 0,86 s a 296 px, 1,4 s a 370 px, 3,2 s a 592 px (em node puro, tudo < 50 ms).
+  Foi por isso que a escala parou em 10 — subir dela só encarece o teste sem o dispositivo usar.
 
 ### ⚠ O QUE ESTÁ BLOQUEADO E POR QUÊ (nada disto é esquecimento)
 
-1. **QR Code — obrigatório (§2.2 e §2.4.3) e o projeto não tem biblioteca.** `gerarDanfse` **recusa**
-   (`DANFSE_SEM_QRCODE`) sem `qrCodePng`; a rota responde **503**. `?semQrCode=1` é escape
-   consciente, e o quadro sai carimbado "QR CODE AUSENTE" — retângulo branco em silêncio se
-   pareceria com um QR que não imprimiu. O conteúdo já está pronto:
-   `https://www.nfse.gov.br/ConsultaPublica/?tpc=1&chave=` + a chave. **A escolha da dependência é
-   do dono.**
-2. **As descrições dos códigos não existem no repo.** Em doze campos a NT manda "utilizar a
+1. **As descrições dos códigos não existem no repo.** Em doze campos a NT manda "utilizar a
    descrição das opções previstas no leiaute", e **o leiaute (XSD/Anexo I) não está versionado** —
    a mesma ausência de `dpsCodigos.js`. A NT dá só *exemplos*, sem dizer a qual número cada um
    corresponde. `danfseDescricoes.js` nasce vazio, imprime-se o **código cru** (conteúdo do XML,
    art. 13 respeitado) e a pendência sai em `conformidade.descricoesPendentes`.
-3. **O DANFSe é v2.0 (multitributário) e o nosso XML é 1.01.** Um bloco inteiro (Tributação
+2. **O DANFSe é v2.0 (multitributário) e o nosso XML é 1.01.** Um bloco inteiro (Tributação
    IBS/CBS), mais `finNFSe`, o bloco DESTINATÁRIO e três totais saem dos grupos `IBSCBS`, que **não
    existem no leiaute 1.01**. Pela nota 12 saem com traço; a lista está em
    `CAMPOS_SEM_FONTE_NO_LEIAUTE_1_01` e no relatório (`camposSemFonte`).
-4. **`prest/xNome` e `prest/end` costumam vir vazios.** A NT aponta NOME e ENDEREÇO do prestador
+3. **`prest/xNome` e `prest/end` costumam vir vazios.** A NT aponta NOME e ENDEREÇO do prestador
    para `DPS/infDPS/prest/`, mas numa NFS-e devolvida esses dados vivem em `infNFSe/emit`. **Não
    caímos para `emit` por conta própria** — seria criar regra de leiaute. Sai traço, com aviso.
-5. **Município do prestador/tomador é CÓDIGO IBGE e a NT manda imprimir o nome.** A tabela do IBGE
+4. **Município do prestador/tomador é CÓDIGO IBGE e a NT manda imprimir o nome.** A tabela do IBGE
    não está no projeto (mesma falta do `Company.codigoMunicipioIbge`). Imprime-se o código;
    `conformidade.municipiosNaoResolvidos` nomeia quais.
-6. **Fontes Arial e Microsoft Sans Serif (§2.4) não estão embutidas.** Sem os `.ttf` o render cai
+5. **Fontes Arial e Microsoft Sans Serif (§2.4) não estão embutidas.** Sem os `.ttf` o render cai
    em Helvetica **e reporta** — substituir por "parecida" em silêncio é o defeito.
-7. **Logomarca oficial não versionada** (a NT dá a URL). Sai placeholder + aviso; desenhar algo
+6. **Logomarca oficial não versionada** (a NT dá a URL). Sai placeholder + aviso; desenhar algo
    parecido seria marca fabricada num documento fiscal.
 
 ### ⚠ Nota 12: campo vazio leva TRAÇO — ele não some
@@ -604,11 +637,22 @@ outra nota apontando para esta). Carimbar SUBSTITUÍDA por causa do `chSubstda` 
 lados do vínculo — o mesmo defeito que o `NotaDetailModal` já teve. A rota deriva por
 `derivarCiclo` (`notas/cicloNota.js`) e passa `marcaDagua` ao gerador, que **não decide sozinho**.
 
-Regressão: `nfse/danfse/__tests__/danfse.test.js` (27) — inclusive **página única com descrição de
+Regressão: `nfse/danfse/__tests__/danfse.test.js` (34) — inclusive **página única com descrição de
 16 mil caracteres**, `tpAmb=2` imprimindo a expressão e `tpAmb=1` **não** imprimindo, campo ausente
-virando traço, e a recusa sem QR Code. ⚠ O teste lê o texto do PDF com `pdf-parse`: procurar a
-frase nos bytes crus **não funciona** (pdfkit comprime os content streams) e faz o `not.toContain`
-passar por engano.
+virando traço, e a recusa quando o QR não pode ser feito. ⚠ O teste lê o texto do PDF com
+`pdf-parse`: procurar a frase nos bytes crus **não funciona** (pdfkit comprime os content streams) e
+faz o `not.toContain` passar por engano.
+
+⚠ **O QR é conferido NO PDF, não no relatório** — `conformidade.qrCode` diria "presente" com o
+símbolo coberto por outro desenho. Os testes medem no content stream: retângulo de 1,52 × 1,52 cm na
+coordenada da NT, imagem pintada **depois** do sombreado do bloco, zona de silêncio `1 1 1 scn`
+(branco puro), `DeviceGray` sem `SMask`, e **os módulos comparados um a um** com o símbolo da URL
+exigida (pega imagem trocada, recortada, esticada, invertida ou de outra chave).
+⚠ **Limite declarado:** essa comparação usa o mesmo codificador, então não re-deriva a cadeia de
+caracteres. A **decodificação independente** (info de formato → máscara → zigue-zague →
+desintercalação de blocos → segmentos, sem usar o `qrcode`) foi executada **fora do suite** sobre o
+PDF da amostra e devolveu exatamente a URL + a chave, em versão 5, nível **M** lido do próprio
+símbolo, máscara 6, 2 blocos, 86 codewords de dados.
 
 ## ⚠ ADN: `ultNSU` é EXCLUSIVO — o cursor guarda o último que já temos
 
