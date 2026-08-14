@@ -7,7 +7,7 @@
 import {
   resolverVinculoTelefone,
   SITUACOES,
-  TOLERANCIAS,
+  LEITURAS,
   AMBIGUIDADES,
   MOTIVOS_SEM_PAPEL,
   MOTIVOS_DESCARTE,
@@ -85,13 +85,13 @@ describe("⚠ AMBIGUO — o sócio com três CNPJs, e o vínculo que NÃO escolh
   });
 
   it("ambiguidade de PESSOA dentro da MESMA empresa é acusada, e não vira ambiguidade de empresa", () => {
-    // A unique é `(portalClientId, telefoneE164)`: duas linhas da mesma empresa só coexistem com
-    // números diferentes — que é o que a leitura tolerante junta.
-    const r = resolverVinculoTelefone(
-      "5521999998888",
-      [contato(), contato({ id: "c2", nome: "João", telefoneE164: "552199998888" })],
-      { tolerancia: TOLERANCIAS.NONO_DIGITO },
-    );
+    // A unique é `(portalClientId, telefoneE164)`, então duas linhas da mesma empresa não repetem o
+    // telefone — mas o `waId` de uma pode ser o telefone da outra, e as duas casam DÍGITO A DÍGITO.
+    // É o caminho real da ambiguidade de pessoa, e não depende de tolerância nenhuma.
+    const r = resolverVinculoTelefone("5521999998888", [
+      contato(),
+      contato({ id: "c2", nome: "João", telefoneE164: "552133334444", waId: "5521999998888" }),
+    ]);
     expect(r.situacao).toBe(SITUACOES.VINCULADO);
     expect(r.ambiguidades).toEqual([AMBIGUIDADES.PESSOA]);
     expect(r.empresas[0].pessoaAmbigua).toBe(true);
@@ -142,32 +142,46 @@ describe("⚠ VÍNCULO NÃO É AUTORIZAÇÃO — o papel é LIDO do RBAC e para 
   });
 });
 
-describe("⚠ O NONO DÍGITO — as duas leituras, nomeadas, e a discordância acesa", () => {
-  it("ESTRITA é o padrão: a outra forma NÃO casa sozinha", () => {
+// ⚠ DECISÃO DO DONO, 14/08/2026: *"os números são sempre com um nove na frente a partir de agora,
+// mas você nunca deve pressupor o número, o número de comunicação com o cliente será o do
+// cadastro"*. O que estes testes trancam é a segunda metade da frase — a comparação é com o
+// CADASTRO, dígito a dígito, e a leitura tolerante existe só para APONTAR cadastro no formato
+// antigo, nunca para responder no lugar dele.
+describe("⚠ O NÚMERO É O DO CADASTRO — a leitura tolerante NUNCA vira resposta", () => {
+  it("a outra forma do nono dígito NÃO casa: o cadastro manda", () => {
     const r = resolverVinculoTelefone("552199998888", [contato({ telefoneE164: "5521999998888" })]);
-    expect(r.tolerancia).toBe(TOLERANCIAS.ESTRITA);
+    expect(r.leitura).toBe(LEITURAS.ESTRITA);
     expect(r.situacao).toBe(SITUACOES.DESCONHECIDO);
   });
 
-  it("NONO_DIGITO casa a outra forma — nos dois sentidos", () => {
-    const semNove = resolverVinculoTelefone("552199998888", [contato({ telefoneE164: "5521999998888" })], {
-      tolerancia: TOLERANCIAS.NONO_DIGITO,
-    });
-    const comNove = resolverVinculoTelefone("5521999998888", [contato({ telefoneE164: "552199998888" })], {
-      tolerancia: TOLERANCIAS.NONO_DIGITO,
-    });
-    expect(semNove.situacao).toBe(SITUACOES.VINCULADO);
-    expect(comNove.situacao).toBe(SITUACOES.VINCULADO);
+  it("⚠ NÃO HÁ COMO PEDIR A LEITURA TOLERANTE — o parâmetro não existe mais", () => {
+    // Enquanto `opcoes.tolerancia` existia, um chamador futuro violava a regra sem saber que havia
+    // regra. Passar qualquer coisa como 3º argumento é inerte: a resposta continua a estrita.
+    const candidatos = [contato({ telefoneE164: "5521999998888" })];
+    const semOpcoes = resolverVinculoTelefone("552199998888", candidatos);
+    const comOpcoes = resolverVinculoTelefone("552199998888", candidatos, { tolerancia: "NONO_DIGITO" });
+    expect(comOpcoes.situacao).toBe(SITUACOES.DESCONHECIDO);
+    expect(comOpcoes.situacao).toBe(semOpcoes.situacao);
+    expect(comOpcoes.leitura).toBe(LEITURAS.ESTRITA);
+    // E o inverso também: quem chegasse pela outra forma continua não casando.
+    expect(resolverVinculoTelefone("5521999998888", [contato({ telefoneE164: "552199998888" })], {
+      tolerancia: "NONO_DIGITO",
+    }).situacao).toBe(SITUACOES.DESCONHECIDO);
   });
 
-  it("quando as leituras discordam, a discordância APARECE — nas duas tolerâncias", () => {
-    const candidatos = [contato({ telefoneE164: "5521999998888" })];
-    const estrita = resolverVinculoTelefone("552199998888", candidatos);
-    const tolerante = resolverVinculoTelefone("552199998888", candidatos, { tolerancia: TOLERANCIAS.NONO_DIGITO });
-    expect(estrita.divergemPeloNonoDigito).toBe(true);
-    expect(tolerante.divergemPeloNonoDigito).toBe(true);
-    expect(estrita.leituras[TOLERANCIAS.ESTRITA].situacao).toBe(SITUACOES.DESCONHECIDO);
-    expect(estrita.leituras[TOLERANCIAS.NONO_DIGITO].situacao).toBe(SITUACOES.VINCULADO);
+  it("nos DOIS sentidos: nem o cadastro antigo casa o número novo, nem o contrário", () => {
+    const chegaSemNove = resolverVinculoTelefone("552199998888", [contato({ telefoneE164: "5521999998888" })]);
+    const chegaComNove = resolverVinculoTelefone("5521999998888", [contato({ telefoneE164: "552199998888" })]);
+    expect(chegaSemNove.situacao).toBe(SITUACOES.DESCONHECIDO);
+    expect(chegaComNove.situacao).toBe(SITUACOES.DESCONHECIDO);
+  });
+
+  it("a discordância APARECE — é o aviso de que o CADASTRO está no formato antigo", () => {
+    const r = resolverVinculoTelefone("552199998888", [contato({ telefoneE164: "5521999998888" })]);
+    expect(r.divergemPeloNonoDigito).toBe(true);
+    // A resposta é a estrita; a outra leitura viaja só como diagnóstico, nomeada.
+    expect(r.leituras[LEITURAS.ESTRITA].situacao).toBe(SITUACOES.DESCONHECIDO);
+    expect(r.leituras[LEITURAS.NONO_DIGITO].situacao).toBe(SITUACOES.VINCULADO);
   });
 
   it("quando as leituras concordam, nada acende", () => {
@@ -175,10 +189,11 @@ describe("⚠ O NONO DÍGITO — as duas leituras, nomeadas, e a discordância a
     expect(r.divergemPeloNonoDigito).toBe(false);
   });
 
-  it("⚠ A LEITURA TOLERANTE PODE COLAR UM FIXO A UM CELULAR DE OUTRA EMPRESA", () => {
+  it("⚠ POR QUE A REGRA É ESSA: a tolerância colaria um FIXO ao celular de OUTRA empresa", () => {
     // `variantesE164` acrescenta o 9 a QUALQUER número de 8 dígitos, inclusive a um fixo:
-    // `552133334444` gera `5521933334444`. Este teste não afirma que isso está certo — ele FIXA o
-    // comportamento e mostra que a leitura estrita não o produz. A escolha é do dono.
+    // `552133334444` gera `5521933334444`. Aqui está a consequência medida — pela leitura tolerante
+    // o mesmo número falaria por DUAS empresas, e a nota poderia sair no CNPJ errado. A resposta
+    // (estrita) não produz isso: identifica só o fixo, que é o que está no cadastro.
     const candidatos = [
       contato({ id: "fixo", portalClientId: "p1", telefoneE164: "552133334444" }),
       contato({
@@ -188,16 +203,16 @@ describe("⚠ O NONO DÍGITO — as duas leituras, nomeadas, e a discordância a
         portalClient: { id: "p2", razao: "BETA ME", cnpj: "22222222000122" },
       }),
     ];
-    expect(resolverVinculoTelefone("552133334444", candidatos).situacao).toBe(SITUACOES.VINCULADO);
-    const tolerante = resolverVinculoTelefone("552133334444", candidatos, { tolerancia: TOLERANCIAS.NONO_DIGITO });
-    expect(tolerante.situacao).toBe(SITUACOES.AMBIGUO);
-    expect(tolerante.divergemPeloNonoDigito).toBe(true);
+    const r = resolverVinculoTelefone("552133334444", candidatos);
+    expect(r.situacao).toBe(SITUACOES.VINCULADO);
+    expect(r.empresas.map((e) => e.portalClientId)).toEqual(["p1"]);
+    // O diagnóstico mostra o que teríamos aceitado — e é exatamente o que não queremos.
+    expect(r.leituras[LEITURAS.NONO_DIGITO].situacao).toBe(SITUACOES.AMBIGUO);
+    expect(r.divergemPeloNonoDigito).toBe(true);
   });
 
   it("número estrangeiro não ganha variante — o `+` é o único desambiguador", () => {
-    const r = resolverVinculoTelefone("+1 415 555 2671", [contato({ telefoneE164: "14155552671" })], {
-      tolerancia: TOLERANCIAS.NONO_DIGITO,
-    });
+    const r = resolverVinculoTelefone("+1 415 555 2671", [contato({ telefoneE164: "14155552671" })]);
     expect(r.situacao).toBe(SITUACOES.VINCULADO);
     expect(r.divergemPeloNonoDigito).toBe(false);
   });

@@ -112,12 +112,26 @@ export async function removerContato(portalClientId, id) {
   });
 }
 
-/** Acha o contato a partir do número que a Meta devolveu (tolerando o nono dígito). */
+/**
+ * Acha o contato a partir do número que a Meta devolveu.
+ *
+ * ⚠ CASA DÍGITO A DÍGITO COM O CADASTRO. Ela tolerava o nono dígito (`variantesE164`), e isso
+ * contraria a decisão do dono de 14/08/2026 — *"você nunca deve pressupor o número, o número de
+ * comunicação com o cliente será o do cadastro"*. Ver o cabeçalho de `vinculoTelefone.js`.
+ *
+ * ⚠ E o `findFirst` era pior que a tolerância: sem `orderBy` e sem escopo, ele escolhia UM contato
+ * entre os que casassem — possivelmente de outra empresa — e devolvia como se não houvesse dúvida.
+ * O mesmo número pode legitimamente falar por mais de um CNPJ.
+ *
+ * ⚠ QUEM RESPONDE "DE QUEM É ESTA MENSAGEM?" É `resolverVinculoPorTelefone`, não esta função. Ela
+ * sobrevive só como atalho de leitura para quem já sabe que há um contato só; o webhook (F5/F6)
+ * usa o vínculo, que sabe dizer AMBIGUO e DESCONHECIDO com todas as letras.
+ */
 export async function acharContatoPorWaId(waIdOuTelefone) {
-  const variantes = variantesE164(waIdOuTelefone);
-  if (!variantes.length) return null;
+  const e164 = normalizarE164(waIdOuTelefone);
+  if (!e164) return null;
   return prisma.contatoWhatsapp.findFirst({
-    where: { OR: [{ waId: { in: variantes } }, { telefoneE164: { in: variantes } }] },
+    where: { OR: [{ waId: e164 }, { telefoneE164: e164 }] },
     include: { portalClient: { select: { id: true, razao: true, cnpj: true } } },
   });
 }
@@ -187,20 +201,21 @@ export const SELECT_CONTATO_PARA_VINCULO = Object.freeze({
  * consumidor tem de usá-lo como escopo dali em diante, nunca como permissão (ver o cabeçalho de
  * `vinculoTelefone.js`).
  *
- * ⚠ A rede é lançada SEMPRE pela leitura larga (`variantesE164`); quem estreita é a REGRA, com a
- * tolerância escolhida. Fosse a query a estreitar, a leitura alternativa ficaria invisível e
- * `divergemPeloNonoDigito` nunca poderia acender.
+ * ⚠ A rede é lançada larga (`variantesE164`) e quem estreita é a REGRA, que casa dígito a dígito
+ * com o cadastro. Isso NÃO afrouxa a decisão do dono — é o que a torna verificável: fosse a query a
+ * estreitar, a leitura alternativa ficaria invisível e `divergemPeloNonoDigito` nunca poderia
+ * acender para dizer que um cadastro está no formato antigo.
  */
-export async function resolverVinculoPorTelefone(telefone, opcoes = {}) {
+export async function resolverVinculoPorTelefone(telefone) {
   const e164 = normalizarE164(telefone);
-  if (!e164) return resolverVinculoTelefone(telefone, [], opcoes);
+  if (!e164) return resolverVinculoTelefone(telefone, []);
 
   const variantes = variantesE164(e164);
   const contatos = await prisma.contatoWhatsapp.findMany({
     where: { OR: [{ telefoneE164: { in: variantes } }, { waId: { in: variantes } }] },
     select: SELECT_CONTATO_PARA_VINCULO,
   });
-  if (!contatos.length) return resolverVinculoTelefone(e164, [], opcoes);
+  if (!contatos.length) return resolverVinculoTelefone(e164, []);
 
   // O papel vem do RBAC que já existe — não é recalculado nem copiado para o contato.
   const comUsuario = contatos.filter((c) => c.userId);
@@ -215,6 +230,5 @@ export async function resolverVinculoPorTelefone(telefone, opcoes = {}) {
   return resolverVinculoTelefone(
     e164,
     contatos.map((c) => ({ ...c, vinculoRbac: c.userId ? porChave.get(`${c.portalClientId}|${c.userId}`) || null : null })),
-    opcoes,
   );
 }

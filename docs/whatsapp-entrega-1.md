@@ -109,28 +109,50 @@ FINANCEIRO=1 < CLIENT_ADMIN=2 < OWNER=3. Uma segunda cópia da permissão é sem
   (`USUARIO_SEM_VINCULO`, 400) — senão o cadastro de contato criaria um vínculo que o RBAC nunca
   concedeu.
 
-### ⚠ O NONO DÍGITO — DUAS LEITURAS NOMEADAS, e uma pergunta aberta ao dono
+### ⚠ O NÚMERO É O DO CADASTRO — decisão do dono, 14/08/2026
 
-`TOLERANCIAS.ESTRITA` (padrão, dígito a dígito) e `TOLERANCIAS.NONO_DIGITO` (usa `variantesE164`).
-**As duas são calculadas sempre**; quando discordam, `divergemPeloNonoDigito` acende e `leituras`
-mostra o que cada uma respondeu. Errar aqui erra nos dois sentidos:
+> *"os números são sempre com um nove na frente a partir de agora, mas você nunca deve pressupor o
+> número, o número de comunicação com o cliente será o do cadastro"*
 
-| leitura | o erro dela |
+A comparação é **dígito a dígito** com `contatos_whatsapp`. `LEITURAS.ESTRITA` deixou de ser um
+padrão e virou **a regra**; `LEITURAS.NONO_DIGITO` continua sendo calculada, mas **só como
+diagnóstico**.
+
+| leitura | papel dela hoje |
 |---|---|
-| **ESTRITA** | mensagem legítima vinda da outra forma cai em "não vinculado" sem motivo aparente |
-| **NONO_DIGITO** | ⚠ `variantesE164` acrescenta o 9 a **qualquer** número de 8 dígitos, inclusive a um FIXO: `552133334444` gera `5521933334444`, que pode ser o celular de outra empresa. Travado em teste — o teste **fixa o comportamento**, não afirma que ele está certo |
+| **ESTRITA** | **a resposta**, sempre. O custo aceito: mensagem vinda da outra forma cai em "não vinculado" — e aí o conserto é o CADASTRO, não a comparação |
+| **NONO_DIGITO** | ⚠ nunca responde. `variantesE164` acrescenta o 9 a **qualquer** número de 8 dígitos, inclusive a um FIXO: `552133334444` gera `5521933334444`, que pode ser o celular de outra empresa — e a nota sairia no CNPJ errado |
 
-O padrão é ESTRITA porque num ato de consequência o erro barato é perguntar de novo e o erro caro é
-emitir no CNPJ de outro. **A escolha definitiva é do dono** — `scripts/diag-vinculo-whatsapp.mjs`
-mede, na base real, em quantos números as duas leituras discordam.
+⚠ **A TOLERÂNCIA NÃO É PARÂMETRO.** `opcoes.tolerancia` foi **retirada da assinatura** de
+`resolverVinculoTelefone` e de `resolverVinculoPorTelefone`. Enquanto existia, bastava um chamador
+futuro passar `NONO_DIGITO` para violar a regra em silêncio — e o violador nem saberia que havia
+regra. Não é padrão: é que **não existe caminho** para a leitura tolerante virar a resposta.
+Experimento executado: trocando a resposta para ela, o contrato fica **5 vermelhos**; restaurado,
+**55 verdes**.
+
+⚠ **`divergemPeloNonoDigito` MUDOU DE SIGNIFICADO.** Não é mais "talvez devêssemos tolerar"; é
+**"este cadastro está no formato antigo — conserte o cadastro"**. Quem escrever o webhook lê o
+sinal, avisa o contador, e **não casa**.
+
+⚠ **`acharContatoPorWaId` seguia o critério antigo e foi corrigida junto.** Ela era pior que a
+tolerância: um `findFirst` sem `orderBy` e sem escopo escolhia **um** contato entre os que
+casassem — possivelmente de outra empresa — e devolvia como se não houvesse dúvida. Quem responde
+"de quem é esta mensagem?" é **`resolverVinculoPorTelefone`**, que sabe dizer `AMBIGUO` e
+`DESCONHECIDO`.
+
+Medido em produção (14/08/2026): **`contatos_whatsapp` tem 0 registros** — a F1 subiu sem tela e
+ninguém nunca cadastrou um número, então **não há cadastro retroativo no formato antigo**.
+`scripts/diag-vinculo-whatsapp.mjs` (só leitura) mede quando houver; hoje ele **para antes**, porque
+a migration `20260814160000` não foi aplicada.
 
 ### ⚠ A busca é SEM escopo de tenant — e isso é o oposto de furar a multi-tenancy
 
 Não existe `portalClientId` para filtrar **antes**: a pergunta da função **é** "de qual tenant se
 trata?". A resposta é o que **produz** o escopo, e todo consumidor tem de usá-la como escopo dali em
 diante — nunca como permissão. A query lança a rede **larga** (as duas formas); quem estreita é a
-regra, com a tolerância escolhida. Fosse a query a estreitar, a leitura alternativa ficaria
-invisível e `divergemPeloNonoDigito` nunca poderia acender.
+regra, que casa dígito a dígito com o cadastro. Isso **não afrouxa** a decisão do dono — é o que a
+torna verificável: fosse a query a estreitar, a leitura alternativa ficaria invisível e
+`divergemPeloNonoDigito` nunca poderia acender para apontar o cadastro no formato antigo.
 
 ### O que NÃO foi feito, e por quê
 

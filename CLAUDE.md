@@ -226,11 +226,29 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
       `CompanyClientUser.role`) e para aí — sem peso, sem `podeEmitir`. Quem decide continua sendo
       `requireClientCompanyAccess(minRole)`. O campo `papel` do cadastro é **rótulo de tela** e sobe
       como `rotulo`.
-    - ⚠ **O nono dígito tem DUAS leituras NOMEADAS** (`ESTRITA`, padrão × `NONO_DIGITO`), as duas
-      calculadas sempre, com `divergemPeloNonoDigito` acendendo quando discordam. **A escolha é do
-      dono** — `variantesE164` acrescenta o 9 a qualquer número de 8 dígitos, inclusive a um fixo.
-      Medir na base real: `scripts/diag-vinculo-whatsapp.mjs` (só leitura, zero chamada externa;
-      **não foi rodado** — não há banco alcançável nesta máquina).
+    - ⚠ **O NÚMERO É O DO CADASTRO — decisão do dono, 14/08/2026:** *"os números são sempre com um
+      nove na frente a partir de agora, mas você nunca deve pressupor o número, o número de
+      comunicação com o cliente será o do cadastro"*. A comparação é **dígito a dígito** com
+      `contatos_whatsapp`. `variantesE164` acrescenta o 9 a qualquer número de 8 dígitos, **inclusive
+      a um fixo** (`552133334444` → `5521933334444`, que pode ser o celular de outra empresa) —
+      casar por aí é pressupor o número, e a consequência é emitir no CNPJ de outro.
+      - ⚠ **A tolerância NÃO é parâmetro** — `opcoes.tolerancia` foi **retirada da assinatura**.
+        Enquanto existia, bastava um chamador futuro passar `NONO_DIGITO` para violar a regra em
+        silêncio, sem saber que havia regra. A leitura tolerante continua **calculada**, mas só
+        alimenta `divergemPeloNonoDigito` e `leituras[NONO_DIGITO]`; **não há caminho para ela virar
+        a resposta**. Experimento (executado): trocando a resposta para a leitura tolerante, o
+        contrato fica **5 vermelhos**; restaurado, 55 verdes.
+      - ⚠ **O sinal mudou de significado**: `divergemPeloNonoDigito` não é mais "talvez devêssemos
+        tolerar", é **"este cadastro está no formato antigo — conserte o CADASTRO"**. A query segue
+        pescando as duas formas de propósito: fosse ela a estreitar, o aviso nunca poderia acender.
+      - ⚠ **`acharContatoPorWaId` também era tolerante** e foi para o mesmo critério. Ela ainda era
+        pior que a tolerância: um `findFirst` sem `orderBy` e sem escopo escolhia **um** contato
+        entre os que casassem — possivelmente de outra empresa — como se não houvesse dúvida. Quem
+        responde "de quem é esta mensagem?" é `resolverVinculoPorTelefone`.
+      - Medido em produção (14/08/2026): **`contatos_whatsapp` tem 0 registros** — a F1 subiu sem
+        tela e ninguém nunca cadastrou um número, então não há dado retroativo no formato antigo.
+        `scripts/diag-vinculo-whatsapp.mjs` (só leitura) mede quando houver; hoje ele **para antes**,
+        porque a migration `20260814160000` não foi aplicada.
     - ⚠ **Dois furos de multi-tenancy da F1 fechados de passagem**: `salvarContato({id})` e
       `removerContato` escolhiam o alvo **só pelo id** (contato de outra empresa caía dentro do
       acesso do chamador), e o `POST` fazia `{portalClientId: path, ...body}` — corpo sobrescrevendo

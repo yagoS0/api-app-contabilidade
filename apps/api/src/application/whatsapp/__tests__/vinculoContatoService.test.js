@@ -18,7 +18,7 @@ import {
   removerContato,
   ContatoWhatsappError,
 } from "../ContatoWhatsappService.js";
-import { SITUACOES, TOLERANCIAS } from "../vinculoTelefone.js";
+import { SITUACOES, LEITURAS } from "../vinculoTelefone.js";
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -89,12 +89,18 @@ describe("resolverVinculoPorTelefone", () => {
     expect(r.empresas[0].contatos[0].papelRbac).toBeNull();
   });
 
-  it("a tolerância atravessa até a regra", async () => {
+  it("⚠ a query pesca largo, mas quem RESPONDE é o cadastro — e a divergência acende", async () => {
+    // A busca usa `variantesE164` de propósito: sem trazer a linha do formato antigo, a divergência
+    // ficaria invisível e ninguém saberia que aquele cadastro precisa ser corrigido. O que a rede
+    // larga NÃO faz é decidir — a regra casa dígito a dígito e recusa.
     prisma.contatoWhatsapp.findMany.mockResolvedValue([linha({ telefoneE164: "552199998888" })]);
-    expect((await resolverVinculoPorTelefone("5521999998888")).situacao).toBe(SITUACOES.DESCONHECIDO);
-    expect(
-      (await resolverVinculoPorTelefone("5521999998888", { tolerancia: TOLERANCIAS.NONO_DIGITO })).situacao,
-    ).toBe(SITUACOES.VINCULADO);
+    const r = await resolverVinculoPorTelefone("5521999998888");
+    expect(r.situacao).toBe(SITUACOES.DESCONHECIDO);
+    expect(r.divergemPeloNonoDigito).toBe(true);
+    expect(r.leituras[LEITURAS.NONO_DIGITO].situacao).toBe(SITUACOES.VINCULADO);
+    // A linha foi buscada com as DUAS formas — é isso que torna o aviso possível.
+    const where = prisma.contatoWhatsapp.findMany.mock.calls.at(-1)[0].where;
+    expect(where.OR[0].telefoneE164.in.sort()).toEqual(["552199998888", "5521999998888"]);
   });
 });
 

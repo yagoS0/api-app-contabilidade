@@ -31,18 +31,32 @@
 // permissão aqui criaria uma segunda resposta para a pergunta que o middleware já responde — e a
 // segunda cópia é sempre a que diverge.
 //
-// ── ⚠ O NONO DÍGITO TEM DUAS LEITURAS, E ESTE MÓDULO NÃO ESCOLHE SOZINHO ────────────────────────
-// Celular brasileiro ganhou o 9 em 2012, e a base da Meta guarda contatos nas duas formas: um número
-// cadastrado como `5521999998888` pode chegar como `552199998888`. Errar aqui erra nos DOIS
-// sentidos:
-//   - achar que são DIFERENTES faz a mensagem legítima cair em "não vinculados" sem motivo aparente;
-//   - achar que são o MESMO pode colar dois números que de fato são de pessoas diferentes — porque
-//     `variantesE164` acrescenta o 9 a QUALQUER número de 8 dígitos, inclusive a um fixo
-//     (`552133334444` gera `5521933334444`, um celular que pode ser de outra pessoa).
-// As duas leituras estão NOMEADAS em `TOLERANCIAS` e as duas são calculadas sempre. Quando elas
-// discordam, `divergemPeloNonoDigito` acende e `leituras` mostra o que cada uma respondeu — a
-// discordância aparece em vez de ser decidida em silêncio. O padrão é `ESTRITA` porque, num ato de
-// consequência, o erro barato é perguntar de novo e o erro caro é emitir no CNPJ de outro.
+// ── ⚠ O NÚMERO É O DO CADASTRO. NADA É DERIVADO. (decisão do dono, 14/08/2026) ──────────────────
+//
+// > "os números são sempre com um nove na frente a partir de agora, mas você nunca deve pressupor
+// >  o número, o número de comunicação com o cliente será o do cadastro"
+//
+// Isso resolve o que antes era uma escolha em aberto, e resolve nas duas pontas:
+//
+//   1. **O CADASTRO É A AUTORIDADE.** Quem responde "que número é este?" é a linha gravada em
+//      `contatos_whatsapp`, comparada DÍGITO A DÍGITO. A comparação estrita não é mais um padrão
+//      que alguém possa virar: é a regra.
+//   2. **NADA É INVENTADO PARA CASAR.** Celular brasileiro ganhou o 9 em 2012 e o mesmo aparelho
+//      pode ser escrito das duas formas — mas `variantesE164` acrescenta o 9 a QUALQUER número de
+//      8 dígitos, **inclusive a um fixo**: `552133334444` gera `5521933334444`, que pode ser o
+//      celular de outra pessoa, de outra empresa. Casar por aí é pressupor o número, e a
+//      consequência é emitir no CNPJ de outro.
+//
+// ⚠ POR ISSO A TOLERÂNCIA NÃO É PARÂMETRO — foi retirada da assinatura de propósito. Enquanto
+// `opcoes.tolerancia` existia, bastava um chamador futuro passar `NONO_DIGITO` para violar a regra
+// em silêncio, e o violador nem saberia que havia uma regra. A leitura tolerante continua sendo
+// CALCULADA, mas ela **nunca pode virar a resposta**: serve só para acender
+// `divergemPeloNonoDigito`.
+//
+// ⚠ E ESSE SINAL MUDOU DE SIGNIFICADO. Ele não é mais "talvez devêssemos ser tolerantes"; é
+// **"este cadastro está no formato antigo — conserte o CADASTRO"**. É a diferença entre corrigir a
+// origem e remendar a comparação para sempre. Quem escrever o webhook lê o sinal, avisa o contador,
+// e não casa.
 
 import { normalizarE164, variantesE164, somenteDigitos } from "./telefone.js";
 
@@ -57,10 +71,16 @@ export const SITUACOES = Object.freeze({
   VINCULADO: "VINCULADO",
 });
 
-export const TOLERANCIAS = Object.freeze({
-  /** Só casa dígito a dígito. Padrão. */
+export const LEITURAS = Object.freeze({
+  /**
+   * A REGRA: casa dígito a dígito com o que está no cadastro. Única que produz resposta.
+   */
   ESTRITA: "ESTRITA",
-  /** Casa também a outra forma do nono dígito (`variantesE164`). */
+  /**
+   * ⚠ DIAGNÓSTICO, NUNCA RESPOSTA. Casa também a outra forma do nono dígito (`variantesE164`).
+   * Existe só para comparar com a estrita e acender `divergemPeloNonoDigito` — que significa
+   * "o cadastro está no formato antigo", não "case assim mesmo".
+   */
   NONO_DIGITO: "NONO_DIGITO",
 });
 
@@ -78,8 +98,8 @@ export const MOTIVOS_DESCARTE = Object.freeze({
   CONTATO_INATIVO: "contato desativado no cadastro",
 });
 
-const alvosDaLeitura = (e164, tolerancia) =>
-  tolerancia === TOLERANCIAS.NONO_DIGITO ? new Set(variantesE164(e164)) : new Set([somenteDigitos(e164)]);
+const alvosDaLeitura = (e164, leitura) =>
+  leitura === LEITURAS.NONO_DIGITO ? new Set(variantesE164(e164)) : new Set([somenteDigitos(e164)]);
 
 /**
  * Os números de um contato, na ordem em que o vínculo os prefere.
@@ -151,9 +171,9 @@ function agruparPorEmpresa(casados) {
   return empresas;
 }
 
-/** Uma leitura completa (empresas + descartes) para uma tolerância. */
-function lerCom(e164, candidatos, tolerancia) {
-  const alvos = alvosDaLeitura(e164, tolerancia);
+/** Uma leitura completa (empresas + descartes) para uma das leituras de `LEITURAS`. */
+function lerCom(e164, candidatos, leitura) {
+  const alvos = alvosDaLeitura(e164, leitura);
   const casados = [];
   const descartados = [];
   for (const contato of candidatos || []) {
@@ -199,13 +219,17 @@ const mesmoResumo = (a, b) =>
  * @param {string} telefone o que chegou (do webhook, da tela, do teste) — em qualquer forma
  * @param {Array} candidatos contatos JÁ CARREGADOS, no formato de `SELECT_CONTATO_PARA_VINCULO`,
  *   acrescidos de `userId` e `vinculoRbac: {role,status}|null`. Quem carrega é o service.
- * @param {{tolerancia?: string}} opcoes
- * @returns {{situacao:string, e164:string|null, tolerancia:string, empresas:Array,
+ * @returns {{situacao:string, e164:string|null, leitura:string, empresas:Array,
  *            ambiguidades:Array<string>, descartados:Array, divergemPeloNonoDigito:boolean,
  *            leituras:object}}
+ *
+ * ⚠ NÃO RECEBE OPÇÕES, e essa ausência é a regra (ver o cabeçalho). A resposta sai SEMPRE da
+ * leitura estrita contra o cadastro. Se algum dia alguém precisar da leitura tolerante, ela já está
+ * em `leituras[NONO_DIGITO]` para ser OLHADA — o que não existe é o caminho para ela virar a
+ * resposta sem que a decisão do dono seja revista.
  */
-export function resolverVinculoTelefone(telefone, candidatos = [], opcoes = {}) {
-  const tolerancia = opcoes.tolerancia === TOLERANCIAS.NONO_DIGITO ? TOLERANCIAS.NONO_DIGITO : TOLERANCIAS.ESTRITA;
+export function resolverVinculoTelefone(telefone, candidatos = []) {
+  const leitura = LEITURAS.ESTRITA;
   const e164 = normalizarE164(telefone);
 
   if (!e164) {
@@ -214,7 +238,7 @@ export function resolverVinculoTelefone(telefone, candidatos = [], opcoes = {}) 
     return {
       situacao: SITUACOES.TELEFONE_INVALIDO,
       e164: null,
-      tolerancia,
+      leitura,
       empresas: [],
       ambiguidades: [],
       descartados: [],
@@ -223,11 +247,11 @@ export function resolverVinculoTelefone(telefone, candidatos = [], opcoes = {}) 
     };
   }
 
-  const estrita = lerCom(e164, candidatos, TOLERANCIAS.ESTRITA);
-  const tolerante = lerCom(e164, candidatos, TOLERANCIAS.NONO_DIGITO);
-  const escolhida = tolerancia === TOLERANCIAS.NONO_DIGITO ? tolerante : estrita;
+  const estrita = lerCom(e164, candidatos, LEITURAS.ESTRITA);
+  // ⚠ Calculada, NUNCA escolhida. É o termo de comparação de `divergemPeloNonoDigito`.
+  const tolerante = lerCom(e164, candidatos, LEITURAS.NONO_DIGITO);
 
-  const empresas = escolhida.empresas;
+  const empresas = estrita.empresas;
   const situacao = situacaoDe(empresas);
   const ambiguidades = [];
   if (empresas.length > 1) ambiguidades.push(AMBIGUIDADES.EMPRESA);
@@ -239,11 +263,12 @@ export function resolverVinculoTelefone(telefone, candidatos = [], opcoes = {}) 
   return {
     situacao,
     e164,
-    tolerancia,
+    leitura,
     empresas,
     ambiguidades,
-    descartados: escolhida.descartados,
+    descartados: estrita.descartados,
+    // "o cadastro está no formato antigo — conserte o cadastro", NUNCA "case assim mesmo".
     divergemPeloNonoDigito: !mesmoResumo(resumoEstrita, resumoTolerante),
-    leituras: { [TOLERANCIAS.ESTRITA]: resumoEstrita, [TOLERANCIAS.NONO_DIGITO]: resumoTolerante },
+    leituras: { [LEITURAS.ESTRITA]: resumoEstrita, [LEITURAS.NONO_DIGITO]: resumoTolerante },
   };
 }
