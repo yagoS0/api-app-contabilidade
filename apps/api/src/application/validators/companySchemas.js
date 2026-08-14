@@ -28,6 +28,11 @@ const companyBaseFields = {
   email: z.string().email().optional().nullable(),
   telefone: z.string().max(40).optional().nullable(),
   inscricaoMunicipal: z.string().max(60).optional().nullable(),
+  // Código IBGE do município emissor da NFS-e. O Zod só confere a FORMA (string curta); quem diz
+  // "7 dígitos ou nada" é `validateAndNormalizeCompanyProfile`, num lugar só, junto do motivo.
+  // ⚠ Precisa estar declarado aqui mesmo assim: `company` é um `z.object` sem `passthrough`, e
+  // chave não declarada é removida do `parsed.data` sem erro nenhum.
+  codigoMunicipioIbge: z.string().max(20).optional().nullable(),
   cnaePrincipal: z.string().max(20).optional().nullable(),
   cnaesSecundarios: z.array(z.string().max(20)).max(50).optional(),
   regimeTributario: z.enum(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI", "OUTRO"]).optional().nullable(),

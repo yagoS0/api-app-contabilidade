@@ -153,6 +153,10 @@ function buildCompanyPayload(input) {
       // em produção ela é sempre null.
       inscricaoMunicipal: txt(input.inscricaoMunicipal),
       inscricaoMunicipalData: omitIfEmpty(input.inscricaoMunicipalData),
+      // Município EMISSOR da NFS-e (`cLocEmi`). Vai como `null` quando em branco — "não escolhido"
+      // precisa poder voltar a ser gravado, senão limpar uma escolha errada seria impossível pela
+      // tela. Quem recusa formato inválido é o normalizador do backend (e o CHECK do banco).
+      codigoMunicipioIbge: txt(input.codigoMunicipioIbge),
       inscricaoEstadual: txt(input.inscricaoEstadual),
       inscricaoEstadualData: omitIfEmpty(input.inscricaoEstadualData),
       porte: txt(input.porte),

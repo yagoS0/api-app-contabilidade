@@ -216,6 +216,26 @@ export function validateAndNormalizeCompanyProfile(input) {
   const capitalSocial = asNumberOrNull(company.capitalSocial);
   if (capitalSocial !== null && capitalSocial < 0) return { ok: false, error: "company_capital_social_invalid" };
 
+  // ⚠ CÓDIGO IBGE DO MUNICÍPIO EMISSOR — 7 dígitos, ou nada.
+  //
+  // É o `cLocEmi` da DPS, e entra no `Id` do documento; o banco tem CHECK `^[0-9]{7}$` na coluna
+  // (migration `20260814120000_add_nfse_emissao_fase1`). A guarda vive AQUI, e não só no CHECK,
+  // porque uma violação de constraint sobe como erro 500 sem nome — o contador veria "erro
+  // interno" ao salvar o cadastro, sem saber qual campo recusou.
+  //
+  // ⚠ NÃO É DERIVADO DE `endereco.cidade`, nem quando ele está preenchido. O de-para nome→IBGE
+  // erra em homônimo (há cinco "Bom Jesus" no país) e o erro só apareceria como nota emitida no
+  // município errado. Quem escolhe é o contador, na lista oficial do IBGE embarcada no front.
+  //
+  // Valor em branco grava NULL de propósito: desfazer uma escolha errada tem de ser possível, e
+  // NULL é o estado que a emissão recusa com motivo (`NFSE_MUNICIPIO_NAO_CONFIGURADO`) em vez de
+  // fabricar `"0000000"`.
+  const codigoMunicipioIbgeBruto = asString(company.codigoMunicipioIbge);
+  const codigoMunicipioIbge = onlyDigits(codigoMunicipioIbgeBruto);
+  if (codigoMunicipioIbgeBruto && codigoMunicipioIbge.length !== 7) {
+    return { ok: false, error: "company_codigo_municipio_ibge_invalid" };
+  }
+
   return {
     ok: true,
     data: {
@@ -233,6 +253,7 @@ export function validateAndNormalizeCompanyProfile(input) {
       // ── Ficha de cadastro ──
       inscricaoMunicipal: asString(company.inscricaoMunicipal) || null,
       inscricaoMunicipalData,
+      codigoMunicipioIbge: codigoMunicipioIbge || null,
       inscricaoEstadual: asString(company.inscricaoEstadual) || null,
       inscricaoEstadualData,
       porte: asString(company.porte) || null,

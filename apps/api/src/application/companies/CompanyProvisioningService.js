@@ -186,6 +186,10 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
           cnaePrincipal: normalizedCompany.cnaePrincipal,
           cnaesSecundarios: normalizedCompany.cnaesSecundarios,
           inscricaoMunicipal: inscricaoMunicipalInput ?? normalizedCompany.inscricaoMunicipal,
+          // Município EMISSOR da NFS-e (`cLocEmi`). ⚠ Nasce do que foi ESCOLHIDO no formulário e de
+          // mais nada: a BrasilAPI devolve o município como texto, e converter esse texto em código
+          // erraria em homônimo. Empresa criada sem ele simplesmente não emite até alguém escolher.
+          codigoMunicipioIbge: normalizedCompany.codigoMunicipioIbge,
           // ── Ficha de cadastro (muito disso já vem preenchido da BrasilAPI) ──
           inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
           inscricaoEstadual: normalizedCompany.inscricaoEstadual,

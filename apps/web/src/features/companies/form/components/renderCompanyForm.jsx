@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "../../../../components/ui/Button";
 import { companyCreateFormSchema, companyUpdateFormSchema } from "../../../../lib/schemas/companySchema";
 import { passwordChecklist } from "../../../../lib/schemas/passwordPolicy";
+import { SeletorMunicipioIbge } from "./SeletorMunicipioIbge";
 
 // Q11.2: estilo padrão pra mensagens de erro inline (vermelho, abaixo do input)
 const ERROR_TEXT_STYLE = {
@@ -268,6 +269,11 @@ export function CompanyForm({
   submitLabel,
   showOwnerPassword,
   cnpjReadOnly = false, // true em modo edição: CNPJ é imutável após criação (UI + API)
+  // Município/UF que o cadastro (PortalClient) já tem, como TEXTO — servem para CONFERIR o
+  // município emissor escolhido, nunca para escolhê-lo. Ausentes, o bloco cai no endereço do
+  // próprio formulário, que é a mesma informação pela outra fonte.
+  municipioCadastrado = null,
+  ufCadastrado = null,
   // Q11.1: zona de risco — botões só aparecem em modo edição (cnpjReadOnly=true)
   status,            // "ATIVA" | "SUSPENSA" (vem do servidor)
   onSuspend,         // (reason?) => Promise
@@ -599,6 +605,15 @@ export function CompanyForm({
         <input type="date" value={form.inscricaoMunicipalData} onChange={(event) => onChange("inscricaoMunicipalData", event.target.value)} />
       </label>
       <div />
+      {/* ⚠ O MUNICÍPIO EMISSOR FICA AQUI, junto da inscrição municipal, e não em tela nova: são os
+          dados que o `buildMissingFields` do emissor de NFS-e exige, e o contador já vem a este
+          bloco para preenchê-los. Seletor, não campo livre — ver `SeletorMunicipioIbge`. */}
+      <SeletorMunicipioIbge
+        valor={form.codigoMunicipioIbge}
+        onChange={(codigo) => onChange("codigoMunicipioIbge", codigo)}
+        municipioCadastrado={municipioCadastrado || form.enderecoCidade}
+        ufCadastrado={ufCadastrado || form.enderecoUf}
+      />
       <label>
         Inscrição estadual
         <input value={form.inscricaoEstadual} onChange={(event) => onChange("inscricaoEstadual", event.target.value)} />

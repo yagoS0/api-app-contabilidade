@@ -443,6 +443,25 @@ constante `DPS_VERSAO`, num lugar só, para virar em uma linha.
 1. **Como `Company.codigoMunicipioIbge` será preenchido.** O município só existe como TEXTO em
    `PortalClient.municipio`/`uf` (33/33 preenchidos, 32 no Rio). O de-para nome→IBGE exige a tabela
    do IBGE, que não temos, e erra em homônimo. **Migration sem backfill**, de propósito.
+   - ✅ **RESPONDIDO (2026-08-14): o contador ESCOLHE numa lista oficial embarcada.** A tabela do
+     IBGE passou a existir no projeto (`apps/web/src/lib/municipios/municipiosIbge.data.js`, 5.571
+     linhas, extraídas da API de Localidades do IBGE, versionadas e datadas — **nunca** buscadas em
+     runtime). O campo entrou no formulário de edição da empresa, no bloco "Inscrições".
+     ⚠ **Escolher ≠ derivar:** nada é pré-selecionado, a busca não autosseleciona nem com um único
+     resultado, e toda opção mostra município **e UF**. O de-para automático nome→código continua
+     proibido, pelo mesmo motivo de sempre (homônimo → nota emitida no município errado).
+   - **Caminho backend:** `validateAndNormalizeCompanyProfile` normaliza (7 dígitos ou nada;
+     `company_codigo_municipio_ibge_invalid`), a rota grava em `tx.company.update` e o campo entrou
+     em `legacyCompanySelect`. ⚠ A rota lista os campos aceitos UM A UM — antes disso o valor
+     chegava no corpo, passava pelo Zod (`.passthrough()`) e era **descartado em silêncio**, com a
+     resposta 200. Regressão: `routes/firm/__tests__/companyMunicipioIbge.test.js` (7 testes;
+     removendo a linha do `update`, quatro deles caem com `undefined`).
+   - **A ausência aparece ANTES da tentativa de emitir:** aviso no cadastro e bloqueio no primeiro
+     passo do assistente (`EmitirNfseWizard`), espelhando `NFSE_MUNICIPIO_NAO_CONFIGURADO`.
+   - Fonte de que `cLocEmi` **é** o código do IBGE: `docs/nfse-preenchimento.md` §2 e §5 ("cLocEmi:
+     IBGE do município emissor, ex.: 3304557 (Rio de Janeiro)"; `cMun` "(IBGE, 7 dígitos)"),
+     escrito a partir de emissão bem-sucedida em homologação — e o mesmo `3304557` que
+     `NfseService` já usa na regra de IM do Rio.
 2. **`opSimpNac` do MEI.** Simples→`3` e não optante→`1` têm evidência (a emissão homolog aceita, e
    a NFS-e real versionada com `opSimpNac=1` + `pTotTrib` + sem `regApTribSN`). O `2` do MEI tem
    **só um comentário de código**, escrito no mesmo bloco que cravava o `3`. MEI **recusa**.

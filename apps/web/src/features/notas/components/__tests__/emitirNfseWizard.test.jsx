@@ -17,8 +17,23 @@ import { EmitirNfseWizard } from "../EmitirNfseWizard";
 
 const noop = () => {};
 
-function abrir({ onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} })), regime = "SIMPLES" } = {}) {
-  render(<EmitirNfseWizard companyId="c-1" regime={regime} onEmitir={onEmitir} onClose={noop} />);
+// ⚠ O município emissor vem PREENCHIDO por padrão aqui porque, sem ele, a empresa não emite e o
+// assistente trava no primeiro passo — os demais testes falariam pelo motivo errado. O caso da
+// ausência tem teste próprio, no fim do arquivo.
+function abrir({
+  onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} })),
+  regime = "SIMPLES",
+  codigoMunicipioIbge = "3304557",
+} = {}) {
+  render(
+    <EmitirNfseWizard
+      companyId="c-1"
+      regime={regime}
+      codigoMunicipioIbge={codigoMunicipioIbge}
+      onEmitir={onEmitir}
+      onClose={noop}
+    />
+  );
   return { onEmitir };
 }
 
@@ -191,5 +206,34 @@ describe("depois de emitida, a tela não promete o que não pode acontecer", () 
     expect(within(lista).getByText("1001")).toBeInTheDocument();
     expect(within(lista).getByText("R$ 1.500,00")).toBeInTheDocument();
     expect(within(lista).getByText("3304abc")).toBeInTheDocument();
+  });
+});
+
+// ⚠ SEM MUNICÍPIO EMISSOR A EMPRESA NÃO EMITE — e o servidor recusa com
+// `NFSE_MUNICIPIO_NAO_CONFIGURADO` (`resolverCLocEmi`), depois de já ter reservado o número.
+// O impedimento é da EMPRESA, não da nota: ele aparece no PRIMEIRO passo, antes de o contador
+// preencher tomador, serviço e valores para só então ouvir "não".
+describe("empresa sem município emissor não chega ao botão Emitir", () => {
+  it("bloqueia já no passo 1, com o motivo e onde resolver", () => {
+    abrir({ codigoMunicipioIbge: null });
+
+    expect(screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/)).toBeInTheDocument();
+    // A explicação inteira aparece UMA vez (no bloco do impedimento); a lista de pendências do
+    // passo leva a versão curta. As duas dizem onde resolver — é o que o contador precisa.
+    expect(screen.getAllByText(/recusa a emissão inteira/)).toHaveLength(1);
+    expect(screen.getAllByText(/Editar cadastro → Inscrições/)).toHaveLength(2);
+
+    const botao = screen.getByRole("button", { name: /Continuar/ });
+    expect(botao).toBeDisabled();
+    expect(botao).toHaveAttribute("title", expect.stringContaining("município emissor"));
+  });
+
+  it("com o município cadastrado o bloqueio some e o passo 1 volta a andar", () => {
+    abrir({ codigoMunicipioIbge: "3304557" });
+
+    expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
+    digitar("CNPJ ou CPF do tomador", "12345678000199");
+    digitar("Nome ou razão social", "ACME LTDA");
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
   });
 });

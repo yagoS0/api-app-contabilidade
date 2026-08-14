@@ -218,6 +218,30 @@ esses, saem dos lançamentos de verdade do mock.
   avisa que há download em lote rodando mesmo depois de sair da página que disparou. Polling
   adaptativo (4s ativo / 30s ocioso) e para com a aba escondida.
 
+## Município emissor da NFS-e — SELEÇÃO, nunca dedução
+
+Campo no formulário de edição (bloco **Inscrições**, junto da inscrição municipal — os campos que
+`buildMissingFields` do emissor exige). Componente: `form/components/SeletorMunicipioIbge.jsx`;
+regra em `lib/municipios/municipioIbge.js`; dado em `lib/municipios/municipiosIbge.data.js`
+(5.571 linhas, extraídas da API de Localidades do IBGE em 2026-08-14, **versionadas** — nunca
+buscadas em runtime; o arquivo diz no cabeçalho como atualizar).
+
+- ⚠ **NADA vem pré-selecionado**, nem para a maioria da carteira que é do Rio. O código do Rio
+  (`3304557`) aparece cravado numa regra de IM dentro de `NfseService`; reusá-lo como sugestão
+  transformaria detalhe de implementação em afirmação sobre a empresa.
+- ⚠ **A busca ENCONTRA, não escolhe.** Um único resultado também não se autosseleciona, e toda
+  opção mostra **município E UF** — é a UF que desambigua (há cinco "Bom Jesus" no país). Derivar o
+  código do `PortalClient.municipio` (texto) erraria em homônimo, e o erro apareceria só como **nota
+  emitida no município errado**.
+- O `municipio`/`uf` do cadastro aparece **ao lado, para conferir**; divergência vira **aviso**, não
+  correção automática (a empresa pode ter mudado de endereço).
+- **A ausência aparece antes da tentativa**, em dois lugares: no cadastro (aviso âmbar dizendo que a
+  empresa não emite) e no `EmitirNfseWizard`, que **bloqueia no primeiro passo** — impedimento da
+  EMPRESA não pode ser descoberto depois de preencher a nota inteira.
+- Onde ele vive: **`legacyCompany.codigoMunicipioIbge`** (coluna de `Company`, não de
+  `PortalClient`). Tem de estar em `legacyCompanySelect` (`routes/firm/index.js`), senão volta
+  `undefined` e o formulário reabre vazio.
+
 ## ⚠ Regime da empresa mora em `legacyCompany`
 
 `selectedCompany.regimeTributario` **não existe** — `buildFirmCompanyPayload` só devolve o regime

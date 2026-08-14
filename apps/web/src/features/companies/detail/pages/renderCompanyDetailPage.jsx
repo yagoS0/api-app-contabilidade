@@ -562,6 +562,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 submitLabel="Salvar alterações"
                 showOwnerPassword={false}
                 cnpjReadOnly
+                /* Conferência do município emissor: o que o cadastro (PortalClient) diz, em texto.
+                   Não escolhe nada — ver `SeletorMunicipioIbge`. */
+                municipioCadastrado={selectedCompany?.municipio}
+                ufCadastrado={selectedCompany?.uf}
                 // Q11.1: zona de risco
                 status={selectedCompany?.status}
                 dangerSaving={dangerActions?.saving}
@@ -629,6 +633,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                    com o do cadastro. Mesmo `companyRegime` do resto da página (mora em
                    `legacyCompany`, nunca no topo do payload). */
                 regime={companyRegime}
+                /* Município emissor da DPS — mesma fonte do formulário (`legacyCompany`), nunca o
+                   `municipio` de texto do topo do payload. */
+                codigoMunicipioIbge={selectedCompany?.legacyCompany?.codigoMunicipioIbge || null}
               />
             </Suspense>
           </ErrorBoundary>

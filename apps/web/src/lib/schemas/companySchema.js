@@ -43,6 +43,13 @@ export const companyCreateFormSchema = z.object({
   telefone: z.string().max(40).optional().or(z.literal("")),
   regimeTributario: z.string().optional().or(z.literal("")),
   cnaePrincipal: z.string().max(20).optional().or(z.literal("")),
+  // Município emissor da NFS-e. Vazio é legítimo (a empresa apenas não emite), 7 dígitos é o valor
+  // — e não há terceira forma: o campo é preenchido por ESCOLHA na lista do IBGE, não digitado.
+  codigoMunicipioIbge: z
+    .string()
+    .regex(/^\d{7}$/, "Escolha o município na lista — o código do IBGE tem 7 dígitos")
+    .or(z.literal(""))
+    .optional(),
   enderecoRua: z.string().max(200).optional().or(z.literal("")),
   enderecoNumero: z.string().max(20).optional().or(z.literal("")),
   enderecoBairro: z.string().max(120).optional().or(z.literal("")),

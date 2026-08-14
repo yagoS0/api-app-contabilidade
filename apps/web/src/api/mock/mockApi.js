@@ -154,10 +154,20 @@ function makeCompanies(count = 6) {
       : new Date(Date.now() + 200 * 24 * 3600 * 1000).toISOString();
     // Empresa zerada (sem movimento): a coluna de guias precisa dizer isso em vez de listar chips.
     const empresaZerada = i === 5;
+    // ⚠ O MUNICÍPIO EMISSOR EM DUAS SITUAÇÕES, porque são duas telas diferentes.
+    // Em produção (medido) 32 das 33 empresas são do Rio e uma é de Mangaratiba/RJ, e NENHUMA tem
+    // o código IBGE preenchido — a coluna nasceu vazia de propósito. O mock precisa dos dois casos:
+    // sem código (a empresa NÃO emite, e é isso que o cadastro e o assistente têm de dizer ANTES da
+    // tentativa) e com código (o caminho normal). Só a de Mangaratiba vem configurada.
+    // `municipio`/`uf` são texto do `PortalClient` e existem no payload real; aqui eles alimentam a
+    // CONFERÊNCIA ao lado do seletor — nunca a escolha.
+    const ehMangaratiba = i === 2;
     return {
       companyId,
       razao: faker.company.name(),
       cnpj: faker.helpers.replaceSymbols("##.###.###/####-##"),
+      municipio: ehMangaratiba ? "Mangaratiba" : "Rio de Janeiro",
+      uf: "RJ",
       ownerEmail,
       guideNotificationEmail: ownerEmail,
       hasProlabore,
@@ -175,6 +185,8 @@ function makeCompanies(count = 6) {
         // tomador e sem nenhum item) era inalcançável sem backend. Só a 2ª empresa tem IE: a maioria
         // dos clientes é de serviço, e ter IE em todas apagaria o caminho "empresa só de NFS-e".
         inscricaoEstadual: i === 1 ? "11.222.333" : "",
+        // Código do IBGE (7 dígitos) — o `cLocEmi` da DPS. Nulo = empresa que ainda não emite.
+        codigoMunicipioIbge: ehMangaratiba ? "3302601" : null,
       },
       // Recalculado a cada `listCompanies` (ver abaixo) — aqui é só o valor inicial da carga.
       guideCompliance: mockGuideComplianceRow({ companyId, indice: i, hasProlabore, regimeTributario }),
@@ -1189,6 +1201,24 @@ if (_firstCompanyId) {
   ]);
 }
 
+/**
+ * O código IBGE do município emissor, com a MESMA regra do backend
+ * (`validateAndNormalizeCompanyProfile` → `company_codigo_municipio_ibge_invalid`) e do CHECK do
+ * banco (`^[0-9]{7}$`).
+ *
+ * Três respostas, e as três importam: ausente = não mexer · vazio = limpar a escolha · 7 dígitos =
+ * gravar. Qualquer outra coisa é RECUSA — um mock que aceitasse "3304" faria a tela passar offline
+ * e estourar no banco em produção.
+ */
+function normalizarCodigoMunicipioIbgeMock(valor, atual) {
+  if (valor === undefined) return atual ?? null;
+  const texto = String(valor ?? "").trim();
+  if (!texto) return null;
+  const digitos = texto.replace(/\D+/g, "");
+  if (digitos.length !== 7) throw new Error("company_codigo_municipio_ibge_invalid");
+  return digitos;
+}
+
 function buildCompanyPayload(input) {
   const ownerEmail = String(input.ownerEmail || "").trim().toLowerCase();
   const guideEmail =
@@ -1214,7 +1244,14 @@ function buildCompanyPayload(input) {
     telefone: String(input.telefone || "").trim() || null,
     portalCreatedAt: new Date().toISOString(),
     portalUpdatedAt: new Date().toISOString(),
-    legacyCompany: { regimeTributario, tipoTributario: regimeTributario },
+    // ⚠ `codigoMunicipioIbge` nasce do que foi ESCOLHIDO no formulário, e nada mais. Derivá-lo de
+    // `enderecoCidade` aqui faria o mock aceitar o que o real recusa — e ensinaria o de-para por
+    // nome, que é justamente o erro (homônimo) que o seletor existe para impedir.
+    legacyCompany: {
+      regimeTributario,
+      tipoTributario: regimeTributario,
+      codigoMunicipioIbge: normalizarCodigoMunicipioIbgeMock(input.codigoMunicipioIbge, null),
+    },
     guideCompliance: mockGuideComplianceRow({ hasProlabore, regimeTributario, inssOk: true, dasOk: true }),
   };
 }
@@ -2556,15 +2593,30 @@ export function createMockApi() {
       const index = mockCompanies.findIndex((item) => item.companyId === companyId);
       if (index < 0) throw new Error("not_found");
       const body = input || {};
-      const nested = body.company && typeof body.company === "object" ? body.company : {};
+      // ⚠ ACEITA AS DUAS FORMAS, como a rota real (`companyInput = body.company ?? body`).
+      // Faltava o segundo caso, e ele é justamente o que chega aqui: `updateCompany` é chamada com
+      // o FORMULÁRIO CRU (`editCompanyForm.form`, achatado) — quem aninha em `{ company: … }` é o
+      // `buildCompanyPayload` do realApi, que o mock não usa. Sem o fallback, `nested` era `{}` e
+      // toda edição virava no-op offline: salvar, recarregar e ver o valor VELHO parecia campo
+      // descartado pelo backend, quando era o mock que nunca lia o payload.
+      const nested = body.company && typeof body.company === "object" ? body.company : body;
       const companyInput = { ...nested, ownerEmail: body.ownerEmail, ownerName: body.ownerName };
       const current = mockCompanies[index];
       const legacyCurrent = current.legacyCompany && typeof current.legacyCompany === "object"
         ? current.legacyCompany
         : {};
+      // O form achatado manda `enderecoRua`/`enderecoCidade`/…; o payload aninhado manda `endereco`.
       const endereco = companyInput.endereco && typeof companyInput.endereco === "object"
         ? companyInput.endereco
-        : {};
+        : {
+          rua: companyInput.enderecoRua,
+          numero: companyInput.enderecoNumero,
+          bairro: companyInput.enderecoBairro,
+          cidade: companyInput.enderecoCidade,
+          uf: companyInput.enderecoUf,
+          cep: companyInput.enderecoCep,
+          complemento: companyInput.enderecoComplemento,
+        };
       const next = {
         ...current,
         razao: String(companyInput.razaoSocial || current.razao || "").trim(),
@@ -2597,6 +2649,14 @@ export function createMockApi() {
           companyInput.regimeTributario || legacyCurrent.regimeTributario || "SIMPLES"
         ),
         cnaePrincipal: String(companyInput.cnaePrincipal || legacyCurrent.cnaePrincipal || "").trim() || null,
+        // ⚠ MESMA REGRA DO REAL: só dígitos, e 7 ou nada. O mock precisa RECUSAR o que o servidor
+        // recusaria (o banco tem CHECK `^[0-9]{7}$`) — um mock permissivo aqui deixaria passar
+        // offline exatamente o valor que estoura em produção. Vazio grava `null` (limpar a escolha
+        // é uma operação legítima); qualquer outra coisa fora de 7 dígitos é erro.
+        codigoMunicipioIbge: normalizarCodigoMunicipioIbgeMock(
+          companyInput.codigoMunicipioIbge,
+          legacyCurrent.codigoMunicipioIbge ?? null,
+        ),
         enderecoJson: {
           rua: String(endereco.rua || legacyCurrent.enderecoJson?.rua || "").trim() || null,
           numero: String(endereco.numero || legacyCurrent.enderecoJson?.numero || "").trim() || null,
@@ -4915,6 +4975,14 @@ export function createMockApi() {
      */
     async emitirNfse(payload) {
       await delay(400);
+      // ⚠ SEM MUNICÍPIO EMISSOR NÃO SAI NADA — e o servidor recusa ANTES de qualquer coisa
+      // (`NFSE_MUNICIPIO_NAO_CONFIGURADO`, em `resolverCLocEmi`): o código é o `cLocEmi` e entra no
+      // `Id` da DPS. Sem esta recusa aqui, o caminho da empresa não configurada passaria offline —
+      // e é exatamente ele que o assistente aprendeu a mostrar antes do clique.
+      const empresa = mockCompanies.find((c) => c.companyId === payload?.companyId);
+      if (empresa && !String(empresa.legacyCompany?.codigoMunicipioIbge || "").trim()) {
+        throw new Error("nfse_municipio_nao_configurado");
+      }
       const doc = String(payload?.tomador?.cnpjCpf || "").replace(/\D/g, "");
       if (doc.length !== 11 && doc.length !== 14) throw new Error("tomador_documento_invalido");
       if (!String(payload?.tomador?.nome || "").trim()) throw new Error("tomador_nome_obrigatorio");

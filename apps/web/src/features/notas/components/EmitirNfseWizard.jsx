@@ -31,6 +31,13 @@
 //   • regime não mapeado  → `NFSE_REGIME_INDEFINIDO`
 //   • não optante         → `MISSING_TOT_TRIB_NAO_SIMPLES` (grupo de XML ainda não confirmado)
 //   • ISS retido sem alíquota → `NFSE_ISS_RETIDO_SEM_ALIQUOTA`
+//   • sem município emissor   → `NFSE_MUNICIPIO_NAO_CONFIGURADO`
+//
+// ⚠ O MUNICÍPIO EMISSOR É IMPEDIMENTO DA EMPRESA, e por isso aparece no PRIMEIRO passo.
+// Ele não se resolve aqui (é cadastro), e um assistente que deixa preencher tomador, serviço e
+// valores para só então recusar cobra do contador um trabalho que já estava perdido. A ausência
+// também é dita no próprio cadastro — ver `SeletorMunicipioIbge`: a recusa não pode ser a primeira
+// vez que alguém descobre que a empresa não emite.
 
 import { useMemo, useState } from "react";
 import { PANEL } from "./notasStyles";
@@ -48,6 +55,7 @@ import {
   MOTIVO_P_TOT_TRIB_SN,
   FONTE_P_TOT_TRIB_SN,
 } from "../lib/declaracaoNfse";
+import { impedimentoDeEmissao } from "../../../lib/municipios/municipioIbge";
 
 const PASSOS = ["Tomador", "Serviço", "Valores e tributos", "Conferir"];
 
@@ -66,7 +74,14 @@ const TOM_REGIME = {
   bloqueado: { cor: "var(--state-danger)", fundo: "var(--state-danger-surface)" },
 };
 
-export function EmitirNfseWizard({ companyId, regime: regimeCadastrado, onEmitir, onClose, onEmitida }) {
+export function EmitirNfseWizard({
+  companyId,
+  regime: regimeCadastrado,
+  codigoMunicipioIbge,
+  onEmitir,
+  onClose,
+  onEmitida,
+}) {
   const [passo, setPasso] = useState(0);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
@@ -87,6 +102,8 @@ export function EmitirNfseWizard({ companyId, regime: regimeCadastrado, onEmitir
   // O regime que o SERVIDOR vai declarar, confrontado com o do cadastro. Não é escolha da tela:
   // é o espelho do `opSimpNac` que o backend crava, exposto para o contador ver antes de emitir.
   const regime = useMemo(() => regimeDeclaradoNaNota(regimeCadastrado), [regimeCadastrado]);
+  // O município emissor (`cLocEmi`) é da EMPRESA, não da nota: ou está no cadastro, ou nada sai.
+  const municipio = useMemo(() => impedimentoDeEmissao(codigoMunicipioIbge), [codigoMunicipioIbge]);
   const leituraPTot = useMemo(
     () => lerPTotTribSN(pTotTribSN, { exigido: regime.exigePTotTribSN }),
     [pTotTribSN, regime.exigePTotTribSN],
@@ -100,6 +117,10 @@ export function EmitirNfseWizard({ companyId, regime: regimeCadastrado, onEmitir
 
   const problemasPorPasso = useMemo(() => [
     [
+      // ⚠ Primeiro da lista, e no primeiro passo: é o impedimento que não depende de nada que se
+      // digite aqui. Deixá-lo para o passo 3 (como o do regime) faria o contador preencher a nota
+      // inteira antes de descobrir que a empresa não emite.
+      municipio.bloqueia && municipio.motivoCurto,
       !docValido && "informe um CNPJ (14 dígitos) ou CPF (11 dígitos) válido",
       !String(tomador.nome).trim() && "informe o nome ou a razão social do tomador",
       !emailValido && "o e-mail informado não parece um e-mail",
@@ -117,7 +138,7 @@ export function EmitirNfseWizard({ companyId, regime: regimeCadastrado, onEmitir
       regime.bloqueiaEmissao && regime.motivoCurto,
     ].filter(Boolean),
     [],
-  ], [docValido, tomador.nome, emailValido, enderecoParcial, servico.descricao, valor,
+  ], [municipio, docValido, tomador.nome, emailValido, enderecoParcial, servico.descricao, valor,
     servico.issRetido, servico.aliquota, leituraPTot.problema, regime]);
 
   const problemasAtuais = problemasPorPasso[passo] || [];
@@ -267,6 +288,22 @@ export function EmitirNfseWizard({ companyId, regime: regimeCadastrado, onEmitir
           <h3 style={{ margin: 0, fontSize: "1.05rem" }}>Emitir nota de serviço</h3>
           <button onClick={onClose} style={{ background: "none", border: "none", color: PANEL.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
+
+        {/* ⚠ IMPEDIMENTO DA EMPRESA — fica ACIMA da trilha, visível em todos os passos, porque não
+            é um campo que falta: é a empresa que ainda não emite. A lista de problemas do passo
+            repete a versão curta; aqui vai o motivo inteiro e onde se resolve. */}
+        {municipio.bloqueia && (
+          <div style={{
+            marginBottom: 14, padding: 10, borderRadius: 6, fontSize: "0.82rem",
+            background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
+            color: "var(--state-danger)",
+          }}>
+            <strong style={{ display: "block", marginBottom: 4 }}>
+              Esta empresa ainda não pode emitir nota de serviço.
+            </strong>
+            {municipio.motivo}
+          </div>
+        )}
 
         {/* Trilha dos passos: onde estou e quanto falta. */}
         <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>

@@ -19,7 +19,13 @@ import { Button } from "../../../components/ui/Button";
 // por props e não tem `api` em escopo.
 const nfseApi = createApiClient();
 
-export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, competencia: competenciaGlobal, regime }) {
+export function NotasFiscaisTab({
+  notasPanel,
+  hasInscricaoEstadual = false,
+  competencia: competenciaGlobal,
+  regime,
+  codigoMunicipioIbge = null,
+}) {
   const {
     loading, error, reload,
     dfeState, dfeSyncing, syncDfe, clearDfeError,
@@ -189,6 +195,9 @@ export function NotasFiscaisTab({ notasPanel, hasInscricaoEstadual = false, comp
              empresa, e o assistente confronta isso com o cadastro para o contador ver antes de
              emitir. Vem de `legacyCompany.regimeTributario` (nunca do topo do payload). */
           regime={regime}
+          /* O município emissor (`cLocEmi`) vive em `legacyCompany.codigoMunicipioIbge`. Vazio, a
+             empresa não emite — e o assistente diz isso no primeiro passo, não na recusa. */
+          codigoMunicipioIbge={codigoMunicipioIbge}
           onEmitir={(payload) => nfseApi.emitirNfse(payload)}
           onClose={() => setEmitindo(false)}
           /* ⚠ ISTO NÃO FAZ A NOTA APARECER NA LISTA, e não é para fazer.

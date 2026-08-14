@@ -27,6 +27,9 @@ export function getInitialCompanyFormState() {
     // ── Ficha de cadastro ──
     inscricaoMunicipal: "",
     inscricaoMunicipalData: "",
+    // Código IBGE (7 dígitos) do município EMISSOR da NFS-e — o `cLocEmi` da DPS. Nasce vazio e
+    // NUNCA é pré-preenchido: o contador escolhe na lista oficial (ver `SeletorMunicipioIbge`).
+    codigoMunicipioIbge: "",
     inscricaoEstadual: "",
     inscricaoEstadualData: "",
     porte: "",
@@ -81,6 +84,9 @@ export function mapCompanyToEditForm(company) {
     // ── Ficha de cadastro ──
     inscricaoMunicipal: String(company?.inscricaoMunicipal || legacy?.inscricaoMunicipal || "").trim(),
     inscricaoMunicipalData: toDateInput(legacy?.inscricaoMunicipalData),
+    // ⚠ Só de `legacyCompany`: a coluna vive em `Company`, não em `PortalClient`. Ler o
+    // `municipio`/`uf` do topo como fallback seria transformar o TEXTO do endereço em código.
+    codigoMunicipioIbge: String(legacy?.codigoMunicipioIbge || "").trim(),
     inscricaoEstadual: String(legacy?.inscricaoEstadual || "").trim(),
     inscricaoEstadualData: toDateInput(legacy?.inscricaoEstadualData),
     porte: String(legacy?.porte || "").trim(),

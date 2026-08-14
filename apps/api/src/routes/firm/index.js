@@ -517,6 +517,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     codigoServicoMunicipal: true,
     rpsSerie: true,
     rpsNumero: true,
+    // ⚠ SEM ISTO O CAMPO NÃO VOLTA PRA TELA. O `select` é explícito, então coluna nova que não
+    // entre aqui simplesmente não existe para o frontend: o formulário abriria sempre vazio e o
+    // contador reescolheria o município a cada edição, achando que nada foi salvo.
+    codigoMunicipioIbge: true,
     optanteSimples: true,
     regimeEspecialTributacao: true,
     // ── Ficha de cadastro ──
@@ -1108,6 +1112,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 // A rota já aceitava `inscricaoMunicipal` solto no body; agora o form também
                 // manda pelo perfil normalizado. Mantém a precedência do body por compat.
                 inscricaoMunicipal: inscricaoMunicipalInput ?? normalizedCompany.inscricaoMunicipal,
+                // ⚠ Município EMISSOR da NFS-e (`cLocEmi`). A rota lista os campos aceitos um a um:
+                // enquanto ele não estava nesta lista, o valor vinha no corpo, passava pelo Zod
+                // (`.passthrough()`) e era DESCARTADO EM SILÊNCIO no `update` — salvar respondia
+                // 200 e o campo voltava vazio na recarga.
+                codigoMunicipioIbge: normalizedCompany.codigoMunicipioIbge,
                 // ── Ficha de cadastro ──
                 inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
                 inscricaoEstadual: normalizedCompany.inscricaoEstadual,

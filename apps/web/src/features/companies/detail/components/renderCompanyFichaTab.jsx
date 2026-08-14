@@ -148,6 +148,22 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
         <div />
         <Campo label="Inscrição estadual" value={lg.inscricaoEstadual} />
         <Campo label="Data da IE" value={fmtDate(lg.inscricaoEstadualData)} />
+        <div />
+        {/* ⚠ O município EMISSOR (código IBGE) não é o mesmo dado que o município do ENDEREÇO logo
+            acima: um é texto cadastral, o outro é o `cLocEmi` da nota. Ficam em blocos diferentes
+            de propósito — foi tratar os dois como a mesma coisa que produziu a ideia de derivar o
+            código a partir do nome. Vazio aqui quer dizer que a empresa não emite NFS-e. */}
+        <Campo
+          label="Município emissor (IBGE)"
+          value={lg.codigoMunicipioIbge}
+          wide
+        />
+        {!lg.codigoMunicipioIbge && (
+          <div style={{ gridColumn: "span 3", fontSize: "0.75rem", color: "#FFB347" }}>
+            Sem o município emissor esta empresa não emite nota de serviço — o servidor recusa a
+            emissão. Preencha em <strong>Editar</strong>, escolhendo o município na lista do IBGE.
+          </div>
+        )}
       </Bloco>
 
       <Bloco titulo="Atividades" cols={1}>
