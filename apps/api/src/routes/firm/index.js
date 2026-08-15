@@ -483,6 +483,17 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   const invoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log });
   const syncRouter = createPortalSyncRouter({ ensureAuthorized, log });
 
+  /**
+   * O gate de ATO DE CONSEQUÊNCIA, na forma que este arquivo já usa em `/guides/batch-send`,
+   * `/guides/liberar-cliente` e `/guides/vazio` — mesma leitura de papel (`isAdminLikeUser`) e
+   * mesmo código de erro. Devolve `false` DEPOIS de responder, para o chamador só dar `return`.
+   */
+  function somenteAdminOuContador(req, res) {
+    if (isAdminLikeUser(req.auth?.user)) return true;
+    res.status(403).json({ ok: false, error: "forbidden_admin_or_contador_only" });
+    return false;
+  }
+
   async function getLegacyCompanyByPortalId(portalCompanyId) {
     const portal = await prisma.portalClient.findUnique({
       where: { id: String(portalCompanyId) },
@@ -2095,71 +2106,23 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     }
   );
 
-  router.delete("/guides/:guideId", requireAccountType("FIRM"), async (req, res) => {
-    const appRole = String(req.auth?.user?.role || "").toLowerCase();
-    if (!["admin", "contador"].includes(appRole)) {
-      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
-    }
-    const { guideId } = req.params;
-    try {
-      const guide = await prisma.guide.findFirst({
-        where: { id: String(guideId) },
-        select: { id: true, portalClientId: true, competencia: true, extracted: true },
-      });
-      if (!guide) {
-        return res.status(404).json({ ok: false, error: "guide_not_found" });
-      }
-
-      // Q61: excluir a guia deve fazê-la SUMIR da Circular — remove as provisões derivadas + reverte o
-      // split de acréscimos. Só remove o SEGURO (não exportado, não pago, sem baixa); se houver
-      // lançamento pago/baixado/exportado, BLOQUEIA (integridade contábil — desfaça a baixa antes).
-      const derivadas = await prisma.accountingEntry.findMany({
-        where: { sourceGuideId: guide.id, tipo: { in: ["PROVISAO", "BAIXA"] } },
-        select: { id: true, tipo: true, status: true, statusPagamento: true, baixas: { select: { id: true }, take: 1 } },
-      });
-      const bloqueia = derivadas.some(
-        (e) => e.tipo === "BAIXA" || e.status === "EXPORTADO" || e.statusPagamento === "PAGO" || (e.baixas && e.baixas.length),
-      );
-      if (bloqueia) {
-        return res.status(409).json({
-          ok: false, error: "GUIA_COM_LANCAMENTO",
-          message: "Há lançamento pago/baixado/exportado vinculado a esta guia. Desfaça a baixa antes de excluir.",
-        });
-      }
-
-      // Tributos desta guia (composição LP) pra limpar do split de acréscimos da circular.
-      const CODIGO_TRIBUTO = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };
-      const composicao = Array.isArray(guide.extracted?.composicao) ? guide.extracted.composicao : [];
-      const tributos = new Set();
-      for (const c of composicao) {
-        const t = c?.tributo || CODIGO_TRIBUTO[String(c?.codigo || "")];
-        if (t) tributos.add(t);
-      }
-
-      await prisma.$transaction(async (tx) => {
-        for (const e of derivadas) {
-          await tx.accountingEntryLine.deleteMany({ where: { entryId: e.id } });
-          await tx.accountingEntry.delete({ where: { id: e.id } });
-        }
-        if (tributos.size && guide.competencia) {
-          const where = { portalClientId_competencia: { portalClientId: guide.portalClientId, competencia: guide.competencia } };
-          const circ = await tx.companyMonthlyCircular.findUnique({ where, select: { acrescimos: true } }).catch(() => null);
-          if (circ?.acrescimos && typeof circ.acrescimos === "object") {
-            const next = { ...circ.acrescimos };
-            for (const t of tributos) delete next[t];
-            await tx.companyMonthlyCircular.update({ where, data: { acrescimos: next } });
-          }
-        }
-        await tx.guide.delete({ where: { id: guide.id } });
-      });
-
-      return res.json({ ok: true, guideId: guide.id, provisoesRemovidas: derivadas.length });
-    } catch (err) {
-      log.error({ err }, "Falha ao excluir guia");
-      return res.status(500).json({ ok: false, error: "guide_delete_failed", message: err?.message });
-    }
-  });
-
+  // ⚠ AS LITERAIS `/guides/vazio` VÊM ANTES DO CURINGA `/guides/:guideId` — ORDEM, NÃO ESTILO.
+  //
+  // O Express casa na ORDEM DE REGISTRO. Com o curinga registrado antes, todo
+  // `DELETE /firm/guides/vazio` caía nele com `guideId="vazio"`, não achava guia nenhuma e
+  // respondia `404 guide_not_found` — o handler do curinga responde, nunca chama `next()`.
+  // Ou seja: MARCAR funcionava e DESMARCAR nunca funcionou, com um 404 que falava de uma guia
+  // inexistente em vez de dizer que a rota não fora alcançada.
+  //
+  // O estrago não parava no botão: o marcador VAZIO ficava preso, `computeGuideComplianceMap`
+  // seguia devolvendo `ok: true` para aquele tributo, a empresa sumia do filtro de pendências e o
+  // card podia condensar em "✓ Guias concluídas" — enquanto a guia que faltava de verdade nunca era
+  // cobrada. A guarda `mes_fechado` da rota de desfazer também nunca chegava a rodar.
+  //
+  // Mesmo defeito, mesmo conserto e mesmo espírito de teste de `parcelamentosRotasLiterais.test.js`
+  // (`/parcelamentos/contas-provisao` engolida por `/parcelamentos/:parcId`). A ordem está travada
+  // por `guidesVazioRotasLiterais.test.js` — reintroduzir o curinga na frente deixa ele vermelho.
+  //
   // Q17: marcar "não há guia neste mês" (Vazio) — ausência confirmada (campo amarelo).
   // Cria/garante uma Guide marcadora status="VAZIO" (sem PDF) por (empresa, tipo, competência).
   router.post("/guides/vazio", requireAccountType("FIRM"), async (req, res) => {
@@ -2260,6 +2223,72 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     } catch (err) {
       log.error({ err }, "Falha ao desfazer Vazio");
       return res.status(500).json({ ok: false, error: "guide_vazio_undo_failed", message: err?.message });
+    }
+  });
+
+  // ⚠ REGISTRADO DEPOIS DAS LITERAIS `/guides/vazio` — E A ORDEM É O CONSERTO, ver acima.
+  router.delete("/guides/:guideId", requireAccountType("FIRM"), async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const { guideId } = req.params;
+    try {
+      const guide = await prisma.guide.findFirst({
+        where: { id: String(guideId) },
+        select: { id: true, portalClientId: true, competencia: true, extracted: true },
+      });
+      if (!guide) {
+        return res.status(404).json({ ok: false, error: "guide_not_found" });
+      }
+
+      // Q61: excluir a guia deve fazê-la SUMIR da Circular — remove as provisões derivadas + reverte o
+      // split de acréscimos. Só remove o SEGURO (não exportado, não pago, sem baixa); se houver
+      // lançamento pago/baixado/exportado, BLOQUEIA (integridade contábil — desfaça a baixa antes).
+      const derivadas = await prisma.accountingEntry.findMany({
+        where: { sourceGuideId: guide.id, tipo: { in: ["PROVISAO", "BAIXA"] } },
+        select: { id: true, tipo: true, status: true, statusPagamento: true, baixas: { select: { id: true }, take: 1 } },
+      });
+      const bloqueia = derivadas.some(
+        (e) => e.tipo === "BAIXA" || e.status === "EXPORTADO" || e.statusPagamento === "PAGO" || (e.baixas && e.baixas.length),
+      );
+      if (bloqueia) {
+        return res.status(409).json({
+          ok: false, error: "GUIA_COM_LANCAMENTO",
+          message: "Há lançamento pago/baixado/exportado vinculado a esta guia. Desfaça a baixa antes de excluir.",
+        });
+      }
+
+      // Tributos desta guia (composição LP) pra limpar do split de acréscimos da circular.
+      const CODIGO_TRIBUTO = { "8109": "PIS", "2172": "COFINS", "2089": "IRPJ", "2372": "CSLL" };
+      const composicao = Array.isArray(guide.extracted?.composicao) ? guide.extracted.composicao : [];
+      const tributos = new Set();
+      for (const c of composicao) {
+        const t = c?.tributo || CODIGO_TRIBUTO[String(c?.codigo || "")];
+        if (t) tributos.add(t);
+      }
+
+      await prisma.$transaction(async (tx) => {
+        for (const e of derivadas) {
+          await tx.accountingEntryLine.deleteMany({ where: { entryId: e.id } });
+          await tx.accountingEntry.delete({ where: { id: e.id } });
+        }
+        if (tributos.size && guide.competencia) {
+          const where = { portalClientId_competencia: { portalClientId: guide.portalClientId, competencia: guide.competencia } };
+          const circ = await tx.companyMonthlyCircular.findUnique({ where, select: { acrescimos: true } }).catch(() => null);
+          if (circ?.acrescimos && typeof circ.acrescimos === "object") {
+            const next = { ...circ.acrescimos };
+            for (const t of tributos) delete next[t];
+            await tx.companyMonthlyCircular.update({ where, data: { acrescimos: next } });
+          }
+        }
+        await tx.guide.delete({ where: { id: guide.id } });
+      });
+
+      return res.json({ ok: true, guideId: guide.id, provisoesRemovidas: derivadas.length });
+    } catch (err) {
+      log.error({ err }, "Falha ao excluir guia");
+      return res.status(500).json({ ok: false, error: "guide_delete_failed", message: err?.message });
     }
   });
 
@@ -4513,14 +4542,32 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   // Q15.6: fila de transmissão em lote ao SERPRO
   // POST /firm/apuracao/batch  body: { portalClientIds:[], competencia }
+  //
+  // ⚠ O ESCOPO É INTERSEÇÃO, NUNCA UNIÃO — o mesmo idioma de `whatsappGuias.js` (`escopoDoLote`).
+  // O corpo pode PEDIR empresas; quem decide quais existem para este usuário é a carteira. Aqui a
+  // interseção é `idsDaCarteira` (a função deste arquivo, definida abaixo), pelo mesmo motivo que
+  // as três rotas de lote a usam: escrever a cláusula inline é como as cópias divergem.
+  //
+  // ⚠ O QUE ESTAVA ABERTO: `portalClientIds` ia CRU do corpo para `criarBatchJob`, e o worker
+  // (`apuracaoBatchWorker`) só confere `apuracaoSnapshot.estado === "fechada"` — ele valida o
+  // ESTADO da apuração, nunca DE QUEM é a empresa. Um usuário mandando ids de outro escritório
+  // enfileirava — e o `run-now` abaixo TRANSMITE (`indicadorTransmissao: true`) — declaração
+  // PGDAS-D de empresa que ele não pode nem listar. Ato fiscal irreversível, em CNPJ alheio.
+  //
+  // ⚠ Silencioso de propósito, como `idsDaCarteira`: id fora da carteira é DESCARTADO, não vira
+  // erro. Pedindo só empresas alheias sobra lista vazia e a resposta é o `NO_COMPANIES` que já
+  // existia — a mesma que quem não selecionou nada recebe.
   router.post("/apuracao/batch", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
     const { portalClientIds, competencia } = req.body || {};
     if (!/^\d{4}-\d{2}$/.test(String(competencia || ""))) {
       return res.status(400).json({ ok: false, error: "invalid_competencia" });
     }
     try {
       const result = await criarBatchJob({
-        portalClientIds, competencia, userId: req.auth?.user?.id,
+        portalClientIds: await idsDaCarteira(req, portalClientIds),
+        competencia,
+        userId: req.auth?.user?.id,
       });
       return res.json({ ok: true, ...result });
     } catch (err) {
@@ -4531,6 +4578,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   });
 
   // GET /firm/apuracao/batch/:jobId — progresso (polling)
+  //
+  // ⚠ A resposta traz razão social e número de declaração empresa por empresa: ler o lote é ler a
+  // carteira de quem o disparou. Escopo pelo MESMO critério da criação — ver `jobDaCarteira`.
   router.get("/apuracao/batch/:jobId", async (req, res) => {
     const jobId = String(req.params.jobId);
     try {
@@ -4540,6 +4590,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         where: { jobId },
         select: { portalClientId: true, status: true, dasValor: true, numeroDeclaracao: true, erroMensagem: true },
       });
+      if (!(await jobDaCarteira(req, items.map((i) => i.portalClientId)))) {
+        return res.status(404).json({ ok: false, error: "job_not_found" });
+      }
       // enriquece com razão social
       const ids = items.map((i) => i.portalClientId);
       const empresas = await prisma.portalClient.findMany({ where: { id: { in: ids } }, select: { id: true, razao: true } });
@@ -4564,11 +4617,21 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // OFF os itens ficavam "pendente" pra sempre (modal preso). Aqui drenamos os itens pendentes do job
   // inline (com teto de tempo/ciclos), pra o lote andar mesmo sem o worker ligado. Idempotente
   // (o worker faz consulta-antes-de-transmitir; item já "ok" é ignorado). ⚠ Transmite de verdade.
+  //
+  // ⚠ É AQUI QUE A DECLARAÇÃO SAI. Duas guardas, e nenhuma delas substitui a outra: o gate
+  // `admin|contador` (o mesmo de `/guides/batch-send`, `/guides/liberar-cliente` e `/guides/vazio`,
+  // que já tratavam ato de consequência assim) e o escopo do lote (`jobDaCarteira`) — buscar o job
+  // só pelo id deixava qualquer jobId conhecido rodar, e rodar aqui é transmitir à Receita.
   router.post("/apuracao/batch/:jobId/run-now", async (req, res) => {
+    if (!somenteAdminOuContador(req, res)) return undefined;
     const jobId = String(req.params.jobId);
     try {
       const job = await prisma.apuracaoBatchJob.findUnique({ where: { id: jobId } });
       if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      const doLote = await prisma.apuracaoBatchItem.findMany({ where: { jobId }, select: { portalClientId: true } });
+      if (!(await jobDaCarteira(req, doLote.map((i) => i.portalClientId)))) {
+        return res.status(404).json({ ok: false, error: "job_not_found" });
+      }
 
       const deadline = Date.now() + 20000; // teto inline; o front continua o polling/run-now se sobrar
       let ciclos = 0;
@@ -4636,6 +4699,53 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     return existentes.map((c) => c.id);
   }
 
+  /** Normaliza a lista de empresas gravada no job (`companyIds` é `Json`, então chega solta). */
+  function idsDoJob(companyIds) {
+    return [...new Set((Array.isArray(companyIds) ? companyIds : []).map((v) => String(v || "")).filter(Boolean))];
+  }
+
+  /**
+   * ⚠ A CONTRAPARTIDA DE LEITURA DE `idsDaCarteira`. A guarda da criação não vale nada sozinha.
+   *
+   * `idsDaCarteira` protege quem ENTRA no job. Mas `GET /notas-download` listava
+   * `findMany({ orderBy, take: 10 })` **sem nenhum `where`** (os 10 jobs mais recentes do sistema
+   * inteiro — a assinatura era `(_req, res)`, a rota nem tinha como se escopar) e `/arquivo` fazia
+   * `findUnique({ where: { id } })`, servindo o ZIP a quem conhecesse o jobId. O escopo já era
+   * GRAVADO (`companyIds`, `triggeredBy`) e nunca era consultado: a leitura desfazia a escrita.
+   *
+   * ⚠ CONTENÇÃO, NÃO INTERSEÇÃO — e a diferença é o ponto. Na criação, id fora da carteira é
+   * descartado e o resto do lote segue. Aqui o objeto é UM SÓ (o ZIP, o progresso do lote): basta
+   * uma empresa alheia dentro dele para o arquivo carregar XML que não é de quem baixa. Então o job
+   * só é visível quando TODAS as suas empresas são.
+   *
+   * ⚠ RECUSA É 404, NUNCA 403. 403 confirmaria que aquele jobId existe — a mesma discrição do
+   * "descarte silencioso" de `idsDaCarteira`.
+   *
+   * Admin/contador enxergam a carteira toda (`isAdminLikeUser`), e o curto-circuito é o que mantém
+   * o caminho legítimo intacto — inclusive para job de empresa já removida, cujo id não voltaria de
+   * `portalClient.findMany`.
+   */
+  async function permitidosParaLeitura(req, ids) {
+    if (isAdminLikeUser(req.auth?.user)) return new Set(ids);
+    return new Set(await idsDaCarteira(req, ids));
+  }
+
+  async function jobDaCarteira(req, companyIds) {
+    const ids = idsDoJob(companyIds);
+    // Job sem empresa nenhuma não é criável por rota nenhuma (todas recusam com
+    // `COMPANIES_REQUIRED`/`NO_COMPANIES`); se aparecer, não há carteira que o contenha.
+    if (!ids.length) return false;
+    const permitidas = await permitidosParaLeitura(req, ids);
+    return ids.every((id) => permitidas.has(id));
+  }
+
+  /** A mesma contenção sobre uma LISTA, com uma consulta só (a união dos ids de todos os jobs). */
+  async function jobsDaCarteira(req, jobs, companyIdsDoJob = (j) => j.companyIds) {
+    const porJob = jobs.map((job) => ({ job, ids: idsDoJob(companyIdsDoJob(job)) }));
+    const permitidas = await permitidosParaLeitura(req, [...new Set(porJob.flatMap((x) => x.ids))]);
+    return porJob.filter((x) => x.ids.length && x.ids.every((id) => permitidas.has(id))).map((x) => x.job);
+  }
+
   // POST /firm/notas-download  body: { companyIds:[], competenciaDe, competenciaAte, tipo?, papel? }
   router.post("/notas-download", async (req, res) => {
     const { companyIds, competenciaDe, competenciaAte, tipo, papel } = req.body || {};
@@ -4690,19 +4800,28 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
 
   // GET /firm/notas-captura — últimas consultas ("Consultas recentes"): sair da página e voltar
   // não pode perder o resultado, senão o contador dispara de novo (e gasta chamada de novo).
-  router.get("/notas-captura", async (_req, res) => {
+  //
+  // ⚠ Busca 50 e mostra 10 DEPOIS de filtrar: filtrar 10 já cortados deixaria a lista vazia para
+  // quem tem carteira parcial, que é o oposto do que a rota existe para fazer.
+  router.get("/notas-captura", async (req, res) => {
     try {
-      return res.json({ ok: true, jobs: await listNotasCapturaJobs(10) });
+      const jobs = await jobsDaCarteira(req, await listNotasCapturaJobs(50));
+      return res.json({ ok: true, jobs: jobs.slice(0, 10) });
     } catch (err) {
       return res.status(500).json({ ok: false, error: "notas_captura_list_failed", message: err?.message });
     }
   });
 
   // GET /firm/notas-captura/:jobId — polling (traz os itens por empresa)
+  //
+  // ⚠ Os itens trazem razão social e CNPJ de cada empresa do lote — buscar o job só pelo id
+  // entregava a carteira de outro escritório. 404 (não 403) para não confirmar o jobId.
   router.get("/notas-captura/:jobId", async (req, res) => {
     try {
       const job = await getNotasCapturaJob(req.params.jobId);
-      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      if (!job || !(await jobDaCarteira(req, job.companyIds))) {
+        return res.status(404).json({ ok: false, error: "job_not_found" });
+      }
       return res.json({ ok: true, job });
     } catch (err) {
       return res.status(500).json({ ok: false, error: "notas_captura_get_failed", message: err?.message });
@@ -4752,14 +4871,19 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   });
 
   // GET /firm/notas-download — últimos jobs ("Downloads recentes")
-  router.get("/notas-download", async (_req, res) => {
+  //
+  // ⚠ `(_req, res)` era o sintoma: a rota nem tinha o usuário em mãos, e o `findMany` saía sem
+  // `where` nenhum — os 10 jobs mais recentes DO SISTEMA INTEIRO, com o jobId de cada um, que é a
+  // chave do `/arquivo` logo abaixo. Busca 50 e mostra 10 depois de filtrar (ver `/notas-captura`).
+  router.get("/notas-download", async (req, res) => {
     try {
       await cleanupNotasDownloadJobs();
       const jobs = await prisma.notasDownloadJob.findMany({
         orderBy: { createdAt: "desc" },
-        take: 10,
+        take: 50,
       });
-      return res.json({ ok: true, jobs: jobs.map(notasDownloadJobToResponse) });
+      const visiveis = await jobsDaCarteira(req, jobs);
+      return res.json({ ok: true, jobs: visiveis.slice(0, 10).map(notasDownloadJobToResponse) });
     } catch (err) {
       return res.status(500).json({ ok: false, error: "notas_download_list_failed", message: err?.message });
     }
@@ -4769,7 +4893,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   router.get("/notas-download/:jobId", async (req, res) => {
     try {
       const job = await prisma.notasDownloadJob.findUnique({ where: { id: String(req.params.jobId) } });
-      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      if (!job || !(await jobDaCarteira(req, job.companyIds))) {
+        return res.status(404).json({ ok: false, error: "job_not_found" });
+      }
       return res.json({ ok: true, job: notasDownloadJobToResponse(job) });
     } catch (err) {
       return res.status(500).json({ ok: false, error: "notas_download_status_failed", message: err?.message });
@@ -4777,10 +4903,15 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   });
 
   // GET /firm/notas-download/:jobId/arquivo — stream do ZIP pronto
+  //
+  // ⚠ AQUI SAEM OS XMLs. Conferir só que o job existe é exatamente o furo que `idsDaCarteira`
+  // fechou na criação, reaberto pelo lado da leitura.
   router.get("/notas-download/:jobId/arquivo", async (req, res) => {
     try {
       const job = await prisma.notasDownloadJob.findUnique({ where: { id: String(req.params.jobId) } });
-      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      if (!job || !(await jobDaCarteira(req, job.companyIds))) {
+        return res.status(404).json({ ok: false, error: "job_not_found" });
+      }
       if (job.status === "expirado") return res.status(410).json({ ok: false, error: "expirado" });
       if (job.status !== "concluido" || !job.arquivoPath) {
         return res.status(409).json({ ok: false, error: "nao_concluido", status: job.status });
@@ -4822,10 +4953,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   });
 
   // GET /firm/sitfis-download/:jobId — progresso (polling)
+  // ⚠ Gêmea de `/notas-download/:jobId`, mesmo furo, mesmo conserto — ver `jobDaCarteira`.
   router.get("/sitfis-download/:jobId", async (req, res) => {
     try {
       const job = await prisma.sitfisDownloadJob.findUnique({ where: { id: String(req.params.jobId) } });
-      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      if (!job || !(await jobDaCarteira(req, job.companyIds))) {
+        return res.status(404).json({ ok: false, error: "job_not_found" });
+      }
       return res.json({ ok: true, job: sitfisJobToResponse(job) });
     } catch (err) {
       return res.status(500).json({ ok: false, error: "sitfis_download_status_failed", message: err?.message });
@@ -4833,10 +4967,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   });
 
   // GET /firm/sitfis-download/:jobId/arquivo — stream do ZIP pronto
+  // ⚠ Este ZIP são os relatórios de SITUAÇÃO FISCAL (débitos, dívida ativa) das empresas do lote.
   router.get("/sitfis-download/:jobId/arquivo", async (req, res) => {
     try {
       const job = await prisma.sitfisDownloadJob.findUnique({ where: { id: String(req.params.jobId) } });
-      if (!job) return res.status(404).json({ ok: false, error: "job_not_found" });
+      if (!job || !(await jobDaCarteira(req, job.companyIds))) {
+        return res.status(404).json({ ok: false, error: "job_not_found" });
+      }
       if (job.status === "expirado") return res.status(410).json({ ok: false, error: "expirado" });
       if (job.status !== "concluido" || !job.arquivoPath) return res.status(409).json({ ok: false, error: "nao_concluido", status: job.status });
       if (job.expiresAt && new Date(job.expiresAt) < new Date()) return res.status(410).json({ ok: false, error: "expirado" });

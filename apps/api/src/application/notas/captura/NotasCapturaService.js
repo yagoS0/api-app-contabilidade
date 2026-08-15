@@ -281,6 +281,10 @@ export function jobToResponse(job) {
     status: job.status,
     origem: job.origem || "manual",
     alvos: Array.isArray(job.alvos) ? job.alvos : [],
+    // ⚠ O ESCOPO DO JOB VIAJA NA RESPOSTA porque quem decide se ele pode ser LIDO é a rota, e a
+    // rota não tem outra forma de saber de quem é o lote: a listagem não carrega `itens`. Sem este
+    // campo, `GET /firm/notas-captura` voltaria a listar os jobs de toda a base.
+    companyIds: Array.isArray(job.companyIds) ? job.companyIds.map(String) : [],
     totalEmpresas: job.totalEmpresas,
     processadas: job.processadas,
     totalNotas: job.totalNotas,
