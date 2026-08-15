@@ -1339,12 +1339,18 @@ export function AccountingEntriesTab({
         <FunctionListModal
           functions={accountingFunctions.functions}
           loading={accountingFunctions.loading}
+          /* ⚠ O ERRO SOBE PARA A TELA. `useAccountingFunctions` sempre gravou o motivo e ninguém o
+             lia: com o `catch {}` mudo abaixo, excluir e duplicar falhavam com a lista igual e
+             nenhuma mensagem — indistinguível de "o botão não fez nada". */
+          falha={accountingFunctions.falha}
           onApply={(f) => { setShowFunctionsList(false); setApplyingFunction(f); }}
           onEdit={(f) => { setShowFunctionsList(false); setEditingFunction(f); }}
           onDelete={async (f) => {
             // eslint-disable-next-line no-alert
             if (!window.confirm(`Excluir a função "${f.name}"?`)) return;
-            try { await accountingFunctions.remove(f.id); } catch {}
+            // O `try` existe só para a rejeição não virar unhandled — quem REGISTRA a falha é o
+            // `setError` do hook, e quem a MOSTRA é o banner do modal (prop `error` acima).
+            try { await accountingFunctions.remove(f.id); } catch { /* exibido em `error` */ }
           }}
           onCreate={() => { setShowFunctionsList(false); setEditingFunction({}); }}
           onDuplicate={async (f) => {
@@ -1359,7 +1365,7 @@ export function AccountingEntriesTab({
             };
             try {
               await accountingFunctions.create(dup);
-            } catch {}
+            } catch { /* mesmo caminho do excluir: registrado em `error`, exibido no modal */ }
           }}
           onClose={() => setShowFunctionsList(false)}
         />

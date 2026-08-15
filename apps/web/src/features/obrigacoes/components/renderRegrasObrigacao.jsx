@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { BackButton } from "../../../components/ui/BackButton";
+import { lerFalhaDeCarga, SEM_RESPOSTA } from "../../../lib/falhaDeCarga";
 
 const COR = {
   fundo: "#21222C", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
@@ -58,6 +59,7 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
   const [previa, setPrevia] = useState(null);
+  const [falhaPrevia, setFalhaPrevia] = useState(null);
   const [carregandoPrevia, setCarregandoPrevia] = useState(false);
   const [verLista, setVerLista] = useState(false);
 
@@ -86,13 +88,31 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
   }, [form.escopo, form.regimes, form.temFolha, form.empresasIds]);
 
   // Contador ao vivo: a cada mexida no filtro, quantas empresas entram.
+  //
+  // ⚠ PRÉVIA QUE FALHA NÃO É PRÉVIA DE ZERO. Enquanto o `catch` só zerava `previa`, a tela dizia
+  // "0 empresas serão incluídas" e desabilitava o "Criar regra" sem motivo: o contador concluía
+  // que nenhuma empresa é do Presumido quando são 11. O estado de ERRO agora é separado do de
+  // DADO, e é ele que a tela desenha.
   useEffect(() => {
     if (passo !== 2 || !api) return undefined;
     let cancelado = false;
     setCarregandoPrevia(true);
+    setFalhaPrevia(null);
     api.previewEscopoRegra({ escopo: form.escopo, filtros })
-      .then((out) => { if (!cancelado) setPrevia(out?.ok === false ? null : out); })
-      .catch(() => { if (!cancelado) setPrevia(null); })
+      .then((out) => {
+        if (cancelado) return;
+        if (out?.ok === false || !Number.isFinite(Number(out?.total))) {
+          setPrevia(null);
+          setFalhaPrevia(lerFalhaDeCarga(out?.message ? out : "O servidor respondeu sem o total do escopo.", { assunto: "a prévia do escopo" }));
+          return;
+        }
+        setPrevia(out);
+      })
+      .catch((err) => {
+        if (cancelado) return;
+        setPrevia(null);
+        setFalhaPrevia(lerFalhaDeCarga(err, { assunto: "a prévia do escopo" }));
+      })
       .finally(() => { if (!cancelado) setCarregandoPrevia(false); });
     return () => { cancelado = true; };
   }, [api, passo, form.escopo, filtros]);
@@ -158,9 +178,26 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
     } finally { setSalvando(false); }
   }
 
-  const totalPrevia = previa?.total ?? 0;
-  const ocorrenciasEstimadas =
-    totalPrevia * (form.periodicidade === "MENSAL" ? 12 : form.periodicidade === "TRIMESTRAL" ? 4 : 1);
+  // ⚠ `null` é "não sei", `0` é "nenhuma" — e os dois não podem virar o mesmo número na tela.
+  const totalPrevia = falhaPrevia ? null : (previa?.total ?? null);
+  const ocorrenciasEstimadas = totalPrevia == null
+    ? null
+    : totalPrevia * (form.periodicidade === "MENSAL" ? 12 : form.periodicidade === "TRIMESTRAL" ? 4 : 1);
+
+  // ⚠ BOTÃO DESABILITADO DIZ POR QUÊ — sempre. Cinza sem motivo faz o contador concluir que o
+  // sistema recusou a regra dele, e não que a tela não conseguiu medir o alcance.
+  const motivoNaoSalva = salvando
+    ? null
+    : impedimento
+      || (falhaPrevia
+        ? `${falhaPrevia.titulo}. Sem saber quantas empresas entram, a regra não é aplicada — são calendários alterados às cegas. ${falhaPrevia.motivo}`
+        : carregandoPrevia
+          ? "Calculando quantas empresas entram no escopo…"
+          : totalPrevia === 0
+            ? "Nenhuma empresa entra neste escopo — ajuste o filtro."
+            : totalPrevia == null
+              ? "O alcance da regra ainda não foi medido."
+              : null);
 
   return (
     <div
@@ -307,8 +344,14 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
 
             {form.escopo === "SELECAO_MANUAL" && (
               <div style={{ marginBottom: 12, maxHeight: 200, overflowY: "auto", border: `1px solid ${COR.borda}`, borderRadius: 6, padding: 8 }}>
-                {(previa?.empresas || []).length === 0 && (
-                  <div style={{ color: COR.suave, fontSize: "0.78rem" }}>Carregando empresas…</div>
+                {/* ⚠ A lista abaixo vem de `opcoes.todasEmpresas`, NÃO da prévia — e esta linha
+                    dizia "Carregando empresas…" olhando para `previa.empresas`, ou seja, ficava
+                    para sempre quando a prévia falhava e some quando não devia. Ela agora fala do
+                    que de fato desenha. */}
+                {(opcoes?.todasEmpresas || []).length === 0 && (
+                  <div style={{ color: COR.suave, fontSize: "0.78rem" }}>
+                    Nenhuma empresa para escolher — a carteira não chegou a esta tela.
+                  </div>
                 )}
                 {(opcoes?.todasEmpresas || []).map((e) => (
                   <label key={e.companyId} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8rem", color: COR.texto, padding: "2px 0" }}>
@@ -331,15 +374,32 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
               </div>
             )}
 
-            <div style={{ padding: "10px 12px", background: COR.fundo, borderRadius: 6, border: `1px solid ${totalPrevia && !impedimento ? COR.destaque : COR.alerta}` }}>
-              <div style={{ fontSize: "0.9rem", color: COR.texto, fontWeight: 600 }}>
-                {carregandoPrevia ? "calculando…" : `${totalPrevia} empresa${totalPrevia === 1 ? "" : "s"} ${totalPrevia === 1 ? "será incluída" : "serão incluídas"}`}
+            <div style={{
+              padding: "10px 12px", background: COR.fundo, borderRadius: 6,
+              // Vermelho porque a prévia BLOQUEIA o salvar; âmbar quando é só pendência de filtro.
+              border: `1px solid ${falhaPrevia ? COR.perigo : totalPrevia && !impedimento ? COR.destaque : COR.alerta}`,
+            }}>
+              <div style={{ fontSize: "0.9rem", color: falhaPrevia ? COR.perigo : COR.texto, fontWeight: 600 }}>
+                {carregandoPrevia
+                  ? "calculando…"
+                  : falhaPrevia
+                    // ⚠ NO LUGAR DO NÚMERO, no mesmo tamanho do número: é isto que impede a falha
+                    // de ser lida como "nenhuma empresa se encaixa".
+                    ? `${SEM_RESPOSTA} ${falhaPrevia.titulo.toLowerCase()}`
+                    : `${totalPrevia ?? SEM_RESPOSTA} empresa${totalPrevia === 1 ? "" : "s"} ${totalPrevia === 1 ? "será incluída" : "serão incluídas"}`}
               </div>
-              <div style={{ fontSize: "0.75rem", color: COR.suave }}>
+              <div style={{ fontSize: "0.75rem", color: falhaPrevia ? COR.texto : COR.suave }}>
                 {/* O número de ocorrências é o que o contador vai ver multiplicado no calendário —
-                    é ele que revela o tamanho real da ação, não a contagem de empresas. */}
-                ~{ocorrenciasEstimadas} vencimento(s) no calendário
-                {totalPrevia > 0 && (
+                    é ele que revela o tamanho real da ação, não a contagem de empresas.
+                    ⚠ Durante o cálculo ele SOME: enquanto a contagem de empresas dizia
+                    "calculando…", este ainda exibia o número do filtro ANTERIOR — dado velho sob
+                    rótulo novo, o mesmo defeito do relatório, em miniatura. */}
+                {carregandoPrevia
+                  ? "medindo o alcance no servidor"
+                  : falhaPrevia
+                    ? `${falhaPrevia.motivo} O alcance desta regra não foi medido — nada é aplicado enquanto isso.`
+                    : `~${ocorrenciasEstimadas ?? SEM_RESPOSTA} vencimento(s) no calendário`}
+                {!carregandoPrevia && !falhaPrevia && totalPrevia > 0 && (
                   <>
                     {" · "}
                     <button
@@ -374,7 +434,11 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
             {passo < 2 ? (
               <Button type="button" variant="primary" onClick={() => setPasso(passo + 1)} disabled={!podeAvancar}>Avançar</Button>
             ) : (
-              <Button type="button" variant="primary" onClick={salvar} disabled={salvando || !totalPrevia || Boolean(impedimento)}>
+              <Button
+                type="button" variant="primary" onClick={salvar}
+                disabled={salvando || Boolean(motivoNaoSalva)}
+                title={motivoNaoSalva || undefined}
+              >
                 {salvando ? "Aplicando…" : editando ? "Salvar regra" : "Criar regra"}
               </Button>
             )}
@@ -389,6 +453,7 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
+  const [falha, setFalha] = useState(null);
   const [aviso, setAviso] = useState(null);
   const [wizard, setWizard] = useState(null);
   const [aberta, setAberta] = useState(null); // regraId com o detalhe aberto
@@ -397,12 +462,18 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
     if (!api) return;
     setCarregando(true);
     setErro(null);
+    setFalha(null);
     try {
       const out = await api.listRegrasObrigacao();
-      if (out?.ok === false) { setErro(out.message || "Não foi possível carregar."); setDados(null); }
-      else setDados(out);
+      if (out?.ok === false) {
+        setFalha(lerFalhaDeCarga(out, { assunto: "as regras" }));
+        setDados(null);
+      } else setDados(out);
     } catch (err) {
-      setErro(err?.message || "Não foi possível carregar as regras.");
+      // ⚠ O DADO ANTIGO SAI: recarga que falha deixando a lista anterior na tela é a lista de
+      // ontem passando por lista de hoje.
+      setFalha(lerFalhaDeCarga(err, { assunto: "as regras" }));
+      setDados(null);
     } finally { setCarregando(false); }
   }, [api]);
 
@@ -479,7 +550,22 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
         </div>
       )}
 
-      {!carregando && !regras.length && (
+      {/* ⚠ "NÃO CARREGOU" NÃO É "NÃO HÁ". Enquanto as duas caíam no mesmo painel tracejado, a falha
+          de carga convidava a criar de novo uma regra que já existe. */}
+      {!carregando && falha && (
+        <div
+          role="alert"
+          style={{ padding: "24px 16px", textAlign: "center", background: COR.fundo, border: `2px solid ${falha.semAcesso ? COR.borda : COR.perigo}`, borderRadius: 8 }}
+        >
+          <div style={{ color: falha.semAcesso ? COR.texto : COR.perigo, fontWeight: 700, fontSize: "1rem", marginBottom: 4 }}>
+            {falha.titulo}
+          </div>
+          <div style={{ color: COR.texto, fontSize: "0.8rem", marginBottom: 10 }}>{falha.motivo}</div>
+          <Button variant="secondary" onClick={carregar}>Tentar de novo</Button>
+        </div>
+      )}
+
+      {!carregando && !falha && !regras.length && (
         <div style={{ padding: "28px 16px", textAlign: "center", background: COR.fundo, border: `1px dashed ${COR.borda}`, borderRadius: 8 }}>
           <div style={{ color: COR.texto, fontWeight: 600, marginBottom: 4 }}>Nenhuma regra criada.</div>
           <div style={{ color: COR.suave, fontSize: "0.8rem" }}>

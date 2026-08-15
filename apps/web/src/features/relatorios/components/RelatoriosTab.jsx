@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createApiClient } from "../../../api/client";
 import { Tabs } from "../../../components/ui/Tabs";
+import { lerFalhaDeCarga } from "../../../lib/falhaDeCarga";
 import {
   intervalosDisponiveis, periodoAnterior, variacao, somaPorTipo, somaTotal,
 } from "../lib/periodoRelatorio";
@@ -36,7 +37,7 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
   const [dados, setDados] = useState(null);
   const [anterior, setAnterior] = useState(null);
   const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState("");
+  const [falha, setFalha] = useState(null);
   const [imprimindo, setImprimindo] = useState(false);
 
   const opcoes = useMemo(() => intervalosDisponiveis(competenciaReferencia), [competenciaReferencia]);
@@ -45,7 +46,12 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
   useEffect(() => {
     if (!companyId || !escolhido) return undefined;
     let vivo = true;
-    setCarregando(true); setErro("");
+    setCarregando(true); setFalha(null);
+    // ⚠ O DADO ANTIGO SAI ANTES DA NOVA RESPOSTA CHEGAR. Enquanto ele sobrevivia à troca de
+    // período, uma falha na recarga deixava a tabela e os totais do período ANTERIOR na tela sob o
+    // rótulo do período NOVO — com o botão Imprimir ativo em cima. O PDF que sai daí declara um
+    // período e traz o movimento de outro, e ele circula sem esta tela por perto.
+    setDados(null); setAnterior(null);
     const ant = periodoAnterior(escolhido.de, escolhido.ate);
     Promise.all([
       relatoriosApi.getRelatorioResumo(companyId, escolhido.de, escolhido.ate),
@@ -55,10 +61,21 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
     ])
       .then(([atual, previo]) => {
         if (!vivo) return;
-        setDados(atual?.linhas || []);
-        setAnterior(previo?.linhas || null);
+        // ⚠ Resposta sem `linhas` NÃO é relatório vazio — é resposta que não entendemos. Tratada
+        // como sucesso, ela viraria uma tabela de zeros com o total do período carimbado embaixo.
+        if (!Array.isArray(atual?.linhas)) {
+          setFalha(lerFalhaDeCarga(atual?.message ? atual : "O servidor respondeu sem as linhas do período.", { assunto: "o relatório" }));
+          return;
+        }
+        setDados(atual.linhas);
+        setAnterior(Array.isArray(previo?.linhas) ? previo.linhas : null);
       })
-      .catch((e) => { if (vivo) setErro(e?.message || "Não foi possível montar o relatório."); })
+      .catch((e) => {
+        if (!vivo) return;
+        // Nada de dado por perto: `setDados(null)` já correu acima, então a tela não tem o que
+        // desenhar sob o rótulo novo — nem tabela, nem totais, nem botão de imprimir.
+        setFalha(lerFalhaDeCarga(e, { assunto: "o relatório" }));
+      })
       .finally(() => { if (vivo) setCarregando(false); });
     return () => { vivo = false; };
   }, [companyId, escolhido?.de, escolhido?.ate]);
@@ -100,7 +117,28 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
         </span>
       </div>
 
-      {erro && <div style={{ padding: 10, borderRadius: 8, border: "1px solid #FF5555", color: "#FF5555", fontSize: "0.82rem" }}>{erro}</div>}
+      {/* ⚠ A RECUSA TEM O PESO DO RELATÓRIO (mesma ideia do `CardRegime`): ela ocupa o lugar da
+          tabela, não uma tarja fina acima dela. Aqui não há número em cinza para o olho pescar —
+          há a frase, e ela é a resposta. */}
+      {falha && !carregando && (
+        <div
+          role="alert"
+          style={{
+            padding: 16, borderRadius: 10, background: C.surface,
+            border: `2px solid ${falha.semAcesso ? C.muted : C.baixa}`,
+          }}
+        >
+          <div style={{ fontSize: "1.05rem", fontWeight: 800, color: falha.semAcesso ? C.texto : C.baixa }}>
+            {falha.titulo}
+          </div>
+          <div style={{ fontSize: "0.84rem", color: C.texto, marginTop: 6 }}>{falha.motivo}</div>
+          <div style={{ fontSize: "0.78rem", color: C.muted, marginTop: 8, lineHeight: 1.5 }}>
+            Nada do período {escolhido ? `${escolhido.de} a ${escolhido.ate}` : "escolhido"} está sendo
+            exibido — nem tabela, nem totais, nem impressão. O que estava na tela era de outro
+            período e saiu junto.
+          </div>
+        </div>
+      )}
       {carregando && <div style={{ padding: 20, textAlign: "center", color: C.muted, fontSize: "0.84rem" }}>Montando o relatório…</div>}
 
       {!carregando && dados && (

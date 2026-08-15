@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Button } from "../../../../components/ui/Button";
+import { lerFalhaDeCarga } from "../../../../lib/falhaDeCarga";
 
 // Q48: página top-level "Download de Notas" — seleciona período + filtros + empresas e baixa os XMLs
 // em um ZIP (pasta por empresa). O ZIP é gerado EM SEGUNDO PLANO no servidor (job + polling), então a
@@ -54,6 +55,8 @@ export function NotasDownloadContent({ api, companies }) {
   const [downloadingId, setDownloadingId] = useState(null);
   const [notice, setNotice] = useState(null); // { type: "error"|"info", text }
   const [recentes, setRecentes] = useState([]);
+  const [falhaRecentes, setFalhaRecentes] = useState(null);
+  const [carregandoRecentes, setCarregandoRecentes] = useState(true);
   const pollTimer = useRef(null);
 
   const companyList = useMemo(() => (Array.isArray(companies) ? companies : []), [companies]);
@@ -73,11 +76,34 @@ export function NotasDownloadContent({ api, companies }) {
     setSelectedIds(() => (allSelected ? new Set() : new Set(companyList.map((c) => c.companyId))));
   }
 
+  // ⚠ ISTO ERA UM `catch` SILENCIOSO, e o silêncio saía como "Nenhum download ainda." — a tela
+  // afirmando que não existe ZIP nenhum quando o que houve foi a listagem falhar. O contador
+  // dispara de novo a geração de um ZIP que já está pronto no servidor.
   async function loadRecentes() {
+    setCarregandoRecentes(true);
+    setFalhaRecentes(null);
     try {
-      const out = await api.listNotasDownloads?.();
-      setRecentes(out?.jobs || []);
-    } catch { /* silencioso */ }
+      if (typeof api?.listNotasDownloads !== "function") {
+        // Capacidade ausente é resposta, não lista vazia (acontece no modo mock parcial).
+        setRecentes([]);
+        setFalhaRecentes(lerFalhaDeCarga("Esta versão da API não expõe a lista de downloads.", { assunto: "os downloads recentes" }));
+        return;
+      }
+      const out = await api.listNotasDownloads();
+      if (!Array.isArray(out?.jobs)) {
+        setRecentes([]);
+        setFalhaRecentes(lerFalhaDeCarga(out?.message ? out : "O servidor respondeu sem a lista de downloads.", { assunto: "os downloads recentes" }));
+        return;
+      }
+      setRecentes(out.jobs);
+    } catch (err) {
+      // O dado antigo sai junto: lista de antes sob um estado que não foi confirmado é pior que
+      // lista nenhuma — é ela que faz o contador achar que já viu tudo o que há.
+      setRecentes([]);
+      setFalhaRecentes(lerFalhaDeCarga(err, { assunto: "os downloads recentes" }));
+    } finally {
+      setCarregandoRecentes(false);
+    }
   }
   useEffect(() => { loadRecentes(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
@@ -292,7 +318,28 @@ export function NotasDownloadContent({ api, companies }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentes.length === 0 && (
+                  {/* ⚠ "não carregou" × "não há" × "sem acesso" — três respostas, três linhas. */}
+                  {carregandoRecentes && recentes.length === 0 && !falhaRecentes && (
+                    <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Carregando…</td></tr>
+                  )}
+                  {!carregandoRecentes && falhaRecentes && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: 16, textAlign: "center" }}>
+                        <div style={{ color: falhaRecentes.semAcesso ? "#F8F8F2" : "#FF4757", fontWeight: 700 }}>
+                          {falhaRecentes.titulo}
+                        </div>
+                        <div style={{ color: "#A7B0C0", fontSize: "0.82rem", marginTop: 4 }}>{falhaRecentes.motivo}</div>
+                        <div style={{ color: "#A7B0C0", fontSize: "0.8rem", marginTop: 4 }}>
+                          Pode haver ZIP pronto que esta lista não está mostrando — gerar de novo é refazer
+                          trabalho já feito.
+                        </div>
+                        <div style={{ marginTop: 10 }}>
+                          <Button type="button" variant="secondary" onClick={loadRecentes}>Tentar de novo</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {!carregandoRecentes && !falhaRecentes && recentes.length === 0 && (
                     <tr><td colSpan={7} style={{ padding: 16, textAlign: "center", color: "#6b7280" }}>Nenhum download ainda.</td></tr>
                   )}
                   {recentes.map((j) => {

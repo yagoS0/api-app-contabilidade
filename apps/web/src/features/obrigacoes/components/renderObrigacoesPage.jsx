@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../../components/layout/AppShell";
 import { Button } from "../../../components/ui/Button";
 import { BackButton } from "../../../components/ui/BackButton";
+import { lerFalhaDeCarga, SEM_RESPOSTA } from "../../../lib/falhaDeCarga";
 import { RegrasObrigacao } from "./renderRegrasObrigacao";
 
 const COR = {
@@ -48,11 +49,33 @@ function Selo({ cor, children, title }) {
   );
 }
 
-function CartaoResumo({ rotulo, valor, cor }) {
+/**
+ * ⚠ O CARTÃO SABE DIZER QUE NÃO SABE.
+ *
+ * Ele mostrava `resumo.pendentes` de um objeto que nascia `{0, 0, 0}` quando a carga falhava: a
+ * tela afirmava "0 pendentes · 0 vencendo · 0 vencidas" em corpo de 1.5rem sobre um servidor que
+ * não respondeu. O contador lê os três números, conclui que está tudo em dia e fecha a página.
+ *
+ * Com `indisponivel`, o "—" ocupa exatamente o mesmo espaço do número (mesmo tamanho, mesma
+ * altura de cartão — a recusa não pode encolher, senão o olho pula para os cartões que "têm"
+ * número) e a legenda vermelha diz que houve falha de carga.
+ */
+function CartaoResumo({ rotulo, valor, cor, indisponivel, legenda, motivo }) {
   return (
-    <div style={{ flex: "1 1 140px", minWidth: 140, background: COR.fundo, border: `1px solid ${cor}`, borderRadius: 8, padding: "10px 12px" }}>
-      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: cor, lineHeight: 1.1 }}>{valor}</div>
+    <div
+      title={indisponivel ? motivo : undefined}
+      style={{ flex: "1 1 140px", minWidth: 140, background: COR.fundo, border: `1px solid ${indisponivel ? COR.borda : cor}`, borderRadius: 8, padding: "10px 12px" }}
+    >
+      <div style={{ fontSize: "1.5rem", fontWeight: 700, color: indisponivel ? COR.suave : cor, lineHeight: 1.1 }}>
+        {indisponivel ? SEM_RESPOSTA : valor}
+      </div>
       <div style={{ fontSize: "0.75rem", color: COR.suave }}>{rotulo}</div>
+      {indisponivel && legenda && (
+        // Vermelho só quando é FALHA — "carregando" não é bloqueio, e gastar a cor nele a esvazia.
+        <div style={{ fontSize: "0.72rem", color: legenda.falhou ? COR.vencida : COR.suave, marginTop: 2 }}>
+          {legenda.texto}
+        </div>
+      )}
     </div>
   );
 }
@@ -236,7 +259,8 @@ function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, salvand
 export function ObrigacoesPage({ api, empresas = [], onBack }) {
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
-  const [erro, setErro] = useState(null);
+  const [erro, setErro] = useState(null);       // falha de AÇÃO (concluir, excluir)
+  const [falha, setFalha] = useState(null);     // falha de CARGA — some com a lista, não com a ação
   const [aviso, setAviso] = useState(null);
   const [companyId, setCompanyId] = useState("");
   const [busca, setBusca] = useState("");
@@ -250,12 +274,15 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
     if (!api) return;
     setCarregando(true);
     setErro(null);
+    setFalha(null);
     try {
       const out = await api.listObrigacoes({ companyId: companyId || undefined });
-      if (out?.ok === false) { setErro(out.message || "Não foi possível carregar."); setDados(null); }
-      else setDados(out);
+      if (out?.ok === false) {
+        setFalha(lerFalhaDeCarga(out, { assunto: "as obrigações" }));
+        setDados(null);
+      } else setDados(out);
     } catch (err) {
-      setErro(err?.message || "Não foi possível carregar as obrigações.");
+      setFalha(lerFalhaDeCarga(err, { assunto: "as obrigações" }));
       setDados(null);
     } finally { setCarregando(false); }
   }, [api, companyId]);
@@ -339,7 +366,17 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
     } catch (err) { setErro(err?.message || "Não foi possível excluir."); }
   }
 
-  const resumo = dados?.resumo || { pendentes: 0, vencendoEm7Dias: 0, vencidas: 0 };
+  // ⚠ SEM `dados` NÃO HÁ RESUMO — e o default `{0,0,0}` que morava aqui era a mentira inteira.
+  const resumo = dados?.resumo || null;
+  const resumoIndisponivel = !resumo;
+  const motivoDoResumo = falha
+    ? `${falha.titulo}. ${falha.motivo}`
+    : carregando
+      ? "Os números estão sendo carregados."
+      : "Os números ainda não chegaram do servidor.";
+  const legendaDoResumo = falha
+    ? { falhou: true, texto: falha.semAcesso ? "sem acesso" : "não carregou" }
+    : { falhou: false, texto: carregando ? "carregando…" : "sem resposta" };
 
   // Ao voltar das regras, recarrega: propagar cria e remove obrigações nas empresas, e a lista
   // atrás estaria desatualizada.
@@ -387,9 +424,18 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
       )}
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-        <CartaoResumo rotulo="Pendentes" valor={resumo.pendentes} cor={COR.pendente} />
-        <CartaoResumo rotulo="Vencendo em 7 dias" valor={resumo.vencendoEm7Dias} cor={COR.alerta} />
-        <CartaoResumo rotulo="Vencidas" valor={resumo.vencidas} cor={COR.vencida} />
+        <CartaoResumo
+          rotulo="Pendentes" valor={resumo?.pendentes} cor={COR.pendente}
+          indisponivel={resumoIndisponivel} legenda={legendaDoResumo} motivo={motivoDoResumo}
+        />
+        <CartaoResumo
+          rotulo="Vencendo em 7 dias" valor={resumo?.vencendoEm7Dias} cor={COR.alerta}
+          indisponivel={resumoIndisponivel} legenda={legendaDoResumo} motivo={motivoDoResumo}
+        />
+        <CartaoResumo
+          rotulo="Vencidas" valor={resumo?.vencidas} cor={COR.vencida}
+          indisponivel={resumoIndisponivel} legenda={legendaDoResumo} motivo={motivoDoResumo}
+        />
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
@@ -413,7 +459,25 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
         {categorias.map((c) => <option key={c} value={c} />)}
       </datalist>
 
-      {!carregando && !obrigacoes.length && (
+      {/* ⚠ TRÊS ESTADOS, TRÊS PAINÉIS. Antes eram um: carga falhada saía como "Nenhuma obrigação
+          cadastrada." — a tela afirmando sobre a carteira inteira uma coisa que ela não sabe. */}
+      {!carregando && falha && (
+        <div
+          role="alert"
+          style={{ padding: "24px 16px", textAlign: "center", background: COR.fundo, border: `2px solid ${falha.semAcesso ? COR.borda : COR.vencida}`, borderRadius: 8 }}
+        >
+          <div style={{ color: falha.semAcesso ? COR.texto : COR.vencida, fontWeight: 700, fontSize: "1rem", marginBottom: 4 }}>
+            {falha.titulo}
+          </div>
+          <div style={{ color: COR.texto, fontSize: "0.8rem", marginBottom: 4 }}>{falha.motivo}</div>
+          <div style={{ color: COR.suave, fontSize: "0.78rem", marginBottom: 10 }}>
+            Isto não quer dizer que não há obrigações — quer dizer que esta tela não conseguiu vê-las.
+          </div>
+          <Button variant="secondary" onClick={carregar}>Tentar de novo</Button>
+        </div>
+      )}
+
+      {!carregando && !falha && !obrigacoes.length && (
         <div style={{ padding: "28px 16px", textAlign: "center", background: COR.fundo, border: `1px dashed ${COR.borda}`, borderRadius: 8 }}>
           <div style={{ color: COR.texto, fontWeight: 600, marginBottom: 4 }}>
             {dados?.obrigacoes?.length ? "Nada com esses filtros." : "Nenhuma obrigação cadastrada."}

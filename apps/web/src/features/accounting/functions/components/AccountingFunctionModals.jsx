@@ -95,7 +95,10 @@ function AccountSearch({ value, onChange, accounts, placeholder }) {
 // ─────────────────────────────────────────────────────────────────────────
 // FunctionListModal — escolha de função para aplicar/editar
 // ─────────────────────────────────────────────────────────────────────────
-export function FunctionListModal({ functions, loading, onApply, onEdit, onDelete, onCreate, onDuplicate, onClose }) {
+export function FunctionListModal({ functions, loading, falha, onApply, onEdit, onDelete, onCreate, onDuplicate, onClose }) {
+  // ⚠ `falha` vem pronta do `useAccountingFunctions` e cobre os dois momentos: a listagem que não
+  // veio e a ação (excluir/duplicar) que o servidor recusou — em ambos, sem esta leitura, a lista
+  // ficava igual e nada aparecia na tela.
   const globals = functions.filter((f) => !f.portalClientId);
   const ownerEmpresa = functions.filter((f) => f.portalClientId);
 
@@ -164,9 +167,27 @@ export function FunctionListModal({ functions, loading, onApply, onEdit, onDelet
           <Button variant="primary" onClick={onCreate}>+ Nova função</Button>
         </div>
 
+        {falha && (
+          <div
+            role="alert"
+            style={{
+              padding: "10px 12px", borderRadius: 8, marginBottom: 12,
+              border: `1px solid ${falha.semAcesso ? PANEL.border : "#FF5757"}`,
+              background: falha.semAcesso ? "transparent" : "rgba(255,87,87,0.10)",
+            }}
+          >
+            <div style={{ color: falha.semAcesso ? PANEL.text : "#FF5757", fontWeight: 700, fontSize: "0.85rem" }}>
+              {falha.titulo}
+            </div>
+            <div style={{ color: PANEL.text, fontSize: "0.8rem", marginTop: 2 }}>{falha.motivo}</div>
+          </div>
+        )}
+
         {loading && <div style={{ color: PANEL.muted, padding: 20, textAlign: "center" }}>Carregando…</div>}
 
-        {!loading && functions.length === 0 && (
+        {/* ⚠ Lista vazia SÓ é "nenhuma função cadastrada" quando a carga deu certo. Com falha, o
+            convite a criar a primeira seria a tela mandando refazer o que já existe. */}
+        {!loading && !falha && functions.length === 0 && (
           <div style={{ color: PANEL.muted, padding: 20, textAlign: "center" }}>
             Nenhuma função cadastrada. Clique em "Nova função" para criar a primeira.
           </div>
