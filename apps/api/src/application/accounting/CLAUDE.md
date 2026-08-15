@@ -904,6 +904,39 @@ coluna **"Total em aberto"** (`totaisEmAberto` lê `saldo ?? valor ?? totalD`) s
 2026-07: célula **19.539,95**, em aberto **18.842,28** (= 18.347,28 do razão + 495,00 de INSS). A
 composição da célula está **certa** (DAS + INSS, confirmado pelo dono); errada era a fonte.
 
+### ⚠ `enrichDasProvisao` SUBSTITUI o `sourceGuide` — e substituir não é completar
+
+O `include` das provisões (`GET /entries/circular`) carrega `vencimento`, `emailStatus` e `envios`
+com comentário dizendo para que servem. Três caminhos reescreviam o objeto depois —
+`enrichDasProvisao` (DAS), a provisão **sintética** do INSS e a do DAS por upload — e os três
+emitiam um `sourceGuide` de **cinco campos**, jogando os outros três fora. **DARF, PIS e COFINS não
+passam por nenhum deles** e sempre chegaram completos: duas linhas da mesma tela, uma certa e outra
+errada, e foi essa assimetria que denunciou o defeito.
+
+O que o contador via nas duas linhas mais comuns da Circular: popover afirmando **"Enviada ao
+cliente: ainda não"** sobre guia já entregue (afirmação **falsa**, não ausência); linha
+"Vencimento" sumindo; o chip dizendo que o vencimento "não é conhecido" dois meses depois de
+vencido; e o valor caindo no balde `semData` de `estadoGuia.js`, o que **subdimensiona o "Total
+vencido"** do mês.
+
+⚠ **As duas linhas sintéticas não têm `include` que as alcance** — tudo o que a tela lê delas sai do
+objeto literal. Por isso os campos foram acrescentados também aos `select` de `inssGuides` e
+`simplesGuides` (`vencimento` já estava lá; entraram `emailStatus` e `envios`), com **um** shape de
+envios compartilhado (`SELECT_ENVIO_DA_GUIA`) para as três consultas — carregamentos diferentes
+fariam uma linha mostrar menos que a de cima sem nada denunciar.
+
+⚠ **Se um campo não puder ser carregado, o conserto é carregá-lo — nunca emitir `sourceGuide`
+parcial.** Ausência nunca é resposta, mas "ainda não enviada" sobre guia enviada é pior que
+silêncio.
+
+⚠ **Nada disto mexeu em `saldo`** (o assunto da seção acima, que continua sendo o assunto de lá) nem
+na forma de lançamento nenhum: a mudança é no que a rota **devolve**, não no que ela grava. E "esta
+guia foi enviada?" continua sendo respondida por **`foiEnviadaComLegado`** (`envios_guia` +
+tolerância do legado) — a rota só entrega o dado. Regressão:
+`routes/firm/__tests__/circularSourceGuideEnvio.test.js` (9), com o DARF como **controle**;
+removendo o repasse de qualquer um dos três campos, **2 vermelhos** (experimento executado, campo a
+campo).
+
 ### O detector — `divergenciaDeFonte.js`
 
 `divergenciasDeFonte(circular, entries)` → uma linha por evento cujo ΣD **não** bate com o que o

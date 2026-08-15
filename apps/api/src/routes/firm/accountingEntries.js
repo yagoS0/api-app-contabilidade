@@ -660,6 +660,17 @@ function entriesToCsv(entries) {
   return rows.join("\r\n");
 }
 
+// O ENVIO DA GUIA, como a Circular precisa lê-lo — UM select, três consultas.
+//
+// A pergunta "esta guia foi enviada?" é respondida por `envios_guia` (um registro por guia × canal),
+// com `emailStatus` valendo só como tolerância do legado — ver `guides/EnvioGuiaService.js`. As três
+// consultas que alimentam a matriz (as provisões, as guias de INSS e as de SIMPLES) precisam da
+// MESMA forma: se uma delas trouxer menos campos, a linha dela mostra menos no popover que a de
+// cima, e a diferença não aparece em lugar nenhum a não ser na tela do contador.
+const SELECT_ENVIO_DA_GUIA = Object.freeze({
+  canal: true, status: true, destino: true, enviadoEm: true, entregueEm: true, lidoEm: true,
+});
+
 // ---------------------------------------------------------------------------
 // Router factory
 // ---------------------------------------------------------------------------
@@ -878,7 +889,7 @@ export function createAccountingEntriesRouter({ log }) {
               // Envio ao cliente, para a linha "Enviada ao cliente" do popover da célula.
               // `emailStatus` é legado de transporte; a verdade do ENVIO mora em `envios_guia`.
               emailStatus: true,
-              envios: { select: { canal: true, status: true, destino: true, enviadoEm: true, entregueEm: true, lidoEm: true } },
+              envios: { select: SELECT_ENVIO_DA_GUIA },
             },
           },
         },
@@ -917,6 +928,12 @@ export function createAccountingEntriesRouter({ log }) {
           vencimento: true,
           updatedAt: true,
           parcelamentoId: true, // Q31: vínculo a parcelamento (célula amarela na Circular)
+          // Envio ao cliente, para a linha "Enviada ao cliente" do popover da célula. A provisão do
+          // INSS é SINTÉTICA — não há lançamento contábil para ela, então o `include` das provisões
+          // não a alcança e é aqui que estes dois campos têm de ser carregados. Sem eles a linha do
+          // INSS afirmava "ainda não enviada" para guia já entregue.
+          emailStatus: true,
+          envios: { select: SELECT_ENVIO_DA_GUIA },
         },
       }),
       prisma.companyMonthlyCircular.findMany({
@@ -951,6 +968,12 @@ export function createAccountingEntriesRouter({ log }) {
           // `extracted`: traz o comprovante lido do SERPRO (data real + principal/juros/multa),
           // usado pra pré-preencher a baixa.
           extracted: true,
+          // Envio ao cliente, para a linha "Enviada ao cliente" do popover da célula. Esta guia
+          // SUBSTITUI o `sourceGuide` da provisão de DAS (`enrichDasProvisao`) e alimenta a linha
+          // sintética do DAS por upload — o que não for carregado aqui não chega à tela por
+          // caminho nenhum.
+          emailStatus: true,
+          envios: { select: SELECT_ENVIO_DA_GUIA },
         },
       }),
     ]);
@@ -1028,7 +1051,18 @@ export function createAccountingEntriesRouter({ log }) {
         pagamentoLocalizado: Boolean(guidePaid && !hasBaixa),
         // Dados do comprovante pra pré-preencher a baixa (data real + quebra principal/juros/multa).
         comprovante,
-        // sourceGuide: dados do pagamento p/ o selo ✅ (data/origem/comprovante).
+        // sourceGuide: dados do pagamento p/ o selo ✅ (data/origem/comprovante) — E o vencimento e
+        // o estado do envio, que o `include` lá em cima carrega COM comentário dizendo para que
+        // servem.
+        //
+        // ⚠ ESTE OBJETO SUBSTITUI o `entry.sourceGuide`, não o completa. Enquanto ele saía com
+        // cinco campos, a linha do DAS perdia os três — e o efeito não era um campo em branco: era
+        // o popover AFIRMANDO "Enviada ao cliente: ainda não" sobre guia já entregue, a linha
+        // "Vencimento" sumindo, e o valor caindo no balde `semData` (que subdimensiona o "Total
+        // vencido" do mês). DARF/PIS/COFINS não passam por aqui e nunca tiveram o problema.
+        //
+        // ⚠ Se algum destes campos deixar de ser carregado no `select` da guia, o conserto é
+        // carregá-lo — NÃO emitir o objeto pela metade. Afirmação falsa é pior que silêncio.
         sourceGuide: guide
           ? {
               id: guide.id,
@@ -1036,6 +1070,9 @@ export function createAccountingEntriesRouter({ log }) {
               paymentStatusSource: guide.paymentStatusSource,
               paymentConfirmedAt: guide.paymentConfirmedAt,
               comprovantePdfFileId: guide.comprovantePdfFileId,
+              vencimento: guide.vencimento,
+              emailStatus: guide.emailStatus,
+              envios: guide.envios || [],
             }
           : entry.sourceGuide,
         recalculatedAt: recalculado ? (guide?.updatedAt || entry.recalculatedAt || null) : entry.recalculatedAt,
@@ -1148,7 +1185,11 @@ export function createAccountingEntriesRouter({ log }) {
         placeholder: false,
         synthetic: true, // sinaliza ao frontend que é uma "fake provisão"
         parcelamentoId: g.parcelamentoId || null, // Q31: vínculo (amarelo) — roteado pela guia
-        // Q41: dados do pagamento confirmado pelo SERPRO (selo verde na célula).
+        // Q41: dados do pagamento confirmado pelo SERPRO (selo verde na célula) — mais o vencimento
+        // e o estado do envio, os MESMOS três campos que a provisão real de DARF/PIS/COFINS já
+        // entregava. Esta linha é sintética: não existe `include` que a alcance, então tudo o que a
+        // tela lê dela sai daqui. Sem os três, a linha do INSS afirmava "ainda não enviada" para
+        // guia entregue, ficava sem vencimento e caía no balde `semData` do rodapé.
         sourceGuide: {
           id: g.id,
           paymentStatus: g.paymentStatus,
@@ -1156,6 +1197,9 @@ export function createAccountingEntriesRouter({ log }) {
           paymentConfirmedAt: g.paymentConfirmedAt,
           serproLastCheckResult: g.serproLastCheckResult,
           comprovantePdfFileId: g.comprovantePdfFileId,
+          vencimento: g.vencimento,
+          emailStatus: g.emailStatus,
+          envios: g.envios || [],
         },
       };
     });
@@ -1229,12 +1273,17 @@ export function createAccountingEntriesRouter({ log }) {
           placeholder: false,
           synthetic: true,
           parcelamentoId: null,
+          // Mesma linha da provisão sintética do INSS, e pelo mesmo motivo: nada de `include`
+          // alcança esta linha, então vencimento e estado do envio saem daqui ou não saem.
           sourceGuide: {
             id: g.id,
             paymentStatus: g.paymentStatus,
             paymentStatusSource: g.paymentStatusSource,
             paymentConfirmedAt: g.paymentConfirmedAt,
             comprovantePdfFileId: g.comprovantePdfFileId,
+            vencimento: g.vencimento,
+            emailStatus: g.emailStatus,
+            envios: g.envios || [],
           },
         };
       });
