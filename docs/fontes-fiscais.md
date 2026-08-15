@@ -35,6 +35,13 @@ para os tributos federais. É por isso que a 6ª faixa dos anexos não traz ICMS
 - Cálculo proporcional no mês de estouro do sublimite: seguir a Resolução CGSN nº 140/2018
   (não transcrita aqui — implementar contra o texto da Resolução, não contra material de terceiros).
 
+⚠ **Na comparação de regimes, o DAS menor da 6ª faixa NÃO é custo menor.** O que saiu do DAS
+continua sendo pago — por fora. Ou ele volta à conta como valor (ISS, quando a alíquota do município
+é informada — §9), ou vai como **ressalva com o mesmo peso do número** (ICMS, que depende de estado,
+NCM e operação, e por isso não se estima). Onde isso vive no código: `simplesNacional.js` →
+`tributosForaDoDasNaSextaFaixa()` e `custoAnualSimples({ aliquotaIss })`; `comparador.js` passa a
+alíquota aos três regimes; `CardRegime.jsx` mostra `naoConsiderado` no corpo do card.
+
 ### 1.2 Fórmula da alíquota efetiva (art. 18, § 1º e § 1º-A)
 
 ```
@@ -400,11 +407,51 @@ lucros do exterior, benefícios fiscais específicos etc.).
 
 ### 2.3 Percentuais de presunção — CSLL (Lei 9.249/1995, art. 20, redação da LC 167/2019)
 
-| Atividade | Presunção |
-|---|---|
-| Regra geral (comércio, indústria, transporte de cargas, hospitalares etc.) | 12% |
-| Serviços em geral e demais atividades do inciso III do § 1º do art. 15 | 32% |
-| Empresa Simples de Crédito — ESC (inciso IV do § 1º do art. 15) | 38,4% |
+> ⚠ **REDAÇÃO CORRIGIDA EM 15/08/2026.** A versão anterior desta tabela descrevia a linha de 12%
+> como *"Regra geral (comércio, indústria, **transporte de cargas**, hospitalares etc.)"*. Citar só o
+> transporte **de cargas** convida a supor que o de **passageiros** seria 32% — e foi exatamente esse
+> o defeito que chegou ao motor (`lucroPresumido.js`, `transportePassageiros` com a presunção de
+> serviços). **Todo transporte é 12% na CSLL**; o que separa passageiros de cargas é só o IRPJ.
+> Conferido no texto compilado oficial da Câmara dos Deputados em **15/08/2026**:
+> https://www2.camara.leg.br/legin/fed/lei/1995/lei-9249-26-dezembro-1995-349062-normaatualizada-pl.pdf
+
+⚠ **O art. 20 não traz uma lista de atividades.** Ele faz **duas remissões** ao § 1º do art. 15 e
+manda todo o resto para 12%. Ler a tabela como se fosse uma lista de atividades é o que produz o
+erro: a pergunta certa nunca é "esta atividade parece um serviço?", é "**em que inciso do § 1º do
+art. 15 ela está?**".
+
+| Receita bruta | Presunção | Base legal |
+|---|---|---|
+| Atividades do **inciso III do § 1º do art. 15**: serviços em geral (exceto hospitalares), intermediação de negócios, administração/locação/cessão de bens imóveis, móveis e direitos, factoring, construção vinculada a contrato de concessão de serviço público | 32% | art. 20, **I** |
+| Empresa Simples de Crédito — ESC (**inciso IV do § 1º do art. 15**) | 38,4% | art. 20, **II** |
+| **Demais receitas brutas** — comércio, indústria, revenda de combustíveis, serviços hospitalares e **TODO TRANSPORTE, de cargas E de passageiros** (estes no **inciso II do § 1º do art. 15**, que o art. 20 não cita) | **12%** | art. 20, **III** |
+
+Transcrição literal do **art. 20** (redação da LC 167/2019), conferida em 15/08/2026 na fonte acima:
+
+> A base de cálculo da Contribuição Social sobre o Lucro Líquido (CSLL) (…) corresponderá aos
+> seguintes percentuais (…): I - 32% (…) para a receita bruta decorrente das atividades previstas
+> **no inciso III do § 1º do art. 15** desta Lei; II - 38,4% (…) inciso IV (…); III - **12% (doze por
+> cento) para as demais receitas brutas**.
+
+E o **art. 15, § 1º**, que é para onde o art. 20 aponta:
+
+> Nas seguintes atividades, o percentual de que trata este artigo será de: (…) **II - dezesseis por
+> cento:** a) para a atividade de prestação de serviços de transporte, **exceto o de carga**, para o
+> qual se aplicará o percentual previsto no caput deste artigo; (…) **III - trinta e dois por cento,
+> para as atividades de:** a) prestação de serviços em geral, exceto a de serviços hospitalares (…);
+> b) intermediação de negócios; c) administração, locação ou cessão de bens imóveis, móveis e
+> direitos (…); d) (…) 'factoring'; e) prestação de serviços de construção (…) vinculados a contrato
+> de concessão de serviço público
+
+⚠ **TRANSPORTE DE PASSAGEIROS = IRPJ de 16% + CSLL de 12%**, e a assimetria é a regra, não um
+descuido de transcrição. A conclusão é mecânica: transporte está no **inciso II** do § 1º do art. 15;
+o art. 20 só manda 32% para o **inciso III**; logo transporte cai em "demais receitas brutas" → 12%.
+A **única** diferença entre passageiros e cargas está no IRPJ: 16% (inciso II, "a") contra 8%
+(caput do art. 15). Ver §2.2.
+
+Onde isso vive no código: `tabelasFiscais.js` → `PRESUNCAO_CSLL.demaisReceitas` (o nome antigo era
+`comercioIndustria`, que descrevia uma lista fechada que a lei não tem); `lucroPresumido.js` →
+`ATIVIDADES_PRESUMIDO`; caso dourado calculado à mão em `casosDourados.test.js`.
 
 ### 2.4 MAJORAÇÃO 2026 — LC 224/2025 (crítico; ausente de material anterior a dez/2025)
 

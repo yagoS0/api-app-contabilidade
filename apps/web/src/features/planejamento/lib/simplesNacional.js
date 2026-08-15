@@ -171,6 +171,24 @@ export function repartirPorTributo(anexo, rbt12) {
 }
 
 /**
+ * ⚠⚠ O QUE SAI DO DAS ACIMA DO SUBLIMITE — LC 123/2006, art. 13-A (§1.1).
+ *
+ * Passando de R$ 3,6 mi de RBT12 (a 6ª faixa), ICMS e ISS deixam de ser recolhidos no DAS e passam
+ * a ser pagos por fora, pelas regras estaduais/municipais. A empresa continua no Simples para os
+ * federais — o que muda é que o DAS encolhe SEM a empresa pagar menos.
+ *
+ * ⚠ QUAL DELES SAI NÃO É HARDCODE: é o que a própria tabela do anexo mostra — o tributo que existe
+ * nas faixas de baixo e SOME na 6ª. O Anexo I perde o ICMS; o III, IV e V perdem o ISS; o II perde
+ * o ICMS e mantém o IPI. Escrever a lista à mão aqui a faria divergir da tabela no dia em que a
+ * tabela mudar, que é o único dia em que isso importa.
+ */
+export function tributosForaDoDasNaSextaFaixa(anexo) {
+  const primeira = anexo.faixas[0].partilha;
+  const sexta = anexo.faixas[anexo.faixas.length - 1].partilha;
+  return ["icms", "iss"].filter((t) => primeira[t] != null && sexta[t] == null);
+}
+
+/**
  * FATOR R — FONTES_FISCAIS §1.8 (art. 18, §§ 5º-J e 5º-M).
  *
  *     Fator R = folha de 12 meses / RBT12
@@ -227,6 +245,13 @@ export function folhaParaFatorR(folha12m, rbt12) {
  * Com receita em rampa (o caso real de quem abriu agora) a série muda o resultado, e aí o motor
  * precisa dela — passe `receitasMensais`.
  *
+ * ⚠⚠ `aliquotaIss` SÓ TEM EFEITO NA 6ª FAIXA, e a assimetria é a regra, não uma exceção do código:
+ * abaixo do sublimite o ISS JÁ ESTÁ no DAS (está na partilha da faixa), e somá-lo de novo cobraria
+ * o mesmo imposto duas vezes. Acima do sublimite ele saiu do DAS (art. 13-A) e passa a ser custo
+ * por fora — se não entrar aqui, o Simples aparece mais barato exatamente onde ele não é, enquanto
+ * o card do Presumido soma o ISS e ainda imprime o que ficou de fora. Era a comparação decidida por
+ * um imposto que existe nos dois lados e só aparecia em um.
+ *
  * ⚠⚠ E LIGA TAMBÉM A GUARDA DE ELEGIBILIDADE (art. 3º, § 2º). Quando o excesso sobre o limite
  * proporcional passa de 20%, a exclusão RETROAGE ao início das atividades: os números do Simples
  * para o ano deixam de valer, e por isso o resultado sai `elegivel: false` — o comparador tira o
@@ -235,6 +260,7 @@ export function folhaParaFatorR(folha12m, rbt12) {
  */
 export function custoAnualSimples({
   anexoChave, rbt12, receitaAnual, folhaAnual = 0,
+  aliquotaIss = null, // §9 — parâmetro; só entra na 6ª faixa, quando o ISS sai do DAS
   mesesDeAtividade = null, receitasMensais = null,
   mesesNoAnoDeInicio = null, sublimiteMensal,
 }) {
@@ -290,6 +316,14 @@ export function custoAnualSimples({
   // A CPP por fora incide sobre a FOLHA, não sobre a receita.
   const cppPorFora = anexo.cppForaDoDas ? (Number(folhaAnual) || 0) * ENCARGOS_FOLHA.cppPatronal : 0;
 
+  // ⚠⚠ ACIMA DO SUBLIMITE O DAS ENCOLHE SEM A EMPRESA PAGAR MENOS (art. 13-A). O que saiu do DAS
+  // tem de voltar à conta — como VALOR quando temos a alíquota, e como RESSALVA quando não temos.
+  // Ausência não é zero: um total sem o ISS é comparado, lado a lado, com um Presumido que o soma.
+  const foraDoDas = rep.faixa === 6 ? tributosForaDoDasNaSextaFaixa(anexo) : [];
+  const issForaDoDas = foraDoDas.includes("iss") && aliquotaIss != null
+    ? receita * Number(aliquotaIss)
+    : 0;
+
   return {
     regime: "Simples Nacional",
     anexo: anexo.nome,
@@ -298,7 +332,11 @@ export function custoAnualSimples({
     tetoIssAplicado: rep.tetoIssAplicado,
     das,
     cppPorFora,
-    total: das + cppPorFora,
+    // O ISS que saiu do DAS e voltou pela alíquota informada — zero quando ela não foi informada
+    // (e aí a ausência viaja em `naoConsiderado`, não em silêncio).
+    issPorFora: issForaDoDas,
+    acimaDoSublimite: rep.faixa === 6,
+    total: das + cppPorFora + issForaDoDas,
     rbt12Utilizado: rbtExibido,
     // Presente só em início de atividade — é o que a tela usa para dizer que o RBT12 é premissa.
     inicioAtividade: inicio,
@@ -306,10 +344,24 @@ export function custoAnualSimples({
     // card usa para avisar que a elegibilidade está por um fio ANTES de ela se perder.
     elegibilidadeInicioAtividade: guarda,
     // Carga sobre a receita, já com o que sai por fora — é o número comparável entre regimes.
-    cargaEfetiva: receita > 0 ? (das + cppPorFora) / receita : null,
-    porTributo: Object.fromEntries(
-      Object.entries(rep.porTributo).map(([t, pct]) => [t, pct * receita]),
-    ),
+    cargaEfetiva: receita > 0 ? (das + cppPorFora + issForaDoDas) / receita : null,
+    porTributo: {
+      ...Object.fromEntries(Object.entries(rep.porTributo).map(([t, pct]) => [t, pct * receita])),
+      // Na 6ª faixa o ISS não vem da partilha (ele saiu dela) — vem da alíquota do município.
+      ...(issForaDoDas > 0 ? { iss: issForaDoDas } : {}),
+    },
+    // ⚠⚠ A RESSALVA TEM O MESMO PESO DO NÚMERO QUE ELA QUALIFICA — é a regra do `CardRegime`, que
+    // renderiza `naoConsiderado` no CORPO do card, em bloco de alerta. Sem esta lista, o Simples
+    // acima do sublimite mostrava um total reduzido, sem uma linha dizendo o que faltava nele,
+    // ao lado de um Presumido que soma o ISS e imprime o próprio "Fora desta conta".
+    naoConsiderado: [
+      foraDoDas.includes("iss") && aliquotaIss == null
+        ? `ISS: acima do sublimite de ${brl(LIMITES_SIMPLES.sublimiteIcmsIss)} ele SAI do DAS e é recolhido por fora — informe a alíquota do município para que entre nesta conta`
+        : null,
+      foraDoDas.includes("icms")
+        ? `ICMS: acima do sublimite de ${brl(LIMITES_SIMPLES.sublimiteIcmsIss)} ele SAI do DAS e passa a ser recolhido pelas regras do estado — não estimado aqui`
+        : null,
+    ].filter(Boolean),
     premissas: [
       `${anexo.nome} (${anexo.fonte})`,
       inicio?.proporcionalizado
@@ -320,6 +372,12 @@ export function custoAnualSimples({
         : null,
       guarda?.efeitoExclusao === "ano_calendario_subsequente"
         ? "⚠ Limite proporcional ultrapassado em até 20%: a empresa permanece no Simples neste ano e é excluída a partir do ano-calendário seguinte (art. 3º, § 12)"
+        : null,
+      rep.faixa === 6
+        ? `6ª faixa: com RBT12 acima do sublimite de ${brl(LIMITES_SIMPLES.sublimiteIcmsIss)}, ${foraDoDas.map((t) => t.toUpperCase()).join(" e ")} ${foraDoDas.length > 1 ? "saem" : "sai"} do DAS e ${foraDoDas.length > 1 ? "são recolhidos" : "é recolhido"} por fora (LC 123/2006, art. 13-A)`
+        : null,
+      issForaDoDas > 0
+        ? `ISS de ${(Number(aliquotaIss) * 100).toFixed(2).replace(".", ",")}% somado POR FORA do DAS: ${brl(issForaDoDas)}`
         : null,
       rep.tetoIssAplicado ? "Teto de ISS de 5% aplicado, com redistribuição aos federais" : null,
       anexo.cppForaDoDas ? `CPP de 20% somada POR FORA sobre folha de ${brl(folhaAnual)} — no Anexo IV ela não está no DAS` : null,

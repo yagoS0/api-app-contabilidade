@@ -8,6 +8,7 @@ import {
   aliquotaEfetiva, repartirPorTributo, fatorR, anexoPorFatorR, folhaParaFatorR,
   custoAnualSimples, podeOptarPorReceita, faixaDoRbt12,
   rbt12InicioAtividade, INICIO_ATIVIDADE, limiteProporcionalInicioAtividade,
+  tributosForaDoDasNaSextaFaixa,
 } from "../simplesNacional";
 import { custoAnualPresumido, baseComMajoracao, adicionalIrpjAnual, avisoTravaServicos16 } from "../lucroPresumido";
 import { ANEXOS, MAJORACAO_LC224, FATOR_R_LIMITE } from "../tabelasFiscais";
@@ -239,6 +240,64 @@ describe("teto de ISS de 5% na 5ª faixa (§1.5 e §1.6)", () => {
 
   it("6ª faixa do Anexo I não tem ICMS", () => {
     expect(repartirPorTributo(ANEXOS.I, 4_000_000).porTributo.icms).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SIMPLES — acima do sublimite: ICMS/ISS fora do DAS (art. 13-A, §1.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("⚠⚠ 6ª faixa: o que sai do DAS volta à conta, ou vai escrito", () => {
+  it("quem sai é lido da TABELA, não de uma lista escrita à mão", () => {
+    // Anexo I perde o ICMS; III, IV e V perdem o ISS; o II perde o ICMS e mantém o IPI.
+    expect(tributosForaDoDasNaSextaFaixa(ANEXOS.I)).toEqual(["icms"]);
+    expect(tributosForaDoDasNaSextaFaixa(ANEXOS.II)).toEqual(["icms"]);
+    expect(tributosForaDoDasNaSextaFaixa(ANEXOS.III)).toEqual(["iss"]);
+    expect(tributosForaDoDasNaSextaFaixa(ANEXOS.IV)).toEqual(["iss"]);
+    expect(tributosForaDoDasNaSextaFaixa(ANEXOS.V)).toEqual(["iss"]);
+  });
+
+  it("⚠ ABAIXO do sublimite a alíquota de ISS é IGNORADA — o ISS já está no DAS", () => {
+    // Somar de novo aqui cobraria o mesmo imposto duas vezes e faria o Simples parecer caro em
+    // toda faixa onde ele é competitivo.
+    const semIss = custoAnualSimples({ anexoChave: "III", rbt12: 2_000_000, receitaAnual: 2_000_000 });
+    const comIss = custoAnualSimples({ anexoChave: "III", rbt12: 2_000_000, receitaAnual: 2_000_000, aliquotaIss: 0.05 });
+    expect(comIss.issPorFora).toBe(0);
+    perto(comIss.total, semIss.total, 1e-9);
+    expect(comIss.acimaDoSublimite).toBe(false);
+    // E o ISS que aparece no detalhamento é o da partilha, não o do município.
+    perto(comIss.porTributo.iss, semIss.porTributo.iss, 1e-9);
+  });
+
+  it("⚠⚠ ACIMA do sublimite, sem a alíquota, o número menor vem com a RESSALVA — não em silêncio", () => {
+    // Era o defeito: `custoAnualSimples` não devolvia `naoConsiderado` nenhum, então o card do
+    // Simples mostrava um total reduzido sem uma linha de ressalva, ao lado de um Presumido que
+    // soma o ISS e ainda imprime o próprio "Fora desta conta".
+    const r = custoAnualSimples({ anexoChave: "III", rbt12: 4_000_000, receitaAnual: 4_000_000 });
+    expect(r.acimaDoSublimite).toBe(true);
+    expect(r.naoConsiderado.some((x) => /^ISS/.test(x))).toBe(true);
+    expect(r.premissas.some((p) => /art\. 13-A/.test(p))).toBe(true);
+  });
+
+  it("no Anexo I acima do sublimite a ressalva é do ICMS, que ninguém estima aqui", () => {
+    // A alíquota de ICMS varia por estado, NCM e operação: não há número a somar, só a ressalva.
+    const r = custoAnualSimples({ anexoChave: "I", rbt12: 4_000_000, receitaAnual: 4_000_000, aliquotaIss: 0.05 });
+    expect(r.issPorFora).toBe(0);
+    expect(r.naoConsiderado.some((x) => /^ICMS/.test(x))).toBe(true);
+  });
+
+  it("informada a alíquota, o ISS entra no total, no detalhamento e na premissa", () => {
+    const r = custoAnualSimples({ anexoChave: "III", rbt12: 4_000_000, receitaAnual: 4_000_000, aliquotaIss: 0.05 });
+    perto(r.issPorFora, 200_000);
+    perto(r.total, r.das + 200_000);
+    // Deixa de ser ausência: vira valor, e a ressalva de ISS sai da lista.
+    expect(r.naoConsiderado.some((x) => /^ISS/.test(x))).toBe(false);
+    expect(r.premissas.some((p) => /somado POR FORA do DAS/.test(p))).toBe(true);
+  });
+
+  it("abaixo da 6ª faixa não há ressalva de sublimite — a regra é da 6ª faixa, não de todo Simples", () => {
+    const r = custoAnualSimples({ anexoChave: "III", rbt12: 2_000_000, receitaAnual: 2_000_000 });
+    expect(r.naoConsiderado).toEqual([]);
   });
 });
 
@@ -591,6 +650,42 @@ describe("comparador de regimes", () => {
   it("a economia só existe havendo com quem comparar", () => {
     const r = compararRegimes(base);
     expect(r.economiaAnual).toBeGreaterThan(0);
+  });
+
+  it("⚠⚠ o ISS acima do sublimite INVERTE o vencedor — é o efeito do defeito corrigido", () => {
+    // Anexo III, receita e RBT12 de R$ 4 mi (6ª faixa), ISS de 5%, folha zero:
+    //   Simples   DAS 672.000 + ISS por fora 200.000 = 872.000
+    //   Presumido IRPJ 192.000 + adicional 104.000 + CSLL 115.920 + PIS/COFINS 146.000
+    //             + ISS 200.000                                   = 757.920
+    // Sem o ISS no lado do Simples, o comparador via 672.000 × 757.920 e coroava o Simples; com
+    // ele, o Presumido ganha. O mesmo imposto existia nos dois lados e só aparecia em um.
+    const args = {
+      receitaAnual: 4_000_000, rbt12: 4_000_000, anexoSimples: "III",
+      atividadePresumido: "servicos", aliquotaIss: 0.05, folhaAnual: 0,
+    };
+    const r = compararRegimes(args);
+    const simples = r.regimes.find((x) => x.regime === "Simples Nacional");
+    const presumido = r.regimes.find((x) => x.regime === "Lucro Presumido");
+
+    perto(simples.das, 672_000);
+    perto(simples.issPorFora, 200_000);
+    perto(simples.total, 872_000);
+    perto(presumido.total, 757_920);
+    expect(r.vencedor.regime).toBe("Lucro Presumido");
+
+    // A PROVA DE QUE A INVERSÃO É DO ISS, reconstruindo a comparação ASSIMÉTRICA de antes: o
+    // Simples sem o ISS (era o que o comparador fazia — não passava a alíquota) contra o mesmo
+    // Presumido, que sempre o somou. 672.000 < 757.920: o Simples "vencia" por R$ 85.920 porque
+    // faltava um imposto do lado dele, e a diferença real é de R$ 114.080 para o outro lado.
+    const simplesComoAntes = custoAnualSimples({
+      anexoChave: "III", rbt12: 4_000_000, receitaAnual: 4_000_000, folhaAnual: 0,
+    });
+    expect(simplesComoAntes.total).toBeLessThan(presumido.total);
+    perto(presumido.total - simplesComoAntes.total, 85_920);
+    perto(simples.total - presumido.total, 114_080);
+
+    // E onde o número menor sobrevive (alíquota não informada), a falta vai ESCRITA no card.
+    expect(simplesComoAntes.naoConsiderado.some((x) => /^ISS/.test(x))).toBe(true);
   });
 
   it("toda simulação carrega a data de verificação das fontes e o aviso", () => {

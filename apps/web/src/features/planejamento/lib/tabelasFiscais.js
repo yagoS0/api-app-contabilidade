@@ -196,10 +196,31 @@ export const PRESUNCAO_IRPJ = Object.freeze({
 });
 export const LIMITE_SERVICOS_16_PCT = 120_000;
 
-/** §2.3 — presunção de CSLL (Lei 9.249/1995, art. 20, red. LC 167/2019). */
+/**
+ * §2.3 — presunção de CSLL (Lei 9.249/1995, art. 20, red. LC 167/2019).
+ *
+ * ⚠⚠ O ART. 20 NÃO TRAZ UMA LISTA DE ATIVIDADES — TRAZ DUAS REMISSÕES E UM RESTO, e é exatamente aí
+ * que se erra. Ele manda 32% SÓ para as atividades do **inciso III do § 1º do art. 15** (serviços em
+ * geral, intermediação de negócios, administração/locação/cessão de bens e direitos, factoring,
+ * construção vinculada a concessão), 38,4% para as do inciso IV, e **12% para "as demais receitas
+ * brutas"** (inciso III do art. 20).
+ *
+ * TRANSPORTE — DE PASSAGEIROS OU DE CARGAS — ESTÁ NO INCISO II DO § 1º DO ART. 15, que o art. 20 não
+ * cita em lugar nenhum: cai no resto, e portanto em **12%**. O que separa passageiros de cargas é só
+ * o IRPJ (16% do inciso II "a" contra 8% do caput), nunca a CSLL. Ler "serviços de transporte" e
+ * concluir "serviço em geral → 32%" é o caminho curto que custa dinheiro do cliente.
+ *
+ * Conferido em 15/08/2026 no texto compilado oficial (Câmara dos Deputados):
+ * https://www2.camara.leg.br/legin/fed/lei/1995/lei-9249-26-dezembro-1995-349062-normaatualizada-pl.pdf
+ */
 export const PRESUNCAO_CSLL = Object.freeze({
-  comercioIndustria: 0.12,
+  // Art. 20, III — "demais receitas brutas". É a linha do comércio, da indústria, dos combustíveis e
+  // de TODO transporte. O nome anterior (`comercioIndustria`) descrevia uma lista fechada que a lei
+  // não tem, e foi o que convidou a pôr transporte de passageiros em 32%.
+  demaisReceitas: 0.12,
+  // Art. 20, I → art. 15, § 1º, III.
   servicosGeral: 0.32,
+  // Art. 20, II → art. 15, § 1º, IV.
   empresaSimplesCredito: 0.384,
 });
 

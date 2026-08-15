@@ -7,13 +7,22 @@ import {
   PIS_COFINS_CUMULATIVO, LIMITE_LUCRO_PRESUMIDO, LIMITE_SERVICOS_16_PCT, ENCARGOS_FOLHA,
 } from "./tabelasFiscais";
 
-/** As atividades que o simulador oferece, com as duas presunções (§2.2 e §2.3). */
+/**
+ * As atividades que o simulador oferece, com as duas presunções (§2.2 e §2.3).
+ *
+ * ⚠⚠ AS DUAS PRESUNÇÕES SÃO INDEPENDENTES, E O TRANSPORTE É ONDE ISSO APARECE. As tabelas de IRPJ
+ * (art. 15) e de CSLL (art. 20) não são a mesma lista com outro número: o art. 20 remete APENAS aos
+ * incisos III e IV do § 1º do art. 15 e joga todo o resto em 12%. Transporte está no inciso II —
+ * logo, CSLL de 12% para passageiros E para cargas. A ÚNICA diferença entre os dois é o IRPJ: 16%
+ * (inciso II, "a") contra 8% (caput). Copiar a linha de serviços para passageiros porque "transporte
+ * de passageiros é serviço" foi o defeito corrigido em 15/08/2026 — ver `PRESUNCAO_CSLL`.
+ */
 export const ATIVIDADES_PRESUMIDO = Object.freeze({
-  comercio: { rotulo: "Comércio / Indústria", irpj: PRESUNCAO_IRPJ.comercioIndustria, csll: PRESUNCAO_CSLL.comercioIndustria },
+  comercio: { rotulo: "Comércio / Indústria", irpj: PRESUNCAO_IRPJ.comercioIndustria, csll: PRESUNCAO_CSLL.demaisReceitas },
   servicos: { rotulo: "Serviços em geral", irpj: PRESUNCAO_IRPJ.servicosGeral, csll: PRESUNCAO_CSLL.servicosGeral },
-  transporteCargas: { rotulo: "Transporte de cargas", irpj: PRESUNCAO_IRPJ.comercioIndustria, csll: PRESUNCAO_CSLL.comercioIndustria },
-  transportePassageiros: { rotulo: "Transporte de passageiros", irpj: PRESUNCAO_IRPJ.transportePassageiros, csll: PRESUNCAO_CSLL.servicosGeral },
-  combustiveis: { rotulo: "Revenda de combustíveis", irpj: PRESUNCAO_IRPJ.combustiveis, csll: PRESUNCAO_CSLL.comercioIndustria },
+  transporteCargas: { rotulo: "Transporte de cargas", irpj: PRESUNCAO_IRPJ.comercioIndustria, csll: PRESUNCAO_CSLL.demaisReceitas },
+  transportePassageiros: { rotulo: "Transporte de passageiros", irpj: PRESUNCAO_IRPJ.transportePassageiros, csll: PRESUNCAO_CSLL.demaisReceitas },
+  combustiveis: { rotulo: "Revenda de combustíveis", irpj: PRESUNCAO_IRPJ.combustiveis, csll: PRESUNCAO_CSLL.demaisReceitas },
 });
 
 /**

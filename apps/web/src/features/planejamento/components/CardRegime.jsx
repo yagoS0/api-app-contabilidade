@@ -167,6 +167,13 @@ export function CardRegime({ resultado, vencedor, aberto, onToggle }) {
               Inclui {brl(resultado.cppPorFora)} de INSS patronal <strong>por fora do DAS</strong> — no Anexo IV a CPP não está incluída.
             </div>
           )}
+          {/* ⚠ Par do aviso da CPP: o total do Simples na 6ª faixa inclui um imposto que NÃO está
+              no DAS. Sem esta linha, quem confere o DAS na guia não reconhece o número do card. */}
+          {resultado.issPorFora > 0 && (
+            <div style={{ marginTop: 8, fontSize: "0.76rem", color: C.alerta }}>
+              Inclui {brl(resultado.issPorFora)} de ISS <strong>por fora do DAS</strong> — acima do sublimite de R$ 3,6 mi o ISS sai do DAS (art. 13-A).
+            </div>
+          )}
           {resultado.majoracaoLc224?.aplicada && (
             <div style={{ marginTop: 8, fontSize: "0.74rem", color: C.alerta }}>
               Presunção majorada pela LC 224/2025.

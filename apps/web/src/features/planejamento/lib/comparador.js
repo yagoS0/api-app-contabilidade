@@ -91,7 +91,11 @@ export function compararRegimes({
   const anexoResolvido = sujeitoAoFatorR ? anexoPorFatorR(folhaAnual, rbt) : anexoSimples;
 
   const simples = anexoResolvido
-    ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual, mesesDeAtividade, receitasMensais })
+    // ⚠ `aliquotaIss` vai para os TRÊS regimes, como já ia para o Presumido e o Real. No Simples ela
+    // só produz efeito na 6ª faixa, onde o ISS saiu do DAS (art. 13-A) — abaixo dela o ISS está
+    // dentro do DAS e o motor a ignora. Não passá-la aqui comparava um Simples sem ISS com um
+    // Presumido com ISS, e a diferença chegava a inverter o vencedor.
+    ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual, aliquotaIss, mesesDeAtividade, receitasMensais })
     : null;
   const presumido = custoAnualPresumido({ receitaAnual, atividade: atividadePresumido, folhaAnual, aliquotaIss, anoBase });
   const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss });
