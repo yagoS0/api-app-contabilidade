@@ -31,6 +31,7 @@ import { createCompanyCredentialsRouter } from "./companyCredentials.js";
 import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
+import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
@@ -4363,6 +4364,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Onboarding — funil PRÉ-cadastro. Monta na RAIZ de /firm, não sob `/companies/:companyId`:
   // a ficha existe justamente porque a empresa ainda NÃO existe.
   router.use("/", createOnboardingsRouter({ log }));
+
+  // Envio de guias por WhatsApp (Entrega 1). Monta na raiz porque o LOTE é da carteira inteira; o
+  // envio individual, que é por empresa, traz o próprio `requireFirmCompanyAccess` no caminho.
+  // ⚠ Só a SAÍDA. O webhook é público e vive fora deste roteador (é o único sem `requireAuth`).
+  router.use("/", createWhatsappGuiasRouter({ log }));
 
   // Q12.C.2: Apuração global — todas as empresas em uma página
   // GET /firm/apuracao?competencia=YYYY-MM&search=...

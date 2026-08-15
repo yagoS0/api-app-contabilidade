@@ -482,6 +482,17 @@ export const WHATSAPP_TIMEOUT_MS = Math.max(1000, Number(process.env.WHATSAPP_TI
 export const WHATSAPP_TEMPLATE_GUIA = (process.env.WHATSAPP_TEMPLATE_GUIA || "guia_disponivel").trim();
 export const WHATSAPP_TEMPLATE_IDIOMA = (process.env.WHATSAPP_TEMPLATE_IDIOMA || "pt_BR").trim();
 
+// Espaçamento entre os envios do LOTE, em milissegundos.
+//
+// PROCEDÊNCIA: **o esqueleto do dono** (`INTERVALO_ENTRE_ENVIOS_MS = 1500`, com o comentário
+// "número novo tem teto de conversas iniciadas/24h; comece conservador"). Não é número da Meta — o
+// teto por tier depende do número e não está exercido aqui.
+//
+// ⚠ É espaçamento, NÃO fila. O precedente do projeto é `ADN_DELAY_MS` no `dfeNotasWorker`: um
+// `setTimeout` entre chamadas, em série. Fila com retentativa própria é decisão posterior — e não
+// se promete o que não existe (ver `guideEmailCopy.SEM_REENVIO_AUTOMATICO`).
+export const WHATSAPP_ENVIO_DELAY_MS = Math.max(0, Number(process.env.WHATSAPP_ENVIO_DELAY_MS || 1500));
+
 if (INTEGRACAO_WHATSAPP) {
   // Mesmo padrão do SERPRO: com a flag ligada e credencial faltando, a integração fica desabilitada
   // e o arranque DIZ isso. Ausência silenciosa é o que faz o contador descobrir no dia do envio.

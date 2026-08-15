@@ -89,6 +89,37 @@ parcela. **`vazio`/`semFaturamento` não valem ali**: ausência de parcela contr
 mês sem receita não suspende parcelamento. Rótulo na UI: **"Parcelamento"** (uma parcela de INSS
 parcelado também cai nesse nó).
 
+## ⚠ `envios_guia` GANHOU O PRIMEIRO ESCRITOR DE PRODUÇÃO — e o que isso muda no compliance
+
+Até 15/08/2026 nenhuma função de escrita de `EnvioGuiaService` tinha chamador fora dos testes, então
+`foiEnviadaComLegado` fazia **toda** guia valer pelo `emailStatus` antigo. Quem escreve agora é o
+**envio de guia por WhatsApp** (`application/whatsapp/EnvioGuiaWhatsappService.js`) — e só para as
+guias que ele toca.
+
+⚠ **`scripts/backfill-envio-guia.mjs` CONTINUA PROIBIDO.** Ele converte TODOS os estados de uma vez
+(`PENDING`/`SENDING` → `pendente`, `ERROR` → `falhou`) e, como a tolerância se desliga na primeira
+linha que existir para a guia, congelaria em `enviada: false` **para sempre** toda guia que estivesse
+pendente naquele instante. O envio por WhatsApp é o oposto: conversão **por guia tocada** e **só do
+que é `SENT`**.
+
+**A guarda:** `linhaLegadoDoEmail(guide)` (pura) + `materializarEnvioDeEmailLegado(guide)`. Antes de
+registrar a linha de WhatsApp, a guia que o `emailStatus: SENT` já prova entregue ganha a sua linha
+`EMAIL/enviado`. Sem isso, guia entregue por e-mail cujo WhatsApp falhasse depois viraria **não
+enviada** — card do dashboard reaberto para sempre. `destino` fica nulo de propósito: para um e-mail
+anterior a esta tabela ninguém sabe para onde foi.
+
+**Invariante provada, não afirmada:** tocar uma guia por WhatsApp **nunca rebaixa** a resposta do
+`guideCompliance`. `__tests__/complianceAposEnvioWhatsapp.test.js` roda o `computeGuideComplianceMap`
+de verdade sobre as 10 combinações de (`emailStatus` × desfecho do WhatsApp), e reproduz **cru** o
+caso que prenderia a guia antes de mostrá-lo corrigido. Experimento executado: fazendo
+`linhaLegadoDoEmail` devolver sempre `null`, ficam **5 vermelhos**; restaurada, tudo verde.
+
+⚠ **`marcarEnviando` virou RESERVA ATÔMICA** (`updateMany` condicional em `status: "pendente"`,
+devolvendo `{ reservado }`) — não era um `update` que dava para deixar simples: `registrarEnvio` é
+check-then-act, e duas requisições simultâneas (duplo clique, lote correndo junto do individual)
+passariam as duas pela verificação de "já enviado" antes de qualquer uma escrever. Mesmo idioma da
+reserva das baixas.
+
 ## Compliance (guideCompliance.js)
 
 `computeGuideComplianceMap(rows, competencia)` retorna por empresa, por tributo, um nó

@@ -132,6 +132,51 @@ export async function registrarMensagemRecebida({
 }
 
 /**
+ * GRAVA O BALÃO QUE NÓS MANDAMOS. É o que o envio de guia chama depois de a Meta aceitar.
+ *
+ * ⚠ **A MENSAGEM NÃO TEM STATUS, E ISTO AQUI É A RAZÃO DE ELA NÃO TER.** O estado daquele envio
+ * (enviado → entregue → lido, o retry, o erro traduzido) mora em `envios_guia`, com UM escritor. O
+ * que fica aqui é o ponteiro `envioGuiaId` — é por ele que o fio mostra o ✓✓ sem manter uma segunda
+ * resposta para "esta guia foi enviada?".
+ *
+ * ⚠ **BEST-EFFORT POR CONTRATO: quem chama NÃO pode deixar a falha daqui derrubar o envio.** A
+ * mensagem já saiu para o cliente quando esta linha é escrita; transformar um erro de histórico em
+ * erro de envio faria o contador reenviar uma guia que o cliente recebeu.
+ *
+ * ⚠ `providerMessageId` é o `wamid` e é `@unique`: reexecutar com o mesmo id devolve a linha
+ * existente em vez de duplicar o balão (mesmo tratamento do recebimento).
+ */
+export async function registrarMensagemEnviada({
+  telefone,
+  portalClientId = null,
+  tipo = "template",
+  corpo = null,
+  providerMessageId = null,
+  envioGuiaId = null,
+}) {
+  const conversa = await garantirConversa({ telefone, portalClientId });
+  try {
+    const mensagem = await prisma.mensagemWhatsapp.create({
+      data: {
+        conversaId: conversa.id,
+        direcao: DIRECAO.SAIDA,
+        providerMessageId: providerMessageId ? String(providerMessageId) : null,
+        tipo: String(tipo),
+        corpo: corpo ?? null,
+        envioGuiaId: envioGuiaId ? String(envioGuiaId) : null,
+      },
+    });
+    return { mensagem, conversa, duplicada: false };
+  } catch (e) {
+    if (!ehConflitoDeUnique(e) || !providerMessageId) throw e;
+    const mensagem = await prisma.mensagemWhatsapp.findUnique({
+      where: { providerMessageId: String(providerMessageId) },
+    });
+    return { mensagem, conversa, duplicada: true };
+  }
+}
+
+/**
  * A ÚLTIMA MENSAGEM RECEBIDA do fio — o fato de que a janela depende.
  *
  * ⚠ ORDENA POR `registradaEm`, o NOSSO instante, e não pelo do provedor. `registradaEm` nunca é
