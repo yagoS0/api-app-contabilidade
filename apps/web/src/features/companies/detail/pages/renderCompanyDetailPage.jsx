@@ -15,11 +15,10 @@ import { useSitfis } from "../../../fiscal/sitfis/hooks/useSitfis";
 import { createApiClient } from "../../../../api/client";
 import { competenciaPadrao, deslocarCompetencia, formatCompetencia } from "../../../../lib/competencia";
 import { ENTREGA_POR_ARQUIVO_LIBERADA } from "../../../obrigacoes/entregas/lib/liberacao";
-// ⚠ A regra de QUEM DEVE a DEFIS e o painel da dispensa entram EAGER, ao contrário do `EspelhoDefis`:
-// a decisão precisa acontecer antes de qualquer chunk, e o painel é um parágrafo. Fazer a dispensa
-// esperar um `lazy` mostraria "Carregando…" para dizer que não há trabalho a fazer.
+// ⚠ A regra de QUEM DEVE a DEFIS entra EAGER, ao contrário do `EspelhoDefis`: a decisão precisa
+// acontecer antes de qualquer chunk, e ela é uma função pura. Ela continua sendo a fonte de quem vê
+// o fluxo — o que saiu da tela foi a APRESENTAÇÃO da dispensa, não a regra.
 import { obrigatoriedadeDefis } from "../../../obrigacoes/defis/lib/obrigatoriedadeDefis";
-import { DefisNaoDevida } from "../../../obrigacoes/defis/components/DefisNaoDevida";
 import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useCompanyDocuments";
 import { useCompanyCredentials } from "../../credentials/hooks/useCompanyCredentials";
 
@@ -151,9 +150,8 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
   // presumidas não têm DEFIS") era AUSÊNCIA de regra, não regra errada. A DEFIS é declaração do
   // Simples Nacional; a regra (com a fonte oficial) vive em `defis/lib/obrigatoriedadeDefis.js`.
   //
-  // Três respostas, não duas: `obrigada` abre o fluxo, `dispensada` e `indefinida` o SUBSTITUEM por
-  // um painel que diz o motivo. Empresa sem regime cadastrado não é afirmada como dispensada —
-  // ausência nunca é resposta.
+  // Três respostas, não duas: só `obrigada` abre o fluxo. `dispensada` e `indefinida` NÃO oferecem
+  // o espelho — e, desde 15/08/2026, também não dizem nada na tela (ver abaixo).
   const vereditoDefis = obrigatoriedadeDefis({ regime: companyRegime, anoCalendario: anoDefis });
   const defisDevida = vereditoDefis.situacao === "obrigada";
 
@@ -168,12 +166,17 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {/* ⚠ O BLOCO APARECE SEMPRE, mas o que ele mostra depende do REGIME. A DEFIS é declaração do
-          Simples Nacional (Manual do PGDAS-D e DEFIS, seção 9; LC 123/2006, art. 25, caput), e para
-          quem não é optante a tela mostra a DISPENSA COM O MOTIVO no lugar do fluxo. Não é o mesmo
-          que sumir — some da tela quem não deve nada, e aí ninguém sabe se foi dispensa ou
-          esquecimento. Mesmo desenho da EFD-Contribuições, com o sinal invertido. */}
-      {defisDevida ? (
+      {/* ⚠ QUEM NÃO DEVE A DEFIS NÃO VÊ NADA SOBRE DEFIS — decisão do dono, 15/08/2026, com a tela
+          na frente dele: *"empresas do Presumido que não têm DEFIS estão aparecendo uma legenda
+          explicando que elas não têm, isso é horrível, é apenas tirar isso de lá"*.
+          Havia aqui um painel (`DefisNaoDevida`) que anunciava a dispensa com motivo e norma, pelo
+          argumento de que sumir confunde dispensa com esquecimento. O dono reverteu: no Presumido a
+          dispensa é a regra, não a exceção, e um parágrafo fixo em toda empresa não-optante é ruído.
+          ⚠ O QUE NÃO MUDA: a regra (`defis/lib/obrigatoriedadeDefis.js`, com a fonte oficial)
+          continua decidindo, e `dispensada`/`indefinida` continuam SEM o fluxo — agora em silêncio.
+          Trocar este `&&` por um render incondicional devolveria o espelho da DEFIS a empresa do
+          Lucro Presumido, que é o defeito fiscal que a regra existe para impedir. */}
+      {defisDevida && (
         <div style={{ width: "var(--content-wide)", margin: "0 auto", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Entrega anual:</span>
           <input
@@ -192,18 +195,6 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
             {carregando ? "Abrindo…" : "📄 Espelho da DEFIS"}
           </button>
         </div>
-      ) : (
-        <DefisNaoDevida
-          anoCalendario={anoDefis}
-          veredito={vereditoDefis}
-          // ⚠ A dispensa não pode virar BECO SEM SAÍDA. A própria regra documenta o caso em que ela
-          // é derrubada: empresa excluída do Simples continua devendo a DEFIS do ano em que foi
-          // optante, e o sistema guarda só o regime de hoje. Por isso a saída existe — escondida
-          // dentro da lista de hipóteses, que é exatamente onde o motivo dela está escrito — e só
-          // para `dispensada`: em `indefinida` a ação certa é cadastrar o regime, não contornar.
-          onAbrirMesmoAssim={vereditoDefis.situacao === "dispensada" ? abrir : null}
-          abrindo={carregando}
-        />
       )}
 
       {/* ⚠ A EFD-Contribuições fica ACIMA do calendário, não como uma ocorrência dentro dele.

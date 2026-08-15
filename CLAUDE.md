@@ -142,14 +142,33 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
       pelo dono). A regra vive em `defis/lib/obrigatoriedadeDefis.js` (24 testes) e tem **três**
       respostas: `obrigada`, `dispensada` e **`indefinida`** — sem regime cadastrado não se afirma
       nem uma coisa nem outra. Mesma forma da `obrigatoriedadeEfd.js`, com o **sinal invertido**.
-      A dispensa **aparece com o motivo e a norma** (`DefisNaoDevida.jsx`) no lugar do fluxo; some
-      da tela quem não deve nada, e aí ninguém sabe se foi dispensa ou esquecimento.
+      - ⚠ **QUEM NÃO DEVE A DEFIS NÃO VÊ NADA SOBRE DEFIS — decisão do dono, 15/08/2026**, com a
+        tela na frente dele: *"empresas do Presumido que não têm DEFIS estão aparecendo uma legenda
+        explicando que elas não têm, isso é horrível, é apenas tirar isso de lá"*.
+        **Isto REVERTE o desenho anterior**, que era o oposto e está registrado aqui porque o
+        argumento continua valendo para a EFD (abaixo): a dispensa **aparecia com o motivo e a
+        norma** (`DefisNaoDevida.jsx`) no lugar do fluxo, para que não sumisse da tela quem não deve
+        nada — senão ninguém sabe se foi dispensa ou esquecimento. O que virou: no Lucro Presumido a
+        dispensa é a **regra**, não a exceção, e um parágrafo fixo repetido em toda empresa
+        não-optante é ruído, não informação.
+        ⚠ **A REGRA NÃO SAIU** — `obrigatoriedadeDefis.js` (e seus 24 testes) segue intacta e segue
+        decidindo. O ramo `dispensada`/`indefinida` continua **não oferecendo o fluxo**; só ficou
+        **silencioso**. Trocar o `&&` de `defisDevida` em `renderCompanyDetailPage.jsx` por um
+        render incondicional devolveria o espelho da DEFIS ao Presumido, que é o defeito fiscal que
+        a regra existe para impedir.
+        ⚠ Efeito colateral: `DefisNaoDevida.jsx` (e seu teste) ficou **sem consumidor**. Não foi
+        apagado — apagar componente é decisão à parte.
     - ⚠ **A resposta é sobre o ANO-CALENDÁRIO, não sobre "hoje".** Empresa excluída do Simples
       continua devendo a DEFIS do ano em que foi optante ("em relação ao ano-calendário de exclusão
       (…) a DEFIS abrangerá o período em que esteve na condição de optante" — manual, item 9.2.2), e
       o sistema guarda só o regime atual. Por isso as hipóteses que derrubam a dispensa viajam
-      NOMEADAS junto dela, e a dispensa **não é beco sem saída**: há como abrir o espelho mesmo
-      assim, dentro da lista de hipóteses que justifica a exceção.
+      NOMEADAS junto dela, em `obrigatoriedadesNaoAvaliadas`.
+      - ⚠ **A SAÍDA "abrir o espelho mesmo assim" SAIU DA TELA junto com a legenda (15/08/2026).**
+        Ela morava dentro de `DefisNaoDevida`, colada às hipóteses que a justificavam; tirado o
+        painel, não há mais como abrir o espelho de uma empresa não-optante pela interface. As
+        hipóteses continuam sendo devolvidas pela regra — o que não existe é consumidor delas.
+        Se o caso do ano de exclusão aparecer de verdade, é assunto a levar ao dono, não a
+        reintroduzir por conta própria: foi ele quem pediu o silêncio.
     - **Fonte conferida no documento oficial** (não copiada de terceiros): Manual do PGDAS-D e DEFIS
       (RFB), seção 9 — "deve ser prestada por contribuinte optante do Simples Nacional por pelo menos
       um período nela abrangido" (LC 123/2006, art. 25, caput); prazo e situação especial no item

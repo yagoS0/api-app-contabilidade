@@ -292,32 +292,9 @@ export function CompaniesHomePage({
   }, [companies]);
   const contagemFaltaEnviar = empresasFaltaEnviar.size;
 
-  /**
-   * Progresso do fechamento, em segmentos proporcionais.
-   *
-   * ⚠ VAZIO CONTA COMO CONCLUÍDO — é o ponto todo da bifurcação: empresa sem movimento não pode
-   * parecer eternamente pendente. Aqui isso entra pelo `podeFechar`/`fechado`, que já não dependem
-   * de guia existir; o chip cinza é o outro lado da mesma decisão.
-   */
-  const segmentosProgresso = useMemo(() => {
-    if (!contagemApuracao?.total) return [];
-    // ⚠ ORDEM CINZA → ÂMBAR → VERDE, e é ela que mata o paredão.
-    //
-    // A barra antiga pintava "falta check-list" de âmbar e, no começo do mês, praticamente toda a
-    // carteira caía ali: uma faixa âmbar de ponta a ponta, alarmando durante trinta dias seguidos.
-    // Agora "falta apurar" — que É o estado normal do dia 1 — é CINZA, e a barra nasce cinza e vai
-    // colorindo conforme o trabalho anda. Ela conta a história do mês em vez de gritar o mês
-    // inteiro; quando fica âmbar, é porque de fato há coisa esperando ação.
-    return ORDEM_APURACAO
-      .map((chave) => ({
-        chave,
-        n: contagemApuracao[chave] || 0,
-        cor: APURACAO[chave].cor,
-        rotulo: APURACAO[chave].rotulo.toLowerCase(),
-      }))
-      .filter((s) => s.n > 0)
-      .sort((a, b) => ORDEM_APURACAO.indexOf(b.chave) - ORDEM_APURACAO.indexOf(a.chave));
-  }, [contagemApuracao]);
+  // ⚠ `segmentosProgresso` (o cálculo da barra de progresso) foi REMOVIDO junto com a barra em
+  // 15/08/2026 — sem consumidor, era `useMemo` morto rodando a cada render. `contagemApuracao`
+  // continua: é dele que saem os chips de filtro. Ver o comentário no lugar onde a barra ficava.
 
   /**
    * Fecha, uma a uma, as empresas que o servidor disse estarem prontas.
@@ -797,35 +774,14 @@ export function CompaniesHomePage({
             </div>
           )}
 
-          {/* A BARRA DE PROGRESSO. Os números acima dizem quanto falta; a barra diz o quanto já
-              andou — é a única coisa na tela que responde "estou perto do fim do mês?".
-              Cada segmento é o mesmo filtro dos chips: clicar aplica o recorte. */}
-          {(modoVisao === "cards" || modoVisao === "tabela") && segmentosProgresso.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-              <div
-                role="img"
-                aria-label={`Progresso do fechamento: ${segmentosProgresso.map((s) => `${s.n} ${s.rotulo}`).join(", ")}`}
-                style={{ display: "flex", flex: "1 1 auto", height: 6, borderRadius: 999, overflow: "hidden", background: "var(--state-neutral-surface)" }}
-              >
-                {segmentosProgresso.map((s) => (
-                  <button
-                    key={s.chave}
-                    type="button"
-                    title={`${s.n} ${s.rotulo} — clique para filtrar`}
-                    onClick={() => setTravaFiltro(travaFiltro === s.chave ? "all" : s.chave)}
-                    style={{
-                      flex: `${s.n} 0 0`, background: s.cor, border: "none", padding: 0,
-                      cursor: "pointer", height: "100%",
-                      opacity: travaFiltro === "all" || travaFiltro === s.chave ? 1 : 0.35,
-                    }}
-                  />
-                ))}
-              </div>
-              <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                {contagemTravas.fechadas}/{contagemTravas.total} fechadas
-              </span>
-            </div>
-          )}
+          {/* ⚠ A BARRA DE PROGRESSO FOI REMOVIDA — decisão do dono, 15/08/2026: *"tire também
+              aquela barra de progresso da página principal, está poluindo"*. Ela ficava aqui, em
+              cards e tabela, com um segmento por estado de `estadoApuracao` e o contador
+              "N/M fechadas" ao lado.
+              ⚠ O que ela dizia NÃO se perdeu: os chips de APURAÇÃO DO MÊS, logo acima, saem do
+              MESMO `contagemApuracao` — inclusive "🔒 Fechada · N" e "Todas · N", que eram os dois
+              números do rótulo. O que sumiu é a proporção desenhada, não o dado.
+              ⚠ Só a barra saiu: chip de filtro e ordenação continuam lendo `estadoApuracao`. */}
 
           {/* Os filtros abaixo são da visão de cards — a grade anual tem navegação própria (ano). */}
           {(modoVisao === "cards" || modoVisao === "tabela") && (

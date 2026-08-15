@@ -423,9 +423,16 @@ semântico, senão vira mais um vermelho competindo com as três colunas de trab
 
 ### `lib/estadoApuracao.js` — o enum que quatro coisas compartilham
 
-`problema → falta fechar → falta apurar → fechada`. Coluna Apuração, chips de filtro do topo,
-segmentos da barra de progresso e peso de ordenação saem **todos daqui**. Antes eram quatro cálculos
-paralelos sobre `travas`, e divergiam na mesma tela.
+`problema → falta fechar → falta apurar → fechada`. Coluna Apuração, chips de filtro do topo e peso
+de ordenação saem **todos daqui**. Antes eram quatro cálculos paralelos sobre `travas`, e divergiam
+na mesma tela.
+
+⚠ **A barra de progresso SAIU (15/08/2026, decisão do dono: *"tire também aquela barra de progresso
+da página principal, está poluindo"*).** Ela era o quarto consumidor deste enum — segmentos
+proporcionais em cards e tabela, com "N/M fechadas" ao lado — e o `useMemo` `segmentosProgresso` foi
+removido junto, para não deixar cálculo morto. **Chip de filtro e ordenação FICARAM**: só a barra
+saiu, e o dado que ela mostrava continua nos chips (`🔒 Fechada · N` e `Todas · N` vêm do mesmo
+`contagemApuracao`).
 
 ⚠ **"Fechada" é TEAL (`--state-closed`), não verde** — o plano pedia verde. Verde quer dizer
 *concluído* no vocabulário de cores; fechada quer dizer **fora do fluxo de trabalho**, que não é a
