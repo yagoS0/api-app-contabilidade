@@ -25,6 +25,11 @@ import {
 import { avisoForaDaFila } from "../lib/exclusaoParcelamento";
 import { Button } from "../../../../components/ui/Button";
 import { createApiClient } from "../../../../api/client";
+// ⚠ O vencimento contratado da prestação é DATA CIVIL (meia-noite UTC). Lido no fuso do navegador
+// ele saía um dia antes — e nesta MESMA linha o selo "Vencida"/"Vence hoje" vem do SERVIDOR, então
+// a tela se contradizia sobre a mesma prestação. Os irmãos (`ParcelasDoAcordo`,
+// `InformarValorEmLoteModal`, `ParcelamentoModals`) já liam em UTC; só esta ficou para trás.
+import { fmtDataCivil } from "../../../../lib/format";
 
 const PANEL = { text: "#F8F8F2", muted: "#A7B0C0", border: "#44475A", surface: "#21222C", field: "#282A36" };
 const parcelaApi = createApiClient();
@@ -620,7 +625,7 @@ function ParcelasSemGuiaPendentes({
                   <td style={{ ...td, color: PANEL.muted, maxWidth: 220 }}>{p.parcelamento?.label || "—"}</td>
                   <td style={td}>{p.competencia || "—"}</td>
                   <td style={td}>
-                    {p.vencimento ? new Date(p.vencimento).toLocaleDateString("pt-BR") : "—"}
+                    {p.vencimento ? fmtDataCivil(p.vencimento) : "—"}
                   </td>
                   <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>
                     {formatarMoeda(p.valorPrevisto)}

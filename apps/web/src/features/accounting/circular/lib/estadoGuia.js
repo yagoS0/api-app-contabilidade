@@ -10,13 +10,14 @@
 // Estado bom NÃO grita (princípio 6): pago sai verde discreto, e "a vencer" é âmbar — ação
 // programada, não alarme.
 
-/** Meia-noite local da data — comparar timestamps crus faria "vence hoje" virar "vencida". */
-function inicioDoDia(v) {
-  const d = v instanceof Date ? new Date(v) : new Date(String(v));
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
+// ⚠ O VENCIMENTO É DATA CIVIL — meia-noite UTC, como o backend a grava. A leitura antiga era
+// `new Date(v)` + `setHours(0,0,0,0)`, que converte para o fuso do navegador: em São Paulo (UTC−3)
+// a guia que vence 20/08 era ancorada no dia 19. Efeito na tela, no dia 20: célula VERMELHA,
+// "Vencida há 1 dia — juros e multa correndo", o valor somado no balde **vencido** do rodapé, e o
+// rótulo "A vencer · DD/MM" imprimindo o dia anterior. Ver `src/lib/dataCivil.js`.
+//
+// A comparação passou a ser dia civil × dia civil — string `"YYYY-MM-DD"`, que ordena sozinha.
+import { diaCivil, diaCivilDeHoje, diasEntreDiasCivis, diaMesCivil } from "../../../../lib/dataCivil.js";
 
 export const ESTADO_GUIA = Object.freeze({
   PLACEHOLDER: "placeholder",
@@ -45,23 +46,22 @@ export function estadoDaGuia(entry, hoje = new Date()) {
   if (status === "PARCIAL") return ESTADO_GUIA.PARCIAL;
   if (status !== "ABERTO") return ESTADO_GUIA.PAGA;
 
-  const venc = inicioDoDia(entry.sourceGuide?.vencimento || entry.vencimento);
+  const venc = diaCivil(entry.sourceGuide?.vencimento || entry.vencimento);
   if (!venc) return ESTADO_GUIA.ABERTA;
 
-  const ref = inicioDoDia(hoje);
+  const ref = diaCivilDeHoje(hoje);
+  if (!ref) return ESTADO_GUIA.ABERTA;
   // Vence HOJE ainda é "a vencer": o pagamento do dia é possível até o fim do expediente bancário.
   return venc < ref ? ESTADO_GUIA.VENCIDA : ESTADO_GUIA.A_VENCER;
 }
 
 /** Dias de atraso (>= 1) de uma guia vencida; `null` quando não se aplica. */
 export function diasDeAtraso(entry, hoje = new Date()) {
-  const venc = inicioDoDia(entry?.sourceGuide?.vencimento || entry?.vencimento);
-  const ref = inicioDoDia(hoje);
+  const venc = diaCivil(entry?.sourceGuide?.vencimento || entry?.vencimento);
+  const ref = diaCivilDeHoje(hoje);
   if (!venc || !ref || venc >= ref) return null;
-  return Math.round((ref - venc) / 86400000);
+  return diasEntreDiasCivis(venc, ref);
 }
-
-const DIA_MES = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 /** Cor, fundo e rótulo de cada estado. A cor NUNCA viaja sozinha — sempre acompanhada do texto. */
 export function aparenciaDaGuia(entry, hoje = new Date()) {
@@ -82,11 +82,11 @@ export function aparenciaDaGuia(entry, hoje = new Date()) {
       };
     }
     case ESTADO_GUIA.A_VENCER: {
-      const venc = inicioDoDia(entry.sourceGuide?.vencimento || entry.vencimento);
+      const diaMes = diaMesCivil(entry.sourceGuide?.vencimento || entry.vencimento);
       return {
         estado, cor: "#FFB347", fundo: "rgba(255,179,71,0.08)",
-        rotulo: `A vencer · ${DIA_MES(venc)}`,
-        titulo: `Em aberto, dentro do prazo — vence em ${DIA_MES(venc)}.`,
+        rotulo: `A vencer · ${diaMes}`,
+        titulo: `Em aberto, dentro do prazo — vence em ${diaMes}.`,
       };
     }
     default:

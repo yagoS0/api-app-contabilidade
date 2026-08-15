@@ -200,3 +200,29 @@ describe("+ Subir Guia → PARCELAMENTO", () => {
     expect(item.getAttribute("title")).toMatch(/não foram carregados/i);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// A COLUNA DE VENCIMENTO — data civil, não instante.
+//
+// ⚠ Isto é ligação, não regra: a regra vive em `src/lib/dataCivil.js`, com teste próprio. O que se
+// trava aqui é a ESCOLHA do formatador nesta célula. Ela usava `fmtDate` (fuso do navegador), e a
+// guia que vence 01/09 era impressa como 31/08 — mudando de dia E de mês. O `process.env.TZ` é
+// forçado num fuso NEGATIVO de propósito: sem isso o teste passa numa máquina em UTC e continua
+// quebrado em produção.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("coluna Vencimento", () => {
+  const TZ_ORIGINAL = process.env.TZ;
+  beforeAll(() => { process.env.TZ = "America/Sao_Paulo"; });
+  afterAll(() => { process.env.TZ = TZ_ORIGINAL; });
+
+  it("⚠ imprime o DIA gravado — o 1º de setembro não vira 31 de agosto", () => {
+    renderTabela([guiaDoDas({ vencimento: "2026-09-01T00:00:00.000Z" })]);
+    expect(screen.getByText("01/09/2026")).toBeInTheDocument();
+    expect(screen.queryByText("31/08/2026")).toBeNull();
+  });
+
+  it("o vencimento comum do DAS (dia 20) também não anda", () => {
+    renderTabela([guiaDoDas({ vencimento: "2026-03-20T00:00:00.000Z" })]);
+    expect(screen.getByText("20/03/2026")).toBeInTheDocument();
+  });
+});

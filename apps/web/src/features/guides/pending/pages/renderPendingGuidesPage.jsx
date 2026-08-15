@@ -2,7 +2,7 @@ import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
-import { fmtDate, fmtMoney } from "../../../../lib/format";
+import { fmtDataCivil, fmtMoney } from "../../../../lib/format";
 import { rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 
 export function PendingGuidesPage({
@@ -82,7 +82,8 @@ export function PendingGuidesPage({
                     <td title={tituloTipoGuia(guide)}>{rotuloTipoGuia(guide)}</td>
                     <td>{guide.competencia || "—"}</td>
                     <td>{fmtMoney(guide.valor)}</td>
-                    <td>{fmtDate(guide.vencimento)}</td>
+                    {/* Vencimento é DATA CIVIL (meia-noite UTC) — `fmtDate` a imprimiria um dia antes. */}
+                    <td>{fmtDataCivil(guide.vencimento)}</td>
                     <td>{guide.emailStatus || "—"}</td>
                     <td>{Number(guide.emailAttempts || 0)}</td>
                     <td className="td-ellipsis" title={guide.emailLastError || ""}>

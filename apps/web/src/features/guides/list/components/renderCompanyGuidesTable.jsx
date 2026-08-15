@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { createApiClient } from "../../../../api/client";
 import { Button } from "../../../../components/ui/Button";
-import { fmtDate, fmtMoney } from "../../../../lib/format";
+// ⚠ AS DUAS CONVIVEM DE PROPÓSITO: `fmtDataCivil` para o VENCIMENTO (data civil, meia-noite UTC —
+// `fmtDate` a imprimiria um dia antes) e `fmtDate` para `liberadaEm`, que é timestamp de verdade e
+// deve mesmo sair no fuso de quem lê.
+import { fmtDataCivil, fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
 import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
@@ -942,7 +945,7 @@ export function CompanyGuidesTable({
                         </span>
                       )}
                     </span>
-                    <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{fmtDate(guide.vencimento)}</span>
+                    <span className="guides-grid__cell guides-grid__cell--competencia" role="cell">{fmtDataCivil(guide.vencimento)}</span>
                     <span className={`guides-grid__cell guides-grid__cell--status guides-grid__tone guides-grid__tone--${status.tone}`} role="cell">
                       {status.label}
                     </span>

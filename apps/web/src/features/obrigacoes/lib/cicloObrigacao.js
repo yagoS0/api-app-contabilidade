@@ -15,6 +15,15 @@
 // último quarto da janela que o próprio contador definiu, com piso de 2 dias. Não afirma nada sobre
 // a lei; só decide quando o âmbar vira vermelho.
 
+// ⚠ O VENCIMENTO É DATA CIVIL, e ler isso com o fuso do navegador tirava um dia da conta.
+// `dataVencimento` chega como meia-noite UTC (`"2026-08-20T00:00:00.000Z"`) ou como
+// `"2026-08-20"`; `new Date(v)` + `setHours(0,0,0,0)` ancorava no dia 19 em São Paulo. Efeito na
+// tela: a obrigação que vence dia 20 aparecia **no dia 20** como "Vencida · 1 dia", e no dia 19
+// como "Vence hoje" — e o MESMO chip do calendário se contradizia, porque `estaVencida`
+// (`renderCalendarioGrid.jsx`) compara dia civil contra dia civil e dizia que ela não venceu.
+// Ver `src/lib/dataCivil.js`.
+import { diaCivil, diaCivilDeHoje, diasEntreDiasCivis } from "../../../lib/dataCivil.js";
+
 export const CICLO = Object.freeze({
   CONCLUIDA: "concluida",
   VENCIDA: "vencida",
@@ -23,21 +32,14 @@ export const CICLO = Object.freeze({
   AGUARDANDO: "aguardando",
 });
 
-const DIA_MS = 86400000;
-
-function meiaNoite(v) {
-  const d = v instanceof Date ? new Date(v) : new Date(String(v));
-  if (Number.isNaN(d.getTime())) return null;
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
 /** Dias até o vencimento: 0 = vence hoje, negativo = venceu. `null` sem data legível. */
 export function diasAte(dataVencimento, hoje = new Date()) {
-  const venc = meiaNoite(dataVencimento);
-  const ref = meiaNoite(hoje);
+  // ⚠ Duas leituras diferentes, de propósito: o vencimento é dado gravado (UTC / fatia da ISO),
+  // `hoje` é um instante de verdade (fuso de quem está na tela).
+  const venc = diaCivil(dataVencimento);
+  const ref = diaCivilDeHoje(hoje);
   if (!venc || !ref) return null;
-  return Math.round((venc - ref) / DIA_MS);
+  return diasEntreDiasCivis(ref, venc);
 }
 
 /**

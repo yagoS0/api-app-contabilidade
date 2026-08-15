@@ -3,7 +3,7 @@ import { AppShell } from "../../../../components/layout/AppShell";
 import { PageShell } from "../../../../components/layout/PageShell";
 import { Feedback } from "../../../../components/ui/Feedback";
 import { Button } from "../../../../components/ui/Button";
-import { fmtDate, fmtMoney } from "../../../../lib/format";
+import { fmtDataCivil, fmtMoney } from "../../../../lib/format";
 
 function buildSummary(results) {
   if (!Array.isArray(results) || !results.length) return "Nenhum upload nesta sessão.";
@@ -140,7 +140,8 @@ export function GuideUploadPage({
                     <td>{item.competencia || "—"}</td>
                     <td>{item.tipo || "—"}</td>
                     <td>{fmtMoney(item.valor)}</td>
-                    <td>{fmtDate(item.vencimento)}</td>
+                    {/* Vencimento é DATA CIVIL (meia-noite UTC) — `fmtDate` a imprimiria um dia antes. */}
+                    <td>{fmtDataCivil(item.vencimento)}</td>
                   </tr>
                 ))}
               </tbody>

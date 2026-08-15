@@ -10,6 +10,8 @@ import { Button } from "../../../../components/ui/Button";
 // A regra que separa "a vencer" de "vencida" — uma leitura para a cor da célula, o chip do popover
 // e os totais do rodapé. Ver `lib/estadoGuia.js`.
 import { aparenciaDaGuia, totaisEmAberto } from "../lib/estadoGuia";
+// ⚠ Vencimento é DATA CIVIL (meia-noite UTC) — o `fmtDate` local abaixo é para TIMESTAMP.
+import { fmtDataCivil } from "../../../../lib/format";
 
 // Subtipos universais + flag de regimes que os exibem.
 // "all" = qualquer regime; array = só esses regimes.
@@ -71,6 +73,14 @@ function fmtValor(val) {
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/**
+ * TIMESTAMP — instante, no fuso de quem lê. Serve a `recalculatedAt`, à data do envio e a
+ * `paymentConfirmedAt`.
+ *
+ * ⚠ NÃO SERVE AO VENCIMENTO, e servia: ele é data civil gravada como meia-noite UTC, então em São
+ * Paulo saía um dia antes — a guia que vence 01/09 era impressa como 31/08, mudando de dia E de
+ * mês. Quem responde por ele é `fmtDataCivil`.
+ */
 function fmtDate(value) {
   if (!value) return "—";
   const d = value instanceof Date ? value : new Date(value);
@@ -360,7 +370,7 @@ function ResumoDaGuia({ entry, acrescimo, aparencia }) {
         />
       )}
       {juros > 0 && <LinhaResumo rotulo="Valor atualizado" valor={`R$ ${fmtValor(atualizado)}`} forte />}
-      <LinhaResumo rotulo="Vencimento" valor={guia?.vencimento ? fmtDate(guia.vencimento) : null} />
+      <LinhaResumo rotulo="Vencimento" valor={guia?.vencimento ? fmtDataCivil(guia.vencimento) : null} />
       {Number.isFinite(Number(entry?.saldo)) && String(entry?.statusPagamento).toUpperCase() === "PARCIAL" && (
         <LinhaResumo rotulo="Saldo a pagar" valor={`R$ ${fmtValor(entry.saldo)}`} cor="#6EA8FF" forte />
       )}
