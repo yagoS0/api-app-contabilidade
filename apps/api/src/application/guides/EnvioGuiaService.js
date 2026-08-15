@@ -80,11 +80,90 @@ export async function registrarEnvio({ guideId, canal, destino, tx = prisma }) {
   return { envio, jaEnviado: false };
 }
 
+/**
+ * RESERVA O ENVIO PARA ESTA TENTATIVA — e devolve se conseguiu.
+ *
+ * ⚠ NÃO É UM `update` SIMPLES, E A DIFERENÇA É A CORRIDA. `registrarEnvio` é check-then-act: entre
+ * o `findUnique` e o `upsert` cabe outra requisição (duplo clique no botão, ou o lote rodando junto
+ * do envio individual da mesma guia). As duas passariam pela verificação de "já enviado" antes de
+ * qualquer uma escrever, e a guia sairia DUAS VEZES para o cliente.
+ *
+ * O idioma é o mesmo que este projeto já usa nas baixas (`updateMany` condicional dentro do estado
+ * anterior, seguido de `count === 1`): quem conseguir mover `pendente → enviando` é quem manda; a
+ * segunda tentativa recebe `false` e desiste **antes** de gastar upload e mensagem.
+ *
+ * `pendente` é o único estado que autoriza — é exatamente o que `registrarEnvio` acabou de gravar.
+ * `enviando` não autoriza (há um envio em curso), e os terminais já foram barrados lá em cima.
+ */
 export async function marcarEnviando(envioId, tx = prisma) {
-  return tx.envioGuia.update({
-    where: { id: String(envioId) },
+  const r = await tx.envioGuia.updateMany({
+    where: { id: String(envioId), status: "pendente" },
     data: { status: "enviando", tentativas: { increment: 1 } },
   });
+  return { reservado: r.count === 1 };
+}
+
+/**
+ * A LINHA DE ENVIO QUE O HISTÓRICO DE E-MAIL DESTA GUIA JÁ PROVA — ou `null`. PURA.
+ *
+ * ⚠⚠ ESTA FUNÇÃO EXISTE POR CAUSA DA ARMADILHA MAIS CARA DESTA TABELA, e ela merece ser lida
+ * inteira antes de qualquer mexida aqui.
+ *
+ * `foiEnviadaComLegado` desliga a tolerância na PRIMEIRA linha que existir para a guia
+ * (`if (envios && envios.length)`). Enquanto ninguém escrevia em `envios_guia`, toda guia valia
+ * pelo `emailStatus` antigo e a tela estava correta. O envio por WhatsApp é o **primeiro escritor
+ * de produção** desta tabela — e, sem cuidado, ele produziria exatamente o estrago que o backfill
+ * produziria:
+ *
+ *   guia já enviada por e-mail (`emailStatus: SENT`, nenhuma linha em `envios_guia`)
+ *   → alguém tenta mandá-la também por WhatsApp e a Meta recusa
+ *   → passa a existir UMA linha (`WHATSAPP/falhou`)
+ *   → a tolerância se desliga e a guia vira **não enviada** — apesar de o cliente TER recebido.
+ *
+ * Card do dashboard eternamente aberto, "✓ Guias concluídas" que nunca condensa.
+ *
+ * A saída não é enfraquecer a tolerância (ela é o que segura a carteira inteira): é **trazer o
+ * legado junto** no instante em que a guia é tocada. Quem liga a tabela para uma guia materializa,
+ * na mesma transação, o que o e-mail dela já provava.
+ *
+ * ⚠ **SÓ `SENT` VIRA LINHA — e é aí que isto difere do backfill.** O backfill converte TODOS os
+ * estados (`PENDING`/`SENDING` → `pendente`, `ERROR` → `falhou`), e é essa conversão que congela em
+ * "não enviada" toda guia que estivesse pendente no instante em que ele roda. Aqui, um estado que
+ * não seja `SENT` **não gera linha nenhuma**: a resposta do legado para ele já era "não enviada",
+ * então não há nada a preservar e não se inventa histórico. A consequência é uma invariante que dá
+ * para provar: **tocar uma guia por WhatsApp nunca rebaixa a resposta do `guideCompliance`.**
+ *
+ * ⚠ `destino` fica NULO de propósito. O destino é do ENVIO, não do cadastro — e para um e-mail
+ * enviado antes desta tabela existir ninguém sabe para onde foi. Copiar o
+ * `guideNotificationEmail` de hoje afirmaria um endereço que pode ter mudado desde então.
+ */
+export function linhaLegadoDoEmail(guide) {
+  if (String(guide?.emailStatus || "").toUpperCase() !== "SENT") return null;
+  return {
+    guideId: String(guide.id),
+    canal: CANAL.EMAIL,
+    status: "enviado",
+    destino: null,
+    enviadoEm: guide.emailSentAt || null,
+    tentativas: Number(guide.emailAttempts || 0),
+  };
+}
+
+/**
+ * Grava a linha acima, se houver e se ainda não existir. Idempotente pela unique `(guideId, canal)`.
+ *
+ * Devolve `{ materializou }` — o chamador registra isso no log/resposta, porque é uma escrita que
+ * ninguém pediu explicitamente e que muda o que a tela responde sobre aquela guia.
+ */
+export async function materializarEnvioDeEmailLegado(guide, tx = prisma) {
+  const linha = linhaLegadoDoEmail(guide);
+  if (!linha) return { materializou: false };
+  const existente = await tx.envioGuia.findUnique({
+    where: { guideId_canal: { guideId: linha.guideId, canal: linha.canal } },
+  });
+  if (existente) return { materializou: false };
+  await tx.envioGuia.create({ data: linha });
+  return { materializou: true };
 }
 
 export async function marcarEnviado({ envioId, providerMessageId }, tx = prisma) {
@@ -140,6 +219,47 @@ export async function aplicarStatusDoProvedor({ providerMessageId, status }, tx 
       ...(novo === "lido" ? { lidoEm: new Date(), entregueEm: envio.entregueEm || new Date() } : {}),
     },
   });
+}
+
+/**
+ * FALHA vinda do webhook (`statuses[].status === "failed"`).
+ *
+ * ⚠ **POR QUE ELA NÃO PASSA POR `aplicarStatusDoProvedor`.** Aquela função traduz qualquer status
+ * que não seja `read`/`delivered` para **`enviado`** (`const novo = … : "enviado"`). Entregar-lhe um
+ * `failed` PROMOVERIA a falha a enviada: a guia apareceria concluída no chip, com "✓ Guias
+ * concluídas" no card, para um cliente que não recebeu nada. Falha já tem função própria
+ * (`marcarFalhou`), e é ela que se usa.
+ *
+ * ⚠ **ELA REBAIXA, E ISSO É O CONTRÁRIO DA REGRA "NUNCA REBAIXA" — na parte que importa.** O que
+ * `aplicarStatusDoProvedor` protege é a escada de SUCESSO chegando fora de ordem. Aqui:
+ *   · de `pendente`/`enviando`/`enviado` o rebaixamento é obrigatório — `enviado` é exatamente o
+ *     estado em que a guia fica quando a Meta ACEITA a chamada e só depois descobre que não
+ *     entrega, e é esse o caso que o webhook de `failed` existe para contar;
+ *   · de `entregue`/`lido` o estado FICA. Esses dois são confirmação do aparelho do cliente; um
+ *     `failed` posterior é contradição, não novidade. A contradição sobe no retorno em vez de
+ *     apagar uma entrega comprovada.
+ *
+ * ⚠ `proximaTentativaEm` fica NULO de propósito. Quem responde "posso tentar de novo?" é
+ * `errosMeta.podeTentarDeNovo` — com `true`/`false`/**`null`** —, e neste projeto **não existe laço
+ * que drene retentativa** (`emailNextRetryAt` já é o precedente: gravado e sem leitor; os loops
+ * automáticos saíram na Q55). Gravar um instante que ninguém lê seria uma promessa de reenvio que
+ * não acontece.
+ *
+ * @returns {null|{envio, aplicada: boolean, motivo: string|null}} `null` = nenhum envio de guia com
+ *   esse `providerMessageId` (caso NORMAL: o status pode ser de uma mensagem de conversa, que não é
+ *   envio de guia nenhum).
+ */
+export async function aplicarFalhaDoProvedor({ providerMessageId, codigo, mensagemUsuario }, tx = prisma) {
+  const envio = await tx.envioGuia.findFirst({ where: { providerMessageId: String(providerMessageId) } });
+  if (!envio) return null;
+  if (envio.status === "entregue" || envio.status === "lido") {
+    return { envio, aplicada: false, motivo: "CHEGADA_JA_CONFIRMADA" };
+  }
+  const atualizado = await marcarFalhou(
+    { envioId: envio.id, codigo, mensagemUsuario, proximaTentativaEm: null },
+    tx,
+  );
+  return { envio: atualizado, aplicada: true, motivo: null };
 }
 
 /** Envios de um conjunto de guias, agrupados — uma query para a listagem inteira. */

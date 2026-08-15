@@ -18,6 +18,7 @@ import { createInvoicesRouter } from "./routes/invoices.js";
 import { createNfseRouter } from "./routes/nfse.js";
 import { createAdnRouter } from "./routes/adn.js";
 import { createInternalRouter } from "./routes/internal.js";
+import { createWhatsappWebhookRouter, CAMINHO_WEBHOOK_WHATSAPP } from "./routes/webhooks/whatsapp.js";
 import { runSerproPgdasdWorkerLoop } from "./workers/serproPgdasdWorker.js";
 import { runSerproDctfwebWorkerLoop } from "./workers/serproDctfwebWorker.js";
 import { runDfeNotasWorkerLoop } from "./workers/dfeNotasWorker.js";
@@ -34,6 +35,17 @@ import { seedAtividadePgdasd } from "./application/notas/apuracao/v2/seeds/Ativi
 import { prisma } from "./infrastructure/db/prisma.js";
 
 const app = express();
+
+// ⚠⚠ O WEBHOOK DO WHATSAPP É MONTADO **ANTES** DO `express.json()`, E ISSO NÃO É ESTILO.
+// A assinatura `X-Hub-Signature-256` é um HMAC do corpo EXATO que a Meta enviou. Montado depois da
+// linha abaixo, `req.body` chegaria como objeto já parseado, o HMAC seria calculado sobre um
+// `JSON.stringify` NOSSO — que não é o mesmo texto — e a assinatura **nunca** conferiria: 403 em
+// todo evento, com um sintoma que não parece com a causa. O router traz o próprio `express.raw`,
+// então a ordem aqui é a única coisa que precisa ser respeitada.
+// ⚠ Esta é a ÚNICA rota pública do sistema (sem `ensureAuthorized`): a assinatura é a autenticação.
+// Ver `routes/webhooks/whatsapp.js`.
+app.use(CAMINHO_WEBHOOK_WHATSAPP, createWhatsappWebhookRouter());
+
 app.use(express.json());
 
 // Q8.A.2: CORS — em produção exige whitelist via env CORS_ALLOWED_ORIGINS (CSV).
