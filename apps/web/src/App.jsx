@@ -275,9 +275,14 @@ function App() {
   // ⚠ NÃO exige empresa selecionada — de propósito. A simulação livre é o cenário de reunião com
   // prospect: a empresa ainda não existe no sistema, e exigir cadastro para simular mataria
   // justamente o uso comercial do módulo.
+  // ⚠ `setPage`, NÃO `switchPage`. Esta linha chamava `session.switchPage("companies")` — um método
+  // que NÃO EXISTE: `useManageAuthSession` expõe `setPage`, e a busca no repo inteiro achava
+  // `switchPage` uma única vez, aqui. O clique em "Voltar" estourava
+  // `TypeError: session.switchPage is not a function` e a página não saía do lugar.
+  // O erro não aparecia como erro: o handler morria dentro do onClick e a tela simplesmente ficava.
   if (session.page === "planejamento") {
     return (
-      <PlanejamentoPage onVoltar={() => session.switchPage("companies")} />
+      <PlanejamentoPage onVoltar={() => session.setPage("companies")} />
     );
   }
 
