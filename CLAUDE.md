@@ -192,27 +192,48 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     NFS-e na lista (`ServiceInvoice` não tem o campo); chip anual da DEFIS na listagem principal
     (falta agregação no backend); Bloco 3 (Apuração do Lucro Presumido) segue travado no probe do
     `CONSDECCOMPLETA33`.
-- [~] **WhatsApp — Entrega 1: envio de guias pelo canal** — **PAUSADO aguardando número para o
-  cadastro na Meta**. Roadmap e estado completo em **`docs/whatsapp-entrega-1.md`**.
+- [~] **WhatsApp — Entrega 1: envio de guias pelo canal** — **F1 a F5 escritas na `dev`, o canal
+  DESLIGADO** (flag `INTEGRACAO_WHATSAPP` OFF; cadastro na Meta em verificação). Roadmap e estado
+  completo em **`docs/whatsapp-entrega-1.md`**.
+  - ⚠ **NADA SAI E NADA ENTRA HOJE, e isso é por construção, não por acaso:** com a flag OFF o
+    cliente da Cloud API **recusa operar** e o webhook responde 503 nos dois verbos, mesmo com
+    assinatura válida; e **nenhum template foi submetido à Meta** (`TemplateWhatsapp.statusAprovacao`
+    nasce `DECLARADO`, nunca `APROVADO`), então o envio recusa por `TEMPLATE_NAO_APROVADO`. Ligar o
+    canal é decisão do dono em **dado e variável de ambiente**, não em código.
   - **F1 e F2 prontas na `dev`** e seguras para subir junto de qualquer outra entrega: F1 é inerte
     (tabelas e rotas que ninguém chama ainda) e F2 preserva o comportamento (`foiEnviadaComLegado`).
+  - ⚠ **O esqueleto que o dono trouxe (`whatsapp-module.zip`) foi CONFERIDO CONTRA O PROJETO, não
+    copiado** — instrução dele: *"sempre verifique essas coisas, quem fez o plano não viu o
+    projeto"*. Duas das seis tabelas dele já existiam aqui (`contato_whatsapp` = `contatos_whatsapp`;
+    `evento_envio_guia` = `envios_guia`, e a `UNIQUE (guia_id, canal)` dele **brigaria com o
+    retry**); ele mandava rodar `psql -f` num projeto gerido por **Prisma**; não tratava
+    **ambiguidade** de número; e traduzia o erro `130472` com o texto documentado do `131050`.
+    Cada decisão do código carrega a procedência: **fonte oficial** (URL + data) × **esqueleto** ×
+    **código existente**.
   - **F2 é a mudança estrutural:** `Guide.emailStatus` deixou de ser o estado de envio. Quem
     responde "esta guia foi enviada?" agora é **`envios_guia`** (um registro por guia × canal) — um
     campo só não representa "enviada por WhatsApp e ainda não por e-mail". Enviada = terminal em
     QUALQUER canal.
-  - ⚠ **NÃO RODE `scripts/backfill-envio-guia.mjs` ENQUANTO A F5 NÃO EXISTIR.** Esta linha já
-    mandou o contrário, e seguir a instrução antiga quebra o dashboard de forma permanente.
-    Auditado em 2026-08-08: **nenhum caminho de envio escreve em `envios_guia`** — as funções de
-    escrita de `EnvioGuiaService` (`registrarEnvio`, `marcarEnviado`, …) não têm um chamador
-    sequer fora dos testes, porque a F5 não foi iniciada. Quem grava é só o backfill.
-    E `foiEnviadaComLegado` desliga a tolerância na **primeira linha que existir**
-    (`if (envios && envios.length)`), não por guia. Como o backfill converte **todos** os estados
-    (`PENDING`/`ERROR` viram `pendente`/`falhou`), toda guia que estivesse pendente naquele
-    instante ficaria `enviada: false` **para sempre** no `guideCompliance`, mesmo depois de
-    enviada: card do dashboard eternamente aberto, "✓ Guias concluídas" que nunca condensa — com a
-    aba Guias da empresa mostrando "✓ enviado" ao lado. **Com a tabela vazia está tudo correto**
-    (medido em produção: 0 registros, e o legado responde por todo mundo). A instrução de backfill
-    só volta a valer quando o envio passar a gravar na tabela nova.
+  - ⚠ **NÃO RODE `scripts/backfill-envio-guia.mjs`. A F5 EXISTIR NÃO O LIBEROU — pelo contrário.**
+    Esta linha já mandou o oposto duas vezes; seguir a instrução antiga quebra o dashboard de forma
+    permanente. O que muda o estado do mundo não é a F5 ter sido escrita, é ela **gravar** — e hoje
+    ela não grava (flag `INTEGRACAO_WHATSAPP` OFF, e `envios_guia` medida em produção: **0
+    registros**, com o legado respondendo por todo mundo).
+    - **O mecanismo:** `foiEnviadaComLegado` desliga a tolerância na **primeira linha que existir**
+      (`if (envios && envios.length)`), **por guia**. O backfill converte **todos** os estados de
+      uma vez (`PENDING`/`ERROR` viram `pendente`/`falhou`), então toda guia pendente naquele
+      instante ficaria `enviada: false` **para sempre**: card eternamente aberto, "✓ Guias
+      concluídas" que nunca condensa — com a aba Guias mostrando "✓ enviado" ao lado.
+    - ⚠ **A F5 fecha essa porta pelo lado dela, e é por isso que ela não precisa do backfill:**
+      antes de gravar a linha de WhatsApp, `materializarEnvioDeEmailLegado` cria a linha
+      `EMAIL/enviado` da guia que o `emailStatus: SENT` já prova entregue. **Só `SENT` vira linha** —
+      estado que não seja `SENT` não gera nada, porque a resposta do legado para ele já era "não
+      enviada" e não há histórico a inventar. É exatamente a diferença para o backfill.
+      Invariante travada em `guides/__tests__/complianceAposEnvioWhatsapp.test.js` sobre as 10
+      combinações de (`emailStatus` × desfecho): **tocar uma guia nunca rebaixa o
+      `guideCompliance`**. Desligando `linhaLegadoDoEmail`, 5 vermelhos.
+    - O backfill só voltaria a fazer sentido para converter histórico em massa — e aí a conversão
+      de `PENDING`/`ERROR` continua sendo o defeito. **Trate-o como script morto.**
   - **F1.5 — o VÍNCULO número → empresa (→ pessoa)**, feito **antes** da retomada porque é o pedaço
     que, deixado para depois, contamina todo o resto. Regra **pura** em
     `application/whatsapp/vinculoTelefone.js` (33 testes ao todo, com a ligação); a ligação com o banco em
