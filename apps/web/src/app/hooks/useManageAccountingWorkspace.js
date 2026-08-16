@@ -39,14 +39,14 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     // Mudou de ANO no header? A matriz vai junto — senão a pessoa trabalha em dezembro/2025 olhando
     // a grade de 2026. Trocar só o mês DENTRO do ano não mexe na matriz (ela já mostra os 12).
     //
-    // ⚠ O reload leva os DOIS valores novos explicitamente. `handleCircularYearChange` chamaria
-    // `loadCircular(ano)` e a competência cairia no default do parâmetro — que é o valor DESTE
-    // render, ainda o antigo. A revisão da Circular viria do mês errado, calada.
+    // ⚠ O RELOAD NÃO É MAIS FEITO AQUI, e o motivo original continua valendo — só ficou melhor
+    // atendido. Ele existia porque `loadCircular(ano)` deixaria a competência cair no default do
+    // parâmetro, que é o valor DESTE render, ainda o antigo: a revisão viria do mês errado, calada.
+    // Hoje quem recarrega é o effect da aba Circular (lá embaixo), que lê os DOIS valores já
+    // atualizados do próximo render — nunca de um closure velho — e cobre também a troca de mês
+    // dentro do mesmo ano, que antes não recarregava nada.
     const ano = parseCompetencia(value)?.ano;
-    if (ano && ano !== circularYear) {
-      setCircularYear(ano);
-      loadCircular(ano, value);
-    }
+    if (ano && ano !== circularYear) setCircularYear(ano);
   }
   const [entriesMessage, setEntriesMessage] = useState("");
   const [entriesError, setEntriesError] = useState("");
@@ -555,9 +555,10 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     }
   }
 
+  // As setas ← → do ano. Só mexem no estado: quem recarrega é o effect da aba Circular, que tem
+  // `circularYear` nas deps. Carregar aqui TAMBÉM seria duas requisições por clique na seta.
   function handleCircularYearChange(year) {
     setCircularYear(year);
-    loadCircular(year);
   }
 
   function resetWorkspace() {
@@ -594,6 +595,27 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
     // lista. Reagir a `page` garante a recarga após a limpeza.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedCompanyId, companyDetailTab, accountingEntriesState.filters]);
+
+  // ⚠ O IRMÃO DO EFFECT ACIMA — a Circular estava sem ele.
+  //
+  // O único disparo de `loadCircular` era a TROCA DE ABA (`switchTab`, em
+  // `renderCompanyDetailPage`). Quem desse F5 na Circular, ou abrisse o link direto, via
+  // "Nenhum dado disponível. Clique em Atualizar." — o mesmo defeito que a aba Lançamentos teve na
+  // Q18 e que este molde corrigiu lá.
+  //
+  // `circularYear`/`circularCompetencia` nas deps porque são os dois eixos da matriz: mudar o ano
+  // pela seta, ou a competência pelo header, é a mesma pergunta com outro recorte. Isso torna a
+  // chamada explícita de `switchTab` redundante (ela foi removida de lá) — dois disparos para a
+  // mesma carga seriam duas requisições por clique.
+  useEffect(() => {
+    if (page === "companyDetail" && selectedCompanyId && companyDetailTab === "circular") {
+      loadCircular(circularYear, circularCompetencia);
+      // O plano de contas é do modal de edição da célula; sem ele o `LineEditor` abre sem nome de
+      // conta nenhum. É o mesmo par que a aba Lançamentos carrega junto.
+      loadChartOfAccounts(selectedCompanyId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, selectedCompanyId, companyDetailTab, circularYear, circularCompetencia]);
 
   return {
     accountingEntriesState,

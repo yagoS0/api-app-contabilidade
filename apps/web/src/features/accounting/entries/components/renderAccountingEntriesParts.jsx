@@ -5,6 +5,7 @@ import { valorUtilizavel } from "../lib/valorFormula";
 import { avisoContaSintetica, motivoContaSintetica, contasSugeriveis } from "../lib/contaSintetica";
 import {
   ACCOUNTING_PANEL,
+  COL_COUNT,
   INPUT,
   ORIGEM_LABELS,
   PANEL_FIELD_STYLE,
@@ -353,6 +354,149 @@ export function LineEditor({ lines, onChange, accounts }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * ⚠ O EDITOR DE N LINHAS — o que o ✎ abre quando o lançamento NÃO é 1D/1C.
+ *
+ * O ✎ abria sempre o `DraftEntryRow`, que é um editor de **1 débito / 1 crédito / 1 valor**. Num
+ * lançamento de três linhas — `D principal · D juros · C total`, a forma da provisão de
+ * parcelamento — ele lia `lines.find(D)` / `lines.find(C)`, montava um payload de DUAS linhas com o
+ * valor do primeiro débito, e o `PUT /entries` (que faz `deleteMany` + `createMany`) apagava a
+ * linha de juros do banco e ainda rebaixava o total. Sem erro, sem aviso, sem confirmação — e a
+ * tela SABIA que era composto: ela desenha "2D / 1C ▶" na mesma linha e oferecia o ✎ igual.
+ *
+ * ⚠ ISTO NÃO MUDA A FORMA DE LANÇAMENTO NENHUM [[nao-mudar-forma-lancamentos]]. As linhas abrem
+ * exatamente como estão gravadas e sobem exatamente como estão na tela; o que deixou de existir é
+ * o caminho que as destruía em silêncio.
+ *
+ * ⚠ Reusa o `LineEditor` (acima, o mesmo que a Circular usa no seu modal de edição). Um segundo
+ * editor de linhas divergiria do primeiro na primeira correção — é a classe de defeito que este
+ * arquivo já documenta em três lugares.
+ */
+export function CompositeEntryEditorRow({ entry, accounts, saving, onSave, onClose, onSearchHistoricos }) {
+  const [dateVal, setDateVal] = useState(entry.data ? String(entry.data).slice(0, 10) : "");
+  const [historico, setHistorico] = useState(entry.historico || "");
+  // Duas casas: é o formato que o `LineEditor` (input `type="number"`) lê de volta sem ambiguidade.
+  const [lines, setLines] = useState(() => (entry.lines || []).map((l) => ({
+    tipo: String(l.tipo || "D").toUpperCase(),
+    conta: l.conta || "",
+    valor: l.valor != null ? Number(l.valor).toFixed(2) : "",
+  })));
+
+  // ⚠ UMA LEITURA SÓ do valor, e é a MESMA do `LineEditor` (`Number(l.valor || 0)`): o número que
+  // habilita o Salvar tem de ser o número que sobe no payload. Duas leituras da mesma string é
+  // exatamente como o gate e o payload divergiriam depois.
+  const valorDaLinha = (l) => Number(l.valor || 0);
+  const totalD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + valorDaLinha(l), 0);
+  const totalC = lines.filter((l) => l.tipo === "C").reduce((s, l) => s + valorDaLinha(l), 0);
+  const diferenca = Math.abs(totalD - totalC);
+  const semConta = lines.filter((l) => !String(l.conta || "").trim()).length;
+  const semValor = lines.filter((l) => !(valorDaLinha(l) > 0)).length;
+  const contasForaDoPlano = contasDesconhecidas(lines, accounts);
+  // Mesma regra do `DraftEntryRow`: na edição só bloqueia a sintética que ESTA edição ACRESCENTA —
+  // senão o lançamento que já está em conta de agregação ficaria preso no caminho que existe para
+  // movê-lo.
+  const codigosAtuais = useMemo(() => (entry?.lines || []).map((l) => l.conta), [entry]);
+  const motivoSintetica = motivoContaSintetica(lines, accounts, codigosAtuais);
+  const avisoSintetica = avisoContaSintetica(lines, accounts, codigosAtuais);
+
+  const motivoNaoSalva = saving ? "Salvando…"
+    : !dateVal ? "Informe a data do lançamento."
+      : !historico ? "Informe o histórico."
+        : !lines.length ? "O lançamento ficou sem linhas."
+          : semConta ? `${semConta} linha(s) sem conta — preencha antes de salvar.`
+            : semValor ? `${semValor} linha(s) sem valor (ou com valor ≤ 0).`
+              : contasForaDoPlano.length ? `${contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa.`
+                : motivoSintetica ? motivoSintetica
+                  : diferenca >= 0.01 ? `Débitos e créditos não fecham — diferença de R$ ${fmtValor(diferenca)}.`
+                    : null;
+  const canSave = !motivoNaoSalva;
+
+  async function handleSave() {
+    if (!canSave) return;
+    const payload = {
+      data: dateVal,
+      historico,
+      // O tipo e o subtipo são do lançamento — esta tela edita LINHAS, não reclassifica nada.
+      tipo: entry.tipo,
+      lines: lines.map((l, i) => ({
+        conta: String(l.conta).trim(),
+        tipo: l.tipo,
+        valor: valorDaLinha(l),
+        ordem: i,
+      })),
+    };
+    if (entry.subtipo) payload.subtipo = entry.subtipo;
+    const res = await onSave(payload);
+    if (res !== null) onClose?.();
+  }
+
+  const dCount = lines.filter((l) => l.tipo === "D").length;
+  const cCount = lines.filter((l) => l.tipo === "C").length;
+
+  return (
+    <tr style={{ background: "#202334", outline: "2px solid #69FF47", outlineOffset: "-2px" }}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose?.(); } }}>
+      <td colSpan={COL_COUNT} style={{ ...TDv, padding: "10px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+          <strong style={{ fontSize: "0.8125rem", color: ACCOUNTING_PANEL.text }}>
+            Editando lançamento composto — {dCount}D / {cCount}C
+          </strong>
+          {entry.subtipo ? (
+            <span style={{ fontSize: "0.72rem", color: ACCOUNTING_PANEL.muted }}>
+              {TIPO_LABELS[entry.tipo] || entry.tipo} · {SUBTIPO_OPTIONS.find((o) => o.key === entry.subtipo)?.label || entry.subtipo}
+            </span>
+          ) : null}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "150px minmax(220px, 1fr)", gap: 10 }}>
+          <label style={PANEL_LABEL_STYLE}>
+            <span>Data</span>
+            <input type="date" value={dateVal || ""} onChange={(e) => setDateVal(e.target.value)}
+              style={{ ...PANEL_FIELD_STYLE, colorScheme: "dark", padding: "0 6px" }} />
+          </label>
+          <label style={PANEL_LABEL_STYLE}>
+            <span>Histórico</span>
+            <SmartHistoricoInput
+              value={historico}
+              onChange={setHistorico}
+              // ⚠ O preenchimento por histórico salvo NÃO reescreve as linhas aqui: ele traz um par
+              // D/C, e aplicá-lo a um lançamento de N linhas é o mesmo estrago que este editor
+              // existe para impedir. Só o texto vem.
+              onFillFromHistory={(h) => { if (h) setHistorico(h); }}
+              onSearchHistoricos={onSearchHistoricos}
+              accounts={accounts}
+              competencia={entry.competencia}
+            />
+          </label>
+        </div>
+        {/* Colunas fixas do LineEditor: em telas estreitas rola só aqui. */}
+        <div style={{ overflowX: "auto", minWidth: 0 }}>
+          <LineEditor lines={lines} onChange={setLines} accounts={accounts} />
+        </div>
+        {contasForaDoPlano.length > 0 ? (
+          <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#FF4757", fontWeight: 600 }}>
+            {contasForaDoPlano.join(", ")} — fora do plano de contas desta empresa
+            <span style={{ fontWeight: 400, color: ACCOUNTING_PANEL.muted }}> — cadastre em Configurações → Plano de contas.</span>
+          </div>
+        ) : null}
+        {avisoSintetica ? (
+          <div style={{ marginTop: 6, fontSize: "0.78rem", color: motivoSintetica ? "#FF4757" : "#FFB347", fontWeight: 600 }}>{avisoSintetica}</div>
+        ) : null}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+          {/* Botão desabilitado sem explicação é proibido neste projeto: o motivo fica à vista, não
+              só no `title`. */}
+          {motivoNaoSalva && !saving ? (
+            <span style={{ fontSize: "0.78rem", color: "#FF4757", fontWeight: 600 }}>{motivoNaoSalva}</span>
+          ) : null}
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <Button size="sm" variant="secondary" onClick={() => onClose?.()}>Cancelar</Button>
+            <Button size="sm" variant="primary" onClick={handleSave} disabled={!canSave} title={motivoNaoSalva || "Salvar"}>{saving ? "..." : "Salvar"}</Button>
+          </div>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -1130,6 +1274,22 @@ export function AccountRow({ entry, accounts, onUpdate, onDelete, saving, onCrea
     setEditing(true);
   }
 
+  // ⚠ COMPOSTO ABRE O EDITOR DE N LINHAS — o `DraftEntryRow` só sabe 1D/1C, e salvar por ele
+  // APAGAVA as linhas que sobravam (o PUT faz `deleteMany` + `createMany`). A tela já sabia que era
+  // composto: é o mesmo `isSimple` que desenha "2D / 1C ▶" logo abaixo.
+  if (editing && !isSimple) {
+    return (
+      <CompositeEntryEditorRow
+        entry={entry}
+        accounts={accounts}
+        saving={saving}
+        onSave={(payload) => onUpdate(entry.id, payload)}
+        onClose={() => setEditing(false)}
+        onSearchHistoricos={onSearchHistoricos}
+      />
+    );
+  }
+
   // Q38: editar usa a MESMA linha do criar (DraftEntryRow em modo "edit"), preservando tipo/subtipo.
   if (editing) {
     return (
@@ -1246,6 +1406,28 @@ function lastDayOfCompetencia(competencia) {
 // Quando o template tiver novos roles (ex: CASP), basta adicionar aqui.
 const RETENCAO_ROLES = new Set(["inss", "irrf", "casp", "fgts"]);
 
+/**
+ * ⚠ O QUE VAI PARA A TELA QUANDO O TEMPLATE NÃO CARREGA — e o que fica só no console.
+ *
+ * Enquanto `getPayrollTemplate` existia só no `realApi`, o modo mock estourava um `TypeError` e o
+ * `err.message` ia **cru** para o lugar da tabela: *"api.getPayrollTemplate is not a function"*.
+ * Isso não é mensagem para o contador — é o nome interno de uma função —, e não diz nem que ele
+ * pode lançar a folha à mão enquanto isso.
+ *
+ * A recusa NOMEADA do servidor continua passando inteira: `UNKNOWN_PAYROLL_KIND` e afins dizem o
+ * que fazer, e trocá-los por um texto genérico seria substituir um silêncio por outro.
+ */
+function mensagemDeFalhaDoTemplate(err) {
+  const bruta = String(err?.message || "");
+  const ehErroDePrograma = err instanceof TypeError || /is not a function|undefined is not|cannot read/i.test(bruta);
+  if (bruta && !ehErroDePrograma) return bruta;
+  // O detalhe técnico não se perde — ele vai para onde quem depura procura.
+  if (err) console.error("[folha] falha ao carregar o template:", err);
+  return "Não foi possível carregar o modelo de folha/pró-labore desta empresa. "
+    + "As contas e os valores podem ser preenchidos à mão nas linhas abaixo; se a tabela não aparecer, "
+    + "feche e abra o modal de novo.";
+}
+
 export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate, onSave, saving, onClose }) {
   const [kind, setKind] = useState("PROLABORE");
   const [competencia, setCompetencia] = useState(defaultCompetencia || "");
@@ -1304,7 +1486,7 @@ export function PayrollEntryModal({ accounts, defaultCompetencia, onLoadTemplate
       })
       .catch((err) => {
         if (canceled) return;
-        setError(err?.message || "Falha ao carregar template.");
+        setError(mensagemDeFalhaDoTemplate(err));
       })
       .finally(() => {
         if (!canceled) setLoading(false);

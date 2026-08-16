@@ -1137,6 +1137,109 @@ function _recusaContaSinteticaMock(companyId, lines, codigosAtuais = []) {
   return err;
 }
 
+/**
+ * ⚠ CÓPIA DECLARADA de `apps/api/src/application/accounting/payrollTemplate.js` — templates, dicas
+ * de conta, as TRÊS passadas de match e a resolução do histórico. Mesmo motivo de
+ * `_derivarAnaliticaMock`: o backend não é importável daqui.
+ *
+ * Existe porque `getPayrollTemplate` tinha implementação **só no `realApi`**: em "Funções →
+ * + Folha / Pró-labore" o modo mock mostrava `api.getPayrollTemplate is not a function` no lugar da
+ * tabela, e a folha — primeiro item do check-list de fechamento — era o único fluxo grande da aba
+ * impossível de conferir offline. É o mesmo defeito que `getBaixaTemplate` teve, e o
+ * `apps/web/CLAUDE.md` já dizia: *"toda feature nova deve ter implementação em AMBOS"*.
+ *
+ * ⚠ Nada aqui é invenção: os `accountHints`, os `role`, os `historicoTemplate` e a forma da
+ * resposta foram copiados da rota. Mock que responde diferente do real esconde defeito.
+ */
+const PAYROLL_TEMPLATES_MOCK = Object.freeze({
+  PROLABORE: {
+    label: "Pró-labore",
+    historicoTemplate: "PRÓ-LABORE - {{competencia}}",
+    lines: [
+      { side: "D", role: "salary", label: "Despesa de Pró-labore",
+        accountHints: ["pro labore", "prolabore", "pro-labore", "pró labore", "despesa pro labore", "despesa prolabore", "remuneracao socios", "remuneração sócios", "honorarios diretoria"],
+        historicoTemplate: "VR REF PRO LAB FP {{competencia}}" },
+      { side: "C", role: "inss", label: "INSS a Recolher",
+        accountHints: ["inss a recolher", "inss a pagar", "inss obrigacoes", "obrigacoes inss", "obrigações inss", "inss"],
+        historicoTemplate: "VR REF INSS S/PRO LAB FP {{competencia}}" },
+      { side: "C", role: "irrf", label: "IRRF a Recolher",
+        accountHints: ["irrf a recolher", "irrf a pagar", "irrf obrigacoes", "obrigacoes irrf", "irf retido", "irrf"],
+        historicoTemplate: "VR REF IRRF S/PRO LAB FP {{competencia}}" },
+      { side: "C", role: "liquid", label: "Pró-labore a Pagar",
+        accountHints: ["pro labore a pagar", "prolabore a pagar", "pro-labore a pagar", "pró labore a pagar", "honorarios a pagar"],
+        historicoTemplate: "VR PRO LAB LIQ FP {{competencia}}" },
+    ],
+    baixa: {
+      debitFromRole: "liquid",
+      creditAccountHints: ["caixa matriz", "caixa geral", "caixa", "banco conta movimento", "banco conta corrente", "banco itau", "banco bradesco", "banco do brasil", "banco santander", "banco caixa", "bancos contas com movimentos", "banco"],
+      historicoTemplate: "PAGO PRO-LAB {{competencia}}",
+    },
+  },
+  FOLHA: {
+    label: "Folha de Pagamento",
+    historicoTemplate: "FOLHA DE PAGAMENTO - {{competencia}}",
+    lines: [
+      { side: "D", role: "salary", label: "Despesa de Salários",
+        accountHints: ["salarios", "salários", "despesa salarios", "despesa de salarios", "salarios e ordenados", "remuneracao funcionarios", "ordenados"],
+        historicoTemplate: "VR REF SALARIO FP {{competencia}}" },
+      { side: "C", role: "inss", label: "INSS a Recolher",
+        accountHints: ["inss a recolher", "inss a pagar", "obrigacoes inss", "obrigações inss", "inss"],
+        historicoTemplate: "VR REF INSS S/SALARIO FP {{competencia}}" },
+      { side: "C", role: "fgts", label: "FGTS a Recolher",
+        accountHints: ["fgts a recolher", "fgts a pagar", "obrigacoes fgts", "obrigações fgts", "fgts"],
+        historicoTemplate: "VR REF FGTS S/SALARIO FP {{competencia}}" },
+      { side: "C", role: "irrf", label: "IRRF a Recolher",
+        accountHints: ["irrf a recolher", "irrf a pagar", "obrigacoes irrf", "obrigações irrf", "irf retido", "irrf"],
+        historicoTemplate: "VR REF IRRF S/SALARIO FP {{competencia}}" },
+      { side: "C", role: "liquid", label: "Salários a Pagar",
+        accountHints: ["salarios a pagar", "salários a pagar", "ordenados a pagar", "salario a pagar"],
+        historicoTemplate: "VR SALARIO LIQ FP {{competencia}}" },
+    ],
+    baixa: {
+      debitFromRole: "liquid",
+      creditAccountHints: ["caixa matriz", "caixa geral", "caixa", "banco conta movimento", "banco conta corrente", "banco itau", "banco bradesco", "banco do brasil", "banco santander", "banco caixa", "bancos contas com movimentos", "banco"],
+      historicoTemplate: "PAGO SALARIOS FP {{competencia}}",
+    },
+  },
+});
+
+// "2026-07" → "07/2026" (o histórico pede MM/AAAA).
+function _payrollHistoricoMock(template, competencia) {
+  const m = String(competencia || "").match(/^(\d{4})-(\d{2})$/);
+  const label = m ? `${m[2]}/${m[1]}` : String(competencia || "");
+  return String(template || "").replace(/\{\{\s*competencia\s*\}\}/gi, label);
+}
+
+function _normalizarNomeContaMock(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\s\-_/]+/g, " ")
+    .trim();
+}
+
+// As TRÊS passadas do backend, nesta ordem: exato → começa com → contém. A ordem é o que faz
+// "inss a recolher" vencer o genérico "inss"; invertê-la muda a conta sugerida.
+function _acharContaPorDicasMock(accounts, hints) {
+  const normalizadas = accounts.map((a) => ({ ...a, _norm: _normalizarNomeContaMock(a.nome) }));
+  const dicas = (hints || []).map((h) => _normalizarNomeContaMock(h)).filter(Boolean);
+  if (!dicas.length) return null;
+  for (const dica of dicas) {
+    const achada = normalizadas.find((a) => a._norm === dica);
+    if (achada) return achada;
+  }
+  for (const dica of dicas) {
+    const achada = normalizadas.find((a) => a._norm.startsWith(dica));
+    if (achada) return achada;
+  }
+  for (const dica of dicas) {
+    const achada = normalizadas.find((a) => a._norm.includes(dica));
+    if (achada) return achada;
+  }
+  return null;
+}
+
 for (const company of mockCompanies) {
   mockChartOfAccounts.set(
     company.companyId,
@@ -4286,6 +4389,94 @@ export function createMockApi() {
       for (const b of payload.baixas || []) mk(b.data, b.historico || `PAGO ${subtipo}`, b.lines || []);
       mockEntriesByCompany.set(companyId, list);
       return { ok: true, loteImportacao, created };
+    },
+    // ⚠ ESTA FUNÇÃO NÃO EXISTIA NO MOCK — mesmo defeito, mesma classe, do `getBaixaTemplate` logo
+    // abaixo: `handleLoadPayrollTemplate` chamava `api.getPayrollTemplate` e o modo mock estourava
+    // `TypeError`, que o `.catch` do `PayrollEntryModal` colocava CRU na tela no lugar da tabela.
+    //
+    // Espelha `GET /firm/companies/:id/payroll/template?kind=&competencia=` e
+    // `resolvePayrollTemplate` — envelope `{ ok, template }`, os mesmos campos por linha, a mesma
+    // resolução de conta por dicas (`PAYROLL_TEMPLATES_MOCK`, lá em cima) e o mesmo
+    // `UNKNOWN_PAYROLL_KIND` para tipo desconhecido.
+    async getPayrollTemplate(companyId, kind, competencia) {
+      await delay();
+      const chave = String(kind || "").toUpperCase();
+      const template = PAYROLL_TEMPLATES_MOCK[chave];
+      if (!template) {
+        // O real responde 400 com este código; um mock que devolvesse `{template: null}` faria o
+        // modal abrir vazio e sem motivo, que é o desfecho que este par existe para impedir.
+        const err = new Error(`unknown_payroll_kind: ${kind}`);
+        err.code = "UNKNOWN_PAYROLL_KIND";
+        err.status = 400;
+        throw err;
+      }
+
+      // Empresa + global, com a da empresa vencendo no mesmo código (o `byCodigo` do backend).
+      const porCodigo = new Map();
+      for (const acc of [...mockGlobalChartOfAccounts, ...(mockChartOfAccounts.get(companyId) || [])]) {
+        const existente = porCodigo.get(acc.codigo);
+        if (!existente || (acc.portalClientId && !existente.portalClientId)) porCodigo.set(acc.codigo, acc);
+      }
+      const accounts = [...porCodigo.values()];
+
+      const lines = template.lines.map((line) => {
+        const casada = _acharContaPorDicasMock(accounts, line.accountHints);
+        return {
+          side: line.side,
+          role: line.role,
+          label: line.label,
+          // ⚠ `null` quando o plano não casa com nenhuma dica — é o que o real devolve, e é o que
+          // faz o campo abrir vazio para o contador escolher. Preencher "a conta mais parecida"
+          // seria o mock ensinando um comportamento que não existe.
+          accountCode: casada?.codigo || null,
+          accountName: casada?.nome || null,
+          value: 0,
+          historico: _payrollHistoricoMock(line.historicoTemplate || "", competencia),
+        };
+      });
+
+      let baixa = null;
+      if (template.baixa) {
+        const liquida = lines.find((l) => l.role === template.baixa.debitFromRole);
+        const credito = _acharContaPorDicasMock(accounts, template.baixa.creditAccountHints || []);
+        baixa = {
+          debitAccountCode: liquida?.accountCode || null,
+          debitAccountName: liquida?.accountName || null,
+          creditAccountCode: credito?.codigo || null,
+          creditAccountName: credito?.nome || null,
+          historico: _payrollHistoricoMock(template.baixa.historicoTemplate || "", competencia),
+        };
+      }
+
+      // A guia de INSS da competência — o rodapé do modal mostra o valor dela. Sai das guias do
+      // mock, com o MESMO filtro do real (tipo INSS + competência + PROCESSED); não havendo, é
+      // `null`, que é o caso normal e não um erro.
+      const guias = mockGuidesByCompany.get(companyId) || [];
+      const inss = guias.find(
+        (g) => String(g.tipo).toUpperCase() === "INSS"
+          && String(g.competencia) === String(competencia)
+          && String(g.status).toUpperCase() === "PROCESSED",
+      );
+
+      return {
+        ok: true,
+        template: {
+          kind: chave,
+          label: template.label,
+          competencia: String(competencia),
+          historicoTemplate: template.historicoTemplate,
+          lines,
+          baixa,
+          inssGuide: inss
+            ? {
+                guideId: inss.id,
+                valor: inss.valor != null ? Number(inss.valor) : null,
+                vencimento: inss.vencimento || null,
+                paymentStatus: inss.paymentStatus,
+              }
+            : null,
+        },
+      };
     },
     async updateAccountingEntry(companyId, entryId, input) {
       await delay();

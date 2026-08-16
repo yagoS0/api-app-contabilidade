@@ -285,7 +285,12 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   function switchTab(tab) {
     setCompanyDetailTab(tab);
     if (tab === "lancamentos") { accountingPanel.onLoadAccounts(); accountingPanel.onLoadEntries(); }
-    if (tab === "circular") { accountingPanel.onLoadAccounts(); circularPanel.onLoadCircular(); }
+    // ⚠ A CIRCULAR NÃO CARREGA MAIS DAQUI — e não é esquecimento.
+    // Enquanto a troca de aba era o ÚNICO disparo, um F5 (ou o link direto) abria a aba vazia
+    // dizendo "Clique em Atualizar". Quem carrega agora é o effect de
+    // `useManageAccountingWorkspace`, no mesmo molde da aba Lançamentos — e ele cobre os três
+    // caminhos (troca de aba, recarga da página e mudança de ano/competência). Chamar aqui também
+    // faria duas requisições por clique.
     if (tab === "planoContas") { accountingPanel.onLoadAccounts(); }
     // Guias precisa do plano de contas: o modal de ingestão de parcelamento sugere as contas D/C.
     if (tab === "guides") { accountingPanel.onLoadAccounts(); }

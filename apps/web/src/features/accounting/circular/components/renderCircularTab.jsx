@@ -52,6 +52,42 @@ function getSubtipoRowsForRegime(regime) {
 // Mantido como fallback para código legado que ainda importava esta constante.
 const SUBTIPO_ROWS = SUBTIPO_ROWS_ALL;
 
+/**
+ * ⚠ O BUCKET FINAL — porque AUSÊNCIA NUNCA É RESPOSTA, e aqui a ausência chegava a SOMAR.
+ *
+ * `visibleRows` filtra as colunas pelo regime; `abertoByMonth` varre o quadro INTEIRO. Uma empresa
+ * do Simples com PIS e COFINS abertos via a linha do mês com só o INSS e um "Total em aberto" que
+ * incluía os outros dois: R$ 5.900 sem NENHUMA célula para clicar. Provisão sem `subtipo` era pior
+ * ainda — a `matrix` a descarta na entrada (`if (!p.subtipo) continue`) e ela nunca teve coluna.
+ *
+ * Esta linha é o lugar onde esse valor continua alcançável: ela não corrige nada sozinha, ela dá o
+ * caminho de volta (abrir o lançamento e responder qual é o subtipo).
+ */
+const SEM_COLUNA_KEY = "__SEM_COLUNA__";
+const SEM_COLUNA_LABEL = "Sem subtipo / fora do regime";
+
+/** O valor da provisão, na MESMA leitura que o `cellNum` usa nas colunas de tributo. */
+function valorDaProvisao(p) {
+  return Number(p?.totalD || p?.valor || 0);
+}
+
+/**
+ * Os subtipos que o seletor do modal pode OFERECER — os do regime, mais o que já está gravado.
+ *
+ * ⚠ O que já está gravado nunca some da lista: escondê-lo faria o `<select>` exibir outro valor e
+ * reclassificar o lançamento no primeiro salvar, sem ninguém pedir.
+ */
+function opcoesDeSubtipo(regime, subtipoAtual) {
+  const doRegime = new Set(getSubtipoRowsForRegime(regime).map((r) => r.key));
+  const lista = SUBTIPO_OPTIONS.filter((o) => doRegime.has(o.key));
+  const atual = String(subtipoAtual || "");
+  if (atual && !lista.some((o) => o.key === atual)) {
+    const conhecido = SUBTIPO_OPTIONS.find((o) => o.key === atual) || SUBTIPO_ROWS_ALL.find((r) => r.key === atual);
+    lista.push({ key: atual, label: `${conhecido?.label || atual} — fora do regime desta empresa` });
+  }
+  return lista;
+}
+
 // Frente B: subtipo da matriz → chave(s) do tributo em circular.acrescimos.
 // Agora é 1:1 — PIS e COFINS têm linha própria, então cada um lê o SEU acréscimo. Enquanto
 // `PIS_COFINS` mapeava para os dois, o juros/multa de um aparecia somado ao do outro na única
@@ -90,7 +126,7 @@ function fmtDate(value) {
 
 // ─── Entry Edit Modal ────────────────────────────────────────────────────────
 
-function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSearchHistoricos, acrescimosComp }) {
+function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSearchHistoricos, acrescimosComp, companyRegime }) {
   const [form, setForm] = useState({
     data: entry.data ? String(entry.data).slice(0, 10) : "",
     historico: entry.historico || "",
@@ -230,8 +266,14 @@ function CircularEntryEditModal({ entry, accounts, saving, onSave, onClose, onSe
                   onChange={(e) => setForm((p) => ({ ...p, subtipo: e.target.value }))}
                   style={{ ...PANEL_FIELD_STYLE, height: 34, padding: "0 8px", colorScheme: "dark" }}
                 >
-                  <option value="">—</option>
-                  {SUBTIPO_OPTIONS.map(({ key, label }) => (
+                  {/* ⚠ A opção vazia NÃO é escolha — ela existe só para representar o lançamento
+                      que ainda não tem subtipo. Enquanto era selecionável, salvar por ela fazia a
+                      célula sumir da matriz na hora e o valor migrar para o "Total em aberto",
+                      sem dono e sem caminho de volta. */}
+                  <option value="" disabled>— escolha o subtipo —</option>
+                  {/* ⚠ Só os tributos que o regime EXIBE: oferecer ISS/PIS/COFINS a uma empresa do
+                      Simples é oferecer a porta pela qual o valor sai do quadro. */}
+                  {opcoesDeSubtipo(companyRegime, form.subtipo).map(({ key, label }) => (
                     <option key={key} value={key}>{label}</option>
                   ))}
                 </select>
@@ -594,6 +636,79 @@ function PagamentoCell({ entry, onBaixa, onEdit, onDesfazerBaixa, parcelamentosA
   );
 }
 
+/**
+ * A célula do bucket "Sem subtipo / fora do regime".
+ *
+ * ⚠ Ela é uma LISTA, não uma provisão: várias podem cair no mesmo mês (o PIS e o COFINS de uma
+ * empresa do Simples são dois lançamentos distintos). Por isso não reusa a `PagamentoCell`, que
+ * desenha UMA guia e as ações dela — aqui o que se oferece é o caminho de volta: ver quais são e
+ * abrir cada uma para responder qual é o subtipo.
+ */
+function CelulaSemColuna({ itens = [], onEdit }) {
+  const [open, setOpen] = useState(false);
+  if (!itens.length) {
+    return <td style={{ width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", fontSize: "0.85rem", color: "#44475A", borderRight: "1px solid #44475A" }}>—</td>;
+  }
+  const total = itens.reduce((s, e) => s + valorDaProvisao(e), 0);
+  const menuBtn = { display: "block", width: "100%", textAlign: "left", padding: "6px 8px", background: "transparent", border: "1px solid #44475A", borderRadius: 4, color: "#F8F8F2", fontSize: "0.72rem", cursor: "pointer", marginTop: 4 };
+
+  return (
+    <td style={{ position: "relative", width: COL_W, minWidth: COL_W, padding: "8px 4px", textAlign: "center", borderRight: "1px solid #44475A", color: "#F8F8F2" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => { if (e.key === "Escape" && open) { e.stopPropagation(); setOpen(false); } }}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        title="Provisões sem coluna neste quadro — clique para ver quais são."
+        style={{
+          background: open ? "#2b2d45" : "transparent", border: "1px solid transparent", borderRadius: 6,
+          cursor: "pointer", color: "#FFB347", fontWeight: 700, fontSize: "0.95rem", whiteSpace: "nowrap",
+          width: "100%", padding: "2px 0",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; e.currentTarget.style.borderColor = "#44475A"; }}
+        onMouseLeave={(e) => { if (!open) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "transparent"; } }}
+      >
+        R$ {fmtValor(total) || "0,00"}
+      </button>
+      {open && (
+        <div
+          onMouseLeave={() => setOpen(false)}
+          style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 50, background: "#24253A", border: "1px solid #44475A", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.45)", padding: 8, minWidth: 280, textAlign: "left" }}
+        >
+          <div style={{ fontSize: "0.7rem", color: "#8A8FA3", lineHeight: 1.35, marginBottom: 6 }}>
+            Estas provisões entram no <strong style={{ color: "#F8F8F2" }}>Total em aberto</strong> do mês e não têm
+            coluna própria: ou estão sem subtipo, ou o subtipo não é exibido no regime desta empresa.
+            Abra o lançamento para responder qual é o subtipo.
+          </div>
+          {itens.map((e) => (
+            <div key={e.id} style={{ borderTop: "1px solid #44475A", paddingTop: 6, marginTop: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: "0.74rem" }}>
+                <span style={{ color: "#F8F8F2", fontWeight: 600 }}>{e.historico || "(sem histórico)"}</span>
+                <span style={{ color: "#FFB347", fontWeight: 700, whiteSpace: "nowrap" }}>R$ {fmtValor(valorDaProvisao(e)) || "0,00"}</span>
+              </div>
+              <div style={{ fontSize: "0.68rem", color: "#8A8FA3" }}>
+                {e.subtipo
+                  ? `Subtipo ${e.subtipo} — fora do regime desta empresa`
+                  : "Sem subtipo"}
+              </div>
+              {onEdit && (
+                <button
+                  onClick={() => { setOpen(false); onEdit(e); }}
+                  style={menuBtn}
+                  onMouseEnter={(ev) => { ev.currentTarget.style.background = "#2b2d45"; }}
+                  onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; }}
+                >
+                  ✎ Editar
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </td>
+  );
+}
+
 function FaturamentoCell({ valor }) {
   return (
     <td style={{ padding: "6px 4px", textAlign: "center", fontSize: "0.75rem", borderRight: "1px solid #44475A" }}>
@@ -776,11 +891,29 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
   // Linhas da matriz são filtradas em 2 passos:
   // 1) Por regime tributário da empresa (Simples não tem IRPJ/CSLL/etc; Presumido não tem DAS)
   // 2) Apenas linhas que tenham pelo menos 1 entrada com dados (estética — esconde linhas vazias)
+  // 3) ⚠ E um bucket final para o que NÃO cabe em nenhuma coluna — ver `SEM_COLUNA_KEY`.
+  //    Sem ele, provisão sem subtipo (que a `matrix` descarta na entrada) e provisão de tributo
+  //    fora do regime somem da matriz e CONTINUAM somadas no "Total em aberto": valor sem célula
+  //    para clicar. Ausência nunca é resposta.
+  const semColunaPorMes = useMemo(() => {
+    const doRegime = new Set(getSubtipoRowsForRegime(companyRegime).map((r) => r.key));
+    const porMes = {};
+    for (const p of quadroProvisoes) {
+      if (p.subtipo && doRegime.has(p.subtipo)) continue;
+      (porMes[p.competencia] ||= []).push(p);
+    }
+    return porMes;
+  }, [quadroProvisoes, companyRegime]);
+  const temSemColuna = Object.keys(semColunaPorMes).length > 0;
+
   const visibleRows = useMemo(() => {
     const byRegime = getSubtipoRowsForRegime(companyRegime);
     const usedSubtipos = new Set(quadroProvisoes.map((p) => p.subtipo).filter(Boolean));
-    return byRegime.filter((r) => usedSubtipos.has(r.key));
-  }, [quadroProvisoes, companyRegime]);
+    const linhas = byRegime.filter((r) => usedSubtipos.has(r.key));
+    // O bucket é o ÚLTIMO: ele não é um tributo, é o resto que precisa continuar alcançável.
+    if (temSemColuna) linhas.push({ key: SEM_COLUNA_KEY, label: SEM_COLUNA_LABEL });
+    return linhas;
+  }, [quadroProvisoes, companyRegime, temSemColuna]);
 
   // ⚠ "Em aberto" DIVIDIDO em vencido × a vencer.
   // Um total único soma dívida atrasada com compromisso futuro e responde a pergunta errada: em
@@ -822,8 +955,11 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
     // Trimestre e ano continuam somando o TOTAL em aberto — a divisão vencido × a vencer é uma
     // leitura do mês, e agregar "vencido" num trimestre já encerrado não diria nada de novo.
     if (colKey === "__ABERTO__") return Number(abertoByMonth[comp]?.total) || 0;
+    // O bucket soma os lançamentos do mês que não têm coluna — é o que faz o trimestre e o anual
+    // contarem o mesmo que o "Total em aberto" já contava.
+    if (colKey === SEM_COLUNA_KEY) return (semColunaPorMes[comp] || []).reduce((s, p) => s + valorDaProvisao(p), 0);
     const e = matrix[`${colKey}__${comp}`];
-    return e ? Number(e.totalD || e.valor || 0) : 0;
+    return e ? valorDaProvisao(e) : 0;
   };
   const sumQuarter = (colKey, qi) => monthKeys.slice(qi * 3, qi * 3 + 3).reduce((s, c) => s + cellNum(colKey, c), 0);
   const sumYear = (colKey) => monthKeys.reduce((s, c) => s + cellNum(colKey, c), 0);
@@ -1074,7 +1210,13 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                     <td style={monthStickyStyle}>
                       {MONTH_LABELS[i]}/{yy}
                     </td>
-                    {visibleRows.map((col) => (
+                    {visibleRows.map((col) => (col.key === SEM_COLUNA_KEY ? (
+                      <CelulaSemColuna
+                        key={col.key}
+                        itens={semColunaPorMes[comp] || []}
+                        onEdit={onUpdateEntry ? (entry) => setEditEntry(entry) : null}
+                      />
+                    ) : (
                       <PagamentoCell
                         key={col.key}
                         entry={matrix[`${col.key}__${comp}`]}
@@ -1087,7 +1229,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
                         onDesvincular={handleDesvincular}
                         acrescimo={acrescimoFor(col.key, comp)}
                       />
-                    ))}
+                    )))}
                     <td style={extraCellStyle}>{fat ? <span style={{ color: "#8BE9FD", fontWeight: 700 }}>R$ {fmtValor(fat)}</span> : <span style={{ color: "#44475A" }}>—</span>}</td>
                     {/* Vencido em VERMELHO, a vencer em ÂMBAR — e cada um com o seu rótulo, porque
                         cor sozinha não é estado (princípio 2). Nada em aberto vira "—", não "R$ 0,00":
@@ -1183,6 +1325,7 @@ A baixa continua com você: use "Dar baixa" (já vem preenchida).`
           onClose={() => setEditEntry(null)}
           onSearchHistoricos={onSearchHistoricos}
           acrescimosComp={circularData?.acrescimos?.[editEntry.competencia] || {}}
+          companyRegime={companyRegime}
         />
       )}
 

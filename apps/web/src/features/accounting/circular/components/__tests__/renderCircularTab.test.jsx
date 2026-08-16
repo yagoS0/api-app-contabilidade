@@ -453,6 +453,92 @@ describe("Total em aberto — somar vencido com a vencer responde a pergunta err
   });
 });
 
+// ⚠ AUSÊNCIA NUNCA É RESPOSTA — e aqui ela chegava a SOMAR.
+//
+// `visibleRows` filtra as colunas pelo regime da empresa; `abertoByMonth` varre o quadro INTEIRO.
+// Numa empresa do Simples com PIS e COFINS abertos, a linha do mês mostrava só o INSS e um "Total
+// em aberto" que incluía os outros dois: R$ 5.900 sem NENHUMA célula para clicar. E dava para cair
+// nisso pela própria Circular — o seletor de Subtipo do modal oferecia ISS/PIS/COFINS (e a opção
+// vazia) para qualquer regime: salvando, a célula sumia na hora e o valor migrava para o total,
+// sem dono e sem caminho de volta.
+describe("provisão fora do regime / sem subtipo — continua clicável em algum lugar", () => {
+  const vencida = (over) => provisao({ statusPagamento: "ABERTO", ...over });
+
+  function comForaDoRegime(over = {}) {
+    return renderTab([
+      vencida({ id: "i", subtipo: "INSS", valor: 487.30, sourceGuide: guia({ id: "gi", tipo: "INSS", vencimento: emDias(-10) }) }),
+      vencida({ id: "p", subtipo: "PIS", valor: 2900, historico: "PIS 07", sourceGuide: guia({ id: "gp", tipo: "DARF", vencimento: emDias(-10) }) }),
+      vencida({ id: "c", subtipo: "COFINS", valor: 3000, historico: "COFINS 07", sourceGuide: guia({ id: "gc", tipo: "DARF", vencimento: emDias(-10) }) }),
+    ], { companyRegime: "SIMPLES", ...over });
+  }
+
+  it("⚠ o que o total soma tem coluna: R$ 5.900 de PIS+COFINS não fica sem célula", () => {
+    comForaDoRegime();
+
+    // O total continua sendo o mesmo — o defeito nunca foi o total, foi o que a matriz escondia.
+    expect(screen.getByText("vencido").parentElement).toHaveTextContent("R$ 6.387,30");
+    // E agora existe onde clicar nos R$ 5.900 que o regime não exibe.
+    expect(screen.getByRole("columnheader", { name: /Sem subtipo \/ fora do regime/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "R$ 5.900,00" })).toBeInTheDocument();
+  });
+
+  it("a célula do bucket NOMEIA cada lançamento e leva de volta à edição", () => {
+    const { props } = comForaDoRegime();
+
+    fireEvent.click(screen.getByRole("button", { name: "R$ 5.900,00" }));
+    expect(screen.getByText("PIS 07")).toBeInTheDocument();
+    expect(screen.getByText("COFINS 07")).toBeInTheDocument();
+
+    // O caminho de volta é editar o lançamento (é lá que se corrige o subtipo).
+    fireEvent.click(screen.getAllByRole("button", { name: /✎ Editar/ })[0]);
+    expect(screen.getByText(/^Editar:/)).toBeInTheDocument();
+    expect(props.onLoad).not.toHaveBeenCalled();
+  });
+
+  it("provisão SEM subtipo também tem lugar — ela nem entrava na matriz", () => {
+    renderTab([
+      vencida({ id: "s", subtipo: null, valor: 1500, historico: "SEM SUBTIPO", sourceGuide: guia({ id: "gs", vencimento: emDias(-4) }) }),
+    ], { companyRegime: "SIMPLES" });
+
+    expect(screen.getByText("vencido").parentElement).toHaveTextContent("R$ 1.500,00");
+    expect(screen.getByRole("button", { name: "R$ 1.500,00" })).toBeInTheDocument();
+  });
+
+  it("empresa sem nada fora do regime NÃO ganha a coluna", () => {
+    renderTab([provisao({ subtipo: "DAS", valor: 900 })], { companyRegime: "SIMPLES" });
+    expect(screen.queryByRole("columnheader", { name: /Sem subtipo/ })).not.toBeInTheDocument();
+  });
+
+  it("⚠ o seletor de Subtipo não oferece tributo que o regime não exibe", () => {
+    renderTab([provisao({ subtipo: "DAS", valor: 900 })], { companyRegime: "SIMPLES" });
+
+    abrirCelula("R$ 900,00");
+    fireEvent.click(screen.getByRole("button", { name: /✎ Editar/ }));
+
+    const seletor = screen.getByLabelText("Subtipo");
+    const oferecidos = Array.from(seletor.options).filter((o) => !o.disabled).map((o) => o.value);
+    expect(oferecidos).toContain("DAS");
+    // Simples não tem ISS/PIS/COFINS — oferecê-los é a porta pela qual a célula some.
+    expect(oferecidos).not.toContain("ISS");
+    expect(oferecidos).not.toContain("PIS");
+    expect(oferecidos).not.toContain("COFINS");
+    // E a opção vazia não é escolha: ela existe só para representar o que ainda não foi respondido.
+    expect(oferecidos).not.toContain("");
+  });
+
+  it("o subtipo JÁ GRAVADO continua no seletor, mesmo fora do regime", () => {
+    // Escondê-lo faria o select exibir outra coisa e reclassificar o lançamento no primeiro salvar.
+    renderTab([provisao({ subtipo: "PIS", valor: 250, historico: "PIS" })], { companyRegime: "SIMPLES" });
+
+    fireEvent.click(screen.getByRole("button", { name: "R$ 250,00" }));
+    fireEvent.click(screen.getAllByRole("button", { name: /✎ Editar/ })[0]);
+
+    const seletor = screen.getByLabelText("Subtipo");
+    expect(seletor.value).toBe("PIS");
+    expect(Array.from(seletor.options).map((o) => o.value)).toContain("PIS");
+  });
+});
+
 describe("estados de carga", () => {
   it("carregando não mostra a tabela", () => {
     renderTab([], { loading: true });

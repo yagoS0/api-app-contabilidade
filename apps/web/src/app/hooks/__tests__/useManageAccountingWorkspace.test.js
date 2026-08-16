@@ -67,6 +67,56 @@ function ultimoSetEntries() {
   return calls[calls.length - 1][0];
 }
 
+// ⚠ F5 NA CIRCULAR DEIXAVA A TELA VAZIA.
+//
+// O único disparo de `onLoadCircular` era a TROCA DE ABA (`switchTab`, em
+// `renderCompanyDetailPage`). Recarregando a página — ou abrindo o link direto — o corpo mostrava
+// "Nenhum dado disponível. Clique em Atualizar.". A aba Lançamentos tem um effect de carga
+// automática criado exatamente por esse motivo; a Circular ficou sem o irmão, e este é ele.
+describe("carga automática da Circular", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("⚠ a aba abre carregada, sem depender da troca de aba", async () => {
+    const api = montarApi([]);
+    await act(async () => {
+      montarHook(api);
+    });
+
+    expect(api.getCircular).toHaveBeenCalledTimes(1);
+    expect(api.getCircular).toHaveBeenCalledWith("company-123", { year: expect.any(Number) });
+    // A revisão da competência viaja junto — é o par que a aba mostra embaixo da matriz.
+    expect(api.getCircularAccountingEntries).toHaveBeenCalledWith("company-123", "2026-07");
+  });
+
+  it("o plano de contas vem junto — o modal de edição da célula depende dele", async () => {
+    const api = montarApi([]);
+    await act(async () => {
+      montarHook(api);
+    });
+
+    expect(api.getChartOfAccounts).toHaveBeenCalledWith("company-123");
+  });
+
+  it("outra aba não busca a Circular", async () => {
+    const api = montarApi([]);
+    await act(async () => {
+      renderHook(() =>
+        useManageAccountingWorkspace({
+          api,
+          page: "companyDetail",
+          selectedCompanyId: "company-123",
+          companyDetailTab: "guides",
+          feedback: {},
+        })
+      );
+    });
+
+    expect(api.getCircular).not.toHaveBeenCalled();
+  });
+});
+
 describe("loadAccountingEntries", () => {
   beforeEach(() => {
     jest.clearAllMocks();
