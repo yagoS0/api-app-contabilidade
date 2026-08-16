@@ -1,6 +1,7 @@
 import {
   montarParcelasDoAcordo, estadoBuscaParcela, textoDaConfirmacao,
   resumoDoResultado, motivoDaFalha, agruparBloqueios, resumoDosNumeros,
+  situacaoDaLinha, valorDaLinha,
 } from "../parcelaBusca";
 
 const guia = (over = {}) => ({
@@ -348,5 +349,165 @@ describe("motivoDaFalha — cada recusa paga chega à tela com nome próprio", (
     const err = new Error("");
     err.code = "SERPRO_TETO_DIARIO";
     expect(motivoDaFalha(err).detalhe).toMatch(/teto de consultas pagas/i);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠ O ACORDEÃO CONTRADIZIA O CARD LOGO ACIMA — e a distância entre as duas afirmações era 200px.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Num contrato MIGRADO (as N primeiras prestações vêm `origemBaixa: "HISTORICO"`, F2.3) o card diz
+// "22 de 60 (22 históricas)" e "VALOR DA PARCELA R$ 1.200,00". Abrindo o acordeão, as MESMAS 22
+// apareciam como "sem guia", valor "—", idênticas às 38 que nunca foram pagas — cada uma com um
+// botão "🔎 Buscar pagamento" (consulta PAGA ao SERPRO) e o motivo mandando capturar a guia de uma
+// prestação já quitada.
+//
+// A causa: `linhaDaParcela` montava a linha SÓ pela guia. `origemBaixa` (o predicado de quitação
+// que `parcelaRowQuitada` já usa no backend e que `cartaoParcelamento.contarHistoricas` já lê para
+// o card) e `valorPrevisto` nem chegavam à linha, embora os dois venham no
+// `SELECT_PARCELA_PARA_QUADRO` desde a F2.3.
+const CONTRATO_MIGRADO = {
+  numParcelas: 60,
+  formaPagamento: "DEBITO_AUTOMATICO",
+  guides: [],
+  parcelasContratadas: Array.from({ length: 60 }, (_, i) => ({
+    id: `p${i + 1}`,
+    numeroParcela: i + 1,
+    competencia: "2026-01",
+    vencimento: "2026-01-20T12:00:00.000Z",
+    valorPrevisto: 1200,
+    origemBaixa: i < 22 ? "HISTORICO" : null,
+    guia: null,
+  })),
+};
+
+describe("a linha carrega o CONTRATO, não só a guia", () => {
+  it("`origemBaixa` e `valorPrevisto` chegam à linha", () => {
+    const linhas = montarParcelasDoAcordo(CONTRATO_MIGRADO);
+    expect(linhas[0].origemBaixa).toBe("HISTORICO");
+    expect(linhas[0].valorPrevisto).toBe(1200);
+    expect(linhas[59].origemBaixa).toBeNull();
+    expect(linhas[59].valorPrevisto).toBe(1200);
+  });
+
+  it("a competência CONTRATADA entra quando não há guia", () => {
+    expect(montarParcelasDoAcordo(CONTRATO_MIGRADO)[0].competencia).toBe("2026-01");
+  });
+
+  it("guia sem prestação contratada continua sem `origemBaixa` nem valor previsto", () => {
+    const [l] = montarParcelasDoAcordo({ guides: [guia({ id: "g9", numeroParcela: 9 })], parcelasContratadas: [] });
+    expect(l.origemBaixa).toBeNull();
+    expect(l.valorPrevisto).toBeNull();
+  });
+});
+
+// ⚠ SÃO DOIS FATOS DIFERENTES. `guia.valor` é o que o documento diz; `valorPrevisto` é o que o
+// contrato contratou. A coluna mostra o segundo quando o primeiro não existe — e DIZ qual é.
+describe("valorDaLinha — o número da coluna Valor, COM a procedência", () => {
+  it("com guia, o valor é o do DOCUMENTO", () => {
+    const [l] = montarParcelasDoAcordo({
+      guides: [guia({ valor: 1350.75 })],
+      parcelasContratadas: [{ id: "p1", numeroParcela: 1, valorPrevisto: 1200, guia: { id: "g1" } }],
+    });
+    expect(valorDaLinha(l)).toEqual({ valor: 1350.75, fonte: "guia" });
+  });
+
+  it("⚠ SEM guia, o valor CONTRATADO deixa de virar '—' — era a contradição com o card", () => {
+    const linhas = montarParcelasDoAcordo(CONTRATO_MIGRADO);
+    expect(valorDaLinha(linhas[0])).toEqual({ valor: 1200, fonte: "contrato" });
+    expect(linhas.every((l) => valorDaLinha(l).valor === 1200)).toBe(true);
+  });
+
+  it("sem nenhum dos dois continua sem valor — ausência não é zero", () => {
+    expect(valorDaLinha({ valor: null, valorPrevisto: null })).toEqual({ valor: null, fonte: null });
+    expect(valorDaLinha(null)).toEqual({ valor: null, fonte: null });
+  });
+
+  it("`valorPrevisto: 0` (o contrato que o wizard produzia) é 0, não ausência", () => {
+    expect(valorDaLinha({ valor: null, valorPrevisto: 0 })).toEqual({ valor: 0, fonte: "contrato" });
+  });
+});
+
+// ⚠ AS TRÊS RESPOSTAS. `HISTORICO` é QUITADA e **não tem lançamento contábil** (F2.3) — chamá-la de
+// "baixada" mandaria alguém procurar no razão uma baixa que não existe. `MANUAL` é baixada de
+// verdade, pela declaração. "Sem guia" é a prestação que ainda não foi nem paga nem declarada.
+describe("situacaoDaLinha — quitada (histórica) × baixada (declarada) × sem guia", () => {
+  const sit = (over) => situacaoDaLinha({ guideId: null, ...over });
+
+  it("as três têm textos DIFERENTES — nenhuma é achatada na outra", () => {
+    const textos = [
+      sit({ origemBaixa: "HISTORICO" }).texto,
+      sit({ origemBaixa: "MANUAL" }).texto,
+      sit({}).texto,
+    ];
+    expect(new Set(textos).size).toBe(3);
+  });
+
+  it("a histórica é QUITADA e diz que não há lançamento nosso", () => {
+    const s = sit({ origemBaixa: "HISTORICO" });
+    expect(s.texto).toMatch(/quitada/i);
+    expect(s.texto).toMatch(/histórica/i);
+    expect(s.detalhe).toMatch(/sem lançamento/i);
+    expect(s.cor).toBe("var(--state-ok)");
+  });
+
+  it("a declarada é BAIXADA, e o detalhe diz que a evidência é declaração", () => {
+    const s = sit({ origemBaixa: "MANUAL" });
+    expect(s.texto).toMatch(/baixada/i);
+    expect(s.texto).toMatch(/declarada/i);
+    expect(s.detalhe).toMatch(/declaração/i);
+  });
+
+  it("`DEBITO_AUTOMATICO` (a via da PROVA, ainda não implementada) já tem rótulo próprio", () => {
+    expect(sit({ origemBaixa: "DEBITO_AUTOMATICO" }).texto).toMatch(/débito automático/i);
+  });
+
+  // ⚠ O vocabulário é cópia declarada de `ancoraBaixa.ORIGENS_BAIXA_PARCELA`. Uma via nova gravada
+  // no backend sem passar por aqui não pode virar "sem guia" — isso apagaria a quitação.
+  it("origem desconhecida ainda é QUITADA, nomeando a origem", () => {
+    const s = sit({ origemBaixa: "VIA_NOVA" });
+    expect(s.texto).toMatch(/quitada/i);
+    expect(s.detalhe).toMatch(/VIA_NOVA/);
+  });
+
+  it("os estados por GUIA continuam como estavam", () => {
+    expect(situacaoDaLinha({ guideId: "g1", baixada: true }).texto).toBe("baixada");
+    expect(situacaoDaLinha({ guideId: "g1", paymentStatus: "PAID" }).texto).toMatch(/falta lançar/);
+    expect(situacaoDaLinha({ guideId: "g1" }).texto).toBe("em aberto");
+    expect(sit({}).texto).toBe("sem guia");
+  });
+});
+
+// ⚠ NÃO SE OFERECE CONSULTA PAGA SOBRE PRESTAÇÃO JÁ QUITADA. Antes, a quitada sem guia caía no ramo
+// "sem guia capturada" e o texto mandava capturá-la no SERPRO — a chamada é paga, e a prestação já
+// está paga.
+describe("estadoBuscaParcela — a quitação é lida ANTES da ausência de guia", () => {
+  it("a histórica bloqueia dizendo que já foi paga, não que falta capturar guia", () => {
+    const [l] = montarParcelasDoAcordo(CONTRATO_MIGRADO);
+    const e = estadoBuscaParcela(l);
+    expect(e.podeBuscar).toBe(false);
+    expect(e.motivo).toMatch(/já paga|quitada/i);
+    expect(e.motivo).not.toMatch(/captura do SERPRO/i);
+    expect(e.motivo).not.toMatch(/upload na aba Guias/i);
+    expect(e.rotulo).toMatch(/quitada/i);
+  });
+
+  it("a declarada bloqueia como baixa já lançada", () => {
+    const e = estadoBuscaParcela({ guideId: null, origemBaixa: "MANUAL" });
+    expect(e.podeBuscar).toBe(false);
+    expect(e.rotulo).toMatch(/baixa já lançada/i);
+  });
+
+  it("a prestação AINDA em aberto continua com o motivo de 'sem guia' do contrato", () => {
+    const linhas = montarParcelasDoAcordo(CONTRATO_MIGRADO);
+    const e = estadoBuscaParcela(linhas[59]);
+    expect(e.podeBuscar).toBe(false);
+    expect(e.motivo).toMatch(/débito automático/i);
+  });
+
+  // O efeito na tela: 22 + 38 deixam de ser um bloco só de 60 "sem guia capturada".
+  it("⚠ o acordeão passa a ter DOIS grupos, com 22 e 38 — não um de 60", () => {
+    const grupos = agruparBloqueios(montarParcelasDoAcordo(CONTRATO_MIGRADO));
+    expect(grupos.map((g) => g.quantidade).sort((a, b) => a - b)).toEqual([22, 38]);
   });
 });

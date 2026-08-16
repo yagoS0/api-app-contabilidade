@@ -1236,7 +1236,13 @@ export function ParcelamentoTab({
           onSearchHistoricos={onSearchHistoricos}
           onGetHistoricosByCode={onGetHistoricosByCode}
           saving={parcelamentos.saving}
-          onClose={() => setWizardAberto(false)}
+          // ⚠ CRIAR CONTRATO TAMBÉM ENCHE AS DUAS FILAS DE BAIXA — e elas não recarregavam.
+          // `ingest` já chama `parcelamentos.load()`, então o CARD aparecia na hora; as filas são
+          // requisições dos filhos, presas em `baixaRefreshKey`, e continuavam com o número antigo.
+          // Um contrato migrado nasce com N prestações vencidas sem guia: o trabalho que a criação
+          // acabou de gerar ficava invisível até alguém sair da aba e voltar. `aposAto` é o MESMO
+          // handler que a exclusão e o desfazer-rescisão já usam, pelo mesmo motivo.
+          onClose={() => { setWizardAberto(false); aposAto(); }}
         />
       )}
     </div>

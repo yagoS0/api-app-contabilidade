@@ -27,7 +27,16 @@ export function montarParcelasDoAcordo(parc) {
   const linhas = contratadas.map((p) => {
     const g = p.guia ? (porGuiaId.get(p.guia.id) || p.guia) : null;
     if (g) porGuiaId.delete(g.id);
-    return linhaDaParcela({ parcelaId: p.id, numeroParcela: p.numeroParcela, vencimentoContratado: p.vencimento, guia: g, parc });
+    return linhaDaParcela({
+      parcelaId: p.id,
+      numeroParcela: p.numeroParcela,
+      vencimentoContratado: p.vencimento,
+      competenciaContratada: p.competencia,
+      valorPrevisto: p.valorPrevisto,
+      origemBaixa: p.origemBaixa,
+      guia: g,
+      parc,
+    });
   });
 
   // Guia que não casou com nenhuma prestação contratada continua aparecendo. Sumir com ela seria
@@ -40,7 +49,12 @@ export function montarParcelasDoAcordo(parc) {
   return linhas.sort((a, b) => (a.numeroParcela ?? 9999) - (b.numeroParcela ?? 9999));
 }
 
-function linhaDaParcela({ parcelaId, numeroParcela, vencimentoContratado, guia, parc }) {
+function linhaDaParcela({
+  parcelaId, numeroParcela, vencimentoContratado, competenciaContratada,
+  valorPrevisto, origemBaixa, guia, parc,
+}) {
+  const valorDaGuia = guia?.valor != null ? Number(guia.valor) : null;
+  const contratado = valorPrevisto != null && valorPrevisto !== "" ? Number(valorPrevisto) : null;
   return {
     key: parcelaId || guia?.id || `p-${numeroParcela}`,
     numeroParcela: numeroParcela ?? null,
@@ -48,8 +62,18 @@ function linhaDaParcela({ parcelaId, numeroParcela, vencimentoContratado, guia, 
     // O vencimento REAL (da guia) quando existe; o CONTRATADO quando não — mesma precedência que
     // `quadroDasParcelas` usa no backend para decidir atraso.
     vencimento: guia?.vencimento || vencimentoContratado || null,
-    competencia: guia?.competencia || guia?.anoMesParcela || null,
-    valor: guia?.valor != null ? Number(guia.valor) : null,
+    competencia: guia?.competencia || guia?.anoMesParcela || competenciaContratada || null,
+    // ⚠ VALOR DA GUIA E VALOR CONTRATADO SÃO FATOS DIFERENTES, e por isso viajam em campos
+    // diferentes — quem decide qual mostrar é `valorDaLinha`, e ela DIZ de onde o número veio.
+    // Antes só o da guia chegava aqui: num contrato migrado (60 prestações, nenhuma guia) a coluna
+    // Valor mostrava "—" nas 60, com o card logo acima anunciando "VALOR DA PARCELA R$ 1.200,00".
+    valor: valorDaGuia,
+    valorPrevisto: Number.isFinite(contratado) ? contratado : null,
+    // ⚠ `origemBaixa` É O PREDICADO DE QUITAÇÃO da prestação sem guia (F2.2/F2.3) — o mesmo que
+    // `parcelaRowQuitada` usa no backend e que `cartaoParcelamento.contarHistoricas` já lê para o
+    // card. Sem ele, as 22 prestações quitadas de um contrato migrado eram desenhadas idênticas às
+    // 38 que nunca foram pagas.
+    origemBaixa: origemBaixa ? String(origemBaixa).toUpperCase() : null,
     guideId: guia?.id || null,
     // ⚠ A FORMA DE PAGAMENTO É DO CONTRATO, e ela VIAJA NA LINHA porque é ela que decide se
     // "sem guia" é um estado transitório ou o estado definitivo desta prestação. Em débito
@@ -107,6 +131,102 @@ function motivoSemGuia(formaPagamento) {
 }
 
 /**
+ * ⚠ O VOCABULÁRIO DE `parcelas.origemBaixa` MORA NO BACKEND — `ORIGENS_BAIXA_PARCELA`, em
+ * `apps/api/src/application/accounting/ancoraBaixa.js`. Aqui ele é **cópia declarada**, pelo mesmo
+ * motivo de `src/lib/vocabulario.js` e de `_derivarAnaliticaMock`: o `Dockerfile` não copia
+ * `packages/` e cruzar apps quebra o boot. Quem acrescentar uma via de baixa lá acrescenta aqui.
+ *
+ * ⚠ AS TRÊS RESPOSTAS NÃO SÃO A MESMA COISA, e achatá-las foi o defeito:
+ *   · `HISTORICO` — quitada ANTES de o contrato entrar no sistema (contrato migrado). Ela **não
+ *     gera `AccountingEntry`**: é quitada, mas não há baixa nossa a mostrar nem a estornar;
+ *   · `MANUAL` / `DEBITO_AUTOMATICO` — baixada de verdade, com lançamento, pela via da DECLARAÇÃO
+ *     (o contador afirma) ou da PROVA (SERPRO, ainda não implementada);
+ *   · `GUIA` — a via do documento; ali quem responde "foi quitada?" é a própria guia.
+ */
+const QUITACAO_SEM_GUIA = Object.freeze({
+  HISTORICO: {
+    situacao: "quitada (histórica)",
+    detalhe: "quitada antes de o contrato entrar no sistema — sem lançamento contábil nosso",
+    rotulo: "quitada (histórica)",
+    motivo: "Esta prestação foi declarada como já paga na adesão do parcelamento (contrato migrado "
+      + "de outra contabilidade). Ela está quitada e não há pagamento nosso a localizar — nem "
+      + "lançamento contábil, porque o pagamento não passou por este escritório.",
+  },
+  MANUAL: {
+    situacao: "baixada (declarada)",
+    detalhe: "baixa lançada por declaração do contador, sem documento",
+    rotulo: "baixa já lançada (declarada)",
+    motivo: "Esta prestação já foi baixada por declaração (o contador afirmou que o débito saiu da "
+      + "conta) e a baixa já está lançada. Não há o que consultar no PAGTOWEB.",
+  },
+  DEBITO_AUTOMATICO: {
+    situacao: "baixada (débito automático)",
+    detalhe: "baixa lançada com a prova do débito automático",
+    rotulo: "baixa já lançada",
+    motivo: "Esta prestação já foi baixada pela via do débito automático e a baixa já está lançada. "
+      + "Não há o que consultar no PAGTOWEB.",
+  },
+  GUIA: {
+    situacao: "baixada",
+    detalhe: "baixa lançada a partir da guia",
+    rotulo: "baixa já lançada",
+    motivo: "Pagamento já localizado e baixa já lançada — não há o que consultar.",
+  },
+});
+
+/** A leitura de `origemBaixa`, já com o fallback nomeado para uma via que ainda não conhecemos. */
+function quitacaoDaLinha(linha) {
+  const origem = linha?.origemBaixa ? String(linha.origemBaixa).toUpperCase() : null;
+  if (!origem) return null;
+  return QUITACAO_SEM_GUIA[origem] || {
+    situacao: "quitada",
+    detalhe: `quitada (origem "${origem}")`,
+    rotulo: "quitada",
+    motivo: `Esta prestação consta quitada (origem "${origem}") — não há pagamento a localizar. `
+      + "Esta via de baixa é mais nova que esta tela; confira o razão para saber se ela gerou lançamento.",
+  };
+}
+
+/**
+ * A SITUAÇÃO da prestação na coluna do acordeão — e ela tem de concordar com o card logo acima.
+ *
+ * ⚠ ELA LIA SÓ A GUIA. Num contrato migrado o card dizia "22 de 60 (22 históricas)" e as 22
+ * quitadas apareciam aqui como "sem guia", indistinguíveis das 38 que nunca foram pagas: duas
+ * afirmações opostas sobre a mesma prestação, a 200px de distância.
+ *
+ * ⚠ QUITADA (HISTÓRICA) ≠ BAIXADA (DECLARADA). A histórica não tem lançamento contábil — dizer
+ * "baixada" nela mandaria alguém procurar no razão uma baixa que não existe.
+ */
+export function situacaoDaLinha(linha) {
+  const q = quitacaoDaLinha(linha);
+  if (q) return { texto: q.situacao, detalhe: q.detalhe, cor: "var(--state-ok)" };
+  if (linha?.baixada) return { texto: "baixada", detalhe: null, cor: "var(--state-ok)" };
+  if (String(linha?.paymentStatus || "").toUpperCase() === "PAID") {
+    return { texto: "paga · falta lançar", detalhe: null, cor: "var(--state-warn)" };
+  }
+  if (!linha?.guideId) return { texto: "sem guia", detalhe: null, cor: "var(--state-neutral)" };
+  return { texto: "em aberto", detalhe: null, cor: "var(--state-neutral)" };
+}
+
+/**
+ * O número da coluna Valor, **com a procedência**.
+ *
+ * ⚠ SÃO DOIS FATOS. `guia.valor` é o que o documento diz; `parcela.valorPrevisto` é o que o
+ * contrato contratou. Mostrar só o primeiro fazia o acordeão exibir "—" nas 60 prestações de um
+ * contrato sem guia, com o card ao lado anunciando o valor da parcela. Colapsar os dois num campo
+ * só faria o contrário: a tela afirmaria que existe documento onde não existe.
+ */
+export function valorDaLinha(linha) {
+  if (linha?.valor != null && Number.isFinite(Number(linha.valor))) {
+    return { valor: Number(linha.valor), fonte: "guia" };
+  }
+  if (linha?.valorPrevisto != null && Number.isFinite(Number(linha.valorPrevisto))) {
+    return { valor: Number(linha.valorPrevisto), fonte: "contrato" };
+  }
+  return { valor: null, fonte: null };
+}
+
+/**
  * O botão de busca desta linha: pode clicar, e se não, POR QUÊ.
  *
  * ⚠ O projeto proíbe desabilitado sem explicação. Todo ramo de `podeBuscar: false` devolve um
@@ -114,6 +234,11 @@ function motivoSemGuia(formaPagamento) {
  * o mesmo motivo se repete em 60 prestações (ver `agruparBloqueios`).
  */
 export function estadoBuscaParcela(linha) {
+  // ⚠ A QUITAÇÃO VEM PRIMEIRO, e a ordem é o conserto. Sem esta leitura, uma prestação já quitada
+  // sem guia caía no ramo "sem guia capturada" e a tela mandava capturar no SERPRO — que é uma
+  // chamada PAGA — o documento de uma parcela que já está paga.
+  const q = quitacaoDaLinha(linha);
+  if (q) return { podeBuscar: false, rotulo: q.rotulo, motivo: q.motivo };
   if (!linha?.guideId) {
     return { podeBuscar: false, ...motivoSemGuia(linha?.formaPagamento || null) };
   }

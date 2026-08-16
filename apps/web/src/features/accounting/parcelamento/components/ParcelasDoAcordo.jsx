@@ -18,6 +18,7 @@ import { useState } from "react";
 import {
   montarParcelasDoAcordo, estadoBuscaParcela, textoDaConfirmacao,
   resumoDoResultado, motivoDaFalha, agruparBloqueios, resumoDosNumeros,
+  situacaoDaLinha, valorDaLinha,
 } from "../lib/parcelaBusca";
 
 const PANEL = { field: "#282A36", border: "#44475A", text: "#F8F8F2", muted: "#aeb6d3" };
@@ -59,13 +60,6 @@ function Desfecho({ resumo }) {
       </div>
     </div>
   );
-}
-
-function situacaoDaLinha(linha) {
-  if (linha.baixada) return { texto: "baixada", cor: "var(--state-ok)" };
-  if (linha.paymentStatus === "PAID") return { texto: "paga · falta lançar", cor: "var(--state-warn)" };
-  if (!linha.guideId) return { texto: "sem guia", cor: "var(--state-neutral)" };
-  return { texto: "em aberto", cor: "var(--state-neutral)" };
 }
 
 /**
@@ -195,6 +189,7 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
               {linhas.map((linha) => {
                 const estado = estadoBuscaParcela(linha);
                 const sit = situacaoDaLinha(linha);
+                const val = valorDaLinha(linha);
                 // ⚠ `Boolean(linha.guideId)` NÃO É DEFENSIVO — é o conserto do incidente.
                 // `buscando` nasce `null` e a prestação SEM GUIA tem `guideId: null`, então
                 // `buscando === linha.guideId` era `null === null` = **true**: as 60 linhas de um
@@ -209,10 +204,27 @@ export function ParcelasDoAcordo({ parcelamento, onBuscar, onBuscou, aberto, onA
                       {linha.totalParcelas ? `/${linha.totalParcelas}` : ""}
                     </td>
                     <td style={{ ...td, color: PANEL.muted }}>{fmtVenc(linha.vencimento)}</td>
+                    {/* ⚠ O VALOR DIZ DE ONDE VEIO. Sem guia o número é o CONTRATADO
+                        (`parcelas.valorPrevisto`) — o mesmo que o card mostra em "valor da
+                        parcela" —, e a linha "contratado" impede que ele seja lido como
+                        documento. Antes só o valor da guia chegava aqui, e um contrato migrado
+                        exibia "—" em todas as prestações. */}
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>
-                      {linha.valor != null ? `R$ ${fmtMoney(linha.valor)}` : "—"}
+                      {val.valor != null ? `R$ ${fmtMoney(val.valor)}` : "—"}
+                      {val.fonte === "contrato" && (
+                        <div style={{ fontSize: "0.6rem", color: PANEL.muted, fontFamily: "inherit", marginTop: 2 }}>
+                          contratado
+                        </div>
+                      )}
                     </td>
-                    <td style={{ ...td, color: sit.cor, fontWeight: 600 }}>{sit.texto}</td>
+                    <td style={{ ...td, color: sit.cor, fontWeight: 600 }}>
+                      {sit.texto}
+                      {sit.detalhe && (
+                        <div style={{ fontSize: "0.6rem", color: PANEL.muted, fontWeight: 400, marginTop: 2, lineHeight: 1.35 }}>
+                          {sit.detalhe}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ ...td, textAlign: "right", minWidth: 190 }}>
                       {/* ⚠ Desabilitado SEMPRE com o motivo no `title` — o projeto proíbe o
                           contrário, e aqui o motivo mais comum (guia sem número de documento) é

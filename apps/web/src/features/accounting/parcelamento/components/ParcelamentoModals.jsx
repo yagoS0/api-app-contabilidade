@@ -20,7 +20,7 @@ import {
   textoDoProgresso, alertaDeAtraso, proximaPrestacao, restantes as restantesDoContrato,
   rotuloFormaPagamento, tomDoStatus,
 } from "../lib/cartaoParcelamento";
-import { baseDaRescisao, valorPorPapelDaRescisao } from "../lib/rescisaoParcelamento";
+import { baseDaRescisao, valorPorPapelDaRescisao, somasDaRescisao } from "../lib/rescisaoParcelamento";
 
 // Fechamento dos modais deste arquivo: ESC fecha, clicar fora NÃO.
 // Clique no backdrop fechava e fazia perder o preenchimento inteiro sem confirmação —
@@ -228,7 +228,6 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
   const [erro, setErro] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmando, setConfirmando] = useState(null); // 2ª etapa da confirmação
-  const num = (v) => { const n = Number(String(v).replace(",", ".")); return Number.isFinite(n) ? n : 0; };
 
   // ⚠ A REGRA (E A RECUSA) MORAM NA LIB, com teste próprio. O que o `|| 0` de antes fazia era
   // transformar "não sei quanto falta" em "não falta nada" — R$ 0,00 pré-preenchido num lançamento
@@ -271,23 +270,36 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
   function addLine() { setLines((p) => [...p, { tipoLinha: "PARC", label: "", tipo: "D", conta: "", valor: "" }]); }
   function rmLine(i) { setLines((p) => (p.length > 1 ? p.filter((_, idx) => idx !== i) : p)); }
 
-  const somaD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + num(l.valor), 0);
-  const somaC = lines.filter((l) => l.tipo === "C").reduce((s, l) => s + num(l.valor), 0);
+  // ⚠ UMA LEITURA SÓ, E ELA É A GRAMÁTICA DO PROJETO (`entries/lib/valorFormula.js`, via
+  // `somasDaRescisao`). O que existia aqui era um `String(v).replace(",", ".")` escrito à mão: ele
+  // lia `12.000` como R$ 12,00 e `6.900,00` como ZERO, e as duas guardas abaixo não pegavam nada
+  // porque Σ D e Σ C erravam na mesma proporção. Ver o cabeçalho de `lib/rescisaoParcelamento.js`.
+  const somas = useMemo(() => somasDaRescisao(lines), [lines]);
+  const { somaD, somaC, ilegiveis } = somas;
   // ⚠ D ≠ C BLOQUEIA AQUI. Antes só pintava de âmbar e deixava passar — e um lote de rescisão
   // desbalanceado trava o FECHAMENTO do mês (`computeFechamentoBlockers` soma o grupo do
   // `parcelamentoId`), semanas depois, longe deste modal. Tolerância de 1 centavo, a mesma do gate.
-  const desbalanceado = Math.abs(somaD - somaC) >= 0.01;
+  const desbalanceado = somas.desbalanceado;
   // ⚠ RESCISÃO DE R$ 0,00 NÃO É RESCISÃO — e ela era ALCANÇÁVEL: com as contas vindo da
   // `configProvisao` e os valores em branco, `clean` tinha três linhas, Σ D = Σ C = 0, o gate de
   // balanço achava tudo certo e o lote ia para o razão zerado. O zero pré-preenchido tornava esse
   // caminho o DEFAULT nos contratos sem `principalTotal`.
-  const semValor = somaD < 0.01;
+  const semValor = somas.semValor;
 
   async function submit() {
     setErro("");
+    // ⚠ CAMPO ILEGÍVEL BLOQUEIA — antes ele virava 0 em silêncio. Isto APERTA a guarda: o que
+    // passava mudo agora nomeia a linha e o motivo.
+    if (ilegiveis > 0) {
+      const i = somas.leituras.findIndex((r) => !r.ok);
+      setErro(`Linha ${i + 1} (${lines[i]?.label || lines[i]?.tipoLinha}): ${somas.leituras[i].mensagem} Corrija antes de rescindir.`);
+      return;
+    }
+    // ⚠ MAPEIA ANTES DE FILTRAR: o índice de `leituras` é o da linha na TELA, e filtrar primeiro
+    // faria o `map` receber o índice da lista já encurtada — cada linha herdaria o valor de outra.
     const clean = lines
-      .filter((l) => String(l.conta).trim() || num(l.valor))
-      .map((l) => ({ tipoLinha: l.tipoLinha || (l.tipo === "C" ? "PRINCIPAL" : "PARC"), tipo: l.tipo, conta: String(l.conta).trim(), valor: num(l.valor) }));
+      .map((l, i) => ({ tipoLinha: l.tipoLinha || (l.tipo === "C" ? "PRINCIPAL" : "PARC"), tipo: l.tipo, conta: String(l.conta).trim(), valor: somas.leituras[i].valor }))
+      .filter((l) => l.conta || l.valor);
     if (!clean.length) { setErro("Preencha ao menos uma linha da rescisão."); return; }
     if (semValor) {
       setErro(
@@ -386,26 +398,55 @@ export function ParcelamentoRescisaoModal({ parc, getConfig, saving, onConfirm, 
                         placeholder="—"
                       />
                     </td>
-                    <td style={{ padding: 3 }}><input value={l.valor} onChange={(e) => setLine(i, "valor", e.target.value)} placeholder="0,00" style={{ ...FIELD_STYLE, padding: "4px 6px", textAlign: "right" }} /></td>
+                    {/* ⚠ A PRÉVIA DO VALOR LIDO — é ela que torna a gramática do separador segura,
+                        e é ela que teria denunciado este defeito na primeira digitação. `12.000`
+                        pode ser doze mil ou doze reais e o texto não distingue; o que a tela pode
+                        fazer é mostrar COMO ELA LEU, antes do clique. Mesmo padrão do
+                        `DraftEntryRow` (célula de valor da aba Lançamentos), pelo mesmo motivo. */}
+                    <td style={{ padding: 3 }}>
+                      <input
+                        value={l.valor}
+                        onChange={(e) => setLine(i, "valor", e.target.value)}
+                        placeholder="0,00"
+                        aria-label={`Valor — ${l.label || l.tipoLinha}`}
+                        style={{ ...FIELD_STYLE, padding: "4px 6px", textAlign: "right" }}
+                      />
+                      {!somas.leituras[i]?.vazio && (
+                        <div
+                          data-testid={`rescisao-previa-${i}`}
+                          style={{ fontSize: "0.7rem", marginTop: 2, textAlign: "right", color: somas.leituras[i]?.ok ? PANEL.muted : "var(--state-danger)" }}
+                        >
+                          {somas.leituras[i]?.ok ? `= ${fmtMoney(somas.leituras[i].valor)}` : somas.leituras[i]?.mensagem}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: 3, textAlign: "center" }}><button onClick={() => rmLine(i)} style={{ background: "transparent", border: "none", color: "var(--state-danger)", cursor: "pointer" }}>×</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div style={{ textAlign: "right", fontSize: "0.78rem", color: desbalanceado ? "var(--state-danger)" : PANEL.muted }}>
+            {/* ⚠ COM CAMPO ILEGÍVEL NÃO SE CARIMBA "✓". As somas descrevem só as linhas que deram
+                para ler — um "D = C ✓" por cima de uma linha ilegível é número certo ao lado de
+                soma incompleta, com selo de conferido (o mesmo defeito do rodapé da aba
+                Lançamentos quando ela paginava sem dizer). */}
+            <div style={{ textAlign: "right", fontSize: "0.78rem", color: (desbalanceado || ilegiveis > 0) ? "var(--state-danger)" : PANEL.muted }}>
               Σ Débito: <strong style={{ color: PANEL.text }}>{fmtMoney(somaD)}</strong> · Σ Crédito: <strong style={{ color: PANEL.text }}>{fmtMoney(somaC)}</strong>
-              {desbalanceado ? "  ⚠ D ≠ C — bloqueia" : " ✓"}
+              {ilegiveis > 0
+                ? `  ⚠ ${ilegiveis} ${ilegiveis === 1 ? "valor ilegível" : "valores ilegíveis"} — a soma está incompleta`
+                : (desbalanceado ? "  ⚠ D ≠ C — bloqueia" : " ✓")}
             </div>
             {erro && <div style={{ color: "var(--state-danger)", fontSize: "0.8rem" }}>{erro}</div>}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button type="button" onClick={onClose} disabled={saving || busy} style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "8px 14px", cursor: "pointer", fontSize: "0.85rem" }}>Cancelar</button>
               <Button
-                variant="danger" type="button" onClick={submit} disabled={saving || busy || desbalanceado || semValor}
-                title={desbalanceado
-                  ? "Σ Débito ≠ Σ Crédito: um lote de rescisão desbalanceado trava o fechamento do mês."
-                  : (semValor
-                    ? "A rescisão está sem valor — informe quanto ainda resta do parcelamento."
-                    : "Pede uma confirmação final antes de gravar.")}
+                variant="danger" type="button" onClick={submit} disabled={saving || busy || desbalanceado || semValor || ilegiveis > 0}
+                title={ilegiveis > 0
+                  ? "Há valor que não dá para ler — a prévia embaixo do campo diz o que está errado."
+                  : (desbalanceado
+                    ? "Σ Débito ≠ Σ Crédito: um lote de rescisão desbalanceado trava o fechamento do mês."
+                    : (semValor
+                      ? "A rescisão está sem valor — informe quanto ainda resta do parcelamento."
+                      : "Pede uma confirmação final antes de gravar."))}
               >
                 {saving || busy ? "Rescindindo…" : "Rescindir e lançar"}
               </Button>

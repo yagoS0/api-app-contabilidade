@@ -21,6 +21,8 @@
 // lados e a identidade `PARC = PRINCIPAL + JUROS` são exatamente os de antes — o que muda é DE ONDE
 // sai o número do principal remanescente, e o que acontece quando ele não existe.
 
+import { avaliarValor } from "../../entries/lib/valorFormula.js";
+
 /** `null` para qualquer coisa que não seja um número finito — inclusive `undefined` e `""`. */
 function num(v) {
   if (v == null || v === "") return null;
@@ -102,6 +104,78 @@ function formatar(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "—";
   return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// A LEITURA DO QUE FOI DIGITADO — e por que ela NÃO podia continuar sendo escrita aqui à mão.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// O modal lia os campos com `Number(String(v).replace(",", "."))`. Num teclado numérico brasileiro
+// isso é uma leitura 1000× errada, e o pior é que ela erra COERENTEMENTE:
+//
+//   digitado     `replace(",", ".")`   a gramática estrita
+//   `12.000`     12          ← R$ 12,00        12000
+//   `6.900,00`   NaN → 0     ← R$ 0,00          6900
+//   `1.234,56`   NaN → 0                        1234,56
+//
+// ⚠ AS DUAS GUARDAS DO MODAL NÃO PEGAM ISSO, e é por isso que passava até o razão: Σ D e Σ C erram
+// na MESMA proporção (`12.000/10.000/2.000` vira 12 = 10 + 2, e o rodapé carimba "✓"), e o piso
+// `Σ D < 0,01` é satisfeito por R$ 12,00. O servidor não re-deriva nada — `ParcelamentoService`
+// grava o que recebe —, e a rescisão é o ato mais caro do módulo: manda o saldo remanescente para a
+// Dívida Ativa da União e o app não a desfaz.
+//
+// ⚠ NADA DE UM QUARTO PARSER. `entries/lib/valorFormula.js` (48 testes próprios) já é a gramática
+// deste projeto, e a baixa manual (`baixaManualParcela.lerAcrescimo`/`lerPrincipal`) e o wizard
+// (`wizardParcelamento.numero`) já a reusam. Este arquivo era o único lugar do módulo em que um
+// valor digitado virava lançamento por outro caminho.
+
+/**
+ * Lê um campo de valor da rescisão.
+ *
+ * ⚠ VAZIO É 0 E NÃO É ERRO — é o estado inicial de TODA linha quando `podePrePreencher` é falso
+ * (o contrato sem `principalTotal` abre com os campos em branco, de propósito). Quem recusa a
+ * rescisão zerada é o gate `Σ D < 0,01`, que continua exatamente como estava.
+ *
+ * ⚠ ILEGÍVEL, PORÉM, DEIXOU DE VIRAR 0. O `num` antigo devolvia 0 para tudo que não entendia, e um
+ * zero silencioso numa linha da rescisão é o mesmo defeito de ordem de grandeza pelo outro lado.
+ * Isto APERTA a guarda: o que antes passava mudo agora bloqueia com o motivo na tela.
+ */
+export function lerValorDaRescisao(texto) {
+  const r = avaliarValor(texto);
+  if (!r.ok) return { ok: false, valor: null, vazio: false, erro: r.erro, mensagem: r.mensagem };
+  if (r.vazio) return { ok: true, valor: 0, vazio: true, erro: null, mensagem: null };
+  return { ok: true, valor: r.valor, vazio: false, erro: null, mensagem: null };
+}
+
+/**
+ * As somas do rodapé e os dois gates, a partir das linhas COMO ESTÃO NA TELA.
+ *
+ * Devolve as leituras na mesma ordem das linhas — é o que permite o modal mostrar a prévia
+ * (`= 12.000,00`) embaixo de cada campo sem ler o texto uma segunda vez.
+ *
+ * ⚠ A PRÉVIA É PARTE DA CORREÇÃO, não enfeite. `12.000` pode ser doze mil ou doze reais, e o texto
+ * não distingue — é a mesma ambiguidade que `valorFormula` documenta para `2.500`. Mostrar como o
+ * app leu, antes do clique, é o que teria denunciado este defeito na primeira digitação.
+ */
+export function somasDaRescisao(lines) {
+  const linhas = Array.isArray(lines) ? lines : [];
+  const leituras = linhas.map((l) => lerValorDaRescisao(l?.valor));
+  const somaD = linhas.reduce((s, l, i) => (l?.tipo === "D" && leituras[i].ok ? s + leituras[i].valor : s), 0);
+  const somaC = linhas.reduce((s, l, i) => (l?.tipo === "C" && leituras[i].ok ? s + leituras[i].valor : s), 0);
+  const ilegiveis = leituras.filter((r) => !r.ok).length;
+  return {
+    leituras,
+    somaD: r2(somaD),
+    somaC: r2(somaC),
+    // Tolerância de 1 centavo — a MESMA do gate de fechamento (`computeFechamentoBlockers`).
+    desbalanceado: Math.abs(somaD - somaC) >= 0.01,
+    semValor: somaD < 0.01,
+    ilegiveis,
+    // ⚠ Enquanto houver campo ilegível, as somas NÃO são a resposta: elas descrevem só as linhas
+    // que deram para ler. Carimbar "✓ D = C" por cima disso seria o mesmo "número certo ao lado de
+    // soma errada" do rodapé da aba Lançamentos.
+    somasConfiaveis: ilegiveis === 0,
+  };
 }
 
 /**
