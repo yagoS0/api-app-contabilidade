@@ -4392,6 +4392,69 @@ export function createMockApi() {
         recalculo: { risco: { nivel: "BAIXO", emAtraso: 0 } },
       };
     },
+    // ⚠ ESTA FUNÇÃO NÃO EXISTIA NO MOCK, e é por isso que o defeito da baixa da Circular não se
+    // reproduzia offline. `handleLoadBaixaTemplate` chama `api.getBaixaTemplate`; sem par no mock a
+    // chamada estourava `TypeError`, engolido pelo `.catch(() => {})` do `BaixaModal` — resultado:
+    // no mock o modal NUNCA recebia `saldoInfo` nem `acrescimo`, nunca pré-preenchia nada, e a
+    // divergência entre o valor proposto e o saldo da provisão era **inalcançável**.
+    // "Toda feature nova precisa de entrada no `mockApi.js`" — esta ficou de fora.
+    //
+    // Espelha `GET /firm/companies/:id/entries/:entryId/baixa-template`, inclusive no cálculo do
+    // saldo: principal = débitos da provisão; abatido = débitos NÃO-acréscimo das baixas penduradas
+    // (juros 501 / multa 506 são despesa, não amortização).
+    async getBaixaTemplate(companyId, entryId) {
+      await delay();
+      const list = mockEntriesByCompany.get(companyId) || [];
+      const entry = list.find((e) => e.id === entryId);
+      if (!entry) throw new Error("lancamento_nao_encontrado");
+
+      const CONTAS_ACRESCIMO = new Set(["501", "506"]);
+      const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+      const principal = r2((entry.lines || [])
+        .filter((l) => l.tipo === "D")
+        .reduce((s, l) => s + Number(l.valor || 0), 0));
+      const penduradas = list.filter((e) => e.openEntryId === entryId);
+      const baixas = penduradas.filter((e) => String(e.tipo).toUpperCase() !== "ESTORNO");
+      const estornos = penduradas.filter((e) => String(e.tipo).toUpperCase() === "ESTORNO");
+      const somaLado = (es, lado) => es
+        .flatMap((e) => e.lines || [])
+        .filter((l) => String(l.tipo).toUpperCase() === lado && !CONTAS_ACRESCIMO.has(String(l.conta).trim()))
+        .reduce((s, l) => s + Number(l.valor || 0), 0);
+      const abatido = r2(Math.max(0, somaLado(baixas, "D") - somaLado(estornos, "C")));
+      const saldoRaw = r2(principal - abatido);
+      const saldoInfo = {
+        principal,
+        abatido,
+        saldo: saldoRaw > 0 ? saldoRaw : 0,
+        quotasPagas: Math.max(0, baixas.length - estornos.length),
+      };
+      const quotaNumero = saldoInfo.quotasPagas + 1;
+
+      // Sem regra nem memória o real devolve `template: null` e o modal inverte as linhas da
+      // provisão — o mock repete isso em vez de inventar contas.
+      if (!entry.lines?.length) {
+        return { ok: true, template: null, acrescimo: null, saldoInfo, quotaNumero, reason: "sem_memoria_nem_regra" };
+      }
+      const debito = entry.lines.find((l) => l.tipo === "D");
+      const credito = entry.lines.find((l) => l.tipo === "C");
+      return {
+        ok: true,
+        acrescimo: null,
+        saldoInfo,
+        quotaNumero,
+        template: {
+          eventType: entry.eventType || null,
+          // A baixa é a contrapartida: debita o que a provisão creditou, e vice-versa.
+          debitAccountCode: credito?.conta || "",
+          creditAccountCode: debito?.conta || "",
+          historico: `PAGAMENTO ${entry.subtipo || "PROVISÃO"} - ${entry.competencia}`,
+          // ⚠ O SALDO, não o principal cheio — é o que o real sugere na baixa parcial por quota.
+          valor: saldoInfo.saldo > 0 ? saldoInfo.saldo : saldoInfo.principal,
+          ruleId: null,
+          scope: "FALLBACK",
+        },
+      };
+    },
     async createBaixa(companyId, entryId, { data, historico, lines }) {
       await delay();
       const list = mockEntriesByCompany.get(companyId) || [];
@@ -4402,6 +4465,27 @@ export function createMockApi() {
       const totalD = linesArr.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
       const totalC = linesArr.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
       if (Math.abs(totalD - totalC) > 0.01) throw new Error("entry_nao_balanceada");
+      // ⚠ A RECUSA QUE FALTAVA AQUI — e um mock que só sabe aceitar esconde exatamente o que a tela
+      // existe para mostrar (mesmo argumento do detector de divergência de fonte, acima).
+      // O real recusa com 400 `baixa_excede_saldo` quando o principal desta baixa passa do saldo da
+      // provisão; a soma é por CONTA (501/506 fora), igual ao servidor. Foi essa recusa, invisível,
+      // que produziu "a baixa da junho do Simples não está funcionando".
+      const CONTAS_ACRESCIMO_BAIXA = new Set(["501", "506"]);
+      const principalDestaBaixa = Math.round(linesArr
+        .filter((l) => String(l.tipo).toUpperCase() === "D" && !CONTAS_ACRESCIMO_BAIXA.has(String(l.conta ?? "").trim()))
+        .reduce((s, l) => s + Number(String(l.valor ?? "").replace(",", ".") || 0), 0) * 100) / 100;
+      const saldoProvisao = Math.round((list[openIdx].lines || [])
+        .filter((l) => l.tipo === "D")
+        .reduce((s, l) => s + Number(l.valor || 0), 0) * 100) / 100;
+      if (principalDestaBaixa - saldoProvisao > 0.01) {
+        const err = new Error(
+          `A baixa (principal R$ ${principalDestaBaixa.toFixed(2)}) excede o saldo da provisão `
+          + `(R$ ${saldoProvisao.toFixed(2)}).`,
+        );
+        err.code = "baixa_excede_saldo";
+        err.status = 400;
+        throw err;
+      }
       const baixaId = faker.string.uuid();
       const dt = data ? new Date(data) : new Date();
       const baixa = {

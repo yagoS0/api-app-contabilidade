@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
+import { CONTA_JUROS, CONTA_MULTA, conferirPrincipalContraSaldo } from "../lib/principalDaBaixa";
 
-// Mesmos códigos do backend (`application/accounting/contasAcrescimo.js`). Ficavam como literais
-// "501"/"506" soltos aqui — quarta cópia de um código de conta que já divergia em três lugares.
-const CONTA_JUROS = "501";
-const CONTA_MULTA = "506";
+// ⚠ `CONTA_JUROS`/`CONTA_MULTA` vêm de `lib/principalDaBaixa.js`, que também é quem espelha a regra
+// do servidor. Eram literais "501"/"506" soltos aqui — quarta cópia de um código de conta que já
+// divergia em três lugares.
 
 const SUBTIPO_LABELS = {
   DAS: "DAS / Simples Nacional",
@@ -270,7 +270,22 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
   const totalD = lines.filter((l) => l.tipo === "D").reduce((s, l) => s + Number(l.valor || 0), 0);
   const totalC = lines.filter((l) => l.tipo === "C").reduce((s, l) => s + Number(l.valor || 0), 0);
   const balanced = Math.abs(totalD - totalC) < 0.01 && totalD > 0;
-  const canSave = data && historico && balanced && !saving;
+  // ⚠ BALANCEADO NÃO É SUFICIENTE, e era só isso que o botão conferia.
+  // Comprovante do SERPRO com principal maior que a provisão (guia RECALCULADA, acréscimo embutido e
+  // não quebrado) monta `D X / C X` — balanceado — e o servidor recusa com `baixa_excede_saldo`.
+  // A conferência é a MESMA do servidor, em `lib/principalDaBaixa.js`; quem recusa continua sendo
+  // ele. Sem `saldoInfo` isto devolve `null` e nada é afirmado.
+  const excedeSaldo = conferirPrincipalContraSaldo(lines, saldoInfo);
+  const canSave = data && historico && balanced && !excedeSaldo && !saving;
+  const motivoNaoSalva = !data
+    ? "Informe a data do pagamento."
+    : !historico
+      ? "Informe o histórico."
+      : !balanced
+        ? "As partidas não fecham (Σ D ≠ Σ C)."
+        : excedeSaldo
+          ? `${excedeSaldo.motivo} ${excedeSaldo.saida}`
+          : "";
 
   async function handleSave() {
     if (!canSave) return;
@@ -350,6 +365,19 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
           </div>
         </div>
 
+        {/* ⚠ A RECUSA TEM O MESMO PESO VISUAL DO RESTO — ela é o que separa "não funciona" de
+            "não pode, e por isto". O bloco diz o MOTIVO e a SAÍDA; recusa muda é o defeito. */}
+        {excedeSaldo && (
+          <div style={{
+            background: "var(--state-danger-surface, rgba(255,87,87,0.12))",
+            border: "1px solid var(--state-danger, #FF5757)",
+            borderRadius: 6, padding: "10px 12px", marginBottom: 12, fontSize: "0.8125rem",
+          }}>
+            <strong>Esta baixa não pode ser registrada.</strong> {excedeSaldo.motivo}
+            <div style={{ marginTop: 6, opacity: 0.9 }}>{excedeSaldo.saida}</div>
+          </div>
+        )}
+
         {error && <p style={{ color: "var(--danger)", margin: "0 0 12px", fontSize: "0.875rem" }}>{error}</p>}
 
         <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 12, marginBottom: 8 }}>
@@ -379,7 +407,8 @@ export function BaixaModal({ entry, accounts, onSave, onClose, saving, onLoadBai
         <LineEditor lines={lines} onChange={setLines} accounts={accounts} />
 
         <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <Button variant="primary" onClick={handleSave} disabled={!canSave}>
+          {/* O botão desabilitado NOMEIA o motivo — nascer mudo é o que faz "não faz nada". */}
+          <Button variant="primary" onClick={handleSave} disabled={!canSave} title={motivoNaoSalva || undefined}>
             {saving ? "Registrando..." : "Confirmar Baixa"}
           </Button>
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>

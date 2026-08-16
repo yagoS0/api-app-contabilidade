@@ -211,6 +211,22 @@ export function useManageAccountingWorkspace({ api, page, selectedCompanyId, com
       setEntriesMessage("Baixa registrada com sucesso.");
     } catch (err) {
       setEntriesError(err?.message || "Falha ao criar baixa.");
+      // ⚠ RELANÇA — engolir aqui apagava a recusa do servidor da tela inteira.
+      //
+      // O `BaixaModal` tem canal de erro PRÓPRIO (`handleSave` → `setError`), e ele só é alcançado
+      // se `onSave` REJEITAR. Com o catch terminando aqui, `onSave` resolvia como se tivesse dado
+      // certo: o modal fechava, a célula continuava igual, e o contador ficava sem nada na tela.
+      //
+      // Na Circular era pior ainda, e é o defeito relatado ("a baixa da junho do Simples não está
+      // funcionando"): o `onSave` de `renderCircularTab` segue com `await onLoad(...)`, e
+      // `loadCircular` começa com `setEntriesError("")` — a mensagem que acabara de ser escrita
+      // era APAGADA no mesmo clique, antes de qualquer render. Recusa correta (409 `MES_FECHADO`,
+      // 400 `baixa_excede_saldo`) chegava ao front com o motivo e morria aqui.
+      //
+      // Relançando: o modal fica ABERTO com o motivo à vista — que é onde a saída está, porque os
+      // valores se corrigem no próprio formulário —, e `onLoad`/`setBaixaEntry(null)` não rodam.
+      // O banner da aba continua sendo escrito para quem já tinha fechado o modal.
+      throw err;
     } finally {
       setSavingBaixa(false);
     }
