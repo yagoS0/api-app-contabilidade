@@ -869,7 +869,25 @@ export function createAccountingEntriesRouter({ log }) {
         },
         include: {
           lines: { orderBy: { ordem: "asc" } },
-          baixas: { select: { id: true }, take: 1 },
+          // ⚠ AS BAIXAS VÊM COM AS LINHAS, E O LOTE VEM INTEIRO — as duas coisas por motivos
+          // diferentes, e as duas quebradas pelo mesmo `select: { id: true }, take: 1` que estava
+          // aqui. Esta era a ÚNICA das cinco queries de provisão do arquivo que não pedia
+          // `include: { lines }` (as outras: `/entries/provisoes`, e as três da baixa/estorno).
+          //
+          //   1. `entryToResponse` → `computeSaldoProvisao` calcula o ABATIDO somando os débitos
+          //      não-acréscimo DAS LINHAS de cada baixa. Sem `lines`, o abatido dá SEMPRE ZERO e o
+          //      saldo sai pelo valor CHEIO: um IRPJ de R$ 3.000 com a 1ª quota de R$ 1.000 já paga
+          //      ficava "Parcial" (azul) com o popover afirmando "Saldo a pagar R$ 3.000,00", e o
+          //      "Total em aberto" do mês somava os R$ 3.000 inteiros. Sem `tipo`, o contra-
+          //      lançamento de ESTORNO também deixava de ser reconhecido (`computeSaldoProvisao`
+          //      separa por `tipo`) e voltava a ser contado como amortização.
+          //   2. UMA GUIA TEM ATÉ TRÊS BAIXAS — principal, juros e multa são lançamentos separados
+          //      (regra do dono) — e "↩ Desfazer baixa" leva o LOTE. Com `take: 1` a tela recebia
+          //      uma de três: o mesmo estrago que o `Map` por `sourceGuideId` logo abaixo já teve
+          //      de desmontar (lançamentos órfãos com a provisão reaberta).
+          //
+          // Regressão: `__tests__/circularSaldoProvisaoParcial.test.js`.
+          baixas: { include: { lines: { orderBy: { ordem: "asc" } } } },
           // Q41: dados do pagamento confirmado pelo SERPRO (para o selo verde na célula).
           sourceGuide: {
             select: {
@@ -2699,6 +2717,55 @@ export function createAccountingEntriesRouter({ log }) {
         data.competencia = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
       }
     }
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    // ⚠ MÊS FECHADO TAMBÉM BLOQUEIA **EDITAR** — e são DUAS competências a olhar, não uma.
+    // ══════════════════════════════════════════════════════════════════════════════════════════
+    //
+    // O `POST` recusa criar (409) e o `DELETE` recusa apagar (409, com o comentário do dono logo
+    // abaixo na rota); o verbo do MEIO passava. Reproduzido no navegador: mês fechado, clique no ✎,
+    // R$ 60,00 → R$ 6.000,00, "Lançamento atualizado.", rodapé recalculado — competência fechada
+    // alterada **sem nenhum rastro de reabertura**.
+    //
+    // Editar não é mais brando que apagar. É a MESMA decisão do dono, pelo mesmo motivo — *"qualquer
+    // DELETE em competência fechada corrompe um saldo que já foi reportado"* —, e aqui com a
+    // agravante de a linha continuar lá, parecendo intacta, com outro número dentro.
+    //
+    // ⚠ POR QUE DUAS COMPETÊNCIAS: este PUT **recalcula** a competência a partir de `body.data`
+    // (logo acima). Então mover a data é mover o lançamento de mês, e são dois estragos distintos:
+    //   · olhar só a ATUAL deixa **entrar** lançamento no mês fechado (data movida para dentro);
+    //   · olhar só a NOVA deixa **sair** lançamento do mês fechado (data movida para fora).
+    // Os dois mudam um total que já foi reportado. Quando a data não muda, `competenciaNova` é nula
+    // e a pergunta é uma só.
+    //
+    // ⚠ NADA AQUI AFROUXA — é guarda ACRESCENTADA. Os dois fluxos legítimos continuam sendo os do
+    // DELETE: REABRIR a competência (o ato fica gravado em `CompanyMonthlyCircular`) e então
+    // corrigir, ou ESTORNAR na competência aberta. Consequência declarada: corrigir lançamento
+    // legado que esteja em conta de agregação passa a exigir reabrir o mês, se ele estiver fechado.
+    //
+    // ⚠ Nenhum caminho AUTOMÁTICO passa por aqui: worker e captura SERPRO escrevem pelos serviços
+    // (`GuideToProvisionService`, `syncPgdasByCompetencia`, `ParcelamentoV2Service`), não por esta
+    // rota HTTP — a trava não interrompe sincronia no meio.
+    //
+    // Regressão: `__tests__/putEntryMesFechado.test.js`.
+    const competenciaAtual = existing.competencia || null;
+    const competenciaNova = data.competencia && data.competencia !== competenciaAtual ? data.competencia : null;
+    const fechadas = (
+      await Promise.all(
+        [competenciaAtual, competenciaNova].filter(Boolean).map(
+          async (comp) => ((await isMonthClosed(portalClientId, comp)) ? comp : null),
+        ),
+      )
+    ).filter(Boolean);
+    if (fechadas.length) {
+      const comp = fechadas[0];
+      return res.status(409).json({
+        error: "MES_FECHADO",
+        competencia: comp,
+        competenciasFechadas: fechadas,
+        message: `Mês ${comp} fechado — reabra a competência ou estorne pelo caminho do estorno (contra-lançamento no mês aberto).`,
+      });
+    }
+
     if (body.historico !== undefined) data.historico = String(body.historico).trim();
     if (body.tipo !== undefined) data.tipo = String(body.tipo).toUpperCase();
     if (body.subtipo !== undefined) data.subtipo = body.subtipo ? String(body.subtipo).toUpperCase() : null;
@@ -4378,11 +4445,21 @@ export function createAccountingEntriesRouter({ log }) {
       });
       return res.json(data);
     } catch (err) {
+      // ⚠ A rescisão GRAVA LANÇAMENTO CONTÁBIL, então ela tem a mesma trava de mês fechado das
+      // baixas — e a recusa chega com `err.code`, não pelo `message` (a mensagem é a frase que o
+      // contador lê). Sem esta tradução ela viraria um 500 genérico, que na tela é
+      // indistinguível de defeito.
+      if (err?.code === "MES_FECHADO") {
+        return res.status(409).json({
+          ok: false, error: "MES_FECHADO", competencia: err.competencia, message: err.message,
+        });
+      }
       const code = err?.message || "internal_error";
       const map = {
         parcelamento_not_found: 404,
         parcelamento_not_active: 400,
         rescision_template_not_configured: 400,
+        data_invalida: 400,
       };
       const status = map[code] || 500;
       if (status === 500) log.error({ err }, "Falha ao rescindir parcelamento");

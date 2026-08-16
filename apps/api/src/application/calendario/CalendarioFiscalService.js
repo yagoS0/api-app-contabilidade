@@ -123,13 +123,28 @@ export async function montarCalendarioDoMes({ portalIds, competencia, companyId 
   };
 
   for (const g of guias) {
-    adicionar(diaISO(g.vencimento), {
+    // ⚠ A DATA VAI NO ITEM, NÃO SÓ NA CHAVE DO DIA — é ela que separa "vencida" de "a vencer".
+    //
+    // O dia em que o item aparece na grade é a chave do `Map`; o ESTADO dele a tela decide pelo
+    // CAMPO `data` (`estaVencida`: `Boolean(item.data) && item.data < hoje`; `corDoItem`:
+    // `item.data > hoje` → futura). Sem o campo, as duas leituras caem no mesmo galho: guia
+    // atrasada, guia de hoje e guia de daqui a três semanas saíam TODAS iguais, e a moldura de
+    // atraso era **inalcançável** — a primeira metade do `&&` nunca era verdadeira.
+    //
+    // É a mesma lição que a Circular já teve de aprender ("o vencimento é o que separa a vencer de
+    // vencida"), e o formato é o que a OBRIGAÇÃO já entrega desde sempre: `YYYY-MM-DD` em UTC, o
+    // mesmo `diaISO`/`paraISO` — a tela compara as duas com `hoje` como STRING.
+    //
+    // Regressão: `__tests__/calendarioDataDaGuia.test.js`.
+    const dia = diaISO(g.vencimento);
+    adicionar(dia, {
       tipo: "guia",
       id: g.id,
       titulo: g.tipo,
       companyId: g.portalClientId,
       empresa: razaoPor.get(g.portalClientId) || null,
       competencia: g.competencia,
+      data: dia,
       valor: g.valor != null ? Number(g.valor) : null,
       // Guia já paga continua no dia (é histórico do mês), mas resolvida — a tela a mostra apagada.
       resolvido: String(g.paymentStatus || "").toUpperCase() === "PAID",

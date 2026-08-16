@@ -21,6 +21,11 @@ import { quadroDasParcelas, SELECT_PARCELA_PARA_QUADRO } from "./parcelamento/re
 import { sincronizarParcelas, addMonths, buildDateOfMonth } from "./parcelamento/parcelaSync.js";
 import { tipoLinhaDaBaixa } from "./tipoLinhaBaixa.js";
 import { saldoPassivoDasLinhasParc } from "./saldoProvisao.js";
+// ⚠ A competência de uma data tem UMA derivação neste módulo contábil (`contraLancamento.js`,
+// junto do espelho que a usa) — a mesma que `EstornoBaixaService` e `AtosParcelamentoService`
+// importam. Uma segunda cópia é como as duas telas passam a discordar sobre o mesmo mês.
+import { competenciaDe } from "./contraLancamento.js";
+import { isMonthClosed } from "./fechamentoContabil.js";
 
 // Q16: contas D/C do parcelamento começam EM BRANCO e são memorizadas por papel de
 // linha (igual às guias do Simples). A memória usa AccountingHistorico keyed por
@@ -429,7 +434,43 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
   const isV2 = customLines || !parc.templateRescision;
   const LABEL = { PARC: "parcelamento a pagar", PRINCIPAL: "principal", PARC_DAS: "principal", MULTA: "multa", JUROS: "juros", TOTAL: "total" };
   const dataEntry = dataRescisao ? new Date(dataRescisao) : new Date();
+  if (Number.isNaN(dataEntry.getTime())) throw new Error("data_invalida");
   const loteRescisao = `PARC-${parc.id.slice(0, 8)}-RESCISAO`;
+
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠ A COMPETÊNCIA DO LANÇAMENTO SAI DA DATA DO ATO — não da 1ª PARCELA DO CONTRATO.
+  // ══════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // Aqui estava `competencia: parc.competenciaInicial` nos dois caminhos de criação. Rescindindo
+  // HOJE um contrato migrado cuja 1ª parcela é 2024-06, os lançamentos nasciam com `data` de hoje e
+  // `competencia: "2024-06"`: sumiam do mês corrente (o contador rescinde e não acha nada na aba
+  // Lançamentos) e caíam num mês **já fechado e reportado** — o mesmo estrago que as travas do
+  // DELETE e do PUT existem para impedir, aqui por escrita nova em vez de por edição.
+  //
+  // ⚠ E pior no contrato que veio pela SENTINELA: `competenciaInicial = "1970-01"`
+  // (`ingestParcelamentoFromGuide` grava `compLabel || "1970-01"`) mandava o lançamento contábil
+  // para janeiro de 1970.
+  //
+  // A derivação é a que já existe (`competenciaDe`), e a trava é a que
+  // `gerarPagamentoParcelaManual` já aplica — este arquivo não tinha **uma única** chamada a
+  // `isMonthClosed`. Ela vem ANTES da transação, como nas outras baixas: recusar no meio não é
+  // melhor, é só mais caro.
+  //
+  // ⚠ A FORMA DO LANÇAMENTO NÃO MUDA — contas, D/C, valores, `tipoLinha`, `subtipo`, histórico e o
+  // `loteImportacao` (a chave por onde `desfazerRescisaoParcelamento` acha o lote) seguem
+  // idênticos. Só a competência passa a descrever quando o ato aconteceu.
+  //
+  // Regressão: `__tests__/rescisaoCompetenciaMesFechado.test.js`.
+  const competenciaRescisao = competenciaDe(dataEntry);
+  if (await isMonthClosed(portalClientId, competenciaRescisao)) {
+    const err = new Error(
+      `Mês ${competenciaRescisao} fechado — reabra a competência antes de rescindir o parcelamento `
+      + "(a rescisão grava lançamento contábil).",
+    );
+    err.code = "MES_FECHADO";
+    err.competencia = competenciaRescisao;
+    throw err;
+  }
 
   return prisma.$transaction(async (tx) => {
     let rescisaoEntry = null;
@@ -442,7 +483,7 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
         const e = await tx.accountingEntry.create({
           data: {
             portalClientId, parcelamentoId: parc.id, numeroParcela: null,
-            data: dataEntry, competencia: parc.competenciaInicial,
+            data: dataEntry, competencia: competenciaRescisao,
             historico: `${historico} — ${label}`,
             tipo: tipoEntry, subtipo: subtipoEntry, origem: "MANUAL",
             // `tipoEntry` vem do template de rescisão quando existe — pode ser BAIXA.
@@ -461,7 +502,7 @@ export async function rescindirParcelamento({ portalClientId, parcelamentoId, da
       rescisaoEntry = await tx.accountingEntry.create({
         data: {
           portalClientId, parcelamentoId: parc.id, numeroParcela: null,
-          data: dataEntry, competencia: parc.competenciaInicial,
+          data: dataEntry, competencia: competenciaRescisao,
           historico, tipo: tipoEntry, subtipo: subtipoEntry, origem: "MANUAL",
           tipoLinha: tipoLinhaDaBaixa(tipoEntry),
           loteImportacao: loteRescisao,
