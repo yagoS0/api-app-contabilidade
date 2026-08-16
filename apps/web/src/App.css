@@ -551,7 +551,10 @@
 }
 
 .dashboard-home__user-label {
-  color: #6272a4;
+  /* ⚠ Era o hex `#6272a4` cravado aqui — 3.63:1 sobre o fundo da página, abaixo do mínimo de
+     4.5:1. Passa a ler o token, que é onde a cor foi corrigida (`styles/tokens.css`); com o hex
+     literal a correção do token não alcançaria este rótulo. */
+  color: var(--text-faint);
   font-size: 0.75rem;
   font-weight: 500;
 }
@@ -596,14 +599,47 @@
 }
 
 /* `--success` (verde #69ff47) saiu: "Envio de e-mails em lote" é ação, e verde é concluído.
-   Ficou `--accent`, que é o que o resto da fileira de atalhos já usava. */
-.dashboard-home__action--accent {
+   Ficou `--accent`, que é o que o resto da fileira de atalhos já usava.
+
+   ⚠ A CLASSE ESTÁ DOBRADA (`.a.a--accent`) PORQUE ELA NÃO ESTAVA PEGANDO. Todo botão aqui é
+   `<Button variant="secondary">`, ou seja carrega `.btn-secondary`, que também tem especificidade
+   0-1-0 e é declarada MAIS ABAIXO neste arquivo (~linha 890) — pelo desempate por ordem, quem
+   vencia era o `.btn-secondary`, e todos os "botões de acento" do dashboard renderizavam com o
+   MESMO cinza dos demais. Medido no DOM da tela rodando: `background-color` = `rgb(36, 37, 58)`
+   (`--bg-surface`) em TODOS eles, inclusive nos que o código chamava de acento.
+   Ou seja: a hierarquia visual desta barra existia só no CSS, nunca na tela. Dobrar a classe
+   (0-2-0) é a correção mais barata — não mexe na ordem do arquivo nem no componente `Button`. */
+.dashboard-home__action.dashboard-home__action--accent {
   background: #bd93f9;
+  border-color: transparent;
   color: #1a1b26;
 }
 
-.dashboard-home__action--accent:hover:not(:disabled) {
+.dashboard-home__action.dashboard-home__action--accent:hover:not(:disabled) {
   background: #ac7ef4;
+}
+
+/* ─── HIERARQUIA DA BARRA DE ATALHOS ──────────────────────────────────────────────────────────
+   Antes, SEIS botões usavam `--accent` ao mesmo tempo (roxo cheio): Envio de e-mails, Apuração,
+   Rotinas, Planejamento, Consultas e mais. Seis primários é o mesmo que nenhum — a fileira vira
+   uma faixa roxa e o olho não tem onde pousar.
+
+   A hierarquia agora é: UM sólido (`--accent`, "Nova empresa", a única ação de CRIAR da tela) ·
+   os frequentes em CONTORNO · o resto dentro de "Mais ▾".
+
+   ⚠ Sólido é `--accent` (roxo), nunca verde: verde quer dizer CONCLUÍDO no vocabulário do app, e
+   um botão verde de "faça isto" estraga o verde de "guia enviada" no resto da mesma tela. */
+/* Classe dobrada pelo mesmo motivo do `--accent` acima: `.btn-secondary` vem depois neste arquivo
+   e venceria o desempate por ordem, devolvendo o fundo cheio a estes botões. */
+.dashboard-home__action.dashboard-home__action--outline {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.dashboard-home__action.dashboard-home__action--outline:hover:not(:disabled) {
+  background: var(--bg-surface);
+  border-color: var(--accent-purple-border);
 }
 
 .dashboard-filter-field {
@@ -612,7 +648,8 @@
 }
 
 .dashboard-filter-field span {
-  color: #6272a4;
+  /* Mesmo motivo do `__user-label`: o hex literal ficava fora do alcance do token corrigido. */
+  color: var(--text-faint);
   font-size: 0.75rem;
   font-weight: 500;
 }

@@ -11,8 +11,15 @@ import { CalendarioGrid } from "../../../calendario/components/renderCalendarioG
 import { estadoCertificado } from "../lib/certificado";
 import { APURACAO, ORDEM_APURACAO, contarApuracao, estadoApuracao } from "../lib/estadoApuracao";
 
-// Q17: dropdown de "Configurações" — abre um seletor (não navega para um hub).
-function SettingsMenu({ items }) {
+// Q17: dropdown — abre um seletor (não navega para um hub).
+//
+// ⚠ ELE PASSOU A SER O MENU "Mais ▾", e a diferença entre isso e remover função é o assunto todo:
+// tudo o que estava na barra continua alcançável, com o MESMO rótulo e o MESMO handler. Mover para
+// dentro de um menu é LAYOUT; tirar da tela seria decisão de produto, que não é desta passada.
+//
+// `grupo` desenha uma régua com título — sem ela "Rotinas" e "Configuração SERPRO" viram uma lista
+// de sete itens sem hierarquia, que é o mesmo problema da barra, um nível abaixo.
+function SettingsMenu({ items, label = "Configurações ▾" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -23,32 +30,55 @@ function SettingsMenu({ items }) {
     document.addEventListener("keydown", onEsc);
     return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onEsc); };
   }, [open]);
+  // ⚠ Item sem handler NÃO VIRA LINHA — a página monta o menu com os `onOpen*` que recebeu, e
+  // renderizar um item morto ofereceria uma função que não existe naquele contexto.
   const usable = items.filter((it) => typeof it.onClick === "function");
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
-      <Button variant="secondary" className="dashboard-home__action" onClick={() => setOpen((o) => !o)}>
-        Configurações ▾
+      <Button
+        variant="secondary"
+        className="dashboard-home__action dashboard-home__action--outline"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        {label}
       </Button>
       {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
-          background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8,
-          boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 220, overflow: "hidden",
-        }}>
-          {usable.map((it) => (
-            <button
-              key={it.label}
-              type="button"
-              onClick={() => { setOpen(false); it.onClick(); }}
-              style={{
-                display: "block", width: "100%", textAlign: "left", padding: "9px 14px",
-                background: "transparent", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.85rem",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-            >
-              {it.label}
-            </button>
+        <div
+          role="menu"
+          style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200,
+            background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 240, overflow: "hidden",
+          }}
+        >
+          {usable.map((it, i) => (
+            <div key={it.label}>
+              {it.grupo && (
+                <div style={{
+                  padding: "8px 14px 4px", fontSize: "0.66rem", fontWeight: 700, letterSpacing: "0.04em",
+                  textTransform: "uppercase", color: "var(--text-muted)",
+                  borderTop: i > 0 ? "1px solid var(--border)" : "none",
+                  marginTop: i > 0 ? 4 : 0,
+                }}>
+                  {it.grupo}
+                </div>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setOpen(false); it.onClick(); }}
+                style={{
+                  display: "block", width: "100%", textAlign: "left", padding: "9px 14px",
+                  background: "transparent", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.85rem",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              >
+                {it.label}
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -398,7 +428,14 @@ export function CompaniesHomePage({
     setCertFilter("all");
     setFiscalFilter("all");
     setRegimeFilter("all");
-    setFechamentoFilter("all");
+    // ⚠ AQUI HAVIA UM `setFechamentoFilter("all")` — um setter que NÃO EXISTE. O estado
+    // `fechamentoFilter` saiu quando o filtro "Fechamento" foi removido do painel (ele duplicava os
+    // chips de Apuração do topo), e a linha da limpeza ficou para trás. Como é uma referência a
+    // identificador inexistente, o clique em "Limpar tudo" / "Limpar filtros" lançava
+    // `ReferenceError` e NENHUM filtro era limpo — o botão simplesmente não funcionava, sem dizer
+    // por quê. Não é regressão desta passada; estava vivo na `dev` e nenhum teste montava esta
+    // página para pegá-lo.
+    // ⚠ Nada mais foi acrescentado no lugar: reintroduzir o filtro é decisão de produto.
   }
 
   const filteredCompanies = useMemo(() => {
@@ -506,6 +543,20 @@ export function CompaniesHomePage({
                       title="Próximo mês" aria-label="Próximo mês"
                       style={{ ...COMP_ARROW, fontSize: "0.9rem" }}
                     >›</button>
+                    {/* ⚠ O RECARREGAR MORA AQUI, e não na fileira de atalhos, porque é ESTA lista —
+                        a da competência escrita à esquerda dele — que ele recarrega. Na barra de
+                        botões ele era um "↻" sem contexto no meio de sete rótulos; ao lado do mês,
+                        o que ele atualiza está dito. */}
+                    <Button
+                      variant="secondary"
+                      onClick={onRefreshCompanies}
+                      disabled={loadingCompanies}
+                      title={`Recarregar a lista de ${rotuloCompetencia(dashboardCompetencia)}`}
+                      aria-label={`Recarregar a lista de ${rotuloCompetencia(dashboardCompetencia)}`}
+                      style={{ minHeight: 30, minWidth: 34, padding: "2px 8px", marginLeft: 4, fontSize: "0.9rem" }}
+                    >
+                      <span aria-hidden="true">{loadingCompanies ? "…" : "↻"}</span>
+                    </Button>
                   </span>
                 </h1>
               </div>
@@ -552,13 +603,35 @@ export function CompaniesHomePage({
             </div>
           )}
 
+          {/* ─── BARRA DE AÇÕES ──────────────────────────────────────────────────────────────────
+              ⚠ ERAM OITO BOTÕES NO MESMO PESO, SEIS DELES ROXO CHEIO. Uma fileira em que tudo é
+              primário não tem primário: o olho não encontra "a ação desta tela" e passa a ler os
+              oito rótulos toda vez.
+
+              A hierarquia agora tem três degraus, e nenhuma função saiu da tela:
+                1. `Nova empresa` — SÓLIDO (accent). É a única ação de CRIAR daqui.
+                2. Onboardings · Apuração · Consultas · Envio de e-mails — CONTORNO. São o fluxo
+                   frequente do mês.
+                3. Rotinas · Planejamento · Configurações — dentro de `Mais ▾`, com os mesmos
+                   rótulos e os mesmos handlers.
+
+              ⚠ SÓLIDO É ROXO (accent), NUNCA VERDE. Verde quer dizer CONCLUÍDO neste app — a guia
+              paga, o `D = C ✓ ok`, "Guias concluídas" nesta mesma tabela. Um botão verde de "faça
+              isto" na primeira linha da tela estraga a leitura do verde em todo o resto dela.
+
+              ⚠ NENHUM BOTÃO GANHOU CONTADOR. O plano sugeria "Onboardings · 3"; esta página não
+              recebe contagem de onboarding nenhuma (só o handler `onOpenOnboardings`), e um número
+              inventado — ou um zero que na verdade quer dizer "não perguntei" — é exatamente o
+              defeito que `lib/falhaDeCarga.js` existe para matar.
+
+              ⚠ A VERSÃO "COMPLETA" DO PLANO NÃO FOI FEITA, de propósito: ela move Rotinas e
+              Planejamento para uma "navegação de módulos (sidebar ou abas)" que NÃO EXISTE aqui —
+              não há `<Routes>` no `App.jsx`, o despacho é uma cadeia de `if` (ver
+              `apps/web/CLAUDE.md`). Criar navegação nova é decisão de produto do dono. */}
           <nav className="dashboard-home__actions" aria-label="Atalhos">
-            {/* ⚠ "Nova empresa" deixou de ser verde. Dois botões verdes lado a lado competem entre
-                si e nenhum vira o primário de verdade. O verde fica com "Envio de e-mails em
-                lote", que é A ação do fluxo mensal; criar empresa é episódico. */}
             <Button
               variant="secondary"
-              className="dashboard-home__action"
+              className="dashboard-home__action dashboard-home__action--accent"
               onClick={() => {
                 if (globalChartStatus && !globalChartStatus.isConfigured) {
                   const faltantes = (globalChartStatus.tiposFaltantes || []).join(", ");
@@ -585,49 +658,46 @@ export function CompaniesHomePage({
             {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
                 "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
                 ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
+            {/* Onboardings fica ao LADO de "Nova empresa", e as duas portas continuam existindo:
+                "Nova empresa" serve a quem já tem tudo em mãos; o funil serve ao que acontece
+                ANTES disso (empresa que ainda vai abrir, papelada chegando em partes). */}
             {onOpenOnboardings && (
-              <Button variant="secondary" className="dashboard-home__action" onClick={onOpenOnboardings}>
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenOnboardings}>
                 Onboardings
               </Button>
             )}
-            {/* Q17: ordem — Nova empresa · Envio de e-mails · Apuração · Configurações */}
-            {onOpenBatchEmail && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenBatchEmail}>
-                Envio de e-mails em lote
-              </Button>
-            )}
             {onOpenApuracao && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenApuracao}>
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenApuracao}>
                 Apuração
-              </Button>
-            )}
-            {/* O botão "Calendário" saiu daqui: o calendário virou VISÃO, ao lado de Cards e Ano.
-                Ter as duas portas para a mesma coisa só dividiria o caminho. */}
-            {onOpenRotinas && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenRotinas}>
-                Rotinas
-              </Button>
-            )}
-            {/* Fica no dashboard, e nao dentro de uma empresa, de proposito: a simulacao LIVRE e o
-                cenario de reuniao com prospect, quando a empresa ainda nao existe no sistema. */}
-            {onOpenPlanejamento && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenPlanejamento}>
-                Planejamento
               </Button>
             )}
             {/* C10: "Pendências" saiu do dashboard — virou a aba "Situação Fiscal"
                 dentro de Consultas (antiga "Funções em lote"). */}
             {onOpenSerproFuncoes && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--accent" onClick={onOpenSerproFuncoes}>
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenSerproFuncoes}>
                 Consultas
               </Button>
             )}
+            {onOpenBatchEmail && (
+              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenBatchEmail}>
+                Envio de e-mails em lote
+              </Button>
+            )}
+            {/* O botão "Calendário" saiu daqui: o calendário virou VISÃO, ao lado de Cards e Ano.
+                Ter as duas portas para a mesma coisa só dividiria o caminho. */}
             <SettingsMenu
+              label="Mais ▾"
               items={[
+                // ⚠ Rotinas e Planejamento MUDARAM DE LUGAR, não saíram. Mesmo rótulo, mesmo
+                // handler, um clique a mais. São ferramentas episódicas: Planejamento é cenário de
+                // reunião com PROSPECT (por isso mora no dashboard e não dentro de uma empresa), e
+                // Rotinas é configuração de recorrência — nenhuma das duas é o trabalho do dia.
+                { grupo: "Ferramentas", label: "Rotinas", onClick: onOpenRotinas },
+                { label: "Planejamento", onClick: onOpenPlanejamento },
                 // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
                 // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
                 // seletor de visões e entrou aqui.
-                { label: "Obrigações do escritório", onClick: onOpenObrigacoes },
+                { grupo: "Configurações", label: "Obrigações do escritório", onClick: onOpenObrigacoes },
                 { label: "Configuração SERPRO", onClick: onOpenGuideSettings },
                 { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
                 // ⚠ Chamava-se "Pendências (debug)". É a ÚNICA tela que lista guia por guia o
@@ -637,18 +707,10 @@ export function CompaniesHomePage({
                 { label: "Pendências de e-mail", onClick: onOpenPendingReport },
               ]}
             />
-            {/* Atualizar lista vira um ícone discreto */}
-            <Button
-              variant="secondary"
-              className="dashboard-home__action"
-              onClick={onRefreshCompanies}
-              disabled={loadingCompanies}
-              title="Atualizar lista"
-              aria-label="Atualizar lista"
-              style={{ minWidth: 40, padding: "8px 12px" }}
-            >
-              {loadingCompanies ? "…" : "↻"}
-            </Button>
+            {/* ⚠ O "↻" SAIU DAQUI e foi para o lado do seletor de competência, no título. Ele não é
+                um atalho como os outros: é a recarga DA LISTA da competência exibida — o que ele
+                atualiza está escrito ao lado dele agora. Numa fileira de atalhos, um ícone mudo
+                entre botões nomeados era a coisa que ninguém sabia dizer o que fazia. */}
           </nav>
 
           {/* C9: avisa que há processo rodando em segundo plano (downloads de notas / situações
@@ -795,7 +857,10 @@ export function CompaniesHomePage({
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Ex.: Clinica ou 00.000.000/0001-00"
+                /* "Clinica" sem acento era erro de digitação, não escolha: a busca já normaliza
+                   acento nos dois lados (`normalizeSearch`), então o exemplo não precisava ser
+                   escrito errado para funcionar. */
+                placeholder="Ex.: Clínica ou 00.000.000/0001-00"
                 style={{ ...FILTER_CONTROL, width: "100%" }}
               />
             </label>
@@ -976,6 +1041,15 @@ export function CompaniesHomePage({
                 acoesGuia={acoesGuia}
                 busca={search}
                 imprimindo={imprimindo}
+                carregando={loadingCompanies}
+                /* ⚠ A CARTEIRA INTEIRA, não a filtrada — é a diferença entre os dois números que
+                   responde ao "o chip diz 33 e eu conto 12 linhas". */
+                totalSemFiltro={(companies || []).length}
+                /* ⚠ `error` é o feedback GERAL do app, não um erro dedicado desta carga; a tabela
+                   só o usa quando a lista está VAZIA, que é o único momento em que confundir
+                   "não carregou" com "não há" custa caro. Com 33 empresas na tela ele é ignorado. */
+                erroDeCarga={error || null}
+                onLimparFiltros={() => { limparFiltros(); setTravaFiltro("all"); setSearch(""); }}
               />
             </div>
           ) : (
