@@ -16,6 +16,7 @@ import { AppShell } from "../../../components/layout/AppShell";
 import { Button } from "../../../components/ui/Button";
 import { BackButton } from "../../../components/ui/BackButton";
 import { lerFalhaDeCarga, SEM_RESPOSTA } from "../../../lib/falhaDeCarga";
+import { calcularPreviaVencimentos } from "../lib/previaVencimentos";
 import { RegrasObrigacao } from "./renderRegrasObrigacao";
 
 const COR = {
@@ -115,29 +116,26 @@ function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, salvand
     antecedenciaLembreteDias: inicial?.antecedenciaLembreteDias ?? 5,
     ajusteDiaUtil: inicial?.ajusteDiaUtil || "ANTECIPAR",
     verificador: inicial?.verificador || "",
+    // Só existe no cadastro NOVO, e só quando o vencimento deste mês já passou — ver a caixa lá
+    // embaixo. Não é campo da obrigação: não é salvo, não é editável depois.
+    incluirVencidoDoMes: false,
   }));
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   // Preview em tempo real: o contador confere a regra vendo as datas, não lendo a configuração.
-  const previa = useMemo(() => {
-    const hoje = new Date();
-    const dias = [];
-    for (let i = 0; i < 12 && dias.length < 3; i += 1) {
-      const bruto = hoje.getUTCMonth() + i;
-      const ano = hoje.getUTCFullYear() + Math.floor(bruto / 12);
-      const mes = (bruto % 12) + 1;
-      if (form.periodicidade === "ANUAL" && mes !== Number(form.mesReferencia)) continue;
-      if (form.periodicidade === "TRIMESTRAL" && (((mes - Number(form.mesReferencia)) % 3) + 3) % 3 !== 0) continue;
-      const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-      const d = new Date(Date.UTC(ano, mes - 1, Math.min(Number(form.diaVencimento) || 1, ultimo)));
-      if (form.ajusteDiaUtil !== "MANTER") {
-        const passo = form.ajusteDiaUtil === "ANTECIPAR" ? -1 : 1;
-        while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + passo);
-      }
-      dias.push(d.toISOString().slice(0, 10));
-    }
-    return dias;
-  }, [form.periodicidade, form.mesReferencia, form.diaVencimento, form.ajusteDiaUtil]);
+  //
+  // ⚠ DATA QUE JÁ PASSOU NÃO É "PRÓXIMO VENCIMENTO". A prévia partia do mês corrente e anunciava o
+  // vencimento deste mês mesmo depois de vencido — e o backend o criava, deixando a obrigação
+  // VENCIDA em vermelho no instante em que foi cadastrada. O passado sai da lista e vira uma
+  // ESCOLHA declarada (a caixa abaixo), porque só o contador sabe se aquela entrega de fato
+  // atrasou naquela empresa.
+  const previa = useMemo(
+    () => calcularPreviaVencimentos(form, new Date()),
+    [form.periodicidade, form.mesReferencia, form.diaVencimento, form.ajusteDiaUtil],
+  );
+
+  // Marcar "já venceu" numa obrigação que passa a existir agora só faz sentido no cadastro novo.
+  const podeMarcarVencido = !editando && Boolean(previa.jaVencida);
 
   return (
     <div
@@ -146,7 +144,12 @@ function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, salvand
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16, overflowY: "auto" }}
     >
       <form
-        onSubmit={(e) => { e.preventDefault(); onSalvar(form); }}
+        // A caixa só vale enquanto a data passada existe: mudar o dia depois de marcá-la não pode
+        // deixar a escolha "pegada" num vencimento que não é mais retroativo.
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSalvar({ ...form, incluirVencidoDoMes: podeMarcarVencido && form.incluirVencidoDoMes });
+        }}
         style={{ width: "100%", maxWidth: 560, background: "#282A36", border: `1px solid ${COR.borda}`, borderRadius: 12, padding: 20, color: COR.texto }}
       >
         <h3 style={{ margin: "0 0 14px", fontSize: "1.05rem" }}>
@@ -242,7 +245,36 @@ function ModalObrigacao({ empresas, opcoes, inicial, onFechar, onSalvar, salvand
         </div>
 
         <div style={{ marginTop: 12, padding: "8px 10px", background: COR.fundo, borderRadius: 6, border: `1px solid ${COR.borda}`, fontSize: "0.78rem", color: COR.suave }}>
-          Próximos vencimentos: <strong style={{ color: COR.texto }}>{previa.map(fmtData).join(" · ") || "—"}</strong>
+          Próximos vencimentos: <strong style={{ color: COR.texto }}>{previa.proximas.map(fmtData).join(" · ") || "—"}</strong>
+          {previa.jaVencida && (
+            <div style={{ marginTop: 6, color: COR.alerta }}>
+              O vencimento deste mês ({fmtData(previa.jaVencida)}) já passou.
+              {podeMarcarVencido ? (
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 6, marginTop: 4, color: COR.texto }}>
+                  <input
+                    type="checkbox"
+                    checked={form.incluirVencidoDoMes}
+                    onChange={(e) => set("incluirVencidoDoMes", e.target.checked)}
+                  />
+                  <span>
+                    Registrar {fmtData(previa.jaVencida)} como pendência em atraso — marque só se esta
+                    entrega realmente não foi feita.
+                  </span>
+                </label>
+              ) : (
+                <> Ele não vira pendência: a obrigação começa no próximo.</>
+              )}
+            </div>
+          )}
+          {/* ⚠ O rótulo do campo fala em feriado; esta conta, que roda no navegador, só conhece
+              sábado e domingo. Os feriados vivem na tabela `Feriado` do servidor (semeada por
+              `apps/api/scripts/semear-feriados.mjs`), e os municipais dependem do município da
+              empresa — quem os aplica é o servidor, ao gerar os vencimentos. Inventar um calendário
+              aqui seria pior que declarar o alcance da estimativa. */}
+          <div style={{ marginTop: 4, fontSize: "0.72rem" }}>
+            estimativa: considera só fim de semana. Os feriados cadastrados entram quando o servidor
+            gera os vencimentos.
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
@@ -332,7 +364,9 @@ export function ObrigacoesPage({ api, empresas = [], onBack }) {
       };
       const out = modal?.inicial?.obrigacaoId
         ? await api.updateObrigacao(modal.inicial.obrigacaoId, corpo)
-        : await api.createObrigacao(form.companyId, corpo);
+        // ⚠ Só no CADASTRO. `incluirVencidoDoMes` é a declaração de que o vencimento já passado
+        // desta empresa é atraso de verdade; editar depois não pode fabricar pendência retroativa.
+        : await api.createObrigacao(form.companyId, { ...corpo, incluirVencidoDoMes: form.incluirVencidoDoMes === true });
       if (out?.ok === false) { setErroModal(out.message || "Não foi possível salvar."); return; }
       setModal(null);
       // Diz o que aconteceu de fato, não um "salvo" liso: o número é a prova de que entrou no

@@ -123,8 +123,22 @@ async function carregarConsultorDeFeriados(portalClientId, db = prisma) {
  * Regra que não se negocia: **ocorrência CONCLUÍDA nunca é tocada**. Ela é histórico do que o
  * escritório fez, e mudar o dia de vencimento hoje não pode reescrever o passado. Só as futuras
  * pendentes somem/nascem.
+ *
+ * ⚠ **NINGUÉM NASCE VENCIDO.** A janela começa no mês CORRENTE, e o vencimento desse mês pode já
+ * ter passado — cadastrar dia 15 no dia 16 criava, na hora, uma ocorrência de ontem, que a leitura
+ * (`situacaoDaOcorrencia`) mostra em vermelho como VENCIDA. Numa regra do escritório isso acusa
+ * atraso na carteira inteira de uma vez, e vermelho que aparece sozinho treina o olho a ignorar
+ * vermelho. VENCIDA passou a ser sempre efeito do TEMPO PASSANDO sobre uma pendência que existiu:
+ * ocorrência com data anterior a hoje não é criada.
+ *
+ * ⚠ **Isso NÃO apaga atraso real**: as ocorrências já gravadas com data passada não entram em
+ * `existentes` (a query é `gte: hoje`) e seguem intocadas, vencidas, no banco e na tela.
+ *
+ * @param {{incluirVencidoDoMes?: boolean}} opcoes  `true` só quando o contador declarou, no
+ *   cadastro daquela empresa, que o vencimento já passado é uma pendência de verdade. Não há
+ *   default silencioso e a regra do escritório não oferece a opção — ver `criar`.
  */
-export async function sincronizarOcorrencias(obrigacaoId, db = prisma) {
+export async function sincronizarOcorrencias(obrigacaoId, db = prisma, { incluirVencidoDoMes = false } = {}) {
   const obrigacao = await db.obrigacao.findUnique({ where: { id: obrigacaoId } });
   if (!obrigacao) throw new ObrigacaoError("nao_encontrada", "Obrigação não encontrada.", 404);
 
@@ -139,11 +153,18 @@ export async function sincronizarOcorrencias(obrigacaoId, db = prisma) {
   }
 
   const ehFeriado = await carregarConsultorDeFeriados(obrigacao.portalClientId, db);
-  const previstas = calcularVencimentos(
-    obrigacao,
-    { inicio: { ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 }, quantidadeMeses: MESES_DA_JANELA },
-    ehFeriado,
-  );
+  const inicio = { ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 };
+  const naJanela = (quantidadeMeses) =>
+    calcularVencimentos(obrigacao, { inicio, quantidadeMeses }, ehFeriado)
+      .filter((p) => incluirVencidoDoMes || p.data >= hoje);
+
+  let previstas = naJanela(MESES_DA_JANELA);
+  if (!previstas.length) {
+    // A janela inteira ficou para trás. Só acontece na ANUAL cujo mês de referência é o corrente e
+    // já venceu: sem isto a obrigação nasceria sem NENHUM vencimento, e "não tem prazo" é pior que
+    // "o próximo é daqui a um ano". Procura só a PRÓXIMA, fora da janela.
+    previstas = naJanela(MESES_DA_JANELA + 12).slice(0, 1);
+  }
   const previstasPorIso = new Map(previstas.map((p) => [p.iso, p]));
 
   const existentes = await db.ocorrenciaObrigacao.findMany({
@@ -181,10 +202,15 @@ export async function sincronizarOcorrencias(obrigacaoId, db = prisma) {
 
 export async function criar({ portalClientId, dados, criadoPorId = null }) {
   const limpo = normalizarEntrada(dados);
+  // ⚠ ESCOLHA EXPLÍCITA, UMA EMPRESA POR VEZ. `incluirVencidoDoMes` não é campo da obrigação (não
+  // vai para `normalizarEntrada` nem para o banco): é uma decisão sobre ESTE cadastro, tomada por
+  // quem sabe se aquela empresa de fato deixou de entregar. A regra do escritório não a oferece —
+  // lá o mesmo clique afirmaria atraso de 38 empresas que ninguém conferiu uma a uma.
+  const incluirVencidoDoMes = dados?.incluirVencidoDoMes === true;
   const obrigacao = await prisma.obrigacao.create({
     data: { ...limpo, portalClientId, criadoPorId },
   });
-  const geradas = await sincronizarOcorrencias(obrigacao.id);
+  const geradas = await sincronizarOcorrencias(obrigacao.id, prisma, { incluirVencidoDoMes });
   return { obrigacao, ...geradas };
 }
 

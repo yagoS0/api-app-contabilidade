@@ -179,15 +179,48 @@ export async function propagar({ regraId, portalIds }) {
 
   // Saiu do escopo (ou a regra foi inativada): a obrigação da regra vai junto. Sobrescrita local
   // fica — virou obrigação daquela empresa no momento em que alguém a editou.
-  const aRemover = existentes.filter((o) => !alvoIds.has(o.portalClientId) && !o.sobrescritaLocal);
-  if (aRemover.length) {
-    await prisma.obrigacao.deleteMany({ where: { id: { in: aRemover.map((o) => o.id) } } });
+  //
+  // ⚠ **QUEM TEM ENTREGA CONCLUÍDA NÃO É APAGADO, É DESVINCULADO.** O `deleteMany` daqui leva as
+  // ocorrências junto por `onDelete: Cascade` — INCLUSIVE as CONCLUÍDAS. "Tirar da regra" é um
+  // clique sem volta em cima de histórico: o vencimento que o escritório entregou e marcou sumia,
+  // e ao devolver a empresa à regra a obrigação voltava como VENCIDA na data original, como se a
+  // entrega nunca tivesse acontecido. Sair da regra é uma afirmação sobre o FUTURO ("esta empresa
+  // não segue mais este prazo"), nunca sobre o que já foi feito.
+  //
+  // Desvincular é exatamente o que `removerRegra({ modo: "desvincular" })` já faz com a regra
+  // inteira: `regraId: null` e a obrigação continua na empresa, avulsa, com as ocorrências.
+  // Apagar de verdade continua existindo — mas só onde não há nada a perder (nenhuma concluída) ou
+  // pela exclusão da obrigação/regra, que pergunta antes e diz que não dá para desfazer.
+  const aSair = existentes.filter((o) => !alvoIds.has(o.portalClientId) && !o.sobrescritaLocal);
+  let desvinculadas = 0;
+  let removidas = 0;
+  if (aSair.length) {
+    const idsQueSaem = aSair.map((o) => o.id);
+    const comHistorico = new Set(
+      (await prisma.ocorrenciaObrigacao.findMany({
+        where: { obrigacaoId: { in: idsQueSaem }, status: "CONCLUIDA" },
+        select: { obrigacaoId: true },
+      })).map((oc) => oc.obrigacaoId),
+    );
+    const aDesvincular = idsQueSaem.filter((id) => comHistorico.has(id));
+    const aApagar = idsQueSaem.filter((id) => !comHistorico.has(id));
+    if (aDesvincular.length) {
+      const r = await prisma.obrigacao.updateMany({
+        where: { id: { in: aDesvincular } },
+        data: { regraId: null, sobrescritaLocal: false },
+      });
+      desvinculadas = r.count ?? aDesvincular.length;
+    }
+    if (aApagar.length) {
+      const r = await prisma.obrigacao.deleteMany({ where: { id: { in: aApagar } } });
+      removidas = r.count ?? aApagar.length;
+    }
   }
 
   // Ocorrências só depois que todas as obrigações existem: cada uma consulta feriado e empresa.
   for (const id of tocadas) await sincronizarOcorrencias(id);
 
-  return { criadas, atualizadas, puladas, removidas: aRemover.length, empresasNoEscopo: alvo.length };
+  return { criadas, atualizadas, puladas, removidas, desvinculadas, empresasNoEscopo: alvo.length };
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────────────────────
@@ -250,9 +283,53 @@ export async function adicionarExcecao({ portalIds, regraId, companyId, motivo =
   return propagar({ regraId, portalIds });
 }
 
+/**
+ * A volta do desvínculo: "devolver à regra" reencontra a obrigação que "tirar da regra" deixou na
+ * empresa, em vez de criar uma segunda igual.
+ *
+ * ⚠ Sem isto, o par de botões produziria DUAS obrigações de mesmo nome na mesma empresa (a avulsa
+ * com o histórico e a nova da regra) — o `@@unique([regraId, portalClientId])` não impede, porque o
+ * Postgres não compara NULLs. Duas linhas iguais no calendário é o defeito que aquela constraint
+ * existe para evitar.
+ *
+ * O casamento é ESTREITO de propósito — mesma empresa, `regraId` nulo, **nome exato** da regra — e
+ * acontece só neste momento, que é o inverso exato do que desvinculou. Nome diferente (a regra foi
+ * renomeada no meio, ou a obrigação é outra) não casa: nasce uma nova e a avulsa fica visível na
+ * tela, com outro nome. Adivinhar por semelhança seria a regra absorver obrigação que não é dela.
+ */
+async function readotarObrigacaoDesvinculada({ regraId, companyId }) {
+  const regra = await prisma.regraObrigacao.findUnique({
+    where: { id: regraId },
+    select: { nome: true },
+  });
+  if (!regra) return null;
+
+  // Sobrescrita local mantém a obrigação ligada mesmo fora do escopo: nesse caso já existe a linha
+  // do par (regra, empresa) e adotar outra violaria o unique.
+  const jaLigada = await prisma.obrigacao.findFirst({
+    where: { regraId, portalClientId: companyId },
+    select: { id: true },
+  });
+  if (jaLigada) return null;
+
+  const orfa = await prisma.obrigacao.findFirst({
+    where: { portalClientId: companyId, regraId: null, nome: regra.nome },
+    select: { id: true },
+  });
+  if (!orfa) return null;
+
+  await prisma.obrigacao.update({
+    where: { id: orfa.id },
+    data: { regraId, sobrescritaLocal: false },
+  });
+  return orfa.id;
+}
+
 export async function removerExcecao({ portalIds, regraId, companyId }) {
   await prisma.regraObrigacaoExcecao.deleteMany({ where: { regraId, portalClientId: companyId } });
-  return propagar({ regraId, portalIds });
+  const readotada = await readotarObrigacaoDesvinculada({ regraId, companyId });
+  const efeito = await propagar({ regraId, portalIds });
+  return { ...efeito, readotada: Boolean(readotada) };
 }
 
 // ── Leitura ──────────────────────────────────────────────────────────────────────────────────
@@ -263,7 +340,17 @@ export async function listarRegras({ portalIds }) {
     include: {
       excecoes: { select: { portalClientId: true, motivo: true } },
       obrigacoes: {
-        select: { id: true, portalClientId: true, sobrescritaLocal: true, portalClient: { select: { razao: true } } },
+        select: {
+          id: true,
+          portalClientId: true,
+          sobrescritaLocal: true,
+          portalClient: { select: { razao: true } },
+          // ⚠ É este número que a confirmação de "tirar da regra" repete de volta ao contador. Sem
+          // ele a pergunta viraria um "tem certeza?" genérico — e ato de consequência confirma
+          // repetindo os dados, não pedindo fé. Só as CONCLUÍDAS: são elas que representam trabalho
+          // entregue, e é por elas que a obrigação é desvinculada em vez de apagada.
+          ocorrencias: { where: { status: "CONCLUIDA" }, select: { id: true } },
+        },
       },
     },
   });
@@ -297,6 +384,7 @@ export async function listarRegras({ portalIds }) {
         razao: o.portalClient?.razao || null,
         obrigacaoId: o.id,
         sobrescritaLocal: o.sobrescritaLocal,
+        ocorrenciasConcluidas: o.ocorrencias?.length ?? 0,
       })),
       excecoes: r.excecoes.map((e) => ({ companyId: e.portalClientId, motivo: e.motivo })),
     };

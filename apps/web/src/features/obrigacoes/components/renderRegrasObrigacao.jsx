@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { BackButton } from "../../../components/ui/BackButton";
 import { lerFalhaDeCarga, SEM_RESPOSTA } from "../../../lib/falhaDeCarga";
+import { calcularPreviaVencimentos } from "../lib/previaVencimentos";
 
 const COR = {
   fundo: "#21222C", borda: "#44475A", texto: "#F8F8F2", suave: "#A7B0C0",
@@ -52,6 +53,9 @@ function Selo({ cor, children, title }) {
 }
 
 const PASSOS = ["O quê", "Quando", "Para quem"];
+
+/** "YYYY-MM-DD" → "DD/MM/YYYY". */
+const fmtData = (iso) => (iso ? iso.split("-").reverse().join("/") : "—");
 
 function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
   const editando = Boolean(inicial?.regraId);
@@ -117,25 +121,15 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
     return () => { cancelado = true; };
   }, [api, passo, form.escopo, filtros]);
 
-  const previaDatas = useMemo(() => {
-    const hoje = new Date();
-    const dias = [];
-    for (let i = 0; i < 12 && dias.length < 3; i += 1) {
-      const bruto = hoje.getUTCMonth() + i;
-      const ano = hoje.getUTCFullYear() + Math.floor(bruto / 12);
-      const mes = (bruto % 12) + 1;
-      if (form.periodicidade === "ANUAL" && mes !== Number(form.mesReferencia)) continue;
-      if (form.periodicidade === "TRIMESTRAL" && (((mes - Number(form.mesReferencia)) % 3) + 3) % 3 !== 0) continue;
-      const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
-      const d = new Date(Date.UTC(ano, mes - 1, Math.min(Number(form.diaVencimento) || 1, ultimo)));
-      if (form.ajusteDiaUtil !== "MANTER") {
-        const passoDia = form.ajusteDiaUtil === "ANTECIPAR" ? -1 : 1;
-        while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + passoDia);
-      }
-      dias.push(d.toISOString().slice(0, 10).split("-").reverse().join("/"));
-    }
-    return dias;
-  }, [form.periodicidade, form.mesReferencia, form.diaVencimento, form.ajusteDiaUtil]);
+  // ⚠ A PRÉVIA NÃO ANUNCIA DATA QUE JÁ PASSOU. Ela partia do mês corrente e mostrava o vencimento
+  // deste mês mesmo depois de ele ter vencido — "Próximos vencimentos: 14/08" no dia 16 —, e o
+  // backend criava aquela ocorrência, entregando a regra com TODAS as empresas do escopo em
+  // vermelho, "Vencida", no primeiro segundo de vida. O passado sai da lista aqui e não é criado lá
+  // (`sincronizarOcorrencias`); a data que passou é dita à parte, como informação, não como prazo.
+  const previaDatas = useMemo(
+    () => calcularPreviaVencimentos(form, new Date()),
+    [form.periodicidade, form.mesReferencia, form.diaVencimento, form.ajusteDiaUtil],
+  );
 
   const podeAvancar = passo === 0 ? Boolean(form.nome.trim()) : true;
 
@@ -290,7 +284,27 @@ function Wizard({ api, opcoes, inicial, onFechar, onSalvo }) {
               </Campo>
             </div>
             <div style={{ marginTop: 12, padding: "8px 10px", background: COR.fundo, borderRadius: 6, border: `1px solid ${COR.borda}`, fontSize: "0.78rem", color: COR.suave }}>
-              Próximos vencimentos: <strong style={{ color: COR.texto }}>{previaDatas.join(" · ") || "—"}</strong>
+              Próximos vencimentos: <strong style={{ color: COR.texto }}>{previaDatas.proximas.map(fmtData).join(" · ") || "—"}</strong>
+              {previaDatas.jaVencida && (
+                // ⚠ A regra do escritório NÃO oferece a caixa "registrar como atraso" que o cadastro
+                // por empresa oferece: aqui um clique afirmaria atraso em todas as empresas do
+                // escopo de uma vez, e ninguém conferiu uma a uma. Empresa que de fato deixou de
+                // entregar se cadastra por dentro dela.
+                <div style={{ marginTop: 4, color: COR.alerta }}>
+                  O vencimento deste mês ({fmtData(previaDatas.jaVencida)}) já passou — a regra começa
+                  no próximo, e nenhuma empresa do escopo nasce vencida.
+                </div>
+              )}
+              {/* ⚠ O RÓTULO DO CAMPO FALA EM FERIADO E ESTA CONTA NÃO OLHA FERIADO NENHUM: ela roda
+                  no navegador, e os feriados vivem na tabela `Feriado` do servidor (semeada por
+                  `apps/api/scripts/semear-feriados.mjs`), com os MUNICIPAIS variando por empresa —
+                  numa regra que pega a carteira inteira não existe uma data só que sirva a todas.
+                  Quem aplica o feriado é o servidor, ao gerar as ocorrências. Em vez de inventar
+                  calendário aqui, a prévia diz até onde ela vai. */}
+              <div style={{ marginTop: 4, fontSize: "0.72rem" }}>
+                estimativa: considera só fim de semana. Os feriados cadastrados (inclusive os
+                municipais de cada empresa) entram quando o servidor gera os vencimentos.
+              </div>
             </div>
           </>
         )}
@@ -515,12 +529,56 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
     } catch (err) { setErro(err?.message || "Não foi possível excluir."); }
   }
 
+  /**
+   * ⚠ TIRAR DA REGRA É ATO DE CONSEQUÊNCIA — E A CONFIRMAÇÃO REPETE OS DADOS.
+   *
+   * Este clique não tinha pergunta nenhuma e apagava a obrigação da empresa com todas as
+   * ocorrências, **inclusive as concluídas**: o vencimento entregue e marcado sumia, e "devolver à
+   * regra" trazia a obrigação de volta VENCIDA na data original. A assimetria denunciava que não
+   * era decisão — a exclusão da regra, que causa o mesmo estrago, pergunta duas vezes.
+   *
+   * Hoje o servidor DESVINCULA quando há entrega concluída (a obrigação continua na empresa,
+   * avulsa, com o histórico) e só apaga quando não há nada a perder. A confirmação existe porque
+   * os dois desfechos são diferentes e o contador precisa saber qual vai acontecer NESTA empresa —
+   * por isso ela diz o número, e não "tem certeza?".
+   *
+   * ⚠ `ocorrenciasConcluidas` ausente é "não sei", nunca zero: quem não informa o número não pode
+   * levar a tela a prometer que não há histórico em jogo.
+   */
+  async function tirarDaRegra(regra, empresa) {
+    const nome = empresa.razao || empresa.companyId;
+    const concluidas = Number.isFinite(Number(empresa.ocorrenciasConcluidas))
+      ? Number(empresa.ocorrenciasConcluidas)
+      : null;
+    const consequencia = concluidas === null
+      ? "Não deu para contar aqui os vencimentos já concluídos desta empresa. Havendo algum, a obrigação NÃO é apagada: ela deixa de seguir a regra e continua na empresa, avulsa, com o histórico."
+      : concluidas > 0
+        ? `${concluidas} vencimento(s) já concluído(s) — o histórico NÃO é apagado: a obrigação deixa de seguir a regra e continua na empresa, avulsa.`
+        : "Nenhum vencimento concluído — a obrigação some do calendário desta empresa.";
+    const confirmado = window.confirm(
+      `Tirar ${nome} da regra "${regra.nome}".\n\n${consequencia}\n\n"Devolver à regra" traz a empresa de volta.`,
+    );
+    if (!confirmado) return;
+    await alternarExcecao(regra, empresa.companyId, true);
+  }
+
   async function alternarExcecao(regra, companyId, virarExcecao) {
     try {
       const out = virarExcecao
         ? await api.addExcecaoRegra(regra.regraId, companyId, null)
         : await api.removeExcecaoRegra(regra.regraId, companyId);
       if (out?.ok === false) { setErro(out.message || "Não foi possível alterar."); return; }
+      // O aviso conta qual dos dois desfechos aconteceu de fato — é o servidor quem decide, pelo
+      // histórico da empresa, e a tela não pode adivinhar por ele.
+      if (virarExcecao) {
+        setAviso(out?.desvinculadas
+          ? "Empresa fora da regra; a obrigação continua nela, avulsa, com os vencimentos concluídos."
+          : "Empresa fora da regra; a obrigação foi removida do calendário dela.");
+      } else {
+        setAviso(out?.readotada
+          ? "Empresa de volta à regra, reaproveitando a obrigação que já estava nela."
+          : "Empresa de volta à regra.");
+      }
       await carregar();
     } catch (err) { setErro(err?.message || "Não foi possível alterar."); }
   }
@@ -584,9 +642,10 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
                 <strong style={{ color: COR.texto, fontSize: "0.92rem" }}>{r.nome}</strong>
                 <Selo cor={COR.suave}>{ROTULO_PERIODICIDADE[r.periodicidade] || r.periodicidade}</Selo>
                 {r.categoria && <Selo cor={COR.suave}>{r.categoria}</Selo>}
+                {/* Plural da palavra INTEIRA: concatenar o sufixo escrevia "2 exceçãoões". */}
                 {r.totalExcecoes > 0 && (
                   <Selo cor={COR.alerta} title="Empresas tiradas da regra à mão">
-                    {r.totalExcecoes} exceção{r.totalExcecoes === 1 ? "" : "ões"}
+                    {r.totalExcecoes} {r.totalExcecoes === 1 ? "exceção" : "exceções"}
                   </Selo>
                 )}
                 <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
@@ -625,7 +684,7 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
                         : <Selo cor={COR.ok}>aplicada</Selo>}
                       <button
                         type="button"
-                        onClick={() => alternarExcecao(r, e.companyId, true)}
+                        onClick={() => tirarDaRegra(r, e)}
                         style={{ marginLeft: "auto", background: "none", border: "none", color: COR.suave, cursor: "pointer", fontSize: "0.76rem", textDecoration: "underline" }}
                       >
                         tirar da regra
@@ -668,7 +727,10 @@ export function RegrasObrigacao({ api, empresas = [], onVoltar }) {
               (out.criadas ? ` · ${out.criadas} nova(s)` : "") +
               (out.atualizadas ? ` · ${out.atualizadas} atualizada(s)` : "") +
               (out.puladas ? ` · ${out.puladas} pulada(s) por edição local` : "") +
-              (out.removidas ? ` · ${out.removidas} removida(s)` : ""),
+              (out.removidas ? ` · ${out.removidas} removida(s)` : "") +
+              // Quem tinha entrega concluída sai da regra sem ser apagada — o aviso conta as duas
+              // saídas separadamente, porque elas não têm o mesmo efeito no histórico.
+              (out.desvinculadas ? ` · ${out.desvinculadas} desvinculada(s), com histórico` : ""),
             );
             await carregar();
           }}
