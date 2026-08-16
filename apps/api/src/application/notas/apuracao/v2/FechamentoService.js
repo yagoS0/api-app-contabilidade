@@ -98,7 +98,11 @@ export async function notasEmitDaCompetencia(portalClientId, competencia) {
  * chip de guia vazia) e cada cópia desta cláusula é uma chance de duas telas discordarem sobre se
  * o mês teve receita.
  */
-function whereFaturamentoEmit() {
+// ⚠ Exportada porque o Planejamento Tributário precisa da MESMA população numa janela de 12 meses
+// (não de uma competência). Escrever `{ papel: "EMIT", statusEfetivo: "autorizada" }` de novo lá
+// seria a sexta cópia — e a receita que a simulação de regime mostra ao cliente tem de ser a mesma
+// que a apuração usa, senão o contador leva à reunião um faturamento que a tela ao lado desmente.
+export function whereFaturamentoEmit() {
   return { papel: "EMIT", statusEfetivo: "autorizada" };
 }
 

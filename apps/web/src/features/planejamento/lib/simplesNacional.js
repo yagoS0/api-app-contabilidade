@@ -195,11 +195,19 @@ export function tributosForaDoDasNaSextaFaixa(anexo) {
  *
  * A folha INCLUI pró-labore e encargos. Apuração mensal sobre os 12 meses anteriores: o
  * enquadramento pode alternar mês a mês, e é por isso que a tela mostra a margem, não só o lado.
+ *
+ * ⚠⚠ FOLHA `null` (NÃO INFORMADA) DEVOLVE `null`, NÃO ZERO — e esta é a guarda mais cara do módulo.
+ * `Number(null)` é 0, e 0 é finito: sem esta linha, uma folha DESCONHECIDA produzia Fator R 0,00%,
+ * `anexoPorFatorR` respondia "V" (a alíquota maior), e o comparativo passava a recomendar regime
+ * com base num número que ninguém informou — num PDF que vai para o cliente do contador. Folha
+ * zero de verdade continua sendo `0`, e continua dando Fator R 0: o que muda é que AUSÊNCIA deixou
+ * de ser confundida com ela.
  */
 export function fatorR(folha12m, rbt12) {
   const r = Number(rbt12) || 0;
   if (r <= 0) return null;
-  return (Number(folha12m) || 0) / r;
+  if (folha12m == null || !Number.isFinite(Number(folha12m))) return null;
+  return Number(folha12m) / r;
 }
 
 /** ≥ 28% → Anexo III; abaixo → Anexo V. Só vale para atividade sujeita ao fator (§ 5º-M). */
@@ -219,6 +227,9 @@ export function anexoPorFatorR(folha12m, rbt12) {
 export function folhaParaFatorR(folha12m, rbt12) {
   const r = Number(rbt12) || 0;
   if (r <= 0) return null;
+  // Par da guarda de `fatorR`: sem folha informada não há "quanto falta" nem "quanto pode cair".
+  // O gauge não renderiza — e quem explica o que falta é o card do Simples, que sai indisponível.
+  if (folha12m == null || !Number.isFinite(Number(folha12m))) return null;
   const necessaria = r * FATOR_R_LIMITE;
   const atual = Number(folha12m) || 0;
   return {
@@ -314,7 +325,14 @@ export function custoAnualSimples({
   const das = rep.aliquotaEfetiva * receita;
 
   // A CPP por fora incide sobre a FOLHA, não sobre a receita.
-  const cppPorFora = anexo.cppForaDoDas ? (Number(folhaAnual) || 0) * ENCARGOS_FOLHA.cppPatronal : 0;
+  //
+  // ⚠ FOLHA NÃO INFORMADA (`null`) NO ANEXO IV NÃO VIRA CPP ZERO. No Anexo IV a CPP está fora do
+  // DAS, então zerá-la faria o regime aparecer 20% da folha mais barato do que é — exatamente o
+  // erro que o alerta do documento de fontes descreve, só que causado por ausência de dado em vez
+  // de esquecimento. Sem folha, a CPP sai da soma E vai para `naoConsiderado`, no corpo do card.
+  const folhaInformada = folhaAnual != null && Number.isFinite(Number(folhaAnual));
+  const cppPorFora = anexo.cppForaDoDas && folhaInformada ? Number(folhaAnual) * ENCARGOS_FOLHA.cppPatronal : 0;
+  const cppNaoEstimada = Boolean(anexo.cppForaDoDas) && !folhaInformada;
 
   // ⚠⚠ ACIMA DO SUBLIMITE O DAS ENCOLHE SEM A EMPRESA PAGAR MENOS (art. 13-A). O que saiu do DAS
   // tem de voltar à conta — como VALOR quando temos a alíquota, e como RESSALVA quando não temos.
@@ -361,6 +379,9 @@ export function custoAnualSimples({
       foraDoDas.includes("icms")
         ? `ICMS: acima do sublimite de ${brl(LIMITES_SIMPLES.sublimiteIcmsIss)} ele SAI do DAS e passa a ser recolhido pelas regras do estado — não estimado aqui`
         : null,
+      cppNaoEstimada
+        ? "CPP (INSS patronal de 20%): no Anexo IV ela fica FORA do DAS, e a folha de 12 meses não foi informada — não estimada aqui, então este total está subestimado"
+        : null,
     ].filter(Boolean),
     premissas: [
       `${anexo.nome} (${anexo.fonte})`,
@@ -380,7 +401,9 @@ export function custoAnualSimples({
         ? `ISS de ${(Number(aliquotaIss) * 100).toFixed(2).replace(".", ",")}% somado POR FORA do DAS: ${brl(issForaDoDas)}`
         : null,
       rep.tetoIssAplicado ? "Teto de ISS de 5% aplicado, com redistribuição aos federais" : null,
-      anexo.cppForaDoDas ? `CPP de 20% somada POR FORA sobre folha de ${brl(folhaAnual)} — no Anexo IV ela não está no DAS` : null,
+      anexo.cppForaDoDas && folhaInformada
+        ? `CPP de 20% somada POR FORA sobre folha de ${brl(folhaAnual)} — no Anexo IV ela não está no DAS`
+        : null,
     ].filter(Boolean),
   };
 }

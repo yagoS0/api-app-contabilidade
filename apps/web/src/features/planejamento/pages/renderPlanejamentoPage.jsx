@@ -5,6 +5,9 @@
 //  • SIMULAÇÃO LIVRE — formulário em branco, sem empresa. É o cenário de reunião com prospect,
 //    e por isso não exige empresa cadastrada.
 //
+// ⚠ A SIMULAÇÃO LIVRE FICA, e o modo carteira é ACRÉSCIMO. O seletor abaixo nasce em "Simulação
+// livre": exigir empresa cadastrada para simular mataria o uso comercial do módulo.
+//
 // ⚠ TRÊS EXIGÊNCIAS DE PRODUTO QUE VÊM DO MOTOR, e nenhuma é detalhe de layout:
 //
 //  1. A RECUSA DE CALCULAR TEM O MESMO PESO DO RESULTADO. Ver `CardRegime` — se o Lucro Real
@@ -13,14 +16,19 @@
 //  2. O QUE FICOU DE FORA DA SOMA VAI NO CORPO DO CARD, não em rodapé: um total sem ISS parece
 //     completo.
 //  3. O PDF CIRCULA SOZINHO. Ele vai para o cliente do contador sem esta tela por perto, então
-//     data de vigência das tabelas e avisos de escopo têm de sair IMPRESSOS junto dos números —
-//     não adianta estarem visíveis aqui.
+//     data de vigência das tabelas, avisos de escopo E A PROCEDÊNCIA DE CADA CAMPO têm de sair
+//     IMPRESSOS junto dos números — não adianta estarem visíveis aqui.
+//
+// ⚠⚠ E A QUARTA, que é a razão do modo carteira existir: FOLHA AUSENTE NÃO É ZERO. Campo que a
+// empresa não tem chega `null`, o input fica VAZIO e a linha de origem diz que não foi possível
+// apurar. Ver `lib/prefillDaEmpresa.js` e a recusa do Fator R em `lib/comparador.js`.
 
 import { useMemo, useState, useEffect } from "react";
 import { compararRegimes, pontoDeEquilibrio } from "../lib/comparador";
 import { custoAnualSimples } from "../lib/simplesNacional";
 import { ATIVIDADES_PRESUMIDO, avisoTravaServicos16 } from "../lib/lucroPresumido";
 import { ANEXOS, ISS_FAIXA_LEGAL } from "../lib/tabelasFiscais";
+import { prefillDaEmpresa, procedenciaDosCampos } from "../lib/prefillDaEmpresa";
 import { CardRegime } from "../components/CardRegime";
 import { GaugeFatorR } from "../components/GaugeFatorR";
 import { BackButton } from "../../../components/ui/BackButton";
@@ -36,7 +44,27 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-export function PlanejamentoPage({ empresa = null, onVoltar }) {
+const ROTULO_REGIME = {
+  SIMPLES_NACIONAL: "Simples Nacional", LUCRO_PRESUMIDO: "Lucro Presumido",
+  LUCRO_REAL: "Lucro Real", MEI: "MEI",
+};
+
+/**
+ * A LINHA DE ORIGEM DE UM CAMPO — regra do módulo, não enfeite.
+ *
+ * ⚠ A ausência tem COR DE PENDÊNCIA (âmbar), não cinza: campo vazio sem explicação parece campo
+ * quebrado, e o contador preencheria "o que estava lá antes". A origem apurada é discreta de
+ * propósito — ela informa, não alerta. E nada aqui é verde: verde é concluído, nunca "confie".
+ */
+function OrigemDoCampo({ campo }) {
+  if (!campo) return null;
+  if (campo.apurado) {
+    return <span style={{ fontSize: "0.68rem", color: C.muted, lineHeight: 1.35 }}>da empresa · {campo.origem}</span>;
+  }
+  return <span style={{ fontSize: "0.68rem", color: C.alerta, lineHeight: 1.35 }}>⚠ {campo.motivoAusencia}</span>;
+}
+
+export function PlanejamentoPage({ api = null, empresas = [], empresa = null, onVoltar }) {
   const [receita, setReceita] = useState("");
   const [rbt12, setRbt12] = useState("");
   const [mesesAtividade, setMesesAtividade] = useState("");
@@ -52,14 +80,63 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
   const [abertos, setAbertos] = useState({});
   const [imprimindo, setImprimindo] = useState(false);
 
-  // Modo carteira: pré-preenche com o que a empresa já tem. Editável — é cenário, não cadastro.
+  // ── SELETOR DE EMPRESA ────────────────────────────────────────────────────────────────────────
+  // ⚠ A lista vem PRONTA de fora (`empresas`), da mesma leitura que o dashboard usa
+  // (`GET /firm/companies`), que já é escopada pela carteira de quem está logado — o mesmo critério
+  // de `empresasVisiveis`. Não há uma segunda leitura de escopo aqui, e não pode haver: escopo
+  // escrito duas vezes é escopo que diverge, e divergir nisto é mostrar empresa de outro escritório.
+  // O backend confere de novo o id do path (`requireFirmCompanyAccess`) — a tela nunca é a guarda.
+  const [empresaId, setEmpresaId] = useState(empresa?.id || "");
+  const [dadosEmpresa, setDadosEmpresa] = useState(empresa || null);
+  const [carregando, setCarregando] = useState(false);
+  const [erroCarga, setErroCarga] = useState(null);
+
   useEffect(() => {
-    if (!empresa) return;
-    if (empresa.receitaAnual != null) setReceita(String(empresa.receitaAnual));
-    if (empresa.rbt12 != null) setRbt12(String(empresa.rbt12));
-    if (empresa.folhaAnual != null) setFolha(String(empresa.folhaAnual));
-    if (empresa.aliquotaIss != null) setIss(String(empresa.aliquotaIss * 100));
-  }, [empresa]);
+    let cancelado = false;
+    if (!empresaId) { setDadosEmpresa(null); setErroCarga(null); return () => { cancelado = true; }; }
+    if (!api?.getDadosPlanejamento) {
+      setErroCarga("Esta instalação não expõe os dados de planejamento por empresa.");
+      return () => { cancelado = true; };
+    }
+    setCarregando(true);
+    setErroCarga(null);
+    api.getDadosPlanejamento(empresaId)
+      .then((r) => {
+        if (cancelado) return;
+        if (!r || r.ok === false) throw new Error(r?.error || "falha");
+        setDadosEmpresa(r);
+      })
+      .catch(() => {
+        if (cancelado) return;
+        setDadosEmpresa(null);
+        // ⚠ RECUSA COM MOTIVO, e sem cair para simulação livre em silêncio: um formulário em branco
+        // depois de escolher a empresa se lê como "a empresa não tem dado nenhum".
+        setErroCarga("Não foi possível carregar os dados desta empresa. Os campos continuam em branco — nada foi preenchido por suposição.");
+      })
+      .finally(() => { if (!cancelado) setCarregando(false); });
+    return () => { cancelado = true; };
+  }, [api, empresaId]);
+
+  const prefill = useMemo(() => prefillDaEmpresa(dadosEmpresa), [dadosEmpresa]);
+
+  // Modo carteira: pré-preenche com o que a empresa já tem. Editável — é cenário, não cadastro.
+  //
+  // ⚠⚠ CAMPO NÃO APURADO LIMPA O INPUT, não o deixa com o valor da empresa ANTERIOR. Trocar de
+  // empresa e herdar a folha da outra é a forma mais silenciosa possível de calcular o Fator R da
+  // empresa errada — e o resultado tem cara de certo.
+  useEffect(() => {
+    if (!prefill.temEmpresa) return;
+    const v = prefill.valores;
+    setReceita(v.receitaAnual == null ? "" : String(v.receitaAnual));
+    setRbt12(v.rbt12 == null ? "" : String(v.rbt12));
+    setFolha(v.folhaAnual == null ? "" : String(v.folhaAnual));
+    setIss(v.aliquotaIss == null ? "" : String(Math.round(v.aliquotaIss * 1e6) / 1e4));
+    if (v.sujeitoFatorR != null) setSujeitoFatorR(Boolean(v.sujeitoFatorR));
+    if (v.anexo != null) setAnexo(v.anexo);
+    // `atividadePresumido` NÃO é pré-preenchida: o projeto não tem de-para CNAE→presunção de
+    // IRPJ/CSLL, e chutar entre 8% e 32% inverteria a comparação. Fica com a escolha da tela, e a
+    // linha de origem diz que não veio da empresa.
+  }, [prefill]);
 
   // ⚠ SÓ do 1º ao 12º mês. Do 13º em diante a empresa TEM os 12 meses de histórico, e o RBT12 real
   // volta a ser o campo comum — a transição do art. 22, § 4º, II é isto, na tela. Passar um valor
@@ -95,7 +172,11 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
   const entradas = useMemo(() => ({
     receitaAnual: num(receita) || 0,
     rbt12: num(rbt12) ?? num(receita),
-    folhaAnual: num(folha) || 0,
+    // ⚠⚠ `num(folha)`, NÃO `num(folha) || 0`. Campo vazio significa FOLHA NÃO INFORMADA, e o motor
+    // trata `null` como ausência: sem folha o Fator R não se calcula e o Simples sai indisponível,
+    // em vez de cair no Anexo V (a alíquota maior) por causa de um zero que ninguém digitou. Folha
+    // realmente zero continua sendo possível — digite 0.
+    folhaAnual: num(folha),
     anexoSimples: anexo,
     sujeitoAoFatorR: sujeitoFatorR,
     atividadePresumido: atividade,
@@ -129,6 +210,36 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
   }, [entradas, temReceita, sujeitoFatorR]);
 
   const avisoTrava = temReceita && atividade === "servicos" ? avisoTravaServicos16(entradas.receitaAnual) : null;
+
+  // ⚠ A PROCEDÊNCIA DE CADA CAMPO, PARA O PAPEL. O PDF circula sozinho: dois PDFs da mesma empresa
+  // com números diferentes têm de se distinguir NELE, senão a diferença parece erro de cálculo.
+  // Cada linha diz se o valor veio da empresa (e de onde), se foi digitado por cima, se foi
+  // informado nesta simulação, ou se não foi possível apurar.
+  const procedencias = useMemo(() => procedenciaDosCampos(prefill, {
+    receitaAnual: num(receita),
+    rbt12: num(rbt12),
+    folhaAnual: num(folha),
+    // O regime atual não é editável na tela: ele descreve de onde a empresa está saindo.
+    regimeAtual: prefill.valores?.regimeAtual ?? null,
+    // ⚠ Sujeito ao Fator R: o anexo do seletor não vale nada (o campo fica desabilitado e quem
+    // decide é a folha). Imprimir "Anexo III · informado nesta simulação" nesse caso afirmaria uma
+    // escolha que não existiu — a linha tem de dizer que o anexo sai da folha.
+    anexo: sujeitoFatorR ? null : anexo,
+    sujeitoFatorR,
+    aliquotaIss: num(iss) == null ? null : num(iss) / 100,
+    atividadePresumido: atividade,
+  }), [prefill, receita, rbt12, folha, anexo, sujeitoFatorR, iss, atividade]);
+
+  const valorImpresso = (linha) => {
+    if (linha.valor === null || linha.valor === undefined || linha.valor === "") return "—";
+    if (linha.tipo === "brl") return brl(linha.valor);
+    if (linha.tipo === "percentual") return `${(Number(linha.valor) * 100).toFixed(2).replace(".", ",")}%`;
+    if (linha.tipo === "booleano") return linha.valor ? "sim" : "não";
+    if (linha.chave === "regimeAtual") return ROTULO_REGIME[linha.valor] || String(linha.valor);
+    if (linha.chave === "atividadePresumido") return ATIVIDADES_PRESUMIDO[linha.valor]?.rotulo || String(linha.valor);
+    if (linha.chave === "anexo") return ANEXOS[linha.valor]?.nome || `Anexo ${linha.valor}`;
+    return String(linha.valor);
+  };
 
   // ⚠ EXIGÊNCIA DE PRODUTO, NÃO ENFEITE. Em início de atividade o RBT12 é PREMISSA, não histórico —
   // e é premissa que muda o número. Sem esta frase, "RBT12 de R$ 360.000" se lê como faturamento
@@ -173,15 +284,44 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
           )}
           <h1 style={{ margin: 0, fontSize: "1.2rem" }}>Planejamento tributário</h1>
           <span style={{ fontSize: "0.8rem", color: C.muted }}>
-            {empresa ? empresa.razao : "Simulação livre — sem empresa vinculada"}
+            {prefill.empresa?.razao || "Simulação livre — sem empresa vinculada"}
           </span>
         </div>
+
+        {/* ── SELETOR DE EMPRESA ─────────────────────────────────────────────
+            A porta de entrada do modo carteira. Nasce em "Simulação livre" de propósito: a tela
+            continua servindo à reunião com prospect, onde a empresa ainda não existe no sistema.
+            A lista é a da carteira de quem está logado — ver o comentário do estado acima. */}
+        {empresas.length > 0 && (
+          <div data-print-hide style={{ padding: 12, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 8 }}>
+            <label style={{ ...rotulo, maxWidth: 520 }}>Empresa
+              <select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)} style={campo}>
+                <option value="">Simulação livre — sem empresa vinculada</option>
+                {empresas.map((e) => (
+                  <option key={e.companyId || e.id} value={e.companyId || e.id}>
+                    {e.razao}{e.cnpj ? ` — ${e.cnpj}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {carregando && <span style={{ fontSize: "0.76rem", color: C.muted }}>Carregando os dados da empresa…</span>}
+            {erroCarga && <span style={{ fontSize: "0.76rem", color: C.alerta }}>⚠ {erroCarga}</span>}
+            {prefill.temEmpresa && prefill.referencia && (
+              <span style={{ fontSize: "0.72rem", color: C.muted, lineHeight: 1.45 }}>
+                Campos apurados sobre os 12 meses de <strong>{prefill.referencia.janelaRotulo}</strong>.
+                Tudo abaixo é <strong>editável</strong> — isto é um cenário, não o cadastro da empresa,
+                e nada aqui grava nada. O que for digitado por cima sai marcado no PDF.
+              </span>
+            )}
+          </div>
+        )}
 
         {/* ── ENTRADAS ─────────────────────────────────────────────────────── */}
         <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.borda}`, background: C.surface, display: "grid", gap: 12 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
             <label style={rotulo}>Receita anual (R$)
               <input value={receita} onChange={(e) => setReceita(e.target.value)} inputMode="decimal" placeholder="0,00" style={campo} />
+              {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.receitaAnual} />}
             </label>
             <label style={rotulo}>RBT12 (R$) — receita dos 12 meses anteriores
               <input
@@ -192,6 +332,7 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
                 placeholder={mesesInicioAtividade ? "proporcionalizado — empresa em início de atividade" : "igual à receita anual"}
                 style={{ ...campo, opacity: mesesInicioAtividade ? 0.5 : 1 }}
               />
+              {prefill.temEmpresa && !mesesInicioAtividade && <OrigemDoCampo campo={prefill.campos.rbt12} />}
             </label>
             {/* ⚠ Entrada, não inferência: a receita não diz em que mês a empresa está. Duas empresas
                 com o mesmo acumulado podem estar no 2º ou no 9º mês, e a alíquota sai diferente. */}
@@ -204,28 +345,52 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
                 style={campo}
               />
             </label>
+            {/* ⚠ A FOLHA É O CAMPO CRÍTICO DESTA TELA. Vazio = NÃO INFORMADA, e o placeholder diz
+                isso: "0,00" convidava a ler o vazio como zero, que é exatamente a confusão que
+                joga a empresa no Anexo V sem ninguém ter informado a folha. */}
             <label style={rotulo}>Folha anual, com pró-labore (R$)
-              <input value={folha} onChange={(e) => setFolha(e.target.value)} inputMode="decimal" placeholder="0,00" style={campo} />
+              <input
+                value={folha}
+                onChange={(e) => setFolha(e.target.value)}
+                inputMode="decimal"
+                placeholder="vazio = não informada"
+                style={campo}
+              />
+              {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.folhaAnual} />}
             </label>
             <label style={rotulo}>Atividade no Lucro Presumido
               <select value={atividade} onChange={(e) => setAtividade(e.target.value)} style={campo}>
                 {Object.entries(ATIVIDADES_PRESUMIDO).map(([k, a]) => <option key={k} value={k}>{a.rotulo}</option>)}
               </select>
+              {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.atividadePresumido} />}
             </label>
             <label style={rotulo}>Anexo do Simples
               <select value={anexo} onChange={(e) => setAnexo(e.target.value)} disabled={sujeitoFatorR} style={{ ...campo, opacity: sujeitoFatorR ? 0.5 : 1 }}>
                 {Object.entries(ANEXOS).map(([k, a]) => <option key={k} value={k}>{a.nome}</option>)}
               </select>
+              {prefill.temEmpresa && !sujeitoFatorR && <OrigemDoCampo campo={prefill.campos.anexo} />}
             </label>
             <label style={rotulo}>Alíquota de ISS do município (%)
               <input value={iss} onChange={(e) => setIss(e.target.value)} inputMode="decimal" placeholder="deixe vazio se não souber" style={campo} />
+              {prefill.temEmpresa && <OrigemDoCampo campo={prefill.campos.aliquotaIss} />}
             </label>
           </div>
+
+          {/* O regime ATUAL não é entrada do cálculo — é o ponto de partida da conversa ("hoje você
+              está no X"). Aparece como leitura, com origem, e some quando não se sabe qual é. */}
+          {prefill.temEmpresa && (
+            <div style={{ fontSize: "0.78rem", color: prefill.campos.regimeAtual.apurado ? C.muted : C.alerta, lineHeight: 1.45 }}>
+              {prefill.campos.regimeAtual.apurado
+                ? <>Regime atual da empresa: <strong style={{ color: C.texto }}>{ROTULO_REGIME[prefill.campos.regimeAtual.valor] || prefill.campos.regimeAtual.valor}</strong> · {prefill.campos.regimeAtual.origem}</>
+                : <>⚠ {prefill.campos.regimeAtual.motivoAusencia}</>}
+            </div>
+          )}
 
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", cursor: "pointer" }}>
             <input type="checkbox" checked={sujeitoFatorR} onChange={(e) => setSujeitoFatorR(e.target.checked)} />
             Atividade sujeita ao Fator R (o anexo passa a sair da folha, não da escolha)
           </label>
+          {prefill.temEmpresa && <div style={{ marginTop: -4 }}><OrigemDoCampo campo={prefill.campos.sujeitoFatorR} /></div>}
 
           {/* O Lucro Real só entra com estes dois — e o card diz isso enquanto faltarem. */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, paddingTop: 8, borderTop: `1px solid ${C.borda}` }}>
@@ -324,7 +489,8 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
             <div data-print-only style={{ display: "none" }}>
               <h2 style={{ margin: "0 0 2px" }}>Simulação de regime tributário</h2>
               <p style={{ margin: "0 0 4px", fontSize: "0.85rem" }}>
-                {empresa ? empresa.razao : "Simulação livre"} · ano-base {resultado.anoBase} ·
+                {prefill.empresa?.razao || "Simulação livre"}
+                {prefill.empresa?.cnpj ? ` · CNPJ ${prefill.empresa.cnpj}` : ""} · ano-base {resultado.anoBase} ·
                 emitida em {new Date().toLocaleDateString("pt-BR")}
               </p>
               <p style={{ margin: "0 0 10px", fontSize: "0.8rem" }}>
@@ -334,6 +500,32 @@ export function PlanejamentoPage({ empresa = null, onVoltar }) {
                   proporcionalizado sem a ressalva vira faturamento real aos olhos de quem receber. */}
               {premissaInicio && (
                 <p style={{ margin: "0 0 10px", fontSize: "0.8rem" }}><strong>⚠ {premissaInicio}</strong></p>
+              )}
+
+              {/* ⚠⚠ DE ONDE VEIO CADA NÚMERO — IMPRESSO, e não só na tela.
+                  Dois PDFs da mesma empresa com números diferentes têm de se distinguir no PAPEL:
+                  sem esta tabela, quem recebe não tem como saber se o RBT12 saiu da apuração
+                  transmitida, da soma dos lançamentos ou da mão do contador — e a diferença entre
+                  os dois documentos parece erro de cálculo. Vale também para a simulação livre,
+                  onde a resposta é "informado nesta simulação", que é uma informação, não um vazio. */}
+              {prefill.temEmpresa && (
+                <table data-print-tabela style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.72rem", margin: "0 0 10px" }}>
+                  <caption style={{ textAlign: "left", fontWeight: 700, padding: "0 0 3px" }}>
+                    Procedência dos dados usados nesta simulação
+                    {prefill.referencia ? ` · apuração sobre ${prefill.referencia.janelaRotulo}` : ""}
+                  </caption>
+                  <tbody>
+                    {procedencias.map((l) => (
+                      <tr key={l.chave}>
+                        <td style={{ padding: "2px 6px 2px 0", whiteSpace: "nowrap" }}>{l.rotulo}</td>
+                        <td style={{ padding: "2px 6px", whiteSpace: "nowrap", fontWeight: 700 }}>{valorImpresso(l)}</td>
+                        <td style={{ padding: "2px 0" }}>
+                          {l.estado === "ausente" ? "não foi possível apurar — " : ""}{l.texto}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
 

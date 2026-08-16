@@ -39,13 +39,16 @@ export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCo
   // Crédito não gera saldo negativo de imposto na simulação: o que passa vira crédito acumulado,
   // que é outro assunto (e outro fluxo de caixa).
   const pisCofins = Math.max(0, pisCofinsBruto - Number(creditosPisCofins));
-  const cpp = (Number(folhaAnual) || 0) * ENCARGOS_FOLHA.cppPatronal;
+  // ⚠ Folha `null` = NÃO INFORMADA. Mesma regra do Presumido: a CPP sai da soma e a falta viaja em
+  // `naoConsiderado`, porque zerá-la barateia o regime em 20% da folha por ausência de dado.
+  const folhaInformada = folhaAnual != null && Number.isFinite(Number(folhaAnual));
+  const cpp = folhaInformada ? Number(folhaAnual) * ENCARGOS_FOLHA.cppPatronal : 0;
   const iss = aliquotaIss == null ? 0 : receita * Number(aliquotaIss);
   const total = irpj + adicional + csll + pisCofins + cpp + iss;
 
   return {
     regime: "Lucro Real",
-    porTributo: { irpj, adicionalIrpj: adicional, csll, pisCofins, cpp, ...(aliquotaIss == null ? {} : { iss }) },
+    porTributo: { irpj, adicionalIrpj: adicional, csll, pisCofins, ...(folhaInformada ? { cpp } : {}), ...(aliquotaIss == null ? {} : { iss }) },
     total,
     cargaEfetiva: receita > 0 ? total / receita : null,
     premissas: [
@@ -53,7 +56,13 @@ export function custoAnualReal({ receitaAnual, margemLucro = null, creditosPisCo
       `PIS/COFINS não cumulativo (9,25%) menos ${brl(creditosPisCofins)} de créditos informados`,
       "Compensação de prejuízos fiscais NÃO considerada (trava de 30% — Lei 9.065/1995, art. 15)",
     ],
-    naoConsiderado: ["Compensação de prejuízo fiscal acumulado", "ICMS e substituição tributária"],
+    naoConsiderado: [
+      folhaInformada
+        ? null
+        : "CPP (INSS patronal de 20% sobre a folha): a folha de 12 meses não foi informada — não estimada aqui, então este total está subestimado",
+      "Compensação de prejuízo fiscal acumulado",
+      "ICMS e substituição tributária",
+    ].filter(Boolean),
   };
 }
 
@@ -90,13 +99,33 @@ export function compararRegimes({
   // Sujeito ao Fator R: o anexo sai da folha, não de uma escolha.
   const anexoResolvido = sujeitoAoFatorR ? anexoPorFatorR(folhaAnual, rbt) : anexoSimples;
 
-  const simples = anexoResolvido
+  // ⚠⚠ RECUSA, NÃO ANEXO V. Atividade sujeita ao Fator R com folha NÃO INFORMADA não tem anexo
+  // resolvível: `folha/rbt` não existe. Antes desta guarda o caminho era silencioso e caro —
+  // `Number(null) || 0` dava Fator R 0,00%, `anexoPorFatorR` respondia "V" (a alíquota maior), o
+  // card do Simples exibia um total plausível e o comparativo coroava um vencedor a partir de um
+  // número que ninguém informou. O `indisponivel` faz o `CardRegime` mostrar a PERGUNTA no lugar do
+  // valor, com o mesmo peso visual — que é a regra do módulo para número ausente.
+  const faltaFolhaParaFatorR = sujeitoAoFatorR && !anexoResolvido
+    && (folhaAnual == null || !Number.isFinite(Number(folhaAnual)));
+
+  const simplesSemFolha = faltaFolhaParaFatorR
+    ? {
+      regime: "Simples Nacional",
+      indisponivel: true,
+      faltam: ["a folha dos últimos 12 meses, com pró-labore e encargos"],
+      motivo: "A atividade é sujeita ao Fator R: o anexo (III ou V) sai da folha ÷ RBT12, e a folha "
+        + "não foi informada. Tratar a ausência como zero levaria ao Anexo V, que é a alíquota maior — "
+        + "e mudaria o regime recomendado sem que ninguém tivesse informado a folha.",
+    }
+    : null;
+
+  const simples = simplesSemFolha || (anexoResolvido
     // ⚠ `aliquotaIss` vai para os TRÊS regimes, como já ia para o Presumido e o Real. No Simples ela
     // só produz efeito na 6ª faixa, onde o ISS saiu do DAS (art. 13-A) — abaixo dela o ISS está
     // dentro do DAS e o motor a ignora. Não passá-la aqui comparava um Simples sem ISS com um
     // Presumido com ISS, e a diferença chegava a inverter o vencedor.
     ? custoAnualSimples({ anexoChave: anexoResolvido, rbt12: rbt, receitaAnual, folhaAnual, aliquotaIss, mesesDeAtividade, receitasMensais })
-    : null;
+    : null);
   const presumido = custoAnualPresumido({ receitaAnual, atividade: atividadePresumido, folhaAnual, aliquotaIss, anoBase });
   const real = custoAnualReal({ receitaAnual, margemLucro, creditosPisCofins, folhaAnual, aliquotaIss });
 

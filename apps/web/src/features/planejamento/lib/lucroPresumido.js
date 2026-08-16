@@ -96,7 +96,13 @@ export function custoAnualPresumido({
   const pis = receita * PIS_COFINS_CUMULATIVO.pis;
   const cofins = receita * PIS_COFINS_CUMULATIVO.cofins;
   // §2.7 e §5 — no Presumido a CPP é SEMPRE por fora, sobre a folha.
-  const cpp = (Number(folhaAnual) || 0) * ENCARGOS_FOLHA.cppPatronal;
+  //
+  // ⚠ FOLHA `null` = NÃO INFORMADA, e aqui isso pesa mais que no Simples: no Presumido a CPP entra
+  // em TODA empresa. Zerá-la por ausência de dado barateia o regime em 20% da folha e pode inverter
+  // a comparação sozinha. Sem folha, a parcela sai da soma e a falta vai declarada em
+  // `naoConsiderado`, ao lado do número — a mesma regra do ISS.
+  const folhaInformada = folhaAnual != null && Number.isFinite(Number(folhaAnual));
+  const cpp = folhaInformada ? Number(folhaAnual) * ENCARGOS_FOLHA.cppPatronal : 0;
   const iss = aliquotaIss == null ? 0 : receita * Number(aliquotaIss);
 
   const total = irpj + adicional + csll + pis + cofins + cpp + iss;
@@ -105,12 +111,15 @@ export function custoAnualPresumido({
     regime: "Lucro Presumido",
     atividade: at.rotulo,
     elegivel: receita <= LIMITE_LUCRO_PRESUMIDO,
-    porTributo: { irpj, adicionalIrpj: adicional, csll, pis, cofins, cpp, ...(aliquotaIss == null ? {} : { iss }) },
+    porTributo: { irpj, adicionalIrpj: adicional, csll, pis, cofins, ...(folhaInformada ? { cpp } : {}), ...(aliquotaIss == null ? {} : { iss }) },
     total,
     cargaEfetiva: receita > 0 ? total / receita : null,
     // ⚠ A tela PRECISA dizer o que ficou de fora, senão o número parece completo e não é.
     naoConsiderado: [
       aliquotaIss == null ? "ISS (informe a alíquota do município no cadastro)" : null,
+      folhaInformada
+        ? null
+        : "CPP (INSS patronal de 20% sobre a folha): a folha de 12 meses não foi informada — não estimada aqui, então este total está subestimado",
       "ICMS e substituição tributária, quando houver",
       "RAT/FAP e contribuições a terceiros sobre a folha",
     ].filter(Boolean),
@@ -124,7 +133,7 @@ export function custoAnualPresumido({
         : null,
       "PIS/COFINS no regime cumulativo, 3,65% sobre a receita, sem créditos (§2.6)",
       "Adicional de IRPJ calculado por TRIMESTRE (R$ 60.000 por trimestre), como manda a apuração trimestral",
-      "CPP de 20% sobre a folha, recolhida por fora (§5)",
+      folhaInformada ? "CPP de 20% sobre a folha, recolhida por fora (§5)" : null,
     ].filter(Boolean),
     majoracaoLc224: {
       aplicada: bIrpj.houveMajoracao || bCsll.houveMajoracao,
