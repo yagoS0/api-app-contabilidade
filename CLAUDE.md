@@ -189,6 +189,40 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     Início de atividade coberto — RBT12 proporcionalizado e **guarda do limite proporcional** de
     enquadramento (estouro pode excluir a empresa retroativamente): `docs/fontes-fiscais.md`
     §1.12 e §1.13.
+    - **MODO CARTEIRA LIGADO (16/08/2026).** O efeito de pré-preenchimento já existia na página e
+      **ninguém nunca passava a empresa** — o `App.jsx` renderizava `<PlanejamentoPage />` sem prop.
+      Hoje há **seletor de empresa dentro da página** (a simulação livre continua sendo o estado
+      inicial, de propósito) alimentado por `companiesState.companies` (`GET /firm/companies`, já
+      escopado pela carteira); o backend reconfere o id com `requireFirmCompanyAccess`. Fonte dos
+      campos: `application/planejamento/DadosPlanejamentoService.js` +
+      `GET /firm/companies/:id/planejamento` — **só leitura, não grava nem cache** (por isso NÃO usa
+      `RbtExtratoService.getRbt12`, que faz `upsertCache` no fallback).
+    - ⚠⚠ **FOLHA AUSENTE NÃO É ZERO, e isso virou regra do motor.** `fatorR(null, rbt)` devolve
+      `null` (era `0`, porque `Number(null) || 0`), `anexoPorFatorR` deixa de responder **"V"**, e
+      `compararRegimes` devolve o Simples **`indisponivel`** quando a atividade é de Fator R e a
+      folha não foi informada. Antes o caminho era silencioso e caro: Fator R 0% → Anexo V (a
+      alíquota maior) → um vencedor eleito sobre um número que ninguém digitou, num PDF que vai ao
+      cliente. Folha **zero informada** continua calculando — a distinção é `null` × `0`.
+      Travado em `lib/__tests__/folhaAusenteNaoEZero.test.js` (11).
+      - O zero não é hipotético: `CalculoFiscal.calcularApuracaoParaCompetencia` grava
+        `fs12Manual: fs12` com `fs12 = … : 0`. Há **zeros fabricados no banco**, e por isso
+        `campoComOrigem.valorMonetario` trata `0` como NÃO APURADO em toda base monetária.
+      - Par disso: CPP que depende da folha (Anexo IV, Presumido, Real) **não vira zero por
+        ausência** — sai da soma e vai declarada em `naoConsiderado`, no corpo do card.
+    - **Cada campo mostra a ORIGEM, e ela sai IMPRESSA.** `lib/prefillDaEmpresa.js` traduz o payload
+      em valores + procedência, com quatro estados (`da_empresa` · `digitado` (por cima, mostrando
+      os dois) · `informado` · `ausente` com motivo). O PDF ganhou a tabela "Procedência dos dados
+      usados nesta simulação" — dois PDFs da mesma empresa com números diferentes precisam se
+      distinguir **no papel**.
+    - ⚠ **A atividade do Lucro Presumido NÃO é derivada do CNAE, de propósito**: o projeto não tem
+      de-para CNAE→presunção de IRPJ/CSLL (o `CnaeAnexo` mapeia para ANEXO DO SIMPLES, outra lei), e
+      errar entre 8% e 32% inverteria a comparação. Sai ausente, com o motivo. **Pendente do dono.**
+    - ⚠ **Regime atual sem default.** `apuracaoV2.mapRegime` e `PerfilFiscalService` terminam em
+      `return "SIMPLES_NACIONAL"`; aqui texto irreconhecível devolve `null` e a tela diz que não
+      sabe — o comparativo inteiro se lê a partir do "hoje você está no X".
+    - **IBS/CBS: não construído, e a porta ficou aberta** — `tabelasFiscais.js` + um `custoAnual*`
+      novo em `comparador.js` é tudo que o desenho pede. Ver o relatório da entrega; nada de
+      alíquota/base/transição foi escrito (LC 214/2025 em transição).
   - **EFD-Contribuições / entrega por arquivo** (`obrigacoes/entregas/`, modelo genérico
     `EntregaObrigacaoArquivo`) — o **rastro** em três passos, com o "onde acontece" no rótulo de
     cada um. Serve também a ECD/ECF (`competencia` aceita "YYYY-MM" e "YYYY").

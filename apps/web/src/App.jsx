@@ -280,9 +280,19 @@ function App() {
   // `switchPage` uma única vez, aqui. O clique em "Voltar" estourava
   // `TypeError: session.switchPage is not a function` e a página não saía do lugar.
   // O erro não aparecia como erro: o handler morria dentro do onClick e a tela simplesmente ficava.
+  // ⚠ O MODO CARTEIRA JÁ EXISTIA NA PÁGINA E NUNCA TINHA SIDO LIGADO: o efeito de pré-preenchimento
+  // estava escrito, e este bloco renderizava `<PlanejamentoPage />` SEM `api` e SEM `empresas`, de
+  // modo que nenhuma empresa jamais chegava lá. O seletor de empresa vive dentro da página; a lista
+  // que ele mostra é a MESMA de `companiesState.companies` (`GET /firm/companies`), já escopada
+  // pela carteira de quem está logado — não há uma segunda leitura de escopo, e o backend confere o
+  // id de novo (`requireFirmCompanyAccess`).
   if (session.page === "planejamento") {
     return (
-      <PlanejamentoPage onVoltar={() => session.setPage("companies")} />
+      <PlanejamentoPage
+        api={api}
+        empresas={companiesWorkspace.companiesState.companies}
+        onVoltar={() => session.setPage("companies")}
+      />
     );
   }
 

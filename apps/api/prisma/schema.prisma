@@ -45,7 +45,31 @@ model Company {
   dataAbertura             DateTime?
   quantidadeSocios         Int?
   inscricaoMunicipal       String?
+  /// O código de tributação nacional (`cTribNac`) que a DPS LEVA — um só, porque a DPS tem um só.
+  ///
+  /// ⚠ NÃO É MAIS O CADASTRO. O cadastro dos serviços que a empresa pode prestar é
+  /// `codigosServicoNacional` (a lista, logo abaixo). Esta coluna continua existindo porque é ela
+  /// que `NfseService.buildMissingFields` exige e que `buildDpsXml` escreve no XML — e porque
+  /// remover coluna é migration destrutiva, decisão do dono.
+  ///
+  /// Regra de coerência (em `application/company/companyProfile.js`): quando a lista tem
+  /// EXATAMENTE um código, esta coluna é ele — não há o que escolher. Com mais de um, ela tem de
+  /// ser um dos cadastrados, senão o cadastro é RECUSADO com nome próprio. Nunca se elege um
+  /// "primeiro da lista" por conta própria: o serviço declarado é dado fiscal.
   codigoServicoNacional    String?
+  /// ⚠ OS CÓDIGOS DE SERVIÇO QUE A EMPRESA PODE USAR — decisão do dono, 16/08/2026:
+  /// *"ao cadastrar podemos ter mais de um código, a empresa pode usar mais de uma atividade e na
+  /// hora da emissão ela deve escolher"*.
+  ///
+  /// Cada item tem 6 dígitos (`item(2) + subitem(2) + desdobro nacional(2)`) e vem da lista OFICIAL
+  /// versionada em `docs/lista-servico-nacional/` (Anexo B do portal `gov.br/nfse`), com hash.
+  /// Nada é derivado do CNAE nem sugerido — a mesma regra do seletor de município.
+  ///
+  /// ⚠ ADITIVA E VAZIA: a coluna nasce `{}` e o dado antigo NÃO some. Medido no schema, o campo
+  /// singular acima era a única forma de guardar isto, e nenhuma migração de conteúdo é necessária
+  /// (ver a migration `20260816120000_add_codigos_servico_nacional`, que faz o backfill a partir
+  /// dele mesmo quando há valor).
+  codigosServicoNacional   String[]          @default([])
   codigoServicoMunicipal   String?
   rpsSerie                 String?
   rpsNumero                String?

@@ -62,6 +62,14 @@ export const companyCreateFormSchema = z.object({
     .regex(/^\d{6}$/, "O código nacional do serviço tem 6 dígitos (ex.: 171201)")
     .or(z.literal(""))
     .optional(),
+  // ⚠ A LISTA de códigos de serviço (decisão do dono, 16/08/2026): a empresa pode prestar mais de
+  // uma atividade. Cada item tem 6 dígitos, e vem de ESCOLHA na lista oficial versionada
+  // (`docs/lista-servico-nacional/`) — o formulário não deixa digitar. Lista vazia é legítima: a
+  // empresa apenas não emite, e a tela diz isso.
+  codigosServicoNacional: z
+    .array(z.string().regex(/^\d{6}$/, "Cada código de serviço tem 6 dígitos"))
+    .max(50)
+    .optional(),
   codigoServicoMunicipal: z
     .string()
     // ⚠ Sem comprimento fixo de propósito: a fonte prova que o XML leva os ÚLTIMOS 3 dígitos, não

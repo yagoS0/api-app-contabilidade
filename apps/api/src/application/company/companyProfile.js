@@ -250,10 +250,56 @@ export function validateAndNormalizeCompanyProfile(input) {
   // `cTribNac` — 6 dígitos numéricos.
   // Fonte, dentro do projeto: `docs/nfse-preenchimento.md` §5 ("cTribNac: código nacional (6
   // dígitos numéricos). Ex.: 171201"), §11 e o exemplo §12 da única emissão que voltou `issued`.
+  //
+  // ⚠ A PARTIR DE 16/08/2026 ESTA COLUNA DEIXOU DE SER O CADASTRO. Quem guarda os serviços que a
+  // empresa presta é `codigosServicoNacional` (a LISTA, logo abaixo); esta continua sendo **o
+  // código que a DPS leva** — uma nota declara UM serviço, e é ela que `buildMissingFields` exige e
+  // que `buildDpsXml` escreve no XML. As duas colunas existem porque respondem a perguntas
+  // diferentes ("o que a empresa pode emitir" × "o que ESTA nota declara").
   const codigoServicoNacionalBruto = asString(company.codigoServicoNacional);
   const codigoServicoNacional = onlyDigits(codigoServicoNacionalBruto);
   if (codigoServicoNacionalBruto && codigoServicoNacional.length !== 6) {
     return { ok: false, error: "company_codigo_servico_nacional_invalid" };
+  }
+
+  // ── A LISTA DE CÓDIGOS DE SERVIÇO — decisão do dono, 16/08/2026 ────────────────────────────
+  //
+  // > *"ao cadastrar podemos ter mais de um código, a empresa pode usar mais de uma atividade e na
+  // > hora da emissão ela deve escolher (…) existe uma lista da LC116 com texto vs o código,
+  // > devemos mostrar o texto para que facilite a escolha."*
+  //
+  // ⚠ AGORA HÁ LISTA OFICIAL NO PROJETO, e é isso que autoriza a mudança de campo digitado para
+  // ESCOLHA. O Anexo B do portal `gov.br/nfse` está versionado em `docs/lista-servico-nacional/`
+  // com URL, data, contagem e SHA-256; o front escolhe dentro dele
+  // (`apps/web/src/lib/servicosNacionais/`). Continua NÃO havendo de-para CNAE → serviço, nem
+  // sugestão, nem default.
+  //
+  // ⚠ AQUI SE VALIDA A FORMA, não a pertinência: o backend não carrega a lista de 335 códigos.
+  // Conferir o conteúdo nos dois lados exigiria a tabela duplicada em JS de servidor, livre para
+  // divergir da do front na primeira atualização do Anexo B — e a divergência apareceria como
+  // "salvei e o servidor recusou um código que a tela ofereceu".
+  //
+  // ⚠ `undefined` = o campo não veio no payload ⇒ NÃO MEXER. Array vazio = "apague a lista", que é
+  // uma intenção legítima e diferente. Confundir as duas apagaria o cadastro de toda tela que
+  // salvasse a empresa sem enviar este campo — que é o que a aba de certificado, por exemplo, faz.
+  let codigosServicoNacional;
+  if (company.codigosServicoNacional !== undefined) {
+    const entrada = Array.isArray(company.codigosServicoNacional)
+      ? company.codigosServicoNacional
+      : company.codigosServicoNacional == null
+        ? []
+        : [company.codigosServicoNacional];
+    codigosServicoNacional = [];
+    for (const item of entrada) {
+      const bruto = asString(item);
+      if (!bruto) continue;
+      const digitos = onlyDigits(bruto);
+      if (digitos.length !== 6) {
+        return { ok: false, error: "company_codigo_servico_nacional_invalid" };
+      }
+      // Deduplica preservando a ORDEM em que o contador escolheu — ela é a ordem da tela.
+      if (!codigosServicoNacional.includes(digitos)) codigosServicoNacional.push(digitos);
+    }
   }
 
   // `cTribMun` — SÓ DÍGITOS, e **sem exigência de comprimento**.
@@ -292,6 +338,30 @@ export function validateAndNormalizeCompanyProfile(input) {
     rpsSerie = String(n).padStart(5, "0");
   }
 
+  // ── COERÊNCIA ENTRE A LISTA E O CÓDIGO QUE A DPS LEVA ──────────────────────────────────────
+  //
+  // ⚠ ESTE BLOCO EXISTE PORQUE A ESCOLHA POR EMISSÃO AINDA NÃO CHEGA AO XML. `buildDpsXml` monta o
+  // `cTribNac` a partir de `company.codigoServicoNacional` e de mais nada (`NfseService.js:540`) —
+  // não há campo de serviço no payload da emissão. Enquanto for assim, a empresa com N códigos
+  // precisa de UM deles marcado como "o que a nota leva", senão o cadastro descreve uma coisa e a
+  // nota declara outra. A pendência está nomeada no relatório: é UMA linha em `buildDpsXml`.
+  //
+  // As três respostas, e por que nenhuma delas é "escolher o primeiro":
+  //   • lista com UM código      → o singular é ele. Não há escolha a fazer, então adotá-lo não é
+  //                                escolher por ninguém — é a mesma informação em dois lugares.
+  //   • lista com N e o singular entre eles → fica como está.
+  //   • lista com N e o singular fora dela (ou vazio) → RECUSA NOMEADA. Eleger "o primeiro da
+  //     lista" seria o sistema decidindo qual serviço a empresa declara ao fisco. Serviço errado na
+  //     nota é silencioso: ninguém percebe até o DANFSe sair com a descrição de outra atividade.
+  let codigoServicoNacionalFinal = codigoServicoNacional || null;
+  if (codigosServicoNacional && codigosServicoNacional.length) {
+    if (codigosServicoNacional.length === 1) {
+      codigoServicoNacionalFinal = codigosServicoNacional[0];
+    } else if (!codigoServicoNacionalFinal || !codigosServicoNacional.includes(codigoServicoNacionalFinal)) {
+      return { ok: false, error: "company_codigo_servico_nacional_fora_da_lista" };
+    }
+  }
+
   return {
     ok: true,
     data: {
@@ -313,7 +383,11 @@ export function validateAndNormalizeCompanyProfile(input) {
       // ── Configuração da emissão de NFS-e (o que `buildMissingFields` exige) ──
       // ⚠ Sem estas três linhas o valor chega no corpo, passa pelo Zod e é DESCARTADO EM SILÊNCIO
       // pela lista de colunas do `tx.company.update` — 200 na resposta e campo vazio na recarga.
-      codigoServicoNacional: codigoServicoNacional || null,
+      codigoServicoNacional: codigoServicoNacionalFinal,
+      // ⚠ `undefined` VIAJA DE PROPÓSITO: quem grava (a rota e o provisionamento) usa
+      // `!== undefined` para decidir entre "atualizar a lista" e "não tocar nela". Trocar por `[]`
+      // faria toda tela que salva a empresa sem enviar este campo APAGAR o cadastro de serviços.
+      codigosServicoNacional,
       codigoServicoMunicipal: codigoServicoMunicipal || null,
       rpsSerie,
       inscricaoEstadual: asString(company.inscricaoEstadual) || null,

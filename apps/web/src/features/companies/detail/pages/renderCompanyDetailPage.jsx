@@ -640,6 +640,9 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                   cnpj: selectedCompany?.legacyCompany?.cnpj || selectedCompany?.cnpj || null,
                   inscricaoMunicipal: selectedCompany?.legacyCompany?.inscricaoMunicipal || null,
                   codigoServicoNacional: selectedCompany?.legacyCompany?.codigoServicoNacional || null,
+                  /* Os N códigos que a empresa pode usar. É esta lista que o assistente mostra na
+                     hora de emitir — "aparecem apenas aqueles pré-cadastrados" (dono, 16/08/2026). */
+                  codigosServicoNacional: selectedCompany?.legacyCompany?.codigosServicoNacional || [],
                   codigoServicoMunicipal: selectedCompany?.legacyCompany?.codigoServicoMunicipal || null,
                   rpsSerie: selectedCompany?.legacyCompany?.rpsSerie || null,
                 }}

@@ -632,6 +632,10 @@ export function CompanyForm({
           "para que serve isto?" a quem nunca vai emitir nota de serviço. */}
       <CamposEmissaoNfse
         codigoServicoNacional={form.codigoServicoNacional}
+        /* ⚠ A LISTA de códigos (dono, 16/08/2026). Sem esta linha o seletor abre vazio em toda
+           empresa e o contador recadastra achando que nada foi salvo — a mesma classe do defeito
+           que o `legacyCompanySelect` do backend já cometeu com o município. */
+        codigosServicoNacional={form.codigosServicoNacional}
         codigoServicoMunicipal={form.codigoServicoMunicipal}
         rpsSerie={form.rpsSerie}
         onChange={onChange}

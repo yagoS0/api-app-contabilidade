@@ -57,6 +57,7 @@ import {
 } from "../lib/declaracaoNfse";
 import { impedimentoDeEmissao } from "../../../lib/municipios/municipioIbge";
 import { faltasParaEmitir } from "../../../lib/nfse/cadastroEmissaoNfse";
+import { ServicoNacionalDaNota } from "./ServicoNacionalDaNota";
 
 const PASSOS = ["Tomador", "Serviço", "Valores e tributos", "Conferir"];
 
@@ -381,6 +382,11 @@ export function EmitirNfseWizard({
 
         {passo === 1 && (
           <div style={{ display: "grid", gap: 10 }}>
+            {/* ⚠ O CÓDIGO DE SERVIÇO É O QUE SE DECLARA AO FISCO, e ele vinha invisível: a nota
+                saía com o `cTribNac` do cadastro e o contador não via qual, nem com que descrição.
+                Fica ANTES da descrição livre de propósito — a descrição do serviço se escreve
+                olhando para o serviço que está sendo declarado, não o contrário. */}
+            <ServicoNacionalDaNota cadastroEmissao={cadastroEmissao} />
             <label style={rotulo}>Descrição do serviço
               <textarea value={servico.descricao} onChange={(e) => setServico({ ...servico, descricao: e.target.value })} rows={4} style={{ ...campo, resize: "vertical" }} />
             </label>

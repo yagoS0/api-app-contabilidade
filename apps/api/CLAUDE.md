@@ -491,8 +491,10 @@ defeito do município — configuração que existe no model sem porta.
   | `codigoServicoNacional` (`cTribNac`) | 6 dígitos | `company_codigo_servico_nacional_invalid` | `docs/nfse-preenchimento.md` §5/§11/§12 |
   | `codigoServicoMunicipal` (`cTribMun`) | só dígitos, **sem comprimento fixo** | `company_codigo_servico_municipal_invalid` | idem §5 |
   | `rpsSerie` | numérica, 1–49999, gravada com 5 dígitos | `company_rps_serie_invalid` | RN **E0010** via `nfseNumeracao.js` |
-- ⚠ **NÃO EXISTE no projeto a lista de serviços da LC 116 nem a lista do município**, e por isso o
-  campo é **digitado**, não selecionado (o oposto do município, cuja lista do IBGE está versionada).
+- ⚠ **A LISTA DE SERVIÇO NACIONAL PASSOU A EXISTIR NO PROJETO (16/08/2026)** — ver a seção
+  "N CÓDIGOS DE SERVIÇO" abaixo. O `cTribNac` deixou de ser digitado e virou **escolha** numa lista
+  oficial versionada com hash. A lista do **município** continua não existindo (não há tabela
+  nacional; cada prefeitura publica a sua), então o `cTribMun` segue **digitado**.
   Nenhum de-para CNAE→serviço, nenhuma sugestão, nenhum default — inclusive **nenhuma série "1"**
   pré-preenchida: a série entra no identificador de toda nota emitida.
 - ⚠ **O comprimento do `cTribMun` NÃO está provado.** A fonte diz "código municipal (últimos 3
@@ -517,9 +519,97 @@ defeito do município — configuração que existe no model sem porta.
   Não foi possível medir nesta máquina: **não há banco alcançável**.
 
 Tabelas de código com a evidência de cada linha e `verificadoNoLeiaute: false`: **`dpsCodigos.js`**.
-Testes: `nfse/__tests__/` (`nfseNumeracao`, `nfseCertificado`, `dpsCodigos`, `desfechoEmissao`,
-`emissaoDps`) + `validators/__tests__/nfsePayload`. Medir antes da migration:
+Testes: `nfse/__tests__/` (`nfseNumeracao`, `nfseUltimaNota`, `nfseCertificado`, `dpsCodigos`,
+`desfechoEmissao`, `emissaoDps`) + `validators/__tests__/nfsePayload`. Medir antes da migration:
 **`scripts/diag-nfse-numeracao.mjs`** (só leitura, zero chamada externa).
+
+### ⚠ N CÓDIGOS DE SERVIÇO POR EMPRESA — decisão do dono, 16/08/2026
+
+> *"ao cadastrar podemos ter mais de um código, a empresa pode usar mais de uma atividade e na hora
+> da emissão ela deve escolher (…) existe uma lista da LC116 com texto vs o código, devemos mostrar
+> o texto para que facilite a escolha."*
+
+**A fonte existe agora, e é o que autoriza a mudança de campo digitado para escolha:**
+`docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx`
+(SHA-256 `a588fea0…55d424`), aba `LISTA.SERV.NAC.`, do portal `gov.br/nfse`. Ler o README de lá
+antes de mexer. Gerador: `scripts/gerar-lista-servico-nacional.mjs` (só leitura, zero rede) →
+`apps/web/src/lib/servicosNacionais/servicosNacionais.data.js` (`import()` dinâmico, 59 KB fora do
+bundle inicial).
+
+- ⚠ **O `cTribNac` NÃO é o item da LC 116.** É `item(2) + subitem(2) + desdobro nacional(2)`. O
+  item `31.01` é o guarda-chuva; **`310104`** é "Serviços técnicos em telecomunicações e
+  congêneres" — e é esse que o DANFSe imprime. Medido na planilha: **41 itens, 201 subitens,
+  335 desdobramentos selecionáveis**. Carregar só o anexo da LC 116 daria a granularidade errada.
+- ⚠ **ARMADILHA MEDIDA:** a coluna do código é NUMÉRICA e `010101` sai do arquivo como `10101`.
+  O gerador dá padding para 6 **e prova o padding** conferindo cada linha contra as colunas
+  ITEM/SUBITEM/DESDOBRO (335/335); divergência **aborta** a geração. Trava no front:
+  `lib/servicosNacionais/__tests__/servicoNacional.test.js` ("o PRIMEIRO código é 010101").
+- **Duas colunas, dois significados** (não duas com o mesmo — ver "TRÊS NÚMEROS DE DAS"):
+
+  | coluna | o que é |
+  |---|---|
+  | `Company.codigosServicoNacional` (`TEXT[]`, nova) | **o conjunto habilitado** da empresa |
+  | `Company.codigoServicoNacional` (existente) | **o que ESTA DPS leva** — é o que `buildMissingFields` exige e `buildDpsXml` escreve |
+
+- **Coerência entre as duas**, em `validateAndNormalizeCompanyProfile`: lista com UM código ⇒ o
+  singular é ele; lista com N e o singular fora dela (ou vazio) ⇒ **recusa nomeada**
+  `company_codigo_servico_nacional_fora_da_lista`. ⚠ **Nunca "o primeiro da lista"**: seria o
+  sistema decidindo qual serviço a empresa declara ao fisco.
+- ⚠ **`undefined` ≠ `[]`.** Ausente = "não veio no payload, não mexer"; `[]` = "apague a lista". O
+  `tx.company.update` usa spread condicional — sem isso, toda tela que salva a empresa sem este
+  bloco (certificado, sócios, ficha) apagaria o cadastro de serviços.
+- ⚠ **A ESCOLHA POR EMISSÃO AINDA NÃO CHEGA AO XML, e isso está DITO na tela.** `buildDpsXml`
+  (`NfseService.js:540`) monta o `cTribNac` a partir de `company.codigoServicoNacional` e de mais
+  nada; não há campo de serviço em `validators/nfsePayload.js`. O assistente **mostra** os
+  pré-cadastrados com a descrição oficial e **diz qual vai** na nota; trocar é uma marcação no
+  cadastro. Ligar a escolha por emissão = o campo no validador + uma linha em `buildDpsXml`.
+  **`NfseService.js` está travado para outra sessão** — por isso a ponte, e não um seletor que
+  parecesse funcionar e emitisse o outro código (erro fiscal silencioso).
+- **Migration `20260816120000_add_codigos_servico_nacional` — escrita, NÃO APLICADA.** Aditiva
+  (`TEXT[] NOT NULL DEFAULT '{}'`, espelhando `cnaesSecundarios`), com backfill do valor singular
+  quando ele já tiver a forma. ⚠ **Sem CHECK, de propósito**: conferir cada elemento de um array
+  exige `unnest`, que é subquery — e o Postgres a proíbe em CHECK; a alternativa
+  (`array_to_string`) não é IMMUTABLE. Migration que falha é P3009 e servidor que não sobe. A forma
+  é guardada no normalizador, no Zod e na tela. Medido: `codigoServicoNacional` está
+  **vazio nas 33 empresas** (o campo só ganhou porta em 14/08/2026), então o UPDATE toca zero linhas
+  hoje — ele existe para o intervalo entre escrever a migration e aplicá-la.
+
+### ⚠ A SÉRIE DA DPS É AUTOMÁTICA — decisão do dono, 16/08/2026
+
+> *"sobre a série RPS, deve ser automática, devemos consultar a última nota emitida e extrair o RPS
+> dela, e colocar para emissão, nem sempre o usuário vai emitir pelo nosso portal."*
+
+`nfseUltimaNota.js` (leitura) + `nfseNumeracao.js` (decisão e reserva). **`NfseService.issue` não
+foi tocado**: a assinatura de `reservarNumeracao({ companyId, rpsSerie, criarLinha })` é a mesma, e
+`rpsSerie` deixou de ser a resposta para ser o **fallback**.
+
+- **De onde sai, exatamente** (leiaute transcrito em `danfse/danfseLeiaute.js`, NT 008 §2.4.5):
+  `NFSe/infNFSe/DPS/infDPS/serie` e `.../nDPS`. ⚠ **Não confundir com `infNFSe/nNFSe`**, que é o
+  número da NFS-e (outro contador) — é ele que `PortalInvoice.numero` guarda.
+- ⚠ **`PortalInvoice` NÃO tem a série da DPS em coluna.** `serie` existe no model mas só
+  `DfeSyncService` (NF-e) a escreve; para NFS-e ela é sempre nula. **A única fonte é o `xmlRaw`.**
+  Colunas dedicadas exigiriam backfill em 556+ notas e mudança na captura — decisão do dono.
+- **Leitura por CAMINHO**, nunca `getTextByLocalNames` — mesma razão de `danfseDados.js`.
+- **Janela de 50 notas** mais recentes (`papel: "EMIT"`, `xmlRaw` não nulo), e o piso é o **MAIOR
+  `nDPS` da janela**, não o da primeira linha. ⚠ **Não filtra por situação:** nota CANCELADA
+  consumiu o número, e não existe inutilização na NFS-e.
+- **Reserva:** `GREATEST(contador interno, piso) + 1`, dentro do MESMO `UPDATE … RETURNING`. O
+  contador continua valendo porque ele sabe das notas que nós acabamos de emitir e que o ADN ainda
+  não devolveu (a captura é assíncrona).
+- **As duas coisas proibidas, as duas com teste:** (1) reusar número já emitido — nota de fora com
+  `nDPS` 127 e contador em 5 ⇒ o próximo é **128**; (2) pular em silêncio — leitura que falha
+  **RECUSA** (`NFSE_ULTIMA_NOTA_ILEGIVEL` 422 / `NFSE_LEITURA_ULTIMA_NOTA_FALHOU` 503, mapeados em
+  `routes/nfse.js`) e `criarLinha` nunca é chamada.
+- ⚠ **A SÉRIE MANUAL NÃO FOI REMOVIDA, e não é esquecimento.** `Company.rpsSerie` cobre dois casos
+  que a leitura não cobre: **empresa nova** (não há nota de onde ler) e **última nota fora da faixa
+  E0010** (`00001–49999` é do emissor por aplicativo próprio; série do Emissor Web não é nossa para
+  continuar). Além disso `issue` a exige no pré-voo (`normalizarSerie(company.rpsSerie)`), que é
+  código travado. Remover coluna é migration destrutiva, decisão do dono. O rótulo na tela virou
+  **"Série da DPS (ponto de partida)"**.
+- ⚠ **Efeito colateral conhecido:** `rpsNumero` é um contador **único para todas as séries**. Se a
+  série mudar, o `GREATEST` pode **pular** na série nova. Pular é buraco permanente (ruim); repetir
+  é E0014 numa nota que talvez exista (pior). O desenho prefere o buraco. Um contador por série
+  seria duas colunas com o mesmo significado.
 
 ## DANFSe — o PDF da NFS-e (NT 008), gerado por nós desde que a API oficial caiu
 

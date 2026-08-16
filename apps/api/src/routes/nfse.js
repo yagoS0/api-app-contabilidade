@@ -138,6 +138,32 @@ export function createNfseRouter({ ensureAuthorized, log }) {
       if (err.code === "NFSE_RETRY_INVOICE_NOT_FOUND") {
         return res.status(404).json({ error: "nfse_retry_invoice_not_found" });
       }
+      // ⚠ A SÉRIE PASSOU A SER LIDA DA ÚLTIMA NOTA (decisão do dono, 16/08/2026), e a leitura pode
+      // NÃO DAR CERTO. Quando isso acontece a emissão é RECUSADA em vez de chutar o próximo número
+      // — e a recusa precisa chegar com NOME e MOTIVO, senão cai no `internal_error` abaixo e o
+      // contador lê "erro interno" para um impedimento que ele consegue entender e conferir.
+      //
+      // Os dois desfechos, e por que nenhum deles é 500:
+      //   • `NFSE_ULTIMA_NOTA_ILEGIVEL`      → há notas e o XML delas não rendeu série/nDPS. É
+      //     estado do DADO, não defeito de execução. 422.
+      //   • `NFSE_LEITURA_ULTIMA_NOTA_FALHOU` → a consulta ao banco não voltou. Aí é transitório,
+      //     e o verbo certo é "tente de novo". 503.
+      if (err.code === "NFSE_ULTIMA_NOTA_ILEGIVEL") {
+        return res.status(422).json({
+          error: "nfse_ultima_nota_ilegivel",
+          codigo: err.code,
+          message: err.message,
+          correcao: err.correcao,
+          notasLidas: err.notasLidas,
+        });
+      }
+      if (err.code === "NFSE_LEITURA_ULTIMA_NOTA_FALHOU" || err.code === "NFSE_ULTIMA_NOTA_SEM_EMPRESA") {
+        return res.status(503).json({
+          error: "nfse_leitura_numeracao_indisponivel",
+          codigo: err.code,
+          message: err.message,
+        });
+      }
       log.error({ err }, "Falha ao registrar emissão de NFS-e");
       return res.status(500).json({ error: "internal_error" });
     }

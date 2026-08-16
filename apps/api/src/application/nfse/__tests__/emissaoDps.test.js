@@ -61,6 +61,11 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
     prisma: {
       company: { findUnique: jest.fn() },
       portalClient: { findUnique: jest.fn(async () => ({ id: "portal-1" })) },
+      // ⚠ A SÉRIE PASSOU A SER LIDA DA ÚLTIMA NOTA (dono, 16/08/2026) — ver `nfseUltimaNota.js`.
+      // Sem este mock a emissão RECUSA com `NFSE_LEITURA_ULTIMA_NOTA_FALHOU`, que é o comportamento
+      // certo (leitura que não volta nunca vira palpite) e derrubaria esta suíte inteira. Vazio =
+      // empresa sem nota = primeira emissão, que é o cenário destes testes.
+      portalInvoice: { findMany: jest.fn(async () => []) },
       cadastroFiscal: { findUnique: jest.fn(async () => null) },
       serviceInvoice,
       $transaction: jest.fn(async (cb) => cb(tx)),
@@ -70,7 +75,7 @@ jest.mock("../../../infrastructure/db/prisma.js", () => {
 
 import { gunzipSync } from "node:zlib";
 import axios from "axios";
-import { prisma } from "../../../infrastructure/db/prisma.js";
+import { prisma, __tx } from "../../../infrastructure/db/prisma.js";
 import { resolverCertificadosDaEmpresa } from "../nfseCertificado.js";
 import { NfseService } from "../NfseService.js";
 
@@ -333,6 +338,43 @@ describe("numeração na emissão", () => {
     montarCenario();
     await NfseService.issue({ data: PAYLOAD_BASE, log });
     expect(xmlEnviado()).toContain('versao="1.00"');
+  });
+
+  // ── A SÉRIE AUTOMÁTICA, no caminho REAL da emissão (dono, 16/08/2026) ──────────────────────
+  //
+  // > *"nem sempre o usuário vai emitir pelo nosso portal"*. Aqui o teste é sobre a LIGAÇÃO: que
+  // `NfseService.issue` — que não foi tocado — passa a numerar a partir da última nota que existe.
+  // A regra em si está travada em `nfseNumeracao.test.js` e `nfseUltimaNota.test.js`.
+
+  it("⚠ a série vem da ÚLTIMA NOTA, não do cadastro — inclusive de nota emitida fora do portal", async () => {
+    montarCenario();
+    // Uma NFS-e capturada do ADN, série 00007, nDPS 127. O cadastro diz série 1 e contador 41.
+    prisma.portalInvoice.findMany.mockResolvedValueOnce([
+      {
+        id: "n1",
+        xmlRaw: `<NFSe><infNFSe><nNFSe>900001</nNFSe><DPS><infDPS><serie>00007</serie><nDPS>127</nDPS></infDPS></DPS></infNFSe></NFSe>`,
+      },
+    ]);
+
+    await NfseService.issue({ data: PAYLOAD_BASE, log });
+
+    // A série do XML é a LIDA (00007), não a cadastrada (00001).
+    expect(xmlEnviado()).toContain("<serie>00007</serie>");
+    // E o piso 127 chegou ao `UPDATE … GREATEST(…) + 1` — é o que impede reusar um número já
+    // emitido. (O `$queryRaw` do mock devolve sempre 42; o que se confere aqui é o PARÂMETRO.)
+    const [, ...parametros] = __tx.$queryRaw.mock.calls[0];
+    expect(parametros).toContain(127);
+  });
+
+  it("⚠ leitura da última nota que NÃO volta RECUSA a emissão — não chuta o próximo número", async () => {
+    montarCenario();
+    prisma.portalInvoice.findMany.mockRejectedValueOnce(new Error("banco fora"));
+
+    await expect(NfseService.issue({ data: PAYLOAD_BASE, log })).rejects.toMatchObject({
+      code: "NFSE_LEITURA_ULTIMA_NOTA_FALHOU",
+    });
+    // Nada foi enviado e nenhuma linha de nota foi criada — o número não se queima à toa.
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
   });
 });
 

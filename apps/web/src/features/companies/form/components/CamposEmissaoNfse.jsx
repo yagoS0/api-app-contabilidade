@@ -1,26 +1,29 @@
-// CONFIGURAÇÃO DA EMISSÃO DE NFS-e — os três campos que existiam no banco e não existiam em tela.
+// CONFIGURAÇÃO DA EMISSÃO DE NFS-e — o que a empresa precisa ter para emitir nota de serviço.
 //
-// ⚠ POR QUE DIGITADO E NÃO SELETOR, se o município ao lado virou lista.
-// O município tem uma lista OFICIAL, publicada pelo IBGE, que está versionada no projeto — por isso
-// lá o contador ESCOLHE. Aqui não: a lista de serviços da LC 116 e a lista de códigos do município
-// **não estão neste repositório**, e escrevê-las de memória (ou deduzi-las do CNAE) é o que a regra
-// 1 do projeto proíbe. O erro sairia como nota emitida com o serviço errado, que é silencioso.
-// Então o código é DIGITADO, e a tela valida só a FORMA que uma fonte já versionada prova.
+// ⚠ O CÓDIGO NACIONAL DEIXOU DE SER DIGITADO (16/08/2026) e virou uma LISTA de escolhas.
+// A razão do campo digitado estava escrita aqui e era literal: *"a lista de serviços da LC 116 não
+// está neste repositório"*. Agora está — o Anexo B oficial do portal `gov.br/nfse` está versionado
+// em `docs/lista-servico-nacional/` com hash. E o dono pediu **N códigos por empresa**, com a
+// escolha na hora de emitir. Ver `SeletorServicosNacionais`.
+//
+// ⚠ O CÓDIGO MUNICIPAL CONTINUA DIGITADO, e o motivo é o mesmo de sempre, só que agora ele vale
+// para um campo só: **não existe lista nacional de códigos municipais** — cada prefeitura publica a
+// sua, e nenhuma delas está aqui. Inventá-la (ou deduzi-la do CNAE) é o que a regra 1 proíbe.
 //
 // ⚠ NADA VEM PRÉ-PREENCHIDO, nem a série. "1" parece inofensivo, mas a série entra no identificador
 // de toda nota emitida: um valor que o sistema escolheu sozinho seria indistinguível de um valor
 // que o contador conferiu. Campo vazio é a verdade sobre uma empresa não configurada — e a caixa
 // âmbar abaixo diz o que essa ausência impede, em vez de deixar a descoberta para a recusa.
 
+import { SeletorServicosNacionais } from "./SeletorServicosNacionais";
+import { lerCodigosServicoNacional } from "../../../../lib/servicosNacionais/servicoNacional";
 import {
-  lerCodigoServicoNacional,
   lerCodigoServicoMunicipal,
   lerRpsSerie,
   digitosQueVaoParaDps,
-  MOTIVO_CODIGO_SERVICO_NACIONAL,
   MOTIVO_CODIGO_SERVICO_MUNICIPAL,
   MOTIVO_RPS_SERIE,
-  PORQUE_DIGITADO_E_NAO_LISTA,
+  PORQUE_MUNICIPAL_DIGITADO,
 } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 // Mesmo visual dos demais campos do formulário (`styles/tokens.css` + inline; sem Tailwind).
@@ -61,11 +64,12 @@ function Campo({ id, titulo, valor, onChange, leitura, ajuda, placeholder, extra
 
 export function CamposEmissaoNfse({
   codigoServicoNacional,
+  codigosServicoNacional,
   codigoServicoMunicipal,
   rpsSerie,
   onChange,
 }) {
-  const nacional = lerCodigoServicoNacional(codigoServicoNacional);
+  const nacional = lerCodigosServicoNacional(codigosServicoNacional);
   const municipal = lerCodigoServicoMunicipal(codigoServicoMunicipal);
   const serie = lerRpsSerie(rpsSerie);
 
@@ -74,28 +78,43 @@ export function CamposEmissaoNfse({
   const municipalSeraCortado = Boolean(naDps && naDps !== municipal.valor);
 
   const faltando = [
-    !nacional.preenchido && "o código nacional do serviço",
+    !nacional.codigos.length && "o código nacional do serviço",
     !municipal.preenchido && "o código municipal do serviço",
     !serie.preenchido && "a série da DPS",
   ].filter(Boolean);
+
+  // ⚠ MUDAR A LISTA MEXE NO CÓDIGO QUE A NOTA LEVA, e as três respostas são as MESMAS do backend
+  // (`validateAndNormalizeCompanyProfile`) — a tela não pode prometer um desfecho diferente:
+  //   • lista com UM código → é ele. Não há escolha a fazer, adotá-lo não é escolher por ninguém;
+  //   • o marcado continua na lista → fica como está;
+  //   • o marcado saiu da lista → LIMPA, e o seletor pede que se marque um. Eleger "o primeiro"
+  //     seria o sistema decidindo qual serviço a empresa declara ao fisco.
+  function trocarCodigos(novos) {
+    onChange("codigosServicoNacional", novos);
+    if (novos.length === 1) {
+      onChange("codigoServicoNacional", novos[0]);
+    } else if (!novos.includes(String(codigoServicoNacional || ""))) {
+      onChange("codigoServicoNacional", "");
+    }
+  }
 
   return (
     <>
       <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
         <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Emissão de NFS-e</strong>
         <div style={{ ...AJUDA, marginTop: 4 }}>
-          Configuração da nota de serviço que este sistema emite. {PORQUE_DIGITADO_E_NAO_LISTA}
+          Configuração da nota de serviço que este sistema emite.
         </div>
       </div>
 
-      <Campo
-        id="codigoServicoNacional"
-        titulo="Código nacional do serviço"
-        valor={codigoServicoNacional}
-        onChange={(v) => onChange("codigoServicoNacional", v)}
-        leitura={nacional}
-        placeholder="171201"
-        ajuda={MOTIVO_CODIGO_SERVICO_NACIONAL}
+      {/* ⚠ VAI O VALOR CRU em `codigos`, não `nacional.codigos`. O seletor faz a própria leitura
+          porque é ele que precisa dos `invalidos` — passar a lista já filtrada esconderia o código
+          torto gravado, e o contador acharia que a empresa tem menos códigos do que tem. */}
+      <SeletorServicosNacionais
+        codigos={codigosServicoNacional}
+        codigoDaNota={codigoServicoNacional}
+        onChangeCodigos={trocarCodigos}
+        onChangeCodigoDaNota={(v) => onChange("codigoServicoNacional", v)}
       />
 
       <Campo
@@ -105,7 +124,7 @@ export function CamposEmissaoNfse({
         onChange={(v) => onChange("codigoServicoMunicipal", v)}
         leitura={municipal}
         placeholder="001"
-        ajuda={MOTIVO_CODIGO_SERVICO_MUNICIPAL}
+        ajuda={`${MOTIVO_CODIGO_SERVICO_MUNICIPAL} ${PORQUE_MUNICIPAL_DIGITADO}`}
         extra={municipalSeraCortado && (
           /* ⚠ O corte já existe no backend (`buildDpsXml` faz `.slice(-3)`) e é o que a fonte
              descreve ("cTribMun: código municipal (últimos 3 dígitos)"). Anunciá-lo é o que impede
@@ -119,7 +138,11 @@ export function CamposEmissaoNfse({
 
       <Campo
         id="rpsSerie"
-        titulo="Série da DPS"
+        /* ⚠ O RÓTULO MUDOU JUNTO COM O COMPORTAMENTO (16/08/2026): a série passou a ser LIDA da
+           última nota emitida, inclusive das emitidas fora deste portal. Este campo deixou de ser
+           "a série" e virou o PONTO DE PARTIDA — chamá-lo do que ele era faria o contador achar que
+           mudar aqui muda a série de uma empresa que já emite. Ver `nfseNumeracao.js`. */
+        titulo="Série da DPS (ponto de partida)"
         valor={rpsSerie}
         onChange={(v) => onChange("rpsSerie", v)}
         leitura={serie}

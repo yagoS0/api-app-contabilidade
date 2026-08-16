@@ -148,38 +148,6 @@ function buildAxiosClient(certificadoTransporte) {
   return client;
 }
 
-function buildRpsPayload({ company, data }) {
-  // Payload simplificado para o padrão nacional.
-  // Ajustar campos conforme o provedor (REST) escolhido.
-  return {
-    ambiente: NFSE_ENV === "homolog" ? "homolog" : "producao",
-    prestador: {
-      cnpj: company.cnpj,
-      inscricaoMunicipal: company.inscricaoMunicipal,
-    },
-    rps: {
-      numero: company.rpsNumero || null,
-      serie: company.rpsSerie || "UNICA",
-      tipo: "RPS",
-      dataEmissao: new Date().toISOString(),
-    },
-    servico: {
-      codigoServicoNacional: company.codigoServicoNacional,
-      codigoServicoMunicipal: company.codigoServicoMunicipal,
-      discriminacao: data.servico.descricao,
-      valorServicos: data.servico.valorServicos,
-      aliquota: data.servico.aliquota,
-      issRetido: data.servico.issRetido ?? false,
-    },
-    tomador: {
-      documento: data.tomador.doc,
-      razaoSocial: data.tomador.nome,
-      email: data.tomador.email || undefined,
-    },
-    referencia: data.referencia || undefined,
-  };
-}
-
 function escapeXml(value) {
   if (value === null || value === undefined) return "";
   return String(value)

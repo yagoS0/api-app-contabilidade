@@ -34,6 +34,9 @@ export function getInitialCompanyFormState() {
     // NUNCA são pré-preenchidos — nem a série: ela entra no identificador de toda nota emitida, e um
     // valor escolhido pelo sistema seria indistinguível de um valor conferido pelo contador.
     codigoServicoNacional: "",
+    // Os N códigos de serviço que a empresa pode usar (decisão do dono, 16/08/2026). Escolhidos na
+    // lista oficial versionada — nunca derivados do CNAE.
+    codigosServicoNacional: [],
     codigoServicoMunicipal: "",
     rpsSerie: "",
     inscricaoEstadual: "",
@@ -97,6 +100,13 @@ export function mapCompanyToEditForm(company) {
     // fallback derivado (CNAE → código de serviço, ou uma série "1" quando vier vazio): campo vazio
     // aqui é a informação de que a empresa não está configurada para emitir.
     codigoServicoNacional: String(legacy?.codigoServicoNacional || "").trim(),
+    // ⚠ CAI PARA O CAMPO SINGULAR quando a lista está vazia — e isso não é derivação, é o MESMO
+    // dado no formato antigo. Uma empresa cadastrada antes de 16/08/2026 (ou antes de a migration
+    // ser aplicada) tem só o campo de um código; abrir o formulário com a lista vazia faria o
+    // contador achar que nada foi salvo e recadastrar.
+    codigosServicoNacional: Array.isArray(legacy?.codigosServicoNacional) && legacy.codigosServicoNacional.length
+      ? legacy.codigosServicoNacional.map((c) => String(c).trim()).filter(Boolean)
+      : (String(legacy?.codigoServicoNacional || "").trim() ? [String(legacy.codigoServicoNacional).trim()] : []),
     codigoServicoMunicipal: String(legacy?.codigoServicoMunicipal || "").trim(),
     rpsSerie: String(legacy?.rpsSerie || "").trim(),
     inscricaoEstadual: String(legacy?.inscricaoEstadual || "").trim(),

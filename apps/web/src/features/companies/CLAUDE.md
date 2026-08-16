@@ -242,28 +242,65 @@ buscadas em runtime; o arquivo diz no cabeçalho como atualizar).
   `PortalClient`). Tem de estar em `legacyCompanySelect` (`routes/firm/index.js`), senão volta
   `undefined` e o formulário reabre vazio.
 
-## Emissão de NFS-e — os três campos DIGITADOS, e por que não viraram lista
+## Emissão de NFS-e — N códigos ESCOLHIDOS, e o municipal ainda digitado
 
 Bloco **"Emissão de NFS-e"** no formulário de edição, logo abaixo de Inscrições (onde o seletor de
 município já estava). Componente `form/components/CamposEmissaoNfse.jsx`; regra em
-`lib/nfse/cadastroEmissaoNfse.js`. São `codigoServicoNacional` (`cTribNac`),
+`lib/nfse/cadastroEmissaoNfse.js`. São `codigosServicoNacional` (a LISTA de `cTribNac`),
 `codigoServicoMunicipal` (`cTribMun`) e `rpsSerie`.
 
 ⚠ **Eles existiam no banco e na API e NÃO existiam em tela nenhuma.** `buildMissingFields` recusava
 a emissão por eles e não havia por onde preenchê-los — a mesma classe de defeito do município.
 
-- ⚠ **Digitado, não selecionado, e a diferença é o que existe no repositório.** O município virou
-  seletor porque a lista do IBGE está versionada aqui. A lista de serviços da **LC 116** e a lista
-  do **município** **não estão** — escrevê-las de memória, ou deduzi-las do CNAE, produziria nota
-  emitida com o serviço errado. Valida-se **forma**, nunca conteúdo; e a tela **diz** que não
-  confere o conteúdo, em vez de deixar parecer que confere.
+### ⚠ O código nacional virou LISTA (dono, 16/08/2026)
+
+> *"ao cadastrar podemos ter mais de um código (…) e na hora da emissão ela deve escolher (…)
+> devemos mostrar o texto para que facilite a escolha."*
+
+`form/components/SeletorServicosNacionais.jsx` + regra em `lib/servicosNacionais/servicoNacional.js`
++ dado em `servicosNacionais.data.js` (**335 códigos + 242 grupos**, extraídos do Anexo B oficial do
+portal `gov.br/nfse` em 2026-08-16, versionados com hash em `docs/lista-servico-nacional/` — nunca
+buscados em runtime; `import()` dinâmico, fora do bundle inicial).
+
+- ⚠ **A razão do campo digitado deixou de valer.** Estava escrita aqui: *"a lista de serviços da LC
+  116 não está neste repositório"*. Agora está, com URL, data, contagem e SHA-256. Mesmo caminho que
+  o município fez.
+- ⚠ **O `cTribNac` NÃO é o item da LC 116** — é `item+subitem+desdobro`. A lista mostra os
+  **desdobramentos**; o nome do item/subitem aparece como **grupo**, que é o que faz a busca
+  funcionar (o contador procura "informática", não "análise e desenvolvimento de sistemas").
+- ⚠ **A busca ENCONTRA, não escolhe.** Resultado único não se autosseleciona, nada é
+  pré-selecionado, não há de-para CNAE→serviço, e toda linha mostra **código E texto**.
+- ⚠ **Código gravado fora da forma NÃO some da tela** (volta em `invalidos`, com aviso): sumir faria
+  o contador achar que a empresa tem menos códigos do que tem.
+- ⚠ **"Qual destes a nota leva"** aparece só quando há **mais de um** — com um só não há escolha a
+  fazer, e a tela não pergunta. Com vários e nenhum marcado, a tela **não elege um**: diz o que
+  falta, e o backend recusa com `company_codigo_servico_nacional_fora_da_lista`.
+  Esse marcador é uma **ponte**: a escolha por emissão ainda não chega ao XML (`buildDpsXml` lê
+  `company.codigoServicoNacional` e não há campo de serviço no payload). Um seletor na emissão que
+  parecesse funcionar faria a nota sair com o outro código — erro fiscal **silencioso**.
+- **Na emissão** (`features/notas/components/ServicoNacionalDaNota.jsx`, passo "Serviço" do
+  `EmitirNfseWizard`): aparecem **só os pré-cadastrados**, com a descrição oficial, e a tela diz
+  **qual vai** na nota e onde se troca. Com um único código não faz escolher — mas mostra qual é.
+- **Compatibilidade:** com a lista vazia, tanto o formulário quanto a tela de emissão caem para o
+  campo singular. É o MESMO dado no formato antigo (antes da migration) — sem isso o cadastro
+  reabriria vazio e o contador recadastraria.
+
+### O municipal e a série
+
+- ⚠ **O `cTribMun` continua DIGITADO**, e agora por um motivo só: **não existe lista nacional de
+  códigos municipais** — cada prefeitura publica a sua, e nenhuma está aqui. Valida-se **forma**,
+  nunca conteúdo; e a tela **diz** que não confere o conteúdo.
+- ⚠ **A série virou "ponto de partida"** (o rótulo mudou junto com o comportamento): ela é lida da
+  última nota emitida, inclusive das emitidas fora do portal. Este campo vale na primeira emissão e
+  quando a última nota está numa faixa de outro tipo de emissor. Ver `apps/api/CLAUDE.md`.
 - ⚠ **NADA é pré-preenchido, nem a série.** `"1"` parece inofensivo e entra no identificador de
   toda nota emitida: um valor escolhido pelo sistema seria indistinguível de um conferido pelo
   contador. Campo vazio é a verdade sobre uma empresa não configurada.
-- **A forma, e a fonte de cada uma:** `cTribNac` 6 dígitos e `cTribMun` só dígitos
-  (`docs/nfse-preenchimento.md` §5); série 1–49999 (RN **E0010**, emissor por aplicativo próprio,
-  espelhando `nfseNumeracao.js`). ⚠ A faixa vive nos dois lados por não haver código compartilhado
-  entre front e back — se ela mudar no backend, muda aqui.
+- **A forma, e a fonte de cada uma:** `cTribNac` 6 dígitos (agora provado pela própria lista oficial
+  — `item+subitem+desdobro` —, antes por `docs/nfse-preenchimento.md` §5); `cTribMun` só dígitos
+  (idem §5); série 1–49999 (RN **E0010**, emissor por aplicativo próprio, espelhando
+  `nfseNumeracao.js`). ⚠ A faixa vive nos dois lados por não haver código compartilhado entre front
+  e back — se ela mudar no backend, muda aqui.
 - ⚠ **O corte dos últimos 3 dígitos do `cTribMun` é ANUNCIADO.** `buildDpsXml` faz `.slice(-3)`;
   sem o aviso o contador informa `10203` e a nota sai com `203`, descoberto depois da emissão. O
   comprimento do código municipal **não está provado** — por isso o campo aceita qualquer tamanho.

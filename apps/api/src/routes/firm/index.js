@@ -26,6 +26,7 @@ import { createPortalSyncRouter } from "../portalSync.js";
 import { createAccountingEntriesRouter } from "./accountingEntries.js";
 import { createNotasRouter } from "./notas.js";
 import { createApuracaoV2Router } from "./apuracaoV2.js";
+import { createPlanejamentoRouter } from "./planejamento.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCompanyCredentialsRouter } from "./companyCredentials.js";
 import { createCalendarioRouter } from "./calendario.js";
@@ -526,6 +527,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     quantidadeSocios: true,
     inscricaoMunicipal: true,
     codigoServicoNacional: true,
+    // ⚠ MESMO MOTIVO DA LINHA ABAIXO (`codigoMunicipioIbge`): sem isto a lista de serviços não
+    // volta para a tela, o formulário reabre vazio e o contador reescolhe tudo a cada edição.
+    codigosServicoNacional: true,
     codigoServicoMunicipal: true,
     rpsSerie: true,
     rpsNumero: true,
@@ -1135,6 +1139,14 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 // (`.passthrough()`) e morria aqui, nesta lista. `buildMissingFields` recusava a
                 // emissão por eles e o contador não tinha por onde preenchê-los.
                 codigoServicoNacional: normalizedCompany.codigoServicoNacional,
+                // ⚠ SPREAD CONDICIONAL, e é essencial. `undefined` aqui significa "o payload não
+                // trouxe a lista" — e mandar `codigosServicoNacional: undefined` para o Prisma é
+                // inofensivo, mas mandar `[]` APAGARIA o cadastro de serviços de toda tela que
+                // salva a empresa sem enviar o campo. O `!== undefined` mantém as duas intenções
+                // distintas ("não mexer" × "apagar") até a última linha.
+                ...(normalizedCompany.codigosServicoNacional !== undefined
+                  ? { codigosServicoNacional: normalizedCompany.codigosServicoNacional }
+                  : {}),
                 codigoServicoMunicipal: normalizedCompany.codigoServicoMunicipal,
                 rpsSerie: normalizedCompany.rpsSerie,
                 // ── Ficha de cadastro ──
@@ -4373,6 +4385,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // Q14.2.d: Apuração v2 — cadastro fiscal, produtos/serviços, pendências, classificar v2
   const apuracaoV2Router = createApuracaoV2Router({ log });
   router.use("/companies/:companyId", apuracaoV2Router);
+
+  // Planejamento tributário — SÓ LEITURA. Monta os campos da empresa (com a procedência de cada
+  // um) que a tela de simulação de regime pré-preenche. Não grava nada.
+  const planejamentoRouter = createPlanejamentoRouter({ log });
+  router.use("/companies/:companyId", planejamentoRouter);
 
   // Documentos societários + anotações da empresa (grupo "Cadastro" na UI).
   const companyDocumentsRouter = createCompanyDocumentsRouter({ log });

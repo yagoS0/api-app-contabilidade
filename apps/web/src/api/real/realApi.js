@@ -163,6 +163,13 @@ function buildCompanyPayload(input) {
       // eles e não havia por onde preenchê-los. Vão como `null` quando em branco, pelo mesmo motivo
       // do município: desfazer uma configuração errada tem de ser possível pela tela.
       codigoServicoNacional: txt(input.codigoServicoNacional),
+      // ⚠ A LISTA de códigos (decisão do dono, 16/08/2026). Só vai quando o formulário TEM o campo:
+      // `undefined` diz ao backend "não mexa na lista", e `[]` diz "apague a lista". Mandar `[]`
+      // incondicionalmente apagaria o cadastro de serviços em qualquer tela que salve a empresa sem
+      // este bloco — o mesmo defeito que o `omitIfEmpty` do e-mail do dono existe para impedir.
+      codigosServicoNacional: Array.isArray(input.codigosServicoNacional)
+        ? input.codigosServicoNacional.map((c) => String(c).replace(/\D+/g, "")).filter(Boolean)
+        : undefined,
       codigoServicoMunicipal: txt(input.codigoServicoMunicipal),
       rpsSerie: txt(input.rpsSerie),
       inscricaoEstadual: txt(input.inscricaoEstadual),
@@ -1738,6 +1745,16 @@ export function createRealApi() {
     // Módulo Fiscal (§1.3) — sugestão de anexo por nota.
     async getSugestaoAnexo(companyId, competencia) {
       return request(`/firm/companies/${companyId}/apuracao-sugestao/${competencia}`);
+    },
+    // ─── Planejamento tributário — os dados da empresa para a simulação de regime ──────────────
+    //
+    // ⚠ SÓ LEITURA, e o backend não escreve nada (nem cache de RBT12): abrir um planejamento não
+    // pode mudar o estado fiscal da empresa. Cada campo volta como
+    // `{ valor, apurado, origem, motivoAusencia }` — `apurado: false` significa AUSENTE, com
+    // `valor: null`, nunca zero. A folha é o caso que justifica o formato: lida como zero, ela
+    // derruba o Fator R e troca o anexo (III → V) num PDF que vai ao cliente.
+    async getDadosPlanejamento(companyId) {
+      return request(`/firm/companies/${companyId}/planejamento`);
     },
     // Q15 — fechamento
     async getFechamento(companyId, competencia) {

@@ -38,6 +38,13 @@ const companyBaseFields = {
   // `parsed.data` sem erro nenhum. Quem diz a forma de cada uma é
   // `validateAndNormalizeCompanyProfile`, num lugar só, junto do motivo da recusa.
   codigoServicoNacional: z.string().max(20).optional().nullable(),
+  // ⚠ A LISTA DE CÓDIGOS DE SERVIÇO (decisão do dono, 16/08/2026). `optional()` SEM `nullable()`
+  // e sem default: `undefined` significa "não veio no payload, não mexer", e `[]` significa
+  // "apague a lista". São intenções diferentes, e um default aqui achataria as duas — toda tela
+  // que salva a empresa sem enviar o campo apagaria o cadastro de serviços.
+  // O limite de 50 espelha `cnaesSecundarios`; a forma de cada item (6 dígitos) é dita em
+  // `validateAndNormalizeCompanyProfile`, num lugar só, junto do motivo da recusa.
+  codigosServicoNacional: z.array(z.string().max(20)).max(50).optional(),
   codigoServicoMunicipal: z.string().max(20).optional().nullable(),
   rpsSerie: z.string().max(20).optional().nullable(),
   cnaePrincipal: z.string().max(20).optional().nullable(),

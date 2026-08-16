@@ -195,6 +195,11 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
           // município não existem neste repositório, e inventá-las é o que a regra 1 proíbe.
           // Empresa criada sem eles não emite, e o cadastro diz isso antes de alguém tentar.
           codigoServicoNacional: normalizedCompany.codigoServicoNacional,
+          // A LISTA de códigos (o dono pode cadastrar N atividades). No `create` o `undefined` cai
+          // no default do schema (`[]`), então o spread condicional não é necessário aqui — mas o
+          // campo precisa estar na lista, senão o que o formulário escolheu na CRIAÇÃO da empresa
+          // é descartado em silêncio, e o contador reabre o cadastro achando que não salvou.
+          codigosServicoNacional: normalizedCompany.codigosServicoNacional,
           codigoServicoMunicipal: normalizedCompany.codigoServicoMunicipal,
           rpsSerie: normalizedCompany.rpsSerie,
           // ── Ficha de cadastro (muito disso já vem preenchido da BrasilAPI) ──

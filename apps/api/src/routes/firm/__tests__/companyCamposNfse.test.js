@@ -198,6 +198,107 @@ describe("PATCH /firm/companies/:id — configuração de emissão de NFS-e", ()
     });
   });
 
+  // ── A LISTA de códigos (decisão do dono, 16/08/2026) ─────────────────────────────────────────
+  //
+  // > *"ao cadastrar podemos ter mais de um código, a empresa pode usar mais de uma atividade e na
+  // > hora da emissão ela deve escolher."*
+  //
+  // ⚠ MESMA CLASSE DE DEFEITO QUE O TRIO ACIMA: coluna nova que não entre no `tx.company.update`
+  // (ou no Zod, ou no normalizador) responde 200 e joga o valor fora.
+  describe("⚠ códigos de serviço da empresa — a LISTA", () => {
+    test("a lista CHEGA ao update da Company, normalizada e sem repetição", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({
+          codigosServicoNacional: ["17.12.01", "010101", "171201"],
+          codigoServicoNacional: "171201",
+        }));
+
+      expect(res.status).toBe(200);
+      const { data, select } = dadosDoUpdateDaCompany();
+      // Máscara limpa, duplicata fora, ORDEM da escolha preservada.
+      expect(data.codigosServicoNacional).toEqual(["171201", "010101"]);
+      // E volta para a tela — sem isto o formulário reabre vazio e o contador reescolhe tudo.
+      expect(select.codigosServicoNacional).toBe(true);
+    });
+
+    test("⚠ lista com UM código define sozinha o que a DPS leva — não há escolha a fazer", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ codigosServicoNacional: ["171201"] }));
+
+      expect(res.status).toBe(200);
+      expect(dadosDoUpdateDaCompany().data.codigoServicoNacional).toBe("171201");
+    });
+
+    test("⚠ lista com VÁRIOS e nenhum marcado → 400 nomeado; o sistema NÃO elege o primeiro", async () => {
+      // Eleger "o primeiro da lista" seria o sistema decidindo qual serviço a empresa declara ao
+      // fisco. Serviço errado na nota é silencioso: aparece só no DANFSe, com a descrição de outra
+      // atividade.
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ codigosServicoNacional: ["171201", "010101"] }));
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("company_codigo_servico_nacional_fora_da_lista");
+      expect(prismaMock.company.update).not.toHaveBeenCalled();
+    });
+
+    test("lista com VÁRIOS e o marcado FORA dela também é recusa", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({
+          codigosServicoNacional: ["171201", "010101"],
+          codigoServicoNacional: "310104",
+        }));
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("company_codigo_servico_nacional_fora_da_lista");
+    });
+
+    test("lista com VÁRIOS e o marcado DENTRO dela passa, e o marcado é o que fica", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({
+          codigosServicoNacional: ["171201", "010101"],
+          codigoServicoNacional: "010101",
+        }));
+
+      expect(res.status).toBe(200);
+      const { data } = dadosDoUpdateDaCompany();
+      expect(data.codigoServicoNacional).toBe("010101");
+      expect(data.codigosServicoNacional).toEqual(["171201", "010101"]);
+    });
+
+    test("item com comprimento errado → 400 nomeado, e NADA é escrito", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ codigosServicoNacional: ["171201", "1712"] }));
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("company_codigo_servico_nacional_invalid");
+      expect(prismaMock.company.update).not.toHaveBeenCalled();
+    });
+
+    test("⚠ NÃO enviar a lista significa NÃO MEXER nela — não apagar", async () => {
+      // Toda tela que salva a empresa sem este bloco (certificado, sócios, ficha) passaria por
+      // aqui. Se o campo virasse `[]` por omissão, o cadastro de serviços seria apagado por elas.
+      const res = await request(app).patch(`/firm/companies/${PORTAL_ID}`).send(payload({}));
+
+      expect(res.status).toBe(200);
+      expect(dadosDoUpdateDaCompany().data).not.toHaveProperty("codigosServicoNacional");
+    });
+
+    test("lista VAZIA explícita apaga — desfazer uma configuração errada precisa ser possível", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ codigosServicoNacional: [] }));
+
+      expect(res.status).toBe(200);
+      expect(dadosDoUpdateDaCompany().data.codigosServicoNacional).toEqual([]);
+    });
+  });
+
   // ── cTribMun ────────────────────────────────────────────────────────────────────────────────
   describe("código de serviço MUNICIPAL (`cTribMun`)", () => {
     test("aceita comprimento qualquer — a fonte prova o corte no XML, não o tamanho do código", async () => {

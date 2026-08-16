@@ -197,6 +197,12 @@ function makeCompanies(count = 6) {
         // ⚠ NADA aqui é derivado do CNAE nem da atividade: a lista da LC 116 e a do município não
         // existem no projeto. Estes valores são os do exemplo real de `docs/nfse-preenchimento.md`.
         codigoServicoNacional: ehMangaratiba ? "171201" : null,
+        // ⚠ A empresa configurada nasce com DOIS códigos, não um — o caso que o dono descreveu
+        // ("a empresa pode usar mais de uma atividade") precisa existir offline, senão o seletor,
+        // o marcador de "qual a nota leva" e a escolha na emissão nunca são exercidos. Os dois
+        // saem da lista OFICIAL versionada (`docs/lista-servico-nacional/`): 171201 é o do exemplo
+        // real de `docs/nfse-preenchimento.md`, 010101 é o primeiro da lista.
+        codigosServicoNacional: ehMangaratiba ? ["171201", "010101"] : [],
         codigoServicoMunicipal: ehMangaratiba ? "001" : null,
         rpsSerie: ehMangaratiba ? "00001" : null,
       },
@@ -1359,6 +1365,35 @@ function normalizarCamposEmissaoNfseMock(entrada, atuais) {
     const d = so(entrada.codigoServicoNacional);
     if (d.length !== 6) throw new Error("company_codigo_servico_nacional_invalid");
     resultado.codigoServicoNacional = d;
+  }
+
+  // ── A LISTA de códigos de serviço (decisão do dono, 16/08/2026) ────────────────────────────
+  // Mesmas três respostas: ausente = não mexer · `[]` = apagar · itens = gravar normalizados.
+  if (entrada.codigosServicoNacional !== undefined) {
+    const lista = [];
+    for (const item of Array.isArray(entrada.codigosServicoNacional) ? entrada.codigosServicoNacional : []) {
+      const d = so(item);
+      if (!d) continue;
+      if (d.length !== 6) throw new Error("company_codigo_servico_nacional_invalid");
+      if (!lista.includes(d)) lista.push(d);
+    }
+    resultado.codigosServicoNacional = lista;
+  } else {
+    resultado.codigosServicoNacional = Array.isArray(atuais.codigosServicoNacional)
+      ? atuais.codigosServicoNacional
+      : [];
+  }
+
+  // ⚠ A MESMA COERÊNCIA DO BACKEND (`validateAndNormalizeCompanyProfile`), com o MESMO código de
+  // erro. Com um código só, ele é o que a nota leva; com vários, o marcado tem de estar na lista —
+  // eleger "o primeiro" seria o sistema decidindo qual serviço a empresa declara ao fisco.
+  if (resultado.codigosServicoNacional.length === 1) {
+    resultado.codigoServicoNacional = resultado.codigosServicoNacional[0];
+  } else if (
+    resultado.codigosServicoNacional.length > 1
+    && !resultado.codigosServicoNacional.includes(resultado.codigoServicoNacional)
+  ) {
+    throw new Error("company_codigo_servico_nacional_fora_da_lista");
   }
 
   if (entrada.codigoServicoMunicipal === undefined) {
@@ -6437,6 +6472,120 @@ export function createMockApi() {
       return { ok: true, relatorio };
     },
     async getSugestaoAnexo() { await delay(60); return { ok: true, competencia: null, totalNotas: 0, perfilConfigurado: false, anexosAtivos: [], resumo: { alta: 0, media: 0, revisao: 0, porAnexo: {} }, notas: [] }; },
+    // ─── Planejamento tributário — dados da empresa, cada campo com a PROCEDÊNCIA ──────────────
+    //
+    // ⚠ O CASO QUE ESTE MOCK EXISTE PARA TORNAR CAMINHÁVEL É O DA FOLHA AUSENTE (4ª empresa, com
+    // atividade sujeita ao Fator R e nenhuma folha conhecida). É ele que prova offline que a tela
+    // deixa o campo VAZIO, diz que não foi possível apurar, e o Simples sai INDISPONÍVEL — em vez
+    // de virar Fator R 0%, Anexo V e um vencedor calculado sobre um zero que ninguém informou.
+    //
+    // Os demais cenários existem porque cada FONTE de folha/RBT12 se lê diferente na tela: folha do
+    // fechamento, folha digitada na circular, folha somada dos lançamentos, e o nada.
+    async getDadosPlanejamento(companyId) {
+      await delay(70);
+      const idx = mockCompanies.findIndex((c) => c.companyId === companyId);
+      const empresa = idx >= 0 ? mockCompanies[idx] : null;
+      if (!empresa) return { ok: false, error: "company_not_found" };
+
+      const hoje = new Date();
+      const ref = `${hoje.getUTCFullYear()}-${String(hoje.getUTCMonth() + 1).padStart(2, "0")}`;
+      const de = new Date(Date.UTC(hoje.getUTCFullYear() - 1, hoje.getUTCMonth(), 1));
+      const janelaRotulo = `${String(de.getUTCMonth() + 1).padStart(2, "0")}/${de.getUTCFullYear()}`
+        + ` a ${String(hoje.getUTCMonth() || 12).padStart(2, "0")}/${hoje.getUTCMonth() === 0 ? hoje.getUTCFullYear() - 1 : hoje.getUTCFullYear()}`;
+
+      const ok = (valor, origem) => ({ valor, apurado: true, origem, motivoAusencia: null });
+      const nao = (motivoAusencia) => ({ valor: null, apurado: false, origem: null, motivoAusencia });
+
+      const semAtividadePresumido = nao(
+        "A atividade do Lucro Presumido não é derivada do CNAE: o projeto não tem de-para CNAE→presunção "
+        + "de IRPJ/CSLL, e errar entre 8% e 32% inverteria a comparação. Escolha na tela.",
+      );
+
+      const cenarios = [
+        // 0 — tudo apurado, Fator R com folha vinda do fechamento.
+        {
+          receitaAnual: ok(1_850_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (214 notas)`),
+          rbt12: ok(1_790_000, "apuração de 05/2026 (transmitida)"),
+          folhaAnual: ok(560_000, "folha de 12 meses informada no fechamento de 05/2026"),
+          regimeAtual: ok("SIMPLES_NACIONAL", "cadastro fiscal da empresa"),
+          anexo: nao("Atividade sujeita ao Fator R: o anexo sai da folha (III a partir de 28%, V abaixo), não do cadastro."),
+          sujeitoFatorR: ok(true, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
+          aliquotaIss: ok(0.05, "perfil de atividades — CNAE 6202300 (5%)"),
+          atividadePresumido: semAtividadePresumido,
+        },
+        // 1 — Lucro Presumido, folha digitada na circular, sem ISS no perfil.
+        {
+          receitaAnual: ok(4_100_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (98 notas)`),
+          rbt12: ok(4_050_000, "circular de 06/2026 (soma móvel de 12 meses)"),
+          folhaAnual: ok(1_240_000, "folha de 12 meses digitada na circular de 06/2026 (MANUAL)"),
+          regimeAtual: ok("LUCRO_PRESUMIDO", "cadastro da empresa (regime tributário: \"LUCRO_PRESUMIDO\")"),
+          anexo: nao("Anexo do Simples não cadastrado — escolha na tela."),
+          sujeitoFatorR: ok(false, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
+          aliquotaIss: nao("Alíquota de ISS não informada no perfil de atividades da empresa."),
+          atividadePresumido: semAtividadePresumido,
+        },
+        // 2 — a folha vem dos LANÇAMENTOS, e parcial: 9 dos 12 meses. A origem diz isso.
+        {
+          receitaAnual: ok(820_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (63 notas)`),
+          rbt12: ok(810_000, "extrato de RBT12 de 06/2026 · origem PARCIAL_LOCAL"),
+          folhaAnual: ok(198_400, `soma dos lançamentos de folha/pró-labore de ${janelaRotulo} (9 de 12 meses com lançamento)`),
+          regimeAtual: ok("SIMPLES_NACIONAL", "cadastro fiscal da empresa"),
+          anexo: ok("III", "cadastro da empresa (anexo do Simples)"),
+          sujeitoFatorR: ok(false, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
+          aliquotaIss: ok(0.02, "perfil de atividades — CNAE 4711302 (2%)"),
+          atividadePresumido: semAtividadePresumido,
+        },
+        // 3 — ⚠⚠ FOLHA AUSENTE COM ATIVIDADE DE FATOR R. O caso caro, e o único que prova a regra.
+        {
+          receitaAnual: ok(1_200_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (140 notas)`),
+          rbt12: ok(1_150_000, "apuração de 06/2026 (fechada)"),
+          folhaAnual: nao(
+            "Não foi possível apurar a folha dos 12 meses. Sem ela o Fator R não se calcula — e um zero "
+            + "aqui jogaria a empresa no Anexo V sem que ninguém tivesse informado a folha.",
+          ),
+          regimeAtual: ok("SIMPLES_NACIONAL", "cadastro fiscal da empresa"),
+          anexo: nao("Atividade sujeita ao Fator R: o anexo sai da folha (III a partir de 28%, V abaixo), não do cadastro."),
+          sujeitoFatorR: ok(true, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
+          aliquotaIss: nao("Alíquota de ISS não informada no perfil de atividades da empresa."),
+          atividadePresumido: semAtividadePresumido,
+        },
+        // 4 — regime NÃO cadastrado: a tela tem de dizer que não sabe, não supor Simples.
+        {
+          receitaAnual: ok(390_000, `notas fiscais emitidas e autorizadas de ${janelaRotulo} (22 notas)`),
+          rbt12: ok(380_000, "extrato de RBT12 de 06/2026 · origem PARCIAL_LOCAL"),
+          folhaAnual: nao(
+            "Não foi possível apurar a folha dos 12 meses. Sem ela o Fator R não se calcula — e um zero "
+            + "aqui jogaria a empresa no Anexo V sem que ninguém tivesse informado a folha.",
+          ),
+          regimeAtual: nao("Regime atual não cadastrado. Sem ele a comparação continua valendo, mas ninguém pode dizer de onde a empresa está saindo."),
+          anexo: nao("Anexo do Simples não cadastrado — escolha na tela."),
+          sujeitoFatorR: nao("Sem cadastro fiscal não há como saber se a atividade é sujeita ao Fator R."),
+          aliquotaIss: nao("Alíquota de ISS não informada no perfil de atividades da empresa."),
+          atividadePresumido: semAtividadePresumido,
+        },
+        // 5 — empresa zerada: NENHUMA nota no período. Receita AUSENTE, não R$ 0,00.
+        {
+          receitaAnual: nao(`Não foi possível apurar a receita: nenhuma nota emitida autorizada em ${janelaRotulo}.`),
+          rbt12: nao("Não foi possível apurar o RBT12: nenhuma apuração, extrato ou circular com receita acumulada nos 12 meses anteriores."),
+          folhaAnual: nao(
+            "Não foi possível apurar a folha dos 12 meses. Sem ela o Fator R não se calcula — e um zero "
+            + "aqui jogaria a empresa no Anexo V sem que ninguém tivesse informado a folha.",
+          ),
+          regimeAtual: ok("SIMPLES_NACIONAL", "cadastro fiscal da empresa"),
+          anexo: ok("I", "cadastro da empresa (anexo do Simples)"),
+          sujeitoFatorR: ok(false, "cadastro fiscal da empresa (campo \"usa Fator R\")"),
+          aliquotaIss: nao("Alíquota de ISS não informada no perfil de atividades da empresa."),
+          atividadePresumido: semAtividadePresumido,
+        },
+      ];
+
+      return {
+        ok: true,
+        empresa: { id: empresa.companyId, razao: empresa.razao, cnpj: empresa.cnpj },
+        referencia: { competencia: ref, janela: [], janelaRotulo },
+        campos: cenarios[idx % cenarios.length],
+      };
+    },
     // Mock com atividade SUJEITA A FATOR R e folha derivada dos lançamentos — é a única forma de
     // conferir a comparação da folha sem backend. A folha digitada vem DIFERENTE da derivada de
     // propósito: o caso que precisa avisar é a divergência, não a coincidência.

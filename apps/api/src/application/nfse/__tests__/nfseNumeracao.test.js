@@ -1,4 +1,5 @@
 // DUAS EMISSÕES SIMULTÂNEAS NÃO PODEM PRODUZIR O MESMO NÚMERO.
+// E NENHUMA EMISSÃO PODE REUSAR UM NÚMERO QUE JÁ SAIU — INCLUSIVE FORA DESTE PORTAL.
 //
 // ⚠ POR QUE ESTE TESTE EXISTE
 // `NfseService.issue` montava o `nDPS` lendo `company.rpsNumero` e só DEPOIS gravava
@@ -13,15 +14,29 @@
 //
 // ⚠ Como **não existe inutilização na NFS-e** (varrido nos 16 eventos do Anexo II e nas RNs do
 // Anexo I), número pulado é buraco permanente: a reserva tem de ser transacional E sem furos.
+//
+// ⚠ A PARTIR DE 16/08/2026 (decisão do dono) O CONTADOR INTERNO NÃO BASTA. *"nem sempre o usuário
+// vai emitir pelo nosso portal"* — as notas emitidas em outro sistema chegam pela captura do ADN e
+// consumiram números da mesma série. Os dois desfechos proibidos, e os dois estão travados abaixo:
+//   1. REUSAR número já emitido (E0014);
+//   2. PULAR número em silêncio — leitura que falha vira RECUSA com motivo, nunca palpite.
 
 import {
   normalizarSerie,
   reservarProximoNumero,
   reservarNumeracao,
+  resolverSerieENumero,
+  ORIGEM_SERIE,
   NfseNumeracaoError,
   SERIE_MIN,
   SERIE_MAX,
 } from "../nfseNumeracao.js";
+import { ESTADO, NfseUltimaNotaError } from "../nfseUltimaNota.js";
+
+// A leitura da última nota é INJETADA nos testes. O default do módulo é a leitura real (que abre o
+// Prisma) — passar a injeção aqui é o que mantém este arquivo sem banco, e é também o que deixa
+// cada cenário de leitura explícito na chamada, em vez de escondido num mock global.
+const semNota = async () => ({ estado: ESTADO.SEM_NOTA, notasLidas: 0 });
 
 // ── Um Postgres de mentira que respeita o que importa: o `UPDATE … RETURNING` é UMA instrução, e
 // a transação serializa. É essa semântica que torna a reserva livre de corrida — não a sorte do
@@ -37,11 +52,14 @@ function fakeClient(estadoInicial) {
       // O teste trava a FORMA da instrução: ler-somar-escrever em JS é exatamente o defeito.
       expect(sql).toMatch(/UPDATE "Company"/);
       expect(sql).toMatch(/RETURNING "rpsNumero"/);
-      const id = values[0];
+      // ⚠ E trava o GREATEST: sem ele o piso lido da última nota seria decorativo.
+      expect(sql).toMatch(/GREATEST/);
+      // A ordem dos parâmetros é a do template: primeiro o piso, depois o id.
+      const [piso, id] = values;
       const atual = contadores.get(id);
       const digitos = String(atual ?? "").replace(/\D+/g, ""); // regexp_replace
       const base = digitos === "" ? 0 : Number(digitos); // COALESCE(NULLIF(...), '0')
-      const proximo = String(base + 1);
+      const proximo = String(Math.max(base, Number(piso) || 0) + 1); // GREATEST(…, piso) + 1
       contadores.set(id, proximo);
       return [{ rpsNumero: proximo }];
     },
@@ -126,6 +144,7 @@ describe("reserva do número — atômica, sem furo e sem repetição", () => {
           companyId: "c1",
           rpsSerie: "1",
           client,
+          lerUltimaNota: semNota,
           criarLinha: (tx, dados) => tx.serviceInvoice.create({ data: { companyId: "c1", ...dados } }),
         })
       )
@@ -156,8 +175,162 @@ describe("reserva do número — atômica, sem furo e sem repetição", () => {
   it("série inválida recusa ANTES de mexer no contador — número não se queima à toa", async () => {
     const { client, contadores } = fakeClient({ c1: "10" });
     await expect(
-      reservarNumeracao({ companyId: "c1", rpsSerie: "UNICA", client, criarLinha: async () => ({}) })
+      reservarNumeracao({
+        companyId: "c1",
+        rpsSerie: "UNICA",
+        client,
+        lerUltimaNota: semNota,
+        criarLinha: async () => ({}),
+      })
     ).rejects.toThrow(/não é numérica/i);
     expect(contadores.get("c1")).toBe("10"); // intacto
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// A SÉRIE AUTOMÁTICA — a última nota que EXISTE, não a nossa contagem
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+
+describe("⚠ INVARIANTE 1 — nunca reusar número já emitido (E0014)", () => {
+  it("nota de FORA com nDPS 127 e contador interno em 5: o próximo é 128, não 6", async () => {
+    // Este é o caso do dono: *"nem sempre o usuário vai emitir pelo nosso portal"*. O contador
+    // interno conta só as NOSSAS emissões; as 127 notas emitidas em outro sistema chegaram pela
+    // captura do ADN. Sem o piso, a emissão sairia com o número 6 — que já existe.
+    const { client, contadores } = fakeClient({ c1: "5" });
+    const r = await reservarNumeracao({
+      companyId: "c1",
+      rpsSerie: "1",
+      client,
+      lerUltimaNota: async () => ({ estado: ESTADO.LIDA, serie: "00001", numero: 127, notasLidas: 40, porSerie: { "00001": 127 } }),
+      criarLinha: (tx, dados) => tx.serviceInvoice.create({ data: { companyId: "c1", ...dados } }),
+    });
+    expect(r.rpsNumero).toBe("128");
+    expect(r.rpsSerie).toBe("00001");
+    expect(r.origemSerie).toBe(ORIGEM_SERIE.ULTIMA_NOTA);
+    // E o contador FICA gravado no piso novo: a próxima não recomeça do 6.
+    expect(contadores.get("c1")).toBe("128");
+  });
+
+  it("o contador interno ainda vence quando é MAIOR — nota nossa que o ADN ainda não devolveu", async () => {
+    // ⚠ Por que não trocar o contador pelo piso: a captura é assíncrona. Uma nota que emitimos hoje
+    // pode levar horas para voltar do ADN. Se o piso substituísse o contador, esse número seria
+    // reemitido — E0014 numa nota que nós mesmos acabamos de gerar.
+    const { client } = fakeClient({ c1: "200" });
+    const r = await reservarNumeracao({
+      companyId: "c1",
+      rpsSerie: "1",
+      client,
+      lerUltimaNota: async () => ({ estado: ESTADO.LIDA, serie: "00001", numero: 127, notasLidas: 40, porSerie: { "00001": 127 } }),
+      criarLinha: (tx, dados) => tx.serviceInvoice.create({ data: { companyId: "c1", ...dados } }),
+    });
+    expect(r.rpsNumero).toBe("201");
+  });
+
+  it("a série da última nota VENCE a cadastrada — é o pedido do dono", async () => {
+    const { client } = fakeClient({ c1: "0" });
+    const r = await reservarNumeracao({
+      companyId: "c1",
+      rpsSerie: "1", // cadastro diz 00001
+      client,
+      lerUltimaNota: async () => ({ estado: ESTADO.LIDA, serie: "00007", numero: 42, notasLidas: 3, porSerie: { "00007": 42 } }),
+      criarLinha: (tx, dados) => tx.serviceInvoice.create({ data: { companyId: "c1", ...dados } }),
+    });
+    expect(r.rpsSerie).toBe("00007");
+    expect(r.rpsNumero).toBe("43");
+  });
+});
+
+describe("⚠ INVARIANTE 2 — leitura que falha RECUSA, nunca chuta o próximo", () => {
+  it("notas existem e nenhuma rende série/nDPS ⇒ recusa nomeada, e o contador NÃO se move", async () => {
+    const { client, contadores } = fakeClient({ c1: "10" });
+    const ilegivel = async () => {
+      throw new NfseUltimaNotaError("NFSE_ULTIMA_NOTA_ILEGIVEL", "não deu para ler", { notasLidas: 12 });
+    };
+    await expect(
+      reservarNumeracao({
+        companyId: "c1",
+        rpsSerie: "1",
+        client,
+        lerUltimaNota: ilegivel,
+        criarLinha: async () => ({}),
+      })
+    ).rejects.toMatchObject({ code: "NFSE_ULTIMA_NOTA_ILEGIVEL" });
+    // ⚠ O ponto do invariante: NADA foi escrito. O contador está onde estava, e nenhum número
+    // foi queimado por uma tentativa que não podia acontecer.
+    expect(contadores.get("c1")).toBe("10");
+  });
+
+  it("a consulta ao banco não voltou ⇒ recusa nomeada, e o contador NÃO se move", async () => {
+    const { client, contadores } = fakeClient({ c1: "10" });
+    const caiu = async () => {
+      throw new NfseUltimaNotaError("NFSE_LEITURA_ULTIMA_NOTA_FALHOU", "banco fora");
+    };
+    await expect(
+      reservarNumeracao({ companyId: "c1", rpsSerie: "1", client, lerUltimaNota: caiu, criarLinha: async () => ({}) })
+    ).rejects.toMatchObject({ code: "NFSE_LEITURA_ULTIMA_NOTA_FALHOU" });
+    expect(contadores.get("c1")).toBe("10");
+  });
+
+  it("⚠ o que NÃO pode existir: um caminho que engula a falha e crie a linha assim mesmo", async () => {
+    // Experimento invertido. Se algum dia alguém puser um `try/catch` em volta da leitura e cair
+    // para o contador interno, `criarLinha` passa a ser chamada — e ESTE teste cai. É a trava
+    // contra o "pular número em silêncio": a linha da nota só nasce com numeração decidida.
+    const { client } = fakeClient({ c1: "10" });
+    const criarLinha = jest.fn(async () => ({}));
+    await expect(
+      reservarNumeracao({
+        companyId: "c1",
+        rpsSerie: "1",
+        client,
+        lerUltimaNota: async () => {
+          throw new NfseUltimaNotaError("NFSE_LEITURA_ULTIMA_NOTA_FALHOU", "banco fora");
+        },
+        criarLinha,
+      })
+    ).rejects.toThrow(/RECUSADA|banco fora/);
+    expect(criarLinha).not.toHaveBeenCalled();
+  });
+});
+
+describe("de onde saiu a série — as três origens, cada uma com nome", () => {
+  it("empresa NOVA: sem nota, a série é a do cadastro e o piso é 0", async () => {
+    const r = await resolverSerieENumero({ companyId: "c1", rpsSerie: "3", lerUltimaNota: semNota });
+    expect(r).toMatchObject({ serie: "00003", piso: 0, origem: ORIGEM_SERIE.CADASTRO_PRIMEIRA_EMISSAO });
+  });
+
+  it("última nota na NOSSA faixa: ela manda", async () => {
+    const r = await resolverSerieENumero({
+      companyId: "c1",
+      rpsSerie: "3",
+      lerUltimaNota: async () => ({ estado: ESTADO.LIDA, serie: "00009", numero: 88, porSerie: { "00009": 88 } }),
+    });
+    expect(r).toMatchObject({ serie: "00009", piso: 88, origem: ORIGEM_SERIE.ULTIMA_NOTA });
+  });
+
+  it("⚠ última nota FORA da faixa E0010 (Emissor Web) não é continuável — volta ao cadastro", async () => {
+    // A RN E0010 reserva 00001–49999 para o emissor por APLICATIVO PRÓPRIO. Uma nota em série
+    // 900001 foi emitida por outro tipo de emissor; continuá-la seria rejeição, não continuidade.
+    const r = await resolverSerieENumero({
+      companyId: "c1",
+      rpsSerie: "3",
+      lerUltimaNota: async () => ({
+        estado: ESTADO.LIDA,
+        serie: "900001",
+        numero: 500,
+        // ⚠ E o piso da NOSSA série continua valendo: a empresa pode emitir pelos dois caminhos.
+        porSerie: { 900001: 500, "00003": 17 },
+      }),
+    });
+    expect(r).toMatchObject({ serie: "00003", piso: 17, origem: ORIGEM_SERIE.CADASTRO_SERIE_FORA_DA_FAIXA });
+  });
+
+  it("série fora da faixa E cadastro vazio ⇒ recusa — não há série de onde partir", async () => {
+    await expect(
+      resolverSerieENumero({
+        companyId: "c1",
+        rpsSerie: null,
+        lerUltimaNota: async () => ({ estado: ESTADO.LIDA, serie: "900001", numero: 500, porSerie: {} }),
+      })
+    ).rejects.toMatchObject({ code: "SERIE_NAO_CADASTRADA" });
   });
 });

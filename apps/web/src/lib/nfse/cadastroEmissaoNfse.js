@@ -8,13 +8,18 @@
 // emissão compartilham, para que os dois digam a MESMA coisa sobre a mesma empresa.
 //
 // ⚠ O QUE ESTE MÓDULO DELIBERADAMENTE NÃO FAZ: sugerir, derivar ou completar código de serviço.
-//   • a lista de serviços da **LC 116** não está neste repositório;
-//   • a lista de códigos do **município** também não;
-//   • o CNAE da empresa **não** determina nenhuma das duas.
-// Escrever qualquer uma delas de memória, ou deduzir uma da outra, é o que a regra 1 do projeto
-// proíbe — e o erro sairia como nota emitida com o serviço errado, que é silencioso e caro. Por
-// isso aqui só se valida **FORMA**, e apenas a forma que uma fonte já versionada no repositório
-// prova. Nada é pré-preenchido: campo vazio é a verdade sobre uma empresa não configurada.
+//   • a lista de códigos do **município** não está neste repositório;
+//   • o CNAE da empresa **não** determina nenhum dos dois códigos.
+// Escrever a lista municipal de memória, ou deduzi-la do CNAE, é o que a regra 1 do projeto proíbe
+// — e o erro sairia como nota emitida com o serviço errado, que é silencioso e caro. Por isso aqui
+// só se valida **FORMA**, e apenas a forma que uma fonte já versionada no repositório prova. Nada é
+// pré-preenchido: campo vazio é a verdade sobre uma empresa não configurada.
+//
+// ⚠ O CÓDIGO NACIONAL SAIU DAQUI (16/08/2026) e virou lista de escolhas. A razão do campo digitado
+// era literal — *"a lista de serviços da LC 116 não está neste repositório"* — e deixou de valer: o
+// Anexo B oficial do portal `gov.br/nfse` está versionado em `docs/lista-servico-nacional/` com
+// hash, e a regra dele mora em `lib/servicosNacionais/servicoNacional.js`. `lerCodigoServicoNacional`
+// continua aqui porque o valor gravado (o código que a DPS leva) ainda é lido como texto único.
 //
 // ⚠ Sem crase nem markdown nas strings: elas vão para a TELA, que não renderiza markdown.
 
@@ -44,17 +49,23 @@ export const MOTIVO_CODIGO_SERVICO_NACIONAL =
 export const MOTIVO_CODIGO_SERVICO_MUNICIPAL =
   "É o código do serviço na lista do seu município (o campo “cTribMun” da DPS).";
 
+// ⚠ O TEXTO MUDOU JUNTO COM O COMPORTAMENTO (16/08/2026). A série passou a ser LIDA da última nota
+// emitida — inclusive das emitidas fora deste portal, que chegam pela captura do ADN. Este campo
+// virou o PONTO DE PARTIDA, e dizer que ele "é a série" faria o contador achar que mudar aqui muda
+// a numeração de uma empresa que já emite. Ver `apps/api/src/application/nfse/nfseNumeracao.js`.
 export const MOTIVO_RPS_SERIE =
-  `É a série da DPS que este sistema vai emitir. Ela é escolha do emitente — não vem de fora —, e a `
-  + `RN E0010 do Padrão Nacional reserva a faixa ${SERIE_MIN} a ${SERIE_MAX} para quem emite por `
-  + "aplicativo próprio, que é o caso aqui.";
+  "A série da nota é lida automaticamente da última NFS-e desta empresa, inclusive das emitidas "
+  + "fora deste sistema. Este campo é o PONTO DE PARTIDA: vale na primeira emissão (quando ainda "
+  + "não há nota de onde ler) e quando a última nota está numa faixa de outro tipo de emissor. A RN "
+  + `E0010 reserva a faixa ${SERIE_MIN} a ${SERIE_MAX} para quem emite por aplicativo próprio, que é `
+  + "o caso aqui.";
 
-// Por que a tela pede que se DIGITE, em vez de oferecer uma lista como faz com o município. Fica
-// junto do campo: quem preenche precisa saber que ninguém vai conferir isto depois por ele.
-export const PORQUE_DIGITADO_E_NAO_LISTA =
-  "O sistema não tem a lista de serviços da LC 116 nem a lista do seu município, e inventá-las "
-  + "produziria nota emitida com o serviço errado. Por isso o código é digitado por você e nada "
-  + "aqui confere o CONTEÚDO — só o formato.";
+// Por que o código MUNICIPAL continua digitado, agora que o nacional virou lista. Fica junto do
+// campo: quem preenche precisa saber que ninguém vai conferir isto depois por ele.
+export const PORQUE_MUNICIPAL_DIGITADO =
+  "Não existe lista nacional de códigos municipais — cada prefeitura publica a sua, e nenhuma está "
+  + "neste sistema. Por isso este código é digitado por você e nada aqui confere o CONTEÚDO — só o "
+  + "formato.";
 
 export const PROBLEMA_CTRIB_NAC =
   `o código nacional do serviço tem exatamente ${TAMANHO_CTRIB_NAC} dígitos (ex.: 171201)`;
@@ -181,8 +192,8 @@ export const CAMPOS_EXIGIDOS_PARA_EMITIR = [
     onde: "Editar cadastro → Emissão de NFS-e",
     motivo:
       "É o “cTribNac” da nota — o serviço que está sendo declarado. Sem ele o servidor recusa a "
-      + "emissão inteira, e o sistema não tem como escolhê-lo por você: a lista da LC 116 não está "
-      + "no projeto.",
+      + "emissão inteira. Escolha na lista oficial (Anexo B do portal nacional da NFS-e); a empresa "
+      + "pode ter mais de um código cadastrado.",
   },
   {
     campo: "codigoServicoMunicipal",
@@ -197,9 +208,10 @@ export const CAMPOS_EXIGIDOS_PARA_EMITIR = [
     rotulo: "Série da DPS",
     onde: "Editar cadastro → Emissão de NFS-e",
     motivo:
-      `É a série das notas que este sistema vai emitir, na faixa ${SERIE_MIN}–${SERIE_MAX} da RN `
-      + "E0010. Ela é escolha sua e não tem valor padrão: uma série chutada muda o identificador de "
-      + "toda nota emitida.",
+      "É o ponto de partida da numeração. A série é lida da última nota emitida, mas na PRIMEIRA "
+      + "emissão não há nota de onde ler — e aí vale esta, na faixa "
+      + `${SERIE_MIN}–${SERIE_MAX} da RN E0010. Ela é escolha sua e não tem valor padrão: uma série `
+      + "chutada muda o identificador de toda nota emitida.",
   },
 ];
 
