@@ -1622,6 +1622,33 @@ th {
     opacity: 1 !important;
   }
 
+  /* ⚠ AS BARRAS DE UM GRÁFICO PRECISAM DE CONTORNO, PORQUE A REGRA ACIMA ZERA O FUNDO DELAS.
+     A barra desenhada só com `background` (o mês COM movimento) some inteira no papel; a do mês
+     VAZIO é transparente com tracejado, e o tracejado sobrevive. O resultado impresso era uma
+     caixa vazia onde a única marca visível ficava justamente nos meses em que NADA foi lançado —
+     o inverso do que a tela mostra. E esse PDF circula sem a tela por perto para desmenti-lo.
+
+     A regra geral NÃO foi afrouxada (ela é a única alavanca contra os ~2.200 estilos inline, e
+     quem imprime outras telas depende dela): o que se dá aqui é uma marca que sobrevive a ela,
+     num seletor mais específico e restrito a quem se declara barra. Contorno, e não fundo, porque
+     o navegador descarta fundo por padrão na impressão ("Gráficos de segundo plano" desmarcado) —
+     borda é o que o papel garante. O fundo vai junto, com `print-color-adjust`, para quem marca a
+     opção; sozinho ele não seria suficiente. */
+  body.imprimindo [data-print-area] [data-print-barra] {
+    box-sizing: border-box !important;
+    border: 1px solid #000 !important;
+    background: #c8c8c8 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Mês SEM lançamento continua VISUALMENTE DISTINTO — tracejado e sem preenchimento, a mesma
+     distinção que a tela faz. Ele não vira barra: sem lançamento a altura é o mínimo. */
+  body.imprimindo [data-print-area] [data-print-barra="vazio"] {
+    border: 1px dashed #666 !important;
+    background: transparent !important;
+  }
+
   /* O contêiner rolável cortaria a lista na primeira página. */
   body.imprimindo [data-print-tabela] {
     max-height: none !important;

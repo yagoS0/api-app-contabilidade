@@ -42,6 +42,14 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
 
   const opcoes = useMemo(() => intervalosDisponiveis(competenciaReferencia), [competenciaReferencia]);
   const escolhido = opcoes.find((o) => o.chave === intervalo) || opcoes[0];
+  // ⚠ O PERÍODO DA COMPARAÇÃO, LIDO UMA VEZ — a mesma leitura que alimenta a busca lá embaixo e o
+  // rótulo que a nomeia na tela. Recalculá-lo no render seria a segunda definição do "anterior", e
+  // a primeira divergência apareceria como uma variação comparada a um intervalo que ninguém
+  // buscou. A regra (mesmo tamanho, imediatamente antes) vive em `lib/periodoRelatorio.js`.
+  const comparado = useMemo(
+    () => (escolhido ? periodoAnterior(escolhido.de, escolhido.ate) : null),
+    [escolhido?.de, escolhido?.ate],
+  );
 
   useEffect(() => {
     if (!companyId || !escolhido) return undefined;
@@ -52,12 +60,11 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
     // rótulo do período NOVO — com o botão Imprimir ativo em cima. O PDF que sai daí declara um
     // período e traz o movimento de outro, e ele circula sem esta tela por perto.
     setDados(null); setAnterior(null);
-    const ant = periodoAnterior(escolhido.de, escolhido.ate);
     Promise.all([
       relatoriosApi.getRelatorioResumo(companyId, escolhido.de, escolhido.ate),
       // O período anterior é buscado JUNTO: sem ele a tela mostraria o total e depois o
       // comparativo apareceria pulando, o que faz duvidar do primeiro número.
-      ant ? relatoriosApi.getRelatorioResumo(companyId, ant.de, ant.ate) : Promise.resolve(null),
+      comparado ? relatoriosApi.getRelatorioResumo(companyId, comparado.de, comparado.ate) : Promise.resolve(null),
     ])
       .then(([atual, previo]) => {
         if (!vivo) return;
@@ -78,7 +85,7 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
       })
       .finally(() => { if (vivo) setCarregando(false); });
     return () => { vivo = false; };
-  }, [companyId, escolhido?.de, escolhido?.ate]);
+  }, [companyId, escolhido?.de, escolhido?.ate, comparado]);
 
   useEffect(() => {
     if (!imprimindo) return undefined;
@@ -179,6 +186,19 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
             })}
           </div>
 
+          {/* ⚠ O PERÍODO DA COMPARAÇÃO É NOMEADO — na tela E no papel (por isso ele mora DENTRO da
+              área impressa, e não junto do seletor, que é `data-print-hide`). "▲ 12,4% vs. período
+              anterior" não diz contra o quê; no PDF, que circula sozinho, o leitor vê uma variação
+              percentual sem ter como descobrir a base. O intervalo é o MESMO que foi buscado, e
+              o "mesmo tamanho" é dito porque é ele que torna a comparação honesta — um trimestre
+              comparado com "o mês passado" produziria um número que não significa nada. */}
+          {anterior && comparado && (
+            <div style={{ fontSize: "0.75rem", color: C.muted }}>
+              Comparação com o período anterior, de mesmo tamanho:{" "}
+              <strong style={{ color: C.texto }}>{comparado.de} a {comparado.ate}</strong>.
+            </div>
+          )}
+
           {/* ── EVOLUÇÃO ────────────────────────────────────────────────── */}
           <div style={{ padding: 12, borderRadius: 10, border: `1px solid ${C.borda}`, background: C.surface }}>
             <div style={{ fontSize: "0.78rem", color: C.muted, marginBottom: 8 }}>Evolução mensal</div>
@@ -187,6 +207,12 @@ export function RelatoriosTab({ companyId, competenciaReferencia, razaoSocial })
                 <div key={l.competencia} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, minWidth: 0 }}>
                   <div
                     title={`${l.competencia}: ${l.semLancamento ? "sem lançamento" : brl(l.total)}`}
+                    // ⚠ ESTA MARCA É O QUE FAZ A BARRA EXISTIR NO PAPEL. A regra de impressão
+                    // (compartilhada, `@media print` no `App.css`) zera o fundo de todo descendente
+                    // da área impressa — e a barra com movimento é SÓ fundo. Sem o `data-print-barra`
+                    // o gráfico saía impresso como uma caixa vazia em que os únicos traços eram os
+                    // meses SEM lançamento, que têm tracejado. Ver o bloco `[data-print-barra]` lá.
+                    data-print-barra={l.semLancamento ? "vazio" : "movimento"}
                     style={{
                       width: "100%",
                       height: `${Math.max(2, (l.total / maiorTotal) * 96)}px`,

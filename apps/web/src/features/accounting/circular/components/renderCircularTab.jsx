@@ -842,8 +842,15 @@ export function CircularTab({
       const r = await circularApi.buscarPagamentoGuia(guideId);
       if (r?.encontrado) {
         const c = r.comprovante;
+        // ⚠ O VALOR SAI PELO FORMATADOR DA TELA, não por `toFixed(2)`. Este era o único número
+        // desta aba em formato americano: "R$ 193.03" no meio de um quadro em que todo o resto
+        // é "1.234,56". Ponto onde se lê vírgula não é detalhe tipográfico num valor pago — é a
+        // leitura de milhar contra a de centavo. `fmtValor` é o mesmo que a célula, o popover e o
+        // rodapé usam; e, como ele, um total ausente NÃO vira "R$ 0,00" — a frase omite o valor,
+        // igual faz o irmão desta busca (`parcelaBusca.resumoDoResultado`).
+        const total = fmtValor(c?.total);
         window.alert(c?.dataArrecadacao
-          ? `Pagamento localizado em ${c.dataArrecadacao} — total R$ ${Number(c.total || 0).toFixed(2)}.
+          ? `Pagamento localizado em ${c.dataArrecadacao}${total ? ` — total R$ ${total}` : ""}.
 
 A baixa continua com você: use "Dar baixa" (já vem preenchida).`
           : "Pagamento localizado no SERPRO. Use \"Dar baixa\" para lançar.");
