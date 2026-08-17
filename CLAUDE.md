@@ -97,6 +97,19 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   à captura (`PortalInvoice` intacto). **Camada 2** (conferência de contagem por chave vs ADN) **trava o
   fechamento** no "28 vs 27" (`ConferenciaAdnService`; `POST .../fechamento/:comp/conferencia`;
   `scripts/conferir-adn.mjs` roda em prod). Fase 0 (forense) superada pela detecção automática.
+- [x] **Auditoria pré-apuração das notas** — sub-aba **Auditoria** (grupo Fiscal, **antes** de
+  Apuração), consumindo os campos fiscais extraídos do XML. **Cinco perguntas com nome próprio**,
+  regra PURA em `apps/api/src/application/notas/auditoria/auditoriaNotas.js`, rota literal
+  `GET /firm/companies/:id/notas/auditoria`, tela em `apps/web/src/features/notas/`.
+  - ⚠ **CADA ACHADO É UMA PERGUNTA, NUNCA UM VEREDITO** — a tela diz "esta nota usa um código que
+    não está no cadastro da empresa", não "nota errada". Quem julga é o contador, e a frase está
+    **na tela**, não num comentário.
+  - ⚠ **ZERO ACHADOS ≠ "NÃO DÁ PARA CONFERIR"**, com desenhos diferentes. Empresa sem código de
+    serviço cadastrado responde *"cadastre os códigos"* — **não** "todas as notas erradas". Medido:
+    33 de 33 empresas nesse estado hoje.
+  - ⚠ **A AUDITORIA NÃO ESCREVE NADA** e não faz chamada externa — provado por teste.
+  - Detalhes, as cinco perguntas e os números de produção: `apps/api/CLAUDE.md`, seção "AUDITORIA
+    PRÉ-APURAÇÃO". Medição: `apps/api/scripts/diag-auditoria-notas.mjs` (só leitura).
 - [x] **Apuração dentro da empresa (Q60)** — aba Fiscal "Cadastro" → **"Apuração"**: faturamento +
   prévia (reusa `FechamentoModal`) + **extrato do Simples** (`syncPgdasCircular`) + fechar/transmitir/retificar
   por dentro da empresa. Cadastro enxuto (só regime + atividades permitidas). Tela de lote global vira

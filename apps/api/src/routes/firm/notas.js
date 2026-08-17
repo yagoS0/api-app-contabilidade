@@ -11,6 +11,7 @@
 //   POST   /competencias/:competencia/reabrir
 //   GET    /pendencias-pos-fechamento
 //   POST   /pendencias-pos-fechamento/:pendId/resolver
+//   GET    /notas/auditoria             (auditoria pré-apuração da competência — SÓ LEITURA)
 //   GET    /notas/:notaId/danfse        (PDF da NFS-e, layout do Padrão Nacional — NT 008)
 
 import { Router } from "express";
@@ -31,6 +32,7 @@ import { calcularApuracaoParaCompetencia } from "../../application/notas/apuraca
 import { transmitirApuracao } from "../../application/notas/apuracao/ApuracaoTransmissaoService.js";
 import { conferirApuracao } from "../../application/notas/apuracao/ApuracaoConferenciaService.js";
 import { gerarDanfse } from "../../application/nfse/danfse/gerarDanfse.js";
+import { auditarCompetencia } from "../../application/notas/auditoria/AuditoriaNotasService.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
 
@@ -570,6 +572,36 @@ export function createNotasRouter({ log }) {
       totals: { totalNotas, totalEmitido, totalRecebido, countNfe, countNfse, countCanceladas },
       byMonth: Object.values(byMonth).sort((a, b) => a.competencia.localeCompare(b.competencia)),
     });
+  });
+
+  // GET /notas/auditoria?competencia=AAAA-MM → a AUDITORIA PRÉ-APURAÇÃO da competência.
+  //
+  // ⚠ LITERAL, E REGISTRADA ANTES DE `/notas/:notaId` — pela MESMA razão que `/notas/summary`
+  // (logo acima) e que as três rotas literais de parcelamento: o Express casa na ordem, e posta
+  // depois esta rota seria engolida pelo curinga, devolvendo 404 falando de "nota não encontrada"
+  // sobre uma nota chamada "auditoria". Regressão: `__tests__/auditoriaNotasRota.test.js`.
+  //
+  // ⚠ **SÓ LEITURA, E SEM CHAMADA EXTERNA.** Não marca nota, não classifica, não mexe em apuração,
+  // não fala com ADN/SEFAZ/SERPRO. Por isso o guard é o mesmo dos GETs (`requireFirmCompanyAccess()`
+  // sem `minRole`): quem pode ver as notas pode ver as perguntas sobre elas. A prova de que nada é
+  // escrito está em `application/notas/auditoria/__tests__/auditoriaNaoEscreve.test.js`.
+  //
+  // A REGRA não mora aqui: `application/notas/auditoria/auditoriaNotas.js` é pura e é a mesma que o
+  // script de medição (`scripts/diag-auditoria-notas.mjs`) roda contra produção — a tela e o número
+  // do relatório saem do mesmo lugar por construção.
+  router.get("/notas/auditoria", requireFirmCompanyAccess(), async (req, res) => {
+    const portalClientId = String(req.params.companyId);
+    const competencia = String(req.query.competencia || "");
+    if (!COMPETENCIA_RE.test(competencia)) {
+      return bad(res, 400, "invalid_competencia", "Informe a competência no formato AAAA-MM.");
+    }
+    try {
+      const auditoria = await auditarCompetencia({ portalClientId, competencia });
+      return res.json({ ok: true, auditoria });
+    } catch (err) {
+      log?.error?.({ err, portalClientId, competencia }, "[notas] auditoria falhou");
+      return bad(res, 500, "auditoria_falhou", "Não foi possível montar a auditoria desta competência.");
+    }
   });
 
   // GET /notas/:notaId → a ÍNTEGRA do que temos de UMA nota.

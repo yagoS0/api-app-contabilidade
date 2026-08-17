@@ -10,7 +10,7 @@ import {
 
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
-const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "parcelamento", "notas-fiscais", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "documentos", "anotacoes", "edit"];
+const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "parcelamento", "notas-fiscais", "auditoria", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "documentos", "anotacoes", "edit"];
 const SEGMENT_TO_TAB = {
   guides: "guides",
   lancamentos: "lancamentos",
@@ -19,6 +19,9 @@ const SEGMENT_TO_TAB = {
   obrigacoes: "obrigacoes",
   relatorios: "relatorios",
   "notas-fiscais": "notasFiscais",
+  // Auditoria pré-apuração (grupo Fiscal). ⚠ O PAR EM `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o
+  // clique na aba não navega e a URL cai em Anotações, sem erro nenhum.
+  auditoria: "auditoria",
   sitfis: "sitfis",
   "cadastro-fiscal": "cadastroFiscal",
   // Sugestão e Pendências viraram sub-abas INTERNAS do Cadastro (estado local, não URL).
@@ -46,6 +49,7 @@ const TAB_TO_SEGMENT = {
   obrigacoes: "obrigacoes",
   relatorios: "relatorios",
   notasFiscais: "notas-fiscais",
+  auditoria: "auditoria",
   sitfis: "sitfis",
   cadastroFiscal: "cadastro-fiscal",
   planoContas: "plano-contas",

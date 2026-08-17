@@ -982,6 +982,74 @@ campo mora.
   ingestão atrás de caminho de XML reescrito à mão. Experimento executado: tirando o spread de
   `ingestaoNfse.js`, **11 vermelhos**; tirando o do `InvoiceSyncEngine`, **1**.
 
+### AUDITORIA PRÉ-APURAÇÃO — cinco PERGUNTAS, e nenhuma delas é um veredito
+
+> Pedido do dono (17/08/2026): *"nos ajuda em uma auditoria pré-apuração para entender se a nota está
+> correta ou não, baseado na atividade e baseado na data de emissão"*.
+
+É o consumidor das colunas acima. **Regra PURA** em `application/notas/auditoria/auditoriaNotas.js`
+(nenhum import de prisma; só `utils/dataCivil.js`), ligação em `AuditoriaNotasService.js`, rota
+**literal** `GET /firm/companies/:id/notas/auditoria?competencia=AAAA-MM` (registrada **antes** de
+`/notas/:notaId`, mesmo cuidado de `/notas/summary`), tela em `apps/web/src/features/notas/` —
+sub-aba **Auditoria** do grupo Fiscal, **antes de Apuração**, porque é *pré*-apuração.
+
+⚠ **A AUDITORIA NÃO ESCREVE NADA** — não marca nota, não classifica, não cria pendência, não altera
+apuração, e não chama ADN/SEFAZ/SERPRO. Provado em `auditoria/__tests__/auditoriaNaoEscreve.test.js`
+(molde de `dadosPlanejamento.test.js`: os métodos de escrita **lançam** e um teste final varre
+`Object.values(prisma)`), mais uma varredura textual do serviço atrás de `.update(`/`$transaction`.
+
+⚠ **ZERO ACHADOS E "NÃO DÁ PARA CONFERIR" SÃO RESPOSTAS DIFERENTES**, e é o eixo do módulo. Cada
+pergunta devolve `situacao: CONFERIDA | NAO_CONFERIVEL`; a segunda vem com `motivo` de vocabulário
+fechado. Medido em produção (17/08/2026): **0 de 33 empresas** tem um único código em
+`Company.codigosServicoNacional` — se a pergunta 1 respondesse "0 achados", a tela afirmaria
+"nenhuma nota fora da atividade cadastrada" sobre um cadastro que não existe, em toda a carteira. A
+resposta certa é `EMPRESA_SEM_CODIGOS_CADASTRADOS`: *"cadastre os códigos"*. Ausência de critério não
+vira acusação **nem aprovação** — e a segunda é a mais perigosa, porque passa despercebida.
+A mesma disciplina desce à NOTA: sem o campo que a pergunta lê, ela sai em `naoAvaliadas`, nomeada.
+
+| # | pergunta | população | medido em produção (17/08/2026) |
+|---|---|---|---|
+| 1 | atividade fora do cadastro (`cTribNac` × `codigosServicoNacional`) | EMIT autorizada | **0 achados; 33/33 empresas `NAO_CONFERIVEL`** |
+| 2 | emissão fora da competência (mês de `issueDate` × mês de `competencia`) | EMIT autorizada | **1.738 notas** — 1.727 com desvio de **um** mês (emitidas nos dias 1–4), 11 com ≥2 (até −5) |
+| 3 | ISS zerado onde a atividade tributa | EMIT autorizada | **7 notas** (BC > 0, valor 0). Zero com alíquota > 0 e valor zerado |
+| 4 | número da DPS pulado ou repetido, por série | ⚠ EMIT de **todos** os status | **0 repetidos · 54 buracos** em 10 pares empresa+série |
+| 5 | nota que não pôde ser lida | ⚠ EMIT de **todos** os status | **62** DEST `NAO_E_NFSE` + **5 EMIT `NUNCA_EXTRAIDA`** |
+
+- ⚠ **A NOTA CANCELADA CONTA NA NUMERAÇÃO.** Não existe inutilização na NFS-e (varrido nos 16
+  eventos do Anexo II — ver a seção do emissor); ela **consumiu** o número. Tirá-la faria a auditoria
+  inventar um buraco a cada cancelamento. Nas perguntas 1–3 ela fica de fora, porque não entra em
+  apuração nenhuma.
+- ⚠ **NUMERAÇÃO NÃO É FATO MENSAL.** A nº 100 de julho e a nº 101 de agosto são vizinhas na SÉRIE e
+  estranhas na competência: dentro de um mês, toda virada viraria "salto". A pergunta 4 é respondida
+  sobre uma **janela de 12 meses terminando na competência**, que volta DECLARADA no resultado — e
+  **salto exige número dos dois lados**: a borda da janela nunca é achado.
+- ⚠ **A PERGUNTA 5 TEM DUAS ESPÉCIES, e a segunda é o quarto estado do schema.** `LEITURA_FALHOU` é
+  `camposFiscaisMotivo` preenchido; **`NUNCA_EXTRAIDA` é `camposFiscaisExtraidosEm` NULO** — *"o
+  extrator nunca passou por esta linha"*, que é exatamente o que aquela coluna existe para desfazer.
+  As 5 notas EMIT nesse estado (XML de ~9,8 KB guardado, criadas em 17/08 às 15:38, antes de a
+  captura passar a extrair) **sumiriam da tela** se a pergunta lesse só o motivo — e sumiriam
+  também das outras quatro, por falta de campo.
+- ⚠ **ISS: nota sem base, sem alíquota E sem valor NÃO é achado** (`SEM_ISSQN_NO_XML`). É o desenho
+  de nota imune, isenta ou com ISS retido pelo tomador; acusar seria derivar erro fiscal de ausência
+  de dado. Medido: 202 das 209 notas sem alíquota também não têm base nem valor.
+- ⚠ **O DESVIO EM MESES VIAJA JUNTO** na pergunta 2. Competência um mês antes da emissão é o serviço
+  de julho faturado em 1º de agosto — legítimo e maciço (1.727 casos). É o desvio que separa isso de
+  uma nota contada cinco meses atrás.
+- ⚠ **O TEXTO DE CADA PERGUNTA É DADO**, em `PERGUNTAS` (backend), e desce pronto para a tela.
+  Escrito no componente, a próxima tela a consumir a rota escreveria o seu — e um dos dois diria
+  "nota errada". Há teste recusando `errad|inválid|irregular|incorret|ilegal` nos textos.
+- ⚠ **NUNCA `--state-danger` na tela.** Vermelho, neste projeto, é o que **bloqueia o fechamento**;
+  achado de auditoria não bloqueia nada. Regra de tela em `notas/lib/auditoriaTela.js` (21 testes).
+- `"autorizada"` é o MESMO valor de `FechamentoService.whereFaturamentoEmit()` (a definição única de
+  faturamento). Ela não é importável pela regra pura (aquele módulo carrega o prisma no topo), então
+  a amarração é **textual**, num teste que lê o arquivo — muda lá, cai aqui.
+- Medição em produção: **`scripts/diag-auditoria-notas.mjs`** (só leitura, zero chamada externa, sem
+  `--aplicar`). Ele chama a MESMA regra pura da rota — o número do relatório e o da tela não podem
+  divergir por construção.
+- Regressão: `auditoria/__tests__/auditoriaNotas.test.js` (38) + `auditoriaNaoEscreve.test.js` (11)
+  + `routes/firm/__tests__/auditoriaNotasRota.test.js` (6) + web
+  `notas/lib/__tests__/auditoriaTela.test.js` (21) e `components/__tests__/auditoriaTab.test.jsx` (11).
+
 ## ⚠ A RECAPTURA NÃO PODE APAGAR A CLASSIFICAÇÃO
 
 `AdnNotasService` e `DfeSyncService` faziam `notaItem.deleteMany` + recriação seca. Isso apagava

@@ -1599,6 +1599,12 @@ export function createRealApi() {
       const suffix = q.toString() ? `?${q.toString()}` : "";
       return request(`/firm/companies/${companyId}/notas/summary${suffix}`);
     },
+    // A AUDITORIA PRÉ-APURAÇÃO da competência — SÓ LEITURA (não marca nota, não altera apuração,
+    // não fala com ADN/SEFAZ/SERPRO). A rota é LITERAL e registrada antes de `/notas/:notaId`.
+    async getAuditoriaNotas(companyId, competencia) {
+      const q = new URLSearchParams({ competencia: String(competencia || "") });
+      return request(`/firm/companies/${companyId}/notas/auditoria?${q.toString()}`);
+    },
     // A ÍNTEGRA de UMA nota (itens + XML bruto + identificadores + carimbos de captura).
     // A lista continua enxuta de propósito; a profundidade vem de clicar na linha.
     async getNota(companyId, notaId) {

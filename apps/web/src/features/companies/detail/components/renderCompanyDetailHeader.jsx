@@ -24,7 +24,9 @@ import { Tabs } from "../../../../components/ui/Tabs";
 //
 // Obrigações também: o `CalendarioGrid` navega por mês com controle próprio, que já é o único
 // daquela tela e serve à página principal do calendário do mesmo jeito.
-const TABS_COM_COMPETENCIA = new Set(["lancamentos", "circular", "cadastroFiscal", "guides", "notasFiscais"]);
+// ⚠ `auditoria` entra aqui porque a auditoria É por competência — ela responde "as notas DESTE mês
+// batem?". Sem o seletor, a aba mostraria sempre o mês default e não haveria como conferir outro.
+const TABS_COM_COMPETENCIA = new Set(["lancamentos", "circular", "cadastroFiscal", "guides", "notasFiscais", "auditoria"]);
 
 // Navegação da empresa em 2 níveis: grupos grandes (Anotações, Contabilidade, Fiscal, Empresa)
 // e, abaixo, as sub-abas do grupo ativo. A aba ativa continua vindo do segmento da URL (activeTab);
@@ -65,6 +67,13 @@ const GROUPS = [
     // ao clicar no grupo "Fiscal").
     tabs: [
       { key: "notasFiscais", label: "Notas Fiscais" },
+      // ⚠ AUDITORIA VEM ANTES DE APURAÇÃO, e a ordem é o argumento: o dono pediu uma auditoria
+      // *pré-apuração* ("entender se a nota está correta ou não, baseado na atividade e baseado na
+      // data de emissão"). Ela lê as notas que a apuração vai somar; posta depois, seria conferência
+      // do que já foi fechado. ⚠ E ela NÃO é `soApuraSimples`: as cinco perguntas são sobre a NOTA
+      // (código de serviço, data, ISS, numeração da DPS), não sobre o regime — esconder a aba do
+      // Lucro Presumido tiraria a conferência de quem também emite NFS-e.
+      { key: "auditoria", label: "Auditoria" },
       // Só apuramos Simples hoje — no Lucro Presumido esta aba é escondida (ver soApuraSimples).
       { key: "cadastroFiscal", label: "Apuração", soApuraSimples: true },
       { key: "guides", label: "Guias" },

@@ -51,6 +51,10 @@ const CalendarioGrid = lazy(() =>
 const NotasFiscaisTab = lazy(() =>
   import("../../../notas/components/renderNotasFiscaisTab").then((m) => ({ default: m.NotasFiscaisTab }))
 );
+// Auditoria pré-apuração das notas — SÓ LEITURA (autônoma: faz a própria chamada, como o SITFIS).
+const AuditoriaTab = lazy(() =>
+  import("../../../notas/components/renderAuditoriaTab").then((m) => ({ default: m.AuditoriaTab }))
+);
 // Q14.2: Apuração v2 — cadastro fiscal + produtos/serviços + pendências
 const ApuracaoV2Tab = lazy(() =>
   import("../../../apuracao-v2/pages/renderApuracaoV2Tab").then((m) => ({ default: m.ApuracaoV2Tab }))
@@ -676,6 +680,34 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 competencia={circularPanel?.competencia}
                 onCompetenciaChange={circularPanel?.onCompetenciaChange}
               />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
+      </div>
+    );
+  }
+
+  // Auditoria pré-apuração — autônoma (faz a própria chamada), e por competência.
+  //
+  // ⚠ Ela recebe a competência GLOBAL (`circularPanel.competencia`), a mesma que Lançamentos,
+  // Circular, Guias e Notas Fiscais leem. Uma competência própria aqui faria a auditoria conferir um
+  // mês e a apuração fechar outro — que é exatamente o defeito que a competência global corrigiu.
+  if (companyDetailTab === "auditoria") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="auditoria"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        />
+        <div style={{ flex: 1 }}>
+          <ErrorBoundary>
+            <Suspense fallback={<TabLoadingFallback />}>
+              <AuditoriaTab companyId={companyId} competencia={circularPanel?.competencia} />
             </Suspense>
           </ErrorBoundary>
         </div>

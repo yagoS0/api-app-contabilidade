@@ -6421,6 +6421,88 @@ export function createMockApi() {
         byMonth: [],
       };
     },
+    // AUDITORIA PRÉ-APURAÇÃO — só leitura.
+    //
+    // ⚠ O MOCK NÃO PODE SER "TUDO VERDE". A tela tem três desenhos (`notas/lib/auditoriaTela.js`) e
+    // o que ela existe para não confundir é justamente `CONFERIDA com 0 achados` × `NAO_CONFERIVEL`.
+    // Um payload só com achados, ou só sem, passaria por essa distinção sem exercê-la.
+    //
+    // ⚠ E a pergunta da ATIVIDADE nasce NAO_CONFERIVEL de propósito: é o estado real da produção
+    // (33 de 33 empresas sem nenhum código de serviço cadastrado, medido em 17/08/2026). O mock que
+    // mostrasse a carteira configurada esconderia offline exatamente o caso que existe online.
+    //
+    // A REGRA não é reimplementada aqui — ela é do backend (`application/notas/auditoria/`) e não é
+    // importável (o Dockerfile não copia `packages/`, e cruzar apps quebra o boot). Isto é uma
+    // AMOSTRA do contrato, e o par real é `realApi.getAuditoriaNotas`.
+    async getAuditoriaNotas(_companyId, competencia) {
+      await delay(80);
+      const notaRef = (id, numero) => ({
+        notaId: id, numero, chaveAcesso: `330455722553875800001030000000${numero}26088969924100`,
+        emissao: `${competencia}-04`, competencia, valor: 1250,
+      });
+      const perguntas = [
+        {
+          id: "ATIVIDADE_FORA_DO_CADASTRO", titulo: "Atividade fora do cadastro",
+          pergunta: "Alguma nota saiu num código de serviço que não está cadastrado na empresa?",
+          achado: "esta nota usa um código de serviço que não está no cadastro da empresa",
+          situacao: "NAO_CONFERIVEL", motivo: "EMPRESA_SEM_CODIGOS_CADASTRADOS",
+          avaliadas: 0, achados: [], naoAvaliadas: [], cadastrados: [],
+        },
+        {
+          id: "EMISSAO_FORA_DA_COMPETENCIA", titulo: "Emissão fora da competência",
+          pergunta: "Alguma nota está sendo contada num mês diferente do mês em que foi emitida?",
+          achado: "esta nota está contada numa competência diferente do mês da data de emissão",
+          situacao: "CONFERIDA", motivo: null, avaliadas: 12, naoAvaliadas: [],
+          achados: [{
+            pergunta: "EMISSAO_FORA_DA_COMPETENCIA", ...notaRef("mock-nfse-1", "13000"),
+            dados: { mesDaCompetencia: competencia, mesDaEmissao: "2026-08", mesesDeDesvio: -1 },
+          }],
+        },
+        {
+          id: "ISS_ZERADO_ONDE_TRIBUTA", titulo: "ISS zerado onde a atividade tributa",
+          pergunta: "Alguma nota tem base ou alíquota de ISSQN e mesmo assim saiu com imposto zero?",
+          achado: "esta nota tem base/alíquota de ISSQN e o valor do imposto saiu zerado",
+          situacao: "CONFERIDA", motivo: null, avaliadas: 10, achados: [],
+          // ⚠ Nota sem ISSQN no XML NÃO é achado — sai nomeada, e a tela precisa desenhar isso.
+          naoAvaliadas: [{ ...notaRef("mock-nfse-2", "13001"), motivo: "SEM_ISSQN_NO_XML" }],
+        },
+        {
+          id: "NUMERACAO_DA_DPS", titulo: "Numeração da DPS",
+          pergunta: "Dentro de uma mesma série, algum número de DPS foi repetido ou pulado?",
+          achado: "a numeração desta série tem um número repetido ou um intervalo sem nota",
+          situacao: "CONFERIDA", motivo: null, avaliadas: 12, naoAvaliadas: [],
+          janela: { de: "2025-09", ate: competencia, meses: 12 },
+          series: [{ serie: "00001", de: 40, ate: 55, notas: 12, numerosDistintos: 12, pulados: 4, repetidos: 0 }],
+          achados: [{
+            pergunta: "NUMERACAO_DA_DPS", notaId: null, numero: null, chaveAcesso: null,
+            emissao: null, competencia: null, valor: null,
+            dados: { especie: "NUMERO_PULADO", serie: "00001", de: 44, ate: 47, quantidade: 4, antes: 43, depois: 48 },
+          }],
+        },
+        {
+          id: "NOTA_NAO_LIDA", titulo: "Nota que não pôde ser lida",
+          pergunta: "De alguma nota deste mês não conseguimos extrair os campos fiscais do XML?",
+          achado: "os campos fiscais desta nota não foram extraídos do XML",
+          situacao: "CONFERIDA", motivo: null, avaliadas: 13, naoAvaliadas: [], achados: [],
+        },
+      ];
+      return {
+        ok: true,
+        auditoria: {
+          competencia,
+          totalNotas: 13, totalNotasApuradas: 12,
+          totalAchados: perguntas.reduce((s, p) => s + p.achados.length, 0),
+          perguntasConferidas: perguntas.filter((p) => p.situacao === "CONFERIDA").length,
+          perguntasNaoConferiveis: perguntas.filter((p) => p.situacao === "NAO_CONFERIVEL").length,
+          perguntas,
+          empresa: {
+            portalClientId: _companyId, razao: "EMPRESA EXEMPLO MOCK LTDA", cnpj: "00000000000191",
+            codigosServicoNacional: [], codigoServicoNacionalDaDps: null, temCadastroDeServicos: false,
+          },
+          janelaDaSerie: { de: "2025-09", ate: competencia, meses: 12 },
+        },
+      };
+    },
     async listApuracao({ competencia } = {}) { await delay(60); return { competencia, items: [] }; },
     async calcularApuracao() { await delay(120); return { ok: true, result: { rb12: 0, fs12: 0, fatorR: 0, receitaMes: 0, receitaPorAnexo: {}, divergencias: 0 } }; },
     async getApuracao() { await delay(60); return null; },
