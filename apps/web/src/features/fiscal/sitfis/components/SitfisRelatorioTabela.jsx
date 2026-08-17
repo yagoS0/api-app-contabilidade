@@ -38,9 +38,14 @@ const COR = { texto: "#F8F8F2", suave: "#A7B0C0", borda: "#44475A", ok: "#69FF47
 // (SIEF)" imprime com espaço. As duas grafias existem no mesmo relatório — ver `COLUNAS_CONHECIDAS`
 // em `parseSitfisRelatorio.js`. Sem as duas, a coluna de dinheiro do bloco suspenso ficava alinhada
 // à esquerda e em fonte proporcional, que é onde o olho troca um valor pelo outro.
+// ⚠ `Valor em Atraso`/`Valor Suspenso` entraram em 17/08/2026, com a tabulação do bloco do
+// parcelamento (SIEFPAR): são as duas colunas de dinheiro DELE. Sem elas aqui, o valor do
+// parcelamento sairia alinhado à esquerda e em fonte proporcional, que é onde o olho troca um
+// valor pelo outro — a mesma falta que `Vl.Original` teve.
 const COLUNAS_VALOR = new Set([
   "Vl. Original", "Sdo. Devedor", "Vl.Original", "Sdo.Devedor",
   "Multa", "Juros", "Sdo. Dev. Cons.", "Valor",
+  "Valor em Atraso", "Valor Suspenso",
 ]);
 
 // ⚠ A COLUNA QUE RESPONDE A PERGUNTA.
@@ -97,12 +102,18 @@ function Bloco({ bloco }) {
   // Enquanto não acha, tudo vai para `descricao` — então, quando NENHUM rótulo bate, o bloco INTEIRO
   // sai em `descricao` e `naoInterpretado` fica VAZIO (o `slice` já não tem sobra para pôr nele).
   // Na tela isso aparecia como linhas soltas, sem uma palavra dizendo que não foram interpretadas:
-  // ausência de leitura com cara de conteúdo. O caso real é o bloco do parcelamento (SIEFPAR), que é
-  // rótulo/valor intercalado.
+  // ausência de leitura com cara de conteúdo.
+  //
+  // ⚠ O CASO QUE ORIGINOU ESTE ESTADO — o bloco do parcelamento (SIEFPAR) — SAIU DELE em
+  // 17/08/2026: o dono decidiu tabular o bloco, e o parser passou a lê-lo por PARES
+  // (`montarTabelaDePares`), então ele chega aqui já com `colunas` e `registros`. O que ainda cai
+  // neste estado, medido nos 22 relatórios reais, são os blocos
+  // "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)", cuja única linha é uma descrição
+  // livre ("SIMPLES NACIONAL - EM PARCELAMENTO"): sem rótulo não há par, e forçar tabela ali seria
+  // inventar o layout.
   //
   // ⚠ Aqui só se torna a ausência VISÍVEL. Nada é interpretado: as linhas continuam na ordem exata
-  // em que o relatório as imprime, sem virar tabela, sem pares rótulo→valor. Tabular o SIEFPAR é
-  // decisão de produto, e está pendente do dono.
+  // em que o relatório as imprime, sem virar tabela, sem pares rótulo→valor.
   const naoVirouTabela = colunas.length === 0 && registros.length === 0 && descricao.length > 0;
 
   return (

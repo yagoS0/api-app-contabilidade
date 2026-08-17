@@ -1274,10 +1274,56 @@ resposta honesta. Não dá para consertá-lo só reconhecendo mais colunas: o re
 `Ajuizado em` **vazio** (a linha em branco some) e um par `Situação:`/valor no fim, então nem 6
 colunas fechariam.
 
-⚠ **O SIEFPAR NÃO virou tabela.** Ele é rótulo/valor intercalado, não cabeçalho-e-dados; nenhum
-rótulo dele está em `COLUNAS_CONHECIDAS`, então o bloco inteiro sai em `descricao`, na ordem
-impressa. O número reaparece visualmente solto (o rótulo numa linha, o valor na seguinte) — é o
-formato do bloco, e tabular isso é decisão de produto.
+⚠ **O SIEFPAR não virou tabela NESTE conserto** — ele é rótulo/valor intercalado, não
+cabeçalho-e-dados; nenhum rótulo dele está em `COLUNAS_CONHECIDAS`, então o bloco inteiro saía em
+`descricao`, na ordem impressa, com o número visualmente solto (o rótulo numa linha, o valor na
+seguinte). Isto ficou registrado aqui como **decisão de produto**, e a decisão veio: ver a seção
+seguinte.
+
+### ✅ DECIDIDO em 17/08/2026 — o bloco do parcelamento (SIEFPAR) VIRA TABELA
+
+O dono liberou a tabulação do bloco. O que o PDF imprime como **uma linha horizontal** —
+`Parcelamento: <nº>   Parcelas em Atraso: 4   Valor em Atraso: 2.114,32`, com
+`Parcelamento Simplificado` embaixo — virava **7 linhas âmbar empilhadas** na tela.
+
+**A leitura é por PARES, e é uma segunda forma de bloco, não um remendo na primeira.**
+`montarTabelaDePares` (`parseSitfisRelatorio.js`) só é tentada quando o cabeçalho **não** foi
+reconhecido — é isso que garante que nenhum bloco que já virava tabela possa mudar de leitura.
+
+- **Lista FECHADA de rótulos** (`ROTULOS_SIEFPAR`: `Parcelamento:` · `Parcelas em Atraso:` ·
+  `Valor em Atraso:` · `Valor Suspenso:`), pelo mesmo motivo de `COLUNAS_CONHECIDAS`. Rótulo novo
+  não vira coluna: fica fora do par e o bloco cai no aviso.
+- ⚠ **O caso que decide o desenho é o RÓTULO COLADO.** Com 2+ parcelamentos o relatório não põe
+  separador: a modalidade do anterior vem grudada no rótulo do seguinte
+  (`"Parcelamento SimplificadoParcelamento:"`). O corte é no **rótulo inteiro, no fim da linha** —
+  mesma disciplina das armadilhas 1 e 6. Quem tratar só o caso de um parcelamento deixa o bloco de
+  três exatamente como estava.
+- ⚠ **NÃO SE INVENTA PAR.** Rótulo só se emparelha com a linha seguinte, e só quando ela não é
+  outro rótulo. Rótulo sem valor e **valor órfão** ficam FORA da tabela e voltam em
+  `naoInterpretado`, com o aviso — nunca casados com o vizinho por proximidade. É o caso de
+  `Parcelamento Simplificado`, que o relatório imprime **sem rótulo nenhum**: virar coluna exigiria
+  inventar o cabeçalho (`Modalidade`), num documento fiscal.
+- ⚠ **A PROTEÇÃO DA CONTAGEM NÃO AFROUXOU, mudou de forma.** Onde a tabela de colunas exige
+  `dados % colunas === 0`, aqui se exige que **todos os registros tenham exatamente os mesmos
+  rótulos, na mesma ordem**. Um parcelamento com um campo a mais derruba o bloco inteiro de volta
+  ao estado anterior, com as linhas cruas visíveis.
+- **Medido nos 22 relatórios reais** (`scripts/diag-sitfis-tabelas.mjs`, só leitura), antes → depois:
+  blocos "só descrição" **5 → 3**; tabelas **25 → 27**; `tabela, forma NÃO BATE` **0 → 0**; não
+  interpretado **1 → 1**. Nenhum bloco que já era tabela mudou.
+- ⚠ **OS OUTROS TRÊS "SÓ DESCRIÇÃO" CONTINUAM COMO ESTÃO**, e isso é resposta, não pendência: são
+  blocos `Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)` cuja **única** linha é
+  `SIMPLES NACIONAL - EM PARCELAMENTO` — descrição livre, sem rótulo. Sem rótulo não há par, e
+  forçar tabela ali seria inventar o layout. Seguem com o aviso âmbar de não-interpretado.
+- ⚠ **O teste que travava o oposto foi INVERTIDO, não apagado.**
+  `apps/web/.../__tests__/colunasNuncaSomem.test.jsx` tinha
+  *"⚠ NÃO vira tabela — tabular o SIEFPAR é decisão do dono, ainda não respondida"*, com
+  `expect(container.querySelector("table")).toBeNull()`. Ele existia para ninguém "consertar" por
+  conta própria uma decisão de produto. A trava mudou de lado: hoje ela prende o desenho novo (os
+  pares, o caso colado, e a recusa de inventar rótulo). O mesmo no backend, em
+  `serpro/__tests__/parseSitfisRelatorio.test.js`.
+- `Valor em Atraso`/`Valor Suspenso` entraram em `COLUNAS_VALOR` na tela e no diagnóstico — são as
+  colunas de dinheiro do bloco. **Não há linha de total**: somar o valor de parcelamentos distintos
+  produziria um número que o relatório não afirma.
 
 **O relatório salvo nunca é apagado por uma consulta que falha.** A gravação só sobrescreve
 `situacao`/`relatorioPdfFileId`/`texto` quando vem relatório NOVO.

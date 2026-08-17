@@ -42,6 +42,8 @@ const temFlag = (n) => process.argv.includes(`--${n}`);
 const COLUNAS_VALOR = new Set([
   "Vl. Original", "Sdo. Devedor", "Vl.Original", "Sdo.Devedor",
   "Multa", "Juros", "Sdo. Dev. Cons.", "Valor",
+  // As duas colunas de dinheiro do bloco do parcelamento (SIEFPAR), que virou tabela em 17/08/2026.
+  "Valor em Atraso", "Valor Suspenso",
 ]);
 const COLUNAS_DATA = new Set(["Dt. Vcto", "Data"]);
 
@@ -70,19 +72,15 @@ function classificarCelula(coluna, valor) {
   return null;
 }
 
-// ⚠ A TELA NÃO MOSTRA TODAS AS COLUNAS QUE O PARSER PRODUZ.
-// `SitfisRelatorioTabela.jsx` retira da tabela toda coluna (não monetária) cujo valor se repete em
-// TODAS as linhas, e a transforma numa nota acima — regra escrita para o "Situação: DEVEDOR"
-// repetido linha a linha. Reproduzida aqui LITERALMENTE para medir quantas colunas somem de fato:
-// a divergência com o PDF pode estar aqui, e não no parser.
-function colunasQueASomem(colunas, registros) {
-  if (!registros || registros.length < 2) return [];
-  return colunas.filter((c) => {
-    if (COLUNAS_VALOR.has(c)) return false;
-    const primeiro = registros[0][c];
-    return Boolean(primeiro) && registros.every((r) => r[c] === primeiro);
-  });
-}
+// ⚠ AQUI HAVIA UMA MEDIÇÃO QUE HOJE SERIA MENTIRA, e por isso ela saiu (17/08/2026).
+// `colunasQueASomem` reproduzia a regra `colunasConstantes` de `SitfisRelatorioTabela.jsx` — a que
+// tirava da tabela toda coluna não-monetária cujo valor se repetisse em todas as linhas — para
+// medir quantas colunas o parser lia e a tela NÃO mostrava. Essa regra foi REMOVIDA da tela no
+// commit 508a67b3 (pedido do dono: *"preciso que essa tabela seja consistente"*); a tela mostra
+// todas as colunas, sempre. Manter a seção aqui faria o diagnóstico anunciar 19 colunas "somindo"
+// numa tela onde nenhuma some — e diagnóstico que descreve regra inexistente é como o quadro de
+// flags envelhecido: alguém dimensiona trabalho em cima dele.
+// O número da coluna oculta continua sendo medível pelo `--tudo`, que imprime a tabela inteira.
 
 function conferirForma(bloco) {
   const achados = [];
@@ -98,11 +96,15 @@ function conferirForma(bloco) {
 // ⚠ QUATRO ESTADOS, não três. `descricao_apenas` é o bloco em que NENHUM rótulo bate com
 // `COLUNAS_CONHECIDAS` — ele não vira tabela E TAMBÉM NÃO cai em `naoInterpretado` (o parser
 // devolve `naoInterpretado: []` quando `colunas` está vazia, porque `dados` já ficou vazio).
-// Ele sai inteiro em `descricao`, e a tela imprime uma linha âmbar por célula: rótulo numa linha,
-// valor na seguinte. É o bloco do SIEFPAR. Contar só três estados o torna INVISÍVEL na medição.
+// Ele sai inteiro em `descricao`, e a tela imprime uma linha âmbar por célula. Contar só três
+// estados o torna INVISÍVEL na medição.
+//
+// ⚠ Foi este contador que dimensionou a tabulação do SIEFPAR (17/08/2026): ele mostrava **5**
+// blocos aqui, dos quais 2 eram SIEFPAR — e um deles com TRÊS parcelamentos, o caso que decidiu o
+// desenho. Depois da mudança são **3**, todos "Parcelamento com Exigibilidade Suspensa
+// (PARCSN/PARCMEI)": uma descrição livre, sem rótulo nenhum, logo sem par a ler.
 const ESTADOS = {
   tabela_ok: 0, tabela_forma_nao_bate: 0, nao_interpretado: 0, sem_colunas: 0, descricao_apenas: 0,
-  tabelas_com_coluna_oculta: 0, colunas_ocultas: 0,
 };
 
 try {
@@ -176,8 +178,6 @@ try {
   const empresasComNaoInterpretado = new Set();
   const empresasComTabela = new Set();
   const empresasSoDescricao = new Set();
-  const empresasComColunaOculta = new Set();
-  const colunasOcultadas = [];
   const tiposDeAchado = new Map();
   const detalhes = [];
 
@@ -203,19 +203,6 @@ try {
             ESTADOS.tabela_ok += 1;
           }
           empresasComTabela.add(rotulo);
-
-          // Quantas colunas o parser produziu × quantas a TELA mostra.
-          const somem = colunasQueASomem(b.colunas, b.registros);
-          if (somem.length) {
-            ESTADOS.tabelas_com_coluna_oculta += 1;
-            ESTADOS.colunas_ocultas += somem.length;
-            empresasComColunaOculta.add(rotulo);
-            colunasOcultadas.push(
-              `[${s.portalClient?.cnpj}] "${b.titulo}": ${b.colunas.length} colunas no relatório, `
-              + `${b.colunas.length - somem.length} na tela · somem: ${JSON.stringify(somem)} `
-              + `(${b.registros.length} linhas)`,
-            );
-          }
         } else if (temNaoInterp) {
           ESTADOS.nao_interpretado += 1;
           empresasComNaoInterpretado.add(rotulo);
@@ -242,13 +229,6 @@ try {
   console.log(`  com pelo menos um bloco suspeito .. ${empresasComBlocoSuspeito.size}`);
   console.log(`  com pelo menos um não interpretado  ${empresasComNaoInterpretado.size}`);
   console.log(`  com pelo menos um só-descrição .... ${empresasSoDescricao.size}`);
-  console.log(`  com coluna OCULTA pela tela ....... ${empresasComColunaOculta.size}`);
-
-  if (colunasOcultadas.length) {
-    console.log(`\n--- COLUNAS QUE O PARSER LÊ E A TELA NÃO MOSTRA (regra do front, não do parser) ---`);
-    console.log(`  ${ESTADOS.tabelas_com_coluna_oculta} tabela(s), ${ESTADOS.colunas_ocultas} coluna(s) no total`);
-    for (const l of colunasOcultadas) console.log(`  ${l}`);
-  }
 
   if (tiposDeAchado.size) {
     console.log(`\n--- TIPOS DE DIVERGÊNCIA DE FORMA (célula a célula) ---`);

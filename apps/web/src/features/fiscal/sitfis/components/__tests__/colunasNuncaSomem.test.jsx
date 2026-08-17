@@ -98,21 +98,21 @@ describe("tabela de débitos — as colunas do relatório sobrevivem", () => {
 //
 // `montarTabela` só põe algo em `naoInterpretado` depois de achar um cabeçalho conhecido. Quando
 // NENHUM rótulo bate, o bloco inteiro sai em `descricao` e `naoInterpretado` fica vazio — e a tela
-// mostrava as linhas soltas, sem nenhum aviso de que não foram interpretadas. É o formato do bloco
-// de parcelamento (SIEFPAR), rótulo/valor intercalado.
+// mostrava as linhas soltas, sem nenhum aviso de que não foram interpretadas.
+//
+// ⚠ O CASO QUE ORIGINOU ESTE ESTADO SAIU DELE EM 17/08/2026 (ver o `describe` seguinte): o bloco do
+// parcelamento (SIEFPAR) virou tabela. Quem continua aqui — medido nos 22 relatórios reais — é o
+// "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)", cuja única linha é uma descrição
+// livre, sem rótulo nenhum. Ele NÃO é forçado a virar tabela: não há par a ler.
 describe("bloco não interpretado — a ausência de leitura tem de aparecer", () => {
-  const SIEFPAR = {
-    titulo: "Pendência - Parcelamento (SIEFPAR)",
-    descricao: [
-      "Parcelamento:", "0211.00012.0055566677.26-45",
-      "Parcelas em Atraso:", "3",
-      "Valor em Atraso:", "1.585,74",
-    ],
+  const SO_DESCRICAO = {
+    titulo: "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)",
+    descricao: ["SIMPLES NACIONAL - EM PARCELAMENTO"],
     colunas: [], registros: [], anotacoes: [], naoInterpretado: [],
   };
 
   it("diz que não foi interpretado, e por quê", () => {
-    render(<SitfisRelatorioTabela relatorio={relatorioCom([SIEFPAR])} />);
+    render(<SitfisRelatorioTabela relatorio={relatorioCom([SO_DESCRICAO])} />);
 
     expect(screen.getByText(/não foi interpretado como tabela/i)).toBeInTheDocument();
     expect(screen.getByText(/cabeçalho de\s+coluna conhecido/i)).toBeInTheDocument();
@@ -120,17 +120,15 @@ describe("bloco não interpretado — a ausência de leitura tem de aparecer", (
   });
 
   it("as linhas continuam TODAS visíveis, na ordem impressa", () => {
-    render(<SitfisRelatorioTabela relatorio={relatorioCom([SIEFPAR])} />);
+    render(<SitfisRelatorioTabela relatorio={relatorioCom([SO_DESCRICAO])} />);
 
-    for (const linha of SIEFPAR.descricao) expect(screen.getByText(linha)).toBeInTheDocument();
+    for (const linha of SO_DESCRICAO.descricao) expect(screen.getByText(linha)).toBeInTheDocument();
   });
 
-  it("⚠ NÃO vira tabela — tabular o SIEFPAR é decisão do dono, ainda não respondida", () => {
-    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([SIEFPAR])} />);
+  it("⚠ NÃO vira tabela: sem rótulo não há par, e forçar layout aqui seria inventá-lo", () => {
+    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([SO_DESCRICAO])} />);
 
     expect(container.querySelector("table")).toBeNull();
-    // Nada de emparelhar rótulo com valor: as linhas saem como o relatório as imprime.
-    expect(screen.queryByText(/Parcelamento:\s*0211/)).toBeNull();
   });
 
   it("descrição de bloco QUE VIROU TABELA não é acusada de não-interpretada", () => {
@@ -141,5 +139,95 @@ describe("bloco não interpretado — a ausência de leitura tem de aparecer", (
 
     expect(screen.getByText("SIMPLES NACIONAL - EM PARCELAMENTO")).toBeInTheDocument();
     expect(screen.queryByText(/não foi interpretado como tabela/i)).toBeNull();
+  });
+});
+
+// ── ESTE `describe` É A INVERSÃO DE UMA TRAVA ───────────────────────────────────────────────────
+//
+// Até 17/08/2026 havia aqui um teste travando o OPOSTO — "⚠ NÃO vira tabela — tabular o SIEFPAR é
+// decisão do dono, ainda não respondida", com `expect(container.querySelector("table")).toBeNull()`.
+// Ele foi escrito de propósito, para ninguém "consertar" por conta própria o que era decisão de
+// produto. O dono decidiu; a trava não foi apagada, mudou de lado.
+//
+// ⚠ Os blocos abaixo são a SAÍDA do parser (`montarTabelaDePares`) para os dois textos reais
+// guardados em produção — um com UM parcelamento, outro com TRÊS. Os números do parcelamento são
+// FABRICADOS, com formato e comprimento reais.
+describe("SIEFPAR — o bloco do parcelamento chega como tabela e é desenhado como tabela", () => {
+  const UM_PARCELAMENTO = {
+    titulo: "Pendência - Parcelamento (SIEFPAR)",
+    descricao: [],
+    colunas: ["Parcelamento", "Parcelas em Atraso", "Valor em Atraso"],
+    registros: [{
+      "Parcelamento": "0211.00012.0055566677.26-45",
+      "Parcelas em Atraso": "3",
+      "Valor em Atraso": "1.585,74",
+    }],
+    anotacoes: [],
+    // A modalidade vem solta no relatório, sem rótulo — não virou coluna e não sumiu.
+    naoInterpretado: ["Parcelamento Simplificado"],
+  };
+
+  const TRES_PARCELAMENTOS = {
+    titulo: "Parcelamento com Exigibilidade Suspensa (SIEFPAR)",
+    descricao: [],
+    colunas: ["Parcelamento", "Valor Suspenso"],
+    registros: [
+      { "Parcelamento": "0211.00012.0055566677.26-45", "Valor Suspenso": "37.067,11" },
+      { "Parcelamento": "0211.00012.0088899900.25-31", "Valor Suspenso": "19.840,14" },
+      { "Parcelamento": "0211.00012.0011122233.25-77", "Valor Suspenso": "76.377,88" },
+    ],
+    anotacoes: [],
+    naoInterpretado: ["Parcelamento Simplificado", "Parcelamento Simplificado", "Parcelamento Simplificado"],
+  };
+
+  it("um parcelamento: as três colunas viram cabeçalho, e o aviso de não-interpretado sai da frente", () => {
+    render(<SitfisRelatorioTabela relatorio={relatorioCom([UM_PARCELAMENTO])} />);
+
+    expect(screen.getAllByRole("columnheader").map((th) => th.textContent))
+      .toEqual(["Parcelamento", "Parcelas em Atraso", "Valor em Atraso"]);
+    expect(screen.getByText("0211.00012.0055566677.26-45")).toBeInTheDocument();
+    expect(screen.getByText("1.585,74")).toBeInTheDocument();
+    expect(screen.queryByText(/não foi interpretado como tabela/i)).toBeNull();
+  });
+
+  it("três parcelamentos: três linhas, cada número junto do SEU valor", () => {
+    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([TRES_PARCELAMENTOS])} />);
+
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(3);
+    const linhas = [...container.querySelectorAll("tbody tr")].map((tr) => [...tr.children].map((td) => td.textContent));
+    expect(linhas).toEqual([
+      ["0211.00012.0055566677.26-45", "37.067,11"],
+      ["0211.00012.0088899900.25-31", "19.840,14"],
+      ["0211.00012.0011122233.25-77", "76.377,88"],
+    ]);
+  });
+
+  // ⚠ O QUE NÃO ENTROU NA TABELA CONTINUA NA TELA. "Parcelamento Simplificado" não tem rótulo no
+  // relatório; inventar um ("Modalidade") seria fabricar cabeçalho de documento fiscal. Ela sai no
+  // aviso, que é onde a ausência de leitura já mora.
+  it("a linha sem rótulo não vira coluna — e também não some", () => {
+    render(<SitfisRelatorioTabela relatorio={relatorioCom([UM_PARCELAMENTO])} />);
+
+    expect(screen.getAllByRole("columnheader").map((th) => th.textContent)).not.toContain("Modalidade");
+    expect(screen.getByText(/Não foi possível alinhar estas linhas/i)).toBeInTheDocument();
+    expect(screen.getByText(/Parcelamento Simplificado/)).toBeInTheDocument();
+  });
+
+  // O valor do parcelamento é dinheiro e tem de ser lido como dinheiro — à direita, monoespaçado.
+  it("as colunas de dinheiro do SIEFPAR são tratadas como dinheiro", () => {
+    const { container } = render(<SitfisRelatorioTabela relatorio={relatorioCom([TRES_PARCELAMENTOS])} />);
+
+    const celula = [...container.querySelectorAll("tbody td")].find((td) => td.textContent === "37.067,11");
+    expect(celula.style.textAlign).toBe("right");
+    expect(celula.style.fontFamily).toBe("monospace");
+  });
+
+  // ⚠ NÃO HÁ LINHA DE TOTAL AQUI, e isso é de propósito: o total da tela só existe para
+  // `Sdo. Dev. Cons.` (o saldo consolidado do débito). Somar "Valor Suspenso" de três
+  // parcelamentos diferentes produziria um número que o relatório não afirma em lugar nenhum.
+  it("não inventa total para as colunas do parcelamento", () => {
+    render(<SitfisRelatorioTabela relatorio={relatorioCom([TRES_PARCELAMENTOS])} />);
+
+    expect(screen.queryByText(/^Total \(/)).toBeNull();
   });
 });

@@ -20,6 +20,11 @@
 //
 // Então a leitura é: contar as colunas pelo cabeçalho e agrupar as linhas de dados de N em N.
 //
+// ⚠ SÃO DUAS FORMAS DE BLOCO, NÃO UMA. A de cima é "cabeçalho e dados". A do PARCELAMENTO
+// (SIEFPAR) é "rótulo e valor" — `Parcelamento:` numa linha, o número na seguinte. Ela tem leitura
+// própria (`montarTabelaDePares`), que só é tentada quando NENHUM cabeçalho foi reconhecido; ver o
+// bloco de comentário logo acima dela.
+//
 // ── AS SEIS ARMADILHAS, todas presentes no texto real ──
 //
 //  1. O CNPJ vem COLADO na primeira célula do cabeçalho:
@@ -266,6 +271,91 @@ function linhasDoBloco(bruto) {
   return { linhas: saida, anotacoes };
 }
 
+// ── O BLOCO DO PARCELAMENTO (SIEFPAR): RÓTULO E VALOR, NÃO CABEÇALHO E DADOS ────────────────────
+//
+// ⚠ TABULAR ESTE BLOCO É DECISÃO DO DONO, TOMADA EM 17/08/2026. Antes disso o bloco saía inteiro
+// em `descricao` — o rótulo numa linha, o valor na seguinte, sete linhas âmbar empilhadas para o
+// que o PDF imprime como UMA linha horizontal:
+//
+//   Parcelamento: 0211.00012.0011122233.26-69   Parcelas em Atraso: 3   Valor em Atraso: 1.585,74
+//   Parcelamento Simplificado
+//
+// ⚠ LISTA FECHADA, pelo mesmo motivo de `COLUNAS_CONHECIDAS` e de `CELULAS_PARTIDAS`: são os
+// QUATRO rótulos que aparecem nos 22 relatórios reais guardados (dois blocos SIEFPAR, um com um
+// parcelamento e outro com três). Rótulo novo NÃO vira coluna — ele fica de fora do par, o bloco
+// deixa de fechar e cai no aviso, que é o modo de falhar seguro.
+const ROTULOS_SIEFPAR = [
+  "Parcelamento:",
+  "Parcelas em Atraso:",
+  "Valor em Atraso:",
+  "Valor Suspenso:",
+];
+
+// ⚠ O CASO QUE DECIDE O DESENHO É O RÓTULO COLADO, e ele só aparece com 2+ parcelamentos.
+// O relatório NÃO separa um parcelamento do outro: a modalidade do anterior vem grudada no rótulo
+// do seguinte — `"Parcelamento SimplificadoParcelamento:"` (texto real de 30.333.444/0001-03, três
+// parcelamentos). Tratar só o caso simples deixaria esse bloco quebrado exatamente como está hoje.
+//
+// ⚠ O CORTE É NO RÓTULO INTEIRO, nunca por proximidade ou por formato: a linha só é partida quando
+// TERMINA com um dos rótulos da lista fechada e sobra alguma coisa antes dele. Mesma disciplina das
+// armadilhas 1 e 6 (o CNPJ colado na célula, a anotação colada no título). Um corte por linha —
+// é a forma observada, e mais que isso seria regra sem caso.
+function separarRotuloColado(linha) {
+  const rotulo = ROTULOS_SIEFPAR
+    .filter((r) => linha.length > r.length && linha.endsWith(r))
+    .sort((a, b) => b.length - a.length)[0];
+  if (!rotulo) return [linha];
+  return [limpar(linha.slice(0, linha.length - rotulo.length)), rotulo];
+}
+
+/**
+ * Lê o bloco rótulo/valor do SIEFPAR e devolve a tabela — ou `null`, e aí o bloco fica como estava.
+ *
+ * ⚠ NÃO INVENTA PAR. Um rótulo só se emparelha com a linha SEGUINTE, e só quando ela não é outro
+ * rótulo. Rótulo sem valor e linha sem rótulo (a modalidade "Parcelamento Simplificado", que o
+ * relatório imprime solta) ficam FORA da tabela e voltam em `naoInterpretado`, com o aviso — nunca
+ * casados com o vizinho por proximidade. Casar por proximidade é o defeito antigo deste parser, o
+ * que mostrava "R$ 100,00" de débito lendo o "100,00%" do quadro societário.
+ *
+ * ⚠ A PROTEÇÃO DA CONTAGEM NÃO FOI AFROUXADA, só mudou de forma: onde a tabela de colunas exige
+ * `dados % colunas === 0`, aqui se exige que TODOS os registros tenham exatamente os mesmos
+ * rótulos, na mesma ordem. Um parcelamento com um campo a mais (ou a menos) que os outros derruba
+ * o bloco inteiro para o estado anterior, com as linhas cruas visíveis.
+ */
+export function montarTabelaDePares(linhas) {
+  const norm = linhas.flatMap(separarRotuloColado).filter(Boolean);
+  const ehRotulo = (l) => ROTULOS_SIEFPAR.includes(l);
+  if (!norm.some(ehRotulo)) return null;
+
+  const soltas = [];
+  const pares = [];
+  for (let i = 0; i < norm.length; i += 1) {
+    const valor = norm[i + 1];
+    if (!ehRotulo(norm[i]) || valor === undefined || ehRotulo(valor)) { soltas.push(norm[i]); continue; }
+    pares.push([norm[i].replace(/:$/, ""), valor]);
+    i += 1;
+  }
+  if (!pares.length) return null;
+
+  // Rótulo que se repete abre um registro NOVO: é o que separa os três parcelamentos, já que o
+  // relatório não traz separador nenhum entre eles.
+  const registros = [];
+  for (const [rotulo, valor] of pares) {
+    let atual = registros[registros.length - 1];
+    if (!atual || rotulo in atual) { atual = {}; registros.push(atual); }
+    atual[rotulo] = valor;
+  }
+
+  const colunas = Object.keys(registros[0]);
+  const mesmaForma = (r) => {
+    const k = Object.keys(r);
+    return k.length === colunas.length && k.every((c, idx) => c === colunas[idx]);
+  };
+  if (!registros.every(mesmaForma)) return null;
+
+  return { descricao: [], colunas, registros, naoInterpretado: soltas };
+}
+
 /** Monta uma tabela a partir das linhas já normalizadas. */
 function montarTabela(linhas) {
   // Antes do cabeçalho pode vir uma descrição livre ("SIMPLES NACIONAL - EM PARCELAMENTO").
@@ -280,7 +370,13 @@ function montarTabela(linhas) {
   // quem decide o que é coluna é `COLUNAS_CONHECIDAS`, e remontar linha antes disso mudaria a
   // fronteira entre cabeçalho e dado.
   const dados = fundirCelulasPartidas(linhas.slice(i));
-  if (!colunas.length) return { descricao, colunas: [], registros: [], naoInterpretado: dados };
+  if (!colunas.length) {
+    // ⚠ A LEITURA POR PARES SÓ ENTRA AQUI, e isso é o que garante que nenhum bloco que já virava
+    // tabela possa mudar: quando o cabeçalho foi reconhecido, este ramo nem é alcançado.
+    const pares = montarTabelaDePares(descricao);
+    if (pares) return pares;
+    return { descricao, colunas: [], registros: [], naoInterpretado: dados };
+  }
 
   // A VALIDAÇÃO: dados têm que fechar em múltiplo exato das colunas.
   if (dados.length % colunas.length !== 0) {

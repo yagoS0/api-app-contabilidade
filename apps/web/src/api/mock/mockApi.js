@@ -3861,20 +3861,28 @@ export function createMockApi() {
                     anotacoes: [], naoInterpretado: [],
                   },
                   {
-                    // ⚠ O QUARTO ESTADO — bloco que NÃO virou tabela e também NÃO caiu em
-                    // `naoInterpretado`. É o formato do parcelamento (SIEFPAR): rótulo/valor
-                    // intercalado, nenhum rótulo em `COLUNAS_CONHECIDAS`, então o parser manda o
-                    // bloco inteiro para `descricao` e `naoInterpretado` fica vazio. O mock não
-                    // cobria essa forma, e por isso a tela mostrava as linhas soltas sem UMA PALAVRA
-                    // dizendo que não foram interpretadas.
+                    // ⚠ O BLOCO DO PARCELAMENTO (SIEFPAR) VIRA TABELA desde 17/08/2026 (decisão do
+                    // dono). Ele não tem cabeçalho-e-dados: é rótulo/valor intercalado, e o parser
+                    // o lê por PARES (`montarTabelaDePares`). Este mock reproduz a saída de lá.
+                    // ⚠ "Parcelamento Simplificado" vem SOLTA no relatório, sem rótulo: não virou
+                    // coluna (inventar o rótulo é proibido) e não sumiu — sai em `naoInterpretado`.
                     // ⚠ O número do parcelamento é FABRICADO (formato e comprimento reais).
                     titulo: "Pendência - Parcelamento (SIEFPAR)",
-                    descricao: [
-                      "Parcelamento:", "0211.00012.0055566677.26-45",
-                      "Parcelas em Atraso:", "3",
-                      "Valor em Atraso:", "1.585,74",
-                      "Parcelamento Simplificado",
-                    ],
+                    descricao: [],
+                    colunas: ["Parcelamento", "Parcelas em Atraso", "Valor em Atraso"],
+                    registros: [{
+                      "Parcelamento": "0211.00012.0055566677.26-45",
+                      "Parcelas em Atraso": "3",
+                      "Valor em Atraso": "1.585,74",
+                    }],
+                    anotacoes: [], naoInterpretado: ["Parcelamento Simplificado"],
+                  },
+                  {
+                    // O QUARTO ESTADO continua existindo e continua tendo dono: o bloco do
+                    // PARCSN/PARCMEI traz UMA descrição livre e nenhum rótulo. Sem rótulo não há
+                    // par — ele sai com o aviso, e é assim que a tela tem de mostrá-lo.
+                    titulo: "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)",
+                    descricao: ["SIMPLES NACIONAL - EM PARCELAMENTO"],
                     colunas: [], registros: [], anotacoes: [], naoInterpretado: [],
                   },
                   {

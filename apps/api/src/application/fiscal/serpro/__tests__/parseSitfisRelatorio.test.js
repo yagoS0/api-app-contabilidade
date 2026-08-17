@@ -50,7 +50,7 @@
 // resultado da fusão (`2º TRIM/2026`) é literalmente o que o outro relatório imprime quando a
 // linha não quebra.
 
-import { parseSitfisRelatorio, fundirCelulasPartidas } from "../parseSitfisRelatorio.js";
+import { parseSitfisRelatorio, fundirCelulasPartidas, montarTabelaDePares } from "../parseSitfisRelatorio.js";
 
 // ── 10.111.222/0001-58 · 10/08/2026 ──────────────────────────────────────────────────────────────
 // Seis pendências: quatro mensais (9 células) e duas trimestrais (10 células, porque o PA quebrou).
@@ -481,33 +481,49 @@ describe("a validação não foi afrouxada", () => {
 // eram as parcelas em atraso. O que separa os dois casos é a CAUDA: nome (tem letra) vs dígito
 // verificador (só número).
 //
-// ⚠ NÃO É TABELA, e não vira. O SIEFPAR tem formato rótulo/valor intercalado, não
-// cabeçalho-e-dados; nenhum dos seus rótulos está em `COLUNAS_CONHECIDAS`, então o bloco inteiro
-// sai em `descricao`, na ordem em que o relatório imprime. O número volta visualmente solto —
-// é o formato do bloco, e a alternativa (inventar layout) é decisão de produto.
-describe("SIEFPAR — o número do parcelamento sobrevive (textos reais)", () => {
-  it("um parcelamento: o número aparece logo depois do rótulo (10.111.222/0001-58)", () => {
+// ⚠ ESTE `describe` FOI INVERTIDO EM 17/08/2026, e a inversão é o registro de uma decisão.
+//
+// Ele travava o contrário: o SIEFPAR **não virava tabela**, e o teste dizia por quê — formato
+// rótulo/valor intercalado, nenhum rótulo em `COLUNAS_CONHECIDAS`, bloco inteiro em `descricao`.
+// A trava era deliberada, para ninguém "consertar" por conta própria o que era **decisão de
+// produto**. O dono decidiu (17/08/2026): o bloco vira TABELA. A trava não foi apagada — ela mudou
+// de lado, e agora é o desenho novo que fica preso.
+//
+// ⚠ O QUE NÃO MUDOU: os pares saem do texto EMPARELHADO, nunca da proximidade. Rótulo sem valor e
+// linha sem rótulo ficam FORA da tabela, em `naoInterpretado`, com o aviso na tela.
+describe("SIEFPAR — o bloco do parcelamento VIRA TABELA (textos reais)", () => {
+  it("um parcelamento: uma linha, com cada valor debaixo do seu rótulo (10.111.222/0001-58)", () => {
     const bloco = blocosDe(TRIMESTRAL_PARTIDO, "RFB")[1];
     expect(bloco.titulo).toBe("Pendência – Parcelamento (SIEFPAR)");
-    expect(bloco.descricao).toEqual([
-      "Parcelamento:",
-      "0211.00012.0011122233.26-69",
-      "Parcelas em Atraso:",
-      "3",
-      "Valor em Atraso:",
-      "1.585,74",
-      "Parcelamento Simplificado",
-    ]);
+    expect(bloco.colunas).toEqual(["Parcelamento", "Parcelas em Atraso", "Valor em Atraso"]);
+    expect(bloco.registros).toEqual([{
+      "Parcelamento": "0211.00012.0011122233.26-69",
+      "Parcelas em Atraso": "3",
+      "Valor em Atraso": "1.585,74",
+    }]);
+    // A modalidade vem SOLTA no relatório, sem rótulo nenhum. Ela não vira coluna (isso seria
+    // inventar o rótulo) e não some: continua visível, com o aviso.
+    expect(bloco.naoInterpretado).toEqual(["Parcelamento Simplificado"]);
+    expect(bloco.descricao).toEqual([]);
   });
 
-  it("três parcelamentos: os três números sobrevivem, cada um junto do seu valor (30.333.444/0001-03)", () => {
+  // ⚠ É ESTE CASO QUE DECIDE O DESENHO. Com 2+ parcelamentos o relatório não põe separador nenhum:
+  // a modalidade do anterior vem COLADA no rótulo do seguinte. Quem tratar só o caso de um
+  // parcelamento deixa este bloco exatamente como estava.
+  it("três parcelamentos, com os rótulos vindo COLADOS: três linhas (30.333.444/0001-03)", () => {
     const bloco = blocoRfb(SIEFPAR_TRES);
-    expect(bloco.descricao).toEqual([
-      "Parcelamento:", "0211.00012.0044455566.26-88", "Valor Suspenso:", "37.067,11",
-      "Parcelamento SimplificadoParcelamento:", "0211.00012.0077788899.25-54", "Valor Suspenso:", "19.840,14",
-      "Parcelamento SimplificadoParcelamento:", "0211.00012.0012233445.25-20", "Valor Suspenso:", "76.377,88",
-      "Parcelamento Simplificado",
+    expect(bloco.colunas).toEqual(["Parcelamento", "Valor Suspenso"]);
+    expect(bloco.registros).toEqual([
+      { "Parcelamento": "0211.00012.0044455566.26-88", "Valor Suspenso": "37.067,11" },
+      { "Parcelamento": "0211.00012.0077788899.25-54", "Valor Suspenso": "19.840,14" },
+      { "Parcelamento": "0211.00012.0012233445.25-20", "Valor Suspenso": "76.377,88" },
     ]);
+    // Uma modalidade por parcelamento, todas fora da tabela e todas visíveis.
+    expect(bloco.naoInterpretado).toEqual([
+      "Parcelamento Simplificado", "Parcelamento Simplificado", "Parcelamento Simplificado",
+    ]);
+    // O rótulo colado não pode sobrar em lugar nenhum na forma grudada.
+    expect(JSON.stringify(bloco)).not.toContain("SimplificadoParcelamento");
   });
 
   // O bloco de parcelamento do PARCSN/PARCMEI não traz número — traz a contagem de parcelas em
@@ -517,6 +533,73 @@ describe("SIEFPAR — o número do parcelamento sobrevive (textos reais)", () =>
     expect(bloco.colunas).toEqual(["Parcelas em atraso"]);
     expect(bloco.registros).toEqual([{ "Parcelas em atraso": "6" }]);
     expect(bloco.descricao).toEqual(["SIMPLES NACIONAL - EM PARCELAMENTO"]);
+  });
+});
+
+// ── O QUE A LEITURA POR PARES SE RECUSA A FAZER ─────────────────────────────────────────────────
+//
+// ⚠ ESTAS SÃO AS DUAS REGRAS QUE FAZEM O CONSERTO VALER A PENA, e sem elas a tabela nova seria o
+// defeito antigo com outra roupa: (1) par só existe quando o texto o traz emparelhado — nunca por
+// proximidade; (2) a proteção da contagem não afrouxa — o que não fecha NÃO vira tabela.
+describe("montarTabelaDePares — o que ela recusa", () => {
+  it("rótulo sem valor NÃO rouba o vizinho: ele fica de fora, e os pares bons continuam", () => {
+    // Dois rótulos seguidos. O primeiro perdeu o valor; casá-lo com "3" poria o número de parcelas
+    // debaixo de "Parcelamento" — exatamente a classe do "R$ 100,00" lido do "100,00%".
+    const t = montarTabelaDePares(["Parcelamento:", "Parcelas em Atraso:", "3"]);
+    expect(t.colunas).toEqual(["Parcelas em Atraso"]);
+    expect(t.registros).toEqual([{ "Parcelas em Atraso": "3" }]);
+    expect(t.naoInterpretado).toEqual(["Parcelamento:"]);
+  });
+
+  it("valor órfão (sem rótulo antes) fica de fora, visível", () => {
+    const t = montarTabelaDePares(["1.585,74", "Parcelamento:", "0211.00012.0011122233.26-69"]);
+    expect(t.registros).toEqual([{ "Parcelamento": "0211.00012.0011122233.26-69" }]);
+    expect(t.naoInterpretado).toEqual(["1.585,74"]);
+  });
+
+  it("rótulo no FIM do bloco, sem linha seguinte, não inventa valor", () => {
+    const t = montarTabelaDePares(["Parcelamento:", "0211.00012.0011122233.26-69", "Valor em Atraso:"]);
+    expect(t.registros).toEqual([{ "Parcelamento": "0211.00012.0011122233.26-69" }]);
+    expect(t.naoInterpretado).toEqual(["Valor em Atraso:"]);
+  });
+
+  // ⚠ A PROTEÇÃO DA CONTAGEM, na forma que este bloco pede: se um parcelamento tiver campo que os
+  // outros não têm, não há tabela possível sem célula fabricada. Recusa, e o bloco fica como estava.
+  it("parcelamentos com campos DIFERENTES derrubam a tabela inteira", () => {
+    expect(montarTabelaDePares([
+      "Parcelamento:", "0211.00012.0044455566.26-88", "Valor Suspenso:", "37.067,11",
+      "Parcelamento:", "0211.00012.0077788899.25-54",
+    ])).toBeNull();
+  });
+
+  // ⚠ OS OUTROS TRÊS BLOCOS "SÓ DESCRIÇÃO" DOS 22 RELATÓRIOS NÃO SÃO SIEFPAR e continuam como
+  // estão. É literalmente esta a única linha que eles trazem (medido em produção, 17/08/2026):
+  // "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)" com uma descrição livre e nenhum
+  // rótulo. Sem rótulo não há par, e forçar tabela ali seria inventar o layout.
+  it("bloco sem nenhum rótulo conhecido não vira tabela nenhuma", () => {
+    expect(montarTabelaDePares(["SIMPLES NACIONAL - EM PARCELAMENTO"])).toBeNull();
+    expect(montarTabelaDePares([])).toBeNull();
+  });
+
+  // Rótulo desconhecido não vira coluna — a lista é FECHADA, igual a `COLUNAS_CONHECIDAS`.
+  it("rótulo fora da lista fechada não emparelha nada", () => {
+    const t = montarTabelaDePares(["Modalidade:", "Simplificado", "Parcelamento:", "0211.00012.0011122233.26-69"]);
+    expect(t.colunas).toEqual(["Parcelamento"]);
+    expect(t.naoInterpretado).toEqual(["Modalidade:", "Simplificado"]);
+  });
+
+  // O corte do rótulo colado é no rótulo INTEIRO, no FIM da linha. Rótulo no meio não parte nada —
+  // senão o corte viraria busca por substring, que é onde se perde dado.
+  it("só parte a linha quando ela TERMINA num rótulo da lista, e sobra alguma coisa antes", () => {
+    expect(montarTabelaDePares(["Parcelamento SimplificadoParcelamento:", "0211.00012.0011122233.26-69"]))
+      .toEqual({
+        descricao: [],
+        colunas: ["Parcelamento"],
+        registros: [{ "Parcelamento": "0211.00012.0011122233.26-69" }],
+        naoInterpretado: ["Parcelamento Simplificado"],
+      });
+    expect(montarTabelaDePares(["Parcelamento: 0211", "Valor em Atraso:", "1.585,74"]).naoInterpretado)
+      .toEqual(["Parcelamento: 0211"]);
   });
 });
 
