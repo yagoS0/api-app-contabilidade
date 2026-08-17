@@ -26,10 +26,18 @@
 //   • `routes/portalInvoices.js` — import manual de XML (uma transação por arquivo).
 // Os dois usam a MESMA chave de multi-tenancy: `PortalClient.id` (`portalClientId` na captura,
 // `clientId` na rota são o mesmo id — a rota o valida em `ensurePortalClientAccess`).
+//
+// ⚠ **HÁ UM TERCEIRO ESCRITOR DE `PortalInvoice` COM `type:"NFSE"`, E ELE NÃO PASSA POR AQUI:**
+// `application/sync/InvoiceSyncEngine.js`, o motor legado da rota
+// `POST /clients/:id/invoices/sync/start` (montada também sob `/firm` e `/client`). Ele grava
+// direto, com dedup própria (`idDps` → `chaveAcesso` → `idNfse`). Não é "a única porta" de fato —
+// é a única porta CONSERTADA. Quem mexer em campo de nota tem de olhar os dois lugares até que o
+// legado seja aposentado, e é por isso que ele está nomeado aqui em vez de esquecido.
 
 import { log } from "../../config.js";
 import { ESTADOS } from "./CompetenciaStateMachine.js";
 import { substituirItensPreservandoClassificacao } from "./notaItens.js";
+import { camposFiscaisParaPersistir } from "../nfse/camposFiscaisNfse.js";
 
 // ─── Competência fechada → vira pendência (mesmo padrão Dfe) ───────────────
 
@@ -151,9 +159,31 @@ export async function upsertNfseFromItem(tx, { portalClientId, companyCnpj, item
     chaveSubstituida: metadata.chaveSubstituida || null,
     motivoSubstituicao: metadata.motivoSubstituicao || null,
     competenciaPosFechamento: fechada || false,
+    // ⚠ OS CAMPOS FISCAIS NASCEM COM A NOTA — e saem do MESMO `xmlPlain` que a linha acima grava em
+    // `xmlRaw`. Antes eles só existiam por backfill: nota nova nascia com as colunas nulas, e como
+    // `NULL` também quer dizer "o XML não traz este campo", a coluna virava fotografia — ninguém
+    // distinguiria "sem código de serviço" de "o extrator nunca passou por aqui".
+    //
+    // ⚠ **O EXTRATOR É UM SÓ** (`application/nfse/camposFiscaisNfse.js`, leitura POR CAMINHO, NT 008
+    // §2.4.5). Nenhum caminho de XML é escrito aqui: uma segunda leitura produziria, na MESMA coluna,
+    // um valor diferente do que o backfill gravou nas 16.818 notas existentes.
+    //
+    // ⚠ **ISTO NÃO PODE DERRUBAR A CAPTURA** — `camposFiscaisParaPersistir` não lança. XML ruim vira
+    // coluna nula + motivo nomeado, e a nota entra assim mesmo. Perder a nota é irreversível; perder
+    // o campo derivado se conserta relendo o `xmlRaw`.
+    //
+    // ⚠ **RECAPTURA NÃO APAGA:** a extração é pura sobre o XML que está sendo gravado. XML igual ⇒
+    // mesmas colunas; XML mudou ⇒ as colunas passam a descrever o XML novo. Nunca há limpeza "para
+    // recalcular depois" — o defeito que este projeto já pagou com a classificação dos itens.
+    ...camposFiscaisParaPersistir(xmlPlain),
   };
 
   if (fechada) {
+    // ⚠ O `update` daqui continua estreito de propósito — competência fechada não é reescrita. Os
+    // campos fiscais entram no `create` (nota nova nasce com eles) e NÃO no `update`, pela mesma
+    // razão que o `xmlRaw` também não entra: as colunas derivadas descrevem o XML que está na linha,
+    // e recalculá-las sem reescrever a fonte faria as duas coisas discordarem. Nota fechada já
+    // gravada se atualiza pelo backfill, que é idempotente e mede antes de escrever.
     const created = await tx.portalInvoice.upsert({
       where,
       create: { clientId: portalClientId, ...dataToWrite },

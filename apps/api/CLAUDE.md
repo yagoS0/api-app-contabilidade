@@ -936,6 +936,52 @@ porque lá o arquivo vem de uma pessoa) e os contadores por arquivo.
 - Regressão: `notas/__tests__/ingestaoNfseUnica.test.js`, que também **varre a rota** atrás de
   `portalInvoice.upsert`/`clientId_idNfse:` para a implementação não voltar.
 
+### ⚠ OS CAMPOS FISCAIS DA NOTA NASCEM COM ELA — a projeção não pode virar fotografia
+
+As colunas extraídas do XML (`cTribNac`, `cTribMun`, `xTribNac`, `xTribMun`, `xDescServ`,
+`cLocPrestacao`, `issqnBaseCalculo`, `issqnAliquota`, `issqnValor`, `dpsSerie`, `dpsNumero` +
+`camposFiscaisExtraidosEm`/`camposFiscaisMotivo`) nasceram de um **backfill** sobre 16.818 notas — e
+a **captura não as preenchia**. Medido: durante a execução do próprio backfill chegaram **14 notas
+novas, todas com as colunas nulas**; só entraram porque o script rodou outra vez.
+
+⚠ **E isso é pior do que ficar desatualizado.** Como `NULL` também significa *"o XML não traz este
+campo"*, duas semanas depois ninguém distingue "nota sem código de serviço" de "o extrator nunca
+passou por esta linha". `camposFiscaisExtraidosEm` existe exatamente para desfazer essa ambiguidade —
+e era ele que ficava nulo justamente nas notas novas.
+
+**A porta é uma só:** `camposFiscaisNfse.camposFiscaisParaPersistir(xmlPlain)`, que devolve o bloco
+de colunas pronto para espalhar no `create`/`update`. O extrator (`extrairCamposFiscaisNfse`, leitura
+**por caminho**, NT 008 §2.4.5) continua intocado e continua sendo o **único** que sabe onde cada
+campo mora.
+
+| caminho de entrada de NFS-e | onde | ligado |
+|---|---|---|
+| captura ADN (`dfeNotasWorker` → `AdnNotasService`) | `notas/ingestaoNfse.js` | ✅ |
+| import manual de XML pela tela (`POST /import/xml`) | idem (a rota chama a mesma função) | ✅ |
+| motor de sync **legado** `POST /clients/:id/invoices/sync/start` | `sync/InvoiceSyncEngine.js` | ✅ |
+| NF-e (SEFAZ DFe) | `notas/dfe/DfeSyncService.js` | ⛔ **de propósito** |
+
+- ⚠ **A EXTRAÇÃO NÃO DERRUBA A CAPTURA.** `camposFiscaisParaPersistir` **não lança**: XML ruim vira
+  coluna nula + motivo nomeado (`XML_ILEGIVEL`, `NAO_E_NFSE`, `NENHUM_CAMPO`, `EXTRACAO_LANCOU`) e a
+  nota entra assim mesmo. Perder a nota é irreversível; o campo derivado se reconstrói do `xmlRaw`.
+  O **extrator** continua propagando exceção — quem o chama para MEDIR (backfill, testes) tem de ver
+  o erro, senão um leiaute quebrado se esconde atrás de um relatório limpo.
+- ⚠ **RECAPTURA NÃO APAGA.** A extração é pura e sai do **mesmo `xmlPlain` que a escrita persiste em
+  `xmlRaw`**: XML igual ⇒ colunas iguais; XML mudou ⇒ as colunas descrevem o XML novo. Não existe
+  passo que limpe "para recalcular depois" — o defeito já pago com a classificação dos itens (abaixo).
+- ⚠ **O ramo de EVENTO do `InvoiceSyncEngine` NÃO recebe a extração.** Lá o XML é o do *evento*, não
+  o da nota: extrair dele devolveria `NAO_E_NFSE` e **zeraria** as colunas de uma nota correta.
+- ⚠ **NF-e fora**, pelo mesmo motivo do backfill: `nfeProc/NFe/infNFe` não tem `cTribNac`, nem DPS,
+  nem ISSQN. Carimbar `camposFiscaisExtraidosEm` numa linha em que tudo é nulo por natureza diria
+  "olhamos e não achamos" onde o certo é "não se aplica". Quem responde isso já é a coluna `type`.
+- ⚠ O `update` do ramo **competência fechada** segue estreito: os campos entram no `create` e não no
+  `update`, pela mesma razão que o `xmlRaw` também não entra — recalcular o derivado sem reescrever a
+  fonte faria os dois discordarem. Nota fechada já gravada se atualiza pelo backfill, que é idempotente.
+- Regressão: **`notas/__tests__/camposFiscaisNaCaptura.test.js`** (15) — exercita o **caminho real**
+  (`upsertNfseFromItem` + a rota de import), não o extrator isolado, e varre os três arquivos de
+  ingestão atrás de caminho de XML reescrito à mão. Experimento executado: tirando o spread de
+  `ingestaoNfse.js`, **11 vermelhos**; tirando o do `InvoiceSyncEngine`, **1**.
+
 ## ⚠ A RECAPTURA NÃO PODE APAGAR A CLASSIFICAÇÃO
 
 `AdnNotasService` e `DfeSyncService` faziam `notaItem.deleteMany` + recriação seca. Isso apagava

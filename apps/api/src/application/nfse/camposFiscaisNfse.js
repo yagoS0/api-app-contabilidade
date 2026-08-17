@@ -219,6 +219,12 @@ export const MOTIVO = Object.freeze({
   CAMPO_ILEGIVEL: "CAMPO_ILEGIVEL",
   /** `cTribNac` presente com comprimento diferente de 6 — o valor é gravado como está. */
   CTRIBNAC_FORA_DA_FORMA: "CTRIBNAC_FORA_DA_FORMA",
+  /**
+   * A extração LANÇOU. Só é possível ver este motivo pela porta de persistência
+   * (`camposFiscaisParaPersistir`), que é a única que engole a exceção — ver o comentário dela.
+   * O extrator em si continua propagando: quem chama para MEDIR (backfill, teste) tem de ver o erro.
+   */
+  EXTRACAO_LANCOU: "EXTRACAO_LANCOU",
 });
 
 /**
@@ -344,6 +350,55 @@ export function extrairCamposFiscaisNfse(xmlPlain) {
     origem,
     avisos,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// A PORTA DE PERSISTÊNCIA — o que a CAPTURA grava, no mesmo objeto em que grava o `xmlRaw`
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚠ ELA EXISTE PORQUE A COLUNA ESTAVA VIRANDO FOTOGRAFIA. O backfill materializou 16.818 notas e a
+// captura não preenchia nada: as 14 notas que chegaram DURANTE o backfill nasceram com as colunas
+// nulas. Como `NULL` também significa "o XML não traz este campo", duas semanas depois ninguém
+// distinguiria "nota sem código de serviço" de "o extrator nunca passou por esta linha" — e é
+// exatamente essa ambiguidade que `camposFiscaisExtraidosEm` existe para desfazer.
+//
+// ⚠ **ELA NUNCA LANÇA, E ESSA É A RAZÃO DE ELA EXISTIR SEPARADA DO EXTRATOR.** Capturar a nota é o
+// que não pode ser perdido; o campo derivado é secundário. Se a leitura falhar, a nota entra assim
+// mesmo, com as colunas nulas e o motivo registrado — o mesmo desfecho que o backfill dá a
+// `NAO_E_NFSE` e companhia. O extrator continua propagando exceção para quem o chama para MEDIR
+// (backfill, testes): lá, engolir o erro esconderia um leiaute quebrado atrás de um relatório limpo.
+//
+// ⚠ A EXTRAÇÃO É DO XML QUE ESTÁ SENDO GRAVADO NESSA MESMA ESCRITA, nunca do que já estava na
+// linha. É isso que faz a recaptura não apagar nada: a extração é pura, então XML igual ⇒ colunas
+// iguais; XML diferente ⇒ as colunas descrevem o XML novo, que é o que a linha passa a guardar.
+// Nunca há um estado intermediário em que a coluna é limpa "para recalcular depois".
+//
+// ⚠ **NF-e NÃO PASSA POR AQUI.** Leiaute diferente (`nfeProc/NFe/infNFe`): nem `cTribNac`, nem DPS,
+// nem ISSQN. Chamar isto no caminho do SEFAZ carimbaria `camposFiscaisExtraidosEm` numa linha em
+// que tudo é nulo por natureza — "olhamos e não achamos" onde o certo é "não se aplica".
+
+/**
+ * As colunas de `PortalInvoice` a gravar para UMA NFS-e, a partir do XML que a mesma escrita persiste.
+ *
+ * @param {string} xmlPlain XML da NFS-e (o mesmo que vai para `xmlRaw`).
+ * @param {{agora?: Date}} [opcoes] `agora` é injetável só para teste; o padrão é o relógio.
+ * @returns {Record<string, string|Date|null>} pronto para espalhar num `create`/`update` do Prisma.
+ */
+export function camposFiscaisParaPersistir(xmlPlain, { agora = new Date() } = {}) {
+  let campos = Object.fromEntries(IDS_DOS_CAMPOS.map((id) => [id, null]));
+  let motivo = MOTIVO.EXTRACAO_LANCOU;
+
+  try {
+    const r = extrairCamposFiscaisNfse(xmlPlain);
+    campos = r.campos;
+    motivo = r.motivo;
+  } catch {
+    // ⚠ O VOCABULÁRIO É FECHADO — a mensagem do erro NÃO entra na coluna. `camposFiscaisMotivo` é
+    // agregado por valor (o backfill conta por código); texto livre de exceção viraria uma
+    // categoria por nota. O que aconteceu está no log de quem chamou, não no dado fiscal.
+  }
+
+  return { ...campos, camposFiscaisMotivo: motivo ?? null, camposFiscaisExtraidosEm: agora };
 }
 
 export const _internos = { descer, filhosPorNome, textoDe, decimalOuNulo };

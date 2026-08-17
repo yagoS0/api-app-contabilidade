@@ -3,6 +3,7 @@ import { gunzipSync } from "node:zlib";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { AdnSyncService } from "../nfse/AdnSyncService.js";
 import { parseXmlMetadata } from "../nfse/AdnXmlMetadata.js";
+import { camposFiscaisParaPersistir } from "../nfse/camposFiscaisNfse.js";
 import { parseDate } from "../../utils/date.js";
 import { readStoredCompanyPfx } from "../../infrastructure/storage/CertStorage.js";
 import { decryptSecret } from "../../utils/crypto.js";
@@ -469,7 +470,23 @@ export class InvoiceSyncEngine {
             data: baseData,
           });
           const mergedStatus = mergeStatus(existing?.status, baseData.status);
-          const data = { ...baseData, status: mergedStatus };
+          // ⚠ O TERCEIRO CAMINHO DE ENTRADA DE NFS-e, e ele também precisa preencher as colunas
+          // fiscais — senão a coluna volta a envelhecer por aqui, num motor que quase ninguém olha.
+          // Esta rota (`POST /clients/:id/invoices/sync/start`, montada também em `/firm` e
+          // `/client`) grava `PortalInvoice` DIRETO, sem passar por `notas/ingestaoNfse.js`.
+          //
+          // ⚠ Mesmo extrator, mesma regra: nada é reescrito aqui, e a leitura sai do `xmlRaw` que
+          // esta mesma escrita persiste.
+          //
+          // ⚠ **O RAMO DE EVENTO ACIMA NÃO RECEBE ISTO, DE PROPÓSITO.** Lá o `xmlPlain` é o XML do
+          // EVENTO, não o da nota — extrair dele devolveria `NAO_E_NFSE` e ZERARIA as colunas de uma
+          // nota que está correta. Apagar campo fiscal por causa de um cancelamento é exatamente o
+          // "recaptura apaga o que já estava lá" que este projeto já pagou uma vez.
+          const data = {
+            ...baseData,
+            status: mergedStatus,
+            ...camposFiscaisParaPersistir(xmlRaw),
+          };
           const result = await upsertPortalInvoiceSafe({
             clientId: portalClient.id,
             data,
