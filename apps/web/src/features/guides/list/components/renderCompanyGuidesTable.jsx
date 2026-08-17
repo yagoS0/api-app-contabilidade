@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { createApiClient } from "../../../../api/client";
+import { Aviso } from "../../../../components/ui/Aviso";
 import { Button } from "../../../../components/ui/Button";
 // ⚠ AS DUAS CONVIVEM DE PROPÓSITO: `fmtDataCivil` para o VENCIMENTO (data civil, meia-noite UTC —
 // `fmtDate` a imprimiria um dia antes) e `fmtDate` para `liberadaEm`, que é timestamp de verdade e
@@ -8,6 +9,7 @@ import { fmtDataCivil, fmtDate, fmtMoney } from "../../../../lib/format";
 import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureModal";
 import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
+import { estadoVazioDasGuias } from "../lib/estadoVazioGuias";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -95,14 +97,14 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
           boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 200, overflow: "hidden",
         }}>
           <div style={{
-            padding: "8px 12px", fontSize: "0.7rem", color: "#6272A4",
+            padding: "8px 12px", fontSize: "0.7rem", color: "var(--text-faint)",
             textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700,
             borderBottom: "1px solid #44475A",
           }}>
             Marcar vazia ({competencia})
           </div>
           {candidatos.length === 0 ? (
-            <div style={{ padding: "8px 12px", fontSize: "0.8rem", color: "#6272A4" }}>
+            <div style={{ padding: "8px 12px", fontSize: "0.8rem", color: "var(--text-faint)" }}>
               Nenhuma guia obrigatória pendente.
             </div>
           ) : candidatos.map((r) => (
@@ -111,10 +113,10 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
               onClick={() => marcar(r.tipo)}
               style={{
                 display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
-                background: "transparent", border: "none", color: "#F8F8F2",
+                background: "transparent", border: "none", color: "var(--text)",
                 fontSize: "0.875rem", cursor: "pointer", fontWeight: 500,
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-surface)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
               {r.label}
@@ -159,21 +161,21 @@ const S = {
   },
   modal: {
     background: "#24253A", border: "1px solid #44475A", borderRadius: 8,
-    padding: "24px 28px", width: 380, maxWidth: "95vw", color: "#F8F8F2",
+    padding: "24px 28px", width: 380, maxWidth: "95vw", color: "var(--text)",
   },
-  title: { margin: "0 0 16px", fontSize: 16, fontWeight: 600, color: "#F8F8F2" },
+  title: { margin: "0 0 16px", fontSize: 16, fontWeight: 600, color: "var(--text)" },
   field: { marginBottom: 14 },
-  label: { display: "block", fontSize: 12, color: "#6272A4", marginBottom: 4 },
+  label: { display: "block", fontSize: 12, color: "var(--text-faint)", marginBottom: 4 },
   input: {
     width: "100%", background: "#1A1B26", border: "1px solid #44475A",
-    borderRadius: 4, color: "#F8F8F2", padding: "6px 10px", fontSize: 14, boxSizing: "border-box",
+    borderRadius: 4, color: "var(--text)", padding: "6px 10px", fontSize: 14, boxSizing: "border-box",
   },
   select: {
     width: "100%", background: "#1A1B26", border: "1px solid #44475A",
-    borderRadius: 4, color: "#F8F8F2", padding: "6px 10px", fontSize: 14, boxSizing: "border-box",
+    borderRadius: 4, color: "var(--text)", padding: "6px 10px", fontSize: 14, boxSizing: "border-box",
   },
   btnRow: { display: "flex", gap: 8, marginTop: 16 },
-  error: { fontSize: 12, color: "#FF5555", marginBottom: 10 },
+  error: { fontSize: 12, color: "var(--state-danger)", marginBottom: 10 },
   checkbox: { width: 16, height: 16, cursor: "pointer", accentColor: "#BD93F9" },
 };
 
@@ -209,7 +211,7 @@ function MetadataDialog({ initial, onSave, onCancel, saving }) {
     <div style={S.overlay} onClick={(e) => e.target === e.currentTarget && onCancel()}>
       <div style={S.modal}>
         <h3 style={S.title}>Identificar guia</h3>
-        <p style={{ fontSize: 13, color: "#6272A4", margin: "0 0 16px" }}>
+        <p style={{ fontSize: 13, color: "var(--text-faint)", margin: "0 0 16px" }}>
           Não conseguimos identificar automaticamente esta guia. Preencha os dados abaixo.
         </p>
 
@@ -321,6 +323,9 @@ export function CompanyGuidesTable({
   accounts = [],
   onSearchHistoricos,
   onGetHistoricosByCode,
+  // Estado vazio: leva à aba Apuração quando a competência ainda não foi apurada. Sem a prop o
+  // texto continua aparecendo — o que se perde é só o atalho.
+  onIrParaApuracao,
 }) {
   // R4 — "+ Subir Guia → PARCELAMENTO": anexar uma guia a um contrato que JÁ EXISTE.
   //
@@ -386,6 +391,53 @@ export function CompanyGuidesTable({
       return true;
     });
   }, [filterCompetencia, guides]);
+
+  // ── POR QUE NÃO HÁ GUIA — o contexto que transforma o vazio em resposta ──────────────────────
+  //
+  // ⚠ SÓ BUSCA QUANDO HÁ VAZIO A EXPLICAR. Competência com guia não paga chamada nenhuma; o efeito
+  // depende de `precisaExplicarVazio` justamente para isso.
+  //
+  // São DUAS perguntas diferentes, e é por isso que são duas chamadas:
+  //   `getFechamento`          → `estado` da APURAÇÃO (aberta/calculada/fechada/transmitida)
+  //   `getFechamentoContabil`  → `semFaturamento`, a afirmação de que o mês não teve receita
+  // ⚠ `monthClosed` (fechamento CONTÁBIL) é uma TERCEIRA pergunta e não entra aqui: mês fechado no
+  // razão não diz nada sobre haver ou não guia a pagar.
+  const precisaExplicarVazio = !loadingGuides && filteredGuides.length === 0;
+  const [contextoVazio, setContextoVazio] = useState({ carregando: false, erro: null, semFaturamento: null, estadoApuracao: null });
+
+  useEffect(() => {
+    if (!precisaExplicarVazio || !companyId || !filterCompetencia) return undefined;
+    let cancel = false;
+    setContextoVazio((p) => ({ ...p, carregando: true }));
+    (async () => {
+      try {
+        const [apuracao, contabil] = await Promise.all([
+          expectedGuidesApi.getFechamento(companyId, filterCompetencia),
+          expectedGuidesApi.getFechamentoContabil(companyId, filterCompetencia),
+        ]);
+        if (cancel) return;
+        setContextoVazio({
+          carregando: false,
+          erro: null,
+          semFaturamento: contabil?.semFaturamento === true,
+          estadoApuracao: apuracao?.dados?.estado || apuracao?.estado || null,
+        });
+      } catch (err) {
+        if (cancel) return;
+        // ⚠ A FALHA É GUARDADA, NÃO ENGOLIDA. Era este o defeito: sem o erro, o vazio afirmava
+        // "não há guia" sobre uma competência que ninguém conseguiu consultar.
+        setContextoVazio({ carregando: false, erro: err, semFaturamento: null, estadoApuracao: null });
+      }
+    })();
+    return () => { cancel = true; };
+  }, [precisaExplicarVazio, companyId, filterCompetencia, vazioRefreshKey]);
+
+  const leituraDoVazio = useMemo(() => estadoVazioDasGuias({
+    competencia: filterCompetencia,
+    erro: contextoVazio.erro,
+    semFaturamento: contextoVazio.semFaturamento,
+    estadoApuracao: contextoVazio.estadoApuracao,
+  }), [filterCompetencia, contextoVazio]);
 
   const filteredIds = useMemo(
     () => filteredGuides.map((g) => g.guideId || g.id),
@@ -656,7 +708,7 @@ export function CompanyGuidesTable({
         <div style={S.overlay} onClick={(e) => e.target === e.currentTarget && setResendConfirm(null)}>
           <div style={S.modal}>
             <h3 style={S.title}>Guia já enviada</h3>
-            <p style={{ fontSize: 13, color: "#6272A4", margin: "0 0 16px" }}>
+            <p style={{ fontSize: 13, color: "var(--text-faint)", margin: "0 0 16px" }}>
               Esta guia ({rotuloTipoGuia(resendConfirm)} · {resendConfirm.competencia}) já foi enviada ao cliente por
               e-mail. Deseja reenviar?
             </p>
@@ -706,7 +758,7 @@ export function CompanyGuidesTable({
                     boxShadow: "0 8px 24px rgba(0,0,0,0.4)", minWidth: 180, overflow: "hidden",
                   }}>
                     <div style={{
-                      padding: "8px 12px", fontSize: "0.7rem", color: "#6272A4",
+                      padding: "8px 12px", fontSize: "0.7rem", color: "var(--text-faint)",
                       textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700,
                       borderBottom: "1px solid #44475A",
                     }}>
@@ -730,12 +782,12 @@ export function CompanyGuidesTable({
                           display: "block", width: "100%", textAlign: "left",
                           padding: "8px 12px", background: "transparent", border: "none",
                           borderTop: tipo === TIPO_UPLOAD_PARCELAMENTO ? "1px solid #44475A" : "none",
-                          color: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "#6272A4" : "#F8F8F2",
+                          color: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "var(--text-faint)" : "var(--text)",
                           fontSize: "0.875rem",
                           cursor: tipo === TIPO_UPLOAD_PARCELAMENTO && !parcelamentos ? "not-allowed" : "pointer",
                           fontWeight: 500,
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "#2b2d45"; }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-surface)"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                       >
                         {tipo}
@@ -870,7 +922,7 @@ export function CompanyGuidesTable({
                 cheio, e é assim que se confere uma guia achando que é de outro período. */}
             {!verTodasCompetencias && (
               <span style={{ fontSize: "0.8rem", color: "#aeb6d3" }}>
-                Competência: <strong style={{ color: "#F8F8F2" }}>{filterCompetencia}</strong>
+                Competência: <strong style={{ color: "var(--text)" }}>{filterCompetencia}</strong>
               </span>
             )}
           </div>
@@ -879,7 +931,34 @@ export function CompanyGuidesTable({
         {loadingGuides ? (
           <p className="text-muted">Carregando...</p>
         ) : filteredGuides.length === 0 ? (
-          <p className="text-muted">Nenhuma guia encontrada para os filtros atuais.</p>
+          // ⚠ ERA UMA FRASE SÓ — "Nenhuma guia encontrada para os filtros atuais." — para situações
+          // que exigem ações OPOSTAS, e uma delas era o servidor não ter respondido. Ver a regra e
+          // o porquê em `../lib/estadoVazioGuias.js`.
+          contextoVazio.carregando ? (
+            <p className="text-muted">Nenhuma guia em {filterCompetencia}. Verificando o estado da competência…</p>
+          ) : (
+            <Aviso
+              tom={leituraDoVazio.chave === "FALHA" ? "erro" : "neutro"}
+              titulo={leituraDoVazio.titulo}
+              style={{ maxWidth: 640 }}
+            >
+              <div>{leituraDoVazio.explicacao}</div>
+              {leituraDoVazio.acao && (
+                <div style={{ marginTop: "var(--space-3)" }}>
+                  {leituraDoVazio.acao.destino === "apuracao" && onIrParaApuracao && (
+                    <Button size="sm" variant="secondary" onClick={onIrParaApuracao}>
+                      {leituraDoVazio.acao.rotulo}
+                    </Button>
+                  )}
+                  {leituraDoVazio.acao.destino === "upload" && (
+                    <Button size="sm" variant="secondary" onClick={() => setUploadMenuOpen(true)}>
+                      {leituraDoVazio.acao.rotulo}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </Aviso>
+          )
         ) : (
           <div className="guides-grid" role="table" aria-label="Lista de guias">
             <div className="guides-grid__head" role="rowgroup">

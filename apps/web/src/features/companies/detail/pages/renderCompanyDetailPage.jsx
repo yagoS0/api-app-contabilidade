@@ -412,6 +412,10 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
             accounts={accountingPanel.accounts}
             onSearchHistoricos={accountingPanel.onSearchHistoricos}
             onGetHistoricosByCode={accountingPanel.onGetHistoricosByCode}
+            /* Competência sem guia porque ainda não foi apurada: o vazio leva ao trabalho que
+               falta. ⚠ A aba de Apuração é a `cadastroFiscal` (segmento `cadastro-fiscal`) —
+               `apuracao-v2` saiu do menu e virou sub-aba interna. */
+            onIrParaApuracao={() => switchTab("cadastroFiscal")}
           />
           </Suspense>
 

@@ -21,6 +21,40 @@ envio em lote e o painel de guias esperadas.
   selecionável**: o envio manual alcança `ERROR`, então a mudança é de exibição, não de
   elegibilidade.
 
+## ⚠ POR QUE NÃO HÁ GUIA NESTE MÊS — `list/lib/estadoVazioGuias.js`
+
+O vazio da tabela era **uma frase só** — *"Nenhuma guia encontrada para os filtros atuais."* — para
+situações que exigem ações **opostas**. E a pior delas não era ambiguidade: era a **falha de carga**
+se parecendo com ausência, fazendo o contador concluir que não há tributo a pagar naquele mês.
+
+Seis respostas, regra pura com 16 testes + a ligação em `components/__tests__/estadoVazioNaTela.test.jsx`:
+
+| chave | quando | o próximo passo |
+|---|---|---|
+| `FALHA` | o servidor não respondeu / recusou (`lib/falhaDeCarga.js`) | nenhum — e a frase **diz** que não se sabe se deveria haver guia |
+| `TODAS_COMPETENCIAS` | "Ver todas as competências" ligado | não há mês único sobre o qual perguntar |
+| `SEM_MOVIMENTO` | `CompanyMonthlyCircular.semFaturamento === true` | nenhum — o DAS não é exigido |
+| `NAO_APURADO` | `ApuracaoSnapshot.estado` ∈ aberta/pendente/configurando | **Ir para Apuração** |
+| `APURADO_SEM_GUIA` | estado ∈ calculada/revisada/fechada/transmitida/confirmada | **+ Subir guia** |
+| `INDEFINIDO` | qualquer outro estado, ou nenhum | manda conferir antes de concluir |
+
+- ⚠ **São TRÊS perguntas diferentes, e por isso duas chamadas + uma que NÃO entra.**
+  `getFechamento` responde o estado da APURAÇÃO; `getFechamentoContabil` responde `semFaturamento`.
+  `monthClosed` (fechamento **contábil**) é a terceira e **fica de fora**: mês fechado no razão não
+  diz nada sobre haver guia a pagar. Era esse o dado que a aba já tinha — e ele não respondia a
+  pergunta.
+- ⚠ **Só consulta quando há vazio a explicar** (`precisaExplicarVazio`). Competência com guia não
+  paga chamada nenhuma; há teste provando que nada sai.
+- ⚠ **Estado desconhecido NÃO vira "não apurado"** — vira `INDEFINIDO`. As listas são **fechadas**,
+  pelo mesmo motivo de `COLUNAS_CONHECIDAS` no SITFIS: enum novo não pode ser concluído por
+  semelhança. Mesma disciplina de `chaveSituacaoFiscal`, onde valor estranho cai em `NAO_CONSULTADA`.
+- ⚠ **`semFaturamento` exige `=== true`.** O campo é **tri-estado** no banco: `null` é "ninguém
+  disse nada", não "não teve receita".
+- ⚠ **Nenhuma das seis respostas afirma que a empresa está em dia** — há teste varrendo
+  `em dia|regular|nada consta|tudo certo` nos textos.
+- `onIrParaApuracao` é prop; sem ela o texto continua, só o atalho some. A aba de Apuração é
+  **`cadastroFiscal`** (`apuracao-v2` saiu do menu e virou sub-aba interna).
+
 ## ⚠ `PARCELAMENTO` é um tipo do menu "+ Subir Guia" — e a guia é ANEXO, não gatilho (R4)
 
 `list/components/GuiaDeParcelamentoModal.jsx`, com as regras em `lib/anexoParcelamento.js`
@@ -165,5 +199,10 @@ Ligação coberta em `list/components/__tests__/renderCompanyGuidesTable.test.js
   (`isParcelamento`, sem documento, só informa). Por isso o "info-only" é do **valor da célula**, não
   da coluna: enquanto era da coluna, empresa cuja única pendência do mês era a parcela sumia do
   filtro "só pendentes" e ninguém conseguia selecioná-la.
-- Cores de estado: verde `#69FF47`, amarelo `#FFB347`, vermelho `#FF5757`.
+- Cores de estado: verde `#69FF47`, amarelo `#FFB347`, vermelho `#FF5757` — ⚠ **pelo token**
+  (`var(--state-ok|warn|danger)`), nunca pelo hex. Em `renderCompanyGuidesTable.jsx` o `#6272A4`
+  usado como cor de TEXTO era **3,02:1** sobre `--bg-subtle` (reprova o mínimo de 4,5:1 do WCAG AA,
+  medição em `styles/tokens.css`); virou `var(--text-faint)` (4,82:1). ⚠ A cópia canônica
+  `accounting/.../accountingEntriesShared.js` ainda carrega `muted: "#6272A4"` — o conserto do token
+  não chegou às cópias.
 - Toda chamada nova precisa de par mock/real em `src/api/`.
