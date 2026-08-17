@@ -20,7 +20,7 @@
 //
 // Então a leitura é: contar as colunas pelo cabeçalho e agrupar as linhas de dados de N em N.
 //
-// ── AS QUATRO ARMADILHAS, todas presentes no texto real ──
+// ── AS SEIS ARMADILHAS, todas presentes no texto real ──
 //
 //  1. O CNPJ vem COLADO na primeira célula do cabeçalho:
 //       "…______CNPJ: 60.666.777/0001-92Receita"  →  a coluna é "Receita".
@@ -31,6 +31,14 @@
 //  4. UMA CÉLULA PODE VIR PARTIDA EM DUAS LINHAS. O PA trimestral ("2º TRIM/2026") não cabe na
 //     largura da coluna em alguns relatórios e a extração devolve "2º" e "TRIM/2026" separados —
 //     ver `CELULAS_PARTIDAS`, abaixo.
+//  5. NEM TODA RECEITA TEM CÓDIGO. O débito do Simples imprime só "SIMPLES NAC.", e aí a célula
+//     colada na anotação não pode ser achada pelo código — ver `ANOTACAO_COM_CELULA_SEPARADA`.
+//  6. QUANDO O REGISTRO ANOTADO É O ÚLTIMO DO BLOCO, o que vem colado na anotação é o TÍTULO DO
+//     BLOCO SEGUINTE — ver `ANOTACAO_COLADA_NO_TITULO`.
+//
+// ⚠ 5 e 6 saem da MESMA linha do relatório (a anotação de lançamento) e foram medidas em produção
+// em 17/08/2026, nos 22 relatórios guardados: das 6 anotações existentes, 2 caíam no caso 3 (que já
+// funcionava), 1 no caso 5 e 2 no caso 6.
 //
 // ── POR QUE A CONTAGEM É A VALIDAÇÃO ──
 //
@@ -108,6 +116,50 @@ const ehRuido = (l) => RUIDO.some((r) => r.test(l));
 
 // "1099-01 - CP-SEGUR." — código de receita, usado para achar onde a anotação termina.
 const INICIO_REGISTRO = /(\d{4}-\d{2}\s*-\s*\D.*)$/;
+
+// ── ARMADILHA 5: NEM TODA RECEITA TEM CÓDIGO, e a anotação engolia a célula sem ele ──
+//
+// A armadilha 3 acha onde a anotação termina procurando o código de receita do registro seguinte
+// (`INICIO_REGISTRO`). Mas a coluna "Receita" nem sempre traz código: o débito do Simples imprime
+// só **"SIMPLES NAC."**. Nesse caso a linha vem
+//
+//   "Notificação de lançamento: 50000111222333          SIMPLES NAC."
+//
+// e o `INICIO_REGISTRO` não casa — então a linha INTEIRA virava anotação e a célula "SIMPLES NAC."
+// do registro seguinte **sumia**. Medido em produção (17/08/2026): o bloco "Pendência - Débito
+// (SIEF)" ficava com 17 linhas para 9 colunas, resto 8, e o bloco INTEIRO caía em `naoInterpretado`
+// — o contador via 17 linhas cruas no lugar da tabela de pendências.
+//
+// ⚠ "SIMPLES NAC." NÃO É INVENTADO: é o valor que a coluna "Receita" imprime, e ele aparece assim
+// em 7 outras empresas dos mesmos 22 relatórios, onde a linha não vem colada na anotação.
+//
+// ⚠ O QUE SEPARA OS DOIS CASOS É O ESPAÇO EM BRANCO, e é por isso que esta regra é a mais estreita
+// possível. Quando o registro seguinte tem código, ele vem **colado** no número da notificação
+// ("…202601001" + "1099-01 - CP-SEGUR.") e não há onde cortar sem reconhecer o código — que é
+// exatamente o que a armadilha 3 faz. Quando não tem código, o relatório **separa** os dois com
+// espaços. Então: número da notificação = a corrida de dígitos; havendo espaço depois dela, o que
+// sobra é a próxima célula. Sem espaço, esta regra não faz nada e a armadilha 3 continua mandando.
+//
+// ⚠ A REDE DA CONTAGEM CONTINUA VALENDO. Se esta leitura estiver errada, o bloco ganha uma célula a
+// mais, a divisão deixa de fechar e ele cai em `naoInterpretado` — que é o modo de falhar seguro.
+const ANOTACAO_COM_CELULA_SEPARADA = /^(\d+)\s+(\S.*)$/;
+
+// ── ARMADILHA 6: A ANOTAÇÃO COLADA NO TÍTULO DO BLOCO SEGUINTE ──
+//
+// Quando o registro anotado é o ÚLTIMO do bloco, o que vem colado na anotação não é o registro
+// seguinte — é o **título do próximo bloco**:
+//
+//   "Notificação de lançamento: 8790111222333Débito com Exigibilidade Suspensa (SIEF) ______…"
+//
+// A separação em blocos acontece ANTES da normalização de linhas (o marcador é "título + régua na
+// mesma linha"), então esse prefixo entrava no TÍTULO. Medido em produção (17/08/2026): duas
+// empresas exibiam o bloco com o título "Notificação de lançamento: 8790111222333Débito com
+// Exigibilidade Suspensa (SIEF)" — o PDF imprime "Débito com Exigibilidade Suspensa (SIEF)" —, e o
+// número da notificação, que é do bloco ANTERIOR, sumia das anotações dele.
+//
+// Só se aplica a título que COMEÇA com o rótulo literal da notificação; qualquer outro passa
+// intacto. O número volta para o bloco anterior, que é de onde ele veio.
+const ANOTACAO_COLADA_NO_TITULO = /^Notifica[çc][ãa]o de lan[çc]amento:\s*(\d+)\s*(.*)$/i;
 
 // ── ARMADILHA 4: CÉLULA PARTIDA EM DUAS LINHAS ──
 //
@@ -193,9 +245,17 @@ function linhasDoBloco(bruto) {
       if (mProx) {
         anotacoes.push(limpar(resto.slice(0, mProx.index)));
         saida.push(limpar(mProx[1]));   // devolve o registro seguinte à fila
-      } else {
-        anotacoes.push(limpar(resto));
+        continue;
       }
+      // Armadilha 5: a próxima célula não tem código de receita ("SIMPLES NAC."), e por isso vem
+      // SEPARADA do número da notificação por espaço em vez de colada nele.
+      const mSep = resto.match(ANOTACAO_COM_CELULA_SEPARADA);
+      if (mSep) {
+        anotacoes.push(limpar(mSep[1]));
+        saida.push(limpar(mSep[2]));    // devolve a célula seguinte à fila
+        continue;
+      }
+      anotacoes.push(limpar(resto));
       continue;
     }
 
@@ -286,7 +346,15 @@ export function parseSitfisRelatorio(texto) {
       const marcadores = [...corpoSecao.matchAll(/([^\n_]{3,120}?)[ \t]*_{6,}/g)];
       for (let b = 0; b < marcadores.length; b += 1) {
         const m = marcadores[b];
-        const titulo = limpar(m[1]);
+        let titulo = limpar(m[1]);
+        // Armadilha 6: a anotação do último registro do bloco ANTERIOR vem colada neste título.
+        // O número volta para o bloco de onde veio; o título fica como o PDF o imprime.
+        const mColado = titulo.match(ANOTACAO_COLADA_NO_TITULO);
+        if (mColado) {
+          const anterior = blocos[blocos.length - 1];
+          if (anterior) anterior.anotacoes.push(mColado[1]);
+          titulo = limpar(mColado[2]);
+        }
         const inicio = m.index + m[0].length;
         const fim = marcadores[b + 1] ? marcadores[b + 1].index : corpoSecao.length;
         const { linhas, anotacoes } = linhasDoBloco(corpoSecao.slice(inicio, fim));

@@ -12,7 +12,13 @@
 // ESTRUTURA**. Foram fabricados — sempre com FORMATO IDÊNTICO (mesma quantidade de dígitos, mesma
 // pontuação, mesmo comprimento, mesmo número de palavras) — apenas:
 //
-//   CNPJ · razão social · número de parcelamento · inscrição em dívida ativa
+//   CNPJ · razão social · número de parcelamento · inscrição em dívida ativa ·
+//   número da notificação de lançamento
+//
+// ⚠ O NÚMERO DA NOTIFICAÇÃO entrou nessa lista em 17/08/2026, com as fixtures das armadilhas 5 e 6:
+// ele identifica um lançamento contra um contribuinte real, do mesmo jeito que o parcelamento. O
+// COMPRIMENTO dele é estrutura e foi preservado — 14 e 13 dígitos, como nos textos reais —, porque
+// é a corrida de dígitos que a armadilha 5 corta.
 //
 // ⚠ **NÃO foram tocados** valores monetários, datas, códigos de receita (`8109-02`, `2172-01` — são
 // tabela pública da Receita) nem nomes de tributo. Eles são ESTRUTURA: os valores exercitam o
@@ -35,6 +41,10 @@
 //   • CNPJ 30.333.444/0001-03, relatório de 06/08/2026 — TRÊS parcelamentos numerados no SIEFPAR
 //   • CNPJ 40.444.555/0001-64, relatório de 24/07/2026 — o cabeçalho da página 2 (CNPJ + razão
 //     social) caindo DENTRO de um bloco, e a inscrição em dívida ativa na seção da PGFN
+//   • CNPJ 80.888.999/0001-27, relatório de 24/07/2026 — ARMADILHA 5: a anotação de lançamento
+//     carregando uma célula "Receita" SEM código ("SIMPLES NAC."), separada por espaços
+//   • CNPJ 70.777.888/0001-09, relatório de 24/07/2026 — ARMADILHA 6: a anotação do ÚLTIMO registro
+//     do bloco carregando o TÍTULO do bloco seguinte
 //
 // São esses dois primeiros textos, juntos, que provam que a remontagem não inventa valor: o
 // resultado da fusão (`2º TRIM/2026`) é literalmente o que o outro relatório imprime quando a
@@ -265,6 +275,81 @@ Final do Relatório
 Página: 2 /
 2`;
 
+// ── 80.888.999/0001-27 · 24/07/2026 ──────────────────────────────────────────────────────────────
+// ARMADILHA 5. A anotação do 1º registro carrega a célula "Receita" do 2º — e essa célula NÃO tem
+// código ("SIMPLES NAC."), então vem SEPARADA por espaços em vez de colada no número.
+// Medido em produção: 17 linhas de dado para 9 colunas → resto 8 → o bloco INTEIRO caía em
+// "não interpretado", e o contador via 17 linhas cruas no lugar da tabela de pendências.
+const ANOTACAO_SEM_CODIGO = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Pendência - Débito (SIEF) _______________________________________________________________________________________CNPJ: 80.888.999/0001-27Receita
+PA/Exerc.
+Dt. Vcto
+Vl. Original
+Sdo. Devedor
+Multa
+Juros
+Sdo. Dev. Cons.
+Situação
+5440-01 - MAED - DCTFWEB
+17/10/2023
+23/02/2026
+100,00
+100,00
+0,00
+5,49
+105,49
+DEVEDOR
+          Notificação de lançamento: 50000111222333          SIMPLES NAC.
+05/2026
+22/06/2026
+360,00
+152,99
+16,15
+1,52
+170,66
+DEVEDOR`;
+
+// ── 70.777.888/0001-09 · 24/07/2026 ──────────────────────────────────────────────────────────────
+// ARMADILHA 6. O registro anotado é o ÚLTIMO do bloco, então o que vem colado na anotação é o
+// TÍTULO DO BLOCO SEGUINTE. Como a separação em blocos acontece antes da normalização de linhas, o
+// prefixo entrava no título: a tela exibia "Notificação de lançamento: 8790111222333Débito com
+// Exigibilidade Suspensa (SIEF)" onde o PDF imprime "Débito com Exigibilidade Suspensa (SIEF)".
+const ANOTACAO_NO_TITULO = `_____________________________________ Diagnóstico Fiscal na Receita Federal _____________________________________Pendência - Débito (SIEF) _______________________________________________________________________________________CNPJ: 70.777.888/0001-09Receita
+PA/Exerc.
+Dt. Vcto
+Vl. Original
+Sdo. Devedor
+Multa
+Juros
+Sdo. Dev. Cons.
+Situação
+3624-02 - MAED - ECF
+01/08/2025
+12/02/2026
+230,58
+230,58
+0,00
+12,65
+243,23
+DEVEDOR
+          Notificação de lançamento: 8790111222333Débito com Exigibilidade Suspensa (SIEF) ________________________________________________________________________CNPJ: 70.777.888/0001-09Receita
+PA/Exerc.
+Dt. Vcto
+Vl.Original
+Sdo.Devedor
+Situação
+8109-02 - PIS
+06/2026
+24/07/2026
+30,65
+30,65
+A ANALISAR-A VENCER
+2172-01 - COFINS
+06/2026
+24/07/2026
+141,46
+141,46
+A ANALISAR-A VENCER`;
+
 /** Os blocos de um diagnóstico, pela chave do órgão. */
 const blocosDe = (texto, chave) => parseSitfisRelatorio(texto).diagnosticos.find((d) => d.chave === chave).blocos;
 /** O primeiro bloco do diagnóstico da Receita Federal. */
@@ -486,6 +571,84 @@ describe("Pendência - Inscrição (SIDA) — a inscrição volta a aparecer (40
     for (const celula of ["1507-SIMPLESNACIONAL", "09/12/2024", "11777.691.032/2024-21", "DEVEDOR PRINCIPAL", "ATIVA A SER AJUIZADA"]) {
       expect(bloco.naoInterpretado).toContain(celula);
     }
+  });
+});
+
+// ── ARMADILHA 5 ──────────────────────────────────────────────────────────────────────────────────
+//
+// A armadilha 3 acha onde a anotação termina procurando o CÓDIGO de receita do registro seguinte.
+// A coluna "Receita" nem sempre traz código: o débito do Simples imprime só "SIMPLES NAC.", e aí a
+// anotação engolia a célula inteira. O que separa os dois casos é o ESPAÇO EM BRANCO — com código o
+// relatório cola ("…202601001" + "1099-01 - CP-SEGUR."), sem código ele separa.
+describe("armadilha 5 — a célula colada na anotação nem sempre tem código de receita", () => {
+  const bloco = blocoRfb(ANOTACAO_SEM_CODIGO);
+
+  it("vira tabela: a célula 'SIMPLES NAC.' volta para o registro em vez de sumir na anotação", () => {
+    expect(bloco.naoInterpretado).toEqual([]);
+    expect(bloco.registros).toHaveLength(2);
+    expect(bloco.registros[1]).toEqual({
+      "Receita": "SIMPLES NAC.",
+      "PA/Exerc.": "05/2026",
+      "Dt. Vcto": "22/06/2026",
+      "Vl. Original": "360,00",
+      "Sdo. Devedor": "152,99",
+      "Multa": "16,15",
+      "Juros": "1,52",
+      "Sdo. Dev. Cons.": "170,66",
+      "Situação": "DEVEDOR",
+    });
+  });
+
+  it("o registro anterior continua intacto, e o número da notificação continua sendo anotação", () => {
+    expect(bloco.registros[0]["Receita"]).toBe("5440-01 - MAED - DCTFWEB");
+    expect(bloco.registros[0]["Sdo. Dev. Cons."]).toBe("105,49");
+    expect(bloco.anotacoes).toEqual(["50000111222333"]);
+  });
+
+  // ⚠ A regra nova NÃO pode roubar o caminho da armadilha 3: lá os dois vêm COLADOS, e cortar pela
+  // corrida de dígitos partiria o número da notificação no meio.
+  it("não atrapalha o caso colado, em que o código é a única fronteira possível", () => {
+    const b = blocoRfb(ANOTACAO_SEM_CODIGO.replace(
+      "Notificação de lançamento: 50000111222333          SIMPLES NAC.",
+      "Notificação de lançamento: 808889992026010011099-01 - CP-SEGUR.",
+    ));
+    expect(b.anotacoes).toEqual(["80888999202601001"]);
+    expect(b.registros[1]["Receita"]).toBe("1099-01 - CP-SEGUR.");
+  });
+});
+
+// ── ARMADILHA 6 ──────────────────────────────────────────────────────────────────────────────────
+describe("armadilha 6 — a anotação do último registro vem colada no TÍTULO do bloco seguinte", () => {
+  const blocos = blocosDe(ANOTACAO_NO_TITULO, "RFB");
+
+  it("o título do bloco é o que o PDF imprime, sem o prefixo da notificação", () => {
+    expect(blocos[1].titulo).toBe("Débito com Exigibilidade Suspensa (SIEF)");
+  });
+
+  // O número é do registro ANTERIOR — tirá-lo do título não pode significar perdê-lo.
+  it("o número da notificação volta para o bloco de onde veio", () => {
+    expect(blocos[0].anotacoes).toEqual(["8790111222333"]);
+  });
+
+  it("os dois blocos continuam virando tabela, cada um com as suas colunas", () => {
+    expect(blocos[0].registros).toHaveLength(1);
+    expect(blocos[0].registros[0]["Sdo. Dev. Cons."]).toBe("243,23");
+    expect(blocos[1].colunas).toEqual(["Receita", "PA/Exerc.", "Dt. Vcto", "Vl.Original", "Sdo.Devedor", "Situação"]);
+    expect(blocos[1].registros).toHaveLength(2);
+    expect(blocos[1].registros[1]).toEqual({
+      "Receita": "2172-01 - COFINS",
+      "PA/Exerc.": "06/2026",
+      "Dt. Vcto": "24/07/2026",
+      "Vl.Original": "141,46",
+      "Sdo.Devedor": "141,46",
+      "Situação": "A ANALISAR-A VENCER",
+    });
+  });
+
+  // A regra só morde o título que COMEÇA com o rótulo literal — título normal passa intacto.
+  it("não mexe em título que não começa com a anotação", () => {
+    expect(blocos[0].titulo).toBe("Pendência - Débito (SIEF)");
+    expect(blocoRfb(TRIMESTRAL_INTEIRO).titulo).toBe("Débito com Exigibilidade Suspensa (SIEF)");
   });
 });
 
