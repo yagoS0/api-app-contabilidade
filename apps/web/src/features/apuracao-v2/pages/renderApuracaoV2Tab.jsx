@@ -17,7 +17,9 @@ import { FechamentoModal } from "../../apuracao/components/FechamentoModal";
 import { entregaPgdasDoFechamento, CORES_TOM } from "../../apuracao/lib/entregaPgdas";
 import { RelatorioFaturamentoPanel } from "../components/RelatorioFaturamentoPanel";
 import { estadoDaClassificacao, kpiDasApurado, CORES_TOM_RELATORIO } from "../lib/relatorioFaturamento";
+import { leituraDaPendencia } from "../lib/pendenciaTela";
 import { Tabs } from "../../../components/ui/Tabs";
+import { Aviso } from "../../../components/ui/Aviso";
 import { Button } from "../../../components/ui/Button";
 
 function competenciaAnterior() {
@@ -264,6 +266,24 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
             </span>
             <span style={{ fontSize: "0.82rem", color: PANEL.muted, paddingBottom: 6 }}>Estado: <EstadoBadge estado={estado} /></span>
             <div style={{ flex: 1 }} />
+            {/* ⚠ A PENDÊNCIA É NOMEADA, NÃO BLOQUEIA — e isso é decisão, não descuido.
+                O caso CARO já é bloqueado onde importa: `motivoCalcularBloqueado`
+                (`apuracao/components/FechamentoModal.jsx`) impede a chamada PAGA ao SERPRO quando
+                as atividades somam zero, com o motivo no `title`. Desabilitar aqui deixaria a
+                empresa com pendência crônica sem saída pela tela — o botão é a única porta para o
+                modal, que é onde se resolve. Então o que faltava não era a trava: era o contador
+                saber, ANTES de clicar, que há pendência aberta e quantas. */}
+            {pendencias.length > 0 && (
+              <button type="button" onClick={() => setSecao("sugestao")}
+                title="Ver as pendências na sub-aba Sugestão"
+                style={{
+                  background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+                  color: "var(--state-warn)", borderRadius: "var(--radius-sm)", cursor: "pointer",
+                  padding: "6px 10px", fontSize: "0.78rem", fontWeight: 600, marginBottom: 2,
+                }}>
+                ⚠ {pendencias.length} pendência{pendencias.length > 1 ? "s" : ""} de classificação
+              </button>
+            )}
             <Button onClick={() => setFechando({ retificar: false })} disabled={fechLoading}>
               {estado === "aberta" || !estado ? "Calcular / Fechar" : "Revisar / Fechar"}
             </Button>
@@ -325,10 +345,19 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
               </div>
             );
           })()}
+          {/* ⚠ O TEXTO DIZIA "aba Cadastro", E ESSA ABA NÃO EXISTE MAIS COM ESSE NOME. A sub-aba
+              foi renomeada para **Perfil fiscal** justamente porque "Cadastro" já era o grupo de
+              abas da empresa E a tela de ficha (ver `SecaoTabs` acima) — o contador ia procurar na
+              aba errada. ⚠ Mudou só o TEXTO: a chave `"cadastro"` continua a mesma, porque é ela
+              que circula na navegação, e o app não tem `<Route>` — o despacho é cadeia de `if`, e
+              trocar a chave quebraria em silêncio. */}
           {fechDados?.cadastroCompleto === false && (
-            <div style={{ padding: 10, background: "rgba(255,179,71,0.10)", border: "1px solid #FFB347", borderRadius: 8, color: "#FFB347", fontSize: "0.82rem" }}>
-              ⚠ Cadastro fiscal incompleto (sem CNAE). Ajuste na aba Cadastro antes de fechar.
-            </div>
+            <Aviso compacto tom="atencao" titulo="Cadastro fiscal incompleto">
+              A empresa está sem CNAE. Ajuste na sub-aba <strong>Perfil fiscal</strong> antes de fechar.
+              <div style={{ marginTop: "var(--space-2)" }}>
+                <Button size="sm" variant="secondary" onClick={() => setSecao("cadastro")}>Abrir Perfil fiscal</Button>
+              </div>
+            </Aviso>
           )}
 
           {/* ⚠ O RELATÓRIO DE FATURAMENTO — pedido do dono: exibido ao calcular, SALVO, e visível
@@ -425,17 +454,30 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
                 </div>
               );
             })() : (
-              pendencias.map((p) => (
+              pendencias.map((p) => {
+                // ⚠ A tela imprimia `[{p.tipo}]` — `[ITEM_SEM_REGRA]` cru, entre colchetes, como
+                // cabeçalho de cada pendência. Ver `../lib/pendenciaTela.js` (o enum cru não se
+                // perdeu: vive no `title`).
+                const leitura = leituraDaPendencia(p.tipo);
+                // ⚠ Âmbar é "pendência com ação"; o outro ramo era `#FF4757`, que nem token é
+                // (`--state-danger` é `#FF5757`). Vermelho aqui diria que a pendência bloqueia o
+                // fechamento — e o que ela bloqueia é o cálculo do motor, não o mês.
+                const cor = leitura.conhecida ? "var(--state-warn)" : "var(--state-neutral)";
+                return (
                 <div key={p.id}
                   style={{
-                    padding: 12, background: PANEL.field, border: `1px solid ${p.tipo === "ITEM_SEM_REGRA" ? "#FFB347" : "#FF4757"}`,
+                    padding: 12, background: PANEL.field, border: `1px solid ${cor}`,
                     borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12,
                   }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "0.7rem", color: p.tipo === "ITEM_SEM_REGRA" ? "#FFB347" : "#FF4757", fontWeight: 600, marginBottom: 4 }}>
-                      [{p.tipo}]
+                    <div title={leitura.titulo}
+                      style={{ fontSize: "0.72rem", color: cor, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                      {leitura.rotulo}
                     </div>
                     <div style={{ fontSize: "0.9rem" }}>{p.resumo}</div>
+                    {leitura.explicacao && (
+                      <div style={{ fontSize: "0.75rem", color: PANEL.muted, marginTop: 4 }}>{leitura.explicacao}</div>
+                    )}
                     {p.competencia && (
                       <div style={{ fontSize: "0.7rem", color: PANEL.muted, marginTop: 4 }}>
                         {p.competencia} · {fmtDate(p.createdAt)}
@@ -448,7 +490,8 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
                     </Button>
                   )}
                 </div>
-              ))
+                );
+              })
             )}
           </div>
 
