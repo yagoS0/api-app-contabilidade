@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { prisma } from "../../../infrastructure/db/prisma.js";
+import { parseTributosPgdas, tributosPorTributoParaColuna } from "./parseTributosPgdas.js";
 import { GuideStorageService } from "../../guides/GuideStorageService.js";
 import { generateEntriesFromCircular, FONTE_VALOR_EXTRATO } from "../../accounting/AccountingEntryGeneratorService.js";
 // As duas travas de "sem faturamento" vivem no service, não na rota — é o que impede este caminho
@@ -176,6 +177,41 @@ export async function consultarDasIndexPorCompetencia({ portalClientId, competen
     contratanteCnpj: procuradorCnpj, contribuinteCnpj: cnpj, periodoApuracao: competencia,
   });
   return parseDasIndexResponse(resp);
+}
+
+/**
+ * Grava a repartição por tributo do extrato em `ApuracaoSnapshot.tributosPorTributo`.
+ *
+ * ⚠ **ATUALIZA, NUNCA CRIA — e isso não é preguiça.** `ApuracaoSnapshot` tem `rbt12` e
+ * `receitaPorTipo` NOT NULL (mais `idempotencyKey` @unique): criar uma linha só para pendurar esta
+ * marca exigiria inventar dado fiscal num registro auditável. É a mesma razão pela qual a marca de
+ * "empresa zerada" não virou coluna de snapshot (ver `apps/api/CLAUDE.md`), e a mesma disciplina de
+ * `RbtExtratoService.gravarPeriodosAceitos`: *"sem linha no cache não há o que anexar (…) não criar
+ * aqui evita inventar um RBT12"*. Sem snapshot, a repartição fica só no `metadata` da circular,
+ * de onde o backfill a recupera quando o snapshot passar a existir.
+ *
+ * ⚠ **NÃO TOCA EM NENHUMA COLUNA DO MOTOR** (`dasCalculadoLocal`, `receitaPorAnexo`,
+ * `aliquotaEfetivaPorAnexo`, `vigenciaAliquota`) nem nas três colunas de DAS. Esta é uma coluna de
+ * LEITURA: nada aqui declara, calcula alíquota ou parte lançamento.
+ *
+ * **Best-effort de propósito:** quando o código chega aqui o extrato já foi capturado e gravado.
+ * Falhar em anexar um dado de auditoria não pode desfazer a captura — o backfill recupera depois.
+ */
+async function gravarTributosNoSnapshot({ portalClientId, competencia, tributosPorTributo }) {
+  // `null` = não houve repartição confiável (sem linha, contagem estranha ou soma que não fecha).
+  // Não se apaga o que já estava lá por causa de um extrato que não deu para ler.
+  if (!tributosPorTributo) return { gravado: false, motivo: "SEM_REPARTICAO" };
+  try {
+    const r = await prisma.apuracaoSnapshot.updateMany({
+      where: { portalClientId: String(portalClientId), competencia: String(competencia) },
+      data: { tributosPorTributo },
+    });
+    return r.count > 0
+      ? { gravado: true, motivo: null }
+      : { gravado: false, motivo: "SEM_SNAPSHOT" };
+  } catch (error) {
+    return { gravado: false, motivo: "ERRO", erro: error?.message || String(error) };
+  }
 }
 
 async function tryEnsureDasGuideRecord(params) {
@@ -411,15 +447,17 @@ async function parsePgdasDeclarationPdf(buffer) {
     /receita\s+total[^\d]{0,60}(\d+[\d.]*,\d{2})/i,
   ]);
 
-  // 2) Imposto apurado (total do DAS) — preservado igual: tabela de tributos / Principal+Multa+Juros / Valor Total do Documento
-  let impostoApurado = null;
-  const tributoTableMatch = rawText.match(
-    /IRPJ\s*CSLL\s*COFINS\s*PIS\S*Pasep\s*INSS\S*CPP\s*ICMS\s*IPI\s*ISS\s*Total\s*([\d.,]+)/i
-  );
-  if (tributoTableMatch?.[1]) {
-    const values = tributoTableMatch[1].match(/\d+(?:\.\d{3})*,\d{2}/g);
-    if (values && values.length > 0) impostoApurado = parseDecimal(values[values.length - 1]);
-  }
+  // 2) Imposto apurado (total do DAS) — MESMA regra de sempre ("o último valor da linha de
+  //    tributos"), agora lida por `parseTributosPgdas`, que devolve na mesma passada os OITO
+  //    valores que esta função descartava (`values[values.length - 1]` jogava fora o resto).
+  //
+  //    ⚠ UMA LEITURA SÓ, DUAS EXIGÊNCIAS. O `total` não depende da soma fechar — é o número que já
+  //    está em produção e que foi conferido contra a guia real (medido 17/08/2026: bate com o
+  //    `dasTotal` gravado em 82/82 extratos). A `reparticao` exige 9 valores E a soma. Amarrar o
+  //    total à autoverificação seria regressão: um extrato de leiaute novo perderia o `dasTotal`
+  //    que hoje ele acerta.
+  const leituraTributos = parseTributosPgdas(rawText);
+  let impostoApurado = leituraTributos.total;
   if (impostoApurado == null) {
     impostoApurado = extractMoneyFromTextByPatterns(rawText, [
       /Principal\s*\d+[\d.]*,\d{2}\s*Multa\s*\d+[\d.]*,\d{2}\s*Juros\s*\d+[\d.]*,\d{2}\s*Total\s*(\d+[\d.]*,\d{2})/i,
@@ -449,9 +487,17 @@ async function parsePgdasDeclarationPdf(buffer) {
     atividades,
   } = parseAtividadesPgdas(rawText);
 
+  // ⚠ A REPARTIÇÃO É DADO DE LEITURA/AUDITORIA — ela NÃO parte o DAS.
+  // Regra escrita do dono: "a guia do Simples vem desmembrada nos impostos, porém contabilizamos
+  // junto, como DAS Simples Nacional". Nada aqui vira lançamento, provisão ou alíquota; quem
+  // consome é a coluna `ApuracaoSnapshot.tributosPorTributo`, que existia e estava morta.
+  const tributosPorTributo = tributosPorTributoParaColuna(leituraTributos);
+
   return {
     receitaBruta,
     impostoApurado,
+    tributosPorTributo,      // { fonte, lidoEm, total, somaConfere, ordemVerificada, tributos } | null
+    tributosMotivo: leituraTributos.motivo, // por que NÃO houve repartição (vocabulário fechado)
     receitaServicos,         // agregado de todos os blocos de Prestação de Serviços
     receitaVendas,           // soma total de vendas (= semST + comST), mantido para compat
     receitaVendasSemST,      // vendas sem substituição tributária
@@ -682,6 +728,12 @@ export async function syncPgdasByCompetencia({ portalClientId, competencia, cont
           parsedPgdas,
         },
       },
+    });
+
+    await gravarTributosNoSnapshot({
+      portalClientId: company.id,
+      competencia: competenciaStorage,
+      tributosPorTributo: parsedPgdas.tributosPorTributo,
     });
 
     const guideResult = dasIndex?.numeroDocumento
