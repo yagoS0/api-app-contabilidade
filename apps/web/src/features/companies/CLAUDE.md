@@ -599,6 +599,94 @@ tela), `data-print-tabela` (zera `overflow`/`max-height`), `data-coluna-acao` (s
 ⚠ O cabeçalho impresso lista **os filtros ativos** — folha filtrada que não diz que está filtrada
 mente por omissão.
 
+## SELEÇÃO NA TABELA — as funções em lote passaram a dizer PARA QUEM
+
+> Pedido do dono: *"podemos aderir as funções de, por exemplo, enviar email em lote, à tabela,
+> selecionando as empresas e enviando todas as guias que nessas empresas estão contidas"*.
+
+O defeito foi nomeado pelo próprio plano de UI que ele trouxe: *"'Envio de e-mails em lote' não diz
+para quem vai enviar"*. As operações rodavam sobre "todas as empresas" ou sobre uma lista que o
+contador **não via**.
+
+Peças: caixa por linha + "selecionar todos" em `list/components/renderCompaniesTable.jsx`, regra
+pura em **`list/lib/acoesDaSelecao.js`** (32 testes), barra + prévia em
+**`list/components/BarraSelecaoEmpresas.jsx`**. Estado da seleção mora na **página**
+(`renderCompaniesHomePage`), junto do filtro que a recorta e da `api` que a executa.
+
+⚠ **NADA FOI REMOVIDO DA BARRA DO TOPO.** Envio de e-mails, Apuração e Consultas continuam onde
+estavam — este é um segundo caminho. Tirar de lá é decisão de produto.
+
+⚠ **NENHUMA ROTA NOVA.** As cinco já existiam e já ganharam escopo de carteira (`idsDaCarteira`,
+commit `edc5d468`): `guides/batch-send` · `apuracao/batch` (+`run-now`) · `notas-captura` ·
+`notas-download` · `sitfis-download`. O acompanhamento da fila de apuração reusa o
+**`BatchProgressModal`** da página Apuração — é ele que faz o `run-now` quando o worker está OFF.
+
+### "Selecionar todos" respeita o FILTRO, e o rótulo diz o número
+
+`companies` chega **filtrado** à tabela, então "todos" é o recorte. Com "○ Falta apurar · 4" na
+tela o rótulo é *"Selecionar as 4 empresas desta lista"* — conferido no navegador. As **fechadas
+entram mesmo colapsadas** (são linhas desta lista), e por isso o rótulo acrescenta *"(N no grupo
+Fechadas, recolhido)"* em vez de deixar o contador descobrir depois.
+
+### Seleção × filtro: PODADA, nunca sobrevivente — e a poda não é silenciosa
+
+Seleção que sobrevive a um filtro pode mandar guia para empresa que o contador não está mais vendo.
+Apagar tudo a cada tecla da busca também não serve. Então: a seleção é **podada para o que está na
+lista** (nunca sobra id invisível), e a barra **diz quantas saíram**. Limpar o filtro depois mantém
+marcadas as que continuam visíveis.
+⚠ **Trocar a COMPETÊNCIA limpa tudo** — guias, apuração e situação fiscal são por mês, e uma seleção
+feita olhando julho, executada em agosto, manda a guia errada. Aqui não há meio-termo.
+
+### Ação que não se aplica NÃO SOME — e o motivo é TEXTO, não `title`
+
+`planoDaSelecao` devolve, por ação, `alvos` · `fora[{razao, motivo}]` · `disponivel` · `motivo`.
+Motivos nomeados: **Lucro Presumido/Real** (o portal não apura), regime **não cadastrado** (não se
+afirma nem que apura nem que não), **já apurada** (reapurar = retificadora), **sem A1 / A1 vencido**
+(o ADN recusa com `NO_COMPANY_CERT`), **nunca consultada** (não há SITFIS salvo para zipar).
+⚠ `title` não conta: não é descobrível, some ao mover o mouse e não existe no toque.
+
+⚠ **Regra 5 ligada no indicador que já existe:** com `useBackgroundJobs().total > 0` as ações que
+criam JOB travam com o motivo. O envio de e-mail **não** trava por isso — é chamada bloqueante e
+nunca aparece em `/firm/jobs/ativos`. E aquele contador é **global, não escopado por carteira**:
+ele pode acender por lote de outro usuário, por isso o texto diz "há processo rodando".
+
+### ⚠ O NÚMERO DO ENVIO SAI DE `batch-report`, NUNCA do `guideCompliance`
+
+A confirmação repete os dados — *"Enviar 8 guias de 3 empresas, competência 07/2026?"* — e esse
+número vem de `GET /firm/guides/batch-report` (`pendingGuideIds`), que é **a mesma leitura que
+`batch-send` consome**. O `guideCompliance` da listagem é outro caminho e pode estar velho na tela.
+
+- ⚠ **Relatório que não carrega BLOQUEIA o envio.** Sem prévia não há número a repetir, e
+  confirmação sem número é o "tem certeza?" que a regra proíbe. Não se mostra o número da listagem
+  no lugar: dois números para a mesma pergunta é o defeito que o projeto passa o dia matando — pelo
+  mesmo motivo o **botão do envio não tem contador**, só as outras quatro (essas contam sobre dado
+  que só a listagem tem: regime, certificado, `fiscalCheckedAt`).
+- ⚠ **A leitura local NÃO GATEIA o envio.** Enquanto gateava, um `guideCompliance` velho ("todas já
+  enviadas") trancava a porta ANTES de o relatório poder ser lido. Hoje ela só empresta o **motivo**
+  mais específico ("empresa zerada", "falta apurar") a quem o relatório já pôs de fora — e **quem
+  decide quem entra é o relatório**. Somar as duas listas punha a MESMA empresa em "Entram" e em
+  "Ficam de fora" ao mesmo tempo (visto na tela).
+- ⚠ **Prévia que resolve para zero não pergunta "enviar 0 guias de 0 empresas?"** — pergunta sobre
+  nada, e que ainda parece defeito de contagem. Afirma o desfecho e lista os motivos.
+
+⚠ **`pendingGuideIds` do MOCK estava mentindo** e o conserto foi junto (`mockApi.js`): o backend
+empurra para lá **toda** guia não-`SENT` e não-`VAZIO`; o mock só empurrava a **parcela** (o único
+`push` do arquivo). Ficou invisível enquanto ninguém lia o campo — a página de envio em lote monta
+a seleção por `tiposGuias`. Assim que a prévia passou a contar por ele, o mock respondeu "0 guias"
+numa tela cheia de guias. Hoje o campo é **derivado** de `tiposGuias`, com o mesmo critério do real.
+
+### ⚠ O `sitfis-download` NÃO é a consulta paga — o plano do dono dizia que era
+
+O inventário que veio com o pedido listava `POST /firm/sitfis-download` como *"consulta PAGA, trava
+de 1× a cada 4h"*. **Medido: ele zipa o PDF já armazenado e não fala com o SERPRO.** A consulta paga
+(com a trava de 4 h por empresa e o limite AV02 **por contratante**) é
+`POST /firm/companies/:id/serpro/sitfis/relatorio` — e ela **não** entrou na barra de seleção:
+o caminho por empresa continua no botão "Consultar" da própria linha, e o lote pago continua em
+**Consultas → Situação Fiscal**, onde `usePendencias.consultarLote` já espaça as chamadas e para
+depois de 3 limites seguidos. Um segundo disparador de consulta paga, sem essa cadência, era o risco
+que a regra existe para impedir. `HORAS_TRAVA_SITFIS` vive em `acoesDaSelecao.js` só para a prévia
+poder **nomear** quem está dentro da janela — o backend continua sendo a autoridade.
+
 ## Padrões
 
 - Componentes recebem dados/handlers por props; estado de workspace em

@@ -7,6 +7,7 @@ import { Tabs } from "../../../../components/ui/Tabs";
 import { CompanyCard, getComplianceTags } from "../components/renderCompanyCard";
 import { AnnualGrid } from "../components/renderAnnualGrid";
 import { CompaniesTable } from "../components/renderCompaniesTable";
+import { BarraSelecaoEmpresas } from "../components/BarraSelecaoEmpresas";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
 import { estadoCertificado } from "../lib/certificado";
 import { APURACAO, ORDEM_APURACAO, contarApuracao, estadoApuracao } from "../lib/estadoApuracao";
@@ -510,6 +511,71 @@ export function CompaniesHomePage({
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
   }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, travaFiltro, travas, empresasFaltaEnviar]);
+
+  // ─── SELEÇÃO NA TABELA ────────────────────────────────────────────────────────────────────────
+  //
+  // ⚠ A SELEÇÃO É RECORTADA PELO FILTRO, E ISSO É DECISÃO, NÃO EFEITO COLATERAL.
+  //
+  // A pergunta do dono era: *"seleção que sobrevive a um filtro pode mandar guia para empresa que o
+  // contador não está mais vendo"*. É verdade, e é o risco caro. Mas apagar tudo a cada tecla
+  // digitada na busca também não serve — quem marca 8 empresas e digita uma letra perde o trabalho.
+  //
+  // O meio-termo que preserva a garantia: a seleção é **podada para o que está na lista**. Nunca
+  // sobra id invisível (a barra só pode agir sobre linhas que estão na tela), e marcar 4 num
+  // recorte e depois LIMPAR o filtro mantém as 4 marcadas, porque elas continuam visíveis.
+  // A poda **não é silenciosa**: quando ela tira alguém, a barra diz quantas saíram.
+  //
+  // ⚠ TROCAR A COMPETÊNCIA LIMPA TUDO. Guias, apuração e situação fiscal são POR MÊS: uma seleção
+  // feita olhando julho, executada em agosto, mandaria a guia errada. Aqui não há meio-termo.
+  const [selecionados, setSelecionados] = useState(() => new Set());
+  const [recortadas, setRecortadas] = useState(0);
+
+  const idsVisiveis = useMemo(
+    () => new Set((filteredCompanies || []).map((c) => c.companyId)),
+    [filteredCompanies],
+  );
+
+  useEffect(() => {
+    const fora = [...selecionados].filter((id) => !idsVisiveis.has(id));
+    if (!fora.length) return;
+    setSelecionados(new Set([...selecionados].filter((id) => idsVisiveis.has(id))));
+    setRecortadas(fora.length);
+  }, [idsVisiveis, selecionados]);
+
+  useEffect(() => {
+    setSelecionados(new Set());
+    setRecortadas(0);
+  }, [dashboardCompetencia]);
+
+  function alternarSelecao(companyId) {
+    setRecortadas(0);
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(companyId)) next.delete(companyId);
+      else next.add(companyId);
+      return next;
+    });
+  }
+  function selecionarTodos(ids, marcar) {
+    setRecortadas(0);
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) { if (marcar) next.add(id); else next.delete(id); }
+      return next;
+    });
+  }
+  function limparSelecao() {
+    setRecortadas(0);
+    setSelecionados(new Set());
+  }
+
+  // ⚠ AS LINHAS, não os ids: o plano de ações lê regime, certificado, `guideCompliance` e
+  // `fiscalCheckedAt` de cada empresa. Uma lista de ids obrigaria a barra a buscar o que a página
+  // já tem na mão.
+  const empresasSelecionadas = useMemo(
+    () => (filteredCompanies || []).filter((c) => selecionados.has(c.companyId)),
+    [filteredCompanies, selecionados],
+  );
 
   return (
     <div className="dashboard-home-page">
@@ -1019,6 +1085,22 @@ export function CompaniesHomePage({
           ) : modoVisao === "ano" ? (
             <AnnualGrid api={api} onOpenCompany={onOpenCompany} />
           ) : modoVisao === "tabela" ? (
+            <>
+            {/* ⚠ FORA do `data-print-area`: a barra é gesto de tela, e uma folha impressa com
+                "8 empresas selecionadas" descreveria um estado que o papel não tem. */}
+            <BarraSelecaoEmpresas
+              api={api}
+              empresasSelecionadas={empresasSelecionadas}
+              competencia={dashboardCompetencia}
+              /* ⚠ O MESMO indicador de processo em segundo plano que já desenha o selo acima —
+                 não um segundo contador. É ele que impede disparar o mesmo lote duas vezes. */
+              jobsAtivos={backgroundJobs?.total || 0}
+              onLimparSelecao={limparSelecao}
+              onConcluido={async () => { await onRefreshCompanies?.(); await carregarTravas(); }}
+              avisoDeRecorte={recortadas > 0
+                ? `${recortadas} empresa(s) saíram da seleção porque não estão mais nesta lista.`
+                : null}
+            />
             <div data-print-area>
               {/* Só existe no papel (`display:none` na tela, ligado pelo @media print). É o que
                   permite conferir a folha meses depois: qual competência, quando foi impressa,
@@ -1050,8 +1132,12 @@ export function CompaniesHomePage({
                    "não carregou" com "não há" custa caro. Com 33 empresas na tela ele é ignorado. */
                 erroDeCarga={error || null}
                 onLimparFiltros={() => { limparFiltros(); setTravaFiltro("all"); setSearch(""); }}
+                selecionados={selecionados}
+                onAlternarSelecao={alternarSelecao}
+                onSelecionarTodos={selecionarTodos}
               />
             </div>
+            </>
           ) : (
           <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
             {filteredCompanies.map((company) => (

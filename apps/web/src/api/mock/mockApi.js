@@ -4821,9 +4821,7 @@ export function createMockApi() {
           if (idx % 4 === 0) {
             row.tiposGuias.PARC_DAS = { entryId: faker.string.uuid(), isParcelamento: true };
           } else if (idx % 4 === 1) {
-            const parcelaId = faker.string.uuid();
-            row.tiposGuias.PARC_DAS = { guideId: parcelaId, valor: 320, emailStatus: "PENDING" };
-            row.pendingGuideIds.push(parcelaId);
+            row.tiposGuias.PARC_DAS = { guideId: faker.string.uuid(), valor: 320, emailStatus: "PENDING" };
           }
           simples.push(row);
         } else {
@@ -4834,6 +4832,22 @@ export function createMockApi() {
           if (idx % 2 === 0) row.tiposGuias.INSS = { guideId: faker.string.uuid(), valor: 250 };
           presumidos.push(row);
         }
+        // ⚠ `pendingGuideIds` É DERIVADO, e o mock estava MENTINDO sobre o contrato.
+        //
+        // O backend (`routes/firm/index.js`, `batch-report`) empurra para cá **toda** guia que não
+        // esteja `SENT` e não seja marcador `VAZIO` — é literalmente "o que o envio vai mandar".
+        // O mock só empurrava a PARCELA (o único `push` do arquivo), então uma empresa com DAS e
+        // INSS pendentes na matriz respondia `pendingGuideIds: []`.
+        //
+        // Ficou invisível enquanto ninguém lia o campo: a página de envio em lote monta a seleção
+        // a partir de `tiposGuias`, não daqui. Assim que a prévia da seleção da tabela passou a
+        // contar as guias por este campo — que é a MESMA fonte que o envio consome —, o mock
+        // passou a dizer "0 guias" numa tela cheia de guias. Contrato mock ≠ real é exatamente o
+        // que `apps/web/CLAUDE.md` proíbe.
+        row.pendingGuideIds = Object.values(row.tiposGuias)
+          .filter((cell) => cell && !cell.vazio && !cell.isParcelamento && cell.emailStatus !== "SENT")
+          .map((cell) => cell.guideId)
+          .filter(Boolean);
       });
       return { competencia: ref, simples, presumidos, outros: [] };
     },

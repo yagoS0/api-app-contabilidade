@@ -234,7 +234,7 @@ function ChipGuiasFaltando({ tributos, empresa, competencia, acoes }) {
   );
 }
 
-function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca }) {
+function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, selecionada, onAlternarSelecao }) {
   const [config, setConfig] = useState(false);
   const [consultando, setConsultando] = useState(false);
   const apuracao = estadoApuracao(company, trava);
@@ -295,6 +295,22 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca })
       onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
+      {/* ⚠ A CAIXA DE SELEÇÃO NÃO NAVEGA E NÃO ABRE POPOVER. Ela vive numa célula própria, à
+          esquerda do nome, porque marcar linha é o gesto que se repete — e porque o `aria-label`
+          precisa carregar o nome da empresa: trinta caixas com o rótulo "Selecionar" não
+          distinguem nada para quem usa leitor de tela.
+          `data-coluna-acao` some no papel, junto do botão Acessar: seleção é gesto de tela. */}
+      {onAlternarSelecao && (
+        <td data-coluna-acao style={{ ...CELULA, width: 34, textAlign: "center" }}>
+          <input
+            type="checkbox"
+            checked={Boolean(selecionada)}
+            onChange={() => onAlternarSelecao(company.companyId)}
+            aria-label={`Selecionar ${nome}`}
+            style={{ cursor: "pointer", width: 15, height: 15 }}
+          />
+        </td>
+      )}
       <td style={{ ...CELULA, position: "relative" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span
@@ -522,10 +538,20 @@ export function CompaniesTable({
   totalSemFiltro = null,
   erroDeCarga = null,
   onLimparFiltros = null,
+  // ─── SELEÇÃO ────────────────────────────────────────────────────────────────────────────────
+  // ⚠ O ESTADO DA SELEÇÃO NÃO MORA AQUI. Ele mora na página, junto do filtro que o recorta e da
+  // `api` que o executa — a tabela é quem DESENHA a seleção, não quem a possui. Sem os dois
+  // handlers a coluna nem renderiza, e a tabela volta a ser exatamente o que era (é o que mantém
+  // as suítes que a montam sem seleção verdes, e o que deixa a impressão intacta).
+  selecionados = null,
+  onAlternarSelecao = null,
+  onSelecionarTodos = null,
 }) {
   const [ordem, setOrdem] = useState({ campo: "urgencia", asc: true });
   const [mostrarFechadas, setMostrarFechadas] = useState(false);
   const corpoRef = useRef(null);
+  const selecaoAtiva = typeof onAlternarSelecao === "function";
+  const marcadas = selecionados instanceof Set ? selecionados : new Set(selecionados || []);
 
   // ⚠ NA IMPRESSÃO AS FECHADAS SAEM SEMPRE. Elas ficam colapsadas na tela de propósito (estão fora
   // do fluxo de trabalho), mas imprimir assim entregaria uma lista INCOMPLETA sem avisar ninguém —
@@ -630,6 +656,28 @@ export function CompaniesTable({
     );
   };
 
+  /**
+   * ⚠ "SELECIONAR TODOS" RESPEITA O FILTRO ATIVO — é o ponto inteiro desta caixa.
+   *
+   * `companies` já chega FILTRADO da página. Com o recorte "falta apurar · 4" na tela, estes ids
+   * são 4, não 33 — e o rótulo diz 4. Um "todos" que alcançasse a carteira inteira mandaria guia
+   * para empresa que o contador não está vendo, que é exatamente o defeito que a seleção existe
+   * para matar.
+   *
+   * ⚠ As FECHADAS entram, mesmo colapsadas: elas são linhas desta lista, e o grupo recolhido é
+   * conveniência de exibição, não filtro. Como isso pode surpreender, o rótulo diz quantas estão
+   * lá dentro em vez de deixar o contador descobrir depois.
+   */
+  const idsDaLista = useMemo(
+    () => [...abertas, ...fechadas].map((c) => c.companyId),
+    [abertas, fechadas],
+  );
+  const marcadasNaLista = idsDaLista.filter((id) => marcadas.has(id)).length;
+  const todasMarcadas = idsDaLista.length > 0 && marcadasNaLista === idsDaLista.length;
+  const rotuloTodos = `Selecionar as ${idsDaLista.length} empresas desta lista`
+    + (!fechadasVisiveis && fechadas.length ? ` (${fechadas.length} no grupo Fechadas, recolhido)` : "");
+
+  const colunas = selecaoAtiva ? 7 : 6;
   const visiveis = abertas.length + fechadas.length;
   const total = Number.isFinite(totalSemFiltro) ? totalSemFiltro : visiveis;
   const escondidasPorFiltro = Math.max(0, total - visiveis);
@@ -730,6 +778,22 @@ export function CompaniesTable({
                 ⚠ Não é `table-layout: fixed`: percentual aqui é SUGESTÃO, e em tela estreita o
                 browser devolve a cada coluna o seu mínimo de conteúdo — que é o comportamento
                 desejado, e o motivo de o `minWidth` da tabela existir logo acima. */}
+            {selecaoAtiva && (
+              <th scope="col" data-coluna-acao style={{ ...CABECALHO, width: 34, textAlign: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={todasMarcadas}
+                  /* Estado intermediário: parte da lista marcada. Sem ele, "algumas" e "nenhuma"
+                     são visualmente a mesma coisa. */
+                  ref={(el) => { if (el) el.indeterminate = marcadasNaLista > 0 && !todasMarcadas; }}
+                  onChange={() => onSelecionarTodos?.(idsDaLista, !todasMarcadas)}
+                  aria-label={rotuloTodos}
+                  title={rotuloTodos}
+                  disabled={idsDaLista.length === 0}
+                  style={{ cursor: "pointer", width: 15, height: 15 }}
+                />
+              </th>
+            )}
             <Cabecalho campo="empresa" largura="27%">Empresa</Cabecalho>
             <Cabecalho campo="apuracao" largura="11%" pergunta="como está o mês?">Apuração</Cabecalho>
             <Cabecalho campo="fiscal" largura="14%" pergunta="e com a Receita?">Situação fiscal</Cabecalho>
@@ -746,7 +810,7 @@ export function CompaniesTable({
               nada, e o `aria-busy` diz o mesmo a quem ouve a tela. */}
           {carregando && !abertas.length && !fechadas.length && [0, 1, 2, 3, 4].map((i) => (
             <tr key={`esqueleto-${i}`} aria-hidden="true">
-              {[27, 11, 14, 25, 13, 10].map((largura, col) => (
+              {(selecaoAtiva ? [3, 27, 11, 14, 25, 13, 10] : [27, 11, 14, 25, 13, 10]).map((largura, col) => (
                 <td key={col} style={{ ...CELULA }}>
                   <span style={{
                     display: "block", height: 12, borderRadius: 6,
@@ -763,6 +827,7 @@ export function CompaniesTable({
             <Linha
               key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}
+              selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao}
             />
           ))}
 
@@ -770,7 +835,7 @@ export function CompaniesTable({
               só empurram para baixo o que ainda precisa de atenção. */}
           {fechadas.length > 0 && (
             <tr>
-              <td colSpan={6} style={{ ...CELULA, padding: 0 }}>
+              <td colSpan={colunas} style={{ ...CELULA, padding: 0 }}>
                 <button
                   type="button"
                   onClick={() => setMostrarFechadas((v) => !v)}
@@ -790,6 +855,7 @@ export function CompaniesTable({
             <Linha
               key={c.companyId} company={c} trava={travas?.get?.(c.companyId)}
               competencia={competencia} onOpenCompany={onOpenCompany} acoesGuia={acoesGuia} busca={busca}
+              selecionada={marcadas.has(c.companyId)} onAlternarSelecao={onAlternarSelecao}
             />
           ))}
 
@@ -805,7 +871,7 @@ export function CompaniesTable({
                 carteira vazia → a carteira está vazia mesmo, e o caminho é criar a primeira */}
           {!carregando && !abertas.length && !fechadas.length && (
             <tr>
-              <td colSpan={6} style={{ ...CELULA, textAlign: "center", padding: 24 }}>
+              <td colSpan={colunas} style={{ ...CELULA, textAlign: "center", padding: 24 }}>
                 {falha ? (
                   <>
                     <div style={{ color: "var(--state-danger)", fontWeight: 700, marginBottom: 4 }}>
