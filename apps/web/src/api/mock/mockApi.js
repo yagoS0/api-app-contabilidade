@@ -3861,6 +3861,23 @@ export function createMockApi() {
                     anotacoes: [], naoInterpretado: [],
                   },
                   {
+                    // ⚠ O QUARTO ESTADO — bloco que NÃO virou tabela e também NÃO caiu em
+                    // `naoInterpretado`. É o formato do parcelamento (SIEFPAR): rótulo/valor
+                    // intercalado, nenhum rótulo em `COLUNAS_CONHECIDAS`, então o parser manda o
+                    // bloco inteiro para `descricao` e `naoInterpretado` fica vazio. O mock não
+                    // cobria essa forma, e por isso a tela mostrava as linhas soltas sem UMA PALAVRA
+                    // dizendo que não foram interpretadas.
+                    // ⚠ O número do parcelamento é FABRICADO (formato e comprimento reais).
+                    titulo: "Pendência - Parcelamento (SIEFPAR)",
+                    descricao: [
+                      "Parcelamento:", "0211.00012.0055566677.26-45",
+                      "Parcelas em Atraso:", "3",
+                      "Valor em Atraso:", "1.585,74",
+                      "Parcelamento Simplificado",
+                    ],
+                    colunas: [], registros: [], anotacoes: [], naoInterpretado: [],
+                  },
+                  {
                     titulo: "Pendência - Bloco de exemplo (ilegível)",
                     descricao: [], colunas: [], registros: [], anotacoes: [],
                     naoInterpretado: ["LINHA SOLTA A", "LINHA SOLTA B"],
