@@ -317,6 +317,43 @@ buscados em runtime; `import()` dinâmico, fora do bundle inicial).
 - ⚠ **Prop ausente ≠ cadastro vazio.** `cadastroEmissao={null}` quer dizer "esta tela não recebeu o
   cadastro" e **não bloqueia nada**; tratar as duas como iguais travaria empresa configurada.
 
+### O TOMADOR consulta o CNPJ — ajuda, nunca portão
+
+Pedido do dono (17/08/2026): *"na hora de emitir nota, quando colocamos o tomador, ele deve consultar
+o CNPJ"*. Regra em `features/notas/lib/consultaTomador.js` (25 testes), ligação no passo 1 do
+`EmitirNfseWizard` (`features/notas/components/__tests__/consultaCnpjTomador.test.jsx`, 13).
+
+⚠ **A chamada é a que já existia** — `consultarCnpj` de `features/onboarding/lib/brasilApi.js`,
+importada e **não reescrita**: ela já classifica a recusa em `{ ok, motivo, mensagem }`, já trata a
+ausência de `fetch` e já aceita `fetchImpl` (é o que mantém o teste fora da rede — o assistente
+recebe isso pela prop `fetchCnpj`). Segundo consumidor de fora do onboarding, ao lado de
+`list/components/renderCompaniesTable.jsx`.
+
+- ⚠ **CPF NÃO SE CONSULTA.** 11 dígitos ⇒ **nada acontece**: sem chamada, sem "não encontrado", sem
+  piscar, e o botão "consultar Receita" nem aparece. A BrasilAPI é base de CNPJ; perguntar por CPF
+  devolveria uma recusa que não significa nada, na tela de quem não errou nada.
+- ⚠ **Falha NÃO bloqueia.** Rede fora, 404 ou API caída não entram em `problemasPorPasso`: a recusa
+  aparece com a frase "a emissão segue normalmente" e o Continuar fica como estava. É o oposto do
+  precedente ruim do erro engolido virando "o botão não faz nada" — aqui a recusa é visível **e** o
+  caminho continua aberto. O botão existe para a **retentativa** (a consulta automática não repete
+  o mesmo CNPJ; sem ele, uma queda de rede exigiria apagar e redigitar o documento).
+- ⚠ **O digitado VENCE**, inclusive numa consulta posterior, e os **dois lados ficam à vista** (com
+  botão "usar o da Receita"). A origem sai no rótulo — `da Receita` × `digitado` × ausente, o mesmo
+  princípio do planejamento tributário. Sem isso, "por que o nome mudou?" não tem resposta na tela.
+- ⚠ **O ENDEREÇO É TUDO OU NADA, e é a decisão que molda o resto.** O validador só aceita o bloco
+  completo e o assistente trata endereço **parcial** como problema que trava o passo 1 — então
+  preencher 4 dos 5 campos faria uma consulta **bem-sucedida** virar bloqueio da emissão. Faltando
+  um pedaço, **nada** é escrito e a tela nomeia o que faltou.
+- ⚠ **O `cMun` é aceito por PROVA, nunca por confiança.** Nada de nome→código (homônimo ⇒ nota
+  emitida no município errado, a proibição de sempre). O código que a resposta trouxer só vira
+  `cMun` se: 7 dígitos **e** existir em `municipiosIbge.data.js` **e** o município/UF dessa linha
+  baterem com o `municipio`/`uf` da MESMA resposta. ⚠ O nome do campo na BrasilAPI **não está
+  confirmado** por documentação neste repositório — é justamente por isso que a aceitação passa
+  pelas três provas; campo ausente ou com outro significado simplesmente não produz código, e o
+  endereço deixa de ser oferecido. A lista entra por `import()` dinâmico, só quando há o que
+  conferir.
+- **Situação cadastral ≠ ATIVA** vira aviso (vem de graça na mesma resposta) — nunca bloqueio.
+
 ## ⚠ Regime da empresa mora em `legacyCompany`
 
 `selectedCompany.regimeTributario` **não existe** — `buildFirmCompanyPayload` só devolve o regime

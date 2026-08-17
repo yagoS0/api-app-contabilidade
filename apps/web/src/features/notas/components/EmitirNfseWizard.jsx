@@ -33,13 +33,23 @@
 //   • ISS retido sem alíquota → `NFSE_ISS_RETIDO_SEM_ALIQUOTA`
 //   • sem município emissor   → `NFSE_MUNICIPIO_NAO_CONFIGURADO`
 //
+// ⚠ A CONSULTA DE CNPJ DO TOMADOR É AJUDA, NUNCA PORTÃO.
+// Com os 14 dígitos completos a tela consulta a Receita (BrasilAPI) e OFERECE nome e endereço. A
+// regra fica em `notas/lib/consultaTomador.js`; a chamada é a que o onboarding já usa
+// (`onboarding/lib/brasilApi.js` — reusada, não reescrita). Quatro coisas são inegociáveis aqui:
+//   • **CPF não se consulta** (11 dígitos ⇒ nada acontece, nem erro, nem "não encontrado");
+//   • **falha não bloqueia** — rede fora, 404 ou API caída deixam o "Continuar" exatamente como
+//     estava; a recusa aparece, e o contador digita;
+//   • **o digitado vence** uma consulta nova, e a tela diz de onde veio cada valor;
+//   • **o endereço é tudo ou nada** — ver o bloco de endereço logo abaixo.
+//
 // ⚠ O MUNICÍPIO EMISSOR É IMPEDIMENTO DA EMPRESA, e por isso aparece no PRIMEIRO passo.
 // Ele não se resolve aqui (é cadastro), e um assistente que deixa preencher tomador, serviço e
 // valores para só então recusar cobra do contador um trabalho que já estava perdido. A ausência
 // também é dita no próprio cadastro — ver `SeletorMunicipioIbge`: a recusa não pode ser a primeira
 // vez que alguém descobre que a empresa não emite.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PANEL } from "./notasStyles";
 import { Button } from "../../../components/ui/Button";
 import {
@@ -55,9 +65,25 @@ import {
   MOTIVO_P_TOT_TRIB_SN,
   FONTE_P_TOT_TRIB_SN,
 } from "../lib/declaracaoNfse";
-import { impedimentoDeEmissao } from "../../../lib/municipios/municipioIbge";
+import { carregarMunicipiosIbge, impedimentoDeEmissao } from "../../../lib/municipios/municipioIbge";
 import { faltasParaEmitir } from "../../../lib/nfse/cadastroEmissaoNfse";
 import { ServicoNacionalDaNota } from "./ServicoNacionalDaNota";
+// ⚠ IMPORTAR daqui é o certo: `consultarCnpj` já existe, já classifica a recusa em
+// `{ ok, motivo, mensagem }`, já trata a ausência de `fetch` e já aceita `fetchImpl` (é o que
+// mantém o teste fora da rede). Uma segunda consulta divergiria na primeira correção.
+import { consultarCnpj } from "../../onboarding/lib/brasilApi";
+import {
+  ORIGEM,
+  NAO_CONSULTA,
+  aplicarEndereco,
+  aplicarNome,
+  avisoSituacao,
+  decidirConsulta,
+  enderecoDaReceita,
+  mensagemEndereco,
+  nomeDaReceita,
+  rotuloOrigem,
+} from "../lib/consultaTomador";
 
 const PASSOS = ["Tomador", "Serviço", "Valores e tributos", "Conferir"];
 
@@ -86,6 +112,10 @@ export function EmitirNfseWizard({
   // lista `missing` e NINGUÉM na interface a lia — o contador preenchia a nota inteira para receber
   // um erro genérico, sem saber qual campo faltava nem onde preenchê-lo.
   cadastroEmissao = null,
+  // ⚠ O `fetch` da CONSULTA DE CNPJ, injetável. Em produção fica `null` e vale o do browser; nos
+  // testes entra um dublê — nenhum teste deste projeto pode tocar a rede. Não confundir com a
+  // emissão, que vai por `onEmitir`.
+  fetchCnpj = null,
   onEmitir,
   onClose,
   onEmitida,
@@ -97,6 +127,26 @@ export function EmitirNfseWizard({
 
   const [tomador, setTomador] = useState({ cnpjCpf: "", nome: "", email: "" });
   const [endereco, setEndereco] = useState({ cMun: "", CEP: "", xLgr: "", nro: "", xCpl: "", xBairro: "" });
+  // De onde veio o que está no campo. `DIGITADO` é o que faz o contador vencer a consulta.
+  // ⚠ Guardadas TAMBÉM em ref: a resposta da consulta chega depois do render que a disparou, e o
+  // contador pode ter digitado o nome nesse meio-tempo. Lendo só do closure, a consulta em voo
+  // sobrescreveria justamente o que ele acabou de escrever.
+  const [origemNome, setOrigemNome] = useState(ORIGEM.AUSENTE);
+  const [origemEndereco, setOrigemEndereco] = useState(ORIGEM.AUSENTE);
+  const origemNomeRef = useRef(ORIGEM.AUSENTE);
+  const origemEnderecoRef = useRef(ORIGEM.AUSENTE);
+  function marcarOrigemNome(o) { origemNomeRef.current = o; setOrigemNome(o); }
+  function marcarOrigemEndereco(o) { origemEnderecoRef.current = o; setOrigemEndereco(o); }
+  // Espelho do último render committed, pelo mesmo motivo das origens acima: a decisão de aplicar
+  // (ou não) o que a Receita devolveu tem de olhar o campo COMO ELE ESTÁ quando a resposta chega.
+  const tomadorRef = useRef(tomador);
+  const enderecoRef = useRef(endereco);
+  tomadorRef.current = tomador;
+  enderecoRef.current = endereco;
+  // `null` = a tela não tem nada a dizer sobre consulta (é o estado do CPF, e o do campo vazio).
+  const [consulta, setConsulta] = useState(null);
+  const [ultimoConsultado, setUltimoConsultado] = useState(null);
+  const consultando = useRef(false);
   const [servico, setServico] = useState({ descricao: "", valorServicos: "", aliquota: "", issRetido: false });
   const [pTotTribSN, setPTotTribSN] = useState("");
   const [competencia, setCompetencia] = useState("");
@@ -106,6 +156,92 @@ export function EmitirNfseWizard({
   const docValido = docLimpo.length === 11 || docLimpo.length === 14;
   const emailValido = !tomador.email || tomador.email.includes("@");
   const valor = Number(String(servico.valorServicos).replace(",", "."));
+
+  // ── A consulta do tomador na Receita ──────────────────────────────────────
+  // ⚠ Nada aqui entra em `problemasPorPasso`. A consulta ajuda; ela não decide se a nota pode sair.
+  async function consultarTomador(digitos) {
+    if (consultando.current) return;
+    consultando.current = true;
+    // Marcado ANTES da chamada: é o que impede o mesmo CNPJ de ser consultado de novo enquanto a
+    // primeira resposta ainda está no ar.
+    setUltimoConsultado(digitos);
+    setConsulta({ estado: "consultando" });
+    try {
+      const r = await consultarCnpj(digitos, { fetchImpl: fetchCnpj });
+      if (!r.ok) {
+        // A recusa APARECE (o projeto tem o precedente do erro engolido virando "o botão não faz
+        // nada") e o caminho segue aberto — nenhum campo é tocado, nenhum passo é bloqueado.
+        setConsulta({ estado: "recusada", mensagem: r.mensagem });
+        return;
+      }
+
+      // A lista oficial do IBGE só é carregada quando há resposta para conferir — `import()`
+      // dinâmico, fora do bundle inicial. Falha de carga não é erro de consulta: vira "sem código
+      // verificável", e o endereço deixa de ser oferecido.
+      const municipios = await carregarMunicipiosIbge().catch(() => null);
+      const leituraEndereco = enderecoDaReceita(r.bruto, { municipios });
+      const nome = nomeDaReceita(r.bruto);
+
+      const nomeAplicado = aplicarNome({
+        nomeAtual: tomadorRef.current.nome,
+        origemAtual: origemNomeRef.current,
+        nome,
+      });
+      if (nomeAplicado.aplicou) {
+        setTomador((atual) => ({ ...atual, nome: nomeAplicado.nome }));
+        marcarOrigemNome(ORIGEM.DA_RECEITA);
+      }
+
+      const enderecoAplicado = aplicarEndereco({
+        enderecoAtual: enderecoRef.current,
+        origemAtual: origemEnderecoRef.current,
+        endereco: leituraEndereco.endereco,
+      });
+      if (enderecoAplicado.aplicou) {
+        setEndereco(enderecoAplicado.endereco);
+        marcarOrigemEndereco(ORIGEM.DA_RECEITA);
+      }
+
+      setConsulta({
+        estado: "ok",
+        nome,
+        // O que o contador tinha digitado continua valendo; a tela mostra os DOIS e deixa ele
+        // trocar. Sumir com um dos lados é o que faz "por que o nome mudou?" não ter resposta.
+        nomeRecusado: nome && !nomeAplicado.aplicou ? nome : null,
+        avisoSituacao: avisoSituacao(r.situacao),
+        endereco: leituraEndereco.endereco,
+        enderecoAplicado: enderecoAplicado.aplicou,
+        mensagemEndereco: mensagemEndereco(leituraEndereco),
+      });
+    } finally {
+      consultando.current = false;
+    }
+  }
+
+  // ⚠ CPF (11 dígitos) NÃO CONSULTA e NÃO MOSTRA NADA — nem erro, nem "não encontrado". Documento
+  // fora de forma também limpa o painel; repetido mantém o que já está na tela.
+  useEffect(() => {
+    const decisao = decidirConsulta(tomador.cnpjCpf, { ultimoConsultado });
+    if (decisao.consultar) {
+      consultarTomador(decisao.digitos);
+      return;
+    }
+    if (decisao.motivo !== NAO_CONSULTA.REPETIDA) setConsulta(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tomador.cnpjCpf, ultimoConsultado]);
+
+  // ⚠ Toda digitação no endereço marca `DIGITADO` — e é isso que impede uma consulta posterior de
+  // apagar o que o contador escreveu.
+  function alterarEndereco(campoNome, valorNovo) {
+    marcarOrigemEndereco(ORIGEM.DIGITADO);
+    setEndereco((atual) => ({ ...atual, [campoNome]: valorNovo }));
+  }
+
+  function usarNomeDaReceita(nome) {
+    setTomador((atual) => ({ ...atual, nome }));
+    marcarOrigemNome(ORIGEM.DA_RECEITA);
+    setConsulta((atual) => (atual ? { ...atual, nomeRecusado: null } : atual));
+  }
 
   // O regime que o SERVIDOR vai declarar, confrontado com o do cadastro. Não é escolha da tela:
   // é o espelho do `opSimpNac` que o backend crava, exposto para o contador ver antes de emitir.
@@ -355,26 +491,103 @@ export function EmitirNfseWizard({
 
         {passo === 0 && (
           <div style={{ display: "grid", gap: 10 }}>
-            <label style={rotulo}>CNPJ ou CPF do tomador
-              <input value={tomador.cnpjCpf} onChange={(e) => setTomador({ ...tomador, cnpjCpf: e.target.value })} placeholder="Só números" style={campo} />
-            </label>
-            <label style={rotulo}>Nome ou razão social
-              <input value={tomador.nome} onChange={(e) => setTomador({ ...tomador, nome: e.target.value })} style={campo} />
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+              <label style={{ ...rotulo, flex: 1 }}>CNPJ ou CPF do tomador
+                <input value={tomador.cnpjCpf} onChange={(e) => setTomador({ ...tomador, cnpjCpf: e.target.value })} placeholder="Só números" style={campo} />
+              </label>
+              {/* ⚠ O botão existe para a RETENTATIVA: a consulta automática não repete o mesmo
+                  CNPJ, e sem ele uma queda de rede deixaria o contador sem como tentar de novo
+                  (teria de apagar e redigitar o documento). Com CPF ele nem aparece. */}
+              {docLimpo.length === 14 && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => consultarTomador(docLimpo)}
+                  disabled={consulta?.estado === "consultando"}
+                >
+                  {consulta?.estado === "consultando" ? "consultando…" : "consultar Receita"}
+                </Button>
+              )}
+            </div>
+
+            {/* ⚠ COM CPF (11 dígitos) NADA É RENDERIZADO AQUI. `consulta` fica `null`: sem erro,
+                sem "não encontrado", sem piscar. A BrasilAPI é base de CNPJ. */}
+            {consulta?.estado === "consultando" && (
+              <div style={{ fontSize: "0.78rem", color: PANEL.muted }}>Consultando o CNPJ na Receita…</div>
+            )}
+            {consulta?.estado === "recusada" && (
+              <div style={{
+                padding: 10, borderRadius: 6, fontSize: "0.8rem",
+                background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+                color: "var(--state-warn)",
+              }}>
+                {consulta.mensagem}{" "}
+                {/* A frase que mantém a consulta como AJUDA: nada aqui impede emitir. */}
+                <span style={{ opacity: 0.9 }}>
+                  A consulta é só uma ajuda — preencha os campos à mão e a emissão segue normalmente.
+                </span>
+              </div>
+            )}
+            {consulta?.estado === "ok" && (
+              <div style={{
+                padding: 10, borderRadius: 6, fontSize: "0.8rem", display: "grid", gap: 6,
+                background: "var(--state-neutral-surface)", border: `1px solid ${PANEL.border}`,
+                color: PANEL.text,
+              }}>
+                <div>
+                  <span style={{ color: PANEL.muted }}>Razão social na Receita: </span>
+                  <strong>{consulta.nome || "não informada na resposta"}</strong>
+                </div>
+                {consulta.avisoSituacao && (
+                  <div style={{ color: "var(--state-warn)" }}>⚠ {consulta.avisoSituacao}</div>
+                )}
+                {/* ⚠ O DIGITADO VENCE — e os dois lados ficam à vista. Sumir com um deles faria
+                    "por que o nome mudou?" (ou não mudou) ficar sem resposta na tela. */}
+                {consulta.nomeRecusado && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ color: PANEL.muted }}>
+                      O nome digitado foi mantido — o que você escreve vence a consulta.
+                    </span>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => usarNomeDaReceita(consulta.nomeRecusado)}>
+                      usar o da Receita
+                    </Button>
+                  </div>
+                )}
+                <div style={{ color: consulta.enderecoAplicado ? PANEL.muted : "var(--state-warn)" }}>
+                  {consulta.mensagemEndereco}
+                </div>
+              </div>
+            )}
+
+            <label style={rotulo}>
+              Nome ou razão social
+              {rotuloOrigem(origemNome) && (
+                <span style={{ marginLeft: 6, fontSize: "0.72rem", opacity: 0.85 }}>
+                  ({rotuloOrigem(origemNome)})
+                </span>
+              )}
+              <input
+                value={tomador.nome}
+                onChange={(e) => { marcarOrigemNome(ORIGEM.DIGITADO); setTomador({ ...tomador, nome: e.target.value }); }}
+                style={campo}
+              />
             </label>
             <label style={rotulo}>E-mail (opcional)
               <input value={tomador.email} onChange={(e) => setTomador({ ...tomador, email: e.target.value })} style={campo} />
             </label>
-            <details>
+            <details open={origemEndereco === ORIGEM.DA_RECEITA}>
               <summary style={{ cursor: "pointer", fontSize: "0.78rem", color: PANEL.muted }}>
                 Endereço do tomador (opcional — mas só vale completo)
+                {rotuloOrigem(origemEndereco) && <span style={{ marginLeft: 6 }}>({rotuloOrigem(origemEndereco)})</span>}
               </summary>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                <label style={rotulo}>Código do município (IBGE)<input value={endereco.cMun} onChange={(e) => setEndereco({ ...endereco, cMun: e.target.value })} style={campo} /></label>
-                <label style={rotulo}>CEP<input value={endereco.CEP} onChange={(e) => setEndereco({ ...endereco, CEP: e.target.value })} style={campo} /></label>
-                <label style={{ ...rotulo, gridColumn: "1 / -1" }}>Logradouro<input value={endereco.xLgr} onChange={(e) => setEndereco({ ...endereco, xLgr: e.target.value })} style={campo} /></label>
-                <label style={rotulo}>Número<input value={endereco.nro} onChange={(e) => setEndereco({ ...endereco, nro: e.target.value })} style={campo} /></label>
-                <label style={rotulo}>Complemento<input value={endereco.xCpl} onChange={(e) => setEndereco({ ...endereco, xCpl: e.target.value })} style={campo} /></label>
-                <label style={{ ...rotulo, gridColumn: "1 / -1" }}>Bairro<input value={endereco.xBairro} onChange={(e) => setEndereco({ ...endereco, xBairro: e.target.value })} style={campo} /></label>
+                <label style={rotulo}>Código do município (IBGE)<input value={endereco.cMun} onChange={(e) => alterarEndereco("cMun", e.target.value)} style={campo} /></label>
+                <label style={rotulo}>CEP<input value={endereco.CEP} onChange={(e) => alterarEndereco("CEP", e.target.value)} style={campo} /></label>
+                <label style={{ ...rotulo, gridColumn: "1 / -1" }}>Logradouro<input value={endereco.xLgr} onChange={(e) => alterarEndereco("xLgr", e.target.value)} style={campo} /></label>
+                <label style={rotulo}>Número<input value={endereco.nro} onChange={(e) => alterarEndereco("nro", e.target.value)} style={campo} /></label>
+                <label style={rotulo}>Complemento<input value={endereco.xCpl} onChange={(e) => alterarEndereco("xCpl", e.target.value)} style={campo} /></label>
+                <label style={{ ...rotulo, gridColumn: "1 / -1" }}>Bairro<input value={endereco.xBairro} onChange={(e) => alterarEndereco("xBairro", e.target.value)} style={campo} /></label>
               </div>
             </details>
           </div>

@@ -31,11 +31,19 @@ const CADASTRO_COMPLETO = {
   rpsSerie: "00001",
 };
 
+// ⚠ NENHUM TESTE PODE TOCAR A REDE. O assistente consulta o CNPJ do tomador ao completar os 14
+// dígitos, e `ateOsValores` digita um CNPJ — então o `fetch` da consulta é SEMPRE injetado. Aqui
+// ele é um dublê que nunca resolve: estes testes são sobre a emissão, não sobre a consulta (essa
+// tem arquivo próprio, `consultaCnpjTomador.test.jsx`), e uma promessa pendente mantém a tela
+// exatamente como estes casos a descrevem.
+const FETCH_QUE_NUNCA_RESPONDE = () => new Promise(() => {});
+
 function abrir({
   onEmitir = jest.fn(async () => ({ status: "issued", nfse: {} })),
   regime = "SIMPLES",
   codigoMunicipioIbge = "3304557",
   cadastroEmissao = CADASTRO_COMPLETO,
+  fetchCnpj = FETCH_QUE_NUNCA_RESPONDE,
 } = {}) {
   render(
     <EmitirNfseWizard
@@ -43,6 +51,7 @@ function abrir({
       regime={regime}
       codigoMunicipioIbge={codigoMunicipioIbge}
       cadastroEmissao={cadastroEmissao}
+      fetchCnpj={fetchCnpj}
       onEmitir={onEmitir}
       onClose={noop}
     />
