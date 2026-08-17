@@ -1138,6 +1138,67 @@ model PortalInvoice {
   // Q12.A: marca quando a nota chegou em competência já fechada (vai pra fila de pendências)
   competenciaPosFechamento Boolean @default(false)
 
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // CAMPOS FISCAIS EXTRAÍDOS DO XML — a auditoria pré-apuração precisa deles em COLUNA
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // Pedido do dono (17/08/2026): "nos ajuda em uma auditoria pré-apuração para entender se a nota
+  // está correta ou não, baseado na atividade e baseado na data de emissão".
+  //
+  // ⚠ NÃO HOUVE NADA A "TRAZER": o XML já está inteiro em `xmlRaw` (medido em produção,
+  // `scripts/diag-cobertura-xml-notas.mjs`: EMIT 14.946 = 100% com XML; DEST 1.846 = 98%). Estas
+  // colunas só materializam o que já estava dentro do texto.
+  //
+  // ⚠ O EXTRATOR É O ÚNICO ESCRITOR — `application/nfse/camposFiscaisNfse.js`, lido por caminho
+  // (NT 008 §2.4.5, transcrita em `nfse/danfse/danfseLeiaute.js`), NUNCA por nome de tag. Ninguém
+  // corrige estas colunas por fora: a projeção é recalculável, nunca editável. Backfill idempotente
+  // em `scripts/backfill-campos-fiscais-nota.mjs` (dry-run por padrão, zero chamada externa).
+  //
+  // ⚠ NULO É RESPOSTA. Onde a extração falhar, a coluna fica NULA e o motivo vai em
+  // `camposFiscaisMotivo` — nunca um valor "provável", nunca zero no lugar de ausente.
+  //
+  // ⚠ SÓ NFS-e. O XML da NF-e é outro documento (`nfeProc/NFe/infNFe`) e não tem nenhum destes
+  // campos; nas linhas `type = "NFE"` tudo isto fica nulo, inclusive `camposFiscaisExtraidosEm`.
+  //
+  // O CÓDIGO DE SERVIÇO — o campo central da pergunta "a nota foi emitida na atividade certa?".
+  // ⚠ NÃO é o item da LC 116: é item(2)+subitem(2)+desdobro nacional(2). Ver a seção "N CÓDIGOS DE
+  // SERVIÇO" em `apps/api/CLAUDE.md`. Caminho: `.../DPS/infDPS/serv/cServ/cTribNac`.
+  //
+  // ⚠ ISTO NÃO SUBSTITUI `NotaItem.codigoServico`, que a captura já grava a partir de
+  // `AdnXmlMetadata.parseXmlMetadata` — e que é lido por `getTextByLocalNames` (varredura por nome).
+  // Aquele caminho continua intocado; o backfill COMPARA os dois e relata a divergência.
+  cTribNac                 String?
+  cTribMun                 String?
+  // As descrições que a própria NFS-e devolve prontas (`infNFSe/xTribNac`, `infNFSe/xTribMun`) —
+  // por isso o DANFSe pode imprimi-las sem tabela nenhuma (NT §2.4.5, campo `xTrib`).
+  xTribNac                 String?
+  xTribMun                 String?
+  // `.../serv/cServ/xDescServ` — a descrição do serviço escrita pelo emitente.
+  xDescServ                String?
+  // Município da PRESTAÇÃO (código IBGE, `.../serv/locPrest/cLocPrestacao`). Decide para qual
+  // prefeitura o ISSQN é devido (LC 116/2003, art. 3º) — local errado é ISS na cidade errada.
+  cLocPrestacao            String?
+  // ⚠ ISSQN, e os três nomes são explícitos DE PROPÓSITO. A tag da base de cálculo é `vBC`, e `vBC`
+  // existe em DOIS grupos do XML (`infNFSe/valores` = ISSQN; `IBSCBS/valores` = base após exclusões
+  // do IBS/CBS). Chamar a coluna de `vBC` deixaria a ambiguidade dentro do nome dela.
+  issqnBaseCalculo         Decimal? @db.Decimal(18, 2) // infNFSe/valores/vBC
+  issqnAliquota            Decimal? @db.Decimal(7, 4) // infNFSe/valores/pAliqAplic
+  issqnValor               Decimal? @db.Decimal(18, 2) // infNFSe/valores/vISSQN
+  // ⚠ COLUNAS NOVAS, E NÃO A COLUNA `serie` ACIMA. `serie` já existe e é escrita **só** por
+  // `notas/dfe/DfeSyncService.js`, para NF-e; a série da DPS é outro contador, de outro documento.
+  // Gravar as duas na mesma célula é a classe de defeito já paga em "TRÊS NÚMEROS DE DAS, TRÊS
+  // COLUNAS" (`apps/api/CLAUDE.md`): a coluna passaria a guardar ora um, ora outro, sem nada na
+  // linha que os distinguisse. Lidas por `nfse/nfseUltimaNota.lerSerieENumeroDaDps` — a MESMA
+  // função da numeração automática, não uma segunda leitura.
+  // ⚠ E `dpsNumero` não é `numero`: `numero` guarda o `nNFSe` (contador do município/SEFIN).
+  dpsSerie                 String? // .../DPS/infDPS/serie (5 dígitos, normalizada)
+  dpsNumero                String? // .../DPS/infDPS/nDPS
+  // ⚠ SEM ISTO, "coluna nula" seria ambíguo entre "o XML não traz o campo" e "o extrator nunca
+  // passou por esta linha" — que é o quarto estado perigoso já nomeado na migration do ciclo de
+  // vida da NFS-e ("não temos o evento" se parece com "não houve evento" e significa o oposto).
+  camposFiscaisExtraidosEm DateTime?
+  camposFiscaisMotivo      String? // vocabulário fechado em `camposFiscaisNfse.MOTIVO`
+
   client     PortalClient             @relation(fields: [clientId], references: [id], onDelete: Cascade)
   events     PortalInvoiceEvent[]
   itens      NotaItem[]
@@ -1155,6 +1216,9 @@ model PortalInvoice {
   @@index([statusEfetivo])
   // A pergunta inversa ("quem substituiu ESTA nota?") é uma varredura por chave dentro da empresa.
   @@index([clientId, chaveSubstituida])
+  // A pergunta da auditoria: "quais notas DESTA empresa saíram no código de serviço X?" — sempre
+  // por empresa primeiro, porque multi-tenancy não é opcional nem no índice.
+  @@index([clientId, cTribNac])
 }
 
 // O FATO que aconteceu com a nota — cancelamento, substituição, manifestação.
