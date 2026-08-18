@@ -10,6 +10,7 @@ import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureMo
 import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 import { estadoVazioDasGuias } from "../lib/estadoVazioGuias";
+import { MOTIVOS_GUIA_VAZIA, TEM_LISTA_DE_MOTIVOS, motivoParaGravar, motivoSuficiente } from "../lib/motivoGuiaVazia";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
 // Mapeia a chave do compliance → tipo de Guide pra marcar Vazio.
@@ -68,13 +69,34 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
     return node?.required && node.state === "missing";
   });
 
-  async function marcar(tipo) {
+  // ⚠ RECUSA COM `precisaConfirmar` NÃO É ERRO — é a evidência chegando ANTES da afirmação fiscal.
+  // Enquanto isto caía no `window.alert` junto com as falhas de verdade, o contador via "Não dá para
+  // marcar" e não tinha saída nenhuma pela tela (ver `lib/motivoGuiaVazia.js`).
+  const [confirmacao, setConfirmacao] = useState(null); // { tipo, faturamento, message }
+  const [motivoChave, setMotivoChave] = useState("");
+  const [motivoTexto, setMotivoTexto] = useState("");
+
+  function fecharConfirmacao() {
+    setConfirmacao(null); setMotivoChave(""); setMotivoTexto("");
+  }
+
+  async function marcar(tipo, { confirmado = false } = {}) {
     setBusy(true);
     try {
-      await expectedGuidesApi.markGuideVazio(companyId, tipo, competencia);
+      const motivo = confirmado ? motivoParaGravar({ chave: motivoChave, texto: motivoTexto }) : "";
+      // ⚠ As duas formas de recusa: o cliente real LANÇA em não-2xx, o mock devolve `{ok:false}` no
+      // corpo. Tratar só uma deixaria a confirmação inalcançável em metade dos ambientes.
+      const r = await expectedGuidesApi.markGuideVazio(companyId, tipo, competencia, motivo, { confirmado });
+      if (r?.ok === false) throw Object.assign(new Error(r.message || "Falha ao marcar vazio."), r);
       setOpen(false);
+      fecharConfirmacao();
       if (onChanged) await onChanged();
     } catch (err) {
+      if (err?.precisaConfirmar || err?.error === "GUIA_VAZIA_COM_FATURAMENTO") {
+        setOpen(false);
+        setConfirmacao({ tipo, faturamento: err.faturamento, message: err.message });
+        return;
+      }
       // eslint-disable-next-line no-alert
       window.alert(err?.message || "Falha ao marcar vazio.");
     } finally { setBusy(false); }
@@ -124,8 +146,68 @@ function MarcarVazioDropdown({ companyId, competencia, refreshKey, onChanged }) 
           ))}
         </div>
       )}
+
+      {/* ⚠ CONFIRMAÇÃO QUE REPETE A EVIDÊNCIA — não é um "tem certeza?".
+          O valor das notas da competência aparece por extenso, e o MOTIVO é obrigatório: é ele que
+          responde "por que o contador afirmou ausência de guia havendo nota emitida?". Mesmo
+          desenho de `avisosDeDuplicidade` ("DUPLICIDADE AVISA, NUNCA RECUSA"). */}
+      {confirmacao && (
+        <div onClick={fecharConfirmacao} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "var(--space-5)", width: "min(96vw, 520px)", color: "var(--text)", display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+            <div style={{ fontSize: "1rem", fontWeight: 700 }}>
+              Marcar {rotuloDoTipoEsperado(confirmacao.tipo)} como sem movimento?
+            </div>
+            <Aviso compacto tom="atencao" titulo="Há faturamento nesta competência">
+              {confirmacao.faturamento != null && (
+                <>Notas emitidas autorizadas somam <strong>{fmtMoney(confirmacao.faturamento)}</strong> em {competencia}. </>
+              )}
+              Marcar como sem movimento afirma que, mesmo assim, não há guia a pagar.
+            </Aviso>
+
+            {TEM_LISTA_DE_MOTIVOS && (
+              <label style={{ display: "grid", gap: 4, fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                Motivo
+                <select value={motivoChave} onChange={(e) => setMotivoChave(e.target.value)}
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "6px 8px", fontSize: "0.85rem", colorScheme: "dark" }}>
+                  <option value="">Escolha…</option>
+                  {MOTIVOS_GUIA_VAZIA.map((m) => <option key={m.chave} value={m.chave}>{m.rotulo}</option>)}
+                  {/* ⚠ Valor PRÓPRIO, não `""`: com dois `value=""` no mesmo select, "não escolhi"
+                      e "escolhi Outro" ficariam indistinguíveis. `OUTRO` não casa com nenhuma chave
+                      da lista, então `motivoParaGravar` cai no texto livre — que é o desejado. */}
+                  <option value="OUTRO">Outro (descrever abaixo)</option>
+                </select>
+              </label>
+            )}
+
+            <label style={{ display: "grid", gap: 4, fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              {TEM_LISTA_DE_MOTIVOS ? "Detalhe (obrigatório se \"Outro\")" : "Motivo (obrigatório)"}
+              <textarea value={motivoTexto} onChange={(e) => setMotivoTexto(e.target.value)} rows={3}
+                placeholder="Ex.: por que não há guia a pagar nesta competência"
+                style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text)", padding: "6px 8px", fontSize: "0.85rem", resize: "vertical" }} />
+            </label>
+            <div style={{ fontSize: "0.72rem", color: "var(--text-faint)" }}>
+              Fica gravado com o seu usuário e a data, e aparece na guia.
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <Button variant="secondary" size="sm" onClick={fecharConfirmacao} style={{ marginRight: "auto" }}>Cancelar</Button>
+              {/* ⚠ Desabilitado NOMEIA o motivo — regra da casa. */}
+              <Button size="sm" disabled={busy || !motivoSuficiente({ chave: motivoChave, texto: motivoTexto })}
+                title={motivoSuficiente({ chave: motivoChave, texto: motivoTexto }) ? "" : "Informe o motivo para confirmar"}
+                onClick={() => marcar(confirmacao.tipo, { confirmado: true })}>
+                {busy ? "…" : "Confirmar sem movimento"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+/** O nome que o contador lê para o tipo de guia — a mesma lista do dropdown, não uma segunda. */
+function rotuloDoTipoEsperado(tipo) {
+  return EXPECTED_GUIDE_ROWS.find((r) => r.tipo === tipo)?.label || tipo;
 }
 
 // Tipos sempre disponíveis (qualquer regime).

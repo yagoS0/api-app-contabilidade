@@ -244,9 +244,33 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                             Reativar
                           </button>
                         ) : (
-                          <button onClick={() => { if (window.confirm("Marcar esta nota como CANCELADA? Ela sai do faturamento/apuração.")) onMarcarStatus(n.id, "cancelada"); }} title="Marcar como cancelada (sai do faturamento/apuração)"
-                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: "#FF4757", borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
-                            Cancelar
+                          /* ⚠ CHAMAVA-SE "Cancelar", EM VERMELHO — e não cancela nada.
+                             Rastreado em 18/08/2026, a pedido do dono ("o ato de clicar em cancelar
+                             na nota envia um cancelamento para o portal?"): este botão chama
+                             `PATCH /firm/companies/:id/notas/:notaId/status`, que faz UM
+                             `portalInvoice.update` na nossa linha e mais nada. Zero chamada ao ADN,
+                             ao sistema nacional ou ao SERPRO. A própria rota diz para que nasceu:
+                             *"Bridge manual enquanto a auto-detecção de cancelamento de NFS-e
+                             Nacional não é implementada"* — ela REGISTRA um cancelamento feito fora.
+
+                             Para um contador, "cancelar a nota" é o ato fiscal. Os dois erros
+                             possíveis eram caros e opostos: clicar achando que cancelou na
+                             prefeitura (a nota segue válida perante o fisco e some da nossa
+                             apuração), ou evitar um ajuste legítimo de escrituração com medo de
+                             disparar algo irreversível.
+
+                             ⚠ E a ação é REVERSÍVEL — o "Reativar" ao lado a desfaz. Vermelho, no
+                             vocabulário deste app, é o que BLOQUEIA o fechamento. Um botão vermelho
+                             ao lado de um verde que o desfaz é o contrário da régua de cor.
+                             Decisão do dono: rótulo "Marcar como cancelada". */
+                          <button onClick={() => { if (window.confirm(`Marcar a nota ${n.numero || ""} como CANCELADA aqui no portal?
+
+Ela sai do faturamento e da apuração.
+
+⚠ NADA é enviado à prefeitura nem ao sistema nacional — o cancelamento perante o fisco continua sendo feito por você, fora daqui. Esta marcação é reversível pelo botão Reativar.`)) onMarcarStatus(n.id, "cancelada"); }}
+                            title="Marca como cancelada NA NOSSA BASE (sai do faturamento/apuração). Não envia cancelamento à prefeitura."
+                            style={{ background: "transparent", border: `1px solid ${PANEL.border}`, color: PANEL.muted, borderRadius: 6, padding: "3px 8px", fontSize: "0.7rem", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            Marcar como cancelada
                           </button>
                         )}
                       </td>

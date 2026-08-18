@@ -436,10 +436,17 @@ export function createRealApi() {
     },
     // Marcar "não houve movimento neste mês" (Vazio). É declaração fiscal: grava quem/quando no
     // servidor e é RECUSADA (409) se houver nota emitida na competência. `motivo` é opcional.
-    async markGuideVazio(portalClientId, tipo, competencia, motivo) {
+    // ⚠ `confirmado` NÃO tem default `true`. Com faturamento na competência o backend recusa o
+    // primeiro POST de propósito, para que a evidência chegue à tela ANTES da afirmação fiscal —
+    // quem confirma é o contador, não o cliente de API.
+    async markGuideVazio(portalClientId, tipo, competencia, motivo, { confirmado = false } = {}) {
       return request("/firm/guides/vazio", {
         method: "POST",
-        body: JSON.stringify({ portalClientId, tipo, competencia, motivo: motivo || undefined }),
+        body: JSON.stringify({
+          portalClientId, tipo, competencia,
+          motivo: motivo || undefined,
+          ...(confirmado ? { confirmado: true } : {}),
+        }),
       });
     },
     async undoGuideVazio(portalClientId, tipo, competencia) {

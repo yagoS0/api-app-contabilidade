@@ -355,15 +355,36 @@ mora só no upload protege o futuro e deixa o passado como está. Erro: **`CERT_
   ausência de dado não é prova de certificado alheio, e recusar por falta de informação derrubaria
   empresa legítima. Quem pega o resto é o cinturão de ingestão, abaixo.
 
-## Emissor de NFS-e — Fase 1 (backend). ⚠ NADA FOI EMITIDO, EM NENHUM AMBIENTE
+## Emissor de NFS-e — Fase 1 (backend). ✅ JÁ EMITIU EM PRODUÇÃO REAL
 
-> Regra do dono, sem exceção: **não emitir, cancelar ou transmitir NFS-e** em ambiente nenhum —
-> nem homologação. Esta fase torna o caminho *exercível*; ela não o exerce.
+⚠⚠ **ESTA SEÇÃO AFIRMAVA O CONTRÁRIO ATÉ 18/08/2026** — ela abria com *"NADA FOI EMITIDO, EM NENHUM
+AMBIENTE"* e com *"nenhuma variável `NFSE_*` está definida no Railway"*. As duas frases ficaram
+**falsas** quando o dono configurou e emitiu, e um documento que erra sobre o próprio estado é pior
+que documento nenhum: ele faz a próxima sessão decidir como se não houvesse nota no mundo.
 
-**Contexto que torna tudo isto seguro:** a emissão **nunca rodou em produção**. Nenhuma variável
-`NFSE_*` está definida no Railway, `integrationReady()` sempre foi falso e toda emissão parava em
-`status:"pending"`. Não há dado legado nem comportamento a preservar — e é por isso que os cinco
-defeitos abaixo apareceriam **todos juntos** no dia em que a configuração ligasse.
+**Medido em produção em 18/08/2026** (leitura direta, sem chamada externa):
+
+| | |
+|---|---|
+| `NFSE_BASE_URL` | `https://sefin.nfse.gov.br/SefinNacional` |
+| `NFSE_ENV` | **`producao`** |
+| `ServiceInvoice` | **1 linha**, série `00001` nº 1, `status: "issued"`, **com chave**, de 17/08/2026 |
+
+⚠ **A regra do dono NÃO mudou, e o que mudou foi quem a exerce.** Continua valendo: *nenhum agente
+emite, cancela ou transmite NFS-e* — em ambiente nenhum, nem homologação. Quem emitiu foi o dono,
+pela interface. O que caiu foi a rede de proteção acidental (`integrationReady()` falso): **hoje o
+caminho está ligado e apontado para o sistema nacional de PRODUÇÃO**, então errar aqui produz nota
+fiscal de verdade. Trate qualquer mexida em `NfseService`/`nfseNumeracao`/`buildDpsXml` com esse peso.
+
+⚠ **E o cancelamento deixou de ser hipótese.** `POST /nfse/:chaveAcesso/eventos` (`e101101`) existe
+e não tem porta na tela — o front só chama `/nfse/issue`. Havendo nota nossa emitida em produção, a
+falta dessa porta passou a ser lacuna, não prudência. **Decisão do dono, ainda não tomada.**
+⚠ Não confundir com o botão **"Marcar como cancelada"** da aba Notas
+(`PATCH /firm/companies/:id/notas/:notaId/status`): ele só escreve `statusEfetivo` na NOSSA linha,
+para a nota sair do faturamento e da apuração. **Não fala com o sistema nacional.** O rótulo dizia
+"Cancelar" e foi trocado justamente porque, para um contador, esse é o nome do ato fiscal.
+
+Os cinco defeitos abaixo foram medidos e corrigidos **antes** dessa primeira emissão.
 
 | # | Defeito medido | Hoje |
 |---|---|---|

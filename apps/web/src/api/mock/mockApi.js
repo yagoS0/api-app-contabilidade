@@ -3096,21 +3096,36 @@ export function createMockApi() {
     },
     // Marcar/desfazer "sem movimento" MEXE no estado do mock, e a recusa é aplicada de verdade:
     // é o único jeito de conferir offline a bifurcação do ciclo e a trava contra faturamento.
-    async markGuideVazio(portalClientId, tipo, competencia, motivo) {
+    async markGuideVazio(portalClientId, tipo, competencia, motivo, { confirmado = false } = {}) {
       await delay();
       const fat = mockFaturamentoDaCompetencia(portalClientId, competencia);
+      const motivoInformado = String(motivo || "").trim();
+      // ⚠ A BIFURCAÇÃO INTEIRA VIVE AQUI TAMBÉM. Só a recusa no mock deixaria a confirmação (o
+      // caminho novo) inalcançável offline — que é justamente o que se quer conferir.
       if (fat > 0) {
-        return {
-          ok: false,
-          error: "GUIA_VAZIA_COM_FATURAMENTO",
-          faturamento: fat,
-          message: `A competência tem R$ ${fat.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} em notas emitidas autorizadas. Não dá para marcar esta guia como sem movimento.`,
-        };
+        const valorFmt = fat.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
+        if (!confirmado) {
+          return {
+            ok: false,
+            error: "GUIA_VAZIA_COM_FATURAMENTO",
+            precisaConfirmar: true,
+            faturamento: fat,
+            message: `A competência tem R$ ${valorFmt} em notas emitidas autorizadas. Marcar esta guia como sem movimento afirma que, mesmo assim, não há guia a pagar — confirme e diga o motivo.`,
+          };
+        }
+        if (!motivoInformado) {
+          return {
+            ok: false,
+            error: "GUIA_VAZIA_MOTIVO_OBRIGATORIO",
+            faturamento: fat,
+            message: `Com R$ ${valorFmt} em notas na competência, o motivo é obrigatório.`,
+          };
+        }
       }
       mockVazios.set(chaveVazio(portalClientId, tipo), {
         vazioEm: new Date().toISOString(),
         vazioPor: "Usuario Mock",
-        vazioMotivo: String(motivo || "").trim() || null,
+        vazioMotivo: motivoInformado || null,
       });
       return { ok: true, status: "VAZIO", guideId: `mock-vazio-${portalClientId}-${tipo}` };
     },

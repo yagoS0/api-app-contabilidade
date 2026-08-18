@@ -155,7 +155,7 @@ describe("truncamento nunca é silencioso", () => {
     expect(anterior).toHaveAttribute("title", expect.stringMatching(/primeira página/i));
   });
 
-  it("a linha inteira abre a nota — e a ação de cancelar NÃO abre junto", () => {
+  it("a linha inteira abre a nota — e a ação de marcar NÃO abre junto", () => {
     const onAbrirNota = jest.fn();
     const onMarcarStatus = jest.fn();
     window.confirm = () => true;
@@ -172,9 +172,40 @@ describe("truncamento nunca é silencioso", () => {
     expect(onAbrirNota).toHaveBeenCalledWith("nota-0");
 
     onAbrirNota.mockClear();
-    fireEvent.click(screen.getAllByRole("button", { name: "Cancelar" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Marcar como cancelada" })[0]);
     expect(onMarcarStatus).toHaveBeenCalledWith("nota-0", "cancelada");
     expect(onAbrirNota).not.toHaveBeenCalled();
+  });
+
+  it("⚠ o botão NÃO se chama 'Cancelar' e NÃO é vermelho — ele não cancela nada no fisco", () => {
+    // Rastreado em 18/08/2026: a ação faz um `portalInvoice.update` na nossa linha e mais nada.
+    // O rótulo antigo era o nome do ATO FISCAL, que este botão não pratica.
+    render(
+      <NotasList
+        notas={paginaDe(1)} total={1} filters={FILTROS}
+        onFiltersChange={noop} onApply={noop} loading={false}
+        onAbrirNota={noop} onMarcarStatus={noop}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
+    const botao = screen.getByRole("button", { name: "Marcar como cancelada" });
+    expect(botao.getAttribute("style")).not.toMatch(/#FF4757|--state-danger/);
+    expect(botao).toHaveAttribute("title", expect.stringMatching(/não envia cancelamento à prefeitura/i));
+  });
+
+  it("⚠ a confirmação DIZ que nada é enviado à prefeitura", () => {
+    const perguntas = [];
+    window.confirm = (msg) => { perguntas.push(msg); return false; };
+    render(
+      <NotasList
+        notas={paginaDe(1)} total={1} filters={FILTROS}
+        onFiltersChange={noop} onApply={noop} loading={false}
+        onAbrirNota={noop} onMarcarStatus={noop}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Marcar como cancelada" }));
+    expect(perguntas[0]).toMatch(/NADA é enviado à prefeitura/i);
+    expect(perguntas[0]).toMatch(/revers[íi]vel/i);
   });
 });
 
