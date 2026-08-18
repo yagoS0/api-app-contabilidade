@@ -6,6 +6,7 @@ import { mensagemDeErro } from "../../lib/mensagens";
 import {
   TRACO,
   brl,
+  competenciaPadrao,
   competenciasRecentes,
   fmtCompetencia,
   fmtDateBr,
@@ -66,7 +67,14 @@ function baixarArquivo({ contentBase64, fileName, mimeType }) {
  */
 export function GuiasPage({ empresa }) {
   const companyId = empresa.companyId;
-  const [competencia, setCompetencia] = useState("");
+  // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
+  // `lib/format.js`). Antes abria em "Todas".
+  //
+  // ⚠ AQUI O ESTREITAMENTO MORDE MAIS QUE NAS NOTAS, e é por isso que o estado vazio é o que é: a
+  // guia da competência 07 costuma ser LIBERADA em agosto, então a competência corrente
+  // frequentemente não tem guia nenhuma. "Nenhuma guia" sem dizer de qual mês, numa tela em que o
+  // cliente vem procurar o que pagar, é indistinguível de "o contador não liberou nada".
+  const [competencia, setCompetencia] = useState(competenciaPadrao);
   const [pagina, setPagina] = useState(1);
   const [baixandoId, setBaixandoId] = useState(null);
   const [erroDownload, setErroDownload] = useState(null);
@@ -152,7 +160,7 @@ export function GuiasPage({ empresa }) {
       ) : query.erro ? null : guias.length === 0 ? (
         <Vazio>
           {competencia
-            ? `Nenhuma guia liberada em ${fmtCompetencia(competencia)}.`
+            ? `Nenhuma guia liberada em ${fmtCompetencia(competencia)}. A guia de um mês costuma ser liberada no mês seguinte — troque a competência acima, ou escolha "Todas".`
             : "Nenhuma guia liberada para esta empresa até agora."}
         </Vazio>
       ) : (

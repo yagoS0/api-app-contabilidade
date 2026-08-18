@@ -1,9 +1,32 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
-import { TRACO, brl, mesCorrente, pct, texto } from "../../lib/format";
+import { TRACO, brl, pct, texto } from "../../lib/format";
+import { useCarregamento } from "../../lib/hooks";
 import { roleLabel } from "../../lib/roles";
+import { carregarMunicipiosIbge } from "../../lib/municipios/municipioIbge";
 import { ESTADO, lerPortaoEmissao } from "./lib/portaoEmissao";
 import { TIPO, lerErroEmissao, lerResultado } from "./lib/desfechoEmissao";
+import {
+  NAO_CONSULTA,
+  ORIGEM,
+  aplicarEndereco,
+  aplicarNome,
+  avisoSituacao,
+  decidirConsulta,
+  enderecoDaReceita,
+  mensagemEndereco,
+  nomeDaReceita,
+  rotuloOrigem,
+  soDigitosDoc,
+} from "./lib/consultaTomador";
+import {
+  ORIGEM_ALIQUOTA,
+  escolherAliquotaEfetiva,
+  janelaDaConsulta,
+  textoDaProcedencia,
+} from "./lib/aliquotaEfetiva";
+import { registrarDescricao, sugerirDescricoes } from "./lib/descricoesRecentes";
+import { SeletorMunicipio } from "./SeletorMunicipio";
 import { DesfechoEmissao } from "./DesfechoEmissao";
 import { PreviaNota } from "./PreviaNota";
 
@@ -23,9 +46,18 @@ import { PreviaNota } from "./PreviaNota";
  *
  * ⚠ **NENHUM CAMPO FOI INVENTADO.** Todo campo do formulário existe no validador; nenhum campo do
  * validador que o backend ignora (`referencia`, que nada consome) foi oferecido.
+ *
+ * Ajustes de 18/08/2026, a pedido do dono (cada um com o seu ⚠ no lugar em que mora):
+ *   1. consulta do CNPJ do tomador (ajuda, nunca portão) — `lib/consultaTomador.js`
+ *   2. abre na competência CORRENTE — `lib/format.js`, `competenciaPadrao`
+ *   3. município por NOME, não por código — `SeletorMunicipio.jsx`
+ *   4. data da competência escolhível — ver `DATA DA COMPETÊNCIA`, abaixo
+ *   5. alíquota de ISS fora do formulário no Simples — ver `O ISS NO SIMPLES`, abaixo
+ *   6. alíquota efetiva pré-preenchida, com a origem à vista — `lib/aliquotaEfetiva.js`
+ *   7. descrição sugerida — `lib/descricoesRecentes.js`
  */
 
-const FORM_VAZIO = {
+const CAMPOS_VAZIOS = {
   tomadorDoc: "",
   tomadorNome: "",
   tomadorEmail: "",
@@ -45,6 +77,27 @@ const FORM_VAZIO = {
 };
 
 /**
+ * Data de hoje em 'YYYY-MM-DD', pelo relógio LOCAL.
+ *
+ * ⚠ Sem `toISOString()`: ele converte para UTC, e às 22h de Brasília (UTC-3) devolveria a data de
+ * AMANHÃ. A data que vai no `dCompet` da nota não pode depender da hora em que se emite.
+ */
+function dataDeHoje() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * ⚠ FUNÇÃO, NÃO CONSTANTE: a data de hoje muda, e um `const` avaliado na carga do módulo deixaria
+ * uma aba aberta durante a virada do dia oferecendo a data de ontem.
+ */
+function formVazio() {
+  return { ...CAMPOS_VAZIOS, competencia: dataDeHoje() };
+}
+
+const CONSULTA_OCIOSA = { estado: "ocioso", recusa: null, aviso: null, endereco: null, nome: "" };
+
+/**
  * Campos que `NfseService` exige da EMPRESA antes de qualquer emissão (`REQUIRED_COMPANY_FIELDS`).
  *
  * ⚠ **`cnpj` FICOU DE FORA DE PROPÓSITO, e isso foi medido, não suposto.** O servidor exige cinco
@@ -61,6 +114,36 @@ const CAMPOS_EXIGIDOS_DA_EMPRESA = [
   ["codigoServicoMunicipal", "código de serviço municipal"],
   ["rpsSerie", "série do RPS"],
 ];
+
+const REGIME = { SIMPLES: "simples", OUTRO: "outro", DESCONHECIDO: "desconhecido" };
+
+/**
+ * O REGIME DA EMPRESA, do jeito que ESTA TELA consegue lê-lo — com a ressalva no nome.
+ *
+ * ⚠ **A AUTORIDADE NÃO É ESTE CAMPO.** No servidor quem decide é `CadastroFiscal.regime`, com
+ * `Company.regimeTributario` como SEGUNDA leitura (`carregarRegimeDaEmpresa`, em `NfseService`), e
+ * `GET /client/companies` só nos manda a segunda. As duas podem discordar.
+ *
+ * ⚠ Por isso a resposta tem TRÊS estados, e o terceiro não é "não". Regime ausente ou não
+ * reconhecido devolve `DESCONHECIDO`, e no desconhecido a tela **não esconde nada** — mostrar um
+ * campo a mais é um incômodo, escondê-lo indevidamente é uma emissão recusada pelo servidor com o
+ * campo que a resolveria fora da tela.
+ *
+ * A normalização copia `resolverOpSimpNac` (`apps/api/src/application/nfse/dpsCodigos.js`),
+ * inclusive o alias SIMPLES → SIMPLES_NACIONAL. ⚠ `optanteSimples` existe na resposta e **não é
+ * usado**: o backend não o consulta para o `opSimpNac`, e eleger aqui uma autoridade que lá não
+ * existe é como as duas pontas passam a discordar.
+ */
+function lerRegime(empresa) {
+  const bruto = String(empresa?.legacyCompany?.regimeTributario || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+  if (!bruto) return REGIME.DESCONHECIDO;
+  if (bruto === "SIMPLES" || bruto === "SIMPLES_NACIONAL") return REGIME.SIMPLES;
+  if (bruto === "LUCRO_PRESUMIDO" || bruto === "LUCRO_REAL") return REGIME.OUTRO;
+  return REGIME.DESCONHECIDO;
+}
 
 function apenasDigitos(valor) {
   return String(valor || "").replace(/\D+/g, "");
@@ -94,11 +177,14 @@ function numeroDoCampo(valor) {
  * `Company.codigosServicoNacional` é RECUSADO (`NFSE_CODIGO_SERVICO_FORA_DA_LISTA`). Essa lista
  * está **vazia nas 33 empresas** medidas — um seletor aqui não teria o que oferecer, e ofereceria
  * ou nada, ou opções que o servidor recusaria uma a uma. Sem o campo, vale o singular
- * `Company.codigoServicoNacional`, que é o comportamento de sempre — e a tela DIZ qual é ele, em
- * vez de deixar a pergunta sem resposta. Quando houver códigos cadastrados, é aqui que o seletor
- * entra.
+ * `Company.codigoServicoNacional`, que é o comportamento de sempre — e a tela DIZ qual é ele.
+ *
+ * ⚠ **O ISS NO SIMPLES.** Com `issNoFormulario: false` (empresa do Simples), a alíquota de ISS
+ * **não é enviada** e `issRetido` vai `false` — não "o que estiver no estado". Os dois andam
+ * juntos por exigência do servidor, não por estética: `buildDpsXml` recusa
+ * `issRetido: true` sem alíquota > 0 (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`). Ver o bloco Impostos.
  */
-function montarPayload(form) {
+function montarPayload(form, { issNoFormulario }) {
   const payload = {
     tomador: {
       cnpjCpf: apenasDigitos(form.tomadorDoc),
@@ -115,15 +201,17 @@ function montarPayload(form) {
     servico: {
       descricao: form.descricao.trim(),
       valorServicos: numeroDoCampo(form.valorServicos),
-      issRetido: form.issRetido === true,
+      issRetido: issNoFormulario ? form.issRetido === true : false,
     },
   };
 
   const email = form.tomadorEmail.trim();
   if (email) payload.tomador.email = email;
 
-  const aliquota = numeroDoCampo(form.aliquota);
-  if (aliquota !== null) payload.servico.aliquota = aliquota;
+  if (issNoFormulario) {
+    const aliquota = numeroDoCampo(form.aliquota);
+    if (aliquota !== null) payload.servico.aliquota = aliquota;
+  }
 
   const local = apenasDigitos(form.cLocPrestacao);
   if (local) payload.servico.cLocPrestacao = local;
@@ -131,16 +219,24 @@ function montarPayload(form) {
   const pTotTribSN = numeroDoCampo(form.pTotTribSN);
   if (pTotTribSN !== null) payload.totTrib = { pTotTribSN };
 
-  // 'YYYY-MM' do `<input type="month">` → o primeiro dia do mês. ⚠ Sem competência o servidor usa
-  // a data de HOJE (`formatDateOnly(null)`), e é isso que a dica ao lado do campo diz.
-  if (form.competencia) payload.competencia = `${form.competencia}-01`;
+  // ── DATA DA COMPETÊNCIA ────────────────────────────────────────────────────────────────────
+  //
+  // ⚠ A DATA VAI INTEIRA, e antes só ia o mês. O campo era `<input type="month">` e o código
+  // acrescentava `-01`: toda nota declarava o primeiro dia do mês. Agora é a data escolhida.
+  //
+  // ⚠ **ESTE É O `dCompet`, NÃO O `dhEmi`.** É a única data desta nota que o cliente controla:
+  // `buildDpsXml` faz `formatDateOnly(data.competencia)` → `<dCompet>`, e é justamente o
+  // `formatDateOnly(null)` (a data de HOJE) que este campo passa a substituir. O `<dhEmi>` — o
+  // instante da emissão — é `formatDateTimeWithOffset(new Date())` cravado no servidor, **não
+  // existe no payload do validador**, e não foi inventado aqui. Ver o bloco do campo na tela.
+  if (form.competencia) payload.competencia = form.competencia;
 
   return payload;
 }
 
 export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
   const companyId = empresa.companyId;
-  const [form, setForm] = useState(FORM_VAZIO);
+  const [form, setForm] = useState(formVazio);
   const [enviando, setEnviando] = useState(false);
   const [desfecho, setDesfecho] = useState(null);
   // A linha da tentativa anterior, quando o servidor disse que o número dela é reaproveitável.
@@ -148,12 +244,38 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
   // permanente. Nunca é preenchida depois de uma falha de TRANSPORTE.
   const [retryInvoiceId, setRetryInvoiceId] = useState(null);
 
+  // Consulta do tomador na Receita.
+  const [consulta, setConsulta] = useState(CONSULTA_OCIOSA);
+  const [origemNome, setOrigemNome] = useState(ORIGEM.AUSENTE);
+  const [origemEndereco, setOrigemEndereco] = useState(ORIGEM.AUSENTE);
+  const ultimoConsultado = useRef(null);
+  const [gatilhoConsulta, setGatilhoConsulta] = useState(0);
+
+  // Alíquota efetiva do Simples (`pTotTribSN`).
+  const [origemPTot, setOrigemPTot] = useState(ORIGEM_ALIQUOTA.AUSENTE);
+
+  // ⚠ Espelhos do estado para a resposta ASSÍNCRONA da consulta ler. Ela chega centenas de
+  // milissegundos depois, e precisa do que está na tela NAQUELE instante — não do que estava
+  // quando o efeito começou. Fechar sobre `form`/`origem…` faria o "o digitado vence" perder para
+  // o que o usuário digitou durante a espera, que é justo o caso em que a regra importa.
+  const formRef = useRef(form);
+  formRef.current = form;
+  const origemNomeRef = useRef(origemNome);
+  origemNomeRef.current = origemNome;
+  const origemEnderecoRef = useRef(origemEndereco);
+  origemEnderecoRef.current = origemEndereco;
+
   // ⚠ TROCAR DE EMPRESA ZERA TUDO. Uma nota meio preenchida que sobrevivesse à troca seria emitida
   // no CNPJ errado — o pior desfecho possível num portal multi-empresa, e irreversível aqui.
   useEffect(() => {
-    setForm(FORM_VAZIO);
+    setForm(formVazio());
     setDesfecho(null);
     setRetryInvoiceId(null);
+    setConsulta(CONSULTA_OCIOSA);
+    setOrigemNome(ORIGEM.AUSENTE);
+    setOrigemEndereco(ORIGEM.AUSENTE);
+    setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
+    ultimoConsultado.current = null;
   }, [companyId]);
 
   const portao = lerPortaoEmissao(empresa);
@@ -163,20 +285,184 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
     ? CAMPOS_EXIGIDOS_DA_EMPRESA.filter(([campo]) => !legacy[campo]).map(([, nome]) => nome)
     : [];
 
+  const regime = lerRegime(empresa);
+  // ⚠ O ISS SAI DO FORMULÁRIO SÓ NO SIMPLES — decisão do dono, 18/08/2026: no Simples o ISS está
+  // dentro do DAS, e não há alíquota de ISS a informar por nota. Regime desconhecido MANTÉM os
+  // campos (ver `lerRegime`).
+  const issNoFormulario = regime !== REGIME.SIMPLES;
+
+  // ── A CONSULTA DO TOMADOR ─────────────────────────────────────────────────────────────────
+  //
+  // ⚠ CPF NÃO SE CONSULTA: 11 dígitos ⇒ nada acontece, e o painel de uma consulta anterior é
+  // limpo. Sem chamada, sem "não encontrado", sem botão. A BrasilAPI é base de CNPJ.
+  // ⚠ FALHA NÃO BLOQUEIA: a recusa aparece com "a emissão segue normalmente" e o botão Emitir
+  // continua exatamente como estava.
+  const documento = form.tomadorDoc;
+  useEffect(() => {
+    const decisao = decidirConsulta(documento, { ultimoConsultado: ultimoConsultado.current });
+    if (!decisao.consultar) {
+      if (decisao.motivo === NAO_CONSULTA.CPF || decisao.motivo === NAO_CONSULTA.FORA_DE_FORMA) {
+        setConsulta((anterior) => (anterior === CONSULTA_OCIOSA ? anterior : CONSULTA_OCIOSA));
+      }
+      return undefined;
+    }
+
+    // ⚠ Marcado ANTES do `await`. Sem isso o StrictMode do React 19 (que executa o efeito duas
+    // vezes em desenvolvimento) dispararia duas chamadas para a BrasilAPI, que é pública e tem
+    // throttle — e o defeito só apareceria como "às vezes não consulta".
+    ultimoConsultado.current = decisao.digitos;
+    let descartado = false;
+    setConsulta({ ...CONSULTA_OCIOSA, estado: "consultando" });
+
+    // ⚠⚠ O QUE VEIO DA RECEITA DO TOMADOR ANTERIOR SAI DA TELA AGORA — antes de saber o desfecho
+    // desta consulta. Exercido no navegador: consultar um CNPJ, depois trocar por outro cuja
+    // resposta não traga endereço aceitável deixava na tela o nome NOVO com o **endereço da
+    // empresa anterior**, e "preencha à mão" ao lado de campos que pareciam preenchidos. Isso
+    // emite nota fiscal com o endereço de outra pessoa jurídica.
+    //
+    // ⚠ **SÓ SAI O QUE ERA `da Receita`.** O que a pessoa digitou continua sendo dela e vence,
+    // aqui como em qualquer outro ponto — é a mesma regra, aplicada ao caso em que o valor na tela
+    // não é de ninguém que esteja nela: é de um CNPJ que já não é o do formulário.
+    //
+    // ⚠ Os REFS são atualizados na mesma linha do `set…`. Quem lê o estado depois do `await` são
+    // eles; deixar a limpeza só no estado do React faria a leitura pós-consulta depender de o
+    // React ter re-renderizado antes de a promessa resolver — verdade hoje, e silenciosamente
+    // falso no dia em que a resposta vier de um cache.
+    if (origemNomeRef.current === ORIGEM.DA_RECEITA) {
+      origemNomeRef.current = ORIGEM.AUSENTE;
+      formRef.current = { ...formRef.current, tomadorNome: "" };
+      setOrigemNome(ORIGEM.AUSENTE);
+      setForm((anterior) => ({ ...anterior, tomadorNome: "" }));
+    }
+    if (origemEnderecoRef.current === ORIGEM.DA_RECEITA) {
+      const vazio = { cMun: "", cep: "", logradouro: "", numero: "", complemento: "", bairro: "" };
+      origemEnderecoRef.current = ORIGEM.AUSENTE;
+      formRef.current = { ...formRef.current, ...vazio };
+      setOrigemEndereco(ORIGEM.AUSENTE);
+      setForm((anterior) => ({ ...anterior, ...vazio }));
+    }
+
+    (async () => {
+      const resposta = await api.consultarCnpj(decisao.digitos);
+      // A lista oficial é esperada AQUI, e não lida de um estado que talvez ainda não tenha
+      // chegado: sem ela, `codigoMunicipioVerificado` recusa o código e o endereço inteiro cai
+      // junto — uma consulta boa viraria "a consulta não trouxe o município" por corrida de carga.
+      const municipios = await carregarMunicipiosIbge().catch(() => null);
+      if (descartado) return;
+
+      if (!resposta?.ok) {
+        setConsulta({ ...CONSULTA_OCIOSA, estado: "recusa", recusa: resposta?.mensagem || null });
+        return;
+      }
+
+      const nome = nomeDaReceita(resposta.bruto);
+      const leituraEndereco = enderecoDaReceita(resposta.bruto, { municipios });
+
+      // ⚠ O estado atual é lido do REF, e não de dentro de um `setForm(anterior => …)`. Duas
+      // razões: (1) chamar `setOrigem…` dentro de um updater é efeito colateral em função que o
+      // React pode reexecutar — no StrictMode ela roda duas vezes; (2) o ref carrega o que o
+      // usuário digitou DURANTE a consulta, que é exatamente o que tem de vencer.
+      const atual = formRef.current;
+      const passoNome = aplicarNome({
+        nomeAtual: atual.tomadorNome,
+        origemAtual: origemNomeRef.current,
+        nome,
+      });
+      const passoEndereco = aplicarEndereco({
+        enderecoAtual: {
+          cMun: atual.cMun,
+          CEP: atual.cep,
+          xLgr: atual.logradouro,
+          nro: atual.numero,
+          xCpl: atual.complemento,
+          xBairro: atual.bairro,
+        },
+        origemAtual: origemEnderecoRef.current,
+        endereco: leituraEndereco.endereco,
+      });
+      if (passoNome.aplicou) setOrigemNome(ORIGEM.DA_RECEITA);
+      if (passoEndereco.aplicou) setOrigemEndereco(ORIGEM.DA_RECEITA);
+      setForm((anterior) => ({
+        ...anterior,
+        tomadorNome: passoNome.nome,
+        cMun: passoEndereco.endereco.cMun || "",
+        cep: passoEndereco.endereco.CEP || "",
+        logradouro: passoEndereco.endereco.xLgr || "",
+        numero: passoEndereco.endereco.nro || "",
+        complemento: passoEndereco.endereco.xCpl || "",
+        bairro: passoEndereco.endereco.xBairro || "",
+      }));
+
+      setConsulta({
+        estado: "ok",
+        recusa: null,
+        aviso: avisoSituacao(resposta.situacao),
+        endereco: mensagemEndereco(leituraEndereco),
+        nome,
+      });
+    })();
+
+    return () => {
+      descartado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documento, gatilhoConsulta, companyId]);
+
+  function consultarDeNovo() {
+    // ⚠ O botão existe para a RETENTATIVA. A consulta automática não repete o mesmo CNPJ; sem ele,
+    // uma queda de rede exigiria apagar e redigitar o documento inteiro.
+    ultimoConsultado.current = null;
+    setGatilhoConsulta((n) => n + 1);
+  }
+
+  // ── A ALÍQUOTA EFETIVA DO SIMPLES ─────────────────────────────────────────────────────────
+  const competenciaDaNota = String(form.competencia || "").slice(0, 7);
+  const serieAliquota = useCarregamento(
+    () => api.getAliquotas(companyId, janelaDaConsulta(competenciaDaNota)),
+    [companyId, competenciaDaNota],
+    // ⚠ Não é pedido a quem não pode emitir: a tela nem chega a mostrar o formulário.
+    { habilitado: portao.podeEmitir }
+  );
+  const escolhaAliquota = useMemo(
+    () => escolherAliquotaEfetiva(serieAliquota.dados, competenciaDaNota),
+    [serieAliquota.dados, competenciaDaNota]
+  );
+
+  // ⚠ PRÉ-PREENCHIDO ≠ TRAVADO. Assim que a pessoa digita por cima (`DIGITADA`), este efeito para
+  // de escrever no campo — inclusive quando a competência muda e a sugestão vira outra. Os dois
+  // números continuam à vista, com um botão para voltar ao sugerido.
+  // ⚠ SEM DADO, CAMPO VAZIO — nunca zero. `escolherAliquotaEfetiva` já devolve `null` em vez do
+  // zero que o backend fabrica; aqui isso vira string vazia, e a tela diz o motivo.
+  useEffect(() => {
+    if (origemPTot === ORIGEM_ALIQUOTA.DIGITADA) return;
+    const valor = escolhaAliquota.valor === null ? "" : String(escolhaAliquota.valor);
+    setForm((anterior) => (anterior.pTotTribSN === valor ? anterior : { ...anterior, pTotTribSN: valor }));
+    setOrigemPTot(valor === "" ? ORIGEM_ALIQUOTA.AUSENTE : ORIGEM_ALIQUOTA.SUGERIDA);
+  }, [escolhaAliquota, origemPTot]);
+
+  // ── As descrições já usadas DESTE navegador ───────────────────────────────────────────────
+  const sugestoesDescricao = useMemo(
+    () => sugerirDescricoes(companyId, { tomadorDoc: form.tomadorDoc, jaDigitado: form.descricao }),
+    [companyId, form.tomadorDoc, form.descricao]
+  );
+
   const valorServicos = numeroDoCampo(form.valorServicos);
-  const aliquota = numeroDoCampo(form.aliquota);
+  const aliquota = issNoFormulario ? numeroDoCampo(form.aliquota) : null;
+  const issRetido = issNoFormulario && form.issRetido;
   const issRetidoValor =
-    form.issRetido && valorServicos !== null && aliquota !== null
+    issRetido && valorServicos !== null && aliquota !== null
       ? Number(((valorServicos * aliquota) / 100).toFixed(2))
       : null;
   const liquido =
     valorServicos === null
       ? null
-      : form.issRetido
+      : issRetido
         ? issRetidoValor === null
           ? null
           : Number((valorServicos - issRetidoValor).toFixed(2))
         : valorServicos;
+
+  const pTotTribSN = numeroDoCampo(form.pTotTribSN);
 
   const valoresDaPrevia = useMemo(
     () => ({
@@ -194,13 +480,25 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
       descricao: form.descricao.trim(),
       valorServicos,
       competencia: form.competencia,
-      issRetido: form.issRetido,
+      issNoFormulario,
+      issRetido,
       aliquota,
       issRetidoValor,
       liquido,
+      pTotTribSN,
       codigoServicoNacional,
     }),
-    [form, valorServicos, aliquota, issRetidoValor, liquido, codigoServicoNacional]
+    [
+      form,
+      valorServicos,
+      aliquota,
+      issRetido,
+      issNoFormulario,
+      issRetidoValor,
+      liquido,
+      pTotTribSN,
+      codigoServicoNacional,
+    ]
   );
 
   function campo(nome) {
@@ -211,17 +509,39 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
     };
   }
 
+  /** O digitado VENCE o consultado — e a origem passa a dizer isso. */
+  function campoDoTomador(nome, marcarOrigem) {
+    return (evento) => {
+      const valor = evento.target.value;
+      marcarOrigem(ORIGEM.DIGITADO);
+      setForm((anterior) => ({ ...anterior, [nome]: valor }));
+    };
+  }
+
   async function emitir(evento) {
     evento.preventDefault();
     if (enviando) return;
     setEnviando(true);
     try {
-      const resposta = await api.emitirNfse(companyId, montarPayload(form), { retryInvoiceId });
+      const payload = montarPayload(form, { issNoFormulario });
+      const resposta = await api.emitirNfse(companyId, payload, { retryInvoiceId });
       const lido = lerResultado(resposta);
       setDesfecho(lido);
       if (lido.tipo === TIPO.SUCESSO) {
+        // ⚠ Só o SUCESSO vira sugestão. Uma descrição que o servidor recusou não pode voltar
+        // oferecida como se tivesse dado certo.
+        registrarDescricao(companyId, {
+          descricao: form.descricao,
+          tomadorDoc: form.tomadorDoc,
+          tomadorNome: form.tomadorNome,
+        });
         setRetryInvoiceId(null);
-        setForm(FORM_VAZIO);
+        setForm(formVazio());
+        setOrigemNome(ORIGEM.AUSENTE);
+        setOrigemEndereco(ORIGEM.AUSENTE);
+        setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
+        setConsulta(CONSULTA_OCIOSA);
+        ultimoConsultado.current = null;
       }
     } catch (err) {
       const lido = lerErroEmissao(err);
@@ -231,7 +551,12 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
       // "enviar de novo" de um clique só sobre uma nota que talvez já exista. Quem quiser
       // reemitir depois de consultar terá de digitar tudo outra vez, de propósito.
       if (lido.tipo === TIPO.TRANSPORTE || lido.tipo === TIPO.DESCONHECIDO) {
-        setForm(FORM_VAZIO);
+        setForm(formVazio());
+        setOrigemNome(ORIGEM.AUSENTE);
+        setOrigemEndereco(ORIGEM.AUSENTE);
+        setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
+        setConsulta(CONSULTA_OCIOSA);
+        ultimoConsultado.current = null;
       }
     } finally {
       setEnviando(false);
@@ -250,6 +575,13 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
     );
   }
 
+  const digitosDoc = soDigitosDoc(form.tomadorDoc);
+  const ehCnpjCompleto = digitosDoc.length === 14;
+  const nomeDivergeDaReceita =
+    origemNome === ORIGEM.DIGITADO &&
+    Boolean(consulta.nome) &&
+    consulta.nome !== form.tomadorNome.trim();
+
   return (
     <>
       <div className="page-header">
@@ -262,8 +594,13 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
           aoNavegar={aoNavegar}
           aoCorrigir={() => setDesfecho(null)}
           aoNovaNota={() => {
-            setForm(FORM_VAZIO);
+            setForm(formVazio());
             setRetryInvoiceId(null);
+            setOrigemNome(ORIGEM.AUSENTE);
+            setOrigemEndereco(ORIGEM.AUSENTE);
+            setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
+            setConsulta(CONSULTA_OCIOSA);
+            ultimoConsultado.current = null;
             setDesfecho(null);
           }}
         />
@@ -283,6 +620,33 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
               <p>
                 Você pode preencher a nota, mas ela provavelmente será recusada antes de sair daqui.
                 Fale com o seu contador.
+              </p>
+            </div>
+          ) : null}
+
+          {/* ⚠⚠ MEDIÇÃO, NÃO PALPITE: **hoje esta tela não emite para quem não é do Simples.**
+              `buildDpsXml` recusa com `MISSING_TOT_TRIB_NAO_SIMPLES` quando o regime não é o
+              Simples e nenhum de `pTotTribFed`/`pTotTribEst`/`pTotTribMun` vem no corpo — e o
+              formulário do cliente não oferece nenhum dos três. Lá a recusa é DELIBERADA: o
+              caminho antigo declarava `0,00`, ou seja, carga tributária ZERO (Lei 12.741/2012).
+              ⚠ AVISO, NÃO BLOQUEIO — pela mesma razão do cadastro incompleto logo acima: o regime
+              que chega aqui é a SEGUNDA leitura do servidor (`Company.regimeTributario`), e a
+              primeira (`CadastroFiscal.regime`) pode dizer outra coisa. Bloquear por leitura de
+              segunda mão pararia uma emissão que talvez passe. */}
+          {regime === REGIME.OUTRO ? (
+            <div className="alerta alerta-aviso" role="status">
+              <p>
+                <strong>
+                  Esta empresa não é optante pelo Simples Nacional, e a emissão pelo portal do
+                  cliente ainda não cobre esse caso.
+                </strong>
+              </p>
+              <p>
+                A nota de uma empresa não optante precisa declarar a carga tributária aproximada
+                (Lei 12.741/2012) em percentuais federal, estadual e municipal — campos que esta
+                tela não oferece. Você pode preencher e tentar, mas a nota provavelmente será
+                recusada antes de sair daqui, sem consumir numeração. Fale com o seu contador: hoje
+                a emissão desta empresa é feita por ele.
               </p>
             </div>
           ) : null}
@@ -311,15 +675,89 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                     onChange={campo("tomadorDoc")}
                   />
                 </label>
+
+                {/* ⚠ O BLOCO INTEIRO DA CONSULTA SÓ EXISTE PARA CNPJ. Com 11 dígitos (CPF) não há
+                    nem painel, nem botão, nem "não encontrado": a BrasilAPI é base de CNPJ, e uma
+                    recusa aqui seria uma mancha vermelha na tela de quem não errou nada. */}
+                {ehCnpjCompleto ? (
+                  <div className="consulta-receita">
+                    {consulta.estado === "consultando" ? (
+                      <p className="hint" role="status">
+                        Consultando o CNPJ na Receita…
+                      </p>
+                    ) : null}
+
+                    {consulta.estado === "recusa" ? (
+                      <div className="alerta alerta-aviso" role="status">
+                        <p>{texto(consulta.recusa)}</p>
+                        {/* ⚠ A frase que separa aviso de bloqueio. A consulta é ajuda: nada aqui
+                            impede a emissão, e o botão Emitir está exatamente como estava. */}
+                        <p>
+                          Preencha os dados do tomador à mão — <strong>a emissão segue normalmente</strong>.
+                        </p>
+                        <p>
+                          <button type="button" className="btn-link" onClick={consultarDeNovo}>
+                            Consultar de novo
+                          </button>
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {consulta.estado === "ok" ? (
+                      <div className="alerta alerta-info" role="status">
+                        {consulta.aviso ? (
+                          <p>
+                            <strong>{consulta.aviso}</strong> Emitir para este tomador continua
+                            possível — a informação é para você decidir.
+                          </p>
+                        ) : null}
+                        <p>{texto(consulta.endereco)}</p>
+                        <p>
+                          <button type="button" className="btn-link" onClick={consultarDeNovo}>
+                            Consultar de novo
+                          </button>
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {consulta.estado === "ocioso" ? (
+                      <p className="hint">
+                        <button type="button" className="btn-link" onClick={consultarDeNovo}>
+                          Consultar este CNPJ na Receita
+                        </button>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <label htmlFor="emitir-nome">
                   Nome ou razão social
+                  <RotuloOrigem origem={origemNome} />
                   <input
                     id="emitir-nome"
                     required
                     value={form.tomadorNome}
-                    onChange={campo("tomadorNome")}
+                    onChange={campoDoTomador("tomadorNome", setOrigemNome)}
                   />
                 </label>
+                {/* ⚠ OS DOIS LADOS FICAM À VISTA. O digitado vence, inclusive numa consulta
+                    posterior — mas "por que o nome mudou?" precisa ter resposta na tela. */}
+                {nomeDivergeDaReceita ? (
+                  <p className="hint">
+                    Na Receita: <strong>{texto(consulta.nome)}</strong>{" "}
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => {
+                        setForm((a) => ({ ...a, tomadorNome: consulta.nome }));
+                        setOrigemNome(ORIGEM.DA_RECEITA);
+                      }}
+                    >
+                      usar o da Receita
+                    </button>
+                  </p>
+                ) : null}
+
                 <label htmlFor="emitir-email">
                   E-mail (opcional)
                   <input
@@ -336,54 +774,54 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                     educação": `buildDpsXml` recusa a nota inteira sem cMun, CEP, xLgr, nro e
                     xBairro (`MISSING_TOMADOR_ADDRESS`), para evitar a rejeição RNG6110. Só o
                     complemento é dispensável. */}
-                <legend>Endereço do tomador</legend>
-                <div className="filters">
-                  <label htmlFor="emitir-cep">
-                    CEP
-                    <input id="emitir-cep" inputMode="numeric" required value={form.cep} onChange={campo("cep")} />
-                  </label>
-                  <label htmlFor="emitir-cmun">
-                    Código IBGE do município
-                    <input
-                      id="emitir-cmun"
-                      inputMode="numeric"
-                      required
-                      value={form.cMun}
-                      onChange={campo("cMun")}
-                    />
-                  </label>
-                </div>
-                <span className="hint">
-                  O código IBGE tem 7 dígitos. ⚠ Ele não é deduzido do CEP nem do nome da cidade —
-                  cidades homônimas têm códigos diferentes, e o município errado joga o ISS para o
-                  lugar errado.
-                </span>
+                <legend>
+                  Endereço do tomador
+                  <RotuloOrigem origem={origemEndereco} />
+                </legend>
+                <label htmlFor="emitir-cep">
+                  CEP
+                  <input id="emitir-cep" inputMode="numeric" required value={form.cep} onChange={campoDoTomador("cep", setOrigemEndereco)} />
+                </label>
+
+                {/* ⚠ ERAM SETE DÍGITOS DIGITADOS À MÃO. Agora se busca pelo NOME, na tabela oficial
+                    do IBGE versionada no repositório — ver `SeletorMunicipio.jsx`. */}
+                <SeletorMunicipio
+                  id="emitir-cmun"
+                  rotulo="Município do tomador"
+                  valor={form.cMun}
+                  onChange={(codigo) => {
+                    setOrigemEndereco(ORIGEM.DIGITADO);
+                    setForm((a) => ({ ...a, cMun: codigo }));
+                  }}
+                  ajuda="Busque pelo nome. Cidades homônimas têm códigos diferentes — por isso toda opção mostra o município e a UF."
+                />
+
                 <label htmlFor="emitir-logradouro">
                   Logradouro
                   <input
                     id="emitir-logradouro"
                     required
                     value={form.logradouro}
-                    onChange={campo("logradouro")}
+                    onChange={campoDoTomador("logradouro", setOrigemEndereco)}
                   />
                 </label>
                 <div className="filters">
                   <label htmlFor="emitir-numero">
                     Número
-                    <input id="emitir-numero" required value={form.numero} onChange={campo("numero")} />
+                    <input id="emitir-numero" required value={form.numero} onChange={campoDoTomador("numero", setOrigemEndereco)} />
                   </label>
                   <label htmlFor="emitir-complemento">
                     Complemento (opcional)
                     <input
                       id="emitir-complemento"
                       value={form.complemento}
-                      onChange={campo("complemento")}
+                      onChange={campoDoTomador("complemento", setOrigemEndereco)}
                     />
                   </label>
                 </div>
                 <label htmlFor="emitir-bairro">
                   Bairro
-                  <input id="emitir-bairro" required value={form.bairro} onChange={campo("bairro")} />
+                  <input id="emitir-bairro" required value={form.bairro} onChange={campoDoTomador("bairro", setOrigemEndereco)} />
                 </label>
               </fieldset>
 
@@ -399,6 +837,32 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                     onChange={campo("descricao")}
                   />
                 </label>
+
+                {/* ⚠ SUGESTÃO, NUNCA IMPOSIÇÃO: some assim que a pessoa começa a escrever, nada é
+                    aplicado sem clique, e o rótulo diz de onde veio. Ver
+                    `lib/descricoesRecentes.js` — inclusive por que a fonte é ESTE navegador. */}
+                {sugestoesDescricao.length ? (
+                  <div className="sugestoes">
+                    <span className="hint">
+                      Descrições que você já emitiu <strong>neste navegador</strong> — é sugestão,
+                      não cadastro:
+                    </span>
+                    {sugestoesDescricao.map((s) => (
+                      <button
+                        key={`${s.doc}-${s.em}`}
+                        type="button"
+                        className="btn"
+                        onClick={() => setForm((a) => ({ ...a, descricao: s.descricao }))}
+                      >
+                        <span className="truncar">{s.descricao}</span>
+                        <span className="muted">
+                          {s.doMesmoTomador ? "mesmo tomador" : texto(s.nome)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
                 <div className="filters">
                   <label htmlFor="emitir-valor">
                     Valor dos serviços (R$)
@@ -413,21 +877,35 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                     />
                   </label>
                   <label htmlFor="emitir-competencia">
-                    Competência (opcional)
+                    Data da competência
                     <input
                       id="emitir-competencia"
-                      type="month"
-                      max={mesCorrente()}
+                      type="date"
+                      max={dataDeHoje()}
                       value={form.competencia}
                       onChange={campo("competencia")}
                     />
                   </label>
                 </div>
+                {/* ⚠⚠ ESTA É A `dCompet`, E **NÃO** A DATA/HORA DA EMISSÃO.
+                    O que foi MEDIDO antes de construir o campo:
+                      • `buildDpsXml` (`apps/api/.../NfseService.js`) monta `<dCompet>` com
+                        `formatDateOnly(data.competencia)` — sem competência, a data de HOJE. É este
+                        campo, e antes ele era um seletor de MÊS que mandava sempre o dia 01;
+                      • `<dhEmi>` é `formatDateTimeWithOffset(new Date())`, **cravado no servidor**.
+                        Não existe campo para ele no validador (`validators/nfsePayload.js`) e nada
+                        no repositório documenta se o sistema nacional aceita `dhEmi` retroativo —
+                        `docs/nfse-preenchimento.md` §2 só descreve o formato. Por isso ele NÃO foi
+                        oferecido: seria inventar comportamento de integração.
+                    ⚠ O teto é HOJE — competência futura não é competência. Não há piso porque não
+                    há, neste repositório, nenhum limite de retroatividade que se possa provar. */}
                 <span className="hint">
                   O valor usa ponto para os centavos (ex.: 1500.00) — confira o valor formatado na
-                  pré-visualização ao lado. Sem competência, a nota sai com a data de hoje.
+                  pré-visualização ao lado. A data da competência é a que vai na nota (campo
+                  “dCompet”); a data e a hora da emissão são as do momento em que a nota for
+                  transmitida, e não se escolhem aqui.
                 </span>
-                <p className="hint" style={{ marginTop: "8px" }}>
+                <p className="hint">
                   {/* ⚠ A tela DIZ qual código vai, em vez de oferecer uma escolha que o cadastro
                       recusaria. Ver `montarPayload`. */}
                   Código de serviço desta nota:{" "}
@@ -440,71 +918,130 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
 
               <fieldset>
                 <legend>Impostos</legend>
-                <label htmlFor="emitir-iss-retido" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+
+                {/* ── A ALÍQUOTA EFETIVA DO SIMPLES (`pTotTribSN`) ──────────────────────────
+                    ⚠ PRÉ-PREENCHIDA, E COM A PROCEDÊNCIA NA TELA. "6,00%" e "6,00% — DAS de
+                    07/2026 sobre a receita da mesma competência" são coisas diferentes: a primeira
+                    é um número que apareceu sozinho.
+                    ⚠ A conta é DAS ÷ receita. O INSS **não** entra — ele não está dentro do DAS,
+                    e `pTotTribSN` é "total de tributos do SIMPLES NACIONAL". Ver
+                    `lib/aliquotaEfetiva.js`. */}
+                <label htmlFor="emitir-ptottribsn">
+                  Alíquota efetiva do Simples (%)
+                  <span className="origem" data-origem={origemPTot}>
+                    {origemPTot === ORIGEM_ALIQUOTA.SUGERIDA
+                      ? "preenchido pelo portal"
+                      : origemPTot === ORIGEM_ALIQUOTA.DIGITADA
+                        ? "digitado por você"
+                        : ""}
+                  </span>
                   <input
-                    id="emitir-iss-retido"
-                    type="checkbox"
-                    style={{ width: "auto", minHeight: 0 }}
-                    checked={form.issRetido}
-                    onChange={campo("issRetido")}
-                  />
-                  O ISS desta nota é retido pelo tomador
-                </label>
-                <div className="filters">
-                  <label htmlFor="emitir-aliquota">
-                    Alíquota do ISS (%)
-                    <input
-                      id="emitir-aliquota"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      required={form.issRetido}
-                      value={form.aliquota}
-                      onChange={campo("aliquota")}
-                    />
-                  </label>
-                  <label htmlFor="emitir-ptottribsn">
-                    Alíquota efetiva do Simples (%)
-                    <input
-                      id="emitir-ptottribsn"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      value={form.pTotTribSN}
-                      onChange={campo("pTotTribSN")}
-                    />
-                  </label>
-                </div>
-                <span className="hint">
-                  {/* ⚠ Nenhum dos dois é preenchido por nós. A alíquota efetiva é a do extrato do
-                      PGDAS-D da competência — derivá-la de faturamento e guias daria um número
-                      parecido e declarado ao fisco como se fosse o certo. */}
-                  Com ISS retido, a alíquota é obrigatória. A alíquota efetiva do Simples Nacional é
-                  exigida das empresas optantes e sai do extrato do PGDAS-D — se não souber, peça ao
-                  seu contador.
-                </span>
-                <label htmlFor="emitir-loc-prestacao">
-                  Município da prestação — código IBGE (opcional)
-                  <input
-                    id="emitir-loc-prestacao"
-                    inputMode="numeric"
-                    value={form.cLocPrestacao}
-                    onChange={campo("cLocPrestacao")}
+                    id="emitir-ptottribsn"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={form.pTotTribSN}
+                    onChange={(e) => {
+                      // ⚠ PRÉ-PREENCHIDO ≠ TRAVADO: a partir daqui o portal não escreve mais neste
+                      // campo, nem quando a competência muda.
+                      setOrigemPTot(ORIGEM_ALIQUOTA.DIGITADA);
+                      setForm((a) => ({ ...a, pTotTribSN: e.target.value }));
+                    }}
                   />
                 </label>
                 <span className="hint">
-                  Em branco vale a regra geral: o ISS é devido no município da sua empresa
-                  (LC 116/2003, art. 3º). Só preencha se souber que este serviço é uma das exceções.
+                  {serieAliquota.carregando
+                    ? "Procurando a alíquota efetiva desta empresa…"
+                    : textoDaProcedencia(escolhaAliquota, competenciaDaNota)}
                 </span>
+                {/* ⚠ OS DOIS LADOS À VISTA quando a pessoa sobrescreve — a mesma disciplina do
+                    nome do tomador. */}
+                {origemPTot === ORIGEM_ALIQUOTA.DIGITADA && escolhaAliquota.valor !== null ? (
+                  <p className="hint">
+                    O portal sugeria <strong>{pct(escolhaAliquota.valor)}</strong>.{" "}
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => {
+                        setForm((a) => ({ ...a, pTotTribSN: String(escolhaAliquota.valor) }));
+                        setOrigemPTot(ORIGEM_ALIQUOTA.SUGERIDA);
+                      }}
+                    >
+                      voltar ao sugerido
+                    </button>
+                  </p>
+                ) : null}
+
+                {/* ── O ISS ─────────────────────────────────────────────────────────────────
+                    ⚠⚠ NO SIMPLES ESTE BLOCO NÃO EXISTE — decisão do dono, 18/08/2026: o ISS da
+                    empresa do Simples está dentro do DAS, e não há alíquota de ISS a informar por
+                    nota.
+                    ⚠ O CHECKBOX SAIU JUNTO COM O CAMPO, E ISSO NÃO É ESTÉTICA: `buildDpsXml`
+                    recusa `issRetido: true` sem alíquota > 0 (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`).
+                    Tirar só a alíquota deixaria na tela uma caixinha que faz o servidor recusar a
+                    nota, com o campo do conserto fora da tela.
+                    ⚠ MEDIDO: a alíquota de ISS **não entra no XML da DPS** — `buildDpsXml` só a
+                    usa nessa guarda, e `NfseService` a grava em `ServiceInvoice.aliquota`. Não é
+                    um valor declarado que se perde; é um campo do nosso registro.
+                    ⚠ REGIME DESCONHECIDO MANTÉM O BLOCO (ver `lerRegime`). */}
+                {issNoFormulario ? (
+                  <>
+                    <label htmlFor="emitir-iss-retido" className="linha-checkbox">
+                      <input
+                        id="emitir-iss-retido"
+                        type="checkbox"
+                        checked={form.issRetido}
+                        onChange={campo("issRetido")}
+                      />
+                      O ISS desta nota é retido pelo tomador
+                    </label>
+                    <label htmlFor="emitir-aliquota">
+                      Alíquota do ISS (%)
+                      <input
+                        id="emitir-aliquota"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        required={form.issRetido}
+                        value={form.aliquota}
+                        onChange={campo("aliquota")}
+                      />
+                    </label>
+                    <span className="hint">
+                      Com ISS retido, a alíquota é obrigatória — sem ela a nota é recusada antes de
+                      sair daqui.
+                      {regime === REGIME.DESCONHECIDO
+                        ? " ⚠ Esta tela não recebeu o regime tributário desta empresa. Se ela for optante pelo Simples Nacional, o ISS já está no DAS e não há alíquota a informar aqui — confirme com o seu contador."
+                        : ""}
+                    </span>
+                  </>
+                ) : (
+                  <span className="hint">
+                    <strong>Esta empresa é optante pelo Simples Nacional</strong>, então o ISS já
+                    está dentro do DAS: não há alíquota de ISS a informar por nota, e esta nota sai
+                    sem retenção de ISS. A carga tributária declarada ao tomador é a alíquota
+                    efetiva acima.
+                  </span>
+                )}
+
+                {/* ⚠ TAMBÉM ERAM SETE DÍGITOS À MÃO. É o campo que decide para QUAL MUNICÍPIO o
+                    ISSQN é devido — errar aqui é recolher para a prefeitura errada. */}
+                <SeletorMunicipio
+                  id="emitir-loc-prestacao"
+                  rotulo="Município da prestação (opcional)"
+                  valor={form.cLocPrestacao}
+                  onChange={(codigo) => setForm((a) => ({ ...a, cLocPrestacao: codigo }))}
+                  ajuda="Em branco vale a regra geral: o ISS é devido no município da sua empresa (LC 116/2003, art. 3º). Só preencha se souber que este serviço é uma das exceções."
+                />
               </fieldset>
 
               <div className="total">
-                <span>{form.issRetido ? "A receber do tomador" : "Valor da nota"}</span>
+                <span>{issRetido ? "A receber do tomador" : "Valor da nota"}</span>
                 <strong>{liquido === null ? TRACO : brl(liquido)}</strong>
               </div>
-              {form.issRetido ? (
+              {issRetido ? (
                 <p className="hint">
                   Valor da nota {valorServicos === null ? TRACO : brl(valorServicos)} · ISS retido{" "}
                   {issRetidoValor === null ? TRACO : brl(issRetidoValor)}
@@ -529,6 +1066,22 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * A ORIGEM DO CAMPO, no rótulo — `da Receita` × `digitado` × nada.
+ *
+ * ⚠ Sem ela, "por que o nome mudou sozinho?" não tem resposta na tela. É o mesmo princípio do
+ * planejamento tributário, que imprime a procedência de cada campo.
+ */
+function RotuloOrigem({ origem }) {
+  const rotulo = rotuloOrigem(origem);
+  if (!rotulo) return null;
+  return (
+    <span className="origem" data-origem={origem}>
+      {rotulo}
+    </span>
   );
 }
 

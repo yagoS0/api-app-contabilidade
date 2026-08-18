@@ -9,6 +9,7 @@ import { SeletorEmpresa } from "./SeletorEmpresa";
 import { HomePage } from "../home/HomePage";
 import { NotasPage } from "../notas/NotasPage";
 import { EmitirNotaPage } from "../emitir/EmitirNotaPage";
+import { esquecerTodasAsDescricoes } from "../emitir/lib/descricoesRecentes";
 import { GuiasPage } from "../guias/GuiasPage";
 
 // ⚠ A ABA "EMITIR" APARECE SEMPRE, inclusive para quem não pode emitir — e isso é deliberado.
@@ -60,6 +61,9 @@ export function AppShell({ user }) {
       // A sessão local some mesmo se o servidor não responder: "Sair" que não
       // sai é pior que erro visível, sobretudo em computador compartilhado.
       salvarEmpresa(null);
+      // ⚠ E o histórico de descrições vai junto: ele guarda nome e CNPJ de tomadores. Pelo mesmo
+      // motivo do resto desta linha — computador compartilhado. Ver `emitir/lib/descricoesRecentes.js`.
+      esquecerTodasAsDescricoes();
       limparSessao();
     }
   }

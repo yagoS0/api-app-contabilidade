@@ -160,6 +160,59 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 
 .card-success { border-left: 4px solid var(--success); }
 
+/* --- Emissão: consulta do CNPJ, origem do campo, sugestões ------------------
+   ⚠ A ORIGEM É UM RÓTULO, NÃO UM ALARME. Ela responde "por que este campo se
+   preencheu sozinho?" e por isso é discreta: um chip colorido ao lado de cada
+   campo consultado transformaria uma ajuda em ruído numa tela que já tem um
+   aviso de irreversibilidade. */
+.consulta-receita { margin-bottom: 10px; }
+.consulta-receita .alerta { margin-bottom: 6px; }
+
+.origem {
+  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  font-size: .72rem; font-weight: 600; text-transform: none; letter-spacing: 0;
+  background: var(--neutral-surface); color: var(--muted); vertical-align: middle;
+}
+.origem[data-origem="da_receita"] { background: var(--primary-surface); color: var(--primary); }
+.origem[data-origem="sugerida"]   { background: var(--primary-surface); color: var(--primary); }
+
+/* O checkbox e o texto na mesma linha, sem style inline. */
+.linha-checkbox { display: flex; align-items: center; gap: 8px; }
+.linha-checkbox > input { margin-top: 0; }
+
+/* Sugestões de descrição: botões largos, texto truncado, quem é o tomador ao lado. */
+.sugestoes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.sugestoes .hint { margin-bottom: 0; }
+.sugestoes .btn { justify-content: space-between; text-align: left; width: 100%; font-size: .85rem; }
+.sugestoes .btn .truncar { max-width: 100%; }
+.sugestoes .btn .muted { font-size: .76rem; white-space: nowrap; }
+
+/* --- Emissão: seletor de município (busca por NOME) ------------------------ */
+.municipio { position: relative; margin-bottom: 10px; }
+.municipio > label { margin-bottom: 0; }
+.municipio-rotulo { display: block; font-size: .88rem; color: var(--muted); }
+.municipio-escolhido {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px;
+  background: var(--bg);
+}
+.municipio-escolhido strong { font-size: .92rem; }
+.municipio-escolhido code { color: var(--muted); font-size: .82rem; }
+.municipio-lista {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  max-height: 240px; overflow-y: auto; margin-top: 4px;
+}
+.municipio-lista button {
+  display: flex; justify-content: space-between; gap: 12px; width: 100%;
+  background: none; border: 0; border-bottom: 1px solid var(--border);
+  color: var(--text); padding: 8px 10px; cursor: pointer; font: inherit;
+  font-size: .88rem; text-align: left;
+}
+.municipio-lista button[data-ativo="sim"] { background: var(--primary-surface); }
+.municipio-lista button:last-child { border-bottom: 0; }
+.municipio-lista button code { color: var(--muted); font-size: .8rem; }
+.municipio-vazio { margin: 0; padding: 8px 10px; color: var(--muted); font-size: .82rem; }
+
 /* Pré-visualização: parece uma nota, para que o erro salte antes da emissão. */
 .nfse-preview { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; font-size: .88rem; }
 .nfse-preview > header { display: flex; justify-content: space-between; gap: var(--gap); border-bottom: 2px solid var(--text); padding-bottom: 10px; margin-bottom: 12px; }

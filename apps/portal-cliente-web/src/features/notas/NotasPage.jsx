@@ -5,6 +5,7 @@ import { useCarregamento } from "../../lib/hooks";
 import {
   TRACO,
   brl,
+  competenciaPadrao,
   competenciasRecentes,
   fmtCompetencia,
   fmtDateBr,
@@ -43,7 +44,11 @@ function chipDaNota(status) {
  */
 export function NotasPage({ empresa }) {
   const companyId = empresa.companyId;
-  const [competencia, setCompetencia] = useState("");
+  // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
+  // `lib/format.js`). Antes abria em "Todas". ⚠ Isto ESTREITA o que a tela mostra ao abrir: quem
+  // emitiu no mês passado não vê a nota de cara. Por isso o estado vazio abaixo NOMEIA a
+  // competência e aponta para "Todas" — some da tela, mas não some sem dizer para onde foi.
+  const [competencia, setCompetencia] = useState(competenciaPadrao);
   const [pagina, setPagina] = useState(1);
 
   // Trocar de empresa ou de competência recomeça na página 1: manter a página 4
@@ -119,7 +124,7 @@ export function NotasPage({ empresa }) {
       ) : query.erro ? null : notas.length === 0 ? (
         <Vazio>
           {competencia
-            ? `Nenhuma nota emitida em ${fmtCompetencia(competencia)}.`
+            ? `Nenhuma nota emitida em ${fmtCompetencia(competencia)}. Troque a competência acima — ou escolha "Todas" para ver o histórico inteiro.`
             : "Nenhuma nota emitida encontrada."}
         </Vazio>
       ) : (

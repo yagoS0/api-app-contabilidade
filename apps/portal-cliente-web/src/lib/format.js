@@ -113,3 +113,26 @@ export function mesCorrente() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
+
+/**
+ * A COMPETÊNCIA COM QUE AS TELAS DO CLIENTE ABREM: o **mês CORRENTE**.
+ *
+ * ⚠⚠ ISTO INVERTE UMA DECISÃO DOCUMENTADA, E A INVERSÃO É DO DONO — 18/08/2026.
+ * O padrão do projeto é o mês ANTERIOR, e ele é deliberado: `apps/web/src/lib/competencia.js`
+ * (`competenciaPadrao`) diz *"o contador trabalha com o mês fechado"*, e o dashboard do escritório
+ * filtra assim. O portal do CLIENTE passa a abrir no mês corrente porque foi o que o dono pediu,
+ * com a tela na frente dele.
+ *
+ * ⚠ **NÃO "CONSERTE" ISTO DE VOLTA PARA `mesAntecedente`.** Quem vier daqui a três meses vai
+ * encontrar duas telas do mesmo sistema abrindo em meses diferentes e vai querer alinhá-las; o
+ * alinhamento certo é perguntar ao dono, não escolher o lado do contador. O motivo da diferença é
+ * o USO: o contador olha o mês que fechou, o cliente olha o mês que está vivendo — ele acabou de
+ * emitir a nota que quer ver.
+ *
+ * ⚠ O que NÃO mudou junto: o mês anterior continua na lista de opções (é a segunda linha de
+ * `competenciasRecentes`), e nas abas Notas e Guias "Todas" continua existindo. A decisão é sobre
+ * onde a tela ABRE, não sobre o que ela deixa ver.
+ */
+export function competenciaPadrao() {
+  return mesCorrente();
+}

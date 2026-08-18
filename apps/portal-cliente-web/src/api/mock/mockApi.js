@@ -80,6 +80,9 @@ function criarEstado() {
   //   pc-003  NÃO liberada              → o contador precisa liberar
   //   pc-004  campo AUSENTE             → ⚠ "não recebemos o estado" — que NÃO é "não liberada"
   //
+  // ⚠ A pc-005 vem depois e NÃO é um quinto estado do portão: ela abre o eixo do REGIME
+  // (Lucro Presumido), sem o qual o ramo do ISS que MANTÉM os campos é inalcançável offline.
+  //
   // ⚠ A pc-004 **omite** `emissaoNfseLiberada` de propósito. É o que acontece quando o portal fala
   // com uma API anterior a 18/08/2026 (o campo é dessa data). Se o mock sempre mandasse o campo,
   // o ramo tri-estado da tela seria código morto no desenvolvimento e só apareceria em campo.
@@ -175,6 +178,47 @@ function criarEstado() {
       portalUpdatedAt: "2026-08-11T12:05:00.000Z",
       legacyCompany: null,
     },
+    {
+      // ⚠ A QUINTA EMPRESA NÃO É UM QUINTO ESTADO DO PORTÃO — ela abre um EIXO NOVO: o REGIME.
+      //
+      // Desde 18/08/2026 o formulário esconde a alíquota de ISS (e a retenção) quando a empresa é
+      // do Simples, porque ali o ISS está dentro do DAS. Com as quatro empresas de cima, o ramo
+      // que MANTÉM os campos era inalcançável offline: só a pc-001 passa pelo portão, e ela é do
+      // Simples. Um ramo que ninguém consegue abrir é um ramo cujo desenho só aparece em produção.
+      //
+      // ⚠ E ela também torna visível uma limitação REAL, não uma invenção do mock: o formulário
+      // não oferece `pTotTribFed/Est/Mun`, e `buildDpsXml` **recusa** a emissão de quem não é do
+      // Simples sem eles (`MISSING_TOT_TRIB_NAO_SIMPLES`) em vez de declarar carga zero. Ver o
+      // desfecho replicado em `emitirNfse`.
+      companyId: "pc-005",
+      portalId: "pc-005",
+      myRole: "OWNER",
+      razao: "Meridiano Engenharia e Projetos Ltda",
+      cnpj: "10203040000150",
+      inscricaoMunicipal: "551200",
+      uf: "RJ",
+      municipio: "Rio de Janeiro",
+      ownerEmail: "cliente@exemplo.com",
+      guideNotificationEmail: null,
+      email: null,
+      telefone: null,
+      emissaoNfseLiberada: true,
+      portalCreatedAt: "2025-02-10T10:00:00.000Z",
+      portalUpdatedAt: "2026-08-14T09:12:00.000Z",
+      legacyCompany: {
+        id: "legacy-005",
+        razaoSocial: "MERIDIANO ENGENHARIA E PROJETOS LTDA",
+        inscricaoMunicipal: "551200",
+        codigoServicoNacional: "070201",
+        codigoServicoMunicipal: "0702",
+        rpsSerie: "1",
+        rpsNumero: "12",
+        // ⚠ É ESTE CAMPO que a tela lê para decidir sobre o ISS — e ele é a SEGUNDA leitura do
+        // servidor (a primeira é `CadastroFiscal.regime`, que `GET /client/companies` não manda).
+        regimeTributario: "LUCRO_PRESUMIDO",
+        optanteSimples: false,
+      },
+    },
   ];
 
   const usuarios = [
@@ -186,7 +230,7 @@ function criarEstado() {
       accountType: "CLIENT",
       name: "Ana Ribeiro",
       defaultClientId: "pc-001",
-      empresas: ["pc-001", "pc-002", "pc-003", "pc-004"],
+      empresas: ["pc-001", "pc-002", "pc-003", "pc-004", "pc-005"],
     },
     {
       id: "u-cliente-2",
@@ -358,6 +402,94 @@ function criarEstado() {
   /** invoiceId → a linha da tentativa (número reservado, e se ele está retido). */
   const tentativasNfse = new Map();
 
+  // ── A BASE DE CNPJ SIMULADA (consulta do tomador) ──────────────────────────────────────────
+  //
+  // ⚠ NADA AQUI SAI PARA A REDE. O par real (`api/real/brasilApi.js`) fala com a BrasilAPI; este
+  // lado responde de uma tabela que mora no ESTADO do mock, pelos mesmos CNPJs que já aparecem nas
+  // notas (`NOMES_TOMADOR`) — assim a consulta e a lista de notas contam a mesma história.
+  //
+  // ⚠ AS QUATRO RESPOSTAS BOAS SÃO QUATRO DESFECHOS DIFERENTES, e existem separadas por isso: a
+  // regra do endereço é TUDO OU NADA e a do código IBGE é aceitação POR PROVA. Uma base só com
+  // respostas perfeitas deixaria os dois ramos mais importantes sem desenho conferido offline.
+  //
+  //   11222333000181  completa e ATIVA          → nome + endereço inteiro entram
+  //   22333444000172  ATIVA, endereço SEM NÚMERO→ ⚠ nada de endereço é escrito, e a tela diz o quê
+  //   33444555000163  ATIVA, código IBGE que NÃO bate com o município/UF da MESMA resposta
+  //                                             → o código é recusado, e o endereço cai junto
+  //   44555666000154  situação BAIXADA          → aviso; a emissão segue normalmente
+  //   00000000000191  → 404 (não encontrado)
+  //   99999999000199  → falha de rede
+  //   qualquer outro  → 404 (não encontrado)
+  const baseCnpj = new Map([
+    [
+      "11222333000181",
+      {
+        razao_social: "COMERCIAL AURORA LTDA",
+        descricao_situacao_cadastral: "ATIVA",
+        cep: "01310930",
+        descricao_tipo_de_logradouro: "AVENIDA",
+        logradouro: "PAULISTA",
+        numero: "1578",
+        complemento: "CONJ 42",
+        bairro: "BELA VISTA",
+        municipio: "São Paulo",
+        uf: "SP",
+        codigo_municipio_ibge: "3550308",
+      },
+    ],
+    [
+      "22333444000172",
+      {
+        razao_social: "STUDIO VERTICE ARQUITETURA ME",
+        descricao_situacao_cadastral: "ATIVA",
+        cep: "36010000",
+        descricao_tipo_de_logradouro: "RUA",
+        logradouro: "HALFELD",
+        numero: "", // ⚠ o furo do cenário
+        bairro: "CENTRO",
+        municipio: "Juiz de Fora",
+        uf: "MG",
+        codigo_municipio_ibge: "3136702",
+      },
+    ],
+    [
+      "33444555000163",
+      {
+        razao_social: "DELTA LOGISTICA S.A.",
+        descricao_situacao_cadastral: "ATIVA",
+        cep: "80010000",
+        descricao_tipo_de_logradouro: "RUA",
+        logradouro: "XV DE NOVEMBRO",
+        numero: "300",
+        bairro: "CENTRO",
+        municipio: "Curitiba",
+        uf: "PR",
+        // ⚠ 3550308 é São Paulo/SP. A resposta diz Curitiba/PR. As três provas do
+        // `codigoMunicipioVerificado` existem exatamente para este caso.
+        codigo_municipio_ibge: "3550308",
+      },
+    ],
+    [
+      "44555666000154",
+      {
+        razao_social: "PREFEITURA MUNICIPAL DE SAO BENTO",
+        descricao_situacao_cadastral: "BAIXADA",
+        motivo_situacao_cadastral: "EXTINCAO POR ENCERRAMENTO LIQUIDACAO VOLUNTARIA",
+        data_situacao_cadastral: "2024-11-30",
+        cep: "58500000",
+        descricao_tipo_de_logradouro: "PRACA",
+        logradouro: "DA BANDEIRA",
+        numero: "1",
+        bairro: "CENTRO",
+        municipio: "São Bento",
+        uf: "PB",
+        // ⚠ 2513901 conferido contra a lista versionada. O primeiro palpite deste cenário foi
+        // 2513851, que é **Santo André/PB** — o erro que as três provas existem para pegar.
+        codigo_municipio_ibge: "2513901",
+      },
+    ],
+  ]);
+
   return {
     empresas,
     usuarios,
@@ -368,6 +500,7 @@ function criarEstado() {
     tokensRedefinicao,
     numeracaoNfse,
     tentativasNfse,
+    baseCnpj,
   };
 }
 
@@ -648,6 +781,53 @@ export function createMockApi() {
       return { data, total: Number(data.reduce((s, i) => s + i.valor, 0).toFixed(2)) };
     },
 
+    // --- Consulta do tomador na Receita (CNPJ) ------------------------------------------------
+    //
+    // ⚠ **NENHUMA CHAMADA DE REDE SAI DAQUI.** O par real é `api/real/brasilApi.js`, que fala com
+    // a BrasilAPI de verdade; este lado responde da tabela guardada no estado do mock. Os CNPJs
+    // sentinela e o que cada um produz estão documentados em `criarEstado`.
+    //
+    // ⚠ O CONTRATO É O MESMO DOS DOIS LADOS, inclusive na forma da recusa: `{ ok:false, motivo,
+    // mensagem }` e **nunca** um erro lançado. Um `throw` aqui entraria no
+    // `real_with_mock_fallback` e uma queda da BrasilAPI viraria dado de empresa inventado numa
+    // tela que emite nota fiscal.
+    //
+    // ⚠ CPF NÃO CHEGA AQUI — quem não pergunta é a tela (`decidirConsulta`). Se chegasse mesmo
+    // assim, cai no `cnpj_incompleto` abaixo, que é o mesmo do real.
+    async consultarCnpj(cnpj) {
+      await dormir(320); // consulta externa demora mais que uma leitura local
+      const digitos = String(cnpj || "").replace(/\D+/g, "").slice(0, 14);
+      if (digitos.length !== 14) {
+        return { ok: false, motivo: "cnpj_incompleto", mensagem: "Informe os 14 dígitos do CNPJ." };
+      }
+      if (digitos === "99999999000199") {
+        return {
+          ok: false,
+          motivo: "rede",
+          mensagem: "Não conseguimos consultar a Receita agora — confira e preencha à mão.",
+        };
+      }
+      const bruto = estado.baseCnpj.get(digitos);
+      if (!bruto) {
+        return {
+          ok: false,
+          motivo: "nao_encontrado",
+          mensagem: "CNPJ não encontrado na base da Receita.",
+        };
+      }
+      const texto = String(bruto.descricao_situacao_cadastral || "").trim().toUpperCase();
+      return {
+        ok: true,
+        situacao: {
+          texto: texto || null,
+          ativa: texto === "ATIVA",
+          motivo: String(bruto.motivo_situacao_cadastral || "").trim() || null,
+          data: String(bruto.data_situacao_cadastral || "").trim() || null,
+        },
+        bruto,
+      };
+    },
+
     // --- Emissão de NFS-e ---------------------------------------------------------------------
     //
     // ⚠⚠ **NADA AQUI EMITE COISA ALGUMA.** Nenhuma chamada de rede sai deste arquivo: a "emissão"
@@ -729,6 +909,59 @@ export function createMockApi() {
         throw new ApiError(400, "company_missing_fields", "company_missing_fields", {
           error: "company_missing_fields",
           missing: ["codigoServicoMunicipal"],
+        });
+      }
+
+      // ── 3.5. O REGIME, E A RECUSA QUE ELE PRODUZ ───────────────────────────────────────────
+      //
+      // ⚠ **QUEM NÃO É DO SIMPLES NÃO CONSEGUE EMITIR POR ESTA TELA HOJE, E ISSO É DO SERVIDOR.**
+      // `buildDpsXml` (`apps/api/src/application/nfse/NfseService.js`) recusa com
+      // `MISSING_TOT_TRIB_NAO_SIMPLES` quando `opSimpNac ≠ 3` e nenhum de
+      // `pTotTribFed`/`pTotTribEst`/`pTotTribMun` vem no corpo — e o formulário do cliente não
+      // oferece nenhum dos três. A recusa é DELIBERADA lá: o caminho antigo emitia
+      // `<vTotTribFed>0.00</vTotTribFed>`, que **afirma carga tributária zero** (Lei 12.741/2012),
+      // e a estrutura correta do grupo não pôde ser confirmada sem o XSD.
+      //
+      // ⚠ O mock replica a recusa em vez de deixar a empresa do Presumido emitir. Um mock que
+      // aceitasse faria a tela parecer pronta para um regime em que ela não está — e o defeito só
+      // apareceria com o cliente na frente do formulário preenchido.
+      const regimeBruto = String(empresa?.legacyCompany?.regimeTributario || "")
+        .trim()
+        .toUpperCase()
+        .replace(/[\s-]+/g, "_");
+      const ehSimplesNoMock = regimeBruto === "SIMPLES" || regimeBruto === "SIMPLES_NACIONAL";
+      const temTotTribNaoSimples = [
+        payload?.totTrib?.pTotTribFed,
+        payload?.totTrib?.pTotTribEst,
+        payload?.totTrib?.pTotTribMun,
+      ].some((v) => v !== undefined && v !== null && v !== "");
+      // ⚠ Só recusa quando o regime é CONHECIDO e não é Simples. Regime que não chegou até a tela
+      // (`legacyCompany: null`, as pc-002/003/004) não vira "não optante" por omissão — do lado do
+      // servidor essa empresa cairia em `NFSE_REGIME_INDEFINIDO`, que é outra recusa, de outra
+      // fonte (`CadastroFiscal`), e fabricá-la aqui seria o mock inventando um fato do cadastro.
+      if (regimeBruto && !ehSimplesNoMock && !temTotTribNaoSimples) {
+        throw new ApiError(400, "nfse_falha_local", "falha local", {
+          error: "nfse_falha_local",
+          camada: "NOSSA",
+          codigo: "MISSING_TOT_TRIB_NAO_SIMPLES",
+          message:
+            "Empresa não optante do Simples: a carga tributária aproximada (pTotTribFed/Est/Mun) não " +
+            "foi informada, e o código emitia 0,00 — que afirma carga zero.",
+          correcao:
+            "Informe os percentuais de tributos aproximados (Lei 12.741/2012). ⚠ O formulário do " +
+            "cliente não oferece esses campos hoje: a emissão de empresa não optante ainda não " +
+            "passa por esta tela. Fale com o seu contador.",
+          numeroReutilizavel: true,
+          // ⚠ SEM `rpsNumero`: a recusa acontece ANTES da reserva de numeração, e é isso que ela
+          // significa — nenhum número foi consumido, nada saiu da máquina. Preencher um número
+          // aqui contaria a história errada sobre o que aconteceu.
+          nfse: {
+            companyId: id,
+            tomadorNome: String(payload?.tomador?.nome || ""),
+            valorServicos: Number(payload?.servico?.valorServicos),
+            status: "falha_envio",
+            falhaCamada: "NOSSA",
+          },
         });
       }
 

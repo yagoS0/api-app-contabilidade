@@ -1,4 +1,4 @@
-import { TRACO, brl, fmtCnpj, fmtCompetencia, fmtDoc, pct, texto } from "../../lib/format";
+import { TRACO, brl, fmtCnpj, fmtDateBr, fmtDoc, pct, texto } from "../../lib/format";
 
 /**
  * PRÉ-VISUALIZAÇÃO AO VIVO da nota — o vocabulário `.nfse-preview` do protótipo
@@ -20,10 +20,12 @@ export function PreviaNota({ empresa, valores }) {
     descricao,
     valorServicos,
     competencia,
+    issNoFormulario,
     issRetido,
     aliquota,
     issRetidoValor,
     liquido,
+    pTotTribSN,
     codigoServicoNacional,
   } = valores;
 
@@ -68,8 +70,11 @@ export function PreviaNota({ empresa, valores }) {
         <div style={{ whiteSpace: "pre-wrap" }}>
           {descricao ? texto(descricao) : <span className="vazio">O que foi prestado</span>}
         </div>
+        {/* ⚠ É a `dCompet` — a data que a NOTA declara como competência, e que a pessoa escolhe.
+            A data e a hora da EMISSÃO (`dhEmi`) são as do instante da transmissão e o servidor as
+            crava; por isso não aparecem aqui como se fossem escolhíveis. */}
         <div className="muted">
-          Competência {competencia ? fmtCompetencia(competencia) : TRACO}
+          Data da competência {competencia ? fmtDateBr(competencia) : TRACO}
         </div>
         <div className="muted">
           Código de serviço {codigoServicoNacional ? texto(codigoServicoNacional) : TRACO}
@@ -84,16 +89,29 @@ export function PreviaNota({ empresa, valores }) {
               <td>Valor dos serviços</td>
               <td>{valorServicos === null ? TRACO : brl(valorServicos)}</td>
             </tr>
-            <tr className="linha-info">
-              <td>ISSQN retido pelo tomador</td>
-              <td>{issRetido ? "Sim" : "Não"}</td>
-            </tr>
-            {issRetido ? (
+            {/* ⚠ NO SIMPLES O ISS NÃO É UMA LINHA DESTA NOTA — ele está dentro do DAS, e a tela de
+                emissão nem oferece o campo (decisão do dono, 18/08/2026). Escrever "ISSQN retido:
+                Não" aqui daria a entender que houve uma escolha de retenção; o que houve é que a
+                pergunta não se aplica. */}
+            {issNoFormulario ? (
+              <tr className="linha-info">
+                <td>ISSQN retido pelo tomador</td>
+                <td>{issRetido ? "Sim" : "Não"}</td>
+              </tr>
+            ) : null}
+            {issNoFormulario && issRetido ? (
               <tr className="linha-info">
                 <td>Alíquota do ISS</td>
                 <td>{aliquota === null ? TRACO : pct(aliquota)}</td>
               </tr>
             ) : null}
+            {/* ⚠ VAI IMPRESSO PARA O TOMADOR (Lei 12.741/2012), então precisa estar à vista antes
+                de emitir. ⚠ Em branco é TRAÇO, nunca 0,00% — zero é uma afirmação sobre a carga
+                tributária. */}
+            <tr className="linha-info">
+              <td>Tributos do Simples nesta nota</td>
+              <td>{pTotTribSN === null || pTotTribSN === undefined ? TRACO : pct(pTotTribSN)}</td>
+            </tr>
             {issRetido ? (
               <tr>
                 <td>ISS retido</td>

@@ -5,11 +5,11 @@ import { useCarregamento } from "../../lib/hooks";
 import {
   TRACO,
   brl,
+  competenciaPadrao,
   competenciasRecentes,
   fmtCompetencia,
   fmtDateBr,
   inteiro,
-  mesAntecedente,
   pct,
   somaOuTraco,
 } from "../../lib/format";
@@ -23,7 +23,9 @@ const OPCOES_COMPETENCIA = competenciasRecentes(12);
  *   a vencer                   -> GET /fluxo (guias liberadas ainda em aberto)
  */
 export function HomePage({ empresa, aoNavegar }) {
-  const [competencia, setCompetencia] = useState(mesAntecedente);
+  // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026, que inverte o padrão do projeto
+  // (mês anterior). O porquê está em `lib/format.js`, em `competenciaPadrao`.
+  const [competencia, setCompetencia] = useState(competenciaPadrao);
   const companyId = empresa.companyId;
 
   // limit:1 — aqui só interessa o `summary`, que o backend calcula sobre o
@@ -45,6 +47,17 @@ export function HomePage({ empresa, aoNavegar }) {
   const proximos = (fluxo?.data || []).slice(0, 5);
   const vencidas = (fluxo?.data || []).filter((i) => i.vencida).length;
 
+  // ⚠⚠ ESTE CARD USA `efetiva` (impostos PAGOS ÷ faturamento, **INSS incluso**) DE PROPÓSITO, e a
+  // nota fiscal usa a OUTRA conta da mesma rota (`deReceita`, só o DAS). Não são duas leituras do
+  // mesmo número: são duas perguntas. Decisão do dono, 18/08/2026 — *"no painel isso está correto,
+  // pois ali temos a alíquota efetiva total, com todos os impostos; no caso da nota precisamos
+  // preencher apenas com a alíquota do Simples Nacional."*
+  //   • aqui, PAINEL: *quanto esta empresa paga de imposto?* ⇒ tudo. É gestão.
+  //   • na emissão: *quanto desta nota é tributo do Simples?* ⇒ só o DAS, porque `pTotTribSN` é
+  //     "total de tributos do SIMPLES NACIONAL" e vai impresso ao tomador (Lei 12.741/2012).
+  // ⚠ NÃO alinhe as duas. O porquê, com os números medidos em produção, está em
+  // `features/emitir/lib/aliquotaEfetiva.js`.
+  //
   // ⚠ A alíquota efetiva do backend é `impostosPagos / faturamento`, com
   // `d > 0 ? n/d*100 : 0`. Os DOIS lados fabricam zero:
   //  - sem faturamento, o denominador some e a conta devolve 0;

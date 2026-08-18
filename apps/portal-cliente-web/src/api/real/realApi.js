@@ -10,6 +10,7 @@
 import { ApiError } from "../ApiError";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, definirTokens, limparSessao } from "../sessionStore";
+import { consultarCnpjNaBrasilApi } from "./brasilApi";
 
 const BASE = String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 
@@ -205,6 +206,19 @@ export function createRealApi() {
 
     async getFluxo(companyId) {
       return pedir(`/client/companies/${encodeURIComponent(companyId)}/fluxo`);
+    },
+
+    // --- Consulta do tomador na Receita (CNPJ) ------------------------------------------------
+    //
+    // ⚠ ESTA É A ÚNICA CHAMADA DESTE ARQUIVO QUE **NÃO** VAI PARA A API DO CONTADOR. A BrasilAPI é
+    // pública e o pedido sai direto do navegador — sem token, sem `pedir()`, sem sessão. Por isso
+    // ela também não derruba sessão nem passa pelo refresh.
+    //
+    // ⚠ Ela NUNCA lança. A recusa é `{ ok:false, motivo, mensagem }`, e é assim de propósito: um
+    // erro lançado daqui entraria no `real_with_mock_fallback` de `api/index.js` e uma queda da
+    // BrasilAPI viraria **dados do mock** numa tela que emite nota fiscal de verdade.
+    async consultarCnpj(cnpj) {
+      return consultarCnpjNaBrasilApi(cnpj);
     },
 
     // --- Emissão de NFS-e ---------------------------------------------------
