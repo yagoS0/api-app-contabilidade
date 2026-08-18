@@ -152,7 +152,16 @@ export function enderecoDaReceita(bruto, { municipios = null } = {}) {
   const lido = {
     cMun: municipio.codigo || "",
     CEP: soDigitosDoc(bruto?.cep),
-    xLgr: [bruto?.descricao_tipo_de_logradouro, bruto?.logradouro].filter(Boolean).join(" ").trim(),
+    // ⚠ O LOGRADOURO É QUEM MANDA — o tipo sozinho NÃO é um logradouro. Enquanto isto era
+    // `[tipo, logradouro].filter(Boolean).join(" ")`, uma resposta com
+    // `descricao_tipo_de_logradouro: "RUA"` e `logradouro` vazio produzia a string **"RUA"** —
+    // não-vazia, portanto **aprovada** pela checagem de tudo-ou-nada logo abaixo. Meio campo
+    // passando por inteiro, na exata regra que existe para impedir isso ("meio endereço é pior
+    // que nenhum"): o endereço inteiro entrava no formulário com a palavra "Rua" no lugar da rua,
+    // e ia para o XML da nota. Sem logradouro, `xLgr` fica VAZIO e o bloco todo é recusado.
+    xLgr: String(bruto?.logradouro || "").trim()
+      ? [bruto?.descricao_tipo_de_logradouro, bruto?.logradouro].filter(Boolean).join(" ").trim()
+      : "",
     nro: String(bruto?.numero || "").trim(),
     xCpl: String(bruto?.complemento || "").trim(),
     xBairro: String(bruto?.bairro || "").trim(),

@@ -217,3 +217,50 @@ describe("situação cadastral — aviso, nunca bloqueio", () => {
     expect(avisoSituacao(null)).toBeNull();
   });
 });
+
+// ── O TIPO DE LOGRADOURO SOZINHO NÃO É UM LOGRADOURO ────────────────────────────────────────────
+//
+// Achado pelo agente que escreveu o harness do portal do cliente, e REPRODUZIDO nos dois apps antes
+// do conserto. `xLgr` era `[tipo, logradouro].filter(Boolean).join(" ")`: com
+// `descricao_tipo_de_logradouro: "RUA"` e `logradouro` vazio, o resultado era a string **"RUA"** —
+// não-vazia, portanto APROVADA pela checagem de tudo-ou-nada. Meio campo passando por inteiro, na
+// exata regra que existe para impedir isso, e o endereço ia inteiro para o formulário (e para o XML
+// da nota) com a palavra "Rua" no lugar da rua.
+describe("logradouro vazio derruba o endereço, mesmo com tipo presente", () => {
+  const semRua = { ...RESPOSTA, descricao_tipo_de_logradouro: "RUA", logradouro: "" };
+
+  it("⚠ \"RUA\" sozinho não vira logradouro — o bloco INTEIRO é recusado", () => {
+    const r = enderecoDaReceita(semRua, { municipios: MUNICIPIOS });
+    expect(r.endereco).toBeNull();
+    expect(JSON.stringify(r)).not.toMatch(/"xLgr":\s*"RUA"/);
+  });
+
+  it("e o que faltou é NOMEADO, como nos outros campos", () => {
+    const r = enderecoDaReceita(semRua, { municipios: MUNICIPIOS });
+    expect((r.faltantes || []).join(" ")).toMatch(/logradouro/i);
+  });
+
+  it("logradouro só com espaços também não passa", () => {
+    const r = enderecoDaReceita(
+      { ...RESPOSTA, descricao_tipo_de_logradouro: "AVENIDA", logradouro: "   " },
+      { municipios: MUNICIPIOS },
+    );
+    expect(r.endereco).toBeNull();
+  });
+
+  it("com logradouro de verdade, o tipo continua sendo prefixado", () => {
+    const r = enderecoDaReceita(
+      { ...RESPOSTA, descricao_tipo_de_logradouro: "RUA", logradouro: "DAS FLORES" },
+      { municipios: MUNICIPIOS },
+    );
+    expect(r.endereco.xLgr).toBe("RUA DAS FLORES");
+  });
+
+  it("sem TIPO, o logradouro sozinho basta — a guarda não é ampla demais", () => {
+    const r = enderecoDaReceita(
+      { ...RESPOSTA, descricao_tipo_de_logradouro: "", logradouro: "DAS FLORES" },
+      { municipios: MUNICIPIOS },
+    );
+    expect(r.endereco.xLgr).toBe("DAS FLORES");
+  });
+});
