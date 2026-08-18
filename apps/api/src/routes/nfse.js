@@ -3,6 +3,12 @@ import { validateNfsePayload } from "../application/validators/nfsePayload.js";
 import { NfseService } from "../application/nfse/NfseService.js";
 import { NfseRepository } from "../infrastructure/db/NfseRepository.js";
 import { ensureLegacyCompanyAccess, resolveLegacyCompanyId } from "./middlewares/portalAccess.js";
+// ⚠ O PORTÃO DOS DOIS ATOS FISCAIS, e só deles. `ensureLegacyCompanyAccess` responde "esta pessoa
+// enxerga esta empresa?" — que é VÍNCULO, não permissão: todo `CompanyClientUser` ATIVO passa, do
+// papel mais forte ao mais fraco. Emitir e cancelar NFS-e precisam de uma segunda pergunta ("o
+// contador liberou esta empresa, e o papel alcança?"), e ela é feita DEPOIS da primeira, aqui
+// embaixo, nas duas rotas de ato — nunca em `GET /nfse` nem em `POST /nfse/consulta`.
+import { ensureEmissaoNfseAutorizada } from "./middlewares/emissaoNfseGate.js";
 
 // ⚠ OS TRÊS CAMINHOS (emissão, consulta e evento) PASSARAM A EXIGIR O A1 DA PRÓPRIA EMPRESA.
 // Antes, todos usavam um PFX GLOBAL (`NFSE_CERT_PFX_PATH`) sem conferir de quem ele era. Cada
@@ -73,6 +79,9 @@ export function createNfseRouter({ ensureAuthorized, log }) {
     }
     const access = await ensureLegacyCompanyAccess(req, res, legacyCompanyId);
     if (!access.ok) return;
+    // ATO FISCAL: além de enxergar a empresa, é preciso estar autorizado a emitir por ela.
+    const portao = await ensureEmissaoNfseAutorizada(req, res, legacyCompanyId, { log });
+    if (!portao.ok) return;
 
     try {
       const result = await NfseService.issue({
@@ -334,6 +343,11 @@ export function createNfseRouter({ ensureAuthorized, log }) {
       }
       const access = await ensureLegacyCompanyAccess(req, res, existing.companyId);
       if (!access.ok) return;
+      // ⚠ O MESMO PORTÃO DA EMISSÃO — decisão do dono: emitir e cancelar são os dois atos da mesma
+      // tela, e duas regras divergiriam na primeira correção. Cancelar uma nota autorizada é ato
+      // fiscal tanto quanto emiti-la.
+      const portao = await ensureEmissaoNfseAutorizada(req, res, existing.companyId, { log });
+      if (!portao.ok) return;
       const status = String(existing.status || "").toLowerCase();
       if (status.includes("cancel") || status.includes("reject")) {
         return res.status(422).json({ error: "nfse_not_authorized" });

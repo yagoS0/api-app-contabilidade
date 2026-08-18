@@ -16,6 +16,7 @@
 // âmbar abaixo diz o que essa ausência impede, em vez de deixar a descoberta para a recusa.
 
 import { SeletorServicosNacionais } from "./SeletorServicosNacionais";
+import { LiberacaoEmissaoCliente } from "./LiberacaoEmissaoCliente";
 import { lerCodigosServicoNacional } from "../../../../lib/servicosNacionais/servicoNacional";
 import {
   lerCodigoServicoMunicipal,
@@ -68,6 +69,12 @@ export function CamposEmissaoNfse({
   codigoServicoMunicipal,
   rpsSerie,
   onChange,
+  // ⚠ O PORTÃO DA EMISSÃO PELO CLIENTE não é campo do formulário — não entra no `onChange` nem é
+  // salvo pelo "Salvar alterações". Vem do payload da empresa (`PortalClient`) e tem rota própria.
+  emissaoCliente = null,
+  razaoSocial = null,
+  onSetEmissaoCliente = null,
+  emissaoClienteSaving = false,
 }) {
   const nacional = lerCodigosServicoNacional(codigosServicoNacional);
   const municipal = lerCodigoServicoMunicipal(codigoServicoMunicipal);
@@ -169,6 +176,16 @@ export function CamposEmissaoNfse({
           seguem funcionando.
         </div>
       )}
+
+      {/* ⚠ QUEM PODE EMITIR vem DEPOIS de com o que emitir — a ordem é a do trabalho: primeiro a
+          empresa fica configurada, depois se decide se o cliente pode usar essa configuração.
+          O bloco não aparece no cadastro de empresa NOVA (não há empresa a liberar ainda). */}
+      <LiberacaoEmissaoCliente
+        emissaoCliente={emissaoCliente}
+        razaoSocial={razaoSocial}
+        onSetEmissaoCliente={onSetEmissaoCliente}
+        saving={emissaoClienteSaving}
+      />
     </>
   );
 }

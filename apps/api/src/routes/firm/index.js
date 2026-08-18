@@ -266,6 +266,37 @@ async function attachGuideComplianceToCompaniesList(data, competenciaArg) {
   });
 }
 
+// QUEM LIBEROU A EMISSÃO PELO CLIENTE, por NOME.
+//
+// `PortalClient.emissaoClienteLiberadaPor` guarda o **userId** (mesmo padrão de
+// `fechadoContabilPor`) — nome copiado na coluna envelheceria no dia em que a pessoa trocasse de
+// e-mail. Mas um uuid na tela não responde "quem autorizou este cliente a emitir?", que é a única
+// razão de a coluna existir. Então o nome é resolvido na LEITURA, em **uma** query para a lista
+// inteira (mesmo molde de `attachFiscalParcelamentoToCompaniesList`).
+//
+// ⚠ Usuário apagado NÃO vira "ninguém": o payload mantém o `liberadaPor` cru e o `liberadaPorNome`
+// fica nulo — a tela mostra o id em vez de dizer que a liberação não teve autor.
+async function anexarQuemLiberouEmissao(data) {
+  if (!Array.isArray(data) || !data.length) return data;
+  const userIds = [...new Set(data.map((item) => item.emissaoCliente?.liberadaPor).filter(Boolean))];
+  if (!userIds.length) return data;
+  const users = await prisma.user
+    .findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } })
+    .catch(() => []);
+  const nomePorId = new Map(users.map((u) => [u.id, u.name || u.email || null]));
+  return data.map((item) =>
+    item.emissaoCliente?.liberadaPor
+      ? {
+          ...item,
+          emissaoCliente: {
+            ...item.emissaoCliente,
+            liberadaPorNome: nomePorId.get(item.emissaoCliente.liberadaPor) || null,
+          },
+        }
+      : item
+  );
+}
+
 // C6: anexa ao card (a) a situação fiscal do SITFIS — pra avisar pendência ao lado de "apurada" —
 // e (b) se a empresa tem parcelamento ATIVO (selo "PARC" junto das guias). Duas queries pra lista
 // inteira, no molde de attachFechamentoContabilToCompaniesList.
@@ -607,6 +638,19 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       status: portal.status || "ATIVA",
       suspendedAt: portal.suspendedAt || null,
       suspendedReason: portal.suspendedReason || null,
+      // ⚠ O PORTÃO DA EMISSÃO PELO CLIENTE precisa VOLTAR para a tela — campo que não entra no
+      // `select` volta `undefined` e o controle reabre desligado, como se o contador nunca tivesse
+      // liberado nada. Este projeto já pagou isso três vezes (`legacyCompanySelect`,
+      // `codigoMunicipioIbge`, os campos de NFS-e), e aqui o erro seria pior: o contador clicaria
+      // de novo achando que não salvou.
+      // O NOME de quem liberou é resolvido depois (`anexarQuemLiberouEmissao`); a coluna guarda o
+      // userId, e nome copiado no payload envelheceria.
+      emissaoCliente: {
+        liberada: Boolean(portal.emissaoClienteLiberada),
+        liberadaEm: portal.emissaoClienteLiberadaEm || null,
+        liberadaPor: portal.emissaoClienteLiberadaPor || null,
+        liberadaPorNome: null,
+      },
       legacyCompany: legacy ? { ...legacy, email: legacyEmail } : null,
     };
   }
@@ -780,6 +824,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           status: true,           // Q11.1
           suspendedAt: true,
           suspendedReason: true,
+          // ⚠ SEM ISTO O PORTÃO NÃO VOLTA PARA A TELA. O `select` é explícito: coluna nova que não
+          // entre aqui simplesmente não existe para o frontend, e o controle de liberação abriria
+          // sempre desligado — o contador clicaria de novo achando que não tinha salvado.
+          emissaoClienteLiberada: true,
+          emissaoClienteLiberadaEm: true,
+          emissaoClienteLiberadaPor: true,
         },
       });
       const companyIds = items.map((item) => item.companyId).filter(Boolean);
@@ -826,7 +876,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
       const dataWithFechamento = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
       const dataWithNotas = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
-      const data = await attachFiscalParcelamentoToCompaniesList(dataWithNotas);
+      const dataComParcelamento = await attachFiscalParcelamentoToCompaniesList(dataWithNotas);
+      const data = await anexarQuemLiberouEmissao(dataComParcelamento);
       return res.json({ data, competencia: competenciaRef });
     }
 
@@ -851,6 +902,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             status: true,           // Q11.1
             suspendedAt: true,
             suspendedReason: true,
+            // ⚠ Mesmo motivo do bloco acima: `select` explícito, coluna que falta volta `undefined`.
+            emissaoClienteLiberada: true,
+            emissaoClienteLiberadaEm: true,
+            emissaoClienteLiberadaPor: true,
           },
         },
       },
@@ -900,7 +955,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     const dataWithSerpro = await attachSerproStatusToCompaniesList(dataWithCompliance);
     const dataWithFechamento = await attachFechamentoContabilToCompaniesList(dataWithSerpro, competenciaRef);
     const dataWithNotas = await attachNotasApuracaoToCompaniesList(dataWithFechamento, competenciaRef);
-    const data = await attachFiscalParcelamentoToCompaniesList(dataWithNotas);
+    const dataComParcelamento = await attachFiscalParcelamentoToCompaniesList(dataWithNotas);
+    const data = await anexarQuemLiberouEmissao(dataComParcelamento);
     return res.json({ data, competencia: competenciaRef });
   });
 
@@ -1099,6 +1155,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
               createdAt: true,
               updatedAt: true,
               companyId: true,
+              // ⚠ O PATCH do cadastro NÃO altera o portão (ele tem rota própria), mas precisa
+              // DEVOLVÊ-LO: sem estas três linhas a resposta do "Salvar alterações" traria
+              // `emissaoCliente.liberada: false` e a tela desligaria o controle sozinha, sem
+              // ninguém ter clicado nele.
+              emissaoClienteLiberada: true,
+              emissaoClienteLiberadaEm: true,
+              emissaoClienteLiberadaPor: true,
             },
           });
           let updatedLegacy = null;
@@ -1255,7 +1318,8 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             ownerName: ownerLinkAfter?.user?.name || null,
           });
         });
-        const [company] = await attachGuideComplianceToCompaniesList([result]);
+        const [comCompliance] = await attachGuideComplianceToCompaniesList([result]);
+        const [company] = await anexarQuemLiberouEmissao([comCompliance]);
         return res.json({ ok: true, company });
       } catch (err) {
         if (err?.code === "PORTAL_COMPANY_NOT_FOUND") {
@@ -2431,6 +2495,91 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       return res.status(500).json({ ok: false, error: "canal_update_failed", message: err?.message });
     }
   });
+
+  // ⚠ A PORTA DO CONTADOR PARA O PORTÃO DA EMISSÃO — decisão do dono, 18/08/2026:
+  // *"o acesso a emissão deve ser liberado para o cliente pelo portal do contador"*.
+  //
+  // Quem consome a chave gravada aqui é `routes/middlewares/emissaoNfseGate.js`, nos dois atos
+  // fiscais (`POST /nfse/issue` e `POST /nfse/:chave/eventos`). LIGAR aqui faz usuários
+  // `CLIENT_ADMIN`/`OWNER` desta empresa passarem a emitir NFS-e **em produção, em nome dela** —
+  // por isso `minRole: "ACCOUNTANT"`, o mesmo gate de `canal-envio` e dos contatos de WhatsApp.
+  router.patch(
+    "/companies/:companyId/emissao-cliente",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId || "").trim();
+      // ⚠ `Boolean(req.body?.liberada)` aceitaria "false" (string) como TRUE e ligaria o portão
+      // por erro de digitação de um chamador. Ato de consequência recebe booleano de verdade.
+      const liberada = req.body?.liberada;
+      if (typeof liberada !== "boolean") {
+        return res.status(400).json({
+          ok: false,
+          error: "liberada_invalida",
+          message: "O campo `liberada` deve ser booleano (true para liberar, false para revogar).",
+        });
+      }
+      const userId = String(req.auth?.user?.id || "") || null;
+      try {
+        // ⚠ DESLIGAR VOLTA `Em`/`Por` A NULO. As duas colunas respondem "quem autorizou este
+        // cliente a emitir?" — guardar nelas o instante da REVOGAÇÃO daria dois significados a uma
+        // coluna só (o erro documentado em "TRÊS NÚMEROS DE DAS, TRÊS COLUNAS"). Quem revogou fica
+        // no log abaixo. É o mesmo desenho do `reabrir` do fechamento contábil, que também zera
+        // `fechadoContabilEm`/`Por`.
+        const atualizado = await prisma.portalClient.update({
+          where: { id: portalClientId },
+          data: liberada
+            ? {
+                emissaoClienteLiberada: true,
+                emissaoClienteLiberadaEm: new Date(),
+                emissaoClienteLiberadaPor: userId,
+              }
+            : {
+                emissaoClienteLiberada: false,
+                emissaoClienteLiberadaEm: null,
+                emissaoClienteLiberadaPor: null,
+              },
+          select: {
+            id: true,
+            razao: true,
+            emissaoClienteLiberada: true,
+            emissaoClienteLiberadaEm: true,
+            emissaoClienteLiberadaPor: true,
+          },
+        });
+        log.info(
+          { portalClientId, liberada, userId, razao: atualizado.razao },
+          liberada
+            ? "Emissão de NFS-e pelo cliente LIBERADA pelo escritório"
+            : "Emissão de NFS-e pelo cliente REVOGADA pelo escritório"
+        );
+        // O nome sai na resposta para a tela poder dizer "liberado por Fulano em …" sem uma
+        // segunda chamada; a coluna continua guardando o userId.
+        const autor = atualizado.emissaoClienteLiberadaPor
+          ? await prisma.user
+              .findUnique({
+                where: { id: atualizado.emissaoClienteLiberadaPor },
+                select: { name: true, email: true },
+              })
+              .catch(() => null)
+          : null;
+        return res.json({
+          ok: true,
+          emissaoCliente: {
+            liberada: atualizado.emissaoClienteLiberada,
+            liberadaEm: atualizado.emissaoClienteLiberadaEm,
+            liberadaPor: atualizado.emissaoClienteLiberadaPor,
+            liberadaPorNome: autor?.name || autor?.email || null,
+          },
+        });
+      } catch (err) {
+        if (err?.code === "P2025") {
+          return res.status(404).json({ ok: false, error: "portal_company_not_found" });
+        }
+        log.error({ err }, "Falha ao alterar a liberação de emissão de NFS-e pelo cliente");
+        return res.status(500).json({ ok: false, error: "emissao_cliente_update_failed" });
+      }
+    }
+  );
 
   // Q17: guias ESPERADAS da competência (por regime/prolabore) + estado de cada uma
   // (present/vazio/missing) — alimenta a aba de Guias (lista pré-preenchida + botão Vazio).

@@ -285,6 +285,37 @@ buscados em runtime; `import()` dinâmico, fora do bundle inicial).
   campo singular. É o MESMO dado no formato antigo (antes da migration) — sem isso o cadastro
   reabriria vazio e o contador recadastraria.
 
+### ⚠ QUEM PODE EMITIR — o portão do cliente (dono, 18/08/2026)
+
+> *"o acesso a emissão deve ser liberado para o cliente pelo portal do contador"*
+
+Último bloco de **"Emissão de NFS-e"**, depois dos campos: a ordem é a do trabalho — primeiro a
+empresa fica configurada, depois se decide se o cliente pode usar essa configuração.
+Componente `form/components/LiberacaoEmissaoCliente.jsx`; regra em
+`lib/nfse/liberacaoEmissaoCliente.js`. Par mock/real: `setEmissaoClienteNfse`.
+
+- ⚠ **NÃO é campo do formulário.** Não entra em `form`, não passa pelo `onChange` e não é salvo pelo
+  "Salvar alterações": no backend é rota própria (`PATCH /firm/companies/:id/emissao-cliente`, gate
+  `ACCOUNTANT`+) com auditoria de quem/quando. Um campo a mais faria o ato fiscal viajar junto de
+  troca de telefone, e a confirmação perderia o sentido. Vem do payload da empresa
+  (`selectedCompany.emissaoCliente`, do `PortalClient`) — **não** de `legacyCompany`: é permissão de
+  portal, não configuração fiscal da `Company`.
+- ⚠ **TRÊS estados, não dois.** `emissaoCliente` ausente = *"esta tela não recebeu o estado"* e o
+  bloco **não renderiza** — não é o mesmo que "não liberada", e desenhar as duas iguais faria o
+  contador achar que revogaram a liberação dele. É também o que mantém o bloco fora do cadastro de
+  empresa NOVA (não há empresa a liberar antes de ela existir).
+- ⚠ **Ligar CONFIRMA repetindo o que vai acontecer** — "os usuários CLIENT_ADMIN e OWNER desta
+  empresa passarão a emitir NFS-e em produção, em nome dela", e **nomeia quem continua sem emitir**
+  (`FINANCEIRO`). O primeiro clique não envia nada. Revogar também confirma, dizendo que o
+  escritório continua emitindo e que as notas já emitidas não são afetadas.
+- ⚠ **Verde não entra**, nem no botão de ligar nem no de confirmar (verde é CONCLUÍDO neste app):
+  ação primária é o **accent**. Há teste amarrando isso e a ausência de hex literal.
+- **"Quem liberou e quando" fica na tela** enquanto está liberada, com as ausências ditas: usuário
+  apagado cai no id, data ilegível vira "sem registro da data" — a liberação nunca aparece sem
+  autor por omissão.
+- ⚠ **`PAPEIS_QUE_PASSAM` é o espelho de `PAPEL_MINIMO_EMISSAO`** (backend). Mudou lá, muda aqui —
+  senão a confirmação promete um desfecho e o servidor entrega outro.
+
 ### O municipal e a série
 
 - ⚠ **O `cTribMun` continua DIGITADO**, e agora por um motivo só: **não existe lista nacional de

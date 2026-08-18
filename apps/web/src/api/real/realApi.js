@@ -1093,6 +1093,17 @@ export function createRealApi() {
       });
     },
 
+    // ── O PORTÃO DA EMISSÃO PELO CLIENTE (18/08/2026) ──────────────────────
+    // Liga/desliga, por empresa, quem do LADO DO CLIENTE pode emitir e cancelar NFS-e. Quem lê a
+    // chave é o portão dos dois atos fiscais no backend (`routes/middlewares/emissaoNfseGate.js`);
+    // o `companyId` aqui é o `PortalClient.id`, como em todas as rotas `/firm/companies/:id/*`.
+    async setEmissaoClienteNfse(companyId, liberada) {
+      return request(`/firm/companies/${companyId}/emissao-cliente`, {
+        method: "PATCH",
+        body: JSON.stringify({ liberada: Boolean(liberada) }),
+      });
+    },
+
     // ── Q11.1: Suspender / Reativar / Excluir empresa ──────────────────────
     async suspendCompany(companyId, reason) {
       return request(`/firm/companies/${companyId}/suspend`, {

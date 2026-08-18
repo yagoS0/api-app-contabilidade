@@ -384,6 +384,52 @@ falta dessa porta passou a ser lacuna, não prudência. **Decisão do dono, aind
 para a nota sair do faturamento e da apuração. **Não fala com o sistema nacional.** O rótulo dizia
 "Cancelar" e foi trocado justamente porque, para um contador, esse é o nome do ato fiscal.
 
+### ⚠ QUEM PODE EMITIR (E CANCELAR) — o portão do cliente, decisão do dono, 18/08/2026
+
+> *"o acesso a emissão deve ser liberado para o cliente pelo portal do contador"*
+
+**O que estava medido:** `POST /nfse/issue` e `POST /nfse/:chaveAcesso/eventos` — os dois atos
+fiscais — autorizavam só por `ensureLegacyCompanyAccess`, que é checagem de **VÍNCULO, não de
+permissão**: `listAccessibleLegacyCompanyIds` inclui todo `CompanyClientUser` com `status:"ACTIVE"`.
+Ou seja, **qualquer membro ativo do lado do cliente, do papel mais forte ao mais fraco, alcançava a
+emissão** — e o caminho está ligado e apontado para o **sistema nacional de produção**.
+
+**Duas guardas independentes**, e uma sem a outra não serve:
+
+| guarda | onde | quem liga |
+|---|---|---|
+| a empresa | `PortalClient.emissaoClienteLiberada` (+ `...Em`/`...Por`) | o contador, `PATCH /firm/companies/:id/emissao-cliente` (`minRole: "ACCOUNTANT"`) |
+| o papel | `CompanyClientUser.role` **≥ `CLIENT_ADMIN`** | ninguém — é regra |
+
+- Regra pura: **`application/nfse/emissaoClienteAutorizacao.js`**; ligação (Prisma + HTTP):
+  **`routes/middlewares/emissaoNfseGate.js`**. Testes: o da regra + `routes/__tests__/portaoEmissaoNfse.test.js`
+  (a matriz nas duas rotas) + `routes/firm/__tests__/emissaoClienteLiberacao.test.js` (a porta do contador).
+- ⚠ **O ESCRITÓRIO PASSA SEMPRE**, sem consultar a flag (admin-like **ou** `CompanyFirmAccess`
+  ATIVO). Foi por esse caminho que a nota real de 17/08/2026 saiu; travá-lo pararia o contador, e é
+  a regressão mais cara desta entrega.
+- ⚠ **`ensureLegacyCompanyAccess` NÃO FOI TOCADA** — ela é usada em 12 pontos, em 4 arquivos, e
+  autoriza LEITURA de notas e o ADN inteiro. O portão é um **segundo passo**, depois dela, e **só
+  nos dois atos**. `GET /nfse`, `POST /nfse/consulta`, `adn.js` e `invoices.js` ficaram como estavam
+  — ler nota não é ato fiscal, e há teste provando que a leitura não apertou.
+- ⚠ **O mínimo é `CLIENT_ADMIN` por PRECEDENTE**: pró-labore, certificado A1 e sócios já o exigem.
+- ⚠ **A recusa NOMEIA o motivo**, com **códigos distintos** (403): `EMISSAO_CLIENTE_NAO_LIBERADA` ×
+  `EMISSAO_CLIENTE_PAPEL_INSUFICIENTE` — conserto diferente (um clique do contador × troca de
+  papel). Faltando as duas, o `codigo` nomeia a da empresa e `motivos` traz as duas.
+- ⚠ **Os dois ids.** A permissão mora no **`PortalClient`**; o que chega às rotas é a **`Company`
+  legada**. A volta é por `PortalClient.companyId` (`@unique`) — **nunca** `portalClient.findUnique({where:{id}})`
+  com o id legado.
+- ⚠ **Empresa legada sem `PortalClient` não é "liberada por omissão"** — sem a linha do portal não
+  existe a chave que o contador ligaria. Recusa nomeada.
+- ⚠ **Desligar zera `...Em`/`...Por`.** Elas respondem *"quem autorizou este cliente a emitir?"*;
+  guardar nelas o instante da REVOGAÇÃO daria dois significados a uma coluna só. Quem revogou fica
+  no log. Mesmo desenho do `reabrir` do fechamento contábil.
+- ⚠ **O estado volta no payload da empresa** (`emissaoCliente: {liberada, liberadaEm, liberadaPor,
+  liberadaPorNome}`) — as três colunas entraram nos **três** `select` explícitos de `PortalClient`
+  em `routes/firm/index.js`, e o nome é resolvido em uma query (`anexarQuemLiberouEmissao`).
+- **Migration `20260818120000_add_emissao_cliente_liberada` — escrita, NÃO APLICADA.** Aditiva,
+  `DEFAULT false`, **sem backfill** de propósito: nenhum dado no banco prova que o contador quis
+  liberar alguma empresa.
+
 Os cinco defeitos abaixo foram medidos e corrigidos **antes** dessa primeira emissão.
 
 | # | Defeito medido | Hoje |

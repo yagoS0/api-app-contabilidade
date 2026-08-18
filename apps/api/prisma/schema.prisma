@@ -413,6 +413,21 @@ model PortalClient {
   inscricaoMunicipal     String?
   uf                     String?
   municipio              String?
+  /// ⚠ PORTÃO DO ATO FISCAL — decisão do dono, 18/08/2026: *"o acesso a emissão deve ser liberado
+  /// para o cliente pelo portal do contador"*. Enquanto isto for `false`, NENHUM usuário do lado do
+  /// CLIENTE emite ou cancela NFS-e desta empresa, qualquer que seja o papel dele. O usuário do
+  /// ESCRITÓRIO não passa por aqui (ver `emissaoNfseGate.js`): foi por esse caminho que a primeira
+  /// nota real saiu, e travá-lo pararia o contador.
+  ///
+  /// ⚠ NASCE FECHADA, sem exceção. Ato fiscal não se libera por omissão — e o default é o que
+  /// protege as empresas que já existem no dia em que a migration for aplicada.
+  emissaoClienteLiberada Boolean   @default(false)
+  /// Quando e por QUEM a liberação foi ligada (userId, mesmo padrão de `fechadoContabilPor`).
+  /// ⚠ Desligar volta os dois a NULO — a coluna responde "quem autorizou este cliente a emitir?",
+  /// e guardar nela o instante do DESLIGAMENTO seria dar dois significados a uma coluna só (o erro
+  /// documentado em "TRÊS NÚMEROS DE DAS, TRÊS COLUNAS").
+  emissaoClienteLiberadaEm  DateTime?
+  emissaoClienteLiberadaPor String?
   // Q11.1: empresa pode ser SUSPENSA (workers SERPRO pulam, não captura nem processa).
   // Suspender é reversível; excluir é hard-delete via DELETE /companies/:id.
   status                 String    @default("ATIVA") // ATIVA | SUSPENSA

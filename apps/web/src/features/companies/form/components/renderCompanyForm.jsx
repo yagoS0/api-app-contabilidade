@@ -275,6 +275,14 @@ export function CompanyForm({
   // próprio formulário, que é a mesma informação pela outra fonte.
   municipioCadastrado = null,
   ufCadastrado = null,
+  // O PORTÃO DA EMISSÃO PELO CLIENTE — estado + ação, e NÃO campo do formulário. Ele não entra em
+  // `form` porque não é salvo pelo "Salvar alterações": tem rota própria, confirmação e auditoria.
+  // ⚠ `emissaoCliente = null` quer dizer "esta tela não recebeu o estado" (é o caso do cadastro de
+  // empresa NOVA, onde ainda não há empresa a liberar) e o bloco simplesmente não aparece — não é
+  // o mesmo que "não liberada", e desenhar as duas iguais faria o contador achar que revogaram.
+  emissaoCliente = null,
+  onSetEmissaoCliente = null,
+  emissaoClienteSaving = false,
   // Q11.1: zona de risco — botões só aparecem em modo edição (cnpjReadOnly=true)
   status,            // "ATIVA" | "SUSPENSA" (vem do servidor)
   onSuspend,         // (reason?) => Promise
@@ -639,6 +647,10 @@ export function CompanyForm({
         codigoServicoMunicipal={form.codigoServicoMunicipal}
         rpsSerie={form.rpsSerie}
         onChange={onChange}
+        emissaoCliente={emissaoCliente}
+        razaoSocial={form.razaoSocial}
+        onSetEmissaoCliente={onSetEmissaoCliente}
+        emissaoClienteSaving={emissaoClienteSaving}
       />
 
       <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>

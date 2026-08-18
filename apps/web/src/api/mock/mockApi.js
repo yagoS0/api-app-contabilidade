@@ -206,6 +206,19 @@ function makeCompanies(count = 6) {
         codigoServicoMunicipal: ehMangaratiba ? "001" : null,
         rpsSerie: ehMangaratiba ? "00001" : null,
       },
+      // ⚠ O PORTÃO DA EMISSÃO PELO CLIENTE nasce FECHADO em todas — é o default da coluna
+      // (`emissaoClienteLiberada Boolean @default(false)`) e o que protege as empresas existentes.
+      // Só a de Mangaratiba, a única que está configurada para emitir, vem LIBERADA: sem um caso
+      // ligado offline, o bloco "quem liberou e quando" nunca é exercido e o botão de revogar não
+      // tem como ser conferido. Data e nome fixos — o mock não inventa "agora".
+      emissaoCliente: ehMangaratiba
+        ? {
+            liberada: true,
+            liberadaEm: "2026-08-17T13:40:00.000Z",
+            liberadaPor: "mock-user-contador",
+            liberadaPorNome: "Contador do escritório",
+          }
+        : { liberada: false, liberadaEm: null, liberadaPor: null, liberadaPorNome: null },
       // Recalculado a cada `listCompanies` (ver abaixo) — aqui é só o valor inicial da carga.
       guideCompliance: mockGuideComplianceRow({ companyId, indice: i, hasProlabore, regimeTributario }),
       // C6: paridade com o real — o card usa estes campos pro toggle guias⇄"Enviado",
@@ -7385,6 +7398,40 @@ export function createMockApi() {
       mockOnboardings.delete(id);
       mockOnboardingEtapas.delete(id);
       return { ok: true };
+    },
+
+    // ── O PORTÃO DA EMISSÃO PELO CLIENTE (18/08/2026) ───────────────────
+    //
+    // ⚠ Estado de VERDADE no mock, não retorno fixo: ligar e desligar é justamente a regra que só
+    // dá para conferir mexendo, e um stub `{ ok: true }` faria o controle parecer funcionar sem
+    // mudar nada na tela — o mock inerte que já escondeu bug duas vezes neste projeto.
+    async setEmissaoClienteNfse(companyId, liberada) {
+      await delay(120);
+      // Mesma recusa do real: `Boolean("false")` é `true`, e ato de consequência não aceita
+      // booleano de mentira.
+      if (typeof liberada !== "boolean") {
+        throw Object.assign(new Error("O campo `liberada` deve ser booleano."), {
+          code: "liberada_invalida", status: 400,
+        });
+      }
+      const index = mockCompanies.findIndex((item) => item.companyId === companyId);
+      if (index < 0) {
+        throw Object.assign(new Error("Empresa não encontrada."), {
+          code: "portal_company_not_found", status: 404,
+        });
+      }
+      // Revogar volta `Em`/`Por` a NULO — as duas respondem "quem autorizou", não "quem mexeu por
+      // último". Igual ao real.
+      const emissaoCliente = liberada
+        ? {
+            liberada: true,
+            liberadaEm: new Date().toISOString(),
+            liberadaPor: "mock-user-contador",
+            liberadaPorNome: "Contador do escritório",
+          }
+        : { liberada: false, liberadaEm: null, liberadaPor: null, liberadaPorNome: null };
+      mockCompanies[index] = { ...mockCompanies[index], emissaoCliente };
+      return { ok: true, emissaoCliente };
     },
 
     // ── Q11.1: stubs Suspender/Reativar/Excluir ─────────────────────────
