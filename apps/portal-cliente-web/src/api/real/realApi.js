@@ -11,7 +11,7 @@ import { ApiError } from "../ApiError";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, definirTokens, limparSessao } from "../sessionStore";
 
-const BASE = String(import.meta.env.VITE_API_URL || "http://localhost:3000").replace(/\/+$/, "");
+const BASE = String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 
 async function lerCorpo(res) {
   const text = await res.text();

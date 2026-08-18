@@ -1,0 +1,11 @@
+# Railway define PORT em runtime; o Dockerfile fixa 8080, como no `apps/web`.
+#
+# ⚠ `try_files {path} /index.html` é o que faz o roteamento do SPA funcionar: sem ele, abrir
+# `/redefinir-senha?token=…` direto (que é EXATAMENTE o que o link do e-mail de recuperação faz)
+# devolveria 404, porque não existe arquivo com esse nome no disco.
+:8080 {
+	root * /usr/share/caddy
+	encode gzip
+	try_files {path} /index.html
+	file_server
+}
