@@ -2,7 +2,10 @@ function getApiBaseUrl() {
   return String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 }
 
-function mapKnownError(payload, status) {
+// ⚠ EXPORTADA SÓ PARA SER TESTÁVEL — é pura (payload → texto) e não tem outro chamador fora deste
+// módulo. Sem isso, a única forma de amarrar a tradução de um código de erro seria por grep no
+// arquivo, que passa a valer nada no dia em que alguém trocar o texto por outro igualmente mudo.
+export function mapKnownError(payload, status) {
   const code = String(payload?.error || "").trim().toUpperCase();
   const reason = String(payload?.reason || "").trim();
 
@@ -68,6 +71,23 @@ function mapKnownError(payload, status) {
   }
   if (code === "ACCOUNTING_GENERATION_FAILED") {
     return "A circular foi salva, mas a geração dos lançamentos falhou.";
+  }
+  // ⚠ SEM ESTAS DUAS, O CÓDIGO VOLTA CRU PARA A TELA. O backend passou a recusar a baixa com 409
+  // nomeado no lugar do 500 `internal_error` — mas o fallback lá embaixo mostra `payload.message`,
+  // e a mensagem do servidor já traz o conserto por extenso. Elas existem para que a tradução seja
+  // DELIBERADA e não dependa de o backend continuar mandando `message`.
+  if (code === "BAIXA_DUPLICADA_NA_COMPETENCIA") {
+    const comp = String(payload?.competencia || "").trim();
+    const trib = String(payload?.tributo || "").trim();
+    return (
+      `Já existe uma baixa${trib ? ` de ${trib}` : ""} desta empresa lançada${comp ? ` na competência ${comp}` : ""}. `
+      + "Informe a data de pagamento real desta parcela — sem comprovante o modal usa a data de hoje, "
+      + "e todas as provisões em atraso acabam caindo no mês corrente."
+    );
+  }
+  if (code === "BAIXA_CONFLITO_UNICIDADE") {
+    return String(payload?.message || "").trim()
+      || "Esta baixa conflita com uma já gravada. Confira se ela não foi lançada antes.";
   }
   // Erro de negócio do SERPRO: a mensagem REAL vem em payload.message (ex.: "PA já declarado",
   // atividade inválida, cadastro incompleto) — mostrar ela, não o código seco.

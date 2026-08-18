@@ -1509,7 +1509,32 @@ model AccountingEntry {
   parcelamentoAbertura Parcelamento?           @relation("ParcAberturaEntry")
   estornosQueEspelha   EstornoBaixa[]          @relation("EstornoContraLancamento")
 
-  @@unique([portalClientId, competencia, eventType, origem])
+  // ⚠ O UNIQUE DE COMPETÊNCIA SAIU DAQUI E VIROU ÍNDICE PARCIAL EM SQL — ele NÃO desapareceu.
+  // Vive na migration `20260818160000_unique_competencia_nao_morde_baixa`, com o mesmo nome:
+  //   UNIQUE accounting_entries_portalClientId_competencia_eventType_ori_key
+  //        : ("portalClientId","competencia","eventType","origem")  WHERE "tipo" <> 'BAIXA'
+  //
+  // O Prisma não modela unique PARCIAL, e o predicado é a correção: declarado aqui, ele voltaria a
+  // ser TOTAL e a morder as baixas de novo.
+  //
+  // ⚠ ELE CONTINUA SENDO A ÚNICA TRAVA CONTRA PROVISÃO DUPLICADA VINDA DO EXTRATO.
+  // `AccountingEntryGeneratorService.generateEntriesFromCircular` faz check-then-act sobre esta
+  // tupla exata (`findFirst({portalClientId, competencia, eventType, origem:"SERPRO"})` → `create`)
+  // e este índice é o backstop atômico daquela janela. O `uniq_entry_per_guide_event` abaixo NÃO
+  // cobre esse caminho: a provisão do DAS/Simples nasce do extrato, **sem `sourceGuideId`**, e no
+  // Postgres NULLs são distintos em UNIQUE. Por isso ele virou parcial em vez de ser removido.
+  //
+  // ⚠ POR QUE AS BAIXAS SAÍRAM: `POST /entries/:id/baixa` grava o principal com a competência da
+  // DATA DO PAGAMENTO + `eventType` + `origem:"MANUAL"` — e nada nessa tupla diz QUAL provisão está
+  // sendo quitada. Baixa sem comprovante usa HOJE, então toda provisão em atraso mirava a
+  // competência corrente: a 1ª passava, a 2ª estourava P2002 → 500 `internal_error`. Medido em
+  // produção (18/08/2026): 16 empresas nesse estado. Ele também recusava a 2ª QUOTA de uma baixa
+  // parcial no mesmo mês, que é fluxo legítimo da mesma rota.
+  //
+  // ⚠ Nenhum código usa a chave composta gerada pelo Prisma
+  // (`portalClientId_competencia_eventType_origem`) — zero ocorrências em `apps/`. Não havia
+  // `upsert` a reescrever; removê-la da declaração não quebra chamador nenhum.
+  //
   // ⚠ MANTIDO DE PROPÓSITO mesmo não mordendo as BAIXAS. Ele vale para as PROVISÕES, que é para
   // quem foi feito: `GuideToProvisionService` grava uma por tributo, cada uma com `eventType`
   // próprio, e faz a idempotência por ele (`where: { uniq_entry_per_guide_event: ... }`). Removê-lo

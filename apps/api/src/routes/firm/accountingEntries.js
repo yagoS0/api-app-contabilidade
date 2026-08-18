@@ -3304,10 +3304,21 @@ export function createAccountingEntriesRouter({ log }) {
               // único; o papel entra pelo mesmo motivo que o sufixo do histórico entra: é o que
               // distingue principal de juros e multa no lote.
               tipoLinha: g.papel,
-              // Q37: o eventType alimenta a memória de contas — e há @@unique(portalClientId,
-              // competencia, eventType, origem), então SÓ o lançamento do principal pode carregá-lo.
-              // Repetir nos três violaria a constraint e derrubaria a baixa inteira. Também é o
-              // certo semanticamente: a memória D/C é do par do tributo, não de juros/multa.
+              // Q37: o eventType alimenta a memória de contas, e SÓ o lançamento do principal o
+              // carrega. Isso NÃO mudou com o índice parcial — mudou só a razão de ser.
+              //
+              // ⚠ Antes havia DUAS razões e uma delas era o unique de competência (repetir o
+              // evento nos três lançamentos do lote violava a constraint e derrubava a baixa
+              // inteira). Essa razão caiu: desde
+              // `20260818160000_unique_competencia_nao_morde_baixa` o índice é parcial em
+              // `tipo <> 'BAIXA'` e não alcança mais nenhuma destas linhas.
+              //
+              // ⚠ A OUTRA RAZÃO CONTINUA DE PÉ E É A QUE MANDA: a memória D/C
+              // (`AccountingHistorico`) é do par do TRIBUTO, não de juros/multa. Marcar os três
+              // com o mesmo evento faria a conta de juros (501) e a de multa (506) sobrescreverem
+              // a conta memorizada do tributo, e a próxima baixa viria pré-preenchida com a conta
+              // errada. Não afrouxe isto "porque a constraint saiu" — é forma de lançamento, e
+              // mudá-la exige pedido explícito do dono.
               eventType: g.papel === "PRINCIPAL" ? deriveBaixaEventType(openEntry) : null,
               // Todos apontam para a MESMA provisão: o cálculo de saldo soma as três (e juros/multa
               // não entram no principal abatido, por conta de CONTAS_ACRESCIMO).
@@ -3365,6 +3376,53 @@ export function createAccountingEntriesRouter({ log }) {
         openEntry: entryToResponse(result.openEntry),
       });
     } catch (err) {
+      // ⚠ P2002 AQUI É RECUSA DE NEGÓCIO, NÃO FALHA DO SERVIDOR — e devolver 500 `internal_error`
+      // é a família de defeito que este projeto já conhece pelo nome ("o botão não faz nada").
+      //
+      // O caso medido: o unique de competência (`portalClientId, competencia, eventType, origem`)
+      // era TOTAL e mordia as baixas. Duas provisões em atraso baixadas no mesmo mês colidiam, a
+      // segunda estourava aqui dentro do `$transaction`, e o contador via a palavra
+      // `internal_error` — sem motivo, sem conserto, sem pista de que a DATA era o problema.
+      // A migration `20260818160000_unique_competencia_nao_morde_baixa` tirou as baixas de dentro
+      // daquele índice, então este ramo não deve mais acender por ela.
+      //
+      // ⚠ E ELE FICA MESMO ASSIM, de propósito: os outros uniques desta tabela CONTINUAM valendo
+      // para baixas (`uq_baixa_guia_linha`, `uq_baixa_parcela_linha`), e um P2002 novo — de
+      // qualquer um deles, ou de um índice futuro — voltaria a sair como 500 se o `catch` genérico
+      // fosse a única saída. Traduzir o conflito é a correção; o índice parcial é a outra metade.
+      if (err?.code === "P2002") {
+        const alvo = Array.isArray(err?.meta?.target)
+          ? err.meta.target.join(",")
+          : String(err?.meta?.target || "");
+        const tributo = openEntry.subtipo || openEntry.eventType || "provisão";
+
+        // A colisão da tupla de competência tem conserto PRÓPRIO e ele é do contador: a data.
+        // Por isso ela é nomeada à parte, em vez de cair no conflito genérico abaixo.
+        if (alvo.includes("competencia")) {
+          log.warn({ alvo, portalClientId, entryId, competencia }, "Baixa recusada: colisão na competência");
+          return res.status(409).json({
+            error: "BAIXA_DUPLICADA_NA_COMPETENCIA",
+            competencia,
+            tributo,
+            message:
+              `Já existe uma baixa de ${tributo} desta empresa lançada na competência ${competencia}. `
+              + "Informe a data de pagamento REAL desta parcela — sem comprovante o modal usa a data de hoje, "
+              + "e todas as provisões em atraso acabam caindo no mês corrente.",
+          });
+        }
+
+        log.warn({ alvo, portalClientId, entryId, competencia }, "Baixa recusada por conflito de unicidade");
+        return res.status(409).json({
+          error: "BAIXA_CONFLITO_UNICIDADE",
+          competencia,
+          tributo,
+          alvo: alvo || null,
+          message:
+            `Esta baixa de ${tributo} conflita com uma já gravada (${alvo || "restrição de unicidade"}). `
+            + "Confira se ela não foi lançada antes — inclusive por outra sessão ou pela confirmação "
+            + "automática de pagamento.",
+        });
+      }
       log.error({ err }, "Erro ao criar baixa");
       return res.status(500).json({ error: "internal_error" });
     }

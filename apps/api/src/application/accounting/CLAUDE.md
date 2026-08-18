@@ -406,14 +406,84 @@ eles são **despesa do mês do pagamento**. Componente zerado **não** gera lan�
 
 - O **papel** de cada linha vem MARCADO do modal (`papel: PRINCIPAL|JUROS|MULTA`), não deduzido da
   conta: o contador pode trocar a conta. Linha sem papel conta como principal.
-- ⚠ `@@unique([portalClientId, competencia, eventType, origem])`: **só o lançamento do PRINCIPAL
-  carrega o `eventType`** — repetir nos três viola a constraint e derruba a baixa inteira. Também é
-  o correto: a memória de contas (`AccountingHistorico`) é do par do tributo, não de juros/multa.
+- ⚠ **Só o lançamento do PRINCIPAL carrega o `eventType`** — a memória de contas
+  (`AccountingHistorico`) é do par do TRIBUTO, não de juros/multa. Marcar os três com o mesmo evento
+  faria a conta de juros (501) e a de multa (506) sobrescreverem a conta memorizada do tributo, e a
+  próxima baixa viria pré-preenchida com a conta errada.
+  - ⚠ **Havia uma SEGUNDA razão e ela CAIU — não confunda as duas.** O unique de competência
+    (`portalClientId, competencia, eventType, origem`) era TOTAL e mordia as baixas, então repetir
+    o evento nos três derrubava a baixa inteira. Desde
+    `20260818160000_unique_competencia_nao_morde_baixa` ele é **parcial em `tipo <> 'BAIXA'`** e não
+    alcança mais nenhum desses lançamentos. **A razão de cima continua de pé sozinha**, e é forma de
+    lançamento — afrouxar "porque a constraint saiu" exige pedido explícito do dono.
 - Todos apontam para a MESMA provisão (`openEntryId`); juros/multa não entram no principal abatido
   (`CONTAS_ACRESCIMO` = 501/506), então o saldo continua certo.
 - Onde vale: baixa do INSS (`InssPagamentoService`), baixa genérica (`POST /entries/:id/baixa`) e
   parcelamento V2 (que já usava `criarLancamentosIndividuais`).
 - Legado: `scripts/separar-baixas-agrupadas.mjs` separa baixas antigas que ficaram agrupadas.
+
+### ⚠ O UNIQUE DE COMPETÊNCIA NÃO MORDE MAIS AS BAIXAS — o schema virou verdade (18/08/2026)
+
+`accounting_entries` tinha `@@unique([portalClientId, competencia, eventType, origem])`, **TOTAL**, e
+o comentário do `schema.prisma` afirmava que ele "não morde as BAIXAS" (porque elas nasceriam com
+`eventType` NULL). Isso é verdade para `InssPagamentoService` e para o parcelamento; era **falso**
+para `POST /entries/:id/baixa`, que preenche o `eventType` no lançamento do principal de propósito.
+
+**O mecanismo:** a rota grava a baixa com a competência da **DATA DO PAGAMENTO**, não a da provisão.
+Baixa **sem comprovante** usa a data de HOJE — então toda provisão em atraso, de qualquer mês, aponta
+para a competência CORRENTE. A primeira ocupa a tupla; a segunda estoura P2002 dentro do
+`$transaction` e voltava como **500 `internal_error`**, sem motivo na tela.
+
+**Medido em produção (18/08/2026, `scripts/diag-baixa-colisao-competencia.mjs`, só leitura):
+16 empresas** com 2+ provisões de DAS abertas mirando 2026-08 — ARAUJO BARRETO e TALBOT com 7 meses
+cada; ATIM, FADINI e ALESSANDRO com 6. Em cada uma, a primeira baixa passa e as demais estouram.
+
+⚠ **Ele também recusava a 2ª QUOTA de uma baixa parcial no mesmo mês** — fluxo que a própria rota
+oferece (`saldoInfo`/`quotaNumero`, `statusPagamento: "PARCIAL"`). Duas quotas da mesma provisão
+repetem a tupla inteira. Era o mesmo 500.
+
+**A correção — `20260818160000_unique_competencia_nao_morde_baixa`:** o índice vira **PARCIAL**,
+`WHERE "tipo" <> 'BAIXA'`, **com o mesmo nome**
+(`accounting_entries_portalClientId_competencia_eventType_ori_key`, renomeado lá em
+`20260519095906` porque o gerado pelo Prisma estourava os 63 caracteres do Postgres).
+
+⚠ **ELE NÃO PODIA SIMPLESMENTE SUMIR — é a única trava contra provisão duplicada vinda do EXTRATO.**
+`AccountingEntryGeneratorService.generateEntriesFromCircular` faz check-then-act sobre esta tupla
+exata (`findFirst({portalClientId, competencia, eventType, origem:"SERPRO"})` → `create`), e o índice
+é o backstop atômico daquela janela. O outro unique, `(sourceGuideId, eventType)`, **não alcança**
+esse caminho: a provisão do DAS/Simples nasce do extrato **sem `sourceGuideId`**, e no Postgres NULLs
+são distintos em UNIQUE. Por isso *parcial*, não *removido*.
+
+⚠ **O `@@unique` saiu do `schema.prisma` e não pode voltar** — o Prisma não modela unique parcial, e
+declarado ali ele volta a ser TOTAL. Mesmo tratamento que `uq_baixa_guia_linha`,
+`uq_baixa_parcela_linha` e `chk_baixa_tipo_linha` já tinham: vive no SQL, documentado no schema.
+
+⚠ **O risco que se mediu ANTES de escrever, e que NÃO se materializou:** a chave composta gerada
+pelo Prisma (`portalClientId_competencia_eventType_origem`) tem **ZERO ocorrências** em `apps/`. Não
+havia `upsert` a reescrever e **nenhuma corrida foi aberta**. `GuideToProvisionService` nunca a usou:
+ele faz `findUnique({ where: { uniq_entry_per_guide_event: … } })`, sobre o **outro** unique, que fica
+intacto. Travado em `routes/firm/__tests__/baixaColisaoCompetencia.test.js` (15).
+
+⚠ **`tipo` é NOT NULL**, então `tipo <> 'BAIXA'` é predicado total — não há o buraco de lógica de três
+valores que um `<>` sobre coluna anulável abriria.
+
+⚠ **Nada a backfillar, e é estrutural:** um índice que passa de total para parcial só pode aceitar
+MAIS linhas. Nenhuma linha existente viola o índice novo — se violasse, já violaria o antigo.
+
+⚠ **O que o conserto ABRE MÃO, declaradamente:** a tupla acidentalmente barrava a MESMA baixa
+repetida (duplo clique) na rota genérica. Isso volta a depender das guardas de aplicação, que são
+check-then-act: `lancamento_nao_esta_aberto` (a provisão vira PAGO) e `baixa_excede_saldo`. É a
+**mesma postura que INSS e parcelamento já tinham** (ambos nascem com `eventType` NULL e nunca
+estiveram nesse índice), e um índice que barrasse isso barraria também a quota legítima. **Fechar
+essa janela na rota genérica é decisão do dono** — ver o relatório.
+
+**O P2002 desta rota virou 409 NOMEADO**, entrega independente e de risco zero:
+`BAIXA_DUPLICADA_NA_COMPETENCIA` (com competência, tributo e o conserto: *informe a data de pagamento
+real*) e `BAIXA_CONFLITO_UNICIDADE` para os demais índices. O `catch` genérico devolvendo 500 é a
+família de defeito que este projeto já conhece ("o botão não faz nada"), e os outros uniques
+(`uq_baixa_guia_linha`, `uq_baixa_parcela_linha`) **continuam mordendo baixas** — por isso a tradução
+fica mesmo com a constraint consertada. Front: `mapKnownError` em `apps/web/src/api/real/realApi.js`
+(exportada para ser testável), regressão em `api/real/__tests__/baixaColisaoCompetencia.test.js` (10).
 
 ### ⚠ Como a regra estava furada na prática (e os quatro furos)
 
@@ -565,7 +635,15 @@ O espelho carrega `sourceGuideId` (rastreável a partir da guia — seguro, as t
 `parcelamentoId` (**obrigatório**: o lote do parcelamento só balanceia em GRUPO, e sem ele
 `computeFechamentoBlockers` veria quatro lançamentos desbalanceados e travaria o fechamento
 seguinte). `eventType` é **null** — só a baixa original carrega o evento, senão o segundo estorno do
-mesmo evento no mesmo mês violaria `@@unique([portalClientId, competencia, eventType, origem])`.
+mesmo evento no mesmo mês violaria o unique de competência
+(`portalClientId, competencia, eventType, origem`).
+
+⚠ **ESTA LINHA CONTINUA VALENDO DEPOIS DO ÍNDICE PARCIAL, e é fácil ler o contrário.**
+`20260818160000_unique_competencia_nao_morde_baixa` tornou o índice parcial em **`tipo <> 'BAIXA'`**
+— e o espelho **não é** `tipo:"BAIXA"`, ele é `tipo:"ESTORNO"` (decisão da própria fase do estorno,
+para escapar de `uq_baixa_guia_linha`). Logo o espelho está **DENTRO** do índice, e preencher o
+`eventType` nele voltaria a colidir no segundo estorno do mesmo evento no mesmo mês. O que saiu de
+dentro do índice foram as BAIXAS; o estorno ficou onde estava.
 
 #### F2.5 — o estorno DESPACHA PELA ÂNCORA DA BAIXA (um serviço só, sem irmão)
 
