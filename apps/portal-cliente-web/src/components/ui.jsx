@@ -1,4 +1,59 @@
+import { useState } from "react";
 import { mensagemDeErro } from "../lib/mensagens";
+
+/**
+ * COPIAR — para a linha digitável da guia, que é o número que o cliente digita no banco.
+ *
+ * ⚠⚠ O RETORNO NÃO MENTE, e é a razão de este componente ter estado próprio em vez de ser um
+ * `onClick` solto. `navigator.clipboard` NÃO EXISTE em contexto inseguro (`http://ip:porta`, que é
+ * como o portal roda em rede local) e a chamada pode ser recusada mesmo onde existe. Nesses casos o
+ * botão diz "não deu" — um "✓" falso faria o cliente colar o conteúdo ANTERIOR da área de
+ * transferência no campo do banco, e ele não teria como saber.
+ *
+ * ⚠ Copia o VALOR CRU, nunca o formatado: são os 48 dígitos que se digitam.
+ *
+ * ⚠ Gêmeo de `apps/web/src/components/ui/BotaoCopiar.jsx` — MESMO comportamento, apps separados e
+ * paletas diferentes (aqui a paleta é clara e os tokens são `--success`/`--danger`, não
+ * `--state-ok`/`--state-danger`). Se o comportamento mudar num, tem de mudar no outro.
+ */
+export function BotaoCopiar({ valor, rotulo }) {
+  const [estado, setEstado] = useState("parado"); // parado | copiado | falhou
+
+  async function copiar() {
+    const texto = String(valor || "");
+    if (!texto) return;
+    try {
+      if (!navigator?.clipboard?.writeText) throw new Error("sem clipboard");
+      await navigator.clipboard.writeText(texto);
+      setEstado("copiado");
+    } catch {
+      setEstado("falhou");
+    }
+    window.setTimeout(() => setEstado("parado"), 1600);
+  }
+
+  const rotuloVisivel = estado === "copiado" ? "Copiado" : estado === "falhou" ? "Não deu" : "Copiar";
+  return (
+    <button
+      type="button"
+      className="btn"
+      onClick={copiar}
+      aria-label={rotulo}
+      title={
+        estado === "falhou"
+          ? "Não foi possível copiar neste navegador — selecione o número e copie à mão"
+          : "Copiar os 48 dígitos, sem espaços — é o que se digita no banco"
+      }
+      style={{
+        padding: "2px 8px",
+        fontSize: ".78rem",
+        color: estado === "copiado" ? "var(--success)" : estado === "falhou" ? "var(--danger)" : undefined,
+      }}
+    >
+      {rotuloVisivel}
+    </button>
+  );
+}
 
 /**
  * Chip de status. Reusa o mapa de cores do protótipo (`data-status`), que é o

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../../api";
-import { AlertaErro, Carregando, Chip, Vazio } from "../../components/ui";
+import { AlertaErro, BotaoCopiar, Carregando, Chip, Vazio } from "../../components/ui";
+import { linhaDigitavelDaGuia } from "./lib/linhaDigitavelTela";
 import { useCarregamento } from "../../lib/hooks";
 import { mensagemDeErro } from "../../lib/mensagens";
 import {
@@ -36,6 +37,55 @@ function rotuloDaGuia(guia) {
   // `parcelamentoLabel` existe para que uma parcela não apareça como "DAS" solto.
   if (guia.parcelamentoLabel) return guia.parcelamentoLabel;
   return texto(guia.tipo);
+}
+
+/**
+ * LINHA DIGITÁVEL — o número que o cliente digita no aplicativo do banco para pagar.
+ *
+ * ⚠⚠ AS TRÊS AUSÊNCIAS NÃO SÃO DESENHADAS IGUAIS (a regra está em `lib/linhaDigitavelTela.js`):
+ * "ainda não lemos" · "o documento não traz" · "em conferência com o contador". Um traço mudo para
+ * as três apagaria a diferença entre um problema que existe e um dado que ninguém buscou.
+ *
+ * ⚠ NA DIVERGÊNCIA O CLIENTE NÃO VÊ OS DOIS VALORES — isso é material de trabalho do contador. Aqui
+ * ele vê que o número está em conferência e que o PDF continua servindo para pagar.
+ *
+ * ⚠ O NÚMERO APARECE INTEIRO, com máscara, e é de propósito: esta é a tela de quem vai DIGITAR, e
+ * um número truncado obriga a abrir outra coisa. O botão copia os 48 dígitos LIMPOS.
+ */
+function CelulaLinhaDigitavel({ guia }) {
+  const leitura = linhaDigitavelDaGuia(guia);
+  if (leitura.linhaLimpa) {
+    return (
+      <td>
+        <span
+          style={{
+            display: "block",
+            fontVariantNumeric: "tabular-nums",
+            fontSize: ".8rem",
+            lineHeight: 1.35,
+            wordBreak: "keep-all",
+          }}
+        >
+          {leitura.linhaFormatada}
+        </span>
+        <BotaoCopiar valor={leitura.linhaLimpa} rotulo={`Copiar a linha digitável da guia ${rotuloDaGuia(guia)}`} />
+      </td>
+    );
+  }
+  return (
+    <td>
+      <span
+        className="muted"
+        style={{
+          fontSize: ".78rem",
+          // Âmbar só na conferência: é a única das três em que existe um conflito conhecido.
+          color: leitura.tom === "atencao" ? "var(--warning)" : undefined,
+        }}
+      >
+        {leitura.aviso}
+      </span>
+    </td>
+  );
 }
 
 function baixarArquivo({ contentBase64, fileName, mimeType }) {
@@ -176,6 +226,7 @@ export function GuiasPage({ empresa }) {
                   <th scope="col" className="num">
                     Valor
                   </th>
+                  <th scope="col">Linha digitável</th>
                   <th scope="col">Arquivo</th>
                 </tr>
               </thead>
@@ -217,6 +268,7 @@ export function GuiasPage({ empresa }) {
                           </span>
                         ) : null}
                       </td>
+                      <CelulaLinhaDigitavel guia={guia} />
                       <td>
                         <button
                           type="button"

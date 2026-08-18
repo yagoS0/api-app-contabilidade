@@ -206,3 +206,43 @@ Ligação coberta em `list/components/__tests__/renderCompanyGuidesTable.test.js
   `accounting/.../accountingEntriesShared.js` ainda carrega `muted: "#6272A4"` — o conserto do token
   não chegou às cópias.
 - Toda chamada nova precisa de par mock/real em `src/api/`.
+
+## LINHA DIGITÁVEL na linha da guia (18/08/2026)
+
+Coluna **"Linha digitável"** em `list/components/renderCompanyGuidesTable.jsx`
+(`CelulaLinhaDigitavel`), alimentada por `lib/linhaDigitavelTela.js` (regra pura, com teste próprio).
+A **ligação** é prendida à parte, em `list/components/__tests__/linhaDigitavelNaTela.test.jsx` —
+regra certa sem chamador não desenha nada.
+
+⚠⚠ **A AUSÊNCIA É RESPOSTA E TEM TRÊS SIGNIFICADOS, com desenhos DIFERENTES:**
+
+| situação | na tela | tom |
+|---|---|---|
+| `DISPONIVEL` | a linha com máscara + botão de copiar | `--text-muted` |
+| `NAO_TENTADA` | "não lida" — ninguém olhou o documento ainda | `--text-muted` |
+| `NAO_ENCONTRADA` | "sem linha no documento" — olhamos e não havia | `--text-muted` |
+| `DIVERGENTE` | "confira: valores divergentes", **com os dois valores no `title`** | `--state-warn` |
+
+⚠ **Na divergência a linha NÃO aparece** — ela é internamente íntegra mas discorda do valor da guia,
+e não se sabe qual dos dois está errado. Mostrar o número seria oferecer como meio de pagamento algo
+que não se conferiu; **omitir o conflito seria pior**. Aparece o conflito, com os dois valores.
+
+⚠ **Âmbar, nunca vermelho** (vermelho aqui é o que BLOQUEIA o fechamento, e linha que não bate não
+bloqueia nada) e **nunca verde** (verde é concluído; ter o número não é etapa concluída).
+
+⚠ **A máscara é para o olho; o botão copia os 48 DÍGITOS LIMPOS** — é o que se digita no banco.
+
+⚠ **`BotaoCopiar` MUDOU DE CASA**: era local de `companies/list/components/renderCompaniesTable.jsx`
+e hoje é `components/ui/BotaoCopiar.jsx`, usado pelo CNPJ e pela linha digitável. Uma segunda cópia
+do bloco seria uma segunda implementação da promessa "não mente", e a que ninguém testasse acabaria
+mentindo. Sem `navigator.clipboard` (http:// em rede local) ele diz **"não deu"**, nunca "✓" —
+travado em `companies/list/components/__tests__/tabelaEmpresasLeitura.test.jsx`.
+
+⚠ **Motivo não catalogado não ganha frase inventada** (`frasePorMotivo` devolve `null`): vira texto
+neutro e o valor cru sobrevive no `title`, para a auditoria recuperar. Enum novo não se conclui por
+semelhança — mesma disciplina de `list/lib/estadoVazioGuias.js`.
+
+> O portal do **cliente** tem a sua própria leitura (`apps/portal-cliente-web/src/features/guias/lib/`)
+> e ela é **deliberadamente diferente numa coisa**: o cliente NÃO vê os dois valores da divergência —
+> isso é material de trabalho do contador. Ele vê "em conferência com o contador" e que o PDF
+> continua servindo para pagar.

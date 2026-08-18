@@ -1291,6 +1291,9 @@
 
 .guides-grid__row {
   display: grid;
+  /* A 9ª coluna é a LINHA DIGITÁVEL. Ela é a mais larga depois do tipo porque carrega 48 dígitos
+     mascarados; ainda assim trunca (ver `.guides-grid__cell--linha`), com o número inteiro no
+     `title` e nos 48 dígitos limpos do botão de copiar. */
   grid-template-columns:
     36px
     minmax(120px, 1.6fr)
@@ -1299,7 +1302,8 @@
     minmax(100px, 1fr)
     minmax(100px, 1fr)
     minmax(100px, 1fr)
-    minmax(80px, 0.8fr);
+    minmax(80px, 0.8fr)
+    minmax(140px, 1.5fr);
   gap: 10px;
   align-items: center;
   width: 100%;
@@ -1336,6 +1340,24 @@
 
 .guides-grid__money {
   color: #ffb347;
+}
+
+/* Linha digitável: número longo em fonte tabular, truncado na largura da coluna.
+   ⚠ O truncamento é só visual — o valor inteiro vive no `title` e nos 48 dígitos que o botão copia.
+   Nunca deixar o número quebrar em duas linhas: dígito partido se lê errado. */
+.guides-grid__cell--linha {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.guides-grid__linha-numero {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
 }
 
 .guides-grid__tone--success {

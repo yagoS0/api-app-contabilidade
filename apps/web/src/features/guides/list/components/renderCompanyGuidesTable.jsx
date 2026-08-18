@@ -10,6 +10,8 @@ import { GuideCaptureModal } from "../../capture/components/renderGuideCaptureMo
 import { GuiaDeParcelamentoModal } from "./GuiaDeParcelamentoModal";
 import { ehGuiaDeParcelamento, rotuloTipoGuia, tituloTipoGuia } from "../../lib/rotuloGuia";
 import { estadoVazioDasGuias } from "../lib/estadoVazioGuias";
+import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
+import { linhaDigitavelDaGuia } from "../../lib/linhaDigitavelTela";
 import { MOTIVOS_GUIA_VAZIA, TEM_LISTA_DE_MOTIVOS, motivoParaGravar, motivoSuficiente } from "../lib/motivoGuiaVazia";
 
 // Q17: guias ESPERADAS do mês (por regime/prolabore) com botão "Vazio" (ausência confirmada).
@@ -372,6 +374,54 @@ function formatPaymentStatus(status) {
   if (n === "PAID") return { label: "Paga", tone: "success" };
   if (n === "OVERDUE") return { label: "Vencida", tone: "danger" };
   return { label: "Em aberto", tone: "warning" };
+}
+
+/**
+ * LINHA DIGITÁVEL da guia — o número que o cliente digita no banco.
+ *
+ * ⚠⚠ AS TRÊS AUSÊNCIAS TÊM DESENHOS DIFERENTES, e é o ponto desta célula:
+ *   • "não lida"                     → cinza, sem drama: ninguém olhou o documento ainda.
+ *   • "sem linha no documento"       → cinza, mas com frase própria: olhamos e não havia.
+ *   • "confira: valores divergentes" → ÂMBAR, e é a única em que o contador precisa AGIR.
+ * Desenhar as três iguais devolveria ao balde único que este trabalho existe para desfazer.
+ *
+ * ⚠ NA DIVERGÊNCIA A LINHA NÃO APARECE. Ela é internamente íntegra (os cinco dígitos verificadores
+ * fecham), mas discorda do valor da guia, e não se sabe qual dos dois está errado. Mostrar o número
+ * seria oferecer como meio de pagamento algo que não se conferiu; omitir o conflito seria pior.
+ * Então o que aparece é o CONFLITO, com os dois valores.
+ *
+ * ⚠ ÂMBAR, NUNCA VERMELHO: vermelho neste portal é o que BLOQUEIA o fechamento, e uma linha que não
+ * bate não bloqueia nada. E nunca verde: verde é concluído, e ter o número não é etapa concluída.
+ *
+ * ⚠ A MÁSCARA É PARA O OLHO; O BOTÃO COPIA OS 48 DÍGITOS LIMPOS — é o que se digita no banco.
+ */
+function CelulaLinhaDigitavel({ guide }) {
+  const leitura = linhaDigitavelDaGuia(guide);
+  const temNumero = Boolean(leitura.linhaLimpa);
+  return (
+    <span
+      className="guides-grid__cell guides-grid__cell--linha"
+      role="cell"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span
+        className="guides-grid__linha-numero"
+        style={{ color: leitura.tom }}
+        // ⚠ O `title` carrega a frase inteira e, quando o motivo NÃO está catalogado, o valor cru
+        // junto — é por ele que uma auditoria recupera um motivo que a tela ainda não sabe nomear.
+        title={leitura.motivoCru && !temNumero ? `${leitura.titulo} (${leitura.motivoCru})` : leitura.titulo}
+      >
+        {leitura.resumo}
+      </span>
+      {temNumero && (
+        <BotaoCopiar
+          valor={leitura.linhaLimpa}
+          rotulo={`Copiar a linha digitável da guia ${rotuloTipoGuia(guide)} ${guide.competencia || ""}`.trim()}
+          titulo="Copiar os 48 dígitos, sem máscara — é o que se digita no banco"
+        />
+      )}
+    </span>
+  );
 }
 
 export function CompanyGuidesTable({
@@ -1062,6 +1112,7 @@ export function CompanyGuidesTable({
                 <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Status</span>
                 <span className="guides-grid__cell guides-grid__cell--status" role="columnheader">Situação</span>
                 <span className="guides-grid__cell guides-grid__cell--email" role="columnheader">E-mail</span>
+                <span className="guides-grid__cell guides-grid__cell--linha" role="columnheader">Linha digitável</span>
               </div>
             </div>
 
@@ -1144,6 +1195,7 @@ export function CompanyGuidesTable({
                         </span>
                       )}
                     </span>
+                    <CelulaLinhaDigitavel guide={guide} />
                   </div>
                 );
               })}

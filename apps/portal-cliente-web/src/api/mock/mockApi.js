@@ -298,6 +298,60 @@ function criarEstado() {
   }
 
   // --- Guias -----------------------------------------------------------------
+  // ⚠ LINHA DIGITÁVEL NO MOCK — as QUATRO situações, em rodízio, para que nenhuma delas dependa de
+  // sorte para ser vista offline.
+  //
+  // ⚠⚠ A LINHA É UMA SÓ, REAL E FIXA — e o mock NÃO GERA linha digitável. Montar uma para cada
+  // valor sorteado exigiria um gerador de código de barras dentro do projeto, que é precisamente o
+  // que a regra proíbe: quem sabe montar aqui sabe montar em produção. Esta é uma linha de DAS real,
+  // lida de um documento, cujos cinco dígitos verificadores fecham; ela codifica R$ 3.422,00.
+  //
+  // ⚠ Por isso a guia que EXIBE a linha tem o `valor` fixado em 3.422,00: a linha e o valor da guia
+  // precisam concordar, senão o mock estaria desenhando como "disponível" exatamente a divergência
+  // que a tela recusa a mostrar.
+  const LINHA_DIGITAVEL_REAL = "858800000342220003282624010720261829070844066762";
+  const VALOR_DA_LINHA = 3422.0;
+
+  function linhaDigitavelDoMock(seq, valorSorteado) {
+    const lidaEm = new Date().toISOString();
+    switch (seq % 4) {
+      case 0: // TEMOS A LINHA
+        return {
+          valor: VALOR_DA_LINHA,
+          linhaDigitavel: LINHA_DIGITAVEL_REAL,
+          linhaDigitavelSituacao: "DISPONIVEL",
+          linhaDigitavelMotivo: null,
+          linhaDigitavelValorLidoCentavos: null,
+          linhaDigitavelLidaEm: lidaEm,
+        };
+      case 1: // DIVERGÊNCIA — a linha traz R$ 3.422,00 e a guia está com outro valor
+        return {
+          linhaDigitavel: null,
+          linhaDigitavelSituacao: "DIVERGENTE",
+          linhaDigitavelMotivo: "valor_divergente_do_documento",
+          linhaDigitavelValorLidoCentavos: Math.round(VALOR_DA_LINHA * 100),
+          linhaDigitavelLidaEm: lidaEm,
+        };
+      case 2: // TENTAMOS E NÃO DEU
+        return {
+          linhaDigitavel: null,
+          linhaDigitavelSituacao: "NAO_ENCONTRADA",
+          linhaDigitavelMotivo: "linha_digitavel_nao_encontrada_no_texto",
+          linhaDigitavelValorLidoCentavos: null,
+          linhaDigitavelLidaEm: lidaEm,
+        };
+      default: // NÃO TENTAMOS — o estado de toda guia anterior a esta leitura
+        return {
+          valor: valorSorteado,
+          linhaDigitavel: null,
+          linhaDigitavelSituacao: "NAO_TENTADA",
+          linhaDigitavelMotivo: null,
+          linhaDigitavelValorLidoCentavos: null,
+          linhaDigitavelLidaEm: null,
+        };
+    }
+  }
+
   // Só a pc-001 tem guias LIBERADAS. A rota /client já filtra `liberadaCliente`,
   // então a pc-002 responde lista vazia — que é o estado real de quem ainda não
   // teve nada liberado pelo contador.
@@ -359,6 +413,10 @@ function criarEstado() {
           parcelamentoTipo: null,
           parcelamentoNumero: null,
           extracted: null,
+          // ⚠ AS QUATRO SITUAÇÕES DA LINHA DIGITÁVEL, todas alcançáveis offline. O mock existe para
+          // exercitar a tela, e uma tela que só é vista num dos estados é uma tela não conferida —
+          // as três AUSÊNCIAS são o que mais importa aqui, e são as mais fáceis de deixar de fora.
+          ...linhaDigitavelDoMock(seqGuia, valor),
           liberadaCliente: true,
           liberadaEm: venc.toISOString(),
           vazioEm: null,

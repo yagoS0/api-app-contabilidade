@@ -304,8 +304,61 @@ function makeParcelaGuides(company) {
   ];
 }
 
+// ⚠ LINHA DIGITÁVEL NO MOCK — as QUATRO situações, em rodízio, para que nenhuma dependa de sorte
+// para ser vista offline. As três AUSÊNCIAS são o que mais importa desenhar, e são as que mais
+// facilmente ficam de fora de um mock.
+//
+// ⚠⚠ A LINHA É UMA SÓ, REAL E FIXA — o mock NÃO GERA linha digitável. Montar uma para cada valor
+// sorteado exigiria um gerador de código de barras dentro do projeto, que é exatamente o que a
+// regra proíbe: quem sabe montar aqui sabe montar em produção. Esta é uma linha de DAS real, cujos
+// cinco dígitos verificadores fecham, e ela codifica R$ 3.422,00 — por isso a guia que a EXIBE tem
+// o valor fixado nesse número: linha e valor precisam concordar, senão o mock desenharia como
+// "disponível" justamente a divergência que a tela recusa a mostrar.
+const LINHA_DIGITAVEL_REAL = "858800000342220003282624010720261829070844066762";
+const VALOR_DA_LINHA = "3422.00";
+
+function linhaDigitavelDoMock(seq) {
+  const lidaEm = new Date().toISOString();
+  switch (seq % 4) {
+    case 0:
+      return {
+        valor: VALOR_DA_LINHA,
+        linhaDigitavel: LINHA_DIGITAVEL_REAL,
+        linhaDigitavelSituacao: "DISPONIVEL",
+        linhaDigitavelMotivo: null,
+        linhaDigitavelValorLidoCentavos: null,
+        linhaDigitavelLidaEm: lidaEm,
+      };
+    case 1:
+      return {
+        linhaDigitavel: null,
+        linhaDigitavelSituacao: "DIVERGENTE",
+        linhaDigitavelMotivo: "valor_divergente_do_documento",
+        linhaDigitavelValorLidoCentavos: 342200,
+        linhaDigitavelLidaEm: lidaEm,
+      };
+    case 2:
+      return {
+        linhaDigitavel: null,
+        linhaDigitavelSituacao: "NAO_ENCONTRADA",
+        linhaDigitavelMotivo: "linha_digitavel_nao_encontrada_no_texto",
+        linhaDigitavelValorLidoCentavos: null,
+        linhaDigitavelLidaEm: lidaEm,
+      };
+    default:
+      return {
+        linhaDigitavel: null,
+        linhaDigitavelSituacao: "NAO_TENTADA",
+        linhaDigitavelMotivo: null,
+        linhaDigitavelValorLidoCentavos: null,
+        linhaDigitavelLidaEm: null,
+      };
+  }
+}
+
 function makeGuidesByCompany(companies) {
   const guidesByCompany = new Map();
+  let seqLinha = 0;
   for (const company of companies) {
     const guides = Array.from({ length: faker.number.int({ min: 3, max: 12 }) }).map(() => {
       const status = faker.helpers.arrayElement(["PROCESSED", "PROCESSED", "PROCESSED", "ERROR"]);
@@ -331,6 +384,9 @@ function makeGuidesByCompany(companies) {
         serproService: "GERARDAS12",
         canConfirmPayment: paymentStatus !== "PAID",
         canRecalculate: paymentStatus !== "PAID", // Q29: vencida ou em aberto (não só vencida)
+        // ⚠ Depois de `valor`, de propósito: no caso DISPONIVEL este bloco o sobrescreve para o
+        // valor que a linha realmente codifica.
+        ...linhaDigitavelDoMock(seqLinha++),
       };
     });
     if (company.temParcelamento) guides.unshift(...makeParcelaGuides(company));
@@ -5466,11 +5522,23 @@ export function createMockApi() {
      * exigiria inventar um relógio de retorno que não corresponde a nada.
      *
      * ⚠ RECUSA TAMBÉM SEM `totTrib.pTotTribSN`, e essa é a recusa que importa.
-     * O `NfseService` declara toda empresa como `opSimpNac="3"` (Simples ME/EPP) e, sendo Simples,
-     * exige o percentual: sem ele lança `MISSING_P_TOT_TRIB_SN`. O mock aceitava o payload sem o
-     * campo — ou seja, o assistente parecia completo offline e falharia 100% das vezes no real,
-     * com o erro chegando ao banco como `rejected` (rejeição fiscal) por não ser mapeado na rota.
-     * Com a recusa aqui, dá para caminhar o caso de falta sem emitir nada em lugar nenhum.
+     * Sendo a nota declarada como Simples, o servidor exige o percentual: sem ele lança
+     * `MISSING_P_TOT_TRIB_SN`. O mock aceitava o payload sem o campo — ou seja, o assistente
+     * parecia completo offline e falharia 100% das vezes no real, com o erro chegando ao banco como
+     * `rejected` (rejeição fiscal) por não ser mapeado na rota. Com a recusa aqui, dá para caminhar
+     * o caso de falta sem emitir nada em lugar nenhum.
+     *
+     * ⚠⚠ E ELA DEIXOU DE VALER PARA TODA EMPRESA (18/08/2026). O texto acima dizia que
+     * "o `NfseService` declara toda empresa como `opSimpNac=3`" — não declara mais: o regime real
+     * decide, e a empresa do Lucro Presumido sai como `opSimpNac=1`. Ela NÃO manda `pTotTribSN`
+     * (esse número é do extrato do PGDAS-D, que ela não tem) e manda o grupo `totTrib/pTotTrib`.
+     * Enquanto a trava de tela do não optante existia, nenhuma empresa do Presumido chegava aqui e
+     * a divergência era invisível; destravada a tela, um mock que continuasse exigindo o
+     * `pTotTribSN` recusaria offline exatamente a emissão que o real aceita — a mesma classe de
+     * defeito, com o sinal trocado. A empresa `i === 1` do mock é LUCRO_PRESUMIDO — ela nasce SEM
+     * município emissor e sem os códigos de serviço (é o estado da carteira real), então percorrer
+     * este caminho offline exige configurá-la antes, como faz
+     * `api/mock/__tests__/emissaoNaoOptanteMock.test.js`.
      */
     async emitirNfse(payload) {
       await delay(400);
@@ -5506,16 +5574,52 @@ export function createMockApi() {
       if (payload?.servico?.issRetido === true && !(Number.isFinite(aliq) && aliq > 0)) {
         throw new Error("nfse_iss_retido_sem_aliquota");
       }
-      const pTotTribSNCru = payload?.totTrib?.pTotTribSN;
-      const pTotTribSN = pTotTribSNCru === undefined || pTotTribSNCru === null || pTotTribSNCru === ""
-        ? null
-        : Number(pTotTribSNCru);
-      if (pTotTribSN === null || Number.isNaN(pTotTribSN)) {
-        throw new Error("missing_p_tot_trib_sn");
+      // ── QUAL DOS DOIS GRUPOS DE TRIBUTOS ESTA NOTA DECLARA ────────────────────────────────
+      //
+      // ⚠ SÓ O REGIME CONHECIDO E NÃO OPTANTE PEGA O OUTRO CAMINHO. Regime ausente, MEI ou
+      // desconhecido **não vira nada por omissão** — no real ele é recusado por
+      // `NFSE_REGIME_INDEFINIDO`, de outra fonte (`CadastroFiscal`), e fabricar aqui uma resposta
+      // de cadastro seria o mock inventando um fato. Ele cai no ramo do `pTotTribSN`, que é o lado
+      // barato do erro e é exatamente o que `regimeDeclaradoNaNota` faz na tela
+      // (`exigePTotTribSN: true` quando indefinido).
+      const regimeBruto = String(empresa?.legacyCompany?.regimeTributario || "")
+        .trim().toUpperCase().replace(/[\s-]+/g, "_");
+      const ehNaoOptante = regimeBruto === "LUCRO_PRESUMIDO" || regimeBruto === "LUCRO_REAL";
+
+      if (ehNaoOptante) {
+        // ⚠ ESPELHO DO PORTÃO DE `buildDpsXml`: os TRÊS percentuais, resolvidos POR CAMPO
+        // (payload → cadastro da empresa), e a recusa NOMEIA quais faltam (`err.faltando`).
+        // Nada de `.some()`: um percentual presente NÃO libera os outros dois, senão a nota
+        // afirmaria carga 0,00% ao tomador (Lei 12.741/2012) por omissão.
+        const informado = (v) => v !== undefined && v !== null && v !== "";
+        const faltandoCarga = [];
+        for (const campo of ["pTotTribFed", "pTotTribEst", "pTotTribMun"]) {
+          const doPayload = payload?.totTrib?.[campo];
+          const doCadastro = empresa?.legacyCompany?.[campo];
+          // ⚠ `informado`, nunca truthiness: `0` é um percentual DECLARADO e legítimo — a NFS-e
+          // real de referência traz 0,00 no estadual e no municipal.
+          const bruto = informado(doPayload) ? doPayload : informado(doCadastro) ? doCadastro : null;
+          if (bruto === null) { faltandoCarga.push(campo); continue; }
+          const n = Number(bruto);
+          if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error("invalid_tot_trib_nao_simples");
+        }
+        if (faltandoCarga.length) {
+          const err = new Error("missing_tot_trib_nao_simples");
+          err.faltando = faltandoCarga;
+          throw err;
+        }
+      } else {
+        const pTotTribSNCru = payload?.totTrib?.pTotTribSN;
+        const pTotTribSN = pTotTribSNCru === undefined || pTotTribSNCru === null || pTotTribSNCru === ""
+          ? null
+          : Number(pTotTribSNCru);
+        if (pTotTribSN === null || Number.isNaN(pTotTribSN)) {
+          throw new Error("missing_p_tot_trib_sn");
+        }
+        // Faixa do validador real (`p_tot_trib_sn_invalido`): fora de 0–100 é outra unidade, não um
+        // número grande — provavelmente o valor em reais no lugar do percentual.
+        if (pTotTribSN < 0 || pTotTribSN > 100) throw new Error("p_tot_trib_sn_invalido");
       }
-      // Faixa do validador real (`p_tot_trib_sn_invalido`): fora de 0–100 é outra unidade, não um
-      // número grande — provavelmente o valor em reais no lugar do percentual.
-      if (pTotTribSN < 0 || pTotTribSN > 100) throw new Error("p_tot_trib_sn_invalido");
       const seq = (mockNfseSeq += 1);
       return {
         status: "issued",

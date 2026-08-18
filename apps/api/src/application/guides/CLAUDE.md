@@ -142,3 +142,65 @@ Endpoints em `routes/firm/index.js`: `POST /firm/guides/vazio` (cria/garante Gui
 - Lock de captura: `GuideLockService` (`tryAcquireGuideLock`/`releaseGuideLock`).
 - Envio de e-mail é manual em prod (BatchEmail); ver `apps/api/CLAUDE.md`.
 - Isolamento multi-tenant: sempre `portalClientId`.
+
+## LINHA DIGITÁVEL da guia — lida do documento, NUNCA montada (18/08/2026)
+
+Pedido do dono: *"colocar código de barras e ou código pix na linha das guias"*, com a instrução
+*"faça A e se não conseguir faça B"*. **A não existe** (medido no catálogo do Integra Contador: os 9
+serviços do PGDASD não devolvem código de barras), então é **B: extrair do PDF que já guardamos**.
+
+⚠⚠ **PIX NÃO EXISTE E NÃO ENTRA.** Nenhum serviço documentado devolve copia-e-cola, e nos PDFs reais
+o QR é IMAGEM: medido no banco local, **7 documentos imprimem "Pague com o PIX" e 0 têm o texto**.
+Não gerar QR, não deduzir chave. Isto não é lacuna a preencher — é resposta.
+
+### As quatro colunas são uma MÁQUINA DE ESTADOS, não quatro campos soltos
+
+| `linhaDigitavelLidaEm` | `linhaDigitavel` | `...Motivo` | `...ValorLidoCentavos` | significado |
+|---|---|---|---|---|
+| NULL | — | — | — | **NÃO TENTAMOS** (guia antiga, ou sem PDF) |
+| data | preenchida | NULL | NULL | **TEMOS A LINHA** |
+| data | NULL | preenchido | preenchido | **DIVERGÊNCIA** — mostra os dois valores |
+| data | NULL | preenchido | NULL | **TENTAMOS E NÃO DEU** |
+
+⚠ `linhaDigitavelLidaEm` é gravado em TODA tentativa, inclusive nas que recusam — é ele, sozinho,
+que separa "não tentamos" de "tentamos e não deu". Sem ele os dois voltam ao mesmo balde.
+
+⚠⚠ **`linhaDigitavelValorLidoCentavos` SÓ É PREENCHIDO NA RECUSA POR VALOR DIVERGENTE.** Ali os
+cinco DVs FECHARAM e o número codificado é confiável: o documento diz aquilo. Em recusa de
+DV/tamanho/produto a sequência já se provou corrompida, e imprimir um valor tirado dela seria
+inventar pela porta dos fundos. Travado em `__tests__/lerLinhaDigitavelDoPdf.test.js`, e o banco
+ainda garante `CHECK ("linhaDigitavel" IS NULL OR "linhaDigitavelMotivo" IS NULL)`.
+
+⚠ **Motivo é texto livre no BANCO e lista FECHADA na TELA** (de propósito: o catálogo cresce, e um
+CHECK obrigaria migration a cada motivo novo). Motivo não catalogado **não ganha frase inventada** —
+vira texto neutro com o valor cru no `title`, para a auditoria recuperar.
+
+### Onde a leitura foi ligada, e por quê
+
+Em **`createOrUpdateGuideFromProcessing`** (o funil), logo depois do bloco de `pdfBytes`:
+- é o **único funil por onde passa guia com PDF** — os três caminhos de upload e os três de captura
+  SERPRO desembocam ali;
+- o **PDF já está em memória**; ler na tela obrigaria a buscar o BYTEA e reparsear a cada listagem;
+- a conferência usa **`data.valor`, o mesmo número gravado na operação** — o par (linha, valor) nasce
+  coerente por construção, sem janela entre conferir e gravar.
+
+⚠ **Só mexe nas colunas quando `pdfBytes` é tocado.** Confirmar pagamento, liberar ao cliente e
+reenviar e-mail passam pelo funil SEM `pdfBytes`: se escrevessem, apagariam uma linha válida por
+causa de um update que nada tem a ver com ela. Travado em `__tests__/linhaDigitavelNaGravacao.test.js`.
+
+⚠ **A leitura NUNCA derruba o salvamento da guia.** PDF ilegível vira recusa nomeada (`pdf_ilegivel`).
+
+⚠ **Guia sem valor gravado NÃO produz linha** (`sem_valor_na_guia_para_conferir`): `conferirContraDocumento`
+pula a comparação quando o esperado é nulo, o que é correto para diagnóstico mas aqui produziria uma
+linha "aprovada" que ninguém conferiu contra nada.
+
+### Backfill
+
+`scripts/reler-linha-digitavel.mjs` — **dry-run por padrão**, `--aplicar` para escrever. Lê o PDF já
+guardado (`pdfBytes`, ou o base64 do `extracted.rawPayload`) e escreve **exclusivamente as quatro
+colunas**. **Não roda sozinho** e não deve passar a rodar: sem cron, worker ou rota. Usa a MESMA
+função do funil — reescrever a leitura ali faria backfill e captura discordarem sobre a mesma guia.
+
+Medido no banco local (16 guias): **6 com linha, 1 divergente, 2 sem linha legível, 7 sem PDF**.
+O divergente é real: `PGDASD-DAS-44742042202605001.pdf` traz **R$ 790,79** impressos e a guia está
+gravada com **R$ 100,00**.

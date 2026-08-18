@@ -10,6 +10,7 @@ import {
 } from "./guideContract.js";
 import { isMonthClosed } from "../accounting/fechamentoContabil.js";
 import { canGuideConfirmPayment, canGuideRecalculate } from "./GuidePaymentStatusService.js";
+import { NAO_TENTADA, lerLinhaDigitavelDoPdf, situacaoDaLinhaDigitavel } from "./lerLinhaDigitavelDoPdf.js";
 
 function normalizeCnpj(value) {
   return String(value || "").replace(/\D+/g, "");
@@ -280,6 +281,23 @@ export function toGuideResponse(item) {
     extracted: Array.isArray(item.extracted?.composicao)
       ? { composicao: item.extracted.composicao }
       : null,
+    // LINHA DIGITÁVEL — o número que o cliente digita no banco para pagar.
+    //
+    // ⚠ A AUSÊNCIA É RESPOSTA, E TEM TRÊS SIGNIFICADOS DIFERENTES. Por isso `linhaDigitavel: null`
+    // sozinho não serve de contrato: `linhaDigitavelSituacao` é que diz se ninguém tentou ler, se o
+    // documento não traz linha legível, ou se lemos e o número DISCORDA da guia. As três pedem
+    // frases diferentes na tela, e a terceira precisa chegar com os dois valores.
+    //
+    // ⚠ Vai nos 48 DÍGITOS LIMPOS, sem máscara: é o que se digita no banco. A máscara é decisão de
+    // apresentação e mora no front — mandá-la daqui obrigaria cada tela a desfazer a formatação
+    // antes de copiar, que é exatamente onde um dígito se perde.
+    linhaDigitavel: item.linhaDigitavel || null,
+    linhaDigitavelSituacao: situacaoDaLinhaDigitavel(item),
+    linhaDigitavelMotivo: item.linhaDigitavelMotivo || null,
+    // Centavos INTEIROS, não reais: valor monetário não atravessa a rede como float.
+    linhaDigitavelValorLidoCentavos:
+      item.linhaDigitavelValorLidoCentavos != null ? Number(item.linhaDigitavelValorLidoCentavos) : null,
+    linhaDigitavelLidaEm: item.linhaDigitavelLidaEm ? new Date(item.linhaDigitavelLidaEm).toISOString() : null,
     // Portal Cliente (#3.1): liberação ao cliente (selo no contador + gate no /client).
     liberadaCliente: Boolean(item.liberadaCliente),
     liberadaEm: item.liberadaEm ? new Date(item.liberadaEm).toISOString() : null,
@@ -466,6 +484,33 @@ export async function createOrUpdateGuideFromProcessing({
     data.storageProvider = storageProvider || null;
     data.storageKey = storageKey || null;
     data.storageUrl = storageUrl || null;
+  }
+
+  // LINHA DIGITÁVEL — lida AQUI, no funil, e não na leitura da tela.
+  //
+  // POR QUE NESTE PONTO, e não em outro:
+  //   • Este é o ÚNICO funil por onde passa guia COM PDF: os três caminhos de upload
+  //     (`GuideUploadService`) e os três de captura SERPRO (`CaptureSerproGuidesService`,
+  //     `CaptureSerproParcelaService`, `SerproDctfwebService`) todos desembocam aqui.
+  //   • O PDF JÁ ESTÁ EM MEMÓRIA — acabou de ser recebido ou baixado. Ler na tela obrigaria a
+  //     buscar o BYTEA e reparsear o PDF a cada request de listagem.
+  //   • A conferência de valor usa `data.valor`, o MESMO número gravado nesta operação. Não existe
+  //     janela entre conferir e gravar: o par (linha, valor) nasce coerente por construção. Ler
+  //     depois abriria a possibilidade de conferir contra um valor que já mudou.
+  //
+  // ⚠ Só mexe nas colunas quando o PDF é tocado. `pdfBytesInput === undefined` significa "esta
+  // operação não fala do arquivo" (confirmação de pagamento, liberação, e-mail) — e sobrescrever a
+  // leitura ali apagaria um número válido por causa de um update que nada tem a ver com ele.
+  if (pdfBytesInput !== undefined) {
+    if (hasDbPdf) {
+      Object.assign(
+        data,
+        await lerLinhaDigitavelDoPdf(pdfBytesInput, { valorTotal: data.valor, vencimento: data.vencimento }),
+      );
+    } else {
+      // O PDF saiu. Manter a leitura antiga descreveria um arquivo que não está mais aqui.
+      Object.assign(data, NAO_TENTADA);
+    }
   }
 
   let savedGuide;

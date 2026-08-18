@@ -960,6 +960,19 @@ model Guide {
   pdfBytes        Bytes?
   hash            String? @unique
 
+  /// Linha digitável de arrecadação (48 dígitos, sem máscara), LIDA do documento oficial.
+  /// Só entra número que passou nos cinco dígitos verificadores (FEBRABAN §07–§10) E cuja
+  /// importância bate com o total da guia. Nulo = não foi possível ler — nunca um palpite.
+  linhaDigitavel       String?
+  linhaDigitavelLidaEm DateTime?
+  /// Motivo da RECUSA, quando não foi possível entregar uma linha pagável. Texto livre no banco
+  /// (o catálogo cresce), lista FECHADA na tela. Nunca coexiste com `linhaDigitavel` (CHECK).
+  linhaDigitavelMotivo String?
+  /// Valor, EM CENTAVOS, codificado na linha recusada. Preenchido EXCLUSIVAMENTE quando o motivo é
+  /// `valor_divergente_do_documento` — ali os 5 DVs fecharam e o número é confiável. Em recusa de
+  /// DV/tamanho/produto fica nulo: imprimir valor lido de sequência corrompida seria inventar.
+  linhaDigitavelValorLidoCentavos Int?
+
   status           String    @default("PENDING") // PENDING|PROCESSING|PROCESSED|NEEDS_REVIEW|ERROR
   errors           Json?
   extracted        Json?

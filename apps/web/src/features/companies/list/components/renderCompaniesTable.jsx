@@ -13,6 +13,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
+import { BotaoCopiar } from "../../../../components/ui/BotaoCopiar";
 import { getComplianceTags } from "./renderCompanyCard";
 import { GuiaChip, Popover, todasConcluidas, todasPorGerar, ehParcela } from "./renderGuiaChip";
 import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
@@ -78,55 +79,17 @@ const CABECALHO = {
 
 const fmtMoeda = (v) => `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-/**
- * COPIAR — o gesto que o contador repete o dia inteiro.
- *
- * ⚠ O CNPJ é COPIADO SEM MÁSCARA, e é esse o ponto: o e-CAC e os portais da Receita recusam (ou
- * silenciosamente truncam) `00.000.000/0001-00`. A tela mostra com máscara porque é assim que se
- * confere com o olho; a área de transferência recebe os 14 dígitos porque é assim que se cola.
- * As duas leituras vêm do MESMO par de funções (`formatarCnpj` / `soDigitosCnpj`), então não têm
- * como divergir.
- *
- * ⚠ O RETORNO NÃO MENTE. `navigator.clipboard` não existe em contexto inseguro (http://ip:porta,
- * que é como o portal roda em rede local) e a chamada pode ser recusada. Nesses casos o botão diz
- * "não deu" em vez de piscar "copiado" — um sucesso falso aqui manda o contador colar o conteúdo
- * ANTERIOR da área de transferência num campo de CNPJ.
- */
-function BotaoCopiar({ valor, rotulo, titulo }) {
-  const [estado, setEstado] = useState("parado"); // parado | copiado | falhou
-
-  async function copiar(e) {
-    e.stopPropagation();
-    const texto = String(valor || "");
-    if (!texto) return;
-    try {
-      if (!navigator?.clipboard?.writeText) throw new Error("sem clipboard");
-      await navigator.clipboard.writeText(texto);
-      setEstado("copiado");
-    } catch {
-      setEstado("falhou");
-    }
-    window.setTimeout(() => setEstado("parado"), 1600);
-  }
-
-  const cor = estado === "copiado" ? "var(--state-ok)" : estado === "falhou" ? "var(--state-danger)" : "var(--text-muted)";
-  return (
-    <button
-      type="button"
-      onClick={copiar}
-      title={estado === "falhou" ? "Não foi possível copiar neste navegador — selecione e copie à mão" : titulo}
-      aria-label={rotulo}
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: 20, height: 18, padding: 0, flex: "0 0 auto",
-        background: "transparent", border: "none", borderRadius: 4,
-        color: cor, cursor: "pointer", font: "inherit", fontSize: "0.7rem", lineHeight: 1,
-      }}
-    >
-      <span aria-hidden="true">{estado === "copiado" ? "✓" : estado === "falhou" ? "✖" : "⧉"}</span>
-    </button>
-  );
-}
+// ⚠ `BotaoCopiar` MUDOU DE ENDEREÇO (18/08/2026) — hoje é `components/ui/BotaoCopiar.jsx`.
+// Ele nasceu aqui, para o CNPJ, e subiu quando a linha digitável da guia passou a precisar do mesmo
+// gesto: duas cópias do bloco seriam duas implementações da promessa "não mente", e a que ninguém
+// testasse acabaria mentindo. O comportamento é o mesmo, e o teste desta tabela continua sendo o que
+// o prende.
+//
+// ⚠ O CNPJ CONTINUA SENDO COPIADO SEM MÁSCARA, e é esse o ponto: o e-CAC e os portais da Receita
+// recusam (ou silenciosamente truncam) `00.000.000/0001-00`. A tela mostra com máscara porque é
+// assim que se confere com o olho; a área de transferência recebe os 14 dígitos porque é assim que
+// se cola. As duas leituras vêm do MESMO par de funções (`formatarCnpj` / `soDigitosCnpj`), então
+// não têm como divergir.
 
 /** Configuração da empresa (A1, SERPRO, parc, folha) — sai da linha para não competir com estado. */
 function PopoverConfig({ company, onFechar }) {
