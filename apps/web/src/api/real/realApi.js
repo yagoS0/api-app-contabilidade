@@ -1648,6 +1648,35 @@ export function createRealApi() {
     async getNota(companyId, notaId) {
       return request(`/firm/companies/${companyId}/notas/${notaId}`);
     },
+    // O DANFSe da NFS-e (PDF do Padrão Nacional, NT 008), gerado sob demanda pelo backend.
+    //
+    // ⚠ NÃO PODE SER UM `<a href>`: a rota é autenticada e um link não leva o Bearer — mesmo motivo
+    // do `fetchCompanyDocumentBlob` e do `fetchSitfisPdfBlob`. Vem como Blob e a tela entrega.
+    //
+    // ⚠ A RECUSA PRECISA CHEGAR NOMEADA. A rota responde **503 `danfse_sem_qrcode`** (com `motivo`)
+    // quando a chave está ausente ou o QR não pôde ser gerado — e isso é deliberado: um DANFSe sem
+    // QR Code não é um DANFSe. Um `Error` genérico aqui viraria "falha ao baixar" na tela, que é
+    // exatamente a informação errada. Por isso o corpo JSON é lido e `code`/`motivo`/`status` sobem
+    // junto, como o `request()` já faz para as demais rotas.
+    async fetchDanfseBlob(companyId, notaId) {
+      const baseUrl = getApiBaseUrl();
+      const headers = {};
+      const tok = accessToken || readStoredToken();
+      if (tok) headers.Authorization = `Bearer ${tok}`;
+      const res = await fetch(`${baseUrl}/firm/companies/${companyId}/notas/${notaId}/danfse`, { method: "GET", headers });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        const err = new Error(
+          String(payload?.message || "").trim() || `Falha ao gerar o DANFSe (HTTP ${res.status})`,
+        );
+        err.code = String(payload?.error || "").trim() || "DANFSE_FETCH_FAILED";
+        err.status = res.status;
+        err.motivo = payload?.motivo ?? null;
+        err.payload = payload;
+        throw err;
+      }
+      return res.blob();
+    },
     async marcarNotaStatus(companyId, notaId, statusEfetivo) {
       return request(`/firm/companies/${companyId}/notas/${notaId}/status`, {
         method: "PATCH", body: JSON.stringify({ statusEfetivo }),

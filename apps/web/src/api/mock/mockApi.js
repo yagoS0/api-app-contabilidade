@@ -844,6 +844,25 @@ const mockNotas = (() => {
     __descricao: "CONSULTORIA COM VALOR CORRIGIDO DEPOIS", __codigoServico: "140201",
   }));
 
+  // FEIO 8 — EMITIDA, com XML, e SEM CHAVE DE ACESSO: é a nota em que o **DANFSe é recusado**.
+  //
+  // ⚠ ELA EXISTE PARA QUE A RECUSA SEJA ALCANÇÁVEL PELA TELA. O backend responde 503
+  // `danfse_sem_qrcode` quando não há chave (sem chave não há QR Code, e um DANFSe sem QR Code não é
+  // um DANFSe) — e essa é a única resposta da rota que a interface precisa EXPLICAR. A outra nota
+  // sem chave do mock (`mock-nfse-sem-chave`, FEIO 2) tem `papel: null` de propósito e por isso não
+  // aparece em nenhuma das duas caixas (Emitidas/Recebidas): a recusa ficava inalcançável offline,
+  // que é como ela passaria despercebida até aparecer em produção.
+  out.push(mockNota({
+    id: "mock-nfse-sem-chave-emit",
+    numero: "13995", papel: "EMIT",
+    idNfse: "3304557202606000000013995",
+    issueDate: `${MOCK_NOTAS_COMPETENCIA}-18T00:00:00.000Z`,
+    total: "640.00",
+    emitenteNome: "EMPRESA EXEMPLO MOCK LTDA", emitenteDoc: "00000000000191",
+    tomadorNome: "TOMADOR MOCK 905 LTDA", tomadorDoc: "11222333090591",
+    __descricao: "SUPORTE TECNICO AVULSO", __codigoServico: "010701",
+  }));
+
   // FEIO 4 — chegou em competência já FECHADA.
   out.push(mockNota({
     id: "mock-nfse-pos-fechamento",
@@ -6439,6 +6458,44 @@ export function createMockApi() {
           },
         },
       };
+    },
+    // O DANFSe (PDF da NFS-e, NT 008). ⚠ OS **DOIS** CAMINHOS TÊM DE SER EXERCÍVEIS OFFLINE, e é
+    // por isso que este mock não devolve PDF para toda nota:
+    //   • `mock-nfse-sem-chave` não tem `chaveAcesso` ⇒ **503 `danfse_sem_qrcode`**, a recusa
+    //     deliberada do backend (sem chave não há QR, e um DANFSe sem QR não é um DANFSe);
+    //   • as NF-e do mock não têm XML ⇒ **404 `xml_indisponivel`**;
+    //   • o resto devolve o PDF mínimo, como as demais rotas de PDF deste mock.
+    // Um mock que sempre devolvesse o arquivo deixaria a única tela que explica a recusa
+    // inalcançável sem backend — que é como a recusa passa despercebida até aparecer em produção.
+    async fetchDanfseBlob(_companyId, notaId) {
+      await delay(120);
+      const n = mockNotas.find((x) => x.id === notaId);
+      if (!n) {
+        const err = new Error("Nota não encontrada nesta empresa.");
+        err.code = "nota_nao_encontrada";
+        err.status = 404;
+        throw err;
+      }
+      if (!n.__temXml) {
+        const err = new Error(
+          "Esta nota não tem o XML guardado, e o DANFSe é gerado a partir dele — nada aqui é "
+          + "inventado. Recapture a nota para que o XML entre na base.",
+        );
+        err.code = "xml_indisponivel";
+        err.status = 404;
+        throw err;
+      }
+      if (!n.chaveAcesso) {
+        const err = new Error("Não foi possível gerar o QR Code obrigatório do DANFSe.");
+        err.code = "danfse_sem_qrcode";
+        err.status = 503;
+        err.motivo = "a nota não tem chave de acesso no XML, e o QR Code do DANFSe é a consulta pública por chave";
+        throw err;
+      }
+      // Mesmo PDF mínimo das outras rotas do mock — o leiaute real é do backend (pdfkit + qrcode),
+      // e reproduzi-lo aqui seria manter um segundo gerador que envelheceria sozinho.
+      const tinyPdf = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF";
+      return new Blob([tinyPdf], { type: "application/pdf" });
     },
     async getNotasSummary(_companyId, filtros = {}) {
       await delay(60);

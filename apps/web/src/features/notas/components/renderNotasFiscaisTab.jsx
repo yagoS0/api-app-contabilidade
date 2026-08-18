@@ -14,6 +14,7 @@ import { NotaDetailModal } from "./NotaDetailModal";
 import { createApiClient } from "../../../api/client";
 import { Tabs } from "../../../components/ui/Tabs";
 import { Button } from "../../../components/ui/Button";
+import { modeloDeEmissaoDaNota } from "../lib/reaproveitarNota";
 
 // Cliente próprio, mesmo padrão auto-contido do SITFIS e do Apuração v2 — a aba já recebe tudo
 // por props e não tem `api` em escopo.
@@ -41,7 +42,11 @@ export function NotasFiscaisTab({
 
   // NFS-e é a janela padrão; NF-e só existe com inscrição estadual.
   const [janela, setJanela] = useState("NFSE");
-  const [emitindo, setEmitindo] = useState(false);
+  // ⚠ `null` = assistente fechado. `{ modelo: null }` = nota do zero. `{ modelo: {...} }` = nota
+  // NOVA a partir de uma já emitida. Um booleano não conseguiria carregar o modelo, e uma segunda
+  // variável ao lado dele poderia ficar preenchida com o assistente fechado — e a próxima emissão
+  // do zero abriria com os dados da nota anterior.
+  const [emissao, setEmissao] = useState(null);
   const janelaAtiva = (janela === "NFE" && !hasInscricaoEstadual) ? "NFSE" : janela;
   const notasDaJanela = notas.filter((n) => n.type === janelaAtiva);
 
@@ -114,7 +119,7 @@ export function NotasFiscaisTab({
                 e em "clique aqui". Ação primária é o accent do botão. */}
             <Button
               type="button"
-              onClick={() => setEmitindo(true)}
+              onClick={() => setEmissao({ modelo: null })}
             >
               + Emitir nota
             </Button>
@@ -187,10 +192,29 @@ export function NotasFiscaisTab({
              aberto: o esqueleto aparece na hora e o conteúdo chega depois, igual ao clique na
              linha da tabela. */
           onAbrirNota={abrirNota}
+          /* ⚠ REAPROVEITAR PASSA PELO ASSISTENTE, NUNCA EM VOLTA DELE. O detalhe não emite: ele
+             fecha e abre o `EmitirNfseWizard` com os campos preenchidos, e lá continuam valendo o
+             bloqueio de cadastro incompleto, o pré-voo do regime, a conferência e a confirmação.
+             Um atalho que emitisse daqui desfaria tudo isso. */
+          onReaproveitar={(notaModelo) => {
+            const modelo = modeloDeEmissaoDaNota(notaModelo);
+            if (!modelo) return;
+            fecharNota();
+            setEmissao({ modelo });
+          }}
+          /* O DANFSe: PDF gerado sob demanda pelo backend. ⚠ Vem por `fetch` com Bearer (Blob) —
+             um `<a href>` não leva o token. A recusa nomeada (503 `danfse_sem_qrcode`) sobe com
+             `code`/`motivo` e é o modal que a explica. Ausente na API = o botão diz que esta tela
+             não baixa, em vez de falhar no clique. */
+          onBaixarDanfse={
+            nfseApi.fetchDanfseBlob
+              ? (notaId) => nfseApi.fetchDanfseBlob(companyId, notaId)
+              : undefined
+          }
         />
       )}
 
-      {emitindo && (
+      {emissao && (
         <EmitirNfseWizard
           companyId={companyId}
           /* O REGIME É MOSTRADO, não escolhido: o backend declara o mesmo `opSimpNac` para toda
@@ -212,8 +236,12 @@ export function NotasFiscaisTab({
              ⚠ E SÓ COM `papel: "EMIT"`. Em "Recebidas" (`DEST`) o tomador de toda linha é a PRÓPRIA
              empresa — sugerir dali ofereceria a empresa como tomadora dela mesma. */
           notasDaEmpresa={notasFilters.papel === "EMIT" ? notasDaJanela : null}
+          /* ⚠ O estado INICIAL do formulário quando a emissão nasceu de uma nota já emitida — e
+             SÓ isso. Nenhum identificador viaja aqui (ver `lib/reaproveitarNota.js`): o número da
+             nota nova é reservado pelo backend. `null` = emissão do zero, o caminho de sempre. */
+          valoresIniciais={emissao.modelo}
           onEmitir={(payload) => nfseApi.emitirNfse(payload)}
-          onClose={() => setEmitindo(false)}
+          onClose={() => setEmissao(null)}
           /* ⚠ ISTO NÃO FAZ A NOTA APARECER NA LISTA, e não é para fazer.
              A lista vem de `PortalInvoice` (captura do ADN); a nota emitida aqui é gravada em
              `ServiceInvoice`. Recarregar só atualiza o estado da captura e o resumo — quem traz a

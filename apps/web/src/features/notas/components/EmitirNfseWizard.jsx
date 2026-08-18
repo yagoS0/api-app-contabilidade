@@ -95,6 +95,7 @@ import { ServicoNacionalDaNota } from "./ServicoNacionalDaNota";
 import { PainelDaNota } from "./PainelDaNota";
 import { CampoComBusca } from "./CampoComBusca";
 import { buscarTomadores, listarTomadoresRecentes } from "../lib/tomadoresRecentes";
+import { CAMPOS_COPIADOS, CAMPOS_NAO_COPIADOS } from "../lib/reaproveitarNota";
 import { CAMPO, lerRejeicao } from "../lib/rejeicaoDaEmissao";
 // ⚠ IMPORTAR daqui é o certo: `consultarCnpj` já existe, já classifica a recusa em
 // `{ ok, motivo, mensagem }`, já trata a ausência de `fetch` e já aceita `fetchImpl` (é o que
@@ -134,6 +135,77 @@ const TOM_REGIME = {
   bloqueado: { cor: "var(--state-danger)", fundo: "var(--state-danger-surface)" },
 };
 
+// ── O AVISO DE REAPROVEITAMENTO ──────────────────────────────────────────────
+//
+// ⚠⚠ A TELA TEM DE DIZER QUE ISTO É UMA **NOTA NOVA**, e dizer alto. Um formulário que abre
+// preenchido com os dados de uma nota que já existe se parece com "reemitir aquela nota" — e é
+// exatamente o que ele NÃO é: a original não é tocada, o número é novo, e não há substituição.
+// Sem esta frase, o contador que reaproveita uma nota cancelada acha que a corrigiu.
+//
+// ⚠ A LISTA DO QUE **NÃO** VEIO É PARTE DA MENSAGEM, não rodapé. Campo em branco num formulário
+// pré-preenchido se lê como "não tinha nada lá"; aqui ele quer dizer "não copiamos, e por isto".
+// As duas listas vêm de `lib/reaproveitarNota.js` — as mesmas que o código usa.
+function AvisoDeReaproveitamento({ modelo }) {
+  if (!modelo) return null;
+  const origem = modelo.origem || {};
+  const avisos = Array.isArray(modelo.avisos) ? modelo.avisos : [];
+
+  return (
+    <div style={{
+      marginBottom: 14, padding: 12, borderRadius: 8, fontSize: "0.82rem",
+      background: "var(--state-neutral-surface)", border: `1px solid ${PANEL.accent}`,
+      color: PANEL.text, display: "grid", gap: 8,
+    }}>
+      <strong style={{ color: PANEL.accent }}>
+        Nota NOVA, a partir da nota {origem.numero ? `nº ${origem.numero}` : "selecionada"}
+      </strong>
+
+      {/* ⚠ O TEXTO VEM DO PRÓPRIO MÓDULO DA REGRA, como já acontece com os avisos do ciclo da nota.
+          Reescrevê-lo aqui faria a tela dizer uma coisa e a regra outra — e é justamente esta frase
+          ("é nota nova, a original não é tocada") que impede a leitura de "reemissão". */}
+      {avisos.map((a) => (
+        a.tom === "atencao" ? (
+          // Âmbar é pendência: cada um destes é algo a conferir ANTES de emitir.
+          <div key={a.codigo} style={{
+            padding: 10, borderRadius: 6,
+            background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+            color: "var(--state-warn)",
+          }}>
+            ⚠ {a.texto}
+          </div>
+        ) : (
+          <div key={a.codigo}>{a.texto}</div>
+        )
+      ))}
+
+      <div style={{ color: PANEL.muted }}>
+        <strong style={{ color: PANEL.text }}>Copiado:</strong>{" "}
+        {CAMPOS_COPIADOS.map((c) => c.rotulo).join(" · ")}.
+      </div>
+
+      <details>
+        <summary style={{ cursor: "pointer", color: PANEL.muted }}>
+          O que <strong>não</strong> foi copiado, e por quê
+        </summary>
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "grid", gap: 6 }}>
+          {CAMPOS_NAO_COPIADOS.map((c) => (
+            <li key={c.chave} style={{ color: PANEL.muted }}>
+              <strong style={{ color: PANEL.text }}>{c.rotulo}</strong> — {c.motivo}
+            </li>
+          ))}
+        </ul>
+        {origem.codigosDaOriginal?.length > 0 && (
+          <div style={{ marginTop: 8, color: PANEL.muted }}>
+            Código de serviço declarado na nota de origem:{" "}
+            <code>{origem.codigosDaOriginal.join(", ")}</code>. A nota nova sai com o código do
+            cadastro da empresa — o bloco “O que” mostra qual.
+          </div>
+        )}
+      </details>
+    </div>
+  );
+}
+
 // Cabeçalho de bloco do formulário. As três perguntas em ordem de trabalho — "para quem", "o quê",
 // "quanto" —, o mesmo vocabulário do protótipo aprovado.
 function Bloco({ titulo, children }) {
@@ -168,6 +240,18 @@ export function EmitirNfseWizard({
   // testes entra um dublê — nenhum teste deste projeto pode tocar a rede. Não confundir com a
   // emissão, que vai por `onEmitir`.
   fetchCnpj = null,
+  // ⚠ REAPROVEITAMENTO DE UMA NOTA JÁ EMITIDA — o estado INICIAL do formulário, e nada além disso.
+  //
+  // Vem de `notas/lib/reaproveitarNota.js` na forma `{ tomador, servico, competencia, referencia,
+  // origem, avisos }`. O assistente continua sendo o único caminho de emissão: o bloqueio de
+  // cadastro incompleto, o pré-voo do regime, a consulta de CNPJ, o espelho ao vivo e as travas de
+  // desfecho desconhecido valem igual. O que muda é de onde os campos partem.
+  //
+  // ⚠⚠ NENHUM IDENTIFICADOR CHEGA AQUI. `numero`, `chaveAcesso`, `idNfse`, `idDps`, série e RPS não
+  // existem neste objeto (ver a lista `CAMPOS_NAO_COPIADOS` do módulo): o número da nota nova é
+  // reservado pelo BACKEND na emissão. Reaproveitar identificador é duplicidade (E0014) ou uma nota
+  // que se diz ser outra.
+  valoresIniciais = null,
   onEmitir,
   onClose,
   onEmitida,
@@ -177,16 +261,27 @@ export function EmitirNfseWizard({
   const [rejeicao, setRejeicao] = useState(null);
   const [resultado, setResultado] = useState(null);
 
-  const [tomador, setTomador] = useState({ cnpjCpf: "", nome: "", email: "" });
+  // ⚠ Inicializadores preguiçosos, não `useEffect`: o assistente é montado do zero a cada abertura,
+  // então isto é o estado de partida. Um efeito que "aplicasse" os valores depois sobrescreveria o
+  // que o contador tivesse digitado enquanto ele não rodava.
+  const [tomador, setTomador] = useState(() => ({
+    cnpjCpf: "", nome: "", email: "", ...(valoresIniciais?.tomador || {}),
+  }));
   const [endereco, setEndereco] = useState({ cMun: "", CEP: "", xLgr: "", nro: "", xCpl: "", xBairro: "" });
   const [enderecoAberto, setEnderecoAberto] = useState(false);
   // De onde veio o que está no campo. `DIGITADO` é o que faz o contador vencer a consulta.
   // ⚠ Guardadas TAMBÉM em ref: a resposta da consulta chega depois do render que a disparou, e o
   // contador pode ter digitado o nome nesse meio-tempo. Lendo só do closure, a consulta em voo
   // sobrescreveria justamente o que ele acabou de escrever.
-  const [origemNome, setOrigemNome] = useState(ORIGEM.AUSENTE);
+  //
+  // ⚠ NOME VINDO DE UMA NOTA REAPROVEITADA ENTRA COMO `DIGITADO`, exatamente como
+  // `escolherTomadorSugerido` faz com o tomador escolhido na busca: foi uma escolha explícita do
+  // contador, e é isso que impede a consulta de CNPJ (que o próprio preenchimento vai disparar) de
+  // trocá-lo sozinho. O nome da Receita continua aparecendo, com o botão "usar o da Receita".
+  const nomeVeioDeNotaModelo = Boolean(String(valoresIniciais?.tomador?.nome || "").trim());
+  const [origemNome, setOrigemNome] = useState(nomeVeioDeNotaModelo ? ORIGEM.DIGITADO : ORIGEM.AUSENTE);
   const [origemEndereco, setOrigemEndereco] = useState(ORIGEM.AUSENTE);
-  const origemNomeRef = useRef(ORIGEM.AUSENTE);
+  const origemNomeRef = useRef(nomeVeioDeNotaModelo ? ORIGEM.DIGITADO : ORIGEM.AUSENTE);
   const origemEnderecoRef = useRef(ORIGEM.AUSENTE);
   function marcarOrigemNome(o) { origemNomeRef.current = o; setOrigemNome(o); }
   function marcarOrigemEndereco(o) { origemEnderecoRef.current = o; setOrigemEndereco(o); }
@@ -200,10 +295,15 @@ export function EmitirNfseWizard({
   const [consulta, setConsulta] = useState(null);
   const [ultimoConsultado, setUltimoConsultado] = useState(null);
   const consultando = useRef(false);
-  const [servico, setServico] = useState({ descricao: "", valorServicos: "", aliquota: "", issRetido: false });
+  const [servico, setServico] = useState(() => ({
+    descricao: "", valorServicos: "", aliquota: "", issRetido: false, ...(valoresIniciais?.servico || {}),
+  }));
   const [pTotTribSN, setPTotTribSN] = useState("");
-  const [competencia, setCompetencia] = useState("");
-  const [referencia, setReferencia] = useState("");
+  // ⚠ A COMPETÊNCIA DA NOTA MODELO **NÃO** ENTRA — a nota nova é de agora, não do mês da antiga.
+  // `valoresIniciais.competencia` chega vazio de propósito (ver `reaproveitarNota.js`); a leitura
+  // está aqui, e não um valor cravado, para que este campo continue igual nos dois caminhos.
+  const [competencia, setCompetencia] = useState(valoresIniciais?.competencia || "");
+  const [referencia, setReferencia] = useState(valoresIniciais?.referencia || "");
 
   // A lista oficial do IBGE, para o campo do município do tomador. ⚠ Carregada por `import()`
   // dinâmico e SÓ quando a seção do endereço é aberta (ou quando a consulta precisa conferir um
@@ -616,6 +716,10 @@ export function EmitirNfseWizard({
             )}
           </div>
         )}
+
+        {/* Fica DEPOIS do impedimento da empresa (que é o que decide se sai nota) e ANTES da
+            trilha: é o contexto da tela inteira, não de um passo. */}
+        <AvisoDeReaproveitamento modelo={valoresIniciais} />
 
         {/* Trilha dos passos: onde estou e quanto falta. */}
         <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>

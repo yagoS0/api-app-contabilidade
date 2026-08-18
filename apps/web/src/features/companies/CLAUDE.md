@@ -385,6 +385,112 @@ recebe isso pela prop `fetchCnpj`). Segundo consumidor de fora do onboarding, ao
   conferir.
 - **Situação cadastral ≠ ATIVA** vira aviso (vem de graça na mesma resposta) — nunca bloqueio.
 
+### O ASSISTENTE virou UMA TELA COM ESPELHO AO VIVO (18/08/2026)
+
+Elevação de UX do `EmitirNfseWizard` ao nível do protótipo aprovado (`prototipos/emissor-notas/`).
+⚠ **O que se copiou foi o FLUXO, não a paleta** — o protótipo é claro porque é a cara do CLIENTE; o
+portal do contador é escuro e continua lendo `styles/tokens.css`. Nenhum hex novo entrou.
+
+- **Quatro passos viraram DOIS** — `Preencher a nota` (blocos *Para quem · O que · Quanto*) e
+  `Conferir e emitir`. ⚠ **Nenhuma garantia caiu junto**: o botão Emitir só existe na conferência, o
+  `window.confirm` continua repetindo `linhasDoEspelho` inteira, e o impedimento da EMPRESA
+  (município emissor + `faltasParaEmitir`) continua **acima da trilha**, antes de tudo.
+- **Espelho ao vivo** (`components/PainelDaNota.jsx`), ao lado do formulário, reagindo a cada tecla.
+  ⚠ **Ele NÃO é uma segunda descrição da nota**: sai da MESMA `linhasDoEspelho` que o `confirm` usa.
+  Na conferência ele é a tela inteira — a cópia que existia no passo 4 saiu, senão a mesma nota
+  apareceria duas vezes lado a lado. Grade em `App.css` (`.emitir-nfse-corpo`), **media query**, não
+  `window.innerWidth`; abaixo de 900px o espelho empilha embaixo do formulário e nunca some.
+  - ⚠ **`linhasDoEspelho` deixou de escrever "R$ 0,00" para valor ausente.** O espelho passou a ser
+    lido com os campos vazios (antes só se chegava nele validado), e zero é AFIRMAÇÃO: dizia que a
+    nota vale zero. Hoje é "não informado".
+- **Impostos e líquido em destaque** (`lib/tributosDaNota.js`, 20 testes). ⚠ **A única conta é a que
+  a tela já afirmava em palavras** (`textoIssRetido`: *"o prestador recebe o valor menos o ISS"*).
+  Alíquota em branco **não é alíquota zero** — o ISS fica `null` e vira travessão, com o motivo; e
+  **"Não sai do líquido"** nomeia o ISS não retido e o `pTotTribSN`, senão R$ 1.500 de valor com
+  R$ 30 de ISS e R$ 1.500 de líquido parece erro de conta.
+- **Busca com "encontra, nunca escolhe"** (`components/CampoComBusca.jsx`) em dois campos:
+  - **tomador**, a partir das notas que a ABA já carregou (`lib/tomadoresRecentes.js`, prop
+    `notasDaEmpresa`). ⚠ **NÃO existe cadastro de clientes neste projeto** — sem modelo, sem rota, e
+    inventar um seria construir cadastro fiscal por conta própria. A lista é uma **página filtrada
+    por competência**, e o rótulo diz isso; só com `papel: "EMIT"` (em "Recebidas" o tomador é a
+    própria empresa).
+  - **município do tomador** (`cMun`), que eram **7 dígitos digitados à mão** — errar um emite a nota
+    no município errado. Busca na mesma lista oficial versionada do IBGE que o cadastro usa.
+  - ⚠ **Resultado único NÃO se autosseleciona** e `Enter` sem item marcado não elege ninguém — é
+    onde o componente diverge do protótipo de propósito. Conferido no navegador.
+- **A recusa diz o que fazer e leva ao campo** (`lib/rejeicaoDaEmissao.js`, 12 testes).
+  ⚠ **`routes/nfse.js` já respondia `{camada, codigo, message, correcao, numeroReutilizavel}` e a
+  tela lia só `e.message`** — o "o que fazer" que o backend escrevia era descartado. A `correcao` do
+  servidor **vence** qualquer texto local; código nunca visto **não ganha procedimento inventado**.
+  - ⚠⚠ **Falha de TRANSPORTE (502) e número indeterminado (409) DESABILITAM o botão Emitir.** Ali o
+    desfecho é desconhecido — a nota pode ter sido autorizada do outro lado — e o botão continuava
+    clicável depois de qualquer erro. É assim que se duplica nota fiscal.
+- **A lista de pendências separa `falta preencher` (cinza) de `corrija` (vermelho).** Juntar os três
+  passos faria o assistente **abrir com cinco linhas vermelhas**; campo vazio é o estado normal de um
+  formulário recém-aberto. Os dois desabilitam o Continuar igualmente — a cor fala do que fazer.
+- ⚠ **O código de serviço por emissão CONTINUA sem seletor, e foi reconferido nesta entrega**:
+  `application/validators/nfsePayload.js` não declara campo de serviço e `NfseService.js:540` segue
+  lendo `company.codigoServicoNacional`. `ServicoNacionalDaNota` segue dizendo **qual vai** e onde se
+  troca. Um seletor que parecesse funcionar emitiria com outro código — erro fiscal silencioso.
+
+### CLICAR NUMA NOTA passou a FAZER alguma coisa (dono, 18/08/2026)
+
+> *"o portal do contador não está habilitado as notas do jeito que lhe disse, como no portal do
+> cliente, podendo apenas clicar em uma nota já emitida para copiar dados entre outras coisas"*
+
+O `NotaDetailModal` era uma ficha: dava três coisas para LER e nenhuma para FAZER. Ganhou um bloco
+**"O que fazer com esta nota"**, no topo (a ficha é a conferência, vem depois), com duas ações.
+
+**1. Emitir outra a partir desta** — regra em `features/notas/lib/reaproveitarNota.js` (30 testes);
+ligação em `notas/components/__tests__/reaproveitarNotaEDanfse.test.jsx` (18).
+
+- ⚠⚠ **NOTA NOVA É NOTA NOVA.** `numero`, `chaveAcesso`, `idNfse`, `idDps`, série/RPS, a
+  `competencia` da original, status, ciclo e eventos **não são copiados** — o número da nova é
+  reservado pelo BACKEND na emissão. Copiar identificador é duplicidade (**E0014**) ou uma nota que
+  se diz ser outra. A invariante é testada por **varredura** do objeto (não campo a campo), senão
+  acrescentar `chaveAcesso` "só para a tela mostrar" passaria.
+- **Copiado:** documento e nome do tomador, descrição do serviço e valor (`vServ` = `total`).
+  **Não copiado, e a tela diz o porquê de cada um:** e-mail e endereço (a nota capturada não os
+  guarda — mas o CNPJ preenchido dispara a consulta à Receita, que oferece o endereço), alíquota e
+  ISS retido (não os guardamos; em branco vale a da prefeitura), código de serviço (vem sempre do
+  cadastro — o da original aparece só para conferência).
+- ⚠ **PASSA PELO ASSISTENTE, nunca em volta dele.** O botão só abre o `EmitirNfseWizard`
+  pré-preenchido (prop `valoresIniciais`): o bloqueio de cadastro incompleto, o pré-voo do regime, a
+  conferência e o `confirm` continuam valendo. Um atalho que emitisse do modal desfaria tudo isso.
+- ⚠ **NOTA CANCELADA E SUBSTITUÍDA PODEM SER MODELO — de propósito.** Copiar dados não é reemitir, e
+  o caso relatado pelo dono (*"cancelamos essa nota, emitimos outra"*) É o reaproveitamento de uma
+  cancelada: a nota errada é o melhor modelo para a certa. O que não pode é a tela **calar**, porque
+  aí o contador conclui que (a) emitir daqui "conserta" a cancelada e (b) a nova substitui a antiga
+  — e nenhuma das duas é verdade (o payload de emissão não tem campo de substituição). Por isso a
+  permissão vem **sempre acompanhada do aviso**, e o de substituída manda conferir se o modelo certo
+  não é a substituta.
+- ⚠ **Impedem de verdade:** NF-e (este portal não a emite) e nota **recebida** (`papel: "DEST"`, que
+  ofereceria a empresa como tomadora dela mesma — mesma razão do filtro das sugestões de tomador).
+  Botão impossível **não some**: fica desabilitado com o motivo em **texto**.
+- ⚠ **Mais de um item descrito ⇒ descrição VAZIA**, com aviso. A NFS-e tem um `xDescServ` só;
+  emendar itens escreveria na nota nova uma frase que ninguém redigiu — e ela sai impressa no
+  DANFSe que vai ao tomador.
+- O nome copiado entra como `ORIGEM.DIGITADO` (igual à sugestão de tomador): é o que impede a
+  consulta de CNPJ — que o próprio preenchimento dispara — de trocá-lo sozinho.
+
+**2. Baixar DANFSe (PDF)** — regra em `features/notas/lib/danfseDaNota.js` (13 testes); par
+mock/real `fetchDanfseBlob`.
+
+- ⚠ **A feature inteira existia no backend e NÃO TINHA PORTA NA TELA.** `GET
+  /firm/companies/:id/notas/:notaId/danfse` gera o PDF da NT 008 com QR Code e tem 50 testes; até
+  aqui `grep -rn "danfse" apps/web/src` devolvia **uma ocorrência, e era um comentário**.
+- ⚠ **Não é `<a href>`** — a rota é autenticada e o link não leva o Bearer. Vem por `fetch` com
+  Bearer → Blob, o mesmo caminho dos Documentos da empresa e do SITFIS.
+- ⚠⚠ **A recusa 503 `danfse_sem_qrcode` APARECE, com o motivo do servidor e o porquê da recusa**
+  (*um DANFSe sem QR Code não é um DANFSe*, NT 008 §2.2/§2.4.3). Tela em branco, "falha ao baixar"
+  ou download vazio aqui seria a mesma mentira que o 503 existe para impedir.
+- **Nota sem `xmlRaw` não gera**, e o botão **diz isso** em vez de sumir. O PDF é **gerado sob
+  demanda e nunca salvo** — não há cache a limpar nem "regerar" a oferecer.
+- ⚠ **O mock exercita os DOIS caminhos**: `mock-nfse-sem-chave-emit` (nota EMITIDA, com XML e **sem
+  chave**) devolve a recusa 503, as NF-e devolvem `xml_indisponivel`, o resto devolve o PDF mínimo.
+  Ela precisou ser **acrescentada**: a outra nota sem chave do mock tem `papel: null` e por isso não
+  aparece em nenhuma das duas caixas — a recusa ficava inalcançável offline.
+
 ## ⚠ Regime da empresa mora em `legacyCompany`
 
 `selectedCompany.regimeTributario` **não existe** — `buildFirmCompanyPayload` só devolve o regime
