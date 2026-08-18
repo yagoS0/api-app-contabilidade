@@ -19,6 +19,11 @@
 import { getComplianceTags } from "../components/renderCompanyCard";
 import { estadoCertificado } from "./certificado";
 import { empresaSemObrigacoes } from "./estadoDominante";
+// ⚠ A LEITURA DO REGIME MORA EM `abaRegime.js` e é IMPORTADA — não recopiada. É a mesma função
+// que decide em qual aba a empresa aparece na página principal. Com duas cópias, dava para a
+// empresa cair na aba do Simples e esta barra recusá-la dizendo "Lucro Presumido/Real", na mesma
+// tela. (A função nasceu aqui; mudou de arquivo para o módulo do regime — quem importa é este.)
+import { regimeDe } from "./abaRegime";
 
 /**
  * A trava de 4 h da consulta SITFIS, espelhada do backend (`SITFIS_MIN_INTERVALO_MS`).
@@ -100,9 +105,6 @@ export function guiasPendentesDeEnvio(company) {
   return getComplianceTags(company?.guideCompliance).filter((t) => ESTADOS_ENVIAVEIS.has(t.state));
 }
 
-function regimeDe(company) {
-  return String(company?.legacyCompany?.regimeTributario || company?.regimeTributario || "").trim().toUpperCase();
-}
 
 /**
  * O plano de UMA ação sobre a seleção.

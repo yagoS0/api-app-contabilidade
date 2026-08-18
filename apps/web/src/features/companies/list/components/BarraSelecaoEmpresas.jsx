@@ -8,9 +8,11 @@
 // sobre uma lista que o contador não via. Aqui elas rodam sobre uma seleção QUE ESTÁ NA TELA, e o
 // número que a barra mostra é o número de linhas marcadas.
 //
-// ⚠ NADA FOI REMOVIDO DA BARRA DO TOPO. Envio de e-mails, Apuração e Consultas continuam onde
-// estavam; este é um segundo caminho, não uma mudança de lugar. Tirar da barra é decisão de
-// produto do dono.
+// ⚠ ISTO CONTINUA SENDO UM SEGUNDO CAMINHO, não a mudança de lugar — mas a barra do topo mudou em
+// 18/08/2026, por decisão do dono: `Apuração` e `Consultas` foram para a GAVETA lateral (☰) e o
+// botão `Envio de e-mails em lote` (o que abria `/guides/batch-email`) SAIU. Enviar guia em lote
+// continua aqui, sobre uma seleção que está na tela, e guia a guia dentro da empresa
+// ("Liberar ao cliente"). O que saiu foi o BOTÃO daquela página, não a função.
 //
 // AS TRÊS REGRAS QUE ESTE ARQUIVO EXISTE PARA CUMPRIR
 //   1. ATO IRREVERSÍVEL CONFIRMA REPETINDO OS DADOS — a confirmação repete quantas empresas,

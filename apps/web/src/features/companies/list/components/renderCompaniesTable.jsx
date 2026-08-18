@@ -18,7 +18,7 @@ import { GuiaChip, Popover, todasConcluidas, todasPorGerar, ehParcela } from "./
 import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
 import { estadoApuracao, detalheApuracao } from "../lib/estadoApuracao";
 import { situacaoFiscalDaLinha } from "../lib/situacaoFiscal";
-import { rotuloRegime } from "../../../../lib/vocabulario";
+import { corRegime, descricaoDoRegime } from "../lib/abaRegime";
 import { estadoCertificado } from "../lib/certificado";
 import { lerFalhaDeCarga } from "../../../../lib/falhaDeCarga";
 // ⚠ REUSO, NÃO CÓPIA. Já existiam DOIS formatadores de CNPJ no projeto
@@ -77,13 +77,6 @@ const CABECALHO = {
 };
 
 const fmtMoeda = (v) => `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-function corRegime(regime) {
-  if (regime === "SIMPLES") return "var(--accent-cyan)";
-  if (regime === "LUCRO_PRESUMIDO") return "var(--accent-orange)";
-  if (regime === "LUCRO_REAL") return "var(--accent-purple)";
-  return "var(--text-faint)";
-}
 
 /**
  * COPIAR — o gesto que o contador repete o dia inteiro.
@@ -356,8 +349,13 @@ function Linha({ company, trava, competencia, onOpenCompany, acoesGuia, busca, s
             das três que respondem o que fazer hoje. Aqui, junto do CNPJ, continua a um olhar.
             O selo A1 também saiu daqui: configuração vive no popover do nome, e nada mais. */}
         <span style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-          {regime && <span style={{ color: corRegime(regime) }}>{rotuloRegime(regime)}</span>}
-          {regime && <span aria-hidden="true">·</span>}
+          {/* ⚠ O REGIME SEMPRE APARECE — inclusive quando NÃO HÁ. Enquanto a ausência era um vazio,
+              a empresa sem regime cadastrado era indistinguível de qualquer outra nesta linha; com
+              as abas de regime ela cai em "Outros", e uma aba chamada "Outros" sem a linha dizer
+              por quê é a ausência de novo, um nível acima. A leitura é a mesma de `abaRegime.js`,
+              que é quem decide a aba. */}
+          <span style={{ color: corRegime(regime) }}>{descricaoDoRegime(company)}</span>
+          <span aria-hidden="true">·</span>
           {/* ⚠ COM MÁSCARA NA TELA, SEM MÁSCARA NA ÁREA DE TRANSFERÊNCIA. `00.000.000/0001-00` é a
               forma que o olho confere contra o contrato social; os 14 dígitos crus são a forma que
               o e-CAC aceita. O botão ao lado existe para não obrigar ninguém a apagar pontuação à
@@ -535,7 +533,23 @@ export function CompaniesTable({
   // "não carregou" ou "os filtros escondem". Ver `lib/falhaDeCarga.js`: são três coisas diferentes
   // e viravam uma só.
   carregando = false,
+  /**
+   * ⚠ `totalSemFiltro` é o universo DESTA lista sem os filtros — e com as abas de regime esse
+   * universo passou a ser o da ABA, não a carteira inteira. Fosse a carteira, o rodapé diria
+   * "Exibindo 5 de 6" com um botão "Limpar filtros" que não traria a sexta (ela está na outra aba,
+   * e limpar filtro nenhum a traz). O que explica a diferença entre 5 e 6 é a barra de abas logo
+   * acima, que mostra as duas contagens.
+   */
   totalSemFiltro = null,
+  /**
+   * O nome do recorte a que esta lista pertence ("Simples Nacional"), quando há um.
+   * ⚠ Ele existe por causa do VAZIO: sem ele, uma aba de regime sem nenhuma empresa cairia na frase
+   * "Nenhuma empresa nesta carteira ainda", que é falsa — a carteira tem empresas, esta aba é que
+   * não tem. Ausência dizendo a coisa errada é pior que ausência calada.
+   */
+  rotuloDoRecorte = null,
+  /** Quantas empresas a carteira tem ao todo — é o que separa "aba vazia" de "carteira vazia". */
+  totalDaCarteira = null,
   erroDeCarga = null,
   onLimparFiltros = null,
   // ─── SELEÇÃO ────────────────────────────────────────────────────────────────────────────────
@@ -882,7 +896,9 @@ export function CompaniesTable({
                 ) : escondidasPorFiltro > 0 ? (
                   <>
                     <div style={{ color: "var(--text)", marginBottom: 6 }}>
-                      Nenhuma das <strong>{total}</strong> empresas da carteira bate com os filtros atuais.
+                      Nenhuma das <strong>{total}</strong> empresas
+                      {rotuloDoRecorte ? <> de <strong>{rotuloDoRecorte}</strong></> : " da carteira"} bate
+                      com os filtros atuais.
                     </div>
                     {onLimparFiltros && (
                       <button
@@ -897,6 +913,13 @@ export function CompaniesTable({
                       </button>
                     )}
                   </>
+                ) : rotuloDoRecorte && Number(totalDaCarteira) > 0 ? (
+                  /* ⚠ ABA VAZIA ≠ CARTEIRA VAZIA. Mandar cadastrar a primeira empresa a quem tem 33
+                     na carteira, só porque a aba do Lucro Real está vazia, é a ausência respondendo
+                     a pergunta errada. */
+                  <div style={{ color: "var(--text-muted)" }}>
+                    Nenhuma empresa de <strong>{rotuloDoRecorte}</strong> nesta carteira.
+                  </div>
                 ) : (
                   <div style={{ color: "var(--text-muted)" }}>
                     Nenhuma empresa nesta carteira ainda. Use <strong>Nova empresa</strong> para cadastrar a primeira.

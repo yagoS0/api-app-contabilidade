@@ -1029,6 +1029,47 @@
   font-weight: 700;
 }
 
+/* ─── GAVETA LATERAL DE FERRAMENTAS (☰) ───────────────────────────────────────────────────────
+   Pedido do dono (18/08/2026): *"Pegue a aba de mais e coloque na lateral esquerda, com 3 traços
+   para abrir ela e fechar; padrão dela deve ser fechado"*.
+
+   ⚠ ELA SOBREPÕE, NÃO EMPURRA. A tabela da carteira tem seis colunas e chips de guia; tirar 280px
+   da largura faz a coluna Guias refluir e o contador perde de vista justamente o que foi olhar.
+   Empurrar também moveria a tabela sob o cursor a cada abertura.
+
+   ⚠ Em tela estreita ela ocupa a largura toda, como o drawer do calendário — 280px num aparelho de
+   375px deixa uma faixa de conteúdo inutilizável ao lado. A largura vem daqui (media query) e não
+   de `window.innerWidth` em JS: medir largura no primeiro render é a armadilha que já abriu o
+   calendário em modo celular numa janela grande. */
+.dashboard-gaveta__fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dashboard-gaveta {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 301;
+  width: 288px;
+  max-width: 100vw;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 760px) {
+  .dashboard-gaveta {
+    width: 100%;
+  }
+}
+
 /* Cards */
 .cards-grid {
   display: grid;

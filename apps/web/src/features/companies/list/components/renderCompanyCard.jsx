@@ -1,5 +1,6 @@
 import { Button } from "../../../../components/ui/Button";
-import { rotuloRegime, SITUACAO_FISCAL_SIMBOLO } from "../../../../lib/vocabulario";
+import { SITUACAO_FISCAL_SIMBOLO } from "../../../../lib/vocabulario";
+import { corRegime, descricaoDoRegime } from "../lib/abaRegime";
 import { GuiaChip, todasConcluidas } from "./renderGuiaChip";
 import { estadoCertificado } from "../lib/certificado";
 import { empresaSemObrigacoes, TITULO_ZERADA } from "../lib/estadoDominante";
@@ -150,11 +151,13 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
     ? `Empresa fechada${company.fechamentoContabil?.fechadoEm ? ` em ${new Date(company.fechamentoContabil.fechadoEm).toLocaleDateString("pt-BR")}` : ""}`
     : undefined;
   // Regime tributário — tag Simples/Presumido/Real (vem do cadastro legado).
+  // ⚠ A AUSÊNCIA TAMBÉM VIRA PÍLULA ("Sem regime cadastrado"). Antes ela era um espaço em branco, e
+  // a empresa sem regime ficava indistinguível das outras no card. Com as abas de regime na página
+  // principal ela cai em "Outros" — e "Outros" sem o card dizer por quê é a mesma ausência um nível
+  // acima. Leitura e cor saem de `abaRegime.js`, que é quem decide a aba.
   const regime = legacy?.regimeTributario || null;
-  const regimeLabel = rotuloRegime(regime) || null;
-  const regimeColor = regime === "SIMPLES" ? "var(--accent-cyan)"
-    : regime === "LUCRO_PRESUMIDO" ? "var(--accent-orange)"
-    : regime === "LUCRO_REAL" ? "var(--accent-purple)" : "var(--text-faint)";
+  const regimeLabel = descricaoDoRegime(company);
+  const regimeColor = corRegime(regime);
   // Empresa zerada (sem movimento) — só enviamos obrigações zeradas; não há guias/impostos.
   // Mesma função da tabela: a regra vivia só aqui e a tabela mostrava chips na mesma empresa.
   const zerada = empresaSemObrigacoes(company);
@@ -178,7 +181,11 @@ export function CompanyCard({ company, onAccess, acoesGuia }) {
         {/* C6: identidade da empresa — regime, SERPRO e A1 juntos e no MESMO design (pílula). */}
         <p style={{ margin: "4px 0 0", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
           {regimeLabel && (
-            <Pill tone="categoria" color={regimeColor} title={`Regime tributário: ${regimeLabel}`}>{regimeLabel}</Pill>
+            <Pill
+              tone="categoria"
+              color={regimeColor}
+              title={regime ? `Regime tributário: ${regimeLabel}` : "Esta empresa não tem regime tributário cadastrado"}
+            >{regimeLabel}</Pill>
           )}
           {/* SELO SÓ PARA EXCEÇÃO. Antes "SERPRO" e "A1" apareciam em TODAS as empresas — e selo
               que nunca varia não informa nada: ocupa espaço e não distingue ninguém. O estado

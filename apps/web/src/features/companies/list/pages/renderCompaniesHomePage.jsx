@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { situacaoFiscalComSimbolo } from "../../../../lib/vocabulario";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { Feedback } from "../../../../components/ui/Feedback";
@@ -11,6 +12,9 @@ import { BarraSelecaoEmpresas } from "../components/BarraSelecaoEmpresas";
 import { CalendarioGrid } from "../../../calendario/components/renderCalendarioGrid";
 import { estadoCertificado } from "../lib/certificado";
 import { APURACAO, ORDEM_APURACAO, contarApuracao, estadoApuracao } from "../lib/estadoApuracao";
+import {
+  ABA_PADRAO, abasVisiveis, contarPorAba, empresasDaAba, normalizarAba, rotuloAba,
+} from "../lib/abaRegime";
 
 // Q17: dropdown — abre um seletor (não navega para um hub).
 //
@@ -20,6 +24,11 @@ import { APURACAO, ORDEM_APURACAO, contarApuracao, estadoApuracao } from "../lib
 //
 // `grupo` desenha uma régua com título — sem ela "Rotinas" e "Configuração SERPRO" viram uma lista
 // de sete itens sem hierarquia, que é o mesmo problema da barra, um nível abaixo.
+// ⚠⚠ ESTE COMPONENTE FICOU SEM CONSUMIDOR EM 18/08/2026 e NÃO FOI APAGADO.
+// O menu "Mais ▾" virou a GAVETA LATERAL (`GavetaFerramentas`, logo abaixo) a pedido do dono. Ele
+// não tem outro chamador — nem neste arquivo nem em nenhum outro. Apagar componente é decisão à
+// parte (o precedente registrado do projeto é o `DefisNaoDevida.jsx`), então ele fica aqui,
+// marcado, até alguém decidir. Não o religue sem pedido: seriam duas portas para o mesmo menu.
 function SettingsMenu({ items, label = "Configurações ▾" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -87,6 +96,158 @@ function SettingsMenu({ items, label = "Configurações ▾" }) {
   );
 }
 
+/**
+ * A GAVETA LATERAL ESQUERDA — o que era o menu "Mais ▾".
+ *
+ * Pedido do dono (18/08/2026): *"retire o botão de envio de e-mails em lote, e coloque o de
+ * apuração e de consulta dentro de mais, em ferramentas. Pegue a aba de mais e coloque na lateral
+ * esquerda, com 3 traços para abrir ela e fechar; padrão dela deve ser fechado"*.
+ *
+ * ⚠ É MUDANÇA DE LUGAR, NÃO REMOÇÃO. Cada função continua com o MESMO rótulo e o MESMO handler;
+ * o que muda é onde se clica. Apuração e Consultas entraram no grupo "Ferramentas", ao lado de
+ * Rotinas e Planejamento.
+ *
+ * ⚠ NASCE FECHADA E NÃO LEMBRA. "Padrão fechado" quer dizer fechada a cada carregamento — por isso
+ * o estado inicial é `false` cravado, e não uma leitura de `localStorage` como a do modo de visão.
+ * Aquilo é preferência de leitura da carteira; isto é um menu.
+ *
+ * ⚠ O FOCO VAI E VOLTA. Ao abrir, ele entra na gaveta; ao fechar, volta para o hambúrguer. Sem o
+ * retorno, quem usa teclado é largado no fim do documento e precisa tabular a página inteira de
+ * volta. Fecha por Esc, por clique no fundo e pelo próprio botão.
+ */
+function GavetaFerramentas({ items }) {
+  const [aberta, setAberta] = useState(false);
+  const botaoRef = useRef(null);
+  const gavetaRef = useRef(null);
+  // ⚠ Item sem handler NÃO VIRA LINHA — a página monta o menu com os `onOpen*` que recebeu, e
+  // renderizar um item morto ofereceria uma função que não existe naquele contexto.
+  const usable = items.filter((it) => typeof it.onClick === "function");
+
+  function fechar() {
+    setAberta(false);
+    // `requestAnimationFrame`: o foco só pode voltar depois que a gaveta saiu do DOM. Se a ação
+    // navegou para outra tela, a ref já é nula e o `?.` resolve.
+    if (typeof window !== "undefined" && window.requestAnimationFrame) {
+      window.requestAnimationFrame(() => botaoRef.current?.focus());
+    } else {
+      botaoRef.current?.focus();
+    }
+  }
+
+  useEffect(() => {
+    if (!aberta) return undefined;
+    function onEsc(e) {
+      if (e.key === "Escape") {
+        setAberta(false);
+        botaoRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onEsc);
+    // O foco entra na gaveta assim que ela abre.
+    gavetaRef.current?.querySelector("button")?.focus();
+    return () => document.removeEventListener("keydown", onEsc);
+  }, [aberta]);
+
+  return (
+    <>
+      <Button
+        ref={botaoRef}
+        variant="secondary"
+        className="dashboard-home__action dashboard-home__action--outline"
+        onClick={() => (aberta ? fechar() : setAberta(true))}
+        aria-expanded={aberta}
+        aria-controls="dashboard-gaveta"
+        /* ⚠ O rótulo acessível DIZ O QUE ABRE. "Menu" sozinho não distingue esta gaveta do menu do
+           navegador nem do popover de uma linha da tabela. */
+        aria-label={aberta ? "Fechar o menu de ferramentas e configurações" : "Abrir o menu de ferramentas e configurações"}
+        title="Ferramentas e configurações"
+      >
+        {/* Os três traços, desenhados — o caractere ☰ some em fonte sem o glifo e não escala com
+            a cor do botão. `aria-hidden`: quem anuncia é o `aria-label` acima. */}
+        <svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true" focusable="false">
+          <g fill="currentColor">
+            <rect x="0" y="0" width="16" height="2" rx="1" />
+            <rect x="0" y="5" width="16" height="2" rx="1" />
+            <rect x="0" y="10" width="16" height="2" rx="1" />
+          </g>
+        </svg>
+      </Button>
+
+      {/* ⚠ A GAVETA SAI PARA O `body` (portal). O hambúrguer mora dentro do `<nav aria-label=
+          "Atalhos">`, e renderizar ali um `role="dialog"` com um `<nav>` dentro aninharia uma
+          navegação na outra e poria a caixa de diálogo dentro da barra de atalhos. Fora, ela
+          também fica imune a qualquer `transform`/`overflow` de ancestral, que é o que costuma
+          quebrar `position: fixed` sem avisar. */}
+      {aberta && createPortal(
+        <>
+          {/* O fundo fecha ao clique. Ele é `aria-hidden` porque o botão de fechar dentro da gaveta
+              é o caminho anunciado; o clique no fundo é atalho de mouse. */}
+          <div className="dashboard-gaveta__fundo" aria-hidden="true" onClick={fechar} />
+          <aside
+            id="dashboard-gaveta"
+            ref={gavetaRef}
+            className="dashboard-gaveta"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Ferramentas e configurações"
+          >
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "12px 14px", borderBottom: "1px solid var(--border)",
+            }}>
+              <strong style={{ fontSize: "0.82rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                Mais
+              </strong>
+              <button
+                type="button"
+                onClick={fechar}
+                aria-label="Fechar o menu"
+                style={{
+                  background: "transparent", border: "none", color: "var(--text-muted)",
+                  cursor: "pointer", fontSize: "1.1rem", lineHeight: 1, padding: 4,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <nav aria-label="Ferramentas e configurações" style={{ padding: "6px 0" }}>
+              {usable.map((it, i) => (
+                <div key={it.label}>
+                  {/* O grupo desenha uma régua com título — sem ela "Rotinas" e "Configuração
+                      SERPRO" viram uma lista de sete itens sem hierarquia. */}
+                  {it.grupo && (
+                    <div style={{
+                      padding: "10px 14px 4px", fontSize: "0.66rem", fontWeight: 700, letterSpacing: "0.04em",
+                      textTransform: "uppercase", color: "var(--text-muted)",
+                      borderTop: i > 0 ? "1px solid var(--border)" : "none",
+                      marginTop: i > 0 ? 4 : 0,
+                    }}>
+                      {it.grupo}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { fechar(); it.onClick(); }}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left", padding: "10px 14px",
+                      background: "transparent", border: "none", color: "var(--text)", cursor: "pointer", fontSize: "0.88rem",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-subtle)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    {it.label}
+                  </button>
+                </div>
+              ))}
+            </nav>
+          </aside>
+        </>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function normalizeSearch(value) {
   return String(value || "")
     .normalize("NFD")
@@ -137,7 +298,11 @@ export function CompaniesHomePage({
   onOpenChartGlobal,
   onRefreshCompanies,
   onOpenPendingReport,
-  onOpenBatchEmail,
+  // ⚠ SEM CONSUMIDOR desde 18/08/2026: o botão "Envio de e-mails em lote" saiu da barra a pedido
+  // do dono, e ele era o único uso desta prop nesta página. O `App.jsx` continua fornecendo-a
+  // (`onOpenBatchEmail={() => session.setPage("batchEmail")}`) e a rota `/guides/batch-email`
+  // continua de pé. Apagar a prop e o handler é decisão à parte — está relatado, não escondido.
+  onOpenBatchEmail, // eslint-disable-line no-unused-vars
   onOpenApuracao,
   onOpenRotinas,
   onOpenPlanejamento,
@@ -205,9 +370,13 @@ export function CompaniesHomePage({
   const [emailFilter, setEmailFilter] = useState("all"); // all | sent | notSent (Q16)
   const [apuracaoFilter, setApuracaoFilter] = useState("all"); // all | apurados | naoApurados
   const [certFilter, setCertFilter] = useState("all"); // all | comCert | semCert | vencido
-  // Situação fiscal (SITFIS) e regime — combinam com os demais filtros.
+  // Situação fiscal (SITFIS) — combina com os demais filtros.
   const [fiscalFilter, setFiscalFilter] = useState("all"); // all | comPendencia | semPendencia | emParcelamento
-  const [regimeFilter, setRegimeFilter] = useState("all"); // all | SIMPLES | LUCRO_PRESUMIDO
+  // ⚠ O FILTRO "REGIME" SAIU INTEIRO (pedido do dono, 18/08/2026): *"exclua o filtro de regime,
+  // pois já estarão separados"*. Quem separa por regime agora são as ABAS acima da tabela
+  // (`lib/abaRegime.js`). Saíram JUNTOS o estado, a entrada do de-para dos chips, o reset, a
+  // condição do `useMemo` e a dependência — deixar qualquer metade produziria o "filtro fantasma"
+  // que o `CLAUDE.md` desta pasta nomeia: um recorte agindo sem chip removível na tela.
   // Fechamento CONTÁBIL do mês filtrado (o mesmo 🔒 do card) — não confundir com apuração.
   // C7: os filtros secundários ficam num painel; só busca e competência seguem aparentes.
   const [showFilters, setShowFilters] = useState(false);
@@ -380,13 +549,14 @@ export function CompaniesHomePage({
     apuracaoFilter: { rotulo: "Apuração", valores: { apurados: "apurados", naoApurados: "não apurados" } },
     certFilter: { rotulo: "Certificado", valores: { comCert: "com certificado válido", semCert: "sem certificado", vencido: "certificado vencido" } },
     fiscalFilter: { rotulo: "Situação fiscal", valores: { comPendencia: "com pendência", semPendencia: "sem pendência", emParcelamento: "em parcelamento" } },
-    // Sem o de-para, o chip mostrava a constante crua ("Regime: LUCRO_PRESUMIDO") — o valor do
-    // banco vazando para a tela.
-    regimeFilter: { rotulo: "Regime", valores: { SIMPLES: "Simples Nacional", LUCRO_PRESUMIDO: "Lucro Presumido", LUCRO_REAL: "Lucro Real" } },
+    // ⚠ A ENTRADA `regimeFilter` SAIU DAQUI JUNTO COM O FILTRO. A aba de regime NÃO ocupa o lugar
+    // dela: aba é navegação, não filtro removível — ela não vira chip e não pode entrar na contagem
+    // do botão "Filtros" (que sai desta MESMA lista). Onde a aba precisa aparecer é no CABEÇALHO
+    // IMPRESSO, e aparece.
   };
   const valoresFiltro = {
     documentFilter, serproFilter, emailFilter, apuracaoFilter,
-    certFilter, fiscalFilter, regimeFilter,
+    certFilter, fiscalFilter,
   };
   // Cada filtro precisa saber se DESLIGAR sozinho — é isso que permite o chip removível.
   const RESET_FILTRO = {
@@ -396,7 +566,6 @@ export function CompaniesHomePage({
     apuracaoFilter: () => setApuracaoFilter("all"),
     certFilter: () => setCertFilter("all"),
     fiscalFilter: () => setFiscalFilter("all"),
-    regimeFilter: () => setRegimeFilter("all"),
   };
 
   /**
@@ -428,7 +597,6 @@ export function CompaniesHomePage({
     setApuracaoFilter("all");
     setCertFilter("all");
     setFiscalFilter("all");
-    setRegimeFilter("all");
     // ⚠ AQUI HAVIA UM `setFechamentoFilter("all")` — um setter que NÃO EXISTE. O estado
     // `fechamentoFilter` saiu quando o filtro "Fechamento" foi removido do painel (ele duplicava os
     // chips de Apuração do topo), e a linha da limpeza ficou para trás. Como é uma referência a
@@ -483,10 +651,10 @@ export function CompaniesHomePage({
       // ⚠ O filtro "Fechamento" SAIU do painel: os chips de Apuração no topo já respondem a mesma
       // pergunta, e dois controles para o mesmo estado divergem — dava para filtrar "abertas" no
       // painel e "fechadas" no chip, e a tela ficava vazia sem explicar por quê.
-      if (regimeFilter !== "all") {
-        const regime = String(company?.legacyCompany?.regimeTributario || company?.regimeTributario || "").trim().toUpperCase();
-        if (regime !== regimeFilter) return false;
-      }
+      // ⚠ AQUI FICAVA O RECORTE POR REGIME. Ele saiu porque quem separa por regime agora é a ABA
+      // (abaixo, `empresasVisiveis`) — e o recorte da aba acontece DEPOIS deste `useMemo` de
+      // propósito: é desta lista, já filtrada por tudo o mais, que saem as CONTAGENS das abas.
+      // Contar antes faria a aba prometer um número e a tabela mostrar outro.
       if (!normalizedQuery) return true;
       return (
         normalizeSearch(company?.razao).includes(normalizedQuery) ||
@@ -510,7 +678,60 @@ export function CompaniesHomePage({
       .map((company, index) => ({ company, index, p: priority(company) }))
       .sort((a, b) => (b.p - a.p) || (a.index - b.index))
       .map((item) => item.company);
-  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, regimeFilter, travaFiltro, travas, empresasFaltaEnviar]);
+  }, [companies, documentFilter, search, serproFilter, emailFilter, apuracaoFilter, certFilter, fiscalFilter, travaFiltro, travas, empresasFaltaEnviar]);
+
+  // ─── ABAS DE REGIME ───────────────────────────────────────────────────────────────────────────
+  //
+  // Pedido do dono (18/08/2026): *"ter duas tabelas na página principal, uma para presumido e outra
+  // simples nacional, deve ficar indicado em cima da tabela, como uma aba de navegador"*.
+  //
+  // ⚠ AS CONTAGENS SAEM DE `filteredCompanies`, a lista JÁ recortada por busca, competência e pelos
+  // filtros do painel. Contar sobre a carteira inteira faria a aba prometer 22 e a tabela mostrar 7.
+  //
+  // ⚠ A ABA ATIVA É DERIVADA, não o estado cru: `normalizarAba` devolve o padrão quando a aba
+  // guardada é "Outros" e "Outros" não está mais desenhada (ninguém nela). Sem isso, a escolha
+  // salva apontaria para uma aba inexistente e a tabela ficaria vazia sem nenhum botão marcado.
+  //
+  // ⚠ A ESCOLHA PERSISTE, como o modo de visão já persiste. Quem trabalha o dia no Presumido não
+  // pode voltar ao Simples a cada recarga.
+  const [abaSalva, setAbaSalva] = useState(() => {
+    try {
+      return localStorage.getItem("dashboard:abaRegime") || ABA_PADRAO;
+    } catch { /* localStorage bloqueado (modo privado) não pode derrubar a tela */ }
+    return ABA_PADRAO;
+  });
+  const contagensPorAba = useMemo(() => contarPorAba(filteredCompanies), [filteredCompanies]);
+  const abasDaCarteira = useMemo(() => abasVisiveis(contagensPorAba), [contagensPorAba]);
+  const abaAtiva = normalizarAba(abaSalva, contagensPorAba);
+  function trocarAba(aba) {
+    setAbaSalva(aba);
+    try { localStorage.setItem("dashboard:abaRegime", aba); } catch { /* idem */ }
+  }
+
+  /**
+   * A lista que a tabela e os cards realmente mostram.
+   *
+   * ⚠ É ELA que alimenta `idsVisiveis` logo abaixo — e é por isso que TROCAR DE ABA PODA A SELEÇÃO
+   * exatamente como um filtro poda, pelo MESMO caminho, sem uma segunda regra. Sem isso, marcar 8
+   * empresas no Simples e ir para o Presumido deixaria a barra agindo sobre linhas que o contador
+   * não está mais vendo — o risco que a poda existe para impedir.
+   */
+  const empresasVisiveis = useMemo(
+    () => empresasDaAba(filteredCompanies, abaAtiva),
+    [filteredCompanies, abaAtiva],
+  );
+
+  /**
+   * O universo DESTA aba sem os filtros — o denominador do "Exibindo X de N" da tabela.
+   *
+   * ⚠ Era a carteira inteira, e com as abas isso passou a mentir: o rodapé dizia "Exibindo 5 de 6"
+   * e oferecia "Limpar filtros", um botão que não traz a sexta empresa (ela está na OUTRA aba).
+   * Quem explica a diferença entre 5 e 6 é a barra de abas, que mostra as duas contagens.
+   */
+  const totalDaAba = useMemo(
+    () => empresasDaAba(companies || [], abaAtiva).length,
+    [companies, abaAtiva],
+  );
 
   // ─── SELEÇÃO NA TABELA ────────────────────────────────────────────────────────────────────────
   //
@@ -530,9 +751,11 @@ export function CompaniesHomePage({
   const [selecionados, setSelecionados] = useState(() => new Set());
   const [recortadas, setRecortadas] = useState(0);
 
+  // ⚠ `empresasVisiveis`, não `filteredCompanies`: o que está na TELA é a aba ativa. É esta única
+  // troca que faz a poda da seleção valer também para a troca de aba.
   const idsVisiveis = useMemo(
-    () => new Set((filteredCompanies || []).map((c) => c.companyId)),
-    [filteredCompanies],
+    () => new Set((empresasVisiveis || []).map((c) => c.companyId)),
+    [empresasVisiveis],
   );
 
   useEffect(() => {
@@ -569,12 +792,26 @@ export function CompaniesHomePage({
     setSelecionados(new Set());
   }
 
+  /**
+   * A FRASE DA PODA, escrita UMA vez.
+   *
+   * ⚠ ELA PRECISA SOBREVIVER À SELEÇÃO VAZIA — e é a troca de aba que expôs isso. A
+   * `BarraSelecaoEmpresas` devolve `null` sem seleção, então quando a poda leva TODAS as marcadas
+   * (o caso normal ao sair do Simples para o Presumido: nenhuma empresa está nas duas abas) a barra
+   * some levando o aviso junto, e as marcações desaparecem em silêncio — exatamente o que a poda
+   * anunciada existe para impedir. Por isso o aviso também é renderizado sozinho, com a MESMA
+   * frase, quando não sobrou ninguém selecionado.
+   */
+  const avisoDeRecorte = recortadas > 0
+    ? `${recortadas} empresa(s) saíram da seleção porque não estão mais nesta lista.`
+    : null;
+
   // ⚠ AS LINHAS, não os ids: o plano de ações lê regime, certificado, `guideCompliance` e
   // `fiscalCheckedAt` de cada empresa. Uma lista de ids obrigaria a barra a buscar o que a página
   // já tem na mão.
   const empresasSelecionadas = useMemo(
-    () => (filteredCompanies || []).filter((c) => selecionados.has(c.companyId)),
-    [filteredCompanies, selecionados],
+    () => (empresasVisiveis || []).filter((c) => selecionados.has(c.companyId)),
+    [empresasVisiveis, selecionados],
   );
 
   return (
@@ -695,6 +932,35 @@ export function CompaniesHomePage({
               não há `<Routes>` no `App.jsx`, o despacho é uma cadeia de `if` (ver
               `apps/web/CLAUDE.md`). Criar navegação nova é decisão de produto do dono. */}
           <nav className="dashboard-home__actions" aria-label="Atalhos">
+            {/* ⚠ O HAMBÚRGUER VEM PRIMEIRO porque a gaveta abre à ESQUERDA — botão à direita
+                abrindo painel à esquerda faz o olho atravessar a tela atrás do que acabou de
+                clicar. */}
+            <GavetaFerramentas
+              items={[
+                // ⚠ APURAÇÃO E CONSULTAS MUDARAM DE LUGAR, NÃO SAÍRAM (dono, 18/08/2026: *"coloque
+                // o de apuração e de consulta dentro de mais, em ferramentas"*). Mesmo rótulo,
+                // mesmo handler, um clique a mais.
+                { grupo: "Ferramentas", label: "Apuração", onClick: onOpenApuracao },
+                // C10: "Pendências" já tinha virado a aba "Situação Fiscal" dentro de Consultas.
+                { label: "Consultas", onClick: onOpenSerproFuncoes },
+                // Planejamento é cenário de reunião com PROSPECT (por isso mora no dashboard e não
+                // dentro de uma empresa); Rotinas é configuração de recorrência. Nenhuma das duas é
+                // o trabalho do dia — são episódicas, e é isso que as põe aqui dentro.
+                { label: "Rotinas", onClick: onOpenRotinas },
+                { label: "Planejamento", onClick: onOpenPlanejamento },
+                // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
+                // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
+                // seletor de visões e entrou aqui.
+                { grupo: "Configurações", label: "Obrigações do escritório", onClick: onOpenObrigacoes },
+                { label: "Configuração SERPRO", onClick: onOpenGuideSettings },
+                { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
+                // ⚠ Chamava-se "Pendências (debug)". É a ÚNICA tela que lista guia por guia o
+                // status do e-mail, as tentativas e o `emailLastError` — e o rótulo "(debug)"
+                // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
+                // escondida atrás de um aviso de "não mexa" é o mesmo que não existir.
+                { label: "Pendências de e-mail", onClick: onOpenPendingReport },
+              ]}
+            />
             <Button
               variant="secondary"
               className="dashboard-home__action dashboard-home__action--accent"
@@ -732,47 +998,19 @@ export function CompaniesHomePage({
                 Onboardings
               </Button>
             )}
-            {onOpenApuracao && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenApuracao}>
-                Apuração
-              </Button>
-            )}
-            {/* C10: "Pendências" saiu do dashboard — virou a aba "Situação Fiscal"
-                dentro de Consultas (antiga "Funções em lote"). */}
-            {onOpenSerproFuncoes && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenSerproFuncoes}>
-                Consultas
-              </Button>
-            )}
-            {onOpenBatchEmail && (
-              <Button variant="secondary" className="dashboard-home__action dashboard-home__action--outline" onClick={onOpenBatchEmail}>
-                Envio de e-mails em lote
-              </Button>
-            )}
-            {/* O botão "Calendário" saiu daqui: o calendário virou VISÃO, ao lado de Cards e Ano.
-                Ter as duas portas para a mesma coisa só dividiria o caminho. */}
-            <SettingsMenu
-              label="Mais ▾"
-              items={[
-                // ⚠ Rotinas e Planejamento MUDARAM DE LUGAR, não saíram. Mesmo rótulo, mesmo
-                // handler, um clique a mais. São ferramentas episódicas: Planejamento é cenário de
-                // reunião com PROSPECT (por isso mora no dashboard e não dentro de uma empresa), e
-                // Rotinas é configuração de recorrência — nenhuma das duas é o trabalho do dia.
-                { grupo: "Ferramentas", label: "Rotinas", onClick: onOpenRotinas },
-                { label: "Planejamento", onClick: onOpenPlanejamento },
-                // Cadastrar obrigação é CONFIGURAÇÃO do escritório (define o que passa a ser
-                // cobrado de todo mundo), não uma forma de olhar a carteira — por isso saiu do
-                // seletor de visões e entrou aqui.
-                { grupo: "Configurações", label: "Obrigações do escritório", onClick: onOpenObrigacoes },
-                { label: "Configuração SERPRO", onClick: onOpenGuideSettings },
-                { label: "Plano de Contas Global", onClick: onOpenChartGlobal },
-                // ⚠ Chamava-se "Pendências (debug)". É a ÚNICA tela que lista guia por guia o
-                // status do e-mail, as tentativas e o `emailLastError` — e o rótulo "(debug)"
-                // dizia ao contador que aquilo não era assunto dele. Ferramenta de diagnóstico
-                // escondida atrás de um aviso de "não mexa" é o mesmo que não existir.
-                { label: "Pendências de e-mail", onClick: onOpenPendingReport },
-              ]}
-            />
+            {/* ⚠ APURAÇÃO E CONSULTAS FORAM PARA A GAVETA (☰), no grupo "Ferramentas" — pedido do
+                dono, 18/08/2026. Continuam com o mesmo rótulo e o mesmo handler.
+
+                ⚠ O BOTÃO "ENVIO DE E-MAILS EM LOTE" FOI REMOVIDO da barra, e este é o único caso
+                em que uma porta se fechou: *"não é tirar o botão de enviar, é tirar o botão que
+                abre a aba de envio de email, aquela ao lado de consultas"* (dono, 18/08/2026). Ele
+                era o único link para `/guides/batch-email`; a rota e a página continuam existindo.
+                ⚠ ENVIAR GUIA EM LOTE NÃO DEPENDIA DELE e continua em dois caminhos: a seleção na
+                tabela (marcar as linhas → "Enviar guias", que roda sobre a seleção e mostra a
+                prévia) e, guia a guia, "Liberar ao cliente" dentro da empresa.
+
+                O botão "Calendário" também não está aqui: o calendário virou VISÃO, ao lado de
+                Cards e Ano. Ter duas portas para a mesma coisa só dividiria o caminho. */}
             {/* ⚠ O "↻" SAIU DAQUI e foi para o lado do seletor de competência, no título. Ele não é
                 um atalho como os outros: é a recarga DA LISTA da competência exibida — o que ele
                 atualiza está escrito ao lado dele agora. Numa fileira de atalhos, um ícone mudo
@@ -1053,14 +1291,12 @@ export function CompaniesHomePage({
                     </select>
                   </label>
 
-                  <label style={FILTER_LABEL}>
-                    Regime
-                    <select value={regimeFilter} onChange={(event) => setRegimeFilter(event.target.value)} style={{ ...FILTER_CONTROL, width: "100%" }}>
-                      <option value="all">Todos</option>
-                      <option value="SIMPLES">Simples Nacional</option>
-                      <option value="LUCRO_PRESUMIDO">Lucro Presumido</option>
-                    </select>
-                  </label>
+                  {/* ⚠ O SELETOR "REGIME" FOI REMOVIDO DAQUI — decisão do dono, 18/08/2026:
+                      *"exclua o filtro de regime, pois já estarão separados"*. A separação por
+                      regime é a barra de ABAS acima da tabela. Reintroduzir este `<select>` daria
+                      dois controles para a mesma pergunta, e eles podem se contradizer: filtrar
+                      "Simples" aqui com a aba "Lucro Presumido" ativa esvaziaria a tela sem que
+                      nada na página explicasse por quê. */}
 
                   {/* Rodapé ocupando as duas colunas. "Aplicar" só FECHA o painel: os selects já
                       filtram ao mudar, e segurar a aplicação até o clique faria a lista mentir
@@ -1080,6 +1316,48 @@ export function CompaniesHomePage({
           </section>
           )}
 
+          {/* ─── ABAS DE REGIME ─────────────────────────────────────────────────────────────────
+              *"ter duas tabelas na página principal, uma para presumido e outra simples nacional,
+              deve ficar indicado em cima da tabela, como uma aba de navegador"* (dono, 18/08/2026).
+
+              ⚠ REUSA `components/ui/Tabs` — a ÚNICA barra de abas do app. Uma segunda barra
+              divergiria da primeira na correção seguinte, que é a razão de o componente existir.
+
+              ⚠ `mode="view"`, não `nav`: trocar de aba não navega para lugar nenhum, é o mesmo
+              recorte da mesma tela. Com `nav` o leitor de tela anunciaria "página atual" para um
+              botão que não mudou de página.
+
+              ⚠ SÓ EM TABELA E CARDS. "Ano" e "Calendário" são o outro eixo (o tempo): a grade anual
+              é 12 meses × empresas e o calendário é o que vence no dia; recortá-los por regime não
+              é o que o dono pediu, e a grade anual nem passa por `filteredCompanies` (ela tem busca
+              própria no servidor).
+
+              ⚠ A CONTAGEM VAI NO TEXTO, não no `badge` do componente — aquele badge é vermelho
+              (`--state-danger`), e o 22 pareceria 22 problemas. O ponto colorido é a MESMA cor de
+              categoria do card e da linha (ciano Simples · laranja Presumido), nunca `--state-*`. */}
+          {(modoVisao === "cards" || modoVisao === "tabela") && (
+            <div style={{ marginBottom: 10 }}>
+              <Tabs
+                mode="view"
+                align="start"
+                ariaLabel="Regime tributário"
+                items={abasDaCarteira.map((aba) => ({
+                  key: aba.key,
+                  title: aba.title,
+                  label: (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span aria-hidden="true" style={{ color: aba.cor, fontSize: "0.72em" }}>●</span>
+                      {aba.rotulo}
+                      <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>({aba.contagem})</span>
+                    </span>
+                  ),
+                }))}
+                active={abaAtiva}
+                onChange={trocarAba}
+              />
+            </div>
+          )}
+
           {modoVisao === "calendario" ? (
             <CalendarioGrid api={api} empresas={companies} onOpenCompany={onOpenCompany} />
           ) : modoVisao === "ano" ? (
@@ -1097,10 +1375,32 @@ export function CompaniesHomePage({
               jobsAtivos={backgroundJobs?.total || 0}
               onLimparSelecao={limparSelecao}
               onConcluido={async () => { await onRefreshCompanies?.(); await carregarTravas(); }}
-              avisoDeRecorte={recortadas > 0
-                ? `${recortadas} empresa(s) saíram da seleção porque não estão mais nesta lista.`
-                : null}
+              avisoDeRecorte={avisoDeRecorte}
             />
+            {/* A mesma frase, quando a poda não deixou ninguém marcado e a barra acima não existe.
+                O ✕ existe para o aviso não ficar grudado na tela depois de lido — ele descreve algo
+                que já aconteceu, não um estado atual. */}
+            {avisoDeRecorte && empresasSelecionadas.length === 0 && (
+              <div
+                role="status"
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+                  padding: "8px 12px", borderRadius: 8,
+                  background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+                  color: "var(--state-warn)", fontSize: "0.78rem", fontWeight: 600,
+                }}
+              >
+                {avisoDeRecorte}
+                <button
+                  type="button"
+                  onClick={() => setRecortadas(0)}
+                  aria-label="Dispensar o aviso"
+                  style={{ background: "transparent", border: "none", color: "inherit", cursor: "pointer", marginLeft: "auto", font: "inherit" }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             <div data-print-area>
               {/* Só existe no papel (`display:none` na tela, ligado pelo @media print). É o que
                   permite conferir a folha meses depois: qual competência, quando foi impressa,
@@ -1110,13 +1410,17 @@ export function CompaniesHomePage({
                   Empresas · {rotuloCompetencia(dashboardCompetencia)}
                 </h2>
                 <p style={{ margin: "2px 0 0", fontSize: "0.78rem" }}>
-                  {filteredCompanies.length} empresa(s) · impresso em {new Date().toLocaleString("pt-BR")}
+                  {/* ⚠ A ABA ATIVA SAI IMPRESSA, e vem ANTES dos filtros porque é ela que explica o
+                      tamanho da lista. Uma folha com 11 linhas que não diz "Lucro Presumido" é
+                      exatamente a folha filtrada que não diz que está filtrada. */}
+                  Regime: {rotuloAba(abaAtiva)} · {empresasVisiveis.length} empresa(s) · impresso em {new Date().toLocaleString("pt-BR")}
                   {descricaoFiltros ? ` · Filtros — ${descricaoFiltros}` : " · sem filtros"}
                   {search.trim() ? ` · Busca: "${search.trim()}"` : ""}
                 </p>
               </div>
               <CompaniesTable
-                companies={filteredCompanies}
+                /* ⚠ A LISTA DA ABA ATIVA — a mesma de onde saem `idsVisiveis` e a seleção. */
+                companies={empresasVisiveis}
                 travas={travas}
                 competencia={dashboardCompetencia}
                 onOpenCompany={onOpenCompany}
@@ -1124,9 +1428,14 @@ export function CompaniesHomePage({
                 busca={search}
                 imprimindo={imprimindo}
                 carregando={loadingCompanies}
-                /* ⚠ A CARTEIRA INTEIRA, não a filtrada — é a diferença entre os dois números que
-                   responde ao "o chip diz 33 e eu conto 12 linhas". */
-                totalSemFiltro={(companies || []).length}
+                /* ⚠ O universo DA ABA, não o da carteira — ver `totalDaAba`. É a diferença entre
+                   este número e o de linhas que responde ao "o chip diz 33 e eu conto 12 linhas";
+                   a diferença para a carteira inteira quem conta é a barra de abas. */
+                totalSemFiltro={totalDaAba}
+                /* ⚠ Para o vazio saber dizer "esta ABA não tem empresa" em vez de mandar cadastrar
+                   a primeira a quem tem a carteira cheia. */
+                rotuloDoRecorte={rotuloAba(abaAtiva)}
+                totalDaCarteira={(companies || []).length}
                 /* ⚠ `error` é o feedback GERAL do app, não um erro dedicado desta carga; a tabela
                    só o usa quando a lista está VAZIA, que é o único momento em que confundir
                    "não carregou" com "não há" custa caro. Com 33 empresas na tela ele é ignorado. */
@@ -1140,7 +1449,7 @@ export function CompaniesHomePage({
             </>
           ) : (
           <section className="cards-grid cards-grid--dashboard" aria-label="Lista de empresas">
-            {filteredCompanies.map((company) => (
+            {empresasVisiveis.map((company) => (
               <CompanyCard key={company.companyId} company={company} onAccess={onOpenCompany} acoesGuia={acoesGuia} />
             ))}
           </section>
@@ -1148,7 +1457,7 @@ export function CompaniesHomePage({
 
           {/* A tabela já diz "nenhuma empresa" na própria linha vazia — repetir aqui duplicaria a
               mensagem embaixo dela. */}
-          {!loadingCompanies && modoVisao !== "tabela" && filteredCompanies.length === 0 ? (
+          {!loadingCompanies && modoVisao !== "tabela" && empresasVisiveis.length === 0 ? (
             <p className="text-muted dashboard-home__empty">Nenhuma empresa encontrada para os filtros atuais.</p>
           ) : null}
         </section>

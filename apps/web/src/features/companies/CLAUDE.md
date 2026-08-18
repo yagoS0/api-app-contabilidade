@@ -547,6 +547,77 @@ dizer isso nos dois lugares foi o que duplicou o parcelamento.
 inegociável. O painel antigo escondia o estado atrás de um botão e o contador via a carteira pela
 metade sem entender por quê (o "filtro fantasma"). Contagem do botão e chips saem da MESMA lista.
 O filtro "Fechamento" **saiu**: duplicava os chips do topo, e dava para os dois se contradizerem.
+⚠ O filtro **"Regime" também saiu** (18/08/2026) — quem separa por regime agora são as **abas**
+acima da tabela. Saiu INTEIRO: estado, `<select>`, entrada no de-para dos chips, reset e condição
+do `useMemo`. Meia remoção é o filtro fantasma de novo.
+
+## Abas de regime + gaveta lateral (dono, 18/08/2026)
+
+> *"ter duas tabelas na página principal, uma para presumido e outra simples nacional, deve ficar
+> indicado em cima da tabela, como uma aba de navegador. dessa forma exclua o filtro de regime, pois
+> já estarão separados"*
+
+Regra em **`list/lib/abaRegime.js`** (26 testes); a ligação em
+`list/pages/__tests__/abasDeRegimeNaCarteira.test.jsx` (24). Reusa **`components/ui/Tabs`**, a única
+barra de abas do app, com `mode="view"` (trocar de aba não navega).
+
+- ⚠ **TRÊS ABAS, NÃO DUAS.** `Simples Nacional` · `Lucro Presumido` · **`Outros`**, esta última
+  renderizada **só quando há empresa nela**, com a contagem. Medido em produção (18/08/2026): 33
+  empresas, 22 `SIMPLES`, 11 `LUCRO_PRESUMIDO`, **zero** fora dos dois — então hoje ela não aparece.
+  Com só duas abas fixas, a empresa de `LUCRO_REAL`/`MEI`/`OUTRO` (valores que o cadastro aceita) ou
+  **sem regime** sumiria da página principal sem nada dizendo que existe. Dentro de `Outros` a linha
+  **nomeia o regime** — e a ausência vira a frase **"Sem regime cadastrado"**, no card e na tabela.
+- ⚠ **O critério é o MESMO de `acoesDaSelecao`**: só `SIMPLES` exato é Simples. A leitura é uma só —
+  `regimeDe` **mudou de arquivo** (de `acoesDaSelecao.js` para `abaRegime.js`) e é **importada** de
+  volta por ele. Foi para lá, e não o contrário, porque `acoesDaSelecao` importa `renderCompanyCard`
+  e o card lê o regime: ficando lá, o card fecharia um ciclo de imports.
+- **As contagens saem da lista JÁ filtrada** pelos demais filtros. Contar sobre a carteira inteira
+  faria a aba prometer 22 e a tabela mostrar 7.
+- ⚠ **Trocar de aba PODA A SELEÇÃO pelo MESMO caminho que um filtro poda** — a única mudança foi
+  `idsVisiveis` passar a sair da lista da aba. **Mas a poda ficou muda**: `BarraSelecaoEmpresas`
+  devolve `null` sem seleção, e ao sair do Simples para o Presumido a poda leva *todas* (nenhuma
+  empresa está nas duas abas), então a barra sumia levando o aviso junto. Hoje a MESMA frase é
+  renderizada solta (`role="status"`, dispensável) quando não sobra ninguém marcado.
+- **A aba ativa PERSISTE** (`localStorage: dashboard:abaRegime`), como `modoVisao`. ⚠ Aba guardada
+  que não está mais desenhada (`Outros` esvaziada) cai no padrão via `normalizarAba` — senão a
+  escolha salva apontaria para uma aba inexistente e a tabela ficaria vazia sem botão marcado.
+- ⚠ **A aba NÃO é filtro:** não vira chip removível e não entra na contagem do botão "Filtros"
+  (aquele critério existe contra o filtro *escondido*; uma aba em cima da tabela é o oposto disso).
+  Onde ela **tem** de aparecer é no **cabeçalho impresso**, e aparece: `Regime: Lucro Presumido · 11
+  empresa(s) · …`.
+- ⚠ **Só em Tabela e Cards.** `Ano` e `Calendário` são o outro eixo (o tempo) e não foram tocados —
+  a grade anual nem passa por `filteredCompanies`, ela tem busca própria no servidor.
+- **A barra "Fechamento do mês" (`contagemApuracao`) NÃO passou a contar por aba**: ela conta sobre a
+  carteira inteira, como sempre contou (já não respeita busca nem os filtros do painel). São chips de
+  filtro sobre `travas`, não um resumo da lista visível; recortá-los por aba mudaria o significado de
+  um controle que ninguém pediu para mudar.
+- **Cor:** ponto de categoria (`--accent-cyan` Simples · `--accent-orange` Presumido · `--text-faint`
+  Outros), **nunca `--state-*`** — regime não é pendência nem conclusão. A contagem vai no **texto**,
+  não no `badge` do `Tabs`: aquele badge é `--state-danger`, e "22" em vermelho diria 22 problemas.
+
+### A gaveta lateral (☰) — o que era "Mais ▾"
+
+> *"retire o botão de envio de e-mails em lote, e coloque o de apuração e de consulta dentro de mais,
+> em ferramentas. Pegue a aba de mais e coloque na lateral esquerda, com 3 traços para abrir ela e
+> fechar; padrão dela deve ser fechado"*
+
+Na barra do topo sobraram **`Nova empresa`** (accent) e **`Onboardings`**, mais o **hambúrguer**, que
+vem primeiro porque a gaveta abre à esquerda.
+
+- **Ferramentas:** Apuração · Consultas · Rotinas · Planejamento. **Configurações:** Obrigações do
+  escritório · Configuração SERPRO · Plano de Contas Global · Pendências de e-mail. Mesmos rótulos,
+  mesmos handlers — é mudança de LUGAR.
+- ⚠ **Nasce FECHADA a cada carregamento** (`useState(false)` cravado, sem `localStorage`): "padrão
+  fechado" não é "lembra que eu deixei aberta". Fecha por `Esc`, por clique no fundo e pelo próprio
+  botão; o foco entra na gaveta ao abrir e **volta para o hambúrguer** ao fechar.
+- ⚠ **Sobrepõe, não empurra** (`.dashboard-gaveta` no `App.css`; largura total em ≤760px, como o
+  drawer do calendário): a tabela tem seis colunas e reflui se perder 288px. A largura vem de **media
+  query**, não de `window.innerWidth` no primeiro render.
+- ⚠ **`SettingsMenu` ficou SEM CONSUMIDOR** e **não foi apagado** — está marcado no arquivo. Mesmo
+  tratamento do `DefisNaoDevida.jsx`: apagar componente é decisão à parte.
+- ⚠ **`/guides/batch-email` ficou sem porta no dashboard.** A rota, a página e o handler do `App.jsx`
+  continuam de pé; o que sumiu foi o único link para ela. A prop `onOpenBatchEmail` chega à página e
+  **não tem mais uso** (marcada no código, não removida).
 
 ## A LINHA da tabela: quatro regras que vivem em `list/lib/`
 
@@ -613,8 +684,11 @@ pura em **`list/lib/acoesDaSelecao.js`** (32 testes), barra + prévia em
 **`list/components/BarraSelecaoEmpresas.jsx`**. Estado da seleção mora na **página**
 (`renderCompaniesHomePage`), junto do filtro que a recorta e da `api` que a executa.
 
-⚠ **NADA FOI REMOVIDO DA BARRA DO TOPO.** Envio de e-mails, Apuração e Consultas continuam onde
-estavam — este é um segundo caminho. Tirar de lá é decisão de produto.
+⚠ **ISTO CONTINUA SENDO UM SEGUNDO CAMINHO** — mas a barra do topo mudou em **18/08/2026**, por
+decisão do dono: `Apuração` e `Consultas` foram para a **gaveta lateral (☰)** e o botão
+**`Envio de e-mails em lote`** (o que abria `/guides/batch-email`) **saiu da barra**. Enviar guia em
+lote segue por aqui (seleção na tela) e, guia a guia, por "Liberar ao cliente" dentro da empresa —
+saiu o BOTÃO daquela página, não a função. Ver "Abas de regime e gaveta lateral", abaixo.
 
 ⚠ **NENHUMA ROTA NOVA.** As cinco já existiam e já ganharam escopo de carteira (`idsDaCarteira`,
 commit `edc5d468`): `guides/batch-send` · `apuracao/batch` (+`run-now`) · `notas-captura` ·
