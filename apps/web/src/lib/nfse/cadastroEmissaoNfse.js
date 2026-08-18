@@ -157,6 +157,88 @@ export function lerRpsSerie(entrada) {
   return { preenchido: true, valor: String(n).padStart(5, "0"), problema: null };
 }
 
+// ── CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — só da empresa NÃO OPTANTE ────────────────
+//
+// Pedido do dono (18/08/2026): *"precisamos emitir para simples nacional também, as alíquotas
+// efetivas do presumido não precisam ser calculadas a não ser o ISS que varia de município, mas
+// deve ser configurado do lado do contador, no portal do contador."*
+//
+// ⚠ NADA É CALCULADO AQUI, e não é limitação de tela: não existe de-para CNAE→presunção neste
+// repositório (está escrito em `features/companies/CLAUDE.md`), e errar entre 8% e 32% inverteria
+// a comparação. O contador digita; o sistema guarda e usa.
+//
+// ⚠ E ESTE NÚMERO VAI IMPRESSO AO TOMADOR. É a Lei da Transparência: o DANFSe imprime "Totais
+// Aproximados de Tributos" na linha fixa de Informações Complementares. Não é preenchimento
+// técnico — é uma afirmação sobre quanto de tributo há no preço.
+
+export const CAMPOS_CARGA_TRIBUTARIA = [
+  { campo: "pTotTribFed", rotulo: "Federal", curto: "federal" },
+  { campo: "pTotTribEst", rotulo: "Estadual", curto: "estadual" },
+  { campo: "pTotTribMun", rotulo: "Municipal (ISS)", curto: "municipal" },
+];
+
+export const MOTIVO_CARGA_TRIBUTARIA =
+  "São os percentuais de tributos aproximados que a nota declara ao tomador (Lei 12.741/2012, a Lei "
+  + "da Transparência) — o grupo “totTrib/pTotTrib” da DPS. Valem para a empresa que NÃO é optante "
+  + "do Simples Nacional: a optante declara a alíquota efetiva do PGDAS-D na hora de emitir, e não "
+  + "usa estes campos.";
+
+// Por que o sistema não calcula. Fica junto do campo, porque quem preenche precisa saber que
+// ninguém vai conferir isto depois por ele.
+export const PORQUE_CARGA_DIGITADA =
+  "Este sistema não calcula nenhum destes percentuais e não os deduz do CNAE nem do regime. Eles "
+  + "são seus, e vão impressos na nota que o seu cliente entrega ao tomador.";
+
+// ⚠ O QUE A TELA PRECISA DIZER SOBRE O ZERO, e é o coração do conserto de 18/08/2026.
+export const PORQUE_OS_TRES =
+  "Os três são obrigatórios juntos, inclusive quando algum é 0,00 — e 0,00 é comum (serviço não tem "
+  + "ICMS, então o estadual costuma ser zero). Preencher só um faria a nota AFIRMAR carga zero nos "
+  + "outros dois, e o sistema não escreve esse zero por você: sem os três, a emissão é recusada.";
+
+export const PROBLEMA_PERCENTUAL_CARGA =
+  "informe um percentual entre 0 e 100, com até duas casas (ex.: 11,33)";
+
+/**
+ * Um percentual da carga aproximada — 0 a 100, até duas casas.
+ *
+ * ⚠ Vírgula E ponto são aceitos como separador DECIMAL. Percentual de 0 a 100 não tem separador de
+ * milhar, então não há a ambiguidade que obriga o normalizador de moeda do backend
+ * (`asNumberOrNull`) a tratar ponto como milhar — e é por isso que ele NÃO é reusado aqui: ele
+ * transformaria "11.33" em 1133.
+ *
+ * ⚠ Vazio NÃO é problema — é ausência, e quem responde por ela é `faltasDaCargaTributaria`.
+ * Pintar de vermelho toda empresa que ainda não configurou (a maioria da carteira) faria o aviso
+ * virar ruído.
+ */
+export function lerPercentualCarga(entrada) {
+  const texto = String(entrada ?? "").trim();
+  if (!texto) return vazio();
+  const normalizado = texto.replace(",", ".");
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(normalizado)) {
+    return { preenchido: true, valor: null, problema: PROBLEMA_PERCENTUAL_CARGA };
+  }
+  const n = Number(normalizado);
+  if (!Number.isFinite(n) || n < 0 || n > 100) {
+    return { preenchido: true, valor: null, problema: PROBLEMA_PERCENTUAL_CARGA };
+  }
+  // ⚠ Devolve NÚMERO, e `0` é um valor legítimo — quem consumir isto não pode usar `||`.
+  return { preenchido: true, valor: n, problema: null };
+}
+
+/**
+ * Quais dos três percentuais faltam.
+ *
+ * ⚠ ESPELHO do portão de `buildDpsXml` (`MISSING_TOT_TRIB_NAO_SIMPLES`), que exige os TRÊS. Mudou
+ * lá, muda aqui — senão a tela promete um desfecho e o servidor entrega outro.
+ *
+ * ⚠ Campo com valor INVÁLIDO não conta como faltando: ele é recusado ao salvar, com o motivo, e
+ * não chega gravado. Mesma disciplina de `faltasParaEmitir`.
+ */
+export function faltasDaCargaTributaria(valores) {
+  const dados = valores || {};
+  return CAMPOS_CARGA_TRIBUTARIA.filter((c) => !lerPercentualCarga(dados[c.campo]).preenchido);
+}
+
 // ── O QUE FALTA PARA A EMPRESA EMITIR ───────────────────────────────────────────────────────
 
 /**

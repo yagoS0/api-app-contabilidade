@@ -13,7 +13,10 @@ import {
   lerRpsSerie,
   digitosQueVaoParaDps,
   faltasParaEmitir,
+  lerPercentualCarga,
+  faltasDaCargaTributaria,
   CAMPOS_EXIGIDOS_PARA_EMITIR,
+  CAMPOS_CARGA_TRIBUTARIA,
   SERIE_MIN,
   SERIE_MAX,
 } from "../cadastroEmissaoNfse";
@@ -158,5 +161,82 @@ describe("o que falta para a empresa emitir", () => {
 
   it("objeto ausente não explode e não afirma nada além do que falta", () => {
     expect(faltasParaEmitir(null)).toHaveLength(5);
+  });
+});
+
+// ── CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — dono, 18/08/2026 ────────────────────────
+//
+// > *"as alíquotas efetivas do presumido não precisam ser calculadas a não ser o ISS que varia de
+// > município, mas deve ser configurado do lado do contador, no portal do contador."*
+describe("lerPercentualCarga — percentual, e nada mais", () => {
+  it("aceita vírgula E ponto como decimal — o contador digita 11,33", () => {
+    expect(lerPercentualCarga("11,33").valor).toBe(11.33);
+    expect(lerPercentualCarga("11.33").valor).toBe(11.33);
+  });
+
+  it("⚠ 11.33 NÃO vira 1133 — o ponto aqui é decimal, não milhar", () => {
+    // O normalizador de MOEDA do backend (`asNumberOrNull`) faz `.replace(/\./g, "")` porque em
+    // real o ponto é separador de milhar. Percentual de 0 a 100 não tem milhar, e reusar aquela
+    // regra faria "11.33" virar 1133 — recusado como fora da faixa, ou pior, gravado.
+    expect(lerPercentualCarga("11.33").valor).not.toBe(1133);
+  });
+
+  it("⚠ ZERO é um valor, não ausência — e é o caso comum do estadual", () => {
+    const leitura = lerPercentualCarga("0");
+    expect(leitura.preenchido).toBe(true);
+    expect(leitura.valor).toBe(0);
+    expect(leitura.problema).toBeNull();
+  });
+
+  it("vazio é AUSÊNCIA, não problema — a maioria da carteira ainda não configurou", () => {
+    for (const v of ["", "   ", null, undefined]) {
+      expect(lerPercentualCarga(v)).toEqual({ preenchido: false, valor: null, problema: null });
+    }
+  });
+
+  it("fora de 0–100 é problema — é outra unidade, não um número grande", () => {
+    expect(lerPercentualCarga("101").problema).toBeTruthy();
+    expect(lerPercentualCarga("1133").problema).toBeTruthy();
+  });
+
+  it("mais de duas casas é problema — o XML leva duas", () => {
+    expect(lerPercentualCarga("11,333").problema).toBeTruthy();
+  });
+
+  it("texto e sinal são recusados, nunca convertidos", () => {
+    for (const v of ["cinco", "-1", "5%", "1e2"]) {
+      expect(lerPercentualCarga(v).problema).toBeTruthy();
+      expect(lerPercentualCarga(v).valor).toBeNull();
+    }
+  });
+});
+
+describe("faltasDaCargaTributaria — o espelho do portão que exige os TRÊS", () => {
+  it("nenhum preenchido: faltam os três", () => {
+    expect(faltasDaCargaTributaria({}).map((c) => c.campo)).toEqual(
+      CAMPOS_CARGA_TRIBUTARIA.map((c) => c.campo)
+    );
+  });
+
+  it("⚠⚠ só o municipal: faltam federal e estadual — era assim que a nota saía com 0,00", () => {
+    const faltas = faltasDaCargaTributaria({ pTotTribMun: "2,5" });
+    expect(faltas.map((c) => c.campo)).toEqual(["pTotTribFed", "pTotTribEst"]);
+  });
+
+  it("⚠ ZERO CONTA COMO PREENCHIDO — é a diferença entre declarado e esquecido", () => {
+    expect(faltasDaCargaTributaria({ pTotTribFed: "11,33", pTotTribEst: "0", pTotTribMun: "0" }))
+      .toHaveLength(0);
+  });
+
+  it("objeto ausente não explode", () => {
+    expect(faltasDaCargaTributaria(null)).toHaveLength(3);
+  });
+
+  it("⚠ a ordem é a do XML: Fed · Est · Mun (a da NFS-e real versionada)", () => {
+    expect(CAMPOS_CARGA_TRIBUTARIA.map((c) => c.campo)).toEqual([
+      "pTotTribFed",
+      "pTotTribEst",
+      "pTotTribMun",
+    ]);
   });
 });

@@ -316,6 +316,47 @@ Componente `form/components/LiberacaoEmissaoCliente.jsx`; regra em
 - ⚠ **`PAPEIS_QUE_PASSAM` é o espelho de `PAPEL_MINIMO_EMISSAO`** (backend). Mudou lá, muda aqui —
   senão a confirmação promete um desfecho e o servidor entrega outro.
 
+### ⚠ A CARGA TRIBUTÁRIA APROXIMADA — o contador digita, o sistema NÃO calcula (dono, 18/08/2026)
+
+> *"precisamos emitir para simples nacional também, as alíquotas efetivas do presumido não precisam
+> ser calculadas a não ser o ISS que varia de município, mas deve ser configurado do lado do
+> contador, no portal do contador."*
+
+Último bloco de campos de **"Emissão de NFS-e"**, antes do portão do cliente: `pTotTribFed`,
+`pTotTribEst` e `pTotTribMun` (colunas novas em `Company`). São os percentuais da **Lei
+12.741/2012** que a nota da empresa **não optante** declara ao tomador — o grupo `totTrib/pTotTrib`
+da DPS. Regra de tela em `lib/nfse/cadastroEmissaoNfse.js` (`lerPercentualCarga`,
+`faltasDaCargaTributaria`).
+
+- ⚠⚠ **O DEFEITO QUE ESTE BLOCO EXISTE PARA IMPEDIR.** O portão do backend usava `.some()`: **um**
+  percentual liberava a emissão, e o XML escrevia `0,00` nos outros dois. Configurar só o ISS
+  municipal fazia a nota **afirmar carga federal e estadual zero** — impresso ao tomador. Hoje o
+  servidor exige os três, e a tela avisa **antes de salvar**, com caixa âmbar, quando só alguns
+  estão preenchidos.
+- ⚠ **ZERO SE DIGITA, e a tela diz isso.** `0,00` é comum e legítimo (serviço não tem ICMS; a
+  NFS-e real versionada declara `pTotTribEst 0.00`). Por isso **nada é pré-preenchido, nem com
+  zero** — um zero escolhido pelo sistema seria indistinguível de um conferido pelo contador —, e
+  a leitura do que está gravado usa `!= null`, **nunca `||`**: com `||` o zero conferido reabriria
+  o formulário em branco, o contador salvaria de novo, gravaria NULL, e a empresa pararia de
+  emitir sem nada na tela ter mudado. Mesma armadilha do `?? ""` do `FechamentoModal`.
+- ⚠ **O BLOCO RENDERIZA SEMPRE, independente do regime** — e é decisão, não descuido. Quem decide
+  o `opSimpNac` da nota é o **`CadastroFiscal`**, com `Company.regimeTributario` só como segunda
+  leitura; esconder por `Company.regimeTributario` deixaria a empresa cujo cadastro fiscal diz
+  LUCRO_PRESUMIDO com a emissão recusada **e sem campo onde preencher** — a mesma classe do defeito
+  que criou este bloco inteiro. O texto diz a quem se aplica (a optante do Simples informa
+  `pTotTribSN` na emissão e não usa estes campos).
+- ⚠ **NADA É DERIVADO**, e a tela **declara** isso: não há de-para CNAE→presunção aqui (a mesma
+  ausência registrada no planejamento tributário), e errar entre 8% e 32% inverteria a comparação.
+- ⚠ **`pTotTribMun` NÃO é a alíquota de ISS da nota**, e o campo diz isso: podem coincidir
+  numericamente e não são o mesmo dado. Na amostra oficial o ISS aplicado é 5,00% e o
+  `pTotTribMun` é 0,00% — no mesmo documento.
+- **Vírgula E ponto** são aceitos como decimal (percentual de 0 a 100 não tem milhar). ⚠ Não reuse
+  o normalizador de moeda do backend: ele trata ponto como milhar e faria `11.33` virar `1133`.
+- ⚠ **A ligação tem teste PRÓPRIO** (`form/components/__tests__/cargaTributariaLigada.test.jsx`):
+  o teste do componente sozinho continuaria verde com o `CompanyForm` nunca passando as props —
+  que é o defeito favorito daqui. Ele exercita a cadeia inteira: estado inicial →
+  `mapCompanyToEditForm` → `<CompanyForm>` renderizando os três campos.
+
 ### O municipal e a série
 
 - ⚠ **O `cTribMun` continua DIGITADO**, e agora por um motivo só: **não existe lista nacional de

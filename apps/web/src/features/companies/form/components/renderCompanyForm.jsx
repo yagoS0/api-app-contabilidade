@@ -646,6 +646,13 @@ export function CompanyForm({
         codigosServicoNacional={form.codigosServicoNacional}
         codigoServicoMunicipal={form.codigoServicoMunicipal}
         rpsSerie={form.rpsSerie}
+        /* ⚠ OS TRÊS PERCENTUAIS DA LEI 12.741 (dono, 18/08/2026). Sem estas linhas o bloco monta
+           com os defaults `""` e o formulário reabre vazio a cada edição — o defeito que o
+           `codigosServicoNacional` logo acima já cometeu, e que aqui custaria a empresa do Lucro
+           Presumido parar de emitir com o contador achando que a configurou. */
+        pTotTribFed={form.pTotTribFed}
+        pTotTribEst={form.pTotTribEst}
+        pTotTribMun={form.pTotTribMun}
         onChange={onChange}
         emissaoCliente={emissaoCliente}
         razaoSocial={form.razaoSocial}

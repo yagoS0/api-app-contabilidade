@@ -21,10 +21,16 @@ import { lerCodigosServicoNacional } from "../../../../lib/servicosNacionais/ser
 import {
   lerCodigoServicoMunicipal,
   lerRpsSerie,
+  lerPercentualCarga,
+  faltasDaCargaTributaria,
   digitosQueVaoParaDps,
+  CAMPOS_CARGA_TRIBUTARIA,
   MOTIVO_CODIGO_SERVICO_MUNICIPAL,
   MOTIVO_RPS_SERIE,
+  MOTIVO_CARGA_TRIBUTARIA,
   PORQUE_MUNICIPAL_DIGITADO,
+  PORQUE_CARGA_DIGITADA,
+  PORQUE_OS_TRES,
 } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 // Mesmo visual dos demais campos do formulário (`styles/tokens.css` + inline; sem Tailwind).
@@ -68,6 +74,13 @@ export function CamposEmissaoNfse({
   codigosServicoNacional,
   codigoServicoMunicipal,
   rpsSerie,
+  // ⚠ CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012), decisão do dono de 18/08/2026. São campos do
+  // formulário como os de cima — entram no `onChange` e são salvos pelo "Salvar alterações". Nada
+  // aqui é ato fiscal com consequência imediata (diferente do portão `LiberacaoEmissaoCliente`),
+  // é configuração da empresa.
+  pTotTribFed = "",
+  pTotTribEst = "",
+  pTotTribMun = "",
   onChange,
   // ⚠ O PORTÃO DA EMISSÃO PELO CLIENTE não é campo do formulário — não entra no `onChange` nem é
   // salvo pelo "Salvar alterações". Vem do payload da empresa (`PortalClient`) e tem rota própria.
@@ -79,6 +92,13 @@ export function CamposEmissaoNfse({
   const nacional = lerCodigosServicoNacional(codigosServicoNacional);
   const municipal = lerCodigoServicoMunicipal(codigoServicoMunicipal);
   const serie = lerRpsSerie(rpsSerie);
+
+  const cargaValores = { pTotTribFed, pTotTribEst, pTotTribMun };
+  const cargaFaltando = faltasDaCargaTributaria(cargaValores);
+  // ⚠ TRÊS ESTADOS, não dois: nenhum preenchido (a empresa nem começou — e a optante do Simples
+  // nunca precisa destes campos, então isto não é pendência para ela), ALGUNS preenchidos (o
+  // caso perigoso: é exatamente aqui que a nota saía afirmando 0,00 nos outros) e os três prontos.
+  const cargaParcial = cargaFaltando.length > 0 && cargaFaltando.length < CAMPOS_CARGA_TRIBUTARIA.length;
 
   const naDps = digitosQueVaoParaDps(codigoServicoMunicipal);
   // Só vale avisar quando o corte MUDA o valor — repetir "vai 001" para quem digitou "001" é ruído.
@@ -161,6 +181,59 @@ export function CamposEmissaoNfse({
           </span>
         )}
       />
+
+      {/* ── CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) ──────────────────────────────────
+          ⚠ O BLOCO RENDERIZA SEMPRE, e isso é decisão medida. Esconder por
+          `Company.regimeTributario` seria o defeito: quem decide o `opSimpNac` da nota é o
+          `CadastroFiscal` (é o que `resolverRegime` lê, com a `Company` só como segunda leitura).
+          Uma empresa cujo cadastro fiscal diz LUCRO_PRESUMIDO e cuja `Company` ficou em SIMPLES
+          teria a emissão recusada por falta destes percentuais SEM CAMPO ONDE PREENCHÊ-LOS — a
+          mesma classe do defeito que criou este bloco inteiro. O texto diz a quem se aplica; a
+          tela não decide o regime por conta própria. */}
+      <div className="full" style={{ marginTop: 12 }}>
+        <strong style={{ fontSize: "0.85rem", color: "#F8F8F2" }}>
+          Carga tributária aproximada (Lei 12.741/2012)
+        </strong>
+        <div style={{ ...AJUDA, marginTop: 4 }}>
+          {MOTIVO_CARGA_TRIBUTARIA} {PORQUE_CARGA_DIGITADA}
+        </div>
+      </div>
+
+      {CAMPOS_CARGA_TRIBUTARIA.map(({ campo, rotulo }) => (
+        <Campo
+          key={campo}
+          id={campo}
+          titulo={`${rotulo} (%)`}
+          valor={cargaValores[campo]}
+          onChange={(v) => onChange(campo, v)}
+          leitura={lerPercentualCarga(cargaValores[campo])}
+          /* ⚠ SEM `placeholder` NUMÉRICO. Um "11,33" cinza no campo é indistinguível de um valor
+             conferido a um metro de distância, e este número vai impresso ao tomador. O exemplo
+             mora na mensagem de erro, onde não se confunde com conteúdo. */
+          placeholder=""
+          ajuda={
+            campo === "pTotTribMun"
+              ? "É a parcela MUNICIPAL da carga aproximada — a que varia de município para município. "
+                + "⚠ Não é a alíquota de ISS da nota: elas podem coincidir e não são o mesmo campo."
+              : `Parcela ${rotulo.toLowerCase()} da carga aproximada, em percentual do valor do serviço.`
+          }
+        />
+      ))}
+
+      {cargaParcial && (
+        // ⚠ ESTA CAIXA É O CONSERTO DE 18/08/2026 APARECENDO NA TELA. Enquanto o portão do backend
+        // usava `.some()`, configurar só um percentual EMITIA — e a nota afirmava 0,00 nos outros
+        // dois. Hoje o servidor recusa; a tela avisa antes, e diz por quê.
+        <div className="full" style={{
+          border: "1px solid var(--state-warn)", background: "var(--state-warn-surface)",
+          borderRadius: 6, padding: "8px 10px", fontSize: "0.8rem", color: "var(--state-warn)",
+        }}>
+          <strong>
+            Falta {cargaFaltando.map((c) => c.rotulo.toLowerCase()).join(", ").replace(/, ([^,]*)$/, " e $1")}.
+          </strong>{" "}
+          {PORQUE_OS_TRES}
+        </div>
+      )}
 
       {faltando.length > 0 && (
         // ⚠ A AUSÊNCIA APARECE NO CADASTRO, com o que ela impede — e não só na hora de emitir.

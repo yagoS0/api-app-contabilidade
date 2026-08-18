@@ -84,6 +84,26 @@ export const companyCreateFormSchema = z.object({
     .refine((v) => Number(v) >= 1 && Number(v) <= 49999, "A série da DPS vai de 1 a 49999 (RN E0010)")
     .or(z.literal(""))
     .optional(),
+  // ── Carga tributária aproximada da empresa NÃO optante (Lei 12.741/2012) ──────────────────
+  // ⚠ Percentual de 0 a 100, com até duas casas, vírgula OU ponto. Não há separador de milhar
+  // num percentual, então os dois só podem ser o decimal — é por isso que a regra é própria e
+  // não reusa o normalizador de moeda. Espelha `validateAndNormalizeCompanyProfile` (backend) e
+  // `lerPercentualCarga` (`lib/nfse/cadastroEmissaoNfse.js`).
+  // Vazio é legítimo: a empresa apenas não emite como não optante, e a tela diz isso.
+  ...Object.fromEntries(
+    ["pTotTribFed", "pTotTribEst", "pTotTribMun"].map((campo) => [
+      campo,
+      z
+        .string()
+        .regex(/^\d{1,3}([.,]\d{1,2})?$/, "Informe um percentual entre 0 e 100 (ex.: 11,33)")
+        .refine(
+          (v) => Number(String(v).replace(",", ".")) <= 100,
+          "Informe um percentual entre 0 e 100 (ex.: 11,33)"
+        )
+        .or(z.literal(""))
+        .optional(),
+    ])
+  ),
   enderecoRua: z.string().max(200).optional().or(z.literal("")),
   enderecoNumero: z.string().max(20).optional().or(z.literal("")),
   enderecoBairro: z.string().max(120).optional().or(z.literal("")),

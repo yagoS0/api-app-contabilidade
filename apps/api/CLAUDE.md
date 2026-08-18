@@ -569,7 +569,43 @@ constante `DPS_VERSAO`, num lugar só, para virar em uma linha.
    **só um comentário de código**, escrito no mesmo bloco que cravava o `3`. MEI **recusa**.
 3. **`totTrib` do não optante.** O ramo era inalcançável e emitia `vTotTrib` com `0.00` — que
    **afirma carga tributária zero** (Lei 12.741/2012). A nota real usa `pTotTrib` com percentuais.
-   Passou a exigir os percentuais informados; a estrutura carece de confirmação sem o XSD.
+   - ✅ **RESPONDIDO (18/08/2026): o CONTADOR configura, no cadastro da empresa.**
+     > *"precisamos emitir para simples nacional também, as alíquotas efetivas do presumido não
+     > precisam ser calculadas a não ser o ISS que varia de município, mas deve ser configurado do
+     > lado do contador, no portal do contador."*
+
+     Três colunas em `Company` — `pTotTribFed` / `pTotTribEst` / `pTotTribMun`, `DECIMAL(5,2)`,
+     nullable, com CHECK 0–100 (migration **`20260818210000_add_carga_tributaria_nao_simples`,
+     escrita e NÃO APLICADA**; ⚠ o `schema.prisma` foi editado JUNTO, então **aplicar antes de
+     subir** — o cabeçalho da migration explica por que aqui a decisão é o oposto da da `Guide`).
+     Caminho completo: `validateAndNormalizeCompanyProfile` → `companySchemas.js` →
+     `tx.company.update` (spread condicional) → `CompanyProvisioningService` → `legacyCompanySelect`.
+   - ⚠ **A ESTRUTURA ESTÁ CONFIRMADA**, e a frase "carece de confirmação sem o XSD" **deixou de
+     valer**: `docs/leiaute-nfse/nfse-nacional-substituicao.xml` (`opSimpNac=1`) traz
+     `<totTrib><pTotTrib><pTotTribFed>11.33</…><pTotTribEst>0.00</…><pTotTribMun>0.00</…>`, com os
+     três filhos, nesta ordem, `pTotTrib` filho único de `totTrib`, sem irmãos.
+   - ⚠⚠ **O DEFEITO QUE ELES SOMAVAM.** O portão usava `.some()` (UM percentual liberava) e o XML
+     escrevia `?? 0` nos outros dois: o contador configurava só o municipal e a nota **afirmava ao
+     tomador carga federal 0,00% e estadual 0,00%** — impresso, por força da Lei da Transparência.
+     Hoje **os TRÊS são exigidos** e a recusa nomeia quais faltam (`err.faltando`). O que decide o
+     desenho é a própria amostra: ela declara `0.00` em dois campos, ou seja **zero DECLARADO é
+     legítimo** — logo zero **por omissão** não pode produzir o mesmo XML. NULL = não configurado
+     (recusa), 0.00 = o contador afirmou. Valor fora de 0–100 recusa com
+     `INVALID_TOT_TRIB_NAO_SIMPLES` (camada `NOSSA`).
+   - **Precedência:** cada campo resolve sozinho, **payload → cadastro**. Payload parcial não
+     apaga o resto (era assim que o zero nascia). ⚠ O **Simples não passa por este bloco**: ele
+     declara `pTotTribSN`, e valor torto nestas colunas não derruba a nota dele.
+   - ⚠ **`pTotTribMun` NÃO é a alíquota de ISS**, e a mesma amostra prova: nela o ISS aplicado é
+     `pAliqAplic = 5.00` (em `infNFSe/valores`) e o `pTotTribMun` é `0.00`. Mesmo documento, mesma
+     nota, números diferentes. E a **alíquota de ISS não entra na DPS que enviamos** —
+     `infDPS/…/trib/tribMun` leva só `tribISSQN` e `tpRetISSQN`; `data.servico.aliquota` só serve
+     de guarda para `issRetido` (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`) e é gravada em
+     `ServiceInvoice.aliquota`. Quem calcula o `pAliqAplic` é o município, a partir do `cTribMun`.
+   - ⚠ **NADA É CALCULADO**, e não é preguiça: não há de-para CNAE→presunção neste repositório
+     (está registrado em `features/companies/CLAUDE.md`), e errar entre 8% e 32% inverteria a
+     comparação. O número vai IMPRESSO ao tomador — é afirmação, não preenchimento técnico.
+   - Regressão: `nfse/__tests__/emissaoDps.test.js` (o bloco "carga tributária do não optante") e
+     `routes/firm/__tests__/companyCamposNfse.test.js` (o bloco `pTotTrib*`).
 4. **`cLocPrestacao` diferente do emissor.** Decide para qual município o ISSQN é devido, e **não se
    deduz do endereço do tomador** (LC 116/2003, art. 3º: `caput` + lista fechada de exceções). Virou
    campo informável; ausente aplica a regra geral **e registra a suposição no log**.

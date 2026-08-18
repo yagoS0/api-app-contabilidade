@@ -52,6 +52,9 @@ const CODIGOS_NOSSOS = new Set([
   "MISSING_TOMADOR_ADDRESS",
   "INVALID_PIS_COFINS_RET_BASE",
   "MISSING_TOT_TRIB_NAO_SIMPLES",
+  // Percentual da carga aproximada gravado fora de 0–100 (cadastro velho, ou payload torto).
+  // Recusa NOSSA pelo mesmo motivo do irmão acima: nada saiu da máquina.
+  "INVALID_TOT_TRIB_NAO_SIMPLES",
   "NFSE_MUNICIPIO_NAO_CONFIGURADO",
   "NFSE_REGIME_INDEFINIDO",
   // O código de serviço pedido não está no cadastro da empresa (ou não tem a forma de um

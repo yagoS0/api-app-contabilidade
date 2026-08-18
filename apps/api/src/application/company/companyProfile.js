@@ -71,6 +71,12 @@ function normalizeEndereco(raw) {
   return { ok: true, data: normalized };
 }
 
+// `pTotTribFed` → `p_tot_trib_fed`, para que o código de erro tenha o mesmo formato dos demais
+// (`company_rps_serie_invalid`) e o contador leia o nome do campo que ele preencheu.
+function snakeCasePercentual(campo) {
+  return campo.replace(/([A-Z])/g, "_$1").toLowerCase();
+}
+
 function asNumberOrNull(value) {
   if (value === undefined || value === null || value === "") return null;
   const n = Number(String(value).replace(/\./g, "").replace(",", "."));
@@ -338,6 +344,43 @@ export function validateAndNormalizeCompanyProfile(input) {
     rpsSerie = String(n).padStart(5, "0");
   }
 
+  // ── CARGA TRIBUTÁRIA APROXIMADA da empresa NÃO OPTANTE (Lei 12.741/2012) ────────────────────
+  //
+  // Pedido do dono (18/08/2026): *"as alíquotas efetivas do presumido não precisam ser calculadas
+  // (…) mas deve ser configurado do lado do contador, no portal do contador."*
+  //
+  // São os três percentuais de `totTrib/pTotTrib` da DPS. ⚠ NADA É CALCULADO AQUI: não há de-para
+  // CNAE→presunção neste repositório, e o número vai IMPRESSO ao tomador. O contador digita.
+  //
+  // ⚠ TRÊS RESPOSTAS, como na lista de serviços: `undefined` = não veio no payload (NÃO MEXER),
+  // `null` = o contador apagou, número = grava. Achatar "ausente" em `null` faria qualquer rota
+  // que salve a empresa sem este bloco APAGAR a configuração — e o desfecho seria a empresa parar
+  // de emitir com o contador convicto de que a configurou.
+  //
+  // ⚠ `asNumberOrNull` NÃO SERVE AQUI: ele faz `.replace(/\./g, "")` para tratar ponto como
+  // separador de MILHAR, e "11.33" viraria 1133. Percentual de 0 a 100 não tem milhar — então
+  // ponto e vírgula são a MESMA coisa (separador decimal), e qualquer outra forma é recusa.
+  const percentuais = {};
+  for (const campo of ["pTotTribFed", "pTotTribEst", "pTotTribMun"]) {
+    if (company[campo] === undefined) continue; // não veio: não mexer
+    const bruto = asString(company[campo]);
+    if (!bruto) {
+      percentuais[campo] = null; // apagado de propósito — e NULL é o que a emissão recusa com motivo
+      continue;
+    }
+    const texto = bruto.replace(",", ".");
+    if (!/^\d{1,3}(\.\d{1,2})?$/.test(texto)) {
+      return { ok: false, error: `company_${snakeCasePercentual(campo)}_invalid` };
+    }
+    const n = Number(texto);
+    // É PERCENTUAL. Fora de 0–100 não é "um número grande", é outra unidade — provavelmente o
+    // valor em reais no lugar da alíquota. Mesma checagem de `validateNfsePayload`.
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      return { ok: false, error: `company_${snakeCasePercentual(campo)}_invalid` };
+    }
+    percentuais[campo] = n;
+  }
+
   // ── COERÊNCIA ENTRE A LISTA E O CÓDIGO QUE A DPS LEVA ──────────────────────────────────────
   //
   // ⚠ ESTE BLOCO EXISTE PORQUE A ESCOLHA POR EMISSÃO AINDA NÃO CHEGA AO XML. `buildDpsXml` monta o
@@ -390,6 +433,12 @@ export function validateAndNormalizeCompanyProfile(input) {
       codigosServicoNacional,
       codigoServicoMunicipal: codigoServicoMunicipal || null,
       rpsSerie,
+      // ⚠ `undefined` VIAJA DE PROPÓSITO (mesma razão de `codigosServicoNacional`): quem grava usa
+      // `!== undefined` para separar "não mexer" de "apagar". Um `?? null` aqui apagaria a carga
+      // tributária em toda rota que salva a empresa sem enviar o bloco.
+      pTotTribFed: percentuais.pTotTribFed,
+      pTotTribEst: percentuais.pTotTribEst,
+      pTotTribMun: percentuais.pTotTribMun,
       inscricaoEstadual: asString(company.inscricaoEstadual) || null,
       inscricaoEstadualData,
       porte: asString(company.porte) || null,

@@ -568,6 +568,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     // entre aqui simplesmente não existe para o frontend: o formulário abriria sempre vazio e o
     // contador reescolheria o município a cada edição, achando que nada foi salvo.
     codigoMunicipioIbge: true,
+    // ⚠ MESMO MOTIVO DAS LINHAS ACIMA. A carga tributária aproximada (Lei 12.741/2012) da empresa
+    // NÃO OPTANTE é DIGITADA pelo contador neste formulário — sem estas três linhas ela não volta
+    // para a tela, o bloco reabre vazio e o contador redigita a cada edição, achando que não
+    // salvou. E aqui o preço é maior que nos outros campos: o percentual vai IMPRESSO ao tomador.
+    pTotTribFed: true,
+    pTotTribEst: true,
+    pTotTribMun: true,
     optanteSimples: true,
     regimeEspecialTributacao: true,
     // ── Ficha de cadastro ──
@@ -1212,6 +1219,29 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   : {}),
                 codigoServicoMunicipal: normalizedCompany.codigoServicoMunicipal,
                 rpsSerie: normalizedCompany.rpsSerie,
+                // ⚠ CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — pedido do dono, 18/08/2026.
+                // Sem estas três linhas o valor chega no corpo, passa pelo Zod e MORRE AQUI, nesta
+                // lista: 200 na resposta e campo vazio na recarga. É o defeito que
+                // `codigoServicoNacional` já cometeu, e neste campo ele seria pior — a empresa
+                // continuaria sem emitir e o contador teria acabado de configurar a carga.
+                // `null` é gravável de propósito: desfazer uma configuração errada tem de ser
+                // possível pela tela, e NULL é o estado que a emissão RECUSA com motivo, em vez de
+                // declarar 0,00 ao tomador.
+                //
+                // ⚠ SPREAD CONDICIONAL, pelo mesmo motivo de `codigosServicoNacional`:
+                // `undefined` significa "o payload não trouxe o campo" e mandar `undefined` ao
+                // Prisma é inofensivo — mas achatar isso em `null` APAGARIA a carga tributária em
+                // toda rota que salva a empresa sem este bloco. As duas intenções ("não mexer" ×
+                // "apagar") ficam distintas até a última linha.
+                ...(normalizedCompany.pTotTribFed !== undefined
+                  ? { pTotTribFed: normalizedCompany.pTotTribFed }
+                  : {}),
+                ...(normalizedCompany.pTotTribEst !== undefined
+                  ? { pTotTribEst: normalizedCompany.pTotTribEst }
+                  : {}),
+                ...(normalizedCompany.pTotTribMun !== undefined
+                  ? { pTotTribMun: normalizedCompany.pTotTribMun }
+                  : {}),
                 // ── Ficha de cadastro ──
                 inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
                 inscricaoEstadual: normalizedCompany.inscricaoEstadual,

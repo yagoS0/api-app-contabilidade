@@ -202,6 +202,14 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
           codigosServicoNacional: normalizedCompany.codigosServicoNacional,
           codigoServicoMunicipal: normalizedCompany.codigoServicoMunicipal,
           rpsSerie: normalizedCompany.rpsSerie,
+          // ⚠ CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012), do formulário de criação. Mesma
+          // regra de tudo o que está acima: **nada é derivado**. Não há de-para CNAE→presunção
+          // neste repositório, e o número vai IMPRESSO ao tomador — quem o informa é o contador.
+          // No `create` o `undefined` vira NULL, que é o estado certo para empresa nova: a
+          // emissão do não optante RECUSA com motivo, em vez de declarar 0,00.
+          pTotTribFed: normalizedCompany.pTotTribFed,
+          pTotTribEst: normalizedCompany.pTotTribEst,
+          pTotTribMun: normalizedCompany.pTotTribMun,
           // ── Ficha de cadastro (muito disso já vem preenchido da BrasilAPI) ──
           inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
           inscricaoEstadual: normalizedCompany.inscricaoEstadual,

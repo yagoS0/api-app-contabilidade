@@ -47,6 +47,17 @@ const companyBaseFields = {
   codigosServicoNacional: z.array(z.string().max(20)).max(50).optional(),
   codigoServicoMunicipal: z.string().max(20).optional().nullable(),
   rpsSerie: z.string().max(20).optional().nullable(),
+  // ── CARGA TRIBUTÁRIA APROXIMADA da empresa NÃO OPTANTE (Lei 12.741/2012) ──────────────────
+  // Mesmo motivo dos campos acima: sem declaração o `z.object` (sem `passthrough`) apaga a chave
+  // do `parsed.data` em silêncio e o valor nunca chega ao `update`.
+  //
+  // ⚠ `union([string, number])` porque o formulário manda TEXTO ("11,33") e o mock/integração
+  // mandam número. Quem diz "percentual de 0 a 100, com vírgula ou ponto" é
+  // `validateAndNormalizeCompanyProfile`, num lugar só, junto do motivo da recusa — e é lá que
+  // `""` (apagar) e `undefined` (não mexer) continuam sendo coisas diferentes.
+  pTotTribFed: z.union([z.string().max(20), z.number()]).optional().nullable(),
+  pTotTribEst: z.union([z.string().max(20), z.number()]).optional().nullable(),
+  pTotTribMun: z.union([z.string().max(20), z.number()]).optional().nullable(),
   cnaePrincipal: z.string().max(20).optional().nullable(),
   cnaesSecundarios: z.array(z.string().max(20)).max(50).optional(),
   regimeTributario: z.enum(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI", "OUTRO"]).optional().nullable(),

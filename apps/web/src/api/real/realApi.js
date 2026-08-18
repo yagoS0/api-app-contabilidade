@@ -192,6 +192,15 @@ function buildCompanyPayload(input) {
         : undefined,
       codigoServicoMunicipal: txt(input.codigoServicoMunicipal),
       rpsSerie: txt(input.rpsSerie),
+      // ── Carga tributária aproximada do não optante (Lei 12.741/2012), dono 18/08/2026 ──────
+      // ⚠ `txt` devolve `null` no vazio, e é o que se quer: NULL é o estado que a emissão RECUSA
+      // com motivo. Desfazer uma configuração errada tem de ser possível pela tela — e é o
+      // oposto de gravar 0,00, que AFIRMARIA carga zero ao tomador.
+      // ⚠ O texto vai CRU ("11,33"): quem normaliza vírgula/ponto é o backend, num lugar só.
+      // Converter aqui criaria uma segunda regra que divergiria da primeira correção.
+      pTotTribFed: txt(input.pTotTribFed),
+      pTotTribEst: txt(input.pTotTribEst),
+      pTotTribMun: txt(input.pTotTribMun),
       inscricaoEstadual: txt(input.inscricaoEstadual),
       inscricaoEstadualData: omitIfEmpty(input.inscricaoEstadualData),
       porte: txt(input.porte),

@@ -182,3 +182,84 @@ describe("⚠ o código nacional é ESCOLHIDO na lista oficial, não digitado", 
     expect(await screen.findByText(/não têm a forma de um código de tributação nacional/)).toBeInTheDocument();
   });
 });
+
+// ── CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — dono, 18/08/2026 ─────────────────────────
+//
+// > *"as alíquotas efetivas do presumido não precisam ser calculadas a não ser o ISS que varia de
+// > município, mas deve ser configurado do lado do contador, no portal do contador."*
+//
+// ⚠ O que este bloco tranca é o defeito, não o campo: enquanto o portão do backend usava
+// `.some()`, UM percentual liberava a emissão e o XML escrevia `0.00` nos outros dois — a nota
+// AFIRMAVA ao tomador carga federal e estadual zero. A tela precisa dizer isso ANTES de salvar.
+describe("carga tributária aproximada — os três, e nenhum inventado", () => {
+  it("os três campos existem e nascem VAZIOS — nem zero", () => {
+    abrir();
+    // ⚠ Zero pré-preenchido seria o defeito com outra roupa: 0,00 é uma AFIRMAÇÃO impressa ao
+    // tomador, e um zero escolhido pelo sistema é indistinguível de um conferido pelo contador.
+    expect(screen.getByLabelText("Federal (%)", { exact: false })).toHaveValue("");
+    expect(screen.getByLabelText("Estadual (%)", { exact: false })).toHaveValue("");
+    expect(screen.getByLabelText("Municipal (ISS) (%)", { exact: false })).toHaveValue("");
+  });
+
+  it("⚠ RENDERIZA MESMO SEM AS PROPS — o bloco não some por falta de dado", () => {
+    // Componente que renderiza `null` porque a prop nunca foi passada é o defeito favorito daqui.
+    // Sem `pTotTrib*`, os campos continuam em tela (vazios), prontos para o contador preencher.
+    abrir();
+    expect(screen.getByText("Carga tributária aproximada (Lei 12.741/2012)")).toBeInTheDocument();
+  });
+
+  it("o valor cadastrado VOLTA para a tela — inclusive o ZERO", () => {
+    abrir({ pTotTribFed: "11,33", pTotTribEst: "0", pTotTribMun: "2.5" });
+    expect(screen.getByLabelText("Federal (%)", { exact: false })).toHaveValue("11,33");
+    // ⚠ Se algum dia alguém usar `||` na leitura do legado, este é o teste que cai: o zero
+    // conferido pelo contador reapareceria como campo em branco.
+    expect(screen.getByLabelText("Estadual (%)", { exact: false })).toHaveValue("0");
+  });
+
+  it("digitar avisa o formulário com o NOME do campo", () => {
+    const { onChange } = abrir();
+    fireEvent.change(screen.getByLabelText("Federal (%)", { exact: false }), {
+      target: { value: "11,33" },
+    });
+    expect(onChange).toHaveBeenCalledWith("pTotTribFed", "11,33");
+  });
+
+  it("⚠⚠ SÓ O MUNICIPAL PREENCHIDO ACENDE O AVISO — era assim que a nota saía com 0,00", () => {
+    abrir({ pTotTribMun: "2,5" });
+    expect(screen.getByText(/Falta federal e estadual\./i)).toBeInTheDocument();
+    // A tela diz POR QUE os três andam juntos, e que zero se digita.
+    expect(screen.getByText(/inclusive quando algum é 0,00/i)).toBeInTheDocument();
+  });
+
+  it("com os três preenchidos o aviso some — e 0,00 conta como preenchido", () => {
+    abrir({ pTotTribFed: "11,33", pTotTribEst: "0", pTotTribMun: "0" });
+    expect(screen.queryByText(/Falta federal/i)).not.toBeInTheDocument();
+  });
+
+  it("nenhum preenchido NÃO acende o aviso — a optante do Simples não usa estes campos", () => {
+    // Aviso em toda empresa não configurada viraria ruído, e para a empresa do Simples ele seria
+    // simplesmente falso: ela declara `pTotTribSN` na emissão, não estes três.
+    abrir();
+    // ⚠ A asserção mira a caixa DA CARGA, não qualquer "Falta …": a caixa dos campos de emissão
+    // (código nacional/municipal/série) acende legitimamente numa empresa vazia, e um regex solto
+    // passaria a medir aquela em vez desta.
+    expect(screen.queryByText(/inclusive quando algum é 0,00/i)).not.toBeInTheDocument();
+  });
+
+  it("percentual fora de 0–100 mostra o problema no próprio campo", () => {
+    abrir({ pTotTribFed: "1133" });
+    expect(screen.getByText(/percentual entre 0 e 100/i)).toBeInTheDocument();
+  });
+
+  it("⚠ o municipal DIZ que não é a alíquota de ISS da nota", () => {
+    // Elas podem coincidir numericamente e não são o mesmo campo — a NFS-e real versionada traz
+    // ISS aplicado de 5,00% com `pTotTribMun` 0,00 no MESMO documento.
+    abrir();
+    expect(screen.getByText(/Não é a alíquota de ISS da nota/i)).toBeInTheDocument();
+  });
+
+  it("⚠ a tela declara que NÃO calcula nada — nem pelo CNAE, nem pelo regime", () => {
+    abrir();
+    expect(screen.getByText(/não calcula nenhum destes percentuais/i)).toBeInTheDocument();
+  });
+});

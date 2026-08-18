@@ -628,21 +628,90 @@ function buildDpsXml({ company, data, numeracao, regime }) {
   // reais, não zeros. Ou seja, o formato que o código emite não é o que a nota real usa, **e** o
   // valor que ele emite é falso. Como a estrutura correta não pode ser confirmada sem o XSD (que
   // não está versionado), o caminho **recusa** em vez de declarar zero.
-  const totTribNaoSimples = data.totTrib || {};
-  const temTotTribNaoSimples =
-    [totTribNaoSimples.pTotTribFed, totTribNaoSimples.pTotTribEst, totTribNaoSimples.pTotTribMun].some(
-      (v) => v !== undefined && v !== null && v !== ""
-    );
-  if (!isSimples && !temTotTribNaoSimples) {
+  // ⚠⚠ A ESTRUTURA ESTÁ CONFIRMADA CONTRA A NFS-e REAL VERSIONADA, e ela decide o desenho.
+  // `docs/leiaute-nfse/nfse-nacional-substituicao.xml` (`opSimpNac=1`, não optante) traz, dentro
+  // de `infDPS/valores/trib`, exatamente:
+  //
+  //     <totTrib><pTotTrib>
+  //       <pTotTribFed>11.33</pTotTribFed>
+  //       <pTotTribEst>0.00</pTotTribEst>
+  //       <pTotTribMun>0.00</pTotTribMun>
+  //     </pTotTrib></totTrib>
+  //
+  // — os TRÊS filhos presentes, nesta ordem, `pTotTrib` filho único de `totTrib`, sem irmãos.
+  //
+  // ⚠⚠ E É ELA QUE PROVA O DEFEITO QUE ESTE BLOCO ACABA DE CONSERTAR. O gate anterior usava
+  // `.some()`: **UM** percentual presente liberava a emissão, e o XML escrevia `?? 0` nos outros
+  // dois. Ou seja, o contador configurava só o municipal e a nota saía AFIRMANDO ao tomador carga
+  // federal 0,00% e estadual 0,00%. Zero fabricado por omissão — e aqui ele vai IMPRESSO, por
+  // força da Lei 12.741/2012.
+  //
+  // A amostra mostra `0.00` LEGÍTIMO em dois dos três campos (serviço não tem ICMS). Logo zero
+  // **declarado** existe e é normal — e por isso mesmo zero **por descuido** não pode produzir o
+  // mesmo XML. A diferença tem de estar NO DADO, não no acaso: exigem-se os TRÊS, e a recusa
+  // NOMEIA quais faltam. Omitir filho não é alternativa: a nota real os traz todos.
+  //
+  // ⚠ A FONTE É O CADASTRO DA EMPRESA — pedido do dono (18/08/2026): *"as alíquotas efetivas do
+  // presumido não precisam ser calculadas (…) mas deve ser configurado do lado do contador, no
+  // portal do contador."* O payload da emissão continua podendo informá-los (é assim que o
+  // escritório emite uma nota com carga diferente da cadastrada), e quando informa, VENCE — mas a
+  // ausência dele cai no cadastro, não em zero. ⚠ NADA É CALCULADO: não há de-para
+  // CNAE→presunção neste repositório, e errar entre 8% e 32% inverteria a comparação.
+  //
+  // ⚠ Cada campo resolve SOZINHO (payload → cadastro). Exigir o grupo inteiro de uma fonte só
+  // faria a nota que corrige apenas o federal perder o municipal já cadastrado.
+  const totTribInformado = data.totTrib || {};
+  const informado = (v) => v !== undefined && v !== null && v !== "";
+  const CAMPOS_TOT_TRIB = [
+    ["pTotTribFed", "federal"],
+    ["pTotTribEst", "estadual"],
+    ["pTotTribMun", "municipal"],
+  ];
+  const totTribNaoSimples = {};
+  const totTribFaltando = [];
+  // ⚠ SÓ O NÃO OPTANTE PASSA POR AQUI. Para o Simples este grupo não vai ao XML (ele declara
+  // `pTotTribSN`), então recusar a nota por um valor torto nestas colunas seria bloquear uma
+  // emissão legítima por causa de um campo que ela não usa.
+  for (const [campo, rotulo] of isSimples ? [] : CAMPOS_TOT_TRIB) {
+    const doPayload = totTribInformado[campo];
+    const doCadastro = company?.[campo];
+    // `Number(Decimal)` funciona: o Prisma devolve `Decimal` (decimal.js), cujo `valueOf` é a
+    // representação numérica. O cadastro guarda NULL quando não configurado — nunca 0 por default.
+    const bruto = informado(doPayload) ? doPayload : informado(doCadastro) ? doCadastro : null;
+    if (bruto === null) {
+      totTribFaltando.push({ campo, rotulo });
+      continue;
+    }
+    const n = Number(bruto);
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      const err = new Error(
+        `A carga tributária aproximada ${rotulo} (${campo}) não é um percentual válido: ${bruto}.`
+      );
+      err.code = "INVALID_TOT_TRIB_NAO_SIMPLES";
+      err.correcao =
+        `Informe ${campo} como percentual entre 0 e 100 no cadastro da empresa ` +
+        "(Editar cadastro → Emissão de NFS-e → Carga tributária aproximada).";
+      throw err;
+    }
+    totTribNaoSimples[campo] = n;
+  }
+  if (!isSimples && totTribFaltando.length) {
+    const listados = totTribFaltando.map((f) => `${f.campo} (${f.rotulo})`).join(", ");
     const err = new Error(
-      "Empresa não optante do Simples: a carga tributária aproximada (pTotTribFed/Est/Mun) não foi " +
-        "informada, e o código emitia 0,00 — que afirma carga zero."
+      "Empresa não optante do Simples: a carga tributária aproximada (Lei 12.741/2012) não está " +
+        `completa — falta ${listados}. O código emitia 0,00 nos campos ausentes, ` +
+        "que AFIRMA carga zero ao tomador."
     );
     err.code = "MISSING_TOT_TRIB_NAO_SIMPLES";
+    // ⚠ A LISTA VIAJA NOMEADA, no molde de `company_missing_fields`: a tela precisa dizer QUAL
+    // percentual falta. "Falta a carga tributária" manda o contador conferir os três.
+    err.faltando = totTribFaltando.map((f) => f.campo);
     err.correcao =
-      "Informe os percentuais de tributos aproximados (Lei 12.741/2012). ⚠ Este caminho nunca foi " +
-      "exercido: enquanto opSimpNac era cravado em 3, nenhuma empresa do Lucro Presumido chegava " +
-      "aqui. Confirmar a estrutura do grupo totTrib com o dono antes de ligar.";
+      "Cadastre os TRÊS percentuais em Editar cadastro → Emissão de NFS-e → Carga tributária " +
+      "aproximada. ⚠ Os três são exigidos mesmo quando algum é 0,00: zero DECLARADO é legítimo " +
+      "(a NFS-e real de referência declara 0,00 no estadual), mas zero por omissão afirmaria ao " +
+      "tomador uma carga que ninguém conferiu. Estes percentuais são do contador — o sistema não " +
+      "os calcula.";
     throw err;
   }
 
@@ -865,16 +934,22 @@ function buildDpsXml({ company, data, numeracao, regime }) {
             ? `<totTrib>
           <pTotTribSN>${pTotTribSN.toFixed(2)}</pTotTribSN>
         </totTrib>`
-            : // ⚠ Não optante: PERCENTUAIS informados, não zeros cravados. A forma
-              // (`pTotTrib` com os três filhos) é a da NFS-e real versionada em
-              // `docs/leiaute-nfse/nfse-nacional-substituicao.xml`. O código anterior emitia
-              // `vTotTrib` com `0.00` — outro grupo, e afirmando carga tributária zero. Chegar
-              // aqui sem os percentuais já foi recusado acima (`MISSING_TOT_TRIB_NAO_SIMPLES`).
+            : // ⚠ Não optante: PERCENTUAIS resolvidos acima (payload → cadastro da empresa), não
+              // zeros cravados. A forma (`pTotTrib` com os três filhos, nesta ordem) é a da NFS-e
+              // real versionada em `docs/leiaute-nfse/nfse-nacional-substituicao.xml`. O código
+              // original emitia `vTotTrib` com `0.00` — outro grupo, e afirmando carga zero.
+              //
+              // ⚠⚠ O `?? 0` SAIU DAQUI, e ele era o defeito. Com o gate antigo (`.some()`), UM
+              // percentual liberava a emissão e estes `?? 0` escreviam `0.00` nos outros dois —
+              // uma AFIRMAÇÃO de carga zero ao tomador (Lei 12.741/2012) montada por omissão.
+              // Hoje os três chegam aqui resolvidos ou a emissão já foi recusada por
+              // `MISSING_TOT_TRIB_NAO_SIMPLES`, então não há default a aplicar. Não reintroduza
+              // o `??`: ele voltaria a fabricar o zero sem que nenhum teste do XML acusasse.
               `<totTrib>
           <pTotTrib>
-            <pTotTribFed>${Number(totTribNaoSimples.pTotTribFed ?? 0).toFixed(2)}</pTotTribFed>
-            <pTotTribEst>${Number(totTribNaoSimples.pTotTribEst ?? 0).toFixed(2)}</pTotTribEst>
-            <pTotTribMun>${Number(totTribNaoSimples.pTotTribMun ?? 0).toFixed(2)}</pTotTribMun>
+            <pTotTribFed>${totTribNaoSimples.pTotTribFed.toFixed(2)}</pTotTribFed>
+            <pTotTribEst>${totTribNaoSimples.pTotTribEst.toFixed(2)}</pTotTribEst>
+            <pTotTribMun>${totTribNaoSimples.pTotTribMun.toFixed(2)}</pTotTribMun>
           </pTotTrib>
         </totTrib>`
         }

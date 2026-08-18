@@ -388,4 +388,92 @@ describe("PATCH /firm/companies/:id — configuração de emissão de NFS-e", ()
     expect(data.codigoServicoMunicipal).toBeNull();
     expect(data.rpsSerie).toBeNull();
   });
+
+  // ── CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — pedido do dono, 18/08/2026 ──────────────
+  //
+  // > *"as alíquotas efetivas do presumido não precisam ser calculadas a não ser o ISS que varia
+  // > de município, mas deve ser configurado do lado do contador, no portal do contador."*
+  //
+  // Mesmo risco dos três acima, e maior: percentual que o `update` descarta em silêncio deixa a
+  // empresa do Lucro Presumido SEM EMITIR, com o contador convicto de que acabou de configurá-la.
+  describe("carga tributária aproximada do não optante (`pTotTrib*`)", () => {
+    test("os três CHEGAM ao update da Company", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ pTotTribFed: "11,33", pTotTribEst: "0", pTotTribMun: "2.5" }));
+
+      expect(res.status).toBe(200);
+      const { data } = dadosDoUpdateDaCompany();
+      // ⚠ Vírgula E ponto entram: o contador brasileiro digita "11,33". Percentual de 0 a 100 não
+      // tem separador de milhar, então os dois só podem ser o separador DECIMAL.
+      expect(data.pTotTribFed).toBe(11.33);
+      expect(data.pTotTribMun).toBe(2.5);
+      // ⚠ ZERO É GRAVADO COMO ZERO, nunca engolido: é a afirmação "conferi, é zero" — e o estadual
+      // de um serviço é legitimamente 0,00 (a NFS-e real de referência declara assim).
+      expect(data.pTotTribEst).toBe(0);
+    });
+
+    test("voltam na resposta — sem as colunas no `select` a tela reabre vazia", async () => {
+      await request(app).patch(`/firm/companies/${PORTAL_ID}`).send(payload({ pTotTribFed: "11.33" }));
+      const { select } = dadosDoUpdateDaCompany();
+      expect(select.pTotTribFed).toBe(true);
+      expect(select.pTotTribEst).toBe(true);
+      expect(select.pTotTribMun).toBe(true);
+    });
+
+    test("vazio grava NULL — e NULL é o que a emissão recusa com motivo, não 0,00", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ pTotTribFed: "", pTotTribEst: "", pTotTribMun: "" }));
+
+      expect(res.status).toBe(200);
+      const { data } = dadosDoUpdateDaCompany();
+      expect(data.pTotTribFed).toBeNull();
+      expect(data.pTotTribEst).toBeNull();
+      expect(data.pTotTribMun).toBeNull();
+    });
+
+    test("⚠ AUSENTE ≠ APAGAR: sem os campos no corpo, o update NÃO os toca", async () => {
+      // Sem o spread condicional, toda tela que salva a empresa sem este bloco (certificado,
+      // sócios, ficha) APAGARIA a carga tributária — e a empresa pararia de emitir em silêncio.
+      const res = await request(app).patch(`/firm/companies/${PORTAL_ID}`).send(payload());
+
+      expect(res.status).toBe(200);
+      const { data } = dadosDoUpdateDaCompany();
+      expect("pTotTribFed" in data).toBe(false);
+      expect("pTotTribEst" in data).toBe(false);
+      expect("pTotTribMun" in data).toBe(false);
+    });
+
+    test("⚠ nada é calculado: CNAE e regime no corpo não produzem percentual nenhum", async () => {
+      // Não há de-para CNAE→presunção neste repositório. Se algum dia alguém "ajudar" derivando
+      // 8%/32% do CNAE, este teste cai — que é o ponto. O número vai IMPRESSO ao tomador.
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ regimeTributario: "LUCRO_PRESUMIDO", cnaePrincipal: "6920601" }));
+
+      expect(res.status).toBe(200);
+      const { data } = dadosDoUpdateDaCompany();
+      expect("pTotTribFed" in data).toBe(false);
+    });
+
+    test("fora de 0–100 é RECUSA nomeada, não um número grande", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ pTotTribFed: "1133" }));
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("company_p_tot_trib_fed_invalid");
+      expect(prismaMock.company.update).not.toHaveBeenCalled();
+    });
+
+    test("texto é recusado — percentual não se traduz", async () => {
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({ pTotTribMun: "cinco por cento" }));
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("company_p_tot_trib_mun_invalid");
+    });
+  });
 });

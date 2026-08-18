@@ -87,6 +87,36 @@ model Company {
   /// apareceria como nota emitida no município errado. Enquanto o campo estiver nulo a emissão é
   /// **RECUSADA com motivo** — nunca completada por palpite.
   codigoMunicipioIbge      String?
+  /// ── CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — só da empresa NÃO OPTANTE ────────────
+  ///
+  /// Pedido do dono (18/08/2026): *"as alíquotas efetivas do presumido não precisam ser calculadas
+  /// a não ser o ISS que varia de município, mas deve ser configurado do lado do contador, no
+  /// portal do contador."*
+  ///
+  /// São os três percentuais que a DPS leva em `valores/trib/totTrib/pTotTrib` quando
+  /// `opSimpNac != 3`. O optante do Simples NÃO usa estes campos: ele declara `pTotTribSN`, que é
+  /// a alíquota efetiva da COMPETÊNCIA e sai do extrato do PGDAS-D — muda todo mês, por isso é
+  /// informada na emissão e não cadastrada aqui.
+  ///
+  /// ⚠ DIGITADOS PELO CONTADOR, NUNCA CALCULADOS. Não há de-para CNAE→presunção neste
+  /// repositório, e o número vai IMPRESSO ao tomador: é afirmação, não preenchimento técnico.
+  ///
+  /// ⚠ NULL ≠ 0.00, e a distinção é o motivo de existirem. A NFS-e real versionada
+  /// (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`, `opSimpNac=1`) declara
+  /// `pTotTribEst 0.00` e `pTotTribMun 0.00` — zero DECLARADO é legítimo. Então zero não pode ser
+  /// o que o sistema escreve por omissão: NULL = não configurado (a emissão recusa com
+  /// `MISSING_TOT_TRIB_NAO_SIMPLES`, nomeando quais faltam), 0.00 = o contador afirmou zero.
+  ///
+  /// ⚠ `pTotTribMun` NÃO é a alíquota de ISS. Na mesma amostra o ISS aplicado é
+  /// `pAliqAplic = 5.00` e o `pTotTribMun` é `0.00` — mesmo documento, mesma nota, números
+  /// diferentes. Um é o que o município cobra; o outro é a parcela municipal da carga aproximada.
+  ///
+  /// ⚠ Migration `20260818210000_add_carga_tributaria_nao_simples` — APLICAR ANTES de este código
+  /// subir: a `Company` é lida sem `select` em várias rotas e por `legacyCompanySelect` com
+  /// `select` explícito. Sem a coluna no banco, P2022 derruba a carteira inteira.
+  pTotTribFed              Decimal?          @db.Decimal(5, 2)
+  pTotTribEst              Decimal?          @db.Decimal(5, 2)
+  pTotTribMun              Decimal?          @db.Decimal(5, 2)
   optanteSimples           Boolean?          @default(false)
   regimeEspecialTributacao String?
   // ── Ficha de cadastro do escritório ──────────────────────────────────────────

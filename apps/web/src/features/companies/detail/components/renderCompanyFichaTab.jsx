@@ -182,6 +182,24 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
         <Campo label="Código nacional do serviço" value={lg.codigoServicoNacional} />
         <Campo label="Código municipal do serviço" value={lg.codigoServicoMunicipal} />
         <Campo label="Série da DPS" value={lg.rpsSerie} />
+        {/* ⚠ CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012). Aparece na FICHA porque é o número que
+            a nota IMPRIME ao tomador — conferir isto é trabalho de contador, e até aqui não havia
+            onde vê-lo sem abrir o formulário de edição.
+            ⚠ `!= null`, nunca `||`: `0` é um percentual conferido (serviço não tem ICMS), e com
+            `||` ele apareceria como ausente — a ficha diria "não configurado" sobre um campo que
+            o contador preencheu com zero de propósito. */}
+        <Campo
+          label="Carga aprox. federal (%)"
+          value={lg.pTotTribFed != null ? String(lg.pTotTribFed) : null}
+        />
+        <Campo
+          label="Carga aprox. estadual (%)"
+          value={lg.pTotTribEst != null ? String(lg.pTotTribEst) : null}
+        />
+        <Campo
+          label="Carga aprox. municipal (%)"
+          value={lg.pTotTribMun != null ? String(lg.pTotTribMun) : null}
+        />
         {faltasDaEmissao.length > 0 && (
           <div style={{ gridColumn: "span 3", fontSize: "0.75rem", color: "#FFB347" }}>
             {/* ⚠ Nomeia QUAL campo falta E ONDE ele fica. "Configuração incompleta" mandaria o

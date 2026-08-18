@@ -235,13 +235,18 @@ describe("regime tributário — opSimpNac vem do dado", () => {
 
   it("⚠ o CadastroFiscal é a autoridade — vence Company.regimeTributario", async () => {
     montarCenario({
-      empresa: { regimeTributario: "SIMPLES_NACIONAL" },
+      // ⚠ A CARGA COMPLETA ENTROU NESTA FIXTURE, e é o conserto de 18/08/2026 aparecendo: antes o
+      // payload trazia SÓ `pTotTribFed` e a emissão passava, porque o portão usava `.some()`. Um
+      // percentual bastava e os outros dois saíam `0.00` no XML — carga zero AFIRMADA ao tomador.
+      empresa: {
+        regimeTributario: "SIMPLES_NACIONAL",
+        pTotTribFed: 11.33,
+        pTotTribEst: 0,
+        pTotTribMun: 2.5,
+      },
       cadastroFiscal: { regime: "LUCRO_PRESUMIDO" },
     });
-    await NfseService.issue({
-      data: { ...PAYLOAD_BASE, totTrib: { pTotTribFed: 11.33 } },
-      log,
-    });
+    await NfseService.issue({ data: PAYLOAD_BASE, log });
     expect(xmlEnviado()).toContain("<opSimpNac>1</opSimpNac>");
   });
 
@@ -263,6 +268,110 @@ describe("regime tributário — opSimpNac vem do dado", () => {
     montarCenario({ cadastroFiscal: { regime: "LUCRO_PRESUMIDO" } });
     const r = await NfseService.issue({ data: { ...PAYLOAD_BASE, totTrib: {} }, log });
     expect(r.codigo).toBe("MISSING_TOT_TRIB_NAO_SIMPLES");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — o cadastro do contador, e o zero fabricado
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// Pedido do dono (18/08/2026): *"precisamos emitir para simples nacional também, as alíquotas
+// efetivas do presumido não precisam ser calculadas a não ser o ISS que varia de município, mas
+// deve ser configurado do lado do contador, no portal do contador."*
+//
+// ⚠⚠ O DEFEITO QUE ESTE BLOCO PRENDE: o portão usava `.some()` — UM percentual liberava a
+// emissão — e o XML escrevia `?? 0` nos outros dois. O contador configurava só o municipal e a
+// nota saía AFIRMANDO ao tomador carga federal 0,00% e estadual 0,00%. Zero fabricado por
+// omissão, IMPRESSO no DANFSe por força da Lei da Transparência.
+describe("carga tributária do não optante — vem do CADASTRO, e os três são exigidos", () => {
+  const PRESUMIDO = { regime: "LUCRO_PRESUMIDO" };
+  const CARGA = { pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 2.5 };
+
+  it("⚠ o CADASTRO DA EMPRESA alimenta o XML — o payload não precisa trazer nada", async () => {
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.status).toBe("issued");
+    const xml = xmlEnviado();
+    // A FORMA é a da NFS-e real versionada (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`):
+    // `pTotTrib` filho único de `totTrib`, com os três na ordem Fed · Est · Mun.
+    expect(xml).toContain(
+      "<pTotTribFed>11.33</pTotTribFed>"
+    );
+    expect(xml).toContain("<pTotTribEst>0.00</pTotTribEst>");
+    expect(xml).toContain("<pTotTribMun>2.50</pTotTribMun>");
+    expect(xml).not.toContain("vTotTrib");
+  });
+
+  it("⚠⚠ SÓ O MUNICIPAL CONFIGURADO NÃO EMITE — antes saía com federal e estadual 0,00", async () => {
+    montarCenario({ empresa: { pTotTribMun: 2.5 }, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.codigo).toBe("MISSING_TOT_TRIB_NAO_SIMPLES");
+    expect(r.camada).toBe("NOSSA");
+    // Nada saiu da máquina, e o número não foi queimado.
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it("⚠ ZERO DECLARADO EMITE — e é o que separa 0,00 conferido de 0,00 por omissão", async () => {
+    // A própria NFS-e real de referência declara `pTotTribEst 0.00` e `pTotTribMun 0.00`: serviço
+    // não tem ICMS. Zero é legítimo — desde que alguém o tenha digitado.
+    montarCenario({
+      empresa: { pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 0 },
+      cadastroFiscal: PRESUMIDO,
+    });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.status).toBe("issued");
+    expect(xmlEnviado()).toContain("<pTotTribMun>0.00</pTotTribMun>");
+  });
+
+  it("o payload VENCE o cadastro, campo a campo", async () => {
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    await NfseService.issue({
+      data: { ...PAYLOAD_BASE, totTrib: { pTotTribFed: 9.25 } },
+      log,
+    });
+    const xml = xmlEnviado();
+    expect(xml).toContain("<pTotTribFed>9.25</pTotTribFed>");
+    // ⚠ E os outros dois continuam vindo do cadastro — não viram 0,00 por o payload ser parcial.
+    expect(xml).toContain("<pTotTribMun>2.50</pTotTribMun>");
+  });
+
+  it("a recusa NOMEIA quais faltam — 'falta a carga' mandaria conferir os três", async () => {
+    montarCenario({ empresa: { pTotTribFed: 11.33 }, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.message).toContain("pTotTribEst");
+    expect(r.message).toContain("pTotTribMun");
+    expect(r.message).not.toContain("pTotTribFed (");
+  });
+
+  it("percentual fora de 0–100 recusa em vez de virar XML", async () => {
+    montarCenario({ empresa: { ...CARGA, pTotTribFed: 1133 }, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.codigo).toBe("INVALID_TOT_TRIB_NAO_SIMPLES");
+    expect(r.camada).toBe("NOSSA");
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it("⚠ o SIMPLES não é afetado — ele declara pTotTribSN e ignora estas colunas", async () => {
+    montarCenario({
+      empresa: { pTotTribFed: null, pTotTribEst: null, pTotTribMun: null },
+      cadastroFiscal: { regime: "SIMPLES_NACIONAL" },
+    });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.status).toBe("issued");
+    const xml = xmlEnviado();
+    expect(xml).toContain("<pTotTribSN>6.00</pTotTribSN>");
+    expect(xml).not.toContain("pTotTribFed");
+  });
+
+  it("⚠ valor torto NESTAS colunas não derruba a nota do SIMPLES — ela não os usa", async () => {
+    // Recusar aqui bloquearia uma emissão legítima por causa de um campo que a nota não leva.
+    // Quem responde pelo Simples é `pTotTribSN`, e ele tem guarda própria.
+    montarCenario({
+      empresa: { pTotTribFed: 1133 },
+      cadastroFiscal: { regime: "SIMPLES_NACIONAL" },
+    });
+    const r = await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(r.status).toBe("issued");
   });
 });
 

@@ -1455,6 +1455,29 @@ function normalizarCamposEmissaoNfseMock(entrada, atuais) {
     resultado.rpsSerie = String(n).padStart(5, "0");
   }
 
+  // ── CARGA TRIBUTÁRIA APROXIMADA do não optante (Lei 12.741/2012), dono 18/08/2026 ──────────
+  // ⚠ AS MESMAS TRÊS RESPOSTAS do backend (`validateAndNormalizeCompanyProfile`), com os MESMOS
+  // códigos de erro: ausente = não mexer · vazio = apagar · número = gravar.
+  // ⚠ E a mesma leitura de separador: vírgula OU ponto são o DECIMAL. Percentual de 0 a 100 não
+  // tem milhar — reusar o normalizador de moeda transformaria "11.33" em 1133.
+  for (const campo of ["pTotTribFed", "pTotTribEst", "pTotTribMun"]) {
+    const erro = `company_${campo.replace(/([A-Z])/g, "_$1").toLowerCase()}_invalid`;
+    if (entrada[campo] === undefined) {
+      resultado[campo] = atuais[campo] ?? null;
+      continue;
+    }
+    const bruto = String(entrada[campo] ?? "").trim();
+    if (!bruto) {
+      resultado[campo] = null; // apagado de propósito — NULL é o que a emissão recusa com motivo
+      continue;
+    }
+    const texto = bruto.replace(",", ".");
+    if (!/^\d{1,3}(\.\d{1,2})?$/.test(texto)) throw new Error(erro);
+    const valor = Number(texto);
+    if (!Number.isFinite(valor) || valor < 0 || valor > 100) throw new Error(erro);
+    resultado[campo] = valor;
+  }
+
   return resultado;
 }
 

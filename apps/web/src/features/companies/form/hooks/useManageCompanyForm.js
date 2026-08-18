@@ -39,6 +39,13 @@ export function getInitialCompanyFormState() {
     codigosServicoNacional: [],
     codigoServicoMunicipal: "",
     rpsSerie: "",
+    // Carga tributária aproximada da empresa NÃO optante (Lei 12.741/2012). ⚠ Nascem vazios e
+    // NUNCA são pré-preenchidos — nem com 0. Zero é uma AFIRMAÇÃO ("conferi, é zero") que vai
+    // impressa ao tomador; um zero escolhido pelo sistema seria indistinguível de um zero
+    // conferido pelo contador. Campo vazio é a verdade sobre uma empresa não configurada.
+    pTotTribFed: "",
+    pTotTribEst: "",
+    pTotTribMun: "",
     inscricaoEstadual: "",
     inscricaoEstadualData: "",
     porte: "",
@@ -109,6 +116,13 @@ export function mapCompanyToEditForm(company) {
       : (String(legacy?.codigoServicoNacional || "").trim() ? [String(legacy.codigoServicoNacional).trim()] : []),
     codigoServicoMunicipal: String(legacy?.codigoServicoMunicipal || "").trim(),
     rpsSerie: String(legacy?.rpsSerie || "").trim(),
+    // ⚠ `!= null`, NUNCA `|| ""`: a coluna é `Decimal?` e um `0` gravado é um percentual
+    // LEGÍTIMO (serviço não tem ICMS — a NFS-e real de referência declara 0,00 no estadual).
+    // Com `||` o zero conferido pelo contador reabriria o formulário em branco, ele salvaria de
+    // novo, e a empresa voltaria a não emitir. Mesma armadilha do `?? ""` do FechamentoModal.
+    pTotTribFed: legacy?.pTotTribFed != null ? String(legacy.pTotTribFed) : "",
+    pTotTribEst: legacy?.pTotTribEst != null ? String(legacy.pTotTribEst) : "",
+    pTotTribMun: legacy?.pTotTribMun != null ? String(legacy.pTotTribMun) : "",
     inscricaoEstadual: String(legacy?.inscricaoEstadual || "").trim(),
     inscricaoEstadualData: toDateInput(legacy?.inscricaoEstadualData),
     porte: String(legacy?.porte || "").trim(),
