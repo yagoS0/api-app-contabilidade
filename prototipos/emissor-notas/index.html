@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Emissor de Notas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Aviso global persistente (certificado, indisponibilidade). Oculto por padrão -->
+  <div id="banner-global" class="banner" role="alert" hidden></div>
+
+  <div class="layout">
+
+    <!-- Navegação lateral -->
+    <aside class="sidebar" aria-label="Navegação principal">
+      <div class="brand">Emissor</div>
+      <button id="btn-nova-nota" class="btn btn-primary btn-block" data-action="nova-nota">
+        + Nova nota <kbd>N</kbd>
+      </button>
+      <nav>
+        <a href="#/"             data-route="painel">Início</a>
+        <a href="#/notas"        data-route="notas">Notas</a>
+        <a href="#/clientes"     data-route="clientes">Clientes</a>
+        <a href="#/servicos"     data-route="servicos">Serviços</a>
+        <a href="#/recorrencias" data-route="recorrencias">Recorrências</a>
+        <a href="#/lotes"        data-route="lotes">Lotes</a>
+        <a href="#/config"       data-route="config">Configurações</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="empresa-nome"></span>
+      </div>
+    </aside>
+
+    <!-- Área principal -->
+    <div class="content">
+      <header class="topbar">
+        <input id="busca-global" type="search"
+               placeholder="Buscar nota, cliente, CNPJ ou valor…"
+               aria-label="Busca global">
+        <div id="topbar-actions"></div>
+      </header>
+
+      <!-- Todas as telas renderizam aqui -->
+      <main id="app" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <!-- Camadas globais -->
+  <div id="modal-root" aria-live="polite"></div>
+  <div id="toast-root" aria-live="polite"></div>
+
+  <!-- Templates das telas. O JS clona por id e preenche. -->
+
+  <template id="tpl-painel">
+    <section class="page" data-page="painel">
+      <h1>Início</h1>
+      <div class="grid-3">
+        <article class="card" data-widget="pendencias">
+          <h2>Precisa de ação</h2>
+          <ul data-list="pendencias"></ul>
+        </article>
+        <article class="card" data-widget="resumo-mes">
+          <h2>Este mês</h2>
+          <dl data-list="resumo"></dl>
+        </article>
+        <article class="card" data-widget="recorrencias-semana">
+          <h2>Recorrências desta semana</h2>
+          <ul data-list="recorrencias"></ul>
+          <button class="btn" data-action="emitir-recorrentes">Emitir recorrentes do mês</button>
+        </article>
+      </div>
+    </section>
+  </template>
+
+  <template id="tpl-notas-lista">
+    <section class="page" data-page="notas">
+      <header class="page-header">
+        <h1>Notas</h1>
+        <div class="page-actions">
+          <button class="btn" data-action="importar-planilha">Importar planilha</button>
+          <button class="btn btn-primary" data-action="nova-nota">Nova nota</button>
+        </div>
+      </header>
+
+      <form class="filters" data-form="filtros-notas">
+        <input type="month" name="periodo" aria-label="Período">
+        <select name="clienteId" aria-label="Cliente"><option value="">Todos os clientes</option></select>
+        <select name="status" aria-label="Status">
+          <option value="">Todos os status</option>
+          <option value="emitida">Emitida</option>
+          <option value="processando">Processando</option>
+          <option value="rejeitada">Rejeitada</option>
+          <option value="cancelada">Cancelada</option>
+          <option value="rascunho">Rascunho</option>
+        </select>
+        <select name="origem" aria-label="Origem">
+          <option value="">Todas as origens</option>
+          <option value="avulsa">Avulsa</option>
+          <option value="recorrente">Recorrente</option>
+          <option value="lote">Lote</option>
+        </select>
+      </form>
+
+      <div class="bulk-bar" data-bulk hidden>
+        <span data-bulk-count></span> selecionadas
+        <button data-action="bulk-baixar">Baixar PDF/XML</button>
+        <button data-action="bulk-enviar">Enviar por e-mail</button>
+        <button data-action="bulk-cancelar" class="btn-danger">Cancelar</button>
+      </div>
+
+      <table class="table" data-table="notas">
+        <thead>
+          <tr>
+            <th><input type="checkbox" data-select-all aria-label="Selecionar todas"></th>
+            <th>Nº</th><th>Cliente</th><th>Descrição</th>
+            <th class="num">Valor</th><th>Data</th><th>Origem</th><th>Status</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="empty" data-empty hidden>Nenhuma nota encontrada com esses filtros.</p>
+    </section>
+  </template>
+
+  <template id="tpl-nota-form">
+    <section class="page page-split" data-page="nota-form">
+      <form class="pane pane-form" data-form="nota" novalidate>
+        <h1 data-title>Nova nota</h1>
+
+        <fieldset>
+          <legend>Para quem</legend>
+          <label>Cliente
+            <input type="text" name="clienteBusca" data-autocomplete="cliente"
+                   placeholder="Nome ou CNPJ" autocomplete="off" required>
+            <input type="hidden" name="clienteId">
+          </label>
+          <div data-autocomplete-list="cliente" class="ac-list" hidden></div>
+          <small data-cliente-resumo class="hint"></small>
+        </fieldset>
+
+        <fieldset>
+          <legend>O quê</legend>
+          <label>Serviço
+            <input type="text" name="servicoBusca" data-autocomplete="servico" autocomplete="off" required>
+            <input type="hidden" name="servicoId">
+          </label>
+          <div data-autocomplete-list="servico" class="ac-list" hidden></div>
+          <label>Descrição
+            <textarea name="descricao" rows="3"
+              placeholder="Ex.: Consultoria referente a {mes/ano}"></textarea>
+          </label>
+          <small class="hint">Use <code>{mes/ano}</code> para preencher o mês automaticamente.</small>
+        </fieldset>
+
+        <fieldset>
+          <legend>Quanto</legend>
+          <label>Valor
+            <input type="text" name="valor" inputmode="decimal" data-mask="money" required>
+          </label>
+          <details open data-impostos>
+            <summary>Impostos e retenções</summary>
+            <dl data-list="impostos"></dl>
+          </details>
+          <div class="total">
+            <span>Líquido</span>
+            <strong data-liquido>R$ 0,00</strong>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Detalhes</legend>
+          <label><input type="checkbox" name="enviarEmail" checked> Enviar ao cliente por e-mail ao emitir</label>
+          <label>Observações <textarea name="observacoes" rows="2"></textarea></label>
+        </fieldset>
+
+        <footer class="form-actions">
+          <button type="button" class="btn" data-action="salvar-modelo">Salvar como modelo</button>
+          <button type="button" class="btn" data-action="salvar-rascunho">Salvar rascunho</button>
+          <button type="submit" class="btn btn-primary" data-action="emitir">Emitir</button>
+        </footer>
+      </form>
+
+      <aside class="pane pane-preview" aria-label="Pré-visualização da nota">
+        <div class="nfse-preview" data-preview>
+          <header>
+            <div data-preview="emitente"></div>
+            <div data-preview="numero">Nº —</div>
+          </header>
+          <section><h3>Tomador</h3><div data-preview="tomador"></div></section>
+          <section><h3>Serviço</h3><div data-preview="servico"></div></section>
+          <section><h3>Valores</h3><table data-preview="valores"></table></section>
+          <footer data-preview="observacoes"></footer>
+        </div>
+      </aside>
+    </section>
+  </template>
+
+  <template id="tpl-nota-sucesso">
+    <section class="page" data-page="nota-sucesso">
+      <div class="card card-success">
+        <h1>Nota <span data-numero></span> emitida</h1>
+        <p data-resumo></p>
+        <div class="actions">
+          <button class="btn" data-action="baixar-pdf">PDF</button>
+          <button class="btn" data-action="baixar-xml">XML</button>
+          <button class="btn" data-action="enviar-email">Enviar ao cliente</button>
+          <button class="btn" data-action="duplicar">Emitir outra igual</button>
+          <a class="btn btn-primary" href="#/notas">Voltar para notas</a>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <!-- ACRÉSCIMO ao HTML do dono (nada foi renomeado nem removido): o detalhe de #/notas/:id é
+       entrega da Fase 1 e não tinha template. Segue a mesma convenção data-* das demais telas. -->
+  <template id="tpl-nota-detalhe">
+    <section class="page" data-page="nota-detalhe">
+      <p class="trilha"><a href="#/notas">&larr; Todas as notas</a></p>
+      <header class="page-header">
+        <h1>Nota <span data-numero></span> <span data-chip></span></h1>
+        <div class="page-actions" data-acoes></div>
+      </header>
+
+      <div data-rejeicao></div>
+
+      <div class="grid-2">
+        <article class="card">
+          <h2>Dados</h2>
+          <dl data-list="dados"></dl>
+        </article>
+        <article class="card">
+          <h2>Valores</h2>
+          <dl data-list="valores"></dl>
+        </article>
+      </div>
+
+      <article class="card">
+        <h2>Histórico</h2>
+        <ol class="auditoria" data-list="auditoria"></ol>
+      </article>
+    </section>
+  </template>
+
+  <template id="tpl-recorrencias-lista">
+    <section class="page" data-page="recorrencias">
+      <header class="page-header">
+        <h1>Recorrências</h1>
+        <div class="page-actions">
+          <button class="btn" data-action="revisar-mes">Revisar mês atual</button>
+          <button class="btn btn-primary" data-action="nova-recorrencia">Nova recorrência</button>
+        </div>
+      </header>
+      <div data-list="recorrencias-por-dia"></div>
+    </section>
+  </template>
+
+  <template id="tpl-revisao-mes">
+    <section class="page" data-page="revisao-mes">
+      <header class="page-header">
+        <h1>Revisão de <span data-referencia></span></h1>
+        <p class="hint">Altere valores só deste mês, pule linhas ou edite a recorrência. Nada é emitido até você confirmar.</p>
+      </header>
+
+      <table class="table table-editable" data-table="revisao">
+        <thead>
+          <tr>
+            <th><input type="checkbox" data-select-all></th>
+            <th>Cliente</th><th>Descrição</th>
+            <th class="num">Valor</th><th class="num">Impostos</th><th class="num">Líquido</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <footer class="sticky-footer">
+        <span><strong data-total-count>0</strong> selecionadas · <strong data-total-valor>R$ 0,00</strong></span>
+        <button class="btn btn-primary" data-action="emitir-selecionadas">Emitir <span data-total-count>0</span> notas</button>
+      </footer>
+    </section>
+  </template>
+
+  <template id="tpl-lote-importar">
+    <section class="page" data-page="lote-importar">
+      <h1>Importar planilha</h1>
+      <ol class="steps" data-steps>
+        <li data-step="1" class="active">Enviar arquivo</li>
+        <li data-step="2">Validar</li>
+        <li data-step="3">Emitir</li>
+      </ol>
+
+      <div data-step-panel="1">
+        <a href="#" data-action="baixar-template">Baixar template (.csv)</a>
+        <label class="dropzone">Arraste o .csv aqui ou clique
+          <input type="file" accept=".csv" name="planilha" hidden>
+        </label>
+      </div>
+
+      <div data-step-panel="2" hidden>
+        <p><span data-validas>0</span> válidas · <span data-invalidas>0</span> com problema</p>
+        <table class="table table-editable" data-table="validacao">
+          <thead><tr><th>#</th><th>CNPJ</th><th>Cliente</th><th>Descrição</th><th class="num">Valor</th><th>Situação</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <button class="btn btn-primary" data-action="ir-emitir" disabled>Emitir válidas</button>
+      </div>
+
+      <div data-step-panel="3" hidden data-include="tpl-lote-progresso"></div>
+    </section>
+  </template>
+
+  <template id="tpl-lote-progresso">
+    <section class="page" data-page="lote-progresso">
+      <h1>Emitindo lote <span data-lote-id></span></h1>
+      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="progress-bar" data-progress-bar></div>
+      </div>
+      <p aria-live="polite" data-progress-text>0 de 0</p>
+
+      <ul class="lote-itens" data-list="itens"></ul>
+
+      <footer class="lote-resultado" data-resultado hidden>
+        <p><strong data-ok>0</strong> emitidas · <strong data-erro-count>0</strong> rejeitadas</p>
+        <button class="btn" data-action="reprocessar-erros">Corrigir e reprocessar rejeitadas</button>
+        <button class="btn" data-action="baixar-zip">Baixar tudo (ZIP)</button>
+        <button class="btn" data-action="enviar-todas">Enviar todas por e-mail</button>
+        <a class="btn btn-primary" href="#/notas">Ver notas</a>
+      </footer>
+    </section>
+  </template>
+
+  <template id="tpl-cliente-form">
+    <section class="page" data-page="cliente-form">
+      <h1 data-title>Novo cliente</h1>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="dados" aria-selected="true">Dados</button>
+        <button role="tab" data-tab="notas">Notas</button>
+        <button role="tab" data-tab="recorrencias">Recorrências</button>
+      </div>
+      <form data-form="cliente" data-tab-panel="dados">
+        <label>CNPJ
+          <input name="cnpj" data-mask="cnpj" required>
+          <button type="button" data-action="consultar-cnpj">Consultar</button>
+        </label>
+        <label>Razão social <input name="razaoSocial" required></label>
+        <label>E-mail para envio <input name="email" type="email"></label>
+        <fieldset><legend>Endereço</legend></fieldset>
+        <fieldset><legend>Retenções padrão (%)</legend>
+          <label>IRRF <input name="irrf" type="number" step="0.01"></label>
+          <label>PIS <input name="pis" type="number" step="0.01"></label>
+          <label>COFINS <input name="cofins" type="number" step="0.01"></label>
+          <label>CSLL <input name="csll" type="number" step="0.01"></label>
+          <label>INSS <input name="inss" type="number" step="0.01"></label>
+        </fieldset>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </form>
+      <div data-tab-panel="notas" hidden><table class="table" data-table="notas-cliente"></table></div>
+      <div data-tab-panel="recorrencias" hidden><ul data-list="recorrencias-cliente"></ul></div>
+    </section>
+  </template>
+
+  <template id="tpl-chip-status">
+    <span class="chip" data-status=""></span>
+  </template>
+
+  <template id="tpl-modal">
+    <div class="modal-backdrop" data-modal-close>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <h2 id="modal-title" data-modal-title></h2>
+        <div data-modal-body></div>
+        <footer data-modal-actions></footer>
+      </div>
+    </div>
+  </template>
+
+  <script src="format.js"></script>
+  <script src="data.js"></script>
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
