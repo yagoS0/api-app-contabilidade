@@ -664,6 +664,17 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                   codigosServicoNacional: selectedCompany?.legacyCompany?.codigosServicoNacional || [],
                   codigoServicoMunicipal: selectedCompany?.legacyCompany?.codigoServicoMunicipal || null,
                   rpsSerie: selectedCompany?.legacyCompany?.rpsSerie || null,
+                  /* ⚠ A CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) — o que o não optante precisa
+                     ter para emitir. Sem estas três linhas o assistente não teria como saber que
+                     ela falta, e a empresa do Lucro Presumido chegaria ao botão Emitir para ser
+                     recusada pelo servidor (`MISSING_TOT_TRIB_NAO_SIMPLES`).
+                     ⚠⚠ `??`, NUNCA `||`: `0` é um percentual LEGÍTIMO e declarado (a NFS-e real de
+                     referência traz 0,00 no estadual e no municipal). Com `||` o zero conferido
+                     pelo contador viraria `null`, a tela diria "falta o estadual" e mandaria
+                     redigitar o que já está gravado. */
+                  pTotTribFed: selectedCompany?.legacyCompany?.pTotTribFed ?? null,
+                  pTotTribEst: selectedCompany?.legacyCompany?.pTotTribEst ?? null,
+                  pTotTribMun: selectedCompany?.legacyCompany?.pTotTribMun ?? null,
                 }}
               />
             </Suspense>

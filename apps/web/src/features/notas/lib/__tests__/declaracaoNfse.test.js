@@ -58,19 +58,49 @@ describe("o regime decide o opSimpNac — e o que não resolve RECUSA", () => {
     expect(r.exigeTotTribNaoSimples).toBe(true);
   });
 
-  // ⚠ E o não optante ainda NÃO emite: o servidor exige os percentuais da Lei 12.741/2012 e a
-  // estrutura desse grupo no XML não foi confirmada. A tela diz isso antes do clique.
-  it("não optante bloqueia a emissão, com o motivo nomeado", () => {
+  // ⚠ OS DOIS GRUPOS SÃO EXCLUDENTES, e é isso que impede a tela de pedir o campo errado: o
+  // `pTotTribSN` sai do extrato do PGDAS-D e é do OPTANTE; a carga aproximada é do NÃO optante e
+  // vai impressa ao tomador. Nenhuma empresa RESOLVIDA declara os dois, e nenhuma declara nenhum.
+  it.each(["SIMPLES", "SIMPLES_NACIONAL", "LUCRO_PRESUMIDO", "LUCRO_REAL"])(
+    "%s exige EXATAMENTE UM dos dois grupos de tributos",
+    (valor) => {
+      const r = regimeDeclaradoNaNota(valor);
+      expect(r.exigePTotTribSN).toBe(!r.exigeTotTribNaoSimples);
+    },
+  );
+
+  // ⚠⚠ A TRAVA DO NÃO OPTANTE SAIU INTEIRA (18/08/2026) — e este caso existe para que ela não
+  // volte por descuido. Enquanto ela existia, o motivo dizia que *"a estrutura desse grupo no XML
+  // ainda não foi confirmada"*; ela FOI (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`,
+  // `opSimpNac=1`), o backend passou a montar `totTrib/pTotTrib` a partir do cadastro da empresa, e
+  // manter a frase no ar afirmaria ao contador algo que deixou de ser verdade.
+  //
+  // O que ainda pode impedir a emissão do não optante é a CARGA TRIBUTÁRIA não configurada — e essa
+  // é pendência de CADASTRO (`lib/nfse/cadastroEmissaoNfse.js`), não do regime. Se ela virasse
+  // bloqueio aqui, a empresa com os três percentuais preenchidos continuaria travada.
+  it.each(["LUCRO_PRESUMIDO", "LUCRO_REAL"])("%s NÃO é mais bloqueado pelo regime", (valor) => {
+    const r = regimeDeclaradoNaNota(valor);
+    expect(r.bloqueiaEmissao).toBe(false);
+    expect(r.motivoDoBloqueio).toBeNull();
+    expect(r.aviso).toBeNull();
+    expect(r.motivoCurto).toBeNull();
+  });
+
+  // ⚠ E o motivo não pode sobreviver escondido num campo qualquer da resposta: o "filtro fantasma"
+  // deste projeto é exatamente isso — o texto some da tela e continua vivo numa lista.
+  it("nenhum campo da resposta do não optante carrega o texto da trava antiga", () => {
     const r = regimeDeclaradoNaNota("LUCRO_PRESUMIDO");
-    expect(r.bloqueiaEmissao).toBe(true);
-    expect(r.motivoDoBloqueio).toContain("não está liberada");
-    expect(r.motivoDoBloqueio).toContain("12.741");
+    const textos = JSON.stringify(r);
+    expect(textos).not.toMatch(/não está liberada/);
+    expect(textos).not.toMatch(/ainda não foi confirmada/);
   });
 
   // ⚠ Duas versões do mesmo motivo: a longa explica, a curta cabe no `title` do botão e na lista
   // de pendências. Sem a curta, o mesmo parágrafo aparecia duas vezes na mesma tela.
   it("todo bloqueio tem motivo CURTO além do longo", () => {
-    for (const valor of [null, "MEI", "REGIME_NOVO", "LUCRO_PRESUMIDO"]) {
+    // ⚠ `LUCRO_PRESUMIDO` SAIU desta lista junto com a trava. Os que sobraram são os INDEFINIDOS —
+    // regime que o servidor não sabe declarar, e aí a emissão para de verdade.
+    for (const valor of [null, "MEI", "REGIME_NOVO"]) {
       const r = regimeDeclaradoNaNota(valor);
       expect(r.bloqueiaEmissao).toBe(true);
       expect(r.motivoCurto).toBeTruthy();

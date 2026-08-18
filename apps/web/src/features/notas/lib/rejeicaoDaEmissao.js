@@ -100,6 +100,24 @@ const CONHECIDAS = {
   },
 
   // ── Cadastro da EMPRESA — não se resolve nesta tela ──────────────────────
+  // ⚠ A CARGA TRIBUTÁRIA APROXIMADA do NÃO OPTANTE. No real a `correcao` do servidor chega junto e
+  // VENCE este texto (ela nomeia os percentuais que faltam); esta entrada existe para o mock, que
+  // lança só o código — sem ela, o caminho offline do Lucro Presumido cairia em "a tela não conhece
+  // esta recusa". O lugar é o MESMO que a `correcao` do servidor nomeia.
+  missing_tot_trib_nao_simples: {
+    oQueFazer:
+      "A empresa não é optante do Simples: a nota declara a carga tributária aproximada (Lei "
+      + "12.741/2012), e os TRÊS percentuais são exigidos, inclusive quando algum é 0,00. Cadastre-os "
+      + "em Editar cadastro → Emissão de NFS-e → Carga tributária aproximada.",
+    ondeSeResolve: "no cadastro da empresa",
+  },
+  invalid_tot_trib_nao_simples: {
+    oQueFazer:
+      "Um dos percentuais da carga tributária aproximada está fora de 0 a 100 — é um PERCENTUAL, "
+      + "não o valor dos tributos em reais. Corrija em Editar cadastro → Emissão de NFS-e → Carga "
+      + "tributária aproximada.",
+    ondeSeResolve: "no cadastro da empresa",
+  },
   company_missing_fields: {
     oQueFazer:
       "Faltam campos no cadastro da empresa. Preencha em Editar cadastro → Inscrições e → Emissão "

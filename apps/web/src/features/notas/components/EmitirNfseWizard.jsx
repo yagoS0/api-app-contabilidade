@@ -38,9 +38,14 @@
 // A tela não tem regra fiscal própria: ela espelha `application/nfse/dpsCodigos.js` para que o
 // contador veja o desfecho antes de gastar uma emissão.
 //   • regime não mapeado  → `NFSE_REGIME_INDEFINIDO`
-//   • não optante         → `MISSING_TOT_TRIB_NAO_SIMPLES` (grupo de XML ainda não confirmado)
+//   • não optante sem a carga tributária aproximada configurada → `MISSING_TOT_TRIB_NAO_SIMPLES`
 //   • ISS retido sem alíquota → `NFSE_ISS_RETIDO_SEM_ALIQUOTA`
 //   • sem município emissor   → `NFSE_MUNICIPIO_NAO_CONFIGURADO`
+//
+// ⚠ O NÃO OPTANTE EMITE (18/08/2026). A trava de tela que o impedia (`MOTIVO_NAO_OPTANTE_BLOQUEADO`)
+// saiu inteira: o backend já monta o grupo `totTrib/pTotTrib` a partir do cadastro da empresa. O que
+// pode faltar agora é DADO — os três percentuais —, e isso aparece como impedimento da EMPRESA, ao
+// lado dos de `buildMissingFields`, no passo 1.
 //
 // ⚠ E QUANDO O SERVIDOR RECUSA MESMO ASSIM, A TELA DIZ O QUE FAZER E LEVA AO CAMPO.
 // A rota já respondia `{ camada, codigo, message, correcao, numeroReutilizavel }` e o assistente
@@ -90,7 +95,12 @@ import {
   impedimentoDeEmissao,
   municipioPorCodigo,
 } from "../../../lib/municipios/municipioIbge";
-import { faltasParaEmitir } from "../../../lib/nfse/cadastroEmissaoNfse";
+import {
+  faltasParaEmitir,
+  faltasDaCargaTributaria,
+  ONDE_CARGA_TRIBUTARIA,
+  PORQUE_OS_TRES,
+} from "../../../lib/nfse/cadastroEmissaoNfse";
 import { ServicoNacionalDaNota } from "./ServicoNacionalDaNota";
 import { PainelDaNota } from "./PainelDaNota";
 import { CampoComBusca } from "./CampoComBusca";
@@ -450,6 +460,24 @@ export function EmitirNfseWizard({
   // mesma ordem. Vazio = nada falta. ⚠ Sem `cadastroEmissao` a lista sai vazia de propósito: quem
   // não passou a prop não sabe nada sobre o cadastro, e afirmar "falta tudo" seria pior que calar.
   const faltas = useMemo(() => (cadastroEmissao ? faltasParaEmitir(cadastroEmissao) : []), [cadastroEmissao]);
+  // ⚠ A CARGA TRIBUTÁRIA APROXIMADA — o outro impedimento da EMPRESA, e só do NÃO OPTANTE.
+  //
+  // O backend recusa a emissão do não optante sem os TRÊS percentuais
+  // (`MISSING_TOT_TRIB_NAO_SIMPLES`, com `err.faltando` nomeando quais). Aqui a mesma exigência é
+  // espelhada por `faltasDaCargaTributaria` e mostrada no passo 1 — a alternativa é o contador
+  // preencher a nota inteira para ouvir "não" no clique.
+  //
+  // ⚠ `regime.exigeTotTribNaoSimples` GUARDA A PORTA NOS DOIS SENTIDOS: a empresa do Simples não vê
+  // estes campos (eles não vão ao XML dela; ela declara `pTotTribSN`), e o regime INDEFINIDO também
+  // não os cobra — ali já não se sabe nem qual dos dois grupos a nota vai levar, e a emissão já está
+  // bloqueada pelo regime, com o seu próprio motivo.
+  //
+  // ⚠ Sem `cadastroEmissao` a lista sai vazia, pelo mesmo motivo de `faltas`: prop ausente quer
+  // dizer "esta tela não recebeu o cadastro", não "o cadastro está vazio".
+  const faltasDaCarga = useMemo(
+    () => (cadastroEmissao && regime.exigeTotTribNaoSimples ? faltasDaCargaTributaria(cadastroEmissao) : []),
+    [cadastroEmissao, regime.exigeTotTribNaoSimples],
+  );
   const leituraPTot = useMemo(
     () => lerPTotTribSN(pTotTribSN, { exigido: regime.exigePTotTribSN }),
     [pTotTribSN, regime.exigePTotTribSN],
@@ -483,6 +511,9 @@ export function EmitirNfseWizard({
       // Os campos de `buildMissingFields`, na mesma posição e pelo mesmo motivo do município: são
       // impedimentos da EMPRESA, que não se resolvem nesta tela.
       ...faltas.map((f) => ({ texto: f.motivoCurto, campo: null, grave: true })),
+      // Mesma posição e mesmo motivo: é a EMPRESA que não está configurada, e isso não se resolve
+      // nesta tela. Uma linha POR PERCENTUAL — "falta a carga tributária" mandaria conferir os três.
+      ...faltasDaCarga.map((f) => ({ texto: f.motivoCurto, campo: null, grave: true })),
       !docValido && {
         texto: "informe um CNPJ (14 dígitos) ou CPF (11 dígitos) válido",
         campo: CAMPO.DOC,
@@ -514,7 +545,7 @@ export function EmitirNfseWizard({
       // CURTA — a explicação inteira está no bloco do regime, na mesma tela.
       regime.bloqueiaEmissao && { texto: regime.motivoCurto, campo: null, grave: true },
     ].filter(Boolean);
-  }, [municipio, faltas, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial,
+  }, [municipio, faltas, faltasDaCarga, docValido, docLimpo, tomador.nome, emailValido, enderecoParcial,
     servico.descricao, servico.valorServicos, valor, servico.issRetido, servico.aliquota,
     leituraPTot.problema, leituraPTot.preenchido, regime]);
 
@@ -691,7 +722,7 @@ export function EmitirNfseWizard({
         {/* ⚠ IMPEDIMENTO DA EMPRESA — fica ACIMA da trilha, visível em todos os passos, porque não
             é um campo que falta: é a empresa que ainda não emite. A lista de problemas repete a
             versão curta; aqui vai o motivo inteiro e onde se resolve. */}
-        {(municipio.bloqueia || faltas.length > 0) && (
+        {(municipio.bloqueia || faltas.length > 0 || faltasDaCarga.length > 0) && (
           <div style={{
             marginBottom: 14, padding: 10, borderRadius: 6, fontSize: "0.82rem",
             background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
@@ -713,6 +744,22 @@ export function EmitirNfseWizard({
                   </li>
                 ))}
               </ul>
+            )}
+            {/* ⚠ A CARGA APROXIMADA VEM EM UM PARÁGRAFO SÓ, não em três itens com a mesma
+                explicação repetida: o que muda de um para o outro é só o NOME da parcela, e o
+                motivo (os três são exigidos juntos, inclusive quando algum é 0,00) é o mesmo.
+                Os nomes aparecem — é o que a recusa do servidor devolve em `faltando`. */}
+            {faltasDaCarga.length > 0 && (
+              <div style={{ marginTop: (municipio.bloqueia || faltas.length > 0) ? 8 : 0 }}>
+                <strong>
+                  Carga tributária aproximada — falta{" "}
+                  {faltasDaCarga.map((f) => f.rotulo.toLowerCase()).join(", ").replace(/, ([^,]*)$/, " e $1")}.
+                </strong>{" "}
+                Esta empresa não é optante do Simples: a nota declara os percentuais de tributos
+                aproximados da Lei 12.741/2012, e o servidor recusa a emissão sem eles.{" "}
+                {PORQUE_OS_TRES}{" "}
+                <span style={{ opacity: 0.9 }}>Preencha em {ONDE_CARGA_TRIBUTARIA}.</span>
+              </div>
             )}
           </div>
         )}

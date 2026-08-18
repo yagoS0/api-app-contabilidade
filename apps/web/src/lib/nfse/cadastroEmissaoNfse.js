@@ -225,6 +225,11 @@ export function lerPercentualCarga(entrada) {
   return { preenchido: true, valor: n, problema: null };
 }
 
+// ONDE SE PREENCHE. ⚠ É o MESMO lugar que a `correcao` do servidor nomeia na recusa
+// `MISSING_TOT_TRIB_NAO_SIMPLES` ("Editar cadastro → Emissão de NFS-e → Carga tributária
+// aproximada"). Duas grafias do mesmo caminho mandariam o contador procurar duas telas.
+export const ONDE_CARGA_TRIBUTARIA = "Editar cadastro → Emissão de NFS-e → Carga tributária aproximada";
+
 /**
  * Quais dos três percentuais faltam.
  *
@@ -233,10 +238,20 @@ export function lerPercentualCarga(entrada) {
  *
  * ⚠ Campo com valor INVÁLIDO não conta como faltando: ele é recusado ao salvar, com o motivo, e
  * não chega gravado. Mesma disciplina de `faltasParaEmitir`.
+ *
+ * ⚠ Cada falta viaja com `onde` e `motivoCurto`, na MESMA forma de `faltasParaEmitir`: o
+ * assistente de emissão mostra as duas listas lado a lado no passo 1, e uma delas dizendo só o
+ * nome do campo mandaria o contador procurar onde a outra já diz.
  */
 export function faltasDaCargaTributaria(valores) {
   const dados = valores || {};
-  return CAMPOS_CARGA_TRIBUTARIA.filter((c) => !lerPercentualCarga(dados[c.campo]).preenchido);
+  return CAMPOS_CARGA_TRIBUTARIA
+    .filter((c) => !lerPercentualCarga(dados[c.campo]).preenchido)
+    .map((c) => ({
+      ...c,
+      onde: ONDE_CARGA_TRIBUTARIA,
+      motivoCurto: `cadastre a parcela ${c.curto} da carga tributária aproximada (${ONDE_CARGA_TRIBUTARIA})`,
+    }));
 }
 
 // ── O QUE FALTA PARA A EMPRESA EMITIR ───────────────────────────────────────────────────────

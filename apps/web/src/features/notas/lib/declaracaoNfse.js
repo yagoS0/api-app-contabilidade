@@ -58,17 +58,25 @@ export const FONTE_P_TOT_TRIB_SN =
   + "não existe quando a nota é emitida, então não há de onde copiá-lo com segurança — confira no "
   + "extrato ou com quem responde pela apuração.";
 
-// ⚠ EMPRESA NÃO OPTANTE AINDA NÃO EMITE POR AQUI, e o motivo é do servidor, não da tela.
-// Quem não é do Simples declara a carga tributária aproximada (Lei 12.741/2012) em
-// `totTrib.pTotTribFed/Est/Mun`. O backend RECUSA sem eles (`MISSING_TOT_TRIB_NAO_SIMPLES`) em vez
-// de emitir `0,00`, que afirmaria carga zero — e o próprio código registra que a estrutura desse
-// grupo **ainda não foi confirmada com o dono**. Coletar os três campos aqui, antes dessa
-// confirmação, seria montar um grupo de XML por suposição.
-export const MOTIVO_NAO_OPTANTE_BLOQUEADO =
-  "A emissão para empresa NÃO optante do Simples ainda não está liberada: o Padrão Nacional exige "
-  + "os percentuais de tributos aproximados (federal, estadual e municipal, da Lei 12.741/2012) e a "
-  + "estrutura desse grupo no XML ainda não foi confirmada. O servidor recusaria a nota. Decisão do "
-  + "dono — não emita por outro caminho enquanto isso.";
+// ⚠ A EMPRESA NÃO OPTANTE EMITE — e o que ela precisa NÃO é o `pTotTribSN`.
+//
+// Aqui morava `MOTIVO_NAO_OPTANTE_BLOQUEADO`, uma trava de tela que impedia o não optante de
+// chegar à emissão porque *"a estrutura desse grupo no XML ainda não foi confirmada"*. **Ela foi
+// confirmada** (18/08/2026, commit `11187501`): `docs/leiaute-nfse/nfse-nacional-substituicao.xml`
+// é uma NFS-e real com `opSimpNac=1` e traz `totTrib > pTotTrib` com os três filhos, nesta ordem.
+// O backend passou a resolver os percentuais campo a campo (payload → cadastro da empresa) e a
+// recusar NOMEANDO o que falta (`MISSING_TOT_TRIB_NAO_SIMPLES`, com `err.faltando`).
+//
+// A trava saiu INTEIRA — constante, uso e testes. Meia remoção seria pior que a trava: o motivo
+// some da tela e continua vivo numa lista, e ninguém entende por que a empresa não emite.
+//
+// ⚠ O QUE SOBROU NO LUGAR NÃO É NADA: é a pendência de CADASTRO. Quem não é do Simples só emite
+// com os três percentuais configurados, e quem espelha essa exigência é
+// `faltasDaCargaTributaria` (`lib/nfse/cadastroEmissaoNfse.js`) — o assistente a mostra no passo 1,
+// junto dos outros impedimentos da EMPRESA, em vez de deixar a descoberta para a recusa.
+//
+// ⚠ E O CAMINHO NÃO SE INVERTE: o `pTotTribSN` continua sendo do OPTANTE (sai do extrato do
+// PGDAS-D) e a carga aproximada continua sendo do NÃO optante. Nenhuma empresa vê os dois.
 
 const soDigitos = (v) => String(v || "").replace(/\D/g, "");
 
@@ -153,10 +161,12 @@ export function regimeDeclaradoNaNota(regimeCadastrado) {
   }
 
   const naoOptante = !entrada.ehSimples;
+  // ⚠ REGIME RESOLVIDO NÃO BLOQUEIA MAIS NADA — nem o Simples, nem o não optante. O que ainda pode
+  // impedir a emissão do não optante é a CARGA TRIBUTÁRIA não configurada, e isso é pendência do
+  // cadastro da empresa (`faltasDaCargaTributaria`), não do regime. Deixar o bloqueio aqui faria
+  // uma empresa com os três percentuais preenchidos continuar travada por causa do regime.
   return {
-    motivoCurto: naoOptante
-      ? "empresa não optante do Simples: a emissão por aqui ainda não está liberada (falta confirmar o grupo de tributos aproximados no XML)"
-      : null,
+    motivoCurto: null,
     resolucao: RESOLUCAO.RESOLVIDO,
     opSimpNac: entrada.opSimpNac,
     rotuloDeclarado: OP_SIMP_NAC[entrada.opSimpNac],
@@ -164,10 +174,13 @@ export function regimeDeclaradoNaNota(regimeCadastrado) {
     rotuloCadastrado,
     ehSimples: entrada.ehSimples,
     exigePTotTribSN: entrada.ehSimples,
+    // ⚠ OS DOIS LADOS SÃO EXCLUDENTES, e é o que impede a tela de pedir o campo errado: o optante
+    // declara `pTotTribSN` e NÃO vê a carga aproximada; o não optante declara a carga aproximada e
+    // NÃO vê o `pTotTribSN`. Nenhum dos dois grupos vai ao XML do outro.
     exigeTotTribNaoSimples: naoOptante,
-    bloqueiaEmissao: naoOptante,
-    motivoDoBloqueio: naoOptante ? MOTIVO_NAO_OPTANTE_BLOQUEADO : null,
-    aviso: naoOptante ? MOTIVO_NAO_OPTANTE_BLOQUEADO : null,
+    bloqueiaEmissao: false,
+    motivoDoBloqueio: null,
+    aviso: null,
   };
 }
 

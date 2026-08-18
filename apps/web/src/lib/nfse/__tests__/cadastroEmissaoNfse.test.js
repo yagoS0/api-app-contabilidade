@@ -7,6 +7,8 @@
 //      lista de serviços inventada, nada de default, nada derivado do CNAE;
 //   3. o corte dos últimos 3 dígitos do código municipal é ANUNCIADO, não silencioso.
 
+import fs from "node:fs";
+import path from "node:path";
 import {
   lerCodigoServicoNacional,
   lerCodigoServicoMunicipal,
@@ -17,6 +19,7 @@ import {
   faltasDaCargaTributaria,
   CAMPOS_EXIGIDOS_PARA_EMITIR,
   CAMPOS_CARGA_TRIBUTARIA,
+  ONDE_CARGA_TRIBUTARIA,
   SERIE_MIN,
   SERIE_MAX,
 } from "../cadastroEmissaoNfse";
@@ -238,5 +241,61 @@ describe("faltasDaCargaTributaria — o espelho do portão que exige os TRÊS", 
       "pTotTribEst",
       "pTotTribMun",
     ]);
+  });
+
+  // ⚠ Mesma disciplina de `faltasParaEmitir`: o nome do campo sozinho manda o contador procurar.
+  it("cada falta viaja com o LUGAR e uma versão curta que o repete", () => {
+    for (const f of faltasDaCargaTributaria({})) {
+      expect(f.rotulo).toBeTruthy();
+      expect(f.onde).toBe(ONDE_CARGA_TRIBUTARIA);
+      expect(f.motivoCurto).toContain(f.onde);
+      expect(f.motivoCurto).toContain(f.curto);
+    }
+  });
+});
+
+// ⚠⚠ A AMARRA COM O BACKEND — e ela LÊ O ARQUIVO DO SERVIDOR, não uma cópia.
+//
+// `faltasDaCargaTributaria` é o espelho do portão de `buildDpsXml`
+// (`api/application/nfse/NfseService.js`), que recusa a emissão do não optante com
+// `MISSING_TOT_TRIB_NAO_SIMPLES` e devolve em `err.faltando` os nomes do que falta. Um espelho
+// escrito à mão nos dois lados diverge no primeiro conserto, e aí a tela promete um desfecho e o
+// servidor entrega outro — que é exatamente o defeito que a tela existe para não ter.
+//
+// Front e back não compartilham código (workspaces separados, sem import cruzado), então a amarra
+// possível é a varredura do FONTE. Mesmo formato de `app/hooks/__tests__/mensagensSemFila.test.js`.
+describe("⚠ o espelho da carga tributária está amarrado ao portão do backend", () => {
+  const NFSE_SERVICE = [
+    path.join(process.cwd(), "..", "api", "src", "application", "nfse", "NfseService.js"),
+    path.join(process.cwd(), "apps", "api", "src", "application", "nfse", "NfseService.js"),
+  ].find((p) => fs.existsSync(p));
+
+  test("o `NfseService.js` foi encontrado — senão esta varredura seria um teste vazio", () => {
+    expect(NFSE_SERVICE).toBeTruthy();
+  });
+
+  const fonte = fs.readFileSync(NFSE_SERVICE, "utf8");
+  // O bloco `const CAMPOS_TOT_TRIB = [ ... ];` do portão. É ele que decide o que a recusa nomeia.
+  const inicio = fonte.indexOf("const CAMPOS_TOT_TRIB = [");
+  const bloco = fonte.slice(inicio, fonte.indexOf("];", inicio));
+
+  it("o bloco do portão existe no backend — se ele foi renomeado, esta amarra precisa acompanhar", () => {
+    expect(inicio).toBeGreaterThan(-1);
+  });
+
+  it("⚠ os MESMOS três campos, na MESMA ordem que o XML leva", () => {
+    // ⚠ O nome INTEIRO, entre aspas, não um `match` frouxo: `/pTotTribMun/` casaria dentro de
+    // `pTotTribMun2` e a amarra passaria verde com o backend renomeado. Medido — foi o que
+    // aconteceu na primeira escrita deste caso.
+    const doBackend = [...bloco.matchAll(/\["([A-Za-z0-9_]+)"\s*,/g)].map((m) => m[1]);
+    expect(doBackend).toEqual(CAMPOS_CARGA_TRIBUTARIA.map((c) => c.campo));
+  });
+
+  it("⚠ o portão exige os TRÊS — nenhum `.some()` sobrou nele", () => {
+    // Enquanto o portão usava `.some()`, UM percentual liberava a emissão e o XML escrevia `?? 0`
+    // nos outros dois: a nota AFIRMAVA carga zero ao tomador. Se o `.some()` voltasse, a tela
+    // continuaria exigindo os três e passaria a ser MAIS restritiva que o servidor.
+    const portao = fonte.slice(inicio, fonte.indexOf("MISSING_TOT_TRIB_NAO_SIMPLES", inicio));
+    expect(portao).not.toMatch(/\.some\(/);
   });
 });

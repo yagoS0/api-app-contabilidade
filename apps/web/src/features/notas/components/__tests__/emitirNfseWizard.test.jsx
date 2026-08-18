@@ -41,6 +41,12 @@ const CADASTRO_COMPLETO = {
   rpsSerie: "00001",
 };
 
+// ⚠ A CARGA TRIBUTÁRIA APROXIMADA da empresa NÃO OPTANTE (Lei 12.741/2012). Os números são os da
+// NFS-e real versionada em `docs/leiaute-nfse/nfse-nacional-substituicao.xml` (`opSimpNac=1`):
+// 11,33 federal e **0,00** nos outros dois — zero DECLARADO é legítimo, e é justamente por isso que
+// ele não pode ser confundido com ausência.
+const CARGA_COMPLETA = { pTotTribFed: "11.33", pTotTribEst: "0", pTotTribMun: "0" };
+
 // ⚠ NENHUM TESTE PODE TOCAR A REDE. O assistente consulta o CNPJ do tomador ao completar os 14
 // dígitos, e `ateOsValores` digita um CNPJ — então o `fetch` da consulta é SEMPRE injetado. Aqui
 // ele é um dublê que nunca resolve: estes testes são sobre a emissão, não sobre a consulta (essa
@@ -135,20 +141,39 @@ describe("as recusas do servidor aparecem ANTES do clique", () => {
     expect(within(painel()).getByText(/Simples Nacional — ME\/EPP \(opSimpNac 3\)/)).toBeInTheDocument();
   });
 
-  // ⚠ A empresa do Lucro Presumido saía declarada como Simples ME/EPP. Hoje ela declara
-  // `opSimpNac 1` — e a emissão para, porque o grupo `totTrib` do não optante não está confirmado.
-  it("Lucro Presumido declara opSimpNac 1 e a emissão fica bloqueada com o motivo", () => {
-    abrir({ regime: "LUCRO_PRESUMIDO" });
+  // ⚠⚠ A EMPRESA DO LUCRO PRESUMIDO EMITE (18/08/2026). Ela saía declarada como Simples ME/EPP;
+  // depois passou a declarar `opSimpNac 1` e a ser BLOQUEADA pela tela, porque o grupo `totTrib` do
+  // não optante "ainda não estava confirmado". Está: a NFS-e real versionada
+  // (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`) o traz inteiro, o backend o monta a partir
+  // do cadastro da empresa, e a trava saiu.
+  it("Lucro Presumido declara opSimpNac 1 e, com a carga configurada, chega à conferência", () => {
+    abrir({ regime: "LUCRO_PRESUMIDO", cadastroEmissao: { ...CADASTRO_COMPLETO, ...CARGA_COMPLETA } });
     ateOsValores();
     expect(noFormulario(/Não optante pelo Simples Nacional \(opSimpNac 1\)/)).toHaveLength(1);
     expect(screen.getByText("Presumido")).toBeInTheDocument();
-    // A explicação inteira aparece UMA vez (no bloco do regime); a lista de pendências e o
-    // `title` do botão levam a versão curta.
-    expect(screen.getAllByText(/estrutura desse grupo no XML ainda não foi confirmada/)).toHaveLength(1);
-    expect(screen.getByText(/ainda não está liberada \(falta confirmar/)).toBeInTheDocument();
-    // O percentual do Simples não é pedido a quem não é do Simples.
+    // ⚠ O texto da trava não sobrou em canto nenhum da tela — nem no bloco do regime, nem na lista
+    // de pendências, nem no `title` do botão. Meia remoção é o defeito que este projeto chama de
+    // "filtro fantasma".
+    expect(screen.queryByText(/ainda não está liberada/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/estrutura desse grupo no XML/)).not.toBeInTheDocument();
+    // O percentual do Simples continua NÃO sendo pedido a quem não é do Simples — ele sai do
+    // extrato do PGDAS-D, que a empresa do Presumido não tem.
     expect(screen.queryByLabelText(/Total de tributos do Simples Nacional/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+
+    const botao = screen.getByRole("button", { name: /Continuar/ });
+    expect(botao).toBeEnabled();
+    expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
+  });
+
+  // ⚠ E A EMPRESA DO SIMPLES NÃO PASSA A VER OS TRÊS CAMPOS DE CARGA. Eles não vão ao XML dela (ela
+  // declara `pTotTribSN`), e cobrá-los seria trocar a trava antiga por uma pendência impossível.
+  it("empresa do Simples não vê nada sobre carga tributária aproximada", () => {
+    abrir({ regime: "SIMPLES", cadastroEmissao: CADASTRO_COMPLETO });
+    ateOsValores();
+    digitar("Total de tributos do Simples Nacional", "6");
+    expect(screen.queryByText(/Carga tributária aproximada/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/12\.741/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
   });
 
   it("empresa sem regime cadastrado não é dada como Simples, e não avança", () => {
@@ -333,5 +358,84 @@ describe("empresa sem a configuração de emissão não chega ao botão Emitir",
     // Tratar as duas como a mesma coisa bloquearia a emissão de empresa configurada.
     abrir({ cadastroEmissao: null });
     expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
+  });
+});
+
+// ⚠⚠ O ESPELHO DA RECUSA `MISSING_TOT_TRIB_NAO_SIMPLES`, NO PASSO 1.
+//
+// `buildDpsXml` (`api/application/nfse/NfseService.js`) recusa a emissão do NÃO OPTANTE sem os TRÊS
+// percentuais da carga aproximada, e a recusa vem NOMEANDO quais faltam (`err.faltando`). Sem este
+// espelho, destravar o Lucro Presumido só trocaria o lugar do "não": o contador preencheria a nota
+// inteira, clicaria em Emitir e ouviria a recusa do servidor — pior do que a trava honesta de antes.
+//
+// A regra em si é de `lib/nfse/cadastroEmissaoNfse.js` (`faltasDaCargaTributaria`, com teste
+// próprio). O que se tranca aqui é a LIGAÇÃO: que o assistente lê aquela lista, do cadastro que
+// recebe por prop, e a mostra ANTES.
+describe("empresa não optante sem a carga tributária não chega ao botão Emitir", () => {
+  it("bloqueia no passo 1 NOMEANDO os percentuais que faltam e onde preenchê-los", () => {
+    abrir({ regime: "LUCRO_PRESUMIDO", cadastroEmissao: CADASTRO_COMPLETO });
+
+    const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
+    expect(bloco).toHaveTextContent("Carga tributária aproximada");
+    // Os três nomes, como a recusa do servidor os devolve — "falta a carga tributária" mandaria o
+    // contador conferir os três.
+    expect(bloco).toHaveTextContent("federal, estadual e municipal (iss)");
+    expect(bloco).toHaveTextContent("Editar cadastro → Emissão de NFS-e → Carga tributária aproximada");
+    // E o motivo do servidor, não um texto inventado pela tela: os três são exigidos JUNTOS.
+    expect(bloco).toHaveTextContent("12.741");
+
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  });
+
+  it("⚠⚠ só o municipal configurado: faltam federal e estadual — era assim que a nota saía com 0,00", () => {
+    // O defeito que o commit `11187501` consertou no backend: o portão usava `.some()`, um
+    // percentual liberava a emissão e o XML escrevia `?? 0` nos outros dois — a nota AFIRMAVA carga
+    // federal e estadual de 0,00% ao tomador.
+    abrir({
+      regime: "LUCRO_PRESUMIDO",
+      cadastroEmissao: { ...CADASTRO_COMPLETO, pTotTribMun: "2.5" },
+    });
+
+    const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
+    expect(bloco).toHaveTextContent("federal e estadual");
+    expect(bloco).not.toHaveTextContent("municipal (iss).");
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
+  });
+
+  it("⚠ ZERO CONFIGURADO NÃO É AUSÊNCIA — a nota real declara 0,00 no estadual e no municipal", () => {
+    abrir({
+      regime: "LUCRO_PRESUMIDO",
+      // Como o valor chega da coluna `Decimal`: número, e o zero é um zero de verdade.
+      cadastroEmissao: { ...CADASTRO_COMPLETO, pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 0 },
+    });
+    expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
+  });
+
+  it("a pendência da carga aparece na LISTA de problemas, uma linha por percentual", () => {
+    abrir({ regime: "LUCRO_PRESUMIDO", cadastroEmissao: CADASTRO_COMPLETO });
+    ateOsValores();
+    // A versão curta, do mesmo jeito que os campos de `buildMissingFields` — e ela leva o lugar
+    // junto, senão o contador lê o nome do campo e sai procurando.
+    expect(screen.getByText(/cadastre a parcela federal da carga tributária aproximada/)).toBeInTheDocument();
+    expect(screen.getByText(/cadastre a parcela estadual da carga tributária aproximada/)).toBeInTheDocument();
+    expect(screen.getByText(/cadastre a parcela municipal da carga tributária aproximada/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Continuar/ })).toHaveAttribute(
+      "title",
+      expect.stringContaining("carga tributária aproximada"),
+    );
+  });
+
+  it("⚠ sem a prop o assistente não afirma que a carga falta — quem não sabe, cala", () => {
+    abrir({ regime: "LUCRO_PRESUMIDO", cadastroEmissao: null });
+    expect(screen.queryByText(/Carga tributária aproximada/)).not.toBeInTheDocument();
+  });
+
+  it("⚠ regime INDEFINIDO não cobra a carga: ali não se sabe nem qual grupo a nota leva", () => {
+    // Sem regime cadastrado a emissão já está bloqueada, com o motivo do regime. Acrescentar a
+    // carga aproximada seria afirmar que a empresa é não optante — que é justamente o que
+    // `regimeDeclaradoNaNota` se recusa a afirmar.
+    abrir({ regime: null, cadastroEmissao: CADASTRO_COMPLETO });
+    expect(screen.queryByText(/Carga tributária aproximada/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();
   });
 });
