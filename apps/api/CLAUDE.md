@@ -426,9 +426,44 @@ emissão** — e o caminho está ligado e apontado para o **sistema nacional de 
 - ⚠ **O estado volta no payload da empresa** (`emissaoCliente: {liberada, liberadaEm, liberadaPor,
   liberadaPorNome}`) — as três colunas entraram nos **três** `select` explícitos de `PortalClient`
   em `routes/firm/index.js`, e o nome é resolvido em uma query (`anexarQuemLiberouEmissao`).
-- **Migration `20260818120000_add_emissao_cliente_liberada` — escrita, NÃO APLICADA.** Aditiva,
-  `DEFAULT false`, **sem backfill** de propósito: nenhum dado no banco prova que o contador quis
-  liberar alguma empresa.
+- **Migration `20260818120000_add_emissao_cliente_liberada`** — aditiva, `DEFAULT false`, **sem
+  backfill** de propósito (nenhum dado no banco prova que o contador quis liberar alguma empresa).
+  **Aplicada no banco LOCAL em 18/08/2026; ainda NÃO em produção.**
+
+#### A porta do cliente — `POST /client/companies/:companyId/nfse` (18/08/2026)
+
+O app do cliente fala tudo por `/client/...`, e a emissão vivia só em `POST /nfse/issue`, **outro
+router, que não sabe distinguir escritório de cliente** — foi essa indistinção que criou o buraco de
+autorização fechado no mesmo dia. Em vez de ensinar aquele router a falar duas línguas, o lado do
+cliente ganhou a própria porta, em `routes/client/index.js`.
+
+⚠ **É FACHADA, e a palavra importa: nenhuma regra de emissão mora nela.** Ela delega — validador
+(`validateNfsePayload`), resolução dos dois ids (**`resolveLegacyCompanyId`**, a mesma de
+`/nfse/issue`), portão (`ensureEmissaoNfseAutorizada`), serviço (`NfseService.issue`) e desfechos.
+Escrever uma segunda resolução, uma segunda validação ou um segundo mapa de resposta é o defeito que
+o desenho existe para impedir: as duas portas discordariam na primeira correção, e a que o cliente
+usa é a que ninguém do escritório testa.
+
+- **Os desfechos saíram de dentro de `routes/nfse.js` para `routes/nfseEmissaoHttp.js`**
+  (`responderResultadoEmissao` / `responderErroEmissao`), consumido pelas DUAS portas. O mapa das
+  três camadas continua o mesmo: `NOSSA` → 400 · `TRANSPORTE` → 502 · `RECEITA` → 422. Aquele
+  arquivo **não valida e não decide nada** — só traduz para HTTP.
+- ⚠ **O PATH VENCE O CORPO**, e o spread vem antes: `{ ...body, companyId: path }`. Invertido, um
+  `companyId` no corpo apontaria a emissão para OUTRA empresa depois de a permissão ter sido
+  conferida nesta — literalmente o furo de multi-tenancy medido na F1 do WhatsApp.
+- `requireClientCompanyAccess()` entra **sem `minRole`**, de propósito: quem responde "este papel
+  emite?" é o portão, com código e mensagem próprios. Um `minRole` aqui devolveria
+  `insufficient_role` genérico, e o cliente não saberia se o problema é o papel dele ou a liberação
+  do contador.
+- **A flag viaja em `GET /client/companies`** como **`emissaoNfseLiberada`** (booleano, `=== true`).
+  Antes disto o app só descobria o portão pela RECUSA, depois de preencher a nota inteira.
+  ⚠ **SÓ A FLAG.** `emissaoClienteLiberadaEm`/`...Por` são registro de **auditoria do contador** —
+  o id e o instante de um usuário do escritório não são dado do cliente. Ampliar aquele `select` é
+  o caminho por onde vazamento entre lados acontece sem ninguém notar; há teste varrendo o JSON.
+  ⚠ E a flag **não é a permissão**: quem decide continua sendo o portão, no servidor, a cada
+  emissão. Ela existe para a tela não oferecer um botão que vai ser recusado.
+- Testes: `routes/client/__tests__/emissaoNfseCliente.test.js` (18) — a matriz do portão medida por
+  **`NfseService.issue` não ter sido chamado**, os três desfechos, o corpo malicioso e a flag.
 
 Os cinco defeitos abaixo foram medidos e corrigidos **antes** dessa primeira emissão.
 
@@ -539,6 +574,30 @@ constante `DPS_VERSAO`, num lugar só, para virar em uma linha.
    deduz do endereço do tomador** (LC 116/2003, art. 3º: `caput` + lista fechada de exceções). Virou
    campo informável; ausente aplica a regra geral **e registra a suposição no log**.
 
+### ⚠ O CPF DO TOMADOR PASSOU A TER DÍGITO VERIFICADOR — pedido do dono, 18/08/2026
+
+Medido antes: **o projeto inteiro não tinha nenhuma validação de DV**. Existiam `normalizeCpf`
+(`validators/clientPayload.js`) e `fmtCpf` (front), as duas só mexendo em pontuação — o tomador
+pessoa física entrava na DPS com qualquer sequência de 11 dígitos. Com o caminho ligado e apontado
+para produção, um dígito trocado vira nota fiscal contra outra pessoa, e o conserto é
+**cancelamento**, não edição.
+
+- Regra pura: **`utils/cpf.js`** (`cpfTemDvValido`), consumida por `validators/nfsePayload.js`.
+- ⚠ **NÃO SE CONSULTA CPF EM LUGAR NENHUM — decisão do dono.** A BrasilAPI é base de **CNPJ**;
+  consulta de CPF é serviço pago e traz LGPD junto (o tomador é terceiro). É validação **local**, e
+  só: nenhuma rede, nenhum cache, nenhuma gravação.
+- ⚠ **A recusa é NOMEADA e DISTINTA de documento ausente**: `tomador_cpf_digito_invalido` ×
+  `tomador_documento_invalido`. Consertos diferentes — "não preenchi o campo" × "digitei errado".
+- ⚠ **Sequências repetidas** (`111.111.111-11` etc.) **passam no módulo 11** e são recusadas à
+  parte: são o preenchimento para o formulário deixar seguir, exatamente o que a validação pega.
+- ⚠ **O CNPJ SEGUE COMO ESTAVA.** Validar o DV dele não foi pedido, e inventá-lo passaria a recusar
+  tomador legítimo com cadastro velho sem que ninguém tivesse decidido isso. Há teste prendendo essa
+  ausência, para que ela não seja "consertada" por conta própria.
+- O que o DV prova: que o número é **bem formado**. Não prova que existe, nem que é da pessoa cujo
+  nome veio no payload.
+- Testes: `utils/__tests__/cpf.test.js` (a aritmética, inclusive o ramo `resto < 2` ⇒ DV 0) +
+  `validators/__tests__/nfsePayload.test.js`.
+
 ### ⚠ `buildMissingFields` exige CINCO campos — e três deles não tinham porta nenhuma
 
 `REQUIRED_COMPANY_FIELDS` = `cnpj` · `inscricaoMunicipal` · `codigoServicoNacional` ·
@@ -587,7 +646,8 @@ defeito do município — configuração que existe no model sem porta.
 
 Tabelas de código com a evidência de cada linha e `verificadoNoLeiaute: false`: **`dpsCodigos.js`**.
 Testes: `nfse/__tests__/` (`nfseNumeracao`, `nfseUltimaNota`, `nfseCertificado`, `dpsCodigos`,
-`desfechoEmissao`, `emissaoDps`) + `validators/__tests__/nfsePayload`. Medir antes da migration:
+`desfechoEmissao`, `emissaoDps`, **`codigoServicoDaNota`**) + `validators/__tests__/nfsePayload` +
+**`utils/__tests__/cpf`** + **`routes/client/__tests__/emissaoNfseCliente`**. Medir antes da migration:
 **`scripts/diag-nfse-numeracao.mjs`** (só leitura, zero chamada externa).
 
 ### ⚠ N CÓDIGOS DE SERVIÇO POR EMPRESA — decisão do dono, 16/08/2026
@@ -625,13 +685,32 @@ bundle inicial).
 - ⚠ **`undefined` ≠ `[]`.** Ausente = "não veio no payload, não mexer"; `[]` = "apague a lista". O
   `tx.company.update` usa spread condicional — sem isso, toda tela que salva a empresa sem este
   bloco (certificado, sócios, ficha) apagaria o cadastro de serviços.
-- ⚠ **A ESCOLHA POR EMISSÃO AINDA NÃO CHEGA AO XML, e isso está DITO na tela.** `buildDpsXml`
-  (`NfseService.js:540`) monta o `cTribNac` a partir de `company.codigoServicoNacional` e de mais
-  nada; não há campo de serviço em `validators/nfsePayload.js`. O assistente **mostra** os
-  pré-cadastrados com a descrição oficial e **diz qual vai** na nota; trocar é uma marcação no
-  cadastro. Ligar a escolha por emissão = o campo no validador + uma linha em `buildDpsXml`.
-  **`NfseService.js` está travado para outra sessão** — por isso a ponte, e não um seletor que
-  parecesse funcionar e emitisse o outro código (erro fiscal silencioso).
+- ✅ **A ESCOLHA POR EMISSÃO CHEGA AO XML DESDE 18/08/2026 — e a trava é o coração dela.**
+  ⚠⚠ **Este item dizia o contrário** ("AINDA NÃO CHEGA AO XML, e isso está DITO na tela"): era uma
+  ponte deliberada enquanto `NfseService.js` estava travado para outra sessão, para não existir
+  seletor que parecesse funcionar e emitisse outro código (erro fiscal SILENCIOSO). A ponte foi
+  fechada; a frase antiga fica aqui porque o **motivo** dela continua valendo para quem mexer.
+  - **Campo:** `servico.codigoServicoNacional` (apelido `cTribNac`) em `validators/nfsePayload.js`.
+    Lá se confere **só a forma** — 6 dígitos, `servico_codigo_nacional_invalido`.
+  - **Trava (a decisão):** **`application/nfse/codigoServicoDaNota.js`**, regra PURA. ⚠ **O CADASTRO
+    É A AUTORIDADE, NUNCA O PAYLOAD**: só vale código que esteja em `Company.codigosServicoNacional`.
+    Fora dela ⇒ recusa nomeada **`NFSE_CODIGO_SERVICO_FORA_DA_LISTA`** (camada `NOSSA`), no espírito
+    do `company_codigo_servico_nacional_fora_da_lista` que o cadastro já aplica ao SALVAR.
+  - ⚠ **A trava mora no PRÉ-VOO de `issue`, não em `buildDpsXml`** — e por dois motivos: a recusa
+    acontece **antes de reservar numeração** (não existe inutilização na NFS-e; número gasto à toa é
+    buraco permanente), e assim **`buildDpsXml` não é alcançado**, ou seja, não há caminho em que um
+    código não cadastrado vire `<cTribNac>`. Há teste sobre as duas coisas.
+  - ⚠ **LISTA VAZIA NÃO É "PODE TUDO"** — e hoje ela está vazia em **33 de 33 empresas**. Sem lista,
+    a autoridade do cadastro é o singular `codigoServicoNacional`: nada escolhido ⇒ sai o singular
+    (**o comportamento de hoje, intacto**); escolhido = singular ⇒ passa; escolhido ≠ singular ⇒
+    **recusa**. Aceitar qualquer código com a lista vazia desligaria a trava na carteira inteira.
+  - ⚠ **Nunca "o primeiro da lista"**, nem aqui nem no cadastro — seria o sistema decidindo qual
+    serviço a empresa declara ao fisco. Sem escolha, quem vale é o singular.
+  - Elemento torto dentro da lista é **ignorado**, não recusa: a coluna não tem CHECK (ver a
+    migration), e derrubar a emissão por causa de uma linha velha pararia quem escolheu certo.
+  - Testes: `nfse/__tests__/codigoServicoDaNota.test.js` (a regra) + `emissaoDps.test.js` (o XML —
+    o código dentro da lista **sai** no `<cTribNac>`; fora dela, `postMock` e
+    `serviceInvoice.create` **não são chamados**).
 - **Migration `20260816120000_add_codigos_servico_nacional` — escrita, NÃO APLICADA.** Aditiva
   (`TEXT[] NOT NULL DEFAULT '{}'`, espelhando `cnaesSecundarios`), com backfill do valor singular
   quando ele já tiver a forma. ⚠ **Sem CHECK, de propósito**: conferir cada elemento de um array
