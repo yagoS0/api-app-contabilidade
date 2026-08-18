@@ -1,0 +1,164 @@
+/* =============================================================================
+   Esqueleto visual do portal do cliente. Reusa o vocabulário do protótipo
+   (chip, table-wrap, card, alerta) para que web e mobile digam a mesma coisa.
+
+   Critério de aceite herdado do protótipo: NADA quebra em 375px.
+   ============================================================================= */
+@import "./tokens.css";
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; min-height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1 { font-size: 1.4rem; margin: 0; }
+h2 { font-size: 1.05rem; margin: 0 0 8px; }
+h3 { font-size: .85rem; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+a { color: var(--primary); }
+
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+
+/* --- Casca ---------------------------------------------------------------- */
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex; align-items: center; gap: var(--gap); flex-wrap: wrap;
+}
+.topbar .brand { font-weight: 700; font-size: 1.05rem; letter-spacing: -.01em; white-space: nowrap; }
+.topbar .empresa { min-width: 0; }
+.topbar .empresa-nome { font-weight: 600; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar .empresa-cnpj { color: var(--muted); font-size: .8rem; }
+.topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* min-width:0 nos itens flex: sem isso o nome longo da empresa empurra a barra
+   e a PAGINA INTEIRA passa a rolar para o lado em 375px. */
+.topbar > * { min-width: 0; }
+
+.nav { display: flex; gap: 4px; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; overflow-x: auto; }
+.nav button {
+  border: 0; background: none; padding: 10px 12px; font: inherit; cursor: pointer;
+  color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.nav button[aria-current="page"] { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+
+main.page { padding: 20px; min-width: 0; display: flex; flex-direction: column; gap: var(--gap); flex: 1; }
+.page-header { display: flex; align-items: center; gap: var(--gap); flex-wrap: wrap; }
+.page-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* --- Cartões -------------------------------------------------------------- */
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--gap); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--gap); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
+.card .rotulo { color: var(--muted); font-size: .82rem; }
+.card .numero { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.card .numero.destaque { color: var(--primary); }
+.card .apoio { color: var(--muted); font-size: .85rem; }
+.muted { color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* --- Botões --------------------------------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 14px; min-height: 38px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text);
+  font: inherit; font-size: .92rem; text-decoration: none; cursor: pointer;
+}
+.btn:hover { background: var(--bg); }
+/* Acao primaria é o accent, nunca verde — verde significa CONCLUIDO. */
+.btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-block { width: 100%; }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+.btn-link { border: 0; background: none; color: var(--primary); padding: 4px 6px; cursor: pointer; font: inherit; text-decoration: underline; }
+
+/* --- Campos --------------------------------------------------------------- */
+input, select, textarea {
+  font: inherit; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 8px 10px; min-height: 38px; width: 100%; max-width: 100%;
+}
+label { display: block; font-size: .88rem; color: var(--muted); margin-bottom: 10px; }
+label > input, label > select { margin-top: 4px; color: var(--text); }
+.filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; align-items: end; }
+
+/* --- Chips (mapa de cores verbatim do protótipo) -------------------------- */
+.chip {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-size: .78rem; font-weight: 600; white-space: nowrap;
+  background: var(--neutral-surface); color: var(--muted);
+}
+.chip[data-status="emitida"]     { background: var(--success-surface); color: var(--success); }
+.chip[data-status="processando"] { background: var(--primary-surface); color: var(--primary); }
+.chip[data-status="rejeitada"]   { background: var(--danger-surface); color: var(--danger); }
+.chip[data-status="cancelada"]   { background: var(--neutral-surface); color: var(--muted); }
+.chip[data-status="rascunho"]    { background: var(--warning-surface); color: var(--warning); }
+.chip[data-status="substituida"] { background: var(--neutral-surface); color: var(--muted); }
+
+/* --- Tabela --------------------------------------------------------------- */
+/* .table-wrap: em 375px a tabela rola DENTRO dela em vez de esticar a página. */
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.table { width: 100%; border-collapse: collapse; font-size: .9rem; min-width: 720px; }
+.table th, .table td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.table thead th { font-size: .78rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); background: var(--bg); }
+.table tbody tr:hover { background: #fafbfc; }
+.table tbody tr:last-child td { border-bottom: 0; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.table .truncar { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); padding: 24px; text-align: center; }
+
+.paginacao { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.paginacao .info { color: var(--muted); font-size: .85rem; }
+
+/* --- Alertas -------------------------------------------------------------- */
+.alerta { border: 1px solid var(--border); border-left-width: 4px; border-radius: var(--radius); background: var(--surface); padding: 12px 14px; font-size: .9rem; }
+.alerta p { margin: 4px 0; }
+.alerta-erro { border-left-color: var(--danger); background: var(--danger-surface); }
+.alerta-erro strong { color: var(--danger); }
+.alerta-aviso { border-left-color: var(--warning); background: var(--warning-surface); }
+.alerta-info { border-left-color: var(--primary); background: var(--primary-surface); }
+
+/* --- Login ---------------------------------------------------------------- */
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.login-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: min(400px, 100%); }
+.login-card h1 { margin-bottom: 4px; }
+.login-card .sub { color: var(--muted); font-size: .9rem; margin: 0 0 var(--gap); }
+
+/* --- Modal (troca de empresa) --------------------------------------------- */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(28,33,40,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.modal { background: var(--surface); border-radius: var(--radius); padding: 20px; width: min(520px, 100%); max-height: 90vh; overflow-y: auto; box-shadow: 0 18px 48px rgba(28,33,40,.25); }
+.modal footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: var(--gap); }
+.lista-empresas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lista-empresas button {
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
+}
+.lista-empresas button:hover { background: var(--bg); }
+.lista-empresas button[aria-current="true"] { border-color: var(--primary); background: var(--primary-surface); }
+.lista-empresas .razao { font-weight: 600; }
+.lista-empresas .meta { color: var(--muted); font-size: .82rem; }
+
+/* =============================================================================
+   Responsivo. Critério de aceite: nada quebra em 375px.
+   ============================================================================= */
+@media (max-width: 560px) {
+  main.page { padding: 12px; }
+  .topbar { padding: 10px 12px; }
+  .nav { padding: 0 6px; }
+  .page-actions { margin-left: 0; width: 100%; }
+  .page-actions .btn { flex: 1 1 auto; }
+  .filters { grid-template-columns: 1fr; }
+  .topbar-actions { margin-left: 0; width: 100%; }
+  .topbar-actions .btn { flex: 1 1 auto; }
+  .card .numero { font-size: 1.35rem; }
+}

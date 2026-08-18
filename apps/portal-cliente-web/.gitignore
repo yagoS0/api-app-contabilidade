@@ -1,0 +1,6 @@
+# O .gitignore da raiz ignora `apps/web/dist/` NOMINALMENTE, não `apps/*/dist/`.
+# Sem este arquivo, o build deste app entraria no commit.
+dist/
+node_modules/
+.env
+.env.local

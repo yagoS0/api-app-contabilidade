@@ -1,0 +1,115 @@
+// Formatação para o cliente final. Espelha `src/format.ts` do app mobile
+// (portal-cliente-mobile) — os dois lados precisam formatar igual.
+//
+// ⚠ DIFERENÇA DELIBERADA em relação ao mobile: lá `brl(null)` devolve "R$ 0,00".
+// Aqui não. Ausência é traço; zero é afirmação. Um "R$ 0,00" no lugar de um
+// dado que a API não mandou é o front inventando um fato fiscal.
+
+export const TRACO = "—"; // em dash
+
+/** Valor monetário. `null`/`undefined`/NaN viram traço; 0 vira "R$ 0,00". */
+export function brl(value) {
+  if (value === null || value === undefined || value === "") return TRACO;
+  const v = Number(value);
+  if (!Number.isFinite(v)) return TRACO;
+  const neg = v < 0;
+  const [intPart, decPart] = Math.abs(v).toFixed(2).split(".");
+  const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${neg ? "-" : ""}R$ ${withThousands},${decPart}`;
+}
+
+/**
+ * Valor que vem de uma SOMA/AGREGAÇÃO do backend, onde `0` é indistinguível de
+ * "não há nada somado" (ex.: `impostosPagos` = soma de guias PAID; `dasExtrato`
+ * = extrato do PGDAS-D que pode nunca ter sido capturado). Nesses campos o zero
+ * não afirma "foi zero", afirma "não achei linha" — e por isso sai como traço.
+ */
+export function somaOuTraco(value) {
+  if (value === null || value === undefined) return TRACO;
+  const v = Number(value);
+  if (!Number.isFinite(v) || v === 0) return TRACO;
+  return brl(v);
+}
+
+/** Percentual com 2 casas. `null`/NaN viram traço. */
+export function pct(value) {
+  if (value === null || value === undefined) return TRACO;
+  const v = Number(value);
+  if (!Number.isFinite(v)) return TRACO;
+  return `${v.toFixed(2).replace(".", ",")}%`;
+}
+
+/** Inteiro simples; `null` vira traço (0 continua sendo 0 — é contagem, e contagem zero é fato). */
+export function inteiro(value) {
+  if (value === null || value === undefined) return TRACO;
+  const v = Number(value);
+  if (!Number.isFinite(v)) return TRACO;
+  return String(Math.trunc(v));
+}
+
+/** Texto: string vazia/nula vira traço. */
+export function texto(value) {
+  const s = value === null || value === undefined ? "" : String(value).trim();
+  return s === "" ? TRACO : s;
+}
+
+/** 'YYYY-MM' -> 'MM/AAAA' */
+export function fmtCompetencia(competencia) {
+  if (!competencia) return TRACO;
+  const m = /^(\d{4})-(\d{2})/.exec(String(competencia));
+  if (!m) return String(competencia);
+  return `${m[2]}/${m[1]}`;
+}
+
+/** ISO ou 'YYYY-MM-DD' -> 'DD/MM/AAAA'. Sem `new Date` para não deslocar fuso. */
+export function fmtDateBr(date) {
+  if (!date) return TRACO;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date));
+  if (!m) return String(date);
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/** 00.000.000/0000-00 — só formata se tiver os 14 dígitos; senão devolve o que veio. */
+export function fmtCnpj(cnpj) {
+  const d = String(cnpj || "").replace(/\D+/g, "");
+  if (d.length !== 14) return texto(cnpj);
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+
+/** CNPJ (14) ou CPF (11); qualquer outro tamanho sai como veio. */
+export function fmtDoc(doc) {
+  const d = String(doc || "").replace(/\D+/g, "");
+  if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  if (d.length === 14) return fmtCnpj(d);
+  return texto(doc);
+}
+
+/** Últimas N competências 'YYYY-MM', do mês atual para trás. */
+export function competenciasRecentes(n = 12) {
+  const out = [];
+  const now = new Date();
+  let y = now.getFullYear();
+  let mo = now.getMonth();
+  for (let i = 0; i < n; i += 1) {
+    out.push(`${y}-${String(mo + 1).padStart(2, "0")}`);
+    mo -= 1;
+    if (mo < 0) {
+      mo = 11;
+      y -= 1;
+    }
+  }
+  return out;
+}
+
+/** Competência do mês antecedente (mês fechado anterior), 'YYYY-MM'. */
+export function mesAntecedente() {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Competência do mês corrente, 'YYYY-MM'. */
+export function mesCorrente() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
