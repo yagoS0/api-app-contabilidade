@@ -20,6 +20,15 @@ import {
   toGuideResponse,
 } from "../../application/guides/GuideService.js";
 import { buildCompanyDashboard } from "../../application/dashboard/buildCompanyDashboard.js";
+// ── A EMISSÃO DE NFS-e PELO CLIENTE — tudo REUSADO, nada reimplementado ──────────────────────
+// Ver o bloco `POST /companies/:companyId/nfse`, no fim deste arquivo, para o porquê de a fachada
+// existir. Estes cinco imports SÃO o desenho: validador, resolução dos dois ids, portão do ato
+// fiscal, serviço de emissão e o mapa de desfechos — todos os mesmos de `POST /nfse/issue`.
+import { validateNfsePayload } from "../../application/validators/nfsePayload.js";
+import { NfseService } from "../../application/nfse/NfseService.js";
+import { resolveLegacyCompanyId } from "../middlewares/portalAccess.js";
+import { ensureEmissaoNfseAutorizada } from "../middlewares/emissaoNfseGate.js";
+import { responderResultadoEmissao, responderErroEmissao } from "../nfseEmissaoHttp.js";
 
 function sanitizeRole(role) {
   const value = String(role || "FINANCEIRO").toUpperCase();
@@ -125,6 +134,15 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
             createdAt: true,
             updatedAt: true,
             companyId: true,
+            // ⚠ O PORTÃO DE EMISSÃO PRECISA VIAJAR ATÉ O APP DO CLIENTE. A coluna existe desde
+            // 18/08/2026 e **não aparecia aqui** — o app só descobria o portão pela RECUSA, depois
+            // de o usuário preencher a nota inteira. Ver `emissaoNfseLiberada`, abaixo.
+            //
+            // ⚠ **SÓ A FLAG.** `emissaoClienteLiberadaEm`/`...Por` respondem *"quem autorizou este
+            // cliente a emitir?"* — é registro de AUDITORIA do contador, e o id/instante de um
+            // usuário do escritório não é dado do cliente. Ampliar este `select` é o caminho por
+            // onde vazamento entre lados acontece sem ninguém notar.
+            emissaoClienteLiberada: true,
           },
         },
       },
@@ -170,6 +188,12 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
           uf: link.company.uf || getEnderecoField(legacy, "uf"),
           municipio: link.company.municipio || getEnderecoField(legacy, "cidade"),
           ownerEmail,
+          // O portão de emissão de NFS-e desta empresa, do ponto de vista do cliente: *"o contador
+          // liberou a emissão para nós?"*. ⚠ **Isto NÃO é a permissão** — quem decide continua
+          // sendo `ensureEmissaoNfseAutorizada` (empresa liberada **e** papel ≥ CLIENT_ADMIN), no
+          // servidor, a cada emissão. Aqui é só o que a tela precisa para não oferecer um botão que
+          // vai ser recusado. `=== true` porque autorização não se abre por coerção de tipo.
+          emissaoNfseLiberada: link.company.emissaoClienteLiberada === true,
           guideNotificationEmail: link.company.guideNotificationEmail || null,
           email: legacyEmail,
           telefone: legacy?.telefone || null,
@@ -771,6 +795,73 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       } catch (err) {
         log.error({ err: err.message, companyId }, "client dashboard falhou");
         return res.status(500).json({ error: "internal_error" });
+      }
+    }
+  );
+
+  // ── EMISSÃO DE NFS-e PELO APP DO CLIENTE ───────────────────────────────────────────────────
+  //
+  // ⚠ ISTO É UMA FACHADA, E A PALAVRA IMPORTA: **nenhuma regra de emissão mora aqui**. O app do
+  // cliente fala tudo por `/client/...`; a emissão vive em `POST /nfse/issue`, em outro router,
+  // que **não sabe distinguir escritório de cliente** — foi essa indistinção que criou o buraco de
+  // autorização fechado em 18/08/2026 (qualquer membro ATIVO alcançava o ato fiscal). Em vez de
+  // ensinar aquele router a falar duas línguas, o lado do cliente ganha a própria porta, e ela
+  // delega:
+  //
+  //   validação  → `validateNfsePayload`            (o MESMO validador; nada é reconferido aqui)
+  //   os dois ids → `resolveLegacyCompanyId`        (a MESMA resolução de `/nfse/issue`)
+  //   permissão  → `ensureEmissaoNfseAutorizada`    (o MESMO portão, com os mesmos códigos)
+  //   emissão    → `NfseService.issue`              (o MESMO serviço)
+  //   resposta   → `nfseEmissaoHttp.js`             (os MESMOS desfechos das três camadas)
+  //
+  // ⚠ Escrever uma segunda resolução, uma segunda validação ou um segundo mapa de resposta é o
+  // defeito que este desenho existe para impedir — as duas portas discordariam na primeira
+  // correção, e a que o cliente usa é a que ninguém do escritório testa.
+  router.post(
+    "/companies/:companyId/nfse",
+    // Primeiro passo: esta pessoa é membro ATIVO desta empresa? (é o equivalente, do lado
+    // `/client`, ao `ensureLegacyCompanyAccess` de `/nfse/issue` — VÍNCULO, não permissão.)
+    // O papel mínimo NÃO é declarado aqui de propósito: quem responde "este papel emite?" é o
+    // portão, com código e mensagem próprios. Um `minRole` aqui devolveria `insufficient_role`
+    // genérico e o cliente não saberia se o problema é o papel dele ou a liberação do contador.
+    requireClientCompanyAccess(),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId || "").trim();
+
+      // ⚠ O PATH VENCE O CORPO, e o spread vem ANTES. `{ ...body, companyId: path }` — invertido,
+      // um `companyId` no corpo apontaria a emissão para OUTRA empresa depois de a permissão ter
+      // sido conferida nesta. É literalmente o furo de multi-tenancy medido na F1 do WhatsApp.
+      const validation = validateNfsePayload({ ...(req.body || {}), companyId: portalClientId });
+      if (!validation.ok) {
+        return res.status(400).json({ error: validation.error });
+      }
+
+      // ⚠ RESOLVER ANTES DE AUTORIZAR O ATO. `/client` fala em `PortalClient.id`; `NfseService`
+      // fala em `Company` legada, e o id de uma nunca encontra a outra. Inverter a ordem
+      // autorizaria uma empresa e emitiria por outra.
+      const legacyCompanyId = await resolveLegacyCompanyId(portalClientId);
+      if (!legacyCompanyId) {
+        return res.status(404).json({ error: "company_not_found" });
+      }
+
+      // ATO FISCAL: além de enxergar a empresa, é preciso estar autorizado a emitir por ela —
+      // empresa liberada pelo contador **e** papel ≥ CLIENT_ADMIN. A recusa (403) sai daqui com o
+      // motivo nomeado, idêntica à de `/nfse/issue`.
+      const portao = await ensureEmissaoNfseAutorizada(req, res, legacyCompanyId, { log });
+      if (!portao.ok) return;
+
+      try {
+        const result = await NfseService.issue({
+          data: { ...validation.data, companyId: legacyCompanyId },
+          log,
+          // Reaproveita a linha da tentativa anterior em vez de queimar um número novo — não
+          // existe inutilização na NFS-e. O serviço confere que a linha é DESTA empresa e recusa
+          // quando o desfecho anterior foi TRANSPORTE (número em estado indeterminado).
+          retryInvoiceId: req.body?.retryInvoiceId || null,
+        });
+        return responderResultadoEmissao(res, result);
+      } catch (err) {
+        return responderErroEmissao(res, err, { log });
       }
     }
   );

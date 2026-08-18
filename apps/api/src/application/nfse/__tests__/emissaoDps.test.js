@@ -453,3 +453,106 @@ describe("reemissão reusa a linha e o número — não queima numeração", () 
     ).rejects.toMatchObject({ code: "NFSE_NUMERO_EM_ESTADO_INDETERMINADO" });
   });
 });
+
+// ── O CÓDIGO DE SERVIÇO DA NOTA CHEGA AO XML — E A TRAVA VEM ANTES DELE ────────────────────────
+//
+// ⚠ A ESCOLHA POR EMISSÃO ERA UMA PONTE ATÉ 18/08/2026: `buildDpsXml` lia
+// `company.codigoServicoNacional` e mais nada, o assistente MOSTRAVA os códigos cadastrados e
+// trocar era marcação no cadastro. A ponte existia para não haver seletor que parecesse funcionar
+// e emitisse outro código — erro fiscal SILENCIOSO.
+//
+// ⚠ O QUE ESTA SUÍTE PRENDE É A TRAVA, não a funcionalidade: **o cadastro é a autoridade, nunca o
+// payload**. Cada caso mede sobre o XML que SAIRIA (ou sobre o fato de nada ter saído), nunca
+// sobre a intenção do código.
+describe("cTribNac — a escolha da emissão, com o cadastro mandando", () => {
+  it("⚠ SEM escolha e SEM lista: o comportamento de hoje, intacto — sai o cadastro", async () => {
+    // É o estado das 33 empresas medidas: `codigosServicoNacional` vazio. Nenhuma emissão
+    // existente pode mudar por causa desta entrega.
+    montarCenario();
+    await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(xmlEnviado()).toContain("<cTribNac>171201</cTribNac>");
+  });
+
+  it("código DENTRO da lista: é ELE que sai no <cTribNac> (não o singular do cadastro)", async () => {
+    montarCenario({
+      empresa: { codigoServicoNacional: "171201", codigosServicoNacional: ["171201", "310104"] },
+    });
+
+    const r = await NfseService.issue({
+      data: { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, codigoServicoNacional: "310104" } },
+      log,
+    });
+
+    expect(r.status).toBe("issued");
+    const xml = xmlEnviado();
+    expect(xml).toContain("<cTribNac>310104</cTribNac>");
+    expect(xml).not.toContain("<cTribNac>171201</cTribNac>");
+  });
+
+  it("⚠ código FORA da lista: recusa nomeada, e `buildDpsXml` NÃO é alcançado", async () => {
+    montarCenario({
+      empresa: { codigoServicoNacional: "171201", codigosServicoNacional: ["171201", "310104"] },
+    });
+
+    const r = await NfseService.issue({
+      data: { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, codigoServicoNacional: "999999" } },
+      log,
+    });
+
+    expect(r.status).toBe("falha_envio");
+    expect(r.camada).toBe("NOSSA");
+    expect(r.codigo).toBe("NFSE_CODIGO_SERVICO_FORA_DA_LISTA");
+    expect(r.correcao).toMatch(/cadastr/i);
+    // Nada saiu da máquina…
+    expect(postMock).not.toHaveBeenCalled();
+    // …e nada foi escrito: a recusa é PRÉ-VOO, antes da reserva. Como não há inutilização na
+    // NFS-e, número gasto à toa é buraco permanente.
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  });
+
+  it("⚠ LISTA VAZIA não é 'pode qualquer código' — escolha diferente do cadastro recusa", async () => {
+    // Sem esta linha a trava estaria desligada em toda a carteira, que é onde ela mais importa.
+    montarCenario({ empresa: { codigoServicoNacional: "171201", codigosServicoNacional: [] } });
+
+    const r = await NfseService.issue({
+      data: { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, codigoServicoNacional: "310104" } },
+      log,
+    });
+
+    expect(r.codigo).toBe("NFSE_CODIGO_SERVICO_FORA_DA_LISTA");
+    expect(postMock).not.toHaveBeenCalled();
+    expect(prisma.serviceInvoice.create).not.toHaveBeenCalled();
+  });
+
+  it("lista vazia + escolha IGUAL ao cadastro: passa, e é ele que sai", async () => {
+    montarCenario({ empresa: { codigoServicoNacional: "171201", codigosServicoNacional: [] } });
+
+    const r = await NfseService.issue({
+      data: { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, codigoServicoNacional: "171201" } },
+      log,
+    });
+
+    expect(r.status).toBe("issued");
+    expect(xmlEnviado()).toContain("<cTribNac>171201</cTribNac>");
+  });
+
+  it("com lista e SEM escolha, sai o singular — nunca 'o primeiro da lista'", async () => {
+    montarCenario({
+      empresa: { codigoServicoNacional: "310104", codigosServicoNacional: ["171201", "310104"] },
+    });
+    await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(xmlEnviado()).toContain("<cTribNac>310104</cTribNac>");
+  });
+
+  it("o cTribMun NÃO muda com a escolha do nacional — são códigos de listas diferentes", async () => {
+    montarCenario({
+      empresa: { codigosServicoNacional: ["171201", "310104"], codigoServicoMunicipal: "001" },
+    });
+    await NfseService.issue({
+      data: { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, codigoServicoNacional: "310104" } },
+      log,
+    });
+    expect(xmlEnviado()).toContain("<cTribMun>001</cTribMun>");
+  });
+});

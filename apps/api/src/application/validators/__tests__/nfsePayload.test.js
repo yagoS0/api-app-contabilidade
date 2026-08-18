@@ -83,3 +83,74 @@ describe("cLocPrestacao — local da prestação", () => {
     });
   });
 });
+
+// ── O CÓDIGO DE SERVIÇO DA NOTA (`cTribNac`) ───────────────────────────────────────────────────
+//
+// ⚠ AQUI SÓ SE CONFERE A FORMA. A pergunta "este código vale para ESTA empresa?" depende do
+// CADASTRO, que o validador não lê — quem responde é `escolherCodigoServicoNacional`, no pré-voo
+// de `NfseService.issue` (testes em `nfse/__tests__/codigoServicoDaNota.test.js` e a prova sobre o
+// XML em `emissaoDps.test.js`).
+describe("servico.codigoServicoNacional", () => {
+  it("ausente é null — 'ninguém escolheu', e o cadastro continua mandando", () => {
+    expect(validateNfsePayload(BASE).data.servico.codigoServicoNacional).toBeNull();
+  });
+
+  it("6 dígitos passam e viajam normalizados", () => {
+    const r = validateNfsePayload({
+      ...BASE,
+      servico: { ...BASE.servico, codigoServicoNacional: "31.01.04" },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.data.servico.codigoServicoNacional).toBe("310104");
+  });
+
+  it("aceita o apelido `cTribNac` (é o nome da tag no XML)", () => {
+    const r = validateNfsePayload({ ...BASE, servico: { ...BASE.servico, cTribNac: "171201" } });
+    expect(r.data.servico.codigoServicoNacional).toBe("171201");
+  });
+
+  it("⚠ forma errada RECUSA — não se completa com zero à esquerda", () => {
+    // `\"10101\"` é o que a planilha oficial devolve quando a coluna é lida como número; virar
+    // `\"010101\"` aqui seria o padStart escolhendo um serviço que ninguém digitou.
+    expect(validateNfsePayload({ ...BASE, servico: { ...BASE.servico, codigoServicoNacional: "10101" } })).toEqual({
+      ok: false,
+      error: "servico_codigo_nacional_invalido",
+    });
+  });
+});
+
+// ── O DÍGITO VERIFICADOR DO CPF DO TOMADOR — pedido do dono, 18/08/2026 ────────────────────────
+//
+// ⚠ Antes disto, 11 dígitos QUAISQUER entravam: o projeto não tinha nenhuma validação de DV. Com o
+// caminho apontado para produção, um dígito trocado emite nota contra outra pessoa.
+// ⚠ **Validação LOCAL, e só** — nada é consultado (ver `utils/cpf.js`).
+describe("documento do tomador", () => {
+  const comDoc = (cnpjCpf) => validateNfsePayload({ ...BASE, tomador: { ...BASE.tomador, cnpjCpf } });
+
+  it("CPF com DV válido passa", () => {
+    expect(comDoc("11144477735").ok).toBe(true);
+    expect(comDoc("111.444.777-35").data.tomador.doc).toBe("11144477735");
+  });
+
+  it("⚠ CPF com DV inválido recusa com código PRÓPRIO, distinto de documento ausente", () => {
+    // Conserto diferente: "não preenchi o campo" × "digitei o número errado".
+    expect(comDoc("11144477734")).toEqual({ ok: false, error: "tomador_cpf_digito_invalido" });
+    expect(comDoc("").error).toBe("tomador_documento_invalido");
+    expect(validateNfsePayload({ ...BASE, tomador: { nome: "x" } }).error).toBe("tomador_documento_invalido");
+  });
+
+  it("⚠ sequência repetida recusa — é o preenchimento para o formulário deixar seguir", () => {
+    expect(comDoc("11111111111").error).toBe("tomador_cpf_digito_invalido");
+  });
+
+  it("⚠ O CNPJ SEGUE COMO ESTAVA — nenhuma validação de DV foi acrescentada a ele", () => {
+    // Validar o DV do CNPJ não foi pedido; inventá-lo passaria a recusar tomador legítimo com
+    // cadastro velho, sem que ninguém tivesse decidido isso.
+    expect(comDoc("11222333000181").ok).toBe(true);
+    expect(comDoc("00000000000000").ok).toBe(true);
+  });
+
+  it("comprimento fora de 11/14 continua sendo 'documento inválido'", () => {
+    expect(comDoc("1114447773").error).toBe("tomador_documento_invalido");
+  });
+});

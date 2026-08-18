@@ -1,5 +1,7 @@
 import { onlyDigits, toBoolean, toNullableString } from "../../utils/normalizers.js";
 import { parseDate } from "../../utils/date.js";
+import { cpfTemDvValido } from "../../utils/cpf.js";
+import { normalizarCodigoServicoNacional } from "../nfse/codigoServicoDaNota.js";
 
 function parseNumber(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -21,6 +23,21 @@ export function validateNfsePayload(body) {
   const doc = onlyDigits(tomador.cnpjCpf || tomador.documento || tomador.doc);
   if (!doc || (doc.length !== 11 && doc.length !== 14)) {
     return { ok: false, error: "tomador_documento_invalido" };
+  }
+  // ⚠ O DÍGITO VERIFICADOR DO CPF — pedido do dono, 18/08/2026. Até aqui, 11 dígitos quaisquer
+  // entravam: o projeto inteiro não tinha nenhuma checagem de DV (só `normalizeCpf`/`fmtCpf`, que
+  // mexem em pontuação). Com o caminho ligado em PRODUÇÃO, um dígito trocado emite nota fiscal
+  // contra outra pessoa — e a NFS-e não tem inutilização, então o conserto é cancelamento.
+  //
+  // ⚠ RECUSA NOMEADA E **DISTINTA** de `tomador_documento_invalido`: os dois têm conserto
+  // diferente. "Documento ausente ou com comprimento errado" é campo não preenchido; "DV inválido"
+  // é número digitado errado, e quem lê precisa saber que o problema está NO NÚMERO.
+  //
+  // ⚠ É VALIDAÇÃO **LOCAL**, e só. Nada é consultado: a BrasilAPI é base de CNPJ, consulta de CPF
+  // é serviço pago e traz LGPD junto (o tomador é terceiro). Ver `utils/cpf.js`.
+  // O CNPJ segue exatamente como estava — sua validação de DV não foi pedida e não foi inventada.
+  if (doc.length === 11 && !cpfTemDvValido(doc)) {
+    return { ok: false, error: "tomador_cpf_digito_invalido" };
   }
   const tomadorNome = toNullableString(tomador.nome || tomador.razaoSocial || tomador.name);
   if (!tomadorNome) {
@@ -54,6 +71,31 @@ export function validateNfsePayload(body) {
   const aliquota = parseNumber(servico.aliquota || servico.pAliq || servico.pIss);
   const issRetido = toBoolean(servico.issRetido);
   const competencia = parseDate(body.competencia || servico.competencia || servico.dCompet);
+
+  // ── O CÓDIGO DE SERVIÇO DESTA NOTA (`cTribNac`) ────────────────────────────────────────────
+  //
+  // ⚠ ANTES NÃO HAVIA CAMPO NENHUM AQUI, e isso era ponte deliberada: a empresa já podia cadastrar
+  // N códigos (`Company.codigosServicoNacional`, 16/08/2026) e a tela já MOSTRAVA qual iria, mas
+  // `buildDpsXml` lia só `company.codigoServicoNacional`. Um seletor que parecesse funcionar e
+  // emitisse outro código é erro fiscal SILENCIOSO — pior que a ausência do seletor.
+  //
+  // ⚠ AQUI SÓ SE CONFERE A **FORMA** (6 dígitos). Quem decide se este código vale para ESTA
+  // empresa é `escolherCodigoServicoNacional` (`application/nfse/codigoServicoDaNota.js`), no
+  // pré-voo de `NfseService.issue`, porque a resposta depende do CADASTRO — que o validador não lê
+  // e não deve ler. **O cadastro é a autoridade, nunca o payload.**
+  //
+  // Ausente = "não escolheram" ⇒ vale o cadastro, como sempre valeu. `null` é o valor que diz isso.
+  const codigoServicoNacionalBruto =
+    servico.codigoServicoNacional ?? servico.cTribNac ?? body.codigoServicoNacional ?? null;
+  const codigoServicoNacional = normalizarCodigoServicoNacional(codigoServicoNacionalBruto);
+  if (
+    codigoServicoNacionalBruto !== null &&
+    codigoServicoNacionalBruto !== undefined &&
+    String(codigoServicoNacionalBruto).trim() !== "" &&
+    !codigoServicoNacional
+  ) {
+    return { ok: false, error: "servico_codigo_nacional_invalido" };
+  }
 
   // ⚠ LOCAL DA PRESTAÇÃO — agora é um campo, e antes não era. `buildDpsXml` cravava
   // `cLocPrestacao = cLocEmi` com o comentário "por enquanto assume igual", e não havia como
@@ -114,6 +156,7 @@ export function validateNfsePayload(body) {
         aliquota,
         issRetido: Boolean(issRetido),
         cLocPrestacao,
+        codigoServicoNacional,
       },
       totTrib: {
         pTotTribSN,

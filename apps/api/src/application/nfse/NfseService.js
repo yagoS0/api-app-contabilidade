@@ -10,6 +10,7 @@ import { findFirstByLocalName, getTextByLocalNames } from "../../utils/xml.js";
 import { resolverCertificadosDaEmpresa } from "./nfseCertificado.js";
 import { resolverOpSimpNac, resolverTpRetIssqn, RESOLUCAO } from "./dpsCodigos.js";
 import { normalizarSerie, reservarNumeracao } from "./nfseNumeracao.js";
+import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
 import {
   classificarFalha,
   camposDeFalha,
@@ -537,10 +538,19 @@ function buildDpsXml({ company, data, numeracao, regime }) {
   const verAplic = "SefinNacional_1.5.0";
 
   const serieTag = serieVal; // XML padded (ex.: 00001)
-  const cTribNacRaw = (company.codigoServicoNacional || codigoServico || "").replace(
-    /\D+/g,
+  // ⚠ O CÓDIGO DESTA NOTA VEM DA ESCOLHA DA EMISSÃO — quando houve escolha. Até 18/08/2026 esta
+  // linha lia `company.codigoServicoNacional` e mais nada, e por isso a empresa com N códigos
+  // cadastrados emitia sempre sob o mesmo. **O valor que chega aqui já passou pela trava**
+  // (`escolherCodigoServicoNacional`, no pré-voo de `issue`): ele é, obrigatoriamente, um dos
+  // códigos do CADASTRO. Sem escolha, `data.servico.codigoServicoNacional` é nulo e o caminho é o
+  // de sempre. ⚠ Nunca leia o payload cru aqui — a autoridade é o cadastro, e quem a aplica é o
+  // pré-voo.
+  const cTribNacRaw = (
+    data.servico?.codigoServicoNacional ||
+    company.codigoServicoNacional ||
+    codigoServico ||
     ""
-  );
+  ).replace(/\D+/g, "");
   const cTribNac = cTribNacRaw ? cTribNacRaw.padStart(6, "0").slice(-6) : "";
   const cTribMunRaw = (company.codigoServicoMunicipal || codigoServico || "")
     .replace(/\D+/g, "")
@@ -1298,9 +1308,28 @@ export class NfseService {
     // depois da reserva significaria mover o contador por causa de um campo em branco. A reserva é
     // transacional, então o número voltaria — mas o desfecho sairia como exceção não classificada
     // (a rota responderia 500), em vez da recusa nomeada com correção que o contador precisa ler.
+    // ⚠ A TRAVA DO CÓDIGO DE SERVIÇO — o cadastro é a autoridade, nunca o payload.
+    //
+    // Ela mora AQUI, no pré-voo, e não em `buildDpsXml`, por dois motivos: (1) a recusa acontece
+    // ANTES de reservar numeração — e como não existe inutilização na NFS-e, número gasto à toa é
+    // buraco permanente; (2) `buildDpsXml` **não é alcançado**, então não há caminho em que um
+    // código não cadastrado chegue a virar `<cTribNac>`. Há teste sobre as duas coisas.
+    let codigoServicoDaNota = null;
     try {
       resolverCLocEmi(company);
       normalizarSerie(company.rpsSerie);
+      const escolha = escolherCodigoServicoNacional({
+        escolhido: data.servico?.codigoServicoNacional,
+        lista: company.codigosServicoNacional,
+        singular: company.codigoServicoNacional,
+      });
+      if (!escolha.ok) {
+        const err = new Error(escolha.message);
+        err.code = escolha.codigo;
+        err.correcao = escolha.correcao;
+        throw err;
+      }
+      codigoServicoDaNota = escolha.codigo;
       const regTrib = resolverOpSimpNac(regime);
       if (regTrib.resolucao !== RESOLUCAO.RESOLVIDO) {
         const err = new Error(regTrib.motivo);
@@ -1373,7 +1402,13 @@ export class NfseService {
       const client = buildAxiosClient(certificados.transporte);
       const construido = buildDpsPayload({
         company,
-        data,
+        // O código já conferido contra o cadastro desce junto do resto do serviço. `null` = não
+        // houve escolha (ou o singular não tem a forma), e `buildDpsXml` cai no cadastro como
+        // sempre caiu.
+        data: {
+          ...data,
+          servico: { ...(data.servico || {}), codigoServicoNacional: codigoServicoDaNota },
+        },
         numeracao,
         regime,
         certificadoAssinatura: certificados.assinatura,

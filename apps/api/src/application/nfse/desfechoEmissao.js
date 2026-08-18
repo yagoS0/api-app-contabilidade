@@ -54,6 +54,10 @@ const CODIGOS_NOSSOS = new Set([
   "MISSING_TOT_TRIB_NAO_SIMPLES",
   "NFSE_MUNICIPIO_NAO_CONFIGURADO",
   "NFSE_REGIME_INDEFINIDO",
+  // O código de serviço pedido não está no cadastro da empresa (ou não tem a forma de um
+  // `cTribNac`). Recusa NOSSA: nada saiu da máquina e o número continua intacto.
+  "NFSE_CODIGO_SERVICO_FORA_DA_LISTA",
+  "NFSE_CODIGO_SERVICO_INVALIDO",
   "NFSE_ISS_RETIDO_SEM_ALIQUOTA",
   "NO_COMPANY_CERT",
   "CERT_CNPJ_MISMATCH",
