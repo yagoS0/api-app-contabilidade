@@ -194,6 +194,41 @@ model User {
   clientSessions     ClientSession[]
   /// Contraparte de `contatos_whatsapp.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
   contatosWhatsapp   ContatoWhatsapp[]
+  /// Contraparte de `password_reset_tokens.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
+  passwordResetTokens PasswordResetToken[]
+}
+
+// Pedido de redefinição de senha ("esqueci minha senha").
+//
+// ⚠ MESMA FORMA DE `ClientSession`, e de propósito: o valor em claro NUNCA encosta no banco.
+// `tokenHash` é o SHA-256 do token opaco (32 bytes de `crypto.randomBytes`); o claro existe só
+// dentro da requisição que monta o e-mail. Quem vaza o dump do banco não ganha nenhum token.
+//
+// ⚠ `usedAt` é a coluna que `ClientSession` NÃO tem e que este modelo EXIGE — é ela que faz o
+// token ser de USO ÚNICO. Foi exatamente a falta dela que impediu o reuso do token de onboarding
+// (ver "Fase 2" no CLAUDE.md da raiz: *"o único token opaco do projeto não tem campo de consumo,
+// então uso único exige modelo novo"*).
+//
+// ⚠ NADA AQUI DISTINGUE "expirado" de "já usado" PARA QUEM PERGUNTA. As duas colunas existem para
+// o servidor decidir e para auditoria; a resposta HTTP é a MESMA recusa genérica nos dois casos.
+// Dizer "este token já foi usado" conta ao atacante que ele existiu.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  /// SHA-256 hex do token opaco. `@unique` = a busca é feita pelo hash, nunca varrendo a tabela.
+  tokenHash String    @unique
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  /// Instante do consumo. NULO = ainda não usado. Preenchido = queimado, para sempre.
+  usedAt    DateTime?
+  /// IP de quem PEDIU (não de quem usou). Só auditoria; nunca entra em decisão de autorização.
+  requestIp String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // Sessão revogável do portal do cliente (app mobile). O refresh é opaco (aleatório),

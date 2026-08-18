@@ -261,7 +261,25 @@ function criarEstado() {
     guias.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   }
 
-  return { empresas, usuarios, notas, guias, circular, sessoes: new Map() };
+  // ⚠ TOKENS DE REDEFINIÇÃO DE SENHA — os TRÊS ESTADOS, fixos e alcançáveis por URL.
+  //
+  // Existem com nome fixo (e não sorteados) para que a tela de redefinição possa ser aberta
+  // offline em cada um dos desfechos, sem banco e sem e-mail:
+  //
+  //   /redefinir-senha?token=token-valido    → troca a senha
+  //   /redefinir-senha?token=token-expirado  → recusa (vencido)
+  //   /redefinir-senha?token=token-usado     → recusa (já consumido)
+  //
+  // Os dois últimos precisam existir SEPARADOS mesmo produzindo a mesma mensagem: é justamente a
+  // igualdade entre eles que é a regra de segurança, e regra que não se consegue exercer não se
+  // consegue conferir.
+  const tokensRedefinicao = new Map([
+    ["token-valido", { userId: "u-cliente-1", expiraEm: Date.now() + 60 * 60 * 1000, usado: false }],
+    ["token-expirado", { userId: "u-cliente-1", expiraEm: Date.now() - 60 * 1000, usado: false }],
+    ["token-usado", { userId: "u-cliente-1", expiraEm: Date.now() + 60 * 60 * 1000, usado: true }],
+  ]);
+
+  return { empresas, usuarios, notas, guias, circular, sessoes: new Map(), tokensRedefinicao };
 }
 
 const estado = criarEstado();
@@ -335,6 +353,70 @@ export function createMockApi() {
       await dormir(40);
       const { accessToken } = lerSessao();
       if (accessToken) estado.sessoes.delete(accessToken);
+    },
+
+    // --- Recuperação de senha -----------------------------------------------
+    //
+    // ⚠ A RESPOSTA É A MESMA para e-mail cadastrado e não cadastrado, igual ao servidor. O mock
+    // NÃO consulta `estado.usuarios` aqui de propósito: se ele ramificasse, a tela poderia ser
+    // desenvolvida offline contra um comportamento que vaza existência e só divergiria do real em
+    // produção — que é exatamente como o mock passa a mentir.
+    async solicitarRedefinicao(email) {
+      await dormir();
+      const alvo = String(email || "").trim();
+      if (!alvo) throw new ApiError(400, "email_required");
+      return {
+        ok: true,
+        message:
+          "Se houver uma conta com esse e-mail, enviamos as instruções para redefinir a senha.",
+      };
+    },
+
+    // ⚠⚠ O MOCK NÃO ACEITA QUALQUER TOKEN — e essa é a razão de ele existir nesta tela.
+    //
+    // A regra mais importante da recuperação de senha é que token VÁLIDO, EXPIRADO e JÁ USADO se
+    // comportam de formas diferentes por dentro e produzem a MESMA recusa por fora. Um mock que
+    // dissesse "ok" para qualquer string deixaria essa regra sem prova offline: a tela de erro
+    // nunca seria exercida, e o desenvolvedor só descobriria o desenho dela em produção, com um
+    // cliente trancado do lado de fora.
+    //
+    // Os três estados são alcançáveis por URL, sem banco e sem e-mail:
+    //   /redefinir-senha?token=token-valido    → troca a senha (e vira "usado" na hora)
+    //   /redefinir-senha?token=token-expirado  → recusa
+    //   /redefinir-senha?token=token-usado     → recusa
+    //   qualquer outro                         → recusa
+    //
+    // ⚠ As três recusas são o MESMO `ApiError(400, "invalid_reset_token")`, sem motivo anexo — copiado do
+    // servidor, onde a indistinguibilidade é a regra de segurança e não um detalhe de mensagem.
+    async redefinirSenha(token, password) {
+      await dormir();
+      const t = String(token || "");
+      if (!t || !password) throw new ApiError(400, "token_password_required");
+
+      // Mesma política do backend (`application/validators/passwordPolicy.js`), e conferida ANTES
+      // do token — pelo mesmo motivo de lá: `weak_password` com token válido e `invalid_token` com
+      // token chutado revelariam qual dos dois foi o problema.
+      const faltas = [];
+      if (password.length < 8) faltas.push("pelo menos 8 caracteres");
+      if (!/[a-z]/.test(password)) faltas.push("uma letra minúscula");
+      if (!/[A-Z]/.test(password)) faltas.push("uma letra maiúscula");
+      if (!/[0-9]/.test(password)) faltas.push("um número");
+      if (!/[^A-Za-z0-9]/.test(password)) faltas.push("um caractere especial");
+      if (faltas.length) {
+        throw new ApiError(400, "weak_password", `A senha precisa ter: ${faltas.join(", ")}.`);
+      }
+
+      const registro = estado.tokensRedefinicao.get(t);
+      if (!registro) throw new ApiError(400, "invalid_reset_token");
+      if (registro.usado) throw new ApiError(400, "invalid_reset_token");
+      if (registro.expiraEm <= Date.now()) throw new ApiError(400, "invalid_reset_token");
+
+      registro.usado = true;
+      // Redefinir revoga as sessões, como no servidor: quem estava logado cai.
+      estado.sessoes.clear();
+      const usuario = estado.usuarios.find((u) => u.id === registro.userId);
+      if (usuario) usuario.senha = password;
+      return { ok: true };
     },
 
     // --- Empresas -----------------------------------------------------------

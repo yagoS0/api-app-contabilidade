@@ -2084,6 +2084,57 @@ arquivo a subir e entra pela rota da apuração.
   exatamente por isso que ela tem um bloco próprio, visível, na aba Apuração da empresa (não só
   dentro do modal).
 
+## Recuperação de senha ("esqueci minha senha") — 18/08/2026
+
+Antes desta entrega **não havia nada**: `grep -iE "forgot|reset|recuperar|esqueci" src/routes/auth.js`
+não achava uma linha, e o cliente que esquecia a senha dependia de o escritório mexer no banco à mão.
+Com `apps/portal-cliente-web` no ar, isso apareceria no primeiro usuário real.
+
+- **Rotas:** `POST /auth/forgot-password` e `POST /auth/reset-password` (`routes/auth.js`).
+  Regra pura + banco em **`application/auth/PasswordResetService.js`**.
+  Testes: **`routes/__tests__/recuperacaoSenha.test.js`** (20).
+- **Model `PasswordResetToken`** → tabela **`password_reset_tokens`** (`@@map` explícito).
+  Migration **`20260818140000_add_password_reset_token` — escrita, NÃO APLICADA.**
+  A única FK é para **`"User"`** (sem `@@map`, conferido contra DDL real, não contra o `schema.prisma`).
+- **Forma copiada de `ClientSession`:** token opaco de `crypto.randomBytes(32)`, guardado só como
+  **SHA-256** (`tokenHash`). O claro existe dentro da requisição, vai para o e-mail e morre ali.
+  A coluna que `ClientSession` **não** tem e esta exige é **`usedAt`** — é ela que faz o uso único.
+- ⚠⚠ **NÃO REVELAR SE O E-MAIL EXISTE** é a regra que sustenta o resto: um portal contábil que
+  responde "este e-mail não existe" deixa qualquer um descobrir **quem é cliente de qual escritório**.
+  Quatro desfechos respondem 200 idêntico (conta inexistente · conta ativa · conta pendente/bloqueada ·
+  falha de envio). Só o **503 `mail_not_configured`** difere — e é decidido **antes de tocar no banco**,
+  então vale igual para todo endereço.
+  - ⚠ **A resposta sai ANTES de criar o token e mandar o e-mail**, e isso não é otimização: é o que
+    fecha o **oráculo de tempo**. Com o envio no caminho, "existe" custaria uma escrita + uma ida ao
+    Gmail e "não existe" um SELECT indexado — bastaria CRONOMETRAR para enumerar a carteira.
+  - ⚠ Por isso **falha de envio não vira erro HTTP** (viraria oráculo: só quem existe pode falhar).
+    Ela vira log de erro. **Pendente do dono:** alerta ao escritório ou retry, como o `guideEmailWorker`.
+- ⚠ **Recusa única** para token inexistente, adulterado, **vencido** e **já usado**:
+  `invalid_reset_token` (400). "Este link já foi usado" contaria ao atacante que ele existiu.
+  - ⚠ **Código PRÓPRIO, não o `invalid_token` genérico** — aquele já significa "sua sessão expirou"
+    no portal do cliente (`lib/mensagens.js`), e reusá-lo mandaria um usuário **deslogado** "entrar
+    novamente" numa tela cujo problema é o link do e-mail.
+  - ⚠ **Senha fraca é conferida ANTES do token**: ao contrário, `weak_password` × `invalid_reset_token`
+    revelaria que o token chutado era válido.
+- ⚠ **REDEFINIR REVOGA TODAS AS SESSÕES**, no MESMO commit da troca (`ClientSession.revokedAt`).
+  Sem isso, quem redefine a senha por desconfiar de invasão continuaria com o invasor logado — o
+  refresh opaco sobrevive à troca de senha. Mesma garantia do `POST /auth/change-password`, que já a
+  dava; escrita à mão (e não via `revokeAllForUser`) só porque aquela roda **fora** de transação.
+- **Prazo: 60 minutos** (`PASSWORD_RESET_TTL_MINUTES`). Não menos porque o cliente não fica sentado
+  na caixa de entrada — token que vence antes o devolve ao trabalho manual que isto eliminou. Não
+  mais porque **o e-mail do cliente não é necessariamente pessoal**: o projeto já mede isso em
+  `PortalClient.guideNotificationEmail` (caixa `financeiro@…`, separada do dono), e um link vivo por
+  24 h numa caixa compartilhada é uma senha esperando ser achada.
+- **Link:** `PORTAL_CLIENTE_WEB_URL` em `config.js`, **sem default** e **nunca lido do header `Host`**
+  (seria o atacante escolhendo para onde o token da vítima vai). Ausente ⇒ 503.
+- **Rate limit:** `/reset-password` reusa o `authStrictLimiter`; `/forgot-password` tem um **mais
+  estrito (5 / 15 min)** por ser a única rota que faz o servidor **mandar e-mail para um endereço
+  escolhido por quem chama** — abuso aqui é mail-bomb na vítima e reputação de envio do domínio.
+- **Front** (`apps/portal-cliente-web`): `features/auth/EsqueciSenhaPage.jsx` +
+  `RedefinirSenhaPage.jsx`; despacho por URL em `App.jsx` (sem router). ⚠ O **mock não aceita
+  qualquer token** — `token-valido` · `token-expirado` · `token-usado` exercem os três desfechos
+  offline, e os dois últimos produzem a **mesma** recusa do válido-porém-recusado.
+
 ## Regras
 
 - Nunca hardcodar credenciais ou URLs — usar `config.js`

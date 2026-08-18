@@ -17,6 +17,27 @@ const MENSAGENS = {
   too_many_requests: "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.",
   auth_not_configured: "O sistema de acesso está indisponível no momento. Tente mais tarde.",
 
+  // --- Recuperação de senha ---
+  //
+  // ⚠ `invalid_reset_token` cobre QUATRO casos por dentro — link inexistente, adulterado, vencido
+  // e já usado — e o servidor não diz qual, de propósito: "este link já foi usado" confirmaria a
+  // quem chutou o código que ele existiu, e portanto que a conta existe. A frase abaixo não tenta
+  // adivinhar o motivo; ela dá o CONSERTO, que é o mesmo nos quatro casos.
+  //
+  // ⚠ E é um código PRÓPRIO, não o `invalid_token` logo abaixo: aquele significa "sua sessão
+  // expirou", e reusá-lo mandaria um usuário deslogado "entrar novamente" numa tela cujo problema
+  // é o link do e-mail.
+  invalid_reset_token:
+    "Este link de redefinição não é mais válido. Peça um novo — os links valem por 60 minutos e só podem ser usados uma vez.",
+  email_required: "Informe o e-mail da sua conta.",
+  token_password_required: "Informe a nova senha.",
+  // O servidor manda a lista do que falta em `message`; esta é a frase de reserva.
+  weak_password:
+    "A senha precisa ter pelo menos 8 caracteres, com maiúscula, minúscula, número e um caractere especial.",
+  // ⚠ Ausência de configuração NÃO responde "enviamos" — senão o cliente esperaria para sempre.
+  mail_not_configured:
+    "Não conseguimos enviar e-mails neste momento. Fale com o seu contador para redefinir sua senha.",
+
   // --- Trava de produto: este portal é do CLIENTE ---
   not_a_client:
     "Esta conta é do escritório de contabilidade, não de um cliente. Use o portal do escritório.",

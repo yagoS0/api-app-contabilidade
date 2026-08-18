@@ -126,6 +126,35 @@ export function createRealApi() {
       }
     },
 
+    // --- Recuperação de senha -----------------------------------------------
+    //
+    // ⚠ `solicitarRedefinicao` responde IGUAL para e-mail cadastrado e não cadastrado — é a regra
+    // do backend (`POST /auth/forgot-password`), e a tela não tem como (nem deve) distinguir.
+    // Qualquer tentativa de "melhorar" isto aqui, mostrando um aviso quando a conta não existe,
+    // reintroduz a enumeração de usuário que o servidor fecha de propósito.
+    //
+    // -> { ok: true, message } — 503 `mail_not_configured` é o único desfecho diferente, e é
+    //    sobre o servidor, não sobre a conta.
+    async solicitarRedefinicao(email) {
+      return pedir("/auth/forgot-password", {
+        method: "POST",
+        body: { email },
+        auth: false,
+      });
+    },
+
+    // ⚠ Token inválido, EXPIRADO e JÁ USADO chegam aqui como o MESMO `invalid_token` (400). A tela
+    // não recebe motivo porque o servidor não manda motivo — dizer "já usado" contaria ao atacante
+    // que o token existiu.
+    // -> { ok: true }
+    async redefinirSenha(token, password) {
+      return pedir("/auth/reset-password", {
+        method: "POST",
+        body: { token, password },
+        auth: false,
+      });
+    },
+
     // --- Empresas -----------------------------------------------------------
     // GET /client/companies -> { data: Company[] }; Company.companyId = PortalClient.id
     async getCompanies() {

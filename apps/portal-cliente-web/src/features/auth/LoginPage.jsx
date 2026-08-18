@@ -11,7 +11,7 @@ import { mensagemDeErro } from "../../lib/mensagens";
  *  2. Que a sessão EXPIROU, quando foi o caso. Voltar ao login sem explicação é
  *     indistinguível de um app que desloga sozinho.
  */
-export function LoginPage({ expirou }) {
+export function LoginPage({ expirou, aoEsquecerSenha }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState(null);
@@ -87,6 +87,17 @@ export function LoginPage({ expirou }) {
         <button className="btn btn-primary btn-block" type="submit" disabled={enviando}>
           {enviando ? "Entrando…" : "Entrar"}
         </button>
+
+        {/* ⚠ A saída para quem esqueceu a senha fica NA TELA DO ERRO, não escondida num rodapé:
+            é exatamente aqui que a pessoa está quando descobre que não lembra. Até esta entrega
+            não havia saída nenhuma — o cliente dependia de o escritório mexer no banco à mão. */}
+        {aoEsquecerSenha ? (
+          <p style={{ marginTop: "var(--gap)", textAlign: "center" }}>
+            <button type="button" className="btn-link" onClick={aoEsquecerSenha}>
+              Esqueci minha senha
+            </button>
+          </p>
+        ) : null}
 
         {demonstracao ? (
           <div className="alerta alerta-info" style={{ marginTop: "var(--gap)" }}>

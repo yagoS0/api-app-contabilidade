@@ -357,6 +357,42 @@ export const REFRESH_TOKEN_EXPIRES_IN = (
   process.env.REFRESH_TOKEN_EXPIRES_IN || "7d"
 ).trim();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Recuperação de senha ("esqueci minha senha")
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Base do PORTAL DO CLIENTE (`apps/portal-cliente-web`), para montar o link do e-mail.
+//
+// ⚠ SEM DEFAULT, e isso é a decisão. Um `localhost:5173` de fallback produziria, em produção, um
+// e-mail com link que não abre em máquina nenhuma — e o usuário descobriria isso depois de já ter
+// recebido a mensagem. Ausente, `POST /auth/forgot-password` RECUSA (503), do mesmo jeito que
+// `/auth/login` recusa quando `AuthService.isEnabled()` é falso.
+export const PORTAL_CLIENTE_WEB_URL = (process.env.PORTAL_CLIENTE_WEB_URL || "")
+  .trim()
+  .replace(/\/+$/, "");
+
+// Validade do token de redefinição, em MINUTOS.
+//
+// ⚠ 60 MINUTOS é uma DECISÃO DE PRAZO, não um número redondo — e é revisável em uma variável de
+// ambiente porque quem manda nela é o dono, não este arquivo.
+//
+// Por que não mais curto (5–15 min): o cliente deste portal não fica sentado na caixa de entrada.
+// Ele pede a redefinição, sai da tela, e vai ler o e-mail no celular quando puder. Token que vence
+// antes disso devolve a pessoa exatamente ao lugar de onde ela veio — pedir socorro ao escritório
+// à mão —, que é o trabalho manual que esta funcionalidade existe para eliminar.
+//
+// Por que não mais longo (24 h): o e-mail do cliente NÃO É NECESSARIAMENTE PESSOAL. Este projeto
+// já mede isso — `PortalClient.guideNotificationEmail` é um endereço separado do dono justamente
+// porque a correspondência da empresa cai numa caixa compartilhada (`financeiro@…`). Um link de
+// redefinição vivo por um dia numa caixa que várias pessoas abrem é uma senha de administrador
+// esperando ser encontrada. Uma hora mantém a janela dentro do mesmo expediente em que o pedido
+// foi feito.
+export const PASSWORD_RESET_TTL_MINUTES = (() => {
+  const raw = Number(process.env.PASSWORD_RESET_TTL_MINUTES);
+  if (Number.isFinite(raw) && raw > 0 && raw <= 24 * 60) return Math.floor(raw);
+  return 60;
+})();
+
 // Sanidade básica (só loga; quem quiser pode “throw”)
 if (!GOOGLE_APPLICATION_CREDENTIALS && !GOOGLE_APPLICATION_CREDENTIALS_JSON)
   log.warn("GOOGLE_APPLICATION_CREDENTIALS/GOOGLE_APPLICATION_CREDENTIALS_JSON ausente no .env");
@@ -368,6 +404,10 @@ if (!AUTH_USERS.length)
   log.warn("AUTH_USERS vazio: configure pelo menos um usuário para login/password");
 if (!JWT_SECRET)
   log.warn("JWT_SECRET vazio: tokens JWT não serão emitidos");
+if (!PORTAL_CLIENTE_WEB_URL)
+  log.warn(
+    "PORTAL_CLIENTE_WEB_URL ausente: /auth/forgot-password vai RECUSAR (503) — sem a base do portal não há link de redefinição a enviar"
+  );
 // ⚠ NFSE_CERT_PFX_PATH / NFSE_CERT_PFX_PASSWORD NÃO SÃO MAIS LIDOS PELA EMISSÃO.
 //
 // Eram um PFX GLOBAL — um arquivo só assinando DPS de qualquer CNPJ da carteira e servindo de mTLS

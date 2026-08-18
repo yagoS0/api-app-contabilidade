@@ -4,6 +4,12 @@ import rateLimit from "express-rate-limit";
 import { prisma } from "../infrastructure/db/prisma.js";
 import { validateStrongPassword, strongPasswordMessage } from "../application/validators/passwordPolicy.js";
 import { ClientSessionService } from "../application/auth/ClientSessionService.js";
+import {
+  PasswordResetService,
+  enviarEmailRedefinicao,
+  mailerConfigurado,
+  portalConfigurado,
+} from "../application/auth/PasswordResetService.js";
 import { safeLogError } from "../lib/safeLogError.js";
 
 export function createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized }) {
@@ -59,6 +65,21 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
   const authStrictLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
     max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "too_many_requests", reason: "auth_rate_limit" },
+  });
+
+  // ⚠ MAIS ESTRITO QUE O `authStrictLimiter`, e o motivo é que esta rota é a única da API que
+  // FAZ O SERVIDOR MANDAR E-MAIL PARA UM ENDEREÇO ESCOLHIDO POR QUEM CHAMA.
+  //
+  // /login e /refresh, sob abuso, só gastam CPU nossa. /forgot-password entrega mensagens na caixa
+  // de outra pessoa: 10 requisições em 5 minutos são 10 e-mails que a vítima recebe sem ter pedido
+  // nada, e o mesmo abuso queima a reputação de envio do domínio do escritório. 5 em 15 minutos
+  // continua folgado para o uso legítimo — quem esqueceu a senha pede uma vez, no máximo duas.
+  const forgotPasswordLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "too_many_requests", reason: "auth_rate_limit" },
@@ -359,6 +380,163 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
       return res.json({ ok: true });
     } catch (err) {
       safeLogError(log, { userId: authUser.id }, err, "Falha ao trocar senha");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // ESQUECI MINHA SENHA — pedir o link
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  //
+  // ⚠⚠ A RESPOSTA É A MESMA PARA E-MAIL CADASTRADO E NÃO CADASTRADO. Mesmo corpo, mesmo status.
+  // Isto não é polidez: um portal contábil que responde "este e-mail não existe" deixa qualquer
+  // pessoa descobrir, endereço por endereço, QUEM É CLIENTE DE QUAL ESCRITÓRIO. A enumeração de
+  // usuário é o defeito clássico desta tela e é o requisito mais forte desta rota.
+  //
+  // Os quatro desfechos que respondem IGUAL (200 `RESPOSTA_GENERICA`):
+  //   1. e-mail não existe          → nada acontece
+  //   2. e-mail existe e está ativo → token criado, e-mail enviado
+  //   3. usuário pendente/bloqueado → nada é enviado (ver abaixo)
+  //   4. o envio do e-mail falhou   → ver a nota sobre falha de envio
+  //
+  // ⚠ A ÚNICA resposta diferente é 503, e ela é sobre o SERVIDOR, não sobre a conta: é decidida
+  // ANTES de tocar no banco, então vale igual para todo endereço e não informa nada sobre nenhum.
+  const RESPOSTA_GENERICA = {
+    ok: true,
+    message:
+      "Se houver uma conta com esse e-mail, enviamos as instruções para redefinir a senha.",
+  };
+
+  router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
+    if (isRateLimited(req)) {
+      return res.status(429).json({ error: "too_many_requests" });
+    }
+
+    // ⚠ CONFIGURAÇÃO PRIMEIRO, SEMPRE. Sem mailer ou sem a base do portal, esta rota NÃO PODE
+    // responder 200: o usuário ficaria esperando para sempre um e-mail que nunca foi tentado.
+    // Mesmo desenho do `auth_not_configured` do /login logo acima — ausência de configuração é
+    // recusa nomeada, nunca sucesso silencioso.
+    if (!mailerConfigurado()) {
+      log.warn("Pedido de redefinição de senha, mas o envio de e-mail não está configurado");
+      return res.status(503).json({ error: "mail_not_configured" });
+    }
+    if (!portalConfigurado()) {
+      log.warn("Pedido de redefinição de senha, mas PORTAL_CLIENTE_WEB_URL não está configurada");
+      return res.status(503).json({ error: "mail_not_configured" });
+    }
+
+    const { email } = req.body || {};
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ error: "email_required" });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+
+    let user = null;
+    try {
+      user = await UserRepository.findByEmail(normalizedEmail);
+    } catch (err) {
+      safeLogError(log, {}, err, "Falha ao consultar usuário para redefinição de senha");
+    }
+
+    // ⚠⚠ A RESPOSTA SAI AQUI, ANTES DE CRIAR O TOKEN E DE MANDAR O E-MAIL — e isto fecha o
+    // ORÁCULO DE TEMPO, que é o vazamento que sobra depois de igualar corpo e status.
+    //
+    // Se esperássemos o envio, o caminho "e-mail existe" custaria uma escrita no banco mais uma
+    // ida ao Gmail (centenas de ms a segundos) e o caminho "não existe" custaria um SELECT
+    // indexado (~1 ms). Ninguém precisa ler o corpo da resposta para enumerar clientes: bastaria
+    // CRONOMETRAR. Respondendo antes, os dois caminhos fazem exatamente o mesmo trabalho até o
+    // `res.json` — a mesma consulta, e nada mais.
+    //
+    // Isto NÃO enfraquece nada, porque o desfecho do envio já não podia mudar a resposta (veja a
+    // nota de falha de envio abaixo): não se está escondendo um erro que antes aparecia.
+    res.json(RESPOSTA_GENERICA);
+
+    // ⚠ `status !== "active"` NÃO vira exceção visível — a resposta genérica já foi enviada, igual
+    // para todo mundo. Não mandamos e-mail porque redefinir a senha de uma conta ainda não
+    // aprovada não daria acesso a nada (o /login continuaria recusando com `user_not_active`):
+    // seria um link prometendo o que não pode cumprir. Quem pergunta não fica sabendo a diferença.
+    if (!user || (user.status || "active") !== "active") return;
+
+    try {
+      const { token, expiraEmMinutos } = await PasswordResetService.criarPedido(user.id, {
+        requestIp: req.ip,
+      });
+      await enviarEmailRedefinicao({
+        to: user.email,
+        nome: user.name,
+        token,
+        expiraEmMinutos,
+      });
+      // ⚠ SEM O TOKEN. `userId` responde "quem pediu"; o token em claro nunca entra em log nenhum
+      // — nem aqui, nem em mensagem de erro. (`safeLogError` redige chaves com "token", mas
+      // depender disso seria contar com a rede de proteção em vez de não deixar cair.)
+      log.info({ userId: user.id }, "E-mail de redefinição de senha enviado");
+    } catch (err) {
+      // ⚠ FALHA NO ENVIO NÃO VIRA ERRO PARA QUEM CHAMOU, e é escolha consciente entre dois males.
+      //
+      // Um 5xx aqui seria um ORÁCULO: para e-mail inexistente nunca há envio, logo nunca haveria
+      // erro — então "deu erro" passaria a significar "esta conta existe". Isso desfaria, por uma
+      // porta lateral, a regra inteira que esta rota existe para cumprir.
+      //
+      // Por isso a falha vira RUÍDO NO LOG DO ESCRITÓRIO, não sinal para quem chama. A ausência de
+      // configuração — que é o caso comum e previsível — já foi tratada acima, ANTES do banco,
+      // onde pode recusar sem vazar nada. O que sobra aqui é falha transitória do provedor.
+      //
+      // ⚠ PERGUNTA EM ABERTO PARA O DONO: se o Gmail cair, o cliente lê "enviamos as instruções" e
+      // não recebe nada. Um alerta ao escritório (ou um retry, como o `guideEmailWorker` já faz
+      // com as guias) fecharia esse buraco sem reabrir o oráculo. Não foi construído por ser
+      // decisão de produto, não detalhe de implementação.
+      safeLogError(log, { userId: user.id }, err, "Falha ao enviar e-mail de redefinição de senha");
+    }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  // ESQUECI MINHA SENHA — usar o link
+  // ───────────────────────────────────────────────────────────────────────────────────────────
+  //
+  // ⚠ UMA SÓ RECUSA para token inexistente, adulterado, EXPIRADO e JÁ USADO: `invalid_reset_token`.
+  //
+  // ⚠ O código é PRÓPRIO, e não o `invalid_token` genérico do resto da API, porque aquele já
+  // significa "sua sessão expirou" para o portal do cliente (`lib/mensagens.js`). Reaproveitá-lo
+  // faria a tela de redefinição dizer a um usuário DESLOGADO que a sessão dele acabou — instrução
+  // impossível de seguir. Distinguir aqui não vaza nada: os quatro casos continuam idênticos entre
+  // si, que é a regra; o que muda é só a separação de "link ruim" e "sessão morta".
+  // "Este token já foi usado" conta ao atacante que o token existiu — e portanto que a conta
+  // existe, que alguém pediu a redefinição e mais ou menos quando.
+  router.post("/reset-password", authStrictLimiter, async (req, res) => {
+    if (isRateLimited(req)) {
+      return res.status(429).json({ error: "too_many_requests" });
+    }
+    const { token, password } = req.body || {};
+    if (typeof token !== "string" || !token || typeof password !== "string" || !password) {
+      return res.status(400).json({ error: "token_password_required" });
+    }
+
+    // ⚠ A FORÇA DA SENHA É CONFERIDA ANTES DO TOKEN, e a ordem é de propósito.
+    //
+    // Ao contrário, um atacante mandaria um token chutado com uma senha fraca: receber
+    // `weak_password` em vez de `invalid_token` provaria que o chute acertou. Adivinhar 32 bytes é
+    // inviável, então isto é defesa em profundidade — mas custa uma troca de ordem, e o caminho em
+    // que ela importa é aquele em que alguma outra coisa já deu errado.
+    const pwCheck = validateStrongPassword(password);
+    if (!pwCheck.ok) {
+      return res.status(400).json({
+        error: "weak_password",
+        message: strongPasswordMessage(pwCheck.errors),
+        missing: pwCheck.errors,
+      });
+    }
+
+    try {
+      const resultado = await PasswordResetService.redefinirSenha(token, password);
+      if (!resultado.ok) {
+        return res.status(400).json({ error: "invalid_reset_token" });
+      }
+      // Nada do token aqui — só de quem foi a senha trocada.
+      log.info({ userId: resultado.userId }, "Senha redefinida por token; sessões revogadas");
+      return res.json({ ok: true });
+    } catch (err) {
+      safeLogError(log, {}, err, "Falha ao redefinir senha por token");
       return res.status(500).json({ error: "internal_error" });
     }
   });
