@@ -204,6 +204,14 @@ export function NotasFiscaisTab({
              a rota devolvia a lista `missing` e ela morria ali. Agora o assistente a espelha ANTES
              do clique, com o nome do campo e onde preenchê-lo. */
           cadastroEmissao={cadastroEmissao}
+          /* ⚠ SUGESTÃO DE TOMADOR, E NADA MAIS. São as notas que ESTA ABA já carregou — nenhuma
+             chamada nova, nenhum modelo de "cliente" (não existe um neste projeto). É uma PÁGINA
+             filtrada por competência e por papel, e o assistente diz isso no rótulo: quem não
+             aparece na sugestão pode existir mesmo assim. Só a janela de NFS-e alimenta a lista —
+             tomador de NF-e é outra coisa.
+             ⚠ E SÓ COM `papel: "EMIT"`. Em "Recebidas" (`DEST`) o tomador de toda linha é a PRÓPRIA
+             empresa — sugerir dali ofereceria a empresa como tomadora dela mesma. */
+          notasDaEmpresa={notasFilters.papel === "EMIT" ? notasDaJanela : null}
           onEmitir={(payload) => nfseApi.emitirNfse(payload)}
           onClose={() => setEmitindo(false)}
           /* ⚠ ISTO NÃO FAZ A NOTA APARECER NA LISTA, e não é para fazer.

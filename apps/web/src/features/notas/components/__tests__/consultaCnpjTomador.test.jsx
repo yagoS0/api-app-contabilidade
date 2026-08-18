@@ -11,9 +11,17 @@
 //   3. API fora do ar / rede    → idem, com o texto da escapatória manual
 //   4. CPF (11 dígitos)         → NADA acontece: sem chamada, sem mensagem, sem piscar
 
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { EmitirNfseWizard } from "../EmitirNfseWizard";
+
+// ⚠ O ESPELHO AO VIVO REPETE O NOME DO TOMADOR NA MESMA TELA. Por isso as buscas por texto que
+// existe nos dois lugares são escopadas com `noFormulario`/`painel` — "Found multiple elements"
+// aqui é sinal de que o espelho está funcionando, não de defeito.
+//
+// ⚠ E O ASSISTENTE TEM DOIS PASSOS: tomador, serviço e valores são blocos da MESMA tela. O
+// "Continuar" leva à conferência e só habilita com a nota INTEIRA preenchida — então os casos que
+// dizem "a consulta não bloqueia" preenchem o resto e conferem o mesmo desfecho de antes.
 
 const noop = () => {};
 
@@ -68,6 +76,23 @@ function digitar(rotulo, valor) {
   fireEvent.change(screen.getByLabelText(rotulo, { exact: false }), { target: { value: valor } });
 }
 
+/** O painel do espelho ao vivo — `<aside aria-label="A nota como ela vai sair">`. */
+function painel() {
+  return screen.getByRole("complementary", { name: /A nota como ela vai sair/ });
+}
+
+/** Tudo o que NÃO é o espelho: o formulário, os avisos e a lista de pendências. */
+function noFormulario(matcher, opcoes) {
+  return screen.getAllByText(matcher, opcoes).filter((el) => !painel().contains(el));
+}
+
+/** O resto da nota, para o "Continuar" poder responder sobre o que estes casos perguntam. */
+function completarORestoDaNota() {
+  digitar("Descrição do serviço", "Consultoria contábil");
+  digitar("Valor dos serviços", "1500");
+  digitar("Total de tributos do Simples Nacional", "6");
+}
+
 const CNPJ = "12345678000199";
 
 describe("1) CNPJ encontrado — a consulta OFERECE, e diz de onde veio", () => {
@@ -76,8 +101,10 @@ describe("1) CNPJ encontrado — a consulta OFERECE, e diz de onde veio", () => 
     abrir({ fetchCnpj: f });
     digitar("CNPJ ou CPF do tomador", CNPJ);
 
-    expect(await screen.findByText(/TOMADOR EXEMPLO LTDA/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("TOMADOR EXEMPLO LTDA");
+    await waitFor(() => expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("TOMADOR EXEMPLO LTDA"));
+    // O nome aparece no bloco da consulta E no espelho ao vivo.
+    expect(noFormulario(/TOMADOR EXEMPLO LTDA/).length).toBeGreaterThan(0);
+    expect(within(painel()).getByText(/TOMADOR EXEMPLO LTDA/)).toBeInTheDocument();
     // A origem aparece em DOIS lugares: no rótulo do nome e no do endereço — os dois vieram da
     // consulta, e cada campo responde por si.
     expect(screen.getAllByText(/\(da Receita\)/)).toHaveLength(2);
@@ -108,6 +135,9 @@ describe("1) CNPJ encontrado — a consulta OFERECE, e diz de onde veio", () => 
     expect(await screen.findByText(/O endereço NÃO foi preenchido/)).toBeInTheDocument();
     expect(screen.getByLabelText(/Logradouro/)).toHaveValue("");
     expect(screen.getByLabelText(/Código do município/)).toHaveValue("");
+    // A consulta que falha em parte não acrescenta pendência nenhuma: com o resto preenchido, o
+    // caminho segue exatamente como seguiria sem consulta alguma.
+    completarORestoDaNota();
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
   });
 
@@ -117,6 +147,7 @@ describe("1) CNPJ encontrado — a consulta OFERECE, e diz de onde veio", () => 
     digitar("CNPJ ou CPF do tomador", CNPJ);
 
     expect(await screen.findByText(/Situação cadastral do tomador na Receita: BAIXADA/)).toBeInTheDocument();
+    completarORestoDaNota();
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
   });
 
@@ -125,7 +156,7 @@ describe("1) CNPJ encontrado — a consulta OFERECE, e diz de onde veio", () => 
     const f = fetchFalso();
     abrir({ fetchCnpj: f });
     digitar("CNPJ ou CPF do tomador", CNPJ);
-    await screen.findByText(/TOMADOR EXEMPLO LTDA/);
+    await waitFor(() => expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("TOMADOR EXEMPLO LTDA"));
 
     digitar("E-mail", "contato@exemplo.com.br");
     await waitFor(() => expect(f).toHaveBeenCalledTimes(1));
@@ -142,9 +173,11 @@ describe("2) CNPJ não encontrado — a recusa aparece e a emissão segue possí
     expect(screen.getByText(/a emissão segue normalmente/)).toBeInTheDocument();
 
     digitar("Nome ou razão social", "TOMADOR DIGITADO À MÃO");
+    completarORestoDaNota();
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
-    expect(screen.getByLabelText(/Descrição do serviço/)).toBeInTheDocument();
+    // Chegou à conferência: o botão Emitir só existe lá.
+    expect(screen.getByRole("button", { name: /Emitir nota/ })).toBeInTheDocument();
   });
 });
 
@@ -155,6 +188,7 @@ describe("3) API fora do ar — mesma regra, texto da escapatória manual", () =
 
     expect(await screen.findByText(/preencha à mão/)).toBeInTheDocument();
     digitar("Nome ou razão social", "TOMADOR DIGITADO À MÃO");
+    completarORestoDaNota();
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
   });
 
@@ -181,8 +215,9 @@ describe("4) CPF — NADA acontece", () => {
     expect(f).not.toHaveBeenCalled();
     expect(screen.queryByText(/Receita/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /consultar Receita/i })).not.toBeInTheDocument();
-    // O CPF continua valendo como documento do tomador — só o nome é que falta.
+    // O CPF continua valendo como documento do tomador — nada do que falta é por causa dele.
     digitar("Nome ou razão social", "MARIA DA SILVA");
+    completarORestoDaNota();
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
     expect(f).not.toHaveBeenCalled();
   });
@@ -211,7 +246,7 @@ describe("o que o contador digitou SOBREVIVE a uma consulta nova", () => {
     expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("NOME QUE O CONTADOR ESCREVEU");
     expect(screen.getByText(/\(digitado\)/)).toBeInTheDocument();
     // O outro lado não some: a razão social da Receita continua na tela, com um botão para adotá-la.
-    expect(screen.getByText(/TOMADOR EXEMPLO LTDA/)).toBeInTheDocument();
+    expect(noFormulario(/TOMADOR EXEMPLO LTDA/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /usar o da Receita/i }));
     expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("TOMADOR EXEMPLO LTDA");
@@ -221,7 +256,7 @@ describe("o que o contador digitou SOBREVIVE a uma consulta nova", () => {
     const f = fetchFalso();
     abrir({ fetchCnpj: f });
     digitar("CNPJ ou CPF do tomador", CNPJ);
-    await screen.findByText(/TOMADOR EXEMPLO LTDA/);
+    await waitFor(() => expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("TOMADOR EXEMPLO LTDA"));
 
     digitar("Nome ou razão social", "CORRIGIDO PELO CONTADOR");
     fireEvent.click(screen.getByRole("button", { name: /consultar Receita/i }));
@@ -235,7 +270,7 @@ describe("o que o contador digitou SOBREVIVE a uma consulta nova", () => {
     digitar("Código do município", "3550308");
     digitar("CNPJ ou CPF do tomador", CNPJ);
 
-    await screen.findByText(/TOMADOR EXEMPLO LTDA/);
+    await waitFor(() => expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue("TOMADOR EXEMPLO LTDA"));
     expect(screen.getByLabelText(/Código do município/)).toHaveValue("3550308");
     expect(screen.getByLabelText(/Logradouro/)).toHaveValue("");
   });

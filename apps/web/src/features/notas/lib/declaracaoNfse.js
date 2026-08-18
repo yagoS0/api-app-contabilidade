@@ -266,7 +266,17 @@ export function linhasDoEspelho(dados = {}) {
   linhas.push({ rotulo: "Competência", valor: competencia || "não informada" });
   if (referencia) linhas.push({ rotulo: "Referência", valor: String(referencia).trim() });
 
-  linhas.push({ rotulo: "Valor dos serviços", valor: fmtBRL(servico.valor), forte: true, separadorAntes: true });
+  // ⚠ VALOR AUSENTE NÃO É "R$ 0,00". O espelho passou a ser desenhado AO VIVO, ao lado do
+  // formulário — então ele é lido com os campos ainda vazios, o que antes não acontecia (o passo
+  // "Conferir" só era alcançável com o valor já validado). "R$ 0,00" num campo em branco é uma
+  // afirmação sobre a nota: diz que ela vale zero. Travessão diz que ninguém informou.
+  const valorInformado = Number.isFinite(Number(servico.valor)) && Number(servico.valor) > 0;
+  linhas.push({
+    rotulo: "Valor dos serviços",
+    valor: valorInformado ? fmtBRL(servico.valor) : "não informado",
+    forte: true,
+    separadorAntes: true,
+  });
   linhas.push({
     rotulo: "Alíquota de ISS",
     valor: servico.aliquota == null || servico.aliquota === "" ? "a da prefeitura" : fmtPercent(servico.aliquota),

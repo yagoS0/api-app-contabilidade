@@ -1769,3 +1769,29 @@ th {
     margin-bottom: 10px;
   }
 }
+
+/* ─── Assistente de emissão de NFS-e: formulário + espelho ao vivo ───────────
+   ⚠ A LARGURA VEM DE MEDIA QUERY, NÃO DE `window.innerWidth`. O assistente é um modal e nasce
+   junto com o layout; ler a largura no primeiro render é a armadilha que já fez o calendário abrir
+   em modo celular numa janela grande (`ehTelaEstreita`, em `renderCalendarioGrid`).
+
+   Duas colunas: o formulário e o espelho da nota. Abaixo de 900px vira uma coluna e o espelho fica
+   EMBAIXO do formulário — nunca escondido: ele é a declaração, e o passo "Conferir" é a única
+   porta para o botão Emitir. Na conferência a grade já é de uma coluna só, porque ali o espelho é
+   a tela inteira. */
+.emitir-nfse-corpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  gap: 16px;
+  align-items: start;
+}
+
+.emitir-nfse-corpo--conferir {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .emitir-nfse-corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

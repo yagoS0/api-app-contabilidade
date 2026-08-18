@@ -15,6 +15,16 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { EmitirNfseWizard } from "../EmitirNfseWizard";
 
+// ⚠ O ASSISTENTE TEM DOIS PASSOS, NÃO QUATRO — tomador, serviço e valores são blocos da MESMA
+// tela, com o espelho ao vivo ao lado. Estes testes deixaram de contar cliques em "Continuar"
+// (eram três) e passaram a preencher a nota e conferir o desfecho, que é o que eles sempre
+// quiseram dizer.
+//
+// ⚠ E O ESPELHO REPETE OS DADOS DA NOTA NA MESMA TELA, DE PROPÓSITO. Por isso as buscas por texto
+// que existe nos dois lugares são escopadas: `noFormulario` exclui o painel. Sem isso, "o nome
+// aparece" viraria "Found multiple elements" — que é sinal de que o espelho está funcionando, não
+// de defeito.
+
 const noop = () => {};
 
 // ⚠ O município emissor vem PREENCHIDO por padrão aqui porque, sem ele, a empresa não emite e o
@@ -67,14 +77,22 @@ function continuar() {
   fireEvent.click(screen.getByRole("button", { name: /Continuar/ }));
 }
 
-// Preenche até o passo de valores, sem avançar dele.
+/** O painel do espelho ao vivo — `<aside aria-label="A nota como ela vai sair">`. */
+function painel() {
+  return screen.getByRole("complementary", { name: /A nota como ela vai sair/ });
+}
+
+/** Tudo o que NÃO é o espelho: o formulário, os avisos e a lista de pendências. */
+function noFormulario(matcher, opcoes) {
+  return screen.getAllByText(matcher, opcoes).filter((el) => !painel().contains(el));
+}
+
+// Preenche a nota inteira MENOS o percentual do Simples — o campo que os primeiros casos exercitam.
 function ateOsValores() {
   digitar("CNPJ ou CPF do tomador", "12345678000199");
   digitar("Nome ou razão social", "ACME LTDA");
-  continuar();
   digitar("Descrição do serviço", "Consultoria contábil");
   digitar("Competência", "2026-08");
-  continuar();
   digitar("Valor dos serviços", "1500");
   digitar("Alíquota de ISS", "2");
 }
@@ -112,7 +130,9 @@ describe("as recusas do servidor aparecem ANTES do clique", () => {
   it("Simples resolve e mostra o opSimpNac que vai no XML", () => {
     abrir({ regime: "SIMPLES" });
     ateOsValores();
-    expect(screen.getByText(/Simples Nacional — ME\/EPP \(opSimpNac 3\)/)).toBeInTheDocument();
+    // No bloco do regime E no espelho ao vivo — a mesma leitura, nos dois lugares onde ela é lida.
+    expect(noFormulario(/Simples Nacional — ME\/EPP \(opSimpNac 3\)/)).toHaveLength(1);
+    expect(within(painel()).getByText(/Simples Nacional — ME\/EPP \(opSimpNac 3\)/)).toBeInTheDocument();
   });
 
   // ⚠ A empresa do Lucro Presumido saía declarada como Simples ME/EPP. Hoje ela declara
@@ -120,7 +140,7 @@ describe("as recusas do servidor aparecem ANTES do clique", () => {
   it("Lucro Presumido declara opSimpNac 1 e a emissão fica bloqueada com o motivo", () => {
     abrir({ regime: "LUCRO_PRESUMIDO" });
     ateOsValores();
-    expect(screen.getByText(/Não optante pelo Simples Nacional \(opSimpNac 1\)/)).toBeInTheDocument();
+    expect(noFormulario(/Não optante pelo Simples Nacional \(opSimpNac 1\)/)).toHaveLength(1);
     expect(screen.getByText("Presumido")).toBeInTheDocument();
     // A explicação inteira aparece UMA vez (no bloco do regime); a lista de pendências e o
     // `title` do botão levam a versão curta.
@@ -146,9 +166,7 @@ describe("as recusas do servidor aparecem ANTES do clique", () => {
     abrir();
     digitar("CNPJ ou CPF do tomador", "12345678000199");
     digitar("Nome ou razão social", "ACME LTDA");
-    continuar();
     digitar("Descrição do serviço", "Consultoria");
-    continuar();
     digitar("Valor dos serviços", "1500");
     digitar("Total de tributos do Simples Nacional", "6");
     fireEvent.click(screen.getByRole("checkbox"));
@@ -250,12 +268,12 @@ describe("empresa sem município emissor não chega ao botão Emitir", () => {
     expect(botao).toHaveAttribute("title", expect.stringContaining("município emissor"));
   });
 
-  it("com o município cadastrado o bloqueio some e o passo 1 volta a andar", () => {
+  it("com o município cadastrado o bloqueio some e a nota anda até a conferência", () => {
     abrir({ codigoMunicipioIbge: "3304557" });
 
     expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
-    digitar("CNPJ ou CPF do tomador", "12345678000199");
-    digitar("Nome ou razão social", "ACME LTDA");
+    ateOsValores();
+    digitar("Total de tributos do Simples Nacional", "6");
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
   });
 });
@@ -301,12 +319,12 @@ describe("empresa sem a configuração de emissão não chega ao botão Emitir",
     expect(bloco).toHaveTextContent("Série da DPS");
   });
 
-  it("com tudo cadastrado o bloqueio some e o passo 1 anda", () => {
+  it("com tudo cadastrado o bloqueio some e a nota anda até a conferência", () => {
     abrir();
 
     expect(screen.queryByText(/Esta empresa ainda não pode emitir nota de serviço/)).not.toBeInTheDocument();
-    digitar("CNPJ ou CPF do tomador", "12345678000199");
-    digitar("Nome ou razão social", "ACME LTDA");
+    ateOsValores();
+    digitar("Total de tributos do Simples Nacional", "6");
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeEnabled();
   });
 
