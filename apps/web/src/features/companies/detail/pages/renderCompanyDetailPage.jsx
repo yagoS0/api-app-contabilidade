@@ -570,6 +570,17 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                    Não escolhe nada — ver `SeletorMunicipioIbge`. */
                 municipioCadastrado={selectedCompany?.municipio}
                 ufCadastrado={selectedCompany?.uf}
+                /* O PORTÃO DA EMISSÃO PELO CLIENTE. ⚠ Vem do payload da empresa (`PortalClient`),
+                   não de `legacyCompany` — é permissão de portal, não configuração fiscal da
+                   `Company`. Prop ausente = "esta tela não recebeu o estado", e o bloco não
+                   renderiza; não é o mesmo que "não liberada". */
+                emissaoCliente={selectedCompany?.emissaoCliente}
+                onSetEmissaoCliente={
+                  editPanel?.onSetEmissaoCliente && selectedCompany?.companyId
+                    ? (liberada) => editPanel.onSetEmissaoCliente(selectedCompany.companyId, liberada)
+                    : null
+                }
+                emissaoClienteSaving={editPanel?.emissaoClienteSaving}
                 // Q11.1: zona de risco
                 status={selectedCompany?.status}
                 dangerSaving={dangerActions?.saving}

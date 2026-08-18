@@ -1052,6 +1052,36 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
 
+  // O PORTÃO DA EMISSÃO PELO CLIENTE (18/08/2026) — liga/desliga por empresa.
+  //
+  // ⚠ NÃO passa pelo "Salvar alterações" do cadastro, de propósito: no backend é rota própria, com
+  // gate ACCOUNTANT+ e auditoria de quem/quando. Um campo a mais no formulário faria o ato fiscal
+  // viajar junto de trocas de telefone e endereço, e a confirmação perderia o sentido.
+  const [emissaoClienteSaving, setEmissaoClienteSaving] = useState(false);
+
+  async function handleSetEmissaoCliente(companyId, liberada) {
+    if (!companyId) return { ok: false };
+    setEmissaoClienteSaving(true);
+    feedback.clearFeedback();
+    try {
+      const res = await api.setEmissaoClienteNfse(companyId, liberada);
+      // Recarrega a carteira: o estado vem do payload da empresa, e sem isto a tela ficaria
+      // mostrando o valor anterior até a próxima navegação.
+      await loadCompanies();
+      feedback.setMessage(
+        liberada
+          ? "Emissão de NFS-e liberada para os usuários CLIENT_ADMIN e OWNER desta empresa."
+          : "Emissão de NFS-e pelo cliente revogada. Só o escritório emite por esta empresa."
+      );
+      return res;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao alterar a liberação de emissão.");
+      throw err;
+    } finally {
+      setEmissaoClienteSaving(false);
+    }
+  }
+
   // Q11.1: suspender / reativar / excluir empresa
   const [companyDangerSaving, setCompanyDangerSaving] = useState(false);
 
@@ -1190,6 +1220,9 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     resetWorkspace,
     globalChartStatus,
     loadGlobalChartStatus,
+    // Portão da emissão de NFS-e pelo cliente
+    emissaoClienteSaving,
+    handleSetEmissaoCliente,
     // Q11.1: ações destrutivas na empresa
     companyDangerSaving,
     handleSuspendCompany,

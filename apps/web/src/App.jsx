@@ -413,6 +413,10 @@ function App() {
           onChange: companiesWorkspace.editCompanyForm.setField,
           onSubmit: companiesWorkspace.handleUpdateCompany,
           submitting: companiesWorkspace.submittingCompanyEdit,
+          // O portão da emissão pelo cliente NÃO é campo do formulário: é rota própria, com
+          // confirmação e auditoria. Por isso viaja como handler ao lado do form, e não em `form`.
+          onSetEmissaoCliente: companiesWorkspace.handleSetEmissaoCliente,
+          emissaoClienteSaving: companiesWorkspace.emissaoClienteSaving,
         }}
         accountingPanel={{
           entries: accountingWorkspace.accountingEntriesState.entries,
