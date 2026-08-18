@@ -8,11 +8,18 @@ import { roleLabel } from "../../lib/roles";
 import { SeletorEmpresa } from "./SeletorEmpresa";
 import { HomePage } from "../home/HomePage";
 import { NotasPage } from "../notas/NotasPage";
+import { EmitirNotaPage } from "../emitir/EmitirNotaPage";
 import { GuiasPage } from "../guias/GuiasPage";
 
+// ⚠ A ABA "EMITIR" APARECE SEMPRE, inclusive para quem não pode emitir — e isso é deliberado.
+// Escondê-la deixaria o cliente sem saber que a emissão existe e sem saber que ela depende de um
+// clique do contador; a tela do outro lado explica QUAL das guardas está fechada e o que fazer.
+// (É o oposto do caso da DEFIS, em que o dono pediu silêncio: lá a dispensa é permanente e não há
+// nada a pedir a ninguém. Aqui há.)
 const ABAS = [
   { chave: "home", rotulo: "Início" },
   { chave: "notas", rotulo: "Notas" },
+  { chave: "emitir", rotulo: "Emitir" },
   { chave: "guias", rotulo: "Guias" },
 ];
 
@@ -118,6 +125,15 @@ export function AppShell({ user }) {
           </Vazio>
         ) : rota === "notas" ? (
           <NotasPage empresa={empresaAtiva} />
+        ) : rota === "emitir" ? (
+          <EmitirNotaPage
+            empresa={empresaAtiva}
+            aoNavegar={navegar}
+            // ⚠ Recarregar as EMPRESAS, não a tela: o estado do portão (`emissaoNfseLiberada`)
+            // vem de `GET /client/companies`, então quem está no ramo "não recebemos o estado" só
+            // sai dele refazendo essa chamada.
+            aoRecarregarEmpresas={empresasQuery.recarregar}
+          />
         ) : rota === "guias" ? (
           <GuiasPage empresa={empresaAtiva} />
         ) : (

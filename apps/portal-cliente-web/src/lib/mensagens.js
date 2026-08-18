@@ -57,6 +57,50 @@ const MENSAGENS = {
   not_found: "Não encontramos este registro.",
   file_not_available: "O arquivo ainda não está disponível.",
 
+  // --- Emissão de NFS-e: recusas do VALIDADOR (campo do formulário) --------
+  //
+  // ⚠ Códigos de `apps/api/src/application/validators/nfsePayload.js`, copiados literalmente. São
+  // recusas de PEDIDO: nada saiu da máquina e nenhum número foi consumido — a frase precisa dizer
+  // o que corrigir, não pedir para "tentar de novo".
+  payload_invalido: "Não conseguimos ler os dados da nota. Recarregue a página e preencha de novo.",
+  tomador_documento_invalido:
+    "O CNPJ ou CPF do tomador precisa ter 14 dígitos (CNPJ) ou 11 dígitos (CPF).",
+  // ⚠ DISTINTO do de cima, de propósito: aqui o campo está preenchido e o NÚMERO é que está
+  // errado. Emitir contra um CPF com um dígito trocado é emitir contra outra pessoa, e a NFS-e
+  // não tem inutilização — o conserto seria cancelar a nota.
+  tomador_cpf_digito_invalido:
+    "Este CPF não é válido: confira os números digitados. (A verificação é feita aqui mesmo, sem consultar nenhuma base.)",
+  tomador_nome_obrigatorio: "Informe o nome ou a razão social do tomador.",
+  tomador_email_invalido: "O e-mail do tomador não parece válido.",
+  servico_descricao_obrigatoria: "Descreva o serviço prestado.",
+  servico_valor_invalido: "Informe o valor do serviço — precisa ser maior que zero.",
+  servico_local_prestacao_invalido:
+    "O código do município de prestação precisa ter 7 dígitos (código IBGE).",
+  servico_codigo_nacional_invalido: "O código de serviço informado não tem os 6 dígitos exigidos.",
+  p_tot_trib_sn_invalido: "A alíquota efetiva do Simples Nacional precisa estar entre 0 e 100.",
+
+  // --- Emissão de NFS-e: impedimentos do CADASTRO da empresa ---------------
+  //
+  // ⚠ Nenhum destes o cliente resolve sozinho — todos terminam no contador. Frases genéricas aqui
+  // ("erro ao emitir") mandariam o cliente tentar de novo para sempre.
+  company_not_found: "Não encontramos o cadastro desta empresa. Fale com o seu contador.",
+  company_missing_fields:
+    "O cadastro fiscal da empresa está incompleto e a nota não pode ser emitida. Fale com o seu contador.",
+  nfse_not_configured:
+    "A emissão de NFS-e ainda não está configurada para esta empresa. Fale com o seu contador.",
+  nfse_ultima_nota_ilegivel:
+    "Não foi possível ler a numeração da última nota desta empresa. Fale com o seu contador antes de emitir.",
+  nfse_leitura_numeracao_indisponivel:
+    "Não conseguimos consultar a numeração das notas agora. Tente de novo em alguns minutos.",
+  nfse_retry_invoice_not_found:
+    "Não encontramos a tentativa anterior desta nota. Recarregue a página e preencha de novo.",
+
+  // --- Emissão de NFS-e: o portão (quem pode emitir) -----------------------
+  emissao_cliente_nao_liberada:
+    "A emissão de notas ainda não foi liberada para esta empresa. Peça ao seu contador.",
+  emissao_cliente_papel_insuficiente:
+    "Seu perfil nesta empresa não permite emitir notas. Peça ao responsável da empresa.",
+
   // --- Servidor / rede ---
   internal_error: "Algo deu errado do nosso lado. Tente de novo em instantes.",
   not_implemented_yet: "Esta funcionalidade ainda não está disponível.",

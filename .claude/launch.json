@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "apps/web", "--", "--port", "5199", "--mode", "mock"],
       "port": 5199
+    },
+    {
+      "name": "portal-cliente-web-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "apps/portal-cliente-web", "--", "--port", "5210"],
+      "port": 5210
     }
   ]
 }

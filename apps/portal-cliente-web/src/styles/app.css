@@ -128,6 +128,50 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
 .alerta-aviso { border-left-color: var(--warning); background: var(--warning-surface); }
 .alerta-info { border-left-color: var(--primary); background: var(--primary-surface); }
 
+/* =============================================================================
+   Emissão de nota — vocabulário copiado de `prototipos/emissor-notas/styles.css`
+   (fieldset/legend, .hint, .page-split, .nfse-preview, .total, .card-success).
+   A referência visual deste lado do portal é o protótipo; divergir dele aqui
+   faria a mesma tela ter dois desenhos entre a maquete e o app.
+   ============================================================================= */
+
+/* Duas colunas com a pré-visualização grudada no topo enquanto o formulário rola. */
+.page-split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+.pane { min-width: 0; }
+.pane-preview { position: sticky; top: 12px; }
+
+fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 14px; margin: 0 0 var(--gap); min-width: 0; }
+legend { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 0 6px; }
+textarea { min-height: 62px; resize: vertical; }
+input[type="checkbox"] { width: auto; min-height: 0; min-width: 16px; height: 16px; accent-color: var(--primary); }
+.hint { display: block; color: var(--muted); font-size: .82rem; margin-bottom: 10px; }
+.form-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: var(--gap); }
+
+/* Listas de definição (dados da nota emitida). */
+dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: .9rem; }
+dl dt { color: var(--muted); }
+dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* O líquido em destaque. Verde é CONCLUÍDO/valor, o mesmo uso do protótipo. */
+.total { display: flex; justify-content: space-between; align-items: baseline; gap: var(--gap);
+  border-top: 1px solid var(--border); margin-top: var(--gap); padding-top: var(--gap); }
+.total strong { font-size: 1.35rem; color: var(--success); font-variant-numeric: tabular-nums; }
+
+.card-success { border-left: 4px solid var(--success); }
+
+/* Pré-visualização: parece uma nota, para que o erro salte antes da emissão. */
+.nfse-preview { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; font-size: .88rem; }
+.nfse-preview > header { display: flex; justify-content: space-between; gap: var(--gap); border-bottom: 2px solid var(--text); padding-bottom: 10px; margin-bottom: 12px; }
+.nfse-preview > header [data-numero] { text-align: right; color: var(--muted); white-space: nowrap; }
+.nfse-preview section { margin-bottom: 14px; min-width: 0; overflow-wrap: anywhere; }
+.nfse-preview table { width: 100%; border-collapse: collapse; }
+.nfse-preview table td { padding: 3px 0; }
+.nfse-preview table td:last-child { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nfse-preview tr.linha-total td { border-top: 1px solid var(--border); padding-top: 7px; font-weight: 700; }
+.nfse-preview tr.linha-info td { color: var(--muted); font-size: .82rem; }
+.nfse-preview .vazio { color: var(--muted); font-style: italic; }
+
 /* --- Login ---------------------------------------------------------------- */
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: min(400px, 100%); }
@@ -151,6 +195,13 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
 /* =============================================================================
    Responsivo. Critério de aceite: nada quebra em 375px.
    ============================================================================= */
+/* A pré-visualização desce para baixo do formulário antes de as duas colunas
+   ficarem estreitas demais para o que cada uma tem de mostrar. */
+@media (max-width: 960px) {
+  .page-split { grid-template-columns: 1fr; }
+  .pane-preview { position: static; }
+}
+
 @media (max-width: 560px) {
   main.page { padding: 12px; }
   .topbar { padding: 10px 12px; }
@@ -161,4 +212,12 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
   .topbar-actions { margin-left: 0; width: 100%; }
   .topbar-actions .btn { flex: 1 1 auto; }
   .card .numero { font-size: 1.35rem; }
+  .form-actions { justify-content: stretch; }
+  .form-actions .btn { flex: 1 1 130px; }
+  .actions .btn { flex: 1 1 130px; }
+  .total strong { font-size: 1.15rem; }
+  /* Em 375px a coluna do valor de um `dl` não pode empurrar a do rótulo. */
+  dl { grid-template-columns: 1fr; gap: 0 0; }
+  dl dt { margin-top: 6px; }
+  dl dd { text-align: left; }
 }

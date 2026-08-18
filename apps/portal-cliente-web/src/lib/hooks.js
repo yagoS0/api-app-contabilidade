@@ -47,7 +47,7 @@ export function useCarregamento(fn, deps, { habilitado = true } = {}) {
   return { ...estado, recarregar };
 }
 
-const ROTAS = ["home", "notas", "guias"];
+const ROTAS = ["home", "notas", "emitir", "guias"];
 const ROTA_PADRAO = "home";
 
 function rotaDaUrl() {

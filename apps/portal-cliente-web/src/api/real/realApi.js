@@ -90,7 +90,10 @@ async function pedir(path, { method = "GET", body, auth = true } = {}) {
   if (!res.ok) {
     const data = await lerCorpo(res);
     const code = data?.error || data?.code || null;
-    throw new ApiError(res.status, code, data?.message || code);
+    // ⚠ O CORPO INTEIRO VIAJA JUNTO. As recusas de emissão de NFS-e trazem `camada`, `correcao` e
+    // `numeroReutilizavel` — sem eles a tela não consegue distinguir as três camadas, e é essa
+    // distinção que impede um reenvio depois de uma falha de TRANSPORTE.
+    throw new ApiError(res.status, code, data?.message || code, data);
   }
 
   return lerCorpo(res);
@@ -202,6 +205,36 @@ export function createRealApi() {
 
     async getFluxo(companyId) {
       return pedir(`/client/companies/${encodeURIComponent(companyId)}/fluxo`);
+    },
+
+    // --- Emissão de NFS-e ---------------------------------------------------
+    //
+    // ⚠⚠ **ESTE É O ÚNICO MÉTODO DESTE ARQUIVO QUE MUDA O MUNDO FORA DO SISTEMA.** Ele bate na
+    // fachada `POST /client/companies/:companyId/nfse`, que delega ao MESMO `NfseService.issue`
+    // do portal do escritório — e o caminho está apontado para o **sistema nacional de
+    // PRODUÇÃO** (`NFSE_ENV=producao`). O que sai daqui vira nota fiscal de verdade, e a NFS-e
+    // **não tem inutilização**: o conserto de uma nota errada é cancelamento, não edição.
+    //
+    // Contrato lido em (não deduzido):
+    //   `apps/api/src/routes/client/index.js`                     (a fachada e o portão)
+    //   `apps/api/src/application/validators/nfsePayload.js`      (os campos exatos do corpo)
+    //   `apps/api/src/routes/nfseEmissaoHttp.js`                  (os desfechos em três camadas)
+    //
+    // ⚠ `companyId` **não vai no corpo**: ele vem do PATH, e a fachada sobrescreve
+    // (`{...body, companyId: path}`) justamente para que um id no corpo não desvie a emissão para
+    // outra empresa depois de a permissão ter sido conferida nesta.
+    //
+    // ⚠ `retryInvoiceId` reaproveita a linha da tentativa anterior em vez de queimar um número
+    // novo. Só deve ser mandado quando o servidor disse `numeroReutilizavel: true` — nunca depois
+    // de uma falha de TRANSPORTE, em que o próprio servidor recusa com
+    // `nfse_numero_em_estado_indeterminado`.
+    async emitirNfse(companyId, payload, { retryInvoiceId = null } = {}) {
+      const corpo = { ...payload };
+      if (retryInvoiceId) corpo.retryInvoiceId = retryInvoiceId;
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/nfse`, {
+        method: "POST",
+        body: corpo,
+      });
     },
   };
 }
