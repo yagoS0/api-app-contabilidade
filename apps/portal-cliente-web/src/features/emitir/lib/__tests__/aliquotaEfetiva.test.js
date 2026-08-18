@@ -217,3 +217,51 @@ describe("os nomes da origem do campo", () => {
     });
   });
 });
+
+// ── A TERCEIRA PROVA: o percentual também precisa ser LEGÍVEL ─────────────────────────
+//
+// Reportado pelo agente que escreveu esta suíte e REPRODUZIDO antes do conserto: com receita e DAS
+// presentes e `deReceita` ausente, `escolherAliquotaEfetiva` devolvia `valor: NaN` — e aí
+// `textoDaProcedencia` afirmava a origem NORMALMENTE e o campo da nota escrevia "NaN".
+//
+// ⚠ Não é alcançável pela rota de hoje (`client/index.js:704` calcula `deReceita` na mesma
+// expressão que os insumos). É guarda contra uma mudança no backend que ninguém vai lembrar de
+// conferir aqui — e `NaN` é pior que ausente: ausente a tela sabe dizer, `NaN` ela imprime.
+describe("percentual ilegível é tratado como ausente, nunca como NaN", () => {
+  const comInsumos = (extra) => [
+    { competencia: "2026-07", faturamento: 12000, dasExtrato: 720, ...extra },
+  ];
+
+  it.each([
+    ["ausente", undefined],
+    ["nulo", null],
+    ["texto", "seis por cento"],
+    ["NaN", Number.NaN],
+  ])("deReceita %s não vira número", (_rotulo, deReceita) => {
+    const r = escolherAliquotaEfetiva(comInsumos({ deReceita }), "2026-07");
+    expect(r.valor).toBeNull();
+    expect(Number.isNaN(r.valor)).toBe(false);
+    expect(r.motivo).toBeTruthy();
+  });
+
+  it("⚠ a procedencia NÃO afirma origem quando não há número", () => {
+    const r = escolherAliquotaEfetiva(comInsumos({}), "2026-07");
+    const texto = textoDaProcedencia(r, "2026-07");
+    // ⚠ O texto CITA o PGDAS-D — dentro do motivo ("nem receita apurada nem extrato"), que é o
+    // certo. O que ele não pode é AFIRMAR procedência: nada de "DAS de 07/2026 sobre a receita".
+    expect(texto).toMatch(/^Não preenchemos:/);
+    expect(texto).not.toMatch(/DAS de \d{2}\/\d{4}/);
+  });
+
+  it("a linha boa continua passando — a guarda não é ampla demais", () => {
+    const r = escolherAliquotaEfetiva(comInsumos({ deReceita: 6 }), "2026-07");
+    expect(r.valor).toBe(6);
+  });
+
+  it("deReceita ZERO é legível e passa — zero declarado ≠ zero fabricado", () => {
+    // ⚠ A distinção inteira desta lib: o que se recusa é o zero que o backend INVENTA por falta de
+    // insumo. Com receita e DAS provados, um percentual zero é uma LEITURA, e leitura não se descarta.
+    const r = escolherAliquotaEfetiva(comInsumos({ deReceita: 0 }), "2026-07");
+    expect(r.valor).toBe(0);
+  });
+});

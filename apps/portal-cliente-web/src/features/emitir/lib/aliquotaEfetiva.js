@@ -41,9 +41,36 @@ export const ORIGEM_ALIQUOTA = {
   DIGITADA: "digitada",
 };
 
-/** Uma linha da série tem os dois insumos crus que provam que o percentual não é fabricado? */
+/** Uma linha da série tem os insumos crus que provam que o percentual não é fabricado? */
 function linhaTemProva(linha) {
-  return Number(linha?.dasExtrato) > 0 && Number(linha?.faturamento) > 0;
+  // ⚠ O PERCENTUAL TAMBÉM PRECISA SER LEGÍVEL — não basta conferir os dois insumos. Sem a
+  // terceira condição, uma linha COM receita e COM DAS mas sem `deReceita` produzia
+  // `Number(undefined)` = **NaN**: o campo da nota escrevia literalmente "NaN" e
+  // `textoDaProcedencia` afirmava a origem normalmente, como se o número fosse bom. É o oposto
+  // do que o cabeçalho promete ("sem os dois não há de onde tirar" ⇒ campo vazio e motivo).
+  //
+  // NÃO É ALCANÇÁVEL PELA ROTA DE HOJE: `client/index.js:704` calcula `deReceita` na MESMA
+  // expressão que os insumos, então ela nunca vem ausente. A guarda entra por isso mesmo — custa
+  // uma linha e sobrevive a uma mudança no backend que ninguém vai lembrar de conferir aqui.
+  return (
+    Number(linha?.dasExtrato) > 0
+    && Number(linha?.faturamento) > 0
+    && percentualLegivel(linha?.deReceita)
+  );
+}
+
+/**
+ * O percentual foi LIDO, ou está ausente?
+ *
+ * ⚠⚠ `Number.isFinite(Number(x))` NÃO SERVE SOZINHO, e a primeira versão desta guarda errou nisso:
+ * **`Number(null)` é `0`**, que é finito — então `deReceita: null` passava e a nota declarava 0%.
+ * É exatamente a armadilha que o projeto já registra no `apps/web/CLAUDE.md`: o `fatorR` devolvia
+ * `0` por causa de `Number(null) || 0`, elegendo o Anexo V sobre um número que ninguém digitou.
+ * Ausente, nulo e vazio são AUSENTES; `0` só vale quando alguém escreveu zero.
+ */
+function percentualLegivel(v) {
+  if (v === null || v === undefined || v === "") return false;
+  return Number.isFinite(Number(v));
 }
 
 /**
