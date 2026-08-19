@@ -165,7 +165,10 @@ describe("a DESCRIÇÃO chega sugerida, com a origem à vista", () => {
   test("só códigos nus: campo VAZIO, com o motivo e a quem pedir", async () => {
     await renderizar(comAtividades(KAIZEN, "7112000"));
     expect(campoDescricao().value).toBe("");
-    expect(screen.getByText(/não deduzimos o texto a partir do número/i)).toBeInTheDocument();
+    // ⚠ A FRASE ENCURTOU EM 19/08/2026 (o dono: *"esse tanto de legenda é desnecessário"*) e o que
+    // ela protege NÃO: a tela continua dizendo que não há sugestão, por que não há, e a quem pedir.
+    // O que saiu foi *"e não deduzimos o texto a partir do número do CNAE"* — mecânica nossa.
+    expect(screen.getByText(/só o código, sem o texto/i)).toBeInTheDocument();
     expect(screen.getByText(/seu escritório de contabilidade/i)).toBeInTheDocument();
   });
 

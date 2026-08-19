@@ -243,23 +243,27 @@ export function textoDaProcedencia(escolha) {
 /**
  * POR QUE NÃO HÁ SUGESTÃO — e onde se resolve. O texto do "onde" muda por portal (o cliente não
  * edita o próprio cadastro), então ele entra por parâmetro em vez de existir em duas versões.
+ *
+ * ⚠⚠ ENCURTADO EM 19/08/2026 (dono, com a tela do cliente na frente: *"esse tanto de legenda é
+ * desnecessário"*), E O QUE SAIU FOI SÓ A NOSSA MECÂNICA. Saiu *"e não deduzimos o texto a partir
+ * do número do CNAE"*: isso explica como o PORTAL raciocina, e o cliente não tem o que fazer com
+ * essa informação. **Ficou tudo o que responde a pergunta dele:** que não há sugestão (senão o
+ * campo vazio vira mistério), por quê, e a quem pedir. Encolher não é apagar a distinção — a
+ * ausência continua NOMEADA, com motivo próprio para cada caso.
  */
 export function textoDoMotivo(motivo, { ondeSeResolve = "" } = {}) {
   const onde = ondeSeResolve ? ` ${ondeSeResolve}` : "";
   if (motivo === SEM_SUGESTAO.SEM_CADASTRO) return null; // esta tela não recebeu o cadastro: não afirma nada
   if (motivo === SEM_SUGESTAO.SEM_ATIVIDADE) {
-    return `Não sugerimos a descrição: esta empresa não tem atividade cadastrada.${onde}`;
+    return `Sem sugestão: esta empresa não tem atividade cadastrada.${onde}`;
   }
   if (motivo === SEM_SUGESTAO.SEM_DESCRICAO) {
-    return (
-      "Não sugerimos a descrição: as atividades cadastradas têm só o código, sem o texto — e não "
-      + `deduzimos o texto a partir do número do CNAE.${onde}`
-    );
+    return `Sem sugestão: as atividades cadastradas têm só o código, sem o texto.${onde}`;
   }
   if (motivo === SEM_SUGESTAO.VARIAS) {
     return (
-      "Não sugerimos a descrição: esta empresa tem mais de uma atividade cadastrada e nenhuma delas "
-      + "é, sem dúvida, a do CNAE principal. Escolha abaixo ou escreva a descrição."
+      "Sem sugestão: há mais de uma atividade cadastrada e nenhuma delas é, sem dúvida, a do CNAE "
+      + "principal. Escolha abaixo ou escreva a descrição."
     );
   }
   return null;

@@ -14,6 +14,14 @@
 // ⚠⚠ ELA NÃO É UM `ApiError`, e isso é deliberado. Um erro lançado daqui entraria no
 // `real_with_mock_fallback` de `api/index.js` e a falha da BrasilAPI viraria **dados de empresa do
 // mock** numa tela que emite nota fiscal de verdade. Recusa é `{ ok: false }`, sempre.
+//
+// ⚠⚠ A MENSAGEM DIZ O QUE ACONTECEU; O QUE FAZER É DA TELA — e isso é conserto de 19/08/2026, não
+// estética. Estas mensagens terminavam em *"— confira e preencha à mão"*, e a `EmitirNotaPage`
+// renderiza, logo abaixo, *"Preencha os dados do tomador à mão — a emissão segue normalmente"*: o
+// mesmo recado, duas vezes, uma embaixo da outra. Quem apaga uma das duas depois não sabe qual
+// delas carregava o "a emissão segue normalmente" — que é a metade que impede o cliente de achar
+// que travou. A divisão passou a ser: aqui, o FATO (a consulta não saiu); lá, a SAÍDA. Não
+// reintroduza a instrução aqui.
 
 const BASE = "https://brasilapi.com.br/api/cnpj/v1";
 
@@ -57,7 +65,7 @@ export async function consultarCnpjNaBrasilApi(cnpj, { fetchImpl = null } = {}) 
     return {
       ok: false,
       motivo: "rede",
-      mensagem: "Não conseguimos consultar a Receita agora — confira e preencha à mão.",
+      mensagem: "Não conseguimos consultar a Receita agora.",
     };
   }
 
@@ -68,7 +76,7 @@ export async function consultarCnpjNaBrasilApi(cnpj, { fetchImpl = null } = {}) 
     return {
       ok: false,
       motivo: "indisponivel",
-      mensagem: "Não conseguimos consultar a Receita agora — confira e preencha à mão.",
+      mensagem: "Não conseguimos consultar a Receita agora.",
     };
   }
 
@@ -79,7 +87,7 @@ export async function consultarCnpjNaBrasilApi(cnpj, { fetchImpl = null } = {}) 
     return {
       ok: false,
       motivo: "resposta_invalida",
-      mensagem: "A Receita respondeu em um formato que não conseguimos ler — preencha à mão.",
+      mensagem: "A Receita respondeu em um formato que não conseguimos ler.",
     };
   }
 

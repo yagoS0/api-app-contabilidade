@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
-import { TRACO, brl, pct, texto } from "../../lib/format";
+import { TRACO, brl, fmtCompetencia, pct, texto } from "../../lib/format";
 import { useCarregamento } from "../../lib/hooks";
 import { roleLabel } from "../../lib/roles";
 import { carregarMunicipiosIbge } from "../../lib/municipios/municipioIbge";
@@ -70,6 +70,21 @@ import { PreviaNota } from "./PreviaNota";
  *   5. alíquota de ISS fora do formulário no Simples — ver `O ISS NO SIMPLES`, abaixo
  *   6. alíquota efetiva pré-preenchida, com a origem à vista — `lib/aliquotaEfetiva.js`
  *   7. descrição sugerida — `lib/descricoesRecentes.js`
+ *
+ * Ajustes de 19/08/2026, a pedido do dono:
+ *   8. reaproveitar uma nota já emitida, **com o valor em branco** — `lib/reaproveitarNota.js`, e o
+ *      bloco `REAPROVEITAR UMA NOTA JÁ EMITIDA` abaixo (a ligação)
+ *   9. ⚠⚠ **AS LEGENDAS ENCOLHERAM, E O CRITÉRIO ESTÁ ESCRITO AQUI** — *"esse tanto de legenda é
+ *      desnecessário"*, com esta tela na frente. Quem lê é o CLIENTE, não o contador:
+ *        FICA o texto que (a) muda uma decisão de quem emite, (b) avisa de consequência fiscal, ou
+ *          (c) diz o que fazer quando algo falta;
+ *        SAI o que explica o nosso raciocínio interno ou nomeia peça de integração (`dCompet`, a
+ *          dedução de CNAE, a citação da LC 116).
+ *      ⚠ ENCOLHER NÃO É APAGAR A DISTINÇÃO. "Sem sugestão" virou uma linha curta e **não sumiu** —
+ *      senão o campo vazio vira mistério. Corta-se palavra, nunca significado.
+ *      ⚠ E a frase que descreve um comportamento é PARTE do comportamento: as duas legendas falsas
+ *      encontradas aqui (o valor "com ponto", e a trava do não optante) ficaram falsas no dia em
+ *      que o campo e o backend mudaram, e cada uma tem hoje o seu ⚠ no lugar em que mora.
  */
 
 const CAMPOS_VAZIOS = {
@@ -258,7 +273,7 @@ function montarPayload(form, { issNoFormulario }) {
   return payload;
 }
 
-export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
+export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, modelo = null, aoDescartarModelo }) {
   const companyId = empresa.companyId;
   const [form, setForm] = useState(formVazio);
   const [enviando, setEnviando] = useState(false);
@@ -293,7 +308,7 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
   // no CNPJ errado — o pior desfecho possível num portal multi-empresa, e irreversível aqui.
   useEffect(() => {
     setForm(formVazio());
-        setDescricaoDigitada(false);
+    setDescricaoDigitada(false);
     setDesfecho(null);
     setRetryInvoiceId(null);
     setConsulta(CONSULTA_OCIOSA);
@@ -302,6 +317,69 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
     setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
     ultimoConsultado.current = null;
   }, [companyId]);
+
+  // ── REAPROVEITAR UMA NOTA JÁ EMITIDA ──────────────────────────────────────────────────────
+  //
+  // > *"não podemos usar uma nota já emitida para preencher os dados do tomador, e da nota no
+  // > geral, apenas apagando o valor — isso deveria ser possível."* (dono, 19/08/2026)
+  //
+  // ⚠ A REGRA NÃO MORA AQUI: `lib/reaproveitarNota.js` decide o que se copia, o que não se copia e
+  // o que a tela é obrigada a dizer. Este bloco é só a LIGAÇÃO — ele aplica os campos ao formulário
+  // NORMAL, com todas as travas de sempre no lugar (portão, cadastro incompleto, consulta do CNPJ,
+  // desfechos). Não existe caminho que emita "a partir de uma nota" por fora daqui.
+  //
+  // ⚠⚠ CONFERÊNCIA DE EMPRESA ANTES DE APLICAR. O modelo atravessa a casca do app (a lista de notas
+  // é outra tela), e aplicar numa empresa o modelo tirado da nota de OUTRA emitiria no CNPJ errado.
+  // O `companyId` viaja dentro do modelo justamente para poder ser recusado aqui.
+  //
+  // ⚠⚠ ESTE EFEITO É IDEMPOTENTE DE PROPÓSITO, E JÁ FOI O CONTRÁRIO — o defeito apareceu no
+  // NAVEGADOR e passou batido nos testes. Ele tinha uma guarda `if (modelo === jaAplicado) return`
+  // num ref, e o `StrictMode` do React 19 (`main.jsx`) executa cada efeito DUAS VEZES na montagem:
+  // na segunda passada o efeito que zera o formulário na troca de empresa (logo acima) rodava de
+  // novo e limpava tudo, enquanto este via "já apliquei" e não repunha nada. Resultado: o painel
+  // dizia "preenchido a partir da nota nº X" em cima de um formulário VAZIO — exatamente a classe
+  // de defeito (a frase que descreve um comportamento que não é o comportamento) que esta entrega
+  // existe para consertar.
+  // ⚠ A guarda não é necessária: as dependências são `[modelo, companyId]`, e as duas só mudam
+  // quando aplicar de novo é o certo. Reaplicar os MESMOS valores é inofensivo; não reaplicar,
+  // não. `render` duas vezes tem de dar o mesmo resultado que uma.
+  const [modeloNaTela, setModeloNaTela] = useState(null);
+  useEffect(() => {
+    if (!modelo || (modelo.companyId && modelo.companyId !== companyId)) {
+      setModeloNaTela(null);
+      return;
+    }
+    // ⚠ O ESPALHAMENTO É SOBRE O FORMULÁRIO VAZIO, não sobre o que estava na tela: o modelo é um
+    // ponto de partida inteiro, e restos de uma digitação anterior misturados a ele produziriam uma
+    // nota que ninguém montou. `formVazio()` traz a competência de HOJE — a da nota de origem é
+    // dela, e não é copiada.
+    setForm({ ...formVazio(), ...modelo.campos });
+    // ⚠ Descrição VAZIA não conta como digitada: assim o pré-preenchimento pela atividade do
+    // cadastro continua valendo (é o caminho de verdade neste portal, ver `reaproveitarNota.js`).
+    setDescricaoDigitada(Boolean(modelo.campos.descricao));
+    // ⚠ O NOME COPIADO ENTRA COMO `DIGITADO` — a mesma decisão do portal do escritório. É o que
+    // impede a consulta de CNPJ, que o próprio preenchimento do documento dispara, de trocá-lo
+    // sozinho pelo da Receita.
+    setOrigemNome(modelo.campos.tomadorNome ? ORIGEM.DIGITADO : ORIGEM.AUSENTE);
+    setOrigemEndereco(ORIGEM.AUSENTE);
+    // ⚠ A alíquota efetiva volta a ser recalculada: o `setForm` acima zerou `pTotTribSN`, e sem
+    // devolver a origem para `AUSENTE` o efeito que preenche o campo não reexecutaria — o campo
+    // ficaria vazio com "preenchido pelo portal" ao lado.
+    setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
+    setConsulta(CONSULTA_OCIOSA);
+    ultimoConsultado.current = null;
+    setDesfecho(null);
+    setRetryInvoiceId(null);
+    setModeloNaTela(modelo);
+  }, [modelo, companyId]);
+
+  /** Tira o modelo do caminho — o formulário volta a ser um formulário em branco. */
+  function esquecerModelo() {
+    setModeloNaTela(null);
+    // ⚠ E avisa quem GUARDA o modelo (a casca). Sem isto o painel voltaria na próxima vez que o
+    // efeito acima rodasse, porque a prop continuaria apontando para a nota de origem.
+    if (aoDescartarModelo) aoDescartarModelo();
+  }
 
   const portao = lerPortaoEmissao(empresa);
   const legacy = empresa.legacyCompany || null;
@@ -613,6 +691,10 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
         setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
         setConsulta(CONSULTA_OCIOSA);
         ultimoConsultado.current = null;
+        // ⚠ O MODELO SAI JUNTO COM O FORMULÁRIO. Um painel dizendo "preenchido a partir da nota nº
+        // X" em cima de um formulário já limpo afirmaria uma coisa que deixou de ser verdade — a
+        // classe de defeito que esta entrega inteira está consertando.
+        esquecerModelo();
       }
     } catch (err) {
       const lido = lerErroEmissao(err);
@@ -629,6 +711,10 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
         setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
         setConsulta(CONSULTA_OCIOSA);
         ultimoConsultado.current = null;
+        // ⚠ E aqui o modelo sai pelo MESMO motivo do apagamento: o "enviar de novo" de um clique só
+        // sobre uma nota que talvez já exista é justamente o que este ramo tira do caminho. Deixar
+        // o painel de pé ofereceria o atalho de volta.
+        esquecerModelo();
       }
     } finally {
       setEnviando(false);
@@ -667,7 +753,8 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
           aoCorrigir={() => setDesfecho(null)}
           aoNovaNota={() => {
             setForm(formVazio());
-        setDescricaoDigitada(false);
+            setDescricaoDigitada(false);
+            esquecerModelo();
             setRetryInvoiceId(null);
             setOrigemNome(ORIGEM.AUSENTE);
             setOrigemEndereco(ORIGEM.AUSENTE);
@@ -697,29 +784,35 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
             </div>
           ) : null}
 
-          {/* ⚠⚠ MEDIÇÃO, NÃO PALPITE: **hoje esta tela não emite para quem não é do Simples.**
-              `buildDpsXml` recusa com `MISSING_TOT_TRIB_NAO_SIMPLES` quando o regime não é o
-              Simples e nenhum de `pTotTribFed`/`pTotTribEst`/`pTotTribMun` vem no corpo — e o
-              formulário do cliente não oferece nenhum dos três. Lá a recusa é DELIBERADA: o
-              caminho antigo declarava `0,00`, ou seja, carga tributária ZERO (Lei 12.741/2012).
+          {/* ⚠⚠ ESTE AVISO ERA FALSO, E A MEDIÇÃO ESTÁ AQUI. Ele afirmava que *"a emissão pelo
+              portal do cliente ainda não cobre esse caso"* e que a nota *"provavelmente será
+              recusada"* — verdade enquanto os três percentuais só pudessem vir no corpo da emissão,
+              e MENTIRA desde que o cadastro passou a ser a fonte deles (18/08/2026, a pedido do
+              dono: *"deve ser configurado do lado do contador, no portal do contador"*).
+              O que `NfseService` faz hoje, lido e não deduzido: cada um de
+              `pTotTribFed`/`pTotTribEst`/`pTotTribMun` resolve SOZINHO, **payload → cadastro**, e
+              só falta o que não estiver em nenhum dos dois (`MISSING_TOT_TRIB_NAO_SIMPLES`, com a
+              lista nomeada). Ou seja: com o cadastro completo, esta tela emite para o não optante
+              sem precisar de campo nenhum a mais.
+              ⚠ E O QUE ESTA TELA NÃO SABE ELA NÃO AFIRMA: os três percentuais **não estão** no
+              `legacyCompanySelect` de `GET /client/companies` (conferido campo a campo em
+              `apps/api/src/routes/client/index.js`), então daqui não dá para dizer se o cadastro
+              está completo — e é por isso que o texto passou a descrever as duas saídas em vez de
+              apostar numa. Ampliar aquele `select` é decisão do dono: ele expõe ao cliente a
+              configuração fiscal que o contador fez.
               ⚠ AVISO, NÃO BLOQUEIO — pela mesma razão do cadastro incompleto logo acima: o regime
               que chega aqui é a SEGUNDA leitura do servidor (`Company.regimeTributario`), e a
-              primeira (`CadastroFiscal.regime`) pode dizer outra coisa. Bloquear por leitura de
-              segunda mão pararia uma emissão que talvez passe. */}
+              primeira (`CadastroFiscal.regime`) pode dizer outra coisa. */}
           {regime === REGIME.OUTRO ? (
             <div className="alerta alerta-aviso" role="status">
               <p>
-                <strong>
-                  Esta empresa não é optante pelo Simples Nacional, e a emissão pelo portal do
-                  cliente ainda não cobre esse caso.
-                </strong>
+                <strong>Esta empresa não é optante pelo Simples Nacional.</strong>
               </p>
               <p>
-                A nota de uma empresa não optante precisa declarar a carga tributária aproximada
-                (Lei 12.741/2012) em percentuais federal, estadual e municipal — campos que esta
-                tela não oferece. Você pode preencher e tentar, mas a nota provavelmente será
-                recusada antes de sair daqui, sem consumir numeração. Fale com o seu contador: hoje
-                a emissão desta empresa é feita por ele.
+                A nota precisa declarar a carga tributária aproximada — três percentuais que o seu
+                contador configura no cadastro da empresa. Esta tela não recebe esse cadastro: se
+                ele estiver completo, a nota sai normalmente; se faltar algum, ela é recusada antes
+                de sair daqui, sem consumir numeração.
               </p>
             </div>
           ) : null}
@@ -729,6 +822,43 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
               <p>
                 Esta é uma correção da tentativa anterior — ela vai reaproveitar o mesmo número, em
                 vez de consumir um novo.
+              </p>
+            </div>
+          ) : null}
+
+          {/* ⚠⚠ O PAINEL DO MODELO. Ele é a metade que impede a emissão errada, e por isso os
+              avisos vêm da REGRA (`lib/reaproveitarNota.js`), não escritos aqui: quem muda o que se
+              copia muda o que a tela diz, no mesmo arquivo. Os dois avisos incondicionais são "isto
+              é uma nota NOVA" e "o valor NÃO foi copiado" — sem o segundo, o campo em branco vira
+              esquecimento e alguém emite achando que o valor veio junto. */}
+          {modeloNaTela ? (
+            <div className="alerta alerta-info" role="status">
+              <p>
+                <strong>
+                  Preenchido a partir da nota nº {texto(modeloNaTela.origem.numero)}
+                  {modeloNaTela.origem.competencia
+                    ? ` · ${fmtCompetencia(modeloNaTela.origem.competencia)}`
+                    : ""}
+                </strong>
+              </p>
+              {modeloNaTela.avisos.map((aviso) => (
+                <p key={aviso.codigo}>
+                  {aviso.tom === "atencao" ? <strong>{aviso.texto}</strong> : aviso.texto}
+                </p>
+              ))}
+              <p>
+                <button type="button" className="btn-link" onClick={() => {
+                  setForm(formVazio());
+                  setDescricaoDigitada(false);
+                  setOrigemNome(ORIGEM.AUSENTE);
+                  setOrigemEndereco(ORIGEM.AUSENTE);
+                  setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
+                  setConsulta(CONSULTA_OCIOSA);
+                  ultimoConsultado.current = null;
+                  esquecerModelo();
+                }}>
+                  Começar do zero
+                </button>
               </p>
             </div>
           ) : null}
@@ -866,7 +996,7 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                     setOrigemEndereco(ORIGEM.DIGITADO);
                     setForm((a) => ({ ...a, cMun: codigo }));
                   }}
-                  ajuda="Busque pelo nome. Cidades homônimas têm códigos diferentes — por isso toda opção mostra o município e a UF."
+                  ajuda="Busque pelo nome. Há cidades homônimas: confira a UF."
                 />
 
                 <label htmlFor="emitir-logradouro">
@@ -919,10 +1049,10 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
 
                 {/* ⚠ A ORIGEM DA FRASE FICA NA TELA. Ela vai sair impressa no DANFSe que o tomador
                     recebe; texto de documento fiscal sem procedência é o que ninguém confere. */}
+                {/* ⚠ "É sugestão: escreva por cima à vontade" SAIU — a procedência já começa com
+                    "Sugerido a partir de…", e o campo é editável à vista de todos. */}
                 {sugestaoDoCadastro.texto && !descricaoDigitada ? (
-                  <span className="hint">
-                    {sugestaoDoCadastro.procedencia} É sugestão: escreva por cima à vontade.
-                  </span>
+                  <span className="hint">{sugestaoDoCadastro.procedencia}</span>
                 ) : null}
 
                 {/* ⚠ SEM DADO, CAMPO VAZIO — e a tela diz POR QUÊ e a quem pedir. O cliente não
@@ -968,9 +1098,10 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                     `lib/descricoesRecentes.js` — inclusive por que a fonte é ESTE navegador. */}
                 {sugestoesDescricao.length ? (
                   <div className="sugestoes">
+                    {/* ⚠ "— é sugestão, não cadastro" saiu; "neste navegador" NÃO PODE SAIR: é ele
+                        que impede o cliente de achar que esta lista é o cadastro da empresa. */}
                     <span className="hint">
-                      Descrições que você já emitiu <strong>neste navegador</strong> — é sugestão,
-                      não cadastro:
+                      Descrições que você já emitiu <strong>neste navegador</strong>:
                     </span>
                     {sugestoesDescricao.map((s) => (
                       <button
@@ -1057,11 +1188,22 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                         oferecido: seria inventar comportamento de integração.
                     ⚠ O teto é HOJE — competência futura não é competência. Não há piso porque não
                     há, neste repositório, nenhum limite de retroatividade que se possa provar. */}
+                {/* ⚠⚠ ESTA LEGENDA JÁ FOI FALSA, E FICA REGISTRADO PORQUE A CLASSE SE REPETE.
+                    Ela dizia *"o valor usa ponto para os centavos (ex.: 1500.00)"* — verdade
+                    enquanto o campo era `type="number"`, e MENTIRA no mesmo dia em que ele virou
+                    máscara de moeda (18/08/2026): o ponto não entra na digitação, e a forma
+                    canônica é `1.234,56`. A tela ensinava o OPOSTO do que o campo faz.
+                    ⚠ E o conserto não foi reescrever a frase: foi APAGÁ-LA. Quem diz como se
+                    escreve o valor é o próprio campo — a máscara não deixa escrever de outro jeito,
+                    e o `placeholder` mostra a forma. Legenda que repete o que o campo já faz é a
+                    legenda que ninguém atualiza quando o campo muda.
+                    ⚠ O QUE SOBROU muda uma decisão: qual data é esta, e que a da emissão não se
+                    escolhe. `dCompet` saiu — é nome de campo do XML, e o cliente não tem o que fazer
+                    com ele. (O `dCompet`/`dhEmi` continua explicado no comentário de
+                    `montarPayload`, que é onde essa distinção é do programador.) */}
                 <span className="hint">
-                  O valor usa ponto para os centavos (ex.: 1500.00) — confira o valor formatado na
-                  pré-visualização ao lado. A data da competência é a que vai na nota (campo
-                  “dCompet”); a data e a hora da emissão são as do momento em que a nota for
-                  transmitida, e não se escolhem aqui.
+                  A data da competência é a que vai na nota. A data e a hora da emissão são as do
+                  envio, e não se escolhem aqui.
                 </span>
                 <p className="hint">
                   {/* ⚠ A tela DIZ qual código vai, em vez de oferecer uma escolha que o cadastro
@@ -1069,8 +1211,8 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                   Código de serviço desta nota:{" "}
                   <strong>{codigoServicoNacional ? texto(codigoServicoNacional) : TRACO}</strong>{" "}
                   {codigoServicoNacional
-                    ? "— é o único cadastrado para esta empresa, e não há escolha a fazer aqui. Para emitir com outro código, fale com o seu contador."
-                    : "— esta tela não recebeu o código de serviço cadastrado da empresa. Quem confere é o servidor, na emissão."}
+                    ? "— para emitir com outro, fale com o seu contador."
+                    : "— não recebemos o código cadastrado desta empresa. Confira com o seu contador antes de emitir."}
                 </p>
               </fieldset>
 
@@ -1171,16 +1313,19 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                       Com ISS retido, a alíquota é obrigatória — sem ela a nota é recusada antes de
                       sair daqui.
                       {regime === REGIME.DESCONHECIDO
-                        ? " ⚠ Esta tela não recebeu o regime tributário desta empresa. Se ela for optante pelo Simples Nacional, o ISS já está no DAS e não há alíquota a informar aqui — confirme com o seu contador."
+                        ? " ⚠ Não recebemos o regime desta empresa. Se ela for do Simples, não há alíquota de ISS a informar — confirme com o seu contador."
                         : ""}
                     </span>
                   </>
                 ) : (
+                  // ⚠ ENCOLHEU, MAS NÃO SUMIU: sem esta frase o cliente procura na tela um campo de
+                  // ISS que foi retirado de propósito — e ausência sem explicação vira suspeita de
+                  // defeito. Saiu a última oração ("a carga tributária declarada ao tomador é a
+                  // alíquota efetiva acima"), que descreve o nosso mapeamento de campos: o rótulo do
+                  // campo logo acima já diz o que ele é.
                   <span className="hint">
-                    <strong>Esta empresa é optante pelo Simples Nacional</strong>, então o ISS já
-                    está dentro do DAS: não há alíquota de ISS a informar por nota, e esta nota sai
-                    sem retenção de ISS. A carga tributária declarada ao tomador é a alíquota
-                    efetiva acima.
+                    <strong>Empresa do Simples Nacional:</strong> o ISS já está dentro do DAS, então
+                    esta nota sai sem alíquota e sem retenção de ISS.
                   </span>
                 )}
 
@@ -1191,7 +1336,9 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                   rotulo="Município da prestação (opcional)"
                   valor={form.cLocPrestacao}
                   onChange={(codigo) => setForm((a) => ({ ...a, cLocPrestacao: codigo }))}
-                  ajuda="Em branco vale a regra geral: o ISS é devido no município da sua empresa (LC 116/2003, art. 3º). Só preencha se souber que este serviço é uma das exceções."
+                  // ⚠ A CITAÇÃO DA LC 116 SAIU (é conversa de contador); a DECISÃO ficou inteira —
+                  // deixar em branco tem consequência, e a frase diz qual é e quando não deixar.
+                  ajuda="Em branco, o ISS é devido no município da sua empresa. Só preencha se este serviço for uma exceção."
                 />
               </fieldset>
 

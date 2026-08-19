@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Chip, Vazio } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
+import { modeloDeEmissaoDaNota, podeReaproveitar } from "../emitir/lib/reaproveitarNota";
 import {
   TRACO,
   brl,
@@ -41,8 +42,31 @@ function chipDaNota(status) {
  * ⚠ O `summary` é do FILTRO INTEIRO, não da página — é o backend que soma
  * (`prisma.aggregate`). Por isso ele vive fora da tabela: somar a coluna da
  * página daria outro número, menor, e ninguém saberia qual dos dois é o do mês.
+ *
+ * ── DE ONDE SE CLICA PARA REAPROVEITAR (dono, 19/08/2026) ────────────────────
+ *
+ * ⚠ O QUE ESTA TELA TINHA, MEDIDO ANTES DE INVENTAR NAVEGAÇÃO: uma tabela de 7
+ * colunas, `<tr>` sem `onClick`, sem modal de detalhe, sem seleção e sem rota
+ * por nota (o roteamento do portal é por HASH, com quatro destinos fixos —
+ * `lib/hooks.js`). Ou seja: **hoje clicar numa nota não faz nada**, e não havia
+ * nem detalhe onde pendurar a ação, como há no portal do escritório (lá ela mora
+ * no `NotaDetailModal`).
+ *
+ * ⚠ POR ISSO A AÇÃO É UM BOTÃO NA LINHA, e não a linha inteira virando clicável:
+ * linha clicável sem detalhe para abrir teria UM destino possível — começar uma
+ * emissão —, e um clique acidental na lista abrindo a tela que pratica ato
+ * fiscal é caro demais para ser adivinhado. Botão nomeado diz o que vai
+ * acontecer antes de acontecer, e é alcançável pelo teclado.
+ *
+ * ⚠ BOTÃO IMPOSSÍVEL NÃO SOME: a nota que não serve de modelo (NF-e, ou nota em
+ * que a tomadora é a própria empresa) fica DESABILITADA com o motivo em texto ao
+ * lado — a mesma disciplina do portal do escritório. Sumir faria a ausência
+ * parecer defeito.
+ *
+ * ⚠ A REGRA NÃO MORA AQUI: quem decide o que se copia, o que não se copia e o
+ * que a tela é obrigada a dizer é `emitir/lib/reaproveitarNota.js`.
  */
-export function NotasPage({ empresa }) {
+export function NotasPage({ empresa, aoReaproveitar }) {
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
   // `lib/format.js`). Antes abria em "Todas". ⚠ Isto ESTREITA o que a tela mostra ao abrir: quem
@@ -142,11 +166,13 @@ export function NotasPage({ empresa }) {
                   <th scope="col" className="num">
                     Valor
                   </th>
+                  <th scope="col">Emitir outra</th>
                 </tr>
               </thead>
               <tbody>
                 {notas.map((nota) => {
                   const chip = chipDaNota(nota.status);
+                  const permissao = podeReaproveitar(nota, { cnpjDaEmpresa: empresa.cnpj });
                   return (
                     <tr key={nota.invoiceId}>
                       <td>{texto(nota.numero)}</td>
@@ -165,6 +191,32 @@ export function NotasPage({ empresa }) {
                         <Chip status={chip.status}>{chip.rotulo}</Chip>
                       </td>
                       <td className="num">{brl(nota.total)}</td>
+                      <td>
+                        {/* ⚠ O BOTÃO NÃO EMITE NADA — ele abre a tela de emissão pré-preenchida,
+                            que continua tendo o portão, o aviso de cadastro incompleto e o botão
+                            Emitir como sempre teve. */}
+                        <button
+                          type="button"
+                          className="btn-link"
+                          disabled={!permissao.pode}
+                          title={permissao.texto || undefined}
+                          onClick={() =>
+                            aoReaproveitar?.(
+                              modeloDeEmissaoDaNota(nota, {
+                                companyId,
+                                cnpjDaEmpresa: empresa.cnpj,
+                              })
+                            )
+                          }
+                        >
+                          Usar como modelo
+                        </button>
+                        {permissao.pode ? null : (
+                          <span className="muted" style={{ fontSize: ".78rem" }}>
+                            {permissao.resumo}
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

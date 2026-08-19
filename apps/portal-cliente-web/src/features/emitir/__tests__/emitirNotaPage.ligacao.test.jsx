@@ -290,7 +290,9 @@ describe("a consulta é AJUDA, nunca portão", () => {
     api.consultarCnpj.mockResolvedValue({
       ok: false,
       motivo: "rede",
-      mensagem: "Não conseguimos consultar a Receita agora — confira e preencha à mão.",
+      // ⚠ A MENSAGEM DA CAMADA DE API DIZ O FATO E PARA AÍ (19/08/2026). Ela terminava em
+      // "— confira e preencha à mão", que é exatamente o que a TELA já diz na linha seguinte.
+      mensagem: "Não conseguimos consultar a Receita agora.",
     });
     await renderizar();
 
@@ -299,6 +301,9 @@ describe("a consulta é AJUDA, nunca portão", () => {
     });
 
     await waitFor(() => expect(screen.getByText(/Não conseguimos consultar a Receita agora/)).toBeInTheDocument());
+    // ⚠ UMA VEZ SÓ, e é este `toHaveLength(1)` que impede a duplicação de voltar: o "preencha à
+    // mão" é da tela, e a frase que não pode se perder junto com ele é a de baixo.
+    expect(screen.getAllByText(/preencha os dados do tomador à mão/i)).toHaveLength(1);
     expect(screen.getByText(/a emissão segue normalmente/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Emitir nota" })).toBeEnabled();
   });

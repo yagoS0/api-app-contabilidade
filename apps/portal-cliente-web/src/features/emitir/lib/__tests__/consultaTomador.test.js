@@ -155,7 +155,12 @@ describe("FALHA NÃO BLOQUEIA — nenhuma função devolve impedimento", () => {
     const r = await consultarCnpjNaBrasilApi("11222333000181", { fetchImpl: fetchFalso });
     expect(fetchFalso).toHaveBeenCalledTimes(1);
     expect(r).toMatchObject({ ok: false, motivo: "rede" });
-    expect(r.mensagem).toMatch(/preencha à mão/i);
+    // ⚠ A ASSERÇÃO MUDOU DE METADE EM 19/08/2026, E FICOU MAIS ESTRITA. Ela prendia o *"preencha à
+    // mão"* desta mensagem — e essa instrução era a MESMA que a `EmitirNotaPage` renderiza logo
+    // abaixo dela, o mesmo recado duas vezes. Hoje a divisão é: aqui o FATO, na tela a SAÍDA. O
+    // `not.toMatch` é o que impede a duplicação de voltar sem ninguém perceber.
+    expect(r.mensagem).toMatch(/não conseguimos consultar a receita/i);
+    expect(r.mensagem).not.toMatch(/preencha/i);
   });
 
   test("CNPJ não encontrado (404) também é recusa, não exceção", async () => {

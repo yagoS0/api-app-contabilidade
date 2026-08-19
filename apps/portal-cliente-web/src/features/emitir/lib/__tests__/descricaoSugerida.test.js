@@ -198,7 +198,14 @@ describe("a sugestão inteira — as quatro empresas medidas", () => {
     const r = sugerir(KAIZEN, "7112000");
     expect(r.texto).toBeNull();
     expect(r.motivo).toBe(SEM_SUGESTAO.SEM_DESCRICAO);
-    expect(textoDoMotivo(r.motivo)).toMatch(/não\s+deduzimos o texto a partir do número/i);
+    // ⚠ A ASSERÇÃO MUDOU DE FRASE EM 19/08/2026, E NÃO DE EXIGÊNCIA. Ela prendia *"não deduzimos o
+    // texto a partir do número do CNAE"*; essa metade saiu da tela a pedido do dono (é a nossa
+    // mecânica, e quem lê é o cliente). O que o caso protege continua sendo a DISTINÇÃO — "há
+    // atividade cadastrada, mas ela não tem texto" ≠ "não há atividade" ≠ silêncio —, e é ela que
+    // está travada aqui, agora pela frase que ficou. Relaxar para `toBeTruthy()` deixaria as três
+    // respostas virarem uma só.
+    expect(textoDoMotivo(r.motivo)).toMatch(/só o código, sem o texto/i);
+    expect(textoDoMotivo(r.motivo)).not.toMatch(/não tem atividade cadastrada/i);
   });
 
   // ⚠ A PROCEDÊNCIA VAI PARA A TELA. Frase de documento fiscal sem origem é o que ninguém confere.

@@ -29,6 +29,11 @@ export function AppShell({ user }) {
   const [empresaEscolhida, setEmpresaEscolhida] = useState(() => lerEmpresaSalva());
   const [seletorAberto, setSeletorAberto] = useState(false);
   const [saindo, setSaindo] = useState(false);
+  // ⚠ O MODELO DE EMISSÃO ATRAVESSA DUAS TELAS, e é por isso que ele mora aqui: quem escolhe a nota
+  // é a lista (`NotasPage`), quem preenche o formulário é a emissão (`EmitirNotaPage`), e entre as
+  // duas só existe a navegação por hash — que não carrega objeto. Guardá-lo dentro de qualquer uma
+  // delas o perderia na troca de rota, porque a casca só monta a tela ativa.
+  const [modeloEmissao, setModeloEmissao] = useState(null);
 
   const empresasQuery = useCarregamento(() => api.getCompanies(), []);
   const empresas = empresasQuery.dados || [];
@@ -50,6 +55,18 @@ export function AppShell({ user }) {
     setEmpresaEscolhida(companyId);
     salvarEmpresa(companyId);
     setSeletorAberto(false);
+    // ⚠⚠ TROCAR DE EMPRESA DESCARTA O MODELO. Ele foi tirado da nota de OUTRA empresa; aplicá-lo
+    // aqui emitiria no CNPJ errado. É a mesma razão pela qual a `EmitirNotaPage` zera o formulário
+    // inteiro na troca — e ela ainda confere o `companyId` do modelo antes de aplicar, porque uma
+    // guarda só do lado de quem envia não é guarda.
+    setModeloEmissao(null);
+  }
+
+  /** A nota escolhida na lista vira o ponto de partida da emissão — e a tela troca junto. */
+  function reaproveitarNota(modelo) {
+    if (!modelo) return;
+    setModeloEmissao(modelo);
+    navegar("emitir");
   }
 
   async function sair() {
@@ -128,11 +145,13 @@ export function AppShell({ user }) {
             Nenhuma empresa está vinculada ao seu acesso. Fale com o seu contador para liberar.
           </Vazio>
         ) : rota === "notas" ? (
-          <NotasPage empresa={empresaAtiva} />
+          <NotasPage empresa={empresaAtiva} aoReaproveitar={reaproveitarNota} />
         ) : rota === "emitir" ? (
           <EmitirNotaPage
             empresa={empresaAtiva}
             aoNavegar={navegar}
+            modelo={modeloEmissao}
+            aoDescartarModelo={() => setModeloEmissao(null)}
             // ⚠ Recarregar as EMPRESAS, não a tela: o estado do portão (`emissaoNfseLiberada`)
             // vem de `GET /client/companies`, então quem está no ramo "não recebemos o estado" só
             // sai dele refazendo essa chamada.

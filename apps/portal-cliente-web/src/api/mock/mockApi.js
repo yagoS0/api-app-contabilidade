@@ -875,7 +875,9 @@ export function createMockApi() {
         return {
           ok: false,
           motivo: "rede",
-          mensagem: "Não conseguimos consultar a Receita agora — confira e preencha à mão.",
+          // ⚠ MESMA FRASE DO REAL, letra por letra (`api/real/brasilApi.js`): a instrução ("preencha
+          // à mão") mora na TELA, e repeti-la aqui recriaria a duplicação removida em 19/08/2026.
+          mensagem: "Não conseguimos consultar a Receita agora.",
         };
       }
       const bruto = estado.baseCnpj.get(digitos);

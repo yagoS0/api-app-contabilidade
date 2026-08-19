@@ -180,9 +180,12 @@ export function SeletorMunicipio({
       </label>
 
       {erroCarga ? (
+        // ⚠ "— digitar o código de sete dígitos à mão não é oferecido aqui de propósito" SAIU
+        // (19/08/2026): é a NOSSA decisão de desenho, e o cliente não tem o que fazer com ela. O que
+        // ele precisa — que a lista não carregou e o que fazer a respeito — ficou inteiro. A decisão
+        // em si continua registrada no cabeçalho deste arquivo, que é onde ela é do programador.
         <span className="hint">
-          Não foi possível carregar a lista de municípios do IBGE. Recarregue a página — digitar o
-          código de sete dígitos à mão não é oferecido aqui de propósito.
+          Não foi possível carregar a lista de municípios do IBGE. Recarregue a página.
         </span>
       ) : null}
 

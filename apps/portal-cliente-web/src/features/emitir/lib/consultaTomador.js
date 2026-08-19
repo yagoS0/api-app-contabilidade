@@ -190,10 +190,12 @@ export function mensagemEndereco(leitura) {
   }
   const faltantes = leitura?.faltantes || [];
   const detalhe = leitura?.motivoMunicipio ? ` (${leitura.motivoMunicipio})` : "";
+  // ⚠ ENCURTADA EM 19/08/2026. Saiu *"meio endereço seria descartado inteiro, então ele fica
+  // vazio"* — é o nosso raciocínio. FICOU o que o cliente precisa: o endereço não veio, o que
+  // faltou, que a nota exige ele completo, e o que fazer.
   return (
     `O endereço NÃO foi preenchido: a consulta não trouxe ${faltantes.join(", ")}${detalhe}. `
-    + "A nota só aceita o endereço do tomador COMPLETO — meio endereço seria descartado inteiro, "
-    + "então ele fica vazio. Preencha à mão."
+    + "A nota exige o endereço do tomador completo. Preencha à mão."
   );
 }
 
