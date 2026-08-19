@@ -1,5 +1,19 @@
 // RELEITURA da linha digitável das guias JÁ GRAVADAS — o backfill.
 //
+// ⚠⚠⚠ O DONO DECIDIU QUE ESTE SCRIPT NÃO SERÁ RODADO — 18/08/2026, com os números na frente:
+//   *"as guias antigas não precisa extrair o código de barras, apenas as novas guias."*
+//
+// Ou seja: guia gravada antes de 18/08/2026 fica com as quatro colunas NULAS **para sempre**, e
+// isso é o resultado desejado, não uma pendência. Na tela ela lê "não lida" — o estado
+// `NAO_TENTADA`, que existe exatamente para esta situação e que NÃO afirma que o documento não
+// traz linha. O "Baixar PDF" continua sendo a saída, como sempre foi para toda guia.
+//
+// ⚠ NÃO RODE ISTO PARA "COMPLETAR OS DADOS". A ausência aqui é resposta, não buraco. Se algum dia
+// a decisão mudar, ela muda com o dono — este cabeçalho é o registro de que ela JÁ foi tomada uma
+// vez no outro sentido. O precedente de por que isso importa está a um diretório daqui:
+// `backfill-envio-guia.mjs` foi mandado rodar, depois proibido, e seguir a instrução velha quebra
+// o dashboard de forma permanente.
+//
 // ⚠⚠ NÃO RODA SOZINHO, E NÃO DEVE PASSAR A RODAR. Não há cron, worker nem rota que o chame; ele é
 // executado à mão, pelo dono, quando ele decidir. **DRY-RUN POR PADRÃO** — sem `--aplicar` nada é
 // escrito. A leitura acontece nos dois modos, então dá para medir antes de decidir.
