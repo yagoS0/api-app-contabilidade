@@ -114,6 +114,22 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
 .table tbody tr:hover { background: #fafbfc; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* --- Nota emitida por nós, ainda não confirmada pelo ADN ------------------- */
+/* ⚠ A DISTINÇÃO É VISUAL E SÓ — instrução literal do dono (19/08/2026):
+   "não coloque explicação disso na tela". Nada de legenda, rodapé ou parágrafo.
+   O estado viaja em `data-confirmada-adn` (auditável no DOM) e no `title`/`aria-label`
+   do chip, que não são texto na tela e são o que existe para leitor de tela.
+
+   ⚠ NÃO PODE SE CONFUNDIR COM CANCELADA NEM COM LINHA DESABILITADA:
+   - cancelada é COR (o chip vira cinza) — aqui a cor não muda, muda a intensidade;
+   - desabilitada seria `pointer-events: none` / cursor proibido — aqui os botões da
+     linha continuam clicáveis e o hover continua respondendo.
+   Só a opacidade muda, e ela volta ao normal quando o ponteiro está em cima, para que
+   ler a linha nunca fique mais difícil que ler as outras. */
+.table tbody tr[data-confirmada-adn="nao"] { opacity: .62; }
+.table tbody tr[data-confirmada-adn="nao"]:hover,
+.table tbody tr[data-confirmada-adn="nao"]:focus-within { opacity: 1; }
 .table .truncar { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty { color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); padding: 24px; text-align: center; }
 

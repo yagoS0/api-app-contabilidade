@@ -60,9 +60,9 @@ export function BotaoCopiar({ valor, rotulo }) {
  * mesmo vocabulário do app mobile — web e mobile precisam pintar a mesma coisa
  * da mesma cor, senão o cliente aprende dois idiomas para um sistema só.
  */
-export function Chip({ status, children }) {
+export function Chip({ status, children, title, "aria-label": ariaLabel }) {
   return (
-    <span className="chip" data-status={status || undefined}>
+    <span className="chip" data-status={status || undefined} title={title || undefined} aria-label={ariaLabel || undefined}>
       {children}
     </span>
   );

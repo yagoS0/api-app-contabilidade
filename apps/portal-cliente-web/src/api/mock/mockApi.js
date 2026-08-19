@@ -363,12 +363,71 @@ function criarEstado() {
           updatedAt: diaDoMes(comp, Math.min(28, dia + 1)).toISOString(),
           hasXml: rand() > 0.1,
           hasPdf: rand() > 0.35,
+          // A nota gerada VEIO do ADN — é a projeção, o caso normal. Ver os dois casos
+          // plantados logo abaixo para o estado oposto.
+          confirmadaPeloAdn: true,
           // ⚠ campo interno do mock, NÃO sai no contrato: reproduz o filtro do
           // backend, que esconde canceladas por padrão (statusEfetivo).
           _statusEfetivo: status === "CANCELADA" ? "cancelada" : "autorizada",
         });
       }
     }
+  }
+
+  // ── OS DOIS ESTADOS QUE PRECISAM SER ALCANÇÁVEIS OFFLINE ──────────────────────────────────
+  //
+  // ⚠ SEM ISTO O CAMINHO NOVO É INALCANÇÁVEL SEM EMITIR. O mock só produzia nota confirmada e
+  // com XML; a nota "emitida por nós, ainda não confirmada" só apareceria depois de uma emissão
+  // no mock, e a recusa 503 do DANFSe não apareceria nunca. Precedente desta casa: o mock do
+  // cliente recusava todo Lucro Presumido e ninguém via, porque a tela travava antes.
+  const empresaPrincipal = empresas.find((e) => e.companyId === "pc-001");
+  if (empresaPrincipal) {
+    const compAtual = competencias[competencias.length - 1];
+    const agoraMock = diaDoMes(compAtual, 20);
+
+    // (1) EMITIDA POR NÓS, AINDA NÃO CONFIRMADA PELO ADN — a linha "mais clarinha".
+    // ⚠ O `invoiceId` imita um `ServiceInvoice.id` de propósito: no backend ele É de outra
+    // tabela, e é por isso que `/invoices/:id/xml` e o DANFSe não a encontram.
+    notas.push({
+      clientId: empresaPrincipal.companyId,
+      invoiceId: "si-emitida-aguardando-adn",
+      type: "NFSE",
+      numero: null,
+      competencia: compAtual,
+      issueDate: agoraMock.toISOString(),
+      status: "EMITIDA",
+      total: 1450,
+      emitente: { nome: empresaPrincipal.razao, cnpj: empresaPrincipal.cnpj },
+      tomador: { nome: "TOMADOR AGUARDANDO ADN LTDA", cnpjCpf: "11222333000181" },
+      updatedAt: agoraMock.toISOString(),
+      hasXml: false,
+      hasPdf: false,
+      confirmadaPeloAdn: false,
+      _statusEfetivo: "autorizada",
+    });
+
+    // (2) CONFIRMADA, COM XML, E SEM CHAVE DE ACESSO: é a nota em que o DANFSe é RECUSADO
+    // (503 `danfse_sem_qrcode`). ⚠ O contrato do cliente não devolve `chaveAcesso`, então o
+    // mock marca o caso com um campo interno — quem responde é o servidor, não a tela.
+    const ontemMock = diaDoMes(compAtual, 19);
+    notas.push({
+      clientId: empresaPrincipal.companyId,
+      invoiceId: "inv-sem-qrcode",
+      type: "NFSE",
+      numero: "13995",
+      competencia: compAtual,
+      issueDate: ontemMock.toISOString(),
+      status: "EMITIDA",
+      total: 640,
+      emitente: { nome: empresaPrincipal.razao, cnpj: empresaPrincipal.cnpj },
+      tomador: { nome: "TOMADOR MOCK 905 LTDA", cnpjCpf: "11222333090591" },
+      updatedAt: ontemMock.toISOString(),
+      hasXml: true,
+      hasPdf: false,
+      confirmadaPeloAdn: true,
+      _statusEfetivo: "autorizada",
+      _semQrCode: true,
+    });
   }
 
   // --- Guias -----------------------------------------------------------------
@@ -802,7 +861,7 @@ export function createMockApi() {
       const pageAmount = pagina.reduce((s, n) => s + n.total, 0);
 
       return {
-        data: pagina.map(({ clientId, _statusEfetivo, ...rest }) => rest),
+        data: pagina.map(({ clientId, _statusEfetivo, _semQrCode, ...rest }) => rest),
         page: pageNum,
         limit: take,
         total,
@@ -813,6 +872,46 @@ export function createMockApi() {
         },
         sync: { lastSyncAt: new Date().toISOString(), state: "OK", stale: false, canSync: true },
       };
+    },
+
+    // O DANFSe, offline. ⚠ AS DUAS RESPOSTAS PRECISAM SER ALCANÇÁVEIS — o PDF **e** a recusa 503
+    // `danfse_sem_qrcode`. Ela é a única resposta desta rota que a interface precisa EXPLICAR (um
+    // DANFSe sem QR Code não é um DANFSe), e sem um caso no mock ela só apareceria em produção.
+    // A nota que a produz é `_semQrCode`, plantada em `criarEstado`.
+    async fetchDanfseBlob(companyId, notaId) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const nota = estado.notas.find((n) => n.clientId === id && n.invoiceId === String(notaId));
+      // O backend lê `PortalInvoice`; a nota emitida-e-não-confirmada não está lá.
+      if (!nota || nota.confirmadaPeloAdn === false) {
+        throw new ApiError(404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
+      }
+      if (!nota.hasXml) {
+        throw new ApiError(
+          404,
+          "xml_indisponivel",
+          "Esta nota não tem o XML guardado, e o DANFSe é gerado a partir dele — nada aqui é "
+            + "inventado. Recapture a nota para que o XML entre na base."
+        );
+      }
+      if (nota._semQrCode) {
+        const err = new ApiError(
+          503,
+          "danfse_sem_qrcode",
+          "O QR Code não pôde ser gerado: a chave de acesso não está no XML desta nota.",
+          { motivo: "chave_ausente" }
+        );
+        err.motivo = "chave_ausente";
+        throw err;
+      }
+      // ⚠ `pdfDeUmaLinha` devolve BASE64 (é o formato da rota de guia, que responde JSON). A rota
+      // real do DANFSe responde o PDF **cru**, e a tela faz `res.blob()` — então o mock decodifica
+      // aqui, para que o par mock/real entregue o mesmo tipo à tela.
+      const base64 = pdfDeUmaLinha(`DANFSe MOCK - nota ${nota.numero}`);
+      const binario = window.atob(base64);
+      const bytes = new Uint8Array(binario.length);
+      for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
+      return new Blob([bytes], { type: "application/pdf" });
     },
 
     // --- Guias --------------------------------------------------------------
@@ -1234,8 +1333,12 @@ export function createMockApi() {
         emitente: { nome: empresa?.razao || "", cnpj: empresa?.cnpj || "" },
         tomador: { nome: nfseBase.tomadorNome, cnpjCpf: nfseBase.tomadorDoc },
         updatedAt: agora.toISOString(),
-        hasXml: true,
-        hasPdf: true,
+        // ⚠ A NOTA RECÉM-EMITIDA NÃO PASSOU PELO ADN, e é isso que o backend agora reflete: ela
+        // entra na lista vinda de `ServiceInvoice`, sem XML nosso e sem rota de download por este
+        // id. Marcá-la `hasXml: true` aqui faria o mock oferecer um botão que a produção recusa.
+        hasXml: false,
+        hasPdf: false,
+        confirmadaPeloAdn: false,
         _statusEfetivo: "autorizada",
       });
 

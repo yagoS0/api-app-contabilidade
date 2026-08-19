@@ -29,6 +29,10 @@ import { NfseService } from "../../application/nfse/NfseService.js";
 import { resolveLegacyCompanyId } from "../middlewares/portalAccess.js";
 import { ensureEmissaoNfseAutorizada } from "../middlewares/emissaoNfseGate.js";
 import { responderResultadoEmissao, responderErroEmissao } from "../nfseEmissaoHttp.js";
+// ── O DANFSe PELO CLIENTE — mesma fachada, mesmo serviço, mesmos desfechos ───────────────────
+// Ver o bloco `GET /companies/:companyId/notas/:notaId/danfse`, no fim deste arquivo.
+import { gerarDanfseDaNota } from "../../application/nfse/danfse/danfseDaNotaDoPortal.js";
+import { responderDanfse, responderErroDanfse } from "../danfseHttp.js";
 
 function sanitizeRole(role) {
   const value = String(role || "FINANCEIRO").toUpperCase();
@@ -68,7 +72,16 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
     limits: { fileSize: 10 * 1024 * 1024 },
   });
 
-  const invoicesRouter = createPortalInvoicesRouter({ ensureAuthorized, log });
+  // ⚠ `incluirEmitidasNaoConfirmadas` É LIGADO SÓ AQUI — pedido do dono, 19/08/2026: *"ao emitir
+  // uma nota, ela deve aparecer para o cliente, e depois que consultar o ADN aí fica confirmada"*.
+  // O mesmo router é montado em `/firm` e em `server.js`, e nenhum dos dois liga: o pedido é sobre
+  // a tela do CLIENTE, e mudar as outras duas de carona seria mudar o que o escritório vê sem
+  // ninguém ter pedido. Ver `application/notas/notasEmitidasNaoConfirmadas.js`.
+  const invoicesRouter = createPortalInvoicesRouter({
+    ensureAuthorized,
+    log,
+    incluirEmitidasNaoConfirmadas: true,
+  });
   const syncRouter = createPortalSyncRouter({ ensureAuthorized, log });
 
   async function getLegacyCompanyByPortalId(portalCompanyId) {
@@ -886,6 +899,52 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         return responderResultadoEmissao(res, result);
       } catch (err) {
         return responderErroEmissao(res, err, { log });
+      }
+    }
+  );
+
+  // ── O DANFSe PELO APP DO CLIENTE ───────────────────────────────────────────────────────────
+  //
+  // > Pedido do dono (19/08/2026): *"o DANFE da nota deve ser gerado"*, no portal do cliente.
+  //
+  // ⚠ A FEATURE INTEIRA JÁ EXISTIA — só faltava a porta deste lado. O gerador (NT 008, com QR
+  // Code) e a rota do escritório (`GET /firm/companies/:id/notas/:notaId/danfse`) já estavam
+  // construídos e testados. **Nada de PDF foi escrito aqui.**
+  //
+  // ⚠ NÃO DEU PARA REUSAR A ROTA `/firm`: ela é gateada por `requireFirmCompanyAccess()`, que
+  // responde "esta pessoa é do ESCRITÓRIO desta empresa?" — o cliente não é, e afrouxar aquele
+  // middleware para deixá-lo passar abriria as outras 20 rotas do mesmo router (fechar/reabrir
+  // competência, classificar, transmitir apuração) para o lado do cliente. Por isso a porta é
+  // própria e o desenho é o MESMO da emissão, logo acima: **fachada**.
+  //
+  //   serviço  → `gerarDanfseDaNota`   (o MESMO que o `/firm` chama, desde 19/08/2026)
+  //   resposta → `routes/danfseHttp.js` (os MESMOS desfechos, inclusive o 503)
+  //
+  // ⚠ O PATH VENCE, e não há corpo: `companyId` e `notaId` saem do path, já conferidos pelo
+  // middleware, e o serviço busca SEMPRE com `{ id: notaId, clientId: companyId }`.
+  //
+  // ⚠ `requireClientCompanyAccess()` **sem `minRole`** — baixar o documento auxiliar de uma nota é
+  // LEITURA, e o piso das rotas financeiras deste arquivo (notas/guias/alíquota/fluxo) é "membro
+  // ativo". Exigir `CLIENT_ADMIN` aqui seria mais estrito que o `GET /invoices` que lista a mesma
+  // nota e serve o XML dela.
+  //
+  // ⚠⚠ A RECUSA 503 `danfse_sem_qrcode` CHEGA À TELA, com o motivo. Um DANFSe sem QR Code não é um
+  // DANFSe (NT 008 §2.2 e §2.4.3).
+  router.get(
+    "/companies/:companyId/notas/:notaId/danfse",
+    requireClientCompanyAccess(),
+    async (req, res) => {
+      try {
+        const resultado = await gerarDanfseDaNota({
+          portalClientId: String(req.params.companyId),
+          notaId: String(req.params.notaId),
+          incluirCanhoto: String(req.query.canhoto || "") === "1",
+        });
+        return responderDanfse(res, resultado);
+      } catch (err) {
+        if (responderErroDanfse(res, err)) return;
+        log.error({ err: err?.message, companyId: req.params.companyId }, "DANFSe do cliente falhou");
+        return res.status(500).json({ ok: false, error: "internal_error" });
       }
     }
   );

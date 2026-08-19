@@ -9,6 +9,10 @@ import { parseXmlMetadata } from "../application/nfse/AdnXmlMetadata.js";
 // a segunda implementação que morava aqui criava linha duplicada para nota que a captura já tinha.
 import { upsertNfseFromItem } from "../application/notas/ingestaoNfse.js";
 import { ensurePortalClientAccess } from "./middlewares/portalAccess.js";
+// ⚠ A NOTA QUE NÓS EMITIMOS E QUE O ADN AINDA NÃO TROUXE. Ver o cabeçalho daquele arquivo para a
+// chave de deduplicação e para o porquê de a união ser na LEITURA e não uma gravação em
+// `PortalInvoice`. Ligado SÓ na montagem do `/client` — ver `INCLUIR_EMITIDAS` abaixo.
+import { lerEmitidasNaoConfirmadas } from "../application/notas/notasEmitidasNaoConfirmadas.js";
 
 function normalizeDoc(value) {
   return String(value || "").replace(/\D+/g, "") || null;
@@ -44,6 +48,46 @@ function serializeInvoice(inv) {
     updatedAt: dateToIso(inv.updatedAt),
     hasXml: Boolean(inv.xmlRaw),
     hasPdf: Boolean(inv.pdfUrl),
+    // ⚠ ESTE CAMPO É O ESTADO, e ele é o que sobrevive a uma auditoria. `true` = a nota veio da
+    // projeção do ADN (`PortalInvoice`), que é o sistema nacional confirmando que ela existe.
+    // `false` = a linha é da NOSSA emissão (`ServiceInvoice`) e o ADN ainda não a devolveu — o
+    // `invoiceId` dela é um `ServiceInvoice.id`, então as sub-rotas de `/invoices/:id` (xml, pdf,
+    // eventos, DANFSe) NÃO a encontram, e é por isso que `hasXml`/`hasPdf` saem `false`.
+    // Ver `application/notas/notasEmitidasNaoConfirmadas.js`.
+    confirmadaPeloAdn: true,
+  };
+}
+
+/**
+ * Uma linha de `ServiceInvoice` (nossa emissão) no MESMO contrato da listagem.
+ *
+ * ⚠ `status: "EMITIDA"` é o vocabulário de `PortalInvoice`, e é o certo: a nota FOI emitida — o que
+ * falta é a confirmação do ADN, e quem diz isso é `confirmadaPeloAdn`, não o status. Inventar um
+ * status novo aqui (`"PENDENTE"`, `"AGUARDANDO"`) faria a tela pintá-la como rascunho ou como
+ * erro, e ela não é nem um nem outro.
+ *
+ * ⚠ `issueDate` sai de `createdAt` — o instante em que a linha foi criada É o da emissão (a reserva
+ * de numeração e o envio acontecem na mesma chamada). Quando o ADN devolver a nota, a data passa a
+ * ser a do documento, que é a autoridade.
+ */
+function serializeEmitidaNaoConfirmada(si, { emitenteNome, emitenteDoc }) {
+  return {
+    invoiceId: si.id,
+    type: "NFSE",
+    numero: si.numeroNfse || null,
+    competencia: formatCompetencia(si.competencia),
+    issueDate: dateToIso(si.createdAt),
+    status: "EMITIDA",
+    total: decimalToNumber(si.valorServicos),
+    emitente: { nome: emitenteNome || null, cnpj: emitenteDoc || null },
+    tomador: { nome: si.tomadorNome || null, cnpjCpf: si.tomadorDoc || null },
+    updatedAt: dateToIso(si.updatedAt),
+    // ⚠ NÃO É "não temos o XML": é "não há rota que o sirva por este id". `ServiceInvoice.xml`
+    // guarda o que o provedor devolveu (ou a DPS crua), e `/invoices/:id/xml` lê `PortalInvoice`.
+    // Dizer `true` ofereceria um download que responde 404.
+    hasXml: false,
+    hasPdf: false,
+    confirmadaPeloAdn: false,
   };
 }
 
@@ -123,7 +167,102 @@ function buildWhereFilters({
   return where;
 }
 
-export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// A UNIÃO NA LEITURA — as notas que nós emitimos e que o ADN ainda não devolveu
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// ⚠ POR QUE ESTE BLOCO MORA AQUI, COLADO EM `buildWhereFilters`. Ele é o GÊMEO dela: o mesmo
+// filtro, em memória, sobre linhas que não estão no banco de `PortalInvoice`. Escrevê-lo noutro
+// arquivo é como as duas metades divergiriam — a lista mostraria a nota emitida no mês errado, ou
+// a esconderia num filtro que o SQL honra e o JS não. Quem mexer numa mexe na outra.
+//
+// ⚠ FILTRO QUE ESTE GÊMEO NÃO SABE HONRAR ⇒ A LINHA NÃO ENTRA (`filtroAlcancavel`). Fail-closed é
+// o certo aqui: pôr a nota num recorte que ela pode não pertencer é mostrar dado errado; deixá-la
+// de fora repete, no máximo, o comportamento de hoje (ela aparece quando o ADN a trouxer).
+
+/** `true` quando o recorte pedido é inteiramente reproduzível sobre uma linha de `ServiceInvoice`. */
+function filtroAlcancavel({ direcao }) {
+  // "recebidas" é o único recorte em que a nossa emissão NÃO cabe por definição: ela é sempre
+  // emitida pela própria empresa. Não é "não sei honrar" — é "não pertence".
+  return String(direcao || "emitidas").toLowerCase() !== "recebidas";
+}
+
+/** O mesmo recorte de `buildWhereFilters`, aplicado a UMA linha de `ServiceInvoice`. */
+function emitidaPassaNoFiltro(si, { competencia, from, to, status, type, search, clientCnpj, emitenteNome }) {
+  // `type`: a emissão do portal é sempre NFS-e.
+  if (type && String(type).toUpperCase() !== "NFSE") return false;
+  // `status`: a linha nossa entra como EMITIDA (ver `serializeEmitidaNaoConfirmada`).
+  if (status && String(status).toUpperCase() !== "EMITIDA") return false;
+
+  if (competencia && /^\d{4}-\d{2}$/.test(String(competencia))) {
+    if (formatCompetencia(si.competencia) !== String(competencia)) return false;
+  }
+
+  // ⚠ A data comparada é a MESMA que sai em `issueDate` (`createdAt`) — comparar por um campo e
+  // exibir outro faria a nota sumir de um intervalo que a mostra.
+  const data = si.createdAt ? new Date(si.createdAt) : null;
+  if (from) {
+    const ini = parseDate(from);
+    if (!data || (ini && data < ini)) return false;
+  }
+  if (to) {
+    const fim = parseDate(to);
+    if (!data || (fim && data > fim)) return false;
+  }
+
+  const q = String(search || "").trim();
+  if (q) {
+    const doc = normalizeDoc(q);
+    const alvo = [si.numeroNfse, si.tomadorNome, emitenteNome, si.chaveAcesso]
+      .map((v) => String(v ?? "").toLowerCase());
+    const docs = [normalizeDoc(si.tomadorDoc), normalizeDoc(clientCnpj)].filter(Boolean);
+    const achou = alvo.some((v) => v && v.includes(q.toLowerCase()))
+      || (doc && docs.some((d) => d.includes(doc)));
+    if (!achou) return false;
+  }
+
+  // `incluirCanceladas` não se aplica: a linha nossa nunca é cancelada (o que é cancelado ganha
+  // evento e vira `PortalInvoice`).
+  return true;
+}
+
+/** O valor pelo qual a lista está ordenada, para uma linha já SERIALIZADA (dos dois lados). */
+function chaveDeOrdenacao(linha, sortKey) {
+  return String((sortKey === "issueDate" ? linha.issueDate : linha.updatedAt) || "");
+}
+
+/**
+ * Intercala duas listas JÁ ordenadas pela mesma chave, preservando a ordem.
+ * ⚠ Empate mantém a linha do ADN à frente: quando a nota é confirmada no mesmo instante, a
+ * confirmada é a que vale.
+ */
+function intercalar(doAdn, nossas, sortKey, ordem) {
+  const sinal = ordem === "asc" ? 1 : -1;
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (i < doAdn.length && j < nossas.length) {
+    const a = chaveDeOrdenacao(doAdn[i], sortKey);
+    const b = chaveDeOrdenacao(nossas[j], sortKey);
+    if (a === b || sinal * a.localeCompare(b) <= 0) out.push(doAdn[i++]);
+    else out.push(nossas[j++]);
+  }
+  while (i < doAdn.length) out.push(doAdn[i++]);
+  while (j < nossas.length) out.push(nossas[j++]);
+  return out;
+}
+
+/**
+ * @param {Object} opts
+ * @param {boolean} [opts.incluirEmitidasNaoConfirmadas=false] — junta à lista as notas que NÓS
+ *   emitimos e que o ADN ainda não devolveu.
+ *
+ *   ⚠ **É OPT-IN, E SÓ O `/client` O LIGA.** Este router é montado em TRÊS lugares
+ *   (`routes/client/index.js`, `routes/firm/index.js` e `server.js`), e o pedido do dono é sobre a
+ *   tela do CLIENTE — *"as notas que aparecem para o cliente…"*. Ligar por default mudaria em
+ *   silêncio o que o escritório vê em duas outras portas, uma delas legada, sem ninguém ter pedido.
+ */
+export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmitidasNaoConfirmadas = false }) {
   const router = Router({ mergeParams: true });
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
@@ -162,7 +301,7 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
       if (!access.ok) return;
       const portalClient = await prisma.portalClient.findUnique({
         where: { id: String(clientId) },
-        select: { cnpj: true },
+        select: { cnpj: true, razao: true, companyId: true },
       });
       const clientCnpj = normalizeDoc(portalClient?.cnpj);
 
@@ -183,12 +322,48 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
         incluirCanceladas: String(req.query.incluirCanceladas || "") === "1",
       });
 
+      // ── As nossas emissões ainda não confirmadas ────────────────────────────────────────────
+      //
+      // ⚠ ELAS SÃO BUSCADAS POR INTEIRO, NÃO POR PÁGINA — e podem ser, porque o conjunto é
+      // "emitidas e ainda não capturadas", que numa carteira saudável é zero ou poucas unidades
+      // (a captura roda de hora em hora). O teto está em `TETO_EMITIDAS`.
+      let nossas = [];
+      if (incluirEmitidasNaoConfirmadas && portalClient?.companyId && filtroAlcancavel({ direcao: invoiceDirection })) {
+        const cruas = await lerEmitidasNaoConfirmadas({
+          legacyCompanyId: portalClient.companyId,
+          portalClientId: String(clientId),
+        });
+        nossas = cruas
+          .filter((si) => emitidaPassaNoFiltro(si, {
+            competencia, from, to, status, type, search,
+            clientCnpj, emitenteNome: portalClient?.razao,
+          }))
+          .map((si) => serializeEmitidaNaoConfirmada(si, {
+            emitenteNome: portalClient?.razao,
+            emitenteDoc: clientCnpj,
+          }))
+          .sort((a, b) => {
+            const cmp = chaveDeOrdenacao(a, sortKey).localeCompare(chaveDeOrdenacao(b, sortKey));
+            return sortOrder === "asc" ? cmp : -cmp;
+          });
+      }
+
+      // ⚠ A JANELA DO BANCO É ALARGADA PELO TAMANHO DO CONJUNTO NOSSO, e a conta é exata.
+      // Chamando `n = nossas.length`, `P` a lista do ADN e `M = intercalar(P, nossas)`: buscando
+      // `P` a partir de `max(0, skip - n)` até `skip + take`, e intercalando essa fatia com TODAS
+      // as nossas, os elementos a partir do índice local `skip - inicioP` são exatamente
+      // `M[skip .. skip+take)`. (No máximo `n` linhas nossas podem se antepor à fatia, e
+      // `inicioP + n ≤ skip` sempre que `skip ≥ n`; quando `skip < n`, `inicioP = 0` e a fatia já
+      // é o prefixo verdadeiro.) Sem isso, a página 2 pularia tantas notas quantas fossem as nossas.
+      const inicioP = Math.max(0, skip - nossas.length);
+      const tamanhoP = skip + take - inicioP;
+
       const [items, total, totals, sync] = await prisma.$transaction([
         prisma.portalInvoice.findMany({
           where,
           orderBy: { [sortKey]: sortOrder },
-          skip,
-          take,
+          skip: inicioP,
+          take: tamanhoP,
         }),
         prisma.portalInvoice.count({ where }),
         prisma.portalInvoice.aggregate({
@@ -198,16 +373,24 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log }) {
         prisma.portalSyncState.findUnique({ where: { clientId: String(clientId) } }),
       ]);
 
-      const sumFiltered = decimalToNumber(totals?._sum?.total);
-      const pageAmount = items.reduce((acc, item) => acc + (decimalToNumber(item.total) || 0), 0);
+      const janela = intercalar(items.map(serializeInvoice), nossas, sortKey, sortOrder);
+      const data = janela.slice(skip - inicioP, skip - inicioP + take);
+
+      // ⚠ OS TOTAIS CONTAM AS NOSSAS. A nota emitida existe e vale o que vale; deixá-la fora do
+      // "Valor total" faria o card e a tabela discordarem sobre a mesma competência — que é o
+      // defeito que este projeto já pagou em "somar a coluna da página daria outro número".
+      const totalGeral = total + nossas.length;
+      const sumFiltered = (decimalToNumber(totals?._sum?.total) || 0)
+        + nossas.reduce((acc, n) => acc + (n.total || 0), 0);
+      const pageAmount = data.reduce((acc, item) => acc + (item.total || 0), 0);
 
       return res.json({
-        data: items.map(serializeInvoice),
+        data,
         page: pageNum,
         limit: take,
-        total,
+        total: totalGeral,
         summary: {
-          totalInvoices: total,
+          totalInvoices: totalGeral,
           totalAmount: sumFiltered || 0,
           pageAmount,
         },

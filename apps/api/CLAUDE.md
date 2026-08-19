@@ -465,6 +465,88 @@ usa é a que ninguém do escritório testa.
 - Testes: `routes/client/__tests__/emissaoNfseCliente.test.js` (18) — a matriz do portão medida por
   **`NfseService.issue` não ter sido chamado**, os três desfechos, o corpo malicioso e a flag.
 
+#### A porta do DANFSe do cliente — `GET /client/companies/:companyId/notas/:notaId/danfse` (19/08/2026)
+
+> Pedido do dono: *"o DANFE da nota deve ser gerado"*, no portal do cliente.
+
+**A feature inteira já existia** (gerador NT 008 com QR Code, 50 testes; rota do escritório desde
+`700a1b18`). Faltava a porta deste lado, e **nada de PDF foi escrito**.
+
+⚠ **A rota `/firm` não dava para reusar**: `requireFirmCompanyAccess()` responde *"esta pessoa é do
+ESCRITÓRIO desta empresa?"*. Afrouxá-lo abriria as outras ~20 rotas do mesmo router (fechar/reabrir
+competência, classificar, transmitir apuração) ao lado do cliente.
+
+⚠ **O CORPO DA ROTA DO ESCRITÓRIO FOI EXTRAÍDO, não copiado** — achar a nota, recusar sem XML e
+derivar a **marca d'água** do ciclo moram agora em **`application/nfse/danfse/danfseDaNotaDoPortal.js`**,
+e os desfechos HTTP em **`routes/danfseHttp.js`** (mesmo desenho de `nfseEmissaoHttp.js`). Duas
+cópias da regra da marca d'água divergiriam, e o cliente veria um PDF **sem** "CANCELADA" sobre a
+MESMA nota em que o contador vê com.
+
+- `requireClientCompanyAccess()` **sem `minRole`**: baixar documento auxiliar é LEITURA, e o piso
+  das rotas financeiras é "membro ativo" — exigir `CLIENT_ADMIN` seria mais estrito que o
+  `GET /invoices` que lista a mesma nota e serve o XML dela.
+- ⚠ **O 503 `danfse_sem_qrcode` chega ao cliente com o `motivo`.** Um DANFSe sem QR Code não é um
+  DANFSe (NT 008 §2.2/§2.4.3). Tela em branco ou "falha ao baixar" seria a mentira que ele impede.
+- Testes: `routes/client/__tests__/danfseCliente.test.js` (14) — o portão, o escopo do path, as
+  cinco recusas nomeadas e os headers. O PDF em si continua medido em `danfse/__tests__/danfse.test.js`.
+
+### ⚠⚠ A NOTA EMITIDA APARECE NA HORA — união na LEITURA, nunca gravação (19/08/2026)
+
+> *"as notas que aparecem para o cliente são apenas as notas que vêm da consulta ADN, porém ao
+> emitir uma nota, ela deve aparecer para o cliente, e depois que consultar o ADN aí fica confirmada
+> na tela; deve ficar mais clarinha (…). **Não coloque explicação disso na tela.***"
+
+**Medido:** a lista do cliente (`routes/portalInvoices.js`, `GET /`) lê **`PortalInvoice`** — a
+projeção do ADN. A emissão (`NfseService.js:1445-1466`, `:1507-1515`) grava **`ServiceInvoice`** e
+nunca um `PortalInvoice`. Entre emitir e a próxima captura, a nota não existia para o cliente.
+
+⚠ **NÃO SE GRAVA `PortalInvoice` NA EMISSÃO.** Ela é a projeção de um sistema EXTERNO, com donos
+declarados (`notas/ingestaoNfse.js` + o motor legado `sync/InvoiceSyncEngine.js`). Uma quarta
+escrita criaria uma linha que a captura não sabe que existe — e o encontro das duas é onde este
+projeto já mediu **faturamento somado duas vezes**. Além disso a linha escrita à mão não teria o
+`xmlRaw` do sistema nacional, de onde saem os campos fiscais, o DANFSe e a série/nDPS da próxima
+emissão. Na leitura, um dedup errado se conserta numa linha de código; na escrita ele é permanente.
+
+**Regra em `application/notas/notasEmitidasNaoConfirmadas.js`** (só leitura, varredura de fonte no
+teste proíbe escrita). **A chave de deduplicação são TRÊS provas independentes**, cada uma
+suficiente, nenhuma com falso positivo, aplicadas só quando os **dois** lados têm o valor:
+
+| # | prova | nosso lado | lado do ADN | cobertura |
+|---|---|---|---|---|
+| 1 | `chaveAcesso` | `ServiceInvoice.chaveAcesso` | `PortalInvoice.chaveAcesso` | parcial — o fallback `\|\| numeroNfse` de `NfseService.js:1510` a torna INCOMPLETA, nunca insegura (chave tem 50 dígitos, `nNFSe` tem poucos) |
+| 2 | **a tupla do E0014 — `(série, nDPS)`** | `rpsSerie`+`rpsNumero`, reservados transacionalmente e com `@@unique` | `lerSerieENumeroDaDps(xmlRaw)` (`nfse/nfseUltimaNota.js`, leitura **por caminho**) | **completa** — e a única que funciona **sem chave dos dois lados** |
+| 3 | `numeroNfse` (`nNFSe`) | `ServiceInvoice.numeroNfse` | `PortalInvoice.numero` | rede quando o XML não pôde ser lido |
+
+⚠ **Por que a nº 2 IDENTIFICA, e não só "parece":** a RN **E0014** rejeita DPS cujo conjunto *Série
++ Número + Município Emissor + CNPJ/CPF* já exista. O escopo aqui já fixa os dois últimos — uma
+`PortalClient` ↔ uma `Company` (`companyId` `@unique`) ↔ um CNPJ (`Company.cnpj` `@unique`). Dentro
+dele o par é único **pela regra do próprio sistema nacional**. São literalmente os mesmos números:
+`buildDpsXml` escreve `<serie>`/`<nDPS>` da numeração reservada (`NfseService.js:526`, `:776-777`) e
+o sistema nacional devolve a DPS **dentro** da NFS-e. Cobertura do `xmlRaw` medida em produção:
+**EMIT 14.946 = 100%**. Vale só com `papel: "EMIT"` — a numeração de nota recebida é do prestador dela.
+
+⚠⚠ **AUSÊNCIA NÃO VIRA IGUALDADE.** Chave nula dos dois lados não é "são a mesma"; número nulo
+tampouco. Mesma disciplina de `ingestaoNfse.js` e do índice único do Postgres.
+
+- ⚠ **Só `status` fora de `pending|rejected|falha_envio` entra.** `pending` é o valor gravado **na
+  reserva do número**, antes de o pedido sair da máquina — "a nota existe" é o que não se sabe.
+- ⚠ **`incluirEmitidasNaoConfirmadas` é OPT-IN e SÓ o `/client` liga.** O mesmo router é montado em
+  `/firm` e em `server.js`; o pedido é sobre a tela do cliente.
+- ⚠ **A PAGINAÇÃO É CORRIGIDA, não ignorada.** O `skip` do banco recua pelo tamanho do conjunto
+  nosso e a fatia é intercalada — sem isso a página 2 **pularia** tantas notas fiscais quantas
+  fossem as nossas. A conta está escrita na rota e provada no teste (páginas somam ids distintos,
+  nas duas ordens, inclusive com nota nossa no MEIO da lista).
+- ⚠ **Os totais contam as nossas** — senão o card "Valor total" e a tabela discordariam do mesmo mês.
+- **Contrato:** todo item ganhou **`confirmadaPeloAdn`**. `false` ⇒ a linha vem de `ServiceInvoice`,
+  o `invoiceId` é um `ServiceInvoice.id`, e as sub-rotas de `/invoices/:id` (xml, pdf, DANFSe) **não
+  a encontram** — por isso `hasXml`/`hasPdf` saem `false`. ⚠ No front, `undefined` é lido como
+  **confirmada** (contrato antigo e app mobile), nunca como falsa.
+- ⚠ **`status` continua `EMITIDA`.** A nota FOI emitida; o que falta é a confirmação. Um status novo
+  a pintaria de rascunho ou de erro.
+- Testes: `application/notas/__tests__/notasEmitidasNaoConfirmadas.test.js` (21, as três provas
+  isoladas + os negativos) e `routes/__tests__/uniaoNotasDoCliente.test.js` (21, a paginação, os
+  totais, o gêmeo do filtro e o opt-in).
+
 Os cinco defeitos abaixo foram medidos e corrigidos **antes** dessa primeira emissão.
 
 | # | Defeito medido | Hoje |

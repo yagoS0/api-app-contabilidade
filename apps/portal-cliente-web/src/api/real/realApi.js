@@ -179,6 +179,45 @@ export function createRealApi() {
       );
     },
 
+    // O DANFSe da NFS-e (PDF do Padrão Nacional, NT 008), gerado sob demanda pelo backend.
+    // Contrato lido em `apps/api/src/routes/client/index.js` + `apps/api/src/routes/danfseHttp.js`.
+    //
+    // ⚠⚠ NÃO PODE SER UM `<a href>`: a rota é autenticada e um link não leva o Bearer. Vem como
+    // **Blob** e a tela entrega. (Este é o primeiro `res.blob()` deste app — o download de guia usa
+    // base64 dentro de JSON porque a rota DELE responde JSON; aqui a rota responde o PDF cru.)
+    //
+    // ⚠⚠ A RECUSA PRECISA CHEGAR NOMEADA. A rota responde **503 `danfse_sem_qrcode`** (com
+    // `motivo`) quando a chave está ausente ou o QR não pôde ser gerado — e isso é deliberado: um
+    // DANFSe sem QR Code não é um DANFSe. Um `Error` genérico aqui viraria "falha ao baixar" na
+    // tela, que é exatamente a informação errada. Por isso o corpo JSON é lido e
+    // `code`/`motivo`/`status` sobem junto, como `pedir()` já faz nas demais rotas.
+    //
+    // ⚠ NÃO passa por `pedir()` de propósito: aquele faz `res.json()` sempre, e um PDF não é JSON.
+    // O preço é não ter o refresh single-flight — por isso o 401 é traduzido para o MESMO
+    // `ApiError(401, "unauthorized")` que o resto do app já sabe ler.
+    async fetchDanfseBlob(companyId, notaId) {
+      const { accessToken } = lerSessao();
+      const res = await fetchCru(
+        `/client/companies/${encodeURIComponent(companyId)}/notas/${encodeURIComponent(notaId)}/danfse`,
+        { method: "GET" },
+        accessToken
+      );
+      if (!res.ok) {
+        const corpo = await lerCorpo(res);
+        const codigo = String(corpo?.error || "").trim()
+          || (res.status === 401 ? "unauthorized" : "danfse_fetch_failed");
+        const err = new ApiError(
+          res.status,
+          codigo,
+          String(corpo?.message || "").trim() || `Falha ao gerar o DANFSe (HTTP ${res.status})`,
+          corpo
+        );
+        err.motivo = corpo?.motivo ?? null;
+        throw err;
+      }
+      return res.blob();
+    },
+
     // --- Guias --------------------------------------------------------------
     // GET /client/companies/:id/guides -> { data, page, limit, total }
     // ⚠ A rota já filtra `apenasLiberadas: true` — o cliente só vê guia que o

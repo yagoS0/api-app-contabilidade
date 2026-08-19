@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Chip, Vazio } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
+import { baixarBlob } from "../../lib/baixarBlob";
 import { modeloDeEmissaoDaNota, podeReaproveitar } from "../emitir/lib/reaproveitarNota";
+import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "./lib/danfseDaNota";
 import {
   TRACO,
   brl,
@@ -65,7 +67,84 @@ function chipDaNota(status) {
  *
  * ⚠ A REGRA NÃO MORA AQUI: quem decide o que se copia, o que não se copia e o
  * que a tela é obrigada a dizer é `emitir/lib/reaproveitarNota.js`.
+ *
+ * ── A NOTA EMITIDA APARECE NA HORA (dono, 19/08/2026) ────────────────────────
+ *
+ * > *"ao emitir uma nota, ela deve aparecer para o cliente, e depois que
+ * > consultar o ADN aí fica confirmada na tela; deve ficar mais clarinha e,
+ * > quando confirmada ADN, ela fica viva como as outras. **Não coloque
+ * > explicação disso na tela.***"
+ *
+ * A lista lia SÓ `PortalInvoice`, que é a projeção do ADN — entre emitir e a
+ * próxima captura a nota simplesmente não existia aqui. Hoje o backend junta as
+ * duas fontes NA LEITURA e marca cada linha com **`confirmadaPeloAdn`** (ver
+ * `application/notas/notasEmitidasNaoConfirmadas.js`, que traz a chave de
+ * deduplicação e a prova de que ela identifica).
+ *
+ * ⚠⚠ **A DISTINÇÃO É VISUAL E SÓ** — é instrução literal do dono, e ela veio
+ * logo depois de ele mandar enxugar as legendas desta tela. Não há parágrafo,
+ * legenda nem rodapé explicando os dois estados. O que existe:
+ *   • `data-confirmada-adn` no `<tr>` — o estado fica **auditável no DOM**;
+ *   • `opacity` no CSS (`styles/app.css`) — a linha "mais clarinha";
+ *   • `title`/`aria-label` no chip — que **não são texto na tela** e são o que
+ *     existe para quem passa o mouse e para quem usa leitor de tela. Opacidade
+ *     sozinha não chega a quem não enxerga a diferença.
  */
+/**
+ * O botão do DANFSe de UMA nota.
+ *
+ * ⚠ BOTÃO IMPOSSÍVEL NÃO SOME — fica desabilitado com o motivo em texto ao lado, a mesma
+ * disciplina de "Usar como modelo". A regra de quando ele pode não mora aqui: mora em
+ * `lib/danfseDaNota.js`, que espelha o que o backend recusa.
+ *
+ * ⚠⚠ A RECUSA APARECE INTEIRA. A rota responde **503 `danfse_sem_qrcode`** quando o QR Code não
+ * pôde ser gerado, e essa é a única resposta que a tela precisa EXPLICAR: um DANFSe sem QR Code
+ * não é um DANFSe (NT 008 §2.2 e §2.4.3). Mostrar "falha ao baixar" — ou nada — aqui seria a
+ * mentira que o 503 existe para impedir.
+ */
+function BotaoDanfse({ nota, companyId }) {
+  const [estado, setEstado] = useState({ fase: "ocioso", recusa: null });
+  const permissao = podeGerarDanfse(nota);
+  const gerando = estado.fase === "gerando";
+
+  async function baixar() {
+    setEstado({ fase: "gerando", recusa: null });
+    try {
+      const blob = await api.fetchDanfseBlob(companyId, nota.invoiceId);
+      baixarBlob(blob, nomeDoArquivoDanfse(nota));
+      setEstado({ fase: "pronto", recusa: null });
+    } catch (err) {
+      setEstado({ fase: "recusado", recusa: lerRecusaDanfse(err) });
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="btn-link"
+        disabled={!permissao.pode || gerando}
+        title={permissao.pode ? "Gera e baixa o PDF da NFS-e" : permissao.texto || undefined}
+        onClick={permissao.pode && !gerando ? baixar : undefined}
+      >
+        {gerando ? "Gerando…" : "Baixar DANFSe"}
+      </button>
+      {permissao.pode ? null : (
+        <span className="muted" style={{ fontSize: ".78rem" }}>{permissao.resumo}</span>
+      )}
+      {estado.recusa ? (
+        <span
+          className="muted"
+          style={{ fontSize: ".78rem", color: "var(--danger)", display: "block", maxWidth: 260 }}
+        >
+          ⚠ {estado.recusa.titulo} {estado.recusa.texto}
+          {estado.recusa.porQue ? ` ${estado.recusa.porQue}` : ""}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 export function NotasPage({ empresa, aoReaproveitar }) {
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
@@ -166,6 +245,7 @@ export function NotasPage({ empresa, aoReaproveitar }) {
                   <th scope="col" className="num">
                     Valor
                   </th>
+                  <th scope="col">DANFSe</th>
                   <th scope="col">Emitir outra</th>
                 </tr>
               </thead>
@@ -173,8 +253,12 @@ export function NotasPage({ empresa, aoReaproveitar }) {
                 {notas.map((nota) => {
                   const chip = chipDaNota(nota.status);
                   const permissao = podeReaproveitar(nota, { cnpjDaEmpresa: empresa.cnpj });
+                  // ⚠ `false` explícito, não "falsy": o contrato antigo não tinha este campo, e
+                  // `undefined` (uma resposta velha em cache, ou o app mobile) tem de continuar
+                  // sendo lido como CONFIRMADA — que era o único estado que existia.
+                  const aguardandoAdn = nota.confirmadaPeloAdn === false;
                   return (
-                    <tr key={nota.invoiceId}>
+                    <tr key={nota.invoiceId} data-confirmada-adn={aguardandoAdn ? "nao" : "sim"}>
                       <td>{texto(nota.numero)}</td>
                       <td>{texto(nota.type)}</td>
                       <td>{fmtDateBr(nota.issueDate)}</td>
@@ -188,9 +272,26 @@ export function NotasPage({ empresa, aoReaproveitar }) {
                         </span>
                       </td>
                       <td>
-                        <Chip status={chip.status}>{chip.rotulo}</Chip>
+                        {/* ⚠ O CHIP NÃO MUDA DE COR NEM DE RÓTULO. A nota FOI emitida; o que falta
+                            é a confirmação do sistema nacional. Um rótulo diferente ("Pendente",
+                            "Aguardando") a pintaria de azul de processando ou de cinza de
+                            cancelada, que é justamente a confusão a evitar.
+
+                            ⚠ `title`/`aria-label` NÃO são "explicação na tela" — são o que existe
+                            para quem passa o mouse e para quem usa leitor de tela. A opacidade
+                            sozinha não chega a quem não enxerga a diferença. */}
+                        <Chip
+                          status={chip.status}
+                          title={aguardandoAdn ? "Emitida — aguardando confirmação do sistema nacional" : undefined}
+                          aria-label={aguardandoAdn ? `${chip.rotulo} — aguardando confirmação do sistema nacional` : undefined}
+                        >
+                          {chip.rotulo}
+                        </Chip>
                       </td>
                       <td className="num">{brl(nota.total)}</td>
+                      <td>
+                        <BotaoDanfse nota={nota} companyId={companyId} />
+                      </td>
                       <td>
                         {/* ⚠ O BOTÃO NÃO EMITE NADA — ele abre a tela de emissão pré-preenchida,
                             que continua tendo o portão, o aviso de cadastro incompleto e o botão

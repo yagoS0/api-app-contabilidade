@@ -16,10 +16,30 @@ import { createRealApi } from "./real/realApi";
  * mock abriria a tela como se fosse a API de verdade — e o modo "fallback"
  * viraria um bypass de login. O fallback existe para BACKEND FORA DO AR
  * (rede caiu, porta 3000 vazia, 5xx), não para credencial recusada.
+ *
+ * ⚠⚠ E ELE TAMBÉM NÃO ENGOLE UMA RECUSA NOMEADA — medido em 19/08/2026, ao
+ * ligar o DANFSe. A regra era só `status >= 500`, e há recusas DELIBERADAS do
+ * backend nessa faixa. O que acontecia:
+ *
+ *   • `503 danfse_sem_qrcode` — o servidor recusa de propósito, porque um
+ *     DANFSe sem QR Code não é um DANFSe (NT 008 §2.2/§2.4.3). Com o fallback,
+ *     o mock devolvia um PDF **válido** no lugar da recusa: exatamente o
+ *     documento inválido servido em silêncio que esse 503 existe para impedir.
+ *   • `502` da camada **TRANSPORTE** da emissão — desfecho DESCONHECIDO (a DPS
+ *     pode ter sido processada). O mock respondia `status: "issued"`, e a tela
+ *     dizia ao cliente que a nota saiu quando ninguém sabe se saiu.
+ *   • `503 mail_not_configured` — o mock fingia que o e-mail de redefinição de
+ *     senha foi enviado.
+ *
+ * O que separa os dois casos é o CORPO, não o status: um backend fora do ar não
+ * responde o nosso JSON. `pedir()` preenche `code` a partir de `error`/`code`
+ * do corpo (`realApi.js`), então **`code` presente = o servidor respondeu, e
+ * respondeu isto**. Fallback só quando não houve resposta nossa nenhuma.
  */
 function deveCairParaMock(err) {
   const status = Number(err?.status);
   if (status === 0) return true; // falha de rede: não houve resposta
+  if (err?.code) return false; // recusa NOMEADA: o servidor respondeu, e a resposta é essa
   return Number.isFinite(status) && status >= 500;
 }
 

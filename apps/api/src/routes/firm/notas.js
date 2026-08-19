@@ -31,7 +31,8 @@ import { classifyItemsForCompany } from "../../application/notas/apuracao/Classi
 import { calcularApuracaoParaCompetencia } from "../../application/notas/apuracao/CalculoFiscal.js";
 import { transmitirApuracao } from "../../application/notas/apuracao/ApuracaoTransmissaoService.js";
 import { conferirApuracao } from "../../application/notas/apuracao/ApuracaoConferenciaService.js";
-import { gerarDanfse } from "../../application/nfse/danfse/gerarDanfse.js";
+import { gerarDanfseDaNota } from "../../application/nfse/danfse/danfseDaNotaDoPortal.js";
+import { responderDanfse, responderErroDanfse } from "../danfseHttp.js";
 import { auditarCompetencia } from "../../application/notas/auditoria/AuditoriaNotasService.js";
 
 const COMPETENCIA_RE = /^\d{4}-\d{2}$/;
@@ -742,92 +743,28 @@ export function createNotasRouter({ log }) {
   //
   // O "arquivo ausente" dos precedentes (PGDAS/SITFIS) vira aqui "XML ausente", e é respondido
   // com a mesma honestidade: 404 dizendo QUAL é a falta.
+  //
+  // ⚠ ESTA ROTA É FACHADA DESDE 19/08/2026 — o corpo dela (achar a nota, recusar sem XML, derivar
+  // a marca d'água do ciclo) saiu para `application/nfse/danfse/danfseDaNotaDoPortal.js`, e os
+  // desfechos para `routes/danfseHttp.js`. O motivo é o app do CLIENTE, que ganhou a mesma porta:
+  // duas cópias da regra da marca d'água divergiriam, e o cliente veria um PDF sem "CANCELADA"
+  // sobre a MESMA nota em que o contador vê com. Mesmo desenho de `nfseEmissaoHttp.js`.
+  //
+  // ⚠ `?semQrCode=1` FOI REMOVIDO, e o motivo é que ele perdeu o dele. Existia para conferir
+  // layout enquanto não havia biblioteca; hoje a conferência se faz com o QR, que é o layout real.
+  // O que sobraria é servir o documento inválido exatamente quando ele é inválido — o oposto do
+  // que o escape existia para fazer. Um escape assim, alcançável por query string, é uma
+  // tentação a um refresh de distância no dia em que o 503 incomodar alguém.
   router.get("/notas/:notaId/danfse", requireFirmCompanyAccess(), async (req, res) => {
-    const portalClientId = String(req.params.companyId);
-    const notaId = String(req.params.notaId);
-
-    const nota = await prisma.portalInvoice.findFirst({
-      where: { id: notaId, clientId: portalClientId },
-      select: {
-        id: true, numero: true, chaveAcesso: true, chaveSubstituida: true,
-        status: true, statusEfetivo: true, xmlRaw: true,
-      },
-    });
-    if (!nota) return bad(res, 404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
-
-    if (!nota.xmlRaw) {
-      return bad(res, 404, "xml_indisponivel",
-        "Esta nota não tem o XML guardado, e o DANFSe é gerado a partir dele — nada aqui é " +
-        "inventado. Recapture a nota para que o XML entre na base.");
-    }
-
-    // ⚠ O QR CODE É OBRIGATÓRIO (NT §2.2 e §2.4.3) e agora é gerado (dependência `qrcode`, escolhida
-    // pelo dono). A RECUSA CONTINUA: quando o QR não puder ser gerado — chave ausente no XML, falha
-    // da biblioteca — a resposta é 503, não um PDF sem QR. Servi-lo em silêncio faria o contador
-    // mandar ao tomador um documento inválido achando que mandou o certo.
-    //
-    // ⚠ `?semQrCode=1` FOI REMOVIDO, e o motivo é que ele perdeu o dele. Existia para conferir
-    // layout enquanto não havia biblioteca; hoje a conferência se faz com o QR, que é o layout real.
-    // O que sobraria é servir o documento inválido exatamente quando ele é inválido — o oposto do
-    // que o escape existia para fazer. Um escape assim, alcançável por query string, é uma
-    // tentação a um refresh de distância no dia em que o 503 incomodar alguém.
-
-    // ⚠ A MARCA D'ÁGUA VEM DO CICLO DA NOTA, NUNCA DO `chSubstda` DO XML. `chSubstda` diz "eu
-    // substituo AQUELA"; quem responde "esta foi substituída" é o evento (ou outra nota apontando
-    // para esta) — a mesma distinção que o `NotaDetailModal` já errou uma vez.
-    const eventos = await prisma.portalInvoiceEvent.findMany({
-      where: { clientId: portalClientId, invoiceId: nota.id },
-      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-      select: { type: true, chaveSubstituta: true },
-    });
-    const substituta = nota.chaveAcesso
-      ? await prisma.portalInvoice.findFirst({
-          where: { clientId: portalClientId, chaveSubstituida: nota.chaveAcesso },
-          select: { chaveAcesso: true },
-        })
-      : null;
-    const ciclo = derivarCiclo({
-      nota,
-      evento: eventos.find((e) => e.type === "canc_por_substituicao") || eventos[eventos.length - 1] || null,
-      substituta,
-    });
-    const marcaDagua =
-      ciclo?.situacao === "substituida" ? "SUBSTITUIDA"
-      : ciclo?.situacao === "cancelada" ? "CANCELADA"
-      : null;
-
     try {
-      const { pdf, conformidade } = await gerarDanfse({
-        xml: nota.xmlRaw,
-        marcaDagua,
+      const resultado = await gerarDanfseDaNota({
+        portalClientId: String(req.params.companyId),
+        notaId: String(req.params.notaId),
         incluirCanhoto: String(req.query.canhoto || "") === "1",
       });
-
-      // A não conformidade viaja em header, não some: quem baixar o PDF consegue saber, sem abrir
-      // o arquivo, o que ainda falta nele.
-      //
-      // ⚠ `X-Danfse-Conforme` SAIU, e sair é mais honesto que ficar. Ele era `qrCode === "presente"`
-      // — ou seja, respondia sobre o QR Code com o nome de "o documento está conforme". Agora que o
-      // QR sempre sai (quando não sai, a resposta é 503 e não tem header nenhum), ele seria a
-      // constante "1" afirmando conformidade que o documento ainda não tem: as fontes Arial/MS Sans
-      // Serif não estão embutidas, a logomarca oficial não está versionada e doze descrições de
-      // código dependem de um leiaute que não está no repositório.
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition",
-        `inline; filename="danfse-${(nota.chaveAcesso || nota.numero || nota.id).toString().replace(/[^\w.-]/g, "")}.pdf"`);
-      res.setHeader("Cache-Control", "private, max-age=300");
-      res.setHeader("X-Danfse-Qrcode", String(conformidade.qrCode));
-      res.setHeader("X-Danfse-Pendencias", String(conformidade.avisos.length));
-      res.setHeader("X-Danfse-Paginas", String(conformidade.paginas));
-      return res.send(pdf);
+      return responderDanfse(res, resultado);
     } catch (err) {
-      if (err?.code === "DANFSE_SEM_QRCODE") {
-        // ⚠ 503 e não 200-com-PDF-torto: o QR Code é obrigatório e ausência não é resposta.
-        return bad(res, 503, "danfse_sem_qrcode", err.message, { motivo: err.motivo || null });
-      }
-      if (err?.code === "DANFSE_XML_NAO_E_NFSE" || err?.code === "DANFSE_XML_VAZIO") {
-        return bad(res, 422, "xml_nao_e_nfse", err.message);
-      }
+      if (responderErroDanfse(res, err)) return;
       throw err;
     }
   });
