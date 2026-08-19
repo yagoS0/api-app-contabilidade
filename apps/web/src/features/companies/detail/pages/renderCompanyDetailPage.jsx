@@ -675,6 +675,17 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                   pTotTribFed: selectedCompany?.legacyCompany?.pTotTribFed ?? null,
                   pTotTribEst: selectedCompany?.legacyCompany?.pTotTribEst ?? null,
                   pTotTribMun: selectedCompany?.legacyCompany?.pTotTribMun ?? null,
+                  /* ⚠ A ATIVIDADE CADASTRADA — é o que SUGERE a descrição do serviço na emissão
+                     (dono, 18/08/2026: *"a atividade é pré-configurada no cadastro do cliente no
+                     portal do contador, devemos usar o máximo dos dados que já temos"*). Ver
+                     `notas/lib/descricaoSugerida.js`.
+                     ⚠ Estes dois campos NÃO entram em `buildMissingFields` e não bloqueiam nada:
+                     sem eles a sugestão simplesmente não existe e o campo fica vazio.
+                     ⚠ As duas colunas já vinham no `legacyCompanySelect` (`routes/firm/index.js`),
+                     então isto é leitura, não coluna nova — o defeito que este projeto já pagou
+                     três vezes (campo no banco sem caminho até a tela) não se repete aqui. */
+                  atividades: selectedCompany?.legacyCompany?.atividades || [],
+                  cnaePrincipal: selectedCompany?.legacyCompany?.cnaePrincipal || null,
                 }}
               />
             </Suspense>

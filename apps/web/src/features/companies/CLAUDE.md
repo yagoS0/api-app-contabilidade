@@ -474,6 +474,92 @@ portal do contador é escuro e continua lendo `styles/tokens.css`. Nenhum hex no
   lendo `company.codigoServicoNacional`. `ServicoNacionalDaNota` segue dizendo **qual vai** e onde se
   troca. Um seletor que parecesse funcionar emitiria com outro código — erro fiscal silencioso.
 
+### ⚠⚠ O VALOR DA NOTA VIROU CAMPO DE MOEDA (dono, 18/08/2026)
+
+> *"Ajuste o campo de valor de preenchimento da nota, para valor, com vírgula, não deixando ser
+> escrito de outra forma."*
+
+Regra em `notas/lib/valorDaNota.js` (25 testes), gêmea em
+`apps/portal-cliente-web/src/features/emitir/lib/valorDaNota.js`. Ligação em
+`notas/components/__tests__/valorEDescricaoLigados.test.jsx` (14) e no par do portal do cliente (16).
+
+- ⚠⚠ **O DEFEITO ERA DE ORDEM DE GRANDEZA.** O assistente lia o campo com
+  `Number(String(v).replace(",", "."))` — um `replace` só, do PRIMEIRO caractere. Três grafias que
+  um contador escreve davam três desfechos: `1.500` → **1,5** · `1.500,00` → **NaN** ("o valor
+  precisa ser maior que zero" numa nota com o valor preenchido na tela) · `1500.00` → 1500, certo
+  por acaso. O do meio emite a nota por 1/1000 do valor, e **nota emitida não se desfaz**.
+- ⚠ **A AMBIGUIDADE NÃO É RESOLVIDA — ELA É TORNADA IMPOSSÍVEL.** O campo só consegue conter
+  `1.234,56`: o teclado é um FLUXO DE DÍGITOS em centavos (`150000` ⇒ `1.500,00`), e o ponto
+  simplesmente não entra. Não há duas grafias, logo não há o que decidir depois.
+- ⚠⚠ **COLAR TEM REGRA PRÓPRIA, e é onde mora o risco.** Quem cola vem de planilha. Passar o
+  colado pela máscara faria `1500` virar **R$ 15,00**. Então a colagem é PARSEADA com gramática
+  fechada: aceita `1500`, `1500,00`, `1.500,00`, `1,500.00` e `1500.00` (ponto com 1–2 casas não
+  pode ser milhar pt-BR, que agrupa de 3 em 3), e **RECUSA com o motivo** o que tem duas leituras —
+  `1.500` e `1,500`. Campo intocado + frase na tela; nunca conversão silenciosa.
+- ⚠ **O payload continua NÚMERO**, e é o mesmo `lerValorDoCampo` que alimenta o espelho/prévia: o
+  número que o contador vê é, por construção, o que vai em `<vServ>`. Provado por teste nos dois
+  portais.
+- ⚠ **ZERO DIGITADO ≠ CAMPO VAZIO** — a máscara nunca fabrica `0,00` num campo em branco.
+- ⚠ **ISTO NÃO VALE PARA PERCENTUAL.** Alíquota e `pTotTribSN` seguem aceitando vírgula E ponto:
+  percentual de 0 a 100 não tem milhar, logo não tem a ambiguidade — e a máscara de centavos ali
+  transformaria "5" em "0,05".
+- ⚠ **`reaproveitarNota.paraCampoDeValor` INVERTEU**, e o teste que dizia *"valor grande sai SEM
+  separador de milhar"* virou o oposto. Ele existia como CONTORNO do parse quebrado; hoje a forma
+  canônica É com milhar, e é ela que o campo tem de receber.
+
+### ⚠ A DESCRIÇÃO DO SERVIÇO CHEGA SUGERIDA (dono, 18/08/2026)
+
+> *"a sugestão do campo descrição da nota, pode ser feito com 'serviço prestado de' + 'atividade' +
+> competência"* … *"não, a atividade é pré-configurada no cadastro do cliente no portal do contador,
+> devemos usar o máximo dos dados que já temos para facilitar."*
+
+Regra em `notas/lib/descricaoSugerida.js` (16 testes), gêmea em
+`apps/portal-cliente-web/src/features/emitir/lib/descricaoSugerida.js`.
+
+- ⚠⚠ **A FONTE É `Company.atividades`, NÃO A LISTA DO ANEXO B**, e o que decidiu foi a medição em
+  produção (33 empresas): `atividades` 33/33 · `cnaePrincipal` 33/33 · `codigosServicoNacional`
+  **2/33**. A lista oficial é o texto que sai no DANFSe, mas depende de um código que duas empresas
+  da carteira têm — sugestão para 2 de 33 não facilita nada. As duas colunas já estavam no
+  `legacyCompanySelect` dos dois portais; só faltava caminho até a tela.
+- ⚠⚠ **CÓDIGO NU NÃO VIRA TEXTO.** O formato medido é `"46.19-2-00 - Representantes comerciais…"`,
+  mas há empresa com os quatro códigos NUS (`["71.12-0-00","4120400",…]`). Não existe tabela
+  CNAE→descrição neste repositório (o `CnaeAnexo` mapeia para ANEXO DO SIMPLES, outra lei), então
+  entrada sem texto ⇒ **sem sugestão**, campo vazio, motivo na tela. ⚠ A descrição precisa **começar
+  por letra**: sem isso, `71.12-0-00` casaria como código `71.12-0` e descrição `00` — o traço de
+  dentro do próprio CNAE.
+- ⚠⚠ **O PORTUGUÊS QUEBRA COM A FÓRMULA LITERAL, e foi medido.** Na lista oficial, **61 dos 335**
+  códigos começam com "Serviço(s)" (34 com "Serviços de"): *"Serviço prestado de Serviços de
+  consultoria…"*. Nas descrições de CNAE é pior — além de "Atividades de…", há nomes de AGENTE no
+  plural ("Representantes comerciais e agentes do comércio"), onde "prestado **de** Representantes"
+  não é redundância, é frase errada. **Não há heurística confiável** para decidir se "de" cabe antes
+  de um sintagma que não controlamos. A regra é de dois ramos:
+  1. a descrição já começa com "Serviço(s)" ⇒ **o prefixo SOME** (*"Serviços de consultoria em
+     gestão empresarial — competência 07/2026"*);
+  2. qualquer outra ⇒ **"Serviço prestado: " + a descrição inteira e intocada**. Os DOIS PONTOS são
+     a peça: introduzem uma aposição, que aceita qualquer sintagma nominal sem exigir regência nem
+     concordância. É a frase do dono, com o "de" trocado por um sinal que não briga com o texto.
+  O texto oficial **não é reescrito** — o único ajuste é tirar o ponto final, senão a cláusula de
+  competência ficaria depois dele.
+- ⚠ **SUGESTÃO NÃO É TRAVA.** O efeito para de escrever assim que a pessoa digita — inclusive
+  quando a competência muda depois. Mesmo desenho da alíquota efetiva (`emitir/lib/aliquotaEfetiva.js`).
+- ⚠ **SEM DADO, CAMPO VAZIO — NUNCA MEIA FRASE.** Quatro motivos com nome próprio (`SEM_CADASTRO`
+  · `SEM_ATIVIDADE` · `SEM_DESCRICAO` · `VARIAS`), cada um com frase própria e o "onde se resolve"
+  por portal (o cliente não edita o próprio cadastro). ⚠ `SEM_CADASTRO` **não gera texto**: prop
+  ausente ≠ cadastro vazio.
+- ⚠ **VÁRIAS ATIVIDADES NÃO SE RESOLVEM EM SILÊNCIO.** Tenta-se casar com o `cnaePrincipal`; sem
+  casamento único **não se elege ninguém** — as opções são oferecidas, nada pré-selecionado. A
+  ordem de um `String[]` não significa nada.
+- ⚠ **A PROCEDÊNCIA VAI NA TELA**, nomeando o CNAE de onde a frase saiu. O que sai daqui é
+  `xDescServ`, impresso no DANFSe do tomador.
+- ⚠ **A PRECEDÊNCIA CONTRA `descricoesRecentes` (portal do cliente):** a atividade do cadastro
+  PRÉ-PREENCHE (é dado da empresa, igual em qualquer máquina); as descrições deste navegador
+  continuam BOTÕES, e **clicar vence** (é escolha explícita, e marca `DIGITADA`). ⚠⚠ E o
+  `jaDigitado` que viaja para `sugerirDescricoes` é o que a PESSOA escreveu, não o pré-preenchido —
+  passar `form.descricao` cru mataria a lista de recentes para sempre, em silêncio.
+- ⚠ **O mock ganhou os quatro formatos**, e o caminho feliz ficou na empresa de Mangaratiba
+  (`i === 2`), a ÚNICA configurada para emitir: o caso feliz em outra empresa só apareceria em telas
+  que param no passo 1.
+
 ### CLICAR NUMA NOTA passou a FAZER alguma coisa (dono, 18/08/2026)
 
 > *"o portal do contador não está habilitado as notas do jeito que lhe disse, como no portal do

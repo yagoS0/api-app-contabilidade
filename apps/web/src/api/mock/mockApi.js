@@ -205,6 +205,41 @@ function makeCompanies(count = 6) {
         codigosServicoNacional: ehMangaratiba ? ["171201", "010101"] : [],
         codigoServicoMunicipal: ehMangaratiba ? "001" : null,
         rpsSerie: ehMangaratiba ? "00001" : null,
+        // ⚠ AS ATIVIDADES — é delas que sai a DESCRIÇÃO SUGERIDA da nota
+        // (`notas/lib/descricaoSugerida.js`). Sem elas no mock, o assistente offline mostraria
+        // "esta empresa não tem atividade cadastrada" em TODAS, e o caminho normal da sugestão
+        // nunca seria exercido sem backend.
+        //
+        // ⚠ OS FORMATOS SÃO OS MEDIDOS EM PRODUÇÃO (33 empresas), e cada um existe aqui porque
+        // produz um desfecho DIFERENTE na tela — um mock com só o caso feliz não exercitaria
+        // nenhuma das recusas:
+        //   i === 2  UMA atividade `código - descrição`  ⇒ SUGERE (o caminho normal)
+        //   i === 0  VÁRIAS com descrição, e o `cnaePrincipal` desempata ⇒ sugere a do principal
+        //   i === 1  VÁRIAS com descrição e principal que não casa ⇒ NÃO sugere, oferece as opções
+        //   demais   códigos NUS, sem texto ⇒ NÃO sugere (não há de-para CNAE→texto no projeto)
+        //
+        // ⚠ O CAMINHO NORMAL FICA NA DE MANGARATIBA (`i === 2`) DE PROPÓSITO: ela é a ÚNICA que
+        // está configurada para emitir, ou seja a única em que o assistente destrava até o fim.
+        // Pendurar o caso feliz em outra empresa deixaria a sugestão preenchida só em telas que
+        // param no passo 1 — e o caminho completo (sugestão → conferência → Emitir) nunca seria
+        // percorrido offline. Os textos são descrições reais de CNAE, não inventadas para o mock.
+        atividades: i === 2
+          ? ["73.19-0-03 - Marketing direto"]
+          : i === 0
+            ? [
+              "62.01-5-01 - Desenvolvimento de programas de computador sob encomenda",
+              "62.04-0-00 - Consultoria em tecnologia da informação",
+            ]
+            : i === 1
+              ? [
+                "69.20-6-01 - Atividades de contabilidade",
+                "70.20-4-00 - Atividades de consultoria em gestão empresarial",
+              ]
+              : ["71.12-0-00", "4120400", "4399101"],
+        cnaePrincipal: i === 2 ? "7319003"
+          : i === 0 ? "6204000"
+            : i === 1 ? "8599604" // ⚠ NÃO está entre as atividades: é o caso "não dá para desempatar"
+              : "7112000",
       },
       // ⚠ O PORTÃO DA EMISSÃO PELO CLIENTE nasce FECHADO em todas — é o default da coluna
       // (`emissaoClienteLiberada Boolean @default(false)`) e o que protege as empresas existentes.

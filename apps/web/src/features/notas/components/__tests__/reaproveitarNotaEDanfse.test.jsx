@@ -187,7 +187,10 @@ describe("o assistente abre PREENCHIDO — e sem nenhum identificador da nota de
     expect(screen.getByLabelText(/CNPJ ou CPF do tomador/i)).toHaveValue("11222333000191");
     expect(screen.getByLabelText(/Nome ou raz[ãa]o social/i)).toHaveValue("TOMADOR EXEMPLO LTDA");
     expect(screen.getByLabelText(/Descri[çc][ãa]o do servi[çc]o/i)).toHaveValue("CONSULTORIA EM GESTAO");
-    expect(screen.getByLabelText(/Valor dos servi[çc]os/i)).toHaveValue("2300,00");
+    // ⚠ Na forma canônica do campo mascarado (`lib/valorDaNota.js`), COM milhar. Era "2300,00"
+    // enquanto o campo era texto livre lido por um `replace(",", ".")` — e nessa época "1.500"
+    // valia 1,5. O campo e o pré-preenchimento têm de falar a mesma língua.
+    expect(screen.getByLabelText(/Valor dos servi[çc]os/i)).toHaveValue("2.300,00");
   });
 
   // ⚠⚠ A INVARIANTE. Nenhum campo do formulário pode carregar identificador da nota de origem —

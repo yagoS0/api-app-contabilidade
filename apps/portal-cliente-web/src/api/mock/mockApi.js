@@ -116,6 +116,13 @@ function criarEstado() {
         rpsNumero: "37",
         regimeTributario: "SIMPLES_NACIONAL",
         optanteSimples: true,
+        // ⚠ A ATIVIDADE — é dela que sai a DESCRIÇÃO SUGERIDA da nota
+        // (`features/emitir/lib/descricaoSugerida.js`). Sem ela no mock, o formulário offline
+        // mostraria "esta empresa não tem atividade cadastrada" e o caminho normal da sugestão
+        // nunca seria exercido sem backend. O formato é o MEDIDO em produção:
+        // `código + " - " + descrição`, e a descrição é texto real de CNAE.
+        atividades: ["73.19-0-03 - Marketing direto"],
+        cnaePrincipal: "7319003",
       },
     },
     {
@@ -217,6 +224,12 @@ function criarEstado() {
         // servidor (a primeira é `CadastroFiscal.regime`, que `GET /client/companies` não manda).
         regimeTributario: "LUCRO_PRESUMIDO",
         optanteSimples: false,
+        // ⚠⚠ O CASO QUE PROVA A REGRA 1: códigos NUS, sem texto nenhum. Não existe tabela
+        // CNAE→descrição neste repositório (o `CnaeAnexo` mapeia para ANEXO DO SIMPLES, outra
+        // coisa), então aqui a tela NÃO sugere nada, o campo fica VAZIO e ela diz por quê. Sem
+        // este caso no mock, só o caminho feliz seria alcançável offline.
+        atividades: ["71.12-0-00", "4120400", "4399101"],
+        cnaePrincipal: "7112000",
       },
     },
   ];

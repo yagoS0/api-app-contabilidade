@@ -107,6 +107,23 @@ import { CampoComBusca } from "./CampoComBusca";
 import { buscarTomadores, listarTomadoresRecentes } from "../lib/tomadoresRecentes";
 import { CAMPOS_COPIADOS, CAMPOS_NAO_COPIADOS } from "../lib/reaproveitarNota";
 import { CAMPO, lerRejeicao } from "../lib/rejeicaoDaEmissao";
+// ⚠ O VALOR EM MOEDA BRASILEIRA — uma leitura só. O que havia aqui era
+// `Number(String(v).replace(",", "."))`, que lia "1.500" como 1,5 e "1.500,00" como NaN: erro de
+// ORDEM DE GRANDEZA num campo cujo desfecho é uma nota fiscal que não se desfaz. Ver o cabeçalho
+// de `lib/valorDaNota.js`, que explica por que a máscara e por que a colagem tem regra própria.
+import {
+  lerValorColado,
+  lerValorDoCampo,
+  mascararValorDigitado,
+  textoDaRecusaDeColagem,
+} from "../lib/valorDaNota";
+// ⚠ A DESCRIÇÃO SUGERIDA a partir da ATIVIDADE do cadastro. Sugestão, nunca trava — ver o
+// cabeçalho de `lib/descricaoSugerida.js` (inclusive a regra que impede o português quebrado).
+import {
+  montarFrase as montarFraseDaAtividade,
+  sugerirDescricaoDaNota,
+  textoDoMotivo,
+} from "../lib/descricaoSugerida";
 // ⚠ IMPORTAR daqui é o certo: `consultarCnpj` já existe, já classifica a recusa em
 // `{ ok, motivo, mensagem }`, já trata a ausência de `fetch` e já aceita `fetchImpl` (é o que
 // mantém o teste fora da rede). Uma segunda consulta divergiria na primeira correção.
@@ -314,6 +331,35 @@ export function EmitirNfseWizard({
   // está aqui, e não um valor cravado, para que este campo continue igual nos dois caminhos.
   const [competencia, setCompetencia] = useState(valoresIniciais?.competencia || "");
   const [referencia, setReferencia] = useState(valoresIniciais?.referencia || "");
+  // A recusa da última colagem no campo de valor. `null` = nada a dizer. ⚠ Ela existe porque a
+  // colagem ambígua NÃO é convertida: o campo fica como estava e a tela precisa explicar o porquê,
+  // senão o Ctrl+V "não faz nada" — o pior desfecho possível.
+  const [recusaColagemValor, setRecusaColagemValor] = useState(null);
+
+  // ── A DESCRIÇÃO SUGERIDA (dono, 18/08/2026) ───────────────────────────────
+  // ⚠ SUGESTÃO, NUNCA TRAVA: o efeito abaixo para de escrever no campo assim que alguém digita, e
+  // o que o contador escrever vence sempre. Mesmo desenho da alíquota efetiva no portal do cliente.
+  // ⚠ Nota reaproveitada JÁ TRAZ descrição — e ela vence a sugestão: foi um ato explícito do
+  // contador (clicar em "emitir outra a partir desta"), como o nome do tomador que entra `DIGITADO`.
+  const [descricaoDigitada, setDescricaoDigitada] = useState(
+    Boolean(String(valoresIniciais?.servico?.descricao || "").trim())
+  );
+  const sugestaoDescricao = useMemo(
+    () => sugerirDescricaoDaNota({
+      atividades: cadastroEmissao?.atividades,
+      cnaePrincipal: cadastroEmissao?.cnaePrincipal,
+      competencia,
+      // ⚠ Prop ausente ≠ cadastro vazio: sem o cadastro esta tela não afirma que a empresa não tem
+      // atividade — ela apenas não sugere e não diz nada.
+      temCadastro: Boolean(cadastroEmissao),
+    }),
+    [cadastroEmissao, competencia]
+  );
+  useEffect(() => {
+    if (descricaoDigitada) return;
+    const texto = sugestaoDescricao.texto || "";
+    setServico((a) => (a.descricao === texto ? a : { ...a, descricao: texto }));
+  }, [sugestaoDescricao, descricaoDigitada]);
 
   // A lista oficial do IBGE, para o campo do município do tomador. ⚠ Carregada por `import()`
   // dinâmico e SÓ quando a seção do endereço é aberta (ou quando a consulta precisa conferir um
@@ -331,7 +377,10 @@ export function EmitirNfseWizard({
   const docLimpo = soDigitos(tomador.cnpjCpf);
   const docValido = docLimpo.length === 11 || docLimpo.length === 14;
   const emailValido = !tomador.email || tomador.email.includes("@");
-  const valor = Number(String(servico.valorServicos).replace(",", "."));
+  // ⚠ O NÚMERO SAI DO CAMPO POR UMA LEITURA SÓ (centavos inteiros), e o campo só consegue conter a
+  // forma canônica `1.234,56`. `null` = campo vazio, e é o que mantém "ainda não preenchi"
+  // separado de "escreveu zero" — a distinção que `problemasDaNota` usa logo abaixo.
+  const valor = lerValorDoCampo(servico.valorServicos);
 
   // ── A consulta do tomador na Receita ──────────────────────────────────────
   // ⚠ Nada aqui entra em `problemasDaNota`. A consulta ajuda; ela não decide se a nota pode sair.
@@ -980,8 +1029,65 @@ export function EmitirNfseWizard({
                       erro fiscal silencioso. Conferido no backend nesta entrega: continua assim. */}
                   <ServicoNacionalDaNota cadastroEmissao={cadastroEmissao} />
                   <label htmlFor={CAMPO.DESCRICAO} style={rotulo}>Descrição do serviço
-                    <textarea id={CAMPO.DESCRICAO} value={servico.descricao} onChange={(e) => setServico({ ...servico, descricao: e.target.value })} rows={3} style={{ ...campo, resize: "vertical" }} />
+                    <textarea
+                      id={CAMPO.DESCRICAO}
+                      value={servico.descricao}
+                      onChange={(e) => {
+                        // ⚠ O DIGITADO VENCE, e vence PARA SEMPRE nesta abertura: a partir daqui o
+                        // efeito da sugestão não escreve mais no campo, nem quando a competência
+                        // muda. Apagar tudo devolve o campo à sugestão — é o desfazer natural.
+                        setDescricaoDigitada(Boolean(e.target.value.trim()));
+                        setServico({ ...servico, descricao: e.target.value });
+                      }}
+                      rows={3}
+                      style={{ ...campo, resize: "vertical" }}
+                    />
                   </label>
+                  {/* ⚠ A ORIGEM DA FRASE FICA NA TELA. Texto de documento fiscal sem procedência é
+                      o que ninguém confere — mesmo princípio do "de onde veio" da alíquota efetiva
+                      e da consulta à Receita. E quando NÃO há sugestão, a tela diz por quê e onde
+                      se resolve, em vez de um campo vazio sem explicação. */}
+                  {sugestaoDescricao.texto && !descricaoDigitada && (
+                    <div style={{ fontSize: "0.72rem", color: PANEL.muted }}>
+                      {sugestaoDescricao.procedencia} É sugestão: escreva por cima à vontade.
+                    </div>
+                  )}
+                  {!sugestaoDescricao.texto && textoDoMotivo(sugestaoDescricao.motivo, {
+                    ondeSeResolve: "Cadastre em Editar cadastro → Atividades.",
+                  }) && (
+                    <div style={{ fontSize: "0.72rem", color: PANEL.muted }}>
+                      {textoDoMotivo(sugestaoDescricao.motivo, {
+                        ondeSeResolve: "Cadastre em Editar cadastro → Atividades.",
+                      })}
+                    </div>
+                  )}
+                  {/* ⚠ COM VÁRIAS ATIVIDADES, A TELA OFERECE — NÃO ESCOLHE. Nada vem marcado, nem
+                      quando a lista tem duas linhas: eleger uma seria o sistema decidindo o que vai
+                      escrito na nota, e a ordem de um `String[]` não significa nada. */}
+                  {!sugestaoDescricao.texto && sugestaoDescricao.opcoes.length > 1 && (
+                    <div style={{ display: "grid", gap: 4 }}>
+                      {sugestaoDescricao.opcoes.map((o) => (
+                        <button
+                          key={o.bruto}
+                          type="button"
+                          onClick={() => {
+                            setDescricaoDigitada(true);
+                            setServico((a) => ({
+                              ...a,
+                              descricao: montarFraseDaAtividade(o.descricao, competencia),
+                            }));
+                          }}
+                          style={{
+                            textAlign: "left", background: "var(--bg-page)", color: PANEL.text,
+                            border: `1px solid ${PANEL.border}`, borderRadius: 6,
+                            padding: "6px 8px", fontSize: "0.75rem", cursor: "pointer",
+                          }}
+                        >
+                          {o.codigo ? `${o.codigo} — ` : ""}{o.descricao}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <label htmlFor={CAMPO.COMPETENCIA} style={rotulo}>Competência (opcional)
                       <input id={CAMPO.COMPETENCIA} type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} style={{ ...campo, colorScheme: "dark" }} />
@@ -995,13 +1101,58 @@ export function EmitirNfseWizard({
                 {/* ── Quanto ────────────────────────────────────────────── */}
                 <Bloco titulo="Quanto">
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {/* ⚠⚠ O CAMPO DE VALOR É MASCARADO, e não é enfeite: ele só consegue conter
+                        `1.234,56`. Antes era texto livre lido com um `replace(",", ".")`, e as três
+                        grafias que um contador escreve davam três desfechos — "1.500" virava 1,5.
+                        Ver `lib/valorDaNota.js`. */}
                     <label htmlFor={CAMPO.VALOR} style={rotulo}>Valor dos serviços (R$)
-                      <input id={CAMPO.VALOR} value={servico.valorServicos} onChange={(e) => setServico({ ...servico, valorServicos: e.target.value })} placeholder="0,00" inputMode="decimal" style={campo} />
+                      <input
+                        id={CAMPO.VALOR}
+                        value={servico.valorServicos}
+                        onChange={(e) => {
+                          setRecusaColagemValor(null);
+                          setServico({ ...servico, valorServicos: mascararValorDigitado(e.target.value) });
+                        }}
+                        onPaste={(e) => {
+                          // ⚠ A COLAGEM NÃO PASSA PELA MÁSCARA. Colar "1500" pela máscara daria
+                          // R$ 15,00 — quem colou quis mil e quinhentos. Aqui o texto é PARSEADO, e
+                          // o que tiver duas leituras é recusado com o motivo, sem tocar no campo.
+                          e.preventDefault();
+                          const bruto = e.clipboardData?.getData?.("text") ?? "";
+                          const lido = lerValorColado(bruto);
+                          if (lido.ok) {
+                            setRecusaColagemValor(null);
+                            setServico({ ...servico, valorServicos: lido.mascarado });
+                          } else {
+                            setRecusaColagemValor(lido);
+                          }
+                        }}
+                        placeholder="0,00"
+                        inputMode="numeric"
+                        style={campo}
+                      />
                     </label>
                     <label htmlFor={CAMPO.ALIQUOTA} style={rotulo}>Alíquota de ISS (%) — opcional
                       <input id={CAMPO.ALIQUOTA} value={servico.aliquota} onChange={(e) => setServico({ ...servico, aliquota: e.target.value })} placeholder="Vazio = a da prefeitura" inputMode="decimal" style={campo} />
                     </label>
                   </div>
+
+                  {/* ⚠ A RECUSA DA COLAGEM APARECE. Âmbar (pendência: falta você agir), nunca
+                      vermelho — nada quebrou, e nada foi escrito de errado na nota. Sem esta linha
+                      o Ctrl+V simplesmente "não faria nada", que é o defeito que este projeto já
+                      catalogou como erro engolido. */}
+                  {recusaColagemValor && (
+                    <div
+                      role="status"
+                      style={{
+                        border: "1px solid var(--state-warn)",
+                        background: "var(--state-warn-surface)",
+                        borderRadius: 8, padding: "8px 10px", fontSize: "0.78rem", color: PANEL.text,
+                      }}
+                    >
+                      {textoDaRecusaDeColagem(recusaColagemValor)}
+                    </div>
+                  )}
 
                   {/* ⚠ Retenção fica VISÍVEL como escolha, não escondida num default: ela muda quem
                       recolhe o ISS, e passar batido é erro que só aparece na conciliação. O rótulo diz a

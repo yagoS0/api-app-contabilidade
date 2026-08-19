@@ -14,6 +14,9 @@ import {
   podeReaproveitar,
   valoresIniciaisDaNota,
 } from "../reaproveitarNota";
+// ⚠ A leitura REAL do campo, não uma reimplementação: se o campo e o pré-preenchimento
+// divergirem, é aqui que tem de aparecer.
+import { lerValorDoCampo } from "../valorDaNota";
 
 function notaEmitida(patch = {}) {
   return {
@@ -98,15 +101,25 @@ describe("o que É copiado", () => {
     expect(valores.tomador.cnpjCpf).toBe("11222333000191");
     expect(valores.tomador.nome).toBe("TOMADOR EXEMPLO LTDA");
     expect(valores.servico.descricao).toBe("CONSULTORIA EM GESTAO");
-    expect(valores.servico.valorServicos).toBe("2300,00");
+    expect(valores.servico.valorServicos).toBe("2.300,00");
   });
 
-  // ⚠ O assistente lê o campo com `Number(String(v).replace(",", "."))` — um replace só. Separador
-  // de milhar viraria `NaN` e o valor preenchido apareceria como "precisa ser maior que zero".
-  it("valor grande sai SEM separador de milhar, e o parse do assistente o aceita", () => {
+  // ⚠ ESTE CASO INVERTEU, E O MOTIVO É O CONSERTO DO CAMPO. Ele se chamava *"valor grande sai SEM
+  // separador de milhar"* e existia porque o assistente lia o campo com
+  // `Number(String(v).replace(",", "."))` — um replace só —, onde "1.234.567,89" virava `NaN` e o
+  // valor preenchido aparecia como "precisa ser maior que zero". Hoje o campo é mascarado
+  // (`lib/valorDaNota.js`) e a leitura é por centavos inteiros: a forma canônica É com milhar, e é
+  // ela que o campo tem de receber para abrir mostrando o mesmo número que a nota original.
+  it("valor grande sai NA FORMA CANÔNICA, com milhar, e o campo o lê de volta exato", () => {
     const valores = valoresIniciaisDaNota(notaEmitida({ total: "1234567.89" }));
-    expect(valores.servico.valorServicos).toBe("1234567,89");
-    expect(Number(String(valores.servico.valorServicos).replace(",", "."))).toBe(1234567.89);
+    expect(valores.servico.valorServicos).toBe("1.234.567,89");
+    expect(lerValorDoCampo(valores.servico.valorServicos)).toBe(1234567.89);
+  });
+
+  // ⚠ Nota sem total abre o campo VAZIO, nunca "0,00": zero é uma afirmação sobre a nota.
+  it("total ausente ou zerado deixa o campo vazio", () => {
+    expect(valoresIniciaisDaNota(notaEmitida({ total: null })).servico.valorServicos).toBe("");
+    expect(valoresIniciaisDaNota(notaEmitida({ total: 0 })).servico.valorServicos).toBe("");
   });
 
   it("e-mail, alíquota e retenção NÃO são copiados — a nota capturada não os guarda", () => {

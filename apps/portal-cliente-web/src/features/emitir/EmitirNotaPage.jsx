@@ -26,6 +26,21 @@ import {
   textoDaProcedencia,
 } from "./lib/aliquotaEfetiva";
 import { registrarDescricao, sugerirDescricoes } from "./lib/descricoesRecentes";
+// ⚠ A DESCRIÇÃO SUGERIDA a partir da ATIVIDADE do cadastro da empresa (dono, 18/08/2026). Convive
+// com `descricoesRecentes` — a precedência está escrita no bloco `A DESCRIÇÃO SUGERIDA`, abaixo.
+import {
+  montarFrase as montarFraseDaAtividade,
+  sugerirDescricaoDaNota,
+  textoDoMotivo,
+} from "./lib/descricaoSugerida";
+// ⚠ O VALOR EM MOEDA BRASILEIRA. Ver o cabeçalho de `lib/valorDaNota.js`, inclusive por que a
+// decisão anterior deste arquivo (campo `type="number"`, separador ponto) está revertida.
+import {
+  lerValorColado,
+  lerValorDoCampo,
+  mascararValorDigitado,
+  textoDaRecusaDeColagem,
+} from "./lib/valorDaNota";
 import { SeletorMunicipio } from "./SeletorMunicipio";
 import { DesfechoEmissao } from "./DesfechoEmissao";
 import { PreviaNota } from "./PreviaNota";
@@ -152,11 +167,17 @@ function apenasDigitos(valor) {
 /**
  * Número de um `<input type="number">`.
  *
- * ⚠ O campo é `type="number"` de propósito, e não um texto com máscara: máscara de moeda em
- * pt-BR precisa decidir se `1.234` é mil duzentos e trinta e quatro ou um vírgula dois — e essa
- * decisão, errada, vira o VALOR DA NOTA. Com `type="number"` o separador é o ponto e um `1.234`
- * ambíguo não existe; o que o navegador não conseguir ler chega aqui como `""` e sai como traço na
- * pré-visualização, onde a pessoa vê o erro antes de emitir.
+ * ⚠ ISTO NÃO VALE MAIS PARA O VALOR DOS SERVIÇOS, e a razão antiga fica registrada porque ela
+ * estava CERTA para o que sabia: *"o campo é `type="number"` de propósito, e não um texto com
+ * máscara: máscara de moeda em pt-BR precisa decidir se `1.234` é mil duzentos e trinta e quatro ou
+ * um vírgula dois — e essa decisão, errada, vira o VALOR DA NOTA"*. O dono pediu o campo com
+ * vírgula (18/08/2026), e `lib/valorDaNota.js` resolve aquele receio pelo outro lado: a máscara não
+ * DECIDE nada, porque a grafia ambígua não pode ser digitada; e a COLAGEM, que era o resto do
+ * receio, é recusada em vez de convertida.
+ *
+ * ⚠ ELE CONTINUA VALENDO PARA OS PERCENTUAIS (alíquota de ISS e `pTotTribSN`), que seguem em
+ * `type="number"`: percentual de 0 a 100 não tem separador de milhar, logo não tem a ambiguidade —
+ * e uma máscara de centavos ali transformaria "5" em "0,05".
  */
 function numeroDoCampo(valor) {
   const s = String(valor ?? "").trim();
@@ -200,7 +221,10 @@ function montarPayload(form, { issNoFormulario }) {
     },
     servico: {
       descricao: form.descricao.trim(),
-      valorServicos: numeroDoCampo(form.valorServicos),
+      // ⚠ NÚMERO, nunca a string mascarada: `validators/nfsePayload.js` espera `valorServicos`
+      // numérico, e é ele que vira `<vServ>` no XML. A leitura é por centavos inteiros — o mesmo
+      // número que o campo mostra e que a pré-visualização confirma.
+      valorServicos: lerValorDoCampo(form.valorServicos),
       issRetido: issNoFormulario ? form.issRetido === true : false,
     },
   };
@@ -269,6 +293,7 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
   // no CNPJ errado — o pior desfecho possível num portal multi-empresa, e irreversível aqui.
   useEffect(() => {
     setForm(formVazio());
+        setDescricaoDigitada(false);
     setDesfecho(null);
     setRetryInvoiceId(null);
     setConsulta(CONSULTA_OCIOSA);
@@ -440,13 +465,58 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
     setOrigemPTot(valor === "" ? ORIGEM_ALIQUOTA.AUSENTE : ORIGEM_ALIQUOTA.SUGERIDA);
   }, [escolhaAliquota, origemPTot]);
 
+  // ── A DESCRIÇÃO SUGERIDA, e a PRECEDÊNCIA entre as duas fontes ────────────────────────────
+  //
+  // Existem duas coisas que sabem propor uma descrição, e elas NÃO competem — cada uma ocupa um
+  // lugar, e a diferença é se houve uma ESCOLHA humana:
+  //
+  //   1. A ATIVIDADE DO CADASTRO (`lib/descricaoSugerida.js`) PRÉ-PREENCHE o campo. É dado da
+  //      empresa, gravado pelo contador, igual em qualquer máquina, e o dono pediu que o campo
+  //      "chegasse sugerido". Por ser dado e não escolha, ela cede a qualquer coisa que a pessoa
+  //      faça — é o mesmo desenho da alíquota efetiva, logo acima.
+  //   2. AS DESCRIÇÕES DESTE NAVEGADOR (`lib/descricoesRecentes.js`) continuam sendo BOTÕES, e
+  //      clicar num deles VENCE: é uma escolha explícita, e o clique marca `DIGITADA`, o que
+  //      desliga o pré-preenchimento dali em diante. A procedência delas é fraca de propósito (é o
+  //      localStorage desta máquina, não o cadastro), então elas não podem ser o padrão — mas quem
+  //      emite todo mês para o mesmo tomador repete a descrição, e essa lista é onde isso vive.
+  //
+  // ⚠⚠ A ARMADILHA QUE ISTO EVITA: `sugerirDescricoes` some quando `jaDigitado` não está vazio. Com
+  // o campo pré-preenchido desde a abertura, passar `form.descricao` cru MATARIA a lista de
+  // recentes para sempre — a sugestão nova teria comido a antiga em silêncio. Por isso o que viaja
+  // como "já digitado" é o que a PESSOA escreveu, não o que o sistema escreveu por ela.
+  const [descricaoDigitada, setDescricaoDigitada] = useState(false);
+  // A recusa da última colagem no campo de valor. ⚠ Ela existe porque a colagem ambígua NÃO é
+  // convertida: o campo fica como estava, e sem esta frase o Ctrl+V "não faria nada".
+  const [recusaColagemValor, setRecusaColagemValor] = useState(null);
+  const sugestaoDoCadastro = useMemo(
+    () => sugerirDescricaoDaNota({
+      atividades: legacy?.atividades,
+      cnaePrincipal: legacy?.cnaePrincipal,
+      competencia: form.competencia,
+      // ⚠ Prop ausente ≠ cadastro vazio: sem `legacyCompany` esta tela não afirma nada sobre as
+      // atividades da empresa — ela só não sugere.
+      temCadastro: Boolean(legacy),
+    }),
+    [legacy, form.competencia]
+  );
+  useEffect(() => {
+    if (descricaoDigitada) return;
+    const t = sugestaoDoCadastro.texto || "";
+    setForm((anterior) => (anterior.descricao === t ? anterior : { ...anterior, descricao: t }));
+  }, [sugestaoDoCadastro, descricaoDigitada]);
+
   // ── As descrições já usadas DESTE navegador ───────────────────────────────────────────────
   const sugestoesDescricao = useMemo(
-    () => sugerirDescricoes(companyId, { tomadorDoc: form.tomadorDoc, jaDigitado: form.descricao }),
-    [companyId, form.tomadorDoc, form.descricao]
+    () => sugerirDescricoes(companyId, {
+      tomadorDoc: form.tomadorDoc,
+      jaDigitado: descricaoDigitada ? form.descricao : "",
+    }),
+    [companyId, form.tomadorDoc, form.descricao, descricaoDigitada]
   );
 
-  const valorServicos = numeroDoCampo(form.valorServicos);
+  // ⚠ UMA LEITURA SÓ. Este é o mesmo `lerValorDoCampo` que `montarPayload` usa — o número que a
+  // pré-visualização mostra é, por construção, o número que vai na nota.
+  const valorServicos = lerValorDoCampo(form.valorServicos);
   const aliquota = issNoFormulario ? numeroDoCampo(form.aliquota) : null;
   const issRetido = issNoFormulario && form.issRetido;
   const issRetidoValor =
@@ -537,6 +607,7 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
         });
         setRetryInvoiceId(null);
         setForm(formVazio());
+        setDescricaoDigitada(false);
         setOrigemNome(ORIGEM.AUSENTE);
         setOrigemEndereco(ORIGEM.AUSENTE);
         setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
@@ -552,6 +623,7 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
       // reemitir depois de consultar terá de digitar tudo outra vez, de propósito.
       if (lido.tipo === TIPO.TRANSPORTE || lido.tipo === TIPO.DESCONHECIDO) {
         setForm(formVazio());
+        setDescricaoDigitada(false);
         setOrigemNome(ORIGEM.AUSENTE);
         setOrigemEndereco(ORIGEM.AUSENTE);
         setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
@@ -595,6 +667,7 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
           aoCorrigir={() => setDesfecho(null)}
           aoNovaNota={() => {
             setForm(formVazio());
+        setDescricaoDigitada(false);
             setRetryInvoiceId(null);
             setOrigemNome(ORIGEM.AUSENTE);
             setOrigemEndereco(ORIGEM.AUSENTE);
@@ -834,9 +907,61 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                     rows={3}
                     required
                     value={form.descricao}
-                    onChange={campo("descricao")}
+                    onChange={(e) => {
+                      // ⚠ O DIGITADO VENCE. A partir daqui o pré-preenchimento pela atividade do
+                      // cadastro para de escrever no campo — inclusive quando a competência muda.
+                      // Apagar tudo devolve o campo à sugestão: é o desfazer natural.
+                      setDescricaoDigitada(Boolean(e.target.value.trim()));
+                      setForm((a) => ({ ...a, descricao: e.target.value }));
+                    }}
                   />
                 </label>
+
+                {/* ⚠ A ORIGEM DA FRASE FICA NA TELA. Ela vai sair impressa no DANFSe que o tomador
+                    recebe; texto de documento fiscal sem procedência é o que ninguém confere. */}
+                {sugestaoDoCadastro.texto && !descricaoDigitada ? (
+                  <span className="hint">
+                    {sugestaoDoCadastro.procedencia} É sugestão: escreva por cima à vontade.
+                  </span>
+                ) : null}
+
+                {/* ⚠ SEM DADO, CAMPO VAZIO — e a tela diz POR QUÊ e a quem pedir. O cliente não
+                    edita o próprio cadastro; quem cadastra a atividade é o escritório. */}
+                {!sugestaoDoCadastro.texto
+                  && textoDoMotivo(sugestaoDoCadastro.motivo, {
+                    ondeSeResolve: "Quem cadastra a atividade é o seu escritório de contabilidade.",
+                  }) ? (
+                    <span className="hint">
+                      {textoDoMotivo(sugestaoDoCadastro.motivo, {
+                        ondeSeResolve: "Quem cadastra a atividade é o seu escritório de contabilidade.",
+                      })}
+                    </span>
+                  ) : null}
+
+                {/* ⚠ COM VÁRIAS ATIVIDADES A TELA OFERECE, NÃO ESCOLHE — nada vem marcado. É o
+                    mesmo "encontra, nunca escolhe" do seletor de município aqui do lado. */}
+                {!sugestaoDoCadastro.texto && sugestaoDoCadastro.opcoes.length > 1 ? (
+                  <div className="sugestoes">
+                    <span className="hint">Atividades cadastradas para esta empresa:</span>
+                    {sugestaoDoCadastro.opcoes.map((o) => (
+                      <button
+                        key={o.bruto}
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          setDescricaoDigitada(true);
+                          setForm((a) => ({
+                            ...a,
+                            descricao: montarFraseDaAtividade(o.descricao, a.competencia),
+                          }));
+                        }}
+                      >
+                        <span className="truncar">{o.descricao}</span>
+                        <span className="muted">{o.codigo || ""}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
 
                 {/* ⚠ SUGESTÃO, NUNCA IMPOSIÇÃO: some assim que a pessoa começa a escrever, nada é
                     aplicado sem clique, e o rótulo diz de onde veio. Ver
@@ -852,7 +977,13 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                         key={`${s.doc}-${s.em}`}
                         type="button"
                         className="btn"
-                        onClick={() => setForm((a) => ({ ...a, descricao: s.descricao }))}
+                        onClick={() => {
+                          // ⚠ CLIQUE É ESCOLHA, E ESCOLHA VENCE: marcar `DIGITADA` é o que impede o
+                          // pré-preenchimento pela atividade do cadastro de reescrever por cima na
+                          // próxima mudança de competência.
+                          setDescricaoDigitada(true);
+                          setForm((a) => ({ ...a, descricao: s.descricao }));
+                        }}
                       >
                         <span className="truncar">{s.descricao}</span>
                         <span className="muted">
@@ -866,14 +997,34 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                 <div className="filters">
                   <label htmlFor="emitir-valor">
                     Valor dos serviços (R$)
+                    {/* ⚠⚠ CAMPO DE MOEDA MASCARADO — ele só consegue conter `1.234,56`. Era
+                        `type="number"` (separador PONTO), e o dono pediu vírgula. A máscara não
+                        "aceita as duas grafias": a ambígua não pode ser digitada. Ver
+                        `lib/valorDaNota.js`. */}
                     <input
                       id="emitir-valor"
-                      type="number"
-                      step="0.01"
-                      min="0.01"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0,00"
                       required
                       value={form.valorServicos}
-                      onChange={campo("valorServicos")}
+                      onChange={(e) => {
+                        setRecusaColagemValor(null);
+                        setForm((a) => ({ ...a, valorServicos: mascararValorDigitado(e.target.value) }));
+                      }}
+                      onPaste={(e) => {
+                        // ⚠ A COLAGEM NÃO PASSA PELA MÁSCARA: colar "1500" por ela daria R$ 15,00, e
+                        // quem colou de uma planilha quis mil e quinhentos. O texto é PARSEADO, e o
+                        // que tiver duas leituras é recusado com o motivo — o campo fica intocado.
+                        e.preventDefault();
+                        const lido = lerValorColado(e.clipboardData?.getData?.("text") ?? "");
+                        if (lido.ok) {
+                          setRecusaColagemValor(null);
+                          setForm((a) => ({ ...a, valorServicos: lido.mascarado }));
+                        } else {
+                          setRecusaColagemValor(lido);
+                        }
+                      }}
                     />
                   </label>
                   <label htmlFor="emitir-competencia">
@@ -887,6 +1038,13 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas }) {
                     />
                   </label>
                 </div>
+                {/* ⚠ A RECUSA DA COLAGEM APARECE, com o motivo. Nada quebrou e nada errado foi
+                    escrito na nota — é pendência, não falha. */}
+                {recusaColagemValor ? (
+                  <div className="alerta alerta-aviso" role="status">
+                    <p>{textoDaRecusaDeColagem(recusaColagemValor)}</p>
+                  </div>
+                ) : null}
                 {/* ⚠⚠ ESTA É A `dCompet`, E **NÃO** A DATA/HORA DA EMISSÃO.
                     O que foi MEDIDO antes de construir o campo:
                       • `buildDpsXml` (`apps/api/.../NfseService.js`) monta `<dCompet>` com

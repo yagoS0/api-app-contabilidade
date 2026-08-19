@@ -25,20 +25,28 @@
 // conferido e confirmado por quem emite.
 
 /** Só dígitos — o campo de documento do assistente é `soDigitos` do outro lado também. */
+// ⚠ A MESMA formatação que o campo do assistente usa. Duas cópias fariam o campo abrir com uma
+// grafia e ler outra — que é a classe de defeito que `valorDaNota.js` existe para fechar.
+import { formatarValorParaCampo } from "./valorDaNota";
+
 const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
 
 /**
  * O valor como o campo do assistente o entende.
  *
- * ⚠ SEM SEPARADOR DE MILHAR. O assistente lê o campo com `Number(String(v).replace(",", "."))` —
- * um replace só, do primeiro caractere. "1.234,56" viraria "1.234.56" → `NaN` → "o valor do serviço
- * precisa ser maior que zero" numa nota cujo valor está preenchido na tela. Formatar bonito aqui
- * quebraria o campo lá.
+ * ⚠ A RAZÃO ANTIGA CAIU JUNTO COM O DEFEITO QUE A CRIOU, e ela está aqui porque o argumento
+ * inverteu: dizia *"SEM SEPARADOR DE MILHAR — o assistente lê o campo com
+ * `Number(String(v).replace(",", "."))`, um replace só, do primeiro caractere; '1.234,56' viraria
+ * '1.234.56' → NaN"*. Era verdade, e era um contorno: o campo é que estava errado. Hoje ele é
+ * mascarado (`lib/valorDaNota.js`), a leitura é por centavos inteiros e o milhar é obrigatório na
+ * forma canônica — então formatar bonito aqui é justamente o que faz o campo abrir certo.
+ *
+ * ⚠ O total da nota chega como número ou como string de API; `formatarValorParaCampo` devolve `""`
+ * para o que não for número positivo — nota sem total abre o campo VAZIO, nunca "0,00".
  */
 function paraCampoDeValor(total) {
   const n = Number(String(total ?? "").replace(",", "."));
-  if (!Number.isFinite(n) || n <= 0) return "";
-  return n.toFixed(2).replace(".", ",");
+  return formatarValorParaCampo(n);
 }
 
 // ── O que se copia, dito por extenso ─────────────────────────────────────────

@@ -40,6 +40,11 @@ function abrir({ onEmitir = jest.fn(), notasDaEmpresa = null } = {}) {
 
 const painel = () => screen.getByRole("complementary", { name: /A nota como ela vai sair/ });
 
+// ⚠ O CAMPO DE VALOR É MASCARADO (`lib/valorDaNota.js`): o que se digita é um FLUXO DE DÍGITOS em
+// centavos, então "150000" é R$ 1.500,00 e "1500" seria R$ 15,00. Estes testes digitavam "1500"
+// e esperavam mil e quinhentos — a leitura antiga era `Number(v.replace(",", "."))`, que também
+// lia "1.500" como 1,5. A mudança de dígitos aqui é a mudança de comportamento, não um ajuste
+// cosmético do teste.
 function digitar(rotulo, valor) {
   fireEvent.change(screen.getByLabelText(rotulo, { exact: false }), { target: { value: valor } });
 }
@@ -48,7 +53,7 @@ function preencherTudo() {
   digitar("CNPJ ou CPF do tomador", "12345678000199");
   digitar("Nome ou razão social", "ACME LTDA");
   digitar("Descrição do serviço", "Consultoria contábil");
-  digitar("Valor dos serviços", "1500");
+  digitar("Valor dos serviços", "150000");
   digitar("Alíquota de ISS", "2");
   digitar("Total de tributos do Simples Nacional", "6,84");
 }
@@ -74,7 +79,7 @@ describe("1) o espelho reage a cada tecla", () => {
 describe("2) o líquido, e o que não sai dele", () => {
   it("sem retenção: ISS calculado, líquido cheio e a linha que explica a diferença", () => {
     abrir();
-    digitar("Valor dos serviços", "1500");
+    digitar("Valor dos serviços", "150000");
     digitar("Alíquota de ISS", "2");
 
     const p = within(painel());
@@ -89,7 +94,7 @@ describe("2) o líquido, e o que não sai dele", () => {
 
   it("com retenção o líquido cai — e o ISS sai da lista do 'não sai'", () => {
     abrir();
-    digitar("Valor dos serviços", "1500");
+    digitar("Valor dos serviços", "150000");
     digitar("Alíquota de ISS", "2");
     fireEvent.click(screen.getByRole("checkbox"));
 
