@@ -4,17 +4,26 @@
 // > *"na hora de emitir aparecem apenas aqueles pré-cadastrados, existe uma lista da LC116 com
 // > texto vs o código, devemos mostrar o texto para que facilite a escolha."*
 //
-// ⚠ O QUE ESTA TELA FAZ HOJE, E O QUE ELA AINDA NÃO FAZ — está escrito nela, não só aqui.
-// Ela MOSTRA os códigos cadastrados com a descrição oficial, e diz **qual deles a nota vai levar**.
-// O que ela NÃO faz é deixar trocar por aqui, e o motivo é concreto: `NfseService.buildDpsXml` monta
-// o `cTribNac` a partir de `company.codigoServicoNacional` e de mais nada — não existe campo de
-// serviço no payload da emissão (`application/validators/nfsePayload.js` não o declara, e
-// `NfseService.js:540` não o lê). Um seletor aqui pareceria funcionar e a nota sairia com o outro
-// código: erro fiscal SILENCIOSO, que só apareceria no DANFSe com a descrição de outra atividade.
+// ⚠⚠ O IMPEDIMENTO QUE ESTE CABEÇALHO DESCREVIA **CAIU EM 18/08/2026**. Ele dizia que a escolha
+// por emissão não chegava ao XML e que um seletor aqui seria erro fiscal silencioso. Isso deixou de
+// ser verdade, e a medição está aqui para ninguém reintroduzir o veto por ler o texto antigo:
+//   • `application/validators/nfsePayload.js` **aceita** `servico.codigoServicoNacional`
+//     (ou `servico.cTribNac`, ou `body.codigoServicoNacional`) e normaliza;
+//   • `escolherCodigoServicoNacional` (`application/nfse/codigoServicoDaNota.js`) roda no **pré-voo
+//     de `issue`**, ANTES de reservar numeração, e só aceita código **do cadastro da empresa** —
+//     fora dele é `NFSE_CODIGO_SERVICO_FORA_DA_LISTA`, recusa NOSSA, nada sai da máquina;
+//   • `buildDpsXml` lê `data.servico?.codigoServicoNacional` **primeiro**, caindo para o cadastro
+//     quando não há escolha.
 //
-// Enquanto for assim, a troca é feita no cadastro (uma marcação, um salvar) e a tela DIZ isso, com
-// o caminho. Ligar a escolha por emissão é uma linha em `buildDpsXml` mais o campo no validador —
-// está nomeado no relatório da entrega.
+// ⚠ O QUE ESTA TELA FAZ HOJE continua sendo CONFERÊNCIA: ela mostra os códigos cadastrados com a
+// descrição oficial e diz **qual a nota vai levar**. O que falta é só a interface de escolha — o
+// caminho no servidor está pronto e provado. Enquanto ela não existir, a troca é feita no cadastro.
+//
+// ⚠ E o pedido do dono (19/08/2026) é exatamente esse: *"código de serviço deve e pode ser
+// alterado, mas apenas para aqueles que estão cadastrados pelo contador; se o contador cadastrar
+// mais de um, ela deve poder selecionar."* ⚠ Medido em produção no mesmo dia: **0 de 33 empresas
+// têm mais de um código cadastrado** (só 2 têm sequer um). O ramo que renderiza hoje é o de um
+// código só — o seletor múltiplo é caminho futuro, que acende quando o cadastro plural existir.
 //
 // ⚠ ESTE COMPONENTE NÃO BLOQUEIA NADA. Quem responde "esta empresa pode emitir?" continua sendo
 // `faltasParaEmitir` (espelho de `buildMissingFields`), no passo 1. Aqui é conferência.

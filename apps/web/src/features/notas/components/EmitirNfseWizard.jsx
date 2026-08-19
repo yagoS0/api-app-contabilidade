@@ -1023,10 +1023,12 @@ export function EmitirNfseWizard({
                       saía com o `cTribNac` do cadastro e o contador não via qual, nem com que descrição.
                       Fica ANTES da descrição livre de propósito — a descrição do serviço se escreve
                       olhando para o serviço que está sendo declarado, não o contrário.
-                      ⚠ E continua sendo CONFERÊNCIA, não escolha: `buildDpsXml` lê
-                      `company.codigoServicoNacional` e o validador do payload não declara campo de
-                      serviço. Um seletor aqui pareceria funcionar e a nota sairia com outro código —
-                      erro fiscal silencioso. Conferido no backend nesta entrega: continua assim. */}
+                      ⚠⚠ ESTA TELA AINDA É CONFERÊNCIA, MAS O IMPEDIMENTO CAIU (18/08/2026). O texto
+                      antigo dizia que o validador não declarava campo de serviço e que um seletor
+                      seria erro fiscal silencioso — **não é mais o caso**: o validador aceita
+                      `servico.codigoServicoNacional`, `escolherCodigoServicoNacional` valida no
+                      pré-voo contra o cadastro da empresa, e `buildDpsXml` lê a escolha primeiro.
+                      Falta só a interface. Ver o cabeçalho de `ServicoNacionalDaNota.jsx`. */}
                   <ServicoNacionalDaNota cadastroEmissao={cadastroEmissao} />
                   <label htmlFor={CAMPO.DESCRICAO} style={rotulo}>Descrição do serviço
                     <textarea
