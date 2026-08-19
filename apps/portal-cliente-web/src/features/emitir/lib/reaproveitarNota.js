@@ -49,6 +49,13 @@
 // AVISOS, que a tela mostra. Lista que ninguém renderiza é código morto, e código morto é pior que
 // texto curto.
 
+// ⚠ ESTE IMPORT ERA PROIBIDO AQUI, POR ESCRITO, ATÉ 19/08/2026 — havia um comentário dizendo que
+// `formatarValorParaCampo` **não é importada** porque o valor saía sempre `""`. O dono reverteu a
+// decisão (ver `camposDaNota`), e agora ela é o único caminho legítimo: o campo da tela é
+// mascarado, e escrever nele um número cru ou a string do backend produziria um valor que a
+// máscara não sabe ler.
+import { formatarValorParaCampo } from "./valorDaNota";
+
 const soDigitos = (v) => String(v ?? "").replace(/\D+/g, "");
 
 export const MOTIVO_NAO_REAPROVEITAVEL = {
@@ -150,9 +157,35 @@ function descricaoDosItens(nota) {
  * vazio, sem traduzir nada. Chave que não seja campo do formulário não entra aqui — e é isso que a
  * varredura do teste prende.
  *
- * ⚠ `valorServicos` sai SEMPRE `""`. Não é "o total não veio": é o pedido do dono. E `""` é o único
- * valor aceitável — `formatarValorParaCampo` (`valorDaNota.js`), que o portal do escritório usa
- * para trazer o total da original, **não é importada aqui** justamente por isso.
+ * ═══ ⚠⚠ O VALOR: DUAS DECISÕES DO DONO, NESTA ORDEM — e a segunda desfez a primeira ═══════════
+ *
+ * **18/08/2026 — sai VAZIO.** *"não podemos usar uma nota já emitida para preencher os dados do
+ * tomador, e da nota no geral, **apenas apagando o valor** — isso deveria ser possível."* O medo
+ * era o valor errado passar despercebido, e por isso `formatarValorParaCampo` chegou a ser
+ * **proibida** neste arquivo, por escrito.
+ *
+ * **19/08/2026 — é COPIADO.** Depois daquilo ele pediu que a nota viesse *"100% idêntica"*. Os dois
+ * pedidos eram opostos; perguntado qual valia, respondeu **`"copia"`**.
+ *
+ * ⚠ ISTO NÃO FOI UM DESCUIDO NEM UM DESVIO — foram duas decisões, e a segunda tem razão própria:
+ * entre reaproveitar e emitir há uma tela inteira de conferência (o campo é editável, o painel diz
+ * de qual nota veio, e o valor aparece mascarado ao lado do rótulo), e na prática o valor SE
+ * REPETE — é o caso normal do serviço recorrente. Copiar e conferir é menos trabalho e menos erro
+ * que redigitar. Quem ler isto daqui a seis meses precisa saber que houve DUAS decisões, senão a
+ * primeira volta "consertando" a segunda.
+ *
+ * ⚠ E isto ALINHA OS DOIS PORTAIS: o `reaproveitarNota.js` do portal do escritório sempre copiou o
+ * valor. Desde 19/08/2026 a mesma ação faz a mesma coisa dos dois lados.
+ *
+ * ⚠⚠ COPIAR O VALOR **NÃO ABRE A PORTA PARA COPIAR O RESTO.** Identificador de documento fiscal
+ * continua fora — número, chave, `idNfse`, `idDps`, série/RPS, a competência da origem, status,
+ * ciclo e eventos —, e a varredura do teste continua sendo por VARREDURA do objeto, não campo a
+ * campo. O valor é um dado do serviço; os outros são a identidade de OUTRO documento.
+ *
+ * ⚠ A FORMA IMPORTA: `formatarValorParaCampo` devolve a forma canônica `1.234,56`, que é a que o
+ * campo mascarado sabe ler. Ela também devolve `""` para o que não é número positivo — então uma
+ * nota sem total continua abrindo o campo VAZIO, nunca `"0,00"`, que seria afirmar que a nota vale
+ * zero.
  */
 export function camposDaNota(nota) {
   if (!nota) return null;
@@ -164,8 +197,10 @@ export function camposDaNota(nota) {
     // do tomador em campo nenhum. Com o CNPJ preenchido, a consulta à Receita oferece o endereço.
     tomadorEmail: "",
     descricao,
-    // ⚠⚠ O VALOR VEM VAZIO — o pedido do dono. Nunca "0,00".
-    valorServicos: "",
+    // ⚠⚠ COPIADO (dono, 19/08/2026 — a história das duas decisões está no cabeçalho acima).
+    // `formatarValorParaCampo` devolve `""` quando o total não é número positivo: nota sem total
+    // abre o campo vazio, nunca "0,00".
+    valorServicos: formatarValorParaCampo(nota.total),
   };
 }
 
@@ -197,13 +232,31 @@ export function avisosDoReaproveitamento(nota) {
       + "cancelada nem substituída por aqui.",
   });
 
-  // ⚠⚠ INCONDICIONAL, e é a diferença pedida pelo dono. Sem esta frase o campo vazio vira
-  // esquecimento — e alguém emite achando que o valor veio junto.
-  avisos.push({
-    codigo: "valor_em_branco",
-    tom: "atencao",
-    texto: "O valor NÃO foi copiado: digite o valor desta nota.",
-  });
+  // ⚠⚠ A LINHA DO VALOR MUDOU DE SENTIDO EM 19/08/2026, junto com o comportamento. Ela dizia
+  // *"O valor NÃO foi copiado: digite o valor desta nota."* — e essa frase vira MENTIRA no instante
+  // em que o valor passa a ser copiado. Deixar a antiga sobreviver ao comportamento é exatamente a
+  // classe de defeito que esta rodada inteira está consertando (a legenda que ensinava o formato
+  // antigo do campo, o aviso que dizia que o não optante não emitia).
+  //
+  // ⚠ SÃO DOIS ESTADOS, e o código do aviso diz QUAL — porque `formatarValorParaCampo` devolve `""`
+  // para nota sem total, e aí o campo abre vazio de novo. Um aviso só, fixo, mentiria num dos dois.
+  const valorCopiado = formatarValorParaCampo(nota?.total);
+  avisos.push(
+    valorCopiado
+      ? {
+          codigo: "valor_copiado",
+          tom: "atencao",
+          // ⚠ CONFERÊNCIA, não instrução de digitar: o valor está lá, e o risco agora é o oposto
+          // do de antes — emitir sem olhar, com o valor da nota errada.
+          texto: `O valor foi copiado da nota de origem (R$ ${valorCopiado}): confira antes de emitir.`,
+        }
+      : {
+          codigo: "valor_em_branco",
+          tom: "atencao",
+          // ⚠ Este ramo NÃO é o pedido antigo: é "a nota de origem não tinha total utilizável".
+          texto: "O valor não veio da nota de origem: digite o valor desta nota.",
+        }
+  );
 
   if (situacao === "cancelada") {
     avisos.push({

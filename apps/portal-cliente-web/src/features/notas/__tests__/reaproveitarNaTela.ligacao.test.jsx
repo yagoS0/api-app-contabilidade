@@ -136,8 +136,72 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     expect(screen.getByText(/Preenchido a partir da nota nº 13000/)).toBeInTheDocument();
   });
 
-  // ⚠⚠ A DIFERENÇA PEDIDA PELO DONO, e o caso mais caro deste arquivo.
-  test("⚠⚠ o VALOR vem VAZIO — e nunca 0,00 — com a tela dizendo isso", async () => {
+  // ⚠⚠ INVERTIDO EM 19/08/2026 — e este é o caso mais caro do arquivo, nas duas versões.
+  //
+  //   18/08/2026 — o dono pediu *"apenas apagando o valor"*: este caso media `value === ""` e que
+  //                o total da original NÃO tivesse vazado para o formulário.
+  //   19/08/2026 — ele pediu a nota *"100% idêntica"* e, confrontado com a contradição, respondeu
+  //                **"copia"**. O que era vazamento virou o comportamento pedido.
+  //
+  // ⚠ O caso NÃO foi apagado nem relaxado: ele mede o oposto, e mede a FORMA — que é onde estava o
+  // risco real da mudança. O campo é mascarado, e um número cru (`2300`) ou a string do backend
+  // (`"2300.00"`) entrariam nele como lixo silencioso.
+  test("⚠⚠ o VALOR vem COPIADO, mascarado, e a tela pede CONFERÊNCIA", async () => {
+    await abrirNotas();
+    fireEvent.click(botaoModelo());
+    await act(async () => {});
+    await screen.findByRole("button", { name: "Emitir nota" });
+
+    // ⚠ A forma canônica do campo, não o número cru nem a string do backend.
+    expect(campo("emitir-valor").value).toBe("2.300,00");
+    expect(campo("emitir-valor").value).not.toBe("2300");
+    expect(campo("emitir-valor").value).not.toBe("2300.00");
+
+    // ⚠ A frase de 18/08 NÃO pode ter sobrevivido ao comportamento — ela já estaria mentindo.
+    expect(screen.queryByText(/O valor NÃO foi copiado/i)).not.toBeInTheDocument();
+    // ⚠ E a linha nova é conferência, não instrução de digitar.
+    expect(screen.getByText(/confira antes de emitir/i)).toBeInTheDocument();
+  });
+
+  // ⚠⚠ A PROVA DO PAYLOAD, SEM EMITIR NADA.
+  //
+  // O risco da mudança de 19/08/2026 não é o campo — é o que sai dele. `validators/nfsePayload.js`
+  // espera `valorServicos` NÚMERO, e `montarPayload` faz `lerValorDoCampo(form.valorServicos)`
+  // (`EmitirNotaPage.jsx:253`). Se o valor copiado entrasse no campo numa forma que a máscara não
+  // lê, `lerValorDoCampo` devolveria `null` e a nota sairia SEM VALOR — em silêncio, porque o campo
+  // pareceria preenchido.
+  //
+  // ⚠ NÃO DÁ PARA MEDIR ISSO SUBMETENDO O FORMULÁRIO: emitir é ato fiscal irreversível, e nesta
+  // suíte `api.emitirNfse` é uma armadilha que explode. A medição é pelo RESUMO da tela, e ela é
+  // equivalente por construção: o resumo lê `lerValorDoCampo(form.valorServicos)` na MESMA linha de
+  // código que o payload (`EmitirNotaPage.jsx:643`, cujo comentário diz "este é o mesmo
+  // `lerValorDoCampo` que `montarPayload` usa"). O número que aparece ali É o número que iria.
+  test("⚠⚠ o valor copiado é RELIDO como número — o resumo prova o que iria no payload", async () => {
+    await abrirNotas();
+    fireEvent.click(botaoModelo());
+    await act(async () => {});
+    await screen.findByRole("button", { name: "Emitir nota" });
+
+    // R$ 2.300,00 — a nota de origem vale 2300, e o resumo só mostra isso se a releitura deu 2300.
+    const total = document.querySelector(".total strong");
+    expect(total.textContent).toBe("R$ 2.300,00");
+  });
+
+  test("⚠ e sem total na origem o resumo NÃO inventa zero — fica no traço", async () => {
+    api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ total: null })]));
+    await abrirNotas();
+    fireEvent.click(botaoModelo());
+    await act(async () => {});
+    await screen.findByRole("button", { name: "Emitir nota" });
+
+    const total = document.querySelector(".total strong");
+    expect(total.textContent).not.toBe("R$ 0,00");
+  });
+
+  // ⚠ NOTA SEM TOTAL continua abrindo o campo VAZIO — nunca "0,00", que afirmaria que a nota vale
+  // zero. Este ramo é o que sobrou, intacto, da decisão de 18/08.
+  test("nota de origem sem total: campo VAZIO, com o motivo certo", async () => {
+    api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ total: null })]));
     await abrirNotas();
     fireEvent.click(botaoModelo());
     await act(async () => {});
@@ -145,11 +209,9 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
 
     expect(campo("emitir-valor").value).toBe("");
     expect(campo("emitir-valor").value).not.toBe("0,00");
-    // ⚠ Campo vazio SEM a frase vira esquecimento: alguém emite achando que o valor veio junto.
-    expect(screen.getByText(/O valor NÃO foi copiado/i)).toBeInTheDocument();
-    // ⚠ E o total da original não pode ter vazado para lugar nenhum do formulário.
-    const formulario = document.querySelector("form");
-    expect(formulario.textContent).not.toMatch(/2\.300,00/);
+    // ⚠ A frase do VALOR, não a da descrição — as duas começam igual ("não veio da nota de
+    // origem"), e um regex frouxo aqui casaria com a errada e passaria por acidente.
+    expect(screen.getByText(/O valor não veio da nota de origem: digite o valor desta nota\./i)).toBeInTheDocument();
   });
 
   // ⚠ NOTA NOVA É NOTA NOVA: nenhum identificador da original pode virar campo do formulário. A

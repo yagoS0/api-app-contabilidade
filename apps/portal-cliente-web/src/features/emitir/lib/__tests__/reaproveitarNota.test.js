@@ -113,27 +113,64 @@ describe("⚠⚠ nota nova é nota nova — nenhum identificador atravessa", () 
   });
 });
 
-describe("⚠⚠ O VALOR VEM VAZIO — o pedido do dono, e vazio nunca é 0,00", () => {
-  it("com total na nota, o campo do valor sai vazio mesmo assim", () => {
-    expect(camposDaNota(notaEmitida({ total: 2300 })).valorServicos).toBe("");
+// ⚠⚠ ESTE BLOCO FOI INVERTIDO EM 19/08/2026, E A INVERSÃO É O REGISTRO DE DUAS DECISÕES DO DONO.
+//
+//   18/08/2026 — *"apenas apagando o valor"*  ⇒ `valorServicos` saía `""`, e era isto que estes
+//                casos travavam.
+//   19/08/2026 — ele pediu a nota *"100% idêntica"*; os dois pedidos eram opostos, e perguntado
+//                qual valia respondeu **"copia"**.
+//
+// ⚠ NÃO APAGUEI E NÃO RELAXEI: os mesmos cenários continuam aqui, medindo o comportamento OPOSTO.
+// Apagá-los perderia a prova de que o "0,00" nunca aparece; relaxar para `toBeTruthy()` deixaria a
+// decisão de 19/08 ser desfeita por acidente, que é justamente o que aconteceria se o bloco
+// sumisse. A razão da segunda decisão: há uma tela inteira de conferência antes de emitir, e na
+// prática o valor se repete (serviço recorrente).
+describe("⚠⚠ O VALOR É COPIADO (dono, 19/08/2026 — reverte o vazio de 18/08), e nunca vira 0,00", () => {
+  it("com total na nota, o campo do valor vem PREENCHIDO, na forma canônica do campo mascarado", () => {
+    // ⚠ `1.234,56`, não `2300` nem `"2300.00"`: o campo é mascarado, e só esta forma ele sabe ler.
+    expect(camposDaNota(notaEmitida({ total: 2300 })).valorServicos).toBe("2.300,00");
   });
 
-  it("nenhum total, por maior ou menor que seja, produz algo no campo", () => {
-    for (const total of [0, null, undefined, 1234567.89, "2300.00"]) {
+  it("⚠ o valor copiado é RELIDO pelo campo como o mesmo número — ida e volta sem perda", () => {
+    for (const [total, esperado] of [[2300, 2300], [1234567.89, 1234567.89], [0.5, 0.5], [1, 1]]) {
+      const v = camposDaNota(notaEmitida({ total })).valorServicos;
+      expect(lerValorDoCampo(v)).toBe(esperado);
+    }
+  });
+
+  it("⚠ total AUSENTE ou não positivo continua abrindo o campo VAZIO — nunca 0,00", () => {
+    // Este era o coração do bloco antigo, e ele NÃO mudou: zero é uma AFIRMAÇÃO sobre quanto vale
+    // a nota, e um campo pré-preenchido com "0,00" a partir de dado ausente seria essa afirmação.
+    for (const total of [0, null, undefined, -5, "abc"]) {
       const v = camposDaNota(notaEmitida({ total })).valorServicos;
       expect(v).toBe("");
-      // ⚠ ZERO É UMA AFIRMAÇÃO sobre quanto vale a nota. O campo vazio lê `null`, não `0`.
       expect(v).not.toBe("0,00");
       expect(lerValorDoCampo(v)).toBeNull();
     }
   });
 
-  // ⚠ Campo vazio sem aviso vira esquecimento — e alguém emite achando que o valor veio junto.
-  it("e a tela é OBRIGADA a dizer isso: o aviso é incondicional", () => {
-    const aviso = avisosDoReaproveitamento(notaEmitida()).find((a) => a.codigo === "valor_em_branco");
+  // ⚠ A LINHA DO PAINEL MUDOU DE SENTIDO junto com o comportamento: era "digite", virou "confira".
+  // Deixar a frase antiga sobreviver seria a mentira que esta rodada inteira está consertando.
+  it("o aviso vira CONFERÊNCIA, e a frase antiga não sobrevive", () => {
+    const aviso = avisosDoReaproveitamento(notaEmitida({ total: 2300 }))
+      .find((a) => a.codigo === "valor_copiado");
     expect(aviso).toBeTruthy();
-    expect(aviso.texto).toMatch(/valor N[ÃA]O foi copiado/i);
+    expect(aviso.texto).toMatch(/confira antes de emitir/i);
+    expect(aviso.texto).toMatch(/2\.300,00/);
     expect(aviso.tom).toBe("atencao");
+    // ⚠ A frase de 18/08 não pode continuar em lugar nenhum dos avisos.
+    const todos = avisosDoReaproveitamento(notaEmitida({ total: 2300 })).map((a) => a.texto).join(" ");
+    expect(todos).not.toMatch(/N[ÃA]O foi copiado/i);
+  });
+
+  // ⚠ E o ramo oposto continua nomeado — mas agora ele diz outra coisa: não é "escolhemos não
+  // copiar", é "a nota de origem não tinha total utilizável".
+  it("sem total utilizável, o aviso volta a pedir que se digite — com o motivo certo", () => {
+    const aviso = avisosDoReaproveitamento(notaEmitida({ total: null }))
+      .find((a) => a.codigo === "valor_em_branco");
+    expect(aviso).toBeTruthy();
+    expect(aviso.texto).toMatch(/não veio da nota de origem/i);
+    expect(aviso.texto).toMatch(/digite o valor/i);
   });
 });
 
@@ -269,8 +306,9 @@ describe("modeloDeEmissaoDaNota — campos, avisos e origem numa peça só", () 
   it("junta tudo, para que a tela não possa esquecer a metade que avisa", () => {
     const m = modelo({ status: "CANCELADA" });
     expect(m.campos.tomadorDoc).toBe("44555666000177");
+    // ⚠ `valor_copiado` desde 19/08/2026 (era `valor_em_branco`) — ver o bloco do VALOR acima.
     expect(m.avisos.map((a) => a.codigo)).toEqual(
-      expect.arrayContaining(["nota_nova", "valor_em_branco", "origem_cancelada"])
+      expect.arrayContaining(["nota_nova", "valor_copiado", "origem_cancelada"])
     );
     expect(m.companyId).toBe("pc-001");
   });
