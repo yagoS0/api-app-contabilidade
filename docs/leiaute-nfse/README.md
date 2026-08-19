@@ -10,6 +10,13 @@ hash, e o gerador é implementado campo a campo contra ele.
 |---|---|---|
 | `NT_008_SE_CGNFSe_DANFSe_v1.02_2026-07-14.pdf` | `https://www.gov.br/nfse/pt-br/biblioteca/documentacao-tecnica/rtc/nt-008-se-cgnfse-danfse-20260714-v1-02.pdf` | 2026-08-14 |
 | `nfse-nacional-substituicao.xml` | amostra de leiaute 1.01 (identificadores fabricados — ver o cabeçalho do próprio arquivo) | — |
+| **`documentacao-tecnica/`** | ANEXO_I (leiaute DPS/NFS-e + regras de negócio), **esquemas XSD 1.00 e 1.01** e ANEXO_VIII (de-para Item/NBS/IndOp/cClassTrib) — ver o `README.md` da subpasta | 2026-08-19 |
+
+⚠ **A afirmação "o leiaute (XSD / Anexo I) não está versionado neste repositório", repetida
+abaixo e em `NfseService.js:191` / `dpsCodigos.js:12`, DEIXOU DE VALER** — ver
+`documentacao-tecnica/README.md`, seção "O que a fonte primária CORRIGIU". As consequências
+adotadas a partir dessa ausência (entre elas `danfseDescricoes.js` nascer vazio) precisam ser
+revistas; **nada de código foi alterado nesta rodada.**
 
 **NT 008, versão 1.02, de 14/07/2026** — "Especificações Técnicas do DANFSe", SE/CGNFS-e.
 1.201.429 bytes, `%PDF-1.7`, 26 páginas,
