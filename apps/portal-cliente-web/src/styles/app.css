@@ -78,6 +78,18 @@ main.page { padding: 20px; min-width: 0; display: flex; flex-direction: column; 
 /* Acao primaria é o accent, nunca verde — verde significa CONCLUIDO. */
 .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-hover); }
+/* ⚠ O BOTÃO DE ATO DESTRUTIVO. Vermelho aqui é o mesmo vermelho de "isto bloqueia" no resto do
+   app — e cancelar uma NFS-e é irreversível. Ele nunca é o botão padrão de um diálogo: em
+   `ConfirmarCancelamento`, "Voltar" vem primeiro. */
+.btn-perigo { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-perigo:hover:not(:disabled) { filter: brightness(.94); }
+.btn-perigo:disabled { opacity: .55; }
+
+/* Os quatro campos pelos quais se reconhece uma nota, repetidos na confirmação. */
+.dados-da-nota { display: grid; gap: 6px; margin: 12px 0; padding: 12px; background: var(--bg); border-radius: var(--radius); }
+.dados-da-nota > div { display: flex; gap: 8px; align-items: baseline; }
+.dados-da-nota dt { min-width: 84px; color: var(--muted); font-size: .82rem; }
+.dados-da-nota dd { margin: 0; font-weight: 600; }
 .btn-block { width: 100%; }
 .btn[disabled] { opacity: .55; cursor: not-allowed; }
 .btn-link { border: 0; background: none; color: var(--primary); padding: 4px 6px; cursor: pointer; font: inherit; text-decoration: underline; }

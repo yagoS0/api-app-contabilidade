@@ -198,6 +198,26 @@ export function classificarFalha(err) {
   };
 }
 
+/**
+ * ⚠⚠ A CORREÇÃO DA CAMADA TRANSPORTE **DO CANCELAMENTO** — e ela mora ao lado da da emissão de
+ * propósito, para que a diferença fique à vista de quem mexer numa das duas.
+ *
+ * `classificarFalha` devolve, na camada TRANSPORTE, um texto sobre NUMERAÇÃO: *"não reemita com
+ * número novo… número pulado é buraco permanente"*. Aquilo é verdade para a EMISSÃO, onde o que
+ * fica em estado indeterminado é um número de DPS já reservado.
+ *
+ * **Cancelar não consome número nenhum.** O que fica indeterminado aqui é outra coisa — se a nota
+ * está cancelada ou não —, e mandar o cliente consultar um Id de DPS seria mandá-lo procurar a
+ * resposta no lugar errado.
+ *
+ * ⚠ Reusar `classificarFalha` para a CLASSIFICAÇÃO e trocar só este texto é o desenho: a leitura
+ * de 4xx × 5xx × rede continua sendo uma só.
+ */
+export const CORRECAO_TRANSPORTE_EVENTO =
+  "O pedido saiu daqui, mas a resposta do sistema nacional não voltou — então NÃO se sabe se a "
+  + "nota foi cancelada. NÃO envie o cancelamento de novo: consulte a situação da nota antes de "
+  + "decidir. Se ela já estiver cancelada, um segundo pedido volta recusado e parece falha.";
+
 /** Campos de falha prontos para o `update` da `ServiceInvoice`. */
 export function camposDeFalha(desfecho) {
   return {

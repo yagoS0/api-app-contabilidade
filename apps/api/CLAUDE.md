@@ -490,6 +490,94 @@ MESMA nota em que o contador vê com.
 - Testes: `routes/client/__tests__/danfseCliente.test.js` (14) — o portão, o escopo do path, as
   cinco recusas nomeadas e os headers. O PDF em si continua medido em `danfse/__tests__/danfse.test.js`.
 
+#### A porta de CANCELAMENTO do cliente — `POST /client/companies/:id/notas/:notaId/cancelar` (19/08/2026)
+
+> Decisão do dono: *"esqueça substituir então, deixe apenas o cancelar."*
+
+⚠⚠ **É o ato mais perigoso que o app do cliente pratica**, e o caminho está ligado e apontado para
+o sistema nacional de PRODUÇÃO. Mesma fachada da emissão, com o **MESMO portão**
+(`ensureEmissaoNfseAutorizada`) — decisão já registrada em `routes/nfse.js`: *"emitir e cancelar são
+os dois atos da mesma tela, e duas regras divergiriam na primeira correção"*.
+
+- ⚠ **A CHAVE NÃO VEM DO CLIENTE.** O app manda o `notaId` (o `PortalInvoice.id` que ele já tem na
+  lista) e a chave é lida no servidor, de uma nota escopada por `clientId`. Aceitá-la no corpo
+  deixaria qualquer membro cancelar a nota de outra empresa conhecendo a chave — que sai **impressa
+  no DANFSe**. `tipoEvento` também não vem do corpo: a porta faz UMA coisa (`e101101`).
+- ⚠ **`sendEvent` ganhou `companyId` opcional.** Sem ele a empresa saía de `findByChaveAcesso`, que
+  procura em **`ServiceInvoice`** — a tabela das NOSSAS emissões. Nota capturada do ADN (emitida no
+  Emissor Web, em outro ERP) não tem linha lá e morria em `NFSE_NOT_FOUND`, **que é a maioria da
+  lista que o cliente vê**. Ausente, o comportamento é exatamente o de antes.
+- Recusas NOSSAS antes de qualquer I/O: `nota_nao_encontrada` (404), `nota_sem_chave` (422),
+  `nota_ja_cancelada` (422 — um segundo pedido volta recusado e se lê como "falhou").
+- Testes: `routes/client/__tests__/cancelamentoCliente.test.js` (23) — cada recusa medida por
+  **`NfseService.sendEvent` NÃO ter sido chamado**.
+
+### ⚠⚠ O `cMotivo` DO CANCELAMENTO ERA ARBITRADO — e a lista não é a da substituição (19/08/2026)
+
+**O defeito, medido:** `buildEventoXml` escrevia, no ramo do cancelamento,
+`<cMotivo>${escapeXml(cMotivo || "1")}</cMotivo>`. Sem `cMotivo`, o código declarava ao sistema
+nacional **"1 — Erro na emissão"** por conta própria; quem cancelasse por "Serviço não prestado"
+declarava outra coisa, num ato irreversível. O ramo irmão (`e105102`) já recusava a ausência — e o
+comentário logo acima afirmava, desde sempre, que *"o código é uma justificativa FISCAL e não se
+arbitra uma"*. **A regra existia; o ramo não a seguia.**
+
+⚠⚠ **AS DUAS LISTAS SÃO DIFERENTES, e o projeto acreditava que eram a mesma:**
+
+| evento | tipo no XSD | valores | largura |
+|---|---|---|---|
+| `e101101` cancelamento | **`TSCodJustCanc`** (`tiposEventos_v1.01.xsd:233`) | **`1` `2` `9`** | **1** |
+| `e105102` substituição | `TSCodJustSubst` (`:267`) | `01`…`05` `99` | 2 |
+| ambos, `xMotivo` | `TSMotivo` (`tiposSimples_v1.01.xsd:348`) | 15 a 255 chars | — |
+
+**Fonte e varredura, não suposição** (`application/nfse/motivosDeEvento.js`): o **ANEXO_I não cobre
+eventos** — é o leiaute da DPS/NFS-e. Os **87 comentários de célula** do `.xlsx` foram extraídos de
+`xl/comments1.xml`/`comments2.xml` e varridos por `cancel|cMotivo|justificativ|101101`: **zero
+ocorrências**. O **ANEXO_II** (eventos) **não está versionado** — está nomeado como próximo
+candidato no README daquela pasta. O XSD é primário e é o que valida; e há precedente do XSD vencer
+o ANEXO_I registrado ali (o `TAM. = 1` incoerente do `cMotivo` da substituição).
+
+- ⚠ **NENHUM `padStart` no `cMotivo`.** "Consertar" `1` para `01` mandaria código de outra lista, e
+  a rejeição chega como erro de schema, sem dizer qual foi a confusão.
+- ⚠ **As duas travas rodam ANTES DE ASSINAR** (`sendEvent`, no pré-voo). Sem elas, uma justificativa
+  de 4 letras era montada, **assinada com o A1 da empresa**, transmitida, e voltava rejeitada por
+  schema — um round-trip ao sistema nacional para descobrir uma regra que está no XSD do nosso disco.
+- ⚠ **O `e105102` perdeu a checagem local de `cMotivo`** — ela subiu e virou geral. Era a condição
+  `=== "e105102"` que deixava o cancelamento sem lista fechada.
+
+### ⚠⚠ As TRÊS CAMADAS chegaram ao cancelamento — e a do TRANSPORTE desabilita a tela
+
+Antes, toda falha de envio de evento virava um `NFSE_EVENT_FAILED` plano, traduzido em 422: **um
+timeout de rede e uma recusa fiscal chegavam à tela com o mesmo rosto**. Hoje `sendEvent` classifica
+com o **MESMO `classificarFalha`** da emissão (não é um segundo mapa), e `routes/nfseCancelamentoHttp.js`
+traduz para HTTP nas duas portas:
+
+| camada | status | `podeTentarDeNovo` |
+|---|---|---|
+| `NOSSA` | 400 `nfse_cancelamento_local` | `true` — nada saiu da máquina |
+| `TRANSPORTE` | 502 `nfse_cancelamento_transporte` | **`false`** — desfecho DESCONHECIDO |
+| `RECEITA` | 422 `nfse_cancelamento_rejeitado` | `true` — analisou e recusou; a nota NÃO foi cancelada |
+
+⚠⚠ **O que NÃO se reusa é o TEXTO da `correcao` do TRANSPORTE.** Na emissão ele fala de NUMERAÇÃO
+("não reemita com número novo; número pulado é buraco permanente"), porque lá o que fica
+indeterminado é um número de DPS reservado. **Cancelar não consome número.** O que fica
+indeterminado aqui é se a nota está cancelada — e mandar o cliente consultar um Id de DPS seria
+mandá-lo procurar no lugar errado. O texto do cancelamento é `CORRECAO_TRANSPORTE_EVENTO`, em
+`desfechoEmissao.js`, **ao lado do da emissão** para que a diferença fique à vista.
+
+⚠ **`podeTentarDeNovo: false` é o campo que DESABILITA o botão na tela do cliente** — o botão
+destrutivo some e sobra "Fechar". Reenviar sobre nota que já foi cancelada volta recusado e se lê
+como "o cancelamento falhou", quando ele tinha dado certo.
+
+- **A confirmação REPETE OS DADOS** (número, tomador, valor, data) — `ConfirmarCancelamento.jsx`.
+  *"Tem certeza?"* não é confirmação: aprende-se a clicar sem ler, e o clique na linha errada recebe
+  a mesma pergunta que o clique na certa.
+- ⚠ **Nada vem pré-selecionado** no motivo, e **o mínimo de 15 caracteres aparece ANTES de digitar**,
+  como contagem — não como erro depois de clicar num ato irreversível.
+- Testes: `nfse/__tests__/motivosDeEvento.test.js` (21, as constantes conferidas contra o XSD) +
+  `nfse/__tests__/cancelamentoEvento.test.js` (25 — cada recusa medida por `axios.post` **e** a
+  assinatura **não** terem sido chamados) + os do front (`cancelamentoNaTela.ligacao` 20,
+  `lib/cancelamentoNota` 24).
+
 ### ⚠⚠ A NOTA EMITIDA APARECE NA HORA — união na LEITURA, nunca gravação (19/08/2026)
 
 > *"as notas que aparecem para o cliente são apenas as notas que vêm da consulta ADN, porém ao

@@ -5,6 +5,8 @@ import { useCarregamento } from "../../lib/hooks";
 import { baixarBlob } from "../../lib/baixarBlob";
 import { modeloDeEmissaoDaNota, podeReaproveitar } from "../emitir/lib/reaproveitarNota";
 import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "./lib/danfseDaNota";
+import { podeCancelar } from "./lib/cancelamentoNota";
+import { ConfirmarCancelamento } from "./ConfirmarCancelamento";
 import {
   TRACO,
   brl,
@@ -153,6 +155,9 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
   // competência e aponta para "Todas" — some da tela, mas não some sem dizer para onde foi.
   const [competencia, setCompetencia] = useState(competenciaPadrao);
   const [pagina, setPagina] = useState(1);
+  // ⚠ A nota que está em confirmação de CANCELAMENTO. Fica aqui, e não dentro da linha, porque o
+  // diálogo é modal: uma confirmação por vez, e ela sobrevive à rolagem da tabela.
+  const [notaParaCancelar, setNotaParaCancelar] = useState(null);
 
   // Trocar de empresa ou de competência recomeça na página 1: manter a página 4
   // de uma lista que agora tem 2 páginas mostra uma tela vazia que parece um bug.
@@ -258,6 +263,7 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
                     Valor
                   </th>
                   <th scope="col">DANFSe</th>
+                  <th scope="col">Cancelar</th>
                   <th scope="col">Emitir outra</th>
                 </tr>
               </thead>
@@ -265,6 +271,7 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
                 {notas.map((nota) => {
                   const chip = chipDaNota(nota.status);
                   const permissao = podeReaproveitar(nota, { cnpjDaEmpresa: empresa.cnpj });
+                  const cancelamento = podeCancelar(nota);
                   // ⚠ `false` explícito, não "falsy": o contrato antigo não tinha este campo, e
                   // `undefined` (uma resposta velha em cache, ou o app mobile) tem de continuar
                   // sendo lido como CONFIRMADA — que era o único estado que existia.
@@ -303,6 +310,26 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
                       <td className="num">{brl(nota.total)}</td>
                       <td>
                         <BotaoDanfse nota={nota} companyId={companyId} />
+                      </td>
+                      <td>
+                        {/* ⚠⚠ ESTE BOTÃO NÃO CANCELA NADA — ele abre a confirmação, que repete os
+                            dados da nota. Cancelar uma NFS-e é IRREVERSÍVEL, e um clique acidental
+                            na linha errada de uma tabela é exatamente o acidente a evitar.
+                            ⚠ BOTÃO IMPOSSÍVEL NÃO SOME: fica desabilitado com o motivo ao lado. */}
+                        <button
+                          type="button"
+                          className="btn-link"
+                          disabled={!cancelamento.pode}
+                          title={cancelamento.texto || undefined}
+                          onClick={() => setNotaParaCancelar(nota)}
+                        >
+                          Cancelar
+                        </button>
+                        {cancelamento.pode ? null : (
+                          <span className="muted" style={{ fontSize: ".78rem" }}>
+                            {cancelamento.resumo}
+                          </span>
+                        )}
                       </td>
                       <td>
                         {/* ⚠ O BOTÃO NÃO EMITE NADA — ele abre a tela de emissão pré-preenchida,
@@ -360,6 +387,20 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
           </div>
         </>
       )}
+
+      {notaParaCancelar ? (
+        <ConfirmarCancelamento
+          nota={notaParaCancelar}
+          aoFechar={() => setNotaParaCancelar(null)}
+          aoConfirmar={async ({ cMotivo, justificativa }) => {
+            // ⚠ A recusa NÃO é engolida: o diálogo a captura e a mostra. Aqui só o desfecho feliz
+            // fecha e recarrega — a lista precisa refletir a nota cancelada.
+            await api.cancelarNota(companyId, notaParaCancelar.invoiceId, { cMotivo, justificativa });
+            setNotaParaCancelar(null);
+            query.recarregar();
+          }}
+        />
+      ) : null}
     </>
   );
 }

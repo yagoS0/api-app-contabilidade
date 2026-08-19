@@ -218,7 +218,12 @@ describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — ele fica desabilitado DIZENDO POR
     api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ confirmadaPeloAdn: false, hasXml: false })]));
     await abrirNotas();
     expect(botaoDanfse()).toBeDisabled();
-    expect(screen.getByText("Ainda não confirmada.")).toBeInTheDocument();
+    // ⚠ ESCOPADO NA CÉLULA DO DANFSe, de propósito. Desde que o botão Cancelar entrou na mesma
+    // linha (19/08/2026), a MESMA frase aparece duas vezes — uma por ação, cada uma debaixo do seu
+    // botão. Um `getByText` solto passaria a achar duas e quebraria; e, pior, um `getAllByText`
+    // frouxo deixaria de provar que é a célula do DANFSe que explica o DANFSe.
+    const celulaDanfse = botaoDanfse().closest("td");
+    expect(within(celulaDanfse).getByText("Ainda não confirmada.")).toBeInTheDocument();
     expect(api.fetchDanfseBlob).not.toHaveBeenCalled();
   });
 });

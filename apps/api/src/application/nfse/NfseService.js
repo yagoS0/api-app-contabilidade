@@ -10,9 +10,15 @@ import { findFirstByLocalName, getTextByLocalNames } from "../../utils/xml.js";
 import { resolverCertificadosDaEmpresa } from "./nfseCertificado.js";
 import { resolverOpSimpNac, resolverTpRetIssqn, RESOLUCAO } from "./dpsCodigos.js";
 import { normalizarSerie, reservarNumeracao } from "./nfseNumeracao.js";
+// As listas fechadas de `cMotivo` (uma por evento) e o tamanho de `xMotivo`, lidos do XSD
+// oficial versionado. Ver o cabeçalho daquele arquivo para a fonte e para a varredura do ANEXO_I.
+import { motivoValido, motivosDoEvento, validarJustificativa } from "./motivosDeEvento.js";
+
 import { escolherCodigoServicoNacional } from "./codigoServicoDaNota.js";
+import { registrarTomadorEmitido } from "./tomadorEmitido.js";
 import {
   classificarFalha,
+  CORRECAO_TRANSPORTE_EVENTO,
   camposDeFalha,
   CAMPOS_DE_FALHA_LIMPOS,
   CAMADA,
@@ -229,21 +235,32 @@ function buildEventoXml({
   const eventoId = `PRE${chaveDigits}${tipoEventoNum}`;
   const dhEvento = formatDateTimeWithOffset(new Date());
   const motivoTexto = justificativa || "Cancelamento de NFS-e";
+  // ⚠⚠ AS DUAS LISTAS DE `cMotivo` SÃO DIFERENTES, e nenhuma delas é normalizada aqui.
+  //
+  //   `e101101` (cancelamento)  → `TSCodJustCanc`  = "1" "2" "9"     — UM caractere
+  //   `e105102` (substituição)  → `TSCodJustSubst` = "01"…"05" "99"  — DOIS caracteres
+  //
+  // Fonte e varredura em `application/nfse/motivosDeEvento.js`, que é quem VALIDA (em `sendEvent`,
+  // antes de assinar). Aqui o valor entra como veio, de propósito: um `padStart` neste ponto
+  // "consertaria" `"1"` para `"01"` num cancelamento e mandaria ao sistema nacional um código de
+  // outra lista, que volta como erro de schema sem dizer qual foi a confusão.
+  //
+  // ⚠⚠ O `|| "1"` DO RAMO DO CANCELAMENTO FOI REMOVIDO EM 19/08/2026, E ERA UM DEFEITO REAL: sem
+  // `cMotivo`, este código declarava ao sistema nacional **"1 — Erro na emissão"** por conta
+  // própria. Quem cancelasse por "Serviço não prestado" declarava outra coisa. O ramo irmão já
+  // recusava a ausência; este arbitrava — e o comentário que estava aqui dizia, desde sempre, que
+  // "o código é uma justificativa FISCAL e não se arbitra uma". A regra existia; o ramo não a seguia.
   const eventoXml =
     String(tipoEvento).toLowerCase() === "e105102"
-      ? // ⚠ `cMotivo` do e105102 tem TAMANHO 2 (01, 02, 03, 04, 05, 99), diferente do e101101,
-        // que tem tamanho 1. O padStart não escolhe motivo nenhum — só formata o que o chamador
-        // mandou; quem não manda cMotivo é recusado em `sendEvent`, porque o código é uma
-        // justificativa FISCAL e não se arbitra uma (regra 1).
-        `<e105102>
+      ? `<e105102>
       <xDesc>Cancelamento de NFS-e por Substituição</xDesc>
-      <cMotivo>${escapeXml(normalizeDigits(cMotivo).padStart(2, "0").slice(-2))}</cMotivo>
+      <cMotivo>${escapeXml(String(cMotivo))}</cMotivo>
       <xMotivo>${escapeXml(motivoTexto)}</xMotivo>
       <chSubstituta>${escapeXml(normalizeDigits(chaveSubstituta).slice(-50).padStart(50, "0"))}</chSubstituta>
     </e105102>`
       : `<e101101>
       <xDesc>Cancelamento de NFS-e</xDesc>
-      <cMotivo>${escapeXml(cMotivo || "1")}</cMotivo>
+      <cMotivo>${escapeXml(String(cMotivo))}</cMotivo>
       <xMotivo>${escapeXml(motivoTexto)}</xMotivo>
     </e101101>`;
 
@@ -1028,6 +1045,17 @@ export class NfseService {
     numeroSubstituta,
     cMotivo,
     cnpjAutor,
+    // ⚠ A EMPRESA PELO CHAMADOR, quando ele já a resolveu e já a autorizou.
+    //
+    // Sem isto, a empresa sai de `findByChaveAcesso`, que procura em `ServiceInvoice` — a nossa
+    // tabela de EMISSÕES. Uma nota capturada do ADN (emitida no Emissor Web, em outro ERP, pela
+    // prefeitura) não tem linha lá, e o cancelamento dela morria em `NFSE_NOT_FOUND` mesmo sendo
+    // uma nota legítima da empresa. E a lista que o cliente vê é justamente a projeção do ADN.
+    //
+    // ⚠ Passar isto NÃO é autorizar nada: quem autoriza é a porta, ANTES. É o mesmo desenho de
+    // `resolveLegacyCompanyId` na emissão — resolver e autorizar acontecem fora do serviço, e o id
+    // já conferido desce por parâmetro. Ausente, o comportamento é exatamente o de antes.
+    companyId = null,
     log,
   }) {
     if (!integrationReady()) {
@@ -1048,6 +1076,39 @@ export class NfseService {
     if (!justificativa) {
       const err = new Error("justificativa_required");
       err.code = "NFSE_JUSTIFICATIVA_REQUIRED";
+      throw err;
+    }
+
+    // ⚠⚠ AS DUAS TRAVAS DE LEIAUTE, E ELAS RODAM **ANTES DE ASSINAR** — este é o ponto delas.
+    //
+    // O que vem depois daqui é montar o XML, ASSINAR com o certificado A1 da empresa e transmitir
+    // ao sistema nacional. Uma justificativa de quatro letras, ou um `cMotivo` de outra lista,
+    // atravessava tudo isso e voltava como erro de SCHEMA — que não diz "faltam 11 caracteres" nem
+    // "esse código é da substituição". Um round-trip ao sistema nacional para descobrir uma regra
+    // que está no XSD guardado no nosso disco.
+    //
+    // ⚠ E ELAS VALEM PARA O CANCELAMENTO TAMBÉM, que é a novidade: até 19/08/2026 só o `e105102`
+    // exigia `cMotivo`, e o `e101101` arbitrava `"1"` lá embaixo, em `buildEventoXml`.
+    //
+    // Listas, larguras e fonte (XSD oficial versionado): `application/nfse/motivosDeEvento.js`.
+    if (!motivoValido(tipoEvento, cMotivo)) {
+      const lista = (motivosDoEvento(tipoEvento) || []).map((m) => `${m.codigo} (${m.rotulo})`);
+      const err = new Error(
+        lista.length
+          ? `O motivo do evento é de lista fechada. Valores aceitos: ${lista.join(", ")}.`
+          : "Tipo de evento sem lista de motivos conhecida."
+      );
+      // Ausência e valor fora da lista são o MESMO desfecho para quem chama — em ambos não há
+      // motivo fiscal declarável —, mas o código distingue para o log e para a tela.
+      err.code = String(cMotivo ?? "").trim() ? "NFSE_CMOTIVO_INVALIDO" : "NFSE_CMOTIVO_REQUIRED";
+      err.motivosAceitos = motivosDoEvento(tipoEvento) || [];
+      throw err;
+    }
+
+    const conferencia = validarJustificativa(justificativa);
+    if (!conferencia.ok) {
+      const err = new Error(conferencia.mensagem);
+      err.code = conferencia.codigo;
       throw err;
     }
     // ⚠⚠ ESTE CAMINHO ESTÁ ERRADO PARA A SUBSTITUIÇÃO — MARCADO, NÃO CONSERTADO (Fase 4).
@@ -1087,15 +1148,14 @@ export class NfseService {
     // comentário de `buildEventoXml`. Recusar aqui é o que substituiu o fallback inventado
     // `<nNFSeSubst>`: sem a chave da substituta não existe evento de substituição, e o código do
     // motivo é justificativa fiscal de lista fechada (01…05, 99) que ninguém pode arbitrar.
+    // ⚠ A CHECAGEM DE `cMotivo` QUE MORAVA AQUI SUBIU, e agora vale para os DOIS eventos
+    // (`motivoValido`, lá em cima). Ela era condicional ao `e105102`, e era essa condição que
+    // deixava o cancelamento sem lista fechada. O que sobra aqui é o que é MESMO só da
+    // substituição: a chave da substituta.
     if (String(tipoEvento).toLowerCase() === "e105102") {
       if (normalizeDigits(chaveSubstituta).length !== 50) {
         const err = new Error("chave_substituta_required");
         err.code = "NFSE_CHAVE_SUBSTITUTA_REQUIRED";
-        throw err;
-      }
-      if (!normalizeDigits(cMotivo)) {
-        const err = new Error("c_motivo_required");
-        err.code = "NFSE_CMOTIVO_REQUIRED";
         throw err;
       }
     }
@@ -1104,13 +1164,24 @@ export class NfseService {
     // que ASSINA o evento (E0718 vale para o autor do pedido de registro) quanto o do mTLS. Antes,
     // `buildAxiosClient()` e `signEventoXml()` usavam o PFX GLOBAL, e o CNPJ do autor era só um
     // campo de texto no XML: nada impedia declarar um CNPJ e assinar com o certificado de outro.
-    const invoice = await NfseRepository.findByChaveAcesso(chaveAcesso);
-    if (!invoice?.companyId) {
-      const err = new Error("nfse_not_found");
-      err.code = "NFSE_NOT_FOUND";
+    // ⚠ O `companyId` DO CHAMADOR VENCE — ver a nota na assinatura. `findByChaveAcesso` só é
+    // consultada quando ele não veio, e nesse caso o comportamento é o de sempre.
+    let empresaDoEvento = String(companyId || "").trim() || null;
+    if (!empresaDoEvento) {
+      const invoice = await NfseRepository.findByChaveAcesso(chaveAcesso);
+      if (!invoice?.companyId) {
+        const err = new Error("nfse_not_found");
+        err.code = "NFSE_NOT_FOUND";
+        throw err;
+      }
+      empresaDoEvento = invoice.companyId;
+    }
+    const companyDoEvento = await prisma.company.findUnique({ where: { id: empresaDoEvento } });
+    if (!companyDoEvento) {
+      const err = new Error("company_not_found");
+      err.code = "COMPANY_NOT_FOUND";
       throw err;
     }
-    const companyDoEvento = await prisma.company.findUnique({ where: { id: invoice.companyId } });
     const autor = cnpjAutor || companyDoEvento?.cnpj || null;
     if (!autor) {
       const err = new Error("cnpj_autor_required");
@@ -1118,7 +1189,7 @@ export class NfseService {
       throw err;
     }
 
-    const certificados = await resolverCertificadosDaEmpresa(invoice.companyId);
+    const certificados = await resolverCertificadosDaEmpresa(empresaDoEvento);
     const client = buildAxiosClient(certificados.transporte);
     const nfsePath = NFSE_NFSE_PATH.replace(/\/+$/, "");
     const requestUrl = `${client.defaults.baseURL}${nfsePath}/${encodeURIComponent(
@@ -1203,8 +1274,23 @@ export class NfseService {
         },
         "Falha ao enviar evento NFS-e ao provedor nacional"
       );
-      const error = new Error(reason);
+      // ⚠⚠ AS TRÊS CAMADAS, PELA MESMA FUNÇÃO DA EMISSÃO — `classificarFalha`. Até 19/08/2026
+      // toda falha daqui saía como um `NFSE_EVENT_FAILED` plano, e a rota a traduzia em 422: um
+      // timeout de rede e uma recusa fiscal do sistema nacional chegavam à tela com o MESMO rosto.
+      // É o defeito que a emissão já pagou e consertou — e ele importa mais no cancelamento, porque
+      // aqui o desfecho desconhecido não é "o número ficou retido", é "a nota pode estar cancelada".
+      //
+      // ⚠ NÃO É UM SEGUNDO MAPA: a leitura de 4xx × 5xx × rede é a mesma, importada.
+      const desfecho = classificarFalha(err);
+      const error = new Error(desfecho.mensagem || reason);
       error.code = "NFSE_EVENT_FAILED";
+      error.camada = desfecho.camada;
+      error.codigo = desfecho.codigo;
+      // ⚠ A `correcao` da emissão fala de NUMERAÇÃO ("não reemita com número novo") e não serve
+      // aqui: cancelar não consome número. O texto do cancelamento mora em `nfseCancelamentoHttp.js`,
+      // junto do mapa HTTP, e é ele que diz para NÃO reenviar.
+      error.correcao =
+        desfecho.camada === CAMADA.TRANSPORTE ? CORRECAO_TRANSPORTE_EVENTO : desfecho.correcao;
       error.providerData = providerData;
       throw error;
     }
@@ -1534,6 +1620,42 @@ export class NfseService {
       // transação. O `update` que existia neste ponto — `String(Number(company.rpsNumero) + 1)` —
       // era o read-modify-write que gerava número repetido, e o `if (company.rpsNumero)` que o
       // guardava fazia toda empresa de contador nulo emitir "1" para sempre.
+
+      // ── A MEMÓRIA DO TOMADOR ────────────────────────────────────────────────────────────
+      //
+      // > Dono, 19/08/2026: *"ao emitir a nota para um tomador vamos salvar as informações; na hora
+      // > de emitir o cliente pode escolher o tomador ao qual ele já emitiu."*
+      //
+      // ⚠ AQUI, E NÃO ANTES: depois do POST ter voltado e de `markIssued` ter gravado. Gravar antes
+      // registraria como "já emitimos para este tomador" uma nota que a Receita ainda podia
+      // recusar.
+      //
+      // ⚠ FORA DE TRANSAÇÃO, DE PROPÓSITO. A única transação de `issue` é a reserva de numeração
+      // (etapa 2), que já fechou. Abrir uma nova envolvendo `markIssued` faria uma falha ao gravar
+      // a memória dar ROLLBACK na linha que diz que a nota foi emitida — e a nota existe no sistema
+      // nacional (não há inutilização na NFS-e). O raciocínio inteiro está em `tomadorEmitido.js`.
+      //
+      // ⚠⚠ O `try/catch` AQUI É CINTO E SUSPENSÓRIO, e não é redundância à toa:
+      // `registrarTomadorEmitido` já não lança, mas este ponto está DENTRO do `try` cujo `catch` é
+      // o CLASSIFICADOR DE FALHA da emissão. Qualquer exceção que escapasse viraria `falha_envio`
+      // numa nota AUTORIZADA — mascarar ato fiscal consumado é o pior desfecho possível deste
+      // caminho, e ele não pode depender de um módulo continuar se comportando.
+      try {
+        await registrarTomadorEmitido({
+          prisma,
+          companyId: company.id,
+          tomador: data.tomador,
+          log,
+        });
+      } catch (errTomador) {
+        // ⚠ `log?.warn?.` e não `log.warn`: `log` é PARÂMETRO de `issue` (linha 1333) e pode não
+        // vir. Um `TypeError` aqui dentro do `catch` de segurança escaparia para o classificador de
+        // falha — exatamente o que estas linhas existem para impedir.
+        log?.warn?.(
+          { companyId: company.id, err: errTomador?.message },
+          "NFS-e: nota emitida; a memória do tomador não foi gravada (a emissão não é afetada)"
+        );
+      }
 
       return {
         status: issued.status || STATUS.ISSUED,

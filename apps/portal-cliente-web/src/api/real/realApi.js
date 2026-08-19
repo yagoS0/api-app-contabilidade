@@ -218,6 +218,28 @@ export function createRealApi() {
       return res.blob();
     },
 
+    // ⚠⚠ CANCELAR UMA NFS-e — ATO FISCAL IRREVERSÍVEL. Uma nota cancelada não volta.
+    //
+    // Contrato lido em `apps/api/src/routes/client/index.js` +
+    // `apps/api/src/routes/nfseCancelamentoHttp.js`. A chave de acesso **não vai no corpo**: ela é
+    // lida no servidor, de uma nota escopada pelo cliente. Mandá-la daqui deixaria qualquer um
+    // cancelar a nota de outra empresa conhecendo a chave — que sai impressa no DANFSe.
+    //
+    // ⚠ `tipoEvento` também não vai: esta porta faz UMA coisa (`e101101`). A substituição é escopo
+    // FECHADO por decisão do dono (19/08/2026).
+    //
+    // ⚠⚠ A RECUSA PRECISA CHEGAR INTEIRA. O corpo traz `camada` (NOSSA/TRANSPORTE/RECEITA),
+    // `correcao`, `motivosAceitos` e — o mais importante — **`podeTentarDeNovo`**, que é `false`
+    // no TRANSPORTE, onde o desfecho é DESCONHECIDO. `pedir()` já sobe o corpo inteiro no
+    // `ApiError.corpo`; reduzir isso a um código apagaria justamente o que separa "corrija e tente"
+    // de "NÃO tente de novo".
+    async cancelarNota(companyId, notaId, { cMotivo, justificativa } = {}) {
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/notas/${encodeURIComponent(notaId)}/cancelar`,
+        { method: "POST", body: { cMotivo, justificativa } }
+      );
+    },
+
     // --- Guias --------------------------------------------------------------
     // GET /client/companies/:id/guides -> { data, page, limit, total }
     // ⚠ A rota já filtra `apenasLiberadas: true` — o cliente só vê guia que o

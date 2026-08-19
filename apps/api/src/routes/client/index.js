@@ -33,6 +33,10 @@ import { responderResultadoEmissao, responderErroEmissao } from "../nfseEmissaoH
 // Ver o bloco `GET /companies/:companyId/notas/:notaId/danfse`, no fim deste arquivo.
 import { gerarDanfseDaNota } from "../../application/nfse/danfse/danfseDaNotaDoPortal.js";
 import { responderDanfse, responderErroDanfse } from "../danfseHttp.js";
+// ── O CANCELAMENTO PELO CLIENTE — mesma fachada, mesmo serviço, mesmos desfechos ─────────────
+// Ver o bloco `POST /companies/:companyId/notas/:notaId/cancelar`, no fim deste arquivo.
+import { responderErroCancelamento } from "../nfseCancelamentoHttp.js";
+import { NfseRepository } from "../../infrastructure/db/NfseRepository.js";
 
 function sanitizeRole(role) {
   const value = String(role || "FINANCEIRO").toUpperCase();
@@ -944,6 +948,122 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       } catch (err) {
         if (responderErroDanfse(res, err)) return;
         log.error({ err: err?.message, companyId: req.params.companyId }, "DANFSe do cliente falhou");
+        return res.status(500).json({ ok: false, error: "internal_error" });
+      }
+    }
+  );
+
+
+  // ── O CANCELAMENTO DE NFS-e PELO APP DO CLIENTE ────────────────────────────────────────────
+  //
+  // ⚠⚠ ATO FISCAL IRREVERSÍVEL, e o mais perigoso que este app pratica: uma NFS-e cancelada não
+  // volta. Por isso a porta é a mesma fachada da emissão, com o MESMO portão — decisão já
+  // registrada em `routes/nfse.js`: *"emitir e cancelar são os dois atos da mesma tela, e duas
+  // regras divergiriam na primeira correção"*.
+  //
+  //   permissão  → `ensureEmissaoNfseAutorizada`      (o MESMO portão da emissão)
+  //   os dois ids → `resolveLegacyCompanyId`          (a MESMA resolução)
+  //   listas      → `application/nfse/motivosDeEvento.js`  (XSD oficial versionado)
+  //   envio       → `NfseService.sendEvent`           (o MESMO serviço)
+  //   resposta    → `routes/nfseCancelamentoHttp.js`  (os MESMOS desfechos das três camadas)
+  //
+  // ⚠ A CHAVE NÃO VEM DO CLIENTE, e isso é multi-tenancy. O app manda o `notaId` (que é o
+  // `PortalInvoice.id` que ele já tem na lista) e a chave de acesso é lida AQUI, de uma nota
+  // escopada por `clientId`. Aceitar `chaveAcesso` no corpo deixaria qualquer membro de qualquer
+  // empresa cancelar a nota de outra, bastando conhecer a chave — que é impressa no DANFSe.
+  //
+  // ⚠ O `companyId` DESCE PARA O SERVIÇO já resolvido e já autorizado. Sem ele, `sendEvent`
+  // resolveria a empresa por `findByChaveAcesso`, que procura em `ServiceInvoice` — e a nota
+  // capturada do ADN (emitida no Emissor Web, em outro ERP) não tem linha lá. A lista que o
+  // cliente vê é a projeção do ADN: sem isto, o cancelamento falharia justamente na maioria delas.
+  router.post(
+    "/companies/:companyId/notas/:notaId/cancelar",
+    requireClientCompanyAccess(),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId || "").trim();
+      const notaId = String(req.params.notaId || "").trim();
+
+      // ⚠ RESOLVER ANTES DE AUTORIZAR O ATO — a mesma ordem da emissão. Invertido, autorizaria uma
+      // empresa e cancelaria por outra.
+      const legacyCompanyId = await resolveLegacyCompanyId(portalClientId);
+      if (!legacyCompanyId) {
+        return res.status(404).json({ ok: false, error: "company_not_found" });
+      }
+
+      const portao = await ensureEmissaoNfseAutorizada(req, res, legacyCompanyId, { log });
+      if (!portao.ok) return;
+
+      // A nota é DESTA empresa? E ela tem chave? Sem chave não há evento a montar — o `chNFSe` é
+      // obrigatório no `pedRegEvento`, e fabricar 50 zeros seria pedir o cancelamento de "nota
+      // nenhuma".
+      const nota = await prisma.portalInvoice.findFirst({
+        where: { id: notaId, clientId: portalClientId },
+        select: { id: true, chaveAcesso: true, numero: true, status: true, statusEfetivo: true },
+      });
+      if (!nota) {
+        return res.status(404).json({ ok: false, error: "nota_nao_encontrada" });
+      }
+      if (!nota.chaveAcesso) {
+        return res.status(422).json({
+          ok: false,
+          error: "nota_sem_chave",
+          message:
+            "Esta nota não tem chave de acesso guardada, e o pedido de cancelamento é identificado "
+            + "por ela. Fale com o seu escritório de contabilidade.",
+        });
+      }
+
+      // ⚠ JÁ CANCELADA NÃO SE CANCELA DE NOVO, e a recusa é NOSSA (nada sai da máquina). Um
+      // segundo pedido volta recusado pelo sistema nacional e é lido como "o cancelamento
+      // falhou" — exatamente a confusão que o desfecho de TRANSPORTE também existe para evitar.
+      const situacao = String(nota.statusEfetivo || nota.status || "").toLowerCase();
+      if (situacao.includes("cancel")) {
+        return res.status(422).json({
+          ok: false,
+          error: "nota_ja_cancelada",
+          message: "Esta nota já consta cancelada.",
+        });
+      }
+
+      try {
+        const result = await NfseService.sendEvent({
+          chaveAcesso: nota.chaveAcesso,
+          // ⚠ CRAVADO: esta porta faz UMA coisa. `e105102` (cancelamento por substituição) é
+          // escopo FECHADO por decisão do dono (19/08/2026) e, além disso, o caminho de envio
+          // manual dele está invertido — ver `NfseService.sendEvent`. Aceitar `tipoEvento` do
+          // corpo ofereceria os dois.
+          tipoEvento: "e101101",
+          cMotivo: req.body?.cMotivo,
+          justificativa: req.body?.justificativa,
+          companyId: legacyCompanyId,
+          log,
+        });
+        // ⚠ O NOSSO REGISTRO DA EMISSÃO ACOMPANHA — a mesma linha que a porta do escritório já
+        // fazia. É `ServiceInvoice`, NOSSA tabela: deixá-la dizendo `issued` depois de nós termos
+        // cancelado seria a nossa base mentindo sobre um ato nosso.
+        //
+        // ⚠⚠ E ISTO **NÃO** É ESCREVER EM `PortalInvoice`. Aquela é a projeção do ADN, e gravá-la à
+        // mão é o que o cabeçalho de `notasEmitidasNaoConfirmadas.js` proíbe: a captura traz o
+        // evento de cancelamento e é ela a autoridade sobre `statusEfetivo`.
+        //
+        // ⚠ `updateByChaveAcesso` devolve `null` quando não há linha nossa — o caso normal de uma
+        // nota emitida fora do portal. Não é erro, e não muda o desfecho.
+        await NfseRepository.updateByChaveAcesso(nota.chaveAcesso, { status: "cancelled" });
+
+        return res.json({
+          ok: true,
+          evento: "e101101",
+          status: "cancelled",
+          notaId: nota.id,
+          numero: nota.numero,
+          // ⚠ A LISTA SÓ MOSTRA A NOTA COMO CANCELADA DEPOIS QUE O ADN TROUXER O EVENTO — ela lê
+          // `PortalInvoice`, e nós não a escrevemos. Este campo diz isso ao app, em dado.
+          refletidoNaLista: false,
+          providerData: result?.providerData ?? null,
+        });
+      } catch (err) {
+        if (responderErroCancelamento(res, err)) return;
+        log.error({ err: err?.message, companyId: portalClientId }, "Cancelamento do cliente falhou");
         return res.status(500).json({ ok: false, error: "internal_error" });
       }
     }

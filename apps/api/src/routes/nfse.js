@@ -14,6 +14,7 @@ import { ensureEmissaoNfseAutorizada } from "./middlewares/emissaoNfseGate.js";
 // têm de responder a mesma coisa — duas cópias divergiriam na primeira correção, e o app do
 // cliente veria "erro interno" onde o portal do contador vê a recusa nomeada.
 import { responderResultadoEmissao, responderErroEmissao } from "./nfseEmissaoHttp.js";
+import { responderErroCancelamento } from "./nfseCancelamentoHttp.js";
 
 // ⚠ OS TRÊS CAMINHOS (emissão, consulta e evento) PASSARAM A EXIGIR O A1 DA PRÓPRIA EMPRESA.
 // Antes, todos usavam um PFX GLOBAL (`NFSE_CERT_PFX_PATH`) sem conferir de quem ele era. Cada
@@ -308,36 +309,16 @@ export function createNfseRouter({ ensureAuthorized, log }) {
         providerData: result.providerData,
       });
     } catch (err) {
-      if (err.code === "NFSE_NOT_CONFIGURED") {
-        return res.status(400).json({ error: "nfse_not_configured" });
-      }
-      if (err.code === "NFSE_TIPO_EVENTO_REQUIRED") {
-        return res.status(400).json({ error: "tipo_evento_required" });
-      }
-      if (err.code === "NFSE_JUSTIFICATIVA_REQUIRED") {
-        return res.status(400).json({ error: "justificativa_required" });
-      }
-      if (err.code === "NFSE_CNPJ_AUTOR_REQUIRED") {
-        return res.status(400).json({ error: "cnpj_autor_required" });
-      }
-      // e105102: `chSubstituta` e `cMotivo` são 1-1 no ANEXO_II v1.01 (ver `buildEventoXml`).
-      if (err.code === "NFSE_CHAVE_SUBSTITUTA_REQUIRED") {
-        return res.status(400).json({ error: "chave_substituta_required" });
-      }
-      if (err.code === "NFSE_CMOTIVO_REQUIRED") {
-        return res.status(400).json({ error: "c_motivo_required" });
-      }
-      if (err.code === "NFSE_EVENT_FAILED") {
-        return res.status(422).json({ error: "nfse_event_failed", providerData: err.providerData });
-      }
-      // O evento também é assinado pelo certificado do autor (E0718) — sem o A1 da empresa não há
-      // pedido de registro válido a montar.
-      if (CODIGOS_CERT.has(err.code)) {
-        return res.status(422).json({ error: "nfse_sem_certificado", codigo: err.code, message: err.message });
-      }
-      if (err.code === "NFSE_NOT_FOUND") {
-        return res.status(404).json({ error: "nfse_not_found" });
-      }
+      // ⚠ O MAPA DE DESFECHOS SAIU DAQUI PARA `routes/nfseCancelamentoHttp.js` EM 19/08/2026,
+      // consumido pelas DUAS portas (esta e a do app do cliente). É o mesmo movimento que a emissão
+      // e o DANFSe já fizeram: duas cópias discordariam na primeira correção, e a que o cliente usa
+      // é a que ninguém do escritório testa.
+      //
+      // ⚠ E ELE GANHOU AS TRÊS CAMADAS. Antes, toda falha de envio virava `422 nfse_event_failed` —
+      // um timeout de rede e uma recusa fiscal chegavam à tela com o mesmo rosto. Agora
+      // `sendEvent` classifica com o MESMO `classificarFalha` da emissão, e o TRANSPORTE responde
+      // **502 com `podeTentarDeNovo: false`**: desfecho desconhecido não convida a repetir.
+      if (responderErroCancelamento(res, err)) return;
       log.error({ err }, "Falha ao registrar evento NFS-e");
       return res.status(500).json({ error: "internal_error" });
     }

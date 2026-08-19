@@ -17,6 +17,19 @@ import { gerarDanfse } from "../gerarDanfse.js";
 import { lerNfse } from "../danfseDados.js";
 import { truncarComReticencias, urlDeConsulta, cm } from "../danfseLeiaute.js";
 
+// ⚠ TEMPO-LIMITE PRÓPRIO — NÃO É FOLGA PARA TESTE LENTO ESCONDER REGRESSÃO.
+// Cada caso aqui GERA um PDF e o LÊ DE VOLTA com pdf-parse; isso custa tempo de CPU de verdade, e o
+// default do jest (5000 ms) não cabe: medido em 18/08/2026, o caso mais lento leva 2665 ms rodando
+// sozinho e 4462 ms na suíte completa (8 workers) — 89% do orçamento, 538 ms de margem. O resultado
+// era vermelho por sorteio: o mesmo teste passava 50/50 isolado e estourava em ~metade das rodadas
+// cheias, e QUALQUER suíte nova acrescentada ao projeto reduzia essa margem. Vermelho por acaso
+// treina a equipe a ignorar vermelho.
+// 30 s = ~6,7x o pior tempo já medido sob carga. É margem para contenção de CPU, não para lentidão
+// nova: se um caso destes chegar perto de 30 s, o gerador regrediu e o certo é investigar, não
+// subir o número. (Local, e não `testTimeout` global no jest.config.js, porque o custo é deste
+// arquivo — afrouxar o projeto inteiro esconderia teste travado em outro lugar.)
+jest.setTimeout(30000);
+
 // ⚠ A FIXTURE É A AMOSTRA VERSIONADA, NÃO UMA CÓPIA COLADA AQUI. `docs/leiaute-nfse/` é a fonte, e
 // duplicar o XML no teste faria a amostra e o teste divergirem na primeira correção de leiaute.
 // (`import.meta.url` não serve: o jest deste projeto transpila para CJS.)

@@ -914,6 +914,84 @@ export function createMockApi() {
       return new Blob([bytes], { type: "application/pdf" });
     },
 
+    // ⚠⚠ CANCELAR, offline. AS TRÊS CAMADAS PRECISAM SER ALCANÇÁVEIS — senão o desfecho de
+    // TRANSPORTE (o único em que o botão DESABILITA, porque o desfecho é desconhecido) só
+    // apareceria em produção, num ato irreversível. Os gatilhos vão na JUSTIFICATIVA, mesmo
+    // arranjo que a emissão usa na descrição.
+    //
+    //   "#transporte" → 502, camada TRANSPORTE, `podeTentarDeNovo: false`
+    //   "#receita"    → 422, camada RECEITA (o sistema nacional analisou e recusou)
+    //   qualquer outra → cancela (no mock)
+    async cancelarNota(companyId, notaId, { cMotivo, justificativa } = {}) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const empresa = estado.empresas.find((e) => e.companyId === id);
+      if (!empresa?.emissaoNfseLiberada) {
+        throw new ApiError(403, "EMISSAO_CLIENTE_NAO_LIBERADA", "A emissão não está liberada para esta empresa.");
+      }
+
+      const nota = estado.notas.find((n) => n.clientId === id && n.invoiceId === String(notaId));
+      if (!nota) throw new ApiError(404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
+      if (nota.confirmadaPeloAdn === false) {
+        throw new ApiError(422, "nota_sem_chave", "Esta nota ainda não voltou do sistema nacional.");
+      }
+      if (nota._statusEfetivo === "cancelada" || nota.status === "CANCELADA") {
+        throw new ApiError(422, "nota_ja_cancelada", "Esta nota já consta cancelada.");
+      }
+
+      // ⚠ As MESMAS travas do servidor, com a MESMA lista fechada — ver
+      // `features/notas/lib/cancelamentoNota.js` e `apps/api/.../motivosDeEvento.js`.
+      const texto = String(justificativa ?? "").trim();
+      if (!["1", "2", "9"].includes(String(cMotivo ?? ""))) {
+        const err = new ApiError(400, "c_motivo_invalido", "O motivo do evento é de lista fechada.", {
+          camada: "NOSSA",
+          podeTentarDeNovo: true,
+          motivosAceitos: [
+            { codigo: "1", rotulo: "Erro na emissão" },
+            { codigo: "2", rotulo: "Serviço não prestado" },
+            { codigo: "9", rotulo: "Outros" },
+          ],
+        });
+        throw err;
+      }
+      if (texto.length < 15) {
+        throw new ApiError(
+          400,
+          "justificativa_curta",
+          `A justificativa precisa ter pelo menos 15 caracteres (tem ${texto.length}).`,
+          { camada: "NOSSA", podeTentarDeNovo: true }
+        );
+      }
+
+      if (texto.includes("#transporte")) {
+        throw new ApiError(
+          502,
+          "nfse_cancelamento_transporte",
+          "A resposta do sistema nacional não voltou.",
+          {
+            camada: "TRANSPORTE",
+            // ⚠⚠ É ESTE `false` que desabilita o botão na tela.
+            podeTentarDeNovo: false,
+            correcao:
+              "NÃO envie o cancelamento de novo: consulte a situação da nota antes de decidir. "
+              + "Se ela já estiver cancelada, um segundo pedido volta recusado e parece falha.",
+          }
+        );
+      }
+      if (texto.includes("#receita")) {
+        throw new ApiError(
+          422,
+          "nfse_cancelamento_rejeitado",
+          "E0046 - NFS-e cancelada não pode ser cancelada novamente.",
+          { camada: "RECEITA", podeTentarDeNovo: true }
+        );
+      }
+
+      nota.status = "CANCELADA";
+      nota._statusEfetivo = "cancelada";
+      return { ok: true, evento: "e101101", status: "cancelled", notaId: nota.invoiceId, numero: nota.numero };
+    },
+
     // --- Guias --------------------------------------------------------------
     async getGuides(companyId, { competencia, page = 1, limit = 25 } = {}) {
       await dormir();
