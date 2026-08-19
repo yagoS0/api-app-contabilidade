@@ -12,15 +12,18 @@ import { EmitirNotaPage } from "../emitir/EmitirNotaPage";
 import { esquecerTodasAsDescricoes } from "../emitir/lib/descricoesRecentes";
 import { GuiasPage } from "../guias/GuiasPage";
 
-// ⚠ A ABA "EMITIR" APARECE SEMPRE, inclusive para quem não pode emitir — e isso é deliberado.
-// Escondê-la deixaria o cliente sem saber que a emissão existe e sem saber que ela depende de um
-// clique do contador; a tela do outro lado explica QUAL das guardas está fechada e o que fazer.
-// (É o oposto do caso da DEFIS, em que o dono pediu silêncio: lá a dispensa é permanente e não há
-// nada a pedir a ninguém. Aqui há.)
+// ⚠⚠ A ABA "EMITIR" FOI REMOVIDA EM 19/08/2026 — pedido do dono: emitir virou um BOTÃO dentro de
+// Notas. A remoção é INTEIRA: o item do menu (aqui), o destino de roteamento (`lib/hooks.js`) e o
+// estado. Meia remoção — tirar do menu e deixar a rota de pé — é o "filtro fantasma": um link
+// antigo para `#/emitir` levaria a uma tela sem nenhuma saída visível.
+//
+// ⚠ O QUE NÃO SE PERDEU COM ISSO. A emissão continua ALCANÇÁVEL POR QUEM NÃO PODE EMITIR: o botão
+// em Notas aparece sempre, e a tela do outro lado explica qual guarda está fechada e o que fazer.
+// Era essa a razão de a aba aparecer sempre, e ela vale igual para o botão — escondê-lo deixaria o
+// cliente sem saber que a emissão existe e que ela depende de um clique do contador.
 const ABAS = [
   { chave: "home", rotulo: "Início" },
   { chave: "notas", rotulo: "Notas" },
-  { chave: "emitir", rotulo: "Emitir" },
   { chave: "guias", rotulo: "Guias" },
 ];
 
@@ -34,6 +37,10 @@ export function AppShell({ user }) {
   // duas só existe a navegação por hash — que não carrega objeto. Guardá-lo dentro de qualquer uma
   // delas o perderia na troca de rota, porque a casca só monta a tela ativa.
   const [modeloEmissao, setModeloEmissao] = useState(null);
+  // ⚠ A EMISSÃO É UM MODO DA TELA DE NOTAS, não mais uma rota. Este booleano é o que substituiu
+  // `rota === "emitir"`. Ele mora aqui, e não dentro da `NotasPage`, pelo mesmo motivo do modelo:
+  // a casca é quem monta a tela ativa, e é ela que precisa decidir entre a lista e o formulário.
+  const [emissaoAberta, setEmissaoAberta] = useState(false);
 
   const empresasQuery = useCarregamento(() => api.getCompanies(), []);
   const empresas = empresasQuery.dados || [];
@@ -62,11 +69,41 @@ export function AppShell({ user }) {
     setModeloEmissao(null);
   }
 
-  /** A nota escolhida na lista vira o ponto de partida da emissão — e a tela troca junto. */
+  /**
+   * ⚠ SAIR DE NOTAS FECHA A EMISSÃO — e isso REPRODUZ o comportamento de antes, não muda nada.
+   * Enquanto "emitir" era rota, trocar de aba DESMONTAVA a `EmitirNotaPage` e o formulário meio
+   * preenchido já se perdia. Mantê-lo aberto por trás de outra aba seria um comportamento NOVO,
+   * que ninguém pediu — e faria o clique em "Notas" cair num formulário, e não na lista que o
+   * rótulo promete.
+   */
+  function irPara(destino) {
+    setEmissaoAberta(false);
+    navegar(destino);
+  }
+
+  /** Abre a emissão em branco — o botão "Emitir nota" da lista. */
+  function abrirEmissao() {
+    setModeloEmissao(null);
+    setEmissaoAberta(true);
+  }
+
+  /**
+   * A nota escolhida na lista vira o ponto de partida da emissão.
+   *
+   * ⚠ ISTO NÃO NAVEGA MAIS. Antes era `navegar("emitir")`; hoje a lista e o formulário são a MESMA
+   * rota, e o que muda é o modo. O modelo continua vivendo na casca porque continua atravessando
+   * duas telas — só que agora as duas telas são dois estados de uma rota só.
+   */
   function reaproveitarNota(modelo) {
     if (!modelo) return;
     setModeloEmissao(modelo);
-    navegar("emitir");
+    setEmissaoAberta(true);
+  }
+
+  /** Volta da emissão para a lista, sem sair da rota. */
+  function fecharEmissao() {
+    setEmissaoAberta(false);
+    setModeloEmissao(null);
   }
 
   async function sair() {
@@ -124,7 +161,7 @@ export function AppShell({ user }) {
             key={aba.chave}
             type="button"
             aria-current={rota === aba.chave ? "page" : undefined}
-            onClick={() => navegar(aba.chave)}
+            onClick={() => irPara(aba.chave)}
           >
             {aba.rotulo}
           </button>
@@ -145,22 +182,32 @@ export function AppShell({ user }) {
             Nenhuma empresa está vinculada ao seu acesso. Fale com o seu contador para liberar.
           </Vazio>
         ) : rota === "notas" ? (
-          <NotasPage empresa={empresaAtiva} aoReaproveitar={reaproveitarNota} />
-        ) : rota === "emitir" ? (
-          <EmitirNotaPage
-            empresa={empresaAtiva}
-            aoNavegar={navegar}
-            modelo={modeloEmissao}
-            aoDescartarModelo={() => setModeloEmissao(null)}
-            // ⚠ Recarregar as EMPRESAS, não a tela: o estado do portão (`emissaoNfseLiberada`)
-            // vem de `GET /client/companies`, então quem está no ramo "não recebemos o estado" só
-            // sai dele refazendo essa chamada.
-            aoRecarregarEmpresas={empresasQuery.recarregar}
-          />
+          // ⚠ UMA ROTA, DOIS MODOS. `emissaoAberta` é o que sobrou de `rota === "emitir"`.
+          emissaoAberta ? (
+            <EmitirNotaPage
+              empresa={empresaAtiva}
+              // ⚠ O PROP MUDOU DE NOME PORQUE MUDOU DE NATUREZA. Era `aoNavegar`, e a única coisa
+              // que a emissão jamais fez com ele foi `aoNavegar("notas")` — ou seja, voltar. Hoje
+              // isso não é navegação, é fechar um modo; um nome que dissesse "navegar" mentiria.
+              aoVoltarParaNotas={fecharEmissao}
+              modelo={modeloEmissao}
+              aoDescartarModelo={() => setModeloEmissao(null)}
+              // ⚠ Recarregar as EMPRESAS, não a tela: o estado do portão (`emissaoNfseLiberada`)
+              // vem de `GET /client/companies`, então quem está no ramo "não recebemos o estado" só
+              // sai dele refazendo essa chamada.
+              aoRecarregarEmpresas={empresasQuery.recarregar}
+            />
+          ) : (
+            <NotasPage
+              empresa={empresaAtiva}
+              aoReaproveitar={reaproveitarNota}
+              aoEmitir={abrirEmissao}
+            />
+          )
         ) : rota === "guias" ? (
           <GuiasPage empresa={empresaAtiva} />
         ) : (
-          <HomePage empresa={empresaAtiva} aoNavegar={navegar} />
+          <HomePage empresa={empresaAtiva} aoNavegar={irPara} />
         )}
       </main>
 

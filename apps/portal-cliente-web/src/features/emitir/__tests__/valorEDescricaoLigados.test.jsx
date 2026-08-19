@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 async function renderizar(empresa = EMPRESA_BASE) {
-  const utils = render(<EmitirNotaPage empresa={empresa} aoNavegar={() => {}} aoRecarregarEmpresas={() => {}} />);
+  const utils = render(<EmitirNotaPage empresa={empresa} aoVoltarParaNotas={() => {}} aoRecarregarEmpresas={() => {}} />);
   await act(async () => {});
   return utils;
 }
@@ -161,15 +161,24 @@ describe("a DESCRIÇÃO chega sugerida, com a origem à vista", () => {
     expect(screen.queryByText(/Sugerido a partir/i)).not.toBeInTheDocument();
   });
 
-  // ⚠⚠ SEM DADO, CAMPO VAZIO — e a tela diz a quem pedir. O cliente não edita o próprio cadastro.
-  test("só códigos nus: campo VAZIO, com o motivo e a quem pedir", async () => {
+  // ⚠⚠ ATUALIZADO EM 19/08/2026 — pedido do dono, com a tela na frente. Este caso media que a frase
+  // *"Sem sugestão: as atividades cadastradas têm só o código, sem o texto. Quem cadastra a
+  // atividade é o seu escritório de contabilidade."* estava NA TELA; agora mede que ela NÃO está.
+  //
+  // ⚠ NÃO FOI RELAXADO NEM APAGADO, e a diferença importa: trocar por `toBeTruthy()` deixaria a
+  // frase voltar sem ninguém notar, e apagar o caso perderia a única prova de que o campo fica
+  // VAZIO neste cenário — que é o que a regra 1 do projeto protege (não inventar descrição de
+  // documento fiscal). O `expect(campoDescricao().value).toBe("")` continua sendo o coração daqui.
+  //
+  // ⚠ E o motivo continua CLASSIFICADO em dado (`SEM_SUGESTAO.SEM_DESCRICAO`), medido em
+  // `lib/__tests__/descricaoSugerida.test.js`. O que saiu foi só o consumo visível.
+  test("só códigos nus: campo VAZIO — e sem legenda nenhuma na tela", async () => {
     await renderizar(comAtividades(KAIZEN, "7112000"));
     expect(campoDescricao().value).toBe("");
-    // ⚠ A FRASE ENCURTOU EM 19/08/2026 (o dono: *"esse tanto de legenda é desnecessário"*) e o que
-    // ela protege NÃO: a tela continua dizendo que não há sugestão, por que não há, e a quem pedir.
-    // O que saiu foi *"e não deduzimos o texto a partir do número do CNAE"* — mecânica nossa.
-    expect(screen.getByText(/só o código, sem o texto/i)).toBeInTheDocument();
-    expect(screen.getByText(/seu escritório de contabilidade/i)).toBeInTheDocument();
+    expect(screen.queryByText(/só o código, sem o texto/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/seu escritório de contabilidade/i)).not.toBeInTheDocument();
+    // ⚠ E o campo NÃO ganhou texto inventado no lugar da legenda.
+    expect(campoDescricao().value).not.toMatch(/\S/);
   });
 
   test("sem atividade nenhuma: campo VAZIO, com o motivo", async () => {

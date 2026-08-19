@@ -257,9 +257,20 @@ export function textoDoMotivo(motivo, { ondeSeResolve = "" } = {}) {
   if (motivo === SEM_SUGESTAO.SEM_ATIVIDADE) {
     return `Sem sugestão: esta empresa não tem atividade cadastrada.${onde}`;
   }
-  if (motivo === SEM_SUGESTAO.SEM_DESCRICAO) {
-    return `Sem sugestão: as atividades cadastradas têm só o código, sem o texto.${onde}`;
-  }
+  // ⚠⚠ ESTE TEXTO SAIU DA TELA EM 19/08/2026 — pedido do dono, com a tela na frente. Era:
+  // *"Sem sugestão: as atividades cadastradas têm só o código, sem o texto. Quem cadastra a
+  // atividade é o seu escritório de contabilidade."*
+  //
+  // ⚠ A REGRA CONTINUA VIVA: `SEM_SUGESTAO.SEM_DESCRICAO` continua sendo CLASSIFICADO por
+  // `motivoDaAusencia` e continua viajando no retorno — quem perguntar por que não houve sugestão
+  // continua tendo a resposta em DADO. O que saiu foi o consumo visível, e `null` aqui é o mesmo
+  // caminho que `SEM_CADASTRO` já usava: a tela simplesmente não renderiza a linha.
+  //
+  // ⚠ OS OUTROS DOIS MOTIVOS CONTINUAM NA TELA de propósito, e não é inconsistência: `SEM_ATIVIDADE`
+  // e `VARIAS` pedem AÇÃO de quem está emitindo (cadastrar a atividade; escolher entre as que
+  // existem). Este aqui não pedia nada — o cliente não edita o próprio cadastro, e o campo de
+  // descrição logo abaixo está livre para ele escrever.
+  if (motivo === SEM_SUGESTAO.SEM_DESCRICAO) return null;
   if (motivo === SEM_SUGESTAO.VARIAS) {
     return (
       "Sem sugestão: há mais de uma atividade cadastrada e nenhuma delas é, sem dúvida, a do CNAE "

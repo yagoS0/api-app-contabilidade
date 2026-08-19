@@ -113,7 +113,7 @@ afterEach(() => {
 
 /** Renderiza e espera a carga inicial (alíquotas + lista do IBGE) assentar. */
 async function renderizar(empresa = EMPRESA) {
-  const utils = render(<EmitirNotaPage empresa={empresa} aoNavegar={() => {}} aoRecarregarEmpresas={() => {}} />);
+  const utils = render(<EmitirNotaPage empresa={empresa} aoVoltarParaNotas={() => {}} aoRecarregarEmpresas={() => {}} />);
   await act(async () => {});
   return utils;
 }
@@ -129,7 +129,7 @@ describe("a alíquota efetiva CHEGA ao campo — e é a do DAS", () => {
     expect(api.getAliquotas).toHaveBeenCalledWith("pc-001", esperada);
   });
 
-  test("com os dois insumos crus, o percentual aparece no campo com a procedência ao lado", async () => {
+  test("com os dois insumos crus, o percentual aparece no campo — e a procedência sai do TEXTO da tela", async () => {
     const comp = competenciaDeHoje();
     api.getAliquotas.mockResolvedValue([linhaComProva(comp, 6)]);
     await renderizar();
@@ -138,20 +138,42 @@ describe("a alíquota efetiva CHEGA ao campo — e é a do DAS", () => {
     // ⚠ `efetiva` (7,26%) veio na MESMA linha e NÃO pode ter chegado ao campo: ela inclui o INSS de
     // guia separada, que não é tributo do Simples Nacional.
     expect(campoAliquota().value).not.toBe("7.26");
-    expect(screen.getByText(/sobre a receita da mesma competência/)).toBeInTheDocument();
+
+    // ⚠⚠ ATUALIZADO EM 19/08/2026 — pedido do dono, com a tela na frente: a legenda da procedência
+    // saiu da TELA. Este caso NÃO foi relaxado nem apagado: ele passou a medir o oposto, porque o
+    // oposto é a decisão. Antes: `getByText(/sobre a receita da mesma competência/)`.
+    expect(screen.queryByText(/sobre a receita da mesma competência/)).not.toBeInTheDocument();
+    // ⚠ E a informação NÃO SUMIU — ela vive no `title` do campo, que não é texto na tela.
+    expect(campoAliquota().getAttribute("title")).toMatch(/sobre a receita da mesma competência/);
+
+    // A ORIGEM (preenchido pelo portal × digitado por você) NÃO era uma das legendas removidas e
+    // continua na tela: ela diz de quem é o número, não de onde ele veio.
     expect(screen.getByText("preenchido pelo portal")).toBeInTheDocument();
   });
 
-  // ⚠ Usar a última apurada é o certo; usá-la SEM DIZER que é de outro mês seria apresentar o
-  // número do mês passado como se fosse o deste.
-  test("sem a competência da nota, o campo recebe a última apurada E a tela diz que é de outro mês", async () => {
+  // ⚠⚠ ATUALIZADO EM 19/08/2026 — pedido do dono, com a tela na frente. Este caso media que o aviso
+  // *"⚠ É a última competência apurada — a da nota (…) ainda não tem extrato do PGDAS-D. Confira
+  // antes de emitir."* estava NA TELA, e agora mede que ele NÃO está.
+  //
+  // ⚠ O ARGUMENTO CONTRÁRIO FICA REGISTRADO, porque ele é bom e pode voltar: usar a última apurada
+  // é o certo, e usá-la sem dizer que é de outro mês apresenta o número do mês passado como se
+  // fosse o deste. A decisão do dono foi tirar a frase da tela mesmo assim — e o que a sustenta é
+  // que a informação continua ALCANÇÁVEL no `title`, medido logo abaixo. Se um dia ela sair do
+  // `title` também, este caso vira vermelho, que é o que se quer.
+  test("sem a competência da nota, o campo recebe a última apurada — e o aviso NÃO é texto na tela", async () => {
     api.getAliquotas.mockResolvedValue([linhaComProva("2020-01", 6.24)]);
     await renderizar();
 
     await waitFor(() => expect(campoAliquota().value).toBe("6.24"));
-    expect(screen.getByText(/DAS de 01\/2020/)).toBeInTheDocument();
-    expect(screen.getByText(/última competência apurada/)).toBeInTheDocument();
-    expect(screen.getByText(/Confira antes de emitir/)).toBeInTheDocument();
+    expect(screen.queryByText(/DAS de 01\/2020/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/última competência apurada/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Confira antes de emitir/)).not.toBeInTheDocument();
+
+    // ⚠ A informação inteira sobrevive fora da tela, para quem passar o mouse.
+    const title = campoAliquota().getAttribute("title");
+    expect(title).toMatch(/DAS de 01\/2020/);
+    expect(title).toMatch(/última competência apurada/);
+    expect(title).toMatch(/Confira antes de emitir/);
   });
 });
 
@@ -378,5 +400,60 @@ describe("as descrições deste navegador chegam à tela — e são da EMPRESA c
     fireEvent.change(document.getElementById("emitir-descricao"), { target: { value: "Outro" } });
     await act(async () => {});
     expect(screen.queryByText("Consultoria em TI — agosto")).not.toBeInTheDocument();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ AS LEGENDAS QUE O DONO MANDOU TIRAR DA TELA (19/08/2026)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Ele leu a tela e pediu, literalmente, a remoção de quatro textos. Duas delas NÃO TINHAM TESTE
+// NENHUM — e é justamente por isso que este bloco existe: remoção que ninguém trava é remoção que
+// volta na próxima edição do arquivo, e aí a decisão do dono se perde sem que nada acuse.
+//
+// ⚠ EM TODOS OS CASOS, O QUE SAIU FOI O CONSUMO VISÍVEL — a regra continua viva e continua
+// decidindo. É por isso que cada caso mede também o que NÃO mudou.
+describe("⚠⚠ as legendas removidas a pedido do dono NÃO voltam", () => {
+  test("a legenda da DATA DA COMPETÊNCIA saiu — e o campo continua lá, rotulado", async () => {
+    await renderizar();
+    // Era: "A data da competência é a que vai na nota. A data e a hora da emissão são as do envio,
+    // e não se escolhem aqui."
+    expect(screen.queryByText(/A data da competência é a que vai na nota/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/não se escolhem aqui/i)).not.toBeInTheDocument();
+    // ⚠ O CAMPO NÃO SUMIU JUNTO: quem some com o campo some com a escolha da competência.
+    expect(document.getElementById("emitir-competencia")).toBeInTheDocument();
+  });
+
+  test("a legenda do ISS DENTRO DO DAS saiu — e o campo de ISS continua ausente, que é a regra", async () => {
+    await renderizar();
+    // Era: "Empresa do Simples Nacional: o ISS já está dentro do DAS, então esta nota sai sem
+    // alíquota e sem retenção de ISS."
+    expect(screen.queryByText(/já está dentro do DAS/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sem alíquota e sem retenção de ISS/i)).not.toBeInTheDocument();
+    // ⚠⚠ A REGRA CONTINUA: a empresa do teste é do Simples, e no Simples os campos de ISS NÃO são
+    // renderizados. Se eles reaparecerem, este caso acende — e a legenda removida seria o menor dos
+    // problemas.
+    expect(document.getElementById("emitir-aliquota")).not.toBeInTheDocument();
+    expect(document.getElementById("emitir-iss-retido")).not.toBeInTheDocument();
+    // E o campo que existe no lugar deles — a alíquota efetiva do Simples — segue de pé.
+    expect(campoAliquota()).toBeInTheDocument();
+  });
+
+  // ⚠⚠ ESTE CASO EXISTE PARA PROVAR QUE O DE CIMA TEM DENTES. Um `not.toBeInTheDocument()` sobre um
+  // id ERRADO passa sempre, e foi exatamente o que aconteceu na primeira escrita deste bloco
+  // (`emitir-aliquota-iss`, que não existe). Aqui os MESMOS ids são exigidos PRESENTES no regime em
+  // que o campo de ISS deve aparecer — se algum id mudar, este caso quebra e denuncia o outro.
+  test("⚠ fora do Simples, os campos de ISS EXISTEM — é a contraprova dos ids acima", async () => {
+    await renderizar({
+      ...EMPRESA,
+      legacyCompany: { ...EMPRESA.legacyCompany, regimeTributario: "LUCRO_PRESUMIDO" },
+    });
+    expect(document.getElementById("emitir-aliquota")).toBeInTheDocument();
+    expect(document.getElementById("emitir-iss-retido")).toBeInTheDocument();
+  });
+
+  test("⚠ o regime DESCONHECIDO continua avisando — aquilo não era legenda fixa, é dado que falta", async () => {
+    await renderizar({ ...EMPRESA, legacyCompany: { ...EMPRESA.legacyCompany, regimeTributario: null } });
+    expect(screen.getByText(/Não recebemos o regime desta empresa/i)).toBeInTheDocument();
   });
 });

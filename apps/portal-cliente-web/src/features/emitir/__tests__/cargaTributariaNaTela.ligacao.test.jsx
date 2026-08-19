@@ -82,7 +82,7 @@ afterEach(() => {
 async function renderizar(empresa) {
   const utils = render(
     <StrictMode>
-      <EmitirNotaPage empresa={empresa} aoNavegar={() => {}} aoRecarregarEmpresas={() => {}} />
+      <EmitirNotaPage empresa={empresa} aoVoltarParaNotas={() => {}} aoRecarregarEmpresas={() => {}} />
     </StrictMode>
   );
   await act(async () => {});

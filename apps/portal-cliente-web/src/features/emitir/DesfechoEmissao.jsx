@@ -38,7 +38,12 @@ function LinhaDado({ rotulo, valor }) {
  * Antes de a camada existir no backend, os três eram o mesmo "rejeitada" — e quem lia não tinha
  * como saber se corrigia, se esperava ou se consultava.
  */
-export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoNavegar }) {
+// ⚠ O PROP DE VOLTA MUDOU DE NOME EM 19/08/2026, e a troca não é cosmética: a emissão deixou de
+// ser rota e virou um MODO da tela de Notas (ver `shell/AppShell.jsx`). Este componente só usava o
+// prop antigo para um destino — a lista de notas —, quatro vezes, sempre o mesmo. Ou seja: o que
+// ele sempre quis dizer foi "volte para a lista". Um prop chamado "navegar" que não navega
+// mentiria, e o argumento de destino viraria um parâmetro morto que alguém trocaria por outro.
+export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarParaNotas }) {
   if (!desfecho) return null;
 
   // ── SUCESSO ───────────────────────────────────────────────────────────────────────────────
@@ -72,7 +77,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoNavegar })
           <button type="button" className="btn" onClick={aoNovaNota}>
             Emitir outra nota
           </button>
-          <button type="button" className="btn btn-primary" onClick={() => aoNavegar("notas")}>
+          <button type="button" className="btn btn-primary" onClick={aoVoltarParaNotas}>
             Ver minhas notas
           </button>
         </div>
@@ -94,7 +99,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoNavegar })
           resolver — duas notas iguais não têm como ser desfeitas.
         </p>
         <div className="actions">
-          <button type="button" className="btn btn-primary" onClick={() => aoNavegar("notas")}>
+          <button type="button" className="btn btn-primary" onClick={aoVoltarParaNotas}>
             Ver minhas notas
           </button>
           {/* ⚠ "OUTRA nota", e o formulário é limpo antes de reaparecer — não é um caminho de
@@ -141,7 +146,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoNavegar })
             : ""}
         </p>
         <div className="actions">
-          <button type="button" className="btn" onClick={() => aoNavegar("notas")}>
+          <button type="button" className="btn" onClick={aoVoltarParaNotas}>
             Ver minhas notas
           </button>
           <button type="button" className="btn" onClick={aoNovaNota}>
@@ -308,7 +313,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoNavegar })
         já estiver lá, emitir outra criaria uma nota em duplicidade.
       </p>
       <div className="actions">
-        <button type="button" className="btn btn-primary" onClick={() => aoNavegar("notas")}>
+        <button type="button" className="btn btn-primary" onClick={aoVoltarParaNotas}>
           Ver minhas notas
         </button>
       </div>

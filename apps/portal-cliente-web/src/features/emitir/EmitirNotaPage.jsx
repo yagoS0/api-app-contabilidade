@@ -284,7 +284,17 @@ function montarPayload(form, { issNoFormulario }) {
   return payload;
 }
 
-export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, modelo = null, aoDescartarModelo }) {
+/**
+ * ⚠ O PROP DE VOLTA MUDOU DE NOME EM 19/08/2026 (o antigo dizia "navegar"). A emissão deixou de ser
+ * uma ABA e virou um MODO da tela de Notas (`shell/AppShell.jsx`): não há mais para onde navegar,
+ * há o modo a fechar. O prop antigo só era usado com o destino `"notas"`, então o nome novo diz o
+ * que a chamada sempre fez.
+ *
+ * ⚠⚠ E POR ISSO ESTA TELA GANHOU UMA SAÍDA PRÓPRIA, EM TODOS OS RAMOS. Enquanto "Emitir" era aba,
+ * a saída era o menu; sem a aba, uma tela sem botão de voltar é uma armadilha — e o ramo do
+ * PORTÃO FECHADO é o pior deles, porque quem cai nele é justamente quem não pode fazer nada ali.
+ */
+export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresas, modelo = null, aoDescartarModelo }) {
   const companyId = empresa.companyId;
   const [form, setForm] = useState(formVazio);
   const [enviando, setEnviando] = useState(false);
@@ -769,6 +779,11 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
       <>
         <div className="page-header">
           <h1>Emitir nota</h1>
+          {/* ⚠ A SAÍDA PRECISA EXISTIR AQUI, e este é o ramo em que ela mais importa: sem a aba
+              "Emitir", quem cai no portão fechado não tem menu nenhum a que voltar. */}
+          <button type="button" className="btn" onClick={aoVoltarParaNotas}>
+            Voltar para as notas
+          </button>
         </div>
         <PortaoFechado portao={portao} empresa={empresa} aoRecarregar={aoRecarregarEmpresas} />
       </>
@@ -786,12 +801,15 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
     <>
       <div className="page-header">
         <h1>Emitir nota</h1>
+        <button type="button" className="btn" onClick={aoVoltarParaNotas}>
+          Voltar para as notas
+        </button>
       </div>
 
       {desfecho ? (
         <DesfechoEmissao
           desfecho={desfecho}
-          aoNavegar={aoNavegar}
+          aoVoltarParaNotas={aoVoltarParaNotas}
           aoCorrigir={() => setDesfecho(null)}
           aoNovaNota={() => {
             setForm(formVazio());
@@ -1277,10 +1295,13 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
                     escolhe. `dCompet` saiu — é nome de campo do XML, e o cliente não tem o que fazer
                     com ele. (O `dCompet`/`dhEmi` continua explicado no comentário de
                     `montarPayload`, que é onde essa distinção é do programador.) */}
-                <span className="hint">
-                  A data da competência é a que vai na nota. A data e a hora da emissão são as do
-                  envio, e não se escolhem aqui.
-                </span>
+                {/* ⚠⚠ ESTA LEGENDA SAIU DA TELA EM 19/08/2026 — pedido do dono, com a tela na
+                    frente. Era: *"A data da competência é a que vai na nota. A data e a hora da
+                    emissão são as do envio, e não se escolhem aqui."*
+                    O rótulo do campo já diz que a data é a da COMPETÊNCIA, e a data de emissão
+                    nunca esteve na tela para ser confundida — a frase respondia a uma pergunta que
+                    o formulário não levanta. A distinção `dCompet` × `dhEmi` continua escrita no
+                    comentário de `montarPayload`, que é onde ela é do programador. */}
                 <p className="hint">
                   {/* ⚠ A tela DIZ qual código vai, em vez de oferecer uma escolha que o cadastro
                       recusaria. Ver `montarPayload`. */}
@@ -1318,6 +1339,15 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
                     min="0"
                     max="100"
                     value={form.pTotTribSN}
+                    // ⚠⚠ A PROCEDÊNCIA SAIU DA TELA E VEIO PARA CÁ (dono, 19/08/2026 — ver o bloco
+                    // logo abaixo). `title` não é legenda: não ocupa a tela, e é o que existe para
+                    // quem passa o mouse. O número continua CONFERÍVEL — quem precisar saber de que
+                    // competência ele veio, e que ela não é a da nota, continua tendo como.
+                    title={
+                      serieAliquota.carregando
+                        ? undefined
+                        : textoDaProcedencia(escolhaAliquota, competenciaDaNota)
+                    }
                     onChange={(e) => {
                       // ⚠ PRÉ-PREENCHIDO ≠ TRAVADO: a partir daqui o portal não escreve mais neste
                       // campo, nem quando a competência muda.
@@ -1326,11 +1356,24 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
                     }}
                   />
                 </label>
-                <span className="hint">
-                  {serieAliquota.carregando
-                    ? "Procurando a alíquota efetiva desta empresa…"
-                    : textoDaProcedencia(escolhaAliquota, competenciaDaNota)}
-                </span>
+                {/* ⚠⚠ A LEGENDA DA PROCEDÊNCIA SAIU DA TELA EM 19/08/2026 — pedido do dono, com a
+                    tela na frente. Era: *"DAS de 07/2026 sobre a receita da mesma competência
+                    (extrato do PGDAS-D). ⚠ É a última competência apurada — a da nota (08/2026)
+                    ainda não tem extrato do PGDAS-D. Confira antes de emitir."*
+
+                    ⚠ A REGRA CONTINUA VIVA E INTOCADA: `lib/aliquotaEfetiva.js` segue escolhendo a
+                    competência, marcando `exata` e redigindo a frase — o que saiu foi o CONSUMO
+                    VISÍVEL. A frase passou para o `title` do campo, logo acima.
+
+                    ⚠ O QUE **NÃO** SAIU, e a distinção é o ponto: quando NÃO conseguimos preencher,
+                    o motivo continua na tela ("Não preenchemos: …"). Aquilo não é legenda — é a
+                    explicação de um campo VAZIO, e campo vazio sem motivo vira suspeita de defeito.
+                    A mesma razão pela qual "Procurando…" também ficou. */}
+                {serieAliquota.carregando ? (
+                  <span className="hint">Procurando a alíquota efetiva desta empresa…</span>
+                ) : escolhaAliquota?.valor === null ? (
+                  <span className="hint">{textoDaProcedencia(escolhaAliquota, competenciaDaNota)}</span>
+                ) : null}
                 {/* ⚠ OS DOIS LADOS À VISTA quando a pessoa sobrescreve — a mesma disciplina do
                     nome do tomador. */}
                 {origemPTot === ORIGEM_ALIQUOTA.DIGITADA && escolhaAliquota.valor !== null ? (
@@ -1393,17 +1436,21 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
                         : ""}
                     </span>
                   </>
-                ) : (
-                  // ⚠ ENCOLHEU, MAS NÃO SUMIU: sem esta frase o cliente procura na tela um campo de
-                  // ISS que foi retirado de propósito — e ausência sem explicação vira suspeita de
-                  // defeito. Saiu a última oração ("a carga tributária declarada ao tomador é a
-                  // alíquota efetiva acima"), que descreve o nosso mapeamento de campos: o rótulo do
-                  // campo logo acima já diz o que ele é.
-                  <span className="hint">
-                    <strong>Empresa do Simples Nacional:</strong> o ISS já está dentro do DAS, então
-                    esta nota sai sem alíquota e sem retenção de ISS.
-                  </span>
-                )}
+                ) : null}
+                {/* ⚠⚠ ESTA LEGENDA SAIU DA TELA EM 19/08/2026 — pedido do dono, com a tela na
+                    frente. Era: *"Empresa do Simples Nacional: o ISS já está dentro do DAS, então
+                    esta nota sai sem alíquota e sem retenção de ISS."*
+
+                    ⚠ ISTO REVERTE O DESENHO ANTERIOR, que era o oposto e está registrado porque o
+                    argumento continua valendo em outros lugares: a frase existia para que o cliente
+                    do Simples não procurasse na tela um campo de ISS retirado de propósito —
+                    "ausência sem explicação vira suspeita de defeito". O que mudou: no Simples a
+                    ausência do campo é a REGRA, não a exceção, e um parágrafo fixo repetido em toda
+                    nota é ruído. (Mesmo movimento da legenda da DEFIS no portal do escritório.)
+
+                    ⚠ A REGRA NÃO SAIU: `regime === REGIME.SIMPLES` continua decidindo que o campo
+                    de ISS não é renderizado, e o ramo do regime DESCONHECIDO continua avisando —
+                    aquele não é legenda fixa, é a resposta a um dado que não recebemos. */}
 
                 {/* ⚠ TAMBÉM ERAM SETE DÍGITOS À MÃO. É o campo que decide para QUAL MUNICÍPIO o
                     ISSQN é devido — errar aqui é recolher para a prefeitura errada. */}

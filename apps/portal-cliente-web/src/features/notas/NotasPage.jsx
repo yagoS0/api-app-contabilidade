@@ -145,7 +145,7 @@ function BotaoDanfse({ nota, companyId }) {
   );
 }
 
-export function NotasPage({ empresa, aoReaproveitar }) {
+export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
   // `lib/format.js`). Antes abria em "Todas". ⚠ Isto ESTREITA o que a tela mostra ao abrir: quem
@@ -176,6 +176,18 @@ export function NotasPage({ empresa, aoReaproveitar }) {
     <>
       <div className="page-header">
         <h1>Notas emitidas</h1>
+        {/* ⚠⚠ ESTE BOTÃO SUBSTITUIU A ABA "EMITIR" (dono, 19/08/2026) — a aba foi removida
+            INTEIRA: menu, rota e estado (`shell/AppShell.jsx`, `lib/hooks.js`).
+
+            ⚠ ELE APARECE SEMPRE, inclusive para quem NÃO pode emitir, e isso é a razão de a aba
+            aparecer sempre, herdada: escondê-lo deixaria o cliente sem saber que a emissão existe
+            e que ela depende de um clique do contador. Quem não pode cai na tela do outro lado,
+            que diz QUAL guarda está fechada e o que fazer — e que tem o seu próprio "Voltar".
+            Um botão desabilitado aqui não serviria: o motivo não cabe num `title`, e o portão é
+            resposta do servidor, não da lista. */}
+        <button type="button" className="btn btn-primary" onClick={aoEmitir}>
+          Emitir nota
+        </button>
       </div>
 
       <div className="card">

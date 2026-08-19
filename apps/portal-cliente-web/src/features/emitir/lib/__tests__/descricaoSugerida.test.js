@@ -198,14 +198,19 @@ describe("a sugestão inteira — as quatro empresas medidas", () => {
     const r = sugerir(KAIZEN, "7112000");
     expect(r.texto).toBeNull();
     expect(r.motivo).toBe(SEM_SUGESTAO.SEM_DESCRICAO);
-    // ⚠ A ASSERÇÃO MUDOU DE FRASE EM 19/08/2026, E NÃO DE EXIGÊNCIA. Ela prendia *"não deduzimos o
-    // texto a partir do número do CNAE"*; essa metade saiu da tela a pedido do dono (é a nossa
-    // mecânica, e quem lê é o cliente). O que o caso protege continua sendo a DISTINÇÃO — "há
-    // atividade cadastrada, mas ela não tem texto" ≠ "não há atividade" ≠ silêncio —, e é ela que
-    // está travada aqui, agora pela frase que ficou. Relaxar para `toBeTruthy()` deixaria as três
+    // ⚠⚠ A FRASE SAIU DA TELA EM 19/08/2026 (pedido do dono), E A DISTINÇÃO NÃO. Este caso já foi
+    // atualizado uma vez, quando a frase encurtou; agora ela deixou de ser renderizada, e
+    // `textoDoMotivo` devolve `null` para ESTE motivo — o mesmo caminho que `SEM_CADASTRO` já usava.
+    //
+    // ⚠ O QUE O CASO PROTEGE CONTINUA INTEIRO, e continua acima destas duas linhas: `r.texto` é
+    // `null` (campo vazio — a regra 1 do projeto) e `r.motivo` é `SEM_DESCRICAO`, que é a
+    // DISTINÇÃO — "há atividade cadastrada, mas sem texto" ≠ "não há atividade" ≠ silêncio. Ela
+    // migrou de FRASE para DADO; não desapareceu. Relaxar para `toBeTruthy()` deixaria as três
     // respostas virarem uma só.
-    expect(textoDoMotivo(r.motivo)).toMatch(/só o código, sem o texto/i);
-    expect(textoDoMotivo(r.motivo)).not.toMatch(/não tem atividade cadastrada/i);
+    expect(textoDoMotivo(r.motivo)).toBeNull();
+    // ⚠ E os outros dois motivos continuam com texto: eles pedem AÇÃO de quem emite.
+    expect(textoDoMotivo(SEM_SUGESTAO.SEM_ATIVIDADE)).toMatch(/não tem atividade cadastrada/i);
+    expect(textoDoMotivo(SEM_SUGESTAO.VARIAS)).toMatch(/mais de uma atividade/i);
   });
 
   // ⚠ A PROCEDÊNCIA VAI PARA A TELA. Frase de documento fiscal sem origem é o que ninguém confere.

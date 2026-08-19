@@ -47,7 +47,12 @@ export function useCarregamento(fn, deps, { habilitado = true } = {}) {
   return { ...estado, recarregar };
 }
 
-const ROTAS = ["home", "notas", "emitir", "guias"];
+// ⚠ "emitir" SAIU DAQUI EM 19/08/2026 — pedido do dono: emitir deixou de ser aba e virou um botão
+// DENTRO de Notas. A remoção é INTEIRA (menu, destino de rota e estado), de propósito: uma rota que
+// ninguém mais alcança pelo menu, mas que o hash ainda aceita, é o "filtro fantasma" — alguém volta
+// nela por um link antigo e cai numa tela que o app já não sabe fechar. `#/emitir` hoje cai no
+// destino padrão, que é o comportamento de qualquer hash desconhecido.
+const ROTAS = ["home", "notas", "guias"];
 const ROTA_PADRAO = "home";
 
 function rotaDaUrl() {
