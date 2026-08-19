@@ -118,6 +118,10 @@ function criarEstado() {
         razaoSocial: "VERTICE SERVICOS DIGITAIS LTDA",
         inscricaoMunicipal: "884512",
         codigoServicoNacional: "010101",
+        // ⚠ UM CÓDIGO SÓ — **o ramo que de fato renderiza hoje**: 0 de 33 empresas em produção têm
+        // lista plural. A tela não pergunta nada; ela diz qual vai. Lista vazia (não `undefined`)
+        // é o estado real das 33.
+        codigosServicoNacional: [],
         codigoServicoMunicipal: "0101",
         rpsSerie: "1",
         rpsNumero: "37",
@@ -225,6 +229,13 @@ function criarEstado() {
         razaoSocial: "MERIDIANO ENGENHARIA E PROJETOS LTDA",
         inscricaoMunicipal: "551200",
         codigoServicoNacional: "070201",
+        // ⚠⚠ VÁRIOS CÓDIGOS — o ramo do SELETOR, inalcançável em produção hoje. Este projeto já foi
+        // mordido três vezes esta semana por ramo que só existia offline no papel: o "não é
+        // Simples", o `emitirNfse` que recusava todo Presumido, e a recusa do DANFSe sem QR Code.
+        // ⚠ O terceiro elemento está FORA DA FORMA de propósito (é o item da LC 116, não o
+        // cTribNac de 6 dígitos): a coluna não tem CHECK no banco, então isso acontece de verdade —
+        // e a tela tem de MOSTRÁ-LO como inválido, não sumir com ele.
+        codigosServicoNacional: ["070201", "140201", "31.01"],
         codigoServicoMunicipal: "0702",
         rpsSerie: "1",
         rpsNumero: "12",
@@ -276,6 +287,8 @@ function criarEstado() {
         razaoSocial: "BALUARTE SERVICOS DE ENGENHARIA LTDA",
         inscricaoMunicipal: "770145",
         codigoServicoNacional: "070201",
+        // Sem lista: a autoridade é o singular, como nas 33 de produção.
+        codigosServicoNacional: [],
         codigoServicoMunicipal: "0702",
         rpsSerie: "1",
         rpsNumero: "4",

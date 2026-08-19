@@ -121,6 +121,15 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       quantidadeSocios: true,
       inscricaoMunicipal: true,
       codigoServicoNacional: true,
+      // ⚠⚠ A LISTA PLURAL NÃO CHEGAVA AO CLIENTE, e a ausência dela era o que travava o seletor.
+      // Sem esta linha o campo volta `undefined` — o `select` é explícito — e a tela do cliente não
+      // tinha como oferecer escolha nenhuma, nem saber que havia o que escolher. É a MESMA
+      // armadilha que a carga tributária documenta três linhas abaixo.
+      //
+      // ⚠ SÓ LEITURA, como as vizinhas: quem cadastra códigos de serviço é o CONTADOR. A emissão
+      // do cliente ESCOLHE entre os cadastrados; ela não cadastra — e o servidor recusa
+      // (`NFSE_CODIGO_SERVICO_FORA_DA_LISTA`) o que não estiver aqui.
+      codigosServicoNacional: true,
       codigoServicoMunicipal: true,
       rpsSerie: true,
       rpsNumero: true,

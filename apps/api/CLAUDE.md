@@ -955,6 +955,53 @@ bundle inicial).
   **vazio nas 33 empresas** (o campo só ganhou porta em 14/08/2026), então o UPDATE toca zero linhas
   hoje — ele existe para o intervalo entre escrever a migration e aplicá-la.
 
+### ⚠⚠ O SELETOR DE CÓDIGO DE SERVIÇO NO PORTAL DO CLIENTE (19/08/2026)
+
+**O que travava, e não era a tela:** `legacyCompanySelect` (`routes/client/index.js`) trazia
+`codigoServicoNacional` (singular) e **não** `codigosServicoNacional` (a lista). Coluna fora de um
+`select` explícito volta `undefined`, **sem erro nenhum** — o app do cliente não tinha o que
+oferecer e não tinha como saber que havia o que escolher. Mesma armadilha da carga tributária e do
+`codigoMunicipioIbge`, terceira vez.
+
+⚠ **A AUTORIDADE CONTINUA SENDO `escolherCodigoServicoNacional`** (`application/nfse/codigoServicoDaNota.js`).
+A tela é **ESPELHO** — `features/emitir/lib/codigoServicoDaNota.js` no portal do cliente — e o
+espelho é **amarrado por teste**: `codigoServicoDaNota.test.js` importa a função do backend e roda
+os MESMOS sete cenários pelas duas implementações, exigindo o mesmo veredito. Sem isso "espelho" é
+intenção, não fato, e a divergência apareceria como *"a tela ofereceu e o servidor recusou"*.
+
+**Três ramos, e o do meio é o único que renderiza hoje** (0 de 33 empresas têm lista plural):
+
+| situação | a tela | o payload |
+|---|---|---|
+| `SEM_CODIGO` | diz que não recebeu código e manda falar com o contador | — |
+| **`UNICO`** | **não pergunta**: diz qual código vai, com a descrição oficial | ⚠ **não manda o campo** — o servidor usa o cadastro, o caminho de sempre |
+| `VARIOS` | seletor, **sem pré-seleção** | manda o escolhido |
+
+- ⚠⚠ **COM VÁRIOS E NENHUM ESCOLHIDO, NADA SAI DA TELA.** Sem essa trava o campo não é enviado, o
+  servidor cai no singular, e a empresa que habilitou três serviços emitiria sob o primeiro **em
+  silêncio** — o erro fiscal silencioso que a própria autoridade descreve como "pior que a ausência
+  do seletor". A tela **não elege**: recusa e diz o que falta (regra 3, "nunca o primeiro da lista").
+- ⚠ **ENCONTRA, NUNCA ESCOLHE — nem com resultado único.** `UNICO` não vira "escolhido"; vira "é
+  este, e a tela diz qual". A diferença está no payload, e é o que mantém intacta toda emissão
+  existente.
+- ⚠ **CÓDIGO GRAVADO FORA DA FORMA NÃO SOME** — aparece marcado, e não vira opção. Sumir faria o
+  cliente achar que a empresa tem MENOS códigos do que tem, e a coluna **não tem CHECK** no banco
+  (o Postgres proíbe subquery em CHECK), então isso acontece de verdade.
+- ⚠ **Nenhum `padStart`, dos dois lados:** 6 dígitos ou nada. Padding fabricaria código plausível a
+  partir de um dígito a menos — a classe do `cLocEmi="0000000"`.
+- **A lista dos 335 entra por `import()` dinâmico** e sai em chunk próprio (medido no build:
+  `servicosNacionais.data-*.js`, 59,61 kB, **fora** do bundle inicial).
+  ⚠ **O GERADOR PASSOU A ESCREVER NOS DOIS PORTAIS** (`scripts/gerar-lista-servico-nacional.mjs`):
+  uma atualização do Anexo B que chegasse a só um deles apareceria como "a tela ofereceu e o
+  servidor recusou", no portal que ninguém do escritório testa.
+- ⚠ **Trocar o código não reescreve descrição já editada** — o digitado vence, e o cruzamento é real
+  desde que a descrição passou a chegar da nota de origem no reaproveitamento.
+- **O mock exercita os DOIS ramos** (pc-001 sem lista; pc-002 com três, um deles fora da forma):
+  este projeto foi mordido três vezes na mesma semana por ramo inalcançável offline.
+- Testes: `contratoDeEmpresasDoCliente.test.js` (12 — varredura do `select`, com contraprova de que
+  o padrão casa) + front `lib/codigoServicoDaNota.test.js` (30, com o amarre) e
+  `codigoServicoNaTela.ligacao.test.jsx` (10, inclusive **o que chega ao payload**).
+
 ### ⚠ A SÉRIE DA DPS É AUTOMÁTICA — decisão do dono, 16/08/2026
 
 > *"sobre a série RPS, deve ser automática, devemos consultar a última nota emitida e extrair o RPS

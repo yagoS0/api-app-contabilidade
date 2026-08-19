@@ -52,6 +52,15 @@ import {
   mascararValorDigitado,
   textoDaRecusaDeColagem,
 } from "./lib/valorDaNota";
+import {
+  SITUACAO as SITUACAO_CODIGO,
+  carregarServicosNacionais,
+  codigoParaOPayload,
+  codigosOferecidos,
+  conferirCodigoEscolhido,
+  descricaoDoCodigo,
+  rotuloDoCodigo,
+} from "./lib/codigoServicoDaNota";
 import { SeletorMunicipio } from "./SeletorMunicipio";
 import { DesfechoEmissao } from "./DesfechoEmissao";
 import { PreviaNota } from "./PreviaNota";
@@ -231,7 +240,7 @@ function numeroDoCampo(valor) {
  * juntos por exigência do servidor, não por estética: `buildDpsXml` recusa
  * `issRetido: true` sem alíquota > 0 (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`). Ver o bloco Impostos.
  */
-function montarPayload(form, { issNoFormulario }) {
+function montarPayload(form, { issNoFormulario, codigoServicoEscolhido = null }) {
   const payload = {
     tomador: {
       cnpjCpf: apenasDigitos(form.tomadorDoc),
@@ -254,6 +263,18 @@ function montarPayload(form, { issNoFormulario }) {
       issRetido: issNoFormulario ? form.issRetido === true : false,
     },
   };
+
+  // ⚠⚠ O CÓDIGO ESCOLHIDO VAI NO PAYLOAD — e este é o OPOSTO do caso da carga tributária, onde a
+  // tela MOSTRA e não manda. Aqui a escolha é **da nota**: um seletor que parece funcionar e emite
+  // outro código é erro fiscal SILENCIOSO, pior que a ausência do seletor.
+  //
+  // ⚠ `null` significa NÃO MANDAR O CAMPO, e é o caminho de hoje: com um código só (0 de 33
+  // empresas têm lista plural) nada é enviado e o servidor usa `Company.codigoServicoNacional`,
+  // exatamente como sempre usou. Nenhuma emissão existente muda de comportamento.
+  //
+  // ⚠ E o CADASTRO continua sendo a autoridade: quem confere se o código está habilitado é
+  // `escolherCodigoServicoNacional`, no servidor, a cada emissão. Isto aqui não autoriza nada.
+  if (codigoServicoEscolhido) payload.servico.codigoServicoNacional = codigoServicoEscolhido;
 
   const email = form.tomadorEmail.trim();
   if (email) payload.tomador.email = email;
@@ -634,6 +655,45 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // A recusa da última colagem no campo de valor. ⚠ Ela existe porque a colagem ambígua NÃO é
   // convertida: o campo fica como estava, e sem esta frase o Ctrl+V "não faria nada".
   const [recusaColagemValor, setRecusaColagemValor] = useState(null);
+
+  // ── O CÓDIGO DE SERVIÇO DESTA NOTA ────────────────────────────────────────────────────────
+  //
+  // ⚠ A REGRA NÃO MORA AQUI: `lib/codigoServicoDaNota.js` é ESPELHO de
+  // `apps/api/src/application/nfse/codigoServicoDaNota.js`, que é a AUTORIDADE. O que ela aceita, a
+  // tela oferece; o que ela recusa, a tela não deixa escolher.
+  const cadastroDeCodigos = useMemo(
+    () => codigosOferecidos({
+      lista: legacy?.codigosServicoNacional,
+      singular: legacy?.codigoServicoNacional,
+    }),
+    [legacy]
+  );
+  const [codigoEscolhido, setCodigoEscolhido] = useState("");
+  const [servicosOficiais, setServicosOficiais] = useState(null);
+
+  // ⚠ TROCAR DE EMPRESA ZERA A ESCOLHA — o código é do cadastro DELA. Manter a escolha anterior
+  // emitiria sob um serviço que a nova empresa pode nem declarar.
+  useEffect(() => {
+    setCodigoEscolhido("");
+  }, [companyId]);
+
+  // ⚠ A LISTA DOS 335 ENTRA POR `import()` DINÂMICO, e só quando há o que descrever — ela fica fora
+  // do bundle inicial (~66 KB). Falha de carga NÃO vira lista vazia permanente nem impede emitir: o
+  // campo continua mostrando o NÚMERO, que é o que a nota precisa.
+  useEffect(() => {
+    if (!cadastroDeCodigos.oferecidos.length) return undefined;
+    let vivo = true;
+    carregarServicosNacionais()
+      .then((lista) => { if (vivo) setServicosOficiais(lista); })
+      .catch(() => { if (vivo) setServicosOficiais(null); });
+    return () => { vivo = false; };
+  }, [cadastroDeCodigos.oferecidos.length]);
+
+  const conferenciaCodigo = conferirCodigoEscolhido({
+    situacao: cadastroDeCodigos.situacao,
+    oferecidos: cadastroDeCodigos.oferecidos,
+    escolhido: codigoEscolhido,
+  });
   const sugestaoDoCadastro = useMemo(
     () => sugerirDescricaoDaNota({
       atividades: legacy?.atividades,
@@ -746,9 +806,30 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   async function emitir(evento) {
     evento.preventDefault();
     if (enviando) return;
+
+    // ⚠⚠ COM VÁRIOS CÓDIGOS E NENHUM ESCOLHIDO, NADA SAI DAQUI — e esta trava não é cosmética.
+    //
+    // Sem ela, `codigoParaOPayload` devolve `null`, o campo não é enviado, e o servidor cai no
+    // `Company.codigoServicoNacional` (o singular). Ou seja: a empresa que habilitou TRÊS serviços
+    // emitiria sob o primeiro deles **em silêncio**, sem ninguém ter escolhido — exatamente o erro
+    // fiscal silencioso que o backend descreve como "pior que a ausência do seletor".
+    //
+    // ⚠ A tela NÃO ELEGE por conta própria: ela recusa e diz o que falta. É a regra 3 da autoridade
+    // ("nunca o primeiro da lista"), do lado de cá.
+    if (!conferenciaCodigo.ok) {
+      document.getElementById("emitir-codigo-servico")?.focus();
+      return;
+    }
+
     setEnviando(true);
     try {
-      const payload = montarPayload(form, { issNoFormulario });
+      const payload = montarPayload(form, {
+        issNoFormulario,
+        codigoServicoEscolhido: codigoParaOPayload({
+          situacao: cadastroDeCodigos.situacao,
+          escolhido: codigoEscolhido,
+        }),
+      });
       const resposta = await api.emitirNfse(companyId, payload, { retryInvoiceId });
       const lido = lerResultado(resposta);
       setDesfecho(lido);
@@ -1330,15 +1411,63 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     nunca esteve na tela para ser confundida — a frase respondia a uma pergunta que
                     o formulário não levanta. A distinção `dCompet` × `dhEmi` continua escrita no
                     comentário de `montarPayload`, que é onde ela é do programador. */}
-                <p className="hint">
-                  {/* ⚠ A tela DIZ qual código vai, em vez de oferecer uma escolha que o cadastro
-                      recusaria. Ver `montarPayload`. */}
-                  Código de serviço desta nota:{" "}
-                  <strong>{codigoServicoNacional ? texto(codigoServicoNacional) : TRACO}</strong>{" "}
-                  {codigoServicoNacional
-                    ? "— para emitir com outro, fale com o seu contador."
-                    : "— não recebemos o código cadastrado desta empresa. Confira com o seu contador antes de emitir."}
-                </p>
+                {/* ═══ O CÓDIGO DE SERVIÇO DESTA NOTA ═══════════════════════════════════════
+                    ⚠ TRÊS RAMOS, e o do meio é o que RENDERIZA HOJE: 0 de 33 empresas em produção
+                    têm lista plural. A regra é `lib/codigoServicoDaNota.js`, espelho do backend. */}
+                {cadastroDeCodigos.situacao === SITUACAO_CODIGO.VARIOS ? (
+                  <>
+                    <label htmlFor="emitir-codigo-servico">
+                      Código de serviço desta nota
+                      <select
+                        id="emitir-codigo-servico"
+                        value={codigoEscolhido}
+                        onChange={(e) => setCodigoEscolhido(e.target.value)}
+                      >
+                        {/* ⚠⚠ SEM PRÉ-SELEÇÃO, NEM QUANDO SÓ HÁ DOIS. "O primeiro da lista" seria o
+                            sistema decidindo qual serviço a empresa declara ao fisco — a mesma
+                            proibição que o cadastro carrega. A tela ENCONTRA; ela não escolhe. */}
+                        <option value="">Escolha…</option>
+                        {cadastroDeCodigos.oferecidos.map((codigo) => (
+                          <option key={codigo} value={codigo}>
+                            {rotuloDoCodigo(codigo, descricaoDoCodigo(servicosOficiais, codigo))}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {conferenciaCodigo.ok ? null : (
+                      <span className="hint">{conferenciaCodigo.falta}</span>
+                    )}
+                  </>
+                ) : cadastroDeCodigos.situacao === SITUACAO_CODIGO.UNICO ? (
+                  <p className="hint">
+                    {/* ⚠ UM CÓDIGO SÓ NÃO VIRA PERGUNTA. A tela DIZ qual vai — perguntar entre uma
+                        opção é pedir confirmação de um fato. E ele NÃO é enviado no payload: sem o
+                        campo, o servidor usa o cadastro, que é o caminho de sempre. */}
+                    Código de serviço desta nota:{" "}
+                    <strong>{texto(cadastroDeCodigos.oferecidos[0])}</strong>
+                    {descricaoDoCodigo(servicosOficiais, cadastroDeCodigos.oferecidos[0])
+                      ? ` — ${descricaoDoCodigo(servicosOficiais, cadastroDeCodigos.oferecidos[0])}`
+                      : ""}
+                  </p>
+                ) : (
+                  <p className="hint">
+                    Não recebemos nenhum código de serviço cadastrado para esta empresa. Fale com o
+                    seu contador antes de emitir.
+                  </p>
+                )}
+
+                {/* ⚠⚠ CÓDIGO GRAVADO FORA DA FORMA NÃO SOME — ele aparece, marcado. Sumir faria o
+                    cliente achar que a empresa tem MENOS códigos do que tem, e a coluna não tem
+                    CHECK no banco (o Postgres proíbe subquery em CHECK), então isto acontece de
+                    verdade. ⚠ Ele não é oferecível: o servidor o recusaria. */}
+                {cadastroDeCodigos.invalidos.length ? (
+                  <span className="hint">
+                    O cadastro tem {cadastroDeCodigos.invalidos.length === 1 ? "um código" : "códigos"}{" "}
+                    fora da forma de 6 dígitos ({cadastroDeCodigos.invalidos.join(", ")}) — não dá
+                    para emitir com {cadastroDeCodigos.invalidos.length === 1 ? "ele" : "eles"}.
+                    Fale com o seu contador.
+                  </span>
+                ) : null}
               </fieldset>
 
               <fieldset>

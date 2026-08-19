@@ -2,7 +2,8 @@
 // GERADOR DA LISTA OFICIAL DE CÓDIGOS DE TRIBUTAÇÃO NACIONAL (cTribNac) — só leitura, zero rede.
 //
 // Lê o XLSX oficial versionado em `docs/lista-servico-nacional/` e regrava
-// `apps/web/src/lib/servicosNacionais/servicosNacionais.data.js`.
+// `apps/web/src/lib/servicosNacionais/servicosNacionais.data.js` e o gêmeo em
+// `apps/portal-cliente-web/src/lib/servicosNacionais/servicosNacionais.data.js`.
 //
 // ⚠ POR QUE UM GERADOR, se a lista de municípios do IBGE só tem instruções no cabeçalho.
 // Porque esta planilha tem UMA ARMADILHA MEDIDA: a coluna "CÓDIGO DE TRIBUTAÇÃO NACIONAL" é
@@ -33,10 +34,20 @@ const XLSX_PATH = resolve(
   RAIZ,
   "docs/lista-servico-nacional/anexo_b-nbs2-lista_servico_nacional-snnfse.xlsx",
 );
-const SAIDA = resolve(
+// ⚠ DOIS DESTINOS, E ELES SÃO O MESMO ARQUIVO. Os dois portais consomem a lista e não compartilham
+// código (mesmo arranjo de `municipiosIbge.data.js`, `consultaTomador.js` e `reaproveitarNota.js`).
+// Gerar nos dois AQUI é o que impede a divergência: uma atualização do Anexo B que só chegasse a um
+// deles apareceria como "a tela ofereceu e o servidor recusou" — no portal que ninguém testou.
+const SAIDAS = [
+  resolve(
   RAIZ,
   "apps/web/src/lib/servicosNacionais/servicosNacionais.data.js",
-);
+  ),
+  resolve(
+  RAIZ,
+  "apps/portal-cliente-web/src/lib/servicosNacionais/servicosNacionais.data.js",
+  ),
+];
 
 const ABA = "LISTA.SERV.NAC.";
 const URL_OFICIAL =
@@ -176,9 +187,9 @@ ${grupos.map(([c, d]) => `  [${js(c)},${js(d)}],`).join("\n")}
 ];
 `;
 
-writeFileSync(SAIDA, conteudo, "utf8");
+for (const saida of SAIDAS) writeFileSync(saida, conteudo, "utf8");
 
-console.log(`✓ ${SAIDA}`);
+for (const saida of SAIDAS) console.log(`✓ ${saida}`);
 console.log(`  ${servicos.length} códigos · ${grupos.length} grupos`);
 console.log(`  primeiro: ${servicos[0][0]} — ${servicos[0][1]}`);
 console.log(`  sha256 do XLSX: ${sha256}`);
