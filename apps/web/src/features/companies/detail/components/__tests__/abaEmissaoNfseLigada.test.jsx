@@ -11,7 +11,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { CompanySectionHeader } from "../renderCompanyDetailHeader";
 import { EmissaoNfseTab } from "../renderEmissaoNfseTab";
@@ -24,43 +24,44 @@ const EMPRESA = {
   legacyCompany: { regimeTributario: "SIMPLES" },
 };
 
-describe("peça 1 — a aba existe no menu da empresa (GROUPS)", () => {
-  it("aparece no grupo Fiscal, com a URL da rota dela", () => {
+describe("peça 1 — a ENTRADA é a engrenagem da aba Notas Fiscais, não uma aba no GROUPS", () => {
+  // ⚠⚠ ESTE BLOCO FOI INVERTIDO EM 19/08/2026, no mesmo dia em que a aba nasceu, e a inversão é o
+  // pedido do dono — não um relaxamento:
+  //
+  //   > *"a aba nova que criei no fiscal de emissão de NFS-e deve ser uma engrenagem de
+  //   > configuração na aba Notas Fiscais."*
+  //
+  // Ele dizia "aparece no grupo Fiscal, com a URL da rota dela". Hoje diz o contrário — a aba SAIU
+  // do menu — e o que ele guarda mudou de lado: **a entrada não pode voltar para o `GROUPS`**, ou
+  // haveria DUAS portas para a mesma tela. O que NÃO mudou (peças 2 e 3, abaixo): a rota, a URL e
+  // o bloco `if` continuam de pé, e é por isso que todo link já guardado continua abrindo.
+  it("a aba NÃO está mais no menu da empresa", () => {
     render(
       <CompanySectionHeader
         company={EMPRESA} activeTab="notasFiscais" onBack={jest.fn()}
         onTabChange={jest.fn()} canEditCompany
       />
     );
-    expect(screen.getByRole("link", { name: "Emissão de NFS-e" }))
-      .toHaveAttribute("href", "/companies/empresa-1/emissao-nfse");
+    expect(screen.queryByRole("link", { name: "Emissão de NFS-e" })).not.toBeInTheDocument();
+    // e as vizinhas continuam lá — a remoção foi cirúrgica, não uma poda do grupo
+    expect(screen.getByRole("link", { name: "Notas Fiscais" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Situação Fiscal" })).toBeInTheDocument();
   });
 
-  it("clicar nela navega para `emissaoNfse`", () => {
-    const onTabChange = jest.fn();
+  // ⚠ Com a tela aberta, o menu tem de continuar dizendo onde o contador está. Sem o par em
+  // `TAB_TO_GROUP`, o header cairia no primeiro grupo (Anotações) enquanto a configuração estivesse
+  // na tela — menu apontando para um lugar e tela mostrando outro, o defeito que a URL como fonte
+  // de verdade existe para matar.
+  it("com a tela de configuração aberta, o grupo Fiscal continua marcado", () => {
     render(
       <CompanySectionHeader
-        company={EMPRESA} activeTab="notasFiscais" onBack={jest.fn()}
-        onTabChange={onTabChange} canEditCompany
+        company={EMPRESA} activeTab="emissaoNfse" onBack={jest.fn()}
+        onTabChange={jest.fn()} canEditCompany
       />
     );
-    fireEvent.click(screen.getByRole("link", { name: "Emissão de NFS-e" }));
-    expect(onTabChange).toHaveBeenCalledWith("emissaoNfse");
-  });
-
-  // ⚠ Ela NÃO é `soApuraSimples`: os campos são sobre EMITIR nota de serviço, não sobre o regime.
-  // Escondê-la do Lucro Presumido tiraria a configuração de quem também emite NFS-e — e a carga
-  // tributária aproximada é justamente do NÃO optante.
-  it("aparece também no Lucro Presumido", () => {
-    render(
-      <CompanySectionHeader
-        company={{ ...EMPRESA, legacyCompany: { regimeTributario: "LUCRO_PRESUMIDO" } }}
-        activeTab="notasFiscais" onBack={jest.fn()} onTabChange={jest.fn()} canEditCompany
-      />
-    );
-    expect(screen.getByRole("link", { name: "Emissão de NFS-e" })).toBeInTheDocument();
-    // e a aba Apuração continua escondida — a prova de que o filtro por regime não foi afrouxado
-    expect(screen.queryByRole("link", { name: "Apuração" })).not.toBeInTheDocument();
+    const grupos = screen.getByRole("navigation", { name: "Grupos da empresa" });
+    expect(within(grupos).getByRole("link", { name: "Fiscal" })).toHaveAttribute("aria-current", "page");
+    expect(within(grupos).getByRole("link", { name: "Anotações" })).not.toHaveAttribute("aria-current");
   });
 });
 
@@ -114,6 +115,17 @@ describe("peça 3 — o bloco `if` da página, e o que ele passa para a aba", ()
   it("recebe o portão do cliente como bloco à parte, com o handler da rota dele", () => {
     expect(bloco).toContain("emissaoCliente={selectedCompany?.emissaoCliente}");
     expect(bloco).toContain("onSetEmissaoCliente");
+  });
+
+  // ⚠ A PEÇA QUE SUBSTITUIU A ENTRADA (19/08/2026): a página tem de LEVAR a engrenagem até a aba
+  // Notas Fiscais. Sem estas duas props, a aba saiu do menu e nada ficou no lugar — a tela existe,
+  // a rota existe, e não há como chegar nela clicando.
+  it("a aba Notas Fiscais recebe a URL e o handler da engrenagem", () => {
+    const notas = fonte.slice(fonte.indexOf("<NotasFiscaisTab"), fonte.indexOf("</Suspense>", fonte.indexOf("<NotasFiscaisTab")));
+    expect(notas).toContain("hrefConfiguracaoEmissao");
+    // ⚠ Da MESMA fonte que a navegação usa — nunca uma string montada à parte.
+    expect(notas).toContain('companyTabPath(companyId, "emissaoNfse")');
+    expect(notas).toContain('onAbrirConfiguracaoEmissao={() => switchTab("emissaoNfse")}');
   });
 });
 

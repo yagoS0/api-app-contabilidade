@@ -209,7 +209,12 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
             o servidor recusa a emissão inteira.
             <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
               {faltasDaEmissao.map((f) => (
-                <li key={f.campo}>{f.rotulo} — preencha em <strong>Editar</strong> → {f.onde.replace("Editar cadastro → ", "")}</li>
+                /* ⚠ O caminho vem PRONTO de `faltasParaEmitir` (`f.onde`), sem remendo local: havia
+                   aqui um `.replace("Editar cadastro → ", "")` que reescrevia o caminho — e, quando
+                   a configuração saiu do formulário para a engrenagem da aba Notas Fiscais
+                   (19/08/2026), ele passaria a colar "Editar →" na frente de um caminho que não
+                   começa mais assim. */
+                <li key={f.campo}>{f.rotulo} — preencha em <strong>{f.onde}</strong></li>
               ))}
             </ul>
           </div>

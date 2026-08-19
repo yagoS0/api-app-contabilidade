@@ -14,6 +14,8 @@ import { NotaDetailModal } from "./NotaDetailModal";
 import { createApiClient } from "../../../api/client";
 import { Tabs } from "../../../components/ui/Tabs";
 import { Button } from "../../../components/ui/Button";
+// A MESMA regra de clique das abas — ver `cliqueDeLink.js`. A engrenagem é um link de verdade.
+import { oNavegadorAssumeOClique } from "../../../components/ui/cliqueDeLink";
 import { modeloDeEmissaoDaNota } from "../lib/reaproveitarNota";
 
 // Cliente próprio, mesmo padrão auto-contido do SITFIS e do Apuração v2 — a aba já recebe tudo
@@ -28,6 +30,21 @@ export function NotasFiscaisTab({
   codigoMunicipioIbge = null,
   // O cadastro que `buildMissingFields` confere, vindo inteiro de `legacyCompany`.
   cadastroEmissao = null,
+  // ── A ENGRENAGEM DE CONFIGURAÇÃO (dono, 19/08/2026) ────────────────────────────────────────
+  //
+  // > *"a aba nova que criei no fiscal de emissão de NFS-e deve ser uma engrenagem de configuração
+  // > na aba Notas Fiscais."*
+  //
+  // ⚠ MUDOU A ENTRADA, NÃO O DESTINO. A tela de configuração continua sendo a MESMA, na MESMA URL
+  // (`/companies/:id/emissao-nfse`): o que saiu foi a aba irmã no grupo Fiscal. Transformá-la em
+  // modal perderia justamente o que o dono pediu na mensagem anterior — Ctrl+clique abrindo em
+  // nova guia —, além do link copiável e do voltar do navegador.
+  //
+  // ⚠ Por isso ela é um `<a href>` e não um `<button>`: mesma razão das abas, mesmas cinco coisas
+  // de graça (clique do meio, botão direito, Cmd no Mac, URL no hover, copiar endereço).
+  // Prop ausente = "esta tela não recebeu a URL" e a engrenagem não aparece — nada de link morto.
+  hrefConfiguracaoEmissao = null,
+  onAbrirConfiguracaoEmissao = null,
 }) {
   const {
     loading, error, reload,
@@ -132,6 +149,36 @@ export function NotasFiscaisTab({
               {importing ? "Importando…" : "⬆️ Importar XML"}
               <input type="file" accept=".xml,text/xml,application/xml" multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
             </label>
+            {hrefConfiguracaoEmissao && (
+              /* ⚠ ÍCONE SOZINHO NÃO SE EXPLICA, e o rótulo acessível é o canal certo (o dono está
+                 cortando texto de tela): `aria-label` diz o que é para quem usa leitor de tela e o
+                 `title` diz para quem passa o mouse. Sem os dois, isto é um desenho clicável.
+                 ⚠ CINZA, de propósito: verde é CONCLUÍDO neste app e âmbar é PENDÊNCIA.
+                 Configuração não é nem uma coisa nem outra — ela não pede ação hoje. */
+              <a
+                href={hrefConfiguracaoEmissao}
+                aria-label="Configurar a emissão de NFS-e desta empresa"
+                title="Configurar a emissão de NFS-e (códigos de serviço, série da DPS, carga tributária e liberação ao cliente)"
+                data-testid="engrenagem-emissao-nfse"
+                onClick={(event) => {
+                  // Ctrl/Cmd/Shift/Alt e botão do meio: o navegador assume e abre em outra guia.
+                  if (oNavegadorAssumeOClique(event)) return;
+                  event.preventDefault();
+                  onAbrirConfiguracaoEmissao?.();
+                }}
+                style={{
+                  marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "8px 11px", borderRadius: 6, border: "1px solid var(--border)",
+                  background: "transparent", color: "var(--text-faint)", textDecoration: "none",
+                  fontSize: "0.85rem", fontWeight: 600, lineHeight: 1,
+                }}
+              >
+                {/* ⚠ SÓ A ENGRENAGEM em tela — foi o que o dono pediu, e ele está cortando texto.
+                    O ícone é `aria-hidden`: quem lê tela recebe o `aria-label` do link, não o
+                    nome do caractere. Sem isso, o leitor anunciaria "engrenagem, link". */}
+                <span aria-hidden="true" style={{ fontSize: "1.05rem" }}>⚙</span>
+              </a>
+            )}
           </>
         ) : (
           <DfeCapturePanel dfeState={dfeState} dfeSyncing={dfeSyncing} onSync={syncDfe} onClearError={clearDfeError} />

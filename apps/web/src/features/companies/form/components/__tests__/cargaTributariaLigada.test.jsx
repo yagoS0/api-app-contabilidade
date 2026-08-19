@@ -161,7 +161,10 @@ describe("o formulário do cadastro em modo EDIÇÃO não edita mais estes campo
     montar({ ...getInitialCompanyFormState(), pTotTribFed: "11,33" });
     expect(screen.queryByLabelText("Federal (%)", { exact: false })).not.toBeInTheDocument();
     // ⚠ Aba que some sem rastro é o que faz recadastrar: a saída fica dita.
-    expect(screen.getByText(/ficam na aba/i)).toBeInTheDocument();
+    // ⚠ 19/08/2026: o ponteiro deixou de dizer "na aba Fiscal → Emissão de NFS-e" — a aba saiu do
+    // menu e a entrada virou a ENGRENAGEM da aba Notas Fiscais. A frase sai de
+    // `ONDE_CONFIGURA_EMISSAO`, para não voltar a apontar para uma tela que não existe.
+    expect(screen.getByText(/Notas Fiscais → ⚙ Configuração de emissão/)).toBeInTheDocument();
   });
 
   it("⚠ mas os valores CONTINUAM no `form` — senão o Salvar alterações os apagaria", () => {

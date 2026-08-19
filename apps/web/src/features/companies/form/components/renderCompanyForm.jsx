@@ -6,6 +6,9 @@ import { companyCreateFormSchema, companyUpdateFormSchema } from "../../../../li
 import { passwordChecklist } from "../../../../lib/schemas/passwordPolicy";
 import { SeletorMunicipioIbge } from "./SeletorMunicipioIbge";
 import { CamposEmissaoNfse } from "./CamposEmissaoNfse";
+// ⚠ O caminho da configuração sai de UMA fonte (`lib/nfse/cadastroEmissaoNfse.js`): ele mudou de
+// lugar duas vezes em dois dias, e um texto solto aqui apontaria para a tela anterior.
+import { ONDE_CONFIGURA_EMISSAO } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 // Q11.2: estilo padrão pra mensagens de erro inline (vermelho, abaixo do input)
 const ERROR_TEXT_STYLE = {
@@ -262,6 +265,12 @@ function RegimeHistoricoEditor({ historico, onChange }) {
   );
 }
 
+import {
+  AvisoAcessoNovoCriado,
+  AvisoEmailCompartilhado,
+  ConfirmacaoAcessoProprio,
+} from "./ResponsavelCompartilhado";
+
 export function CompanyForm({
   form,
   onChange,
@@ -283,6 +292,18 @@ export function CompanyForm({
   emissaoCliente = null,
   onSetEmissaoCliente = null,
   emissaoClienteSaving = false,
+  // ⚠⚠ O E-MAIL DO RESPONSÁVEL QUE ATENDE VÁRIAS EMPRESAS. As duas props abaixo são as DUAS
+  // horas em que a consequência precisa estar na tela — ao digitar e ao salvar. Ausentes (o caso
+  // do cadastro de empresa NOVA, e de qualquer chamador antigo), nada renderiza e o formulário se
+  // comporta exatamente como antes. Defeito que elas fecham: um login enxergando nove empresas
+  // (produção, 19/08/2026). Ver `lib/portal/responsavelCompartilhado.js`.
+  empresasDoResponsavel = null,      // { empresas, carregando } — a consulta ao digitar
+  confirmacaoAcessoProprio = null,   // os detalhes que o servidor devolveu no 409
+  onConfirmarAcessoProprio = null,
+  onCancelarAcessoProprio = null,
+  acessoProprioCriado = null,        // o aviso de "a conta nova nasce sem senha"
+  empresaAtualId = null,             // para o aviso não acusar a própria empresa editada
+  razaoSocialAtual = null,
   // Q11.1: zona de risco — botões só aparecem em modo edição (cnpjReadOnly=true)
   status,            // "ATIVA" | "SUSPENSA" (vem do servidor)
   onSuspend,         // (reason?) => Promise
@@ -355,6 +376,26 @@ export function CompanyForm({
           <span style={ERROR_TEXT_STYLE}>{errors.ownerEmail.message}</span>
         )}
       </label>
+      {/* ⚠ AVISA, NÃO PROÍBE — e fica COLADO no campo, não numa faixa no topo: o aviso é sobre o
+          que acabou de ser digitado, e longe do campo ele vira paisagem. */}
+      <div className="full">
+        <AvisoEmailCompartilhado
+          email={form.ownerEmail}
+          empresas={empresasDoResponsavel?.empresas}
+          carregando={empresasDoResponsavel?.carregando}
+          empresaAtualId={empresaAtualId}
+        />
+        {/* A confirmação nasce aqui, e não junto do botão Salvar, porque o ato é sobre ESTE campo:
+            é o e-mail acima que muda de dono, e é ele que o contador precisa reler ao confirmar. */}
+        <ConfirmacaoAcessoProprio
+          detalhes={confirmacaoAcessoProprio}
+          razaoSocial={razaoSocialAtual}
+          salvando={submitting}
+          onConfirmar={onConfirmarAcessoProprio}
+          onCancelar={onCancelarAcessoProprio}
+        />
+        <AvisoAcessoNovoCriado acessoNovo={acessoProprioCriado} />
+      </div>
       {showOwnerPassword ? (
         <label>
           Senha do responsavel
@@ -674,8 +715,8 @@ export function CompanyForm({
           <strong style={{ color: "#F8F8F2", fontSize: "0.9rem" }}>Emissão de NFS-e</strong>
           <div style={{ marginTop: 4 }}>
             Os códigos de serviço, a série da DPS, a carga tributária aproximada e a liberação de
-            emissão para o cliente ficam na aba <strong>Fiscal → Emissão de NFS-e</strong>, com o
-            salvar próprio dela.
+            emissão para o cliente ficam em <strong>{ONDE_CONFIGURA_EMISSAO}</strong> (a engrenagem
+            no topo da aba), com o salvar próprio dela.
           </div>
         </div>
       )}

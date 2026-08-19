@@ -225,10 +225,20 @@ export function lerPercentualCarga(entrada) {
   return { preenchido: true, valor: n, problema: null };
 }
 
-// ONDE SE PREENCHE. ⚠ É o MESMO lugar que a `correcao` do servidor nomeia na recusa
-// `MISSING_TOT_TRIB_NAO_SIMPLES` ("Editar cadastro → Emissão de NFS-e → Carga tributária
-// aproximada"). Duas grafias do mesmo caminho mandariam o contador procurar duas telas.
-export const ONDE_CARGA_TRIBUTARIA = "Editar cadastro → Emissão de NFS-e → Carga tributária aproximada";
+// ONDE SE PREENCHE — UMA constante, porque o caminho já mudou duas vezes em dois dias.
+//
+// ⚠ 19/08/2026: era "Editar cadastro → Emissão de NFS-e" (um bloco dentro do formulário). O bloco
+// virou tela própria e, no mesmo dia, o dono trocou a ENTRADA dela: *"deve ser uma engrenagem de
+// configuração na aba Notas Fiscais"*. Estas frases dizem ao contador ONDE resolver — apontar para
+// "Editar cadastro" hoje é mandá-lo a uma tela onde os campos não estão mais. Por isso todas as
+// ocorrências passaram a sair daqui: espalhadas, sobreviveriam à próxima mudança de lugar.
+export const ONDE_CONFIGURA_EMISSAO = "Notas Fiscais → ⚙ Configuração de emissão";
+// ⚠ A `correcao` que o SERVIDOR manda ainda diz "Editar cadastro → Emissão de NFS-e → Carga
+// tributária aproximada" (`apps/api`), e ela VENCE este texto quando chega. Está reportado: o
+// caminho do servidor precisa da mesma troca. Enquanto isso, o texto local diz a verdade da tela
+// de hoje — e o do servidor, quando chega, leva a um lugar que ainda existe (o cadastro), só que
+// sem os campos. Menos errado que duas telas inventadas.
+export const ONDE_CARGA_TRIBUTARIA = `${ONDE_CONFIGURA_EMISSAO} → Carga tributária aproximada`;
 
 /**
  * Quais dos três percentuais faltam.
@@ -286,7 +296,7 @@ export const CAMPOS_EXIGIDOS_PARA_EMITIR = [
   {
     campo: "codigoServicoNacional",
     rotulo: "Código nacional do serviço",
-    onde: "Editar cadastro → Emissão de NFS-e",
+    onde: ONDE_CONFIGURA_EMISSAO,
     motivo:
       "É o “cTribNac” da nota — o serviço que está sendo declarado. Sem ele o servidor recusa a "
       + "emissão inteira. Escolha na lista oficial (Anexo B do portal nacional da NFS-e); a empresa "
@@ -295,7 +305,7 @@ export const CAMPOS_EXIGIDOS_PARA_EMITIR = [
   {
     campo: "codigoServicoMunicipal",
     rotulo: "Código municipal do serviço",
-    onde: "Editar cadastro → Emissão de NFS-e",
+    onde: ONDE_CONFIGURA_EMISSAO,
     motivo:
       "É o “cTribMun” da nota — o mesmo serviço, na lista do seu município. Sem ele o servidor "
       + "recusa a emissão inteira, e o sistema não tem a lista do município para sugerir nada.",
@@ -303,7 +313,7 @@ export const CAMPOS_EXIGIDOS_PARA_EMITIR = [
   {
     campo: "rpsSerie",
     rotulo: "Série da DPS",
-    onde: "Editar cadastro → Emissão de NFS-e",
+    onde: ONDE_CONFIGURA_EMISSAO,
     motivo:
       "É o ponto de partida da numeração. A série é lida da última nota emitida, mas na PRIMEIRA "
       + "emissão não há nota de onde ler — e aí vale esta, na faixa "

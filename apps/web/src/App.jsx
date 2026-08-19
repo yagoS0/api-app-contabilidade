@@ -422,6 +422,14 @@ function App() {
           // social, CNAE e endereço — de uma aba que não os tem, ele seria recusado com 400.
           onSalvarEmissaoNfse: companiesWorkspace.handleUpdateEmissaoNfse,
           emissaoNfseSaving: companiesWorkspace.emissaoNfseSaving,
+          // ⚠ TROCAR O E-MAIL DO RESPONSÁVEL PODE CRIAR UM ACESSO NOVO. Os três viajam juntos: os
+          // detalhes que o servidor devolveu no 409, o confirmar e o cancelar. Sem eles o salvar
+          // ficaria mudo depois da recusa — pareceria que "não fez nada".
+          confirmacaoAcessoProprio: companiesWorkspace.confirmacaoAcessoProprio,
+          onConfirmarAcessoProprio: companiesWorkspace.confirmarAcessoProprio,
+          onCancelarAcessoProprio: companiesWorkspace.cancelarAcessoProprio,
+          // E o aviso de que a conta nova nasce SEM SENHA — sem ele o cliente descobre tentando entrar.
+          acessoProprioCriado: companiesWorkspace.acessoProprioCriado,
         }}
         accountingPanel={{
           entries: accountingWorkspace.accountingEntriesState.entries,

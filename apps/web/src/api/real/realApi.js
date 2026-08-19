@@ -400,11 +400,27 @@ export function createRealApi() {
         body: JSON.stringify(buildCompanyPayload(input)),
       });
     },
-    async updateCompany(companyId, input) {
+    // ⚠ `confirmarNovoAcesso` é o SEGUNDO envio do MESMO formulário, depois de o contador ter lido
+    // o aviso de que aquele e-mail responde por N empresas. Ele não é campo do formulário e não
+    // entra em `buildCompanyPayload`: é uma decisão daquele clique, e guardá-la no `form` faria a
+    // confirmação sobreviver ao próximo salvar, autorizando em silêncio um ato futuro.
+    async updateCompany(companyId, input, { confirmarNovoAcesso = false } = {}) {
       return request(`/firm/companies/${companyId}`, {
         method: "PATCH",
-        body: JSON.stringify(buildCompanyPayload(input)),
+        body: JSON.stringify({
+          ...buildCompanyPayload(input),
+          ...(confirmarNovoAcesso === true ? { confirmarNovoAcesso: true } : {}),
+        }),
       });
+    },
+    // Quais empresas este e-mail de responsável já atende. Só leitura — alimenta o AVISO ao digitar.
+    // ⚠ Nunca proíbe nada: quem recusa (e só no caso da conta compartilhada, com confirmação) é o
+    // PATCH, no servidor.
+    async empresasDoResponsavel(email) {
+      const alvo = String(email || "").trim().toLowerCase();
+      if (!alvo) return [];
+      const payload = await request(`/firm/responsavel/empresas?email=${encodeURIComponent(alvo)}`);
+      return Array.isArray(payload?.empresas) ? payload.empresas : [];
     },
     async getCompanyGuides(companyId) {
       const payload = await request(`/firm/companies/${companyId}/guides?page=1&limit=50`);

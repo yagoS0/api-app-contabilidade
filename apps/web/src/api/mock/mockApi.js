@@ -2982,11 +2982,65 @@ export function createMockApi() {
       mockGuidesByCompany.set(company.companyId, []);
       return { ok: true, companyId: company.companyId, portalId: company.companyId };
     },
-    async updateCompany(companyId, input) {
+    // Quais empresas este e-mail de responsável já atende — par do `empresasDoResponsavel` real.
+    // ⚠ O MOCK PRECISA TER O CASO COMPARTILHADO, senão o aviso e a confirmação são ramos
+    // inalcançáveis offline: este projeto já foi mordido três vezes na mesma semana por ramo que
+    // ninguém conseguia exercer sem banco.
+    async empresasDoResponsavel(email) {
+      await delay();
+      const alvo = String(email || "").trim().toLowerCase();
+      if (!alvo) return [];
+      return mockCompanies
+        .filter((c) => String(c.ownerEmail || "").trim().toLowerCase() === alvo)
+        .map((c) => ({ id: c.companyId, razao: c.razao, cnpj: c.cnpj }));
+    },
+    async updateCompany(companyId, input, { confirmarNovoAcesso = false } = {}) {
       await delay();
       const index = mockCompanies.findIndex((item) => item.companyId === companyId);
       if (index < 0) throw new Error("not_found");
       const body = input || {};
+
+      // ⚠ A RECUSA DA CONTA COMPARTILHADA, offline. O mock reproduz a REGRA do servidor (trocar o
+      // e-mail de um responsável cuja conta atende várias empresas exige confirmação), não o
+      // texto: quem escreve a frase da tela é `lib/portal/responsavelCompartilhado.js`.
+      const emailNovoMock = String(body.ownerEmail || "").trim().toLowerCase();
+      const atualMock = mockCompanies[index];
+      const emailAtualMock = String(atualMock.ownerEmail || "").trim().toLowerCase();
+      if (emailNovoMock && emailAtualMock && emailNovoMock !== emailAtualMock) {
+        const daConta = mockCompanies.filter(
+          (c) => String(c.ownerEmail || "").trim().toLowerCase() === emailAtualMock
+        );
+        // ⚠ Colisão com OUTRO responsável continua recusada, inclusive com confirmação — a
+        // confirmação autoriza CRIAR conta, nunca ASSUMIR a de outro.
+        const deOutro = mockCompanies.some(
+          (c) =>
+            c.companyId !== companyId
+            && String(c.ownerEmail || "").trim().toLowerCase() === emailNovoMock
+        );
+        if (deOutro) {
+          const err = new Error("owner_email_already_in_use");
+          err.code = "owner_email_already_in_use";
+          err.status = 409;
+          throw err;
+        }
+        if (daConta.length > 1 && confirmarNovoAcesso !== true) {
+          const outrasMock = daConta.filter((c) => c.companyId !== companyId);
+          const err = new Error("owner_email_conta_compartilhada");
+          err.code = "owner_email_conta_compartilhada";
+          err.status = 409;
+          err.payload = {
+            error: "owner_email_conta_compartilhada",
+            emailAtual: emailAtualMock,
+            nomeAtual: atualMock.ownerName || null,
+            emailNovo: emailNovoMock,
+            empresasDaConta: daConta.length,
+            outrasEmpresas: outrasMock.length,
+            outras: outrasMock.map((c) => ({ id: c.companyId, razao: c.razao, cnpj: c.cnpj })),
+            contaNovaSemSenha: true,
+          };
+          throw err;
+        }
+      }
       // ⚠ ACEITA AS DUAS FORMAS, como a rota real (`companyInput = body.company ?? body`).
       // Faltava o segundo caso, e ele é justamente o que chega aqui: `updateCompany` é chamada com
       // o FORMULÁRIO CRU (`editCompanyForm.form`, achatado) — quem aninha em `{ company: … }` é o
@@ -3077,7 +3131,21 @@ export function createMockApi() {
         dasOk: next.guideCompliance?.das?.ok ?? true,
       });
       mockCompanies[index] = next;
-      return { ok: true, company: next };
+      // ⚠ Só quando o acesso PRÓPRIO foi mesmo criado. As outras empresas do e-mail antigo não são
+      // tocadas aqui — que é literalmente a garantia do conserto, e offline ela se vê olhando
+      // `mockCompanies` depois do salvar.
+      const criouAcessoProprio =
+        confirmarNovoAcesso === true
+        && emailNovoMock
+        && emailAtualMock
+        && emailNovoMock !== emailAtualMock;
+      return {
+        ok: true,
+        company: next,
+        ...(criouAcessoProprio
+          ? { acessoNovo: { userId: `mock-user-${companyId}`, email: emailNovoMock, semSenha: true } }
+          : {}),
+      };
     },
     async getCompanyGuides(companyId) {
       await delay();

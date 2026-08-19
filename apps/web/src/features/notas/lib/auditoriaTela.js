@@ -1,3 +1,5 @@
+import { ONDE_CONFIGURA_EMISSAO } from "../../../lib/nfse/cadastroEmissaoNfse";
+
 // A LEITURA DE TELA DA AUDITORIA — como cada resposta do backend vira frase, cor e ordem.
 //
 // ⚠ A REGRA NÃO MORA AQUI. Quem decide o que é achado é `application/notas/auditoria/auditoriaNotas.js`
@@ -26,7 +28,7 @@
 export const FRASE_NAO_CONFERIVEL = Object.freeze({
   // ⚠ Não é "todas as notas estão erradas". É "falta o critério".
   EMPRESA_SEM_CODIGOS_CADASTRADOS:
-    "Não dá para conferir: a empresa não tem código de serviço cadastrado. Cadastre os códigos na ficha da empresa (bloco Emissão de NFS-e).",
+    `Não dá para conferir: a empresa não tem código de serviço cadastrado. Cadastre os códigos em ${ONDE_CONFIGURA_EMISSAO}.`,
   SEM_NOTAS: "Não há nota emitida nesta competência para conferir.",
   NENHUMA_NOTA_AVALIAVEL: "Nenhuma nota desta competência tem o campo que esta pergunta lê.",
 });

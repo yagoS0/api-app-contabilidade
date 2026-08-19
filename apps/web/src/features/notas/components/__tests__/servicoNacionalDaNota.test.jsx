@@ -11,6 +11,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { ServicoNacionalDaNota } from "../ServicoNacionalDaNota";
+import { ONDE_CONFIGURA_EMISSAO } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 describe("o código de serviço da nota", () => {
   it("⚠ com UM cadastrado NÃO faz escolher — mas MOSTRA qual é, com a descrição oficial", async () => {
@@ -42,7 +43,11 @@ describe("o código de serviço da nota", () => {
     expect(screen.getByText("01.01.01")).toBeInTheDocument();
     expect(screen.getByText("Esta nota vai com este.")).toBeInTheDocument();
     // ⚠ Opção que não existe nunca fica sem explicação — e a explicação é também o caminho.
-    expect(screen.getByText(/Editar cadastro → Emissão de NFS-e/)).toBeInTheDocument();
+    // ⚠ O CAMINHO MUDOU EM 19/08/2026 (dono): a configuração saiu do formulário e a entrada
+    // virou a ENGRENAGEM da aba Notas Fiscais. O texto sai de `ONDE_CONFIGURA_EMISSAO`
+    // (`lib/nfse/cadastroEmissaoNfse.js`) — apontar para "Editar cadastro" mandaria o
+    // contador a uma tela onde estes campos não estão mais.
+    expect(screen.getByText(ONDE_CONFIGURA_EMISSAO)).toBeInTheDocument();
     // ⚠ A descrição vem da LISTA OFICIAL, não do que alguém supõe que o código seja: `171201` é
     // "Administração em geral, inclusive de bens e negócios de terceiros" — e é justamente por
     // isso que o texto tem de aparecer. Quem lê "171201" não sabe o que está declarando.

@@ -253,9 +253,31 @@ O bloco tinha **264 linhas dentro de um formulário de 750**. Hoje é a aba **Fi
 NFS-e** (`detail/components/renderEmissaoNfseTab.jsx`), com os MESMOS campos e as MESMAS regras —
 o que mudou é onde moram e **quem os salva**.
 
-- **As três peças estão lá** (`abaEmissaoNfseLigada.test.jsx` prova uma a uma): `GROUPS` no grupo
-  **Fiscal** (não em Empresa: é o que a emissão consome, e trabalha-se ao lado de Notas Fiscais),
-  o par `emissao-nfse` ⇄ `emissaoNfse` e o bloco `if` da página.
+- ⚠⚠ **A ENTRADA MUDOU NO MESMO DIA, e a tela NÃO** (dono, 19/08/2026): *"a aba nova que criei no
+  fiscal de emissão de NFS-e deve ser uma **engrenagem de configuração na aba Notas Fiscais**"*.
+  A aba **saiu do `GROUPS` por inteiro**; a **rota, a URL e o bloco `if` ficaram** — sem eles
+  `/companies/:id/emissao-nfse` cairia em Anotações em silêncio e todo link guardado morreria.
+  Hoje se chega pela **engrenagem no topo da aba Notas Fiscais**
+  (`features/notas/components/renderNotasFiscaisTab.jsx`), que é onde o contador está quando pensa
+  em configurar emissão. ⚠ **Devolver a entrada para o `GROUPS` é criar duas portas para a mesma
+  tela** — o teste `abaEmissaoNfseLigada.test.jsx` (peça 1) trava isso, invertido com a data.
+  - ⚠ **Ela NÃO virou modal, e a razão é do próprio dono:** ele acabara de pedir Ctrl+clique
+    abrindo em nova guia. Modal não tem URL, não tem link copiável e não tem voltar do navegador.
+    A engrenagem é um **`<a href>`** — mesma regra de clique das abas, agora numa fonte só
+    (`components/ui/cliqueDeLink.js`, usada pelo `Tabs` e por ela).
+  - **Ícone sozinho não se explica:** `aria-label` ("Configurar a emissão de NFS-e desta empresa") e
+    `title` com o que há lá dentro. **Cinza** — verde é concluído, âmbar é pendência, e configuração
+    não pede ação hoje. Só na janela de **NFS-e**: na de NF-e não há emissão a configurar.
+  - `TAB_TO_GROUP` ganhou `emissaoNfse: "fiscal"` — com a tela aberta o menu continua marcando
+    **Fiscal**, como `edit` marca Empresa. Sem isso ele cairia em Anotações.
+- **As peças que ficaram** (`abaEmissaoNfseLigada.test.jsx` prova uma a uma): o par
+  `emissao-nfse` ⇄ `emissaoNfse` e o bloco `if` da página.
+- ⚠ **O "onde se resolve" tem UMA fonte** (`ONDE_CONFIGURA_EMISSAO`, em
+  `lib/nfse/cadastroEmissaoNfse.js`): o caminho mudou **duas vezes em dois dias** (bloco do
+  formulário → aba própria → engrenagem), e as frases espalhadas pelo assistente, pela ficha, pela
+  auditoria e pela recusa mandavam o contador a uma tela onde os campos não estão mais.
+  ⚠ **A `correcao` do SERVIDOR ainda diz "Editar cadastro → Emissão de NFS-e"** e ela **vence** o
+  texto local quando chega — está reportado, é uma linha no `apps/api`.
 - ⚠ **NÃO É O "Salvar alterações".** Medido: `PATCH /firm/companies/:id` é um salvar da empresa
   INTEIRA — `validateAndNormalizeCompanyProfile` exige CNPJ, razão social, CNAE e endereço (payload
   parcial volta **400**, e isso é o certo, fica como está) e o `update` escreve ~30 colunas de uma
@@ -805,7 +827,10 @@ Com `<a href>` o navegador faz todas de graça. O clique normal continua SPA (`p
 - ARIA: continua `<nav>` + `aria-current="page"` (não é `role="tab"`, então não há conflito de
   padrão). ⚠ Diferença herdada do elemento: **Espaço não ativa link** (Enter ativa) — é a semântica
   de link, e nada de teclado se perdeu além disso.
-- Só o header da empresa ganhou `href`. As demais barras `nav` (`PageShell`, sub-abas de
+- A regra "quem assume o clique" vive em **`components/ui/cliqueDeLink.js`** e é usada pelo `Tabs`
+  **e** pela engrenagem de configuração da aba Notas Fiscais — duas cópias divergiriam, e a
+  divergência apareceria como "Ctrl+clique funciona na aba e não na engrenagem".
+- Só o header da empresa e a engrenagem ganharam `href`. As demais barras `nav` (`PageShell`, sub-abas de
   Relatórios/Apuração/Consultas) continuam botões: seus itens **não carregam rota**, e inventar uma
   URL para eles é exatamente o que a regra proíbe.
 

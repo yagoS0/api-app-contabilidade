@@ -135,7 +135,11 @@ describe("o que falta para a empresa emitir", () => {
       expect(f.rotulo).toBeTruthy();
       expect(f.motivo).toBeTruthy();
       // "Configuração incompleta" mandaria o contador procurar. O lugar viaja junto do campo.
-      expect(f.onde).toMatch(/Editar cadastro/);
+      // ⚠ 19/08/2026: o caminho dos campos de EMISSÃO deixou de ser "Editar cadastro" — a
+      // configuração virou tela própria, aberta pela ENGRENAGEM da aba Notas Fiscais (pedido do
+      // dono). A inscrição municipal e o CNPJ continuam no cadastro. O que este teste trava é que
+      // TODO campo diz um lugar de verdade, não que o lugar seja um só.
+      expect(f.onde).toMatch(/Editar cadastro|Notas Fiscais → ⚙ Configuração de emissão/);
       expect(f.motivoCurto).toContain(f.onde);
     }
   });

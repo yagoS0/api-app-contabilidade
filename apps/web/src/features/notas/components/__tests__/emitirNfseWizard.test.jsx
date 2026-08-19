@@ -14,6 +14,7 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { EmitirNfseWizard } from "../EmitirNfseWizard";
+import { ONDE_CONFIGURA_EMISSAO, ONDE_CARGA_TRIBUTARIA } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 // ⚠ O ASSISTENTE TEM DOIS PASSOS, NÃO QUATRO — tomador, serviço e valores são blocos da MESMA
 // tela, com o espelho ao vivo ao lado. Estes testes deixaram de contar cliques em "Continuar"
@@ -323,7 +324,11 @@ describe("empresa sem a configuração de emissão não chega ao botão Emitir",
     expect(bloco).toHaveTextContent("Código nacional do serviço");
     expect(bloco).toHaveTextContent("Código municipal do serviço");
     expect(bloco).toHaveTextContent("Série da DPS");
-    expect(bloco).toHaveTextContent("Editar cadastro → Emissão de NFS-e");
+    // ⚠ O CAMINHO MUDOU EM 19/08/2026 (dono): a configuração saiu do formulário e a entrada
+    // virou a ENGRENAGEM da aba Notas Fiscais. O texto sai de `ONDE_CONFIGURA_EMISSAO`
+    // (`lib/nfse/cadastroEmissaoNfse.js`) — apontar para "Editar cadastro" mandaria o
+    // contador a uma tela onde estes campos não estão mais.
+    expect(bloco).toHaveTextContent(ONDE_CONFIGURA_EMISSAO);
     // E não acusa o que ESTÁ preenchido.
     expect(bloco).not.toHaveTextContent("Inscrição municipal");
 
@@ -385,7 +390,11 @@ describe("empresa não optante sem a carga tributária não chega ao botão Emit
     // Os três nomes, como a recusa do servidor os devolve — "falta a carga tributária" mandaria o
     // contador conferir os três.
     expect(bloco).toHaveTextContent("federal, estadual e municipal (iss)");
-    expect(bloco).toHaveTextContent("Editar cadastro → Emissão de NFS-e → Carga tributária aproximada");
+    // ⚠ O CAMINHO MUDOU EM 19/08/2026 (dono): a configuração saiu do formulário e a entrada
+    // virou a ENGRENAGEM da aba Notas Fiscais. O texto sai de `ONDE_CONFIGURA_EMISSAO`
+    // (`lib/nfse/cadastroEmissaoNfse.js`) — apontar para "Editar cadastro" mandaria o
+    // contador a uma tela onde estes campos não estão mais.
+    expect(bloco).toHaveTextContent(ONDE_CARGA_TRIBUTARIA);
     // E o motivo do servidor, não um texto inventado pela tela: os três são exigidos JUNTOS.
     expect(bloco).toHaveTextContent("12.741");
 

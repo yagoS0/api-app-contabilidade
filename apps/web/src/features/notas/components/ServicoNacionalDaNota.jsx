@@ -36,6 +36,8 @@ import {
   lerCodigosServicoNacional,
   servicoPorCodigo,
 } from "../../../lib/servicosNacionais/servicoNacional";
+// O caminho da configuração vem de uma fonte só — ele já mudou de lugar duas vezes.
+import { ONDE_CONFIGURA_EMISSAO } from "../../../lib/nfse/cadastroEmissaoNfse";
 
 export function ServicoNacionalDaNota({ cadastroEmissao }) {
   const [dados, setDados] = useState(null);
@@ -122,7 +124,7 @@ export function ServicoNacionalDaNota({ cadastroEmissao }) {
            caminho para conseguir o que se queria fazer. */
         <div style={{ fontSize: "0.75rem", color: PANEL.muted }}>
           A escolha do código por emissão ainda não está ligada: a nota sai com o código marcado.
-          Para emitir com outro, marque-o em <strong>Editar cadastro → Emissão de NFS-e</strong> e
+          Para emitir com outro, marque-o em <strong>{ONDE_CONFIGURA_EMISSAO}</strong> e
           salve.
         </div>
       )}

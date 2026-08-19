@@ -49,6 +49,8 @@
  * ⚠ Aba DESABILITADA também continua `<button>`: `<a>` não tem `disabled`, e um link cinza
  * continuaria navegando no Ctrl+clique — exatamente o que o `disabled` existe para impedir.
  */
+import { oNavegadorAssumeOClique } from "./cliqueDeLink";
+
 export function Tabs({
   items = [],
   active,
@@ -91,12 +93,10 @@ export function Tabs({
               href={href}
               className={classe}
               onClick={(event) => {
-                // ⚠ SEM `preventDefault` AQUI: Ctrl/Cmd (nova guia), Shift (nova janela), Alt
-                // (baixar) e qualquer botão que não seja o esquerdo são do NAVEGADOR. Interceptar
-                // é o que o `<a href>` existe para não precisar fazer.
-                if (event.defaultPrevented) return;
-                if (event.button !== 0) return;
-                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                // ⚠ A REGRA MORA EM `cliqueDeLink.js` e é COMPARTILHADA com a engrenagem de
+                // configuração da aba Notas Fiscais: duas cópias divergiriam, e a divergência
+                // apareceria como "Ctrl+clique funciona aqui e não ali".
+                if (oNavegadorAssumeOClique(event)) return;
                 // Clique normal: a navegação continua sendo a do app (SPA), sem recarregar a
                 // página. ⚠ O `preventDefault` vale TAMBÉM para a aba ativa — sem ele, clicar na
                 // aba já aberta seguiria o link e recarregaria a tela inteira, que é pior que o

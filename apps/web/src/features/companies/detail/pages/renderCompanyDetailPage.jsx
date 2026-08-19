@@ -2,6 +2,8 @@ import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { CompanySectionHeader } from "../components/renderCompanyDetailHeader";
+// A URL das abas da empresa — a MESMA fonte que a navegação por clique usa. Ver `rotasDaEmpresa`.
+import { companyTabPath } from "../lib/rotasDaEmpresa";
 import { CompanyFichaTab } from "../components/renderCompanyFichaTab";
 import { PageHeader } from "../../../../components/layout/PageHeader";
 import { Feedback } from "../../../../components/ui/Feedback";
@@ -277,6 +279,8 @@ function SitfisTabWrapper({ companyId }) {
   return <SitfisTab sitfisPanel={panel} />;
 }
 
+import { useEmpresasDoResponsavel } from "../../form/hooks/useEmpresasDoResponsavel";
+
 export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingPanel, circularPanel, notasPanel, certPanel, feedback, dangerActions }) {
   const { selectedCompany, canEditCompany, companyDetailTab, setCompanyDetailTab, onBack } = company;
   const companyId = selectedCompany?.companyId;
@@ -292,6 +296,14 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     || null;
   // Q11.1: state do modal de exclusão (zona de risco)
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  // ⚠ QUAIS EMPRESAS O E-MAIL DIGITADO JÁ ATENDE — só leitura, e só para AVISAR embaixo do campo.
+  // ⚠ Reusa `companyDocsApi` (a mesma instância do cofre e do acesso ao portal); um cliente novo
+  // por tela é o começo de dois contratos para a mesma rota.
+  // ⚠ O hook roda com o formulário de edição carregado ou não: sem e-mail válido ele nem consulta.
+  const empresasDoResponsavel = useEmpresasDoResponsavel({
+    api: companyDocsApi,
+    email: editPanel?.form?.ownerEmail,
+  });
   // R4 — "＋ Criar novo…" no modal de anexo de guia: leva à aba Parcelamentos E abre o wizard.
   // Sem esta intenção, o clique só trocava de aba e o contador tinha de achar o botão de novo —
   // que é onde a intenção se perde. A criação continua tendo UMA porta só (o wizard).
@@ -647,6 +659,16 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                 onSuspend={dangerActions?.onSuspend}
                 onResume={dangerActions?.onResume}
                 onDelete={dangerActions?.onDelete ? () => setShowDeleteModal(true) : null}
+                /* ⚠ O E-MAIL DO RESPONSÁVEL QUE ATENDE VÁRIAS EMPRESAS — as duas horas em que a
+                   consequência precisa aparecer: ao DIGITAR (a consulta abaixo) e ao SALVAR (o que
+                   o servidor devolveu no 409, vindo pelo `editPanel`). */
+                empresasDoResponsavel={empresasDoResponsavel}
+                empresaAtualId={companyId}
+                razaoSocialAtual={selectedCompany?.razao}
+                confirmacaoAcessoProprio={editPanel?.confirmacaoAcessoProprio}
+                onConfirmarAcessoProprio={editPanel?.onConfirmarAcessoProprio}
+                onCancelarAcessoProprio={editPanel?.onCancelarAcessoProprio}
+                acessoProprioCriado={editPanel?.acessoProprioCriado}
               />
               </Suspense>
             )}
@@ -747,6 +769,14 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                   atividades: selectedCompany?.legacyCompany?.atividades || [],
                   cnaePrincipal: selectedCompany?.legacyCompany?.cnaePrincipal || null,
                 }}
+                /* ⚠ A ENGRENAGEM DE CONFIGURAÇÃO (dono, 19/08/2026) — a ENTRADA da tela de emissão
+                   passou a ser daqui, e a aba irmã no grupo Fiscal saiu. O destino é o MESMO e a
+                   URL é a MESMA: `companyTabPath` é a função que a navegação por clique já usa, e
+                   o `href` sai dela — duas construções da mesma URL divergem na primeira correção.
+                   Clique normal navega por dentro do app (`switchTab`); Ctrl/Cmd/meio abrem em
+                   nova guia, de graça, porque é um `<a href>` de verdade. */
+                hrefConfiguracaoEmissao={companyId ? companyTabPath(companyId, "emissaoNfse") : null}
+                onAbrirConfiguracaoEmissao={() => switchTab("emissaoNfse")}
               />
             </Suspense>
           </ErrorBoundary>

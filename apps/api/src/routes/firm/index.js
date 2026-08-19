@@ -37,6 +37,12 @@ import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
 import { createWhatsappGuiasRouter } from "./whatsappGuias.js";
 import { empresasVisiveis } from "./empresasVisiveis.js";
+import {
+  DECISAO,
+  decidirTrocaDeEmail,
+  hashDeSenhaInutilizavel,
+  STATUS_DA_CONTA_NOVA,
+} from "../../application/companies/acessoDoResponsavel.js";
 import { comContextoSerpro, podeForcarSerpro } from "../../application/fiscal/serpro/serproCallContext.js";
 import { consumoDoMes } from "../../application/fiscal/serpro/SerproCallGuard.js";
 // Mesma definição de faturamento da apuração — a recusa de "marcar guia vazia" precisa concordar
@@ -1068,6 +1074,50 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     });
   });
 
+  // QUAIS EMPRESAS ESTE E-MAIL DE RESPONSÁVEL JÁ ATENDE — leitura, para a tela AVISAR na hora.
+  //
+  // ⚠ AVISA, NÃO PROÍBE. Grupo de empresas com o mesmo dono é legítimo e existe na base (medido:
+  // um e-mail com 3 construtoras, outro com 2, os dois aparentemente reais). O que não pode é a
+  // consequência ser invisível — **um login, todas as empresas daquele e-mail** —, e foi ela que
+  // produziu o defeito de 19/08/2026. Esta rota é o que permite dizer isso ANTES de salvar.
+  //
+  // ⚠ NENHUMA AUTORIDADE NOVA. O gate é o MESMO do `PATCH /companies/:companyId` (`admin` ou
+  // `contador`), e medido: `GET /firm/companies` já devolve a carteira INTEIRA para esses dois
+  // papéis (`isAdminLike`). Ou seja, nada aqui é visível a quem não podia ver — e afrouxar o gate
+  // transformaria isto num enumerador de e-mails de clientes.
+  //
+  // ⚠ Caminho literal FORA de `/companies/*`, de propósito: `/companies/por-responsavel` seria
+  // lido como `/companies/:companyId` se registrado depois — armadilha que este projeto já pagou
+  // com `/notas/summary` e `/companies/annual`.
+  router.get("/responsavel/empresas", async (req, res) => {
+    const appRole = String(req.auth?.user?.role || "").toLowerCase();
+    if (!["admin", "contador"].includes(appRole)) {
+      return res.status(403).json({ error: "forbidden_admin_or_contador_only" });
+    }
+    const email = String(req.query?.email || "").trim().toLowerCase();
+    // ⚠ Sem e-mail a resposta é LISTA VAZIA, nunca 400: a tela consulta enquanto o contador digita,
+    // e um erro vermelho a cada campo apagado seria ruído em cima de trabalho normal.
+    if (!email) return res.json({ ok: true, email: "", empresas: [] });
+    try {
+      const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+      if (!user?.id) return res.json({ ok: true, email, empresas: [] });
+      const vinculos = await prisma.companyClientUser.findMany({
+        where: { userId: user.id, role: "OWNER", status: "ACTIVE" },
+        select: { companyId: true },
+      });
+      if (!vinculos.length) return res.json({ ok: true, email, empresas: [] });
+      const empresas = await prisma.portalClient.findMany({
+        where: { id: { in: vinculos.map((v) => v.companyId) } },
+        select: { id: true, razao: true, cnpj: true },
+        orderBy: { razao: "asc" },
+      });
+      return res.json({ ok: true, email, empresas });
+    } catch (err) {
+      log.error({ err }, "Falha ao listar empresas do responsável");
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
   router.patch(
     "/companies/:companyId",
     requireFirmCompanyAccess(),
@@ -1095,6 +1145,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       const ownerNameInput = Object.prototype.hasOwnProperty.call(body, "ownerName")
         ? String(body.ownerName || "").trim()
         : null;
+      // ⚠ `=== true` EXATO, como o `confirmado` da senha do portal. Trocar o e-mail de um
+      // responsável cuja conta atende VÁRIAS empresas cria um acesso novo — ato de consequência,
+      // e a tela tem de tê-lo mostrado antes. Um truthy solto (`"false"`, `1`, `{}`) transformaria
+      // qualquer chamador desatento em confirmação.
+      const confirmarNovoAcessoInput = body.confirmarNovoAcesso === true;
       const inscricaoMunicipalInput = String(companyInput.inscricaoMunicipal || "").trim() || null;
       // CNPJ é IMUTÁVEL após criação — vinculado ao certificado A1, SERPRO, NFS-e, validação de PDFs.
       // Para "trocar" CNPJ, contador deve excluir a empresa e criar uma nova.
@@ -1118,6 +1173,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
       }
 
       try {
+        // ⚠ Declarado FORA da transação de propósito: o `$transaction` devolve o payload da
+        // empresa (que já tem forma de contrato e passa por `attachGuideCompliance...`), e
+        // pendurar um segundo valor no retorno mudaria essa forma para todos os consumidores.
+        // Uma transação que aborta LANÇA — então não há caminho em que este valor sobreviva a um
+        // rollback e vá parar na resposta.
+        let acessoNovo = null;
         const result = await prisma.$transaction(async (tx) => {
           const portal = await tx.portalClient.findUnique({
             where: { id: portalCompanyId },
@@ -1293,6 +1354,11 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
           }
           // Atualiza o responsável (owner): e-mail E/OU nome. Antes só o e-mail era gravado —
           // por isso o "Nome do responsável" não salvava.
+          //
+          // ⚠⚠ E ANTES, TROCAR O E-MAIL RENOMEAVA A CONTA — inclusive quando ela era de VÁRIAS
+          // empresas, arrastando todos os vínculos para o login novo. Defeito de produção
+          // (19/08/2026): um login enxergando NOVE empresas. A regra que decide está em
+          // `application/companies/acessoDoResponsavel.js`; aqui fica só a orquestração.
           if (ownerEmailInput || ownerNameInput) {
             const ownerLink = await tx.companyClientUser.findFirst({
               where: {
@@ -1301,11 +1367,21 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                 status: "ACTIVE",
               },
               orderBy: { createdAt: "asc" },
-              select: { userId: true },
+              select: { id: true, userId: true },
             });
             if (ownerLink?.userId) {
-              const userData = {};
+              // O e-mail/nome de HOJE — a confirmação REPETE OS DADOS do ato, nunca "tem certeza?".
+              const contaAtual = await tx.user.findUnique({
+                where: { id: ownerLink.userId },
+                select: { email: true, name: true },
+              });
+
+              let decisao = DECISAO.RENOMEAR;
+              let vinculosDaConta = 1;
               if (ownerEmailInput) {
+                // ⚠ GUARDA PRESERVADA, e ela vem PRIMEIRO. E-mail que já é de OUTRO usuário
+                // continua sendo recusado — reaproveitar a conta alheia é como este problema
+                // começou. A confirmação abaixo autoriza CRIAR conta, nunca ASSUMIR a de outro.
                 const existingUser = await tx.user.findUnique({
                   where: { email: ownerEmailInput },
                   select: { id: true },
@@ -1315,18 +1391,118 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   err.code = "OWNER_EMAIL_ALREADY_IN_USE";
                   throw err;
                 }
-                userData.email = ownerEmailInput;
+                // ⚠ A CONTAGEM MORA DENTRO DA TRANSAÇÃO. Contá-la fora abriria a janela em que
+                // uma empresa é vinculada entre a contagem e o update — e o arrasto voltaria por
+                // essa fresta, com a tela tendo dito que a conta era de uma empresa só.
+                vinculosDaConta = await tx.companyClientUser.count({
+                  where: { userId: ownerLink.userId, status: "ACTIVE" },
+                });
+                decisao = decidirTrocaDeEmail({
+                  vinculosDaConta,
+                  confirmado: confirmarNovoAcessoInput,
+                });
               }
-              if (ownerNameInput) userData.name = ownerNameInput;
-              if (Object.keys(userData).length) {
-                await tx.user.update({ where: { id: ownerLink.userId }, data: userData });
+
+              if (decisao === DECISAO.PEDIR_CONFIRMACAO) {
+                // ⚠ RECUSA ANTES DO ATO, não um desfazer depois: o `throw` aborta a transação
+                // inteira, então nem o cadastro da empresa é salvo. O contador reenvia o mesmo
+                // formulário com `confirmarNovoAcesso: true` depois de ler o aviso.
+                const outras = await tx.companyClientUser.findMany({
+                  where: {
+                    userId: ownerLink.userId,
+                    status: "ACTIVE",
+                    companyId: { not: portalCompanyId },
+                  },
+                  select: { companyId: true },
+                  take: 50,
+                });
+                const empresas = outras.length
+                  ? await tx.portalClient.findMany({
+                      where: { id: { in: outras.map((o) => o.companyId) } },
+                      select: { id: true, razao: true, cnpj: true },
+                      orderBy: { razao: "asc" },
+                    })
+                  : [];
+                const err = new Error("owner_email_conta_compartilhada");
+                err.code = "OWNER_EMAIL_CONTA_COMPARTILHADA";
+                err.detalhes = {
+                  emailAtual: contaAtual?.email || null,
+                  nomeAtual: contaAtual?.name || null,
+                  emailNovo: ownerEmailInput,
+                  empresasDaConta: vinculosDaConta,
+                  outrasEmpresas: vinculosDaConta - 1,
+                  // ⚠ A LISTA PODE SER MENOR QUE A CONTAGEM (o `take` acima). Quem manda é
+                  // `outrasEmpresas`; a lista é para a tela NOMEAR, não para ela contar.
+                  outras: empresas,
+                  // ⚠ A TELA PRECISA DIZER ISTO. Sem esta linha o contador troca o e-mail e o
+                  // cliente fica sem conseguir entrar, sem ninguém saber por quê.
+                  contaNovaSemSenha: true,
+                };
+                throw err;
+              }
+
+              if (decisao === DECISAO.CRIAR_ACESSO_PROPRIO) {
+                const contaNova = await tx.user.create({
+                  data: {
+                    email: ownerEmailInput,
+                    // O nome do responsável não muda só porque o e-mail mudou: sem `ownerName` no
+                    // payload, a conta nova herda o nome que esta empresa já exibia.
+                    name: ownerNameInput || contaAtual?.name || null,
+                    passwordHash: await hashDeSenhaInutilizavel(),
+                    role: "user",
+                    status: STATUS_DA_CONTA_NOVA,
+                    accountType: "CLIENT",
+                  },
+                });
+                await tx.companyClientUser.create({
+                  data: {
+                    companyId: portalCompanyId,
+                    userId: contaNova.id,
+                    role: "OWNER",
+                    status: "ACTIVE",
+                  },
+                });
+                // ⚠ SÓ O VÍNCULO DESTA EMPRESA SAI, e pelo `id` do vínculo — nunca por `userId`,
+                // que alcançaria as outras e seria o mesmo arrasto em outra direção. Sem esta
+                // linha o login ANTIGO continuaria enxergando a empresa editada: o defeito
+                // consertado pela metade.
+                await tx.companyClientUser.update({
+                  where: { id: ownerLink.id },
+                  data: { status: "REMOVED" },
+                });
+                acessoNovo = {
+                  userId: contaNova.id,
+                  email: ownerEmailInput,
+                  // A tela aponta para a ação que JÁ existe (Credenciais → Acesso ao portal).
+                  semSenha: true,
+                };
+              } else {
+                // RENOMEAR — o caminho de sempre, intacto.
+                const userData = {};
+                if (ownerEmailInput) userData.email = ownerEmailInput;
+                if (ownerNameInput) userData.name = ownerNameInput;
+                if (Object.keys(userData).length) {
+                  await tx.user.update({ where: { id: ownerLink.userId }, data: userData });
+                }
               }
             }
             if (ownerEmailInput && updatedLegacy?.clientId) {
-              await tx.client.update({
-                where: { id: updatedLegacy.clientId },
-                data: { email: ownerEmailInput, login: ownerEmailInput },
+              // ⚠ MESMA CLASSE DE DEFEITO NA TABELA LEGADA. `Client` tem `companies Company[]` e
+              // `CompanyProvisioningService` REUSA o `Client` por e-mail — N empresas podem
+              // apontar para um `Client` só, e este `update` renomeava o de todas elas.
+              // ⚠ Medido: NADA em `routes/auth.js` autentica contra `Client` (a única leitura é
+              // `ClientRepository`), então isto é DADO, não login — mas dado errado para N-1
+              // empresas. Compartilhado, fica como está; a conta do portal, que é o login, já foi
+              // separada acima.
+              const companiesDoClient = await tx.company.count({
+                where: { clientId: updatedLegacy.clientId },
               });
+              if (companiesDoClient <= 1) {
+                await tx.client.update({
+                  where: { id: updatedLegacy.clientId },
+                  data: { email: ownerEmailInput, login: ownerEmailInput },
+                });
+              }
             }
           }
           const ownerLinkAfter = await tx.companyClientUser.findFirst({
@@ -1353,13 +1529,25 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         });
         const [comCompliance] = await attachGuideComplianceToCompaniesList([result]);
         const [company] = await anexarQuemLiberouEmissao([comCompliance]);
-        return res.json({ ok: true, company });
+        // ⚠ `acessoNovo` só existe quando um acesso PRÓPRIO foi criado. A tela usa a presença dele
+        // para mandar o contador definir a senha ANTES de avisar o cliente — a conta nasce sem
+        // senha utilizável, e sem esse aviso o cliente descobre isso tentando entrar.
+        return res.json({ ok: true, company, ...(acessoNovo ? { acessoNovo } : {}) });
       } catch (err) {
         if (err?.code === "PORTAL_COMPANY_NOT_FOUND") {
           return res.status(404).json({ error: "portal_company_not_found" });
         }
         if (err?.code === "OWNER_EMAIL_ALREADY_IN_USE") {
           return res.status(409).json({ error: "owner_email_already_in_use" });
+        }
+        // ⚠ 409 com os DADOS DO ATO, não um erro seco: é este corpo que a tela repete ao contador
+        // (quais empresas o e-mail atende, o que acontece com cada lado, e que a conta nova nasce
+        // sem senha). Sem ele a confirmação viraria "tem certeza?", que se aprende a clicar sem ler.
+        if (err?.code === "OWNER_EMAIL_CONTA_COMPARTILHADA") {
+          return res.status(409).json({
+            error: "owner_email_conta_compartilhada",
+            ...(err.detalhes || {}),
+          });
         }
         if (err?.code === "P2002") {
           return res.status(409).json({ error: "unique_constraint_violation" });

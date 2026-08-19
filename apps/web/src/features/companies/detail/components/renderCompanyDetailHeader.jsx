@@ -82,13 +82,18 @@ const GROUPS = [
       { key: "cadastroFiscal", label: "Apuração", soApuraSimples: true },
       { key: "guides", label: "Guias" },
       { key: "sitfis", label: "Situação Fiscal" },
-      // ⚠ CONFIGURAÇÃO DE EMISSÃO — aba própria (dono, 19/08/2026): *"configuração de notas na aba
-      // do contador está ficando muito grande, vamos separar ela em uma aba própria"*. Era um bloco
-      // de 264 linhas dentro do formulário de edição (grupo Empresa), que tem 750.
-      // ⚠ Fica em FISCAL, e não em Empresa: é o que a emissão de nota consome (`buildMissingFields`
-      // recusa a emissão por estes campos), e é ao lado de Notas Fiscais que se trabalha com ela.
-      // Vem por ÚLTIMO no grupo porque é configuração — o resto do grupo é o trabalho do mês.
-      { key: "emissaoNfse", label: "Emissão de NFS-e" },
+      // ⚠⚠ `emissaoNfse` NÃO ENTRA AQUI — e a ausência é decisão, não esquecimento (dono,
+      // 19/08/2026, no mesmo dia em que a aba nasceu):
+      //
+      //   > *"a aba nova que criei no fiscal de emissão de NFS-e deve ser uma engrenagem de
+      //   > configuração na aba Notas Fiscais."*
+      //
+      // A TELA continua existindo, na MESMA rota (`/companies/:id/emissao-nfse`): o que mudou foi
+      // a ENTRADA — hoje é a engrenagem no topo da aba Notas Fiscais
+      // (`features/notas/components/renderNotasFiscaisTab.jsx`), que é onde o contador está quando
+      // pensa em configurar emissão. Por isso o par em `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT` e o bloco
+      // `if` da página FICARAM: sem eles a URL cairia em Anotações em silêncio e todo link já
+      // guardado morreria. ⚠ Devolver a entrada para cá é criar DUAS portas para a mesma tela.
     ],
   },
   {
@@ -114,7 +119,12 @@ const GROUPS = [
 
 // Abas que não são sub-aba de ninguém, mas pertencem a um grupo (o grupo fica destacado).
 // `edit` abre pela ficha (botão Editar) e `planoContas` por Lançamentos → Configurações.
-const TAB_TO_GROUP = { edit: "cadastro", planoContas: "contabilidade" };
+// ⚠ `emissaoNfse` entra AQUI, e não em `GROUPS`: ela é uma tela do grupo Fiscal que se abre pela
+// ENGRENAGEM da aba Notas Fiscais (dono, 19/08/2026), como `edit` se abre pelo botão Editar da
+// ficha e `planoContas` por Lançamentos → Configurações. Sem esta linha o header cairia no primeiro
+// grupo (Anotações) enquanto a tela de configuração estivesse aberta — o menu apontando para um
+// lugar e a tela mostrando outro.
+const TAB_TO_GROUP = { edit: "cadastro", planoContas: "contabilidade", emissaoNfse: "fiscal" };
 
 // Q63: a aba "Apuração" só existe pro Simples — ainda não apuramos Lucro Presumido/Real no app.
 // O regime vem do cadastro legado (mesma fonte da tag do card) ou do próprio company.

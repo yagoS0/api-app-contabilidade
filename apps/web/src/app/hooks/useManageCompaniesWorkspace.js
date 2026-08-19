@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { detalhesDaContaCompartilhada } from "../../lib/portal/responsavelCompartilhado";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useCompanies } from "../../features/companies/list/hooks/useManageCompanies";
 import { useCompanyGuides } from "../../features/guides/list/hooks/useManageCompanyGuides";
@@ -598,21 +599,62 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
-  async function handleUpdateCompany(event) {
-    event.preventDefault();
+  // ⚠⚠ TROCAR O E-MAIL DO RESPONSÁVEL PODE CRIAR UM ACESSO NOVO, e o contador tem de ver isso
+  // ANTES. Quando a conta atual atende VÁRIAS empresas, o servidor recusa com 409
+  // `owner_email_conta_compartilhada` e devolve os dados do ato; guardamos esses dados aqui, a
+  // tela os repete, e só então o MESMO formulário é reenviado com `confirmarNovoAcesso: true`.
+  // Defeito que isto fecha: um login enxergando nove empresas (produção, 19/08/2026).
+  const [confirmacaoAcessoProprio, setConfirmacaoAcessoProprio] = useState(null);
+  const [acessoProprioCriado, setAcessoProprioCriado] = useState(null);
+
+  async function salvarEdicaoDaEmpresa({ confirmarNovoAcesso } = {}) {
     if (!companiesState.selectedCompanyId) return;
     setSubmittingCompanyEdit(true);
     feedback.clearFeedback();
     try {
-      await api.updateCompany(companiesState.selectedCompanyId, editCompanyForm.form);
+      const resposta = await api.updateCompany(
+        companiesState.selectedCompanyId,
+        editCompanyForm.form,
+        { confirmarNovoAcesso: confirmarNovoAcesso === true }
+      );
+      setConfirmacaoAcessoProprio(null);
+      // ⚠ A conta nova nasce SEM SENHA. Sem este aviso o contador troca o e-mail, avisa o cliente,
+      // e o cliente não consegue entrar — sem ninguém saber por quê.
+      setAcessoProprioCriado(resposta?.acessoNovo || null);
       feedback.setMessage("Cadastro da empresa atualizado com sucesso.");
       await loadCompanies();
-      setCompanyDetailTab("lancamentos");
+      // ⚠ Com acesso novo criado a tela NÃO troca de aba: o aviso de "defina a senha" some junto,
+      // e ele é a única coisa que impede o cliente de ficar de fora sem explicação.
+      if (!resposta?.acessoNovo) setCompanyDetailTab("lancamentos");
     } catch (err) {
+      const detalhes = detalhesDaContaCompartilhada(err);
+      if (detalhes) {
+        // Não é erro do contador: é um ato de consequência esperando confirmação.
+        setConfirmacaoAcessoProprio(detalhes);
+        return;
+      }
+      setConfirmacaoAcessoProprio(null);
       feedback.setError(err?.message || "Falha ao atualizar cadastro da empresa.");
     } finally {
       setSubmittingCompanyEdit(false);
     }
+  }
+
+  async function handleUpdateCompany(event) {
+    event.preventDefault();
+    setAcessoProprioCriado(null);
+    // ⚠ O salvar normal NUNCA confirma. A confirmação vale para UM clique, o do painel — se ela
+    // viajasse daqui, reabrir a tela e salvar de novo criaria acesso novo sem ninguém ter lido nada.
+    await salvarEdicaoDaEmpresa({ confirmarNovoAcesso: false });
+  }
+
+  async function confirmarAcessoProprio() {
+    if (!confirmacaoAcessoProprio) return;
+    await salvarEdicaoDaEmpresa({ confirmarNovoAcesso: true });
+  }
+
+  function cancelarAcessoProprio() {
+    setConfirmacaoAcessoProprio(null);
   }
 
   async function handleResendGuide(guideId) {
@@ -1208,6 +1250,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     handleToggleJob,
     handleCreateCompany,
     handleUpdateCompany,
+    // ⚠ Os três viajam JUNTOS e a tela precisa dos três: sem `confirmacaoAcessoProprio` o salvar
+    // fica mudo depois do 409 (parece que "não fez nada"), e sem `acessoProprioCriado` a conta
+    // nova nasce sem senha e ninguém avisa.
+    confirmacaoAcessoProprio,
+    confirmarAcessoProprio,
+    cancelarAcessoProprio,
+    acessoProprioCriado,
     handleResendGuide,
     handleConfirmGuidePayment,
     handleRecalculateGuide,

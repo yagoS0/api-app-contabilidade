@@ -75,7 +75,9 @@ describe("a aba Auditoria", () => {
   it("⚠ NÃO CONFERÍVEL não vira 'nada a apontar' — a tela manda cadastrar os códigos", async () => {
     render(<AuditoriaTab companyId="emp-1" competencia="2026-07" api={apiCom(AUDITORIA)} />);
     expect(await screen.findByText(/a empresa não tem código de serviço cadastrado/i)).toBeInTheDocument();
-    expect(screen.getByText(/Cadastre os códigos na ficha da empresa/i)).toBeInTheDocument();
+    // ⚠ 19/08/2026: o "onde se resolve" passou a sair de `ONDE_CONFIGURA_EMISSAO` — a configuração
+    // saiu da ficha e a entrada virou a engrenagem da aba Notas Fiscais (pedido do dono).
+    expect(screen.getByText(/Cadastre os códigos em Notas Fiscais → ⚙ Configuração de emissão/i)).toBeInTheDocument();
   });
 
   it("a pergunta conferida SEM achado diz quantas notas foram olhadas", async () => {

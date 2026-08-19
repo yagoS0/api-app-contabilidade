@@ -22,6 +22,7 @@ import path from "node:path";
 import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { NotasFiscaisTab } from "../renderNotasFiscaisTab";
+import { ONDE_CARGA_TRIBUTARIA } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 const CADASTRO_SEM_CARGA = {
   cnpj: "39254243000191",
@@ -107,7 +108,11 @@ describe("a empresa do Lucro Presumido CHEGA ao assistente pela aba Notas Fiscai
     const bloco = screen.getByText(/Esta empresa ainda não pode emitir nota de serviço/).closest("div");
     expect(bloco).toHaveTextContent("Carga tributária aproximada");
     expect(bloco).toHaveTextContent("federal, estadual e municipal (iss)");
-    expect(bloco).toHaveTextContent("Editar cadastro → Emissão de NFS-e → Carga tributária aproximada");
+    // ⚠ O CAMINHO MUDOU EM 19/08/2026 (dono): a configuração saiu do formulário e a entrada
+    // virou a ENGRENAGEM da aba Notas Fiscais. O texto sai de `ONDE_CONFIGURA_EMISSAO`
+    // (`lib/nfse/cadastroEmissaoNfse.js`) — apontar para "Editar cadastro" mandaria o
+    // contador a uma tela onde estes campos não estão mais.
+    expect(bloco).toHaveTextContent(ONDE_CARGA_TRIBUTARIA);
     // O passo 1 é o passo de preencher: o botão Emitir nem existe ainda, e o Continuar está travado.
     expect(screen.queryByRole("button", { name: /^Emitir$/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continuar/ })).toBeDisabled();

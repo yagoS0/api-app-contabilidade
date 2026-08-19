@@ -19,6 +19,11 @@
 // estava. Por isso `podeTentarDeNovo: false` nesses casos, com o motivo na tela.
 
 /** Os campos do assistente, por id. É a mesma constante que o formulário usa no `id` do input. */
+// ⚠ O CAMINHO DA CONFIGURAÇÃO SAI DE UMA FONTE SÓ (`lib/nfse/cadastroEmissaoNfse.js`): ele mudou
+// duas vezes em dois dias (bloco do formulário → aba própria → engrenagem da aba Notas
+// Fiscais), e frase espalhada não sobrevive à próxima mudança de lugar.
+import { ONDE_CARGA_TRIBUTARIA, ONDE_CONFIGURA_EMISSAO } from "../../../lib/nfse/cadastroEmissaoNfse";
+
 export const CAMPO = {
   DOC: "nfse-doc",
   NOME: "nfse-nome",
@@ -108,20 +113,19 @@ const CONHECIDAS = {
     oQueFazer:
       "A empresa não é optante do Simples: a nota declara a carga tributária aproximada (Lei "
       + "12.741/2012), e os TRÊS percentuais são exigidos, inclusive quando algum é 0,00. Cadastre-os "
-      + "em Editar cadastro → Emissão de NFS-e → Carga tributária aproximada.",
+      + `em ${ONDE_CARGA_TRIBUTARIA}.`,
     ondeSeResolve: "no cadastro da empresa",
   },
   invalid_tot_trib_nao_simples: {
     oQueFazer:
       "Um dos percentuais da carga tributária aproximada está fora de 0 a 100 — é um PERCENTUAL, "
-      + "não o valor dos tributos em reais. Corrija em Editar cadastro → Emissão de NFS-e → Carga "
-      + "tributária aproximada.",
+      + `não o valor dos tributos em reais. Corrija em ${ONDE_CARGA_TRIBUTARIA}.`,
     ondeSeResolve: "no cadastro da empresa",
   },
   company_missing_fields: {
     oQueFazer:
-      "Faltam campos no cadastro da empresa. Preencha em Editar cadastro → Inscrições e → Emissão "
-      + "de NFS-e, e emita de novo.",
+      "Faltam campos no cadastro da empresa. Preencha em Editar cadastro → Inscrições e em "
+      + `${ONDE_CONFIGURA_EMISSAO}, e emita de novo.`,
     ondeSeResolve: "no cadastro da empresa",
   },
   nfse_municipio_nao_configurado: {
