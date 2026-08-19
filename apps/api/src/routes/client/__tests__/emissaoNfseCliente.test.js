@@ -354,4 +354,64 @@ describe("GET /client/companies — a flag aparece; a auditoria NÃO", () => {
       guideNotificationEmail: null,
     });
   });
+
+  // ── A CARGA TRIBUTÁRIA APROXIMADA VIAJA — dono, 19/08/2026 ──────────────────────────────────
+  //
+  // ⚠ *"o portal do cliente deve enxergar sim, no caso do presumido"*. Antes disto os três
+  // percentuais não estavam no `legacyCompanySelect`, e a tela de emissão do cliente **não sabia**
+  // se o cadastro do não optante estava completo — o texto dela descrevia as DUAS saídas.
+  //
+  // ⚠⚠ O QUE ESTE BLOCO PROVA É O `select`, NÃO A REGRA. Um `select` explícito devolve `undefined`
+  // para coluna que não está nele, **sem erro nenhum**: a tela reabre vazia e ninguém percebe. É a
+  // armadilha que este arquivo já pagou em `codigoMunicipioIbge` e nos `codigosServicoNacional`.
+  describe("⚠ os três percentuais da Lei 12.741/2012 chegam ao cliente", () => {
+    const CARGA = { pTotTribFed: "11.33", pTotTribEst: "0.00", pTotTribMun: "0.00" };
+
+    it("estão NOMEADOS no `select` da consulta — sem isto a coluna volta `undefined`", async () => {
+      montarCarteira({ liberada: true });
+      await listar();
+
+      const [{ select }] = prisma.company.findMany.mock.calls[0];
+      expect(select.pTotTribFed).toBe(true);
+      expect(select.pTotTribEst).toBe(true);
+      expect(select.pTotTribMun).toBe(true);
+    });
+
+    it("os valores gravados chegam dentro de `legacyCompany`", async () => {
+      montarCarteira({ liberada: true });
+      prisma.company.findMany.mockResolvedValue([{ id: LEGACY_ID, email: null, ...CARGA }]);
+      const r = await listar();
+
+      expect(r.body.data[0].legacyCompany).toMatchObject(CARGA);
+    });
+
+    it("⚠ NULL viaja como `null`, e a CHAVE continua presente", async () => {
+      // A distinção é o desenho inteiro do lado do cliente: `null` é "o contador não configurou"
+      // (a tela nomeia o que falta); chave AUSENTE é "esta tela não recebeu o cadastro" (a tela não
+      // afirma nada). Serializar `null` como ausência apagaria os dois textos num só.
+      montarCarteira({ liberada: true });
+      prisma.company.findMany.mockResolvedValue([
+        { id: LEGACY_ID, email: null, pTotTribFed: null, pTotTribEst: null, pTotTribMun: "2.50" },
+      ]);
+      const r = await listar();
+
+      const legacy = r.body.data[0].legacyCompany;
+      expect(legacy).toHaveProperty("pTotTribFed", null);
+      expect(legacy).toHaveProperty("pTotTribEst", null);
+      expect(legacy.pTotTribMun).toBe("2.50");
+    });
+
+    it("⚠ ampliar o `select` NÃO abriu a auditoria do escritório junto", async () => {
+      // O critério que barra `emissaoClienteLiberadaEm/Por` é outro: aqueles dizem quem, DO
+      // ESCRITÓRIO, autorizou este cliente. Estes três são o conteúdo da nota do próprio cliente.
+      montarCarteira({ liberada: true });
+      prisma.company.findMany.mockResolvedValue([{ id: LEGACY_ID, email: null, ...CARGA }]);
+      const r = await listar();
+
+      const serializado = JSON.stringify(r.body.data[0]);
+      expect(serializado).not.toContain("LiberadaEm");
+      expect(serializado).not.toContain("LiberadaPor");
+      expect(serializado).not.toContain("user-do-escritorio-1");
+    });
+  });
 });

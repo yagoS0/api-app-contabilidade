@@ -26,6 +26,7 @@ export function PreviaNota({ empresa, valores }) {
     issRetidoValor,
     liquido,
     pTotTribSN,
+    cargaAproximada,
     codigoServicoNacional,
   } = valores;
 
@@ -112,6 +113,24 @@ export function PreviaNota({ empresa, valores }) {
               <td>Tributos do Simples nesta nota</td>
               <td>{pTotTribSN === null || pTotTribSN === undefined ? TRACO : pct(pTotTribSN)}</td>
             </tr>
+            {/* ⚠ A CARGA TRIBUTÁRIA APROXIMADA DA EMPRESA NÃO OPTANTE (Lei 12.741/2012) — dono,
+                19/08/2026. Ela VAI IMPRESSA ao tomador, e até aqui o cliente do Presumido não a via
+                em lugar nenhum antes de emitir: descobria o número na nota pronta, ou descobria a
+                falta pela recusa.
+                ⚠ SÓ LEITURA, vinda do cadastro que o CONTADOR configura — nenhuma destas linhas tem
+                campo correspondente no formulário, e nenhuma delas vai no payload da emissão.
+                ⚠ A LISTA VEM PRONTA DE `lib/cargaTributaria.js`, e chega `null` quando a pergunta
+                não se aplica (Simples, regime indefinido) ou quando o cadastro não foi recebido —
+                nada é decidido aqui. ⚠ Em branco é TRAÇO, nunca 0,00%: zero é uma AFIRMAÇÃO sobre a
+                carga tributária, e a que falta é exatamente a que o servidor recusa. */}
+            {cargaAproximada
+              ? cargaAproximada.map((item) => (
+                  <tr className="linha-info" key={item.campo}>
+                    <td>Tributos aproximados · {item.rotulo}</td>
+                    <td>{item.valor === null || item.valor === undefined ? TRACO : pct(item.valor)}</td>
+                  </tr>
+                ))
+              : null}
             {issRetido ? (
               <tr>
                 <td>ISS retido</td>

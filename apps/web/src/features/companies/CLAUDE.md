@@ -356,6 +356,19 @@ da DPS. Regra de tela em `lib/nfse/cadastroEmissaoNfse.js` (`lerPercentualCarga`
   o teste do componente sozinho continuaria verde com o `CompanyForm` nunca passando as props —
   que é o defeito favorito daqui. Ele exercita a cadeia inteira: estado inicial →
   `mapCompanyToEditForm` → `<CompanyForm>` renderizando os três campos.
+- ⚠ **O CLIENTE PASSOU A VER OS TRÊS — só ver** (dono, 19/08/2026: *"o portal do cliente deve
+  enxergar sim, no caso do presumido"*). Eles entraram no `legacyCompanySelect` de
+  `GET /client/companies` (`apps/api/src/routes/client/index.js`) e a tela de emissão do portal do
+  cliente mostra o estado real: com o cadastro completo ela **não insinua recusa** e exibe a carga
+  no espelho da nota; faltando algum, ela **nomeia quais** e diz que quem configura é o contador.
+  Regra em `apps/portal-cliente-web/src/features/emitir/lib/cargaTributaria.js` (espelho de
+  `lerPercentualCarga`/`faltasDaCargaTributaria` daqui — **mudou aqui, muda lá**).
+  ⚠ **Nenhum campo editável e nenhuma rota de escrita do lado do cliente**: a caneta continua sendo
+  esta tela. E o payload de emissão do cliente **não** leva os três — se levasse, ele venceria o
+  cadastro (`NfseService` resolve por campo, payload → cadastro) e um valor velho preso no
+  formulário do cliente sobrescreveria em silêncio a correção que o contador acabou de fazer.
+  ⚠ **O guarda dos dois sentidos vale lá igual**: Simples não vê (declara `pTotTribSN`) e regime
+  indefinido não vê.
 
 ### O municipal e a série
 

@@ -25,6 +25,17 @@ import {
   janelaDaConsulta,
   textoDaProcedencia,
 } from "./lib/aliquotaEfetiva";
+// ⚠ A CARGA TRIBUTÁRIA APROXIMADA DO CADASTRO (dono, 19/08/2026: *"o portal do cliente deve enxergar
+// sim, no caso do presumido"*) — LEITURA, nunca campo. Ver o bloco `A CARGA TRIBUTÁRIA APROXIMADA`,
+// abaixo, e o cabeçalho de `lib/cargaTributaria.js` para o porquê de ela não ir no payload.
+import {
+  CARGA_NAO_RECEBIDA,
+  ESTADO_CARGA,
+  O_QUE_E_A_CARGA,
+  QUEM_CONFIGURA,
+  frasePendencia,
+  lerCargaTributaria,
+} from "./lib/cargaTributaria";
 import { registrarDescricao, sugerirDescricoes } from "./lib/descricoesRecentes";
 // ⚠ A DESCRIÇÃO SUGERIDA a partir da ATIVIDADE do cadastro da empresa (dono, 18/08/2026). Convive
 // com `descricoesRecentes` — a precedência está escrita no bloco `A DESCRIÇÃO SUGERIDA`, abaixo.
@@ -394,6 +405,31 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
   // campos (ver `lerRegime`).
   const issNoFormulario = regime !== REGIME.SIMPLES;
 
+  // ── A CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) ───────────────────────────────────────
+  //
+  // ⚠⚠ **O GUARDA VALE NOS DOIS SENTIDOS, E ELE É O MESMO DO PORTAL DO ESCRITÓRIO** (commit
+  // `0905d58e`), não uma segunda leitura: só o regime `OUTRO` (não optante) vê isto.
+  //   • **Simples não vê**: ela declara `pTotTribSN`, que é outra coisa e já está no formulário
+  //     logo abaixo. Mostrar os três ali faria a pessoa procurar um campo que a nota dela não leva.
+  //   • **Regime INDEFINIDO também não vê**: ali não se sabe qual grupo a nota leva, e afirmar
+  //     "não optante" é o default silencioso que este projeto proíbe. ⚠ Isto NÃO é esconder por
+  //     desconhecimento: nada some do formulário (o ISS continua lá, ver `issNoFormulario`) — o que
+  //     não aparece é uma AFIRMAÇÃO sobre o cadastro de uma empresa cujo regime ninguém afirmou.
+  //
+  // ⚠ SÓ LEITURA. Não há campo, não há `onChange`, não entra em `form` e não vai no payload — quem
+  // configura é o contador, no portal dele. Ver o cabeçalho de `lib/cargaTributaria.js`.
+  // ⚠ `useMemo` só pela IDENTIDADE: `lerCargaTributaria` devolve objeto e array novos a cada
+  // chamada, e sem isto o `valoresDaPrevia` abaixo recalcularia a cada render (a prévia depende
+  // dele). Nada aqui é caro; o que se preserva é a estabilidade da referência.
+  const carga = useMemo(
+    () => (regime === REGIME.OUTRO ? lerCargaTributaria(legacy) : null),
+    [regime, legacy]
+  );
+  // O que o ESPELHO DA NOTA mostra. ⚠ `null` quando não se recebeu o cadastro: a prévia desenha o
+  // que VAI SER DECLARADO, e uma linha em traço ali diria "vai sair em branco" — que é uma
+  // afirmação, e não o que se mediu.
+  const cargaDaPrevia = carga && carga.estado !== ESTADO_CARGA.NAO_RECEBIDA ? carga.itens : null;
+
   // ── A CONSULTA DO TOMADOR ─────────────────────────────────────────────────────────────────
   //
   // ⚠ CPF NÃO SE CONSULTA: 11 dígitos ⇒ nada acontece, e o painel de uma consulta anterior é
@@ -634,6 +670,11 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
       issRetidoValor,
       liquido,
       pTotTribSN,
+      // ⚠ O ESPELHO DA NOTA MOSTRA A CARGA QUE VAI DECLARADA. Ela sai IMPRESSA ao tomador (Lei
+      // 12.741/2012) e não vinha de lugar nenhum nesta tela — o cliente do Presumido só veria o
+      // número depois de a nota existir. `null` quando não se aplica (Simples, regime indefinido)
+      // ou quando a resposta não trouxe o cadastro.
+      cargaAproximada: cargaDaPrevia,
       codigoServicoNacional,
     }),
     [
@@ -645,6 +686,7 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
       issRetidoValor,
       liquido,
       pTotTribSN,
+      cargaDaPrevia,
       codigoServicoNacional,
     ]
   );
@@ -794,26 +836,60 @@ export function EmitirNotaPage({ empresa, aoNavegar, aoRecarregarEmpresas, model
               só falta o que não estiver em nenhum dos dois (`MISSING_TOT_TRIB_NAO_SIMPLES`, com a
               lista nomeada). Ou seja: com o cadastro completo, esta tela emite para o não optante
               sem precisar de campo nenhum a mais.
-              ⚠ E O QUE ESTA TELA NÃO SABE ELA NÃO AFIRMA: os três percentuais **não estão** no
-              `legacyCompanySelect` de `GET /client/companies` (conferido campo a campo em
-              `apps/api/src/routes/client/index.js`), então daqui não dá para dizer se o cadastro
-              está completo — e é por isso que o texto passou a descrever as duas saídas em vez de
-              apostar numa. Ampliar aquele `select` é decisão do dono: ele expõe ao cliente a
-              configuração fiscal que o contador fez.
+              ⚠⚠ **E DESDE 19/08/2026 A TELA SABE**, a pedido do dono: *"o portal do cliente deve
+              enxergar sim, no caso do presumido"*. Os três percentuais entraram no
+              `legacyCompanySelect` de `GET /client/companies` (`apps/api/src/routes/client/index.js`,
+              com o ⚠ do porquê ao lado deles), então o texto abaixo virou UMA resposta em vez de
+              duas — e a que descrevia as duas saídas sobrou só para o estado em que ela continua
+              verdadeira: quando a resposta **não trouxe** as chaves (`ESTADO_CARGA.NAO_RECEBIDA`).
+              ⚠ CHEGOU PARA VER, NÃO PARA MEXER. Não há campo aqui, e não pode haver: isto é
+              configuração fiscal do ESCRITÓRIO, e o payload da emissão **não** leva os três — se
+              levasse, o payload venceria o cadastro (`NfseService` resolve por campo, payload →
+              cadastro) e um valor velho preso neste formulário sobrescreveria em silêncio a
+              correção que o contador acabou de fazer.
               ⚠ AVISO, NÃO BLOQUEIO — pela mesma razão do cadastro incompleto logo acima: o regime
               que chega aqui é a SEGUNDA leitura do servidor (`Company.regimeTributario`), e a
               primeira (`CadastroFiscal.regime`) pode dizer outra coisa. */}
-          {regime === REGIME.OUTRO ? (
+          {carga && carga.estado === ESTADO_CARGA.NAO_RECEBIDA ? (
             <div className="alerta alerta-aviso" role="status">
               <p>
                 <strong>Esta empresa não é optante pelo Simples Nacional.</strong>
               </p>
+              <p>{CARGA_NAO_RECEBIDA}</p>
+            </div>
+          ) : null}
+
+          {/* ⚠ O CADASTRO ESTÁ COMPLETO: A TELA NÃO INSINUA RECUSA. O aviso antigo dizia que a nota
+              "provavelmente será recusada" para toda empresa não optante — e com os três
+              percentuais gravados isso é simplesmente falso: `NfseService` cai no cadastro e a nota
+              sai. Um aviso que está sempre aceso não é aviso, é ruído.
+              ⚠ `alerta-info`, não `alerta-aviso`: não há nada a consertar. O que há é um número que
+              vai IMPRESSO ao tomador e que o cliente precisava ver antes de emitir. */}
+          {carga && carga.estado === ESTADO_CARGA.COMPLETA ? (
+            <div className="alerta alerta-info" role="status">
+              <p>{O_QUE_E_A_CARGA}</p>
               <p>
-                A nota precisa declarar a carga tributária aproximada — três percentuais que o seu
-                contador configura no cadastro da empresa. Esta tela não recebe esse cadastro: se
-                ele estiver completo, a nota sai normalmente; se faltar algum, ela é recusada antes
-                de sair daqui, sem consumir numeração.
+                {carga.itens.map((item, i) => (
+                  <span key={item.campo}>
+                    {i ? " · " : ""}
+                    {item.rotulo} <strong>{pct(item.valor)}</strong>
+                  </span>
+                ))}
               </p>
+              <p className="hint">{QUEM_CONFIGURA}</p>
+            </div>
+          ) : null}
+
+          {/* ⚠ FALTANDO: A TELA DIZ QUAIS, E DE QUEM É A CANETA. "Falta a carga tributária" mandaria
+              o cliente conferir três números que ele não pode editar; e sem dizer que quem configura
+              é o contador, ele procura o campo nesta tela até desistir. É o mesmo molde da recusa
+              `MISSING_TOT_TRIB_NAO_SIMPLES` do servidor, que também NOMEIA o que falta. */}
+          {carga && carga.estado === ESTADO_CARGA.PENDENTE ? (
+            <div className="alerta alerta-aviso" role="status">
+              <p>
+                <strong>{frasePendencia(carga)}</strong>
+              </p>
+              <p>{QUEM_CONFIGURA}</p>
             </div>
           ) : null}
 

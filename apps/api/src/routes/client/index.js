@@ -107,6 +107,30 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       codigoServicoMunicipal: true,
       rpsSerie: true,
       rpsNumero: true,
+      // ⚠ A CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) VIAJA ATÉ O CLIENTE — pedido do dono
+      // (19/08/2026): *"o portal do cliente deve enxergar sim, no caso do presumido"*.
+      //
+      // ⚠ SEM ESTAS TRÊS LINHAS O CAMPO NÃO CHEGA, E NÃO HÁ ERRO NENHUM. O `select` é explícito:
+      // coluna que não está aqui volta `undefined`, e a tela lê ausência — foi por isso que a tela
+      // de emissão do cliente passou a descrever DUAS saídas ("se estiver completo sai; se faltar
+      // algum é recusada") em vez de dizer o estado real. É a mesma armadilha que
+      // `legacyCompanySelect` do portal do escritório já documenta em `codigoMunicipioIbge` e nos
+      // `codigosServicoNacional`.
+      //
+      // ⚠⚠ **SÓ LEITURA, E ISSO É O DESENHO.** Isto é CONFIGURAÇÃO FISCAL DO ESCRITÓRIO, não campo
+      // de formulário do cliente: quem edita é o contador (`PATCH` do cadastro da empresa, gate
+      // `ACCOUNTANT`+). Nenhuma rota de escrita do lado do cliente toca estas colunas, e o payload
+      // da emissão do cliente **não** as envia — se enviasse, o payload venceria o cadastro
+      // (`NfseService` resolve por campo, payload → cadastro) e um valor velho preso no formulário
+      // sobrescreveria em silêncio o que o contador acabou de corrigir.
+      //
+      // ⚠ NÃO É DADO SIGILOSO — é o número que vai IMPRESSO ao tomador na nota que este mesmo
+      // cliente emite (Lei da Transparência). O critério que barrou `emissaoClienteLiberadaEm/Por`
+      // logo abaixo não se aplica: aqueles são AUDITORIA do escritório (quem, do escritório,
+      // autorizou), e estes são o conteúdo da própria nota do cliente.
+      pTotTribFed: true,
+      pTotTribEst: true,
+      pTotTribMun: true,
       optanteSimples: true,
       regimeEspecialTributacao: true,
       certStorageKey: true,

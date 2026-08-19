@@ -83,6 +83,13 @@ function criarEstado() {
   // ⚠ A pc-005 vem depois e NÃO é um quinto estado do portão: ela abre o eixo do REGIME
   // (Lucro Presumido), sem o qual o ramo do ISS que MANTÉM os campos é inalcançável offline.
   //
+  // ⚠ A pc-006 é o MESMO regime da pc-005 com o OUTRO desfecho da carga tributária aproximada
+  // (dono, 19/08/2026). Desde que os três percentuais viajam em `GET /client/companies`, a tela do
+  // Presumido tem dois textos possíveis — "a nota sai, e a carga é esta" e "falta configurar tal
+  // parcela" — e com uma empresa só, um dos dois seria inalcançável offline. A pc-006 tem apenas o
+  // MUNICIPAL configurado de propósito: é a forma exata do defeito que o commit `11187501`
+  // consertou (um percentual liberava a emissão, e o XML afirmava 0,00 nos outros dois).
+  //
   // ⚠ A pc-004 **omite** `emissaoNfseLiberada` de propósito. É o que acontece quando o portal fala
   // com uma API anterior a 18/08/2026 (o campo é dessa data). Se o mock sempre mandasse o campo,
   // o ramo tri-estado da tela seria código morto no desenvolvimento e só apareceria em campo.
@@ -193,10 +200,11 @@ function criarEstado() {
       // que MANTÉM os campos era inalcançável offline: só a pc-001 passa pelo portão, e ela é do
       // Simples. Um ramo que ninguém consegue abrir é um ramo cujo desenho só aparece em produção.
       //
-      // ⚠ E ela também torna visível uma limitação REAL, não uma invenção do mock: o formulário
-      // não oferece `pTotTribFed/Est/Mun`, e `buildDpsXml` **recusa** a emissão de quem não é do
-      // Simples sem eles (`MISSING_TOT_TRIB_NAO_SIMPLES`) em vez de declarar carga zero. Ver o
-      // desfecho replicado em `emitirNfse`.
+      // ⚠⚠ E ELA MOSTRA O CAMINHO FELIZ DO NÃO OPTANTE, que até 19/08/2026 era inalcançável. O
+      // formulário continua NÃO oferecendo `pTotTribFed/Est/Mun` — e não deve oferecer: eles são
+      // configuração do CONTADOR. O que mudou é que o cadastro os manda para a tela VER, e
+      // `NfseService` cai neles quando o payload não os traz. Com os três gravados aqui, a emissão
+      // do Presumido passa; a pc-006 exercita o outro desfecho. Ver `emitirNfse`.
       companyId: "pc-005",
       portalId: "pc-005",
       myRole: "OWNER",
@@ -224,11 +232,64 @@ function criarEstado() {
         // servidor (a primeira é `CadastroFiscal.regime`, que `GET /client/companies` não manda).
         regimeTributario: "LUCRO_PRESUMIDO",
         optanteSimples: false,
+        // ⚠ A CARGA TRIBUTÁRIA APROXIMADA COMPLETA (Lei 12.741/2012). ⚠ Os valores são os da NFS-e
+        // real versionada em `docs/leiaute-nfse/nfse-nacional-substituicao.xml` — não foram
+        // inventados aqui, e é ela que prova que `0.00` DECLARADO é legítimo (serviço não tem ICMS).
+        // ⚠ STRING, como o backend entrega: `Decimal(5,2)` do Prisma serializa em JSON como texto.
+        // Um mock que mandasse número esconderia justamente a conversão que a tela precisa fazer.
+        pTotTribFed: "11.33",
+        pTotTribEst: "0.00",
+        pTotTribMun: "0.00",
         // ⚠⚠ O CASO QUE PROVA A REGRA 1: códigos NUS, sem texto nenhum. Não existe tabela
         // CNAE→descrição neste repositório (o `CnaeAnexo` mapeia para ANEXO DO SIMPLES, outra
         // coisa), então aqui a tela NÃO sugere nada, o campo fica VAZIO e ela diz por quê. Sem
         // este caso no mock, só o caminho feliz seria alcançável offline.
         atividades: ["71.12-0-00", "4120400", "4399101"],
+        cnaePrincipal: "7112000",
+      },
+    },
+    {
+      // ⚠ O OUTRO DESFECHO DO PRESUMIDO: cadastro de carga tributária INCOMPLETO.
+      //
+      // ⚠⚠ E A FORMA DA INCOMPLETUDE É A DO DEFEITO REAL (commit `11187501`): só o MUNICIPAL está
+      // configurado. Era exatamente essa a empresa que o portão antigo (`.some()`) deixava emitir,
+      // com o XML escrevendo `0,00` no federal e no estadual — carga zero AFIRMADA ao tomador, por
+      // omissão. Hoje o servidor exige os três e NOMEIA os que faltam; esta empresa existe para que
+      // o texto que a tela mostra nesse caso possa ser lido offline, em vez de só em produção.
+      companyId: "pc-006",
+      portalId: "pc-006",
+      myRole: "CLIENT_ADMIN",
+      razao: "Baluarte Servicos de Engenharia Ltda",
+      cnpj: "50607080000191",
+      inscricaoMunicipal: "770145",
+      uf: "MG",
+      municipio: "Belo Horizonte",
+      ownerEmail: "cliente@exemplo.com",
+      guideNotificationEmail: null,
+      email: null,
+      telefone: null,
+      emissaoNfseLiberada: true,
+      portalCreatedAt: "2025-04-22T13:30:00.000Z",
+      portalUpdatedAt: "2026-08-16T15:40:00.000Z",
+      legacyCompany: {
+        id: "legacy-006",
+        razaoSocial: "BALUARTE SERVICOS DE ENGENHARIA LTDA",
+        inscricaoMunicipal: "770145",
+        codigoServicoNacional: "070201",
+        codigoServicoMunicipal: "0702",
+        rpsSerie: "1",
+        rpsNumero: "4",
+        regimeTributario: "LUCRO_PRESUMIDO",
+        optanteSimples: false,
+        // ⚠ `null`, NÃO chave ausente — e a diferença é o desenho inteiro. `null` é "o contador não
+        // configurou" (a tela nomeia o que falta); chave AUSENTE seria "esta tela não recebeu o
+        // cadastro" (a tela não afirma nada), que é o estado da API anterior a 19/08/2026. Escrever
+        // um dos dois no lugar do outro apagaria a distinção que `lerCargaTributaria` existe para
+        // manter.
+        pTotTribFed: null,
+        pTotTribEst: null,
+        pTotTribMun: "2.50",
+        atividades: ["71.12-0-00"],
         cnaePrincipal: "7112000",
       },
     },
@@ -243,7 +304,7 @@ function criarEstado() {
       accountType: "CLIENT",
       name: "Ana Ribeiro",
       defaultClientId: "pc-001",
-      empresas: ["pc-001", "pc-002", "pc-003", "pc-004", "pc-005"],
+      empresas: ["pc-001", "pc-002", "pc-003", "pc-004", "pc-005", "pc-006"],
     },
     {
       id: "u-cliente-2",
@@ -987,43 +1048,54 @@ export function createMockApi() {
 
       // ── 3.5. O REGIME, E A RECUSA QUE ELE PRODUZ ───────────────────────────────────────────
       //
-      // ⚠ **QUEM NÃO É DO SIMPLES NÃO CONSEGUE EMITIR POR ESTA TELA HOJE, E ISSO É DO SERVIDOR.**
-      // `buildDpsXml` (`apps/api/src/application/nfse/NfseService.js`) recusa com
-      // `MISSING_TOT_TRIB_NAO_SIMPLES` quando `opSimpNac ≠ 3` e nenhum de
-      // `pTotTribFed`/`pTotTribEst`/`pTotTribMun` vem no corpo — e o formulário do cliente não
-      // oferece nenhum dos três. A recusa é DELIBERADA lá: o caminho antigo emitia
-      // `<vTotTribFed>0.00</vTotTribFed>`, que **afirma carga tributária zero** (Lei 12.741/2012),
-      // e a estrutura correta do grupo não pôde ser confirmada sem o XSD.
+      // ⚠ **QUEM NÃO É DO SIMPLES PRECISA DECLARAR A CARGA TRIBUTÁRIA APROXIMADA, E QUEM RECUSA É O
+      // SERVIDOR.** `buildDpsXml` (`apps/api/src/application/nfse/NfseService.js`) recusa com
+      // `MISSING_TOT_TRIB_NAO_SIMPLES` quando `opSimpNac ≠ 3` e algum de
+      // `pTotTribFed`/`pTotTribEst`/`pTotTribMun` não é encontrado. A recusa é DELIBERADA lá: o
+      // caminho antigo emitia `<vTotTribFed>0.00</vTotTribFed>`, que **afirma carga tributária
+      // zero** (Lei 12.741/2012).
       //
-      // ⚠ O mock replica a recusa em vez de deixar a empresa do Presumido emitir. Um mock que
-      // aceitasse faria a tela parecer pronta para um regime em que ela não está — e o defeito só
-      // apareceria com o cliente na frente do formulário preenchido.
+      // ⚠⚠ **RESOLUÇÃO POR CAMPO, PAYLOAD → CADASTRO — e este mock já mentiu sobre isso.** Ele
+      // julgava SÓ o payload, e por isso recusava toda empresa do Presumido: era verdade enquanto os
+      // três só pudessem vir no corpo, e virou falso quando o cadastro passou a ser a fonte deles
+      // (`11187501`). Cada campo resolve SOZINHO — o payload vence quando informado, e a ausência
+      // dele cai no cadastro, nunca em zero. Um mock que continuasse recusando faria a tela parecer
+      // travada para um regime que hoje emite.
+      //
+      // ⚠ O FORMULÁRIO DO CLIENTE NÃO ENVIA NENHUM DOS TRÊS, e não deve enviar: eles são
+      // configuração do contador, e o payload VENCERIA o cadastro. Na prática, aqui, o valor sempre
+      // vem do `legacyCompany` — o ramo do payload existe porque a REGRA do servidor é essa, e um
+      // mock que só implementasse o ramo que a tela usa esconderia a precedência.
       const regimeBruto = String(empresa?.legacyCompany?.regimeTributario || "")
         .trim()
         .toUpperCase()
         .replace(/[\s-]+/g, "_");
       const ehSimplesNoMock = regimeBruto === "SIMPLES" || regimeBruto === "SIMPLES_NACIONAL";
-      const temTotTribNaoSimples = [
-        payload?.totTrib?.pTotTribFed,
-        payload?.totTrib?.pTotTribEst,
-        payload?.totTrib?.pTotTribMun,
-      ].some((v) => v !== undefined && v !== null && v !== "");
+      const informadoNoMock = (v) => v !== undefined && v !== null && v !== "";
+      const totTribFaltando = ["pTotTribFed", "pTotTribEst", "pTotTribMun"].filter((campo) => {
+        const doPayload = payload?.totTrib?.[campo];
+        const doCadastro = empresa?.legacyCompany?.[campo];
+        return !informadoNoMock(doPayload) && !informadoNoMock(doCadastro);
+      });
       // ⚠ Só recusa quando o regime é CONHECIDO e não é Simples. Regime que não chegou até a tela
       // (`legacyCompany: null`, as pc-002/003/004) não vira "não optante" por omissão — do lado do
       // servidor essa empresa cairia em `NFSE_REGIME_INDEFINIDO`, que é outra recusa, de outra
       // fonte (`CadastroFiscal`), e fabricá-la aqui seria o mock inventando um fato do cadastro.
-      if (regimeBruto && !ehSimplesNoMock && !temTotTribNaoSimples) {
+      if (regimeBruto && !ehSimplesNoMock && totTribFaltando.length) {
         throw new ApiError(400, "nfse_falha_local", "falha local", {
           error: "nfse_falha_local",
           camada: "NOSSA",
           codigo: "MISSING_TOT_TRIB_NAO_SIMPLES",
+          // ⚠ A LISTA VIAJA NOMEADA, como no servidor: "falta a carga tributária" mandaria conferir
+          // três números; o servidor diz QUAIS, e o mock não pode dizer menos.
+          faltando: totTribFaltando,
           message:
-            "Empresa não optante do Simples: a carga tributária aproximada (pTotTribFed/Est/Mun) não " +
-            "foi informada, e o código emitia 0,00 — que afirma carga zero.",
+            "Empresa não optante do Simples: a carga tributária aproximada (Lei 12.741/2012) não " +
+            `está completa — falta ${totTribFaltando.join(", ")}. O código emitia 0,00 nos campos ` +
+            "ausentes, que AFIRMA carga zero ao tomador.",
           correcao:
-            "Informe os percentuais de tributos aproximados (Lei 12.741/2012). ⚠ O formulário do " +
-            "cliente não oferece esses campos hoje: a emissão de empresa não optante ainda não " +
-            "passa por esta tela. Fale com o seu contador.",
+            "Os percentuais de tributos aproximados (Lei 12.741/2012) são configurados pelo seu " +
+            "contador, no cadastro da empresa. Fale com ele antes de emitir.",
           numeroReutilizavel: true,
           // ⚠ SEM `rpsNumero`: a recusa acontece ANTES da reserva de numeração, e é isso que ela
           // significa — nenhum número foi consumido, nada saiu da máquina. Preencher um número
