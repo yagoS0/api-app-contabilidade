@@ -29,7 +29,7 @@ jest.mock("../../config.js", () => ({
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // "Banco" em memória
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-const mockDb = { users: [], tokens: [], sessions: [] };
+const mockDb = { users: [], tokens: [], sessions: [], trocas: [] };
 let mockSeq = 0;
 
 jest.mock("../../infrastructure/db/prisma.js", () => {
@@ -73,6 +73,17 @@ jest.mock("../../infrastructure/db/prisma.js", () => {
         const alvos = mockDb.sessions.filter((s) => casa(s, where));
         alvos.forEach((s) => Object.assign(s, data));
         return { count: alvos.length };
+      }),
+    },
+    // ⚠ A AUDITORIA DA TROCA (`senhas_portal_trocas`) — é UMA SENHA SÓ com três caminhos, e este é
+    // um deles. Sem a linha aqui, a tela do contador mostraria a troca DELE como a última muito
+    // depois de o cliente ter redefinido pelo e-mail. Ver `SenhaDoPortalService.registrarTroca`.
+    portalPasswordChange: {
+      create: jest.fn(async ({ data }) => {
+        mockSeq += 1;
+        const linha = { id: `spt-${mockSeq}`, createdAt: new Date(), ...data };
+        mockDb.trocas.push(linha);
+        return { ...linha };
       }),
     },
     company: { findMany: jest.fn(async () => []) },
@@ -182,6 +193,7 @@ beforeEach(() => {
     },
   ];
   mockDb.tokens = [];
+  mockDb.trocas = [];
   mockDb.sessions = [
     { id: "sess-1", userId: "user-1", revokedAt: null },
     { id: "sess-2", userId: "user-1", revokedAt: null },

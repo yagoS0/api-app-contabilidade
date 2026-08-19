@@ -31,6 +31,7 @@ import { createApuracaoV2Router } from "./apuracaoV2.js";
 import { createPlanejamentoRouter } from "./planejamento.js";
 import { createCompanyDocumentsRouter } from "./companyDocuments.js";
 import { createCompanyCredentialsRouter } from "./companyCredentials.js";
+import { createPortalAccessRouter } from "./portalAccess.js";
 import { createCalendarioRouter } from "./calendario.js";
 import { createObrigacoesRouter } from "./obrigacoes.js";
 import { createOnboardingsRouter } from "./onboardings.js";
@@ -4773,6 +4774,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
   // ⚠ Router PRÓPRIO, com gate de papel próprio — é a única superfície que devolve senha de cliente.
   const companyCredentialsRouter = createCompanyCredentialsRouter({ log });
   router.use("/companies/:companyId", companyCredentialsRouter);
+
+  // Acesso do CLIENTE ao portal — quem é o usuário daquela empresa e a troca da senha dele.
+  // ⚠ Router PRÓPRIO e SEPARADO do cofre acima, apesar de as duas seções dividirem a mesma aba: o
+  // cofre guarda senha de terceiro de forma RECUPERÁVEL, de propósito; esta é bcrypt e NÃO É
+  // recuperável, nem pode passar a ser. Ver o cabeçalho de `portalAccess.js`.
+  const portalAccessRouter = createPortalAccessRouter({ log });
+  router.use("/companies/:companyId", portalAccessRouter);
 
   // Calendário fiscal — do ESCRITÓRIO, não por empresa: monta no nível raiz de /firm.
   router.use("/", createCalendarioRouter({ log }));

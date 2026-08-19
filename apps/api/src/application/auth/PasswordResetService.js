@@ -2,6 +2,7 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../infrastructure/db/prisma.js";
 import { EmailService } from "../../infrastructure/mail/EmailService.js";
+import { registrarTroca, ORIGENS } from "./SenhaDoPortalService.js";
 import {
   PASSWORD_RESET_TTL_MINUTES,
   PORTAL_CLIENTE_WEB_URL,
@@ -200,6 +201,14 @@ export class PasswordResetService {
     // ⚠ Por isso a revogação é escrita à mão aqui em vez de chamar
     // `ClientSessionService.revokeAllForUser`: aquela roda fora de transação, e a revogação precisa
     // acontecer no MESMO commit da troca de senha. A regra é a mesma; o que muda é a fronteira.
+    //
+    // ⚠ A QUARTA ESCRITA — a linha de auditoria — entrou em 19/08/2026, junto da porta do contador
+    // (`POST /firm/companies/:id/acesso-portal/:userId/senha`). Ela está AQUI, e não só lá, porque
+    // é UMA SENHA SÓ com TRÊS caminhos: se só o caminho do escritório registrasse, a tela do
+    // contador diria "trocada por mim em tal dia" para uma senha que o cliente redefiniu depois
+    // pelo e-mail — o estado errado exatamente no caso em que ele importa.
+    //
+    // ⚠ NADA DA SENHA, NEM DO TOKEN, entra nessa linha (ver a assinatura de `registrarTroca`).
     await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: registro.userId },
@@ -212,6 +221,15 @@ export class PasswordResetService {
       await tx.clientSession.updateMany({
         where: { userId: registro.userId, revokedAt: null },
         data: { revokedAt: agora },
+      });
+      // O autor é o PRÓPRIO dono da senha: quem redefine pelo link é quem tem a caixa de e-mail.
+      // Nome e e-mail ficam nulos de propósito — este módulo não consulta a `User`, e a tela sabe
+      // dizer "pelo próprio cliente" só pela `origem`.
+      await registrarTroca(tx, {
+        userId: registro.userId,
+        portalClientId: null,
+        origem: ORIGENS.CLIENTE_RECUPERACAO,
+        ator: { id: registro.userId },
       });
     });
 

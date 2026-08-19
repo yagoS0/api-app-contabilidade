@@ -831,6 +831,30 @@ export function createRealApi() {
         body: JSON.stringify({ confirmado: confirmado === true, motivo: motivo || undefined }),
       });
     },
+    // ── Acesso do CLIENTE ao portal — a senha dele ─────────────────────────────────────────
+    //
+    // ⚠⚠ NÃO É O COFRE ACIMA, e a diferença é a razão de existirem duas. O cofre guarda senha de
+    // TERCEIRO de forma recuperável, de propósito; esta é `bcrypt` em `User.passwordHash` e NÃO tem
+    // volta. Não existe "ver a senha do cliente": o contador DEFINE uma nova.
+    //
+    // A listagem traz quem são os usuários do portal e QUANDO a senha de cada um foi trocada pela
+    // última vez, por qual caminho. Nenhuma senha, nem máscara, nem tamanho — não há o que mascarar.
+    async getPortalAccessUsers(companyId) {
+      return request(`/firm/companies/${companyId}/acesso-portal`);
+    },
+    // ⚠ A ÚNICA chamada deste par que devolve senha, e ela é uma senha NOVA — o servidor a GERA.
+    // POST de propósito: escreve a linha de auditoria, revoga as sessões do usuário, e um verbo
+    // repetível seria repetido de graça por refresh/"abrir em nova aba" — cada repetição sendo
+    // outra senha, invalidando a que o contador acabou de ditar ao cliente.
+    //
+    // ⚠ `userId` na URL e OBRIGATÓRIO: a senha é DE UM USUÁRIO, e o servidor nunca escolhe sozinho.
+    // ⚠ `confirmado` viaja explícito — o servidor recusa sem ele (400 `confirmacao_obrigatoria`).
+    async resetPortalUserPassword(companyId, userId, { confirmado } = {}) {
+      return request(`/firm/companies/${companyId}/acesso-portal/${userId}/senha`, {
+        method: "POST",
+        body: JSON.stringify({ confirmado: confirmado === true }),
+      });
+    },
     async listCompanyCredentialAccesses(companyId, limite) {
       const q = limite ? `?limite=${encodeURIComponent(limite)}` : "";
       return request(`/firm/companies/${companyId}/credenciais/acessos${q}`);

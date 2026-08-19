@@ -679,6 +679,44 @@ const mockCofre = {
   rotulo: "Chave derivada de CERT_SECRET_KEY (variável de ambiente do servidor)",
 };
 
+// Usuários do PORTAL DO CLIENTE — a credencial que o contador pode redefinir.
+//
+// ⚠ NENHUMA SENHA AQUI, nem falsa. O cofre acima tem `_senhaFalsa` porque lá o valor é recuperável
+// de propósito; esta é bcrypt e não tem volta. Um campo de senha nesta fixture convidaria a tela a
+// lê-lo, e a promessa de "exibida uma vez" quebraria no mock antes de quebrar em produção.
+//
+// Os dois usuários existem para a tela exercitar o caso do SEGUNDO usuário — hoje raro (33 de 33
+// empresas têm um só), e exatamente por isso o ramo que nunca seria testado offline.
+let mockUsuariosPortal = [
+  {
+    userId: "mock-user-cli-1",
+    nome: "Maria do Cliente",
+    email: "maria@empresa.com.br",
+    papel: "OWNER",
+    situacaoUsuario: "active",
+    vinculadoEm: "2026-01-10T12:00:00.000Z",
+    // A última troca foi do PRÓPRIO cliente — o estado que só existe porque é uma senha só.
+    ultimaTroca: {
+      origem: "CLIENTE_RECUPERACAO",
+      em: "2026-08-11T09:14:00.000Z",
+      autorUserId: "mock-user-cli-1",
+      autorNome: null,
+      autorEmail: null,
+    },
+  },
+  {
+    userId: "mock-user-cli-2",
+    nome: "João Sócio",
+    email: "joao@empresa.com.br",
+    papel: "CLIENT_ADMIN",
+    situacaoUsuario: "active",
+    vinculadoEm: "2026-03-02T12:00:00.000Z",
+    // Sem registro nenhum: a senha pode ter sido definida no provisionamento da empresa, que é
+    // anterior a esta tabela existir. A tela diz isso, em vez de inventar uma data.
+    ultimaTroca: null,
+  },
+];
+
 // Consultas de notas em lote já disparadas nesta sessão — dá para sair da aba e voltar achando o
 // resultado, que é o comportamento que evita o contador disparar (e pagar) de novo.
 let mockCapturas = [];
@@ -6379,6 +6417,64 @@ export function createMockApi() {
       return {
         ok: true, id: cred.id, rotulo: cred.rotulo, login: cred.login,
         senha: cred._senhaFalsa, acessoId: `mock-acesso-${Date.now()}`,
+      };
+    },
+    // ── Acesso do CLIENTE ao portal (mock) ─────────────────────────────────────────────────
+    //
+    // ⚠ O MOCK EXERCITA OS DOIS RAMOS QUE A TELA PRECISA DISTINGUIR, porque este projeto já foi
+    // mordido três vezes na mesma semana por ramo inalcançável offline:
+    //   `mock-pc-1` → UM usuário (o caso de hoje: 33 empresas, 33 usuários, todos OWNER);
+    //   qualquer outra empresa → DOIS usuários, e aí a tela não pode escolher sozinha.
+    //
+    // ⚠ E o `mock-pc-1` nasce com a última troca feita PELO PRÓPRIO CLIENTE. É de propósito: é o
+    // estado que o contador precisa ver e que só existe porque é UMA SENHA SÓ. Um mock que só
+    // conhecesse `ESCRITORIO` deixaria a frase dos outros dois caminhos sem exercício.
+    async getPortalAccessUsers(companyId) {
+      await delay(70);
+      const usuarios =
+        String(companyId) === "mock-pc-1"
+          ? [mockUsuariosPortal[0]]
+          : mockUsuariosPortal;
+      return {
+        ok: true,
+        usuarios: usuarios.map((u) => ({ ...u })),
+        podeDefinirSenha: true,
+        papelMinimoDefinirSenha: "ACCOUNTANT",
+      };
+    },
+    // ⚠ Recusa sem `confirmado`, igual ao servidor — mock permissivo faria a tela passar sem nunca
+    // mandar o campo, e a recusa só apareceria em produção.
+    // ⚠ E a senha volta UMA VEZ: o mock NÃO a guarda em `mockUsuariosPortal`, exatamente como o
+    // servidor não a guarda em lugar nenhum. Guardá-la aqui faria a próxima listagem devolvê-la, e
+    // a tela poderia passar a lê-la de lá sem ninguém notar que a promessa quebrou.
+    async resetPortalUserPassword(companyId, userId, { confirmado } = {}) {
+      await delay(140);
+      if (confirmado !== true) {
+        const e = new Error("Trocar a senha do cliente exige confirmação explícita.");
+        e.code = "confirmacao_obrigatoria";
+        throw e;
+      }
+      const alvo = mockUsuariosPortal.find((u) => u.userId === userId);
+      if (!alvo) {
+        const e = new Error("Este usuário não é um usuário ativo do portal desta empresa.");
+        e.code = "usuario_nao_e_do_portal";
+        throw e;
+      }
+      const em = new Date().toISOString();
+      alvo.ultimaTroca = {
+        origem: "ESCRITORIO",
+        em,
+        autorUserId: "mock-user-firm",
+        autorNome: "Contador Fulano",
+        autorEmail: "contador@exemplo.com.br",
+      };
+      return {
+        ok: true,
+        // Formato IGUAL ao do gerador do servidor (3 blocos de 4, sem caractere ambíguo) — um mock
+        // com senha de outra forma esconderia problema de largura/quebra de linha na tela.
+        senha: "Kfrp-7twn-Qx3m",
+        usuario: { userId: alvo.userId, nome: alvo.nome, email: alvo.email, papel: alvo.papel },
+        troca: { ...alvo.ultimaTroca },
       };
     },
     async listCompanyCredentialAccesses() {

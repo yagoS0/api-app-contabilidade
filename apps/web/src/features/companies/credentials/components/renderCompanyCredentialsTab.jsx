@@ -13,6 +13,7 @@ import {
   ESTADOS, MASCARA, CARGA,
   estadoDaCredencial, podeVerSenha, avisoDeProtecao, estadoDaCarga,
 } from "../lib/estadoCredencial";
+import { AcessoPortalCliente } from "./AcessoPortalCliente";
 
 const btn = (cor = "var(--border)") => ({
   padding: "6px 10px", borderRadius: "var(--radius-sm)", border: `1px solid ${cor}`,
@@ -380,7 +381,7 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
   );
 }
 
-export function CompanyCredentialsTab({ vault }) {
+export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
   const {
     credenciais, cofre, podeRevelar, papelMinimoRevelar, carregando, erro,
     informacoes, carregandoInfos, erroInfos,
@@ -437,6 +438,13 @@ export function CompanyCredentialsTab({ vault }) {
             : (erro && !credenciais.length ? "não foi possível contar" : `${credenciais.length} credencial(is)`)}
         </span>
       </div>
+
+      {/* ⚠ TRÊS SEÇÕES AGORA, e a de cima é de outra natureza que as duas de baixo. Ela trata da
+          senha do CLIENTE no portal dele — bcrypt, irreversível, com três caminhos de troca —,
+          enquanto o cofre trata de senha de TERCEIRO, cifrada de forma recuperável de propósito.
+          Vem primeiro porque é a que o contador procura quando o cliente liga dizendo que não
+          consegue entrar; e é a única que muda algo fora deste sistema. */}
+      {acesso ? <AcessoPortalCliente acesso={acesso} razaoSocial={razaoSocial} /> : null}
 
       <Aviso nivel={aviso.nivel} texto={aviso.texto} />
 

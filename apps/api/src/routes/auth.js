@@ -10,6 +10,9 @@ import {
   mailerConfigurado,
   portalConfigurado,
 } from "../application/auth/PasswordResetService.js";
+// ⚠ A troca de senha do cliente pelo PRÓPRIO perfil também é registrada — é UMA SENHA SÓ, e a tela
+// do contador precisa saber que ELE não foi o último a trocar. Ver `SenhaDoPortalService.js`.
+import { registrarTroca, ORIGENS } from "../application/auth/SenhaDoPortalService.js";
 import { safeLogError } from "../lib/safeLogError.js";
 
 export function createAuthRouter({ AuthService, UserRepository, log, ensureAuthorized }) {
@@ -375,8 +378,46 @@ export function createAuthRouter({ AuthService, UserRepository, log, ensureAutho
         return res.status(401).json({ error: "invalid_current_password" });
       }
       const passwordHash = await bcrypt.hash(String(newPassword), 10);
-      await UserRepository.updateUser(user.id, { passwordHash });
-      await ClientSessionService.revokeAllForUser(user.id);
+      const agora = new Date();
+
+      // ⚠ AS TRÊS ESCRITAS VIRARAM UMA TRANSAÇÃO SÓ (19/08/2026), pelo mesmo motivo que já estava
+      // escrito em `PasswordResetService.redefinirSenha`: senha nova com sessão viva, ou senha nova
+      // sem linha de auditoria, são estados intermediários que uma transação evita. É também por
+      // isso que a revogação é escrita à mão aqui em vez de chamar
+      // `ClientSessionService.revokeAllForUser` — aquela roda FORA de transação. A regra é a mesma;
+      // o que muda é a fronteira.
+      //
+      // ⚠ A LINHA DE AUDITORIA É NOVA, e é o que faz o portal do contador saber que ESTE caminho
+      // foi usado. É UMA SENHA SÓ com TRÊS caminhos (escritório, este, e a recuperação por e-mail);
+      // sem o registro aqui, a tela do contador continuaria mostrando a troca DELE como a última,
+      // muito depois de o cliente ter trocado a senha por conta própria.
+      //
+      // ⚠ Os tokens de recuperação pendentes também são queimados: um link de "esqueci minha senha"
+      // pedido ANTES desta troca continuaria vivo e desfaria em silêncio a senha recém-definida.
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+        await tx.clientSession.updateMany({
+          where: { userId: user.id, revokedAt: null },
+          data: { revokedAt: agora },
+        });
+        await tx.passwordResetToken.updateMany({
+          where: { userId: user.id, usedAt: null },
+          data: { usedAt: agora },
+        });
+        // O autor é o próprio dono da senha — este caminho exige saber a senha ATUAL.
+        await registrarTroca(tx, {
+          userId: user.id,
+          portalClientId: null,
+          origem: ORIGENS.CLIENTE_PERFIL,
+          ator: {
+            id: user.id,
+            name: user.name || null,
+            email: user.email || null,
+            ip: req.ip || req.socket?.remoteAddress || null,
+            userAgent: req.get?.("user-agent") || null,
+          },
+        });
+      });
       return res.json({ ok: true });
     } catch (err) {
       safeLogError(log, { userId: authUser.id }, err, "Falha ao trocar senha");

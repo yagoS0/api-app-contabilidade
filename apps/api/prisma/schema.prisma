@@ -227,6 +227,10 @@ model User {
   contatosWhatsapp   ContatoWhatsapp[]
   /// Contraparte de `password_reset_tokens.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
   passwordResetTokens PasswordResetToken[]
+  /// Contraparte de `senhas_portal_trocas.userId`. NENHUMA coluna nova em `"User"` — a FK mora lá.
+  /// ⚠ E nenhuma delas guarda a senha: `passwordHash` continua sendo o ÚNICO lugar onde a senha
+  /// existe, em bcrypt, sem volta.
+  senhasPortalTrocas  PortalPasswordChange[]
 }
 
 // Pedido de redefinição de senha ("esqueci minha senha").
@@ -265,6 +269,67 @@ model PasswordResetToken {
 // Sessão revogável do portal do cliente (app mobile). O refresh é opaco (aleatório),
 // guardado só como hash; rotaciona a cada /auth/refresh. Logout revoga a sessão do
 // dispositivo; troca de senha revoga TODAS as sessões do usuário. FIRM segue stateless.
+/// Histórico de trocas de senha do usuário do portal — quem trocou, quando, e por qual caminho.
+///
+/// ⚠⚠ NADA DA SENHA ENTRA AQUI: nem o claro, nem o hash, nem o tamanho, nem um prefixo. A senha do
+/// portal é `bcrypt` em `User.passwordHash` e NÃO TEM VOLTA. Não existe "mostrar a senha atual" em
+/// lugar nenhum deste sistema, e nenhuma coluna futura pode passar a permitir isso — o cliente
+/// EMITE NFS-e em nome da própria empresa com essa credencial, e uma cópia do banco viraria a senha
+/// de todos eles.
+///
+/// ⚠ POR QUE UMA TABELA, e não duas colunas em `PortalClient` no molde de
+/// `emissaoClienteLiberadaEm`/`Por`: aquelas são POR EMPRESA e esta senha é DE UM USUÁRIO. Hoje os
+/// dois recortes coincidem (medido em 19/08/2026: 33 empresas, 33 usuários `OWNER` ativos, um por
+/// empresa), mas a coincidência não é garantida por nada no schema — `CompanyClientUser` é
+/// `@@unique([companyId, userId])`, o que permite N usuários por empresa. Com duas colunas, o
+/// segundo usuário faria a linha responder "a senha de quem?" com o último que trocou.
+///
+/// ⚠ E é a tabela que faz o estado ser HONESTO NOS TRÊS CAMINHOS. São três, e é uma senha só:
+///   ESCRITORIO          → `POST /firm/companies/:id/acesso-portal/:userId/senha` (o contador)
+///   CLIENTE_PERFIL      → `POST /auth/change-password` (o cliente, sabendo a senha atual)
+///   CLIENTE_RECUPERACAO → `POST /auth/reset-password` (o cliente, pelo link do e-mail)
+/// Os dois últimos não passam por empresa nenhuma. Sem esta tabela, a tela do contador diria
+/// "trocada por mim em tal dia" para uma senha que o cliente já trocou depois — o estado errado
+/// justamente no caso em que ele importa.
+///
+/// Append-only, como `company_credential_acessos`, `estornos_baixa` e `atos_parcelamento`. Nada
+/// aqui é editado nem apagado; `autorNome`/`autorEmail` são CÓPIA IMUTÁVEL do instante do ato,
+/// porque o contador que agiu pode ser desligado e apagado depois, e um log que aponta para um id
+/// que não existe mais não conta história nenhuma.
+model PortalPasswordChange {
+  id String @id @default(uuid())
+
+  /// De QUEM é a senha trocada.
+  userId String
+
+  /// Em qual empresa o contador estava. NULO nos caminhos do cliente — e nulo aqui significa "não
+  /// houve empresa", nunca "não sabemos".
+  portalClientId String?
+
+  /// ESCRITORIO | CLIENTE_PERFIL | CLIENTE_RECUPERACAO (CHECK no banco).
+  origem String
+
+  /// Quem AGIU: o contador, ou o próprio dono da senha nos dois caminhos do cliente.
+  autorUserId String?
+  /// Cópia imutável — ver o comentário acima.
+  autorNome   String?
+  autorEmail  String?
+
+  ip        String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SetNull: o histórico sobrevive ao encerramento da empresa — é depois que um cliente sai que
+  /// se pergunta quem tinha o acesso dele.
+  portalClient PortalClient? @relation(fields: [portalClientId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([portalClientId, createdAt])
+  @@map("senhas_portal_trocas")
+}
+
 model ClientSession {
   id               String    @id @default(uuid())
   userId           String
@@ -651,6 +716,10 @@ model PortalClient {
   /// Relatórios de faturamento gerados por competência. NENHUMA coluna nova em `portal_clients`:
   /// a FK mora em `relatorios_faturamento.portalClientId`.
   relatoriosFaturamento   RelatorioFaturamento[]
+  /// Trocas de senha do usuário do portal feitas PELO ESCRITÓRIO nesta empresa. NENHUMA coluna
+  /// nova aqui — a FK mora em `senhas_portal_trocas.portalClientId`, e ela é NULA nos caminhos do
+  /// cliente (perfil e recuperação), que não passam por empresa nenhuma.
+  senhasPortalTrocas      PortalPasswordChange[]
 
   @@index([cnpj])
   @@index([updatedAt])

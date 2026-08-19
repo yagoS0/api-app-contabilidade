@@ -21,6 +21,7 @@ import { ENTREGA_POR_ARQUIVO_LIBERADA } from "../../../obrigacoes/entregas/lib/l
 import { obrigatoriedadeDefis } from "../../../obrigacoes/defis/lib/obrigatoriedadeDefis";
 import { useCompanyDocuments, useCompanyNotes } from "../../documents/hooks/useCompanyDocuments";
 import { useCompanyCredentials } from "../../credentials/hooks/useCompanyCredentials";
+import { useAcessoPortalCliente } from "../../credentials/hooks/useAcessoPortalCliente";
 
 // Q8.C.3: lazy load das tabs pesadas. Bundle inicial cai (~30-40% segundo medições típicas),
 // e cada tab só carrega seu JS quando o contador clica nela pela 1ª vez.
@@ -107,9 +108,14 @@ function CompanyNotesTabWrapper({ companyId, feedback }) {
 // ⚠ `feedback` INTEIRO, nunca `{ message, error }`. O hook do cofre chama `notifyError` — com a
 // função ausente o optional call vira no-op silencioso, e toda falha de carga/revelação sumiria
 // sem uma linha na tela. É o defeito que já custou uma semana no FechamentoModal.
-function CompanyCredentialsTabWrapper({ companyId, feedback }) {
+// ⚠ DOIS HOOKS, e não um com três naturezas. `useAcessoPortalCliente` guarda uma senha que NÃO tem
+// como ser recuperada por ninguém; o cofre guarda segredos que podem ser revelados de novo. Regras
+// de descarte diferentes não moram no mesmo estado — a mais frouxa venceria na primeira mexida.
+// ⚠ `razaoSocial` viaja para a CONFIRMAÇÃO nomear a empresa junto do usuário.
+function CompanyCredentialsTabWrapper({ companyId, feedback, razaoSocial }) {
   const vault = useCompanyCredentials({ api: companyDocsApi, companyId, feedback });
-  return <CompanyCredentialsTab vault={vault} />;
+  const acesso = useAcessoPortalCliente({ api: companyDocsApi, companyId, feedback });
+  return <CompanyCredentialsTab vault={vault} acesso={acesso} razaoSocial={razaoSocial} />;
 }
 
 // Q14.2: wrapper que instancia hook próprio da Apuração v2 (state da empresa atual)
@@ -528,7 +534,11 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
         <div style={{ flex: 1 }}>
           <ErrorBoundary>
             <Suspense fallback={<div style={{ padding: 24, color: "#8A8FA3" }}>Carregando…</div>}>
-              <CompanyCredentialsTabWrapper companyId={companyId} feedback={feedback} />
+              <CompanyCredentialsTabWrapper
+                companyId={companyId}
+                feedback={feedback}
+                razaoSocial={selectedCompany?.razao}
+              />
             </Suspense>
           </ErrorBoundary>
         </div>
