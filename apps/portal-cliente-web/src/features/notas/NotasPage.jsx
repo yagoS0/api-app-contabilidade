@@ -5,6 +5,7 @@ import { useCarregamento } from "../../lib/hooks";
 import { baixarBlob } from "../../lib/baixarBlob";
 import { modeloDeEmissaoDaNota, podeReaproveitar } from "../emitir/lib/reaproveitarNota";
 import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "./lib/danfseDaNota";
+import { lerRecusaLote, nomeDoArquivoLoteDanfse } from "./lib/loteDanfse";
 import { podeCancelar } from "./lib/cancelamentoNota";
 import { estadoDaLinhaDaNota } from "./lib/estadoDaLinhaDaNota";
 import { ESCOPO } from "./lib/impedimento";
@@ -154,6 +155,76 @@ function BotaoDanfse({ nota, companyId }) {
   );
 }
 
+/**
+ * O botão do DANFSe EM LOTE — o zip da competência que está na tela.
+ *
+ * > Pedido do dono (19/08/2026): *"a possibilidade de baixar notas em lote (…) quero o download no
+ * > portal do cliente, e fazer o download dos DANFSe e não do XML."*
+ *
+ * ⚠ ELE MORA JUNTO DO FILTRO DE COMPETÊNCIA, e não numa coluna da tabela, porque **é o filtro que
+ * ele baixa**. Nenhuma lista de notas sai daqui: o que vai ao servidor é a competência, e é lá que
+ * o recorte é resolvido — com o mesmo `where` da listagem. Botão no cabeçalho, longe do seletor,
+ * faria parecer que ele baixa "tudo".
+ *
+ * ⚠⚠ O ZIP TRAZ UM `RELATORIO.txt`, E A TELA DIZ ISSO ANTES DE A PESSOA ABRIR O ARQUIVO. Nem toda
+ * nota gera DANFSe (NF-e, nota sem o XML guardado, nota sem QR Code, nota que o sistema nacional
+ * ainda não devolveu), e a ausência **não pode ser descoberta contando arquivos**. O relatório é
+ * onde ela está escrita, nota por nota, com o motivo — apontar para ele é o que transforma o
+ * arquivo em resposta.
+ *
+ * ⚠ A RECUSA `lote_muito_grande` CHEGA COM OS NÚMEROS. Ela é a única resposta desta ação que a
+ * tela precisa EXPLICAR: cada DANFSe é gerado na hora, e sem o teto o download morreria no meio
+ * sem dizer quantas notas vieram. A regra do texto mora em `lib/loteDanfse.js`.
+ */
+function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado }) {
+  const [estado, setEstado] = useState({ fase: "ocioso", recusa: null });
+  const baixando = estado.fase === "baixando";
+
+  async function baixar() {
+    setEstado({ fase: "baixando", recusa: null });
+    try {
+      const blob = await api.baixarDanfseEmLote(companyId, { competencia: competencia || undefined });
+      baixarBlob(blob, nomeDoArquivoLoteDanfse({ cnpj, competencia }));
+      setEstado({ fase: "pronto", recusa: null });
+    } catch (err) {
+      setEstado({ fase: "recusado", recusa: lerRecusaLote(err) });
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: ".25rem" }}>
+      <button
+        type="button"
+        className="btn"
+        disabled={!habilitado || baixando}
+        title={
+          habilitado
+            ? "Gera os DANFSe das notas deste filtro e baixa tudo num arquivo .zip"
+            : "Não há nota neste filtro para baixar."
+        }
+        onClick={habilitado && !baixando ? baixar : undefined}
+      >
+        {baixando ? "Gerando os PDFs…" : "Baixar DANFSe em lote (.zip)"}
+      </button>
+      {estado.fase === "pronto" ? (
+        <span className="muted" style={{ fontSize: ".78rem", maxWidth: 340 }}>
+          Arquivo baixado. Dentro dele, <strong>RELATORIO.txt</strong> lista as notas que não
+          geraram DANFSe e o motivo de cada uma.
+        </span>
+      ) : null}
+      {estado.recusa ? (
+        <span
+          className="muted"
+          style={{ fontSize: ".78rem", color: "var(--danger)", display: "block", maxWidth: 340 }}
+        >
+          ⚠ {estado.recusa.titulo} {estado.recusa.texto}
+          {estado.recusa.porQue ? ` ${estado.recusa.porQue}` : ""}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
@@ -231,6 +302,13 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
               ))}
             </select>
           </label>
+          {/* ⚠ O botão do lote fica AQUI, colado no filtro, porque é o filtro que ele baixa. */}
+          <BotaoLoteDanfse
+            companyId={companyId}
+            cnpj={empresa.cnpj}
+            competencia={competencia}
+            habilitado={notas.length > 0}
+          />
         </div>
       </div>
 

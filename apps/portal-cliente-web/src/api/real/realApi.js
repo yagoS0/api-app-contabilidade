@@ -218,6 +218,49 @@ export function createRealApi() {
       return res.blob();
     },
 
+    // O ZIP COM OS DANFSe DE VÁRIAS NOTAS — `GET /client/companies/:id/invoices/danfse/bulk`.
+    //
+    // > Pedido do dono (19/08/2026): *"a possibilidade de baixar notas em lote (…) quero o download
+    // > no portal do cliente, e fazer o download dos DANFSe e não do XML."*
+    //
+    // ⚠ NENHUMA LISTA DE IDS VAI DAQUI. O que viaja é o FILTRO (a competência que está na tela), e
+    // quem resolve quais notas entram é o servidor, com o mesmo `where` da listagem — é isso que
+    // impede o zip de conter nota de outra empresa e que o mantém igual ao que a tabela mostra.
+    //
+    // ⚠ `direcao: "emitidas"` é o MESMO recorte de `getInvoices`, e tem de continuar sendo: o lote
+    // que baixasse "todas" traria nota recebida que a tela nunca listou.
+    //
+    // ⚠⚠ A RECUSA PRECISA CHEGAR NOMEADA, com os NÚMEROS. **400 `lote_muito_grande`** traz
+    // `encontradas` e `maximo` no corpo, e é o que a tela mostra em vez de "falha ao baixar" — o
+    // teto existe justamente para a pessoa saber quantas notas há antes de o download morrer no
+    // meio. Por isso o corpo inteiro sobe em `ApiError.corpo`, como `pedir()` já faz.
+    //
+    // ⚠ NÃO passa por `pedir()` de propósito, mesma razão do DANFSe individual: aquele faz
+    // `res.json()` sempre, e um zip não é JSON.
+    async baixarDanfseEmLote(companyId, { competencia } = {}) {
+      const { accessToken } = lerSessao();
+      const res = await fetchCru(
+        `/client/companies/${encodeURIComponent(companyId)}/invoices/danfse/bulk${qs({
+          direcao: "emitidas",
+          competencia,
+        })}`,
+        { method: "GET" },
+        accessToken
+      );
+      if (!res.ok) {
+        const corpo = await lerCorpo(res);
+        const codigo = String(corpo?.error || "").trim()
+          || (res.status === 401 ? "unauthorized" : "danfse_lote_fetch_failed");
+        throw new ApiError(
+          res.status,
+          codigo,
+          String(corpo?.message || "").trim() || `Falha ao baixar o lote (HTTP ${res.status})`,
+          corpo
+        );
+      }
+      return res.blob();
+    },
+
     // ⚠⚠ CANCELAR UMA NFS-e — ATO FISCAL IRREVERSÍVEL. Uma nota cancelada não volta.
     //
     // Contrato lido em `apps/api/src/routes/client/index.js` +

@@ -13,6 +13,14 @@ import { ensurePortalClientAccess } from "./middlewares/portalAccess.js";
 // chave de deduplicação e para o porquê de a união ser na LEITURA e não uma gravação em
 // `PortalInvoice`. Ligado SÓ na montagem do `/client` — ver `INCLUIR_EMITIDAS` abaixo.
 import { lerEmitidasNaoConfirmadas } from "../application/notas/notasEmitidasNaoConfirmadas.js";
+// ⚠ O LOTE DE DANFSe — ver `GET /danfse/bulk`, abaixo. O serviço gera os PDFs chamando, nota a
+// nota, o MESMO `gerarDanfseDaNota` da porta individual; nada de PDF é escrito aqui.
+import {
+  LOTE_MAXIMO,
+  NOME_DO_RELATORIO,
+  gerarLoteDanfse,
+  textoDoRelatorio,
+} from "../application/nfse/danfse/loteDanfseDoPortal.js";
 
 function normalizeDoc(value) {
   return String(value || "").replace(/\D+/g, "") || null;
@@ -588,6 +596,179 @@ export function createPortalInvoicesRouter({ ensureAuthorized, log, incluirEmiti
       await archive.finalize();
     } catch (err) {
       log.error({ err, clientId }, "Falha no bulk download de XML");
+      if (!res.headersSent) {
+        return res.status(500).json({ error: "internal_error" });
+      }
+      return res.end();
+    }
+  });
+
+  // ── O DANFSe EM LOTE ────────────────────────────────────────────────────────────────────────
+  //
+  // > Pedido do dono (19/08/2026): *"a possibilidade de baixar notas em lote, com o nome dos
+  // > arquivos sendo o CNPJ da empresa + um número"* — e, na sequência, *"quero o download no
+  // > portal do cliente, e fazer o download dos DANFSe e não do XML."*
+  //
+  // GET /clients/:clientId/invoices/danfse/bulk?competencia=YYYY-MM&direcao=...
+  //
+  // ⚠ ELE MORA AQUI, COLADO NO `/xml/bulk`, E NÃO NUMA ROTA PRÓPRIA DO `/client`, por uma razão
+  // que vale mais que a simetria: **o zip precisa conter exatamente as notas que a tela mostra**, e
+  // quem decide isso é `buildWhereFilters` — a MESMA função da listagem, que é privada deste
+  // módulo. Um lote com o próprio filtro discordaria da tela no primeiro ajuste, e a pessoa veria
+  // 50 linhas e receberia 43 PDFs sem nada dizendo por quê. (O mesmo argumento do gêmeo
+  // `emitidaPassaNoFiltro`, logo acima.)
+  //
+  // ⚠ ESCOPO POR EMPRESA É LEI, e ele é resolvido DUAS vezes: aqui, por `ensurePortalClientAccess`
+  // + `where.clientId`, e de novo dentro de `gerarDanfseDaNota`, que busca cada nota por
+  // `{ id, clientId }`. **Nenhuma lista de ids vem do cliente** — o que chega são filtros.
+  //
+  // ⚠ SÍNCRONO, EM STREAMING, COM TETO. O porquê (e as medições que o decidiram) está no cabeçalho
+  // de `application/nfse/danfse/loteDanfseDoPortal.js`. O teto é conferido com `count()` ANTES de
+  // qualquer byte sair, porque depois do primeiro byte do zip não há mais como responder um erro.
+  router.get("/danfse/bulk", async (req, res) => {
+    if (!(await ensureAuthorized(req, res, { allowApiKeyFallback: false }))) return;
+    const { clientId } = req.params || {};
+    const { direcao, from, to, competencia, status, search } = req.query || {};
+
+    try {
+      const access = await ensurePortalClientAccess(req, res, clientId);
+      if (!access.ok) return;
+
+      const portalClient = await prisma.portalClient.findUnique({
+        where: { id: String(clientId) },
+        select: { cnpj: true, razao: true, companyId: true },
+      });
+      const clientCnpj = normalizeDoc(portalClient?.cnpj);
+
+      const invoiceDirection = String(direcao || "emitidas").toLowerCase();
+      if (!["emitidas", "recebidas", "todas"].includes(invoiceDirection)) {
+        return res.status(400).json({ error: "direcao_invalid" });
+      }
+
+      // ⚠ O MESMO `where` DA LISTAGEM — inclusive `incluirCanceladas`, que por padrão esconde as
+      // canceladas. Divergir daqui é divergir da tela.
+      const where = buildWhereFilters({
+        clientId,
+        clientCnpj,
+        direcao: invoiceDirection,
+        from,
+        to,
+        competencia,
+        status,
+        type: undefined, // ⚠ NF-e NÃO é filtrada no SQL — ela entra e sai NOMEADA no relatório.
+        search,
+        incluirCanceladas: String(req.query.incluirCanceladas || "") === "1",
+      });
+
+      const encontradas = await prisma.portalInvoice.count({ where });
+      if (!encontradas) {
+        return res.status(404).json({
+          error: "lote_vazio",
+          message: "Nenhuma nota encontrada para este filtro.",
+        });
+      }
+      if (encontradas > LOTE_MAXIMO) {
+        // ⚠ RECUSA NOMEADA, ANTES DE COMEÇAR — e não o navegador caindo no meio do download.
+        return res.status(400).json({
+          error: "lote_muito_grande",
+          // ⚠ A SAÍDA TEM DE EXISTIR NA TELA DE QUEM LÊ. "Escolha um filtro mais estreito" é
+          // resposta enquanto houver filtro a estreitar — e no portal do cliente o único é a
+          // competência. Quem JÁ está numa competência e ainda estoura o teto não tem para onde
+          // ir, e por isso a segunda saída (baixar nota a nota, pelo botão da linha, que existe
+          // desde 19/08) é nomeada junto: recusa sem caminho é beco sem saída.
+          message:
+            `Este filtro encontrou ${encontradas} notas, e o download em lote gera no máximo `
+            + `${LOTE_MAXIMO} DANFSe por vez (cada um é um PDF gerado na hora, não um arquivo `
+            + `guardado). Escolha uma competência mais estreita, ou baixe as notas uma a uma pelo `
+            + `botão "Baixar DANFSe" de cada linha.`,
+          encontradas,
+          maximo: LOTE_MAXIMO,
+        });
+      }
+
+      const notas = await prisma.portalInvoice.findMany({
+        where,
+        // ⚠ Ordem pelo NÚMERO da nota — é o que nomeia os arquivos, e o zip sai em ordem legível.
+        orderBy: [{ numero: "asc" }, { issueDate: "asc" }],
+        take: LOTE_MAXIMO,
+        // ⚠ `xmlRaw` NÃO entra: quem o lê é `gerarDanfseDaNota`, nota a nota. Trazer 200 XMLs para
+        // a memória aqui só para descartá-los seria pagar duas vezes pelo mesmo dado.
+        select: { id: true, type: true, numero: true, chaveAcesso: true, emitenteDoc: true },
+      });
+
+      // ⚠⚠ AS NOSSAS EMISSÕES AINDA NÃO CONFIRMADAS entram no RELATÓRIO, não no zip. Elas
+      // aparecem na tela do cliente (união na leitura — ver `notasEmitidasNaoConfirmadas.js`), mas
+      // vivem em `ServiceInvoice`, e a rota do DANFSe lê `PortalInvoice`: não há XML do sistema
+      // nacional de onde gerar. Sem esta linha, quem vê 12 notas na tela receberia 11 PDFs e teria
+      // de descobrir a ausência contando arquivos — que é exatamente o que o relatório impede.
+      const naoConfirmadas = [];
+      if (
+        incluirEmitidasNaoConfirmadas
+        && portalClient?.companyId
+        && filtroAlcancavel({ direcao: invoiceDirection })
+      ) {
+        const cruas = await lerEmitidasNaoConfirmadas({
+          legacyCompanyId: portalClient.companyId,
+          portalClientId: String(clientId),
+        });
+        for (const si of cruas) {
+          if (!emitidaPassaNoFiltro(si, {
+            competencia, from, to, status, type: undefined, search,
+            clientCnpj, emitenteNome: portalClient?.razao,
+          })) continue;
+          naoConfirmadas.push({
+            nota: { id: si.id, numero: si.numeroNfse, chaveAcesso: si.chaveAcesso },
+            motivo:
+              "esta nota foi emitida por aqui e o sistema nacional ainda não a devolveu — o DANFSe "
+              + "é gerado a partir do XML que vem de lá",
+          });
+        }
+      }
+
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const comp = safeFilePart(competencia || "todas");
+      const filename = `danfse-${safeFilePart(clientCnpj || clientId)}-${comp}-${stamp}.zip`;
+
+      res.setHeader("content-type", "application/zip");
+      res.setHeader("content-disposition", `attachment; filename="${filename}"`);
+
+      const archive = archiver("zip", { zlib: { level: 9 } });
+      archive.on("error", (err) => {
+        log.error({ err, clientId }, "Falha ao gerar zip de DANFSe");
+        if (!res.headersSent) res.status(500).json({ error: "zip_generation_failed" });
+        else res.end();
+      });
+      archive.pipe(res);
+
+      const { geradas, falhas, colisoes } = await gerarLoteDanfse({
+        notas,
+        portalClientId: String(clientId),
+        cnpjDaEmpresa: clientCnpj,
+        archive,
+      });
+
+      // ⚠ O RELATÓRIO ENTRA POR ÚLTIMO porque só agora se sabe o que falhou — e isso funciona
+      // mesmo em streaming: o índice do zip é escrito no `finalize`.
+      archive.append(
+        textoDoRelatorio({
+          empresa: portalClient?.razao,
+          cnpj: clientCnpj,
+          competencia,
+          direcao: invoiceDirection,
+          geradas,
+          falhas: [...falhas, ...naoConfirmadas],
+          colisoes,
+        }),
+        { name: NOME_DO_RELATORIO }
+      );
+
+      await archive.finalize();
+      log.info(
+        { clientId, geradas, falhas: falhas.length + naoConfirmadas.length },
+        "danfse-lote: concluído"
+      );
+    } catch (err) {
+      log.error({ err, clientId }, "Falha no download em lote de DANFSe");
       if (!res.headersSent) {
         return res.status(500).json({ error: "internal_error" });
       }

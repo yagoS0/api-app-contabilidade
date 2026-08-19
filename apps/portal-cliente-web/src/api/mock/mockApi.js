@@ -21,6 +21,12 @@ import { lerSessao, limparSessao } from "../sessionStore";
 
 const LATENCIA_MS = 140; // o suficiente para os estados de carregamento existirem de verdade
 
+// ⚠ ESPELHO DE `LOTE_MAXIMO` (`apps/api/src/application/nfse/danfse/loteDanfseDoPortal.js`).
+// Está aqui em cópia porque não há código compartilhado entre a API e este app (ver a tabela
+// "mudou lá, muda aqui" no CLAUDE.md deste portal). ⚠ **Mudou lá, muda aqui**: um mock com teto
+// diferente do servidor treinaria a tela a recusar onde a produção aceita, ou pior, o contrário.
+const LOTE_MAXIMO_MOCK = 200;
+
 function dormir(ms = LATENCIA_MS) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -450,6 +456,39 @@ function criarEstado() {
       _statusEfetivo: "autorizada",
       _semQrCode: true,
     });
+
+    // (3) ⚠⚠ UMA COMPETÊNCIA ACIMA DO TETO DO LOTE — senão a recusa `lote_muito_grande` seria
+    // INALCANÇÁVEL offline, e ela é a única resposta do download em lote que a tela precisa
+    // EXPLICAR (o teto existe porque cada DANFSe é gerado na hora; ver
+    // `apps/api/src/application/nfse/danfse/loteDanfseDoPortal.js`). Sem este mês, o mock geraria
+    // no máximo ~11 notas por competência e ninguém veria o ramo antes da produção — o precedente
+    // desta casa é o mock que recusava todo Lucro Presumido sem ninguém ver.
+    //
+    // ⚠ VAI NO MÊS MAIS ANTIGO de propósito: a tela abre no mês CORRENTE, então nada do fluxo
+    // normal fica mais lento por causa deste caso.
+    const compAntiga = competencias[0];
+    for (let i = 0; i < LOTE_MAXIMO_MOCK + 5; i += 1) {
+      seqNota += 1;
+      const dia = (i % 28) + 1;
+      notas.push({
+        clientId: empresaPrincipal.companyId,
+        invoiceId: `inv-lote-${seqNota}`,
+        type: "NFSE",
+        numero: String(seqNota),
+        competencia: compAntiga,
+        issueDate: diaDoMes(compAntiga, dia).toISOString(),
+        status: "EMITIDA",
+        total: 100 + i,
+        emitente: { nome: empresaPrincipal.razao, cnpj: empresaPrincipal.cnpj },
+        tomador: { nome: `TOMADOR VOLUME ${i + 1} LTDA`, cnpjCpf: "11222333000181" },
+        updatedAt: diaDoMes(compAntiga, dia).toISOString(),
+        hasXml: true,
+        hasPdf: false,
+        descricao: "SERVICO RECORRENTE",
+        confirmadaPeloAdn: true,
+        _statusEfetivo: "autorizada",
+      });
+    }
   }
 
   // --- Guias -----------------------------------------------------------------
@@ -934,6 +973,103 @@ export function createMockApi() {
       const bytes = new Uint8Array(binario.length);
       for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
       return new Blob([bytes], { type: "application/pdf" });
+    },
+
+    // O DANFSe EM LOTE, offline — o zip com os PDFs + `RELATORIO.txt`.
+    //
+    // ⚠⚠ AS QUATRO AUSÊNCIAS PRECISAM SER ALCANÇÁVEIS AQUI, e é a razão de este mock decidir em
+    // vez de devolver um zip fixo. O que o servidor recusa nota a nota, ele recusa também:
+    //
+    //   • **NF-e** — o mock gera ~15% das notas como `type: "NFE"` (`criarEstado`);
+    //   • **sem o XML guardado** — ~10% nascem com `hasXml: false`;
+    //   • **sem QR Code** — a nota plantada `inv-sem-qrcode`;
+    //   • **emitida e ainda não confirmada** — a nota plantada `si-emitida-aguardando-adn`.
+    //
+    // Sem elas, o zip do mock viria sempre completo e o `RELATORIO.txt` nunca teria uma linha —
+    // ninguém veria offline o que a entrega inteira existe para dizer.
+    //
+    // ⚠ E o teto (`lote_muito_grande`) é alcançável pela competência mais antiga da `pc-001`.
+    async baixarDanfseEmLote(companyId, { competencia } = {}) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const empresa = estado.empresas.find((e) => e.companyId === id);
+      const cnpj = String(empresa?.cnpj || "").replace(/\D+/g, "");
+
+      // ⚠ O MESMO recorte de `getInvoices` — o zip tem de conter o que a tabela mostra.
+      const filtradas = estado.notas
+        .filter((n) => n.clientId === id)
+        .filter((n) => (competencia ? n.competencia === competencia : true))
+        .filter((n) => n._statusEfetivo !== "cancelada")
+        .sort((a, b) => String(a.numero || "").localeCompare(String(b.numero || "")));
+
+      if (!filtradas.length) {
+        throw new ApiError(404, "lote_vazio", "Nenhuma nota encontrada para este filtro.");
+      }
+      if (filtradas.length > LOTE_MAXIMO_MOCK) {
+        throw new ApiError(
+          400,
+          "lote_muito_grande",
+          `Este filtro encontrou ${filtradas.length} notas, e o download em lote gera no máximo `
+            + `${LOTE_MAXIMO_MOCK} DANFSe por vez (cada um é um PDF gerado na hora, não um arquivo `
+            + 'guardado). Escolha uma competência mais estreita, ou baixe as notas uma a uma pelo '
+            + 'botão "Baixar DANFSe" de cada linha.',
+          { encontradas: filtradas.length, maximo: LOTE_MAXIMO_MOCK }
+        );
+      }
+
+      const arquivos = [];
+      const falhas = [];
+      const usados = new Set(["relatorio.txt"]);
+      for (const nota of filtradas) {
+        if (String(nota.type).toUpperCase() !== "NFSE") {
+          falhas.push([nota, "é NF-e, e o documento auxiliar dela é o DANFE — este portal não o gera"]);
+          continue;
+        }
+        if (nota.confirmadaPeloAdn === false) {
+          falhas.push([nota, "esta nota foi emitida por aqui e o sistema nacional ainda não a devolveu — o DANFSe é gerado a partir do XML que vem de lá"]);
+          continue;
+        }
+        if (!nota.hasXml) {
+          falhas.push([nota, "o XML desta nota não está guardado, e o DANFSe é gerado a partir dele"]);
+          continue;
+        }
+        if (nota._semQrCode) {
+          falhas.push([nota, "o QR Code não pôde ser gerado, e um DANFSe sem QR Code não é um DANFSe (NT 008 §2.2 e §2.4.3)"]);
+          continue;
+        }
+        // ⚠ O ESQUEMA DE NOMES É O DO SERVIDOR: CNPJ da empresa + o NÚMERO da nota (não um
+        // contador sequencial — ver `nomeNoLote`, no backend). Sem número, cai no id.
+        const doc = String(nota.emitente?.cnpj || cnpj || "").replace(/\D+/g, "") || "sem-cnpj";
+        const sufixo = String(nota.numero || nota.invoiceId || "sem-numero").replace(/[^\w.-]+/g, "_");
+        let nome = `${doc}_${sufixo}.pdf`;
+        for (let i = 2; usados.has(nome.toLowerCase()); i += 1) nome = `${doc}_${sufixo}-${i}.pdf`;
+        usados.add(nome.toLowerCase());
+        arquivos.push([nome, bytesDeBase64(pdfDeUmaLinha(`DANFSe MOCK - nota ${nota.numero}`))]);
+      }
+
+      const linhas = [
+        "DANFSe em lote — relatório do download",
+        "=".repeat(60),
+        `Empresa .......: ${empresa?.razao || "(sem razão social)"}`,
+        `CNPJ ..........: ${cnpj || "(não informado)"}`,
+        `Competência ...: ${competencia || "todas"}`,
+        "",
+        `PDFs neste zip ........: ${arquivos.length}`,
+        `Notas no filtro .......: ${filtradas.length}`,
+        `Notas SEM DANFSe ......: ${falhas.length}`,
+        "",
+      ];
+      if (!falhas.length) {
+        linhas.push("Todas as notas do filtro geraram DANFSe. Nenhuma ficou de fora.");
+      } else {
+        linhas.push("Estas notas NÃO geraram DANFSe:", "");
+        for (const [nota, motivo] of falhas) {
+          linhas.push(`  • ${nota.numero ? `nota ${nota.numero}` : `nota sem número (id ${nota.invoiceId})`} — ${motivo}`);
+        }
+      }
+      arquivos.push(["RELATORIO.txt", bytesDeTexto(`${linhas.join("\r\n")}\r\n`)]);
+
+      return zipArmazenado(arquivos);
     },
 
     // ⚠⚠ CANCELAR, offline. AS TRÊS CAMADAS PRECISAM SER ALCANÇÁVEIS — senão o desfecho de
@@ -1617,4 +1753,136 @@ function pdfDeUmaLinha(texto) {
   pdf += `trailer\n<< /Size ${objetos.length + 1} /Root 1 0 R >>\nstartxref\n${inicioXref}\n%%EOF`;
   // btoa só aceita latin-1; o conteúdo aqui é ASCII por construção.
   return window.btoa(pdf);
+}
+
+/**
+ * Texto → bytes UTF-8.
+ *
+ * ⚠ NÃO USA `TextEncoder`, e isso é medido: o ambiente jsdom do jest deste projeto **não o expõe**
+ * (`ReferenceError: TextEncoder is not defined`), enquanto o navegador expõe. Depender dele faria o
+ * mock funcionar no `npm run dev` e explodir no `npm test` — ou pior, obrigaria a mexer no
+ * `jest.config.js`, que é cópia deliberada do `apps/web`. São 10 linhas; a conversão é a definição
+ * de UTF-8, não uma aproximação.
+ */
+function bytesDeTexto(texto) {
+  const s = String(texto);
+  const out = [];
+  for (let i = 0; i < s.length; i += 1) {
+    let cp = s.codePointAt(i);
+    if (cp > 0xffff) i += 1; // par substituto: o code point ocupa duas unidades
+    if (cp < 0x80) out.push(cp);
+    else if (cp < 0x800) out.push(0xc0 | (cp >> 6), 0x80 | (cp & 63));
+    else if (cp < 0x10000) out.push(0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    else {
+      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));
+    }
+  }
+  return new Uint8Array(out);
+}
+
+/** base64 → bytes. Existe porque o mock produz PDF em base64 e o zip precisa de bytes. */
+function bytesDeBase64(base64) {
+  const binario = window.atob(base64);
+  const bytes = new Uint8Array(binario.length);
+  for (let i = 0; i < binario.length; i += 1) bytes[i] = binario.charCodeAt(i);
+  return bytes;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// UM ZIP DE VERDADE, OFFLINE
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// ⚠ POR QUE ISTO EXISTE, e por que é tão pequeno. O lote de DANFSe é um **zip**, e um mock que
+// devolvesse qualquer Blob rotulado `application/zip` produziria um arquivo que **não abre** —
+// a tela pareceria funcionar e o download seria lixo. Mesmo raciocínio de `pdfDeUmaLinha`, que
+// monta um PDF mínimo mas VÁLIDO em vez de fingir um.
+//
+// ⚠ SEM COMPRESSÃO (método 0, "stored"), de propósito: `deflate` no navegador exigiria
+// `CompressionStream` (que o jsdom dos testes não tem) ou uma biblioteca. O que se quer aqui é um
+// arquivo que ABRA, não um arquivo pequeno.
+//
+// ⚠ NADA DISTO É USADO EM PRODUÇÃO — quem monta o zip de verdade é o `archiver` do backend.
+
+const TABELA_CRC32 = (() => {
+  const tabela = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    tabela[n] = c >>> 0;
+  }
+  return tabela;
+})();
+
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) c = TABELA_CRC32[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * Monta um zip (entradas "stored") a partir de `[nome, bytes][]`.
+ *
+ * ⚠ Os nomes são ASCII por construção (dígitos de CNPJ, número da nota, `RELATORIO.txt`); o
+ * CONTEÚDO vai em UTF-8 e não precisa de sinalização — só o nome precisaria.
+ */
+function zipArmazenado(arquivos) {
+  // ⚠ `bytesDeTexto` e não `TextEncoder` — ver o comentário dele.
+  const locais = [];
+  const centrais = [];
+  let deslocamento = 0;
+
+  for (const [nome, dados] of arquivos) {
+    const nomeBytes = bytesDeTexto(nome);
+    const crc = crc32(dados);
+
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true); // assinatura do cabeçalho local
+    local.setUint16(4, 20, true); // versão necessária
+    local.setUint16(6, 0, true); // flags
+    local.setUint16(8, 0, true); // método: 0 = stored
+    local.setUint16(10, 0, true); // hora
+    local.setUint16(12, 0x21, true); // data (1980-01-01: o zip não guarda "agora" aqui)
+    local.setUint32(14, crc, true);
+    local.setUint32(18, dados.length, true); // tamanho comprimido = original (stored)
+    local.setUint32(22, dados.length, true);
+    local.setUint16(26, nomeBytes.length, true);
+    local.setUint16(28, 0, true); // extra
+    locais.push(new Uint8Array(local.buffer), nomeBytes, dados);
+
+    const central = new DataView(new ArrayBuffer(46));
+    central.setUint32(0, 0x02014b50, true);
+    central.setUint16(4, 20, true); // versão de origem
+    central.setUint16(6, 20, true); // versão necessária
+    central.setUint16(8, 0, true);
+    central.setUint16(10, 0, true);
+    central.setUint16(12, 0, true);
+    central.setUint16(14, 0x21, true);
+    central.setUint32(16, crc, true);
+    central.setUint32(20, dados.length, true);
+    central.setUint32(24, dados.length, true);
+    central.setUint16(28, nomeBytes.length, true);
+    central.setUint16(30, 0, true); // extra
+    central.setUint16(32, 0, true); // comentário
+    central.setUint16(34, 0, true); // disco
+    central.setUint16(36, 0, true); // atributos internos
+    central.setUint32(38, 0, true); // atributos externos
+    central.setUint32(42, deslocamento, true); // onde está o cabeçalho local
+    centrais.push(new Uint8Array(central.buffer), nomeBytes);
+
+    deslocamento += 30 + nomeBytes.length + dados.length;
+  }
+
+  const tamanhoCentral = centrais.reduce((s, p) => s + p.length, 0);
+  const fim = new DataView(new ArrayBuffer(22));
+  fim.setUint32(0, 0x06054b50, true);
+  fim.setUint16(4, 0, true);
+  fim.setUint16(6, 0, true);
+  fim.setUint16(8, arquivos.length, true);
+  fim.setUint16(10, arquivos.length, true);
+  fim.setUint32(12, tamanhoCentral, true);
+  fim.setUint32(16, deslocamento, true);
+  fim.setUint16(20, 0, true); // comentário
+  return new Blob([...locais, ...centrais, new Uint8Array(fim.buffer)], {
+    type: "application/zip",
+  });
 }
