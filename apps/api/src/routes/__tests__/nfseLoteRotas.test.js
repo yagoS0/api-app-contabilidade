@@ -39,9 +39,12 @@ function planilha(linhas) {
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 }
 
-function app() {
+function app(opcoes = {}) {
   const a = express();
-  a.use("/companies/:companyId/nfse/lote", createNfseLoteRouter({ log: { warn: jest.fn() } }));
+  a.use(
+    "/companies/:companyId/nfse/lote",
+    createNfseLoteRouter({ log: { warn: jest.fn() }, ...opcoes })
+  );
   return a;
 }
 
@@ -185,5 +188,179 @@ describe("POST /leitura", () => {
     // O dublê só expõe `findMany` de propósito: qualquer escrita seria `undefined is not a function`
     // e derrubaria o teste com estrondo.
     expect(Object.keys(prisma.tomadorEmitido)).toEqual(["findMany"]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ O ID DA MEMÓRIA NÃO É O ID DO PATH — e errar aqui é SILENCIOSO
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// `TomadorEmitido.companyId` é o id da **`Company` legada** (`NfseService` grava `company.id`); o
+// `:companyId` do portal do cliente é um **`PortalClient.id`**. São entidades com PKs próprias, e
+// `routes/middlewares/portalAccess.js` registra que o id de uma NUNCA encontra a outra.
+//
+// Passar o id do path direto faz o `findMany` voltar **vazio, sem erro nenhum**: todo CNPJ cai em
+// `consultar` e o *"se já emitiu para este tomador antes, só preencher"* deixa de existir, em
+// silêncio. Nenhum teste de comportamento pega isso — a tela funciona. Estes pegam.
+describe("⚠⚠ `resolverCompanyId` — a memória é buscada pela empresa LEGADA", () => {
+  it("com o resolvedor, o `findMany` recebe o id RESOLVIDO, nunca o do path", async () => {
+    const resolver = jest.fn(async () => "legacy-42");
+    await request(app({ resolverCompanyId: resolver }))
+      .post(`${BASE}/leitura`)
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+
+    expect(resolver).toHaveBeenCalledWith("company-1");
+    expect(prisma.tomadorEmitido.findMany).toHaveBeenCalledWith({
+      where: { companyId: "legacy-42", documento: { in: [CNPJ] } },
+    });
+    // ⚠ A contraprova: o id do path NÃO pode ter chegado ao banco.
+    const chamada = prisma.tomadorEmitido.findMany.mock.calls[0][0];
+    expect(chamada.where.companyId).not.toBe("company-1");
+  });
+
+  it("o tomador conhecido da empresa legada preenche o endereço — a corrente inteira", async () => {
+    prisma.tomadorEmitido.findMany.mockResolvedValue([{ documento: CNPJ, ...ENDERECO }]);
+    const r = await request(app({ resolverCompanyId: async () => "legacy-42" }))
+      .post(`${BASE}/leitura`)
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.body.linhas[0].estado).toBe("pronta");
+    expect(r.body.linhas[0].origemEndereco).toBe("memoria");
+  });
+
+  it("empresa sem `Company` legada (resolvedor devolve null) não derruba a leitura", async () => {
+    const r = await request(app({ resolverCompanyId: async () => null }))
+      .post(`${BASE}/leitura`)
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.status).toBe(200);
+    // ⚠ E DIZ que não consultou a memória, em vez de dar a entender que nenhum tomador é conhecido.
+    expect(r.body.memoriaIndisponivel).toBeTruthy();
+    expect(prisma.tomadorEmitido.findMany).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// O AJUSTE FEITO NA TELA
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("⚠ `ajustes` — a linha corrigida na tela é reclassificada pela MESMA regra", () => {
+  it("o endereço digitado na tela leva a linha de pendente a pronta", async () => {
+    const semEndereco = { ...NOTA, documento: "12345678909" }; // CPF: não se consulta
+    const antes = await request(app())
+      .post(`${BASE}/leitura`)
+      .attach("arquivo", planilha([semEndereco]), "notas.xlsx");
+    expect(antes.body.linhas[0].estado).toBe("pendente");
+    expect(antes.body.linhas[0].pendencias[0].codigo).toBe("cpf_sem_endereco");
+    const numero = antes.body.linhas[0].numero;
+
+    const depois = await request(app())
+      .post(`${BASE}/leitura`)
+      .field("ajustes", JSON.stringify({ [numero]: { ...ENDERECO } }))
+      .attach("arquivo", planilha([semEndereco]), "notas.xlsx");
+
+    // ⚠ `conferir`, não `pronta`: o `cMun` da planilha não é conferível no backend (sem a lista do
+    // IBGE) — a segunda metade da prova acontece na tela. Ajustar não pula essa conferência.
+    expect(depois.body.linhas[0].estado).toBe("conferir");
+    expect(depois.body.linhas[0].origemEndereco).toBe("planilha");
+    expect(depois.body.linhasAjustadas).toEqual([numero]);
+  });
+
+  it("⚠ o ajuste do DOCUMENTO muda qual tomador se procura na memória", async () => {
+    await request(app())
+      .post(`${BASE}/leitura`)
+      .field("ajustes", JSON.stringify({ 2: { documento: "39254243000282" } }))
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(prisma.tomadorEmitido.findMany).toHaveBeenCalledWith({
+      where: { companyId: "company-1", documento: { in: ["39254243000282"] } },
+    });
+  });
+
+  it("sem ajustes, `linhasAjustadas` é vazio — nada é inventado", async () => {
+    const r = await request(app()).post(`${BASE}/leitura`).attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.body.linhasAjustadas).toEqual([]);
+  });
+
+  it("⚠⚠ coluna desconhecida RECUSA nomeando — nunca aplica o resto em silêncio", async () => {
+    const r = await request(app())
+      .post(`${BASE}/leitura`)
+      .field("ajustes", JSON.stringify({ 2: { cep: "20031005", inventado: "x" } }))
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("ajuste_coluna_desconhecida");
+    expect(r.body.colunasDesconhecidas).toEqual(["inventado"]);
+  });
+
+  it("⚠⚠ linha que não existe na planilha RECUSA nomeando", async () => {
+    const r = await request(app())
+      .post(`${BASE}/leitura`)
+      .field("ajustes", JSON.stringify({ 999: { cep: "20031005" } }))
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("ajuste_linha_desconhecida");
+    expect(r.body.linhasDesconhecidas).toEqual(["999"]);
+  });
+
+  it("⚠⚠ ajuste MALFORMADO recusa — ao contrário de `consultas`, que é dado derivado", async () => {
+    const r = await request(app())
+      .post(`${BASE}/leitura`)
+      .field("ajustes", "{isto não é json")
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("ajuste_forma_invalida");
+    // A contraprova está no teste de `consultas` malformado, acima: lá a leitura SEGUE em 200.
+  });
+
+  it("⚠ ajustar não escreve nada — o dublê continua só com `findMany`", async () => {
+    await request(app())
+      .post(`${BASE}/leitura`)
+      .field("ajustes", JSON.stringify({ 2: { cep: "20031005" } }))
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(Object.keys(prisma.tomadorEmitido)).toEqual(["findMany"]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠ AS CÉLULAS VOLTAM COM A LINHA — sem elas a tela não sabe de qual nota está falando
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("`valores` na resposta", () => {
+  it("a linha PENDENTE volta com as células — é ela que precisa de ajuste, e `dados` é nulo", async () => {
+    const r = await request(app())
+      .post(`${BASE}/leitura`)
+      .attach("arquivo", planilha([{ ...NOTA, documento: "12345678909" }]), "notas.xlsx");
+    const linha = r.body.linhas[0];
+    expect(linha.estado).toBe("pendente");
+    expect(linha.dados).toBeNull();
+    expect(linha.valores.nome).toBe("TOMADOR LTDA");
+    expect(linha.valores.valor).toBe("1500,00");
+  });
+
+  it("⚠⚠ a data volta como a LEITURA a entendeu (dd/mm/aaaa), nunca em ISO/UTC", async () => {
+    // A célula de competência costuma chegar como `Date` (o `cellDates: true` da leitura). Em ISO,
+    // um fuso a leste mostraria o dia seguinte — a tela diria 01/08 sobre a linha classificada
+    // como 31/07, e a competência sai impressa na nota.
+    const wb = XLSX.utils.book_new();
+    const matriz = [
+      CABECALHOS,
+      COLUNAS_LOTE.map((c) => (c.chave === "competencia" ? new Date(2026, 6, 31) : NOTA[c.chave] ?? "")),
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matriz, { cellDates: true }), "Notas");
+    const r = await request(app())
+      .post(`${BASE}/leitura`)
+      .attach("arquivo", XLSX.write(wb, { type: "buffer", bookType: "xlsx", cellDates: true }), "notas.xlsx");
+
+    expect(r.body.linhas[0].valores.competencia).toBe("31/07/2026");
+    expect(r.body.linhas[0].valores.competencia).not.toMatch(/T\d{2}:/);
+  });
+
+  it("as células voltam JÁ AJUSTADAS, e a linha diz que foi ajustada aqui", async () => {
+    const r = await request(app())
+      .post(`${BASE}/leitura`)
+      .field("ajustes", JSON.stringify({ 2: { nome: "OUTRO NOME LTDA" } }))
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.body.linhas[0].valores.nome).toBe("OUTRO NOME LTDA");
+    expect(r.body.linhas[0].ajustada).toBe(true);
+  });
+
+  it("linha não ajustada tem `ajustada: false` — nunca `undefined` disfarçado", async () => {
+    const r = await request(app()).post(`${BASE}/leitura`).attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.body.linhas[0].ajustada).toBe(false);
   });
 });

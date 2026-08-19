@@ -225,7 +225,7 @@ function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado }) {
   );
 }
 
-export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
+export function NotasPage({ empresa, aoReaproveitar, aoEmitir, aoPrepararLote }) {
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
   // `lib/format.js`). Antes abria em "Todas". ⚠ Isto ESTREITA o que a tela mostra ao abrir: quem
@@ -282,6 +282,14 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
             resposta do servidor, não da lista. */}
         <button type="button" className="btn btn-primary" onClick={aoEmitir}>
           Emitir nota
+        </button>
+        {/* ⚠ "PREPARAR", E NÃO "EMITIR EM LOTE": a tela do outro lado baixa o modelo, lê a planilha
+            preenchida e CONFERE linha a linha — ela não emite nada, e a emissão em lote não existe
+            ainda. Um botão que prometesse emitir mandaria o cliente procurar um botão que não há.
+            ⚠ Ele aparece SEMPRE, como o "Emitir nota" ao lado: baixar o modelo e conferir uma
+            planilha são LEITURA (a rota entra sem papel mínimo), então não há portão a espelhar. */}
+        <button type="button" className="btn" onClick={aoPrepararLote}>
+          Preparar lote por planilha
         </button>
       </div>
 

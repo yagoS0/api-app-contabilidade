@@ -9,6 +9,7 @@ import { SeletorEmpresa } from "./SeletorEmpresa";
 import { HomePage } from "../home/HomePage";
 import { NotasPage } from "../notas/NotasPage";
 import { EmitirNotaPage } from "../emitir/EmitirNotaPage";
+import { LotePlanilhaPage } from "../lote/LotePlanilhaPage";
 import { esquecerTodasAsDescricoes } from "../emitir/lib/descricoesRecentes";
 import { GuiasPage } from "../guias/GuiasPage";
 
@@ -41,6 +42,10 @@ export function AppShell({ user }) {
   // `rota === "emitir"`. Ele mora aqui, e não dentro da `NotasPage`, pelo mesmo motivo do modelo:
   // a casca é quem monta a tela ativa, e é ela que precisa decidir entre a lista e o formulário.
   const [emissaoAberta, setEmissaoAberta] = useState(false);
+  // ⚠ O LOTE POR PLANILHA É O SEGUNDO MODO DA MESMA ROTA, pelo mesmo motivo da emissão: o
+  // roteamento é por hash com três destinos fixos, e a casca é quem monta a tela ativa. ⚠ Ele NÃO
+  // emite nada — prepara e confere a planilha. A emissão em lote é fase seguinte.
+  const [loteAberto, setLoteAberto] = useState(false);
 
   const empresasQuery = useCarregamento(() => api.getCompanies(), []);
   const empresas = empresasQuery.dados || [];
@@ -62,6 +67,9 @@ export function AppShell({ user }) {
     setEmpresaEscolhida(companyId);
     salvarEmpresa(companyId);
     setSeletorAberto(false);
+    // ⚠ E FECHA O LOTE: a planilha conferida é de OUTRA empresa. A própria tela também descarta o
+    // estado dela ao ver o `companyId` mudar — guarda de um lado só não é guarda.
+    setLoteAberto(false);
     // ⚠⚠ TROCAR DE EMPRESA DESCARTA O MODELO. Ele foi tirado da nota de OUTRA empresa; aplicá-lo
     // aqui emitiria no CNPJ errado. É a mesma razão pela qual a `EmitirNotaPage` zera o formulário
     // inteiro na troca — e ela ainda confere o `companyId` do modelo antes de aplicar, porque uma
@@ -78,13 +86,26 @@ export function AppShell({ user }) {
    */
   function irPara(destino) {
     setEmissaoAberta(false);
+    setLoteAberto(false);
     navegar(destino);
   }
 
   /** Abre a emissão em branco — o botão "Emitir nota" da lista. */
   function abrirEmissao() {
     setModeloEmissao(null);
+    setLoteAberto(false);
     setEmissaoAberta(true);
+  }
+
+  /**
+   * Abre a preparação do lote por planilha — o botão "Preparar lote por planilha" da lista.
+   *
+   * ⚠ Os dois modos são EXCLUSIVOS: a emissão avulsa e o lote são duas conversas diferentes sobre
+   * a mesma empresa, e sobrepô-las deixaria um formulário meio preenchido atrás de uma tabela.
+   */
+  function abrirLote() {
+    setEmissaoAberta(false);
+    setLoteAberto(true);
   }
 
   /**
@@ -197,11 +218,14 @@ export function AppShell({ user }) {
               // sai dele refazendo essa chamada.
               aoRecarregarEmpresas={empresasQuery.recarregar}
             />
+          ) : loteAberto ? (
+            <LotePlanilhaPage empresa={empresaAtiva} aoVoltar={() => setLoteAberto(false)} />
           ) : (
             <NotasPage
               empresa={empresaAtiva}
               aoReaproveitar={reaproveitarNota}
               aoEmitir={abrirEmissao}
+              aoPrepararLote={abrirLote}
             />
           )
         ) : rota === "guias" ? (

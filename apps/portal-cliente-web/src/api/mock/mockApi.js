@@ -1297,6 +1297,109 @@ export function createMockApi() {
       };
     },
 
+    // --- O LOTE POR PLANILHA, offline -------------------------------------------------------
+    //
+    // ⚠⚠ **NADA AQUI EMITE.** Baixar o modelo e conferir a planilha são leitura, aqui como no
+    // servidor.
+    //
+    // ⚠⚠ **O MOCK PRECISA ALCANÇAR TODOS OS ESTADOS DE LINHA, e é por isso que ele não devolve uma
+    // resposta fixa.** Este projeto já foi mordido quatro vezes por ramo que só existia em
+    // produção. As linhas plantadas em `LINHAS_DO_LOTE_MOCK` cobrem, de propósito:
+    //   • `pronta` pela MEMÓRIA (o *"se já emitiu antes, só preencher"*);
+    //   • `conferir` com `municipio_nao_conferido` e código **válido** — a tela resolve o município;
+    //   • `conferir` com `municipio_nao_conferido` e código **inexistente** — ⚠ é a linha que prova
+    //     a segunda metade da prova do IBGE: a TELA rebaixa para `pendente`, o backend não pode;
+    //   • `conferir` por `zero_a_esquerda_recuperado` (o CPF que o Excel comeu);
+    //   • `conferir` por `email_fora_de_forma`;
+    //   • `consultar` (dois CNPJs — um deles resolve, o outro serve para a consulta que FALHA);
+    //   • `pendente` por `cpf_sem_endereco`, `endereco_incompleto`, `valor_ambiguo` e
+    //     `competencia_ausente`.
+    //
+    // ⚠ **A CLASSIFICAÇÃO DE VERDADE É DO BACKEND** (`application/nfse/lote/classificarLinhaLote.js`).
+    // O que roda aqui é um DUBLÊ que usa os mesmos códigos, para a tela poder ser exercitada sem
+    // servidor — inclusive o ajuste, que reclassifica. Ele não é autoridade sobre nada.
+    async baixarModeloDoLote(companyId) {
+      await dormir();
+      exigirAcessoEmpresa(companyId);
+      return planilhaModeloMock();
+    },
+
+    async lerPlanilhaDoLote(companyId, arquivo, { consultas = null, ajustes = null } = {}) {
+      await dormir();
+      exigirAcessoEmpresa(companyId);
+
+      // ⚠ AS RECUSAS DA LEITURA PRECISAM SER ALCANÇÁVEIS OFFLINE — senão a tela que as mostra só
+      // seria vista em produção, com uma planilha de verdade na mão. O gatilho vai no NOME do
+      // arquivo, mesmo arranjo que a emissão usa na descrição e o cancelamento na justificativa.
+      const nome = String(arquivo?.name || "").toLowerCase();
+      if (nome.includes("#cabecalho")) {
+        throw new ApiError(
+          422,
+          "planilha_sem_cabecalho",
+          "Não reconhecemos o cabeçalho desta planilha — nenhuma das colunas esperadas foi "
+            + "encontrada nas primeiras linhas. Use o modelo que geramos: baixe, preencha e envie "
+            + "de volta sem renomear as colunas."
+        );
+      }
+      if (nome.includes("#vazia")) {
+        throw new ApiError(
+          422,
+          "planilha_sem_linhas",
+          "A planilha foi reconhecida, mas não há nenhuma linha preenchida abaixo do cabeçalho."
+        );
+      }
+      if (nome.includes("#colunas")) {
+        const err = new ApiError(
+          422,
+          "planilha_colunas_faltando",
+          "Faltam colunas obrigatórias nesta planilha: Valor do serviço (R$).",
+          { faltando: ["valor"] }
+        );
+        throw err;
+      }
+
+      // ⚠ AS RECUSAS DO AJUSTE PRECISAM SER ALCANÇÁVEIS, e vêm ANTES de aplicar qualquer coisa:
+      // campo desconhecido e linha inexistente recusam NOMEANDO, e **nada é aplicado** — como no
+      // servidor. Aplicar o resto e calar sobre o que não se conhece faz a correção sumir sem aviso.
+      const recusaAjuste = conferirAjustesNoMock(ajustes, LINHAS_DO_LOTE_MOCK);
+      if (recusaAjuste) throw recusaAjuste;
+
+      const ajustadas = [];
+      const linhas = LINHAS_DO_LOTE_MOCK.map((linha) => {
+        const ajuste = lerAjusteDaLinhaMock(ajustes, linha.numero);
+        if (ajuste) ajustadas.push(linha.numero);
+        const valores = { ...linha.valores, ...(ajuste || {}) };
+        return {
+          numero: linha.numero,
+          valores,
+          ajustada: Boolean(ajuste),
+          ...classificarLinhaNoMock(valores, { consultas }),
+        };
+      });
+
+      const contar = (estado) => linhas.filter((l) => l.estado === estado).length;
+      return {
+        aba: "Notas",
+        linhaDoCabecalho: 1,
+        colunasReconhecidas: COLUNAS_DO_LOTE_MOCK,
+        colunasIgnoradas: [],
+        exemploDescartado: [],
+        memoriaIndisponivel: null,
+        linhasAjustadas: ajustadas,
+        linhas,
+        resumo: {
+          total: linhas.length,
+          prontas: contar("pronta"),
+          conferir: contar("conferir"),
+          consultar: contar("consultar"),
+          pendentes: contar("pendente"),
+        },
+        aConsultar: [
+          ...new Set(linhas.filter((l) => l.estado === "consultar" && l.documento).map((l) => l.documento)),
+        ],
+      };
+    },
+
     // --- Emissão de NFS-e ---------------------------------------------------------------------
     //
     // ⚠⚠ **NADA AQUI EMITE COISA ALGUMA.** Nenhuma chamada de rede sai deste arquivo: a "emissão"
@@ -1596,6 +1699,575 @@ export function createMockApi() {
   };
 }
 
+
+// -----------------------------------------------------------------------------
+// O LOTE POR PLANILHA, offline — dublê da leitura do backend
+// -----------------------------------------------------------------------------
+//
+// ⚠⚠ **A AUTORIDADE É `apps/api/src/application/nfse/lote/`.** O que está aqui existe para que a
+// TELA seja exercitável sem servidor, e usa os MESMOS códigos de estado e de pendência — nunca
+// códigos próprios. Um mock que inventasse vocabulário treinaria a tela errada.
+//
+// ⚠ **NENHUMA DESTAS FUNÇÕES EMITE, CONSULTA OU GRAVA.**
+
+/** As 12 colunas, na ordem do modelo (`colunasLote.js`). */
+const COLUNAS_DO_LOTE_MOCK = [
+  "documento",
+  "nome",
+  "descricao",
+  "valor",
+  "competencia",
+  "email",
+  "cMun",
+  "cep",
+  "xLgr",
+  "nro",
+  "xBairro",
+  "xCpl",
+];
+
+const ROTULOS_DO_LOTE_MOCK = [
+  "CNPJ/CPF do tomador",
+  "Nome / razão social do tomador",
+  "Descrição do serviço",
+  "Valor do serviço (R$)",
+  "Data da competência (dd/mm/aaaa)",
+  "E-mail do tomador",
+  "Código IBGE do município do tomador",
+  "CEP do tomador",
+  "Logradouro do tomador",
+  "Número",
+  "Bairro",
+  "Complemento",
+];
+
+/** Os cinco que a emissão exige JUNTOS. `xCpl` é o único opcional — aqui como lá. */
+const ENDERECO_EXIGIDO_MOCK = [
+  ["cMun", "o código IBGE do município"],
+  ["cep", "o CEP"],
+  ["xLgr", "o logradouro"],
+  ["nro", "o número"],
+  ["xBairro", "o bairro"],
+];
+
+/**
+ * A MEMÓRIA de tomadores deste mock (`tomadores_emitidos`, do backend).
+ *
+ * ⚠ Um documento só: é o que faz a linha 2 sair `pronta` com `origemEndereco: "memoria"` — o
+ * *"se o CNPJ já teve antes, só preencher"* do dono. Sem ele, esse ramo inteiro não existiria
+ * offline.
+ */
+const MEMORIA_DO_LOTE_MOCK = {
+  "44555666000177": {
+    cMun: "3304557",
+    cep: "20031005",
+    xLgr: "Avenida Rio Branco",
+    nro: "100",
+    xBairro: "Centro",
+    xCpl: "Sala 1201",
+  },
+};
+
+const ENDERECO_COMPLETO_MOCK = {
+  cMun: "3304557",
+  cep: "20040020",
+  xLgr: "Rua da Assembleia",
+  nro: "10",
+  xBairro: "Centro",
+  xCpl: "",
+};
+
+/**
+ * As linhas plantadas. ⚠ O `numero` é o do EXCEL (o cabeçalho é a linha 1) — é por ele que a tela
+ * diz "linha 7" e a pessoa acha a linha na planilha dela, e é ele que chaveia o ajuste.
+ */
+const LINHAS_DO_LOTE_MOCK = [
+  // pronta — pela MEMÓRIA (o *"se já emitiu antes, só preencher"* do dono)
+  {
+    numero: 2,
+    valores: {
+      documento: "44.555.666/0001-77",
+      nome: "TOMADOR RECORRENTE LTDA",
+      descricao: "Consultoria contábil de julho",
+      valor: "1500,00",
+      competencia: "31/07/2026",
+      email: "financeiro@recorrente.com.br",
+    },
+  },
+  // conferir — o código do município tem a forma certa e EXISTE: a tela resolve e mostra de quem é
+  {
+    numero: 3,
+    valores: {
+      documento: "22.333.444/0001-72",
+      nome: "STUDIO VERTICE ARQUITETURA ME",
+      descricao: "Assessoria fiscal",
+      valor: "2800,00",
+      competencia: "31/07/2026",
+      ...ENDERECO_COMPLETO_MOCK,
+    },
+  },
+  // ⚠⚠ conferir no SERVIDOR, pendente na TELA — o código não existe na lista oficial do IBGE.
+  // É a linha que prova a segunda metade da prova: o backend não tem a lista; esta tela tem.
+  {
+    numero: 4,
+    valores: {
+      documento: "55.666.777/0001-14",
+      nome: "SERVICOS DO INTERIOR LTDA",
+      descricao: "Consultoria de processos",
+      valor: "990,00",
+      competencia: "31/07/2026",
+      ...ENDERECO_COMPLETO_MOCK,
+      cMun: "9999999",
+    },
+  },
+  // conferir — o zero à esquerda do CPF, recolocado por nós (o Excel o comeu)
+  {
+    numero: 5,
+    valores: {
+      documento: "1234567890",
+      nome: "MARIA DE SOUZA",
+      descricao: "Aula particular",
+      valor: "300,00",
+      competencia: "31/07/2026",
+      ...ENDERECO_COMPLETO_MOCK,
+    },
+  },
+  // conferir — e-mail malformado. ⚠ A nota sai SEM e-mail; isto não bloqueia nada.
+  {
+    numero: 6,
+    valores: {
+      documento: "44.555.666/0001-77",
+      nome: "TOMADOR RECORRENTE LTDA",
+      descricao: "Consultoria contábil de agosto",
+      valor: "1500,00",
+      competencia: "31/07/2026",
+      email: "financeiro.recorrente.com.br",
+    },
+  },
+  // consultar → PRONTA: a consulta traz o endereço inteiro e o `cMun` passa na prova tripla
+  {
+    numero: 7,
+    valores: {
+      documento: "11.222.333/0001-81",
+      nome: "COMERCIAL AURORA LTDA",
+      descricao: "Implantação de sistema",
+      valor: "4200,00",
+      competencia: "31/07/2026",
+    },
+  },
+  // consultar → PENDENTE: a resposta vem, mas o `cMun` dela não se prova (diz Curitiba/PR com o
+  // código de São Paulo/SP). ⚠ Endereço é tudo ou nada, então o bloco inteiro cai.
+  {
+    numero: 8,
+    valores: {
+      documento: "33.444.555/0001-63",
+      nome: "DELTA LOGISTICA S.A.",
+      descricao: "Frete de mudança",
+      valor: "1800,00",
+      competencia: "31/07/2026",
+    },
+  },
+  // ⚠⚠ consultar → a consulta FALHA (rede). É a linha que prova que uma consulta que morre no meio
+  // não derruba o lote: ela vira pendência DESTA linha, com o motivo, e as outras seguem.
+  {
+    numero: 9,
+    valores: {
+      documento: "99.999.999/0001-99",
+      nome: "CLIENTE SEM CADASTRO LTDA",
+      descricao: "Manutenção mensal",
+      valor: "800,00",
+      competencia: "31/07/2026",
+    },
+  },
+  // pendente — CPF sem endereço, e ⚠ CPF NÃO SE CONSULTA
+  {
+    numero: 10,
+    valores: {
+      documento: "123.456.789-09",
+      nome: "JOAO DA SILVA",
+      descricao: "Serviço de pintura",
+      valor: "650,00",
+      competencia: "31/07/2026",
+    },
+  },
+  // pendente — meio endereço. ⚠ Nunca "quase pronta": o servidor recusa a emissão faltando um dos cinco
+  {
+    numero: 11,
+    valores: {
+      documento: "33.444.555/0001-03",
+      nome: "LOJA DA ESQUINA LTDA",
+      descricao: "Consultoria de estoque",
+      valor: "1200,00",
+      competencia: "31/07/2026",
+      cep: "20040020",
+      xLgr: "Rua da Assembleia",
+    },
+  },
+  // pendente — valor ambíguo: mil e quinhentos ou um e meio?
+  {
+    numero: 12,
+    valores: {
+      documento: "66.777.888/0001-25",
+      nome: "INDUSTRIA DO VALE LTDA",
+      descricao: "Treinamento de equipe",
+      valor: "1.500",
+      competencia: "31/07/2026",
+      ...ENDERECO_COMPLETO_MOCK,
+    },
+  },
+  // pendente — competência em branco (num lote, a data de hoje carimbaria todas as notas)
+  {
+    numero: 13,
+    valores: {
+      documento: "77.888.999/0001-36",
+      nome: "ESCRITORIO PARCEIRO LTDA",
+      descricao: "Serviço de digitação",
+      valor: "450,00",
+      competencia: "",
+      ...ENDERECO_COMPLETO_MOCK,
+    },
+  },
+];
+
+function soDigitosMock(v) {
+  return String(v ?? "").replace(/\D+/g, "");
+}
+
+function textoMock(v) {
+  const t = String(v ?? "").trim();
+  return t || null;
+}
+
+/**
+ * O dublê do classificador. ⚠ Usa os códigos de `classificarLinhaLote.js`, e só os que as linhas
+ * plantadas produzem — não é uma segunda implementação da regra, é o suficiente para a tela.
+ */
+function classificarLinhaNoMock(valores, { consultas = null } = {}) {
+  const pendencias = [];
+  const conferencias = [];
+  const pend = (codigo, texto) => pendencias.push({ codigo, texto });
+  const conf = (codigo, texto) => conferencias.push({ codigo, texto });
+
+  // ── documento
+  const digitos = soDigitosMock(valores.documento);
+  let documento = null;
+  let tipoDocumento = null;
+  if (!digitos) {
+    pend("documento_ausente", "O CNPJ/CPF do tomador está em branco.");
+  } else if (digitos.length === 14) {
+    documento = digitos;
+    tipoDocumento = "CNPJ";
+  } else if (digitos.length === 11) {
+    if (cpfTemDvValidoMock(digitos)) {
+      documento = digitos;
+      tipoDocumento = "CPF";
+    } else {
+      pend("cpf_dv_invalido", "O dígito verificador deste CPF não confere — o número foi digitado errado.");
+    }
+  } else if (digitos.length === 10 && cpfTemDvValidoMock(`0${digitos}`)) {
+    documento = `0${digitos}`;
+    tipoDocumento = "CPF";
+    conf(
+      "zero_a_esquerda_recuperado",
+      `A planilha trouxe “${String(valores.documento).trim()}” e nós lemos como o CPF ${documento}: `
+        + "o Excel apaga o zero da frente em coluna numérica, e o dígito verificador fecha com ele "
+        + "recolocado. Confira o CPF antes de emitir — nós mudamos o número que veio."
+    );
+  } else {
+    pend(
+      "documento_fora_de_forma",
+      "O CNPJ/CPF não tem 11 nem 14 dígitos. Confira o número — e confira também se a coluna da "
+        + "planilha está formatada como TEXTO, porque o Excel apaga o zero da frente."
+    );
+  }
+
+  // ── nome / descrição / valor / competência
+  const nome = textoMock(valores.nome);
+  if (!nome) pend("nome_ausente", "O nome / razão social do tomador está em branco.");
+  const descricao = textoMock(valores.descricao);
+  if (!descricao) {
+    pend("descricao_ausente", "A descrição do serviço está em branco. Ela sai impressa no DANFSe que vai ao tomador.");
+  }
+
+  const valorBruto = String(valores.valor ?? "").trim();
+  let valor = null;
+  if (!valorBruto) {
+    pend("valor_ausente", "O valor do serviço está em branco.");
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(valorBruto) || /^\d{1,3}(,\d{3})+$/.test(valorBruto)) {
+    pend(
+      "valor_ambiguo",
+      "Este valor tem duas leituras possíveis — mil e quinhentos ou um e meio, conforme o separador "
+        + "seja de milhar ou de decimal. Não convertemos: escreva o valor com vírgula nos centavos (1500,00)."
+    );
+  } else {
+    valor = Number(valorBruto.replace(/\./g, "").replace(",", "."));
+    if (!Number.isFinite(valor) || valor <= 0) {
+      pend("valor_nao_positivo", "O valor do serviço tem de ser maior que zero.");
+      valor = null;
+    }
+  }
+
+  const competenciaBruta = String(valores.competencia ?? "").trim();
+  let competencia = null;
+  if (!competenciaBruta) {
+    pend(
+      "competencia_ausente",
+      "A data da competência está em branco. Ela é obrigatória aqui: em branco, a nota sairia com a "
+        + "data de hoje sem ninguém ver — e num lote isso carimbaria todas as notas."
+    );
+  } else {
+    const m = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(competenciaBruta);
+    if (m) competencia = `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+    else pend("competencia_ilegivel", `Não conseguimos ler “${competenciaBruta}” como data. Use dd/mm/aaaa.`);
+  }
+
+  // ── e-mail: opcional de verdade; malformado vai para conferência, nunca derruba a linha
+  const emailBruto = String(valores.email ?? "").trim();
+  const emailOk = !emailBruto || emailBruto.includes("@");
+  if (!emailOk) {
+    conf(
+      "email_fora_de_forma",
+      `O e-mail “${emailBruto}” não tem “@”. A nota sai SEM e-mail — a emissão não o exige. `
+        + "Corrija se quiser que ele fique guardado."
+    );
+  }
+
+  // ── endereço: planilha → memória → consulta
+  const daPlanilha = {
+    cMun: textoMock(valores.cMun),
+    cep: soDigitosMock(valores.cep) || null,
+    xLgr: textoMock(valores.xLgr),
+    nro: textoMock(valores.nro),
+    xBairro: textoMock(valores.xBairro),
+    xCpl: textoMock(valores.xCpl),
+  };
+  const trouxeAlgo = Object.values(daPlanilha).some(Boolean);
+
+  let endereco = null;
+  let origemEndereco = null;
+  let precisaConsulta = false;
+
+  if (trouxeAlgo) {
+    const faltam = ENDERECO_EXIGIDO_MOCK.filter(([c]) => !daPlanilha[c]).map(([, r]) => r);
+    if (faltam.length) {
+      pend(
+        "endereco_incompleto",
+        `O endereço do tomador está pela metade: falta ${faltam.join(", ")}. A nota exige o endereço `
+          + "COMPLETO (só o complemento é opcional) — meio endereço faz a emissão ser recusada. "
+          + "Preencha o que falta ou apague o bloco inteiro para buscarmos o endereço."
+      );
+    } else if (soDigitosMock(daPlanilha.cMun).length !== 7) {
+      pend(
+        "municipio_fora_de_forma",
+        `O código IBGE do município (“${daPlanilha.cMun}”) não tem 7 dígitos. ⚠ O NOME do município `
+          + "não serve no lugar do código."
+      );
+    } else {
+      // ⚠ O servidor NÃO tem a lista oficial do IBGE — a conferência do código acontece na TELA.
+      // O mock reproduz isso de propósito: é o ramo que a tela precisa exercitar.
+      conf(
+        "municipio_nao_conferido",
+        `O código IBGE ${daPlanilha.cMun} tem a forma certa, mas não foi conferido contra a lista `
+          + "oficial aqui — a conferência acontece na tela de ajuste, que tem a lista. Confira o "
+          + "município antes de emitir."
+      );
+      endereco = daPlanilha;
+      origemEndereco = "planilha";
+    }
+  } else if (documento) {
+    const daMemoria = MEMORIA_DO_LOTE_MOCK[documento] || null;
+    if (daMemoria) {
+      endereco = { ...daMemoria };
+      origemEndereco = "memoria";
+    } else if (tipoDocumento === "CPF") {
+      // ⚠ CPF NÃO SE CONSULTA — decisão do dono. Nenhuma chamada é sequer sugerida.
+      pend(
+        "cpf_sem_endereco",
+        "O tomador é pessoa física e nunca emitimos para este CPF, então não temos o endereço — e "
+          + "CPF não se consulta (a base pública é de CNPJ). Preencha o endereço do tomador nesta linha."
+      );
+    } else {
+      const consulta = consultas ? consultas[documento] : undefined;
+      if (consulta === undefined || consulta === null) {
+        precisaConsulta = true;
+      } else if (!consulta.ok) {
+        pend(
+          "consulta_falhou",
+          `Não conseguimos consultar este CNPJ: ${consulta.motivo || "a consulta não respondeu"}. `
+            + "Preencha o endereço do tomador nesta linha — as outras linhas seguem normalmente."
+        );
+      } else if (!consulta.endereco) {
+        pend(
+          "consulta_sem_endereco",
+          `A consulta respondeu, mas não trouxe ${(consulta.faltantes || []).join(", ") || "o endereço"}. `
+            + "A nota exige o endereço completo — preencha nesta linha."
+        );
+      } else if (consulta.cMunVerificado !== true) {
+        pend(
+          "consulta_municipio_nao_provado",
+          "A consulta trouxe um código de município que não foi conferido contra a lista oficial do "
+            + "IBGE. Não usamos código de município sem prova: a nota sairia no município errado."
+        );
+      } else {
+        const e = consulta.endereco;
+        endereco = {
+          cMun: e.cMun,
+          cep: soDigitosMock(e.CEP ?? e.cep) || null,
+          xLgr: e.xLgr,
+          nro: e.nro,
+          xBairro: e.xBairro,
+          xCpl: e.xCpl || null,
+        };
+        origemEndereco = "consulta";
+      }
+    }
+  }
+
+  // ⚠ A ORDEM É A PRIORIDADE, e só o último ramo produz `pronta` — igual ao backend.
+  let estado;
+  if (pendencias.length) estado = "pendente";
+  else if (precisaConsulta) estado = "consultar";
+  else if (!endereco || !origemEndereco) {
+    pend("sem_endereco", "Não foi possível determinar o endereço do tomador desta linha. Preencha o endereço.");
+    estado = "pendente";
+  } else if (conferencias.length) estado = "conferir";
+  else estado = "pronta";
+
+  return {
+    estado,
+    pendencias,
+    conferencias,
+    documento,
+    tipoDocumento,
+    origemEndereco,
+    dados:
+      estado === "pronta" || estado === "conferir"
+        ? {
+            tomador: {
+              doc: documento,
+              nome,
+              email: emailOk && emailBruto ? emailBruto : null,
+              endereco: {
+                cMun: endereco.cMun,
+                CEP: endereco.cep,
+                xLgr: endereco.xLgr,
+                nro: endereco.nro,
+                xCpl: endereco.xCpl,
+                xBairro: endereco.xBairro,
+              },
+            },
+            servico: { descricao, valorServicos: valor },
+            competencia,
+          }
+        : null,
+  };
+}
+
+function lerAjusteDaLinhaMock(ajustes, numero) {
+  const bruto = ajustes ? ajustes[numero] ?? ajustes[String(numero)] : null;
+  if (!bruto || typeof bruto !== "object") return null;
+  const saida = {};
+  for (const [chave, valor] of Object.entries(bruto)) {
+    saida[chave] = valor === null || valor === undefined ? "" : String(valor);
+  }
+  return Object.keys(saida).length ? saida : null;
+}
+
+/**
+ * As duas recusas do ajuste, offline. ⚠ Elas existem porque **nada é aplicado em silêncio**: um
+ * campo que o servidor não conhece some sem aviso se a recusa não aparecer.
+ */
+function conferirAjustesNoMock(ajustes, linhas) {
+  if (!ajustes || typeof ajustes !== "object") return null;
+  const numeros = new Set(linhas.map((l) => Number(l.numero)));
+  const desconhecidas = [];
+  const colunas = new Set();
+  for (const [chaveLinha, celulas] of Object.entries(ajustes)) {
+    if (!numeros.has(Number(chaveLinha))) desconhecidas.push(String(chaveLinha));
+    for (const chave of Object.keys(celulas || {})) {
+      if (!COLUNAS_DO_LOTE_MOCK.includes(chave)) colunas.add(chave);
+    }
+  }
+  if (desconhecidas.length) {
+    return new ApiError(
+      422,
+      "ajuste_linha_desconhecida",
+      `Estas linhas não existem na planilha enviada: ${desconhecidas.join(", ")}. Nada foi aplicado.`,
+      { linhasDesconhecidas: desconhecidas }
+    );
+  }
+  if (colunas.size) {
+    return new ApiError(
+      422,
+      "ajuste_coluna_desconhecida",
+      `Estes campos não existem na planilha: ${[...colunas].join(", ")}. Nada foi aplicado.`,
+      { colunasDesconhecidas: [...colunas] }
+    );
+  }
+  return null;
+}
+
+/**
+ * Um .xlsx MÍNIMO e VÁLIDO com o cabeçalho do modelo.
+ *
+ * ⚠ Ele é de verdade (abre no Excel) porque reusa o `zipArmazenado` que o DANFSe em lote já usa —
+ * um arquivo corrompido com extensão `.xlsx` faria o modo offline "funcionar" até a pessoa tentar
+ * abrir o arquivo. ⚠ O que ele NÃO tem é a pré-formatação de TEXTO das colunas de dígitos, que é
+ * metade da defesa do zero à esquerda do CPF (a outra metade, a leitura, existe nos dois lados).
+ * Quem for conferir aquela defesa precisa do modelo do SERVIDOR.
+ */
+function planilhaModeloMock() {
+  const celula = (col, linha, valor) =>
+    `<c r="${col}${linha}" t="inlineStr"><is><t xml:space="preserve">${String(valor)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")}</t></is></c>`;
+  const colunaExcel = (i) => (i < 26 ? String.fromCharCode(65 + i) : `A${String.fromCharCode(65 + i - 26)}`);
+  const cabecalho = ROTULOS_DO_LOTE_MOCK.map((r, i) => celula(colunaExcel(i), 1, r)).join("");
+
+  const partes = [
+    [
+      "[Content_Types].xml",
+      '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        + '<Default Extension="xml" ContentType="application/xml"/>'
+        + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        + "</Types>",
+    ],
+    [
+      "_rels/.rels",
+      '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        + "</Relationships>",
+    ],
+    [
+      "xl/workbook.xml",
+      '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        + '<sheets><sheet name="Notas" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    ],
+    [
+      "xl/_rels/workbook.xml.rels",
+      '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        + "</Relationships>",
+    ],
+    [
+      "xl/worksheets/sheet1.xml",
+      '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        + `<sheetData><row r="1">${cabecalho}</row></sheetData></worksheet>`,
+    ],
+  ];
+
+  // ⚠ O tipo importa: o navegador escolhe o programa por ele. Ele vai como PARÂMETRO do zip, e não
+  // reembalando o Blob depois — `blob.arrayBuffer()` não existe no jsdom, e o teste do par
+  // mock/real precisa conseguir abrir este arquivo.
+  return zipArmazenado(partes.map(([nome, xml]) => [nome, bytesDeTexto(xml)]), {
+    tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
 // -----------------------------------------------------------------------------
 // Réplicas das regras do backend usadas pela emissão
 // -----------------------------------------------------------------------------
@@ -1825,7 +2497,7 @@ function crc32(bytes) {
  * ⚠ Os nomes são ASCII por construção (dígitos de CNPJ, número da nota, `RELATORIO.txt`); o
  * CONTEÚDO vai em UTF-8 e não precisa de sinalização — só o nome precisaria.
  */
-function zipArmazenado(arquivos) {
+function zipArmazenado(arquivos, { tipo = "application/zip" } = {}) {
   // ⚠ `bytesDeTexto` e não `TextEncoder` — ver o comentário dele.
   const locais = [];
   const centrais = [];
@@ -1882,7 +2554,8 @@ function zipArmazenado(arquivos) {
   fim.setUint32(12, tamanhoCentral, true);
   fim.setUint32(16, deslocamento, true);
   fim.setUint16(20, 0, true); // comentário
-  return new Blob([...locais, ...centrais, new Uint8Array(fim.buffer)], {
-    type: "application/zip",
-  });
+  // ⚠ O TIPO É PARÂMETRO porque um .xlsx TAMBÉM é um zip — e é o `type` do Blob que faz o
+  // navegador oferecer o arquivo ao programa certo. Reembalar o Blob depois exigiria
+  // `blob.arrayBuffer()`, que **não existe no jsdom** desta versão do Jest.
+  return new Blob([...locais, ...centrais, new Uint8Array(fim.buffer)], { type: tipo });
 }

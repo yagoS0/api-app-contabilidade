@@ -25,8 +25,12 @@ async function lerCorpo(res) {
 }
 
 async function fetchCru(path, init, token) {
+  // ⚠ `FormData` NÃO leva `Content-Type` nosso: o navegador precisa escrever o dele, com o
+  // `boundary` do multipart. Cravar `application/json` aqui faria o servidor receber um corpo que
+  // ele não consegue separar — e o `multer` devolveria "arquivo ausente" sobre um arquivo enviado.
+  const ehFormulario = typeof FormData !== "undefined" && init.body instanceof FormData;
   const headers = {
-    "Content-Type": "application/json",
+    ...(ehFormulario ? {} : { "Content-Type": "application/json" }),
     ...(init.headers || {}),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -72,7 +76,12 @@ async function renovar() {
 
 async function pedir(path, { method = "GET", body, auth = true } = {}) {
   const init = { method };
-  if (body !== undefined) init.body = JSON.stringify(body);
+  // ⚠ `FormData` vai INTEIRO, sem `JSON.stringify` — que devolveria `"{}"` e mandaria um corpo
+  // vazio com cara de sucesso. Passar por `pedir()` (e não por um `fetch` à parte) é o que dá a
+  // esta chamada o mesmo refresh single-flight do resto do app.
+  if (body !== undefined) {
+    init.body = typeof FormData !== "undefined" && body instanceof FormData ? body : JSON.stringify(body);
+  }
 
   const token = auth ? lerSessao().accessToken : null;
   let res = await fetchCru(path, init, token);
@@ -323,6 +332,75 @@ export function createRealApi() {
     // BrasilAPI viraria **dados do mock** numa tela que emite nota fiscal de verdade.
     async consultarCnpj(cnpj) {
       return consultarCnpjNaBrasilApi(cnpj);
+    },
+
+    // --- O LOTE POR PLANILHA: baixar o modelo e conferir o preenchido ------------------------
+    //
+    // ⚠⚠ **NENHUMA DAS DUAS EMITE NADA.** Uma baixa um .xlsx; a outra manda a planilha preenchida
+    // e recebe as linhas CLASSIFICADAS. A emissão em lote é fase seguinte e não existe nesta tela.
+    //
+    // Contrato lido em `apps/api/src/routes/nfseLoteRoutes.js` (não deduzido):
+    //   GET  /client/companies/:companyId/nfse/lote/modelo   -> o .xlsx cru
+    //   POST /client/companies/:companyId/nfse/lote/leitura  -> multipart: arquivo + consultas + ajustes
+
+    /**
+     * O MODELO da planilha.
+     *
+     * ⚠⚠ NÃO PODE SER UM `<a href>`: a rota é autenticada e um link comum não leva o Bearer —
+     * ele receberia 401 e o cliente veria um arquivo quebrado. Vem como **Blob** e a tela entrega
+     * com `lib/baixarBlob.js`. Mesma razão do DANFSe.
+     *
+     * ⚠ NÃO passa por `pedir()` de propósito: aquele lê o corpo como JSON, e um .xlsx não é JSON.
+     * O preço é não ter o refresh single-flight — por isso o 401 é traduzido para o MESMO
+     * `ApiError(401, "unauthorized")` que o resto do app já sabe ler.
+     */
+    async baixarModeloDoLote(companyId) {
+      const { accessToken } = lerSessao();
+      const res = await fetchCru(
+        `/client/companies/${encodeURIComponent(companyId)}/nfse/lote/modelo`,
+        { method: "GET" },
+        accessToken
+      );
+      if (!res.ok) {
+        const corpo = await lerCorpo(res);
+        const codigo = String(corpo?.error || "").trim()
+          || (res.status === 401 ? "unauthorized" : "modelo_lote_fetch_failed");
+        throw new ApiError(
+          res.status,
+          codigo,
+          String(corpo?.message || "").trim() || `Não foi possível baixar o modelo (HTTP ${res.status})`,
+          corpo
+        );
+      }
+      return res.blob();
+    },
+
+    /**
+     * A LEITURA da planilha preenchida — classificação linha a linha. **Não emite e não grava.**
+     *
+     * ⚠⚠ **O SEGUNDO PASSE VAI NO MESMO PEDIDO.** `consultas` é o mapa `documento -> resultado já
+     * resolvido` das consultas que ESTE navegador fez (a Receita é consultada aqui, não no
+     * servidor), e `ajustes` é `numeroDaLinhaNoExcel -> células que a pessoa digitou por cima`. Os
+     * dois são **parciais por natureza**: 40 linhas resolvidas e 160 ainda em `consultar` é o
+     * estado normal de uma planilha de 200, e é o que impede a tela de travar esperando tudo.
+     *
+     * ⚠ **O ARQUIVO VAI DE NOVO a cada passe**, e é isso que mantém a regra num lugar só: quem
+     * classifica é sempre o backend, sobre o arquivo inteiro. Remontar o .xlsx no navegador exigiria
+     * o SheetJS no bundle deste portal, que hoje **não tem nenhuma dependência fora do React**.
+     *
+     * ⚠ `companyId` vem do PATH, nunca do corpo — escopo por empresa é lei.
+     */
+    async lerPlanilhaDoLote(companyId, arquivo, { consultas = null, ajustes = null } = {}) {
+      const form = new FormData();
+      form.append("arquivo", arquivo);
+      // ⚠ Só entram quando há algo: um `"{}"` a mais no corpo não muda o resultado, mas um `"null"`
+      // literal chegaria como a string "null" e o servidor tentaria lê-la como JSON.
+      if (consultas && Object.keys(consultas).length) form.append("consultas", JSON.stringify(consultas));
+      if (ajustes && Object.keys(ajustes).length) form.append("ajustes", JSON.stringify(ajustes));
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/nfse/lote/leitura`, {
+        method: "POST",
+        body: form,
+      });
     },
 
     // --- Emissão de NFS-e ---------------------------------------------------

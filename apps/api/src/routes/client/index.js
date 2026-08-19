@@ -29,6 +29,9 @@ import { NfseService } from "../../application/nfse/NfseService.js";
 import { resolveLegacyCompanyId } from "../middlewares/portalAccess.js";
 import { ensureEmissaoNfseAutorizada } from "../middlewares/emissaoNfseGate.js";
 import { responderResultadoEmissao, responderErroEmissao } from "../nfseEmissaoHttp.js";
+// As duas portas de LEITURA do lote por planilha (modelo + conferência). Ver o bloco
+// "O LOTE DE NFS-e POR PLANILHA", abaixo — nada ali emite.
+import { createNfseLoteRouter } from "../nfseLoteRoutes.js";
 // ── O DANFSe PELO CLIENTE — mesma fachada, mesmo serviço, mesmos desfechos ───────────────────
 // Ver o bloco `GET /companies/:companyId/notas/:notaId/danfse`, no fim deste arquivo.
 import { gerarDanfseDaNota } from "../../application/nfse/danfse/danfseDaNotaDoPortal.js";
@@ -847,6 +850,29 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         return res.status(500).json({ error: "internal_error" });
       }
     }
+  );
+
+  // ── O LOTE DE NFS-e POR PLANILHA — as duas portas de LEITURA ───────────────────────────────
+  //
+  // ⚠⚠ **NENHUMA DAS DUAS EMITE NADA.** `GET /modelo` devolve um .xlsx; `POST /leitura` lê a
+  // planilha preenchida, classifica cada linha e devolve. Sem ADN, sem SERPRO, sem gravação. A
+  // emissão em lote é fase seguinte e **não passa por aqui** — ver `routes/nfseLoteRoutes.js`.
+  //
+  // ⚠ `requireClientCompanyAccess()` **sem `minRole`**: baixar um modelo e conferir uma planilha
+  // são LEITURA, e o piso das rotas financeiras deste arquivo é "membro ativo". O portão de
+  // emissão (`ensureEmissaoNfseAutorizada`) é da EMISSÃO, logo abaixo, e é lá que ele fica.
+  //
+  // ⚠⚠ **`resolveLegacyCompanyId` NÃO É DECORAÇÃO AQUI.** O `:companyId` deste router é um
+  // `PortalClient.id`, e a memória de tomadores (`TomadorEmitido.companyId`) é da `Company`
+  // legada — o id de uma nunca encontra a outra (`routes/middlewares/portalAccess.js`). Sem a
+  // resolução, o `findMany` volta **vazio, sem erro**: todo CNPJ cairia em "consultar" e o
+  // *"se já emitiu para este tomador antes, só preencher"* nunca aconteceria, em silêncio. É a
+  // mesma família do `legacyCompanySelect`, que já mordeu três vezes.
+  // ⚠ Só o escopo da MEMÓRIA usa o id resolvido; o de ACESSO continua sendo o do path.
+  router.use(
+    "/companies/:companyId/nfse/lote",
+    requireClientCompanyAccess(),
+    createNfseLoteRouter({ log, resolverCompanyId: resolveLegacyCompanyId })
   );
 
   // ── EMISSÃO DE NFS-e PELO APP DO CLIENTE ───────────────────────────────────────────────────

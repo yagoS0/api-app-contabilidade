@@ -4,19 +4,30 @@
 // linhas e devolve o resultado. Não há chamada ao ADN, ao SERPRO nem a homologação, e nada é
 // gravado — nem tomador, nem nota. A emissão em lote é fase seguinte e **não passa por aqui**.
 //
-// ─── ONDE MONTAR (ainda NÃO montado — de propósito) ─────────────────────────────────────────────
+// ─── ONDE ESTÁ MONTADO (19/08/2026) ─────────────────────────────────────────────────────────────
 //
-// Este arquivo exporta uma FÁBRICA de router e não se monta sozinho, porque a porta do cliente
-// (`routes/client/index.js`) está sendo editada por outra sessão. Para ligar, dentro de
-// `createClientPortalRouter`, ao lado das outras sub-rotas de empresa:
-//
-//     import { createNfseLoteRouter } from "../nfseLoteRoutes.js";
-//     …
+//     // routes/client/index.js, dentro de `createClientPortalRouter`
 //     router.use(
 //       "/companies/:companyId/nfse/lote",
 //       requireClientCompanyAccess(),
-//       createNfseLoteRouter({ log })
+//       createNfseLoteRouter({ log, resolverCompanyId: resolveLegacyCompanyId })
 //     );
+//
+// ⚠⚠ **`resolverCompanyId` NÃO É OPCIONAL NA PRÁTICA, E A AUSÊNCIA DELE É SILENCIOSA.** O
+// `:companyId` do path do portal do cliente é um **`PortalClient.id`**; `TomadorEmitido.companyId`
+// é o id da **`Company` legada** (gravado com `company.id` em `NfseService.js`, depois do
+// `markIssued`). São duas entidades com PKs próprias, e `routes/middlewares/portalAccess.js`
+// registra por extenso que **o id de uma nunca encontra a outra** — é por isso que
+// `resolveLegacyCompanyId` teve de existir para a emissão.
+//
+// Sem a resolução, `buscarTomadoresEmitidos` devolve **vazio, sem erro nenhum**: todo CNPJ cai em
+// `CONSULTAR` e o *"se o CNPJ preenchido for de um tomador que já teve antes, só preencher"* —
+// metade do que o dono descreveu — **nunca acontece**. A tela funciona, só consulta a Receita para
+// todo mundo, e ninguém acha isso testando. É a mesma família do `legacyCompanySelect`.
+//
+// O padrão é a IDENTIDADE para quem montar este router num caminho que já fale o id legado (é o
+// caso do teste da própria fábrica). ⚠ **Só o escopo da MEMÓRIA muda** — o portão de acesso
+// continua sendo `requireClientCompanyAccess()` sobre o id do PATH, sempre.
 //
 // ⚠ **`requireClientCompanyAccess()` SEM `minRole`, e é decisão, não descuido.** Estas rotas não
 // emitem: baixar um modelo e conferir uma planilha são LEITURA, e o piso das rotas financeiras do
@@ -35,13 +46,14 @@ import { buscarTomadoresEmitidos } from "../application/nfse/tomadorEmitido.js";
 import { gerarModeloPlanilhaLote } from "../application/nfse/lote/modeloPlanilhaLote.js";
 import { lerPlanilhaLote } from "../application/nfse/lote/lerPlanilhaLote.js";
 import { classificarPlanilhaLote } from "../application/nfse/lote/classificarLinhaLote.js";
+import { aplicarAjustesLote, RECUSA_AJUSTE } from "../application/nfse/lote/ajustesLote.js";
 
 /** 10 MB — o mesmo teto dos outros uploads do portal do cliente (`routes/client/index.js`). */
 const TAMANHO_MAXIMO = 10 * 1024 * 1024;
 
 const TIPO_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-export function createNfseLoteRouter({ log = null } = {}) {
+export function createNfseLoteRouter({ log = null, resolverCompanyId = null } = {}) {
   // `mergeParams` porque o `:companyId` vem do caminho do router pai.
   const router = Router({ mergeParams: true });
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: TAMANHO_MAXIMO } });
@@ -78,9 +90,22 @@ export function createNfseLoteRouter({ log = null } = {}) {
    * `municipio_nao_conferido` (estado `conferir`, nunca `pronta`). A lista oficial do IBGE não
    * existe no `apps/api` — ela mora nos dois fronts, e uma terceira cópia foi recusada em
    * 19/08/2026. **A conferência não se perde: ela acontece na tela de ajuste**, que tem a lista.
+   *
+   * ⚠⚠ **O corpo também aceita `ajustes`** — o que a pessoa digitou por cima, na tela, chaveado
+   * pelo NÚMERO DA LINHA DO EXCEL. O arquivo é o mesmo; a sobreposição é `ajustesLote.js`, e ela
+   * roda ANTES da classificação: a regra continua num lugar só, e a tela não reimplementa nada.
+   *
+   * ⚠ **`ajustes` e `consultas` são tratados de forma DIFERENTE quando chegam malformados, e é
+   * deliberado.** A consulta é dado DERIVADO — descartá-la devolve a linha a `consultar`, que é o
+   * estado honesto, e o front refaz. O ajuste é o que uma PESSOA digitou: descartá-lo em silêncio
+   * faria a correção sumir com a tela dizendo que enviou. Por isso ajuste malformado é **recusa
+   * nomeada**, e nada é aplicado.
    */
   router.post("/leitura", upload.single("arquivo"), async (req, res) => {
-    const companyId = String(req.params.companyId || "");
+    // ⚠ O id do PATH é o que o portão já autorizou. A memória de tomadores fala outro id — ver o
+    // cabeçalho deste arquivo. A tradução acontece AQUI e não muda o escopo de acesso.
+    const idDoPath = String(req.params.companyId || "");
+    const companyId = resolverCompanyId ? await resolverCompanyId(idDoPath) : idDoPath;
     if (!req.file?.buffer?.length) {
       return res.status(400).json({
         error: "arquivo_ausente",
@@ -100,7 +125,23 @@ export function createNfseLoteRouter({ log = null } = {}) {
       });
     }
 
-    const documentos = lida.linhas.map((l) => String(l.valores?.documento ?? ""));
+    // ⚠ O AJUSTE ENTRA ANTES DE TUDO O QUE DEPENDE DAS CÉLULAS: a memória é buscada pelo documento,
+    // e um ajuste que conserte o CNPJ tem de mudar qual tomador se procura.
+    const pedidoDeAjuste = lerAjustesDoCorpo(req.body);
+    const ajustados = pedidoDeAjuste.ok
+      ? aplicarAjustesLote(lida.linhas, pedidoDeAjuste.ajustes)
+      : pedidoDeAjuste;
+    if (!ajustados.ok) {
+      return res.status(422).json({
+        error: ajustados.codigo,
+        message: ajustados.mensagem,
+        linhasDesconhecidas: ajustados.linhasDesconhecidas,
+        colunasDesconhecidas: ajustados.colunasDesconhecidas,
+      });
+    }
+    const linhas = ajustados.linhas;
+
+    const documentos = linhas.map((l) => String(l.valores?.documento ?? ""));
     const { tomadores, motivo } = await buscarTomadoresEmitidos({
       prisma,
       companyId,
@@ -108,7 +149,7 @@ export function createNfseLoteRouter({ log = null } = {}) {
       log,
     });
 
-    const classificacao = classificarPlanilhaLote(lida.linhas, {
+    const classificacao = classificarPlanilhaLote(linhas, {
       tomadoresConhecidos: tomadores,
       consultas: lerConsultasDoCorpo(req.body),
       municipios: null,
@@ -123,11 +164,63 @@ export function createNfseLoteRouter({ log = null } = {}) {
       /** ⚠ Nulo quando a memória foi lida sem problema. Preenchido, a tela DIZ que não consultou a
        *  memória — em vez de dar a entender que nenhum tomador é conhecido. */
       memoriaIndisponivel: motivo,
+      /**
+       * Os números das linhas do Excel que foram ajustadas NESTA leitura.
+       *
+       * ⚠ A tela precisa dizer isso: **a planilha no disco da pessoa continua com o valor antigo**.
+       * Subir o mesmo arquivo amanhã perde os ajustes, e sem este campo a perda seria silenciosa.
+       */
+      linhasAjustadas: ajustados.ajustadas,
       ...classificacao,
+      /**
+       * ⚠⚠ AS CÉLULAS VOLTAM COM CADA LINHA, e não é conveniência: sem elas a tela de conferência
+       * não consegue **dizer de que nota está falando**. A classificação devolve o estado e, para
+       * `pronta`/`conferir`, os `dados` — mas a linha PENDENTE (justamente a que precisa de ajuste)
+       * volta com `dados: null`. Ela apareceria como "linha 37" e um motivo, e quem lê teria de
+       * abrir a planilha para saber qual tomador é. É também o que a pessoa edita para corrigir.
+       *
+       * ⚠ São os valores JÁ AJUSTADOS — é o que o servidor classificou.
+       */
+      linhas: classificacao.linhas.map((linha) => {
+        const origem = linhas.find((l) => l.numero === linha.numero);
+        return {
+          ...linha,
+          valores: celulasParaTela(origem?.valores),
+          /** ⚠ Ajustada NESTA sessão. O arquivo no disco continua dizendo o antigo. */
+          ajustada: origem?.ajustada === true,
+        };
+      }),
     });
   });
 
   return router;
+}
+
+/**
+ * As células como a tela vai mostrá-las — e como a LEITURA as entendeu.
+ *
+ * ⚠⚠ A DATA É FORMATADA COM OS MESMOS ACESSADORES DE `lerCompetenciaDaPlanilha` (`getFullYear`,
+ * `getMonth`, `getDate` — hora local), e **não** com `toJSON`/ISO. O ISO converte para UTC e, num
+ * fuso a leste de Greenwich, mostraria um DIA DIFERENTE do que o classificador leu na mesma célula:
+ * a tela diria "01/08" sobre a linha que o servidor classificou como 31/07. A competência sai
+ * impressa na nota — a tela e a regra têm de estar falando da mesma data.
+ *
+ * ⚠ Tudo mais vira texto cru, sem máscara e sem arredondar: é a GRAFIA da planilha que decide o
+ * valor ambíguo (`1.500`) e o zero à esquerda do CPF, e é ela que a pessoa precisa ver para
+ * entender a pendência.
+ */
+function celulasParaTela(valores) {
+  const saida = {};
+  for (const [chave, valor] of Object.entries(valores || {})) {
+    if (valor instanceof Date) {
+      saida[chave] = Number.isNaN(valor.getTime())
+        ? String(valor)
+        : `${String(valor.getDate()).padStart(2, "0")}/${String(valor.getMonth() + 1).padStart(2, "0")}/${valor.getFullYear()}`;
+      continue;
+    }
+    saida[chave] = valor === null || valor === undefined ? "" : String(valor);
+  }
+  return saida;
 }
 
 /**
@@ -146,5 +239,31 @@ function lerConsultasDoCorpo(body) {
     return lido && typeof lido === "object" ? lido : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Os ajustes que a pessoa digitou na tela.
+ *
+ * ⚠⚠ **AQUI O MALFORMADO RECUSA, ao contrário de `consultas`.** A consulta é dado derivado: jogá-la
+ * fora devolve a linha ao estado `consultar`, que é honesto, e o front a refaz sem ninguém perder
+ * nada. O ajuste é o que uma PESSOA escreveu — jogá-lo fora em silêncio faria a tela dizer que
+ * enviou a correção e o servidor reclassificar com o valor velho, e a linha voltaria pendente pelo
+ * mesmo motivo de antes. Ninguém descobriria isso olhando.
+ */
+function lerAjustesDoCorpo(body) {
+  const bruto = body?.ajustes;
+  if (bruto === undefined || bruto === null || bruto === "") return { ok: true, ajustes: null };
+  if (typeof bruto === "object") return { ok: true, ajustes: bruto };
+  try {
+    return { ok: true, ajustes: JSON.parse(String(bruto)) };
+  } catch {
+    return {
+      ok: false,
+      codigo: RECUSA_AJUSTE.FORMA_INVALIDA,
+      mensagem:
+        "Os ajustes desta planilha não chegaram em forma que se possa ler. Nada foi aplicado — "
+        + "confira a linha na tela e envie de novo.",
+    };
   }
 }

@@ -541,6 +541,78 @@ os dois atos da mesma tela, e duas regras divergiriam na primeira correção"*.
 - Testes: `routes/client/__tests__/cancelamentoCliente.test.js` (23) — cada recusa medida por
   **`NfseService.sendEvent` NÃO ter sido chamado**.
 
+#### As duas portas do LOTE POR PLANILHA — `/client/companies/:id/nfse/lote` (19/08/2026)
+
+> Dono: *"a planilha deve ser baixada por nós o modelo, o cliente preenche; se o CNPJ preenchido for
+> de um tomador que já teve antes, só preencher; se não teve consultamos na API; e se a API não
+> retornar nós avisamos isso em uma tela para ajuste daquela nota."*
+
+⚠⚠ **NENHUMA DAS DUAS EMITE NADA, e a emissão em lote NÃO EXISTE.** `GET /modelo` devolve um .xlsx;
+`POST /leitura` lê a planilha, classifica cada linha e devolve. Sem ADN, sem SERPRO, sem gravação —
+nem tomador, nem nota. A emissão em série é fase seguinte, com regras próprias (sequencial, parada
+no desfecho desconhecido, numeração queimada) que **não estão construídas**.
+
+Regra pura em `application/nfse/lote/` (`colunasLote` · `modeloPlanilhaLote` · `lerPlanilhaLote` ·
+`celulasLote` · `classificarLinhaLote` · `ajustesLote`), fábrica de router em
+`routes/nfseLoteRoutes.js`, montada em `routes/client/index.js`.
+
+**Quatro estados, lista FECHADA:** `pronta` · `conferir` · `consultar` · `pendente`. ⚠ `PRONTA`
+exige as duas listas vazias **e** endereço resolvido por origem conhecida — estado não previsto cai
+em `PENDENTE`, nunca em `PRONTA`. O endereço vem, nesta ordem: **planilha** → **memória**
+(`tomadores_emitidos`) → **consulta**.
+
+⚠⚠ **O `:companyId` DO PATH NÃO SERVE PARA A MEMÓRIA — e errar isso é SILENCIOSO.** Ele é um
+`PortalClient.id`; `TomadorEmitido.companyId` é o id da `Company` legada (gravado com `company.id`
+depois do `markIssued`). Sem resolver, o `findMany` volta **vazio, sem erro nenhum**: todo CNPJ cai
+em `consultar` e o *"se já teve antes, só preencher"* — metade do pedido do dono — nunca acontece,
+com a tela funcionando. É a mesma família do `legacyCompanySelect`. Por isso a fábrica recebe
+**`resolverCompanyId: resolveLegacyCompanyId`** (a mesma resolução da emissão) e o padrão é
+identidade. ⚠ **Só o escopo da MEMÓRIA usa o id resolvido; o de ACESSO é sempre o do path.**
+Travas: `routes/__tests__/nfseLoteRotas.test.js` (comportamento) +
+`routes/client/__tests__/loteMontadoNoPortalDoCliente.test.js` (varredura da montagem).
+
+⚠ **`requireClientCompanyAccess()` SEM `minRole`**: baixar um modelo e conferir uma planilha são
+LEITURA, e o piso das rotas financeiras do cliente é "membro ativo". O portão de emissão
+(`ensureEmissaoNfseAutorizada`) é da EMISSÃO e fica na rota que emitir.
+
+⚠⚠ **A CONSULTA À RECEITA NÃO SAI DAQUI, e o `cMun` da planilha não é conferido aqui.** O
+classificador é PURO: devolve `consultar` com a lista `aConsultar`, e quem consulta é o front — é lá
+que a chamada à BrasilAPI já mora (direto do browser) e onde está a lista oficial do IBGE. A mesma
+lista é o que falta para provar o `cMun` que vem NA PLANILHA: por isso ele sai marcado
+`municipio_nao_conferido` (estado `conferir`, **nunca** `pronta`) e **a conferência acontece na
+tela**, que a completa e rebaixa para `pendente` (`municipio_inexistente`) o código que não existir.
+Uma terceira cópia da tabela do IBGE no `apps/api` foi **recusada** em 19/08/2026.
+
+**O segundo passe vem no MESMO POST**, em dois campos, os dois parciais por natureza:
+
+| campo | chave | malformado |
+|---|---|---|
+| `consultas` | **documento** (20 linhas do mesmo CNPJ = 1 consulta) | vira "nenhuma consulta conhecida"; as linhas voltam em `consultar` |
+| `ajustes` | **número da linha DO EXCEL** | ⚠⚠ **RECUSA NOMEADA** (`ajuste_forma_invalida`) |
+
+⚠ A assimetria é deliberada: consulta é dado DERIVADO (o front refaz), ajuste é o que uma **pessoa
+digitou** — descartá-lo em silêncio faria a tela dizer que enviou a correção e o servidor
+reclassificar com o valor velho. Pelo mesmo motivo, coluna fora da lista fechada
+(`ajuste_coluna_desconhecida`) e linha inexistente (`ajuste_linha_desconhecida`) **recusam sem
+aplicar nada**. ⚠ O número é o do EXCEL, nunca índice de array: eles divergem na primeira linha em
+branco, e o ajuste iria para a NOTA ERRADA.
+
+⚠ **A resposta devolve `linhasAjustadas` e as `valores` de cada linha.** As células voltam porque a
+linha PENDENTE — a que precisa de ajuste — tem `dados: null`, e sem elas a tela não sabe de que nota
+está falando nem tem o que editar. ⚠ A data sai formatada com os **mesmos acessadores** de
+`lerCompetenciaDaPlanilha` (hora local), nunca em ISO: o ISO converte para UTC e mostraria um dia
+diferente do que o classificador leu. ⚠ E o ajuste **não persiste** — a planilha no disco continua
+dizendo o antigo, e é por isso que `linhasAjustadas` existe e a tela precisa dizê-lo.
+
+⚠ A **linha de exemplo do modelo**, voltando intacta, é descartada e reportada
+(`exemploDescartado`): ela é uma nota completa e bem formada, e na fase de emissão sairia como
+documento fiscal de verdade.
+
+- Testes: `application/nfse/lote/__tests__/` (116, inclusive `loteNaoEscreveNemEmite` e
+  `ajustesLote`) + `routes/__tests__/nfseLoteRotas.test.js` (28) +
+  `routes/client/__tests__/loteMontadoNoPortalDoCliente.test.js` (6).
+- A tela: `apps/portal-cliente-web/src/features/lote/` — ver o `CLAUDE.md` de lá.
+
 ### ⚠⚠ O `cMotivo` DO CANCELAMENTO ERA ARBITRADO — e a lista não é a da substituição (19/08/2026)
 
 **O defeito, medido:** `buildEventoXml` escrevia, no ramo do cancelamento,

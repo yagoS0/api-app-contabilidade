@@ -53,6 +53,7 @@ src/
     home/               - resumo do mês
     notas/              - lista + DANFSe + cancelamento + "usar como modelo"
     emitir/             - ⚠ a ÚNICA tela deste portal que pratica ato fiscal
+    lote/               - planilha de emissão em lote: modelo, leitura e CONFERÊNCIA (⚠ NÃO emite)
     guias/              - guias + linha digitável
   lib/
     format.js  hooks.js  roles.js  mensagens.js  baixarBlob.js
@@ -320,6 +321,113 @@ Duas fontes, e nenhuma inventa texto de documento fiscal:
 oferece botão nenhum de reenvio: **não um botão com aviso, nenhum botão**.
 ⚠ `nfse_numero_em_estado_indeterminado` (409) é da FAMÍLIA do transporte, não erro de validação.
 
+## O LOTE POR PLANILHA (`src/features/lote/`) — ⚠⚠ ELA PREPARA; ELA NÃO EMITE
+
+> Dono (19/08/2026): *"a planilha deve ser baixada por nós o modelo, o cliente preenche; se o CNPJ
+> preenchido for de um tomador que já teve antes, só preencher; se não teve consultamos na API; e se
+> a API não retornar nós avisamos isso em uma tela para ajuste daquela nota; ajustando, ele passa
+> por todas as notas para conferir e pode emitir em lote."*
+
+⚠⚠ **A ENTREGA VAI ATÉ "CONFERIR". NÃO HÁ BOTÃO DE EMITIR — nem desabilitado.** A emissão em série é
+a fase perigosa e tem regras próprias (sequencial, parada no desfecho DESCONHECIDO, numeração
+queimada) que não estão construídas. ⚠ E **a ausência é DITA**, em uma linha no fim da tela: sem
+ela, quem termina a conferência procura um botão que não existe. É o critério do dono aplicado —
+*sai a frase que descreve uma ausência visível; fica a que impede uma ausência de ser lida como
+afirmação*.
+
+⚠ Por isso o botão em Notas e o título dizem **"Preparar lote por planilha"**, e não "Emitir em
+lote": a frase que descreve um comportamento é parte do comportamento.
+
+Contrato (LIDO de `apps/api/src/routes/nfseLoteRoutes.js`): `GET .../nfse/lote/modelo` (o .xlsx) e
+`POST .../nfse/lote/leitura` (multipart: `arquivo` + `consultas` + `ajustes`). ⚠ O modelo vem por
+**Blob**, com Bearer — `<a href>` receberia 401.
+
+### ⚠⚠ A CLASSIFICAÇÃO É DO BACKEND. A TELA MOSTRA — com DUAS exceções, as duas delegadas por escrito
+
+Os quatro estados são lista FECHADA (`classificarLinhaLote.js`): `pronta` · `conferir` ·
+`consultar` · `pendente`. `lib/estadoDaLinhaDoLote.js` é ESPELHO, amarrado por teste que importa o
+`ESTADO` do backend. As duas coisas que esta tela DECIDE são as que o servidor não tem como fazer:
+
+1. ⚠⚠ **A CONFERÊNCIA DO CÓDIGO DO MUNICÍPIO.** A lista oficial do IBGE **não existe no `apps/api`**
+   (uma terceira cópia foi recusada em 19/08/2026); ela mora nos dois fronts. O backend marca
+   `municipio_nao_conferido` e escreve, no próprio arquivo, que *"a conferência acontece na tela de
+   ajuste, que tem a lista"*. **Cumprir a segunda metade é obrigação desta tela**: código que existe
+   vira "Rio de Janeiro / RJ" na linha (município **e** UF, sempre); código que não existe **derruba
+   a linha para `pendente`**, com o código de pendência **do próprio backend**
+   (`municipio_inexistente`) — o veredito que ele daria se tivesse a lista.
+   ⚠ O texto do backend é **substituído** quando a conferência acontece: ele dizia que ela ainda ia
+   acontecer, e ficaria falso.
+   ⚠ Sem código a conferir (linha já pendente por outro motivo volta com `dados: null`) **não se
+   confere nada** — a primeira versão lia `""` e acusava `municipio_inexistente` com o código vazio,
+   inventando um segundo defeito em três linhas do mock.
+2. ⚠⚠ **A CONSULTA DO CNPJ NA RECEITA** (`lib/consultasDoLote.js`), que sai do navegador. ⚠ **CPF
+   NÃO SE CONSULTA** — a guarda é `decidirConsulta`, a MESMA da emissão avulsa, e há teste provando
+   que nenhuma chamada sai. ⚠ `cMunVerificado: true` só nasce da **prova tripla** de
+   `enderecoDaReceita`/`codigoMunicipioVerificado`; não existe caminho que o produza sem endereço, e
+   o backend recusa `!== true`.
+
+⚠⚠ **A TELA SÓ REBAIXA, NUNCA PROMOVE.** Nada aqui transforma `conferir`/`consultar`/`pendente` em
+`pronta`. ⚠ E **estado que a tela não conhece não vira pronta**: sai nomeado, em vermelho, contado
+fora das prontas. O "ainda não" é `total - prontas`, e não a soma dos outros três — um estado novo
+no backend entra nessa conta **por construção**, em vez de sumir dela.
+
+⚠ O **resumo é RECONTADO na tela**, e não o do servidor: ele não sabe da conferência do município, e
+mostrá-lo ao lado das linhas rebaixadas faria a tela discordar de si mesma no número que decide se
+dá para seguir. **Prontas e não-prontas ficam sempre à vista** (`data-lote="prontas"` /
+`"nao-prontas"`, auditáveis no DOM).
+
+### O segundo passe — parcial de propósito
+
+A consulta é **em série** (200 linhas, BrasilAPI pública com throttle) e o mapa é **por documento**:
+vinte linhas do mesmo CNPJ consomem uma consulta. Enquanto roda, a tela mostra o progresso e um
+botão **"Parar e conferir o que já veio"**.
+
+⚠⚠ **UMA CONSULTA QUE FALHA NÃO DERRUBA O LOTE**: ela vira pendência DAQUELA linha, com o motivo, e
+as outras seguem. Exigir o conjunto completo travaria a tela esperando tudo — e é literalmente o que
+o dono descreveu (*"se a API não retornar nós avisamos isso em uma tela para ajuste daquela nota"*).
+
+### O ajuste — o que a pessoa digita, e o que ele NÃO é
+
+O formulário abre com as células que vieram da planilha (o backend as devolve em `valores`, porque a
+linha pendente tem `dados: null` e sem elas a tela não sabe de que nota fala). ⚠ **Só o que MUDOU é
+enviado**, em `ajustes`, chaveado pelo **número da linha DO EXCEL** — o mesmo que a pessoa vê na
+planilha dela. Índice de array iria para a nota errada.
+
+⚠⚠ **A REGRA NÃO FOI REIMPLEMENTADA AQUI.** As alternativas foram medidas e recusadas: reimplementar
+a classificação no front dá duas regras que divergem na primeira correção, e remontar o .xlsx no
+navegador poria o **SheetJS** no bundle de um app que **não tem nenhuma dependência fora do React**.
+O arquivo é reenviado a cada passe e quem classifica é sempre o servidor.
+
+⚠⚠ **O AJUSTE VIVE NESTA TELA, E ISSO É DITO.** A planilha no disco continua com o valor antigo, e
+subir o mesmo arquivo amanhã perde as correções. A frase fica porque é ausência que muda decisão.
+⚠ Recusa de ajuste (`ajuste_coluna_desconhecida`, `ajuste_linha_desconhecida`,
+`ajuste_forma_invalida`) **não descarta a leitura**: o servidor recusou a correção, não o arquivo.
+
+⚠ **Trocar de arquivo descarta os AJUSTES e mantém as CONSULTAS**: o ajuste é chaveado pela linha (a
+ordem pode mudar), a consulta pelo documento (que não muda de significado).
+⚠ **Trocar de empresa descarta tudo** — planilha, ajustes e consultas —, na casca **e** dentro da
+tela: guarda de um lado só não é guarda, e conferir a planilha de outra empresa prepararia notas no
+CNPJ errado.
+
+### O mock
+
+⚠⚠ **ELE ALCANÇA TODOS OS ESTADOS DE LINHA**, e é a razão de ele decidir em vez de devolver uma
+resposta fixa — este projeto foi mordido QUATRO vezes por ramo que só existia em produção. As linhas
+plantadas cobrem `pronta` pela memória, as três conferências (`municipio_nao_conferido`,
+`zero_a_esquerda_recuperado`, `email_fora_de_forma`), a consulta que **resolve**, a que responde sem
+endereço provável, a que **falha**, e `cpf_sem_endereco` / `endereco_incompleto` / `valor_ambiguo` /
+`competencia_ausente`. ⚠ Inclusive **a linha que o servidor dá como `conferir` e a TELA rebaixa** —
+sem ela, a segunda metade da prova do IBGE seria inalcançável offline.
+As recusas da leitura têm gatilho no **nome do arquivo** (`#cabecalho`, `#vazia`, `#colunas`), mesmo
+arranjo das sentinelas da emissão. E o modelo do mock é um **.xlsx de verdade** (reusa o
+`zipArmazenado` do lote de DANFSe), porque um arquivo corrompido com a extensão certa faria o modo
+offline "funcionar" até alguém tentar abrir.
+
+Testes: `lote/lib/__tests__/` (colunas 7 · estado 18 · consultas 15 · recusa 9),
+`lote/__tests__/lotePlanilhaNaTela.ligacao.test.jsx` (15 — a corrente inteira, com
+`api.emitirNfse` armadilhado) e `api/__tests__/loteDePlanilhaNoMock.test.js` (22 — o par mock/real e
+todos os estados).
+
 ## A LISTA DE NOTAS (`src/features/notas/`)
 
 Lê `GET /client/companies/:id/invoices?direcao=emitidas`. O `summary` é do **filtro inteiro**
@@ -497,9 +605,11 @@ de outra.
 
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **445 testes, 23 suítes, todas verdes** (medido em
-19/08/2026). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101). **0 suíte falhando é o
-estado esperado.**
+`npm test -w @contabilidade/portal-cliente-web` → **557 testes, 32 suítes, todas verdes** (medido em
+19/08/2026, depois do lote por planilha; eram 471/26 antes dele). Não existiam até 18/08
+(`d5a91490` subiu os primeiros 101). **0 suíte falhando é o estado esperado.**
+
+⚠ **`npm test` PASSA COM JSX QUEBRADO — só `npm run build` pega.** Rode os dois.
 
 ⚠ **`jest.config.js` e `babel.config.js` são cópia deliberada de `apps/web`**, letra por letra — um
 segundo jeito de testar dentro do mesmo monorepo é um jeito a mais de esquecer de rodar.
@@ -532,6 +642,8 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | `emitir/lib/codigoServicoDaNota.js` | `apps/api/src/application/nfse/codigoServicoDaNota.js` (**autoridade**) |
 | `notas/lib/cancelamentoNota.js` (`MOTIVOS_CANCELAMENTO`) | `apps/api/src/application/nfse/motivosDeEvento.js` (**valida**) |
 | `notas/lib/danfseDaNota.js` | `apps/web/src/features/notas/lib/danfseDaNota.js` (⚠ contratos DIFERENTES) |
+| `lote/lib/colunasDoLote.js` | `apps/api/src/application/nfse/lote/colunasLote.js` (**autoridade**) |
+| `lote/lib/estadoDaLinhaDoLote.js` (`ESTADO`) | `apps/api/src/application/nfse/lote/classificarLinhaLote.js` (**autoridade**) |
 | `lib/municipios/` · `lib/servicosNacionais/` | tabelas geradas; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs` — **não editar à mão** |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
 
@@ -570,11 +682,12 @@ ninguém notar.
   negócio — E0060/E0061 proíbem a substituta de alterar competência/serviço/local (não optante) e
   tomador/competência/valor (Simples), que é exatamente o que ele queria poder corrigir. Para o uso
   dele, cancelar e emitir nova são dois atos deliberados e resolvem; substituir não.
-- **Emissão em lote** — a **leitura** da planilha existe no backend
-  (`apps/api/src/application/nfse/lote/`, 12 colunas, classificador puro), mas
-  `apps/api/src/routes/nfseLoteRoutes.js` **exporta uma fábrica e não está montado em lugar nenhum**
-  (verificado: nenhum `import` fora do próprio teste). **Nada disso emite.** Este portal não tem
-  tela para lote.
+- **A EMISSÃO em lote** — ⚠⚠ **este item dizia que o lote inteiro não existia, e ficou falso em
+  19/08/2026.** O que existe hoje é a **preparação**: a tela `features/lote/` baixa o modelo, lê a
+  planilha, confere linha a linha, consulta a Receita e ajusta — e **para ali** (ver a seção
+  própria). O que continua não existindo é o ato: **nenhuma nota é emitida em lote**, não há botão,
+  não há rota. As regras da emissão em série (sequencial, parada no desfecho DESCONHECIDO, numeração
+  queimada) não estão construídas, e é por isso que ela é fase à parte.
 - **Envio da nota por e-mail ao tomador** — não existe. O campo `tomadorEmail` do formulário vira o
   `<email>` **dentro da DPS** (`nfsePayload.js:150` → `NfseService.js:820`); nós não disparamos
   e-mail nenhum a partir daqui.

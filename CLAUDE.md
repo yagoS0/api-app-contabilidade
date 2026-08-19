@@ -370,7 +370,7 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     alcançável nesta máquina. Rodar `prisma:migrate:deploy` + `:status` antes de usar.
 - [~] **Portal do CLIENTE na web (`apps/portal-cliente-web`)** — app novo (18–19/08/2026, nove
   commits): login, casca, Home, Notas, Guias e **emissão de NFS-e pelo cliente**. React 19 + Vite,
-  **sem router** (hash, 3 destinos) e sem lib de estado; paleta CLARA própria; 445 testes / 23 suítes.
+  **sem router** (hash, 3 destinos) e sem lib de estado; paleta CLARA própria; 557 testes / 32 suítes.
   ⚠ **Ler `apps/portal-cliente-web/CLAUDE.md` antes de mexer** — quase toda decisão veio de defeito
   medido ou de instrução literal do dono. Os três que mais custam se reintroduzidos:
   - ⚠ **O fallback mock não engole recusa NOMEADA** (`src/api/index.js:42`). Antes caía para o mock
@@ -382,9 +382,18 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   - ⚠ **`legacyCompanySelect` (`routes/client/index.js:102`) já mordeu três vezes**: coluna fora do
     `select` volta `undefined` sem erro, a rota responde 200 e a tela "só não mostra". A trava é
     varredura do texto do `select`, não teste de comportamento.
-  - **Fora de escopo, com motivo escrito:** substituição de NFS-e (**escopo fechado pelo dono**),
-    emissão em lote (a leitura existe no backend; `routes/nfseLoteRoutes.js` **não está montado**) e
-    envio da nota por e-mail ao tomador.
+  - ⚠⚠ **O LOTE POR PLANILHA PREPARA E NÃO EMITE** (19/08/2026) — `features/lote/` baixa o modelo,
+    lê a planilha e **confere linha a linha**: quatro estados fechados vindos do backend
+    (`nfse/lote/classificarLinhaLote.js`), consulta do CNPJ **saindo do navegador** em série e
+    ajuste da linha que volta ao servidor para ser RECLASSIFICADO por lá. ⚠ Duas metades moram no
+    front porque só ele as tem: a **conferência do código do IBGE** (que rebaixa a linha, nunca a
+    promove) e a **consulta à Receita**. ⚠ **Nenhuma nota é emitida em lote** — não há botão nem
+    rota, e a tela DIZ isso. `routes/nfseLoteRoutes.js` está montado em `routes/client/index.js`
+    com `resolverCompanyId: resolveLegacyCompanyId` (sem ele a memória de tomadores volta vazia
+    **sem erro**, e o *"se já teve antes, só preencher"* nunca acontece).
+  - **Fora de escopo, com motivo escrito:** substituição de NFS-e (**escopo fechado pelo dono**), a
+    EMISSÃO em lote (sequencial, parada no desfecho desconhecido, numeração queimada — fase à parte)
+    e envio da nota por e-mail ao tomador.
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 
