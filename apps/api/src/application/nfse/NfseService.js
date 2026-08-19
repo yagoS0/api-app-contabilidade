@@ -1063,10 +1063,25 @@ export class NfseService {
     // por substituição sem que exista a nota substituta — a nota "substituída" ficaria cancelada e
     // a substituta nunca teria sido emitida.
     //
-    // ⚠ NÃO CONSERTAR AGORA, POR INSTRUÇÃO: o fluxo de cancelamento/substituição é Fase 4. Fica o
-    // registro para que ninguém "complete" este caminho achando que ele só está incompleto — ele
-    // está invertido. Note que `buildDpsXml` ainda **não monta o grupo `<subst>`**, então o
-    // caminho certo também não existe ainda.
+    // ⚠⚠ NÃO SERÁ CONSTRUÍDO — DECISÃO DO DONO, 19/08/2026: *"esqueça substituir então, deixe
+    // apenas o cancelar."* Isto NÃO é mais "Fase 4 pendente": é escopo fechado. Quem for
+    // "completar" este caminho está reabrindo uma decisão, não terminando um trabalho.
+    //
+    // A decisão foi tomada COM a fonte oficial na mão, e é aí que ela fica interessante — o
+    // impedimento técnico tinha acabado de cair. O `ANEXO_I`/XSD versionados em
+    // `docs/leiaute-nfse/documentacao-tecnica/` dão a estrutura inteira do grupo (`subst` 0-1 entre
+    // `cLocEmi` e `prest`; `chSubstda` 1-1 de 50 dígitos; `cMotivo` 1-1 com a lista oficial
+    // `TSCodJustSubst` = 01,02,03,04,05,99; `xMotivo` 0-1). Dava para construir.
+    //
+    // O que decidiu foi a REGRA DE NEGÓCIO, não a estrutura: **E0060/E0061** proíbem a substituta
+    // de alterar competência/serviço/local (não optante) e tomador/competência/valor (Simples) —
+    // ou seja, exatamente o que o dono queria poder corrigir (*"podendo alterar data ou qualquer
+    // outro tipo de dado"*). Para o uso dele, substituição não serve: o caminho é **cancelar e
+    // emitir uma nota nova**, dois atos deliberados, que é o que o portal do cliente oferece.
+    //
+    // ⚠ E o caminho abaixo continua INVERTIDO — este parágrafo não o conserta nem o autoriza.
+    // `buildDpsXml` não monta `<subst>` e não vai montar. Se um dia a decisão mudar, o que se
+    // constrói é o `POST /nfse` com o grupo, NUNCA o envio manual do e105102.
     //
     // ── Os dois campos abaixo são OBRIGATÓRIOS (1-1) no e105102 pelo ANEXO_II v1.01 — ver o
     // comentário de `buildEventoXml`. Recusar aqui é o que substituiu o fallback inventado
