@@ -13,13 +13,20 @@ Portal contábil full-stack multi-tenant para gestão de documentos fiscais bras
 ## Monorepo — Estrutura
 
 ```
-apps/api/         - Backend Node.js/Express (porta 3000)
-apps/web/         - Frontend React/Vite
-apps/pdf-reader/  - Serviço Python/FastAPI de parsing de PDF (porta 8000)
-packages/shared/  - Contratos e tipos compartilhados
+apps/api/                 - Backend Node.js/Express (porta 3000)
+apps/web/                 - Frontend React/Vite — portal do ESCRITÓRIO (paleta escura)
+apps/portal-cliente-web/  - Frontend React/Vite — portal do CLIENTE (paleta clara, porta 5210)
+apps/pdf-reader/          - Serviço Python/FastAPI de parsing de PDF (porta 8000)
+packages/shared/          - Contratos e tipos compartilhados
 ```
 
 Cada app tem seu próprio `CLAUDE.md` com regras específicas.
+
+⚠ **`apps/web` e `apps/portal-cliente-web` são dois frontends separados, sem código compartilhado.**
+Vários módulos de regra fiscal existem **em cópia** nos dois (valor da nota, consulta do tomador,
+reaproveitamento, código de serviço, municípios). A tabela "mudou lá, muda aqui" está em
+`apps/portal-cliente-web/CLAUDE.md` — duas leituras da mesma coluna divergem na primeira correção, e
+aí as duas telas afirmam coisas diferentes sobre a MESMA empresa.
 
 ## Tech Stack
 
@@ -361,6 +368,23 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     opaco do projeto não tem campo de consumo, então uso único exige modelo novo.
   - ⚠ **Migração `20260809120000_add_onboarding` escrita mas NUNCA APLICADA** — não há banco
     alcançável nesta máquina. Rodar `prisma:migrate:deploy` + `:status` antes de usar.
+- [~] **Portal do CLIENTE na web (`apps/portal-cliente-web`)** — app novo (18–19/08/2026, nove
+  commits): login, casca, Home, Notas, Guias e **emissão de NFS-e pelo cliente**. React 19 + Vite,
+  **sem router** (hash, 3 destinos) e sem lib de estado; paleta CLARA própria; 445 testes / 23 suítes.
+  ⚠ **Ler `apps/portal-cliente-web/CLAUDE.md` antes de mexer** — quase toda decisão veio de defeito
+  medido ou de instrução literal do dono. Os três que mais custam se reintroduzidos:
+  - ⚠ **O fallback mock não engole recusa NOMEADA** (`src/api/index.js:42`). Antes caía para o mock
+    em todo 5xx: o `503 danfse_sem_qrcode` virava PDF válido e o **502 de TRANSPORTE virava
+    `status: "issued"`** na tela do cliente, com o desfecho real desconhecido.
+  - ⚠ **A nota emitida aparece antes do ADN por UNIÃO NA LEITURA** — `PortalInvoice` é projeção de
+    sistema externo e **não se escreve**; a dedup usa a tupla do **E0014** (série + nDPS). Regra em
+    `apps/api/src/application/notas/notasEmitidasNaoConfirmadas.js`.
+  - ⚠ **`legacyCompanySelect` (`routes/client/index.js:102`) já mordeu três vezes**: coluna fora do
+    `select` volta `undefined` sem erro, a rota responde 200 e a tela "só não mostra". A trava é
+    varredura do texto do `select`, não teste de comportamento.
+  - **Fora de escopo, com motivo escrito:** substituição de NFS-e (**escopo fechado pelo dono**),
+    emissão em lote (a leitura existe no backend; `routes/nfseLoteRoutes.js` **não está montado**) e
+    envio da nota por e-mail ao tomador.
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 
