@@ -976,6 +976,10 @@
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
+  /* ⚠ A aba de navegação é um `<a href>` de verdade desde 19/08/2026 (Ctrl+clique abre em nova
+     guia). O sublinhado do link brigaria com o sublinhado que marca a aba ATIVA — são dois traços
+     diferentes no mesmo lugar. O `.is-active::after` continua sendo o único. */
+  text-decoration: none;
   transition: background 0.12s ease, color 0.12s ease;
 }
 

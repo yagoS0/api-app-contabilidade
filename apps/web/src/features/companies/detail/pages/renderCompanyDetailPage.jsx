@@ -31,6 +31,11 @@ const CompanyGuidesTable = lazy(() =>
 const CompanyForm = lazy(() =>
   import("../../form/components/renderCompanyForm").then((m) => ({ default: m.CompanyForm }))
 );
+// A configuração de emissão de NFS-e, que era um bloco de 264 linhas dentro do formulário de
+// edição e virou ABA PRÓPRIA (dono, 19/08/2026) — com salvar próprio, por rota própria.
+const EmissaoNfseTab = lazy(() =>
+  import("../components/renderEmissaoNfseTab").then((m) => ({ default: m.EmissaoNfseTab }))
+);
 const AccountingEntriesTab = lazy(() =>
   import("../../../accounting/entries/components/renderAccountingEntriesTab").then((m) => ({ default: m.AccountingEntriesTab }))
 );
@@ -532,6 +537,57 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
     );
   }
 
+  // ─── Aba Emissão de NFS-e (grupo Fiscal): a configuração, com o salvar dela ───────────────
+  //
+  // ⚠ TERCEIRA PEÇA DAS TRÊS. Sem este bloco, a entrada em `GROUPS` e o par em
+  // `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT` levariam a URL a uma tela que não existe.
+  if (companyDetailTab === "emissaoNfse") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+        <CompanySectionHeader
+          company={selectedCompany}
+          activeTab="emissaoNfse"
+          onBack={onBack}
+          onTabChange={switchTab}
+          canEditCompany={canEditCompany}
+          competencia={circularPanel?.competencia}
+          onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        />
+
+        <AppShell className="company-form-page-shell">
+          <Suspense fallback={<TabLoadingFallback />}>
+            <EmissaoNfseTab
+              /* ⚠ A EMPRESA INTEIRA, e a aba lê dela só o que é dela (`legacyCompany`, pela MESMA
+                 leitura do formulário do cadastro). */
+              company={selectedCompany}
+              podeEditar={canEditCompany}
+              /* ⚠ O SALVAR PRÓPRIO — `PATCH .../emissao-nfse`, que aceita SÓ os sete campos. NÃO é
+                 o `editPanel.onSubmit`: aquele manda a empresa inteira. */
+              onSalvar={
+                editPanel?.onSalvarEmissaoNfse && companyId
+                  ? (campos) => editPanel.onSalvarEmissaoNfse(companyId, campos)
+                  : null
+              }
+              salvando={editPanel?.emissaoNfseSaving}
+              /* O PORTÃO DA EMISSÃO PELO CLIENTE veio junto, como bloco à parte: rota própria, com
+                 confirmação e auditoria, e fora de qualquer salvar. Prop ausente = "esta tela não
+                 recebeu o estado", e o bloco não renderiza — não é o mesmo que "não liberada". */
+              emissaoCliente={selectedCompany?.emissaoCliente}
+              onSetEmissaoCliente={
+                editPanel?.onSetEmissaoCliente && companyId
+                  ? (liberada) => editPanel.onSetEmissaoCliente(companyId, liberada)
+                  : null
+              }
+              emissaoClienteSaving={editPanel?.emissaoClienteSaving}
+            />
+          </Suspense>
+
+          <Feedback message={feedback.message} error={feedback.error} />
+        </AppShell>
+      </div>
+    );
+  }
+
   if (companyDetailTab === "edit") {
     return (
       <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
@@ -570,17 +626,11 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                    Não escolhe nada — ver `SeletorMunicipioIbge`. */
                 municipioCadastrado={selectedCompany?.municipio}
                 ufCadastrado={selectedCompany?.uf}
-                /* O PORTÃO DA EMISSÃO PELO CLIENTE. ⚠ Vem do payload da empresa (`PortalClient`),
-                   não de `legacyCompany` — é permissão de portal, não configuração fiscal da
-                   `Company`. Prop ausente = "esta tela não recebeu o estado", e o bloco não
-                   renderiza; não é o mesmo que "não liberada". */
-                emissaoCliente={selectedCompany?.emissaoCliente}
-                onSetEmissaoCliente={
-                  editPanel?.onSetEmissaoCliente && selectedCompany?.companyId
-                    ? (liberada) => editPanel.onSetEmissaoCliente(selectedCompany.companyId, liberada)
-                    : null
-                }
-                emissaoClienteSaving={editPanel?.emissaoClienteSaving}
+                /* ⚠ O PORTÃO DA EMISSÃO PELO CLIENTE NÃO É PASSADO AQUI desde 19/08/2026: ele
+                   mora no bloco "Emissão de NFS-e", que virou ABA PRÓPRIA (`emissaoNfse`). Passá-lo
+                   ainda assim seria prop morta — o formulário não renderiza mais aquele bloco em
+                   modo edição. O controle, a confirmação e a rota com auditoria continuam
+                   exatamente os mesmos, um clique adiante. */
                 // Q11.1: zona de risco
                 status={selectedCompany?.status}
                 dangerSaving={dangerActions?.saving}

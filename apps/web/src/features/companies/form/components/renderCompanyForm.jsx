@@ -633,32 +633,52 @@ export function CompanyForm({
       </label>
       <div />
 
-      {/* ⚠ OS TRÊS CAMPOS QUE FALTAVAM FICAM AQUI, encostados no bloco Inscrições e no seletor de
-          município — juntos eles são exatamente o que `buildMissingFields` do emissor de NFS-e
-          exige, e o contador já vem a esta parte do formulário para preenchê-los. Bloco próprio, e
-          não mais três campos soltos em "Inscrições", porque o nome do grupo é o que responde
-          "para que serve isto?" a quem nunca vai emitir nota de serviço. */}
-      <CamposEmissaoNfse
-        codigoServicoNacional={form.codigoServicoNacional}
-        /* ⚠ A LISTA de códigos (dono, 16/08/2026). Sem esta linha o seletor abre vazio em toda
-           empresa e o contador recadastra achando que nada foi salvo — a mesma classe do defeito
-           que o `legacyCompanySelect` do backend já cometeu com o município. */
-        codigosServicoNacional={form.codigosServicoNacional}
-        codigoServicoMunicipal={form.codigoServicoMunicipal}
-        rpsSerie={form.rpsSerie}
-        /* ⚠ OS TRÊS PERCENTUAIS DA LEI 12.741 (dono, 18/08/2026). Sem estas linhas o bloco monta
-           com os defaults `""` e o formulário reabre vazio a cada edição — o defeito que o
-           `codigosServicoNacional` logo acima já cometeu, e que aqui custaria a empresa do Lucro
-           Presumido parar de emitir com o contador achando que a configurou. */
-        pTotTribFed={form.pTotTribFed}
-        pTotTribEst={form.pTotTribEst}
-        pTotTribMun={form.pTotTribMun}
-        onChange={onChange}
-        emissaoCliente={emissaoCliente}
-        razaoSocial={form.razaoSocial}
-        onSetEmissaoCliente={onSetEmissaoCliente}
-        emissaoClienteSaving={emissaoClienteSaving}
-      />
+      {/* ── A CONFIGURAÇÃO DE EMISSÃO DE NFS-e SAIU DAQUI (dono, 19/08/2026) ────────────────────
+          > *"configuração de notas na aba do contador está ficando muito grande, vamos separar ela
+          > em uma aba própria."*
+
+          ⚠ EM MODO EDIÇÃO ela virou ABA PRÓPRIA, com SALVAR PRÓPRIO
+          (`detail/components/renderEmissaoNfseTab.jsx`, rota `PATCH .../emissao-nfse`, que aceita
+          só os sete campos). Renderizá-la também aqui devolveria dois lugares editando os mesmos
+          campos, com dois salvares diferentes — o defeito, não a solução.
+
+          ⚠ MAS OS CAMPOS CONTINUAM NO `form` E NO PAYLOAD deste formulário, e isso NÃO é sobra:
+          `buildCompanyPayload` manda a empresa inteira, e campo ausente vira `null` — tirá-los
+          daqui faria o "Salvar alterações" APAGAR a configuração de emissão de quem veio só trocar
+          o telefone. Ver `mapCompanyToEmissaoNfseForm`.
+
+          No cadastro de empresa NOVA (`!cnpjReadOnly`) o bloco CONTINUA aqui: não existe aba antes
+          de a empresa existir, e o portão do cliente já não aparecia nesse caso. */}
+      {!cnpjReadOnly ? (
+        <CamposEmissaoNfse
+          codigoServicoNacional={form.codigoServicoNacional}
+          codigosServicoNacional={form.codigosServicoNacional}
+          codigoServicoMunicipal={form.codigoServicoMunicipal}
+          rpsSerie={form.rpsSerie}
+          pTotTribFed={form.pTotTribFed}
+          pTotTribEst={form.pTotTribEst}
+          pTotTribMun={form.pTotTribMun}
+          onChange={onChange}
+          emissaoCliente={emissaoCliente}
+          razaoSocial={form.razaoSocial}
+          onSetEmissaoCliente={onSetEmissaoCliente}
+          emissaoClienteSaving={emissaoClienteSaving}
+        />
+      ) : (
+        /* ⚠ A SAÍDA FICA DITA, não subentendida: quem procurava os códigos de serviço aqui precisa
+           saber para onde eles foram. Aba sumida sem rastro é o que faz recadastrar. */
+        <div className="full" style={{
+          borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12,
+          fontSize: 12, color: "#8A8FA3", lineHeight: 1.6,
+        }}>
+          <strong style={{ color: "#F8F8F2", fontSize: "0.9rem" }}>Emissão de NFS-e</strong>
+          <div style={{ marginTop: 4 }}>
+            Os códigos de serviço, a série da DPS, a carga tributária aproximada e a liberação de
+            emissão para o cliente ficam na aba <strong>Fiscal → Emissão de NFS-e</strong>, com o
+            salvar próprio dela.
+          </div>
+        </div>
+      )}
 
       <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
         <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Alterações contratuais</strong>

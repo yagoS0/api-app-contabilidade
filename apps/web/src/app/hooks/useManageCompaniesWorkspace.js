@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useCompanies } from "../../features/companies/list/hooks/useManageCompanies";
 import { useCompanyGuides } from "../../features/guides/list/hooks/useManageCompanyGuides";
+// ⚠ OS DOIS MAPAS SAÍRAM DAQUI (19/08/2026) e viraram `features/companies/detail/lib/rotasDaEmpresa.js`.
+// Motivo: eles ganharam um SEGUNDO consumidor. A aba do header virou `<a href>` de verdade (para o
+// Ctrl+clique abrir em nova guia), e o `href` tem de sair da MESMA fonte que a navegação usa —
+// duas construções da mesma URL divergem na primeira correção, e aí o link leva a um lugar e o
+// clique a outro. Os nomes e o conteúdo não mudaram; só o endereço.
+import { SEGMENT_TO_TAB, TAB_TO_SEGMENT, companyTabPath } from "../../features/companies/detail/lib/rotasDaEmpresa";
 import {
   getInitialCompanyFormState,
   mapCompanyToEditForm,
@@ -11,54 +17,6 @@ import {
 // Q8.C.3: tabs do CompanyDetail viraram sub-rotas — `companyDetailTab` agora é derivado da URL.
 // Mantém a API legada `setCompanyDetailTab(name)` por compat — só faz navigate().
 const COMPANY_TAB_SEGMENTS = ["guides", "lancamentos", "circular", "parcelamento", "notas-fiscais", "auditoria", "sitfis", "cadastro-fiscal", "plano-contas", "cadastro", "documentos", "anotacoes", "edit"];
-const SEGMENT_TO_TAB = {
-  guides: "guides",
-  lancamentos: "lancamentos",
-  circular: "circular",
-  parcelamento: "parcelamento",
-  obrigacoes: "obrigacoes",
-  relatorios: "relatorios",
-  "notas-fiscais": "notasFiscais",
-  // Auditoria pré-apuração (grupo Fiscal). ⚠ O PAR EM `TAB_TO_SEGMENT` É OBRIGATÓRIO — sem ele o
-  // clique na aba não navega e a URL cai em Anotações, sem erro nenhum.
-  auditoria: "auditoria",
-  sitfis: "sitfis",
-  "cadastro-fiscal": "cadastroFiscal",
-  // Sugestão e Pendências viraram sub-abas INTERNAS do Cadastro (estado local, não URL).
-  // Links antigos caem no Cadastro Fiscal.
-  sugestao: "cadastroFiscal",
-  pendencias: "cadastroFiscal",
-  "apuracao-v2": "cadastroFiscal",
-  "plano-contas": "planoContas",
-  // "configuracoes" (Configurações de Lançamentos) foi removida: lançamento não se configura,
-  // ele aprende do histórico. Link antigo cai em Lançamentos.
-  configuracoes: "lancamentos",
-  cadastro: "cadastro",
-  documentos: "documentos",
-  // Cofre de senhas da empresa (grupo Empresa). ⚠ O PAR ABAIXO (`TAB_TO_SEGMENT`) É OBRIGATÓRIO:
-  // sem ele o clique na aba não navega e a URL cai em Anotações sem erro nenhum.
-  credenciais: "credenciais",
-  anotacoes: "anotacoes",
-  edit: "edit",
-};
-const TAB_TO_SEGMENT = {
-  guides: "guides",
-  lancamentos: "lancamentos",
-  circular: "circular",
-  parcelamento: "parcelamento",
-  obrigacoes: "obrigacoes",
-  relatorios: "relatorios",
-  notasFiscais: "notas-fiscais",
-  auditoria: "auditoria",
-  sitfis: "sitfis",
-  cadastroFiscal: "cadastro-fiscal",
-  planoContas: "plano-contas",
-  cadastro: "cadastro",
-  documentos: "documentos",
-  credenciais: "credenciais",
-  anotacoes: "anotacoes",
-  edit: "edit",
-};
 // Q17: competência default do dashboard = mês civil anterior.
 function dashboardPrevMonth() {
   const now = new Date();
@@ -130,7 +88,10 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
       console.warn("[openCompanyTab] sem companyId — não é possível navegar");
       return;
     }
-    navigate(`/companies/${companyId}/${segment}`);
+    // ⚠ A URL SAI DE `companyTabPath`, o MESMO construtor que alimenta o `href` das abas do
+    // header. Enquanto era uma template string aqui, havia duas construções da mesma URL: a
+    // primeira correção numa delas faria o Ctrl+clique abrir uma tela e o clique normal outra.
+    navigate(companyTabPath(companyId, tab));
   }
 
   function setCompanyDetailTab(tab) {
@@ -1082,6 +1043,52 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     }
   }
 
+  // ── O SALVAR PRÓPRIO DA ABA DE EMISSÃO DE NFS-e (dono, 19/08/2026) ──────────────────────────
+  //
+  // ⚠ NÃO É O `handleUpdateCompany`, e a diferença é a razão de a rota existir. Aquele manda a
+  // empresa INTEIRA (`buildCompanyPayload`), e a rota do cadastro exige CNPJ, razão social, CNAE e
+  // endereço — de uma aba que só tem os campos de emissão, ela responderia 400, e os campos que
+  // ela aceita e não recebesse seriam zerados. Esta chama `PATCH .../emissao-nfse`, que aceita só
+  // os sete campos e trata ausente como "não mexer".
+  const [emissaoNfseSaving, setEmissaoNfseSaving] = useState(false);
+
+  async function handleUpdateEmissaoNfse(companyId, campos) {
+    if (!companyId) return { ok: false };
+    setEmissaoNfseSaving(true);
+    feedback.clearFeedback();
+    try {
+      const res = await api.updateEmissaoNfse(companyId, campos);
+      // ⚠ O FORMULÁRIO DO CADASTRO É ATUALIZADO JUNTO, e sem isto haveria um jeito de desfazer o
+      // que acabou de ser salvo: o `editCompanyForm` é remapeado só quando MUDA DE EMPRESA, então
+      // ele continuaria segurando a série antiga — e o "Salvar alterações" da aba Cadastro, que
+      // manda a empresa inteira, gravaria o valor velho por cima. Os dois passam a concordar aqui.
+      const salvo = res?.emissaoNfse || {};
+      const texto = (v) => (v != null ? String(v) : "");
+      editCompanyForm.setForm((old) => ({
+        ...old,
+        codigoServicoNacional: texto(salvo.codigoServicoNacional),
+        codigosServicoNacional: Array.isArray(salvo.codigosServicoNacional)
+          ? salvo.codigosServicoNacional
+          : old.codigosServicoNacional,
+        codigoServicoMunicipal: texto(salvo.codigoServicoMunicipal),
+        rpsSerie: texto(salvo.rpsSerie),
+        pTotTribFed: texto(salvo.pTotTribFed),
+        pTotTribEst: texto(salvo.pTotTribEst),
+        pTotTribMun: texto(salvo.pTotTribMun),
+      }));
+      // A aba lê o que está gravado a partir do payload da empresa — sem recarregar, ela mostraria
+      // o valor anterior até a próxima navegação.
+      await loadCompanies();
+      feedback.setMessage("Configuração de emissão de NFS-e salva.");
+      return res;
+    } catch (err) {
+      feedback.setError(err?.message || "Falha ao salvar a configuração de emissão de NFS-e.");
+      throw err;
+    } finally {
+      setEmissaoNfseSaving(false);
+    }
+  }
+
   // Q11.1: suspender / reativar / excluir empresa
   const [companyDangerSaving, setCompanyDangerSaving] = useState(false);
 
@@ -1222,6 +1229,8 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
     loadGlobalChartStatus,
     // Portão da emissão de NFS-e pelo cliente
     emissaoClienteSaving,
+    handleUpdateEmissaoNfse,
+    emissaoNfseSaving,
     handleSetEmissaoCliente,
     // Q11.1: ações destrutivas na empresa
     companyDangerSaving,

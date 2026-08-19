@@ -16,9 +16,10 @@
 // não ser o ISS que varia de município, mas deve ser configurado do lado do contador, no portal do
 // contador."*
 
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { CompanyForm } from "../renderCompanyForm";
+import { EmissaoNfseTab } from "../../../detail/components/renderEmissaoNfseTab";
 import {
   getInitialCompanyFormState,
   mapCompanyToEditForm,
@@ -89,32 +90,100 @@ describe("o que está gravado na Company volta para o formulário", () => {
   });
 });
 
-describe("⚠ O FORMULÁRIO PASSA AS PROPS — o bloco não renderiza vazio para sempre", () => {
-  it("os três campos aparecem dentro do CompanyForm, com o valor do `form`", () => {
-    montar({
-      ...getInitialCompanyFormState(),
-      pTotTribFed: "11,33",
-      pTotTribEst: "0",
-      pTotTribMun: "2,5",
-    });
-    expect(screen.getByLabelText("Federal (%)", { exact: false })).toHaveValue("11,33");
+describe("⚠ A ABA PASSA AS PROPS — o bloco não renderiza vazio para sempre", () => {
+  // ⚠ ESTE BLOCO MUDOU DE ALVO em 19/08/2026, e o motivo é o pedido do dono: a configuração de
+  // emissão saiu do formulário e virou ABA PRÓPRIA, com salvar próprio. O que ele protege é o
+  // MESMO defeito de sempre (o componente verde e a tela vazia, porque ninguém passa as props);
+  // o que mudou foi quem tem de passá-las.
+  it("os três campos aparecem na aba, com o que está gravado na `Company`", () => {
+    render(
+      <EmissaoNfseTab
+        company={{ razao: "ACME", legacyCompany: { pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 2.5 } }}
+        onSalvar={jest.fn()}
+      />
+    );
+    expect(screen.getByLabelText("Federal (%)", { exact: false })).toHaveValue("11.33");
+    // ⚠ O ZERO GRAVADO CHEGA À ABA como "0", não como campo vazio — é a mesma armadilha do `||`,
+    // agora atravessando um componente a mais.
     expect(screen.getByLabelText("Estadual (%)", { exact: false })).toHaveValue("0");
-    expect(screen.getByLabelText("Municipal (ISS) (%)", { exact: false })).toHaveValue("2,5");
+    expect(screen.getByLabelText("Municipal (ISS) (%)", { exact: false })).toHaveValue("2.5");
   });
 
-  it("digitar chega ao `onChange` do formulário, com o nome da coluna", () => {
-    const { onChange } = montar(getInitialCompanyFormState());
+  it("digitar e salvar manda os três ao `onSalvar`, com o nome da coluna", async () => {
+    const onSalvar = jest.fn(async () => ({ ok: true }));
+    render(<EmissaoNfseTab company={{ razao: "ACME", legacyCompany: {} }} onSalvar={onSalvar} />);
+
     fireEvent.change(screen.getByLabelText("Municipal (ISS) (%)", { exact: false }), {
       target: { value: "2,5" },
     });
-    expect(onChange).toHaveBeenCalledWith("pTotTribMun", "2,5");
+    fireEvent.click(screen.getByRole("button", { name: /Salvar configuração de emissão/i }));
+
+    await waitFor(() => expect(onSalvar).toHaveBeenCalled());
+    const campos = onSalvar.mock.calls[0][0];
+    expect(campos.pTotTribMun).toBe("2,5");
+    // ⚠ OS SETE VIAJAM SEMPRE, e os que não foram tocados vão VAZIOS de propósito: é assim que a
+    // tela consegue APAGAR uma configuração errada. Quem separa "não mexer" de "apagar" é a
+    // presença da chave no corpo, e a aba manda todas as dela.
+    expect(Object.keys(campos).sort()).toEqual([
+      "codigoServicoMunicipal", "codigoServicoNacional", "codigosServicoNacional",
+      "pTotTribEst", "pTotTribFed", "pTotTribMun", "rpsSerie",
+    ]);
+  });
+
+  // ⚠ O salvar da aba NÃO PODE carregar campo do cadastro: a rota recusa o corpo inteiro se vier
+  // um campo de fora, e a tela não pode nem tentar.
+  it("campo que não é desta aba não entra no que ela salva", async () => {
+    const onSalvar = jest.fn(async () => ({ ok: true }));
+    render(<EmissaoNfseTab company={{ razao: "ACME", legacyCompany: { telefone: "2199999" } }} onSalvar={onSalvar} />);
+    fireEvent.change(screen.getByLabelText("Série da DPS", { exact: false }), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: /Salvar configuração de emissão/i }));
+    await waitFor(() => expect(onSalvar).toHaveBeenCalled());
+    expect(onSalvar.mock.calls[0][0]).not.toHaveProperty("telefone");
+    expect(onSalvar.mock.calls[0][0]).not.toHaveProperty("razaoSocial");
   });
 
   it("⚠ o bloco aparece INDEPENDENTE do regime — quem decide o opSimpNac é o CadastroFiscal", () => {
     // Esconder por `Company.regimeTributario` seria o defeito: a empresa cujo cadastro fiscal diz
     // LUCRO_PRESUMIDO e cuja `Company` ficou em SIMPLES teria a emissão recusada por falta destes
     // percentuais SEM CAMPO ONDE PREENCHÊ-LOS.
-    montar({ ...getInitialCompanyFormState(), regimeTributario: "SIMPLES" });
+    render(
+      <EmissaoNfseTab
+        company={{ razao: "ACME", legacyCompany: { regimeTributario: "SIMPLES" } }}
+        onSalvar={jest.fn()}
+      />
+    );
+    expect(screen.getByLabelText("Federal (%)", { exact: false })).toBeInTheDocument();
+  });
+});
+
+describe("o formulário do cadastro em modo EDIÇÃO não edita mais estes campos — mas não os apaga", () => {
+  it("os três campos não aparecem no formulário de edição; a aba é NOMEADA no lugar", () => {
+    montar({ ...getInitialCompanyFormState(), pTotTribFed: "11,33" });
+    expect(screen.queryByLabelText("Federal (%)", { exact: false })).not.toBeInTheDocument();
+    // ⚠ Aba que some sem rastro é o que faz recadastrar: a saída fica dita.
+    expect(screen.getByText(/ficam na aba/i)).toBeInTheDocument();
+  });
+
+  it("⚠ mas os valores CONTINUAM no `form` — senão o Salvar alterações os apagaria", () => {
+    // `buildCompanyPayload` manda a empresa inteira e campo ausente vira `null`. Este é o teste
+    // que cai se alguém "limpar" o estado do formulário achando que os campos não servem mais.
+    const form = mapCompanyToEditForm({ legacyCompany: { pTotTribEst: 0, rpsSerie: "00001" } });
+    expect(form.pTotTribEst).toBe("0");
+    expect(form.rpsSerie).toBe("00001");
+  });
+
+  it("no cadastro de empresa NOVA o bloco continua no formulário (ainda não há aba)", () => {
+    const onChange = jest.fn();
+    render(
+      <CompanyForm
+        form={getInitialCompanyFormState()}
+        onChange={onChange}
+        onSubmit={jest.fn()}
+        submitting={false}
+        submitLabel="Cadastrar"
+        showOwnerPassword
+      />
+    );
     expect(screen.getByLabelText("Federal (%)", { exact: false })).toBeInTheDocument();
   });
 });

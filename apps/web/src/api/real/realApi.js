@@ -1133,6 +1133,25 @@ export function createRealApi() {
       });
     },
 
+    // ── O SALVAR PRÓPRIO DA ABA DE EMISSÃO DE NFS-e (dono, 19/08/2026) ─────────────────────────
+    //
+    // ⚠ NÃO É `updateCompany`, e a diferença é o ponto inteiro. `buildCompanyPayload` monta a
+    // empresa INTEIRA (`String(input.x || "")` em ~30 campos): usá-lo aqui mandaria razão social,
+    // endereço e CNAE em branco a partir de um formulário que não tem esses campos. A rota do
+    // cadastro recusaria com 400 — e, nos campos que ela aceita, o que não fosse enviado seria
+    // zerado. Por isso a aba tem rota própria, que aceita SÓ estes sete campos.
+    //
+    // ⚠ MANDA APENAS O QUE A ABA TEM, e nada é preenchido "por garantia": o backend usa a presença
+    // da CHAVE para separar "não mexer" (ausente) de "apagar" (`""`/`[]`). Acrescentar uma chave
+    // com `undefined` aqui é inofensivo (o `JSON.stringify` a descarta), mas mandar `""` no lugar
+    // de omitir apagaria a configuração que a tela não estava editando.
+    async updateEmissaoNfse(companyId, campos) {
+      return request(`/firm/companies/${companyId}/emissao-nfse`, {
+        method: "PATCH",
+        body: JSON.stringify(campos || {}),
+      });
+    },
+
     // ── Q11.1: Suspender / Reativar / Excluir empresa ──────────────────────
     async suspendCompany(companyId, reason) {
       return request(`/firm/companies/${companyId}/suspend`, {

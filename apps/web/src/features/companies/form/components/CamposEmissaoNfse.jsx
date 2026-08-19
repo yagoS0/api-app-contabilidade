@@ -82,6 +82,11 @@ export function CamposEmissaoNfse({
   pTotTribEst = "",
   pTotTribMun = "",
   onChange,
+  // ⚠ O QUE ENTRA ENTRE OS CAMPOS E O PORTÃO — hoje, o botão de salvar da ABA PRÓPRIA de emissão
+  // (dono, 19/08/2026). Ele não pode ficar embaixo de tudo: depois do portão do cliente, um botão
+  // "Salvar" pareceria salvar TAMBÉM a liberação — que não passa por salvar nenhum, grava no
+  // clique da própria confirmação. Ausente (é o caso do cadastro de empresa NOVA), nada muda.
+  acoesDosCampos = null,
   // ⚠ O PORTÃO DA EMISSÃO PELO CLIENTE não é campo do formulário — não entra no `onChange` nem é
   // salvo pelo "Salvar alterações". Vem do payload da empresa (`PortalClient`) e tem rota própria.
   emissaoCliente = null,
@@ -249,6 +254,8 @@ export function CamposEmissaoNfse({
           seguem funcionando.
         </div>
       )}
+
+      {acoesDosCampos}
 
       {/* ⚠ QUEM PODE EMITIR vem DEPOIS de com o que emitir — a ordem é a do trabalho: primeiro a
           empresa fica configurada, depois se decide se o cliente pode usar essa configuração.

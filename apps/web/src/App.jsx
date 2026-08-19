@@ -417,6 +417,11 @@ function App() {
           // confirmação e auditoria. Por isso viaja como handler ao lado do form, e não em `form`.
           onSetEmissaoCliente: companiesWorkspace.handleSetEmissaoCliente,
           emissaoClienteSaving: companiesWorkspace.emissaoClienteSaving,
+          // ⚠ O SALVAR DA ABA DE EMISSÃO É OUTRO, de propósito: rota própria que aceita SÓ os sete
+          // campos da configuração. O `onSubmit` acima manda a empresa inteira e exige CNPJ, razão
+          // social, CNAE e endereço — de uma aba que não os tem, ele seria recusado com 400.
+          onSalvarEmissaoNfse: companiesWorkspace.handleUpdateEmissaoNfse,
+          emissaoNfseSaving: companiesWorkspace.emissaoNfseSaving,
         }}
         accountingPanel={{
           entries: accountingWorkspace.accountingEntriesState.entries,

@@ -14,6 +14,8 @@ import { auditCertAccess } from "../../application/security/CertAccessAudit.js";
 import {
   enderecoToSingleLine,
   validateAndNormalizeCompanyProfile,
+  // ⚠ A MESMA normalização que o PATCH do cadastro usa — ver a rota `emissao-nfse` mais abaixo.
+  normalizeCamposEmissaoNfse,
 } from "../../application/company/companyProfile.js";
 import {
   companyUpdateSchema,
@@ -2607,6 +2609,169 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         }
         log.error({ err }, "Falha ao alterar a liberação de emissão de NFS-e pelo cliente");
         return res.status(500).json({ ok: false, error: "emissao_cliente_update_failed" });
+      }
+    }
+  );
+
+  // ⚠ A ABA PRÓPRIA DE CONFIGURAÇÃO DA EMISSÃO — decisão do dono, 19/08/2026:
+  // *"configuração de notas na aba do contador está ficando muito grande, vamos separar ela em uma
+  // aba própria"* … *"ele ganha o próprio salvar"*.
+  //
+  // ⚠ POR QUE ESTA ROTA EXISTE, e por que ela NÃO é o `PATCH` do cadastro com menos campos.
+  // `PATCH /firm/companies/:id` é um salvar da EMPRESA INTEIRA: `validateAndNormalizeCompanyProfile`
+  // exige `cnpj`, `razaoSocial`, `cnaePrincipal` e endereço, e o `tx.company.update` de lá escreve
+  // ~30 colunas de uma vez. Mandar só os campos de emissão por lá é recusado com 400 — e isso é o
+  // comportamento CERTO, que fica como está: afrouxá-lo abriria a porta para meia empresa ser
+  // salva por qualquer chamador. Daí uma rota que aceita SÓ estes campos, no molde da
+  // `emissao-cliente` logo acima (mesmo lugar, mesmo gate `ACCOUNTANT`+).
+  //
+  // ⚠ `undefined` = NÃO MEXER · `null` = APAGAR. É a regra que o commit `11187501` já fixou nestes
+  // mesmos campos, e aqui ela é a diferença entre "salvei a série" e "apaguei a carga tributária
+  // que o contador tinha acabado de configurar". Campo que não veio no corpo NÃO ENTRA no `data`
+  // do Prisma — é o `hasOwnProperty` abaixo, não um `?? null`.
+  //
+  // ⚠ A NORMALIZAÇÃO É A MESMA do cadastro (`normalizeCamposEmissaoNfse`), importada e não
+  // reescrita: duas normalizações dos mesmos campos divergiriam na primeira correção, e o mesmo
+  // valor seria aceito por uma porta e recusado pela outra.
+  //
+  // ⚠ A LIBERAÇÃO DE EMISSÃO PELO CLIENTE NÃO ENTRA AQUI. Ela tem a rota dela
+  // (`PATCH .../emissao-cliente`), com confirmação e auditoria de quem/quando — é ato fiscal, não
+  // configuração. Duas rotas para o mesmo ato é o começo de duas regras.
+  const CAMPOS_EMISSAO_NFSE = [
+    "codigoServicoNacional",
+    "codigosServicoNacional",
+    "codigoServicoMunicipal",
+    "rpsSerie",
+    "pTotTribFed",
+    "pTotTribEst",
+    "pTotTribMun",
+  ];
+
+  router.patch(
+    "/companies/:companyId/emissao-nfse",
+    requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId || "").trim();
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+
+      // ⚠ CAMPO DE FORA É RECUSADO, NOMEANDO-O — não ignorado em silêncio. Aceitar e descartar é o
+      // defeito que esta base já pagou caro (`codigoServicoNacional` chegava no corpo, passava pelo
+      // Zod e morria na lista de colunas: 200 na resposta e campo vazio na recarga). Quem quiser
+      // salvar telefone continua tendo a rota do cadastro.
+      const intrusos = Object.keys(body).filter((k) => !CAMPOS_EMISSAO_NFSE.includes(k));
+      if (intrusos.length) {
+        return res.status(400).json({
+          ok: false,
+          error: "campos_nao_aceitos",
+          campos: intrusos,
+          message:
+            `Esta rota salva apenas a configuração de emissão de NFS-e (${CAMPOS_EMISSAO_NFSE.join(", ")}). `
+            + `Recebeu também: ${intrusos.join(", ")}. O restante do cadastro é salvo em PATCH /firm/companies/:id.`,
+        });
+      }
+      const enviados = CAMPOS_EMISSAO_NFSE.filter((c) =>
+        Object.prototype.hasOwnProperty.call(body, c)
+      );
+      if (!enviados.length) {
+        return res.status(400).json({
+          ok: false,
+          error: "nenhum_campo_de_emissao",
+          message: "Nenhum campo de configuração de emissão veio no corpo — não há o que salvar.",
+        });
+      }
+
+      const normalizado = normalizeCamposEmissaoNfse(body);
+      if (!normalizado.ok) return res.status(400).json({ ok: false, error: normalizado.error });
+      const {
+        codigoServicoNacionalFinal,
+        codigosServicoNacional,
+        codigoServicoMunicipal,
+        rpsSerie,
+        percentuais,
+      } = normalizado.data;
+
+      try {
+        const portal = await prisma.portalClient.findUnique({
+          where: { id: portalClientId },
+          select: { id: true, razao: true, companyId: true },
+        });
+        if (!portal?.id) {
+          return res.status(404).json({ ok: false, error: "portal_company_not_found" });
+        }
+        // ⚠ SEM LINHA LEGADA NÃO HÁ ONDE GRAVAR, e a resposta DIZ ISSO. As sete colunas vivem em
+        // `Company`, não em `PortalClient`. Responder 200 aqui seria o pior desfecho: o contador
+        // configuraria a empresa, a tela diria "salvo" e a emissão continuaria recusando.
+        if (!portal.companyId) {
+          return res.status(409).json({
+            ok: false,
+            error: "company_legada_ausente",
+            message:
+              "Esta empresa não tem cadastro legado (Company) — não há onde gravar a configuração de "
+              + "emissão de NFS-e. Salve o cadastro da empresa antes.",
+          });
+        }
+
+        // ⚠ AQUI ESTÁ A REGRA INTEIRA: só entra no `data` o que veio no corpo. Um `data` montado
+        // com os sete campos sempre apagaria, a cada salvar desta aba, tudo que a tela não tivesse
+        // enviado — inclusive a carga tributária, e a empresa pararia de emitir em silêncio.
+        const data = {};
+        if (Object.prototype.hasOwnProperty.call(body, "codigoServicoNacional")
+          || Object.prototype.hasOwnProperty.call(body, "codigosServicoNacional")) {
+          // O singular é conferido CONTRA a lista pelo normalizador (é o `Final`): com um código só
+          // na lista, ele é esse código; com vários e nenhum marcado, o normalizador já recusou.
+          data.codigoServicoNacional = codigoServicoNacionalFinal;
+        }
+        if (codigosServicoNacional !== undefined) {
+          data.codigosServicoNacional = codigosServicoNacional;
+        }
+        if (Object.prototype.hasOwnProperty.call(body, "codigoServicoMunicipal")) {
+          data.codigoServicoMunicipal = codigoServicoMunicipal || null;
+        }
+        if (Object.prototype.hasOwnProperty.call(body, "rpsSerie")) {
+          data.rpsSerie = rpsSerie;
+        }
+        for (const campo of ["pTotTribFed", "pTotTribEst", "pTotTribMun"]) {
+          if (percentuais[campo] !== undefined) data[campo] = percentuais[campo];
+        }
+
+        const atualizada = await prisma.company.update({
+          where: { id: portal.companyId },
+          data,
+          select: {
+            id: true,
+            codigoServicoNacional: true,
+            codigosServicoNacional: true,
+            codigoServicoMunicipal: true,
+            rpsSerie: true,
+            pTotTribFed: true,
+            pTotTribEst: true,
+            pTotTribMun: true,
+          },
+        });
+        log.info(
+          { portalClientId, companyId: portal.companyId, campos: Object.keys(data), razao: portal.razao },
+          "Configuração de emissão de NFS-e atualizada pela aba própria"
+        );
+        return res.json({
+          ok: true,
+          emissaoNfse: {
+            codigoServicoNacional: atualizada.codigoServicoNacional,
+            codigosServicoNacional: atualizada.codigosServicoNacional,
+            codigoServicoMunicipal: atualizada.codigoServicoMunicipal,
+            rpsSerie: atualizada.rpsSerie,
+            // Decimal do Prisma não é JSON — vai como string, a mesma forma que o
+            // `legacyCompanySelect` já entrega à tela.
+            pTotTribFed: atualizada.pTotTribFed != null ? String(atualizada.pTotTribFed) : null,
+            pTotTribEst: atualizada.pTotTribEst != null ? String(atualizada.pTotTribEst) : null,
+            pTotTribMun: atualizada.pTotTribMun != null ? String(atualizada.pTotTribMun) : null,
+          },
+        });
+      } catch (err) {
+        if (err?.code === "P2025") {
+          return res.status(404).json({ ok: false, error: "portal_company_not_found" });
+        }
+        log.error({ err }, "Falha ao salvar a configuração de emissão de NFS-e");
+        return res.status(500).json({ ok: false, error: "emissao_nfse_update_failed" });
       }
     }
   );

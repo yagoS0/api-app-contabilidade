@@ -7653,6 +7653,53 @@ export function createMockApi() {
       return { ok: true, emissaoCliente };
     },
 
+    // ── O SALVAR PRÓPRIO DA ABA DE EMISSÃO (dono, 19/08/2026) ─────────────────────────────────
+    //
+    // ⚠ MESMO CONTRATO DO REAL, inclusive nas recusas — é o que mantém o mock útil: a aba salva
+    // SÓ os sete campos dela, campo ausente NÃO É TOCADO e campo vazio APAGA. Sem a recusa de
+    // campo estranho aqui, o mock aceitaria em silêncio um `telefone` que o real devolve 400, e o
+    // caminho offline "ensinaria" um comportamento que não existe.
+    async updateEmissaoNfse(companyId, campos) {
+      await delay(140);
+      const corpo = campos && typeof campos === "object" ? campos : {};
+      const aceitos = [
+        "codigoServicoNacional", "codigosServicoNacional", "codigoServicoMunicipal", "rpsSerie",
+        "pTotTribFed", "pTotTribEst", "pTotTribMun",
+      ];
+      const intrusos = Object.keys(corpo).filter((k) => !aceitos.includes(k));
+      if (intrusos.length) {
+        throw Object.assign(new Error(`Esta rota salva apenas a configuração de emissão de NFS-e. Recebeu também: ${intrusos.join(", ")}.`), {
+          code: "campos_nao_aceitos", status: 400,
+        });
+      }
+      if (!aceitos.some((c) => Object.prototype.hasOwnProperty.call(corpo, c))) {
+        throw Object.assign(new Error("Nenhum campo de configuração de emissão veio no corpo."), {
+          code: "nenhum_campo_de_emissao", status: 400,
+        });
+      }
+      const index = mockCompanies.findIndex((item) => item.companyId === companyId);
+      if (index < 0) {
+        throw Object.assign(new Error("Empresa não encontrada."), {
+          code: "portal_company_not_found", status: 404,
+        });
+      }
+      const atuais = mockCompanies[index].legacyCompany || {};
+      // ⚠ A MESMA função que o `updateCompany` do mock usa. Ela já trata as três respostas
+      // (ausente = não mexer, vazio = apagar, válido = gravar normalizado) e recusa com os MESMOS
+      // códigos de erro do backend — uma segunda normalização aqui divergiria da primeira.
+      let normalizados;
+      try {
+        normalizados = normalizarCamposEmissaoNfseMock(corpo, atuais);
+      } catch (err) {
+        throw Object.assign(new Error(err.message), { code: err.message, status: 400 });
+      }
+      mockCompanies[index] = {
+        ...mockCompanies[index],
+        legacyCompany: { ...atuais, ...normalizados },
+      };
+      return { ok: true, emissaoNfse: normalizados };
+    },
+
     // ── Q11.1: stubs Suspender/Reativar/Excluir ─────────────────────────
     async suspendCompany() { await delay(80); return { ok: true }; },
     async resumeCompany() { await delay(80); return { ok: true }; },

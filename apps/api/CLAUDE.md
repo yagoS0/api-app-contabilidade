@@ -384,6 +384,35 @@ falta dessa porta passou a ser lacuna, não prudência. **Decisão do dono, aind
 para a nota sair do faturamento e da apuração. **Não fala com o sistema nacional.** O rótulo dizia
 "Cancelar" e foi trocado justamente porque, para um contador, esse é o nome do ato fiscal.
 
+### ⚠ A CONFIGURAÇÃO DE EMISSÃO GANHOU ROTA PRÓPRIA (dono, 19/08/2026)
+
+`PATCH /firm/companies/:companyId/emissao-nfse` (`routes/firm/index.js`, gate `ACCOUNTANT`+, no
+molde da `emissao-cliente`). Nasceu porque a configuração de emissão virou **aba própria com salvar
+próprio** no portal do contador.
+
+- ⚠ **O `PATCH /firm/companies/:id` continua exigindo a empresa INTEIRA, e isso é a garantia, não o
+  problema.** Medido: `validateAndNormalizeCompanyProfile` recusa payload parcial com **400**
+  (`company_cnpj_invalid` → `company_razao_social_required` → `company_cnae_principal_required` →
+  endereço) e o `tx.company.update` escreve ~30 colunas de uma vez. **Afrouxá-lo abriria a porta
+  para meia empresa ser salva por qualquer chamador** — por isso a rota nova, e não um relaxamento.
+- **Aceita SÓ sete campos:** `codigoServicoNacional`, `codigosServicoNacional`,
+  `codigoServicoMunicipal`, `rpsSerie`, `pTotTribFed/Est/Mun`. Campo de fora é **recusado nomeando**
+  (`campos_nao_aceitos`) — aceitar e descartar em silêncio é o defeito que estas mesmas colunas já
+  sofreram (200 na resposta, campo vazio na recarga).
+- ⚠ **`undefined` = não mexer · `null` = apagar** (regra do commit `11187501`): só entra no `data`
+  do Prisma o que veio no corpo (`hasOwnProperty`). Um `data` com os sete sempre apagaria a carga
+  tributária a cada salvar da aba, e a empresa pararia de emitir **em silêncio**.
+- ⚠ **A normalização é a MESMA do cadastro:** `normalizeCamposEmissaoNfse` foi **extraída** de
+  `validateAndNormalizeCompanyProfile` (`application/company/companyProfile.js`) e é chamada pelas
+  duas portas. Refatoração pura — `routes/firm/__tests__/companyCamposNfse.test.js` passa **sem
+  edição**. Duas normalizações fariam o mesmo valor ser aceito por uma porta e recusado pela outra.
+- **Empresa sem `Company` legada responde 409 `company_legada_ausente`**, nunca 200: as sete colunas
+  vivem na `Company`, e um "salvo" mentiroso deixaria o contador com a emissão recusando.
+- ⚠ **A liberação ao cliente NÃO passa por aqui** — continua na `emissao-cliente`, com auditoria de
+  quem/quando. Duas rotas para o mesmo ato é o começo de duas regras.
+- Testes: `routes/firm/__tests__/emissaoNfseSalvarProprio.test.js` (14), olhando o **argumento
+  passado ao Prisma** — só o `data` prova que a coluna não foi tocada.
+
 ### ⚠ QUEM PODE EMITIR (E CANCELAR) — o portão do cliente, decisão do dono, 18/08/2026
 
 > *"o acesso a emissão deve ser liberado para o cliente pelo portal do contador"*

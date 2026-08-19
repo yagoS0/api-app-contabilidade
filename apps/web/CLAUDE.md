@@ -89,6 +89,10 @@ Regra: `feedback={feedback}`. Se precisar restringir, restrinja no componente, n
 `page` sai de `pathToPageName(location.pathname)` em `useManageAuthSession.js`. Quem procurar por
 `<Route>` para entender a navegação não acha nada.
 
+- ⚠ **Aba de navegação da EMPRESA é `<a href>`** desde 19/08/2026 (Ctrl+clique abre em nova guia).
+  O `href` sai de `companyTabPath` (`features/companies/detail/lib/rotasDaEmpresa.js`), a MESMA
+  fonte que a navegação usa. `Tabs` só honra `href` em `mode="nav"`: as abas de VISÃO
+  (`mode="view"`) não têm URL e continuam `<button>`. Detalhes em `features/companies/CLAUDE.md`.
 - **Página nova = duas peças**: entrada em `PAGE_TO_PATH` + `pathToPageName`, **e** o bloco `if`
   correspondente no `App.jsx`. Só a primeira metade não dá erro: a URL cai no fallback
   (`companies`) em silêncio, que foi o destino de `/calendario` e `/pendencias` por um tempo.

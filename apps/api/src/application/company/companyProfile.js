@@ -160,88 +160,21 @@ function normalizeRegimeHistorico(raw) {
   return { ok: true, data: out };
 }
 
-export function validateAndNormalizeCompanyProfile(input) {
-  const company = input && typeof input === "object" ? input : {};
-  const cnpj = onlyDigits(company.cnpj);
-  const razaoSocial = asString(company.razaoSocial || company.razao);
-  const nomeFantasia = asString(company.nomeFantasia) || null;
-  const regimeTributario = normalizeRegimeTributario(company.regimeTributario);
-  const cnaePrincipal = asString(company.cnaePrincipal);
-  const cnaesSecundarios = Array.isArray(company.cnaesSecundarios)
-    ? [...new Set(company.cnaesSecundarios.map((x) => asString(x)).filter(Boolean))]
-    : [];
-
-  if (!cnpj || cnpj.length !== 14) return { ok: false, error: "company_cnpj_invalid" };
-  if (!razaoSocial) return { ok: false, error: "company_razao_social_required" };
-  if (!REGIMES.has(regimeTributario)) {
-    return { ok: false, error: "company_regime_tributario_invalid" };
-  }
-  if (!cnaePrincipal) return { ok: false, error: "company_cnae_principal_required" };
-
-  const enderecoResult = normalizeEndereco(company.endereco);
-  if (!enderecoResult.ok) return enderecoResult;
-
-  let simples = null;
-  if (regimeTributario === "SIMPLES") {
-    const anexo = asString(company?.simples?.anexo).toUpperCase() || null;
-    if (anexo && !SIMPLES_ANEXOS.has(anexo)) {
-      return { ok: false, error: "company_simples_anexo_required_or_invalid" };
-    }
-    const dataOpcao = parseIsoDateOrNull(company?.simples?.dataOpcao);
-    if (company?.simples?.dataOpcao && !dataOpcao) {
-      return { ok: false, error: "company_simples_data_opcao_invalid" };
-    }
-    simples = { anexo, dataOpcao };
-  } else if (company?.simples?.anexo) {
-    return { ok: false, error: "company_simples_not_allowed_for_regime" };
-  }
-
-  const guideEmailResult = normalizeOptionalNotificationEmail(company.guideNotificationEmail);
-  if (!guideEmailResult.ok) return guideEmailResult;
-
-  const sociosResult = normalizeSocios(company.socios);
-  if (!sociosResult.ok) return sociosResult;
-
-  const historicoResult = normalizeRegimeHistorico(company.regimeHistorico);
-  if (!historicoResult.ok) return historicoResult;
-
-  // Datas da ficha: se veio algo e não parseou, é erro do usuário — não engolir.
-  const dataAbertura = parseIsoDateOrNull(company.dataAbertura);
-  if (company.dataAbertura && !dataAbertura) return { ok: false, error: "company_data_abertura_invalid" };
-  const inscricaoMunicipalData = parseIsoDateOrNull(company.inscricaoMunicipalData);
-  if (company.inscricaoMunicipalData && !inscricaoMunicipalData) {
-    return { ok: false, error: "company_inscricao_municipal_data_invalid" };
-  }
-  const inscricaoEstadualData = parseIsoDateOrNull(company.inscricaoEstadualData);
-  if (company.inscricaoEstadualData && !inscricaoEstadualData) {
-    return { ok: false, error: "company_inscricao_estadual_data_invalid" };
-  }
-  const alteracaoData = parseIsoDateOrNull(company.alteracaoData);
-  if (company.alteracaoData && !alteracaoData) return { ok: false, error: "company_alteracao_data_invalid" };
-
-  const capitalSocial = asNumberOrNull(company.capitalSocial);
-  if (capitalSocial !== null && capitalSocial < 0) return { ok: false, error: "company_capital_social_invalid" };
-
-  // ⚠ CÓDIGO IBGE DO MUNICÍPIO EMISSOR — 7 dígitos, ou nada.
-  //
-  // É o `cLocEmi` da DPS, e entra no `Id` do documento; o banco tem CHECK `^[0-9]{7}$` na coluna
-  // (migration `20260814120000_add_nfse_emissao_fase1`). A guarda vive AQUI, e não só no CHECK,
-  // porque uma violação de constraint sobe como erro 500 sem nome — o contador veria "erro
-  // interno" ao salvar o cadastro, sem saber qual campo recusou.
-  //
-  // ⚠ NÃO É DERIVADO DE `endereco.cidade`, nem quando ele está preenchido. O de-para nome→IBGE
-  // erra em homônimo (há cinco "Bom Jesus" no país) e o erro só apareceria como nota emitida no
-  // município errado. Quem escolhe é o contador, na lista oficial do IBGE embarcada no front.
-  //
-  // Valor em branco grava NULL de propósito: desfazer uma escolha errada tem de ser possível, e
-  // NULL é o estado que a emissão recusa com motivo (`NFSE_MUNICIPIO_NAO_CONFIGURADO`) em vez de
-  // fabricar `"0000000"`.
-  const codigoMunicipioIbgeBruto = asString(company.codigoMunicipioIbge);
-  const codigoMunicipioIbge = onlyDigits(codigoMunicipioIbgeBruto);
-  if (codigoMunicipioIbgeBruto && codigoMunicipioIbge.length !== 7) {
-    return { ok: false, error: "company_codigo_municipio_ibge_invalid" };
-  }
-
+/**
+ * OS CAMPOS DA EMISSÃO DE NFS-e — a normalização, num lugar só.
+ *
+ * ⚠ POR QUE ISTO É UMA FUNÇÃO (19/08/2026). Este bloco vivia INLINE dentro de
+ * `validateAndNormalizeCompanyProfile`, e passou a ter DOIS chamadores: o `PATCH` do cadastro da
+ * empresa (que continua exigindo a empresa inteira e recusando payload parcial com 400) e a rota
+ * nova `PATCH /firm/companies/:id/emissao-nfse`, que salva SÓ estes campos a partir da aba própria
+ * de emissão. A extração é pura: mesmas recusas, mesmos códigos de erro, mesma ordem — se as duas
+ * portas normalizassem por conta própria, o mesmo valor seria aceito por uma e recusado pela outra.
+ *
+ * ⚠ `undefined` VIAJA. `codigosServicoNacional` e os três percentuais saem `undefined` quando o
+ * payload não os trouxe ("não mexer") e `null`/`[]` quando o contador apagou ("apagar"). Quem grava
+ * usa `!== undefined` para manter as duas intenções distintas até a última linha.
+ */
+export function normalizeCamposEmissaoNfse(company = {}) {
   // ── OS TRÊS CAMPOS QUE FALTAVAM PARA A EMISSÃO — e por que a FORMA é tudo o que se valida ──
   //
   // `buildMissingFields` (`application/nfse/NfseService.js`) recusa a emissão quando faltar
@@ -404,6 +337,116 @@ export function validateAndNormalizeCompanyProfile(input) {
       return { ok: false, error: "company_codigo_servico_nacional_fora_da_lista" };
     }
   }
+  return {
+    ok: true,
+    data: {
+      // O nome mantém o "Final" de propósito: este é o código que a DPS leva DEPOIS da conferência
+      // de coerência com a lista, não o que veio cru no payload.
+      codigoServicoNacionalFinal,
+      codigosServicoNacional,
+      codigoServicoMunicipal,
+      rpsSerie,
+      percentuais,
+    },
+  };
+}
+
+export function validateAndNormalizeCompanyProfile(input) {
+  const company = input && typeof input === "object" ? input : {};
+  const cnpj = onlyDigits(company.cnpj);
+  const razaoSocial = asString(company.razaoSocial || company.razao);
+  const nomeFantasia = asString(company.nomeFantasia) || null;
+  const regimeTributario = normalizeRegimeTributario(company.regimeTributario);
+  const cnaePrincipal = asString(company.cnaePrincipal);
+  const cnaesSecundarios = Array.isArray(company.cnaesSecundarios)
+    ? [...new Set(company.cnaesSecundarios.map((x) => asString(x)).filter(Boolean))]
+    : [];
+
+  if (!cnpj || cnpj.length !== 14) return { ok: false, error: "company_cnpj_invalid" };
+  if (!razaoSocial) return { ok: false, error: "company_razao_social_required" };
+  if (!REGIMES.has(regimeTributario)) {
+    return { ok: false, error: "company_regime_tributario_invalid" };
+  }
+  if (!cnaePrincipal) return { ok: false, error: "company_cnae_principal_required" };
+
+  const enderecoResult = normalizeEndereco(company.endereco);
+  if (!enderecoResult.ok) return enderecoResult;
+
+  let simples = null;
+  if (regimeTributario === "SIMPLES") {
+    const anexo = asString(company?.simples?.anexo).toUpperCase() || null;
+    if (anexo && !SIMPLES_ANEXOS.has(anexo)) {
+      return { ok: false, error: "company_simples_anexo_required_or_invalid" };
+    }
+    const dataOpcao = parseIsoDateOrNull(company?.simples?.dataOpcao);
+    if (company?.simples?.dataOpcao && !dataOpcao) {
+      return { ok: false, error: "company_simples_data_opcao_invalid" };
+    }
+    simples = { anexo, dataOpcao };
+  } else if (company?.simples?.anexo) {
+    return { ok: false, error: "company_simples_not_allowed_for_regime" };
+  }
+
+  const guideEmailResult = normalizeOptionalNotificationEmail(company.guideNotificationEmail);
+  if (!guideEmailResult.ok) return guideEmailResult;
+
+  const sociosResult = normalizeSocios(company.socios);
+  if (!sociosResult.ok) return sociosResult;
+
+  const historicoResult = normalizeRegimeHistorico(company.regimeHistorico);
+  if (!historicoResult.ok) return historicoResult;
+
+  // Datas da ficha: se veio algo e não parseou, é erro do usuário — não engolir.
+  const dataAbertura = parseIsoDateOrNull(company.dataAbertura);
+  if (company.dataAbertura && !dataAbertura) return { ok: false, error: "company_data_abertura_invalid" };
+  const inscricaoMunicipalData = parseIsoDateOrNull(company.inscricaoMunicipalData);
+  if (company.inscricaoMunicipalData && !inscricaoMunicipalData) {
+    return { ok: false, error: "company_inscricao_municipal_data_invalid" };
+  }
+  const inscricaoEstadualData = parseIsoDateOrNull(company.inscricaoEstadualData);
+  if (company.inscricaoEstadualData && !inscricaoEstadualData) {
+    return { ok: false, error: "company_inscricao_estadual_data_invalid" };
+  }
+  const alteracaoData = parseIsoDateOrNull(company.alteracaoData);
+  if (company.alteracaoData && !alteracaoData) return { ok: false, error: "company_alteracao_data_invalid" };
+
+  const capitalSocial = asNumberOrNull(company.capitalSocial);
+  if (capitalSocial !== null && capitalSocial < 0) return { ok: false, error: "company_capital_social_invalid" };
+
+  // ⚠ CÓDIGO IBGE DO MUNICÍPIO EMISSOR — 7 dígitos, ou nada.
+  //
+  // É o `cLocEmi` da DPS, e entra no `Id` do documento; o banco tem CHECK `^[0-9]{7}$` na coluna
+  // (migration `20260814120000_add_nfse_emissao_fase1`). A guarda vive AQUI, e não só no CHECK,
+  // porque uma violação de constraint sobe como erro 500 sem nome — o contador veria "erro
+  // interno" ao salvar o cadastro, sem saber qual campo recusou.
+  //
+  // ⚠ NÃO É DERIVADO DE `endereco.cidade`, nem quando ele está preenchido. O de-para nome→IBGE
+  // erra em homônimo (há cinco "Bom Jesus" no país) e o erro só apareceria como nota emitida no
+  // município errado. Quem escolhe é o contador, na lista oficial do IBGE embarcada no front.
+  //
+  // Valor em branco grava NULL de propósito: desfazer uma escolha errada tem de ser possível, e
+  // NULL é o estado que a emissão recusa com motivo (`NFSE_MUNICIPIO_NAO_CONFIGURADO`) em vez de
+  // fabricar `"0000000"`.
+  const codigoMunicipioIbgeBruto = asString(company.codigoMunicipioIbge);
+  const codigoMunicipioIbge = onlyDigits(codigoMunicipioIbgeBruto);
+  if (codigoMunicipioIbgeBruto && codigoMunicipioIbge.length !== 7) {
+    return { ok: false, error: "company_codigo_municipio_ibge_invalid" };
+  }
+
+  // ── Configuração da emissão de NFS-e ──
+  // ⚠ A NORMALIZAÇÃO SAIU DAQUI e virou `normalizeCamposEmissaoNfse` (acima): a aba própria de
+  // emissão salva os mesmos campos por uma rota própria, e duas normalizações dos mesmos campos
+  // divergiriam na primeira correção. Nada mudou de comportamento — recusas, códigos de erro e
+  // ordem são os mesmos, e é o que a suíte `routes/firm/__tests__/companyCamposNfse.test.js` prova.
+  const emissaoNfse = normalizeCamposEmissaoNfse(company);
+  if (!emissaoNfse.ok) return emissaoNfse;
+  const {
+    codigoServicoNacionalFinal,
+    codigosServicoNacional,
+    codigoServicoMunicipal,
+    rpsSerie,
+    percentuais,
+  } = emissaoNfse.data;
 
   return {
     ok: true,

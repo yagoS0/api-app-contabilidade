@@ -244,6 +244,49 @@ buscadas em runtime; o arquivo diz no cabeçalho como atualizar).
 
 ## Emissão de NFS-e — N códigos ESCOLHIDOS, e o municipal ainda digitado
 
+### ⚠⚠ VIROU ABA PRÓPRIA, COM SALVAR PRÓPRIO (dono, 19/08/2026)
+
+> *"configuração de notas na aba do contador está ficando muito grande, vamos separar ela em uma
+> aba própria."* … *"ele ganha o próprio salvar."*
+
+O bloco tinha **264 linhas dentro de um formulário de 750**. Hoje é a aba **Fiscal → Emissão de
+NFS-e** (`detail/components/renderEmissaoNfseTab.jsx`), com os MESMOS campos e as MESMAS regras —
+o que mudou é onde moram e **quem os salva**.
+
+- **As três peças estão lá** (`abaEmissaoNfseLigada.test.jsx` prova uma a uma): `GROUPS` no grupo
+  **Fiscal** (não em Empresa: é o que a emissão consome, e trabalha-se ao lado de Notas Fiscais),
+  o par `emissao-nfse` ⇄ `emissaoNfse` e o bloco `if` da página.
+- ⚠ **NÃO É O "Salvar alterações".** Medido: `PATCH /firm/companies/:id` é um salvar da empresa
+  INTEIRA — `validateAndNormalizeCompanyProfile` exige CNPJ, razão social, CNAE e endereço (payload
+  parcial volta **400**, e isso é o certo, fica como está) e o `update` escreve ~30 colunas de uma
+  vez. Daí **`PATCH /firm/companies/:id/emissao-nfse`**, no molde da `emissao-cliente`: gate
+  `ACCOUNTANT`+, aceita **só os sete campos** e **recusa nomeando** qualquer campo de fora (aceitar
+  e descartar em silêncio é o defeito que esta base já pagou três vezes).
+- ⚠ **`undefined` = não mexer · `null` = apagar**, a regra do commit `11187501`, agora aplicada
+  campo a campo no `data` do Prisma (`hasOwnProperty`, nunca `?? null`). Sem ela, salvar a série
+  apagaria a carga tributária e a empresa pararia de emitir em silêncio.
+- ⚠ **A normalização é UMA SÓ:** `normalizeCamposEmissaoNfse` foi **extraída** de
+  `validateAndNormalizeCompanyProfile` (refatoração pura — a suíte `companyCamposNfse.test.js`
+  passa **sem edição**) e é importada pelas duas portas. Duas normalizações fariam o mesmo valor ser
+  aceito por uma e recusado pela outra. A leitura do lado da tela também: `mapCompanyToEmissaoNfseForm`
+  saiu de `mapCompanyToEditForm` e serve aos dois (é onde moram o `!= null` do zero e a queda para
+  o campo singular).
+- ⚠ **OS CAMPOS CONTINUAM NO `form` DO CADASTRO**, e isso NÃO é sobra: `buildCompanyPayload` manda
+  a empresa inteira e campo ausente vira `null` — tirá-los faria o "Salvar alterações" APAGAR a
+  configuração de quem foi só trocar o telefone. Em modo edição o formulário **não os renderiza** e
+  aponta para a aba (aba que some sem rastro é o que faz recadastrar); no cadastro de empresa
+  **NOVA** o bloco continua no formulário, porque não existe aba antes de a empresa existir.
+- ⚠ **E o inverso também foi consertado:** o `editCompanyForm` é remapeado só quando MUDA DE
+  EMPRESA, então, depois de salvar pela aba, ele ainda segurava a série antiga e o "Salvar
+  alterações" a gravaria por cima. `handleUpdateEmissaoNfse` **atualiza o form com o que gravou**
+  (travado em `app/hooks/__tests__/emissaoNfseNaoVoltaAtras.test.js`).
+- **A liberação ao cliente veio junto, como BLOCO À PARTE**, depois do botão de salvar, e continua
+  **fora de qualquer salvar** — rota própria, confirmação e auditoria. O botão fica ENTRE os campos
+  e ela (`acoesDosCampos`): embaixo de tudo, pareceria salvar a liberação também.
+- O botão **desabilitado diz por quê** ("Nada para salvar: os campos estão como foram gravados") e,
+  com alteração pendente, diz o que ele salva **e o que não salva**.
+
+
 Bloco **"Emissão de NFS-e"** no formulário de edição, logo abaixo de Inscrições (onde o seletor de
 município já estava). Componente `form/components/CamposEmissaoNfse.jsx`; regra em
 `lib/nfse/cadastroEmissaoNfse.js`. São `codigosServicoNacional` (a LISTA de `cTribNac`),
@@ -737,6 +780,34 @@ Eram três defeitos somados:
 
 `resetWorkspace` **não navega**: roda no logout, logo depois de `clearSession()` mandar para
 `/login`, e um navigate ali devolveria o usuário deslogado para uma página de empresa.
+
+### ⚠ A ABA É UM `<a href>` DE VERDADE (dono, 19/08/2026)
+
+> *"ao apertar control + uma das abas, abrir em uma nova guia do navegador aquela aba que
+> clicamos."*
+
+⚠ **A TECLA NÃO É INTERCEPTADA.** Um `onClick` que olhasse `event.ctrlKey` para chamar
+`window.open` resolveria o caso pedido e quebraria outros cinco: clique do **meio**, "abrir em nova
+aba" do **botão direito**, **Cmd** no Mac, a URL ao **passar o mouse** e "copiar endereço do link".
+Com `<a href>` o navegador faz todas de graça. O clique normal continua SPA (`preventDefault()` +
+`onChange`); Ctrl/Cmd/Shift/Alt e botão ≠ esquerdo passam **sem** `preventDefault`.
+
+- O `href` sai de **`companyTabPath`** (`detail/lib/rotasDaEmpresa.js`), a MESMA função que
+  `openCompanyTab` usa para navegar — duas construções da mesma URL divergem na primeira correção,
+  e aí o link leva a um lugar e o clique a outro. Foi para lá que `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT`
+  se mudaram (de `useManageCompaniesWorkspace`), porque agora têm dois consumidores.
+- ⚠ **As abas de VISÃO continuam `<button>`** — `mode="view"` (regimes do dashboard, visões do
+  calendário, recorte dos relatórios) troca o que a tela mostra **sem navegar**: não há URL, e um
+  `href` inventado abriria guia quebrada. O `Tabs` **ignora `href` em `mode="view"`**, mesmo que
+  alguém passe. Aba **desabilitada** também segue `<button>` (`<a>` não tem `disabled`).
+- ⚠ **A aba ATIVA também é link** (para o Ctrl+clique), mas o clique normal continua com
+  `preventDefault` — sem ele, clicar na aba já aberta recarregaria a página inteira.
+- ARIA: continua `<nav>` + `aria-current="page"` (não é `role="tab"`, então não há conflito de
+  padrão). ⚠ Diferença herdada do elemento: **Espaço não ativa link** (Enter ativa) — é a semântica
+  de link, e nada de teclado se perdeu além disso.
+- Só o header da empresa ganhou `href`. As demais barras `nav` (`PageShell`, sub-abas de
+  Relatórios/Apuração/Consultas) continuam botões: seus itens **não carregam rota**, e inventar uma
+  URL para eles é exatamente o que a regra proíbe.
 
 Ordem/roteamento: `useManageCompaniesWorkspace.deriveCompanyDetailTab` (default `anotacoes`)
 + `GROUPS` em `renderCompanyDetailHeader.jsx` (Anotações primeiro, no primeiro nível). Navegação ao

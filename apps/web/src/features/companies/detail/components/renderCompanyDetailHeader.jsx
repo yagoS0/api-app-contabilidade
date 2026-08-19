@@ -1,6 +1,10 @@
 import { formatCompetencia, deslocarCompetencia, competenciaAtual } from "../../../../lib/competencia";
 import { BackButton } from "../../../../components/ui/BackButton";
 import { Tabs } from "../../../../components/ui/Tabs";
+// ⚠ O `href` DAS ABAS SAI DAQUI, da MESMA fonte que a navegação por clique usa (`openCompanyTab`
+// chama `companyTabPath` também). Montar "/companies/" + id + "/" + segmento aqui funcionaria hoje
+// e divergiria na primeira correção — o link levaria a um lugar e o clique a outro.
+import { companyTabPath } from "../lib/rotasDaEmpresa";
 
 // ⚠ ABAS QUE VIVEM NUMA COMPETÊNCIA — e são as ÚNICAS que mostram o seletor.
 //
@@ -78,6 +82,13 @@ const GROUPS = [
       { key: "cadastroFiscal", label: "Apuração", soApuraSimples: true },
       { key: "guides", label: "Guias" },
       { key: "sitfis", label: "Situação Fiscal" },
+      // ⚠ CONFIGURAÇÃO DE EMISSÃO — aba própria (dono, 19/08/2026): *"configuração de notas na aba
+      // do contador está ficando muito grande, vamos separar ela em uma aba própria"*. Era um bloco
+      // de 264 linhas dentro do formulário de edição (grupo Empresa), que tem 750.
+      // ⚠ Fica em FISCAL, e não em Empresa: é o que a emissão de nota consome (`buildMissingFields`
+      // recusa a emissão por estes campos), e é ao lado de Notas Fiscais que se trabalha com ela.
+      // Vem por ÚLTIMO no grupo porque é configuração — o resto do grupo é o trabalho do mês.
+      { key: "emissaoNfse", label: "Emissão de NFS-e" },
     ],
   },
   {
@@ -160,6 +171,9 @@ export function CompanySectionHeader({
   competencia, onCompetenciaChange,
 }) {
   const simples = isSimplesCompany(company);
+  // O id da empresa é o mesmo que está na URL (`selectedCompany` é achado por `companyId`), então
+  // o `href` de cada aba é literalmente a URL para onde o clique navega.
+  const companyId = company?.companyId;
   const mostraCompetencia = Boolean(competencia && onCompetenciaChange && TABS_COM_COMPETENCIA.has(activeTab));
   const groups = GROUPS.map((g) => ({
     ...g,
@@ -194,6 +208,10 @@ export function CompanySectionHeader({
             label: group.label,
             disabled: Boolean(group.requiresEdit && !canEditCompany),
             title: group.requiresEdit && !canEditCompany ? "Apenas admin ou contador pode editar." : undefined,
+            /* ⚠ O `href` do GRUPO é o da sua 1ª sub-aba — exatamente o destino do `onChange` logo
+               abaixo (`grupo.tabs[0].key`). Se os dois saíssem de lugares diferentes, o Ctrl+clique
+               num grupo abriria uma aba e o clique normal outra. */
+            href: companyTabPath(companyId, group.tabs[0]?.key),
           }))}
           active={activeGroup.key}
           onChange={(key) => {
@@ -220,7 +238,9 @@ export function CompanySectionHeader({
       {subTabs.length > 1 && (
         <div className="company-section-header__subtabs">
           <Tabs
-            items={subTabs}
+            /* Cada sub-aba leva a URL da SUA rota — é o que faz o Ctrl+clique abrir aquela aba
+               numa guia nova em vez de reabrir a empresa na aba de entrada. */
+            items={subTabs.map((tab) => ({ ...tab, href: companyTabPath(companyId, tab.key) }))}
             active={activeTab}
             onChange={onTabChange}
             ariaLabel={`Seções de ${activeGroup.label}`}
