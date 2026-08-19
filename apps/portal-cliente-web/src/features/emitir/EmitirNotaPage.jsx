@@ -304,6 +304,28 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // permanente. Nunca é preenchida depois de uma falha de TRANSPORTE.
   const [retryInvoiceId, setRetryInvoiceId] = useState(null);
 
+  // ⚠⚠ O ESPELHO SÍNCRONO DE `descricaoDigitada`, E ELE CONSERTA UM DEFEITO DE ORDEM DE EFEITOS
+  // MEDIDO EM 19/08/2026 — quando a descrição passou a chegar da nota de origem.
+  //
+  // O defeito: o efeito do MODELO (mais acima) escreve a descrição e chama
+  // marcava a descrição como digitada. O efeito da SUGESTÃO (mais abaixo) roda no MESMO commit, depois
+  // dele, e lê `descricaoDigitada` pelo closure daquele render — ou seja, ainda `false`. Resultado:
+  // ele sobrescrevia a descrição vinda da nota com a sugestão do cadastro (vazia, quando a empresa
+  // não tem atividade cadastrada). **O campo abria em branco.**
+  //
+  // ⚠ ELE ERA LATENTE, NÃO NOVO: enquanto `modelo.campos.descricao` era SEMPRE `""`, a
+  // sobrescrita era um no-op e ninguém via. A primeira nota com descrição real o acendeu — e quem
+  // o acendeu foi o teste de LIGAÇÃO, não o de regra: a regra devolvia a descrição certa o tempo
+  // todo. É a mesma família do defeito de `StrictMode` que este arquivo já registra.
+  //
+  // ⚠ `useState` não serve aqui: o guarda precisa valer NO MESMO commit em que o modelo é aplicado.
+  const descricaoProtegidaRef = useRef(false);
+  /** Mantém estado e ref juntos — quem esquecer um dos dois reabre o defeito acima. */
+  function marcarDescricaoDigitada(valor) {
+    descricaoProtegidaRef.current = Boolean(valor);
+    setDescricaoDigitada(Boolean(valor));
+  }
+
   // Consulta do tomador na Receita.
   const [consulta, setConsulta] = useState(CONSULTA_OCIOSA);
   const [origemNome, setOrigemNome] = useState(ORIGEM.AUSENTE);
@@ -329,7 +351,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // no CNPJ errado — o pior desfecho possível num portal multi-empresa, e irreversível aqui.
   useEffect(() => {
     setForm(formVazio());
-    setDescricaoDigitada(false);
+    marcarDescricaoDigitada(false);
     setDesfecho(null);
     setRetryInvoiceId(null);
     setConsulta(CONSULTA_OCIOSA);
@@ -377,7 +399,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     setForm({ ...formVazio(), ...modelo.campos });
     // ⚠ Descrição VAZIA não conta como digitada: assim o pré-preenchimento pela atividade do
     // cadastro continua valendo (é o caminho de verdade neste portal, ver `reaproveitarNota.js`).
-    setDescricaoDigitada(Boolean(modelo.campos.descricao));
+    marcarDescricaoDigitada(Boolean(modelo.campos.descricao));
     // ⚠ O NOME COPIADO ENTRA COMO `DIGITADO` — a mesma decisão do portal do escritório. É o que
     // impede a consulta de CNPJ, que o próprio preenchimento do documento dispara, de trocá-lo
     // sozinho pelo da Receita.
@@ -624,7 +646,10 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     [legacy, form.competencia]
   );
   useEffect(() => {
-    if (descricaoDigitada) return;
+    // ⚠⚠ O REF, NÃO O ESTADO — ver `descricaoProtegidaRef`. Ler `descricaoDigitada` aqui pega o
+    // valor do render ANTERIOR, e no commit em que o modelo é aplicado ele ainda é `false`: a
+    // sugestão do cadastro (vazia, quando não há atividade) apagava a descrição vinda da nota.
+    if (descricaoProtegidaRef.current || descricaoDigitada) return;
     const t = sugestaoDoCadastro.texto || "";
     setForm((anterior) => (anterior.descricao === t ? anterior : { ...anterior, descricao: t }));
   }, [sugestaoDoCadastro, descricaoDigitada]);
@@ -737,7 +762,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
         });
         setRetryInvoiceId(null);
         setForm(formVazio());
-        setDescricaoDigitada(false);
+        marcarDescricaoDigitada(false);
         setOrigemNome(ORIGEM.AUSENTE);
         setOrigemEndereco(ORIGEM.AUSENTE);
         setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
@@ -757,7 +782,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       // reemitir depois de consultar terá de digitar tudo outra vez, de propósito.
       if (lido.tipo === TIPO.TRANSPORTE || lido.tipo === TIPO.DESCONHECIDO) {
         setForm(formVazio());
-        setDescricaoDigitada(false);
+        marcarDescricaoDigitada(false);
         setOrigemNome(ORIGEM.AUSENTE);
         setOrigemEndereco(ORIGEM.AUSENTE);
         setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
@@ -813,7 +838,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
           aoCorrigir={() => setDesfecho(null)}
           aoNovaNota={() => {
             setForm(formVazio());
-            setDescricaoDigitada(false);
+            marcarDescricaoDigitada(false);
             esquecerModelo();
             setRetryInvoiceId(null);
             setOrigemNome(ORIGEM.AUSENTE);
@@ -946,7 +971,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
               <p>
                 <button type="button" className="btn-link" onClick={() => {
                   setForm(formVazio());
-                  setDescricaoDigitada(false);
+                  marcarDescricaoDigitada(false);
                   setOrigemNome(ORIGEM.AUSENTE);
                   setOrigemEndereco(ORIGEM.AUSENTE);
                   setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
@@ -1138,7 +1163,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                       // ⚠ O DIGITADO VENCE. A partir daqui o pré-preenchimento pela atividade do
                       // cadastro para de escrever no campo — inclusive quando a competência muda.
                       // Apagar tudo devolve o campo à sugestão: é o desfazer natural.
-                      setDescricaoDigitada(Boolean(e.target.value.trim()));
+                      marcarDescricaoDigitada(Boolean(e.target.value.trim()));
                       setForm((a) => ({ ...a, descricao: e.target.value }));
                     }}
                   />
@@ -1176,7 +1201,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                         type="button"
                         className="btn"
                         onClick={() => {
-                          setDescricaoDigitada(true);
+                          marcarDescricaoDigitada(true);
                           setForm((a) => ({
                             ...a,
                             descricao: montarFraseDaAtividade(o.descricao, a.competencia),
@@ -1209,7 +1234,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                           // ⚠ CLIQUE É ESCOLHA, E ESCOLHA VENCE: marcar `DIGITADA` é o que impede o
                           // pré-preenchimento pela atividade do cadastro de reescrever por cima na
                           // próxima mudança de competência.
-                          setDescricaoDigitada(true);
+                          marcarDescricaoDigitada(true);
                           setForm((a) => ({ ...a, descricao: s.descricao }));
                         }}
                       >

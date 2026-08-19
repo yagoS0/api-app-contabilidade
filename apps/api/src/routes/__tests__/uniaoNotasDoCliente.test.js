@@ -58,6 +58,7 @@ function pi(n) {
     tomadorNome: `TOMADOR ${n}`, tomadorDoc: "11222333000181",
     updatedAt: new Date(`2026-08-${dia}T00:00:00Z`),
     xmlRaw: "<xml/>", pdfUrl: null,
+    xDescServ: `SERVICO DA NOTA ${n}`,
   };
 }
 
@@ -161,6 +162,31 @@ describe("a nota emitida aparece NA HORA, e vem marcada", () => {
     expect(r.body.data).toHaveLength(1);
     expect(r.body.data[0].confirmadaPeloAdn).toBe(true);
     expect(r.body.total).toBe(1);
+  });
+});
+
+// ⚠⚠ A DESCRIÇÃO NO CONTRATO — 19/08/2026, para o reaproveitamento poder trazê-la.
+//
+// ⚠ O PONTO DELICADO ERA A FONTE: se a descrição só existisse dentro do `xmlRaw`, servi-la
+// significaria parsear XML a cada linha de cada página. Ela é COLUNA (`PortalInvoice.xDescServ`),
+// escrita pelo extrator de campos fiscais por caminho — e é isso que estes casos travam.
+describe("a DESCRIÇÃO do serviço viaja no contrato", () => {
+  it("vem de `xDescServ`, a coluna — e chega como `descricao`", async () => {
+    cenario.doAdn = [pi(1)];
+    const r = await listar();
+    expect(r.body.data[0].descricao).toBe("SERVICO DA NOTA 1");
+  });
+
+  it("⚠ NULO É RESPOSTA: nota anterior ao backfill vem sem descrição, não com string vazia falsa", async () => {
+    cenario.doAdn = [{ ...pi(1), xDescServ: null }];
+    const r = await listar();
+    expect(r.body.data[0].descricao).toBeNull();
+  });
+
+  it("⚠ a NOSSA emissão não confirmada vem `descricao: null` — o extrator lê o XML que ainda não voltou", async () => {
+    cenario.nossas = [si(9)];
+    const r = await listar();
+    expect(r.body.data[0].descricao).toBeNull();
   });
 });
 

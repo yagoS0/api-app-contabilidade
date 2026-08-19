@@ -197,13 +197,29 @@ describe("⚠⚠ A RECUSA 503 APARECE, COM O MOTIVO", () => {
 });
 
 describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — ele fica desabilitado DIZENDO POR QUÊ", () => {
-  test("NF-e: o botão continua na tela, desabilitado, com o motivo ao lado", async () => {
+  // ATUALIZADO EM 19/08/2026 (consolidacao da frase repetida): ser NF-e e impedimento da NOTA, e a
+  // coluna Tipo da linha ja mostra NFE. A frase ao lado do botao seria a segunda vez que a linha
+  // diz o mesmo, e a coluna Cancelar diria uma terceira. O motivo continua no title.
+  test("NF-e: o botão continua na tela, desabilitado, com o motivo no title", async () => {
     api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ type: "NFE" })]));
     await abrirNotas();
     const botao = botaoDanfse();
     expect(botao).toBeInTheDocument();
     expect(botao).toBeDisabled();
-    expect(screen.getByText("Só NFS-e tem DANFSe.")).toBeInTheDocument();
+    expect(botao.getAttribute("title")).toMatch(/documento auxiliar da NFS-e/i);
+    const linha = document.querySelector("tbody tr").textContent;
+    // A linha ja diz que e NF-e na coluna Tipo.
+    expect(linha).toContain("NFE");
+    // A frase do DANFSe saiu.
+    expect(linha).not.toContain("Só NFS-e tem DANFSe.");
+    // ⚠⚠ E O QUE SOBROU, MEDIDO COM HONESTIDADE: a coluna "Usar como modelo" ainda escreve o seu
+    // "só NFS-e" — UMA vez na linha, e de propósito. A regra dela
+    // (`emitir/lib/reaproveitarNota.js`) é ESPELHO da do portal do escritório ("mudou lá, muda
+    // aqui"), e acrescentar `escopo` só de um lado divergiria as duas. Uma ocorrência por linha
+    // era a meta; esta é ela.
+    // ⚠ A contagem é case-INSENSITIVE de propósito: a primeira versão deste caso usava /Só NFS-e/
+    // com maiúscula e passava por acidente, porque o texto que sobra é "só NFS-e", minúsculo.
+    expect(linha.match(/só NFS-e/gi)).toHaveLength(1);
     expect(api.fetchDanfseBlob).not.toHaveBeenCalled();
   });
 
@@ -218,12 +234,15 @@ describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — ele fica desabilitado DIZENDO POR
     api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ confirmadaPeloAdn: false, hasXml: false })]));
     await abrirNotas();
     expect(botaoDanfse()).toBeDisabled();
-    // ⚠ ESCOPADO NA CÉLULA DO DANFSe, de propósito. Desde que o botão Cancelar entrou na mesma
-    // linha (19/08/2026), a MESMA frase aparece duas vezes — uma por ação, cada uma debaixo do seu
-    // botão. Um `getByText` solto passaria a achar duas e quebraria; e, pior, um `getAllByText`
-    // frouxo deixaria de provar que é a célula do DANFSe que explica o DANFSe.
-    const celulaDanfse = botaoDanfse().closest("td");
-    expect(within(celulaDanfse).getByText("Ainda não confirmada.")).toBeInTheDocument();
+    // ⚠⚠ ATUALIZADO DUAS VEZES EM 19/08/2026, e a segunda desfez a primeira. Quando o botão
+    // Cancelar entrou na mesma linha, a MESMA frase passou a aparecer duas vezes e eu escopei a
+    // asserção na célula do DANFSe. O dono então mandou CONSOLIDAR: "Ainda não confirmada." é
+    // estado da NOTA, e a linha o diz uma vez só — pela opacidade e pelo `title`/`aria` do chip.
+    // Ver `lib/impedimento.js`.
+    //
+    // ⚠ O motivo desta ação não sumiu: ele está no `title` do botão, que não é texto na tela.
+    expect(botaoDanfse().getAttribute("title")).toMatch(/ainda não voltou/i);
+    expect(document.querySelector("tbody tr").textContent).not.toMatch(/Ainda não confirmada/);
     expect(api.fetchDanfseBlob).not.toHaveBeenCalled();
   });
 });
@@ -241,8 +260,10 @@ describe("a nota emitida aparece MAIS CLARA e 'acende' quando o ADN confirma", (
     await abrirNotas();
     const linhas = [...document.querySelectorAll("tbody tr")];
     expect(linhas).toHaveLength(2);
-    expect(linhas[0].getAttribute("data-confirmada-adn")).toBe("nao");
-    expect(linhas[1].getAttribute("data-confirmada-adn")).toBe("sim");
+    // ⚠ O atributo virou `data-estado-nota` em 19/08/2026, quando o cancelamento enviado passou a
+    // ser um TERCEIRO estado: um booleano não comportava três fatos. Ver `estadoDaLinhaDaNota.js`.
+    expect(linhas[0].getAttribute("data-estado-nota")).toBe("aguardando_adn");
+    expect(linhas[1].getAttribute("data-estado-nota")).toBe("confirmada");
   });
 
   test("⚠⚠ NENHUMA EXPLICAÇÃO NA TELA — instrução literal do dono", async () => {
@@ -289,7 +310,7 @@ describe("a nota emitida aparece MAIS CLARA e 'acende' quando o ADN confirma", (
     const { confirmadaPeloAdn, ...semOCampo } = nota();
     api.getInvoices.mockResolvedValue(respostaDeNotas([semOCampo]));
     await abrirNotas();
-    expect(document.querySelector("tbody tr").getAttribute("data-confirmada-adn")).toBe("sim");
+    expect(document.querySelector("tbody tr").getAttribute("data-estado-nota")).toBe("confirmada");
     expect(botaoDanfse()).not.toBeDisabled();
   });
 

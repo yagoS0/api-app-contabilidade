@@ -363,6 +363,11 @@ function criarEstado() {
           updatedAt: diaDoMes(comp, Math.min(28, dia + 1)).toISOString(),
           hasXml: rand() > 0.1,
           hasPdf: rand() > 0.35,
+          // ⚠ A DESCRIÇÃO CHEGA NO CONTRATO desde 19/08/2026 — `PortalInvoice.xDescServ`, coluna.
+          // Uma em cada seis fica SEM descrição de propósito: é o caso da nota anterior ao backfill
+          // (ou cujo XML não trouxe o campo), e é ele que mantém alcançável o aviso
+          // "a descrição não veio da nota de origem". Sem esse caso, o ramo some do alcance offline.
+          descricao: seqNota % 6 === 0 ? null : `${nomeTomador.split(" ")[0]} — servico prestado`,
           // A nota gerada VEIO do ADN — é a projeção, o caso normal. Ver os dois casos
           // plantados logo abaixo para o estado oposto.
           confirmadaPeloAdn: true,
@@ -402,6 +407,9 @@ function criarEstado() {
       updatedAt: agoraMock.toISOString(),
       hasXml: false,
       hasPdf: false,
+      // ⚠ A nossa emissão não tem `xDescServ`: o extrator lê o XML que o sistema nacional devolve,
+      // e ele ainda não devolveu. É o que o backend responde (`serializeEmitidaNaoConfirmada`).
+      descricao: null,
       confirmadaPeloAdn: false,
       _statusEfetivo: "autorizada",
     });
@@ -424,6 +432,7 @@ function criarEstado() {
       updatedAt: ontemMock.toISOString(),
       hasXml: true,
       hasPdf: false,
+      descricao: "SUPORTE TECNICO AVULSO",
       confirmadaPeloAdn: true,
       _statusEfetivo: "autorizada",
       _semQrCode: true,
@@ -1416,6 +1425,7 @@ export function createMockApi() {
         // id. Marcá-la `hasXml: true` aqui faria o mock oferecer um botão que a produção recusa.
         hasXml: false,
         hasPdf: false,
+        descricao: null,
         confirmadaPeloAdn: false,
         _statusEfetivo: "autorizada",
       });

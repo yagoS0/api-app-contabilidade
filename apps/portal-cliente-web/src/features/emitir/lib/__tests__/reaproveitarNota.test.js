@@ -174,6 +174,58 @@ describe("⚠⚠ O VALOR É COPIADO (dono, 19/08/2026 — reverte o vazio de 18/
   });
 });
 
+// ⚠⚠ A DESCRIÇÃO PASSOU A CHEGAR NO CONTRATO — 19/08/2026, pedido do dono.
+//
+// Antes, `serializeInvoice` não trazia a descrição e a rota de detalhe respondia `items: []`
+// cravado: o campo abria SEMPRE vazio, com aviso. Hoje o contrato traz `descricao`, lida da COLUNA
+// `PortalInvoice.xDescServ` — não de XML parseado a cada listagem, que era a alternativa cara e o
+// motivo de a decisão ter subido antes de ser construída.
+describe("⚠⚠ a DESCRIÇÃO vem da nota de origem (19/08/2026)", () => {
+  it("com `descricao` no contrato, ela é copiada", () => {
+    expect(camposDaNota(notaEmitida({ descricao: "CONSULTORIA EM GESTAO" })).descricao)
+      .toBe("CONSULTORIA EM GESTAO");
+  });
+
+  it("o espaço em volta é aparado", () => {
+    expect(camposDaNota(notaEmitida({ descricao: "  SERVICO X  " })).descricao).toBe("SERVICO X");
+  });
+
+  it("⚠ NULO CONTINUA SENDO RESPOSTA — nota anterior ao backfill abre o campo vazio, com aviso", () => {
+    const campos = camposDaNota(notaEmitida({ descricao: null }));
+    expect(campos.descricao).toBe("");
+    const codigos = avisosDoReaproveitamento(notaEmitida({ descricao: null })).map((a) => a.codigo);
+    expect(codigos).toContain("sem_descricao");
+  });
+
+  it("com descrição, o aviso de ausência NÃO aparece", () => {
+    const codigos = avisosDoReaproveitamento(notaEmitida({ descricao: "SERVICO X" })).map((a) => a.codigo);
+    expect(codigos).not.toContain("sem_descricao");
+  });
+
+  it("⚠⚠ MAIS DE UM ITEM continua vencendo: descrição VAZIA, com aviso", () => {
+    // A regra é anterior a tudo isto e não foi tocada: emendar dois itens com " · " escreveria na
+    // nota nova uma frase que ninguém redigiu, e ela sai impressa no DANFSe que vai ao tomador.
+    const nota = notaEmitida({
+      descricao: "ISTO NAO PODE VENCER",
+      itens: [{ descricao: "ITEM A" }, { descricao: "ITEM B" }],
+    });
+    expect(camposDaNota(nota).descricao).toBe("");
+    expect(avisosDoReaproveitamento(nota).map((a) => a.codigo)).toContain("varios_itens");
+  });
+
+  it("⚠ `itens` com UM item vence o campo único — ele é mais específico", () => {
+    const nota = notaEmitida({ descricao: "DO CAMPO UNICO", itens: [{ descricao: "DO ITEM" }] });
+    expect(camposDaNota(nota).descricao).toBe("DO ITEM");
+  });
+
+  it("⚠ a descrição NÃO é identificador — a varredura de identificadores continua valendo", () => {
+    const campos = camposDaNota(notaEmitida({ descricao: "SERVICO X" }));
+    expect(campos).not.toHaveProperty("numero");
+    expect(campos).not.toHaveProperty("chaveAcesso");
+    expect(campos).not.toHaveProperty("competencia");
+  });
+});
+
 describe("o que É copiado", () => {
   it("documento (só dígitos) e nome do tomador", () => {
     const campos = camposDaNota(notaEmitida());

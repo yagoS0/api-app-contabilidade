@@ -139,9 +139,25 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
      linha continuam clicáveis e o hover continua respondendo.
    Só a opacidade muda, e ela volta ao normal quando o ponteiro está em cima, para que
    ler a linha nunca fique mais difícil que ler as outras. */
-.table tbody tr[data-confirmada-adn="nao"] { opacity: .62; }
-.table tbody tr[data-confirmada-adn="nao"]:hover,
-.table tbody tr[data-confirmada-adn="nao"]:focus-within { opacity: 1; }
+.table tbody tr[data-estado-nota="aguardando_adn"] { opacity: .62; }
+.table tbody tr[data-estado-nota="aguardando_adn"]:hover,
+.table tbody tr[data-estado-nota="aguardando_adn"]:focus-within { opacity: 1; }
+
+/* --- Nota que a pessoa acabou de mandar cancelar -------------------------- */
+/* ⚠⚠ DESENHO DIFERENTE DO DE CIMA, DE PROPÓSITO. Os dois são "esperando o ADN", mas um espera a
+   confirmação de que a nota EXISTE e o outro, de que ela DEIXOU de valer — e dois fatos diferentes
+   com o mesmo desenho é o defeito que este projeto persegue.
+
+   Riscado (não mais claro): é o gesto universal de "isto sai", e ele é FEEDBACK DE UMA AÇÃO que a
+   pessoa acabou de praticar. Sem nada mudar na linha, o clique parece não ter funcionado e ela
+   clica de novo — mandando o mesmo cancelamento duas vezes.
+
+   ⚠ O texto NÃO some e NÃO fica ilegível: o risco é fino e a opacidade continua cheia, porque a
+   pessoa ainda precisa CONFERIR qual nota ela mandou cancelar. E o botão da linha fica desabilitado
+   (`podeCancelar`), então não há segundo clique a dar. */
+.table tbody tr[data-estado-nota="cancelamento_enviado"] td { text-decoration: line-through; }
+.table tbody tr[data-estado-nota="cancelamento_enviado"] td .chip,
+.table tbody tr[data-estado-nota="cancelamento_enviado"] td button { text-decoration: none; }
 .table .truncar { display: block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty { color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius); padding: 24px; text-align: center; }
 

@@ -12,6 +12,10 @@
 // `chaveAcesso`** — traz `type` e `hasXml`. Copiar a versão do escritório sem olhar faria
 // `podeGerarDanfse` ler um campo que nunca chega e desabilitar o botão em toda nota.
 
+import { ESCOPO } from "./impedimento";
+
+export { ESCOPO };
+
 export const MOTIVO_SEM_DANFSE = {
   NAO_E_NFSE: "nao_e_nfse",
   SEM_XML: "sem_xml",
@@ -29,13 +33,21 @@ export const MOTIVO_SEM_DANFSE = {
  */
 export function podeGerarDanfse(nota) {
   if (!nota) {
-    return { pode: false, motivo: MOTIVO_SEM_DANFSE.SEM_XML, texto: "A nota ainda não carregou." };
+    return {
+      pode: false,
+      motivo: MOTIVO_SEM_DANFSE.SEM_XML,
+      escopo: ESCOPO.NOTA,
+      resumo: null,
+      texto: "A nota ainda não carregou.",
+    };
   }
 
   if (String(nota.type || "").toUpperCase() !== "NFSE") {
     return {
       pode: false,
       motivo: MOTIVO_SEM_DANFSE.NAO_E_NFSE,
+      // ⚠ A coluna "Tipo" da linha já mostra NFE — a frase seria a terceira vez que a linha diz isso.
+      escopo: ESCOPO.NOTA,
       resumo: "Só NFS-e tem DANFSe.",
       texto:
         "O DANFSe é o documento auxiliar da NFS-e. Esta é uma nota de venda (NF-e), cujo documento "
@@ -51,6 +63,8 @@ export function podeGerarDanfse(nota) {
     return {
       pode: false,
       motivo: MOTIVO_SEM_DANFSE.NAO_CONFIRMADA,
+      // ⚠ Estado da NOTA — a opacidade da linha e o `title`/`aria` do chip já o carregam.
+      escopo: ESCOPO.NOTA,
       resumo: "Ainda não confirmada.",
       texto:
         "O DANFSe é gerado a partir do XML que o sistema nacional devolve, e esta nota ainda não "
@@ -62,6 +76,8 @@ export function podeGerarDanfse(nota) {
     return {
       pode: false,
       motivo: MOTIVO_SEM_DANFSE.SEM_XML,
+      // ⚠ Só o DANFSe depende do XML — cancelar e reaproveitar não. Nada mais na linha diz isto.
+      escopo: ESCOPO.ACAO,
       resumo: "Sem o XML guardado.",
       texto:
         "Não guardamos o XML desta nota, e o DANFSe é gerado a partir dele — nada aqui é "
@@ -69,7 +85,7 @@ export function podeGerarDanfse(nota) {
     };
   }
 
-  return { pode: true, motivo: null, resumo: null, texto: null };
+  return { pode: true, motivo: null, escopo: null, resumo: null, texto: null };
 }
 
 /**

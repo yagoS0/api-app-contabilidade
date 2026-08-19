@@ -13,15 +13,27 @@
 //      campo mascarado (`valorDaNota.js`) nunca fabrica "0,00" num campo em branco. A tela DIZ que
 //      o valor não veio — senão o campo em branco vira esquecimento, e alguém emite achando que
 //      copiou.
-//   2. ⚠ **A DESCRIÇÃO NÃO CHEGA A ESTE PORTAL, e isso foi MEDIDO, não suposto.** O contrato do
-//      cliente não traz os itens da nota: `serializeInvoice`
-//      (`apps/api/src/routes/portalInvoices.js`) devolve `invoiceId · type · numero · competencia ·
-//      issueDate · status · total · emitente · tomador · updatedAt · hasXml · hasPdf` — sem
-//      `itens` —, e a rota de detalhe responde `items: []` cravado. Ou seja: **hoje a descrição
-//      sempre vem vazia, com aviso.** A regra do item único fica escrita mesmo assim, porque é a
-//      MESMA do portal do escritório e porque o dia em que o contrato trouxer os itens ela já tem
-//      de estar certa — emendar dois itens com " · " escreveria na nota nova uma frase que ninguém
-//      redigiu, e ela sai impressa no DANFSe que vai ao tomador.
+//   2. ⚠⚠ **A DESCRIÇÃO PASSOU A CHEGAR — 19/08/2026, pedido do dono.** Este item dizia o
+//      CONTRÁRIO, e a frase antiga fica registrada porque ela estava certa quando foi escrita:
+//      *"a descrição NÃO chega a este portal"* — `serializeInvoice` não a trazia, a rota de
+//      detalhe respondia `items: []` cravado, e o campo abria **sempre vazio, com aviso**.
+//
+//      **O que mudou:** `serializeInvoice` passou a devolver `descricao`, lida da COLUNA
+//      `PortalInvoice.xDescServ` — escrita pelo extrator de campos fiscais
+//      (`application/nfse/camposFiscaisNfse.js`), **por caminho** (`.../serv/cServ/xDescServ`,
+//      NT 008 §2.4.5), que é o único escritor dela.
+//
+//      ⚠ **NADA É PARSEADO NA LISTAGEM.** A alternativa era abrir o `xmlRaw` de cada linha de cada
+//      página — e foi por isso que a decisão subiu antes de ser construída, em vez de resolvida
+//      sozinha. A pergunta era "coluna ou só XML?", e a resposta, medida, foi coluna.
+//
+//      ⚠ **A regra do item único continua INTOCADA:** mais de um item ⇒ descrição VAZIA, com
+//      aviso. Emendar dois itens com " · " escreveria na nota nova uma frase que ninguém redigiu, e
+//      ela sai impressa no DANFSe que vai ao tomador. `itens` continua sendo consultado primeiro,
+//      porque quando existir ele é mais específico que o campo único.
+//
+//      ⚠ **NULO CONTINUA SENDO RESPOSTA:** nota anterior ao backfill, ou cujo XML não trouxe o
+//      campo, vem sem descrição — e aí o comportamento é o de antes, campo vazio com aviso.
 //
 // ⚠⚠ NOTA NOVA É NOTA NOVA. Este módulo NUNCA copia identificador de documento fiscal: `numero`,
 // `chaveAcesso`, `idNfse`, `idDps`, série/RPS, a competência da original, status, ciclo e eventos.
@@ -146,8 +158,22 @@ export function podeReaproveitar(nota, { cnpjDaEmpresa = "" } = {}) {
 function descricaoDosItens(nota) {
   const itens = Array.isArray(nota?.itens) ? nota.itens : [];
   const descricoes = [...new Set(itens.map((i) => String(i?.descricao ?? "").trim()).filter(Boolean))];
+  // ⚠ MAIS DE UM ITEM ⇒ DESCRIÇÃO VAZIA, COM AVISO. A regra é anterior a tudo isto e continua
+  // intocada: emendar dois itens com " · " escreveria na nota nova uma frase que ninguém redigiu, e
+  // ela sai impressa no DANFSe que vai ao tomador.
+  if (descricoes.length > 1) return { descricao: "", varios: true };
   if (descricoes.length === 1) return { descricao: descricoes[0], varios: false };
-  return { descricao: "", varios: descricoes.length > 1 };
+
+  // ⚠⚠ A DESCRIÇÃO PASSOU A CHEGAR NO CONTRATO DO CLIENTE (dono, 19/08/2026), e este ramo é novo.
+  // Ver o item 2 do cabeçalho. Ela vem de COLUNA (`PortalInvoice.xDescServ`), não de XML parseado
+  // a cada listagem.
+  //
+  // ⚠ `itens` continua sendo consultado PRIMEIRO, e de propósito: quando ele existir, ele é mais
+  // específico (sabe distinguir um item de vários). Este ramo é o de hoje, não o substituto dele.
+  const doContrato = String(nota?.descricao ?? "").trim();
+  if (doContrato) return { descricao: doContrato, varios: false };
+
+  return { descricao: "", varios: false };
 }
 
 /**

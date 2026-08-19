@@ -48,6 +48,19 @@ function serializeInvoice(inv) {
     updatedAt: dateToIso(inv.updatedAt),
     hasXml: Boolean(inv.xmlRaw),
     hasPdf: Boolean(inv.pdfUrl),
+    // ⚠⚠ A DESCRIÇÃO DO SERVIÇO — e ela sai de COLUNA, não de XML parseado na listagem.
+    //
+    // Pedido do dono (19/08/2026): reaproveitar uma nota deve trazer também a descrição. A dúvida
+    // que travava isso era se o texto só existia dentro do `xmlRaw` — parsear XML a cada linha de
+    // cada página seria caro e foi por isso que a pergunta subiu antes de construir.
+    //
+    // ⚠ MEDIDO, NÃO SUPOSTO: `PortalInvoice.xDescServ` é coluna (`schema.prisma`), escrita pelo
+    // extrator de campos fiscais (`application/nfse/camposFiscaisNfse.js`), que lê **por caminho**
+    // (`.../serv/cServ/xDescServ`, NT 008 §2.4.5) e é o ÚNICO escritor dela. Zero parsing aqui.
+    //
+    // ⚠ NULO É RESPOSTA. Nota antiga, anterior ao backfill, ou nota cujo XML não trouxe o campo,
+    // sai `null` — e a tela trata como "a descrição não veio", que é o que ela já fazia.
+    descricao: inv.xDescServ || null,
     // ⚠ ESTE CAMPO É O ESTADO, e ele é o que sobrevive a uma auditoria. `true` = a nota veio da
     // projeção do ADN (`PortalInvoice`), que é o sistema nacional confirmando que ela existe.
     // `false` = a linha é da NOSSA emissão (`ServiceInvoice`) e o ADN ainda não a devolveu — o
@@ -87,6 +100,10 @@ function serializeEmitidaNaoConfirmada(si, { emitenteNome, emitenteDoc }) {
     // Dizer `true` ofereceria um download que responde 404.
     hasXml: false,
     hasPdf: false,
+    // ⚠ A NOSSA emissão não tem `xDescServ`: aquela coluna é do extrator, que lê o XML que o
+    // sistema nacional devolve — e ele ainda não devolveu. A descrição que ORIGINOU esta nota está
+    // em `NotaItem`, que pertence à `PortalInvoice` que ainda não existe. `null` é a resposta certa.
+    descricao: null,
     confirmadaPeloAdn: false,
   };
 }

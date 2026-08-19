@@ -6,6 +6,8 @@ import { baixarBlob } from "../../lib/baixarBlob";
 import { modeloDeEmissaoDaNota, podeReaproveitar } from "../emitir/lib/reaproveitarNota";
 import { lerRecusaDanfse, nomeDoArquivoDanfse, podeGerarDanfse } from "./lib/danfseDaNota";
 import { podeCancelar } from "./lib/cancelamentoNota";
+import { estadoDaLinhaDaNota } from "./lib/estadoDaLinhaDaNota";
+import { ESCOPO } from "./lib/impedimento";
 import { ConfirmarCancelamento } from "./ConfirmarCancelamento";
 import {
   TRACO,
@@ -131,7 +133,12 @@ function BotaoDanfse({ nota, companyId }) {
       >
         {gerando ? "Gerando…" : "Baixar DANFSe"}
       </button>
-      {permissao.pode ? null : (
+      {/* ⚠ Ver `lib/impedimento.js`. Impedimento da NOTA (é NF-e, ainda não confirmada) NÃO vira
+          texto aqui: a linha inteira já o carrega — a coluna "Tipo", o chip e o `title`/`aria`
+          dele —, e a coluna vizinha chegaria à mesma conclusão e escreveria a mesma frase. Até
+          19/08/2026 "Ainda não confirmada." aparecia DUAS vezes na mesma linha.
+          O que sobra aqui é o que só o DANFSe sabe: a nota não tem o XML guardado. */}
+      {permissao.pode || permissao.escopo === ESCOPO.NOTA ? null : (
         <span className="muted" style={{ fontSize: ".78rem" }}>{permissao.resumo}</span>
       )}
       {estado.recusa ? (
@@ -158,12 +165,24 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
   // ⚠ A nota que está em confirmação de CANCELAMENTO. Fica aqui, e não dentro da linha, porque o
   // diálogo é modal: uma confirmação por vez, e ela sobrevive à rolagem da tabela.
   const [notaParaCancelar, setNotaParaCancelar] = useState(null);
+  // ⚠⚠ AS NOTAS QUE MANDAMOS CANCELAR NESTA SESSÃO. Elas NÃO vêm do servidor: a lista lê
+  // `PortalInvoice`, a projeção do ADN, e nós deliberadamente não a escrevemos (ver
+  // `notasEmitidasNaoConfirmadas.js`). Até a captura trazer o evento, o único lugar do mundo que
+  // sabe do cancelamento é esta tela — e quem mandou cancelar precisa ver que funcionou.
+  const [cancelamentosEnviados, setCancelamentosEnviados] = useState(() => new Set());
 
   // Trocar de empresa ou de competência recomeça na página 1: manter a página 4
   // de uma lista que agora tem 2 páginas mostra uma tela vazia que parece um bug.
   useEffect(() => {
     setPagina(1);
   }, [companyId, competencia]);
+
+  // ⚠ TROCAR DE EMPRESA ESQUECE OS CANCELAMENTOS ENVIADOS. Os ids são de outra carteira; mantê-los
+  // riscaria uma linha desta empresa por causa de um clique dado na outra. (A competência NÃO
+  // limpa: a nota cancelada continua sendo a mesma nota se a pessoa voltar ao mês dela.)
+  useEffect(() => {
+    setCancelamentosEnviados(new Set());
+  }, [companyId]);
 
   const query = useCarregamento(
     () => api.getInvoices(companyId, { competencia: competencia || undefined, page: pagina, limit: LIMITE }),
@@ -271,13 +290,14 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
                 {notas.map((nota) => {
                   const chip = chipDaNota(nota.status);
                   const permissao = podeReaproveitar(nota, { cnpjDaEmpresa: empresa.cnpj });
-                  const cancelamento = podeCancelar(nota);
-                  // ⚠ `false` explícito, não "falsy": o contrato antigo não tinha este campo, e
-                  // `undefined` (uma resposta velha em cache, ou o app mobile) tem de continuar
-                  // sendo lido como CONFIRMADA — que era o único estado que existia.
-                  const aguardandoAdn = nota.confirmadaPeloAdn === false;
+                  // ⚠ O ESTADO DA LINHA MORA NUM LUGAR SÓ — `lib/estadoDaLinhaDaNota.js`. Ele
+                  // distingue "emitida, aguardando o ADN" de "cancelamento enviado", que são dois
+                  // fatos diferentes e têm desenhos diferentes.
+                  const cancelamentoEnviado = cancelamentosEnviados.has(nota.invoiceId);
+                  const estadoLinha = estadoDaLinhaDaNota(nota, { cancelamentoEnviado });
+                  const cancelamento = podeCancelar(nota, { cancelamentoEnviado });
                   return (
-                    <tr key={nota.invoiceId} data-confirmada-adn={aguardandoAdn ? "nao" : "sim"}>
+                    <tr key={nota.invoiceId} data-estado-nota={estadoLinha.estado}>
                       <td>{texto(nota.numero)}</td>
                       <td>{texto(nota.type)}</td>
                       <td>{fmtDateBr(nota.issueDate)}</td>
@@ -301,8 +321,8 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
                             sozinha não chega a quem não enxerga a diferença. */}
                         <Chip
                           status={chip.status}
-                          title={aguardandoAdn ? "Emitida — aguardando confirmação do sistema nacional" : undefined}
-                          aria-label={aguardandoAdn ? `${chip.rotulo} — aguardando confirmação do sistema nacional` : undefined}
+                          title={estadoLinha.title || undefined}
+                          aria-label={estadoLinha.aria ? `${chip.rotulo} — ${estadoLinha.aria}` : undefined}
                         >
                           {chip.rotulo}
                         </Chip>
@@ -325,7 +345,10 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
                         >
                           Cancelar
                         </button>
-                        {cancelamento.pode ? null : (
+                        {/* ⚠ Ver `lib/impedimento.js`: impedimento da NOTA não vira texto aqui —
+                            a linha já o carrega (coluna Tipo, chip, `title`/`aria`), e cada botão
+                            escrevendo o seu fazia a mesma frase aparecer duas vezes por linha. */}
+                        {cancelamento.pode || cancelamento.escopo === ESCOPO.NOTA ? null : (
                           <span className="muted" style={{ fontSize: ".78rem" }}>
                             {cancelamento.resumo}
                           </span>
@@ -395,7 +418,12 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir }) {
           aoConfirmar={async ({ cMotivo, justificativa }) => {
             // ⚠ A recusa NÃO é engolida: o diálogo a captura e a mostra. Aqui só o desfecho feliz
             // fecha e recarrega — a lista precisa refletir a nota cancelada.
-            await api.cancelarNota(companyId, notaParaCancelar.invoiceId, { cMotivo, justificativa });
+            const alvo = notaParaCancelar.invoiceId;
+            await api.cancelarNota(companyId, alvo, { cMotivo, justificativa });
+            // ⚠ MARCA ANTES DE RECARREGAR. O servidor vai devolver a nota como "EMITIDA" de novo
+            // (a lista lê a projeção do ADN), então sem esta marca a linha voltaria ao normal e o
+            // clique pareceria não ter funcionado.
+            setCancelamentosEnviados((anterior) => new Set(anterior).add(alvo));
             setNotaParaCancelar(null);
             query.recarregar();
           }}

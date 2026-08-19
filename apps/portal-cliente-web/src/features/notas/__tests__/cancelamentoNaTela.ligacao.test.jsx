@@ -329,23 +329,96 @@ describe("⚠ RECEITA e recusas NOSSAS — aí SIM dá para corrigir e tentar de
   });
 });
 
-describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — fica desabilitado dizendo por quê", () => {
+describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — desabilitado, e o motivo continua alcançável", () => {
+  // ⚠⚠ ATUALIZADO EM 19/08/2026, junto com a consolidação da frase repetida. Estes casos exigiam
+  // o motivo como TEXTO VISÍVEL ao lado do botão. Os três impedimentos abaixo são da NOTA, não
+  // desta ação — e cada botão da linha escrevendo o seu fazia a MESMA frase aparecer duas vezes
+  // lado a lado ("Ainda não confirmada." no DANFSe e no Cancelar).
+  //
+  // ⚠ NÃO FOI RELAXADO: o que o caso protege — o botão NÃO some, ele NÃO abre o diálogo, e o
+  // motivo CONTINUA alcançável — está tudo medido, e o `title` passou a ser a asserção do motivo.
+  // Ver `lib/impedimento.js`.
   test.each([
-    ["nota já CANCELADA", { status: "CANCELADA" }, "Já cancelada."],
-    ["NF-e", { type: "NFE" }, "Só NFS-e."],
-    ["ainda não confirmada pelo ADN", { confirmadaPeloAdn: false, hasXml: false }, "Ainda não confirmada."],
-  ])("%s: desabilitado, com o motivo", async (_caso, patch, resumo) => {
+    ["nota já CANCELADA", { status: "CANCELADA" }, /já não está válida/i],
+    ["NF-e", { type: "NFE" }, /apenas NFS-e/i],
+    ["ainda não confirmada pelo ADN", { confirmadaPeloAdn: false, hasXml: false }, /chave de acesso/i],
+  ])("%s: desabilitado, com o motivo no `title` e NADA de texto repetido", async (_caso, patch, motivo) => {
     api.getInvoices.mockResolvedValue(resposta([nota(patch)]));
     await abrirNotas();
     const botao = botaoCancelarDaLinha();
     expect(botao).toBeInTheDocument();
     expect(botao).toBeDisabled();
-    // ⚠ ESCOPADO NA CÉLULA: a mesma frase pode aparecer na coluna do DANFSe, e um `getByText`
-    // solto acharia as duas e passaria (ou quebraria) por acidente.
-    expect(within(botao.closest("td")).getByText(resumo)).toBeInTheDocument();
+    // ⚠ O motivo não sumiu — ele está no `title`, que não é texto na tela.
+    expect(botao.getAttribute("title")).toMatch(motivo);
+    // ⚠⚠ E a célula não escreve nada: o estado da nota é dito UMA vez por linha, pela coluna Tipo,
+    // pelo chip e pelo `title`/`aria` dele.
+    expect(botao.closest("td").textContent.trim()).toBe("Cancelar");
+
     fireEvent.click(botao);
     await act(async () => {});
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(api.cancelarNota).not.toHaveBeenCalled();
+  });
+
+  test("⚠ a frase que aparecia DUAS vezes na linha não aparece nenhuma", async () => {
+    api.getInvoices.mockResolvedValue(resposta([nota({ confirmadaPeloAdn: false, hasXml: false })]));
+    await abrirNotas();
+    const linha = document.querySelector("tbody tr");
+    expect(linha.textContent).not.toMatch(/Ainda não confirmada/);
+  });
+});
+
+describe("⚠⚠ o CANCELAMENTO ENVIADO é feedback da ação — e não se confunde com a nota mais clara", () => {
+  async function cancelarComSucesso() {
+    await abrirConfirmacao();
+    preencher();
+    await act(async () => {});
+    fireEvent.click(botaoConfirmar());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  }
+
+  test("a linha muda de estado no DOM, e é um estado PRÓPRIO", async () => {
+    await cancelarComSucesso();
+    const linha = document.querySelector("tbody tr");
+    expect(linha.getAttribute("data-estado-nota")).toBe("cancelamento_enviado");
+    // ⚠⚠ NÃO é o estado da nota emitida-não-confirmada: são dois fatos diferentes.
+    expect(linha.getAttribute("data-estado-nota")).not.toBe("aguardando_adn");
+  });
+
+  test("⚠ o servidor CONTINUA dizendo EMITIDA — e é justamente por isso que a marca existe", async () => {
+    await cancelarComSucesso();
+    // A lista lê `PortalInvoice` (projeção do ADN) e nós não a escrevemos. Sem a marca local, a
+    // linha voltaria ao normal e o clique pareceria não ter funcionado.
+    expect(document.querySelector("tbody tr .chip").textContent).toBe("Emitida");
+    expect(document.querySelector("tbody tr").getAttribute("data-estado-nota")).toBe("cancelamento_enviado");
+  });
+
+  test("⚠ o estado chega a quem não enxerga: `title`/`aria` do chip", async () => {
+    await cancelarComSucesso();
+    const chip = document.querySelector("tbody tr .chip");
+    expect(chip.getAttribute("title")).toMatch(/Cancelamento enviado/i);
+    expect(chip.getAttribute("aria-label")).toMatch(/Cancelamento enviado/i);
+  });
+
+  test("⚠⚠ NENHUMA explicação em texto na tela", async () => {
+    await cancelarComSucesso();
+    const corpo = document.body.textContent;
+    for (const frase of [
+      /aguardando confirmação do sistema nacional/i,
+      /a lista mostra a nota como cancelada/i,
+      /cancelamento enviado/i,
+    ]) {
+      expect(corpo).not.toMatch(frase);
+    }
+  });
+
+  test("⚠⚠ e NÃO dá para mandar cancelar duas vezes", async () => {
+    await cancelarComSucesso();
+    const botao = botaoCancelarDaLinha();
+    expect(botao).toBeDisabled();
+    fireEvent.click(botao);
+    await act(async () => {});
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.cancelarNota).toHaveBeenCalledTimes(1);
   });
 });

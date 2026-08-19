@@ -23,6 +23,10 @@
 // oferecer os rótulos sem uma ida ao servidor. É o mesmo arranjo de `reaproveitarNota.js`,
 // `consultaTomador.js` e `municipioIbge.js`: **mudou lá, muda aqui.**
 
+import { ESCOPO } from "./impedimento";
+
+export { ESCOPO };
+
 export const MOTIVOS_CANCELAMENTO = Object.freeze([
   Object.freeze({ codigo: "1", rotulo: "Erro na emissão" }),
   Object.freeze({ codigo: "2", rotulo: "Serviço não prestado" }),
@@ -36,6 +40,8 @@ export const MOTIVO_NAO_CANCELAVEL = {
   NAO_E_NFSE: "nao_e_nfse",
   JA_CANCELADA: "ja_cancelada",
   NAO_CONFIRMADA: "nao_confirmada",
+  /** Nós já mandamos cancelar; o ADN ainda não devolveu o evento. Ver `estadoDaLinhaDaNota.js`. */
+  CANCELAMENTO_ENVIADO: "cancelamento_enviado",
 };
 
 /**
@@ -44,13 +50,33 @@ export const MOTIVO_NAO_CANCELAVEL = {
  * ⚠ O BOTÃO NÃO SOME — fica desabilitado dizendo por quê. Some quem não deve nada; aqui há
  * sempre algo a dizer.
  */
-export function podeCancelar(nota) {
-  if (!nota) return { pode: false, motivo: null, resumo: null, texto: "A nota ainda não carregou." };
+export function podeCancelar(nota, { cancelamentoEnviado = false } = {}) {
+  if (!nota) {
+    return { pode: false, motivo: null, escopo: ESCOPO.NOTA, resumo: null, texto: "A nota ainda não carregou." };
+  }
+
+  // ⚠⚠ JÁ MANDAMOS CANCELAR ESTA NOTA NESTA SESSÃO. O servidor ainda responde "EMITIDA" (a lista
+  // lê `PortalInvoice`, a projeção do ADN, e nós não a escrevemos — ver
+  // `notasEmitidasNaoConfirmadas.js`). Sem esta guarda o botão continuaria clicável e a pessoa
+  // mandaria o mesmo cancelamento duas vezes: o segundo volta recusado pelo sistema nacional e se
+  // lê como "falhou", quando o primeiro tinha dado certo.
+  if (cancelamentoEnviado) {
+    return {
+      pode: false,
+      motivo: MOTIVO_NAO_CANCELAVEL.CANCELAMENTO_ENVIADO,
+      escopo: ESCOPO.NOTA,
+      resumo: "Cancelamento enviado.",
+      texto:
+        "O cancelamento já foi enviado ao sistema nacional. A lista mostra a nota como cancelada "
+        + "assim que a consulta trouxer o evento.",
+    };
+  }
 
   if (String(nota.type || "").toUpperCase() !== "NFSE") {
     return {
       pode: false,
       motivo: MOTIVO_NAO_CANCELAVEL.NAO_E_NFSE,
+      escopo: ESCOPO.NOTA,
       resumo: "Só NFS-e.",
       texto:
         "Este portal cancela apenas NFS-e. A NF-e de venda é capturada da SEFAZ e cancelada por "
@@ -63,6 +89,8 @@ export function podeCancelar(nota) {
     return {
       pode: false,
       motivo: MOTIVO_NAO_CANCELAVEL.JA_CANCELADA,
+      // ⚠ O chip da linha já diz "Cancelada", em cor própria. A frase seria a segunda vez.
+      escopo: ESCOPO.NOTA,
       resumo: "Já cancelada.",
       texto: "Esta nota já não está válida — não há o que cancelar.",
     };
@@ -75,6 +103,7 @@ export function podeCancelar(nota) {
     return {
       pode: false,
       motivo: MOTIVO_NAO_CANCELAVEL.NAO_CONFIRMADA,
+      escopo: ESCOPO.NOTA,
       resumo: "Ainda não confirmada.",
       texto:
         "Esta nota ainda não voltou do sistema nacional, e o cancelamento é identificado pela "
@@ -82,7 +111,7 @@ export function podeCancelar(nota) {
     };
   }
 
-  return { pode: true, motivo: null, resumo: null, texto: null };
+  return { pode: true, motivo: null, escopo: null, resumo: null, texto: null };
 }
 
 /**

@@ -214,6 +214,34 @@ describe("clicar numa nota emitida abre a EMISSÃO pré-preenchida", () => {
     expect(screen.getByText(/O valor não veio da nota de origem: digite o valor desta nota\./i)).toBeInTheDocument();
   });
 
+  // ⚠⚠ A DESCRIÇÃO CHEGA AO CAMPO — 19/08/2026, pedido do dono.
+  //
+  // Até aqui ela NUNCA chegava: o contrato do cliente não a trazia, e o campo abria sempre vazio
+  // com aviso. Hoje `serializeInvoice` devolve `descricao`, lida da coluna `PortalInvoice.xDescServ`
+  // (não de XML parseado na listagem). O que se mede aqui é a CORRENTE: contrato → regra → campo.
+  test("⚠⚠ a DESCRIÇÃO da nota de origem chega preenchida no campo", async () => {
+    api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ descricao: "CONSULTORIA EM GESTAO" })]));
+    await abrirNotas();
+    fireEvent.click(botaoModelo());
+    await act(async () => {});
+    await screen.findByRole("button", { name: "Emitir nota" });
+
+    expect(campo("emitir-descricao").value).toBe("CONSULTORIA EM GESTAO");
+    // ⚠ E o aviso de ausência NÃO aparece, porque não há ausência.
+    expect(screen.queryByText(/descrição do serviço não veio da nota de origem/i)).not.toBeInTheDocument();
+  });
+
+  test("⚠ nota SEM descrição (anterior ao backfill): campo vazio, com o aviso — o de antes", async () => {
+    api.getInvoices.mockResolvedValue(respostaDeNotas([nota({ descricao: null })]));
+    await abrirNotas();
+    fireEvent.click(botaoModelo());
+    await act(async () => {});
+    await screen.findByRole("button", { name: "Emitir nota" });
+
+    expect(campo("emitir-descricao").value).toBe("");
+    expect(screen.getByText(/A descrição do serviço não veio da nota de origem/i)).toBeInTheDocument();
+  });
+
   // ⚠ NOTA NOVA É NOTA NOVA: nenhum identificador da original pode virar campo do formulário. A
   // varredura profunda está na suíte da regra; aqui a asserção é sobre o que está NA TELA.
   test("nenhum campo do formulário recebe o número da nota de origem", async () => {
