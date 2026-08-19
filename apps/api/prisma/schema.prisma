@@ -152,6 +152,7 @@ model Company {
   invoices                 Invoice[]
   serviceInvoices          ServiceInvoice[]
   guides                   Guide[]
+  tomadoresEmitidos        TomadorEmitido[]
 
   @@index([regimeTributario])
   @@index([cnaePrincipal])
@@ -407,6 +408,99 @@ model ServiceInvoice {
   @@index([idDps])
   @@index([chaveAcesso])
   @@index([numeroNfse])
+}
+
+/// MEMÓRIA DO QUE JÁ FOI EMITIDO — o tomador para quem esta empresa já emitiu uma nota.
+///
+/// > Pedido do dono (19/08/2026): *"ao emitir a nota para um tomador vamos salvar as informações;
+/// > na hora de emitir o cliente pode escolher o tomador ao qual ele já emitiu."*
+///
+/// ⚠⚠ **NÃO É CADASTRO, E NÃO É FONTE DE VERDADE SOBRE NINGUÉM.** É o registro do que a emissão
+/// TEVE. Não existe tela de gestão, não existe rota de edição e não existe exclusão — e a ausência
+/// das três é decisão, não pendência. Um "cadastro de clientes" de verdade abre perguntas que
+/// ninguém fez (quem edita, quem apaga, o que acontece com as notas já emitidas quando o cadastro
+/// muda) e cria uma segunda autoridade sobre o tomador ao lado do que foi efetivamente declarado
+/// na DPS. Aqui a autoridade é a nota que saiu.
+///
+/// ⚠ **POR QUE ISTO NÃO EXISTIA E PRECISOU NASCER.** Medido em 19/08/2026: não havia nenhum model
+/// de tomador/cliente/destinatário neste schema, e `ServiceInvoice` guarda do tomador **só
+/// `tomadorDoc` e `tomadorNome`** (linhas 347-348) — sem e-mail e sem endereço. É por isso que o
+/// reaproveitamento de nota não consegue trazer o endereço, e está escrito assim em
+/// `apps/portal-cliente-web/src/features/emitir/lib/reaproveitarNota.js` ("a nota capturada não
+/// traz e-mail do tomador em campo nenhum"). Guardar o endereço na `ServiceInvoice` responderia
+/// "qual endereço ESTA nota levou"; esta tabela responde "qual é o endereço mais recente que este
+/// tomador teve", que é a pergunta do dono. As duas perguntas são diferentes e as duas continuam
+/// respondíveis.
+///
+/// ⚠ **ESCOPADA POR EMPRESA, e a chave é o DOCUMENTO dentro desse escopo.** Duas empresas do mesmo
+/// escritório podem emitir para o mesmo CNPJ com endereços diferentes (filial, endereço de
+/// cobrança), e nenhuma delas tem autoridade sobre o registro da outra. Sem o `companyId` na
+/// chave, a emissão de uma empresa reescreveria a memória da outra — num portal multi-empresa isso
+/// é o dado de um cliente vazando para outro.
+///
+/// ⚠ **NADA AQUI É COMPLETADO POR CONSULTA NEM DEDUZIDO.** Só entra o que a emissão de fato levou.
+/// Nota que saiu sem e-mail produz registro sem e-mail; nota que saiu sem endereço completo produz
+/// registro sem endereço (o validador só entrega o bloco quando os cinco campos estão lá — ver
+/// `hasEnderecoTomador` em `application/validators/nfsePayload.js`). Um campo preenchido "para não
+/// ficar vazio" seria uma afirmação sobre um terceiro que ninguém fez.
+model TomadorEmitido {
+  id        String  @id @default(uuid())
+  companyId String
+  /// CPF (11) ou CNPJ (14), **só dígitos** — é a forma que `onlyDigits` já entrega em
+  /// `validateNfsePayload`. Guardar com máscara faria a busca pelo documento falhar em silêncio
+  /// contra o que a emissão seguinte compara.
+  documento String
+  nome      String
+  /// Nulo quando a nota saiu sem e-mail. `null` diz "a emissão não teve"; `""` diria "tem e é
+  /// vazio" — a mesma disciplina do `?? ""` que o projeto usa nos campos de tela.
+  email     String?
+
+  // ── ENDEREÇO ────────────────────────────────────────────────────────────────────────────────
+  //
+  // ⚠ OS SEIS CAMPOS SÃO EXATAMENTE OS DA DPS, com os nomes do domínio (`cMun`, `xLgr`…) e não com
+  // nomes "amigáveis": é o vocabulário do XML, do validador e do `buildDpsXml`. Traduzir aqui
+  // criaria um de-para a mais para alguém errar.
+  //
+  // ⚠ TODOS NULLABLE E TUDO-OU-NADA NA PRÁTICA: o validador entrega `endereco: undefined` quando
+  // qualquer um dos CINCO exigidos falta (`cMun`, `CEP`, `xLgr`, `nro`, `xBairro`), então ou os
+  // cinco chegam juntos ou nenhum chega. Não há constraint disso no banco de propósito — o dado
+  // nasce de uma emissão que JÁ foi autorizada, e uma constraint que recusasse gravação aqui
+  // derrubaria a memória de uma nota que existe no sistema nacional.
+  cMun    String?
+  cep     String?
+  xLgr    String?
+  nro     String?
+  /// O único opcional dos seis, aqui e na DPS.
+  xCpl    String?
+  xBairro String?
+
+  // ── AS TRÊS DATAS, e por que são três perguntas diferentes ──────────────────────────────────
+  //
+  // ⚠ NÃO HÁ `updatedAt @updatedAt` AQUI, e a ausência é deliberada: ele sobe a cada `update`,
+  // inclusive quando a emissão repetiu exatamente os mesmos dados. Ele responderia "quando o
+  // registro foi tocado", e a pergunta do dono é "quando o dado MUDOU". Ter os dois lado a lado
+  // convidaria a ler um pelo outro.
+  /// Quando esta empresa emitiu para este documento pela PRIMEIRA vez.
+  createdAt          DateTime  @default(now())
+  /// Toda emissão bem-sucedida sobe esta data, mudando o dado ou não. É por ela que a tela ordena
+  /// "para quem emiti mais recentemente".
+  ultimaEmissaoEm    DateTime  @default(now())
+  /// ⚠ SÓ SOBE QUANDO ALGUM CAMPO DE FATO MUDOU — é o "registra quando" do pedido. Nulo = o
+  /// registro nunca mudou desde que nasceu. Endereço de cliente muda, e a nota seguinte tem de
+  /// sair no endereço novo: é esta data que prova quando isso aconteceu.
+  dadosAtualizadosEm DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// ⚠ A CHAVE. `documento` sozinho seria global e vazaria o dado de uma empresa para outra;
+  /// `companyId` sozinho não identifica ninguém. Emitiu de novo para o mesmo documento na mesma
+  /// empresa ⇒ é o MESMO registro, e ele se atualiza.
+  ///
+  /// ⚠ Não há `@@index([companyId])` à parte: `companyId` é a coluna LÍDER deste índice único, que
+  /// o Postgres já usa para varrer "os tomadores desta empresa". Um índice a mais custaria escrita
+  /// em toda emissão sem responder a nenhuma pergunta nova.
+  @@unique([companyId, documento])
+  @@map("tomadores_emitidos")
 }
 
 model AdnSyncState {
