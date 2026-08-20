@@ -389,18 +389,21 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   - ⚠ **`legacyCompanySelect` (`routes/client/index.js:102`) já mordeu três vezes**: coluna fora do
     `select` volta `undefined` sem erro, a rota responde 200 e a tela "só não mostra". A trava é
     varredura do texto do `select`, não teste de comportamento.
-  - ⚠⚠ **O LOTE POR PLANILHA PREPARA E NÃO EMITE** (19/08/2026) — `features/lote/` baixa o modelo,
+  - ⚠⚠ **O LOTE POR PLANILHA CONFERE E EMITE** (emissão em 20/08/2026) — `features/lote/` baixa o modelo,
     lê a planilha e **confere linha a linha**: quatro estados fechados vindos do backend
     (`nfse/lote/classificarLinhaLote.js`), consulta do CNPJ **saindo do navegador** em série e
     ajuste da linha que volta ao servidor para ser RECLASSIFICADO por lá. ⚠ Duas metades moram no
     front porque só ele as tem: a **conferência do código do IBGE** (que rebaixa a linha, nunca a
-    promove) e a **consulta à Receita**. ⚠ **Nenhuma nota é emitida em lote** — não há botão nem
-    rota, e a tela DIZ isso. `routes/nfseLoteRoutes.js` está montado em `routes/client/index.js`
+    promove) e a **consulta à Receita**. ⚠⚠ **A EMISSÃO EM LOTE EXISTE DESDE 20/08/2026** — e este item dizia o
+    contrário. Ela é **persistida** (duas tabelas, migration NÃO aplicada), **sequencial**, para o
+    lote inteiro na camada `TRANSPORTE` (desfecho DESCONHECIDO), retoma **depois** da linha
+    indeterminada e é **idempotente** por impressão digital do conteúdo. ⚠ Nasce DESLIGADA
+    (`INTEGRACAO_NFSE_LOTE`), com o **servidor** recusando — não é a tela que esconde o botão. `routes/nfseLoteRoutes.js` está montado em `routes/client/index.js`
     com `resolverCompanyId: resolveLegacyCompanyId` (sem ele a memória de tomadores volta vazia
     **sem erro**, e o *"se já teve antes, só preencher"* nunca acontece).
-  - **Fora de escopo, com motivo escrito:** substituição de NFS-e (**escopo fechado pelo dono**), a
-    EMISSÃO em lote (sequencial, parada no desfecho desconhecido, numeração queimada — fase à parte)
-    e envio da nota por e-mail ao tomador.
+  - **Fora de escopo, com motivo escrito:** substituição de NFS-e (**escopo fechado pelo dono**) e
+    envio da nota por e-mail ao tomador. ⚠ A EMISSÃO em lote saiu desta lista em 20/08/2026 — ela
+    foi construída.
 - [ ] **Cofre de certificados / hardening LGPD (Q13)** — planejado (AWS KMS
   envelope encryption); remover fallback JWT→CERT_SECRET_KEY. Não iniciado.
 

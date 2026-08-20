@@ -45,7 +45,15 @@ describe("⚠ o par mock/real", () => {
   test("as duas funções do lote existem nos dois", () => {
     const mock = createMockApi();
     const real = createRealApi();
-    for (const nome of ["baixarModeloDoLote", "lerPlanilhaDoLote"]) {
+    for (const nome of [
+      "baixarModeloDoLote",
+      "lerPlanilhaDoLote",
+      // ⚠⚠ A emissão em lote entrou no par em 20/08/2026. Função que exista só num dos dois treina
+      // a tela errada — é o defeito já registrado do `emitirNfse`.
+      "emitirLoteDeNotas",
+      "consultarLoteEmissao",
+      "retomarLoteEmissao",
+    ]) {
       expect(typeof mock[nome]).toBe("function");
       expect(typeof real[nome]).toBe("function");
     }
@@ -243,3 +251,112 @@ function bytesDoBlob(blob) {
     leitor.readAsArrayBuffer(blob);
   });
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ A EMISSÃO EM LOTE NO MOCK — inclusive o 502 QUE PARA O LOTE
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// ⚠⚠ ESTA É A RAZÃO MAIS FORTE DE O MOCK EXISTIR. A camada TRANSPORTE — o desfecho DESCONHECIDO
+// que para o lote e produz a linha que ninguém pode reprocessar — **não se provoca de propósito
+// contra um backend de verdade**. Sem estes testes, o caminho mais perigoso do sistema seria o
+// único que ninguém vê antes de acontecer com nota fiscal real.
+//
+// ⚠ NADA AQUI EMITE: o mock não faz chamada de rede nenhuma; o "lote" é objeto em memória.
+describe("⚠⚠ a emissão em lote, offline", () => {
+  const arquivo = (nome) =>
+    new File(["x"], nome, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+  /**
+   * Resolve as consultas antes de emitir — o MESMO caminho da tela.
+   *
+   * ⚠ Sem isto o mock tem UMA linha pronta (a que vem da memória), e o caso do TRANSPORTE — que
+   * precisa de uma linha antes e outra depois — seria inalcançável. Ou seja: sem resolver as
+   * consultas, o teste do caminho mais perigoso passaria por vacuidade.
+   */
+  async function comConsultasResolvidas(api, nome) {
+    const arq = arquivo(nome);
+    const primeira = await api.lerPlanilhaDoLote(EMPRESA, arq, {});
+    const { resultados } = await consultarDocumentos(primeira.aConsultar, {
+      consultar: (cnpj) => api.consultarCnpj(cnpj),
+      municipios: MUNICIPIOS,
+    });
+    return { arq, consultas: resultados };
+  }
+
+  test("o caminho normal emite as prontas", async () => {
+    const api = await apiLogada();
+    const { arq, consultas } = await comConsultasResolvidas(api, "notas.xlsx");
+    const r = await api.emitirLoteDeNotas(EMPRESA, arq, { consultas });
+    expect(r.reconhecido).toBe(false);
+    expect(r.lote.status).toBe("concluido");
+    expect(r.lote.emitidas).toBeGreaterThan(0);
+    expect(r.lote.linhas.every((l) => l.desfecho !== "indeterminada")).toBe(true);
+  });
+
+  // ⚠⚠ O TESTE QUE MAIS IMPORTA DESTA SUÍTE.
+  test("⚠⚠ `#transporte` PARA o lote, nomeia a linha e deixa as seguintes NÃO TENTADAS", async () => {
+    const api = await apiLogada();
+    const { arq, consultas } = await comConsultasResolvidas(api, "notas#transporte.xlsx");
+    const { lote } = await api.emitirLoteDeNotas(EMPRESA, arq, { consultas });
+
+    expect(lote.status).toBe("parado_indeterminado");
+    expect(Number.isInteger(lote.linhaIndeterminada)).toBe(true);
+
+    const indeterminada = lote.linhas.find((l) => l.numeroLinha === lote.linhaIndeterminada);
+    expect(indeterminada.desfecho).toBe("indeterminada");
+    expect(indeterminada.camada).toBe("TRANSPORTE");
+    // ⚠ O número reservado fica REGISTRADO: não existe inutilização na NFS-e, então um número que
+    // não virou nota é buraco permanente — informação fiscal, não detalhe técnico.
+    expect(indeterminada.rpsNumero).toBeTruthy();
+    expect(indeterminada.correcao).toMatch(/consulte/i);
+
+    // ⚠ as seguintes ficam `nao_tentada`, que é a VERDADE: ninguém encostou nelas
+    const depois = lote.linhas.filter((l) => l.numeroLinha > lote.linhaIndeterminada);
+    expect(depois.length).toBeGreaterThan(0);
+    expect(depois.every((l) => l.desfecho === "nao_tentada")).toBe(true);
+  });
+
+  test("⚠⚠ retomar NÃO toca a linha indeterminada — ela continua indeterminada", async () => {
+    const api = await apiLogada();
+    const { arq, consultas } = await comConsultasResolvidas(api, "notas#transporte.xlsx");
+    const { lote } = await api.emitirLoteDeNotas(EMPRESA, arq, { consultas });
+    const alvo = lote.linhaIndeterminada;
+
+    const r = await api.retomarLoteEmissao(EMPRESA, lote.id);
+
+    const aindaIndeterminada = r.lote.linhas.find((l) => l.numeroLinha === alvo);
+    expect(aindaIndeterminada.desfecho).toBe("indeterminada");
+    // e as seguintes foram emitidas
+    expect(r.lote.linhas.filter((l) => l.numeroLinha > alvo).every((l) => l.desfecho === "emitida")).toBe(true);
+    expect(r.lote.status).toBe("concluido");
+  });
+
+  test("`#recusa` deixa a linha recusada pela Receita e o lote SEGUE", async () => {
+    const api = await apiLogada();
+    const { arq, consultas } = await comConsultasResolvidas(api, "notas#recusa.xlsx");
+    const { lote } = await api.emitirLoteDeNotas(EMPRESA, arq, { consultas });
+    expect(lote.status).toBe("concluido");
+    expect(lote.recusadas).toBe(1);
+    expect(lote.linhas.some((l) => l.codigo === "E0014")).toBe(true);
+  });
+
+  // ⚠⚠ O ESTADO DE NASCENÇA. A flag nasce OFF e quem recusa é o SERVIDOR.
+  test("⚠⚠ `#desligado` é recusa NOMEADA — e ela cita a variável de ambiente", async () => {
+    const api = await apiLogada();
+    await expect(api.emitirLoteDeNotas(EMPRESA, arquivo("notas#desligado.xlsx"))).rejects.toMatchObject({
+      status: 503,
+      code: "emissao_lote_desligada",
+    });
+  });
+
+  test("consultar um lote inexistente é 404 nomeado", async () => {
+    const api = await apiLogada();
+    await expect(api.consultarLoteEmissao(EMPRESA, "lote-que-nao-existe")).rejects.toMatchObject({
+      status: 404,
+      code: "lote_nao_encontrado",
+    });
+  });
+});

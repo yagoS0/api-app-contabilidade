@@ -5,8 +5,15 @@
 // amanhã), então a prova é uma **varredura de código-fonte** sobre o diretório inteiro — o mesmo
 // molde de `auditoria/__tests__/auditoriaNaoEscreve.test.js` e de `dadosPlanejamento.test.js`.
 //
-// ⚠ A emissão em lote é FASE SEGUINTE. Nada deste diretório fala com o ADN, com o SERPRO nem com
-// homologação, e nada dele grava uma linha sequer.
+// ⚠⚠ MUDOU EM 20/08/2026: A EMISSÃO EM LOTE PASSOU A EXISTIR, e ela mora neste diretório
+// (`emissaoLote.js`). Este teste NÃO foi afrouxado por causa disso — ele foi ESCOPADO:
+//
+//   • todos os outros arquivos continuam proibidos de tocar banco, escrever ou fazer rede. É a
+//     pipeline de LEITURA, e ela não pode virar escritora por um `import` que alguém acrescente;
+//   • `emissaoLote.js` é o ÚNICO isento das proibições de escrita — escrever o desfecho de cada
+//     linha **no instante em que ele acontece** é a razão de ele existir. Em troca, ele ganhou
+//     travas PRÓPRIAS, abaixo: continua sem rede, continua sem importar o `NfseService` (quem
+//     emite é INJETADO) e continua sem importar o cliente do Prisma (ele o recebe por parâmetro).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -28,10 +35,17 @@ function semComentarios(fonte) {
   return fonte.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
 }
 
-function arquivosDoModulo() {
+/**
+ * ⚠ O ÚNICO arquivo autorizado a escrever — nomeado, e não um padrão. Um padrão (`*Emissao*`)
+ * isentaria arquivos futuros sem ninguém decidir isso.
+ */
+const ESCRITOR_AUTORIZADO = "emissaoLote.js";
+
+function arquivosDoModulo({ incluirEscritor = true } = {}) {
   return fs
     .readdirSync(DIRETORIO)
     .filter((nome) => nome.endsWith(".js"))
+    .filter((nome) => incluirEscritor || nome !== ESCRITOR_AUTORIZADO)
     .map((nome) => {
       const fonte = fs.readFileSync(path.join(DIRETORIO, nome), "utf-8");
       return { nome, fonte, codigo: semComentarios(fonte) };
@@ -39,7 +53,10 @@ function arquivosDoModulo() {
 }
 
 describe("varredura do código-fonte de `application/nfse/lote/`", () => {
-  const arquivos = arquivosDoModulo();
+  /** Sem o escritor: é sobre a pipeline de LEITURA que as proibições de banco/escrita valem. */
+  const arquivos = arquivosDoModulo({ incluirEscritor: false });
+  /** Com ele: as proibições de REDE valem para o diretório inteiro, sem exceção. */
+  const todos = arquivosDoModulo();
 
   it("há arquivos a varrer (a varredura não pode passar por estar vazia)", () => {
     expect(arquivos.length).toBeGreaterThanOrEqual(5);
@@ -62,7 +79,7 @@ describe("varredura do código-fonte de `application/nfse/lote/`", () => {
   });
 
   it("⚠⚠ nenhum arquivo faz chamada de rede — sem axios, fetch, http ou BrasilAPI", () => {
-    for (const { nome, codigo } of arquivos) {
+    for (const { nome, codigo } of todos) {
       expect({ nome, tem: /\baxios\b|\bfetch\s*\(|from\s+["']node:https?["']|brasilapi/i.test(codigo) }).toEqual({
         nome,
         tem: false,
@@ -83,5 +100,40 @@ describe("varredura do código-fonte de `application/nfse/lote/`", () => {
     const puro = arquivos.find((a) => a.nome === "classificarLinhaLote.js");
     expect(puro).toBeDefined();
     expect(/Date\.now|new Date\(\)|Math\.random/.test(puro.codigo)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ AS TRAVAS PRÓPRIAS DO ÚNICO ESCRITOR
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// `emissaoLote.js` está isento da proibição de ESCRITA — é o que ele faz. Não está isento de nada
+// mais, e estas travas existem para que a isenção não vire uma porta aberta.
+describe("⚠ `emissaoLote.js` — o escritor, e o que ele continua NÃO podendo fazer", () => {
+  const fonte = fs.readFileSync(path.join(DIRETORIO, "emissaoLote.js"), "utf-8");
+  const codigo = semComentarios(fonte);
+
+  it("existe (se for renomeado, a isenção acima passa a não cobrir ninguém e isto avisa)", () => {
+    expect(codigo.length).toBeGreaterThan(500);
+  });
+
+  // ⚠⚠ QUEM EMITE É INJETADO. Se este módulo importasse o `NfseService`, todo teste dele passaria a
+  // depender de mockar o serviço de emissão — e o dia em que alguém esquecesse, o teste emitiria
+  // NOTA FISCAL DE VERDADE. A injeção é o que torna o dublê o caminho natural, não o cuidadoso.
+  it("⚠⚠ NÃO importa o `NfseService` — quem emite é injetado", () => {
+    expect(/from\s+["'][^"']*NfseService[^"']*["']/i.test(codigo)).toBe(false);
+    expect(/NfseService/.test(codigo)).toBe(false);
+  });
+
+  // ⚠ Ele recebe o `prisma` por PARÂMETRO. Importar o cliente singleton amarraria o laço ao banco
+  // real e tiraria do teste a capacidade de observar a persistência linha a linha.
+  it("⚠ NÃO importa o cliente do Prisma — ele o recebe por parâmetro", () => {
+    expect(/from\s+["'][^"']*infrastructure\/db\/prisma[^"']*["']/i.test(codigo)).toBe(false);
+  });
+
+  // ⚠ Nada de paralelismo: a regra 1 é sequencial, e `Promise.all` sobre as linhas é exatamente o
+  // atalho que alguém tentaria para "acelerar o lote".
+  it("⚠⚠ NÃO usa `Promise.all`/`allSettled` sobre as linhas — a emissão é SEQUENCIAL", () => {
+    expect(/Promise\s*\.\s*(all|allSettled|race|any)\s*\(/.test(codigo)).toBe(false);
   });
 });

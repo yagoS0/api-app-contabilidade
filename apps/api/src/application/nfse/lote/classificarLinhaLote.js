@@ -229,6 +229,112 @@ function conferirMunicipioDaPlanilha(cMun, municipios) {
 }
 
 /**
+ * O `cMun` que veio da CONSULTA — provado AQUI, no servidor, e não aceito por afirmação do navegador.
+ *
+ * ─── ⚠⚠ O QUE MUDOU EM 20/08/2026, E POR QUE ────────────────────────────────────────────────
+ *
+ * Antes esta decisão era uma linha só: `if (consulta.cMunVerificado !== true) pendência`. Ou seja,
+ * **a prova era um booleano que o navegador mandava**. Na emissão avulsa isso é uma nota por vez,
+ * com uma pessoa olhando a tela; na emissão em LOTE seriam 50 notas fiscais a partir de uma
+ * afirmação que o servidor nunca conferiu — e nota emitida no município errado não se corrige, se
+ * cancela.
+ *
+ * Com a lista do IBGE alcançável pelo `apps/api` (Bloco A), o servidor **refaz a prova tripla**:
+ *
+ *   1. o código tem 7 dígitos;
+ *   2. ele existe na lista oficial;
+ *   3. o município e a UF daquela linha batem com o `municipio`/`uf` **da mesma resposta**.
+ *
+ * ⚠ **`cMunVerificado` NÃO É MAIS LIDO EM LUGAR NENHUM.** Não é que ele "também" seja conferido:
+ * ele deixou de participar da decisão. Um front que mandasse `cMunVerificado: true` com um código
+ * de outro município é RECUSADO aqui.
+ *
+ * ⚠ **A PROVA 3 EXIGE QUE A CONSULTA CARREGUE `municipio`/`uf` CRUS.** Sem eles não há contra o quê
+ * conferir, e a resposta é PENDÊNCIA, não "passa assim mesmo" — falha fechado. É o que obriga o
+ * front a relatar a resposta da BrasilAPI em vez de resumi-la num booleano.
+ *
+ * ⚠ **SEM A LISTA INJETADA, NADA É PROVADO** — e a linha cai em `municipio_nao_conferido`
+ * (conferência ⇒ `CONFERIR`, nunca `PRONTA`), exatamente como já acontecia no caminho da planilha.
+ * As duas origens passaram a falhar do mesmo jeito, de propósito: uma lista que não carregou não
+ * pode significar "aceite sem conferir" em nenhum dos dois caminhos.
+ */
+function conferirMunicipioDaConsulta(cMun, consulta, municipios) {
+  const digitos = soDigitos(cMun);
+  if (digitos.length !== 7) {
+    return {
+      ok: false,
+      pendencia: PENDENCIA.CONSULTA_MUNICIPIO_NAO_PROVADO,
+      texto:
+        "A consulta não trouxe um código de município com 7 dígitos. Não usamos código de "
+        + "município sem prova: a nota sairia no município errado. Preencha o endereço nesta linha.",
+    };
+  }
+  if (!Array.isArray(municipios) || municipios.length === 0) {
+    return {
+      ok: true,
+      conferencia: CONFERENCIA.MUNICIPIO_NAO_CONFERIDO,
+      texto:
+        `O código IBGE ${digitos} veio da consulta com a forma certa, mas a lista oficial não pôde `
+        + "ser carregada aqui para conferi-lo. Confira o município antes de emitir.",
+    };
+  }
+  const linha = municipios.find((m) => m?.[0] === digitos);
+  if (!linha) {
+    return {
+      ok: false,
+      pendencia: PENDENCIA.CONSULTA_MUNICIPIO_NAO_PROVADO,
+      texto:
+        `A consulta trouxe o código ${digitos}, que não existe na lista oficial do IBGE. Preencha o `
+        + "endereço nesta linha.",
+    };
+  }
+  // ⚠ A PROVA 3. O nome e a UF vêm da MESMA resposta que trouxe o código — é isso que impede um
+  // código válido de outro município passar por válido para ESTE tomador.
+  const nomeDaResposta = String(consulta?.municipio ?? "").trim();
+  const ufDaResposta = String(consulta?.uf ?? "").trim().toUpperCase();
+  if (!nomeDaResposta || !ufDaResposta) {
+    return {
+      ok: false,
+      pendencia: PENDENCIA.CONSULTA_MUNICIPIO_NAO_PROVADO,
+      texto:
+        `O código ${digitos} existe na lista oficial, mas a consulta não informou o NOME e a UF do `
+        + "município para conferir se é o mesmo. Sem essa conferência o código não é aceito — "
+        + "preencha o endereço nesta linha.",
+    };
+  }
+  const bate =
+    normalizarParaBusca(linha[1]) === normalizarParaBusca(nomeDaResposta) &&
+    String(linha[2]).toUpperCase() === ufDaResposta;
+  if (!bate) {
+    return {
+      ok: false,
+      pendencia: PENDENCIA.CONSULTA_MUNICIPIO_NAO_PROVADO,
+      texto:
+        `O código ${digitos} é de ${linha[1]}/${linha[2]}, mas a consulta diz `
+        + `${nomeDaResposta}/${ufDaResposta}. Os dois têm de ser o mesmo município — preencha o `
+        + "endereço nesta linha.",
+    };
+  }
+  return { ok: true, municipio: `${linha[1]} / ${linha[2]}` };
+}
+
+/**
+ * "São Gonçalo" e "sao goncalo" precisam casar — a resposta da consulta vem com acento e a lista
+ * também, mas não necessariamente com a mesma grafia.
+ *
+ * ⚠ É a MESMA normalização de `normalizarParaBusca` dos dois portais
+ * (`lib/municipios/municipioIbge.js`). Duas leituras diferentes fariam o servidor recusar um
+ * município que a tela aceitou.
+ */
+function normalizarParaBusca(texto) {
+  return String(texto ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+/**
  * Classifica UMA linha.
  *
  * @param {object} linha `{ numero, valores: { documento, nome, descricao, valor, competencia,
@@ -382,21 +488,18 @@ export function classificarLinhaLote(linha, { tomadorConhecido = null, consulta 
           `A consulta respondeu, mas não trouxe ${faltam || "o endereço"}. A nota exige o endereço `
           + "completo — preencha nesta linha."
         );
-      } else if (consulta.cMunVerificado !== true) {
-        // ⚠⚠ O `cMun` DA CONSULTA SÓ ENTRA COM A PROVA TRIPLA FEITA. Quem consulta é quem tem a
-        // lista oficial e a resposta inteira (município + UF), então é lá que
-        // `codigoMunicipioVerificado` roda. Aqui só se exige que o resultado DIGA que a prova
-        // passou — aceitar em silêncio um `cMun` não provado é exatamente o que aquela função
-        // existe para impedir. Ausente conta como não provado.
-        pend(
-          PENDENCIA.CONSULTA_MUNICIPIO_NAO_PROVADO,
-          "A consulta trouxe um código de município que não foi conferido contra a lista oficial "
-          + "do IBGE. Não usamos código de município sem prova: a nota sairia no município errado. "
-          + "Preencha o endereço nesta linha."
-        );
       } else {
-        endereco = daConsulta;
-        origemEndereco = ORIGEM_ENDERECO.CONSULTA;
+        // ⚠⚠ A PROVA TRIPLA É REFEITA **AQUI**, no servidor — ver `conferirMunicipioDaConsulta`.
+        // Até 20/08/2026 este ramo lia `consulta.cMunVerificado`, um booleano do NAVEGADOR. Numa
+        // emissão em lote isso seriam 50 notas fiscais apoiadas numa afirmação que ninguém conferiu.
+        const municipio = conferirMunicipioDaConsulta(daConsulta.cMun, consulta, municipios);
+        if (!municipio.ok) {
+          pend(municipio.pendencia, municipio.texto);
+        } else {
+          if (municipio.conferencia) conf(municipio.conferencia, municipio.texto);
+          endereco = daConsulta;
+          origemEndereco = ORIGEM_ENDERECO.CONSULTA;
+        }
       }
     }
   }

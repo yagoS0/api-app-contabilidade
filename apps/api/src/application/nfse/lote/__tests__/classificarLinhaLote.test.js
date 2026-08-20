@@ -28,6 +28,20 @@ const MUNICIPIOS = [
   ["3550308", "São Paulo", "SP"],
 ];
 
+/**
+ * Uma consulta BEM-SUCEDIDA, na forma que o front manda desde 20/08/2026.
+ *
+ * ⚠ `municipio`/`uf` são o NOME e a UF da MESMA resposta que trouxe o `cMun`. Sem eles o servidor
+ * não fecha a prova 3 e recusa a linha — falha fechado, de propósito.
+ */
+const CONSULTA_OK = {
+  ok: true,
+  cMunVerificado: true,
+  endereco: ENDERECO_COMPLETO,
+  municipio: "Rio de Janeiro",
+  uf: "RJ",
+};
+
 function linha(valores, numero = 2) {
   return {
     numero,
@@ -110,28 +124,84 @@ describe("CONSULTAR — e só para CNPJ", () => {
     expect(r.tipoDocumento).toBe("CPF");
   });
 
-  it("consulta bem-sucedida com cMun PROVADO preenche o endereço", () => {
+  it("consulta com o município provado CONTRA A LISTA preenche o endereço", () => {
     const r = classificarLinhaLote(linha({}), {
       municipios: MUNICIPIOS,
       consulta: {
         ok: true,
-        cMunVerificado: true,
         endereco: { cMun: "3304557", CEP: "20031005", xLgr: "Av. Rio Branco", nro: "1", xBairro: "Centro" },
+        // ⚠ O nome e a UF da MESMA resposta — é o que fecha a prova 3, agora no servidor.
+        municipio: "Rio de Janeiro",
+        uf: "RJ",
       },
     });
     expect(r.estado).toBe(ESTADO.PRONTA);
     expect(r.origemEndereco).toBe(ORIGEM_ENDERECO.CONSULTA);
   });
 
-  it("⚠⚠ consulta cujo cMun NÃO foi provado é RECUSADA — a prova tripla não se pula", () => {
+  // ⚠⚠ O TESTE QUE DÁ SENTIDO À MUDANÇA DE 20/08/2026. Até aqui o servidor lia `cMunVerificado` e
+  // aceitava. Um front adulterado — ou só defeituoso — afirmando `true` com o código de OUTRO
+  // município emitiria a nota no município errado, e em lote isso é 50 notas de uma vez.
+  it("⚠⚠ `cMunVerificado: true` NÃO é mais prova: código que não bate com a resposta é RECUSADO", () => {
     const r = classificarLinhaLote(linha({}), {
+      municipios: MUNICIPIOS,
       consulta: {
         ok: true,
+        cMunVerificado: true,
+        // 3550308 é São Paulo/SP…
+        endereco: { cMun: "3550308", CEP: "20031005", xLgr: "Av.", nro: "1", xBairro: "Centro" },
+        // …e a resposta que trouxe esse código diz Rio de Janeiro/RJ.
+        municipio: "Rio de Janeiro",
+        uf: "RJ",
+      },
+    });
+    expect(r.estado).toBe(ESTADO.PENDENTE);
+    expect(codigos(r)).toContain(PENDENCIA.CONSULTA_MUNICIPIO_NAO_PROVADO);
+    expect(r.pendencias[0].texto).toContain("São Paulo");
+    expect(r.pendencias[0].texto).toContain("Rio de Janeiro");
+  });
+
+  it("⚠ consulta sem NOME/UF não fecha a prova 3 — recusa em vez de aceitar pela metade", () => {
+    const r = classificarLinhaLote(linha({}), {
+      municipios: MUNICIPIOS,
+      consulta: {
+        ok: true,
+        cMunVerificado: true,
         endereco: { cMun: "3304557", CEP: "20031005", xLgr: "Av.", nro: "1", xBairro: "Centro" },
       },
     });
     expect(r.estado).toBe(ESTADO.PENDENTE);
     expect(codigos(r)).toContain(PENDENCIA.CONSULTA_MUNICIPIO_NAO_PROVADO);
+  });
+
+  it("⚠ código da consulta fora da lista oficial é RECUSADO", () => {
+    const r = classificarLinhaLote(linha({}), {
+      municipios: MUNICIPIOS,
+      consulta: {
+        ok: true,
+        endereco: { cMun: "9999999", CEP: "20031005", xLgr: "Av.", nro: "1", xBairro: "Centro" },
+        municipio: "Cidade Que Não Existe",
+        uf: "RJ",
+      },
+    });
+    expect(r.estado).toBe(ESTADO.PENDENTE);
+    expect(codigos(r)).toContain(PENDENCIA.CONSULTA_MUNICIPIO_NAO_PROVADO);
+  });
+
+  // ⚠ Falha FECHADO, igual ao caminho da planilha: sem lista não se prova, e não provado não emite.
+  it("⚠⚠ sem a lista injetada, a consulta NÃO vira PRONTA — cai em conferência", () => {
+    const r = classificarLinhaLote(linha({}), {
+      municipios: null,
+      consulta: {
+        ok: true,
+        cMunVerificado: true,
+        endereco: { cMun: "3304557", CEP: "20031005", xLgr: "Av.", nro: "1", xBairro: "Centro" },
+        municipio: "Rio de Janeiro",
+        uf: "RJ",
+      },
+    });
+    expect(r.estado).toBe(ESTADO.CONFERIR);
+    expect(codigos(r)).toContain(CONFERENCIA.MUNICIPIO_NAO_CONFERIDO);
   });
 
   it("⚠ falha da consulta é pendência DA LINHA, com o motivo — não é erro do cliente", () => {
@@ -248,7 +318,7 @@ describe("⚠⚠ A LISTA É FECHADA — e o padrão nunca é “pronta”", () =
     [{ email: "x" }, { municipios: MUNICIPIOS, tomadorConhecido: ENDERECO_COMPLETO }],
     [{}, { consulta: { ok: false, motivo: "timeout" } }],
     [{}, { consulta: { ok: true, endereco: null } }],
-    [{}, { consulta: { ok: true, cMunVerificado: true, endereco: ENDERECO_COMPLETO } }],
+    [{}, { consulta: CONSULTA_OK }],
     [{ nro: "10" }, { municipios: MUNICIPIOS }],
   ];
 
@@ -325,7 +395,7 @@ describe("a planilha inteira — e os resultados PARCIAIS de consulta", () => {
     const r = classificarPlanilhaLote(planilha, {
       municipios: MUNICIPIOS,
       consultas: {
-        [CNPJ]: { ok: true, cMunVerificado: true, endereco: ENDERECO_COMPLETO },
+        [CNPJ]: CONSULTA_OK,
         // 39254243000282 ainda não foi consultado — e isso não derruba nada.
       },
     });
@@ -348,17 +418,21 @@ describe("a planilha inteira — e os resultados PARCIAIS de consulta", () => {
     expect(r.linhas[0].estado).toBe(ESTADO.CONFERIR); // o zero recuperado continua marcado
   });
 
+  // ⚠ O QUE ESTE TESTE MEDE É A FORMA DO MAPA (Map × objeto simples), não a regra do município —
+  // por isso a lista é injetada nos DOIS lados. Até 20/08/2026 o primeiro caso rodava sem lista e
+  // ainda assim esperava `PRONTA`, porque o servidor aceitava o `cMunVerificado` do navegador.
+  // Hoje quem prova é o servidor: sem lista, nada da consulta vira `PRONTA` (há teste próprio para
+  // isso, em "sem a lista injetada"), e manter aqui o caso sem lista mediria duas coisas ao mesmo
+  // tempo — e falharia pela razão errada.
   it("aceita Map e objeto simples nos dois mapas", () => {
     const comMap = classificarPlanilhaLote([linha({}, 2)], {
-      consultas: new Map([[CNPJ, { ok: true, cMunVerificado: true, endereco: ENDERECO_COMPLETO }]]),
+      municipios: MUNICIPIOS,
+      consultas: new Map([[CNPJ, CONSULTA_OK]]),
     });
-    // ⚠ Sem a lista do IBGE aqui, e mesmo assim PRONTA: o `municipio_nao_conferido` vale para o
-    // `cMun` vindo da PLANILHA. O da consulta já veio com a prova tripla feita por quem consultou
-    // (`cMunVerificado: true`) — é a prova mudando de camada, não sumindo.
     expect(comMap.linhas[0].estado).toBe(ESTADO.PRONTA);
     const comObjeto = classificarPlanilhaLote([linha({}, 2)], {
       municipios: MUNICIPIOS,
-      consultas: { [CNPJ]: { ok: true, cMunVerificado: true, endereco: ENDERECO_COMPLETO } },
+      consultas: { [CNPJ]: CONSULTA_OK },
     });
     expect(comObjeto.linhas[0].estado).toBe(ESTADO.PRONTA);
   });

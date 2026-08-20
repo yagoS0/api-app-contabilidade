@@ -6,6 +6,11 @@ watchPatterns = [
   "railway.toml",
   "docker/**",
   "apps/api/**",
+  # ⚠ O `apps/api` passou a importar `@contabilidade/shared/municipios-ibge` (lista do IBGE) em
+  # 20/08/2026. Sem este padrão, atualizar a lista NÃO dispararia rebuild da API: o container
+  # continuaria servindo a tabela antiga, e a divergência apareceria só como nota emitida no
+  # município errado — silenciosa, que é o que a lista existe para impedir.
+  "packages/**",
   "package.json",
   "package-lock.json"
 ]

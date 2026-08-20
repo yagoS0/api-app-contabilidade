@@ -13,12 +13,21 @@ import {
 } from "./lib/estadoDaLinhaDoLote";
 import { consultarDocumentos } from "./lib/consultasDoLote";
 import { lerRecusaDaPlanilha } from "./lib/recusaDaPlanilha";
+import {
+  aindaCorrendo,
+  avisoDaLinhaIndeterminada,
+  confirmacaoDaEmissao,
+  conviteParaRetomar,
+  resumoDaEmissao,
+  somarValorDasProntas,
+  textoDoDesfecho,
+} from "./lib/emissaoDoLote";
 
 /**
- * O LOTE POR PLANILHA — a tela de CONFERÊNCIA. **Ela prepara; ela não emite.**
+ * O LOTE POR PLANILHA — conferir e, no fim, EMITIR.
  *
- * ⚠ O TÍTULO E O BOTÃO QUE LEVA AQUI DIZEM "PREPARAR", e isso é deliberado: chamá-los de "Emitir
- * em lote" prometeria um comportamento que esta fase não tem. A frase que descreve um comportamento
+ * ⚠⚠ **ESTA TELA PASSOU A EMITIR EM 20/08/2026.** O cabeçalho anterior dizia "ela prepara; ela não
+ * emite", e a frase ficou falsa — está corrigida aqui, porque a frase que descreve um comportamento
  * é parte do comportamento.
  *
  * > Dono (19/08/2026): *"a planilha deve ser baixada por nós o modelo, o cliente preenche; se o
@@ -26,10 +35,16 @@ import { lerRecusaDaPlanilha } from "./lib/recusaDaPlanilha";
  * > API; e se a API não retornar nós avisamos isso em uma tela para ajuste daquela nota; ajustando,
  * > ele passa por todas as notas para conferir e pode emitir em lote."*
  *
- * ⚠⚠ **ESTA TELA NÃO EMITE, E NÃO TEM BOTÃO DE EMITIR.** Ela termina em "pronto para emitir" e para
- * ali. A emissão em série é a fase perigosa e tem regras próprias (sequencial, parada no desfecho
- * desconhecido, numeração queimada) que **não estão construídas**. Um botão aqui, mesmo desabilitado,
- * seria a promessa de um comportamento que não existe.
+ * ⚠⚠ **O BOTÃO DE EMITIR É O ATO MAIS PERIGOSO DESTE PORTAL.** Cada linha pronta vira uma nota
+ * fiscal irreversível no sistema nacional, em série. O que protege quem clica:
+ *
+ *   • a CONFIRMAÇÃO é esta tela — ela já mostra linha a linha. O bloco final confirma o que ela
+ *     mostra (quantas, o total, e que é definitivo). ⚠ **Um bloco, não 50**: confirmação repetida
+ *     ensina a clicar sem ler, e confirmação que ninguém lê é pior que nenhuma;
+ *   • ⚠ o servidor **reclassifica a planilha inteira** — o que esta tela manda é o ARQUIVO, nunca a
+ *     lista de linhas. A tela não escolhe o que se emite;
+ *   • ⚠⚠ se o lote parar por **desfecho desconhecido**, a tela GRITA a linha e **não oferece
+ *     retentativa dela** — nem com aviso, nem escondida. Retomar segue DEPOIS dela.
  *
  * ⚠ **A CLASSIFICAÇÃO É DO BACKEND** (`application/nfse/lote/classificarLinhaLote.js`). A tela
  * mostra. As duas únicas decisões que moram deste lado estão em `lib/`, e as duas foram DELEGADAS
@@ -56,6 +71,13 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
   // na sessão da tela: nada disso é gravado em lugar nenhum.
   const [consultas, setConsultas] = useState({});
   const [ajustes, setAjustes] = useState({});
+
+  // ⚠⚠ O ESTADO DA EMISSÃO. `confirmando` é o passo que separa o clique do ato fiscal.
+  const [confirmando, setConfirmando] = useState(false);
+  const [lote, setLote] = useState(null);
+  const [emitindo, setEmitindo] = useState(false);
+  const [erroEmissao, setErroEmissao] = useState(null);
+  const [reconhecido, setReconhecido] = useState(false);
 
   const [municipios, setMunicipios] = useState(null);
   const [municipiosFalharam, setMunicipiosFalharam] = useState(false);
@@ -89,7 +111,34 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
     setAjustes({});
     setEmAjuste(null);
     setProgresso(null);
+    // ⚠ O LOTE TAMBÉM. Um relatório de emissão da empresa anterior, visível sob o nome da nova,
+    // faria alguém acreditar que emitiu notas para o CNPJ errado — ou que não emitiu as que emitiu.
+    setLote(null);
+    setConfirmando(false);
+    setErroEmissao(null);
+    setReconhecido(false);
   }, [companyId]);
+
+  // ⚠⚠ O POLLING. O lote corre no servidor (uma nota pode levar até 15 s), e o desfecho de cada
+  // linha já está gravado quando acontece — então fechar a aba não perde nada. Enquanto ela está
+  // aberta, a tela pergunta a cada 2 s.
+  useEffect(() => {
+    if (!lote?.id || !aindaCorrendo(lote)) return undefined;
+    let vivo = true;
+    const id = setInterval(async () => {
+      try {
+        const r = await api.consultarLoteEmissao(companyId, lote.id);
+        if (vivo && r?.lote) setLote(r.lote);
+      } catch {
+        // ⚠ Falha de polling NÃO é falha do lote — ele segue no servidor. Silenciar aqui é o certo:
+        // um erro na tela faria a pessoa achar que a emissão parou, e ela não parou.
+      }
+    }, 2000);
+    return () => {
+      vivo = false;
+      clearInterval(id);
+    };
+  }, [companyId, lote]);
 
   const veredito = vereditosDoLote(leitura, { municipios });
   const resumo = veredito.resumo;
@@ -174,6 +223,46 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
   }
 
   /** Guarda o que a pessoa digitou nesta linha e manda reclassificar. */
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠ A EMISSÃO — daqui sai nota fiscal de verdade, em série
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+
+  async function emitirDeVerdade() {
+    setConfirmando(false);
+    setErroEmissao(null);
+    setEmitindo(true);
+    try {
+      // ⚠ VAI O ARQUIVO, não a lista de linhas. Quem decide o que é `pronta` é o servidor, que
+      // reclassifica tudo de novo — a tela não escolhe o que se emite.
+      const r = await api.emitirLoteDeNotas(companyId, arquivo, { consultas, ajustes });
+      setReconhecido(Boolean(r?.reconhecido));
+      setLote(r?.lote || null);
+    } catch (err) {
+      setErroEmissao(err);
+    } finally {
+      setEmitindo(false);
+    }
+  }
+
+  /**
+   * ⚠⚠ RETOMAR — e o servidor começa DEPOIS da linha indeterminada, nunca nela.
+   *
+   * Esta tela não decide isso e não pode contorná-lo: ela só pede a retomada. A ressalva aparece
+   * ANTES do clique (ver `conviteParaRetomar`), porque "retomar" se lê como "resolver tudo".
+   */
+  async function retomar() {
+    setErroEmissao(null);
+    setEmitindo(true);
+    try {
+      const r = await api.retomarLoteEmissao(companyId, lote.id);
+      setLote(r?.lote || null);
+    } catch (err) {
+      setErroEmissao(err);
+    } finally {
+      setEmitindo(false);
+    }
+  }
+
   async function salvarAjuste(numero, celulas) {
     const acumulado = { ...ajustes, [numero]: { ...(ajustes[numero] || {}), ...celulas } };
     setAjustes(acumulado);
@@ -335,11 +424,30 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
             </table>
           </div>
 
-          <p className="muted" style={{ fontSize: ".85rem" }}>
-            {/* ⚠ A AUSÊNCIA DO BOTÃO DE EMITIR PRECISA SER DITA: sem esta linha, quem terminar a
-                conferência procura um botão que não existe. */}
-            Esta tela confere a planilha. A emissão em lote ainda não está disponível aqui.
-          </p>
+          {/* ⚠⚠ O ATO. Só aparece quando há linha pronta — botão que não pode fazer nada não
+              precisa existir —, e nunca enquanto a consulta em série ainda está correndo. */}
+          {erroEmissao ? <AlertaErro erro={erroEmissao} /> : null}
+
+          {lote ? (
+            <RelatorioDoLote lote={lote} reconhecido={reconhecido} ocupado={emitindo} aoRetomar={retomar} />
+          ) : resumo.prontas > 0 && fase === "ocioso" ? (
+            <BlocoDeEmissao
+              prontas={resumo.prontas}
+              naoProntas={naoProntas}
+              valorTotal={somarValorDasProntas(veredito.linhas)}
+              confirmando={confirmando}
+              ocupado={emitindo}
+              aoPedirConfirmacao={() => setConfirmando(true)}
+              aoCancelar={() => setConfirmando(false)}
+              aoConfirmar={emitirDeVerdade}
+            />
+          ) : (
+            <p className="muted" style={{ fontSize: ".85rem" }}>
+              {/* ⚠ A ausência continua sendo DITA — mas agora ela é sobre não haver linha pronta,
+                  não sobre o botão não existir. */}
+              Nenhuma linha está pronta para emitir. Corrija o que está marcado acima.
+            </p>
+          )}
         </>
       ) : null}
     </>
@@ -441,6 +549,171 @@ function LinhaDoLote({ linha, emAjuste, aoAbrirAjuste, aoFecharAjuste, aoSalvar,
         </tr>
       ) : null}
     </>
+  );
+}
+
+
+/**
+ * ⚠⚠ O BOTÃO QUE EMITE, E A CONFIRMAÇÃO DE UM BLOCO SÓ.
+ *
+ * A confirmação é a TELA — ela já mostrou linha a linha. Este bloco confirma o que ela mostra:
+ * quantas, o total e que é definitivo. ⚠ Repetir a pergunta por nota ensinaria a clicar sem ler.
+ *
+ * ⚠ O botão de confirmar NASCE fora da tela e só aparece depois do primeiro clique: um ato
+ * irreversível não pode estar a um clique acidental de distância.
+ */
+function BlocoDeEmissao({
+  prontas,
+  naoProntas,
+  valorTotal,
+  confirmando,
+  ocupado,
+  aoPedirConfirmacao,
+  aoCancelar,
+  aoConfirmar,
+}) {
+  const texto = confirmacaoDaEmissao({ prontas, valorTotal });
+
+  if (!confirmando) {
+    return (
+      <div style={{ marginTop: "12px" }} data-emissao="convite">
+        <button type="button" className="btn btn-primary" onClick={aoPedirConfirmacao} disabled={ocupado}>
+          Emitir {prontas} {prontas === 1 ? "nota" : "notas"}
+        </button>
+        {naoProntas > 0 ? (
+          <p className="muted" style={{ fontSize: ".82rem", marginTop: "6px" }}>
+            {/* ⚠ Quem tem 3 de 50 prontas precisa saber que as outras 47 NÃO vão sair — senão o
+                clique parece emitir a planilha inteira. */}
+            As outras {naoProntas} linhas não serão emitidas.
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ marginTop: "12px", padding: "14px" }} data-emissao="confirmacao">
+      <h3 style={{ marginTop: 0 }}>{texto.titulo}</h3>
+      <p style={{ margin: "4px 0" }}>
+        Valor total: <strong>{brl(valorTotal)}</strong>
+        {naoProntas > 0 ? <> · {naoProntas} linhas ficam de fora</> : null}
+      </p>
+      <p className="muted" style={{ fontSize: ".85rem" }}>{texto.aviso}</p>
+      <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+        <button type="button" className="btn btn-primary" onClick={aoConfirmar} disabled={ocupado}>
+          {ocupado ? "Emitindo…" : "Confirmar e emitir"}
+        </button>
+        <button type="button" className="btn" onClick={aoCancelar} disabled={ocupado}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * O RELATÓRIO — o que aconteceu com cada linha.
+ *
+ * ⚠⚠ A LINHA INDETERMINADA VEM PRIMEIRO E EM DESTAQUE. Ela é o pior estado deste sistema: pode
+ * existir uma nota fiscal no mundo e ninguém sabe qual. Enterrá-la no meio de uma tabela de 50
+ * linhas seria esconder exatamente o que precisa de ação humana.
+ */
+function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar }) {
+  const resumo = resumoDaEmissao(lote);
+  const aviso = avisoDaLinhaIndeterminada(lote);
+  const convite = conviteParaRetomar(lote);
+
+  return (
+    <div style={{ marginTop: "12px" }} data-emissao="relatorio" data-status-lote={lote.status}>
+      {reconhecido ? (
+        <p className="muted" style={{ fontSize: ".85rem" }} data-emissao="reconhecido">
+          {/* ⚠ Esta planilha JÁ tinha sido emitida. Dizer isso é o que impede a pessoa de tentar de
+              novo achando que falhou — e emitir tudo em duplicidade. */}
+          Esta planilha já havia sido emitida. Abaixo está o que aconteceu naquela vez — nenhuma nota
+          nova foi emitida agora.
+        </p>
+      ) : null}
+
+      {aviso ? (
+        <div className="card" style={{ padding: "14px", borderColor: "var(--warning-surface-border)" }} data-emissao="indeterminada">
+          <h3 style={{ marginTop: 0 }}>A linha {aviso.numeroLinha} precisa da sua conferência</h3>
+          <p style={{ margin: "4px 0" }}>
+            {aviso.tomadorNome ? <>Tomador: <strong>{aviso.tomadorNome}</strong>. </> : null}
+            {aviso.rpsNumero ? (
+              <>
+                Número reservado: <strong>{aviso.rpsSerie}/{aviso.rpsNumero}</strong>.
+              </>
+            ) : null}
+          </p>
+          {/* ⚠⚠ O texto vem do SERVIDOR (`paradoMotivo`/`correcao`) — reescrevê-lo aqui criaria uma
+              segunda explicação do mesmo fato, e as duas divergiriam na primeira correção. */}
+          {aviso.motivo ? <p style={{ margin: "4px 0" }}>{aviso.motivo}</p> : null}
+          {aviso.correcao ? <p className="muted" style={{ fontSize: ".85rem" }}>{aviso.correcao}</p> : null}
+        </div>
+      ) : null}
+
+      <div className="grid-3" style={{ marginTop: "10px" }} data-resumo-emissao>
+        <div className="card" style={{ padding: "12px" }}>
+          <div className="rotulo">Emitidas</div>
+          <div className="numero destaque" data-emissao-conta="emitidas">{resumo.emitidas}</div>
+          <div className="apoio">de {resumo.total} linhas</div>
+        </div>
+        <div className="card" style={{ padding: "12px" }}>
+          <div className="rotulo">Recusadas</div>
+          <div className="numero" data-emissao-conta="recusadas">{resumo.recusadas}</div>
+          <div className="apoio">não viraram nota</div>
+        </div>
+        <div className="card" style={{ padding: "12px" }}>
+          <div className="rotulo">Não tentadas</div>
+          <div className="numero" data-emissao-conta="nao-tentadas">{resumo.naoTentadas}</div>
+          <div className="apoio">ninguém encostou nelas</div>
+        </div>
+      </div>
+
+      {convite ? (
+        <div style={{ marginTop: "10px" }} data-emissao="retomar">
+          {/* ⚠⚠ A RESSALVA VEM ANTES DO BOTÃO. "Retomar" se lê como "resolver tudo", e a pergunta
+              que fica é justamente sobre a linha duvidosa. Deixá-la implícita faria a pessoa clicar
+              esperando que aquela nota fosse resolvida — e ela não será, nem deve ser. */}
+          <p style={{ margin: "4px 0" }}>{convite.ressalva}</p>
+          <button type="button" className="btn" onClick={aoRetomar} disabled={ocupado}>
+            {ocupado ? "Retomando…" : `Emitir as ${convite.quantas} linhas seguintes`}
+          </button>
+        </div>
+      ) : null}
+
+      <div className="table-wrap" style={{ marginTop: "10px" }}>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Linha</th>
+              <th>Tomador</th>
+              <th className="num">Valor</th>
+              <th>Nº da nota</th>
+              <th>Desfecho</th>
+              <th>Observação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(lote.linhas || []).map((l) => {
+              const d = textoDoDesfecho(l.desfecho);
+              return (
+                <tr key={l.numeroLinha} data-desfecho={l.desfecho}>
+                  <td>{l.numeroLinha}</td>
+                  <td>{l.tomadorNome}</td>
+                  <td className="num">{brl(Number(l.valorServicos))}</td>
+                  {/* ⚠ O número RESERVADO aparece mesmo quando a linha não virou nota: não existe
+                      inutilização na NFS-e, então número queimado é informação fiscal. */}
+                  <td>{l.rpsNumero ? `${l.rpsSerie}/${l.rpsNumero}` : "—"}</td>
+                  <td><Chip status={d.chip}>{d.rotulo}</Chip></td>
+                  <td>{l.mensagem || l.correcao || "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

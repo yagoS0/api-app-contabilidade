@@ -1400,6 +1400,94 @@ export function createMockApi() {
       };
     },
 
+    // --- ⚠⚠ A EMISSÃO EM LOTE, NO MOCK -------------------------------------------------------
+    //
+    // ⚠⚠ **NADA AQUI EMITE COISA ALGUMA.** Nenhuma chamada de rede sai deste arquivo; o "lote" é
+    // um objeto em memória. A rota real emite NOTA FISCAL EM SÉRIE no sistema nacional.
+    //
+    // ⚠⚠ POR QUE O MOCK PRECISA EXERCITAR O 502 QUE PARA O LOTE. É o caminho mais perigoso do
+    // sistema — desfecho DESCONHECIDO, lote parado, linha que ninguém pode reprocessar — e é
+    // impossível provocá-lo de propósito contra um backend de verdade. Sem ele aqui, a tela que
+    // avisa sobre a linha indeterminada **só seria vista quando acontecesse com nota fiscal real**.
+    //
+    // ─── COMO ALCANÇAR CADA DESFECHO, SEM EDITAR CÓDIGO (sentinela no NOME do arquivo) ────────
+    //
+    //   `#desligado`     → 503 `emissao_lote_desligada` (a flag OFF, que é o estado de nascença)
+    //   `#transporte`    → o lote PARA na 2ª linha, com a indeterminada nomeada
+    //   `#recusa`        → uma linha recusada pela Receita (E0014) e o lote SEGUE
+    //   `#jaemitido`     → 200 `reconhecido: true` — a mesma planilha subida duas vezes
+    //   qualquer outro   → todas emitem
+    //
+    // ⚠ Sentinela fixa, nunca sorteio: sorteio faz "a tela quebrou" e "deu azar" virarem a mesma
+    // coisa. Mesmo desenho dos tokens de redefinição de senha.
+
+    async emitirLoteDeNotas(companyId, arquivo, { consultas = null, ajustes = null } = {}) {
+      await dormir();
+      exigirAcessoEmpresa(companyId);
+      const nome = String(arquivo?.name || "").toLowerCase();
+
+      // ⚠⚠ A FLAG DESLIGADA É O ESTADO DE NASCENÇA, e a recusa é do SERVIDOR — não da tela. Como
+      // ela é NOMEADA, o fallback do mock não a engole (`api/index.js`).
+      if (nome.includes("#desligado")) {
+        throw new ApiError(
+          503,
+          "emissao_lote_desligada",
+          "A emissão de NFS-e em lote está desligada neste ambiente (INTEGRACAO_NFSE_LOTE). "
+            + "Nenhuma nota é emitida enquanto a integração não for habilitada."
+        );
+      }
+
+      const leitura = await this.lerPlanilhaDoLote(companyId, arquivo, { consultas, ajustes });
+      const prontas = leitura.linhas.filter((l) => l.estado === "pronta");
+      if (!prontas.length) {
+        throw new ApiError(
+          422,
+          "nenhuma_linha_pronta",
+          "Nenhuma linha desta planilha está pronta para emitir. Só linhas conferidas e sem "
+            + "pendência entram no lote — confira a tela e corrija o que estiver marcado.",
+          { resumo: leitura.resumo }
+        );
+      }
+
+      const loteId = `lote-mock-${Object.keys(LOTES_EMISSAO_MOCK).length + 1}`;
+      const lote = montarLoteDoMock(loteId, prontas, nome);
+      LOTES_EMISSAO_MOCK[loteId] = lote;
+
+      if (nome.includes("#jaemitido")) return { reconhecido: true, lote };
+      return { reconhecido: false, lote };
+    },
+
+    async consultarLoteEmissao(companyId, loteId) {
+      await dormir();
+      exigirAcessoEmpresa(companyId);
+      const lote = LOTES_EMISSAO_MOCK[loteId];
+      if (!lote) throw new ApiError(404, "lote_nao_encontrado", "Este lote não foi encontrado.");
+      return { lote };
+    },
+
+    /**
+     * ⚠⚠ A RETOMADA NÃO TOCA A LINHA INDETERMINADA — e o mock respeita isso, senão a tela seria
+     * exercitada contra um comportamento que o servidor não tem.
+     */
+    async retomarLoteEmissao(companyId, loteId) {
+      await dormir();
+      exigirAcessoEmpresa(companyId);
+      const lote = LOTES_EMISSAO_MOCK[loteId];
+      if (!lote) throw new ApiError(404, "lote_nao_encontrado", "Este lote não foi encontrado.");
+
+      const corte = Number.isInteger(lote.linhaIndeterminada) ? lote.linhaIndeterminada : -Infinity;
+      lote.linhas = lote.linhas.map((l) =>
+        // ⚠ ESTRITAMENTE MAIOR: a indeterminada continua indeterminada, para sempre, até o contador
+        // decidir o que fazer com ela olhando o portal nacional.
+        l.desfecho === "nao_tentada" && l.numeroLinha > corte
+          ? { ...l, desfecho: "emitida", rpsSerie: "00001", rpsNumero: String(l.numeroLinha) }
+          : l
+      );
+      recontarLoteDoMock(lote);
+      lote.status = lote.naoTentadas > 0 ? "parado_indeterminado" : "concluido";
+      return { lote };
+    },
+
     // --- Emissão de NFS-e ---------------------------------------------------------------------
     //
     // ⚠⚠ **NADA AQUI EMITE COISA ALGUMA.** Nenhuma chamada de rede sai deste arquivo: a "emissão"
@@ -1781,6 +1869,115 @@ const ENDERECO_COMPLETO_MOCK = {
  * As linhas plantadas. ⚠ O `numero` é o do EXCEL (o cabeçalho é a linha 1) — é por ele que a tela
  * diz "linha 7" e a pessoa acha a linha na planilha dela, e é ele que chaveia o ajuste.
  */
+// ⚠⚠ OS LOTES DE EMISSÃO DO MOCK — em memória, e NADA aqui emite coisa alguma.
+const LOTES_EMISSAO_MOCK = {};
+
+/**
+ * Monta o lote já com o desfecho de cada linha, conforme a sentinela do nome do arquivo.
+ *
+ * ⚠⚠ O CASO `#transporte` É O QUE MAIS IMPORTA. Ele reproduz a regra do servidor: a linha do meio
+ * fica **indeterminada** (desfecho DESCONHECIDO — a nota pode existir), o lote PARA ali, e as
+ * seguintes ficam `nao_tentada`, que é a verdade: ninguém encostou nelas.
+ *
+ * ⚠ E o número reservado fica REGISTRADO na linha indeterminada: não existe inutilização na NFS-e,
+ * então um número que não virou nota é buraco permanente — informação fiscal, não detalhe técnico.
+ */
+function montarLoteDoMock(id, prontas, nomeDoArquivo) {
+  const paraTransporte = nomeDoArquivo.includes("#transporte");
+  // ⚠⚠ ONDE O LOTE PARA, e por que NÃO é uma posição fixa.
+  //
+  // O que o caso do TRANSPORTE precisa demonstrar é que **as linhas seguintes ficam `nao_tentada`**
+  // — ninguém encostou nelas. Uma posição fixa (`i === 1`) faz o lote parar na ÚLTIMA linha quando
+  // o mock tem só duas prontas: o estado aparece, mas a propriedade que importa fica sem prova, e o
+  // teste passaria por vacuidade.
+  //
+  // `length - 2` sempre deixa pelo menos uma linha depois, e com 3+ prontas também deixa uma
+  // emitida antes.
+  const indiceDaParada = Math.max(0, prontas.length - 2);
+  const paraRecusa = nomeDoArquivo.includes("#recusa");
+  let parou = false;
+  let linhaIndeterminada = null;
+
+  const linhas = prontas.map((l, i) => {
+    const base = {
+      numeroLinha: l.numero,
+      tomadorDoc: l.valores?.documento ?? l.documento ?? "",
+      tomadorNome: l.valores?.nome ?? "",
+      valorServicos: l.dados?.servico?.valorServicos ?? l.valores?.valor ?? null,
+      rpsSerie: null,
+      rpsNumero: null,
+      serviceInvoiceId: null,
+      camada: null,
+      codigo: null,
+      mensagem: null,
+      correcao: null,
+    };
+    if (parou) return { ...base, desfecho: "nao_tentada" };
+
+    if (paraTransporte && i === indiceDaParada) {
+      parou = true;
+      linhaIndeterminada = l.numero;
+      return {
+        ...base,
+        desfecho: "indeterminada",
+        camada: "TRANSPORTE",
+        codigo: "ETIMEDOUT",
+        rpsSerie: "00001",
+        rpsNumero: String(l.numero),
+        mensagem: "Falha de comunicação com o sistema nacional.",
+        correcao:
+          "Não se sabe se a DPS chegou a ser processada. NÃO reemita com número novo: como a NFS-e "
+          + "não tem inutilização, um número pulado é buraco permanente. Consulte o Id da DPS no "
+          + "sistema nacional antes de decidir.",
+      };
+    }
+    if (paraRecusa && i === 0) {
+      return {
+        ...base,
+        desfecho: "recusada_receita",
+        camada: "RECEITA",
+        codigo: "E0014",
+        rpsSerie: "00001",
+        rpsNumero: String(l.numero),
+        mensagem:
+          "Conjunto de Série, Número, Código do Município Emissor e CNPJ/CPF informado nesta DPS já existe.",
+      };
+    }
+    return {
+      ...base,
+      desfecho: "emitida",
+      rpsSerie: "00001",
+      rpsNumero: String(l.numero),
+      serviceInvoiceId: `si-mock-${l.numero}`,
+    };
+  });
+
+  const lote = {
+    id,
+    status: parou ? "parado_indeterminado" : "concluido",
+    totalLinhas: linhas.length,
+    linhaIndeterminada,
+    paradoEm: parou ? new Date().toISOString() : null,
+    paradoMotivo: parou
+      ? "O pedido desta linha saiu, mas a resposta do sistema nacional não voltou — então NÃO se "
+        + "sabe se a nota foi emitida. O lote parou aqui de propósito."
+      : null,
+    criadoEm: new Date().toISOString(),
+    linhas,
+  };
+  recontarLoteDoMock(lote);
+  return lote;
+}
+
+/** Os totais saem das LINHAS, nunca de um contador incrementado — igual ao servidor. */
+function recontarLoteDoMock(lote) {
+  const conta = (d) => lote.linhas.filter((l) => l.desfecho === d).length;
+  lote.emitidas = conta("emitida");
+  lote.recusadas = conta("recusada_receita") + conta("recusada_nossa");
+  lote.naoTentadas = conta("nao_tentada");
+  return lote;
+}
+
 const LINHAS_DO_LOTE_MOCK = [
   // pronta — pela MEMÓRIA (o *"se já emitiu antes, só preencher"* do dono)
   {

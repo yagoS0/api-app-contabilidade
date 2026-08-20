@@ -403,6 +403,60 @@ export function createRealApi() {
       });
     },
 
+    // --- ⚠⚠ A EMISSÃO EM LOTE — AQUI SAI NOTA FISCAL DE VERDADE, EM SÉRIE ---------------------
+    //
+    // ⚠⚠ Cada linha da planilha vira um ato IRREVERSÍVEL no sistema nacional de produção. Nota
+    // emitida não se apaga: cancela-se, e cancelar é outro ato.
+    //
+    // Contrato lido em `apps/api/src/routes/nfseLoteRoutes.js` (não deduzido):
+    //   POST /client/companies/:id/nfse/lote/emissao              -> 202 {lote} | 200 {reconhecido}
+    //   GET  /client/companies/:id/nfse/lote/emissao/:loteId      -> {lote}
+    //   POST /client/companies/:id/nfse/lote/emissao/:loteId/retomar -> 202 {lote}
+    //
+    // ⚠ Com `INTEGRACAO_NFSE_LOTE` desligada as três respondem **503 `emissao_lote_desligada`**, e
+    // essa recusa é NOMEADA — ou seja, o fallback do mock **não a engole** (ver `api/index.js`).
+
+    /**
+     * ⚠⚠ EMITE. Manda a MESMA planilha conferida; o servidor **reclassifica** e emite as prontas.
+     *
+     * ⚠ O ARQUIVO VAI DE NOVO, e não a lista de linhas. Mandar "o que emitir" deixaria o navegador
+     * escolher por cima da regra — a linha que a classificação recusou entraria com um campo a mais
+     * no JSON. Quem decide o que é `pronta` é o servidor, sempre.
+     *
+     * ⚠ A resposta é **202** (o lote está correndo; acompanhe por `consultarLoteEmissao`) ou **200**
+     * com `reconhecido: true` — a mesma planilha já foi emitida e este é o relatório dela.
+     */
+    async emitirLoteDeNotas(companyId, arquivo, { consultas = null, ajustes = null } = {}) {
+      const form = new FormData();
+      form.append("arquivo", arquivo);
+      if (consultas && Object.keys(consultas).length) form.append("consultas", JSON.stringify(consultas));
+      if (ajustes && Object.keys(ajustes).length) form.append("ajustes", JSON.stringify(ajustes));
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/nfse/lote/emissao`, {
+        method: "POST",
+        body: form,
+      });
+    },
+
+    /** O relatório do lote. Só leitura — é o que a tela consulta enquanto o laço corre. */
+    async consultarLoteEmissao(companyId, loteId) {
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/nfse/lote/emissao/${encodeURIComponent(loteId)}`
+      );
+    },
+
+    /**
+     * ⚠⚠ RETOMA — e o servidor **jamais** reprocessa a linha indeterminada.
+     *
+     * A seleção lá é `numeroLinha > linhaIndeterminada`. Quem decide o que fazer com a linha cujo
+     * desfecho não se sabe é o contador, olhando o portal nacional — não esta tela, e não sozinho.
+     */
+    async retomarLoteEmissao(companyId, loteId) {
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/nfse/lote/emissao/${encodeURIComponent(loteId)}/retomar`,
+        { method: "POST" }
+      );
+    },
+
     // --- Emissão de NFS-e ---------------------------------------------------
     //
     // ⚠⚠ **ESTE É O ÚNICO MÉTODO DESTE ARQUIVO QUE MUDA O MUNDO FORA DO SISTEMA.** Ele bate na

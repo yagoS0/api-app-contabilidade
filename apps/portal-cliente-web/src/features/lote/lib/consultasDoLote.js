@@ -29,14 +29,23 @@ import { decidirConsulta, enderecoDaReceita, NAO_CONSULTA } from "../../emitir/l
  * O contrato foi LIDO de `classificarLinhaLote.js`, não deduzido:
  *   `{ ok: false, motivo }`                       → pendência `consulta_falhou`, com o motivo
  *   `{ ok: true, endereco: null, faltantes }`     → pendência `consulta_sem_endereco`
- *   `{ ok: true, cMunVerificado: true, endereco }`→ endereço aceito, origem `consulta`
+ *   `{ ok: true, endereco, municipio, uf }`       → endereço aceito, origem `consulta`
  *
- * ⚠⚠ **`cMunVerificado` SÓ É `true` COM A PROVA TRIPLA FEITA**, e quem a faz é
- * `enderecoDaReceita`/`codigoMunicipioVerificado`: 7 dígitos + existe na lista oficial + município
- * **e** UF batem com a MESMA resposta. Falhando qualquer prova, `enderecoDaReceita` devolve
- * `endereco: null` — então **não há caminho** em que um `cMun` não provado saia daqui como
- * verificado. O backend recusa `cMunVerificado !== true` justamente para que essa afirmação não
- * seja aceita em silêncio.
+ * ─── ⚠⚠ QUEM PROVA O MUNICÍPIO É O SERVIDOR, DESDE 20/08/2026 ───────────────────────────────
+ *
+ * Este módulo continua fazendo a prova tripla **para a tela** (é ela que precisa decidir o que
+ * mostrar, e `enderecoDaReceita` devolve `endereco: null` quando a prova falha). O que mudou é que
+ * **o backend não acredita mais nela**: ele refaz as três provas com a lista oficial, que agora
+ * alcança pelo pacote compartilhado.
+ *
+ * ⚠ **POR ISSO `municipio` E `uf` VIAJAM CRUS.** Sem eles o servidor consegue provar que o código
+ * existe, mas **não** que ele é o município DESTA resposta — a prova 3 — e recusa a linha. Resumir
+ * a resposta num booleano era exatamente o que deixava 50 notas fiscais apoiadas na palavra do
+ * navegador.
+ *
+ * ⚠ `cMunVerificado` continua sendo enviado por COMPATIBILIDADE de contrato, mas o backend **não o
+ * lê mais**. Não acrescente regra nova apoiada nele: um front adulterado mandando `true` com um
+ * código de outro município é recusado no servidor.
  */
 export function resultadoParaOBackend(resposta, { municipios = null } = {}) {
   if (!resposta || resposta.ok !== true) {
@@ -52,7 +61,16 @@ export function resultadoParaOBackend(resposta, { municipios = null } = {}) {
   if (!leitura.endereco) {
     return { ok: true, cMunVerificado: false, endereco: null, faltantes: leitura.faltantes };
   }
-  return { ok: true, cMunVerificado: true, endereco: leitura.endereco };
+  return {
+    ok: true,
+    cMunVerificado: true,
+    endereco: leitura.endereco,
+    // ⚠ O NOME E A UF **DA MESMA RESPOSTA**, crus, para o servidor refazer a prova 3. Mandar o que
+    // a LISTA diz (em vez do que a consulta disse) faria a conferência comparar a lista consigo
+    // mesma e passar sempre — que é o mesmo que não conferir.
+    municipio: String(resposta.bruto?.municipio ?? "").trim(),
+    uf: String(resposta.bruto?.uf ?? "").trim().toUpperCase(),
+  };
 }
 
 /**

@@ -62,6 +62,11 @@ beforeEach(() => {
   jest.spyOn(api, "lerPlanilhaDoLote");
   jest.spyOn(api, "baixarModeloDoLote");
   jest.spyOn(api, "consultarCnpj");
+  // ⚠ Espiões, não substitutos: o mock continua sendo o backend desta suíte. O que se observa é
+  // SE e COM O QUÊ a emissão foi chamada.
+  jest.spyOn(api, "emitirLoteDeNotas");
+  jest.spyOn(api, "consultarLoteEmissao");
+  jest.spyOn(api, "retomarLoteEmissao");
   jest.spyOn(api, "emitirNfse").mockImplementation(() => {
     throw new Error("⚠⚠ NENHUM TESTE PODE EMITIR NFS-e");
   });
@@ -273,19 +278,50 @@ describe("⚠ ajustar a linha pendente e reclassificar", () => {
   });
 });
 
-describe("⚠⚠ a tela termina em “pronto para emitir” e PARA ali", () => {
-  test("não existe nenhum botão que emita, em nenhum estado da tela", async () => {
+// ⚠⚠ ESTE BLOCO FOI **INVERTIDO**, NÃO APAGADO (20/08/2026).
+//
+// Ele travava o oposto: *"não existe nenhum botão que emita"* + *"e a ausência é DITA"*. Existia
+// para ninguém "consertar" por conta própria uma fase que ainda não tinha as regras da emissão em
+// série. As regras foram construídas, e a trava mudou de lado — agora ela prende o desenho novo:
+// o ato existe, mas **atrás de uma confirmação**, e nunca a um clique de distância.
+//
+// Manter o histórico aqui importa: quem ler daqui a seis meses precisa saber que houve DUAS
+// decisões, senão a primeira volta "consertando" a segunda.
+describe("⚠⚠ o botão de emitir — existe, e só depois de confirmar", () => {
+  test("⚠ o primeiro clique NÃO emite: ele abre a confirmação", async () => {
     await abrirLote();
     await subirPlanilha();
-    const botoes = screen.getAllByRole("button").map((b) => b.textContent);
-    for (const rotulo of botoes) {
-      expect(rotulo).not.toMatch(/emitir em lote|emitir tudo|emitir as notas/i);
-    }
+
+    const botao = await screen.findByRole("button", { name: /emitir \d+ nota/i });
+    fireEvent.click(botao);
+
+    // ⚠⚠ A prova de que o ato não aconteceu: a API de emissão não foi chamada.
+    expect(api.emitirLoteDeNotas).not.toHaveBeenCalled();
+    expect(screen.getByText(/A emissão é definitiva/i)).toBeInTheDocument();
   });
 
-  test("⚠ e a ausência é DITA — senão quem termina a conferência procura um botão que não existe", async () => {
+  test("⚠ dá para desistir na confirmação, e nada é emitido", async () => {
     await abrirLote();
     await subirPlanilha();
-    expect(screen.getByText(/A emissão em lote ainda não está disponível aqui/i)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /emitir \d+ nota/i }));
+    fireEvent.click(screen.getByRole("button", { name: /cancelar/i }));
+    expect(api.emitirLoteDeNotas).not.toHaveBeenCalled();
+  });
+
+  test("⚠⚠ confirmando, o que vai para a API é o ARQUIVO — nunca a lista de linhas", async () => {
+    await abrirLote();
+    await subirPlanilha();
+    fireEvent.click(await screen.findByRole("button", { name: /emitir \d+ nota/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /confirmar e emitir/i }));
+    });
+
+    expect(api.emitirLoteDeNotas).toHaveBeenCalledTimes(1);
+    const [companyId, arquivo, opcoes] = api.emitirLoteDeNotas.mock.calls[0];
+    expect(companyId).toBe("pc-001");
+    expect(arquivo).toBeInstanceOf(File);
+    // ⚠ Nenhuma chave que signifique "estas são as linhas a emitir": quem decide é o servidor,
+    // reclassificando a planilha inteira.
+    expect(Object.keys(opcoes || {}).sort()).toEqual(["ajustes", "consultas"]);
   });
 });

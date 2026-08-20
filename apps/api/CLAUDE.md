@@ -547,10 +547,14 @@ os dois atos da mesma tela, e duas regras divergiriam na primeira correção"*.
 > de um tomador que já teve antes, só preencher; se não teve consultamos na API; e se a API não
 > retornar nós avisamos isso em uma tela para ajuste daquela nota."*
 
-⚠⚠ **NENHUMA DAS DUAS EMITE NADA, e a emissão em lote NÃO EXISTE.** `GET /modelo` devolve um .xlsx;
-`POST /leitura` lê a planilha, classifica cada linha e devolve. Sem ADN, sem SERPRO, sem gravação —
-nem tomador, nem nota. A emissão em série é fase seguinte, com regras próprias (sequencial, parada
-no desfecho desconhecido, numeração queimada) que **não estão construídas**.
+⚠⚠ **ESTE BLOCO DIZIA QUE A EMISSÃO EM LOTE NÃO EXISTIA. ELA FOI CONSTRUÍDA EM 20/08/2026.**
+`GET /modelo` devolve um .xlsx e `POST /leitura` classifica sem gravar nada — as duas continuam
+inertes. O que mudou é que existem mais três portas, e elas EMITEM NOTA FISCAL EM SÉRIE:
+`POST /emissao`, `GET /emissao/:loteId` e `POST /emissao/:loteId/retomar`.
+
+⚠⚠ **AS TRÊS NASCEM DESLIGADAS (`INTEGRACAO_NFSE_LOTE`), COM O SERVIDOR RECUSANDO (503 nomeado)** —
+não é a tela que esconde o botão; um `curl` passaria por cima dela. Ligar é ato do dono,
+acompanhando o primeiro lote real. Ver a seção "A EMISSÃO EM LOTE" logo abaixo.
 
 Regra pura em `application/nfse/lote/` (`colunasLote` · `modeloPlanilhaLote` · `lerPlanilhaLote` ·
 `celulasLote` · `classificarLinhaLote` · `ajustesLote`), fábrica de router em
@@ -611,9 +615,96 @@ dizendo o antigo, e é por isso que `linhasAjustadas` existe e a tela precisa di
 (`exemploDescartado`): ela é uma nota completa e bem formada, e na fase de emissão sairia como
 documento fiscal de verdade.
 
-- Testes: `application/nfse/lote/__tests__/` (116, inclusive `loteNaoEscreveNemEmite` e
-  `ajustesLote`) + `routes/__tests__/nfseLoteRotas.test.js` (28) +
+- Testes: `application/nfse/lote/__tests__/` + `routes/__tests__/nfseLoteRotas.test.js` +
   `routes/client/__tests__/loteMontadoNoPortalDoCliente.test.js` (6).
+
+### ⚠⚠ A EMISSÃO EM LOTE — trabalho PERSISTIDO, sequencial, e que PARA no desfecho desconhecido (20/08/2026)
+
+> Dono: *"ao importar a planilha, as notas devem aparecer em resumo, com campos a modificar se
+> necessário, e ao final ele pode clicar em emitir para emitir todas."*
+
+⚠⚠ **CADA LINHA É UM ATO FISCAL IRREVERSÍVEL**, e o caminho está apontado para o sistema nacional de
+PRODUÇÃO. Nasce DESLIGADA (`INTEGRACAO_NFSE_LOTE`), com o **servidor** recusando.
+
+**Por que NÃO é síncrono — medido, não estimado:**
+
+| | |
+|---|---|
+| piso local por nota | **48 ms** (janela de numeração 29 + assinatura 5,7 + gzip 0,1 + mTLS 13, contra localhost) |
+| teto por nota | **15 000 ms** — o `timeout` do axios em `NfseService.js`. **313× o piso** |
+| conexão | `buildAxiosClient` cria um `https.Agent` NOVO por chamada ⇒ handshake mTLS por nota, sem keep-alive |
+| `server.requestTimeout` (Node 20) | **300 000 ms**, e o `server.js` NÃO o sobrescreve |
+
+Lote de 50 no teto = 750 s ⇒ **o runtime mata a requisição aos 300 s**, no meio, com notas reais já
+emitidas e a resposta descartada. Determinístico para qualquer lote cuja média passe de 6 s/nota.
+
+⚠ **E a razão mais forte não depende disso.** As `ServiceInvoice` já são duráveis (a reserva grava
+antes do envio) — as NOTAS não se perdem. O que não sobrevive a um POST é o **LOTE**: quais linhas
+são dele, qual virou qual nota, **qual é a linha indeterminada**, quais números foram queimados, e a
+identidade que faz a segunda subida ser reconhecida. **Idempotência é afirmação sobre estado que
+dura mais que uma requisição** — não existe versão síncrona dela.
+
+**Models:** `LoteEmissaoNfse` (`lotes_emissao_nfse`) + `LoteEmissaoNfseLinha`
+(`lotes_emissao_nfse_linhas`). Migration `20260820120000_add_lote_emissao_nfse` — **escrita, NÃO
+APLICADA** (⚠ o `schema.prisma` foi editado junto: models NOVOS que nenhuma consulta existente lê).
+
+**As regras, e onde cada uma mora** (`application/nfse/lote/emissaoLote.js`):
+
+- ⚠ **SEQUENCIAL**: `for...of` com `await`, **sem parâmetro de concorrência** — parâmetro é como
+  alguém põe 2 nele depois. Há teste varrendo o arquivo atrás de `Promise.all`.
+- ⚠⚠ **`TRANSPORTE` para o lote NA HORA**, grava `linhaIndeterminada`, `break`. As seguintes ficam
+  `nao_tentada` — que é a verdade: ninguém encostou nelas.
+- ⚠⚠ **A retomada é uma QUERY, não um `if`**: `numeroLinha > linhaIndeterminada`, estritamente
+  maior. A linha cujo desfecho não se sabe **não está no conjunto, por construção**.
+- ⚠⚠ **O estado `enviando`** é gravado ANTES do POST. É a janela entre a reserva de numeração
+  commitar e a resposta voltar: sem ele, um processo que morresse ali deixaria a linha dizendo
+  `nao_tentada` — com número queimado e nota possivelmente emitida — e a retomada a emitiria DE
+  NOVO. Toda linha achada em `enviando` vira `indeterminada`.
+- ⚠⚠ **A reserva da linha é ATÔMICA** (`updateMany` com o desfecho no `where`, e o `count` é lido).
+  **Isto — e não o lock — é o que impede a nota duplicada**: dois processamentos concorrentes do
+  mesmo lote leriam ambos `nao_tentada` e ambos emitiriam. Medido desligando a cláusula: **8
+  emissões para 4 linhas**.
+- ⚠ **Impressão digital** = SHA-256 sobre as linhas `PRONTA` já classificadas, na ordem — **não**
+  sobre os bytes do arquivo (o Excel reescreve metadados; e os `ajustes` mudam o que será emitido
+  sem tocar no arquivo). Segunda subida devolve **200 com o lote existente**, não 409.
+- ⚠ **Só `PRONTA` entra.** `CONFERIR` também carrega `dados` — filtrar por "tem dados" deixaria
+  passar tudo que a conferência rebaixou. Há teste.
+- ⚠ **Recusa da camada `NOSSA` NÃO queima número**: ela acontece no pré-voo, antes da reserva. A
+  linha fica com `rpsNumero` NULO, e o relatório não pode dizer o contrário.
+- ⚠⚠ **Exceção não classificada PARA o lote como indeterminada.** Só uma lista FECHADA de códigos
+  de pré-voo vira recusa local: o `catch` de `issue` grava com `markIssued`, e se ESSA gravação
+  falhar a exceção escapa **depois de o POST ter saído**.
+
+⚠ **`emissaoLote.js` não importa o `NfseService`** — quem emite é INJETADO. É o que faz o dublê ser
+o caminho natural nos testes, não o cuidadoso. Travado por varredura de fonte.
+
+Testes: `lote/__tests__/emissaoLote.test.js` (15, com um Prisma em memória que guarda estado de
+verdade — inclusive o 502 que para o lote, a retomada que pula a indeterminada, a janela `enviando`
+e a concorrência) + `routes/__tests__/nfseLoteEmissaoRota.test.js` (13 — a flag, o portão antes da
+primeira linha, a reconferência no servidor e a idempotência).
+
+### ⚠⚠ A LISTA DO IBGE PASSOU A SER LIDA PELO `apps/api` — e a regra 6 fechou
+
+Até 20/08/2026 o classificador recebia `municipios: null`, e isso tinha duas consequências que só
+apareceram ao desenhar a emissão:
+
+1. **endereço vindo da PLANILHA nunca podia ser `pronta`** (saía `municipio_nao_conferido`, que é
+   conferência e rebaixa a linha) — o cliente que preenchesse o endereço, que é o fluxo do dono,
+   teria **zero** linhas emitíveis;
+2. **o `cMun` da CONSULTA era aceito por um booleano do navegador** (`cMunVerificado`). Na emissão
+   avulsa é uma nota por vez; num lote seriam 50 notas apoiadas numa afirmação não conferida.
+
+Com a tabela unificada em `packages/shared` (arquivo único), o servidor **refaz a prova tripla**
+(7 dígitos + existe na lista + município/UF batem com a MESMA resposta) em
+`conferirMunicipioDaConsulta`. ⚠ **`cMunVerificado` não é mais lido em lugar nenhum** — um front
+que mandasse `true` com o código de outro município é RECUSADO. Por isso o front passou a enviar
+`municipio`/`uf` crus: sem eles a prova 3 não fecha e a linha é recusada (**falha fechado**).
+
+⚠⚠ **E O PACOTE PRECISA ENTRAR NA IMAGEM DO DOCKER.** Em dev o import resolve pelo symlink de
+workspace, então `npm test` passa VERDE sem ele; dentro do container o `import()` estouraria
+`ERR_MODULE_NOT_FOUND` **em runtime**. `Dockerfile` (COPY do pacote, e do `package.json` **antes** do
+`npm ci`) e `railway.toml` (`packages/**` nos `watchPatterns`) foram corrigidos junto, com teste
+guardando os dois: `lote/__tests__/listaIbgeChegaNaImagem.test.js`.
 - A tela: `apps/portal-cliente-web/src/features/lote/` — ver o `CLAUDE.md` de lá.
 
 ### ⚠⚠ O `cMotivo` DO CANCELAMENTO ERA ARBITRADO — e a lista não é a da substituição (19/08/2026)
@@ -2147,6 +2238,10 @@ GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET  (ou SMTP_*)
 PDF_READER_URL   (URL do serviço FastAPI)
 PORT             (default 3000)
 ```
+
+⚠⚠ **`INTEGRACAO_NFSE_LOTE`** — a emissão de NFS-e **em lote**. Nasce OFF, e com ela desligada o
+SERVIDOR recusa (503 `emissao_lote_desligada`), não só a tela. Ligar é ato do dono, acompanhando o
+primeiro lote real: cada linha de planilha vira nota fiscal real e irreversível.
 
 Workers opt-in (default desligados):
 `SERPRO_PGDASD_WORKER_ENABLED`, `SERPRO_DCTFWEB_WORKER_ENABLED`,

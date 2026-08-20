@@ -153,6 +153,7 @@ model Company {
   serviceInvoices          ServiceInvoice[]
   guides                   Guide[]
   tomadoresEmitidos        TomadorEmitido[]
+  lotesEmissaoNfse         LoteEmissaoNfse[]
 
   @@index([regimeTributario])
   @@index([cnaePrincipal])
@@ -566,6 +567,141 @@ model TomadorEmitido {
   /// em toda emissão sem responder a nenhuma pergunta nova.
   @@unique([companyId, documento])
   @@map("tomadores_emitidos")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// EMISSÃO DE NFS-e EM LOTE — o TRABALHO PERSISTIDO, e por que ele não podia ser síncrono
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// ⚠⚠ CADA LINHA DESTE LOTE VIRA UMA NOTA FISCAL IRREVERSÍVEL. Não é um relatório: é uma série de
+// atos fiscais, cada um chamando o sistema nacional com certificado, assinatura e rede.
+//
+// ─── POR QUE PERSISTIDO, E NÃO SÍNCRONO (medido em 20/08/2026) ─────────────────────────────────
+//
+//   • piso local por nota: ~48 ms (janela de numeração 29 + assinatura 5,7 + gzip 0,1 + mTLS 13);
+//   • TETO por nota: **15 000 ms** — o `timeout` do axios em `NfseService.js`. 313× o piso;
+//   • `buildAxiosClient` cria um `https.Agent` NOVO por chamada ⇒ handshake mTLS completo por nota,
+//     sem keep-alive entre as notas do lote;
+//   • `server.requestTimeout` do Node 20 é **300 000 ms** e o `server.js` NÃO o sobrescreve.
+//
+// Logo: um lote de 50 no teto levaria 750 s e **o runtime mata a requisição aos 300 s**, no meio,
+// com notas fiscais reais já emitidas e a resposta descartada. Não é "pode cair" — é determinístico
+// para qualquer lote cuja média passe de 6 s/nota.
+//
+// ⚠ E A RAZÃO MAIS FORTE NEM DEPENDE DISSO. As `ServiceInvoice` já são duráveis (a reserva de
+// numeração grava ANTES do envio), então as NOTAS não se perdem. O que não sobrevive a um POST é o
+// **LOTE**: quais linhas são dele, qual virou qual nota, **qual é a linha indeterminada**, quais
+// números foram queimados, e a identidade que faz a segunda subida da mesma planilha ser
+// RECONHECIDA em vez de reprocessada. Idempotência é afirmação sobre estado que dura mais que uma
+// requisição — não existe versão síncrona dela.
+
+model LoteEmissaoNfse {
+  id String @id @default(uuid())
+
+  /// ⚠ O id da `Company` LEGADA — o mesmo que `ServiceInvoice.companyId` e `TomadorEmitido.companyId`.
+  /// NÃO é o `PortalClient.id` que chega no path do portal do cliente: são entidades diferentes e o
+  /// id de uma nunca encontra a outra. O escopo de ACESSO continua sendo o do path; este aqui é o
+  /// escopo do DADO.
+  companyId String
+
+  /// ⚠⚠ A IDENTIDADE DO LOTE — é ela que faz "a mesma planilha não emite duas vezes".
+  ///
+  /// SHA-256 sobre as linhas `PRONTA` já classificadas, na ordem. **NÃO é o hash do arquivo**: o
+  /// Excel reescreve metadados e o mesmo conteúdo sai com bytes diferentes, e os `ajustes` mudam o
+  /// que vai ser emitido sem tocar no arquivo. A impressão digital é sobre **o que será emitido**,
+  /// que é a definição de duplicidade.
+  impressaoDigital String
+
+  /// emitindo | concluido | parado_indeterminado | erro
+  status String @default("emitindo")
+
+  totalLinhas Int
+  emitidas    Int @default(0)
+  recusadas   Int @default(0)
+  naoTentadas Int @default(0)
+
+  /// ⚠⚠ O NÚMERO DA LINHA DO EXCEL CUJO DESFECHO NÃO SE SABE (falha de TRANSPORTE: o pedido saiu e
+  /// a resposta não voltou — a nota pode existir do outro lado).
+  ///
+  /// ⚠ COLUNA PRÓPRIA, NÃO DERIVADA: depois de um reinício não existe mais nada que diga "nesta
+  /// aqui você não encosta". É sobre ela que a retomada faz `numeroLinha > linhaIndeterminada` —
+  /// uma QUERY, não um `if` que alguém possa inverter depois.
+  linhaIndeterminada Int?
+
+  paradoEm     DateTime?
+  paradoMotivo String?
+
+  criadoPor    String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  linhas  LoteEmissaoNfseLinha[]
+  company Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// ⚠ A TRAVA DA IDEMPOTÊNCIA. A segunda tentativa com a mesma planilha bate aqui e o serviço
+  /// devolve o lote EXISTENTE — não reprocessa, e não responde 409: o que a tela precisa ver é o
+  /// relatório da primeira vez. Duplicidade de nota fiscal não se desfaz, e contar com o E0014 do
+  /// outro lado é contar com sorte.
+  @@unique([companyId, impressaoDigital])
+  @@index([companyId, criadoEm])
+  @@map("lotes_emissao_nfse")
+}
+
+model LoteEmissaoNfseLinha {
+  id     String @id @default(uuid())
+  loteId String
+
+  /// ⚠ O NÚMERO DA LINHA DO EXCEL, nunca índice de array — eles divergem no primeiro cabeçalho ou
+  /// linha em branco, e o desfecho iria para a NOTA ERRADA. Mesma disciplina de `ajustesLote.js`.
+  numeroLinha Int
+
+  /// ⚠⚠ O PAYLOAD CONGELADO — o que a tela de conferência mostrou, na forma que `classificarLinhaLote`
+  /// já devolve. É o que permite RETOMAR sem o arquivo: os `ajustes` NÃO persistem (a planilha no
+  /// disco continua dizendo o antigo), então pedir o arquivo de novo na retomada emitiria conteúdo
+  /// diferente do confirmado, ou devolveria as linhas a pendentes.
+  dados Json
+
+  /// Repetidos fora do `dados` para o relatório poder NOMEAR a linha sem desempacotar o Json.
+  tomadorDoc    String
+  tomadorNome   String
+  valorServicos Decimal   @db.Decimal(18, 2)
+  competencia   DateTime?
+
+  /// nao_tentada | enviando | emitida | recusada_receita | recusada_nossa | indeterminada
+  ///
+  /// ⚠⚠ `enviando` NÃO É ENFEITE — é a janela entre a reserva de numeração COMMITAR e o POST
+  /// voltar. Se o processo morrer ali, a linha diria `nao_tentada` enquanto um número está queimado
+  /// e a nota pode existir, e a retomada a reprocessaria. Toda linha encontrada em `enviando` é
+  /// tratada como `indeterminada`. Sem este estado o desenho tem um caminho SILENCIOSO de
+  /// reemissão.
+  desfecho String @default("nao_tentada")
+
+  serviceInvoiceId String?
+
+  /// ⚠ GRAVADOS NA RESERVA, ANTES DO ENVIO. Não existe inutilização na NFS-e: número reservado que
+  /// não virou nota é BURACO PERMANENTE, e isso é informação fiscal, não detalhe técnico — tem de
+  /// ser legível pelo lote mesmo quando a `ServiceInvoice` diz `falha_envio`.
+  ///
+  /// ⚠ Ficam NULOS na recusa da camada `NOSSA`: ela acontece no pré-voo de `issue`, ANTES da
+  /// reserva. Nenhum número é queimado nesse caminho, e o relatório não pode dizer o contrário.
+  rpsSerie  String?
+  rpsNumero String?
+
+  /// NOSSA | TRANSPORTE | RECEITA — o MESMO vocabulário de `desfechoEmissao.js`, nunca um segundo.
+  camada    String?
+  codigo    String?
+  mensagem  String?
+  correcao  String?
+
+  tentadaEm DateTime?
+  criadoEm  DateTime @default(now())
+
+  lote LoteEmissaoNfse @relation(fields: [loteId], references: [id], onDelete: Cascade)
+
+  /// Uma linha do Excel entra UMA vez em cada lote.
+  @@unique([loteId, numeroLinha])
+  @@index([loteId, desfecho])
+  @@map("lotes_emissao_nfse_linhas")
 }
 
 model AdnSyncState {

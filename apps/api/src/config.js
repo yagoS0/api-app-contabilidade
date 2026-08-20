@@ -482,6 +482,29 @@ if (SERPRO_ENABLE_PGDASD && !SERPRO_CERT_COMPANY_ID)
 // contrato exercido.
 export const INTEGRACAO_WHATSAPP = process.env.INTEGRACAO_WHATSAPP === "1";
 
+// === EMISSÃO DE NFS-e EM LOTE (por planilha) — nasce DESLIGADA ===
+//
+// ⚠⚠ ISTO EMITE NOTA FISCAL EM SÉRIE, E O CAMINHO DA EMISSÃO ESTÁ APONTADO PARA O SISTEMA NACIONAL
+// DE PRODUÇÃO (`NFSE_ENV=producao`, medido em 18/08/2026). Cada linha é um ato irreversível: nota
+// emitida não se apaga, só se cancela — e cancelar é outro ato. Os erros aqui MULTIPLICAM.
+//
+// ⚠ Por isso a funcionalidade nasce OFF e **o SERVIDOR RECUSA operar** com a flag desligada — não é
+// a tela que esconde o botão. Tela escondida é decisão de front; um `curl` passaria por cima dela.
+// Mesmo molde de `INTEGRACAO_WHATSAPP` e `INTEGRACAO_SERPRO_PAGTOWEB`: contrato escrito não é
+// contrato exercido, e uma tela que emite em série não pode chegar à produção ligada por acidente
+// de deploy.
+//
+// ⚠ Ligar é ato do DONO, acompanhando o primeiro lote real. Não é decisão de agente, e não é
+// consequência de "os testes passaram".
+export const INTEGRACAO_NFSE_LOTE = process.env.INTEGRACAO_NFSE_LOTE === "1";
+
+if (INTEGRACAO_NFSE_LOTE) {
+  log.warn(
+    "INTEGRACAO_NFSE_LOTE=1: a emissão de NFS-e EM LOTE está LIGADA. Cada linha de planilha vira "
+      + "nota fiscal real e irreversível no sistema nacional."
+  );
+}
+
 // As cinco credenciais do manual (MANUAL_CADASTRO_WHATSAPP_API.md, Etapa 4).
 // ⚠ TOKEN e APP_SECRET são SEGREDO: nenhum ponto do sistema pode escrevê-los em log, em mensagem
 // de erro ou em teste. O que se registra é a AUSÊNCIA (o nome da variável), nunca o valor.

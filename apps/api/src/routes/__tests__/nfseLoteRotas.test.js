@@ -84,9 +84,14 @@ describe("POST /leitura", () => {
 
     expect(r.status).toBe(200);
     expect(r.body.resumo.total).toBe(1);
-    // ⚠ Sem a lista do IBGE no backend, o `cMun` da planilha sai para CONFERÊNCIA — nunca "pronta".
-    expect(r.body.resumo.conferir).toBe(1);
-    expect(r.body.linhas[0].conferencias[0].codigo).toBe("municipio_nao_conferido");
+    // ⚠⚠ MUDOU EM 20/08/2026, e é o ponto da entrega: a rota injeta a lista oficial do IBGE, então
+    // o `cMun` da planilha é PROVADO aqui e a linha pode ser `pronta`. Antes ela saía sempre em
+    // `conferir` (`municipio_nao_conferido`) — ou seja, o cliente que preenchesse o endereço na
+    // planilha, que é o fluxo que o dono descreveu, teria ZERO linhas emitíveis.
+    expect(r.body.resumo.pronta ?? r.body.resumo.prontas).toBe(1);
+    expect(r.body.resumo.conferir).toBe(0);
+    expect(r.body.linhas[0].conferencias).toEqual([]);
+    expect(r.body.linhas[0].origemEndereco).toBe("planilha");
   });
 
   it("⚠ a memória de tomadores é lida ESCOPADA pela empresa do PATH", async () => {
@@ -124,7 +129,15 @@ describe("POST /leitura", () => {
       .field(
         "consultas",
         JSON.stringify({
-          [CNPJ]: { ok: true, cMunVerificado: true, endereco: { ...ENDERECO, CEP: ENDERECO.cep } },
+          // ⚠ `municipio`/`uf` CRUS: é com eles que o servidor fecha a prova 3. `cMunVerificado`
+          // continua no corpo e é deliberadamente IGNORADO pelo backend desde 20/08/2026.
+          [CNPJ]: {
+            ok: true,
+            cMunVerificado: true,
+            endereco: { ...ENDERECO, CEP: ENDERECO.cep },
+            municipio: "Rio de Janeiro",
+            uf: "RJ",
+          },
         })
       )
       .attach("arquivo", planilha([NOTA, { ...NOTA, documento: "39254243000282" }]), "notas.xlsx");
@@ -258,7 +271,9 @@ describe("⚠ `ajustes` — a linha corrigida na tela é reclassificada pela MES
 
     // ⚠ `conferir`, não `pronta`: o `cMun` da planilha não é conferível no backend (sem a lista do
     // IBGE) — a segunda metade da prova acontece na tela. Ajustar não pula essa conferência.
-    expect(depois.body.linhas[0].estado).toBe("conferir");
+    // ⚠⚠ ERA `conferir` ATÉ 20/08/2026, e virar `pronta` é a prova de que a lista chegou ao
+    // servidor: o endereço digitado na tela é conferido contra o IBGE aqui, não no navegador.
+    expect(depois.body.linhas[0].estado).toBe("pronta");
     expect(depois.body.linhas[0].origemEndereco).toBe("planilha");
     expect(depois.body.linhasAjustadas).toEqual([numero]);
   });

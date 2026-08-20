@@ -322,22 +322,31 @@ Duas fontes, e nenhuma inventa texto de documento fiscal:
 oferece botão nenhum de reenvio: **não um botão com aviso, nenhum botão**.
 ⚠ `nfse_numero_em_estado_indeterminado` (409) é da FAMÍLIA do transporte, não erro de validação.
 
-## O LOTE POR PLANILHA (`src/features/lote/`) — ⚠⚠ ELA PREPARA; ELA NÃO EMITE
+## O LOTE POR PLANILHA (`src/features/lote/`) — confere e, no fim, EMITE
 
 > Dono (19/08/2026): *"a planilha deve ser baixada por nós o modelo, o cliente preenche; se o CNPJ
 > preenchido for de um tomador que já teve antes, só preencher; se não teve consultamos na API; e se
 > a API não retornar nós avisamos isso em uma tela para ajuste daquela nota; ajustando, ele passa
 > por todas as notas para conferir e pode emitir em lote."*
 
-⚠⚠ **A ENTREGA VAI ATÉ "CONFERIR". NÃO HÁ BOTÃO DE EMITIR — nem desabilitado.** A emissão em série é
-a fase perigosa e tem regras próprias (sequencial, parada no desfecho DESCONHECIDO, numeração
-queimada) que não estão construídas. ⚠ E **a ausência é DITA**, em uma linha no fim da tela: sem
-ela, quem termina a conferência procura um botão que não existe. É o critério do dono aplicado —
-*sai a frase que descreve uma ausência visível; fica a que impede uma ausência de ser lida como
-afirmação*.
+⚠⚠ **ESTE BLOCO DIZIA "NÃO HÁ BOTÃO DE EMITIR". ELE EXISTE DESDE 20/08/2026**, e a frase ficou
+falsa — corrigida aqui, porque a frase que descreve um comportamento é parte do comportamento.
 
-⚠ Por isso o botão em Notas e o título dizem **"Preparar lote por planilha"**, e não "Emitir em
-lote": a frase que descreve um comportamento é parte do comportamento.
+O que protege quem clica:
+
+- a **CONFIRMAÇÃO é esta tela**, que já mostra linha a linha. O bloco final confirma o que ela
+  mostra: quantas, o total e que é definitivo. ⚠ **Um bloco, não 50** — confirmação repetida ensina
+  a clicar sem ler, e confirmação que ninguém lê é pior que nenhuma;
+- ⚠ o primeiro clique **não emite**: abre a confirmação. Há teste medindo que a API não foi chamada;
+- ⚠⚠ o que vai para a API é o **ARQUIVO**, nunca a lista de linhas — o servidor **reclassifica tudo**
+  e decide o que é `pronta`. A tela não escolhe o que se emite;
+- ⚠⚠ parando por **desfecho desconhecido**, a tela GRITA a linha (com o número reservado) e **não
+  oferece retentativa dela** — nem com aviso. "Retomar" cobre só as seguintes, e a **ressalva vem
+  antes do botão**, porque "retomar" se lê como "resolver tudo".
+
+⚠ `indeterminada` é **âmbar, nunca vermelho**, e o rótulo é *"Desfecho desconhecido"* — nunca
+"falhou". Vermelho e "falhou" convidam a tentar de novo, que é exatamente como se duplica nota.
+Regras em `lib/emissaoDoLote.js` (18 testes).
 
 Contrato (LIDO de `apps/api/src/routes/nfseLoteRoutes.js`): `GET .../nfse/lote/modelo` (o .xlsx) e
 `POST .../nfse/lote/leitura` (multipart: `arquivo` + `consultas` + `ajustes`). ⚠ O modelo vem por
@@ -349,9 +358,11 @@ Os quatro estados são lista FECHADA (`classificarLinhaLote.js`): `pronta` · `c
 `consultar` · `pendente`. `lib/estadoDaLinhaDoLote.js` é ESPELHO, amarrado por teste que importa o
 `ESTADO` do backend. As duas coisas que esta tela DECIDE são as que o servidor não tem como fazer:
 
-1. ⚠⚠ **A CONFERÊNCIA DO CÓDIGO DO MUNICÍPIO.** A lista oficial do IBGE **não é lida pelo
-   `apps/api`** — ela mora em `packages/shared` (arquivo único desde 20/08/2026; antes eram duas
-   cópias, uma em cada portal) e hoje só os dois fronts a consomem. O backend marca
+1. ⚠⚠ **A CONFERÊNCIA DO CÓDIGO DO MUNICÍPIO — e esta exceção CAIU em 20/08/2026.** O `apps/api`
+   passou a ler a lista de `packages/shared` e **refaz a prova tripla por conta própria**;
+   `cMunVerificado` **não é mais lido pelo servidor**. Por isso `consultasDoLote.js` passou a enviar
+   `municipio`/`uf` CRUS: sem eles a prova 3 não fecha e a linha é recusada (falha fechado). A tela
+   continua conferindo para poder MOSTRAR, mas ela não é mais a autoridade. O backend marca
    `municipio_nao_conferido` e escreve, no próprio arquivo, que *"a conferência acontece na tela de
    ajuste, que tem a lista"*. **Cumprir a segunda metade é obrigação desta tela**: código que existe
    vira "Rio de Janeiro / RJ" na linha (município **e** UF, sempre); código que não existe **derruba
@@ -685,12 +696,11 @@ ninguém notar.
   negócio — E0060/E0061 proíbem a substituta de alterar competência/serviço/local (não optante) e
   tomador/competência/valor (Simples), que é exatamente o que ele queria poder corrigir. Para o uso
   dele, cancelar e emitir nova são dois atos deliberados e resolvem; substituir não.
-- **A EMISSÃO em lote** — ⚠⚠ **este item dizia que o lote inteiro não existia, e ficou falso em
-  19/08/2026.** O que existe hoje é a **preparação**: a tela `features/lote/` baixa o modelo, lê a
-  planilha, confere linha a linha, consulta a Receita e ajusta — e **para ali** (ver a seção
-  própria). O que continua não existindo é o ato: **nenhuma nota é emitida em lote**, não há botão,
-  não há rota. As regras da emissão em série (sequencial, parada no desfecho DESCONHECIDO, numeração
-  queimada) não estão construídas, e é por isso que ela é fase à parte.
+- ~~**A EMISSÃO em lote**~~ — ⚠⚠ **SAIU DESTA LISTA EM 20/08/2026: ela foi construída.** Este item
+  já havia sido corrigido uma vez (dizia que o lote inteiro não existia) e ficou falso de novo. Hoje
+  existe o ato: botão, confirmação, rota, e as regras da emissão em série (persistida, sequencial,
+  parada no desfecho DESCONHECIDO, retomada depois da linha indeterminada, idempotente). ⚠ Nasce
+  DESLIGADA por `INTEGRACAO_NFSE_LOTE`, com o **servidor** recusando. Ver a seção do lote.
 - **Envio da nota por e-mail ao tomador** — não existe. O campo `tomadorEmail` do formulário vira o
   `<email>` **dentro da DPS** (`nfsePayload.js:150` → `NfseService.js:820`); nós não disparamos
   e-mail nenhum a partir daqui.
