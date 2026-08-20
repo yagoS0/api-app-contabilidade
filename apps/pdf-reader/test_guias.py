@@ -49,7 +49,7 @@ do Simples Nacional
 CNPJ Razão Social
 00.000.000/0001-00 EMPRESA EXEMPLO LTDA
 Período de Apuração Data de Vencimento Número do Documento Pagar este documento até
-julho/2026 31/07/2026 07.18.26230.3095657-6
+julho/2026 31/07/2026 07.99.26230.3095657-6
 31/08/2026
 Observações
 DAS de PARCSN (Versão: 2.0.0)
@@ -73,8 +73,9 @@ RIO DE JANEIRO (RJ) - 06/2025
 06/2025
 Totais 246,79 49,35 36,51 332,65
 SENDA (Versão:1.5.9) Página: 1/1 18/08/2026 13:41:30
+85830000003 3 32650328262 9 43079926230 9 30956576080 0 AUTENTICAÇÃO MECÂNICA
 Documento de Arrecadação do Simples Nacional Pague com o PIX
-Número: 07.18.26230.3095657-6
+85830000003 3 32650328262 9 43079926230 9 30956576080 0 Número: 07.99.26230.3095657-6
 Pagar até: 31/08/2026
 Valor: 332,65
 """
@@ -85,7 +86,7 @@ de Receitas Federais
 CNPJ Razão Social
 00.000.000/0001-00 EMPRESA EXEMPLO LTDA
 Período de Apuração Data de Vencimento Número do Documento Pagar este documento até
-Diversos 07.16.26212.4523244-5
+Diversos 07.96.26212.4523244-5
 31/07/2026
 Observações
 web v5.2.2
@@ -109,7 +110,85 @@ Código Denominação Principal Multa Juros Total
 02 PIS - FATURAMENTO - PJ EM GERAL
 PA 06/2026 Vencimento 24/07/2026
 Totais 38.896,89 3.959,93 1.232,26 44.089,08
+85860002406 0 71500385262 0 12079626212 7 45232445107 3 AUTENTICAÇÃO MECÂNICA
+Documento de Arrecadação de Receitas Federais Pague com o PIX
+Número: 07.96.26212.4523244-5
 """
+
+# DARF de PARCELAMENTO não-Simples no FORMULÁRIO NUMERADO — o layout que NÃO tem tabela de
+# composição. Texto real do pdfplumber (CNPJ e razão social trocados; valores e posições
+# preservados, porque é neles que a aritmética fecha e é neles que a armadilha aparece).
+#
+# ⚠ AS DUAS VIAS ESTÃO AQUI DE PROPÓSITO. O documento é impresso em "1a. via" e "2a. via" na MESMA
+# página, então TODO campo aparece duas vezes no texto. Cortar a segunda via daria um teste que não
+# exerce a segmentação nem a exigência de que as duas concordem.
+#
+# ⚠ E A LINHA "2-4 64,32" É A ARMADILHA, não um erro de digitação: o "2-4" é da coluna ESQUERDA
+# (observações) e só o "64,32" pertence ao campo 09. Ele está aqui para que a regra seja exercida
+# contra o texto que quase a engana.
+TEXTO_DARF_PARCELAMENTO_NUMERADO = """1a. via
+MINISTÉRIO DA FAZENDA 02 PERÍODO DE APURAÇÃO 30/04/2026
+SECRETARIA DA RECEITA FEDERAL DO BRASIL
+03 NÚMERO DO CPF OU CNPJ
+Documento de Arrecadação de Receitas Federais 00.000.000/0001-00
+DARF
+04 CÓDIGO DA RECEITA
+1124
+05 NÚMERO DE REFERÊNCIA
+01 NOME / RAZÃO SOCIAL
+06 DATA DE VENCIMENTO
+EMPRESA EXEMPLO LTDA 31/07/2026
+Número do Documento: 07.93.26195.9218090-8 07 VALOR DO PRINCIPAL
+1.503,09
+Data limite para acolhimento: 31/07/2026
+08 VALOR DA MULTA
+Observações:
+02110001200423659112669
+09 VALOR DOS JUROS E / OU
+2-4 64,32
+ENCARGOS DL - 1.025/69
+10 VALOR TOTAL
+1.567,41
+SENDA (Versão:5.2.9) 14/07/2026 15:01:18 11 AUTENTICAÇÃO BANCÁRIA (Somente nas 1a. e 2a. vias)
+85840000015 9 67410385262 1 12079326195 0 92180908750 2
+2a. via
+MINISTÉRIO DA FAZENDA 02 PERÍODO DE APURAÇÃO 30/04/2026
+SECRETARIA DA RECEITA FEDERAL DO BRASIL
+03 NÚMERO DO CPF OU CNPJ
+Documento de Arrecadação de Receitas Federais 00.000.000/0001-00
+DARF
+04 CÓDIGO DA RECEITA
+1124
+05 NÚMERO DE REFERÊNCIA
+01 NOME / RAZÃO SOCIAL
+06 DATA DE VENCIMENTO
+EMPRESA EXEMPLO LTDA 31/07/2026
+Número do Documento: 07.93.26195.9218090-8 07 VALOR DO PRINCIPAL
+1.503,09
+Data limite para acolhimento: 31/07/2026
+08 VALOR DA MULTA
+Observações:
+02110001200423659112669
+09 VALOR DOS JUROS E / OU
+2-4 64,32
+ENCARGOS DL - 1.025/69
+10 VALOR TOTAL
+1.567,41
+SENDA (Versão:5.2.9) 14/07/2026 15:01:18 11 AUTENTICAÇÃO BANCÁRIA (Somente nas 1a. e 2a. vias)
+85840000015 9 67410385262 1 12079326195 0 92180908750 2
+"""
+
+# O MESMO documento com os juros adulterados nas DUAS vias: 1.503,09 + 0 + 60,00 = 1.563,09, e o
+# campo 10 continua dizendo 1.567,41. Nada a corrigir aqui — é o caso em que a resposta certa é
+# NÃO LER.
+TEXTO_NUMERADO_QUE_NAO_FECHA = TEXTO_DARF_PARCELAMENTO_NUMERADO.replace("2-4 64,32", "2-4 60,00")
+
+# O MESMO documento com um segundo valor monetário vazando da coluna ESQUERDA para dentro da janela
+# do campo 09. É exatamente o cenário que a leitura por proximidade erraria em silêncio.
+TEXTO_NUMERADO_AMBIGUO = TEXTO_DARF_PARCELAMENTO_NUMERADO.replace(
+    "ENCARGOS DL - 1.025/69",
+    "ENCARGOS DL - 1.025/69 saldo devedor 1.234,56",
+)
 
 
 def _checar(nome, condicao, detalhe=""):
@@ -158,6 +237,109 @@ def run_regras():
                       compd and compd[0]["periodoApuracao"] == "01/01/2026")
     falhas += _checar("linha com 3 valores: o do meio é MULTA e os juros ficam ZERO",
                       compd and compd[-1]["multa"] == 8.15 and compd[-1]["juros"] == 0)
+
+    # ── Número do documento de arrecadação ─────────────────────────────────────────────────
+    #
+    # ⚠⚠ É A CHAVE QUE O PAGTOWEB CONSULTA. Número errado não dá erro: devolve o comprovante de
+    # OUTRO documento. As checagens abaixo prendem as três condições que tornam a leitura
+    # inequívoca — e, sobretudo, prendem as RECUSAS: cada uma delas é um caminho por onde um
+    # número errado entraria.
+    falhas += _checar("número do DAS sai só com dígitos (17)",
+                      das["fields"].get("numero_documento") == "07992623030956576",
+                      str(das["fields"].get("numero_documento")))
+    falhas += _checar("número do DARF também é lido",
+                      darf["fields"].get("numero_documento") == "07962621245232445",
+                      str(darf["fields"].get("numero_documento")))
+
+    # ⚠ SEM A SEGUNDA TESTEMUNHA, NÃO SE GRAVA. O documento continua dizendo o número no cabeçalho —
+    # e mesmo assim a resposta é ausência, porque uma fonte só não basta para escolher QUAL dívida
+    # vai ser consultada. É a recusa mais fácil de "consertar" por engano.
+    sem_barras = "\n".join(
+        l for l in TEXTO_DAS_PARCELAMENTO.split("\n") if "85830000003" not in l
+    )
+    r = extract_from_text(sem_barras)
+    falhas += _checar("sem código de barras, NÃO grava número",
+                      r["fields"].get("numero_documento") is None
+                      and "numero_documento_sem_codigo_barras" in r["warnings"],
+                      str(r["warnings"]))
+
+    # ⚠ E O CÓDIGO DE BARRAS QUE NÃO CONTÉM O NÚMERO É RECUSA, não aviso: alguma das duas leituras
+    # está errada, e não há como saber qual.
+    r = extract_from_text(TEXTO_DAS_PARCELAMENTO.replace("43079926230", "43079926231"))
+    falhas += _checar("código de barras que não confere ⇒ RECUSA",
+                      r["fields"].get("numero_documento") is None
+                      and "numero_documento_diverge_do_codigo_barras" in r["warnings"],
+                      str(r["warnings"]))
+
+    r = extract_from_text(TEXTO_DAS_PARCELAMENTO.replace(
+        "Número: 07.99.26230.3095657-6", "Número: 07.99.26230.3095657-7"))
+    falhas += _checar("duas leituras divergentes no mesmo documento ⇒ RECUSA",
+                      r["fields"].get("numero_documento") is None
+                      and "numero_documento_ambiguo" in r["warnings"],
+                      str(r["warnings"]))
+
+    falhas += _checar("documento que não é de arrecadação não gera aviso nenhum",
+                      extract_from_text(
+                          "Alvará de funcionamento\n" * 20)["fields"].get("numero_documento") is None)
+
+    # ── DARF de parcelamento no FORMULÁRIO NUMERADO ────────────────────────────────────────
+    #
+    # ⚠ O VÃO QUE ISTO FECHA (medido em 20/08/2026, 3 PDFs reais). Este layout não tem a tabela de
+    # composição: ele saía com `valor_total` certo e `composicao = []`, a parcela ficava sem
+    # `TributoParcela` e a baixa dependia da DECLARAÇÃO manual do contador — com o DARF, que prova
+    # os três componentes, aberto ao lado.
+    num = extract_from_text(TEXTO_DARF_PARCELAMENTO_NUMERADO)
+    compn = num["fields"].get("composicao") or []
+    falhas += _checar("formulário numerado continua tipado DARF",
+                      num["document_type"] == "DARF", num["document_type"])
+    falhas += _checar("formulário numerado passa a ter composição (1 tributo)",
+                      len(compn) == 1, str(len(compn)))
+    falhas += _checar("carrega o CÓDIGO DE RECEITA do campo 04 — é o que prova a origem",
+                      compn and compn[0]["codigo"] == "1124")
+    # ⚠ Os juros vêm da linha "2-4 64,32": o "2-4" é da coluna ESQUERDA. Se algum dia esta checagem
+    # falhar com juros == 2 ou == 4, a janela deixou de conter o valor e voltou a ser proximidade.
+    falhas += _checar("juros são 64,32 — o '2-4' da coluna esquerda NÃO vira valor",
+                      compn and compn[0]["juros"] == 64.32,
+                      str(compn[0]["juros"]) if compn else "—")
+    falhas += _checar("principal é 1.503,09 e o total é 1.567,41",
+                      compn and compn[0]["principal"] == 1503.09 and compn[0]["total"] == 1567.41)
+    # ⚠ O campo 08 vem VAZIO. O zero não é chute: ele é o que a aritmética do próprio documento
+    # confirma — e é por isso que a checagem seguinte existe.
+    falhas += _checar("campo 08 vazio vira multa ZERO (declarada ausente, não derivada)",
+                      compn and compn[0]["multa"] == 0)
+    falhas += _checar("principal + multa + juros = VALOR TOTAL do campo 10",
+                      compn and round(compn[0]["principal"] + compn[0]["multa"]
+                                      + compn[0]["juros"], 2) == compn[0]["total"])
+    falhas += _checar("Σ da composição = valor_total da guia (é o que `lerComposicaoDoDocumento` confere)",
+                      compn and round(sum(c["total"] for c in compn), 2)
+                      == num["fields"].get("valor_total"))
+    # ⚠ Sem denominação: o formulário numerado NÃO nomeia o tributo, e inventar um rótulo seria
+    # afirmar o que o documento não diz.
+    falhas += _checar("denominação fica NULA — o documento não nomeia o tributo",
+                      compn and compn[0]["denominacao"] is None)
+
+    # ── E os dois casos em que a resposta certa é NÃO LER ──────────────────────────────────
+    nfecha = extract_from_text(TEXTO_NUMERADO_QUE_NAO_FECHA)
+    falhas += _checar("aritmética que não fecha RECUSA o documento (não corrige, não subtrai)",
+                      not (nfecha["fields"].get("composicao") or []),
+                      str(nfecha["fields"].get("composicao")))
+    amb = extract_from_text(TEXTO_NUMERADO_AMBIGUO)
+    falhas += _checar("segundo valor na mesma janela é AMBIGUIDADE e RECUSA o documento",
+                      not (amb["fields"].get("composicao") or []),
+                      str(amb["fields"].get("composicao")))
+    # ⚠ O valor_total NÃO depende da composição e continua saindo nos dois casos recusados: a guia
+    # segue registrável, só não prova a decomposição — que é o caminho da declaração manual.
+    falhas += _checar("documento recusado mantém o valor_total (só a decomposição falta)",
+                      nfecha["fields"].get("valor_total") == 1567.41
+                      and amb["fields"].get("valor_total") == 1567.41)
+
+    # ⚠ A TABELA VENCE. O fallback do formulário numerado só pode responder a documento SEM tabela;
+    # se ele começar a morder o DAS/DARF com composição, a composição rica (N tributos, denominação,
+    # período por linha) seria trocada por uma linha só.
+    falhas += _checar("fallback numerado NÃO rouba o DAS com tabela (6 tributos preservados)",
+                      len(comp) == 6, str(len(comp)))
+    falhas += _checar("fallback numerado NÃO rouba o DARF com tabela (3 tributos preservados)",
+                      len(compd) == 3, str(len(compd)))
 
     print(f"\n  {'TODAS AS CHECAGENS PASSARAM' if not falhas else str(falhas) + ' FALHA(S)'}\n")
     return falhas

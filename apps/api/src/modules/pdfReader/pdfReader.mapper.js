@@ -25,6 +25,13 @@ export function mapPdfReaderToParserShape(raw) {
       // A Circular consome `composicao` para gerar provisões sintéticas por tributo.
       composicao: Array.isArray(fields.composicao) ? fields.composicao : null,
       quotas: Array.isArray(fields.quotas) ? fields.quotas : null,
+      // ⚠ O NÚMERO DO DOCUMENTO DE ARRECADAÇÃO — a chave que o PAGTOWEB consulta. Vem SÓ DÍGITOS
+      // (17), como o serviço exige, e só quando o `pdf-reader` conseguiu lê-lo de forma inequívoca:
+      // ele recusa a leitura ambígua e a que não confere com o código de barras do próprio
+      // documento, devolvendo ausência + o motivo em `warnings`. Aqui não há normalização a fazer
+      // — reescrever/limpar este campo neste ponto seria a segunda regra sobre o mesmo dado.
+      numeroDocumento:
+        fields.numero_documento != null ? String(fields.numero_documento) : null,
     },
   };
 }

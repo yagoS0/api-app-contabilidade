@@ -4,6 +4,7 @@ import {
   isGuidePaid,
   markGuidePaidByComprovante,
   markGuideOpenBySerpro,
+  CHECK_RESULT_NAO_LOCALIZADO,
 } from "../../guides/GuidePaymentStatusService.js";
 import { gerarPagamentoInssFromGuide } from "../../accounting/InssPagamentoService.js";
 import { gerarPagamentoParcelaFromGuide, recalcularEstadosParcelasEmAberto } from "../../accounting/parcelamento/ParcelamentoV2Service.js";
@@ -11,6 +12,7 @@ import { confirmarPagamento } from "./SerproPagtoWebService.js";
 import { classificarDocumentoArrecadado } from "./classificarDocumentoArrecadado.js";
 import { consultarDasIndexPorCompetencia } from "./SerproPgdasDeclaracaoService.js";
 import { idsComRotinaAtiva } from "./CompanyRotinasService.js";
+import { WHERE_GUIA_SEM_PARCELAMENTO } from "../../guides/guideContract.js";
 import { INTEGRACAO_SERPRO_PAGTOWEB } from "../../../config.js";
 
 // Q40 Fase A/B: confirmação de pagamento de guias via comprovante oficial (PAGTOWEB).
@@ -51,6 +53,31 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
 
   const tipoUpper = String(guide.tipo || "").toUpperCase();
 
+  // ⚠⚠ A PARCELA DE PARCELAMENTO É `tipo:"SIMPLES"` E **NÃO** PODE SER RESPONDIDA PELO ÍNDICE DO
+  // PGDAS-D. Medido em 20/08/2026, antes de qualquer mudança.
+  //
+  // `confirmarPagamentoDas` pergunta `CONSDECLARACAO13` pela DECLARAÇÃO da competência da guia e
+  // decide por `dasPago`. Numa parcela de PARCSN isso é a pergunta errada sobre o documento errado:
+  // a competência dela é o mês da PRESTAÇÃO, e a declaração daquele mês, quando existe, é a do DAS
+  // de APURAÇÃO — outro documento, com outro número, com outro pagamento. Se o DAS de apuração
+  // estivesse pago, a parcela seria marcada `PAID` por causa dele. É afirmação falsa sobre a dívida
+  // de um cliente, gerada por um documento que ninguém pediu para consultar.
+  //
+  // O que separa as duas é `parcelamentoId` — a MESMA regra que `guideContract.isGuiaDeParcelamento`
+  // já aplica no compliance e no `batch-report`, pelo mesmo motivo (a parcela satisfazia o nó `das`
+  // e a empresa aparecia com "DAS gerada" sem nunca ter gerado o DAS).
+  //
+  // ⚠⚠ E ELA **NÃO** É REDIRECIONADA PARA O PAGTOWEB AQUI, DE PROPÓSITO. Esta função é o corpo do
+  // WORKER e da confirmação em lote, que varrem até 500 guias num laço — mandar parcela para o
+  // PAGTOWEB neste ponto transformaria cada prestação em aberto da carteira numa CHAMADA PAGA, por
+  // execução, sem ninguém ter pedido. Consulta automática de parcela é decisão do dono, não efeito
+  // colateral de um conserto. O caminho da parcela é o BOTÃO
+  // (`POST /firm/guides/:id/buscar-pagamento`), que pergunta pelo `numeroDocumento` DELA, um clique
+  // humano por vez, com a confirmação que já repete documento, valor e competência.
+  if (guide.parcelamentoId) {
+    return { ok: true, skipped: "parcela_sem_confirmacao_automatica", guideId: guide.id };
+  }
+
   // Q46: DAS (Simples) — sinal de pago AUTORITATIVO vem do `dasPago` (CONSDECLARACAO13), não do PAGTOWEB.
   if (tipoUpper === "SIMPLES") {
     return confirmarPagamentoDas({ guide, contribuinteCnpj, userId, logger });
@@ -72,7 +99,11 @@ export async function confirmarPagamentoGuia({ guideId, userId = null, logger = 
   }
 
   if (!result.pago) {
-    await markGuideOpenBySerpro({ guideId: guide.id });
+    // ⚠ "NÃO LOCALIZADO" ≠ "NÃO PAGO". O comprovante pode não estar lá por atraso de processamento
+    // na Receita, por número de documento errado, ou porque o documento é de outro tipo. A guia
+    // continua `OPEN` — o estado em que já estava —, e o registro passa a DIZER que nada foi
+    // localizado, em vez de gravar `"FOUND"` sobre uma busca que não achou nada.
+    await markGuideOpenBySerpro({ guideId: guide.id, checkResult: CHECK_RESULT_NAO_LOCALIZADO });
     return { ok: true, pago: false, guideId: guide.id, mensagem: result.mensagem };
   }
 
@@ -263,6 +294,12 @@ export async function runPaymentConfirmationOnce({ portalClientId = null, compet
     source: "SERPRO",
     status: "PROCESSED",
     paymentStatus: { in: ["OPEN", "OVERDUE"] },
+    // ⚠ PARCELA DE PARCELAMENTO FICA DE FORA DA VARREDURA — a mesma exclusão que `confirmarPagamentoGuia`
+    // faz por guia, aqui na QUERY para ela nem entrar na contagem do resumo (senão a mensagem diria
+    // "N guias consultadas" incluindo as que ninguém consultou). O motivo está lá: o índice do
+    // PGDAS-D responde sobre o DAS de APURAÇÃO da competência, não sobre a prestação, e mandar a
+    // parcela ao PAGTOWEB neste laço transformaria a carteira inteira em chamada paga.
+    ...WHERE_GUIA_SEM_PARCELAMENTO,
     // SIMPLES/INSS + guia de Lucro Presumido (DCTFWeb, tipo OUTRA) — confirmada via PAGTOWEB pelo nº do DARF.
     OR: [
       { tipo: { in: ["SIMPLES", "INSS"] } },

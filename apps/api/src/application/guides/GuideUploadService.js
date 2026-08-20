@@ -36,10 +36,28 @@ function buildExtractedPayload({ parsed, hash, fileName, parserError = null }) {
   const subFields = base.fields && typeof base.fields === "object" ? base.fields : {};
   const composicao = Array.isArray(subFields.composicao) ? subFields.composicao : null;
   const quotas = Array.isArray(subFields.quotas) ? subFields.quotas : null;
+  // ⚠⚠ O `numeroDocumento` SOBE AO TOPO PORQUE É LÁ QUE TODO MUNDO O PROCURA — e "todo mundo" é
+  // literal: `getGuideNumeroDocumento` (worker), `guiaDaParcelaParaTela` (a linha da parcela) e a
+  // rota `POST /firm/guides/:id/buscar-pagamento` leem `extracted.numeroDocumento`. Deixá-lo dentro
+  // de `fields` seria escrevê-lo num lugar que ninguém lê — o botão continuaria desabilitado com o
+  // motivo "guia sem número de documento", exatamente como antes.
+  //
+  // ⚠ SÓ DÍGITOS, e o `pdf-reader` já garante isso. Não normalize de novo aqui: o PAGTOWEB recebe o
+  // valor por `buildPagtoWebPayload`, que faz o seu próprio `replace(/\D+/g, "")`. Uma segunda
+  // limpeza neste ponto seria a segunda regra sobre o mesmo dado — e é assim que dois lugares
+  // passam a discordar sobre qual documento consultar.
+  //
+  // ⚠ AUSÊNCIA É RESPOSTA. O `pdf-reader` devolve `null` quando a leitura não é inequívoca (duas
+  // ocorrências divergentes no documento, ou número que não confere com o código de barras dele),
+  // e o motivo viaja nos `warnings`. Número errado faria o PAGTOWEB consultar o documento de OUTRO
+  // contribuinte — o aviso de `CaptureSerproGuidesService.extractDocumentNumber`, que já custou uma
+  // carteira inteira de guias com o CNPJ do escritório gravado como número.
+  const numeroDocumento = String(subFields.numeroDocumento || "").trim() || null;
   return {
     ...base,
     ...(composicao ? { composicao } : {}),
     ...(quotas ? { quotas } : {}),
+    ...(numeroDocumento ? { numeroDocumento } : {}),
     uploadHash: hash,
     sourceFileName: fileName || null,
     // ⚠ SÓ APARECE QUANDO O PARSER FALHOU — ausência continua significando "extraiu normalmente",

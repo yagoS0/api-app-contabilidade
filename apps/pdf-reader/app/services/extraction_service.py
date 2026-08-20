@@ -4,6 +4,7 @@ from typing import Any
 
 from app.config import settings
 from app.extractors import darf, das, fgts, generic, inss, iss
+from app.extractors.numero_documento import extract_numero_documento
 from app.services import pdf_text
 from app.services.ocr_service import should_fail_short_text
 
@@ -137,6 +138,16 @@ def extract_from_text(text: str) -> dict[str, Any]:
         warnings.append("cnpj_not_found")
     if not fields_out.get("competencia"):
         warnings.append("competencia_not_found")
+
+    # ⚠ O NÚMERO DO DOCUMENTO É LIDO AQUI, FORA DOS EXTRATORES POR TIPO, e isso é de propósito:
+    # ele é o MESMO campo do SENDA em DARF e em DAS, e é a chave que o PAGTOWEB consulta. Colocá-lo
+    # dentro de `darf.py`/`das.py` faria duas leituras da mesma coisa — que é como a composição
+    # acabou alcançável só pelo ramo do DARF. Ausência é resposta; os avisos dizem a CAUSA quando
+    # a leitura foi RECUSADA (ambígua ou em desacordo com o código de barras) em vez de inexistente.
+    numero, avisos_numero = extract_numero_documento(text)
+    if numero:
+        fields_out["numero_documento"] = numero
+    warnings.extend(avisos_numero)
 
     return {
         "success": True,

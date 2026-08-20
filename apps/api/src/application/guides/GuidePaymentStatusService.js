@@ -102,13 +102,34 @@ export async function markGuideOverdueBySerpro({ guideId }) {
   });
 }
 
-export async function markGuideOpenBySerpro({ guideId }) {
+/**
+ * Guia continua EM ABERTO depois de uma consulta ao SERPRO.
+ *
+ * ⚠⚠ `checkResult` EXISTE PORQUE DUAS COISAS MUITO DIFERENTES CHAMAM ESTA FUNÇÃO, e até 20/08/2026
+ * as duas gravavam a MESMA palavra — `"FOUND"`:
+ *
+ *   · o índice do PGDAS-D respondeu sobre a declaração e disse que o DAS **não consta pago**.
+ *     Aí a Receita respondeu de fato, e `"FOUND"` descreve o que aconteceu;
+ *   · o PAGTOWEB **não localizou** o comprovante. Aí não houve resposta nenhuma sobre o pagamento —
+ *     e gravar `"FOUND"` registra, no banco e na tela, que o SERPRO ENCONTROU algo. Ele não
+ *     encontrou. O contador lê esse valor cru na confirmação do próximo clique
+ *     (`parcelaBusca.js`: "⚠ Esta guia já foi consultada em … (FOUND)").
+ *
+ * ⚠ AUSÊNCIA NÃO É PROVA DE NÃO-PAGAMENTO. Comprovante não localizado pode ser atraso de
+ * processamento na Receita, número de documento errado, ou documento de outro tipo. Por isso a
+ * distinção fica no REGISTRO — o `paymentStatus` continua `OPEN`, que é o estado em que a guia já
+ * estava, e nada aqui marca inadimplência.
+ */
+export async function markGuideOpenBySerpro({ guideId, checkResult = "FOUND" }) {
   const now = new Date();
   return updateGuidePaymentStatus(guideId, {
     paymentStatus: "OPEN",
     paymentStatusSource: "SERPRO",
     serproLastCheckedAt: now,
     serproLastSeenAt: now,
-    serproLastCheckResult: "FOUND",
+    serproLastCheckResult: checkResult,
   });
 }
+
+/** O que se grava quando o PAGTOWEB não localizou o comprovante. Vocabulário do mock desde sempre. */
+export const CHECK_RESULT_NAO_LOCALIZADO = "NAO_LOCALIZADO";
