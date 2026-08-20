@@ -8,6 +8,7 @@
 
 # Não copiar build artifacts
 apps/web/dist/
+apps/portal-cliente-web/dist/
 apps/api/dist/
 
 # Não copiar secrets

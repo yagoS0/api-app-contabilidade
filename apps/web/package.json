@@ -12,6 +12,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@contabilidade/shared": "*",
     "@faker-js/faker": "^8.4.1",
     "@hookform/resolvers": "^5.4.0",
     "react": "^19.2.0",
