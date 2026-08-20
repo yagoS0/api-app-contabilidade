@@ -15,6 +15,7 @@ const OUTRO_PORTAL = "portal-2";
 const LEGACY_ID = "company-legacy-1";
 const NOTA_ID = "nota-1";
 const CHAVE = "3".repeat(50);
+const CNPJ_DA_EMPRESA = "11222333000181";
 
 const cenario = {
   emissaoClienteLiberada: true,
@@ -94,6 +95,12 @@ beforeEach(() => {
     numero: "13000",
     status: "EMITIDA",
     statusEfetivo: "autorizada",
+    // ⚠ Campos que a guarda de nota RECEBIDA lê (20/08/2026). `EMIT` + tomador de terceiro = a
+    // nota que a empresa emitiu, o caso normal.
+    papel: "EMIT",
+    type: "NFSE",
+    emitenteDoc: CNPJ_DA_EMPRESA,
+    tomadorDoc: "44555666000177",
   };
 
   NfseService.sendEvent.mockResolvedValue({ status: "accepted", providerData: { ok: true } });
@@ -103,7 +110,7 @@ beforeEach(() => {
   );
   prisma.company.findMany.mockResolvedValue([]);
   prisma.portalClient.findUnique.mockImplementation(async ({ where }) => {
-    if (where?.id === PORTAL_ID) return { id: PORTAL_ID, companyId: LEGACY_ID };
+    if (where?.id === PORTAL_ID) return { id: PORTAL_ID, companyId: LEGACY_ID, cnpj: CNPJ_DA_EMPRESA };
     if (where?.companyId === LEGACY_ID) {
       return { id: PORTAL_ID, emissaoClienteLiberada: cenario.emissaoClienteLiberada };
     }
@@ -194,6 +201,79 @@ describe("⚠⚠ MULTI-TENANCY: a CHAVE não vem do cliente", () => {
     const r = await cancelar(usuarioCliente(), { notaId: "nota-que-nao-existe" });
     expect(r.status).toBe(404);
     expect(r.body.error).toBe("nota_nao_encontrada");
+    expect(NfseService.sendEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ NOTA RECEBIDA NÃO SE CANCELA — pedido do dono (20/08/2026)
+//
+// > *"as notas recebidas não devem ter opção de emitir elas, nem cancelar. Nota recebida foi
+// > emitida PARA NÓS — não temos controle sobre esse tipo de nota."*
+//
+// ⚠ CANCELAR É ATO DO EMITENTE. Numa nota recebida quem emitiu foi o prestador; o nosso cliente é
+// o tomador, e o certificado que assinaria o evento é o da empresa errada (a família do E0718).
+//
+// ⚠⚠ **A TELA É CONVENIÊNCIA; ESTE TESTE É A GARANTIA.** Ele chama a rota DIRETO, sem passar por
+// tela nenhuma — que é exatamente o que alguém com o `curl` na mão faria. E cada caso mede a
+// recusa por **`NfseService.sendEvent` NÃO ter sido chamado**: nada saiu da máquina.
+describe("⚠⚠ nota RECEBIDA: o servidor recusa, mesmo chamando a rota direto", () => {
+  it("`papel: DEST` ⇒ 422 `nota_recebida`, e NADA é cancelado", async () => {
+    cenario.nota = { ...cenario.nota, papel: "DEST" };
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("nota_recebida");
+    expect(r.body.message).toMatch(/emitida PARA a sua empresa/i);
+    expect(NfseService.sendEvent).not.toHaveBeenCalled();
+  });
+
+  it("⚠ sem `papel`, a DEDUÇÃO pelo CNPJ pega: a empresa é a TOMADORA", async () => {
+    // `papel` pode faltar (nota antiga, captura que não o gravou). A segunda fonte é a mesma de
+    // `reaproveitarNota.js`: se o tomador é a empresa e o emitente é outro, ela recebeu.
+    cenario.nota = {
+      ...cenario.nota,
+      papel: null,
+      tomadorDoc: CNPJ_DA_EMPRESA,
+      emitenteDoc: "44555666000177",
+    };
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("nota_recebida");
+    expect(NfseService.sendEvent).not.toHaveBeenCalled();
+  });
+
+  it("⚠⚠ AUSÊNCIA NÃO CASA COM AUSÊNCIA: empresa sem CNPJ não faz TODA nota virar recebida", async () => {
+    // Se `normalizeDoc` devolvesse `""` em vez de `null`, `"" === ""` daria `true` e a dedução
+    // acusaria toda nota de uma empresa sem CNPJ cadastrado — travando o cancelamento inteiro.
+    prisma.portalClient.findUnique.mockImplementation(async ({ where }) => {
+      if (where?.id === PORTAL_ID) return { id: PORTAL_ID, companyId: LEGACY_ID, cnpj: null };
+      if (where?.companyId === LEGACY_ID) {
+        return { id: PORTAL_ID, emissaoClienteLiberada: cenario.emissaoClienteLiberada };
+      }
+      return null;
+    });
+    cenario.nota = { ...cenario.nota, papel: null, tomadorDoc: null, emitenteDoc: null };
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(200);
+    expect(NfseService.sendEvent).toHaveBeenCalled();
+  });
+
+  it("a nota que a empresa EMITIU continua cancelando normalmente", async () => {
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(200);
+    expect(NfseService.sendEvent).toHaveBeenCalled();
+  });
+});
+
+describe("⚠ NF-e é outro documento — e outro caminho de cancelamento", () => {
+  it("`type: NFE` ⇒ 422 `nota_nao_e_nfse`, e NADA é cancelado", async () => {
+    // O `pedRegEvento` que o serviço monta é do leiaute da NFS-e; mandá-lo sobre uma NF-e é pedir
+    // o cancelamento no lugar errado (a SEFAZ é outra). O reaproveitamento já recusava; o
+    // cancelamento não recusava.
+    cenario.nota = { ...cenario.nota, type: "NFE" };
+    const r = await cancelar(usuarioCliente());
+    expect(r.status).toBe(422);
+    expect(r.body.error).toBe("nota_nao_e_nfse");
     expect(NfseService.sendEvent).not.toHaveBeenCalled();
   });
 });

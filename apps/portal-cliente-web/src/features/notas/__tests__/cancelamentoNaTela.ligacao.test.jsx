@@ -51,6 +51,9 @@ function nota(patch = {}) {
     updatedAt: "2026-06-11T00:00:00.000Z",
     hasXml: true,
     hasPdf: false,
+    // ⚠ `papel` passou a viajar no contrato em 20/08/2026 — é ele que distingue a nota que a
+    // empresa EMITIU da que ela RECEBEU.
+    papel: "EMIT",
     confirmadaPeloAdn: true,
     ...patch,
   };
@@ -342,6 +345,20 @@ describe("⚠ BOTÃO IMPOSSÍVEL NÃO SOME — desabilitado, e o motivo continua
     ["nota já CANCELADA", { status: "CANCELADA" }, /já não está válida/i],
     ["NF-e", { type: "NFE" }, /apenas NFS-e/i],
     ["ainda não confirmada pelo ADN", { confirmadaPeloAdn: false, hasXml: false }, /chave de acesso/i],
+    // ⚠⚠ NOTA RECEBIDA — dono, 20/08/2026. Cancelar é ato do EMITENTE.
+    ["RECEBIDA (papel DEST)", { papel: "DEST" }, /emitida PARA a sua empresa/i],
+    [
+      "RECEBIDA (deduzida pelo CNPJ, sem `papel`)",
+      // A nota recebida de verdade tem os DOIS lados invertidos: quem emitiu foi um terceiro, e a
+      // tomadora é a nossa empresa. Trocar só o tomador descreveria uma nota que a empresa emitiu
+      // PARA SI MESMA — outro caso, e ele NÃO é impedimento de cancelamento.
+      {
+        papel: null,
+        emitente: { nome: "PRESTADOR TERCEIRO LTDA", cnpj: "44555666000177" },
+        tomador: { nome: "ACME SERVICOS LTDA", cnpjCpf: CNPJ },
+      },
+      /emitida PARA a sua empresa/i,
+    ],
   ])("%s: desabilitado, com o motivo no `title` e NADA de texto repetido", async (_caso, patch, motivo) => {
     api.getInvoices.mockResolvedValue(resposta([nota(patch)]));
     await abrirNotas();

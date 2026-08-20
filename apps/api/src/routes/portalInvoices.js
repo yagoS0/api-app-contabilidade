@@ -69,6 +69,20 @@ function serializeInvoice(inv) {
     // ⚠ NULO É RESPOSTA. Nota antiga, anterior ao backfill, ou nota cujo XML não trouxe o campo,
     // sai `null` — e a tela trata como "a descrição não veio", que é o que ela já fazia.
     descricao: inv.xDescServ || null,
+    // ⚠⚠ QUEM EMITIU: `EMIT` = a empresa; `DEST` = ela RECEBEU a nota.
+    //
+    // Pedido do dono (20/08/2026): *"as notas recebidas não devem ter opção de emitir elas, nem
+    // cancelar. Nota recebida foi emitida PARA NÓS — não temos controle sobre esse tipo de nota."*
+    //
+    // ⚠ SEM ESTE CAMPO A TELA NÃO TINHA COMO SABER. `podeReaproveitar` já recusava nota recebida,
+    // mas por DEDUÇÃO (comparando o CNPJ do tomador com o da empresa) — porque `papel` não chegava.
+    // A dedução funciona e continua no lugar; o campo a torna direta, e é o mesmo dado que o
+    // servidor usa na guarda do cancelamento. ⚠ Coluna fora de um `select`/serializer volta
+    // `undefined` **sem erro nenhum** — foi assim que `codigosServicoNacional` ficou invisível.
+    //
+    // ⚠ A TELA É CONVENIÊNCIA; A GARANTIA É O SERVIDOR. Quem recusa cancelar nota recebida é
+    // `POST /client/companies/:id/notas/:notaId/cancelar`, mesmo que ninguém olhe este campo.
+    papel: inv.papel || null,
     // ⚠ ESTE CAMPO É O ESTADO, e ele é o que sobrevive a uma auditoria. `true` = a nota veio da
     // projeção do ADN (`PortalInvoice`), que é o sistema nacional confirmando que ela existe.
     // `false` = a linha é da NOSSA emissão (`ServiceInvoice`) e o ADN ainda não a devolveu — o
@@ -112,6 +126,9 @@ function serializeEmitidaNaoConfirmada(si, { emitenteNome, emitenteDoc }) {
     // sistema nacional devolve — e ele ainda não devolveu. A descrição que ORIGINOU esta nota está
     // em `NotaItem`, que pertence à `PortalInvoice` que ainda não existe. `null` é a resposta certa.
     descricao: null,
+    // ⚠ A NOSSA emissão é, por definição, EMITIDA por nós — ela nasce de `NfseService.issue`.
+    // Cravar aqui não é suposição: é o que a linha significa.
+    papel: "EMIT",
     confirmadaPeloAdn: false,
   };
 }

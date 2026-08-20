@@ -50,6 +50,14 @@ const RECUSAS_LOCAIS = Object.freeze({
   NFSE_CNPJ_AUTOR_REQUIRED: { status: 400, error: "cnpj_autor_required" },
   NFSE_NOT_CONFIGURED: { status: 400, error: "nfse_not_configured" },
   NFSE_NOT_FOUND: { status: 404, error: "nfse_not_found" },
+  // ⚠⚠ NOTA RECEBIDA E NF-e — as duas recusas de 20/08/2026, e as duas são NOSSAS: nada sai da
+  // máquina. Cancelar é ato do EMITENTE, e numa nota recebida o emitente é o prestador, não o
+  // nosso cliente. A NF-e é outro documento, com outro caminho (SEFAZ).
+  //
+  // ⚠ Elas também são recusadas ANTES do serviço, na própria rota — este mapa existe para o dia em
+  // que alguém as lançar de dentro dele, e para que as duas portas respondam igual.
+  NFSE_NOTA_RECEBIDA: { status: 422, error: "nota_recebida" },
+  NFSE_NOTA_NAO_E_NFSE: { status: 422, error: "nota_nao_e_nfse" },
   COMPANY_NOT_FOUND: { status: 404, error: "company_not_found" },
   // Sem o A1 da empresa não há pedido de registro válido a montar: o evento também é assinado
   // pelo certificado do autor (E0718).

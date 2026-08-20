@@ -77,6 +77,53 @@ describe("podeCancelar", () => {
   });
 });
 
+// ⚠⚠ NOTA RECEBIDA NÃO SE CANCELA — pedido do dono (20/08/2026):
+// *"as notas recebidas não devem ter opção de emitir elas, nem cancelar. Nota recebida foi emitida
+// PARA NÓS — não temos controle sobre esse tipo de nota."*
+//
+// ⚠ A GARANTIA É O SERVIDOR (`routes/client/__tests__/cancelamentoCliente.test.js` chama a rota
+// direto). Isto aqui é a conveniência de não oferecer um botão cuja única saída é a recusa.
+describe("⚠⚠ nota RECEBIDA", () => {
+  const CNPJ = "11222333000181";
+
+  it("`papel: DEST` ⇒ não pode, com motivo próprio", () => {
+    const r = podeCancelar(nota({ papel: "DEST" }));
+    expect(r.pode).toBe(false);
+    expect(r.motivo).toBe(MOTIVO_NAO_CANCELAVEL.RECEBIDA);
+    expect(r.texto).toMatch(/emitida PARA a sua empresa/i);
+  });
+
+  it("⚠ sem `papel`, a DEDUÇÃO pelo CNPJ pega — a mesma fonte dupla de `podeReaproveitar`", () => {
+    const r = podeCancelar(
+      nota({
+        papel: null,
+        tomador: { cnpjCpf: CNPJ },
+        emitente: { cnpj: "44555666000177" },
+      }),
+      { cnpjDaEmpresa: CNPJ }
+    );
+    expect(r.motivo).toBe(MOTIVO_NAO_CANCELAVEL.RECEBIDA);
+  });
+
+  it("⚠⚠ AUSÊNCIA NÃO CASA COM AUSÊNCIA: sem o CNPJ da empresa, nada vira recebida", () => {
+    // Comparar "" com "" daria `true` e acusaria TODA nota — travando o cancelamento inteiro.
+    const r = podeCancelar(nota({ papel: null, tomador: {}, emitente: {} }), { cnpjDaEmpresa: "" });
+    expect(r.pode).toBe(true);
+  });
+
+  it("⚠ nota EMITIDA pela empresa (tomador é outro) continua podendo", () => {
+    const r = podeCancelar(
+      nota({ papel: "EMIT", tomador: { cnpjCpf: "44555666000177" }, emitente: { cnpj: CNPJ } }),
+      { cnpjDaEmpresa: CNPJ }
+    );
+    expect(r.pode).toBe(true);
+  });
+
+  it("⚠ o impedimento é da NOTA — a linha já o carrega, e cada botão não repete a frase", () => {
+    expect(podeCancelar(nota({ papel: "DEST" })).escopo).toBe("nota");
+  });
+});
+
 describe("conferirFormulario", () => {
   const bom = { cMotivo: "2", justificativa: "a".repeat(15) };
 

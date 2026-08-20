@@ -381,7 +381,12 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir, aoPrepararLote })
                   // fatos diferentes e têm desenhos diferentes.
                   const cancelamentoEnviado = cancelamentosEnviados.has(nota.invoiceId);
                   const estadoLinha = estadoDaLinhaDaNota(nota, { cancelamentoEnviado });
-                  const cancelamento = podeCancelar(nota, { cancelamentoEnviado });
+                  const cancelamento = podeCancelar(nota, {
+                    cancelamentoEnviado,
+                    // ⚠ O CNPJ da empresa é o que permite reconhecer a nota RECEBIDA quando
+                    // `papel` não veio — a mesma fonte dupla de `podeReaproveitar`.
+                    cnpjDaEmpresa: empresa.cnpj,
+                  });
                   return (
                     <tr key={nota.invoiceId} data-estado-nota={estadoLinha.estado}>
                       <td>{texto(nota.numero)}</td>

@@ -42,6 +42,8 @@ export const MOTIVO_NAO_CANCELAVEL = {
   NAO_CONFIRMADA: "nao_confirmada",
   /** Nós já mandamos cancelar; o ADN ainda não devolveu o evento. Ver `estadoDaLinhaDaNota.js`. */
   CANCELAMENTO_ENVIADO: "cancelamento_enviado",
+  /** A nota foi emitida PARA a empresa. Cancelar é ato de quem emitiu. */
+  RECEBIDA: "recebida",
 };
 
 /**
@@ -50,7 +52,7 @@ export const MOTIVO_NAO_CANCELAVEL = {
  * ⚠ O BOTÃO NÃO SOME — fica desabilitado dizendo por quê. Some quem não deve nada; aqui há
  * sempre algo a dizer.
  */
-export function podeCancelar(nota, { cancelamentoEnviado = false } = {}) {
+export function podeCancelar(nota, { cancelamentoEnviado = false, cnpjDaEmpresa = "" } = {}) {
   if (!nota) {
     return { pode: false, motivo: null, escopo: ESCOPO.NOTA, resumo: null, texto: "A nota ainda não carregou." };
   }
@@ -81,6 +83,39 @@ export function podeCancelar(nota, { cancelamentoEnviado = false } = {}) {
       texto:
         "Este portal cancela apenas NFS-e. A NF-e de venda é capturada da SEFAZ e cancelada por "
         + "outro caminho.",
+    };
+  }
+
+  // ⚠⚠ NOTA RECEBIDA NÃO SE CANCELA — pedido do dono (20/08/2026): *"as notas recebidas não devem
+  // ter opção de emitir elas, nem cancelar. Nota recebida foi emitida PARA NÓS — não temos
+  // controle sobre esse tipo de nota."*
+  //
+  // ⚠ CANCELAR É ATO DO EMITENTE: numa nota recebida quem emitiu foi o PRESTADOR, e o certificado
+  // que assinaria o evento é o da empresa errada (a família do E0718). O sistema nacional
+  // provavelmente recusaria — mas "provavelmente o servidor deles recusa" não é guarda, é sorte.
+  //
+  // ⚠ AS MESMAS DUAS FONTES DE `podeReaproveitar`, e na mesma ordem: `papel` (que passou a chegar
+  // no contrato em 20/08/2026) e a comparação do CNPJ, que já funcionava sozinha antes disso e
+  // continua cobrindo a nota cujo `papel` não veio.
+  //
+  // ⚠⚠ A GARANTIA NÃO É ESTA FUNÇÃO — é o servidor. `POST /client/companies/:id/notas/:id/cancelar`
+  // recusa `nota_recebida` mesmo que alguém chame a rota direto. Isto aqui é a conveniência de não
+  // oferecer um botão cuja única saída é a recusa.
+  const docEmpresa = String(cnpjDaEmpresa ?? "").replace(/\D+/g, "");
+  const docTomador = String(nota.tomador?.cnpjCpf ?? "").replace(/\D+/g, "");
+  const docEmitente = String(nota.emitente?.cnpj ?? "").replace(/\D+/g, "");
+  const recebida = String(nota.papel || "").toUpperCase() === "DEST"
+    // ⚠ `docEmpresa` precisa existir: comparar "" com "" daria `true` e acusaria TODA nota.
+    || (Boolean(docEmpresa) && docTomador === docEmpresa && docEmitente !== docEmpresa);
+  if (recebida) {
+    return {
+      pode: false,
+      motivo: MOTIVO_NAO_CANCELAVEL.RECEBIDA,
+      escopo: ESCOPO.NOTA,
+      resumo: "Nota recebida.",
+      texto:
+        "Esta nota foi emitida PARA a sua empresa — quem a emitiu foi o prestador do serviço. "
+        + "O cancelamento é ato de quem emitiu, e só ele pode fazê-lo.",
     };
   }
 

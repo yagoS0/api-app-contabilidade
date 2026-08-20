@@ -522,6 +522,9 @@ function criarEstado() {
           // (ou cujo XML não trouxe o campo), e é ele que mantém alcançável o aviso
           // "a descrição não veio da nota de origem". Sem esse caso, o ramo some do alcance offline.
           descricao: seqNota % 6 === 0 ? null : `${nomeTomador.split(" ")[0]} — servico prestado`,
+          // ⚠ `papel` passou a viajar no contrato em 20/08/2026 — sem ele a tela não distingue a
+          // nota que a empresa EMITIU da que ela RECEBEU. Ver a nota `inv-recebida`, plantada abaixo.
+          papel: "EMIT",
           // A nota gerada VEIO do ADN — é a projeção, o caso normal. Ver os dois casos
           // plantados logo abaixo para o estado oposto.
           confirmadaPeloAdn: true,
@@ -564,7 +567,38 @@ function criarEstado() {
       // ⚠ A nossa emissão não tem `xDescServ`: o extrator lê o XML que o sistema nacional devolve,
       // e ele ainda não devolveu. É o que o backend responde (`serializeEmitidaNaoConfirmada`).
       descricao: null,
+      papel: "EMIT",
       confirmadaPeloAdn: false,
+      _statusEfetivo: "autorizada",
+    });
+
+    // (3) ⚠⚠ NOTA RECEBIDA (`papel: "DEST"`) — a empresa é a TOMADORA, não a emitente.
+    //
+    // Ela existe para que o ramo "não dá para cancelar nem reaproveitar" seja ALCANÇÁVEL OFFLINE.
+    // Este projeto já foi mordido três vezes na mesma semana por ramo que só existia no papel: o
+    // "não é Simples", o `emitirNfse` que recusava todo Presumido, e a recusa do DANFSe sem QR.
+    //
+    // ⚠ E ela é alcançável de verdade em produção, não só aqui: o filtro `direcao=emitidas` da
+    // listagem **só é aplicado quando o `PortalClient` tem CNPJ** (`buildWhereFilters`) — empresa
+    // sem CNPJ no cadastro vê as recebidas junto com as suas.
+    notas.push({
+      clientId: empresaPrincipal.companyId,
+      invoiceId: "inv-recebida",
+      type: "NFSE",
+      numero: "88001",
+      competencia: compAtual,
+      issueDate: diaDoMes(compAtual, 15).toISOString(),
+      status: "EMITIDA",
+      total: 980,
+      // ⚠ INVERTIDO de propósito: quem emitiu foi OUTRO; a nossa empresa é a tomadora.
+      emitente: { nome: "PRESTADOR TERCEIRO LTDA", cnpj: "44555666000177" },
+      tomador: { nome: empresaPrincipal.razao, cnpjCpf: empresaPrincipal.cnpj },
+      updatedAt: diaDoMes(compAtual, 15).toISOString(),
+      hasXml: true,
+      hasPdf: false,
+      descricao: "SERVICO CONTRATADO DE TERCEIRO",
+      papel: "DEST",
+      confirmadaPeloAdn: true,
       _statusEfetivo: "autorizada",
     });
 
@@ -587,6 +621,7 @@ function criarEstado() {
       hasXml: true,
       hasPdf: false,
       descricao: "SUPORTE TECNICO AVULSO",
+      papel: "EMIT",
       confirmadaPeloAdn: true,
       _statusEfetivo: "autorizada",
       _semQrCode: true,
@@ -1037,7 +1072,7 @@ export function createMockApi() {
     },
 
     // --- Notas --------------------------------------------------------------
-    async getInvoices(companyId, { competencia, page = 1, limit = 25 } = {}) {
+    async getInvoices(companyId, { competencia, direcao = "emitidas", page = 1, limit = 25 } = {}) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       const take = Math.min(Math.max(Number(limit) || 25, 1), 200);
@@ -1045,7 +1080,27 @@ export function createMockApi() {
 
       const filtradas = estado.notas
         .filter((n) => n.clientId === id)
-        // direcao=emitidas: no mock toda nota é emitida pela própria empresa.
+        // ⚠⚠ O FILTRO DE DIREÇÃO PASSOU A EXISTIR AQUI (20/08/2026). O comentário que estava nesta
+        // linha dizia *"no mock toda nota é emitida pela própria empresa"* — e isso deixou de ser
+        // verdade no instante em que o mock ganhou uma nota RECEBIDA (`inv-recebida`), plantada
+        // para que o ramo "não dá para cancelar nota recebida" exista offline.
+        //
+        // ⚠ SEM ESTE FILTRO O MOCK MENTIA SOBRE O BACKEND: lá, `buildWhereFilters` recorta por
+        // `emitenteDoc`/`tomadorDoc` conforme a direção, e o padrão é `emitidas`. A ausência do
+        // recorte aqui fazia a recebida aparecer no recorte em que ela não aparece de verdade — e
+        // isso quebrou, com razão, o teste do DANFSe em lote, que conta com o recorte padrão.
+        //
+        // ⚠ ELA CONTINUA ALCANÇÁVEL, por `direcao: "todas"` — e continua alcançável em PRODUÇÃO
+        // pelo caminho que o backend deixa aberto: `buildWhereFilters` só aplica o recorte de
+        // direção **quando o `PortalClient` tem CNPJ**. Empresa sem CNPJ no cadastro vê as
+        // recebidas junto com as suas, e é por isso que a guarda do cancelamento não é decorativa.
+        .filter((n) => {
+          const papel = String(n.papel || "EMIT").toUpperCase();
+          const alvo = String(direcao || "emitidas").toLowerCase();
+          if (alvo === "todas") return true;
+          if (alvo === "recebidas") return papel === "DEST";
+          return papel !== "DEST";
+        })
         .filter((n) => (competencia ? n.competencia === competencia : true))
         // O backend esconde canceladas por padrão (e elas não somam).
         .filter((n) => n._statusEfetivo !== "cancelada")
@@ -1132,8 +1187,20 @@ export function createMockApi() {
       const cnpj = String(empresa?.cnpj || "").replace(/\D+/g, "");
 
       // ⚠ O MESMO recorte de `getInvoices` — o zip tem de conter o que a tabela mostra.
+      //
+      // ⚠⚠ O RECORTE DE DIREÇÃO ENTROU AQUI EM 20/08/2026, e foi este comentário que o exigiu.
+      // Quando o mock ganhou uma nota RECEBIDA (`inv-recebida`), `getInvoices` passou a recortar
+      // por direção — como o backend sempre fez — e este bloco ficou para trás: o zip passaria a
+      // conter uma nota que a tabela NÃO mostra, com o CNPJ de um terceiro no nome do arquivo.
+      //
+      // ⚠ O NOME COM O CNPJ DO EMITENTE NÃO É DEFEITO — é deliberado no backend
+      // (`nomeNoLote`, em `application/nfse/danfse/loteDanfseDoPortal.js`: *"nos recortes
+      // recebidas/todas o emitente é outro, e escrever o CNPJ da empresa num DANFSe alheio seria
+      // mentira"*). O que estava errado era o recorte, não o nome.
       const filtradas = estado.notas
         .filter((n) => n.clientId === id)
+        // Recorte padrão do portal do cliente: `direcao=emitidas`.
+        .filter((n) => String(n.papel || "EMIT").toUpperCase() !== "DEST")
         .filter((n) => (competencia ? n.competencia === competencia : true))
         .filter((n) => n._statusEfetivo !== "cancelada")
         .sort((a, b) => String(a.numero || "").localeCompare(String(b.numero || "")));
@@ -1226,6 +1293,21 @@ export function createMockApi() {
 
       const nota = estado.notas.find((n) => n.clientId === id && n.invoiceId === String(notaId));
       if (!nota) throw new ApiError(404, "nota_nao_encontrada", "Nota não encontrada nesta empresa.");
+      // ⚠⚠ A MESMA RECUSA DO SERVIDOR: cancelar é ato do EMITENTE. Sem isto o mock deixaria
+      // cancelar a nota recebida e o ramo pareceria funcionar offline — que é pior que não existir.
+      if (String(nota.papel || "").toUpperCase() === "DEST") {
+        throw new ApiError(
+          422,
+          "nota_recebida",
+          "Esta nota foi emitida PARA a sua empresa — o cancelamento é ato de quem emitiu.",
+          { camada: "NOSSA", podeTentarDeNovo: false }
+        );
+      }
+      if (String(nota.type || "").toUpperCase() !== "NFSE") {
+        throw new ApiError(422, "nota_nao_e_nfse", "Este portal cancela apenas NFS-e.", {
+          camada: "NOSSA", podeTentarDeNovo: false,
+        });
+      }
       if (nota.confirmadaPeloAdn === false) {
         throw new ApiError(422, "nota_sem_chave", "Esta nota ainda não voltou do sistema nacional.");
       }
@@ -1929,6 +2011,7 @@ export function createMockApi() {
         hasXml: false,
         hasPdf: false,
         descricao: null,
+        papel: "EMIT",
         confirmadaPeloAdn: false,
         _statusEfetivo: "autorizada",
       });

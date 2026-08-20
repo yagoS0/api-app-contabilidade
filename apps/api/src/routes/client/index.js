@@ -45,6 +45,18 @@ import { responderDanfse, responderErroDanfse } from "../danfseHttp.js";
 import { responderErroCancelamento } from "../nfseCancelamentoHttp.js";
 import { NfseRepository } from "../../infrastructure/db/NfseRepository.js";
 
+/**
+ * Só os dígitos de um CNPJ/CPF, ou `null`.
+ *
+ * ⚠ `null` para vazio, NUNCA `""`: string vazia comparada com string vazia dá `true`, e a guarda de
+ * nota recebida (`docTomador === cnpjDaEmpresa`) passaria a acusar TODA nota de uma empresa sem
+ * CNPJ cadastrado. Ausência não pode casar com ausência — a mesma disciplina da deduplicação em
+ * `notasEmitidasNaoConfirmadas.js`.
+ */
+function normalizeDoc(valor) {
+  return String(valor || "").replace(/\D+/g, "") || null;
+}
+
 function sanitizeRole(role) {
   const value = String(role || "FINANCEIRO").toUpperCase();
   // FINANCEIRO é o piso ofertado no app; CLIENT_USER aceito só por compatibilidade legada.
@@ -1112,11 +1124,69 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
       // nenhuma".
       const nota = await prisma.portalInvoice.findFirst({
         where: { id: notaId, clientId: portalClientId },
-        select: { id: true, chaveAcesso: true, numero: true, status: true, statusEfetivo: true },
+        select: {
+          id: true, chaveAcesso: true, numero: true, status: true, statusEfetivo: true,
+          // ⚠ `papel` e `type` entram no select por causa das DUAS guardas logo abaixo. Coluna
+          // fora de um `select` explícito volta `undefined` — e uma guarda que lê `undefined`
+          // não guarda nada.
+          papel: true, type: true, tomadorDoc: true, emitenteDoc: true,
+        },
       });
       if (!nota) {
         return res.status(404).json({ ok: false, error: "nota_nao_encontrada" });
       }
+
+      // ⚠⚠ NOTA RECEBIDA NÃO SE CANCELA — pedido do dono (20/08/2026): *"as notas recebidas não
+      // devem ter opção de emitir elas, nem cancelar. Nota recebida foi emitida PARA NÓS — não
+      // temos controle sobre esse tipo de nota."*
+      //
+      // ⚠ CANCELAR É ATO DO EMITENTE. Numa nota recebida quem emitiu foi o PRESTADOR; o nosso
+      // cliente é o TOMADOR. Ele não tem autoridade sobre ela, e o certificado que assinaria o
+      // evento é o da empresa errada — o autor do pedido de registro é conferido pelo sistema
+      // nacional (a família do **E0718**, que este projeto já conhece).
+      //
+      // ⚠⚠ "O SISTEMA DELES PROVAVELMENTE RECUSA" NÃO É GUARDA — é sorte, e ela custa uma chamada
+      // externa ASSINADA, um erro que o contador vai tentar entender, e a suspeita de que este
+      // sistema deixa cancelar nota alheia. A recusa é NOSSA e acontece aqui, antes de qualquer I/O.
+      //
+      // ⚠ DUAS FONTES, como em `reaproveitarNota.js`: a coluna `papel` (a leitura da captura) e a
+      // comparação do CNPJ. A segunda existe porque a primeira pode faltar — e porque o filtro de
+      // direção da listagem (`direcao=emitidas`) **só é aplicado quando o `PortalClient` tem CNPJ**
+      // (`buildWhereFilters`): sem CNPJ no cadastro, nota recebida aparece na lista do cliente.
+      const cnpjDaEmpresa = normalizeDoc(
+        (await prisma.portalClient.findUnique({
+          where: { id: portalClientId },
+          select: { cnpj: true },
+        }))?.cnpj
+      );
+      const docTomador = normalizeDoc(nota.tomadorDoc);
+      const docEmitente = normalizeDoc(nota.emitenteDoc);
+      const recebida = String(nota.papel || "").toUpperCase() === "DEST"
+        || (Boolean(cnpjDaEmpresa) && docTomador === cnpjDaEmpresa && docEmitente !== cnpjDaEmpresa);
+      if (recebida) {
+        return res.status(422).json({
+          ok: false,
+          error: "nota_recebida",
+          message:
+            "Esta nota foi emitida PARA a sua empresa — quem a emitiu foi o prestador do serviço. "
+            + "O cancelamento é ato de quem emitiu, e só ele pode fazê-lo.",
+        });
+      }
+
+      // ⚠ NF-e É OUTRO DOCUMENTO, com outro caminho de cancelamento (SEFAZ, não o sistema nacional
+      // de NFS-e). O `pedRegEvento` que este serviço monta é do leiaute da NFS-e — mandá-lo sobre
+      // uma NF-e é pedir o cancelamento no lugar errado. O reaproveitamento já recusava NF-e pelo
+      // mesmo motivo; o cancelamento não recusava.
+      if (String(nota.type || "").toUpperCase() !== "NFSE") {
+        return res.status(422).json({
+          ok: false,
+          error: "nota_nao_e_nfse",
+          message:
+            "Este portal cancela apenas NFS-e. A NF-e é capturada da SEFAZ e cancelada por outro "
+            + "caminho — fale com o seu escritório de contabilidade.",
+        });
+      }
+
       if (!nota.chaveAcesso) {
         return res.status(422).json({
           ok: false,

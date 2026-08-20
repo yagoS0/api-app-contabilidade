@@ -790,6 +790,38 @@ o ANEXO_I registrado ali (o `TAM. = 1` incoerente do `cMotivo` da substituição
 - ⚠ **O `e105102` perdeu a checagem local de `cMotivo`** — ela subiu e virou geral. Era a condição
   `=== "e105102"` que deixava o cancelamento sem lista fechada.
 
+#### ⚠⚠ NOTA RECEBIDA NÃO SE CANCELA — o buraco que o cancelamento tinha (20/08/2026)
+
+> Dono: *"as notas recebidas não devem ter opção de emitir elas, nem cancelar. Nota recebida foi
+> emitida **para nós** — não temos controle sobre esse tipo de nota."*
+
+**O que faltava, medido:** o reaproveitamento já recusava `papel: "DEST"` nos dois portais; **o
+cancelamento não conferia o papel em lugar nenhum** — nem na lib da tela, nem no responder, nem na
+rota. O botão "Cancelar" aparecia numa nota que a empresa RECEBEU.
+
+⚠ **CANCELAR É ATO DO EMITENTE.** Numa nota recebida quem emitiu foi o prestador; o cliente é o
+tomador, e o certificado que assinaria o evento é o da empresa errada (a família do **E0718**).
+⚠⚠ **"O sistema deles provavelmente recusa" não é guarda** — é sorte, e custa uma chamada externa
+**assinada**, um erro que o contador vai tentar entender, e a suspeita de que este sistema deixa
+cancelar nota alheia. A recusa é **NOSSA**, antes de qualquer I/O.
+
+- **Duas fontes, como em `reaproveitarNota.js`:** a coluna `papel` e a comparação do CNPJ. A segunda
+  não é redundância — ⚠ o filtro de direção da listagem (`buildWhereFilters`) **só é aplicado quando
+  o `PortalClient` tem CNPJ**, então empresa sem CNPJ no cadastro vê as recebidas junto com as suas.
+- ⚠⚠ **Ausência não casa com ausência:** `normalizeDoc` devolve `null`, nunca `""`. Com `""`, a
+  comparação `docTomador === cnpjDaEmpresa` daria `true` e travaria o cancelamento de **toda** nota
+  de uma empresa sem CNPJ. Há teste sobre exatamente isso.
+- **NF-e junto:** `422 nota_nao_e_nfse`. O `pedRegEvento` é do leiaute da NFS-e; mandá-lo sobre uma
+  NF-e é pedir o cancelamento no lugar errado (a SEFAZ é outra).
+- ⚠ **`papel` passou a viajar no contrato do cliente** (`serializeInvoice`). Ele não chegava — a
+  tela deduzia pelo CNPJ. Terceira vez que uma coluna fora do serializer/`select` some **sem erro
+  nenhum** (as outras: `codigosServicoNacional`, carga tributária).
+- **Na tela:** botão visível e desabilitado, com o motivo no `title`; o texto visível sai **uma vez
+  por linha**, pela coluna "Usar como modelo" — impedimento da NOTA usa `ESCOPO.NOTA`
+  (`lib/impedimento.js`), e não se escreve um segundo vocabulário.
+- Testes: `cancelamentoCliente.test.js` (32 — a rota chamada **direto**, cada recusa medida por
+  `NfseService.sendEvent` não ter sido chamado) + front `lib/cancelamentoNota` e a ligação.
+
 ### ⚠⚠ As TRÊS CAMADAS chegaram ao cancelamento — e a do TRANSPORTE desabilita a tela
 
 Antes, toda falha de envio de evento virava um `NFSE_EVENT_FAILED` plano, traduzido em 422: **um
