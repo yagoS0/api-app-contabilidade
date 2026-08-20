@@ -3,7 +3,7 @@ import { api } from "../../api";
 import { limparSessao, lerEmpresaSalva, salvarEmpresa } from "../../api/sessionStore";
 import { AlertaErro, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento, useRota } from "../../lib/hooks";
-import { fmtCnpj, texto } from "../../lib/format";
+import { competenciaPadrao, fmtCnpj, texto } from "../../lib/format";
 import { roleLabel } from "../../lib/roles";
 import { SeletorEmpresa } from "./SeletorEmpresa";
 import { HomePage } from "../home/HomePage";
@@ -42,6 +42,27 @@ export function AppShell({ user }) {
   // `rota === "emitir"`. Ele mora aqui, e não dentro da `NotasPage`, pelo mesmo motivo do modelo:
   // a casca é quem monta a tela ativa, e é ela que precisa decidir entre a lista e o formulário.
   const [emissaoAberta, setEmissaoAberta] = useState(false);
+  // ⚠⚠ A COMPETÊNCIA É UMA SÓ, E ELA MORA AQUI.
+  //
+  // Eram DUAS: `HomePage` e `NotasPage` tinham, cada uma, o seu `useState(competenciaPadrao)`.
+  // Trocar o mês no Início e ir para Notas voltava ao padrão — sem nada dizendo que voltou —, e o
+  // cliente lia dois meses diferentes em duas abas do mesmo portal, sobre a mesma empresa.
+  //
+  // É literalmente o defeito que o portal do escritório já pagou e consertou: o cabeçalho de
+  // `apps/web/.../renderCompanyDetailHeader.jsx` registra "o mesmo defeito repetido cinco vezes:
+  // dois seletores para um valor", e a cura foi um controle único na casca. Aqui a casca já é o
+  // lugar natural — é onde `modeloEmissao` e `emissaoAberta` moram, pela mesma razão (atravessam
+  // telas, e a casca é quem monta a tela ativa).
+  //
+  // ⚠ OS DOIS CONTROLES CONTINUAM ONDE ESTAVAM, e isso é decisão: em Notas ele é um FILTRO, dentro
+  // do card de filtros, com a opção "Todas"; no Início ele é o RECORTE do resumo, no cabeçalho da
+  // página. Juntá-los num controle só na barra do topo obrigaria o Início a oferecer um "Todas"
+  // que ele não sabe honrar — e um controle que não comanda o que promete é pior que dois.
+  // O que passou a ser único é o VALOR.
+  //
+  // ⚠ O DEFAULT NÃO MUDOU: `competenciaPadrao` é o mês CORRENTE, decisão do dono de 18/08/2026 que
+  // inverte o padrão do escritório (mês anterior). O porquê está em `lib/format.js`.
+  const [competencia, setCompetencia] = useState(competenciaPadrao);
   // ⚠ O LOTE POR PLANILHA É O SEGUNDO MODO DA MESMA ROTA, pelo mesmo motivo da emissão: o
   // roteamento é por hash com três destinos fixos, e a casca é quem monta a tela ativa. ⚠ Ele NÃO
   // emite nada — prepara e confere a planilha. A emissão em lote é fase seguinte.
@@ -176,16 +197,41 @@ export function AppShell({ user }) {
         </div>
       </header>
 
+      {/* ⚠ AS ABAS SÃO `<a href>` DE VERDADE (20/08/2026), e a tecla NÃO é interceptada.
+          O roteamento já é por hash (`lib/hooks.js`), então `href="#/notas"` existe de graça — e
+          com ele vêm, sem uma linha de código: Ctrl/Cmd+clique abrindo em nova guia, clique do
+          MEIO, "abrir em nova aba" do botão direito, a URL ao passar o mouse e "copiar endereço
+          do link". Um `onClick` que olhasse `event.ctrlKey` resolveria o primeiro caso e quebraria
+          os outros quatro. É o mesmo movimento que o portal do escritório fez em 19/08 nas abas da
+          empresa, pela mesma razão.
+
+          ⚠⚠ O CLIQUE NORMAL CONTINUA SPA — `preventDefault()` + `irPara`, exatamente como o
+          `Tabs` do escritório. Sem isso, quem navega é o `href` sozinho, e duas coisas se perdem:
+          o `emissaoAberta`, que é estado da casca e o hash não carrega (voltar para Notas cairia
+          num formulário meio preenchido em vez da lista), e o controle do `useRota`. Modificado
+          (Ctrl/Cmd/Shift/Alt) ou botão ≠ esquerdo passam SEM `preventDefault`: aí é o navegador
+          que assume, e é dele que vêm as cinco coisas de graça.
+          ⚠ E num Ctrl+clique a guia atual fica onde está — por isso o `irPara` (que fecha a
+          emissão) também não roda: jogaria fora o formulário de quem só queria abrir Notas do lado.
+
+          ⚠ O botão "Emitir nota" da lista continua `<button>`: ele abre um MODO, não uma rota —
+          não tem URL, e inventar uma abriria guia quebrada. */}
       <nav className="nav" aria-label="Seções">
         {ABAS.map((aba) => (
-          <button
+          <a
             key={aba.chave}
-            type="button"
+            href={`#/${aba.chave}`}
             aria-current={rota === aba.chave ? "page" : undefined}
-            onClick={() => irPara(aba.chave)}
+            onClick={(event) => {
+              const oNavegadorAssume =
+                event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
+              if (oNavegadorAssume) return;
+              event.preventDefault();
+              irPara(aba.chave);
+            }}
           >
             {aba.rotulo}
-          </button>
+          </a>
         ))}
       </nav>
 
@@ -223,15 +269,26 @@ export function AppShell({ user }) {
           ) : (
             <NotasPage
               empresa={empresaAtiva}
+              competencia={competencia}
+              aoTrocarCompetencia={setCompetencia}
               aoReaproveitar={reaproveitarNota}
               aoEmitir={abrirEmissao}
               aoPrepararLote={abrirLote}
             />
           )
         ) : rota === "guias" ? (
-          <GuiasPage empresa={empresaAtiva} />
+          <GuiasPage
+            empresa={empresaAtiva}
+            competencia={competencia}
+            aoTrocarCompetencia={setCompetencia}
+          />
         ) : (
-          <HomePage empresa={empresaAtiva} aoNavegar={irPara} />
+          <HomePage
+            empresa={empresaAtiva}
+            competencia={competencia}
+            aoTrocarCompetencia={setCompetencia}
+            aoNavegar={irPara}
+          />
         )}
       </main>
 

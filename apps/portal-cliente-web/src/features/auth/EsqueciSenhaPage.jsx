@@ -61,7 +61,7 @@ export function EsqueciSenhaPage({ aoVoltar }) {
           </div>
 
           {demonstracao ? (
-            <div className="alerta alerta-aviso" style={{ marginTop: "var(--gap)" }}>
+            <div className="alerta alerta-aviso stack-gap">
               <p>
                 <strong>Modo demonstração.</strong> Nenhum e-mail é enviado. Abra a tela de
                 redefinição por um destes endereços para exercer cada desfecho:
@@ -73,7 +73,7 @@ export function EsqueciSenhaPage({ aoVoltar }) {
             </div>
           ) : null}
 
-          <p style={{ marginTop: "var(--gap)" }}>
+          <p className="stack-gap">
             <button type="button" className="btn-link" onClick={aoVoltar}>
               Voltar para o login
             </button>
@@ -116,7 +116,7 @@ export function EsqueciSenhaPage({ aoVoltar }) {
           {enviando ? "Enviando…" : "Enviar instruções"}
         </button>
 
-        <p style={{ marginTop: "var(--gap)", textAlign: "center" }}>
+        <p className="stack-gap" style={{ textAlign: "center" }}>
           <button type="button" className="btn-link" onClick={aoVoltar}>
             Voltar para o login
           </button>

@@ -92,7 +92,7 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
             é exatamente aqui que a pessoa está quando descobre que não lembra. Até esta entrega
             não havia saída nenhuma — o cliente dependia de o escritório mexer no banco à mão. */}
         {aoEsquecerSenha ? (
-          <p style={{ marginTop: "var(--gap)", textAlign: "center" }}>
+          <p className="stack-gap" style={{ textAlign: "center" }}>
             <button type="button" className="btn-link" onClick={aoEsquecerSenha}>
               Esqueci minha senha
             </button>
@@ -100,7 +100,7 @@ export function LoginPage({ expirou, aoEsquecerSenha }) {
         ) : null}
 
         {demonstracao ? (
-          <div className="alerta alerta-info" style={{ marginTop: "var(--gap)" }}>
+          <div className="alerta alerta-info stack-gap">
             <p>
               <strong>Modo demonstração.</strong> Os dados desta tela são fictícios e ficam no seu
               navegador — nenhuma informação real é lida ou enviada.

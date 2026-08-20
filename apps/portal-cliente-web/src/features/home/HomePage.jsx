@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
@@ -22,10 +21,17 @@ const OPCOES_COMPETENCIA = competenciasRecentes(12);
  *   alíquota do mês            -> GET /aliquotas?from=&to= (uma competência)
  *   a vencer                   -> GET /fluxo (guias liberadas ainda em aberto)
  */
-export function HomePage({ empresa, aoNavegar }) {
-  // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026, que inverte o padrão do projeto
-  // (mês anterior). O porquê está em `lib/format.js`, em `competenciaPadrao`.
-  const [competencia, setCompetencia] = useState(competenciaPadrao);
+export function HomePage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar }) {
+  // ⚠⚠ A COMPETÊNCIA VEM DA CASCA — ver o comentário longo em `AppShell.jsx`. Era um
+  // `useState(competenciaPadrao)` daqui, gêmeo do de `NotasPage`, e as duas abas discordavam.
+  // O default não mudou: `competenciaPadrao` é o mês CORRENTE (dono, 18/08/2026).
+  //
+  // ⚠ "TODAS" (string vazia) É CONCEITO DE NOTAS, NÃO DAQUI. O resumo do mês precisa de UM mês;
+  // com o filtro em "Todas", o Início cai no mês corrente — e não esconde isso: os rótulos dos
+  // três cards e o texto de carregamento nomeiam a competência que estão mostrando, como já
+  // faziam. O que não pode acontecer é o Início somar "o período todo" e chamar de mês.
+  const competencia = competenciaDaCasca || competenciaPadrao();
+  const setCompetencia = aoTrocarCompetencia || (() => {});
   const companyId = empresa.companyId;
 
   // limit:1 — aqui só interessa o `summary`, que o backend calcula sobre o
@@ -85,7 +91,7 @@ export function HomePage({ empresa, aoNavegar }) {
             id="competencia-home"
             value={competencia}
             onChange={(e) => setCompetencia(e.target.value)}
-            style={{ width: "auto", minWidth: "150px" }}
+            className="select-auto"
           >
             {OPCOES_COMPETENCIA.map((c) => (
               <option key={c} value={c}>
@@ -149,8 +155,11 @@ export function HomePage({ empresa, aoNavegar }) {
       )}
 
       <div className="card">
-        <div className="page-header" style={{ marginBottom: "8px" }}>
-          <h2 style={{ margin: 0 }}>Próximos vencimentos</h2>
+        {/* ⚠ `.card-header`, não `.page-header`: um é o cabeçalho da PÁGINA, o outro o de uma
+            SEÇÃO dentro de um card. A mesma classe nos dois papéis vinha com um `style` corrigindo
+            a margem — o sinal de que eram duas coisas com um nome só. */}
+        <div className="card-header">
+          <h2>Próximos vencimentos</h2>
           <div className="page-actions">
             <button type="button" className="btn-link" onClick={() => aoNavegar("guias")}>
               Ver todas as guias
@@ -189,7 +198,7 @@ export function HomePage({ empresa, aoNavegar }) {
                     <td>
                       {fmtDateBr(item.vencimento)}
                       {item.vencida ? (
-                        <span className="chip" data-status="rejeitada" style={{ marginLeft: "6px" }}>
+                        <span className="chip" data-status="vencida" style={{ marginLeft: "6px" }}>
                           vencida
                         </span>
                       ) : null}

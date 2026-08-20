@@ -103,13 +103,15 @@ async function abrirApp() {
 
 async function abrirNotas() {
   await abrirApp();
-  fireEvent.click(screen.getByRole("button", { name: "Notas" }));
+  fireEvent.click(screen.getByRole("link", { name: "Notas" }));
   await act(async () => {});
   await screen.findByText("Notas emitidas");
 }
 
 const abas = () =>
-  [...document.querySelectorAll('nav[aria-label="Seções"] button')].map((b) => b.textContent);
+  // ⚠ `a`, não `button`: as abas viraram links de verdade em 20/08/2026 (Ctrl+clique abre em
+  // nova guia). O que se mede aqui continua sendo o mesmo — QUAIS abas existem no menu.
+  [...document.querySelectorAll('nav[aria-label="Seções"] a')].map((b) => b.textContent);
 
 describe("⚠ 1. a aba sumiu do menu — inteira", () => {
   test("o menu tem Início, Notas e Guias, e NADA de Emitir", async () => {
@@ -134,7 +136,7 @@ describe("⚠⚠ 2. `#/emitir` não é mais destino de rota — o filtro fantasm
   test("⚠ e o hash não fica preso: navegar depois continua funcionando", async () => {
     window.location.hash = "#/emitir";
     await abrirApp();
-    fireEvent.click(screen.getByRole("button", { name: "Notas" }));
+    fireEvent.click(screen.getByRole("link", { name: "Notas" }));
     await act(async () => {});
     await screen.findByText("Notas emitidas");
     expect(window.location.hash).toBe("#/notas");
@@ -169,9 +171,9 @@ describe("⚠ 3. o botão dentro de Notas é a entrada nova, e ela tem volta", (
     await act(async () => {});
     await screen.findByRole("heading", { name: "Emitir nota" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Guias" }));
+    fireEvent.click(screen.getByRole("link", { name: "Guias" }));
     await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "Notas" }));
+    fireEvent.click(screen.getByRole("link", { name: "Notas" }));
     await act(async () => {});
     // Volta na LISTA, que é o que o rótulo da aba promete.
     await screen.findByText("Notas emitidas");

@@ -64,7 +64,7 @@ export function RedefinirSenhaPage({ token, aoConcluir }) {
             <p>Este endereço não traz o código de redefinição.</p>
             <p>Abra o link exatamente como ele veio no e-mail, ou peça um novo.</p>
           </div>
-          <p style={{ marginTop: "var(--gap)" }}>
+          <p className="stack-gap">
             <button type="button" className="btn-link" onClick={aoConcluir}>
               Pedir um novo link
             </button>
@@ -92,7 +92,7 @@ export function RedefinirSenhaPage({ token, aoConcluir }) {
               Entre novamente com a senha nova.
             </p>
           </div>
-          <p style={{ marginTop: "var(--gap)" }}>
+          <p className="stack-gap">
             <button type="button" className="btn btn-primary btn-block" onClick={aoConcluir}>
               Ir para o login
             </button>

@@ -23,9 +23,13 @@ const LIMITE = 25;
 // (âmbar) e "vencida" é problema (vermelho) — se tudo fosse vermelho, nada se
 // destacaria justamente na linha que precisa ser vista.
 const CHIP_POR_PAGAMENTO = {
-  PAID: { status: "emitida", rotulo: "Paga" },
-  OVERDUE: { status: "rejeitada", rotulo: "Vencida" },
-  OPEN: { status: "rascunho", rotulo: "Em aberto" },
+  // ⚠⚠ O `status` daqui vira `data-status` no DOM e é o vocabulário que o app mobile espelha.
+  // Era emprestado da NOTA — `PAID → "emitida"`, `OVERDUE → "rejeitada"`, `OPEN → "rascunho"` —
+  // e a cor saía certa por acidente: uma guia VENCIDA aparecia no atributo como nota REJEITADA.
+  // Guia não é nota. Mesmas superfícies, nome certo (ver `app.css`).
+  PAID: { status: "paga", rotulo: "Paga" },
+  OVERDUE: { status: "vencida", rotulo: "Vencida" },
+  OPEN: { status: "aberta", rotulo: "Em aberto" },
 };
 
 function chipDaGuia(paymentStatus) {
@@ -115,7 +119,7 @@ function baixarArquivo({ contentBase64, fileName, mimeType }) {
  * (apps/api/src/application/guides/GuideService.js) — o app mobile não consome
  * esta rota, então ela foi conferida na origem, não copiada de lá.
  */
-export function GuiasPage({ empresa }) {
+export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia }) {
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
   // `lib/format.js`). Antes abria em "Todas".
@@ -124,7 +128,13 @@ export function GuiasPage({ empresa }) {
   // guia da competência 07 costuma ser LIBERADA em agosto, então a competência corrente
   // frequentemente não tem guia nenhuma. "Nenhuma guia" sem dizer de qual mês, numa tela em que o
   // cliente vem procurar o que pagar, é indistinguível de "o contador não liberou nada".
-  const [competencia, setCompetencia] = useState(competenciaPadrao);
+  // ⚠⚠ A COMPETÊNCIA VEM DA CASCA — ver `AppShell.jsx`. Era a TERCEIRA cópia do mesmo
+  // `useState(competenciaPadrao)` (as outras duas eram Início e Notas), e a divergência apareceu
+  // na tela assim que as duas primeiras foram unificadas: Início e Notas em 06/2026, Guias em
+  // 08/2026, sobre a mesma empresa, com o mês escrito no vazio de cada uma.
+  // ⚠ O "Todas" daqui é o mesmo de Notas (string vazia) — as duas são listas.
+  const competencia = competenciaDaCasca ?? competenciaPadrao();
+  const setCompetencia = aoTrocarCompetencia || (() => {});
   const [pagina, setPagina] = useState(1);
   const [baixandoId, setBaixandoId] = useState(null);
   const [erroDownload, setErroDownload] = useState(null);

@@ -140,12 +140,12 @@ function BotaoDanfse({ nota, companyId }) {
           19/08/2026 "Ainda não confirmada." aparecia DUAS vezes na mesma linha.
           O que sobra aqui é o que só o DANFSe sabe: a nota não tem o XML guardado. */}
       {permissao.pode || permissao.escopo === ESCOPO.NOTA ? null : (
-        <span className="muted" style={{ fontSize: ".78rem" }}>{permissao.resumo}</span>
+        <span className="meta">{permissao.resumo}</span>
       )}
       {estado.recusa ? (
         <span
           className="muted"
-          style={{ fontSize: ".78rem", color: "var(--danger)", display: "block", maxWidth: 260 }}
+          className="meta-erro" style={{ maxWidth: 260 }}
         >
           ⚠ {estado.recusa.titulo} {estado.recusa.texto}
           {estado.recusa.porQue ? ` ${estado.recusa.porQue}` : ""}
@@ -207,7 +207,7 @@ function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado }) {
         {baixando ? "Gerando os PDFs…" : "Baixar DANFSe em lote (.zip)"}
       </button>
       {estado.fase === "pronto" ? (
-        <span className="muted" style={{ fontSize: ".78rem", maxWidth: 340 }}>
+        <span className="meta" style={{ maxWidth: 340 }}>
           Arquivo baixado. Dentro dele, <strong>RELATORIO.txt</strong> lista as notas que não
           geraram DANFSe e o motivo de cada uma.
         </span>
@@ -215,7 +215,7 @@ function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado }) {
       {estado.recusa ? (
         <span
           className="muted"
-          style={{ fontSize: ".78rem", color: "var(--danger)", display: "block", maxWidth: 340 }}
+          className="meta-erro" style={{ maxWidth: 340 }}
         >
           ⚠ {estado.recusa.titulo} {estado.recusa.texto}
           {estado.recusa.porQue ? ` ${estado.recusa.porQue}` : ""}
@@ -225,13 +225,18 @@ function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado }) {
   );
 }
 
-export function NotasPage({ empresa, aoReaproveitar, aoEmitir, aoPrepararLote }) {
+export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoReaproveitar, aoEmitir, aoPrepararLote }) {
   const companyId = empresa.companyId;
   // ⚠ Abre no mês CORRENTE — decisão do dono, 18/08/2026 (ver `competenciaPadrao` em
   // `lib/format.js`). Antes abria em "Todas". ⚠ Isto ESTREITA o que a tela mostra ao abrir: quem
   // emitiu no mês passado não vê a nota de cara. Por isso o estado vazio abaixo NOMEIA a
   // competência e aponta para "Todas" — some da tela, mas não some sem dizer para onde foi.
-  const [competencia, setCompetencia] = useState(competenciaPadrao);
+  //
+  // ⚠⚠ O VALOR VEM DA CASCA (`AppShell`) — era um `useState` daqui, gêmeo do da `HomePage`, e as
+  // duas abas discordavam em silêncio. O controle continua sendo ESTE, dentro do card de filtros,
+  // com o "Todas" que só existe aqui; o que passou a ser único é o valor.
+  const competencia = competenciaDaCasca ?? competenciaPadrao();
+  const setCompetencia = aoTrocarCompetencia || (() => {});
   const [pagina, setPagina] = useState(1);
   // ⚠ A nota que está em confirmação de CANCELAMENTO. Fica aqui, e não dentro da linha, porque o
   // diálogo é modal: uma confirmação por vez, e ela sobrevive à rolagem da tabela.
@@ -397,7 +402,7 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir, aoPrepararLote })
                         <span className="truncar" title={texto(nota.tomador?.nome)}>
                           {texto(nota.tomador?.nome)}
                         </span>
-                        <span className="muted" style={{ fontSize: ".78rem" }}>
+                        <span className="meta">
                           {nota.tomador?.cnpjCpf ? fmtDoc(nota.tomador.cnpjCpf) : TRACO}
                         </span>
                       </td>
@@ -440,7 +445,7 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir, aoPrepararLote })
                             a linha já o carrega (coluna Tipo, chip, `title`/`aria`), e cada botão
                             escrevendo o seu fazia a mesma frase aparecer duas vezes por linha. */}
                         {cancelamento.pode || cancelamento.escopo === ESCOPO.NOTA ? null : (
-                          <span className="muted" style={{ fontSize: ".78rem" }}>
+                          <span className="meta">
                             {cancelamento.resumo}
                           </span>
                         )}
@@ -466,7 +471,7 @@ export function NotasPage({ empresa, aoReaproveitar, aoEmitir, aoPrepararLote })
                           Usar como modelo
                         </button>
                         {permissao.pode ? null : (
-                          <span className="muted" style={{ fontSize: ".78rem" }}>
+                          <span className="meta">
                             {permissao.resumo}
                           </span>
                         )}

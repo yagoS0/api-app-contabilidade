@@ -99,7 +99,7 @@ async function abrirLote() {
     </StrictMode>
   );
   await act(async () => {});
-  fireEvent.click(screen.getByRole("button", { name: "Notas" }));
+  fireEvent.click(screen.getByRole("link", { name: "Notas" }));
   await act(async () => {});
   await screen.findByText("Notas emitidas");
   fireEvent.click(screen.getByRole("button", { name: /Preparar lote por planilha/i }));
