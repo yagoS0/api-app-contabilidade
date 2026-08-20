@@ -61,7 +61,31 @@ import {
   descricaoDoCodigo,
   rotuloDoCodigo,
 } from "./lib/codigoServicoDaNota";
+// ⚠⚠ OS CAMPOS DE IMPOSTO QUE ESTA NOTA LEVA — e, por consequência, quais VIAJAM. Regime e
+// retenção decidem juntos, num lugar só: duas leituras (uma para renderizar, outra para montar o
+// corpo) divergem na primeira correção, e foi exatamente essa divergência que produziu o defeito de
+// produção de 20/08/2026. Ver `lib/impostosDaNota.js`.
+import {
+  REGIME,
+  aliquotaIssParaOPayload,
+  camposDeImposto,
+  conferirAliquotaIss,
+  lerRegime,
+  pTotTribSNParaOPayload,
+} from "./lib/impostosDaNota";
+// ⚠ A MEMÓRIA DE TOMADORES (dono, 20/08/2026). ⚠ O cadastro NÃO nasce aqui: ele é
+// `apps/api/src/application/nfse/tomadorEmitido.js`, alimentado por cada emissão autorizada. Esta
+// tela só LÊ. Ver `lib/tomadoresEmitidos.js`.
+import {
+  CAMPOS_DE_ENDERECO,
+  ORIGEM_MEMORIA,
+  aplicarTomadorEmitido,
+  enderecoVeioDaMemoria,
+  normalizarTomadores,
+  textoDosPreservados,
+} from "./lib/tomadoresEmitidos";
 import { SeletorMunicipio } from "./SeletorMunicipio";
+import { SeletorTomador } from "./SeletorTomador";
 import { DesfechoEmissao } from "./DesfechoEmissao";
 import { PreviaNota } from "./PreviaNota";
 
@@ -87,7 +111,7 @@ import { PreviaNota } from "./PreviaNota";
  *   2. abre na competência CORRENTE — `lib/format.js`, `competenciaPadrao`
  *   3. município por NOME, não por código — `SeletorMunicipio.jsx`
  *   4. data da competência escolhível — ver `DATA DA COMPETÊNCIA`, abaixo
- *   5. alíquota de ISS fora do formulário no Simples — ver `O ISS NO SIMPLES`, abaixo
+ *   5. alíquota de ISS fora do formulário no Simples — hoje em `lib/impostosDaNota.js` (ver 10)
  *   6. alíquota efetiva pré-preenchida, com a origem à vista — `lib/aliquotaEfetiva.js`
  *   7. descrição sugerida — `lib/descricoesRecentes.js`
  *
@@ -105,6 +129,17 @@ import { PreviaNota } from "./PreviaNota";
  *      ⚠ E a frase que descreve um comportamento é PARTE do comportamento: as duas legendas falsas
  *      encontradas aqui (o valor "com ponto", e a trava do não optante) ficaram falsas no dia em
  *      que o campo e o backend mudaram, e cada uma tem hoje o seu ⚠ no lugar em que mora.
+ *
+ * Ajustes de 20/08/2026, a pedido do dono:
+ *  10. ⚠⚠ **AS GUARDAS DE IMPOSTO, NOS DOIS LADOS** — `lib/impostosDaNota.js`. Uma delas é conserto
+ *      de DEFEITO EM PRODUÇÃO (*"empresa presumida aparecendo isso na nota: Alíquota efetiva do
+ *      Simples (%). Não pode."*): o `pTotTribSN` era renderizado **sem condição de regime nenhuma**.
+ *      A outra é a alíquota de ISS, que passou a existir só com a RETENÇÃO marcada.
+ *      ⚠ **A TELA E O PAYLOAD SAEM DA MESMA RESPOSTA** (`camposDeImposto`): campo escondido que
+ *      continua viajando é o defeito pior, porque a tela mente e o servidor recebe.
+ *  11. seletor de TOMADORES JÁ EMITIDOS — `lib/tomadoresEmitidos.js` + `SeletorTomador.jsx`.
+ *      ⚠ O cadastro **já existia** (`apps/api/src/application/nfse/tomadorEmitido.js`); o que
+ *      nasceu aqui é a leitura e a tela. Encontra e nunca escolhe; o digitado vence.
  */
 
 const CAMPOS_VAZIOS = {
@@ -165,61 +200,29 @@ const CAMPOS_EXIGIDOS_DA_EMPRESA = [
   ["rpsSerie", "série do RPS"],
 ];
 
-const REGIME = { SIMPLES: "simples", OUTRO: "outro", DESCONHECIDO: "desconhecido" };
-
-/**
- * O REGIME DA EMPRESA, do jeito que ESTA TELA consegue lê-lo — com a ressalva no nome.
- *
- * ⚠ **A AUTORIDADE NÃO É ESTE CAMPO.** No servidor quem decide é `CadastroFiscal.regime`, com
- * `Company.regimeTributario` como SEGUNDA leitura (`carregarRegimeDaEmpresa`, em `NfseService`), e
- * `GET /client/companies` só nos manda a segunda. As duas podem discordar.
- *
- * ⚠ Por isso a resposta tem TRÊS estados, e o terceiro não é "não". Regime ausente ou não
- * reconhecido devolve `DESCONHECIDO`, e no desconhecido a tela **não esconde nada** — mostrar um
- * campo a mais é um incômodo, escondê-lo indevidamente é uma emissão recusada pelo servidor com o
- * campo que a resolveria fora da tela.
- *
- * A normalização copia `resolverOpSimpNac` (`apps/api/src/application/nfse/dpsCodigos.js`),
- * inclusive o alias SIMPLES → SIMPLES_NACIONAL. ⚠ `optanteSimples` existe na resposta e **não é
- * usado**: o backend não o consulta para o `opSimpNac`, e eleger aqui uma autoridade que lá não
- * existe é como as duas pontas passam a discordar.
- */
-function lerRegime(empresa) {
-  const bruto = String(empresa?.legacyCompany?.regimeTributario || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_");
-  if (!bruto) return REGIME.DESCONHECIDO;
-  if (bruto === "SIMPLES" || bruto === "SIMPLES_NACIONAL") return REGIME.SIMPLES;
-  if (bruto === "LUCRO_PRESUMIDO" || bruto === "LUCRO_REAL") return REGIME.OUTRO;
-  return REGIME.DESCONHECIDO;
-}
+// ⚠⚠ `REGIME` E `lerRegime` MUDARAM-SE PARA `lib/impostosDaNota.js` EM 20/08/2026, junto com as
+// três decisões que dependem deles (o bloco de ISS, a alíquota de ISS e o `pTotTribSN`). Estavam
+// aqui dentro, e o defeito que isso produziu foi medido em produção: o campo "Alíquota efetiva do
+// Simples" aparecia para empresa do Lucro Presumido, porque a guarda de regime existia para os
+// vizinhos e faltou neste. Regra de tela mora em `lib/`, com teste próprio — a tela só liga.
 
 function apenasDigitos(valor) {
   return String(valor || "").replace(/\D+/g, "");
 }
 
-/**
- * Número de um `<input type="number">`.
- *
- * ⚠ ISTO NÃO VALE MAIS PARA O VALOR DOS SERVIÇOS, e a razão antiga fica registrada porque ela
- * estava CERTA para o que sabia: *"o campo é `type="number"` de propósito, e não um texto com
- * máscara: máscara de moeda em pt-BR precisa decidir se `1.234` é mil duzentos e trinta e quatro ou
- * um vírgula dois — e essa decisão, errada, vira o VALOR DA NOTA"*. O dono pediu o campo com
- * vírgula (18/08/2026), e `lib/valorDaNota.js` resolve aquele receio pelo outro lado: a máscara não
- * DECIDE nada, porque a grafia ambígua não pode ser digitada; e a COLAGEM, que era o resto do
- * receio, é recusada em vez de convertida.
- *
- * ⚠ ELE CONTINUA VALENDO PARA OS PERCENTUAIS (alíquota de ISS e `pTotTribSN`), que seguem em
- * `type="number"`: percentual de 0 a 100 não tem separador de milhar, logo não tem a ambiguidade —
- * e uma máscara de centavos ali transformaria "5" em "0,05".
- */
-function numeroDoCampo(valor) {
-  const s = String(valor ?? "").trim();
-  if (s === "") return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
-}
+// ⚠⚠ `numeroDoCampo` SAIU DAQUI EM 20/08/2026 — ela foi para `lib/impostosDaNota.js` (`percentual`),
+// junto com os dois únicos campos que a usavam (a alíquota de ISS e o `pTotTribSN`). Ficar aqui sem
+// chamador seria código morto, e código morto é o que alguém "conserta" reintroduzindo o caminho que
+// se acabou de fechar.
+//
+// ⚠ A DISTINÇÃO QUE ELA CARREGAVA CONTINUA VALENDO, e por isso fica escrita: a leitura por
+// `Number()` **não vale mais para o VALOR DOS SERVIÇOS** — o campo é texto com máscara desde
+// 18/08/2026, e quem lê é `lib/valorDaNota.js`. A razão antiga estava CERTA para o que sabia
+// (*"máscara de moeda em pt-BR precisa decidir se `1.234` é mil duzentos e trinta e quatro ou um
+// vírgula dois — e essa decisão, errada, vira o VALOR DA NOTA"*); o que mudou é que a máscara não
+// DECIDE nada, porque a grafia ambígua não pode ser digitada, e a colagem ambígua é recusada.
+// ⚠ Para PERCENTUAL ela continua sendo a leitura certa: de 0 a 100 não há separador de milhar, logo
+// não há ambiguidade — e reusar a máscara de centavos ali transformaria "5" em "0,05".
 
 /**
  * Monta o corpo de `POST /client/companies/:id/nfse`.
@@ -235,12 +238,25 @@ function numeroDoCampo(valor) {
  * ou nada, ou opções que o servidor recusaria uma a uma. Sem o campo, vale o singular
  * `Company.codigoServicoNacional`, que é o comportamento de sempre — e a tela DIZ qual é ele.
  *
- * ⚠ **O ISS NO SIMPLES.** Com `issNoFormulario: false` (empresa do Simples), a alíquota de ISS
- * **não é enviada** e `issRetido` vai `false` — não "o que estiver no estado". Os dois andam
- * juntos por exigência do servidor, não por estética: `buildDpsXml` recusa
- * `issRetido: true` sem alíquota > 0 (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`). Ver o bloco Impostos.
+ * ⚠⚠ **O QUE NÃO ESTÁ NA TELA NÃO PODE ESTAR NO CORPO — e quem decide isso é `lib/impostosDaNota.js`,
+ * o MESMO módulo que decide o que renderizar.** Campo escondido que continua viajando é o defeito
+ * pior: a tela mostra uma coisa e o servidor recebe outra, e quem confere a tela nunca descobre.
+ * Três campos passam por essa guarda, e cada um por um motivo próprio:
+ *
+ *   • **`issRetido`** — no Simples vai `false`, não "o que estiver no estado". Ele e a alíquota
+ *     andam juntos por exigência do servidor: `buildDpsXml` recusa `issRetido: true` sem alíquota
+ *     > 0 (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`).
+ *   • **`servico.aliquota`** — só existe com RETENÇÃO marcada (dono, 20/08/2026), e só fora do
+ *     Simples. Desmarcar a caixa tem de tirar o valor do corpo, e não só da tela: ele fica preso no
+ *     estado do formulário, e informar `pAliq` sendo não optante é a rejeição **E0617**.
+ *   • **`totTrib.pTotTribSN`** — só o Simples declara. ⚠ Este era o DEFEITO: o campo era
+ *     renderizado sem nenhuma condição de regime, e o valor viajava para toda empresa.
+ *
+ * ⚠ `regime` entra AQUI em vez de um punhado de booleanos porque a decisão é uma só. Dois
+ * parâmetros que precisam concordar são dois parâmetros que um dia não vão concordar.
  */
-function montarPayload(form, { issNoFormulario, codigoServicoEscolhido = null }) {
+function montarPayload(form, { regime, codigoServicoEscolhido = null }) {
+  const { issNoFormulario } = camposDeImposto({ regime, issRetido: form.issRetido });
   const payload = {
     tomador: {
       cnpjCpf: apenasDigitos(form.tomadorDoc),
@@ -279,15 +295,19 @@ function montarPayload(form, { issNoFormulario, codigoServicoEscolhido = null })
   const email = form.tomadorEmail.trim();
   if (email) payload.tomador.email = email;
 
-  if (issNoFormulario) {
-    const aliquota = numeroDoCampo(form.aliquota);
-    if (aliquota !== null) payload.servico.aliquota = aliquota;
-  }
+  // ⚠ `null` significa NÃO MANDAR O CAMPO — e ele é `null` sempre que a alíquota não está na tela
+  // (Simples, ou caixa de retenção desmarcada). Ver o cabeçalho.
+  const aliquota = aliquotaIssParaOPayload({ regime, issRetido: form.issRetido, aliquota: form.aliquota });
+  if (aliquota !== null) payload.servico.aliquota = aliquota;
 
   const local = apenasDigitos(form.cLocPrestacao);
   if (local) payload.servico.cLocPrestacao = local;
 
-  const pTotTribSN = numeroDoCampo(form.pTotTribSN);
+  // ⚠⚠ FORA DO SIMPLES O GRUPO `totTrib` NÃO EXISTE NESTE CORPO. Não é "vai vazio": a chave não é
+  // criada. O não optante declara os TRÊS percentuais da Lei 12.741/2012, que vêm do CADASTRO e
+  // esta tela nunca envia (ver `lib/cargaTributaria.js`); o regime indefinido não declara nada,
+  // porque ninguém sabe qual grupo a nota leva.
+  const pTotTribSN = pTotTribSNParaOPayload({ regime, pTotTribSN: form.pTotTribSN });
   if (pTotTribSN !== null) payload.totTrib = { pTotTribSN };
 
   // ── DATA DA COMPETÊNCIA ────────────────────────────────────────────────────────────────────
@@ -354,6 +374,11 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   const ultimoConsultado = useRef(null);
   const [gatilhoConsulta, setGatilhoConsulta] = useState(0);
 
+  // A última escolha no seletor de tomadores já emitidos — para a tela poder DIZER o que ela fez, e
+  // para os rótulos de origem. ⚠ `null` é "ninguém escolheu nada"; não é "escolheu e nada mudou".
+  // Ver o bloco `OS TOMADORES PARA QUEM ESTA EMPRESA JÁ EMITIU`, abaixo.
+  const [escolhaDaMemoria, setEscolhaDaMemoria] = useState(null);
+
   // Alíquota efetiva do Simples (`pTotTribSN`).
   const [origemPTot, setOrigemPTot] = useState(ORIGEM_ALIQUOTA.AUSENTE);
 
@@ -379,6 +404,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     setOrigemNome(ORIGEM.AUSENTE);
     setOrigemEndereco(ORIGEM.AUSENTE);
     setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
+    // ⚠ A MEMÓRIA É DA EMPRESA. Um tomador escolhido que sobrevivesse à troca deixaria na tela o
+    // rótulo "de uma nota já emitida" apontando para uma nota que a empresa NOVA nunca emitiu.
+    setEscolhaDaMemoria(null);
     ultimoConsultado.current = null;
   }, [companyId]);
 
@@ -431,6 +459,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     // ficaria vazio com "preenchido pelo portal" ao lado.
     setOrigemPTot(ORIGEM_ALIQUOTA.AUSENTE);
     setConsulta(CONSULTA_OCIOSA);
+    // ⚠ O modelo substitui o formulário inteiro; o rótulo da escolha anterior descreveria campos
+    // que já não estão lá.
+    setEscolhaDaMemoria(null);
     ultimoConsultado.current = null;
     setDesfecho(null);
     setRetryInvoiceId(null);
@@ -453,10 +484,21 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     : [];
 
   const regime = lerRegime(empresa);
-  // ⚠ O ISS SAI DO FORMULÁRIO SÓ NO SIMPLES — decisão do dono, 18/08/2026: no Simples o ISS está
-  // dentro do DAS, e não há alíquota de ISS a informar por nota. Regime desconhecido MANTÉM os
-  // campos (ver `lerRegime`).
-  const issNoFormulario = regime !== REGIME.SIMPLES;
+  // ── OS CAMPOS DE IMPOSTO DESTA NOTA ───────────────────────────────────────────────────────
+  //
+  // ⚠⚠ **UMA LEITURA SÓ, e ela é a MESMA que `montarPayload` usa.** Enquanto a decisão de
+  // renderizar morava no JSX e a de enviar morava no `montarPayload`, elas podiam divergir — e
+  // divergiram: o `pTotTribSN` aparecia (e viajava) para empresa do Presumido, defeito relatado em
+  // produção pelo dono em 20/08/2026. A regra e os três motivos estão em `lib/impostosDaNota.js`.
+  //
+  //   • `issNoFormulario`      — o bloco de ISS. Sai só no Simples; INDEFINIDO mantém.
+  //   • `aliquotaNoFormulario` — a alíquota de ISS. Só com a caixa de retenção MARCADA.
+  //   • `pTotTribSNNoFormulario` — a alíquota efetiva do Simples. SÓ no Simples: o não optante não
+  //     declara esse campo, e o indefinido não pode afirmar que declara.
+  const { issNoFormulario, aliquotaNoFormulario, pTotTribSNNoFormulario } = camposDeImposto({
+    regime,
+    issRetido: form.issRetido,
+  });
 
   // ── A CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012) ───────────────────────────────────────
   //
@@ -607,13 +649,65 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     setGatilhoConsulta((n) => n + 1);
   }
 
+  // ── OS TOMADORES PARA QUEM ESTA EMPRESA JÁ EMITIU ─────────────────────────────────────────
+  //
+  // > Dono (20/08/2026): *"na aba de emissão deve haver um seletor para selecionarmos tomadores já
+  // > emitidos."*
+  //
+  // ⚠⚠ **O CADASTRO JÁ EXISTIA** — `apps/api/src/application/nfse/tomadorEmitido.js`, alimentado
+  // por CADA emissão autorizada, escopado por empresa, com documento, nome, e-mail e endereço
+  // completo. O que faltava era a porta de leitura para este portal. Nada aqui grava, edita ou
+  // apaga tomador; não existe caminho para isso do lado do cliente.
+  //
+  // ⚠ A REGRA NÃO MORA AQUI: `lib/tomadoresEmitidos.js` decide o que a lista mostra, o que a
+  // escolha preenche e o que ela PRESERVA. Este bloco é a LIGAÇÃO.
+  //
+  // ⚠ Não é pedido a quem não pode emitir — a tela nem chega a montar o formulário.
+  const memoriaTomadores = useCarregamento(
+    () => api.getTomadoresEmitidos(companyId),
+    [companyId],
+    { habilitado: portao.podeEmitir }
+  );
+  const tomadores = useMemo(
+    () => normalizarTomadores(memoriaTomadores.dados),
+    [memoriaTomadores.dados]
+  );
+
+  /**
+   * ⚠⚠ A ESCOLHA NÃO APAGA O QUE A PESSOA DIGITOU — e o que foi preservado aparece, com um botão
+   * para trocar. É a MESMA regra do `consultaTomador` (`aplicarNome`/`aplicarEndereco`).
+   *
+   * ⚠ A PRECEDÊNCIA CONTRA A CONSULTA DA RECEITA É `ORIGEM.DIGITADO`, e a ETIQUETA é outra coisa.
+   * Preencher o documento dispara a consulta do CNPJ segundos depois; sem marcar a origem, ela
+   * sobrescreveria o nome e o endereço que a nota anterior de fato teve. `DIGITADO` é o valor certo
+   * para a PRECEDÊNCIA (a pessoa clicou — foi um ato dela), e o rótulo na tela diz a verdade:
+   * "de uma nota já emitida". Ver o rodapé de `lib/tomadoresEmitidos.js`.
+   */
+  function escolherTomadorDaMemoria(registro, { forcar = false } = {}) {
+    const resultado = aplicarTomadorEmitido({ form: formRef.current, registro, forcar });
+    setForm(resultado.form);
+    if (resultado.aplicados.includes("tomadorNome")) setOrigemNome(ORIGEM.DIGITADO);
+    if (enderecoVeioDaMemoria(resultado.aplicados)) setOrigemEndereco(ORIGEM.DIGITADO);
+    setEscolhaDaMemoria({
+      registro,
+      aplicados: resultado.aplicados,
+      divergentes: resultado.divergentes,
+      nomeDaMemoria: resultado.aplicados.includes("tomadorNome"),
+      enderecoDaMemoria: enderecoVeioDaMemoria(resultado.aplicados),
+    });
+  }
+
   // ── A ALÍQUOTA EFETIVA DO SIMPLES ─────────────────────────────────────────────────────────
   const competenciaDaNota = String(form.competencia || "").slice(0, 7);
   const serieAliquota = useCarregamento(
     () => api.getAliquotas(companyId, janelaDaConsulta(competenciaDaNota)),
     [companyId, competenciaDaNota],
     // ⚠ Não é pedido a quem não pode emitir: a tela nem chega a mostrar o formulário.
-    { habilitado: portao.podeEmitir }
+    // ⚠⚠ NEM A QUEM NÃO DECLARA `pTotTribSN`. Fora do Simples o número não tem campo, não tem
+    // pré-visualização e não vai no corpo — pedi-lo seria buscar dado para não usar, e deixaria
+    // `form.pTotTribSN` preenchido para um regime que não o declara. `habilitado: false` limpa o
+    // estado (ver `useCarregamento`), então o efeito abaixo devolve o campo a `""`.
+    { habilitado: portao.podeEmitir && pTotTribSNNoFormulario }
   );
   const escolhaAliquota = useMemo(
     () => escolherAliquotaEfetiva(serieAliquota.dados, competenciaDaNota),
@@ -726,7 +820,9 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
   // ⚠ UMA LEITURA SÓ. Este é o mesmo `lerValorDoCampo` que `montarPayload` usa — o número que a
   // pré-visualização mostra é, por construção, o número que vai na nota.
   const valorServicos = lerValorDoCampo(form.valorServicos);
-  const aliquota = issNoFormulario ? numeroDoCampo(form.aliquota) : null;
+  // ⚠ A MESMA função que monta o corpo: a alíquota que a pré-visualização usa é, por construção, a
+  // que vai (ou não vai) na nota. Fora do caso "não optante COM retenção" ela é `null` nos dois.
+  const aliquota = aliquotaIssParaOPayload({ regime, issRetido: form.issRetido, aliquota: form.aliquota });
   const issRetido = issNoFormulario && form.issRetido;
   const issRetidoValor =
     issRetido && valorServicos !== null && aliquota !== null
@@ -741,7 +837,17 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
           : Number((valorServicos - issRetidoValor).toFixed(2))
         : valorServicos;
 
-  const pTotTribSN = numeroDoCampo(form.pTotTribSN);
+  // ⚠⚠ IDEM PARA O `pTotTribSN`: a prévia mostra o que VAI SER DECLARADO. Fora do Simples ela
+  // recebe `null` e o espelho da nota não exibe a linha — mostrar ali um percentual que o corpo não
+  // leva seria a mesma mentira do campo, só que na tela que existe para conferir o corpo.
+  const pTotTribSN = pTotTribSNParaOPayload({ regime, pTotTribSN: form.pTotTribSN });
+
+  // ⚠ A CONFERÊNCIA DA ALÍQUOTA DE ISS — a tela diz ANTES o que o servidor recusaria depois.
+  const conferenciaAliquota = conferirAliquotaIss({
+    regime,
+    issRetido: form.issRetido,
+    aliquota: form.aliquota,
+  });
 
   const valoresDaPrevia = useMemo(
     () => ({
@@ -765,6 +871,10 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       issRetidoValor,
       liquido,
       pTotTribSN,
+      // ⚠⚠ A PRÉVIA PRECISA DA MESMA GUARDA DO FORMULÁRIO. Sem ela, a linha "Tributos do Simples
+      // nesta nota" aparecia (com traço) para a empresa do Presumido — o traço não salva, porque a
+      // LINHA já afirma que a nota declara esse grupo.
+      pTotTribSNNoFormulario,
       // ⚠ O ESPELHO DA NOTA MOSTRA A CARGA QUE VAI DECLARADA. Ela sai IMPRESSA ao tomador (Lei
       // 12.741/2012) e não vinha de lugar nenhum nesta tela — o cliente do Presumido só veria o
       // número depois de a nota existir. `null` quando não se aplica (Simples, regime indefinido)
@@ -781,6 +891,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       issRetidoValor,
       liquido,
       pTotTribSN,
+      pTotTribSNNoFormulario,
       cargaDaPrevia,
       codigoServicoNacional,
     ]
@@ -799,8 +910,27 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
     return (evento) => {
       const valor = evento.target.value;
       marcarOrigem(ORIGEM.DIGITADO);
+      // ⚠ E O RÓTULO DA MEMÓRIA SAI JUNTO. Escrever por cima de um campo que veio de uma nota
+      // anterior torna "de uma nota já emitida" uma frase FALSA sobre aquele campo — e a frase que
+      // descreve um comportamento é parte do comportamento. A saída é por GRUPO (nome × endereço),
+      // que é a granularidade dos dois rótulos que a tela tem.
+      esquecerRotuloDaMemoria(nome);
       setForm((anterior) => ({ ...anterior, [nome]: valor }));
     };
+  }
+
+  /** Tira o rótulo "de uma nota já emitida" do GRUPO a que este campo pertence. */
+  function esquecerRotuloDaMemoria(nomeDoCampo) {
+    setEscolhaDaMemoria((anterior) => {
+      if (!anterior) return anterior;
+      if (nomeDoCampo === "tomadorNome" && anterior.nomeDaMemoria) {
+        return { ...anterior, nomeDaMemoria: false };
+      }
+      if (CAMPOS_DE_ENDERECO.includes(nomeDoCampo) && anterior.enderecoDaMemoria) {
+        return { ...anterior, enderecoDaMemoria: false };
+      }
+      return anterior;
+    });
   }
 
   async function emitir(evento) {
@@ -821,10 +951,22 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
       return;
     }
 
+    // ⚠⚠ COM O ISS RETIDO E SEM ALÍQUOTA (OU COM ZERO), NADA SAI DAQUI.
+    //
+    // `buildDpsXml` exige `aliquota > 0` quando `issRetido === true`
+    // (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`, `NfseService.js:766`), então a recusa viria de qualquer
+    // jeito — e descobri-la no clique de um ato fiscal irreversível é o pior momento possível.
+    // ⚠ `required` no HTML não basta: um **zero** digitado passa pelo navegador e morre no
+    // servidor. Ver `conferirAliquotaIss`.
+    if (!conferenciaAliquota.ok) {
+      document.getElementById("emitir-aliquota")?.focus();
+      return;
+    }
+
     setEnviando(true);
     try {
       const payload = montarPayload(form, {
-        issNoFormulario,
+        regime,
         codigoServicoEscolhido: codigoParaOPayload({
           situacao: cadastroDeCodigos.situacao,
           escolhido: codigoEscolhido,
@@ -1070,6 +1212,58 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
             <form className="pane pane-form" onSubmit={emitir}>
               <fieldset>
                 <legend>Para quem</legend>
+
+                {/* ── OS TOMADORES PARA QUEM ESTA EMPRESA JÁ EMITIU ───────────────────────────
+                    > Dono (20/08/2026): *"na aba de emissão deve haver um seletor para
+                    > selecionarmos tomadores já emitidos."*
+
+                    ⚠⚠ **SEM TOMADORES, SEM SELETOR — E NADA É DITO.** Critério literal do dono:
+                    *"sem sugestão não precisa ser falado, pois já está sem"*. Campo vazio numa
+                    empresa que nunca emitiu se explica sozinho; um "você ainda não emitiu para
+                    ninguém" fixo seria ruído em toda nota da empresa nova.
+                    ⚠ Isto NÃO é o mesmo caso do `"Não preenchemos: …"` da alíquota, que FICOU:
+                    aquele impede uma ausência de ser lida como AFIRMAÇÃO; este descreveria uma
+                    ausência já visível.
+
+                    ⚠ Enquanto a lista carrega, também não se diz nada: um "procurando…" que pisca
+                    numa lista que quase sempre é curta chama atenção para o que não decide nada. */}
+                {tomadores.length ? (
+                  <SeletorTomador
+                    id="emitir-tomador-memoria"
+                    tomadores={tomadores}
+                    aoEscolher={(registro) => escolherTomadorDaMemoria(registro)}
+                  />
+                ) : null}
+
+                {/* ⚠⚠ O QUE A ESCOLHA FEZ FICA À VISTA — inclusive o que ela NÃO fez.
+                    O digitado vence (mesma regra do `consultaTomador`), mas "vence em silêncio"
+                    seria a pessoa achar que escolheu e a nota sair com metade dos dados do tomador
+                    anterior. A substituição existe, e é uma SEGUNDA decisão dela. */}
+                {escolhaDaMemoria ? (
+                  <div className="alerta alerta-info" role="status">
+                    <p>
+                      Preenchido a partir de uma nota já emitida para{" "}
+                      <strong>{texto(escolhaDaMemoria.registro.nome)}</strong>.
+                    </p>
+                    {escolhaDaMemoria.divergentes.length ? (
+                      <>
+                        <p>{textoDosPreservados(escolhaDaMemoria.divergentes)}</p>
+                        <p>
+                          <button
+                            type="button"
+                            className="btn-link"
+                            onClick={() =>
+                              escolherTomadorDaMemoria(escolhaDaMemoria.registro, { forcar: true })
+                            }
+                          >
+                            usar os dados da nota anterior
+                          </button>
+                        </p>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 <label htmlFor="emitir-doc">
                   CNPJ ou CPF do tomador
                   <input
@@ -1138,7 +1332,7 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
 
                 <label htmlFor="emitir-nome">
                   Nome ou razão social
-                  <RotuloOrigem origem={origemNome} />
+                  <RotuloOrigem origem={origemNome} daMemoria={escolhaDaMemoria?.nomeDaMemoria} />
                   <input
                     id="emitir-nome"
                     required
@@ -1182,7 +1376,10 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     complemento é dispensável. */}
                 <legend>
                   Endereço do tomador
-                  <RotuloOrigem origem={origemEndereco} />
+                  <RotuloOrigem
+                    origem={origemEndereco}
+                    daMemoria={escolhaDaMemoria?.enderecoDaMemoria}
+                  />
                 </legend>
                 <label htmlFor="emitir-cep">
                   CEP
@@ -1197,6 +1394,10 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                   valor={form.cMun}
                   onChange={(codigo) => {
                     setOrigemEndereco(ORIGEM.DIGITADO);
+                    // ⚠ O município tem seletor próprio e não passa por `campoDoTomador` — o
+                    // rótulo da memória precisa sair aqui também, senão ele sobrevive a uma troca
+                    // de município e passa a descrever um endereço que já não é o da nota anterior.
+                    esquecerRotuloDaMemoria("cMun");
                     setForm((a) => ({ ...a, cMun: codigo }));
                   }}
                   ajuda="Busque pelo nome. Há cidades homônimas: confira a UF."
@@ -1479,7 +1680,25 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     é um número que apareceu sozinho.
                     ⚠ A conta é DAS ÷ receita. O INSS **não** entra — ele não está dentro do DAS,
                     e `pTotTribSN` é "total de tributos do SIMPLES NACIONAL". Ver
-                    `lib/aliquotaEfetiva.js`. */}
+                    `lib/aliquotaEfetiva.js`.
+
+                    ⚠⚠ **ESTE BLOCO INTEIRO SÓ EXISTE NO SIMPLES — E ISSO É UM CONSERTO DE
+                    PRODUÇÃO (20/08/2026).** Palavras do dono: *"empresa presumida aparecendo isso
+                    na nota: Alíquota efetiva do Simples (%). Não pode."* O campo era renderizado
+                    **sem nenhuma condição de regime**, enquanto os dois vizinhos já tinham a sua (o
+                    bloco de ISS sai no Simples; a carga tributária aparece só no não optante).
+
+                    ⚠ A GUARDA VALE NOS DOIS SENTIDOS, e o **regime INDEFINIDO também não vê**: ali
+                    não se sabe qual grupo a nota leva, e um campo chamado "do Simples" é uma
+                    AFIRMAÇÃO sobre uma empresa cujo regime ninguém afirmou — o mesmo critério da
+                    carga tributária (`0905d58e`).
+                    ⚠ E esconder aqui não fabrica recusa nenhuma: o servidor só exige `pTotTribSN`
+                    de quem é do Simples (`MISSING_P_TOT_TRIB_SN` está sob `if (isSimples …)`).
+                    ⚠⚠ **ESCONDER NÃO BASTA**: `montarPayload` também não manda o grupo `totTrib`
+                    fora do Simples. Campo escondido que continua viajando é o defeito pior. As duas
+                    decisões saem do MESMO `camposDeImposto`. */}
+                {pTotTribSNNoFormulario ? (
+                <>
                 <label htmlFor="emitir-ptottribsn">
                   Alíquota efetiva do Simples (%)
                   <span className="origem" data-origem={origemPTot}>
@@ -1548,6 +1767,8 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                     </button>
                   </p>
                 ) : null}
+                </>
+                ) : null}
 
                 {/* ── O ISS ─────────────────────────────────────────────────────────────────
                     ⚠⚠ NO SIMPLES ESTE BLOCO NÃO EXISTE — decisão do dono, 18/08/2026: o ISS da
@@ -1572,26 +1793,61 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                       />
                       O ISS desta nota é retido pelo tomador
                     </label>
-                    <label htmlFor="emitir-aliquota">
-                      Alíquota do ISS (%)
-                      <input
-                        id="emitir-aliquota"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        required={form.issRetido}
-                        value={form.aliquota}
-                        onChange={campo("aliquota")}
-                      />
-                    </label>
-                    <span className="hint">
-                      Com ISS retido, a alíquota é obrigatória — sem ela a nota é recusada antes de
-                      sair daqui.
-                      {regime === REGIME.DESCONHECIDO
-                        ? " ⚠ Não recebemos o regime desta empresa. Se ela for do Simples, não há alíquota de ISS a informar — confirme com o seu contador."
-                        : ""}
-                    </span>
+
+                    {/* ⚠⚠ A ALÍQUOTA SÓ APARECE COM A CAIXA MARCADA — pedido do dono (20/08/2026):
+                        *"a alíquota de ISS é apenas se for retido, correto? então só deve aparecer
+                        campo de alíquota se clicar na caixa de retenção de ISS."*
+
+                        ⚠ CONFIRMADO NA FONTE, por três caminhos independentes:
+                          • `NfseService.js:766` — a alíquota **só é exigida** quando
+                            `issRetido === true` (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`);
+                          • ela **não entra no XML**: o grupo `<tribMun>` leva só `<tribISSQN>` e
+                            `<tpRetISSQN>`. `NfseService` a grava em `ServiceInvoice.aliquota`, que
+                            é registro NOSSO, não valor declarado ao fisco;
+                          • Anexo I: informar `pAliq` sendo **não optante** em município ativo é a
+                            rejeição **E0617**. Mandar não é só inútil — seria errado.
+
+                        ⚠⚠ DESMARCAR TIRA O CAMPO **E O VALOR**: `aliquotaIssParaOPayload` devolve
+                        `null` com a caixa desmarcada, então o número que ficou preso no estado do
+                        formulário não viaja. Esconder sem parar de mandar é o defeito pior.
+                        ⚠ ISTO É SÓ PARA O NÃO OPTANTE — no Simples o bloco inteiro já saiu da tela
+                        (o `issNoFormulario` acima), e nada aqui o reintroduz. */}
+                    {aliquotaNoFormulario ? (
+                      <>
+                        <label htmlFor="emitir-aliquota">
+                          Alíquota do ISS (%)
+                          <input
+                            id="emitir-aliquota"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            required
+                            value={form.aliquota}
+                            onChange={campo("aliquota")}
+                          />
+                        </label>
+                        {/* ⚠ A TELA DIZ ANTES o que o servidor recusaria depois — e o submit é
+                            recusado aqui mesmo (ver `emitir`). ⚠ ZERO NÃO BASTA: `required` do
+                            HTML o aceita, e `buildDpsXml` exige `> 0`. */}
+                        <span className="hint">
+                          {conferenciaAliquota.ok
+                            ? "Com o ISS retido, a alíquota é obrigatória."
+                            : conferenciaAliquota.falta}
+                        </span>
+                      </>
+                    ) : null}
+
+                    {/* ⚠ O AVISO DO REGIME DESCONHECIDO NÃO DEPENDE DA CAIXA, e por isso saiu de
+                        dentro da legenda da alíquota (que agora só existe com retenção). Ele
+                        responde a um dado que NÃO recebemos — não é legenda fixa —, e some junto
+                        com o campo seria justamente esconder a dúvida de quem mais precisa dela. */}
+                    {regime === REGIME.DESCONHECIDO ? (
+                      <span className="hint">
+                        ⚠ Não recebemos o regime desta empresa. Se ela for do Simples, não há
+                        alíquota de ISS a informar — confirme com o seu contador.
+                      </span>
+                    ) : null}
                   </>
                 ) : null}
                 {/* ⚠⚠ ESTA LEGENDA SAIU DA TELA EM 19/08/2026 — pedido do dono, com a tela na
@@ -1660,7 +1916,21 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
  * ⚠ Sem ela, "por que o nome mudou sozinho?" não tem resposta na tela. É o mesmo princípio do
  * planejamento tributário, que imprime a procedência de cada campo.
  */
-function RotuloOrigem({ origem }) {
+function RotuloOrigem({ origem, daMemoria = false }) {
+  // ⚠⚠ A MEMÓRIA DE TOMADORES TEM ETIQUETA PRÓPRIA, e ela VEM PRIMEIRO.
+  //
+  // A PRECEDÊNCIA contra a consulta da Receita é `ORIGEM.DIGITADO` (a pessoa clicou; foi um ato
+  // dela — ver `escolherTomadorDaMemoria`), mas o RÓTULO não pode dizer "digitado": ninguém digitou
+  // aquilo. `ORIGEM` é ESPELHO de `apps/web` ("mudou lá, muda aqui"), e um quarto valor só deste
+  // lado faria as duas cópias divergirem no primeiro `rotuloOrigem` — por isso a etiqueta entra
+  // aqui, e não lá. Ver o rodapé de `lib/tomadoresEmitidos.js`.
+  if (daMemoria) {
+    return (
+      <span className="origem" data-origem="da_memoria">
+        {ORIGEM_MEMORIA}
+      </span>
+    );
+  }
   const rotulo = rotuloOrigem(origem);
   if (!rotulo) return null;
   return (

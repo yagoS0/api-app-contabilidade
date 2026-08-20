@@ -377,9 +377,15 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     alcançável nesta máquina. Rodar `prisma:migrate:deploy` + `:status` antes de usar.
 - [~] **Portal do CLIENTE na web (`apps/portal-cliente-web`)** — app novo (18–19/08/2026, nove
   commits): login, casca, Home, Notas, Guias e **emissão de NFS-e pelo cliente**. React 19 + Vite,
-  **sem router** (hash, 3 destinos) e sem lib de estado; paleta CLARA própria; 557 testes / 32 suítes.
+  **sem router** (hash, 3 destinos) e sem lib de estado; paleta CLARA própria; 683 testes / 38 suítes.
   ⚠ **Ler `apps/portal-cliente-web/CLAUDE.md` antes de mexer** — quase toda decisão veio de defeito
-  medido ou de instrução literal do dono. Os três que mais custam se reintroduzidos:
+  medido ou de instrução literal do dono. Os que mais custam se reintroduzidos:
+  - ⚠⚠ **OS CAMPOS DE IMPOSTO TÊM GUARDA NOS DOIS LADOS** (`emitir/lib/impostosDaNota.js`,
+    20/08/2026) — a tela **e** o payload saem da MESMA resposta. `pTotTribSN` só existe no Simples
+    (o defeito relatado em produção: a empresa do Presumido via "Alíquota efetiva do Simples"), e o
+    **regime indefinido também não o vê**; a alíquota de ISS só existe com a **retenção marcada**, e
+    desmarcar tira o valor do CORPO, não só da tela. ⚠ Campo escondido que continua viajando é o
+    defeito pior.
   - ⚠ **O fallback mock não engole recusa NOMEADA** (`src/api/index.js:42`). Antes caía para o mock
     em todo 5xx: o `503 danfse_sem_qrcode` virava PDF válido e o **502 de TRANSPORTE virava
     `status: "issued"`** na tela do cliente, com o desfecho real desconhecido.
@@ -401,6 +407,11 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     (`INTEGRACAO_NFSE_LOTE`), com o **servidor** recusando — não é a tela que esconde o botão. `routes/nfseLoteRoutes.js` está montado em `routes/client/index.js`
     com `resolverCompanyId: resolveLegacyCompanyId` (sem ele a memória de tomadores volta vazia
     **sem erro**, e o *"se já teve antes, só preencher"* nunca acontece).
+  - ⚠ **O SELETOR DE TOMADORES JÁ EMITIDOS** (20/08/2026) reusa o cadastro que a emissão já
+    alimenta (`api/src/application/nfse/tomadorEmitido.js`) por uma rota nova **só de leitura**,
+    `GET /client/companies/:id/nfse/tomadores` — com `resolveLegacyCompanyId`, a QUINTA vez que essa
+    confusão de ids aparece. Encontra e nunca escolhe; o digitado vence e o que foi preservado é
+    dito; sem tomadores o seletor não aparece e nada é falado.
   - **Fora de escopo, com motivo escrito:** substituição de NFS-e (**escopo fechado pelo dono**) e
     envio da nota por e-mail ao tomador. ⚠ A EMISSÃO em lote saiu desta lista em 20/08/2026 — ela
     foi construída.

@@ -53,6 +53,9 @@ src/
     home/               - resumo do mês
     notas/              - lista + DANFSe + cancelamento + "usar como modelo"
     emitir/             - ⚠ a ÚNICA tela deste portal que pratica ato fiscal
+                          `lib/impostosDaNota.js`   - quais campos de imposto a nota LEVA (e envia)
+                          `lib/tomadoresEmitidos.js`- a memória de tomadores, do lado da TELA
+                          `SeletorTomador.jsx`      - a busca "encontra, nunca escolhe"
     lote/               - planilha de emissão em lote: modelo, leitura e CONFERÊNCIA (⚠ NÃO emite)
     guias/              - guias + linha digitável
   lib/
@@ -118,6 +121,20 @@ mock** numa tela que emite nota fiscal de verdade.
 mock que recusa o que o real aceita treina a tela errada — foi o caso do `emitirNfse` do mock, que
 julgava só o payload e por isso recusava **todo** Lucro Presumido, inclusive o de cadastro completo
 (consertado em `df520df3`).
+
+⚠⚠ **AS EMPRESAS DO MOCK SÃO SETE, E O EIXO DE CADA UMA É DELIBERADO.** Quatro cobrem o PORTÃO;
+`pc-005`/`pc-006` abriram o eixo do REGIME (Presumido com carga completa × incompleta); e **`pc-007`
+é o REGIME INDEFINIDO COM O FORMULÁRIO ABERTO**, acrescentada em 20/08/2026. As `pc-002/003/004` já
+tinham `legacyCompany: null`, mas **nenhuma passa pelo portão** — o formulário nunca montava, então
+o ramo "não sei o regime desta empresa" só existia no papel, e é justamente nele que as três guardas
+de imposto decidem coisas diferentes. ⚠ Nela o `regimeTributario` é uma chave **AUSENTE**, não
+`null` nem `"INDEFINIDO"`.
+
+⚠ **A MEMÓRIA DE TOMADORES DO MOCK cobre os três estados**: `pc-001` com três registros (um **sem
+e-mail**, um **CPF sem endereço nenhum**), `pc-005` com um (a memória não tem nada a ver com
+regime), e `pc-006`/`pc-007` com **nenhum** — que é o caso em que o seletor não aparece. ⚠ E só
+`emitirNfse` escreve nela, **depois do sucesso**, como no par real: as recusas de RECEITA e de
+TRANSPORTE não gravam.
 
 ## Estilo — paleta CLARA, própria
 
@@ -212,6 +229,96 @@ armadilha do `fatorR` já registrada em `apps/web/CLAUDE.md`.
 ⚠ Sem a competência da nota, usa-se a **última apurada e diz-se qual foi** (`:110`) — nunca se
 extrapola nem se repete o número anterior fingindo ser o do mês. A janela da consulta é de **6
 meses, não 12** (`:159`): a rota faz um `aggregate` por competência, em série.
+
+### ⚠⚠ OS CAMPOS DE IMPOSTO — `lib/impostosDaNota.js`
+
+**Duas entregas de 20/08/2026, as duas relatadas pelo dono com a tela na frente.** O módulo existe
+porque as duas são a MESMA pergunta: *quais campos de imposto esta nota leva?* — e a resposta tem de
+valer para o que se RENDERIZA **e** para o que se ENVIA.
+
+⚠⚠ **CAMPO ESCONDIDO QUE CONTINUA VIAJANDO É O DEFEITO PIOR.** A tela mostra uma coisa e o servidor
+recebe outra, e quem confere a tela nunca descobre. Por isso `montarPayload` recebe `regime` (não um
+punhado de booleanos) e chama o MESMO `camposDeImposto` que o JSX chama. Dois parâmetros que
+precisam concordar são dois parâmetros que um dia não vão concordar.
+
+**1. `pTotTribSN` — o DEFEITO EM PRODUÇÃO.** *"empresa presumida aparecendo isso na nota: Alíquota
+efetiva do Simples (%). Não pode."* O campo era renderizado **sem nenhuma condição de regime**,
+enquanto os dois vizinhos já tinham a sua (o bloco de ISS sai no Simples; a carga tributária aparece
+só no não optante).
+
+- **Simples vê e envia**; **não optante não vê e não envia**; ⚠ **regime INDEFINIDO também não** —
+  ali não se sabe qual grupo a nota leva, e um campo chamado "do Simples" é uma AFIRMAÇÃO sobre uma
+  empresa cujo regime ninguém afirmou. É o critério do `0905d58e`, com o mesmo sinal.
+- ⚠ Esconder **não fabrica recusa**: o servidor só exige `pTotTribSN` de quem é do Simples
+  (`MISSING_P_TOT_TRIB_SN` está sob `if (isSimples …)`, `NfseService.js:626`), e o XML só escreve o
+  grupo sob `isSimples` (`:952`).
+- ⚠ **A PRÉVIA TEM A MESMA GUARDA.** A linha *"Tributos do Simples nesta nota"* aparecia com traço
+  para o Presumido — e o traço não salva: a LINHA já afirma que a nota declara esse grupo.
+- ⚠ Fora do Simples a alíquota efetiva **nem é pedida** a `GET /aliquotas`: dado que não se usa não
+  se busca, e buscá-lo deixaria `form.pTotTribSN` preenchido para um regime que não o declara.
+
+**2. A alíquota de ISS só existe com RETENÇÃO.** *"a alíquota de ISS é apenas se for retido, correto?
+então só deve aparecer campo de alíquota se clicar na caixa de retenção de ISS."* Confirmado na
+fonte, por três caminhos independentes:
+
+- `NfseService.js:766` — a alíquota **só é exigida** com `issRetido === true`
+  (`NFSE_ISS_RETIDO_SEM_ALIQUOTA`);
+- ela **não entra no XML**: `<tribMun>` (`:870`) leva só `tribISSQN` e `tpRetISSQN`. `NfseService` a
+  grava em `ServiceInvoice.aliquota`, que é registro NOSSO;
+- Anexo I: informar `pAliq` sendo **não optante** em município ativo é a rejeição **E0617**.
+
+⚠ Marcada, ela é **obrigatória e > 0**, e a tela **recusa o submit** dizendo o que falta — como
+`conferirCodigoEscolhido` já faz. ⚠ `required` do HTML **não basta**: um **zero** passa pelo
+navegador e morre no servidor. ⚠ Desmarcada, o campo some **e o valor não viaja** — ele fica preso
+no estado do formulário.
+⚠ **Isto é só para o NÃO OPTANTE.** No Simples o bloco de ISS inteiro já sai da tela; nada aqui o
+reintroduz (`aliquotaNoFormulario` depende de `issNoFormulario`, não só da caixa).
+
+⚠ `REGIME` e `lerRegime` **mudaram-se para cá** vindos do `.jsx` — era lá que a guarda faltava.
+
+### ⚠⚠ OS TOMADORES JÁ EMITIDOS — `lib/tomadoresEmitidos.js` + `SeletorTomador.jsx`
+
+> Dono (20/08/2026): *"na aba de emissão deve haver um seletor para selecionarmos tomadores já
+> emitidos."*
+
+⚠⚠ **O CADASTRO JÁ EXISTIA E NÃO NASCEU AQUI** — `apps/api/src/application/nfse/tomadorEmitido.js`
+(tabela `tomadores_emitidos`), alimentado por CADA emissão autorizada, escopado por empresa, com
+documento, nome, e-mail e endereço completo. Foi construído em 19/08 exatamente para isto.
+**Não crie outro.** O que faltava era a porta de LEITURA: `buscarTomadoresEmitidos` responde
+*"conheço ESTE documento?"* (é o que o lote pergunta linha a linha) e ninguém respondia *"quem eu já
+conheço?"* — daí `listarTomadoresEmitidos` + `GET /client/companies/:companyId/nfse/tomadores`.
+
+⚠⚠ **`resolveLegacyCompanyId`, PELA QUINTA VEZ ESTA SEMANA.** O `:companyId` do path é um
+`PortalClient.id`; `TomadorEmitido.companyId` é o da `Company` legada. Sem a resolução o `findMany`
+volta **vazio, sem erro**: 200 na rota, "nunca emiti para ninguém" na tela, em silêncio. Travado por
+varredura de fonte (`client/__tests__/tomadoresEmitidosDoCliente.test.js`), não por comportamento —
+um dublê passaria. ⚠ Só o escopo da MEMÓRIA usa o id resolvido; o de ACESSO é o do path.
+
+⚠ **SÓ LEITURA.** Não há POST/PATCH/DELETE de tomador em lugar nenhum, nem no `mockApi`: quem
+escreve nessa tabela é uma nota que o sistema nacional autorizou. Uma tela de gestão transformaria o
+registro do que a emissão TEVE num cadastro editável — outra coisa, que ninguém pediu.
+
+**Na tela:**
+
+- ⚠⚠ **ENCONTRA, NUNCA ESCOLHE** — nada pré-selecionado, **resultado único não se autosseleciona**,
+  `Enter` sem item marcado não elege ninguém, e toda linha mostra NOME **e** DOCUMENTO. ⚠ `Enter`
+  com a lista aberta sempre faz `preventDefault`: dentro de um `<form>` ele ENVIA, e este formulário
+  emite nota fiscal.
+- A escolha preenche **documento, nome, e-mail e o endereço inteiro**, e a origem fica à vista.
+- ⚠⚠ **O DIGITADO VENCE, e escolher não apaga sem a pessoa ver.** Campo com conteúdo é PRESERVADO e
+  volta NOMEADO ("Mantivemos o nome e o logradouro…"), com um botão para a SEGUNDA decisão. ⚠ **O
+  documento é a exceção**: ele É a identidade da escolha, e preservá-lo deixaria o nome de um
+  tomador com o CNPJ de outro — a nota sairia para a pessoa errada.
+- ⚠ **Sem tomadores ⇒ o seletor não aparece, e NADA é dito** (*"sem sugestão não precisa ser falado,
+  pois já está sem"*). Não confundir com o `"Não preenchemos: …"` da alíquota, que FICOU: aquele
+  impede uma ausência de virar afirmação; este descreveria uma ausência já visível.
+- ⚠⚠ **A ETIQUETA E A PRECEDÊNCIA SÃO COISAS DIFERENTES.** Contra a consulta da Receita (que o
+  próprio preenchimento do documento dispara), o que veio da memória se comporta como
+  `ORIGEM.DIGITADO` — foi um ato da pessoa. Mas o RÓTULO diz *"de uma nota já emitida"*, não
+  "digitado". Um quarto valor em `ORIGEM` faria a cópia de `apps/web` divergir ("mudou lá, muda
+  aqui"), então a etiqueta mora no `RotuloOrigem` desta tela.
+- ⚠ Escrever por cima de um campo tira o rótulo **daquele grupo** (nome × endereço): a frase que
+  descreve um comportamento é parte do comportamento.
 
 ### ⚠⚠ O tomador — `lib/consultaTomador.js`
 
@@ -618,9 +725,10 @@ de outra.
 
 ## TESTES
 
-`npm test -w @contabilidade/portal-cliente-web` → **557 testes, 32 suítes, todas verdes** (medido em
-19/08/2026, depois do lote por planilha; eram 471/26 antes dele). Não existiam até 18/08
-(`d5a91490` subiu os primeiros 101). **0 suíte falhando é o estado esperado.**
+`npm test -w @contabilidade/portal-cliente-web` → **683 testes, 38 suítes, todas verdes** (medido em
+20/08/2026, depois das guardas de imposto e do seletor de tomadores; eram 645/36 antes delas, e
+557/32 antes do lote por planilha). Não existiam até 18/08 (`d5a91490` subiu os primeiros 101).
+**0 suíte falhando é o estado esperado.**
 
 ⚠ **`npm test` PASSA COM JSX QUEBRADO — só `npm run build` pega.** Rode os dois.
 

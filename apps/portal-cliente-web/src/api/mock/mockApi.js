@@ -312,7 +312,142 @@ function criarEstado() {
         cnaePrincipal: "7112000",
       },
     },
+    {
+      // ⚠⚠ A SÉTIMA EMPRESA É O **REGIME INDEFINIDO COM O FORMULÁRIO ABERTO** — e sem ela metade
+      // das guardas de regime é INALCANÇÁVEL offline.
+      //
+      // As pc-002/003/004 já têm `legacyCompany: null`, mas nenhuma delas passa pelo portão (papel
+      // baixo, não liberada, e a do estado ausente): o formulário nunca chega a montar, então o
+      // ramo "não sei o regime desta empresa" só existia no papel. Este projeto foi mordido QUATRO
+      // vezes por ramo que só existia em produção — e o defeito de 20/08/2026 (o `pTotTribSN` sem
+      // guarda nenhuma) é exatamente dessa família.
+      //
+      // ⚠ O CADASTRO CHEGA INTEIRO, **menos o regime**: é o estado real de uma empresa cujo
+      // `Company.regimeTributario` está em branco (a primeira leitura, `CadastroFiscal.regime`,
+      // nem viaja até aqui). Não escreva `regimeTributario: null` nem `"INDEFINIDO"` — a AUSÊNCIA
+      // da chave é o fato que este cenário existe para produzir.
+      //
+      // O que ela torna alcançável, offline: o bloco de ISS **fica** (com o aviso próprio do
+      // desconhecido), a "Alíquota efetiva do Simples" **não aparece** e a carga tributária do
+      // Presumido **também não** — três decisões diferentes sobre o mesmo estado.
+      companyId: "pc-007",
+      portalId: "pc-007",
+      myRole: "OWNER",
+      razao: "Aurora Studio de Design Ltda",
+      cnpj: "60708090000132",
+      inscricaoMunicipal: "330987",
+      uf: "SC",
+      municipio: "Florianopolis",
+      ownerEmail: "cliente@exemplo.com",
+      guideNotificationEmail: null,
+      email: null,
+      telefone: null,
+      emissaoNfseLiberada: true,
+      portalCreatedAt: "2025-11-03T09:00:00.000Z",
+      portalUpdatedAt: "2026-08-18T11:20:00.000Z",
+      legacyCompany: {
+        id: "legacy-007",
+        razaoSocial: "AURORA STUDIO DE DESIGN LTDA",
+        inscricaoMunicipal: "330987",
+        codigoServicoNacional: "010101",
+        codigosServicoNacional: [],
+        codigoServicoMunicipal: "0101",
+        rpsSerie: "1",
+        rpsNumero: "9",
+        // ⚠ `regimeTributario` AUSENTE — ver acima. `optanteSimples` também não entra: ele existe
+        // na resposta real e a tela NÃO o lê de propósito (o backend não o consulta para o
+        // `opSimpNac`), então plantá-lo aqui só convidaria alguém a "consertar" a leitura.
+        atividades: ["74.10-2-02 - Design de interiores"],
+        cnaePrincipal: "7410202",
+      },
+    },
   ];
+
+  // ── A MEMÓRIA DE TOMADORES, POR EMPRESA ────────────────────────────────────────────────────
+  //
+  // ⚠⚠ **NÃO É UM CADASTRO — é o registro do que a emissão TEVE.** O par real é
+  // `apps/api/src/application/nfse/tomadorEmitido.js`: cada emissão autorizada escreve aqui, e não
+  // existe tela de gestão, edição nem exclusão em lugar nenhum. O mock respeita isso: só
+  // `emitirNfse` escreve neste mapa.
+  //
+  // ⚠ AS TRÊS SITUAÇÕES QUE A TELA PRECISA SABER DESENHAR estão plantadas de propósito:
+  //   • **pc-001** tem três — inclusive um **sem e-mail** e um **CPF sem endereço nenhum**. É a
+  //     invariante 1 do módulo real ("só o que a emissão de fato teve"): nota que saiu sem e-mail
+  //     virou registro sem e-mail, e a tela não pode completar o que falta nem apagar o que a
+  //     pessoa digitou por causa disso.
+  //   • **pc-005** (Lucro Presumido) tem um — senão o seletor só seria exercitável no Simples, e a
+  //     memória não tem nada a ver com regime.
+  //   • **pc-006 e pc-007 NÃO TÊM NENHUM**, e é o caso mais fácil de esquecer: sem tomadores o
+  //     seletor **não aparece**, e nada é dito. (Critério literal do dono: *"sem sugestão não
+  //     precisa ser falado, pois já está sem"*.)
+  //
+  // ⚠ Os documentos são os MESMOS que já aparecem nas notas e na `baseCnpj` — assim a memória, a
+  // lista de notas e a consulta à Receita contam a mesma história offline.
+  const tomadoresEmitidos = new Map([
+    [
+      "pc-001",
+      [
+        {
+          documento: "11222333000181",
+          nome: "COMERCIAL AURORA LTDA",
+          email: "financeiro@aurora.com.br",
+          cMun: "3550308",
+          cep: "01310930",
+          xLgr: "AVENIDA PAULISTA",
+          nro: "1578",
+          xCpl: "CONJ 42",
+          xBairro: "BELA VISTA",
+          ultimaEmissaoEm: "2026-08-12T14:20:00.000Z",
+        },
+        {
+          // ⚠ SEM E-MAIL: a emissão anterior não teve, e o registro guarda `null`, não `""`.
+          documento: "44555666000154",
+          nome: "TRANSPORTADORA SAO BENTO LTDA",
+          email: null,
+          cMun: "2513901",
+          cep: "58730000",
+          xLgr: "RUA DA MATRIZ",
+          nro: "45",
+          xCpl: null,
+          xBairro: "CENTRO",
+          ultimaEmissaoEm: "2026-07-28T09:05:00.000Z",
+        },
+        {
+          // ⚠⚠ CPF **SEM ENDEREÇO NENHUM** — e isto acontece de verdade: o validador entrega
+          // `endereco: undefined` quando qualquer um dos cinco exigidos falta, então ou os cinco
+          // chegam juntos ou nenhum chega. Escolher este tomador preenche documento e nome, e o
+          // endereço continua vazio — a tela não pode fingir que preencheu.
+          documento: "12219079724",
+          nome: "Yago Almeida Santos",
+          email: "yago@example.com",
+          cMun: null,
+          cep: null,
+          xLgr: null,
+          nro: null,
+          xCpl: null,
+          xBairro: null,
+          ultimaEmissaoEm: "2026-06-15T16:40:00.000Z",
+        },
+      ],
+    ],
+    [
+      "pc-005",
+      [
+        {
+          documento: "22333444000172",
+          nome: "STUDIO VERTICE ARQUITETURA ME",
+          email: null,
+          cMun: "3136702",
+          cep: "36010000",
+          xLgr: "RUA HALFELD",
+          nro: "700",
+          xCpl: null,
+          xBairro: "CENTRO",
+          ultimaEmissaoEm: "2026-08-05T11:00:00.000Z",
+        },
+      ],
+    ],
+  ]);
 
   const usuarios = [
     {
@@ -323,7 +458,7 @@ function criarEstado() {
       accountType: "CLIENT",
       name: "Ana Ribeiro",
       defaultClientId: "pc-001",
-      empresas: ["pc-001", "pc-002", "pc-003", "pc-004", "pc-005", "pc-006"],
+      empresas: ["pc-001", "pc-002", "pc-003", "pc-004", "pc-005", "pc-006", "pc-007"],
     },
     {
       id: "u-cliente-2",
@@ -752,6 +887,7 @@ function criarEstado() {
     tokensRedefinicao,
     numeracaoNfse,
     tentativasNfse,
+    tomadoresEmitidos,
     baseCnpj,
   };
 }
@@ -1218,6 +1354,28 @@ export function createMockApi() {
       });
       data.reverse(); // mais recente primeiro, igual à rota
       return data;
+    },
+
+    // --- Os tomadores para quem esta empresa JÁ emitiu ----------------------
+    //
+    // ⚠ **SÓ LEITURA, COMO NO PAR REAL.** Não existe `salvarTomador`, `editarTomador` nem
+    // `removerTomador` aqui — e não pode existir: quem escreve nessa memória é uma emissão que o
+    // sistema nacional autorizou (ver `emitirNfse`, no fim deste arquivo, e
+    // `apps/api/src/application/nfse/tomadorEmitido.js`). Um mock com porta de escrita treinaria a
+    // tela a oferecer um cadastro que o servidor não tem.
+    //
+    // ⚠ **ESCOPADO PELA EMPRESA**, sempre — pelo mesmo motivo do `where` do backend: uma lista
+    // global devolveria o endereço que OUTRA empresa usou.
+    //
+    // ⚠ ORDEM: `ultimaEmissaoEm` DESC, a mesma da rota. Um mock com outra ordem faria a tela
+    // parecer certa offline e trocar de comportamento no primeiro deploy.
+    async getTomadoresEmitidos(companyId) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      const lista = estado.tomadoresEmitidos.get(id) || [];
+      return [...lista].sort((a, b) =>
+        String(b.ultimaEmissaoEm || "").localeCompare(String(a.ultimaEmissaoEm || ""))
+      );
     },
 
     // --- Fluxo --------------------------------------------------------------
@@ -1769,6 +1927,41 @@ export function createMockApi() {
         confirmadaPeloAdn: false,
         _statusEfetivo: "autorizada",
       });
+
+      // ⚠⚠ A MEMÓRIA DO TOMADOR SÓ SE ESCREVE **DEPOIS DO SUCESSO** — invariante 2 de
+      // `apps/api/src/application/nfse/tomadorEmitido.js`. Este ponto é o equivalente do
+      // `markIssued`: todos os desfechos de falha já saíram acima, com `throw`. Gravar antes
+      // registraria como "já emitimos para este tomador" uma nota que a Receita ainda podia
+      // recusar, e a memória passaria a oferecer dados que nunca saíram em documento nenhum.
+      //
+      // ⚠ SÓ O QUE A EMISSÃO TEVE (invariante 1): nada é completado por consulta nem deduzido.
+      // Endereço incompleto no payload vira registro sem endereço — como no par real, onde o
+      // validador entrega `endereco: undefined` a menos que os cinco exigidos cheguem juntos.
+      const enderecoDaEmissao = payload?.tomador?.endereco || {};
+      const completo = ["cMun", "CEP", "xLgr", "nro", "xBairro"].every((c) =>
+        String(enderecoDaEmissao[c] || "").trim()
+      );
+      if (nfseBase.tomadorDoc && nfseBase.tomadorNome) {
+        const memoria = estado.tomadoresEmitidos.get(id) || [];
+        const registro = {
+          documento: nfseBase.tomadorDoc,
+          nome: nfseBase.tomadorNome,
+          email: String(payload?.tomador?.email || "").trim() || null,
+          cMun: completo ? String(enderecoDaEmissao.cMun) : null,
+          cep: completo ? String(enderecoDaEmissao.CEP) : null,
+          xLgr: completo ? String(enderecoDaEmissao.xLgr) : null,
+          nro: completo ? String(enderecoDaEmissao.nro) : null,
+          xCpl: completo ? String(enderecoDaEmissao.xCpl || "") || null : null,
+          xBairro: completo ? String(enderecoDaEmissao.xBairro) : null,
+          ultimaEmissaoEm: agora.toISOString(),
+        };
+        // ⚠ Um registro por (empresa, documento) — a chave única do model. Emitiu de novo para o
+        // mesmo documento ⇒ é o MESMO registro, e ele se atualiza.
+        const i = memoria.findIndex((t) => t.documento === registro.documento);
+        if (i >= 0) memoria[i] = registro;
+        else memoria.unshift(registro);
+        estado.tomadoresEmitidos.set(id, memoria);
+      }
 
       return {
         status: "issued",

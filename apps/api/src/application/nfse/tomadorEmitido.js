@@ -224,3 +224,60 @@ export async function buscarTomadoresEmitidos({ prisma, companyId, documentos = 
     return { tomadores: new Map(), motivo: err?.message || "erro ao ler a memória de tomadores" };
   }
 }
+
+/**
+ * TODOS os tomadores que esta empresa já conhece — a lista, não a busca por documento.
+ *
+ * É a outra metade do mesmo pedido do dono (19/08/2026): *"na hora de emitir o cliente pode
+ * escolher o tomador ao qual ele já emitiu."* `buscarTomadoresEmitidos` responde *"conheço ESTE
+ * documento?"* (é o que a planilha do lote pergunta, linha a linha); esta responde *"quem eu já
+ * conheço?"*, que é o que um seletor precisa para poder oferecer.
+ *
+ * ⚠ **NÃO É UM CADASTRO NOVO, E NÃO ESCREVE NADA.** Continua valendo tudo do cabeçalho: quem
+ * escreve nesta tabela é uma emissão que o sistema nacional autorizou, e só ela.
+ *
+ * ⚠ **NÃO LANÇA** — mesma razão da irmã: enquanto a migration `20260819140000_add_tomador_emitido`
+ * não estiver aplicada a tabela não existe (P2021), e a tela de emissão não pode cair por causa de
+ * uma conveniência. Sem memória a lista volta VAZIA e a tela simplesmente não oferece o seletor —
+ * que é exatamente o que ela mostra para uma empresa que nunca emitiu.
+ *
+ * ⚠ **ESCOPADO PELA EMPRESA**, sempre — e o `companyId` aqui é o da `Company` LEGADA, não o do
+ * `PortalClient`. Ver a fachada em `routes/client/index.js`.
+ *
+ * ⚠ ORDENADO POR `ultimaEmissaoEm` DESC: "para quem emiti mais recentemente" é a pergunta que a
+ * ordem responde, e é para isso que essa coluna existe (ver o model). `createdAt` responderia
+ * "quem é cliente há mais tempo", que não é o que quem está emitindo procura.
+ *
+ * ⚠ O TETO É EXPLÍCITO. Uma empresa com milhares de tomadores mandaria o banco inteiro para o
+ * navegador de um portal que abre numa tela de login; o recorte volta nomeado (`total`,
+ * `recortada`) para a tela poder DIZER que está mostrando uma parte — lista parcial que se
+ * apresenta como inteira faz escolher achando que o certo não existe.
+ *
+ * @returns {Promise<{tomadores: object[], total: number, recortada: boolean, motivo: string|null}>}
+ */
+export const LIMITE_TOMADORES = 500;
+
+export async function listarTomadoresEmitidos({ prisma, companyId, limite = LIMITE_TOMADORES, log = null }) {
+  const vazio = { tomadores: [], total: 0, recortada: false };
+  if (!prisma?.tomadorEmitido || !companyId) {
+    return { ...vazio, motivo: "memória de tomadores indisponível" };
+  }
+  const teto = Number.isInteger(limite) && limite > 0 ? limite : LIMITE_TOMADORES;
+  try {
+    const [linhas, total] = await Promise.all([
+      prisma.tomadorEmitido.findMany({
+        where: { companyId },
+        orderBy: { ultimaEmissaoEm: "desc" },
+        take: teto,
+      }),
+      prisma.tomadorEmitido.count({ where: { companyId } }),
+    ]);
+    return { tomadores: linhas, total, recortada: total > linhas.length, motivo: null };
+  } catch (err) {
+    log?.warn?.(
+      { companyId, err: err?.message, code: err?.code },
+      "NFS-e: a memória de tomadores não pôde ser listada — a tela segue sem o seletor"
+    );
+    return { ...vazio, motivo: err?.message || "erro ao ler a memória de tomadores" };
+  }
+}

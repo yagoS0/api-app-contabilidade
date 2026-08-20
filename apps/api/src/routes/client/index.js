@@ -32,6 +32,10 @@ import { responderResultadoEmissao, responderErroEmissao } from "../nfseEmissaoH
 // As duas portas de LEITURA do lote por planilha (modelo + conferência). Ver o bloco
 // "O LOTE DE NFS-e POR PLANILHA", abaixo — nada ali emite.
 import { createNfseLoteRouter } from "../nfseLoteRoutes.js";
+// A MEMÓRIA DE TOMADORES, do lado da LEITURA. ⚠ O cadastro é o MESMO que a emissão já alimenta
+// (`application/nfse/tomadorEmitido.js`) — não há segunda tabela nem segunda escrita aqui. Ver o
+// bloco `GET /companies/:companyId/nfse/tomadores`, abaixo.
+import { listarTomadoresEmitidos } from "../../application/nfse/tomadorEmitido.js";
 // ── O DANFSe PELO CLIENTE — mesma fachada, mesmo serviço, mesmos desfechos ───────────────────
 // Ver o bloco `GET /companies/:companyId/notas/:notaId/danfse`, no fim deste arquivo.
 import { gerarDanfseDaNota } from "../../application/nfse/danfse/danfseDaNotaDoPortal.js";
@@ -873,6 +877,81 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
     "/companies/:companyId/nfse/lote",
     requireClientCompanyAccess(),
     createNfseLoteRouter({ log, resolverCompanyId: resolveLegacyCompanyId })
+  );
+
+  // ── OS TOMADORES PARA QUEM ESTA EMPRESA JÁ EMITIU ──────────────────────────────────────────
+  //
+  // > Dono (20/08/2026): *"na aba de emissão deve haver um seletor para selecionarmos tomadores já
+  // > emitidos."*
+  //
+  // ⚠⚠ **NÃO EXISTE CADASTRO NOVO AQUI, E NÃO PODE EXISTIR.** A tabela `tomadores_emitidos` já é
+  // alimentada por cada emissão autorizada (`application/nfse/tomadorEmitido.js`,
+  // `registrarTomadorEmitido`, chamado depois do `markIssued`). O que faltava era **a porta de
+  // leitura para o portal do cliente**: `buscarTomadoresEmitidos` responde "conheço ESTE
+  // documento?" e já é usada pela rota do lote; ninguém respondia "quem eu já conheço?".
+  //
+  // ⚠ **ESTA ROTA É SÓ LEITURA.** Não há POST, PATCH nem DELETE de tomador em lugar nenhum: quem
+  // escreve nessa tabela é uma nota que o sistema nacional autorizou, e só ela. Uma tela de gestão
+  // aqui transformaria o registro do que a emissão TEVE num cadastro editável — outra coisa, com
+  // outras consequências, e que ninguém pediu.
+  //
+  // ⚠⚠ **`resolveLegacyCompanyId` PELA MESMA RAZÃO DO LOTE — E ISTO JÁ MORDEU QUATRO VEZES.** O
+  // `:companyId` do path é um `PortalClient.id`; `TomadorEmitido.companyId` é o da `Company`
+  // legada. São entidades diferentes, e o id de uma NUNCA encontra a outra. Sem a resolução o
+  // `findMany` volta **vazio, sem erro nenhum**: a rota responde 200, a tela conclui "esta empresa
+  // nunca emitiu para ninguém" e não oferece o seletor — em silêncio, para sempre.
+  // ⚠ Só o escopo da MEMÓRIA usa o id resolvido; o de ACESSO continua sendo o do path
+  // (`requireClientCompanyAccess`, que fala a língua do `PortalClient`).
+  //
+  // ⚠ `requireClientCompanyAccess()` **sem `minRole`**: listar para quem a empresa já emitiu é
+  // LEITURA, e o piso deste arquivo é "membro ativo". O portão do ATO fiscal
+  // (`ensureEmissaoNfseAutorizada`) é da emissão, logo abaixo.
+  router.get(
+    "/companies/:companyId/nfse/tomadores",
+    requireClientCompanyAccess(),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId);
+      try {
+        const legacyCompanyId = await resolveLegacyCompanyId(portalClientId);
+        // ⚠ Empresa do portal sem `Company` legada não é erro: é o estado de quem ainda não foi
+        // provisionada. Lista vazia, e a tela não oferece o seletor — o mesmo desenho de "nunca
+        // emitiu para ninguém". 404 aqui acenderia um vermelho numa tela que funciona.
+        if (!legacyCompanyId) return res.json({ data: [], total: 0, recortada: false });
+
+        const { tomadores, total, recortada, motivo } = await listarTomadoresEmitidos({
+          prisma,
+          companyId: legacyCompanyId,
+          log,
+        });
+        if (motivo) {
+          log.warn({ companyId: legacyCompanyId, motivo }, "client tomadores emitidos: memória indisponível");
+        }
+        return res.json({
+          // ⚠ SÓ O QUE A TELA DE EMISSÃO PREENCHE, com os nomes da DPS — os mesmos do model, do
+          // validador e do `buildDpsXml`. Traduzir para "logradouro"/"numero" nesta fronteira
+          // criaria um de-para a mais para alguém errar; o formulário já fala as duas línguas.
+          // ⚠ `companyId` NÃO viaja: é o id LEGADO, que o cliente não conhece e não tem o que
+          // fazer com ele.
+          data: tomadores.map((t) => ({
+            documento: t.documento,
+            nome: t.nome,
+            email: t.email ?? null,
+            cMun: t.cMun ?? null,
+            cep: t.cep ?? null,
+            xLgr: t.xLgr ?? null,
+            nro: t.nro ?? null,
+            xCpl: t.xCpl ?? null,
+            xBairro: t.xBairro ?? null,
+            ultimaEmissaoEm: t.ultimaEmissaoEm ?? null,
+          })),
+          total,
+          recortada,
+        });
+      } catch (err) {
+        log.error({ err: err.message, companyId: portalClientId }, "client tomadores emitidos falhou");
+        return res.status(500).json({ error: "internal_error" });
+      }
+    }
   );
 
   // ── EMISSÃO DE NFS-e PELO APP DO CLIENTE ───────────────────────────────────────────────────

@@ -448,8 +448,13 @@ describe("⚠⚠ as legendas removidas a pedido do dono NÃO voltam", () => {
       ...EMPRESA,
       legacyCompany: { ...EMPRESA.legacyCompany, regimeTributario: "LUCRO_PRESUMIDO" },
     });
-    expect(document.getElementById("emitir-aliquota")).toBeInTheDocument();
     expect(document.getElementById("emitir-iss-retido")).toBeInTheDocument();
+    // ⚠⚠ ATUALIZADO EM 20/08/2026 — pedido do dono: *"só deve aparecer campo de alíquota se clicar
+    // na caixa de retenção de ISS"*. A contraprova continua sendo sobre os MESMOS ids (é a razão de
+    // este caso existir), só que agora o `emitir-aliquota` só é alcançável com a caixa marcada.
+    expect(document.getElementById("emitir-aliquota")).not.toBeInTheDocument();
+    fireEvent.click(document.getElementById("emitir-iss-retido"));
+    expect(document.getElementById("emitir-aliquota")).toBeInTheDocument();
   });
 
   test("⚠ o regime DESCONHECIDO continua avisando — aquilo não era legenda fixa, é dado que falta", async () => {

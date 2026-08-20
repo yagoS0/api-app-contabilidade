@@ -575,6 +575,18 @@ identidade. ⚠ **Só o escopo da MEMÓRIA usa o id resolvido; o de ACESSO é se
 Travas: `routes/__tests__/nfseLoteRotas.test.js` (comportamento) +
 `routes/client/__tests__/loteMontadoNoPortalDoCliente.test.js` (varredura da montagem).
 
+⚠⚠ **E ISTO SE REPETIU NA QUINTA VEZ, EM 20/08/2026** — `GET /client/companies/:companyId/nfse/tomadores`,
+a porta de LEITURA da mesma memória para o SELETOR da tela de emissão avulsa (dono: *"na aba de
+emissão deve haver um seletor para selecionarmos tomadores já emitidos"*). Mesma resolução, mesma
+trava por varredura de fonte (`routes/client/__tests__/tomadoresEmitidosDoCliente.test.js`).
+⚠ **Nenhum cadastro novo foi criado**: `listarTomadoresEmitidos` mora no MESMO
+`application/nfse/tomadorEmitido.js`, responde *"quem eu já conheço?"* (a irmã
+`buscarTomadoresEmitidos` responde *"conheço ESTE documento?"*), **não lança** — com a migration
+`20260819140000_add_tomador_emitido` não aplicada a tabela não existe (P2021), e isso não pode
+derrubar a tela de emissão — e **não escreve nada**: quem escreve é uma nota que o sistema nacional
+autorizou. Não existe rota de escrita de tomador do lado do cliente, e criar uma transformaria o
+registro do que a emissão TEVE num cadastro editável.
+
 ⚠ **`requireClientCompanyAccess()` SEM `minRole`**: baixar um modelo e conferir uma planilha são
 LEITURA, e o piso das rotas financeiras do cliente é "membro ativo". O portão de emissão
 (`ensureEmissaoNfseAutorizada`) é da EMISSÃO e fica na rota que emitir.

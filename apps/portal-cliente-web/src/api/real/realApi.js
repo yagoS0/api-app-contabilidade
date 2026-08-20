@@ -321,6 +321,25 @@ export function createRealApi() {
       return pedir(`/client/companies/${encodeURIComponent(companyId)}/fluxo`);
     },
 
+    // --- Os tomadores para quem esta empresa JÁ emitiu -----------------------------------------
+    //
+    // ⚠ **SÓ LEITURA, E NÃO EXISTE OUTRA PORTA.** A memória é escrita por cada emissão autorizada
+    // (`apps/api/src/application/nfse/tomadorEmitido.js`); não há POST, PATCH nem DELETE de tomador
+    // no portal do cliente, e este arquivo não pode inventar um.
+    //
+    // Contrato LIDO de `apps/api/src/routes/client/index.js` (não deduzido):
+    //   GET /client/companies/:companyId/nfse/tomadores -> { data: [...], total, recortada }
+    //
+    // ⚠ O `:companyId` é o `PortalClient.id`, como em toda rota `/client` — quem traduz para o id
+    // da `Company` legada (que é o escopo da tabela) é `resolveLegacyCompanyId`, no SERVIDOR. Não
+    // resolva nada aqui: esta confusão de ids já mordeu quatro vezes, e sempre em silêncio.
+    async getTomadoresEmitidos(companyId) {
+      const data = await pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/nfse/tomadores`
+      );
+      return Array.isArray(data?.data) ? data.data : [];
+    },
+
     // --- Consulta do tomador na Receita (CNPJ) ------------------------------------------------
     //
     // ⚠ ESTA É A ÚNICA CHAMADA DESTE ARQUIVO QUE **NÃO** VAI PARA A API DO CONTADOR. A BrasilAPI é

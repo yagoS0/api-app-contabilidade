@@ -26,6 +26,9 @@ export function PreviaNota({ empresa, valores }) {
     issRetidoValor,
     liquido,
     pTotTribSN,
+    // ⚠ Quem decide é `lib/impostosDaNota.js`, e a prévia só LÊ — a mesma resposta que o formulário
+    // usou para renderizar e que `montarPayload` usou para montar o corpo.
+    pTotTribSNNoFormulario,
     cargaAproximada,
     codigoServicoNacional,
   } = valores;
@@ -108,11 +111,21 @@ export function PreviaNota({ empresa, valores }) {
             ) : null}
             {/* ⚠ VAI IMPRESSO PARA O TOMADOR (Lei 12.741/2012), então precisa estar à vista antes
                 de emitir. ⚠ Em branco é TRAÇO, nunca 0,00% — zero é uma afirmação sobre a carga
-                tributária. */}
-            <tr className="linha-info">
-              <td>Tributos do Simples nesta nota</td>
-              <td>{pTotTribSN === null || pTotTribSN === undefined ? TRACO : pct(pTotTribSN)}</td>
-            </tr>
+                tributária.
+
+                ⚠⚠ **E SÓ NO SIMPLES — CONSERTO DE 20/08/2026, o mesmo do formulário.** Esta linha
+                era renderizada sem condição de regime nenhuma: a empresa do Lucro Presumido lia
+                "Tributos do Simples nesta nota: —" no espelho da própria nota. O traço não salva —
+                a LINHA já afirma que esta nota declara tributos do Simples, e ela não declara
+                (`NfseService` só escreve `<pTotTribSN>` sob `isSimples`). O não optante tem as três
+                linhas da carga aproximada logo abaixo; o regime indefinido não tem nenhuma, porque
+                ninguém sabe qual grupo a nota leva. */}
+            {pTotTribSNNoFormulario ? (
+              <tr className="linha-info">
+                <td>Tributos do Simples nesta nota</td>
+                <td>{pTotTribSN === null || pTotTribSN === undefined ? TRACO : pct(pTotTribSN)}</td>
+              </tr>
+            ) : null}
             {/* ⚠ A CARGA TRIBUTÁRIA APROXIMADA DA EMPRESA NÃO OPTANTE (Lei 12.741/2012) — dono,
                 19/08/2026. Ela VAI IMPRESSA ao tomador, e até aqui o cliente do Presumido não a via
                 em lugar nenhum antes de emitir: descobria o número na nota pronta, ou descobria a

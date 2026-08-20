@@ -219,6 +219,10 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 }
 .origem[data-origem="da_receita"] { background: var(--primary-surface); color: var(--primary); }
 .origem[data-origem="sugerida"]   { background: var(--primary-surface); color: var(--primary); }
+/* ⚠ A memória de tomadores tem etiqueta PRÓPRIA e não reusa "da_receita": os dois preenchem os
+   mesmos campos, mas um diz "a Receita informa isto hoje" e o outro "a sua nota anterior teve
+   isto". Mesma cor para os dois apagaria a distinção que a etiqueta existe para carregar. */
+.origem[data-origem="da_memoria"] { background: var(--neutral-surface); color: var(--text); }
 
 /* O checkbox e o texto na mesma linha, sem style inline. */
 .linha-checkbox { display: flex; align-items: center; gap: 8px; }
@@ -242,18 +246,29 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 }
 .municipio-escolhido strong { font-size: .92rem; }
 .municipio-escolhido code { color: var(--muted); font-size: .82rem; }
+/* ⚠ O SELETOR DE TOMADORES REUSA O DESENHO DO DE MUNICÍPIO, de propósito: são a MESMA coisa na
+   tela (busca que encontra e não escolhe), e dois desenhos para o mesmo gesto ensinariam duas
+   leituras. O que não se reusa é o NOME da classe — `.municipio-*` num campo de tomador seria
+   uma etiqueta falsa, e este projeto trata etiqueta falsa como defeito. */
+.seletor-tomador { position: relative; margin-bottom: 10px; }
+.seletor-tomador > label { margin-bottom: 0; }
+.seletor-tomador-lista,
 .municipio-lista {
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
   max-height: 240px; overflow-y: auto; margin-top: 4px;
 }
+.seletor-tomador-lista button,
 .municipio-lista button {
   display: flex; justify-content: space-between; gap: 12px; width: 100%;
   background: none; border: 0; border-bottom: 1px solid var(--border);
   color: var(--text); padding: 8px 10px; cursor: pointer; font: inherit;
   font-size: .88rem; text-align: left;
 }
+.seletor-tomador-lista button[data-ativo="sim"],
 .municipio-lista button[data-ativo="sim"] { background: var(--primary-surface); }
+.seletor-tomador-lista button:last-child,
 .municipio-lista button:last-child { border-bottom: 0; }
+.seletor-tomador-lista button code,
 .municipio-lista button code { color: var(--muted); font-size: .8rem; }
 .municipio-vazio { margin: 0; padding: 8px 10px; color: var(--muted); font-size: .82rem; }
 

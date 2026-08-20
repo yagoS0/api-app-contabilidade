@@ -204,6 +204,15 @@ describe("⚠ O GUARDA VALE NOS DOIS SENTIDOS — o mesmo do portal do escritór
     // Esconder por desconhecimento é o oposto do que se faz aqui — o que não aparece é uma
     // AFIRMAÇÃO sobre o cadastro, não um campo.
     await renderizar(empresaDoPortal({ regime: "", carga: CARGA_COMPLETA }));
+    expect(document.getElementById("emitir-iss-retido")).toBeInTheDocument();
+
+    // ⚠⚠ ATUALIZADO EM 20/08/2026 — pedido do dono: *"a alíquota de ISS é apenas se for retido"*. A
+    // alíquota deixou de estar sempre na tela e passou a depender da CAIXA. O caso não foi
+    // relaxado: ele continua provando que o bloco de ISS não some no regime indefinido, e agora
+    // também que a alíquota é alcançável ali — marcando a retenção, como em qualquer outro regime
+    // não optante.
+    expect(screen.queryByLabelText(/Alíquota do ISS/i)).not.toBeInTheDocument();
+    fireEvent.click(document.getElementById("emitir-iss-retido"));
     expect(screen.getByLabelText(/Alíquota do ISS/i)).toBeInTheDocument();
   });
 });
