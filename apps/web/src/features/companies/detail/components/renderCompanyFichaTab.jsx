@@ -1,4 +1,5 @@
 import { Button } from "../../../../components/ui/Button";
+import { Painel } from "../../../../components/ui/Painel";
 import { faltasParaEmitir } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 // Ficha de cadastro — READ-ONLY, no formato da ficha que o escritório já usa em planilha.
@@ -7,13 +8,20 @@ import { faltasParaEmitir } from "../../../../lib/nfse/cadastroEmissaoNfse";
 //
 // Fonte dos dados: `selectedCompany.legacyCompany` (o backend já devolvia porte, capital e
 // data de abertura em toda listagem — o frontend é que não lia).
-
-const PANEL = {
-  // Mesmo estilo da barra superior: cor sólida + borda roxa nos blocos.
-  surface: "#24253a",
-  field: "#282A36", border: "rgba(189,147,249,0.22)",
-  text: "#F8F8F2", muted: "#A7B0C0", dim: "#6b7280",
-};
+//
+// ⚠ A IDENTIDADE NÃO SE REPETE. Havia um `<h1>` com razão social + CNPJ aqui, dois centímetros
+// abaixo do `company-topbar`, que mostra exatamente os mesmos dois campos em TODA aba da empresa.
+// Quem chegou nesta tela chegou por dentro da empresa; repetir o nome dela não informa nada e
+// empurra o conteúdo para baixo. O que ficou é a linha de AÇÃO — os selos de exceção e o Editar.
+//
+// ⚠ A LARGURA NÃO MORA MAIS AQUI. Era `maxWidth: 1100` cravado, e as abas vizinhas do mesmo grupo
+// tinham 900 (Senhas, Anotações) e `--content-wide` (Documentos). Hoje quem decide é o
+// `CompanyTabLayout` (`largura="leitura"`), num lugar só.
+//
+// ⚠ AS CORES SAEM DE `styles/tokens.css`. O `PANEL` local desta tela tinha cinco hex literais, e
+// um deles era defeito de verdade: `dim: "#6b7280"` era a cor de TODOS os rótulos e mede 3,10:1
+// sobre o fundo `#24253a` — abaixo do mínimo 4,5:1 da WCAG AA. É a mesma regressão que o
+// comentário do `tokens.css` documenta ter consertado uma vez, com `--text-faint` (5,79:1).
 
 const REGIME_LABEL = {
   SIMPLES: "Simples Nacional",
@@ -58,22 +66,67 @@ function fmtCep(value) {
 function Campo({ label, value, wide = false }) {
   return (
     <div style={{ gridColumn: wide ? "span 2" : "auto", minWidth: 0 }}>
-      <div style={{ fontSize: "0.7rem", color: PANEL.dim, textTransform: "uppercase", letterSpacing: "0.03em" }}>{label}</div>
-      <div style={{ fontSize: "0.9rem", color: value ? PANEL.text : PANEL.dim, wordBreak: "break-word" }}>
+      <div style={{ fontSize: "0.7rem", color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+        {label}
+      </div>
+      <div style={{ fontSize: "0.9rem", color: value ? "var(--text)" : "var(--text-faint)", wordBreak: "break-word" }}>
         {value || "—"}
       </div>
     </div>
   );
 }
 
-function Bloco({ titulo, children, cols = 3 }) {
+function Grade({ cols, children }) {
   return (
-    <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 16, padding: 18, marginBottom: 12 }}>
-      <h2 style={{ margin: "0 0 12px", fontSize: "0.95rem", color: PANEL.text, fontWeight: 700 }}>{titulo}</h2>
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 12 }}>
-        {children}
-      </div>
-    </section>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: "var(--space-3)" }}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Um bloco da ficha.
+ *
+ * ⚠⚠ O VAZIO CONTINUA VISÍVEL — ELE SÓ PAROU DE OCUPAR A TELA INTEIRA. Decisão do dono, com a
+ * tela da IOHANNA na frente: aquela empresa tem ~15 travessões espalhados por seis blocos, e um
+ * paredão de "—" esconde o que ESTÁ preenchido tão bem quanto esconderia o que falta.
+ *
+ * A regra antiga ("numa ficha, o vazio também é informação") NÃO foi revertida, e é por isso que
+ * os ausentes não sumiram: eles condensam numa linha que diz QUANTOS são e abre com um clique.
+ * Trocar isto por "renderiza só o preenchido" devolveria o defeito que a regra existe para
+ * impedir — não haveria como distinguir "cadastro completo" de "ninguém preencheu".
+ */
+function Bloco({ titulo, cols = 3, campos = [], children, id }) {
+  const preenchidos = campos.filter((c) => c.value);
+  const vazios = campos.filter((c) => !c.value);
+
+  return (
+    <Painel titulo={titulo} id={id}>
+      {preenchidos.length > 0 ? (
+        <Grade cols={cols}>
+          {preenchidos.map((c) => (
+            <Campo key={c.label} label={c.label} value={c.value} wide={c.wide} />
+          ))}
+        </Grade>
+      ) : null}
+
+      {vazios.length > 0 ? (
+        <details className="detalhe-recolhivel" style={{ marginTop: preenchidos.length ? "var(--space-3)" : 0 }}>
+          <summary>
+            {vazios.length} {vazios.length === 1 ? "campo em branco" : "campos em branco"}
+          </summary>
+          <div style={{ marginTop: "var(--space-2)" }}>
+            <Grade cols={cols}>
+              {vazios.map((c) => (
+                <Campo key={c.label} label={c.label} value={null} wide={c.wide} />
+              ))}
+            </Grade>
+          </div>
+        </details>
+      ) : null}
+
+      {children}
+    </Painel>
   );
 }
 
@@ -93,81 +146,81 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
   const cnaesSec = Array.isArray(lg.cnaesSecundarios) ? lg.cnaesSecundarios : [];
   const regimeAtual = lg.regimeTributario || lg.tipoTributario;
 
-  const th = { padding: "6px 8px", fontSize: "0.7rem", color: PANEL.dim, textTransform: "uppercase", textAlign: "left", fontWeight: 700 };
-  const td = { padding: "6px 8px", fontSize: "0.85rem", color: PANEL.text };
+  const selo = { padding: "4px 10px", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700 };
 
   return (
-    <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: "1.15rem", color: PANEL.text }}>{c.razao || "Empresa"}</h1>
-          <span style={{ fontSize: "0.85rem", color: PANEL.muted }}>{fmtCnpj(c.cnpj)}</span>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {c.status === "SUSPENSA" && (
-            <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700, color: "#FFB347", background: "rgba(255,179,71,0.12)", border: "1px solid #FFB347" }}>
-              Suspensa
-            </span>
-          )}
-          {c.empresaZerada && (
-            <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700, color: "#8BE9FD", background: "rgba(139,233,253,0.12)", border: "1px solid #8BE9FD" }}>
-              Zerada
-            </span>
-          )}
-          <Button
-            variant="secondary"
-            onClick={onEdit}
-            disabled={!canEditCompany}
-            title={!canEditCompany ? "Apenas admin ou contador pode editar." : undefined}
-          >
-            ✎ Editar
-          </Button>
-        </div>
+    <div>
+      {/* A linha de AÇÃO. Sem título: quem é a empresa está no topbar, e a sub-aba já se chama
+          "Cadastro". Selo só aparece na EXCEÇÃO — mesma regra do card da carteira. */}
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
+        {c.status === "SUSPENSA" && (
+          <span style={{ ...selo, color: "var(--state-warn)", background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)" }}>
+            Suspensa
+          </span>
+        )}
+        {c.empresaZerada && (
+          <span style={{ ...selo, color: "var(--accent-cyan)", background: "var(--state-neutral-surface)", border: "1px solid var(--accent-cyan)" }}>
+            Zerada
+          </span>
+        )}
+        <Button
+          variant="secondary"
+          onClick={onEdit}
+          disabled={!canEditCompany}
+          title={!canEditCompany ? "Apenas admin ou contador pode editar." : undefined}
+        >
+          ✎ Editar
+        </Button>
       </div>
 
-      <Bloco titulo="Identificação">
-        <Campo label="CNPJ" value={fmtCnpj(c.cnpj)} />
-        <Campo label="Data de abertura" value={fmtDate(lg.dataAbertura)} />
-        <Campo label="Porte" value={lg.porte} />
-        <Campo label="Razão social" value={lg.razaoSocial || c.razao} wide />
-        <Campo label="Nome fantasia" value={lg.nomeFantasia} />
-        <Campo label="Natureza jurídica" value={lg.naturezaJuridica} />
-        <Campo label="Abriu com" value={lg.abriuCom} />
-        <Campo label="Responsável" value={c.ownerName} />
-        <Campo label="E-mail do responsável" value={c.ownerEmail} />
-      </Bloco>
+      <Bloco
+        titulo="Identificação"
+        campos={[
+          { label: "CNPJ", value: fmtCnpj(c.cnpj) },
+          { label: "Data de abertura", value: fmtDate(lg.dataAbertura) },
+          { label: "Porte", value: lg.porte },
+          { label: "Razão social", value: lg.razaoSocial || c.razao, wide: true },
+          { label: "Nome fantasia", value: lg.nomeFantasia },
+          { label: "Natureza jurídica", value: lg.naturezaJuridica },
+          { label: "Abriu com", value: lg.abriuCom },
+          { label: "Responsável", value: c.ownerName },
+          { label: "E-mail do responsável", value: c.ownerEmail },
+        ]}
+      />
 
-      <Bloco titulo="Endereço">
-        <Campo label="Logradouro" value={end.rua} wide />
-        <Campo label="Número" value={end.numero} />
-        <Campo label="Complemento" value={end.complemento} />
-        <Campo label="Bairro" value={end.bairro} />
-        <Campo label="CEP" value={fmtCep(end.cep)} />
-        <Campo label="Município" value={end.cidade || c.municipio} />
-        <Campo label="Estado" value={end.uf || c.uf} />
-      </Bloco>
+      <Bloco
+        titulo="Endereço"
+        campos={[
+          { label: "Logradouro", value: end.rua, wide: true },
+          { label: "Número", value: end.numero },
+          { label: "Complemento", value: end.complemento },
+          { label: "Bairro", value: end.bairro },
+          { label: "CEP", value: fmtCep(end.cep) },
+          { label: "Município", value: end.cidade || c.municipio },
+          { label: "Estado", value: end.uf || c.uf },
+        ]}
+      />
 
-      <Bloco titulo="Registros e inscrições">
-        <Campo label="Nº de registro" value={lg.numeroRegistro} />
-        <Campo label="Tipo de registro" value={lg.tipoRegistro} />
-        <Campo label="Diário nº" value={lg.diarioNumero} />
-        <Campo label="Inscrição municipal" value={c.inscricaoMunicipal || lg.inscricaoMunicipal} />
-        <Campo label="Data da IM" value={fmtDate(lg.inscricaoMunicipalData)} />
-        <div />
-        <Campo label="Inscrição estadual" value={lg.inscricaoEstadual} />
-        <Campo label="Data da IE" value={fmtDate(lg.inscricaoEstadualData)} />
-        <div />
-        {/* ⚠ O município EMISSOR (código IBGE) não é o mesmo dado que o município do ENDEREÇO logo
-            acima: um é texto cadastral, o outro é o `cLocEmi` da nota. Ficam em blocos diferentes
-            de propósito — foi tratar os dois como a mesma coisa que produziu a ideia de derivar o
-            código a partir do nome. Vazio aqui quer dizer que a empresa não emite NFS-e. */}
-        <Campo
-          label="Município emissor (IBGE)"
-          value={lg.codigoMunicipioIbge}
-          wide
-        />
+      <Bloco
+        titulo="Registros e inscrições"
+        id="ficha-inscricoes"
+        campos={[
+          { label: "Nº de registro", value: lg.numeroRegistro },
+          { label: "Tipo de registro", value: lg.tipoRegistro },
+          { label: "Diário nº", value: lg.diarioNumero },
+          { label: "Inscrição municipal", value: c.inscricaoMunicipal || lg.inscricaoMunicipal },
+          { label: "Data da IM", value: fmtDate(lg.inscricaoMunicipalData) },
+          { label: "Inscrição estadual", value: lg.inscricaoEstadual },
+          { label: "Data da IE", value: fmtDate(lg.inscricaoEstadualData) },
+          // ⚠ O município EMISSOR (código IBGE) não é o mesmo dado que o município do ENDEREÇO logo
+          // acima: um é texto cadastral, o outro é o `cLocEmi` da nota. Ficam em blocos diferentes
+          // de propósito — foi tratar os dois como a mesma coisa que produziu a ideia de derivar o
+          // código a partir do nome. Vazio aqui quer dizer que a empresa não emite NFS-e.
+          { label: "Município emissor (IBGE)", value: lg.codigoMunicipioIbge, wide: true },
+        ]}
+      >
         {!lg.codigoMunicipioIbge && (
-          <div style={{ gridColumn: "span 3", fontSize: "0.75rem", color: "#FFB347" }}>
+          <div style={{ marginTop: "var(--space-3)", fontSize: "0.75rem", color: "var(--state-warn)" }}>
             Sem o município emissor esta empresa não emite nota de serviço — o servidor recusa a
             emissão. Preencha em <strong>Editar</strong>, escolhendo o município na lista do IBGE.
           </div>
@@ -176,32 +229,28 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
 
       {/* ⚠ BLOCO PRÓPRIO, e não mais três linhas soltas em "Registros e inscrições": estes campos
           não descrevem a empresa, descrevem a NOTA que este sistema emite por ela. Eles são o que
-          `buildMissingFields` confere, e até agora não apareciam em tela nenhuma — a emissão
-          recusava por eles e não havia por onde preenchê-los. */}
-      <Bloco titulo="Emissão de NFS-e">
-        <Campo label="Código nacional do serviço" value={lg.codigoServicoNacional} />
-        <Campo label="Código municipal do serviço" value={lg.codigoServicoMunicipal} />
-        <Campo label="Série da DPS" value={lg.rpsSerie} />
-        {/* ⚠ CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012). Aparece na FICHA porque é o número que
-            a nota IMPRIME ao tomador — conferir isto é trabalho de contador, e até aqui não havia
-            onde vê-lo sem abrir o formulário de edição.
-            ⚠ `!= null`, nunca `||`: `0` é um percentual conferido (serviço não tem ICMS), e com
-            `||` ele apareceria como ausente — a ficha diria "não configurado" sobre um campo que
-            o contador preencheu com zero de propósito. */}
-        <Campo
-          label="Carga aprox. federal (%)"
-          value={lg.pTotTribFed != null ? String(lg.pTotTribFed) : null}
-        />
-        <Campo
-          label="Carga aprox. estadual (%)"
-          value={lg.pTotTribEst != null ? String(lg.pTotTribEst) : null}
-        />
-        <Campo
-          label="Carga aprox. municipal (%)"
-          value={lg.pTotTribMun != null ? String(lg.pTotTribMun) : null}
-        />
+          `buildMissingFields` confere, e até um tempo atrás não apareciam em tela nenhuma — a
+          emissão recusava por eles e não havia por onde preenchê-los. */}
+      <Bloco
+        titulo="Emissão de NFS-e"
+        id="ficha-emissao-nfse"
+        campos={[
+          { label: "Código nacional do serviço", value: lg.codigoServicoNacional },
+          { label: "Código municipal do serviço", value: lg.codigoServicoMunicipal },
+          { label: "Série da DPS", value: lg.rpsSerie },
+          // ⚠ CARGA TRIBUTÁRIA APROXIMADA (Lei 12.741/2012). Aparece na FICHA porque é o número que
+          // a nota IMPRIME ao tomador — conferir isto é trabalho de contador, e até aqui não havia
+          // onde vê-lo sem abrir o formulário de edição.
+          // ⚠ `!= null`, nunca `||`: `0` é um percentual conferido (serviço não tem ICMS), e com
+          // `||` ele apareceria como ausente — a ficha diria "não configurado" sobre um campo que
+          // o contador preencheu com zero de propósito.
+          { label: "Carga aprox. federal (%)", value: lg.pTotTribFed != null ? String(lg.pTotTribFed) : null },
+          { label: "Carga aprox. estadual (%)", value: lg.pTotTribEst != null ? String(lg.pTotTribEst) : null },
+          { label: "Carga aprox. municipal (%)", value: lg.pTotTribMun != null ? String(lg.pTotTribMun) : null },
+        ]}
+      >
         {faltasDaEmissao.length > 0 && (
-          <div style={{ gridColumn: "span 3", fontSize: "0.75rem", color: "#FFB347" }}>
+          <div style={{ marginTop: "var(--space-3)", fontSize: "0.75rem", color: "var(--state-warn)" }}>
             {/* ⚠ Nomeia QUAL campo falta E ONDE ele fica. "Configuração incompleta" mandaria o
                 contador procurar; e os campos não moram todos no mesmo bloco do formulário — a
                 inscrição municipal fica em Inscrições, os outros em Emissão de NFS-e. */}
@@ -209,63 +258,63 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
             o servidor recusa a emissão inteira.
             <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
               {faltasDaEmissao.map((f) => (
-                /* ⚠ O caminho vem PRONTO de `faltasParaEmitir` (`f.onde`), sem remendo local: havia
-                   aqui um `.replace("Editar cadastro → ", "")` que reescrevia o caminho — e, quando
-                   a configuração saiu do formulário para a engrenagem da aba Notas Fiscais
-                   (19/08/2026), ele passaria a colar "Editar →" na frente de um caminho que não
-                   começa mais assim. */
-                <li key={f.campo}>{f.rotulo} — preencha em <strong>{f.onde}</strong></li>
+                <li key={f.campo}>{f.rotulo} — preencha em <strong>Editar</strong> → {f.onde.replace("Editar cadastro → ", "")}</li>
               ))}
             </ul>
           </div>
         )}
       </Bloco>
 
-      <Bloco titulo="Atividades" cols={1}>
-        <Campo label="CNAE principal" value={lg.cnaePrincipal} />
-        <Campo
-          label="CNAEs secundários"
-          value={cnaesSec.length > 0 ? cnaesSec.join(" · ") : null}
-        />
-      </Bloco>
+      <Bloco
+        titulo="Atividades"
+        cols={1}
+        campos={[
+          { label: "CNAE principal", value: lg.cnaePrincipal },
+          { label: "CNAEs secundários", value: cnaesSec.length > 0 ? cnaesSec.join(" · ") : null },
+        ]}
+      />
 
-      {/* Regime: o atual manda no sistema; o histórico é informativo (registro do escritório). */}
-      <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 16, padding: 18, marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text, fontWeight: 700 }}>Regime tributário</h2>
-          <span style={{ fontSize: "0.8rem", color: PANEL.muted }}>
-            Atual: <strong style={{ color: PANEL.text }}>{REGIME_LABEL[regimeAtual] || regimeAtual || "—"}</strong>
-            {lg.desoneracao ? <span style={{ color: "#FFB347", marginLeft: 8 }}>c/ desoneração</span> : null}
+      {/* Regime: o atual manda no sistema; o histórico é informativo (registro do escritório).
+          ⚠ SEM HISTÓRICO, ISTO NÃO PRECISA DE TABELA — precisa de uma linha. O painel inteiro
+          existia para exibir a frase "Nenhum histórico cadastrado", gastando a altura de seis
+          campos preenchidos. O regime ATUAL, que é o que manda no sistema, fica no cabeçalho:
+          é a informação que se procura aqui em quase toda visita. */}
+      <Painel
+        titulo="Regime tributário"
+        acoes={
+          <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+            Atual: <strong style={{ color: "var(--text)" }}>{REGIME_LABEL[regimeAtual] || regimeAtual || "—"}</strong>
+            {lg.desoneracao ? <span style={{ color: "var(--state-warn)", marginLeft: 8 }}>c/ desoneração</span> : null}
           </span>
-        </div>
-
+        }
+      >
         {historico.length === 0 ? (
-          <p style={{ margin: 0, fontSize: "0.85rem", color: PANEL.dim }}>
-            Nenhum histórico cadastrado. Use Editar para registrar as vigências.
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-faint)" }}>
+            Nenhuma vigência registrada. Use Editar para incluir o histórico.
           </p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+          <div className="table-wrap">
+            <table className="tabela--densa">
               <thead>
-                <tr style={{ background: PANEL.field }}>
-                  <th style={th}>Regime</th>
-                  <th style={th}>De</th>
-                  <th style={th}>Até</th>
-                  <th style={th}>Impostos</th>
+                <tr>
+                  <th>Regime</th>
+                  <th>De</th>
+                  <th>Até</th>
+                  <th>Impostos</th>
                 </tr>
               </thead>
               <tbody>
                 {historico.map((h) => (
-                  <tr key={h.id} style={{ borderTop: `1px solid ${PANEL.border}` }}>
-                    <td style={{ ...td, fontWeight: 600 }}>
+                  <tr key={h.id}>
+                    <td style={{ fontWeight: 600 }}>
                       {REGIME_LABEL[h.regime] || h.regime}
-                      {h.desoneracao && <span style={{ color: "#FFB347", fontSize: "0.75rem", marginLeft: 6 }}>c/ desone</span>}
+                      {h.desoneracao && <span style={{ color: "var(--state-warn)", fontSize: "0.75rem", marginLeft: 6 }}>c/ desone</span>}
                     </td>
-                    <td style={td}>{fmtDate(h.vigenciaInicio)}</td>
-                    <td style={{ ...td, color: h.vigenciaFim ? PANEL.text : "#69FF47" }}>
+                    <td>{fmtDate(h.vigenciaInicio)}</td>
+                    <td style={{ color: h.vigenciaFim ? "var(--text)" : "var(--state-ok)" }}>
                       {fmtDate(h.vigenciaFim) || "vigente"}
                     </td>
-                    <td style={{ ...td, color: PANEL.muted }}>
+                    <td style={{ color: "var(--text-muted)" }}>
                       {Array.isArray(h.impostos) && h.impostos.length > 0 ? h.impostos.join("/") : "—"}
                     </td>
                   </tr>
@@ -274,56 +323,56 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
             </table>
           </div>
         )}
-      </section>
+      </Painel>
 
-      <section style={{ background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 16, padding: 18, marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: "0.95rem", color: PANEL.text, fontWeight: 700 }}>Sócios</h2>
-          <span style={{ fontSize: "0.8rem", color: PANEL.muted }}>
-            Capital social: <strong style={{ color: PANEL.text }}>{fmtMoney(lg.capitalSocial) || "—"}</strong>
+      <Painel
+        titulo="Sócios"
+        acoes={
+          <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+            Capital social: <strong style={{ color: "var(--text)" }}>{fmtMoney(lg.capitalSocial) || "—"}</strong>
             {(lg.alteracaoNumero || lg.alteracaoData) && (
-              <span style={{ marginLeft: 12, color: PANEL.dim }}>
+              <span style={{ marginLeft: 12, color: "var(--text-faint)" }}>
                 {lg.alteracaoNumero ? `${lg.alteracaoNumero}ª alteração` : "Alteração"}
                 {lg.alteracaoData ? ` em ${fmtDate(lg.alteracaoData)}` : ""}
               </span>
             )}
           </span>
-        </div>
-
+        }
+      >
         {socios.length === 0 ? (
-          <p style={{ margin: 0, fontSize: "0.85rem", color: PANEL.dim }}>
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-faint)" }}>
             Nenhum sócio cadastrado. Use Editar para incluir.
           </p>
         ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+          <div className="table-wrap">
+            <table className="tabela--densa">
               <thead>
-                <tr style={{ background: PANEL.field }}>
-                  <th style={th}>Nome</th>
-                  <th style={th}>CPF</th>
-                  <th style={th}>%</th>
-                  <th style={th}>Nascimento</th>
-                  <th style={th}>RG</th>
-                  <th style={th}>Situação</th>
+                <tr>
+                  <th>Nome</th>
+                  <th>CPF</th>
+                  <th>%</th>
+                  <th>Nascimento</th>
+                  <th>RG</th>
+                  <th>Situação</th>
                 </tr>
               </thead>
               <tbody>
                 {socios.map((s) => {
                   const saiu = Boolean(s.dataSaida);
                   return (
-                    <tr key={s.id} style={{ borderTop: `1px solid ${PANEL.border}`, opacity: saiu ? 0.55 : 1 }}>
-                      <td style={{ ...td, fontWeight: 600 }}>
+                    <tr key={s.id} style={{ opacity: saiu ? 0.55 : 1 }}>
+                      <td style={{ fontWeight: 600 }}>
                         {s.name}
-                        {s.representante && <span style={{ color: "#BD93F9", fontSize: "0.72rem", marginLeft: 6 }}>representante</span>}
+                        {s.representante && <span style={{ color: "var(--accent-purple)", fontSize: "0.72rem", marginLeft: 6 }}>representante</span>}
                       </td>
-                      <td style={td}>{fmtCpf(s.documento)}</td>
-                      <td style={td}>{s.participacao != null ? `${Number(s.participacao)}%` : "—"}</td>
-                      <td style={td}>{fmtDate(s.dataNascimento) || "—"}</td>
-                      <td style={td}>
+                      <td>{fmtCpf(s.documento)}</td>
+                      <td>{s.participacao != null ? `${Number(s.participacao)}%` : "—"}</td>
+                      <td>{fmtDate(s.dataNascimento) || "—"}</td>
+                      <td>
                         {s.rg || "—"}
-                        {s.rgOrgaoEmissor && <span style={{ color: PANEL.dim }}> {s.rgOrgaoEmissor}</span>}
+                        {s.rgOrgaoEmissor && <span style={{ color: "var(--text-faint)" }}> {s.rgOrgaoEmissor}</span>}
                       </td>
-                      <td style={{ ...td, color: saiu ? "#FF6E6E" : "#69FF47" }}>
+                      <td style={{ color: saiu ? "var(--state-danger)" : "var(--state-ok)" }}>
                         {saiu ? `Saiu em ${fmtDate(s.dataSaida)}` : "Ativo"}
                       </td>
                     </tr>
@@ -333,13 +382,16 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
             </table>
           </div>
         )}
-      </section>
+      </Painel>
 
-      <Bloco titulo="Contato">
-        <Campo label="Telefone" value={lg.telefone || c.telefone} />
-        <Campo label="E-mail" value={lg.email || c.email} />
-        <Campo label="E-mail para guias" value={c.guideNotificationEmail} />
-      </Bloco>
+      <Bloco
+        titulo="Contato"
+        campos={[
+          { label: "Telefone", value: lg.telefone || c.telefone },
+          { label: "E-mail", value: lg.email || c.email },
+          { label: "E-mail para guias", value: c.guideNotificationEmail },
+        ]}
+      />
     </div>
   );
 }

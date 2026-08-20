@@ -46,18 +46,28 @@ function fmtData(iso) {
   return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString("pt-BR");
 }
 
-function Aviso({ nivel, texto }) {
+/**
+ * ⚠⚠ ISTO ERA UMA FAIXA DE LARGURA TOTAL, E AGORA É UMA LINHA — e a razão é a regra de cor do
+ * próprio projeto, não gosto. Com zero credenciais, esta aba abria com DUAS faixas coloridas
+ * empilhadas (a teal do cofre e a âmbar do "não é cifrado") antes de qualquer conteúdo: 90% da
+ * tela era texto explicativo permanente. E âmbar permanente é exatamente o que o
+ * `apps/web/CLAUDE.md` proíbe — "um menu permanentemente âmbar treina o olho a ignorar a cor que
+ * significa falta enviar".
+ *
+ * ⚠ O TEXTO NÃO FOI ENCURTADO NEM SUAVIZADO. Ele continua inteiro, e o ícone continua carregando
+ * a cor do nível — o que mudou é o PESO na página, não o que a tela afirma. Quem lê descobre a
+ * mesma coisa; quem já leu não é obrigado a reler todo dia.
+ */
+function LinhaDeProtecao({ nivel, texto }) {
   const c = CORES_AVISO[nivel] || CORES_AVISO.desconhecido;
   return (
-    <div style={{
-      display: "flex", gap: 10, alignItems: "flex-start",
-      padding: "10px 12px", borderRadius: "var(--radius-sm)",
-      border: `1px solid ${c.cor}`, background: c.fundo,
-      fontSize: "0.8rem", lineHeight: 1.45, marginBottom: "var(--space-4)",
+    <p style={{
+      display: "flex", gap: 8, alignItems: "flex-start", margin: "0 0 var(--space-4)",
+      fontSize: "0.76rem", lineHeight: 1.45, color: "var(--text-muted)",
     }}>
       <span aria-hidden="true" style={{ color: c.cor, fontWeight: 700 }}>{c.icone}</span>
-      <span style={{ color: "var(--text)" }}>{texto}</span>
-    </div>
+      <span>{texto}</span>
+    </p>
   );
 }
 
@@ -205,7 +215,7 @@ function LinhaCredencial({ credencial, revelada, podeRevelar, papelMinimoRevelar
 }
 
 // ── Formulário de nova credencial ─────────────────────────────────────────────────────────────
-function FormNovaCredencial({ onCriar }) {
+function FormNovaCredencial({ onCriar, onFechar = null }) {
   const [rotulo, setRotulo] = useState("");
   const [login, setLogin] = useState("");
   const [senha, setSenha] = useState("");
@@ -282,6 +292,13 @@ function FormNovaCredencial({ onCriar }) {
         >
           {salvando ? "Guardando…" : "Guardar"}
         </button>
+        {/* Só existe quando alguém ABRIU o formulário. Com a lista vazia ele nasce aberto, e um
+            "Fechar" ali deixaria a aba sem nada e sem porta de entrada. */}
+        {onFechar ? (
+          <button type="button" style={btn()} disabled={salvando} onClick={onFechar}>
+            Fechar
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -325,13 +342,21 @@ function SecaoInformacoes({ informacoes, carregando, erro, onCriar, onExcluir, o
         </span>
       </div>
 
-      {/* ⚠ O aviso vem ANTES do formulário, não depois da lista. Ele existe para ser lido antes de
-          digitar; embaixo, seria a explicação de um erro já cometido. */}
-      <Aviso
-        nivel="atencao"
-        texto={"Isto NÃO é cifrado — fica em texto simples no banco. Serve para contato, código de "
-          + "acesso não-secreto, número de protocolo. Senha vai na seção de cima."}
-      />
+      {/* ⚠⚠ O AVISO CONTINUA ANTES DO FORMULÁRIO E CONTINUA DIZENDO A MESMA COISA — ele só deixou
+          de ser uma FAIXA ÂMBAR de largura total. Um campo que parece cofre e não é vale menos que
+          campo nenhum, então a frase é inegociável; o que mudou é que ela agora está colada aos
+          campos que descreve, em vez de competir com o cofre inteiro logo acima.
+          ⚠ O ícone mantém a cor de atenção: o peso do texto caiu, a distinção não. */}
+      <p style={{
+        display: "flex", gap: 8, alignItems: "flex-start", margin: "0 0 var(--space-2)",
+        fontSize: "0.76rem", lineHeight: 1.45, color: "var(--text-muted)",
+      }}>
+        <span aria-hidden="true" style={{ color: "var(--state-warn)", fontWeight: 700 }}>⚠</span>
+        <span>
+          Isto <strong>não é cifrado</strong> — fica em texto simples no banco. Serve para contato,
+          código de acesso não-secreto, número de protocolo. Senha vai na seção de cima.
+        </span>
+      </p>
 
       <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
         <input
@@ -391,6 +416,9 @@ export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
 
   const aviso = avisoDeProtecao(cofre);
   const carga = estadoDaCarga({ carregando, erro, quantidade: credenciais.length });
+  const [adicionando, setAdicionando] = useState(false);
+  const listaVazia = !carregando && !erro && credenciais.length === 0;
+  const formAberto = adicionando || listaVazia;
 
   /**
    * ⚠ A CONFIRMAÇÃO ANTES DE MOSTRAR. Ato de consequência não dispara no clique: a leitura fica
@@ -426,7 +454,10 @@ export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
   }
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 24px", color: "var(--text)" }}>
+    /* ⚠ A LARGURA NÃO MORA MAIS AQUI (era `maxWidth: 900` + padding próprio): quem decide é o
+       `CompanyTabLayout`, com `largura="leitura"`. As três abas do grupo Empresa tinham três
+       larguras diferentes e o conteúdo saltava a cada troca de sub-aba. */
+    <div style={{ color: "var(--text)" }}>
       <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "baseline", marginBottom: "var(--space-3)", flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Senhas e acessos</h2>
         {/* ⚠ A CONTAGEM NÃO É DITA QUANDO A LEITURA FALHOU. "0 credencial(is)" é uma afirmação
@@ -446,9 +477,25 @@ export function CompanyCredentialsTab({ vault, acesso, razaoSocial }) {
           consegue entrar; e é a única que muda algo fora deste sistema. */}
       {acesso ? <AcessoPortalCliente acesso={acesso} razaoSocial={razaoSocial} /> : null}
 
-      <Aviso nivel={aviso.nivel} texto={aviso.texto} />
+      <LinhaDeProtecao nivel={aviso.nivel} texto={aviso.texto} />
 
-      <FormNovaCredencial onCriar={criar} />
+      {/* ⚠ O FORMULÁRIO SÓ FICA ABERTO QUANDO HÁ MOTIVO. Ele era permanente, acima da lista: numa
+          empresa com seis credenciais, quatro campos vazios empurravam para baixo justamente o que
+          a pessoa veio ver. Com a lista VAZIA ele abre sozinho — aí não há lista a empurrar, e o
+          que a tela tem a oferecer é exatamente cadastrar a primeira.
+          ⚠ `listaVazia` exige `!carregando && !erro`: abrir o formulário em cima de uma leitura
+          que ainda não voltou (ou que falhou) diria "esta empresa não tem credencial" sobre uma
+          resposta que ninguém recebeu — é a mesma distinção que o `estadoDaCarga` protege logo
+          abaixo, e que a contagem do título já respeita. */}
+      {formAberto ? (
+        <FormNovaCredencial onCriar={criar} onFechar={listaVazia ? null : () => setAdicionando(false)} />
+      ) : (
+        <div style={{ marginBottom: "var(--space-5)" }}>
+          <button type="button" style={btn("var(--accent-purple)")} onClick={() => setAdicionando(true)}>
+            + Adicionar credencial
+          </button>
+        </div>
+      )}
 
       {credenciais.map((c) => (
         <LinhaCredencial

@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import { AppShell } from "../../../../components/layout/AppShell";
 import { DeleteCompanyModal } from "../components/DeleteCompanyModal";
 import { CompanySectionHeader } from "../components/renderCompanyDetailHeader";
+import { CompanyTabLayout, CompanyTabLoading } from "../components/CompanyTabLayout";
 // A URL das abas da empresa — a MESMA fonte que a navegação por clique usa. Ver `rotasDaEmpresa`.
 import { companyTabPath } from "../lib/rotasDaEmpresa";
 import { CompanyFichaTab } from "../components/renderCompanyFichaTab";
@@ -200,7 +201,7 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
             type="number"
             value={anoDefis}
             onChange={(e) => setAnoDefis(Number(e.target.value) || anoDefis)}
-            style={{ width: 92, background: "#1A1B26", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.82rem" }}
+            style={{ width: 92, background: "var(--bg-page)", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.82rem" }}
             aria-label="Ano-calendário da DEFIS"
           />
           <button
@@ -330,7 +331,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   if (companyDetailTab === "lancamentos") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="lancamentos"
@@ -394,7 +395,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   if (companyDetailTab === "guides") {
       return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="guides"
@@ -450,7 +451,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   if (companyDetailTab === "planoContas") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="planoContas"
@@ -480,52 +481,51 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // Ficha de cadastro (read-only) — a tela de consulta. Editar leva à aba `edit`.
   if (companyDetailTab === "cadastro") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
-        <CompanySectionHeader
-          company={selectedCompany}
-          activeTab="cadastro"
-          onBack={onBack}
-          onTabChange={switchTab}
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab="cadastro"
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        largura="leitura"
+        feedback={feedback}
+      >
+        <CompanyFichaTab
+          selectedCompany={selectedCompany}
           canEditCompany={canEditCompany}
-          competencia={circularPanel?.competencia}
-          onCompetenciaChange={circularPanel?.onCompetenciaChange}
+          onEdit={() => switchTab("edit")}
         />
-        <div style={{ flex: 1 }}>
-          <CompanyFichaTab
-            selectedCompany={selectedCompany}
-            canEditCompany={canEditCompany}
-            onEdit={() => switchTab("edit")}
-          />
-        </div>
-        <Feedback message={feedback.message} error={feedback.error} />
-      </div>
+      </CompanyTabLayout>
     );
   }
 
   if (companyDetailTab === "documentos" || companyDetailTab === "anotacoes") {
     const ehDocumentos = companyDetailTab === "documentos";
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
-        <CompanySectionHeader
-          company={selectedCompany}
-          activeTab={companyDetailTab}
-          onBack={onBack}
-          onTabChange={switchTab}
-          canEditCompany={canEditCompany}
-          competencia={circularPanel?.competencia}
-          onCompetenciaChange={circularPanel?.onCompetenciaChange}
-        />
-        <div style={{ flex: 1 }}>
-          <ErrorBoundary>
-            <Suspense fallback={<div style={{ padding: 24, color: "#8A8FA3" }}>Carregando…</div>}>
-              {ehDocumentos
-                ? <CompanyDocumentsTabWrapper companyId={companyId} feedback={feedback} />
-                : <CompanyNotesTabWrapper companyId={companyId} feedback={feedback} />}
-            </Suspense>
-          </ErrorBoundary>
-        </div>
-        <Feedback message={feedback.message} error={feedback.error} />
-      </div>
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab={companyDetailTab}
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        /* ⚠ O GRUPO "EMPRESA" INTEIRO É `leitura` — Cadastro, Documentos e Senhas. Documentos TEM
+           uma tabela, mas ela tem seis colunas curtas e cabe folgada em `--content-max`; e o que o
+           dono viu na tela foi exatamente o salto de largura ao passar de uma sub-aba para a
+           vizinha. `trabalho` fica para quem precisa: Lançamentos (7 colunas + histórico),
+           Circular (12 meses × N tributos), Guias e Apuração. Largura é para caber o conteúdo,
+           não para marcar que ali existe um `<table>`. */
+        largura="leitura"
+        feedback={feedback}
+        suspense
+      >
+        {ehDocumentos
+          ? <CompanyDocumentsTabWrapper companyId={companyId} feedback={feedback} />
+          : <CompanyNotesTabWrapper companyId={companyId} feedback={feedback} />}
+      </CompanyTabLayout>
     );
   }
 
@@ -533,29 +533,24 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // fora do Suspense, e nenhuma competência (a aba não filtra por mês).
   if (companyDetailTab === "credenciais") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
-        <CompanySectionHeader
-          company={selectedCompany}
-          activeTab="credenciais"
-          onBack={onBack}
-          onTabChange={switchTab}
-          canEditCompany={canEditCompany}
-          competencia={circularPanel?.competencia}
-          onCompetenciaChange={circularPanel?.onCompetenciaChange}
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab="credenciais"
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        largura="leitura"
+        feedback={feedback}
+        suspense
+      >
+        <CompanyCredentialsTabWrapper
+          companyId={companyId}
+          feedback={feedback}
+          razaoSocial={selectedCompany?.razao}
         />
-        <div style={{ flex: 1 }}>
-          <ErrorBoundary>
-            <Suspense fallback={<div style={{ padding: 24, color: "#8A8FA3" }}>Carregando…</div>}>
-              <CompanyCredentialsTabWrapper
-                companyId={companyId}
-                feedback={feedback}
-                razaoSocial={selectedCompany?.razao}
-              />
-            </Suspense>
-          </ErrorBoundary>
-        </div>
-        <Feedback message={feedback.message} error={feedback.error} />
-      </div>
+      </CompanyTabLayout>
     );
   }
 
@@ -565,7 +560,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // `SEGMENT_TO_TAB`/`TAB_TO_SEGMENT` levariam a URL a uma tela que não existe.
   if (companyDetailTab === "emissaoNfse") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="emissaoNfse"
@@ -612,7 +607,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   if (companyDetailTab === "edit") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="edit"
@@ -709,7 +704,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   if (companyDetailTab === "notasFiscais") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="notasFiscais"
@@ -799,7 +794,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // Fiscal → Cadastro. Sugestão e Pendências são sub-abas INTERNAS deste painel (estado local).
   if (companyDetailTab === "cadastroFiscal") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="cadastroFiscal"
@@ -831,7 +826,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // mês e a apuração fechar outro — que é exatamente o defeito que a competência global corrigiu.
   if (companyDetailTab === "auditoria") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="auditoria"
@@ -855,7 +850,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // Q41: Aba Situação Fiscal (SITFIS) — autônoma (hook próprio via wrapper)
   if (companyDetailTab === "sitfis") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="sitfis"
@@ -880,7 +875,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   if (companyDetailTab === "circular") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="circular"
@@ -932,7 +927,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // ─── Aba Parcelamento (grupo Contabilidade) ──────────────────────────────────
   if (companyDetailTab === "parcelamento") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="parcelamento"
@@ -970,7 +965,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // tela que precisaria ser mantida em paralelo. Sem `onOpenCompany`: já se está dentro dela.
   if (companyDetailTab === "obrigacoes") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="obrigacoes"
@@ -996,7 +991,7 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
 
   if (companyDetailTab === "relatorios") {
     return (
-      <div style={{ minHeight: "100vh", background: "#1A1B26", display: "flex", flexDirection: "column" }}>
+      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
         <CompanySectionHeader
           company={selectedCompany}
           activeTab="relatorios"
