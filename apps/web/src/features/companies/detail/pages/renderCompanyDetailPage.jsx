@@ -826,24 +826,21 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
   // mês e a apuração fechar outro — que é exatamente o defeito que a competência global corrigiu.
   if (companyDetailTab === "auditoria") {
     return (
-      <div style={{ minHeight: "100vh", background: "var(--bg-page)", display: "flex", flexDirection: "column" }}>
-        <CompanySectionHeader
-          company={selectedCompany}
-          activeTab="auditoria"
-          onBack={onBack}
-          onTabChange={switchTab}
-          canEditCompany={canEditCompany}
-          competencia={circularPanel?.competencia}
-          onCompetenciaChange={circularPanel?.onCompetenciaChange}
-        />
-        <div style={{ flex: 1 }}>
-          <ErrorBoundary>
-            <Suspense fallback={<TabLoadingFallback />}>
-              <AuditoriaTab companyId={companyId} competencia={circularPanel?.competencia} />
-            </Suspense>
-          </ErrorBoundary>
-        </div>
-      </div>
+      <CompanyTabLayout
+        company={selectedCompany}
+        activeTab="auditoria"
+        onBack={onBack}
+        onTabChange={switchTab}
+        canEditCompany={canEditCompany}
+        competencia={circularPanel?.competencia}
+        onCompetenciaChange={circularPanel?.onCompetenciaChange}
+        /* ⚠ `leitura`: a Auditoria são cinco PERGUNTAS em texto, não uma tabela. Ela é o melhor
+           desenho do grupo Fiscal e agora abre na mesma largura das demais telas de leitura. */
+        largura="leitura"
+        suspense
+      >
+        <AuditoriaTab companyId={companyId} competencia={circularPanel?.competencia} />
+      </CompanyTabLayout>
     );
   }
 

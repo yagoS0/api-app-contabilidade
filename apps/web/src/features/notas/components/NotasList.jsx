@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PANEL, fmtMoney, fmtDate } from "./notasStyles";
+import { BotaoCopiar } from "../../../components/ui/BotaoCopiar";
 import { Button } from "../../../components/ui/Button";
 import { lerCicloDaNota } from "../lib/cicloNotaTela";
 
@@ -230,9 +231,28 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                     </td>
                     <td style={{ ...td, textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(n.total)}</td>
                     <td style={td}><StatusBadge nota={n} /></td>
-                    <td style={{ ...td, fontSize: "0.7rem", fontFamily: "monospace", color: PANEL.muted, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}
+                    {/* ⚠ A CHAVE ERA IMPOSSÍVEL DE USAR. São 44 dígitos, dos quais a coluna
+                        mostra os 12 últimos; o resto só existia no `title`, que não se seleciona.
+                        Quem precisa dela precisa dela INTEIRA — para colar no portal da
+                        prefeitura, no e-CAC, numa consulta. Reusa o `BotaoCopiar` do app, que já
+                        garante o que interessa aqui: ele diz "não deu" em vez de piscar
+                        "copiado" quando o navegador recusa a área de transferência (é o caso do
+                        portal servido em `http://ip:porta` na rede do escritório) — um sucesso
+                        falso faria colar a chave ANTERIOR numa consulta fiscal.
+                        ⚠ O `stopPropagation` do próprio botão é o que impede o clique de copiar
+                        de abrir o detalhe da nota por baixo. */}
+                    <td style={{ ...td, fontSize: "0.7rem", fontFamily: "monospace", color: PANEL.muted, maxWidth: 220, whiteSpace: "nowrap" }}
                         title={n.chaveAcesso}>
-                      {n.chaveAcesso ? `…${n.chaveAcesso.slice(-12)}` : "—"}
+                      {n.chaveAcesso ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          …{n.chaveAcesso.slice(-12)}
+                          <BotaoCopiar
+                            valor={n.chaveAcesso}
+                            rotulo={`Copiar a chave de acesso da nota ${n.numero || ""}`.trim()}
+                            titulo="Copiar os 44 dígitos da chave, sem espaços"
+                          />
+                        </span>
+                      ) : "—"}
                     </td>
                     {onMarcarStatus && (
                       /* ⚠ A célula de ação PARA o clique antes de ele subir para a linha: senão

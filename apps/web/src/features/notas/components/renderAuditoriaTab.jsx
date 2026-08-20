@@ -180,7 +180,9 @@ export function AuditoriaTab({ companyId, competencia, api = auditoriaApi }) {
   const cabecalho = leituraDoCabecalho(auditoria);
 
   return (
-    <div style={{ padding: 20, display: "grid", gap: 14, maxWidth: 1100, margin: "0 auto" }}>
+    /* ⚠ A LARGURA SAIU DAQUI (era `maxWidth: 1100` + padding próprio, mais um número entre os
+       cinco que o grupo tinha): quem decide é o `CompanyTabLayout`, com `largura="leitura"`. */
+    <div style={{ display: "grid", gap: 14 }}>
       <div style={{ ...card, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

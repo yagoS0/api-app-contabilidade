@@ -15,6 +15,7 @@ import {
   rotuloQualificacoes,
   estadoDaClassificacao,
   kpiDasApurado,
+  recusaEcoaOTopo,
   TOM,
 } from "../relatorioFaturamento";
 
@@ -348,5 +349,38 @@ describe("kpiDasApurado — o rótulo único que confundia as duas origens", () 
     expect(r.valor).toBeNull();
     expect(r.procedencia).toBe("nenhuma");
     expect(r.titulo).toMatch(/Nenhuma apuração gravada/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// recusaEcoaOTopo — a mesma frase não é dita duas vezes na mesma tela
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("recusaEcoaOTopo", () => {
+  const avisoNaoClassificado = [{ codigo: "NAO_CLASSIFICADO", tom: TOM.warn, titulo: "x" }];
+
+  it("ecoa quando o topo já traz NAO_CLASSIFICADO e a recusa é a de sempre", () => {
+    const recusa = { bloqueado: true, tom: TOM.warn };
+    expect(recusaEcoaOTopo(avisoNaoClassificado, recusa)).toBe(true);
+  });
+
+  it("⚠ NÃO ecoa quando o motor QUEBROU — essa causa não está escrita em lugar nenhum acima", () => {
+    const recusa = { bloqueado: true, tom: TOM.danger };
+    expect(recusaEcoaOTopo(avisoNaoClassificado, recusa)).toBe(false);
+  });
+
+  it("não ecoa quando o topo não falou de classificação", () => {
+    const outros = [{ codigo: "SEM_DETALHE_CAPTURADO", tom: TOM.neutral, titulo: "x" }];
+    expect(recusaEcoaOTopo(outros, { bloqueado: true, tom: TOM.warn })).toBe(false);
+    expect(recusaEcoaOTopo([], { bloqueado: true, tom: TOM.warn })).toBe(false);
+  });
+
+  it("recusa que não bloqueia não ecoa nada", () => {
+    expect(recusaEcoaOTopo(avisoNaoClassificado, { bloqueado: false, tom: TOM.ok })).toBe(false);
+    expect(recusaEcoaOTopo(avisoNaoClassificado, null)).toBe(false);
+  });
+
+  it("aguenta entrada que não é lista — a tela não pode quebrar por causa de um aviso", () => {
+    expect(recusaEcoaOTopo(undefined, { bloqueado: true, tom: TOM.warn })).toBe(false);
+    expect(recusaEcoaOTopo(null, { bloqueado: true, tom: TOM.warn })).toBe(false);
   });
 });

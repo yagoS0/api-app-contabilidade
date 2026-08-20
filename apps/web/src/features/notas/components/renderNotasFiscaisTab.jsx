@@ -91,11 +91,12 @@ export function NotasFiscaisTab({
   }
 
   return (
-    /* Largura de trabalho (~90%). A tabela de notas tem número, chave, tomador, valor, data,
-       status e ações — era a que mais truncava em 1400px. */
+    /* Largura de trabalho (~90%), decidida aqui porque esta aba ainda não passa pelo
+       `CompanyTabLayout`. A tabela de notas tem número, chave, tomador, valor, data, status e
+       ações — era a que mais truncava em 1400px. */
     <div style={{ padding: "24px 0", color: PANEL.text, width: "var(--content-wide)", margin: "0 auto" }}>
       {error && (
-        <div style={{ padding: 12, marginBottom: 16, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 6, color: "#FF4757" }}>
+        <div style={{ padding: 12, marginBottom: 16, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)" }}>
           {error}
           {/* ⚠ Este NÃO é um botão destrutivo — ele só recarrega. O `#FF4757` era a cor da CAIXA DE
               ERRO em volta, emprestada pelo botão: exatamente o defeito que esta padronização
@@ -141,11 +142,16 @@ export function NotasFiscaisTab({
               + Emitir nota
             </Button>
             <AdnCapturePanel adnState={adnState} adnSyncing={adnSyncing} onSync={syncAdn} onClearError={clearAdnError} />
-            <label style={{
-              display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 6,
-              border: "none", background: importing ? "#555" : "#2E86DE", color: "white",
-              cursor: importing ? "default" : "pointer", fontSize: "0.85rem", fontWeight: 600, opacity: importing ? 0.7 : 1,
-            }}>
+            {/* ⚠ ERA O QUARTO ESTILO DE BOTÃO DESTA MESMA BARRA. A linha tinha, lado a lado: o
+                `Button` primário (Emitir), o botão do `AdnCapturePanel`, um `<select>` nativo,
+                texto solto e ESTE `<label>` — com `#2E86DE` cravado, um azul que não é token
+                nenhum e que competia com o azul da ação primária ao lado. Continua sendo um
+                `<label>` (é ele que abre o seletor de arquivo sem `ref`), mas veste as classes do
+                botão único: `.btn .btn-secondary .btn-md`. Nenhum estilo novo entra. */}
+            <label
+              className="btn btn-secondary btn-md"
+              style={{ cursor: importing ? "default" : "pointer", opacity: importing ? 0.7 : 1 }}
+            >
               {importing ? "Importando…" : "⬆️ Importar XML"}
               <input type="file" accept=".xml,text/xml,application/xml" multiple disabled={importing} onChange={onPickFiles} style={{ display: "none" }} />
             </label>

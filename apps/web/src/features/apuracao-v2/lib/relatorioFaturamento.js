@@ -199,6 +199,33 @@ export function recusaDoPreApurado(preApurado) {
   };
 }
 
+/**
+ * ⚠⚠ A MESMA FRASE NÃO É DITA DUAS VEZES NA MESMA TELA.
+ *
+ * O relatório tinha QUATRO elementos âmbar para UM fato ("há receita sem classificação"): a caixa
+ * do topo, a caixa dentro de "Simples Nacional — pré-apurado" (com o mesmo número e o mesmo "como
+ * resolver"), o título do bloco NÃO CLASSIFICADO e o rodapé de conferência. Quando quase tudo é
+ * âmbar, âmbar deixa de querer dizer alguma coisa — é a mesma regra que já tirou o paredão da
+ * carteira e o menu permanentemente âmbar do SERPRO.
+ *
+ * ⚠ ISTO NÃO SILENCIA A RECUSA. O pré-apurado continua dizendo, com todas as letras, que o DAS
+ * não foi calculado — o que ele para de fazer é REPETIR o número e o procedimento que estão dois
+ * parágrafos acima, na caixa que já os traz.
+ *
+ * ⚠ E só ecoa quando a CAUSA é a mesma. `erro_calculo` (tom `danger`) tem causa própria — o motor
+ * quebrou, e isso não está escrito em lugar nenhum acima —, então ele mantém a caixa inteira.
+ *
+ * @param {Array} avisos  o que `avisosDoRelatorio` devolveu para ESTE relatório
+ * @param {object} recusa o que `recusaDoPreApurado` devolveu para ESTE pré-apurado
+ * @returns {boolean} true quando o topo já disse o mesmo, com o mesmo número
+ */
+export function recusaEcoaOTopo(avisos, recusa) {
+  if (!recusa || recusa.bloqueado !== true) return false;
+  if (recusa.tom === TOM.danger) return false;
+  const lista = Array.isArray(avisos) ? avisos : [];
+  return lista.some((a) => a && a.codigo === "NAO_CLASSIFICADO");
+}
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // 2. Os estados que não podem virar silêncio — na ordem em que a tela avisa
 // ─────────────────────────────────────────────────────────────────────────────────────────────

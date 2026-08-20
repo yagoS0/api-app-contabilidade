@@ -28,8 +28,14 @@ function competenciaAnterior() {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+// ⚠ Cor de token, não hex literal — e cada uma no seu significado: `--state-ok` é CONCLUÍDO
+// (fechada, confirmada), `--accent-cyan` é a mesma tinta que a carteira usa para "fora do fluxo"
+// (transmitida) e `--state-warn` é o que ainda pede ação (calculada, falta transmitir).
 const ESTADO_COR = {
-  fechada: "#69FF47", transmitida: "#8BE9FD", calculada: "#FFB347", confirmada: "#69FF47",
+  fechada: "var(--state-ok)",
+  transmitida: "var(--accent-cyan)",
+  calculada: "var(--state-warn)",
+  confirmada: "var(--state-ok)",
 };
 // Mostra em que ponto do TRABALHO a competência está, não o nome do registro no banco.
 // "calculada" e "bloqueada_pendencias" descrevem a linha da tabela; o contador quer saber se
@@ -38,7 +44,7 @@ function EstadoBadge({ estado }) {
   if (!estado || estado === "pendente" || estado === "aberta") {
     return <span style={{ color: PANEL.muted }}>{rotuloEstadoApuracao(estado)}</span>;
   }
-  const cor = ESTADO_COR[estado] || "#FFB347";
+  const cor = ESTADO_COR[estado] || "var(--state-warn)";
   return <span style={{ color: cor, fontWeight: 700 }}>{rotuloEstadoApuracao(estado)}</span>;
 }
 
@@ -50,7 +56,10 @@ function SecaoTabs({ secao, setSecao, pendCount }) {
     { key: "cadastro", label: "Perfil fiscal" },
     { key: "sugestao", label: "Sugestão", badge: pendCount },
   ];
-  return <Tabs items={itens} active={secao} onChange={setSecao} ariaLabel="Seções da apuração" align="start" />;
+  /* ⚠ `center`, como os dois níveis de aba ACIMA desta, no mesmo cabeçalho. Ela era a única
+     alinhada à esquerda: três barras de aba empilhadas na mesma tela, a terceira desalinhada das
+     outras duas, e nenhuma razão registrada para a diferença. */
+  return <Tabs items={itens} active={secao} onChange={setSecao} ariaLabel="Seções da apuração" />;
 }
 
 function Kpi({ label, value, cor, title }) {
@@ -385,7 +394,7 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
             {extDados && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
                 <Kpi label="Receita bruta" value={`${fmtMoney(extDados.receitaBruta)}`} />
-                <Kpi label="DAS (Receita)" value={`${fmtMoney(extDados.dasTotal ?? extDados.impostoApurado)}`} cor="#8BE9FD" />
+                <Kpi label="DAS (Receita)" value={`${fmtMoney(extDados.dasTotal ?? extDados.impostoApurado)}`} cor="var(--accent-cyan)" />
                 {/* ⚠ Estes dois botões existiam e NUNCA apareciam: liam `files.declaracaoUrl`, e o
                     backend devolve `files.declaracaoFileId`. O campo errado é sempre `undefined`,
                     então a condição nunca era verdadeira — botão escrito, nunca renderizado.
@@ -408,7 +417,7 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
       {secao === "cadastro" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ padding: 12, background: PANEL.surface, border: `1px solid ${PANEL.border}`, borderRadius: 8, fontSize: "0.85rem" }}>
-            Regime tributário: <strong style={{ color: "#69FF47" }}>
+            Regime tributário: <strong style={{ color: "var(--state-ok)" }}>
               {String(panel.cadastro?.regime || "SIMPLES_NACIONAL") === "SIMPLES_NACIONAL" ? "Simples Nacional" : (panel.cadastro?.regime || "—")}
             </strong>
           </div>
@@ -496,7 +505,7 @@ export function ApuracaoV2Tab({ panel, api, companyId, feedback, razao, competen
           </div>
 
           {sugErro && (
-            <div style={{ padding: 10, background: "rgba(255,71,87,0.10)", border: "1px solid #FF4757", borderRadius: 8, color: "#FF6E6E", fontSize: "0.85rem" }}>{sugErro}</div>
+            <div style={{ padding: 10, background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)", borderRadius: "var(--radius-sm)", color: "var(--state-danger)", fontSize: "0.85rem" }}>{sugErro}</div>
           )}
           {sugData && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

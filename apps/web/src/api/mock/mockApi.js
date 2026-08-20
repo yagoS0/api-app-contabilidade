@@ -2143,9 +2143,11 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
     fracaoDoTotal: totalMes.valorContabil > 0 && gNaoClass
       ? Math.round((gNaoClass.total.valorContabil / totalMes.valorContabil) * 10000) / 10000
       : 0,
-    comoResolver: "Aba Apuração → sub-aba Sugestão → botão \"Classificar competência\". Enquanto os "
-      + "itens não tiverem `tipoReceita`, o relatório não consegue dizer de que tipo de operação é a "
-      + "receita — e o motor de apuração não calcula o DAS.",
+    // ⚠ Espelho do texto do backend (`RelatorioFaturamentoService`). Nome de coluna e caminho de
+    // rota saíram dos dois no mesmo commit: quem lê esta frase é o contador, na tela.
+    comoResolver: "Aba Apuração → sub-aba Sugestão → botão \"Classificar competência\". "
+      + "Enquanto a receita não estiver classificada, o relatório não consegue dizer de que tipo "
+      + "de operação ela é — e o motor de apuração não calcula o DAS.",
   };
 
   const semDetalheCapturado = {
@@ -2155,9 +2157,9 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
       ? Math.round((gSemDet.total.valorContabil / totalMes.valorContabil) * 10000) / 10000
       : 0,
     somaNoTotal: true,
-    motivo: "A NF-e foi capturada pelo RESUMO do DFe (`resNFe`), que por definição não traz os itens "
+    motivo: "A NF-e foi capturada pelo RESUMO do documento, que por definição não traz os itens "
       + "da nota. Não é falta de classificação: é falta do documento completo.",
-    comoResolver: "Manifestar/baixar a NF-e completa (`procNFe`) na aba Notas Fiscais.",
+    comoResolver: "Manifestar ou baixar a NF-e completa na aba Notas Fiscais.",
   };
 
   // ⚠ Conferência que NÃO fecha na forma 2 — é o relatório acusando a si mesmo, e sem um caso no
@@ -2215,8 +2217,9 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
       estado: semReceita ? null : "bloqueada_pendencias",
       motivo: semReceita ? null : {
         code: "RECEITA_NAO_CLASSIFICADA",
-        mensagem: "A receita da competência não está classificada — os itens das notas não têm "
-          + "`tipoReceita`, e sem isso não há anexo, não há alíquota e não há DAS.",
+        mensagem: "A receita da competência não está classificada — as notas ainda não foram "
+          + "classificadas por tipo de operação, e sem isso não há anexo, não há alíquota e não "
+          + "há DAS.",
         detalhe: null,
       },
       blockers: semReceita ? [] : [{ tipo: "RECEITA_NAO_CLASSIFICADA", mensagem: "Receita não classificada" }],

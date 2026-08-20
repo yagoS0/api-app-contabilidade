@@ -640,10 +640,14 @@ export async function montarRelatorioFaturamento({ portalClientId, competencia }
     fracaoDoTotal: totalMes.valorContabil > 0 && grupoNaoClassificado
       ? +(grupoNaoClassificado.total.valorContabil / totalMes.valorContabil).toFixed(4)
       : 0,
-    comoResolver: "Aba Apuração → sub-aba Sugestão → botão \"Classificar competência\" "
-      + "(POST /firm/companies/:companyId/classificar-v2). Enquanto os itens não tiverem "
-      + "`tipoReceita`, o relatório não consegue dizer de que tipo de operação é a receita — e o "
-      + "motor de apuração não calcula o DAS.",
+    // ⚠⚠ ISTO SAI NA TELA DO CONTADOR, e é por isso que não há caminho de API aqui. O texto
+    // imprimia `(POST /firm/companies/:companyId/classificar-v2)` e o nome de coluna `tipoReceita`
+    // entre crases — endereço interno e nome de campo, num aviso que ele lê para saber o que
+    // CLICAR. Quem consome esta frase não tem como usar nenhum dos dois. O que ela diz continua
+    // igual: onde clicar, e o que fica impedido enquanto não se clicar.
+    comoResolver: "Aba Apuração → sub-aba Sugestão → botão \"Classificar competência\". "
+      + "Enquanto a receita não estiver classificada, o relatório não consegue dizer de que tipo "
+      + "de operação ela é — e o motor de apuração não calcula o DAS.",
   };
 
   const semDetalheCapturado = {
@@ -654,11 +658,14 @@ export async function montarRelatorioFaturamento({ portalClientId, competencia }
       : 0,
     // Soma no total do mês: a receita existe e está contada. O que falta é o detalhe dela.
     somaNoTotal: true,
-    motivo: "A NF-e foi capturada pelo RESUMO do DFe (`resNFe`), que por definição não traz os "
-      + "itens da nota — o parser devolve `items: []`. Não é falta de classificação: é falta do "
-      + "documento completo.",
-    comoResolver: "Manifestar/baixar a NF-e completa (`procNFe`) na aba Notas Fiscais. Com o XML "
-      + "completo os itens são gravados e a nota passa a poder ser classificada.",
+    // ⚠ MESMO CRITÉRIO: `resNFe`, `procNFe` e `items: []` são nomes do leiaute e da nossa
+    // implementação. O contador precisa saber que veio o RESUMO e não a nota inteira, e o que
+    // fazer — não o nome do elemento XML. A distinção (falta o documento × falta classificar)
+    // continua explícita, porque é ela que manda o contador para o lugar certo.
+    motivo: "A NF-e foi capturada pelo RESUMO do documento, que por definição não traz os itens "
+      + "da nota. Não é falta de classificação: é falta do documento completo.",
+    comoResolver: "Manifestar ou baixar a NF-e completa na aba Notas Fiscais. Com a nota inteira "
+      + "os itens são gravados e ela passa a poder ser classificada.",
   };
 
   // ⚠ CONFERÊNCIA DO PRÓPRIO RELATÓRIO. O total das linhas TEM de bater com

@@ -17,6 +17,8 @@
 // Não existe segundo mecanismo e não entra biblioteca de PDF.
 import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/Button";
+import { Painel } from "../../../components/ui/Painel";
+import { Aviso } from "../../../components/ui/Aviso";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import {
   avisosDoRelatorio,
@@ -24,7 +26,7 @@ import {
   recusaDoPreApurado,
   rotuloSegregacao,
   rotuloQualificacoes,
-  CORES_TOM_RELATORIO,
+  recusaEcoaOTopo,
   TOM,
 } from "../lib/relatorioFaturamento";
 
@@ -43,16 +45,20 @@ const th = { padding: "6px 8px", textAlign: "left", color: PANEL.muted, fontWeig
 const td = { padding: "6px 8px", verticalAlign: "top" };
 const tdNum = { ...td, textAlign: "right", fontFamily: "monospace", whiteSpace: "nowrap" };
 
-/** Caixa de aviso — a cor sai do tom, e o tom sai da lib. */
-function Aviso({ tom, titulo, children }) {
-  const { cor, fundo } = CORES_TOM_RELATORIO[tom] || CORES_TOM_RELATORIO[TOM.neutral];
-  return (
-    <div style={{ padding: "10px 12px", borderRadius: 8, background: fundo, border: `1px solid ${cor}`, color: cor, fontSize: "0.82rem", display: "flex", flexDirection: "column", gap: 4 }}>
-      <strong>{titulo}</strong>
-      {children ? <span style={{ color: PANEL.muted }}>{children}</span> : null}
-    </div>
-  );
-}
+// ⚠ O `Aviso` LOCAL SAIU. Era a quarta cópia da mesma caixa no app (as outras estavam no cofre de
+// senhas e no wizard de parcelamento), e cada cópia tinha o seu padding, o seu raio e o seu jeito
+// de escolher a cor. Hoje é `components/ui/Aviso` — que traz de graça a trava que interessa aqui:
+// tom inválido cai em `neutro`, NUNCA em `ok`. Numa tela que fala de apuração, uma caixa que
+// conclui o que não foi feito é o defeito caro.
+//
+// ⚠ Os TONS da lib (`TOM.warn`/`danger`/`ok`/`neutral`) são traduzidos para os do componente aqui,
+// num lugar só. O `CORES_TOM_RELATORIO` continua existindo na lib para quem colore texto solto.
+const TOM_DO_AVISO = {
+  [TOM.danger]: "erro",
+  [TOM.warn]: "atencao",
+  [TOM.ok]: "ok",
+  [TOM.neutral]: "neutro",
+};
 
 /**
  * ⚠ "Não apurado" ganha o mesmo peso visual do valor apurado. Dimensão ausente diagramada em
@@ -120,7 +126,10 @@ function BlocoGrupo({ grupo }) {
   const seg = rotuloSegregacao(grupo.segregacao);
   const qual = rotuloQualificacoes(grupo.qualificacoes);
   const alerta = grupo.classificado === false;
-  const corTitulo = alerta ? "var(--state-warn)" : PANEL.text;
+  // ⚠ O TÍTULO DEIXOU DE SER ÂMBAR — o CONTORNO ficou. O contorno responde "onde está o
+  // problema?"; "qual é o problema" está na caixa de aviso do topo, escrita uma vez, com o número
+  // e o que fazer. Pintar o título também fazia a mesma frase gritar duas vezes na mesma rolagem.
+  const corTitulo = PANEL.text;
 
   return (
     <div style={{ ...caixa, padding: 12, display: "flex", flexDirection: "column", gap: 8, borderColor: alerta ? "var(--state-warn)" : PANEL.border }}>
@@ -151,16 +160,26 @@ function BlocoGrupo({ grupo }) {
 }
 
 /** O pré-apurado: o nosso número, o oficial, e a diferença — nunca um número sem dono. */
-function BlocoPreApurado({ preApurado }) {
+function BlocoPreApurado({ preApurado, avisos = [] }) {
   const proc = procedenciaDoDas(preApurado);
   const recusa = recusaDoPreApurado(preApurado);
+  // ⚠ Ver `recusaEcoaOTopo` na lib: quando a caixa do topo já disse o mesmo, com o mesmo número e
+  // o mesmo "como resolver", aqui sobra a AFIRMAÇÃO (o DAS não foi calculado) sem a repetição.
+  const ecoa = recusaEcoaOTopo(avisos, recusa);
 
   return (
     <div style={{ ...caixa, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
       <strong style={{ fontSize: "0.88rem" }}>Simples Nacional — pré-apurado</strong>
 
+      {/* ⚠⚠ A CAIXA CONTINUA INTEIRA — ELA SÓ DEIXA DE SER A SEGUNDA ÂMBAR DA TELA.
+          A primeira versão desta mudança recolhia o conteúdo quando o topo já avisava, e o teste
+          derrubou na hora, com razão: o MOTIVO NOMEADO ("a receita da competência não está
+          classificada") e o TAMANHO DO BURACO só existem aqui — o topo traz o número e o
+          procedimento, não a causa. Some o que era repetição pura: a COR. Uma tela com quatro
+          âmbares para um fato é onde âmbar deixa de significar alguma coisa; uma tela com um
+          âmbar e um bloco neutro continua dizendo tudo, e o olho sabe para onde ir. */}
       {recusa.bloqueado ? (
-        <Aviso tom={recusa.tom} titulo={recusa.titulo}>
+        <Aviso tom={ecoa ? "neutro" : TOM_DO_AVISO[recusa.tom]} titulo={recusa.titulo}>
           {recusa.detalhe}
           {recusa.buraco ? (
             <div style={{ marginTop: 4 }}>
@@ -279,7 +298,7 @@ export function RelatorioFaturamentoPanel({
       <div style={{ ...caixa, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
         {barra}
         {erro ? (
-          <Aviso tom={TOM.danger} titulo="O relatório não pôde ser carregado">{erro}</Aviso>
+          <Aviso tom="erro" titulo="O relatório não pôde ser carregado">{erro}</Aviso>
         ) : (
           <div style={{ fontSize: "0.82rem", color: PANEL.muted }}>
             {loading
@@ -354,7 +373,7 @@ export function RelatorioFaturamentoPanel({
       {avisos.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {avisos.map((a) => (
-            <Aviso key={a.codigo} tom={a.tom} titulo={a.titulo}>
+            <Aviso key={a.codigo} tom={TOM_DO_AVISO[a.tom]} titulo={a.titulo}>
               {a.numeros?.valor != null ? (
                 <div>
                   <strong>{fmtMoney(a.numeros.valor)}</strong>
@@ -376,7 +395,7 @@ export function RelatorioFaturamentoPanel({
         </div>
       )}
 
-      <BlocoPreApurado preApurado={dados.preApurado} />
+      <BlocoPreApurado preApurado={dados.preApurado} avisos={avisos} />
 
       {/* Um bloco por tipo de operação, cada um com o seu total. */}
       {(dados.gruposPorTipoOperacao || []).length === 0 ? (
@@ -453,8 +472,15 @@ export function RelatorioFaturamentoPanel({
           modelo tinha: coluna vazia atravessando o relatório é ruído; a ressalva escrita uma vez
           é denúncia. */}
       {(dados.limitacoes || []).length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, borderTop: `1px solid ${PANEL.border}`, paddingTop: 8 }}>
-          <div style={{ fontSize: "0.74rem", color: PANEL.muted, fontWeight: 700 }}>O que este relatório NÃO afirma</div>
+        <details className="detalhe-recolhivel" style={{ borderTop: `1px solid ${PANEL.border}`, paddingTop: 8 }}>
+          {/* ⚠⚠ RECOLHIDO NA TELA, ABERTO NO PAPEL — e a segunda metade é a que importa. Eram
+              quatro parágrafos de 0,72rem sempre abertos no pé de uma tela que já é longa; quem
+              lê o relatório todo mês passou a rolar por cima deles. Mas o IMPRESSO circula sem a
+              tela por perto, e sem as ressalvas ele se lê como apuração: o bloco `@media print`
+              do `App.css` força o conteúdo de todo `<details>` dentro de `[data-print-area]`.
+              ⚠ O número no rótulo é o que impede o recolhimento de virar sumiço — a tela diz
+              QUANTAS ressalvas existem antes de alguém decidir não abri-las. */}
+          <summary>O que este relatório NÃO afirma ({dados.limitacoes.length})</summary>
           {dados.limitacoes.map((l) => (
             <div key={l.codigo} style={{ fontSize: "0.72rem", color: PANEL.muted }}>
               <strong>⚠ {l.titulo}.</strong> {l.efeito}
@@ -466,7 +492,7 @@ export function RelatorioFaturamentoPanel({
               {dados.vocabulario.avisoCodigos}
             </div>
           ) : null}
-        </div>
+        </details>
       )}
     </div>
   );

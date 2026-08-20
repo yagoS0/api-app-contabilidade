@@ -15,7 +15,7 @@ function Tile({ label, valor, sub, color = PANEL.text, title, onClick, ativo }) 
   const clicavel = typeof onClick === "function";
   const style = {
     padding: "10px 14px", borderRadius: 10, minWidth: 150, flex: "0 1 auto", textAlign: "left",
-    background: ativo ? "rgba(255,255,255,0.06)" : PANEL.field,
+    background: ativo ? "var(--state-neutral-surface)" : PANEL.field,
     border: `1px solid ${ativo ? color : PANEL.border}`,
     cursor: clicavel ? "pointer" : "default",
     font: "inherit",
@@ -66,7 +66,7 @@ export function NotasResumo({ summary, janela, competencia, loading, papel, onSe
         label="Emitidas"
         valor={loading ? "…" : fmtMoney(emitidas)}
         sub={papel === "EMIT" ? "▸ na tabela" : "faturamento do período"}
-        color="#69FF47"
+        color="var(--state-ok)"
         ativo={papel === "EMIT"}
         onClick={onSelectPapel ? () => onSelectPapel("EMIT") : undefined}
         title="Soma das notas EMITIDAS (papel EMIT) autorizadas — é a base do faturamento na apuração. Clique para ver só elas na tabela."
@@ -75,7 +75,7 @@ export function NotasResumo({ summary, janela, competencia, loading, papel, onSe
         label="Recebidas"
         valor={loading ? "…" : fmtMoney(recebidas)}
         sub={papel === "DEST" ? "▸ na tabela" : "notas de fornecedores"}
-        color="#8BE9FD"
+        color="var(--accent-cyan)"
         ativo={papel === "DEST"}
         onClick={onSelectPapel ? () => onSelectPapel("DEST") : undefined}
         title="Soma das notas RECEBIDAS (papel DEST) autorizadas. Clique para ver só elas na tabela."
@@ -88,7 +88,7 @@ export function NotasResumo({ summary, janela, competencia, loading, papel, onSe
           // clicável não havia NENHUM jeito de vê-las: o contador dizia "2 canceladas" e as notas
           // ficavam invisíveis — não dava pra conferir se o cancelamento estava certo.
           sub={verCanceladas ? "▸ na tabela" : "clique para ver"}
-          color="#FF4757"
+          color="var(--state-danger)"
           ativo={Boolean(verCanceladas)}
           onClick={onToggleCanceladas}
           title="Notas canceladas no período — não entram nos valores acima nem na apuração. Clique para mostrá-las na tabela."

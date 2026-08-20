@@ -139,7 +139,10 @@ describe("RelatorioFaturamentoPanel — a forma do impresso", () => {
 
   it("as limitações são nota de rodapé, com a fonte do vocabulário", () => {
     render(<RelatorioFaturamentoPanel relatorio={relatorioFixture()} onGerar={() => {}} />);
-    expect(screen.getByText("O que este relatório NÃO afirma")).toBeInTheDocument();
+    // ⚠ O rótulo passou a contar quantas são ("… NÃO afirma (2)"): o bloco recolhe na tela, e um
+    // recolhimento sem número é indistinguível de um sumiço. O CONTEÚDO continua no DOM — é isso
+    // que faz o `@media print` conseguir abri-lo no papel, onde a ressalva é obrigatória.
+    expect(screen.getByText(/O que este relatório NÃO afirma/)).toBeInTheDocument();
     expect(screen.getAllByText(/O valor contábil não tem os descontos/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Manual do PGDAS-D e DEFIS \(RFB\)/)).toBeInTheDocument();
   });
