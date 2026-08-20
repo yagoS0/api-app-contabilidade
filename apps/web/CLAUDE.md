@@ -123,6 +123,40 @@ de hex quebra em silêncio assim que a cor vira `var(--…)`.
 - Não criar arquivos CSS por componente
 - Componentes de UI reutilizáveis ficam em `src/components/`
 
+#### ⚠ OS PRIMITIVOS (20/08/2026) — use, não recrie
+
+A camada certa existia e quase nenhuma tela a usava. Medido antes desta entrega: **841** hex
+literais em 82 arquivos, **43** overlays de modal escritos à mão em 33 arquivos (com doze
+larguras), **12** pares `const th/td` inline sobre um `table/th/td` que o `App.css` já estiliza,
+**4** componentes `Aviso` locais além do "único", e a moldura da aba da empresa repetida **16
+vezes** no mesmo arquivo. O sintoma que o dono viu foi a LARGURA: `1100` na ficha, `900` no cofre
+e nas anotações, `1400` no SITFIS, `--content-wide` em Documentos — trocar de sub-aba fazia o
+conteúdo saltar.
+
+| Primitivo | Onde | Para quê |
+|---|---|---|
+| `CompanyTabLayout` | `features/companies/detail/components/` | a moldura de TODA aba da empresa (header + largura + Feedback + Suspense) |
+| `Painel` | `components/ui/Painel.jsx` | seção com título — envolve a classe `.panel` que já existia |
+| `Modal` | `components/ui/Modal.jsx` | `sm` 460 · `md` 640 · `lg` 900; Esc, fundo, foco que volta ao gatilho, Tab preso |
+| `.tabela--densa` / `.tabela__num` | `App.css` | o que faltava para a tela parar de mandar `th`/`td` inline |
+| `Aviso` | `components/ui/Aviso.jsx` | ganhou `icone` e `acao`; a trava (tom inválido → `neutro`) não mudou |
+
+- ⚠ **DUAS LARGURAS, E SÓ DUAS:** `leitura` (`--content-max`) e `trabalho` (`--content-wide`), mais
+  `cheia` para quem já é uma tela inteira por dentro (Lançamentos, Circular). Largura desconhecida
+  cai em `cheia`, **nunca** numa das contidas — espremer uma tabela de 12 colunas é um defeito
+  invisível; ficar larga demais é visível e barato. Largura nova entra em `tokens.css`, ou não entra.
+- ⚠ **`Modal` com `ocupado` desliga as três saídas de uma vez, o ✕ inclusive** — botão que não faz
+  nada é pior que botão ausente. E é o CORPO que rola, não a caixa: nos modais à mão o `overflow`
+  era da caixa e o botão de confirmar ficava abaixo da dobra do próprio diálogo.
+- ⚠ **A migração dos outros ~40 modais é incremental.** Não apague modal existente sem migrar.
+- ⚠ **`<details>` dentro de `[data-print-area]` IMPRIME ABERTO** (bloco `@media print`). É o que
+  permite recolher nota de rodapé longa na tela sem tirá-la do papel — usado no relatório de
+  faturamento, cujas ressalvas são o que impede o impresso de ser lido como apuração.
+- ⚠ **`#6b7280` está proibido como tinta de texto** e apareceu duas vezes nesta entrega (rótulos da
+  ficha, ajuda das seções do formulário): mede **3,10:1** sobre `#24253a`, abaixo do mínimo 4,5:1 da
+  WCAG AA. `--text-faint` (#8794C9, 5,79:1) existe exatamente para isso. `#8A8FA3` também não
+  passa (4,44:1 sobre `#282A36`) — use `--text-muted`.
+
 ⚠ **Verde é CONCLUÍDO — nunca use verde em botão de ação primária.** Um botão verde de "faça isto"
 ensina o contrário exatamente nas telas onde o verde precisa ser lido como "está fechado" (o rodapé
 `D = C ✓ ok`, a guia paga, a obrigação entregue). Ação primária é o **accent**. Pelo mesmo motivo,

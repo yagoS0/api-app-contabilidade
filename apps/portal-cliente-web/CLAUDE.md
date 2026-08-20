@@ -85,6 +85,67 @@ Notas). A remoção foi **inteira**: item de menu (`AppShell.jsx:24`), destino (
 estado. Meia remoção é o "filtro fantasma": `#/emitir` de um link antigo levaria a uma tela sem
 saída, porque a aba que servia de saída deixou de existir.
 
+## ⚠⚠ A COMPETÊNCIA É UMA SÓ, E ELA MORA NA CASCA (20/08/2026)
+
+`AppShell` guarda `competencia`; Início, Notas e Guias recebem por prop. Eram **TRÊS**
+`useState(competenciaPadrao)` independentes — trocar o mês no Início e ir para Notas voltava ao
+padrão, sem nada dizendo que voltou, e o cliente lia meses diferentes em abas diferentes sobre a
+MESMA empresa.
+
+⚠ É o defeito que o portal do escritório já pagou e consertou; o cabeçalho de
+`apps/web/.../renderCompanyDetailHeader.jsx` o registra como *"o mesmo defeito repetido cinco vezes:
+dois seletores para um valor"*. A cura é a mesma: um valor na casca.
+
+- ⚠⚠ **A TERCEIRA CÓPIA (Guias) SÓ APARECEU NO NAVEGADOR.** Unificados Início e Notas, a tela ficou
+  com 06/2026 nas duas e 08/2026 em Guias. Meia unificação é o "filtro fantasma" de novo — se
+  alguém acrescentar uma quarta tela com mês, ela entra por prop, não por `useState`.
+- ⚠ **OS TRÊS CONTROLES CONTINUAM ONDE ESTAVAM**, e isso é decisão: em Notas e Guias ele é um
+  FILTRO (com "Todas"), no Início é o RECORTE do resumo. Um controle único na barra do topo
+  obrigaria o Início a oferecer um "Todas" que ele não sabe honrar — e controle que não comanda o
+  que promete é pior que três. O que passou a ser único é o VALOR.
+- ⚠ **"Todas" é conceito de LISTA.** Com ele ligado, o Início cai no mês corrente e **diz qual está
+  mostrando** (os rótulos dos cards já nomeavam a competência). O que não pode é o Início somar "o
+  período todo" e chamar de mês.
+- ⚠ **O default não mudou:** mês CORRENTE (dono, 18/08/2026 — ver `competenciaPadrao`).
+- Travado em `features/shell/__tests__/competenciaAtravessaAsAbas.ligacao.test.jsx` (5 casos).
+  ⚠ É teste de LIGAÇÃO porque não há regra nenhuma aqui: as três telas sempre souberam ler uma
+  competência, e um teste de unidade de qualquer uma continuaria verde com o defeito de pé.
+  ⚠ O helper de navegação precisa flushar uma **tarefa** (`setTimeout(0)` dentro do `act`), não só
+  microtarefas: o `useRota` escuta `hashchange`, e o jsdom entrega esse evento numa tarefa.
+
+## ⚠ AS ABAS SÃO `<a href>` (20/08/2026)
+
+O roteamento já é por hash, então `href="#/notas"` sai de graça — e com ele Ctrl/Cmd+clique em nova
+guia, clique do meio, "abrir em nova aba", URL no hover e "copiar endereço do link". Um `onClick`
+olhando `event.ctrlKey` resolveria o primeiro caso e quebraria os outros quatro. Mesmo movimento que
+o escritório fez em 19/08.
+
+- ⚠ **O clique NORMAL continua SPA** (`preventDefault()` + `irPara`): sem isso o `emissaoAberta` se
+  perde — é estado da casca e o hash não o carrega, então voltar para Notas cairia num formulário
+  meio preenchido em vez da lista. Modificado ou botão ≠ esquerdo passam **sem** `preventDefault`.
+- ⚠ E num Ctrl+clique o `irPara` **também não roda**: a guia atual fica onde está, e fechar a
+  emissão aqui jogaria fora o formulário de quem só queria abrir Notas do lado.
+- ⚠ **O botão "Emitir nota" continua `<button>`** — abre um MODO, não uma rota.
+- ⚠ Os testes navegam por `getByRole("link", …)`. E o jsdom **não executa** a navegação padrão de
+  uma âncora: é o `preventDefault` + `irPara` que faz o clique funcionar lá.
+
+## ⚠ GUIA NÃO É NOTA — o `data-status` do chip
+
+`GuiasPage` mapeava `PAID → "emitida"`, `OVERDUE → "rejeitada"`, `OPEN → "rascunho"`, e o Início
+marcava guia vencida como `data-status="rejeitada"`. A cor saía certa por acidente; o significado,
+não — e `data-status` é **auditável no DOM** e é o vocabulário que o app mobile espelha. Hoje há
+`paga` / `vencida` / `aberta`, com as MESMAS superfícies (zero mudança visual, conferido no
+navegador).
+
+## ⚠ O `style={{}}` — a erosão foi cortada enquanto era barata
+
+Medido em 20/08/2026: ~20 objetos inline num app que é de classes, com as reincidentes já nomeadas
+(`fontSize:".78rem"` 5× só em `NotasPage`, `marginTop:"var(--gap)"` 6× nas telas de auth). É o
+começo exato do que virou ~2.200 no portal do escritório, onde hoje custa caro desfazer. Entraram
+`.meta`, `.meta-erro`, `.stack-gap` e `.select-auto` — e `.card-header`, porque `.page-header`
+fazia dois papéis (cabeçalho da PÁGINA e, dentro de um card, de SEÇÃO, com um `style` corrigindo a
+margem). **Estilo novo entra em `app.css`.**
+
 ## ⚠⚠ O FALLBACK — `src/api/index.js:39`
 
 Três modos, por `VITE_API_MODE`: `mock` (padrão), `real`, `real_with_mock_fallback`.

@@ -862,6 +862,50 @@ menos que campo nenhum.
   excluir e recadastrar, e a distinção que o backend preserva com cuidado (`senha` ausente = não
   mexer × `senha: ""` = apagar) é inalcançável pela UI.
 
+## ⚠ A MOLDURA DA ABA É UMA SÓ — `CompanyTabLayout` (20/08/2026)
+
+`detail/components/CompanyTabLayout.jsx`. Extraiu o bloco que estava escrito à mão **16 vezes** em
+`renderCompanyDetailPage.jsx`: `<div minHeight:100vh background:"#1A1B26">` + `CompanySectionHeader`
+(oito props) + `<div flex:1>` + `<Feedback>`, mais o fallback de `Suspense` (escrito 3× com
+`color:"#8A8FA3"` literal).
+
+- ⚠ **A LARGURA DEIXOU DE MORAR DENTRO DA ABA.** Era `maxWidth: 1100` na ficha, `900` no cofre e
+  nas anotações, `1400` no SITFIS e `var(--content-wide)` em Documentos — trocar de sub-aba dentro
+  do MESMO grupo ("Empresa": Cadastro → Documentos → Senhas) fazia o conteúdo saltar três vezes, e
+  nenhum dos números tinha razão registrada.
+- **Duas larguras e só duas:** `leitura` (`--content-max`) · `trabalho` (`--content-wide`) ·
+  `cheia` (sem contêiner). Desconhecida cai em `cheia`, nunca numa das contidas.
+- ⚠ **O grupo "Empresa" inteiro é `leitura`, Documentos incluído.** Ele TEM tabela, mas são seis
+  colunas curtas que cabem folgadas em `--content-max`, e o que o dono viu na tela foi o salto
+  entre sub-abas vizinhas. `trabalho` fica para quem precisa: Lançamentos, Circular, Guias,
+  Apuração. Largura é para caber o conteúdo, não para marcar que ali existe um `<table>`.
+- Mora na feature, não em `components/layout/`, porque conhece o `CompanySectionHeader` —
+  componente genérico não importa de `features/`.
+- Migradas até aqui: `cadastro`, `documentos`/`anotacoes`, `credenciais`, `auditoria`. As demais
+  continuam com a moldura à mão (já sem o hex literal) e migram quando forem tocadas.
+
+### As três telas do grupo Empresa, depois do redesign
+
+- **Ficha (`renderCompanyFichaTab`)** — o `<h1>` com razão social + CNPJ SAIU: o `company-topbar`
+  mostra os dois em toda aba, dois centímetros acima. ⚠ **Campo vazio continua visível, agora
+  AGRUPADO** (`"6 campos em branco"`, num `<details>`) — decisão do dono com a tela da IOHANNA na
+  frente. A regra antiga ("numa ficha, o vazio também é informação") **não foi revertida**: é por
+  isso que eles não sumiram. Renderizar só o preenchido tornaria indistinguível "cadastro completo"
+  de "ninguém preencheu". Regime e Sócios sem registro deixaram de gastar um painel para exibir uma
+  frase.
+- **Documentos** — o `Excluir` SAIU DA LINHA (eram três vermelhos em repouso numa tela onde nada
+  está errado) e foi para a barra de seleção que já existia; era também um segundo caminho para a
+  mesma ação. Estado vazio ganhou o botão dentro dele. Coluna VALIDADE só renderiza quando alguma
+  linha tem validade. As duas confirmações passaram de `window.confirm` para `ui/Modal` — a regra
+  "confirmação repete os dados" continua, agora legível.
+- **Senhas e acessos** — as duas faixas coloridas de largura total viraram LINHAS. Com zero
+  credenciais a aba era 90% texto explicativo permanente, e âmbar permanente é o que o
+  `apps/web/CLAUDE.md` proíbe. ⚠ **O texto não foi encurtado nem suavizado** e o ícone mantém a cor
+  do nível: caiu o PESO, não o que a tela afirma. O aviso do "não é cifrado" ficou colado aos campos
+  que descreve. O formulário virou `+ Adicionar credencial`, aberto só com a lista vazia —
+  ⚠ `listaVazia` exige `!carregando && !erro`, senão a tela afirmaria "não tem credencial" sobre uma
+  resposta que ninguém recebeu.
+
 ## Abas do detalhe
 
 ### ⚠ A URL manda na EMPRESA, não só na aba
