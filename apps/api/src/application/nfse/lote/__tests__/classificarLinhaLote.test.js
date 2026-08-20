@@ -6,7 +6,7 @@ import {
   classificarLinhaLote,
   classificarPlanilhaLote,
   ESTADO,
-  ORIGEM_ENDERECO,
+  ORIGEM_DO_DADO,
   PENDENCIA,
   CONFERENCIA,
 } from "../classificarLinhaLote.js";
@@ -40,8 +40,15 @@ const CONSULTA_OK = {
   endereco: ENDERECO_COMPLETO,
   municipio: "Rio de Janeiro",
   uf: "RJ",
+  /** ⚠ A razão social da MESMA resposta — desde 20/08/2026 é ela que preenche o nome do tomador. */
+  nome: "COMERCIAL AURORA LTDA",
 };
 
+/**
+ * ⚠ As células de uma linha. Só `documento`, `descricao`, `valor` e `competencia` podem ter vindo
+ * da PLANILHA — as outras só existem se alguém as preencheu na tela de revisão. O `nome` fica no
+ * padrão porque a maioria dos casos aqui mede outra coisa; os casos em que ele importa o apagam.
+ */
 function linha(valores, numero = 2) {
   return {
     numero,
@@ -69,7 +76,7 @@ describe("PRONTA — o caminho feliz, e ele exige endereço resolvido", () => {
   it("planilha com endereço completo e município conferido", () => {
     const r = classificarLinhaLote(linha(ENDERECO_COMPLETO), { municipios: MUNICIPIOS });
     expect(r.estado).toBe(ESTADO.PRONTA);
-    expect(r.origemEndereco).toBe(ORIGEM_ENDERECO.PLANILHA);
+    expect(r.origemEndereco).toBe(ORIGEM_DO_DADO.REVISAO);
     expect(r.pendencias).toEqual([]);
     expect(r.dados.tomador.doc).toBe(CNPJ);
     expect(r.dados.tomador.endereco.CEP).toBe("20031005");
@@ -83,7 +90,7 @@ describe("PRONTA — o caminho feliz, e ele exige endereço resolvido", () => {
       municipios: MUNICIPIOS,
     });
     expect(r.estado).toBe(ESTADO.PRONTA);
-    expect(r.origemEndereco).toBe(ORIGEM_ENDERECO.MEMORIA);
+    expect(r.origemEndereco).toBe(ORIGEM_DO_DADO.MEMORIA);
     expect(r.dados.tomador.endereco.xCpl).toBe("Sala 2");
   });
 
@@ -92,7 +99,7 @@ describe("PRONTA — o caminho feliz, e ele exige endereço resolvido", () => {
       tomadorConhecido: { ...ENDERECO_COMPLETO, xLgr: "Rua Antiga" },
       municipios: MUNICIPIOS,
     });
-    expect(r.origemEndereco).toBe(ORIGEM_ENDERECO.PLANILHA);
+    expect(r.origemEndereco).toBe(ORIGEM_DO_DADO.REVISAO);
     expect(r.dados.tomador.endereco.xLgr).toBe("Rua Nova");
   });
 
@@ -136,7 +143,7 @@ describe("CONSULTAR — e só para CNPJ", () => {
       },
     });
     expect(r.estado).toBe(ESTADO.PRONTA);
-    expect(r.origemEndereco).toBe(ORIGEM_ENDERECO.CONSULTA);
+    expect(r.origemEndereco).toBe(ORIGEM_DO_DADO.CONSULTA);
   });
 
   // ⚠⚠ O TESTE QUE DÁ SENTIDO À MUDANÇA DE 20/08/2026. Até aqui o servidor lia `cMunVerificado` e
@@ -254,7 +261,6 @@ describe("PENDENTE — o que só uma pessoa resolve", () => {
     ["documento fora de forma", { documento: "123" }, PENDENCIA.DOCUMENTO_FORA_DE_FORMA],
     ["CPF com DV errado", { documento: "12219079725" }, PENDENCIA.CPF_DV_INVALIDO],
     ["zero comido sem DV que feche", { documento: 1221907972 }, PENDENCIA.DOCUMENTO_ZERO_A_ESQUERDA],
-    ["nome em branco", { nome: "" }, PENDENCIA.NOME_AUSENTE],
     ["descrição em branco", { descricao: "  " }, PENDENCIA.DESCRICAO_AUSENTE],
     ["valor em branco", { valor: "" }, PENDENCIA.VALOR_AUSENTE],
     ["valor ambíguo", { valor: "1.500" }, PENDENCIA.VALOR_AMBIGUO],
@@ -283,11 +289,16 @@ describe("PENDENTE — o que só uma pessoa resolve", () => {
     expect(codigos(r)).toContain(PENDENCIA.ENDERECO_INCOMPLETO);
   });
 
-  it("código de município fora de forma — e a mensagem diz que NOME não serve", () => {
-    const r = classificarLinhaLote(linha({ ...ENDERECO_COMPLETO, cMun: "Rio de Janeiro" }), {
+  // ⚠⚠ O NOME DE UM MUNICÍPIO NUNCA VIRA CÓDIGO. Este campo é preenchido por um SELETOR, e um nome
+  // chegando aqui significa que alguém contornou a tela — a resposta é recusar e mandar escolher,
+  // nunca resolver por semelhança: 240 nomes cobrem 521 municípios na lista oficial.
+  it("nome de município no lugar do código é RECUSADO — e a frase manda escolher na lista", () => {
+    const r = classificarLinhaLote(linha({ ...ENDERECO_COMPLETO, cMun: "Bom Jesus" }), {
       municipios: MUNICIPIOS,
     });
+    expect(r.estado).toBe(ESTADO.PENDENTE);
     expect(codigos(r)).toContain(PENDENCIA.MUNICIPIO_FORA_DE_FORMA);
+    expect(r.pendencias[0].texto).toContain("Escolha o município");
     expect(r.pendencias[0].texto).toContain("Bom Jesus");
   });
 
@@ -300,8 +311,94 @@ describe("PENDENTE — o que só uma pessoa resolve", () => {
   });
 
   it("uma linha pode acumular pendências, e todas voltam nomeadas", () => {
-    const r = classificarLinhaLote(linha({ nome: "", valor: "", competencia: "" }));
+    const r = classificarLinhaLote(linha({ documento: CPF, nome: "", valor: "", competencia: "" }));
     expect(r.pendencias.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ O NOME DO TOMADOR — TRÊS ORIGENS, desde que ele deixou de ser coluna (20/08/2026)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// > Dono: *"não precisamos de nada do tomador, apenas o CNPJ ou CPF. Em caso que precise de mais
+// > informações, na hora da revisão nós avisamos e permitimos o preenchimento."*
+//
+// O validador continua exigindo o nome (`tomador_nome_obrigatorio`) — o que mudou é de onde ele vem.
+describe("⚠⚠ o NOME do tomador: revisão → memória → consulta", () => {
+  it("o que a REVISÃO digitou vence memória e consulta", () => {
+    const r = classificarLinhaLote(linha({ nome: "ESCRITO NA REVISAO", ...ENDERECO_COMPLETO }), {
+      municipios: MUNICIPIOS,
+      tomadorConhecido: { nome: "DA MEMORIA", ...ENDERECO_COMPLETO },
+      consulta: CONSULTA_OK,
+    });
+    expect(r.dados.tomador.nome).toBe("ESCRITO NA REVISAO");
+    expect(r.origemNome).toBe(ORIGEM_DO_DADO.REVISAO);
+  });
+
+  it("⚠ sem nome, a MEMÓRIA preenche — e a linha fica PRONTA, sem conferência extra", () => {
+    const r = classificarLinhaLote(linha({ nome: "" }), {
+      municipios: MUNICIPIOS,
+      tomadorConhecido: { nome: "TOMADOR RECORRENTE LTDA", email: "fin@x.com.br", ...ENDERECO_COMPLETO },
+    });
+    expect(r.estado).toBe(ESTADO.PRONTA);
+    expect(r.dados.tomador.nome).toBe("TOMADOR RECORRENTE LTDA");
+    expect(r.dados.tomador.email).toBe("fin@x.com.br");
+    expect(r.origemNome).toBe(ORIGEM_DO_DADO.MEMORIA);
+  });
+
+  it("⚠ sem nome e sem memória, a CONSULTA preenche com a razão social", () => {
+    const r = classificarLinhaLote(linha({ nome: "" }), { municipios: MUNICIPIOS, consulta: CONSULTA_OK });
+    expect(r.estado).toBe(ESTADO.PRONTA);
+    expect(r.dados.tomador.nome).toBe("COMERCIAL AURORA LTDA");
+    expect(r.origemNome).toBe(ORIGEM_DO_DADO.CONSULTA);
+  });
+
+  // ⚠⚠ Sem isto, um CNPJ cujo endereço a pessoa já digitou na revisão iria a PENDENTE por
+  // `nome_ausente` sem que a Receita fosse sequer perguntada.
+  it("⚠⚠ falta SÓ o nome e o endereço já veio da revisão: a linha pede CONSULTA, não pendência", () => {
+    const r = classificarLinhaLote(linha({ nome: "", ...ENDERECO_COMPLETO }), { municipios: MUNICIPIOS });
+    expect(r.estado).toBe(ESTADO.CONSULTAR);
+  });
+
+  it("⚠ consulta que responde SEM razão social não inventa nome — a linha fica pendente", () => {
+    const r = classificarLinhaLote(linha({ nome: "", ...ENDERECO_COMPLETO }), {
+      municipios: MUNICIPIOS,
+      consulta: { ...CONSULTA_OK, nome: "" },
+    });
+    expect(r.estado).toBe(ESTADO.PENDENTE);
+    expect(codigos(r)).toContain(PENDENCIA.NOME_AUSENTE);
+  });
+
+  // ⚠⚠ O CASO QUE O DONO NOMEOU: CPF novo NÃO TEM ORIGEM NENHUMA, e sempre vai à revisão.
+  it("⚠⚠ CPF que nunca recebeu nota: sem nome e sem endereço, PENDENTE — e é a regra, não um buraco", () => {
+    const r = classificarLinhaLote(linha({ documento: CPF, nome: "" }), { municipios: MUNICIPIOS });
+    expect(r.estado).toBe(ESTADO.PENDENTE);
+    expect(codigos(r)).toEqual(
+      expect.arrayContaining([PENDENCIA.NOME_AUSENTE, PENDENCIA.CPF_SEM_ENDERECO])
+    );
+    // As duas frases dizem POR QUE não sabemos — e nenhuma sugere consultar um CPF.
+    const texto = r.pendencias.map((p) => p.texto).join(" ");
+    expect(texto).toContain("CPF não se consulta");
+  });
+
+  it("⚠ CPF JÁ conhecido não vai à revisão: memória traz nome e endereço", () => {
+    const r = classificarLinhaLote(linha({ documento: CPF, nome: "" }), {
+      municipios: MUNICIPIOS,
+      tomadorConhecido: { nome: "MARIA DE SOUZA", ...ENDERECO_COMPLETO },
+    });
+    expect(r.estado).toBe(ESTADO.PRONTA);
+    expect(r.dados.tomador.nome).toBe("MARIA DE SOUZA");
+  });
+
+  // ⚠ A conferência já diz "a nota sai SEM e-mail". Preencher de outra fonte na mesma linha faria
+  // a frase virar mentira.
+  it("⚠ e-mail malformado NÃO cai para a memória", () => {
+    const r = classificarLinhaLote(linha({ email: "financeiro" }), {
+      municipios: MUNICIPIOS,
+      tomadorConhecido: { nome: "X LTDA", email: "guardado@x.com.br", ...ENDERECO_COMPLETO },
+    });
+    expect(r.dados.tomador.email).toBeNull();
+    expect(codigos(r)).toContain(CONFERENCIA.EMAIL_FORA_DE_FORMA);
   });
 });
 
@@ -344,7 +441,7 @@ describe("⚠⚠ A LISTA É FECHADA — e o padrão nunca é “pronta”", () =
       expect(r.pendencias).toEqual([]);
       expect(r.conferencias).toEqual([]);
       expect(r.origemEndereco).not.toBeNull();
-      expect(Object.values(ORIGEM_ENDERECO)).toContain(r.origemEndereco);
+      expect(Object.values(ORIGEM_DO_DADO)).toContain(r.origemEndereco);
     }
   });
 
@@ -414,7 +511,7 @@ describe("a planilha inteira — e os resultados PARCIAIS de consulta", () => {
       municipios: MUNICIPIOS,
       tomadoresConhecidos: new Map([["01234567890", ENDERECO_COMPLETO]]),
     });
-    expect(r.linhas[0].origemEndereco).toBe(ORIGEM_ENDERECO.MEMORIA);
+    expect(r.linhas[0].origemEndereco).toBe(ORIGEM_DO_DADO.MEMORIA);
     expect(r.linhas[0].estado).toBe(ESTADO.CONFERIR); // o zero recuperado continua marcado
   });
 

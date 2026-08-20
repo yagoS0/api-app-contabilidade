@@ -562,8 +562,45 @@ Regra pura em `application/nfse/lote/` (`colunasLote` · `modeloPlanilhaLote` ·
 
 **Quatro estados, lista FECHADA:** `pronta` · `conferir` · `consultar` · `pendente`. ⚠ `PRONTA`
 exige as duas listas vazias **e** endereço resolvido por origem conhecida — estado não previsto cai
-em `PENDENTE`, nunca em `PRONTA`. O endereço vem, nesta ordem: **planilha** → **memória**
-(`tomadores_emitidos`) → **consulta**.
+em `PENDENTE`, nunca em `PRONTA`.
+
+⚠⚠ **A PLANILHA TEM QUATRO COLUNAS DESDE 20/08/2026 — eram DOZE.** Dono: *"não precisamos de nada do
+tomador, apenas o CNPJ ou CPF. Em caso que precise de mais informações, na hora da revisão nós
+avisamos e permitimos o preenchimento."* Ficaram `documento` · `descricao` · `valor` ·
+`competencia`, **todas obrigatórias**. Saíram `nome`, `email` e o bloco inteiro de endereço.
+
+⚠⚠ **ELAS NÃO SUMIRAM DO FLUXO — MUDARAM DE LUGAR.** Continuam em `CAMPOS_DA_REVISAO`
+(`colunasLote.js`), e são **duas listas com perguntas diferentes**: `COLUNAS_LOTE` é o que o
+cabeçalho pode conter; `CAMPOS_DA_REVISAO` é o que uma pessoa pode corrigir — e é contra a segunda
+que `ajustesLote.js` valida. Nome, e-mail e endereço vêm, nesta ordem: **revisão** (o que a pessoa
+digitou vence) → **memória** (`tomadores_emitidos`) → **consulta** (só CNPJ).
+⚠ `ORIGEM_ENDERECO.PLANILHA` virou **`ORIGEM_DO_DADO.REVISAO`**, e não é renomeação cosmética:
+aquelas células não têm mais coluna de onde vir. A linha devolve também `origemNome`.
+
+⚠⚠ **O NOME É EXIGIDO PELO VALIDADOR (`tomador_nome_obrigatorio`) E MESMO ASSIM SAIU DA PLANILHA.**
+A regra antiga — *"a razão social da consulta NÃO preenche um nome em branco"* — caiu junto com a
+coluna: ela existia porque o nome era coluna obrigatória. Hoje branco é o estado normal, e o que vira
+pendência é a ausência das TRÊS origens. ⚠ A consulta passa a ser pedida **pelo nome também**: sem
+isso, um CNPJ cujo endereço a pessoa já digitou iria a `PENDENTE` por `nome_ausente` sem que a
+Receita fosse perguntada.
+
+⚠⚠ **CPF QUE NUNCA RECEBEU NOTA CAI SEMPRE NA REVISÃO — é a regra, não um buraco.** CPF não se
+consulta, então não existe origem nem para o nome nem para o endereço, e as duas faltas voltam
+nomeadas (`nome_ausente` + `cpf_sem_endereco`).
+
+⚠⚠ **O `cMun` CONTINUA SENDO CÓDIGO, E NINGUÉM O DIGITA.** *"Código do IBGE é abstração"* (dono) —
+a revisão usa o `SeletorMunicipio` que a emissão avulsa já tem (busca por nome, mostra município **e
+UF**, não autosseleciona nem com resultado único) e devolve o código junto da escolha.
+⚠⚠ **NÃO EXISTE, EM LUGAR NENHUM, CONVERSÃO DE NOME EM CÓDIGO.** Medido na lista oficial: **240 nomes
+cobrem 521 municípios**. `conferirMunicipioDaRevisao` recusa o que não for código e manda escolher.
+⚠ **E o campo não tem PADRÃO nenhum** (dono: *"o município do tomador só deve ser preenchido pelo
+cliente se a consulta do CNPJ não retornar"*): valor escolhido pelo sistema fica indistinguível de
+valor conferido por uma pessoa.
+
+⚠ **NÃO HÁ COLUNA DE ATIVIDADE / CÓDIGO DE SERVIÇO**, e o dono pediu explicitamente que não houvesse
+(*"o cliente não sabe escolher isso"*). Nunca houve. O lote **não manda o campo** e quem decide é
+`escolherCodigoServicoNacional`, lendo o cadastro — o caminho de sempre. ⚠ A troca POR NOTA dentro
+do lote **não foi construída**: ela exigiria o código viajar no payload congelado de cada linha.
 
 ⚠⚠ **O `:companyId` DO PATH NÃO SERVE PARA A MEMÓRIA — e errar isso é SILENCIOSO.** Ele é um
 `PortalClient.id`; `TomadorEmitido.companyId` é o id da `Company` legada (gravado com `company.id`
@@ -591,7 +628,9 @@ registro do que a emissão TEVE num cadastro editável.
 LEITURA, e o piso das rotas financeiras do cliente é "membro ativo". O portão de emissão
 (`ensureEmissaoNfseAutorizada`) é da EMISSÃO e fica na rota que emitir.
 
-⚠⚠ **A CONSULTA À RECEITA NÃO SAI DAQUI, e o `cMun` da planilha não é conferido aqui.** O
+⚠⚠ **A CONSULTA À RECEITA NÃO SAI DAQUI.** (⚠ O parágrafo abaixo descrevia um `cMun` vindo da
+PLANILHA; desde 20/08/2026 ele só pode vir da REVISÃO, e o servidor **tem** a lista para conferi-lo.
+O que continua valendo inteiro é de quem sai a consulta.) O
 classificador é PURO: devolve `consultar` com a lista `aConsultar`, e quem consulta é o front — é lá
 que a chamada à BrasilAPI já mora (direto do browser) e onde está a lista oficial do IBGE. A mesma
 lista é o que falta para provar o `cMun` que vem NA PLANILHA: por isso ele sai marcado

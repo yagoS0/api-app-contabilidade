@@ -90,6 +90,51 @@ describe("⚠⚠ TODOS os estados de linha são alcançáveis offline", () => {
     const pronta = r.linhas.find((l) => l.estado === "pronta");
     expect(pronta.origemEndereco).toBe("memoria");
     expect(pronta.dados.tomador.endereco.cMun).toBe("3304557");
+    // ⚠⚠ E O NOME TAMBÉM VEM DE LÁ desde 20/08/2026: ele deixou de ser coluna da planilha. Sem
+    // isto, uma planilha de quatro colunas não teria NENHUMA linha pronta.
+    expect(pronta.origemNome).toBe("memoria");
+    expect(pronta.dados.tomador.nome).toBe("TOMADOR RECORRENTE LTDA");
+    expect(pronta.valores.nome ?? "").toBe("");
+  });
+
+  // ⚠⚠ O CASO QUE O DONO NOMEOU. CPF não se consulta (a base pública é de CNPJ), então um CPF que
+  // nunca recebeu nota desta empresa não tem origem NENHUMA para o nome nem para o endereço — e as
+  // DUAS faltas voltam nomeadas. **Isso é a regra, não um defeito.**
+  test("⚠⚠ CPF sem cadastro cai SEMPRE na revisão, pedindo nome E endereço", async () => {
+    const api = await apiLogada();
+    const r = await api.lerPlanilhaDoLote(EMPRESA, PLANILHA, {});
+    const linha = r.linhas.find((l) => (l.pendencias || []).some((p) => p.codigo === "cpf_sem_endereco"));
+    expect(linha.estado).toBe("pendente");
+    expect((linha.pendencias || []).map((p) => p.codigo)).toEqual(
+      expect.arrayContaining(["nome_ausente", "cpf_sem_endereco"])
+    );
+    // ⚠ E nenhuma consulta é sugerida para ele — nem uma recusa, que não significaria nada.
+    expect(r.aConsultar).not.toContain(linha.documento);
+  });
+
+  // ⚠ O CONTRAPONTO, e é ele que impede "CPF cai na revisão" de ser lido como regra do DOCUMENTO.
+  // O que manda é o desconhecimento: com o CPF na memória, a linha sai pronta sem revisão nenhuma.
+  test("⚠ CPF que a memória CONHECE sai pronta — não é o documento que decide, é o cadastro", async () => {
+    const api = await apiLogada();
+    const r = await api.lerPlanilhaDoLote(EMPRESA, PLANILHA, {});
+    const linha = r.linhas.find((l) => l.tipoDocumento === "CPF" && l.estado === "pronta");
+    expect(linha).toBeDefined();
+    expect(linha.origemNome).toBe("memoria");
+  });
+
+  // ⚠⚠ A razão social da Receita preenche o nome — desde que ele saiu da planilha. Sem isto, toda
+  // linha de CNPJ novo pediria o nome à mão com a resposta da consulta na tela ao lado.
+  test("⚠⚠ a CONSULTA preenche o nome do tomador com a razão social", async () => {
+    const api = await apiLogada();
+    const primeira = await api.lerPlanilhaDoLote(EMPRESA, PLANILHA, {});
+    const { resultados } = await consultarDocumentos(primeira.aConsultar, {
+      consultar: (cnpj) => api.consultarCnpj(cnpj),
+      municipios: MUNICIPIOS,
+    });
+    const segunda = await api.lerPlanilhaDoLote(EMPRESA, PLANILHA, { consultas: resultados });
+    const linha = segunda.linhas.find((l) => l.origemNome === "consulta");
+    expect(linha).toBeDefined();
+    expect(String(linha.dados?.tomador?.nome || "").length).toBeGreaterThan(0);
   });
 
   test.each([
@@ -106,6 +151,7 @@ describe("⚠⚠ TODOS os estados de linha são alcançáveis offline", () => {
 
   test.each([
     ["cpf_sem_endereco"],
+    ["nome_ausente"],
     ["endereco_incompleto"],
     ["valor_ambiguo"],
     ["competencia_ausente"],
@@ -189,14 +235,19 @@ describe("⚠⚠ a segunda metade da prova do município — o mock precisa alca
 });
 
 describe("o ajuste, offline", () => {
-  test("o endereço digitado leva a linha de pendente a conferir, e ela fica marcada", async () => {
+  // ⚠⚠ O CPF SEM CADASTRO PEDE AS DUAS COISAS — nome E endereço. Ajustar só o endereço deixa a
+  // linha pendente por `nome_ausente`, e isso é o desenho: CPF não se consulta, então não existe
+  // origem nenhuma para o nome. Antes de 20/08/2026 o nome vinha da planilha e este ajuste bastava.
+  test("o nome e o endereço digitados levam a linha de pendente a conferir, e ela fica marcada", async () => {
     const api = await apiLogada();
     const antes = await api.lerPlanilhaDoLote(EMPRESA, PLANILHA, {});
     const alvo = antes.linhas.find((l) => (l.pendencias || []).some((p) => p.codigo === "cpf_sem_endereco"));
+    expect((alvo.pendencias || []).map((p) => p.codigo)).toContain("nome_ausente");
 
     const depois = await api.lerPlanilhaDoLote(EMPRESA, PLANILHA, {
       ajustes: {
         [alvo.numero]: {
+          nome: "JOAO DA SILVA",
           cMun: "3304557",
           cep: "20040020",
           xLgr: "Rua da Assembleia",

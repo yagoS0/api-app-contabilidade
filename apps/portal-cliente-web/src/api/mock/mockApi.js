@@ -1463,15 +1463,20 @@ export function createMockApi() {
     // ⚠⚠ **O MOCK PRECISA ALCANÇAR TODOS OS ESTADOS DE LINHA, e é por isso que ele não devolve uma
     // resposta fixa.** Este projeto já foi mordido quatro vezes por ramo que só existia em
     // produção. As linhas plantadas em `LINHAS_DO_LOTE_MOCK` cobrem, de propósito:
-    //   • `pronta` pela MEMÓRIA (o *"se já emitiu antes, só preencher"*);
+    //   • `pronta` pela MEMÓRIA (o *"se já emitiu antes, só preencher"*) — ⚠ e desde 20/08/2026 é
+    //     dela que vêm também o NOME e o e-mail, que deixaram de ser coluna da planilha;
     //   • `conferir` com `municipio_nao_conferido` e código **válido** — a tela resolve o município;
     //   • `conferir` com `municipio_nao_conferido` e código **inexistente** — ⚠ é a linha que prova
     //     a segunda metade da prova do IBGE: a TELA rebaixa para `pendente`, o backend não pode;
     //   • `conferir` por `zero_a_esquerda_recuperado` (o CPF que o Excel comeu);
     //   • `conferir` por `email_fora_de_forma`;
     //   • `consultar` (dois CNPJs — um deles resolve, o outro serve para a consulta que FALHA);
-    //   • `pendente` por `cpf_sem_endereco`, `endereco_incompleto`, `valor_ambiguo` e
-    //     `competencia_ausente`.
+    //   • ⚠⚠ `pendente` por **`nome_ausente` + `cpf_sem_endereco` juntos**: o CPF que nunca recebeu
+    //     nota. CPF NÃO SE CONSULTA, então não existe origem nem para o nome nem para o endereço, e
+    //     ele SEMPRE cai na revisão. **Isso é a regra, não um defeito** — e o contraponto (um CPF
+    //     que a memória conhece, que sai `pronta`) está plantado ao lado, senão "CPF cai na revisão"
+    //     pareceria regra do documento em vez de regra do desconhecimento;
+    //   • `pendente` por `endereco_incompleto`, `valor_ambiguo` e `competencia_ausente`.
     //
     // ⚠ **A CLASSIFICAÇÃO DE VERDADE É DO BACKEND** (`application/nfse/lote/classificarLinhaLote.js`).
     // O que roda aqui é um DUBLÊ que usa os mesmos códigos, para a tela poder ser exercitada sem
@@ -1991,13 +1996,29 @@ export function createMockApi() {
 //
 // ⚠ **NENHUMA DESTAS FUNÇÕES EMITE, CONSULTA OU GRAVA.**
 
-/** As 12 colunas, na ordem do modelo (`colunasLote.js`). */
-const COLUNAS_DO_LOTE_MOCK = [
-  "documento",
+/**
+ * ⚠⚠ AS QUATRO COLUNAS DA PLANILHA (`colunasLote.js`) — eram doze até 20/08/2026.
+ * Dono: *"não precisamos de nada do tomador, apenas o CNPJ ou CPF."*
+ */
+const COLUNAS_DO_LOTE_MOCK = ["documento", "descricao", "valor", "competencia"];
+
+const ROTULOS_DO_LOTE_MOCK = [
+  "CNPJ/CPF do tomador",
+  "Descrição do serviço",
+  "Valor do serviço (R$)",
+  "Data da competência (dd/mm/aaaa)",
+];
+
+/**
+ * ⚠⚠ OS CAMPOS QUE A REVISÃO PODE PREENCHER (`CAMPOS_DA_REVISAO`, no backend) — as quatro
+ * colunas mais nome, e-mail e o bloco de endereço, que saíram da planilha.
+ *
+ * ⚠ É contra ESTA lista que o ajuste é validado. Usar a das colunas faria o mock recusar
+ * exatamente os campos que a revisão existe para preencher — e a tela seria treinada errado.
+ */
+const CAMPOS_DA_REVISAO_MOCK = [
+  ...COLUNAS_DO_LOTE_MOCK,
   "nome",
-  "descricao",
-  "valor",
-  "competencia",
   "email",
   "cMun",
   "cep",
@@ -2007,24 +2028,9 @@ const COLUNAS_DO_LOTE_MOCK = [
   "xCpl",
 ];
 
-const ROTULOS_DO_LOTE_MOCK = [
-  "CNPJ/CPF do tomador",
-  "Nome / razão social do tomador",
-  "Descrição do serviço",
-  "Valor do serviço (R$)",
-  "Data da competência (dd/mm/aaaa)",
-  "E-mail do tomador",
-  "Código IBGE do município do tomador",
-  "CEP do tomador",
-  "Logradouro do tomador",
-  "Número",
-  "Bairro",
-  "Complemento",
-];
-
 /** Os cinco que a emissão exige JUNTOS. `xCpl` é o único opcional — aqui como lá. */
 const ENDERECO_EXIGIDO_MOCK = [
-  ["cMun", "o código IBGE do município"],
+  ["cMun", "o município"],
   ["cep", "o CEP"],
   ["xLgr", "o logradouro"],
   ["nro", "o número"],
@@ -2040,12 +2046,37 @@ const ENDERECO_EXIGIDO_MOCK = [
  */
 const MEMORIA_DO_LOTE_MOCK = {
   "44555666000177": {
+    // ⚠ NOME E E-MAIL VÊM DAQUI DESDE 20/08/2026 — eles não são mais coluna da planilha.
+    nome: "TOMADOR RECORRENTE LTDA",
+    email: "financeiro@recorrente.com.br",
     cMun: "3304557",
     cep: "20031005",
     xLgr: "Avenida Rio Branco",
     nro: "100",
     xBairro: "Centro",
     xCpl: "Sala 1201",
+  },
+  // ⚠ O CPF QUE JÁ RECEBEU NOTA — o contraponto do `cpf_sem_cadastro`: com memória, ele NÃO vai
+  // à revisão. Sem os dois lados, "CPF sempre cai na revisão" pareceria regra do documento, e
+  // não do desconhecimento.
+  "12345678909": {
+    nome: "MARIA DE SOUZA",
+    cMun: "3304557",
+    cep: "20040020",
+    xLgr: "Rua da Assembleia",
+    nro: "10",
+    xBairro: "Centro",
+    xCpl: "",
+  },
+  /** O CPF que o Excel comeu o zero — a memória é buscada pelo documento JÁ CORRIGIDO. */
+  "01234567890": {
+    nome: "ANA PEREIRA",
+    cMun: "3304557",
+    cep: "20040020",
+    xLgr: "Rua da Assembleia",
+    nro: "10",
+    xBairro: "Centro",
+    xCpl: "",
   },
 };
 
@@ -2061,6 +2092,13 @@ const ENDERECO_COMPLETO_MOCK = {
 /**
  * As linhas plantadas. ⚠ O `numero` é o do EXCEL (o cabeçalho é a linha 1) — é por ele que a tela
  * diz "linha 7" e a pessoa acha a linha na planilha dela, e é ele que chaveia o ajuste.
+ *
+ * ⚠⚠ **`valores` SÃO AS CÉLULAS DA LINHA, NÃO AS COLUNAS DO ARQUIVO.** A planilha tem QUATRO
+ * colunas desde 20/08/2026; `nome`, `email` e o bloco de endereço só existem quando alguém os
+ * preencheu na REVISÃO. As linhas que os trazem aqui representam linhas **já revisadas** — é o que
+ * mantém alcançáveis, offline, os ramos que dependem de um endereço digitado (a conferência do
+ * município e o tudo-ou-nada). As linhas que NÃO os trazem são o estado de nascença de uma planilha
+ * recém-enviada, e é nelas que a memória e a consulta trabalham.
  */
 // ⚠⚠ OS LOTES DE EMISSÃO DO MOCK — em memória, e NADA aqui emite coisa alguma.
 const LOTES_EMISSAO_MOCK = {};
@@ -2095,7 +2133,10 @@ function montarLoteDoMock(id, prontas, nomeDoArquivo) {
     const base = {
       numeroLinha: l.numero,
       tomadorDoc: l.valores?.documento ?? l.documento ?? "",
-      tomadorNome: l.valores?.nome ?? "",
+      // ⚠ O NOME SAI DE `dados`, como no servidor (`emissaoLote.js:176`) — ele é RESOLVIDO (cadastro
+      // de tomador → Receita → revisão) e, desde 20/08/2026, quase nunca existe como célula. Ler a
+      // célula deixaria o relatório da emissão com a coluna "Tomador" vazia na maioria das linhas.
+      tomadorNome: l.dados?.tomador?.nome ?? l.valores?.nome ?? "",
       valorServicos: l.dados?.servico?.valorServicos ?? l.valores?.valor ?? null,
       rpsSerie: null,
       rpsNumero: null,
@@ -2172,148 +2213,155 @@ function recontarLoteDoMock(lote) {
 }
 
 const LINHAS_DO_LOTE_MOCK = [
-  // pronta — pela MEMÓRIA (o *"se já emitiu antes, só preencher"* do dono)
+  // ── PRONTA pela MEMÓRIA — o *"se já teve antes, só preencher"* do dono. ⚠ A planilha traz só o
+  //    documento; NOME e endereço vêm do cadastro de tomador.
   {
     numero: 2,
     valores: {
       documento: "44.555.666/0001-77",
-      nome: "TOMADOR RECORRENTE LTDA",
       descricao: "Consultoria contábil de julho",
       valor: "1500,00",
       competencia: "31/07/2026",
-      email: "financeiro@recorrente.com.br",
     },
   },
-  // conferir — o código do município tem a forma certa e EXISTE: a tela resolve e mostra de quem é
+  // ── CONFERIR — o código do município tem a forma certa e EXISTE: a tela resolve e mostra de quem é.
   {
     numero: 3,
     valores: {
       documento: "22.333.444/0001-72",
-      nome: "STUDIO VERTICE ARQUITETURA ME",
       descricao: "Assessoria fiscal",
       valor: "2800,00",
       competencia: "31/07/2026",
+      nome: "STUDIO VERTICE ARQUITETURA ME",
       ...ENDERECO_COMPLETO_MOCK,
     },
   },
-  // ⚠⚠ conferir no SERVIDOR, pendente na TELA — o código não existe na lista oficial do IBGE.
-  // É a linha que prova a segunda metade da prova: o backend não tem a lista; esta tela tem.
+  // ── ⚠⚠ CONFERIR no SERVIDOR, PENDENTE na TELA — o código não existe na lista oficial do IBGE.
+  //    É a linha que prova a segunda metade da prova: o backend sem a lista não pode rebaixá-la.
   {
     numero: 4,
     valores: {
       documento: "55.666.777/0001-14",
-      nome: "SERVICOS DO INTERIOR LTDA",
       descricao: "Consultoria de processos",
       valor: "990,00",
       competencia: "31/07/2026",
+      nome: "SERVICOS DO INTERIOR LTDA",
       ...ENDERECO_COMPLETO_MOCK,
       cMun: "9999999",
     },
   },
-  // conferir — o zero à esquerda do CPF, recolocado por nós (o Excel o comeu)
+  // ── CONFERIR — o zero à esquerda do CPF, recolocado por nós (o Excel o comeu). ⚠ A memória é
+  //    buscada pelo documento JÁ CORRIGIDO, e é ela que dá nome e endereço.
   {
     numero: 5,
     valores: {
       documento: "1234567890",
-      nome: "MARIA DE SOUZA",
       descricao: "Aula particular",
       valor: "300,00",
       competencia: "31/07/2026",
-      ...ENDERECO_COMPLETO_MOCK,
     },
   },
-  // conferir — e-mail malformado. ⚠ A nota sai SEM e-mail; isto não bloqueia nada.
+  // ── CONFERIR — e-mail malformado. ⚠ A nota sai SEM e-mail; isto não bloqueia nada, e o e-mail
+  //    guardado na memória NÃO entra no lugar (a frase da conferência ficaria falsa).
   {
     numero: 6,
     valores: {
       documento: "44.555.666/0001-77",
-      nome: "TOMADOR RECORRENTE LTDA",
       descricao: "Consultoria contábil de agosto",
       valor: "1500,00",
       competencia: "31/07/2026",
       email: "financeiro.recorrente.com.br",
     },
   },
-  // consultar → PRONTA: a consulta traz o endereço inteiro e o `cMun` passa na prova tripla
+  // ── CONSULTAR → PRONTA: a consulta traz a razão social E o endereço, e o `cMun` passa na prova tripla.
   {
     numero: 7,
     valores: {
       documento: "11.222.333/0001-81",
-      nome: "COMERCIAL AURORA LTDA",
       descricao: "Implantação de sistema",
       valor: "4200,00",
       competencia: "31/07/2026",
     },
   },
-  // consultar → PENDENTE: a resposta vem, mas o `cMun` dela não se prova (diz Curitiba/PR com o
-  // código de São Paulo/SP). ⚠ Endereço é tudo ou nada, então o bloco inteiro cai.
+  // ── CONSULTAR → PENDENTE: a resposta vem, mas o `cMun` dela não se prova (diz Curitiba/PR com o
+  //    código de São Paulo/SP). ⚠ Endereço é tudo ou nada, então o bloco inteiro cai.
   {
     numero: 8,
     valores: {
       documento: "33.444.555/0001-63",
-      nome: "DELTA LOGISTICA S.A.",
       descricao: "Frete de mudança",
       valor: "1800,00",
       competencia: "31/07/2026",
     },
   },
-  // ⚠⚠ consultar → a consulta FALHA (rede). É a linha que prova que uma consulta que morre no meio
-  // não derruba o lote: ela vira pendência DESTA linha, com o motivo, e as outras seguem.
+  // ── ⚠⚠ CONSULTAR → a consulta FALHA (rede). Prova que uma consulta que morre no meio não derruba
+  //    o lote: vira pendência DESTA linha, com o motivo, e as outras seguem.
   {
     numero: 9,
     valores: {
       documento: "99.999.999/0001-99",
-      nome: "CLIENTE SEM CADASTRO LTDA",
       descricao: "Manutenção mensal",
       valor: "800,00",
       competencia: "31/07/2026",
     },
   },
-  // pendente — CPF sem endereço, e ⚠ CPF NÃO SE CONSULTA
+  // ── ⚠⚠ O CASO QUE O DONO NOMEOU: CPF QUE NUNCA RECEBEU NOTA. Não existe origem para o nome nem
+  //    para o endereço — CPF NÃO SE CONSULTA —, então ele SEMPRE cai na revisão, com as DUAS faltas
+  //    nomeadas. **Isso é a regra, não um defeito**, e sem esta linha o ramo não existiria offline.
   {
     numero: 10,
     valores: {
-      documento: "123.456.789-09",
-      nome: "JOAO DA SILVA",
+      documento: "529.982.247-25",
       descricao: "Serviço de pintura",
       valor: "650,00",
       competencia: "31/07/2026",
     },
   },
-  // pendente — meio endereço. ⚠ Nunca "quase pronta": o servidor recusa a emissão faltando um dos cinco
+  // ── ⚠ O CONTRAPONTO: CPF que a empresa JÁ conhece sai PRONTA, sem revisão nenhuma. Sem os dois
+  //    lados, "CPF cai na revisão" pareceria regra do documento, e não do desconhecimento.
   {
     numero: 11,
     valores: {
+      documento: "123.456.789-09",
+      descricao: "Aula de reforço",
+      valor: "420,00",
+      competencia: "31/07/2026",
+    },
+  },
+  // ── PENDENTE — meio endereço. ⚠ Nunca "quase pronta": o servidor recusa a emissão faltando um dos cinco.
+  {
+    numero: 12,
+    valores: {
       documento: "33.444.555/0001-03",
-      nome: "LOJA DA ESQUINA LTDA",
       descricao: "Consultoria de estoque",
       valor: "1200,00",
       competencia: "31/07/2026",
+      nome: "LOJA DA ESQUINA LTDA",
       cep: "20040020",
       xLgr: "Rua da Assembleia",
     },
   },
-  // pendente — valor ambíguo: mil e quinhentos ou um e meio?
-  {
-    numero: 12,
-    valores: {
-      documento: "66.777.888/0001-25",
-      nome: "INDUSTRIA DO VALE LTDA",
-      descricao: "Treinamento de equipe",
-      valor: "1.500",
-      competencia: "31/07/2026",
-      ...ENDERECO_COMPLETO_MOCK,
-    },
-  },
-  // pendente — competência em branco (num lote, a data de hoje carimbaria todas as notas)
+  // ── PENDENTE — valor ambíguo: mil e quinhentos ou um e meio?
   {
     numero: 13,
     valores: {
+      documento: "66.777.888/0001-25",
+      descricao: "Treinamento de equipe",
+      valor: "1.500",
+      competencia: "31/07/2026",
+      nome: "INDUSTRIA DO VALE LTDA",
+      ...ENDERECO_COMPLETO_MOCK,
+    },
+  },
+  // ── PENDENTE — competência em branco (num lote, a data de hoje carimbaria todas as notas).
+  {
+    numero: 14,
+    valores: {
       documento: "77.888.999/0001-36",
-      nome: "ESCRITORIO PARCEIRO LTDA",
       descricao: "Serviço de digitação",
       valor: "450,00",
       competencia: "",
+      nome: "ESCRITORIO PARCEIRO LTDA",
       ...ENDERECO_COMPLETO_MOCK,
     },
   },
@@ -2371,9 +2419,7 @@ function classificarLinhaNoMock(valores, { consultas = null } = {}) {
     );
   }
 
-  // ── nome / descrição / valor / competência
-  const nome = textoMock(valores.nome);
-  if (!nome) pend("nome_ausente", "O nome / razão social do tomador está em branco.");
+  // ── descrição / valor / competência (o NOME é resolvido junto do tomador, mais abaixo)
   const descricao = textoMock(valores.descricao);
   if (!descricao) {
     pend("descricao_ausente", "A descrição do serviço está em branco. Ela sai impressa no DANFSe que vai ao tomador.");
@@ -2422,7 +2468,13 @@ function classificarLinhaNoMock(valores, { consultas = null } = {}) {
     );
   }
 
-  // ── endereço: planilha → memória → consulta
+  // ══════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠ O TOMADOR — nome, e-mail e endereço, nas TRÊS origens: REVISÃO → MEMÓRIA → CONSULTA
+  // ══════════════════════════════════════════════════════════════════════════════════════
+  let nome = textoMock(valores.nome);
+  let origemNome = nome ? "revisao" : null;
+  let email = emailOk && emailBruto ? emailBruto : null;
+
   const daPlanilha = {
     cMun: textoMock(valores.cMun),
     cep: soDigitosMock(valores.cep) || null,
@@ -2462,20 +2514,29 @@ function classificarLinhaNoMock(valores, { consultas = null } = {}) {
           + "município antes de emitir."
       );
       endereco = daPlanilha;
-      origemEndereco = "planilha";
+      origemEndereco = "revisao";
     }
-  } else if (documento) {
-    const daMemoria = MEMORIA_DO_LOTE_MOCK[documento] || null;
-    if (daMemoria) {
+  }
+
+  // ── (2) A MEMÓRIA — o *"se já teve antes, só preencher"* do dono; ela só COMPLETA.
+  const daMemoria = documento ? MEMORIA_DO_LOTE_MOCK[documento] || null : null;
+  if (daMemoria) {
+    if (!nome && daMemoria.nome) {
+      nome = daMemoria.nome;
+      origemNome = "memoria";
+    }
+    if (!email && emailOk && daMemoria.email) email = daMemoria.email;
+    if (!endereco && !trouxeAlgo) {
       endereco = { ...daMemoria };
       origemEndereco = "memoria";
-    } else if (tipoDocumento === "CPF") {
-      // ⚠ CPF NÃO SE CONSULTA — decisão do dono. Nenhuma chamada é sequer sugerida.
-      pend(
-        "cpf_sem_endereco",
-        "O tomador é pessoa física e nunca emitimos para este CPF, então não temos o endereço — e "
-          + "CPF não se consulta (a base pública é de CNPJ). Preencha o endereço do tomador nesta linha."
-      );
+    }
+  }
+
+  // ── (3) A CONSULTA — e SÓ para CNPJ.
+  const faltaEndereco = !endereco && !trouxeAlgo;
+  if (documento && (!nome || faltaEndereco)) {
+    if (tipoDocumento === "CPF") {
+      // ⚠⚠ CPF NÃO SE CONSULTA — decisão do dono. As faltas viram pendência nomeada abaixo.
     } else {
       const consulta = consultas ? consultas[documento] : undefined;
       if (consulta === undefined || consulta === null) {
@@ -2484,7 +2545,7 @@ function classificarLinhaNoMock(valores, { consultas = null } = {}) {
         pend(
           "consulta_falhou",
           `Não conseguimos consultar este CNPJ: ${consulta.motivo || "a consulta não respondeu"}. `
-            + "Preencha o endereço do tomador nesta linha — as outras linhas seguem normalmente."
+            + "Preencha o nome e o endereço do tomador nesta linha — as outras linhas seguem normalmente."
         );
       } else if (!consulta.endereco) {
         pend(
@@ -2510,6 +2571,34 @@ function classificarLinhaNoMock(valores, { consultas = null } = {}) {
         };
         origemEndereco = "consulta";
       }
+      // ⚠ A razão social da MESMA resposta preenche o nome — e resposta sem `nome` não
+      // preenche nada: campo que a API não deu fica vazio, nunca inventado.
+      if (!nome && consulta && consulta.ok && textoMock(consulta.nome)) {
+        nome = textoMock(consulta.nome);
+        origemNome = "consulta";
+      }
+    }
+  }
+
+  // ── (4) O QUE NENHUMA DAS TRÊS RESOLVEU. ⚠ Nada disto entra com consulta pendente: a linha
+  // iria a PENDENTE em vez de CONSULTAR, e o segundo passe nunca aconteceria.
+  if (!precisaConsulta) {
+    if (!nome) {
+      pend(
+        "nome_ausente",
+        tipoDocumento === "CPF"
+          ? "Não sabemos o nome deste tomador: é pessoa física, nunca emitimos para este CPF e CPF "
+            + "não se consulta (a base pública é de CNPJ). Escreva o nome do tomador nesta linha."
+          : "Não sabemos o nome deste tomador — não emitimos para este documento antes e a consulta "
+            + "não trouxe a razão social. Escreva o nome do tomador nesta linha."
+      );
+    }
+    if (tipoDocumento === "CPF" && faltaEndereco) {
+      pend(
+        "cpf_sem_endereco",
+        "O tomador é pessoa física e nunca emitimos para este CPF, então não temos o endereço — e "
+          + "CPF não se consulta (a base pública é de CNPJ). Preencha o endereço do tomador nesta linha."
+      );
     }
   }
 
@@ -2530,13 +2619,14 @@ function classificarLinhaNoMock(valores, { consultas = null } = {}) {
     documento,
     tipoDocumento,
     origemEndereco,
+    origemNome,
     dados:
       estado === "pronta" || estado === "conferir"
         ? {
             tomador: {
               doc: documento,
               nome,
-              email: emailOk && emailBruto ? emailBruto : null,
+              email,
               endereco: {
                 cMun: endereco.cMun,
                 CEP: endereco.cep,
@@ -2575,7 +2665,7 @@ function conferirAjustesNoMock(ajustes, linhas) {
   for (const [chaveLinha, celulas] of Object.entries(ajustes)) {
     if (!numeros.has(Number(chaveLinha))) desconhecidas.push(String(chaveLinha));
     for (const chave of Object.keys(celulas || {})) {
-      if (!COLUNAS_DO_LOTE_MOCK.includes(chave)) colunas.add(chave);
+      if (!CAMPOS_DA_REVISAO_MOCK.includes(chave)) colunas.add(chave);
     }
   }
   if (desconhecidas.length) {
@@ -2590,7 +2680,7 @@ function conferirAjustesNoMock(ajustes, linhas) {
     return new ApiError(
       422,
       "ajuste_coluna_desconhecida",
-      `Estes campos não existem na planilha: ${[...colunas].join(", ")}. Nada foi aplicado.`,
+      `Estes campos não existem nesta nota: ${[...colunas].join(", ")}. Nada foi aplicado.`,
       { colunasDesconhecidas: [...colunas] }
     );
   }

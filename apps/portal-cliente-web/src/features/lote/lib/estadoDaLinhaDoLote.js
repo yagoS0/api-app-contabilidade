@@ -30,6 +30,42 @@ export const ESTADO = Object.freeze({
   PENDENTE: "pendente",
 });
 
+/**
+ * ⚠⚠ DE ONDE VEIO O NOME DO TOMADOR — ESPELHO de `ORIGEM_DO_DADO` (`classificarLinhaLote.js`).
+ *
+ * O nome deixou de ser coluna da planilha em 20/08/2026 (dono: *"não precisamos de nada do tomador,
+ * apenas o CNPJ ou CPF"*) e passou a ter três origens. A tela DIZ qual foi, pelo mesmo motivo que o
+ * `RotuloOrigem` da emissão avulsa existe: **valor preenchido sem procedência é indistinguível de
+ * valor conferido por uma pessoa** — e quem confere um lote de 50 notas precisa saber quais nomes
+ * ele mesmo escreveu.
+ */
+export const ORIGEM_DO_DADO = Object.freeze({
+  REVISAO: "revisao",
+  MEMORIA: "memoria",
+  CONSULTA: "consulta",
+});
+
+const ROTULO_DA_ORIGEM = Object.freeze({
+  // ⚠ A REVISÃO NÃO GANHA RÓTULO: a linha já diz "ajustada aqui", e repetir a mesma informação em
+  // duas frases na mesma célula é o ruído que o corte de legendas de 19/08/2026 mandou tirar.
+  [ORIGEM_DO_DADO.REVISAO]: null,
+  [ORIGEM_DO_DADO.MEMORIA]: "nome de uma nota já emitida",
+  [ORIGEM_DO_DADO.CONSULTA]: "razão social vinda da Receita",
+});
+
+/**
+ * O rótulo da procedência do nome, ou `null` quando não há o que dizer.
+ *
+ * ⚠ Origem que esta tela não conhece **não vira silêncio**: sai como veio. Um valor novo no backend
+ * some da tela se o padrão for `null`, e some justamente a informação que ele foi criado para dar.
+ */
+export function rotuloDaOrigemDoNome(linha) {
+  const origem = String(linha?.origemNome || "");
+  if (!origem) return null;
+  if (Object.prototype.hasOwnProperty.call(ROTULO_DA_ORIGEM, origem)) return ROTULO_DA_ORIGEM[origem];
+  return `nome de origem “${origem}”`;
+}
+
 /** Os códigos do backend que ESTA tela precisa nomear. Ela não inventa nenhum. */
 export const CODIGO = Object.freeze({
   MUNICIPIO_NAO_CONFERIDO: "municipio_nao_conferido",

@@ -1,6 +1,11 @@
-// O MODELO DA PLANILHA QUE O CLIENTE BAIXA.
+// O MODELO DA PLANILHA QUE O CLIENTE BAIXA — QUATRO colunas desde 20/08/2026.
 //
 // > Dono (19/08/2026): *"a planilha deve ser baixada por nós o modelo, o cliente preenche"*.
+// > Dono (20/08/2026): *"não precisamos de nada do tomador, apenas o CNPJ ou CPF."*
+//
+// ⚠ **ERAM DOZE COLUNAS.** Nome, e-mail e o bloco de endereço saíram — o porquê está por extenso em
+// `colunasLote.js`, e a aba de instruções DIZ ao cliente para onde eles foram. Um modelo que
+// encolhesse sem explicar deixaria quem já usava a versão antiga achando que perdeu campo.
 //
 // ⚠⚠ **NADA AQUI EMITE NADA.** Gera um arquivo .xlsx em memória. Sem banco, sem rede.
 //
@@ -44,18 +49,10 @@ export const LINHAS_PREFORMATADAS = 300;
 
 /** Larguras em caracteres. Só estética — cabeçalho cortado faz a pessoa renomear a coluna. */
 const LARGURA = {
-  documento: 20,
-  nome: 34,
-  descricao: 46,
-  valor: 16,
-  competencia: 26,
-  email: 28,
-  cMun: 30,
-  cep: 14,
-  xLgr: 30,
-  nro: 10,
-  xBairro: 20,
-  xCpl: 20,
+  documento: 22,
+  descricao: 52,
+  valor: 18,
+  competencia: 28,
 };
 
 function celulaTexto(valor) {
@@ -79,14 +76,15 @@ function abaDeInstrucoes() {
   const linhas = [
     ["Como preencher esta planilha"],
     [],
-    ["1.", "Uma planilha = UMA empresa emitente. Você escolhe a empresa antes de enviar o arquivo."],
-    ["2.", "Cada LINHA da aba “Notas” é UMA nota. Os tomadores podem ser diferentes entre as linhas."],
-    ["3.", "APAGUE a linha de exemplo antes de enviar."],
-    ["4.", "O endereço é OPCIONAL — mas é TUDO OU NADA: ou os cinco campos (código do município, CEP, logradouro, número e bairro) ou nenhum. Só o complemento pode ficar em branco com o resto preenchido. Meio endereço faz a emissão ser recusada."],
-    ["5.", "Deixando o endereço em branco: se já emitimos para esse CNPJ/CPF antes, preenchemos com o que a última nota levou. Se não, consultamos o CNPJ. Se a consulta não responder, avisamos naquela linha para você ajustar — as outras seguem."],
-    ["6.", "CPF não é consultado. Para tomador pessoa física que nunca recebeu nota sua, preencha o endereço na linha."],
-    ["7.", "⚠ NÃO altere o formato das colunas de CNPJ/CPF, código do município e CEP: elas já vêm como TEXTO. Em coluna numérica o Excel apaga o zero da frente, e um CPF que começa com zero fica com 10 dígitos."],
-    ["8.", "⚠ Escreva o valor com vírgula nos centavos (1500,00). Valor com duas leituras possíveis (como 1.500) não é convertido — vira pendência da linha."],
+    ["1.", "São QUATRO colunas, e todas as quatro são obrigatórias. Do tomador, pedimos só o CNPJ ou CPF."],
+    ["2.", "Uma planilha = UMA empresa emitente. Você escolhe a empresa antes de enviar o arquivo."],
+    ["3.", "Cada LINHA da aba “Notas” é UMA nota. Os tomadores podem ser diferentes entre as linhas."],
+    ["4.", "APAGUE a linha de exemplo antes de enviar."],
+    ["5.", "O nome e o endereço do tomador NÃO são pedidos aqui: se já emitimos para esse CNPJ/CPF antes, usamos o que a última nota levou; se não, consultamos o CNPJ na Receita."],
+    ["6.", "Quando nenhum dos dois responder, a tela de conferência avisa NAQUELA linha e você preenche por lá — inclusive o município, que se escolhe numa lista (não é preciso saber código do IBGE)."],
+    ["7.", "⚠ CPF não é consultado (a base pública é de CNPJ). Tomador pessoa física que nunca recebeu nota sua SEMPRE cai na conferência, para você escrever o nome e o endereço. Isso é o esperado."],
+    ["8.", "⚠ NÃO altere o formato da coluna de CNPJ/CPF: ela já vem como TEXTO. Em coluna numérica o Excel apaga o zero da frente, e um CPF que começa com zero fica com 10 dígitos."],
+    ["9.", "⚠ Escreva o valor com vírgula nos centavos (1500,00). Valor com duas leituras possíveis (como 1.500) não é convertido — vira pendência da linha."],
     [],
     ["Coluna", "Obrigatória?", "Como preencher"],
     ...COLUNAS_LOTE.map((c) => [c.rotulo, c.obrigatoria ? "Sim" : "Não", c.ajuda || ""]),
@@ -95,8 +93,15 @@ function abaDeInstrucoes() {
     [
       "",
       "",
-      "Município emissor, código de serviço, série da DPS e as alíquotas vêm do CADASTRO da sua "
-        + "empresa, no portal do contador. Uma coluna dessas aqui seria uma porta para emitir "
+      "Nome, e-mail e endereço do tomador: eles são pedidos na tela de conferência, e SÓ quando "
+        + "fizerem falta. Uma coluna que quase sempre vem em branco é trabalho para quem preenche "
+        + "sem ganho nenhum.",
+    ],
+    [
+      "",
+      "",
+      "Município emissor, código de serviço (atividade), série da DPS e as alíquotas vêm do CADASTRO "
+        + "da sua empresa, no portal do contador. Uma coluna dessas aqui seria uma porta para emitir "
         + "contradizendo o cadastro.",
     ],
   ];

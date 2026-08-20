@@ -13,11 +13,16 @@ import {
   conferirMunicipioDaLinha,
   ehEstadoConhecido,
   quantasNaoProntas,
+  rotuloDaOrigemDoNome,
+  ORIGEM_DO_DADO,
   vereditoDaLinha,
   vereditosDoLote,
 } from "../estadoDaLinhaDoLote";
-// A AUTORIDADE da lista de estados.
-import { ESTADO as ESTADO_DO_BACKEND } from "../../../../../../api/src/application/nfse/lote/classificarLinhaLote.js";
+// A AUTORIDADE da lista de estados e das origens.
+import {
+  ESTADO as ESTADO_DO_BACKEND,
+  ORIGEM_DO_DADO as ORIGEM_DO_BACKEND,
+} from "../../../../../../api/src/application/nfse/lote/classificarLinhaLote.js";
 
 /** Um recorte da lista oficial, no formato `[codigo, nome, uf]` de `municipiosIbge.data.js`. */
 const MUNICIPIOS = [
@@ -188,5 +193,42 @@ describe("o resumo é RECONTADO na tela", () => {
 describe("⚠⚠ o espelho da lista de estados", () => {
   test("são exatamente os quatro do classificador do backend", () => {
     expect(Object.values(ESTADO).sort()).toEqual(Object.values(ESTADO_DO_BACKEND).sort());
+  });
+
+  test("⚠ as origens do dado são as MESMAS do backend", () => {
+    expect(Object.values(ORIGEM_DO_DADO).sort()).toEqual(Object.values(ORIGEM_DO_BACKEND).sort());
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ A PROCEDÊNCIA DO NOME — ela existe porque o nome deixou de ser coluna (20/08/2026)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Quem confere um lote de 50 notas precisa distinguir o nome que ELE escreveu do que veio do
+// cadastro ou da Receita. Valor preenchido sem procedência é indistinguível de valor conferido.
+describe("de onde veio o nome do tomador", () => {
+  test("a MEMÓRIA e a CONSULTA ganham rótulo — e são rótulos diferentes", () => {
+    const daMemoria = rotuloDaOrigemDoNome({ origemNome: ORIGEM_DO_DADO.MEMORIA });
+    const daConsulta = rotuloDaOrigemDoNome({ origemNome: ORIGEM_DO_DADO.CONSULTA });
+    expect(daMemoria).toMatch(/nota já emitida/i);
+    expect(daConsulta).toMatch(/Receita/i);
+    expect(daMemoria).not.toBe(daConsulta);
+  });
+
+  // ⚠ A linha já diz "ajustada aqui": repetir a mesma informação na mesma célula é o ruído que o
+  // corte de legendas de 19/08/2026 mandou tirar.
+  test("⚠ o que a pessoa escreveu na REVISÃO não ganha rótulo", () => {
+    expect(rotuloDaOrigemDoNome({ origemNome: ORIGEM_DO_DADO.REVISAO })).toBeNull();
+  });
+
+  test("sem origem, não há o que dizer", () => {
+    expect(rotuloDaOrigemDoNome({})).toBeNull();
+    expect(rotuloDaOrigemDoNome(null)).toBeNull();
+  });
+
+  // ⚠⚠ ORIGEM QUE ESTA TELA NÃO CONHECE NÃO VIRA SILÊNCIO. Um valor novo no backend sumiria da
+  // tela, e sumiria justamente a informação que ele foi criado para dar.
+  test("⚠⚠ origem desconhecida SAI NOMEADA, nunca em silêncio", () => {
+    expect(rotuloDaOrigemDoNome({ origemNome: "inventada" })).toContain("inventada");
   });
 });

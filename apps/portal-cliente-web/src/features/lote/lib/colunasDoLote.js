@@ -1,10 +1,10 @@
-// AS COLUNAS DA PLANILHA DO LOTE — ESPELHO da lista fechada do backend.
+// AS COLUNAS DA PLANILHA E OS CAMPOS DA REVISÃO — ESPELHO das listas fechadas do backend.
 //
 // ⚠⚠ **A AUTORIDADE É `apps/api/src/application/nfse/lote/colunasLote.js`**, e este arquivo é
-// cópia. O espelho é **amarrado por teste**: `__tests__/colunasDoLote.test.js` importa a lista do
-// backend e exige as MESMAS chaves, os MESMOS rótulos, na MESMA ordem, com a mesma
-// obrigatoriedade. Sem esse amarre, "espelho" é intenção, não fato — e a divergência apareceria
-// como *"ajustei o campo e o servidor recusou dizendo que ele não existe"*.
+// cópia. O espelho é **amarrado por teste**: `__tests__/colunasDoLote.test.js` importa as listas do
+// backend e exige as MESMAS chaves, os MESMOS rótulos, na MESMA ordem. Sem esse amarre, "espelho" é
+// intenção, não fato — e a divergência apareceria como *"ajustei o campo e o servidor recusou
+// dizendo que ele não existe"*.
 //
 // ⚠ POR QUE HÁ CÓPIA, se o teste consegue importar o original: o **build** não consegue. O Docker
 // deste portal tem Root Directory `apps/portal-cliente-web` (ver `Dockerfile` e `railway.toml`), e
@@ -12,25 +12,83 @@
 // o deploy. No teste, que roda no monorepo inteiro, ele funciona; é exatamente a mesma solução do
 // `codigoServicoDaNota.js`.
 //
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ SÃO DUAS LISTAS, E CONFUNDI-LAS É O DEFEITO
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// > Dono (20/08/2026): *"não precisamos de nada do tomador, apenas o CNPJ ou CPF. Em caso que
+// > precise de mais informações, na hora da revisão nós avisamos e permitimos o preenchimento."*
+//
+//   `COLUNAS_DO_LOTE`   as QUATRO colunas da PLANILHA. É o que o cliente preenche no Excel.
+//   `CAMPOS_DA_REVISAO` as ONZE células que o formulário de revisão pode corrigir — as quatro da
+//                       planilha mais nome, e-mail e o bloco de endereço.
+//
+// Eram doze colunas até 20/08/2026. Nome, e-mail e endereço não sumiram do fluxo: saíram da
+// planilha e passaram a chegar do **cadastro de tomador**, da **consulta à Receita** ou desta
+// **revisão** — e é por isso que a segunda lista existe. Montar o formulário de ajuste a partir de
+// `COLUNAS_DO_LOTE` deixaria a pessoa sem como corrigir exatamente o que a pendência pede.
+//
 // ⚠ **O que NÃO foi copiado, de propósito:** os `aliases` (só o leitor da planilha os usa) e o
-// texto de `ajuda` (ele descreve como PREENCHER a planilha; na tela quem diz o que fazer é a
-// pendência que o backend devolveu, com a frase daquele caso). Copiar os dois seria trazer duas
-// listas a mais para divergir sem que nada na tela dependesse delas.
+// texto de `ajuda` das COLUNAS (ele descreve como preencher a planilha; na tela quem diz o que
+// fazer é a pendência que o backend devolveu, com a frase daquele caso). A `ajuda` dos campos da
+// REVISÃO ficou: ela é lida ao lado do campo, nesta tela.
 
 /** Na ordem do modelo. `chave` é o vocabulário do domínio — o mesmo do XML e do validador. */
 export const COLUNAS_DO_LOTE = Object.freeze([
   { chave: "documento", rotulo: "CNPJ/CPF do tomador", obrigatoria: true },
-  { chave: "nome", rotulo: "Nome / razão social do tomador", obrigatoria: true },
   { chave: "descricao", rotulo: "Descrição do serviço", obrigatoria: true },
   { chave: "valor", rotulo: "Valor do serviço (R$)", obrigatoria: true },
   { chave: "competencia", rotulo: "Data da competência (dd/mm/aaaa)", obrigatoria: true },
-  { chave: "email", rotulo: "E-mail do tomador", obrigatoria: false },
-  { chave: "cMun", rotulo: "Código IBGE do município do tomador", obrigatoria: false },
-  { chave: "cep", rotulo: "CEP do tomador", obrigatoria: false },
-  { chave: "xLgr", rotulo: "Logradouro do tomador", obrigatoria: false },
-  { chave: "nro", rotulo: "Número", obrigatoria: false },
-  { chave: "xBairro", rotulo: "Bairro", obrigatoria: false },
-  { chave: "xCpl", rotulo: "Complemento", obrigatoria: false },
+]);
+
+/**
+ * As células que o formulário de revisão desenha. ⚠ `naPlanilha` distingue as que vieram do arquivo
+ * das que só existem aqui — a tela agrupa por isso, e diz de onde cada bloco veio.
+ *
+ * ⚠⚠ **`cMun` NÃO É UM CAMPO DE TEXTO NESTA TELA.** Ele é preenchido pelo `SeletorMunicipio`, o
+ * MESMO da emissão avulsa: busca por nome, mostra município **e UF** em toda opção, não
+ * autosseleciona nem com resultado único, e devolve o código junto da escolha. *"Código do IBGE é
+ * abstração"* (dono) — ninguém digita sete dígitos, e ninguém converte nome em código: há cinco
+ * "Bom Jesus" no país, e escolher um deles em silêncio emite a nota no município errado.
+ */
+export const CAMPOS_DA_REVISAO = Object.freeze([
+  {
+    chave: "documento",
+    rotulo: "CNPJ/CPF do tomador",
+    naPlanilha: true,
+    ajuda: "Só números ou com máscara. 11 dígitos (CPF) ou 14 (CNPJ). É a única coisa que pedimos do tomador.",
+  },
+  { chave: "descricao", rotulo: "Descrição do serviço", naPlanilha: true, ajuda: "O que está sendo prestado. Sai impresso no DANFSe." },
+  { chave: "valor", rotulo: "Valor do serviço (R$)", naPlanilha: true, ajuda: "Maior que zero. Use vírgula para os centavos: 1500,00" },
+  {
+    chave: "competencia",
+    rotulo: "Data da competência (dd/mm/aaaa)",
+    naPlanilha: true,
+    ajuda: "Obrigatória: em branco, a nota sairia com a data de hoje sem ninguém ver.",
+  },
+  {
+    chave: "nome",
+    rotulo: "Nome / razão social do tomador",
+    naPlanilha: false,
+    ajuda: "Como deve sair na nota. Só é pedido quando não conseguimos saber por conta própria.",
+  },
+  { chave: "email", rotulo: "E-mail do tomador", naPlanilha: false, ajuda: "Opcional. Em branco não impede nada." },
+  {
+    chave: "cMun",
+    rotulo: "Município do tomador",
+    naPlanilha: false,
+    ajuda: "Escolha na lista oficial — o código do IBGE vem junto da escolha.",
+  },
+  { chave: "cep", rotulo: "CEP do tomador", naPlanilha: false, ajuda: "8 dígitos." },
+  { chave: "xLgr", rotulo: "Logradouro do tomador", naPlanilha: false, ajuda: "A rua inteira, ex.: “Rua da Assembleia”." },
+  { chave: "nro", rotulo: "Número", naPlanilha: false, ajuda: "" },
+  { chave: "xBairro", rotulo: "Bairro", naPlanilha: false, ajuda: "" },
+  {
+    chave: "xCpl",
+    rotulo: "Complemento",
+    naPlanilha: false,
+    ajuda: "O único campo do endereço que pode ficar em branco com o resto preenchido.",
+  },
 ]);
 
 /**
@@ -45,7 +103,7 @@ export const CAMPOS_DE_ENDERECO = Object.freeze(["cMun", "cep", "xLgr", "nro", "
 export const CHAVES_DO_LOTE = Object.freeze(COLUNAS_DO_LOTE.map((c) => c.chave));
 
 export function rotuloDaColuna(chave) {
-  return COLUNAS_DO_LOTE.find((c) => c.chave === chave)?.rotulo || String(chave || "");
+  return CAMPOS_DA_REVISAO.find((c) => c.chave === chave)?.rotulo || String(chave || "");
 }
 
 /**

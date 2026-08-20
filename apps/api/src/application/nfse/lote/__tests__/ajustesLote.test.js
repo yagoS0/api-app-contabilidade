@@ -3,7 +3,7 @@
 // ⚠ NADA AQUI EMITE, CONSULTA OU GRAVA: a função troca células e devolve linhas.
 
 import { aplicarAjustesLote, RECUSA_AJUSTE } from "../ajustesLote.js";
-import { COLUNAS_LOTE } from "../colunasLote.js";
+import { COLUNAS_LOTE, CAMPOS_DA_REVISAO } from "../colunasLote.js";
 import { classificarPlanilhaLote } from "../classificarLinhaLote.js";
 
 const LINHAS = [
@@ -61,9 +61,22 @@ describe("o caminho normal", () => {
     expect(r.linhas[0].valores.valor).toBe("1500");
   });
 
-  it("todas as colunas da lista fechada são aceitas", () => {
-    const todas = Object.fromEntries(COLUNAS_LOTE.map((c) => [c.chave, "x"]));
+  it("todos os campos da lista fechada da REVISÃO são aceitos", () => {
+    const todas = Object.fromEntries(CAMPOS_DA_REVISAO.map((c) => [c.chave, "x"]));
     expect(aplicarAjustesLote(LINHAS, { 2: todas }).ok).toBe(true);
+  });
+
+  // ⚠⚠ A DIFERENÇA ENTRE AS DUAS LISTAS É O CORAÇÃO DA ENTREGA DE 20/08/2026. A planilha tem QUATRO
+  // colunas; a revisão aceita onze campos, porque nome, e-mail e endereço saíram da planilha e
+  // passaram a ser pedidos SÓ na revisão. Validar o ajuste contra `COLUNAS_LOTE` faria a revisão
+  // recusar exatamente os campos que ela existe para preencher.
+  it("⚠⚠ os campos que NÃO são coluna da planilha são aceitos no ajuste", () => {
+    const soNaRevisao = CAMPOS_DA_REVISAO.filter((c) => !c.naPlanilha).map((c) => c.chave);
+    expect(soNaRevisao.length).toBeGreaterThan(0);
+    for (const chave of soNaRevisao) {
+      expect(COLUNAS_LOTE.map((c) => c.chave)).not.toContain(chave);
+      expect(aplicarAjustesLote(LINHAS, { 2: { [chave]: "x" } }).ok).toBe(true);
+    }
   });
 });
 

@@ -21,7 +21,7 @@
 // a BrasilAPI é pública e tem throttle. É a mesma economia que `decidirConsulta` já faz na emissão
 // avulsa com o `ultimoConsultado`.
 
-import { decidirConsulta, enderecoDaReceita, NAO_CONSULTA } from "../../emitir/lib/consultaTomador";
+import { decidirConsulta, enderecoDaReceita, nomeDaReceita, NAO_CONSULTA } from "../../emitir/lib/consultaTomador";
 
 /**
  * Traduz a resposta da BrasilAPI para o que o backend espera em `consultas[documento]`.
@@ -57,12 +57,21 @@ export function resultadoParaOBackend(resposta, { municipios = null } = {}) {
     };
   }
 
+  // ⚠⚠ A RAZÃO SOCIAL VIAJA SEMPRE, INCLUSIVE QUANDO O ENDEREÇO NÃO VEIO. Desde 20/08/2026 o nome
+  // do tomador não é mais coluna da planilha, e a Receita é uma das três origens dele. Mandá-lo só
+  // junto do endereço faria a linha cujo endereço a pessoa já digitou continuar pedindo o nome à
+  // mão, com a razão social a um campo de distância.
+  // ⚠ `nomeDaReceita` devolve `""` quando a resposta não traz `razao_social` — e o backend não
+  // preenche nada com isso. Campo que a API não deu fica vazio, nunca inventado.
+  const nome = nomeDaReceita(resposta.bruto);
+
   const leitura = enderecoDaReceita(resposta.bruto, { municipios });
   if (!leitura.endereco) {
-    return { ok: true, cMunVerificado: false, endereco: null, faltantes: leitura.faltantes };
+    return { ok: true, nome, cMunVerificado: false, endereco: null, faltantes: leitura.faltantes };
   }
   return {
     ok: true,
+    nome,
     cMunVerificado: true,
     endereco: leitura.endereco,
     // ⚠ O NOME E A UF **DA MESMA RESPOSTA**, crus, para o servidor refazer a prova 3. Mandar o que

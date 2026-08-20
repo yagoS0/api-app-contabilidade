@@ -25,18 +25,34 @@
 // ⚠ **UMA LINHA RUIM NÃO INVALIDA A PLANILHA.** Esta função classifica UMA linha e não conhece as
 // outras. As boas seguem; a ruim espera.
 //
-// ─── O QUE PREENCHE O ENDEREÇO, NESTA ORDEM ─────────────────────────────────────────────────────
+// ─── ⚠⚠ O QUE PREENCHE O TOMADOR (NOME, E-MAIL E ENDEREÇO), NESTA ORDEM ─────────────────────────
 //
-//   1. **A PLANILHA**, se ela trouxe qualquer campo de endereço. Quem digitou está afirmando o
-//      endereço de hoje, e a memória pode estar velha — é a mesma regra do `aplicarEndereco` do
-//      portal ("o que a pessoa digitou vence a consulta").
-//   2. **A MEMÓRIA** (`tomadores_emitidos`, Fase 1) — o *"se já teve antes, só preencher"*.
+// > Dono (20/08/2026): *"não precisamos de nada do tomador, apenas o CNPJ ou CPF. Em caso que
+// > precise de mais informações, na hora da revisão nós avisamos e permitimos o preenchimento."*
+// > E, sobre o município: *"só deve ser preenchido pelo cliente se a consulta do CNPJ não retornar;
+// > aí sim deixa para que ele preencha na revisão."*
+//
+//   1. **A REVISÃO** — a célula que uma PESSOA digitou na tela de ajuste. Ela vence, sempre: é a
+//      mesma regra do `aplicarEndereco`/`aplicarNome` do portal ("o que a pessoa digitou vence a
+//      consulta"), e a memória pode estar velha.
+//      ⚠ Desde 20/08/2026 estas células **não vêm mais da planilha** — nome, e-mail e endereço
+//      deixaram de ser colunas (ver `colunasLote.js`). Elas só existem se alguém as preencheu na
+//      revisão, e é por isso que a origem se chama REVISÃO e não PLANILHA.
+//   2. **A MEMÓRIA** (`tomadores_emitidos`) — o *"se já teve antes, só preencher"* do dono.
 //   3. **A CONSULTA**, e só para CNPJ.
+//
+// ⚠⚠ **NÃO EXISTE QUARTA ORIGEM, E O MUNICÍPIO NÃO TEM PADRÃO NENHUM.** Nada é preenchido a partir
+// do cadastro da EMPRESA, da última nota, de proximidade ou de semelhança. Um município
+// pré-preenchido com a cidade da empresa faria toda nota para tomador de fora sair com a cidade
+// errada — **e parecendo conferida**, porque o campo estaria cheio. Valor escolhido pelo sistema
+// fica indistinguível de valor conferido por uma pessoa; é a mesma razão pela qual a série da DPS e
+// o código de serviço não nascem preenchidos.
 //
 // ⚠⚠ **CPF NÃO SE CONSULTA. NUNCA.** Decisão do dono, registrada em `utils/cpf.js` e em
 // `consultaTomador.js`: a BrasilAPI é base de **CNPJ**; consulta de CPF é serviço pago e traz LGPD
-// junto (o tomador é terceiro). Com 11 dígitos e sem endereço na planilha nem na memória, a linha é
-// PENDENTE na hora — nenhuma chamada é sequer sugerida.
+// junto (o tomador é terceiro). Então, para um CPF que nunca recebeu nota desta empresa, **não
+// existe origem** nem para o nome nem para o endereço: a linha é PENDENTE na hora, a revisão
+// pergunta, e nenhuma chamada é sequer sugerida. **Isso é a regra, não um buraco.**
 //
 // ⚠ **FALHA DA CONSULTA NÃO É ERRO DO CLIENTE.** É pendência daquela linha, com o motivo — é
 // literalmente o que o dono descreveu ("se a API não retornar nós avisamos isso em uma tela para
@@ -57,9 +73,16 @@ export const ESTADO = Object.freeze({
   PENDENTE: "pendente",
 });
 
-/** De onde veio o endereço da linha. `null` = não foi resolvido. */
-export const ORIGEM_ENDERECO = Object.freeze({
-  PLANILHA: "planilha",
+/**
+ * De onde veio cada dado do tomador (nome e endereço). `null` = não foi resolvido.
+ *
+ * ⚠ **`PLANILHA` VIROU `REVISAO` EM 20/08/2026, E NÃO É RENOMEAÇÃO COSMÉTICA.** Nome, e-mail e
+ * endereço deixaram de ser colunas da planilha (dono: *"não precisamos de nada do tomador, apenas o
+ * CNPJ ou CPF"*). Uma célula desses campos só existe porque alguém a preencheu na tela de revisão —
+ * chamá-la de "planilha" mandaria a próxima sessão procurar uma coluna que não existe.
+ */
+export const ORIGEM_DO_DADO = Object.freeze({
+  REVISAO: "revisao",
   MEMORIA: "memoria",
   CONSULTA: "consulta",
 });
@@ -161,15 +184,25 @@ function faltantesDoEndereco(endereco) {
 }
 
 /**
- * O código IBGE que veio NA PLANILHA — aceito por VERIFICAÇÃO, nunca por confiança.
+ * O código IBGE que veio DA REVISÃO — aceito por VERIFICAÇÃO, nunca por confiança.
+ *
+ * ⚠⚠ **NINGUÉM DIGITA ESTE CÓDIGO.** *"Código do IBGE é abstração"* (dono, 20/08/2026), e a tela de
+ * revisão não oferece um campo de sete dígitos: ela usa o seletor que já existe
+ * (`portal-cliente-web/src/features/emitir/SeletorMunicipio.jsx`), que busca por NOME, mostra
+ * município **e UF** em toda opção, não autosseleciona nem com resultado único, e devolve o código
+ * junto da escolha. O código chega aqui **como consequência de uma escolha explícita**.
+ *
+ * ⚠⚠ **E É POR ISSO QUE NÃO EXISTE, EM LUGAR NENHUM DESTE MÓDULO, CONVERSÃO DE NOME EM CÓDIGO.**
+ * Medido na lista oficial: **240 nomes de município cobrem 521 municípios** (cinco "Bom Jesus",
+ * cinco "São Domingos"). Resolver por nome escolheria um deles em silêncio, e o erro só apareceria
+ * como nota emitida no município errado — que não se corrige, se cancela.
  *
  * ⚠⚠ **AQUI SÓ DUAS DAS TRÊS PROVAS SÃO POSSÍVEIS, E ISSO É MEDIDO, NÃO PREGUIÇA.** A prova tripla
  * de `codigoMunicipioVerificado` (`portal-cliente-web/.../consultaTomador.js`) é: (1) 7 dígitos;
  * (2) existe na lista oficial do IBGE; (3) o município e a UF dessa linha batem com o
- * `municipio`/`uf` **da mesma resposta**. A prova 3 **não tem como existir para a planilha**: a
- * lista fechada de colunas não tem município nem UF, e inventar essas colunas para poder conferir
- * seria fabricar a segunda afirmação. A prova 3 continua valendo INTEIRA no caminho da consulta,
- * que é onde ela nasceu.
+ * `municipio`/`uf` **da mesma resposta**. A prova 3 **não tem contra o que rodar aqui**: não há uma
+ * "resposta" com nome e UF — há a escolha de uma pessoa, feita numa tela que já mostrava a UF de
+ * cada opção. A prova 3 continua valendo INTEIRA no caminho da consulta, que é onde ela nasceu.
  *
  * ⚠⚠ **A LISTA OFICIAL DO IBGE NÃO É LIDA POR ESTE MÓDULO — ela é INJETADA.** Sem ela, o código
  * passa só pela FORMA e a linha sai marcada `municipio_nao_conferido`.
@@ -195,16 +228,16 @@ function faltantesDoEndereco(endereco) {
  * ela muda de camada. É por isso que a linha marcada assim **NUNCA sai como `PRONTA`** — ela sai
  * como `CONFERIR`, e quem lê sabe que falta um passo.
  */
-function conferirMunicipioDaPlanilha(cMun, municipios) {
+function conferirMunicipioDaRevisao(cMun, municipios) {
   const digitos = soDigitos(cMun);
   if (digitos.length !== 7) {
     return {
       ok: false,
       pendencia: PENDENCIA.MUNICIPIO_FORA_DE_FORMA,
       texto:
-        `O código IBGE do município (“${cMun}”) não tem 7 dígitos. ⚠ O NOME do município não serve `
-        + "no lugar do código: há cinco “Bom Jesus” no país, e derivar o código pelo nome erra em "
-        + "homônimo — a nota sairia no município errado.",
+        `Não reconhecemos “${cMun}” como um município. Escolha o município do tomador na lista, na `
+        + "revisão desta linha — o código do IBGE vem junto da escolha, e é a UF ao lado do nome "
+        + "que separa os cinco “Bom Jesus” do país.",
     };
   }
   if (!Array.isArray(municipios) || municipios.length === 0) {
@@ -222,7 +255,9 @@ function conferirMunicipioDaPlanilha(cMun, municipios) {
     return {
       ok: false,
       pendencia: PENDENCIA.MUNICIPIO_INEXISTENTE,
-      texto: `O código ${digitos} não existe na lista oficial do IBGE.`,
+      texto:
+        `O código ${digitos} não existe na lista oficial do IBGE. Escolha o município do tomador na `
+        + "lista, na revisão desta linha.",
     };
   }
   return { ok: true, municipio: `${linha[1]} / ${linha[2]}` };
@@ -337,8 +372,9 @@ function normalizarParaBusca(texto) {
 /**
  * Classifica UMA linha.
  *
- * @param {object} linha `{ numero, valores: { documento, nome, descricao, valor, competencia,
- *   email, cMun, cep, xLgr, nro, xBairro, xCpl } }` — as células como vieram da planilha.
+ * @param {object} linha `{ numero, valores: { … } }` — as células desta linha, na lista fechada de
+ *   `CAMPOS_DA_REVISAO`. ⚠ Só `documento`, `descricao`, `valor` e `competencia` podem ter vindo da
+ *   PLANILHA; `nome`, `email` e o bloco de endereço só existem se alguém os preencheu na revisão.
  * @param {object} [opcoes]
  * @param {object|null} [opcoes.tomadorConhecido] o registro de `tomadores_emitidos` deste
  *   documento nesta empresa, ou `null`. **Quem busca é o chamador** — esta função não lê banco.
@@ -368,14 +404,6 @@ export function classificarLinhaLote(linha, { tomadorConhecido = null, consulta 
     );
   }
 
-  // ── NOME ────────────────────────────────────────────────────────────────────────────────────
-  //
-  // ⚠ A RAZÃO SOCIAL DA CONSULTA **NÃO** PREENCHE UM NOME EM BRANCO. O nome é coluna obrigatória
-  // da lista fechada, e branco é branco — não é um pedido de busca. É a mesma disciplina de
-  // `aplicarNome` no portal, onde o que a pessoa escreveu vence a consulta.
-  const nome = texto(v.nome);
-  if (!nome) pend(PENDENCIA.NOME_AUSENTE, "O nome / razão social do tomador está em branco.");
-
   // ── DESCRIÇÃO ───────────────────────────────────────────────────────────────────────────────
   const descricao = texto(v.descricao);
   if (!descricao) {
@@ -402,22 +430,36 @@ export function classificarLinhaLote(linha, { tomadorConhecido = null, consulta 
     );
   }
 
-  // ── E-MAIL ──────────────────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠ O TOMADOR — nome, e-mail e endereço, nas TRÊS origens: REVISÃO → MEMÓRIA → CONSULTA
+  // ═══════════════════════════════════════════════════════════════════════════════════════════
   //
-  // ⚠ OPCIONAL DE VERDADE, e malformado NÃO derruba a linha: a nota sai sem e-mail e a linha vai
-  // para conferência. O validador não exige e-mail — perder a emissão por causa de um campo que a
-  // emissão não pede seria trocar um problema por outro maior.
-  const email = lerEmailDaPlanilha(v.email);
-  if (!email.ok) {
+  // ⚠ Até 20/08/2026 o NOME era coluna obrigatória e só a planilha o preenchia ("branco é branco,
+  // não é um pedido de busca"). Aquela regra caiu com a coluna: hoje o nome tem as mesmas três
+  // origens do endereço, e é a ausência das TRÊS que vira pendência. O que NÃO mudou é a
+  // precedência — o que uma pessoa digitou continua vencendo memória e consulta.
+
+  // ── E-MAIL: opcional de verdade, e malformado NÃO derruba a linha ────────────────────────────
+  // A nota sai sem e-mail e a linha vai para conferência. O validador não exige e-mail — perder a
+  // emissão por causa de um campo que a emissão não pede seria trocar um problema por outro maior.
+  const emailDigitado = lerEmailDaPlanilha(v.email);
+  if (!emailDigitado.ok) {
     conf(
       CONFERENCIA.EMAIL_FORA_DE_FORMA,
-      `O e-mail “${email.texto}” não tem “@”. A nota sai SEM e-mail — a emissão não o exige. `
+      `O e-mail “${emailDigitado.texto}” não tem “@”. A nota sai SEM e-mail — a emissão não o exige. `
       + "Corrija se quiser que ele fique guardado."
     );
   }
 
-  // ── ENDEREÇO ────────────────────────────────────────────────────────────────────────────────
-  const daPlanilha = normalizarEndereco({
+  let nome = texto(v.nome);
+  let origemNome = nome ? ORIGEM_DO_DADO.REVISAO : null;
+  let email = emailDigitado.ok ? emailDigitado.email : null;
+  let endereco = null;
+  let origemEndereco = null;
+  let precisaConsulta = false;
+
+  // ── (1) A REVISÃO — o endereço que uma PESSOA digitou ────────────────────────────────────────
+  const daRevisao = normalizarEndereco({
     cMun: v.cMun,
     cep: v.cep,
     xLgr: v.xLgr,
@@ -425,17 +467,13 @@ export function classificarLinhaLote(linha, { tomadorConhecido = null, consulta 
     xCpl: v.xCpl,
     xBairro: v.xBairro,
   });
-  const planilhaTrouxeAlgo = CAMPOS_ENDERECO.some((c) => daPlanilha?.[c]);
+  const revisaoTrouxeEndereco = CAMPOS_ENDERECO.some((c) => daRevisao?.[c]);
 
-  let endereco = null;
-  let origemEndereco = null;
-  let precisaConsulta = false;
-
-  if (planilhaTrouxeAlgo) {
+  if (revisaoTrouxeEndereco) {
     // ⚠ TUDO-OU-NADA: `buildDpsXml` recusa a emissão (`MISSING_TOMADOR_ADDRESS`) faltando qualquer
     // um dos cinco. Meio endereço é PENDÊNCIA, nunca "quase pronta" — é a mesma disciplina do
     // `xLgr` do portal, onde a palavra "RUA" sozinha passava por logradouro preenchido.
-    const faltam = faltantesDoEndereco(daPlanilha);
+    const faltam = faltantesDoEndereco(daRevisao);
     if (faltam.length) {
       pend(
         PENDENCIA.ENDERECO_INCOMPLETO,
@@ -444,30 +482,53 @@ export function classificarLinhaLote(linha, { tomadorConhecido = null, consulta 
         + "recusada. Preencha o que falta ou apague o bloco inteiro para buscarmos o endereço."
       );
     } else {
-      const municipio = conferirMunicipioDaPlanilha(daPlanilha.cMun, municipios);
+      const municipio = conferirMunicipioDaRevisao(daRevisao.cMun, municipios);
       if (!municipio.ok) {
         pend(municipio.pendencia, municipio.texto);
       } else {
         if (municipio.conferencia) conf(municipio.conferencia, municipio.texto);
-        endereco = daPlanilha;
-        origemEndereco = ORIGEM_ENDERECO.PLANILHA;
+        endereco = daRevisao;
+        origemEndereco = ORIGEM_DO_DADO.REVISAO;
       }
     }
-  } else if (doc.ok) {
-    const daMemoria = normalizarEndereco(tomadorConhecido);
-    if (daMemoria && faltantesDoEndereco(daMemoria).length === 0) {
-      // ⚠ O *"se já teve antes, só preencher"* do dono. Sem conferência extra: este endereço já
-      // saiu numa nota autorizada desta mesma empresa.
-      endereco = daMemoria;
-      origemEndereco = ORIGEM_ENDERECO.MEMORIA;
-    } else if (doc.tipo === "CPF") {
-      // ⚠⚠ CPF NÃO SE CONSULTA — decisão do dono. Nenhuma chamada é sugerida.
-      pend(
-        PENDENCIA.CPF_SEM_ENDERECO,
-        "O tomador é pessoa física e nunca emitimos para este CPF, então não temos o endereço — e "
-        + "CPF não se consulta (a base pública é de CNPJ). Preencha o endereço do tomador nesta "
-        + "linha."
-      );
+  }
+
+  // ── (2) A MEMÓRIA — o *"se já teve antes, só preencher"* do dono ─────────────────────────────
+  //
+  // ⚠ Sem conferência extra: este nome e este endereço já saíram numa nota que o sistema nacional
+  // AUTORIZOU, para esta mesma empresa. E a memória só completa o que está faltando — ela nunca
+  // escreve por cima do que uma pessoa digitou.
+  if (doc.ok && tomadorConhecido) {
+    if (!nome) {
+      const daMemoria = texto(tomadorConhecido.nome);
+      if (daMemoria) {
+        nome = daMemoria;
+        origemNome = ORIGEM_DO_DADO.MEMORIA;
+      }
+    }
+    // ⚠ E-MAIL MALFORMADO NÃO CAI PARA A MEMÓRIA. A conferência acima já diz que a nota sai SEM
+    // e-mail; preencher de outra fonte faria a frase virar mentira na mesma linha.
+    if (!email && emailDigitado.ok) email = texto(tomadorConhecido.email);
+    if (!endereco && !revisaoTrouxeEndereco) {
+      const daMemoria = normalizarEndereco(tomadorConhecido);
+      if (daMemoria && faltantesDoEndereco(daMemoria).length === 0) {
+        endereco = daMemoria;
+        origemEndereco = ORIGEM_DO_DADO.MEMORIA;
+      }
+    }
+  }
+
+  // ── (3) A CONSULTA — e SÓ para CNPJ ──────────────────────────────────────────────────────────
+  //
+  // ⚠⚠ **A CONSULTA É PEDIDA PELO NOME TAMBÉM, NÃO SÓ PELO ENDEREÇO.** Sem isto, um CNPJ cujo
+  // endereço a pessoa já digitou na revisão, mas cujo nome ninguém sabe, viraria PENDENTE por
+  // `nome_ausente` sem que a Receita fosse sequer perguntada — mandando alguém digitar à mão a razão
+  // social que a consulta traz de graça.
+  const faltaEndereco = !endereco && !revisaoTrouxeEndereco;
+  if (doc.ok && (!nome || faltaEndereco)) {
+    if (doc.tipo === "CPF") {
+      // ⚠⚠ CPF NÃO SE CONSULTA — decisão do dono. Nenhuma chamada é sugerida, e as duas faltas
+      // viram pendência nomeada mais abaixo, cada uma com a sua frase.
     } else if (consulta === undefined || consulta === null) {
       precisaConsulta = true;
     } else if (!consulta.ok) {
@@ -475,32 +536,69 @@ export function classificarLinhaLote(linha, { tomadorConhecido = null, consulta 
       pend(
         PENDENCIA.CONSULTA_FALHOU,
         `Não conseguimos consultar este CNPJ: ${consulta.motivo || "a consulta não respondeu"}. `
-        + "Preencha o endereço do tomador nesta linha — as outras linhas seguem normalmente."
+        + "Preencha o nome e o endereço do tomador nesta linha — as outras linhas seguem normalmente."
       );
     } else {
-      const daConsulta = normalizarEndereco(consulta.endereco);
-      if (!daConsulta || faltantesDoEndereco(daConsulta).length) {
-        const faltam = consulta.faltantes?.length
-          ? consulta.faltantes.join(", ")
-          : faltantesDoEndereco(daConsulta).join(", ");
-        pend(
-          PENDENCIA.CONSULTA_SEM_ENDERECO,
-          `A consulta respondeu, mas não trouxe ${faltam || "o endereço"}. A nota exige o endereço `
-          + "completo — preencha nesta linha."
-        );
-      } else {
-        // ⚠⚠ A PROVA TRIPLA É REFEITA **AQUI**, no servidor — ver `conferirMunicipioDaConsulta`.
-        // Até 20/08/2026 este ramo lia `consulta.cMunVerificado`, um booleano do NAVEGADOR. Numa
-        // emissão em lote isso seriam 50 notas fiscais apoiadas numa afirmação que ninguém conferiu.
-        const municipio = conferirMunicipioDaConsulta(daConsulta.cMun, consulta, municipios);
-        if (!municipio.ok) {
-          pend(municipio.pendencia, municipio.texto);
-        } else {
-          if (municipio.conferencia) conf(municipio.conferencia, municipio.texto);
-          endereco = daConsulta;
-          origemEndereco = ORIGEM_ENDERECO.CONSULTA;
+      // ⚠ A RAZÃO SOCIAL DA RESPOSTA, e nada além dela. Resposta sem `nome` não preenche nada:
+      // campo que a API não deu fica vazio, nunca inventado (mesma regra de `nomeDaReceita`).
+      if (!nome) {
+        const daConsulta = texto(consulta.nome);
+        if (daConsulta) {
+          nome = daConsulta;
+          origemNome = ORIGEM_DO_DADO.CONSULTA;
         }
       }
+      if (faltaEndereco) {
+        const daConsulta = normalizarEndereco(consulta.endereco);
+        if (!daConsulta || faltantesDoEndereco(daConsulta).length) {
+          const faltam = consulta.faltantes?.length
+            ? consulta.faltantes.join(", ")
+            : faltantesDoEndereco(daConsulta).join(", ");
+          pend(
+            PENDENCIA.CONSULTA_SEM_ENDERECO,
+            `A consulta respondeu, mas não trouxe ${faltam || "o endereço"}. A nota exige o endereço `
+            + "completo — preencha nesta linha."
+          );
+        } else {
+          // ⚠⚠ A PROVA TRIPLA É REFEITA **AQUI**, no servidor — ver `conferirMunicipioDaConsulta`.
+          // Até 20/08/2026 este ramo lia `consulta.cMunVerificado`, um booleano do NAVEGADOR. Numa
+          // emissão em lote isso seriam 50 notas fiscais apoiadas numa afirmação não conferida.
+          const municipio = conferirMunicipioDaConsulta(daConsulta.cMun, consulta, municipios);
+          if (!municipio.ok) {
+            pend(municipio.pendencia, municipio.texto);
+          } else {
+            if (municipio.conferencia) conf(municipio.conferencia, municipio.texto);
+            endereco = daConsulta;
+            origemEndereco = ORIGEM_DO_DADO.CONSULTA;
+          }
+        }
+      }
+    }
+  }
+
+  // ── (4) O QUE NENHUMA DAS TRÊS RESOLVEU ──────────────────────────────────────────────────────
+  //
+  // ⚠ As pendências só entram quando não há consulta pendente: uma linha que ainda vai ser
+  // consultada não pode acusar falta do que a consulta traria — ela iria para PENDENTE em vez de
+  // CONSULTAR, e o segundo passe nunca aconteceria.
+  if (!precisaConsulta) {
+    if (!nome) {
+      pend(
+        PENDENCIA.NOME_AUSENTE,
+        doc.ok && doc.tipo === "CPF"
+          ? "Não sabemos o nome deste tomador: é pessoa física, nunca emitimos para este CPF e CPF "
+            + "não se consulta (a base pública é de CNPJ). Escreva o nome do tomador nesta linha."
+          : "Não sabemos o nome deste tomador — não emitimos para este documento antes e a consulta "
+            + "não trouxe a razão social. Escreva o nome do tomador nesta linha."
+      );
+    }
+    if (doc.ok && doc.tipo === "CPF" && faltaEndereco) {
+      pend(
+        PENDENCIA.CPF_SEM_ENDERECO,
+        "O tomador é pessoa física e nunca emitimos para este CPF, então não temos o endereço — e "
+        + "CPF não se consulta (a base pública é de CNPJ). Preencha o endereço do tomador nesta "
+        + "linha."
+      );
     }
   }
 
@@ -536,6 +634,12 @@ export function classificarLinhaLote(linha, { tomadorConhecido = null, consulta 
     documento: doc.ok ? doc.documento : null,
     tipoDocumento: doc.ok ? doc.tipo : null,
     origemEndereco,
+    /**
+     * ⚠ De onde saiu o NOME do tomador — e ele passou a ter procedência porque passou a ter três
+     * origens. A tela mostra ("do cadastro de tomador" × "da Receita" × "você escreveu"): nome
+     * preenchido sem dizer de onde veio é indistinguível de nome conferido por uma pessoa.
+     */
+    origemNome,
     // ⚠ Os dados NA FORMA DO PAYLOAD, para quem for montar a emissão depois não precisar traduzir
     // nada de novo. **Isto não é uma emissão** — é o resultado da leitura.
     dados:
@@ -544,7 +648,7 @@ export function classificarLinhaLote(linha, { tomadorConhecido = null, consulta 
             tomador: {
               doc: doc.documento,
               nome,
-              email: email.ok ? email.email : null,
+              email,
               endereco: {
                 cMun: endereco.cMun,
                 CEP: endereco.cep,

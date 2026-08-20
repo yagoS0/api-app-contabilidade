@@ -19,10 +19,16 @@
 //
 // ─── AS TRÊS TRAVAS ─────────────────────────────────────────────────────────────────────────────
 //
-// ⚠⚠ **A CHAVE DA CÉLULA VEM DA LISTA FECHADA DE COLUNAS, E DESCONHECIDA É RECUSA NOMEADA.**
-// Ignorar em silêncio uma chave que não existe faria um erro de digitação do front virar dado que
-// SOME: a pessoa corrige o CEP, a tela diz que enviou, o servidor descarta, e a linha volta
+// ⚠⚠ **A CHAVE DA CÉLULA VEM DA LISTA FECHADA `CAMPOS_DA_REVISAO`, E DESCONHECIDA É RECUSA
+// NOMEADA.** Ignorar em silêncio uma chave que não existe faria um erro de digitação do front virar
+// dado que SOME: a pessoa corrige o CEP, a tela diz que enviou, o servidor descarta, e a linha volta
 // pendente pelo mesmo motivo de antes. Ninguém acharia isso olhando a tela.
+//
+// ⚠⚠ **A LISTA DO AJUSTE É MAIOR QUE A DA PLANILHA, DESDE 20/08/2026 — e essa diferença é o
+// coração da entrega.** A planilha tem QUATRO colunas (documento, descrição, valor, competência);
+// o ajuste aceita ONZE das doze células, porque nome, e-mail e o bloco de endereço saíram da
+// planilha e passaram a ser pedidos **aqui**, só quando fazem falta. Validar o ajuste contra
+// `COLUNAS_LOTE` faria a revisão recusar exatamente os campos que ela existe para preencher.
 //
 // ⚠⚠ **O NÚMERO DA LINHA É O DO EXCEL** (1-based, contando o cabeçalho) — o mesmo que
 // `lerPlanilhaLote` grava em `linha.numero` e o mesmo que a tela mostra ("linha 37"). Índice de
@@ -34,7 +40,7 @@
 // no disco da pessoa continua dizendo o valor antigo. Por isso a rota devolve quais linhas foram
 // ajustadas — sem isso, subir o mesmo arquivo amanhã perderia as correções em silêncio.
 
-import { COLUNAS_LOTE } from "./colunasLote.js";
+import { CHAVES_DA_REVISAO } from "./colunasLote.js";
 
 export const RECUSA_AJUSTE = Object.freeze({
   FORMA_INVALIDA: "ajuste_forma_invalida",
@@ -42,7 +48,7 @@ export const RECUSA_AJUSTE = Object.freeze({
   COLUNA_DESCONHECIDA: "ajuste_coluna_desconhecida",
 });
 
-const CHAVES_VALIDAS = new Set(COLUNAS_LOTE.map((c) => c.chave));
+const CHAVES_VALIDAS = new Set(CHAVES_DA_REVISAO);
 
 function recusar(codigo, mensagem, extra = {}) {
   return { ok: false, codigo, mensagem, ...extra };
@@ -119,7 +125,7 @@ export function aplicarAjustesLote(linhas, ajustes) {
   if (colunasDesconhecidas.size) {
     return recusar(
       RECUSA_AJUSTE.COLUNA_DESCONHECIDA,
-      `Estes campos não existem na planilha: ${[...colunasDesconhecidas].join(", ")}. Nada foi `
+      `Estes campos não existem nesta nota: ${[...colunasDesconhecidas].join(", ")}. Nada foi `
         + "aplicado — aplicar o resto e calar sobre estes faria a correção sumir sem aviso.",
       { colunasDesconhecidas: [...colunasDesconhecidas] }
     );

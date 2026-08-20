@@ -240,31 +240,60 @@ describe("⚠ ajustar a linha pendente e reclassificar", () => {
     return Number(tr.dataset.linha);
   }
 
+  /**
+   * ⚠⚠ O MUNICÍPIO SE ESCOLHE, NUNCA SE DIGITA. Este helper faz o que uma pessoa faz: busca pelo
+   * NOME e clica na opção — que mostra município **e UF**. Nenhum teste desta suíte escreve
+   * "3304557" em lugar nenhum, e é essa a prova de que *"código do IBGE é abstração"* virou tela.
+   */
+  async function escolherMunicipio(termo, rotuloDaOpcao) {
+    const busca = await screen.findByLabelText(/Município do tomador/i, {}, { timeout: 5000 });
+    await waitFor(() => expect(busca).not.toBeDisabled());
+    fireEvent.focus(busca);
+    fireEvent.change(busca, { target: { value: termo } });
+    const opcao = await screen.findByRole("option", { name: rotuloDaOpcao });
+    fireEvent.click(opcao);
+    await act(async () => {});
+  }
+
   test("o formulário abre com o que a planilha trouxe — a pessoa vê o que vai corrigir", async () => {
     await abrirAjusteDaLinha("endereco_incompleto");
     expect(screen.getByLabelText(/Logradouro do tomador/i)).toHaveValue("Rua da Assembleia");
   });
 
+  // ⚠⚠ O FORMULÁRIO É MAIOR QUE A PLANILHA, E ISSO É A ENTREGA DE 20/08/2026. As quatro colunas
+  // continuam lá, e nome/e-mail/endereço aparecem SÓ aqui — é o *"na hora da revisão nós avisamos e
+  // permitimos o preenchimento"* do dono. Montar este formulário com as colunas da planilha
+  // deixaria a pessoa sem como corrigir exatamente o que a pendência pede.
+  test("⚠⚠ a revisão oferece os campos do tomador, que NÃO são colunas da planilha", async () => {
+    await abrirAjusteDaLinha("endereco_incompleto");
+    for (const rotulo of [/Nome \/ razão social do tomador/i, /E-mail do tomador/i, /Município do tomador/i]) {
+      expect(screen.getByLabelText(rotulo)).toBeInTheDocument();
+    }
+    // ⚠ E a frase que diz POR QUE eles estão sendo pedidos agora — sem ela, quem preencheu a
+    // planilha procuraria por uma coluna que não existe.
+    expect(screen.getByText(/Estes campos não vêm da planilha/i)).toBeInTheDocument();
+  });
+
+  // ⚠⚠ NINGUÉM DIGITA O CÓDIGO DO IBGE. O campo é o seletor da emissão avulsa: busca por nome,
+  // mostra a UF em toda opção e devolve o código junto da escolha. Nada aqui converte nome em
+  // código — há cinco "Bom Jesus" no país, e escolher um em silêncio emite a nota no lugar errado.
   test("⚠ só o que MUDOU é enviado, chaveado pelo NÚMERO DA LINHA DO EXCEL", async () => {
     const numero = await abrirAjusteDaLinha("endereco_incompleto");
 
-    fireEvent.change(screen.getByLabelText(/Código IBGE do município do tomador/i), {
-      target: { value: "3304557" },
-    });
+    await escolherMunicipio("rio de janeiro rj", /Rio de Janeiro/);
     fireEvent.change(screen.getByLabelText(/^Número$/i), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText(/^Bairro$/i), { target: { value: "Centro" } });
     fireEvent.click(screen.getByRole("button", { name: /Aplicar e reclassificar/i }));
 
     await waitFor(() => expect(api.lerPlanilhaDoLote).toHaveBeenCalledTimes(2));
     const [, , opcoes] = api.lerPlanilhaDoLote.mock.calls[1];
+    // ⚠ O código chegou ao ajuste — mas veio da ESCOLHA, não de um campo de sete dígitos.
     expect(opcoes.ajustes).toEqual({ [numero]: { cMun: "3304557", nro: "10", xBairro: "Centro" } });
   });
 
   test("a linha ajustada deixa de ser pendente e a tela diz que ela foi ajustada aqui", async () => {
     const numero = await abrirAjusteDaLinha("endereco_incompleto");
-    fireEvent.change(screen.getByLabelText(/Código IBGE do município do tomador/i), {
-      target: { value: "3304557" },
-    });
+    await escolherMunicipio("rio de janeiro rj", /Rio de Janeiro/);
     fireEvent.change(screen.getByLabelText(/^Número$/i), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText(/^Bairro$/i), { target: { value: "Centro" } });
     fireEvent.click(screen.getByRole("button", { name: /Aplicar e reclassificar/i }));
@@ -275,6 +304,40 @@ describe("⚠ ajustar a linha pendente e reclassificar", () => {
     );
     // ⚠⚠ AUSÊNCIA QUE MUDA DECISÃO: o ajuste vive nesta tela, e a planilha no disco não sabe dele.
     expect(screen.getByText(/a sua planilha continua com o valor antigo/i)).toBeInTheDocument();
+  });
+
+  // ⚠⚠ O CASO QUE O DONO NOMEOU: CPF que nunca recebeu nota. Não existe origem para o nome nem para
+  // o endereço (CPF NÃO SE CONSULTA), então a revisão pede os DOIS — e a tela diz por quê.
+  test("⚠⚠ CPF sem cadastro pede NOME e endereço na revisão, e a frase diz que CPF não se consulta", async () => {
+    await abrirAjusteDaLinha("cpf_sem_endereco");
+    expect(screen.getByLabelText(/Nome \/ razão social do tomador/i)).toHaveValue("");
+    expect(screen.getAllByText(/CPF não se consulta/i).length).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ QUAL SERVIÇO ESTAS NOTAS DECLARAM — dono, 20/08/2026: *"retire o campo de atividade — o
+// cliente não sabe escolher isso; por padrão coloque o código que o contador cadastrou."*
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+describe("o código de serviço do lote", () => {
+  test("⚠ não há campo de atividade em lugar nenhum da tela, nem na revisão", async () => {
+    await abrirLote();
+    await subirPlanilha();
+    expect(screen.queryByLabelText(/atividade|código de serviço|cTribNac/i)).toBeNull();
+    const tr = document.querySelector('[data-codigo="endereco_incompleto"]').closest("tr");
+    fireEvent.click(within(tr).getByRole("button", { name: "Ajustar" }));
+    await act(async () => {});
+    expect(screen.queryByLabelText(/atividade|código de serviço|cTribNac/i)).toBeNull();
+  });
+
+  // ⚠ A `pc-001` do mock tem um código só (é o ramo que renderiza em 33 de 33 empresas medidas).
+  // A tela DIZ qual vai — o lote não manda o campo, e quem decide é o cadastro.
+  test("a tela diz qual serviço sai, e diz que ele é o do cadastro", async () => {
+    await abrirLote();
+    await subirPlanilha();
+    const bloco = document.querySelector("[data-lote-servico]");
+    expect(bloco).not.toBeNull();
+    expect(bloco.textContent).toMatch(/cadastrado pelo seu contador|seu contador/i);
   });
 });
 

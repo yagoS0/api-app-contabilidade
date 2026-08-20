@@ -439,6 +439,76 @@ oferece botão nenhum de reenvio: **não um botão com aviso, nenhum botão**.
 ⚠⚠ **ESTE BLOCO DIZIA "NÃO HÁ BOTÃO DE EMITIR". ELE EXISTE DESDE 20/08/2026**, e a frase ficou
 falsa — corrigida aqui, porque a frase que descreve um comportamento é parte do comportamento.
 
+### ⚠⚠ A PLANILHA TEM QUATRO COLUNAS — eram DOZE até 20/08/2026
+
+> Dono (20/08/2026): *"não precisamos de nada do tomador, apenas o CNPJ ou CPF. Em caso que precise
+> de mais informações, na hora da revisão nós avisamos e permitimos o preenchimento. Outra coisa:
+> código do IBGE é abstração, deve apenas colocar o município (…). Retire o campo de atividade — o
+> cliente não sabe escolher isso."*
+
+**As quatro:** `documento` · `descricao` · `valor` · `competencia`. **Todas obrigatórias.**
+O critério é de quem PREENCHE: quanto menos colunas, mais gente consegue usar.
+
+⚠⚠ **AS SETE QUE SAÍRAM NÃO SUMIRAM DO FLUXO — MUDARAM DE LUGAR.** `nome`, `email` e o bloco de
+endereço continuam existindo como CAMPOS (`CAMPOS_DA_REVISAO`, no backend e no espelho
+`lib/colunasDoLote.js`), e o classificador continua lendo cada um. O que mudou é **por onde
+entram**, nesta ordem: **cadastro de tomador** (`tomadores_emitidos`) → **consulta à Receita**
+(só CNPJ) → **a tela de revisão**.
+
+⚠ **SÃO DUAS LISTAS, E CONFUNDI-LAS É O DEFEITO.** `COLUNAS_DO_LOTE` responde *"o que o cabeçalho
+da planilha pode conter?"*; `CAMPOS_DA_REVISAO` responde *"que célula uma pessoa pode corrigir?"*.
+Montar o formulário de ajuste com a primeira deixa a pessoa sem como corrigir o que a pendência
+pede; validar o ajuste com ela faz o servidor recusar (`ajuste_coluna_desconhecida`) exatamente os
+campos que a revisão existe para preencher.
+
+⚠⚠ **O NOME É OBRIGATÓRIO NO VALIDADOR (`tomador_nome_obrigatorio`) E MESMO ASSIM SAIU DA
+PLANILHA.** Ele ganhou três origens e `origemNome` viaja com a linha (a tela mostra "nome de uma
+nota já emitida" × "razão social vinda da Receita"; o que a pessoa escreveu não ganha rótulo,
+porque a linha já diz "ajustada aqui"). ⚠ A regra antiga — *"a razão social da consulta NÃO
+preenche um nome em branco, porque branco é branco"* — **caiu junto com a coluna**: ela existia
+porque o nome era coluna obrigatória, e hoje branco é o estado normal.
+
+⚠⚠ **CPF QUE NUNCA RECEBEU NOTA CAI SEMPRE NA REVISÃO, E ISSO É A REGRA — NÃO UM BURACO.** CPF não
+se consulta; sem cadastro de tomador não existe origem nenhuma para o nome nem para o endereço, e as
+DUAS faltas voltam nomeadas. O mock planta o caso **e o contraponto** (um CPF que a memória conhece,
+que sai `pronta`) — senão "CPF cai na revisão" se lê como regra do DOCUMENTO em vez de regra do
+desconhecimento.
+
+⚠ **CONSEQUÊNCIA ACEITA: mais linhas nascem em `CONFERIR`/`PENDENTE`.** `PRONTA` continua exigindo
+tudo resolvido. É o desenho, não regressão — e a tela já mostra quantas estão prontas e quantas não.
+
+⚠ **A planilha do modelo ANTIGO continua sendo LIDA** (as quatro colunas que importam são
+reconhecidas) e as sete do tomador voltam nomeadas em `colunasIgnoradas`. Aceitá-las em silêncio
+manteria viva uma segunda porta de entrada para o endereço, com memória e consulta sendo puladas.
+
+#### ⚠⚠ O MUNICÍPIO SE ESCOLHE, NUNCA SE DIGITA — e nunca se deriva do nome
+
+O dono está certo de que *"código do IBGE é abstração"*; ninguém sabe o de cabeça. **Mas converter
+nome em código erra em homônimo**: medido na lista oficial, **240 nomes cobrem 521 municípios**
+(cinco "Bom Jesus", cinco "São Domingos"), e o erro aparece só como nota emitida no município
+errado — que não se corrige, se cancela.
+
+A resposta não é resolver texto: é **reusar `features/emitir/SeletorMunicipio.jsx`** no formulário de
+revisão. Ele já busca por nome, mostra município **e UF** em toda opção, **não autosseleciona nem
+com resultado único**, e devolve o código junto da escolha.
+⚠ **Não escreva um segundo seletor** — duas implementações da mesma escolha divergem na primeira
+correção, e esta decide em que município a nota é emitida.
+⚠⚠ **E o campo NÃO TEM PADRÃO.** Dono: *"o município do tomador só deve ser preenchido pelo cliente
+se a consulta do CNPJ não retornar"*. Pré-preenchê-lo com a cidade da empresa faria toda nota para
+tomador de fora sair com a cidade errada **e parecendo conferida** — valor escolhido pelo sistema
+fica indistinguível de valor conferido por uma pessoa.
+
+#### O código de serviço (atividade) — nunca houve coluna, e continua não havendo
+
+⚠ **A tela agora DIZ qual serviço as notas levam** (`CodigoDeServicoDoLote`), reusando o espelho
+`emitir/lib/codigoServicoDaNota.js`. O lote **não manda o campo**: quem decide é o cadastro
+(`escolherCodigoServicoNacional`), o caminho testado de sempre.
+⚠⚠ **A TELA NÃO ELEGE.** Com vários códigos cadastrados (medido: **0 de 33 empresas**) ela **não
+escolhe o primeiro** — seria o sistema decidindo qual serviço a empresa declara ao fisco. Ela nomeia
+os cadastrados e diz quem decide. **A troca POR NOTA dentro do lote não foi construída**, e é
+decisão a levar ao dono: ela exige o código viajar no payload congelado de cada linha
+(`emissaoLote.js`), que é ato fiscal em série.
+
 O que protege quem clica:
 
 - a **CONFIRMAÇÃO é esta tela**, que já mostra linha a linha. O bloco final confirma o que ela
@@ -468,7 +538,9 @@ Os quatro estados são lista FECHADA (`classificarLinhaLote.js`): `pronta` · `c
 1. ⚠⚠ **A CONFERÊNCIA DO CÓDIGO DO MUNICÍPIO — e esta exceção CAIU em 20/08/2026.** O `apps/api`
    passou a ler a lista de `packages/shared` e **refaz a prova tripla por conta própria**;
    `cMunVerificado` **não é mais lido pelo servidor**. Por isso `consultasDoLote.js` passou a enviar
-   `municipio`/`uf` CRUS: sem eles a prova 3 não fecha e a linha é recusada (falha fechado). A tela
+   `municipio`/`uf` CRUS — e, desde 20/08/2026, a **razão social** também, porque o nome do tomador
+   deixou de ser coluna e a Receita é uma das três origens dele. Sem `municipio`/`uf` a prova 3 não
+   fecha e a linha é recusada (falha fechado). A tela
    continua conferindo para poder MOSTRAR, mas ela não é mais a autoridade. O backend marca
    `municipio_nao_conferido` e escreve, no próprio arquivo, que *"a conferência acontece na tela de
    ajuste, que tem a lista"*. **Cumprir a segunda metade é obrigação desta tela**: código que existe
@@ -533,19 +605,24 @@ CNPJ errado.
 
 ⚠⚠ **ELE ALCANÇA TODOS OS ESTADOS DE LINHA**, e é a razão de ele decidir em vez de devolver uma
 resposta fixa — este projeto foi mordido QUATRO vezes por ramo que só existia em produção. As linhas
-plantadas cobrem `pronta` pela memória, as três conferências (`municipio_nao_conferido`,
-`zero_a_esquerda_recuperado`, `email_fora_de_forma`), a consulta que **resolve**, a que responde sem
-endereço provável, a que **falha**, e `cpf_sem_endereco` / `endereco_incompleto` / `valor_ambiguo` /
-`competencia_ausente`. ⚠ Inclusive **a linha que o servidor dá como `conferir` e a TELA rebaixa** —
+plantadas cobrem `pronta` pela memória (⚠ e desde 20/08/2026 é dela que vêm também o NOME e o
+e-mail), as três conferências (`municipio_nao_conferido`, `zero_a_esquerda_recuperado`,
+`email_fora_de_forma`), a consulta que **resolve** (e que preenche a razão social), a que responde
+sem endereço provável, a que **falha**, e `endereco_incompleto` / `valor_ambiguo` /
+`competencia_ausente` — mais ⚠⚠ **`nome_ausente` + `cpf_sem_endereco` JUNTOS**, que é o CPF sem
+cadastro, com o contraponto do CPF conhecido ao lado.
+⚠ As linhas plantadas que trazem `nome`/endereço nas `valores` representam linhas **já revisadas** —
+a planilha tem quatro colunas, e é assim que os ramos que dependem de endereço digitado (a
+conferência do município, o tudo-ou-nada) continuam alcançáveis offline. ⚠ Inclusive **a linha que o servidor dá como `conferir` e a TELA rebaixa** —
 sem ela, a segunda metade da prova do IBGE seria inalcançável offline.
 As recusas da leitura têm gatilho no **nome do arquivo** (`#cabecalho`, `#vazia`, `#colunas`), mesmo
 arranjo das sentinelas da emissão. E o modelo do mock é um **.xlsx de verdade** (reusa o
 `zipArmazenado` do lote de DANFSe), porque um arquivo corrompido com a extensão certa faria o modo
 offline "funcionar" até alguém tentar abrir.
 
-Testes: `lote/lib/__tests__/` (colunas 7 · estado 18 · consultas 15 · recusa 9),
-`lote/__tests__/lotePlanilhaNaTela.ligacao.test.jsx` (15 — a corrente inteira, com
-`api.emitirNfse` armadilhado) e `api/__tests__/loteDePlanilhaNoMock.test.js` (22 — o par mock/real e
+Testes: `lote/lib/__tests__/` (colunas 11 · estado 23 · consultas 15 · emissão 18 · recusa 9),
+`lote/__tests__/lotePlanilhaNaTela.ligacao.test.jsx` (20 — a corrente inteira, com
+`api.emitirNfse` armadilhado) e `api/__tests__/loteDePlanilhaNoMock.test.js` (32 — o par mock/real e
 todos os estados).
 
 ## A LISTA DE NOTAS (`src/features/notas/`)
@@ -763,7 +840,7 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | `emitir/lib/codigoServicoDaNota.js` | `apps/api/src/application/nfse/codigoServicoDaNota.js` (**autoridade**) |
 | `notas/lib/cancelamentoNota.js` (`MOTIVOS_CANCELAMENTO`) | `apps/api/src/application/nfse/motivosDeEvento.js` (**valida**) |
 | `notas/lib/danfseDaNota.js` | `apps/web/src/features/notas/lib/danfseDaNota.js` (⚠ contratos DIFERENTES) |
-| `lote/lib/colunasDoLote.js` | `apps/api/src/application/nfse/lote/colunasLote.js` (**autoridade**) |
+| `lote/lib/colunasDoLote.js` (`COLUNAS_DO_LOTE` **e** `CAMPOS_DA_REVISAO`) | `apps/api/src/application/nfse/lote/colunasLote.js` (**autoridade**) — ⚠ são DUAS listas desde 20/08/2026: quatro colunas de planilha, onze campos de revisão |
 | `lote/lib/estadoDaLinhaDoLote.js` (`ESTADO`) | `apps/api/src/application/nfse/lote/classificarLinhaLote.js` (**autoridade**) |
 | `lib/servicosNacionais/` | tabela gerada; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs`, que **escreve nos dois portais** — **não editar à mão** |
 | ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |

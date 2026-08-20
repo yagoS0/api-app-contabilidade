@@ -1,14 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, Chip } from "../../components/ui";
 import { baixarBlob } from "../../lib/baixarBlob";
 import { brl, fmtDoc, texto } from "../../lib/format";
 import { carregarMunicipiosIbge } from "../../lib/municipios/municipioIbge";
-import { COLUNAS_DO_LOTE, CAMPOS_DE_ENDERECO, NOME_DO_ARQUIVO_MODELO } from "./lib/colunasDoLote";
+import { SeletorMunicipio } from "../emitir/SeletorMunicipio";
+// ⚠ ESPELHO, não segunda implementação: a autoridade sobre o código de serviço é
+// `apps/api/src/application/nfse/codigoServicoDaNota.js`, e este módulo já é amarrado a ela por
+// teste. Ler o mesmo cadastro de outro jeito aqui faria as duas telas discordarem sobre a MESMA
+// empresa.
+import {
+  SITUACAO,
+  carregarServicosNacionais,
+  codigosOferecidos,
+  descricaoDoCodigo,
+  rotuloDoCodigo,
+} from "../emitir/lib/codigoServicoDaNota";
+import { CAMPOS_DA_REVISAO, CAMPOS_DE_ENDERECO, NOME_DO_ARQUIVO_MODELO } from "./lib/colunasDoLote";
 import {
   ESTADO,
   apresentacaoDoEstado,
   quantasNaoProntas,
+  rotuloDaOrigemDoNome,
   vereditosDoLote,
 } from "./lib/estadoDaLinhaDoLote";
 import { consultarDocumentos } from "./lib/consultasDoLote";
@@ -295,6 +308,14 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
             Uma linha por nota. A linha de exemplo do modelo não vira nota.
           </span>
         </div>
+        {/* ⚠ DIZ O QUE FAZER, e é o que muda a decisão de quem preenche: são quatro colunas, e o
+            resto do tomador só é pedido na conferência quando fizer falta. Sem esta frase, quem já
+            usava o modelo de doze colunas procuraria por elas. */}
+        <p className="muted" style={{ fontSize: ".82rem" }}>
+          São quatro colunas: CNPJ/CPF do tomador, descrição, valor e competência. Nome e endereço do
+          tomador nós buscamos — nas notas que você já emitiu e, para CNPJ, na Receita. O que faltar é
+          pedido na conferência, linha a linha.
+        </p>
       </div>
 
       <div className="card">
@@ -337,6 +358,7 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
         <>
           <div className="card">
             <h2>3. Confira, linha a linha</h2>
+            <CodigoDeServicoDoLote empresa={empresa} />
             <ResumoDoLote resumo={resumo} naoProntas={naoProntas} />
 
             <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", marginTop: "12px" }}>
@@ -455,6 +477,76 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
 }
 
 /**
+ * ⚠⚠ QUAL SERVIÇO ESTAS NOTAS DECLARAM — e por que a planilha não pergunta isso.
+ *
+ * > Dono (20/08/2026): *"retire o campo de atividade — o cliente não sabe escolher isso; por padrão
+ * > coloque o código que o contador cadastrou."*
+ *
+ * Nunca houve coluna de atividade na planilha, e continua não havendo. O que faltava era **dizer**
+ * qual código vai — o lote não manda o campo, e o servidor usa o cadastro
+ * (`escolherCodigoServicoNacional`), que é o caminho testado de sempre.
+ *
+ * ⚠ **A REGRA NÃO É REESCRITA AQUI:** `codigosOferecidos` é o MESMO espelho da emissão avulsa
+ * (`emitir/lib/codigoServicoDaNota.js`), amarrado por teste à autoridade do backend. Uma segunda
+ * leitura do mesmo cadastro divergiria na primeira correção.
+ *
+ * ⚠⚠ **E ESTA TELA NÃO ELEGE NADA.** Com vários códigos cadastrados (medido: 0 de 33 empresas hoje)
+ * ela **não escolhe o primeiro** — seria o sistema decidindo qual serviço a empresa declara ao
+ * fisco. Ela diz que quem decide é o cadastro e manda falar com o contador. É a mesma proibição que
+ * o backend já aplica ao emitir e ao salvar a empresa.
+ */
+function CodigoDeServicoDoLote({ empresa }) {
+  const legacy = empresa?.legacyCompany || null;
+  const cadastro = useMemo(
+    () => codigosOferecidos({ lista: legacy?.codigosServicoNacional, singular: legacy?.codigoServicoNacional }),
+    [legacy]
+  );
+  const [servicosOficiais, setServicosOficiais] = useState(null);
+
+  // ⚠ A lista dos 335 entra por `import()` DINÂMICO e só quando há o que descrever — ela fica fora
+  // do bundle inicial. Falha de carga não vira lista vazia permanente: o código continua à vista.
+  useEffect(() => {
+    if (!cadastro.oferecidos.length) return undefined;
+    let vivo = true;
+    carregarServicosNacionais()
+      .then((lista) => { if (vivo) setServicosOficiais(lista); })
+      .catch(() => { if (vivo) setServicosOficiais(null); });
+    return () => { vivo = false; };
+  }, [cadastro.oferecidos.length]);
+
+  if (cadastro.situacao === SITUACAO.SEM_CODIGO) {
+    // ⚠ DIZ O QUE FAZER: sem código cadastrado a emissão é recusada pelo servidor, e não há nada
+    // que o cliente possa preencher aqui — o cadastro é do contador.
+    return (
+      <p style={{ fontSize: ".85rem", color: "var(--danger)" }} data-lote-servico="sem_codigo">
+        A sua empresa não tem código de serviço cadastrado, e sem ele a emissão é recusada. Fale com
+        o seu contador antes de emitir este lote.
+      </p>
+    );
+  }
+
+  if (cadastro.situacao === SITUACAO.UNICO) {
+    const codigo = cadastro.oferecidos[0];
+    return (
+      <p className="muted" style={{ fontSize: ".85rem" }} data-lote-servico="unico">
+        Todas as notas deste lote saem com o serviço{" "}
+        <strong>{rotuloDoCodigo(codigo, descricaoDoCodigo(servicosOficiais, codigo))}</strong>, que é
+        o cadastrado pelo seu contador.
+      </p>
+    );
+  }
+
+  // ⚠ VÁRIOS: a tela NÃO elege. Ela nomeia os cadastrados e diz quem decide.
+  return (
+    <p className="muted" style={{ fontSize: ".85rem" }} data-lote-servico="varios">
+      A sua empresa tem mais de um código de serviço cadastrado ({cadastro.oferecidos.join(", ")}).
+      Todas as notas deste lote saem com o que está marcado no cadastro — para emitir sob outro
+      serviço, fale com o seu contador ou emita a nota avulsa, onde a escolha é por nota.
+    </p>
+  );
+}
+
+/**
  * ⚠⚠ QUANTAS ESTÃO PRONTAS E QUANTAS NÃO — sempre à vista. É o número que decide se dá para seguir.
  */
 function ResumoDoLote({ resumo, naoProntas }) {
@@ -492,10 +584,21 @@ function LinhaDoLote({ linha, emAjuste, aoAbrirAjuste, aoFecharAjuste, aoSalvar,
       <tr data-estado-lote={linha.estado} data-linha={linha.numero}>
         <td className="num">{linha.numero}</td>
         <td>
-          <span className="truncar">{texto(valores.nome)}</span>
+          {/* ⚠⚠ O NOME NÃO VEM MAIS DA PLANILHA. Ele é resolvido pelo servidor (cadastro de
+              tomador → Receita → o que foi escrito aqui), então quem manda é `dados.tomador.nome`;
+              a célula só existe quando alguém a preencheu na revisão. Ler só a célula deixaria a
+              coluna "Tomador" VAZIA em toda linha resolvida — a maioria delas. */}
+          <span className="truncar">{texto(linha.dados?.tomador?.nome ?? valores.nome)}</span>
           <span className="muted" style={{ fontSize: ".78rem" }}>
             {fmtDoc(linha.documento || valores.documento)}
           </span>
+          {/* ⚠ A PROCEDÊNCIA FICA À VISTA: nome preenchido sem dizer de onde veio é indistinguível
+              de nome conferido por uma pessoa. */}
+          {rotuloDaOrigemDoNome(linha) ? (
+            <span className="muted" style={{ fontSize: ".72rem", display: "block" }} data-origem-nome={linha.origemNome}>
+              {rotuloDaOrigemDoNome(linha)}
+            </span>
+          ) : null}
         </td>
         <td className="num">{brl(linha.dados?.servico?.valorServicos) === "—" ? texto(valores.valor) : brl(linha.dados.servico.valorServicos)}</td>
         <td>{texto(valores.competencia)}</td>
@@ -718,55 +821,106 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar }) {
 }
 
 /**
- * O formulário de ajuste de UMA linha.
+ * ⚠⚠ O FORMULÁRIO DE REVISÃO DE UMA LINHA — e ele é MAIOR que a planilha, de propósito.
+ *
+ * > Dono (20/08/2026): *"não precisamos de nada do tomador, apenas o CNPJ ou CPF. Em caso que
+ * > precise de mais informações, na hora da revisão nós avisamos e permitimos o preenchimento."*
+ *
+ * A planilha tem QUATRO colunas. Nome, e-mail e endereço saíram dela e passaram a chegar do
+ * cadastro de tomador, da consulta à Receita — ou **daqui**, quando nenhum dos dois responde.
+ * ⚠ Por isso os campos saem de `CAMPOS_DA_REVISAO`, nunca de `COLUNAS_DO_LOTE`: montar este
+ * formulário com as colunas da planilha deixaria a pessoa sem como corrigir o que a pendência pede.
  *
  * ⚠ **SÓ O QUE MUDOU É ENVIADO.** O ajuste é o que a PESSOA digitou por cima; mandar de volta os
  * campos intocados marcaria como ajustada uma célula que ninguém tocou.
  *
  * ⚠ O bloco de endereço fica junto e nomeado porque a emissão o exige INTEIRO — preencher quatro
  * dos cinco não adianta, e espalhar esses campos entre os outros esconderia isso.
+ *
+ * ⚠⚠ **O MUNICÍPIO É UM SELETOR, E É O MESMO DA EMISSÃO AVULSA** (`SeletorMunicipio`). Ele busca
+ * por NOME e devolve o código do IBGE junto da escolha — *"código do IBGE é abstração"* (dono).
+ * **Não escreva um segundo seletor:** duas implementações da mesma escolha divergem na primeira
+ * correção, e esta decide **em que município a nota é emitida**. E ele não escolhe por ninguém:
+ * nada vem pré-selecionado, resultado único não se autosseleciona, e toda opção mostra município
+ * **e UF** — é a UF que separa os cinco "Bom Jesus" do país.
+ *
+ * ⚠⚠ **O CAMPO DO MUNICÍPIO NASCE VAZIO, E NÃO EXISTE PADRÃO PARA ELE.** Dono, 20/08/2026: *"o
+ * município do tomador só deve ser preenchido pelo cliente se a consulta do CNPJ não retornar"*.
+ * Pré-preenchê-lo com a cidade da empresa faria toda nota para tomador de fora sair com a cidade
+ * errada — **e parecendo conferida**, porque o campo estaria cheio.
  */
 function FormularioDeAjuste({ valores, numero, aoSalvar, aoCancelar }) {
   const [rascunho, setRascunho] = useState(() =>
-    Object.fromEntries(COLUNAS_DO_LOTE.map((c) => [c.chave, String(valores?.[c.chave] ?? "")]))
+    Object.fromEntries(CAMPOS_DA_REVISAO.map((c) => [c.chave, String(valores?.[c.chave] ?? "")]))
   );
 
   function enviar(evento) {
     evento.preventDefault();
     const mudou = {};
-    for (const coluna of COLUNAS_DO_LOTE) {
-      const antes = String(valores?.[coluna.chave] ?? "");
-      const agora = String(rascunho[coluna.chave] ?? "");
-      if (antes !== agora) mudou[coluna.chave] = agora;
+    for (const campoDaLista of CAMPOS_DA_REVISAO) {
+      const antes = String(valores?.[campoDaLista.chave] ?? "");
+      const agora = String(rascunho[campoDaLista.chave] ?? "");
+      if (antes !== agora) mudou[campoDaLista.chave] = agora;
     }
     if (Object.keys(mudou).length) aoSalvar(mudou);
     else aoCancelar();
   }
 
-  const campo = (coluna) => (
-    <label key={coluna.chave} htmlFor={`ajuste-${numero}-${coluna.chave}`}>
-      {coluna.rotulo}
-      <input
-        id={`ajuste-${numero}-${coluna.chave}`}
-        type="text"
-        value={rascunho[coluna.chave]}
-        onChange={(e) => setRascunho((r) => ({ ...r, [coluna.chave]: e.target.value }))}
-      />
-    </label>
-  );
+  const trocar = (chave, valor) => setRascunho((r) => ({ ...r, [chave]: valor }));
 
-  const daNota = COLUNAS_DO_LOTE.filter((c) => !CAMPOS_DE_ENDERECO.includes(c.chave));
-  const doEndereco = COLUNAS_DO_LOTE.filter((c) => CAMPOS_DE_ENDERECO.includes(c.chave));
+  const campo = (item) => {
+    const id = `ajuste-${numero}-${item.chave}`;
+    // ⚠ O município NÃO tem campo de texto: a escolha é numa lista oficial, com a UF à vista.
+    if (item.chave === "cMun") {
+      return (
+        <SeletorMunicipio
+          key={item.chave}
+          id={id}
+          rotulo={item.rotulo}
+          valor={rascunho.cMun}
+          onChange={(codigo) => trocar("cMun", codigo)}
+          ajuda={item.ajuda}
+        />
+      );
+    }
+    return (
+      <label key={item.chave} htmlFor={id}>
+        {item.rotulo}
+        <input
+          id={id}
+          type="text"
+          value={rascunho[item.chave]}
+          onChange={(e) => trocar(item.chave, e.target.value)}
+        />
+      </label>
+    );
+  };
+
+  const daNota = CAMPOS_DA_REVISAO.filter((c) => c.naPlanilha);
+  const doTomador = CAMPOS_DA_REVISAO.filter((c) => !c.naPlanilha && !CAMPOS_DE_ENDERECO.includes(c.chave));
+  const doEndereco = CAMPOS_DA_REVISAO.filter((c) => CAMPOS_DE_ENDERECO.includes(c.chave));
 
   return (
     <form onSubmit={enviar} data-ajuste-linha={numero}>
       <div className="filters">{daNota.map(campo)}</div>
+
+      <h3>Tomador</h3>
+      {/* ⚠ AUSÊNCIA QUE MUDA DECISÃO: quem vê estes campos em branco precisa saber que eles não
+          estavam na planilha, e por que estão sendo pedidos agora. Sem esta frase, o cliente
+          procuraria na planilha dele uma coluna que não existe. */}
+      <p className="muted" style={{ fontSize: ".78rem", marginTop: 0 }}>
+        Estes campos não vêm da planilha. Nós os buscamos nas notas que você já emitiu e, para CNPJ,
+        na Receita — só pedimos aqui quando nenhum dos dois responde.
+      </p>
+      <div className="filters">{doTomador.map(campo)}</div>
+
       <h3>Endereço do tomador</h3>
       <p className="muted" style={{ fontSize: ".78rem", marginTop: 0 }}>
         A nota exige o endereço completo — só o complemento é opcional. Apague o bloco inteiro para
         buscarmos o endereço de novo.
       </p>
       <div className="filters">{doEndereco.map(campo)}</div>
+
       <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
         <button type="submit" className="btn btn-primary">
           Aplicar e reclassificar

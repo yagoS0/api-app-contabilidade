@@ -395,6 +395,14 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
   - ⚠ **`legacyCompanySelect` (`routes/client/index.js:102`) já mordeu três vezes**: coluna fora do
     `select` volta `undefined` sem erro, a rota responde 200 e a tela "só não mostra". A trava é
     varredura do texto do `select`, não teste de comportamento.
+  - ⚠⚠ **A PLANILHA DO LOTE TEM QUATRO COLUNAS** (20/08/2026) — `documento` · `descricao` · `valor` ·
+    `competencia`, todas obrigatórias. Eram doze; o dono cortou as sete do tomador (*"não precisamos
+    de nada do tomador, apenas o CNPJ ou CPF"*). Elas **não sumiram do fluxo**: viraram campos da
+    tela de REVISÃO (`CAMPOS_DA_REVISAO`) e chegam do **cadastro de tomador** → da **consulta à
+    Receita** → da **revisão**. ⚠⚠ CPF que nunca recebeu nota cai SEMPRE na revisão (CPF não se
+    consulta) — é a regra, não um buraco. ⚠⚠ O município se ESCOLHE no `SeletorMunicipio` que já
+    existia (nome + UF à vista, código junto da escolha) — **nada converte nome em código**: 240
+    nomes cobrem 521 municípios, e o erro só aparece como nota emitida no município errado.
   - ⚠⚠ **O LOTE POR PLANILHA CONFERE E EMITE** (emissão em 20/08/2026) — `features/lote/` baixa o modelo,
     lê a planilha e **confere linha a linha**: quatro estados fechados vindos do backend
     (`nfse/lote/classificarLinhaLote.js`), consulta do CNPJ **saindo do navegador** em série e

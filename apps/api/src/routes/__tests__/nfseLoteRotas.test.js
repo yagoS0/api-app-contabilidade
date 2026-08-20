@@ -16,13 +16,16 @@ import { COLUNAS_LOTE, LINHA_DE_EXEMPLO } from "../../application/nfse/lote/colu
 const CABECALHOS = COLUNAS_LOTE.map((c) => c.rotulo);
 const CNPJ = "39254243000191";
 
+/** ⚠ A planilha inteira: QUATRO colunas. Nada do tomador além do documento. */
 const NOTA = {
   documento: CNPJ,
-  nome: "TOMADOR LTDA",
   descricao: "Consultoria",
   valor: "1500,00",
   competencia: "31/07/2026",
 };
+
+/** O registro da memória de tomadores — nome E endereço saem daqui quando a empresa já emitiu. */
+const CONHECIDO = { documento: CNPJ, nome: "TOMADOR LTDA" };
 
 const ENDERECO = {
   cMun: "3304557",
@@ -56,7 +59,7 @@ beforeEach(() => {
 });
 
 describe("GET /modelo", () => {
-  it("devolve um .xlsx com as 12 colunas e o nome de arquivo certo", async () => {
+  it("devolve um .xlsx com as QUATRO colunas e o nome de arquivo certo", async () => {
     const r = await request(app()).get(`${BASE}/modelo`).buffer().parse((res, cb) => {
       const pedacos = [];
       res.on("data", (p) => pedacos.push(p));
@@ -78,9 +81,11 @@ describe("GET /modelo", () => {
 
 describe("POST /leitura", () => {
   it("classifica e devolve — sem gravar nada", async () => {
+    // ⚠ Nome e endereço vêm da MEMÓRIA: a planilha de quatro colunas não os carrega mais.
+    prisma.tomadorEmitido.findMany.mockResolvedValue([{ ...CONHECIDO, ...ENDERECO }]);
     const r = await request(app())
       .post(`${BASE}/leitura`)
-      .attach("arquivo", planilha([{ ...NOTA, ...ENDERECO }]), "notas.xlsx");
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
 
     expect(r.status).toBe(200);
     expect(r.body.resumo.total).toBe(1);
@@ -91,7 +96,21 @@ describe("POST /leitura", () => {
     expect(r.body.resumo.pronta ?? r.body.resumo.prontas).toBe(1);
     expect(r.body.resumo.conferir).toBe(0);
     expect(r.body.linhas[0].conferencias).toEqual([]);
-    expect(r.body.linhas[0].origemEndereco).toBe("planilha");
+    expect(r.body.linhas[0].origemEndereco).toBe("memoria");
+    expect(r.body.linhas[0].origemNome).toBe("memoria");
+  });
+
+  // ⚠⚠ O ENDEREÇO DIGITADO NA REVISÃO É CONFERIDO CONTRA O IBGE **AQUI**, no servidor. É o que
+  // permite a linha ser `pronta` sem depender do navegador — e o `cMun` chega porque a tela usa
+  // o SELETOR de município, nunca um campo de sete dígitos.
+  it("⚠⚠ o endereço vindo da REVISÃO é provado contra a lista oficial e a linha fica pronta", async () => {
+    const r = await request(app())
+      .post(`${BASE}/leitura`)
+      .field("ajustes", JSON.stringify({ 2: { nome: "TOMADOR LTDA", ...ENDERECO } }))
+      .attach("arquivo", planilha([NOTA]), "notas.xlsx");
+    expect(r.body.linhas[0].estado).toBe("pronta");
+    expect(r.body.linhas[0].origemEndereco).toBe("revisao");
+    expect(r.body.linhas[0].origemNome).toBe("revisao");
   });
 
   it("⚠ a memória de tomadores é lida ESCOPADA pela empresa do PATH", async () => {
@@ -101,11 +120,12 @@ describe("POST /leitura", () => {
     });
   });
 
-  it("tomador conhecido preenche o endereço — o “só preencher” do dono", async () => {
-    prisma.tomadorEmitido.findMany.mockResolvedValue([{ documento: CNPJ, ...ENDERECO }]);
+  it("tomador conhecido preenche NOME e endereço — o “só preencher” do dono", async () => {
+    prisma.tomadorEmitido.findMany.mockResolvedValue([{ ...CONHECIDO, ...ENDERECO }]);
     const r = await request(app()).post(`${BASE}/leitura`).attach("arquivo", planilha([NOTA]), "notas.xlsx");
     expect(r.body.linhas[0].estado).toBe("pronta");
     expect(r.body.linhas[0].origemEndereco).toBe("memoria");
+    expect(r.body.linhas[0].dados.tomador.nome).toBe("TOMADOR LTDA");
   });
 
   it("⚠⚠ a tabela ainda não criada (migration não aplicada) NÃO derruba a leitura", async () => {
@@ -137,12 +157,16 @@ describe("POST /leitura", () => {
             endereco: { ...ENDERECO, CEP: ENDERECO.cep },
             municipio: "Rio de Janeiro",
             uf: "RJ",
+            // ⚠ A razão social da MESMA resposta — é ela que preenche o nome do tomador.
+            nome: "COMERCIAL AURORA LTDA",
           },
         })
       )
       .attach("arquivo", planilha([NOTA, { ...NOTA, documento: "39254243000282" }]), "notas.xlsx");
 
     expect(r.body.linhas[0].estado).toBe("pronta");
+    expect(r.body.linhas[0].dados.tomador.nome).toBe("COMERCIAL AURORA LTDA");
+    expect(r.body.linhas[0].origemNome).toBe("consulta");
     expect(r.body.linhas[1].estado).toBe("consultar");
     expect(r.body.aConsultar).toEqual(["39254243000282"]);
   });
@@ -190,7 +214,7 @@ describe("POST /leitura", () => {
   it("⚠ a linha de exemplo do modelo, intacta, é descartada e reportada", async () => {
     const r = await request(app())
       .post(`${BASE}/leitura`)
-      .attach("arquivo", planilha([LINHA_DE_EXEMPLO, { ...NOTA, ...ENDERECO }]), "notas.xlsx");
+      .attach("arquivo", planilha([LINHA_DE_EXEMPLO, NOTA]), "notas.xlsx");
     expect(r.body.exemploDescartado).toEqual([2]);
     expect(r.body.resumo.total).toBe(1);
   });
@@ -232,7 +256,7 @@ describe("⚠⚠ `resolverCompanyId` — a memória é buscada pela empresa LEGA
   });
 
   it("o tomador conhecido da empresa legada preenche o endereço — a corrente inteira", async () => {
-    prisma.tomadorEmitido.findMany.mockResolvedValue([{ documento: CNPJ, ...ENDERECO }]);
+    prisma.tomadorEmitido.findMany.mockResolvedValue([{ ...CONHECIDO, ...ENDERECO }]);
     const r = await request(app({ resolverCompanyId: async () => "legacy-42" }))
       .post(`${BASE}/leitura`)
       .attach("arquivo", planilha([NOTA]), "notas.xlsx");
@@ -255,18 +279,22 @@ describe("⚠⚠ `resolverCompanyId` — a memória é buscada pela empresa LEGA
 // O AJUSTE FEITO NA TELA
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 describe("⚠ `ajustes` — a linha corrigida na tela é reclassificada pela MESMA regra", () => {
-  it("o endereço digitado na tela leva a linha de pendente a pronta", async () => {
+  // ⚠⚠ O CASO QUE O DONO NOMEOU: CPF NOVO SEMPRE CAI NA REVISÃO. Sem cadastro de tomador e sem
+  // consulta possível (CPF não se consulta), NÃO EXISTE origem para o nome nem para o endereço —
+  // e as duas faltas voltam nomeadas, cada uma com a sua frase. É a regra, não um buraco.
+  it("⚠⚠ CPF sem cadastro pede nome E endereço na revisão, e ajustá-los leva a linha a pronta", async () => {
     const semEndereco = { ...NOTA, documento: "12345678909" }; // CPF: não se consulta
     const antes = await request(app())
       .post(`${BASE}/leitura`)
       .attach("arquivo", planilha([semEndereco]), "notas.xlsx");
     expect(antes.body.linhas[0].estado).toBe("pendente");
-    expect(antes.body.linhas[0].pendencias[0].codigo).toBe("cpf_sem_endereco");
+    const codigos = antes.body.linhas[0].pendencias.map((x) => x.codigo);
+    expect(codigos).toEqual(expect.arrayContaining(["nome_ausente", "cpf_sem_endereco"]));
     const numero = antes.body.linhas[0].numero;
 
     const depois = await request(app())
       .post(`${BASE}/leitura`)
-      .field("ajustes", JSON.stringify({ [numero]: { ...ENDERECO } }))
+      .field("ajustes", JSON.stringify({ [numero]: { nome: "JOAO DA SILVA", ...ENDERECO } }))
       .attach("arquivo", planilha([semEndereco]), "notas.xlsx");
 
     // ⚠ `conferir`, não `pronta`: o `cMun` da planilha não é conferível no backend (sem a lista do
@@ -274,7 +302,7 @@ describe("⚠ `ajustes` — a linha corrigida na tela é reclassificada pela MES
     // ⚠⚠ ERA `conferir` ATÉ 20/08/2026, e virar `pronta` é a prova de que a lista chegou ao
     // servidor: o endereço digitado na tela é conferido contra o IBGE aqui, não no navegador.
     expect(depois.body.linhas[0].estado).toBe("pronta");
-    expect(depois.body.linhas[0].origemEndereco).toBe("planilha");
+    expect(depois.body.linhas[0].origemEndereco).toBe("revisao");
     expect(depois.body.linhasAjustadas).toEqual([numero]);
   });
 
@@ -343,7 +371,7 @@ describe("`valores` na resposta", () => {
     const linha = r.body.linhas[0];
     expect(linha.estado).toBe("pendente");
     expect(linha.dados).toBeNull();
-    expect(linha.valores.nome).toBe("TOMADOR LTDA");
+    expect(linha.valores.documento).toBe("12345678909");
     expect(linha.valores.valor).toBe("1500,00");
   });
 
