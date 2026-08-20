@@ -1814,6 +1814,50 @@ th.tabela__num {
 
 .detalhe-recolhivel > summary:hover { color: var(--text); }
 
+/* ─── Formulário de cadastro: a trilha e o salvar que não some ───────────────────────────────
+   O formulário da empresa tem nove seções e ~700 linhas de campo num scroll só. Nada disso foi
+   quebrado em passos (as seções se leem juntas — o CNPJ preenche a ficha, o regime muda o que a
+   emissão exige); o que faltava era CHEGAR e GRAVAR. */
+.company-form-trilha {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.company-form-trilha a {
+  font-size: 0.78rem;
+  color: var(--tab-ink);
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.company-form-trilha a:hover {
+  color: var(--text);
+  border-color: var(--accent-purple-border);
+  background: var(--accent-purple-surface);
+}
+
+/* ⚠ `sticky`, não `fixed`: ele pertence ao formulário, e num modal ou numa página que role por
+   fora continuaria colado ao lugar errado. O fundo é opaco de propósito — os campos passam por
+   baixo dele. */
+.form-actions--fixa {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin-top: var(--space-4);
+  padding: var(--space-3) 0;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+}
+
+/* Na impressão nada é sticky — barra de ação nem sai no papel. */
+@media print {
+  .form-actions--fixa { position: static; }
+}
+
 @media print {
   @page {
     /* Paisagem: a listagem tem cinco colunas (até quatro chips de guia no Lucro Presumido) e a

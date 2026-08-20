@@ -28,15 +28,43 @@ function fmtMoney(val) {
 
 const INPUT = {
   height: 32,
-  border: "1px solid #44475A",
+  border: "1px solid var(--border)",
   borderRadius: "var(--radius-sm)",
   padding: "0 var(--space-3)",
   font: "inherit",
   fontSize: "0.8125rem",
-  background: "#1A1B26",
-  color: "#F8F8F2",
+  background: "var(--bg-page)",
+  color: "var(--text)",
   colorScheme: "dark",
 };
+
+/**
+ * ⚠⚠ O CÓDIGO SOZINHO NÃO CONFERE NADA. Na tela que o dono mandou, as duas partidas da baixa
+ * apareciam como "240" e "5" — dois números nus, num modal que grava lançamento contábil. O
+ * `<datalist>` ajudava a DIGITAR e sumia depois: escolhido o código, não havia como saber se
+ * "240" é a conta certa sem abrir o plano de contas em outra aba.
+ *
+ * Três respostas, e a terceira é a que importa: conta encontrada (mostra o nome), campo vazio
+ * (não diz nada — é o estado normal de quem ainda não digitou) e **código que não está no plano
+ * de contas**, que é dito com todas as letras. Silêncio ali faria um código inexistente parecer
+ * conferido; o backend recusaria depois, com a baixa já preenchida.
+ *
+ * ⚠ `accounts` ausente ≠ plano vazio: sem a lista carregada não se afirma que a conta não existe.
+ */
+function NomeDaConta({ codigo, accounts }) {
+  const cod = String(codigo || "").trim();
+  if (!cod) return null;
+  if (!Array.isArray(accounts) || accounts.length === 0) return null;
+  const achada = accounts.find((a) => String(a.codigo) === cod);
+  return (
+    <div style={{
+      fontSize: "0.7rem", marginTop: 2, lineHeight: 1.3,
+      color: achada ? "var(--text-muted)" : "var(--state-warn)",
+    }}>
+      {achada ? achada.nome : "não está no plano de contas desta empresa"}
+    </div>
+  );
+}
 
 function LineEditor({ lines, onChange, accounts }) {
   function updateLine(idx, field, val) {
@@ -64,7 +92,7 @@ function LineEditor({ lines, onChange, accounts }) {
     <div style={{ marginTop: 8, overflowX: "auto", minWidth: 0 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
         <thead>
-          <tr style={{ background: "#282A36" }}>
+          <tr style={{ background: "var(--bg-subtle)" }}>
             <th style={{ padding: "4px 6px", width: 52, textAlign: "left", fontSize: "0.7rem", color: "var(--text-muted)", fontWeight: 700 }}>D/C</th>
             {/* O papel é o que decide se a baixa sai em um lançamento ou em três. Ficava invisível:
                 só o pré-preenchimento sabia marcá-lo, e linha digitada à mão ia sem nada. */}
@@ -79,7 +107,7 @@ function LineEditor({ lines, onChange, accounts }) {
             <tr key={i}>
               <td style={{ padding: "2px 4px" }}>
                 <select value={l.tipo} onChange={(e) => updateLine(i, "tipo", e.target.value)}
-                  style={{ ...INPUT, width: 46, fontWeight: 700, color: l.tipo === "D" ? "#8BE9FD" : "#69FF47" }}>
+                  style={{ ...INPUT, width: 46, fontWeight: 700, color: l.tipo === "D" ? "var(--accent-cyan)" : "var(--state-ok)" }}>
                   <option value="D">D</option>
                   <option value="C">C</option>
                 </select>
@@ -99,7 +127,15 @@ function LineEditor({ lines, onChange, accounts }) {
                     <option value="MULTA">Multa</option>
                   </select>
                 ) : (
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-faint)" }}>contrapartida</span>
+                  /* ⚠ MESMA ALTURA DO `<select>` do débito. Era um `<span>` solto de 0.7rem numa
+                     célula cuja vizinha tem 32px de campo: a linha do crédito subia alguns pixels
+                     e as duas partidas da MESMA baixa não se liam como uma tabela. */
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", height: 32,
+                    fontSize: "0.7rem", color: "var(--text-faint)",
+                  }}>
+                    contrapartida
+                  </span>
                 )}
               </td>
               <td style={{ padding: "2px 4px" }}>
@@ -118,6 +154,7 @@ function LineEditor({ lines, onChange, accounts }) {
                     ))}
                   </datalist>
                 )}
+                <NomeDaConta codigo={l.conta} accounts={accounts} />
               </td>
               <td style={{ padding: "2px 4px" }}>
                 <input

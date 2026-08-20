@@ -271,6 +271,73 @@ import {
   ConfirmacaoAcessoProprio,
 } from "./ResponsavelCompartilhado";
 
+// ── O CABEÇALHO DE SEÇÃO, UM SÓ ──────────────────────────────────────────────────────────────
+//
+// ⚠ Eram OITO cópias do mesmo bloco, cada uma com os mesmos três hex escritos à mão
+// (`#2b2d45` na linha, `#F8F8F2` no título, `#6b7280` na ajuda). O último é o mesmo cinza que a
+// ficha usava nos rótulos e que mede **3,10:1** sobre este fundo — abaixo do mínimo 4,5:1 da
+// WCAG AA. Aqui ele pintava o texto que EXPLICA o campo, que é justamente o que alguém lê quando
+// não sabe o que preencher.
+//
+// ⚠ O `id` não é enfeite: é o destino das frases que já existem em outras telas — a ficha e o
+// assistente de emissão mandam "preencha em Editar → Inscrições" e, até agora, quem lia isso
+// tinha de procurar a seção rolando. Ver `ANCORAS_DO_FORMULARIO`.
+export const ANCORAS_DO_FORMULARIO = [
+  { id: "secao-responsavel-pelo-acesso", titulo: "Responsável" },
+  { id: "secao-identificacao-da-empresa", titulo: "Identificação" },
+  { id: "secao-regime-e-obrigacoes", titulo: "Regime" },
+  { id: "secao-atividades-cnae", titulo: "Atividades" },
+  { id: "secao-endereco", titulo: "Endereço" },
+  { id: "secao-dados-da-ficha", titulo: "Ficha" },
+  { id: "secao-inscricoes", titulo: "Inscrições" },
+  { id: "secao-alteracoes-contratuais", titulo: "Alterações" },
+];
+
+function SecaoDoFormulario({ id, titulo, ajuda = null, primeira = false }) {
+  return (
+    <div
+      id={id}
+      className="full"
+      style={primeira
+        ? { paddingBottom: 4, scrollMarginTop: 96 }
+        : { borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, scrollMarginTop: 96 }}
+    >
+      <strong style={{ fontSize: "0.9rem", color: "var(--text)" }}>{titulo}</strong>
+      {ajuda ? (
+        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 8 }}>{ajuda}</span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * A TRILHA DE SEÇÕES — só no modo edição.
+ *
+ * ⚠ O formulário NÃO foi quebrado em passos, e isto não é meio caminho para quebrá-lo: são nove
+ * seções que se leem juntas (o CNPJ preenche a ficha, o regime muda o que a emissão exige), e um
+ * wizard obrigaria a passar por todas para corrigir um telefone. O que faltava era só CHEGAR: são
+ * ~700 linhas de campo num scroll só.
+ *
+ * ⚠ Não é `ui/Tabs`: aba TROCA o que a tela mostra, e aqui nada troca — tudo continua na mesma
+ * página, e o alvo é uma âncora do documento. Usar a barra de abas ensinaria que clicar ali some
+ * com o resto.
+ *
+ * ⚠ Só no cadastro de empresa que JÁ EXISTE: numa empresa nova o formulário se preenche de cima
+ * para baixo (o CNPJ é o primeiro campo e alimenta o resto), e pular seção é o oposto do fluxo.
+ */
+function TrilhaDeSecoes() {
+  return (
+    <nav
+      className="full company-form-trilha"
+      aria-label="Seções do cadastro"
+    >
+      {ANCORAS_DO_FORMULARIO.map((s) => (
+        <a key={s.id} href={`#${s.id}`}>{s.titulo}</a>
+      ))}
+    </nav>
+  );
+}
+
 export function CompanyForm({
   form,
   onChange,
@@ -354,12 +421,10 @@ export function CompanyForm({
 
   return (
     <form className="form-grid two-col" onSubmit={onSubmit}>
-      <div className="full" style={{ paddingBottom: 4 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Responsável pelo acesso</strong>
-        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
-          Quem vai entrar no portal do cliente.
-        </span>
-      </div>
+      {cnpjReadOnly ? <TrilhaDeSecoes /> : null}
+      <SecaoDoFormulario id="secao-responsavel-pelo-acesso" titulo="Responsável pelo acesso" primeira
+        ajuda={<>Quem vai entrar no portal do cliente.</>}
+      />
       <label>
         Nome do responsavel
         <input value={form.ownerName} onChange={(event) => onChange("ownerName", event.target.value)} />
@@ -418,12 +483,9 @@ export function CompanyForm({
           )}
         </label>
       ) : null}
-      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Identificação da empresa</strong>
-        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
-          Digite o CNPJ e saia do campo: o resto preenche sozinho.
-        </span>
-      </div>
+      <SecaoDoFormulario id="secao-identificacao-da-empresa" titulo="Identificação da empresa"
+        ajuda={<>Digite o CNPJ e saia do campo: o resto preenche sozinho.</>}
+      />
       <label>
         CNPJ
         {cnpjReadOnly && (
@@ -478,9 +540,7 @@ export function CompanyForm({
         Telefone
         <input value={form.telefone} onChange={(event) => onChange("telefone", event.target.value)} />
       </label>
-      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Regime e obrigações</strong>
-      </div>
+      <SecaoDoFormulario id="secao-regime-e-obrigacoes" titulo="Regime e obrigações" />
       <label>
         Regime tributario
         <select value={form.regimeTributario} onChange={(event) => onChange("regimeTributario", event.target.value)}>
@@ -524,12 +584,9 @@ export function CompanyForm({
           <option value="sim">Sim — só obrigações zeradas</option>
         </select>
       </label>
-      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Atividades (CNAE)</strong>
-        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
-          Todos os CNAEs contam: a sugestão de anexo é feita sobre o conjunto, não só o principal.
-        </span>
-      </div>
+      <SecaoDoFormulario id="secao-atividades-cnae" titulo="Atividades (CNAE)"
+        ajuda={<>Todos os CNAEs contam: a sugestão de anexo é feita sobre o conjunto, não só o principal.</>}
+      />
       <label>
         CNAE principal
         <input value={form.cnaePrincipal} onChange={(event) => onChange("cnaePrincipal", event.target.value)} required />
@@ -547,9 +604,7 @@ export function CompanyForm({
       {/* Lista legível: o campo de texto é uma fileira de números; aqui dá pra CONFERIR se os
           CNAEs batem com o cartão CNPJ antes de salvar. */}
       <ListaCnaesSecundarios valor={form.cnaesSecundarios} descricoes={cnaeDescricoes} />
-      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Endereço</strong>
-      </div>
+      <SecaoDoFormulario id="secao-endereco" titulo="Endereço" />
       <label>
         Endereco - rua
         <input value={form.enderecoRua} onChange={(event) => onChange("enderecoRua", event.target.value)} required />
@@ -595,12 +650,9 @@ export function CompanyForm({
       </label>
 
       {/* ── Ficha de cadastro ── */}
-      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Dados da ficha</strong>
-        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
-          Porte, natureza jurídica, capital e abertura preenchem sozinhos pelo CNPJ.
-        </span>
-      </div>
+      <SecaoDoFormulario id="secao-dados-da-ficha" titulo="Dados da ficha"
+        ajuda={<>Porte, natureza jurídica, capital e abertura preenchem sozinhos pelo CNPJ.</>}
+      />
       <label>
         Data de abertura
         <input type="date" value={form.dataAbertura} onChange={(event) => onChange("dataAbertura", event.target.value)} />
@@ -643,9 +695,7 @@ export function CompanyForm({
           <option value="sim">Sim — c/ desoneração</option>
         </select>
       </label>
-      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Inscrições</strong>
-      </div>
+      <SecaoDoFormulario id="secao-inscricoes" titulo="Inscrições" />
       <label>
         Inscrição municipal
         <input value={form.inscricaoMunicipal} onChange={(event) => onChange("inscricaoMunicipal", event.target.value)} />
@@ -724,9 +774,7 @@ export function CompanyForm({
         </div>
       )}
 
-      <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Alterações contratuais</strong>
-      </div>
+      <SecaoDoFormulario id="secao-alteracoes-contratuais" titulo="Alterações contratuais" />
       <label>
         Nº da última alteração
         <input value={form.alteracaoNumero} onChange={(event) => onChange("alteracaoNumero", event.target.value)} placeholder="2" />
@@ -740,7 +788,11 @@ export function CompanyForm({
       <SociosEditor socios={form.socios} onChange={(next) => onChange("socios", next)} />
       <RegimeHistoricoEditor historico={form.regimeHistorico} onChange={(next) => onChange("regimeHistorico", next)} />
 
-      <div className="full form-actions">
+      {/* ⚠ FIXA NO RODAPÉ (`.form-actions--fixa`, no App.css). Eram nove seções e ~700 linhas de
+          campo num scroll só, com o Salvar no fim: quem corrigia a inscrição municipal (seção 7)
+          rolava tudo de volta para gravar. O botão não mudou de lugar no DOM nem de comportamento
+          — é o mesmo `type="submit"` do mesmo `<form>`; ele só deixou de sair da tela. */}
+      <div className="full form-actions form-actions--fixa">
         <Button type="submit" variant="primary" className="company-form-page__submit" disabled={submitting || cnpjLoading}>
           {submitting ? "Salvando..." : submitLabel}
         </Button>

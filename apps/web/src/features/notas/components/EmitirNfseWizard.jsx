@@ -1331,6 +1331,15 @@ export function EmitirNfseWizard({
           {/* ⚠ O botão Emitir SÓ existe no passo de conferência. Não é uma decisão de estilo: é a
               garantia de que ninguém emite sem ver o espelho. */}
           {passo < PASSO_CONFERIR ? (
+            /* ⚠ A CONTAGEM AO LADO DO BOTÃO, e a lista continua exatamente onde estava.
+               O formulário é uma coluna longa; a lista "Falta preencher" fica no pé dela, e quem
+               chega ao Continuar desabilitado tinha de rolar de volta para descobrir por quê — ou
+               depender do `title`, que não é descobrível, some ao mover o mouse e não existe no
+               toque (é a mesma objeção já registrada em `acoesDaSelecao`).
+               ⚠ O NÚMERO NÃO SUBSTITUI A LISTA: ele diz QUANTAS faltam, não QUAIS, e nem tenta —
+               os "ir para o campo" continuam sendo o caminho. E ele não ganha cor: a separação
+               cinza (falta preencher) × vermelho (corrija) é da lista, e pintar o botão de
+               vermelho faria um formulário recém-aberto nascer alarmado. */
             <Button
               type="button"
               onClick={() => setPasso(passo + 1)}
@@ -1338,6 +1347,11 @@ export function EmitirNfseWizard({
               title={prontoParaEmitir ? undefined : textoDosProblemas}
             >
               Continuar →
+              {problemasDaNota.length > 0 ? (
+                <span style={{ opacity: 0.75, fontWeight: 400 }}>
+                  {" "}· {problemasDaNota.length} {problemasDaNota.length === 1 ? "pendência" : "pendências"}
+                </span>
+              ) : null}
             </Button>
           ) : (
             /* ⚠ Era verde #69FF47. Emitir nota é o oposto de "concluído" — é o ato fiscal
