@@ -2321,6 +2321,38 @@ mockPagamentosLocalizados.set("mock-guia-pendente-baixa", {
   competencia: "2026-05", parcelamentoId: "parc-ok",
 });
 
+// ⚠ A PARCELA COM GUIA E **SEM COMPOSIÇÃO** — o caso do dono, e ele não existia offline.
+//
+// Medido em produção (20/08/2026): PARCSN nº 2, competência 2026-07, R$ 332,65, guia `PAID` vinda
+// de UPLOAD (`ExibirDAS-18082026_134133_07_2026.pdf`). `TributoParcela` = ZERO, e o `extracted` só
+// tem `{tipo, valor, uploadHash, vencimento, competencia, sourceFileName}` — nenhum `principal`,
+// `multa`, `juros` ou `composicao`. Não é caso isolado: a de 2026-08 da mesma empresa e a de outra
+// empresa estão iguais.
+//
+// ⚠ ELA NÃO ENTRA EM `mockPagamentosLocalizados`, e a distinção é o ponto: aquele mapa é dos
+// pagamentos cujo COMPROVANTE foi localizado no SERPRO (e comprovante traz composição). Aqui não há
+// comprovante nenhum — a guia foi marcada como paga à mão —, e é justamente essa ausência que
+// produz `sem_composicao`. Enfiá-la naquele mapa daria à fixture uma composição que produção não
+// tem, e o mock deixaria de exercer o caso.
+const MOCK_PARCELA_SEM_COMPOSICAO = Object.freeze({
+  parcelaId: "mock-parcela-upload-semcomposicao",
+  guideId: "mock-guia-upload-semcomposicao-2",
+  numeroParcela: 2,
+  competencia: "2026-07",
+  valor: 332.65,
+  vencimento: null,
+  parcelamentoId: "parc-ok",
+  confirmadoEm: "2026-08-18T13:41:33.000Z",
+  // ⚠ SEM COMPROVANTE — e é por isso que a tela não tem data de pagamento para pré-preencher nem
+  // valores para repetir. É a ausência que o `null` diz.
+  comprovante: null,
+});
+
+// As guias cuja composição o contador DECLAROU nesta sessão do mock. Sem isto a linha continuaria
+// na fila depois da declaração e o fluxo terminaria sem consequência visível — que é o tipo de mock
+// que passa no teste e esconde o defeito.
+const mockComposicoesDeclaradas = new Map(); // guideId → { principal, juros, multa, total, dataPagamento }
+
 // ⚠ OS PARCELAMENTOS CRIADOS NESTA SESSÃO DO MOCK (F2.3 — parcelamento-first).
 // O wizard "+ Novo parcelamento" cria o CONTRATO sem guia nenhuma; sem guardar o resultado aqui, a
 // lista voltaria sempre a mesma e a criação pareceria não fazer nada — e o aceite da fase
@@ -3504,6 +3536,12 @@ export function createMockApi() {
         confirmadoEm: c.confirmadoEm || new Date().toISOString(),
         comprovante: c,
       }));
+      // ⚠ A PARCELA COM GUIA E SEM COMPOSIÇÃO ENTRA NA FILA COMO QUALQUER OUTRA — e tem de entrar:
+      // o que a distingue não é a fila, é o que acontece quando se clica em "Dar baixa". Ela sai da
+      // fila quando a composição é declarada, que é a consequência visível do fluxo.
+      if (!mockComposicoesDeclaradas.has(MOCK_PARCELA_SEM_COMPOSICAO.guideId)) {
+        parcelas.push({ ...MOCK_PARCELA_SEM_COMPOSICAO });
+      }
       return { ok: true, parcelas };
     },
     // ⚠ A RECUSA TAMBÉM É UM DESFECHO, e ela vem do servidor como `skipped` com um MOTIVO — não
@@ -3511,14 +3549,70 @@ export function createMockApi() {
     // conferido offline no caminho feliz, e é justamente a recusa que a tela precisa mostrar na
     // linha (antes ela saía num `window.alert` que some ao clicar OK). Os prefixos espelham o
     // `DESFECHO_BUSCA_MOCK`: cada guia da fixture exerce um caminho.
-    async lancarBaixaParcela(companyId, guideId) {
+    // ⚠ `body` OPCIONAL — é a MESMA rota, com o dado que faltava. Sem ele, a baixa de sempre (a
+    // composição vem do documento); com `composicaoDeclarada`, a decomposição que o contador leu no
+    // DAS. Duas rotas seriam duas guardas de idempotência que não se enxergam.
+    async lancarBaixaParcela(companyId, guideId, body = null) {
       await delay();
       const id = String(guideId || "");
+      const declarada = body?.composicaoDeclarada || null;
+      const semComposicao = id === MOCK_PARCELA_SEM_COMPOSICAO.guideId || id.startsWith("mock-guia-semdoc");
+
+      // ⚠ TODAS AS GUARDAS DA ROTA REAL PASSAM POR AQUI — inclusive as duas conferências, que são o
+      // ato de consequência desta via. Um mock que aceitasse qualquer total deixaria a divergência
+      // aparecer só em produção, no lançamento — e é justamente a soma que ninguém pode derivar por
+      // subtração.
+      if (declarada) {
+        // A ordem PROVA → DECLARAÇÃO: onde o documento já responde, a declaração é recusada.
+        if (!semComposicao) return { ok: false, skipped: true, motivo: "composicao_ja_existe" };
+        if (mockComposicoesDeclaradas.has(id)) return { ok: false, skipped: true, motivo: "ja_baixada" };
+        const principal = Number(declarada.principal);
+        if (!Number.isFinite(principal) || principal <= 0) {
+          return { ok: false, skipped: true, motivo: "principal_invalido" };
+        }
+        const juros = Number(declarada.juros ?? 0);
+        const multa = Number(declarada.multa ?? 0);
+        if (!Number.isFinite(juros) || !Number.isFinite(multa)) {
+          return { ok: false, skipped: true, motivo: "acrescimo_invalido" };
+        }
+        if (juros < 0 || multa < 0) return { ok: false, skipped: true, motivo: "acrescimo_negativo" };
+        const total = Math.round((principal + juros + multa) * 100) / 100;
+        if (declarada.totalConferido == null || !Number.isFinite(Number(declarada.totalConferido))) {
+          throw mockRecusa("CONFERENCIA_OBRIGATORIA", "Confirme o total da baixa (principal + juros + multa).");
+        }
+        if (Math.abs(Math.round(Number(declarada.totalConferido) * 100) / 100 - total) > 0.01) {
+          throw mockRecusa(
+            "CONFERENCIA_DIVERGENTE",
+            `O total que o servidor calcula (R$ ${total.toFixed(2)}) não é o que foi conferido. `
+            + "O servidor não deduz juros nem multa por subtração.",
+          );
+        }
+        // ⚠ MÊS FECHADO BLOQUEIA A BAIXA, e a trava fica. Exercida offline por uma data em 2026-01,
+        // que a fixture do fechamento contábil trata como competência fechada.
+        if (String(body?.dataPagamento || "").startsWith("2026-01")) {
+          throw mockRecusa("MES_FECHADO", "Mês 2026-01 fechado — reabra antes de baixar a parcela.");
+        }
+        mockComposicoesDeclaradas.set(id, { principal, juros, multa, total, dataPagamento: body?.dataPagamento || null });
+        mockPagamentosLocalizados.delete(guideId);
+        return {
+          ok: true,
+          resultado: {
+            pagamentoId: "mock-baixa-parcela-declarada",
+            lancamentos: 1 + (juros > 0 ? 1 : 0) + (multa > 0 ? 1 : 0) + 1,
+            composicaoDeclarada: { principal, juros, multa, total },
+          },
+        };
+      }
+
       const RECUSAS = [
         ["mock-guia-naolocalizado", "comprovante_nao_e_parcela"],
         ["mock-guia-cooldown", "provisao_inexistente"],
         ["mock-guia-baixada", "ja_baixada"],
         ["mock-guia-semdoc", "sem_composicao"],
+        // ⚠ O CASO DO DONO: guia PAGA, por upload, sem composição nenhuma. Sem esta linha o mock
+        // nunca chegava ao `sem_composicao` a partir de uma parcela que está NA FILA — e é essa
+        // combinação (fila + recusa + saída) que a tela nova precisa exercer offline.
+        [MOCK_PARCELA_SEM_COMPOSICAO.guideId, "sem_composicao"],
       ];
       const motivo = (RECUSAS.find(([prefixo]) => id.startsWith(prefixo)) || [])[1];
       if (motivo) return { ok: false, skipped: true, motivo };

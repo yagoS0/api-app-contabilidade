@@ -665,20 +665,137 @@ async function marcarParcelasHistoricas(tx, { portalClientId, parcelamentoId, qu
 }
 
 /**
+ * F2.6 — lê a COMPOSIÇÃO DECLARADA pelo contador e a confere. Devolve `null` quando não veio
+ * declaração nenhuma (o caminho normal, em que a composição vem do banco ou do comprovante).
+ *
+ * ⚠ NADA É DERIVADO POR SUBTRAÇÃO. Os três componentes são ENTRADA; o total é a soma deles, feita
+ * para frente, e é confrontado com o que a tela conferiu. Se a conta não fecha, quem fecha é o
+ * contador olhando o DAS — este código não inventa a diferença. É a mesma disciplina de
+ * `gerarPagamentoParcelaManual`, com os mesmos dois códigos de erro, para que a tela não precise
+ * aprender um vocabulário novo.
+ *
+ * ⚠ `principal` É ESTRITO, juros e multa NÃO. Prestação sem acréscimo é o caso comum e vazio ali
+ * significa zero; prestação cujo principal vale zero não existe, e um principal ausente virando 0
+ * (é o que `round2` faz com `undefined`) produziria uma baixa que não amortiza nada do passivo e
+ * credita só o acréscimo no caixa.
+ *
+ * @throws {Error} code `CONFERENCIA_OBRIGATORIA` · `CONFERENCIA_DIVERGENTE`
+ */
+function lerComposicaoDeclarada(raw) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const principalCru = Number(raw.principal);
+  if (!Number.isFinite(principalCru) || round2(principalCru) <= 0) return { recusa: "principal_invalido" };
+  const principal = round2(principalCru);
+
+  const jurosCru = raw.juros == null || raw.juros === "" ? 0 : Number(raw.juros);
+  const multaCru = raw.multa == null || raw.multa === "" ? 0 : Number(raw.multa);
+  if (!Number.isFinite(jurosCru) || !Number.isFinite(multaCru)) return { recusa: "acrescimo_invalido" };
+  const juros = round2(jurosCru);
+  const multa = round2(multaCru);
+  if (juros < 0 || multa < 0) return { recusa: "acrescimo_negativo" };
+
+  const total = round2(principal + juros + multa);
+
+  // ⚠ ATO DE CONSEQUÊNCIA: A ROTA RECEBE O QUE FOI CONFERIDO E RECUSA SE DIVERGIR — a mesma
+  // exigência de `gerarPagamentoParcelaManual`, pelo mesmo motivo: o lançamento contábil vai sair
+  // de números que o contador DECLAROU, e confirmar sem repetir os dados é confirmar o quê?
+  const conferido = raw.totalConferido;
+  if (conferido == null || !Number.isFinite(Number(conferido))) {
+    const err = new Error(
+      "Confirme o total da baixa (principal + juros + multa). A composição desta parcela não veio "
+      + "de documento nenhum — ela está sendo declarada por você, e a tela repete o total para que "
+      + "você confirme o que está prestes a ser lançado.",
+    );
+    err.code = "CONFERENCIA_OBRIGATORIA";
+    err.detalhe = { principal, juros, multa, total };
+    throw err;
+  }
+  if (Math.abs(round2(conferido) - total) > 0.01) {
+    const err = new Error(
+      `O total que o servidor calcula (R$ ${total.toFixed(2)}) não é o que foi conferido `
+      + `(R$ ${round2(conferido).toFixed(2)}). Principal R$ ${principal.toFixed(2)}, juros `
+      + `R$ ${juros.toFixed(2)} e multa R$ ${multa.toFixed(2)} são os que você declarou — o servidor `
+      + "não deduz nenhum deles por subtração. Confira de novo no DAS.",
+    );
+    err.code = "CONFERENCIA_DIVERGENTE";
+    err.detalhe = { principal, juros, multa, total, totalConferido: round2(conferido) };
+    throw err;
+  }
+
+  return { principal, juros, multa, total };
+}
+
+/**
  * Q23 — Gatilho do "pago": gera o lançamento de PAGAMENTO (BAIXA) de uma guia de parcela já
  * registrada (parcelamentoId + TributoParcela). Juros LIDO da composição. Data padrão = hoje (dia
  * do clique), editável depois em Lançamentos. Idempotente. NÃO marca paymentStatus (isso é do
  * markGuidePaidManual no endpoint) — só cria a BAIXA e baixa a guia (baixada/dataBaixa/lancamentoId).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * F2.6 — `composicaoDeclarada`: A GUIA QUE NÃO TRAZ A DECOMPOSIÇÃO.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠ O VÃO QUE ISTO FECHA, medido em produção (20/08/2026). A prestação nº 2 de um PARCSN, paga,
+ * com guia vinda de UPLOAD, tinha `TributoParcela = 0` e um `extracted` com apenas
+ * `{tipo, valor, uploadHash, vencimento, competencia, sourceFileName}` — nenhum `principal`,
+ * `multa`, `juros` ou `composicao`. A fila recusava com `sem_composicao`; a baixa por DECLARAÇÃO
+ * (`gerarPagamentoParcelaManual`) recusa toda prestação que TEM guia. Não havia caminho nenhum, e
+ * o acordo inteiro ficava não baixável — o mesmo formato de defeito da F2.2, com a âncora trocada.
+ *
+ * ⚠ O QUE É PROVA E O QUE É DECLARAÇÃO AQUI, e a divisão não é a mesma da F2.2. O pagamento é
+ * PROVADO (a guia está `PAID`) e o documento existe; o que falta é só a DECOMPOSIÇÃO. Então o
+ * contador declara os três componentes lendo o DAS que ele tem na mão, e:
+ *
+ *   · a ORDEM CONTINUA PROVA → DECLARAÇÃO. Havendo comprovante classificável ou `TributoParcela`,
+ *     a declaração é RECUSADA (`composicao_ja_existe`) em vez de sobrescrever o documento. É a
+ *     mesma precedência de `buildDTOsFromManual` e de `corrigirValorPrevistoParcela`;
+ *   · o ACRÉSCIMO NÃO É DERIVADO POR SUBTRAÇÃO — nem aqui, nem em lugar nenhum. `totalConferido` é
+ *     obrigatório e é conferido contra `principal + juros + multa` (409 `CONFERENCIA_DIVERGENTE`),
+ *     exatamente como em `gerarPagamentoParcelaManual`. Foi por subtração que o encargo já foi
+ *     reconhecido em dobro (o episódio está em `linhasProvisao`);
+ *   · a FORMA DO LANÇAMENTO NÃO MUDA. A composição declarada vira o MESMO objeto `parcela` que a
+ *     composição lida do banco produz, e vai para o MESMO `linhasPagamento`
+ *     (`D PARC · D JUROS · D MULTA / C CAIXA`), com as contas saindo do mesmo
+ *     `configPagamento`/`MapaContaTributo`. Nenhuma conta nova, nada junto, nada separado.
+ *
+ * ⚠ A DISTINÇÃO DECLARAÇÃO × PROVA SOBREVIVE EM TRÊS SINAIS PERSISTIDOS, e nenhum deles é coluna
+ * nova (a F2.2 já tinha estabelecido que estado novo não se cria para uma pergunta já respondida):
+ *
+ *   1. o HISTÓRICO de cada lançamento sai com **"(composição declarada)"** — em texto, no razão,
+ *      para quem nunca vai abrir uma coluna. Não é o "(declarado)" da F2.2 porque não é a mesma
+ *      afirmação: lá o PAGAMENTO é declarado; aqui ele é provado e só a decomposição é declarada.
+ *      Dizer "(declarado)" seco afirmaria menos evidência do que existe;
+ *   2. `AccountingEntry.origem = "MANUAL"` — como já era neste caminho, e a via SERPRO gravará
+ *      `"SERPRO"`;
+ *   3. `AccountingEntryLine.codigoTributo` fica **NULO** em todas as linhas — e o nulo é o sinal.
+ *      Baixa cuja composição veio do banco carrega o código de receita (ou o nome do tributo) em
+ *      cada linha; baixa declarada não tem código nenhum para carregar, porque não veio de
+ *      documento. `sourceGuideId IS NOT NULL AND tipoLinha IN ('PARC','JUROS','MULTA') AND
+ *      codigoTributo IS NULL` é, em SQL e sem DDL, "esta baixa teve a decomposição declarada".
+ *      É o mesmo nulo honesto de `gerarPagamentoParcelaManual`.
+ *
+ * ⚠ `parcelas.origemBaixa` **NÃO** é escrito aqui, e essa omissão é deliberada. Neste caminho quem
+ * responde "foi quitada?" é a GUIA (`baixada`/`lancamentoId`) — a F2.1 evitou de propósito a
+ * segunda cópia do estado —, e `EstornoBaixaService` reverte a âncora `GUIA` reabrindo a guia, sem
+ * tocar na coluna. Gravá-la aqui deixaria a prestação marcada como baixada para sempre depois de um
+ * estorno: exatamente o defeito que a F2.5 nomeou do outro lado.
  *
  * @param {Object} opts
  * @param {string} opts.portalClientId
  * @param {string} opts.guideId
  * @param {string|Date} [opts.dataPagamento]  default = agora
  * @param {string} [opts.userId]
+ * @param {Object} [opts.composicaoDeclarada] — `{ principal, juros, multa, totalConferido }`, lidos
+ *                 do DAS pelo contador. Só aceito quando NÃO há comprovante classificável e NÃO há
+ *                 `TributoParcela`.
  * @returns {Promise<{ ok?, pagamentoId?, skipped?, reason? }>}
- * @throws {Error} code "MES_FECHADO" quando a competência do pagamento está fechada.
+ * @throws {Error} code "MES_FECHADO" · "CONFERENCIA_OBRIGATORIA" · "CONFERENCIA_DIVERGENTE"
  */
-export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, dataPagamento, userId, classificacaoComprovante = null }) {
+export async function gerarPagamentoParcelaFromGuide({
+  portalClientId, guideId, dataPagamento, userId, classificacaoComprovante = null,
+  composicaoDeclarada = null,
+}) {
   const guide = await prisma.guide.findFirst({
     where: { id: String(guideId), portalClientId },
     select: { id: true, parcelamentoId: true, numeroParcela: true, lancamentoId: true, competencia: true, vencimento: true },
@@ -714,7 +831,21 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
   const tributosParcela = usaComprovante
     ? []
     : await prisma.tributoParcela.findMany({ where: { guideId: guide.id } });
-  if (!usaComprovante && !tributosParcela.length) return { skipped: true, reason: "sem_composicao" };
+
+  // ⚠ F2.6 — A DECLARAÇÃO SÓ ENTRA NO VÃO, NUNCA POR CIMA DO DOCUMENTO. Se o comprovante classifica
+  // ou o banco tem a composição, o que o contador digitou é RECUSADO, não aplicado: a ordem
+  // prova → declaração é a mesma de `buildDTOsFromManual`, e aceitar a declaração aqui criaria a
+  // segunda fonte para um número que já tem uma. A recusa é NOMEADA para a tela poder dizer que a
+  // composição apareceu (a captura do SERPRO roda sozinha) e que basta usar o botão normal.
+  const temDocumento = usaComprovante || tributosParcela.length > 0;
+  if (composicaoDeclarada && temDocumento) return { skipped: true, reason: "composicao_ja_existe" };
+
+  // ⚠ A CONFERÊNCIA SÓ RODA NO VÃO — e por isso a leitura vem DEPOIS da guarda acima: lançar
+  // `CONFERENCIA_DIVERGENTE` sobre uma declaração que nem seria usada diria ao contador que o
+  // problema é a conta dele, quando o problema é que o documento chegou.
+  const declarada = temDocumento ? null : lerComposicaoDeclarada(composicaoDeclarada);
+  if (declarada?.recusa) return { skipped: true, reason: declarada.recusa };
+  if (!temDocumento && !declarada) return { skipped: true, reason: "sem_composicao" };
 
   const data = dataPagamento ? new Date(dataPagamento) : new Date();
   const competencia = competenciaFromDate(data);
@@ -725,13 +856,27 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
   }
 
   const tipoParcelamento = parcelamento.tipo || parcelamento.kind || "OUTRO";
-  const parcela = {
-    tributos: tributosParcela.map((t) => ({
-      codigoTributo: t.codigoTributo, nomeTributo: t.nomeTributo,
-      principal: Number(t.principal), multa: Number(t.multa), juros: Number(t.juros), total: Number(t.total),
-    })),
-    valorTotal: round2(tributosParcela.reduce((s, t) => s + Number(t.total || 0), 0)),
-  };
+  // ⚠ A COMPOSIÇÃO DECLARADA ENTRA NA **MESMA FORMA** DA LIDA DO BANCO, com `codigoTributo: null`,
+  // e é isso que faz a forma do lançamento não mudar: daqui para baixo `linhasPagamento` não sabe
+  // (nem precisa saber) de onde os números vieram. O nulo é honesto e é o sinal persistido nº 3 —
+  // não há código de receita a carregar porque não houve documento de onde lê-lo, e `resolverConta`
+  // já trata `codigoTributo` nulo caindo no mapeamento geral do papel (o mesmo caminho de
+  // `gerarPagamentoParcelaManual`).
+  const parcela = declarada
+    ? {
+      tributos: [{
+        codigoTributo: null, nomeTributo: null,
+        principal: declarada.principal, multa: declarada.multa, juros: declarada.juros, total: declarada.total,
+      }],
+      valorTotal: declarada.total,
+    }
+    : {
+      tributos: tributosParcela.map((t) => ({
+        codigoTributo: t.codigoTributo, nomeTributo: t.nomeTributo,
+        principal: Number(t.principal), multa: Number(t.multa), juros: Number(t.juros), total: Number(t.total),
+      })),
+      valorTotal: round2(tributosParcela.reduce((s, t) => s + Number(t.total || 0), 0)),
+    };
 
   // Q28: contas por papel vindas da config do parcelamento (definida no modal de entrada).
   const contaPorPapel = {};
@@ -774,7 +919,13 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
       tipo: "BAIXA", subtipo: `PARC_${tipoParcelamento}`,
       origem: "MANUAL",
       lote: `PARCV2-${parcelamento.id.slice(0, 8)}-PAG-${guide.numeroParcela || "x"}`,
-      historicoBase: `PAGAMENTO ${tipoParcelamento} PARC ${guide.numeroParcela || "?"}/${parcelamento.numParcelas || "?"} - ${competencia}`,
+      // ⚠ SINAL PERSISTIDO Nº 1 — em TEXTO, no razão, para quem nunca vai abrir uma coluna.
+      // "(composição declarada)" e não "(declarado)": o PAGAMENTO desta prestação é provado (a guia
+      // está PAID e o documento existe); o que foi declarado é só a decomposição. Usar a frase da
+      // F2.2 afirmaria menos evidência do que existe, e é justamente a distinção que precisa
+      // sobreviver a quem for auditar.
+      historicoBase: `PAGAMENTO ${tipoParcelamento} PARC ${guide.numeroParcela || "?"}/${parcelamento.numParcelas || "?"} - ${competencia}`
+        + (declarada ? " (composição declarada)" : ""),
       statusPagamento: "PAGO",
       openEntryId: parcelamento.aberturaEntryId,
       sourceGuideId: guide.id,
@@ -786,7 +937,15 @@ export async function gerarPagamentoParcelaFromGuide({ portalClientId, guideId, 
       // Q28 Fase 3: pagamento lançado (RASCUNHO) → entra na fila de conferência (PAGA_A_CONFERIR).
       data: { lancamentoId: pagamentoId, parcelaEstado: PARCELA_ESTADOS.PAGA_A_CONFERIR },
     });
-    return { ok: true, pagamentoId };
+    return {
+      ok: true,
+      pagamentoId,
+      lancamentos: entries.length,
+      // ⚠ O DESFECHO DIZ QUAL DAS DUAS VIAS FOI USADA — a tela precisa repetir "com a composição
+      // que você declarou" em vez de "baixa lançada" e pronto. Ausente no caminho normal, para que
+      // nenhum chamador existente veja campo novo aparecer do nada.
+      ...(declarada ? { composicaoDeclarada: declarada } : {}),
+    };
   });
 }
 

@@ -522,8 +522,38 @@ export function createRealApi() {
     async listParcelasPendentesBaixa(companyId) {
       return request(`/firm/companies/${companyId}/parcelamentos/parcelas-pendentes-baixa`);
     },
-    async lancarBaixaParcela(companyId, guideId) {
-      return request(`/firm/companies/${companyId}/parcelamentos/parcelas/${guideId}/baixa`, { method: "POST" });
+    // ⚠ O SEGUNDO ARGUMENTO É OPCIONAL E É A SAÍDA DO `sem_composicao`.
+    //
+    // Guia de parcela vinda de UPLOAD chega SEM `TributoParcela` e sem principal/multa/juros no
+    // `extracted` — a fila recusava com `sem_composicao` e não havia caminho nenhum (a baixa por
+    // declaração, `/baixa-manual`, recusa toda prestação que TEM guia). Com `composicaoDeclarada`
+    // o contador informa a decomposição lendo o DAS, e ela sobe pela MESMA rota da baixa normal:
+    // mesma guia, mesma reserva atômica, mesma forma de lançamento.
+    //
+    // ⚠ `totalConferido` é OBRIGATÓRIO quando há composição declarada — o servidor refaz
+    // `principal + juros + multa` e recusa com 409 `CONFERENCIA_DIVERGENTE` se não bater. Ele NÃO
+    // deriva o acréscimo por subtração.
+    //
+    // ⚠ SEM O SEGUNDO ARGUMENTO, O BODY NÃO VAI — o caminho normal continua idêntico ao que era, e
+    // `dataPagamento` só é aceita pelo servidor junto da composição (com comprovante, a data dele
+    // manda sempre).
+    async lancarBaixaParcela(companyId, guideId, body = null) {
+      return request(`/firm/companies/${companyId}/parcelamentos/parcelas/${guideId}/baixa`, {
+        method: "POST",
+        ...(body?.composicaoDeclarada
+          ? {
+            body: JSON.stringify({
+              composicaoDeclarada: {
+                principal: body.composicaoDeclarada.principal,
+                juros: body.composicaoDeclarada.juros ?? 0,
+                multa: body.composicaoDeclarada.multa ?? 0,
+                totalConferido: body.composicaoDeclarada.totalConferido,
+              },
+              dataPagamento: body.dataPagamento ?? null,
+            }),
+          }
+          : {}),
+      });
     },
     // ⚠ A OUTRA FILA — prestação SEM guia, vencida e sem baixa. Ela responde outra pergunta: aqui
     // não há `paymentStatus` do SERPRO dizendo que foi pago, porque não há documento nenhum

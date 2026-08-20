@@ -4323,9 +4323,26 @@ export function createAccountingEntriesRouter({ log }) {
   // de dois jeitos.
 
   // Lança a baixa de UMA parcela (a partir da guia). Mês fechado bloqueia — aqui SIM há lançamento.
+  //
+  // ⚠ F2.6 — O BODY É OPCIONAL, E O QUE ELE CARREGA É A SAÍDA DO `sem_composicao`.
+  //
+  // body: { composicaoDeclarada?: { principal, juros, multa, totalConferido }, dataPagamento? }
+  //
+  // Guia de parcela vinda de UPLOAD chega sem `TributoParcela` e com um `extracted` que só tem
+  // tipo/valor/vencimento/competência — sem `principal`, `multa` ou `juros`. A fila recusava com
+  // `sem_composicao` e a baixa por declaração (`/baixa-manual`) recusa toda prestação COM guia:
+  // não havia caminho nenhum. Agora o contador declara a decomposição lendo o DAS que ele tem, e
+  // ela entra por ESTA rota — a mesma guia, a mesma reserva atômica, a mesma forma de lançamento.
+  // Não é uma terceira porta para "dar baixa numa parcela": é a mesma porta, com o dado que
+  // faltava.
+  //
+  // ⚠ `totalConferido` é OBRIGATÓRIO dentro de `composicaoDeclarada` — o servidor refaz
+  // `principal + juros + multa` e recusa com 409 `CONFERENCIA_DIVERGENTE` se não bater. Ele NÃO
+  // deriva o acréscimo por subtração, nem aqui nem em `/baixa-manual`.
   router.post("/parcelamentos/parcelas/:guideId/baixa", requireFirmCompanyAccess({ minRole: "ACCOUNTANT" }), async (req, res) => {
     const portalClientId = String(req.params.companyId);
     const guideId = String(req.params.guideId);
+    const { composicaoDeclarada = null, dataPagamento: dataDeclarada = null } = req.body || {};
     try {
       const { gerarPagamentoParcelaFromGuide } = await import(
         "../../application/accounting/parcelamento/ParcelamentoV2Service.js"
@@ -4345,11 +4362,23 @@ export function createAccountingEntriesRouter({ log }) {
         where: { id: guideId, portalClientId },
         select: { extracted: true },
       });
-      const dataPagamento = dataBrParaDate(guiaComComprovante?.extracted?.comprovante?.dataArrecadacao);
+      const dataDoComprovante = dataBrParaDate(guiaComComprovante?.extracted?.comprovante?.dataArrecadacao);
+
+      // ⚠ PROVA ANTES DE DECLARAÇÃO, TAMBÉM NA DATA. Havendo comprovante, a data dele manda — é ela
+      // que decide a competência do lançamento, e foi por ignorá-la que parcela paga em 20/03 e
+      // lançada em 05/04 virava saída de caixa de abril. A data declarada só é usada quando NÃO há
+      // comprovante, que é exatamente o caso da guia de UPLOAD marcada como paga à mão: sem ela a
+      // baixa cairia no dia do clique, e o contador não teria como dizer quando o dinheiro saiu.
+      //
+      // ⚠ E ela só é aceita JUNTO da composição declarada. Deixar `dataPagamento` livre no caminho
+      // normal permitiria mandar uma data que contradiz o comprovante que está no próprio registro.
+      const dataPagamento = dataDoComprovante
+        || (composicaoDeclarada && dataDeclarada ? new Date(dataDeclarada) : null);
 
       const out = await gerarPagamentoParcelaFromGuide({
         portalClientId, guideId, userId: req.auth?.user?.id,
-        ...(dataPagamento ? { dataPagamento } : {}),
+        ...(dataPagamento && !Number.isNaN(dataPagamento.getTime()) ? { dataPagamento } : {}),
+        ...(composicaoDeclarada ? { composicaoDeclarada } : {}),
       });
       // ⚠ `skipped` NÃO é sucesso silencioso. O serviço recusa com `ja_baixada` quando a parcela já
       // tem lançamento — e a rota devolvia 201 `ok:true` mesmo assim, então o contador clicava, não
@@ -4361,6 +4390,16 @@ export function createAccountingEntriesRouter({ log }) {
     } catch (err) {
       if (err?.code === "MES_FECHADO") {
         return res.status(409).json({ ok: false, error: "MES_FECHADO", message: err.message });
+      }
+      // ⚠ AS DUAS CONFERÊNCIAS DA COMPOSIÇÃO DECLARADA — os MESMOS códigos e os MESMOS status da
+      // rota `/baixa-manual`, de propósito: é a mesma exigência ("o total tem de fechar, e o
+      // servidor não deriva o acréscimo"), e dar-lhe outro nome aqui faria a tela precisar de dois
+      // vocabulários para a mesma recusa.
+      if (err?.code === "CONFERENCIA_DIVERGENTE") {
+        return res.status(409).json({ ok: false, error: err.code, message: err.message, detalhe: err.detalhe });
+      }
+      if (err?.code === "CONFERENCIA_OBRIGATORIA") {
+        return res.status(400).json({ ok: false, error: err.code, message: err.message, detalhe: err.detalhe });
       }
       log.error({ err: err?.message, guideId }, "Falha ao lançar baixa da parcela");
       return res.status(500).json({ ok: false, error: err?.code || "internal_error", message: err?.message });

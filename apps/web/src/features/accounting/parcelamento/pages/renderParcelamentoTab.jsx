@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ParcelamentosList, ConferenciaParcelasPanel } from "../components/ParcelamentoModals";
 import { ParcelamentoWizard } from "../components/ParcelamentoWizard";
 import { BaixaManualParcelaModal } from "../components/BaixaManualParcelaModal";
+import { DeclararComposicaoParcelaModal } from "../components/DeclararComposicaoParcelaModal";
 import { InformarValorEmLoteModal } from "../components/InformarValorEmLoteModal";
 import { ExclusaoParcelamentoModal, DesfazerRescisaoModal } from "../components/AtoParcelamentoModal";
 import {
@@ -117,12 +118,39 @@ const fmtMoney = formatarMoeda;
 const MOTIVOS_RECUSA = {
   ja_baixada: "esta parcela já tem lançamento de baixa.",
   provisao_inexistente: "o parcelamento não tem a provisão de abertura — lance a adesão antes.",
-  sem_composicao: "a parcela não tem composição por tributo, então não dá para separar principal, juros e multa.",
+  // ⚠ ESTE TEXTO MUDOU, E TINHA DE MUDAR. Ele descrevia o beco sem dizer a saída, porque saída não
+  // havia: a fila recusava, e a outra tela (a da prestação SEM guia) recusa toda prestação que TEM
+  // guia. Guia de UPLOAD chega assim — medido em produção, o `extracted` de um `ExibirDAS-*.pdf`
+  // traz só tipo/valor/vencimento/competência e `TributoParcela` vem ZERO —, então isto não é caso
+  // de borda: é o caminho normal de quem sobe o PDF do DAS à mão. A saída agora existe e está no
+  // botão ao lado, e o texto tem de dizê-la — um motivo sem saída é o contador parado.
+  sem_composicao: "a parcela não tem composição por tributo, então o sistema não sabe separar "
+    + "principal, juros e multa. Isso não impede mais a baixa: informe a composição você mesmo, "
+    + "lendo o DAS, no botão ao lado.",
+  // A declaração perdeu a corrida para o documento — e isso é o desenho, não uma falha.
+  composicao_ja_existe: "a composição desta parcela apareceu (a busca do comprovante no SERPRO roda "
+    + "sozinha). O documento vence a declaração: use “Dar baixa”, que os valores vêm de lá.",
+  principal_invalido: "o principal informado não é um valor válido — ele é o que amortiza o passivo, "
+    + "e não se inventa.",
+  acrescimo_invalido: "juros ou multa não foram entendidos. Deixe em branco quando não houve.",
+  acrescimo_negativo: "juros e multa não podem ser negativos.",
   comprovante_nao_e_parcela: "o documento arrecadado não é uma parcela deste parcelamento.",
   nao_e_parcela: "esta guia não pertence a um parcelamento.",
   guide_not_found: "guia não encontrada.",
   parcelamento_not_found: "parcelamento não encontrado.",
 };
+
+/**
+ * ⚠ A RECUSA QUE TEM SAÍDA **NESTA** TELA — e ela é uma só.
+ *
+ * `sem_composicao` se resolve aqui (a decomposição é do contador, lendo o DAS); todas as outras se
+ * resolvem em OUTRO lugar (lançar a adesão, estornar a baixa, conferir a guia). Só a primeira
+ * habilita o botão de declarar — oferecê-lo nas demais prometeria uma ação que não resolve nada.
+ * É a mesma fronteira que `corrigivelNaTela` desenha na fila de baixo.
+ */
+function composicaoDeclaravel(motivo) {
+  return motivo === "sem_composicao";
+}
 
 /**
  * ⚠ AUSÊNCIA NUNCA É RESPOSTA. Este painel fazia `if (!carregando && parcelas.length === 0) return
@@ -140,6 +168,13 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
   const [lancando, setLancando] = useState(null);
   const [desfechos, setDesfechos] = useState({}); // guideId → { tom, texto }
   const [foco, setFoco] = useState(null);          // { id, label } destacado pela barra do card
+  // ⚠ A LINHA CUJA COMPOSIÇÃO ESTÁ SENDO DECLARADA. Guardar a LINHA (e não só o id) é o que faz o
+  // modal poder repetir competência, valor da guia e data do comprovante sem uma segunda chamada.
+  const [declarando, setDeclarando] = useState(null);
+  // guideId → true quando o servidor recusou por `sem_composicao`. É este conjunto que faz a saída
+  // APARECER — a fila não sabe de antemão se a guia tem composição (a rota não devolve isso), e a
+  // pergunta é respondida pelo próprio clique em "Dar baixa".
+  const [semComposicao, setSemComposicao] = useState({});
   const secaoRef = useRef(null);
 
   const carregar = useCallback(async () => {
@@ -184,24 +219,88 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
     return `parcela ${p.numeroParcela ?? "?"} — competência ${p.competencia || "?"}, valor ${fmtMoney(p.valor)}, pagamento em ${quando}`;
   }
 
-  async function executarBaixa(p) {
+  // ⚠ `body` OPCIONAL — sem ele, é a baixa de sempre (a composição vem do documento). Com
+  // `composicaoDeclarada`, é a MESMA rota recebendo a decomposição que o contador leu no DAS. Uma
+  // função só, porque é um ato só: quem clica em qualquer um dos dois botões quer a mesma baixa.
+  async function executarBaixa(p, body = null) {
     setDesfechos((d) => ({ ...d, [p.guideId]: null }));
     try {
-      const out = await parcelaApi.lancarBaixaParcela(companyId, p.guideId);
+      const out = await parcelaApi.lancarBaixaParcela(companyId, p.guideId, body);
       // ⚠ RECUSA NÃO É SUCESSO, E NÃO SOME. Antes o motivo saía num `window.alert` que desaparece
       // ao clicar OK; agora fica NA LINHA, como o `Desfecho` do `ParcelasDoAcordo` já fazia.
       if (out?.skipped) {
+        // ⚠ A RECUSA VIRA A SAÍDA. `sem_composicao` deixa de ser um beco: ela LIGA o botão que
+        // resolve o problema na própria linha, e a mensagem passa a apontá-lo. Sem esta marca o
+        // botão não teria como aparecer — a fila não sabe de antemão quais guias têm composição.
+        if (out.motivo === "sem_composicao") setSemComposicao((s) => ({ ...s, [p.guideId]: true }));
+        // ⚠ E ela também DESLIGA: `composicao_ja_existe` significa que o documento chegou enquanto
+        // a tela estava aberta. Deixar a saída acesa depois disso ofereceria uma declaração que o
+        // servidor vai recusar de novo, para sempre.
+        if (out.motivo === "composicao_ja_existe") {
+          setSemComposicao((s) => ({ ...s, [p.guideId]: false }));
+          setDeclarando(null);
+        }
         setDesfechos((d) => ({
           ...d,
           [p.guideId]: { tom: "warn", texto: `Nada foi lançado: ${MOTIVOS_RECUSA[out.motivo] || out.motivo || "o servidor recusou."}` },
         }));
+        // ⚠ A RECUSA PRECISA SUBIR PARA QUEM CHAMOU COM DECLARAÇÃO — o modal mostra o motivo dentro
+        // dele e mantém o que foi digitado. Sem isto, ele fecharia anunciando sucesso sobre uma
+        // baixa que não aconteceu. No caminho normal (sem `body`) nada é lançado, como antes.
+        if (body) {
+          const err = new Error(MOTIVOS_RECUSA[out.motivo] || out.motivo || "O servidor recusou a baixa.");
+          err.motivo = out.motivo;
+          throw err;
+        }
         return;
       }
       if (out?.ok === false) throw new Error(out?.message || out?.error || "Falha ao lançar.");
-      setDesfechos((d) => ({ ...d, [p.guideId]: { tom: "ok", texto: "Baixa lançada." } }));
+      setSemComposicao((s) => ({ ...s, [p.guideId]: false }));
+      setDesfechos((d) => ({
+        ...d,
+        [p.guideId]: {
+          tom: "ok",
+          // ⚠ O DESFECHO DIZ QUAL DAS DUAS VIAS FOI USADA. "Baixa lançada" nos dois casos apagaria,
+          // na única tela onde o contador olha, a diferença que o razão preserva.
+          texto: body?.composicaoDeclarada
+            ? "Baixa lançada com a composição que você informou (o razão registra “composição declarada”)."
+            : "Baixa lançada.",
+        },
+      }));
     } catch (err) {
       setDesfechos((d) => ({ ...d, [p.guideId]: { tom: "danger", texto: err?.message || "Falha ao lançar a baixa da parcela." } }));
+      if (body) throw err;
     }
+  }
+
+  /**
+   * O que o modal da composição declarada chama ao confirmar.
+   *
+   * ⚠ ELE NÃO TEM ROTA PRÓPRIA — é `executarBaixa` com o body preenchido, a MESMA chamada do botão
+   * "Dar baixa" da linha. Duas portas para "dar baixa nesta guia" teriam duas guardas de
+   * idempotência, e nenhuma enxergaria a outra: é literalmente o motivo pelo qual o servidor recusa
+   * a prestação com guia na fila de baixo.
+   */
+  async function declararComposicao({ guideId, dataPagamento, composicaoDeclarada }) {
+    const p = parcelas.find((x) => x.guideId === guideId) || declarando;
+    if (!p) return;
+    setLancando(guideId);
+    try {
+      await executarBaixa(p, { dataPagamento, composicaoDeclarada });
+      setDeclarando(null);
+      // ⚠ O DESFECHO SOBE PARA A SEÇÃO, e não é enfeite: a baixa TIRA a linha da fila, e o aviso
+      // dela vive DENTRO da linha — recarregar apagaria a única confirmação de que algo aconteceu.
+      // "Cliquei e não aconteceu nada" é literalmente a queixa que esta aba já pagou uma vez.
+      setDesfechos((d) => ({
+        ...d,
+        __lote: {
+          tom: "ok",
+          texto: `Parcela ${p.numeroParcela ?? "?"} baixada com a composição que você informou `
+            + "(o razão registra “composição declarada”).",
+        },
+      }));
+      await carregar();
+    } finally { setLancando(null); }
   }
 
   async function baixarEmLote(parcelamentoId) {
@@ -322,6 +421,32 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
                     >
                       {emVoo ? "Lançando…" : "Dar baixa"}
                     </button>
+                    {/* ⚠ A SAÍDA DO `sem_composicao`, NA PRÓPRIA LINHA QUE RECUSOU.
+                        Ela só aparece depois da recusa, e é essa a ordem certa: a fila não sabe de
+                        antemão quais guias têm composição (a rota não devolve isso), e oferecer
+                        "informar a composição" em toda linha convidaria a declarar por cima de um
+                        documento que existe. Aqui o botão nasce da resposta do servidor. */}
+                    {semComposicao[p.guideId] && (
+                      <div style={{ marginTop: 6 }}>
+                        <button
+                          type="button"
+                          onClick={() => setDeclarando(p)}
+                          disabled={Boolean(lancando)}
+                          title={lancando
+                            ? "Aguarde: outra baixa está sendo lançada."
+                            : "Abre a tela para você informar principal, juros e multa lendo o DAS — e lança a baixa."}
+                          style={{
+                            minHeight: 40, padding: "4px 12px", borderRadius: 6,
+                            cursor: lancando ? "not-allowed" : "pointer",
+                            background: "transparent", border: "1px solid var(--accent-purple)",
+                            color: "var(--accent-purple)", fontSize: "0.76rem", fontWeight: 700,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Informar a composição
+                        </button>
+                      </div>
+                    )}
                     {desfecho && (
                       <div role="status" style={{
                         marginTop: 4, padding: "5px 8px", borderRadius: 6, textAlign: "left", lineHeight: 1.35,
@@ -428,15 +553,30 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
           declarada por você em vez de lida de um documento.
         </div>
       )}
+      {/* ⚠ O DESFECHO DE SEÇÃO GANHOU TOM. Ele era sempre âmbar porque só existia para o lote que
+          não achava nada; agora ele também carrega a confirmação da baixa por composição declarada
+          — a única que sobrevive ao recarregamento, porque a linha sai da fila. Pintar de âmbar um
+          desfecho de SUCESSO diria "falta fazer" sobre algo que acabou de ser feito. */}
       {desfechoLote && (
         <div role="status" style={{
           marginBottom: 8, padding: "6px 9px", borderRadius: 6, fontSize: "0.72rem", color: PANEL.muted,
-          background: "var(--state-warn-surface)", border: "1px solid var(--state-warn)",
+          background: desfechoLote.tom === "ok" ? "var(--state-ok-surface)" : "var(--state-warn-surface)",
+          border: `1px solid ${desfechoLote.tom === "ok" ? "var(--state-ok)" : "var(--state-warn)"}`,
         }}>
           {desfechoLote.texto}
         </div>
       )}
       {corpo()}
+      {/* ⚠ O CHAMADOR DO MODAL — ele vive DENTRO desta fila, ao lado da linha que recusou. É a fila
+          que sabe qual guia é, quanto ela vale e quando foi paga; um modal pendurado na aba inteira
+          teria de reconstruir tudo isso. */}
+      {declarando && (
+        <DeclararComposicaoParcelaModal
+          linha={declarando}
+          onConfirmar={declararComposicao}
+          onClose={() => setDeclarando(null)}
+        />
+      )}
     </section>
   );
 }

@@ -252,6 +252,93 @@ esse select — o teste verifica campo a campo que não o reescreve.
 (`parcelamentosRotasLiterais.test.js` cobre as três): engolida por um curinga, a baixa por
 declaração volta a ser inalcançável, com um 404 falando de parcelamento inexistente.
 
+## F2.6 — a parcela que TEM GUIA e não traz a composição (`composicaoDeclarada`)
+
+> *"não consigo dar baixa na parcela do parcelamento. Isso deve ser possível, senão a contabilidade
+> não anda."* — o dono, 20/08/2026.
+
+**O vão, medido em produção:** ALESSANDRO NIGRO, PARCSN nº 2, competência 2026-07, R$ 332,65, guia
+`PAID` vinda de **UPLOAD** (`ExibirDAS-18082026_134133_07_2026.pdf`). `TributoParcela` para aquela
+guia = **ZERO**, e o `extracted` só tem `{tipo, valor, uploadHash, vencimento, competencia,
+sourceFileName}` — nenhum `principal`, `multa`, `juros` ou `composicao`. **Não é isolado:** a de
+2026-08 da mesma empresa e a de 2026-08 da ERISANGELA estão iguais.
+
+⚠ **NÃO HAVIA CAMINHO NENHUM, e as duas telas estavam certas cada uma no seu terreno:**
+
+| | recusava porque |
+|---|---|
+| fila "Parcelas pagas aguardando lançamento" | `sem_composicao` — ela pressupõe que o documento traz a decomposição |
+| `BaixaManualParcelaModal` (F2.2, prestação SEM guia) | o servidor recusa toda prestação com guia (`parcela_tem_guia`) — as guardas de idempotência das duas vias são **diferentes** e nenhuma enxerga a outra |
+
+⚠ **A tela 2 NÃO servia com um ajuste**, e a razão não é de contexto: lá o principal é o
+**valorPrevisto do CONTRATO**, editá-lo **reescreve o acordo** (rota própria), e a âncora é a
+prestação. Aqui o pagamento é **PROVADO** (guia `PAID`), o principal é uma **leitura do DAS** que
+não toca o contrato, e a âncora é a guia. Passar a prestação com guia por lá exigiria derrubar a
+guarda anti-baixa-dupla.
+
+**A saída é a MESMA rota da baixa normal**, com o dado que faltava:
+`POST .../parcelamentos/parcelas/:guideId/baixa`, body opcional
+`{ composicaoDeclarada: { principal, juros, multa, totalConferido }, dataPagamento? }`.
+Não é uma terceira porta — é a mesma guia, a mesma reserva atômica, o mesmo `linhasPagamento`.
+
+- ⚠ **A ORDEM CONTINUA PROVA → DECLARAÇÃO.** Havendo comprovante classificável **ou**
+  `TributoParcela`, a declaração é RECUSADA (`composicao_ja_existe`, e a recusa vem **antes** da
+  conferência da conta) em vez de sobrescrever o documento. Mesma precedência de
+  `buildDTOsFromManual` e de `corrigirValorPrevistoParcela`.
+- ⚠ **NADA É DERIVADO POR SUBTRAÇÃO.** `totalConferido` é obrigatório e é conferido contra
+  `principal + juros + multa` — **os mesmos códigos e status** de `gerarPagamentoParcelaManual`
+  (400 `CONFERENCIA_OBRIGATORIA` · 409 `CONFERENCIA_DIVERGENTE`), de propósito: é a mesma exigência,
+  e outro nome faria a tela aprender dois vocabulários para a mesma recusa. Mandar só principal e
+  total **não** vira `juros = total − principal`: vira recusa.
+- ⚠ **A FORMA DO LANÇAMENTO NÃO MUDA.** A composição declarada entra na **mesma forma** da lida do
+  banco (um tributo sintético, `codigoTributo: null`) e vai para o MESMO `linhasPagamento` —
+  `D PARC · D JUROS · D MULTA / C CAIXA`, contas de `configPagamento`/`MapaContaTributo` pelo mesmo
+  `resolverConta`. Nenhuma conta nova, nada junto, nada separado.
+- ⚠ **O valor da GUIA não completa a composição.** Ele é mostrado na TELA como conferência (com a
+  diferença nomeada quando não bate) e **avisa sem bloquear** — a divergência pode ser digitação ou
+  pagamento que difere da guia, e quem decide é o contador com o DAS na mão. O servidor lança o que
+  foi declarado.
+
+### A distinção declaração × prova sobrevive em três sinais PERSISTIDOS — e nenhum é coluna nova
+
+1. **o HISTÓRICO** de cada lançamento sai com **"(composição declarada)"**. ⚠ **Não** é o
+   "(declarado)" da F2.2, e a diferença é de fato: lá o **pagamento** é declarado; aqui ele é
+   provado e só a decomposição é declaração. Dizer "(declarado)" seco afirmaria **menos** evidência
+   do que existe;
+2. **`AccountingEntry.origem = "MANUAL"`** — como já era neste caminho; a via SERPRO gravará `SERPRO`;
+3. ⚠ **`AccountingEntryLine.codigoTributo` NULO em todas as linhas — e o nulo é o sinal.** Baixa
+   cuja composição veio do banco carrega o nome/código do tributo em cada linha; a declarada não tem
+   código nenhum a carregar, porque não veio de documento. Em SQL, sem DDL:
+   `sourceGuideId IS NOT NULL AND tipoLinha IN ('PARC','JUROS','MULTA') AND codigoTributo IS NULL`.
+   É o mesmo nulo honesto de `gerarPagamentoParcelaManual`.
+
+⚠ **`parcelas.origemBaixa` NÃO é escrito, e a omissão é deliberada.** Neste caminho quem responde
+"foi quitada?" é a GUIA (a F2.1 evitou a segunda cópia de propósito), e `EstornoBaixaService`
+reverte a âncora `GUIA` **reabrindo a guia, sem tocar na coluna**. Gravá-la aqui deixaria a
+prestação marcada como baixada para sempre depois de um estorno — o defeito que a F2.5 nomeou do
+outro lado.
+
+⚠ **`MES_FECHADO` continua bloqueando**, e a tela diz o que fazer **antes** do clique (reabrir a
+competência), não só depois da recusa.
+
+⚠ **Nenhuma migration.** Nada de schema mudou — a fase inteira cabe no vocabulário existente.
+
+**Na tela** (`apps/web/.../parcelamento/`): a recusa `sem_composicao` deixou de ser um beco e passou
+a LIGAR o botão "Informar a composição" **na própria linha que recusou** — só depois da recusa, e
+só para ela: a fila não sabe de antemão quais guias têm composição, e oferecer a declaração em toda
+linha convidaria a declarar por cima de um documento que existe. `composicao_ja_existe` **desliga** a
+oferta. Modal próprio (`DeclararComposicaoParcelaModal`), reusando o CÁLCULO de
+`lib/baixaManualParcela.js` (`lerPrincipal`/`lerAcrescimo`/`lancamentosPrevistos`) — a gramática é
+reusada, a FRASE não (lá o principal é o contrato; aqui é o DAS).
+
+⚠ **O desfecho de sucesso sobe para a SEÇÃO**: a baixa tira a linha da fila, e o aviso dela morava
+DENTRO da linha — recarregar apagaria a única confirmação de que algo aconteceu.
+
+Regressão: `parcelamento/__tests__/baixaParcelaComposicaoDeclarada.test.js` (26) e, no front,
+`parcelamento/pages/__tests__/parcelamentoComposicaoDeclarada.test.jsx` (21, que exerce a LIGAÇÃO
+pela tela — componente sem chamador é o defeito favorito daqui). O mock (`mockApi`) ganhou a
+**parcela com guia e sem composição**, que não existia offline.
+
 ## F2.3 — parcelamento-first: o contrato antes do documento
 
 O parcelamento nascia como efeito colateral de subir uma guia. Ele é um **contrato de dívida** de

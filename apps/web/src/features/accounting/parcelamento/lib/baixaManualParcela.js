@@ -154,6 +154,163 @@ export function decomporBaixa({ valorPrevisto, textoPrincipal, textoJuros = "", 
 }
 
 /**
+ * F2.6 — A COMPOSIÇÃO DECLARADA DE UMA PARCELA **COM GUIA** e sem decomposição.
+ *
+ * ⚠ ELA NÃO É `decomporBaixa`, E A DIFERENÇA É O QUE ESTÁ SENDO DECLARADO. Lá o PAGAMENTO é a
+ * declaração (débito automático, sem documento nenhum) e o principal vem do CONTRATO
+ * (`valorPrevisto`) — editá-lo reescreve o acordo, por rota própria. Aqui o pagamento é PROVADO (a
+ * guia está paga e o documento existe); o que falta é só a decomposição, e o principal digitado é
+ * uma leitura do DAS — ele NÃO toca o contrato e não persiste em lugar nenhum além deste
+ * lançamento. Colapsar as duas funções faria um campo significar "o acordo diz X" numa tela e
+ * "li X no PDF" na outra, que é exatamente a confusão que o módulo evita em todo lugar.
+ *
+ * ⚠ A CONTA É FEITA PARA FRENTE, e o total do documento NÃO é usado para derivar nada. `valorGuia`
+ * entra só como CONFERÊNCIA visível: o servidor recusa (`CONFERENCIA_DIVERGENTE`) o total que não
+ * bate com `principal + juros + multa`, e nem ele nem esta função deduzem o acréscimo por
+ * subtração — foi assim que o encargo já foi reconhecido em dobro (ver `linhasProvisao`).
+ *
+ * ⚠ A DIVERGÊNCIA CONTRA O DOCUMENTO **AVISA, NÃO BLOQUEIA**. Ela é informação de duas naturezas
+ * possíveis — erro de digitação (o caso comum) ou pagamento que difere da guia — e escolher entre
+ * as duas é do contador, com o DAS na mão. Bloquear devolveria o contador ao vão que esta fase
+ * fecha; calar deixaria um dígito trocado virar lançamento sem ninguém ver.
+ */
+export function decomporComposicaoDeclarada({ valorGuia, textoPrincipal = "", textoJuros = "", textoMulta = "" } = {}) {
+  const documento = valorGuia != null && Number.isFinite(Number(valorGuia)) ? round2(valorGuia) : null;
+  const p = lerPrincipal(textoPrincipal);
+  const j = lerAcrescimo(textoJuros);
+  const m = lerAcrescimo(textoMulta);
+
+  const base = {
+    principal: p.valor, juros: j.valor, multa: m.valor,
+    valorDocumento: documento,
+    erroPrincipal: p.ok ? null : p.mensagem,
+    erroJuros: j.ok ? null : j.mensagem,
+    erroMulta: m.ok ? null : m.mensagem,
+    // Preenchidos abaixo quando a conta fecha; nunca "otimistas" com um campo ilegível.
+    divergeDoDocumento: false,
+    diferencaDocumento: null,
+  };
+
+  // ⚠ A GRAMÁTICA É REUSADA; A FRASE, NÃO. `lerPrincipal` recusa o vazio com o texto da OUTRA tela
+  // ("informe o valor CONTRATADO desta prestação"), que aqui mandaria o contador para o lugar
+  // errado: nesta tela o principal não é o contrato, é o que está impresso no DAS. Reusar a leitura
+  // (o separador decimal estrito, a recusa do zero) e trocar a saída é a divisão certa entre as
+  // duas — mesmo motivo pelo qual `MOTIVOS_CORRECAO_VALOR` não reusa `MOTIVOS_BAIXA_MANUAL`.
+  if (!p.ok) {
+    const mensagem = p.erro === "sem_valor_previsto"
+      ? "Informe o principal da parcela, lendo o DAS — o principal não se inventa, e é ele que "
+        + "amortiza o passivo do parcelamento."
+      : p.mensagem;
+    return {
+      ...base,
+      erroPrincipal: mensagem,
+      total: null,
+      ok: false,
+      erro: p.erro === "sem_valor_previsto" ? "principal_ausente" : p.erro,
+      mensagem,
+    };
+  }
+  if (!j.ok || !m.ok) {
+    return { ...base, total: null, ok: false, erro: "acrescimo_invalido", mensagem: j.mensagem || m.mensagem };
+  }
+
+  const total = round2(p.valor + j.valor + m.valor);
+  const diferenca = documento == null ? null : round2(total - documento);
+  return {
+    ...base,
+    total,
+    diferencaDocumento: diferenca,
+    divergeDoDocumento: diferenca != null && Math.abs(diferenca) > 0.01,
+    ok: true,
+    erro: null,
+    mensagem: null,
+  };
+}
+
+/**
+ * As recusas do caminho da COMPOSIÇÃO DECLARADA — cada uma com a saída que o contador precisa.
+ *
+ * ⚠ NÃO É `MOTIVOS_BAIXA_MANUAL`, e reusá-lo mandaria o contador para a fila errada. Os códigos se
+ * repetem (`provisao_inexistente`, `MES_FECHADO`, `CONFERENCIA_*`) mas o terreno é outro: aqui a
+ * prestação TEM guia e está NESTA fila, então nenhuma mensagem pode apontar para a fila de baixo.
+ */
+export const MOTIVOS_COMPOSICAO_DECLARADA = Object.freeze({
+  composicao_ja_existe: "A composição desta parcela APARECEU (a busca do comprovante no SERPRO roda "
+    + "sozinha e pode tê-la trazido agora). O documento vence a declaração: feche esta tela e use o "
+    + "botão “Dar baixa” da linha — os valores vêm de lá, não de você.",
+  principal_invalido: "Informe o principal da parcela — é ele que amortiza o passivo do "
+    + "parcelamento, e ele não se inventa. Leia-o no DAS.",
+  acrescimo_invalido: "Juros e multa não foram entendidos. Deixe em branco quando não houve.",
+  acrescimo_negativo: "Juros e multa não podem ser negativos.",
+  ja_baixada: "Esta parcela já tem lançamento de baixa. Se ele estiver errado, desfaça-o pelo "
+    + "estorno (no lançamento) — a parcela volta para esta fila.",
+  provisao_inexistente: "O parcelamento não tem a provisão de abertura, então não há passivo a "
+    + "amortizar. Lance a adesão antes.",
+  comprovante_nao_e_parcela: "O documento arrecadado não é uma parcela deste parcelamento.",
+  nao_e_parcela: "Esta guia não pertence a um parcelamento.",
+  guide_not_found: "Guia não encontrada — a lista pode estar desatualizada. Recarregue a fila.",
+  parcelamento_not_found: "Parcelamento não encontrado.",
+  MES_FECHADO: "A competência da data do pagamento está FECHADA. Reabra o mês (aba Fechamento "
+    + "contábil) ou informe a data do pagamento numa competência aberta — mudar o mês fechado sem "
+    + "reabri-lo não deixa rastro, e ele já foi reportado.",
+  CONFERENCIA_OBRIGATORIA: "O servidor exige o total conferido. Confira os valores e tente de novo.",
+  CONFERENCIA_DIVERGENTE: "O total que o servidor calcula não é o que foi conferido nesta tela. "
+    + "Confira principal, juros e multa no DAS — o servidor não deduz nenhum deles por subtração.",
+});
+
+export function explicarRecusaComposicao(codigo, mensagemDoServidor) {
+  const conhecido = MOTIVOS_COMPOSICAO_DECLARADA[codigo];
+  if (conhecido) return conhecido;
+  const texto = String(mensagemDoServidor || "").trim();
+  if (texto && /\s/.test(texto)) return texto;
+  return "O servidor recusou a baixa e não disse por quê.";
+}
+
+/**
+ * A confirmação da COMPOSIÇÃO DECLARADA — repete os dados e diz o que é prova e o que é declaração.
+ *
+ * ⚠ ELA SEPARA AS DUAS COISAS EM VOZ ALTA. O pagamento desta prestação é PROVADO (a guia está paga);
+ * o que o contador está afirmando é a decomposição. Dizer "declaração" sobre o conjunto exageraria
+ * para menos, e dizer "comprovante" exageraria para mais — e é essa distinção que quem auditar
+ * depois vai precisar encontrar no razão, onde ela sai como "(composição declarada)".
+ */
+export function textoDaConfirmacaoDaComposicao({ linha, decomposicao, dataPagamento }) {
+  const n = linha?.numeroParcela ?? "?";
+  const comp = linha?.competencia ? ` (competência ${linha.competencia})` : "";
+  const quando = dataPagamento
+    ? new Date(`${dataPagamento}T12:00:00`).toLocaleDateString("pt-BR")
+    : "hoje";
+  const partes = [
+    `Dar baixa na parcela ${n}${comp}, informando a composição que você leu no DAS.`,
+    "",
+    `Principal (você informou): ${formatarMoeda(decomposicao?.principal)}`,
+    `Juros (você informou): ${formatarMoeda(decomposicao?.juros)}`,
+    `Multa (você informou): ${formatarMoeda(decomposicao?.multa)}`,
+    `TOTAL: ${formatarMoeda(decomposicao?.total)}`,
+  ];
+  if (decomposicao?.valorDocumento != null) {
+    partes.push(`Valor da guia (documento): ${formatarMoeda(decomposicao.valorDocumento)}`);
+    if (decomposicao.divergeDoDocumento) {
+      partes.push(
+        `⚠ A SOMA NÃO BATE COM A GUIA — diferença de ${formatarMoeda(decomposicao.diferencaDocumento)}.`,
+        "   Nada é deduzido por subtração aqui: se um dos três estiver errado, o lançamento sai errado.",
+        "   Confira no DAS antes de confirmar.",
+      );
+    }
+  }
+  partes.push(
+    `Data do pagamento: ${quando}`,
+    "",
+    "Isto GRAVA lançamentos contábeis (principal, juros e multa separados) e amortiza o passivo do",
+    "parcelamento. O PAGAMENTO é comprovado pela guia; a COMPOSIÇÃO é sua declaração, e o histórico",
+    "no razão sai com \"(composição declarada)\" para que depois se distinga o que a Receita provou.",
+    "",
+    "Confirmar?",
+  );
+  return partes.join("\n");
+}
+
+/**
  * O que será GRAVADO no razão, linha a linha — o espelho de `linhasPagamento` no backend.
  *
  * ⚠ ESTA É A PARTE QUE FAZ O ATO DE CONSEQUÊNCIA SER CONFERÍVEL. A baixa grava até quatro
