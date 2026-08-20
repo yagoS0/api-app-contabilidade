@@ -1691,6 +1691,129 @@ th {
    tratamento — fundo escuro no papel, contêiner rolável cortando na primeira página, cabeçalho que
    não repete — e escrever a segunda cópia seria garantir que as duas divergissem na primeira
    correção. Quem quiser imprimir marca `data-print-area` e liga a classe `imprimindo` no body. */
+/* ─── PRIMITIVOS (`components/ui/`) ───────────────────────────────────────────────────────────
+   Estas classes existem para que a tela pare de escrever a caixa à mão. Cada uma substituiu um
+   punhado de objetos `style={{}}` que tinham divergido entre si — os números de antes estão nos
+   cabeçalhos dos componentes correspondentes. */
+
+/* Painel denso: painel DENTRO de painel (o pré-apurado dentro do relatório). Sem ele, o padding
+   de 16px se soma duas vezes e a caixa interna nasce com moldura de 32px. */
+.panel--densa {
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  box-shadow: none;
+  margin-bottom: var(--space-3);
+}
+
+.panel__acoes {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ─── Modal (`components/ui/Modal.jsx`) ─────────────────────────────────────────────────────── */
+.modal-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+
+.modal-caixa {
+  width: 100%;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  color: var(--text);
+}
+
+.modal-topo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-2);
+}
+
+.modal-titulo {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.modal-fechar {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.modal-fechar:hover { color: var(--text); }
+
+/* O corpo é quem rola — o topo e o rodapé (onde estão Cancelar/Confirmar) ficam sempre à vista.
+   Nos modais escritos à mão o `overflow-y` era da caixa inteira, e num formulário longo o botão
+   de confirmar ficava abaixo da dobra do próprio diálogo. */
+.modal-corpo {
+  padding: 0 var(--space-4);
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.modal-rodape {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+/* ─── Tabela ────────────────────────────────────────────────────────────────────────────────
+   `table`, `th` e `td` JÁ são estilizados acima, globalmente. Estas duas classes são o que
+   faltava para as telas pararem de mandar `const th = {padding:"6px 8px", …}` — havia 12 pares
+   desses, com quatro paddings e três tamanhos de fonte. */
+.tabela--densa th,
+.tabela--densa td {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.8125rem;
+}
+
+/* Número em coluna: alinhado à direita e com dígito de largura fixa, senão o olho não consegue
+   comparar dois valores empilhados. */
+.tabela__num,
+td.tabela__num,
+th.tabela__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ─── Detalhe recolhível ─────────────────────────────────────────────────────────────────────
+   Usado para nota de rodapé longa (as limitações do relatório de faturamento). O sumário é um
+   botão de verdade: sem `cursor`, ninguém descobre que aquilo abre. */
+.detalhe-recolhivel > summary {
+  cursor: pointer;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  list-style: revert;
+}
+
+.detalhe-recolhivel > summary:hover { color: var(--text); }
+
 @media print {
   @page {
     /* Paisagem: a listagem tem cinco colunas (até quatro chips de guia no Lucro Presumido) e a
@@ -1714,6 +1837,19 @@ th {
     top: 0 !important;
     width: 100% !important;
     background: #fff !important;
+  }
+
+  /* ⚠⚠ RECOLHIDO NA TELA, ABERTO NO PAPEL. As limitações do relatório de faturamento ("o que
+     este relatório NÃO afirma") passaram a morar num <details> para não ocupar meia tela em
+     letra miúda — mas o impresso CIRCULA SEM A TELA POR PERTO, e sem as ressalvas ele se lê como
+     apuração. `open` não é atributo que o CSS mude; o que se pode forçar é o conteúdo aparecer. */
+  body.imprimindo [data-print-area] details > *,
+  body.imprimindo [data-print-area] details[open] > * {
+    display: revert !important;
+  }
+
+  body.imprimindo [data-print-area] details > summary {
+    list-style: none !important;
   }
 
   /* Fundo escuro, sombras e bordas translúcidas não têm equivalente no papel. */

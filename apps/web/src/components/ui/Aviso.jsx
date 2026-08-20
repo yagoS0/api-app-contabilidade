@@ -31,8 +31,17 @@ export function tomDoAviso(tom) {
  * @param {"ok"|"atencao"|"erro"|"neutro"} tom  Obrigatório. Inválido/ausente vira `neutro`.
  * @param {string} titulo  Obrigatório. É o que distingue duas caixas de mesmo tom.
  * @param {boolean} [compacto]  Caixa de rodapé de campo (0.75rem) em vez de bloco de resultado.
+ * @param {string}  [icone]  ⚠ DECORATIVO (`aria-hidden`), nunca a única marca do estado — a cor e
+ *   o título já dizem o que é, e um leitor de tela não lê emoji como significado. Existe porque as
+ *   cópias locais desta caixa tinham ícone e, sem ele aqui, elas não teriam como ser apagadas.
+ * @param {import("react").ReactNode} [acao]  Um botão dentro do aviso ("Tentar de novo"). Fica
+ *   ABAIXO do corpo, nunca ao lado do título: a caixa diz o que houve antes de oferecer o que fazer.
+ *
+ * ⚠ `role` NÃO é prop própria — vai pelo spread, como qualquer atributo. Aviso que aparece por
+ * causa de uma ação passageira quer `role="status"`; erro que bloqueia quer `role="alert"`. Quem
+ * sabe qual dos dois é quem chama.
  */
-export function Aviso({ tom, titulo, compacto = false, children, style, ...props }) {
+export function Aviso({ tom, titulo, compacto = false, icone = null, acao = null, children, style, ...props }) {
   const { cor, fundo } = TONS[tomDoAviso(tom)];
   return (
     <div
@@ -56,9 +65,11 @@ export function Aviso({ tom, titulo, compacto = false, children, style, ...props
           marginBottom: "var(--space-1)",
         }}
       >
+        {icone ? <span aria-hidden="true">{icone} </span> : null}
         {titulo}
       </div>
       {children}
+      {acao ? <div style={{ marginTop: "var(--space-2)" }}>{acao}</div> : null}
     </div>
   );
 }
