@@ -1,16 +1,14 @@
-# Usado quando o serviço Railway tem Root Directory = apps/portal-cliente-web.
-#
-# ⚠ ESTE ARQUIVO EXISTE POR CAUSA DE UMA FALHA DE BUILD REAL (18/08/2026). Sem ele, o serviço caía
-# no `railway.toml` da RAIZ do repositório, que é o da API (`dockerfilePath = "./Dockerfile"`, o
-# Dockerfile do Express). O build rodava o Dockerfile errado com o contexto desta pasta e morria em
-#   COPY apps/api ./apps/api   ->   "/apps/api": not found
-# porque `apps/api` não existe aqui dentro.
-#
-# ⚠ Os caminhos são relativos ao ROOT DO SERVIÇO, não ao do repositório — é por isso que
-# `dockerfilePath` é "Dockerfile" e não "./apps/portal-cliente-web/Dockerfile". Espelha
-# `apps/web/railway.toml`, que já serve o `contador-front`; divergir aqui faria dois serviços
-# irmãos falharem por motivos diferentes.
+# ⚠ Root Directory deste servico = RAIZ do repositorio (nao a pasta do app).
+# O motivo esta no cabecalho do Dockerfile: o contexto precisa alcancar `packages/shared`.
+# ⚠ E o `dockerfilePath` e relativo a RAIZ -- com a pasta do app ele nao seria encontrado.
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-watchPatterns = ["**/*"]
+dockerfilePath = "apps/portal-cliente-web/Dockerfile"
+# ⚠ `packages/**` entra aqui: sem ele, atualizar a lista de municipios nao dispara rebuild deste
+# front, e o navegador continua servindo a tabela antiga -- divergencia silenciosa.
+watchPatterns = [
+  "apps/portal-cliente-web/**",
+  "packages/**",
+  "package.json",
+  "package-lock.json"
+]
