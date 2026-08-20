@@ -41,14 +41,43 @@ def detect_tipo(text_upper: str) -> str:
     if "FGTS" in text_upper or "GUIA DO FGTS" in text_upper or "GRF" in text_upper or "GUIA DE RECOLHIMENTO DO FGTS" in text_upper:
         return "FGTS"
 
+    # ─────────────────────────────────────────────────────────────────────────────────────────
+    # DARF × DAS — a MESMA gráfica (SENDA) imprime os dois, e o desempate é o CABEÇALHO.
+    # ─────────────────────────────────────────────────────────────────────────────────────────
+    #
+    # ⚠ DEFEITO MEDIDO (20/08/2026): o gatilho "COMPOSIÇÃO DO DOCUMENTO DE ARRECADAÇÃO" era usado
+    # aqui como sinal de DARF, mas ele é o título da tabela que o SENDA imprime nos DOIS documentos.
+    # Resultado: TODO DAS com tabela de composição (PGDAS-D, PGMEI e o DAS de PARCSN) era tipado
+    # **DARF**. O tipo do Guide é consumido pelo `deleteMany` de competência+tipo do upload, pelo
+    # nome do arquivo enviado ao cliente e pela conferência de guias — um DAS gravado como DARF
+    # erra os três.
+    #
+    # A ordem correta é: quem se DECLARA "do Simples Nacional" é DAS; senão, quem se declara
+    # "de Receitas Federais" (ou traz a tabela de composição) é DARF. A frase federal continua
+    # vencendo o texto "SIMPLES NACIONAL" que aparece DENTRO de um DARF (o MAED da DASN-SIMEI é
+    # um DARF que fala do Simples).
+    tem_marca_federal = (
+        "DOCUMENTO DE ARRECADAÇÃO DE RECEITAS FEDERAIS" in text_upper
+        or "DOCUMENTO DE ARRECADACAO DE RECEITAS FEDERAIS" in text_upper
+    )
+    tem_marca_simples = (
+        "DOCUMENTO DE ARRECADAÇÃO DO SIMPLES NACIONAL" in text_upper
+        or "DOCUMENTO DE ARRECADACAO DO SIMPLES NACIONAL" in text_upper
+        or "SIMPLES NACIONAL" in text_upper
+        or "PGDAS" in text_upper
+        or "PGMEI" in text_upper
+        or "PARCSN" in text_upper
+    )
+    if tem_marca_simples and not tem_marca_federal:
+        return "SIMPLES"
+
     # DARF — Documento de Arrecadação de Receitas Federais (SENDA).
     # IMPORTANTE: vir antes de SIMPLES porque DARF contém "DAS" no nome do documento,
     # e antes de PIS/COFINS porque DARF misto contém ambos.
     # A decisão final (DARF vs IRPJ vs CSLL vs PIS vs COFINS) acontece em darf.refine_darf
     # via códigos da tabela de composição.
     if (
-        "DOCUMENTO DE ARRECADAÇÃO DE RECEITAS FEDERAIS" in text_upper
-        or "DOCUMENTO DE ARRECADACAO DE RECEITAS FEDERAIS" in text_upper
+        tem_marca_federal
         or "COMPOSIÇÃO DO DOCUMENTO DE ARRECADAÇÃO" in text_upper
         or "COMPOSICAO DO DOCUMENTO DE ARRECADACAO" in text_upper
     ):

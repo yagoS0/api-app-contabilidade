@@ -129,7 +129,8 @@ const MOTIVOS_RECUSA = {
     + "lendo o DAS, no botão ao lado.",
   // A declaração perdeu a corrida para o documento — e isso é o desenho, não uma falha.
   composicao_ja_existe: "a composição desta parcela apareceu (a busca do comprovante no SERPRO roda "
-    + "sozinha). O documento vence a declaração: use “Dar baixa”, que os valores vêm de lá.",
+    + "sozinha, e o PDF do DAS também é lido). O documento vence a declaração: use “Dar baixa”, que "
+    + "os valores vêm de lá.",
   principal_invalido: "o principal informado não é um valor válido — ele é o que amortiza o passivo, "
     + "e não se inventa.",
   acrescimo_invalido: "juros ou multa não foram entendidos. Deixe em branco quando não houve.",
@@ -240,9 +241,23 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
           setSemComposicao((s) => ({ ...s, [p.guideId]: false }));
           setDeclarando(null);
         }
+        // ⚠ "NÃO HÁ COMPOSIÇÃO" E "A COMPOSIÇÃO LIDA NÃO FECHA" NÃO SÃO A MESMA COISA, e mandar as
+        // duas com a mesma frase faz o contador digitar o que o documento já traz. Quando o
+        // servidor devolve `motivoDocumento`, é porque o DAS TEM a decomposição e a leitura dela
+        // não bateu com o total da guia — o problema é do parser, não do contador, e ele precisa
+        // aparecer para alguém poder avisar. A saída (declarar) continua acesa: não deixar o
+        // contador parado vale mais do que esconder o defeito.
+        const motivoDoc = out?.resultado?.motivoDocumento;
+        const detalheDoc = motivoDoc === "composicao_nao_confere"
+          ? " ⚠ Atenção: este DAS TEM a decomposição, mas a leitura dela não fechou com o total da "
+            + "guia — avise o suporte. Você pode informar os valores lendo o DAS enquanto isso."
+          : "";
         setDesfechos((d) => ({
           ...d,
-          [p.guideId]: { tom: "warn", texto: `Nada foi lançado: ${MOTIVOS_RECUSA[out.motivo] || out.motivo || "o servidor recusou."}` },
+          [p.guideId]: {
+            tom: "warn",
+            texto: `Nada foi lançado: ${MOTIVOS_RECUSA[out.motivo] || out.motivo || "o servidor recusou."}${detalheDoc}`,
+          },
         }));
         // ⚠ A RECUSA PRECISA SUBIR PARA QUEM CHAMOU COM DECLARAÇÃO — o modal mostra o motivo dentro
         // dele e mantém o que foi digitado. Sem isto, ele fecharia anunciando sucesso sobre uma

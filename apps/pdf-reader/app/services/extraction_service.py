@@ -41,7 +41,9 @@ def _build_fields(
     (caso o DARF revele ser de um tributo específico — IRPJ/CSLL/PIS/COFINS)."""
     refined = dict(base)
     if document_type == "SIMPLES":
-        refined = das.refine_simples(refined, text_upper)
+        # DAS precisa do texto original (não só uppercase) pelo mesmo motivo do DARF: a tabela
+        # "Composição do Documento de Arrecadação" é a MESMA nos dois documentos.
+        refined = das.refine_simples(refined, text, text_upper)
     elif document_type == "INSS":
         refined = inss.refine_inss(refined, text_upper)
     elif document_type == "FGTS":
@@ -99,7 +101,16 @@ def extract_from_pdf_bytes(content: bytes, filename: str | None) -> dict[str, An
         print(f"\n=== RAW_PDF_TEXT_START | {name} ===", flush=True)
         print(text, flush=True)
         print(f"=== RAW_PDF_TEXT_END | {name} ===\n", flush=True)
+    return extract_from_text(text)
 
+
+def extract_from_text(text: str) -> dict[str, Any]:
+    """Detecção + extração a partir do TEXTO já extraído do PDF.
+
+    Separada de `extract_from_pdf_bytes` para que o roteamento e a composição possam ser exercidos
+    sem um PDF — o projeto proíbe versionar PDF com dado real de cliente, e a alternativa era não
+    ter checagem nenhuma sobre a parte mais delicada deste serviço. Chamador: `test_guias.py`.
+    """
     if should_fail_short_text(text):
         return {
             "success": False,

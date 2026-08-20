@@ -727,6 +727,63 @@ function lerComposicaoDeclarada(raw) {
 }
 
 /**
+ * A composição que o PRÓPRIO DOCUMENTO traz — `guide.extracted.composicao`, lida do PDF do DAS.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * ⚠ ISTO É PROVA. `lerComposicaoDeclarada`, logo acima, é DECLARAÇÃO. Leia as duas juntas.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ *
+ * O DAS de PARCSN **traz** a decomposição por tributo — conferido nos PDFs reais em 20/08/2026
+ * (ALESSANDRO NIGRO, parcela 7/19, R$ 332,65: seis tributos com principal, multa e juros, somando
+ * exatamente o total do documento). O que faltava nunca foi o dado: era o `pdf-reader` só colher a
+ * tabela "Composição do Documento de Arrecadação" quando tipava o documento como DARF, e a via de
+ * upload por empresa engolir a falha do parser em silêncio. Corrigidos os dois, `extracted.composicao`
+ * passa a existir para o DAS — e este é o caminho que a transforma em lançamento.
+ *
+ * ⚠ A DISTINÇÃO PROVA × DECLARAÇÃO SOBREVIVE PELO **SINAL INVERTIDO** DA F2.6, e de propósito:
+ *
+ *   · `codigoTributo` vem **PREENCHIDO** (1001, 1004, 0151…) — é o código de receita que o
+ *     documento imprime. A via declarada grava NULO porque não há documento de onde lê-lo. O SQL
+ *     que a F2.6 definiu continua valendo com o sentido oposto: linha de baixa com
+ *     `codigoTributo IS NULL` é declaração; COM código é documento;
+ *   · o histórico **NÃO** leva "(composição declarada)" — ninguém declarou nada aqui;
+ *   · e a ORDEM continua PROVA → DECLARAÇÃO: com composição no documento, `temDocumento` fica
+ *     verdadeiro e a declaração é RECUSADA (`composicao_ja_existe`), exatamente como já acontecia
+ *     com o comprovante e com `TributoParcela`.
+ *
+ * ⚠ A CONFERÊNCIA CONTRA O TOTAL DA GUIA NÃO É ZELO — É A MESMA EXIGÊNCIA DA F2.6 APLICADA AO
+ * PARSER. Lá o contador precisa repetir o total do que digitou; aqui o SERVIDOR repete a soma do
+ * que o parser leu e confronta com o `valor` da guia. Composição parcial é um defeito silencioso
+ * conhecido deste parser (o DARF de 2 páginas perdia os tributos da página 2 e ninguém via, porque
+ * o `valor_total` vem de outro campo do PDF e continuava certo). Uma leitura parcial que passasse
+ * daqui amortizaria o passivo a MENOS, para sempre, sem erro nenhum. Não confere ⇒ não é prova, e o
+ * caminho da declaração continua aberto — que é precisamente para isso que ele existe.
+ *
+ * ⚠ E NADA AQUI DERIVA POR SUBTRAÇÃO. Principal, multa e juros são os que o documento imprime;
+ * quando o DAS traz só principal e total, multa e juros saem ZERO porque o documento os declarou
+ * ausentes — não porque alguém os calculou.
+ *
+ * @returns {null | {recusa: string} | {tributos: Array, valorTotal: number}}
+ */
+function lerComposicaoDoDocumento(guide) {
+  const bruta = Array.isArray(guide?.extracted?.composicao) ? guide.extracted.composicao : [];
+  // Item sem código de receita não é prova documental — é o formato da DECLARAÇÃO. Fora.
+  const comCodigo = bruta.filter((c) => String(c?.codigoTributo || c?.codigo || "").trim());
+  if (!comCodigo.length) return null;
+
+  // Reusa o contrato: `normalizeParcelaDTO` já traduz `codigo`/`denominacao`, arredonda e AGREGA
+  // por código (o mesmo código aparece em competências diferentes num DAS de parcelamento).
+  const { tributos, valorTotal } = normalizeParcelaDTO({ tributos: comCodigo });
+  if (!tributos.length || round2(valorTotal) <= 0) return null;
+
+  const valorGuia = guide?.valor == null ? null : round2(Number(guide.valor));
+  if (valorGuia != null && Math.abs(round2(valorTotal) - valorGuia) > 0.01) {
+    return { recusa: "composicao_nao_confere" };
+  }
+  return { tributos, valorTotal: round2(valorTotal) };
+}
+
+/**
  * Q23 — Gatilho do "pago": gera o lançamento de PAGAMENTO (BAIXA) de uma guia de parcela já
  * registrada (parcelamentoId + TributoParcela). Juros LIDO da composição. Data padrão = hoje (dia
  * do clique), editável depois em Lançamentos. Idempotente. NÃO marca paymentStatus (isso é do
@@ -798,7 +855,13 @@ export async function gerarPagamentoParcelaFromGuide({
 }) {
   const guide = await prisma.guide.findFirst({
     where: { id: String(guideId), portalClientId },
-    select: { id: true, parcelamentoId: true, numeroParcela: true, lancamentoId: true, competencia: true, vencimento: true },
+    // `valor` e `extracted` entram para a composição LIDA DO DOCUMENTO (`lerComposicaoDoDocumento`):
+    // o primeiro é o total contra o qual a soma dos tributos é conferida; o segundo carrega a
+    // composição que o `pdf-reader` extraiu do DAS.
+    select: {
+      id: true, parcelamentoId: true, numeroParcela: true, lancamentoId: true,
+      competencia: true, vencimento: true, valor: true, extracted: true,
+    },
   });
   if (!guide) return { skipped: true, reason: "guide_not_found" };
   if (!guide.parcelamentoId) return { skipped: true, reason: "nao_e_parcela" }; // guia normal — nada a fazer
@@ -832,12 +895,26 @@ export async function gerarPagamentoParcelaFromGuide({
     ? []
     : await prisma.tributoParcela.findMany({ where: { guideId: guide.id } });
 
+  // ⚠ TERCEIRA FONTE **DOCUMENTAL**, e ela vem DEPOIS das duas anteriores por precedência, não por
+  // acaso: comprovante SERPRO > `TributoParcela` (já persistida na ingestão) > composição lida do
+  // PDF da própria guia. As três são PROVA; a declaração do contador continua sendo a última.
+  //
+  // ⚠ POR QUE ELA PRECISA EXISTIR MESMO COM A INGESTÃO GRAVANDO `TributoParcela`: a gravação só
+  // acontece quando a guia PASSA por `ingestParcelamentoFromGuide`, e as guias que entraram antes
+  // de o `pdf-reader` colher a composição do DAS ficaram com `TributoParcela = 0` para sempre —
+  // reingerir cada uma à mão é o trabalho que este caminho evita. O PDF continua no banco; a
+  // composição só não tinha sido lida.
+  const documento = !usaComprovante && tributosParcela.length === 0
+    ? lerComposicaoDoDocumento(guide)
+    : null;
+  const composicaoDoPdf = documento && !documento.recusa ? documento : null;
+
   // ⚠ F2.6 — A DECLARAÇÃO SÓ ENTRA NO VÃO, NUNCA POR CIMA DO DOCUMENTO. Se o comprovante classifica
   // ou o banco tem a composição, o que o contador digitou é RECUSADO, não aplicado: a ordem
   // prova → declaração é a mesma de `buildDTOsFromManual`, e aceitar a declaração aqui criaria a
   // segunda fonte para um número que já tem uma. A recusa é NOMEADA para a tela poder dizer que a
   // composição apareceu (a captura do SERPRO roda sozinha) e que basta usar o botão normal.
-  const temDocumento = usaComprovante || tributosParcela.length > 0;
+  const temDocumento = usaComprovante || tributosParcela.length > 0 || Boolean(composicaoDoPdf);
   if (composicaoDeclarada && temDocumento) return { skipped: true, reason: "composicao_ja_existe" };
 
   // ⚠ A CONFERÊNCIA SÓ RODA NO VÃO — e por isso a leitura vem DEPOIS da guarda acima: lançar
@@ -845,7 +922,13 @@ export async function gerarPagamentoParcelaFromGuide({
   // problema é a conta dele, quando o problema é que o documento chegou.
   const declarada = temDocumento ? null : lerComposicaoDeclarada(composicaoDeclarada);
   if (declarada?.recusa) return { skipped: true, reason: declarada.recusa };
-  if (!temDocumento && !declarada) return { skipped: true, reason: "sem_composicao" };
+  if (!temDocumento && !declarada) {
+    // ⚠ A RECUSA DA LEITURA DO PDF VIAJA NOMEADA. "Não há composição" e "a composição lida não
+    // fecha com o total da guia" são coisas diferentes, e o contador precisa saber qual é: a
+    // segunda quer dizer que o DAS tem a decomposição e ela foi lida ERRADA (parser), não que ele
+    // precisa digitar. Sem o motivo, os dois casos chegam à tela como a mesma frase.
+    return { skipped: true, reason: "sem_composicao", ...(documento?.recusa ? { motivoDocumento: documento.recusa } : {}) };
+  }
 
   const data = dataPagamento ? new Date(dataPagamento) : new Date();
   const competencia = competenciaFromDate(data);
@@ -862,6 +945,13 @@ export async function gerarPagamentoParcelaFromGuide({
   // não há código de receita a carregar porque não houve documento de onde lê-lo, e `resolverConta`
   // já trata `codigoTributo` nulo caindo no mapeamento geral do papel (o mesmo caminho de
   // `gerarPagamentoParcelaManual`).
+  //
+  // ⚠ E A COMPOSIÇÃO LIDA DO PDF ENTRA NA MESMA FORMA TAMBÉM — com o `codigoTributo` PREENCHIDO,
+  // que é o sinal invertido da declaração. Daqui para baixo `linhasPagamento` continua sem saber de
+  // onde os números vieram: `D PARC · D JUROS · D MULTA / C CAIXA`, contas do mesmo
+  // `configPagamento`/`MapaContaTributo`. É a MESMA forma que a via SERPRO já produz — lá
+  // `serproParcelamentoMap` também devolve uma linha por tributo; o que muda é que o PDF traz o
+  // código de receita REAL (1004) onde o SERPRO traz o nome ("DAS").
   const parcela = declarada
     ? {
       tributos: [{
@@ -870,6 +960,8 @@ export async function gerarPagamentoParcelaFromGuide({
       }],
       valorTotal: declarada.total,
     }
+    : composicaoDoPdf
+    ? { tributos: composicaoDoPdf.tributos, valorTotal: composicaoDoPdf.valorTotal }
     : {
       tributos: tributosParcela.map((t) => ({
         codigoTributo: t.codigoTributo, nomeTributo: t.nomeTributo,

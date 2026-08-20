@@ -125,9 +125,51 @@ export function normalizeTributoDTO(raw = {}) {
   };
 }
 
+/**
+ * Agrega TributoDTOs pelo CÓDIGO, somando os quatro valores.
+ *
+ * ⚠ NÃO É DEDUPLICAÇÃO — É SOMA, e a diferença vale dinheiro. `TributoParcela` tem
+ * `@@unique([guideId, codigoTributo])`, e o `upsert` de `ingestParcelamentoFromGuide` roda em laço:
+ * duas linhas do MESMO código faziam a segunda SOBRESCREVER a primeira, em silêncio, deixando a
+ * composição persistida menor que a parcela — sem erro, sem log, e com `Σ TributoParcela` deixando
+ * de bater com o valor da guia.
+ *
+ * ⚠ E o código repetido é o caso NORMAL, não a borda: um DAS de parcelamento consolida competências
+ * diferentes na mesma parcela. Medido na parcela 9/41 do PARCSN nº 2 da ERISANGELA (R$ 327,50): a
+ * composição traz 10 linhas e apenas 6 códigos distintos — 1001, 1002, 1004 e 1010 aparecem duas
+ * vezes, uma para 12/2024 e outra para 05/2025.
+ *
+ * A ORDEM da primeira aparição é preservada, e o `nomeTributo` é o da primeira linha que o trouxe:
+ * o mesmo código tem a mesma denominação no documento.
+ */
+function agregarTributosPorCodigo(tributos) {
+  const porCodigo = new Map();
+  const semCodigo = [];
+  for (const t of tributos) {
+    if (!t.codigoTributo) {
+      // Sem código não há chave para agregar (nem para o unique do banco): passa direto.
+      semCodigo.push(t);
+      continue;
+    }
+    const atual = porCodigo.get(t.codigoTributo);
+    if (!atual) {
+      porCodigo.set(t.codigoTributo, { ...t });
+      continue;
+    }
+    atual.nomeTributo = atual.nomeTributo || t.nomeTributo;
+    atual.principal = round2(atual.principal + t.principal);
+    atual.multa = round2(atual.multa + t.multa);
+    atual.juros = round2(atual.juros + t.juros);
+    atual.total = round2(atual.total + t.total);
+  }
+  return [...porCodigo.values(), ...semCodigo];
+}
+
 /** Normaliza um ParcelaDTO. `valorTotal` deriva da soma dos tributos quando ausente. */
 export function normalizeParcelaDTO(raw = {}) {
-  const tributos = Array.isArray(raw.tributos) ? raw.tributos.map(normalizeTributoDTO) : [];
+  const tributos = agregarTributosPorCodigo(
+    Array.isArray(raw.tributos) ? raw.tributos.map(normalizeTributoDTO) : [],
+  );
   const somaTrib = round2(tributos.reduce((s, t) => s + t.total, 0));
   return {
     numeroParcela: raw.numeroParcela != null ? Number(raw.numeroParcela) : null,

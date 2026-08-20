@@ -28,7 +28,7 @@ function buildErrorEntry({ code, reason, message }) {
   };
 }
 
-function buildExtractedPayload({ parsed, hash, fileName }) {
+function buildExtractedPayload({ parsed, hash, fileName, parserError = null }) {
   const base = parsed && typeof parsed === "object" ? parsed : {};
   // Promove composicao e quotas (vindos de parsed.fields para DARFs) ao topo
   // para que a Circular consuma direto via guide.extracted.composicao / .quotas
@@ -42,6 +42,10 @@ function buildExtractedPayload({ parsed, hash, fileName }) {
     ...(quotas ? { quotas } : {}),
     uploadHash: hash,
     sourceFileName: fileName || null,
+    // ⚠ SÓ APARECE QUANDO O PARSER FALHOU — ausência continua significando "extraiu normalmente",
+    // e nenhum `extracted` já gravado ganha campo novo. É o rastro que faltava para distinguir
+    // "este documento não tem composição" de "o parser não rodou nesta guia".
+    ...(parserError ? { parserError } : {}),
   };
 }
 
@@ -407,6 +411,22 @@ export async function uploadGuideForPortalClient({ portalClientId, fileBuffer, f
 
   const runtime = await getGuideRuntimeSettings();
   let parsedData = {};
+  // ⚠ ESTE `catch` ERA MUDO, E FOI ELE QUE FEZ A COMPOSIÇÃO DO DAS SUMIR (medido em 20/08/2026).
+  //
+  // Diferente do upload em lote — que RECUSA quando o `pdf-reader` não está configurado —, aqui a
+  // falha do parser é tolerada de propósito: o contador informa `metadata` (tipo/competência/valor)
+  // e a guia é criada mesmo assim. O problema nunca foi tolerar; foi tolerar EM SILÊNCIO.
+  //
+  // Com `parsedData = {}`, o `extracted` da guia nasce com exatamente
+  // `{tipo, competencia, valor, vencimento, uploadHash, sourceFileName}` — a assinatura literal da
+  // guia da parcela 7/19 do PARCSN da ALESSANDRO NIGRO, sem `cnpj`, sem `fields` e, sobretudo, sem
+  // `composicao`. Dali para a frente `TributoParcela` nasce vazia e a baixa da parcela só existe
+  // pela declaração manual do contador — tudo isso a partir de uma exceção que ninguém registrou.
+  //
+  // O motivo da falha vai para o LOG e para o próprio `extracted` (`parserError`): sem ele, a única
+  // forma de descobrir que o parser não rodou é comparar as chaves do JSON de uma guia com as de
+  // outra.
+  let parserError = null;
   if (runtime.pdfReaderUrl) {
     const parserClient = GuideParserClient.create({ pdfReaderUrl: runtime.pdfReaderUrl });
     try {
@@ -415,9 +435,21 @@ export async function uploadGuideForPortalClient({ portalClientId, fileBuffer, f
         filename: fileName || "guia.pdf",
         requestId: randomUUID(),
       });
-    } catch {
-      // parsing failed — metadata required
+    } catch (parseErr) {
+      parserError = { code: parseErr?.code || "GUIDE_PROCESSING_ERROR", message: String(parseErr?.message || "") };
+      // `log` do pino não alcança este módulo (ele é service, não rota); mesmo fallback de
+      // `SerproPgdasDeclaracaoService` e de `GuideService`.
+      console.warn(
+        "[GuideUpload] pdf-reader falhou no upload por empresa — a guia segue com os metadados informados, SEM composição",
+        { code: parserError.code, message: parserError.message, fileName, portalClientId: portalClient.id },
+      );
     }
+  } else {
+    parserError = { code: "PDF_READER_NOT_CONFIGURED", message: "PDF_READER_URL ausente" };
+    console.warn(
+      "[GuideUpload] pdf-reader não configurado — upload por empresa segue sem extração",
+      { fileName, portalClientId: portalClient.id },
+    );
   }
 
   const merged = {
@@ -470,7 +502,9 @@ export async function uploadGuideForPortalClient({ portalClientId, fileBuffer, f
     hash,
     status: "PROCESSED",
     errors: [],
-    extracted: buildExtractedPayload({ parsed: { ...parsedData, ...merged }, hash, fileName: fileName || "guia.pdf" }),
+    extracted: buildExtractedPayload({
+      parsed: { ...parsedData, ...merged }, hash, fileName: fileName || "guia.pdf", parserError,
+    }),
   });
 
   return { needsMetadata: false, guide, guideId: guide.id };
