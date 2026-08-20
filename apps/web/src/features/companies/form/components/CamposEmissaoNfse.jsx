@@ -31,6 +31,14 @@ import {
   PORQUE_MUNICIPAL_DIGITADO,
   PORQUE_CARGA_DIGITADA,
   PORQUE_OS_TRES,
+  TIPOS_REDUCAO_BM,
+  MOTIVO_BENEFICIO_MUNICIPAL,
+  PORQUE_BENEFICIO_DIGITADO,
+  BENEFICIO_NAO_VAI_NO_XML,
+  lerNumeroBeneficioMunicipal,
+  lerPercentualReducaoBM,
+  decomporNumeroBeneficioMunicipal,
+  problemasDoBeneficioMunicipal,
 } from "../../../../lib/nfse/cadastroEmissaoNfse";
 
 // Mesmo visual dos demais campos do formulário (`styles/tokens.css` + inline; sem Tailwind).
@@ -81,6 +89,12 @@ export function CamposEmissaoNfse({
   pTotTribFed = "",
   pTotTribEst = "",
   pTotTribMun = "",
+  // ⚠ BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS), pedido do dono de 20/08/2026. São campos
+  // do formulário como os de cima — mas com o cuidado maior escrito no bloco: benefício fiscal
+  // REDUZ IMPOSTO, e este cadastro ainda não chega ao XML.
+  beneficioMunicipalNumero = "",
+  beneficioMunicipalTipoReducao = "",
+  beneficioMunicipalPRedBC = "",
   onChange,
   // ⚠ O QUE ENTRA ENTRE OS CAMPOS E O PORTÃO — hoje, o botão de salvar da ABA PRÓPRIA de emissão
   // (dono, 19/08/2026). Ele não pode ficar embaixo de tudo: depois do portão do cliente, um botão
@@ -105,6 +119,18 @@ export function CamposEmissaoNfse({
   // caso perigoso: é exatamente aqui que a nota saía afirmando 0,00 nos outros) e os três prontos.
   const cargaParcial = cargaFaltando.length > 0 && cargaFaltando.length < CAMPOS_CARGA_TRIBUTARIA.length;
 
+  const bmNumero = lerNumeroBeneficioMunicipal(beneficioMunicipalNumero);
+  const bmPercentual = lerPercentualReducaoBM(beneficioMunicipalPRedBC);
+  const bmPartes = decomporNumeroBeneficioMunicipal(beneficioMunicipalNumero);
+  const bmProblemas = problemasDoBeneficioMunicipal({
+    numero: beneficioMunicipalNumero,
+    tipoReducao: beneficioMunicipalTipoReducao,
+    pRedBC: beneficioMunicipalPRedBC,
+  });
+  // O bloco de aviso só "acende" quando há benefício declarado — a maioria das empresas não tem
+  // nenhum, e um aviso sobre redução de imposto em toda empresa é ruído.
+  const temBeneficio = bmNumero.preenchido || Boolean(String(beneficioMunicipalTipoReducao || "").trim());
+
   const naDps = digitosQueVaoParaDps(codigoServicoMunicipal);
   // Só vale avisar quando o corte MUDA o valor — repetir "vai 001" para quem digitou "001" é ruído.
   const municipalSeraCortado = Boolean(naDps && naDps !== municipal.valor);
@@ -119,8 +145,10 @@ export function CamposEmissaoNfse({
   // (`validateAndNormalizeCompanyProfile`) — a tela não pode prometer um desfecho diferente:
   //   • lista com UM código → é ele. Não há escolha a fazer, adotá-lo não é escolher por ninguém;
   //   • o marcado continua na lista → fica como está;
-  //   • o marcado saiu da lista → LIMPA, e o seletor pede que se marque um. Eleger "o primeiro"
-  //     seria o sistema decidindo qual serviço a empresa declara ao fisco.
+  //   • o marcado saiu da lista → LIMPA. ⚠ A TELA não elege ninguém no lugar dele: quem elege é
+  //     o SERVIDOR, no salvar, e só na ausência de marcador (dono, 20/08/2026 — *"pode colocar o
+  //     primeiro valor, pois é o contador que está configurando"*). Marcar por conta própria aqui
+  //     faria a tela parecer que o contador escolheu, e aí escolha e omissão ficariam iguais.
   function trocarCodigos(novos) {
     onChange("codigosServicoNacional", novos);
     if (novos.length === 1) {
@@ -237,6 +265,111 @@ export function CamposEmissaoNfse({
             Falta {cargaFaltando.map((c) => c.rotulo.toLowerCase()).join(", ").replace(/, ([^,]*)$/, " e $1")}.
           </strong>{" "}
           {PORQUE_OS_TRES}
+        </div>
+      )}
+
+      {/* ── BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS) — dono, 20/08/2026 ──────────────
+          > *"do lado do contador ainda, o seletor de benefício, caso o cliente tenha algum
+          > benefício fiscal."*
+
+          ⚠⚠ ESTE BLOCO CARREGA UM RISCO QUE OS OUTROS NÃO TÊM: benefício fiscal REDUZ IMPOSTO.
+          Por isso ele diz três coisas que os outros campos não precisam dizer — que o número é do
+          município e ninguém aqui confere o conteúdo, que o tipo de redução não se deduz, e que
+          **o que for preenchido aqui ainda não chega à nota**. */}
+      <div className="full" style={{ marginTop: 12 }}>
+        <strong style={{ fontSize: "0.85rem", color: "#F8F8F2" }}>
+          Benefício municipal do ISSQN
+        </strong>
+        <div style={{ ...AJUDA, marginTop: 4 }}>
+          {MOTIVO_BENEFICIO_MUNICIPAL} {PORQUE_BENEFICIO_DIGITADO}
+        </div>
+      </div>
+
+      <Campo
+        id="beneficioMunicipalNumero"
+        titulo="Número do benefício (nBM)"
+        valor={beneficioMunicipalNumero}
+        onChange={(v) => onChange("beneficioMunicipalNumero", v)}
+        leitura={bmNumero}
+        placeholder=""
+        ajuda={
+          "14 dígitos: 7 do município (código IBGE) + 2 do tipo de parametrização + 5 sequenciais. "
+          + "Deixe vazio se a empresa não tem benefício — que é o caso da maioria."
+        }
+        extra={bmPartes && (
+          /* ⚠ CONFERÊNCIA, não validação — a mesma ideia de mostrar quais 3 dígitos do código
+             municipal vão para a DPS. A tela lê o que foi digitado em voz alta; ela não afirma que
+             o benefício existe (quem recusa número inexistente é o fisco, pela regra E0541). */
+          <span style={AJUDA}>
+            Lendo o que você digitou: município{" "}
+            <strong style={{ color: "#F8F8F2" }}>{bmPartes.municipioIbge}</strong>
+            {" · "}tipo <strong style={{ color: "#F8F8F2" }}>{bmPartes.tipo}</strong>
+            {bmPartes.tipoRotulo ? ` (${bmPartes.tipoRotulo})` : ""}
+            {" · "}sequencial <strong style={{ color: "#F8F8F2" }}>{bmPartes.sequencial}</strong>.
+            Confira contra a concessão do município — este sistema não tem a lista de benefícios.
+          </span>
+        )}
+      />
+
+      <label htmlFor="beneficioMunicipalTipoReducao" style={{ display: "grid", gap: 4 }}>
+        O que este benefício faz com a base de cálculo
+        <select
+          id="beneficioMunicipalTipoReducao"
+          value={beneficioMunicipalTipoReducao || ""}
+          onChange={(event) => onChange("beneficioMunicipalTipoReducao", event.target.value)}
+          style={CAIXA}
+        >
+          {/* ⚠ NADA VEM PRÉ-SELECIONADO. Qual dos dois campos de redução vale depende de como o
+              MUNICÍPIO cadastrou o benefício (E0565/E0577) — o sistema não tem essa tabela, e um
+              tipo escolhido por ele seria indistinguível de um conferido pelo contador. */}
+          <option value="">— não declarado —</option>
+          {TIPOS_REDUCAO_BM.map((t) => (
+            <option key={t.valor} value={t.valor}>{t.rotulo}</option>
+          ))}
+        </select>
+        <span style={AJUDA}>
+          {TIPOS_REDUCAO_BM.find((t) => t.valor === beneficioMunicipalTipoReducao)?.ajuda
+            || "Isto não se deduz do número: é atributo da concessão do município. Só o benefício "
+              + "do tipo percentual tem valor a cadastrar aqui."}
+        </span>
+      </label>
+
+      {/* ⚠ O CAMPO DO PERCENTUAL SÓ EXISTE PARA O TIPO PERCENTUAL — não é "esconder": um campo
+          desabilitado ao lado de um tipo que não o admite convida a preenchê-lo, e preencher os
+          dois é justamente o erro que o `xs:choice` do XSD e as regras E0565/E0577 proíbem. */}
+      {beneficioMunicipalTipoReducao === "PERCENTUAL" && (
+        <Campo
+          id="beneficioMunicipalPRedBC"
+          titulo="Redução da base de cálculo (%)"
+          valor={beneficioMunicipalPRedBC}
+          onChange={(v) => onChange("beneficioMunicipalPRedBC", v)}
+          leitura={bmPercentual}
+          placeholder=""
+          ajuda={
+            "É o “pRedBCBM” da DPS. Aceita vírgula ou ponto; percentual não tem separador de milhar."
+          }
+        />
+      )}
+
+      {bmProblemas.length > 0 && (
+        <div className="full" style={{
+          border: "1px solid var(--state-warn)", background: "var(--state-warn-surface)",
+          borderRadius: 6, padding: "8px 10px", fontSize: "0.8rem", color: "var(--state-warn)",
+          display: "grid", gap: 4,
+        }}>
+          {bmProblemas.map((p) => <div key={p.texto}>{p.texto}</div>)}
+        </div>
+      )}
+
+      {temBeneficio && (
+        // ⚠⚠ A FRASE QUE IMPEDE A CRENÇA FALSA, e ela aparece SÓ para quem declarou benefício —
+        // avisar quem não tem nenhum seria ruído. Sem ela, o contador configura a redução, a nota
+        // sai com o ISS cheio, e a descoberta acontece depois da emissão.
+        <div className="full" style={{
+          border: "1px solid var(--state-warn)", background: "var(--state-warn-surface)",
+          borderRadius: 6, padding: "8px 10px", fontSize: "0.8rem", color: "var(--state-warn)",
+        }}>
+          {BENEFICIO_NAO_VAI_NO_XML}
         </div>
       )}
 

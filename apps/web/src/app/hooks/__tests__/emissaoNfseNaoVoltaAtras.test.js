@@ -54,6 +54,20 @@ describe("handleUpdateEmissaoNfse", () => {
     }
   });
 
+  // ⚠⚠ O BENEFÍCIO MUNICIPAL TEM DE ESTAR NA MESMA LINHA (dono, 20/08/2026), e aqui o preço do
+  // esquecimento é maior que nos demais: salvar o benefício pela aba e depois clicar em "Salvar
+  // alterações" no cadastro mandaria os campos velhos (vazios) e o APAGARIA — sem nada mudar na
+  // tela. Benefício apagado por engano é a nota saindo com imposto cheio sem ninguém ter pedido.
+  test("atualiza também o benefício municipal — campo novo aqui é campo apagado depois", () => {
+    for (const campo of [
+      "beneficioMunicipalNumero",
+      "beneficioMunicipalTipoReducao",
+      "beneficioMunicipalPRedBC",
+    ]) {
+      expect(corpo).toContain(campo);
+    }
+  });
+
   test("recarrega a carteira — a aba lê o gravado a partir do payload da empresa", () => {
     expect(corpo).toContain("await loadCompanies()");
   });

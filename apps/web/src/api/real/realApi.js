@@ -201,6 +201,14 @@ function buildCompanyPayload(input) {
       pTotTribFed: txt(input.pTotTribFed),
       pTotTribEst: txt(input.pTotTribEst),
       pTotTribMun: txt(input.pTotTribMun),
+      // ── Benefício municipal do ISSQN (grupo `BM` da DPS), dono 20/08/2026 ────────────────
+      // ⚠ Mesma regra dos de cima: o texto vai CRU (o número com a máscara do ofício, o percentual
+      // com vírgula) e quem normaliza é o backend, num lugar só. `txt` devolve `null` no vazio —
+      // apagar um benefício mal cadastrado tem de ser possível pela tela, e apagar o NÚMERO apaga
+      // o grupo inteiro no servidor (senão sobraria um tipo apontando para benefício nenhum).
+      beneficioMunicipalNumero: txt(input.beneficioMunicipalNumero),
+      beneficioMunicipalTipoReducao: txt(input.beneficioMunicipalTipoReducao),
+      beneficioMunicipalPRedBC: txt(input.beneficioMunicipalPRedBC),
       inscricaoEstadual: txt(input.inscricaoEstadual),
       inscricaoEstadualData: omitIfEmpty(input.inscricaoEstadualData),
       porte: txt(input.porte),

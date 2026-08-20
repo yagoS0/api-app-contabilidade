@@ -699,6 +699,9 @@ export function CompanyForm({
           pTotTribFed={form.pTotTribFed}
           pTotTribEst={form.pTotTribEst}
           pTotTribMun={form.pTotTribMun}
+          beneficioMunicipalNumero={form.beneficioMunicipalNumero}
+          beneficioMunicipalTipoReducao={form.beneficioMunicipalTipoReducao}
+          beneficioMunicipalPRedBC={form.beneficioMunicipalPRedBC}
           onChange={onChange}
           emissaoCliente={emissaoCliente}
           razaoSocial={form.razaoSocial}

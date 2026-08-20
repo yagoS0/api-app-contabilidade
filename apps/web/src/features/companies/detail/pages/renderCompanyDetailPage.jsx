@@ -757,6 +757,16 @@ export function CompanyDetailPage({ company, guidesPanel, editPanel, accountingP
                   pTotTribFed: selectedCompany?.legacyCompany?.pTotTribFed ?? null,
                   pTotTribEst: selectedCompany?.legacyCompany?.pTotTribEst ?? null,
                   pTotTribMun: selectedCompany?.legacyCompany?.pTotTribMun ?? null,
+                  /* ⚠ O BENEFÍCIO MUNICIPAL VIAJA PARA A EMISSÃO POR UM MOTIVO SÓ: para a tela da
+                     nota poder DIZER que ele não entra nela. O XML da DPS ainda não leva o grupo
+                     `BM`, e o contador que acabou de cadastrar um benefício é exatamente quem
+                     precisa ver isso na hora de emitir — não depois, na nota já autorizada.
+                     ⚠ Não bloqueia nada: não está em `buildMissingFields`. */
+                  beneficioMunicipalNumero: selectedCompany?.legacyCompany?.beneficioMunicipalNumero || null,
+                  beneficioMunicipalTipoReducao:
+                    selectedCompany?.legacyCompany?.beneficioMunicipalTipoReducao || null,
+                  beneficioMunicipalPRedBC:
+                    selectedCompany?.legacyCompany?.beneficioMunicipalPRedBC ?? null,
                   /* ⚠ A ATIVIDADE CADASTRADA — é o que SUGERE a descrição do serviço na emissão
                      (dono, 18/08/2026: *"a atividade é pré-configurada no cadastro do cliente no
                      portal do contador, devemos usar o máximo dos dados que já temos"*). Ver

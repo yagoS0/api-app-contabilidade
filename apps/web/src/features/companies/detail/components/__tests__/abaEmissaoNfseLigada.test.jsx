@@ -148,12 +148,16 @@ describe("o salvar da aba grava, e só grava o que é dela", () => {
     expect(screen.getByLabelText("Código municipal do serviço", { exact: false })).toHaveValue("001");
   });
 
-  it("salvar manda os sete campos — e SÓ eles", async () => {
+  // ⚠ Eram SETE até 20/08/2026; o benefício municipal do ISSQN (dono) acrescentou três. A lista
+  // continua sendo o espelho de `CAMPOS_EMISSAO_NFSE` (`routes/firm/index.js`), e é isso que este
+  // teste tranca: campo de fora dela faz a rota recusar o corpo INTEIRO, nomeando-o.
+  it("salvar manda os campos desta aba — e SÓ eles", async () => {
     const { onSalvar } = abrir();
     fireEvent.change(screen.getByLabelText("Série da DPS", { exact: false }), { target: { value: "7" } });
     fireEvent.click(screen.getByRole("button", { name: /Salvar configuração de emissão/i }));
     await waitFor(() => expect(onSalvar).toHaveBeenCalled());
     expect(Object.keys(onSalvar.mock.calls[0][0]).sort()).toEqual([
+      "beneficioMunicipalNumero", "beneficioMunicipalPRedBC", "beneficioMunicipalTipoReducao",
       "codigoServicoMunicipal", "codigoServicoNacional", "codigosServicoNacional",
       "pTotTribEst", "pTotTribFed", "pTotTribMun", "rpsSerie",
     ]);

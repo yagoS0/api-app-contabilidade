@@ -231,20 +231,41 @@ describe("PATCH /firm/companies/:id — configuração de emissão de NFS-e", ()
       expect(dadosDoUpdateDaCompany().data.codigoServicoNacional).toBe("171201");
     });
 
-    test("⚠ lista com VÁRIOS e nenhum marcado → 400 nomeado; o sistema NÃO elege o primeiro", async () => {
-      // Eleger "o primeiro da lista" seria o sistema decidindo qual serviço a empresa declara ao
-      // fisco. Serviço errado na nota é silencioso: aparece só no DANFSe, com a descrição de outra
-      // atividade.
+    // ⚠⚠ ESTE TESTE INVERTEU EM 20/08/2026, E O TEXTO ANTIGO FICA REGISTRADO PARA NINGUÉM DESFAZER
+    // ACHANDO QUE É REGRESSÃO. Ele dizia: *"lista com VÁRIOS e nenhum marcado → 400 nomeado; o
+    // sistema NÃO elege o primeiro"*, com o argumento de que eleger seria o SISTEMA decidindo qual
+    // serviço a empresa declara ao fisco. Decisão do dono: *"pode colocar o primeiro valor, pois é
+    // o contador que está configurando"* — quem monta a lista, nessa ordem, é quem tem a
+    // autoridade fiscal, então o primeiro não é escolha do sistema.
+    test("lista com VÁRIOS e nenhum marcado: vale o PRIMEIRO, que é o primeiro que o contador digitou", async () => {
       const res = await request(app)
         .patch(`/firm/companies/${PORTAL_ID}`)
         .send(payload({ codigosServicoNacional: ["171201", "010101"] }));
 
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe("company_codigo_servico_nacional_fora_da_lista");
-      expect(prismaMock.company.update).not.toHaveBeenCalled();
+      expect(res.status).toBe(200);
+      expect(dadosDoUpdateDaCompany().data.codigoServicoNacional).toBe("171201");
+      // ⚠ A ORDEM DA LISTA É A DA TELA e não se reordena — é ela que define qual é "o primeiro".
+      expect(dadosDoUpdateDaCompany().data.codigosServicoNacional).toEqual(["171201", "010101"]);
     });
 
-    test("lista com VÁRIOS e o marcado FORA dela também é recusa", async () => {
+    test("⚠ o MARCADO vence a posição — eleição só acontece na AUSÊNCIA de marcador", async () => {
+      // Marcador é escolha explícita; posição é acidente de digitação. Se a eleição vencesse o
+      // marcador, marcar o segundo código não teria efeito nenhum.
+      const res = await request(app)
+        .patch(`/firm/companies/${PORTAL_ID}`)
+        .send(payload({
+          codigosServicoNacional: ["171201", "010101"],
+          codigoServicoNacional: "010101",
+        }));
+
+      expect(res.status).toBe(200);
+      expect(dadosDoUpdateDaCompany().data.codigoServicoNacional).toBe("010101");
+    });
+
+    // ⚠ ESTA RECUSA **NÃO** CAIU COM A DECISÃO DE 20/08. Marcador vazio é ausência; marcador
+    // apontando para fora da lista são dois campos preenchidos que se contradizem — eleger o
+    // primeiro ali trocaria em silêncio o código que o contador havia marcado.
+    test("lista com VÁRIOS e o marcado FORA dela continua sendo recusa", async () => {
       const res = await request(app)
         .patch(`/firm/companies/${PORTAL_ID}`)
         .send(payload({
@@ -475,5 +496,49 @@ describe("PATCH /firm/companies/:id — configuração de emissão de NFS-e", ()
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("company_p_tot_trib_mun_invalid");
     });
+  });
+});
+
+// ── A TERCEIRA PEÇA: O `legacyCompanySelect` ───────────────────────────────────────────────────
+//
+// ⚠⚠ COLUNA NOVA EM `Company` EXIGE TRÊS PEÇAS — a coluna, a entrada no `legacyCompanySelect` e o
+// campo na tela. Faltando o `select`, o valor volta `undefined` **sem erro**: a rota responde 200,
+// a tela "só não mostra", e o contador recadastra achando que não salvou. Isto mordeu quatro vezes
+// nesta base.
+//
+// ⚠ A varredura é do TEXTO do `select`, e não um teste de comportamento, pelo mesmo motivo do
+// `emissaoNfseCliente.test.js`: o `select` é uma constante de módulo, e nenhuma resposta HTTP do
+// mock de Prisma prova que ela nomeia a coluna.
+describe("as colunas da emissão voltam para a tela (`legacyCompanySelect`)", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const ROTA = [
+    path.join(process.cwd(), "src", "routes", "firm", "index.js"),
+    path.join(process.cwd(), "apps", "api", "src", "routes", "firm", "index.js"),
+  ].find((p) => fs.existsSync(p));
+
+  test("o arquivo foi encontrado — senão esta varredura seria um teste vazio", () => {
+    expect(ROTA).toBeTruthy();
+  });
+
+  test.each([
+    "codigoServicoNacional",
+    "codigosServicoNacional",
+    "codigoServicoMunicipal",
+    "rpsSerie",
+    "pTotTribFed",
+    "pTotTribEst",
+    "pTotTribMun",
+    // Benefício municipal do ISSQN (dono, 20/08/2026).
+    "beneficioMunicipalNumero",
+    "beneficioMunicipalTipoReducao",
+    "beneficioMunicipalPRedBC",
+  ])("`%s` está no select — senão volta undefined sem erro", (coluna) => {
+    const fonte = fs.readFileSync(ROTA, "utf8");
+    const select = fonte.slice(
+      fonte.indexOf("const legacyCompanySelect"),
+      fonte.indexOf("const legacyCompanySelect") + 6000
+    );
+    expect(select).toContain(`${coluna}: true`);
   });
 });

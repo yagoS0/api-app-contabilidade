@@ -338,11 +338,93 @@ buscados em runtime; `import()` dinâmico, fora do bundle inicial).
 - ⚠ **Código gravado fora da forma NÃO some da tela** (volta em `invalidos`, com aviso): sumir faria
   o contador achar que a empresa tem menos códigos do que tem.
 - ⚠ **"Qual destes a nota leva"** aparece só quando há **mais de um** — com um só não há escolha a
-  fazer, e a tela não pergunta. Com vários e nenhum marcado, a tela **não elege um**: diz o que
-  falta, e o backend recusa com `company_codigo_servico_nacional_fora_da_lista`.
-  Esse marcador é uma **ponte**: a escolha por emissão ainda não chega ao XML (`buildDpsXml` lê
-  `company.codigoServicoNacional` e não há campo de serviço no payload). Um seletor na emissão que
-  parecesse funcionar faria a nota sair com o outro código — erro fiscal **silencioso**.
+  fazer, e a tela não pergunta. **O marcador É o padrão da empresa**: ele grava
+  `Company.codigoServicoNacional`, que é o `cTribNac` que a DPS leva quando a emissão não escolhe
+  outro (`buildDpsXml`: `data.servico?.codigoServicoNacional || company.codigoServicoNacional`).
+- ⚠⚠ **SEM MARCAR DEIXOU DE SER RECUSA — dono, 20/08/2026:** *"pode colocar o primeiro valor, pois
+  é o contador que está configurando."* **As duas datas e as duas razões, porque o texto de uma só
+  faz o próximo leitor desfazer a outra achando que é regressão:**
+  - **16/08/2026 — recusa** (`company_codigo_servico_nacional_fora_da_lista`). O argumento era:
+    eleger "o primeiro da lista" seria o SISTEMA decidindo qual serviço a empresa declara ao fisco,
+    e serviço errado na nota é silencioso — aparece só no DANFSe do tomador, com a descrição de
+    outra atividade.
+  - **20/08/2026 — o primeiro, quando NÃO HÁ MARCADOR.** O argumento do dono derruba a premissa:
+    quem monta a lista, na ordem em que ela está, é o **contador** — quem tem a autoridade fiscal.
+    O primeiro item não é escolha do sistema, é o primeiro que ele digitou.
+  - ⚠ **O QUE NÃO MUDOU: o MARCADO vence a posição.** Marcador é escolha explícita; posição é
+    ordem de digitação. A eleição só acontece na **ausência** de marcador, e o marcador apontando
+    para **fora** da lista **continua sendo recusa** — ali são dois campos preenchidos que se
+    contradizem, e trocar em silêncio o código que o contador marcou é o defeito que o parágrafo
+    de 16/08 descreve. A tela diz qual dos dois casos é qual (cinza × vermelho).
+  - ⚠ **A ELEIÇÃO É DO SERVIDOR, no salvar** (`normalizeCamposEmissaoNfse`), **e a tela não marca
+    rádio nenhum por conta própria**: se marcasse, escolha e omissão ficariam indistinguíveis. Pelo
+    mesmo motivo `escolherCodigoServicoNacional` (emissão) **continua sem eleger nada** — no
+    momento de emitir não há contador digitando, e o cadastro já resolveu o singular.
+  - ⚠ Medido em produção (20/08/2026): **0 de 33 empresas têm lista plural**, então isto não muda
+    nenhum cadastro existente hoje.
+
+### ⚠⚠ BENEFÍCIO MUNICIPAL DO ISSQN — cadastrado, e ainda NÃO enviado (dono, 20/08/2026)
+
+> *"do lado do contador ainda, o seletor de benefício, caso o cliente tenha algum benefício fiscal."*
+
+Três colunas novas em `Company` (`beneficioMunicipalNumero` · `beneficioMunicipalTipoReducao` ·
+`beneficioMunicipalPRedBC`), migration `20260820160000_add_beneficio_municipal_issqn` **escrita e
+NÃO aplicada**. Regra de tela em `lib/nfse/cadastroEmissaoNfse.js`; bloco em `CamposEmissaoNfse`;
+aviso na emissão em `features/notas/components/BeneficioMunicipalDaNota.jsx`.
+
+- ⚠⚠ **O XML NÃO LEVA O GRUPO, E A TELA DIZ ISSO — nos dois lugares.** Medido: `buildDpsXml` monta
+  `<tribMun>` com **dois** filhos (`tribISSQN` cravado em `1` e `tpRetISSQN`) dos **sete** que o
+  `TCTribMunicipal` admite (`tribISSQN` · `cPaisResult` · `tpImunidade` · `exigSusp` · `BM` ·
+  `tpRetISSQN` · `pAliq`). A nota sai com o **ISS cheio**. Sem o aviso, o contador configura a
+  redução e descobre depois da emissão — e não vai conferir, porque o erro é para MENOS imposto.
+- ⚠ **NADA É DEDUZIDO.** O número (`nBM`) é do **município** — o Sistema Nacional o gera quando a
+  prefeitura cadastra o benefício. Não há lista neste repositório, não se deriva do CNAE, não se
+  sugere valor. Valida-se a **forma** (`TSNumBeneficioMunicipal` = `[0-9]{14}`, XSD 1.01) e nunca o
+  conteúdo, **e a tela diz que não confere o conteúdo** — o precedente é o `cTribMun`. Quem recusa
+  número inexistente é o fisco (`E0541`).
+- ⚠ **O TIPO DE REDUÇÃO É DECLARADO, NUNCA INFERIDO DO CAMPO PREENCHIDO.** `vRedBCBM` e `pRedBCBM`
+  estão num `xs:choice` (excludentes) **com os dois filhos `minOccurs="0"`**, e qual deles vale é
+  atributo do benefício *como o município o cadastrou* (`E0565` para o valor, `E0577` para o
+  percentual) — dado que este sistema não tem. Daí três opções: `SEM_REDUCAO` · `VALOR` ·
+  `PERCENTUAL`, e `NULL` = não declarado.
+  - ⚠ **"Benefício sem redução" é cadastro COMPLETO, não pela metade** — o `E0612` cita benefícios
+    de "Isenção" e "Alíquota Diferenciada", que não reduzem base. Exigir uma redução recusaria um
+    cadastro legítimo.
+  - ⚠ **`vRedBCBM` NÃO virou coluna, e é decisão:** é *"valor monetário informado pelo emitente
+    para redução da BC"* — é da **NOTA**, não da empresa. Um valor fixo repetido em toda nota
+    emitida seria uma afirmação que ninguém fez, e **reduziria imposto**. O tipo fica registrado; o
+    valor entra por nota quando o envio existir.
+- ⚠ **IMUNIDADE, SUSPENSÃO E BENEFÍCIO SÃO TRÊS COISAS DISTINTAS, e não foram juntadas.** A fonte
+  separa: `tpImunidade` é **obrigatório e só** com `tribISSQN = 2` (`E0592`); `exigSusp` só com
+  `tribISSQN = 1` (`E0585`) e exige um `nProcesso` de **30 dígitos**, que é da nota; `BM` só com
+  `tribISSQN = 1` (`E0533`). As três penduram no `tribISSQN`, que hoje é **cravado em `1`** — e as
+  duas primeiras são situação **da nota**, não configuração da empresa. Só o benefício foi
+  construído; as outras duas exigem `tribISSQN` variável na emissão.
+- ⚠ **Três peças, como sempre:** coluna + `legacyCompanySelect` (varredura de texto em
+  `companyCamposNfse.test.js`) + campo na tela. E uma quarta que quase escapou:
+  `handleUpdateEmissaoNfse` precisa atualizar o `editCompanyForm` com o que gravou, senão o "Salvar
+  alterações" do cadastro **apaga** o benefício recém-salvo (`emissaoNfseNaoVoltaAtras.test.js`).
+
+### ⚠ EMITIR PARA O EXTERIOR — medido, NÃO construído (20/08/2026)
+
+Pedido: *"a configuração pelo lado do contador: se deve ser exibido para o cliente selecionar se ele
+emite nota para o exterior."* **A medição parou a entrega antes da tela, e o motivo é que a
+configuração sozinha não habilitaria nada** — ligar o botão faria o cliente tentar e a nota ser
+rejeitada.
+
+Exportação é `tribISSQN = 3`, e a DPS exige (fonte: XSD 1.01 + ANEXO_I, aba `RN DPS_NFS-e`):
+
+| O que a DPS exige | O que temos hoje |
+|---|---|
+| `tribISSQN = 3` | **cravado em `1`** em `buildDpsXml` |
+| `cPaisResult` (2 letras ISO) — obrigatório nos cenários 2/30/58/62/72/76 (`E0590`) | não existe no código |
+| `cNBS` (9 dígitos) — **obrigatório na exportação** (`E0318`) | não existe; a tabela oficial (1.211 linhas) está no ANEXO_B versionado, **não extraída** |
+| tomador com `end/endExt` (`cPais`, `cEndPost`, `xCidade`, `xEstProvReg`) | o gerador escreve **só `endNac`** (`cMun` + `CEP`), e o validador exige `cMun` |
+| `pAliq` **proibido** quando `tribISSQN ≠ 1` (`E0602`) | não enviamos `pAliq` — este é o único que já está certo |
+
+⚠ **Nenhuma dessas peças é do cadastro da empresa** (país do resultado, NBS e endereço do tomador
+são **por nota**), então a "configuração pelo lado do contador" é a ÚLTIMA peça, não a primeira.
+**Levado ao dono.**
 - **Na emissão** (`features/notas/components/ServicoNacionalDaNota.jsx`, passo "Serviço" do
   `EmitirNfseWizard`): aparecem **só os pré-cadastrados**, com a descrição oficial, e a tela diz
   **qual vai** na nota e onde se troca. Com um único código não faz escolher — mas mostra qual é.

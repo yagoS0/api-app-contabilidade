@@ -117,6 +117,54 @@ model Company {
   pTotTribFed              Decimal?          @db.Decimal(5, 2)
   pTotTribEst              Decimal?          @db.Decimal(5, 2)
   pTotTribMun              Decimal?          @db.Decimal(5, 2)
+  /// ── BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS) — pedido do dono, 20/08/2026 ─────────
+  ///
+  /// > *"do lado do contador ainda, o seletor de benefício, caso o cliente tenha algum benefício
+  /// > fiscal."*
+  ///
+  /// Fonte: XSD oficial 1.01 (`docs/leiaute-nfse/documentacao-tecnica/esquemas-xsd/Schemas/1.01/
+  /// tiposComplexos_v1.01.xsd:1931`, `TCBeneficioMunicipal`) + ANEXO_I, aba `RN DPS_NFS-e`.
+  ///
+  /// ⚠⚠ **O XML AINDA NÃO LEVA ESTE GRUPO.** `buildDpsXml` monta `<tribMun>` com dois filhos
+  /// (`tribISSQN` cravado em 1 e `tpRetISSQN`) dos SETE que o `TCTribMunicipal` admite. Estas
+  /// colunas guardam a configuração; a nota continua saindo com o ISS CHEIO, e a tela DIZ isso —
+  /// tanto no cadastro quanto no assistente de emissão. Configurar um benefício que o contador
+  /// acredita estar sendo aplicado é o defeito que este comentário existe para impedir.
+  ///
+  /// ⚠ NADA AQUI É DEDUZIDO. O número do benefício é do MUNICÍPIO — cada prefeitura concede o seu,
+  /// e o identificador é gerado pelo Sistema Nacional quando o município cadastra o benefício.
+  /// Não há lista neste repositório, não se deriva do CNAE, não se sugere valor. Valida-se a
+  /// FORMA (`TSNumBeneficioMunicipal`: `[0-9]{14}`) e nunca o conteúdo — quem confere o conteúdo é
+  /// o fisco (`E0541`: *"Não existe o código de identificação do benefício municipal informado na
+  /// DPS para o municipío de incidência do ISSQN"*).
+  ///
+  /// Regra de formação (documentação do próprio tipo): 7 dígitos do município (IBGE) + 2 do tipo
+  /// de parametrização (01 legislação · 02 regimes especiais · 03 retenções · 04 outros
+  /// benefícios) + 5 sequenciais.
+  beneficioMunicipalNumero String?
+  /// QUAL redução o benefício aplica — e por que isto é um campo e não uma dedução.
+  ///
+  /// No XSD, `vRedBCBM` e `pRedBCBM` estão num `xs:choice` (excludentes), e **os dois são
+  /// `minOccurs="0"`**: um benefício sem NENHUMA redução de base é válido no schema. As RN
+  /// confirmam que a escolha depende do TIPO com que o município cadastrou o benefício —
+  /// `E0565`: *"Somente é permitido informar vRedBCBM quando o (…) nBM for um benefício do tipo
+  /// Redução de Base de Cálculo por Valor Monetário"*; `E0577`, o mesmo para o percentual. E
+  /// `E0612` cita benefícios dos tipos "Isenção" e "Alíquota Diferenciada", que não reduzem base.
+  ///
+  /// ⚠ Ou seja: **o sistema não tem como saber qual dos dois campos vale** — só o contador sabe,
+  /// pela concessão do município. Por isso o tipo é DECLARADO, não inferido de qual campo foi
+  /// preenchido: "ainda não preenchi" e "este benefício não reduz base" são estados diferentes.
+  ///
+  /// Valores: `SEM_REDUCAO` · `VALOR` · `PERCENTUAL`. NULL = não declarado.
+  beneficioMunicipalTipoReducao String?
+  /// `pRedBCBM` — o percentual de redução da base de cálculo (0 a 100, duas casas).
+  ///
+  /// ⚠ SÓ O PERCENTUAL É CADASTRÁVEL, e a ausência do par monetário é decisão, não esquecimento:
+  /// `vRedBCBM` é *"valor monetário informado pelo emitente para redução da BC"* — ele é da NOTA
+  /// (depende da base daquela nota), não da empresa. Um valor fixo repetido em toda nota emitida
+  /// seria uma afirmação que ninguém fez, e reduziria imposto. O tipo `VALOR` fica registrado; o
+  /// valor entra por nota quando o envio ao XML existir.
+  beneficioMunicipalPRedBC Decimal?          @db.Decimal(5, 2)
   optanteSimples           Boolean?          @default(false)
   regimeEspecialTributacao String?
   // ── Ficha de cadastro do escritório ──────────────────────────────────────────

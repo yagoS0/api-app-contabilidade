@@ -102,6 +102,7 @@ import {
   PORQUE_OS_TRES,
 } from "../../../lib/nfse/cadastroEmissaoNfse";
 import { ServicoNacionalDaNota } from "./ServicoNacionalDaNota";
+import { BeneficioMunicipalDaNota } from "./BeneficioMunicipalDaNota";
 import { PainelDaNota } from "./PainelDaNota";
 import { CampoComBusca } from "./CampoComBusca";
 import { buscarTomadores, listarTomadoresRecentes } from "../lib/tomadoresRecentes";
@@ -1030,6 +1031,11 @@ export function EmitirNfseWizard({
                       pré-voo contra o cadastro da empresa, e `buildDpsXml` lê a escolha primeiro.
                       Falta só a interface. Ver o cabeçalho de `ServicoNacionalDaNota.jsx`. */}
                   <ServicoNacionalDaNota cadastroEmissao={cadastroEmissao} />
+                  {/* ⚠⚠ O BENEFÍCIO MUNICIPAL CADASTRADO NÃO ENTRA NA NOTA, e é AQUI que isso
+                      precisa ser dito — quem cadastrou o benefício acredita que a redução está
+                      valendo, e a nota sai com o ISS cheio. Só renderiza para quem tem benefício
+                      cadastrado, e não bloqueia nada. */}
+                  <BeneficioMunicipalDaNota cadastroEmissao={cadastroEmissao} />
                   <label htmlFor={CAMPO.DESCRICAO} style={rotulo}>Descrição do serviço
                     <textarea
                       id={CAMPO.DESCRICAO}

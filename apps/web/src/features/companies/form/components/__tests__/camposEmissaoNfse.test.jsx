@@ -157,15 +157,38 @@ describe("⚠ o código nacional é ESCOLHIDO na lista oficial, não digitado", 
     await waitFor(() => expect(screen.queryByText(/Qual destes a nota leva/)).not.toBeInTheDocument());
   });
 
-  it("⚠ com MAIS DE UM, a tela pergunta qual a nota leva — e não elege um sozinha", async () => {
+  // ⚠⚠ ESTE TESTE MUDOU DE DESFECHO EM 20/08/2026 e o texto antigo fica aqui: ele era *"com MAIS
+  // DE UM, a tela pergunta qual a nota leva — e não elege um sozinha"*, e exigia a frase "Escolha
+  // qual código a nota leva" em vermelho, porque o servidor recusava o cadastro. Decisão do dono:
+  // *"pode colocar o primeiro valor, pois é o contador que está configurando"* — o servidor passou
+  // a eleger o primeiro, então a frase vermelha prometeria uma recusa que não acontece mais.
+  it("⚠ com MAIS DE UM a tela pergunta qual a nota leva, e NÃO marca nenhum por conta própria", async () => {
     const { onChange } = abrir({ codigosServicoNacional: ["171201", "010101"], codigoServicoNacional: "" });
     expect(await screen.findByText(/Qual destes a nota leva/)).toBeInTheDocument();
-    // Nenhum marcado: o sistema não escolheu por ninguém, e diz o que falta.
     const radios = screen.getAllByRole("radio");
     expect(radios).toHaveLength(2);
+    // ⚠ NENHUM RÁDIO MARCADO: a eleição é do SERVIDOR, no salvar. Marcar o primeiro aqui faria a
+    // tela parecer que o contador escolheu — e aí não haveria como distinguir escolha de omissão.
     expect(radios.every((r) => !r.checked)).toBe(true);
-    expect(screen.getByText(/Escolha qual código a nota leva/)).toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("⚠ sem marcar, a tela DIZ qual sai — e não chama isso de erro", async () => {
+    abrir({ codigosServicoNacional: ["171201", "010101"], codigoServicoNacional: "" });
+    expect(await screen.findByText(/primeiro da lista/)).toBeInTheDocument();
+    // A promessa da tela é a do servidor: o primeiro da lista, com o código à vista.
+    // (o código aparece também na lista de cadastrados — aqui basta que o aviso o cite)
+    expect(screen.getAllByText("17.12.01").length).toBeGreaterThan(1);
+    // ⚠ A recusa que não existe mais não pode continuar sendo anunciada.
+    expect(screen.queryByText(/Escolha qual código a nota leva/)).not.toBeInTheDocument();
+  });
+
+  it("⚠ marcado FORA da lista continua sendo recusa anunciada — não vira eleição", async () => {
+    // Marcador vazio é ausência; marcador apontando para fora da lista são dois campos que se
+    // contradizem, e o servidor recusa. Trocar em silêncio o que o contador marcou é o defeito.
+    abrir({ codigosServicoNacional: ["171201", "010101"], codigoServicoNacional: "310104" });
+    expect(await screen.findByText(/não está entre os cadastrados acima/)).toBeInTheDocument();
+    expect(screen.queryByText(/primeiro da lista/)).not.toBeInTheDocument();
   });
 
   it("remover o marcado LIMPA o código da nota — não promove o vizinho", async () => {

@@ -225,12 +225,24 @@ describe("o que a rota RECUSA", () => {
     expect(prismaMock.company.update).not.toHaveBeenCalled();
   });
 
-  test("vários códigos sem nenhum marcado: recusa nomeada, nada é gravado", async () => {
-    // Eleger "o primeiro da lista" seria o sistema decidindo qual serviço a empresa declara ao
-    // fisco. A regra é a mesma do cadastro — é literalmente a mesma função.
+  // ⚠⚠ INVERTEU EM 20/08/2026, e o texto antigo fica registrado: ele dizia *"vários códigos sem
+  // nenhum marcado: recusa nomeada, nada é gravado"*, porque eleger o primeiro seria o sistema
+  // decidindo qual serviço a empresa declara ao fisco. Decisão do dono: *"pode colocar o primeiro
+  // valor, pois é o contador que está configurando"*. A regra continua sendo a MESMA do cadastro —
+  // é literalmente a mesma função (`normalizeCamposEmissaoNfse`).
+  test("vários códigos sem nenhum marcado: grava o PRIMEIRO da lista", async () => {
     const res = await request(app)
       .patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`)
       .send({ codigosServicoNacional: ["170201", "140101"], codigoServicoNacional: "" });
+
+    expect(res.status).toBe(200);
+    expect(prismaMock.company.update.mock.calls[0][0].data.codigoServicoNacional).toBe("170201");
+  });
+
+  test("vários códigos com um marcado FORA da lista: continua sendo recusa nomeada", async () => {
+    const res = await request(app)
+      .patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`)
+      .send({ codigosServicoNacional: ["170201", "140101"], codigoServicoNacional: "310104" });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("company_codigo_servico_nacional_fora_da_lista");
@@ -253,5 +265,131 @@ describe("o que a rota RECUSA", () => {
     const res = await request(app).patch("/firm/companies/nao-existe/emissao-nfse").send({ rpsSerie: "1" });
     expect(res.status).toBe(404);
     expect(prismaMock.company.update).not.toHaveBeenCalled();
+  });
+});
+
+// ── BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS) — dono, 20/08/2026 ─────────────────────────
+//
+// > *"do lado do contador ainda, o seletor de benefício, caso o cliente tenha algum benefício
+// > fiscal."*
+//
+// ⚠⚠ O QUE ESTE BLOCO EXISTE PARA IMPEDIR é de outra natureza que o resto do arquivo: **benefício
+// fiscal REDUZ IMPOSTO**. Um cadastro de benefício incoerente (percentual sem número, percentual
+// com o tipo errado, número com 13 dígitos aceito como se fosse válido) é uma nota com imposto a
+// menos assim que o envio ao XML existir — e nota emitida não se desfaz.
+//
+// Fonte de cada regra, versionada em `docs/leiaute-nfse/documentacao-tecnica/`:
+//   • forma do `nBM`: `TSNumBeneficioMunicipal` = `[0-9]{14}` (`tiposSimples_v1.01.xsd:957`);
+//   • `E0565`/`E0577`: o campo de redução permitido depende do TIPO com que o município cadastrou
+//     o benefício — por isso o tipo é declarado, nunca deduzido de qual campo foi preenchido.
+describe("PATCH /firm/companies/:id/emissao-nfse — benefício municipal", () => {
+  let app;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prismaMock.portalClient.findUnique.mockResolvedValue({
+      id: PORTAL_ID,
+      razao: "Empresa Teste",
+      companyId: COMPANY_LEGACY_ID,
+    });
+    prismaMock.company.update.mockResolvedValue({
+      id: COMPANY_LEGACY_ID,
+      beneficioMunicipalNumero: "33045570200123",
+      beneficioMunicipalTipoReducao: "PERCENTUAL",
+      beneficioMunicipalPRedBC: "40.00",
+    });
+    app = montarApp();
+  });
+
+  const dados = () => prismaMock.company.update.mock.calls[0][0].data;
+
+  test("grava o benefício por percentual: número, tipo e percentual", async () => {
+    const res = await request(app).patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`).send({
+      beneficioMunicipalNumero: "3304557.02.00123",
+      beneficioMunicipalTipoReducao: "PERCENTUAL",
+      beneficioMunicipalPRedBC: "40,00",
+    });
+
+    expect(res.status).toBe(200);
+    // ⚠ Só os dígitos vão para a coluna: o contador pode digitar a máscara que ele lê no ofício da
+    // prefeitura, e o XML leva `[0-9]{14}`.
+    expect(dados().beneficioMunicipalNumero).toBe("33045570200123");
+    expect(dados().beneficioMunicipalTipoReducao).toBe("PERCENTUAL");
+    // Vírgula é separador DECIMAL — percentual de 0 a 100 não tem milhar.
+    expect(dados().beneficioMunicipalPRedBC).toBe(40);
+  });
+
+  test("benefício SEM redução de base é cadastro válido — não é 'faltou preencher'", async () => {
+    // O `xs:choice` do `TCBeneficioMunicipal` tem os DOIS filhos `minOccurs=\"0\"`, e o `E0612` cita
+    // benefícios de "Isenção" e "Alíquota Diferenciada", que não reduzem base nenhuma.
+    const res = await request(app).patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`).send({
+      beneficioMunicipalNumero: "33045570200123",
+      beneficioMunicipalTipoReducao: "SEM_REDUCAO",
+      beneficioMunicipalPRedBC: "",
+    });
+
+    expect(res.status).toBe(200);
+    expect(dados().beneficioMunicipalTipoReducao).toBe("SEM_REDUCAO");
+    expect(dados().beneficioMunicipalPRedBC).toBeNull();
+  });
+
+  test.each([
+    ["número com 13 dígitos", { beneficioMunicipalNumero: "3304557020012" }, "company_beneficio_municipal_numero_invalid"],
+    ["tipo que não existe", { beneficioMunicipalNumero: "33045570200123", beneficioMunicipalTipoReducao: "ISENCAO" }, "company_beneficio_municipal_tipo_invalid"],
+    ["percentual acima de 100", { beneficioMunicipalNumero: "33045570200123", beneficioMunicipalTipoReducao: "PERCENTUAL", beneficioMunicipalPRedBC: "140" }, "company_beneficio_municipal_p_red_bc_invalid"],
+  ])("%s é recusado com nome próprio, e nada é gravado", async (_nome, corpo, erro) => {
+    const res = await request(app).patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`).send(corpo);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe(erro);
+    expect(prismaMock.company.update).not.toHaveBeenCalled();
+  });
+
+  test("⚠ percentual SEM o número do benefício: recusa — redução não aponta para concessão nenhuma", async () => {
+    const res = await request(app).patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`).send({
+      beneficioMunicipalTipoReducao: "PERCENTUAL",
+      beneficioMunicipalPRedBC: "40",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("company_beneficio_municipal_sem_numero");
+    expect(prismaMock.company.update).not.toHaveBeenCalled();
+  });
+
+  test("⚠ percentual com tipo VALOR: recusa (E0565/E0577) — os dois campos não são intercambiáveis", async () => {
+    const res = await request(app).patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`).send({
+      beneficioMunicipalNumero: "33045570200123",
+      beneficioMunicipalTipoReducao: "VALOR",
+      beneficioMunicipalPRedBC: "40",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("company_beneficio_municipal_percentual_fora_do_tipo");
+  });
+
+  test("⚠ tipo PERCENTUAL com o percentual em branco: recusa — é cadastro pela metade", async () => {
+    const res = await request(app).patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`).send({
+      beneficioMunicipalNumero: "33045570200123",
+      beneficioMunicipalTipoReducao: "PERCENTUAL",
+      beneficioMunicipalPRedBC: "",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("company_beneficio_municipal_percentual_ausente");
+  });
+
+  test("⚠ apagar o NÚMERO apaga o grupo inteiro — nada de tipo órfão no banco", async () => {
+    const res = await request(app).patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`).send({
+      beneficioMunicipalNumero: "",
+    });
+    expect(res.status).toBe(200);
+    expect(dados().beneficioMunicipalNumero).toBeNull();
+    expect(dados().beneficioMunicipalTipoReducao).toBeNull();
+    expect(dados().beneficioMunicipalPRedBC).toBeNull();
+  });
+
+  test("⚠ salvar OUTRO campo não toca no benefício — `undefined` é 'não mexer'", async () => {
+    const res = await request(app)
+      .patch(`/firm/companies/${PORTAL_ID}/emissao-nfse`)
+      .send({ rpsSerie: "7" });
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(dados())).toEqual(["rpsSerie"]);
   });
 });

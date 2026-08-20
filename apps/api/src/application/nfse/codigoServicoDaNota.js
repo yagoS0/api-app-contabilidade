@@ -27,8 +27,24 @@
 // A alternativa (aceitar qualquer código quando a lista está vazia) abriria hoje, em 33 de 33
 // empresas, exatamente a porta que a trava fecha.
 //
-// ⚠ **NUNCA "o primeiro da lista".** Escolher por conta própria seria o sistema decidindo qual
-// serviço a empresa declara ao fisco — a mesma proibição que o cadastro já carrega.
+// ⚠ **AQUI, NA EMISSÃO, NUNCA "o primeiro da lista" — e isto NÃO contradiz o cadastro.**
+// As duas datas, e as duas razões, porque o texto de uma só faria o próximo leitor desfazer a outra:
+//
+//   • **16/08/2026** — a proibição nasceu aqui e no cadastro com o mesmo argumento: escolher por
+//     conta própria seria o SISTEMA decidindo qual serviço a empresa declara ao fisco, e serviço
+//     errado na nota é silencioso (aparece só no DANFSe do tomador).
+//   • **20/08/2026 — o dono derrubou a premissa, mas só do lado do CADASTRO:** *"pode colocar o
+//     primeiro valor, pois é o contador que está configurando."* Quem monta a lista, na ordem em
+//     que ela está, é o contador — então lá o primeiro item não é escolha do sistema, é o primeiro
+//     que ele digitou. `normalizeCamposEmissaoNfse`
+//     (`application/company/companyProfile.js`) passou a eleger o primeiro **quando não há
+//     marcador**, e o marcado continua vencendo a posição.
+//
+// ⚠ **A eleição acontece LÁ, e é justamente por isso que ela não acontece AQUI.** Quando o cadastro
+// é salvo, `Company.codigoServicoNacional` já é o código que a nota leva — marcado ou eleito. No
+// momento da emissão não há contador digitando nada: eleger o primeiro aqui seria o sistema
+// escolhendo o serviço de uma nota que já está sendo emitida, e sem ninguém para conferir. Sem
+// escolha no payload vale o singular do cadastro; e nenhum código fora do cadastro entra.
 //
 // ⚠ VALIDA-SE A FORMA, NUNCA O CONTEÚDO. A lista oficial dos 335 desdobramentos vive no front
 // (`apps/web/src/lib/servicosNacionais/`, gerada do Anexo B versionado com hash); o backend não a

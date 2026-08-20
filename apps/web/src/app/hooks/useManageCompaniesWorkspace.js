@@ -1117,6 +1117,13 @@ export function useManageCompaniesWorkspace({ api, page, setPage, feedback, onIn
         pTotTribFed: texto(salvo.pTotTribFed),
         pTotTribEst: texto(salvo.pTotTribEst),
         pTotTribMun: texto(salvo.pTotTribMun),
+        // ⚠ O BENEFÍCIO MUNICIPAL PRECISA ESTAR AQUI PELO MESMO MOTIVO, e aqui o preço é maior:
+        // sem estas três linhas, salvar o benefício pela aba e depois clicar em "Salvar
+        // alterações" no cadastro mandaria os campos VELHOS (vazios) e APAGARIA o benefício — em
+        // silêncio, porque nada na tela mudaria de aparência.
+        beneficioMunicipalNumero: texto(salvo.beneficioMunicipalNumero),
+        beneficioMunicipalTipoReducao: texto(salvo.beneficioMunicipalTipoReducao),
+        beneficioMunicipalPRedBC: texto(salvo.beneficioMunicipalPRedBC),
       }));
       // A aba lê o que está gravado a partir do payload da empresa — sem recarregar, ela mostraria
       // o valor anterior até a próxima navegação.

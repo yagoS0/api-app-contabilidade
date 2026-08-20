@@ -23,7 +23,9 @@ import { Button } from "../../../../components/ui/Button";
 import { CamposEmissaoNfse } from "../../form/components/CamposEmissaoNfse";
 import { mapCompanyToEmissaoNfseForm } from "../../form/hooks/useManageCompanyForm";
 
-// Os sete campos que esta aba salva — e nada além deles. A lista é a mesma que a rota aceita.
+// Os campos que esta aba salva — e nada além deles. A lista é a mesma que a rota aceita
+// (`CAMPOS_EMISSAO_NFSE`, em `routes/firm/index.js`): campo fora dela é RECUSADO nomeando-o, e
+// campo que falte aqui simplesmente não é salvo, sem erro.
 const CAMPOS = [
   "codigoServicoNacional",
   "codigosServicoNacional",
@@ -32,6 +34,10 @@ const CAMPOS = [
   "pTotTribFed",
   "pTotTribEst",
   "pTotTribMun",
+  // Benefício municipal do ISSQN (dono, 20/08/2026).
+  "beneficioMunicipalNumero",
+  "beneficioMunicipalTipoReducao",
+  "beneficioMunicipalPRedBC",
 ];
 
 function mesmoValor(a, b) {
@@ -114,6 +120,9 @@ export function EmissaoNfseTab({
             pTotTribFed={form.pTotTribFed}
             pTotTribEst={form.pTotTribEst}
             pTotTribMun={form.pTotTribMun}
+            beneficioMunicipalNumero={form.beneficioMunicipalNumero}
+            beneficioMunicipalTipoReducao={form.beneficioMunicipalTipoReducao}
+            beneficioMunicipalPRedBC={form.beneficioMunicipalPRedBC}
             onChange={onChange}
             /* ⚠ O botão fica ENTRE os campos e o portão do cliente. Embaixo de tudo, ele pareceria
                salvar também a liberação — que não passa por salvar nenhum: ela grava no clique da

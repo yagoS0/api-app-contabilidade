@@ -584,6 +584,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     pTotTribFed: true,
     pTotTribEst: true,
     pTotTribMun: true,
+    // ⚠ MESMO MOTIVO DAS LINHAS ACIMA, e esta já mordeu QUATRO vezes esta semana: coluna nova que
+    // não entre neste `select` volta `undefined` SEM ERRO — a rota responde 200 e a tela "só não
+    // mostra", o contador recadastra o benefício a cada edição achando que não salvou.
+    beneficioMunicipalNumero: true,
+    beneficioMunicipalTipoReducao: true,
+    beneficioMunicipalPRedBC: true,
     optanteSimples: true,
     regimeEspecialTributacao: true,
     // ── Ficha de cadastro ──
@@ -1305,6 +1311,20 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
                   : {}),
                 ...(normalizedCompany.pTotTribMun !== undefined
                   ? { pTotTribMun: normalizedCompany.pTotTribMun }
+                  : {}),
+                // ⚠ BENEFÍCIO MUNICIPAL DO ISSQN — spread condicional pelo mesmo motivo dos três
+                // percentuais acima: `undefined` é "o payload não trouxe o campo", e achatar isso
+                // em `null` APAGARIA o benefício em toda rota que salva a empresa sem este bloco.
+                // Benefício apagado por engano é a nota saindo com o imposto cheio sem ninguém
+                // ter pedido — e ninguém veria, porque a tela não mudaria de aparência.
+                ...(normalizedCompany.beneficioMunicipalNumero !== undefined
+                  ? { beneficioMunicipalNumero: normalizedCompany.beneficioMunicipalNumero }
+                  : {}),
+                ...(normalizedCompany.beneficioMunicipalTipoReducao !== undefined
+                  ? { beneficioMunicipalTipoReducao: normalizedCompany.beneficioMunicipalTipoReducao }
+                  : {}),
+                ...(normalizedCompany.beneficioMunicipalPRedBC !== undefined
+                  ? { beneficioMunicipalPRedBC: normalizedCompany.beneficioMunicipalPRedBC }
                   : {}),
                 // ── Ficha de cadastro ──
                 inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
@@ -2834,6 +2854,12 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
     "pTotTribFed",
     "pTotTribEst",
     "pTotTribMun",
+    // ⚠ O BENEFÍCIO MUNICIPAL ENTRA NA MESMA PORTA que os demais campos da configuração de
+    // emissão — é configuração fiscal da `Company`, salva pela mesma aba. Fora desta lista a rota
+    // RECUSA nomeando o campo, e o cadastro nunca chegaria a existir.
+    "beneficioMunicipalNumero",
+    "beneficioMunicipalTipoReducao",
+    "beneficioMunicipalPRedBC",
   ];
 
   router.patch(
@@ -2877,6 +2903,7 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         codigoServicoMunicipal,
         rpsSerie,
         percentuais,
+        beneficio,
       } = normalizado.data;
 
       try {
@@ -2922,6 +2949,10 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
         for (const campo of ["pTotTribFed", "pTotTribEst", "pTotTribMun"]) {
           if (percentuais[campo] !== undefined) data[campo] = percentuais[campo];
         }
+        // ⚠ O `beneficio` já vem com SÓ as chaves que o corpo trouxe (o normalizador é quem separa
+        // "não mexer" de "apagar"), mais a cascata: apagar o número apaga o tipo e o percentual,
+        // senão o banco ficaria com um tipo apontando para benefício que não existe mais.
+        Object.assign(data, beneficio);
 
         const atualizada = await prisma.company.update({
           where: { id: portal.companyId },
@@ -2935,6 +2966,9 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             pTotTribFed: true,
             pTotTribEst: true,
             pTotTribMun: true,
+            beneficioMunicipalNumero: true,
+            beneficioMunicipalTipoReducao: true,
+            beneficioMunicipalPRedBC: true,
           },
         });
         log.info(
@@ -2953,6 +2987,13 @@ export function createFirmPortalRouter({ ensureAuthorized, log }) {
             pTotTribFed: atualizada.pTotTribFed != null ? String(atualizada.pTotTribFed) : null,
             pTotTribEst: atualizada.pTotTribEst != null ? String(atualizada.pTotTribEst) : null,
             pTotTribMun: atualizada.pTotTribMun != null ? String(atualizada.pTotTribMun) : null,
+            beneficioMunicipalNumero: atualizada.beneficioMunicipalNumero,
+            beneficioMunicipalTipoReducao: atualizada.beneficioMunicipalTipoReducao,
+            // Decimal do Prisma não é JSON — string, a mesma forma do `legacyCompanySelect`.
+            beneficioMunicipalPRedBC:
+              atualizada.beneficioMunicipalPRedBC != null
+                ? String(atualizada.beneficioMunicipalPRedBC)
+                : null,
           },
         });
       } catch (err) {

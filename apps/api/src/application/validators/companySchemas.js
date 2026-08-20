@@ -58,6 +58,14 @@ const companyBaseFields = {
   pTotTribFed: z.union([z.string().max(20), z.number()]).optional().nullable(),
   pTotTribEst: z.union([z.string().max(20), z.number()]).optional().nullable(),
   pTotTribMun: z.union([z.string().max(20), z.number()]).optional().nullable(),
+  // ── BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS) — dono, 20/08/2026 ───────────────────
+  // ⚠ MESMO MOTIVO DE TODOS OS DE CIMA: sem declaração aqui o `z.object` (sem `passthrough`) tira
+  // a chave do `parsed.data` EM SILÊNCIO — 200 na resposta, campo vazio na recarga.
+  // A forma (`[0-9]{14}`), os três tipos e a faixa do percentual são conferidos em
+  // `normalizeCamposEmissaoNfse`, junto do motivo de cada recusa; aqui é só a porta.
+  beneficioMunicipalNumero: z.string().max(20).optional().nullable(),
+  beneficioMunicipalTipoReducao: z.string().max(20).optional().nullable(),
+  beneficioMunicipalPRedBC: z.union([z.string().max(20), z.number()]).optional().nullable(),
   cnaePrincipal: z.string().max(20).optional().nullable(),
   cnaesSecundarios: z.array(z.string().max(20)).max(50).optional(),
   regimeTributario: z.enum(["SIMPLES", "LUCRO_PRESUMIDO", "LUCRO_REAL", "MEI", "OUTRO"]).optional().nullable(),

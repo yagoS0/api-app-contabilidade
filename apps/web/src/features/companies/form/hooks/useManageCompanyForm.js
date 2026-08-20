@@ -46,6 +46,12 @@ export function getInitialCompanyFormState() {
     pTotTribFed: "",
     pTotTribEst: "",
     pTotTribMun: "",
+    // Benefício municipal do ISSQN (grupo `BM` da DPS). ⚠ Nascem vazios pelo mesmo motivo dos de
+    // cima, e aqui com mais razão: benefício REDUZ IMPOSTO, e o número é concedido pelo município
+    // — não existe lista neste sistema, nada é deduzido do CNAE e nada é sugerido.
+    beneficioMunicipalNumero: "",
+    beneficioMunicipalTipoReducao: "",
+    beneficioMunicipalPRedBC: "",
     inscricaoEstadual: "",
     inscricaoEstadualData: "",
     porte: "",
@@ -110,6 +116,13 @@ export function mapCompanyToEmissaoNfseForm(company) {
     pTotTribFed: legacy?.pTotTribFed != null ? String(legacy.pTotTribFed) : "",
     pTotTribEst: legacy?.pTotTribEst != null ? String(legacy.pTotTribEst) : "",
     pTotTribMun: legacy?.pTotTribMun != null ? String(legacy.pTotTribMun) : "",
+    // ⚠ BENEFÍCIO MUNICIPAL — o `!= null` do percentual vale igual: `0` é um percentual de redução
+    // legítimo (benefício que reduz zero por cento não existe na prática, mas quem decide isso é o
+    // contador, não a leitura), e `|| ""` reabriria o campo em branco.
+    beneficioMunicipalNumero: String(legacy?.beneficioMunicipalNumero || "").trim(),
+    beneficioMunicipalTipoReducao: String(legacy?.beneficioMunicipalTipoReducao || "").trim(),
+    beneficioMunicipalPRedBC:
+      legacy?.beneficioMunicipalPRedBC != null ? String(legacy.beneficioMunicipalPRedBC) : "",
   };
 }
 

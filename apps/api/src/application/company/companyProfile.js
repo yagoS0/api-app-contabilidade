@@ -71,6 +71,22 @@ function normalizeEndereco(raw) {
   return { ok: true, data: normalized };
 }
 
+/**
+ * `nBM` — 14 dígitos. Fonte: `TSNumBeneficioMunicipal` (`<xs:pattern value="[0-9]{14}"/>`), no XSD
+ * oficial 1.01 versionado em `docs/leiaute-nfse/documentacao-tecnica/`.
+ */
+const TAMANHO_NBM = 14;
+
+/**
+ * Os tipos de redução que o benefício municipal pode ter, e por que são TRÊS.
+ *
+ * `SEM_REDUCAO` não é "nenhum": é a afirmação de que este benefício não reduz base de cálculo
+ * (`E0612` cita benefícios de "Isenção" e "Alíquota Diferenciada"), e o `xs:choice` do XSD a
+ * acomoda porque `vRedBCBM` e `pRedBCBM` são ambos `minOccurs="0"`. NULL continua sendo "não
+ * declarado", que é outra coisa.
+ */
+const TIPOS_REDUCAO_BM = ["SEM_REDUCAO", "VALOR", "PERCENTUAL"];
+
 // `pTotTribFed` → `p_tot_trib_fed`, para que o código de erro tenha o mesmo formato dos demais
 // (`company_rps_serie_invalid`) e o contador leia o nome do campo que ele preencheu.
 function snakeCasePercentual(campo) {
@@ -314,26 +330,155 @@ export function normalizeCamposEmissaoNfse(company = {}) {
     percentuais[campo] = n;
   }
 
+  // ── BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS) — dono, 20/08/2026 ─────────────────────
+  //
+  // > *"do lado do contador ainda, o seletor de benefício, caso o cliente tenha algum benefício
+  // > fiscal."*
+  //
+  // ⚠⚠ BENEFÍCIO FISCAL REDUZ IMPOSTO — é a razão de este bloco ser mais duro que os de cima.
+  // O que ele NÃO faz: nada aqui chega ao XML hoje. `buildDpsXml` escreve `<tribMun>` com dois
+  // filhos (`tribISSQN` cravado em 1 e `tpRetISSQN`) dos SETE do `TCTribMunicipal` — o grupo `BM`
+  // não é montado. As telas dizem isso; este validador só guarda a configuração.
+  //
+  // ⚠ VALIDA-SE A FORMA, NUNCA O CONTEÚDO — a mesma disciplina do `cTribMun`, e pelo mesmo motivo
+  // levado ao extremo: o número do benefício é do MUNICÍPIO (o Sistema Nacional o gera quando a
+  // prefeitura cadastra o benefício), não existe lista neste repositório e não se deduz do CNAE.
+  // A forma é oficial: `TSNumBeneficioMunicipal` = `[0-9]{14}`
+  // (`docs/leiaute-nfse/documentacao-tecnica/esquemas-xsd/Schemas/1.01/tiposSimples_v1.01.xsd:957`).
+  // Quem confere o conteúdo é o fisco, e a recusa tem nome: `E0541`.
+  //
+  // ⚠ O TIPO DE REDUÇÃO É DECLARADO, NUNCA INFERIDO. `vRedBCBM` e `pRedBCBM` estão num `xs:choice`
+  // e os DOIS são `minOccurs="0"`: benefício sem redução de base é válido. E qual dos dois vale é
+  // atributo do benefício **como o município o cadastrou** (`E0565` para o valor monetário,
+  // `E0577` para o percentual) — dado que este sistema não tem. Então "não informei" e "este
+  // benefício não reduz base" precisam ser estados distintos, e por isso `SEM_REDUCAO` existe.
+  //
+  // ⚠ `undefined` = não veio no payload (NÃO MEXER) · `""`/`null` = apagar · valor = grava. A
+  // mesma regra dos percentuais logo acima, e pelo mesmo motivo.
+  const beneficio = {};
+  const bmNumeroVeio = company.beneficioMunicipalNumero !== undefined;
+  const bmTipoVeio = company.beneficioMunicipalTipoReducao !== undefined;
+  const bmPercVeio = company.beneficioMunicipalPRedBC !== undefined;
+
+  let bmNumero;
+  if (bmNumeroVeio) {
+    const bruto = asString(company.beneficioMunicipalNumero);
+    if (!bruto) {
+      bmNumero = null;
+    } else {
+      const digitos = onlyDigits(bruto);
+      if (digitos.length !== TAMANHO_NBM) {
+        return { ok: false, error: "company_beneficio_municipal_numero_invalid" };
+      }
+      bmNumero = digitos;
+    }
+    beneficio.beneficioMunicipalNumero = bmNumero;
+  }
+
+  let bmTipo;
+  if (bmTipoVeio) {
+    const bruto = asString(company.beneficioMunicipalTipoReducao).toUpperCase();
+    if (!bruto) {
+      bmTipo = null;
+    } else if (!TIPOS_REDUCAO_BM.includes(bruto)) {
+      return { ok: false, error: "company_beneficio_municipal_tipo_invalid" };
+    } else {
+      bmTipo = bruto;
+    }
+    beneficio.beneficioMunicipalTipoReducao = bmTipo;
+  }
+
+  let bmPerc;
+  if (bmPercVeio) {
+    const bruto = asString(company.beneficioMunicipalPRedBC);
+    if (!bruto) {
+      bmPerc = null;
+    } else {
+      // Percentual, então ponto e vírgula são a MESMA coisa (separador decimal) — `asNumberOrNull`
+      // não serve aqui, ele trata ponto como milhar. Mesma razão dos `pTotTrib*`.
+      const texto = bruto.replace(",", ".");
+      if (!/^\d{1,3}(\.\d{1,2})?$/.test(texto)) {
+        return { ok: false, error: "company_beneficio_municipal_p_red_bc_invalid" };
+      }
+      const n = Number(texto);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return { ok: false, error: "company_beneficio_municipal_p_red_bc_invalid" };
+      }
+      bmPerc = n;
+    }
+    beneficio.beneficioMunicipalPRedBC = bmPerc;
+  }
+
+  // ── COERÊNCIA DO GRUPO — as três recusas, e o que cada uma impede ────────────────────────────
+  //
+  // ⚠ Conferida entre os campos QUE VIERAM no payload. Um `PATCH` parcial que mande só o
+  // percentual não tem como ser conferido contra o que está gravado (este validador é puro e não
+  // lê o banco) — e é por isso que ele é RECUSADO, em vez de gravar um percentual órfão. A tela
+  // manda os três sempre.
+  if ((bmTipo || bmPerc != null) && !bmNumero) {
+    // Sem o número não há benefício: `nBM` é `1-1` DENTRO do grupo `BM`. Um tipo ou um percentual
+    // gravado sozinho descreveria uma redução de imposto que não aponta para concessão nenhuma.
+    return { ok: false, error: "company_beneficio_municipal_sem_numero" };
+  }
+  if (bmPerc != null && bmTipo !== "PERCENTUAL") {
+    // `E0577`: o percentual só é permitido quando o benefício é do tipo redução por PERCENTUAL.
+    return { ok: false, error: "company_beneficio_municipal_percentual_fora_do_tipo" };
+  }
+  if (bmTipo === "PERCENTUAL" && bmPercVeio && bmPerc == null) {
+    // Declarar "reduz por percentual" e não dizer quanto é cadastro pela metade — e o que falta é
+    // justamente o número que reduziria o imposto.
+    return { ok: false, error: "company_beneficio_municipal_percentual_ausente" };
+  }
+  // ⚠ APAGAR O NÚMERO APAGA O GRUPO INTEIRO. Sem esta cascata, limpar o campo do número deixaria
+  // no banco um tipo (e um percentual) apontando para um benefício que não existe mais — estado
+  // que o CHECK `chk_company_beneficio_municipal_coerencia` recusa, e que viraria erro 500 na cara
+  // de quem só quis desfazer uma configuração.
+  if (bmNumeroVeio && bmNumero === null) {
+    beneficio.beneficioMunicipalTipoReducao = null;
+    beneficio.beneficioMunicipalPRedBC = null;
+  }
+
   // ── COERÊNCIA ENTRE A LISTA E O CÓDIGO QUE A DPS LEVA ──────────────────────────────────────
   //
-  // ⚠ ESTE BLOCO EXISTE PORQUE A ESCOLHA POR EMISSÃO AINDA NÃO CHEGA AO XML. `buildDpsXml` monta o
-  // `cTribNac` a partir de `company.codigoServicoNacional` e de mais nada (`NfseService.js:540`) —
-  // não há campo de serviço no payload da emissão. Enquanto for assim, a empresa com N códigos
-  // precisa de UM deles marcado como "o que a nota leva", senão o cadastro descreve uma coisa e a
-  // nota declara outra. A pendência está nomeada no relatório: é UMA linha em `buildDpsXml`.
+  // ⚠ ESTE BLOCO EXISTE PORQUE A EMPRESA TEM N CÓDIGOS E A DPS LEVA UM. `codigosServicoNacional`
+  // é o que a empresa PODE declarar; `codigoServicoNacional` (singular) é o que a nota declara —
+  // é ele que `buildMissingFields` exige e que `buildDpsXml` escreve, e é ele que o marcador
+  // "Qual destes a nota leva" (`SeletorServicosNacionais.jsx`) grava.
   //
-  // As três respostas, e por que nenhuma delas é "escolher o primeiro":
-  //   • lista com UM código      → o singular é ele. Não há escolha a fazer, então adotá-lo não é
-  //                                escolher por ninguém — é a mesma informação em dois lugares.
-  //   • lista com N e o singular entre eles → fica como está.
-  //   • lista com N e o singular fora dela (ou vazio) → RECUSA NOMEADA. Eleger "o primeiro da
-  //     lista" seria o sistema decidindo qual serviço a empresa declara ao fisco. Serviço errado na
-  //     nota é silencioso: ninguém percebe até o DANFSe sair com a descrição de outra atividade.
+  // ⚠⚠ A RESPOSTA PARA "LISTA COM N E NENHUM MARCADO" INVERTEU — e as DUAS razões ficam escritas,
+  // porque o texto antigo, sozinho, faria o próximo leitor desfazer isto achando que é regressão.
+  //
+  //   • **16/08/2026 — recusa.** O argumento era: eleger "o primeiro da lista" seria o SISTEMA
+  //     decidindo qual serviço a empresa declara ao fisco, e serviço errado na nota é silencioso
+  //     (só aparece no DANFSe do tomador, com a descrição de outra atividade). Enquanto o cadastro
+  //     fosse a única forma de dizer o que a nota leva, a omissão tinha de virar pergunta.
+  //   • **20/08/2026 — o primeiro, quando NÃO HÁ MARCADOR. Decisão do dono:** *"pode colocar o
+  //     primeiro valor, pois é o contador que está configurando."* O argumento derruba a premissa
+  //     do parágrafo acima: quem monta a lista, na ordem em que ela está, é o CONTADOR — quem tem
+  //     a autoridade fiscal sobre o que a empresa declara. O primeiro item não é escolha do
+  //     sistema, é o primeiro que ele digitou. Recusar o cadastro inteiro por causa de um rádio
+  //     não marcado é atritar quem já respondeu a pergunta ao montar a lista.
+  //
+  // ⚠ O QUE **NÃO** MUDOU, e é o que separa as duas coisas: **o MARCADO vence a posição**. Marcador
+  // é escolha explícita; posição na lista é ordem de digitação. Por isso a eleição só acontece na
+  // AUSÊNCIA de marcador — e o marcador APONTANDO PARA FORA DA LISTA continua sendo RECUSA, não
+  // eleição: ali há dois campos preenchidos que se contradizem, e trocar em silêncio o código que
+  // o contador havia marcado é o defeito que o parágrafo de 16/08 descreve, agora de verdade.
+  //
+  // ⚠ Resíduo medido e aceito: num PATCH PARCIAL que mande a lista plural SEM o campo singular
+  // (`PATCH /firm/companies/:id/emissao-nfse`), a eleição substitui o marcador gravado em vez de
+  // recusar. Nenhuma tela faz isso — a aba manda os sete campos sempre (`renderEmissaoNfseTab.jsx`)
+  // e o cadastro manda a empresa inteira.
   let codigoServicoNacionalFinal = codigoServicoNacional || null;
   if (codigosServicoNacional && codigosServicoNacional.length) {
     if (codigosServicoNacional.length === 1) {
+      // Não há escolha a fazer: adotá-lo não é escolher por ninguém, é a mesma informação em dois
+      // lugares.
       codigoServicoNacionalFinal = codigosServicoNacional[0];
-    } else if (!codigoServicoNacionalFinal || !codigosServicoNacional.includes(codigoServicoNacionalFinal)) {
+    } else if (!codigoServicoNacionalFinal) {
+      // Sem marcador: o primeiro da lista, que é o primeiro que o CONTADOR digitou (dono, 20/08).
+      codigoServicoNacionalFinal = codigosServicoNacional[0];
+    } else if (!codigosServicoNacional.includes(codigoServicoNacionalFinal)) {
       return { ok: false, error: "company_codigo_servico_nacional_fora_da_lista" };
     }
   }
@@ -347,6 +492,9 @@ export function normalizeCamposEmissaoNfse(company = {}) {
       codigoServicoMunicipal,
       rpsSerie,
       percentuais,
+      // ⚠ SÓ AS CHAVES QUE VIERAM NO PAYLOAD entram neste objeto — quem grava usa
+      // `hasOwnProperty`, e é isso que separa "não mexer" de "apagar" nas três colunas.
+      beneficio,
     },
   };
 }
@@ -446,6 +594,7 @@ export function validateAndNormalizeCompanyProfile(input) {
     codigoServicoMunicipal,
     rpsSerie,
     percentuais,
+    beneficio,
   } = emissaoNfse.data;
 
   return {
@@ -482,6 +631,10 @@ export function validateAndNormalizeCompanyProfile(input) {
       pTotTribFed: percentuais.pTotTribFed,
       pTotTribEst: percentuais.pTotTribEst,
       pTotTribMun: percentuais.pTotTribMun,
+      // ⚠ BENEFÍCIO MUNICIPAL — as três chaves só existem aqui quando vieram no payload, e é isso
+      // que quem grava usa (`hasOwnProperty`) para separar "não mexer" de "apagar". Achatar em
+      // `?? null` apagaria o benefício em toda rota que salva a empresa sem este bloco.
+      ...beneficio,
       inscricaoEstadual: asString(company.inscricaoEstadual) || null,
       inscricaoEstadualData,
       porte: asString(company.porte) || null,

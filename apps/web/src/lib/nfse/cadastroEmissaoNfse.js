@@ -341,3 +341,210 @@ export function faltasParaEmitir(company) {
       motivoCurto: `cadastre ${c.rotulo.toLowerCase()} da empresa (${c.onde})`,
     }));
 }
+
+// ── BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS) — dono, 20/08/2026 ─────────────────────
+//
+// > *"do lado do contador ainda, o seletor de benefício, caso o cliente tenha algum benefício
+// > fiscal."*
+//
+// ⚠⚠ BENEFÍCIO FISCAL REDUZ IMPOSTO, e é isso que faz este bloco ser mais duro que os de cima.
+// Três consequências, todas escritas na tela:
+//   1. o número do benefício é do MUNICÍPIO — cada prefeitura concede o seu, e o identificador é
+//      gerado pelo Sistema Nacional quando ela o cadastra. Não existe lista neste repositório, não
+//      se deduz do CNAE e não se sugere valor. **Valida-se a FORMA, nunca o conteúdo** — a mesma
+//      regra do `cTribMun`, e a tela DIZ que não confere o conteúdo;
+//   2. as duas reduções (valor monetário × percentual) são EXCLUDENTES e a escolha não é nossa;
+//   3. ⚠⚠ **nada disto chega ao XML hoje** — e a tela diz isso também, porque um contador que
+//      configura um benefício e não é avisado passa a acreditar que a nota sai com redução.
+//
+// FONTE (versionada com hash em `docs/leiaute-nfse/documentacao-tecnica/`):
+//   • `tiposComplexos_v1.01.xsd:1931` — `TCBeneficioMunicipal`: `nBM` (1-1) + `xs:choice` entre
+//     `vRedBCBM` e `pRedBCBM`, **os dois `minOccurs="0"`**;
+//   • `tiposSimples_v1.01.xsd:957` — `TSNumBeneficioMunicipal`: `<xs:pattern value="[0-9]{14}"/>`,
+//     com a regra de formação (7 IBGE + 2 tipo de parametrização + 5 sequencial) na documentação
+//     do próprio tipo;
+//   • ANEXO_I, aba `RN DPS_NFS-e`: `E0541` (o número não existe para o município de incidência),
+//     `E0565`/`E0577` (cada redução só vale para o TIPO correspondente do benefício), `E0533` (o
+//     grupo `BM` só é permitido em operação tributável).
+
+export const TAMANHO_NBM = 14;
+
+/**
+ * Os três tipos, e por que o tipo é DECLARADO em vez de deduzido do campo preenchido.
+ *
+ * `E0565` e `E0577` dizem que cada campo de redução só é permitido quando o `nBM` for de um
+ * benefício **daquele tipo** — atributo da concessão do município, que este sistema não tem. E
+ * `SEM_REDUCAO` existe porque benefício que não reduz base é legítimo (o `xs:choice` tem os dois
+ * filhos opcionais; o `E0612` cita "Isenção" e "Alíquota Diferenciada"). Sem esta opção, "ainda não
+ * preenchi" e "este benefício não reduz base" ficariam indistinguíveis.
+ */
+export const TIPOS_REDUCAO_BM = [
+  {
+    valor: "SEM_REDUCAO",
+    rotulo: "Não reduz a base de cálculo",
+    ajuda:
+      "É o caso de benefício de isenção ou de alíquota diferenciada, por exemplo — o benefício "
+      + "existe e é declarado, mas não entra redução de base na nota.",
+  },
+  {
+    valor: "VALOR",
+    rotulo: "Reduz por VALOR (R$)",
+    ajuda:
+      "O valor da redução é de cada nota (ele depende da base daquela nota), então não se cadastra "
+      + "aqui: o que fica registrado é que o benefício é deste tipo.",
+  },
+  {
+    valor: "PERCENTUAL",
+    rotulo: "Reduz por PERCENTUAL (%)",
+    ajuda: "O percentual vale para qualquer nota, então é ele que se cadastra aqui.",
+  },
+];
+
+export const MOTIVO_BENEFICIO_MUNICIPAL =
+  "Se o município concedeu algum benefício de ISSQN a esta empresa, é aqui que o número dele fica "
+  + "guardado — é o grupo “BM” da DPS.";
+
+// Fica junto do campo: quem preenche precisa saber que ninguém vai conferir isto depois por ele.
+export const PORQUE_BENEFICIO_DIGITADO =
+  "O número é do MUNICÍPIO: cada prefeitura concede o seu, e o identificador é gerado pelo Sistema "
+  + "Nacional quando ela cadastra o benefício. Não existe lista nacional neste sistema — este campo "
+  + "é digitado por você, nada aqui confere o CONTEÚDO (só o formato), e quem recusa um número "
+  + "inexistente é o fisco, na hora de emitir.";
+
+// ⚠⚠ A FRASE QUE IMPEDE A CRENÇA FALSA. Sem ela, configurar o benefício e ver a nota sair com o
+// imposto cheio é uma descoberta que só acontece depois da emissão.
+export const BENEFICIO_NAO_VAI_NO_XML =
+  "⚠ Este cadastro ainda NÃO chega à nota: o XML da DPS que este sistema monta não leva o grupo "
+  + "“BM”, então a nota continua saindo com o ISS cheio, sem a redução. O que você preencher aqui "
+  + "fica guardado para quando o envio existir.";
+
+export const PROBLEMA_NBM =
+  `o número do benefício municipal tem exatamente ${TAMANHO_NBM} dígitos (7 do município + 2 do `
+  + "tipo + 5 sequenciais)";
+
+export const PROBLEMA_P_RED_BC =
+  "informe um percentual entre 0 e 100, com até duas casas (ex.: 40,00)";
+
+/**
+ * `nBM` — 14 dígitos.
+ *
+ * ⚠ A máscara do ofício da prefeitura não é recusada: só os DÍGITOS contam, como no `cTribMun` e no
+ * `cTribNac`. Vazio NÃO é problema — é ausência (a maioria das empresas não tem benefício nenhum),
+ * e pintar de vermelho quem não tem faria o aviso virar paisagem.
+ */
+export function lerNumeroBeneficioMunicipal(entrada) {
+  const texto = String(entrada ?? "").trim();
+  if (!texto) return vazio();
+  const digitos = texto.replace(/\D+/g, "");
+  if (digitos.length !== TAMANHO_NBM) {
+    return { preenchido: true, valor: null, problema: PROBLEMA_NBM };
+  }
+  return { preenchido: true, valor: digitos, problema: null };
+}
+
+/**
+ * `pRedBCBM` — percentual de 0 a 100, até duas casas.
+ *
+ * ⚠ Vírgula E ponto como separador DECIMAL, pelo mesmo motivo de `lerPercentualCarga`: percentual
+ * não tem separador de milhar, então não existe a ambiguidade que obriga o campo de VALOR da nota
+ * a ter máscara de centavos. ⚠ Devolve NÚMERO, e `0` é legítimo — não usar `||` com isto.
+ */
+export function lerPercentualReducaoBM(entrada) {
+  const texto = String(entrada ?? "").trim();
+  if (!texto) return vazio();
+  const normalizado = texto.replace(",", ".");
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(normalizado)) {
+    return { preenchido: true, valor: null, problema: PROBLEMA_P_RED_BC };
+  }
+  const n = Number(normalizado);
+  if (!Number.isFinite(n) || n < 0 || n > 100) {
+    return { preenchido: true, valor: null, problema: PROBLEMA_P_RED_BC };
+  }
+  return { preenchido: true, valor: n, problema: null };
+}
+
+/**
+ * Os tipos de parametrização, na letra da documentação do `TSNumBeneficioMunicipal`.
+ *
+ * ⚠ ESTA LISTA NÃO DECIDE NADA — ela só TRADUZ os dois dígitos do meio do número para o contador
+ * conferir o que digitou, do mesmo jeito que a tela mostra quais 3 dígitos do `cTribMun` vão para a
+ * DPS. Um código fora dela não é recusado: a forma oficial é `[0-9]{14}` e mais nada.
+ */
+const TIPOS_PARAMETRIZACAO_NBM = {
+  "01": "legislação",
+  "02": "regimes especiais",
+  "03": "retenções",
+  "04": "outros benefícios",
+};
+
+/**
+ * Quebra o `nBM` nas três partes que a fonte descreve, para CONFERÊNCIA.
+ *
+ * @returns {null|{municipioIbge: string, tipo: string, tipoRotulo: string|null, sequencial: string}}
+ */
+export function decomporNumeroBeneficioMunicipal(entrada) {
+  const leitura = lerNumeroBeneficioMunicipal(entrada);
+  if (!leitura.valor) return null;
+  const tipo = leitura.valor.slice(7, 9);
+  return {
+    municipioIbge: leitura.valor.slice(0, 7),
+    tipo,
+    tipoRotulo: TIPOS_PARAMETRIZACAO_NBM[tipo] || null,
+    sequencial: leitura.valor.slice(9),
+  };
+}
+
+/**
+ * O que está incoerente no benefício — ESPELHO das recusas de `normalizeCamposEmissaoNfse`.
+ *
+ * ⚠ Mudou lá, muda aqui: senão a tela promete um desfecho e o servidor entrega outro. Cada linha
+ * carrega o código de erro que o backend devolve, para que os dois lados sejam conferíveis.
+ *
+ * ⚠ Campo com FORMA inválida não entra aqui — quem fala dele é a leitura, no próprio campo.
+ */
+export function problemasDoBeneficioMunicipal({ numero, tipoReducao, pRedBC } = {}) {
+  const nBM = lerNumeroBeneficioMunicipal(numero);
+  const perc = lerPercentualReducaoBM(pRedBC);
+  const tipo = String(tipoReducao ?? "").trim();
+  const problemas = [];
+
+  // `nBM` é `1-1` DENTRO do grupo `BM`: tipo ou percentual sozinho descreveria uma redução de
+  // imposto que não aponta para concessão nenhuma.
+  if ((tipo || perc.preenchido) && !nBM.preenchido) {
+    problemas.push({
+      erro: "company_beneficio_municipal_sem_numero",
+      texto:
+        "Informe o número do benefício municipal — sem ele não há benefício a declarar, e o "
+        + "servidor recusa o cadastro.",
+    });
+  }
+  // `E0577`: o percentual só é permitido quando o benefício é do tipo redução por percentual.
+  if (perc.preenchido && tipo && tipo !== "PERCENTUAL") {
+    problemas.push({
+      erro: "company_beneficio_municipal_percentual_fora_do_tipo",
+      texto:
+        "O percentual de redução só vale para benefício do tipo “Reduz por PERCENTUAL”. Qual dos "
+        + "dois campos se preenche depende de como o município cadastrou o benefício (regras E0565 "
+        + "e E0577) — eles não são intercambiáveis.",
+    });
+  }
+  if (tipo === "PERCENTUAL" && !perc.preenchido) {
+    problemas.push({
+      erro: "company_beneficio_municipal_percentual_ausente",
+      texto:
+        "Informe o percentual de redução da base de cálculo — declarar que o benefício reduz por "
+        + "percentual e não dizer quanto deixa o cadastro pela metade.",
+    });
+  }
+  // ⚠ Número SEM tipo: pendência, não recusa. O servidor grava (o tipo é opcional na coluna), mas
+  // o cadastro fica sem dizer o que o benefício faz — e é o que decide se a redução entra na nota.
+  if (nBM.preenchido && !tipo) {
+    problemas.push({
+      erro: null,
+      texto:
+        "Escolha o que este benefício faz com a base de cálculo. Não dá para deduzir isso do "
+        + "número: é atributo da concessão do município.",
+    });
+  }
+  return problemas;
+}

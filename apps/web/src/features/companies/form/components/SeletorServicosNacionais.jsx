@@ -166,20 +166,24 @@ export function SeletorServicosNacionais({
       )}
 
       {/* ── QUAL DELES A NOTA LEVA ───────────────────────────────────────────── */}
-      {/* ⚠ ESTE BLOCO É UMA PONTE, e o motivo está escrito para quem vier depois: o dono pediu a
-          escolha NA HORA DE EMITIR, e ela ainda não chega ao XML — `buildDpsXml` monta o `cTribNac`
-          a partir de `company.codigoServicoNacional` e de mais nada, e não há campo de serviço no
-          payload da emissão (`NfseService.js:540`). Enquanto for assim, a empresa com mais de um
-          código precisa dizer AQUI qual vale, senão o cadastro descreve uma coisa e a nota declara
-          outra. Com um código só não há o que escolher, e a tela não pergunta. */}
+      {/* ⚠ ESTE É O MARCADOR, e ele é o padrão da empresa: grava `Company.codigoServicoNacional`,
+          que é o `cTribNac` que a DPS leva quando a emissão não escolhe outro
+          (`buildDpsXml`: `data.servico?.codigoServicoNacional || company.codigoServicoNacional`).
+          Com um código só não há o que escolher, e a tela não pergunta.
+
+          ⚠ SEM MARCAR NÃO É MAIS RECUSA (dono, 20/08/2026: *"pode colocar o primeiro valor, pois é
+          o contador que está configurando"*). O servidor elege o PRIMEIRO da lista — que é o
+          primeiro que o contador digitou. O marcador continua vencendo a posição, e por isso ele
+          continua aqui: marcar é escolha explícita, posição é ordem de digitação. Marcar um código
+          que NÃO está na lista segue sendo recusa. */}
       {escolhidos.length > 1 && (
         <fieldset style={{ border: "1px solid #44475A", borderRadius: 6, padding: "8px 10px", margin: 0 }}>
           <legend style={{ fontSize: "0.8rem", color: "#F8F8F2", padding: "0 6px" }}>
             Qual destes a nota leva
           </legend>
           <div style={{ ...AJUDA, marginBottom: 6 }}>
-            A escolha por emissão ainda não está ligada: hoje toda nota deste sistema sai com o
-            código marcado abaixo. Os demais ficam cadastrados e aparecem na tela de emissão.
+            A nota sai com o código marcado abaixo. Os demais ficam cadastrados e aparecem na tela
+            de emissão.
           </div>
           {escolhidos.map((codigo) => (
             <label key={codigo} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.82rem", cursor: "pointer", padding: "3px 0" }}>
@@ -196,13 +200,30 @@ export function SeletorServicosNacionais({
               </span>
             </label>
           ))}
-          {!escolhidos.includes(String(codigoDaNota || "")) && (
-            <div style={{ fontSize: 11, color: "var(--state-danger)", marginTop: 6 }}>
-              Escolha qual código a nota leva — sem isso o servidor recusa o cadastro
-              (“company_codigo_servico_nacional_fora_da_lista”). O sistema não elege um por você:
-              o serviço declarado é dado fiscal.
+          {/* ⚠ DUAS AUSÊNCIAS DIFERENTES, DOIS DESFECHOS DIFERENTES — e a tela diz qual é qual,
+              porque o servidor trata as duas de forma diferente desde 20/08/2026. */}
+          {!String(codigoDaNota || "").trim() ? (
+            /* Nada marcado: NÃO é erro. Cinza, e dizendo qual sai — nunca deixando o contador
+               achar que o sistema decidiu sozinho um serviço que ele não escolheu. */
+            <div style={{ ...AJUDA, marginTop: 6 }}>
+              Sem marcar nenhum, a nota sai com o <strong>primeiro da lista</strong> (
+              <code style={{ color: "var(--accent-cyan)" }}>
+                {formatarCodigoServicoNacional(escolhidos[0])}
+              </code>
+              {descricaoDe(escolhidos[0]) ? ` — ${descricaoDe(escolhidos[0])}` : ""}). Marque outro
+              para trocar.
             </div>
-          )}
+          ) : !escolhidos.includes(String(codigoDaNota || "")) ? (
+            /* Marcado um código que não está na lista: são dois campos que se contradizem, e o
+               servidor recusa. Trocar em silêncio o que o contador marcou é o que não se faz. */
+            <div style={{ fontSize: 11, color: "var(--state-danger)", marginTop: 6 }}>
+              O código marcado (
+              <code>{formatarCodigoServicoNacional(String(codigoDaNota))}</code>) não está entre os
+              cadastrados acima — o servidor recusa o cadastro
+              (“company_codigo_servico_nacional_fora_da_lista”). Marque um dos códigos da lista,
+              ou acrescente esse à lista. O sistema não troca por você o código que você marcou.
+            </div>
+          ) : null}
         </fieldset>
       )}
 

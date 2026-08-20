@@ -121,10 +121,14 @@ describe("⚠ A ABA PASSA AS PROPS — o bloco não renderiza vazio para sempre"
     await waitFor(() => expect(onSalvar).toHaveBeenCalled());
     const campos = onSalvar.mock.calls[0][0];
     expect(campos.pTotTribMun).toBe("2,5");
-    // ⚠ OS SETE VIAJAM SEMPRE, e os que não foram tocados vão VAZIOS de propósito: é assim que a
+    // ⚠ TODOS VIAJAM SEMPRE, e os que não foram tocados vão VAZIOS de propósito: é assim que a
     // tela consegue APAGAR uma configuração errada. Quem separa "não mexer" de "apagar" é a
     // presença da chave no corpo, e a aba manda todas as dela.
+    // ⚠ Eram SETE até 20/08/2026; o benefício municipal (dono) acrescentou três. A lista é o
+    // espelho de `CAMPOS_EMISSAO_NFSE` (`routes/firm/index.js`) — campo fora dela é recusado
+    // nomeando-o, e campo que falte aqui simplesmente não é salvo, sem erro.
     expect(Object.keys(campos).sort()).toEqual([
+      "beneficioMunicipalNumero", "beneficioMunicipalPRedBC", "beneficioMunicipalTipoReducao",
       "codigoServicoMunicipal", "codigoServicoNacional", "codigosServicoNacional",
       "pTotTribEst", "pTotTribFed", "pTotTribMun", "rpsSerie",
     ]);

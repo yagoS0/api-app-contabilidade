@@ -205,6 +205,13 @@ function makeCompanies(count = 6) {
         codigosServicoNacional: ehMangaratiba ? ["171201", "010101"] : [],
         codigoServicoMunicipal: ehMangaratiba ? "001" : null,
         rpsSerie: ehMangaratiba ? "00001" : null,
+        // ⚠ BENEFÍCIO MUNICIPAL: a empresa configurada nasce SEM nenhum, e é assim que tem de ser
+        // — benefício é exceção, não o normal, e um número inventado num mock viraria exemplo
+        // copiado. O caminho com benefício se exercita digitando (a forma é `[0-9]{14}`); o
+        // caminho SEM benefício é o que 33 de 33 empresas da carteira têm hoje.
+        beneficioMunicipalNumero: null,
+        beneficioMunicipalTipoReducao: null,
+        beneficioMunicipalPRedBC: null,
         // ⚠ AS ATIVIDADES — é delas que sai a DESCRIÇÃO SUGERIDA da nota
         // (`notas/lib/descricaoSugerida.js`). Sem elas no mock, o assistente offline mostraria
         // "esta empresa não tem atividade cadastrada" em TODAS, e o caminho normal da sugestão
@@ -1545,16 +1552,21 @@ function normalizarCamposEmissaoNfseMock(entrada, atuais) {
       : [];
   }
 
-  // ⚠ A MESMA COERÊNCIA DO BACKEND (`validateAndNormalizeCompanyProfile`), com o MESMO código de
-  // erro. Com um código só, ele é o que a nota leva; com vários, o marcado tem de estar na lista —
-  // eleger "o primeiro" seria o sistema decidindo qual serviço a empresa declara ao fisco.
+  // ⚠ A MESMA COERÊNCIA DO BACKEND (`normalizeCamposEmissaoNfse`), com o MESMO código de erro —
+  // e com a MESMA inversão de 20/08/2026 (dono: *"pode colocar o primeiro valor, pois é o contador
+  // que está configurando"*). Com um código só, ele é o que a nota leva; com vários **e nenhum
+  // marcado**, vale o PRIMEIRO — quem digitou a lista nessa ordem foi o contador. Com vários e o
+  // marcado FORA da lista continua sendo recusa: ali são dois campos preenchidos que se
+  // contradizem, e trocar o marcado em silêncio é o defeito que a regra de 16/08 descrevia.
   if (resultado.codigosServicoNacional.length === 1) {
     resultado.codigoServicoNacional = resultado.codigosServicoNacional[0];
-  } else if (
-    resultado.codigosServicoNacional.length > 1
-    && !resultado.codigosServicoNacional.includes(resultado.codigoServicoNacional)
-  ) {
-    throw new Error("company_codigo_servico_nacional_fora_da_lista");
+  } else if (resultado.codigosServicoNacional.length > 1) {
+    const marcado = String(resultado.codigoServicoNacional ?? "").trim();
+    if (!marcado) {
+      resultado.codigoServicoNacional = resultado.codigosServicoNacional[0];
+    } else if (!resultado.codigosServicoNacional.includes(marcado)) {
+      throw new Error("company_codigo_servico_nacional_fora_da_lista");
+    }
   }
 
   if (entrada.codigoServicoMunicipal === undefined) {
@@ -1605,6 +1617,76 @@ function normalizarCamposEmissaoNfseMock(entrada, atuais) {
     const valor = Number(texto);
     if (!Number.isFinite(valor) || valor < 0 || valor > 100) throw new Error(erro);
     resultado[campo] = valor;
+  }
+
+  // ── BENEFÍCIO MUNICIPAL DO ISSQN (grupo `BM` da DPS), dono 20/08/2026 ──────────────────────
+  // ⚠ AS MESMAS RECUSAS DO BACKEND (`normalizeCamposEmissaoNfse`), com os MESMOS códigos de erro.
+  // Um mock mais permissivo aqui ensinaria offline um cadastro que o real recusa — e o campo em
+  // questão REDUZ IMPOSTO.
+  if (entrada.beneficioMunicipalNumero === undefined) {
+    resultado.beneficioMunicipalNumero = atuais.beneficioMunicipalNumero ?? null;
+  } else {
+    const bruto = String(entrada.beneficioMunicipalNumero ?? "").trim();
+    if (!bruto) {
+      resultado.beneficioMunicipalNumero = null;
+    } else {
+      const digitos = so(bruto);
+      if (digitos.length !== 14) throw new Error("company_beneficio_municipal_numero_invalid");
+      resultado.beneficioMunicipalNumero = digitos;
+    }
+  }
+
+  if (entrada.beneficioMunicipalTipoReducao === undefined) {
+    resultado.beneficioMunicipalTipoReducao = atuais.beneficioMunicipalTipoReducao ?? null;
+  } else {
+    const bruto = String(entrada.beneficioMunicipalTipoReducao ?? "").trim().toUpperCase();
+    if (!bruto) {
+      resultado.beneficioMunicipalTipoReducao = null;
+    } else if (!["SEM_REDUCAO", "VALOR", "PERCENTUAL"].includes(bruto)) {
+      throw new Error("company_beneficio_municipal_tipo_invalid");
+    } else {
+      resultado.beneficioMunicipalTipoReducao = bruto;
+    }
+  }
+
+  if (entrada.beneficioMunicipalPRedBC === undefined) {
+    resultado.beneficioMunicipalPRedBC = atuais.beneficioMunicipalPRedBC ?? null;
+  } else {
+    const bruto = String(entrada.beneficioMunicipalPRedBC ?? "").trim();
+    if (!bruto) {
+      resultado.beneficioMunicipalPRedBC = null;
+    } else {
+      const texto = bruto.replace(",", ".");
+      if (!/^\d{1,3}(\.\d{1,2})?$/.test(texto)) {
+        throw new Error("company_beneficio_municipal_p_red_bc_invalid");
+      }
+      const valor = Number(texto);
+      if (!Number.isFinite(valor) || valor < 0 || valor > 100) {
+        throw new Error("company_beneficio_municipal_p_red_bc_invalid");
+      }
+      resultado.beneficioMunicipalPRedBC = valor;
+    }
+  }
+
+  // ⚠ A COERÊNCIA DO GRUPO, na MESMA ordem do backend. Aqui ela é conferida contra o resultado
+  // FINAL (o mock tem os valores atuais em mãos, o validador do servidor não) — o desfecho para o
+  // que a tela manda é o mesmo, porque a tela manda os três campos sempre.
+  if ((resultado.beneficioMunicipalTipoReducao || resultado.beneficioMunicipalPRedBC != null)
+    && !resultado.beneficioMunicipalNumero) {
+    throw new Error("company_beneficio_municipal_sem_numero");
+  }
+  if (resultado.beneficioMunicipalPRedBC != null
+    && resultado.beneficioMunicipalTipoReducao !== "PERCENTUAL") {
+    throw new Error("company_beneficio_municipal_percentual_fora_do_tipo");
+  }
+  if (resultado.beneficioMunicipalTipoReducao === "PERCENTUAL"
+    && resultado.beneficioMunicipalPRedBC == null) {
+    throw new Error("company_beneficio_municipal_percentual_ausente");
+  }
+  // Apagar o número apaga o grupo inteiro — nada de tipo órfão.
+  if (!resultado.beneficioMunicipalNumero) {
+    resultado.beneficioMunicipalTipoReducao = null;
+    resultado.beneficioMunicipalPRedBC = null;
   }
 
   return resultado;
@@ -7923,6 +8005,7 @@ export function createMockApi() {
       const aceitos = [
         "codigoServicoNacional", "codigosServicoNacional", "codigoServicoMunicipal", "rpsSerie",
         "pTotTribFed", "pTotTribEst", "pTotTribMun",
+        "beneficioMunicipalNumero", "beneficioMunicipalTipoReducao", "beneficioMunicipalPRedBC",
       ];
       const intrusos = Object.keys(corpo).filter((k) => !aceitos.includes(k));
       if (intrusos.length) {

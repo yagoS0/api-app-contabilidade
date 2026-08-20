@@ -210,6 +210,13 @@ export async function provisionarEmpresa({ body, actorUserId, log = null } = {})
           pTotTribFed: normalizedCompany.pTotTribFed,
           pTotTribEst: normalizedCompany.pTotTribEst,
           pTotTribMun: normalizedCompany.pTotTribMun,
+          // ⚠ BENEFÍCIO MUNICIPAL DO ISSQN — mesma regra: **nada é derivado**. O número é do
+          // MUNICÍPIO, não há lista neste repositório e não se deduz do CNAE. No `create` o
+          // `undefined` vira NULL, que é o estado certo para empresa nova: sem benefício
+          // declarado, a nota sai com o imposto cheio, que é o desfecho seguro.
+          beneficioMunicipalNumero: normalizedCompany.beneficioMunicipalNumero,
+          beneficioMunicipalTipoReducao: normalizedCompany.beneficioMunicipalTipoReducao,
+          beneficioMunicipalPRedBC: normalizedCompany.beneficioMunicipalPRedBC,
           // ── Ficha de cadastro (muito disso já vem preenchido da BrasilAPI) ──
           inscricaoMunicipalData: normalizedCompany.inscricaoMunicipalData,
           inscricaoEstadual: normalizedCompany.inscricaoEstadual,
