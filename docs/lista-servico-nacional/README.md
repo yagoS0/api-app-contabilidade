@@ -70,7 +70,11 @@ apps/web/src/lib/servicosNacionais/servicoNacional.js              (a regra: bus
 ```
 
 O `.data.js` é carregado por **`import()` dinâmico** e não entra no bundle inicial — mesmo desenho
-de `apps/web/src/lib/municipios/municipiosIbge.data.js` (a lista do IBGE).
+de `packages/shared/src/municipios/municipiosIbge.data.js` (a lista do IBGE).
+
+⚠ A lista do IBGE virou **arquivo único** em 20/08/2026 (era cópia nos dois portais). Esta lista
+aqui **continua em duas cópias**, escritas pelo gerador nos dois destinos — são tabelas diferentes e
+a consolidação de uma não consolidou a outra.
 
 ## Para atualizar
 

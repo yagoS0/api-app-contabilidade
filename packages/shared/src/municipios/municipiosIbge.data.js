@@ -5,12 +5,38 @@
 // REGISTROS: 5571 — os 5.570 municípios mais o Distrito Federal, que não é município mas
 //            tem código próprio (5300108) e é o que vai no campo de município do documento fiscal.
 //
+// ─── ⚠ ESTA É A CÓPIA ÚNICA. ANTES ERAM DUAS. ───────────────────────────────────────────────
+//
+// Até 20/08/2026 esta tabela existia DUAS vezes — em `apps/web/src/lib/municipios/` e em
+// `apps/portal-cliente-web/src/lib/municipios/` —, e o cabeçalho das duas dizia "regenerou uma,
+// regenere a outra". O plano de consolidação estava escrito ali e é exatamente o que foi feito:
+// mover para `packages/shared` e apontar os dois portais para cá.
+//
+// ⚠ ISSO NÃO CONTRADIZ A RECUSA DE 19/08/2026. O que se recusou lá foi uma TERCEIRA cópia (embarcar
+// a lista também no `apps/api`). Mover ELIMINA cópias: de duas para uma. É o oposto da operação
+// recusada, e é o que o cabeçalho das duas cópias pedia.
+//
+// ⚠ NÃO HÁ SCRIPT GERADOR PARA ESTA LISTA — conferido em 20/08/2026. O único gerador do projeto é
+// `apps/api/scripts/gerar-lista-servico-nacional.mjs`, e ele é de OUTRA tabela
+// (`servicosNacionais.data.js`). Esta aqui se atualiza pelo procedimento manual abaixo.
+//
+// ─── QUEM CONSOME ───────────────────────────────────────────────────────────────────────────
+//
+// Os dois portais, cada um pelo seu ponto de entrada, sempre por `import()` DINÂMICO:
+//   • `apps/web/src/lib/municipios/municipioIbge.js`                (portal do escritório)
+//   • `apps/portal-cliente-web/src/lib/municipios/municipioIbge.js` (portal do cliente)
+//
+// ⚠ OS DOIS PONTOS DE ENTRADA CONTINUAM SEPARADOS, E É DECISÃO. Eles não são a mesma coisa: o do
+// escritório carrega também os textos do CADASTRO da empresa (`impedimentoDeEmissao`,
+// "Editar cadastro → Inscrições"), que são do contador e não fazem sentido na tela do cliente. O que
+// era duplicação é o DADO, e é ele que foi unificado aqui.
+//
 // ⚠ POR QUE ESTA LISTA EXISTE, E O QUE ELA NÃO FAZ.
-// O código IBGE do município emissor é o "cLocEmi" da DPS (dado fiscal): errado, a nota sai emitida
-// no município errado, e o erro é silencioso. O sistema só guarda o município como TEXTO
-// (PortalClient.municipio), e converter nome→código por conta própria erra em homônimo — há CINCO
-// "Bom Jesus" e cinco "São Domingos" nesta lista. Ela alimenta uma ESCOLHA do contador; nada aqui
-// deriva, sugere ou pré-seleciona município nenhum.
+// O código IBGE do município é dado fiscal: errado, a nota sai emitida no município errado, e o erro
+// é silencioso. O sistema só guarda o município como TEXTO (`PortalClient.municipio`), e converter
+// nome→código por conta própria erra em homônimo — há CINCO "Bom Jesus" e cinco "São Domingos"
+// nesta lista. Ela alimenta uma ESCOLHA de quem preenche; nada aqui deriva, sugere ou pré-seleciona
+// município nenhum.
 //
 // ⚠ EMBARCADA DE PROPÓSITO, nunca buscada em tempo de execução: uma chamada de rede no meio do
 // cadastro (ou de uma emissão) seria mais uma dependência externa para falhar.
@@ -21,7 +47,11 @@
 //   2. de cada item: codigo = String(id) (7 dígitos), nome = nome,
 //      uf = microrregiao.mesorregiao.UF.sigla — com "regiao-imediata".["regiao-intermediaria"].UF.sigla
 //      como segunda leitura (nenhum item precisou dela em 2026-08-14, mas a API já variou);
-//   3. ordene por UF e depois por nome (pt-BR) e regrave este arquivo inteiro.
+//   3. ordene por UF e depois por nome (pt-BR) e regrave ESTE arquivo inteiro.
+//
+// ⚠ AGORA É UM ARQUIVO SÓ: não há mais "regenere a outra cópia". A sanidade do que for regravado é
+// guardada por `apps/web/src/lib/__tests__/municipioIbge.test.js` (5571 registros, 7 dígitos,
+// códigos únicos, 27 UFs) — se a nova extração violar qualquer uma dessas, o teste cai.
 //
 // Formato: [código IBGE (7 dígitos), nome, UF]. Tupla em vez de objeto porque são 5571
 // linhas; o arquivo é carregado por import() dinâmico e não entra no bundle inicial.

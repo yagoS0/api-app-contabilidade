@@ -222,7 +222,7 @@ esses, saem dos lançamentos de verdade do mock.
 
 Campo no formulário de edição (bloco **Inscrições**, junto da inscrição municipal — os campos que
 `buildMissingFields` do emissor exige). Componente: `form/components/SeletorMunicipioIbge.jsx`;
-regra em `lib/municipios/municipioIbge.js`; dado em `lib/municipios/municipiosIbge.data.js`
+regra em `lib/municipios/municipioIbge.js`; dado em `@contabilidade/shared/municipios-ibge`
 (5.571 linhas, extraídas da API de Localidades do IBGE em 2026-08-14, **versionadas** — nunca
 buscadas em runtime; o arquivo diz no cabeçalho como atualizar).
 
@@ -496,7 +496,8 @@ recebe isso pela prop `fetchCnpj`). Segundo consumidor de fora do onboarding, ao
   um pedaço, **nada** é escrito e a tela nomeia o que faltou.
 - ⚠ **O `cMun` é aceito por PROVA, nunca por confiança.** Nada de nome→código (homônimo ⇒ nota
   emitida no município errado, a proibição de sempre). O código que a resposta trouxer só vira
-  `cMun` se: 7 dígitos **e** existir em `municipiosIbge.data.js` **e** o município/UF dessa linha
+  `cMun` se: 7 dígitos **e** existir na lista oficial (`@contabilidade/shared/municipios-ibge`)
+  **e** o município/UF dessa linha
   baterem com o `municipio`/`uf` da MESMA resposta. ⚠ O nome do campo na BrasilAPI **não está
   confirmado** por documentação neste repositório — é justamente por isso que a aceitação passa
   pelas três provas; campo ausente ou com outro significado simplesmente não produz código, e o

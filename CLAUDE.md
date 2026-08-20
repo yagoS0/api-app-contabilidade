@@ -17,15 +17,22 @@ apps/api/                 - Backend Node.js/Express (porta 3000)
 apps/web/                 - Frontend React/Vite — portal do ESCRITÓRIO (paleta escura)
 apps/portal-cliente-web/  - Frontend React/Vite — portal do CLIENTE (paleta clara, porta 5210)
 apps/pdf-reader/          - Serviço Python/FastAPI de parsing de PDF (porta 8000)
-packages/shared/          - Contratos e tipos compartilhados
+packages/shared/          - `@contabilidade/shared`. Contratos/tipos + a LISTA DO IBGE
+                            (`municipios-ibge`, 5.571 linhas), que era cópia nos dois portais
+                            até 20/08/2026. ⚠ Consumida por `import()` DINÂMICO nos dois —
+                            import estático jogaria ~197 KB no bundle inicial
 ```
 
 Cada app tem seu próprio `CLAUDE.md` com regras específicas.
 
 ⚠ **`apps/web` e `apps/portal-cliente-web` são dois frontends separados, sem código compartilhado.**
 Vários módulos de regra fiscal existem **em cópia** nos dois (valor da nota, consulta do tomador,
-reaproveitamento, código de serviço, municípios). A tabela "mudou lá, muda aqui" está em
-`apps/portal-cliente-web/CLAUDE.md` — duas leituras da mesma coluna divergem na primeira correção, e
+reaproveitamento, código de serviço).
+⚠ A **tabela do IBGE** saiu dessa lista em 20/08/2026: o DADO virou arquivo único em
+`@contabilidade/shared/municipios-ibge`. A REGRA (`lib/municipios/municipioIbge.js`) continua uma
+por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente.
+
+A tabela "mudou lá, muda aqui" está em `apps/portal-cliente-web/CLAUDE.md` — duas leituras da mesma coluna divergem na primeira correção, e
 aí as duas telas afirmam coisas diferentes sobre a MESMA empresa.
 
 ## Tech Stack

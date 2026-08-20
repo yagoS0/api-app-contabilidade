@@ -113,7 +113,7 @@ export const CAMPOS_ENDERECO_EXIGIDOS = [
  * deriva nada: o que se faz é o contrário, aceitar um código que a resposta traga **desde que ele
  * se prove**, contra a lista oficial versionada do IBGE:
  *   1. tem exatamente 7 dígitos;
- *   2. existe na lista (`lib/municipios/municipiosIbge.data.js`);
+ *   2. existe na lista (`@contabilidade/shared/municipios-ibge`);
  *   3. o município e a UF dessa linha batem com o `municipio`/`uf` da MESMA resposta.
  *
  * ⚠ O NOME DO CAMPO NA BRASILAPI NÃO ESTÁ CONFIRMADO por documentação oficial neste repositório —

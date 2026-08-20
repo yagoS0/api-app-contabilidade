@@ -13,7 +13,12 @@ import {
   normalizarParaBusca,
   rotuloMunicipio,
 } from "../municipios/municipioIbge";
-import { MUNICIPIOS_IBGE } from "../municipios/municipiosIbge.data";
+// ⚠ ÚNICA MUDANÇA DESTE ARQUIVO EM 20/08/2026: o caminho. A tabela saiu de
+// `../municipios/municipiosIbge.data` (que existia em cópia nos dois portais) para o pacote
+// compartilhado — nenhuma asserção abaixo foi tocada, e é de propósito: elas são a guarda de
+// sanidade do arquivo gerado (5571 registros, 7 dígitos, códigos únicos, 27 UFs) e continuam
+// medindo exatamente as mesmas tuplas.
+import { MUNICIPIOS_IBGE } from "@contabilidade/shared/municipios-ibge";
 
 describe("lerCodigoMunicipioIbge — a MESMA leitura do servidor", () => {
   it("vazio é ausência, não erro (a empresa apenas não emite)", () => {

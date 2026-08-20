@@ -150,12 +150,23 @@ export function buscarMunicipios(lista, termo, { limite = 40 } = {}) {
  * da tabela fora do bundle inicial. Duas telas abrindo ao mesmo tempo compartilham a mesma carga.
  *
  * ⚠ Isto NÃO é uma chamada de rede a terceiro: é um chunk do próprio build. A lista é versionada no
- * repositório de propósito (ver o cabeçalho de `municipiosIbge.data.js`).
+ * repositório de propósito (ver o cabeçalho do arquivo de dados).
+ *
+ * ⚠ O DADO MORA EM `@contabilidade/shared/municipios-ibge` DESDE 20/08/2026, e não mais ao lado
+ * deste arquivo. Antes a tabela existia DUAS vezes — aqui e no portal do cliente —, com o cabeçalho
+ * das duas mandando "regenerou uma, regenere a outra". Mover para o pacote ELIMINA a segunda cópia;
+ * não confundir com a recusa de 19/08/2026, que foi contra uma TERCEIRA cópia (embarcá-la também no
+ * `apps/api`).
+ *
+ * ⚠ **CONTINUA SENDO `import()` DINÂMICO, e isso é o ponto.** É ele que mantém as ~197 KB fora do
+ * bundle inicial. Trocar por `import` estático no topo do arquivo jogaria a tabela inteira na
+ * primeira tela que importar qualquer função daqui — e o chunk separado sumiria do build sem que
+ * nenhum teste caísse.
  */
 let promessaDaLista = null;
 export function carregarMunicipiosIbge() {
   if (!promessaDaLista) {
-    promessaDaLista = import("./municipiosIbge.data.js")
+    promessaDaLista = import("@contabilidade/shared/municipios-ibge")
       .then((m) => m.MUNICIPIOS_IBGE || m.default || [])
       .catch((err) => {
         // Uma falha de carga não pode virar "lista vazia" permanente: sem zerar a promessa, a

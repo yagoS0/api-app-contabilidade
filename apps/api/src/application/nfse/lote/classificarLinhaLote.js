@@ -171,14 +171,23 @@ function faltantesDoEndereco(endereco) {
  * seria fabricar a segunda afirmação. A prova 3 continua valendo INTEIRA no caminho da consulta,
  * que é onde ela nasceu.
  *
- * ⚠⚠ **E A LISTA OFICIAL DO IBGE NÃO EXISTE NO `apps/api`** — medido em 19/08/2026: ela mora nos
- * dois fronts (`apps/web` e `apps/portal-cliente-web`, 5.571 linhas, ~197 KB **cada**), e o
- * cabeçalho do próprio arquivo registra que já são duas cópias demais e que o lugar certo é um
- * pacote. Uma terceira cópia aqui foi **recusada** (decisão de 19/08/2026): transformaria uma
- * dívida conhecida em três lugares para regenerar.
+ * ⚠⚠ **A LISTA OFICIAL DO IBGE NÃO É LIDA POR ESTE MÓDULO — ela é INJETADA.** Sem ela, o código
+ * passa só pela FORMA e a linha sai marcada `municipio_nao_conferido`.
  *
- * Por isso a lista é **injetada**. Sem ela, o código passa só pela FORMA e a linha sai marcada
- * `municipio_nao_conferido`.
+ * ⚠ **ONDE ELA MORA MUDOU EM 20/08/2026, e o texto anterior aqui ficou falso.** Ele dizia que a
+ * tabela morava "nos dois fronts (5.571 linhas, ~197 KB **cada**)" e que uma terceira cópia no
+ * `apps/api` havia sido recusada em 19/08/2026. Hoje ela é **arquivo único**, em
+ * `@contabilidade/shared/municipios-ibge` (`packages/shared`), consumido pelos dois portais.
+ *
+ * ⚠ **ISSO NÃO REABRE A RECUSA DE 19/08** — pelo contrário. O que se recusou lá foi **acrescentar**
+ * uma terceira cópia; mover ELIMINA cópias (de duas para uma), que é o que o cabeçalho das duas
+ * pedia por escrito. A decisão de mover é do dono, 20/08/2026.
+ *
+ * ⚠ **E ESTE MÓDULO CONTINUA PURO E CONTINUA RECEBENDO A LISTA POR PARÂMETRO.** Que o pacote seja
+ * agora alcançável a partir do `apps/api` **não** significa que este arquivo passou a importá-lo:
+ * ele não importa, o default de `municipios` continua `null`, e quem não passar a lista continua
+ * recebendo `municipio_nao_conferido`. Trocar a injeção por um import aqui dentro é decisão à
+ * parte, não uma consequência da mudança de lugar.
  *
  * ⚠⚠ **`municipio_nao_conferido` NÃO QUER DIZER "ACEITAMOS SEM CONFERIR" — QUER DIZER "A
  * CONFERÊNCIA É ADIANTE".** A tela de conferência do lote roda no FRONT, e **o front tem a lista**

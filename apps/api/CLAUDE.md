@@ -581,7 +581,10 @@ que a chamada à BrasilAPI já mora (direto do browser) e onde está a lista ofi
 lista é o que falta para provar o `cMun` que vem NA PLANILHA: por isso ele sai marcado
 `municipio_nao_conferido` (estado `conferir`, **nunca** `pronta`) e **a conferência acontece na
 tela**, que a completa e rebaixa para `pendente` (`municipio_inexistente`) o código que não existir.
-Uma terceira cópia da tabela do IBGE no `apps/api` foi **recusada** em 19/08/2026.
+⚠ A tabela do IBGE virou **arquivo único** em `@contabilidade/shared/municipios-ibge` em
+20/08/2026 (eram duas cópias, uma por portal). Isso **não reabre** a recusa de 19/08/2026, que foi
+contra ACRESCENTAR uma terceira cópia no `apps/api`: mover elimina cópias. ⚠ E o classificador
+continua recebendo a lista **por parâmetro** — ele não importa o pacote.
 
 **O segundo passe vem no MESMO POST**, em dois campos, os dois parciais por natureza:
 
@@ -817,7 +820,8 @@ constante `DPS_VERSAO`, num lugar só, para virar em uma linha.
    `PortalClient.municipio`/`uf` (33/33 preenchidos, 32 no Rio). O de-para nome→IBGE exige a tabela
    do IBGE, que não temos, e erra em homônimo. **Migration sem backfill**, de propósito.
    - ✅ **RESPONDIDO (2026-08-14): o contador ESCOLHE numa lista oficial embarcada.** A tabela do
-     IBGE passou a existir no projeto (`apps/web/src/lib/municipios/municipiosIbge.data.js`, 5.571
+     IBGE passou a existir no projeto (`packages/shared/src/municipios/municipiosIbge.data.js` desde
+     20/08/2026 — antes em cópia nos dois portais —, 5.571
      linhas, extraídas da API de Localidades do IBGE, versionadas e datadas — **nunca** buscadas em
      runtime). O campo entrou no formulário de edição da empresa, no bloco "Inscrições".
      ⚠ **Escolher ≠ derivar:** nada é pré-selecionado, a busca não autosseleciona nem com um único

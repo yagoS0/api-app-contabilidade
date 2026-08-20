@@ -57,7 +57,8 @@ src/
     guias/              - guias + linha digitável
   lib/
     format.js  hooks.js  roles.js  mensagens.js  baixarBlob.js
-    municipios/   - regra + dado (5.571 linhas, 191 KB) por `import()` dinâmico
+    municipios/   - SÓ a regra; o dado (5.571 linhas) vem de `@contabilidade/shared/municipios-ibge`
+                    por `import()` dinâmico ⚠ a tabela era cópia nos dois portais até 20/08/2026
     servicosNacionais/ - Anexo B gerado (335 códigos, 63 KB), idem
   styles/tokens.css  styles/app.css
 ```
@@ -348,8 +349,9 @@ Os quatro estados são lista FECHADA (`classificarLinhaLote.js`): `pronta` · `c
 `consultar` · `pendente`. `lib/estadoDaLinhaDoLote.js` é ESPELHO, amarrado por teste que importa o
 `ESTADO` do backend. As duas coisas que esta tela DECIDE são as que o servidor não tem como fazer:
 
-1. ⚠⚠ **A CONFERÊNCIA DO CÓDIGO DO MUNICÍPIO.** A lista oficial do IBGE **não existe no `apps/api`**
-   (uma terceira cópia foi recusada em 19/08/2026); ela mora nos dois fronts. O backend marca
+1. ⚠⚠ **A CONFERÊNCIA DO CÓDIGO DO MUNICÍPIO.** A lista oficial do IBGE **não é lida pelo
+   `apps/api`** — ela mora em `packages/shared` (arquivo único desde 20/08/2026; antes eram duas
+   cópias, uma em cada portal) e hoje só os dois fronts a consomem. O backend marca
    `municipio_nao_conferido` e escreve, no próprio arquivo, que *"a conferência acontece na tela de
    ajuste, que tem a lista"*. **Cumprir a segunda metade é obrigação desta tela**: código que existe
    vira "Rio de Janeiro / RJ" na linha (município **e** UF, sempre); código que não existe **derruba
@@ -644,7 +646,8 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | `notas/lib/danfseDaNota.js` | `apps/web/src/features/notas/lib/danfseDaNota.js` (⚠ contratos DIFERENTES) |
 | `lote/lib/colunasDoLote.js` | `apps/api/src/application/nfse/lote/colunasLote.js` (**autoridade**) |
 | `lote/lib/estadoDaLinhaDoLote.js` (`ESTADO`) | `apps/api/src/application/nfse/lote/classificarLinhaLote.js` (**autoridade**) |
-| `lib/municipios/` · `lib/servicosNacionais/` | tabelas geradas; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs` — **não editar à mão** |
+| `lib/servicosNacionais/` | tabela gerada; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs`, que **escreve nos dois portais** — **não editar à mão** |
+| ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
 
 ⚠ Duas leituras da mesma coluna divergem na primeira correção — e aí as duas telas afirmam coisas

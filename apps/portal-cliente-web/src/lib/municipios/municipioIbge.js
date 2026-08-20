@@ -1,5 +1,5 @@
-// A REGRA do código IBGE do município, no portal do CLIENTE. O DADO (a lista oficial) mora ao
-// lado, em `municipiosIbge.data.js`, e entra por `import()` dinâmico — regra e dado separados
+// A REGRA do código IBGE do município, no portal do CLIENTE. O DADO (a lista oficial) mora em
+// `@contabilidade/shared/municipios-ibge` e entra por `import()` dinâmico — regra e dado separados
 // porque a lista tem 5.571 linhas e não pode pesar no bundle inicial de uma tela de login.
 //
 // ⚠ O QUE ESTE MÓDULO DELIBERADAMENTE NÃO FAZ: converter NOME de município em código.
@@ -11,8 +11,12 @@
 // ⚠ ORIGEM: as funções puras abaixo são as de `apps/web/src/lib/municipios/municipioIbge.js`
 // (portal do escritório). O que ficou de fora foi de propósito: lá o módulo carrega também os
 // textos do CADASTRO da empresa ("cLocEmi", "Editar cadastro → Inscrições"), que são do contador e
-// não fazem sentido na tela do cliente. Ver o cabeçalho de `municipiosIbge.data.js` para o porquê
-// de haver duas cópias da tabela e o que falta para haver uma só.
+// não fazem sentido na tela do cliente.
+//
+// ⚠ OS DOIS PONTOS DE ENTRADA CONTINUAM SEPARADOS DE PROPÓSITO, E ISSO NÃO É A DUPLICAÇÃO QUE FOI
+// RESOLVIDA. O que estava em cópia era o DADO (a tabela de 5.571 linhas), e ele virou um arquivo só
+// em 20/08/2026. Estas funções continuam duas porque os dois módulos NÃO são o mesmo módulo — ver o
+// parágrafo acima. Unificá-las traria os textos de cadastro do contador para a tela do cliente.
 
 export const TAMANHO_CODIGO_IBGE = 7;
 
@@ -90,12 +94,23 @@ export function buscarMunicipios(lista, termo, { limite = 40 } = {}) {
  * da tabela fora do bundle inicial. Dois campos abrindo ao mesmo tempo compartilham a mesma carga.
  *
  * ⚠ Isto NÃO é chamada de rede a terceiro: é um chunk do próprio build. A lista é versionada no
- * repositório de propósito (ver o cabeçalho de `municipiosIbge.data.js`).
+ * repositório de propósito (ver o cabeçalho do arquivo de dados).
+ *
+ * ⚠ O DADO MORA EM `@contabilidade/shared/municipios-ibge` DESDE 20/08/2026, e não mais ao lado
+ * deste arquivo. Antes a tabela existia DUAS vezes — aqui e no portal do escritório —, com o
+ * cabeçalho das duas mandando "regenerou uma, regenere a outra". Mover para o pacote ELIMINA a
+ * segunda cópia; não confundir com a recusa de 19/08/2026, que foi contra uma TERCEIRA cópia
+ * (embarcá-la também no `apps/api`).
+ *
+ * ⚠ **CONTINUA SENDO `import()` DINÂMICO, e isso é o ponto.** É ele que mantém as ~197 KB fora do
+ * bundle inicial de uma tela de login. Trocar por `import` estático no topo do arquivo jogaria a
+ * tabela inteira na primeira tela que importar qualquer função daqui — e o chunk separado sumiria
+ * do build sem que nenhum teste caísse.
  */
 let promessaDaLista = null;
 export function carregarMunicipiosIbge() {
   if (!promessaDaLista) {
-    promessaDaLista = import("./municipiosIbge.data.js")
+    promessaDaLista = import("@contabilidade/shared/municipios-ibge")
       .then((m) => m.MUNICIPIOS_IBGE || m.default || [])
       .catch((err) => {
         // Uma falha de carga não pode virar "lista vazia" permanente: sem zerar a promessa, a
