@@ -19,6 +19,7 @@
 
 import * as XLSX from "xlsx";
 import { COLUNAS_LOTE, COLUNAS_OBRIGATORIAS, LINHA_DE_EXEMPLO, chaveDaColuna } from "./colunasLote.js";
+import { lerDocumentoDaPlanilha, lerValorDaPlanilha, lerCompetenciaDaPlanilha } from "./celulasLote.js";
 
 export const RECUSA_PLANILHA = Object.freeze({
   ARQUIVO_ILEGIVEL: "planilha_ilegivel",
@@ -70,22 +71,60 @@ function acharCabecalho(matriz) {
 }
 
 /**
+ * O valor de uma célula reduzido à sua forma CANÔNICA, para comparar exemplo com linha.
+ *
+ * ⚠⚠ **POR QUE NÃO É MAIS COMPARAÇÃO DE TEXTO** (mudou em 21/08/2026, junto com a tabela tipada).
+ * O modelo passou a nascer com **colunas tipadas**: o valor é uma célula numérica e a competência é
+ * um serial de data. A mesma linha de exemplo que antes voltava como `"1500,00"` e `"31/07/2026"`
+ * agora volta como `1500` e uma `Date` — e a igualdade de texto **falharia**.
+ *
+ * ⚠⚠ Falhar aqui não é um detalhe cosmético: a linha de exemplo deixaria de ser descartada e o
+ * cliente que não a apagasse mandaria **uma nota fiscal para o CPF do exemplo** — o pior desfecho
+ * possível de um modelo, e exatamente o que este descarte existe para impedir.
+ *
+ * ⚠ A canônica é a do próprio domínio (os mesmos leitores de `celulasLote.js` que classificam a
+ * linha depois), então as DUAS formas — a planilha antiga, de texto, e a nova, tipada — reduzem ao
+ * mesmo valor. **Uma planilha do formato antigo continua tendo o exemplo reconhecido e descartado.**
+ *
+ * ⚠ Célula que não se lê vira um sentinela que carrega o texto cru. Ela nunca vai bater com o
+ * exemplo (que se lê), e o efeito é o lado seguro do erro: a linha ENTRA e vira pendência — uma
+ * pendência a mais, nunca uma nota a mais.
+ */
+function canonizar(chave, bruto) {
+  const cru = `!${String(bruto ?? "").trim()}`;
+  if (chave === "documento") {
+    const lido = lerDocumentoDaPlanilha(bruto);
+    return lido.ok ? `d:${lido.documento}` : cru;
+  }
+  if (chave === "valor") {
+    const lido = lerValorDaPlanilha(bruto);
+    return lido.ok ? `v:${lido.valor.toFixed(2)}` : cru;
+  }
+  if (chave === "competencia") {
+    const lido = lerCompetenciaDaPlanilha(bruto);
+    return lido.ok ? `c:${lido.competencia.toISOString()}` : cru;
+  }
+  return `t:${String(bruto ?? "").trim()}`;
+}
+
+/**
+ * A forma canônica da linha de exemplo, calculada uma vez.
+ *
+ * ⚠ Sai de `LINHA_DE_EXEMPLO`, que continua sendo a fonte única — o modelo escreve a partir dela e
+ * a leitura compara contra ela. Se alguém mudar o exemplo, os dois lados mudam juntos.
+ */
+const EXEMPLO_CANONICO = COLUNAS_LOTE.map((coluna) => canonizar(coluna.chave, LINHA_DE_EXEMPLO[coluna.chave]));
+
+/**
  * A linha é a de exemplo do modelo, sem nenhuma edição?
  *
- * ⚠ Compara TODAS as colunas da lista fechada, inclusive as que o exemplo deixa em branco. Um campo
- * diferente já basta para a linha ser dado de verdade.
- *
- * ⚠ A comparação é sobre o TEXTO aparado dos dois lados: o Excel devolve `"1500,00"` como string
- * quando a célula é texto, mas `31/07/2026` pode voltar como `Date` se a pessoa reformatar a
- * coluna. Nesse caso a igualdade falha e a linha entra — que é o lado seguro do erro (uma pendência
- * a mais, nunca uma nota a mais).
+ * ⚠ Compara TODAS as colunas da lista fechada. Um campo diferente já basta para a linha ser dado de
+ * verdade — editou qualquer célula, é nota e é lida como tal. O descarte nunca adivinha.
  */
 function ehALinhaDeExemplo(valores) {
-  return COLUNAS_LOTE.every((coluna) => {
-    const esperado = String(LINHA_DE_EXEMPLO[coluna.chave] ?? "").trim();
-    const veio = String(valores[coluna.chave] ?? "").trim();
-    return esperado === veio;
-  });
+  return COLUNAS_LOTE.every(
+    (coluna, i) => canonizar(coluna.chave, valores[coluna.chave]) === EXEMPLO_CANONICO[i]
+  );
 }
 
 /**

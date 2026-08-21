@@ -110,6 +110,23 @@ export const COLUNAS_LOTE = Object.freeze([
     obrigatoria: true,
     aliases: ["cnpj cpf do tomador", "cnpj cpf", "cpf cnpj", "documento do tomador", "documento", "cnpj", "cpf"],
     ajuda: "Só números ou com máscara. 11 dígitos (CPF) ou 14 (CNPJ). É a única coisa que pedimos do tomador.",
+    tipo: "texto",
+    formato: "@",
+    // ⚠⚠ ESTA VALIDAÇÃO CONFERE **COMPRIMENTO**, E SÓ. Ela não confere dígito verificador, não
+    // confere que são dígitos e não distingue CPF de CNPJ — quem faz isso é
+    // `lerDocumentoDaPlanilha`, depois do envio. O que ela pega, e é muito, é o CPF que perdeu o
+    // zero da frente: `01234567890` virado em número fica com 10 caracteres e bate na trava.
+    // ⚠ 18 é o teto porque o CNPJ com máscara (`00.000.000/0000-00`) tem 18 caracteres.
+    validacao: {
+      tipo: "textLength",
+      operador: "between",
+      formula1: "11",
+      formula2: "18",
+      tituloDoErro: "CNPJ/CPF fora de forma",
+      erro:
+        "Digite 11 dígitos (CPF) ou 14 (CNPJ) — com ou sem máscara. "
+        + "Se o CPF começa com zero, ele precisa continuar com os 11 dígitos.",
+    },
   },
   {
     chave: "descricao",
@@ -117,6 +134,14 @@ export const COLUNAS_LOTE = Object.freeze([
     obrigatoria: true,
     aliases: ["descricao do servico", "descricao", "servico", "discriminacao", "discriminacao do servico"],
     ajuda: "O que está sendo prestado. Sai impresso no DANFSe.",
+    tipo: "texto",
+    formato: "@",
+    // ⚠⚠ SEM VALIDAÇÃO, DE PROPÓSITO. `validateNfsePayload` só exige que a descrição não seja vazia
+    // (`servico_descricao_obrigatoria`) — **não há limite de tamanho em lugar nenhum do fluxo**
+    // (medido no validador). Um `textLength` inventado aqui recusaria, na planilha, um texto que a
+    // emissão aceita — e a divergência apareceria como uma linha barrada sem explicação possível.
+    // A coluna ganha só o formato de texto e a caixa de ajuda.
+    validacao: null,
   },
   {
     chave: "valor",
@@ -124,6 +149,17 @@ export const COLUNAS_LOTE = Object.freeze([
     obrigatoria: true,
     aliases: ["valor do servico r", "valor do servico", "valor", "valor total", "total", "vlr"],
     ajuda: "Maior que zero. Use vírgula para os centavos: 1500,00",
+    tipo: "valor",
+    formato: "#,##0.00",
+    // ⚠ `> 0` é EXATAMENTE a regra que `validateNfsePayload` já aplica (`servico_valor_invalido`).
+    // Nada foi inventado: a planilha passou a cobrar na entrada o que a emissão cobra na saída.
+    validacao: {
+      tipo: "decimal",
+      operador: "greaterThan",
+      formula1: "0",
+      tituloDoErro: "Valor inválido",
+      erro: "O valor do serviço precisa ser um número maior que zero. Use vírgula nos centavos: 1500,00",
+    },
   },
   {
     chave: "competencia",
@@ -131,6 +167,22 @@ export const COLUNAS_LOTE = Object.freeze([
     obrigatoria: true,
     aliases: ["data da competencia dd mm aaaa", "data da competencia", "competencia", "data"],
     ajuda: "Obrigatória: em branco, a nota sairia com a data de hoje sem ninguém ver.",
+    tipo: "data",
+    formato: "dd/mm/yyyy",
+    // ⚠⚠ A VALIDAÇÃO EXIGE QUE **SEJA UMA DATA**, E NADA ALÉM DISSO. Os limites são a faixa inteira
+    // do Excel (serial 1 = 01/01/1900, serial 2958465 = 31/12/9999) — a mesma que
+    // `lerCompetenciaDaPlanilha` já aceita.
+    // ⚠ **Não há janela fiscal aqui porque não existe uma em lugar nenhum deste fluxo** (medido: nem
+    // o validador nem o classificador limitam a competência). Estreitar a faixa seria inventar
+    // regra fiscal na planilha, e é decisão do dono, não desta camada. Ver o relatório.
+    validacao: {
+      tipo: "date",
+      operador: "between",
+      formula1: "1",
+      formula2: "2958465",
+      tituloDoErro: "Data inválida",
+      erro: "Digite uma data no formato dd/mm/aaaa — por exemplo 31/07/2026.",
+    },
   },
 ]);
 

@@ -3,7 +3,7 @@
 // ⚠ NADA AQUI EMITE COISA ALGUMA. Gera um .xlsx em memória e o lê de volta; sem banco, sem rede.
 
 import * as XLSX from "xlsx";
-import { gerarModeloPlanilhaLote, NOME_DA_ABA, NOME_DA_ABA_INSTRUCOES } from "../modeloPlanilhaLote.js";
+import { gerarModeloPlanilhaLote, NOME_DA_ABA, LINHAS_VALIDADAS } from "../modeloPlanilhaLote.js";
 import { lerPlanilhaLote, RECUSA_PLANILHA, MAX_LINHAS } from "../lerPlanilhaLote.js";
 import {
   COLUNAS_LOTE,
@@ -66,9 +66,16 @@ describe("o modelo", () => {
   it("⚠⚠ nasce com as QUATRO colunas, na ordem, e a aba de dados é a PRIMEIRA", () => {
     expect(COLUNAS_LOTE).toHaveLength(4);
     expect(wb.SheetNames[0]).toBe(NOME_DA_ABA);
-    expect(wb.SheetNames).toContain(NOME_DA_ABA_INSTRUCOES);
     const [cabecalho] = XLSX.utils.sheet_to_json(wb.Sheets[NOME_DA_ABA], { header: 1 });
     expect(cabecalho).toEqual(CABECALHOS);
+  });
+
+  // ⚠⚠ A ABA DE INSTRUÇÕES SAIU (dono, 21/08/2026: *"tirar as instruções"*). O que ela dizia virou
+  // mecanismo — formato de coluna, validação e proteção —, e o porquê de cada frase cortada está
+  // no cabeçalho de `modeloPlanilhaLote.js`. Uma aba a mais também era um risco: `lerPlanilhaLote`
+  // lê `SheetNames[0]` e dependia da ordem em que as abas foram acrescentadas.
+  it("⚠⚠ tem UMA aba só — a de instruções saiu, e com ela a dependência da ordem das abas", () => {
+    expect(wb.SheetNames).toEqual([NOME_DA_ABA]);
   });
 
   it("⚠⚠ as colunas de dígitos nascem formatadas como TEXTO — e não só na linha de exemplo", () => {
@@ -108,6 +115,252 @@ describe("o modelo", () => {
     expect(r.ok).toBe(false);
     expect(r.codigo).toBe(RECUSA_PLANILHA.SEM_LINHAS);
     expect(r.mensagem).toContain("linha de exemplo");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ A TABELA TIPADA E A BLINDAGEM (21/08/2026)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// > Dono: *"colocar uma tabela mesmo, com cabeçalhos, campos exclusivos, para número, texto, valor,
+// > data, dessa forma o usuário não erra na planilha nem a modifica sem querer"*
+//
+// ⚠ Estes testes olham o **XML de dentro do .xlsx**, e não a API do SheetJS, porque é justamente
+// onde o SheetJS **não** escreve: `dataValidations` e `<protection locked="0"/>` são escritos à mão
+// por `protecaoPlanilhaLote.js`. Um teste que perguntasse ao SheetJS o que ele leu não veria nada
+// disso — ele não tem por onde devolver.
+//
+// ⚠⚠ **O QUE ESTES TESTES NÃO PROVAM: que o Excel desenha a validação na tela.** Não há Excel no
+// CI. O que está provado é que o arquivo é um ZIP válido, que o XML está nos lugares que o esquema
+// `CT_Worksheet` exige e que o próprio SheetJS reabre o arquivo sem perder célula.
+describe("⚠ o modelo blindado — a tabela tipada, a validação e a proteção", () => {
+  const modelo = gerarModeloPlanilhaLote();
+
+  /** Abre o .xlsx como o ZIP que ele é, para ler as partes que o SheetJS não devolve. */
+  function partesDo(buffer) {
+    // ⚠ O mesmo `XLSX.CFB || XLSX.default.CFB` de `protecaoPlanilhaLote.js`, e pelo mesmo motivo:
+    // sob o Jest (babel → `require`) o primeiro existe; sob o Node de produção (ESM sobre CJS), o
+    // segundo. Ver a nota naquele arquivo.
+    const CFB = XLSX.CFB || XLSX.default?.CFB;
+    const cfb = CFB.read(buffer, { type: "buffer" });
+    const ler = (caminho) => Buffer.from(CFB.find(cfb, caminho).content).toString("utf8");
+    return { aba: ler("/xl/worksheets/sheet1.xml"), estilos: ler("/xl/styles.xml") };
+  }
+
+  // ⚠⚠ A TRAVA CONTRA A DEGRADAÇÃO SILENCIOSA. `blindarPlanilha` devolve o buffer original quando
+  // qualquer passo falha, para nunca derrubar o download. Sem este teste, uma mudança no SheetJS
+  // (ou o `XLSX.CFB` sumindo na interop de módulos) apagaria a validação inteira e **nada avisaria**
+  // — o cliente continuaria baixando uma planilha que abre, só que sem nenhuma das defesas.
+  it("⚠⚠ a blindagem foi de fato aplicada (se degradar, é AQUI que se descobre)", () => {
+    expect(modelo.blindada).toBe(true);
+  });
+
+  it("⚠ cada coluna tem seu tipo exclusivo — texto, texto, valor, data", () => {
+    const ws = XLSX.read(modelo.buffer, { type: "buffer", cellStyles: true }).Sheets[NOME_DA_ABA];
+    const formatoNa = (chave, linha) => {
+      const c = COLUNAS_LOTE.findIndex((x) => x.chave === chave);
+      return ws[XLSX.utils.encode_cell({ c, r: linha })]?.z;
+    };
+    // ⚠ Na linha do exemplo (r=1) E nas vazias abaixo (r=2, r=50) — é a célula VAZIA que carrega o
+    // formato para o que a pessoa vai digitar.
+    for (const r of [1, 2, 50]) {
+      expect(formatoNa("documento", r)).toBe("@");
+      expect(formatoNa("descricao", r)).toBe("@");
+      expect(formatoNa("valor", r)).toBe("#,##0.00");
+      expect(formatoNa("competencia", r)).toBe("dd/mm/yyyy");
+    }
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠ O TESTE QUE PEGA O ERRO DE UM DIA NA COMPETÊNCIA
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // Medido no SheetJS 0.18.5 sob `TZ=America/Sao_Paulo`: escrever a data como `{ t: "d", v: Date }`
+  // produz um serial FRACIONÁRIO (46233,8746…) e a data volta **um dia antes**. Sob `TZ=UTC` o
+  // mesmo código acerta — que é como o defeito se esconde de quem só roda teste em UTC.
+  //
+  // ⚠ O desfecho seria nota fiscal emitida com a competência errada. A trava é o serial INTEIRO.
+  it("⚠⚠ a competência do exemplo é um serial INTEIRO — o `t:\"d\"` do SheetJS erra um dia sob UTC-3", () => {
+    const ws = XLSX.read(modelo.buffer, { type: "buffer" }).Sheets[NOME_DA_ABA];
+    const c = COLUNAS_LOTE.findIndex((x) => x.chave === "competencia");
+    const celula = ws[XLSX.utils.encode_cell({ c, r: 1 })];
+    expect(celula.t).toBe("n");
+    expect(Number.isInteger(celula.v)).toBe(true);
+  });
+
+  it("⚠⚠ e ela volta da leitura como o dia que está escrito no modelo, não o anterior", () => {
+    const lida = XLSX.read(modelo.buffer, { type: "buffer", cellDates: true }).Sheets[NOME_DA_ABA];
+    const c = COLUNAS_LOTE.findIndex((x) => x.chave === "competencia");
+    const valor = lida[XLSX.utils.encode_cell({ c, r: 1 })].v;
+    // ⚠ Componentes LOCAIS, que é o que `lerCompetenciaDaPlanilha` usa — ver `utils/dataCivil.js`.
+    const escrito = `${String(valor.getDate()).padStart(2, "0")}/${String(valor.getMonth() + 1).padStart(2, "0")}/${valor.getFullYear()}`;
+    expect(escrito).toBe(LINHA_DE_EXEMPLO.competencia);
+  });
+
+  it("⚠ cada coluna ganhou um `<dataValidation>` com o alcance que passa do bloco pré-formatado", () => {
+    const { aba } = partesDo(modelo.buffer);
+    expect(aba).toContain(`<dataValidations count="${COLUNAS_LOTE.length}">`);
+    // documento: comprimento — é o que barra o CPF que perdeu o zero (10 caracteres).
+    expect(aba).toContain('type="textLength"');
+    expect(aba).toContain(`sqref="A2:A${LINHAS_VALIDADAS}"`);
+    // valor: a MESMA regra do validador da emissão (`servico_valor_invalido` exige > 0).
+    expect(aba).toContain('type="decimal" operator="greaterThan"');
+    // competência: exige que SEJA data, sem inventar janela fiscal nenhuma.
+    expect(aba).toContain('type="date"');
+  });
+
+  // ⚠ A descrição é a única sem regra, e isso é decisão medida: `validateNfsePayload` só exige que
+  // ela não seja vazia — não há limite de tamanho em lugar nenhum do fluxo. Um `textLength`
+  // inventado aqui recusaria, na planilha, um texto que a emissão aceita.
+  it("⚠ a coluna de descrição NÃO ganha regra inventada — só a caixa de ajuda", () => {
+    expect(COLUNAS_LOTE.find((c) => c.chave === "descricao").validacao).toBeNull();
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠ A PROTEÇÃO SÓ É ÚTIL COM AS CÉLULAS DE DADOS DESTRAVADAS
+  // ═════════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // No OOXML toda célula nasce `locked="1"`. Proteger a planilha sem destravar nada entregaria ao
+  // cliente um arquivo **inteiramente somente-leitura** — ele não digitaria uma nota sequer, com a
+  // emissão em lote LIGADA EM PRODUÇÃO. Este par de testes é o que impede esse desfecho.
+  it("⚠⚠ todo estilo de célula existente está DESTRAVADO — a planilha se preenche", () => {
+    const { estilos } = partesDo(modelo.buffer);
+    const miolo = /<cellXfs count="(\d+)">([\s\S]*?)<\/cellXfs>/.exec(estilos);
+    expect(miolo).not.toBeNull();
+    const xfs = miolo[2].match(/<xf[\s\S]*?<\/xf>/g) || [];
+    // O último é o do cabeçalho; todos os outros são de dados e têm de estar destravados.
+    const deDados = xfs.slice(0, -1);
+    expect(deDados.length).toBeGreaterThanOrEqual(4);
+    for (const xf of deDados) expect(xf).toContain('<protection locked="0"/>');
+  });
+
+  it("⚠⚠ e só o CABEÇALHO fica travado — é o que não se altera sem querer", () => {
+    const { aba, estilos } = partesDo(modelo.buffer);
+    const xfs = /<cellXfs count="\d+">([\s\S]*?)<\/cellXfs>/.exec(estilos)[1].match(/<xf[\s\S]*?<\/xf>/g);
+    const indiceDoCabecalho = xfs.length - 1;
+    expect(xfs[indiceDoCabecalho]).toContain('<protection locked="1"/>');
+    // E as células da linha 1 apontam para ele.
+    const linha1 = /<row r="1"[^>]*>[\s\S]*?<\/row>/.exec(aba)[0];
+    for (let c = 0; c < COLUNAS_LOTE.length; c += 1) {
+      const ref = `${XLSX.utils.encode_col(c)}1`;
+      expect(linha1).toContain(`<c r="${ref}" s="${indiceDoCabecalho}"`);
+    }
+  });
+
+  // ⚠ Semântica INVERTIDA do `<sheetProtection>`: o atributo é uma TRAVA. `insertRows="0"` LIBERA
+  // inserir linha; `formatCells` AUSENTE significa que reformatar está PROIBIDO — e é o ponto
+  // inteiro, porque é reformatando a coluna do CNPJ/CPF que o Excel come o zero da frente do CPF.
+  it("⚠⚠ a planilha é protegida, reformatar célula fica PROIBIDO e inserir/apagar linha, LIBERADO", () => {
+    const { aba } = partesDo(modelo.buffer);
+    const tag = /<sheetProtection[^>]*\/>/.exec(aba);
+    expect(tag).not.toBeNull();
+    expect(tag[0]).toContain('sheet="1"');
+    expect(tag[0]).not.toContain("formatCells");
+    expect(tag[0]).toContain('insertRows="0"');
+    expect(tag[0]).toContain('deleteRows="0"');
+  });
+
+  // ⚠⚠ SEM SENHA, e isso é a decisão. O dono pediu que não se modifique **sem querer**. Com senha,
+  // o dia em que a blindagem estivesse errada seria um cliente PRESO numa planilha que ele não
+  // consegue preencher nem destravar — com a emissão em lote ligada em produção.
+  it("⚠⚠ a proteção NÃO tem senha — ela barra o acidente, nunca a pessoa", () => {
+    const { aba } = partesDo(modelo.buffer);
+    expect(/<sheetProtection[^>]*\/>/.exec(aba)[0]).not.toContain("password");
+  });
+
+  it("o cabeçalho fica congelado ao rolar", () => {
+    expect(partesDo(modelo.buffer).aba).toContain('state="frozen"');
+  });
+
+  // ⚠ A prova de que a cirurgia no ZIP não corrompeu nada: o arquivo blindado continua sendo uma
+  // planilha legítima, e a leitura continua descartando a linha de exemplo.
+  it("⚠⚠ o arquivo blindado continua abrindo, e o exemplo continua não virando nota", () => {
+    const r = lerPlanilhaLote(modelo.buffer);
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe(RECUSA_PLANILHA.SEM_LINHAS);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ A PLANILHA DO FORMATO ANTIGO NÃO PODE PASSAR A SER LIDA ERRADO
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// A tabela tipada mudou o modelo: o valor virou célula numérica e a competência, serial de data. A
+// comparação que reconhece a linha de exemplo deixou de ser de TEXTO e passou a ser pela forma
+// canônica do domínio (`lerDocumentoDaPlanilha`, `lerValorDaPlanilha`, `lerCompetenciaDaPlanilha`).
+//
+// ⚠⚠ Se ela só entendesse o formato novo, o cliente que ainda tem o modelo antigo mandaria **uma
+// nota fiscal para o CPF do exemplo**. É o pior desfecho possível de um modelo, e é o que estes
+// testes vigiam.
+describe("⚠⚠ compatibilidade — a planilha do formato ANTIGO continua sendo lida certo", () => {
+  const EXEMPLO_EM_TEXTO = COLUNAS_LOTE.map((c) => LINHA_DE_EXEMPLO[c.chave]);
+
+  it("⚠⚠ o exemplo em TEXTO (modelo antigo) continua sendo descartado, não vira nota", () => {
+    const r = lerPlanilhaLote(planilhaDe([CABECALHOS, EXEMPLO_EM_TEXTO]));
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe(RECUSA_PLANILHA.SEM_LINHAS);
+  });
+
+  it("⚠ e, junto de uma nota de verdade, some sozinho e deixa a nota passar", () => {
+    const r = lerPlanilhaLote(planilhaDe([CABECALHOS, EXEMPLO_EM_TEXTO, linhaDe(NOTA)]));
+    expect(r.ok).toBe(true);
+    expect(r.exemploDescartado).toEqual([2]);
+    expect(r.linhas).toHaveLength(1);
+    expect(r.linhas[0].valores.documento).toBe(NOTA.documento);
+  });
+
+  // ⚠ O descarte nunca adivinha: uma célula diferente já basta para a linha ser dado de verdade.
+  it("⚠⚠ com UM campo editado, a linha do exemplo é DADO e entra como nota", () => {
+    const editada = COLUNAS_LOTE.map((c) =>
+      c.chave === "descricao" ? "Outra descrição" : LINHA_DE_EXEMPLO[c.chave]
+    );
+    const r = lerPlanilhaLote(planilhaDe([CABECALHOS, editada]));
+    expect(r.ok).toBe(true);
+    expect(r.exemploDescartado).toEqual([]);
+    expect(r.linhas).toHaveLength(1);
+  });
+
+  it("⚠ o exemplo TIPADO (modelo novo, salvo pelo Excel) também é descartado", () => {
+    const ws = XLSX.utils.aoa_to_sheet([CABECALHOS]);
+    ws.A2 = { t: "s", v: LINHA_DE_EXEMPLO.documento, z: "@" };
+    ws.B2 = { t: "s", v: LINHA_DE_EXEMPLO.descricao, z: "@" };
+    ws.C2 = { t: "n", v: 1500, z: "#,##0.00" };
+    // 46234 = 31/07/2026 na época do Excel, que é o que a pessoa vê na célula.
+    ws.D2 = { t: "n", v: 46234, z: "dd/mm/yyyy" };
+    ws["!ref"] = "A1:D2";
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Notas");
+    const r = lerPlanilhaLote(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+    expect(r.ok).toBe(false);
+    expect(r.codigo).toBe(RECUSA_PLANILHA.SEM_LINHAS);
+  });
+
+  // ⚠ As sete colunas que saíram em 20/08/2026 continuam voltando NOMEADAS em `colunasIgnoradas` —
+  // coluna que a pessoa acha que estamos lendo e que ignoramos em silêncio é dado sumindo sem aviso.
+  it("⚠ o modelo de DOZE colunas continua sendo lido, com as sete extras nomeadas", () => {
+    const doze = [
+      "CNPJ/CPF do tomador",
+      "Nome / razão social do tomador",
+      "E-mail do tomador",
+      "Descrição do serviço",
+      "Valor do serviço (R$)",
+      "Data da competência (dd/mm/aaaa)",
+      "Município (código IBGE)",
+      "CEP",
+      "Logradouro",
+      "Número",
+      "Bairro",
+      "Complemento",
+    ];
+    const linha = [
+      NOTA.documento, "X LTDA", "a@b.com", NOTA.descricao, NOTA.valor, NOTA.competencia,
+      "3304557", "20031005", "Av. Rio Branco", "100", "Centro", "",
+    ];
+    const r = lerPlanilhaLote(planilhaDe([doze, linha]));
+    expect(r.ok).toBe(true);
+    expect(r.linhas).toHaveLength(1);
+    expect(r.linhas[0].valores.documento).toBe(NOTA.documento);
+    expect(r.colunasIgnoradas.length).toBe(8);
   });
 });
 
