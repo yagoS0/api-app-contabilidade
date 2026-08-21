@@ -1829,12 +1829,15 @@ export function EmitirNotaPage({ empresa, aoVoltarParaNotas, aoRecarregarEmpresa
                         </label>
                         {/* ⚠ A TELA DIZ ANTES o que o servidor recusaria depois — e o submit é
                             recusado aqui mesmo (ver `emitir`). ⚠ ZERO NÃO BASTA: `required` do
-                            HTML o aceita, e `buildDpsXml` exige `> 0`. */}
-                        <span className="hint">
-                          {conferenciaAliquota.ok
-                            ? "Com o ISS retido, a alíquota é obrigatória."
-                            : conferenciaAliquota.falta}
-                        </span>
+                            HTML o aceita, e `buildDpsXml` exige `> 0`.
+                            ⚠ O RAMO "está tudo certo" NÃO DIZ NADA. Ele dizia "com o ISS retido, a
+                            alíquota é obrigatória" — descrevendo o visível: este campo só existe
+                            com a caixa marcada, e ele já é `required`. É a regra do app: sai a
+                            frase que descreve uma ausência visível; fica a que impede uma ausência
+                            de virar afirmação. O que falta continua sendo dito, e é o que importa. */}
+                        {conferenciaAliquota.ok ? null : (
+                          <span className="hint">{conferenciaAliquota.falta}</span>
+                        )}
                       </>
                     ) : null}
 
@@ -1959,10 +1962,7 @@ function PortaoFechado({ portao, empresa, aoRecarregar }) {
           {texto(empresa.razao)}. Emitir nota fiscal exige o perfil{" "}
           <strong>{roleLabel(portao.papelMinimo)}</strong> ou superior.
         </p>
-        <p>
-          Peça ao responsável pela empresa que ajuste o seu perfil, ou peça a quem já tem esse
-          perfil que faça a emissão.
-        </p>
+        <p>Peça ao responsável pela empresa que ajuste o seu perfil.</p>
       </div>
     );
   }
@@ -1973,11 +1973,10 @@ function PortaoFechado({ portao, empresa, aoRecarregar }) {
         <p>
           <strong>A emissão de notas ainda não foi liberada para esta empresa.</strong>
         </p>
-        <p>
-          Quem libera é o seu escritório de contabilidade, no cadastro de {texto(empresa.razao)}.
-          Fale com o seu contador — é um ajuste do lado dele, e depois esta tela passa a mostrar o
-          formulário.
-        </p>
+        {/* ⚠ "no cadastro de X", "é um ajuste do lado dele" e "depois esta tela passa a mostrar
+            o formulário" descreviam a NOSSA divisão de trabalho — e o terceiro descrevia o que
+            está à vista. Fica o que o cliente faz com a informação. */}
+        <p>Fale com o seu contador: quem libera é ele.</p>
         <p className="muted">Enquanto isso, o seu contador continua emitindo as notas normalmente.</p>
       </div>
     );
@@ -1989,11 +1988,11 @@ function PortaoFechado({ portao, empresa, aoRecarregar }) {
       <p>
         <strong>Não conseguimos verificar se a emissão está liberada para esta empresa.</strong>
       </p>
-      <p>
-        Esta tela não recebeu essa informação — o que não quer dizer que a emissão esteja bloqueada,
-        nem que esteja liberada. Tente recarregar; se continuar assim, avise o seu contador de que o
-        portal não está recebendo o estado da liberação.
-      </p>
+      {/* ⚠ O TÍTULO ACIMA JÁ DIZ QUE NÃO SABEMOS — e era isso que este parágrafo repetia, duas
+          vezes, com a nossa plumbing no meio ("esta tela não recebeu essa informação", "o portal
+          não está recebendo o estado da liberação"). ⚠ O que NÃO pode sair é a distinção: não
+          saber não é estar bloqueado. Ela ficou no título, que é onde ela se lê. */}
+      <p>Tente recarregar. Se continuar assim, avise o seu contador.</p>
       {aoRecarregar ? (
         <p>
           <button type="button" className="btn-link" onClick={aoRecarregar}>

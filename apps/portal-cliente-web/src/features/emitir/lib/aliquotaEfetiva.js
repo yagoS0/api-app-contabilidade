@@ -90,6 +90,11 @@ export function escolherAliquotaEfetiva(serie, competenciaDaNota) {
       valor: null,
       competencia: null,
       exata: false,
+      // ⚠⚠ TENTEI TIRAR O "PGDAS-D" DAQUI E O TESTE RECUSOU — e o comentário dele é o argumento:
+      // *"O texto CITA o PGDAS-D — dentro do MOTIVO, que é o certo. O que ele não pode é AFIRMAR
+      // procedência."* A distinção é essa: a sigla no motivo diz POR QUE não há número; a sigla
+      // numa afirmação de origem ("DAS de 07/2026 sobre a receita") é que seria inventar dono para
+      // um número que não existe. Não confundir com o corte do CNAE, que descrevia a nossa dedução.
       motivo:
         "nenhuma competência recente tem, ao mesmo tempo, receita apurada e extrato do PGDAS-D — "
         + "sem os dois não há de onde tirar a alíquota efetiva",

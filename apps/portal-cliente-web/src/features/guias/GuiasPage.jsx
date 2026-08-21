@@ -177,10 +177,6 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
         <h1>Guias</h1>
       </div>
 
-      <div className="alerta alerta-info">
-        <p>Aparecem aqui apenas as guias que o seu contador liberou.</p>
-      </div>
-
       <div className="card">
         <div className="filters">
           <label htmlFor="competencia-guias">
@@ -219,7 +215,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
       ) : query.erro ? null : guias.length === 0 ? (
         <Vazio>
           {competencia
-            ? `Nenhuma guia liberada em ${fmtCompetencia(competencia)}. A guia de um mês costuma ser liberada no mês seguinte — troque a competência acima, ou escolha "Todas".`
+            ? `Nenhuma guia em ${fmtCompetencia(competencia)} — a guia costuma sair no mês seguinte. Escolha "Todas" para ver o histórico.`
             : "Nenhuma guia liberada para esta empresa até agora."}
         </Vazio>
       ) : (

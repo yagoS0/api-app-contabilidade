@@ -56,7 +56,9 @@ export const CAMPOS_DA_REVISAO = Object.freeze([
     chave: "documento",
     rotulo: "CNPJ/CPF do tomador",
     naPlanilha: true,
-    ajuda: "Só números ou com máscara. 11 dígitos (CPF) ou 14 (CNPJ). É a única coisa que pedimos do tomador.",
+    // ⚠ "É a única coisa que pedimos do tomador" saiu: era a 3ª de quatro repetições da mesma
+    // ideia na mesma tela, e o cabeçalho logo acima já diz quantas colunas são.
+    ajuda: "Só números ou com máscara. 11 dígitos (CPF) ou 14 (CNPJ).",
   },
   { chave: "descricao", rotulo: "Descrição do serviço", naPlanilha: true, ajuda: "O que está sendo prestado. Sai impresso no DANFSe." },
   { chave: "valor", rotulo: "Valor do serviço (R$)", naPlanilha: true, ajuda: "Maior que zero. Use vírgula para os centavos: 1500,00" },
@@ -70,14 +72,18 @@ export const CAMPOS_DA_REVISAO = Object.freeze([
     chave: "nome",
     rotulo: "Nome / razão social do tomador",
     naPlanilha: false,
-    ajuda: "Como deve sair na nota. Só é pedido quando não conseguimos saber por conta própria.",
+    // ⚠ 4ª repetição — e o parágrafo imediatamente acima deste formulário já diz exatamente isso.
+    ajuda: "Como deve sair na nota.",
   },
   { chave: "email", rotulo: "E-mail do tomador", naPlanilha: false, ajuda: "Opcional. Em branco não impede nada." },
   {
     chave: "cMun",
     rotulo: "Município do tomador",
     naPlanilha: false,
-    ajuda: "Escolha na lista oficial — o código do IBGE vem junto da escolha.",
+    // ⚠ Descrevia o que o seletor faz à vista (a lista já é a oficial, e o código aparece junto da
+    // escolha) e nomeava o IBGE. A regra que importa — a escolha é de quem lê, nada é deduzido do
+    // nome — está no comportamento do `SeletorMunicipio`, não numa frase.
+    ajuda: "Escolha o município na lista.",
   },
   { chave: "cep", rotulo: "CEP do tomador", naPlanilha: false, ajuda: "8 dígitos." },
   { chave: "xLgr", rotulo: "Logradouro do tomador", naPlanilha: false, ajuda: "A rua inteira, ex.: “Rua da Assembleia”." },

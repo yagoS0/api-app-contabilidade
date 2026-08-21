@@ -168,7 +168,7 @@ export function SeletorMunicipio({
           onFocus={() => setAberto(true)}
           onBlur={() => fechar()}
           onKeyDown={aoTeclar}
-          placeholder={lista ? "Buscar por nome (ex.: bom jesus rs) ou código" : "Carregando a lista do IBGE…"}
+          placeholder={lista ? "Buscar por nome (ex.: bom jesus rs) ou código" : "Carregando…"}
           disabled={!lista && !erroCarga}
           autoComplete="off"
           role="combobox"

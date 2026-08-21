@@ -43,6 +43,23 @@ function LinhaDado({ rotulo, valor }) {
 // prop antigo para um destino — a lista de notas —, quatro vezes, sempre o mesmo. Ou seja: o que
 // ele sempre quis dizer foi "volte para a lista". Um prop chamado "navegar" que não navega
 // mentiria, e o argumento de destino viraria um parâmetro morto que alguém trocaria por outro.
+/**
+ * ⚠ A MESMA GARANTIA, ESCRITA UMA VEZ. Ela aparecia em QUATRO ramos deste arquivo, em quatro
+ * redações diferentes ("Nada saiu daqui e nenhum número de nota foi consumido", "Nada foi enviado
+ * ao sistema nacional", "…Isso se resolve no escritório, não aqui", "A nota não foi enviada e
+ * nenhum número foi consumido. Se você conseguiu abrir o formulário…").
+ *
+ * ⚠ O QUE ELA AFIRMA NÃO MUDOU, e é o que decide: **é seguro tentar de novo**. Sem ela, quem
+ * recebeu uma recusa fica com medo de emitir em duplicidade — que é o oposto do ramo TRANSPORTE,
+ * onde a tela manda NÃO reenviar. A distinção entre os dois é a razão deste arquivo existir.
+ *
+ * O que saiu foi o rabo de cada cópia: "isso se resolve no escritório, não aqui" (o ramo já diz
+ * o que falta e onde) e "se você conseguiu abrir o formulário e mesmo assim recebeu isto, a
+ * permissão mudou enquanto você preenchia" — que descreve a NOSSA condição de corrida entre ler o
+ * portão na abertura e conferi-lo no envio.
+ */
+const NADA_FOI_ENVIADO = "Nada foi enviado e nenhum número de nota foi consumido — tentar de novo é seguro.";
+
 export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarParaNotas }) {
   if (!desfecho) return null;
 
@@ -199,8 +216,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarPara
           </p>
         ) : null}
         <p className="muted">
-          Nada saiu daqui e nenhum número de nota foi consumido — corrigir e enviar de novo é
-          seguro. Código: {texto(desfecho.codigo)}
+          {NADA_FOI_ENVIADO} Código: {texto(desfecho.codigo)}
         </p>
         <div className="actions">
           <button type="button" className="btn btn-primary" onClick={aoCorrigir}>
@@ -219,7 +235,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarPara
           <strong>Confira os dados da nota.</strong>
         </p>
         <p>{mensagemDeErro({ code: desfecho.codigo, status: 400 }, "Algum campo não foi aceito.")}</p>
-        <p className="muted">Nada foi enviado ao sistema nacional.</p>
+        <p className="muted">{NADA_FOI_ENVIADO}</p>
         <div className="actions">
           <button type="button" className="btn btn-primary" onClick={aoCorrigir}>
             Voltar ao formulário
@@ -244,10 +260,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarPara
             {faltando.map((campo) => NOME_DO_CAMPO[campo] || campo).join(", ")}.
           </p>
         ) : null}
-        <p className="muted">
-          Nada foi enviado ao sistema nacional. Isso se resolve no escritório de contabilidade, não
-          aqui.
-        </p>
+        <p className="muted">{NADA_FOI_ENVIADO}</p>
         <div className="actions">
           {/* Nada saiu da máquina: voltar ao formulário com os dados intactos é seguro, e evita
               que a pessoa perca o que digitou enquanto fala com o contador. */}
@@ -280,10 +293,7 @@ export function DesfechoEmissao({ desfecho, aoCorrigir, aoNovaNota, aoVoltarPara
         </p>
         <p>{desfecho.message || "A permissão de emissão mudou."}</p>
         {desfecho.correcao ? <p>{desfecho.correcao}</p> : null}
-        <p className="muted">
-          A nota não foi enviada e nenhum número foi consumido. Se você conseguiu abrir o formulário
-          e mesmo assim recebeu isto, a permissão mudou enquanto você preenchia.
-        </p>
+        <p className="muted">{NADA_FOI_ENVIADO}</p>
       </div>
     );
   }

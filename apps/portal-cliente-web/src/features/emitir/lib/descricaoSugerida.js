@@ -272,10 +272,12 @@ export function textoDoMotivo(motivo, { ondeSeResolve = "" } = {}) {
   // descrição logo abaixo está livre para ele escrever.
   if (motivo === SEM_SUGESTAO.SEM_DESCRICAO) return null;
   if (motivo === SEM_SUGESTAO.VARIAS) {
-    return (
-      "Sem sugestão: há mais de uma atividade cadastrada e nenhuma delas é, sem dúvida, a do CNAE "
-      + "principal. Escolha abaixo ou escreva a descrição."
-    );
+    // ⚠ "nenhuma delas é, sem dúvida, a do CNAE principal" descrevia a NOSSA tentativa de casar a
+    // atividade com o CNAE — o mesmo tipo de frase que saiu em 19/08 ("não deduzimos o texto a
+    // partir do número do CNAE"). O cliente não escolhe pelo CNAE; ele escolhe pelo que prestou.
+    // ⚠ A ausência continua NOMEADA ("Sem sugestão"), que é o que impede o campo vazio de virar
+    // mistério — e o que fazer continua na segunda oração.
+    return "Sem sugestão: esta empresa tem mais de uma atividade. Escolha abaixo ou escreva a descrição.";
   }
   return null;
 }

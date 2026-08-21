@@ -160,18 +160,28 @@ export function lerCargaTributaria(legacy) {
  * ⚠ A FRASE QUE FALTAVA, E ELA É O PEDIDO. Antes de 19/08/2026 o cliente do Presumido não via este
  * número em lugar nenhum antes de emitir — e ele sai IMPRESSO na nota que o tomador recebe.
  */
+// ⚠⚠ TENTEI CORTAR A NORMA DAQUI E O TESTE RECUSOU, com razão. `cargaTributariaNaTela` afirma
+// `/Lei 12\.741\/2012/` — não é foto do texto atual, é trava: este número SAI IMPRESSO na nota do
+// tomador, e a norma é o que o distingue de um percentual qualquer que a empresa teria escolhido.
+// Não confundir com o corte da LC 116 art. 3º (19/08): aquela citação explicava a NOSSA dedução de
+// onde o ISS é devido; esta nomeia o que a nota declara a terceiro.
 export const O_QUE_E_A_CARGA =
   "Esta nota declara ao tomador quanto do preço é tributo aproximado (Lei 12.741/2012). Os "
   + "percentuais vêm do cadastro da sua empresa e saem impressos na nota.";
 
 /** ⚠ SÓ LEITURA — e a tela precisa dizer de quem é a caneta, senão o cliente procura o campo. */
-export const QUEM_CONFIGURA =
-  "Quem configura estes percentuais é o seu contador, no portal dele. Aqui eles são só conferidos.";
+// ⚠ "Aqui eles são só conferidos" descrevia o visível — não há campo editável nesta tela.
+export const QUEM_CONFIGURA = "Quem configura estes percentuais é o seu contador.";
 
 /**
  * O estado que esta tela NÃO sabe. ⚠ É o texto antigo, e ele continua verdadeiro exatamente aqui:
  * enquanto não se recebe o cadastro, as duas saídas são possíveis e nenhuma pode ser prometida.
  */
+// ⚠⚠ ESTE PARÁGRAFO PARECE O CANDIDATO ÓBVIO AO CORTE E NÃO É — eu tentei, e o teste
+// `"volta a descrever as DUAS saídas — é o único caso em que isso continua verdade"` derrubou.
+// O nome dele é o argumento: nos outros ramos a tela SABE o estado do cadastro e descrever duas
+// saídas seria enrolação; aqui ela NÃO recebeu o cadastro, e as duas são mesmo possíveis. Encurtar
+// para "se faltar algum, é recusada" afirmaria que falta — que é justamente o que não se sabe.
 export const CARGA_NAO_RECEBIDA =
   "A nota precisa declarar a carga tributária aproximada — três percentuais que o seu contador "
   + "configura no cadastro da empresa. Esta tela não recebeu esse cadastro: se ele estiver completo, "
@@ -190,6 +200,9 @@ export function frasePendencia(carga) {
   if (!nomes.length) return "";
   const lista = nomes.length === 1 ? nomes[0] : `${nomes.slice(0, -1).join(", ")} e ${nomes.at(-1)}`;
   const plural = nomes.length > 1;
+  // ⚠ "sem consumir numeração" tem teste próprio ("diz que nada sai e nenhum número se perde") e
+  // fica: é o que separa esta recusa — segura, dá para corrigir e reenviar — da recusa de
+  // TRANSPORTE, onde reenviar duplica a nota. A garantia é a informação, não o enfeite.
   return `Falta configurar ${plural ? "as parcelas" : "a parcela"} ${lista} da carga tributária `
     + `aproximada desta empresa. Sem ${plural ? "elas" : "ela"} a nota é recusada antes de sair `
     + "daqui, sem consumir numeração.";

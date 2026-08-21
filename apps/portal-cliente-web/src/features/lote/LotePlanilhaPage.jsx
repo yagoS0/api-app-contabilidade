@@ -336,10 +336,14 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
         {/* ⚠ DIZ O QUE FAZER, e é o que muda a decisão de quem preenche: são quatro colunas, e o
             resto do tomador só é pedido na conferência quando fizer falta. Sem esta frase, quem já
             usava o modelo de doze colunas procuraria por elas. */}
-        <p className="muted" style={{ fontSize: ".82rem" }}>
-          São quatro colunas: CNPJ/CPF do tomador, descrição, valor e competência. Nome e endereço do
-          tomador nós buscamos — nas notas que você já emitiu e, para CNPJ, na Receita. O que faltar é
-          pedido na conferência, linha a linha.
+        {/* ⚠ A CADEIA DE ORIGENS ("nós buscamos nas notas já emitidas e, para CNPJ, na Receita")
+            SAIU DAQUI. Ela era dita QUATRO vezes nesta mesma tela — aqui, no formulário de ajuste
+            e em duas ajudas de campo. Ficou onde ela é AÇÃO: colada aos campos que estão sendo
+            pedidos, no formulário de revisão. Aqui, antes de a pessoa ter uma planilha, ela é
+            só enredo. O que muda a decisão de quem preenche — quantas colunas são — fica. */}
+        <p className="meta">
+          São quatro colunas: CNPJ/CPF do tomador, descrição, valor e competência. O que faltar do
+          tomador é pedido na conferência, linha a linha.
         </p>
       </div>
 
