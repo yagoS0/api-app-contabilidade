@@ -14,6 +14,7 @@ import { EmitirNotaPage } from "../emitir/EmitirNotaPage";
 import { LotePlanilhaPage } from "../lote/LotePlanilhaPage";
 import { esquecerTodasAsDescricoes } from "../emitir/lib/descricoesRecentes";
 import { GuiasPage } from "../guias/GuiasPage";
+import { SituacaoFiscalPage } from "../fiscal/SituacaoFiscalPage";
 
 // ⚠⚠ A ABA "EMITIR" FOI REMOVIDA EM 19/08/2026 — pedido do dono: emitir virou um BOTÃO dentro de
 // Notas. A remoção é INTEIRA: o item do menu (aqui), o destino de roteamento (`lib/hooks.js`) e o
@@ -28,6 +29,7 @@ const ABAS = [
   { chave: "home", rotulo: "Início" },
   { chave: "notas", rotulo: "Notas" },
   { chave: "guias", rotulo: "Guias" },
+  { chave: "fiscal", rotulo: "Situação fiscal" },
 ];
 
 export function AppShell({ user }) {
@@ -305,6 +307,12 @@ export function AppShell({ user }) {
             competencia={competencia}
             aoTrocarCompetencia={setCompetencia}
           />
+        ) : rota === "fiscal" ? (
+          /* ⚠ SEM `competencia`, e isso é decisão: a situação fiscal é uma FOTO do dia em que o
+             contador consultou, não um recorte de mês. Passar o seletor daqui prometeria um filtro
+             que o dado não tem — o "filtro fantasma", agora dentro da tela. A data da apuração
+             aparece na própria página. */
+          <SituacaoFiscalPage empresa={empresaAtiva} />
         ) : (
           <PainelPage
             empresa={empresaAtiva}

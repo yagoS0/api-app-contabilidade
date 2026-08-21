@@ -52,7 +52,7 @@ export function useCarregamento(fn, deps, { habilitado = true } = {}) {
 // ninguém mais alcança pelo menu, mas que o hash ainda aceita, é o "filtro fantasma" — alguém volta
 // nela por um link antigo e cai numa tela que o app já não sabe fechar. `#/emitir` hoje cai no
 // destino padrão, que é o comportamento de qualquer hash desconhecido.
-const ROTAS = ["home", "notas", "guias"];
+const ROTAS = ["home", "notas", "guias", "fiscal"];
 const ROTA_PADRAO = "home";
 
 function rotaDaUrl() {

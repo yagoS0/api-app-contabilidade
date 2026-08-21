@@ -118,9 +118,11 @@ const abas = () =>
   [...document.querySelectorAll('nav[aria-label="Seções"] a')].map((b) => b.textContent);
 
 describe("⚠ 1. a aba sumiu do menu — inteira", () => {
-  test("o menu tem Início, Notas e Guias, e NADA de Emitir", async () => {
+  test("o menu tem Início, Notas, Guias e Situação fiscal — e NADA de Emitir", async () => {
     await abrirApp();
-    expect(abas()).toEqual(["Início", "Notas", "Guias"]);
+    // ⚠ "Situação fiscal" entrou em 21/08/2026. A asserção é a lista INTEIRA, e não um `toContain`,
+    // porque o que ela protege é a ausência de "Emitir" — e `toContain` não vê o que sobrou.
+    expect(abas()).toEqual(["Início", "Notas", "Guias", "Situação fiscal"]);
   });
 
   test("⚠ a barra é SÓ ÍCONE: o rótulo existe para o leitor de tela, não em tela", async () => {
@@ -130,7 +132,7 @@ describe("⚠ 1. a aba sumiu do menu — inteira", () => {
     // seis suítes.
     await abrirApp();
     const links = [...document.querySelectorAll('nav[aria-label="Seções"] a')];
-    expect(links).toHaveLength(3);
+    expect(links).toHaveLength(4);
     for (const a of links) {
       // Todo rótulo está dentro de `.sr-only` — nenhum texto solto no link.
       expect(a.querySelector(".sr-only")?.textContent).toBeTruthy();

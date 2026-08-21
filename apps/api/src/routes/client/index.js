@@ -36,6 +36,10 @@ import { createNfseLoteRouter } from "../nfseLoteRoutes.js";
 // (`application/nfse/tomadorEmitido.js`) — não há segunda tabela nem segunda escrita aqui. Ver o
 // bloco `GET /companies/:companyId/nfse/tomadores`, abaixo.
 import { listarTomadoresEmitidos } from "../../application/nfse/tomadorEmitido.js";
+// ── A SITUAÇÃO FISCAL DO LADO DO CLIENTE — LEITURA, e só ────────────────────────────────────
+// ⚠⚠ O MESMO parser do escritório, não um segundo. Ver o bloco
+// `GET /companies/:companyId/situacao-fiscal`, abaixo, para o que esta rota NÃO faz.
+import { parseSitfisRelatorio } from "../../application/fiscal/serpro/parseSitfisRelatorio.js";
 // ── O DANFSe PELO CLIENTE — mesma fachada, mesmo serviço, mesmos desfechos ───────────────────
 // Ver o bloco `GET /companies/:companyId/notas/:notaId/danfse`, no fim deste arquivo.
 import { gerarDanfseDaNota } from "../../application/nfse/danfse/danfseDaNotaDoPortal.js";
@@ -863,6 +867,62 @@ export function createClientPortalRouter({ ensureAuthorized, log }) {
         return res.json(data);
       } catch (err) {
         log.error({ err: err.message, companyId }, "client dashboard falhou");
+        return res.status(500).json({ error: "internal_error" });
+      }
+    }
+  );
+
+  // ── A SITUAÇÃO FISCAL (SITFIS) NO PORTAL DO CLIENTE ────────────────────────────────────────
+  //
+  // ⚠⚠ ESTA ROTA NÃO CONSULTA O SERPRO, E NUNCA PODERÁ. Ela lê o `CompanyFiscalStatus` que a
+  // consulta do ESCRITÓRIO já gravou. A consulta é PAGA e o limite AV02 do `/Apoiar` é **por
+  // CONTRATANTE**: uma consulta à toa de uma empresa consome o limite da carteira inteira, e do
+  // lado do cliente não existe ninguém para explicar isso a ninguém. É o mesmo molde já usado
+  // quando a carga tributária passou a ser vista aqui — só ver; a caneta continua sendo a tela do
+  // contador. **Não acrescente POST nem `force` aqui.**
+  //
+  // ⚠⚠ O PISO É `CLIENT_ADMIN`, E NÃO "MEMBRO ATIVO" COMO AS OUTRAS LEITURAS. O relatório do
+  // SITFIS não é só dívida: o texto traz os DADOS CADASTRAIS e o QUADRO SOCIETÁRIO com o
+  // percentual de participação de cada sócio — tanto que o defeito antigo do parser era mostrar
+  // "R$ 100,00" de débito lendo o "100,00%" de participação societária. O piso escrito deste
+  // projeto para dado de sócio é `CLIENT_ADMIN` (ver `requireClientCompanyAccess.js`: *"pró-labore
+  // /certificado/sócios = CLIENT_ADMIN"*), e o FINANCEIRO da empresa não entra nele. Afrouxar isto
+  // é decisão do dono, não refactor.
+  //
+  // ⚠ O QUE NÃO SAI DAQUI, e cada omissão tem motivo:
+  //   • `podeConsultar`/`proximaConsultaEm` — governam um botão do ESCRITÓRIO que não existe aqui;
+  //   • `protocolo` — é credencial de uma solicitação em aberto no SERPRO, não dado do cliente;
+  //   • `relatorioPdfFileId` — o PDF é servido por outra rota, com outra decisão. O cliente não o
+  //     tem, e é por isso que a TELA dele não pode mandar "confira no PDF oficial".
+  router.get(
+    "/companies/:companyId/situacao-fiscal",
+    requireClientCompanyAccess("CLIENT_ADMIN"),
+    async (req, res) => {
+      const portalClientId = String(req.params.companyId || "").trim();
+      if (!portalClientId) return res.status(400).json({ error: "company_id_required" });
+      try {
+        const status = await prisma.companyFiscalStatus.findUnique({
+          where: { portalClientId },
+          select: { situacao: true, texto: true, checkedAt: true, ultimoRelatorioEm: true },
+        });
+        // ⚠ NUNCA CONSULTADA NÃO É "EM DIA". Empresa sem linha responde `situacao: null` e a tela
+        // diz que não sabe. Afirmar regularidade perante o fisco sem ter consultado é o erro caro;
+        // dizer que não se sabe é o barato.
+        if (!status) {
+          return res.json({ ok: true, situacao: null, checkedAt: null, ultimoRelatorioEm: null, relatorio: null });
+        }
+        // Relatório antigo, salvo antes de guardarmos o texto: `relatorio` vem `null` e a tela cai
+        // no aviso de falar com o contador — nunca numa tabela vazia sem explicação.
+        const relatorio = status.texto ? parseSitfisRelatorio(status.texto) : null;
+        return res.json({
+          ok: true,
+          situacao: status.situacao || null,
+          checkedAt: status.checkedAt || null,
+          ultimoRelatorioEm: status.ultimoRelatorioEm || null,
+          relatorio,
+        });
+      } catch (err) {
+        log.error({ err: err.message, companyId: portalClientId }, "client situacao fiscal falhou");
         return res.status(500).json({ error: "internal_error" });
       }
     }

@@ -146,6 +146,38 @@ main.page { padding: 20px; min-width: 0; display: flex; flex-direction: column; 
 .table [data-linha-dre="subtotal"] td,
 .table [data-linha-dre="resultado"] td { border-top: 1px solid var(--border); }
 
+/* --- Situação fiscal (SITFIS) ----------------------------------------------
+   ⚠ Atributo PRÓPRIO (`data-situacao-fiscal`), e não o `data-status` das notas/guias: aquele
+   vocabulário é espelhado pelo app mobile e "paga"/"vencida" não descrevem situação perante o
+   fisco. Cor certa por acidente com significado errado é o defeito que "GUIA NÃO É NOTA" registra.
+   ⚠ E `nao_consultada` é NEUTRO de propósito: verde diria "em dia" sobre algo que ninguém apurou. */
+.situacao-fiscal-estado { margin: 0; font-size: 1.25rem; font-weight: 700; }
+.situacao-fiscal-estado[data-situacao-fiscal="regular"]          { color: var(--success); }
+.situacao-fiscal-estado[data-situacao-fiscal="com_pendencia"]    { color: var(--danger); }
+.situacao-fiscal-estado[data-situacao-fiscal="em_parcelamento"]  { color: var(--warning); }
+.situacao-fiscal-estado[data-situacao-fiscal="processando"]      { color: var(--primary); }
+.situacao-fiscal-estado[data-situacao-fiscal="nao_consultada"]   { color: var(--muted); }
+
+.sitfis-orgao { margin-top: var(--gap); }
+.sitfis-orgao-cabecalho { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.sitfis-orgao-cabecalho h3 { margin: 0; font-size: 1rem; }
+/* Verde é CONCLUÍDO — e aqui ele diz um FATO do relatório, nunca uma ação. */
+.sitfis-nada-consta { color: var(--success); font-size: .84rem; font-weight: 700; }
+.sitfis-bloco { margin-top: 12px; display: grid; gap: 8px; }
+.sitfis-bloco-titulo { margin: 0; font-size: .88rem; font-weight: 700; }
+/* ⚠ As linhas CRUAS ficam em fonte monoespaçada e na ordem exata do relatório: nada foi
+   reordenado nem emparelhado, e o desenho precisa dizer isso antes do texto. */
+.sitfis-cru { margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; line-height: 1.6; overflow-x: auto; }
+/* ⚠ A ROLAGEM É QUEM CEDE. Coluna de relatório fiscal não some para caber na tela — a tabela
+   declara as colunas do bloco, e o `.table-wrap` rola. */
+.table--sitfis { min-width: 0; font-size: .82rem; }
+.table--sitfis th, .table--sitfis td { white-space: nowrap; }
+.table--sitfis td[data-quebra="sim"] { white-space: normal; }
+/* A coluna que responde "quanto devo hoje" — sem destaque, achá-la exige ler cinco cabeçalhos. */
+.table--sitfis [data-coluna-total="sim"] { font-weight: 700; }
+.table--sitfis td[data-coluna-total="sim"] { color: var(--danger); }
+.table--sitfis tr[data-linha-total="sim"] td { border-top: 2px solid var(--border); }
+
 /* --- Botões --------------------------------------------------------------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

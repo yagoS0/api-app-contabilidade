@@ -19,6 +19,7 @@ import { ApiError } from "../ApiError";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, limparSessao } from "../sessionStore";
 import { competenciaPadrao } from "../../lib/format";
+import { isAdminOrAbove } from "../../lib/roles";
 import { fluxoDeCaixaDeDemonstracao, dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
 
 const LATENCIA_MS = 140; // o suficiente para os estados de carregamento existirem de verdade
@@ -929,6 +930,150 @@ function criarEstado() {
   };
 }
 
+// ── A SITUAÇÃO FISCAL DE DEMONSTRAÇÃO ────────────────────────────────────────────────────────
+//
+// ⚠⚠ ELE ALCANÇA TODOS OS ESTADOS DA TELA, e é a razão de o mock DECIDIR em vez de devolver uma
+// resposta fixa: este projeto foi mordido quatro vezes por ramo que só existia em produção. As
+// quatro empresas cobrem `nao_consultada` (sem linha), `regular` (nada consta nos dois órgãos),
+// `com_pendencia` (com a tabela, o total, a anotação de lançamento, o bloco QUE NÃO VIROU TABELA e
+// a linha que não fechou em colunas) e `em_parcelamento` (o bloco do SIEFPAR, que o interpretador
+// lê por PARES rótulo→valor).
+//
+// ⚠ Os CNPJs e números aqui são fabricados, como nas fixtures do backend — formato e comprimento
+// idênticos aos reais, dígitos inventados. Fixture entra no histórico do git para sempre.
+const SITUACAO_FISCAL = {
+  // COM PENDÊNCIA — o caso mais rico, e o único onde o total do bloco FECHA.
+  "pc-001": {
+    situacao: "COM_PENDENCIA",
+    checkedAt: "2026-08-19T13:42:10.000Z",
+    ultimoRelatorioEm: "2026-08-19T13:42:10.000Z",
+    relatorio: {
+      emitidoEm: "19/08/2026 13:42:10",
+      contribuinte: { cnpj: "12.345.678/0001-90", nome: "VERTICE SERVICOS DIGITAIS LTDA" },
+      temTexto: true,
+      naoInterpretado: [],
+      diagnosticos: [
+        {
+          orgao: "Receita Federal",
+          chave: "RFB",
+          semPendencia: false,
+          blocos: [
+            {
+              titulo: "Pendência - Débito (SIEF)",
+              descricao: [],
+              anotacoes: ["12345678202601001"],
+              colunas: ["Receita", "PA/Exerc.", "Dt. Vcto", "Vl. Original", "Multa", "Juros", "Sdo. Dev. Cons.", "Situação"],
+              registros: [
+                { "Receita": "4406-01 - MAED - PGDAS-D", "PA/Exerc.": "03/2026", "Dt. Vcto": "20/04/2026", "Vl. Original": "1.200,00", "Multa": "240,00", "Juros": "78,40", "Sdo. Dev. Cons.": "1.518,40", "Situação": "DEVEDOR" },
+                { "Receita": "1099-01 - CP-SEGUR.", "PA/Exerc.": "2º TRIM/2026", "Dt. Vcto": "20/07/2026", "Vl. Original": "830,00", "Multa": "83,00", "Juros": "12,30", "Sdo. Dev. Cons.": "925,30", "Situação": "DEVEDOR" },
+              ],
+              naoInterpretado: [],
+            },
+            {
+              // ⚠ O BLOCO QUE NÃO VIROU TABELA: nenhuma linha dele é cabeçalho conhecido, então o
+              // bloco inteiro sai em `descricao` e `naoInterpretado` fica vazio. Sem este caso, o
+              // ramo que AVISA isso na tela só existiria em produção.
+              titulo: "Parcelamento com Exigibilidade Suspensa (PARCSN/PARCMEI)",
+              descricao: ["SIMPLES NACIONAL - EM PARCELAMENTO"],
+              anotacoes: [],
+              colunas: [],
+              registros: [],
+              naoInterpretado: [],
+            },
+          ],
+        },
+        {
+          orgao: "Procuradoria-Geral da Fazenda Nacional",
+          chave: "PGFN",
+          semPendencia: false,
+          blocos: [
+            {
+              // ⚠ O bloco em que o interpretador ACHOU colunas e as linhas NÃO FECHARAM — o caso
+              // com risco de dado faltando, e por isso ele é vermelho, não âmbar.
+              titulo: "Pendência - Inscrição em Dívida Ativa",
+              descricao: [],
+              anotacoes: [],
+              colunas: ["Inscrição", "Devedor", "Valor", "Situação"],
+              registros: [],
+              naoInterpretado: ["70.4.24.100200-96", "VERTICE SERVICOS DIGITAIS LTDA", "3.410,55"],
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // EM PARCELAMENTO — o bloco do SIEFPAR, lido por PARES rótulo→valor.
+  "pc-003": {
+    situacao: "EM_PARCELAMENTO",
+    checkedAt: "2026-08-11T09:05:00.000Z",
+    ultimoRelatorioEm: "2026-08-11T09:05:00.000Z",
+    relatorio: {
+      emitidoEm: "11/08/2026 09:05:00",
+      contribuinte: { cnpj: "45.678.912/0001-33", nome: "FAROL CONSULTORIA EMPRESARIAL LTDA" },
+      temTexto: true,
+      naoInterpretado: [],
+      diagnosticos: [
+        {
+          orgao: "Receita Federal",
+          chave: "RFB",
+          semPendencia: false,
+          blocos: [
+            {
+              titulo: "Parcelamento (SIEFPAR)",
+              descricao: [],
+              anotacoes: [],
+              colunas: ["Parcelamento", "Parcelas em atraso", "Valor em Atraso", "Valor Suspenso"],
+              registros: [
+                { "Parcelamento": "0211.00012.0011122233.26-69", "Parcelas em atraso": "2", "Valor em Atraso": "1.140,00", "Valor Suspenso": "9.860,00" },
+              ],
+              // ⚠ A modalidade que o relatório imprime SOLTA: rótulo sem valor não vira par, e
+              // volta cru em vez de ser casado com o vizinho por proximidade.
+              naoInterpretado: ["Parcelamento Simplificado"],
+            },
+          ],
+        },
+        { orgao: "Procuradoria-Geral da Fazenda Nacional", chave: "PGFN", semPendencia: true, blocos: [] },
+      ],
+    },
+  },
+
+  // REGULAR — nada consta nos DOIS órgãos.
+  "pc-004": {
+    situacao: "REGULAR",
+    checkedAt: "2026-08-20T16:20:00.000Z",
+    ultimoRelatorioEm: "2026-08-20T16:20:00.000Z",
+    relatorio: {
+      emitidoEm: "20/08/2026 16:20:00",
+      contribuinte: { cnpj: "32.165.498/0001-77", nome: "ALVORADA MANUTENCAO PREDIAL ME" },
+      temTexto: true,
+      naoInterpretado: [],
+      diagnosticos: [
+        { orgao: "Receita Federal", chave: "RFB", semPendencia: true, blocos: [] },
+        { orgao: "Procuradoria-Geral da Fazenda Nacional", chave: "PGFN", semPendencia: true, blocos: [] },
+      ],
+    },
+  },
+
+  // ⚠ ESTADO CONHECIDO SEM RELATÓRIO GUARDADO — consulta antiga, de antes de o texto ser salvo. A
+  // tela não pode cair numa tabela vazia sem explicação.
+  "pc-005": {
+    situacao: "REGULAR",
+    checkedAt: "2026-05-04T10:00:00.000Z",
+    ultimoRelatorioEm: "2026-05-04T10:00:00.000Z",
+    relatorio: null,
+  },
+};
+
+/** ⚠ Empresa sem linha responde `situacao: null` — NUNCA CONSULTADA NÃO É "EM DIA". */
+function situacaoFiscalDaEmpresa(companyId) {
+  const guardada = SITUACAO_FISCAL[companyId];
+  if (!guardada) {
+    return { ok: true, situacao: null, checkedAt: null, ultimoRelatorioEm: null, relatorio: null };
+  }
+  return { ok: true, ...guardada };
+}
+
 const estado = criarEstado();
 
 // -----------------------------------------------------------------------------
@@ -1485,6 +1630,25 @@ export function createMockApi() {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
       return dreDeDemonstracao(id, competencia || competenciaPadrao());
+    },
+
+    /**
+     * A SITUAÇÃO FISCAL — leitura do que o ESCRITÓRIO gravou.
+     *
+     * ⚠⚠ NÃO EXISTE CONSULTA AQUI, nem no mock. A consulta ao SERPRO é paga e o limite é por
+     * CONTRATANTE; um mock com botão de consultar ensinaria a tela errada.
+     *
+     * ⚠⚠ O PISO É `CLIENT_ADMIN`, e o mock o exerce — `pc-002` é FINANCEIRO e leva 403
+     * `insufficient_role`, como o servidor faria. Mock que aceita o que o real recusa treina a tela
+     * errada; foi o caso já pago do `emitirNfse`.
+     */
+    async getSituacaoFiscal(companyId) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      // `exigirAcessoEmpresa` já provou o vínculo; aqui só falta o PESO do papel.
+      const empresa = estado.empresas.find((e) => e.companyId === id);
+      if (!isAdminOrAbove(empresa?.myRole)) throw new ApiError(403, "insufficient_role");
+      return situacaoFiscalDaEmpresa(id);
     },
 
     async getFluxo(companyId) {

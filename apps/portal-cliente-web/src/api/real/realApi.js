@@ -347,6 +347,22 @@ export function createRealApi() {
       return dreDeDemonstracao(companyId, competencia || competenciaPadrao());
     },
 
+    /**
+     * A SITUAÇÃO FISCAL — LEITURA do que o escritório já gravou.
+     *
+     * ⚠⚠ SÓ EXISTE ESTE VERBO, e é assim de propósito. Não há POST de situação fiscal no portal do
+     * cliente: a consulta ao SERPRO é PAGA e o limite AV02 do `/Apoiar` é **por CONTRATANTE** —
+     * uma consulta à toa de UMA empresa consome o limite da carteira inteira do escritório. Quem
+     * consulta é o contador, na tela dele. **Não acrescente uma função que chame o SERPRO aqui.**
+     *
+     * ⚠ O servidor responde 403 `insufficient_role` abaixo de `CLIENT_ADMIN` — o relatório traz os
+     * dados cadastrais e o quadro societário, e o piso escrito deste projeto para dado de sócio é
+     * `CLIENT_ADMIN`. A tela já não chama por baixo disso; esta é a segunda barreira, não a única.
+     */
+    async getSituacaoFiscal(companyId) {
+      return pedir(`/client/companies/${encodeURIComponent(companyId)}/situacao-fiscal`);
+    },
+
     // --- Os tomadores para quem esta empresa JÁ emitiu -----------------------------------------
     //
     // ⚠ **SÓ LEITURA, E NÃO EXISTE OUTRA PORTA.** A memória é escrita por cada emissão autorizada

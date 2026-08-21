@@ -59,6 +59,8 @@ src/
                           `SeletorTomador.jsx`      - a busca "encontra, nunca escolhe"
     lote/               - planilha de emissão em lote: modelo, leitura e CONFERÊNCIA (⚠ NÃO emite)
     guias/              - guias + linha digitável
+    fiscal/             - situação fiscal (SITFIS): a tabela que o escritório já salvou
+                          ⚠ SÓ LEITURA, e o piso é CLIENT_ADMIN — ver a seção própria
   lib/
     format.js  hooks.js  roles.js  mensagens.js  baixarBlob.js
     municipios/   - SÓ a regra; o dado (5.571 linhas) vem de `@contabilidade/shared/municipios-ibge`
@@ -73,8 +75,8 @@ do `.jsx`.
 
 ### Roteamento: hash, 3 destinos, nenhuma dependência
 
-`lib/hooks.js` → `useRota`. `ROTAS = ["home","notas","guias"]`, padrão `home`; hash desconhecido cai
-no padrão. `App.jsx` despacha por `if`, e a única entrada externa é `/redefinir-senha?token=…`, lida
+`lib/hooks.js` → `useRota`. `ROTAS = ["home","notas","guias","fiscal"]`, padrão `home`; hash
+desconhecido cai no padrão. `App.jsx` despacha por `if`, e a única entrada externa é `/redefinir-senha?token=…`, lida
 **uma vez** na carga.
 
 ⚠ **A redefinição de senha vem ANTES da sessão** (`App.jsx:44`). Quem clica no link do e-mail pode
@@ -978,6 +980,68 @@ um problema sem entregar a ação, com dois valores em conflito numa tela cujo a
 pago". ⚠ Nos três casos o "Baixar PDF" continua sendo a saída — ausência de linha nunca vira ausência
 de caminho para pagar.
 
+## ⚠⚠ A SITUAÇÃO FISCAL (`src/features/fiscal/`) — 21/08/2026
+
+> Dono: *"um símbolo de situação fiscal, onde mostraremos a tabela da situação fiscal ao cliente"*.
+
+`GET /client/companies/:companyId/situacao-fiscal` (rota NOVA, em `apps/api/src/routes/client/index.js`)
+lê o `CompanyFiscalStatus` que a consulta do ESCRITÓRIO gravou e devolve o relatório já interpretado
+por **`parseSitfisRelatorio`**, o parser do backend — não há segundo parser.
+
+- ⚠⚠ **NÃO EXISTE CONSULTA AQUI, E NUNCA PODERÁ EXISTIR.** A consulta ao SERPRO é **paga** e o
+  limite AV02 do `/Apoiar` é **por CONTRATANTE**: uma consulta à toa de UMA empresa consome o limite
+  da carteira inteira do escritório. É o molde já usado na carga tributária — *só ver; a caneta
+  continua sendo a tela do contador*. Não há POST, não há `force`, não há botão. Travado por
+  varredura de fonte (`client/__tests__/situacaoFiscalDoCliente.test.js`) **e** por teste de tela
+  (nenhum `<button>` na página).
+- ⚠⚠ **O PISO É `CLIENT_ADMIN`, E NÃO "MEMBRO ATIVO" COMO AS OUTRAS LEITURAS.** O relatório não é só
+  dívida: o texto traz os **dados cadastrais** e o **quadro societário com o percentual de cada
+  sócio** — tanto que o defeito antigo do parser era mostrar "R$ 100,00" de débito lendo o "100,00%"
+  de participação. O piso escrito deste projeto para dado de sócio é `CLIENT_ADMIN`
+  (`requireClientCompanyAccess.js`: *"pró-labore/certificado/sócios = CLIENT_ADMIN"*), e o
+  FINANCEIRO não entra nele. ⚠ Isso foi decidido **por aplicação da regra existente**, não por
+  pedido do dono — afrouxar é decisão dele, não refactor.
+  - ⚠ **A ABA NÃO SOME para quem não alcança o piso**, e a TELA diz o motivo e o conserto (pedir o
+    papel a quem é proprietário). Aba que aparece e some conforme a empresa deixa a barra instável,
+    e o conserto precisa estar escrito em algum lugar. A tela **nem chama a API** nesse caso
+    (`isAdminOrAbove`, o mesmo mapa de `lib/roles.js`) — mas quem autoriza continua sendo o servidor.
+- ⚠⚠ **NUNCA CONSULTADA NÃO É "EM DIA".** É a regra que decide a tela inteira
+  (`lib/situacaoFiscalNaTela.js`): `null`, ausência **e estado desconhecido** caem todos em
+  `nao_consultada`, em cinza, com a frase que impede a leitura nos dois sentidos. Afirmar
+  regularidade perante o fisco sem ter consultado é o erro caro — o cliente deixa de correr atrás de
+  uma pendência que existe. Há teste varrendo o texto INTEIRO da página contra "em dia"/"regular"/
+  "sem pendência"/"nada consta".
+- ⚠ **`data-situacao-fiscal`, e NÃO o `data-status` das notas/guias.** Aquele vocabulário é
+  espelhado pelo app mobile, e "paga"/"vencida" não descrevem situação perante o fisco — cor certa
+  por acidente com significado errado é o defeito que "GUIA NÃO É NOTA" já registra aqui.
+- ⚠ **A DATA VIAJA JUNTO DO ESTADO.** "Sem pendências" sem dizer DE QUANDO é uma afirmação sobre
+  hoje que ninguém apurou hoje.
+- ⚠ **A rota NÃO devolve** `podeConsultar`/`proximaConsultaEm` (governam um botão do escritório que
+  não existe aqui), `protocolo` (é credencial de uma solicitação aberta no SERPRO) nem o id do PDF.
+- ⚠ **A tela NÃO passa competência**: a situação fiscal é uma FOTO do dia da consulta, não um
+  recorte de mês. Um seletor ali prometeria um filtro que o dado não tem.
+
+### A tabela (`RelatorioSitfis.jsx`) — espelho, com duas mudanças
+
+Cópia de `apps/web/src/features/fiscal/sitfis/components/SitfisRelatorioTabela.jsx` (a de lá é
+escura e com cor hardcoded). As regras vieram inteiras: **cada bloco declara as próprias colunas**;
+**a tela mostra as colunas que o PDF mostra, todas, sempre**; `Sdo. Dev. Cons.` é a coluna que
+responde *"quanto devo hoje"*; **uma linha ilegível invalida o total do bloco**; **nada some** —
+bloco que não virou tabela aparece cru, com o aviso.
+
+⚠⚠ **As duas mudanças são por causa de QUEM LÊ:**
+1. **O cliente não tem o PDF.** Onde o escritório manda *"confira no PDF oficial"*, aqui a saída é
+   uma só: falar com o contador. Há teste varrendo a página contra a palavra "PDF".
+2. `situacao` nula **nunca** lê como "em dia" (acima).
+
+⚠ **A rolagem é quem cede**: tabela larga rola dentro do `.table-wrap`; coluna de relatório fiscal
+não some para caber na tela. Conferido em 375px e 1280px.
+
+⚠ **O mock alcança os CINCO estados** — com pendência (com tabela, total, anotação, o bloco que não
+virou tabela e a linha que não fechou em colunas), em parcelamento (o bloco do SIEFPAR, lido por
+pares), regular, regular **sem relatório guardado**, e não consultada. E ele **exerce o piso de
+papel**: `pc-002` é FINANCEIRO e leva 403 `insufficient_role`, como o servidor faria.
+
 ## AUTENTICAÇÃO
 
 ⚠ **`accountGate.js` é regra de PRODUTO**: conta `FIRM` que entrasse aqui veria a tela do cliente —
@@ -1040,6 +1104,7 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
 | `lib/cliqueDeLink.js` | `apps/web/src/components/ui/cliqueDeLink.js` (quem assume o clique numa aba-link) |
+| `fiscal/RelatorioSitfis.jsx` + `fiscal/lib/situacaoFiscalNaTela.js` (`COLUNAS_VALOR`, `COLUNA_TOTAL`, `parseValorBR`, `totalDoBloco`) | `apps/web/src/features/fiscal/sitfis/components/SitfisRelatorioTabela.jsx` — ⚠ paleta e DUAS frases divergem de propósito (o cliente não tem o PDF; `situacao` nula não lê como "em dia") |
 
 ⚠ Duas leituras da mesma coluna divergem na primeira correção — e aí as duas telas afirmam coisas
 diferentes sobre a MESMA empresa.
