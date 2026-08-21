@@ -242,6 +242,30 @@ describe("RelatorioFaturamentoPanel — impressão", () => {
     await waitFor(() => expect(window.print).toHaveBeenCalled());
   });
 
+  it("⚠⚠ o <details> das limitações vai ABERTO para o papel — e volta a fechar depois", async () => {
+    // ⚠ ISTO EXISTE PORQUE A PRIMEIRA TENTATIVA FOI UM NO-OP. Era só uma regra `@media print`
+    // mandando `display: revert` nos filhos do <details>; medido no navegador, o Chrome não
+    // esconde o conteúdo por `display` — ele usa `content-visibility: hidden` no pseudo
+    // `::details-content`. As ressalvas simplesmente não sairiam impressas, e o relatório
+    // circularia sem o que impede que ele seja lido como apuração.
+    //
+    // O jsdom não implementa nem o pseudo nem a mídia de impressão, então o que se mede aqui é a
+    // única coisa que dá para garantir dos dois lados: o atributo `open`.
+    const { container } = render(<RelatorioFaturamentoPanel relatorio={relatorioFixture()} onGerar={() => {}} />);
+    const bloco = container.querySelector("[data-print-area] details");
+    expect(bloco).toBeTruthy();
+    expect(bloco.open).toBe(false); // na TELA ele nasce recolhido
+
+    fireEvent.click(screen.getByRole("button", { name: /Imprimir/ }));
+    await waitFor(() => expect(window.print).toHaveBeenCalled());
+    // ⚠ aberto ANTES de `window.print()` — depois seria tarde.
+    expect(bloco.open).toBe(true);
+
+    // E o que estava fechado na tela volta a fechar quando a impressão termina.
+    fireEvent(window, new Event("afterprint"));
+    await waitFor(() => expect(bloco.open).toBe(false));
+  });
+
   it("⚠ `imprimivel={false}` não marca área de impressão — só pode haver UMA por página", () => {
     const { container } = render(<RelatorioFaturamentoPanel relatorio={relatorioFixture()} imprimivel={false} onGerar={() => {}} />);
     expect(container.querySelector("[data-print-area]")).toBeNull();

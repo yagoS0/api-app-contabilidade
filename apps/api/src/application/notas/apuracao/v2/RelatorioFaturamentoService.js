@@ -385,7 +385,7 @@ export function grupoDoItem(item, { semDetalhe = false } = {}) {
       temDetalhe: true,
       linhaAtividade: linhaAtividadeDe(null),
       segregacao: null,
-      qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+      qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item ainda não classificado por tipo de operação." },
     };
   }
 
@@ -802,8 +802,11 @@ async function montarAusenciaDeNotas({ portalClientId, competencia, totalMes }) 
  * estado do portal), não regra fiscal.
  */
 const MOTIVO_BLOQUEIO = {
-  RECEITA_NAO_CLASSIFICADA: "A receita da competência não está classificada — os itens das notas "
-    + "não têm `tipoReceita`, e sem isso não há anexo, não há alíquota e não há DAS.",
+  // ⚠ Este texto SAI NA TELA do contador, dentro da caixa do pré-apurado. `tipoReceita` é nome de
+  // coluna nossa — ele não tem como usar isso. Ficou o que descreve o estado e a consequência.
+  RECEITA_NAO_CLASSIFICADA: "A receita da competência não está classificada — as notas ainda não "
+    + "foram classificadas por tipo de operação, e sem isso não há anexo, não há alíquota e não "
+    + "há DAS.",
   PENDENCIAS_ABERTAS: "Há pendências de classificação em aberto para esta empresa.",
   CADASTRO_FALTANDO: "A empresa não tem Cadastro Fiscal preenchido (regime + CNAE).",
   REGIME_INVALIDO: "A empresa não está cadastrada no Simples Nacional — o motor só apura SN.",

@@ -22,7 +22,7 @@ const LIMITE = 25;
 // ⚠ Verde é CONCLUÍDO: só a guia PAGA leva verde. "Em aberto" é pendência
 // (âmbar) e "vencida" é problema (vermelho) — se tudo fosse vermelho, nada se
 // destacaria justamente na linha que precisa ser vista.
-const CHIP_POR_PAGAMENTO = {
+export const CHIP_POR_PAGAMENTO = {
   // ⚠⚠ O `status` daqui vira `data-status` no DOM e é o vocabulário que o app mobile espelha.
   // Era emprestado da NOTA — `PAID → "emitida"`, `OVERDUE → "rejeitada"`, `OPEN → "rascunho"` —
   // e a cor saía certa por acidente: uma guia VENCIDA aparecia no atributo como nota REJEITADA.
@@ -32,7 +32,7 @@ const CHIP_POR_PAGAMENTO = {
   OPEN: { status: "aberta", rotulo: "Em aberto" },
 };
 
-function chipDaGuia(paymentStatus) {
+export function chipDaGuia(paymentStatus) {
   const chave = String(paymentStatus || "").toUpperCase();
   return CHIP_POR_PAGAMENTO[chave] || { status: null, rotulo: texto(paymentStatus) };
 }
@@ -78,13 +78,11 @@ function CelulaLinhaDigitavel({ guia }) {
   }
   return (
     <td>
+      {/* ⚠ A COR fica inline porque é CONDICIONAL (só a conferência tem conflito conhecido); o
+          tamanho vem da classe. Estilo que depende do dado fica no `style`; estilo fixo, não. */}
       <span
-        className="muted"
-        style={{
-          fontSize: ".78rem",
-          // Âmbar só na conferência: é a única das três em que existe um conflito conhecido.
-          color: leitura.tom === "atencao" ? "var(--warning)" : undefined,
-        }}
+        className="meta"
+        style={{ color: leitura.tom === "atencao" ? "var(--warning)" : undefined }}
       >
         {leitura.aviso}
       </span>
@@ -189,6 +187,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
             Competência
             <select
               id="competencia-guias"
+              disabled={!aoTrocarCompetencia}
               value={competencia}
               onChange={(e) => setCompetencia(e.target.value)}
             >
@@ -250,7 +249,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                           {rotuloDaGuia(guia)}
                         </span>
                         {guia.numeroParcela != null ? (
-                          <span className="muted" style={{ fontSize: ".78rem" }}>
+                          <span className="meta">
                             Parcela {inteiro(guia.numeroParcela)}
                             {guia.quantidadeParcelas != null
                               ? ` de ${inteiro(guia.quantidadeParcelas)}`
@@ -263,7 +262,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                       <td>
                         <Chip status={chip.status}>{chip.rotulo}</Chip>
                         {guia.paymentConfirmedAt ? (
-                          <span className="muted" style={{ fontSize: ".78rem", display: "block" }}>
+                          <span className="meta meta--bloco">
                             em {fmtDateBr(guia.paymentConfirmedAt)}
                           </span>
                         ) : null}
@@ -273,7 +272,7 @@ export function GuiasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
                             traço, nunca como R$ 0,00 — zero aqui seria afirmar que não se deve nada. */}
                         {guia.valor == null ? TRACO : brl(guia.valor)}
                         {guia.valorRecalculado != null && guia.valorRecalculado !== guia.valor ? (
-                          <span className="muted" style={{ fontSize: ".78rem", display: "block" }}>
+                          <span className="meta meta--bloco">
                             recalculado {brl(guia.valorRecalculado)}
                           </span>
                         ) : null}

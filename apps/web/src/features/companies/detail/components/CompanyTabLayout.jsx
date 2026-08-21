@@ -54,7 +54,13 @@ const ESTILO_POR_LARGURA = {
  * o defeito é a tela ficar larga demais — visível e barato.
  */
 function estiloDoConteudo(largura) {
-  return ESTILO_POR_LARGURA[largura] !== undefined ? ESTILO_POR_LARGURA[largura] : null;
+  // ⚠ `hasOwnProperty`, não `!== undefined`: com o segundo, `largura="constructor"` (ou
+  // `"toString"`, `"valueOf"`) devolvia uma FUNÇÃO do `Object.prototype` em vez de cair no `null`
+  // que o cabeçalho deste arquivo promete. Só se alcança por erro de digitação — e é exatamente
+  // por erro de digitação que se quer cair no ramo seguro.
+  return Object.prototype.hasOwnProperty.call(ESTILO_POR_LARGURA, largura)
+    ? ESTILO_POR_LARGURA[largura]
+    : null;
 }
 
 export function CompanyTabLoading() {

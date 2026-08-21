@@ -5,6 +5,7 @@ import { AlertaErro, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento, useRota } from "../../lib/hooks";
 import { competenciaPadrao, fmtCnpj, texto } from "../../lib/format";
 import { roleLabel } from "../../lib/roles";
+import { oNavegadorAssumeOClique } from "../../lib/cliqueDeLink";
 import { SeletorEmpresa } from "./SeletorEmpresa";
 import { HomePage } from "../home/HomePage";
 import { NotasPage } from "../notas/NotasPage";
@@ -205,6 +206,11 @@ export function AppShell({ user }) {
           os outros quatro. É o mesmo movimento que o portal do escritório fez em 19/08 nas abas da
           empresa, pela mesma razão.
 
+          ⚠ Precisão sobre o `event.button !== 0` abaixo: o clique do MEIO e o BOTÃO DIREITO já não
+          chegam aqui — navegador moderno dispara `auxclick` (e `contextmenu`), não `click`. Quem
+          faz os dois funcionarem é o `href`, não esta cláusula; ela cobre o caso residual e o
+          navegador antigo. Registrado porque a frase acima credita a ela algo que ela não faz.
+
           ⚠⚠ O CLIQUE NORMAL CONTINUA SPA — `preventDefault()` + `irPara`, exatamente como o
           `Tabs` do escritório. Sem isso, quem navega é o `href` sozinho, e duas coisas se perdem:
           o `emissaoAberta`, que é estado da casca e o hash não carrega (voltar para Notas cairia
@@ -223,9 +229,7 @@ export function AppShell({ user }) {
             href={`#/${aba.chave}`}
             aria-current={rota === aba.chave ? "page" : undefined}
             onClick={(event) => {
-              const oNavegadorAssume =
-                event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
-              if (oNavegadorAssume) return;
+              if (oNavegadorAssumeOClique(event)) return;
               event.preventDefault();
               irPara(aba.chave);
             }}

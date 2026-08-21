@@ -200,7 +200,17 @@ export function NotasList({ notas, total, filters, onFiltersChange, onApply, loa
                     aria-label={onAbrirNota ? `Ver a nota ${n.numero || n.id} por inteiro` : undefined}
                     title={onAbrirNota ? "Clique para ver a nota por inteiro" : undefined}
                     onClick={onAbrirNota ? () => onAbrirNota(n.id) : undefined}
+                    /* ⚠⚠ SÓ QUANDO A TECLA É DA LINHA. O `keydown` de um botão de dentro BORBULHA
+                       até aqui, e este handler chamava `preventDefault()` — o que CANCELA a
+                       ativação nativa do botão. Com o ⧉ da chave focado, o Enter não copiava nada
+                       e ainda abria o detalhe da nota: o botão de copiar fazia, no teclado,
+                       exatamente o contrário do que promete.
+                       O `stopPropagation` do `BotaoCopiar` cobria só o MOUSE.
+                       `e.target === e.currentTarget` vale para qualquer controle da linha — o de
+                       copiar, o "Marcar como cancelada", o "Reativar" —, não só para o que
+                       apareceu primeiro. */
                     onKeyDown={onAbrirNota ? (e) => {
+                      if (e.target !== e.currentTarget) return;
                       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onAbrirNota(n.id); }
                     } : undefined}
                     onMouseEnter={(e) => { if (onAbrirNota) e.currentTarget.style.background = "var(--bg-page)"; }}

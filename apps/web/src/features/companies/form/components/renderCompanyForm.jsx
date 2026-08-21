@@ -15,7 +15,7 @@ const ERROR_TEXT_STYLE = {
   display: "block",
   marginTop: 4,
   fontSize: 12,
-  color: "#FF4757",
+  color: "var(--state-danger)",
   fontWeight: 600,
 };
 
@@ -98,7 +98,7 @@ function CnaeLegenda({ valor, descricoes }) {
   if (digitos.length !== 7) return null;
   const desc = descricoes?.get(digitos) || "";
   return (
-    <span style={{ fontSize: 11, color: "#8A8FA3" }}>
+    <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
       {formatarCnae(digitos)}{desc ? ` — ${desc}` : ""}
     </span>
   );
@@ -112,10 +112,10 @@ function ListaCnaesSecundarios({ valor, descricoes }) {
   if (!codigos.length) return null;
   return (
     <div className="full" style={{ marginTop: -4 }}>
-      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: "#8A8FA3", lineHeight: 1.7 }}>
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 11, color: "var(--text-muted)", lineHeight: 1.7 }}>
         {codigos.map((c) => (
           <li key={c}>
-            <strong style={{ color: "#F8F8F2", fontWeight: 600 }}>{formatarCnae(c)}</strong>
+            <strong style={{ color: "var(--text)", fontWeight: 600 }}>{formatarCnae(c)}</strong>
             {descricoes?.get(c) ? ` — ${descricoes.get(c)}` : ""}
           </li>
         ))}
@@ -125,11 +125,11 @@ function ListaCnaesSecundarios({ valor, descricoes }) {
 }
 
 const MINI_INPUT = {
-  background: "#282A36", border: "1px solid #44475A", borderRadius: 5,
-  color: "#F8F8F2", padding: "5px 7px", fontSize: "0.8rem", width: "100%",
+  background: "var(--bg-subtle)", border: "1px solid var(--border)", borderRadius: 5,
+  color: "var(--text)", padding: "5px 7px", fontSize: "0.8rem", width: "100%",
   colorScheme: "dark",
 };
-const MINI_TH = { padding: "4px 6px", fontSize: "0.68rem", color: "#6b7280", textTransform: "uppercase", textAlign: "left" };
+const MINI_TH = { padding: "4px 6px", fontSize: "0.68rem", color: "var(--text-faint)", textTransform: "uppercase", textAlign: "left" };
 
 // Sócios: lista editável. Sócio que saiu NÃO é removido — preenche "Saiu em" e ele fica no
 // histórico (é assim que a ficha do escritório trata).
@@ -149,10 +149,10 @@ function SociosEditor({ socios, onChange }) {
     .reduce((sum, s) => sum + (Number(String(s.participacao).replace(",", ".")) || 0), 0);
 
   return (
-    <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+    <div id="secao-socios" className="full" style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, scrollMarginTop: ANCORA_ABAIXO_DO_CABECALHO }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Sócios</strong>
-        <span style={{ fontSize: 11, color: totalPerc > 100 ? "#FF4757" : "#6b7280" }}>
+        <strong style={{ fontSize: "0.9rem", color: "var(--text)" }}>Sócios</strong>
+        <span style={{ fontSize: 11, color: totalPerc > 100 ? "var(--state-danger)" : "var(--text-faint)" }}>
           {linhas.length > 0 && `Soma dos ativos: ${totalPerc}%`}
           {totalPerc > 100 && " — passa de 100%"}
         </span>
@@ -212,10 +212,10 @@ function RegimeHistoricoEditor({ historico, onChange }) {
   }
 
   return (
-    <div className="full" style={{ borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12 }}>
+    <div id="secao-historico-de-regime" className="full" style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, scrollMarginTop: ANCORA_ABAIXO_DO_CABECALHO }}>
       <div style={{ marginBottom: 8 }}>
-        <strong style={{ fontSize: "0.9rem", color: "#F8F8F2" }}>Histórico de regime</strong>
-        <span style={{ fontSize: 11, color: "#6b7280", marginLeft: 8 }}>
+        <strong style={{ fontSize: "0.9rem", color: "var(--text)" }}>Histórico de regime</strong>
+        <span style={{ fontSize: 11, color: "var(--text-faint)", marginLeft: 8 }}>
           Registro para consulta. A apuração usa o regime atual selecionado acima.
         </span>
       </div>
@@ -291,7 +291,20 @@ export const ANCORAS_DO_FORMULARIO = [
   { id: "secao-dados-da-ficha", titulo: "Ficha" },
   { id: "secao-inscricoes", titulo: "Inscrições" },
   { id: "secao-alteracoes-contratuais", titulo: "Alterações" },
+  // ⚠ ESTAS DUAS FALTAVAM, e eram as que mais precisavam: são as ÚLTIMAS de ~700 linhas de campo,
+  // exatamente o alvo declarado da trilha ("o que faltava era só CHEGAR"). A barra prometia o
+  // conjunto (`aria-label="Seções do cadastro"`) e entregava 8 de 10.
+  { id: "secao-socios", titulo: "Sócios" },
+  { id: "secao-historico-de-regime", titulo: "Histórico de regime" },
 ];
+
+/**
+ * ⚠ O cabeçalho da empresa é `position: sticky; top: 0` (`.company-section-header`), e com as
+ * sub-abas ele passa de 140px. Com `scroll-margin-top` menor que isso, clicar na trilha rola a
+ * seção para DEBAixo do cabeçalho: some justamente o título que trouxe a pessoa até ali, e o
+ * primeiro elemento visível é um campo sem rótulo. Era 96.
+ */
+const ANCORA_ABAIXO_DO_CABECALHO = 168;
 
 function SecaoDoFormulario({ id, titulo, ajuda = null, primeira = false }) {
   return (
@@ -299,8 +312,8 @@ function SecaoDoFormulario({ id, titulo, ajuda = null, primeira = false }) {
       id={id}
       className="full"
       style={primeira
-        ? { paddingBottom: 4, scrollMarginTop: 96 }
-        : { borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, scrollMarginTop: 96 }}
+        ? { paddingBottom: 4, scrollMarginTop: ANCORA_ABAIXO_DO_CABECALHO }
+        : { borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, scrollMarginTop: ANCORA_ABAIXO_DO_CABECALHO }}
     >
       <strong style={{ fontSize: "0.9rem", color: "var(--text)" }}>{titulo}</strong>
       {ajuda ? (
@@ -328,7 +341,7 @@ function SecaoDoFormulario({ id, titulo, ajuda = null, primeira = false }) {
 function TrilhaDeSecoes() {
   return (
     <nav
-      className="full company-form-trilha"
+      className="company-form-trilha"
       aria-label="Seções do cadastro"
     >
       {ANCORAS_DO_FORMULARIO.map((s) => (
@@ -420,8 +433,17 @@ export function CompanyForm({
   }
 
   return (
-    <form className="form-grid two-col" onSubmit={onSubmit}>
+    /* ⚠⚠ O `<form>` DEIXOU DE SER A GRADE, e isso é o que faz a barra de ação grudar.
+       `position: sticky` num ITEM DE GRID tem como bloco contenedor a PRÓPRIA ÁREA da célula:
+       a barra ocupava a última linha, dimensionada ao conteúdo, e o curso de deslocamento era
+       zero — ela simplesmente não grudava, e a "barra fixa" era decorativa. Não era `overflow`
+       de ancestral (conferido: nem `.layout`, nem `.company-form-page-shell`, nem
+       `.company-form-page__panel` têm `overflow`); era o grid.
+       Hoje a grade é um `<div>` interno e a barra é irmã dela, filha do `<form>` — que continua
+       sendo o mesmo `<form>`, com o mesmo `onSubmit` e o mesmo `type="submit"`. */
+    <form className="company-form" onSubmit={onSubmit}>
       {cnpjReadOnly ? <TrilhaDeSecoes /> : null}
+      <div className="form-grid two-col">
       <SecaoDoFormulario id="secao-responsavel-pelo-acesso" titulo="Responsável pelo acesso" primeira
         ajuda={<>Quem vai entrar no portal do cliente.</>}
       />
@@ -473,7 +495,7 @@ export function CompanyForm({
           {/* Q27.A: checklist ao vivo dos requisitos da senha forte */}
           <ul style={{ listStyle: "none", padding: 0, margin: "6px 0 0", fontSize: 12 }}>
             {passwordChecklist(form.ownerPassword).map((r) => (
-              <li key={r.key} style={{ color: r.ok ? "#69FF47" : "#aeb6d3" }}>
+              <li key={r.key} style={{ color: r.ok ? "var(--state-ok)" : "var(--text-muted)" }}>
                 {r.ok ? "✓" : "○"} {r.label}
               </li>
             ))}
@@ -510,7 +532,7 @@ export function CompanyForm({
           placeholder="00.000.000/0000-00"
           required
           readOnly={cnpjReadOnly}
-          style={cnpjReadOnly ? { background: "#1f2030", color: "#aeb6d3", cursor: "not-allowed" } : undefined}
+          style={cnpjReadOnly ? { background: "var(--bg-page)", color: "var(--text-muted)", cursor: "not-allowed" } : undefined}
         />
         {!cnpjReadOnly && errors.cnpj && (
           <span style={ERROR_TEXT_STYLE}>{errors.cnpj.message}</span>
@@ -570,7 +592,7 @@ export function CompanyForm({
           <option value="nao">Não</option>
           <option value="sim">Sim — tem empregado registrado</option>
         </select>
-        <span style={{ fontSize: 11, color: "#6b7280" }}>
+        <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
           Permite aplicar obrigações trabalhistas em lote pelas regras do escritório.
         </span>
       </label>
@@ -599,7 +621,7 @@ export function CompanyForm({
           onChange={(event) => onChange("cnaesSecundarios", event.target.value)}
           placeholder="4330405, 4321500"
         />
-        <span style={{ fontSize: 11, color: "#6b7280" }}>Separados por vírgula. Preenchem sozinhos pelo CNPJ.</span>
+        <span style={{ fontSize: 11, color: "var(--text-faint)" }}>Separados por vírgula. Preenchem sozinhos pelo CNPJ.</span>
       </label>
       {/* Lista legível: o campo de texto é uma fileira de números; aqui dá pra CONFERIR se os
           CNAEs batem com o cartão CNPJ antes de salvar. */}
@@ -762,10 +784,10 @@ export function CompanyForm({
         /* ⚠ A SAÍDA FICA DITA, não subentendida: quem procurava os códigos de serviço aqui precisa
            saber para onde eles foram. Aba sumida sem rastro é o que faz recadastrar. */
         <div className="full" style={{
-          borderTop: "1px solid #2b2d45", marginTop: 12, paddingTop: 12,
-          fontSize: 12, color: "#8A8FA3", lineHeight: 1.6,
+          borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12,
+          fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6,
         }}>
-          <strong style={{ color: "#F8F8F2", fontSize: "0.9rem" }}>Emissão de NFS-e</strong>
+          <strong style={{ color: "var(--text)", fontSize: "0.9rem" }}>Emissão de NFS-e</strong>
           <div style={{ marginTop: 4 }}>
             Os códigos de serviço, a série da DPS, a carga tributária aproximada e a liberação de
             emissão para o cliente ficam em <strong>{ONDE_CONFIGURA_EMISSAO}</strong> (a engrenagem
@@ -787,12 +809,13 @@ export function CompanyForm({
 
       <SociosEditor socios={form.socios} onChange={(next) => onChange("socios", next)} />
       <RegimeHistoricoEditor historico={form.regimeHistorico} onChange={(next) => onChange("regimeHistorico", next)} />
+      </div>
 
       {/* ⚠ FIXA NO RODAPÉ (`.form-actions--fixa`, no App.css). Eram nove seções e ~700 linhas de
           campo num scroll só, com o Salvar no fim: quem corrigia a inscrição municipal (seção 7)
           rolava tudo de volta para gravar. O botão não mudou de lugar no DOM nem de comportamento
           — é o mesmo `type="submit"` do mesmo `<form>`; ele só deixou de sair da tela. */}
-      <div className="full form-actions form-actions--fixa">
+      <div className="form-actions form-actions--fixa">
         <Button type="submit" variant="primary" className="company-form-page__submit" disabled={submitting || cnpjLoading}>
           {submitting ? "Salvando..." : submitLabel}
         </Button>
@@ -802,12 +825,12 @@ export function CompanyForm({
       {cnpjReadOnly && (onSuspend || onResume || onDelete) && (
         <div className="full" style={{
           marginTop: 32, padding: "16px 18px", borderRadius: 8,
-          background: "rgba(255, 71, 87, 0.06)", border: "1px solid #FF4757",
+          background: "var(--state-danger-surface)", border: "1px solid var(--state-danger)",
         }}>
-          <h3 style={{ margin: "0 0 4px", color: "#FF4757", fontSize: "0.95rem" }}>
+          <h3 style={{ margin: "0 0 4px", color: "var(--state-danger)", fontSize: "0.95rem" }}>
             ⚠ Zona de Risco
           </h3>
-          <p style={{ margin: "0 0 12px", fontSize: "0.8rem", color: "#aeb6d3" }}>
+          <p style={{ margin: "0 0 12px", fontSize: "0.8rem", color: "var(--text-muted)" }}>
             Suspender desativa a captura SERPRO e bloqueia processamentos. Excluir apaga tudo.
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -854,7 +877,7 @@ export function CompanyForm({
           {status === "SUSPENSA" && (
             <div style={{
               marginTop: 12, padding: "8px 10px", background: "rgba(255, 179, 71, 0.10)",
-              border: "1px solid #FFB347", borderRadius: 6, fontSize: "0.8rem", color: "#FFB347",
+              border: "1px solid var(--state-warn)", borderRadius: 6, fontSize: "0.8rem", color: "var(--state-warn)",
             }}>
               ⏸ Empresa SUSPENSA — workers SERPRO não vão capturar guias.
             </div>

@@ -75,6 +75,8 @@ main.page { padding: 20px; min-width: 0; display: flex; flex-direction: column; 
    exato do que virou ~2.200 objetos inline no portal do escritório, onde hoje custa caro desfazer.
    `.meta` é a legenda pequena embaixo de um valor; `.stack-gap` é o respiro entre blocos. */
 .meta { font-size: .78rem; color: var(--muted); }
+/* A mesma legenda, mas ocupando a linha inteira (fica embaixo do valor, não ao lado). */
+.meta--bloco { display: block; }
 .meta-erro { font-size: .78rem; color: var(--danger); display: block; }
 .stack-gap { margin-top: var(--gap); }
 

@@ -107,6 +107,12 @@ dois seletores para um valor"*. A cura é a mesma: um valor na casca.
   mostrando** (os rótulos dos cards já nomeavam a competência). O que não pode é o Início somar "o
   período todo" e chamar de mês.
 - ⚠ **O default não mudou:** mês CORRENTE (dono, 18/08/2026 — ver `competenciaPadrao`).
+- ⚠ **Seletor sem handler fica DESABILITADO, nunca mudo.** O fallback `aoTrocarCompetencia || (() => {})`
+  existe para a tela não quebrar com a prop faltando — mas um controle que a pessoa mexe e no qual
+  nada acontece é PIOR que o defeito que ele evita (é a família do "filtro fantasma"). Assim, prop
+  esquecida vira algo visível na tela em vez de silêncio.
+- ⚠ **Trocar de empresa NÃO zera a competência** (o modelo de emissão e o lote, sim). Mês é do
+  calendário, não da empresa — mas é decisão, não descuido.
 - Travado em `features/shell/__tests__/competenciaAtravessaAsAbas.ligacao.test.jsx` (5 casos).
   ⚠ É teste de LIGAÇÃO porque não há regra nenhuma aqui: as três telas sempre souberam ler uma
   competência, e um teste de unidade de qualquer uma continuaria verde com o defeito de pé.
@@ -126,8 +132,15 @@ o escritório fez em 19/08.
 - ⚠ E num Ctrl+clique o `irPara` **também não roda**: a guia atual fica onde está, e fechar a
   emissão aqui jogaria fora o formulário de quem só queria abrir Notas do lado.
 - ⚠ **O botão "Emitir nota" continua `<button>`** — abre um MODO, não uma rota.
-- ⚠ Os testes navegam por `getByRole("link", …)`. E o jsdom **não executa** a navegação padrão de
-  uma âncora: é o `preventDefault` + `irPara` que faz o clique funcionar lá.
+- ⚠ Os testes navegam por `getByRole("link", …)`, e o helper precisa flushar uma **tarefa**
+  (`setTimeout(0)` dentro do `act`), não só microtarefas — o `hashchange` do jsdom vem numa tarefa.
+  Sem isso a rota trocava DEPOIS da asserção e a suíte ficava vermelha sob carga.
+- ⚠⚠ **O jsdom NÃO implementa "Ctrl+clique abre em outra guia"** — para ele o modificador não muda
+  nada e a navegação de fragmento acontece igual. Por isso a decisão mora numa função pura
+  (`lib/cliqueDeLink.js`, com teste próprio) e o teste de ligação mede o **`preventDefault`**
+  (`fireEvent.click` devolve `false` quando o padrão foi cancelado), nunca o desfecho na tela.
+  Medir o desfecho ali é medir uma emulação errada — e foi o que fez o teste passar sozinho e
+  falhar na suíte inteira.
 
 ## ⚠ GUIA NÃO É NOTA — o `data-status` do chip
 
@@ -137,13 +150,20 @@ não — e `data-status` é **auditável no DOM** e é o vocabulário que o app 
 `paga` / `vencida` / `aberta`, com as MESMAS superfícies (zero mudança visual, conferido no
 navegador).
 
+- ⚠ **O mapa é EXPORTADO e o Início o consome** (`chipDaGuia("OVERDUE").status`) em vez de cravar a
+  string: um quarto valor solto numa segunda tela é como o vocabulário se parte.
+- ⚠ **Há guarda, e ela lê o CSS de verdade** (`guias/__tests__/chipDaGuiaTemCor.test.js`): valor
+  fora da lista de `data-status` renderiza **sem cor nenhuma, em silêncio** — o defeito que
+  `lote/lib/__tests__/emissaoDoLote.test.js` já nomeia para as notas e que a guia não tinha.
+  Uma lista copiada à mão teria o mesmo problema que ela quer resolver.
+
 ## ⚠ O `style={{}}` — a erosão foi cortada enquanto era barata
 
 Medido em 20/08/2026: ~20 objetos inline num app que é de classes, com as reincidentes já nomeadas
 (`fontSize:".78rem"` 5× só em `NotasPage`, `marginTop:"var(--gap)"` 6× nas telas de auth). É o
 começo exato do que virou ~2.200 no portal do escritório, onde hoje custa caro desfazer. Entraram
-`.meta`, `.meta-erro`, `.stack-gap` e `.select-auto` — e `.card-header`, porque `.page-header`
-fazia dois papéis (cabeçalho da PÁGINA e, dentro de um card, de SEÇÃO, com um `style` corrigindo a
+`.meta`, `.meta--bloco`, `.meta-erro`, `.stack-gap` e `.select-auto` — e `.card-header`, porque
+`.page-header` fazia dois papéis (cabeçalho da PÁGINA e, dentro de um card, de SEÇÃO, com um `style` corrigindo a
 margem). **Estilo novo entra em `app.css`.**
 
 ## ⚠⚠ O FALLBACK — `src/api/index.js:39`
@@ -906,6 +926,7 @@ pacote comum; a duplicação é conhecida e a obrigação de sincronizar é sua:
 | `lib/servicosNacionais/` | tabela gerada; `servicosNacionais.data.js` sai de `apps/api/scripts/gerar-lista-servico-nacional.mjs`, que **escreve nos dois portais** — **não editar à mão** |
 | ~~`lib/municipios/` (o dado)~~ | ⚠ **DEIXOU DE SER ESPELHO EM 20/08/2026**: a tabela do IBGE virou arquivo único em `@contabilidade/shared/municipios-ibge`. A REGRA (`municipioIbge.js`) continua uma por portal, de propósito — a do escritório carrega textos de cadastro que não são do cliente |
 | `lib/roles.js` | `apps/api/.../emissaoClienteAutorizacao.js` + `portal-cliente-mobile/src/roles.ts` |
+| `lib/cliqueDeLink.js` | `apps/web/src/components/ui/cliqueDeLink.js` (quem assume o clique numa aba-link) |
 
 ⚠ Duas leituras da mesma coluna divergem na primeira correção — e aí as duas telas afirmam coisas
 diferentes sobre a MESMA empresa.

@@ -144,7 +144,6 @@ function BotaoDanfse({ nota, companyId }) {
       )}
       {estado.recusa ? (
         <span
-          className="muted"
           className="meta-erro" style={{ maxWidth: 260 }}
         >
           ⚠ {estado.recusa.titulo} {estado.recusa.texto}
@@ -214,7 +213,6 @@ function BotaoLoteDanfse({ companyId, cnpj, competencia, habilitado }) {
       ) : null}
       {estado.recusa ? (
         <span
-          className="muted"
           className="meta-erro" style={{ maxWidth: 340 }}
         >
           ⚠ {estado.recusa.titulo} {estado.recusa.texto}
@@ -304,6 +302,7 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
             Competência
             <select
               id="competencia-notas"
+              disabled={!aoTrocarCompetencia}
               value={competencia}
               onChange={(e) => setCompetencia(e.target.value)}
             >

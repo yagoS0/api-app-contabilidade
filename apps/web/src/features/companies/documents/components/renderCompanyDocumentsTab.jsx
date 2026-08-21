@@ -26,6 +26,7 @@
 import { useRef, useState } from "react";
 import { Button } from "../../../../components/ui/Button";
 import { Modal } from "../../../../components/ui/Modal";
+import { Aviso } from "../../../../components/ui/Aviso";
 
 function fmtBytes(n) {
   const v = Number(n || 0);
@@ -56,7 +57,7 @@ const rotulo = { display: "block", fontSize: "0.78rem", color: "var(--text-muted
 
 export function CompanyDocumentsTab({ docs }) {
   const {
-    documentos, tipos, tipoLabels, carregando, enviando,
+    documentos, tipos, tipoLabels, carregando, enviando, erro, recarregar,
     selecionados, alternarSelecao, limparSelecao,
     enviarArquivo, baixar, baixarSelecionados, excluir, enviarPorEmail,
   } = docs;
@@ -160,11 +161,12 @@ export function CompanyDocumentsTab({ docs }) {
         <span style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
           {carregando ? "carregando…" : `${documentos.length} documento(s)`}
         </span>
-        {documentos.length > 0 ? (
-          <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
-            {barraDeAdicionar}
-          </div>
-        ) : null}
+        {/* ⚠ SEMPRE no cabeçalho. Ele chegou a ser condicional (`documentos.length > 0`), com a
+            segunda cópia dentro do estado vazio — e enquanto a carga estava em curso, com a lista
+            ainda vazia, NENHUM dos dois renderizava: a tela ficava sem porta de entrada. */}
+        <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+          {barraDeAdicionar}
+        </div>
       </div>
 
       {/* Barra de ações: só aparece com algo selecionado — sem seleção não há ação possível, e é
@@ -189,7 +191,31 @@ export function CompanyDocumentsTab({ docs }) {
         </div>
       )}
 
-      {!carregando && !documentos.length ? (
+      {/* ⚠⚠ "NÃO CARREGOU" NÃO PODE SE PARECER COM "NÃO EXISTE" — e este bloco quase virou o
+          contrário disso. O estado vazio ganhou moldura, `--space-6` de respiro e um convite
+          ("suba o contrato social…"); com a chamada falhando, a lista também fica vazia, e o
+          contador leria uma tela grande e confiante AFIRMANDO que a empresa não tem documento
+          nenhum — com o toast do erro já desaparecido.
+          É a distinção que o cofre de senhas faz por escrito (`estadoDaCarga`) e que faltava aqui.
+          Falha ganha moldura âmbar e um "Tentar de novo"; vazio de verdade continua com o convite. */}
+      {!carregando && erro ? (
+        <Aviso
+          tom="atencao"
+          titulo="Não foi possível ler os documentos desta empresa"
+          role="status"
+          icone="⚠"
+          acao={recarregar ? (
+            <Button size="sm" variant="secondary" onClick={recarregar}>Tentar de novo</Button>
+          ) : null}
+        >
+          <span style={{ color: "var(--text)" }}>
+            {erro} Isto NÃO quer dizer que a empresa está sem documento — quer dizer que a leitura
+            não voltou.
+          </span>
+        </Aviso>
+      ) : null}
+
+      {!carregando && !erro && !documentos.length ? (
         /* ⚠ O ESTADO VAZIO GANHOU O BOTÃO. Ele estava sozinho no canto oposto da tela, a mais de
            mil pixels da frase que mandava usá-lo — a tela dizia o que fazer e escondia onde. */
         <div style={{
@@ -203,7 +229,7 @@ export function CompanyDocumentsTab({ docs }) {
           </p>
           <div style={{ display: "flex", gap: "var(--space-2)" }}>{barraDeAdicionar}</div>
         </div>
-      ) : (
+      ) : erro && !documentos.length ? null : (
         <div className="table-wrap">
           <table className="tabela--densa">
             <thead>

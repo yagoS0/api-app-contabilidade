@@ -140,8 +140,10 @@ describe("a competência atravessa Início ⇄ Notas", () => {
       from: competenciaPadrao(),
       to: competenciaPadrao(),
     });
-    // ⚠ E não esconde: o rótulo do card nomeia a competência que está sendo mostrada.
-    expect(screen.getByText(/^Faturamento ·/)).toBeInTheDocument();
+    // ⚠ E não esconde: o rótulo do card nomeia QUAL competência está sendo mostrada. A asserção
+    // olha o mês, não só o prefixo — `/^Faturamento ·/` passaria com o card dizendo março/2019.
+    const [ano, mes] = competenciaPadrao().split("-");
+    expect(screen.getByText(new RegExp(`^Faturamento ·.*${mes}/${ano}`))).toBeInTheDocument();
   });
 
   test("⚠ GUIAS entra na mesma competência — era a TERCEIRA cópia do mesmo estado", async () => {
@@ -163,6 +165,35 @@ describe("a competência atravessa Início ⇄ Notas", () => {
       "pc-001",
       expect.objectContaining({ competencia: OUTRO_MES }),
     );
+  });
+
+  test("⚠⚠ a aba é `<a href>` de verdade, e o modificador NÃO é interceptado", async () => {
+    // Esta é a razão inteira de a aba ter virado link, e era a única coisa nova de comportamento
+    // sem teste nenhum. Um refactor que sempre chamasse `preventDefault()` manteria todas as
+    // outras provas verdes e mataria os cinco comportamentos que vêm de graça com o `href`.
+    //
+    // ⚠⚠ O QUE SE MEDE É O `preventDefault`, NÃO O DESFECHO. O jsdom não implementa a regra de
+    // INTERFACE "Ctrl+clique abre em outra guia" — para ele o modificador não muda nada e a
+    // navegação de fragmento acontece igual. Afirmar `location.hash` (ou o que ficou montado na
+    // tela) seria medir uma emulação errada e ainda ficaria à mercê de quando o `hashchange` é
+    // entregue: o teste passava sozinho e falhava na suíte inteira.
+    // `fireEvent.click` devolve `false` quando algum handler chamou `preventDefault`.
+    await abrirApp();
+
+    const guias = screen.getByRole("link", { name: "Guias" });
+    expect(guias.getAttribute("href")).toBe("#/guias");
+
+    // Clique simples: NÓS assumimos (SPA), então o padrão é cancelado.
+    expect(fireEvent.click(guias)).toBe(false);
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // Com modificador: o navegador assume, e não cancelamos nada.
+    const notas = screen.getByRole("link", { name: "Notas" });
+    expect(fireEvent.click(notas, { ctrlKey: true })).toBe(true);
+    expect(fireEvent.click(notas, { metaKey: true })).toBe(true);
+    expect(fireEvent.click(notas, { shiftKey: true })).toBe(true);
+
+    // A regra em si (e o caso do botão do meio) está em `lib/__tests__/cliqueDeLink.test.js`.
   });
 
   test("o valor é o MESMO nos dois seletores — não há dois estados para uma pergunta", async () => {

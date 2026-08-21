@@ -168,7 +168,7 @@ export function procedenciaDoDas(preApurado) {
 export function recusaDoPreApurado(preApurado) {
   const p = preApurado || {};
   if (p.ok === true) {
-    return { bloqueado: false, tom: TOM.ok, titulo: "Pré-apuração calculada", detalhe: null, buraco: null, comoResolver: null };
+    return { bloqueado: false, tom: TOM.ok, titulo: "Pré-apuração calculada", detalhe: null, buraco: null, comoResolver: null, codigo: null };
   }
 
   const sc = p.semClassificacao || {};
@@ -196,6 +196,10 @@ export function recusaDoPreApurado(preApurado) {
     detalhe,
     buraco,
     comoResolver: p.comoResolver || null,
+    // ⚠ A CAUSA VIAJA. Sem ela, quem lê esta recusa só sabe "está bloqueado", e o `tom` é `warn`
+    // para QUALQUER bloqueio que não seja erro de cálculo — `CADASTRO_FALTANDO`, `REGIME_INVALIDO`
+    // e `FOLHA_12M_FALTANDO` inclusive. Ver `recusaEcoaOTopo`, que precisa distinguir.
+    codigo: p.motivo?.code || null,
   };
 }
 
@@ -222,6 +226,15 @@ export function recusaDoPreApurado(preApurado) {
 export function recusaEcoaOTopo(avisos, recusa) {
   if (!recusa || recusa.bloqueado !== true) return false;
   if (recusa.tom === TOM.danger) return false;
+  // ⚠⚠ A CAUSA TEM DE SER A MESMA — não basta existir um aviso âmbar no topo.
+  //
+  // A primeira versão olhava só a presença de `NAO_CLASSIFICADO` nos avisos. Cenário real: empresa
+  // SEM Cadastro Fiscal preenchido E com receita não classificada. O topo dizia "há receita sem
+  // classificação"; o pré-apurado dizia "a empresa não tem Cadastro Fiscal preenchido (regime +
+  // CNAE)" — outra causa, outra ação, outro lugar para clicar — e era rebaixado a cinza como se
+  // já tivesse sido dito acima. Nada sumia, mas o cinza sinaliza "isto já está contado" para um
+  // fato que não está.
+  if (recusa.codigo !== "RECEITA_NAO_CLASSIFICADA") return false;
   const lista = Array.isArray(avisos) ? avisos : [];
   return lista.some((a) => a && a.codigo === "NAO_CLASSIFICADO");
 }

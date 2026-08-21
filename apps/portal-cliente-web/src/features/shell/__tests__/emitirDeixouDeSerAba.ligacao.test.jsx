@@ -104,7 +104,11 @@ async function abrirApp() {
 async function abrirNotas() {
   await abrirApp();
   fireEvent.click(screen.getByRole("link", { name: "Notas" }));
-  await act(async () => {});
+  // ⚠ O flush precisa passar por uma TAREFA, não só por microtarefas: as abas são `<a href>` e o
+  // `useRota` escuta `hashchange`, que o jsdom entrega numa tarefa. Sem isto o `findByText` abaixo
+  // fica dependendo do polling de 1s para a rota trocar — e é daí que vinham os timeouts de 5s
+  // desta suíte quando a máquina está ocupada.
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   await screen.findByText("Notas emitidas");
 }
 
@@ -172,7 +176,7 @@ describe("⚠ 3. o botão dentro de Notas é a entrada nova, e ela tem volta", (
     await screen.findByRole("heading", { name: "Emitir nota" });
 
     fireEvent.click(screen.getByRole("link", { name: "Guias" }));
-    await act(async () => {});
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     fireEvent.click(screen.getByRole("link", { name: "Notas" }));
     await act(async () => {});
     // Volta na LISTA, que é o que o rótulo da aba promete.

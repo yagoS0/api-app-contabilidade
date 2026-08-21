@@ -358,20 +358,28 @@ describe("kpiDasApurado — o rótulo único que confundia as duas origens", () 
 describe("recusaEcoaOTopo", () => {
   const avisoNaoClassificado = [{ codigo: "NAO_CLASSIFICADO", tom: TOM.warn, titulo: "x" }];
 
-  it("ecoa quando o topo já traz NAO_CLASSIFICADO e a recusa é a de sempre", () => {
-    const recusa = { bloqueado: true, tom: TOM.warn };
+  it("ecoa quando o topo já traz NAO_CLASSIFICADO e a recusa é PELA MESMA causa", () => {
+    const recusa = { bloqueado: true, tom: TOM.warn, codigo: "RECEITA_NAO_CLASSIFICADA" };
     expect(recusaEcoaOTopo(avisoNaoClassificado, recusa)).toBe(true);
   });
 
+  it("⚠⚠ NÃO ecoa quando a recusa tem OUTRA causa, mesmo com o topo âmbar", () => {
+    // Empresa sem Cadastro Fiscal E com receita não classificada: os dois fatos existem, e são
+    // dois. Rebaixar o segundo a cinza diria "isto já está dito acima" — e não está.
+    for (const codigo of ["CADASTRO_FALTANDO", "REGIME_INVALIDO", "FOLHA_12M_FALTANDO", "PENDENCIAS_ABERTAS", null]) {
+      expect(recusaEcoaOTopo(avisoNaoClassificado, { bloqueado: true, tom: TOM.warn, codigo })).toBe(false);
+    }
+  });
+
   it("⚠ NÃO ecoa quando o motor QUEBROU — essa causa não está escrita em lugar nenhum acima", () => {
-    const recusa = { bloqueado: true, tom: TOM.danger };
+    const recusa = { bloqueado: true, tom: TOM.danger, codigo: "RECEITA_NAO_CLASSIFICADA" };
     expect(recusaEcoaOTopo(avisoNaoClassificado, recusa)).toBe(false);
   });
 
   it("não ecoa quando o topo não falou de classificação", () => {
     const outros = [{ codigo: "SEM_DETALHE_CAPTURADO", tom: TOM.neutral, titulo: "x" }];
-    expect(recusaEcoaOTopo(outros, { bloqueado: true, tom: TOM.warn })).toBe(false);
-    expect(recusaEcoaOTopo([], { bloqueado: true, tom: TOM.warn })).toBe(false);
+    expect(recusaEcoaOTopo(outros, { bloqueado: true, tom: TOM.warn, codigo: "RECEITA_NAO_CLASSIFICADA" })).toBe(false);
+    expect(recusaEcoaOTopo([], { bloqueado: true, tom: TOM.warn, codigo: "RECEITA_NAO_CLASSIFICADA" })).toBe(false);
   });
 
   it("recusa que não bloqueia não ecoa nada", () => {
@@ -380,7 +388,7 @@ describe("recusaEcoaOTopo", () => {
   });
 
   it("aguenta entrada que não é lista — a tela não pode quebrar por causa de um aviso", () => {
-    expect(recusaEcoaOTopo(undefined, { bloqueado: true, tom: TOM.warn })).toBe(false);
-    expect(recusaEcoaOTopo(null, { bloqueado: true, tom: TOM.warn })).toBe(false);
+    expect(recusaEcoaOTopo(undefined, { bloqueado: true, tom: TOM.warn, codigo: "RECEITA_NAO_CLASSIFICADA" })).toBe(false);
+    expect(recusaEcoaOTopo(null, { bloqueado: true, tom: TOM.warn, codigo: "RECEITA_NAO_CLASSIFICADA" })).toBe(false);
   });
 });

@@ -77,13 +77,10 @@ const CompanyCertificatePanel = lazy(() =>
   import("../../certificate/components/CompanyCertificatePanel").then((m) => ({ default: m.CompanyCertificatePanel }))
 );
 
-function TabLoadingFallback() {
-  return (
-    <div style={{ padding: 32, textAlign: "center", color: "#aeb6d3" }}>
-      Carregando…
-    </div>
-  );
-}
+// ⚠ ERAM DOIS "Carregando…" NESTE ARQUIVO, com cores diferentes: este, com `#aeb6d3` cravado, e o
+// `CompanyTabLoading` do primitivo — importado e nunca chamado. Ficou o do primitivo; este virou
+// um apelido, para não reescrever as 18 chamadas.
+const TabLoadingFallback = CompanyTabLoading;
 
 // Documentos e Anotações da empresa (grupo Cadastro). Lazy como as demais abas: só carregam o JS
 // quando o contador abre a aba.
@@ -150,7 +147,7 @@ const EntregaPorArquivo = lazy(() =>
  * ano que nem terminou.
  */
 const setaEfd = {
-  background: "transparent", border: "1px solid #44475A", color: "#F8F8F2", borderRadius: 6,
+  background: "transparent", border: "1px solid var(--border)", color: "var(--text)", borderRadius: 6,
   padding: "2px 9px", font: "inherit", fontSize: "0.85rem", cursor: "pointer", lineHeight: 1.2,
 };
 
@@ -201,14 +198,14 @@ function ObrigacoesDaEmpresa({ companyId, companyRegime }) {
             type="number"
             value={anoDefis}
             onChange={(e) => setAnoDefis(Number(e.target.value) || anoDefis)}
-            style={{ width: 92, background: "var(--bg-page)", border: "1px solid #44475A", borderRadius: 6, color: "#F8F8F2", padding: "5px 8px", fontSize: "0.82rem" }}
+            style={{ width: 92, background: "var(--bg-page)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", padding: "5px 8px", fontSize: "0.82rem" }}
             aria-label="Ano-calendário da DEFIS"
           />
           <button
             type="button"
             onClick={abrir}
             disabled={carregando}
-            style={{ background: "transparent", border: "1px solid #BD93F9", color: "#BD93F9", borderRadius: 6, padding: "5px 12px", font: "inherit", fontSize: "0.8rem", cursor: "pointer" }}
+            style={{ background: "transparent", border: "1px solid #BD93F9", color: "var(--accent-purple)", borderRadius: 6, padding: "5px 12px", font: "inherit", fontSize: "0.8rem", cursor: "pointer" }}
           >
             {carregando ? "Abrindo…" : "📄 Espelho da DEFIS"}
           </button>

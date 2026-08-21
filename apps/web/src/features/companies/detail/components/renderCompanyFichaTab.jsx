@@ -158,8 +158,11 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
             Suspensa
           </span>
         )}
+        {/* ⚠ Tinta e fundo do MESMO par. `--accent-cyan` é cor de CATEGORIA e não tem `-surface`
+            próprio; o fundo translúcido do ciano fica declarado aqui, uma vez, em vez de emprestar
+            o surface de um token de ESTADO — que é outro eixo e pode divergir na próxima paleta. */}
         {c.empresaZerada && (
-          <span style={{ ...selo, color: "var(--accent-cyan)", background: "var(--state-neutral-surface)", border: "1px solid var(--accent-cyan)" }}>
+          <span style={{ ...selo, color: "var(--accent-cyan)", background: "rgba(139, 233, 253, 0.12)", border: "1px solid var(--accent-cyan)" }}>
             Zerada
           </span>
         )}
@@ -258,7 +261,17 @@ export function CompanyFichaTab({ selectedCompany, canEditCompany, onEdit }) {
             o servidor recusa a emissão inteira.
             <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
               {faltasDaEmissao.map((f) => (
-                <li key={f.campo}>{f.rotulo} — preencha em <strong>Editar</strong> → {f.onde.replace("Editar cadastro → ", "")}</li>
+                /* ⚠⚠ O CAMINHO VEM PRONTO DE `faltasParaEmitir` (`f.onde`), SEM REMENDO LOCAL.
+                   Havia aqui um `.replace("Editar cadastro → ", "")` colado a um `<strong>Editar</strong>`
+                   fixo. Ele foi removido em 19/08/2026 e voltou por descuido no redesign de 20/08 —
+                   registrado aqui porque é a segunda vez.
+                   O motivo: em `lib/nfse/cadastroEmissaoNfse.js` só o CNPJ tem
+                   `onde: "Editar cadastro → Identificação"`. Três dos cinco campos apontam para
+                   `ONDE_CONFIGURA_EMISSAO` = "Notas Fiscais → ⚙ Configuração de emissão", onde o
+                   `.replace` não casa nada — e o "Editar →" fixo na frente mandava o contador a uma
+                   tela onde o campo não está mais. O aviso existe justamente para dizer ONDE
+                   resolver. */
+                <li key={f.campo}>{f.rotulo} — preencha em <strong>{f.onde}</strong></li>
               ))}
             </ul>
           </div>

@@ -24,12 +24,18 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
   const [tipos, setTipos] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  // ⚠⚠ O ERRO PRECISA CHEGAR À TELA, NÃO SÓ AO TOAST. Enquanto ele só virava `notifyError`, a aba
+  // ficava com `carregando: false` e `documentos: []` — indistinguível de uma empresa que não tem
+  // documento nenhum. E o toast some sozinho. É a mesma distinção que o cofre de senhas faz com
+  // nome próprio (`estadoDaCarga`: VAZIA × RECUSADA × SEM_RESPOSTA) e que faltava aqui.
+  const [erro, setErro] = useState(null);
   // Seleção múltipla: é o que permite baixar/enviar vários de uma vez.
   const [selecionados, setSelecionados] = useState(() => new Set());
 
   const carregar = useCallback(async () => {
     if (!api || !companyId) return;
     setCarregando(true);
+    setErro(null);
     try {
       const r = await api.listCompanyDocuments(companyId);
       setDocumentos(r?.documentos || []);
@@ -41,7 +47,9 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
         return new Set([...atual].filter((id) => validos.has(id)));
       });
     } catch (err) {
-      feedbackRef.current?.notifyError?.(err?.message || "Falha ao carregar os documentos.");
+      const mensagem = err?.message || "Falha ao carregar os documentos.";
+      setErro(mensagem);
+      feedbackRef.current?.notifyError?.(mensagem);
     } finally {
       setCarregando(false);
     }
@@ -128,7 +136,7 @@ export function useCompanyDocuments({ api, companyId, feedback }) {
   }, [api, companyId, selecionados, limparSelecao]);
 
   return {
-    documentos, tipos, tipoLabels, carregando, enviando,
+    documentos, tipos, tipoLabels, carregando, enviando, erro,
     selecionados, alternarSelecao, limparSelecao,
     recarregar: carregar, enviarArquivo, baixar, baixarSelecionados, excluir, enviarPorEmail,
   };

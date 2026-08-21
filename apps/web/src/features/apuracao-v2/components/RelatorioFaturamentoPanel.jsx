@@ -17,7 +17,6 @@
 // Não existe segundo mecanismo e não entra biblioteca de PDF.
 import { useEffect, useState } from "react";
 import { Button } from "../../../components/ui/Button";
-import { Painel } from "../../../components/ui/Painel";
 import { Aviso } from "../../../components/ui/Aviso";
 import { PANEL, fmtMoney } from "../../notas/components/notasStyles";
 import {
@@ -251,9 +250,32 @@ export function RelatorioFaturamentoPanel({
   const [imprimindo, setImprimindo] = useState(false);
 
   // Mesmo mecanismo do planejamento: liga a classe, imprime, desliga no `afterprint`.
+  //
+  // ⚠⚠ E ABRE OS `<details>` DA ÁREA IMPRESSA — EM JAVASCRIPT, NÃO EM CSS.
+  //
+  // A primeira versão disto era uma regra `@media print` mandando `display: revert !important`
+  // nos filhos de `details`. **Ela é um no-op, e foi medida no navegador:** o Chrome não esconde
+  // o conteúdo de um `<details>` fechado com `display:none` nos filhos — ele põe
+  // `content-visibility: hidden` no pseudo-elemento `::details-content`
+  // (`getComputedStyle(d, "::details-content").contentVisibility === "hidden"`, e
+  // `filho.checkVisibility()` devolve `false` com o filho ainda reportando `offsetHeight`).
+  // Mexer no `display` dos filhos não toca nesse mecanismo.
+  //
+  // O que estava em jogo não é estética: dentro deste painel o `<details>` recolhido é
+  // "O que este relatório NÃO afirma". O impresso CIRCULA SEM A TELA POR PERTO e, sem as
+  // ressalvas, ele se lê como apuração — é a mesma razão pela qual o cabeçalho de papel abaixo
+  // repete escopo e limitações. A regra de CSS ficou como reforço; quem garante é esta linha.
+  //
+  // ⚠ Restaura o estado no cleanup: quem estava com o bloco fechado na tela continua com ele
+  // fechado depois de imprimir.
   useEffect(() => {
     if (!imprimindo) return undefined;
     document.body.classList.add("imprimindo");
+
+    const area = document.querySelector("[data-print-area]");
+    const recolhidos = area ? Array.from(area.querySelectorAll("details:not([open])")) : [];
+    recolhidos.forEach((d) => { d.open = true; });
+
     const limpar = () => setImprimindo(false);
     window.addEventListener("afterprint", limpar);
     const t = window.setTimeout(() => window.print(), 60);
@@ -261,6 +283,7 @@ export function RelatorioFaturamentoPanel({
       window.clearTimeout(t);
       window.removeEventListener("afterprint", limpar);
       document.body.classList.remove("imprimindo");
+      recolhidos.forEach((d) => { d.open = false; });
     };
   }, [imprimindo]);
 
@@ -476,8 +499,11 @@ export function RelatorioFaturamentoPanel({
           {/* ⚠⚠ RECOLHIDO NA TELA, ABERTO NO PAPEL — e a segunda metade é a que importa. Eram
               quatro parágrafos de 0,72rem sempre abertos no pé de uma tela que já é longa; quem
               lê o relatório todo mês passou a rolar por cima deles. Mas o IMPRESSO circula sem a
-              tela por perto, e sem as ressalvas ele se lê como apuração: o bloco `@media print`
-              do `App.css` força o conteúdo de todo `<details>` dentro de `[data-print-area]`.
+              tela por perto, e sem as ressalvas ele se lê como apuração.
+              ⚠⚠ QUEM ABRE ISTO PARA O PAPEL É O EFEITO DE IMPRESSÃO DESTE ARQUIVO (`d.open = true`),
+              NÃO O CSS. A regra do `@media print` é só reforço — ela sozinha é um no-op, e isso
+              está medido e escrito lá em cima. Tela nova que recolha nota de rodapé precisa
+              repetir o efeito; não basta marcar `data-print-area`.
               ⚠ O número no rótulo é o que impede o recolhimento de virar sumiço — a tela diz
               QUANTAS ressalvas existem antes de alguém decidir não abri-las. */}
           <summary>O que este relatório NÃO afirma ({dados.limitacoes.length})</summary>

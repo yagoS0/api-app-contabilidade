@@ -50,9 +50,23 @@ export function Modal({
   // ⚠ O foco entra ao abrir e VOLTA para quem abriu ao fechar. Sem a volta, fechar o diálogo joga
   // o foco no `<body>` e a próxima tecla do teclado não tem para onde ir — quem navega assim
   // recomeça a página do zero a cada modal.
+  //
+  // ⚠⚠ E ELE ENTRA NO CORPO, NÃO NO ✕. A primeira versão fazia `querySelector(FOCAVEIS)` na caixa
+  // inteira, e `.modal-topo` vem antes de `.modal-corpo` — o primeiro focável era SEMPRE o botão
+  // Fechar. Num diálogo que pergunta "qual documento é este?" isso põe o foco no botão que
+  // DESCARTA a fila de arquivos, e um Enter reflexo joga fora o que a pessoa acabou de arrastar.
+  // Pior: o `autoFocus` que o conteúdo declara roda antes deste efeito (fase de layout) e era
+  // sobrescrito — o autor escrevia `autoFocus` e ele não fazia nada.
+  //
+  // A ordem é: o que pediu `autoFocus` → o primeiro focável do CORPO → a própria caixa.
   useEffect(() => {
     gatilhoRef.current = document.activeElement;
-    const alvo = caixaRef.current?.querySelector(FOCAVEIS) || caixaRef.current;
+    const caixa = caixaRef.current;
+    const corpo = caixa?.querySelector(".modal-corpo");
+    const alvo = caixa?.querySelector("[autofocus]")
+      || corpo?.querySelector(FOCAVEIS)
+      || caixa?.querySelector(FOCAVEIS)
+      || caixa;
     alvo?.focus?.();
     return () => gatilhoRef.current?.focus?.();
   }, []);
@@ -68,7 +82,17 @@ export function Modal({
       // página, mas o foco do teclado continuaria passeando por trás do fundo escuro.
       if (e.key !== "Tab" || !caixaRef.current) return;
       const itens = Array.from(caixaRef.current.querySelectorAll(FOCAVEIS));
-      if (!itens.length) return;
+      // ⚠⚠ ZERO FOCÁVEIS NÃO É "DEIXA PASSAR" — é quando o trap MAIS importa. Acontece de verdade:
+      // com `ocupado`, o ✕ some e os botões do rodapé ficam `disabled`, então a caixa fica sem
+      // nenhum elemento focável e o navegador já jogou o foco no `<body>`. Deixar o Tab seguir
+      // levaria o teclado para a página ATRÁS do overlay, no exato momento em que o diálogo
+      // declara que as três saídas estão desligadas. Prende o foco na caixa (que tem
+      // `tabIndex={-1}`) e engole o Tab.
+      if (!itens.length) {
+        e.preventDefault();
+        caixaRef.current.focus?.();
+        return;
+      }
       const primeiro = itens[0];
       const ultimo = itens[itens.length - 1];
       if (e.shiftKey && document.activeElement === primeiro) {
@@ -93,7 +117,9 @@ export function Modal({
       aria-label={titulo}
       onClick={(e) => { if (e.target === e.currentTarget && !ocupado) aoFechar?.(); }}
     >
-      <div className="modal-caixa" style={{ maxWidth: largura }} ref={caixaRef}>
+      {/* `tabIndex={-1}`: focável por código, nunca pela ordem de Tab. É o alvo de último recurso
+          do foco inicial e o refúgio do trap quando não há nenhum elemento focável dentro. */}
+      <div className="modal-caixa" style={{ maxWidth: largura }} ref={caixaRef} tabIndex={-1}>
         <div className="modal-topo">
           <strong className="modal-titulo">{titulo}</strong>
           {ocupado ? null : (

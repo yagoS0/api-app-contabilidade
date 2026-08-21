@@ -88,7 +88,12 @@ export function CompanyNotesTab({ notes }) {
   });
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 24px", color: PANEL.text }}>
+    /* ⚠ A LARGURA SAIU DAQUI (era `maxWidth: 900` + padding próprio). Quem decide é o
+       `CompanyTabLayout` (`largura="leitura"`), como nas outras três abas do grupo Empresa.
+       ⚠ Isto ficou de fora da primeira leva e o defeito era o PIOR possível: Anotações é a aba
+       DEFAULT da empresa, então abrir qualquer empresa caía em 900px e o primeiro clique em
+       Documentos saltava para 1200 — exatamente o salto que este redesign existe para eliminar. */
+    <div style={{ color: PANEL.text }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700 }}>Anotações</h2>
         <span style={{ color: PANEL.muted, fontSize: "0.78rem" }}>

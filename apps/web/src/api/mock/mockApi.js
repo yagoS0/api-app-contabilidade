@@ -2051,7 +2051,7 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
         i, competencia, valor: p3[i],
         linhaAtividade: mockLinhaAtividade(null),
         segregacao: null,
-        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item ainda não classificado por tipo de operação." },
         motivoNaoClassificado: "item_sem_tipo_receita",
       }));
       grupos.push({
@@ -2059,7 +2059,7 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
         rotulo: "NÃO CLASSIFICADO — a competência não foi classificada",
         tipoReceita: null, classificado: false, temDetalhe: true,
         linhaAtividade: mockLinhaAtividade(null), segregacao: null,
-        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item ainda não classificado por tipo de operação." },
         linhas, total: mockTotal(linhas),
       });
     } else {
@@ -2117,7 +2117,7 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
       const naoClass = [5].map((i) => mockLinhaNota({
         i, competencia, valor: p6[i],
         linhaAtividade: mockLinhaAtividade(null), segregacao: null,
-        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item ainda não classificado por tipo de operação." },
         motivoNaoClassificado: "item_sem_tipo_receita",
       }));
       grupos.push({
@@ -2125,7 +2125,7 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
         rotulo: "NÃO CLASSIFICADO — a competência não foi classificada",
         tipoReceita: null, classificado: false, temDetalhe: true,
         linhaAtividade: mockLinhaAtividade(null), segregacao: null,
-        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item sem `tipoReceita`." },
+        qualificacoes: { estado: "NAO_APURADO", codigos: [], rotulos: [], motivo: "Item ainda não classificado por tipo de operação." },
         linhas: naoClass, total: mockTotal(naoClass),
       });
     }
@@ -2159,7 +2159,8 @@ function mockRelatorioFaturamentoDados(companyId, competencia) {
     somaNoTotal: true,
     motivo: "A NF-e foi capturada pelo RESUMO do documento, que por definição não traz os itens "
       + "da nota. Não é falta de classificação: é falta do documento completo.",
-    comoResolver: "Manifestar ou baixar a NF-e completa na aba Notas Fiscais.",
+    comoResolver: "Manifestar ou baixar a NF-e completa na aba Notas Fiscais. Com a nota inteira "
+      + "os itens são gravados e ela passa a poder ser classificada.",
   };
 
   // ⚠ Conferência que NÃO fecha na forma 2 — é o relatório acusando a si mesmo, e sem um caso no

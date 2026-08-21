@@ -17,6 +17,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { api } from "../../../api";
 import { GuiasPage } from "../GuiasPage";
 
+// ⚠ A competência vem da CASCA desde 20/08/2026. Passar as duas props aqui não é cerimônia: sem
+// elas o `<select>` renderiza DESABILITADO (é o que impede um controle mudo), e o teste passaria a
+// medir uma tela que o cliente nunca vê.
+const COMPETENCIA_DO_TESTE = "2026-06";
+
 const EMPRESA = { companyId: "pc-001", razao: "ACME SERVICOS LTDA", cnpj: "11222333000181", myRole: "OWNER" };
 
 // DAS real do banco local: codifica R$ 3.422,00.
@@ -69,7 +74,11 @@ afterEach(() => {
 
 async function montar(guias) {
   api.getGuides = jest.fn(async () => ({ data: guias, page: 1, limit: 25, total: guias.length }));
-  render(<GuiasPage empresa={EMPRESA} />);
+  render(<GuiasPage
+        empresa={EMPRESA}
+        competencia={COMPETENCIA_DO_TESTE}
+        aoTrocarCompetencia={() => {}}
+      />);
   await waitFor(() => expect(api.getGuides).toHaveBeenCalled());
   await screen.findByRole("columnheader", { name: "Linha digitável" });
 }

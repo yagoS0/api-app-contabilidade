@@ -139,6 +139,7 @@ conteúdo saltar.
 | `Painel` | `components/ui/Painel.jsx` | seção com título — envolve a classe `.panel` que já existia |
 | `Modal` | `components/ui/Modal.jsx` | `sm` 460 · `md` 640 · `lg` 900; Esc, fundo, foco que volta ao gatilho, Tab preso |
 | `.tabela--densa` / `.tabela__num` | `App.css` | o que faltava para a tela parar de mandar `th`/`td` inline |
+| `.form-actions--fixa` | `App.css` | barra de ação que gruda no rodapé do formulário |
 | `Aviso` | `components/ui/Aviso.jsx` | ganhou `icone` e `acao`; a trava (tom inválido → `neutro`) não mudou |
 
 - ⚠ **DUAS LARGURAS, E SÓ DUAS:** `leitura` (`--content-max`) e `trabalho` (`--content-wide`), mais
@@ -149,9 +150,28 @@ conteúdo saltar.
   nada é pior que botão ausente. E é o CORPO que rola, não a caixa: nos modais à mão o `overflow`
   era da caixa e o botão de confirmar ficava abaixo da dobra do próprio diálogo.
 - ⚠ **A migração dos outros ~40 modais é incremental.** Não apague modal existente sem migrar.
-- ⚠ **`<details>` dentro de `[data-print-area]` IMPRIME ABERTO** (bloco `@media print`). É o que
-  permite recolher nota de rodapé longa na tela sem tirá-la do papel — usado no relatório de
-  faturamento, cujas ressalvas são o que impede o impresso de ser lido como apuração.
+- ⚠ **O `Modal` põe o foco no CORPO, não no ✕**, e respeita o `autoFocus` do conteúdo: `.modal-topo`
+  vem antes no documento, então "o primeiro focável" era sempre o botão Fechar — num diálogo cujo
+  Fechar DESCARTA o que a pessoa arrastou. E com zero focáveis (o estado de `ocupado`) o trap de Tab
+  **prende o foco na caixa** em vez de deixar passar: é justamente quando o diálogo diz estar
+  travado. Travado em `components/ui/__tests__/modal.test.jsx`.
+- ⚠⚠ **`position: sticky` NÃO FUNCIONA EM ITEM DE GRID**, e o `.form-actions--fixa` pagou por isso:
+  o bloco contenedor de um item de grid é a própria ÁREA da célula, dimensionada ao conteúdo, e o
+  curso de deslocamento é ZERO. Por isso o formulário da empresa é `.company-form` (bloco) com a
+  grade num `<div>` interno. Devolver `.form-grid` para o `<form>` desliga a barra em silêncio.
+- ⚠⚠ **RECOLHER NOTA DE RODAPÉ NUM `<details>` EXIGE ABRI-LO EM JAVASCRIPT ANTES DE IMPRIMIR** —
+  **o CSS sozinho NÃO faz isso**, e esta linha já disse o contrário uma vez.
+  Medido no navegador: o Chrome não esconde o conteúdo de um `<details>` fechado com `display:none`
+  nos filhos; ele usa `content-visibility: hidden` no pseudo `::details-content`
+  (`getComputedStyle(d, "::details-content").contentVisibility === "hidden"`). Uma regra
+  `@media print` mexendo no `display` dos filhos é **no-op**, e o papel sai sem a ressalva, sem
+  erro nenhum na tela.
+  O único lugar que faz certo hoje é o efeito de impressão de
+  `apuracao-v2/components/RelatorioFaturamentoPanel.jsx` (`d.open = true` nos `details` de dentro
+  de `[data-print-area]`, restaurado no cleanup). As regras do `@media print`
+  (`::details-content` + `display: revert`) são **reforço**; nenhuma delas é garantia.
+  ⚠ Os outros três `data-print-area` do app (Circular, Planejamento, listagem da carteira) **não
+  têm** essa lógica. Tela nova que recolha ressalva precisa repetir o efeito.
 - ⚠ **`#6b7280` está proibido como tinta de texto** e apareceu duas vezes nesta entrega (rótulos da
   ficha, ajuda das seções do formulário): mede **3,10:1** sobre `#24253a`, abaixo do mínimo 4,5:1 da
   WCAG AA. `--text-faint` (#8794C9, 5,79:1) existe exatamente para isso. `#8A8FA3` também não

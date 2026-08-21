@@ -1,6 +1,7 @@
 import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
+import { chipDaGuia } from "../guias/GuiasPage";
 import {
   TRACO,
   brl,
@@ -89,6 +90,7 @@ export function HomePage({ empresa, competencia: competenciaDaCasca, aoTrocarCom
           </label>
           <select
             id="competencia-home"
+            disabled={!aoTrocarCompetencia}
             value={competencia}
             onChange={(e) => setCompetencia(e.target.value)}
             className="select-auto"
@@ -197,8 +199,13 @@ export function HomePage({ empresa, competencia: competenciaDaCasca, aoTrocarCom
                     <td>{fmtCompetencia(item.competencia)}</td>
                     <td>
                       {fmtDateBr(item.vencimento)}
+                      {/* ⚠ O `data-status` SAI DO MESMO MAPA da tela de Guias, não de uma string
+                          cravada aqui. Era `data-status="rejeitada"` — vocabulário de NOTA numa
+                          guia — e depois virou `"vencida"` à mão, que é um quarto valor solto: se
+                          o mapa mudar, esta linha não muda junto e o chip perde a cor em silêncio.
+                          É o defeito que o teste de `emissaoDoLote` já nomeia para as notas. */}
                       {item.vencida ? (
-                        <span className="chip" data-status="vencida" style={{ marginLeft: "6px" }}>
+                        <span className="chip" data-status={chipDaGuia("OVERDUE").status} style={{ marginLeft: "6px" }}>
                           vencida
                         </span>
                       ) : null}

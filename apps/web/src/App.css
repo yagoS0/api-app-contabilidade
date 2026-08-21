@@ -1842,7 +1842,18 @@ th.tabela__num {
 
 /* ⚠ `sticky`, não `fixed`: ele pertence ao formulário, e num modal ou numa página que role por
    fora continuaria colado ao lugar errado. O fundo é opaco de propósito — os campos passam por
-   baixo dele. */
+   baixo dele.
+
+   ⚠⚠ E ELE PRECISA ESTAR FORA DA GRADE. `position: sticky` num ITEM DE GRID tem como bloco
+   contenedor a própria ÁREA da célula — a barra ficava na última linha, dimensionada ao conteúdo,
+   e o curso de deslocamento era ZERO: não grudava em nada. Por isso o `<form>` virou
+   `.company-form` (bloco) com a grade num `<div>` interno, e esta barra é irmã da grade.
+   Se alguém devolver o `.form-grid` para o `<form>`, isto para de funcionar em silêncio. */
+.company-form {
+  display: block;
+  min-width: 0;
+}
+
 .form-actions--fixa {
   position: sticky;
   bottom: 0;
@@ -1883,12 +1894,26 @@ th.tabela__num {
     background: #fff !important;
   }
 
-  /* ⚠⚠ RECOLHIDO NA TELA, ABERTO NO PAPEL. As limitações do relatório de faturamento ("o que
-     este relatório NÃO afirma") passaram a morar num <details> para não ocupar meia tela em
-     letra miúda — mas o impresso CIRCULA SEM A TELA POR PERTO, e sem as ressalvas ele se lê como
-     apuração. `open` não é atributo que o CSS mude; o que se pode forçar é o conteúdo aparecer. */
-  body.imprimindo [data-print-area] details > *,
-  body.imprimindo [data-print-area] details[open] > * {
+  /* ⚠⚠ RECOLHIDO NA TELA, ABERTO NO PAPEL — MAS QUEM GARANTE ISSO É O JAVASCRIPT.
+     As limitações do relatório de faturamento ("o que este relatório NÃO afirma") moram num
+     <details> para não ocupar meia tela em letra miúda; o impresso circula sem a tela por perto e,
+     sem as ressalvas, ele se lê como apuração.
+
+     ⚠ A PRIMEIRA VERSÃO DESTE BLOCO ERA UM NO-OP, e foi medida no navegador: mandava
+     `display: revert !important` nos FILHOS do <details>, e o Chrome nunca os pôs em
+     `display:none` — ele esconde o conteúdo com `content-visibility: hidden` no pseudo-elemento
+     `::details-content`. Mexer no `display` dos filhos não encosta nesse mecanismo, e as
+     ressalvas não sairiam no papel.
+
+     Quem abre o <details> antes do `window.print()` é o efeito de impressão do
+     `RelatorioFaturamentoPanel` (`d.open = true`, restaurado no cleanup). As duas regras abaixo
+     são REFORÇO — para o navegador que esconder por `content-visibility`, e para o que esconder
+     por `display`. Nenhuma delas sozinha é garantia. */
+  body.imprimindo [data-print-area] details::details-content {
+    content-visibility: visible !important;
+  }
+
+  body.imprimindo [data-print-area] details > * {
     display: revert !important;
   }
 
