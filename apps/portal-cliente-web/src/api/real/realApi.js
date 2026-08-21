@@ -431,6 +431,8 @@ export function createRealApi() {
     //   POST /client/companies/:id/nfse/lote/emissao              -> 202 {lote} | 200 {reconhecido}
     //   GET  /client/companies/:id/nfse/lote/emissao/:loteId      -> {lote}
     //   POST /client/companies/:id/nfse/lote/emissao/:loteId/retomar -> 202 {lote}
+    //   POST /client/companies/:id/nfse/lote/emissao/:loteId/retentar -> 202 {lote, retentativa}
+    //                                                                   422 `nada_a_retentar`
     //
     // ⚠ Com `INTEGRACAO_NFSE_LOTE` desligada as três respondem **503 `emissao_lote_desligada`**, e
     // essa recusa é NOMEADA — ou seja, o fallback do mock **não a engole** (ver `api/index.js`).
@@ -472,6 +474,22 @@ export function createRealApi() {
     async retomarLoteEmissao(companyId, loteId) {
       return pedir(
         `/client/companies/${encodeURIComponent(companyId)}/nfse/lote/emissao/${encodeURIComponent(loteId)}/retomar`,
+        { method: "POST" }
+      );
+    },
+
+    /**
+     * ⚠⚠ RETENTA — emite de novo **só as linhas cujo desfecho PROVA que não existe nota**
+     * (recusadas e não tentadas). `emitida` e `indeterminada` NUNCA entram, e quem garante isso é o
+     * servidor, no `where` da reserva atômica: esta chamada não manda lista de linhas nenhuma.
+     *
+     * ⚠ Lote em que nada é retentável responde **422 `nada_a_retentar`** — recusa NOMEADA, logo o
+     * fallback do mock não a engole. É por ela que passa a idempotência de sempre: subir a mesma
+     * planilha depois de emitir com sucesso continua não reemitindo nada.
+     */
+    async retentarLoteEmissao(companyId, loteId) {
+      return pedir(
+        `/client/companies/${encodeURIComponent(companyId)}/nfse/lote/emissao/${encodeURIComponent(loteId)}/retentar`,
         { method: "POST" }
       );
     },

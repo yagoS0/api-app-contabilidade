@@ -604,7 +604,40 @@ O que protege quem clica:
 
 ⚠ `indeterminada` é **âmbar, nunca vermelho**, e o rótulo é *"Desfecho desconhecido"* — nunca
 "falhou". Vermelho e "falhou" convidam a tentar de novo, que é exatamente como se duplica nota.
-Regras em `lib/emissaoDoLote.js` (18 testes).
+Regras em `lib/emissaoDoLote.js` (43 testes).
+
+### ⚠⚠ O LOTE RECONHECIDO — a frase FALSA, e a saída que não existia (21/08/2026)
+
+> Caso real: lote de 3 notas RECUSADO pela Receita por erro de esquema (`E1235`). O erro do XML foi
+> consertado e está em produção. O dono subiu a mesma planilha e leu:
+> *"Esta planilha já havia sido emitida. (…) nenhuma nota nova foi emitida agora."* — com
+> **Emitidas 0 · Recusadas 3**. Foi essa frase que o fez achar que o erro tinha voltado.
+
+- ⚠⚠ **A FRASE ERA CRAVADA E AFIRMAVA O CONTRÁRIO DO RELATÓRIO LOGO ABAIXO.** Hoje ela é DERIVADA
+  das linhas (`textoDoReconhecimento`): zero emitidas diz *"naquela vez NENHUMA nota foi emitida"*;
+  parcial diz *"2 de 3 linhas viraram nota"*; tudo emitido diz que as notas foram emitidas. Se um
+  dia o texto e o relatório discordarem, é porque alguém escreveu um texto fixo aqui de novo.
+- ⚠⚠ **A RETENTATIVA É OFERECIDA** (`conviteParaRetentar`), e o que ela reemite é decidido **por
+  LINHA, no servidor**: só o desfecho que PROVA que não existe nota (`recusada_receita`,
+  `recusada_nossa`, `nao_tentada`). ⚠⚠ `emitida` e `indeterminada` **NUNCA**. A regra vive em
+  `apps/api/.../lote/emissaoLote.js` e este módulo é **ESPELHO amarrado por teste** — o teste
+  importa `podeRetentar` do backend e exige o mesmo veredito nos mesmos casos.
+- ⚠⚠ **O CASO PARCIAL:** lote com 2 emitidas e 1 recusada reemite **uma**. A `ressalva` vem ANTES
+  do botão (molde da de `conviteParaRetomar`) e nomeia quantas ficam de fora e por quê — "tentar de
+  novo" se lê como "refazer o lote", e refazer o lote reemitiria nota que já existe.
+  ⚠ **Sem nada bloqueado não há ressalva**: não existe mal-entendido a desfazer, e o critério do
+  dono manda cortar a frase que só descreve uma ausência já visível.
+- ⚠ **Âmbar, nunca verde** — é PENDÊNCIA. Verde, nesta casa, é concluído e nunca ação.
+- ⚠ A tela **não escolhe linha nenhuma**: `api.retentarLoteEmissao(companyId, loteId)` não manda
+  lista. Reenviar o ARQUIVO cairia na impressão digital e não emitiria nada.
+- ⚠⚠ **O RELATÓRIO PASSOU A DIZER QUANDO** — coluna "Quando", por linha, de `tentadaEm` (carimbo
+  que já existia no registro e não viajava). *"Recusada pela Receita"* sem hora é ambíguo assim que
+  existe uma segunda tentativa, e um resultado das 11:41 foi lido como sendo das 12:41. ⚠ Linha
+  `nao_tentada` sai com **traço** — pôr a data do LOTE ali carimbaria uma tentativa que nunca houve.
+  O carimbo do lote aparece à parte, **dizendo que é do lote** ("Lote enviado em …").
+- ⚠ `fmtDataHora` (`lib/format.js`) é a **exceção deliberada** à regra de `fmtDateBr`, que evita
+  `new Date` para não deslocar fuso: ali o dado é data CIVIL (sem hora); aqui é um INSTANTE gravado
+  em UTC, e o que a pessoa precisa ler é o relógio dela.
 
 Contrato (LIDO de `apps/api/src/routes/nfseLoteRoutes.js`): `GET .../nfse/lote/modelo` (o .xlsx) e
 `POST .../nfse/lote/leitura` (multipart: `arquivo` + `consultas` + `ajustes`). ⚠ O modelo vem por
@@ -701,10 +734,20 @@ arranjo das sentinelas da emissão. E o modelo do mock é um **.xlsx de verdade*
 `zipArmazenado` do lote de DANFSe), porque um arquivo corrompido com a extensão certa faria o modo
 offline "funcionar" até alguém tentar abrir.
 
-Testes: `lote/lib/__tests__/` (colunas 11 · estado 23 · consultas 15 · emissão 18 · recusa 9),
-`lote/__tests__/lotePlanilhaNaTela.ligacao.test.jsx` (20 — a corrente inteira, com
-`api.emitirNfse` armadilhado) e `api/__tests__/loteDePlanilhaNoMock.test.js` (32 — o par mock/real e
+Testes: `lote/lib/__tests__/` (colunas 11 · estado 23 · consultas 15 · emissão 43 · recusa 9),
+`lote/__tests__/lotePlanilhaNaTela.ligacao.test.jsx` (27 — a corrente inteira, com
+`api.emitirNfse` armadilhado) e `api/__tests__/loteDePlanilhaNoMock.test.js` (36 — o par mock/real e
 todos os estados).
+
+⚠ **O rótulo do botão e do título é "Emissão em Lote"** — pedido do dono em 21/08/2026. Era
+*"Preparar lote por planilha"*, de quando a tela ainda não emitia (ela emite desde 20/08/2026), e o
+comentário em `NotasPage.jsx` explicava por que o rótulo não podia prometer emissão. Mudou só o
+TEXTO: a chave de navegação, o handler e os `data-*` continuam os mesmos — o despacho deste app é
+por cadeia de `if` com chave em string, e renomear a chave quebra em silêncio.
+
+⚠ **A sentinela `#tudorecusado` no nome do arquivo** reproduz o caso real offline (todas recusadas
+com `E1235`, zero emitidas). Sem ela, o ramo em que a tela oferece a retentativa só existiria em
+produção — e este projeto já foi mordido quatro vezes por ramo assim.
 
 ## A LISTA DE NOTAS (`src/features/notas/`)
 

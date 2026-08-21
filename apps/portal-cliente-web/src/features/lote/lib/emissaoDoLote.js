@@ -167,3 +167,167 @@ export function somarValorDasProntas(linhas) {
       return Number.isFinite(v) ? total + v : total;
     }, 0);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ A RETENTATIVA — E A ÚNICA FRASE QUE PODE FICAR NA TELA
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// > Caso real, 21/08/2026: lote de 3 notas RECUSADO pela Receita por erro de esquema (`E1235`). O
+// > erro do XML foi consertado e está em produção. O dono subiu a mesma planilha e a tela disse:
+// > *"Esta planilha já havia sido emitida."* — com **Emitidas 0 · Recusadas 3**. A frase era FALSA,
+// > e foi ela que o fez achar que o erro tinha voltado.
+//
+// ⚠⚠ A AUTORIDADE É O SERVIDOR — `apps/api/src/application/nfse/lote/emissaoLote.js`
+// (`bloqueioDaRetentativa`/`planoDeRetentativa`). Isto aqui é ESPELHO, e o espelho é amarrado por
+// teste que importa a função do backend e exige o mesmo veredito nos mesmos casos. Sem o amarre,
+// "espelho" é intenção, não fato — e a divergência apareceria como *"a tela ofereceu e o servidor
+// recusou"*, na tela que emite nota fiscal em série.
+//
+// ⚠⚠ **A TELA NÃO DECIDE O QUE SE REEMITE.** Ela pede a retentativa; quem escolhe as linhas é o
+// `where` da reserva atômica, no servidor. Este módulo existe para a tela poder DIZER, antes do
+// clique, quantas linhas serão tentadas e quantas não serão — e por quê.
+
+/** ⚠⚠ ESPELHO da lista FECHADA do backend. Só o desfecho que PROVA que não existe nota. */
+export const DESFECHOS_RETENTAVEIS = Object.freeze([
+  DESFECHO.NAO_TENTADA,
+  DESFECHO.RECUSADA_RECEITA,
+  DESFECHO.RECUSADA_NOSSA,
+]);
+
+/** ⚠ ESPELHO dos motivos do backend — eles saem na tela, palavra por palavra. */
+export const MOTIVO_NAO_RETENTAVEL = Object.freeze({
+  [DESFECHO.EMITIDA]:
+    "esta linha já virou nota fiscal — emitir de novo criaria uma nota duplicada",
+  [DESFECHO.INDETERMINADA]:
+    "não se sabe se a nota desta linha foi emitida, e tentar outra vez pode gerar uma nota duplicada",
+  [DESFECHO.ENVIANDO]:
+    "o envio desta linha não terminou, então o desfecho dela ainda é desconhecido",
+});
+
+const MOTIVO_DESFECHO_DESCONHECIDO =
+  "esta linha está num estado que este sistema não reconhece, e o que não se reconhece não se retenta";
+
+/** Por que esta linha NÃO pode ser retentada — `null` quando ela pode. */
+export function bloqueioDaRetentativa(linha, lote = null) {
+  const desfecho = linha?.desfecho;
+  if (!DESFECHOS_RETENTAVEIS.includes(desfecho)) {
+    return MOTIVO_NAO_RETENTAVEL[desfecho] || MOTIVO_DESFECHO_DESCONHECIDO;
+  }
+  if (Number.isInteger(lote?.linhaIndeterminada) && linha?.numeroLinha === lote.linhaIndeterminada) {
+    return MOTIVO_NAO_RETENTAVEL[DESFECHO.INDETERMINADA];
+  }
+  return null;
+}
+
+export function podeRetentar(linha, lote = null) {
+  return bloqueioDaRetentativa(linha, lote) === null;
+}
+
+/** O que uma retentativa faria com este lote. Mesma forma do plano que o servidor devolve. */
+export function planoDeRetentativa(lote) {
+  const retentaveis = [];
+  const bloqueadas = [];
+  for (const linha of lote?.linhas || []) {
+    const motivo = bloqueioDaRetentativa(linha, lote);
+    if (motivo === null) {
+      retentaveis.push({ numeroLinha: linha.numeroLinha, desfecho: linha.desfecho });
+      continue;
+    }
+    bloqueadas.push({ numeroLinha: linha.numeroLinha, desfecho: linha.desfecho, motivo });
+  }
+  const conta = (d) => bloqueadas.filter((b) => b.desfecho === d).length;
+  return {
+    quantas: retentaveis.length,
+    retentaveis,
+    bloqueadas,
+    emitidas: conta(DESFECHO.EMITIDA),
+    indeterminadas: conta(DESFECHO.INDETERMINADA),
+  };
+}
+
+/**
+ * ⚠⚠ O CONVITE PARA RETENTAR — e a `ressalva` é a razão de ele existir.
+ *
+ * Molde da `ressalva` de `conviteParaRetomar`, e pelo MESMO motivo: quem lê "tentar de novo"
+ * entende "refazer o lote". Aqui a pergunta que fica é *"e as que já saíram?"*.
+ *
+ * ⚠ O dono corta legenda com agressividade, e o critério dele é *"sai a frase que descreve uma
+ * ausência visível; fica a que impede uma ausência de ser lida como afirmação"*. A frase que FICA
+ * é a que impede alguém de achar que retentar reemite tudo — sem ela, o clique é dado com uma
+ * expectativa errada num ato fiscal irreversível. **Sem nada bloqueado, não há ressalva nenhuma:
+ * não existe mal-entendido a desfazer, e a frase sairia.**
+ */
+export function conviteParaRetentar(lote) {
+  const plano = planoDeRetentativa(lote);
+  if (!plano.quantas) return null;
+
+  return {
+    quantas: plano.quantas,
+    naoSeraoTentadas: plano.bloqueadas.length,
+    emitidas: plano.emitidas,
+    indeterminadas: plano.indeterminadas,
+    bloqueadas: plano.bloqueadas,
+    rotuloDoBotao: `Tentar emitir ${plano.quantas} ${plano.quantas === 1 ? "nota" : "notas"} de novo`,
+    /** ⚠ A frase que impede o mal-entendido caro. `null` quando não há nada a desfazer. */
+    ressalva: plano.bloqueadas.length ? ressalvaDaRetentativa(plano) : null,
+  };
+}
+
+function ressalvaDaRetentativa(plano) {
+  const partes = [];
+  if (plano.emitidas) {
+    partes.push(
+      `${plano.emitidas} ${plano.emitidas === 1 ? "já virou nota fiscal e NÃO será emitida" : "já viraram nota fiscal e NÃO serão emitidas"} de novo`
+    );
+  }
+  if (plano.indeterminadas) {
+    partes.push(
+      `${plano.indeterminadas} ${plano.indeterminadas === 1 ? "está" : "estão"} com desfecho desconhecido e não ${plano.indeterminadas === 1 ? "será tentada" : "serão tentadas"}`
+    );
+  }
+  // ⚠ O resto (estado que esta tela não conhece) entra pela contagem, nunca some da frase.
+  const nomeadas = plano.emitidas + plano.indeterminadas;
+  if (plano.bloqueadas.length > nomeadas) {
+    const outras = plano.bloqueadas.length - nomeadas;
+    partes.push(`${outras} ${outras === 1 ? "não pôde" : "não puderam"} ser ${outras === 1 ? "tentada" : "tentadas"}`);
+  }
+
+  return (
+    `Só as ${plano.quantas === 1 ? "1 linha" : `${plano.quantas} linhas`} que não geraram nota `
+    + `${plano.quantas === 1 ? "será tentada" : "serão tentadas"} de novo: `
+    + `${partes.join("; ")}. Emitir uma nota que já existe não se desfaz — cancela-se, e cancelar é outro ato.`
+  );
+}
+
+/**
+ * ⚠⚠ O QUE DE FATO ACONTECEU DA PRIMEIRA VEZ — a frase que substituiu a mentira.
+ *
+ * A anterior era *"Esta planilha já havia sido emitida"*, cravada, sem olhar desfecho nenhum. Num
+ * lote com **0 emitidas e 3 recusadas** ela afirmava o oposto do fato, e mandava a pessoa procurar
+ * um erro que não existia.
+ *
+ * ⚠ Ela é DERIVADA das linhas — se um dia o relatório e a frase discordarem, é porque alguém
+ * escreveu um texto fixo aqui de novo.
+ */
+export function textoDoReconhecimento(lote) {
+  const r = resumoDaEmissao(lote);
+  if (!r.total) return "Esta planilha já foi enviada antes. Abaixo está o que aconteceu naquela vez.";
+
+  if (r.emitidas === 0) {
+    return (
+      "Esta planilha já foi enviada antes, e naquela vez NENHUMA nota foi emitida. "
+      + "Abaixo está o que aconteceu com cada linha — nada foi emitido agora."
+    );
+  }
+  if (r.emitidas === r.total) {
+    return (
+      `Esta planilha já foi enviada antes, e as ${r.total} notas foram emitidas. `
+      + "Abaixo está o que aconteceu naquela vez — nenhuma nota nova foi emitida agora."
+    );
+  }
+  return (
+    `Esta planilha já foi enviada antes: ${r.emitidas} de ${r.total} `
+    + `${r.emitidas === 1 ? "linha virou nota" : "linhas viraram nota"}. `
+    + "Abaixo está o que aconteceu com cada uma — nenhuma nota nova foi emitida agora."
+  );
+}

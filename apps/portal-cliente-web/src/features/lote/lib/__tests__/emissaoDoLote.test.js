@@ -4,14 +4,25 @@
 
 import {
   DESFECHO,
+  DESFECHOS_RETENTAVEIS,
   STATUS_LOTE,
   avisoDaLinhaIndeterminada,
   confirmacaoDaEmissao,
+  conviteParaRetentar,
   conviteParaRetomar,
+  podeRetentar,
   resumoDaEmissao,
   somarValorDasProntas,
   textoDoDesfecho,
+  textoDoReconhecimento,
 } from "../emissaoDoLote";
+// ⚠⚠ A AUTORIDADE, importada de verdade — o mesmo arranjo de `codigoServicoDaNota.test.js`. É isto
+// que transforma "espelho" de intenção em fato: a regra do servidor é rodada nos MESMOS casos, e
+// exige o MESMO veredito.
+import {
+  podeRetentar as podeRetentarNoServidor,
+  DESFECHOS_RETENTAVEIS as RETENTAVEIS_DO_SERVIDOR,
+} from "../../../../../../api/src/application/nfse/lote/emissaoLote.js";
 
 const linha = (numeroLinha, desfecho, extra = {}) => ({
   numeroLinha,
@@ -144,5 +155,132 @@ describe("a confirmação", () => {
       { estado: "pendente", dados: null },
     ]);
     expect(total).toBe(1500);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ A RETENTATIVA — E O AMARRE COM O BACKEND
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// > Caso real, 21/08/2026: lote de 3 notas recusado por erro de esquema (`E1235`), consertado, e a
+// > tela dizendo *"já havia sido emitida"* com **0 emitidas**.
+//
+// ⚠⚠ A AUTORIDADE É O BACKEND, e o teste IMPORTA A FUNÇÃO DE LÁ para exigir o mesmo veredito nos
+// mesmos casos. Sem isso, "espelho" é intenção — e a divergência apareceria como *"a tela ofereceu
+// e o servidor recusou"*, na tela que emite nota fiscal em série.
+
+describe("⚠⚠ a regra de retentabilidade — espelho do backend, amarrado a ele", () => {
+  const CASOS = [
+    { desfecho: DESFECHO.EMITIDA, pode: false },
+    { desfecho: DESFECHO.INDETERMINADA, pode: false },
+    { desfecho: DESFECHO.ENVIANDO, pode: false },
+    { desfecho: DESFECHO.RECUSADA_RECEITA, pode: true },
+    { desfecho: DESFECHO.RECUSADA_NOSSA, pode: true },
+    { desfecho: DESFECHO.NAO_TENTADA, pode: true },
+    { desfecho: "estado_que_ainda_nao_existe", pode: false },
+  ];
+
+  it.each(CASOS)("`$desfecho` ⇒ retentável: $pode", ({ desfecho, pode }) => {
+    expect(podeRetentar({ numeroLinha: 2, desfecho })).toBe(pode);
+  });
+
+  // ⚠⚠ O AMARRE. Muda lá, cai aqui.
+  it.each(CASOS)("⚠⚠ o BACKEND concorda sobre `$desfecho`", ({ desfecho, pode }) => {
+    expect(podeRetentarNoServidor({ numeroLinha: 2, desfecho })).toBe(pode);
+  });
+
+  it("⚠⚠ a lista de retentáveis é IDÊNTICA à do backend", () => {
+    expect([...DESFECHOS_RETENTAVEIS].sort()).toEqual([...RETENTAVEIS_DO_SERVIDOR].sort());
+  });
+
+  it("⚠ a linha NOMEADA em `linhaIndeterminada` fica fora, nos dois lados", () => {
+    const lote = { linhaIndeterminada: 4 };
+    const linha = { numeroLinha: 4, desfecho: DESFECHO.RECUSADA_RECEITA };
+    expect(podeRetentar(linha, lote)).toBe(false);
+    expect(podeRetentarNoServidor(linha, lote)).toBe(false);
+  });
+});
+
+describe("⚠⚠ o convite para retentar", () => {
+  it("⚠⚠ O CASO PARCIAL: 2 emitidas + 1 recusada oferece UMA, e a ressalva nomeia as outras", () => {
+    const convite = conviteParaRetentar({
+      linhas: [
+        linha(2, DESFECHO.EMITIDA),
+        linha(3, DESFECHO.EMITIDA),
+        linha(4, DESFECHO.RECUSADA_RECEITA),
+      ],
+    });
+    expect(convite.quantas).toBe(1);
+    expect(convite.emitidas).toBe(2);
+    expect(convite.naoSeraoTentadas).toBe(2);
+    expect(convite.rotuloDoBotao).toMatch(/1 nota/);
+    // ⚠ A frase que impede alguém de achar que retentar reemite TUDO.
+    expect(convite.ressalva).toMatch(/já viraram nota fiscal e NÃO serão emitidas/);
+  });
+
+  it("⚠⚠ lote inteiramente EMITIDO não oferece nada — a idempotência de sempre", () => {
+    expect(conviteParaRetentar({ linhas: [linha(2, DESFECHO.EMITIDA), linha(3, DESFECHO.EMITIDA)] })).toBeNull();
+  });
+
+  it("o lote do caso real — 3 recusadas — oferece as três, SEM ressalva", () => {
+    const convite = conviteParaRetentar({
+      linhas: [2, 3, 4].map((n) => linha(n, DESFECHO.RECUSADA_RECEITA)),
+    });
+    expect(convite.quantas).toBe(3);
+    // ⚠ Nada bloqueado ⇒ nenhuma frase: não há mal-entendido a desfazer, e o dono corta a legenda
+    // que só descreve uma ausência já visível.
+    expect(convite.ressalva).toBeNull();
+  });
+
+  it("⚠ a linha indeterminada entra na ressalva com o motivo dela, nunca como 'emitida'", () => {
+    const convite = conviteParaRetentar({
+      linhaIndeterminada: 3,
+      linhas: [linha(2, DESFECHO.RECUSADA_RECEITA), linha(3, DESFECHO.INDETERMINADA)],
+    });
+    expect(convite.quantas).toBe(1);
+    expect(convite.indeterminadas).toBe(1);
+    expect(convite.ressalva).toMatch(/desfecho desconhecido/i);
+    expect(convite.ressalva).not.toMatch(/já virou nota fiscal/);
+  });
+
+  it("⚠⚠ estado que esta tela NÃO conhece não some da contagem — nem vira retentável", () => {
+    const convite = conviteParaRetentar({
+      linhas: [linha(2, DESFECHO.RECUSADA_RECEITA), linha(3, "estado_novo_do_backend")],
+    });
+    expect(convite.quantas).toBe(1);
+    expect(convite.naoSeraoTentadas).toBe(1);
+    // O bloqueio existe e é contado, mesmo sem nome próprio.
+    expect(convite.ressalva).toMatch(/1 não pôde ser tentada/);
+  });
+});
+
+describe("⚠⚠ `textoDoReconhecimento` — a frase que substituiu a mentira", () => {
+  it("⚠⚠ ZERO EMITIDAS não diz 'já havia sido emitida'", () => {
+    const t = textoDoReconhecimento({ linhas: [2, 3, 4].map((n) => linha(n, DESFECHO.RECUSADA_RECEITA)) });
+    expect(t).not.toMatch(/já havia sido emitida/i);
+    expect(t).toMatch(/NENHUMA nota foi emitida/);
+  });
+
+  it("tudo emitido diz que as notas foram emitidas", () => {
+    const t = textoDoReconhecimento({ linhas: [linha(2, DESFECHO.EMITIDA), linha(3, DESFECHO.EMITIDA)] });
+    expect(t).toMatch(/as 2 notas foram emitidas/);
+  });
+
+  it("parcial diz QUANTAS de quantas — nunca 'a planilha foi emitida'", () => {
+    const t = textoDoReconhecimento({
+      linhas: [linha(2, DESFECHO.EMITIDA), linha(3, DESFECHO.RECUSADA_RECEITA), linha(4, DESFECHO.EMITIDA)],
+    });
+    expect(t).toMatch(/2 de 3/);
+  });
+
+  it("⚠ em todos os casos ela afirma que NADA foi emitido agora", () => {
+    const casos = [
+      [linha(2, DESFECHO.RECUSADA_RECEITA)],
+      [linha(2, DESFECHO.EMITIDA)],
+      [linha(2, DESFECHO.EMITIDA), linha(3, DESFECHO.RECUSADA_NOSSA)],
+    ];
+    for (const linhas of casos) {
+      expect(textoDoReconhecimento({ linhas })).toMatch(/nada foi emitido agora|nenhuma nota nova foi emitida agora/i);
+    }
   });
 });

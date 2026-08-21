@@ -69,6 +69,30 @@ export function fmtDateBr(date) {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+/**
+ * ⚠⚠ INSTANTE (data E hora), no relógio de quem lê — `2026-08-21T14:41:00Z` → `21/08/2026 11:41`.
+ *
+ * ⚠ **ESTA É A EXCEÇÃO DELIBERADA À REGRA DE `fmtDateBr`**, que evita `new Date` de propósito para
+ * não deslocar fuso. Ali o dado é uma DATA CIVIL (competência, vencimento): ela não tem hora, e
+ * convertê-la mostraria outro dia. Aqui o dado é um INSTANTE gravado em UTC, e o que a pessoa
+ * precisa ler é a hora do relógio dela — sem a conversão, um desfecho das 11:41 apareceria como
+ * 14:41. Foi por confundir 11:41 com 12:41 que um relatório de lote foi lido como se fosse de
+ * outra tentativa.
+ *
+ * ⚠ Ausência é TRAÇO, nunca "agora": data inventada num relatório de ato fiscal é pior que
+ * nenhuma. Instante ilegível volta como veio, para a ausência não ser confundida com erro nosso.
+ */
+export function fmtDataHora(valor) {
+  if (!valor) return TRACO;
+  const d = valor instanceof Date ? valor : new Date(String(valor));
+  if (Number.isNaN(d.getTime())) return String(valor);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${d.getFullYear()} ${hh}:${mi}`;
+}
+
 /** 00.000.000/0000-00 — só formata se tiver os 14 dígitos; senão devolve o que veio. */
 export function fmtCnpj(cnpj) {
   const d = String(cnpj || "").replace(/\D+/g, "");

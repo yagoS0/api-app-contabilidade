@@ -25,6 +25,10 @@
 //    é uma QUERY (`numeroLinha > linhaIndeterminada`), não um `if` que alguém possa inverter.
 //
 // 4. ⚠ IDEMPOTÊNCIA pela impressão digital: a mesma planilha não emite duas vezes.
+//    ⚠⚠ **E ELA AGORA TEM UM SEGUNDO PASSO — 21/08/2026.** Subir a mesma planilha RECONHECE o lote
+//    (nada é reemitido ali, nunca). O que passou a existir é a RETENTATIVA, uma rota própria, que
+//    reemite **só as linhas cujo desfecho prova que não existe nota**. Ver o bloco "A RETENTATIVA"
+//    abaixo: a trava não foi removida, ela deixou de ser sobre o LOTE e passou a ser sobre a LINHA.
 //
 // 5. ⚠ NUMERAÇÃO QUEIMA E O BURACO É PERMANENTE (não existe inutilização na NFS-e). O número
 //    reservado é gravado na linha, e o relatório distingue os quatro desfechos possíveis dele.
@@ -57,6 +61,150 @@ export const STATUS_LOTE = Object.freeze({
   PARADO_INDETERMINADO: "parado_indeterminado",
   ERRO: "erro",
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ A RETENTATIVA — E A REGRA DE SEGURANÇA QUE A TORNA POSSÍVEL
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Um lote RECONHECIDO (a mesma planilha subida de novo) podia, até 21/08/2026, apenas ser olhado:
+// a idempotência devolvia o relatório antigo e não havia caminho nenhum para tentar outra vez. Isso
+// está certo para o que a trava existe para impedir — reemitir o que JÁ VIROU NOTA —, e estava
+// errado para o caso real que a produziu: **um lote inteiro recusado por erro de esquema (E1235),
+// consertado, e impossível de reemitir**. Zero notas no mundo, e nenhuma saída.
+//
+// ⚠⚠ **UMA LINHA SÓ PODE SER RETENTADA SE O DESFECHO DELA PROVAR QUE NÃO EXISTE NOTA.** A lista é
+// FECHADA e é de segurança — é o coração deste arquivo:
+//
+//   `RECUSADA_RECEITA`  a Receita ANALISOU e recusou. A recusa é anterior ao documento: não existe
+//                       nota, e o número volta a ser reutilizável. ⚠ É exatamente a mesma prova em
+//                       que `NfseService.issue` já se apoia para aceitar `retryInvoiceId` (lá: "só
+//                       é aceito quando a falha daquela linha LIBEROU o número — camadas `NOSSA` e
+//                       `RECEITA`"). Não é regra nova; é a regra que já existia, alcançando o lote.
+//   `RECUSADA_NOSSA`    nós recusamos no PRÉ-VOO. Nada saiu da máquina e nenhum número foi
+//                       reservado. É o mais seguro dos três.
+//   `NAO_TENTADA`       ninguém encostou nela.
+//
+// ⚠⚠ **E OS DOIS QUE NUNCA, EM HIPÓTESE NENHUMA:**
+//
+//   `EMITIDA`           a nota EXISTE no mundo. Reemitir é duplicar documento fiscal, e duplicata
+//                       não se desfaz: cancela-se, e cancelar é outro ato.
+//   `INDETERMINADA`     o pior estado deste sistema — a nota PODE existir e ninguém sabe qual.
+//                       Retentar aqui é a forma mais direta de duplicar nota em série.
+//
+// ⚠⚠ **O CASO PARCIAL É O QUE SEPARA UM CONSERTO DE UM DESASTRE.** Lote com 2 emitidas e 1 recusada
+// reemite **só a recusada**. Um "retentar tudo" mandaria duas notas fiscais idênticas a dois
+// tomadores que já as receberam. Por isso a decisão é **POR LINHA**, nunca pelo lote: não existe,
+// em lugar nenhum deste arquivo, caminho que leia o status do LOTE para decidir o que reemitir.
+//
+// ⚠⚠ **A IDEMPOTÊNCIA NÃO FOI REMOVIDA — ELA FOI AFROUXADA EXATAMENTE ONDE PROVA AUSÊNCIA DE
+// NOTA.** Subir a mesma planilha duas vezes DEPOIS de emitir com sucesso continua sendo
+// reconhecido e continua não reemitindo nada: linha `EMITIDA` não é retentável, então o plano volta
+// VAZIO e a rota recusa. A trava mudou de "este lote já existe" para "o desfecho desta linha prova
+// que existe nota" — que é o que ela sempre quis dizer.
+//
+// ⚠ **DESFECHO QUE ESTE CÓDIGO NÃO CONHECE NÃO É RETENTÁVEL.** A lista é de INCLUSÃO, nunca de
+// exclusão: um estado novo no banco entra como BLOQUEADO por construção, em vez de virar retentável
+// por omissão. Mesma disciplina do "estado que a tela não conhece não vira `pronta`".
+
+/** ⚠⚠ LISTA FECHADA, DE INCLUSÃO. Só o que PROVA que não existe nota. */
+export const DESFECHOS_RETENTAVEIS = Object.freeze([
+  DESFECHO_LINHA.NAO_TENTADA,
+  DESFECHO_LINHA.RECUSADA_RECEITA,
+  DESFECHO_LINHA.RECUSADA_NOSSA,
+]);
+
+/**
+ * Por que cada desfecho bloqueado NÃO é retentado — em frase de gente, porque ela sai na tela.
+ *
+ * ⚠ O motivo viaja JUNTO da linha bloqueada. "3 linhas não serão tentadas" sem o porquê faz a
+ * pessoa achar que o sistema não conseguiu alcançá-las, e a próxima coisa que ela tenta é forçar.
+ */
+export const MOTIVO_NAO_RETENTAVEL = Object.freeze({
+  [DESFECHO_LINHA.EMITIDA]:
+    "esta linha já virou nota fiscal — emitir de novo criaria uma nota duplicada",
+  [DESFECHO_LINHA.INDETERMINADA]:
+    "não se sabe se a nota desta linha foi emitida, e tentar outra vez pode gerar uma nota duplicada",
+  [DESFECHO_LINHA.ENVIANDO]:
+    "o envio desta linha não terminou, então o desfecho dela ainda é desconhecido",
+});
+
+const MOTIVO_DESFECHO_DESCONHECIDO =
+  "esta linha está num estado que este sistema não reconhece, e o que não se reconhece não se retenta";
+
+/**
+ * Os dois modos do laço. ⚠ `RETOMADA` é o comportamento de sempre, e é o DEFAULT — um chamador que
+ * não saiba deste parâmetro continua emitindo só o que nunca foi tentado.
+ */
+export const MODO = Object.freeze({
+  RETOMADA: "retomada",
+  RETENTATIVA: "retentativa",
+});
+
+/**
+ * ⚠ Modo desconhecido cai no conjunto MAIS ESTREITO, nunca no mais largo. Erro de digitação num
+ * chamador futuro não pode alargar o que se reemite.
+ */
+function desfechosDoModo(modo) {
+  return modo === MODO.RETENTATIVA ? DESFECHOS_RETENTAVEIS : [DESFECHO_LINHA.NAO_TENTADA];
+}
+
+/**
+ * ⚠⚠ POR QUE ESTA LINHA NÃO PODE SER RETENTADA — `null` quando ela pode.
+ *
+ * Três guardas independentes, e nenhuma delas é um `if` sobre o status do LOTE:
+ *   1. o desfecho tem de estar na lista de INCLUSÃO;
+ *   2. a linha nomeada em `lote.linhaIndeterminada` fica fora pelo NÚMERO — mesmo que, por qualquer
+ *      razão, o desfecho dela tenha ficado gravado como outra coisa;
+ *   3. a lista de inclusão já exclui `indeterminada` e `emitida` por construção.
+ *
+ * A 2 é redundante com a 1 em todo caminho que este código produz, e é de propósito: ela é a única
+ * que continua valendo se o desfecho da linha e a coluna do lote divergirem.
+ */
+export function bloqueioDaRetentativa(linha, lote = null) {
+  const desfecho = linha?.desfecho;
+  if (!DESFECHOS_RETENTAVEIS.includes(desfecho)) {
+    return MOTIVO_NAO_RETENTAVEL[desfecho] || MOTIVO_DESFECHO_DESCONHECIDO;
+  }
+  if (Number.isInteger(lote?.linhaIndeterminada) && linha?.numeroLinha === lote.linhaIndeterminada) {
+    return MOTIVO_NAO_RETENTAVEL[DESFECHO_LINHA.INDETERMINADA];
+  }
+  return null;
+}
+
+/** Atalho de leitura. A regra é `bloqueioDaRetentativa`; isto é só o sinal dela. */
+export function podeRetentar(linha, lote = null) {
+  return bloqueioDaRetentativa(linha, lote) === null;
+}
+
+/**
+ * O que uma retentativa faria com ESTE lote — puro, sem banco.
+ *
+ * ⚠ É a MESMA regra que o laço aplica; a rota usa este plano para dizer, ANTES do clique, quantas
+ * linhas serão tentadas e quantas não serão. A tela tem o espelho dele
+ * (`portal-cliente-web/.../lib/emissaoDoLote.js`), amarrado por teste: uma tela que oferecesse o
+ * que o servidor recusa é o defeito que este projeto já pagou várias vezes.
+ */
+export function planoDeRetentativa(lote) {
+  const retentaveis = [];
+  const bloqueadas = [];
+  for (const linha of lote?.linhas || []) {
+    const motivo = bloqueioDaRetentativa(linha, lote);
+    if (motivo === null) {
+      retentaveis.push({ numeroLinha: linha.numeroLinha, desfecho: linha.desfecho });
+      continue;
+    }
+    bloqueadas.push({ numeroLinha: linha.numeroLinha, desfecho: linha.desfecho, motivo });
+  }
+  const conta = (d) => bloqueadas.filter((b) => b.desfecho === d).length;
+  return {
+    quantas: retentaveis.length,
+    retentaveis,
+    bloqueadas,
+    /** ⚠ Separadas porque os dois motivos pedem CONVERSAS diferentes com quem lê. */
+    emitidas: conta(DESFECHO_LINHA.EMITIDA),
+    indeterminadas: conta(DESFECHO_LINHA.INDETERMINADA),
+  };
+}
 
 /**
  * ⚠⚠ OS CÓDIGOS QUE PROVAM QUE **NADA SAIU DA MÁQUINA** — lista FECHADA, e ela é de segurança.
@@ -157,6 +305,12 @@ export function linhasEmitiveis(classificacao) {
  * ⚠ Devolve o lote existente, e **não um erro**: o que a tela precisa mostrar é o relatório da
  * primeira vez. Um 409 faria a pessoa subir de novo achando que falhou.
  *
+ * ⚠⚠ **RECONHECER NÃO É "NÃO HÁ NADA A FAZER", E ESTA FUNÇÃO NÃO DECIDE ISSO.** Ela devolve o lote;
+ * quem responde *"dá para tentar de novo?"* é `planoDeRetentativa`, POR LINHA. O lote inteiramente
+ * recusado (zero notas no mundo) é reconhecido igual ao lote inteiramente emitido — e são situações
+ * opostas. Não acrescente aqui um ramo que reprocesse: reemitir tem porta própria, com o portão e a
+ * regra de retentabilidade na frente.
+ *
  * ⚠ O `catch` da violação de unicidade não é decoração: entre o `findFirst` e o `create` cabe uma
  * segunda requisição (duplo clique é o caso comum). Sem ele, o segundo clique viraria erro 500 numa
  * operação que, corretamente, é um no-op.
@@ -212,8 +366,18 @@ export async function criarOuReconhecerLote({ prisma, companyId, linhasProntas, 
  * @param {string} p.companyId  a `Company` LEGADA
  * @param {Function} p.emitir   ⚠ INJETADO. Em produção é `NfseService.issue`; no teste é dublê.
  * @param {object} [p.log]
+ * @param {string} [p.modo]   ⚠ `MODO.RETOMADA` (default, o de sempre) | `MODO.RETENTATIVA`.
+ *                            Ele muda UMA coisa: **quais desfechos entram na seleção**. Não muda o
+ *                            laço, não muda a reserva atômica, não muda o que para o lote.
  */
-export async function processarLoteEmissao({ prisma, loteId, companyId, emitir, log = null }) {
+export async function processarLoteEmissao({
+  prisma,
+  loteId,
+  companyId,
+  emitir,
+  log = null,
+  modo = MODO.RETOMADA,
+}) {
   const lote = await prisma.loteEmissaoNfse.findUnique({ where: { id: loteId } });
   if (!lote || lote.companyId !== companyId) {
     const err = new Error("lote_nao_encontrado");
@@ -228,7 +392,12 @@ export async function processarLoteEmissao({ prisma, loteId, companyId, emitir, 
   const paradoPorQuedaNoMeio = await promoverEnviandoParaIndeterminada({ prisma, lote, log });
   if (paradoPorQuedaNoMeio) return paradoPorQuedaNoMeio;
 
-  const pendentes = await selecionarParaRetomada({ prisma, lote });
+  // ⚠⚠ O CONJUNTO DE DESFECHOS QUE PODEM SER TOCADOS NESTA PASSAGEM — e ele é UM SÓ, usado tanto
+  // para SELECIONAR quanto para RESERVAR. Duas listas (uma na query, outra no `where` da reserva)
+  // divergiriam na primeira correção, e a divergência apareceria como uma linha `emitida` sendo
+  // reservada para envio.
+  const desfechosSelecionados = desfechosDoModo(modo);
+  const pendentes = await selecionarParaRetomada({ prisma, lote, modo });
 
   for (const linha of pendentes) {
     // ⚠⚠ A RESERVA DA LINHA É ATÔMICA — `updateMany` COM O DESFECHO NO `where`, e o `count` é lido.
@@ -242,8 +411,14 @@ export async function processarLoteEmissao({ prisma, loteId, companyId, emitir, 
     // ⚠ É esta cláusula — e não o lock da rota — que garante a não-duplicidade. O lock evita
     // trabalho concorrente; esta linha evita o ato fiscal repetido. Lock vencido é ROUBADO
     // (ver `GuideLockService`), então depender só dele seria depender de um TTL.
+    //
+    // ⚠⚠ O `desfecho` NO `where` CONTINUA SENDO A TRAVA, e o `in` **não a afrouxa**: ele nomeia,
+    // por extenso, o conjunto FECHADO de estados de onde uma linha pode sair para `enviando`.
+    // `emitida` e `indeterminada` não estão nele em modo nenhum — nem por omissão, nem por
+    // default, nem por modo desconhecido (ver `desfechosDoModo`). Trocar isto por um `updateMany`
+    // sem desfecho no `where` é o que reintroduziria a nota duplicada.
     const reservada = await prisma.loteEmissaoNfseLinha.updateMany({
-      where: { id: linha.id, desfecho: DESFECHO_LINHA.NAO_TENTADA },
+      where: { id: linha.id, desfecho: { in: desfechosSelecionados } },
       data: { desfecho: DESFECHO_LINHA.ENVIANDO, tentadaEm: new Date() },
     });
     if (reservada.count !== 1) {
@@ -259,6 +434,17 @@ export async function processarLoteEmissao({ prisma, loteId, companyId, emitir, 
       resultado = await emitir({
         data: { ...linha.dados, companyId },
         log,
+        // ⚠⚠ REUSA O NÚMERO JÁ RESERVADO NA TENTATIVA ANTERIOR — **não existe inutilização na
+        // NFS-e**, então cada retentativa que reservasse número novo abriria um buraco PERMANENTE
+        // na numeração da empresa. Numa linha `nao_tentada` isto é sempre `null` (não há tentativa
+        // anterior), e o comportamento é exatamente o de antes.
+        //
+        // ⚠ **E É UMA QUARTA GUARDA, não um atalho.** Quem decide se aquele número pode voltar é
+        // `NfseService.issue`, e ele já recusa o reuso quando a falha anterior foi de TRANSPORTE
+        // (`NFSE_NUMERO_EM_ESTADO_INDETERMINADO`) — desfecho desconhecido não libera número. Esse
+        // código está em `CODIGOS_ANTES_DE_QUALQUER_ENVIO`: a linha vira recusa NOSSA e o lote
+        // segue, sem nada ter saído da máquina.
+        retryInvoiceId: linha.serviceInvoiceId || null,
       });
     } catch (err) {
       // ⚠⚠ EXCEÇÃO NÃO É DESFECHO. Só os códigos comprovadamente de pré-voo viram recusa local; o
@@ -358,10 +544,23 @@ export async function processarLoteEmissao({ prisma, loteId, companyId, emitir, 
  * Quem decide o que fazer com a linha indeterminada é o CONTADOR, olhando o portal nacional. Nunca
  * este código.
  */
-export async function selecionarParaRetomada({ prisma, lote }) {
-  const where = { loteId: lote.id, desfecho: DESFECHO_LINHA.NAO_TENTADA };
+export async function selecionarParaRetomada({ prisma, lote, modo = MODO.RETOMADA }) {
+  const where = { loteId: lote.id, desfecho: { in: desfechosDoModo(modo) } };
   if (Number.isInteger(lote.linhaIndeterminada)) {
-    where.numeroLinha = { gt: lote.linhaIndeterminada };
+    // ⚠⚠ OS DOIS RAMOS EXCLUEM A LINHA INDETERMINADA, e nenhum deles é um `if` sobre ela.
+    //
+    //   RETOMADA    `gt` — continuar DEPOIS dela. É a regra 3, intacta.
+    //   RETENTATIVA `not` — a retentativa não é uma continuação: ela volta em linhas que já foram
+    //               tentadas e recusadas, inclusive ANTES do ponto de parada. Um `gt` aqui deixaria
+    //               a recusa anterior à indeterminada sem saída nenhuma para sempre. O que ela NÃO
+    //               pode tocar é a linha indeterminada — e é literalmente isso que o `not` diz.
+    //
+    // ⚠ Em qualquer dos dois, a linha indeterminada ainda estaria fora pelo DESFECHO: `indeterminada`
+    // não pertence a nenhum dos conjuntos. São duas exclusões independentes, de propósito.
+    where.numeroLinha =
+      modo === MODO.RETENTATIVA
+        ? { not: lote.linhaIndeterminada }
+        : { gt: lote.linhaIndeterminada };
   }
   return prisma.loteEmissaoNfseLinha.findMany({ where, orderBy: { numeroLinha: "asc" } });
 }

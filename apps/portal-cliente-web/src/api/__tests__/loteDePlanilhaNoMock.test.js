@@ -53,6 +53,8 @@ describe("⚠ o par mock/real", () => {
       "emitirLoteDeNotas",
       "consultarLoteEmissao",
       "retomarLoteEmissao",
+      // ⚠ A retentativa entrou no par em 21/08/2026.
+      "retentarLoteEmissao",
     ]) {
       expect(typeof mock[nome]).toBe("function");
       expect(typeof real[nome]).toBe("function");
@@ -383,6 +385,69 @@ describe("⚠⚠ a emissão em lote, offline", () => {
     // e as seguintes foram emitidas
     expect(r.lote.linhas.filter((l) => l.numeroLinha > alvo).every((l) => l.desfecho === "emitida")).toBe(true);
     expect(r.lote.status).toBe("concluido");
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════════════════════
+  // ⚠⚠ A RETENTATIVA, OFFLINE — e o caso real de 21/08/2026
+  // ═════════════════════════════════════════════════════════════════════════════════════════
+  //
+  // > Lote de 3 notas RECUSADO por erro de esquema (`E1235`), consertado, e sem saída: a tela dizia
+  // > "já havia sido emitida" com **0 emitidas**.
+
+  test("⚠⚠ `#tudorecusado` deixa TODAS recusadas e ZERO emitidas — o caso real", async () => {
+    const api = await apiLogada();
+    const { arq, consultas } = await comConsultasResolvidas(api, "notas#tudorecusado.xlsx");
+    const { lote } = await api.emitirLoteDeNotas(EMPRESA, arq, { consultas });
+
+    expect(lote.emitidas).toBe(0);
+    expect(lote.recusadas).toBe(lote.totalLinhas);
+    expect(lote.linhas.every((l) => l.codigo === "E1235")).toBe(true);
+    // ⚠ O carimbo por linha existe offline — sem ele o ramo da coluna "Quando" só viveria em produção.
+    expect(lote.linhas.every((l) => Boolean(l.tentadaEm))).toBe(true);
+  });
+
+  test("⚠⚠ retentar emite as recusadas — e reusa o número da tentativa anterior", async () => {
+    const api = await apiLogada();
+    const { arq, consultas } = await comConsultasResolvidas(api, "notas#tudorecusado.xlsx");
+    const { lote } = await api.emitirLoteDeNotas(EMPRESA, arq, { consultas });
+    const numerosAntes = lote.linhas.map((l) => l.rpsNumero);
+
+    const r = await api.retentarLoteEmissao(EMPRESA, lote.id);
+
+    expect(r.retentativa.quantas).toBe(lote.totalLinhas);
+    expect(r.lote.emitidas).toBe(lote.totalLinhas);
+    expect(r.lote.recusadas).toBe(0);
+    // ⚠ Não existe inutilização na NFS-e: número pulado é buraco permanente.
+    expect(r.lote.linhas.map((l) => l.rpsNumero)).toEqual(numerosAntes);
+  });
+
+  test("⚠⚠ retentar um lote INTEIRAMENTE EMITIDO é recusa NOMEADA — a idempotência de sempre", async () => {
+    const api = await apiLogada();
+    const { arq, consultas } = await comConsultasResolvidas(api, "notas.xlsx");
+    const { lote } = await api.emitirLoteDeNotas(EMPRESA, arq, { consultas });
+    expect(lote.emitidas).toBe(lote.totalLinhas);
+
+    // ⚠ NOMEADA — logo o fallback do mock não a engole (`api/index.js`), e a tela não a lê como
+    // "o servidor caiu".
+    await expect(api.retentarLoteEmissao(EMPRESA, lote.id)).rejects.toMatchObject({
+      status: 422,
+      code: "nada_a_retentar",
+    });
+  });
+
+  test("⚠⚠ retentar NUNCA reemite a linha indeterminada, nem as já emitidas", async () => {
+    const api = await apiLogada();
+    const { arq, consultas } = await comConsultasResolvidas(api, "notas#transporte.xlsx");
+    const { lote } = await api.emitirLoteDeNotas(EMPRESA, arq, { consultas });
+    const alvo = lote.linhaIndeterminada;
+    const emitidasAntes = lote.linhas.filter((l) => l.desfecho === "emitida").map((l) => l.rpsNumero);
+
+    const r = await api.retentarLoteEmissao(EMPRESA, lote.id);
+
+    expect(r.lote.linhas.find((l) => l.numeroLinha === alvo).desfecho).toBe("indeterminada");
+    expect(r.retentativa.bloqueadas.some((b) => b.numeroLinha === alvo)).toBe(true);
+    // As que já eram nota continuam com o MESMO número — nenhuma foi reemitida.
+    expect(r.lote.linhas.filter((l) => emitidasAntes.includes(l.rpsNumero)).length).toBe(emitidasAntes.length);
   });
 
   test("`#recusa` deixa a linha recusada pela Receita e o lote SEGUE", async () => {

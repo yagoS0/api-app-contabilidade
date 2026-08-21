@@ -286,13 +286,19 @@ export function NotasPage({ empresa, competencia: competenciaDaCasca, aoTrocarCo
         <button type="button" className="btn btn-primary" onClick={aoEmitir}>
           Emitir nota
         </button>
-        {/* ⚠ "PREPARAR", E NÃO "EMITIR EM LOTE": a tela do outro lado baixa o modelo, lê a planilha
-            preenchida e CONFERE linha a linha — ela não emite nada, e a emissão em lote não existe
-            ainda. Um botão que prometesse emitir mandaria o cliente procurar um botão que não há.
+        {/* ⚠⚠ O RÓTULO ERA "Preparar lote por planilha", E O COMENTÁRIO AQUI EXPLICAVA QUE ELE
+            NÃO PODIA PROMETER EMITIR — *"a emissão em lote não existe ainda"*. Ela passou a
+            existir em 20/08/2026, e a frase ficou falsa; **"Emissão em Lote" é o rótulo pedido
+            pelo dono em 21/08/2026**, e hoje ele é verdadeiro: a tela do outro lado confere linha
+            a linha E emite.
+            ⚠ Só o TEXTO mudou. `aoPrepararLote`, a chave de navegação e o `data-*` continuam como
+            estavam: neste app o despacho é por cadeia de `if` com chave em string, e renomear a
+            chave quebra em silêncio.
             ⚠ Ele aparece SEMPRE, como o "Emitir nota" ao lado: baixar o modelo e conferir uma
-            planilha são LEITURA (a rota entra sem papel mínimo), então não há portão a espelhar. */}
+            planilha são LEITURA (a rota entra sem papel mínimo), então não há portão a espelhar —
+            quem recusa a EMISSÃO é o servidor, na rota que emite. */}
         <button type="button" className="btn" onClick={aoPrepararLote}>
-          Preparar lote por planilha
+          Emissão em Lote
         </button>
       </div>
 

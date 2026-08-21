@@ -120,7 +120,8 @@ export function AppShell({ user }) {
   }
 
   /**
-   * Abre a preparação do lote por planilha — o botão "Preparar lote por planilha" da lista.
+   * Abre o lote por planilha — o botão "Emissão em Lote" da lista (rótulo do dono, 21/08/2026;
+   * era "Preparar lote por planilha", de quando a tela ainda não emitia).
    *
    * ⚠ Os dois modos são EXCLUSIVOS: a emissão avulsa e o lote são duas conversas diferentes sobre
    * a mesma empresa, e sobrepô-las deixaria um formulário meio preenchido atrás de uma tabela.

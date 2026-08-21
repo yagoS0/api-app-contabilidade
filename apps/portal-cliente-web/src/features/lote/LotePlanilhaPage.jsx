@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { AlertaErro, Chip } from "../../components/ui";
 import { baixarBlob } from "../../lib/baixarBlob";
-import { brl, fmtDoc, texto } from "../../lib/format";
+import { brl, fmtDataHora, fmtDoc, texto } from "../../lib/format";
 import { carregarMunicipiosIbge } from "../../lib/municipios/municipioIbge";
 import { SeletorMunicipio } from "../emitir/SeletorMunicipio";
 // ⚠ ESPELHO, não segunda implementação: a autoridade sobre o código de serviço é
@@ -30,10 +30,12 @@ import {
   aindaCorrendo,
   avisoDaLinhaIndeterminada,
   confirmacaoDaEmissao,
+  conviteParaRetentar,
   conviteParaRetomar,
   resumoDaEmissao,
   somarValorDasProntas,
   textoDoDesfecho,
+  textoDoReconhecimento,
 } from "./lib/emissaoDoLote";
 
 /**
@@ -276,6 +278,29 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
     }
   }
 
+  /**
+   * ⚠⚠ RETENTAR — e o servidor emite **só as linhas cujo desfecho prova que não existe nota**.
+   *
+   * Esta tela não escolhe nada: ela pede a retentativa e o servidor decide, no `where` da reserva
+   * atômica. A ressalva (quantas ficam de fora, e por quê) aparece ANTES do clique — "tentar de
+   * novo" se lê como "refazer o lote", e refazer o lote reemitiria nota que já existe.
+   */
+  async function retentar() {
+    setErroEmissao(null);
+    setEmitindo(true);
+    try {
+      const r = await api.retentarLoteEmissao(companyId, lote.id);
+      setLote(r?.lote || null);
+      // ⚠ A partir daqui o relatório é o da tentativa NOVA — a frase de "já foi enviada antes"
+      // deixaria de descrever o que está na tela.
+      setReconhecido(false);
+    } catch (err) {
+      setErroEmissao(err);
+    } finally {
+      setEmitindo(false);
+    }
+  }
+
   async function salvarAjuste(numero, celulas) {
     const acumulado = { ...ajustes, [numero]: { ...(ajustes[numero] || {}), ...celulas } };
     setAjustes(acumulado);
@@ -290,7 +315,7 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
   return (
     <>
       <div className="page-header">
-        <h1>Preparar lote por planilha</h1>
+        <h1>Emissão em Lote</h1>
         <div className="page-actions">
           <button type="button" className="btn" onClick={aoVoltar}>
             Voltar
@@ -451,7 +476,13 @@ export function LotePlanilhaPage({ empresa, aoVoltar }) {
           {erroEmissao ? <AlertaErro erro={erroEmissao} /> : null}
 
           {lote ? (
-            <RelatorioDoLote lote={lote} reconhecido={reconhecido} ocupado={emitindo} aoRetomar={retomar} />
+            <RelatorioDoLote
+              lote={lote}
+              reconhecido={reconhecido}
+              ocupado={emitindo}
+              aoRetomar={retomar}
+              aoRetentar={retentar}
+            />
           ) : resumo.prontas > 0 && fase === "ocioso" ? (
             <BlocoDeEmissao
               prontas={resumo.prontas}
@@ -721,19 +752,21 @@ function BlocoDeEmissao({
  * existir uma nota fiscal no mundo e ninguém sabe qual. Enterrá-la no meio de uma tabela de 50
  * linhas seria esconder exatamente o que precisa de ação humana.
  */
-function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar }) {
+function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar, aoRetentar }) {
   const resumo = resumoDaEmissao(lote);
   const aviso = avisoDaLinhaIndeterminada(lote);
   const convite = conviteParaRetomar(lote);
+  const retentativa = conviteParaRetentar(lote);
 
   return (
     <div style={{ marginTop: "12px" }} data-emissao="relatorio" data-status-lote={lote.status}>
       {reconhecido ? (
         <p className="muted" style={{ fontSize: ".85rem" }} data-emissao="reconhecido">
-          {/* ⚠ Esta planilha JÁ tinha sido emitida. Dizer isso é o que impede a pessoa de tentar de
-              novo achando que falhou — e emitir tudo em duplicidade. */}
-          Esta planilha já havia sido emitida. Abaixo está o que aconteceu naquela vez — nenhuma nota
-          nova foi emitida agora.
+          {/* ⚠⚠ ESTA FRASE AFIRMAVA "já havia sido emitida" MESMO COM ZERO NOTAS EMITIDAS — e foi
+              ela que, em 21/08/2026, fez o dono achar que um erro consertado tinha voltado. Hoje
+              ela é DERIVADA das linhas (`textoDoReconhecimento`): quem diz o que aconteceu é o
+              desfecho, nunca um texto fixo. */}
+          {textoDoReconhecimento(lote)}
         </p>
       ) : null}
 
@@ -773,6 +806,42 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar }) {
         </div>
       </div>
 
+      {/* ⚠⚠ O CONVITE PARA RETENTAR — âmbar, porque é PENDÊNCIA (verde, nesta casa, é concluído e
+          nunca ação). Vem antes da tabela: é a decisão que a pessoa tem para tomar.
+          ⚠ Ele aparece SEMPRE que houver linha retentável, não só no lote reconhecido: um lote que
+          acabou de terminar com recusa tem a mesma saída, e escondê-la ali obrigaria a pessoa a
+          subir a planilha de novo só para reencontrar o botão. */}
+      {retentativa ? (
+        <div
+          className="card"
+          style={{ marginTop: "10px", padding: "14px", borderColor: "var(--warning-surface-border)" }}
+          data-emissao="retentar"
+        >
+          <h3 style={{ marginTop: 0 }}>
+            {retentativa.quantas === 1
+              ? "1 linha não gerou nota e pode ser tentada de novo"
+              : `${retentativa.quantas} linhas não geraram nota e podem ser tentadas de novo`}
+          </h3>
+          {/* ⚠⚠ A RESSALVA VEM ANTES DO BOTÃO, e é a frase que impede alguém de achar que retentar
+              reemite TUDO. Sem nada bloqueado ela não existe — não há mal-entendido a desfazer, e o
+              dono corta a legenda que só descreve uma ausência já visível. */}
+          {retentativa.ressalva ? (
+            <p style={{ margin: "4px 0" }} data-emissao="retentar-ressalva">
+              {retentativa.ressalva}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="btn"
+            onClick={aoRetentar}
+            disabled={ocupado}
+            data-emissao="retentar-botao"
+          >
+            {ocupado ? "Emitindo…" : retentativa.rotuloDoBotao}
+          </button>
+        </div>
+      ) : null}
+
       {convite ? (
         <div style={{ marginTop: "10px" }} data-emissao="retomar">
           {/* ⚠⚠ A RESSALVA VEM ANTES DO BOTÃO. "Retomar" se lê como "resolver tudo", e a pergunta
@@ -785,7 +854,15 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar }) {
         </div>
       ) : null}
 
-      <div className="table-wrap" style={{ marginTop: "10px" }}>
+      {/* ⚠ O CARIMBO DO LOTE, e ele diz A QUE SE REFERE. Ele não vale por linha — cada linha tem o
+          seu, na coluna "Quando" —, e chamá-lo de "quando isto aconteceu" seria carimbar todas com
+          a hora de uma só. */}
+      <p className="muted" style={{ fontSize: ".82rem", marginTop: "10px", marginBottom: "4px" }} data-emissao="quando-lote">
+        Lote enviado em {fmtDataHora(lote.criadoEm)}
+        {lote.paradoEm ? <> · parou em {fmtDataHora(lote.paradoEm)}</> : null}
+      </p>
+
+      <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
@@ -794,6 +871,10 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar }) {
               <th className="num">Valor</th>
               <th>Nº da nota</th>
               <th>Desfecho</th>
+              {/* ⚠⚠ SEM ISTO, "Recusada pela Receita" É AMBÍGUO assim que existe uma segunda
+                  tentativa — e em 21/08/2026 um resultado das 11:41 foi lido como sendo das 12:41.
+                  O carimbo já existia no registro (`tentadaEm`) e só não chegava à tela. */}
+              <th>Quando</th>
               <th>Observação</th>
             </tr>
           </thead>
@@ -809,6 +890,9 @@ function RelatorioDoLote({ lote, reconhecido, ocupado, aoRetomar }) {
                       inutilização na NFS-e, então número queimado é informação fiscal. */}
                   <td>{l.rpsNumero ? `${l.rpsSerie}/${l.rpsNumero}` : "—"}</td>
                   <td><Chip status={d.chip}>{d.rotulo}</Chip></td>
+                  {/* ⚠ Traço na linha não tentada — ninguém encostou nela, e pôr a data do LOTE
+                      aqui carimbaria de fato o que nunca aconteceu. */}
+                  <td>{fmtDataHora(l.tentadaEm)}</td>
                   <td>{l.mensagem || l.correcao || "—"}</td>
                 </tr>
               );

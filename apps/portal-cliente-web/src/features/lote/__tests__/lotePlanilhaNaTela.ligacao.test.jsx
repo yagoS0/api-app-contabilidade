@@ -67,6 +67,7 @@ beforeEach(() => {
   jest.spyOn(api, "emitirLoteDeNotas");
   jest.spyOn(api, "consultarLoteEmissao");
   jest.spyOn(api, "retomarLoteEmissao");
+  jest.spyOn(api, "retentarLoteEmissao");
   jest.spyOn(api, "emitirNfse").mockImplementation(() => {
     throw new Error("⚠⚠ NENHUM TESTE PODE EMITIR NFS-e");
   });
@@ -106,9 +107,9 @@ async function abrirLote() {
   // desta suíte quando a máquina está ocupada.
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
   await screen.findByText("Notas emitidas");
-  fireEvent.click(screen.getByRole("button", { name: /Preparar lote por planilha/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Emissão em Lote/i }));
   await act(async () => {});
-  await screen.findByText("Preparar lote por planilha", { selector: "h1" });
+  await screen.findByText("Emissão em Lote", { selector: "h1" });
 }
 
 async function subirPlanilha() {
@@ -123,9 +124,12 @@ async function subirPlanilha() {
 describe("a corrente: da aba Notas à tela de conferência", () => {
   test("⚠ O BOTÃO EXISTE NA ABA NOTAS e abre a tela do lote", async () => {
     await abrirLote();
-    expect(screen.getByText("Preparar lote por planilha", { selector: "h1" })).toBeInTheDocument();
-    // ⚠ "Preparar", nunca "Emitir em lote": a tela do outro lado não emite.
-    expect(screen.queryByRole("button", { name: /^Emitir em lote/i })).toBeNull();
+    expect(screen.getByText("Emissão em Lote", { selector: "h1" })).toBeInTheDocument();
+    // ⚠⚠ O RÓTULO É "Emissão em Lote" desde 21/08/2026 (pedido do dono). O antigo era "Preparar
+    // lote por planilha", e o comentário aqui dizia *"a tela do outro lado não emite"* — falso
+    // desde 20/08/2026, quando ela passou a emitir. Trocado o texto, a CHAVE de navegação e o
+    // `data-*` continuam os mesmos: o despacho deste app é por cadeia de `if` com chave em string.
+    expect(screen.queryByText(/Preparar lote por planilha/i)).toBeNull();
   });
 
   test("⚠⚠ o modelo vem por `fetch` autenticado e é entregue como Blob — nunca por `<a href>`", async () => {
@@ -390,5 +394,130 @@ describe("⚠⚠ o botão de emitir — existe, e só depois de confirmar", () =
     // ⚠ Nenhuma chave que signifique "estas são as linhas a emitir": quem decide é o servidor,
     // reclassificando a planilha inteira.
     expect(Object.keys(opcoes || {}).sort()).toEqual(["ajustes", "consultas"]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// ⚠⚠ O LOTE RECONHECIDO — A FRASE FALSA, E A SAÍDA QUE NÃO EXISTIA
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+//
+// > Caso real, 21/08/2026: lote de 3 notas RECUSADO pela Receita por erro de esquema (`E1235`). O
+// > erro do XML foi consertado e está em produção. O dono subiu a mesma planilha e leu:
+// > *"Esta planilha já havia sido emitida."* — com **Emitidas 0 · Recusadas 3**. A frase era falsa,
+// > e não havia botão nenhum para reemitir.
+//
+// ⚠ O gatilho é a SENTINELA NO NOME DO ARQUIVO (`#tudorecusado#jaemitido`), como todo desfecho do
+// mock: sorteio faria "a tela quebrou" e "deu azar" virarem a mesma coisa.
+
+async function subirPlanilhaEEmitir(nomeDoArquivo) {
+  const campo = screen.getByLabelText(/Planilha/i);
+  fireEvent.change(campo, { target: { files: [planilha(nomeDoArquivo)] } });
+  await waitFor(() => expect(api.lerPlanilhaDoLote).toHaveBeenCalled());
+  await screen.findByText(/Confira, linha a linha/i);
+  await waitFor(() => expect(screen.getAllByText(/Rio de Janeiro \/ RJ/).length).toBeGreaterThan(0));
+
+  fireEvent.click(await screen.findByRole("button", { name: /emitir \d+ nota/i }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: /confirmar e emitir/i }));
+  });
+  await screen.findByText(/Emitidas/);
+}
+
+describe("⚠⚠ o lote reconhecido: a frase diz o que ACONTECEU, e a saída existe", () => {
+  test("⚠⚠ ZERO EMITIDAS: a tela NÃO diz que a planilha já foi emitida", async () => {
+    await abrirLote();
+    await subirPlanilhaEEmitir("notas#tudorecusado#jaemitido.xlsx");
+
+    const frase = document.querySelector('[data-emissao="reconhecido"]');
+    expect(frase).not.toBeNull();
+    // ⚠⚠ A REGRESSÃO EM PESSOA. Esta frase era cravada e afirmava o oposto do relatório logo abaixo.
+    expect(frase.textContent).not.toMatch(/já havia sido emitida/i);
+    expect(frase.textContent).toMatch(/NENHUMA nota foi emitida/i);
+    expect(document.querySelector('[data-emissao-conta="emitidas"]').textContent).toBe("0");
+  });
+
+  test("⚠⚠ e a retentativa é OFERECIDA, com quantas linhas serão tentadas", async () => {
+    await abrirLote();
+    await subirPlanilhaEEmitir("notas#tudorecusado#jaemitido.xlsx");
+
+    const bloco = document.querySelector('[data-emissao="retentar"]');
+    expect(bloco).not.toBeNull();
+    const botao = within(bloco).getByRole("button");
+    expect(botao.textContent).toMatch(/Tentar emitir \d+ nota/i);
+    // ⚠ Nada bloqueado ⇒ nenhuma ressalva: não há mal-entendido a desfazer, e o dono corta a
+    // legenda que só descreve uma ausência já visível.
+    expect(document.querySelector('[data-emissao="retentar-ressalva"]')).toBeNull();
+  });
+
+  test("⚠⚠ clicar chama a RETENTATIVA — e não uma segunda emissão da planilha", async () => {
+    await abrirLote();
+    await subirPlanilhaEEmitir("notas#tudorecusado#jaemitido.xlsx");
+    api.emitirLoteDeNotas.mockClear();
+
+    await act(async () => {
+      fireEvent.click(document.querySelector('[data-emissao="retentar-botao"]'));
+    });
+
+    expect(api.retentarLoteEmissao).toHaveBeenCalledTimes(1);
+    // ⚠ Reenviar o ARQUIVO cairia na impressão digital e não emitiria nada — a saída é a rota da
+    // retentativa, que trabalha sobre o payload congelado de cada linha.
+    expect(api.emitirLoteDeNotas).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(Number(document.querySelector('[data-emissao-conta="emitidas"]').textContent)).toBeGreaterThan(0)
+    );
+    // ⚠ E a frase do reconhecido sai: o relatório na tela passou a ser o da tentativa NOVA.
+    expect(document.querySelector('[data-emissao="reconhecido"]')).toBeNull();
+  });
+
+  test("⚠⚠ LOTE INTEIRAMENTE EMITIDO NÃO OFERECE RETENTATIVA — é a idempotência de sempre", async () => {
+    await abrirLote();
+    await subirPlanilhaEEmitir("notas#jaemitido.xlsx");
+
+    expect(document.querySelector('[data-emissao="reconhecido"]').textContent).toMatch(/foram emitidas/i);
+    // ⚠⚠ Nenhum botão de retentar. Oferecê-lo aqui seria oferecer nota fiscal duplicada.
+    expect(document.querySelector('[data-emissao="retentar"]')).toBeNull();
+  });
+
+  test("⚠⚠ O CASO PARCIAL: com nota já emitida no lote, a ressalva aparece ANTES do botão", async () => {
+    await abrirLote();
+    // `#recusa` recusa a PRIMEIRA linha e emite as demais.
+    await subirPlanilhaEEmitir("notas#recusa#jaemitido.xlsx");
+
+    const bloco = document.querySelector('[data-emissao="retentar"]');
+    expect(bloco).not.toBeNull();
+    const ressalva = document.querySelector('[data-emissao="retentar-ressalva"]');
+    expect(ressalva).not.toBeNull();
+    expect(ressalva.textContent).toMatch(/já virou nota fiscal|já viraram nota fiscal/i);
+
+    // ⚠ A ORDEM IMPORTA: "tentar de novo" se lê como "refazer o lote", e a ressalva é o que desfaz
+    // isso. Depois do botão, ela é lida depois do clique.
+    expect(ressalva.compareDocumentPosition(document.querySelector('[data-emissao="retentar-botao"]')))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  test("⚠⚠ o relatório diz QUANDO — por linha, e o carimbo do lote diz a que se refere", async () => {
+    await abrirLote();
+    await subirPlanilhaEEmitir("notas#tudorecusado#jaemitido.xlsx");
+
+    // O carimbo do LOTE, nomeado como tal.
+    const doLote = document.querySelector('[data-emissao="quando-lote"]');
+    expect(doLote.textContent).toMatch(/Lote enviado em \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/);
+
+    // E o de cada linha, na coluna própria.
+    expect(screen.getByRole("columnheader", { name: "Quando" })).toBeInTheDocument();
+    const linha = document.querySelector('tr[data-desfecho="recusada_receita"]');
+    expect(linha.textContent).toMatch(/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/);
+  });
+
+  test("⚠⚠ a linha NÃO TENTADA sai com TRAÇO, nunca com a hora do lote", async () => {
+    await abrirLote();
+    await subirPlanilhaEEmitir("notas#transporte#jaemitido.xlsx");
+
+    const naoTentada = document.querySelector('tr[data-desfecho="nao_tentada"]');
+    expect(naoTentada).not.toBeNull();
+    // ⚠ Ninguém encostou nesta linha. Carimbá-la com a data do LOTE afirmaria uma tentativa que
+    // nunca houve — é a mesma disciplina do `brl(null)` deste app: ausência é traço.
+    expect(naoTentada.textContent).not.toMatch(/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/);
+    expect(naoTentada.textContent).toContain("—");
   });
 });

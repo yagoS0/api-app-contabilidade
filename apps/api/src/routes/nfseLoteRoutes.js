@@ -9,6 +9,7 @@
 //   `POST /emissao`                   ⚠⚠ EMITE NOTA FISCAL EM SÉRIE.
 //   `GET  /emissao/:loteId`           o relatório (polling).
 //   `POST /emissao/:loteId/retomar`   ⚠⚠ EMITE — as linhas DEPOIS da indeterminada.
+//   `POST /emissao/:loteId/retentar`  ⚠⚠ EMITE — as linhas cujo desfecho PROVA que não existe nota.
 //
 // ⚠⚠ AS TRÊS ÚLTIMAS NASCEM DESLIGADAS por `INTEGRACAO_NFSE_LOTE`, e a recusa é do SERVIDOR (503
 // nomeado), não da tela. Uma tela que emite em série não pode chegar à produção ligada por acidente
@@ -66,7 +67,9 @@ import {
   criarOuReconhecerLote,
   processarLoteEmissao,
   linhasEmitiveis,
+  planoDeRetentativa,
   recontar,
+  MODO,
 } from "../application/nfse/lote/emissaoLote.js";
 
 /** 10 MB — o mesmo teto dos outros uploads do portal do cliente (`routes/client/index.js`). */
@@ -307,9 +310,20 @@ export function createNfseLoteRouter({ log = null, resolverCompanyId = null } = 
 
     // ⚠⚠ A SEGUNDA SUBIDA DA MESMA PLANILHA **NÃO REEMITE** — devolve o lote que já existe, com o
     // relatório dele. Não é 409: o que a pessoa precisa ver é o que aconteceu da primeira vez.
+    //
+    // ⚠⚠ **E ISTO NÃO QUER DIZER "JÁ FOI EMITIDA".** Era o que a tela afirmava até 21/08/2026, e a
+    // frase era FALSA no caso que a produziu: lote com **0 emitidas e 3 recusadas** — nenhuma nota
+    // no mundo, e a tela dizendo que já havia emitido. Quem responde o que de fato aconteceu é o
+    // relatório (que vai junto) e, para "dá para tentar de novo?", `planoDeRetentativa`, POR LINHA.
+    // Reemitir tem porta própria (`/retentar`); esta continua sendo um no-op, de propósito.
     if (reconhecido) {
       const atual = await recontar({ prisma, loteId: lote.id });
-      return res.status(200).json({ reconhecido: true, lote: paraTela(atual) });
+      return res.status(200).json({
+        reconhecido: true,
+        lote: paraTela(atual),
+        /** ⚠ O que uma retentativa faria — para a tela oferecer sem uma segunda ida ao servidor. */
+        retentativa: planoDeRetentativa(atual),
+      });
     }
 
     // ⚠ DESTACADO, e o cliente acompanha por polling — o desenho de `NotasCapturaJob`. Um lote de
@@ -372,6 +386,78 @@ export function createNfseLoteRouter({ log = null, resolverCompanyId = null } = 
       });
 
     return res.status(202).json({ lote: inicial });
+  });
+
+  /**
+   * ⚠⚠ RETENTAR — emite de novo **só as linhas cujo desfecho PROVA que não existe nota**.
+   *
+   * > Caso real, 21/08/2026: lote de 3 notas recusado pela Receita por erro de esquema (`E1235`).
+   * > O erro do XML foi consertado e está em produção; o dono subiu a mesma planilha e a tela
+   * > respondeu que ela "já havia sido emitida". **Zero notas emitidas, e nenhuma saída.**
+   *
+   * ⚠⚠ **A REGRA NÃO MORA AQUI — E ISSO É O DESENHO.** Quem decide o que é retentável é
+   * `bloqueioDaRetentativa`/`planoDeRetentativa` (`emissaoLote.js`), e é a MESMA regra que o laço
+   * aplica no `where` da reserva atômica. Esta rota **não** filtra linha, **não** monta lista de ids
+   * e **não** aceita do corpo o que emitir: ela consulta o plano, recusa se ele estiver vazio, e
+   * chama o laço em `MODO.RETENTATIVA`. Uma segunda peneira aqui seria uma segunda regra, e a que
+   * discordasse seria a que emite.
+   *
+   * ⚠⚠ **O CASO PARCIAL É O QUE ESTA ROTA PRECISA ACERTAR:** lote com 2 emitidas e 1 recusada
+   * reemite **uma** nota. As `EMITIDA` voltam em `bloqueadas`, nomeadas, e o laço nunca as alcança
+   * — nem por esta rota, nem por um `curl` que a chame direto, porque o `where` da reserva não as
+   * contém.
+   *
+   * ⚠ **NÃO ACEITA A PLANILHA DE NOVO**, pelo mesmo motivo da retomada: o payload de cada linha
+   * está CONGELADO em `dados`, e os `ajustes` não persistem. Reler o arquivo emitiria conteúdo
+   * diferente do que foi conferido.
+   */
+  router.post("/emissao/:loteId/retentar", async (req, res) => {
+    if (recusarSeDesligada(res)) return;
+    const idDoPath = String(req.params.companyId || "");
+    const companyId = resolverCompanyId ? await resolverCompanyId(idDoPath) : idDoPath;
+    if (!companyId) return res.status(404).json({ error: "company_not_found" });
+
+    // ⚠ O PORTÃO, ANTES DE QUALQUER COISA. Retentar é emitir.
+    const portao = await ensureEmissaoNfseAutorizada(req, res, companyId, { log });
+    if (!portao.ok) return;
+
+    const lote = await prisma.loteEmissaoNfse.findUnique({ where: { id: String(req.params.loteId) } });
+    if (!lote || lote.companyId !== companyId) return res.status(404).json({ error: "lote_nao_encontrado" });
+
+    const atual = await recontar({ prisma, loteId: lote.id });
+    const plano = planoDeRetentativa(atual);
+
+    // ⚠⚠ NADA RETENTÁVEL É **422 NOMEADO**, nunca um 202 que não emite nada. É por aqui que passa a
+    // idempotência de sempre: o lote inteiramente EMITIDO cai exatamente neste ramo, e a resposta
+    // diz por que — linha por linha, com o motivo de cada bloqueio.
+    if (!plano.quantas) {
+      return res.status(422).json({
+        error: "nada_a_retentar",
+        codigo: "NADA_A_RETENTAR",
+        message:
+          "Nenhuma linha deste lote pode ser emitida de novo. Só voltam a ser tentadas as linhas "
+          + "cujo desfecho prova que nenhuma nota foi gerada — recusadas e não tentadas.",
+        retentativa: plano,
+        lote: paraTela(atual),
+      });
+    }
+
+    // ⚠ A fotografia é tirada ANTES de disparar o laço — `recontar` escreve no lote, e chamá-lo
+    // depois disputaria a linha com o próprio processamento. Mesma razão do `POST /emissao`.
+    const inicial = paraTela(atual);
+
+    processarLoteEmissao({
+      prisma,
+      loteId: lote.id,
+      companyId,
+      emitir: NfseService.issue,
+      log,
+      modo: MODO.RETENTATIVA,
+    }).catch((err) => {
+      log?.error?.({ err: err?.message, loteId: lote.id }, "NFS-e lote: falha não tratada na retentativa");
+    });
+
+    return res.status(202).json({ lote: inicial, retentativa: plano });
   });
 
   /**
@@ -438,6 +524,7 @@ function paraTela(lote) {
     linhaIndeterminada: lote.linhaIndeterminada,
     paradoEm: lote.paradoEm,
     paradoMotivo: lote.paradoMotivo,
+    /** ⚠ Quando o lote foi criado. É o carimbo do LOTE — não vale por linha, e a tela diz isso. */
     criadoEm: lote.criadoEm,
     linhas: (lote.linhas || []).map((l) => ({
       numeroLinha: l.numeroLinha,
@@ -445,6 +532,17 @@ function paraTela(lote) {
       tomadorNome: l.tomadorNome,
       valorServicos: l.valorServicos,
       desfecho: l.desfecho,
+      /**
+       * ⚠⚠ **QUANDO ISTO ACONTECEU.** A coluna sempre existiu (`tentadaEm`, gravada na reserva e de
+       * novo no desfecho) e **não viajava até a tela**: o relatório dizia "Recusada pela Receita"
+       * sem dizer quando, e em 21/08/2026 o dono leu um resultado das 11:41 achando que era das
+       * 12:41. Desfecho sem carimbo é ambíguo assim que existe uma segunda tentativa — e agora
+       * existe.
+       *
+       * ⚠ NULO na linha `nao_tentada`, e isso é a verdade: ninguém encostou nela. A tela mostra
+       * traço, nunca a data do lote no lugar — seria carimbar de fato o que nunca aconteceu.
+       */
+      tentadaEm: l.tentadaEm,
       /** ⚠ O número RESERVADO — informação fiscal. Nulo na recusa NOSSA, que não queima número. */
       rpsSerie: l.rpsSerie,
       rpsNumero: l.rpsNumero,

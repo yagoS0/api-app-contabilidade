@@ -1660,6 +1660,7 @@ export function createMockApi() {
     //   `#desligado`     → 503 `emissao_lote_desligada` (a flag OFF, que é o estado de nascença)
     //   `#transporte`    → o lote PARA na 2ª linha, com a indeterminada nomeada
     //   `#recusa`        → uma linha recusada pela Receita (E0014) e o lote SEGUE
+    //   `#tudorecusado`  → ⚠⚠ TODAS recusadas (E1235) e ZERO emitidas — o caso real de 21/08/2026
     //   `#jaemitido`     → 200 `reconhecido: true` — a mesma planilha subida duas vezes
     //   qualquer outro   → todas emitem
     //
@@ -1698,7 +1699,12 @@ export function createMockApi() {
       const lote = montarLoteDoMock(loteId, prontas, nome);
       LOTES_EMISSAO_MOCK[loteId] = lote;
 
-      if (nome.includes("#jaemitido")) return { reconhecido: true, lote };
+      // ⚠⚠ RECONHECIDO NÃO É "JÁ FOI EMITIDA" — e o mock precisa provar isso, senão o ramo em que
+      // a tela oferece a RETENTATIVA (lote reconhecido com 0 emitidas) só existiria em produção.
+      // O plano vai junto, como na rota real.
+      if (nome.includes("#jaemitido")) {
+        return { reconhecido: true, lote, retentativa: planoDeRetentativaDoMock(lote) };
+      }
       return { reconhecido: false, lote };
     },
 
@@ -1731,6 +1737,54 @@ export function createMockApi() {
       recontarLoteDoMock(lote);
       lote.status = lote.naoTentadas > 0 ? "parado_indeterminado" : "concluido";
       return { lote };
+    },
+
+    /**
+     * ⚠⚠ A RETENTATIVA — e o mock aplica a MESMA regra do servidor, por LINHA.
+     *
+     * Retentável é só o desfecho que PROVA que não existe nota (`nao_tentada`,
+     * `recusada_receita`, `recusada_nossa`). ⚠⚠ `emitida` e `indeterminada` NUNCA — um mock que
+     * reemitisse tudo treinaria a tela contra um comportamento que o servidor recusa, justamente
+     * no ponto em que o erro é uma NOTA FISCAL DUPLICADA.
+     */
+    async retentarLoteEmissao(companyId, loteId) {
+      await dormir();
+      exigirAcessoEmpresa(companyId);
+      const lote = LOTES_EMISSAO_MOCK[loteId];
+      if (!lote) throw new ApiError(404, "lote_nao_encontrado", "Este lote não foi encontrado.");
+
+      const plano = planoDeRetentativaDoMock(lote);
+      if (!plano.quantas) {
+        throw new ApiError(
+          422,
+          "nada_a_retentar",
+          "Nenhuma linha deste lote pode ser emitida de novo. Só voltam a ser tentadas as linhas "
+            + "cujo desfecho prova que nenhuma nota foi gerada — recusadas e não tentadas.",
+          { retentativa: plano, lote }
+        );
+      }
+
+      const aTentar = new Set(plano.retentaveis.map((l) => l.numeroLinha));
+      lote.linhas = lote.linhas.map((l) =>
+        aTentar.has(l.numeroLinha)
+          ? {
+              ...l,
+              desfecho: "emitida",
+              camada: null,
+              codigo: null,
+              mensagem: null,
+              correcao: null,
+              // ⚠ O número da tentativa anterior é REUSADO — não existe inutilização na NFS-e.
+              rpsSerie: l.rpsSerie || "00001",
+              rpsNumero: l.rpsNumero || String(l.numeroLinha),
+              serviceInvoiceId: l.serviceInvoiceId || `si-mock-${l.numeroLinha}`,
+              tentadaEm: new Date().toISOString(),
+            }
+          : l
+      );
+      recontarLoteDoMock(lote);
+      lote.status = lote.naoTentadas > 0 ? "parado_indeterminado" : "concluido";
+      return { lote, retentativa: plano };
     },
 
     // --- Emissão de NFS-e ---------------------------------------------------------------------
@@ -2209,6 +2263,10 @@ function montarLoteDoMock(id, prontas, nomeDoArquivo) {
   // emitida antes.
   const indiceDaParada = Math.max(0, prontas.length - 2);
   const paraRecusa = nomeDoArquivo.includes("#recusa");
+  // ⚠⚠ O CASO REAL DE 21/08/2026: **todas** recusadas por erro de esquema (`E1235`), zero emitidas.
+  // É o único estado em que a retentativa alcança o lote INTEIRO, e é o que a tela precisava saber
+  // dizer — ela afirmava "já havia sido emitida" exatamente aqui.
+  const tudoRecusado = nomeDoArquivo.includes("#tudorecusado");
   let parou = false;
   let linhaIndeterminada = null;
 
@@ -2228,6 +2286,8 @@ function montarLoteDoMock(id, prontas, nomeDoArquivo) {
       codigo: null,
       mensagem: null,
       correcao: null,
+      // ⚠ O carimbo POR LINHA. Nulo em `nao_tentada` — ninguém encostou nela.
+      tentadaEm: null,
     };
     if (parou) return { ...base, desfecho: "nao_tentada" };
 
@@ -2241,11 +2301,25 @@ function montarLoteDoMock(id, prontas, nomeDoArquivo) {
         codigo: "ETIMEDOUT",
         rpsSerie: "00001",
         rpsNumero: String(l.numero),
+        tentadaEm: new Date().toISOString(),
         mensagem: "Falha de comunicação com o sistema nacional.",
         correcao:
           "Não se sabe se a DPS chegou a ser processada. NÃO reemita com número novo: como a NFS-e "
           + "não tem inutilização, um número pulado é buraco permanente. Consulte o Id da DPS no "
           + "sistema nacional antes de decidir.",
+      };
+    }
+    if (tudoRecusado) {
+      return {
+        ...base,
+        desfecho: "recusada_receita",
+        camada: "RECEITA",
+        codigo: "E1235",
+        rpsSerie: "00001",
+        rpsNumero: String(l.numero),
+        serviceInvoiceId: `si-mock-${l.numero}`,
+        tentadaEm: new Date().toISOString(),
+        mensagem: "Erro de esquema no XML enviado.",
       };
     }
     if (paraRecusa && i === 0) {
@@ -2256,6 +2330,7 @@ function montarLoteDoMock(id, prontas, nomeDoArquivo) {
         codigo: "E0014",
         rpsSerie: "00001",
         rpsNumero: String(l.numero),
+        tentadaEm: new Date().toISOString(),
         mensagem:
           "Conjunto de Série, Número, Código do Município Emissor e CNPJ/CPF informado nesta DPS já existe.",
       };
@@ -2266,6 +2341,7 @@ function montarLoteDoMock(id, prontas, nomeDoArquivo) {
       rpsSerie: "00001",
       rpsNumero: String(l.numero),
       serviceInvoiceId: `si-mock-${l.numero}`,
+      tentadaEm: new Date().toISOString(),
     };
   });
 
@@ -2284,6 +2360,34 @@ function montarLoteDoMock(id, prontas, nomeDoArquivo) {
   };
   recontarLoteDoMock(lote);
   return lote;
+}
+
+/**
+ * ⚠⚠ A REGRA DE RETENTABILIDADE, no mock — escrita à mão de propósito.
+ *
+ * O mock não importa a lib da tela: se ele reusasse o mesmo módulo, o teste que confere a tela
+ * contra o mock estaria conferindo o módulo contra ele mesmo, e um erro na regra passaria verde dos
+ * dois lados. A autoridade continua sendo `apps/api/.../emissaoLote.js`.
+ */
+function planoDeRetentativaDoMock(lote) {
+  const RETENTAVEIS = ["nao_tentada", "recusada_receita", "recusada_nossa"];
+  const retentaveis = [];
+  const bloqueadas = [];
+  for (const l of lote.linhas || []) {
+    const bloqueada =
+      !RETENTAVEIS.includes(l.desfecho)
+      || (Number.isInteger(lote.linhaIndeterminada) && l.numeroLinha === lote.linhaIndeterminada);
+    if (bloqueada) bloqueadas.push({ numeroLinha: l.numeroLinha, desfecho: l.desfecho });
+    else retentaveis.push({ numeroLinha: l.numeroLinha, desfecho: l.desfecho });
+  }
+  const conta = (d) => bloqueadas.filter((b) => b.desfecho === d).length;
+  return {
+    quantas: retentaveis.length,
+    retentaveis,
+    bloqueadas,
+    emitidas: conta("emitida"),
+    indeterminadas: conta("indeterminada"),
+  };
 }
 
 /** Os totais saem das LINHAS, nunca de um contador incrementado — igual ao servidor. */

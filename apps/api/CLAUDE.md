@@ -549,10 +549,11 @@ os dois atos da mesma tela, e duas regras divergiriam na primeira correção"*.
 
 ⚠⚠ **ESTE BLOCO DIZIA QUE A EMISSÃO EM LOTE NÃO EXISTIA. ELA FOI CONSTRUÍDA EM 20/08/2026.**
 `GET /modelo` devolve um .xlsx e `POST /leitura` classifica sem gravar nada — as duas continuam
-inertes. O que mudou é que existem mais três portas, e elas EMITEM NOTA FISCAL EM SÉRIE:
-`POST /emissao`, `GET /emissao/:loteId` e `POST /emissao/:loteId/retomar`.
+inertes. O que mudou é que existem mais **quatro** portas, e elas EMITEM NOTA FISCAL EM SÉRIE:
+`POST /emissao`, `GET /emissao/:loteId`, `POST /emissao/:loteId/retomar` e
+**`POST /emissao/:loteId/retentar`** (21/08/2026 — ver "A RETENTATIVA" abaixo).
 
-⚠⚠ **AS TRÊS NASCEM DESLIGADAS (`INTEGRACAO_NFSE_LOTE`), COM O SERVIDOR RECUSANDO (503 nomeado)** —
+⚠⚠ **AS QUATRO NASCEM DESLIGADAS (`INTEGRACAO_NFSE_LOTE`), COM O SERVIDOR RECUSANDO (503 nomeado)** —
 não é a tela que esconde o botão; um `curl` passaria por cima dela. Ligar é ato do dono,
 acompanhando o primeiro lote real. Ver a seção "A EMISSÃO EM LOTE" logo abaixo.
 
@@ -729,10 +730,60 @@ APLICADA** (⚠ o `schema.prisma` foi editado junto: models NOVOS que nenhuma co
 ⚠ **`emissaoLote.js` não importa o `NfseService`** — quem emite é INJETADO. É o que faz o dublê ser
 o caminho natural nos testes, não o cuidadoso. Travado por varredura de fonte.
 
-Testes: `lote/__tests__/emissaoLote.test.js` (15, com um Prisma em memória que guarda estado de
+Testes: `lote/__tests__/emissaoLote.test.js` (31, com um Prisma em memória que guarda estado de
 verdade — inclusive o 502 que para o lote, a retomada que pula a indeterminada, a janela `enviando`
-e a concorrência) + `routes/__tests__/nfseLoteEmissaoRota.test.js` (13 — a flag, o portão antes da
+e a concorrência) + `routes/__tests__/nfseLoteEmissaoRota.test.js` (22 — a flag, o portão antes da
 primeira linha, a reconferência no servidor e a idempotência).
+
+#### ⚠⚠ A RETENTATIVA — reemitir SÓ o que provadamente não virou nota (21/08/2026)
+
+> Caso real: lote de 3 notas (ALTAN, VAGALO, ARAUJO E SILVA 2) **recusado pela Receita** por erro de
+> esquema (`E1235`). O erro do XML foi consertado e está em produção (`961e9c07`). O dono subiu a
+> mesma planilha e a tela respondeu *"Esta planilha já havia sido emitida"* — com **Emitidas 0 ·
+> Recusadas 3**. Zero notas no mundo, e nenhuma saída.
+
+⚠⚠ **A IDEMPOTÊNCIA NÃO FOI REMOVIDA — ELA DEIXOU DE SER SOBRE O LOTE E PASSOU A SER SOBRE A
+LINHA.** Subir a mesma planilha continua RECONHECENDO e continua **não reemitindo nada**; o que
+existe agora é uma porta própria que reemite por linha, com o portão e a regra na frente.
+
+**A regra, em `application/nfse/lote/emissaoLote.js` — lista FECHADA e de INCLUSÃO:**
+
+| desfecho | retenta? | por quê |
+|---|---|---|
+| `RECUSADA_RECEITA` | **sim** | a Receita analisou e recusou: a recusa é anterior ao documento, não existe nota, e o número volta a ser reutilizável |
+| `RECUSADA_NOSSA` | **sim** | recusa de pré-voo — nada saiu da máquina, nenhum número foi reservado |
+| `NAO_TENTADA` | **sim** | ninguém encostou nela |
+| `EMITIDA` | ⚠⚠ **NUNCA** | a nota EXISTE. Reemitir é duplicar documento fiscal |
+| `INDETERMINADA` | ⚠⚠ **NUNCA** | a nota PODE existir e ninguém sabe qual |
+| qualquer outro | **não** | a lista é de INCLUSÃO: estado novo entra bloqueado por construção |
+
+- ⚠ **É a MESMA prova em que `NfseService.issue` já se apoiava** para aceitar `retryInvoiceId` (*"só
+  é aceito quando a falha daquela linha LIBEROU o número — camadas `NOSSA` e `RECEITA`"*). Não é
+  regra nova; é a que já existia, alcançando o lote.
+- ⚠⚠ **O CASO PARCIAL É O QUE SEPARA UM CONSERTO DE UM DESASTRE:** lote com 2 emitidas e 1 recusada
+  reemite **uma** nota. A decisão é **por LINHA** — nada neste caminho lê o status do LOTE.
+- ⚠⚠ **A TRAVA É O `where` DA RESERVA ATÔMICA**, que passou de `desfecho: NAO_TENTADA` para
+  `desfecho: { in: <conjunto do modo> }`. `emitida` e `indeterminada` não estão em conjunto nenhum —
+  nem por default, nem por modo desconhecido (`desfechosDoModo` cai no conjunto MAIS ESTREITO). Um
+  `curl` direto na rota bate nessa cláusula, não na tela.
+- ⚠ **`selecionarParaRetomada` ganhou `modo`**: na RETOMADA continua `numeroLinha > linhaIndeterminada`
+  (a regra 3, intacta); na RETENTATIVA é `not: linhaIndeterminada` — ela não é uma continuação, volta
+  em linhas já tentadas, inclusive ANTES do ponto de parada. Nos dois, a linha indeterminada também
+  está fora pelo DESFECHO.
+- ⚠⚠ **A RETENTATIVA REUSA O NÚMERO** (`retryInvoiceId: linha.serviceInvoiceId`): não existe
+  inutilização na NFS-e, e reservar número novo a cada tentativa abriria buraco permanente. Numa
+  linha nunca tentada isso é `null` e o comportamento é o de antes. Quem recusa o reuso continua
+  sendo `NfseService.issue` (falha de TRANSPORTE não libera número).
+- **A rota:** `POST /emissao/:loteId/retentar` — flag, portão, escopo por empresa (404), e **422
+  `nada_a_retentar`** quando o plano volta vazio (é por aqui que passa o lote inteiramente emitido).
+  Ela **não** filtra linha e **não** aceita a planilha de novo: o payload de cada linha está
+  congelado em `dados`.
+- ⚠ **O `POST /emissao` reconhecido devolve `retentativa`** (o plano), para a tela oferecer sem uma
+  segunda ida ao servidor.
+- ⚠⚠ **`tentadaEm` passou a viajar em `paraTela`.** A coluna sempre existiu e não chegava à tela: o
+  relatório dizia "Recusada pela Receita" **sem dizer quando**, e em 21/08/2026 um resultado das
+  11:41 foi lido como sendo das 12:41. Nulo na linha `nao_tentada` — a tela mostra traço, nunca a
+  data do lote no lugar.
 
 ### ⚠⚠ A LISTA DO IBGE PASSOU A SER LIDA PELO `apps/api` — e a regra 6 fechou
 
