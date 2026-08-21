@@ -2,6 +2,7 @@ import { api } from "../../api";
 import { AlertaErro, CardNumero, Carregando, Vazio } from "../../components/ui";
 import { useCarregamento } from "../../lib/hooks";
 import { chipDaGuia } from "../guias/GuiasPage";
+import { BlocoDeDemonstracao } from "./BlocoDeDemonstracao";
 import {
   TRACO,
   brl,
@@ -17,12 +18,26 @@ import {
 const OPCOES_COMPETENCIA = competenciasRecentes(12);
 
 /**
- * Resumo do mês, montado só com o que as rotas já devolvem:
- *   faturamento e nº de notas  -> summary de GET /invoices
- *   alíquota do mês            -> GET /aliquotas?from=&to= (uma competência)
- *   a vencer                   -> GET /fluxo (guias liberadas ainda em aberto)
+ * O PAINEL — a tela padrão do portal do cliente (21/08/2026).
+ *
+ * Duas metades, e a fronteira entre elas é a coisa mais importante desta tela:
+ *
+ *  1. **O bloco de demonstração** (fluxo de caixa ⇄ DRE) — números FICTÍCIOS, com selo próprio.
+ *  2. **O resumo do mês e os próximos vencimentos** — dado REAL, montado só com o que as rotas já
+ *     devolvem: faturamento e nº de notas (`summary` de `GET /invoices`), alíquota do mês
+ *     (`GET /aliquotas`) e o que está a vencer (`GET /fluxo`, as guias liberadas em aberto).
+ *
+ * ⚠⚠ NENHUM NÚMERO ATRAVESSA A FRONTEira. A saída fictícia do bloco de cima **não é somada nem
+ * comparada** com o "A vencer" real — se os dois discordassem, a tela discordaria de si mesma no
+ * número que o cliente usa para se planejar. E o selo fica NO BLOCO, nunca na página: na página,
+ * ele faria o cliente ler os números verdadeiros como fictícios também, que é o defeito inverso e
+ * igualmente caro.
+ *
+ * ⚠ UM SÓ CONTROLE DE COMPETÊNCIA nesta tela. Duas metades com recortes de tempo diferentes seriam
+ * o mesmo defeito que a casca já consertou (três seletores para uma pergunta) — e há teste que
+ * quebra por ambiguidade se aparecer um segundo rótulo "Competência".
  */
-export function HomePage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar }) {
+export function PainelPage({ empresa, competencia: competenciaDaCasca, aoTrocarCompetencia, aoNavegar }) {
   // ⚠⚠ A COMPETÊNCIA VEM DA CASCA — ver o comentário longo em `AppShell.jsx`. Era um
   // `useState(competenciaPadrao)` daqui, gêmeo do de `NotasPage`, e as duas abas discordavam.
   // O default não mudou: `competenciaPadrao` é o mês CORRENTE (dono, 18/08/2026).
@@ -103,6 +118,10 @@ export function HomePage({ empresa, competencia: competenciaDaCasca, aoTrocarCom
           </select>
         </div>
       </div>
+
+      {/* ⚠ O BLOCO DE DEMONSTRAÇÃO VEM PRIMEIRO — é a tela que o dono pediu como padrão — e é o
+          único desta página que não fala da empresa. Tudo abaixo dele é real. */}
+      <BlocoDeDemonstracao companyId={companyId} competencia={competencia} />
 
       <AlertaErro
         erro={erro}

@@ -50,7 +50,8 @@ src/
   features/
     auth/               - Login, EsqueciSenha, RedefinirSenha
     shell/AppShell.jsx  - casca: empresa ativa, abas, e o estado que atravessa telas
-    home/               - resumo do mês
+    painel/             - a tela PADRÃO: fluxo de caixa ⇄ DRE (mockados) + o resumo do mês
+                          ⚠ era `home/HomePage.jsx` até 21/08/2026 — foi ABSORVIDA, não trocada
     notas/              - lista + DANFSe + cancelamento + "usar como modelo"
     emitir/             - ⚠ a ÚNICA tela deste portal que pratica ato fiscal
                           `lib/impostosDaNota.js`   - quais campos de imposto a nota LEVA (e envia)
@@ -141,6 +142,75 @@ o escritório fez em 19/08.
   (`fireEvent.click` devolve `false` quando o padrão foi cancelado), nunca o desfecho na tela.
   Medir o desfecho ali é medir uma emulação errada — e foi o que fez o teste passar sozinho e
   falhar na suíte inteira.
+
+## ⚠ A NAVEGAÇÃO É UMA BARRA LATERAL DE ÍCONES (21/08/2026)
+
+Pedido do dono: *"vamos ter uma aba lateral, que terá ícones das outras funções"*. As abas
+continuam sendo `<a href="#/…">` (a seção acima vale inteira); o que mudou é o desenho.
+
+- ⚠ **SVG inline, nunca emoji, nunca biblioteca** (`src/components/icones.jsx`). O motivo do emoji
+  já estava escrito no repo, no único precedente de ícone vetorial (`apps/web`, o hambúrguer da
+  carteira): *"o caractere ☰ some em fonte sem o glifo e não escala com a cor do botão"*. E este app
+  tem **três** dependências de produção — o mesmo argumento que recusou o SheetJS.
+- ⚠⚠ **O ÍCONE NÃO É A ÚNICA MARCA DO DESTINO.** Todo SVG é `aria-hidden`; quem carrega o nome
+  acessível é o link, com o rótulo em `.sr-only`. Isso também **mantém o `textContent`**, que é como
+  os `getByRole("link", { name })` de várias suítes acham as abas.
+- ⚠⚠ **O MAPA `ICONE_POR_ROTA` É FECHADO, E A FALHA APARECE.** Chave sem desenho cairia num link
+  VAZIO — destino invisível numa barra que é só ícone. Quem cai na reserva (`?`) ganha o **rótulo
+  visível ao lado** (`temIconePropio`), de propósito: é o mesmo modo de falhar que `chipDaGuia` já
+  nomeia aqui, o valor fora da lista renderizando *"sem cor nenhuma, em silêncio"*.
+- ⚠ **O breakpoint é 960 e a barra volta a ser LINHA HORIZONTAL no fluxo — não barra inferior
+  fixa.** O protótipo (referência visual declarada deste portal) já colapsa em 960, e `app.css` já
+  tinha o bloco. Barra fixa custaria `env(safe-area-inset-bottom)`, `z-index` abaixo do modal e o
+  teclado virtual — orçamento que ninguém pediu. Se o dono a quiser, é commit separado.
+- ⚠ **`min-width: 0` nas duas colunas da grade é obrigatório**: sem ele o item assume o
+  `min-content` dos links e a **página inteira passa a rolar para o lado em 375px**, com o
+  `.table-wrap` deixando de conter a tabela. É o comentário gêmeo do que a `.topbar` já carrega.
+
+## ⚠⚠ O PAINEL — FLUXO DE CAIXA ⇄ DRE, MOCKADOS (21/08/2026)
+
+> Dono: *"por padrão o portal vai exibir um fluxo de caixa, mockado por enquanto pois não temos back
+> end, junto disso teremos de alterar para um DRE, também mockada por enquanto"*.
+
+`features/painel/PainelPage.jsx` é o que a rota `home` renderiza. **A antiga `HomePage` foi
+absorvida, não descartada**: o seletor `#competencia-home` e as três consultas REAIS do resumo do mês
+continuam ali — quatro casos de `competenciaAtravessaAsAbas.ligacao.test.jsx` medem exatamente isso,
+e cairiam **por motivo certo** se o painel os perdesse.
+
+- ⚠⚠ **NÃO HÁ BACKEND PARA NENHUM DOS DOIS, E NÃO HÁ ORIGEM PARA ENTRADAS.**
+  `GET /client/.../fluxo` **existe e NÃO é fluxo de caixa** — é a lista de guias liberadas em aberto,
+  só saídas. `POST .../ofx/import` e `GET .../transactions` são stubs **501**, e nota emitida não é
+  dinheiro recebido. Os números vivem em `features/painel/lib/dadosDeDemonstracao.js`.
+- ⚠⚠ **O SELO É DIRIGIDO PELO DADO, E A LEITURA É `demonstracao !== false`.** Nunca `=== true`:
+  resposta que não traga o campo apresentaria **ficção como fato, em silêncio** — é a mesma armadilha
+  do `select` explícito, e a mesma regra do portão (`AUSENTE NÃO É false`). ⚠ E **nunca `api.mode`**:
+  o aviso "Modo demonstração" do login vive dele e **some no modo real**. Experimento executado:
+  trocando a leitura por `api.mode === "mock"`, `seloDeDemonstracao.test.jsx` fica 1 vermelho.
+  No dia em que o backend existir, ele responde `demonstracao: false` e o selo some sozinho.
+- ⚠⚠ **O SELO FICA NO BLOCO, ACIMA DOS NÚMEROS — nunca na página.** Na página, ele faria o cliente
+  ler como fictícios também os números REAIS do resumo do mês, logo abaixo. `data-demonstracao` vai
+  no DOM, auditável, como `data-status` e `data-estado-nota`.
+- ⚠⚠ **NADA ATRAVESSA A FRONTEIRA.** A saída fictícia não é somada nem comparada com o "A vencer"
+  real, e a demonstração **não é semeada com o faturamento da empresa** — no instante em que a
+  receita bate com o número verdadeiro, o resto herda a credibilidade dela e a peça inteira passa a
+  ser lida como real. Números redondos (múltiplos de 500), de propósito.
+- ⚠ **"DRE" é NOME DE PEÇA CONTÁBIL.** O portal do escritório não entrega balanço/balancete a partir
+  de dado insuficiente; aqui o dado é **inventado**. O selo é o que separa uma maquete de uma
+  afirmação contábil — e por isso a visão de DRE **não oferece exportar, imprimir nem baixar**: o
+  risco não é a tela, é ela SAIR da tela.
+- ⚠ **Fluxo ⇄ DRE são VISÕES, não rotas** — `<button>`, estado local. Inventar `#/dre` daria um hash
+  que o `useRota` recusa e devolve ao padrão: o "filtro fantasma" dentro da própria tela.
+- ⚠ **A competência vem por prop, da casca.** Tela nova com mês nunca ganha
+  `useState(competenciaPadrao)` — e o painel **não acrescenta um segundo controle "Competência"**:
+  `getByLabelText("Competência")` explodiria com dois casamentos e derrubaria a suíte de ligação.
+- ⚠ **Vermelho só no RESULTADO do DRE, nunca na dedução** — imposto sobre a receita é negativo por
+  definição, e cor forte, nesta casa, quer dizer "isto pede ação agora".
+- ⚠ **A série de demonstração alcança os ramos que a tela desenha**: sempre há um mês de saldo
+  NEGATIVO e um mês SEM entrada. Este projeto foi mordido quatro vezes por ramo que só existia em
+  produção.
+- ⚠ `getFluxoCaixa`/`getDre` existem nos **dois** lados (`mockApi` e `realApi`) — `api/index.js` só
+  envolve a chave quando as duas são função, e função só do mock **nunca é alcançada** no modo
+  `real_with_mock_fallback`.
 
 ## ⚠ GUIA NÃO É NOTA — o `data-status` do chip
 

@@ -11,6 +11,8 @@ import { ApiError } from "../ApiError";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, definirTokens, limparSessao } from "../sessionStore";
 import { consultarCnpjNaBrasilApi } from "./brasilApi";
+import { competenciaPadrao } from "../../lib/format";
+import { fluxoDeCaixaDeDemonstracao, dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
 
 const BASE = String(import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
 
@@ -319,6 +321,30 @@ export function createRealApi() {
 
     async getFluxo(companyId) {
       return pedir(`/client/companies/${encodeURIComponent(companyId)}/fluxo`);
+    },
+
+    /**
+     * ⚠⚠ ESTAS DUAS NÃO CHAMAM O SERVIDOR, E ISSO É DELIBERADO — não é código esquecido.
+     *
+     * Não existe rota de fluxo de caixa nem de DRE. ⚠ Não confundir com `getFluxo` acima: aquela é
+     * a lista de guias liberadas EM ABERTO (só saídas, sem entradas, sem saldo) — o próprio backend
+     * a descreve como "fluxo de caixa futuro a partir das obrigações fiscais". Não é a mesma coisa,
+     * e somar as duas seria a tela discordando de si mesma.
+     *
+     * Elas existem AQUI, e não só no mock, por um motivo mecânico: `createApiClient` monta o
+     * wrapper iterando `Object.keys(real)` — função ausente daqui **some do objeto** no modo
+     * `real_with_mock_fallback`, e a tela quebra com `is not a function`.
+     *
+     * ⚠ O `demonstracao: true` que elas devolvem é o que acende o selo na tela. Quando a rota
+     * existir, troque o corpo por `pedir(...)` e o backend passa a responder `demonstracao: false`
+     * — o selo some sozinho, sem ninguém precisar lembrar.
+     */
+    async getFluxoCaixa(companyId, { competencia } = {}) {
+      return fluxoDeCaixaDeDemonstracao(companyId, competencia || competenciaPadrao());
+    },
+
+    async getDre(companyId, { competencia } = {}) {
+      return dreDeDemonstracao(companyId, competencia || competenciaPadrao());
     },
 
     // --- Os tomadores para quem esta empresa JÁ emitiu -----------------------------------------

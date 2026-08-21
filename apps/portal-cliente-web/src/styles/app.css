@@ -134,6 +134,18 @@ main.page { padding: 20px; min-width: 0; display: flex; flex-direction: column; 
 .select-auto { width: auto; min-width: 150px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
+/* --- Bloco de demonstração ------------------------------------------------
+   ⚠ Ele tem de se LER como outra coisa antes de se ler o selo: o bloco vizinho é dinheiro de
+   verdade, e os dois usariam o mesmo `.card`. Borda tracejada + fundo neutro fazem o olho separar
+   os dois antes da primeira palavra. */
+.demonstracao { border-style: dashed; background: var(--neutral-surface); }
+/* O selo vem ANTES dos números, no topo do bloco: quem leu o valor tem de ter passado por ele. */
+.demonstracao-selo { margin: 0 0 var(--gap); }
+/* Saldo/linha negativa: o sinal também é cor, nunca só o traço do menos. */
+.table [data-negativo="sim"] { color: var(--danger); }
+.table [data-linha-dre="subtotal"] td,
+.table [data-linha-dre="resultado"] td { border-top: 1px solid var(--border); }
+
 /* --- Botões --------------------------------------------------------------- */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -204,6 +216,12 @@ label > input, label > select { margin-top: 4px; color: var(--text); }
 .table tbody tr:hover { background: #fafbfc; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* ⚠ O `min-width: 720px` acima é a medida da tabela de SETE colunas das notas, e ela não serve às
+   duas do painel. Cada uma declara a sua: o fluxo tem quatro colunas de dinheiro e ROLA em 375px
+   de propósito (número espremido se lê errado); o DRE tem duas e prefere quebrar o rótulo de linha
+   a empurrar a página para fora da tela. */
+.table--fluxo { min-width: 480px; }
+.table--dre { min-width: 0; }
 
 /* --- Nota emitida por nós, ainda não confirmada pelo ADN ------------------- */
 /* ⚠ A DISTINÇÃO É VISUAL E SÓ — instrução literal do dono (19/08/2026):

@@ -8,7 +8,7 @@ import { roleLabel } from "../../lib/roles";
 import { oNavegadorAssumeOClique } from "../../lib/cliqueDeLink";
 import { iconeDaRota, temIconePropio } from "../../components/icones";
 import { SeletorEmpresa } from "./SeletorEmpresa";
-import { HomePage } from "../home/HomePage";
+import { PainelPage } from "../painel/PainelPage";
 import { NotasPage } from "../notas/NotasPage";
 import { EmitirNotaPage } from "../emitir/EmitirNotaPage";
 import { LotePlanilhaPage } from "../lote/LotePlanilhaPage";
@@ -306,7 +306,7 @@ export function AppShell({ user }) {
             aoTrocarCompetencia={setCompetencia}
           />
         ) : (
-          <HomePage
+          <PainelPage
             empresa={empresaAtiva}
             competencia={competencia}
             aoTrocarCompetencia={setCompetencia}

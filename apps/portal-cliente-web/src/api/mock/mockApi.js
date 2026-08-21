@@ -18,6 +18,8 @@
 import { ApiError } from "../ApiError";
 import { exigirContaDeCliente } from "../accountGate";
 import { lerSessao, limparSessao } from "../sessionStore";
+import { competenciaPadrao } from "../../lib/format";
+import { fluxoDeCaixaDeDemonstracao, dreDeDemonstracao } from "../../features/painel/lib/dadosDeDemonstracao";
 
 const LATENCIA_MS = 140; // o suficiente para os estados de carregamento existirem de verdade
 
@@ -1461,6 +1463,30 @@ export function createMockApi() {
     },
 
     // --- Fluxo --------------------------------------------------------------
+    /**
+     * ⚠⚠ FLUXO DE CAIXA E DRE SÃO DEMONSTRAÇÃO — nos DOIS lados da api, inclusive no real.
+     *
+     * Não há backend para nenhum dos dois, e não há origem para ENTRADAS (o import de OFX e a rota
+     * de transações do cliente são stubs 501). A resposta carimba `demonstracao: true`, e é ela —
+     * não `api.mode` — que faz a tela mostrar o selo: `api.mode` some no modo real, e um selo preso
+     * a ele deixaria número fictício sem aviso em produção.
+     *
+     * ⚠ Elas existem aqui E no `realApi` porque `createApiClient` só envolve a chave quando as DUAS
+     * são função (`api/index.js`): função que exista só no mock **nunca é alcançada** no modo
+     * `real_with_mock_fallback` — ela some do objeto e vira `api.getFluxoCaixa is not a function`.
+     */
+    async getFluxoCaixa(companyId, { competencia } = {}) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      return fluxoDeCaixaDeDemonstracao(id, competencia || competenciaPadrao());
+    },
+
+    async getDre(companyId, { competencia } = {}) {
+      await dormir();
+      const id = exigirAcessoEmpresa(companyId);
+      return dreDeDemonstracao(id, competencia || competenciaPadrao());
+    },
+
     async getFluxo(companyId) {
       await dormir();
       const id = exigirAcessoEmpresa(companyId);
