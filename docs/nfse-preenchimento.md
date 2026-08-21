@@ -51,10 +51,44 @@ Este guia resume o que preencher para emitir a NFS-e pelo padrão nacional, com 
   - `tpRetISSQN`: `1` (não retido).
   - `pAliq`: enviado se informado; `vISSQN` enviado se informado.
 - `tribFed` (PIS/COFINS):
-  - Para Simples, se nada for enviado no payload, o bloco é omitido.
-  - Se enviar, `CST`, base e alíquotas devem ser coerentes.
-  - Retenção (`tpRetPisCofins=1`): base > 0 e < `vServ`; enviar `vBcRetPisCofins` e `vRetPisCofins`.
-  - Sem retenção (`tpRetPisCofins=2` ou omitido): base é ajustada para ser > 0 e < `vServ` para evitar E0680.
+  - ⚠⚠ **ESTE ITEM ESTAVA ERRADO E CUSTOU TRÊS NOTAS RECUSADAS EM PRODUÇÃO** (21/08/2026, `E1235
+    - Falha no esquema XML do DF-e`). Ele mandava "enviar `vBcRetPisCofins` e `vRetPisCofins`" —
+    **os dois campos NÃO EXISTEM no leiaute**. `grep -rin` nos dois nomes em `docs/leiaute-nfse/`
+    devolve zero. Foi daqui, ou do mesmo engano, que o gerador os tirou.
+  - ⚠ **Como citar o Anexo I** (errar isto já custou uma correção): cada linha tem TRÊS numerações
+    que não coincidem — a coluna `#`, a linha do Excel e o índice do array de quem lê por script.
+    Cite **Regra de Negócio pelo código do erro + campo**, nunca por número de linha. E **não leia
+    por `sharedStrings.xml`**: é um pool sem linha, e parear por adjacência desloca a regra em uma
+    linha (atribuindo-a ao campo vizinho). As colunas são `[2]` CAMPO, `[3]` REGRA, `[7]` CÓD.
+    ERRO, na mesma linha.
+  - O grupo tem **exatamente sete filhos, nesta ordem** (XSD `TCTribOutrosPisCofins`,
+    `…/Schemas/1.01/tiposComplexos_v1.01.xsd:2020`; Anexo I, aba `LEIAUTE DPS_NFS-e `, coluna `#`
+    314-320). Só `CST` é obrigatório; os outros seis são `0-1`:
+    `CST` · `vBCPisCofins` · `pAliqPis` · `pAliqCofins` · `vPis` · `vCofins` · `tpRetPisCofins`.
+  - **O grupo inteiro é opcional (`0-1`) e hoje NUNCA é enviado**, para Simples e para não
+    optante. A NFS-e real de empresa não optante versionada aqui
+    (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`, `opSimpNac=1`) traz `<trib>` só com
+    `tribMun` e `totTrib` — **sem `tribFed`**. Preencher com `CST 01` e zeros afirmaria que a
+    empresa não deve PIS/COFINS.
+  - `tpRetPisCofins` aceita **0 a 9** (`TSTipoRetPISCofins`), não só 1/2.
+  - **Não existe campo de base de retenção de PIS/COFINS.** O valor retido vai em
+    `vPis`/`vCofins`, e o da CSLL em `tribFed/vRetCSLL` — a Observação do próprio
+    `tpRetPisCofins` (aba LEIAUTE, coluna `#` 320) diz: *"Indica quais contribuições retidas na
+    fonte compoem o campo vRetCSLL."* RN **E0720** (campo `vRetCSLL`): com `tpRetPisCofins=0` é
+    proibido informar `vRetCSLL`; RN **E0724** (mesmo campo): com qualquer valor diferente de `0`
+    e `2` ele é **obrigatório**.
+    ⚠ O gerador **ainda não monta `vRetCSLL`** e por isso RECUSA retenção declarada
+    (`NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA`) em vez de emitir sem o valor.
+  - Regra da base que EXISTE — RN **E0677** (campo `vBCPisCofins`): *"O valor da BC para
+    Pis/Cofins deve ser menor ou igual ao valor do serviço informado na DPS."* É `<=`.
+    ⚠ O `> 0 e <` que este documento mandava é a regra do `vRetCP`/`vRetIRRF` (E0699/E0700),
+    aplicada ao campo errado — e o comentário do código antigo ainda citava **`E0680`**, que **não
+    existe** no Anexo I.
+  - ⚠ Vizinhas de E0677, fáceis de citar trocadas por deslocamento de uma linha: **E0686**
+    `pAliqPis` (0 a 100%) · **E0692** `pAliqCofins` (0 a 100%) · **E0694** `vPis` = base ×
+    `pAliqPis` · **E0696** `vCofins` = base × `pAliqCofins`. ⚠ E0694/E0696 **não são conferidas
+    localmente**: o leiaute não declara a regra de arredondamento da multiplicação, e inventá-la
+    recusaria nota legítima.
 - `totTrib`:
   - Estrutura exigida: `<totTrib><vTotTrib><vTotTribFed>0.00</vTotTribFed><vTotTribEst>0.00</vTotTribEst><vTotTribMun>0.00</vTotTribMun></vTotTrib></totTrib>`.
 

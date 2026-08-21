@@ -665,3 +665,205 @@ describe("cTribNac — a escolha da emissão, com o cadastro mandando", () => {
     expect(xmlEnviado()).toContain("<cTribMun>001</cTribMun>");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// PIS/COFINS — os dois elementos INVENTADOS, e o que sobrou sem casa
+//
+// ⚠⚠ Três notas fiscais REAIS foram recusadas em PRODUÇÃO em 21/08/2026 (ALTAN CONTABILIDADE,
+// VAGALO VESTUARIO, ARAUJO E SILVA 2 — R$ 1,00, emissão em LOTE):
+//
+//     E1235 - Falha no esquema XML do DF-e.
+//     The element 'piscofins' … has invalid child element 'vBcRetPisCofins' …
+//
+// A conformidade do XML inteiro contra o XSD oficial mora em `dpsContraXsd.test.js`. Aqui ficam
+// as decisões de COMPORTAMENTO: o que sai, o que não sai, e o que RECUSA com nome próprio.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("PIS/COFINS (tribFed/piscofins) — o grupo não afirma o que ninguém informou", () => {
+  const PRESUMIDO = { regime: "LUCRO_PRESUMIDO" };
+  const CARGA = { pTotTribFed: 11.33, pTotTribEst: 0, pTotTribMun: 2.5 };
+
+  it("⚠⚠ o cenário LITERAL das três notas: Lucro Presumido, R$ 1,00 — hoje EMITE", async () => {
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({
+      data: { ...PAYLOAD_BASE, servico: { ...PAYLOAD_BASE.servico, valorServicos: 1 } },
+      log,
+    });
+    expect(r.status).toBe("issued");
+    const xml = xmlEnviado();
+    // Os dois nomes inventados não existem no leiaute e não voltam por caminho nenhum.
+    expect(xml).not.toContain("vBcRetPisCofins");
+    expect(xml).not.toContain("vRetPisCofins");
+  });
+
+  it("⚠ NÃO OPTANTE não leva <tribFed> — a NFS-e real de não optante também não leva", async () => {
+    // `docs/leiaute-nfse/nfse-nacional-substituicao.xml` (`opSimpNac=1`) traz `<trib>` só com
+    // `tribMun` e `totTrib`. `CST 01` + zeros AFIRMARIA que a empresa não deve PIS/COFINS.
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    await NfseService.issue({ data: PAYLOAD_BASE, log });
+    const xml = xmlEnviado();
+    expect(xml).not.toContain("<tribFed>");
+    expect(xml).not.toContain("<piscofins>");
+    expect(xml).not.toContain("<CST>");
+    // E o que o não optante DEVE declarar continua saindo.
+    expect(xml).toContain("<pTotTribFed>11.33</pTotTribFed>");
+  });
+
+  it("Simples também não leva — comportamento de sempre, agora pelo mesmo caminho", async () => {
+    montarCenario({ cadastroFiscal: { regime: "SIMPLES_NACIONAL" } });
+    await NfseService.issue({ data: PAYLOAD_BASE, log });
+    expect(xmlEnviado()).not.toContain("<tribFed>");
+  });
+
+  it("informado, sai na ORDEM DO XSD — e só o que foi informado", async () => {
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    await NfseService.issue({
+      data: {
+        ...PAYLOAD_BASE,
+        servico: { ...PAYLOAD_BASE.servico, valorServicos: 1000 },
+        tribFed: {
+          piscofins: {
+            CST: "01",
+            vBCPisCofins: 1000,
+            pAliqPis: 0.65,
+            pAliqCofins: 3,
+            vPis: 6.5,
+            vCofins: 30,
+            tpRetPisCofins: "2",
+          },
+        },
+      },
+      log,
+    });
+    const xml = xmlEnviado();
+    const piscofins = xml.slice(xml.indexOf("<piscofins>"), xml.indexOf("</piscofins>"));
+    const tags = [...piscofins.matchAll(/<([A-Za-z]+)>/g)].map((m) => m[1]).slice(1);
+    // A ordem é a do `xs:sequence` de `TCTribOutrosPisCofins`, não a de digitação.
+    expect(tags).toEqual([
+      "CST",
+      "vBCPisCofins",
+      "pAliqPis",
+      "pAliqCofins",
+      "vPis",
+      "vCofins",
+      "tpRetPisCofins",
+    ]);
+    expect(piscofins).toContain("<vBCPisCofins>1000.00</vBCPisCofins>");
+    expect(piscofins).toContain("<pAliqPis>0.65</pAliqPis>");
+  });
+
+  it("os seis opcionais ausentes NÃO viram 0.00", async () => {
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    await NfseService.issue({
+      data: { ...PAYLOAD_BASE, tribFed: { piscofins: { CST: "07" } } },
+      log,
+    });
+    const xml = xmlEnviado();
+    expect(xml).toContain("<CST>07</CST>");
+    expect(xml).not.toContain("vBCPisCofins");
+    expect(xml).not.toContain("tpRetPisCofins");
+  });
+
+  it("⚠⚠ RETENÇÃO DECLARADA RECUSA — nunca some em silêncio (RN E0724 exige vRetCSLL)", async () => {
+    // O leiaute NÃO tem campo de base de retenção. O valor retido mora em vPis/vCofins e em
+    // `tribFed/vRetCSLL` — que este gerador ainda não monta. Emitir assim declararia ao fisco e
+    // ao tomador que NÃO houve retenção.
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({
+      data: {
+        ...PAYLOAD_BASE,
+        tribFed: { piscofins: { CST: "01", vPis: 0.65, vCofins: 3, tpRetPisCofins: "1" } },
+      },
+      log,
+    });
+    expect(r.status).toBe("falha_envio");
+    expect(r.camada).toBe("NOSSA");
+    expect(r.codigo).toBe("NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA");
+    expect(r.correcao).toMatch(/vRetCSLL/);
+    // Nada saiu da máquina e o número não foi queimado.
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it("tpRetPisCofins aceita 0 a 9, não só 1/2 — '0' e '2' são os que não exigem vRetCSLL", async () => {
+    for (const valor of ["0", "2"]) {
+      montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+      const r = await NfseService.issue({
+        data: { ...PAYLOAD_BASE, tribFed: { piscofins: { CST: "01", tpRetPisCofins: valor } } },
+        log,
+      });
+      expect(r.status).toBe("issued");
+      expect(xmlEnviado()).toContain(`<tpRetPisCofins>${valor}</tpRetPisCofins>`);
+    }
+    // E os que exigem `vRetCSLL` recusam, todos pelo mesmo motivo.
+    for (const valor of ["3", "4", "5", "6", "7", "8", "9"]) {
+      montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+      const r = await NfseService.issue({
+        data: { ...PAYLOAD_BASE, tribFed: { piscofins: { CST: "01", tpRetPisCofins: valor } } },
+        log,
+      });
+      expect(r.codigo).toBe("NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA");
+    }
+  });
+
+  it("valor fora do enum de tpRetPisCofins recusa em vez de virar XML", async () => {
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({
+      data: { ...PAYLOAD_BASE, tribFed: { piscofins: { CST: "01", tpRetPisCofins: "12" } } },
+      log,
+    });
+    expect(r.codigo).toBe("NFSE_PIS_COFINS_TP_RET_INVALIDO");
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it("⚠ os nomes inventados, se enviados, são RECUSADOS NOMEANDO-OS", async () => {
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({
+      data: { ...PAYLOAD_BASE, tribFed: { piscofins: { CST: "01", vBcRetPisCofins: 500 } } },
+      log,
+    });
+    expect(r.camada).toBe("NOSSA");
+    expect(r.codigo).toBe("NFSE_PIS_COFINS_CAMPO_INEXISTENTE");
+    expect(r.message).toContain("vBcRetPisCofins");
+    expect(postMock).not.toHaveBeenCalled();
+  });
+
+  it("grupo sem CST recusa — CST é o único filho obrigatório, e '01' não se arbitra", async () => {
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({
+      data: { ...PAYLOAD_BASE, tribFed: { piscofins: { vBCPisCofins: 1 } } },
+      log,
+    });
+    expect(r.codigo).toBe("NFSE_PIS_COFINS_SEM_CST");
+  });
+
+  it("⚠ a base agora segue a RN E0677 (<= valor do serviço), sobre o campo que EXISTE", async () => {
+    // RN E0677, conferida NA CÉLULA do Anexo I (aba "RN DPS_NFS-e": CAMPO=`vBCPisCofins`,
+    // CÓD. ERRO=`E0677`): "O valor da BC para Pis/Cofins deve ser menor ou igual ao valor do
+    // serviço informado na DPS."
+    // ⚠ A validação antiga (`INVALID_PIS_COFINS_RET_BASE`) exigia `>0 e <` sobre
+    // `vBcRetPisCofins`, inexistente — a faixa era a do vRetCP/vRetIRRF (E0699/E0700), no campo
+    // errado — e citava `E0680`, que não existe no Anexo I.
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    const r = await NfseService.issue({
+      data: {
+        ...PAYLOAD_BASE,
+        servico: { ...PAYLOAD_BASE.servico, valorServicos: 100 },
+        tribFed: { piscofins: { CST: "01", vBCPisCofins: 100.01 } },
+      },
+      log,
+    });
+    expect(r.codigo).toBe("INVALID_PIS_COFINS_BC");
+
+    // ⚠ IGUAL ao valor do serviço PASSA — a RN é `<=`, e o `<` estrito de antes recusaria a
+    // base cheia, que é o caso normal.
+    montarCenario({ empresa: CARGA, cadastroFiscal: PRESUMIDO });
+    const ok = await NfseService.issue({
+      data: {
+        ...PAYLOAD_BASE,
+        servico: { ...PAYLOAD_BASE.servico, valorServicos: 100 },
+        tribFed: { piscofins: { CST: "01", vBCPisCofins: 100 } },
+      },
+      log,
+    });
+    expect(ok.status).toBe("issued");
+  });
+});

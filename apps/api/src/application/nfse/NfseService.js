@@ -872,77 +872,238 @@ function buildDpsXml({ company, data, numeracao, regime }) {
           <tpRetISSQN>${tpRetISSQN}</tpRetISSQN>
         </tribMun>
         ${(() => {
+          // ── PIS/COFINS (grupo `trib/tribFed/piscofins`) ──────────────────────────────────────
+          //
+          // ⚠⚠ ESTE BLOCO RECUSOU TRÊS NOTAS FISCAIS REAIS EM PRODUÇÃO (21/08/2026, ambiente 1):
+          //
+          //     E1235 - Falha no esquema XML do DF-e.
+          //     The element 'piscofins' in namespace 'http://www.sped.fazenda.gov.br/nfse'
+          //     has invalid child element 'vBcRetPisCofins' in namespace '...'
+          //
+          // Ele escrevia DOIS elementos que NÃO EXISTEM no leiaute — `vBcRetPisCofins` e
+          // `vRetPisCofins` —, nos DOIS caminhos (com e sem retenção). Conferido nas duas fontes
+          // oficiais versionadas neste repositório; `grep -rin` nos dois nomes dentro de
+          // `docs/leiaute-nfse/` devolve **zero**:
+          //
+          //   · XSD     `…/esquemas-xsd/Schemas/1.01/tiposComplexos_v1.01.xsd:2020`
+          //             (`TCTribOutrosPisCofins`; a 1.00 é idêntica neste ponto)
+          //   · Anexo I `…/anexo_i-sefin_adn-dps_nfse-snnfse-v1-01-20260209.xlsx`,
+          //             aba "LEIAUTE DPS_NFS-e ", coluna `#` 313 a 320
+          //
+          // ⚠⚠ COMO CITAR ESTA PLANILHA — errar isto já aconteceu nesta mesma correção. Cada linha
+          // tem TRÊS numerações que NÃO coincidem: a coluna `#` (dado da planilha), o número da
+          // linha do Excel (`<row r="…">`) e o índice do array de quem lê por script. Na aba de
+          // LEIAUTE a coluna `#` casa com o índice do array; **na aba de RN, não** (lá `#` = linha
+          // do Excel − 3). Por isso toda Regra de Negócio abaixo é citada pelo **código do erro +
+          // campo**, que são únicos e não dependem de numeração nenhuma.
+          //
+          // ⚠ E NÃO SE LÊ ESTA PLANILHA POR `sharedStrings.xml`: aquele arquivo é um POOL de
+          // strings sem linha; strings vizinhas nele não são vizinhas na planilha, e parear código
+          // com texto por adjacência produz um deslocamento de uma linha — que aqui significa
+          // atribuir a regra de um campo ao campo ao lado. As colunas são `[2]` CAMPO, `[3]`
+          // REGRAS DE NEGÓCIO, `[7]` CÓD. ERRO, `[8]` MSG. ERRO, na MESMA linha.
+          //
+          // `TCTribOutrosPisCofins` tem EXATAMENTE SETE filhos, NESTA ORDEM. Só `CST` é
+          // obrigatório (`1-1`); os outros seis são `minOccurs="0"` (`0-1`):
+          //
+          //     CST · vBCPisCofins · pAliqPis · pAliqCofins · vPis · vCofins · tpRetPisCofins
+          //
+          // ⚠ POR QUE SÓ QUEBROU AGORA — e não é coincidência de data. Enquanto `opSimpNac` era
+          // cravado em `"3"` (`066bd510^`: `const opSimpNac = "3"; const isSimples = …"3"`),
+          // `isSimples` era SEMPRE verdadeiro, e como `data.tribFed` **não tem produtor nenhum**
+          // no repositório (`validateNfsePayload` não monta o campo), `hasExplicitPisCofins` era
+          // SEMPRE falso: o `return ""` engolia o grupo em toda emissão. O commit `11187501`
+          // ligou a emissão do Lucro Presumido — `isSimples` passou a vir do regime REAL e a
+          // guarda deixou de valer para o não optante. Código que nunca havia sido exercido virou
+          // XML no primeiro lote de produção. Não é bug novo: é bug antigo que ficou alcançável.
+          //
+          // ⚠⚠ E O GRUPO NÃO VOLTA COM ZEROS — a evidência é uma nota REAL, não uma opinião.
+          // A NFS-e de empresa NÃO OPTANTE versionada aqui
+          // (`docs/leiaute-nfse/nfse-nacional-substituicao.xml`, `opSimpNac=1`) traz o `<trib>`
+          // com **`tribMun` e `totTrib`, e mais nada**: `tribFed` está AUSENTE. O grupo é
+          // `minOccurs="0"` no XSD, `0-1` no Anexo I (linha 312), e nenhuma RN o exige.
+          // Escrever `CST 01` ("Operação Tributável com Alíquota Básica") com base, alíquotas e
+          // valores `0.00` não é preenchimento técnico — é AFIRMAR que a empresa não deve
+          // PIS/COFINS, exatamente o defeito do `vTotTrib 0.00` e do `?? 0` da carga tributária
+          // já consertados neste arquivo. **Ausência não é afirmação.**
           const piscofins = data.tribFed?.piscofins || {};
-          const defaultPiscofins = {
-            CST: "01",
-            vBCPisCofins: 0,
-            pAliqPis: 0,
-            pAliqCofins: 0,
-            vPis: 0,
-            vCofins: 0,
-            tpRetPisCofins: undefined,
-            vBcRetPisCofins: undefined,
-            vRetPisCofins: undefined,
-          };
-          const merged = {
-            CST: piscofins.CST ?? defaultPiscofins.CST,
-            vBCPisCofins: piscofins.vBCPisCofins ?? defaultPiscofins.vBCPisCofins,
-            pAliqPis: piscofins.pAliqPis ?? defaultPiscofins.pAliqPis,
-            pAliqCofins: piscofins.pAliqCofins ?? defaultPiscofins.pAliqCofins,
-            vPis: piscofins.vPis ?? defaultPiscofins.vPis,
-            vCofins: piscofins.vCofins ?? defaultPiscofins.vCofins,
-            tpRetPisCofins: piscofins.tpRetPisCofins ?? defaultPiscofins.tpRetPisCofins,
-            vBcRetPisCofins: piscofins.vBcRetPisCofins ?? defaultPiscofins.vBcRetPisCofins,
-            vRetPisCofins: piscofins.vRetPisCofins ?? defaultPiscofins.vRetPisCofins,
-          };
+          const infPC = (v) => v !== undefined && v !== null && v !== "";
 
-          const valorServico = Number(data.servico?.valorServicos ?? 0);
+          // ⚠ HOJE NADA CHEGA AQUI COM DADO. `application/validators/nfsePayload.js` não monta
+          // `tribFed`, e não há outro produtor no repositório — logo este `return ""` é o caminho
+          // de 100% das emissões, para Simples E para não optante. O que vem abaixo é a porta
+          // para quando alguém passar a informar PIS/COFINS: ela nasce montando o que o leiaute
+          // comporta e RECUSANDO NOMEADAMENTE o que ele não comporta.
+          if (!Object.values(piscofins).some(infPC)) return "";
 
-          // Se empresa é Simples (opSimpNac=3) e não há dados explícitos de PIS/COFINS, não enviar tribFed.
-          const hasExplicitPisCofins = Object.values(piscofins || {}).some(
-            (v) => v !== undefined && v !== null && v !== ""
-          );
-          if (isSimples && !hasExplicitPisCofins) {
-            return "";
-          }
-
-          // Controle de retenção PIS/COFINS
-          const tpRetRaw = merged.tpRetPisCofins;
-          const hasTpRet =
-            tpRetRaw !== undefined && tpRetRaw !== null && tpRetRaw !== "";
-          const isRetencao = String(tpRetRaw) === "1";
-
-          let retFieldsXml = "";
-          if (isRetencao) {
-            const baseRet =
-              Number(merged.vBcRetPisCofins ?? merged.vBCPisCofins ?? 0) || 0;
-            const vRet = Number(merged.vRetPisCofins ?? 0);
-            if (!(baseRet > 0 && baseRet < valorServico)) {
+          // ⚠⚠ OS DOIS NOMES INVENTADOS NÃO VOLTAM POR OUTRA PORTA — e não são descartados em
+          // silêncio. Descartar um valor de retenção sem dizer nada é o pior desfecho possível
+          // aqui: a nota sai afirmando menos imposto do que o contador declarou.
+          for (const inexistente of ["vBcRetPisCofins", "vRetPisCofins"]) {
+            if (infPC(piscofins[inexistente])) {
               const err = new Error(
-                `invalid_pis_cofins_ret_base: base ${baseRet} deve ser >0 e < valorServ (${valorServico})`
+                `O campo '${inexistente}' NÃO EXISTE no leiaute da NFS-e — nem no XSD ` +
+                  "(`TCTribOutrosPisCofins`), nem no Anexo I. Foi exatamente ele que produziu o " +
+                  "E1235 em produção. Nada foi enviado."
               );
-              err.code = "INVALID_PIS_COFINS_RET_BASE";
+              err.code = "NFSE_PIS_COFINS_CAMPO_INEXISTENTE";
+              err.correcao =
+                "O grupo `piscofins` comporta só sete campos: CST, vBCPisCofins, pAliqPis, " +
+                "pAliqCofins, vPis, vCofins e tpRetPisCofins. Não há campo de BASE DE RETENÇÃO " +
+                "de PIS/COFINS no leiaute. O VALOR retido viaja em vPis/vCofins (e o da CSLL em " +
+                "tribFed/vRetCSLL), com tpRetPisCofins dizendo quais contribuições foram retidas.";
               throw err;
             }
-            retFieldsXml = `<tpRetPisCofins>1</tpRetPisCofins>
-            <vBcRetPisCofins>${baseRet.toFixed(2)}</vBcRetPisCofins>
-            <vRetPisCofins>${vRet.toFixed(2)}</vRetPisCofins>`;
-          } else {
-            // Sem retenção: tpRetPisCofins=2 e base/valor de retenção zerados.
-            retFieldsXml = `<tpRetPisCofins>2</tpRetPisCofins>
-            <vBcRetPisCofins>0.00</vBcRetPisCofins>
-            <vRetPisCofins>0.00</vRetPisCofins>`;
           }
+
+          // `CST` é o único filho obrigatório do grupo. Sem ele o grupo não pode existir — e o
+          // default `"01"` que havia aqui era uma escolha fiscal feita pelo código.
+          if (!infPC(piscofins.CST)) {
+            const err = new Error(
+              "O grupo PIS/COFINS foi informado sem `CST`, que é o único filho obrigatório de " +
+                "`TCTribOutrosPisCofins` (XSD `1-1`)."
+            );
+            err.code = "NFSE_PIS_COFINS_SEM_CST";
+            err.correcao =
+              "Informe o CST do PIS/COFINS (tabela no XSD `TSTipoCST` / Anexo I, aba LEIAUTE, " +
+              "coluna # 314). O " +
+              "código NÃO arbitra um: '01' é 'Operação Tributável com Alíquota Básica', que é " +
+              "uma afirmação sobre a incidência, não um preenchimento técnico.";
+            throw err;
+          }
+
+          // ⚠ `tpRetPisCofins` aceita **0 a 9**, não só 1/2 — o código antigo só conhecia esses
+          // dois e cravava `2` em todo o resto. Fonte: `TSTipoRetPISCofins`
+          // (`tiposSimples_v1.01.xsd:1231`) e Anexo I, aba LEIAUTE, coluna `#` 320.
+          const TP_RET_PIS_COFINS = new Set(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+          const tpRet = infPC(piscofins.tpRetPisCofins)
+            ? String(piscofins.tpRetPisCofins).trim()
+            : null;
+          if (tpRet !== null && !TP_RET_PIS_COFINS.has(tpRet)) {
+            const err = new Error(
+              `tpRetPisCofins inválido: '${tpRet}'. O leiaute aceita 0 a 9 (TSTipoRetPISCofins).`
+            );
+            err.code = "NFSE_PIS_COFINS_TP_RET_INVALIDO";
+            err.correcao =
+              "Valores válidos: 0 PIS/COFINS/CSLL Não Retidos · 1 PIS/COFINS Retidos · 2 " +
+              "PIS/COFINS Não Retidos · 3 PIS/COFINS/CSLL Retidos · 4 PIS/COFINS Retidos, CSLL " +
+              "Não Retido · 5 PIS Retido, COFINS/CSLL Não Retido · 6 COFINS Retido, PIS/CSLL Não " +
+              "Retido · 7 PIS Não Retido, COFINS/CSLL Retidos · 8 PIS/COFINS Não Retidos, CSLL " +
+              "Retido · 9 COFINS Não Retido, PIS/CSLL Retidos.";
+            throw err;
+          }
+
+          // ⚠⚠ ONDE O LEIAUTE COMPORTA A RETENÇÃO — medido, não suposto:
+          //
+          //   · a OBSERVAÇÃO do próprio `tpRetPisCofins` (aba "LEIAUTE DPS_NFS-e ", coluna `#`
+          //     320, coluna OBSERVAÇÕES): *"Indica quais contribuições retidas na fonte compoem o
+          //     campo vRetCSLL."*
+          //   · RN **E0720** (aba "RN DPS_NFS-e", campo `vRetCSLL`): se `tpRetPisCofins = 0`, é
+          //     PROIBIDO informar `vRetCSLL`.
+          //   · RN **E0724** (mesma aba, mesmo campo): se `tpRetPisCofins` for DIFERENTE de `0` e
+          //     de `2`, é OBRIGATÓRIO informar `vRetCSLL`.
+          //   · NT 008 §2.4.5 (transcrita em `danfse/danfseLeiaute.js`): no DANFSe, com
+          //     `tpRetPisCofins = 1`, "Contribuições Sociais - Retidas" = `vRetCSLL + vPis +
+          //     vCofins`, e `vPis`/`vCofins` são impressos como `0,00`.
+          //
+          // Ou seja: **não existe campo de base de retenção**, e o valor retido não tem um campo
+          // próprio — ele mora em `vPis`/`vCofins` (PIS/COFINS) e em `tribFed/vRetCSLL` (CSLL),
+          // com `tpRetPisCofins` dizendo como lê-los.
+          //
+          // ⚠ `vRetCSLL` NÃO É MONTADO POR ESTE GERADOR. Enquanto não for, declarar retenção
+          // seria emitir uma DPS que a RN E0724 rejeita — ou, pior, que passa sem o valor. Por
+          // isso RECUSA NOMEADA, e a decisão de construir `vRetCSLL` (com o rateio PIS × COFINS ×
+          // CSLL, que é ato do contador) fica com o dono.
+          if (tpRet !== null && tpRet !== "0" && tpRet !== "2") {
+            const err = new Error(
+              `Retenção de PIS/COFINS/CSLL declarada (tpRetPisCofins=${tpRet}), e este gerador ` +
+                "ainda não monta `tribFed/vRetCSLL` — que a RN E0724 torna OBRIGATÓRIO para todo " +
+                "tpRetPisCofins diferente de 0 e de 2. Nada foi enviado."
+            );
+            err.code = "NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA";
+            err.correcao =
+              "Enquanto `vRetCSLL` não for construído, emita esta nota pelo Emissor Web. ⚠ NÃO " +
+              "contorne mandando tpRetPisCofins=0 ou 2: isso declararia ao fisco e ao tomador que " +
+              "NÃO houve retenção. O leiaute não tem campo de base de retenção; o valor retido " +
+              "vai em vPis/vCofins e em tribFed/vRetCSLL (RN E0720 e E0724, campo vRetCSLL).";
+            throw err;
+          }
+
+          // ── Os SETE, na ordem do XSD ────────────────────────────────────────────────────────
+          // ⚠ A ordem não é alfabética nem a de digitação: `xs:sequence` a torna parte do
+          // contrato, e foi um filho fora de lugar/inexistente que gerou o E1235. Só entra o que
+          // foi INFORMADO — os seis opcionais ausentes não viram `0.00`.
+          const linhas = [`<CST>${escapeXml(String(piscofins.CST).trim())}</CST>`];
+          const monetario = (campo) => {
+            if (!infPC(piscofins[campo])) return;
+            const n = Number(piscofins[campo]);
+            if (!Number.isFinite(n) || n < 0) {
+              const err = new Error(`PIS/COFINS: '${campo}' não é um valor válido: ${piscofins[campo]}.`);
+              err.code = "NFSE_PIS_COFINS_VALOR_INVALIDO";
+              err.correcao = `Informe '${campo}' como número maior ou igual a zero.`;
+              throw err;
+            }
+            // ── Pré-checagem local da RN E0677 ────────────────────────────────────────────────
+            //
+            // ⚠ É PRÉ-CHECAGEM NOSSA DE UMA REGRA DELES: quem recusa de verdade é o sistema
+            // nacional; isto só evita o round-trip. Não é regra de esquema (o XSD aceita
+            // `vBCPisCofins` maior que `vServ`).
+            //
+            // **RN E0677**, conferida na CÉLULA — Anexo I, aba "RN DPS_NFS-e", linha em que
+            // CAMPO(coluna 2) = `vBCPisCofins` e CÓD. ERRO(coluna 7) = `E0677`; REGRA(coluna 3),
+            // literal: *"O valor da BC para Pis/Cofins deve ser menor ou igual ao valor do serviço
+            // informado na DPS."* É `<=`, e o campo é o que EXISTE.
+            //
+            // ⚠⚠ NÃO CONFUNDIR com as RN vizinhas — as quatro seguem a este campo na planilha e
+            // são de OUTROS campos, o que torna fácil deslocar uma linha e citar a errada:
+            //     E0686 `pAliqPis`    — alíquota do PIS entre 0 e 100%
+            //     E0692 `pAliqCofins` — alíquota da COFINS entre 0 e 100%
+            //     E0694 `vPis`        — vPis = vBCPisCofins × pAliqPis
+            //     E0696 `vCofins`     — vCofins = vBCPisCofins × pAliqCofins
+            //
+            // ⚠⚠ E A REGRA ANTIGA CITAVA UM ERRO QUE NÃO EXISTE. A validação removida
+            // (`INVALID_PIS_COFINS_RET_BASE`) exigia `>0 e < valorServicos` sobre
+            // `vBcRetPisCofins` — campo inexistente —, e o comentário dela invocava **`E0680`**,
+            // que **não aparece na coluna CÓD. ERRO de aba nenhuma do Anexo I** (varrido). A
+            // faixa `>0 e <` é a do `vRetCP`/`vRetIRRF` (E0699/E0700), transplantada para uma
+            // base. Ou seja: campo inventado E número de regra inventado, no mesmo bloco.
+            if (campo === "vBCPisCofins" && n > valorServicosNumber) {
+              const err = new Error(
+                `A base de cálculo do PIS/COFINS (${n}) é maior que o valor do serviço ` +
+                  `(${valorServicosNumber}). RN E0677 exige menor ou igual.`
+              );
+              err.code = "INVALID_PIS_COFINS_BC";
+              err.correcao =
+                "Informe vBCPisCofins menor ou igual ao valor do serviço da nota (RN E0677).";
+              throw err;
+            }
+            linhas.push(`<${campo}>${n.toFixed(2)}</${campo}>`);
+          };
+          // ⚠ AS RN **E0694** e **E0696** NÃO SÃO CONFERIDAS AQUI, e a escolha é deliberada.
+          // Elas são reais (aba "RN DPS_NFS-e", campos `vPis` e `vCofins`) e dizem que
+          // `vPis` = `vBCPisCofins` × `pAliqPis` e `vCofins` = `vBCPisCofins` × `pAliqCofins`.
+          // O critério para guardar uma regra localmente, aqui, é ela ser **exata**:
+          //
+          //   · E0677 é uma comparação (`<=`) — não há convenção a escolher, então entra;
+          //   · E0694/E0696 são uma MULTIPLICAÇÃO, e o leiaute **não declara a regra de
+          //     arredondamento** (nem casas, nem sentido do desempate). Escrever uma seria
+          //     inventar convenção fiscal, e a versão errada RECUSA nota legítima por um centavo.
+          //
+          // Some-se a isso que este grupo hoje **nunca é emitido** (não há produtor de
+          // `data.tribFed`): construir validação para caminho morto acrescenta superfície de erro
+          // sem evitar erro nenhum. Quem responde por elas é o sistema nacional, que tem a
+          // convenção. ⚠ Se o grupo passar a ser emitido de verdade, esta decisão merece ser
+          // revista **com a convenção em mãos** — não por analogia.
+          monetario("vBCPisCofins");
+          monetario("pAliqPis");
+          monetario("pAliqCofins");
+          monetario("vPis");
+          monetario("vCofins");
+          if (tpRet !== null) linhas.push(`<tpRetPisCofins>${tpRet}</tpRetPisCofins>`);
 
           return `<tribFed>
           <piscofins>
-            <CST>${escapeXml(merged.CST)}</CST>
-            <vBCPisCofins>${Number(merged.vBCPisCofins).toFixed(2)}</vBCPisCofins>
-            <pAliqPis>${Number(merged.pAliqPis).toFixed(2)}</pAliqPis>
-            <pAliqCofins>${Number(merged.pAliqCofins).toFixed(2)}</pAliqCofins>
-            <vPis>${Number(merged.vPis).toFixed(2)}</vPis>
-            <vCofins>${Number(merged.vCofins).toFixed(2)}</vCofins>
-            ${retFieldsXml}
+            ${linhas.join("\n            ")}
           </piscofins>
         </tribFed>`;
         })()}

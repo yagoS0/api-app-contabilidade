@@ -8,7 +8,7 @@
 // tinha como saber se corrigia a nota ou se tentava de novo.
 //
 // Pior: `buildDpsXml` lança as validações NOSSAS (`MISSING_P_TOT_TRIB_SN`,
-// `MISSING_TOMADOR_ADDRESS`, `INVALID_PIS_COFINS_RET_BASE`) de DENTRO do `try` do `issue`. Elas
+// `MISSING_TOMADOR_ADDRESS`, e as do grupo PIS/COFINS) de DENTRO do `try` do `issue`. Elas
 // caíam no mesmo `catch`, viravam `status:"rejected"` e ficavam **indistinguíveis de uma recusa da
 // Receita** — uma nota que nunca saiu da nossa máquina era gravada como recusada por ela.
 //
@@ -50,7 +50,24 @@ export const STATUS = Object.freeze({
 const CODIGOS_NOSSOS = new Set([
   "MISSING_P_TOT_TRIB_SN",
   "MISSING_TOMADOR_ADDRESS",
-  "INVALID_PIS_COFINS_RET_BASE",
+  // ── PIS/COFINS (`trib/tribFed/piscofins`) ────────────────────────────────────────────────
+  // ⚠ `INVALID_PIS_COFINS_RET_BASE` SAIU DAQUI em 21/08/2026, junto com a validação que o
+  // lançava — e ela estava errada DUAS vezes: exigia base de retenção `>0 e < valorServicos`
+  // sobre **`vBcRetPisCofins`, campo que não existe no leiaute** (foi ele que produziu o `E1235`
+  // que recusou três notas reais em produção), citando **`E0680`**, que **também não existe** na
+  // coluna CÓD. ERRO do Anexo I. Campo inventado e número de regra inventado, no mesmo bloco.
+  // A base que EXISTE (`vBCPisCofins`) tem regra própria — RN **E0677** (aba "RN DPS_NFS-e",
+  // campo `vBCPisCofins`): *"deve ser menor ou igual ao valor do serviço informado na DPS"*. É
+  // ela, conferida na célula, que `INVALID_PIS_COFINS_BC` pré-checa. ⚠ Pré-checagem NOSSA de
+  // regra DELES: quem recusa de verdade é o sistema nacional. Ver `NfseService.buildDpsXml`.
+  "INVALID_PIS_COFINS_BC",
+  "NFSE_PIS_COFINS_CAMPO_INEXISTENTE",
+  "NFSE_PIS_COFINS_SEM_CST",
+  "NFSE_PIS_COFINS_TP_RET_INVALIDO",
+  "NFSE_PIS_COFINS_VALOR_INVALIDO",
+  // Retenção declarada sem `tribFed/vRetCSLL`, que a RN E0724 exige. Recusa NOSSA: melhor não
+  // emitir do que emitir uma nota que declara retenção sem o valor retido.
+  "NFSE_PIS_COFINS_RETENCAO_NAO_SUPORTADA",
   "MISSING_TOT_TRIB_NAO_SIMPLES",
   // Percentual da carga aproximada gravado fora de 0–100 (cadastro velho, ou payload torto).
   // Recusa NOSSA pelo mesmo motivo do irmão acima: nada saiu da máquina.
