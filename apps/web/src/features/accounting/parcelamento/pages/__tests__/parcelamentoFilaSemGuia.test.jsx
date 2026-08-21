@@ -99,27 +99,30 @@ describe("as duas filas coexistem e a diferença é DITA", () => {
 });
 
 describe("ausência nunca é resposta", () => {
-  // ⚠ SEÇÃO VAZIA VIRA UMA LINHA (Fase 1) — e a explicação continua ALCANÇÁVEL, num `ℹ` que é um
-  // `<button>` de verdade (foco por teclado, clique no toque), não num `title`. O que saiu foi o
-  // card inteiro dizendo "não há nada"; o que NÃO saiu é o que "vazia" significa aqui, que nunca
-  // foi "tudo pago".
-  it("fila vazia DIZ que está vazia, em uma linha", async () => {
+  // ⚠ A DECISÃO MUDOU, E O TESTE MUDOU COM ELA — dono, 21/08/2026: *"se esses campos não têm
+  // nenhuma, não preciso dizer isso, pois quando tiver vai aparecer"*.
+  //
+  // A Fase 1 tinha trocado o card por uma linha e MANTIDO o texto, com o argumento de que "o que
+  // 'vazia' significa é INFORMAÇÃO". O dono derrubou o argumento: a explicação continua existindo
+  // no ramo COM fila ("Débito automático não gera guia: aqui não há documento nenhum…"), que é
+  // quando ela tem consequência. Com zero prestações, a tela cala.
+  //
+  // ⚠⚠ O QUE ESTE `describe` AINDA PROTEGE, e é o motivo de ele não ter sido apagado: calar diante
+  // do VAZIO não pode virar calar diante da FALHA. Vazio e erro são o mesmo pixel e significam o
+  // oposto — o teste logo abaixo é a guarda disso, e ele continua verde.
+  it("fila vazia não escreve nada — nem título, nem 'nenhuma'", async () => {
     await act(async () => { montar({ semGuia: [] }); });
-    const painel = painelSemGuia();
-    expect(within(painel).getByText(/Prestações vencidas sem guia/i)).toBeTruthy();
-    expect(within(painel).getByText(/nenhuma\./i)).toBeTruthy();
+    expect(screen.queryByText(/Prestações vencidas sem guia/i)).toBeNull();
+    expect(screen.queryByText(/nenhuma\./i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /O que isto quer dizer/i })).toBeNull();
   });
 
-  it("o que 'vazia' significa continua na tela — a um clique, não num title", async () => {
-    await act(async () => { montar({ semGuia: [] }); });
-    const painel = painelSemGuia();
-    expect(within(painel).queryByText(/Nenhuma prestação sem guia venceu até hoje sem baixa/i)).toBeNull();
-
-    await act(async () => {
-      fireEvent.click(within(painel).getByRole("button", { name: /O que isto quer dizer/i }));
-    });
-    expect(within(painel).getByText(/Nenhuma prestação sem guia venceu até hoje sem baixa/i)).toBeTruthy();
-    expect(within(painel).getByText(/vão para a fila acima/i)).toBeTruthy();
+  it("com fila, o que 'vazia' significa não é o que some — a explicação está lá", async () => {
+    await act(async () => { montar({ semGuia: [linhaSemGuia()] }); });
+    expect(screen.getByText(/Prestações vencidas sem guia/i)).toBeTruthy();
+    // ⚠ A frase que carrega a distinção cara: ausência de guia NÃO é prova de não-pagamento, e
+    // quem afirma que o dinheiro saiu é o contador.
+    expect(screen.getByText(/não há documento nenhum/i)).toBeTruthy();
   });
 
   // Falha e vazio são o mesmo pixel e significam o oposto — o defeito que derrubou três painéis.
@@ -194,8 +197,12 @@ describe("o ato de consequência", () => {
     expect(mockBaixaManual).toHaveBeenCalledWith("c1", "parc-migrado-60-p1", expect.objectContaining({
       valorJuros: 12.94, valorMulta: 0, totalConferido: 646.9,
     }));
-    // A fila ficou vazia — e vazia agora é UMA LINHA, não um card (Fase 1).
-    expect(within(painelSemGuia()).getByText(/nenhuma\./i)).toBeTruthy();
+    // ⚠ A FILA ESVAZIOU, E A PROVA FICOU MAIS FORTE. Antes o teste conferia que apareceu a palavra
+    // "nenhuma" — mas desde 21/08/2026 a fila vazia não escreve nada (dono). Então ele passa a
+    // afirmar exatamente o que o título dele promete: a PRESTAÇÃO saiu da tela. Isso mede o
+    // desfecho da baixa; a palavra "nenhuma" só media a legenda.
+    expect(screen.queryByText(/Prestações vencidas sem guia/i)).toBeNull();
+    expect(screen.queryByText(/nenhuma\./i)).toBeNull();
     confirmSpy.mockRestore();
   });
 

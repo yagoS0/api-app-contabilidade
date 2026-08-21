@@ -94,7 +94,10 @@ describe("⚠ a ausência da rescisão deixou de ser muda", () => {
   it("a fila DIZ quantas prestações estão fora, e aponta para onde a informação está", async () => {
     await act(async () => { montar({ semGuia: [], foraDaFila: COM_ESCONDIDAS }); });
 
-    const painel = screen.getByText(/Prestações vencidas sem guia/i).closest("section");
+    // ⚠ A âncora deixou de ser o título da fila: com a fila VAZIA ela não escreve mais nada
+    // (dono, 21/08/2026). Ancoramos no próprio fato dos rescindidos — que é o que este teste
+    // mede, e que SOBREVIVE à fila vazia justamente por não ser a ausência de itens nela.
+    const painel = screen.getByText(/prestações estão fora desta fila/i).closest("section");
     expect(within(painel).getByText(/12 prestações estão fora desta fila/i)).toBeTruthy();
     expect(within(painel).getByRole("button", { name: /Ver contratos rescindidos/i })).toBeTruthy();
     // ⚠ E o que saiu daqui NÃO É CAPACIDADE: o desfazer continua existindo, na seção para onde o
@@ -133,8 +136,12 @@ describe("⚠ a ausência da rescisão deixou de ser muda", () => {
     await act(async () => {
       montar({ semGuia: [], foraDaFila: { prestacoes: 0, contratos: [], motivo: "PARCELAMENTO_RESCINDIDO" } });
     });
-    const painel = screen.getByText(/Prestações vencidas sem guia/i).closest("section");
-    expect(within(painel).queryByText(/fora desta fila/i)).toBeNull();
+    // ⚠ SEM ÂNCORA, E DE PROPÓSITO. Este teste mede a AUSÊNCIA do ponteiro dos rescindidos, então
+    // ancorar nele seria circular. E desde 21/08/2026 a fila vazia não escreve título nenhum, então
+    // também não há painel onde procurar: a asserção passa a ser sobre a TELA INTEIRA, que é o que
+    // "nenhum aviso aparece" sempre quis dizer.
+    expect(screen.queryByText(/fora desta fila/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Ver contratos rescindidos/i })).toBeNull();
   });
 });
 

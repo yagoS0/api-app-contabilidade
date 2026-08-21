@@ -1219,18 +1219,13 @@ export function ConferenciaParcelasPanel({ listConferencia, aprovarConferencia }
     );
   }
 
-  if (!items.length) {
-    // ⚠ SEÇÃO VAZIA É UMA LINHA, NÃO UM BOX — exemplo literal do dono. O card inteiro (moldura,
-    // fundo próprio, 10px de respiro em cima e embaixo) para dizer "não há nada" pesava o mesmo que
-    // a fila cheia, e a tela ensinava o olho a pular a região. O texto continua na tela; o que sai
-    // é a moldura. Ausência nunca é resposta — ausência DIAGRAMADA COMO CARD é ruído.
-    return (
-      <div style={{ marginBottom: 4, color: PANEL.muted, fontSize: "0.78rem" }}>
-        <strong style={{ color: PANEL.text, fontWeight: 600 }}>Conferência de parcelas:</strong>{" "}
-        nenhuma aguardando.
-      </div>
-    );
-  }
+  // ⚠ NADA A CONFERIR, NADA NA TELA — decisão do dono, 21/08/2026: *"se esses campos não têm
+  // nenhuma, não preciso dizer isso, pois quando tiver vai aparecer"*.
+  //
+  // ⚠ Isto REVERTE de propósito o argumento de 19/08 escrito aqui (o card virou linha para deixar
+  // de ser ruído, mas "o texto continua na tela"). O dono tirou o texto também. O painel VOLTA
+  // sozinho quando houver parcela a conferir — que é quando ele diz alguma coisa.
+  if (!items.length) return null;
 
   const selecionaveis = items.filter((it) => it.estado === "PAGA_A_CONFERIR");
   const toggle = (id) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });

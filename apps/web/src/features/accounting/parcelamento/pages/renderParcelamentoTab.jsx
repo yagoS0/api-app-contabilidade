@@ -91,25 +91,6 @@ function Badge({ cor, fundo, children, title }) {
   );
 }
 
-/**
- * SEÇÃO VAZIA É UMA LINHA, NÃO UM BOX — pedido literal do dono.
- *
- * ⚠ E ELA CONTINUA DIZENDO O QUE "VAZIA" SIGNIFICA. A fila vazia nunca quis dizer "tudo pago": há
- * regras de quem entra e de quem não entra, e elas são INFORMAÇÃO. O que muda é o suporte — a
- * moldura, o título grande e o parágrafo permanente viram uma linha com `ℹ`. Ausência nunca é
- * resposta; ausência DIAGRAMADA COMO CARD é ruído.
- */
-function SecaoVazia({ titulo, children }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "2px 2px" }}>
-      <span style={{ color: PANEL.muted, fontSize: "0.78rem" }}>
-        <strong style={{ color: PANEL.text, fontWeight: 600 }}>{titulo}:</strong> nenhuma.
-      </span>
-      <Explicacao>{children}</Explicacao>
-    </div>
-  );
-}
-
 // Uma formatação só para as DUAS filas — elas mostram valores lado a lado na mesma tela, e duas
 // cópias divergiriam no primeiro ajuste de casas decimais.
 const fmtMoney = formatarMoeda;
@@ -498,22 +479,21 @@ function ParcelasPendentesBaixa({ companyId, refreshKey = 0, pedido, onPedidoAte
     ? parcelas.filter((p) => p.parcelamentoId === foco.id).length
     : null;
 
-  // ⚠ SEÇÃO VAZIA VIRA UMA LINHA. Nada de card inteiro para dizer "não há nada" — mas a linha
-  // continua sendo uma SEÇÃO (o `Dar baixa` do card rola até ela, e ela precisa existir no DOM), e
-  // continua dizendo, no `ℹ`, quem entra nesta fila e quem não entra.
+  // ⚠ FILA VAZIA NÃO DIZ NADA — decisão do dono, 21/08/2026: *"se esses campos não têm nenhuma,
+  // não preciso dizer isso, pois quando tiver vai aparecer"*. É o critério dele de sempre: SAI a
+  // frase que descreve uma ausência já visível.
+  //
+  // ⚠ Isto REVERTE, e de propósito, o argumento escrito aqui em 19/08 ("a linha continua dizendo
+  // quem entra e quem não entra, e isso é INFORMAÇÃO"). Aquela rodada já tinha trocado o card por
+  // uma linha; o dono agora tirou a linha também. Quem entra na fila continua explicado quando há
+  // fila — que é quando a explicação tem consequência.
+  //
+  // ⚠⚠ A `<section>` PERMANECE NO DOM, VAZIA, E NÃO É DESCUIDO: o botão `Dar baixa` do card acima
+  // ROLA até `secaoRef`. Devolver `null` aqui mataria o alvo da rolagem, e o botão passaria a não
+  // fazer nada visível — defeito silencioso, do tipo que ninguém liga à remoção de um texto.
   const compacto = !carregando && !erro && !parcelas.length && !foco && !desfechoLote;
   if (compacto) {
-    return (
-      <section ref={secaoRef} style={{ scrollMarginTop: 16 }}>
-        <SecaoVazia titulo="Parcelas pagas aguardando lançamento">
-          O pagamento já foi confirmado na guia e falta gerar a baixa contábil — hoje não há nenhuma.
-          Uma prestação só entra <strong>nesta</strong> fila quando o pagamento dela está confirmado{" "}
-          <strong>na guia</strong>: pela busca do comprovante no SERPRO (botão na linha da parcela) ou
-          pelo “Confirmar pagamento” da aba Guias. Prestação <strong>sem guia</strong> vai para a fila
-          de baixo, onde a baixa é declarada por você.
-        </SecaoVazia>
-      </section>
-    );
+    return <section ref={secaoRef} style={{ scrollMarginTop: 16 }} />;
   }
 
   return (
@@ -882,21 +862,14 @@ function ParcelasSemGuiaPendentes({
     </div>
   );
 
-  // ⚠ SEÇÃO VAZIA VIRA UMA LINHA — e continua dizendo quem entra e quem não entra, no `ℹ`. A linha
-  // dos rescindidos sobrevive à compactação: é justamente com a fila vazia que ela importa.
+  // ⚠ FILA VAZIA NÃO DIZ NADA (dono, 21/08/2026) — mesma decisão da fila de cima.
+  //
+  // ⚠ `linhaRescindidos` SOBREVIVE, e não é inconsistência: contrato rescindido é um FATO sobre o
+  // contrato, não a ausência de itens numa fila. É justamente com a fila vazia que ele importa —
+  // sem ele, "nada aqui" se leria como "nada a fazer", que é conclusão falsa.
   const compacto = !carregando && !erro && !parcelas.length;
   if (compacto) {
-    return (
-      <section>
-        <SecaoVazia titulo="Prestações vencidas sem guia">
-          Nenhuma prestação sem guia venceu até hoje sem baixa. Prestações <strong>futuras</strong> não
-          entram (ainda não são devidas) e prestações <strong>com guia</strong> vão para a fila acima.
-          Débito automático não gera guia: quando uma vencer sem baixa, ela aparece aqui para você
-          declarar que o pagamento saiu.
-        </SecaoVazia>
-        {linhaRescindidos}
-      </section>
-    );
+    return <section>{linhaRescindidos}</section>;
   }
 
   return (
@@ -1279,8 +1252,10 @@ export function ParcelamentoTab({
         <div>
           <h1 style={{ margin: 0, fontSize: "1.15rem", color: PANEL.text }}>Parcelamentos</h1>
           <span style={{ fontSize: "0.85rem", color: PANEL.muted }}>
-            O contrato entra aqui, sem guia nenhuma. A guia de cada mês é evidência opcional e se
-            anexa depois, pelo <strong>+ Subir Guia → PARCELAMENTO</strong> na aba Guias.
+            {/* ⚠ A frase que explicava "o contrato entra sem guia, a guia se anexa depois pelo
+                + Subir Guia" SAIU (dono, 21/08/2026). Ela ensinava a mecânica da tela a quem já a
+                conhece: o leitor aqui é o CONTADOR, dono do escritório. O `+ Novo parcelamento` ao
+                lado já diz o que fazer, e nenhuma ausência passa a se ler como afirmação sem ela. */}
           </span>
         </div>
         <Button variant="primary" type="button" onClick={() => setWizardAberto(true)}>+ Novo parcelamento</Button>
