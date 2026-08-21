@@ -51,6 +51,31 @@ Consequências práticas (duas armadilhas já corrigidas):
   composição** (igual faz com DARF), senão as tags IRPJ/CSLL/PIS-COFINS do card ficam vermelhas
   mesmo com a guia capturada. PIS e COFINS caem no mesmo grupo `PIS_COFINS`.
 
+### ⚠ O GERARGUIA31 é o MESMO para INSS e para o DARF do LP — quem decide é o DOCUMENTO (21/08/2026)
+
+`syncSerproInssForCompany` e `emitirDarfDctfweb` chamam o mesmo serviço SERPRO ("DCTFWeb /
+GERAL_MENSAL"). Na empresa com folha ele devolve o DARF previdenciário; na empresa de **Lucro
+Presumido** devolve o DARF de **PIS/COFINS/IRPJ/CSLL**. A captura de INSS gravava `tipo:"INSS"`
+nos dois casos — **sem olhar a composição que ela mesma já havia parseado**, e que estava sendo
+usada só para a circular.
+
+Efeito: a MESMA dívida virava **duas guias** — a correta (`tipo:"OUTRA"`, escrita pela captura do
+LP, com `composicao` de verdade) e uma cópia rotulada **INSS**, de valor e vencimento idênticos.
+Foi o que o dono viu em SINCROSAT 2026-07: R$ 1.435,49 = COFINS 1.179,85 + PIS 255,64.
+
+A guarda é **`tributosSeNaoForPrevidenciario`** (`serpro/parseArrecadacao.js`, pura): recusa o
+rótulo INSS só quando **TODAS** as linhas da composição são 8109/2172/2089/2372 — o mesmo mapa que
+o LP já usa. Composição vazia ou código desconhecido ⇒ **null**, comportamento antigo preservado.
+
+⚠ **A recusa é pelo DOCUMENTO, nunca pelo cadastro.** Testar `regimeTributario` ou `hasProlabore`
+seria mais curto e **apagaria guia real**: medido em produção, ALBATROZ (LUCRO_PRESUMIDO,
+`hasProlabore=false`) tem DARF genuinamente previdenciário, e **23 das 70** guias legítimas estão em
+empresas com `hasProlabore=false` — o cadastro está desatualizado e não serve de autoridade aqui.
+Travado em `serpro/__tests__/darfDctfwebNaoEhSempreInss.test.js`, com os casos reais dos dois lados.
+
+⚠ **Recusar não é declarar ausência**: não grava marcador VAZIO e **não escreve a circular**
+(`inssTotal`/`inssStatus`/`acrescimos.INSS`) — era ela que passava a afirmar INSS de PIS/COFINS.
+
 ## ⚠ Parcela de parcelamento é `tipo:"SIMPLES"` — o que a separa do DAS é `parcelamentoId`
 
 `CaptureSerproParcelaService` grava a parcela como `tipo:"SIMPLES"`, exatamente como o DAS do mês;

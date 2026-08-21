@@ -109,13 +109,20 @@ export async function runSerproDctfwebWorkerOnce(options = {}) {
           try {
             // eslint-disable-next-line no-await-in-loop
             const sync = await syncSerproInssForCompany({ portalClientId: company.id, competencia });
+            // `NOT_INSS`: o DARF que o GERARGUIA31 devolveu é de PIS/COFINS/IRPJ/CSLL (empresa de
+            // Lucro Presumido) — nada foi gravado. Fica com nome PRÓPRIO no log: cair no balde
+            // "captured" foi exatamente como isso passou meses sem ninguém ver.
+            const statusDaGuia = sync.inss?.status === "NOT_TRANSMITTED"
+              ? "not_transmitted"
+              : sync.inss?.status === "NOT_INSS" ? "nao_e_previdenciario" : "captured";
             results.push({
               companyId: company.id, razao: company.razao, cnpj: company.cnpj, email: company.email,
               competencia,
-              status: sync.inss?.status === "NOT_TRANSMITTED" ? "not_transmitted" : "captured",
+              status: statusDaGuia,
               guideId: sync.guide?.guideId || null,
               inssTotal: sync.inss?.inssTotal || null,
               inssVencimento: sync.inss?.inssVencimento || null,
+              tributosDoDocumento: sync.inss?.tributosDoDocumento || null,
             });
           } catch (err) {
             results.push({
@@ -152,6 +159,7 @@ export async function runSerproDctfwebWorkerOnce(options = {}) {
       totalCompanies: companies.length,
       captured: results.filter((item) => item.status === "captured").length,
       notTransmitted: results.filter((item) => item.status === "not_transmitted").length,
+      naoPrevidenciario: results.filter((item) => item.status === "nao_e_previdenciario").length,
       failed: results.filter((item) => item.status === "error").length,
       skippedByProcuration: results.filter((item) => item.status === "skipped_procuration_inactive").length,
       durationMs: Date.now() - startedAt,

@@ -5,7 +5,7 @@ import { createOrUpdateGuideFromProcessing, hashPdf, toGuideResponse } from "../
 import { normalizeCompetencia } from "../../guides/guideContract.js";
 import { getResolvedSerproCredentials } from "./SerproRuntimeSettings.js";
 import { SerproHttpClient } from "./SerproHttpClient.js";
-import { parseArrecadacaoComposicao } from "./parseArrecadacao.js";
+import { parseArrecadacaoComposicao, tributosSeNaoForPrevidenciario } from "./parseArrecadacao.js";
 import { gravarAcrescimoCircular } from "../circularAcrescimos.js";
 import { parseDctfwebDeclaracao } from "./parseDctfwebDeclaracao.js";
 
@@ -541,6 +541,44 @@ export async function syncSerproInssForCompany({ portalClientId, competencia, co
   });
 
   const mapped = await parsePdfResponse(guideResponse);
+
+  // ⚠ O DOCUMENTO DIZ O QUE ELE É — e até 21/08/2026 ninguém perguntava.
+  //
+  // GERARGUIA31 é o MESMO serviço que `emitirDarfDctfweb` usa na captura do Lucro Presumido:
+  // "DCTFWeb / GERAL_MENSAL". Na empresa com folha ele devolve o DARF previdenciário; na empresa
+  // de Lucro Presumido devolve o DARF de PIS/COFINS/IRPJ/CSLL. Esta função gravava `tipo:"INSS"`
+  // nos dois casos, sem olhar o PDF que acabara de parsear — e a composição estava ali, sendo
+  // usada só para a circular. Resultado medido em produção: 6 guias de PIS/COFINS rotuladas INSS
+  // em 2 empresas (a que o dono viu: SINCROSAT 2026-07, R$ 1.435,49 = COFINS 1.179,85 + PIS 255,64,
+  // ao lado da MESMA dívida já gravada corretamente como `tipo:"OUTRA"` pela captura do LP).
+  //
+  // ⚠ A recusa é pelo DOCUMENTO, nunca pelo cadastro. Testar `regimeTributario` ou `hasProlabore`
+  // pareceria mais direto e estaria ERRADO: na medição, ALBATROZ (LUCRO_PRESUMIDO,
+  // hasProlabore=false) tem um DARF genuinamente previdenciário em 2026-07, e 23 das 70 guias
+  // legítimas estão em empresas com `hasProlabore=false`. Um filtro por cadastro apagaria guia real.
+  //
+  // ⚠ Recusar NÃO é o mesmo que "não há guia": não escrevemos marcador VAZIO nem mexemos na
+  // circular. O que fazemos é parar de AFIRMAR "INSS" sobre um documento que diz outra coisa.
+  const tributosNaoPrevidenciarios = tributosSeNaoForPrevidenciario(mapped.composicao?.itens);
+  if (tributosNaoPrevidenciarios) {
+    return {
+      company: { id: portalClient.id, razao: portalClient.razao, cnpj: portalClient.cnpj },
+      circular: null,
+      accounting: { ok: true, generatedEntries: [] },
+      inss: {
+        status: "NOT_INSS",
+        competencia: normalizedCompetencia,
+        tributosDoDocumento: tributosNaoPrevidenciarios,
+        numeroDocumento: mapped.numeroDocumento ?? null,
+        motivo:
+          `O DARF emitido para ${normalizedCompetencia} é de ${tributosNaoPrevidenciarios.join("/")} `
+          + "— não há contribuição previdenciária nele. Guia de INSS não foi gravada.",
+      },
+      receiptResponse,
+      guideResponse,
+    };
+  }
+
   const storage = GuideStorageService.create();
   const storageKey = `serpro/inss/${portalClient.id}/${normalizedCompetencia}/${Date.now()}.pdf`;
   const uploaded = await storage.upload({ key: storageKey, buffer: mapped.pdfBuffer, contentType: "application/pdf" });

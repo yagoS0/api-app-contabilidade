@@ -208,6 +208,21 @@ export class FiscalManualRunService {
       };
     }
 
+    // O DARF emitido não tem contribuição previdenciária (empresa de Lucro Presumido: o mesmo
+    // GERARGUIA31 devolve PIS/COFINS/IRPJ/CSLL). Nada foi gravado — e o contador precisa LER isso,
+    // não receber um "atualizado" que não atualizou nada.
+    if (result?.inss?.status === "NOT_INSS") {
+      return {
+        action: "sync_inss",
+        competencia,
+        status: "skipped",
+        reason: "documento_nao_e_previdenciario",
+        message: result.inss.motivo,
+        tributosDoDocumento: result.inss.tributosDoDocumento || [],
+        timestamp: new Date().toISOString(),
+      };
+    }
+
     // Auto-send REMOVIDO. Guia INSS fica PENDING para envio em lote pelo contador.
 
     return {

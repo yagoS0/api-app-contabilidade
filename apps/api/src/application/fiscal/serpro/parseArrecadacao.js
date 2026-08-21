@@ -85,3 +85,44 @@ export function parseArrecadacaoComposicao(pdfTexto) {
 }
 
 export { parseBR };
+
+// ⚠ Códigos de receita que PROVAM que o DARF não é previdenciário.
+//
+// Mesmo mapa já usado em `LucroPresumidoProvisaoService` (e documentado em
+// `application/guides/CLAUDE.md`) — não é conhecimento fiscal novo, é o que o projeto já
+// trata como autoridade. Fica aqui porque quem pergunta "o que este documento é?" é quem
+// acabou de lê-lo.
+export const CODIGOS_RECEITA_NAO_PREVIDENCIARIOS = Object.freeze({
+  "8109": "PIS",
+  "2172": "COFINS",
+  "2089": "IRPJ",
+  "2372": "CSLL",
+});
+
+/**
+ * O documento prova que NÃO é uma guia previdenciária?
+ *
+ * Só responde `sim` quando TODAS as linhas da composição são de um dos quatro códigos acima.
+ * Nos demais casos devolve `null` — inclusive quando a composição veio vazia (PDF que não
+ * parseou) ou traz um código que não conhecemos. **Ausência de prova não é prova**: um código
+ * novo no catálogo da Receita não pode fazer o sistema recusar uma guia legítima.
+ *
+ * Medido em produção (21/08/2026, 70 guias `tipo:"INSS"` reparseadas): os DARFs realmente
+ * previdenciários trazem 1082/1099/1138/1646/2985 e nenhum cai nesta regra; os 6 documentos de
+ * PIS/COFINS(/IRPJ/CSLL) rotulados como INSS caem todos.
+ *
+ * @param {Array<{codigo:string}>} itens  `parseArrecadacaoComposicao(...).itens`
+ * @returns {string[]|null} nomes dos tributos do documento, ou null se não dá para afirmar
+ */
+export function tributosSeNaoForPrevidenciario(itens) {
+  const lista = (Array.isArray(itens) ? itens : []).filter((i) => i && i.codigo);
+  if (lista.length === 0) return null;
+  const nomes = [];
+  for (const item of lista) {
+    const codigo = String(item.codigo).replace(/\D+/g, "").slice(0, 4);
+    const nome = CODIGOS_RECEITA_NAO_PREVIDENCIARIOS[codigo];
+    if (!nome) return null;
+    nomes.push(nome);
+  }
+  return [...new Set(nomes)];
+}
