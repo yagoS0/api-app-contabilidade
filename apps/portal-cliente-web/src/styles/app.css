@@ -26,7 +26,21 @@ a { color: var(--primary); }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
 
 /* --- Casca ---------------------------------------------------------------- */
-.app { min-height: 100vh; display: flex; flex-direction: column; }
+/* ⚠ GRADE, não coluna (21/08/2026): a topbar atravessa em cima e, embaixo, a barra lateral fica
+   ao lado do conteúdo. `min-width: 0` nas duas faixas é OBRIGATÓRIO — sem ele o item assume o
+   `min-content` do que está dentro e a PÁGINA INTEIRA passa a rolar para o lado em 375px, além de
+   o `.table-wrap` deixar de conter a tabela. É a mesma armadilha que a `.topbar` já documenta.
+   ⚠ Os modais são filhos de `.app` e continuam de fora: `position: fixed` tira do fluxo, então
+   eles não criam faixa nenhuma na grade.
+   ⚠ A largura da barra é declarada UMA vez (aqui). Não virou token porque não há segunda cópia —
+   a grade já reserva o espaço do conteúdo; um token para um uso só é abstração prematura. */
+.app {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.app > .topbar { grid-column: 1 / -1; }
 
 .topbar {
   background: var(--surface);
@@ -45,15 +59,43 @@ a { color: var(--primary); }
 .topbar > * { min-width: 0; }
 
 .nav { display: flex; gap: 4px; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; overflow-x: auto; }
-/* ⚠ `a`, não `button` (20/08/2026) — ver o comentário no `AppShell`. `text-decoration:none` e a
-   cor herdada são o que mantêm a aba com a MESMA cara de antes: o que mudou é a semântica do
-   elemento (e o Ctrl+clique que vem com ela), não o desenho. */
-.nav a {
-  border: 0; background: none; padding: 10px 12px; font: inherit; cursor: pointer;
-  color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap;
-  text-decoration: none;
+/* ⚠ `a`, não `button` (20/08/2026) — ver o comentário no `AppShell`. O que mudou lá foi a
+   semântica do elemento (e o Ctrl+clique que vem com ela).
+   ⚠ A barra virou LATERAL e SÓ ÍCONE em 21/08/2026. O fundo é `--surface`, o mesmo da topbar: as
+   duas são a moldura do app, e o conteúdo fica sobre `--bg`. Não entrou token de superfície nova —
+   a distinção que faltava já existia entre `--bg` e `--surface`. */
+.nav {
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 0;
+  border-bottom: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow-x: visible;
+  overflow-y: auto;
+  align-items: stretch;
+  min-width: 0;
 }
-.nav a[aria-current="page"] { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.nav a {
+  border: 0; background: none; font: inherit; cursor: pointer;
+  color: var(--muted); text-decoration: none;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  /* 44px de alvo de toque — o mínimo que uma barra só de ícones pode ter. */
+  min-height: 44px; padding: 0 6px;
+  border-inline-start: 3px solid transparent;
+}
+.nav a:hover { color: var(--text); background: var(--bg); }
+/* ⚠ SEM RÓTULO VISÍVEL, O ATIVO PRECISA DE MAIS QUE COR. Superfície preenchida + a barra na borda
+   — é o mesmo desenho que o protótipo usa para o item selecionado, e o `--primary-surface` já
+   significa "item de lista escolhido" na lista de empresas. */
+.nav a[aria-current="page"] {
+  color: var(--primary);
+  background: var(--primary-surface);
+  border-inline-start-color: var(--primary);
+  font-weight: 600;
+}
+/* A reserva: rota sem desenho próprio mostra o rótulo, para a ausência aparecer. */
+.nav .nav-rotulo { font-size: .68rem; line-height: 1; }
 
 main.page { padding: 20px; min-width: 0; display: flex; flex-direction: column; gap: var(--gap); flex: 1; }
 .page-header { display: flex; align-items: center; gap: var(--gap); flex-wrap: wrap; }
@@ -348,12 +390,34 @@ dl dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overfl
 @media (max-width: 960px) {
   .page-split { grid-template-columns: 1fr; }
   .pane-preview { position: static; }
+
+  /* ⚠ A LATERAL DEITA — e continua NO FLUXO. Nada de `position: fixed`: este app não tem nenhum
+     fora do `.modal-backdrop`, e uma barra fixa traria junto `padding-bottom` + safe-area do
+     iPhone (senão a última linha de toda tabela fica inalcançável), `z-index` abaixo de 50 (senão
+     ela cobre o modal de trocar empresa) e o teclado virtual empurrando tudo. Se ela for pedida,
+     é entrega própria, com esse custo escrito.
+     ⚠ 960 é a breakpoint do protótipo, que é a referência visual declarada deste portal — e o
+     bloco já existia aqui. Os 760 do portal do escritório são de uma gaveta modal, outra coisa. */
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .nav {
+    flex-direction: row;
+    justify-content: center;
+    padding: 0 6px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .nav a {
+    border-inline-start: 0;
+    border-bottom: 3px solid transparent;
+    padding: 0 14px;
+  }
+  .nav a[aria-current="page"] { border-bottom-color: var(--primary); }
 }
 
 @media (max-width: 560px) {
   main.page { padding: 12px; }
   .topbar { padding: 10px 12px; }
-  .nav { padding: 0 6px; }
   .page-actions { margin-left: 0; width: 100%; }
   .page-actions .btn { flex: 1 1 auto; }
   .filters { grid-template-columns: 1fr; }
