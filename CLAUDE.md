@@ -375,9 +375,18 @@ Rotas protegidas pelo middleware `requireRole` (escritório) e `requireClientCom
     opaco do projeto não tem campo de consumo, então uso único exige modelo novo.
   - ⚠ **Migração `20260809120000_add_onboarding` escrita mas NUNCA APLICADA** — não há banco
     alcançável nesta máquina. Rodar `prisma:migrate:deploy` + `:status` antes de usar.
-- [~] **Portal do CLIENTE na web (`apps/portal-cliente-web`)** — app novo (18–19/08/2026, nove
-  commits): login, casca, Home, Notas, Guias e **emissão de NFS-e pelo cliente**. React 19 + Vite,
-  **sem router** (hash, 3 destinos) e sem lib de estado; paleta CLARA própria; 683 testes / 38 suítes.
+- [~] **Portal do CLIENTE na web (`apps/portal-cliente-web`)** — app novo (18–21/08/2026): login,
+  casca, Painel, Notas, Guias, **Situação fiscal** e **emissão de NFS-e pelo cliente**. React 19 +
+  Vite, **sem router** (hash, 4 destinos) e sem lib de estado; paleta CLARA própria;
+  **807 testes / 44 suítes**.
+  - ⚠ **A navegação é BARRA LATERAL DE ÍCONES** desde 21/08/2026 (SVG inline, `aria-hidden`, com o
+    rótulo em `.sr-only` — o ícone nunca é a única marca do destino).
+  - ⚠⚠ **A tela padrão é o PAINEL: fluxo de caixa ⇄ DRE, MOCKADOS.** Não há backend para nenhum dos
+    dois e **não há origem para ENTRADAS** (`GET /client/.../fluxo` é a lista de guias liberadas em
+    aberto — só saídas; OFX e transações são stubs 501). O selo de demonstração é dirigido pelo
+    DADO (`demonstracao !== false`), **nunca por `api.mode`**, que some no modo real.
+  - ⚠⚠ **A Situação fiscal é SÓ LEITURA e o piso é `CLIENT_ADMIN`** — o relatório traz o quadro
+    societário, e a consulta paga (limite AV02 **por contratante**) fica só com o contador.
   ⚠ **Ler `apps/portal-cliente-web/CLAUDE.md` antes de mexer** — quase toda decisão veio de defeito
   medido ou de instrução literal do dono. Os que mais custam se reintroduzidos:
   - ⚠⚠ **OS CAMPOS DE IMPOSTO TÊM GUARDA NOS DOIS LADOS** (`emitir/lib/impostosDaNota.js`,
